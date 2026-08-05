@@ -244,10 +244,10 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
   const float crown = tree.up_radius.w;
   if (organ.proxy) {
     organ.centre =
-      organ.root + organ.up * (organ.conifer ? 0.56 : 0.62) * organ.tree_height;
-    organ.radius_x = crown * (organ.conifer ? 0.94 : 1.08);
-    organ.radius_z = crown * (organ.conifer ? 0.88 : 0.98);
-    organ.half_height = organ.tree_height * (organ.conifer ? 0.48 : 0.35);
+      organ.root + organ.up * (organ.conifer ? 0.55 : 0.62) * organ.tree_height;
+    organ.radius_x = crown * (organ.conifer ? 0.86 : 1.08);
+    organ.radius_z = crown * (organ.conifer ? 0.80 : 0.98);
+    organ.half_height = organ.tree_height * (organ.conifer ? 0.52 : 0.35);
     organ.bend = 0.38;
     organ.flutter = 0.04;
   } else if (organ.wood) {
@@ -260,19 +260,49 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
     organ.bend = 0.12;
     organ.flutter = 0.0;
   } else if (organ.conifer) {
-    const float tier = float (part.part - 1u);
-    const float tiers = float (max (part.lod - 1u, 1u));
-    const float t = tiers > 1.0 ? tier / (tiers - 1.0) : tier;
-    const float rise = mix (0.30, 0.84, t);
-    const float irregular =
-      0.88 + 0.22 * forest_hash (organ.seed, part.part + 31u);
-    organ.centre = organ.root + organ.up * rise * organ.tree_height;
-    organ.radius_x = crown * mix (1.10, 0.30, t) * irregular;
-    organ.radius_z = organ.radius_x *
-                     (0.84 + 0.24 * forest_hash (organ.seed, part.part + 43u));
-    organ.half_height = organ.tree_height * mix (0.070, 0.045, t);
-    organ.bend = 0.34 + 0.48 * rise;
-    organ.flutter = 0.20 + 0.30 * t;
+    // A conifer is a cone of mass fringed by bough whorls. Two overlapping
+    // cone shells arrive first and are the whole tree at middle distance —
+    // five boughs read as a sparse antenna once each fan is a few pixels
+    // wide, while a closed conical surface keeps the mass and silhouette of
+    // a fir. The nearest trees keep the shells and add five interleaved
+    // whorls that break the outline into sprays, so the LOD hop only ever
+    // adds fringe to a construction it already contains.
+    if (part.part <= 2u) {
+      organ.proxy = true;
+      const bool lower = part.part == 1u;
+      const float rise = lower ? 0.46 : 0.76;
+      organ.centre = organ.root + organ.up * rise * organ.tree_height;
+      organ.radius_x =
+        crown * (lower ? 1.08 : 0.56) *
+        (0.92 + 0.16 * forest_hash (organ.seed, part.part + 31u));
+      organ.radius_z =
+        organ.radius_x *
+        (0.86 + 0.22 * forest_hash (organ.seed, part.part + 43u));
+      organ.half_height = organ.tree_height * (lower ? 0.28 : 0.24);
+      organ.bend = 0.28 + 0.30 * rise;
+      organ.flutter = 0.08;
+    } else {
+      // Whorls turn by the golden angle per tier: aligned tiers read as one
+      // plant stamped in registers, interleaved tiers read as growth.
+      const float tier = float (part.part - 3u);
+      const float t = tier / 4.0;
+      const float rise = mix (0.26, 0.96, t);
+      const float irregular =
+        0.90 + 0.20 * forest_hash (organ.seed, part.part + 31u);
+      const float spin = 2.3999632 * tier;
+      const float3 across =
+        organ.across * cos (spin) + organ.forward * sin (spin);
+      organ.across = across;
+      organ.forward = normalize (cross (across, organ.up));
+      organ.centre = organ.root + organ.up * rise * organ.tree_height;
+      organ.radius_x = crown * mix (1.18, 0.26, t) * irregular;
+      organ.radius_z =
+        organ.radius_x *
+        (0.86 + 0.20 * forest_hash (organ.seed, part.part + 43u));
+      organ.half_height = organ.tree_height * mix (0.085, 0.055, t);
+      organ.bend = 0.34 + 0.48 * rise;
+      organ.flutter = 0.20 + 0.30 * t;
+    }
   } else {
     const float lobe = float (part.part - 1u);
     const float count = float (max (part.lod - 1u, 1u));
@@ -321,18 +351,15 @@ static inline float3 forest_palette (thread const MoppeForestInstance& tree,
 }
 
 static inline float forest_ring_level (uint ring, bool conifer, bool proxy) {
-  if (conifer && proxy)
-    return float3 (-0.54, -0.08, 0.40)[ring];
+  // A conifer volume is a spire: wide low skirt, straight taper, high apex.
   if (conifer)
-    return float3 (-0.44, -0.04, 0.36)[ring];
+    return float3 (-0.52, 0.02, 0.54)[ring];
   return float3 (-0.42, -0.02, 0.40)[ring];
 }
 
 static inline float forest_ring_radius (uint ring, bool conifer, bool proxy) {
-  if (conifer && proxy)
-    return float3 (1.00, 0.72, 0.38)[ring];
   if (conifer)
-    return float3 (0.66, 1.00, 0.50)[ring];
+    return float3 (1.00, 0.58, 0.22)[ring];
   return float3 (0.72, 1.00, 0.76)[ring];
 }
 
@@ -381,9 +408,9 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
     const float3 radial =
       normalize (organ.across * cos (turn) + organ.forward * sin (turn));
     const float3 sideways = normalize (cross (organ.up, radial));
-    const float distance = float3 (0.12, 0.68, 1.0)[section];
-    const float breadth = float3 (0.08, 0.27, 0.035)[section];
-    const float droop = float3 (0.16, -0.34, 0.06)[section];
+    const float distance = float3 (0.10, 0.62, 1.0)[section];
+    const float breadth = float3 (0.06, 0.30, 0.05)[section];
+    const float droop = float3 (0.26, -0.16, 0.08)[section];
     const float asymmetry =
       0.88 + 0.22 * forest_hash (organ.seed, bough + 229u);
     point.position = organ.centre +

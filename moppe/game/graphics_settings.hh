@@ -40,7 +40,7 @@ namespace moppe::game {
     // the budget and restores the point-relative rule on its own.
     float scene_megapixel_budget = 4.2f;
     // Late afternoon: a lower, warmer sun with longer shadows.
-    float sun_height = 0.56f;
+    float sun_height = 0.62f;
 
     bool terrain_shadows = true;
     bool ocean = true;
