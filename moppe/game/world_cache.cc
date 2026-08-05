@@ -20,9 +20,9 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 11 includes bounded critical-gradient hillslope wasting in the
-    // complete world recipe. Version 10 worlds use linear creep alone.
-    constexpr std::uint32_t CACHE_VERSION = 11;
+    // Version 12 extracts the visible network from a physical five-metre
+    // channel width. Version 11 made that threshold depend on cell spacing.
+    constexpr std::uint32_t CACHE_VERSION = 12;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());

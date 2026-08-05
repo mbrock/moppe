@@ -286,7 +286,7 @@ namespace moppe::map {
     // channel to speak of; past the area that makes a river visible there is
     // nothing more to say, and everything larger reads the same.
     const square_meters_t a_puddle = 4.0f * grid.cell_area ();
-    const square_meters_t a_river = terrain::visible_river_minimum_area (grid);
+    const square_meters_t a_river = terrain::visible_river_minimum_area ();
 
     // How much larger than a puddle a drainage is. Dividing two areas leaves
     // a plain number, which is what a logarithm needs.

@@ -540,3 +540,40 @@ the only item allowed to change those defaults after the multi-seed gate.
 Decision artifacts are under `/tmp/moppe-hillslope-refined.0DLaGE`,
 `/tmp/moppe-hillslope-1024.euWbKA`, and
 `/tmp/moppe-channel-critical.76wl4R`.
+
+## TER-030: physical river extraction and trunk scale
+
+The 1024 confluence failure came from the presentation threshold rather than
+the drainage topology. `visible_river_minimum_area` formerly asked when the
+water-width law reached two source cells. That selected about 0.174 km2 at
+2048 and 0.694 km2 at 1024, so the lower-resolution finished world discarded
+tributaries four times larger before water selection and painting.
+
+The accepted threshold is the catchment that produces a physical five-metre
+water width: 173,611 m2 at every resolution. The same contributing-area
+coordinate drives the established depositional footprint:
+
+| River class | Catchment | Water width | Water depth | Depositional floor |
+| --- | ---: | ---: | ---: | ---: |
+| Visible lower boundary | 0.174 km2 | 5.0 m | 0.63 m | 22.7 m |
+| Seed-123 trunk | 13--14 km2 | 24.0 m | 2.5 m | about 150 m |
+
+The lower member reads as a substantial stream and the capped trunk as a
+small motorcycle-scale river, which is honest for 22 km2 of land inside a
+five-kilometre periodic world. The ratio between water and alluvial floor
+grows only modestly, rather than assigning a broad floodplain to a painted
+rivulet or forcing water to fill the whole valley.
+
+Re-analyzing the accepted 1024 terrain raises extracted river length from
+19.57 to 36.18 km and restores the missing confluence. It yields 710 reaches,
+a 1.617 km/km2 drainage density, and all 17 fixed views. The 2048 terrain has
+733 reaches, 21.34 km of river, a 0.984 km/km2 density, a 13.07 km2 maximum
+catchment, and all 17 views. Network length is not resolution-converged
+because the underlying terrain drainage differs, but physical extraction no
+longer injects an additional fourfold scale change. The stream, river,
+confluence, and mouth views retain a believable widening hierarchy at both
+resolutions.
+
+Cache schema 12 invalidates version-11 finished worlds because river topology
+is stored in the cache. Decision artifacts are under
+`/tmp/moppe-river-1024.koPI8c` and `/tmp/moppe-river-2048.B3UBjA`.

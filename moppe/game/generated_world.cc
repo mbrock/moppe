@@ -42,12 +42,12 @@ namespace moppe::game {
       terrain::analyze_fractional_drainage (standing_water, lakes);
 
     report (HydrologyStage::Rivers);
-    terrain::RiverNetwork rivers = terrain::extract_river_network (
-      standing_water,
-      lakes,
-      drainage,
-      channels,
-      terrain::visible_river_minimum_area (drainage.domain ()));
+    terrain::RiverNetwork rivers =
+      terrain::extract_river_network (standing_water,
+                                      lakes,
+                                      drainage,
+                                      channels,
+                                      terrain::visible_river_minimum_area ());
 
     return { Hydrology (std::move (standing_water),
                         std::move (lakes),
