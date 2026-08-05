@@ -371,6 +371,7 @@ namespace moppe {
         id<MTLRenderPipelineState> copy = nil;
         id<MTLRenderPipelineState> underwater = nil;
         id<MTLRenderPipelineState> shafts = nil;
+        id<MTLRenderPipelineState> shafts_add = nil;
         id<MTLRenderPipelineState> bloom_bright = nil;
         id<MTLRenderPipelineState> bloom_blur = nil;
         id<MTLRenderPipelineState> probe = nil;
@@ -480,6 +481,9 @@ namespace moppe {
         id<MTLTexture> msaa_color = nil, msaa_depth = nil;
         id<MTLTexture> scene_a = nil;
         id<MTLTexture> post_a = nil, post_b = nil;
+        // Half-resolution sun-shaft scatter; the march is the entire cost
+        // of the effect and its result is low-frequency light.
+        id<MTLTexture> shafts = nil;
         id<MTLTexture> motion = nil, reactive = nil;
         id<MTLTexture> prev_frame = nil;
         id<MTLTexture> bloom_a = nil, bloom_b = nil;
@@ -1544,11 +1548,17 @@ namespace moppe {
                                               1,
                                               false);
       m_pipelines.shafts = make_pipeline (@"quad_vertex",
-                                          @"shafts_fragment",
+                                          @"shafts_gather_fragment",
                                           scene,
                                           MTLPixelFormatInvalid,
                                           1,
                                           false);
+      m_pipelines.shafts_add = make_pipeline (@"quad_vertex",
+                                              @"shafts_add_fragment",
+                                              scene,
+                                              MTLPixelFormatInvalid,
+                                              1,
+                                              false);
       m_pipelines.bloom_bright = make_pipeline (@"quad_vertex",
                                                 @"bloom_bright_fragment",
                                                 scene,
@@ -3258,6 +3268,7 @@ namespace moppe {
       retire (m_targets.scene_a);
       retire (m_targets.post_a);
       retire (m_targets.post_b);
+      retire (m_targets.shafts);
       retire (m_targets.motion);
       retire (m_targets.reactive);
       retire (m_targets.prev_frame);
@@ -3521,6 +3532,11 @@ namespace moppe {
         MTLPixelFormatRGBA16Float, drawable_w, drawable_h, 1, false);
       m_targets.post_b = make_target (
         MTLPixelFormatRGBA16Float, drawable_w, drawable_h, 1, false);
+      m_targets.shafts = make_target (MTLPixelFormatRGBA16Float,
+                                      drawable_w / 2 > 0 ? drawable_w / 2 : 1,
+                                      drawable_h / 2 > 0 ? drawable_h / 2 : 1,
+                                      1,
+                                      false);
       const int bw = drawable_w / 4 > 0 ? drawable_w / 4 : 1;
       const int bh = drawable_h / 4 > 0 ? drawable_h / 4 : 1;
       m_targets.bloom_a =
@@ -5036,43 +5052,60 @@ namespace moppe {
       MetalFrameTargets& targets = inputs.targets;
       MetalFrameEncoding& frame = inputs.frame;
 
-      id<MTLTexture> src = frame.current_scene;
-      id<MTLTexture> dst =
-        (src == targets.post_a) ? targets.post_b : targets.post_a;
-
-      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
-      rp.colorAttachments[0].texture = dst;
-      rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
-      rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-
-      id<MTL4RenderCommandEncoder> enc =
-        [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
-      enc.label = @"Sun shafts";
-      if (targets.spatial_fence)
-        [enc waitForFence:targets.spatial_fence
-          beforeEncoderStages:MTLStageFragment];
-      wait_for_render_or_blit_writes (enc);
-      record_gpu_pass_start (frame, enc, GpuPass::Post);
       // The shared fullscreen vertex still wants quad uniforms; the march
       // parameters ride the fragment stage at the same slot.
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
       q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
       q.params.x = 1; // no zoom
+      const MTLGPUAddress quad_uniforms = frame.arena[frame.slot].write (q);
+
+      // Gather: march at half resolution into the scatter target.
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
+      rp.colorAttachments[0].texture = targets.shafts;
+      rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+      id<MTL4RenderCommandEncoder> enc =
+        [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
+      enc.label = @"Sun shafts gather";
+      wait_for_render_or_blit_writes (enc);
+      record_gpu_pass_start (frame, enc, GpuPass::Post);
       [enc setRenderPipelineState:pipelines.shafts];
-      bind_address (frame,
-                    MTLRenderStageVertex,
-                    MOPPE_BUF_FRAME,
-                    frame.arena[frame.slot].write (q));
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, quad_uniforms);
       bind_address (frame,
                     MTLRenderStageFragment,
                     MOPPE_BUF_FRAME,
                     frame.arena[frame.slot].write (shaft));
-      bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
       bind_texture (
         frame, MTLRenderStageFragment, MOPPE_TEX_POST_DEPTH, scene_depth);
       bind_texture (
         frame, MTLRenderStageFragment, MOPPE_TEX_SHADOW, shadow_map);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+      [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+      [enc endEncoding];
+
+      // Add: bilinear-upsample the scatter onto the full-size scene.
+      id<MTLTexture> src = frame.current_scene;
+      id<MTLTexture> dst =
+        (src == targets.post_a) ? targets.post_b : targets.post_a;
+      MTL4RenderPassDescriptor* add = [[MTL4RenderPassDescriptor alloc] init];
+      add.colorAttachments[0].texture = dst;
+      add.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      add.colorAttachments[0].storeAction = MTLStoreActionStore;
+      enc = [frame.command_buffer renderCommandEncoderWithDescriptor:add];
+      enc.label = @"Sun shafts add";
+      if (targets.spatial_fence)
+        [enc waitForFence:targets.spatial_fence
+          beforeEncoderStages:MTLStageFragment];
+      wait_for_render_or_blit_writes (enc);
+      record_gpu_pass_start (frame, enc, GpuPass::Post);
+      [enc setRenderPipelineState:pipelines.shafts_add];
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, quad_uniforms);
+      bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_BLOOM, targets.shafts);
       use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
       [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
       if (targets.spatial_fence)
@@ -5084,7 +5117,8 @@ namespace moppe {
     }
 
     void MetalRenderer::apply_light_shafts (const LightShaftParams& params) {
-      if (!m_pipelines.shafts || !m_frame.command_buffer)
+      if (!m_pipelines.shafts || !m_pipelines.shafts_add || !m_targets.shafts ||
+          !m_frame.command_buffer)
         return;
       // The march needs the stored scene depth, which only the temporal
       // path keeps, and the per-frame camera-local shadow map.

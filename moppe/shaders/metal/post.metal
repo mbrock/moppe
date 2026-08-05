@@ -255,26 +255,26 @@ fragment float4 underwater_fragment (QuadVaryings in [[stage_in]],
 }
 
 // Sun shafts: march each view ray through the camera-local shadow map and
-// add forward-scattered sunlight for the lit spans. The scene depth stops
-// the march at the first surface; the shadow map supplies the tree- and
-// terrain-shaped occlusion that turns open sky into visible beams. An
+// gather forward-scattered sunlight over the lit spans. The scene depth
+// stops the march at the first surface; the shadow map supplies the tree-
+// and terrain-shaped occlusion that turns open sky into visible beams. An
 // interleaved-gradient jitter per pixel replaces banding with fine noise
-// that stays deterministic for captures.
-fragment float4
-shafts_fragment (QuadVaryings in [[stage_in]],
-                 constant MoppeShaftUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-                 texture2d<float> scene [[texture (MOPPE_TEX_SCENE)]],
-                 depth2d<float> scene_depth [[texture (MOPPE_TEX_POST_DEPTH)]],
-                 depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]]) {
-  constexpr sampler smp (
-    coord::normalized, address::clamp_to_edge, filter::linear);
+// that stays deterministic for captures. The march is the whole cost of the
+// effect and the beams are low-frequency light, so it runs at half
+// resolution and a separate pass adds the filtered result to the scene.
+fragment float4 shafts_gather_fragment (QuadVaryings in [[stage_in]],
+                                        constant MoppeShaftUniforms& u
+                                        [[buffer (MOPPE_BUF_FRAME)]],
+                                        depth2d<float> scene_depth
+                                        [[texture (MOPPE_TEX_POST_DEPTH)]],
+                                        depth2d<float> shadow_map
+                                        [[texture (MOPPE_TEX_SHADOW)]]) {
   constexpr sampler depth_smp (
     coord::normalized, address::clamp_to_edge, filter::nearest);
   constexpr sampler shadow_smp (coord::normalized,
                                 address::clamp_to_edge,
                                 filter::linear,
                                 compare_func::less_equal);
-  const float3 base = scene.sample (smp, in.uv).rgb;
   const float3 dir =
     normalize (u.ray_forward.xyz + u.ray_right.xyz * (2.0 * in.uv.x - 1.0) +
                u.ray_up.xyz * (1.0 - 2.0 * in.uv.y));
@@ -310,6 +310,16 @@ shafts_fragment (QuadVaryings in [[stage_in]],
   const float g = 0.60;
   const float phase =
     (1.0 - g * g) / (4.0 * 3.14159265 * pow (1.0 + g * g - 2.0 * g * mu, 1.5));
-  const float3 shafts = u.sun_color.rgb * u.sun_color.w * phase * scatter;
-  return float4 (base + shafts, 1.0);
+  return float4 (u.sun_color.rgb * u.sun_color.w * phase * scatter, 1.0);
+}
+
+fragment float4 shafts_add_fragment (QuadVaryings in [[stage_in]],
+                                     texture2d<float> scene
+                                     [[texture (MOPPE_TEX_SCENE)]],
+                                     texture2d<float> shafts
+                                     [[texture (MOPPE_TEX_BLOOM)]]) {
+  constexpr sampler smp (
+    coord::normalized, address::clamp_to_edge, filter::linear);
+  return float4 (scene.sample (smp, in.uv).rgb + shafts.sample (smp, in.uv).rgb,
+                 1.0);
 }
