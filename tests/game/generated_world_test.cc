@@ -171,6 +171,8 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
                summary.land_below_10_deg_fraction);
   MOPPE_CHECK (summary.largest_connected_below_20_deg_m2 >=
                summary.largest_connected_below_10_deg_m2);
+  MOPPE_CHECK (summary.river_graph_junctions <= summary.river_reaches);
+  MOPPE_CHECK (summary.dry_confluence_cells <= summary.river_graph_junctions);
   MOPPE_CHECK_NEAR (
     static_cast<float> (summary.eroded_sediment_m3), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (

@@ -110,13 +110,25 @@ namespace moppe::game {
 
     double river_length_m = 0.0;
     double largest_catchment_m2 = 0.0;
+    std::vector<std::uint32_t> incoming_reaches (rivers.reaches.size (), 0);
+    std::vector<std::uint32_t> incoming_at_cell (domain.size (), 0);
     for (const terrain::RiverReach& reach : rivers.reaches) {
       river_length_m += reach.alignment.length.numerical_value_in (u::m);
       largest_catchment_m2 =
         std::max (largest_catchment_m2,
                   static_cast<double> (
                     reach.downstream_area.numerical_value_in (u::m * u::m)));
+      if (reach.downstream_reach == terrain::RiverReach::no_id ||
+          reach.cells.empty ())
+        continue;
+      ++incoming_reaches[reach.downstream_reach];
+      const std::uint32_t junction = drainage.receiver[reach.cells.back ()];
+      ++incoming_at_cell[junction];
     }
+    const std::size_t river_graph_junctions = std::ranges::count_if (
+      incoming_reaches, [] (std::uint32_t incoming) { return incoming >= 2; });
+    const std::size_t dry_confluence_cells = std::ranges::count_if (
+      incoming_at_cell, [] (std::uint32_t incoming) { return incoming >= 2; });
 
     std::size_t inland_bodies = 0;
     std::size_t lakes = 0;
@@ -182,6 +194,8 @@ namespace moppe::game {
       .largest_connected_below_20_deg_m2 =
         largest_connected_component (domain, rolling_gradient) * cell_area_m2,
       .river_reaches = rivers.reaches.size (),
+      .river_graph_junctions = river_graph_junctions,
+      .dry_confluence_cells = dry_confluence_cells,
       .river_length_m = river_length_m,
       .drainage_density_m_per_km2 =
         land_area_m2 > 0.0 ? river_length_m / (land_area_m2 / 1000000.0) : 0.0,
@@ -212,6 +226,7 @@ namespace moppe::game {
               "land_below_20_deg_fraction,"
               "largest_connected_below_10_deg_m2,"
               "largest_connected_below_20_deg_m2,river_reaches,"
+              "river_graph_junctions,dry_confluence_cells,"
               "river_length_m,drainage_density_m_per_km2,"
               "largest_river_catchment_m2,inland_water_bodies,lakes,"
               "inland_water_area_m2,mobile_sediment_m3,eroded_sediment_m3,"
@@ -233,6 +248,7 @@ namespace moppe::game {
            << ',' << s.land_below_20_deg_fraction << ','
            << s.largest_connected_below_10_deg_m2 << ','
            << s.largest_connected_below_20_deg_m2 << ',' << s.river_reaches
+           << ',' << s.river_graph_junctions << ',' << s.dry_confluence_cells
            << ',' << s.river_length_m << ',' << s.drainage_density_m_per_km2
            << ',' << s.largest_river_catchment_m2 << ','
            << s.inland_water_bodies << ',' << s.lakes << ','
