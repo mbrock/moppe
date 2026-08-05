@@ -24,7 +24,8 @@ namespace moppe::game {
     Landform,
     Freshwater,
     Coast,
-    Aerial
+    Aerial,
+    Lighting
   };
 
   std::string_view gazetteer_shot_kind_name (GazetteerShotKind kind) noexcept;
@@ -63,6 +64,9 @@ namespace moppe::game {
     }
   };
 
+  // The sun direction (toward the sun, in the frame the capture will light
+  // with) lets the plan include deliberate lighting studies: forest against
+  // the sun, shadows raking across the view, and shaded interiors.
   LandscapeGazetteer
   plan_landscape_gazetteer (const map::SurfaceGeometry& surface,
                             const map::SurfaceReadings& readings,
@@ -71,7 +75,8 @@ namespace moppe::game {
                             const terrain::DrainageGraph& drainage,
                             const terrain::RiverNetwork& rivers,
                             const terrain::TrailNetwork& trail,
-                            position_t spawn);
+                            position_t spawn,
+                            Vec3 sun_direction);
 
   // CSV is the deliberate numerical exit. Column names carry their units and
   // every row names the exact image file the application will write.

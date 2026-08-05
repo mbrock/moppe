@@ -555,6 +555,8 @@ namespace moppe::game {
       return "coast";
     case GazetteerShotKind::Aerial:
       return "aerial";
+    case GazetteerShotKind::Lighting:
+      return "lighting";
     }
     return "landform";
   }
@@ -567,7 +569,8 @@ namespace moppe::game {
                             const terrain::DrainageGraph& drainage,
                             const terrain::RiverNetwork& rivers,
                             const terrain::TrailNetwork& trail,
-                            position_t spawn) {
+                            position_t spawn,
+                            Vec3 sun_direction) {
     if (surface.domain () != readings.domain () ||
         surface.domain () != flood.domain () ||
         surface.domain () != drainage.readings.domain () ||
@@ -595,6 +598,76 @@ namespace moppe::game {
                            0.8f * u::m,
                            2.0f * u::m,
                            20.0f * u::m,
+                           68.0f * u::deg,
+                           surface,
+                           readings,
+                           flood);
+
+    // Lighting studies: the compositions the rendering work is actually
+    // about. Their camera axes come from the sun, not from the ground, so
+    // one capture always contains forest against the light, shadows raking
+    // across the frame, and a shaded interior.
+    Vec3 toward_sun (sun_direction[0], 0, sun_direction[2]);
+    toward_sun =
+      length2 (toward_sun) > 1e-6f ? normalized (toward_sun) : Vec3 (0, 0, 1);
+    const Vec3 sun_side (-toward_sun[2], 0, toward_sun[0]);
+
+    GazetteerCandidate sunward = choose_land_site (
+      surface, readings, flood, census, selected, [] (const SiteSample& site) {
+        return 6.0f * site.forest + 1.0f * site.habitat +
+               1.2f * site.normal[1] - 1.0f * site.trail;
+      });
+    sunward.direction = toward_sun;
+    append_candidate_view (gazetteer,
+                           selected,
+                           "forest-sunward",
+                           GazetteerShotKind::Lighting,
+                           sunward,
+                           2.0f * u::m,
+                           0.6f * u::m,
+                           2.0f * u::m,
+                           24.0f * u::m,
+                           70.0f * u::deg,
+                           surface,
+                           readings,
+                           flood);
+
+    GazetteerCandidate shadowplay = choose_land_site (
+      surface, readings, flood, census, selected, [] (const SiteSample& site) {
+        const float edge = site.forest * (1.0f - site.forest) * 4.0f;
+        return 3.5f * edge + 1.2f * site.normal[1] + 0.5f * site.habitat -
+               0.8f * site.trail;
+      });
+    shadowplay.direction = sun_side;
+    append_candidate_view (gazetteer,
+                           selected,
+                           "forest-shadowplay",
+                           GazetteerShotKind::Lighting,
+                           shadowplay,
+                           5.0f * u::m,
+                           2.0f * u::m,
+                           2.8f * u::m,
+                           34.0f * u::m,
+                           68.0f * u::deg,
+                           surface,
+                           readings,
+                           flood);
+
+    GazetteerCandidate interior = choose_land_site (
+      surface, readings, flood, census, selected, [] (const SiteSample& site) {
+        return 6.0f * site.forest + 0.8f * site.habitat + 0.5f * site.wetness -
+               1.0f * site.trail;
+      });
+    interior.direction = -toward_sun;
+    append_candidate_view (gazetteer,
+                           selected,
+                           "forest-interior",
+                           GazetteerShotKind::Lighting,
+                           interior,
+                           2.0f * u::m,
+                           -0.8f * u::m,
+                           2.1f * u::m,
+                           22.0f * u::m,
                            68.0f * u::deg,
                            surface,
                            readings,

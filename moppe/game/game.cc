@@ -517,7 +517,8 @@ namespace moppe {
                                     drainage (),
                                     rivers (),
                                     trail_network (),
-                                    position (m_spawn_position));
+                                    position (m_spawn_position),
+                                    sun_direction_for (m_graphics.sun_height));
         if (m_gazetteer_plan.empty ())
           throw std::runtime_error ("landscape gazetteer found no viewpoints");
         std::filesystem::create_directories (m_gazetteer->output_directory);
