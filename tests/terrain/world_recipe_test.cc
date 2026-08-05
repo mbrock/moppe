@@ -22,6 +22,8 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_generation_values) {
   MOPPE_CHECK_NEAR (recipe.trail_formation ().sea_level, 50.0f, 0.0f);
   MOPPE_CHECK (recipe.evolution ().duration ==
                200000.0f * mp_units::astronomy::Julian_year);
+  MOPPE_CHECK (recipe.evolution ().uplift_duration ==
+               50000.0f * mp_units::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().diffusivity ==
                0.0001f * mp_units::si::metre * mp_units::si::metre /
                  mp_units::astronomy::Julian_year);
@@ -49,9 +51,11 @@ MOPPE_TEST (smoke_world_recipe_runs_one_geological_step) {
 
   MOPPE_CHECK (profile_id (recipe.generation_profile ()) == "smoke");
   MOPPE_CHECK (recipe.evolution ().duration == recipe.evolution ().time_step);
+  MOPPE_CHECK (recipe.evolution ().uplift_duration ==
+               recipe.evolution ().duration);
 }
 
-MOPPE_TEST (play_world_recipe_evolves_for_two_million_years) {
+MOPPE_TEST (play_world_recipe_relaxes_after_half_a_million_years_of_uplift) {
   using namespace moppe;
   using namespace moppe::terrain;
 
@@ -64,4 +68,23 @@ MOPPE_TEST (play_world_recipe_evolves_for_two_million_years) {
 
   MOPPE_CHECK (recipe.evolution ().duration ==
                2000000.0f * mp_units::astronomy::Julian_year);
+  MOPPE_CHECK (recipe.evolution ().uplift_duration ==
+               500000.0f * mp_units::astronomy::Julian_year);
+}
+
+MOPPE_TEST (research_world_recipe_has_a_finite_uplift_schedule) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const WorldRecipe recipe =
+    make_world_recipe (spatial_extent_in_metres (Vec3 (5000, 320, 5000)),
+                       33,
+                       Seed { 77 },
+                       50.0f * mp_units::si::metre,
+                       TerrainGenerationProfile::Research);
+
+  MOPPE_CHECK (recipe.evolution ().duration ==
+               1000000.0f * mp_units::astronomy::Julian_year);
+  MOPPE_CHECK (recipe.evolution ().uplift_duration ==
+               250000.0f * mp_units::astronomy::Julian_year);
 }

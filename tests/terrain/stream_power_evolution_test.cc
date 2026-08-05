@@ -63,6 +63,63 @@ MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
   MOPPE_CHECK (result.report.fixed_boundaries == cell_count (2));
 }
 
+MOPPE_TEST (finite_uplift_integrates_the_exact_active_interval) {
+  const ElevationMap terrain =
+    make_elevation_map (profile_grid (), profile_heights);
+  auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
+  uplift[4] = 0.002f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+  uplift[9] = uplift[4];
+
+  const auto evolve = [&] (float step_years) {
+    return evolve_stream_power (
+      terrain,
+      uplift,
+      { .duration = 1000.0f * mp_units::astronomy::Julian_year,
+        .time_step = step_years * mp_units::astronomy::Julian_year,
+        .uplift_duration = 500.0f * mp_units::astronomy::Julian_year,
+        .reference_incision_rate =
+          0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        .sea_level = 0.0f });
+  };
+
+  const StreamPowerEvolutionResult three_hundred_year_steps = evolve (300.0f);
+  const StreamPowerEvolutionResult one_hundred_twenty_eight_year_steps =
+    evolve (128.0f);
+
+  for (const StreamPowerEvolutionResult* result :
+       { &three_hundred_year_steps, &one_hundred_twenty_eight_year_steps }) {
+    MOPPE_CHECK_NEAR (
+      surface_elevation_value (result->heights[4]), 41.0f, 1e-6f);
+    MOPPE_CHECK_NEAR (
+      surface_elevation_value (result->heights[9]), 41.0f, 1e-6f);
+    MOPPE_CHECK_NEAR (
+      static_cast<float> (
+        result->report.tectonic_uplift_volume.numerical_value_in (u::m * u::m *
+                                                                  u::m)),
+      200.0f,
+      1e-4f);
+  }
+}
+
+MOPPE_TEST (zero_uplift_duration_disables_tectonic_forcing) {
+  const ElevationMap terrain =
+    make_elevation_map (profile_grid (), profile_heights);
+  const auto uplift = uniform_uplift (profile_heights.size (), 0.002f);
+  const StreamPowerEvolutionResult result = evolve_stream_power (
+    terrain,
+    uplift,
+    { .duration = 1000.0f * mp_units::astronomy::Julian_year,
+      .time_step = 300.0f * mp_units::astronomy::Julian_year,
+      .uplift_duration = 0.0f * mp_units::astronomy::Julian_year,
+      .reference_incision_rate =
+        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+      .sea_level = 0.0f });
+
+  MOPPE_CHECK (result.heights == spatial::get<surface_elevation> (terrain));
+  MOPPE_CHECK (result.report.tectonic_uplift_volume ==
+               cubic_meters_f64_t::zero ());
+}
+
 MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
   constexpr std::array heights { -20.0f, -10.0f, 20.0f, 30.0f };
   const ElevationMap terrain = make_elevation_map (

@@ -1,0 +1,61 @@
+# Terrain landforms
+
+This is the executable track for
+[RFC-0005](../../rfcs/0005-depositional-landforms.md). It begins with the
+conservative sediment foundation already landed, separates uplift from
+relaxation, then builds hillslope, channel, floodplain, and lake geography in
+that dependency order.
+
+```mermaid
+flowchart LR
+  TER000["TER-000: conservative sediment foundation"]
+  TER001["TER-001: finite uplift schedule"]
+  TER002["TER-002: forcing matrix"]
+  TER010["TER-010: conservative hillslopes"]
+  TER011["TER-011: channel initiation"]
+  TER020["TER-020: cover-aware transport"]
+  TER021["TER-021: valley-width deposition"]
+  TER022["TER-022: lakes and deltas"]
+  TER030["TER-030: trunk-river scale"]
+  TER040["TER-040: calibrate Play"]
+
+  TER000 --> TER001 --> TER002 --> TER010 --> TER011 --> TER020
+  TER020 --> TER021 --> TER022 --> TER040
+  TER021 --> TER030 --> TER040
+```
+
+## Program, not queue
+
+The track keeps the long argument visible while individual commits stay
+small. Its gates are causal:
+
+- forcing is chosen before a hillslope law is tuned against it;
+- a conservative hillslope regime exists before channel heads suppress
+  every-cell incision;
+- mobile-cover feedback exists before deposition is widened into landforms;
+- valley floors exist before river width is judged; and
+- the default profile changes only after the whole seed suite passes.
+
+The fixed reference is seed 123 at the ordinary Play extent and resolution.
+The accepted seed suite later includes varied coast, lake, relief, and trail
+conditions. Captures use an optimized build; an unoptimized 2048-square
+generation is not performance evidence.
+
+## Current findings
+
+`c3ae995` closes the fluvial solid-volume ledger and proves stable caching.
+Its rate-limited deposition removes impossible one-cell towers. The resulting
+two-million-year world is coherent but still nearly all alpine, with narrow
+valleys and little rolling land.
+
+TER-001 separates the clocks: seed 123 with 500 ky of uplift followed by
+1.5 My of unforced relaxation produces broad forested ridges, connected
+rolling country, and materially lower relief in the actual renderer. Fine
+fluting remains, and one run cannot choose the forcing. TER-002 therefore
+compares 250, 500, and 750 ky before any process law is retuned.
+
+## Deferred until the shape works
+
+Grain classes, porosity, compaction, stratigraphy, and detailed suspended-load
+physics remain outside this track. They may refine a successful geography;
+they are not allowed to substitute for one.

@@ -17,6 +17,11 @@ namespace moppe::terrain {
   struct StreamPowerEvolution {
     julian_years_t duration = 1000000.0f * mp_units::astronomy::Julian_year;
     julian_years_t time_step = 50000.0f * mp_units::astronomy::Julian_year;
+    // Tectonic forcing may end before geomorphic relaxation does. The uplift
+    // field is active from the start of evolution through this duration; a
+    // geological step crossing that boundary integrates only its overlap.
+    julian_years_t uplift_duration =
+      1000000.0f * mp_units::astronomy::Julian_year;
     meters_per_julian_year_t reference_incision_rate =
       2e-5f * mp_units::si::metre / mp_units::astronomy::Julian_year;
     // Overloaded material continues downstream after this local aggradation
