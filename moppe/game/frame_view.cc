@@ -182,15 +182,15 @@ namespace moppe::game {
                            Mat4::rotation (pitch * u::deg, Vec3 (1, 0, 0));
     }
 
-    result.camera.right = Vec3 (result.camera.view.m[0],
-                                result.camera.view.m[4],
-                                result.camera.view.m[8]);
-    result.camera.up = Vec3 (result.camera.view.m[1],
-                             result.camera.view.m[5],
-                             result.camera.view.m[9]);
-    result.camera.frame_forward = Vec3 (-result.camera.view.m[2],
-                                        -result.camera.view.m[6],
-                                        -result.camera.view.m[10]);
+    result.camera.right = Vec3 (result.camera.view.element (0),
+                                result.camera.view.element (4),
+                                result.camera.view.element (8));
+    result.camera.up = Vec3 (result.camera.view.element (1),
+                             result.camera.view.element (5),
+                             result.camera.view.element (9));
+    result.camera.frame_forward = Vec3 (-result.camera.view.element (2),
+                                        -result.camera.view.element (6),
+                                        -result.camera.view.element (10));
 
     result.camera.projection = Mat4::perspective_reversed (
       result.camera.field_of_view, result.camera.aspect, 0.5f, 9000.0f);
