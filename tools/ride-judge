@@ -19,7 +19,7 @@ set -euo pipefail
 
 OUT="${1:-/tmp/ride-judge}"
 FRAMES="${MOPPE_RIDE_JUDGE_FRAMES:-240}"
-MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
+MODEL="${GEMINI_MODEL:-gemini-3.6-flash}"
 GAME=./build/moppe.app/Contents/MacOS/moppe
 
 mkdir -p "$OUT/frames"
