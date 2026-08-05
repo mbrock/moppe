@@ -581,6 +581,7 @@ namespace moppe {
         bool capture_active = false;
         int capture_frames = 0;
         int capture_frame_limit = 120;
+        int capture_start_frames = 0;
         std::string capture_path;
 #endif
       };
@@ -3796,7 +3797,15 @@ namespace moppe {
       m_frame.current_gpu_pass = GpuPass::Count;
 
 #if !TARGET_OS_IPHONE
-      if (params.profile && !m_frame.capture_path.empty () &&
+      // MOPPE_METAL_CAPTURE_START delays the trace so it lands on the view
+      // under study -- a demo ride, not the loading screen.
+      static const int capture_start = [] {
+        const char* start = ::getenv ("MOPPE_METAL_CAPTURE_START");
+        return start ? std::max (0, ::atoi (start)) : 0;
+      }();
+      const bool capture_reached =
+        ++m_frame.capture_start_frames > capture_start;
+      if (params.profile && !m_frame.capture_path.empty () && capture_reached &&
           !m_frame.capture_active && m_frame.capture_frames == 0) {
         NSString* path =
           [NSString stringWithUTF8String:m_frame.capture_path.c_str ()];
