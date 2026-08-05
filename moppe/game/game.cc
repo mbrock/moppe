@@ -56,6 +56,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -519,7 +520,8 @@ namespace moppe {
                                     drainage (),
                                     rivers (),
                                     trail_network (),
-                                    position (m_spawn_position));
+                                    position (m_spawn_position),
+                                    sun_direction_for (m_graphics.sun_height));
         if (m_gazetteer_plan.empty ())
           throw std::runtime_error ("landscape gazetteer found no viewpoints");
         std::filesystem::create_directories (m_gazetteer->output_directory);
@@ -999,7 +1001,43 @@ namespace moppe {
         // screen-space grades and feedback operate on its full-size result.
         r.reconstruct_scene ();
 
-        // Post effects.
+        // Screen-space post lighting shares the shaken camera basis,
+        // extracted straight from the final view matrix with the frustum
+        // half-extents folded into the right/up spans. Occlusion first so
+        // the added beams are not darkened; sun shafts march the
+        // camera-local shadow map, so the beams carry the same tree and
+        // terrain shapes as the ground shadows. Underwater frames get
+        // their own grade instead.
+        if (!visibility.underwater &&
+            (m_graphics.gtao || m_graphics.light_shafts)) {
+          const FrameCamera& camera = frame.camera;
+          const Mat4& view = camera.view;
+          const Vec3 right (view.at (0, 0), view.at (1, 0), view.at (2, 0));
+          const Vec3 up (view.at (0, 1), view.at (1, 1), view.at (2, 1));
+          const Vec3 forward (
+            -view.at (0, 2), -view.at (1, 2), -view.at (2, 2));
+          const float half_tangent = tan (camera.field_of_view * 0.5f);
+          const Vec3 right_span = right * (half_tangent * camera.aspect);
+          const Vec3 up_span = up * half_tangent;
+          if (m_graphics.gtao)
+            r.apply_gtao ({
+              .camera_pos = position (camera.position),
+              .forward = forward,
+              .right_span = right_span,
+              .up_span = up_span,
+            });
+          if (m_graphics.light_shafts &&
+              frame.lighting.sun_direction[1] > 0.02f)
+            r.apply_light_shafts ({
+              .camera_pos = position (camera.position),
+              .forward = forward,
+              .right_span = right_span,
+              .up_span = up_span,
+              .sun_dir = frame.lighting.sun_direction,
+              .sun_color = frame.lighting.sun_diffuse,
+              .strength = 0.55f * one,
+            });
+        }
         if (visibility.underwater)
           r.apply_underwater (frame.lighting.time);
         if (visibility.motion_blur)
@@ -1107,6 +1145,40 @@ namespace moppe {
             std::filesystem::path (m_gazetteer->output_directory) /
             gazetteer_image_filename (m_gazetteer_shot, gazetteer_shot->name);
           r.request_screenshot (path.string ());
+        }
+        if (m_snapshot_requested) {
+          m_snapshot_requested = false;
+          r.request_screenshot (next_snapshot_path ());
+        }
+        // A ride capture records CONSECUTIVE gameplay frames: the stimulus a
+        // rider actually receives, per-frame LOD transitions included --
+        // exactly what settled single captures can never show. Pair with
+        // MOPPE_DEMO=1 for a deterministic autopilot ride.
+        if (!cinematic && m_ready) {
+          static const char* ride_directory =
+            ::getenv ("MOPPE_RIDE_CAPTURE_DIR");
+          static const int ride_start = [] {
+            const char* start = ::getenv ("MOPPE_RIDE_CAPTURE_START");
+            return start ? std::max (0, ::atoi (start)) : 600;
+          }();
+          static const int ride_count = [] {
+            const char* count = ::getenv ("MOPPE_RIDE_CAPTURE_FRAMES");
+            return count ? std::max (1, ::atoi (count)) : 90;
+          }();
+          if (ride_directory) {
+            const int frame_index = m_ride_capture_render_frame++;
+            if (frame_index >= ride_start && frame_index % 2 == 0 &&
+                m_ride_capture_frame < ride_count) {
+              if (m_ride_capture_frame == 0)
+                std::filesystem::create_directories (ride_directory);
+              std::ostringstream path;
+              path << ride_directory << "/ride-" << std::setfill ('0')
+                   << std::setw (4) << m_ride_capture_frame++ << ".png";
+              r.request_screenshot (path.str ());
+            }
+            if (m_ride_capture_frame >= ride_count)
+              platform::request_quit ();
+          }
         }
         if (!r.begin_frame (frame_params_for (frame)))
           return;
@@ -1360,6 +1432,11 @@ namespace moppe {
           return;
         }
 
+        if (k == Key::Screenshot && down) {
+          m_snapshot_requested = true;
+          return;
+        }
+
         if (m_cinematic.active ()) {
           if (k == Key::Escape && down)
             platform::request_quit ();
@@ -1379,6 +1456,33 @@ namespace moppe {
       }
 
     private:
+      // The in-game screenshot key drops frames into one per-run timestamped
+      // directory, so a walk through the world becomes a reviewable series.
+      std::string next_snapshot_path () {
+        namespace fs = std::filesystem;
+        if (m_snapshot_directory.empty ()) {
+          const char* base = ::getenv ("MOPPE_SCREENSHOT_DIR");
+          char stamp[32];
+          const std::time_t now = std::time (nullptr);
+          std::strftime (
+            stamp, sizeof stamp, "run-%Y%m%d-%H%M%S", std::localtime (&now));
+          fs::path directory = fs::path (base ? base : "screenshots") / stamp;
+          std::error_code error;
+          fs::create_directories (directory, error);
+          if (error) {
+            directory =
+              fs::temp_directory_path () / "moppe-screenshots" / stamp;
+            fs::create_directories (directory, error);
+          }
+          m_snapshot_directory = directory.string ();
+        }
+        std::ostringstream path;
+        path << m_snapshot_directory << "/shot-" << std::setfill ('0')
+             << std::setw (3) << m_snapshot_count++ << ".png";
+        std::cerr << "moppe: screenshot " << path.str () << '\n';
+        return path.str ();
+      }
+
       const GazetteerShot* current_gazetteer_shot () const noexcept {
         if (!m_gazetteer || m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
           return nullptr;
@@ -1627,6 +1731,9 @@ namespace moppe {
       render::Renderer* m_renderer;
       bool m_automated_regeneration_done = false;
       std::string m_screenshot_path;
+      bool m_snapshot_requested = false;
+      std::string m_snapshot_directory;
+      int m_snapshot_count = 0;
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
       std::optional<GazetteerCaptureConfig> m_gazetteer;
@@ -1636,6 +1743,8 @@ namespace moppe {
       int m_screenshot_frames;
       int m_cinematic_capture_frame = 0;
       int m_cinematic_capture_render_frame = 0;
+      int m_ride_capture_frame = 0;
+      int m_ride_capture_render_frame = 0;
       std::atomic<bool> m_ready;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;

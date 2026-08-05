@@ -253,3 +253,180 @@ fragment float4 underwater_fragment (QuadVaryings in [[stage_in]],
 
   return float4 (c, 1.0);
 }
+
+// Sun shafts: march each view ray through the camera-local shadow map and
+// gather forward-scattered sunlight over the lit spans. The scene depth
+// stops the march at the first surface; the shadow map supplies the tree-
+// and terrain-shaped occlusion that turns open sky into visible beams. An
+// interleaved-gradient jitter per pixel replaces banding with fine noise
+// that stays deterministic for captures. The march is the whole cost of the
+// effect and the beams are low-frequency light, so it runs at half
+// resolution and a separate pass adds the filtered result to the scene.
+fragment float4 shafts_gather_fragment (QuadVaryings in [[stage_in]],
+                                        constant MoppeShaftUniforms& u
+                                        [[buffer (MOPPE_BUF_FRAME)]],
+                                        depth2d<float> scene_depth
+                                        [[texture (MOPPE_TEX_POST_DEPTH)]],
+                                        depth2d<float> shadow_map
+                                        [[texture (MOPPE_TEX_SHADOW)]]) {
+  constexpr sampler depth_smp (
+    coord::normalized, address::clamp_to_edge, filter::nearest);
+  constexpr sampler shadow_smp (coord::normalized,
+                                address::clamp_to_edge,
+                                filter::linear,
+                                compare_func::less_equal);
+  const float3 dir =
+    normalize (u.ray_forward.xyz + u.ray_right.xyz * (2.0 * in.uv.x - 1.0) +
+               u.ray_up.xyz * (1.0 - 2.0 * in.uv.y));
+  const float surface_z = scene_depth.sample (depth_smp, in.uv);
+  const float2 px = in.position.xy;
+  const float jitter =
+    fract (52.9829189 * fract (0.06711056 * px.x + 0.00583715 * px.y));
+
+  const uint steps = uint (u.params.z);
+  const float dt = u.params.x / float (steps);
+  const float sigma = u.params.y;
+  float scatter = 0.0;
+  for (uint i = 0u; i < steps; ++i) {
+    const float t = (float (i) + jitter) * dt;
+    const float3 world = u.camera_pos.xyz + dir * t;
+    const float4 clip = u.view_proj * float4 (world, 1.0);
+    if (clip.w <= 0.0)
+      break;
+    // Reversed-Z: a sample farther than the first surface reads smaller.
+    if (clip.z / clip.w < surface_z)
+      break;
+    const float4 sc = u.light_matrix * float4 (world, 1.0);
+    const float3 proj = sc.xyz / sc.w;
+    float lit = 1.0;
+    if (all (proj >= 0.0) && all (proj <= 1.0))
+      lit = shadow_map.sample_compare (shadow_smp, proj.xy, proj.z - 0.0015);
+    scatter += lit * exp (-sigma * t);
+  }
+  scatter *= sigma * dt;
+
+  // Henyey-Greenstein forward lobe: beams live around the solar direction.
+  const float mu = dot (dir, normalize (u.sun_dir.xyz));
+  const float g = 0.60;
+  const float phase =
+    (1.0 - g * g) / (4.0 * 3.14159265 * pow (1.0 + g * g - 2.0 * g * mu, 1.5));
+  return float4 (u.sun_color.rgb * u.sun_color.w * phase * scatter, 1.0);
+}
+
+fragment float4 shafts_add_fragment (QuadVaryings in [[stage_in]],
+                                     texture2d<float> scene
+                                     [[texture (MOPPE_TEX_SCENE)]],
+                                     texture2d<float> shafts
+                                     [[texture (MOPPE_TEX_BLOOM)]]) {
+  constexpr sampler smp (
+    coord::normalized, address::clamp_to_edge, filter::linear);
+  return float4 (scene.sample (smp, in.uv).rgb + shafts.sample (smp, in.uv).rgb,
+                 1.0);
+}
+
+// ---- ambient occlusion ---------------------------------------------
+
+static inline float moppe_gtao_view_depth (float device_z, float n, float f) {
+  // Reversed-Z perspective: near maps to 1, far to 0.
+  return n * f / (device_z * (f - n) + n);
+}
+
+static inline float3
+moppe_gtao_position (float2 uv, float device_z, constant MoppeGtaoUniforms& u) {
+  const float3 dir =
+    normalize (u.ray_forward.xyz + u.ray_right.xyz * (2.0 * uv.x - 1.0) +
+               u.ray_up.xyz * (1.0 - 2.0 * uv.y));
+  const float forward =
+    moppe_gtao_view_depth (device_z, u.params.z, u.params.w);
+  return u.camera_pos.xyz + dir * (forward / dot (dir, u.ray_forward.xyz));
+}
+
+// Alchemy-style obscurance over a jittered spiral of depth taps: crevices,
+// trunk bases, and branch junctions darken by how much nearby geometry
+// leans over the shading point. Runs at half resolution over the stored
+// scene depth; a depth-aware blur removes the sampling noise.
+fragment float4 gtao_gather_fragment (QuadVaryings in [[stage_in]],
+                                      constant MoppeGtaoUniforms& u
+                                      [[buffer (MOPPE_BUF_FRAME)]],
+                                      depth2d<float> scene_depth
+                                      [[texture (MOPPE_TEX_POST_DEPTH)]]) {
+  constexpr sampler depth_smp (
+    coord::normalized, address::clamp_to_edge, filter::nearest);
+  const float device_z = scene_depth.sample (depth_smp, in.uv);
+  if (device_z <= 1e-6)
+    return float4 (1.0); // sky
+  const float3 position = moppe_gtao_position (in.uv, device_z, u);
+  const float3 normal = normalize (cross (dfdy (position), dfdx (position)));
+  const float forward =
+    moppe_gtao_view_depth (device_z, u.params.z, u.params.w);
+
+  // World-space sampling radius projected into uv per axis.
+  const float radius = u.params.x;
+  const float2 uv_radius =
+    radius / (2.0 * forward) *
+    float2 (1.0 / length (u.ray_right.xyz), 1.0 / length (u.ray_up.xyz));
+
+  const float2 px = in.position.xy;
+  const float ign =
+    fract (52.9829189 * fract (0.06711056 * px.x + 0.00583715 * px.y));
+  const uint taps = 10u;
+  const float bias = 0.02 + 0.002 * forward;
+  float obscurance = 0.0;
+  for (uint i = 0u; i < taps; ++i) {
+    const float angle = 6.2831853 * (ign + float (i) * 0.618034);
+    const float reach = pow ((float (i) + 0.5 + ign) / float (taps), 0.7);
+    const float2 tap_uv =
+      in.uv + float2 (cos (angle), sin (angle)) * uv_radius * reach;
+    const float tap_z = scene_depth.sample (depth_smp, tap_uv);
+    if (tap_z <= 1e-6)
+      continue;
+    const float3 tap = moppe_gtao_position (tap_uv, tap_z, u);
+    const float3 to_tap = tap - position;
+    obscurance += max (0.0, dot (to_tap, normal) - bias) * radius /
+                  max (dot (to_tap, to_tap), 0.01);
+  }
+  const float ao = saturate (1.0 - u.params.y * obscurance / float (taps));
+  return float4 (ao);
+}
+
+// Separable depth-aware blur: neighbours vote only when they belong to the
+// same surface, so occlusion never bleeds across silhouettes.
+fragment float4 gtao_blur_fragment (QuadVaryings in [[stage_in]],
+                                    constant MoppeGtaoUniforms& u
+                                    [[buffer (MOPPE_BUF_FRAME)]],
+                                    texture2d<float> occlusion
+                                    [[texture (MOPPE_TEX_BLOOM)]],
+                                    depth2d<float> scene_depth
+                                    [[texture (MOPPE_TEX_POST_DEPTH)]]) {
+  constexpr sampler smp (
+    coord::normalized, address::clamp_to_edge, filter::linear);
+  constexpr sampler depth_smp (
+    coord::normalized, address::clamp_to_edge, filter::nearest);
+  const float centre_depth = moppe_gtao_view_depth (
+    scene_depth.sample (depth_smp, in.uv), u.params.z, u.params.w);
+  const float weights[5] = { 0.153388, 0.221461, 0.250301, 0.221461, 0.153388 };
+  float total = 0.0;
+  float value = 0.0;
+  for (int i = -2; i <= 2; ++i) {
+    const float2 uv = in.uv + u.blur.xy * float (i);
+    const float depth = moppe_gtao_view_depth (
+      scene_depth.sample (depth_smp, uv), u.params.z, u.params.w);
+    const float same_surface =
+      saturate (1.0 - 8.0 * abs (depth - centre_depth) / centre_depth);
+    const float weight = weights[i + 2] * same_surface;
+    value += occlusion.sample (smp, uv).r * weight;
+    total += weight;
+  }
+  return float4 (total > 0.0 ? value / total : 1.0);
+}
+
+fragment float4 gtao_apply_fragment (QuadVaryings in [[stage_in]],
+                                     texture2d<float> scene
+                                     [[texture (MOPPE_TEX_SCENE)]],
+                                     texture2d<float> occlusion
+                                     [[texture (MOPPE_TEX_BLOOM)]]) {
+  constexpr sampler smp (
+    coord::normalized, address::clamp_to_edge, filter::linear);
+  return float4 (
+    scene.sample (smp, in.uv).rgb * occlusion.sample (smp, in.uv).r, 1.0);
+}

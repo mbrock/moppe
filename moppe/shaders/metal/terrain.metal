@@ -1017,9 +1017,13 @@ fragment MoppeTemporalOutput terrain_fragment (
   const float canopy_ambient = mix (1.0, 0.76, canopy_footprint);
   // 0.9 is the old GL terrain material diffuse.
   const float intensity = saturate ((dot (l, n) + 0.08) / 1.08);
+  // Cast shadow also cools the fill: shaded ground is lit by sky alone,
+  // while the hemisphere's warm bounce belongs to sunlit surroundings.
+  const float3 shade_fill =
+    mix (float3 (0.80, 0.92, 1.14), float3 (1.0), shadow);
   const float3 diffuse_light =
     intensity * direct_visibility * canopy_direct * 0.9 * u.sun_diffuse.rgb +
-    canopy_ambient * moppe_hemisphere_light (u.ambient.rgb, n);
+    canopy_ambient * shade_fill * moppe_hemisphere_light (u.ambient.rgb, n);
   float3 color = texel * diffuse_light;
 
   // Material roughness gives rock and snow distinct grazing response instead

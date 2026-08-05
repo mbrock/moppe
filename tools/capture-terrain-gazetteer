@@ -10,7 +10,9 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
 output=$1
 seed=${MOPPE_SEED:-123}
-terrain=${MOPPE_TERRAIN_PROFILE:-fast}
+# The play profile is what the game itself generates; finished worlds cache,
+# so only the first capture of a recipe pays for the full evolution.
+terrain=${MOPPE_TERRAIN_PROFILE:-play}
 terrain_resolution=${MOPPE_TERRAIN_RESOLUTION:-}
 graphics=${MOPPE_GAZETTEER_GRAPHICS:-high}
 settle=${MOPPE_GAZETTEER_SETTLE:-18}

@@ -276,10 +276,14 @@ if(MOPPE_METAL_RESULT EQUAL 0)
   foreach(src ${MOPPE_METAL_SOURCES})
     get_filename_component(name ${src} NAME_WE)
     set(air ${CMAKE_CURRENT_BINARY_DIR}/${name}.air)
+    # Debug line tables and embedded sources let Xcode's shader profiler
+    # attribute GPU time to shader source lines. They add nothing to the
+    # compiled code itself, only to the metallib's debug payload.
     add_custom_command(
       OUTPUT ${air}
       COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
               -std=metal4.0
+              -gline-tables-only -frecord-sources
               -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
               -o ${air}
       DEPENDS ${src} ${MOPPE_METAL_DEPS}
@@ -708,6 +712,22 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     target_compile_definitions(moppe-testbed PRIVATE
       MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
     target_link_libraries(moppe-testbed PRIVATE "-framework AppKit")
+
+    # Tree studio: a flat plane and a lineup of conifer specimens, the fast
+    # instrument for iterating on tree geometry without a generated world.
+    add_executable(moppe-tree-studio EXCLUDE_FROM_ALL
+      moppe/game/tree_studio.cc
+      ${MOPPE_RENDER_SOURCES}
+      ${MOPPE_TERRAIN_SOURCES}
+      ${MOPPE_APPLE_COMMON_SOURCES}
+      ${MOPPE_METAL_RENDER_SOURCES}
+      moppe/platform/mac/main_mac.mm)
+    moppe_configure_code_target(moppe-tree-studio)
+    moppe_configure_apple_target(moppe-tree-studio)
+    moppe_configure_metal_target(moppe-tree-studio)
+    target_compile_definitions(moppe-tree-studio PRIVATE
+      MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
+    target_link_libraries(moppe-tree-studio PRIVATE "-framework AppKit")
   endif()
 
   # The game, as a proper .app bundle with the assets inside.
@@ -729,6 +749,13 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   set_target_properties(moppe PROPERTIES
     XCODE_GENERATE_SCHEME TRUE
     XCODE_SCHEME_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    # Xcode's GPU capture layer crashes the MetalFX temporal scaler under
+    # Metal 4 (GPUToolsCapture wraps the scaler, MetalFX then calls
+    # globalTraceObjectID on the MTL4 debug encoder, which lacks it), so
+    # plain Run keeps capture injection off. For a GPU trace, run with
+    # --upscaling linear -- the exact non-MetalFX fallback.
+    XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Disabled"
+    XCODE_SCHEME_ENABLE_GPU_API_VALIDATION FALSE
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe"
     MACOSX_BUNDLE_INFO_PLIST
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/mac/Info.plist.in

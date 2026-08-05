@@ -9,6 +9,7 @@ test.tga
 field-demo.png
 terrain-lab.png
 screenshots/waterglitch/
+screenshots/run-*/
 *.xcworkspace/xcuserdata/
 moppe.xcworkspace/
 .cache/
@@ -16,3 +17,4 @@ moppe.xcworkspace/
 zig-out/
 __pycache__/
 Untitled*
+screenshots/studio-shot-*.png

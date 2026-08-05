@@ -57,6 +57,7 @@ namespace {
 MOPPE_TEST (landscape_gazetteer_is_a_deterministic_typed_landscape_reading) {
   GazetteerFixture fixture;
   const position_t spawn = position (Vec3 (400, 70, 400));
+  const Vec3 sun = normalized (Vec3 (0.42f, 0.37f, 0.83f));
   const game::LandscapeGazetteer first =
     game::plan_landscape_gazetteer (fixture.surface,
                                     fixture.readings,
@@ -65,7 +66,8 @@ MOPPE_TEST (landscape_gazetteer_is_a_deterministic_typed_landscape_reading) {
                                     fixture.drainage,
                                     fixture.rivers,
                                     fixture.trail,
-                                    spawn);
+                                    spawn,
+                                    sun);
   const game::LandscapeGazetteer second =
     game::plan_landscape_gazetteer (fixture.surface,
                                     fixture.readings,
@@ -74,7 +76,8 @@ MOPPE_TEST (landscape_gazetteer_is_a_deterministic_typed_landscape_reading) {
                                     fixture.drainage,
                                     fixture.rivers,
                                     fixture.trail,
-                                    spawn);
+                                    spawn,
+                                    sun);
 
   MOPPE_CHECK (first.shots.size () >= 5);
   MOPPE_CHECK (first.shots.size () == second.shots.size ());

@@ -53,6 +53,7 @@ struct MoppeUint4 {
 #define MOPPE_TEX_TERRAIN_CHANNEL_FLUX 15
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1        /* post passes */
+#define MOPPE_TEX_POST_DEPTH 2   /* light shafts: stored scene depth */
 #define MOPPE_TEX_HEIGHTS 0      /* vertex stage */
 #define MOPPE_TEX_NORMALS 1      /* vertex stage */
 #define MOPPE_TEX_WATER_LEVELS 3 /* ocean vertex stage */
@@ -265,17 +266,48 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 // trunk/crown assemblies; the mesh stage expands only those assemblies.
 #define MOPPE_FOREST_OBJECT_THREADS 8
 #define MOPPE_FOREST_PARTS_PER_TREE 8
+/* The nearest trees expand into pure bough assemblies: a trunk and nine
+   whorls of seven feathered boughs, one meshlet each. No shell or cone
+   primitive exists at this tier; the crown is the union of its branches. */
+#define MOPPE_FOREST_HERO_PARTS 64
 #define MOPPE_FOREST_PAYLOAD_PARTS                                             \
   (MOPPE_FOREST_OBJECT_THREADS * MOPPE_FOREST_PARTS_PER_TREE)
-#define MOPPE_FOREST_MESH_THREADS 64
-#define MOPPE_FOREST_MESH_VERTICES 32
-#define MOPPE_FOREST_MESH_PRIMITIVES 60
+#define MOPPE_FOREST_MESH_THREADS 192
+#define MOPPE_FOREST_MESH_VERTICES 128
+#define MOPPE_FOREST_MESH_PRIMITIVES 128
 
 struct MOPPE_SHADER_ALIGN MoppeForestInstance {
   MoppeFloat4 root_height; // xyz=root in metres, w=height in metres
   MoppeFloat4 up_radius;   // xyz=ground normal, w=crown radius in metres
   MoppeFloat4 ecology;     // x=cover, y=moisture, zw=reserved
   MoppeUint4 identity;     // x=seed, y=species, z=age, w=reserved
+};
+
+// Sun-shaft raymarch: rays come from a camera basis with the frustum
+// half-extents folded in, and occlusion comes from projecting each march
+// sample forward through the scene and light matrices — no inverse anywhere.
+struct MOPPE_SHADER_ALIGN MoppeShaftUniforms {
+  MoppeMat4 view_proj;     // unjittered scene projection
+  MoppeMat4 light_matrix;  // biased shadow projection
+  MoppeFloat4 camera_pos;  // xyz
+  MoppeFloat4 ray_forward; // xyz unit view direction
+  MoppeFloat4 ray_right;   // xyz right * tan(fov/2) * aspect
+  MoppeFloat4 ray_up;      // xyz up * tan(fov/2)
+  MoppeFloat4 sun_dir;     // xyz toward the sun
+  MoppeFloat4 sun_color;   // rgb linear; w = strength
+  MoppeFloat4 params;      // x=max distance m, y=extinction /m, z=steps
+};
+
+// Screen-space ambient occlusion over the stored scene depth. Positions
+// reconstruct through the same camera-ray basis as the sun shafts; normals
+// come from screen derivatives of those positions.
+struct MOPPE_SHADER_ALIGN MoppeGtaoUniforms {
+  MoppeFloat4 camera_pos;  // xyz
+  MoppeFloat4 ray_forward; // xyz unit view direction
+  MoppeFloat4 ray_right;   // xyz right * tan(fov/2) * aspect
+  MoppeFloat4 ray_up;      // xyz up * tan(fov/2)
+  MoppeFloat4 params;      // x=world radius m, y=strength, z=near m, w=far m
+  MoppeFloat4 blur;        // xy=blur step in uv
 };
 
 struct MOPPE_SHADER_ALIGN MoppeForestUniforms {
