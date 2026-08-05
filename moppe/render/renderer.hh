@@ -83,6 +83,20 @@ namespace moppe {
       meters_t max_distance = 140.0f * u::m;
     };
 
+    // Screen-space ambient occlusion over the stored scene depth. The same
+    // shaken camera basis as the sun shafts reconstructs positions; the
+    // near and far planes linearize the reversed-Z depth.
+    struct GtaoParams {
+      position_t camera_pos;
+      Vec3 forward;    // unit view direction
+      Vec3 right_span; // right * tan(fov/2) * aspect
+      Vec3 up_span;    // up * tan(fov/2)
+      magnitude_t strength = 1.0f * one;
+      meters_t radius = 1.6f * u::m;
+      meters_t near_plane = 0.5f * u::m;
+      meters_t far_plane = 9000.0f * u::m;
+    };
+
     // World-change-time terrain setup.  Heights/normals are the same
     // arrays the CPU-side physics samples, so sim and render cannot
     // diverge.
@@ -363,7 +377,9 @@ namespace moppe {
       // boundary again before HUD/present.
       virtual void reconstruct_scene () {}
       // Post effects; call after reconstruction and before draw_hud.
-      // Backends without a stored scene depth may ignore light shafts.
+      // Backends without a stored scene depth may ignore light shafts
+      // and ambient occlusion.
+      virtual void apply_gtao (const GtaoParams&) {}
       virtual void apply_light_shafts (const LightShaftParams&) {}
       virtual void apply_underwater (float time) = 0;
       virtual void apply_motion_blur (float strength) = 0;
