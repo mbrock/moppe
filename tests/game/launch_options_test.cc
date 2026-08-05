@@ -79,6 +79,7 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--gazetteer-settle",
          "--fast",
          "--terrain-quality",
+         "--uplift-years",
          "--world-cache-key",
          "--refresh-world-cache",
          "--no-world-cache",
@@ -164,6 +165,10 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--drawable-scale", "half" }));
   MOPPE_CHECK (rejects ({ "--render-scale", "1.1" }));
   MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
+  MOPPE_CHECK (rejects ({ "--uplift-years" }));
+  MOPPE_CHECK (rejects ({ "--uplift-years", "ancient" }));
+  MOPPE_CHECK (rejects ({ "--uplift-years", "-1" }));
+  MOPPE_CHECK (rejects ({ "--uplift-years", "10000001" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "../shared" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "spaces are unsafe" }));
@@ -247,13 +252,16 @@ MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
 }
 
 MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
-  game::LaunchOptions options = parsed ({ "--terrain-quality", "fast" });
+  game::LaunchOptions options =
+    parsed ({ "--terrain-quality", "fast", "--uplift-years", "750000" });
   options.seed = 4321;
   const terrain::WorldRecipe recipe = game::make_launch_recipe (options);
   MOPPE_CHECK (recipe.seed ().value == 4321u);
   MOPPE_CHECK (recipe.generation_profile () ==
                terrain::TerrainGenerationProfile::Fast);
   MOPPE_CHECK (recipe.resolution () == options.world.resolution);
+  MOPPE_CHECK (recipe.evolution ().uplift_duration ==
+               750000.0f * mp_units::astronomy::Julian_year);
 }
 
 MOPPE_TEST (launch_benchmark_environment_reaches_the_backend) {

@@ -368,6 +368,7 @@ set(MOPPE_WORLD_SOURCES
   moppe/game/forest_plan.cc
   moppe/game/water_capture.cc
   moppe/game/landscape_gazetteer.cc
+  moppe/game/landscape_summary.cc
 )
 
 set(MOPPE_SIMULATION_SOURCES

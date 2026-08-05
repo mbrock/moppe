@@ -357,6 +357,21 @@ namespace moppe::game {
             return unknown ("terrain quality", values[0], error);
           return true;
         } },
+      { "--uplift-years",
+        "",
+        1,
+        "<YEARS>",
+        "Override the terrain profile's tectonic forcing duration.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float years = 0.0f;
+          if (!parse_float_option (
+                values[0], "--uplift-years", 0.0f, 10000000.0f, years, error))
+            return false;
+          options.uplift_duration = years * mp_units::astronomy::Julian_year;
+          return true;
+        } },
       { "--world-cache-key",
         "",
         1,
@@ -607,6 +622,7 @@ namespace moppe::game {
                                        options.world.resolution,
                                        seed,
                                        options.world.water_level,
-                                       options.generation_profile);
+                                       options.generation_profile,
+                                       options.uplift_duration);
   }
 }

@@ -51,8 +51,11 @@ valleys and little rolling land.
 TER-001 separates the clocks: seed 123 with 500 ky of uplift followed by
 1.5 My of unforced relaxation produces broad forested ridges, connected
 rolling country, and materially lower relief in the actual renderer. Fine
-fluting remains, and one run cannot choose the forcing. TER-002 therefore
-compares 250, 500, and 750 ky before any process law is retuned.
+fluting remains. TER-002 compared 250, 500, and 750 ky and selected 500 ky:
+250 ky loses convincing mountain groups, while 750 ky reaches 407 m of relief
+and leaves only 4.4% of land below ten degrees. The full finding is recorded
+in [`findings.md`](findings.md). TER-010 now addresses the remaining fluting
+with conservative hillslope transport.
 
 ## Deferred until the shape works
 
