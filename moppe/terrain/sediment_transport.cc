@@ -24,7 +24,7 @@ namespace moppe::terrain {
     }
 
     double hillslope_diffusivity_multiplier (
-      double face_gradient,
+      double gradient_magnitude,
       proportion_t critical_gradient,
       proportion_t maximum_diffusivity_multiplier) {
       const double critical =
@@ -32,10 +32,57 @@ namespace moppe::terrain {
       const double maximum =
         maximum_diffusivity_multiplier.numerical_value_in (mp_units::one);
       const double activation =
-        std::clamp (2.0 * face_gradient / critical - 1.0, 0.0, 1.0);
+        std::clamp (2.0 * gradient_magnitude / critical - 1.0, 0.0, 1.0);
       const double smooth_activation =
         activation * activation * (3.0 - 2.0 * activation);
       return 1.0 + (maximum - 1.0) * smooth_activation;
+    }
+
+    enum class HillslopeFaceAxis { x, z };
+
+    void reconstruct_centered_gradients (const TerrainDomain& domain,
+                                         std::span<const double> height_m,
+                                         std::span<double> gradient_x,
+                                         std::span<double> gradient_z) {
+      const std::size_t width = domain.width ();
+      const std::size_t height = domain.height ();
+      const double run_x =
+        2.0 * domain.spacing_x ().numerical_value_in (mp_units::si::metre);
+      const double run_z =
+        2.0 * domain.spacing_z ().numerical_value_in (mp_units::si::metre);
+      for (std::size_t row = 0; row < height; ++row) {
+        const std::size_t prior_row = row == 0 ? height - 1 : row - 1;
+        const std::size_t next_row = row + 1 == height ? 0 : row + 1;
+        for (std::size_t column = 0; column < width; ++column) {
+          const std::size_t prior_column = column == 0 ? width - 1 : column - 1;
+          const std::size_t next_column = column + 1 == width ? 0 : column + 1;
+          const std::size_t cell = row * width + column;
+          gradient_x[cell] = (height_m[row * width + next_column] -
+                              height_m[row * width + prior_column]) /
+                             run_x;
+          gradient_z[cell] = (height_m[next_row * width + column] -
+                              height_m[prior_row * width + column]) /
+                             run_z;
+        }
+      }
+    }
+
+    double reconstructed_face_gradient (std::span<const double> height_m,
+                                        std::span<const double> gradient_x,
+                                        std::span<const double> gradient_z,
+                                        std::size_t first,
+                                        std::size_t second,
+                                        HillslopeFaceAxis axis,
+                                        meters_t run) {
+      const double normal = (height_m[second] - height_m[first]) /
+                            run.numerical_value_in (mp_units::si::metre);
+      if (axis == HillslopeFaceAxis::x) {
+        const double tangent = 0.5 * (gradient_z[first] + gradient_z[second]);
+        return std::hypot (normal, tangent);
+      }
+
+      const double tangent = 0.5 * (gradient_x[first] + gradient_x[second]);
+      return std::hypot (tangent, normal);
     }
 
     int hillslope_sweep_count (const TerrainDomain& domain,
@@ -829,26 +876,45 @@ namespace moppe::terrain {
       .deposited_thickness =
         std::vector<SedimentThickness> (count, SedimentThickness::zero ()),
     };
-    bool nonlinear_flux_active = false;
+    const double cell_area_m2 = domain.cell_area ().numerical_value_in (
+      mp_units::si::metre * mp_units::si::metre);
+    std::vector<double> height_m (count);
+    std::vector<double> sediment_m3 (count);
+    std::vector<double> gradient_x (count);
+    std::vector<double> gradient_z (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
-      if (fixed[cell])
-        continue;
-      const TerrainIndex index = domain.index (cell);
-      const auto inspect_face = [&] (TerrainIndex neighbor, meters_t run) {
-        const std::size_t other = domain.offset (neighbor);
-        if (fixed[other])
-          return;
-        const double difference_m =
-          std::abs (surface_elevation_value (elevations[cell]) -
-                    surface_elevation_value (elevations[other]));
-        const double gradient =
-          difference_m / run.numerical_value_in (mp_units::si::metre);
-        nonlinear_flux_active |=
-          hillslope_diffusivity_multiplier (
-            gradient, critical_gradient, maximum_diffusivity_multiplier) > 1.0;
-      };
-      inspect_face (domain.shifted (index, 1, 0), domain.spacing_x ());
-      inspect_face (domain.shifted (index, 0, 1), domain.spacing_z ());
+      height_m[cell] = surface_elevation_value (elevations[cell]);
+      sediment_m3[cell] =
+        sediment[cell].numerical_value_in (mp_units::si::metre) * cell_area_m2;
+    }
+    reconstruct_centered_gradients (domain, height_m, gradient_x, gradient_z);
+
+    bool nonlinear_flux_active = false;
+    const std::size_t width = domain.width ();
+    const std::size_t height = domain.height ();
+    for (std::size_t row = 0; row < height; ++row) {
+      const std::size_t next_row = row + 1 == height ? 0 : row + 1;
+      for (std::size_t column = 0; column < width; ++column) {
+        const std::size_t next_column = column + 1 == width ? 0 : column + 1;
+        const std::size_t cell = row * width + column;
+        if (fixed[cell])
+          continue;
+        const auto inspect_face =
+          [&] (std::size_t other, HillslopeFaceAxis axis, meters_t run) {
+            if (fixed[other])
+              return;
+            const double gradient = reconstructed_face_gradient (
+              height_m, gradient_x, gradient_z, cell, other, axis, run);
+            nonlinear_flux_active |=
+              hillslope_diffusivity_multiplier (
+                gradient, critical_gradient, maximum_diffusivity_multiplier) >
+              1.0;
+          };
+        inspect_face (
+          row * width + next_column, HillslopeFaceAxis::x, domain.spacing_x ());
+        inspect_face (
+          next_row * width + column, HillslopeFaceAxis::z, domain.spacing_z ());
+      }
     }
     const double stability_multiplier =
       nonlinear_flux_active
@@ -860,19 +926,10 @@ namespace moppe::terrain {
     if (sweep_count == 0)
       return result;
 
-    const double cell_area_m2 = domain.cell_area ().numerical_value_in (
-      mp_units::si::metre * mp_units::si::metre);
     const julian_years_f64_t sweep_duration = duration / sweep_count;
-    std::vector<double> height_m (count);
-    std::vector<double> sediment_m3 (count);
     std::vector<double> net_m3 (count);
     std::vector<double> outgoing_m3 (count);
     std::vector<double> incoming_m3 (count);
-    for (std::size_t cell = 0; cell < count; ++cell) {
-      height_m[cell] = surface_elevation_value (elevations[cell]);
-      sediment_m3[cell] =
-        sediment[cell].numerical_value_in (mp_units::si::metre) * cell_area_m2;
-    }
 
     double transferred_m3 = 0.0;
     double bedrock_detached_m3 = 0.0;
@@ -881,9 +938,11 @@ namespace moppe::terrain {
       std::fill (net_m3.begin (), net_m3.end (), 0.0);
       std::fill (outgoing_m3.begin (), outgoing_m3.end (), 0.0);
       std::fill (incoming_m3.begin (), incoming_m3.end (), 0.0);
+      reconstruct_centered_gradients (domain, height_m, gradient_x, gradient_z);
 
       const auto post_face = [&] (std::size_t first,
                                   std::size_t second,
+                                  HillslopeFaceAxis axis,
                                   meters_t face_width,
                                   meters_t run) {
         if (fixed[first] || fixed[second])
@@ -891,11 +950,10 @@ namespace moppe::terrain {
         const double difference_m = height_m[first] - height_m[second];
         if (difference_m == 0.0)
           return;
-        const double face_gradient =
-          std::abs (difference_m) /
-          run.numerical_value_in (mp_units::si::metre);
+        const double gradient = reconstructed_face_gradient (
+          height_m, gradient_x, gradient_z, first, second, axis, run);
         const double local_multiplier = hillslope_diffusivity_multiplier (
-          face_gradient, critical_gradient, maximum_diffusivity_multiplier);
+          gradient, critical_gradient, maximum_diffusivity_multiplier);
         const double conductance_m2 =
           (local_multiplier * diffusivity * sweep_duration * face_width / run)
             .numerical_value_in (mp_units::si::metre * mp_units::si::metre);
@@ -908,16 +966,22 @@ namespace moppe::terrain {
         incoming_m3[destination] += volume_m3;
       };
 
-      for (std::size_t cell = 0; cell < count; ++cell) {
-        const TerrainIndex index = domain.index (cell);
-        post_face (cell,
-                   domain.offset (domain.shifted (index, 1, 0)),
-                   domain.spacing_z (),
-                   domain.spacing_x ());
-        post_face (cell,
-                   domain.offset (domain.shifted (index, 0, 1)),
-                   domain.spacing_x (),
-                   domain.spacing_z ());
+      for (std::size_t row = 0; row < height; ++row) {
+        const std::size_t next_row = row + 1 == height ? 0 : row + 1;
+        for (std::size_t column = 0; column < width; ++column) {
+          const std::size_t next_column = column + 1 == width ? 0 : column + 1;
+          const std::size_t cell = row * width + column;
+          post_face (cell,
+                     row * width + next_column,
+                     HillslopeFaceAxis::x,
+                     domain.spacing_z (),
+                     domain.spacing_x ());
+          post_face (cell,
+                     next_row * width + column,
+                     HillslopeFaceAxis::z,
+                     domain.spacing_x (),
+                     domain.spacing_z ());
+        }
       }
 
       for (std::size_t cell = 0; cell < count; ++cell) {

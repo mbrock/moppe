@@ -228,6 +228,35 @@ MOPPE_TEST (critical_hillslope_flux_accelerates_only_steep_faces) {
     1e-6f);
 }
 
+MOPPE_TEST (critical_hillslope_flux_uses_the_full_surface_gradient) {
+  const TerrainDomain domain (7, 7, 1.0f * u::m, 1.0f * u::m);
+  std::vector<float> axial (domain.size ());
+  std::vector<float> diagonal (domain.size ());
+  std::vector<std::uint8_t> fixed (domain.size ());
+  constexpr float diagonal_component = 0.25f;
+  constexpr float gradient_magnitude = 0.35355338f;
+
+  for (std::size_t cell = 0; cell < domain.size (); ++cell) {
+    const TerrainIndex index = domain.index (cell);
+    axial[cell] = gradient_magnitude * static_cast<float> (index.column);
+    diagonal[cell] =
+      diagonal_component * static_cast<float> (index.column + index.row);
+    fixed[cell] = index.column == 0 || index.column + 1 == domain.width () ||
+                  index.row == 0 || index.row + 1 == domain.height ();
+  }
+
+  const auto cover = hillslope_cover (domain.size ());
+  const HillslopeTransportResult axial_result =
+    hillslope_transport (domain, axial, cover, fixed, 1.0f, 0.6f, 4.0f);
+  const HillslopeTransportResult diagonal_result =
+    hillslope_transport (domain, diagonal, cover, fixed, 1.0f, 0.6f, 4.0f);
+  const HillslopeTransportResult diagonal_linear =
+    hillslope_transport (domain, diagonal, cover, fixed, 1.0f);
+
+  MOPPE_CHECK (axial_result.sweeps == diagonal_result.sweeps);
+  MOPPE_CHECK (diagonal_result.sweeps > diagonal_linear.sweeps);
+}
+
 MOPPE_TEST (hillslope_transport_substeps_long_geological_intervals) {
   const TerrainDomain domain (3, 3, 1.0f * u::m, 1.0f * u::m);
   const std::array heights { 0.0f, 0.0f, 0.0f, 0.0f, 10.0f,

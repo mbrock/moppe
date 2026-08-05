@@ -147,12 +147,14 @@ namespace moppe::terrain {
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
   };
 
-  // Moves solid material down local surface gradients across cardinal cell
-  // faces. Every face posts one equal-and-opposite volume pair. Faces touching
-  // a fixed cell are no-flux boundaries. Stable internal sweeps make the
-  // result independent of a geological step being longer than the explicit
-  // diffusion limit. Existing mobile cover leaves a source before any
-  // bedrock is detached there.
+  // Reconstructs a two-dimensional surface gradient at each cardinal cell
+  // face, then moves solid down the face-normal component. The nonlinear
+  // diffusivity responds to the full gradient magnitude rather than one
+  // grid-axis component. Every face posts one equal-and-opposite volume pair.
+  // Faces touching a fixed cell are no-flux boundaries. Stable internal
+  // sweeps make the result independent of a geological step being longer than
+  // the explicit diffusion limit. Existing mobile cover leaves a source
+  // before any bedrock is detached there.
   HillslopeTransportResult route_hillslope_sediment (
     const TerrainDomain& domain,
     std::span<const SurfaceElevation> elevations,
