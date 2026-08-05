@@ -166,6 +166,28 @@ namespace moppe {
       float interaction_radius = 0.0f;
     };
 
+    enum class ForestSpecies : uint8_t { Broadleaf, Conifer };
+    enum class ForestAge : uint8_t { Sapling, Young, Mature, Ancient };
+
+    // One stable individual, still expressed in physical and bounded domain
+    // types at the game/renderer boundary. Backends may narrow this to a packed
+    // GPU record only after the semantic checks have happened here.
+    struct ForestInstance {
+      position_t root {};
+      terrain::TerrainNormal ground_normal {};
+      meters_t height {};
+      meters_t crown_radius {};
+      proportion_t canopy_cover {};
+      proportion_t moisture {};
+      std::uint32_t seed = 0;
+      ForestSpecies species = ForestSpecies::Broadleaf;
+      ForestAge age = ForestAge::Mature;
+    };
+
+    struct ForestSetup {
+      spatial_extent_t period {};
+    };
+
     struct DustEmission {
       uint64_t id = 0;
       float birth_time = 0.0f;
@@ -274,6 +296,16 @@ namespace moppe {
         (void)flux;
       }
 
+      // Stable tree individuals cross once when a finished world is activated.
+      // The Metal backend retains compact records and expands reusable organs
+      // through object/mesh stages; other backends may choose their own
+      // presentation without changing the forest plan.
+      virtual void set_forest (const ForestSetup& setup,
+                               std::span<const ForestInstance> instances) {
+        (void)setup;
+        (void)instances;
+      }
+
       // -- frame -------------------------------------------------------
       virtual bool begin_frame (const FrameParams& params) = 0;
       virtual void draw_terrain (const ChunkDraw* chunks, int count) = 0;
@@ -288,6 +320,7 @@ namespace moppe {
       virtual void draw_undergrowth (const UndergrowthParams& params) {
         (void)params;
       }
+      virtual void draw_forest () {}
       // Vertical nickpoint curtains; horizontal water belongs to draw_ocean.
       virtual void draw_waterfalls (const Mesh& mesh, const Mat4& model) = 0;
       // A nonzero motion id names geometry whose prior transform/vertices

@@ -385,41 +385,6 @@ namespace moppe::game {
           options.world_cache.mode = WorldCacheMode::Disabled;
           return true;
         } },
-      { "--tree-demo",
-        "",
-        0,
-        "",
-        "Open the focused tree renderer demo.",
-        [] (LaunchOptions& options, const char* const*, std::string&) {
-          options.tree_demo = true;
-          return true;
-        } },
-      { "--tree-count",
-        "",
-        1,
-        "<1..64>",
-        "Set the tree-demo organism count.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          const int count = std::atoi (values[0]);
-          if (count < 1 || count > 64) {
-            error = "--tree-count must be between 1 and 64";
-            return false;
-          }
-          options.tree_count = static_cast<std::size_t> (count);
-          return true;
-        } },
-      { "--tree-screenshot",
-        "",
-        1,
-        "<PNG>",
-        "Capture the tree demo to a PNG and exit.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          options.tree_demo = true;
-          capture_to (options, values[0]);
-          return true;
-        } },
       { "--screenshot",
         "",
         1,

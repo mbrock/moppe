@@ -15,6 +15,8 @@ namespace moppe::game {
   using TreeSizeFactor =
     mp_units::quantity<tree_size_factor[mp_units::one], float>;
 
+  enum class ForestAge : std::uint8_t { sapling, young, mature, ancient };
+
   struct ForestSite {
     position_t position {};
     terrain::TerrainNormal normal {};
@@ -23,6 +25,7 @@ namespace moppe::game {
     TreeSizeFactor size = 1.0f * tree_size_factor[mp_units::one];
     std::uint32_t seed = 0;
     ForestForm form = ForestForm::broadleaf;
+    ForestAge age = ForestAge::mature;
   };
 
   struct ForestPlan {

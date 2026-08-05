@@ -11,6 +11,7 @@
 #define MOPPE_SHADER_ALIGN
 typedef metal::float4x4 MoppeMat4;
 typedef metal::float4 MoppeFloat4;
+typedef metal::uint4 MoppeUint4;
 #else
 #include <cstdint>
 #define MOPPE_SHADER_ALIGN alignas (16)
@@ -20,6 +21,9 @@ struct MoppeMat4 {
 struct MoppeFloat4 {
   float x, y, z, w;
 };
+struct MoppeUint4 {
+  std::uint32_t x, y, z, w;
+};
 #endif
 
 // Buffer indices (vertex stage).
@@ -28,6 +32,7 @@ struct MoppeFloat4 {
 #define MOPPE_BUF_DRAW 2
 #define MOPPE_BUF_CHUNK 3
 #define MOPPE_BUF_PREVIOUS_VERTICES 4
+#define MOPPE_BUF_FOREST 5
 
 // Texture indices (fragment stage).
 #define MOPPE_TEX_COLOR 0
@@ -254,6 +259,52 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
                            // w=standing-water levels available
   MoppeFloat4 temporal;    // xy=input pixels, z=previous time, w=enabled
 };
+
+// A forest crosses the renderer boundary as stable individuals, not baked
+// vertices. The object stage selects projected detail and schedules reusable
+// trunk/crown assemblies; the mesh stage expands only those assemblies.
+#define MOPPE_FOREST_OBJECT_THREADS 8
+#define MOPPE_FOREST_PARTS_PER_TREE 8
+#define MOPPE_FOREST_PAYLOAD_PARTS                                             \
+  (MOPPE_FOREST_OBJECT_THREADS * MOPPE_FOREST_PARTS_PER_TREE)
+#define MOPPE_FOREST_MESH_THREADS 64
+#define MOPPE_FOREST_MESH_VERTICES 32
+#define MOPPE_FOREST_MESH_PRIMITIVES 60
+
+struct MOPPE_SHADER_ALIGN MoppeForestInstance {
+  MoppeFloat4 root_height; // xyz=root in metres, w=height in metres
+  MoppeFloat4 up_radius;   // xyz=ground normal, w=crown radius in metres
+  MoppeFloat4 ecology;     // x=cover, y=moisture, zw=reserved
+  MoppeUint4 identity;     // x=seed, y=species, z=age, w=reserved
+};
+
+struct MOPPE_SHADER_ALIGN MoppeForestUniforms {
+  MoppeMat4 view_proj;
+  MoppeMat4 unjittered_view_proj;
+  MoppeMat4 previous_view_proj;
+  MoppeMat4 light_matrix;
+  MoppeFloat4 camera_pos;
+  MoppeFloat4 sun_dir;
+  MoppeFloat4 sun_diffuse;
+  MoppeFloat4 sun_specular;
+  MoppeFloat4 ambient;
+  MoppeFloat4 fog_color; // rgb; w=fog scale
+  MoppeFloat4 world;     // x=period x, y=period z, z=tree count
+  MoppeFloat4 params;    // x=time, y=cloudiness, z=sea, w=land relief
+  MoppeFloat4 shadow;    // x=strength, y=shadow texel
+  MoppeFloat4 temporal;  // xy=input pixels, z=previous time, w=enabled
+};
+
+#ifndef __METAL_VERSION__
+static_assert (sizeof (MoppeForestInstance) == 64,
+               "forest instance must remain one cache line");
+static_assert (alignof (MoppeForestInstance) == 16,
+               "forest instances require GPU alignment");
+static_assert (MOPPE_FOREST_MESH_VERTICES <= 256,
+               "forest meshlet exceeds Metal vertex limit");
+static_assert (MOPPE_FOREST_MESH_PRIMITIVES <= 512,
+               "forest meshlet exceeds Metal primitive limit");
+#endif
 
 struct MOPPE_SHADER_ALIGN MoppeDustEmission {
   MoppeFloat4 position_birth; // xyz position, w birth time

@@ -35,17 +35,14 @@ namespace moppe::game {
                                     const FrameView& view) {
       const bool cinematic = input.scene == FrameSceneMode::Cinematic;
       const bool water = input.scene == FrameSceneMode::WaterInspection;
-      const bool tree = input.scene == FrameSceneMode::TreeDemo;
       const bool gazetteer = input.scene == FrameSceneMode::Gazetteer;
 
       FrameVisibility visibility;
       visibility.cinematic = cinematic;
       visibility.water_inspection = water;
-      visibility.tree_demo = tree;
-      visibility.forest = !water && !tree;
+      visibility.forest = !water;
       visibility.undergrowth = !water && input.graphics.undergrowth;
-      visibility.tree_stand = !water;
-      visibility.actors = !water && !tree;
+      visibility.actors = !water;
       visibility.ocean = input.graphics.ocean;
       visibility.waterfall_curtains = input.graphics.waterfall_curtains;
       visibility.dust = !gazetteer && input.graphics.particles;
@@ -58,7 +55,7 @@ namespace moppe::game {
         visibility.actors && input.graphics.vehicle_effects;
       visibility.star_effects =
         visibility.actors && input.graphics.star_effects;
-      visibility.game_hud = !cinematic && !water && !tree && !gazetteer;
+      visibility.game_hud = !cinematic && !water && !gazetteer;
       visibility.cinematic_hud = cinematic;
       return visibility;
     }
@@ -138,7 +135,6 @@ namespace moppe::game {
     const GameLogicState& logic = input.session.logic ();
     const bool cinematic = input.scene == FrameSceneMode::Cinematic;
     const bool water = input.scene == FrameSceneMode::WaterInspection;
-    const bool tree = input.scene == FrameSceneMode::TreeDemo;
 
     FrameView result;
     result.scene = input.scene;
@@ -148,7 +144,7 @@ namespace moppe::game {
     result.camera.forward = input.selected_camera.forward;
     result.camera.field_of_view = cinematic
                                     ? input.selected_camera.field_of_view
-                                  : water || tree ? 70.0f * u::deg
+                                  : water ? 70.0f * u::deg
                                   : input.scene == FrameSceneMode::Gazetteer
                                     ? input.selected_camera.field_of_view
                                     : (100.0f + 9.0f * logic.m_fov_k) * u::deg;

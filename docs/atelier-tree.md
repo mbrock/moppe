@@ -71,20 +71,14 @@ to be a density or population field responding to moisture, disturbance, and
 light. Rendering both as collections of individually generated meshes would
 erase the useful distinction before simulation even begins.
 
-## The production embedding
+## Relationship to the production forest
 
-The intrinsic organism lives in `atelier/tree.*`. Both the Atelier and Moppe
-compile that source, so changing topology, transport, growth, or thickening
-changes the organism in both clients. The Atelier remains the place for
-inspecting the complex in isolation; Moppe supplies a second extrinsic
-embedding in `moppe/game/tree_stand.*`.
-
-The game first derives `tree_habitat` as another quantity in the surface
-bundle. Moisture, height above standing water, tree line, and surface normal
-all contribute. A deterministic site planner samples that field, preserves a
-minimum spacing between organisms, and roots every chosen collar at the exact
-surface elevation and normal. The seed of each site produces a related but
-distinct topology and rest configuration.
+The intrinsic organism remains in `atelier/tree.*`: it is an inspectable model
+of topology, transport, growth, and thickening, and a plausible source of
+future simulation ideas. It is deliberately not a game presentation. The old
+`TreeStand` embedding and its special home-base grove were removed because
+they created a second, unrelated tree population and baked every branch and
+leaf cluster into one retained mesh.
 
 The forest system adds two population scales between habitat and geometry.
 First, broad and local periodic noise turns potential habitat into a global
@@ -93,62 +87,36 @@ A jittered lattice then converts cover into tens of thousands of stable,
 seed-addressed sites across the whole periodic world. Dense cover produces a
 stand rather than a uniform scatter; low cover becomes an ecotone or opening.
 
-Second, one or two suitable sites near the arrival area become detailed
-recruitment centers. Seeds fall in clusters around them; a mixture of canopy
-trees, young trees, and saplings is proposed; and larger crowns self-thin
-overlapping competitors. This follows the important shape of Deussen et al.'s
-ecosystem model without pretending that a single startup pass is a complete
-succession simulation. The observatory mode frames that detailed population
-for deterministic inspection.
+Each stable site now also owns an age class. Sapling, young, mature, and ancient
+cohorts select distinct typed size ranges before the renderer is involved.
+`ForestLandscape` converts the finished plan once into `ForestInstance`
+records whose position, height, crown radius, ground normal, canopy cover, and
+moisture retain their domain or quantity types at the API boundary.
 
-All branches and leaf clusters in the detailed stand are baked into one
-retained world-space mesh. Branch generation and intrinsic flexibility become
-per-vertex wind weights, which the existing Moppe scene shader animates.
+## Assemblies rather than complete meshes
 
-## What a crown says beyond where it is
+The Metal backend narrows each individual to one aligned 64-byte GPU record.
+`forest.metal` then uses an object shader to frustum-cull it and measure its
+actual projected height. Subpixel individuals disappear into the terrain's
+filtered canopy signal; distant trees schedule one crown proxy, middle-distance
+trees schedule three organs, and near trees schedule a trunk plus seven crown
+organs. Those organs are reusable algorithms -- conifer bough tiers and
+broadleaf lobes -- rather than copied vertex buffers. The mesh shader expands
+only the selected organs, so no complete production tree mesh exists in CPU or
+GPU memory.
 
-`moppe/game/foliage.*` is the vocabulary every plant in the world is drawn
-with, and it exists because a cheap crown fails in two ways that have nothing
-to do with its triangle count. It lights by facet, so a five-sided drum reads
-as folded paper; and it carries one flat colour, so a hillside reads as one
-painted green. Both are decided when the mesh is baked and cost nothing to
-draw.
+The crown geometry is opaque and three-dimensional. It does not use the old
+fractal alpha cards, so receding needles cannot turn into jagged black cutouts.
+A dedicated forest material keeps albedo separate from illumination, combines
+sky and ground hemisphere fill with wrapped direct light, and adds thin-leaf
+sun transmission. Moisture, cover, species, age, and stable individual hashes
+vary height, crown proportions, colour, and assembly placement without making
+the forest scintillate.
 
-So a plant vertex carries the outward direction of the volume it belongs to
-rather than of its triangle, and how much sky its part of the canopy sees.
-Species, ground moisture, canopy cover, and plain individual variation pick
-the two ends of the colour ramp that exposure runs along; bark is the same
-mechanism with a wood ramp, dark at the root and lit where the stem rises
-clear. Twenty triangles shaded this way read as a mass of leaves, which is
-the whole reason the global population can stay cheap.
-
-## Three distances
-
-`ForestLandscape` presents the population at three scales, and the interesting
-one is what it refuses to draw.
-
-Within a couple of hundred metres a tree is an organism: a stem that flares
-into its own root plate and tapers and bends, limbs leaving it at heights you
-can see, and a crown of two or three separate masses with sky between them.
-Beyond that only volume and colour still carry, and a tree becomes a handful
-of triangles. Beyond about a kilometre it is smaller than the pixel it lands
-in, and the terrain's own filtered canopy is the more honest representation:
-drawing individual trees there produced a horizon-wide band of dark specks on
-haze-whitened ground, which reads as dirt on the lens rather than as forest.
-The scene shader converges foliage albedo on that canopy tone as distance
-grows, so the handover is a change of texture and not of colour.
-
-Only the near representation is expensive, and at any moment about a dozen
-chunks of the world's lattice are close enough to want it. So the cheap mesh
-is built once for the whole world and kept, and the near mesh is built when a
-chunk comes within reach and released when it leaves — a bounded number per
-frame, so arriving somewhere costs a few frames of coarser trees rather than
-one long stall. Baking the near mesh for every chunk of the world instead cost
-287 MB that was almost entirely idle; the residency scheme peaks around 156 MB
-in play while giving the near tree roughly three times the geometry.
-
-Streamed full organisms and mesh-shader expansion remain later refinements
-rather than prerequisites for a forested world.
+The same individuals participate in the world's one-time shadow pass. Shadow
+submission expands one coarse opaque crown per periodic tree image into the
+existing 4096-square terrain shadow map. Scene detail therefore stays
+view-dependent while the ground still receives forest-scale occlusion.
 
 ## The floor: geometry that is never stored
 
@@ -196,21 +164,5 @@ cost for about 3.2 times the prior blade density, but it leaves ample room in a
 60 Hz frame. It needs Metal mesh shaders; backends without them grow nothing,
 and the `undergrowth` graphics feature turns it off.
 
-Run a quiet camera in the game renderer with:
-
-```sh
-./build/moppe.app/Contents/MacOS/moppe --tree-demo --tree-count 9
-```
-
-Deterministic terrain-rooted screenshots use the same mode:
-
-```sh
-make tree-shot
-tools/capture-trees /tmp/tree.png 1
-tools/capture-trees /tmp/grove.png 9
-MOPPE_SEED=777 tools/capture-trees /tmp/other-grove.png 9
-```
-
-The portrait and grove are deliberately the same rendering path. The count
-only changes site planning and camera composition; there is no special hero
-tree asset.
+The landscape gazetteer and ordinary deterministic screenshot paths exercise
+the real forest renderer; there is no special hero-tree or observatory path.

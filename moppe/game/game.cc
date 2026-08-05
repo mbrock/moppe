@@ -31,7 +31,6 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
-#include <moppe/game/tree_stand.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker_render.hh>
 #include <moppe/game/water_capture.hh>
@@ -89,9 +88,7 @@ namespace moppe {
             m_loading (this->recipe (), options.world_cache),
             m_graphics (options.graphics), m_spawn_position (position_value (
                                              this->world ().spawn_position ())),
-            m_renderer (0), m_tree_demo (options.tree_demo),
-            m_tree_count (options.tree_count),
-            m_screenshot_path (options.screenshot_path),
+            m_renderer (0), m_screenshot_path (options.screenshot_path),
             m_water_shot (options.water_shot), m_gazetteer (options.gazetteer),
             m_screenshot_frames (0), m_ready (false),
             m_benchmark (options.benchmark),
@@ -476,57 +473,13 @@ namespace moppe {
 
       void grow_global_forest () {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
-        if (m_tree_demo || m_water_inspection)
+        if (m_water_inspection)
           return;
         m_forest.rebuild (*m_renderer, generated_world ().forest ());
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)
                   << " MB resident\n";
-      }
-
-      void plant_trailside () {
-        MOPPE_PROFILE_ZONE ("startup.plant_trailside");
-        render::Renderer& r = *m_renderer;
-        const map::SurfaceReadings& readings = surface_readings ();
-        if (m_tree_demo) {
-          m_tree_stand.rebuild (r,
-                                surface (),
-                                readings,
-                                recipe ().seed ().value ^ 0x4f1bbcdcU,
-                                m_tree_count);
-          if (m_tree_stand.empty ())
-            throw std::runtime_error (
-              "the generated surface has no viable tree habitat");
-          const TreeGrove& grove = m_tree_stand.grove ();
-          session ().camera ().place (grove.camera_eye, grove.camera_target);
-          std::cerr << "tree grove: " << grove.sites.size ()
-                    << " organisms, eye=" << grove.camera_eye
-                    << " target=" << grove.camera_target << '\n';
-          return;
-        }
-        if (m_water_inspection) {
-          session ().camera ().place (m_water_inspection->eye,
-                                      m_water_inspection->target);
-          return;
-        }
-        constexpr std::size_t forest_size = 32;
-        m_tree_stand.rebuild (r,
-                              surface (),
-                              readings,
-                              recipe ().seed ().value ^ 0x4f1bbcdcU,
-                              forest_size,
-                              m_home_base_position);
-        const TreeGrove& forest = m_tree_stand.grove ();
-        const auto cohort_count = [&] (TreeCohort cohort) {
-          return std::ranges::count_if (
-            forest.sites,
-            [cohort] (const TreeSite& site) { return site.cohort == cohort; });
-        };
-        std::cerr << "forest: " << forest.sites.size () << " organisms ("
-                  << cohort_count (TreeCohort::canopy) << " canopy, "
-                  << cohort_count (TreeCohort::young) << " young, "
-                  << cohort_count (TreeCohort::sapling) << " saplings)\n";
       }
 
       void plan_opening_journey () {
@@ -592,7 +545,6 @@ namespace moppe {
         prepare_world_surface ();
         place_stars_and_player ();
         grow_global_forest ();
-        plant_trailside ();
         if (m_gazetteer)
           plan_gazetteer_capture ();
         else
@@ -618,7 +570,7 @@ namespace moppe {
         const bool automated =
           !m_screenshot_path.empty () || m_benchmark.has_value () ||
           m_water_shot.has_value () || m_gazetteer.has_value () ||
-          m_tree_demo || ::getenv ("MOPPE_DEMO");
+          ::getenv ("MOPPE_DEMO");
         if (!automated && !m_skip_cinematic_requested &&
             !m_cinematic_plan.empty ()) {
           m_cinematic.start (m_cinematic_plan, surface ());
@@ -778,16 +730,6 @@ namespace moppe {
           }
         }
 
-        // The botanical demo is a stationary observatory. Weather and the
-        // global animation clock continue above, so the retained trees keep
-        // moving in the renderer's wind field while actors remain paused.
-        if (m_tree_demo) {
-          const TreeGrove& grove = m_tree_stand.grove ();
-          session ().camera ().place (grove.camera_eye, grove.camera_target);
-          update_frame_flare ();
-          return;
-        }
-
         // Screenshot autopilot for headless verification: rides in a
         // lazy arc with periodic boost-assisted leaps.
         static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
@@ -877,15 +819,6 @@ namespace moppe {
         return state;
       }
 
-      ForestView forest_view_for (const FrameView& frame) const {
-        return { .position = position (frame.camera.position),
-                 .forward = frame.camera.frame_forward,
-                 .right = frame.camera.right,
-                 .up = frame.camera.up,
-                 .vertical_field_of_view = frame.camera.field_of_view,
-                 .aspect_ratio = frame.camera.aspect * mp_units::one };
-      }
-
       void draw_world_layers (render::Renderer& r, const FrameView& frame) {
         const FrameVisibility& visibility = frame.visibility;
         const Vec3& camera = frame.camera.position;
@@ -916,7 +849,7 @@ namespace moppe {
           draw_world_sky ();
 
         if (visibility.forest)
-          m_forest.draw (r, forest_view_for (frame));
+          m_forest.draw (r);
 
         // The floor grows itself from the same canopy and moisture fields the
         // trees were planted from, so it arrives already agreeing with them.
@@ -947,9 +880,6 @@ namespace moppe {
               .interaction_position = frame.hud.subject_position,
               .interaction_radius = interaction_radius });
         }
-
-        if (visibility.tree_stand)
-          m_tree_stand.draw (r);
       }
 
       void draw_actor_layers (render::Renderer& r, const FrameView& frame) {
@@ -1136,11 +1066,6 @@ namespace moppe {
             std::cerr << "water screenshot camera: eye="
                       << session ().camera ().position ()
                       << " target=" << m_water_inspection->target << '\n';
-          if (m_tree_demo)
-            std::cerr << "tree screenshot camera: eye="
-                      << session ().camera ().position ()
-                      << " target=" << m_tree_stand.grove ().camera_target
-                      << '\n';
           r.request_screenshot (m_screenshot_path);
         }
         const bool captured_gazetteer =
@@ -1152,11 +1077,6 @@ namespace moppe {
             gazetteer_image_filename (m_gazetteer_shot, gazetteer_shot->name);
           r.request_screenshot (path.string ());
         }
-        // Near forest meshes are baked here, outside the frame: the chunks
-        // about to be drawn are exactly the ones worth holding geometry for.
-        if (frame.visibility.forest)
-          m_forest.prepare (r, forest_view_for (frame));
-
         if (!r.begin_frame (frame_params_for (frame)))
           return;
 
@@ -1460,8 +1380,6 @@ namespace moppe {
         } else {
           if (m_water_inspection)
             scene = FrameSceneMode::WaterInspection;
-          else if (m_tree_demo)
-            scene = FrameSceneMode::TreeDemo;
           camera = {
             .position = session ().camera ().position (),
             .forward = session ().camera ().forward (),
@@ -1663,7 +1581,6 @@ namespace moppe {
       WaterfallSurface m_waterfall_surface;
       Terrain m_terrain;
       ForestLandscape m_forest;
-      TreeStand m_tree_stand;
       BlobShadow m_blob;
       std::vector<mov::Box> m_obstacles;
       Hud m_hud;
@@ -1672,8 +1589,6 @@ namespace moppe {
       std::unique_ptr<render::FontAtlas> m_loading_meta_font;
 
       render::Renderer* m_renderer;
-      bool m_tree_demo;
-      std::size_t m_tree_count;
       bool m_automated_regeneration_done = false;
       std::string m_screenshot_path;
       std::optional<WaterShot> m_water_shot;

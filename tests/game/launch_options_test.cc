@@ -82,9 +82,6 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--world-cache-key",
          "--refresh-world-cache",
          "--no-world-cache",
-         "--tree-demo",
-         "--tree-count",
-         "--tree-screenshot",
          "--screenshot",
          "--water-screenshot",
          "--window-size",
@@ -170,8 +167,6 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--world-cache-key" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "../shared" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "spaces are unsafe" }));
-  MOPPE_CHECK (rejects ({ "--tree-count", "0" }));
-  MOPPE_CHECK (rejects ({ "--tree-count", "65" }));
   MOPPE_CHECK (rejects ({ "--water-screenshot", "canyon", "/tmp/a.png" }));
   MOPPE_CHECK (rejects ({ "--water-screenshot", "mouth" }));
   MOPPE_CHECK (rejects ({ "--screenshot" }));
@@ -212,11 +207,6 @@ MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
     parsed ({ "--water-screenshot", "mouth", "/tmp/mouth.png" });
   MOPPE_CHECK (water.water_shot == game::WaterShot::Mouth);
   MOPPE_CHECK (water.screenshot_path == "/tmp/mouth.png");
-
-  const game::LaunchOptions trees =
-    parsed ({ "--tree-screenshot", "/tmp/trees.png", "--tree-count", "12" });
-  MOPPE_CHECK (trees.tree_demo);
-  MOPPE_CHECK (trees.tree_count == 12);
 
   const game::LaunchOptions gazetteer = parsed (
     { "--terrain-gazetteer", "/tmp/gazetteer", "--gazetteer-settle", "7" });
