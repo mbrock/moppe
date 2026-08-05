@@ -157,6 +157,7 @@ namespace moppe {
       }
 
       enum class GpuPass {
+        Shadow,
         Terrain,
         Sky,
         Water,
@@ -172,8 +173,9 @@ namespace moppe {
       };
       constexpr int GPU_PASS_COUNT = static_cast<int> (GpuPass::Count);
       const char* GPU_PASS_NAMES[GPU_PASS_COUNT] = {
-        "terrain",  "sky",        "water",   "scene",         "post",   "bloom",
-        "exposure", "reflection", "upscale", "interpolation", "present"
+        "shadow",     "terrain", "sky",           "water",
+        "scene",      "post",    "bloom",         "exposure",
+        "reflection", "upscale", "interpolation", "present"
       };
 
       struct FrameTiming {
@@ -825,6 +827,7 @@ namespace moppe {
                                 std::span<const float> values) override;
       void clear_terrain_overlay () override;
       void render_terrain_shadow (const Mat4& light_view_proj) override;
+      void render_local_shadow (const LocalShadowParams& params) override;
       void set_ocean (const OceanSetup& setup,
                       const render::TexturePixels& water_levels) override;
       void set_water_flow (const render::TexturePixels& flow) override;
@@ -2795,6 +2798,174 @@ namespace moppe {
                   << shadow_step << "\n";
       }
       m_terrain_resources.have_shadow = true;
+    }
+
+    void MetalRenderer::render_local_shadow (const LocalShadowParams& params) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::render_local_shadow");
+      if (!m_frame.command_buffer || m_frame.scene_encoder ||
+          !m_pipelines.terrain_shadow || !m_terrain_resources.have_terrain)
+        return;
+
+      constexpr int shadow_size = 2048;
+      if (!m_terrain_resources.shadow_map ||
+          m_terrain_resources.shadow_map.width != (NSUInteger)shadow_size ||
+          m_terrain_resources.shadow_map.height != (NSUInteger)shadow_size) {
+        MTLTextureDescriptor* td = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth16Unorm
+                                       width:shadow_size
+                                      height:shadow_size
+                                   mipmapped:NO];
+        td.storageMode = MTLStorageModePrivate;
+        td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        m_terrain_resources.shadow_map = [m_device newTextureWithDescriptor:td];
+        make_resident (m_terrain_resources.shadow_map);
+      }
+
+      Mat4 bias;
+      bias.m[0] = 0.5f;
+      bias.m[5] = -0.5f;
+      bias.m[12] = 0.5f;
+      bias.m[13] = 0.5f;
+      m_terrain_resources.light_biased = bias * params.light_view_proj;
+
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
+      rp.depthAttachment.texture = m_terrain_resources.shadow_map;
+      rp.depthAttachment.loadAction = MTLLoadActionClear;
+      rp.depthAttachment.storeAction = MTLStoreActionStore;
+      rp.depthAttachment.clearDepth = 1.0;
+      id<MTL4RenderCommandEncoder> enc =
+        [m_frame.command_buffer renderCommandEncoderWithDescriptor:rp];
+      record_gpu_pass_start (m_frame, enc, GpuPass::Shadow);
+      [enc setRenderPipelineState:m_pipelines.terrain_shadow];
+      [enc setDepthStencilState:m_pipelines.shadow_depth];
+      [enc setCullMode:MTLCullModeNone];
+      [enc setFrontFacingWinding:MTLWindingCounterClockwise];
+      [enc setDepthBias:2.0f slopeScale:2.0f clamp:0.0f];
+
+      MoppeTerrainUniforms terrain_uniforms;
+      std::memset (&terrain_uniforms, 0, sizeof (terrain_uniforms));
+      terrain_uniforms.view_proj = m4 (params.light_view_proj);
+      terrain_uniforms.params0.x = m_terrain_resources.params.scale[0];
+      terrain_uniforms.params0.y = m_terrain_resources.params.scale[1];
+      terrain_uniforms.params0.z = m_terrain_resources.params.scale[2];
+      bind_address (m_frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_FRAME,
+                    m_frame.arena[m_frame.slot].write (terrain_uniforms));
+      bind_texture (m_frame,
+                    MTLRenderStageVertex,
+                    MOPPE_TEX_HEIGHTS,
+                    m_terrain_resources.heights);
+      use_arguments (enc, m_frame, MTLRenderStageVertex);
+
+      const TerrainParams& terrain = m_terrain_resources.params;
+      const int chunks = terrain.width / CHUNK_CELLS;
+      const float chunk_width = CHUNK_CELLS * terrain.scale[0];
+      const float chunk_depth = CHUNK_CELLS * terrain.scale[2];
+      const float period_x = terrain.width * terrain.scale[0];
+      const float period_z = terrain.height * terrain.scale[2];
+      const Vec3 focus = position_value (params.focus);
+      const float reach = params.radius.numerical_value_in (u::m);
+      const int centre_x =
+        static_cast<int> (std::floor (focus[0] / chunk_width));
+      const int centre_z =
+        static_cast<int> (std::floor (focus[2] / chunk_depth));
+      const int reach_x =
+        static_cast<int> (std::ceil (reach / chunk_width)) + 1;
+      const int reach_z =
+        static_cast<int> (std::ceil (reach / chunk_depth)) + 1;
+      const auto floor_div = [] (int value, int divisor) {
+        const int quotient = value / divisor;
+        const int remainder = value % divisor;
+        return quotient - (remainder < 0 ? 1 : 0);
+      };
+      const auto positive_mod = [] (int value, int divisor) {
+        const int remainder = value % divisor;
+        return remainder < 0 ? remainder + divisor : remainder;
+      };
+      const float chunk_radius = 0.5f * std::sqrt (chunk_width * chunk_width +
+                                                   chunk_depth * chunk_depth);
+      const float draw_reach = reach + chunk_radius;
+      for (int world_z = centre_z - reach_z; world_z <= centre_z + reach_z;
+           ++world_z)
+        for (int world_x = centre_x - reach_x; world_x <= centre_x + reach_x;
+             ++world_x) {
+          const float dx = (world_x + 0.5f) * chunk_width - focus[0];
+          const float dz = (world_z + 0.5f) * chunk_depth - focus[2];
+          if (dx * dx + dz * dz > draw_reach * draw_reach)
+            continue;
+
+          MoppeChunkUniforms chunk;
+          std::memset (&chunk, 0, sizeof (chunk));
+          chunk.origin_x = positive_mod (world_x, chunks) * CHUNK_CELLS;
+          chunk.origin_z = positive_mod (world_z, chunks) * CHUNK_CELLS;
+          chunk.step = TERRAIN_LOD_STEP[TERRAIN_NATIVE_LOD];
+          chunk.verts_per_row = TERRAIN_LOD_VERTS[TERRAIN_NATIVE_LOD];
+          chunk.parent_step = chunk.step;
+          chunk.world_offset.x = floor_div (world_x, chunks) * period_x;
+          chunk.world_offset.z = floor_div (world_z, chunks) * period_z;
+          bind_address (m_frame,
+                        MTLRenderStageVertex,
+                        MOPPE_BUF_CHUNK,
+                        m_frame.arena[m_frame.slot].write (chunk));
+          [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangleStrip
+                          indexCount:m_terrain_resources
+                                       .index_count[TERRAIN_NATIVE_LOD]
+                           indexType:MTLIndexTypeUInt32
+                         indexBuffer:m_terrain_resources
+                                       .indices[TERRAIN_NATIVE_LOD]
+                                       .gpuAddress
+                   indexBufferLength:m_terrain_resources
+                                       .indices[TERRAIN_NATIVE_LOD]
+                                       .length
+                       instanceCount:1];
+        }
+
+      if (m_pipelines.forest_shadow && m_forest_resources.instances &&
+          m_forest_resources.count > 0) {
+        MoppeForestUniforms forest;
+        std::memset (&forest, 0, sizeof (forest));
+        forest.view_proj = m4 (params.light_view_proj);
+        forest.camera_pos = f4 (focus);
+        forest.world.x = m_forest_resources.period_x;
+        forest.world.y = m_forest_resources.period_z;
+        forest.world.z = static_cast<float> (m_forest_resources.count);
+        forest.world.w = 1.0f;
+        const MTLGPUAddress uniforms =
+          m_frame.arena[m_frame.slot].write (forest);
+        for (MTLRenderStages stage :
+             { MTLRenderStageObject, MTLRenderStageMesh }) {
+          bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
+          bind_address (m_frame,
+                        stage,
+                        MOPPE_BUF_FOREST,
+                        m_forest_resources.instances.gpuAddress);
+        }
+        use_arguments (enc, m_frame, MTLRenderStageObject | MTLRenderStageMesh);
+        [enc setRenderPipelineState:m_pipelines.forest_shadow];
+        [enc setDepthStencilState:m_pipelines.shadow_depth];
+        [enc setCullMode:MTLCullModeNone];
+        const NSUInteger candidates = m_forest_resources.count;
+        [enc drawMeshThreadgroups:MTLSizeMake ((candidates +
+                                                MOPPE_FOREST_OBJECT_THREADS -
+                                                1) /
+                                                 MOPPE_FOREST_OBJECT_THREADS,
+                                               1,
+                                               1)
+          threadsPerObjectThreadgroup:MTLSizeMake (
+                                        MOPPE_FOREST_OBJECT_THREADS, 1, 1)
+            threadsPerMeshThreadgroup:MTLSizeMake (
+                                        MOPPE_FOREST_MESH_THREADS, 1, 1)];
+      }
+      record_gpu_pass_end (m_frame, enc);
+      [enc endEncoding];
+
+      m_terrain_resources.have_shadow = true;
+      m_frame.uniforms.light_matrix = m4 (m_terrain_resources.light_biased);
+      m_frame.uniforms.shadow.x = terrain.shadow_strength;
+      m_frame.uniforms.shadow.y = 1.0f / shadow_size;
+      m_frame.frame_uniforms =
+        m_frame.arena[m_frame.slot].write (m_frame.uniforms);
     }
 
     void MetalRenderer::set_ocean (const OceanSetup& setup,

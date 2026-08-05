@@ -7,6 +7,8 @@
 namespace moppe::game {
   namespace {
     constexpr float SUN_AZIMUTH = 0.8f;
+    constexpr degrees_t CHASE_FIELD_OF_VIEW = 78.0f * u::deg;
+    constexpr degrees_t CHASE_SPEED_WIDENING = 8.0f * u::deg;
     // Keep the historical art-direction calculations bit-for-bit aligned
     // with the game loop while moving them behind the presentation seam.
     constexpr float ART_PI = 3.14159f;
@@ -58,6 +60,13 @@ namespace moppe::game {
       visibility.game_hud = !cinematic && !water && !gazetteer;
       visibility.cinematic_hud = cinematic;
       return visibility;
+    }
+
+    degrees_t gameplay_field_of_view (const FrameViewInput& input) {
+      const GameLogicState& logic = input.session.logic ();
+      if (logic.m_cam_mode == CAM_HELMET)
+        return input.selected_camera.field_of_view;
+      return CHASE_FIELD_OF_VIEW + CHASE_SPEED_WIDENING * logic.m_fov_k;
     }
   }
 
@@ -147,7 +156,7 @@ namespace moppe::game {
                                   : water ? 70.0f * u::deg
                                   : input.scene == FrameSceneMode::Gazetteer
                                     ? input.selected_camera.field_of_view
-                                    : (100.0f + 9.0f * logic.m_fov_k) * u::deg;
+                                    : gameplay_field_of_view (input);
     result.camera.aspect = std::max (0.01f, input.aspect);
     result.camera.view = input.selected_camera.view;
 

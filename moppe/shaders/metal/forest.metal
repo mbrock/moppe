@@ -88,12 +88,15 @@ static inline float3 forest_up (thread const MoppeForestInstance& tree) {
                          tree.identity.y == 1u ? 0.20 : 0.28));
 }
 
-static inline uint forest_part_count (float pixels) {
+static inline uint forest_part_count (float pixels, uint seed) {
+  // A stable per-individual threshold avoids a circular LOD front in which a
+  // whole stand changes construction on the same frame.
+  const float threshold = 0.88 + 0.24 * forest_hash (seed, 191u);
   if (pixels < 2.0)
     return 0u;
-  if (pixels < 14.0)
+  if (pixels < 14.0 * threshold)
     return 1u;
-  if (pixels < 48.0)
+  if (pixels < 48.0 * threshold)
     return 3u;
   return MOPPE_FOREST_PARTS_PER_TREE;
 }
@@ -135,7 +138,8 @@ static inline uint forest_part_count (float pixels) {
       if (bottom.w > 0.01 && top.w > 0.01)
         pixels = abs (top.y / top.w - bottom.y / bottom.w) * 0.5 * u.temporal.y;
     }
-    const uint parts = visible ? forest_part_count (pixels) : 0u;
+    const uint parts =
+      visible ? forest_part_count (pixels, tree.identity.x) : 0u;
     if (parts > 0u) {
       const uint first = atomic_fetch_add_explicit (
         &emitted, parts, metal::memory_order_relaxed);
@@ -168,12 +172,14 @@ static inline uint forest_part_count (float pixels) {
   threadgroup_barrier (metal::mem_flags::mem_threadgroup);
 
   const uint tree_count = uint (u.world.z);
+  const bool local = u.world.w > 0.5;
+  const uint image_count = local ? 1u : 9u;
   const uint candidate = group.x * MOPPE_FOREST_OBJECT_THREADS + thread_id;
-  if (candidate < tree_count * 9u) {
+  if (candidate < tree_count * image_count) {
     const uint tree = candidate % tree_count;
-    const uint copy = candidate / tree_count;
+    const uint copy = local ? 4u : candidate / tree_count;
     const MoppeForestInstance individual = trees[tree];
-    const float3 root = forest_root (individual, u, copy, true);
+    const float3 root = forest_root (individual, u, copy, !local);
     const float3 centre =
       root + forest_up (individual) * 0.56 * individual.root_height.w;
     const float4 clip = u.view_proj * float4 (centre, 1.0);
@@ -304,7 +310,7 @@ static inline float3 forest_palette (thread const MoppeForestInstance& tree,
     return bark * (0.72 + 0.28 * exposure);
   }
   float3 leaf =
-    organ.conifer ? float3 (0.205, 0.440, 0.195) : float3 (0.295, 0.525, 0.165);
+    organ.conifer ? float3 (0.270, 0.530, 0.205) : float3 (0.355, 0.610, 0.195);
   leaf *= float3 (1.08 - 0.20 * wet, 0.88 + 0.26 * wet, 0.90 + 0.16 * cover);
   leaf *= 0.94 + 0.15 * variation;
   return leaf * (0.72 + 0.34 * exposure);
@@ -348,6 +354,36 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
       radial * organ.radius_x * taper;
     point.normal = radial;
     point.exposure = ring == 0u ? 0.18 : 0.72;
+    return point;
+  }
+
+  if (organ.conifer && !organ.proxy) {
+    // One conifer organ is a whorl of five explicit bough sprays. Each spray
+    // widens away from the trunk, droops through the loaded middle, and turns
+    // up at its tip. Gaps between them admit sky and make the silhouette read
+    // as branches instead of a single noisy opaque wedge.
+    const uint bough = vertex_index / 6u;
+    const uint local = vertex_index % 6u;
+    const uint section = local / 2u;
+    const float side = local % 2u == 0u ? -1.0 : 1.0;
+    const float turn =
+      6.2831853 * (float (bough) / 5.0 +
+                   0.08 * (forest_hash (organ.seed, bough + 211u) - 0.5));
+    const float3 radial =
+      normalize (organ.across * cos (turn) + organ.forward * sin (turn));
+    const float3 sideways = normalize (cross (organ.up, radial));
+    const float distance = float3 (0.12, 0.68, 1.0)[section];
+    const float breadth = float3 (0.08, 0.27, 0.035)[section];
+    const float droop = float3 (0.16, -0.34, 0.06)[section];
+    const float asymmetry =
+      0.88 + 0.22 * forest_hash (organ.seed, bough + 229u);
+    point.position = organ.centre +
+                     radial * organ.radius_x * distance * asymmetry +
+                     sideways * organ.radius_z * breadth * side +
+                     organ.up * organ.half_height * droop;
+    point.normal =
+      normalize (organ.up + radial * 0.16 + sideways * side * 0.08);
+    point.exposure = saturate (0.42 + 0.24 * distance + 0.10 * droop);
     return point;
   }
 
@@ -395,6 +431,13 @@ static inline void forest_indices (thread Mesh& out,
     const uint next = (side + 1u) % 8u;
     triangle = primitive % 2u == 0u ? uint3 (side, next, 8u + next)
                                     : uint3 (side, 8u + next, 8u + side);
+  } else if (organ.conifer && !organ.proxy) {
+    const uint bough = primitive / 4u;
+    const uint local = primitive % 4u;
+    const uint section = local / 2u;
+    const uint base = bough * 6u + section * 2u;
+    triangle = local % 2u == 0u ? uint3 (base, base + 2u, base + 3u)
+                                : uint3 (base, base + 3u, base + 1u);
   } else if (primitive < 10u) {
     const uint side = primitive;
     triangle = uint3 (0u, 1u + (side + 1u) % 10u, 1u + side);
@@ -428,8 +471,9 @@ static inline void forest_indices (thread Mesh& out,
   const ForestPart part = payload.parts[min (mesh_id, payload.count - 1u)];
   const MoppeForestInstance tree = trees[part.tree];
   const ForestOrgan organ = forest_organ (tree, u, part, false);
-  const uint vertices = organ.wood ? 16u : 32u;
-  const uint primitives = organ.wood ? 16u : 60u;
+  const bool boughs = organ.conifer && !organ.proxy && !organ.wood;
+  const uint vertices = organ.wood ? 16u : boughs ? 30u : 32u;
+  const uint primitives = organ.wood ? 16u : boughs ? 20u : 60u;
   if (thread_id == 0u)
     out.set_primitive_count (primitives);
 
@@ -469,7 +513,7 @@ static inline void forest_indices (thread Mesh& out,
   device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]]) {
   const ForestPart part = payload.parts[min (mesh_id, payload.count - 1u)];
   const MoppeForestInstance tree = trees[part.tree];
-  const ForestOrgan organ = forest_organ (tree, u, part, true);
+  const ForestOrgan organ = forest_organ (tree, u, part, u.world.w <= 0.5);
   if (thread_id == 0u)
     out.set_primitive_count (20u);
   if (thread_id < 12u) {

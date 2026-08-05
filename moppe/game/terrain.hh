@@ -28,6 +28,13 @@ namespace moppe {
       // sun, world space.
       void render_shadow (render::Renderer& r, const Vec3& sun_dir);
 
+      // Updates the production camera-local shadow level. The focus and
+      // radius remain dimensional until the renderer boundary.
+      void render_local_shadow (render::Renderer& r,
+                                position_t camera,
+                                const Vec3& view_dir,
+                                const Vec3& sun_dir);
+
       // Emits culled chunk draws: distance cull against max_dist plus
       // a conservative behind-camera test.  Five nested LODs run from
       // a bilinearly subdivided near field to a stride-8 haze ring.

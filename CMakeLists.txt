@@ -511,6 +511,7 @@ endif()
 if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
   add_executable(moppe-tests EXCLUDE_FROM_ALL
     ${MOPPE_ENGINE_SOURCES}
+    moppe/game/terrain.cc
     tests/test_main.cc
     tests/units_test.cc
     tests/pacioli_test.cc
@@ -533,6 +534,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
     tests/game/frame_view_test.cc
+    tests/game/terrain_test.cc
     tests/game/graphics_benchmark_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc
