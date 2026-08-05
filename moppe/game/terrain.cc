@@ -67,7 +67,7 @@ namespace moppe {
         terrain::measure_height_range (surface).maximum - params.sea_level,
         1.0f);
       params.tex_scale = 0.5f / m_scale[0];
-      params.shadow_strength = graphics.terrain_shadows ? 0.85f : 0.0f;
+      params.shadow_strength = graphics.terrain_shadows ? 0.92f : 0.0f;
       params.fog_scale = attenuation_value (world.fog_scale);
       params.topology_overlay = graphics.terrain_topology;
       params.fragment_normals = graphics.terrain_fragment_normals;
