@@ -11,11 +11,10 @@ namespace moppe::terrain {
   meters_t river_width (square_meters_t contributing_area) noexcept;
   meters_t river_depth (square_meters_t contributing_area) noexcept;
 
-  // A visible channel begins when the width law reaches two terrain cells.
-  // Expressing that threshold through the source grid keeps the same physical
-  // river network across generation profiles.
-  square_meters_t
-  visible_river_minimum_area (const TerrainDomain& grid) noexcept;
+  // A visible river begins at a physical five-metre bankfull width. Terrain
+  // resolution may change how finely that water is painted, but must not
+  // silently change which tributaries and confluences exist in the world.
+  square_meters_t visible_river_minimum_area () noexcept;
 }
 
 #endif

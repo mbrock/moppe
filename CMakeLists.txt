@@ -529,6 +529,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/readings_test.cc
     tests/terrain/drainage_test.cc
     tests/terrain/fractional_drainage_test.cc
+    tests/terrain/river_test.cc
     tests/terrain/flood_test.cc
     tests/terrain/merge_tree_test.cc
     tests/terrain/waterline_test.cc

@@ -115,6 +115,15 @@ confluence selection. TER-030 is therefore ready to align physical catchment,
 river extraction, valley width, and rendered water scale before any values
 become Play defaults.
 
+TER-030 found that the missing confluence was not an erosion failure. Visible
+river extraction began when rendered width reached two cells, which silently
+raised the physical catchment threshold fourfold at 1024. It now begins at a
+resolution-independent five-metre channel. In the selected seed-123 world,
+that means 0.174 km2 of catchment and a 22.7 m depositional floor at the lower
+boundary; the 13--14 km2 trunk renders 24 m wide and 2.5 m deep in an
+approximately 150 m floor. Both 1024 and 2048 now produce all 17 gazetteer
+targets. TER-040 can therefore evaluate the complete recipe across seeds.
+
 ## Deferred until the shape works
 
 Grain classes, porosity, compaction, stratigraphy, and detailed suspended-load
