@@ -67,6 +67,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace moppe {
   namespace game {
@@ -473,6 +474,47 @@ namespace moppe {
           1.2f;
         session ().bike ().reset (m_spawn_position);
         session ().bike ().set_heading (trail_direction_from_home ());
+
+        const char* demo = ::getenv ("MOPPE_DEMO");
+        if (!demo || std::string_view (demo) != "forest")
+          return;
+
+        const LandscapeGazetteer views =
+          plan_landscape_gazetteer (surface (),
+                                    surface_readings (),
+                                    standing_water (),
+                                    lake_census (),
+                                    drainage (),
+                                    rivers (),
+                                    trail_network (),
+                                    position (m_spawn_position),
+                                    sun_direction_for (m_graphics.sun_height));
+        const auto forest = std::find_if (
+          views.shots.begin (), views.shots.end (), [] (const auto& shot) {
+            return shot.name == "forest-floor";
+          });
+        if (forest == views.shots.end ())
+          throw std::runtime_error ("forest demo found no forest-floor site");
+
+        m_spawn_position = position_value (forest->eye);
+        m_spawn_position[1] =
+          terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              surface (),
+              moppe::position (
+                Vec3 (m_spawn_position[0], 0.0f, m_spawn_position[2])))) +
+          1.2f;
+        Vec3 heading = position_value (forest->subject) - m_spawn_position;
+        heading[1] = 0.0f;
+        if (length2 (heading) < 1e-5f)
+          heading = Vec3 (0, 0, 1);
+        heading = normalized (heading);
+        session ().bike ().reset (m_spawn_position);
+        session ().bike ().set_heading (heading);
+        std::cerr << "forest demo: site=" << forest->site.value
+                  << " forest-cover="
+                  << forest->readings.forest_cover.numerical_value_in (one)
+                  << '\n';
       }
 
       void grow_global_forest () {

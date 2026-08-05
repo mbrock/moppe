@@ -95,7 +95,9 @@
     Analyze a completed CSV with
     `tools/graphics-benchmark-analyze INPUT.csv [OUTPUT_DIR]`.
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
-    (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
+    (autopilot for screenshots; use `MOPPE_DEMO=forest` to start the same
+    rider at the world's selected forest-floor site),
+    `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
     `MOPPE_RENDERSCALE=<0.25..1>`, `MOPPE_SCENEPIXELS=<megapixels>` (the
     scene-resolution budget; `0` restores the point-relative rule alone), and
     `MOPPE_MSAA=1|2|4` (sample count, fixed before the pipelines are built)

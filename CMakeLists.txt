@@ -754,8 +754,8 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     # globalTraceObjectID on the MTL4 debug encoder, which lacks it), so
     # plain Run keeps capture injection off. For a GPU trace, run with
     # --upscaling linear -- the exact non-MetalFX fallback.
-    XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Disabled"
-    XCODE_SCHEME_ENABLE_GPU_API_VALIDATION FALSE
+    XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Enabled"
+    XCODE_SCHEME_ENABLE_GPU_API_VALIDATION TRUE
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe"
     MACOSX_BUNDLE_INFO_PLIST
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/mac/Info.plist.in
