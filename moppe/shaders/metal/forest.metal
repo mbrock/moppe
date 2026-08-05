@@ -142,16 +142,20 @@ static inline uint forest_bough_slot (uint rank) {
 
 // Mesh-group coalescing for the middle band: a small distant assembly
 // bundles four boughs of three tufts into each meshlet instead of paying a
-// mostly idle meshlet per bough, the same cure Kuth 2025 applies to leaves.
-// The boundary aligns with ramp saturation, so BOTH representation changes
-// finish while the tree is around a tenth of the frame, and the
+// mostly idle meshlet per bough, the same cure Kuth 2025 applies to
+// leaves. A hero bough still owns its meshlet: packing two would need 234
+// vertices of output, and at 80 bytes of varyings each that breaks
+// Metal's 16 KB mesh-output ceiling (silent corruption, not an error) --
+// hero coalescing therefore waits on half-precision varyings packing.
+// The boundary aligns with ramp saturation, so BOTH representation
+// changes finish while the tree is around a tenth of the frame, and the
 // per-individual threshold keeps a stand from crossing on the same frame.
 static inline uint forest_bough_bundle (uint pixel_code, float threshold) {
   return float (pixel_code) < 90.0 * threshold ? 4u : 1u;
 }
 
 static inline uint forest_bough_tufts (uint bundle) {
-  return bundle == 1u ? 13u : 3u;
+  return bundle == 4u ? 3u : 13u;
 }
 
 static inline uint forest_part_count (
