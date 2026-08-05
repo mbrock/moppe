@@ -12,6 +12,12 @@
     deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
     and `Y` boosts, flares, or skips the cinematic. The D-pad navigates Terrain
     Lab. Xbox, PlayStation, and compatible MFi controllers use this layout.
+  - On foot: `F` steps off the bike to walk (`W`/`A`/`S`/`D` walk and turn,
+    `Space` jumps); `F` near the bike mounts it again.
+  - `P` captures the current frame to `screenshots/run-<timestamp>/shot-NNN.png`
+    (gitignored, one directory per run; `MOPPE_SCREENSHOT_DIR` overrides the
+    base). Start the game, walk around, press `P` at each view worth
+    discussing, then point at the latest run directory.
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
     the motocross stays tethered beneath the wing. Press `E` again to drop it

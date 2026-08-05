@@ -56,6 +56,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -1137,6 +1138,10 @@ namespace moppe {
             gazetteer_image_filename (m_gazetteer_shot, gazetteer_shot->name);
           r.request_screenshot (path.string ());
         }
+        if (m_snapshot_requested) {
+          m_snapshot_requested = false;
+          r.request_screenshot (next_snapshot_path ());
+        }
         if (!r.begin_frame (frame_params_for (frame)))
           return;
 
@@ -1389,6 +1394,11 @@ namespace moppe {
           return;
         }
 
+        if (k == Key::Screenshot && down) {
+          m_snapshot_requested = true;
+          return;
+        }
+
         if (m_cinematic.active ()) {
           if (k == Key::Escape && down)
             platform::request_quit ();
@@ -1408,6 +1418,33 @@ namespace moppe {
       }
 
     private:
+      // The in-game screenshot key drops frames into one per-run timestamped
+      // directory, so a walk through the world becomes a reviewable series.
+      std::string next_snapshot_path () {
+        namespace fs = std::filesystem;
+        if (m_snapshot_directory.empty ()) {
+          const char* base = ::getenv ("MOPPE_SCREENSHOT_DIR");
+          char stamp[32];
+          const std::time_t now = std::time (nullptr);
+          std::strftime (
+            stamp, sizeof stamp, "run-%Y%m%d-%H%M%S", std::localtime (&now));
+          fs::path directory = fs::path (base ? base : "screenshots") / stamp;
+          std::error_code error;
+          fs::create_directories (directory, error);
+          if (error) {
+            directory =
+              fs::temp_directory_path () / "moppe-screenshots" / stamp;
+            fs::create_directories (directory, error);
+          }
+          m_snapshot_directory = directory.string ();
+        }
+        std::ostringstream path;
+        path << m_snapshot_directory << "/shot-" << std::setfill ('0')
+             << std::setw (3) << m_snapshot_count++ << ".png";
+        std::cerr << "moppe: screenshot " << path.str () << '\n';
+        return path.str ();
+      }
+
       const GazetteerShot* current_gazetteer_shot () const noexcept {
         if (!m_gazetteer || m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
           return nullptr;
@@ -1651,6 +1688,9 @@ namespace moppe {
       render::Renderer* m_renderer;
       bool m_automated_regeneration_done = false;
       std::string m_screenshot_path;
+      bool m_snapshot_requested = false;
+      std::string m_snapshot_directory;
+      int m_snapshot_count = 0;
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
       std::optional<GazetteerCaptureConfig> m_gazetteer;
