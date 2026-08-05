@@ -79,6 +79,17 @@ namespace moppe::terrain {
           p.fluvial_transport.runoff_rate < 0 ||
           !isfinite (p.fluvial_transport.concentration_at_unit_slope) ||
           p.fluvial_transport.concentration_at_unit_slope < 0 ||
+          !isfinite (p.valley_deposition.minimum_width) ||
+          p.valley_deposition.minimum_width < 0 ||
+          !isfinite (p.valley_deposition.maximum_width) ||
+          p.valley_deposition.maximum_width <
+            p.valley_deposition.minimum_width ||
+          !isfinite (p.valley_deposition.width_per_sqrt_area) ||
+          p.valley_deposition.width_per_sqrt_area < 0 ||
+          !isfinite (p.valley_deposition.minimum_wall_relief) ||
+          p.valley_deposition.minimum_wall_relief < 0 ||
+          !isfinite (p.valley_deposition.wall_relief_per_width) ||
+          p.valley_deposition.wall_relief_per_width < 0 ||
           !isfinite (p.channel_persistence) || p.channel_persistence < 0 ||
           p.channel_persistence >= 1 * one)
         throw std::invalid_argument (
@@ -419,23 +430,40 @@ namespace moppe::terrain {
         for (std::size_t cell = 0; cell < count; ++cell) {
           const double detached_m =
             stream_sediment_volume_value (routed.detached[cell]) / cell_area_m2;
-          const double deposited_m =
-            stream_sediment_volume_value (routed.deposited[cell]) /
-            cell_area_m2;
           const double entrained_cover_m =
             stream_sediment_volume_value (routed.entrained_cover[cell]) /
             cell_area_m2;
           next_heights[cell] = mp_units::value_cast<float> (
-            uplifted_heights[cell] + (deposited_m - detached_m) * u::m);
+            uplifted_heights[cell] - detached_m * u::m);
 
           const double prior_sediment_m =
             mobile_sediment[cell].numerical_value_in (u::m);
           mobile_sediment[cell] =
-            static_cast<float> (std::max (
-              0.0, prior_sediment_m - entrained_cover_m + deposited_m)) *
+            static_cast<float> (
+              std::max (0.0, prior_sediment_m - entrained_cover_m)) *
             sediment_thickness[u::m];
           eroded_thickness[cell] +=
             static_cast<float> (detached_m) * sediment_thickness[u::m];
+        }
+
+        const LateralDepositionResult lateral = spread_valley_deposition (
+          drainage.domain (),
+          next_heights,
+          spatial::get<fractional_contributing_area> (drainage),
+          spatial::get<channel_tangent> (drainage),
+          routed.deposited,
+          flood.ocean,
+          parameters.valley_deposition);
+        sediment_balance_residual += lateral.balance_residual;
+
+        for (std::size_t cell = 0; cell < count; ++cell) {
+          const double deposited_m =
+            stream_sediment_volume_value (lateral.deposited[cell]) /
+            cell_area_m2;
+          next_heights[cell] = mp_units::value_cast<float> (next_heights[cell] +
+                                                            deposited_m * u::m);
+          mobile_sediment[cell] +=
+            static_cast<float> (deposited_m) * sediment_thickness[u::m];
           deposited_thickness[cell] +=
             static_cast<float> (deposited_m) * sediment_thickness[u::m];
         }

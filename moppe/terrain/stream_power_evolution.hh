@@ -45,6 +45,7 @@ namespace moppe::terrain {
     square_meters_t channel_initiation_area =
       1.0f * mp_units::si::metre * mp_units::si::metre;
     FluvialTransport fluvial_transport;
+    ValleyDeposition valley_deposition;
     square_meters_per_julian_year_t diffusivity =
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;

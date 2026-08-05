@@ -160,6 +160,25 @@ namespace moppe::terrain {
     return sediment_volume_from (capacity.numerical_value_in (cubic_metre));
   }
 
+  meters_t alluvial_valley_width (square_meters_t contributing_area,
+                                  const ValleyDeposition& parameters) noexcept {
+    const float area_m2 =
+      std::max (0.0f,
+                contributing_area.numerical_value_in (mp_units::si::metre *
+                                                      mp_units::si::metre));
+    const float minimum_m = std::max (
+      0.0f, parameters.minimum_width.numerical_value_in (mp_units::si::metre));
+    const float maximum_m = std::max (
+      minimum_m,
+      parameters.maximum_width.numerical_value_in (mp_units::si::metre));
+    const float width_ratio = std::max (
+      0.0f, parameters.width_per_sqrt_area.numerical_value_in (mp_units::one));
+    return std::clamp (minimum_m + width_ratio * std::sqrt (area_m2),
+                       minimum_m,
+                       maximum_m) *
+           mp_units::si::metre;
+  }
+
   SedimentRoutingResult
   route_sediment (const FractionalFlowDomain& flow,
                   std::span<const SedimentVolume> potential_detachment,
@@ -255,6 +274,176 @@ namespace moppe::terrain {
     result.exported_to_ocean = sediment_volume_from (exported_total);
     result.balance_residual =
       (detached_total - deposited_total - exported_total) * cubic_metre;
+    return result;
+  }
+
+  LateralDepositionResult spread_valley_deposition (
+    const FractionalFlowDomain& flow,
+    std::span<const SurfaceElevation> elevations,
+    std::span<const FractionalContributingArea> contributing_areas,
+    std::span<const ChannelTangent> channel_tangents,
+    std::span<const SedimentVolume> centerline_deposition,
+    std::span<const std::uint8_t> ocean,
+    const ValleyDeposition& parameters) {
+    const TerrainDomain& domain = flow.terrain_domain ();
+    const std::size_t count = domain.size ();
+    if (elevations.size () != count || contributing_areas.size () != count ||
+        channel_tangents.size () != count ||
+        centerline_deposition.size () != count || ocean.size () != count)
+      throw std::invalid_argument (
+        "valley deposition inputs do not match terrain domain");
+
+    const double cell_area_m2 = domain.cell_area ().numerical_value_in (
+      mp_units::si::metre * mp_units::si::metre);
+    const float spacing_x_m =
+      domain.spacing_x ().numerical_value_in (mp_units::si::metre);
+    const float spacing_z_m =
+      domain.spacing_z ().numerical_value_in (mp_units::si::metre);
+    const float along_radius_m = 0.75f * std::hypot (spacing_x_m, spacing_z_m);
+    const float minimum_wall_relief_m = std::max (
+      0.0f,
+      parameters.minimum_wall_relief.numerical_value_in (mp_units::si::metre));
+    const float wall_relief_ratio = std::max (
+      0.0f,
+      parameters.wall_relief_per_width.numerical_value_in (mp_units::one));
+
+    LateralDepositionResult result { .deposited = std::vector<SedimentVolume> (
+                                       count, SedimentVolume::zero ()) };
+    std::vector<double> distributed_m3 (count);
+    std::vector<double> working_height_m (count);
+    for (std::size_t cell = 0; cell < count; ++cell) {
+      if (!mp_units::isfinite (elevations[cell].quantity_from_zero ()) ||
+          !mp_units::isfinite (contributing_areas[cell]) ||
+          contributing_areas[cell] < FractionalContributingArea::zero () ||
+          !mp_units::isfinite (channel_tangents[cell].magnitude ()))
+        throw std::invalid_argument (
+          "valley deposition readings must be finite and non-negative");
+      const double volume_m3 =
+        sediment_volume_value (centerline_deposition[cell]);
+      if (!std::isfinite (volume_m3) || volume_m3 < 0.0)
+        throw std::invalid_argument (
+          "valley deposition volumes must be finite and non-negative");
+      working_height_m[cell] = surface_elevation_value (elevations[cell]);
+    }
+
+    struct Candidate {
+      std::size_t cell;
+      double height_m;
+    };
+    double input_total_m3 = 0.0;
+    double output_total_m3 = 0.0;
+    for (std::size_t source = 0; source < count; ++source) {
+      const double source_volume_m3 =
+        sediment_volume_value (centerline_deposition[source]);
+      input_total_m3 += source_volume_m3;
+      if (source_volume_m3 == 0.0)
+        continue;
+      if (ocean[source])
+        throw std::invalid_argument (
+          "valley deposition cannot originate in the ocean");
+
+      Vec3 tangent =
+        channel_tangents[source].numerical_value_in (mp_units::one);
+      float tangent_length = std::hypot (tangent[0], tangent[2]);
+      if (tangent_length <= 1e-6f) {
+        const CellIndex source_cell { static_cast<std::uint32_t> (source) };
+        const FractionalFlowRoute& route = flow.route (source_cell);
+        if (!route.empty ()) {
+          const TerrainIndex from = domain.index (source);
+          const TerrainIndex to = domain.index (route.arcs[0].receiver.value);
+          tangent[0] = minimum_image_delta (
+            (static_cast<float> (to.column) -
+             static_cast<float> (from.column)) *
+              spacing_x_m,
+            domain.period_x ().numerical_value_in (mp_units::si::metre));
+          tangent[2] = minimum_image_delta (
+            (static_cast<float> (to.row) - static_cast<float> (from.row)) *
+              spacing_z_m,
+            domain.period_z ().numerical_value_in (mp_units::si::metre));
+          tangent_length = std::hypot (tangent[0], tangent[2]);
+        }
+      }
+      if (tangent_length <= 1e-6f) {
+        tangent = Vec3 (0.0f, 0.0f, 1.0f);
+      } else {
+        tangent /= tangent_length;
+      }
+
+      const square_meters_t area = square_meters_t (contributing_areas[source]);
+      const float width_m = alluvial_valley_width (area, parameters)
+                              .numerical_value_in (mp_units::si::metre);
+      const float half_width_m = 0.5f * width_m;
+      const float wall_relief_m =
+        minimum_wall_relief_m + wall_relief_ratio * width_m;
+      const float search_radius_m = half_width_m + along_radius_m;
+      const int radius_x =
+        static_cast<int> (std::ceil (search_radius_m / spacing_x_m));
+      const int radius_z =
+        static_cast<int> (std::ceil (search_radius_m / spacing_z_m));
+      const TerrainIndex center = domain.index (source);
+      const double ceiling_m = working_height_m[source] + wall_relief_m;
+
+      std::vector<std::size_t> footprint;
+      for (int dz = -radius_z; dz <= radius_z; ++dz)
+        for (int dx = -radius_x; dx <= radius_x; ++dx) {
+          const float offset_x_m = static_cast<float> (dx) * spacing_x_m;
+          const float offset_z_m = static_cast<float> (dz) * spacing_z_m;
+          const float along_m =
+            std::fabs (offset_x_m * tangent[0] + offset_z_m * tangent[2]);
+          const float across_m =
+            std::fabs (-offset_x_m * tangent[2] + offset_z_m * tangent[0]);
+          if (along_m > along_radius_m || across_m > half_width_m)
+            continue;
+          const TerrainIndex site = domain.shifted (center, dx, dz);
+          const std::size_t cell = domain.offset (site);
+          if (!ocean[cell] && working_height_m[cell] <= ceiling_m)
+            footprint.push_back (cell);
+        }
+      std::ranges::sort (footprint);
+      const auto unique = std::ranges::unique (footprint);
+      footprint.erase (unique.begin (), unique.end ());
+      if (footprint.empty ())
+        footprint.push_back (source);
+
+      std::vector<Candidate> candidates;
+      candidates.reserve (footprint.size ());
+      for (const std::size_t cell : footprint)
+        candidates.push_back ({ cell, working_height_m[cell] });
+      std::ranges::sort (candidates, {}, &Candidate::height_m);
+
+      double remaining_m3 = source_volume_m3;
+      std::size_t active = 1;
+      double floor_level_m = candidates.front ().height_m;
+      while (active < candidates.size ()) {
+        const double next_level_m = candidates[active].height_m;
+        const double needed_m3 = (next_level_m - floor_level_m) * cell_area_m2 *
+                                 static_cast<double> (active);
+        if (remaining_m3 < needed_m3)
+          break;
+        remaining_m3 -= needed_m3;
+        floor_level_m = next_level_m;
+        ++active;
+      }
+      floor_level_m +=
+        remaining_m3 / (cell_area_m2 * static_cast<double> (active));
+
+      double posted_m3 = 0.0;
+      for (std::size_t position = 0; position < active; ++position) {
+        const std::size_t cell = candidates[position].cell;
+        const double share_m3 =
+          position + 1 == active
+            ? source_volume_m3 - posted_m3
+            : (floor_level_m - candidates[position].height_m) * cell_area_m2;
+        distributed_m3[cell] += share_m3;
+        working_height_m[cell] += share_m3 / cell_area_m2;
+        posted_m3 += share_m3;
+      }
+      output_total_m3 += posted_m3;
+    }
+
+    for (std::size_t cell = 0; cell < count; ++cell)
+      result.deposited[cell] = sediment_volume_from (distributed_m3[cell]);
+    result.balance_residual = (input_total_m3 - output_total_m3) * cubic_metre;
     return result;
   }
 

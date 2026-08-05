@@ -203,3 +203,55 @@ full lattice width. Watercourse ground sampling now uses the shared continuous
 wrap operation, with a regression test for that floating-point boundary.
 
 Decision artifacts are under `/tmp/moppe-transport.vFm51d/matrix`.
+
+## TER-021: valley-width deposition
+
+### Decision
+
+Place routed deposition across a local alluvial footprint whose full width is
+`clamp(6 m + 0.04 * sqrt(area), 6 m, 160 m)`. Keep the routing graph and its
+capacity ledger one-dimensional. Lateral placement is a second operation that
+changes destinations, never the volume routed out of suspension.
+
+The footprint follows the remembered channel tangent for one short physical
+cell segment. A local wall threshold of `1 m + 0.08 * width` prevents the
+posting from painting sediment indiscriminately up valley sides. Eligible
+cells are ordered by their current surface elevation and filled toward one
+common level, which makes a slope break grow a floor rather than a centerline
+berm or a fixed raster-width terrace.
+
+### Proof and optimized result
+
+Synthetic tests establish three gates: the width law grows continuously from
+6.04 m at 1 m2 to 10 m at 10,000 m2 and 46 m at 1 km2; all lateral postings
+sum exactly to the centerline source; and a flat-bottomed cross-section rises
+uniformly across its three-cell bottom without depositing on the walls.
+
+The first optimized seed-123 Play acceptance run held the TER-020 calibration,
+500-ky uplift, two-million-year evolution, renderer, and capture settings
+fixed. World cache schema 9 excludes the old one-cell geography. The run made
+all sixteen frozen views in 113 seconds, compared with 111 seconds for the
+matching TER-020 candidate, and its exact finished-world cache loaded on the
+next launch.
+
+| Reading | Centerline | Valley width |
+| --- | ---: | ---: |
+| Land relief | 197.65 m | 194.63 m |
+| Median slope | 25.44 deg | 25.49 deg |
+| 90th-percentile slope | 39.20 deg | 39.58 deg |
+| Land at or below 10 deg | 9.69% | 10.36% |
+| Largest connected land at or below 10 deg | 0.138 km2 | 0.423 km2 |
+| Visible river length | 38.91 km | 36.55 km |
+| Inland water area | 0.494 km2 | 0.598 km2 |
+| Mobile sediment | 24.65 Mm3 | 24.99 Mm3 |
+| Inferred bedrock detached | 2.136 Bm3 | 2.156 Bm3 |
+| Inferred ocean export | 2.111 Bm3 | 2.131 Bm3 |
+
+The near-constant slope percentiles and three-metre relief change show that
+the result is not another global smoothing pass. The threefold growth in the
+largest connected gentle region is local rearrangement into joined receiving
+floors. River, confluence, mouth, lake, coast, and aerial views remain present;
+the freshwater approaches visibly occupy broader ground while mountain groups
+remain intact.
+
+Decision artifacts are under `/tmp/moppe-valley.Z16cEc/gazetteer`.

@@ -27,6 +27,18 @@ namespace moppe::terrain {
       2e-5f * sediment_concentration[mp_units::one];
   };
 
+  struct ValleyDeposition {
+    meters_t minimum_width = 6.0f * mp_units::si::metre;
+    meters_t maximum_width = 160.0f * mp_units::si::metre;
+    proportion_t width_per_sqrt_area = 0.04f * proportion[mp_units::one];
+    meters_t minimum_wall_relief = 1.0f * mp_units::si::metre;
+    proportion_t wall_relief_per_width = 0.08f * proportion[mp_units::one];
+  };
+
+  meters_t
+  alluvial_valley_width (square_meters_t contributing_area,
+                         const ValleyDeposition& parameters = {}) noexcept;
+
   SedimentVolume
   sediment_transport_capacity (julian_years_f64_t duration,
                                square_meters_t contributing_area,
@@ -65,6 +77,25 @@ namespace moppe::terrain {
                   std::span<const SedimentVolume> maximum_deposition,
                   std::span<const std::uint8_t> ocean,
                   std::span<const SedimentVolume> available_cover = {});
+
+  struct LateralDepositionResult {
+    std::vector<SedimentVolume> deposited;
+    cubic_meters_f64_t balance_residual =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+  };
+
+  // Redistributes each routed centerline deposit across the local valley
+  // cross-section. The source volume remains exact; only its destination
+  // cells change. Low cells within the physical footprint are raised toward
+  // one common floor before higher cells receive material.
+  LateralDepositionResult spread_valley_deposition (
+    const FractionalFlowDomain& flow,
+    std::span<const SurfaceElevation> elevations,
+    std::span<const FractionalContributingArea> contributing_areas,
+    std::span<const ChannelTangent> channel_tangents,
+    std::span<const SedimentVolume> centerline_deposition,
+    std::span<const std::uint8_t> ocean,
+    const ValleyDeposition& parameters = {});
 
   struct HillslopeTransportResult {
     std::vector<SurfaceElevation> heights;
