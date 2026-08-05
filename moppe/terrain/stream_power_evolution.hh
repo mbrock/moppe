@@ -3,6 +3,7 @@
 
 #include <moppe/terrain/domain.hh>
 #include <moppe/terrain/fractional_drainage.hh>
+#include <moppe/terrain/sediment_transport.hh>
 
 #include <functional>
 #include <span>
@@ -16,8 +17,18 @@ namespace moppe::terrain {
   struct StreamPowerEvolution {
     julian_years_t duration = 1000000.0f * mp_units::astronomy::Julian_year;
     julian_years_t time_step = 50000.0f * mp_units::astronomy::Julian_year;
+    // Tectonic forcing may end before geomorphic relaxation does. The uplift
+    // field is active from the start of evolution through this duration; a
+    // geological step crossing that boundary integrates only its overlap.
+    julian_years_t uplift_duration =
+      1000000.0f * mp_units::astronomy::Julian_year;
     meters_per_julian_year_t reference_incision_rate =
       2e-5f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+    // Overloaded material continues downstream after this local aggradation
+    // rate is reached. A long geological step may not pile a whole catchment
+    // into one routing cell.
+    meters_per_julian_year_t maximum_deposition_rate =
+      1e-5f * mp_units::si::metre / mp_units::astronomy::Julian_year;
     square_meters_t reference_area =
       1.0f * mp_units::si::metre * mp_units::si::metre;
     float area_exponent = 0.4f;
@@ -49,10 +60,20 @@ namespace moppe::terrain {
     CellCount cells = cell_count (0);
     CellCount fixed_boundaries = cell_count (0);
     IterationCount steps = iteration_count (0);
-    IterationCount diffusion_sweeps = iteration_count (0);
+    IterationCount hillslope_sweeps = iteration_count (0);
     cubic_meters_f64_t tectonic_uplift_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
-    cubic_meters_f64_t incised_volume =
+    cubic_meters_f64_t eroded_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t deposited_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t exported_sediment_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t sediment_balance_residual =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t hillslope_transferred_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t hillslope_bedrock_detached_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t lowered_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
@@ -67,6 +88,9 @@ namespace moppe::terrain {
   struct StreamPowerEvolutionResult {
     // One value per lattice sample.
     std::vector<SurfaceElevation> heights;
+    std::vector<SedimentThickness> sediment_thickness;
+    std::vector<SedimentThickness> eroded_thickness;
+    std::vector<SedimentThickness> deposited_thickness;
     std::vector<ChannelTangent> channel_tangents;
     StreamPowerEvolutionReport report;
   };
@@ -84,7 +108,8 @@ namespace moppe::terrain {
       std::span<const meters_per_julian_year_t> uplift_rate,
       const StreamPowerEvolution& parameters,
       const StreamPowerProgress& progress,
-      std::span<const ChannelTangent> initial_channel_tangents);
+      std::span<const ChannelTangent> initial_channel_tangents,
+      std::span<const SedimentThickness> initial_sediment);
   }
 
   template <TerrainElevations Terrain>
@@ -93,13 +118,15 @@ namespace moppe::terrain {
     std::span<const meters_per_julian_year_t> uplift_rate,
     const StreamPowerEvolution& parameters,
     const StreamPowerProgress& progress = {},
-    std::span<const ChannelTangent> initial_channel_tangents = {}) {
+    std::span<const ChannelTangent> initial_channel_tangents = {},
+    std::span<const SedimentThickness> initial_sediment = {}) {
     return detail::evolve_stream_power (terrain.domain (),
                                         elevations (terrain),
                                         uplift_rate,
                                         parameters,
                                         progress,
-                                        initial_channel_tangents);
+                                        initial_channel_tangents,
+                                        initial_sediment);
   }
 }
 

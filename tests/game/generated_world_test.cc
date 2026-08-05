@@ -1,10 +1,12 @@
 #include <moppe/game/generated_world.hh>
+#include <moppe/game/landscape_summary.hh>
 #include <moppe/game/world_cache.hh>
 
 #include <tests/test.hh>
 
 #include <filesystem>
 #include <memory>
+#include <sstream>
 #include <type_traits>
 #include <vector>
 
@@ -123,6 +125,50 @@ MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
   MOPPE_CHECK (active->recipe ().seed () == Seed { 72 });
 }
 
+MOPPE_TEST (landscape_summary_measures_one_complete_world) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const spatial_extent_t extent =
+    spatial_extent_in_metres (Vec3 (640, 650, 640));
+  game::WorldParams params;
+  params.map_size = extent;
+  params.resolution = 17;
+  params.water_level = 50.0f * u::m;
+  const WorldRecipe recipe =
+    make_world_recipe (extent,
+                       17,
+                       Seed { 42 },
+                       50.0f * u::m,
+                       TerrainGenerationProfile::Fast,
+                       750000.0f * mp_units::astronomy::Julian_year);
+  const std::unique_ptr<game::GeneratedWorld> world =
+    build_test_world (recipe, params);
+  const auto& [flood, census, drainage, rivers] = world->hydrology ();
+  const game::LandscapeSummary summary = game::summarize_landscape (
+    world->surface (), flood, census, drainage, rivers, world->recipe ());
+
+  MOPPE_CHECK (summary.seed == 42u);
+  MOPPE_CHECK (summary.resolution == 17);
+  MOPPE_CHECK_NEAR (static_cast<float> (summary.uplift_years), 750000.0f, 0.0f);
+  MOPPE_CHECK (summary.land_cells > 0);
+  MOPPE_CHECK (summary.land_area_m2 > 0.0);
+  MOPPE_CHECK (summary.land_elevation_max_m >= summary.land_elevation_p90_m);
+  MOPPE_CHECK (summary.land_below_10_deg_fraction >=
+               summary.land_below_5_deg_fraction);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (summary.eroded_sediment_m3), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (summary.deposited_sediment_m3), 0.0f, 0.0f);
+
+  std::ostringstream output;
+  game::write_landscape_summary_csv (output, summary);
+  MOPPE_CHECK (output.str ().starts_with (
+    "seed,resolution,evolution_years,uplift_years,land_cells,"));
+  MOPPE_CHECK (output.str ().find ("\n42,17,200000,750000,") !=
+               std::string::npos);
+}
+
 MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
   using namespace moppe;
   using namespace moppe::terrain;
@@ -152,6 +198,15 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
   const WorldRecipe other_seed = test_world_recipe (extent, 17, Seed { 92 });
   MOPPE_CHECK (!game::try_load_world_cache (
     game::WorldParams {}, other_seed, cache.string ()));
+  const WorldRecipe other_uplift =
+    make_world_recipe (extent,
+                       17,
+                       Seed { 91 },
+                       50.0f * u::m,
+                       TerrainGenerationProfile::Fast,
+                       750000.0f * mp_units::astronomy::Julian_year);
+  MOPPE_CHECK (!game::try_load_world_cache (
+    game::WorldParams {}, other_uplift, cache.string ()));
   std::filesystem::remove_all (cache);
 }
 
@@ -163,10 +218,19 @@ MOPPE_TEST (world_cache_names_are_stable_and_recipe_specific) {
     spatial_extent_in_metres (Vec3 (640, 650, 640));
   const WorldRecipe first = test_world_recipe (extent, 17, Seed { 91 });
   const WorldRecipe second = test_world_recipe (extent, 17, Seed { 92 });
+  const WorldRecipe other_uplift =
+    make_world_recipe (extent,
+                       17,
+                       Seed { 91 },
+                       50.0f * u::m,
+                       TerrainGenerationProfile::Fast,
+                       750000.0f * mp_units::astronomy::Julian_year);
   const game::WorldCacheConfig automatic;
   const std::string automatic_path = game::world_cache_name (first, automatic);
   MOPPE_CHECK (automatic_path.find ("world-default-") != std::string::npos);
   MOPPE_CHECK (automatic_path != game::world_cache_name (second, automatic));
+  MOPPE_CHECK (automatic_path !=
+               game::world_cache_name (other_uplift, automatic));
 
   game::WorldCacheConfig named { .key = "terrain-tuning" };
   const std::string first_path = game::world_cache_name (first, named);

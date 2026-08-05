@@ -277,7 +277,9 @@ bedload, dissolved load, and material leaving the modeled domain are separate
 terms in a complete budget.
 
 Moppe's physical reports use lowered or raised volume in m³ and mean or
-maximum elevation change in m.
+maximum elevation change in m. The fluvial pass separately reports solid
+detachment, deposition, ocean export, and their conservation residual in m³;
+see [sediment transport](sediment-transport.md).
 
 ### Stream power
 
