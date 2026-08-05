@@ -3,6 +3,15 @@
 A note on why the terrain reads as over-eroded, written after riding it and
 disagreeing with it.
 
+## Current decision: prefer the older-looking terrain
+
+On 2026-08-05, current visual evaluation reversed the conclusion below: the
+500 ky Play terrain reads as much too little eroded. Play now evolves for
+2 My. This intentionally accepts the greater relief and steeper country that
+the earlier experiments measured. The note remains below because it records
+the model behavior and the reason this is an aesthetic terrain decision, not
+evidence that the erosion model has reached a mature steady state.
+
 ## Settled by the screenshot gallery
 
 `screenshots/` was captured on 2026-07-19, the day before the change below,
@@ -89,7 +98,7 @@ with a river in it.
   judged worse from the saddle, reverted; see
   [hillslopes and channels](hillslopes-and-channels.md).
 
-## What does
+## What did, for the earlier target
 
 The duration, restored. Fast returns to 200 ky, Play to 500 ky, Research to
 1 My.
