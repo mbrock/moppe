@@ -119,7 +119,8 @@ namespace moppe {
       m_yaw = 0 * u::rad;
       m_yaw_target = 0 * u::rad;
       m_airborne_time = seconds (0.2f);
-      m_fall_top = std::max (m_fall_top, position_value (m_position)[1] * u::m);
+      m_fall_top = std::max (
+        m_fall_top, static_cast<float> (position_value (m_position)[1]) * u::m);
     }
 
     void Vehicle::calculate_orientation () {
@@ -149,7 +150,7 @@ namespace moppe {
 
     void Vehicle::check_ground_collision () {
       Vec3& p = position_value (m_position);
-      p[1] = max (ground_height () + radius, p[1]);
+      p[1] = max (ground_height () + radius, static_cast<float> (p[1]));
     }
 
     bool Vehicle::is_grounded () const {
@@ -436,7 +437,9 @@ namespace moppe {
       }
 
       // Wading through the ocean is slow going
-      if (position_value (m_position)[1] * u::m - radius * u::m < m_water_level)
+      if (static_cast<float> (position_value (m_position)[1]) * u::m -
+            radius * u::m <
+          m_water_level)
         m_velocity *= decay (1.4f / u::s, dt);
 
       m_position += quantity_cast<isq::position_vector> (m_velocity * dt);
@@ -458,16 +461,19 @@ namespace moppe {
           if (m_boost_flight)
             m_impact *= 0.75f;
           m_susp_v -= 0.10f * m_impact.numerical_value_in (u::m / u::s);
-          m_fall_drop = m_fall_top - position_value (m_position)[1] * u::m;
+          m_fall_drop =
+            m_fall_top -
+            static_cast<float> (position_value (m_position)[1]) * u::m;
         }
         if (m_boost_level <= 0)
           m_boost_flight = false;
         m_airborne_time = seconds (0);
-        m_fall_top = position_value (m_position)[1] * u::m;
+        m_fall_top = static_cast<float> (position_value (m_position)[1]) * u::m;
       } else {
         m_airborne_time += dt;
         m_fall_top =
-          std::max (m_fall_top, position_value (m_position)[1] * u::m);
+          std::max (m_fall_top,
+                    static_cast<float> (position_value (m_position)[1]) * u::m);
       }
 
       // Lean into corners: balance the turn against gravity

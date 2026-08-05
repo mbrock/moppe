@@ -22,6 +22,12 @@ namespace {
   // can carry it (unit outside, numerical vector inside).
   static_assert (RepresentationOf<moppe::Vec3, quantity_tensor_order::vector>);
 
+#ifdef __APPLE__
+  static_assert (sizeof (moppe::Vec3) == sizeof (simd_float3));
+  static_assert (alignof (moppe::Vec3) == alignof (simd_float3));
+  static_assert (std::is_trivially_copyable_v<moppe::Vec3>);
+#endif
+
   static_assert (QuantityOf<moppe::position_t, isq::position_vector>);
   static_assert (QuantityOf<moppe::velocity_t, isq::velocity>);
   static_assert (QuantityOf<moppe::acceleration_t, isq::acceleration>);
@@ -53,4 +59,18 @@ namespace {
     MOPPE_CHECK (torque_arm.numerical_value_in (m * m) ==
                  moppe::Vec3 (0, 0, 1));
   }
+
+#ifdef __APPLE__
+  MOPPE_TEST (vector3d_uses_apple_simd_storage_and_remains_mutable) {
+    moppe::Vec3 value (3, 0, 4);
+    value[1] = 12;
+    value[0] += 2;
+
+    MOPPE_CHECK (value == moppe::Vec3 (5, 12, 4));
+    MOPPE_CHECK (moppe::length2 (value) == 185);
+    MOPPE_CHECK (moppe::dot (value, moppe::Vec3 (1, 0, 0)) == 5);
+    MOPPE_CHECK (moppe::cross (moppe::Vec3 (1, 0, 0), moppe::Vec3 (0, 1, 0)) ==
+                 moppe::Vec3 (0, 0, 1));
+  }
+#endif
 }
