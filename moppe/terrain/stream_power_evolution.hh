@@ -44,6 +44,7 @@ namespace moppe::terrain {
     // and no statistic said so -- see docs/hillslopes-and-channels.md.
     square_meters_t channel_initiation_area =
       1.0f * mp_units::si::metre * mp_units::si::metre;
+    FluvialTransport fluvial_transport;
     square_meters_per_julian_year_t diffusivity =
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;
@@ -68,6 +69,10 @@ namespace moppe::terrain {
     cubic_meters_f64_t deposited_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t exported_sediment_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t fluvial_entrained_cover_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t fluvial_bedrock_detached_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t sediment_balance_residual =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;

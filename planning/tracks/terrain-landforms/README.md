@@ -63,6 +63,15 @@ produce perched basins and sheer channel walls before cover feedback and
 valley-floor deposition exist. The typed experiment and evidence remain, but
 TER-020 and TER-021 now precede the final channel-scale selection.
 
+TER-020 now closes that first dependency. Incoming load consumes a typed
+discharge-based capacity, mobile cover is re-entrained before bedrock is cut,
+and a four-candidate optimized matrix selects 0.00002 as the Play
+concentration. Lower capacity preserves the knife-edge terrain under a cover
+blanket; twice the selected capacity collapses most upland relief. The
+selected world shows rivers and local depositional plains while retaining
+mountain groups. TER-021 is now ready to spread that centerline deposition
+across physical valley-width footprints.
+
 ## Deferred until the shape works
 
 Grain classes, porosity, compaction, stratigraphy, and detailed suspended-load

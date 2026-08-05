@@ -207,6 +207,68 @@ MOPPE_TEST (hillslope_transport_substeps_long_geological_intervals) {
     1e-5f);
 }
 
+MOPPE_TEST (fluvial_capacity_is_typed_discharge_times_slope_and_time) {
+  const FluvialTransport transport {
+    .runoff_rate = 2.0f * u::m / mp_units::astronomy::Julian_year,
+    .concentration_at_unit_slope =
+      0.01f * sediment_concentration[mp_units::one],
+  };
+  const auto capacity = [&] (float years) {
+    return sediment_transport_capacity (years *
+                                          mp_units::astronomy::Julian_year,
+                                        10.0f * u::m * u::m,
+                                        0.5f * terrain_slope[mp_units::one],
+                                        0.25f,
+                                        transport);
+  };
+
+  MOPPE_CHECK_NEAR (test_sediment_value (capacity (100.0f)), 2.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (test_sediment_value (capacity (200.0f)), 5.0f, 1e-6f);
+}
+
+MOPPE_TEST (fluvial_transport_entrains_cover_before_cutting_bedrock) {
+  const FractionalFlowDomain flow = flow_domain (
+    { route_to (1), {}, {}, {} },
+    { CellIndex { 0 }, CellIndex { 1 }, CellIndex { 2 }, CellIndex { 3 } });
+  const std::array potential { test_sediment_volume (10.0),
+                               test_sediment_volume (0.0),
+                               test_sediment_volume (0.0),
+                               test_sediment_volume (0.0) };
+  const std::array deposition_limit { test_sediment_volume (20.0),
+                                      test_sediment_volume (20.0),
+                                      test_sediment_volume (20.0),
+                                      test_sediment_volume (20.0) };
+  const std::array cover { test_sediment_volume (8.0),
+                           test_sediment_volume (0.0),
+                           test_sediment_volume (0.0),
+                           test_sediment_volume (0.0) };
+  const std::array<std::uint8_t, 4> ocean { 0, 1, 1, 1 };
+  const auto route_at_capacity = [&] (double capacity_m3) {
+    const std::array capacity { test_sediment_volume (capacity_m3),
+                                test_sediment_volume (0.0),
+                                test_sediment_volume (0.0),
+                                test_sediment_volume (0.0) };
+    return route_sediment (
+      flow, potential, capacity, deposition_limit, ocean, cover);
+  };
+
+  const SedimentRoutingResult protected_bedrock = route_at_capacity (5.0);
+  MOPPE_CHECK_NEAR (
+    test_sediment_value (protected_bedrock.entrained_cover[0]), 5.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    test_sediment_value (protected_bedrock.bedrock_detached[0]), 0.0f, 0.0f);
+
+  const SedimentRoutingResult exposed_bedrock = route_at_capacity (12.0);
+  MOPPE_CHECK_NEAR (
+    test_sediment_value (exposed_bedrock.entrained_cover[0]), 8.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    test_sediment_value (exposed_bedrock.bedrock_detached[0]), 4.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    test_sediment_value (exposed_bedrock.exported_to_ocean), 12.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    test_balance_value (exposed_bedrock.balance_residual), 0.0f, 0.0f);
+}
+
 MOPPE_TEST (sediment_routes_from_source_to_ocean_without_loss) {
   const FractionalFlowDomain flow = flow_domain (
     { route_to (1), route_to (2), {}, {} },

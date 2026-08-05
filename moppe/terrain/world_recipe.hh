@@ -46,21 +46,23 @@ namespace moppe::terrain {
     }
 
   private:
-    friend WorldRecipe
-    make_world_recipe (spatial_extent_t extent,
-                       int resolution,
-                       Seed seed,
-                       meters_t water_datum,
-                       TerrainGenerationProfile generation_profile,
-                       std::optional<julian_years_t> uplift_duration,
-                       std::optional<square_meters_t> channel_initiation_area);
+    friend WorldRecipe make_world_recipe (
+      spatial_extent_t extent,
+      int resolution,
+      Seed seed,
+      meters_t water_datum,
+      TerrainGenerationProfile generation_profile,
+      std::optional<julian_years_t> uplift_duration,
+      std::optional<square_meters_t> channel_initiation_area,
+      std::optional<SedimentConcentration> sediment_concentration);
     WorldRecipe (spatial_extent_t extent,
                  int resolution,
                  Seed seed,
                  meters_t water_datum,
                  TerrainGenerationProfile generation_profile,
                  std::optional<julian_years_t> uplift_duration,
-                 std::optional<square_meters_t> channel_initiation_area);
+                 std::optional<square_meters_t> channel_initiation_area,
+                 std::optional<SedimentConcentration> sediment_concentration);
 
     spatial_extent_t m_extent;
     int m_resolution;
@@ -78,7 +80,8 @@ namespace moppe::terrain {
     meters_t water_datum,
     TerrainGenerationProfile generation_profile,
     std::optional<julian_years_t> uplift_duration = std::nullopt,
-    std::optional<square_meters_t> channel_initiation_area = std::nullopt);
+    std::optional<square_meters_t> channel_initiation_area = std::nullopt,
+    std::optional<SedimentConcentration> sediment_concentration = std::nullopt);
 }
 
 #endif

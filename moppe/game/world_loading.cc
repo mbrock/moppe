@@ -61,6 +61,14 @@ namespace moppe::game {
            << bits (
                 recipe.evolution ().channel_initiation_area.numerical_value_in (
                   u::m * u::m))
+           << "-runoff-"
+           << bits (recipe.evolution ()
+                      .fluvial_transport.runoff_rate.numerical_value_in (
+                        u::m / mp_units::astronomy::Julian_year))
+           << "-concentration-"
+           << bits (recipe.evolution ()
+                      .fluvial_transport.concentration_at_unit_slope
+                      .numerical_value_in (mp_units::one))
            << ".arrows";
       return platform::cache_path (name.str ());
     }
@@ -76,7 +84,11 @@ namespace moppe::game {
         recipe.water_datum ().numerical_value_in (moppe::u::m) == 50.0f &&
         recipe.evolution ().uplift_duration ==
           500000.0f * mp_units::astronomy::Julian_year &&
-        recipe.evolution ().channel_initiation_area == 1.0f * u::m * u::m;
+        recipe.evolution ().channel_initiation_area == 1.0f * u::m * u::m &&
+        recipe.evolution ().fluvial_transport.runoff_rate ==
+          1.0f * u::m / mp_units::astronomy::Julian_year &&
+        recipe.evolution ().fluvial_transport.concentration_at_unit_slope ==
+          2e-5f * terrain::sediment_concentration[mp_units::one];
       if (is_apple_tv_default)
         return platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE);
 #else

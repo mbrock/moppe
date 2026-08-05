@@ -93,10 +93,10 @@ namespace moppe::terrain {
     const float spacing_x = (grid.spacing_x ()).numerical_value_in (u::m);
     const float spacing_z = (grid.spacing_z ()).numerical_value_in (u::m);
     const auto sample_ground = [&] (float world_x, float world_z) {
-      float gx = world_x / spacing_x;
-      float gz = world_z / spacing_z;
-      gx -= std::floor (gx / width) * width;
-      gz -= std::floor (gz / height) * height;
+      const float gx =
+        wrap_coordinate (world_x / spacing_x, static_cast<float> (width));
+      const float gz =
+        wrap_coordinate (world_z / spacing_z, static_cast<float> (height));
       const int x0 = static_cast<int> (std::floor (gx));
       const int z0 = static_cast<int> (std::floor (gz));
       const int x1 = wrap_index (x0 + 1, width);

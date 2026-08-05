@@ -48,6 +48,7 @@ namespace moppe::game {
     // a physical scale, so one experiment means the same thing at every grid
     // resolution.
     std::optional<square_meters_t> channel_initiation_area;
+    std::optional<terrain::SedimentConcentration> sediment_concentration;
     WorldCacheConfig world_cache;
     std::string screenshot_path;
     std::optional<WaterShot> water_shot;

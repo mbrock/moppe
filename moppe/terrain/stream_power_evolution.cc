@@ -75,6 +75,10 @@ namespace moppe::terrain {
           p.reference_area <= 0 || !std::isfinite (p.area_exponent) ||
           p.area_exponent < 0 || !isfinite (p.diffusivity) ||
           p.diffusivity < 0 || !std::isfinite (p.sea_level) ||
+          !isfinite (p.fluvial_transport.runoff_rate) ||
+          p.fluvial_transport.runoff_rate < 0 ||
+          !isfinite (p.fluvial_transport.concentration_at_unit_slope) ||
+          p.fluvial_transport.concentration_at_unit_slope < 0 ||
           !isfinite (p.channel_persistence) || p.channel_persistence < 0 ||
           p.channel_persistence >= 1 * one)
         throw std::invalid_argument (
@@ -218,6 +222,10 @@ namespace moppe::terrain {
     cubic_meters_f64_t eroded_volume = 0.0 * u::m * u::m * u::m;
     cubic_meters_f64_t deposited_volume = 0.0 * stream_cubic_metre;
     cubic_meters_f64_t exported_sediment_volume = 0.0 * stream_cubic_metre;
+    cubic_meters_f64_t fluvial_entrained_cover_volume =
+      0.0 * stream_cubic_metre;
+    cubic_meters_f64_t fluvial_bedrock_detached_volume =
+      0.0 * stream_cubic_metre;
     cubic_meters_f64_t sediment_balance_residual = 0.0 * stream_cubic_metre;
     cubic_meters_f64_t hillslope_transferred_volume = 0.0 * stream_cubic_metre;
     cubic_meters_f64_t hillslope_bedrock_detached_volume =
@@ -234,6 +242,8 @@ namespace moppe::terrain {
                                                     SedimentVolume::zero ());
     std::vector<SedimentVolume> maximum_deposition (count,
                                                     SedimentVolume::zero ());
+    std::vector<SedimentVolume> available_cover (count,
+                                                 SedimentVolume::zero ());
 
     for (IterationCount step = 0 * one; step < steps; step += one_iteration) {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
@@ -338,17 +348,24 @@ namespace moppe::terrain {
           potential_detachment[cell] =
             stream_sediment_volume_from (potential_m3);
 
-          // Unit catchments collectively supply material in proportion to
-          // their number. Extending the stream-power area's A^m response to
-          // A^1 gives trunk channels enough capacity to carry that aggregate
-          // supply while still forcing deposition where the local slope --
-          // and therefore the potential incision -- collapses.
-          const double catchment_cells =
-            (area / cell_area).numerical_value_in (mp_units::one);
-          const double transport_growth = std::pow (
-            catchment_cells, std::max (0.0, 1.0 - parameters.area_exponent));
+          // Capacity is a water-discharge law, not a multiple of whatever
+          // bedrock the implicit incision solve happened to remove. Area
+          // times runoff is discharge; solid concentration and local slope
+          // say how much material that water can carry during this step.
+          const auto receiver_drop =
+            mp_units::isq::height (uplifted - receiver);
+          const auto downhill_height =
+            std::max (receiver_drop, decltype (receiver_drop)::zero ());
+          const slope_t slope =
+            static_cast<float> (
+              (downhill_height / run).numerical_value_in (mp_units::one)) *
+            terrain_slope[mp_units::one];
           transport_capacity[cell] =
-            stream_sediment_volume_from (potential_m3 * transport_growth);
+            sediment_transport_capacity (dt,
+                                         area,
+                                         slope,
+                                         static_cast<float> (channel_share),
+                                         parameters.fluvial_transport);
         };
 
         const auto& areas =
@@ -385,13 +402,19 @@ namespace moppe::terrain {
 
       {
         MOPPE_PROFILE_ZONE ("orogeny.route_sediment");
+        const double cell_area_m2 = cell_area.numerical_value_in (u::m * u::m);
+        for (std::size_t cell = 0; cell < count; ++cell) {
+          const double cover_m3 =
+            mobile_sediment[cell].numerical_value_in (u::m) * cell_area_m2;
+          available_cover[cell] = stream_sediment_volume_from (cover_m3);
+        }
         const SedimentRoutingResult routed =
           route_sediment (drainage.domain (),
                           potential_detachment,
                           transport_capacity,
                           maximum_deposition,
-                          flood.ocean);
-        const double cell_area_m2 = cell_area.numerical_value_in (u::m * u::m);
+                          flood.ocean,
+                          available_cover);
 
         for (std::size_t cell = 0; cell < count; ++cell) {
           const double detached_m =
@@ -399,16 +422,17 @@ namespace moppe::terrain {
           const double deposited_m =
             stream_sediment_volume_value (routed.deposited[cell]) /
             cell_area_m2;
+          const double entrained_cover_m =
+            stream_sediment_volume_value (routed.entrained_cover[cell]) /
+            cell_area_m2;
           next_heights[cell] = mp_units::value_cast<float> (
             uplifted_heights[cell] + (deposited_m - detached_m) * u::m);
 
           const double prior_sediment_m =
             mobile_sediment[cell].numerical_value_in (u::m);
-          const double removed_sediment_m =
-            std::min (prior_sediment_m, detached_m);
           mobile_sediment[cell] =
             static_cast<float> (std::max (
-              0.0, prior_sediment_m - removed_sediment_m + deposited_m)) *
+              0.0, prior_sediment_m - entrained_cover_m + deposited_m)) *
             sediment_thickness[u::m];
           eroded_thickness[cell] +=
             static_cast<float> (detached_m) * sediment_thickness[u::m];
@@ -423,6 +447,12 @@ namespace moppe::terrain {
           stream_cubic_metre;
         exported_sediment_volume +=
           stream_sediment_volume_value (routed.exported_to_ocean) *
+          stream_cubic_metre;
+        fluvial_entrained_cover_volume +=
+          stream_sediment_volume_value (routed.entrained_cover_total) *
+          stream_cubic_metre;
+        fluvial_bedrock_detached_volume +=
+          stream_sediment_volume_value (routed.bedrock_detached_total) *
           stream_cubic_metre;
         sediment_balance_residual += routed.balance_residual;
       }
@@ -490,6 +520,8 @@ namespace moppe::terrain {
     report.eroded_volume = eroded_volume;
     report.deposited_volume = deposited_volume;
     report.exported_sediment_volume = exported_sediment_volume;
+    report.fluvial_entrained_cover_volume = fluvial_entrained_cover_volume;
+    report.fluvial_bedrock_detached_volume = fluvial_bedrock_detached_volume;
     report.sediment_balance_residual = sediment_balance_residual;
     report.hillslope_transferred_volume = hillslope_transferred_volume;
     report.hillslope_bedrock_detached_volume =

@@ -140,3 +140,66 @@ cover-aware transport and valley-width deposition before TER-011 instead.
 
 Decision artifacts are under `/tmp/moppe-channel.I3IBmK/matrix` and
 `/tmp/moppe-channel-fine.SPtKxx/matrix`.
+
+## TER-020: cover-aware discharge capacity
+
+### Decision
+
+Use an effective sediment concentration of **0.00002 at unit slope** with the
+default 1 m/yr runoff. This is the knee of the first cover-aware transport
+matrix, not the final valley-shape calibration. It gives the next item enough
+deposition to spread into valley floors without erasing the selected tectonic
+relief first.
+
+### Model and proof
+
+Incoming sediment occupies the typed transport capacity first. Spare capacity
+entrains mobile cover before the stream-power result may detach bedrock. The
+capacity is duration times contributing area times runoff times effective
+sediment concentration times slope times channel share. It therefore has
+cubic-metre units and scales linearly with the duration represented by a
+geological step.
+
+Synthetic tests cover the exact capacity arithmetic, doubled-time scaling,
+cover-first entrainment, bedrock protection under thick cover, deposition
+under falling capacity, and closure of the solid-volume ledger. Runoff and
+concentration enter the immutable recipe, terrain cache, finished-world cache,
+and landscape summary. Finished cache schema version 8 excludes worlds made
+by the former potential-incision-scaled law.
+
+### Controlled comparison
+
+`tools/terrain-transport-matrix` generated optimized seed-123 Play worlds at
+0.000005, 0.00001, 0.00002, and 0.00004. Uplift remained active for 500 ky of
+the two-million-year evolution; channel initiation remained at 1 m2. Every
+candidate used a fresh terrain cache, produced its frozen gazetteer and
+spectrum, saved a recipe-specific finished world, and loaded that exact cache
+on a second launch.
+
+| Reading | 0.000005 | 0.00001 | **0.00002** | 0.00004 |
+| --- | ---: | ---: | ---: | ---: |
+| Land relief | 307.3 m | 269.6 m | **197.7 m** | 121.2 m |
+| Median slope | 34.2 deg | 32.7 deg | **25.4 deg** | 13.5 deg |
+| 90th-percentile slope | 47.7 deg | 44.9 deg | **39.2 deg** | 29.0 deg |
+| Land at or below 10 deg | 3.49% | 3.68% | **9.69%** | 38.20% |
+| Visible river length | 35.90 km | 40.03 km | **38.91 km** | 41.17 km |
+| Inland water area | 0.468 km2 | 0.481 km2 | **0.494 km2** | 0.653 km2 |
+| Mobile sediment | 52.1 Mm3 | 40.5 Mm3 | **24.7 Mm3** | 13.4 Mm3 |
+| Inferred bedrock detached | 0.91 Bm3 | 1.43 Bm3 | **2.14 Bm3** | 2.80 Bm3 |
+| Inferred ocean export | 0.85 Bm3 | 1.39 Bm3 | **2.11 Bm3** | 2.79 Bm3 |
+
+At the two lower capacities, deposited cover protects the narrow dissected
+surface faster than rivers can rework it. Relief and median slope are as high
+as or higher than the TER-010 world, and the gazetteers retain steep parallel
+ridges. At 0.00004, the landscape jumps to 38.2% low-gradient land and a
+6.95 km2 connected gentle region; local and aerial views are dominated by a
+wet low plateau. The selected 0.00002 result retains visible uplands and
+mountain groups while introducing river corridors, local rolling ground, and
+broad depositional receiving surfaces.
+
+The matrix also exposed and fixed a topology-boundary defect in watercourse
+painting: a bank sample just below a periodic seam could round to exactly one
+full lattice width. Watercourse ground sampling now uses the shared continuous
+wrap operation, with a regression test for that floating-point boundary.
+
+Decision artifacts are under `/tmp/moppe-transport.vFm51d/matrix`.

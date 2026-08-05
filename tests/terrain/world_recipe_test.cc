@@ -123,3 +123,22 @@ MOPPE_TEST (world_recipe_accepts_a_physical_channel_head_experiment) {
   MOPPE_CHECK (recipe.evolution ().channel_initiation_area ==
                1200.0f * mp_units::si::metre * mp_units::si::metre);
 }
+
+MOPPE_TEST (world_recipe_accepts_a_sediment_capacity_experiment) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const WorldRecipe recipe =
+    make_world_recipe (spatial_extent_in_metres (Vec3 (5000, 320, 5000)),
+                       33,
+                       Seed { 77 },
+                       50.0f * mp_units::si::metre,
+                       TerrainGenerationProfile::Play,
+                       std::nullopt,
+                       std::nullopt,
+                       0.00001f * sediment_concentration[mp_units::one]);
+
+  MOPPE_CHECK (
+    recipe.evolution ().fluvial_transport.concentration_at_unit_slope ==
+    0.00001f * sediment_concentration[mp_units::one]);
+}

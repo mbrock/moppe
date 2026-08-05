@@ -186,6 +186,12 @@ namespace moppe::terrain {
   QUANTITY_SPEC (sediment_thickness,
                  mp_units::isq::height,
                  mp_units::non_negative);
+  // Solid volume carried per water volume at unit channel slope. This is a
+  // transport calibration, not a generic proportion or a water-flow share.
+  QUANTITY_SPEC (sediment_concentration,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::is_kind);
 
   // ---- Human use ----
 

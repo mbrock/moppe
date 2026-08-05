@@ -392,6 +392,26 @@ namespace moppe::game {
             area * mp_units::si::metre * mp_units::si::metre;
           return true;
         } },
+      { "--sediment-concentration",
+        "",
+        1,
+        "<FRACTION>",
+        "Set solid transport concentration at unit channel slope.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float concentration = 0.0f;
+          if (!parse_float_option (values[0],
+                                   "--sediment-concentration",
+                                   0.0f,
+                                   1.0f,
+                                   concentration,
+                                   error))
+            return false;
+          options.sediment_concentration =
+            concentration * terrain::sediment_concentration[mp_units::one];
+          return true;
+        } },
       { "--world-cache-key",
         "",
         1,
@@ -644,6 +664,7 @@ namespace moppe::game {
                                        options.world.water_level,
                                        options.generation_profile,
                                        options.uplift_duration,
-                                       options.channel_initiation_area);
+                                       options.channel_initiation_area,
+                                       options.sediment_concentration);
   }
 }

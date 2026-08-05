@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: tools/terrain-transport-matrix OUTPUT_DIR" >&2
+  exit 2
+fi
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+output=$1
+seed=${MOPPE_SEED:-123}
+graphics=${MOPPE_GAZETTEER_GRAPHICS:-high}
+window=${MOPPE_GAZETTEER_WINDOW:-1600x900}
+settle=${MOPPE_GAZETTEER_SETTLE:-18}
+concentrations=${MOPPE_SEDIMENT_CONCENTRATIONS:-"0.000005 0.00001 0.00002 0.00004"}
+
+mkdir -p "$output"
+
+for concentration in $concentrations; do
+  if [[ ! $concentration =~ ^(0|[0-9]+)(\.[0-9]+)?$ ]]; then
+    echo "MOPPE_SEDIMENT_CONCENTRATIONS must contain decimals" >&2
+    exit 2
+  fi
+  label=${concentration//./p}
+  variant="$output/concentration-$label"
+  cache_key="transport-$label"
+  if [[ -f $variant/terrain-summary.csv &&
+        -f $variant/terrain-spectrum.csv &&
+        -f $variant/capture.txt &&
+        -f $variant/cache-check/stderr.log ]] &&
+     grep -q "world cache: local=" "$variant/cache-check/stderr.log"; then
+    echo "reusing completed concentration $concentration"
+    continue
+  fi
+  MOPPE_SEED="$seed" \
+  MOPPE_TERRAIN_PROFILE=play \
+  MOPPE_GAZETTEER_GRAPHICS="$graphics" \
+  MOPPE_GAZETTEER_WINDOW="$window" \
+  MOPPE_GAZETTEER_SETTLE="$settle" \
+  MOPPE_UPLIFT_YEARS=500000 \
+  MOPPE_CHANNEL_INITIATION_AREA=1 \
+  MOPPE_SEDIMENT_CONCENTRATION="$concentration" \
+  MOPPE_WORLD_CACHE_KEY="$cache_key" \
+  MOPPE_REFRESH_WORLD_CACHE=1 \
+  MOPPE_MAPCACHE="$variant/terrain-cache.arrows" \
+    "$root/tools/capture-terrain-gazetteer" "$variant"
+
+  "$root/tools/terrain-spectrum" "$variant"
+
+  mkdir -p "$variant/cache-check"
+  MOPPE_METAL_HUD=0 \
+  MOPPE_CINEMATIC_CAPTURE_DIR="$variant/cache-check" \
+  MOPPE_CINEMATIC_CAPTURE_FRAMES=1 \
+  "$root/build/moppe.app/Contents/MacOS/moppe" \
+    --windowed \
+    --inactive \
+    --seed "$seed" \
+    --terrain-quality play \
+    --uplift-years 500000 \
+    --channel-initiation-area 1 \
+    --sediment-concentration "$concentration" \
+    --graphics-quality "$graphics" \
+    --world-cache-key "$cache_key" \
+    >"$variant/cache-check/stdout.log" \
+    2>"$variant/cache-check/stderr.log"
+  if ! grep -q "world cache: local=" "$variant/cache-check/stderr.log"; then
+    echo "concentration $concentration did not load its world cache" >&2
+    exit 1
+  fi
+done
+
+python3 - "$output" <<'PY'
+import csv
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+rows = []
+fieldnames = None
+for path in root.glob("concentration-*/terrain-summary.csv"):
+    with path.open(newline="") as source:
+        summary_reader = csv.DictReader(source)
+        row = next(summary_reader)
+    with (path.parent / "terrain-spectrum.csv").open(newline="") as source:
+        spectrum_reader = csv.DictReader(source)
+        row.update(next(spectrum_reader))
+    capture = {}
+    with (path.parent / "capture.txt").open() as source:
+        for line in source:
+            key, value = line.rstrip().split("=", 1)
+            capture[key] = value
+    row["process_elapsed_seconds"] = capture["process_elapsed_seconds"]
+    fieldnames = [
+        *summary_reader.fieldnames,
+        *spectrum_reader.fieldnames,
+        "process_elapsed_seconds",
+    ]
+    rows.append(row)
+
+rows.sort(key=lambda row: float(row["sediment_concentration_at_unit_slope"]))
+with (root / "matrix.csv").open("w", newline="") as destination:
+    writer = csv.DictWriter(destination, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+PY
+
+echo "wrote terrain transport matrix to $output/matrix.csv"

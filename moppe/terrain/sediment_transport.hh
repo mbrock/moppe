@@ -14,14 +14,37 @@ namespace moppe::terrain {
     double>;
   using SedimentThickness =
     mp_units::quantity<sediment_thickness[mp_units::si::metre], float>;
+  using SedimentConcentration =
+    mp_units::quantity<sediment_concentration[mp_units::one], float>;
+
+  struct FluvialTransport {
+    // Contributing area times runoff is the water discharge represented by
+    // one terrain cell. Concentration scales that discharge into solid volume
+    // at unit slope; actual capacity also responds linearly to local slope.
+    meters_per_julian_year_t runoff_rate =
+      1.0f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+    SedimentConcentration concentration_at_unit_slope =
+      2e-5f * sediment_concentration[mp_units::one];
+  };
+
+  SedimentVolume
+  sediment_transport_capacity (julian_years_f64_t duration,
+                               square_meters_t contributing_area,
+                               slope_t slope,
+                               float channel_share,
+                               const FluvialTransport& parameters);
 
   struct SedimentRoutingResult {
     // Per-cell solid volumes for this geological step.
     std::vector<SedimentVolume> detached;
+    std::vector<SedimentVolume> entrained_cover;
+    std::vector<SedimentVolume> bedrock_detached;
     std::vector<SedimentVolume> deposited;
     std::vector<SedimentVolume> outgoing;
 
     SedimentVolume detached_total = SedimentVolume::zero ();
+    SedimentVolume entrained_cover_total = SedimentVolume::zero ();
+    SedimentVolume bedrock_detached_total = SedimentVolume::zero ();
     SedimentVolume deposited_total = SedimentVolume::zero ();
     SedimentVolume exported_to_ocean = SedimentVolume::zero ();
     cubic_meters_f64_t balance_residual =
@@ -33,13 +56,15 @@ namespace moppe::terrain {
   // geological step. A cell deposits incoming material above its capacity up
   // to its aggradation limit, then carries the remainder onward. It uses any
   // spare capacity to detach its own surface. Ocean cells export incoming
-  // flux; non-ocean sinks retain it locally.
+  // flux; non-ocean sinks retain it locally. Stored mobile cover consumes
+  // spare capacity before the router may detach underlying bedrock.
   SedimentRoutingResult
   route_sediment (const FractionalFlowDomain& flow,
                   std::span<const SedimentVolume> potential_detachment,
                   std::span<const SedimentVolume> transport_capacity,
                   std::span<const SedimentVolume> maximum_deposition,
-                  std::span<const std::uint8_t> ocean);
+                  std::span<const std::uint8_t> ocean,
+                  std::span<const SedimentVolume> available_cover = {});
 
   struct HillslopeTransportResult {
     std::vector<SurfaceElevation> heights;

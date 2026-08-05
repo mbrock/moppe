@@ -81,6 +81,7 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--terrain-quality",
          "--uplift-years",
          "--channel-initiation-area",
+         "--sediment-concentration",
          "--world-cache-key",
          "--refresh-world-cache",
          "--no-world-cache",
@@ -174,6 +175,9 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--channel-initiation-area", "tiny" }));
   MOPPE_CHECK (rejects ({ "--channel-initiation-area", "0" }));
   MOPPE_CHECK (rejects ({ "--channel-initiation-area", "2000000000" }));
+  MOPPE_CHECK (rejects ({ "--sediment-concentration" }));
+  MOPPE_CHECK (rejects ({ "--sediment-concentration", "muddy" }));
+  MOPPE_CHECK (rejects ({ "--sediment-concentration", "1.1" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "../shared" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "spaces are unsafe" }));
@@ -262,7 +266,9 @@ MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
                                           "--uplift-years",
                                           "750000",
                                           "--channel-initiation-area",
-                                          "1200" });
+                                          "1200",
+                                          "--sediment-concentration",
+                                          "0.00001" });
   options.seed = 4321;
   const terrain::WorldRecipe recipe = game::make_launch_recipe (options);
   MOPPE_CHECK (recipe.seed ().value == 4321u);
@@ -273,6 +279,9 @@ MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
                750000.0f * mp_units::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().channel_initiation_area ==
                1200.0f * mp_units::si::metre * mp_units::si::metre);
+  MOPPE_CHECK (
+    recipe.evolution ().fluvial_transport.concentration_at_unit_slope ==
+    0.00001f * terrain::sediment_concentration[mp_units::one]);
 }
 
 MOPPE_TEST (launch_benchmark_environment_reaches_the_backend) {

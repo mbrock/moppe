@@ -153,6 +153,11 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
   MOPPE_CHECK_NEAR (static_cast<float> (summary.uplift_years), 750000.0f, 0.0f);
   MOPPE_CHECK_NEAR (
     static_cast<float> (summary.channel_initiation_area_m2), 1.0f, 0.0f);
+  MOPPE_CHECK_NEAR (static_cast<float> (summary.runoff_m_per_year), 1.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (summary.sediment_concentration_at_unit_slope),
+    2e-5f,
+    0.0f);
   MOPPE_CHECK (summary.land_cells > 0);
   MOPPE_CHECK (summary.land_area_m2 > 0.0);
   MOPPE_CHECK (summary.land_elevation_max_m >= summary.land_elevation_p90_m);
@@ -162,12 +167,16 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
     static_cast<float> (summary.eroded_sediment_m3), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (
     static_cast<float> (summary.deposited_sediment_m3), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (summary.mobile_sediment_m3), 0.0f, 0.0f);
 
   std::ostringstream output;
   game::write_landscape_summary_csv (output, summary);
   MOPPE_CHECK (output.str ().starts_with (
     "seed,resolution,spacing_x_m,spacing_z_m,evolution_years,"));
-  MOPPE_CHECK (output.str ().find (",200000,750000,1,") != std::string::npos);
+  MOPPE_CHECK (output.str ().find (",200000,750000,1,1,") != std::string::npos);
+  MOPPE_CHECK (output.str ().find ("sediment_concentration_at_unit_slope") !=
+               std::string::npos);
 
   std::ostringstream elevation_output (std::ios::out | std::ios::binary);
   game::write_landscape_elevation_f32 (elevation_output, world->surface ());

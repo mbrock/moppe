@@ -22,6 +22,8 @@ namespace moppe::game {
     double evolution_years = 0.0;
     double uplift_years = 0.0;
     double channel_initiation_area_m2 = 0.0;
+    double runoff_m_per_year = 0.0;
+    double sediment_concentration_at_unit_slope = 0.0;
     std::size_t land_cells = 0;
     double land_area_m2 = 0.0;
     double land_elevation_p10_m = 0.0;
@@ -43,8 +45,10 @@ namespace moppe::game {
     std::size_t inland_water_bodies = 0;
     std::size_t lakes = 0;
     double inland_water_area_m2 = 0.0;
+    double mobile_sediment_m3 = 0.0;
     double eroded_sediment_m3 = 0.0;
     double deposited_sediment_m3 = 0.0;
+    double inferred_bedrock_detached_m3 = 0.0;
     double inferred_exported_sediment_m3 = 0.0;
   };
 
