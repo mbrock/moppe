@@ -139,6 +139,12 @@ static inline uint forest_part_count (float pixels, uint seed) {
       const float4 top = u.view_proj * float4 (root + up * height, 1.0);
       if (bottom.w > 0.01 && top.w > 0.01)
         pixels = abs (top.y / top.w - bottom.y / bottom.w) * 0.5 * u.temporal.y;
+      else
+        // An endpoint behind the camera plane means the rider is beside or
+        // beneath this organism. That is the closest a tree ever gets: it
+        // must be a full assembly, never a zero-pixel cull that vanishes the
+        // trunk you are about to ride past.
+        pixels = 1.0e6;
       parts = forest_part_count (pixels, tree.identity.x);
       // Only conifers own a bough-assembly expansion; a hero broadleaf
       // keeps the ordinary organ set.

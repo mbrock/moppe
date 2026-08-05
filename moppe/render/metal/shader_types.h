@@ -266,9 +266,10 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 // trunk/crown assemblies; the mesh stage expands only those assemblies.
 #define MOPPE_FOREST_OBJECT_THREADS 8
 #define MOPPE_FOREST_PARTS_PER_TREE 8
-/* The nearest trees expand into bough assemblies: trunk, two mass shells,
-   and eight whorls of four feathered boughs, one meshlet each. */
-#define MOPPE_FOREST_HERO_PARTS 35
+/* The nearest trees expand into pure bough assemblies: a trunk and nine
+   whorls of seven feathered boughs, one meshlet each. No shell or cone
+   primitive exists at this tier; the crown is the union of its branches. */
+#define MOPPE_FOREST_HERO_PARTS 64
 #define MOPPE_FOREST_PAYLOAD_PARTS                                             \
   (MOPPE_FOREST_OBJECT_THREADS * MOPPE_FOREST_PARTS_PER_TREE)
 #define MOPPE_FOREST_MESH_THREADS 192
