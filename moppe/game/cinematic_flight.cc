@@ -253,7 +253,7 @@ namespace moppe::game {
       // beat carrying decisive forward energy.
       constexpr float flight_speed_scale = 1.55f;
       position[1] = std::max (
-        position[1],
+        static_cast<float> (position[1]),
         terrain::surface_elevation_value (
           spatial::sample<terrain::surface_elevation> (
             surface, moppe::position (Vec3 (position[0], 0.0f, position[2])))) +
@@ -926,7 +926,7 @@ namespace moppe::game {
           surface,
           moppe::position (Vec3 (m_position[0], 0.0f, m_position[2])))) +
       18.0f;
-    m_position[1] = std::max (m_position[1], floor);
+    m_position[1] = std::max (static_cast<float> (m_position[1]), floor);
     m_velocity = (m_position - previous_position) / dt;
 
     // Aim through a long corridor of future flight instead of continually

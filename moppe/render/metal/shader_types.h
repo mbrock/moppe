@@ -15,7 +15,7 @@ typedef metal::uint4 MoppeUint4;
 #else
 #include <cstdint>
 #define MOPPE_SHADER_ALIGN alignas (16)
-struct MoppeMat4 {
+struct MOPPE_SHADER_ALIGN MoppeMat4 {
   float m[16];
 };
 struct MoppeFloat4 {
@@ -296,6 +296,10 @@ struct MOPPE_SHADER_ALIGN MoppeForestUniforms {
 };
 
 #ifndef __METAL_VERSION__
+static_assert (sizeof (MoppeMat4) == 64,
+               "shader matrices must remain four float4 columns");
+static_assert (alignof (MoppeMat4) == 16,
+               "shader matrices require GPU alignment");
 static_assert (sizeof (MoppeForestInstance) == 64,
                "forest instance must remain one cache line");
 static_assert (alignof (MoppeForestInstance) == 16,

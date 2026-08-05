@@ -40,8 +40,10 @@ namespace {
       fp.proj = Mat4::perspective_reversed (
         60 * u::deg, (float)r.width_pts () / r.height_pts (), 0.5f, 9000.0f);
       fp.camera_pos = eye;
-      fp.cam_right = Vec3 (fp.view.m[0], fp.view.m[4], fp.view.m[8]);
-      fp.cam_up = Vec3 (fp.view.m[1], fp.view.m[5], fp.view.m[9]);
+      fp.cam_right =
+        Vec3 (fp.view.element (0), fp.view.element (4), fp.view.element (8));
+      fp.cam_up =
+        Vec3 (fp.view.element (1), fp.view.element (5), fp.view.element (9));
       fp.cam_forward = normalized (at - eye);
       fp.clear_color = DisplayColor (0.55f, 0.65f, 0.85f);
       fp.fog_scale = 0.004f;

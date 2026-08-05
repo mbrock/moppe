@@ -2000,10 +2000,10 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       m_state->create_terrain_shadow_texture (shadow_size);
 
     Mat4 bias;
-    bias.m[0] = 0.5f;
-    bias.m[5] = -0.5f;
-    bias.m[12] = 0.5f;
-    bias.m[13] = 0.5f;
+    bias.set_element (0, 0.5f);
+    bias.set_element (5, -0.5f);
+    bias.set_element (12, 0.5f);
+    bias.set_element (13, 0.5f);
     m_state->terrain_light_matrix = bias * light_view_proj;
 
     const TerrainParams& terrain = m_state->terrain_params;
@@ -2242,9 +2242,9 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         !m_state->sky_vertices)
       return;
     Mat4 view_rotation = m_state->frame_params.view;
-    view_rotation.m[12] = 0.0f;
-    view_rotation.m[13] = 0.0f;
-    view_rotation.m[14] = 0.0f;
+    view_rotation.set_element (12, 0.0f);
+    view_rotation.set_element (13, 0.0f);
+    view_rotation.set_element (14, 0.0f);
     const SkyUniforms uniforms {
       .view_proj = m_state->frame_params.proj * view_rotation,
       .sun_direction = { params.sun_dir[0],
