@@ -378,7 +378,7 @@ struct UndergrowthShoot {
     s.lift = 1.88;
     s.arch = 1.20;
     s.lobed = 0.38;
-    s.tint = float3 (0.115, 0.300, 0.075);
+    s.tint = float3 (0.108, 0.262, 0.082);
   } else {
     // One strip is one blade. Density now supplies the field's visual mass,
     // letting the individual silhouette remain convincingly narrow.
@@ -388,7 +388,7 @@ struct UndergrowthShoot {
     s.lift = 1.22;
     s.arch = 0.20;
     s.lobed = 0.0;
-    s.tint = float3 (0.205, 0.360, 0.105);
+    s.tint = float3 (0.185, 0.315, 0.112);
     // Bank grasses trade their meadow spread for a taller upright profile.
     // This is a continuous habitat response, not a separately scattered row
     // of reeds that could drift away from the waterline.
@@ -404,7 +404,7 @@ struct UndergrowthShoot {
   // fields. High-contrast salt and pepper reads as glitter once the blades
   // become subpixel, even though every blade has stable identity.
   const float olive = undergrowth_hash (identity, 17u) - 0.5;
-  s.tint *= float3 (1.0 + 0.12 * olive, 1.0, 1.0 - 0.10 * olive);
+  s.tint *= float3 (1.0 + 0.18 * olive, 1.0, 1.0 - 0.16 * olive);
   s.tint *= 0.96 + 0.11 * undergrowth_hash (identity, 19u);
 
   const uint vertex_base = thread_id * MOPPE_UNDERGROWTH_VERTICES_PER_SHOOT;
@@ -528,21 +528,27 @@ fragment MoppeTemporalOutput undergrowth_fragment (
                                        in.world_pos.y,
                                        u.relief.x,
                                        u.relief.y);
+  const float cast_light = moppe_sun_visibility (in.world_pos,
+                                                 n,
+                                                 l,
+                                                 fog,
+                                                 u.light_matrix,
+                                                 u.shadow.x,
+                                                 u.shadow.y,
+                                                 shadow_map);
   const float sun_visibility =
-    moppe_sun_visibility (in.world_pos,
-                          n,
-                          l,
-                          fog,
-                          u.light_matrix,
-                          u.shadow.x,
-                          u.shadow.y,
-                          shadow_map) *
+    cast_light *
     moppe_cloud_transmission (in.world_pos, l, u.params.x, u.params.y);
 
   const float3 base = moppe_srgb (in.color);
   const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
-  float3 color = base * (moppe_hemisphere_light (u.ambient.rgb, n) +
-                         u.sun_diffuse.rgb * lambert * sun_visibility);
+  // Cast shadow cools the fill to match the terrain beneath: shaded blades
+  // are skylit only.
+  const float3 shade_fill =
+    mix (float3 (0.80, 0.92, 1.14), float3 (1.0), cast_light);
+  float3 color =
+    base * (shade_fill * moppe_hemisphere_light (u.ambient.rgb, n) +
+            u.sun_diffuse.rgb * lambert * sun_visibility);
 
   // A blade is one leaf thick and glows when the sun is behind it, which is
   // most of what tells this layer apart from painted ground.

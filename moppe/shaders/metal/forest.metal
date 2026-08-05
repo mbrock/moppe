@@ -304,16 +304,20 @@ static inline float3 forest_palette (thread const MoppeForestInstance& tree,
   const float cover = tree.ecology.x;
   const float variation = forest_hash (tree.identity.x, 97u) - 0.5;
   if (organ.wood) {
-    float3 bark =
-      organ.conifer ? float3 (0.27, 0.18, 0.105) : float3 (0.34, 0.245, 0.145);
-    bark *= 0.88 + 0.18 * wet + 0.12 * variation;
-    return bark * (0.72 + 0.28 * exposure);
+    float3 bark = organ.conifer ? float3 (0.170, 0.140, 0.115)
+                                : float3 (0.235, 0.195, 0.150);
+    bark *= 0.88 + 0.18 * wet + 0.16 * variation;
+    return bark * (0.60 + 0.40 * exposure);
   }
+  // Individuals sit on a warm-olive to cool blue-green axis in addition to
+  // the brightness spread; a stand of one green reads as painted, not grown.
+  const float hue = forest_hash (tree.identity.x, 113u) - 0.5;
   float3 leaf =
-    organ.conifer ? float3 (0.270, 0.530, 0.205) : float3 (0.355, 0.610, 0.195);
+    organ.conifer ? float3 (0.185, 0.335, 0.150) : float3 (0.275, 0.455, 0.165);
   leaf *= float3 (1.08 - 0.20 * wet, 0.88 + 0.26 * wet, 0.90 + 0.16 * cover);
-  leaf *= 0.94 + 0.15 * variation;
-  return leaf * (0.72 + 0.34 * exposure);
+  leaf *= float3 (1.0 + 0.30 * hue, 1.0, 1.0 - 0.34 * hue);
+  leaf *= 0.90 + 0.24 * variation;
+  return leaf * (0.55 + 0.50 * exposure);
 }
 
 static inline float forest_ring_level (uint ring, bool conifer, bool proxy) {
@@ -342,16 +346,21 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
                                          uint vertex_index) {
   ForestPoint point;
   if (organ.wood) {
-    const uint side = vertex_index % 8u;
-    const uint ring = vertex_index / 8u;
-    const float turn = 6.2831853 * float (side) / 8.0;
+    // Twelve slightly irregular sides: a trunk is the one organ the camera
+    // meets at arm's length, where an even octagonal cone reads as a bollard.
+    const uint side = vertex_index % 12u;
+    const uint ring = vertex_index / 12u;
+    const float turn = 6.2831853 * float (side) / 12.0 +
+                       0.06 * (forest_hash (organ.seed, side + 171u) - 0.5);
     const float taper = ring == 0u ? 1.70 : 0.30;
+    const float girth =
+      0.91 + 0.18 * forest_hash (organ.seed, side * 7u + ring + 177u);
     const float3 radial =
       organ.across * cos (turn) + organ.forward * sin (turn);
     point.position =
       organ.centre +
       organ.up * (ring == 0u ? -organ.half_height : organ.half_height) +
-      radial * organ.radius_x * taper;
+      radial * organ.radius_x * taper * girth;
     point.normal = radial;
     point.exposure = ring == 0u ? 0.18 : 0.72;
     return point;
@@ -428,9 +437,9 @@ static inline void forest_indices (thread Mesh& out,
   uint3 triangle;
   if (organ.wood) {
     const uint side = primitive / 2u;
-    const uint next = (side + 1u) % 8u;
-    triangle = primitive % 2u == 0u ? uint3 (side, next, 8u + next)
-                                    : uint3 (side, 8u + next, 8u + side);
+    const uint next = (side + 1u) % 12u;
+    triangle = primitive % 2u == 0u ? uint3 (side, next, 12u + next)
+                                    : uint3 (side, 12u + next, 12u + side);
   } else if (organ.conifer && !organ.proxy) {
     const uint bough = primitive / 4u;
     const uint local = primitive % 4u;
@@ -472,8 +481,8 @@ static inline void forest_indices (thread Mesh& out,
   const MoppeForestInstance tree = trees[part.tree];
   const ForestOrgan organ = forest_organ (tree, u, part, false);
   const bool boughs = organ.conifer && !organ.proxy && !organ.wood;
-  const uint vertices = organ.wood ? 16u : boughs ? 30u : 32u;
-  const uint primitives = organ.wood ? 16u : boughs ? 20u : 60u;
+  const uint vertices = organ.wood ? 24u : boughs ? 30u : 32u;
+  const uint primitives = organ.wood ? 24u : boughs ? 20u : 60u;
   if (thread_id == 0u)
     out.set_primitive_count (primitives);
 
@@ -513,30 +522,61 @@ static inline void forest_indices (thread Mesh& out,
   device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]]) {
   const ForestPart part = payload.parts[min (mesh_id, payload.count - 1u)];
   const MoppeForestInstance tree = trees[part.tree];
-  const ForestOrgan organ = forest_organ (tree, u, part, u.world.w <= 0.5);
+  const bool world_map = u.world.w <= 0.5;
+  const ForestOrgan organ = forest_organ (tree, u, part, world_map);
+  // The camera-local map also carries a trunk prism. A ground shadow reads
+  // as a shadow only when it can be attributed: the sun-elongated trunk line
+  // attaches the crown's shade to its tree. Whole-world images stay
+  // crown-only, where a trunk is sub-texel anyway.
+  const bool trunk = !world_map;
+  ForestOrgan stem = organ;
+  if (trunk)
+    stem = forest_organ (tree, u, { part.tree, 0u, 2u, part.copy }, world_map);
+  const uint vertices = trunk ? 28u : 12u;
+  const uint primitives = trunk ? 36u : 20u;
   if (thread_id == 0u)
-    out.set_primitive_count (20u);
-  if (thread_id < 12u) {
+    out.set_primitive_count (primitives);
+  if (thread_id < vertices) {
     float3 position;
     if (thread_id == 0u || thread_id == 11u) {
       position = organ.centre +
                  organ.up * organ.half_height * (thread_id == 0u ? -1.0 : 1.0);
-    } else {
+    } else if (thread_id < 11u) {
       const uint side = thread_id - 1u;
       const float turn = 6.2831853 * float (side) / 10.0;
       position = organ.centre + organ.across * cos (turn) * organ.radius_x +
                  organ.forward * sin (turn) * organ.radius_z;
+    } else {
+      const uint index = thread_id - 12u;
+      const uint side = index % 8u;
+      const uint ring = index / 8u;
+      const float turn = 6.2831853 * float (side) / 8.0;
+      const float taper = ring == 0u ? 1.70 : 0.30;
+      const float3 radial =
+        stem.across * cos (turn) + stem.forward * sin (turn);
+      position = stem.centre +
+                 stem.up * (ring == 0u ? -stem.half_height : stem.half_height) +
+                 radial * stem.radius_x * taper;
     }
     ForestShadowVaryings v;
     v.position = u.view_proj * float4 (position, 1.0);
     out.set_vertex (thread_id, v);
   }
-  if (thread_id < 20u) {
-    const uint side = thread_id / 2u;
-    const uint next = (side + 1u) % 10u;
-    const uint3 triangle = thread_id % 2u == 0u
-                             ? uint3 (0u, 1u + next, 1u + side)
-                             : uint3 (11u, 1u + side, 1u + next);
+  if (thread_id < primitives) {
+    uint3 triangle;
+    if (thread_id < 20u) {
+      const uint side = thread_id / 2u;
+      const uint next = (side + 1u) % 10u;
+      triangle = thread_id % 2u == 0u ? uint3 (0u, 1u + next, 1u + side)
+                                      : uint3 (11u, 1u + side, 1u + next);
+    } else {
+      const uint prim = thread_id - 20u;
+      const uint side = prim / 2u;
+      const uint next = (side + 1u) % 8u;
+      triangle = (prim % 2u == 0u ? uint3 (side, next, 8u + next)
+                                  : uint3 (side, 8u + next, 8u + side)) +
+                 12u;
+    }
     const uint slot = thread_id * 3u;
     out.set_index (slot + 0u, triangle.x);
     out.set_index (slot + 1u, triangle.y);
@@ -560,20 +600,52 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
                        in.world_pos.y,
                        u.params.z,
                        u.params.w);
-  // The shared shadow map contains deliberately coarse tree proxies. Sampling
-  // it from inside a detailed crown would interpret that proxy as precise
-  // self-occlusion and black out the organism. Trees still cast into the map
-  // for terrain, grass, water, and actors; their own material uses continuous
-  // crown exposure plus the shared cloud field.
-  const float visibility =
+  // The shared shadow map contains deliberately coarse tree proxies, so a
+  // plain sample from inside a detailed crown would interpret that proxy as
+  // precise self-occlusion and black out the organism. Instead the compare
+  // gets a margin of several metres of light depth: the tree's own blob and
+  // its close neighbours fall inside the margin, while a hillside or a
+  // distant stand still puts the whole organism in shade. Fine-grained crown
+  // shaping stays with the continuous exposure signal and the cloud field.
+  float visibility =
     moppe_cloud_transmission (in.world_pos, l, u.params.x, u.params.y);
+  if (u.shadow.x > 0.01) {
+    const float4 shadow_coord = u.light_matrix * float4 (in.world_pos, 1.0);
+    const float3 proj = shadow_coord.xyz / shadow_coord.w;
+    if (all (proj >= 0.0) && all (proj <= 1.0)) {
+      constexpr sampler shadow_smp (coord::normalized,
+                                    address::clamp_to_edge,
+                                    filter::linear,
+                                    compare_func::less_equal);
+      // The local light frustum spans ~1240 m of depth; 9 m in that range.
+      const float margin = 9.0 / 1240.0;
+      const float lit =
+        shadow_map.sample_compare (shadow_smp, proj.xy, proj.z - margin);
+      visibility *= mix (1.0, mix (0.22, 1.0, lit), u.shadow.x);
+    }
+  }
 
-  const float3 base = moppe_srgb (in.albedo);
+  float3 base = moppe_srgb (in.albedo);
+  if (in.leaf < 0.5) {
+    // Bark fissures: two vertical planes of stretched value noise blended by
+    // facing, so striation follows any trunk without a UV seam.
+    const float2 stretch = float2 (3.1, 0.33);
+    const float2 px = float2 (in.world_pos.z, in.world_pos.y) * stretch;
+    const float2 pz = float2 (in.world_pos.x, in.world_pos.y) * stretch;
+    const float sx =
+      0.65 * moppe_value_noise (px) + 0.35 * moppe_value_noise (px * 3.13);
+    const float sz =
+      0.65 * moppe_value_noise (pz) + 0.35 * moppe_value_noise (pz * 3.13);
+    const float wx = n.x * n.x;
+    const float wz = n.z * n.z;
+    const float stria = (wx * sx + wz * sz) / max (wx + wz, 0.001);
+    base *= 0.62 + 0.74 * stria;
+  }
   // A broad wrap term keeps crown volumes legible while retaining a directional
   // sunward side. It is deliberately separate from the sky exposure signal.
-  const float wrap = saturate ((dot (n, l) + 0.34) / 1.34);
+  const float wrap = saturate ((dot (n, l) + 0.26) / 1.26);
   float3 color = base * (moppe_hemisphere_light (u.ambient.rgb, n) *
-                           (0.62 + 0.38 * in.exposure) +
+                           (0.54 + 0.46 * in.exposure) +
                          u.sun_diffuse.rgb * wrap * visibility);
   color +=
     base * float3 (0.10, 0.16, 0.20) * (0.35 + 0.65 * in.exposure) * in.leaf;
