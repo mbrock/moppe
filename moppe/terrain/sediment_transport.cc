@@ -72,13 +72,17 @@ namespace moppe::terrain {
       std::span<const SedimentVolume> potential_detachment,
       std::span<const SedimentVolume> transport_capacity,
       std::span<const SedimentVolume> maximum_deposition,
-      std::span<const std::uint8_t> ocean) {
+      std::span<const std::uint8_t> ocean,
+      std::span<const SedimentVolume> available_cover) {
       const std::size_t count = flow.size ();
       if (potential_detachment.size () != count ||
           transport_capacity.size () != count ||
           maximum_deposition.size () != count || ocean.size () != count)
         throw std::invalid_argument (
           "sediment routing inputs do not match drainage domain");
+      if (!available_cover.empty () && available_cover.size () != count)
+        throw std::invalid_argument (
+          "sediment cover does not match drainage domain");
 
       std::vector<std::size_t> position (count);
       std::vector<std::uint8_t> seen (count);
@@ -99,9 +103,13 @@ namespace moppe::terrain {
           sediment_volume_value (transport_capacity[cell]);
         const double deposition_limit =
           sediment_volume_value (maximum_deposition[cell]);
+        const double cover = available_cover.empty ()
+                               ? 0.0
+                               : sediment_volume_value (available_cover[cell]);
         if (!std::isfinite (potential) || potential < 0.0 ||
             !std::isfinite (capacity) || capacity < 0.0 ||
-            !std::isfinite (deposition_limit) || deposition_limit < 0.0)
+            !std::isfinite (deposition_limit) || deposition_limit < 0.0 ||
+            !std::isfinite (cover) || cover < 0.0)
           throw std::invalid_argument (
             "sediment volumes must be finite and non-negative");
 
@@ -129,27 +137,58 @@ namespace moppe::terrain {
     }
   }
 
+  SedimentVolume
+  sediment_transport_capacity (julian_years_f64_t duration,
+                               square_meters_t contributing_area,
+                               slope_t slope,
+                               float channel_share,
+                               const FluvialTransport& parameters) {
+    if (!mp_units::isfinite (duration) || duration < 0 ||
+        !mp_units::isfinite (contributing_area) || contributing_area < 0 ||
+        !mp_units::isfinite (slope) || slope < 0 ||
+        !std::isfinite (channel_share) || channel_share < 0.0f ||
+        channel_share > 1.0f || !mp_units::isfinite (parameters.runoff_rate) ||
+        parameters.runoff_rate < 0 ||
+        !mp_units::isfinite (parameters.concentration_at_unit_slope) ||
+        parameters.concentration_at_unit_slope < 0)
+      throw std::invalid_argument (
+        "fluvial transport parameters must be finite and non-negative");
+
+    const auto capacity =
+      duration * contributing_area * parameters.runoff_rate *
+      parameters.concentration_at_unit_slope * slope * channel_share;
+    return sediment_volume_from (capacity.numerical_value_in (cubic_metre));
+  }
+
   SedimentRoutingResult
   route_sediment (const FractionalFlowDomain& flow,
                   std::span<const SedimentVolume> potential_detachment,
                   std::span<const SedimentVolume> transport_capacity,
                   std::span<const SedimentVolume> maximum_deposition,
-                  std::span<const std::uint8_t> ocean) {
+                  std::span<const std::uint8_t> ocean,
+                  std::span<const SedimentVolume> available_cover) {
     validate_sediment_routing (flow,
                                potential_detachment,
                                transport_capacity,
                                maximum_deposition,
-                               ocean);
+                               ocean,
+                               available_cover);
 
     const std::size_t count = flow.size ();
     std::vector<double> incoming (count);
     SedimentRoutingResult result {
       .detached = std::vector<SedimentVolume> (count, SedimentVolume::zero ()),
+      .entrained_cover =
+        std::vector<SedimentVolume> (count, SedimentVolume::zero ()),
+      .bedrock_detached =
+        std::vector<SedimentVolume> (count, SedimentVolume::zero ()),
       .deposited = std::vector<SedimentVolume> (count, SedimentVolume::zero ()),
       .outgoing = std::vector<SedimentVolume> (count, SedimentVolume::zero ())
     };
 
     double detached_total = 0.0;
+    double entrained_cover_total = 0.0;
+    double bedrock_detached_total = 0.0;
     double deposited_total = 0.0;
     double exported_total = 0.0;
 
@@ -169,9 +208,15 @@ namespace moppe::terrain {
       }
 
       const double capacity = sediment_volume_value (transport_capacity[cell]);
-      const double local_detachment =
-        std::min (sediment_volume_value (potential_detachment[cell]),
-                  std::max (0.0, capacity - incoming[cell]));
+      double spare_capacity = std::max (0.0, capacity - incoming[cell]);
+      const double cover = available_cover.empty ()
+                             ? 0.0
+                             : sediment_volume_value (available_cover[cell]);
+      const double entrained_cover = std::min (cover, spare_capacity);
+      spare_capacity -= entrained_cover;
+      const double bedrock_detachment = std::min (
+        sediment_volume_value (potential_detachment[cell]), spare_capacity);
+      const double local_detachment = entrained_cover + bedrock_detachment;
       const double available = incoming[cell] + local_detachment;
       const double deposited =
         std::min (std::max (0.0, available - capacity),
@@ -179,9 +224,13 @@ namespace moppe::terrain {
       const double outgoing = available - deposited;
 
       result.detached[cell] = sediment_volume_from (local_detachment);
+      result.entrained_cover[cell] = sediment_volume_from (entrained_cover);
+      result.bedrock_detached[cell] = sediment_volume_from (bedrock_detachment);
       result.deposited[cell] = sediment_volume_from (deposited);
       result.outgoing[cell] = sediment_volume_from (outgoing);
       detached_total += local_detachment;
+      entrained_cover_total += entrained_cover;
+      bedrock_detached_total += bedrock_detachment;
       deposited_total += deposited;
 
       double posted = 0.0;
@@ -199,6 +248,9 @@ namespace moppe::terrain {
     }
 
     result.detached_total = sediment_volume_from (detached_total);
+    result.entrained_cover_total = sediment_volume_from (entrained_cover_total);
+    result.bedrock_detached_total =
+      sediment_volume_from (bedrock_detached_total);
     result.deposited_total = sediment_volume_from (deposited_total);
     result.exported_to_ocean = sediment_volume_from (exported_total);
     result.balance_residual =

@@ -51,7 +51,11 @@ experiment becomes part of that immutable recipe and both cache identities,
 so forcing-matrix launches cannot reuse another schedule's terrain. The typed
 `--channel-initiation-area SQUARE_METERS` experiment has the same identity
 guarantee; it is available for process matrices but is not yet a selected Play
-calibration.
+calibration. `--sediment-concentration FRACTION` controls the effective solid
+concentration in the discharge-based transport-capacity law. Runoff and
+concentration are serialized in the recipe and both cache identities, so an
+older detachment-scaled transport world cannot masquerade as the current
+cover-aware result.
 `--world-cache-key NAME` selects an additional stable developer namespace.
 `--refresh-world-cache` rebuilds and replaces the selected entry, while
 `--no-world-cache` retains the older terrain-only cache path without loading or

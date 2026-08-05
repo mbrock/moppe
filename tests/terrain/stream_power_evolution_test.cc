@@ -24,6 +24,14 @@ namespace {
       count,
       meters_per_year * mp_units::si::metre / mp_units::astronomy::Julian_year);
   }
+
+  FluvialTransport unbounded_test_transport () {
+    return {
+      .runoff_rate = 1.0f * u::m / mp_units::astronomy::Julian_year,
+      .concentration_at_unit_slope =
+        1.0f * sediment_concentration[mp_units::one],
+    };
+  }
 }
 
 MOPPE_TEST (zero_duration_stream_power_evolution_is_identity) {
@@ -164,6 +172,7 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
       // channel network begins.
       .channel_initiation_area =
         1.0f * mp_units::si::metre * mp_units::si::metre,
+      .fluvial_transport = unbounded_test_transport (),
       .sea_level = 0.0f });
 
   // dt v_ref / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
@@ -171,6 +180,44 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[1]), 50.0f, 1e-6f);
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[2]), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[3]), 50.0f, 1e-6f);
+}
+
+MOPPE_TEST (thick_channel_cover_protects_bedrock_during_evolution) {
+  constexpr std::array heights { 0.0f, 100.0f, 0.0f, 100.0f };
+  const ElevationMap terrain = make_elevation_map (
+    TerrainDomain (2, 2, 10.0f * u::m, 10.0f * u::m), heights);
+  const auto uplift = uniform_uplift (heights.size (), 0.0f);
+  std::array<SedimentThickness, 4> cover { SedimentThickness::zero (),
+                                           200.0f * sediment_thickness[u::m],
+                                           SedimentThickness::zero (),
+                                           200.0f * sediment_thickness[u::m] };
+  const StreamPowerEvolution parameters {
+    .duration = 100.0f * mp_units::astronomy::Julian_year,
+    .time_step = 100.0f * mp_units::astronomy::Julian_year,
+    .reference_incision_rate = 0.1f * u::m / mp_units::astronomy::Julian_year,
+    .area_exponent = 0.0f,
+    .channel_initiation_area = 1.0f * u::m * u::m,
+    .fluvial_transport = {
+      .runoff_rate = 1.0f * u::m / mp_units::astronomy::Julian_year,
+      .concentration_at_unit_slope =
+        0.01f * sediment_concentration[mp_units::one],
+    },
+    .sea_level = 0.0f,
+  };
+
+  const StreamPowerEvolutionResult covered =
+    evolve_stream_power (terrain, uplift, parameters, {}, {}, cover);
+  const StreamPowerEvolutionResult bare =
+    evolve_stream_power (terrain, uplift, parameters);
+
+  MOPPE_CHECK (covered.report.fluvial_bedrock_detached_volume ==
+               cubic_meters_f64_t::zero ());
+  MOPPE_CHECK (covered.report.fluvial_entrained_cover_volume >
+               cubic_meters_f64_t::zero ());
+  MOPPE_CHECK (bare.report.fluvial_bedrock_detached_volume >
+               cubic_meters_f64_t::zero ());
+  MOPPE_CHECK (covered.sediment_thickness[1] < cover[1]);
+  MOPPE_CHECK (covered.sediment_thickness[1] > SedimentThickness::zero ());
 }
 
 MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
@@ -195,6 +242,7 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
       .area_exponent = exponent,
       .channel_initiation_area =
         1.0f * mp_units::si::metre * mp_units::si::metre,
+      .fluvial_transport = unbounded_test_transport (),
       .sea_level = 0.0f });
   const float legacy_weight =
     duration_years * legacy_k * std::pow (area_m2, exponent) / distance_m;
@@ -224,6 +272,7 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
         .reference_area =
           reference_area_m2 * mp_units::si::metre * mp_units::si::metre,
         .area_exponent = exponent,
+        .fluvial_transport = unbounded_test_transport (),
         .sea_level = 0.0f });
   };
   const StreamPowerEvolutionResult one_square_meter = evolve (1.0f, 2e-5f);
@@ -351,6 +400,7 @@ MOPPE_TEST (hillslope_catchments_are_left_to_creep) {
         .area_exponent = 0.0f,
         .channel_initiation_area =
           initiation_m2 * mp_units::si::metre * mp_units::si::metre,
+        .fluvial_transport = unbounded_test_transport (),
         .sea_level = 0.0f });
   };
 

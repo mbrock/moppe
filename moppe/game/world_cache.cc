@@ -20,10 +20,10 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 7 records the physical channel-head scale as part of the
-    // immutable recipe. Worlds evolved under another incision scale must
-    // never masquerade as the selected one.
-    constexpr std::uint32_t CACHE_VERSION = 7;
+    // Version 8 replaces potential-incision-scaled capacity with explicit
+    // runoff, slope, and sediment concentration, and distinguishes cover
+    // entrainment from new bedrock detachment.
+    constexpr std::uint32_t CACHE_VERSION = 8;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());
@@ -43,6 +43,14 @@ namespace moppe::game {
            << bits (
                 recipe.evolution ().channel_initiation_area.numerical_value_in (
                   u::m * u::m));
+      name << "-runoff-"
+           << bits (recipe.evolution ()
+                      .fluvial_transport.runoff_rate.numerical_value_in (
+                        u::m / mp_units::astronomy::Julian_year));
+      name << "-concentration-"
+           << bits (recipe.evolution ()
+                      .fluvial_transport.concentration_at_unit_slope
+                      .numerical_value_in (mp_units::one));
       return name.str ();
     }
 
@@ -194,6 +202,13 @@ namespace moppe::game {
         mp_units::astronomy::Julian_year));
       output.scalar (
         square_meters (recipe.evolution ().channel_initiation_area));
+      output.scalar (
+        recipe.evolution ().fluvial_transport.runoff_rate.numerical_value_in (
+          u::m / mp_units::astronomy::Julian_year));
+      output.scalar (
+        recipe.evolution ()
+          .fluvial_transport.concentration_at_unit_slope.numerical_value_in (
+            mp_units::one));
     }
 
     bool read_recipe (BinaryReader& input, const terrain::WorldRecipe& recipe) {
@@ -206,6 +221,8 @@ namespace moppe::game {
       float water = 0.0f;
       float uplift_years = 0.0f;
       float channel_initiation_area_m2 = 0.0f;
+      float runoff_m_per_year = 0.0f;
+      float concentration_at_unit_slope = 0.0f;
       if (!input.bytes (magic.data (), magic.size ()) ||
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
@@ -215,6 +232,8 @@ namespace moppe::game {
           return false;
       return input.scalar (water) && input.scalar (uplift_years) &&
              input.scalar (channel_initiation_area_m2) &&
+             input.scalar (runoff_m_per_year) &&
+             input.scalar (concentration_at_unit_slope) &&
              magic == CACHE_MAGIC && version == CACHE_VERSION &&
              resolution == static_cast<std::uint32_t> (recipe.resolution ()) &&
              seed == recipe.seed ().value &&
@@ -226,7 +245,15 @@ namespace moppe::game {
                recipe.evolution ().uplift_duration.numerical_value_in (
                  mp_units::astronomy::Julian_year) &&
              channel_initiation_area_m2 ==
-               square_meters (recipe.evolution ().channel_initiation_area);
+               square_meters (recipe.evolution ().channel_initiation_area) &&
+             runoff_m_per_year ==
+               recipe.evolution ()
+                 .fluvial_transport.runoff_rate.numerical_value_in (
+                   u::m / mp_units::astronomy::Julian_year) &&
+             concentration_at_unit_slope ==
+               recipe.evolution ()
+                 .fluvial_transport.concentration_at_unit_slope
+                 .numerical_value_in (mp_units::one);
     }
 
     void write_flood (BinaryWriter& output, const terrain::FloodField& flood) {

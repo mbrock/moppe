@@ -41,3 +41,7 @@ MOPPE_TEST (every_site_shifted_by_nothing_is_itself) {
   for (const terrain::TerrainIndex site : spatial::sites (domain))
     MOPPE_CHECK (domain.shifted (site, 0, 0) == site);
 }
+
+MOPPE_TEST (continuous_coordinates_rounding_to_a_full_lap_wrap_to_zero) {
+  MOPPE_CHECK_NEAR (terrain::wrap_coordinate (-0.00001f, 2048.0f), 0.0f, 0.0f);
+}

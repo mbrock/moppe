@@ -16,6 +16,7 @@ settle=${MOPPE_GAZETTEER_SETTLE:-18}
 window=${MOPPE_GAZETTEER_WINDOW:-1600x900}
 uplift_years=${MOPPE_UPLIFT_YEARS:-}
 channel_area=${MOPPE_CHANNEL_INITIATION_AREA:-}
+sediment_concentration=${MOPPE_SEDIMENT_CONCENTRATION:-}
 cache_key=${MOPPE_WORLD_CACHE_KEY:-}
 refresh_cache=${MOPPE_REFRESH_WORLD_CACHE:-0}
 
@@ -29,6 +30,11 @@ if [[ -n $uplift_years && ! $uplift_years =~ ^[0-9]+$ ]]; then
 fi
 if [[ -n $channel_area && ! $channel_area =~ ^[1-9][0-9]*$ ]]; then
   echo "MOPPE_CHANNEL_INITIATION_AREA must be a positive integer" >&2
+  exit 2
+fi
+if [[ -n $sediment_concentration &&
+      ! $sediment_concentration =~ ^(0|[0-9]+)(\.[0-9]+)?$ ]]; then
+  echo "MOPPE_SEDIMENT_CONCENTRATION must be a non-negative decimal" >&2
   exit 2
 fi
 if [[ -e $output ]] && compgen -G "$output/frame-*.png" >/dev/null; then
@@ -59,6 +65,9 @@ fi
 if [[ -n $channel_area ]]; then
   arguments+=(--channel-initiation-area "$channel_area")
 fi
+if [[ -n $sediment_concentration ]]; then
+  arguments+=(--sediment-concentration "$sediment_concentration")
+fi
 if [[ -n $cache_key ]]; then
   arguments+=(--world-cache-key "$cache_key")
 fi
@@ -81,6 +90,7 @@ printf '%s\n' \
   "settle_frames=$settle" \
   "uplift_years=${uplift_years:-profile-default}" \
   "channel_initiation_area_m2=${channel_area:-profile-default}" \
+  "sediment_concentration=${sediment_concentration:-profile-default}" \
   "world_cache_key=${cache_key:-default}" \
   "refresh_world_cache=$refresh_cache" \
   "process_elapsed_seconds=$elapsed_seconds" \

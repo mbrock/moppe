@@ -1553,7 +1553,8 @@ namespace moppe {
           recipe ().water_datum (),
           recipe ().generation_profile (),
           recipe ().evolution ().uplift_duration,
-          recipe ().evolution ().channel_initiation_area);
+          recipe ().evolution ().channel_initiation_area,
+          recipe ().evolution ().fluvial_transport.concentration_at_unit_slope);
         logic ().m_mode = M_BIKE;
         logic ().m_car_exists = false;
         logic ().m_game_over = false;

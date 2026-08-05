@@ -69,6 +69,7 @@ namespace moppe::game {
     const auto& eroded = spatial::get<map::eroded_surface_material> (surface);
     const auto& deposited =
       spatial::get<map::deposited_surface_material> (surface);
+    const auto& mobile = spatial::get<terrain::sediment_thickness> (surface);
     const auto slopes = drainage.slopes ();
 
     std::vector<double> land_elevations;
@@ -78,12 +79,14 @@ namespace moppe::game {
     std::size_t below_10 = 0;
     double eroded_m3 = 0.0;
     double deposited_m3 = 0.0;
+    double mobile_m3 = 0.0;
 
     for (std::size_t cell = 0; cell < domain.size (); ++cell) {
       const double elevation_m =
         terrain::surface_elevation_value (elevations[cell]);
       eroded_m3 += eroded[cell].numerical_value_in (u::m) * cell_area_m2;
       deposited_m3 += deposited[cell].numerical_value_in (u::m) * cell_area_m2;
+      mobile_m3 += mobile[cell].numerical_value_in (u::m) * cell_area_m2;
       if (elevation_m <= sea_level_m || flood.water_depth_m (cell) > 0.0f)
         continue;
       const double slope_deg =
@@ -137,6 +140,13 @@ namespace moppe::game {
       .channel_initiation_area_m2 =
         recipe.evolution ().channel_initiation_area.numerical_value_in (u::m *
                                                                         u::m),
+      .runoff_m_per_year =
+        recipe.evolution ().fluvial_transport.runoff_rate.numerical_value_in (
+          u::m / mp_units::astronomy::Julian_year),
+      .sediment_concentration_at_unit_slope =
+        recipe.evolution ()
+          .fluvial_transport.concentration_at_unit_slope.numerical_value_in (
+            mp_units::one),
       .land_cells = land_cells,
       .land_area_m2 = land_area_m2,
       .land_elevation_p10_m = percentile (land_elevations, 0.10),
@@ -162,8 +172,10 @@ namespace moppe::game {
       .inland_water_bodies = inland_bodies,
       .lakes = lakes,
       .inland_water_area_m2 = inland_water_area_m2,
+      .mobile_sediment_m3 = mobile_m3,
       .eroded_sediment_m3 = eroded_m3,
       .deposited_sediment_m3 = deposited_m3,
+      .inferred_bedrock_detached_m3 = eroded_m3 - deposited_m3 + mobile_m3,
       .inferred_exported_sediment_m3 = eroded_m3 - deposited_m3,
     };
   }
@@ -171,7 +183,8 @@ namespace moppe::game {
   void write_landscape_summary_csv (std::ostream& output,
                                     const LandscapeSummary& s) {
     output << "seed,resolution,spacing_x_m,spacing_z_m,evolution_years,"
-              "uplift_years,channel_initiation_area_m2,land_cells,"
+              "uplift_years,channel_initiation_area_m2,runoff_m_per_year,"
+              "sediment_concentration_at_unit_slope,land_cells,"
               "land_area_m2,land_elevation_p10_m,land_elevation_p50_m,"
               "land_elevation_p90_m,land_elevation_p99_m,"
               "land_elevation_max_m,land_relief_m,slope_p50_deg,"
@@ -180,25 +193,28 @@ namespace moppe::game {
               "largest_connected_below_10_deg_m2,river_reaches,"
               "river_length_m,drainage_density_m_per_km2,"
               "largest_river_catchment_m2,inland_water_bodies,lakes,"
-              "inland_water_area_m2,eroded_sediment_m3,"
-              "deposited_sediment_m3,inferred_exported_sediment_m3\n";
+              "inland_water_area_m2,mobile_sediment_m3,eroded_sediment_m3,"
+              "deposited_sediment_m3,inferred_bedrock_detached_m3,"
+              "inferred_exported_sediment_m3\n";
     output << std::setprecision (12) << s.seed << ',' << s.resolution << ','
            << s.spacing_x_m << ',' << s.spacing_z_m << ',' << s.evolution_years
            << ',' << s.uplift_years << ',' << s.channel_initiation_area_m2
-           << ',' << s.land_cells << ',' << s.land_area_m2 << ','
-           << s.land_elevation_p10_m << ',' << s.land_elevation_p50_m << ','
-           << s.land_elevation_p90_m << ',' << s.land_elevation_p99_m << ','
-           << s.land_elevation_max_m << ',' << s.land_relief_m << ','
-           << s.slope_p50_deg << ',' << s.slope_p90_deg << ','
-           << s.slope_p99_deg << ',' << s.land_below_5_deg_fraction << ','
-           << s.land_below_10_deg_fraction << ','
-           << s.largest_connected_below_10_deg_m2 << ',' << s.river_reaches
-           << ',' << s.river_length_m << ',' << s.drainage_density_m_per_km2
-           << ',' << s.largest_river_catchment_m2 << ','
-           << s.inland_water_bodies << ',' << s.lakes << ','
-           << s.inland_water_area_m2 << ',' << s.eroded_sediment_m3 << ','
-           << s.deposited_sediment_m3 << ',' << s.inferred_exported_sediment_m3
-           << '\n';
+           << ',' << s.runoff_m_per_year << ','
+           << s.sediment_concentration_at_unit_slope << ',' << s.land_cells
+           << ',' << s.land_area_m2 << ',' << s.land_elevation_p10_m << ','
+           << s.land_elevation_p50_m << ',' << s.land_elevation_p90_m << ','
+           << s.land_elevation_p99_m << ',' << s.land_elevation_max_m << ','
+           << s.land_relief_m << ',' << s.slope_p50_deg << ','
+           << s.slope_p90_deg << ',' << s.slope_p99_deg << ','
+           << s.land_below_5_deg_fraction << ',' << s.land_below_10_deg_fraction
+           << ',' << s.largest_connected_below_10_deg_m2 << ','
+           << s.river_reaches << ',' << s.river_length_m << ','
+           << s.drainage_density_m_per_km2 << ','
+           << s.largest_river_catchment_m2 << ',' << s.inland_water_bodies
+           << ',' << s.lakes << ',' << s.inland_water_area_m2 << ','
+           << s.mobile_sediment_m3 << ',' << s.eroded_sediment_m3 << ','
+           << s.deposited_sediment_m3 << ',' << s.inferred_bedrock_detached_m3
+           << ',' << s.inferred_exported_sediment_m3 << '\n';
   }
 
   void write_landscape_elevation_f32 (std::ostream& output,

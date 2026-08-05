@@ -4,13 +4,17 @@ The stream-power solve now proposes detachment; it no longer deletes that
 material from the world. A second pass walks the same D-infinity drainage DAG
 from sources to outlets and routes a single solid sediment volume.
 
-For each non-ocean cell in one geological step:
+For each non-ocean cell in one geological step, incoming load occupies the
+available transport capacity first. Any spare capacity entrains stored mobile
+cover and only then detaches the bedrock allowed by the stream-power solve:
 
 ```text
-available = incoming + detached
-excess    = max(0, available - transport capacity)
-deposited = min(excess, local aggradation limit)
-outgoing  = available - deposited
+spare             = max(0, capacity - incoming)
+entrained cover   = min(stored cover, spare)
+bedrock detached  = min(potential incision, spare - entrained cover)
+available         = incoming + entrained cover + bedrock detached
+deposited         = min(max(0, available - capacity), aggradation limit)
+outgoing          = available - deposited
 ```
 
 Incoming material consumes transport capacity before the cell may detach more
@@ -23,7 +27,8 @@ remainder, rather than rounding every arc independently, so each step has the
 explicit ledger:
 
 ```text
-detached = deposited + exported to ocean + balance residual
+entrained cover + bedrock detached
+  = deposited + exported to ocean + balance residual
 ```
 
 The residual is carried as a signed physical volume and tested at zero. The
@@ -32,14 +37,32 @@ detachment and deposition thickness. Later incision removes mobile sediment
 before it reaches the underlying surface. Trail cut and fill remains in the
 trail network's `earthwork_delta_m`; it does not rewrite geological history.
 
-## Capacity used by the first model
+## Discharge-based transport capacity
 
-The backward-Euler stream-power result supplies potential detachment. Its
-local transport capacity uses that volume as the one-cell calibration, then
-extends the stream-power catchment response from `A^m` to `A^1`. This lets a
-trunk channel carry the aggregate supply of its unit catchments when slope is
-maintained. Where slope and potential incision collapse, capacity collapses
-too and the excess is deposited.
+The backward-Euler stream-power result supplies only the upper bound on new
+bedrock detachment. Transport capacity is independent of that result:
+
+```text
+capacity = duration * contributing area * runoff
+           * sediment concentration at unit slope
+           * local slope * channel share
+```
+
+Every factor retains physical units through the calculation. Capacity scales
+linearly with geological step duration, so changing the time discretization
+does not silently change its interpretation. The Play calibration uses 1 m/yr
+of runoff and a dimensionless concentration of 0.00002 at unit slope. The
+concentration is an effective bulk-solid calibration rather than a claim
+about one measured river's instantaneous suspended load.
+
+A seed-123 capacity matrix selected 0.00002 at the knee between two failure
+regimes. Lower capacities let cover protect the already narrow ridges and
+leave median slopes above 32 degrees. A concentration of 0.00004 collapses
+relief to 121 m and joins 6.95 km2 of land below ten degrees. The selected
+world retains 198 m of relief while exposing connected river valleys and
+depositional plains. `--sediment-concentration` remains available for
+controlled experiments and participates in both terrain and finished-world
+cache identity.
 
 This is deliberately a small first model. It has one solid material, no grain
 classes, density, porosity, compaction, suspension, or dissolved load. Ocean
