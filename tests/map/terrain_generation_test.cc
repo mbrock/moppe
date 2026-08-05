@@ -132,6 +132,48 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
                spatial::get<terrain::surface_elevation> (surface));
 }
 
+MOPPE_TEST (terrain_evolution_materializes_its_sediment_history) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
+  const auto uplift =
+    map::initialize_terrain (surface, Seed { 2468 }, 50.0f * u::m);
+  const StreamPowerEvolutionReport report = map::evolve_terrain (
+    surface,
+    uplift,
+    { .duration = 200000.0f * mp_units::astronomy::Julian_year,
+      .time_step = 50000.0f * mp_units::astronomy::Julian_year,
+      .sea_level = 50.0f });
+
+  const auto& mobile = spatial::get<terrain::sediment_thickness> (surface);
+  const auto& eroded = spatial::get<map::eroded_surface_material> (surface);
+  const auto& deposited =
+    spatial::get<map::deposited_surface_material> (surface);
+  MOPPE_CHECK (std::ranges::any_of (mobile, [] (SedimentThickness value) {
+    return value > SedimentThickness::zero ();
+  }));
+  MOPPE_CHECK (
+    std::ranges::any_of (eroded, [] (map::ErodedSurfaceMaterial value) {
+      return value > map::ErodedSurfaceMaterial::zero ();
+    }));
+  MOPPE_CHECK (
+    std::ranges::any_of (deposited, [] (map::DepositedSurfaceMaterial value) {
+      return value > map::DepositedSurfaceMaterial::zero ();
+    }));
+
+  const auto cubic_metre = u::m * u::m * u::m;
+  const double detached =
+    report.incised_volume.numerical_value_in (cubic_metre);
+  const double retained =
+    report.deposited_volume.numerical_value_in (cubic_metre);
+  const double exported =
+    report.exported_sediment_volume.numerical_value_in (cubic_metre);
+  MOPPE_CHECK_NEAR (static_cast<float> (detached),
+                    static_cast<float> (retained + exported),
+                    static_cast<float> (detached * 1e-5));
+}
+
 MOPPE_TEST (seeded_geology_separates_land_and_bathymetric_relief) {
   using namespace moppe;
   using namespace moppe::terrain;

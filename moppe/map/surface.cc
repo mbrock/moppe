@@ -173,36 +173,35 @@ namespace moppe::map {
       0.001f * u::m / mp_units::astronomy::Julian_year;
 
     void reset_material_history (SurfaceGeometry& surface) {
+      std::ranges::fill (spatial::get<terrain::sediment_thickness> (surface),
+                         0.0f * terrain::sediment_thickness[u::m]);
       std::ranges::fill (spatial::get<eroded_surface_material> (surface),
                          0.0f * eroded_surface_material[u::m]);
       std::ranges::fill (spatial::get<deposited_surface_material> (surface),
                          0.0f * deposited_surface_material[u::m]);
     }
 
-    // A signed elevation displacement splits into the column's two one-way
-    // histories. The narrowing from elevation change to material is the
-    // explicit conversion; the sign decides which history it feeds.
-    void record_material_change (SurfaceGeometry& surface,
-                                 terrain::TerrainIndex site,
-                                 terrain::ElevationChange delta) {
-      const auto row = surface[site];
-      if (delta < terrain::ElevationChange::zero ())
-        spatial::get<eroded_surface_material> (row) -=
-          ErodedSurfaceMaterial (delta);
-      else
-        spatial::get<deposited_surface_material> (row) +=
-          DepositedSurfaceMaterial (delta);
-    }
-
-    // The solver answers in its own linear buffer, so this is where that
-    // order meets the surface. Asking the domain for each site's offset
-    // keeps this the only place the two orders have to agree.
-    void set_elevations (SurfaceGeometry& surface,
-                         std::span<const SurfaceElevation> elevations) {
+    // The solver answers in linear buffers, so this is where those meet the
+    // surface's typed columns. The geological material histories deliberately
+    // exclude the later trail earthwork pass.
+    void
+    set_evolution_result (SurfaceGeometry& surface,
+                          const terrain::StreamPowerEvolutionResult& result) {
       const terrain::TerrainDomain& domain = surface.domain ();
-      for (const terrain::TerrainIndex site : spatial::sites (surface))
+      for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+        const std::size_t offset = domain.offset (site);
+        const auto row = surface[site];
         spatial::get<terrain::surface_elevation> (surface[site]) =
-          elevations[domain.offset (site)];
+          result.heights[offset];
+        spatial::get<terrain::sediment_thickness> (row) =
+          result.sediment_thickness[offset];
+        spatial::get<eroded_surface_material> (row) +=
+          result.eroded_thickness[offset].numerical_value_in (u::m) *
+          eroded_surface_material[u::m];
+        spatial::get<deposited_surface_material> (row) +=
+          result.deposited_thickness[offset].numerical_value_in (u::m) *
+          deposited_surface_material[u::m];
+      }
     }
   }
 
@@ -237,9 +236,11 @@ namespace moppe::map {
                   const terrain::StreamPowerEvolution& parameters,
                   const terrain::StreamPowerProgress& progress) {
     MOPPE_PROFILE_ZONE ("terrain.evolve");
-    terrain::StreamPowerEvolutionResult result =
-      terrain::evolve_stream_power (surface, uplift, parameters, progress);
-    set_elevations (surface, result.heights);
+    const auto& initial_sediment =
+      spatial::get<terrain::sediment_thickness> (surface);
+    terrain::StreamPowerEvolutionResult result = terrain::evolve_stream_power (
+      surface, uplift, parameters, progress, {}, initial_sediment);
+    set_evolution_result (surface, result);
     return result.report;
   }
 
@@ -254,7 +255,6 @@ namespace moppe::map {
       const SurfaceElevation formed = result.heights[domain.offset (site)];
       auto& elevation =
         spatial::get<terrain::surface_elevation> (surface[site]);
-      record_material_change (surface, site, formed - elevation);
       elevation = formed;
     }
     return std::move (result.network);

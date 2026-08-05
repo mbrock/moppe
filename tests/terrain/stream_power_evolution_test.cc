@@ -102,12 +102,12 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
       .reference_incision_rate =
         0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .area_exponent = 0.0f,
-      .sea_level = 0.0f,
       // A four-cell world is entirely below any real channel head, so say
       // that this case is about the fluvial law and not about where the
       // channel network begins.
       .channel_initiation_area =
-        1.0f * mp_units::si::metre * mp_units::si::metre });
+        1.0f * mp_units::si::metre * mp_units::si::metre,
+      .sea_level = 0.0f });
 
   // dt v_ref / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[0]), 0.0f, 0.0f);
@@ -136,9 +136,9 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
       .reference_incision_rate =
         legacy_k * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .area_exponent = exponent,
-      .sea_level = 0.0f,
       .channel_initiation_area =
-        1.0f * mp_units::si::metre * mp_units::si::metre });
+        1.0f * mp_units::si::metre * mp_units::si::metre,
+      .sea_level = 0.0f });
   const float legacy_weight =
     duration_years * legacy_k * std::pow (area_m2, exponent) / distance_m;
   const float expected = 100.0f / (1.0f + legacy_weight);
@@ -180,7 +180,7 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
       1e-6f);
 }
 
-MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
+MOPPE_TEST (depression_routing_closes_the_sediment_ledger) {
   constexpr std::array basin { 0.0f, 30.0f, 10.0f, 40.0f, 50.0f,
                                0.0f, 30.0f, 10.0f, 40.0f, 50.0f };
   const ElevationMap terrain = make_elevation_map (profile_grid (), basin);
@@ -192,9 +192,25 @@ MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
       .time_step = 10000.0f * mp_units::astronomy::Julian_year,
       .sea_level = 0.0f });
 
-  for (std::size_t cell = 0; cell < basin.size (); ++cell)
-    MOPPE_CHECK (result.heights[cell] <=
-                 surface_elevation_point ((basin[cell] + 1e-7f) * u::m));
+  const auto cubic_metre = u::m * u::m * u::m;
+  const double detached =
+    result.report.incised_volume.numerical_value_in (cubic_metre);
+  const double deposited =
+    result.report.deposited_volume.numerical_value_in (cubic_metre);
+  const double exported =
+    result.report.exported_sediment_volume.numerical_value_in (cubic_metre);
+  MOPPE_CHECK (detached > 0.0);
+  MOPPE_CHECK (deposited > 0.0);
+  MOPPE_CHECK_NEAR (static_cast<float> (detached),
+                    static_cast<float> (deposited + exported),
+                    static_cast<float> (detached * 1e-6));
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (
+      result.report.sediment_balance_residual.numerical_value_in (cubic_metre)),
+    0.0f,
+    1e-5f);
+  for (const SedimentThickness thickness : result.sediment_thickness)
+    MOPPE_CHECK (thickness >= SedimentThickness::zero ());
 }
 
 MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
@@ -268,9 +284,9 @@ MOPPE_TEST (hillslope_catchments_are_left_to_creep) {
         .reference_incision_rate =
           0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
         .area_exponent = 0.0f,
-        .sea_level = 0.0f,
         .channel_initiation_area =
-          initiation_m2 * mp_units::si::metre * mp_units::si::metre });
+          initiation_m2 * mp_units::si::metre * mp_units::si::metre,
+        .sea_level = 0.0f });
   };
 
   MOPPE_CHECK_NEAR (
