@@ -100,15 +100,18 @@ static inline float forest_lod_threshold (uint seed) {
 // while organs that grow in one at a time spread it below notice (Kuth 2025,
 // measured in Fig. 12 of the paper; #6S29CJ in the research library).
 static inline float forest_bough_count (float pixels, float threshold) {
-  // The ramp saturates by three hundred projected pixels: a tree anywhere
-  // near the rider carries its complete complement, because a crown that is
-  // still growing at riding distance visibly breathes with every small
-  // change in projected size. The widened tufts of a sparse crown carry
-  // the coverage below saturation. The floor of twenty-one keeps the
-  // sparsest assembly reading as a small solid tree: below that a spruce
-  // degenerates into a pole with stubs, which no distance excuses.
+  // The ramp saturates by ninety projected scene pixels -- at the game's
+  // lens, a tree around a tenth of the frame's height. Perception, not
+  // geometry, sets this point: a rider's eye is exquisitely sensitive to
+  // elements appearing on a tree large enough to watch, so every arrival
+  // must happen while the whole crown is a small figure in the frame.
+  // Saturating at three hundred meant crowns still assembling while they
+  // filled a third of the screen, which read as the forest morphing. The
+  // floor of twenty-one keeps the sparsest assembly reading as a small
+  // solid tree: below that a spruce degenerates into a pole with stubs,
+  // which no distance excuses.
   return clamp (
-    (pixels - 14.0 * threshold) * 63.0 / (286.0 * threshold), 21.0, 63.0);
+    (pixels - 14.0 * threshold) * 63.0 / (76.0 * threshold), 21.0, 63.0);
 }
 
 // The ramp measures projected pixels, so on its own a completion point is a
@@ -140,11 +143,11 @@ static inline uint forest_bough_slot (uint rank) {
 // Mesh-group coalescing for the middle band: a small distant assembly
 // bundles four boughs of three tufts into each meshlet instead of paying a
 // mostly idle meshlet per bough, the same cure Kuth 2025 applies to leaves.
-// The boundary sits where a tree is a few percent of the frame, so the
-// tuft-layout change stays subtle, and the per-individual threshold keeps a
-// stand from crossing it on the same frame.
+// The boundary aligns with ramp saturation, so BOTH representation changes
+// finish while the tree is around a tenth of the frame, and the
+// per-individual threshold keeps a stand from crossing on the same frame.
 static inline uint forest_bough_bundle (uint pixel_code, float threshold) {
-  return float (pixel_code) < 130.0 * threshold ? 4u : 1u;
+  return float (pixel_code) < 90.0 * threshold ? 4u : 1u;
 }
 
 static inline uint forest_bough_tufts (uint bundle) {
