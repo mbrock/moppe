@@ -24,6 +24,10 @@
   fiat objects, substances and qualities, processes, populations, and what
   makes a representation faithful. A vocabulary, not a specification.
 - `working-practices.md` — development and verification practices.
+- `forest-lod.md` — the conifer continuous-LOD system: principles,
+  mechanisms, discovered constraints, instruments, and performance state.
+- `forest-density-and-aggregates.md` — design intent for dense stands, the
+  aggregate far field, and the grass handoff.
 
 Repository-native RFCs and their executable work-item graphs live in
 `../planning/`.  They describe accepted intended work and its dependencies;
