@@ -1924,6 +1924,13 @@ namespace moppe {
       // Samplers.
       {
         MTLSamplerDescriptor* d = [[MTLSamplerDescriptor alloc] init];
+        // This descriptor is the recipe for the immutable sampler states
+        // below. Metal 4 argument tables bind those states by resource ID;
+        // Apple's opt-in for that indirect use is still named
+        // supportArgumentBuffers. Live rendering worked without it, but
+        // Xcode Metal capture replay segfaulted, so every table-bound sampler
+        // must enable it.
+        d.supportArgumentBuffers = YES;
         d.minFilter = MTLSamplerMinMagFilterLinear;
         d.magFilter = MTLSamplerMinMagFilterLinear;
         d.mipFilter = MTLSamplerMipFilterLinear;
@@ -2494,6 +2501,10 @@ namespace moppe {
       make_resident (t->texture);
 
       MTLSamplerDescriptor* sd = [[MTLSamplerDescriptor alloc] init];
+      // This sampler is also bound into a Metal 4 argument table by resource
+      // ID. Without the descriptor's argument-buffer opt-in, live rendering
+      // worked but Xcode Metal capture replay segfaulted.
+      sd.supportArgumentBuffers = YES;
       sd.minFilter = desc.filter == TextureFilter::Nearest
                        ? MTLSamplerMinMagFilterNearest
                        : MTLSamplerMinMagFilterLinear;

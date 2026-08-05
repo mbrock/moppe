@@ -261,6 +261,16 @@ device backend. Validate rendering on macOS or a Metal 4 iPhone/Apple TV.
   texture, and sampler calls. The CPU writes stable GPU addresses and resource
   IDs; each frame arena preserves them until its slot completes and adds
   resident spill allocations only for exceptional frames.
+- A sampler descriptor is a mutable recipe for the filtering, mip, and
+  addressing behavior of the immutable sampler state created from it. Every
+  sampler state placed in a Metal 4 argument table is created with
+  [`supportArgumentBuffers`](https://developer.apple.com/documentation/metal/mtlsamplerdescriptor/supportargumentbuffers)
+  enabled. Apple documents this flag as permitting the resulting sampler to
+  be referenced by resource ID from an argument buffer; Moppe likewise writes
+  that ID into its argument table. Without the flag, ordinary rendering worked
+  but Xcode Metal capture replay consistently segfaulted; enabling it made
+  replay succeed. That last observation establishes the required debugger
+  contract, not the debugger's internal cause.
 - One explicit residency set contains retained textures, private static
   geometry, frame arenas, and targets. The `CAMetalLayer` residency set is
   attached separately. Target replacement waits for prior frame use before
