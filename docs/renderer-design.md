@@ -187,12 +187,12 @@ boundaries.
 
 Fixed pass structure per frame, expressed as explicit API on `Renderer`:
 
-    shadow pass (once per world)  → 4096² Depth16, terrain only
+    shadow pass (once per world)  → 4096² Depth16, terrain + forest proxies
     scene pass
        spatial/linear: memoryless MSAA → sceneA, reversed-Z depth
        temporal: jittered 1x sceneA + persistent reversed-Z depth +
                  RG16F motion + R8 reactive mask
-       terrain → sky → city sectors → immediate world
+       terrain → sky → forest assemblies → undergrowth → immediate world
        draw list (stars, wildlife, fish, vehicles, walker, people, cars,
        blob shadows) → water (sea, lakes, and painted rivers) → dust
     reconstruction (when scene < drawable)

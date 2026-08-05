@@ -4,7 +4,7 @@
 	check-format \
 	complexity format gazetteer hooks plan plan-graph phone profile test \
 	testflight tracy tv \
-	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
+	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
 	web web-deploy web-serve xcode
 
 all: moppe
@@ -140,9 +140,6 @@ web-deploy:
 
 # Build the canonical terrain with the Fast profile, capture the Lab, and exit.
 # Build a deterministic grove from surface habitat and capture it in-game.
-tree-shot:
-	./tools/capture-trees
-
 # Compose a frozen, varied landscape survey and its inspectable HTML report.
 gazetteer:
 	./tools/capture-terrain-gazetteer \

@@ -256,6 +256,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/river.metal
   moppe/shaders/metal/dust.metal
   moppe/shaders/metal/undergrowth.metal
+  moppe/shaders/metal/forest.metal
   moppe/shaders/metal/reflection_geometry.metal
   moppe/shaders/metal/water_reflection.metal
 )
@@ -394,9 +395,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/glider_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
-  moppe/game/foliage.cc
   moppe/game/forest.cc
-  moppe/game/tree_stand.cc
 )
 
 set(MOPPE_ENGINE_SOURCES
@@ -543,9 +542,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/generated_world_test.cc
     tests/game/waterfall_surface_test.cc
     tests/game/water_capture_test.cc
-    tests/game/foliage_test.cc
     tests/game/forest_test.cc
-    tests/game/tree_stand_test.cc
     tests/game/cinematic_flight_test.cc
     tests/map/surface_test.cc
     tests/map/water_surface_test.cc

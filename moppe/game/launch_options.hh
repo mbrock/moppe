@@ -8,7 +8,6 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/terrain/world_recipe.hh>
 
-#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -43,8 +42,6 @@ namespace moppe::game {
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;
     WorldCacheConfig world_cache;
-    bool tree_demo = false;
-    std::size_t tree_count = 9;
     std::string screenshot_path;
     std::optional<WaterShot> water_shot;
     std::optional<GraphicsBenchmarkConfig> benchmark;

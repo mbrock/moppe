@@ -12,13 +12,7 @@
 namespace moppe::game {
   // The one selected presentation mode for a finished world frame. These are
   // deliberately concrete application modes, not a generic scene hierarchy.
-  enum class FrameSceneMode {
-    Gameplay,
-    Cinematic,
-    WaterInspection,
-    TreeDemo,
-    Gazetteer
-  };
+  enum class FrameSceneMode { Gameplay, Cinematic, WaterInspection, Gazetteer };
 
   // A camera has already been selected by the application before composing a
   // frame.  Keeping its view matrix here preserves cinematics' banked camera
@@ -110,12 +104,10 @@ namespace moppe::game {
   struct FrameVisibility {
     bool cinematic = false;
     bool water_inspection = false;
-    bool tree_demo = false;
     bool sky_before_terrain = false;
     bool sky_after_terrain = true;
     bool forest = true;
     bool undergrowth = true;
-    bool tree_stand = true;
     bool actors = true;
     bool ocean = true;
     bool waterfall_curtains = true;

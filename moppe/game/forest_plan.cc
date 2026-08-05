@@ -14,7 +14,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 1;
+    constexpr std::uint32_t forest_plan_version = 3;
 
     struct ForestPlanHeader {
       std::uint64_t magic;
@@ -33,12 +33,13 @@ namespace moppe::game {
       float size;
       std::uint32_t seed;
       std::uint32_t form;
+      std::uint32_t age;
     };
 
     static_assert (std::is_trivially_copyable_v<ForestPlanHeader>);
     static_assert (std::is_trivially_copyable_v<ForestSiteRecord>);
     static_assert (sizeof (ForestPlanHeader) == 40);
-    static_assert (sizeof (ForestSiteRecord) == 44);
+    static_assert (sizeof (ForestSiteRecord) == 48);
 
     position_t sample_position (meters_t x, meters_t z) {
       return position (
@@ -91,6 +92,32 @@ namespace moppe::game {
       if (!output)
         throw std::runtime_error ("could not write forest plan");
     }
+
+    ForestAge age_from_identity (std::uint32_t identity) {
+      const float draw = hash_lane (identity, 6);
+      if (draw < 0.18f)
+        return ForestAge::sapling;
+      if (draw < 0.46f)
+        return ForestAge::young;
+      if (draw < 0.94f)
+        return ForestAge::mature;
+      return ForestAge::ancient;
+    }
+
+    TreeSizeFactor size_for_age (ForestAge age, std::uint32_t identity) {
+      const float draw = hash_lane (identity, 4);
+      switch (age) {
+      case ForestAge::sapling:
+        return (0.18f + 0.27f * draw) * tree_size_factor[one];
+      case ForestAge::young:
+        return (0.48f + 0.32f * draw) * tree_size_factor[one];
+      case ForestAge::mature:
+        return (0.78f + 0.42f * draw) * tree_size_factor[one];
+      case ForestAge::ancient:
+        return (1.25f + 0.45f * draw) * tree_size_factor[one];
+      }
+      return 1.0f * tree_size_factor[one];
+    }
   }
 
   ForestPlan plan_global_forest (const map::SurfaceGeometry& surface,
@@ -142,17 +169,17 @@ namespace moppe::game {
                 elevation);
         const float conifer_chance =
           0.12f + 0.58f * high_ground.numerical_value_in (one);
-        plan.sites.push_back (
-          { .position = forest_position (x, elevation, z),
-            .normal = normal_at (surface, x, z),
-            .cover = cover,
-            .moisture = moisture_at (readings, x, z),
-            .size =
-              (0.78f + 0.50f * hash_lane (identity, 4)) * tree_size_factor[one],
-            .seed = identity,
-            .form = hash_lane (identity, 5) < conifer_chance
-                      ? ForestForm::conifer
-                      : ForestForm::broadleaf });
+        const ForestAge age = age_from_identity (identity);
+        plan.sites.push_back ({ .position = forest_position (x, elevation, z),
+                                .normal = normal_at (surface, x, z),
+                                .cover = cover,
+                                .moisture = moisture_at (readings, x, z),
+                                .size = size_for_age (age, identity),
+                                .seed = identity,
+                                .form = hash_lane (identity, 5) < conifer_chance
+                                          ? ForestForm::conifer
+                                          : ForestForm::broadleaf,
+                                .age = age });
       }
     return plan;
   }
@@ -184,6 +211,7 @@ namespace moppe::game {
         .size = site.size.numerical_value_in (one),
         .seed = site.seed,
         .form = static_cast<std::uint32_t> (site.form),
+        .age = static_cast<std::uint32_t> (site.age),
       };
       write_record (output, record);
     }
@@ -214,7 +242,8 @@ namespace moppe::game {
       ForestSiteRecord record {};
       input.read (reinterpret_cast<char*> (&record), sizeof (record));
       if (!input ||
-          record.form > static_cast<std::uint32_t> (ForestForm::conifer))
+          record.form > static_cast<std::uint32_t> (ForestForm::conifer) ||
+          record.age > static_cast<std::uint32_t> (ForestAge::ancient))
         return std::nullopt;
       plan.sites.push_back (
         { .position = position (
@@ -226,7 +255,8 @@ namespace moppe::game {
           .moisture = record.moisture * map::surface_moisture[one],
           .size = record.size * tree_size_factor[one],
           .seed = record.seed,
-          .form = static_cast<ForestForm> (record.form) });
+          .form = static_cast<ForestForm> (record.form),
+          .age = static_cast<ForestAge> (record.age) });
     }
     return plan;
   }

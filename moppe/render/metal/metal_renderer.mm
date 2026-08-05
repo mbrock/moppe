@@ -379,6 +379,8 @@ namespace moppe {
         id<MTLRenderPipelineState> dust_mesh_add = nil;
         id<MTLRenderPipelineState> water_tiles = nil;
         id<MTLRenderPipelineState> undergrowth = nil;
+        id<MTLRenderPipelineState> forest = nil;
+        id<MTLRenderPipelineState> forest_shadow = nil;
         id<MTLRenderPipelineState> river = nil;
 #if !TARGET_OS_IPHONE
         id<MTLComputePipelineState> reflection_geometry = nil;
@@ -444,6 +446,13 @@ namespace moppe {
         double reflection_proxy_ms = 0.0;
         double reflection_build_ms = 0.0;
 #endif
+      };
+
+      struct MetalForestResources {
+        id<MTLBuffer> instances = nil;
+        std::uint32_t count = 0;
+        float period_x = 0.0f;
+        float period_z = 0.0f;
       };
 
       struct MetalWaterResources {
@@ -826,6 +835,8 @@ namespace moppe {
       void set_terrain_geology (const render::TexturePixels&) override;
       void set_terrain_shore (const render::TexturePixels&) override;
       void set_terrain_paths (const render::TexturePixels&) override;
+      void set_forest (const ForestSetup& setup,
+                       std::span<const ForestInstance> instances) override;
 
       // Shared upload path for typed texture descriptions.
       bool upload_pixels (__strong id<MTLTexture>& texture,
@@ -874,6 +885,7 @@ namespace moppe {
       void draw_dust (std::span<const DustEmission> emissions,
                       float logical_time) override;
       void draw_undergrowth (const UndergrowthParams& params) override;
+      void draw_forest () override;
       void draw_waterfalls (const Mesh& mesh, const Mat4& model) override;
       void draw_mesh (const Mesh& mesh,
                       const Mat4& model,
@@ -981,6 +993,7 @@ namespace moppe {
 
       MetalPipelines m_pipelines;
       MetalTerrainResources m_terrain_resources;
+      MetalForestResources m_forest_resources;
       MetalWaterResources m_water_resources;
       MetalSceneResources m_scene_resources;
       MetalFrameTargets m_targets;
@@ -1272,7 +1285,7 @@ namespace moppe {
 
       MTL4ArgumentTableDescriptor* argument_desc =
         [[MTL4ArgumentTableDescriptor alloc] init];
-      argument_desc.maxBufferBindCount = 5;
+      argument_desc.maxBufferBindCount = 6;
       argument_desc.maxTextureBindCount = 16;
       argument_desc.maxSamplerStateBindCount = 1;
       argument_desc.initializeBindings = YES;
@@ -1742,6 +1755,69 @@ namespace moppe {
             std::cerr << "moppe: undergrowth pipeline failed: "
                       << (error ? error.localizedDescription.UTF8String : "?")
                       << std::endl;
+        }
+
+        // Trees are compact instances expanded into reusable organs. The
+        // object stage makes the projected-detail decision; the mesh stage
+        // never sees or retains a complete tree mesh.
+        MTLMeshRenderPipelineDescriptor* forest =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        forest.objectFunction =
+          [m_library newFunctionWithName:@"forest_object"];
+        forest.meshFunction = [m_library newFunctionWithName:@"forest_mesh"];
+        forest.fragmentFunction =
+          [m_library newFunctionWithName:@"forest_fragment"];
+        forest.rasterSampleCount = scene_samples;
+        forest.colorAttachments[0].pixelFormat = scene;
+        if (m_temporal_scene_pipelines) {
+          forest.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
+          forest.colorAttachments[2].pixelFormat = MTLPixelFormatR8Unorm;
+        }
+        forest.depthAttachmentPixelFormat = depth;
+        if (!m_temporal_scene_pipelines)
+          forest.stencilAttachmentPixelFormat = depth;
+        forest.payloadMemoryLength = 2048;
+        forest.maxTotalThreadsPerObjectThreadgroup =
+          MOPPE_FOREST_OBJECT_THREADS;
+        forest.maxTotalThreadsPerMeshThreadgroup = MOPPE_FOREST_MESH_THREADS;
+        if (forest.objectFunction && forest.meshFunction &&
+            forest.fragmentFunction) {
+          NSError* error = nil;
+          m_pipelines.forest = [m_device
+            newRenderPipelineStateWithMeshDescriptor:forest
+                                             options:MTLPipelineOptionNone
+                                          reflection:nil
+                                               error:&error];
+          if (!m_pipelines.forest)
+            throw std::runtime_error (
+              std::string ("Could not build forest pipeline: ") +
+              (error ? error.localizedDescription.UTF8String : "unknown"));
+        }
+
+        MTLMeshRenderPipelineDescriptor* forest_shadow =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        forest_shadow.objectFunction =
+          [m_library newFunctionWithName:@"forest_shadow_object"];
+        forest_shadow.meshFunction =
+          [m_library newFunctionWithName:@"forest_shadow_mesh"];
+        forest_shadow.rasterSampleCount = 1;
+        forest_shadow.depthAttachmentPixelFormat = MTLPixelFormatDepth16Unorm;
+        forest_shadow.payloadMemoryLength = 1024;
+        forest_shadow.maxTotalThreadsPerObjectThreadgroup =
+          MOPPE_FOREST_OBJECT_THREADS;
+        forest_shadow.maxTotalThreadsPerMeshThreadgroup =
+          MOPPE_FOREST_MESH_THREADS;
+        if (forest_shadow.objectFunction && forest_shadow.meshFunction) {
+          NSError* error = nil;
+          m_pipelines.forest_shadow = [m_device
+            newRenderPipelineStateWithMeshDescriptor:forest_shadow
+                                             options:MTLPipelineOptionNone
+                                          reflection:nil
+                                               error:&error];
+          if (!m_pipelines.forest_shadow)
+            throw std::runtime_error (
+              std::string ("Could not build forest shadow pipeline: ") +
+              (error ? error.localizedDescription.UTF8String : "unknown"));
         }
       }
       m_pipelines.river = make_pipeline (@"river_vertex",
@@ -2610,18 +2686,28 @@ namespace moppe {
       make_resident (scratch.arena[0].buffer);
       MTL4ArgumentTableDescriptor* argument_desc =
         [[MTL4ArgumentTableDescriptor alloc] init];
-      argument_desc.maxBufferBindCount = 4;
+      argument_desc.maxBufferBindCount = 6;
       argument_desc.maxTextureBindCount = 16;
       argument_desc.initializeBindings = YES;
-      NSError* argument_error = nil;
+      const auto make_shadow_arguments = [&] (NSString* label) {
+        argument_desc.label = label;
+        NSError* argument_error = nil;
+        id<MTL4ArgumentTable> table =
+          [m_device newArgumentTableWithDescriptor:argument_desc
+                                             error:&argument_error];
+        if (!table)
+          throw std::runtime_error (
+            std::string ("Could not create shadow argument table: ") +
+            (argument_error ? argument_error.localizedDescription.UTF8String
+                            : "unknown"));
+        return table;
+      };
       scratch.arguments.vertex =
-        [m_device newArgumentTableWithDescriptor:argument_desc
-                                           error:&argument_error];
-      if (!scratch.arguments.vertex)
-        throw std::runtime_error (
-          std::string ("Could not create shadow argument table: ") +
-          (argument_error ? argument_error.localizedDescription.UTF8String
-                          : "unknown"));
+        make_shadow_arguments (@"Moppe terrain shadow bindings");
+      scratch.arguments.object =
+        make_shadow_arguments (@"Moppe forest shadow object bindings");
+      scratch.arguments.mesh =
+        make_shadow_arguments (@"Moppe forest shadow mesh bindings");
       bind_address (scratch,
                     MTLRenderStageVertex,
                     MOPPE_BUF_FRAME,
@@ -2665,6 +2751,41 @@ namespace moppe {
                                            .length
                            instanceCount:1];
             }
+
+      if (m_pipelines.forest_shadow && m_forest_resources.instances &&
+          m_forest_resources.count > 0) {
+        MoppeForestUniforms forest;
+        std::memset (&forest, 0, sizeof (forest));
+        forest.view_proj = m4 (light_view_proj);
+        forest.world.x = m_forest_resources.period_x;
+        forest.world.y = m_forest_resources.period_z;
+        forest.world.z = static_cast<float> (m_forest_resources.count);
+        const MTLGPUAddress forest_uniforms = scratch.arena[0].write (forest);
+        for (MTLRenderStages stage :
+             { MTLRenderStageObject, MTLRenderStageMesh }) {
+          bind_address (scratch, stage, MOPPE_BUF_FRAME, forest_uniforms);
+          bind_address (scratch,
+                        stage,
+                        MOPPE_BUF_FOREST,
+                        m_forest_resources.instances.gpuAddress);
+        }
+        use_arguments (enc, scratch, MTLRenderStageObject | MTLRenderStageMesh);
+        [enc setRenderPipelineState:m_pipelines.forest_shadow];
+        [enc setDepthStencilState:m_pipelines.shadow_depth];
+        [enc setCullMode:MTLCullModeNone];
+        const NSUInteger candidates =
+          static_cast<NSUInteger> (m_forest_resources.count) * 9;
+        [enc drawMeshThreadgroups:MTLSizeMake ((candidates +
+                                                MOPPE_FOREST_OBJECT_THREADS -
+                                                1) /
+                                                 MOPPE_FOREST_OBJECT_THREADS,
+                                               1,
+                                               1)
+          threadsPerObjectThreadgroup:MTLSizeMake (
+                                        MOPPE_FOREST_OBJECT_THREADS, 1, 1)
+            threadsPerMeshThreadgroup:MTLSizeMake (
+                                        MOPPE_FOREST_MESH_THREADS, 1, 1)];
+      }
       [enc endEncoding];
       submit_and_wait (cmd);
       [m_residency removeAllocation:scratch.arena[0].buffer];
@@ -2851,6 +2972,51 @@ namespace moppe {
                        flux,
                        render::PixelFormat::rg16f,
                        MTLPixelFormatRG16Float);
+    }
+
+    void MetalRenderer::set_forest (const ForestSetup& setup,
+                                    std::span<const ForestInstance> instances) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_forest");
+      std::vector<MoppeForestInstance> packed;
+      packed.reserve (instances.size ());
+      for (const ForestInstance& instance : instances) {
+        const Vec3 root = position_value (instance.root);
+        const Vec3 up =
+          instance.ground_normal.numerical_value_in (mp_units::one);
+        const float height = instance.height.numerical_value_in (u::m);
+        const float radius = instance.crown_radius.numerical_value_in (u::m);
+        if (!std::isfinite (height) || !std::isfinite (radius) ||
+            height <= 0.0f || radius <= 0.0f)
+          throw std::invalid_argument ("invalid typed forest individual");
+        MoppeForestInstance gpu {};
+        gpu.root_height = f4 (root, height);
+        gpu.up_radius = f4 (up, radius);
+        gpu.ecology.x =
+          instance.canopy_cover.numerical_value_in (mp_units::one);
+        gpu.ecology.y = instance.moisture.numerical_value_in (mp_units::one);
+        gpu.identity.x = instance.seed;
+        gpu.identity.y = static_cast<std::uint32_t> (instance.species);
+        gpu.identity.z = static_cast<std::uint32_t> (instance.age);
+        packed.push_back (gpu);
+      }
+
+      if (m_forest_resources.instances && m_frame.sequence &&
+          ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                                  timeoutMS:5000])
+        throw std::runtime_error (
+          "Timed out replacing an in-flight forest instance buffer");
+      if (m_forest_resources.instances) {
+        [m_residency removeAllocation:m_forest_resources.instances];
+        [m_residency commit];
+      }
+      m_forest_resources.instances =
+        create_private_buffer (packed.data (),
+                               packed.size () * sizeof (MoppeForestInstance),
+                               @"Moppe forest individuals");
+      m_forest_resources.count = static_cast<std::uint32_t> (packed.size ());
+      const Vec3 period = extent_value (setup.period);
+      m_forest_resources.period_x = period[0];
+      m_forest_resources.period_z = period[2];
     }
 
     // -- targets -------------------------------------------------------
@@ -4205,6 +4371,63 @@ namespace moppe {
             threadsPerMeshThreadgroup:MTLSizeMake (
                                         MOPPE_UNDERGROWTH_MESH_THREADS, 1, 1)];
       }
+    }
+
+    void MetalRenderer::draw_forest () {
+      const MetalForestResources& forest = m_forest_resources;
+      const MetalTerrainResources& terrain = m_terrain_resources;
+      if (!m_pipelines.forest || !forest.instances || forest.count == 0)
+        return;
+
+      MoppeForestUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.view_proj = m_frame.uniforms.view_proj;
+      u.unjittered_view_proj = m_frame.uniforms.unjittered_view_proj;
+      u.previous_view_proj = m_frame.uniforms.previous_view_proj;
+      u.light_matrix = m_frame.uniforms.light_matrix;
+      u.camera_pos = m_frame.uniforms.camera_pos;
+      u.sun_dir = m_frame.uniforms.sun_dir;
+      u.sun_diffuse = m_frame.uniforms.sun_diffuse;
+      u.sun_specular = m_frame.uniforms.sun_specular;
+      u.ambient = m_frame.uniforms.ambient;
+      u.fog_color = m_frame.uniforms.fog_color;
+      u.world.x = forest.period_x;
+      u.world.y = forest.period_z;
+      u.world.z = static_cast<float> (forest.count);
+      u.params = m_frame.uniforms.misc;
+      u.shadow = m_frame.uniforms.shadow;
+      u.temporal = m_frame.uniforms.temporal;
+
+      id<MTL4RenderCommandEncoder> enc = scene_encoder ();
+      begin_gpu_pass (enc, GpuPass::Scene);
+      [enc setRenderPipelineState:m_pipelines.forest];
+      [enc setDepthStencilState:m_pipelines.depth[1][1]];
+      [enc setCullMode:MTLCullModeNone];
+      const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
+      for (MTLRenderStages stage :
+           { MTLRenderStageObject, MTLRenderStageMesh, MTLRenderStageFragment })
+        bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
+      for (MTLRenderStages stage : { MTLRenderStageObject, MTLRenderStageMesh })
+        bind_address (
+          m_frame, stage, MOPPE_BUF_FOREST, forest.instances.gpuAddress);
+      bind_texture (m_frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_SHADOW,
+                    terrain.shadow_map ? terrain.shadow_map
+                                       : m_pipelines.shadow_fallback);
+      use_arguments (enc,
+                     m_frame,
+                     MTLRenderStageObject | MTLRenderStageMesh |
+                       MTLRenderStageFragment);
+      [enc drawMeshThreadgroups:MTLSizeMake ((forest.count +
+                                              MOPPE_FOREST_OBJECT_THREADS - 1) /
+                                               MOPPE_FOREST_OBJECT_THREADS,
+                                             1,
+                                             1)
+        threadsPerObjectThreadgroup:MTLSizeMake (
+                                      MOPPE_FOREST_OBJECT_THREADS, 1, 1)
+          threadsPerMeshThreadgroup:MTLSizeMake (
+                                      MOPPE_FOREST_MESH_THREADS, 1, 1)];
     }
 
     // -- draw lists ----------------------------------------------------

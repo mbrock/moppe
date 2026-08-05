@@ -18,6 +18,9 @@ namespace moppe::test {
     std::vector<float> water_flow;
     std::vector<float> trail_influence;
     std::vector<float> home_base_influence;
+    render::ForestSetup forest_setup {};
+    std::vector<render::ForestInstance> forest_instances;
+    std::size_t forest_draws = 0;
 
     render::TexturePtr create_texture (const render::TextureDesc&,
                                        const void*) override {
@@ -76,12 +79,21 @@ namespace moppe::test {
       if (lanes.size () > 1)
         home_base_influence = lanes[1];
     }
+    void
+    set_forest (const render::ForestSetup& setup,
+                std::span<const render::ForestInstance> instances) override {
+      forest_setup = setup;
+      forest_instances.assign (instances.begin (), instances.end ());
+    }
     bool begin_frame (const render::FrameParams&) override {
       return true;
     }
     void draw_terrain (const render::ChunkDraw*, int) override {}
     void draw_sky (const render::SkyParams&) override {}
     void draw_ocean (const render::OceanParams&) override {}
+    void draw_forest () override {
+      ++forest_draws;
+    }
     void draw_waterfalls (const render::Mesh&, const Mat4&) override {}
     void draw_mesh (const render::Mesh&, const Mat4&, uint64_t) override {
       ++meshes_drawn;
