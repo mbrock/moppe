@@ -42,11 +42,12 @@ handoff.
 
 Every writable host saves that completed renderer-free world as a directory of
 typed Arrow fields, compact topology, and the renderer-independent forest
-plan. The automatic directory name contains the linked executable identity and
-the complete recipe identity, so a changed build or world parameters cannot
-silently reuse stale generated data. `--world-cache-key NAME` replaces only the
-build portion with a stable developer namespace; profile, resolution, seed,
-extent, and water datum still select separate worlds within it.
+plan. The automatic directory name contains a stable default namespace and the
+complete recipe identity. Ordinary executable rebuilds therefore reuse the
+same finished world instead of rerunning erosion. Profile, resolution, seed,
+extent, and water datum still select separate worlds, and the stored schema and
+recipe are validated before reuse. `--world-cache-key NAME` selects an
+additional stable developer namespace.
 `--refresh-world-cache` rebuilds and replaces the selected entry, while
 `--no-world-cache` retains the older terrain-only cache path without loading or
 saving a completed world.

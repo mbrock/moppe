@@ -79,9 +79,10 @@ SurfaceGeometry(TerrainDomain)
   -> GeneratedWorld
 ```
 
-The completed world is cached automatically under executable and recipe
-identity. A named CLI cache namespace can deliberately remain stable across
-builds, while the recipe and cache schemas are still validated on every load.
+The completed world is cached automatically under a stable default namespace
+and recipe identity. A named CLI cache namespace keeps an additional world,
+while the recipe and cache schemas are validated on every load. Executable
+rebuilds alone do not rerun terrain evolution.
 On a whole-world miss, the expensive geometry bundle may still come from its
 older typed Arrow cache. Whether loaded or generated, normals and broad snow
 support are rebuilt before water analysis. Hydrology derives, in order, a

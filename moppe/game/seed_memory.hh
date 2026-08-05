@@ -6,8 +6,8 @@
 
 namespace moppe::game {
   // An ordinary launch returns to the world you last played rather than a new
-  // one.  The memory is keyed by build, generation profile, and resolution,
-  // since a seed only reproduces its world under the same three.
+  // one. The memory is stable across builds and keyed by generation profile
+  // and resolution; the finished-world cache validates the complete recipe.
   void remember_seed (const WorldParams& world,
                       terrain::TerrainGenerationProfile profile,
                       int seed);
@@ -16,10 +16,8 @@ namespace moppe::game {
   int remembered_seed (const WorldParams& world,
                        terrain::TerrainGenerationProfile profile);
 
-  // Cached terrain from earlier builds cannot be trusted to match the current
-  // generator, and it is large. Drop obsolete automatic terrain and finished
-  // world caches rather than retaining one world per build. Named world-cache
-  // namespaces deliberately survive builds.
+  // Drop obsolete build-keyed terrain, seed, and finished-world caches left by
+  // older versions. Stable default and named finished-world caches survive.
   void prune_obsolete_terrain_caches ();
 }
 

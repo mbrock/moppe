@@ -155,7 +155,7 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
   std::filesystem::remove_all (cache);
 }
 
-MOPPE_TEST (named_world_cache_key_replaces_only_the_build_identity) {
+MOPPE_TEST (world_cache_names_are_stable_and_recipe_specific) {
   using namespace moppe;
   using namespace moppe::terrain;
 
@@ -164,20 +164,17 @@ MOPPE_TEST (named_world_cache_key_replaces_only_the_build_identity) {
   const WorldRecipe first = test_world_recipe (extent, 17, Seed { 91 });
   const WorldRecipe second = test_world_recipe (extent, 17, Seed { 92 });
   const game::WorldCacheConfig automatic;
-  MOPPE_CHECK (game::world_cache_name (first, automatic, "build-a") !=
-               game::world_cache_name (first, automatic, "build-b"));
+  const std::string automatic_path = game::world_cache_name (first, automatic);
+  MOPPE_CHECK (automatic_path.find ("world-default-") != std::string::npos);
+  MOPPE_CHECK (automatic_path != game::world_cache_name (second, automatic));
 
   game::WorldCacheConfig named { .key = "terrain-tuning" };
-  const std::string first_path =
-    game::world_cache_name (first, named, "build-a");
-  const std::string second_path =
-    game::world_cache_name (second, named, "build-b");
+  const std::string first_path = game::world_cache_name (first, named);
+  const std::string second_path = game::world_cache_name (second, named);
   MOPPE_CHECK (first_path.find ("world-key-terrain-tuning-") !=
                std::string::npos);
-  MOPPE_CHECK (first_path ==
-               game::world_cache_name (first, named, "another-build"));
   MOPPE_CHECK (first_path != second_path);
 
   named.mode = game::WorldCacheMode::Disabled;
-  MOPPE_CHECK (game::world_cache_name (first, named, "build-a").empty ());
+  MOPPE_CHECK (game::world_cache_name (first, named).empty ());
 }
