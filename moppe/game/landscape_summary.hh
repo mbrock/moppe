@@ -17,8 +17,11 @@ namespace moppe::game {
   struct LandscapeSummary {
     std::uint32_t seed = 0;
     int resolution = 0;
+    double spacing_x_m = 0.0;
+    double spacing_z_m = 0.0;
     double evolution_years = 0.0;
     double uplift_years = 0.0;
+    double channel_initiation_area_m2 = 0.0;
     std::size_t land_cells = 0;
     double land_area_m2 = 0.0;
     double land_elevation_p10_m = 0.0;
@@ -54,6 +57,11 @@ namespace moppe::game {
 
   void write_landscape_summary_csv (std::ostream& output,
                                     const LandscapeSummary& summary);
+
+  // A compact reproducible elevation field accompanies a gazetteer so
+  // terrain-scale evidence can be recalculated without rebuilding the world.
+  void write_landscape_elevation_f32 (std::ostream& output,
+                                      const map::SurfaceGeometry& surface);
 }
 
 #endif

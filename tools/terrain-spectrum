@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Measure physical-scale corrugation in a captured Moppe heightfield."""
+
+import csv
+import pathlib
+import sys
+
+import numpy as np
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"terrain-spectrum: {message}")
+
+
+if len(sys.argv) not in (2, 3):
+    fail("usage: tools/terrain-spectrum GAZETTEER_DIR [OUTPUT_CSV]")
+
+root = pathlib.Path(sys.argv[1])
+output_path = (
+    pathlib.Path(sys.argv[2])
+    if len(sys.argv) == 3
+    else root / "terrain-spectrum.csv"
+)
+
+try:
+    with (root / "terrain-summary.csv").open(newline="") as source:
+        summary = next(csv.DictReader(source))
+except (FileNotFoundError, StopIteration) as error:
+    fail(f"cannot read terrain-summary.csv: {error}")
+
+resolution = int(summary["resolution"])
+spacing_x = float(summary["spacing_x_m"])
+spacing_z = float(summary["spacing_z_m"])
+elevation = np.fromfile(root / "terrain-elevation.f32", dtype="<f4")
+if elevation.size != resolution * resolution:
+    fail(
+        "terrain-elevation.f32 contains "
+        f"{elevation.size} samples, expected {resolution * resolution}"
+    )
+
+# The terrain is periodic, so no window is needed. A radial mean makes the
+# result independent of the camera and of the direction any particular ridge
+# happens to face.
+field = elevation.reshape((resolution, resolution)).astype(np.float64)
+field -= field.mean()
+power = np.abs(np.fft.rfft2(field)) ** 2
+frequency_x = np.fft.rfftfreq(resolution, d=spacing_x)
+frequency_z = np.fft.fftfreq(resolution, d=spacing_z)
+radial_frequency = np.hypot(frequency_x[None, :], frequency_z[:, None])
+
+minimum_wavelength_m = max(10.0, 2.5 * max(spacing_x, spacing_z))
+maximum_wavelength_m = min(200.0, 0.2 * resolution * min(spacing_x, spacing_z))
+minimum_frequency = 1.0 / maximum_wavelength_m
+maximum_frequency = 1.0 / minimum_wavelength_m
+usable = (
+    (radial_frequency >= minimum_frequency)
+    & (radial_frequency <= maximum_frequency)
+    & np.isfinite(power)
+    & (power > 0.0)
+)
+if np.count_nonzero(usable) < 32:
+    fail("heightfield has too few usable physical-frequency samples")
+
+edges = np.geomspace(minimum_frequency, maximum_frequency, 65)
+bin_index = np.searchsorted(edges, radial_frequency[usable], side="right") - 1
+inside = (bin_index >= 0) & (bin_index < len(edges) - 1)
+bin_index = bin_index[inside]
+sample_power = power[usable][inside]
+counts = np.bincount(bin_index, minlength=len(edges) - 1)
+total_power = np.bincount(
+    bin_index, weights=sample_power, minlength=len(edges) - 1
+)
+valid = counts >= 8
+centers = np.sqrt(edges[:-1] * edges[1:])
+mean_power = np.divide(
+    total_power,
+    counts,
+    out=np.zeros_like(total_power),
+    where=counts > 0,
+)
+valid &= mean_power > 0.0
+if np.count_nonzero(valid) < 8:
+    fail("heightfield has too few populated radial spectrum bins")
+
+log_frequency = np.log10(centers[valid])
+log_power = np.log10(mean_power[valid])
+background = np.polyval(np.polyfit(log_frequency, log_power, 1), log_frequency)
+excess = log_power - background
+peak = int(np.argmax(excess))
+
+row = {
+    "spectral_minimum_wavelength_m": minimum_wavelength_m,
+    "spectral_maximum_wavelength_m": maximum_wavelength_m,
+    "spectral_peak_wavelength_m": 1.0 / (10.0 ** log_frequency[peak]),
+    "spectral_peak_excess_dex": excess[peak],
+    "spectral_background_slope": np.polyfit(log_frequency, log_power, 1)[0],
+}
+output_path.parent.mkdir(parents=True, exist_ok=True)
+with output_path.open("w", newline="") as destination:
+    writer = csv.DictWriter(destination, fieldnames=row.keys())
+    writer.writeheader()
+    writer.writerow(row)
+print(output_path)

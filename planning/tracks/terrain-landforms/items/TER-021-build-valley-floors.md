@@ -5,7 +5,7 @@ rfc = "RFC-0005"
 track = "terrain-landforms"
 status = "backlog"
 depends_on = ["TER-020"]
-order = 60
+order = 50
 areas = ["terrain", "rivers", "sediment"]
 +++
 # Deposit sediment across valley-width footprints

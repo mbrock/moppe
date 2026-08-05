@@ -372,6 +372,26 @@ namespace moppe::game {
           options.uplift_duration = years * mp_units::astronomy::Julian_year;
           return true;
         } },
+      { "--channel-initiation-area",
+        "",
+        1,
+        "<SQUARE_METERS>",
+        "Set the physical catchment scale where channel incision begins.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float area = 0.0f;
+          if (!parse_float_option (values[0],
+                                   "--channel-initiation-area",
+                                   1.0f,
+                                   1000000000.0f,
+                                   area,
+                                   error))
+            return false;
+          options.channel_initiation_area =
+            area * mp_units::si::metre * mp_units::si::metre;
+          return true;
+        } },
       { "--world-cache-key",
         "",
         1,
@@ -623,6 +643,7 @@ namespace moppe::game {
                                        seed,
                                        options.world.water_level,
                                        options.generation_profile,
-                                       options.uplift_duration);
+                                       options.uplift_duration,
+                                       options.channel_initiation_area);
   }
 }

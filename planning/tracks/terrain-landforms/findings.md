@@ -91,3 +91,52 @@ additional erosion and deposition; inferred ocean export changes by only
 initiation rather than by an unaccounted elevation filter.
 
 Artifacts are under `/tmp/moppe-hillslope.UGoY4S/gazetteer`.
+
+## TER-011 investigation: channel scale depends on depositional landforms
+
+### Decision
+
+Do not select a new Play channel-initiation area yet. Keep the existing 1 m2
+default while TER-020 and TER-021 add cover-aware transport and valley-floor
+deposition, then rerun this matrix. A 7 m2 candidate looks attractive at the
+2048 Play resolution, but it is approximately one 5.96 m2 grid cell and is
+therefore a resolution coincidence rather than a defensible physical channel
+head. At 1024 resolution one cell is 23.84 m2 and the same threshold again
+applies full fluvial incision everywhere.
+
+### Controlled comparison
+
+`--channel-initiation-area` now enters the immutable recipe and both cache
+identities in square metres. Every gazetteer also retains the completed
+float32 elevation field; `tools/terrain-spectrum` measures its 10--200 m
+radial spectrum. `tools/terrain-channel-matrix` generated optimized seed-123
+Play worlds at 1, 4, 7, 10, 16, 25, 100, 400, and 1200 m2 with 500 ky uplift,
+fixed high-quality renderer settings, and immediate recipe-specific cache-hit
+checks.
+
+| Reading | 1 m2 | 7 m2 | 10 m2 | 25 m2 | 1200 m2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Median slope | 22.89 deg | 19.89 deg | 16.96 deg | 15.45 deg | 16.47 deg |
+| Land at or below 10 deg | 10.07% | 14.89% | 21.60% | 30.06% | 26.51% |
+| Largest connected land at or below 10 deg | 0.91 km2 | 1.31 km2 | 1.53 km2 | 0.80 km2 | 0.51 km2 |
+| Visible river length | 44.33 km | 40.95 km | 39.63 km | 24.22 km | 20.90 km |
+| Inland water area | 0.09 km2 | 0.20 km2 | 0.49 km2 | 2.06 km2 | 2.66 km2 |
+| Spectral peak excess | +0.178 dex | +0.140 dex | +0.149 dex | +0.515 dex | +0.183 dex |
+
+The 4 m2 result is nearly the baseline. Seven square metres improves slopes,
+connected gentle land, and the spectral reading while retaining 92% of the
+visible river length and the full headwater--confluence--mouth view set. At
+10 m2 wet cells are already 54% above baseline. From 25 m2 upward, fixed views
+show broad waterlogged basins, perched waterfalls, ribbed remnants, and sheer
+channel or coastal walls; river length roughly halves. These are not merely
+the historically reported dull hillsides.
+
+The threshold is removing the small-catchment incision that currently serves
+as a basin-drainage and valley-making mechanism. Conservative linear creep
+cannot replace that work over two million years, while one-cell fluvial
+deposition cannot build a receiving valley floor. Choosing 7 m2 would hide
+that missing process at one resolution. The dependency graph now puts
+cover-aware transport and valley-width deposition before TER-011 instead.
+
+Decision artifacts are under `/tmp/moppe-channel.I3IBmK/matrix` and
+`/tmp/moppe-channel-fine.SPtKxx/matrix`.

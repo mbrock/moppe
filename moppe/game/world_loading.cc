@@ -57,6 +57,10 @@ namespace moppe::game {
            << "-uplift-"
            << bits (recipe.evolution ().uplift_duration.numerical_value_in (
                 mp_units::astronomy::Julian_year))
+           << "-channel-"
+           << bits (
+                recipe.evolution ().channel_initiation_area.numerical_value_in (
+                  u::m * u::m))
            << ".arrows";
       return platform::cache_path (name.str ());
     }
@@ -71,7 +75,8 @@ namespace moppe::game {
         extent[0] == 5000.0f && extent[1] == 320.0f && extent[2] == 5000.0f &&
         recipe.water_datum ().numerical_value_in (moppe::u::m) == 50.0f &&
         recipe.evolution ().uplift_duration ==
-          500000.0f * mp_units::astronomy::Julian_year;
+          500000.0f * mp_units::astronomy::Julian_year &&
+        recipe.evolution ().channel_initiation_area == 1.0f * u::m * u::m;
       if (is_apple_tv_default)
         return platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE);
 #else
