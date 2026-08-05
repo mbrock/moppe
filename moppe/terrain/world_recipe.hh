@@ -54,7 +54,9 @@ namespace moppe::terrain {
       TerrainGenerationProfile generation_profile,
       std::optional<julian_years_t> uplift_duration,
       std::optional<square_meters_t> channel_initiation_area,
-      std::optional<SedimentConcentration> sediment_concentration);
+      std::optional<SedimentConcentration> sediment_concentration,
+      std::optional<proportion_t> critical_hillslope_gradient,
+      std::optional<proportion_t> maximum_hillslope_multiplier);
     WorldRecipe (spatial_extent_t extent,
                  int resolution,
                  Seed seed,
@@ -62,7 +64,9 @@ namespace moppe::terrain {
                  TerrainGenerationProfile generation_profile,
                  std::optional<julian_years_t> uplift_duration,
                  std::optional<square_meters_t> channel_initiation_area,
-                 std::optional<SedimentConcentration> sediment_concentration);
+                 std::optional<SedimentConcentration> sediment_concentration,
+                 std::optional<proportion_t> critical_hillslope_gradient,
+                 std::optional<proportion_t> maximum_hillslope_multiplier);
 
     spatial_extent_t m_extent;
     int m_resolution;
@@ -81,7 +85,9 @@ namespace moppe::terrain {
     TerrainGenerationProfile generation_profile,
     std::optional<julian_years_t> uplift_duration = std::nullopt,
     std::optional<square_meters_t> channel_initiation_area = std::nullopt,
-    std::optional<SedimentConcentration> sediment_concentration = std::nullopt);
+    std::optional<SedimentConcentration> sediment_concentration = std::nullopt,
+    std::optional<proportion_t> critical_hillslope_gradient = std::nullopt,
+    std::optional<proportion_t> maximum_hillslope_multiplier = std::nullopt);
 }
 
 #endif

@@ -158,11 +158,19 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
     static_cast<float> (summary.sediment_concentration_at_unit_slope),
     2e-5f,
     0.0f);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (summary.critical_hillslope_gradient), 1.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (summary.maximum_hillslope_multiplier), 1.0f, 0.0f);
   MOPPE_CHECK (summary.land_cells > 0);
   MOPPE_CHECK (summary.land_area_m2 > 0.0);
   MOPPE_CHECK (summary.land_elevation_max_m >= summary.land_elevation_p90_m);
   MOPPE_CHECK (summary.land_below_10_deg_fraction >=
                summary.land_below_5_deg_fraction);
+  MOPPE_CHECK (summary.land_below_20_deg_fraction >=
+               summary.land_below_10_deg_fraction);
+  MOPPE_CHECK (summary.largest_connected_below_20_deg_m2 >=
+               summary.largest_connected_below_10_deg_m2);
   MOPPE_CHECK_NEAR (
     static_cast<float> (summary.eroded_sediment_m3), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (
@@ -176,6 +184,8 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
     "seed,resolution,spacing_x_m,spacing_z_m,evolution_years,"));
   MOPPE_CHECK (output.str ().find (",200000,750000,1,1,") != std::string::npos);
   MOPPE_CHECK (output.str ().find ("sediment_concentration_at_unit_slope") !=
+               std::string::npos);
+  MOPPE_CHECK (output.str ().find ("critical_hillslope_gradient") !=
                std::string::npos);
 
   std::ostringstream elevation_output (std::ios::out | std::ios::binary);
@@ -232,6 +242,19 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
                        1200.0f * u::m * u::m);
   MOPPE_CHECK (!game::try_load_world_cache (
     game::WorldParams {}, other_channel_scale, cache.string ()));
+  const WorldRecipe other_hillslope =
+    make_world_recipe (extent,
+                       17,
+                       Seed { 91 },
+                       50.0f * u::m,
+                       TerrainGenerationProfile::Fast,
+                       std::nullopt,
+                       std::nullopt,
+                       std::nullopt,
+                       0.8f * proportion[mp_units::one],
+                       4.0f * proportion[mp_units::one]);
+  MOPPE_CHECK (!game::try_load_world_cache (
+    game::WorldParams {}, other_hillslope, cache.string ()));
   std::filesystem::remove_all (cache);
 }
 
@@ -258,6 +281,17 @@ MOPPE_TEST (world_cache_names_are_stable_and_recipe_specific) {
                        TerrainGenerationProfile::Fast,
                        std::nullopt,
                        1200.0f * u::m * u::m);
+  const WorldRecipe other_hillslope =
+    make_world_recipe (extent,
+                       17,
+                       Seed { 91 },
+                       50.0f * u::m,
+                       TerrainGenerationProfile::Fast,
+                       std::nullopt,
+                       std::nullopt,
+                       std::nullopt,
+                       0.8f * proportion[mp_units::one],
+                       4.0f * proportion[mp_units::one]);
   const game::WorldCacheConfig automatic;
   const std::string automatic_path = game::world_cache_name (first, automatic);
   MOPPE_CHECK (automatic_path.find ("world-default-") != std::string::npos);
@@ -266,6 +300,8 @@ MOPPE_TEST (world_cache_names_are_stable_and_recipe_specific) {
                game::world_cache_name (other_uplift, automatic));
   MOPPE_CHECK (automatic_path !=
                game::world_cache_name (other_channel_scale, automatic));
+  MOPPE_CHECK (automatic_path !=
+               game::world_cache_name (other_hillslope, automatic));
 
   game::WorldCacheConfig named { .key = "terrain-tuning" };
   const std::string first_path = game::world_cache_name (first, named);

@@ -24,6 +24,8 @@ namespace moppe::game {
     double channel_initiation_area_m2 = 0.0;
     double runoff_m_per_year = 0.0;
     double sediment_concentration_at_unit_slope = 0.0;
+    double critical_hillslope_gradient = 0.0;
+    double maximum_hillslope_multiplier = 0.0;
     std::size_t land_cells = 0;
     double land_area_m2 = 0.0;
     double land_elevation_p10_m = 0.0;
@@ -37,7 +39,9 @@ namespace moppe::game {
     double slope_p99_deg = 0.0;
     double land_below_5_deg_fraction = 0.0;
     double land_below_10_deg_fraction = 0.0;
+    double land_below_20_deg_fraction = 0.0;
     double largest_connected_below_10_deg_m2 = 0.0;
+    double largest_connected_below_20_deg_m2 = 0.0;
     std::size_t river_reaches = 0;
     double river_length_m = 0.0;
     double drainage_density_m_per_km2 = 0.0;

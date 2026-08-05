@@ -366,3 +366,177 @@ change.
 
 Decision artifacts are under
 `/tmp/moppe-standing-water-perf.7FQs7m/gazetteer`.
+
+## TER-011 after standing-water deposition
+
+### Decision
+
+Do not select the visually strongest 10 m2 result. It is only 1.68 cells at
+2048 resolution and lies below one 23.8 m2 cell at 1024, so it repeats the
+resolution coincidence already rejected after the first matrix. Return
+TER-011 to backlog behind explicit outlet erosion.
+
+### Optimized matrix
+
+The renewed seed-123 matrix used the merged Apple-SIMD `Vec3` path, cache
+schema 10, fresh terrain caches, full fixed gazetteers, spectra, and verified
+finished-world cache hits. All six worlds completed in 113--121 seconds.
+
+| Reading | 1 m2 | 7 m2 | 10 m2 | 16 m2 | 25 m2 | 100 m2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Relief (m) | 199.6 | 207.3 | 214.0 | 225.8 | 241.4 | 292.0 |
+| Median slope (deg) | 17.5 | 15.1 | 12.6 | 13.0 | 15.8 | 23.4 |
+| P90 slope (deg) | 39.9 | 38.8 | 37.9 | 41.9 | 49.7 | 62.4 |
+| Land <= 10 deg | 26.7% | 33.4% | 41.3% | 41.1% | 35.6% | 26.5% |
+| Connected gentle land (km2) | 2.53 | 2.73 | 3.26 | 2.55 | 1.98 | 1.49 |
+| River length (km) | 34.9 | 33.5 | 31.9 | 30.3 | 25.4 | 22.5 |
+| Inland water (km2) | 1.06 | 1.39 | 1.85 | 2.37 | 3.10 | 3.73 |
+| Spectral excess (dex) | .444 | .397 | .357 | .489 | .644 | .612 |
+
+TER-022 prevents the immediate catastrophic collapse seen in the earlier
+25 m2 world: all candidates now retain substantial connected gentle land and
+complete the trail gate. But the response beyond the one-cell sweet spot is
+still wrong. Water area rises monotonically, the confluence target disappears
+at every threshold from 7 m2 upward, river length falls, and upper-tail slope
+returns. The 25 and 100 m2 fixed views again show abrupt spillway walls and
+fluted mountain faces.
+
+The mechanism is direct rather than conjectural, but the relevant identities
+must remain distinct. `LakeCensus::outlet_cell` is the final submerged cell and
+should remain depositional. Its `spill_cell` is the dry sill immediately
+downstream. That sill already uses the conservative cover-first router, but
+the ordinary catchment threshold can suppress its stream-power incision even
+though overflow has already concentrated there. TER-023 should give only
+designated spill cells full channel share and leave the submerged bed
+depositional.
+
+Decision artifacts are under
+`/tmp/moppe-channel-standing-water.4vpeRS/matrix`.
+
+## TER-023: designated spillway incision is too narrow
+
+The synthetic hypothesis was sound: marking each census `spill_cell` as
+concentrated overflow lets that dry sill bypass channel-head suppression,
+lowers it through the existing cover-first sediment ledger, and leaves both
+the submerged `outlet_cell` and unrelated lake bed unchanged. The optimized
+25 m2 Play A/B nevertheless rejects it as the missing world process.
+
+| Reading | Standing water | Spillway override |
+| --- | ---: | ---: |
+| Land relief | 241.44 m | 241.38 m |
+| Median slope | 15.84 deg | 16.03 deg |
+| P90 slope | 49.70 deg | 49.73 deg |
+| Connected gentle land | 1.977 km2 | 1.992 km2 |
+| River length | 25.41 km | 25.06 km |
+| Inland water | 3.097 km2 | 3.065 km2 |
+| Spectral excess | +0.644 dex | +0.647 dex |
+
+The result still loses the confluence target and retains the same fluted
+mountain walls. The implementation was removed. The broader discontinuity is
+that channel share multiplies both the implicit incision velocity and solid
+transport capacity down to zero. Below a physical channel head the model has
+linear creep but no rainfall-driven diffuse wash at all. TER-024 should make a
+small conservative wash share explicit, with the channel threshold controlling
+only the concentrated increment.
+
+Decision artifacts are under
+`/tmp/moppe-channel-spillway.M7TsXP/matrix/channel-25`.
+
+## TER-024: diffuse stream power is still stream power
+
+The experiment retained an explicit fraction of both implicit incision and
+transport capacity below the channel head. Zero reproduced the TER-022
+threshold result exactly; 5%, 10%, and 20% were bounded, cover-first, and
+recipe-specific. All four optimized 2048-square worlds completed in 114--127
+seconds and reloaded their finished-world caches.
+
+| Reading | 0% | 5% | 10% | 20% |
+| --- | ---: | ---: | ---: | ---: |
+| Relief (m) | 241.4 | 238.0 | 235.1 | 228.8 |
+| Median slope (deg) | 15.84 | 15.97 | 15.74 | 15.54 |
+| P90 slope (deg) | 49.70 | 48.88 | 48.09 | 47.15 |
+| Land <= 10 deg | 35.6% | 35.0% | 35.3% | 35.0% |
+| Connected gentle land (km2) | 1.98 | 1.87 | 1.49 | 1.51 |
+| River length (km) | 25.4 | 23.2 | 27.2 | 28.3 |
+| Inland water (km2) | 3.10 | 3.13 | 2.84 | 2.64 |
+| Spectral excess (dex) | .644 | .634 | .638 | .627 |
+
+The weak relief response is real, but it does not create the missing
+geography. Connected rolling ground shrinks, spectral evidence barely moves,
+and the fixed eroded-slope and highland views retain the same close parallel
+fluting. The 20% candidate also loses the confluence target. The implementation
+was removed: scaling stream power down still lets unchannelized catchments cut
+bedrock and therefore cannot establish the requested process distinction.
+
+The next bounded hypothesis is TER-025. The existing conservative hillslope
+flux is linear and has only a 14 m two-million-year smoothing length. A bounded
+critical-gradient multiplier can selectively accelerate cover-first movement
+on steep faces while leaving subcritical rolling ground and channel initiation
+semantically distinct.
+
+Decision artifacts are under `/tmp/moppe-diffuse-wash.aUfftR`.
+
+## TER-025: bounded critical-gradient hillslopes
+
+The accepted mechanism leaves the linear face flux exact below half a typed
+critical gradient, then smoothly raises its diffusivity to a bounded
+multiplier. The active factor participates in the explicit stability bound;
+every posting remains equal-and-opposite, cover-first, and part of the same
+solid-volume ledger. Multiplier one is the old implementation exactly.
+
+At a 0.8 critical gradient and 25 m2 channel head, the optimized matrix was:
+
+| Reading | 1x | 2x | 4x |
+| --- | ---: | ---: | ---: |
+| Relief (m) | 241.4 | 242.9 | 218.9 |
+| Median slope (deg) | 15.84 | 15.52 | 15.31 |
+| P90 slope (deg) | 49.70 | 45.44 | 34.16 |
+| P99 slope (deg) | 68.81 | 73.23 | 56.15 |
+| Land <= 20 deg | 59.9% | 63.2% | 64.6% |
+| River length (km) | 25.4 | 23.5 | 22.2 |
+| Inland water (km2) | 3.10 | 2.92 | 2.76 |
+| Spectral excess (dex) | .644 | .552 | .416 |
+| Generation (s) | 120 | 126 | 134 |
+
+The 2x case merely moves the failure around; its P99 tail worsens and its fixed
+eroded-slope view contains sharper pinnacles. The 4x case materially rounds
+the world, retains every capture target, and costs fourteen seconds. This
+closes the hillslope-process gate without granting below-channel stream power.
+
+Decision artifacts are under `/tmp/moppe-critical-hillslope.x8Cjln`.
+
+## TER-011: a physical channel head after nonlinear hillslopes
+
+With the 0.8/4 hillslope candidate, 100 and 400 m2 channel heads both recover
+all seventeen targets that the earlier linear-hillslope worlds lost. The 400
+m2 stress case is still wrong: relief reaches 305 m, P90 slope 52 degrees, and
+the fixed coast shows sheer walls. The viable 100 m2 world led to one focused
+refinement, lowering the critical gradient to 0.6 so transport begins to
+accelerate at a 0.3 face gradient while remaining bounded at four.
+
+| Reading | 2048 | 1024 |
+| --- | ---: | ---: |
+| Cell area | 5.96 m2 | 23.84 m2 |
+| Channel head | 100 m2 | 100 m2 |
+| Relief (m) | 257.4 | 263.4 |
+| Median slope (deg) | 19.68 | 19.28 |
+| P90 slope (deg) | 45.45 | 37.93 |
+| Land <= 20 deg | 51.2% | 52.6% |
+| Connected <= 20 deg (km2) | 5.71 | 9.63 |
+| River length (km) | 22.27 | 19.57 |
+| Inland water (km2) | 2.66 | 1.97 |
+| Spectral excess (dex) | .713 | .476 |
+| Generation (s) | 135 | 36 |
+
+This is the first selected channel scale that represents multiple cells at
+both resolutions. The 2048 world resolves every fixed target. The 1024 world
+keeps river and mouth targets but has no selected confluence despite its broad
+rolling geography. TER-030 owns that remaining river-scale discrepancy; the
+channel head will not be lowered back to a resolution coincidence to hide it.
+
+The selected values are calibration inputs, not Play defaults. TER-040 remains
+the only item allowed to change those defaults after the multi-seed gate.
+
+Decision artifacts are under `/tmp/moppe-hillslope-refined.0DLaGE`,
+`/tmp/moppe-hillslope-1024.euWbKA`, and
+`/tmp/moppe-channel-critical.76wl4R`.

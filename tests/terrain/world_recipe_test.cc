@@ -142,3 +142,25 @@ MOPPE_TEST (world_recipe_accepts_a_sediment_capacity_experiment) {
     recipe.evolution ().fluvial_transport.concentration_at_unit_slope ==
     0.00001f * sediment_concentration[mp_units::one]);
 }
+
+MOPPE_TEST (world_recipe_accepts_a_critical_hillslope_experiment) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const WorldRecipe recipe =
+    make_world_recipe (spatial_extent_in_metres (Vec3 (5000, 320, 5000)),
+                       33,
+                       Seed { 77 },
+                       50.0f * mp_units::si::metre,
+                       TerrainGenerationProfile::Play,
+                       std::nullopt,
+                       std::nullopt,
+                       std::nullopt,
+                       0.8f * proportion[mp_units::one],
+                       4.0f * proportion[mp_units::one]);
+
+  MOPPE_CHECK (recipe.evolution ().critical_hillslope_gradient ==
+               0.8f * proportion[mp_units::one]);
+  MOPPE_CHECK (recipe.evolution ().maximum_hillslope_diffusivity_multiplier ==
+               4.0f * proportion[mp_units::one]);
+}

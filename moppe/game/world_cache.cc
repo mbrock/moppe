@@ -20,10 +20,9 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 10 distributes sediment through standing-water accommodation
-    // and mouth fans; version 9 worlds export it immediately at the coast and
-    // retain lake loads at one routed cell.
-    constexpr std::uint32_t CACHE_VERSION = 10;
+    // Version 11 includes bounded critical-gradient hillslope wasting in the
+    // complete world recipe. Version 10 worlds use linear creep alone.
+    constexpr std::uint32_t CACHE_VERSION = 11;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());
@@ -51,6 +50,15 @@ namespace moppe::game {
            << bits (recipe.evolution ()
                       .fluvial_transport.concentration_at_unit_slope
                       .numerical_value_in (mp_units::one));
+      name << "-slope-"
+           << bits (recipe.evolution ()
+                      .critical_hillslope_gradient.numerical_value_in (
+                        mp_units::one));
+      name << "-waste-"
+           << bits (
+                recipe.evolution ()
+                  .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
+                    mp_units::one));
       return name.str ();
     }
 
@@ -209,6 +217,13 @@ namespace moppe::game {
         recipe.evolution ()
           .fluvial_transport.concentration_at_unit_slope.numerical_value_in (
             mp_units::one));
+      output.scalar (
+        recipe.evolution ().critical_hillslope_gradient.numerical_value_in (
+          mp_units::one));
+      output.scalar (
+        recipe.evolution ()
+          .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
+            mp_units::one));
     }
 
     bool read_recipe (BinaryReader& input, const terrain::WorldRecipe& recipe) {
@@ -223,6 +238,8 @@ namespace moppe::game {
       float channel_initiation_area_m2 = 0.0f;
       float runoff_m_per_year = 0.0f;
       float concentration_at_unit_slope = 0.0f;
+      float critical_hillslope_gradient = 0.0f;
+      float maximum_hillslope_multiplier = 0.0f;
       if (!input.bytes (magic.data (), magic.size ()) ||
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
@@ -237,6 +254,8 @@ namespace moppe::game {
              input.scalar (channel_initiation_area_m2) &&
              input.scalar (runoff_m_per_year) &&
              input.scalar (concentration_at_unit_slope) &&
+             input.scalar (critical_hillslope_gradient) &&
+             input.scalar (maximum_hillslope_multiplier) &&
              magic == CACHE_MAGIC && version == CACHE_VERSION &&
              resolution == static_cast<std::uint32_t> (recipe.resolution ()) &&
              seed == recipe.seed ().value &&
@@ -256,7 +275,15 @@ namespace moppe::game {
              concentration_at_unit_slope ==
                recipe.evolution ()
                  .fluvial_transport.concentration_at_unit_slope
-                 .numerical_value_in (mp_units::one);
+                 .numerical_value_in (mp_units::one) &&
+             critical_hillslope_gradient ==
+               recipe.evolution ()
+                 .critical_hillslope_gradient.numerical_value_in (
+                   mp_units::one) &&
+             maximum_hillslope_multiplier ==
+               recipe.evolution ()
+                 .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
+                   mp_units::one);
     }
 
     void write_flood (BinaryWriter& output, const terrain::FloodField& flood) {

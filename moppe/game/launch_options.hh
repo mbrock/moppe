@@ -41,6 +41,7 @@ namespace moppe::game {
     platform::Config config { .title = "Moppe" };
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;
+    std::optional<int> terrain_resolution;
     // A development experiment may replace the profile's tectonic clock
     // without changing its total evolution age or any process law.
     std::optional<julian_years_t> uplift_duration;
@@ -49,6 +50,8 @@ namespace moppe::game {
     // resolution.
     std::optional<square_meters_t> channel_initiation_area;
     std::optional<terrain::SedimentConcentration> sediment_concentration;
+    std::optional<proportion_t> critical_hillslope_gradient;
+    std::optional<proportion_t> maximum_hillslope_multiplier;
     WorldCacheConfig world_cache;
     std::string screenshot_path;
     std::optional<WaterShot> water_shot;
