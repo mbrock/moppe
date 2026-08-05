@@ -37,6 +37,19 @@ endif()
 
 project(moppe LANGUAGES C CXX)
 
+if(APPLE)
+  # CMake does not yet ship Metal as a first-class language.  The vendored
+  # language module lets shader libraries participate in the target graph for
+  # Ninja and Xcode instead of living behind unrelated custom commands.
+  list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+  include(CheckLanguage)
+  check_language(Metal)
+  if(CMAKE_Metal_COMPILER)
+    enable_language(Metal)
+    include(MetalShaderSupport)
+  endif()
+endif()
+
 # Keep editor tooling in sync with the normal Ninja and Makefile builds.
 # Multi-config generators such as Xcode do not support this output.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -227,26 +240,10 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
 endif()
 
 # ---------------------------------------------------------------
-# Metal shader library: one metallib per Apple SDK. AIR is
-# platform-targeted, so each app must load a library built for its OS.
+# Metal shader library: one metallib target per Apple SDK. AIR is
+# platform-targeted, so each app must embed a library built for its OS.
 
 if(APPLE)
-if(MOPPE_TVOS)
-  if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
-    set(MOPPE_METAL_SDK appletvsimulator)
-  else()
-    set(MOPPE_METAL_SDK appletvos)
-  endif()
-elseif(MOPPE_IOS)
-  if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
-    set(MOPPE_METAL_SDK iphonesimulator)
-  else()
-    set(MOPPE_METAL_SDK iphoneos)
-  endif()
-else()
-  set(MOPPE_METAL_SDK macosx)
-endif()
-
 set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/uber.metal
   moppe/shaders/metal/post.metal
@@ -266,41 +263,18 @@ set(MOPPE_METAL_DEPS
   moppe/render/metal/shader_types.h
 )
 
-execute_process(
-  COMMAND xcrun -sdk ${MOPPE_METAL_SDK} -find metal
-  RESULT_VARIABLE MOPPE_METAL_RESULT
-  OUTPUT_QUIET ERROR_QUIET)
+if(CMAKE_Metal_COMPILER)
+  add_metal_shader_library(moppe_shaders
+    STANDARD metal4.0
+    ${MOPPE_METAL_SOURCES})
+  target_sources(moppe_shaders PRIVATE ${MOPPE_METAL_DEPS})
+  set_target_properties(moppe_shaders PROPERTIES OUTPUT_NAME moppe)
 
-if(MOPPE_METAL_RESULT EQUAL 0)
-  set(MOPPE_AIR_FILES)
-  foreach(src ${MOPPE_METAL_SOURCES})
-    get_filename_component(name ${src} NAME_WE)
-    set(air ${CMAKE_CURRENT_BINARY_DIR}/${name}.air)
-    # Debug line tables and embedded sources let Xcode's shader profiler
-    # attribute GPU time to shader source lines. They add nothing to the
-    # compiled code itself, only to the metallib's debug payload.
-    add_custom_command(
-      OUTPUT ${air}
-      COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
-              -std=metal4.0
-              -gline-tables-only -frecord-sources
-              -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
-              -o ${air}
-      DEPENDS ${src} ${MOPPE_METAL_DEPS}
-      COMMENT "Compiling ${src} (${MOPPE_METAL_SDK})"
-      VERBATIM)
-    list(APPEND MOPPE_AIR_FILES ${air})
-  endforeach()
-
-  set(MOPPE_SHADER_ASSET ${CMAKE_CURRENT_BINARY_DIR}/moppe.metallib)
+  # Debug line tables and embedded sources let Xcode's shader profiler
+  # attribute GPU time to shader source lines. The vendored Metal language
+  # module supplies these flags for Debug and RelWithDebInfo builds.
+  set(MOPPE_SHADER_ASSET "$<TARGET_FILE:moppe_shaders>")
   set(MOPPE_SHADER_NAME moppe.metallib)
-  add_custom_command(
-    OUTPUT ${MOPPE_SHADER_ASSET}
-    COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metallib
-            ${MOPPE_AIR_FILES} -o ${MOPPE_SHADER_ASSET}
-    DEPENDS ${MOPPE_AIR_FILES}
-    COMMENT "Linking moppe.metallib (${MOPPE_METAL_SDK})"
-    VERBATIM)
 else()
   if(MOPPE_MOBILE_APPLE)
     message(FATAL_ERROR
@@ -328,9 +302,20 @@ else()
   file(WRITE ${MOPPE_SHADER_ASSET} "${MOPPE_METAL_SOURCE}")
   message(STATUS
     "Metal compiler not found; shaders will compile at runtime on macOS")
+  add_custom_target(moppe_shaders DEPENDS ${MOPPE_SHADER_ASSET})
 endif()
 
-add_custom_target(moppe_shaders DEPENDS ${MOPPE_SHADER_ASSET})
+function(moppe_embed_metal_shaders target)
+  if(CMAKE_Metal_COMPILER)
+    target_embed_metal_shader_libraries(${target} moppe_shaders)
+  else()
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${MOPPE_SHADER_ASSET}
+        $<TARGET_BUNDLE_CONTENT_DIR:${target}>/Resources/${MOPPE_SHADER_NAME}
+      VERBATIM)
+  endif()
+endfunction()
 endif()
 
 # ---------------------------------------------------------------
@@ -599,6 +584,7 @@ if(APPLE AND MOPPE_IOS)
   moppe_configure_code_target(moppe-ios)
   moppe_configure_apple_target(moppe-ios)
   moppe_configure_metal_target(moppe-ios)
+  moppe_embed_metal_shaders(moppe-ios)
   target_link_libraries(moppe-ios PRIVATE "-framework UIKit")
   set_target_properties(moppe-ios PROPERTIES
     OUTPUT_NAME "Moppe"
@@ -619,9 +605,6 @@ if(APPLE AND MOPPE_IOS)
     XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
   add_custom_command(TARGET moppe-ios POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${MOPPE_SHADER_ASSET}
-      $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/${MOPPE_SHADER_NAME}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/textures
       $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/textures
@@ -643,6 +626,7 @@ if(APPLE AND MOPPE_TVOS)
   moppe_configure_code_target(moppe-tvos)
   moppe_configure_apple_target(moppe-tvos)
   moppe_configure_metal_target(moppe-tvos)
+  moppe_embed_metal_shaders(moppe-tvos)
   target_compile_definitions(moppe-tvos PRIVATE
     MOPPE_DEFAULT_APPLE_TV_GRAPHICS)
   if(MOPPE_TVOS_BAKED_WORLD)
@@ -673,9 +657,6 @@ if(APPLE AND MOPPE_TVOS)
     XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3")
   add_custom_command(TARGET moppe-tvos POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${MOPPE_SHADER_ASSET}
-      $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/${MOPPE_SHADER_NAME}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/textures
       $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/textures
@@ -743,6 +724,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   moppe_configure_code_target(moppe)
   moppe_configure_apple_target(moppe)
   moppe_configure_metal_target(moppe)
+  moppe_embed_metal_shaders(moppe)
   target_compile_definitions(moppe PRIVATE
     MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
   target_link_libraries(moppe PRIVATE "-framework AppKit")
@@ -764,9 +746,6 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
     MACOSX_BUNDLE_BUNDLE_VERSION "1")
   add_custom_command(TARGET moppe POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${MOPPE_SHADER_ASSET}
-      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/${MOPPE_SHADER_NAME}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/textures
       $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/textures
@@ -780,7 +759,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${MOPPE_SHADER_ASSET}
       $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/${MOPPE_SHADER_NAME}
-    DEPENDS ${MOPPE_SHADER_ASSET} moppe
+    DEPENDS moppe_shaders moppe
     COMMENT "Refreshing bundled shaders")
 endif()
 
