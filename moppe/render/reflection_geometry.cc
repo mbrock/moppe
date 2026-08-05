@@ -62,12 +62,15 @@ namespace moppe::render {
 
     ProjectedPoint
     project (const Mat4& matrix, const Vec3& point, int width, int height) {
-      const float clip_x = matrix.m[0] * point[0] + matrix.m[4] * point[1] +
-                           matrix.m[8] * point[2] + matrix.m[12];
-      const float clip_y = matrix.m[1] * point[0] + matrix.m[5] * point[1] +
-                           matrix.m[9] * point[2] + matrix.m[13];
-      const float clip_w = matrix.m[3] * point[0] + matrix.m[7] * point[1] +
-                           matrix.m[11] * point[2] + matrix.m[15];
+      const float clip_x = matrix.element (0) * point[0] +
+                           matrix.element (4) * point[1] +
+                           matrix.element (8) * point[2] + matrix.element (12);
+      const float clip_y = matrix.element (1) * point[0] +
+                           matrix.element (5) * point[1] +
+                           matrix.element (9) * point[2] + matrix.element (13);
+      const float clip_w = matrix.element (3) * point[0] +
+                           matrix.element (7) * point[1] +
+                           matrix.element (11) * point[2] + matrix.element (15);
       if (clip_w <= 1e-4f)
         return {};
       const float ndc_x = clip_x / clip_w;

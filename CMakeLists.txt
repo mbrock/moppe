@@ -515,6 +515,8 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_ENGINE_SOURCES}
     moppe/game/terrain.cc
     tests/test_main.cc
+    tests/mat4_test.cc
+    tests/quaternion_test.cc
     tests/units_test.cc
     tests/pacioli_test.cc
     tests/lavoir/buffer_test.cc

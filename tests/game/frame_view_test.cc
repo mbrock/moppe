@@ -25,7 +25,7 @@ namespace {
 
   bool frame_view_same_matrix (const Mat4& left, const Mat4& right) {
     for (int i = 0; i < 16; ++i)
-      if (left.m[i] != right.m[i])
+      if (left.element (i) != right.element (i))
         return false;
     return true;
   }

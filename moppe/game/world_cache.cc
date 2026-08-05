@@ -227,9 +227,12 @@ namespace moppe::game {
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
         return false;
-      for (std::size_t component = 0; component < 3; ++component)
-        if (!input.scalar (extent[component]))
+      for (std::size_t component = 0; component < 3; ++component) {
+        float value = 0.0f;
+        if (!input.scalar (value))
           return false;
+        extent[component] = value;
+      }
       return input.scalar (water) && input.scalar (uplift_years) &&
              input.scalar (channel_initiation_area_m2) &&
              input.scalar (runoff_m_per_year) &&
