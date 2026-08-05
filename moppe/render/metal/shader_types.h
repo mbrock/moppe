@@ -53,6 +53,7 @@ struct MoppeUint4 {
 #define MOPPE_TEX_TERRAIN_CHANNEL_FLUX 15
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1        /* post passes */
+#define MOPPE_TEX_POST_DEPTH 2   /* light shafts: stored scene depth */
 #define MOPPE_TEX_HEIGHTS 0      /* vertex stage */
 #define MOPPE_TEX_NORMALS 1      /* vertex stage */
 #define MOPPE_TEX_WATER_LEVELS 3 /* ocean vertex stage */
@@ -276,6 +277,21 @@ struct MOPPE_SHADER_ALIGN MoppeForestInstance {
   MoppeFloat4 up_radius;   // xyz=ground normal, w=crown radius in metres
   MoppeFloat4 ecology;     // x=cover, y=moisture, zw=reserved
   MoppeUint4 identity;     // x=seed, y=species, z=age, w=reserved
+};
+
+// Sun-shaft raymarch: rays come from a camera basis with the frustum
+// half-extents folded in, and occlusion comes from projecting each march
+// sample forward through the scene and light matrices — no inverse anywhere.
+struct MOPPE_SHADER_ALIGN MoppeShaftUniforms {
+  MoppeMat4 view_proj;     // unjittered scene projection
+  MoppeMat4 light_matrix;  // biased shadow projection
+  MoppeFloat4 camera_pos;  // xyz
+  MoppeFloat4 ray_forward; // xyz unit view direction
+  MoppeFloat4 ray_right;   // xyz right * tan(fov/2) * aspect
+  MoppeFloat4 ray_up;      // xyz up * tan(fov/2)
+  MoppeFloat4 sun_dir;     // xyz toward the sun
+  MoppeFloat4 sun_color;   // rgb linear; w = strength
+  MoppeFloat4 params;      // x=max distance m, y=extinction /m, z=steps
 };
 
 struct MOPPE_SHADER_ALIGN MoppeForestUniforms {

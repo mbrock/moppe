@@ -973,7 +973,28 @@ namespace moppe {
         // screen-space grades and feedback operate on its full-size result.
         r.reconstruct_scene ();
 
-        // Post effects.
+        // Post effects. Sun shafts march the camera-local shadow map, so
+        // the beams carry the same tree and terrain shapes as the ground
+        // shadows; underwater frames get their own grade instead.
+        if (m_graphics.light_shafts && !visibility.underwater &&
+            frame.lighting.sun_direction[1] > 0.02f) {
+          const FrameCamera& camera = frame.camera;
+          // Basis of the final shaken view, straight from the view matrix.
+          const Mat4& view = camera.view;
+          const Vec3 right (view.m[0], view.m[4], view.m[8]);
+          const Vec3 up (view.m[1], view.m[5], view.m[9]);
+          const Vec3 forward (-view.m[2], -view.m[6], -view.m[10]);
+          const float half_tangent = tan (camera.field_of_view * 0.5f);
+          r.apply_light_shafts ({
+            .camera_pos = position (camera.position),
+            .forward = forward,
+            .right_span = right * (half_tangent * camera.aspect),
+            .up_span = up * half_tangent,
+            .sun_dir = frame.lighting.sun_direction,
+            .sun_color = frame.lighting.sun_diffuse,
+            .strength = 0.55f * one,
+          });
+        }
         if (visibility.underwater)
           r.apply_underwater (frame.lighting.time);
         if (visibility.motion_blur)
