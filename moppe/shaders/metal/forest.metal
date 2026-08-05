@@ -104,9 +104,11 @@ static inline float forest_bough_count (float pixels, float threshold) {
   // near the rider carries its complete complement, because a crown that is
   // still growing at riding distance visibly breathes with every small
   // change in projected size. The widened tufts of a sparse crown carry
-  // the coverage below saturation.
+  // the coverage below saturation. The floor of twenty-one keeps the
+  // sparsest assembly reading as a small solid tree: below that a spruce
+  // degenerates into a pole with stubs, which no distance excuses.
   return clamp (
-    (pixels - 14.0 * threshold) * 63.0 / (286.0 * threshold), 1.0, 63.0);
+    (pixels - 14.0 * threshold) * 63.0 / (286.0 * threshold), 21.0, 63.0);
 }
 
 // The ramp measures projected pixels, so on its own a completion point is a
@@ -121,15 +123,18 @@ static inline float forest_bough_measure (float pixels, float tree_height) {
 }
 
 // Emission rank to whorl-grid slot. The first nine ranks sketch the whole
-// silhouette with one bough per whorl, bottom to top; later ranks fill the
-// remaining spokes whorl by whorl from the bottom. So a sparse crown is a
-// complete small silhouette, mid-distance growth adds large boughs while
-// they are only a sliver of the frame, and the last arrivals -- the only
-// ones still growing near the rider -- are the smallest boughs of the
-// topmost whorls.
+// silhouette with one bough per whorl, bottom to top. Later ranks add one
+// spoke per whorl per round, top whorl first, so the crown densifies
+// evenly everywhere instead of completing region by region: filling the
+// top whorls last read as the tree growing taller against the sky, and
+// filling any whorl's spokes consecutively read as a lopsided branch.
+// Consecutive arrivals within a whorl land on opposite azimuths.
 static inline uint forest_bough_slot (uint rank) {
-  return rank < 9u ? rank * 7u
-                   : ((rank - 9u) / 6u) * 7u + 1u + (rank - 9u) % 6u;
+  if (rank < 9u)
+    return rank * 7u;
+  const uint fill = rank - 9u;
+  const uint spread[6] = { 4u, 2u, 6u, 1u, 5u, 3u };
+  return (8u - fill % 9u) * 7u + spread[fill / 9u];
 }
 
 // Mesh-group coalescing for the middle band: a small distant assembly
@@ -370,9 +375,11 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
     // Survivor widening is a far-field device: it holds a sparse crown's
     // coverage where individual tufts are subpixel, and must fade out as
     // the crown fills, or every tuft visibly shrinks through the approach.
-    // Near geometry has to be STABLE.
+    // Near geometry has to be STABLE. The square-root ratio is area
+    // conservation, at full strength at the twenty-one-bough floor and
+    // gone by two-thirds complement.
     const float sparse = clamp (sqrt (63.0 / max (organ.count, 1.0)), 1.0, 2.0);
-    organ.boost = mix (sparse, 1.0, smoothstep (16.0, 32.0, organ.count)) *
+    organ.boost = mix (sparse, 1.0, smoothstep (21.0, 42.0, organ.count)) *
                   sqrt (13.0 / float (forest_bough_tufts (organ.bundle)));
     organ.centre = organ.root;
     organ.radius_x = crown;

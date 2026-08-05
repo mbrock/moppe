@@ -12,9 +12,11 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/render/renderer.hh>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -30,9 +32,30 @@ namespace {
         m_distance = std::max (10.0f, (float)::atof (distance));
       if (const char* dolly = ::getenv ("MOPPE_STUDIO_DOLLY"))
         m_dolly_directory = dolly;
+      // A solo specimen removes the lineup: one conifer of the given height
+      // at the origin, so a study is never distracted by neighbours.
+      if (const char* solo = ::getenv ("MOPPE_STUDIO_SOLO"))
+        m_solo_height = std::max (2.0f, (float)::atof (solo));
     }
 
     void setup (render::Renderer& r, int, int) override {
+      std::vector<render::ForestInstance> trees;
+      if (m_solo_height > 0.0f) {
+        trees.push_back ({
+          .root = position (Vec3 (0.0f, 0.0f, 0.0f)),
+          .ground_normal =
+            Vec3 (0, 1, 0) * terrain::terrain_normal[mp_units::one],
+          .height = m_solo_height * u::m,
+          .crown_radius = 0.19f * m_solo_height * u::m,
+          .canopy_cover = 0.5f * mp_units::one,
+          .moisture = 0.5f * mp_units::one,
+          .seed = 0x51a7c0deu,
+          .species = render::ForestSpecies::Conifer,
+          .age = render::ForestAge::Mature,
+        });
+        r.set_forest ({ .period = {} }, trees);
+        return;
+      }
       // A lineup across the age range, all conifer: sapling to ancient.
       const float heights[] = { 4.0f, 9.0f, 15.0f, 20.0f, 25.0f, 30.0f };
       const render::ForestAge ages[] = {
@@ -40,7 +63,6 @@ namespace {
         render::ForestAge::Young,   render::ForestAge::Mature,
         render::ForestAge::Mature,  render::ForestAge::Ancient,
       };
-      std::vector<render::ForestInstance> trees;
       float x = -42.0f;
       for (int i = 0; i < 6; ++i) {
         const float height = heights[i];
@@ -63,11 +85,30 @@ namespace {
 
     void tick (float dt) override {
       m_time += dt;
+      // Interactive dolly and orbit: walking toward the specimen is W, and
+      // the orbit stops the moment the visitor steers it.
+      m_distance =
+        std::clamp (m_distance * std::pow (0.5f, dt * m_move), 4.0f, 400.0f);
+      m_orbit += dt * (m_auto_orbit ? 0.15f : 0.6f * m_turn);
     }
 
     void key (platform::Key k, bool down) override {
-      if (k == platform::Key::Escape && down)
+      using platform::Key;
+      const float value = down ? 1.0f : 0.0f;
+      if (k == Key::Escape && down)
         platform::request_quit ();
+      else if (k == Key::W || k == Key::Up)
+        m_move = value;
+      else if (k == Key::S || k == Key::Down)
+        m_move = -value;
+      else if (k == Key::A || k == Key::Left) {
+        m_turn = -value;
+        m_auto_orbit = false;
+      } else if (k == Key::D || k == Key::Right) {
+        m_turn = value;
+        m_auto_orbit = false;
+      } else if (k == Key::Screenshot && down)
+        m_snap = true;
     }
 
     void render (render::Renderer& r) override {
@@ -83,11 +124,29 @@ namespace {
         const float progress = float (m_shot) / float (DOLLY_SHOTS - 1);
         distance = 350.0f * std::pow (10.0f / 350.0f, progress);
       }
-      const float orbit = (capture || dolly) ? 0.0f : m_time * 0.15f;
-      const Vec3 at (4, 9, 0);
+      const float orbit = (capture || dolly) ? 0.0f : m_orbit;
+      // The solo study aims at the specimen's mid-height, so the tree stays
+      // centred at every distance and an atlas can crop around the frame
+      // centre with pure arithmetic.
+      const Vec3 at = m_solo_height > 0.0f
+                        ? Vec3 (0.0f, 0.45f * m_solo_height, 0.0f)
+                        : Vec3 (4, 9, 0);
+      const float rise = m_solo_height > 0.0f ? 1.0f : 3.0f;
       const Vec3 eye =
         at +
-        Vec3 (std::sin (orbit) * distance, 3.0f, std::cos (orbit) * distance);
+        Vec3 (std::sin (orbit) * distance, rise, std::cos (orbit) * distance);
+      if (m_snap) {
+        m_snap = false;
+        std::filesystem::create_directories ("screenshots");
+        char name[64];
+        std::snprintf (name,
+                       sizeof name,
+                       "screenshots/studio-shot-%03d.png",
+                       m_snap_count++);
+        r.request_screenshot (name);
+        std::cerr << "moppe-studio: screenshot " << name
+                  << " distance=" << distance << "m\n";
+      }
       fp.view = Mat4::look_at (eye, at, Vec3 (0, 1, 0));
       fp.proj = Mat4::perspective_reversed (
         50 * u::deg, (float)r.width_pts () / r.height_pts (), 0.5f, 9000.0f);
@@ -173,6 +232,13 @@ namespace {
     int m_shot = 0;
     int m_frame_in_shot = 0;
     float m_distance = 55.0f;
+    float m_solo_height = 0.0f;
+    float m_move = 0.0f;
+    float m_turn = 0.0f;
+    float m_orbit = 0.0f;
+    bool m_auto_orbit = true;
+    bool m_snap = false;
+    int m_snap_count = 0;
     std::string m_output;
     std::string m_dolly_directory;
     render::DrawList m_list;
