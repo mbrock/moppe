@@ -100,13 +100,25 @@ static inline float forest_lod_threshold (uint seed) {
 // while organs that grow in one at a time spread it below notice (Kuth 2025,
 // measured in Fig. 12 of the paper; #6S29CJ in the research library).
 static inline float forest_bough_count (float pixels, float threshold) {
-  // The ramp reaches its full complement around 700 projected pixels; the
-  // widened tufts of a sparse crown carry the coverage below that. One
-  // meshlet per bough makes small far assemblies disproportionately
-  // expensive, so the proper cure for the middle band is bundling several
-  // boughs into one meshlet, as Kuth 2025 does for leaves.
+  // The ramp saturates by three hundred projected pixels: a tree anywhere
+  // near the rider carries its complete complement, because a crown that is
+  // still growing at riding distance visibly breathes with every small
+  // change in projected size. The widened tufts of a sparse crown carry
+  // the coverage below saturation.
   return clamp (
-    (pixels - 14.0 * threshold) * 63.0 / (686.0 * threshold), 1.0, 63.0);
+    (pixels - 14.0 * threshold) * 63.0 / (286.0 * threshold), 1.0, 63.0);
+}
+
+// Emission rank to whorl-grid slot. The first nine ranks sketch the whole
+// silhouette with one bough per whorl, bottom to top; later ranks fill the
+// remaining spokes whorl by whorl from the bottom. So a sparse crown is a
+// complete small silhouette, mid-distance growth adds large boughs while
+// they are only a sliver of the frame, and the last arrivals -- the only
+// ones still growing near the rider -- are the smallest boughs of the
+// topmost whorls.
+static inline uint forest_bough_slot (uint rank) {
+  return rank < 9u ? rank * 7u
+                   : ((rank - 9u) / 6u) * 7u + 1u + (rank - 9u) % 6u;
 }
 
 // Mesh-group coalescing for the middle band: a small distant assembly
@@ -461,7 +473,7 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
     const uint rem = vertex_index % stride;
     const uint fan = rem / 9u;
     const uint local = rem % 9u;
-    const uint slot = (rank * 47u) % 63u;
+    const uint slot = forest_bough_slot (rank);
     const uint whorl = slot / 7u;
     const uint spoke = slot % 7u;
     const float t = float (whorl) / 8.0;
