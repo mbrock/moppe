@@ -1,29 +1,29 @@
 CREATE OR REPLACE TABLE samples AS
 SELECT * FROM read_csv_auto(getvariable('input'));
 
--- Feature bits follow graphics_benchmark_includes() in graphics_features
--- order. terrain-topology is a hot debug view, not an ordinary-riding bit.
-CREATE OR REPLACE TABLE features(bit, name) AS VALUES
-  (0, 'ocean'),
-  (1, 'waterfall-curtains'),
-  (2, 'particles'),
-  (3, 'vehicle-effects'),
-  (4, 'star-effects'),
-  (5, 'bloom'),
-  (6, 'auto-exposure'),
-  (7, 'lens-flare'),
-  (8, 'terrain-fragment-normals'),
-  (9, 'snow-support-filter'),
-  (10, 'channel-flux-detail'),
-  (11, 'undergrowth');
+-- The application is the schema authority. Encoded column names make a CSV
+-- independently analyzable while keeping ordinary numeric rows rectangular.
+CREATE OR REPLACE TABLE feature_samples AS
+SELECT epoch, mask, partition_mask, logical_frame, gpu_ms,
+       regexp_extract(encoded, '^feature_([0-9]+)_', 1)::INTEGER AS bit,
+       regexp_extract(encoded, '^feature_[0-9]+_(.*)$', 1) AS name,
+       enabled::BOOLEAN AS enabled
+FROM (UNPIVOT samples ON COLUMNS('^feature_[0-9]+_')
+      INTO NAME encoded VALUE enabled);
 
-CREATE OR REPLACE TABLE partition_blocks(bit, name) AS VALUES
-  (0, 'ocean'),
-  (1, 'waterfalls'),
-  (2, 'bloom'),
-  (3, 'auto-exposure'),
-  (4, 'undergrowth'),
-  (5, 'small-effects');
+CREATE OR REPLACE TABLE features AS
+SELECT DISTINCT bit, name FROM feature_samples ORDER BY bit;
+
+CREATE OR REPLACE TABLE block_samples AS
+SELECT epoch, mask, partition_mask, logical_frame, gpu_ms,
+       regexp_extract(encoded, '^block_([0-9]+)_', 1)::INTEGER AS bit,
+       regexp_extract(encoded, '^block_[0-9]+_(.*)$', 1) AS name,
+       enabled::BOOLEAN AS enabled
+FROM (UNPIVOT samples ON COLUMNS('^block_[0-9]+_')
+      INTO NAME encoded VALUE enabled);
+
+CREATE OR REPLACE TABLE partition_blocks AS
+SELECT DISTINCT bit, name FROM block_samples ORDER BY bit;
 
 CREATE OR REPLACE TABLE configuration_stats AS
 SELECT mask,
@@ -87,10 +87,9 @@ ORDER BY source_mask, bit;
 CREATE OR REPLACE TABLE feature_correlations AS
 SELECT f.bit,
        f.name AS feature,
-       corr(s.gpu_ms, ((s.mask & (1 << f.bit)) != 0)::INT)
-         AS gpu_correlation
+       corr(s.gpu_ms, s.enabled::INT) AS gpu_correlation
 FROM features f
-CROSS JOIN samples s
+JOIN feature_samples s USING (bit, name)
 GROUP BY f.bit, f.name
 ORDER BY abs(gpu_correlation) DESC;
 
@@ -147,22 +146,6 @@ FROM samples
 GROUP BY logical_frame
 ORDER BY logical_frame;
 
-CREATE OR REPLACE VIEW configurations AS
-SELECT c.*,
-       (c.mask & 1) != 0 AS ocean,
-       (c.mask & 2) != 0 AS waterfall_curtains,
-       (c.mask & 4) != 0 AS particles,
-       (c.mask & 8) != 0 AS vehicle_effects,
-       (c.mask & 16) != 0 AS star_effects,
-       (c.mask & 32) != 0 AS bloom,
-       (c.mask & 64) != 0 AS auto_exposure,
-       (c.mask & 128) != 0 AS lens_flare,
-       (c.mask & 256) != 0 AS terrain_fragment_normals,
-       (c.mask & 512) != 0 AS snow_support_filter,
-       (c.mask & 1024) != 0 AS channel_flux_detail,
-       (c.mask & 2048) != 0 AS undergrowth
-FROM configuration_stats c;
-
 CREATE OR REPLACE TABLE deadline_summary AS
 SELECT count(*) AS configurations,
        count(*) FILTER (WHERE median_gpu_ms > 1000.0 / 120.0)
@@ -182,3 +165,5 @@ COPY feature_correlations TO 'feature-correlations.csv' (HEADER);
 COPY pairwise_interactions TO 'pairwise-interactions.csv' (HEADER);
 COPY logical_frame_stats TO 'logical-frame-stats.csv' (HEADER);
 COPY deadline_summary TO 'deadline-summary.csv' (HEADER);
+COPY features TO 'features.csv' (HEADER);
+COPY partition_blocks TO 'partition-blocks.csv' (HEADER);

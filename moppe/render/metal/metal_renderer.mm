@@ -203,7 +203,9 @@ namespace moppe {
         std::atomic<int> completed { 0 };
         int expected = 0;
         std::string path;
+        std::string partition = "standard";
         std::vector<std::string> feature_names;
+        std::vector<std::string> block_names;
         bool pass_timing = false;
       };
 
@@ -1140,6 +1142,14 @@ namespace moppe {
           std::string name;
           while (std::getline (input, name, ','))
             m_benchmark->feature_names.push_back (name);
+        }
+        if (const char* partition = ::getenv ("MOPPE_BENCHMARK_PARTITION"))
+          m_benchmark->partition = partition;
+        if (const char* names = ::getenv ("MOPPE_BENCHMARK_BLOCKS")) {
+          std::istringstream input (names);
+          std::string name;
+          while (std::getline (input, name, ','))
+            m_benchmark->block_names.push_back (name);
         }
       }
       // Precise timestamps may split a render encoder, so ordinary benchmark
@@ -6348,23 +6358,27 @@ namespace moppe {
           return a.epoch == b.epoch ? a.frame < b.frame : a.epoch < b.epoch;
         });
       std::ofstream output (m_benchmark->path);
-      output << "epoch,mask,partition_mask,logical_frame,gpu_ms";
+      output << "epoch,mask,partition_mask,logical_frame,gpu_ms,partition";
       if (m_benchmark->pass_timing)
         for (int i = 0; i < GPU_PASS_COUNT; ++i)
           output << ',' << GPU_PASS_NAMES[i] << "_ms";
-      for (const std::string& name : m_benchmark->feature_names)
-        output << ',' << name;
+      for (std::size_t bit = 0; bit < m_benchmark->feature_names.size (); ++bit)
+        output << ",feature_" << bit << '_' << m_benchmark->feature_names[bit];
+      for (std::size_t bit = 0; bit < m_benchmark->block_names.size (); ++bit)
+        output << ",block_" << bit << '_' << m_benchmark->block_names[bit];
       output << '\n';
       for (const BenchmarkSample& sample : samples) {
         output << sample.epoch << ',' << sample.mask << ','
                << sample.partition_mask << ',' << sample.frame << ','
-               << sample.gpu_ms;
+               << sample.gpu_ms << ',' << m_benchmark->partition;
         if (m_benchmark->pass_timing)
           for (double pass_ms : sample.pass_ms)
             output << ',' << pass_ms;
         for (std::size_t bit = 0; bit < m_benchmark->feature_names.size ();
              ++bit)
           output << ',' << ((sample.mask & (1u << bit)) ? 1 : 0);
+        for (std::size_t bit = 0; bit < m_benchmark->block_names.size (); ++bit)
+          output << ',' << ((sample.partition_mask & (1u << bit)) ? 1 : 0);
         output << '\n';
       }
       std::cerr << "moppe: wrote " << samples.size ()

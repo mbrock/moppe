@@ -190,6 +190,23 @@ MOPPE_TEST (forest_and_undergrowth_are_independent_benchmark_dimensions) {
 
   // Every hot riding feature still lands in some declared block, and the
   // cube covers every combination of them.
-  MOPPE_CHECK (graphics_benchmark_dimension_count () ==
-               static_cast<int> (RidingGraphicsPartition::blocks.size ()));
+  MOPPE_CHECK (
+    graphics_benchmark_dimension_count (GraphicsBenchmarkPartition::Standard) ==
+    static_cast<int> (RidingGraphicsPartition::blocks.size ()));
+}
+
+MOPPE_TEST (detailed_partition_refines_water_and_post) {
+  using namespace moppe::game;
+  constexpr DetailedRidingGraphicsPartition partition;
+  MOPPE_CHECK (!equivalent (partition,
+                            GraphicsFeatureId::ocean,
+                            GraphicsFeatureId::waterfall_curtains));
+  MOPPE_CHECK (!equivalent (
+    partition, GraphicsFeatureId::bloom, GraphicsFeatureId::auto_exposure));
+  MOPPE_CHECK (graphics_benchmark_dimension_count (
+                 GraphicsBenchmarkPartition::Detailed) == 7);
+  MOPPE_CHECK (
+    graphics_benchmark_block_names (GraphicsBenchmarkPartition::Detailed) ==
+    "forest,ocean,waterfalls,bloom,auto-exposure,undergrowth,"
+    "other-features");
 }

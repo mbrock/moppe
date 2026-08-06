@@ -319,6 +319,23 @@ namespace moppe::game {
           benchmark_config (options).pass_timing = true;
           return true;
         } },
+      { "--benchmark-partition",
+        "",
+        1,
+        "<standard|detailed>",
+        "Select the 32- or 128-configuration benchmark partition.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          GraphicsBenchmarkPartition partition;
+          if (!parse_graphics_benchmark_partition (values[0], partition)) {
+            error = "unknown graphics benchmark partition: " +
+                    std::string (values[0]);
+            return false;
+          }
+          benchmark_config (options).partition = partition;
+          return true;
+        } },
       { "--terrain-gazetteer",
         "",
         1,
@@ -709,7 +726,8 @@ namespace moppe::game {
   void
   publish_benchmark_environment (const GraphicsBenchmarkConfig& benchmark) {
     const int expected =
-      benchmark.measured_frames * (1 << graphics_benchmark_dimension_count ());
+      benchmark.measured_frames *
+      (1 << graphics_benchmark_dimension_count (benchmark.partition));
     ::setenv ("MOPPE_BENCHMARK_OUTPUT", benchmark.output_path.c_str (), 1);
     const std::string expected_text = std::to_string (expected);
     ::setenv ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str (), 1);
@@ -721,6 +739,12 @@ namespace moppe::game {
         feature_names += feature->name;
       }
     ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
+    ::setenv ("MOPPE_BENCHMARK_PARTITION",
+              graphics_benchmark_partition_name (benchmark.partition),
+              1);
+    const std::string block_names =
+      graphics_benchmark_block_names (benchmark.partition);
+    ::setenv ("MOPPE_BENCHMARK_BLOCKS", block_names.c_str (), 1);
     if (benchmark.pass_timing)
       ::setenv ("MOPPE_BENCHMARK_PASSES", "1", 1);
     else

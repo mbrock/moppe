@@ -1,7 +1,7 @@
 #ifndef MOPPE_GAME_LAUNCH_OPTIONS_HH
 #define MOPPE_GAME_LAUNCH_OPTIONS_HH
 
-#include <moppe/game/graphics_settings.hh>
+#include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/world.hh>
 #include <moppe/game/world_cache.hh>
@@ -22,6 +22,7 @@ namespace moppe::game {
     int settle_frames = 30;
     int measured_frames = 120;
     bool pass_timing = false;
+    GraphicsBenchmarkPartition partition = GraphicsBenchmarkPartition::Standard;
   };
 
   struct GazetteerCaptureConfig {
