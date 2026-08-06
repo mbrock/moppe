@@ -748,12 +748,14 @@ controls remain supported but are resolved centrally into the same settings.
 Each Boolean feature descriptor also records whether it is hot-switchable:
 changing a hot feature's stored value is sufficient for the next frame, with
 no resource rebuild or renderer-state reset. Ocean, waterfall curtains,
-particles,
-vehicle and star effects, bloom, automatic exposure, and lens flare are
-currently hot. The fixed-size waterfall mesh is prepared once even when its
-draw is disabled, which lets the benchmark measure it independently. Terrain shadows
-and motion blur remain conservatively marked not hot. The terrain topology
-overlay is hot and can be toggled with `G`.
+particles, vehicle and star effects, bloom, automatic exposure, and lens flare
+are currently hot. Forest is also hot: disabling it skips both its visible
+mesh submission and its contribution to terrain shadow passes while retaining
+its resident instance plan for later benchmark combinations. The fixed-size
+waterfall mesh is prepared once even when its draw is disabled, which lets the
+benchmark measure it independently. Terrain shadows and motion blur remain
+conservatively marked not hot. The terrain topology overlay is hot and can be
+toggled with `G`.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set

@@ -49,7 +49,7 @@ namespace moppe::test {
     void set_terrain_overlay (const render::TerrainOverlayParams&,
                               std::span<const float>) override {}
     void clear_terrain_overlay () override {}
-    void render_terrain_shadow (const Mat4&) override {}
+    void render_terrain_shadow (const Mat4&, bool) override {}
     void set_ocean (const render::OceanSetup& setup,
                     const render::TexturePixels& levels) override {
       ocean = setup;

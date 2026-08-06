@@ -357,6 +357,17 @@ MOPPE_TEST (frame_view_selects_frozen_gazetteer_rules) {
   MOPPE_CHECK (!view.visibility.cinematic_hud);
 }
 
+MOPPE_TEST (frame_view_applies_the_forest_graphics_feature) {
+  FrameFixture fixture;
+  fixture.graphics.forest = false;
+
+  const game::FrameView view =
+    game::compose_frame_view (gameplay_input (fixture));
+
+  MOPPE_CHECK (!view.visibility.forest);
+  MOPPE_CHECK (view.visibility.undergrowth);
+}
+
 MOPPE_TEST (frame_view_carries_sun_height) {
   FrameFixture fixture;
   fixture.graphics.sun_height = 0.75f;

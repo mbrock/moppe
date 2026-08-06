@@ -164,20 +164,28 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
     check_state (end, epoch_ends.front ());
 }
 
-// A block is a claim about what the cube can separate. Undergrowth is a
-// whole geometry pass, so lumping it in with the small effects would make
-// its cost unmeasurable -- which is the only reason the cube exists.
-MOPPE_TEST (undergrowth_is_its_own_benchmark_dimension) {
+// A block is a claim about what the cube can separate. Forest and undergrowth
+// are whole geometry passes, so lumping either in with the small effects would
+// make its cost unmeasurable -- which is the only reason the cube exists.
+MOPPE_TEST (forest_and_undergrowth_are_independent_benchmark_dimensions) {
   using namespace moppe::game;
-  const auto block =
+  const auto undergrowth_block =
     graphics_benchmark_partition (GraphicsFeatureId::undergrowth);
-  MOPPE_CHECK (RidingGraphicsPartition::name (block) == "undergrowth");
+  const auto forest_block =
+    graphics_benchmark_partition (GraphicsFeatureId::forest);
+  MOPPE_CHECK (RidingGraphicsPartition::name (undergrowth_block) ==
+               "undergrowth");
+  MOPPE_CHECK (RidingGraphicsPartition::name (forest_block) == "forest");
+  MOPPE_CHECK (forest_block != undergrowth_block);
   for (const GraphicsFeature* feature : graphics_features) {
     if (!graphics_benchmark_includes (*feature))
       continue;
-    if (feature->id == GraphicsFeatureId::undergrowth)
+    if (feature->id == GraphicsFeatureId::undergrowth ||
+        feature->id == GraphicsFeatureId::forest)
       continue;
-    MOPPE_CHECK (graphics_benchmark_partition (feature->id) != block);
+    const auto block = graphics_benchmark_partition (feature->id);
+    MOPPE_CHECK (block != undergrowth_block);
+    MOPPE_CHECK (block != forest_block);
   }
 
   // Every hot riding feature still lands in some declared block, and the

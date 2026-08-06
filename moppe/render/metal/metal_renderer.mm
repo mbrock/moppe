@@ -846,7 +846,8 @@ namespace moppe {
       void set_terrain_overlay (const TerrainOverlayParams& params,
                                 std::span<const float> values) override;
       void clear_terrain_overlay () override;
-      void render_terrain_shadow (const Mat4& light_view_proj) override;
+      void render_terrain_shadow (const Mat4& light_view_proj,
+                                  bool include_forest) override;
       void render_local_shadow (const LocalShadowParams& params) override;
       void set_ocean (const OceanSetup& setup,
                       const render::TexturePixels& water_levels) override;
@@ -2676,7 +2677,8 @@ namespace moppe {
       m_terrain_resources.have_overlay = false;
     }
 
-    void MetalRenderer::render_terrain_shadow (const Mat4& light_view_proj) {
+    void MetalRenderer::render_terrain_shadow (const Mat4& light_view_proj,
+                                               bool include_forest) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::render_terrain_shadow");
       if (!m_pipelines.terrain_shadow || !m_terrain_resources.have_terrain)
         return;
@@ -2818,8 +2820,8 @@ namespace moppe {
                            instanceCount:1];
             }
 
-      if (m_pipelines.forest_shadow && m_forest_resources.instances &&
-          m_forest_resources.count > 0) {
+      if (include_forest && m_pipelines.forest_shadow &&
+          m_forest_resources.instances && m_forest_resources.count > 0) {
         MoppeForestUniforms forest;
         std::memset (&forest, 0, sizeof (forest));
         forest.view_proj = m4 (light_view_proj);
@@ -2984,8 +2986,8 @@ namespace moppe {
                        instanceCount:1];
         }
 
-      if (m_pipelines.forest_shadow && m_forest_resources.instances &&
-          m_forest_resources.count > 0) {
+      if (params.include_forest && m_pipelines.forest_shadow &&
+          m_forest_resources.instances && m_forest_resources.count > 0) {
         MoppeForestUniforms forest;
         std::memset (&forest, 0, sizeof (forest));
         forest.view_proj = m4 (params.light_view_proj);

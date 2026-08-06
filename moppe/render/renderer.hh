@@ -65,6 +65,7 @@ namespace moppe {
       Mat4 light_view_proj;
       position_t focus;
       meters_t radius = 160.0f * u::m;
+      bool include_forest = true;
     };
 
     // Sun-shaft raymarch through the camera-local shadow map. The caller
@@ -275,7 +276,8 @@ namespace moppe {
       virtual void clear_terrain_overlay () = 0;
       // Renders the one-time terrain shadow map from the fixed sun.
       // light_view_proj maps world to light NDC (conventional Z).
-      virtual void render_terrain_shadow (const Mat4& light_view_proj) = 0;
+      virtual void render_terrain_shadow (const Mat4& light_view_proj,
+                                          bool include_forest) = 0;
       // Optional standing-water raster turns the ocean grid into the complete
       // surface: sea plus inland lakes. Samples are interleaved pairs of
       // (physical surface elevation, wave amplitude factor) following the

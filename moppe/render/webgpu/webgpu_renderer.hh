@@ -35,7 +35,8 @@ namespace moppe::render {
     void set_terrain_overlay (const TerrainOverlayParams& params,
                               std::span<const float> values) override;
     void clear_terrain_overlay () override;
-    void render_terrain_shadow (const Mat4& light_view_proj) override;
+    void render_terrain_shadow (const Mat4& light_view_proj,
+                                bool include_forest) override;
     void set_ocean (const OceanSetup& setup,
                     const TexturePixels& water_levels) override;
 
