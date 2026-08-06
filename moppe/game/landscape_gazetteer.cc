@@ -716,24 +716,32 @@ namespace moppe::game {
         return 3.0f * (1.0f - site.forest) + 2.0f * site.normal[1] +
                1.2f * site.wetness + 1.5f * away - 3.0f * site.trail;
       });
-    for (const auto& [suffix, heading] :
-         { std::pair<const char*, Vec3> { "sunward", toward_sun },
-           { "crosslit", sun_side },
-           { "antisun", -toward_sun } }) {
+    // Five metres up, above the chase camera: high enough that the band
+    // structure lays out in depth instead of stacking at the horizon. The
+    // down view looks steeply into the field, where per-blade and per-tuft
+    // structure is judged; the heading views carry the gradient to the
+    // horizon at known angles to the light.
+    struct GradientView {
+      const char* suffix;
+      Vec3 heading;
+      float ahead_m;
+    };
+    for (const auto& [suffix, heading, ahead_m] :
+         { GradientView { "sunward", toward_sun, 60.0f },
+           { "crosslit", sun_side, 60.0f },
+           { "antisun", -toward_sun, 60.0f },
+           { "down", toward_sun, 7.0f } }) {
       GazetteerCandidate plain = turf;
       plain.direction = heading;
-      // Chase-camera height rather than eye level: the rider's actual view
-      // of the field, where the band structure lays out in depth instead
-      // of stacking at the horizon.
       append_candidate_view (gazetteer,
                              selected,
                              std::string ("grass-gradient-") + suffix,
                              GazetteerShotKind::Lighting,
                              plain,
-                             4.0f * u::m,
                              0.0f * u::m,
-                             3.2f * u::m,
-                             48.0f * u::m,
+                             0.0f * u::m,
+                             5.0f * u::m,
+                             ahead_m * u::m,
                              62.0f * u::deg,
                              surface,
                              readings,

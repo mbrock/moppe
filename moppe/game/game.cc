@@ -954,7 +954,7 @@ namespace moppe {
             { .time = frame.lighting.time,
               .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
               .reach = 96.0f,
-              .density = 1.0f,
+              .density = m_graphics.grass_cover_boost,
               .interaction_position = frame.hud.subject_position,
               .interaction_radius = interaction_radius });
         }

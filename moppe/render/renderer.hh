@@ -127,6 +127,9 @@ namespace moppe {
       // Band and rill the ground along the concentrated-drainage flux so
       // headwater channels read as worked ground below the visible rivers.
       bool channel_flux_detail = true;
+      // Diagnostic cover saturation for the grass canopy material; 1 is
+      // ordinary habitat-driven cover (see GraphicsSettings).
+      float grass_cover_boost = 1.0f;
     };
 
     enum class TerrainOverlayRamp : uint8_t {

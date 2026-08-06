@@ -76,11 +76,16 @@
     `make gazetteer GAZETTEER_OUT=/tmp/moppe-gazetteer`. Unlike the route
     survey, this composes each camera directly over one finished world without
     advancing a demo. It writes named PNGs, dimensional `gazetteer.csv`, a
-    contact sheet, and an HTML atlas. The three `grass-gradient-*` frames are
-    deliberately uncomposed diagnostics: rider-height views across the
-    world's most ordinary open turf, headed sunward, crosslit, and antisun,
-    so the whole grass representation gradient (blades, clumps, canopy
-    material) is inspectable at known lighting angles. Overrides are `MOPPE_SEED`,
+    contact sheet, and an HTML atlas. The four `grass-gradient-*` frames are
+    deliberately uncomposed diagnostics: five-metre-high views across the
+    world's most ordinary open turf, headed sunward, crosslit, antisun, and
+    steeply down, so the whole grass representation gradient (blades,
+    clumps, canopy material) is inspectable at known lighting angles.
+  - Grass laboratory: `make grass-lab GRASS_LAB_OUT=/tmp/moppe-grass-lab`
+    captures the same program on a rolling plain (`--uplift-years 0`) with
+    grass cover saturated everywhere the medium can root and no trees
+    (`MOPPE_GRASS_LAB=1`), so the grass-gradient frames show the pure LOD
+    gradient of the grass system without habitat confounds. Overrides are `MOPPE_SEED`,
     `MOPPE_TERRAIN_PROFILE`, `MOPPE_GAZETTEER_GRAPHICS`,
     `MOPPE_GAZETTEER_WINDOW`, and `MOPPE_GAZETTEER_SETTLE`.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.

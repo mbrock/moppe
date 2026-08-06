@@ -73,6 +73,7 @@ namespace moppe {
       params.fragment_normals = graphics.terrain_fragment_normals;
       params.snow_support_filter = graphics.snow_support_filter;
       params.channel_flux_detail = graphics.channel_flux_detail;
+      params.grass_cover_boost = graphics.grass_cover_boost;
       {
         MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
         r.set_terrain (params,

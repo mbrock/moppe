@@ -84,11 +84,16 @@ namespace moppe::game {
     constexpr float tree_line_share_of_relief = 0.62f;
     const meters_t land_relief =
       terrain::measure_height_range (geometry).maximum * u::m - water_level;
-    map::TreeHabitatMap habitat = map::analyze_tree_habitat (
-      geometry,
-      moisture,
-      water_level,
-      water_level + tree_line_share_of_relief * land_relief);
+    // A near-flat world (the grass laboratory's rolling plain, or any
+    // low-forcing recipe) still deserves a terrestrial habitat band: clamp
+    // the tree line above the analysis floor instead of refusing to finish
+    // the world. Everything on such a plain simply lies below the trees'
+    // altitude limit, which is the truthful reading.
+    const meters_t tree_line =
+      std::max (water_level + tree_line_share_of_relief * land_relief,
+                water_level + 21.0f * u::m);
+    map::TreeHabitatMap habitat =
+      map::analyze_tree_habitat (geometry, moisture, water_level, tree_line);
     map::ForestCoverMap cover = map::analyze_forest_cover (
       habitat, use, recipe.seed ().value ^ 0x6f12ad37U);
 
