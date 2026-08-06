@@ -743,6 +743,22 @@ fragment MoppeTemporalOutput terrain_fragment (
                   smoothstep (0.08, 0.30, height));
   grass_c *= mix (float3 (1.0), float3 (0.76, 0.91, 0.70), damp * 0.55);
 
+  // Calibration to the blade layer. Inside blade reach this texture is the
+  // ground seen BETWEEN blades and keeps its golden soil reading. Past
+  // reach the ground IS the grass medium, so the albedo converges to the
+  // aggregate of the blades that would have grown here: the mesh stage's
+  // base tint and moisture response, times its mean shading. Measured from
+  // the near representation, not tuned to taste -- this is what removes
+  // the green-to-gold snap at the geometry horizon.
+  const float3 blade_mean = moppe_srgb (float3 (0.185, 0.315, 0.112) *
+                                        float3 (1.12 - 0.24 * moisture,
+                                                0.84 + 0.30 * moisture,
+                                                0.82 + 0.22 * moisture) *
+                                        0.85);
+  grass_c = mix (grass_c,
+                 blade_mean * (0.80 + 0.40 * coarse),
+                 0.65 * smoothstep (60.0, 96.0, dist));
+
   // A filtered clump field gives nearby grass some ground-level structure
   // without asking unstable subpixel blade geometry to carry the surface.
   const float grass_patch = saturate (
@@ -1095,6 +1111,20 @@ fragment MoppeTemporalOutput terrain_fragment (
     // axis leaning along the wind displacement direction the gust drives.
     const float3 canopy_axis = normalize (
       float3 (0.0, 1.0, 0.0) + float3 (0.79, 0.0, 0.53) * (0.14 * gust));
+
+    // The medium's diffuse moment. A field of near-vertical blades is lit
+    // by how much of each blade's FACE meets the sun -- Kajiya-Kay's sine
+    // term around the axis -- not by how the flat ground beneath it does.
+    // At a low sun that difference is most of why a real field stays
+    // bright while bare ground goes dark, and it is exactly the lighting
+    // seam the geometric band used to end on. Only the excess over the
+    // flat-Lambert term already applied is added, damped for the mutual
+    // shadowing inside the stand, so noon light changes nothing.
+    const float along_sun = dot (canopy_axis, l);
+    const float blade_diffuse =
+      0.52 * sqrt (saturate (1.0 - along_sun * along_sun));
+    color += texel * u.sun_diffuse.rgb * direct_visibility * canopy_direct *
+             max (blade_diffuse - intensity, 0.0) * 0.9 * wave * canopy_grass;
     const float along = dot (canopy_axis, h);
     const float sheen = pow (sqrt (saturate (1.0 - along * along)), 8.0) *
                         (0.10 + 0.90 * toward * toward);
