@@ -86,7 +86,7 @@ hooks:
 # Generate and open the macOS Xcode workspace.
 xcode:
 	cmake --preset xcode
-	open moppe.xcworkspace
+	open build-xcode/moppe.xcproj
 
 # Build, then record a Metal System Trace (with CPU stacks) while you
 # play; quitting the game ends the recording and opens Instruments.
