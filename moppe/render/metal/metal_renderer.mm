@@ -4581,9 +4581,9 @@ namespace moppe {
         // The tile window is anchored to the world lattice rather than to the
         // camera, so a plant keeps its identity as the rider moves and no
         // amount of travelling makes the floor reshuffle itself.
-        // A metre-sized cell gives the field enough independent roots to read
-        // as grass rather than a lattice of broad four-way plant proxies.
-        const float tile_world = 1.0f;
+        // A sub-metre cell gives the field enough independent roots to read as
+        // a sward rather than a lattice of broad four-way plant proxies.
+        const float tile_world = 0.60f;
         const int tiles_side =
           (int)std::ceil ((2.0f * params.reach) / tile_world);
         u.tiles.x = std::floor ((m_frame.params.camera_pos[0] - params.reach) /

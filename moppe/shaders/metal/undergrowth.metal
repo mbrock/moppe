@@ -11,7 +11,7 @@
 // cannot drift out of step with the ground it grows on, and can change its
 // count and its shape every frame, because nothing is kept to go stale.
 
-#include "common.h"
+#include "grass_medium.h"
 
 // Each mesh thread grows one independently rooted grass blade or rare fern
 // frond. Four cross-sections give that shoot a curved silhouette while the
@@ -103,56 +103,37 @@ undergrowth_ground_normal (float2 world_xz,
 // also occupies open country; a closed canopy thins it rather than being the
 // reason it exists. Soil water sets how lush it gets, a worn trail clears it,
 // and a slope past what roots can hold sheds it entirely.
-static inline float undergrowth_density (float2 world_xz,
-                                         constant MoppeUndergrowthUniforms& u,
-                                         texture2d<float> forest,
-                                         texture2d<float> moisture,
-                                         texture2d<float> paths,
-                                         texture2d<float> snow_support,
-                                         texture2d<float> water_levels,
-                                         float ground_m,
-                                         float3 ground_normal) {
+static inline MoppeGrassMedium
+undergrowth_medium (float2 world_xz,
+                    constant MoppeUndergrowthUniforms& u,
+                    texture2d<float> forest,
+                    texture2d<float> moisture,
+                    texture2d<float> paths,
+                    texture2d<float> snow_support,
+                    texture2d<float> water_levels,
+                    float ground_m,
+                    float3 ground_normal) {
   const float canopy = saturate (undergrowth_field (world_xz, u, forest).r);
   const float wet = saturate (undergrowth_field (world_xz, u, moisture).r);
   const float2 worn = saturate (undergrowth_field (world_xz, u, paths).rg);
-  // Broad variation breaks up an evenly upholstered floor without opening the
-  // large bare holes that made the former rosette layer look planted.
-  const float clump =
-    moppe_value_noise (world_xz * 0.085) * 0.55 +
-    moppe_value_noise (world_xz * 0.021 + float2 (17.3, 4.1)) * 0.45;
-  const float light = 1.0 - 0.30 * smoothstep (0.32, 0.92, canopy);
-  const float damp = 0.75 + 0.25 * smoothstep (0.02, 0.48, wet);
-  const float standable = smoothstep (0.52, 0.78, ground_normal.y);
-  const float cleared = 1.0 - saturate (max (worn.x, worn.y) * 1.6);
-  const float variation = 0.88 + 0.24 * smoothstep (0.18, 0.72, clump);
-  // A generated blade must agree with the terrain material under it. The
-  // filtered support field is the same broad hillside reading that retains
-  // snow, while relative altitude removes grass gradually through the alpine
-  // transition instead of drawing a hard contour. Standing water is a
-  // physical exclusion rather than merely very damp habitat.
   const float support =
     u.relief.z > 0.5
       ? saturate (undergrowth_field (world_xz, u, snow_support).r)
       : ground_normal.y;
   const float relative_height = (ground_m - u.relief.x) / max (u.relief.y, 1.0);
-  const float snow_habitat =
-    smoothstep (0.55, 0.68, relative_height) * smoothstep (0.58, 0.78, support);
-  const float alpine_survival = 1.0 - smoothstep (0.50, 0.67, relative_height);
-  const float water_depth =
+  const float signed_water_depth =
     u.relief.w > 0.5
       ? undergrowth_field (world_xz, u, water_levels).r - ground_m
-      : 0.0;
-  const float dry_ground = 1.0 - smoothstep (0.002, 0.030, water_depth);
-  // A signed water level is also a habitat boundary. On the dry side of the
-  // zero crossing, a narrow riparian band grows slightly denser; on the wet
-  // side the same signal still excludes roots completely.
-  const float shore =
-    u.relief.w > 0.5 ? 1.0 - smoothstep (0.05, 1.35, abs (water_depth)) : 0.0;
-  const float riparian =
-    shore * dry_ground * smoothstep (0.52, 0.80, ground_normal.y);
-  return saturate (light * damp * standable * cleared * variation *
-                   alpine_survival * (1.0 - snow_habitat) * dry_ground *
-                   (1.0 + 0.18 * riparian) * u.params.w);
+      : -100.0;
+  return moppe_grass_medium (world_xz,
+                             wet,
+                             canopy,
+                             worn,
+                             ground_normal.y,
+                             support,
+                             relative_height,
+                             signed_water_depth,
+                             u.params.w);
 }
 
 // Each world tile owns one phase for thinning its ordered shoots. The
@@ -213,35 +194,31 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
     const int2 cell = int2 (u.tiles.xy) + int2 (tile_x, tile_z);
     const float2 base = float2 (cell) * tile_world;
     const float2 center = base + 0.5 * tile_world;
-    const float distance = length (center - u.camera_pos.xz);
+    const float horizontal_distance = length (center - u.camera_pos.xz);
     const float reach = u.params.z;
-    valid = distance < reach + 0.75 * tile_world;
+    valid = horizontal_distance < reach + 0.75 * tile_world;
 
     if (valid) {
       const float3 ground_normal =
         undergrowth_ground_normal (center, u, normals);
       ground = undergrowth_ground (center, u, heights);
-      const float density = undergrowth_density (center,
-                                                 u,
-                                                 forest,
-                                                 moisture,
-                                                 paths,
-                                                 snow_support,
-                                                 water_levels,
-                                                 ground,
-                                                 ground_normal);
-      // The budget is the level of detail, in two regimes. Full blade count
-      // holds only while blades can resolve; by sixty percent of reach a
-      // tile keeps a handful of survivors, which the mesh stage widens into
-      // clumps carrying the retired blades' frontal area. That sparse tuft
-      // field then persists to full reach before growing out, where the
-      // terrain's canopy material takes over the medium.
-      const float blade_share =
-        1.0 - smoothstep (0.22 * reach, 0.60 * reach, distance);
-      const float tail = 1.0 - smoothstep (0.85 * reach, reach, distance);
-      const float near_share =
-        mix (0.085, 1.0, blade_share * blade_share) * tail;
-      wanted = density * near_share * float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
+      const MoppeGrassMedium grass = undergrowth_medium (center,
+                                                         u,
+                                                         forest,
+                                                         moisture,
+                                                         paths,
+                                                         snow_support,
+                                                         water_levels,
+                                                         ground,
+                                                         ground_normal);
+      const float focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+      const float distance =
+        length (float3 (center.x, ground, center.y) - u.camera_pos.xyz);
+      const float blade_pixels =
+        moppe_grass_blade_pixels (focal_pixels, distance);
+      const float resolved = moppe_grass_resolved_fraction (blade_pixels);
+      wanted =
+        grass.leaf_area * resolved * float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
       shoots = undergrowth_lod_shoots (wanted, uint2 (cell));
       valid = shoots > 0u;
     }
@@ -301,6 +278,7 @@ struct UndergrowthShoot {
   texture2d<float> forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
   texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
   texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
+  texture2d<float> snow_support [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
   texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
   const UndergrowthTile tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
@@ -330,19 +308,17 @@ struct UndergrowthShoot {
   const float ground = undergrowth_ground (root_xz, u, heights);
   const float3 root = float3 (root_xz.x, ground, root_xz.y);
 
+  const MoppeGrassMedium grass = undergrowth_medium (root_xz,
+                                                     u,
+                                                     forest,
+                                                     moisture,
+                                                     paths,
+                                                     snow_support,
+                                                     water_levels,
+                                                     ground,
+                                                     ground_normal);
   const float canopy = saturate (undergrowth_field (root_xz, u, forest).r);
-  const float wet = saturate (undergrowth_field (root_xz, u, moisture).r);
-  const float2 worn = saturate (undergrowth_field (root_xz, u, paths).rg);
-  const float root_clear = 1.0 - saturate (max (worn.x, worn.y) * 1.6);
-  const float root_water_depth =
-    u.relief.w > 0.5 ? undergrowth_field (root_xz, u, water_levels).r - ground
-                     : 0.0;
-  const float root_dry = 1.0 - smoothstep (0.002, 0.030, root_water_depth);
-  const float root_shore =
-    u.relief.w > 0.5 ? 1.0 - smoothstep (0.05, 1.35, abs (root_water_depth))
-                     : 0.0;
-  const float riparian =
-    root_shore * root_dry * smoothstep (0.52, 0.80, ground_normal.y);
+  const float wet = grass.moisture;
   // Grass is the ordinary answer. Ferns are an accent reserved for damp shade,
   // not a second carpet competing with it.
   const float fern_habitat =
@@ -354,36 +330,14 @@ struct UndergrowthShoot {
   // The short transition keeps motion continuous without turning the whole
   // layer translucent and giving depth ownership to stochastic fragments.
   const float presence = undergrowth_lod_presence (tile.wanted, shoot, cell);
-  // Shoots thinned out by distance leave gaps, so the survivors take on the
-  // projected width continuously. Height remains an ecological property:
-  // making survivors taller as they recede is a conspicuous LOD tell.
-  //
-  // Two widening laws, one shoot. Near the camera the sqrt law with its
-  // one-blade cap keeps a survivor reading as a single blade. With
-  // distance the SAME shoot thickens into a clump -- the tuft its retired
-  // neighbours belong to -- under the linear law that conserves the
-  // stand's frontal area (count times width), capped where a tuft would
-  // outgrow what its distance can resolve. No representation switch: a
-  // blade becomes a blob by growing, exactly as a crown gains boughs.
-  const float crowd =
-    float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE) / max (tile.wanted, 1.0);
-  const float thinning = sqrt (crowd);
-  const float camera_distance = length (root_xz - u.camera_pos.xz);
-  const float clumping =
-    smoothstep (0.25 * u.params.z, 0.60 * u.params.z, camera_distance);
+  // Retiring neighbours are integrated by the terrain material. A surviving
+  // shoot therefore stays one physical blade; neither its width nor its
+  // ecological height changes to disguise a reduced count.
+  const float camera_distance = length (root - u.camera_pos.xyz);
   const float draw = undergrowth_hash (identity, 4u);
-  const float scale = sqrt (presence * root_clear * root_dry) *
-                      (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
-                      (0.65 + 0.65 * draw * draw) * (1.0 + 0.18 * riparian);
-  const float coverage =
-    mix (1.0,
-         mix (min (thinning, 1.5), min (crowd, fern ? 4.0 : 14.0), clumping),
-         fern ? 0.45 : 0.72);
-  // Past the one-blade width the shoot is carrying its neighbours' area:
-  // it fountains outward like the tuft it now is instead of rising as an
-  // implausibly wide ribbon, and the section loop serrates its edge into
-  // many tips.
-  const float clump = saturate ((coverage - 1.5) / 6.0);
+  const float scale =
+    sqrt (presence) * (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
+    (0.65 + 0.65 * draw * draw) * (1.0 + 0.18 * grass.riparian);
 
   UndergrowthShoot s;
   s.root = root;
@@ -399,9 +353,9 @@ struct UndergrowthShoot {
 
   const float spread = 0.80 + 0.45 * undergrowth_hash (identity, 11u);
   if (fern) {
-    s.reach = scale * 0.48 * spread * coverage;
+    s.reach = scale * 0.48 * spread;
     s.climb = scale * 0.62 * spread;
-    s.width = scale * 0.105 * coverage;
+    s.width = scale * 0.105;
     s.lift = 1.88;
     s.arch = 1.20;
     s.lobed = 0.38;
@@ -411,7 +365,7 @@ struct UndergrowthShoot {
     // letting the individual silhouette remain convincingly narrow.
     s.reach = scale * 0.16 * spread;
     s.climb = scale * 0.65 * spread;
-    s.width = scale * 0.018 * coverage;
+    s.width = scale * MOPPE_GRASS_BLADE_WIDTH_METRES;
     s.lift = 1.22;
     s.arch = 0.20;
     s.lobed = 0.0;
@@ -419,20 +373,12 @@ struct UndergrowthShoot {
     // Bank grasses trade their meadow spread for a taller upright profile.
     // This is a continuous habitat response, not a separately scattered row
     // of reeds that could drift away from the waterline.
-    s.reach *= 1.0 - 0.18 * riparian;
-    s.climb *= 1.0 + 0.28 * riparian;
-    s.width *= 1.0 - 0.08 * riparian;
-    // Gently: the laboratory showed strong fountaining reads as a band of
-    // bushes brighter and denser than the blade field it continues, so a
-    // clump keeps the sward's upright habit and only eases outward.
-    s.reach *= 1.0 + 1.0 * clump;
-    s.arch += 0.22 * clump;
-    s.lift += 0.12 * clump;
+    s.reach *= 1.0 - 0.18 * grass.riparian;
+    s.climb *= 1.0 + 0.28 * grass.riparian;
+    s.width *= 1.0 - 0.08 * grass.riparian;
   }
-  // Damp grass is deeper and greener; dry blades run straw-olive without
-  // becoming a second ground texture.
-  s.tint *= float3 (1.12 - 0.24 * wet, 0.84 + 0.30 * wet, 0.82 + 0.22 * wet);
-  s.tint *= mix (float3 (1.0), float3 (0.82, 1.10, 0.88), riparian);
+  if (!fern)
+    s.tint = grass.blade_tint;
   // Keep blade-to-blade variation subordinate to the continuous habitat
   // fields. High-contrast salt and pepper reads as glitter once the blades
   // become subpixel, even though every blade has stable identity.
@@ -448,8 +394,10 @@ struct UndergrowthShoot {
   // Fine-scale motion is meaningful only while a blade spans several pixels.
   // Beyond that, the coherent gust remains but the fast flick fades before it
   // can turn a distant field into temporal sparkle.
-  const float micro_detail =
-    1.0 - smoothstep (0.28 * u.params.z, 0.72 * u.params.z, camera_distance);
+  const float focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  const float blade_pixels =
+    moppe_grass_blade_pixels (focal_pixels, camera_distance);
+  const float micro_detail = smoothstep (1.5, 4.0, blade_pixels);
 
   // The active mover parts the field without retaining or rewriting a single
   // blade. Roots stay fixed; upper sections lean away and lie down toward the
@@ -479,12 +427,7 @@ struct UndergrowthShoot {
     const float taper =
       fern ? 0.42 + 1.25 * t - 1.35 * t * t : 0.72 + 0.28 * sin (3.1415927 * t);
     const float lobes = 1.0 + s.lobed * cos (12.566371 * t);
-    // A clump's edge is many tips, not one clean ribbon line: per-section
-    // jitter serrates the widened silhouette.
-    const float serration =
-      mix (1.0, 0.80 + 0.40 * undergrowth_hash (identity, 29u + step), clump);
-    const float half_width =
-      s.width * (t >= 0.999 ? 0.0 : taper * lobes * serration);
+    const float half_width = s.width * (t >= 0.999 ? 0.0 : taper * lobes);
     const float3 side = normalize (cross (s.out, s.up));
     // A little twist keeps neighbouring blades from showing identical faces.
     // Ferns twist more strongly as their broad fronds fall.
@@ -583,15 +526,10 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // How many input pixels this shoot's width spans here. This, not
   // distance, is the temporal-stability measure: a jittered single sample
   // can only revisit a feature it can resolve, so per-feature lighting
-  // variance must not outlive the feature's own pixels. The width mirrors
-  // the mesh stage's budget-and-widening law: one blade near the camera,
-  // a clump carrying its neighbours' area in the far band.
+  // variance must not outlive the feature's own pixels. This is the same
+  // physical blade width that partitions resolved and integrated leaf area.
   const float focal_px = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
-  const float blade_share =
-    1.0 - smoothstep (0.22 * u.params.z, 0.60 * u.params.z, dist);
-  const float share_est = mix (0.085, 1.0, blade_share * blade_share);
-  const float width_est = clamp (0.28 + 0.72 / share_est, 1.0, 10.0);
-  const float blade_px = 0.02 * width_est * focal_px / max (dist, 0.5);
+  const float blade_px = moppe_grass_blade_pixels (focal_px, dist);
   const float resolvable = smoothstep (1.5, 4.0, blade_px);
 
   // A blade is one leaf thick and glows when the sun is behind it, which is
@@ -602,8 +540,7 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // Once a blade is subpixel, its individual twist term collapses to the
   // ensemble mean: the field keeps its aggregate warm glow, but stops
   // carrying per-blade HDR spikes no sample can hit twice.
-  const float leaf_back =
-    mix (0.30, pow (max (dot (-n, l), 0.0), 1.8), resolvable);
+  const float leaf_back = moppe_grass_leaf_back (n, l, resolvable);
   const float thin = exp (-2.0 * (1.0 - in.exposure));
   const float trans = leaf_back * thin * sun_visibility;
   const float3 view = to_frag / max (dist, 1e-4);
@@ -625,8 +562,8 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // bright-pass supplies the halo for free. Transmittance rides on
   // sqrt(base): a thin blade passes far more light than its dark diffuse
   // albedo reflects.
-  const float3 chlorophyll = float3 (0.92, 1.0, 0.24);
-  const float lobe = 0.20 + 0.80 * toward * toward * toward;
+  const float3 chlorophyll = moppe_grass_chlorophyll ();
+  const float lobe = moppe_grass_toward_lobe (toward);
   color += sqrt (base) * u.sun_diffuse.rgb * chlorophyll * trans * lobe * 3.2;
 
   // Real backlit grass also glints: a blade is a waxy cylinder carrying an
@@ -650,8 +587,7 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   const float streak = mix (10.0, 64.0, resolvable);
   const float glint = pow (sqrt (saturate (1.0 - along * along)), streak) *
                       (0.10 + 0.90 * toward * toward);
-  const float steady =
-    1.0 - smoothstep (0.30 * u.params.z, 0.75 * u.params.z, dist);
+  const float steady = smoothstep (0.40, 2.0, blade_px);
   color += u.sun_specular.rgb * glint * sun_visibility * steady *
            mix (0.40, 1.0, resolvable) * (0.30 + 0.70 * in.exposure) * 2.4;
 
