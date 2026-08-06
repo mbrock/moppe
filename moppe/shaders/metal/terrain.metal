@@ -743,30 +743,53 @@ fragment MoppeTemporalOutput terrain_fragment (
                   smoothstep (0.08, 0.30, height));
   grass_c *= mix (float3 (1.0), float3 (0.76, 0.91, 0.70), damp * 0.55);
 
-  // Calibration to the blade layer. Inside blade reach this texture is the
-  // ground seen BETWEEN blades and keeps its golden soil reading. Past
-  // reach the ground IS the grass medium, so the albedo converges to the
-  // aggregate of the blades that would have grown here: the mesh stage's
-  // base tint and moisture response, times its mean shading. Measured from
-  // the near representation, not tuned to taste -- this is what removes
-  // the green-to-gold snap at the geometry horizon.
+  // The grass medium's spatial statistics. The mean colour of a patchy
+  // field is brown-green mush; what says GRASS at distance is the second
+  // moment -- crowds of cover with litter gaps between them -- so the
+  // material renders the variance of the same clump-noise field the
+  // undergrowth density samples. Geometry inside reach and material beyond
+  // it are then two renderers of one field, and the patch pattern runs
+  // across the geometry horizon unbroken. (Tsushima's clump lesson,
+  // #66Q3W3: blades inherit clump identity, and the clump scale is what
+  // carries a field's structure at every distance.)
+  const float turf_crowd =
+    0.55 * moppe_value_noise (in.world_pos.xz * 0.085) +
+    0.45 * moppe_value_noise (in.world_pos.xz * 0.021 + float2 (17.3, 4.1));
+  // A tuft-scale octave carries the band just past the clumps and retires
+  // once its wavelength falls toward a pixel, the relief octave rule.
+  const float tuft_visibility = 1.0 - smoothstep (0.12, 0.60, ground_pixel_m);
+  const float turf_tuft =
+    mix (0.5,
+         moppe_value_noise (in.world_pos.xz * 0.85 + float2 (7.7, 3.1)),
+         tuft_visibility);
+  const float turf_cover =
+    smoothstep (0.22,
+                0.60,
+                turf_crowd + 0.35 * (turf_tuft - 0.5) +
+                  0.18 * smoothstep (0.02, 0.48, moisture) - 0.09) *
+    (1.0 - 0.30 * smoothstep (0.32, 0.92, forest_cover));
+
+  // The covered fraction will show the blade layer's aggregate: the mesh
+  // stage's base tint and moisture response times mean shading, with the
+  // crowd field supplying Tsushima-style patch-to-patch lushness. The mix
+  // happens AFTER the material composition below, because the medium
+  // claims whatever soil it roots in -- a vegetated lakeshore flat is
+  // grass over sand, and blending inside the grass layer let the beach
+  // band erase a field the undergrowth demonstrably grows on.
   const float3 blade_mean = moppe_srgb (float3 (0.185, 0.315, 0.112) *
                                         float3 (1.12 - 0.24 * moisture,
                                                 0.84 + 0.30 * moisture,
                                                 0.82 + 0.22 * moisture) *
                                         0.85);
-  grass_c = mix (grass_c,
-                 blade_mean * (0.80 + 0.40 * coarse),
-                 0.65 * smoothstep (60.0, 96.0, dist));
+  const float3 patch_hue = float3 (
+    1.0 + 0.14 * (turf_crowd - 0.5), 1.0, 1.0 - 0.12 * (turf_crowd - 0.5));
+  const float canopy_handoff = smoothstep (58.0, 92.0, dist);
 
-  // A filtered clump field gives nearby grass some ground-level structure
-  // without asking unstable subpixel blade geometry to carry the surface.
-  const float grass_patch = saturate (
-    0.52 +
-    0.28 * sin (in.world_pos.x * 0.036 + 1.7 * sin (in.world_pos.z * 0.019)) +
-    0.20 * sin (in.world_pos.z * 0.071 - in.world_pos.x * 0.043));
+  // Under standing blades the litter is shaded, so nearby ground darkens
+  // where the SAME field says cover stands: the floor beneath the geometry
+  // agrees with the pattern the material continues past it.
   const float grass_ground = (1.0 - smoothstep (55.0, 90.0, dist)) *
-                             grass_patch * (1.0 - beach_coef) *
+                             turf_cover * (1.0 - beach_coef) *
                              (1.0 - cliff_coef);
   grass_c *= 1.0 - 0.24 * grass_ground;
 
@@ -847,6 +870,21 @@ fragment MoppeTemporalOutput terrain_fragment (
     mix (scree_c, scree_value * float3 (0.88, 0.84, 0.76), 0.55) *
     (0.82 + 0.30 * coarse);
   texel = mix (texel, wash_c, 0.42 * wash);
+
+  // The grass medium claims the composed ground wherever the undergrowth
+  // would root: the same gates its density formula applies -- standable
+  // slope, dry ground, no worn trail, no snow, below the alpine band --
+  // and NOT the soil palette, so a field rooted in shore sand or alluvium
+  // keeps its cover past the geometry horizon exactly where its blades
+  // grew inside it.
+  const float rooted = smoothstep (0.52, 0.78, n.y) * (1.0 - submerged) *
+                       (1.0 - snow_coef) * (1.0 - scree_coef) *
+                       (1.0 - saturate (max (trail, home_base) * 1.6));
+  const float medium = turf_cover * canopy_handoff * rooted;
+  texel = mix (texel,
+               blade_mean * patch_hue *
+                 (0.72 + 0.56 * turf_crowd + 0.20 * (turf_tuft - 0.5)),
+               medium);
 
   // Water clarity has something worth revealing. Close flat beds and their
   // damp margins resolve into individual rounded stones; distance retires the
@@ -941,12 +979,16 @@ fragment MoppeTemporalOutput terrain_fragment (
                                 (1.0 - base_material) * (1.0 - trail_material);
   texel = mix (texel, forest_c, forest_material);
   // Wet soil loses diffuse energy and saturation. Underwater ground is
-  // darkest; moisture alone is a quieter bank/lowland treatment.
+  // darkest; moisture alone is a quieter bank/lowland treatment. It is a
+  // SOIL response: where the grass medium covers the pixel it must not
+  // apply, because a wet standing sward deepens its green -- the blade
+  // tint already carries that moisture response -- and greying it here
+  // made damp flats diverge from the lush blades growing on them.
   const float wetness = max (0.62 * damp, submerged);
   const float wet_luma = dot (texel, float3 (0.299, 0.587, 0.114));
   texel = mix (texel,
                mix (texel, float3 (wet_luma), 0.20) * float3 (0.52, 0.58, 0.60),
-               wetness * 0.58);
+               wetness * 0.58 * (1.0 - 0.85 * medium));
   if (u.params4.x > 0.5) {
     const uint2 overlay_size (terrain_overlay.get_width (),
                               terrain_overlay.get_height ());
@@ -1080,8 +1122,10 @@ fragment MoppeTemporalOutput terrain_fragment (
   // draw_undergrowth's 96 m reach; the material takes over across the
   // sparse-tuft tail so the medium never doubles up and never goes
   // missing.
-  const float canopy_handoff = smoothstep (60.0, 96.0, dist);
-  const float canopy_grass = turf * canopy_handoff;
+  // The cover fraction weights the whole response: a litter gap between
+  // crowds neither glows nor shimmers, which keeps the material's lighting
+  // as patchy as its albedo -- the same field again.
+  const float canopy_grass = turf * canopy_handoff * (0.20 + 0.80 * turf_cover);
   if (canopy_grass > 0.002) {
     // The same gust clock that bends near blades tilts the far orientation
     // distribution's mean, so waves of sheen roll across distant fields in

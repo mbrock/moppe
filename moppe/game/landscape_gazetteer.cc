@@ -722,15 +722,18 @@ namespace moppe::game {
            { "antisun", -toward_sun } }) {
       GazetteerCandidate plain = turf;
       plain.direction = heading;
+      // Chase-camera height rather than eye level: the rider's actual view
+      // of the field, where the band structure lays out in depth instead
+      // of stacking at the horizon.
       append_candidate_view (gazetteer,
                              selected,
                              std::string ("grass-gradient-") + suffix,
                              GazetteerShotKind::Lighting,
                              plain,
+                             4.0f * u::m,
                              0.0f * u::m,
-                             0.0f * u::m,
-                             1.7f * u::m,
-                             45.0f * u::m,
+                             3.2f * u::m,
+                             48.0f * u::m,
                              62.0f * u::deg,
                              surface,
                              readings,
