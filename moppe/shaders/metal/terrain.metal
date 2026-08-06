@@ -1047,6 +1047,66 @@ fragment MoppeTemporalOutput terrain_fragment (
     wetness * pow (max (dot (n, h), 0.0), mix (18.0, 52.0, submerged));
   color += u.sun_specular.rgb * direct_visibility * canopy_direct * wet_spec *
            mix (0.025, 0.075, submerged);
+
+  // -- grass canopy material --------------------------------------
+  // Beyond blade reach the grass keeps being grass. The undergrowth layer
+  // samples a statistical medium -- individual blades realized from habitat
+  // fields -- and this material renders the same medium by its moments:
+  // aggregate transmission, an orientation-distribution sheen, and the
+  // opposition hotspot every real field shows. Turf is how much of the
+  // pixel that medium owns, mirroring the material mixes above.
+  const float turf = (1.0 - scree_coef) * (1.0 - cliff_coef) *
+                     (1.0 - snow_coef) * (1.0 - shore_material) *
+                     (1.0 - trail_material) * (1.0 - 0.92 * base_material) *
+                     (1.0 - submerged) * (1.0 - 0.42 * wash) *
+                     (1.0 - forest_material) * smoothstep (0.52, 0.78, n.y);
+  // The geometric blade band thins out from 62% of its reach (see
+  // draw_undergrowth's 58 m); the material takes over on the same ramp so
+  // the medium never doubles up and never goes missing.
+  const float canopy_handoff = smoothstep (36.0, 58.0, dist);
+  const float canopy_grass = turf * canopy_handoff;
+  if (canopy_grass > 0.002) {
+    // The same gust clock that bends near blades tilts the far orientation
+    // distribution's mean, so waves of sheen roll across distant fields in
+    // phase with the blades moving at the rider's feet: one wind, two
+    // representations.
+    const float gust_phase = in.world_pos.x * 0.043 + in.world_pos.z * 0.051;
+    const float gust = sin (u.params2.x * 1.13 + gust_phase) +
+                       0.45 * sin (u.params2.x * 2.63 + gust_phase * 1.7 + 1.3);
+    const float wave = 1.0 + 0.11 * gust;
+    const float3 canopy_light =
+      u.sun_diffuse.rgb * direct_visibility * canopy_direct;
+
+    // Ensemble backlight: the blade layer's transmission term integrated
+    // over its twist and exposure distributions (mean back-scatter times
+    // mean Beer-Lambert thinness), on the same chlorophyll spectrum and
+    // sqrt-albedo transmittance the blades use. Sun-gated by the same
+    // forward lobe, so a backlit hillside glows and a front-lit one keeps
+    // its diffuse reading.
+    const float toward = saturate (dot (view_dir, l));
+    const float lobe = 0.20 + 0.80 * toward * toward * toward;
+    const float3 chlorophyll = float3 (0.92, 1.0, 0.24);
+    color += sqrt (texel) * canopy_light * chlorophyll * lobe * wave * 0.50 *
+             canopy_grass;
+
+    // Orientation-distribution sheen: Kajiya-Kay on the near-vertical mean
+    // axis, wide because the aggregate carries the full blade spread, its
+    // axis leaning along the wind displacement direction the gust drives.
+    const float3 canopy_axis = normalize (
+      float3 (0.0, 1.0, 0.0) + float3 (0.79, 0.0, 0.53) * (0.14 * gust));
+    const float along = dot (canopy_axis, h);
+    const float sheen = pow (sqrt (saturate (1.0 - along * along)), 8.0) *
+                        (0.10 + 0.90 * toward * toward);
+    color += u.sun_specular.rgb * direct_visibility * canopy_direct * sheen *
+             wave * 0.35 * canopy_grass;
+
+    // Opposition surge: blades hide their own shadows around the antisolar
+    // point, so the field brightens mildly where the view runs with the
+    // light. This is what makes a grass hillside read grown rather than
+    // painted when the sun stands behind the rider.
+    const float retro = pow (saturate (-dot (view_dir, l)), 4.0);
+    color += texel * canopy_light * retro * 0.35 * canopy_grass;
+  }
   if (u.params5.x > 0.0) {
     // Cyan is the actual vertex-pulled render lattice. Its quarter-cell near
     // field is allowed to disappear once it becomes sub-pixel instead of
