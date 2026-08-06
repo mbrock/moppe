@@ -76,7 +76,11 @@
     `make gazetteer GAZETTEER_OUT=/tmp/moppe-gazetteer`. Unlike the route
     survey, this composes each camera directly over one finished world without
     advancing a demo. It writes named PNGs, dimensional `gazetteer.csv`, a
-    contact sheet, and an HTML atlas. Overrides are `MOPPE_SEED`,
+    contact sheet, and an HTML atlas. The three `grass-gradient-*` frames are
+    deliberately uncomposed diagnostics: rider-height views across the
+    world's most ordinary open turf, headed sunward, crosslit, and antisun,
+    so the whole grass representation gradient (blades, clumps, canopy
+    material) is inspectable at known lighting angles. Overrides are `MOPPE_SEED`,
     `MOPPE_TERRAIN_PROFILE`, `MOPPE_GAZETTEER_GRAPHICS`,
     `MOPPE_GAZETTEER_WINDOW`, and `MOPPE_GAZETTEER_SETTLE`.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.

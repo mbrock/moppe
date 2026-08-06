@@ -692,6 +692,51 @@ namespace moppe::game {
                            readings,
                            flood);
 
+    // Grass-gradient diagnostics: the same open turf three ways, from rider
+    // height, axes from the sun rather than any composition. Each frame is
+    // a plain look across the plain, so the whole representation gradient
+    // -- blades, widening clumps, canopy material -- lands in every capture
+    // at a known heading relative to the light. The site is the most
+    // ordinary grass in the world: open, flat, a little damp, and away
+    // from the home-base clearing and worn ground that empty the field.
+    const Vec3 home_pos = position_value (spawn);
+    const GazetteerCandidate turf = choose_land_site (
+      surface,
+      readings,
+      flood,
+      census,
+      selected,
+      [home_pos] (const SiteSample& site) {
+        const float away = std::min (
+          std::sqrt (length2 (Vec3 (site.position[0] - home_pos[0],
+                                    0.0f,
+                                    site.position[2] - home_pos[2]))) /
+            220.0f,
+          1.0f);
+        return 3.0f * (1.0f - site.forest) + 2.0f * site.normal[1] +
+               1.2f * site.wetness + 1.5f * away - 3.0f * site.trail;
+      });
+    for (const auto& [suffix, heading] :
+         { std::pair<const char*, Vec3> { "sunward", toward_sun },
+           { "crosslit", sun_side },
+           { "antisun", -toward_sun } }) {
+      GazetteerCandidate plain = turf;
+      plain.direction = heading;
+      append_candidate_view (gazetteer,
+                             selected,
+                             std::string ("grass-gradient-") + suffix,
+                             GazetteerShotKind::Lighting,
+                             plain,
+                             0.0f * u::m,
+                             0.0f * u::m,
+                             1.7f * u::m,
+                             45.0f * u::m,
+                             62.0f * u::deg,
+                             surface,
+                             readings,
+                             flood);
+    }
+
     const GazetteerCandidate wetland = choose_land_site (
       surface, readings, flood, census, selected, [] (const SiteSample& site) {
         const float shore =
