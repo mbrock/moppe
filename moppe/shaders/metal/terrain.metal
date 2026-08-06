@@ -1060,10 +1060,11 @@ fragment MoppeTemporalOutput terrain_fragment (
                      (1.0 - trail_material) * (1.0 - 0.92 * base_material) *
                      (1.0 - submerged) * (1.0 - 0.42 * wash) *
                      (1.0 - forest_material) * smoothstep (0.52, 0.78, n.y);
-  // The geometric blade band thins out from 62% of its reach (see
-  // draw_undergrowth's 58 m); the material takes over on the same ramp so
-  // the medium never doubles up and never goes missing.
-  const float canopy_handoff = smoothstep (36.0, 58.0, dist);
+  // The geometric band (blades widening into clumps) carries the medium to
+  // draw_undergrowth's 96 m reach; the material takes over across the
+  // sparse-tuft tail so the medium never doubles up and never goes
+  // missing.
+  const float canopy_handoff = smoothstep (60.0, 96.0, dist);
   const float canopy_grass = turf * canopy_handoff;
   if (canopy_grass > 0.002) {
     // The same gust clock that bends near blades tilts the far orientation

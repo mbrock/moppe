@@ -953,7 +953,7 @@ namespace moppe {
           r.draw_undergrowth (
             { .time = frame.lighting.time,
               .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
-              .reach = 58.0f,
+              .reach = 96.0f,
               .density = 1.0f,
               .interaction_position = frame.hud.subject_position,
               .interaction_radius = interaction_radius });
