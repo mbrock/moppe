@@ -26,14 +26,17 @@ namespace moppe {
 
       // Renders the one-time shadow map.  sun_dir points toward the
       // sun, world space.
-      void render_shadow (render::Renderer& r, const Vec3& sun_dir);
+      void render_shadow (render::Renderer& r,
+                          const Vec3& sun_dir,
+                          bool include_forest);
 
       // Updates the production camera-local shadow level. The focus and
       // radius remain dimensional until the renderer boundary.
       void render_local_shadow (render::Renderer& r,
                                 position_t camera,
                                 const Vec3& view_dir,
-                                const Vec3& sun_dir);
+                                const Vec3& sun_dir,
+                                bool include_forest);
 
       // Emits culled chunk draws: distance cull against max_dist plus
       // a conservative behind-camera test.  Five nested LODs run from

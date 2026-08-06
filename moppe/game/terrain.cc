@@ -127,7 +127,9 @@ namespace moppe {
         }
     }
 
-    void Terrain::render_shadow (render::Renderer& r, const Vec3& sun_dir) {
+    void Terrain::render_shadow (render::Renderer& r,
+                                 const Vec3& sun_dir,
+                                 bool include_forest) {
       MOPPE_PROFILE_ZONE ("Terrain::render_shadow");
       const Vec3 center (m_extent[0] / 2, m_extent[1] / 2, m_extent[2] / 2);
       const float radius = length (m_extent) / 2;
@@ -139,13 +141,14 @@ namespace moppe {
       const Mat4 view = Mat4::look_at (light_pos, center, Vec3 (0, 1, 0));
       const Mat4 proj = Mat4::ortho (
         -radius, radius, -radius, radius, radius * 0.5f, radius * 6.0f);
-      r.render_terrain_shadow (proj * view);
+      r.render_terrain_shadow (proj * view, include_forest);
     }
 
     void Terrain::render_local_shadow (render::Renderer& r,
                                        position_t camera,
                                        const Vec3& view_dir,
-                                       const Vec3& sun_dir) {
+                                       const Vec3& sun_dir,
+                                       bool include_forest) {
       MOPPE_PROFILE_ZONE ("Terrain::render_local_shadow");
       constexpr meters_t radius = 160.0f * u::m;
       constexpr meters_t look_ahead = 48.0f * u::m;
@@ -185,6 +188,7 @@ namespace moppe {
         .light_view_proj = projection * view,
         .focus = position (centre),
         .radius = radius,
+        .include_forest = include_forest,
       });
     }
 

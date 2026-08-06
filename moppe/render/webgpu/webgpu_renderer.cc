@@ -1991,7 +1991,8 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
   void WebGpuRenderer::set_terrain_overlay (const TerrainOverlayParams&,
                                             std::span<const float>) {}
   void WebGpuRenderer::clear_terrain_overlay () {}
-  void WebGpuRenderer::render_terrain_shadow (const Mat4& light_view_proj) {
+  void WebGpuRenderer::render_terrain_shadow (const Mat4& light_view_proj,
+                                              bool) {
     if (!m_state->device || !m_state->have_terrain ||
         !m_state->terrain_shadow_pipeline || m_state->frame_open)
       return;

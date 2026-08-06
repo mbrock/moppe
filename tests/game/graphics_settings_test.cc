@@ -13,6 +13,7 @@ using namespace moppe;
 MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
   const game::GraphicsFeature* bloom = game::find_graphics_feature ("bloom");
   MOPPE_CHECK (bloom == &game::bloom_feature);
+  MOPPE_CHECK (game::find_graphics_feature ("forest") == &game::forest_feature);
   MOPPE_CHECK (game::find_graphics_feature ("snow-support-filter") ==
                &game::snow_support_filter_feature);
   MOPPE_CHECK (game::find_graphics_feature ("channel-flux-detail") ==
@@ -22,6 +23,7 @@ MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
 
 MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::ocean_feature.hot);
+  MOPPE_CHECK (game::forest_feature.hot);
   MOPPE_CHECK (game::waterfall_curtains_feature.hot);
   MOPPE_CHECK (game::particles_feature.hot);
   MOPPE_CHECK (game::vehicle_effects_feature.hot);
@@ -119,7 +121,7 @@ MOPPE_TEST (graphics_upscaling_modes_parse_and_print_canonically) {
 
 MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {
   const int bits = game::graphics_benchmark_dimension_count ();
-  MOPPE_CHECK (bits == 6);
+  MOPPE_CHECK (bits == 7);
   std::set<uint32_t> masks;
   uint32_t previous = game::gray_code (0);
   for (uint32_t epoch = 0; epoch < (1u << bits); ++epoch) {
@@ -148,7 +150,7 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   settings.terrain_topology = true;
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
-  MOPPE_CHECK (resolved == 0b11011110011100u);
+  MOPPE_CHECK (resolved == 0b110111100111000u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);
   MOPPE_CHECK (settings.star_effects);
@@ -163,6 +165,7 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   MOPPE_CHECK (!settings.waterfall_curtains);
   MOPPE_CHECK (!settings.bloom);
   MOPPE_CHECK (!settings.auto_exposure);
+  MOPPE_CHECK (!settings.forest);
 }
 
 MOPPE_TEST (graphics_benchmark_input_tape_is_repeatable) {

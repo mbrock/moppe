@@ -663,7 +663,8 @@ namespace moppe {
 
       void cast_world_shadows (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.cast_world_shadows");
-        m_terrain.render_shadow (r, sun_direction_for (m_graphics.sun_height));
+        m_terrain.render_shadow (
+          r, sun_direction_for (m_graphics.sun_height), m_graphics.forest);
       }
 
       void update_world_atmosphere (float total_time) {
@@ -896,7 +897,8 @@ namespace moppe {
           m_terrain.render_local_shadow (r,
                                          position (camera),
                                          frame.camera.frame_forward,
-                                         frame.lighting.sun_direction);
+                                         frame.lighting.sun_direction,
+                                         m_graphics.forest);
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
           sky.time = frame.lighting.time;

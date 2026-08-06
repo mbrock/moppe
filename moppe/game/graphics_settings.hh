@@ -11,6 +11,7 @@
 namespace moppe::game {
   enum class GraphicsFeatureId {
     terrain_shadows,
+    forest,
     ocean,
     waterfall_curtains,
     particles,
@@ -45,6 +46,7 @@ namespace moppe::game {
     float sun_height = 0.62f;
 
     bool terrain_shadows = true;
+    bool forest = true;
     bool ocean = true;
     bool waterfall_curtains = true;
     bool particles = true;
@@ -88,6 +90,9 @@ namespace moppe::game {
     "terrain-shadows",
     &GraphicsSettings::terrain_shadows,
     false
+  };
+  inline constexpr GraphicsFeature forest_feature {
+    GraphicsFeatureId::forest, "forest", &GraphicsSettings::forest, true
   };
   inline constexpr GraphicsFeature ocean_feature {
     GraphicsFeatureId::ocean, "ocean", &GraphicsSettings::ocean, true
@@ -183,8 +188,9 @@ namespace moppe::game {
     GraphicsFeatureId::gtao, "gtao", &GraphicsSettings::gtao, true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 17> graphics_features {
+  inline constexpr std::array<const GraphicsFeature*, 18> graphics_features {
     &terrain_shadows_feature,
+    &forest_feature,
     &ocean_feature,
     &waterfall_curtains_feature,
     &particles_feature,
