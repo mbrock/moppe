@@ -422,9 +422,12 @@ struct UndergrowthShoot {
     s.reach *= 1.0 - 0.18 * riparian;
     s.climb *= 1.0 + 0.28 * riparian;
     s.width *= 1.0 - 0.08 * riparian;
-    s.reach *= 1.0 + 1.8 * clump;
-    s.arch += 0.55 * clump;
-    s.lift += 0.25 * clump;
+    // Gently: the laboratory showed strong fountaining reads as a band of
+    // bushes brighter and denser than the blade field it continues, so a
+    // clump keeps the sward's upright habit and only eases outward.
+    s.reach *= 1.0 + 1.0 * clump;
+    s.arch += 0.22 * clump;
+    s.lift += 0.12 * clump;
   }
   // Damp grass is deeper and greener; dry blades run straw-olive without
   // becoming a second ground texture.
@@ -479,7 +482,7 @@ struct UndergrowthShoot {
     // A clump's edge is many tips, not one clean ribbon line: per-section
     // jitter serrates the widened silhouette.
     const float serration =
-      mix (1.0, 0.68 + 0.64 * undergrowth_hash (identity, 29u + step), clump);
+      mix (1.0, 0.80 + 0.40 * undergrowth_hash (identity, 29u + step), clump);
     const float half_width =
       s.width * (t >= 0.999 ? 0.0 : taper * lobes * serration);
     const float3 side = normalize (cross (s.out, s.up));

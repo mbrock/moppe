@@ -788,14 +788,6 @@ fragment MoppeTemporalOutput terrain_fragment (
     1.0 + 0.14 * (turf_crowd - 0.5), 1.0, 1.0 - 0.12 * (turf_crowd - 0.5));
   const float canopy_handoff = smoothstep (58.0, 92.0, dist);
 
-  // Under standing blades the litter is shaded, so nearby ground darkens
-  // where the SAME field says cover stands: the floor beneath the geometry
-  // agrees with the pattern the material continues past it.
-  const float grass_ground = (1.0 - smoothstep (55.0, 90.0, dist)) *
-                             turf_cover * (1.0 - beach_coef) *
-                             (1.0 - cliff_coef);
-  grass_c *= 1.0 - 0.24 * grass_ground;
-
   // -- scree / cliff / snow ---------------------------------------
   float3 scree_c = terrain_layer_integrated (dirt, smp, tc, far_blend);
   scree_c *= 0.82 + 0.36 * dirt.sample (smp, tc * 0.061, bias (1.50)).r;
@@ -879,15 +871,20 @@ fragment MoppeTemporalOutput terrain_fragment (
   // slope, dry ground, no worn trail, no snow, below the alpine band --
   // and NOT the soil palette, so a field rooted in shore sand or alluvium
   // keeps its cover past the geometry horizon exactly where its blades
-  // grew inside it.
+  // grew inside it. The claim is continuous in distance: inside blade
+  // reach, where geometry supplies the resolved blades, the ground between
+  // them is the SHADOWED understory of the same sward -- unresolved short
+  // growth in the blades' shade, not photographic soil (the laboratory's
+  // plainest finding); past the handoff the lit sward takes the full
+  // pixel.
   const float rooted = smoothstep (0.52, 0.78, n.y) * (1.0 - submerged) *
                        (1.0 - snow_coef) * (1.0 - scree_coef) *
                        (1.0 - saturate (max (trail, home_base) * 1.6));
-  const float medium = turf_cover * canopy_handoff * rooted;
-  texel = mix (texel,
-               blade_mean * patch_hue *
-                 (0.72 + 0.56 * turf_crowd + 0.20 * (turf_tuft - 0.5)),
-               medium);
+  const float3 sward = blade_mean * patch_hue *
+                       (0.72 + 0.56 * turf_crowd + 0.20 * (turf_tuft - 0.5));
+  const float3 medium_c = mix (sward * 0.48, sward, canopy_handoff);
+  const float medium = turf_cover * rooted * mix (0.72, 1.0, canopy_handoff);
+  texel = mix (texel, medium_c, medium);
 
   // Water clarity has something worth revealing. Close flat beds and their
   // damp margins resolve into individual rounded stones; distance retires the
