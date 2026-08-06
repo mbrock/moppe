@@ -585,16 +585,11 @@ fragment MoppeTemporalOutput terrain_fragment (
   depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
   texture2d<float, access::read> terrain_overlay
   [[texture (MOPPE_TEX_TERRAIN_OVERLAY)]],
-  texture2d<float> terrain_moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
+  texture2d<float> terrain_landscape [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
   texture2d<float, access::read> terrain_water
   [[texture (MOPPE_TEX_TERRAIN_WATER)]],
-  texture2d<float> terrain_geology [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
+  texture2d<float> terrain_ground [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
   texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
-  texture2d<float> terrain_shore [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
-  texture2d<float> terrain_paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
-  texture2d<float> terrain_forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
-  texture2d<float> terrain_snow_support
-  [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
   texture2d<float> terrain_channel_flux
   [[texture (MOPPE_TEX_TERRAIN_CHANNEL_FLUX)]],
   sampler smp [[sampler (0)]]) {
@@ -620,13 +615,20 @@ fragment MoppeTemporalOutput terrain_fragment (
   const float height = in.height;
   const float sea_level = u.params1.y;
 
+  // The typed surface readings become two compact sheets only at the
+  // presentation boundary. One filtered lookup now supplies four fields
+  // which share the same terrain coordinate and lifetime.
+  const float4 landscape =
+    u.params5.z > 0.5 ? terrain_field_sample (in.field_uv, terrain_landscape)
+                      : float4 (0.0);
+  const float4 ground = u.params5.z > 0.5
+                          ? terrain_field_sample (in.field_uv, terrain_ground)
+                          : float4 (1.0, n.y, 0.0, 0.0);
+
   // Hydrology is material information.
   // Standing water makes its bed fully wet; the moisture field feathers that
   // treatment into banks, drainage lines, and damp low ground.
-  const float moisture =
-    u.params5.z > 0.5
-      ? saturate (terrain_field_sample (in.field_uv, terrain_moisture).r)
-      : 0.0;
+  const float moisture = landscape.r;
   const float water_level =
     u.params5.y > 0.5 ? terrain_field_sample_read (in.field_uv, terrain_water).r
                       : -1.0;
@@ -636,29 +638,19 @@ fragment MoppeTemporalOutput terrain_fragment (
   const float submerged = smoothstep (0.015, 0.22, water_depth);
   // The sediment ledger (fresh cuts, settled fans) feeds both the
   // material blend and the micro-relief below.
-  const float2 geology =
-    u.params5.w > 0.5 ? terrain_field_sample (in.field_uv, terrain_geology).rg
-                      : float2 (0.0);
+  const float2 geology = landscape.gb;
   // Horizontal distance to the extracted waterline: the damp band hugs
   // the actual shoreline curve instead of a vertical depth proxy, and
   // fades on steep banks where ground climbs out of reach of swash.
-  const float shore_m = u.params6.y > 0.5
-                          ? terrain_field_sample (in.field_uv, terrain_shore).r
-                          : 64.0;
+  const float shore_m = ground.r * u.params6.y;
   const float swash_zone =
     (1.0 - smoothstep (0.3, 2.8, shore_m)) * smoothstep (0.42, 0.62, n.y);
   const float damp =
     max (max (submerged, 0.92 * swash_zone), smoothstep (0.22, 0.82, moisture));
-  const float2 intentional_ground =
-    u.params6.z > 0.5
-      ? saturate (terrain_field_sample (in.field_uv, terrain_paths).rg)
-      : float2 (0.0);
+  const float2 intentional_ground = ground.ba;
   const float trail = intentional_ground.r;
   const float home_base = intentional_ground.g;
-  const float forest_cover =
-    u.params6.w > 0.5
-      ? saturate (terrain_field_sample (in.field_uv, terrain_forest).r)
-      : 0.0;
+  const float forest_cover = landscape.a;
   // Concentrated drainage as a planar vector: direction of flow scaled by a
   // log-compressed activity that saturates at the visible-channel threshold.
   const float2 channel_flux =
@@ -710,10 +702,7 @@ fragment MoppeTemporalOutput terrain_fragment (
   // Snow retention is a material-scale reading of the broad hillside. The
   // detailed normal still lights every fold, but no longer turns each
   // lattice-scale steepness fluctuation into a hard snow/rock seam.
-  const float snow_support_up =
-    u.params7.x > 0.5
-      ? saturate (terrain_field_sample (in.field_uv, terrain_snow_support).r)
-      : n.y;
+  const float snow_support_up = u.params7.x > 0.5 ? ground.g : n.y;
   const float snow_coef =
     smoothstep (0.55, 0.68, hn) * smoothstep (0.58, 0.78, snow_support_up);
   // Use a world-space shoreline rule. The old normalized 0.03
@@ -847,7 +836,7 @@ fragment MoppeTemporalOutput terrain_fragment (
   // The sediment ledger is material information the simulation already
   // proved: fresh cuts expose raw regolith, deposition builds smooth
   // pale alluvium on gentle ground.  Both defer to snow.
-  if (u.params5.w > 0.5) {
+  if (u.params5.z > 0.5) {
     const float2 geo = geology;
     const float cut = smoothstep (0.12, 0.72, geo.r);
     const float fill = smoothstep (0.12, 0.72, geo.g);

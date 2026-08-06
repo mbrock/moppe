@@ -18,6 +18,7 @@ struct MoppeGrassMedium {
   float cover;
   float clump;
   float moisture;
+  float forest_cover;
   float riparian;
   float3 blade_tint;
 };
@@ -44,6 +45,7 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
   grass.moisture = saturate (moisture);
 
   const float canopy = saturate (forest_cover);
+  grass.forest_cover = canopy;
   const float light = 1.0 - 0.30 * smoothstep (0.32, 0.92, canopy);
   const float damp = 0.75 + 0.25 * smoothstep (0.02, 0.48, grass.moisture);
   const float standable = smoothstep (0.52, 0.78, ground_up);

@@ -38,6 +38,16 @@ static float2 ocean_grid_sample_raw (float2 world_xz,
   return mix (mix (s00, s10, fx), mix (s01, s11, fx), fz);
 }
 
+static float4 ocean_material_sample (float2 world_xz,
+                                     constant MoppeOceanUniforms& u,
+                                     texture2d<float> materials) {
+  const float2 period (u.shore.w);
+  float2 grid = world_xz * u.shore.xy;
+  grid -= floor (grid / period) * period;
+  constexpr sampler smp (coord::normalized, address::repeat, filter::linear);
+  return materials.sample (smp, (grid + 0.5) / period);
+}
+
 // Height-bearing sheets: x is height in world meters, y carries the
 // water grid's wave amplitude factor.
 static float2 ocean_grid_sample (float2 world_xz,
@@ -576,8 +586,7 @@ fragment MoppeTemporalOutput ocean_fragment (
   [[texture (MOPPE_TEX_WATER_LEVELS_FRAGMENT)]],
   texture2d<float, access::read> water_flow
   [[texture (MOPPE_TEX_WATER_FLOW_FRAGMENT)]],
-  texture2d<float, access::read> geology
-  [[texture (MOPPE_TEX_WATER_GEOLOGY_FRAGMENT)]],
+  texture2d<float> geology [[texture (MOPPE_TEX_WATER_GEOLOGY_FRAGMENT)]],
   depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]]) {
   const float time = u.params.x;
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
@@ -775,7 +784,7 @@ fragment MoppeTemporalOutput ocean_fragment (
   // heights.)
   const float turbidity =
     (u.current.y > 0.5 && u.shore.w > 0.5)
-      ? saturate (1.4 * ocean_grid_sample_raw (in.world_pos.xz, u, geology).y)
+      ? saturate (1.4 * ocean_material_sample (in.world_pos.xz, u, geology).b)
       : 0.0;
 
   float foam = 0.0;

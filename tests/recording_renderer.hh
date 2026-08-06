@@ -19,6 +19,13 @@ namespace moppe::test {
     std::vector<float> water_flow;
     std::vector<float> trail_influence;
     std::vector<float> home_base_influence;
+    std::vector<float> moisture;
+    std::vector<float> erosion;
+    std::vector<float> deposition;
+    std::vector<float> forest_cover;
+    std::vector<float> shore_distance;
+    std::vector<float> snow_support;
+    std::vector<float> channel_flux;
     render::ForestSetup forest_setup {};
     std::vector<render::ForestInstance> forest_instances;
     std::size_t forest_draws = 0;
@@ -74,12 +81,35 @@ namespace moppe::test {
         water_flow.push_back (lanes[1][index]);
       }
     }
-    void set_terrain_paths (const render::TexturePixels& pixels) override {
-      const auto lanes = render::decode_channels (pixels);
-      if (lanes.size () > 0)
-        trail_influence = lanes[0];
-      if (lanes.size () > 1)
-        home_base_influence = lanes[1];
+    void set_terrain_materials (const render::TexturePixels& landscape,
+                                const render::TexturePixels& ground,
+                                const render::TexturePixels& flow,
+                                bool) override {
+      const auto landscape_lanes = render::decode_channels (landscape);
+      const auto ground_lanes = render::decode_channels (ground);
+      const auto flow_lanes = render::decode_channels (flow);
+      if (landscape_lanes.size () == 4) {
+        moisture = landscape_lanes[0];
+        erosion = landscape_lanes[1];
+        deposition = landscape_lanes[2];
+        forest_cover = landscape_lanes[3];
+      }
+      if (ground_lanes.size () == 4) {
+        shore_distance = ground_lanes[0];
+        for (float& distance : shore_distance)
+          distance *= render::terrain_shore_band_metres;
+        snow_support = ground_lanes[1];
+        trail_influence = ground_lanes[2];
+        home_base_influence = ground_lanes[3];
+      }
+      channel_flux.clear ();
+      if (flow_lanes.size () == 2) {
+        channel_flux.reserve (2 * flow_lanes[0].size ());
+        for (std::size_t index = 0; index < flow_lanes[0].size (); ++index) {
+          channel_flux.push_back (flow_lanes[0][index]);
+          channel_flux.push_back (flow_lanes[1][index]);
+        }
+      }
     }
     void
     set_forest (const render::ForestSetup& setup,

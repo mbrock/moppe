@@ -34,7 +34,15 @@
 // that later defers an upload has to materialize the bytes first.
 
 namespace moppe::render {
-  enum class PixelFormat { r32f, rg32f, r16f, rg16f, rg16snorm };
+  enum class PixelFormat {
+    r32f,
+    rg32f,
+    r16f,
+    rg16f,
+    rg16snorm,
+    rgba8unorm,
+    rg8snorm
+  };
 
   constexpr std::size_t channels_in (PixelFormat format) {
     switch (format) {
@@ -44,14 +52,28 @@ namespace moppe::render {
     case PixelFormat::rg32f:
     case PixelFormat::rg16f:
     case PixelFormat::rg16snorm:
+    case PixelFormat::rg8snorm:
       return 2;
+    case PixelFormat::rgba8unorm:
+      return 4;
     }
     return 0;
   }
 
   constexpr std::size_t channel_bytes (PixelFormat format) {
-    return format == PixelFormat::r32f || format == PixelFormat::rg32f ? 4u
-                                                                       : 2u;
+    switch (format) {
+    case PixelFormat::r32f:
+    case PixelFormat::rg32f:
+      return 4;
+    case PixelFormat::r16f:
+    case PixelFormat::rg16f:
+    case PixelFormat::rg16snorm:
+      return 2;
+    case PixelFormat::rgba8unorm:
+    case PixelFormat::rg8snorm:
+      return 1;
+    }
+    return 0;
   }
 
   constexpr std::size_t bytes_per_pixel (PixelFormat format) {
@@ -119,6 +141,18 @@ namespace moppe::render {
       case PixelFormat::rg16snorm: {
         const std::int16_t packed = static_cast<std::int16_t> (
           std::clamp (value, -1.0f, 1.0f) * 32767.0f);
+        std::memcpy (at, &packed, sizeof packed);
+        return;
+      }
+      case PixelFormat::rgba8unorm: {
+        const std::uint8_t packed = static_cast<std::uint8_t> (
+          std::clamp (value, 0.0f, 1.0f) * 255.0f + 0.5f);
+        std::memcpy (at, &packed, sizeof packed);
+        return;
+      }
+      case PixelFormat::rg8snorm: {
+        const std::int8_t packed =
+          static_cast<std::int8_t> (std::clamp (value, -1.0f, 1.0f) * 127.0f);
         std::memcpy (at, &packed, sizeof packed);
         return;
       }
@@ -213,6 +247,14 @@ namespace moppe::render {
           std::int16_t packed = 0;
           std::memcpy (&packed, at, sizeof packed);
           lanes[channel][pixel] = static_cast<float> (packed) / 32767.0f;
+        } else if (pixels.format () == PixelFormat::rgba8unorm) {
+          std::uint8_t packed = 0;
+          std::memcpy (&packed, at, sizeof packed);
+          lanes[channel][pixel] = static_cast<float> (packed) / 255.0f;
+        } else if (pixels.format () == PixelFormat::rg8snorm) {
+          std::int8_t packed = 0;
+          std::memcpy (&packed, at, sizeof packed);
+          lanes[channel][pixel] = static_cast<float> (packed) / 127.0f;
         } else {
           std::uint16_t packed = 0;
           std::memcpy (&packed, at, sizeof packed);

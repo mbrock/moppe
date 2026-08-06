@@ -4,41 +4,101 @@
 #include <moppe/render/texture_pixels.hh>
 
 namespace moppe::game {
+  namespace {
+    struct TerrainMaterialSource {
+      const map::SurfaceGeometry& geometry;
+      const map::SurfaceReadings& readings;
+      bool include_forest;
+    };
+
+    void write_landscape_materials (const void* opaque,
+                                    render::PixelFormat format,
+                                    std::byte* destination) {
+      const auto& source = *static_cast<const TerrainMaterialSource*> (opaque);
+      const auto& moisture =
+        spatial::get<map::surface_moisture> (source.readings);
+      const auto& erosion =
+        spatial::get<map::erosion_exposure> (source.readings);
+      const auto& deposition =
+        spatial::get<map::deposition_cover> (source.readings);
+      const auto& forest = spatial::get<map::forest_cover> (source.readings);
+      const std::size_t stride = render::bytes_per_pixel (format);
+      for (std::size_t pixel = 0; pixel < moisture.size (); ++pixel) {
+        std::byte* at = destination + pixel * stride;
+        render::detail::write_channel (
+          at, format, render::detail::stored_scalar (moisture[pixel]));
+        render::detail::write_channel (
+          at + 1, format, render::detail::stored_scalar (erosion[pixel]));
+        render::detail::write_channel (
+          at + 2, format, render::detail::stored_scalar (deposition[pixel]));
+        render::detail::write_channel (
+          at + 3,
+          format,
+          source.include_forest ? render::detail::stored_scalar (forest[pixel])
+                                : 0.0f);
+      }
+    }
+
+    void write_ground_materials (const void* opaque,
+                                 render::PixelFormat format,
+                                 std::byte* destination) {
+      const auto& source = *static_cast<const TerrainMaterialSource*> (opaque);
+      const auto& shore =
+        spatial::get<map::waterline_distance> (source.readings);
+      const auto& snow = spatial::get<map::snow_support> (source.geometry);
+      const auto& trail = spatial::get<map::trail_influence> (source.readings);
+      const auto& home =
+        spatial::get<map::home_base_influence> (source.readings);
+      const std::size_t stride = render::bytes_per_pixel (format);
+      for (std::size_t pixel = 0; pixel < shore.size (); ++pixel) {
+        std::byte* at = destination + pixel * stride;
+        const float shore_fraction =
+          render::detail::stored_scalar (shore[pixel]) /
+          render::terrain_shore_band_metres;
+        render::detail::write_channel (at, format, shore_fraction);
+        render::detail::write_channel (
+          at + 1, format, render::detail::stored_scalar (snow[pixel]));
+        render::detail::write_channel (
+          at + 2, format, render::detail::stored_scalar (trail[pixel]));
+        render::detail::write_channel (
+          at + 3, format, render::detail::stored_scalar (home[pixel]));
+      }
+    }
+
+    void write_channel_flux (const void* opaque,
+                             render::PixelFormat format,
+                             std::byte* destination) {
+      const auto& source = *static_cast<const TerrainMaterialSource*> (opaque);
+      const auto& flux = spatial::get<map::channel_flux> (source.readings);
+      const std::size_t stride = render::bytes_per_pixel (format);
+      for (std::size_t pixel = 0; pixel < flux.size (); ++pixel) {
+        const Vec3 value = render::detail::stored_vector (flux[pixel]);
+        std::byte* at = destination + pixel * stride;
+        render::detail::write_channel (at, format, value[0]);
+        render::detail::write_channel (at + 1, format, value[2]);
+      }
+    }
+  }
+
   void upload_surface_readings (render::Renderer& renderer,
                                 const map::SurfaceGeometry& geometry,
                                 const map::SurfaceReadings& readings,
                                 bool include_forest) {
     MOPPE_PROFILE_ZONE ("surface.upload_readings");
-    using render::PixelFormat;
-    using render::planar_texture_pixels;
-    using render::texture_pixels;
+    const TerrainMaterialSource source { geometry, readings, include_forest };
+    const auto pixels = [&] (render::PixelFormat format,
+                             render::TexturePixels::Writer writer) {
+      return render::TexturePixels (readings.domain ().width (),
+                                    readings.domain ().height (),
+                                    format,
+                                    &source,
+                                    writer);
+    };
 
-    // Both fields are bounded proportions. Half precision preserves far more
-    // resolution than their presentation thresholds can reveal, halves their
-    // bandwidth, and lets Metal filter them in hardware on every supported
-    // Apple GPU.
-    renderer.set_terrain_moisture (
-      texture_pixels<map::surface_moisture> (readings, PixelFormat::r16f));
-    renderer.set_terrain_geology (
-      texture_pixels<map::erosion_exposure, map::deposition_cover> (
-        readings, PixelFormat::rg16f));
-    renderer.set_terrain_shore (
-      texture_pixels<map::waterline_distance> (readings, PixelFormat::r16f));
-    renderer.set_terrain_snow_support (
-      texture_pixels<map::snow_support> (geometry, PixelFormat::r16f));
-    renderer.set_terrain_paths (
-      texture_pixels<map::trail_influence, map::home_base_influence> (
-        readings, PixelFormat::rg16f));
-
-    // The flux reading is a planar vector; the shader wants its two
-    // horizontal lanes and reconstructs nothing else.
-    renderer.set_terrain_channel_flux (
-      planar_texture_pixels<map::channel_flux> (readings, PixelFormat::rg16f));
-
-    // An empty source is how a caller says "leave this overlay off".
-    renderer.set_terrain_forest (
-      include_forest
-        ? texture_pixels<map::forest_cover> (readings, PixelFormat::r16f)
-        : render::TexturePixels ());
+    renderer.set_terrain_materials (
+      pixels (render::PixelFormat::rgba8unorm, &write_landscape_materials),
+      pixels (render::PixelFormat::rgba8unorm, &write_ground_materials),
+      pixels (render::PixelFormat::rg8snorm, &write_channel_flux),
+      include_forest);
   }
 }

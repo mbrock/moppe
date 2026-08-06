@@ -15,10 +15,12 @@ MOPPE_TEST (terrain_local_shadow_keeps_a_typed_bounded_focus) {
   terrain.render_local_shadow (renderer,
                                camera,
                                Vec3 (0.0f, 0.0f, 1.0f),
-                               normalized (Vec3 (0.7f, 0.7f, 0.2f)));
+                               normalized (Vec3 (0.7f, 0.7f, 0.2f)),
+                               true);
 
   MOPPE_CHECK (renderer.local_shadow.has_value ());
   const render::LocalShadowParams& shadow = *renderer.local_shadow;
+  MOPPE_CHECK (shadow.include_forest);
   MOPPE_CHECK_NEAR (shadow.radius.numerical_value_in (u::m), 160.0f, 1e-6f);
   const Vec3 focus = position_value (shadow.focus);
   const float texel = 320.0f / 2048.0f;

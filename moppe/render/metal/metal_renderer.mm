@@ -430,22 +430,14 @@ namespace moppe {
         TerrainOverlayParams overlay_params {};
         bool have_overlay = false;
 
-        // These raster fields share the terrain domain.  Water borrows the
-        // geology field but does not own terrain presentation data.
-        id<MTLTexture> moisture = nil;
-        bool have_moisture = false;
-        id<MTLTexture> forest = nil;
-        bool have_forest = false;
-        id<MTLTexture> snow_support = nil;
-        bool have_snow_support = false;
+        // Typed terrain readings are packed only at the renderer boundary.
+        // Two RGBA8 sheets carry bounded material scalars; RG8Snorm carries
+        // the signed channel-flow vector.
+        id<MTLTexture> landscape_materials = nil;
+        id<MTLTexture> ground_materials = nil;
         id<MTLTexture> channel_flux = nil;
-        bool have_channel_flux = false;
-        id<MTLTexture> geology = nil;
-        bool have_geology = false;
-        id<MTLTexture> shore = nil;
-        bool have_shore = false;
-        id<MTLTexture> paths = nil;
-        bool have_paths = false;
+        bool have_materials = false;
+        bool have_forest = false;
 #if !TARGET_OS_IPHONE
         // Goal 0 atelier only: one bounded, terrain-only BLAS derived from the
         // completed surface. It is absent unless explicitly requested.
@@ -854,13 +846,10 @@ namespace moppe {
       void set_ocean (const OceanSetup& setup,
                       const render::TexturePixels& water_levels) override;
       void set_water_flow (const render::TexturePixels& flow) override;
-      void set_terrain_moisture (const render::TexturePixels&) override;
-      void set_terrain_forest (const render::TexturePixels&) override;
-      void set_terrain_snow_support (const render::TexturePixels&) override;
-      void set_terrain_channel_flux (const render::TexturePixels&) override;
-      void set_terrain_geology (const render::TexturePixels&) override;
-      void set_terrain_shore (const render::TexturePixels&) override;
-      void set_terrain_paths (const render::TexturePixels&) override;
+      void set_terrain_materials (const render::TexturePixels& landscape,
+                                  const render::TexturePixels& ground,
+                                  const render::TexturePixels& flow,
+                                  bool include_forest) override;
       void set_forest (const ForestSetup& setup,
                        std::span<const ForestInstance> instances) override;
 
@@ -3152,72 +3141,30 @@ namespace moppe {
       return true;
     }
 
-    void
-    MetalRenderer::set_terrain_geology (const render::TexturePixels& geology) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_geology");
-      m_terrain_resources.have_geology =
-        upload_pixels (m_terrain_resources.geology,
-                       geology,
-                       render::PixelFormat::rg16f,
-                       MTLPixelFormatRG16Float);
-    }
-
-    void
-    MetalRenderer::set_terrain_shore (const render::TexturePixels& distance) {
-      m_terrain_resources.have_shore = upload_pixels (m_terrain_resources.shore,
-                                                      distance,
-                                                      render::PixelFormat::r16f,
-                                                      MTLPixelFormatR16Float);
-    }
-
-    void
-    MetalRenderer::set_terrain_paths (const render::TexturePixels& influence) {
-      m_terrain_resources.have_paths =
-        upload_pixels (m_terrain_resources.paths,
-                       influence,
-                       render::PixelFormat::rg16f,
-                       MTLPixelFormatRG16Float);
-    }
-
-    void MetalRenderer::set_terrain_moisture (
-      const render::TexturePixels& moisture) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_moisture");
-      m_terrain_resources.have_moisture =
-        upload_pixels (m_terrain_resources.moisture,
-                       moisture,
-                       render::PixelFormat::r16f,
-                       MTLPixelFormatR16Float);
-    }
-
-    void
-    MetalRenderer::set_terrain_forest (const render::TexturePixels& cover) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_forest");
+    void MetalRenderer::set_terrain_materials (
+      const render::TexturePixels& landscape,
+      const render::TexturePixels& ground,
+      const render::TexturePixels& flow,
+      bool include_forest) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_materials");
+      const bool have_landscape =
+        upload_pixels (m_terrain_resources.landscape_materials,
+                       landscape,
+                       render::PixelFormat::rgba8unorm,
+                       MTLPixelFormatRGBA8Unorm);
+      const bool have_ground =
+        upload_pixels (m_terrain_resources.ground_materials,
+                       ground,
+                       render::PixelFormat::rgba8unorm,
+                       MTLPixelFormatRGBA8Unorm);
+      const bool have_flow = upload_pixels (m_terrain_resources.channel_flux,
+                                            flow,
+                                            render::PixelFormat::rg8snorm,
+                                            MTLPixelFormatRG8Snorm);
+      m_terrain_resources.have_materials =
+        have_landscape && have_ground && have_flow;
       m_terrain_resources.have_forest =
-        upload_pixels (m_terrain_resources.forest,
-                       cover,
-                       render::PixelFormat::r16f,
-                       MTLPixelFormatR16Float);
-    }
-
-    void MetalRenderer::set_terrain_snow_support (
-      const render::TexturePixels& support) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_snow_support");
-      m_terrain_resources.have_snow_support =
-        upload_pixels (m_terrain_resources.snow_support,
-                       support,
-                       render::PixelFormat::r16f,
-                       MTLPixelFormatR16Float);
-    }
-
-    // Direction times a [0,1] activity fits comfortably in half precision.
-    void MetalRenderer::set_terrain_channel_flux (
-      const render::TexturePixels& flux) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_channel_flux");
-      m_terrain_resources.have_channel_flux =
-        upload_pixels (m_terrain_resources.channel_flux,
-                       flux,
-                       render::PixelFormat::rg16f,
-                       MTLPixelFormatRG16Float);
+        m_terrain_resources.have_materials && include_forest;
     }
 
     void MetalRenderer::set_forest (const ForestSetup& setup,
@@ -4053,20 +4000,15 @@ namespace moppe {
       }
       u.params5.x = terrain.params.topology_overlay ? 1.0f : 0.0f;
       u.params5.y = water.have_water_levels ? 1.0f : 0.0f;
-      u.params5.z = terrain.have_moisture ? 1.0f : 0.0f;
-      u.params5.w = terrain.have_geology ? 1.0f : 0.0f;
+      u.params5.z = terrain.have_materials ? 1.0f : 0.0f;
       u.params6.x = terrain.params.fragment_normals ? 1.0f : 0.0f;
-      u.params6.y = terrain.have_shore ? 1.0f : 0.0f;
-      u.params6.z = terrain.have_paths ? 1.0f : 0.0f;
-      u.params6.w = terrain.have_forest ? 1.0f : 0.0f;
+      u.params6.y = render::terrain_shore_band_metres;
       u.params7.x =
-        (terrain.params.snow_support_filter && terrain.have_snow_support)
-          ? 1.0f
-          : 0.0f;
+        (terrain.params.snow_support_filter && terrain.have_materials) ? 1.0f
+                                                                       : 0.0f;
       u.params7.y =
-        (terrain.params.channel_flux_detail && terrain.have_channel_flux)
-          ? 1.0f
-          : 0.0f;
+        (terrain.params.channel_flux_detail && terrain.have_materials) ? 1.0f
+                                                                       : 0.0f;
       u.params7.z = terrain.params.land_relief;
       u.params7.w = terrain.params.grass_cover_boost;
       u.temporal = frame.uniforms.temporal;
@@ -4114,8 +4056,9 @@ namespace moppe {
                     terrain.overlay ? terrain.overlay : terrain.heights);
       bind_texture (frame,
                     MTLRenderStageFragment,
-                    MOPPE_TEX_TERRAIN_MOISTURE,
-                    terrain.have_moisture ? terrain.moisture : terrain.heights);
+                    MOPPE_TEX_TERRAIN_LANDSCAPE,
+                    terrain.have_materials ? terrain.landscape_materials
+                                           : terrain.heights);
       bind_texture (frame,
                     MTLRenderStageFragment,
                     MOPPE_TEX_TERRAIN_WATER,
@@ -4123,34 +4066,18 @@ namespace moppe {
                                             : terrain.heights);
       bind_texture (frame,
                     MTLRenderStageFragment,
-                    MOPPE_TEX_TERRAIN_GEOLOGY,
-                    terrain.have_geology ? terrain.geology : terrain.heights);
+                    MOPPE_TEX_TERRAIN_GROUND,
+                    terrain.have_materials ? terrain.ground_materials
+                                           : terrain.heights);
       bind_texture (frame,
                     MTLRenderStageFragment,
                     MOPPE_TEX_TERRAIN_NORMALS,
                     terrain.normals);
       bind_texture (frame,
                     MTLRenderStageFragment,
-                    MOPPE_TEX_TERRAIN_SHORE,
-                    terrain.have_shore ? terrain.shore : terrain.heights);
-      bind_texture (frame,
-                    MTLRenderStageFragment,
-                    MOPPE_TEX_TERRAIN_PATHS,
-                    terrain.have_paths ? terrain.paths : terrain.heights);
-      bind_texture (frame,
-                    MTLRenderStageFragment,
-                    MOPPE_TEX_TERRAIN_FOREST,
-                    terrain.have_forest ? terrain.forest : terrain.heights);
-      bind_texture (frame,
-                    MTLRenderStageFragment,
-                    MOPPE_TEX_TERRAIN_SNOW_SUPPORT,
-                    terrain.have_snow_support ? terrain.snow_support
-                                              : terrain.heights);
-      bind_texture (frame,
-                    MTLRenderStageFragment,
                     MOPPE_TEX_TERRAIN_CHANNEL_FLUX,
-                    terrain.have_channel_flux ? terrain.channel_flux
-                                              : terrain.heights);
+                    terrain.have_materials ? terrain.channel_flux
+                                           : terrain.heights);
       use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
 
       for (int i = 0; i < count; ++i) {
@@ -4358,11 +4285,12 @@ namespace moppe {
                     MOPPE_TEX_WATER_FLOW_FRAGMENT,
                     water_resources.have_water_flow ? water_resources.water_flow
                                                     : water);
-      u.current.y = terrain.have_geology ? 1.0f : 0.0f;
+      u.current.y = terrain.have_materials ? 1.0f : 0.0f;
       bind_texture (frame,
                     MTLRenderStageFragment,
                     MOPPE_TEX_WATER_GEOLOGY_FRAGMENT,
-                    terrain.have_geology ? terrain.geology : water);
+                    terrain.have_materials ? terrain.landscape_materials
+                                           : water);
       bind_texture (frame,
                     MTLRenderStageFragment,
                     MOPPE_TEX_SHADOW,
@@ -4550,7 +4478,7 @@ namespace moppe {
       const MetalTerrainResources& terrain = m_terrain_resources;
       const MetalWaterResources& water = m_water_resources;
       if (!m_pipelines.undergrowth || !terrain.have_terrain ||
-          !terrain.have_forest || !terrain.have_moisture || !terrain.have_paths)
+          !terrain.have_materials || !terrain.have_forest)
         return;
       {
         MoppeUndergrowthUniforms u;
@@ -4568,7 +4496,7 @@ namespace moppe {
         u.shadow = m_frame.uniforms.shadow;
         u.relief.x = m_frame.uniforms.misc.z;
         u.relief.y = m_frame.uniforms.misc.w;
-        u.relief.z = terrain.have_snow_support ? 1.0f : 0.0f;
+        u.relief.z = terrain.have_materials ? 1.0f : 0.0f;
         u.relief.w = water.have_water_levels ? 1.0f : 0.0f;
         u.temporal = m_frame.uniforms.temporal;
 
@@ -4617,15 +4545,12 @@ namespace moppe {
         };
         bind (terrain.heights, MOPPE_TEX_HEIGHTS);
         bind (terrain.normals, MOPPE_TEX_TERRAIN_NORMALS);
-        bind (terrain.forest ? terrain.forest : terrain.heights,
-              MOPPE_TEX_TERRAIN_FOREST);
-        bind (terrain.moisture ? terrain.moisture : terrain.heights,
-              MOPPE_TEX_TERRAIN_MOISTURE);
-        bind (terrain.paths ? terrain.paths : terrain.heights,
-              MOPPE_TEX_TERRAIN_PATHS);
-        bind (terrain.have_snow_support ? terrain.snow_support
-                                        : terrain.heights,
-              MOPPE_TEX_TERRAIN_SNOW_SUPPORT);
+        bind (terrain.have_materials ? terrain.landscape_materials
+                                     : terrain.heights,
+              MOPPE_TEX_TERRAIN_LANDSCAPE);
+        bind (terrain.have_materials ? terrain.ground_materials
+                                     : terrain.heights,
+              MOPPE_TEX_TERRAIN_GROUND);
         bind (water.have_water_levels ? water.water_levels : terrain.heights,
               MOPPE_TEX_TERRAIN_WATER);
         bind_texture (m_frame,

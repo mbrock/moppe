@@ -377,6 +377,9 @@ MOPPE_TEST (surface_geometry_is_authoritative_without_a_refresh_barrier) {
 
 MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   using namespace moppe;
+  static_assert (render::bytes_per_pixel (render::PixelFormat::rgba8unorm) ==
+                 4);
+  static_assert (render::bytes_per_pixel (render::PixelFormat::rg8snorm) == 2);
   map::SurfaceGeometry surface = map::SurfaceGeometry (
     terrain::TerrainDomain (3, 3, spatial_extent_in_metres (Vec3 (30, 0, 30))));
   std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
@@ -386,31 +389,36 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
 
   std::vector<float> trail (9, 0.0f);
   std::vector<float> home (9, 0.0f);
+  std::vector<float> moisture (9, 0.4f);
+  std::vector<float> shore (9, render::terrain_shore_band_metres);
   trail[4] = 0.75f;
   home[4] = 0.25f;
+  shore[4] = 2.5f;
   const map::SurfaceReadings readings = test::complete_readings (
-    surface, { .use = test::trail_use_map (surface.domain (), trail, home) });
+    surface,
+    { .moisture = test::moisture_map (surface.domain (), moisture),
+      .waterline = test::waterline_map (surface.domain (), shore),
+      .use = test::trail_use_map (surface.domain (), trail, home) });
 
-  // The bridge is the pixels a source writes, so read those back rather than
-  // an intermediate buffer: there no longer is one.
-  const auto paths = render::decode_channels (
-    render::texture_pixels<map::trail_influence, map::home_base_influence> (
-      readings, render::PixelFormat::rg16f));
-  MOPPE_CHECK (paths.size () == 2);
-  MOPPE_CHECK (paths[0].size () == surface.domain ().size ());
-  MOPPE_CHECK_NEAR (paths[0][4], 0.75f, 1e-3f);
-  MOPPE_CHECK_NEAR (paths[1][4], 0.25f, 1e-3f);
+  test::RecordingRenderer renderer;
+  game::upload_surface_readings (renderer, surface, readings, true);
+  MOPPE_CHECK (renderer.moisture.size () == surface.domain ().size ());
+  MOPPE_CHECK (renderer.erosion.size () == surface.domain ().size ());
+  MOPPE_CHECK (renderer.deposition.size () == surface.domain ().size ());
+  MOPPE_CHECK (renderer.forest_cover.size () == surface.domain ().size ());
+  MOPPE_CHECK (renderer.shore_distance.size () == surface.domain ().size ());
+  MOPPE_CHECK (renderer.snow_support.size () == surface.domain ().size ());
+  MOPPE_CHECK (renderer.channel_flux.size () == 2 * surface.domain ().size ());
+  MOPPE_CHECK_NEAR (renderer.moisture[4], 0.4f, 1.0f / 255.0f);
+  MOPPE_CHECK_NEAR (renderer.shore_distance[4],
+                    2.5f,
+                    render::terrain_shore_band_metres / 255.0f);
+  MOPPE_CHECK_NEAR (renderer.trail_influence[4], 0.75f, 1.0f / 255.0f);
+  MOPPE_CHECK_NEAR (renderer.home_base_influence[4], 0.25f, 1.0f / 255.0f);
 
-  const auto flux =
-    render::decode_channels (render::planar_texture_pixels<map::channel_flux> (
-      readings, render::PixelFormat::rg16f));
-  MOPPE_CHECK (flux.size () == 2);
-  MOPPE_CHECK (flux[0].size () == 9);
-
-  const auto snow =
-    render::decode_channels (render::texture_pixels<map::snow_support> (
-      surface, render::PixelFormat::r16f));
-  MOPPE_CHECK (snow[0].size () == 9);
+  game::upload_surface_readings (renderer, surface, readings, false);
+  MOPPE_CHECK (std::ranges::all_of (
+    renderer.forest_cover, [] (float cover) { return cover == 0.0f; }));
 
   // An overlay that is switched off writes nothing at all.
   MOPPE_CHECK (render::TexturePixels ().empty ());
