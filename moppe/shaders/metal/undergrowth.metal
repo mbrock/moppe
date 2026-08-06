@@ -597,9 +597,12 @@ fragment MoppeTemporalOutput undergrowth_fragment (
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);
   color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
   // Glow and glint are view-locked and slide across the blades in motion,
-  // so the bright fringe asks for extra history rejection.
+  // so the bright fringe asks for extra history rejection -- but only while
+  // a blade spans pixels. Subpixel blades live on accumulated history, and
+  // rejecting it at range reads as shimmer, so the boost fades with the
+  // same distance curve as the glint.
   return moppe_temporal_output (
     float4 (color, 1.0),
     in.motion,
-    0.55 + 0.25 * saturate (max (trans * toward, glint * steady)));
+    0.55 + 0.25 * steady * saturate (max (trans * toward, glint)));
 }
