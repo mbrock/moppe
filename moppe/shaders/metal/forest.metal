@@ -900,9 +900,12 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
   color = mix (color, fog_color, smoothstep (0.0, 0.92, fog));
   // The glow is view- and sun-locked, so it slides across the geometry as
   // the camera moves; extra history rejection keeps the reconstruction from
-  // smearing the bright fringe.
-  return moppe_temporal_output (float4 (color, 1.0),
-                                in.motion,
-                                in.leaf > 0.5 ? 0.48 + 0.30 * trans * toward
-                                              : 0.12);
+  // smearing the bright fringe. Only nearby, though: once tufts approach a
+  // pixel, accumulated history is what holds them steady, and rejecting it
+  // there turns the distant fringe into shimmer.
+  const float near_fringe = 1.0 - smoothstep (120.0, 320.0, distance);
+  return moppe_temporal_output (
+    float4 (color, 1.0),
+    in.motion,
+    in.leaf > 0.5 ? 0.48 + 0.30 * trans * toward * near_fringe : 0.12);
 }
