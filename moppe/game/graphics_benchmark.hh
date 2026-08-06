@@ -12,11 +12,35 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
 namespace moppe::game {
   inline constexpr float GRAPHICS_BENCHMARK_DT = 1.0f / 120.0f;
+
+  enum class GraphicsBenchmarkPartition {
+    Standard,
+    Detailed,
+  };
+
+  inline const char*
+  graphics_benchmark_partition_name (GraphicsBenchmarkPartition partition) {
+    return partition == GraphicsBenchmarkPartition::Detailed ? "detailed"
+                                                             : "standard";
+  }
+
+  inline bool
+  parse_graphics_benchmark_partition (std::string_view name,
+                                      GraphicsBenchmarkPartition& partition) {
+    if (name == "standard")
+      partition = GraphicsBenchmarkPartition::Standard;
+    else if (name == "detailed")
+      partition = GraphicsBenchmarkPartition::Detailed;
+    else
+      return false;
+    return true;
+  }
 
   template <typename P>
   concept GraphicsFeaturePartition = requires {
@@ -37,70 +61,119 @@ namespace moppe::game {
     return index ^ (index >> 1);
   }
 
-  // The ordinary riding benchmark preserves the geometry and full-frame
-  // distinctions that have shown measurable cost, and deliberately identifies
-  // the small effects.
-  // Its block type is local to this particular quotient.
+  enum class RidingGraphicsBlock {
+    forest,
+    undergrowth,
+    water,
+    post,
+    other_features,
+    ocean,
+    waterfalls,
+    bloom,
+    auto_exposure,
+  };
+
+  inline constexpr std::string_view
+  riding_graphics_block_name (RidingGraphicsBlock block) {
+    switch (block) {
+    case RidingGraphicsBlock::forest:
+      return "forest";
+    case RidingGraphicsBlock::undergrowth:
+      return "undergrowth";
+    case RidingGraphicsBlock::water:
+      return "water";
+    case RidingGraphicsBlock::post:
+      return "post";
+    case RidingGraphicsBlock::other_features:
+      return "other-features";
+    case RidingGraphicsBlock::ocean:
+      return "ocean";
+    case RidingGraphicsBlock::waterfalls:
+      return "waterfalls";
+    case RidingGraphicsBlock::bloom:
+      return "bloom";
+    case RidingGraphicsBlock::auto_exposure:
+      return "auto-exposure";
+    }
+    return "invalid";
+  }
+
+  // The default quotient answers broad subsystem questions in 32
+  // configurations. Forest and undergrowth remain separate because they are
+  // independent geometry amplifiers; water and post each travel together.
   struct RidingGraphicsPartition {
-    enum class Block {
-      forest,
-      ocean,
-      waterfalls,
-      bloom,
-      auto_exposure,
-      undergrowth,
-      small_effects,
-    };
-
-    using block_type = Block;
+    using block_type = RidingGraphicsBlock;
     inline static constexpr std::array blocks {
-      Block::forest,        Block::ocean,         Block::waterfalls,
-      Block::bloom,         Block::auto_exposure, Block::undergrowth,
-      Block::small_effects,
+      RidingGraphicsBlock::forest,         RidingGraphicsBlock::undergrowth,
+      RidingGraphicsBlock::water,          RidingGraphicsBlock::post,
+      RidingGraphicsBlock::other_features,
     };
 
-    constexpr Block operator() (GraphicsFeatureId feature) const {
+    constexpr RidingGraphicsBlock operator() (GraphicsFeatureId feature) const {
       switch (feature) {
       case GraphicsFeatureId::forest:
-        return Block::forest;
-      case GraphicsFeatureId::ocean:
-        return Block::ocean;
-      case GraphicsFeatureId::waterfall_curtains:
-        return Block::waterfalls;
-      case GraphicsFeatureId::bloom:
-        return Block::bloom;
-      case GraphicsFeatureId::auto_exposure:
-        return Block::auto_exposure;
+        return RidingGraphicsBlock::forest;
       case GraphicsFeatureId::undergrowth:
-        return Block::undergrowth;
+        return RidingGraphicsBlock::undergrowth;
+      case GraphicsFeatureId::ocean:
+      case GraphicsFeatureId::waterfall_curtains:
+        return RidingGraphicsBlock::water;
+      case GraphicsFeatureId::bloom:
+      case GraphicsFeatureId::auto_exposure:
+        return RidingGraphicsBlock::post;
       default:
-        return Block::small_effects;
+        return RidingGraphicsBlock::other_features;
       }
     }
 
-    static constexpr std::string_view name (Block block) {
-      switch (block) {
-      case Block::forest:
-        return "forest";
-      case Block::ocean:
-        return "ocean";
-      case Block::waterfalls:
-        return "waterfalls";
-      case Block::bloom:
-        return "bloom";
-      case Block::auto_exposure:
-        return "auto-exposure";
-      case Block::undergrowth:
-        return "undergrowth";
-      case Block::small_effects:
-        return "small-effects";
+    static constexpr std::string_view name (RidingGraphicsBlock block) {
+      return riding_graphics_block_name (block);
+    }
+  };
+
+  // The opt-in refinement separates water and post components while keeping
+  // the heterogeneous remainder grouped. It is deliberately called detailed,
+  // not exhaustive: fifteen raw Boolean features would make 32768 runs.
+  struct DetailedRidingGraphicsPartition {
+    using block_type = RidingGraphicsBlock;
+    inline static constexpr std::array blocks {
+      RidingGraphicsBlock::forest,         RidingGraphicsBlock::ocean,
+      RidingGraphicsBlock::waterfalls,     RidingGraphicsBlock::bloom,
+      RidingGraphicsBlock::auto_exposure,  RidingGraphicsBlock::undergrowth,
+      RidingGraphicsBlock::other_features,
+    };
+
+    constexpr RidingGraphicsBlock operator() (GraphicsFeatureId feature) const {
+      switch (feature) {
+      case GraphicsFeatureId::forest:
+        return RidingGraphicsBlock::forest;
+      case GraphicsFeatureId::ocean:
+        return RidingGraphicsBlock::ocean;
+      case GraphicsFeatureId::waterfall_curtains:
+        return RidingGraphicsBlock::waterfalls;
+      case GraphicsFeatureId::bloom:
+        return RidingGraphicsBlock::bloom;
+      case GraphicsFeatureId::auto_exposure:
+        return RidingGraphicsBlock::auto_exposure;
+      case GraphicsFeatureId::undergrowth:
+        return RidingGraphicsBlock::undergrowth;
+      default:
+        return RidingGraphicsBlock::other_features;
       }
+    }
+
+    static constexpr std::string_view name (RidingGraphicsBlock block) {
+      return riding_graphics_block_name (block);
     }
   };
 
   static_assert (NamedFiniteGraphicsFeaturePartition<RidingGraphicsPartition>);
+  static_assert (
+    NamedFiniteGraphicsFeaturePartition<DetailedRidingGraphicsPartition>);
 
   inline constexpr RidingGraphicsPartition graphics_benchmark_partition;
+  inline constexpr DetailedRidingGraphicsPartition
+    detailed_graphics_benchmark_partition;
 
   inline constexpr bool
   graphics_benchmark_includes (const GraphicsFeature& feature) {
@@ -109,13 +182,14 @@ namespace moppe::game {
     return feature.hot && feature.id != GraphicsFeatureId::terrain_topology;
   }
 
-  inline constexpr bool graphics_benchmark_partition_covers_features () {
+  template <NamedFiniteGraphicsFeaturePartition P>
+  inline constexpr bool graphics_benchmark_partition_covers_features (P p) {
     for (const GraphicsFeature* feature : graphics_features) {
       if (!graphics_benchmark_includes (*feature))
         continue;
-      const auto block = graphics_benchmark_partition (feature->id);
+      const auto block = p (feature->id);
       bool found = false;
-      for (const auto candidate : RidingGraphicsPartition::blocks)
+      for (const auto candidate : P::blocks)
         found = found || candidate == block;
       if (!found)
         return false;
@@ -123,10 +197,38 @@ namespace moppe::game {
     return true;
   }
 
-  static_assert (graphics_benchmark_partition_covers_features ());
+  static_assert (graphics_benchmark_partition_covers_features (
+    graphics_benchmark_partition));
+  static_assert (graphics_benchmark_partition_covers_features (
+    detailed_graphics_benchmark_partition));
 
-  inline constexpr int graphics_benchmark_dimension_count () {
-    return static_cast<int> (RidingGraphicsPartition::blocks.size ());
+  inline int
+  graphics_benchmark_dimension_count (GraphicsBenchmarkPartition partition) {
+    return partition == GraphicsBenchmarkPartition::Detailed
+             ? static_cast<int> (
+                 DetailedRidingGraphicsPartition::blocks.size ())
+             : static_cast<int> (RidingGraphicsPartition::blocks.size ());
+  }
+
+  inline std::string_view
+  graphics_benchmark_block_name (GraphicsBenchmarkPartition partition,
+                                 int bit) {
+    if (partition == GraphicsBenchmarkPartition::Detailed)
+      return DetailedRidingGraphicsPartition::name (
+        DetailedRidingGraphicsPartition::blocks[bit]);
+    return RidingGraphicsPartition::name (RidingGraphicsPartition::blocks[bit]);
+  }
+
+  inline std::string
+  graphics_benchmark_block_names (GraphicsBenchmarkPartition partition) {
+    std::string names;
+    for (int bit = 0; bit < graphics_benchmark_dimension_count (partition);
+         ++bit) {
+      if (!names.empty ())
+        names += ',';
+      names += graphics_benchmark_block_name (partition, bit);
+    }
+    return names;
   }
 
   inline InputFrame benchmark_input (int frame) {
@@ -149,6 +251,8 @@ namespace moppe::game {
       int prelude_frames = 480;
       int settle_frames = 30;
       int measured_frames = 120;
+      GraphicsBenchmarkPartition partition =
+        GraphicsBenchmarkPartition::Standard;
     };
 
     struct Frame {
@@ -186,7 +290,7 @@ namespace moppe::game {
     }
 
     int configuration_count () const noexcept {
-      return 1 << graphics_benchmark_dimension_count ();
+      return 1 << graphics_benchmark_dimension_count (m_config.partition);
     }
 
     std::optional<Frame> current_frame () const {
@@ -254,16 +358,17 @@ namespace moppe::game {
     return count;
   }
 
-  inline uint32_t apply_graphics_benchmark_mask (GraphicsSettings& settings,
-                                                 uint32_t partition_mask) {
+  template <NamedFiniteGraphicsFeaturePartition P>
+  inline uint32_t apply_graphics_benchmark_mask_with_partition (
+    GraphicsSettings& settings, uint32_t partition_mask, P partition) {
     uint32_t feature_mask = 0;
     int feature_bit = 0;
     for (const GraphicsFeature* feature : graphics_features) {
       if (!graphics_benchmark_includes (*feature))
         continue;
-      const auto block = graphics_benchmark_partition (feature->id);
+      const auto block = partition (feature->id);
       int block_bit = 0;
-      while (RidingGraphicsPartition::blocks[block_bit] != block)
+      while (P::blocks[block_bit] != block)
         ++block_bit;
       const bool enabled = (partition_mask & (1u << block_bit)) != 0;
       feature->set (settings, enabled);
@@ -272,6 +377,17 @@ namespace moppe::game {
       ++feature_bit;
     }
     return feature_mask;
+  }
+
+  inline uint32_t
+  apply_graphics_benchmark_mask (GraphicsSettings& settings,
+                                 uint32_t partition_mask,
+                                 GraphicsBenchmarkPartition partition) {
+    if (partition == GraphicsBenchmarkPartition::Detailed)
+      return apply_graphics_benchmark_mask_with_partition (
+        settings, partition_mask, detailed_graphics_benchmark_partition);
+    return apply_graphics_benchmark_mask_with_partition (
+      settings, partition_mask, graphics_benchmark_partition);
   }
 }
 

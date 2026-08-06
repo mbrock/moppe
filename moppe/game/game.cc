@@ -101,6 +101,7 @@ namespace moppe {
             m_benchmark->prelude_frames,
             m_benchmark->settle_frames,
             m_benchmark->measured_frames,
+            m_benchmark->partition,
           });
       }
 
@@ -1609,8 +1610,8 @@ namespace moppe {
           session ().restore (*m_benchmark_checkpoint);
         m_renderer->reset_temporal_state ();
         m_graphics = m_benchmark_baseline;
-        m_benchmark_mask =
-          apply_graphics_benchmark_mask (m_graphics, frame->partition_mask);
+        m_benchmark_mask = apply_graphics_benchmark_mask (
+          m_graphics, frame->partition_mask, m_benchmark->partition);
         update_benchmark_title (frame->epoch, frame->partition_mask);
         m_benchmark_epoch_pending = false;
       }
@@ -1642,18 +1643,20 @@ namespace moppe {
       void update_benchmark_title (int epoch, uint32_t partition_mask) const {
         if (!m_benchmark)
           return;
-        const int configurations = 1 << graphics_benchmark_dimension_count ();
+        const int configurations =
+          1 << graphics_benchmark_dimension_count (m_benchmark->partition);
         std::ostringstream title;
         title << "Moppe benchmark " << (epoch + 1) << '/' << configurations
               << " - ";
         bool any = false;
-        for (std::size_t bit = 0; bit < RidingGraphicsPartition::blocks.size ();
+        for (int bit = 0;
+             bit < graphics_benchmark_dimension_count (m_benchmark->partition);
              ++bit)
           if (partition_mask & (1u << bit)) {
             if (any)
               title << " + ";
-            title << RidingGraphicsPartition::name (
-              RidingGraphicsPartition::blocks[bit]);
+            title << graphics_benchmark_block_name (m_benchmark->partition,
+                                                    bit);
             any = true;
           }
         if (!any)

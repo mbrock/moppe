@@ -120,8 +120,9 @@ MOPPE_TEST (graphics_upscaling_modes_parse_and_print_canonically) {
 }
 
 MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {
-  const int bits = game::graphics_benchmark_dimension_count ();
-  MOPPE_CHECK (bits == 7);
+  const int bits = game::graphics_benchmark_dimension_count (
+    game::GraphicsBenchmarkPartition::Standard);
+  MOPPE_CHECK (bits == 5);
   std::set<uint32_t> masks;
   uint32_t previous = game::gray_code (0);
   for (uint32_t epoch = 0; epoch < (1u << bits); ++epoch) {
@@ -134,7 +135,7 @@ MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {
   MOPPE_CHECK (masks.size () == (1u << bits));
 }
 
-MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
+MOPPE_TEST (standard_graphics_benchmark_partition_groups_broad_subsystems) {
   using Partition = game::RidingGraphicsPartition;
   constexpr Partition partition;
   MOPPE_CHECK (equivalent (partition,
@@ -142,14 +143,17 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
                            game::GraphicsFeatureId::lens_flare));
   MOPPE_CHECK (!equivalent (
     partition, game::GraphicsFeatureId::ocean, game::GraphicsFeatureId::bloom));
-  MOPPE_CHECK (!equivalent (partition,
-                            game::GraphicsFeatureId::waterfall_curtains,
-                            game::GraphicsFeatureId::ocean));
+  MOPPE_CHECK (equivalent (partition,
+                           game::GraphicsFeatureId::waterfall_curtains,
+                           game::GraphicsFeatureId::ocean));
+  MOPPE_CHECK (equivalent (partition,
+                           game::GraphicsFeatureId::bloom,
+                           game::GraphicsFeatureId::auto_exposure));
 
   game::GraphicsSettings settings = game::low_graphics_settings ();
   settings.terrain_topology = true;
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
-    settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
+    settings, 1u << 4, game::GraphicsBenchmarkPartition::Standard);
   MOPPE_CHECK (resolved == 0b110111100111000u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);

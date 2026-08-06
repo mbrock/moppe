@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -164,9 +165,12 @@ def initialize(connection):
      AND z.start_ns + z.duration_ns >= f.timestamp_ns
   """)
   connection.execute("""
-    CREATE OR REPLACE TABLE benchmark_features(bit, name) AS VALUES
-      (0, 'grass'), (1, 'ocean'), (2, 'bloom'),
-      (3, 'auto-exposure'), (4, 'small-effects')
+    CREATE TABLE IF NOT EXISTS benchmark_blocks (
+      capture_id VARCHAR,
+      bit UINTEGER,
+      name VARCHAR,
+      PRIMARY KEY (capture_id, bit)
+    )
   """)
   connection.execute("""
     CREATE OR REPLACE VIEW benchmark_gpu_frame_zones AS
@@ -209,8 +213,9 @@ def initialize(connection):
       SELECT off.capture_id, off.domain, off.name, f.bit,
              f.name AS feature,
              (on_zone.duration_ns-off.duration_ns) / 1000000.0 AS delta_ms
-      FROM benchmark_features f
-      JOIN all_zones off ON (off.partition_mask & (1 << f.bit))=0
+      FROM benchmark_blocks f
+      JOIN all_zones off ON f.capture_id=off.capture_id
+                        AND (off.partition_mask & (1 << f.bit))=0
       JOIN all_zones on_zone
         ON on_zone.capture_id=off.capture_id
        AND on_zone.domain=off.domain AND on_zone.name=off.name
@@ -306,17 +311,22 @@ def main():
         "INSERT INTO plots VALUES (?, ?, ?, ?, ?)",
         [(identity, *row) for row in plots])
   benchmark_rows = []
+  benchmark_blocks = []
   if benchmark_csv:
     archived_csv = destination / "benchmark.csv"
     shutil.copy2(benchmark_csv, archived_csv)
     with archived_csv.open(newline="") as stream:
       for row in csv.DictReader(stream):
         feature_values = {
-            name: value for name, value in row.items()
-            if name not in {
-                "epoch", "mask", "partition_mask", "logical_frame", "gpu_ms"
-            }
+            match.group(2): value for name, value in row.items()
+            if (match := re.fullmatch(r"feature_([0-9]+)_(.+)", name))
         }
+        if not benchmark_blocks:
+          benchmark_blocks = [
+              (identity, int(match.group(1)), match.group(2))
+              for name in row
+              if (match := re.fullmatch(r"block_([0-9]+)_(.+)", name))
+          ]
         benchmark_rows.append((
             identity, int(row["epoch"]), int(row["mask"]),
             int(row["logical_frame"]), float(row["gpu_ms"]),
@@ -325,12 +335,16 @@ def main():
         "DELETE FROM benchmark_samples WHERE capture_id=?", [identity])
     connection.execute(
         "DELETE FROM benchmark_runs WHERE capture_id=?", [identity])
+    connection.execute(
+        "DELETE FROM benchmark_blocks WHERE capture_id=?", [identity])
     connection.execute("INSERT INTO benchmark_runs VALUES (?, ?, ?, ?)", [
         identity, capture_id(archived_csv), str(archived_csv),
         len(benchmark_rows)])
     connection.executemany(
         "INSERT INTO benchmark_samples VALUES (?, ?, ?, ?, ?, ?)",
         benchmark_rows)
+    connection.executemany(
+        "INSERT INTO benchmark_blocks VALUES (?, ?, ?)", benchmark_blocks)
   parquet = destination / "zones.parquet"
   connection.execute(
       f"COPY (SELECT * FROM zones WHERE capture_id='{identity}') "

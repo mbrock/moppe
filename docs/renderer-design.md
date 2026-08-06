@@ -607,8 +607,9 @@ millisecond, while its absolute frame time does not. Add
 Metal 4 pass columns. That mode may split encoders and is for attribution, not
 whole-frame throughput comparisons.
 
-That contrast is also two regimes, reproducibly: with the small-effects block
-off the ocean costs about 12 ms, and with it on about 2 ms. Something else
+That historical contrast also had two regimes: with the then-named
+`small-effects` block off the ocean cost about 12 ms, and with it on about
+2 ms. Something else
 saturates first in the second regime and the water hides behind it, so a
 single averaged marginal cost describes neither.
 

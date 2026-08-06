@@ -85,11 +85,13 @@
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
   - Automated screenshots and graphics benchmarks keep their macOS windows
     inactive, so repeated captures do not steal focus from the current app.
-  - Partitioned hot-feature GPU benchmark (128 configurations; prefix with
-    `MOPPE_DEMO=1` so it measures a ride rather than the spawn point):
+  - Partitioned hot-feature GPU benchmark (32 configurations by default;
+    prefix with `MOPPE_DEMO=1` so it measures a ride rather than the spawn
+    point):
     `./build/moppe.app/Contents/MacOS/moppe --graphics-benchmark /tmp/gpu.csv
     --windowed --seed 123 --terrain-quality fast`. Development overrides are
-    `--benchmark-prelude`, `--benchmark-settle`, `--benchmark-frames`, and
+    `--benchmark-prelude`, `--benchmark-settle`, `--benchmark-frames`,
+    `--benchmark-partition detailed` for the 128-configuration refinement, and
     `--benchmark-pass-timing` for precise Metal 4 pass columns (with profiling
     overhead).
     Analyze a completed CSV with

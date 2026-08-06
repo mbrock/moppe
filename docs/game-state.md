@@ -79,12 +79,13 @@ The intended experiment loop is:
 The built-in graphics benchmark implements this loop at a fixed 120 Hz. It
 constructs the checkpoint after a deterministic scripted prelude, then visits
 all Boolean combinations of a graphics-feature partition in Gray-code order.
-The current riding partition preserves ocean, waterfall curtains, bloom, and
-automatic exposure as separate blocks and identifies particles, vehicle
-effects, star effects, lens flare, fragment terrain normals, snow-support
-filtering, and channel-flux detail as one `small-effects` block. This reduces
-the ordinary sweep from 2048 configurations to 32 without pretending those
-features no longer exist. Every
+The standard riding partition keeps forest and undergrowth separate, groups
+ocean with waterfall curtains as `water`, groups bloom with automatic exposure
+as `post`, and identifies the remaining hot presentation controls as
+`other-features`. This gives the ordinary sweep five blocks and 32
+configurations without pretending the underlying features no longer exist.
+`--benchmark-partition detailed` refines water and post back into their four
+component blocks for an explicit 128-configuration run. Every
 epoch restores `GameState`, resets renderer temporal history, replays the same
 input segment, discards settling frames, and records command-buffer GPU time
 for the remaining frames. For example:
@@ -96,11 +97,13 @@ for the remaining frames. For example:
 ```
 
 The CSV contains epoch, the resolved feature mask, the quotient-space partition
-mask, logical frame, GPU milliseconds, and one Boolean column per included
-riding-benchmark feature. Defaults are 480 prelude frames, 30 settling frames,
-and 120 measured frames per configuration. The three counts can be overridden
-with `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames` for
-quick smoke runs.
+mask, logical frame, GPU milliseconds, the partition name, and encoded Boolean
+columns such as `feature_0_forest` and `block_0_forest`. Those column names make
+the file self-describing: DuckDB and Tracy derive feature and block bit tables
+from the capture rather than maintaining copies. Defaults are 480 prelude
+frames, 30 settling frames, and 120 measured frames per configuration. The
+three counts can be overridden with `--benchmark-prelude`, `--benchmark-settle`,
+and `--benchmark-frames` for quick smoke runs.
 
 Analyze a completed CSV with DuckDB:
 
@@ -121,6 +124,8 @@ represents a partition by its quotient map. Each particular partition chooses
 its own equality-comparable block type; no global block-ID enumeration is
 required. `RidingGraphicsPartition` refines that algebraic idea with a finite,
 stably ordered, named block set needed by the benchmark UI and traversal.
+`DetailedRidingGraphicsPartition` is a refinement of that default quotient;
+both export their schema through the same benchmark output path.
 
 For a synchronized CPU and Metal trace of the cube, run:
 

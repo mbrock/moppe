@@ -75,6 +75,7 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--benchmark-frames",
          "--benchmark-settle",
          "--benchmark-prelude",
+         "--benchmark-partition",
          "--terrain-gazetteer",
          "--gazetteer-settle",
          "--fast",
@@ -268,8 +269,19 @@ MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
   MOPPE_CHECK (options.benchmark->settle_frames == 5);
   MOPPE_CHECK (options.benchmark->prelude_frames == 480);
   MOPPE_CHECK (options.benchmark->pass_timing);
+  MOPPE_CHECK (options.benchmark->partition ==
+               game::GraphicsBenchmarkPartition::Standard);
   MOPPE_CHECK (!options.config.fullscreen);
   MOPPE_CHECK (!options.config.activate);
+}
+
+MOPPE_TEST (launch_selects_the_detailed_benchmark_partition) {
+  const game::LaunchOptions options = parsed ({ "--graphics-benchmark",
+                                                "/tmp/gpu.csv",
+                                                "--benchmark-partition",
+                                                "detailed" });
+  MOPPE_CHECK (options.benchmark->partition ==
+               game::GraphicsBenchmarkPartition::Detailed);
 }
 
 MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
@@ -311,12 +323,17 @@ MOPPE_TEST (launch_benchmark_environment_reaches_the_backend) {
   game::publish_benchmark_environment (benchmark);
   MOPPE_CHECK (std::string (::getenv ("MOPPE_BENCHMARK_OUTPUT")) ==
                "/tmp/gpu.csv");
-  const int expected = benchmark.measured_frames *
-                       (1 << game::graphics_benchmark_dimension_count ());
+  const int expected =
+    benchmark.measured_frames *
+    (1 << game::graphics_benchmark_dimension_count (benchmark.partition));
   MOPPE_CHECK (std::atoi (::getenv ("MOPPE_BENCHMARK_EXPECTED")) == expected);
   MOPPE_CHECK (
     std::string (::getenv ("MOPPE_BENCHMARK_FEATURES")).find ("bloom") !=
     std::string::npos);
+  MOPPE_CHECK (std::string (::getenv ("MOPPE_BENCHMARK_PARTITION")) ==
+               "standard");
+  MOPPE_CHECK (std::string (::getenv ("MOPPE_BENCHMARK_BLOCKS")) ==
+               "forest,undergrowth,water,post,other-features");
   MOPPE_CHECK (::getenv ("MOPPE_BENCHMARK_PASSES") == nullptr);
 
   benchmark.pass_timing = true;
