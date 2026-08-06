@@ -15,6 +15,8 @@
 
 namespace moppe {
   namespace render {
+    inline constexpr float terrain_shore_band_metres = 8.0f;
+
     // Per-frame environment.  The view matrix already includes the
     // camera-shake rotation; the right/up/forward basis is derived
     // from it and replaces the old GL_MODELVIEW_MATRIX readback for
@@ -295,49 +297,24 @@ namespace moppe {
       virtual void set_water_flow (const TexturePixels& flow) {
         (void)flow;
       }
-      // Ground moisture in [0,1] following the terrain grid. Optional.
-      // Lifetime sediment ledger as interleaved (eroded, deposited)
-      // pairs, width*height cells, both channels normalized to [0, 1].
-      // Materials read it to place raw cuts and pale alluvium.
-      virtual void set_terrain_geology (const TexturePixels& geology) {
-        (void)geology;
-      }
-
-      // Horizontal distance to the nearest waterline per cell, in
-      // meters, clamped to the extraction band.  The wet-soil band and
-      // swash-zone detail hug the true shoreline curve through it.
-      virtual void set_terrain_shore (const TexturePixels& distance) {
-        (void)distance;
-      }
-
-      // Shoulder-blended trail membership in [0,1], following the terrain
-      // grid. This is a material reading: the surface remains the geometric
-      // authority, while the shader can make formed paths unambiguous.
-      // Both lanes arrive as one two-channel source: trail membership and
-      // home-base influence are read together by the shader.
-      virtual void set_terrain_paths (const TexturePixels& influence) {
-        (void)influence;
-      }
-
-      virtual void set_terrain_moisture (const TexturePixels& moisture) {
-        (void)moisture;
-      }
-
-      // Potential canopy cover in [0,1]. The terrain uses it as the filtered
-      // forest representation after individual crown geometry becomes small.
-      virtual void set_terrain_forest (const TexturePixels& cover) {
-        (void)cover;
-      }
-
-      // Vertical component of the broad snow-support plane in [0,1].
-      virtual void set_terrain_snow_support (const TexturePixels& support) {
-        (void)support;
-      }
-
-      // Concentrated-drainage flux per terrain sample: interleaved (x, z)
-      // world-plane direction scaled by fluvial activity in [0,1].
-      virtual void set_terrain_channel_flux (const TexturePixels& flux) {
-        (void)flux;
+      // Renderer-facing material sheets following the terrain grid. The
+      // simulation retains separate typed columns; SurfacePresentation packs
+      // them only at this final boundary:
+      //
+      //   landscape RGBA = moisture, erosion, deposition, forest cover
+      //   ground RGBA = shore proximity / 8 m, snow support, trail, home base
+      //   flow RG = concentrated drainage x/z
+      //
+      // The first two are RGBA8Unorm and flow is RG8Snorm. All are filterable
+      // and consumed synchronously because TexturePixels borrows its source.
+      virtual void set_terrain_materials (const TexturePixels& landscape,
+                                          const TexturePixels& ground,
+                                          const TexturePixels& flow,
+                                          bool include_forest) {
+        (void)landscape;
+        (void)ground;
+        (void)flow;
+        (void)include_forest;
       }
 
       // Stable tree individuals cross once when a finished world is activated.

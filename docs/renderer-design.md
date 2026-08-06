@@ -470,16 +470,27 @@ canopy shade as geometry fades (`#5BNBQQ`, `#X9PHPN` in the Sheaf literature
 library). Clearings, trails, snow, and submerged ground explicitly remove the
 canopy footprint.
 
-The bounded material readings use R16F/RG16F textures and one hardware-linear
-sample in the fragment shader. The half-texel coordinate convention makes an
-integral terrain site land exactly on its stored reading, while repeat
-addressing preserves the periodic seam. Moisture and forest cover are bounded
-proportions and narrow to R16F at upload; this halves their storage and
-bandwidth without approaching a visible threshold step. Physical elevation
-and water level remain R32F and retain explicit four-read interpolation on
-Apple GPUs where that format is not filterable. Fragment normals similarly
-filter the RG16Snorm x/z pair once and reconstruct y, instead of reconstructing
-and mixing four complete normals.
+The bounded material readings remain distinct typed columns through world
+construction and pack only at the renderer-facing presentation boundary. Two
+RGBA8Unorm sheets carry moisture/erosion/deposition/forest and normalized
+shore-distance/snow-support/trail/home-base; one RG8Snorm sheet carries the
+planar channel flux. A terrain fragment therefore obtains ten semantic lanes
+with three hardware-linear samples and ten stored bytes, rather than seven
+samples and twenty bytes of separate R16F/RG16F fields. The half-texel
+coordinate convention makes an integral terrain site land exactly on its
+stored reading, while repeat addressing preserves the periodic seam. Physical
+elevation and water level remain R32F and retain explicit four-read
+interpolation on Apple GPUs where that format is not filterable. Fragment
+normals similarly filter the RG16Snorm x/z pair once and reconstruct y.
+
+On the local M2 Pro, an order-balanced A/B used two 960-sample,
+32-configuration replays per version at a 1280x800 scene surface. The mean of
+the combined configuration medians moved from 13.719 ms to 13.680 ms: a
+0.039 ms (0.23%) improvement, with 17 of 32 configurations improving. The
+all-features median moved from 15.427 ms to 15.400 ms. This is effective parity,
+not evidence that material-field traffic was the terrain bottleneck; the
+durable gains are three samples instead of seven and 10 MB less resident
+material data for the ordinary 1024x1024 world.
 
 Splat layers are evaluated only where they can contribute. Lowland grass,
 paths, and beaches do not fetch the six triplanar cliff samples or three snow

@@ -106,20 +106,17 @@ undergrowth_ground_normal (float2 world_xz,
 static inline MoppeGrassMedium
 undergrowth_medium (float2 world_xz,
                     constant MoppeUndergrowthUniforms& u,
-                    texture2d<float> forest,
-                    texture2d<float> moisture,
-                    texture2d<float> paths,
-                    texture2d<float> snow_support,
+                    texture2d<float> landscape_materials,
+                    texture2d<float> ground_materials,
                     texture2d<float> water_levels,
                     float ground_m,
                     float3 ground_normal) {
-  const float canopy = saturate (undergrowth_field (world_xz, u, forest).r);
-  const float wet = saturate (undergrowth_field (world_xz, u, moisture).r);
-  const float2 worn = saturate (undergrowth_field (world_xz, u, paths).rg);
-  const float support =
-    u.relief.z > 0.5
-      ? saturate (undergrowth_field (world_xz, u, snow_support).r)
-      : ground_normal.y;
+  const float4 landscape = undergrowth_field (world_xz, u, landscape_materials);
+  const float4 ground = undergrowth_field (world_xz, u, ground_materials);
+  const float canopy = landscape.a;
+  const float wet = landscape.r;
+  const float2 worn = ground.ba;
+  const float support = u.relief.z > 0.5 ? ground.g : ground_normal.y;
   const float relative_height = (ground_m - u.relief.x) / max (u.relief.y, 1.0);
   const float signed_water_depth =
     u.relief.w > 0.5
@@ -170,10 +167,9 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
   constant MoppeUndergrowthUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
   texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
-  texture2d<float> forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
-  texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
-  texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
-  texture2d<float> snow_support [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
+  texture2d<float> landscape_materials
+  [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
+  texture2d<float> ground_materials [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
   texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
   threadgroup atomic_uint survivors;
   if (thread_id == 0u)
@@ -204,10 +200,8 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
       ground = undergrowth_ground (center, u, heights);
       const MoppeGrassMedium grass = undergrowth_medium (center,
                                                          u,
-                                                         forest,
-                                                         moisture,
-                                                         paths,
-                                                         snow_support,
+                                                         landscape_materials,
+                                                         ground_materials,
                                                          water_levels,
                                                          ground,
                                                          ground_normal);
@@ -275,10 +269,9 @@ struct UndergrowthShoot {
   constant MoppeUndergrowthUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
   texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
-  texture2d<float> forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
-  texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
-  texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
-  texture2d<float> snow_support [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
+  texture2d<float> landscape_materials
+  [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
+  texture2d<float> ground_materials [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
   texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
   const UndergrowthTile tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
@@ -310,14 +303,12 @@ struct UndergrowthShoot {
 
   const MoppeGrassMedium grass = undergrowth_medium (root_xz,
                                                      u,
-                                                     forest,
-                                                     moisture,
-                                                     paths,
-                                                     snow_support,
+                                                     landscape_materials,
+                                                     ground_materials,
                                                      water_levels,
                                                      ground,
                                                      ground_normal);
-  const float canopy = saturate (undergrowth_field (root_xz, u, forest).r);
+  const float canopy = grass.forest_cover;
   const float wet = grass.moisture;
   // Grass is the ordinary answer. Ferns are an accent reserved for damp shade,
   // not a second carpet competing with it.
