@@ -543,12 +543,25 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   const float3 base = moppe_srgb (in.color);
   const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
 
+  // How many input pixels one blade width spans here. This, not distance,
+  // is the temporal-stability measure: a jittered single sample can only
+  // revisit a feature it can resolve, so per-blade lighting variance must
+  // not outlive the blade's own pixels. The projected-pixels idiom matches
+  // the forest object stage.
+  const float focal_px = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  const float blade_px = 0.02 * focal_px / max (dist, 0.5);
+  const float resolvable = smoothstep (1.5, 4.0, blade_px);
+
   // A blade is one leaf thick and glows when the sun is behind it, which is
   // most of what tells this layer apart from painted ground. Exposure along
   // the shoot doubles as optical depth: a tip is one leaf, the litter at
   // the base is a mat, so Beer-Lambert pins the glow to the thin lit
   // fringe, and sun visibility keeps shaded blades from glowing at all.
-  const float leaf_back = pow (max (dot (-n, l), 0.0), 1.8);
+  // Once a blade is subpixel, its individual twist term collapses to the
+  // ensemble mean: the field keeps its aggregate warm glow, but stops
+  // carrying per-blade HDR spikes no sample can hit twice.
+  const float leaf_back =
+    mix (0.30, pow (max (dot (-n, l), 0.0), 1.8), resolvable);
   const float thin = exp (-2.0 * (1.0 - in.exposure));
   const float trans = leaf_back * thin * sun_visibility;
   const float3 view = to_frag / max (dist, 1e-4);
@@ -583,23 +596,22 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // shimmers is just a paler ground texture.
   //
   // Temporal discipline follows the same rule as blade flutter: fine
-  // sparkle is meaningful only while a blade spans several pixels. With
-  // distance the streak widens (the highlight's footprint must not shrink
-  // below what one jittered sample can hit twice) and the per-blade wobble
-  // straightens, so far blades glint coherently as one sheen instead of
-  // scintillating individually.
-  const float far01 = smoothstep (0.10 * u.params.z, 0.55 * u.params.z, dist);
-  const float wobble = 0.25 * (1.0 - far01);
+  // sparkle is meaningful only while a blade spans several pixels. As the
+  // blade's pixels run out the streak widens (the highlight's footprint
+  // must not shrink below what one jittered sample can hit twice) and the
+  // per-blade wobble straightens, so unresolved blades glint coherently as
+  // one sheen instead of scintillating individually.
+  const float wobble = 0.25 * resolvable;
   const float3 axis = normalize (float3 (wobble * n.x, 1.0, wobble * n.z));
   const float3 half_dir = normalize (l - view);
   const float along = dot (axis, half_dir);
-  const float streak = mix (64.0, 10.0, far01);
+  const float streak = mix (10.0, 64.0, resolvable);
   const float glint = pow (sqrt (saturate (1.0 - along * along)), streak) *
                       (0.10 + 0.90 * toward * toward);
   const float steady =
     1.0 - smoothstep (0.30 * u.params.z, 0.75 * u.params.z, dist);
   color += u.sun_specular.rgb * glint * sun_visibility * steady *
-           mix (1.0, 0.40, far01) * (0.30 + 0.70 * in.exposure) * 2.4;
+           mix (0.40, 1.0, resolvable) * (0.30 + 0.70 * in.exposure) * 2.4;
 
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);

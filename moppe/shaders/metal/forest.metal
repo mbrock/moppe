@@ -858,10 +858,19 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
   // visibility gates it, so a backlit crown inside a mountain's shadow
   // stays dark. Rare is what keeps it precious: lit, thin, against the
   // light, or nothing.
+  // How many input pixels a needle tuft's blade spans here. Per-blade
+  // lighting variance must not outlive the blade's own pixels: a jittered
+  // single sample cannot revisit a feature it cannot resolve, so once the
+  // fringe geometry is subpixel its individual backlight term collapses to
+  // the ensemble mean and the crown keeps a smooth aggregate glow.
+  const float focal_px = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  const float resolvable =
+    smoothstep (1.5, 4.0, 0.3 * focal_px / max (distance, 0.5));
   float trans = 0.0;
   float toward = 0.0;
   if (in.leaf > 0.5) {
-    const float back = pow (max (dot (-n, l), 0.0), 1.45);
+    const float back =
+      mix (0.30, pow (max (dot (-n, l), 0.0), 1.45), resolvable);
     const float thin = exp (-2.5 * (1.0 - in.exposure));
     trans = back * thin * visibility;
     toward = saturate (dot (-to_eye / max (distance, 0.001), l));
@@ -900,12 +909,11 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
   color = mix (color, fog_color, smoothstep (0.0, 0.92, fog));
   // The glow is view- and sun-locked, so it slides across the geometry as
   // the camera moves; extra history rejection keeps the reconstruction from
-  // smearing the bright fringe. Only nearby, though: once tufts approach a
-  // pixel, accumulated history is what holds them steady, and rejecting it
-  // there turns the distant fringe into shimmer.
-  const float near_fringe = 1.0 - smoothstep (120.0, 320.0, distance);
+  // smearing the bright fringe. Only while the fringe resolves, though:
+  // subpixel tufts are held steady by accumulated history, and rejecting
+  // it there turns the distant fringe into shimmer.
   return moppe_temporal_output (
     float4 (color, 1.0),
     in.motion,
-    in.leaf > 0.5 ? 0.48 + 0.30 * trans * toward * near_fringe : 0.12);
+    in.leaf > 0.5 ? 0.48 + 0.30 * trans * toward * resolvable : 0.12);
 }
