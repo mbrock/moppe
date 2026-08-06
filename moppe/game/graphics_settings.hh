@@ -44,6 +44,11 @@ namespace moppe::game {
     float scene_megapixel_budget = 4.2f;
     // Late afternoon: a lower, warmer sun with longer shadows.
     float sun_height = 0.62f;
+    // Diagnostic override: saturates grass cover in both the undergrowth
+    // density and the terrain's canopy material, so LOD structure can be
+    // inspected without habitat confounds. Set by MOPPE_GRASS_LAB; 1 is
+    // ordinary habitat-driven cover.
+    float grass_cover_boost = 1.0f;
 
     bool terrain_shadows = true;
     bool forest = true;

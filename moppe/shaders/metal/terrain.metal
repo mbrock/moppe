@@ -762,12 +762,15 @@ fragment MoppeTemporalOutput terrain_fragment (
     mix (0.5,
          moppe_value_noise (in.world_pos.xz * 0.85 + float2 (7.7, 3.1)),
          tuft_visibility);
-  const float turf_cover =
+  // params7.w is the diagnostic cover boost: 1 in ordinary play, higher in
+  // the grass laboratory where cover saturates so LOD structure can be
+  // inspected without habitat confounds.
+  const float turf_cover = saturate (
     smoothstep (0.22,
                 0.60,
                 turf_crowd + 0.35 * (turf_tuft - 0.5) +
                   0.18 * smoothstep (0.02, 0.48, moisture) - 0.09) *
-    (1.0 - 0.30 * smoothstep (0.32, 0.92, forest_cover));
+    (1.0 - 0.30 * smoothstep (0.32, 0.92, forest_cover)) * u.params7.w);
 
   // The covered fraction will show the blade layer's aggregate: the mesh
   // stage's base tint and moisture response times mean shading, with the

@@ -4068,6 +4068,7 @@ namespace moppe {
           ? 1.0f
           : 0.0f;
       u.params7.z = terrain.params.land_relief;
+      u.params7.w = terrain.params.grass_cover_boost;
       u.temporal = frame.uniforms.temporal;
 
       const MTLGPUAddress uniforms = frame.arena[frame.slot].write (u);

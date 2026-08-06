@@ -152,7 +152,8 @@ struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
                         // w=forest cover
   MoppeFloat4 params7;  // x=filtered snow-support slope enabled,
                         // y=channel flux detail enabled,
-                        // z=land relief above sea level in metres
+                        // z=land relief above sea level in metres,
+                        // w=grass cover boost (1 = habitat-driven)
   MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
 };
 

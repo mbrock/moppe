@@ -165,6 +165,14 @@ namespace moppe::game {
     }
     if (env_enabled ("MOPPE_NOSHADOW"))
       settings.terrain_shadows = false;
+    // The grass laboratory: cover saturates everywhere the medium can root
+    // and trees stay out of the view, so a capture shows the pure LOD
+    // gradient of the grass system. Pair with --uplift-years 0 for the
+    // rolling-plain world.
+    if (env_enabled ("MOPPE_GRASS_LAB")) {
+      settings.grass_cover_boost = 6.0f;
+      settings.forest = false;
+    }
     if (env_enabled ("MOPPE_WATERFALL_CURTAINS"))
       settings.waterfall_curtains = true;
     if (env_enabled ("MOPPE_TERRAIN_TOPOLOGY"))
