@@ -56,24 +56,18 @@ only after getting the same treatment, or as part of the aggregate.
 
 ## Grass: same religion, faster crossover
 
-Undergrowth already generates rather than stores (tile window around the
-camera, per-thread shoots rooted on the terrain fields). A grass blade is
-sub-resolvable at metres, so the geometric band is properly a small ring;
-everything beyond is already "just green" terrain. The quality work is in
-the handoff:
+The first shared-medium pass landed in `42ed47b`: undergrowth still generates
+from a world-lattice tile window, but distant survivors no longer widen to
+carry their retired neighbours. The terrain integrates the released leaf-area
+fraction from the same habitat and optical state.
 
-- **No visible ring.** The terrain beyond the blade window must be the
-  statistical average of the blades inside it -- hue, brightness including
-  between-blade self-shadow darkening, roughness -- or a mowed circle
-  travels with the camera. Conservation of appearance, verbatim from the
-  trees.
-- **Distant grass is a shading model, not geometry.** Anisotropic sheen
-  along blade direction, root-depth darkening, spatial patchiness, wind
-  shimmer -- a few instructions in the terrain fragment shader, fading in
-  exactly as blades fade out. Shell-textured fur is the deluxe version.
-- **Blades leave the way boughs arrive**: shrink before disappearing,
-  survivors carry mass, per-shoot stagger (audit the existing
-  `UNDERGROWTH_LOD_TRANSITION` behaviour against these rules).
+That scalar conservation is only the start. Grass must also conserve projected
+optical depth, vertical density, basal cover, and rootability. A flat far
+material cannot carry the height and occlusion of tall blades through a low
+flight or downhill overview. The proposed continuation -- one semantic medium,
+resolved blades, a terrain-following middle canopy, and a bounded far optical
+response -- is specified in
+[RFC-0006](../planning/rfcs/0006-a-continuous-grass-medium.md).
 
 ## Trees influence the surface: analytic ground deformation
 
