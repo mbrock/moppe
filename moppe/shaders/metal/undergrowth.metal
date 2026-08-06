@@ -230,10 +230,17 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
                                                  water_levels,
                                                  ground,
                                                  ground_normal);
-      // The budget is the level of detail. Shoots grow down continuously with
-      // distance, and the mesh stage widens the remaining coverage as the
-      // budget recedes.
-      const float near_share = 1.0 - smoothstep (0.62 * reach, reach, distance);
+      // The budget is the level of detail, in two regimes. Full blade count
+      // holds only while blades can resolve; by sixty percent of reach a
+      // tile keeps a handful of survivors, which the mesh stage widens into
+      // clumps carrying the retired blades' frontal area. That sparse tuft
+      // field then persists to full reach before growing out, where the
+      // terrain's canopy material takes over the medium.
+      const float blade_share =
+        1.0 - smoothstep (0.22 * reach, 0.60 * reach, distance);
+      const float tail = 1.0 - smoothstep (0.85 * reach, reach, distance);
+      const float near_share =
+        mix (0.085, 1.0, blade_share * blade_share) * tail;
       wanted = density * near_share * float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
       shoots = undergrowth_lod_shoots (wanted, uint2 (cell));
       valid = shoots > 0u;
@@ -350,13 +357,33 @@ struct UndergrowthShoot {
   // Shoots thinned out by distance leave gaps, so the survivors take on the
   // projected width continuously. Height remains an ecological property:
   // making survivors taller as they recede is a conspicuous LOD tell.
-  const float thinning =
-    sqrt (float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE) / max (tile.wanted, 1.0));
+  //
+  // Two widening laws, one shoot. Near the camera the sqrt law with its
+  // one-blade cap keeps a survivor reading as a single blade. With
+  // distance the SAME shoot thickens into a clump -- the tuft its retired
+  // neighbours belong to -- under the linear law that conserves the
+  // stand's frontal area (count times width), capped where a tuft would
+  // outgrow what its distance can resolve. No representation switch: a
+  // blade becomes a blob by growing, exactly as a crown gains boughs.
+  const float crowd =
+    float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE) / max (tile.wanted, 1.0);
+  const float thinning = sqrt (crowd);
+  const float camera_distance = length (root_xz - u.camera_pos.xz);
+  const float clumping =
+    smoothstep (0.25 * u.params.z, 0.60 * u.params.z, camera_distance);
   const float draw = undergrowth_hash (identity, 4u);
   const float scale = sqrt (presence * root_clear * root_dry) *
                       (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
                       (0.65 + 0.65 * draw * draw) * (1.0 + 0.18 * riparian);
-  const float coverage = mix (1.0, min (thinning, 1.5), fern ? 0.45 : 0.72);
+  const float coverage =
+    mix (1.0,
+         mix (min (thinning, 1.5), min (crowd, fern ? 4.0 : 14.0), clumping),
+         fern ? 0.45 : 0.72);
+  // Past the one-blade width the shoot is carrying its neighbours' area:
+  // it fountains outward like the tuft it now is instead of rising as an
+  // implausibly wide ribbon, and the section loop serrates its edge into
+  // many tips.
+  const float clump = saturate ((coverage - 1.5) / 6.0);
 
   UndergrowthShoot s;
   s.root = root;
@@ -395,6 +422,9 @@ struct UndergrowthShoot {
     s.reach *= 1.0 - 0.18 * riparian;
     s.climb *= 1.0 + 0.28 * riparian;
     s.width *= 1.0 - 0.08 * riparian;
+    s.reach *= 1.0 + 1.8 * clump;
+    s.arch += 0.55 * clump;
+    s.lift += 0.25 * clump;
   }
   // Damp grass is deeper and greener; dry blades run straw-olive without
   // becoming a second ground texture.
@@ -415,7 +445,6 @@ struct UndergrowthShoot {
   // Fine-scale motion is meaningful only while a blade spans several pixels.
   // Beyond that, the coherent gust remains but the fast flick fades before it
   // can turn a distant field into temporal sparkle.
-  const float camera_distance = length (root_xz - u.camera_pos.xz);
   const float micro_detail =
     1.0 - smoothstep (0.28 * u.params.z, 0.72 * u.params.z, camera_distance);
 
@@ -447,7 +476,12 @@ struct UndergrowthShoot {
     const float taper =
       fern ? 0.42 + 1.25 * t - 1.35 * t * t : 0.72 + 0.28 * sin (3.1415927 * t);
     const float lobes = 1.0 + s.lobed * cos (12.566371 * t);
-    const float half_width = s.width * (t >= 0.999 ? 0.0 : taper * lobes);
+    // A clump's edge is many tips, not one clean ribbon line: per-section
+    // jitter serrates the widened silhouette.
+    const float serration =
+      mix (1.0, 0.68 + 0.64 * undergrowth_hash (identity, 29u + step), clump);
+    const float half_width =
+      s.width * (t >= 0.999 ? 0.0 : taper * lobes * serration);
     const float3 side = normalize (cross (s.out, s.up));
     // A little twist keeps neighbouring blades from showing identical faces.
     // Ferns twist more strongly as their broad fronds fall.
@@ -543,13 +577,18 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   const float3 base = moppe_srgb (in.color);
   const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
 
-  // How many input pixels one blade width spans here. This, not distance,
-  // is the temporal-stability measure: a jittered single sample can only
-  // revisit a feature it can resolve, so per-blade lighting variance must
-  // not outlive the blade's own pixels. The projected-pixels idiom matches
-  // the forest object stage.
+  // How many input pixels this shoot's width spans here. This, not
+  // distance, is the temporal-stability measure: a jittered single sample
+  // can only revisit a feature it can resolve, so per-feature lighting
+  // variance must not outlive the feature's own pixels. The width mirrors
+  // the mesh stage's budget-and-widening law: one blade near the camera,
+  // a clump carrying its neighbours' area in the far band.
   const float focal_px = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
-  const float blade_px = 0.02 * focal_px / max (dist, 0.5);
+  const float blade_share =
+    1.0 - smoothstep (0.22 * u.params.z, 0.60 * u.params.z, dist);
+  const float share_est = mix (0.085, 1.0, blade_share * blade_share);
+  const float width_est = clamp (0.28 + 0.72 / share_est, 1.0, 10.0);
+  const float blade_px = 0.02 * width_est * focal_px / max (dist, 0.5);
   const float resolvable = smoothstep (1.5, 4.0, blade_px);
 
   // A blade is one leaf thick and glows when the sun is behind it, which is
