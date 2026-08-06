@@ -577,32 +577,36 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // Real backlit grass also glints: a blade is a waxy cylinder carrying an
   // anisotropic streak along its axis (Kajiya-Kay). The axis is near
   // vertical with a small per-blade wobble borrowed from the normal's
-  // horizontal part, which breaks the sheen into shimmer without another
-  // varying. It fades with distance before subpixel blades can turn the
-  // sparkle temporal.
+  // horizontal part, which breaks the sheen into shimmer.
   // The silver stays sun-gated like the glow: without the against-the-light
   // factor a whole cross-lit hillside turns chalk, and a field that always
   // shimmers is just a paler ground texture.
-  const float3 axis = normalize (float3 (0.25 * n.x, 1.0, 0.25 * n.z));
+  //
+  // Temporal discipline follows the same rule as blade flutter: fine
+  // sparkle is meaningful only while a blade spans several pixels. With
+  // distance the streak widens (the highlight's footprint must not shrink
+  // below what one jittered sample can hit twice) and the per-blade wobble
+  // straightens, so far blades glint coherently as one sheen instead of
+  // scintillating individually.
+  const float far01 = smoothstep (0.10 * u.params.z, 0.55 * u.params.z, dist);
+  const float wobble = 0.25 * (1.0 - far01);
+  const float3 axis = normalize (float3 (wobble * n.x, 1.0, wobble * n.z));
   const float3 half_dir = normalize (l - view);
   const float along = dot (axis, half_dir);
-  const float glint = pow (sqrt (saturate (1.0 - along * along)), 64.0) *
+  const float streak = mix (64.0, 10.0, far01);
+  const float glint = pow (sqrt (saturate (1.0 - along * along)), streak) *
                       (0.10 + 0.90 * toward * toward);
   const float steady =
     1.0 - smoothstep (0.30 * u.params.z, 0.75 * u.params.z, dist);
   color += u.sun_specular.rgb * glint * sun_visibility * steady *
-           (0.30 + 0.70 * in.exposure) * 2.4;
+           mix (1.0, 0.40, far01) * (0.30 + 0.70 * in.exposure) * 2.4;
 
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);
   color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
-  // Glow and glint are view-locked and slide across the blades in motion,
-  // so the bright fringe asks for extra history rejection -- but only while
-  // a blade spans pixels. Subpixel blades live on accumulated history, and
-  // rejecting it at range reads as shimmer, so the boost fades with the
-  // same distance curve as the glint.
-  return moppe_temporal_output (
-    float4 (color, 1.0),
-    in.motion,
-    0.55 + 0.25 * steady * saturate (max (trans * toward, glint)));
+  // The layer's flat reactive weight already assumes stochastic blade
+  // fragments; raising it where the glow fires rejected exactly the
+  // history that keeps a jittered single-sample field calm, and the
+  // fringe shimmered. The glow rides on the same weight as the blades.
+  return moppe_temporal_output (float4 (color, 1.0), in.motion, 0.55);
 }
