@@ -542,23 +542,64 @@ fragment MoppeTemporalOutput undergrowth_fragment (
 
   const float3 base = moppe_srgb (in.color);
   const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
+
+  // A blade is one leaf thick and glows when the sun is behind it, which is
+  // most of what tells this layer apart from painted ground. Exposure along
+  // the shoot doubles as optical depth: a tip is one leaf, the litter at
+  // the base is a mat, so Beer-Lambert pins the glow to the thin lit
+  // fringe, and sun visibility keeps shaded blades from glowing at all.
+  const float leaf_back = pow (max (dot (-n, l), 0.0), 1.8);
+  const float thin = exp (-2.0 * (1.0 - in.exposure));
+  const float trans = leaf_back * thin * sun_visibility;
+  const float3 view = to_frag / max (dist, 1e-4);
+  const float toward = saturate (dot (view, l));
+
   // Cast shadow cools the fill to match the terrain beneath: shaded blades
-  // are skylit only.
+  // are skylit only. What a blade transmits it does not also reflect, so
+  // the diffuse sun term yields as transmission rises.
   const float3 shade_fill =
     mix (float3 (0.80, 0.92, 1.14), float3 (1.0), cast_light);
   float3 color =
-    base * (shade_fill * moppe_hemisphere_light (u.ambient.rgb, n) +
-            u.sun_diffuse.rgb * lambert * sun_visibility);
+    base *
+    (shade_fill * moppe_hemisphere_light (u.ambient.rgb, n) +
+     u.sun_diffuse.rgb * lambert * sun_visibility * (1.0 - 0.45 * trans));
 
-  // A blade is one leaf thick and glows when the sun is behind it, which is
-  // most of what tells this layer apart from painted ground.
-  const float leaf_back = pow (max (dot (-n, l), 0.0), 1.8);
-  const float3 transmission_tint (0.96, 0.88, 0.62);
-  color += base * u.sun_diffuse.rgb * transmission_tint * sun_visibility *
-           leaf_back * (0.30 + 0.70 * in.exposure) * 0.52;
+  // Chlorophyll transmits green-yellow and almost no blue. Against the
+  // light the term spends real HDR headroom -- transmitted radiance on a
+  // backlit blade exceeds the reflected scene around it -- and the bloom
+  // bright-pass supplies the halo for free. Transmittance rides on
+  // sqrt(base): a thin blade passes far more light than its dark diffuse
+  // albedo reflects.
+  const float3 chlorophyll = float3 (0.92, 1.0, 0.24);
+  const float lobe = 0.20 + 0.80 * toward * toward * toward;
+  color += sqrt (base) * u.sun_diffuse.rgb * chlorophyll * trans * lobe * 3.2;
+
+  // Real backlit grass also glints: a blade is a waxy cylinder carrying an
+  // anisotropic streak along its axis (Kajiya-Kay). The axis is near
+  // vertical with a small per-blade wobble borrowed from the normal's
+  // horizontal part, which breaks the sheen into shimmer without another
+  // varying. It fades with distance before subpixel blades can turn the
+  // sparkle temporal.
+  // The silver stays sun-gated like the glow: without the against-the-light
+  // factor a whole cross-lit hillside turns chalk, and a field that always
+  // shimmers is just a paler ground texture.
+  const float3 axis = normalize (float3 (0.25 * n.x, 1.0, 0.25 * n.z));
+  const float3 half_dir = normalize (l - view);
+  const float along = dot (axis, half_dir);
+  const float glint = pow (sqrt (saturate (1.0 - along * along)), 64.0) *
+                      (0.10 + 0.90 * toward * toward);
+  const float steady =
+    1.0 - smoothstep (0.30 * u.params.z, 0.75 * u.params.z, dist);
+  color += u.sun_specular.rgb * glint * sun_visibility * steady *
+           (0.30 + 0.70 * in.exposure) * 2.4;
 
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);
   color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
-  return moppe_temporal_output (float4 (color, 1.0), in.motion, 0.55);
+  // Glow and glint are view-locked and slide across the blades in motion,
+  // so the bright fringe asks for extra history rejection.
+  return moppe_temporal_output (
+    float4 (color, 1.0),
+    in.motion,
+    0.55 + 0.25 * saturate (max (trans * toward, glint * steady)));
 }
