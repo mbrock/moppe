@@ -850,20 +850,46 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
     const float stria = (wx * sx + wz * sz) / max (wx + wz, 0.001);
     base *= 0.62 + 0.74 * stria;
   }
+  // Transmission through the crown. On a thin backlit leaf the transmitted
+  // radiance exceeds everything reflected around it, so the term is allowed
+  // past the bloom bright-pass rather than staying inside the diffuse range.
+  // Sky exposure doubles as optical depth -- Beer-Lambert keeps the glow on
+  // the thin lit fringe and leaves the needle mass dark -- and sun
+  // visibility gates it, so a backlit crown inside a mountain's shadow
+  // stays dark. Rare is what keeps it precious: lit, thin, against the
+  // light, or nothing.
+  float trans = 0.0;
+  float toward = 0.0;
+  if (in.leaf > 0.5) {
+    const float back = pow (max (dot (-n, l), 0.0), 1.45);
+    const float thin = exp (-2.5 * (1.0 - in.exposure));
+    trans = back * thin * visibility;
+    toward = saturate (dot (-to_eye / max (distance, 0.001), l));
+  }
+
   // A broad wrap term keeps crown volumes legible while retaining a directional
   // sunward side. It is deliberately separate from the sky exposure signal.
+  // Reflectance plus transmittance cannot exceed one, so the diffuse sun
+  // term gives up what the leaf transmits.
   const float wrap = saturate ((dot (n, l) + 0.26) / 1.26);
-  float3 color = base * (moppe_hemisphere_light (u.ambient.rgb, n) *
-                           (0.62 + 0.38 * in.exposure) +
-                         u.sun_diffuse.rgb * wrap * visibility);
+  float3 color =
+    base *
+    (moppe_hemisphere_light (u.ambient.rgb, n) * (0.62 + 0.38 * in.exposure) +
+     u.sun_diffuse.rgb * wrap * visibility * (1.0 - 0.45 * trans));
   color +=
     base * float3 (0.10, 0.16, 0.20) * (0.35 + 0.65 * in.exposure) * in.leaf;
 
   if (in.leaf > 0.5) {
-    const float back = pow (max (dot (-n, l), 0.0), 1.45);
-    const float3 transmission = float3 (1.0, 0.82, 0.46);
-    color += base * u.sun_diffuse.rgb * transmission * visibility * back *
-             (0.20 + 0.80 * in.exposure) * 0.66;
+    // Chlorophyll transmits green-yellow and almost no blue: the electric
+    // backlit colour is a transmittance spectrum, not a stylistic warm-up.
+    // Transmittance far exceeds reflectance on a thin leaf -- light crosses
+    // half the pigment depth that a reflected ray does -- so the tint rides
+    // on sqrt(base), not on the dark diffuse albedo. The forward lobe
+    // shares its geometry with the sun shafts, so both fire together
+    // looking sunward through partial occlusion.
+    const float3 chlorophyll = float3 (0.92, 1.0, 0.24);
+    const float lobe = 0.20 + 0.80 * toward * toward * toward;
+    color += sqrt (base) * u.sun_diffuse.rgb * chlorophyll * trans * lobe * 4.0;
     const float3 h = normalize (l + normalize (to_eye));
     color += u.sun_specular.rgb * pow (max (dot (n, h), 0.0), 18.0) *
              visibility * 0.055;
@@ -872,6 +898,11 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
   const float3 fog_color =
     moppe_warmed_fog (u.fog_color.rgb, -to_eye / max (distance, 0.001), l);
   color = mix (color, fog_color, smoothstep (0.0, 0.92, fog));
-  return moppe_temporal_output (
-    float4 (color, 1.0), in.motion, in.leaf > 0.5 ? 0.48 : 0.12);
+  // The glow is view- and sun-locked, so it slides across the geometry as
+  // the camera moves; extra history rejection keeps the reconstruction from
+  // smearing the bright fringe.
+  return moppe_temporal_output (float4 (color, 1.0),
+                                in.motion,
+                                in.leaf > 0.5 ? 0.48 + 0.30 * trans * toward
+                                              : 0.12);
 }
