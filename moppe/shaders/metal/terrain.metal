@@ -575,6 +575,699 @@ static inline float4 terrain_overlay_color (float value,
   return float4 (terrain_heat_palette (t), opacity);
 }
 
+static inline float3 terrain_apply_analysis_overlay (
+  float3 color,
+  float2 field_uv,
+  constant MoppeTerrainUniforms& u,
+  texture2d<float, access::read> terrain_overlay) {
+  if (u.params4.x <= 0.5)
+    return color;
+
+  const uint2 overlay_size (terrain_overlay.get_width (),
+                            terrain_overlay.get_height ());
+  const uint2 overlay_position =
+    uint2 (round (fract (field_uv) * float2 (overlay_size))) % overlay_size;
+  const float overlay_value = terrain_overlay.read (overlay_position).r;
+  const float4 overlay = terrain_overlay_color (overlay_value, u);
+  return mix (color, overlay.rgb, overlay.a);
+}
+
+static inline float3
+terrain_apply_lattice_overlay (float3 color,
+                               thread const TerrainVaryings& in,
+                               float distance,
+                               constant MoppeTerrainUniforms& u) {
+  if (u.params5.x <= 0.0)
+    return color;
+
+  // Cyan is the actual vertex-pulled render lattice. Its quarter-cell near
+  // field is allowed to disappear once it becomes sub-pixel instead of
+  // turning into moire. Amber sites are the authoritative source samples:
+  // one row of the materialized surface bundle per site.
+  const float2 cell = fract (in.mesh_coord);
+  const float2 axis_width = max (fwidth (in.mesh_coord), float2 (1e-4));
+  const float axis_edge = min (min (cell.x, 1.0 - cell.x) / axis_width.x,
+                               min (cell.y, 1.0 - cell.y) / axis_width.y);
+  const float diagonal_width =
+    max (fwidth (in.mesh_coord.x + in.mesh_coord.y), 1e-4);
+  const float diagonal_edge = abs (cell.x + cell.y - 1.0) / diagonal_width;
+  const float edge = min (axis_edge, diagonal_edge);
+  const float line = 1.0 - smoothstep (0.45, 1.25, edge);
+  const float mesh_spacing = 1.0 / max (max (axis_width.x, axis_width.y), 1e-4);
+  const float mesh_visible = smoothstep (2.5, 5.0, mesh_spacing);
+  const float2 vertex_distance =
+    min (cell, 1.0 - cell) / max (axis_width, float2 (1e-4));
+  const float mesh_vertex =
+    1.0 - smoothstep (0.75, 1.7, length (vertex_distance));
+
+  const float2 source_cell = fract (in.grid_coord);
+  const float2 source_width = max (fwidth (in.grid_coord), float2 (1e-4));
+  const float2 source_distance =
+    min (source_cell, 1.0 - source_cell) / source_width;
+  const float source_spacing =
+    1.0 / max (max (source_width.x, source_width.y), 1e-4);
+  const float source_visible = smoothstep (2.5, 5.0, source_spacing);
+  const float source_vertex =
+    (1.0 - smoothstep (1.1, 2.5, length (source_distance))) * source_visible;
+
+  const float distance_fade = 1.0 - smoothstep (1400.0, 2200.0, distance);
+  const float lod_band =
+    clamp (log2 (max (in.lod_step, 0.25)) + 2.0, 0.0, 5.0) / 5.0;
+  const float3 lod_tint =
+    mix (float3 (0.82, 0.94, 1.0), float3 (1.0, 0.84, 0.68), lod_band);
+  color = mix (color, color * lod_tint, 0.12 * distance_fade);
+  const float wire = line * mesh_visible * distance_fade;
+  color = mix (color, float3 (0.015, 0.16, 0.19), 0.82 * wire);
+  color = mix (color,
+               float3 (0.16, 0.95, 1.0),
+               0.88 * mesh_vertex * mesh_visible * distance_fade);
+  return mix (
+    color, float3 (1.0, 0.63, 0.08), 0.96 * source_vertex * distance_fade);
+}
+
+struct TerrainSurfaceReadings {
+  float moisture;
+  float signed_water_depth;
+  float submerged;
+  float2 geology;
+  float ground_up;
+  float swash_zone;
+  float damp;
+  float2 intentional_ground;
+  float forest_cover;
+  float2 channel_flux;
+  float channel_activity;
+};
+
+static inline TerrainSurfaceReadings
+terrain_read_surface (thread const TerrainVaryings& in,
+                      float3 normal,
+                      constant MoppeTerrainUniforms& u,
+                      texture2d<float> terrain_landscape,
+                      texture2d<float, access::read> terrain_water,
+                      texture2d<float> terrain_ground,
+                      texture2d<float> terrain_channel_flux) {
+  // The typed surface readings become two compact sheets only at the
+  // presentation boundary. One filtered lookup supplies four fields which
+  // share the same terrain coordinate and lifetime.
+  const float4 landscape =
+    u.params5.z > 0.5 ? terrain_field_sample (in.field_uv, terrain_landscape)
+                      : float4 (0.0);
+  const float4 ground = u.params5.z > 0.5
+                          ? terrain_field_sample (in.field_uv, terrain_ground)
+                          : float4 (1.0, normal.y, 0.0, 0.0);
+
+  TerrainSurfaceReadings readings;
+  readings.moisture = landscape.r;
+  const float water_level =
+    u.params5.y > 0.5 ? terrain_field_sample_read (in.field_uv, terrain_water).r
+                      : -1.0;
+  readings.signed_water_depth =
+    u.params5.y > 0.5 ? (water_level - in.height) * u.params1.x : -100.0;
+  const float water_depth = max (readings.signed_water_depth, 0.0);
+  readings.submerged = smoothstep (0.015, 0.22, water_depth);
+  readings.geology = landscape.gb;
+  readings.ground_up = ground.g;
+
+  // Horizontal distance to the extracted waterline: the damp band hugs the
+  // actual shoreline curve and fades on steep banks.
+  const float shore_m = ground.r * u.params6.y;
+  readings.swash_zone =
+    (1.0 - smoothstep (0.3, 2.8, shore_m)) * smoothstep (0.42, 0.62, normal.y);
+  readings.damp = max (max (readings.submerged, 0.92 * readings.swash_zone),
+                       smoothstep (0.22, 0.82, readings.moisture));
+  readings.intentional_ground = ground.ba;
+  readings.forest_cover = landscape.a;
+  readings.channel_flux =
+    u.params7.y > 0.5
+      ? terrain_field_sample (in.field_uv, terrain_channel_flux).rg
+      : float2 (0.0);
+  readings.channel_activity = min (length (readings.channel_flux), 1.0);
+  return readings;
+}
+
+struct TerrainScaleMeasures {
+  float far_blend;
+  float ground_pixel_m;
+  float fine_detail_visibility;
+  float coarse_detail_visibility;
+  float macro;
+  float coarse;
+  float jitter;
+  float normalized_height;
+};
+
+static inline TerrainScaleMeasures
+terrain_measure_scales (thread const TerrainVaryings& in,
+                        float distance,
+                        float sea_level,
+                        constant MoppeTerrainUniforms& u,
+                        texture2d<float> grass,
+                        sampler smp) {
+  TerrainScaleMeasures measures;
+  measures.far_blend = smoothstep (40.0, 350.0, distance);
+  measures.ground_pixel_m =
+    max (length (dfdx (in.world_pos.xz)), length (dfdy (in.world_pos.xz)));
+  measures.fine_detail_visibility =
+    1.0 - smoothstep (0.18, 1.15, measures.ground_pixel_m);
+  measures.coarse_detail_visibility =
+    1.0 - smoothstep (0.75, 3.0, measures.ground_pixel_m);
+
+  // Independent landscape-scale variation survives after source textures
+  // have mipmapped away.
+  measures.macro =
+    0.65 * moppe_value_noise (in.world_pos.xz * 0.0027 + float2 (19.1, 7.3)) +
+    0.35 * moppe_value_noise (in.world_pos.xz * 0.0091 + float2 (3.7, 31.9));
+  measures.coarse =
+    dot (grass.sample (smp, in.uv * 0.083 + float2 (0.37, 0.19)).rgb,
+         float3 (0.299, 0.587, 0.114));
+  measures.jitter = measures.coarse - 0.5;
+  const float land_relief = max (u.params7.z, 1.0);
+  measures.normalized_height = (in.height - sea_level) / land_relief +
+                               0.045 * measures.jitter +
+                               0.012 * (measures.macro - 0.5);
+  return measures;
+}
+
+struct TerrainMaterialBands {
+  float cliff;
+  float scree;
+  float snow;
+  float beach;
+  MoppeGrassMedium grass_medium;
+  float grass_integrated;
+};
+
+static inline TerrainMaterialBands
+terrain_classify_material (thread const TerrainVaryings& in,
+                           float3 normal,
+                           float distance,
+                           float sea_level,
+                           thread const TerrainSurfaceReadings& readings,
+                           thread const TerrainScaleMeasures& scales,
+                           constant MoppeTerrainUniforms& u) {
+  TerrainMaterialBands bands;
+  bands.cliff = 1.0 - smoothstep (0.60, 0.80, normal.y + 0.06 * scales.jitter);
+  bands.scree = smoothstep (0.38, 0.58, scales.normalized_height);
+
+  const float snow_support_up =
+    u.params7.x > 0.5 ? readings.ground_up : normal.y;
+  bands.snow = smoothstep (0.55, 0.68, scales.normalized_height) *
+               smoothstep (0.58, 0.78, snow_support_up);
+
+  const float jittered_height =
+    in.height + 0.045 * scales.jitter + 0.012 * (scales.macro - 0.5);
+  const float beach_low = sea_level + 0.5 / u.params1.x;
+  const float beach_high = sea_level + 3.0 / u.params1.x;
+  bands.beach = (1.0 - smoothstep (beach_low, beach_high, jittered_height)) *
+                smoothstep (0.55, 0.75, normal.y);
+
+  const float land_relief = max (u.params7.z, 1.0);
+  const float grass_relative_height = (in.height - sea_level) / land_relief;
+  bands.grass_medium = moppe_grass_medium (in.world_pos.xz,
+                                           readings.moisture,
+                                           readings.forest_cover,
+                                           readings.intentional_ground,
+                                           normal.y,
+                                           snow_support_up,
+                                           grass_relative_height,
+                                           readings.signed_water_depth,
+                                           u.params7.w);
+  const float grass_focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  const float grass_blade_pixels =
+    moppe_grass_blade_pixels (grass_focal_pixels, distance);
+  bands.grass_integrated = moppe_grass_integrated_fraction (grass_blade_pixels);
+  return bands;
+}
+
+struct TerrainPalette {
+  float3 grass;
+  float3 scree;
+  float3 cliff;
+  float3 snow;
+  float scree_value;
+  float sand_value;
+  float3 blade_mean;
+  float3 patch_hue;
+  float turf_crowd;
+  float turf_tuft;
+  float turf_cover;
+};
+
+static inline TerrainPalette
+terrain_build_palette (thread const TerrainVaryings& in,
+                       float3 normal,
+                       float damp,
+                       thread const TerrainScaleMeasures& scales,
+                       thread const TerrainMaterialBands& bands,
+                       texture2d<float> grass,
+                       texture2d<float> dirt,
+                       texture2d<float> snow,
+                       texture2d<float> rock,
+                       constant MoppeTerrainUniforms& u,
+                       sampler smp) {
+  TerrainPalette palette;
+  palette.grass = terrain_layer (grass, smp, in.uv, scales.far_blend);
+  const float grass_value = dot (palette.grass, float3 (0.299, 0.587, 0.114));
+  const float3 grass_palette =
+    grass_value * moppe_srgb (float3 (0.68, 1.00, 0.52));
+  palette.grass = mix (palette.grass, grass_palette, 0.34);
+  palette.grass *= 1.36;
+  palette.grass *= 0.88 + 0.55 * scales.coarse;
+  palette.grass *=
+    mix (float3 (0.84, 0.95, 0.76), float3 (1.10, 1.06, 0.92), scales.macro);
+  palette.grass *= mix (float3 (1.04, 1.00, 0.90),
+                        float3 (0.96, 1.02, 0.92),
+                        smoothstep (0.08, 0.30, in.height));
+  palette.grass *= mix (float3 (1.0), float3 (0.76, 0.91, 0.70), damp * 0.55);
+
+  palette.turf_crowd = bands.grass_medium.clump;
+  const float tuft_visibility =
+    1.0 - smoothstep (0.12, 0.60, scales.ground_pixel_m);
+  palette.turf_tuft =
+    mix (0.5,
+         moppe_value_noise (in.world_pos.xz * 0.85 + float2 (7.7, 3.1)),
+         tuft_visibility);
+  palette.turf_cover = bands.grass_medium.cover;
+  palette.blade_mean = moppe_srgb (bands.grass_medium.blade_tint * 0.85);
+  palette.patch_hue = float3 (1.0 + 0.14 * (palette.turf_crowd - 0.5),
+                              1.0,
+                              1.0 - 0.12 * (palette.turf_crowd - 0.5));
+
+  palette.scree = terrain_layer_integrated (dirt, smp, in.uv, scales.far_blend);
+  palette.scree *=
+    0.82 + 0.36 * dirt.sample (smp, in.uv * 0.061, bias (1.50)).r;
+  palette.scree_value = dot (palette.scree, float3 (0.299, 0.587, 0.114));
+  palette.scree =
+    mix (palette.scree, palette.scree_value * float3 (1.00, 0.96, 0.86), 0.72);
+
+  palette.cliff = palette.scree;
+  if (bands.cliff > 0.0) {
+    palette.cliff = terrain_layer_triplanar (
+      rock, smp, in.world_pos, normal, u.params0.w * 1.7, scales.far_blend);
+    const float cliff_value = dot (palette.cliff, float3 (0.299, 0.587, 0.114));
+    const float strata =
+      0.5 + 0.5 * sin (in.world_pos.y * 0.075 +
+                       3.5 * moppe_value_noise (in.world_pos.xz * 0.006));
+    const float3 strata_tint =
+      mix (float3 (0.72, 0.77, 0.80), float3 (0.92, 0.83, 0.68), 0.22 * strata);
+    palette.cliff = mix (palette.cliff, cliff_value * strata_tint, 0.92);
+    palette.cliff *= 0.82 + 0.42 * scales.coarse + 0.10 * strata;
+  }
+
+  palette.snow = palette.scree;
+  if (bands.snow > 0.0) {
+    palette.snow = terrain_layer (snow, smp, in.uv, scales.far_blend);
+    palette.snow *=
+      0.75 + 0.5 * snow.sample (smp, in.uv * 0.053 + float2 (0.21, 0.43)).r;
+  }
+  palette.sand_value = dot (palette.scree, float3 (0.299, 0.587, 0.114));
+  return palette;
+}
+
+struct TerrainMaterial {
+  float3 albedo;
+  float shore;
+  float wash;
+  float grass;
+  float pebble;
+  TerrainPebbleSample pebble_sample;
+  float trail;
+  float close_trail;
+  float base;
+  float forest_presence;
+  float canopy_grain;
+  float forest_distance;
+  float forest;
+  float wetness;
+};
+
+static inline TerrainMaterial
+terrain_compose_substrate (thread const TerrainVaryings& in,
+                           float3 normal,
+                           thread const TerrainSurfaceReadings& readings,
+                           thread const TerrainScaleMeasures& scales,
+                           thread const TerrainMaterialBands& bands,
+                           thread const TerrainPalette& palette,
+                           constant MoppeTerrainUniforms& u) {
+  TerrainMaterial material;
+  material.albedo = palette.grass;
+  material.albedo = mix (material.albedo, palette.scree, bands.scree);
+  material.albedo = mix (material.albedo, palette.cliff, bands.cliff);
+  material.albedo = mix (material.albedo, palette.snow, bands.snow);
+
+  const float3 sand =
+    mix (palette.scree, palette.sand_value * float3 (1.12, 1.03, 0.82), 0.82);
+  material.shore = max (bands.beach, 0.78 * readings.swash_zone) *
+                   (1.0 - readings.submerged) * (1.0 - bands.snow) *
+                   smoothstep (0.48, 0.74, normal.y);
+  material.albedo = mix (material.albedo, sand, material.shore);
+
+  // Fresh cuts expose regolith; deposition builds pale alluvium.
+  if (u.params5.z > 0.5) {
+    const float cut = smoothstep (0.12, 0.72, readings.geology.r);
+    const float fill = smoothstep (0.12, 0.72, readings.geology.g);
+    const float3 cut_color = mix (
+      palette.scree, palette.scree_value * float3 (0.94, 0.84, 0.72), 0.55);
+    material.albedo =
+      mix (material.albedo, cut_color, cut * (1.0 - bands.snow) * 0.42);
+    const float3 alluvium =
+      mix (palette.scree, palette.sand_value * float3 (1.05, 1.00, 0.88), 0.70);
+    const float fill_flat = smoothstep (0.78, 0.93, normal.y);
+    material.albedo = mix (
+      material.albedo, alluvium, fill * fill_flat * (1.0 - bands.snow) * 0.5);
+  }
+
+  material.wash =
+    smoothstep (0.30, 0.85, readings.channel_activity + 0.10 * scales.jitter) *
+    (1.0 - bands.snow) * (1.0 - readings.submerged);
+  const float3 wash_color =
+    mix (palette.scree, palette.scree_value * float3 (0.88, 0.84, 0.76), 0.55) *
+    (0.82 + 0.30 * scales.coarse);
+  material.albedo = mix (material.albedo, wash_color, 0.42 * material.wash);
+
+  material.grass = 0.0;
+  material.pebble = 0.0;
+  material.pebble_sample = { 0.0, 0.5, float2 (0.0) };
+  material.trail = 0.0;
+  material.close_trail = 0.0;
+  material.base = 0.0;
+  material.forest_presence = 0.0;
+  material.canopy_grain = 0.0;
+  material.forest_distance = 0.0;
+  material.forest = 0.0;
+  material.wetness = 0.0;
+  return material;
+}
+
+static inline void
+terrain_compose_grass (thread TerrainMaterial& material,
+                       thread const TerrainMaterialBands& bands,
+                       thread const TerrainPalette& palette) {
+  const float3 sward =
+    palette.blade_mean * palette.patch_hue *
+    (0.72 + 0.56 * palette.turf_crowd + 0.20 * (palette.turf_tuft - 0.5));
+  const float grass_floor_shadow =
+    palette.turf_cover * mix (0.24, 0.42, 1.0 - bands.grass_integrated);
+  material.albedo = mix (material.albedo,
+                         material.albedo * float3 (0.54, 0.66, 0.43),
+                         grass_floor_shadow);
+  material.grass = palette.turf_cover * bands.grass_integrated;
+  material.albedo = mix (material.albedo, sward, material.grass);
+}
+
+static inline void
+terrain_compose_pebbles (thread TerrainMaterial& material,
+                         thread const TerrainVaryings& in,
+                         float3 normal,
+                         float distance,
+                         thread const TerrainSurfaceReadings& readings,
+                         thread const TerrainScaleMeasures& scales,
+                         thread const TerrainMaterialBands& bands) {
+  material.pebble = max (readings.submerged, 0.52 * readings.swash_zone) *
+                    smoothstep (0.48, 0.90, normal.y) * (1.0 - bands.snow) *
+                    scales.fine_detail_visibility *
+                    (1.0 - smoothstep (18.0, 55.0, distance));
+  if (material.pebble <= 0.002)
+    return;
+
+  material.pebble_sample = terrain_pebble_sample (in.world_pos.xz);
+  const float3 cool_stone (0.28, 0.31, 0.32);
+  const float3 warm_stone (0.39, 0.34, 0.29);
+  const float3 pale_stone (0.47, 0.46, 0.42);
+  float3 stone_srgb =
+    mix (cool_stone,
+         warm_stone,
+         smoothstep (0.18, 0.78, material.pebble_sample.tone));
+  stone_srgb = mix (stone_srgb,
+                    pale_stone,
+                    smoothstep (0.76, 0.97, material.pebble_sample.tone));
+  const float3 stone =
+    moppe_srgb (stone_srgb) * (0.72 + 0.36 * material.pebble_sample.cap);
+  const float3 interstitial = moppe_srgb (float3 (0.10, 0.11, 0.105));
+  const float3 pebble_color =
+    mix (interstitial, stone, material.pebble_sample.cap);
+  material.albedo =
+    mix (material.albedo,
+         pebble_color,
+         material.pebble * (0.52 + 0.48 * material.pebble_sample.cap));
+}
+
+static inline void
+terrain_compose_trail_and_base (thread TerrainMaterial& material,
+                                thread const TerrainVaryings& in,
+                                float distance,
+                                thread const TerrainSurfaceReadings& readings,
+                                thread const TerrainScaleMeasures& scales,
+                                thread const TerrainMaterialBands& bands,
+                                thread const TerrainPalette& palette) {
+  const float trail = readings.intentional_ground.r;
+  const float trail_cover = (1.0 - bands.snow) * (1.0 - readings.submerged);
+  const float trail_footprint = smoothstep (0.025, 0.32, trail);
+  const float trail_core = smoothstep (0.42, 0.88, trail);
+  const float trail_shoulder =
+    smoothstep (0.04, 0.22, trail) * (1.0 - smoothstep (0.38, 0.64, trail));
+  material.close_trail = 1.0 - smoothstep (55.0, 240.0, distance);
+  const float coarse_visibility =
+    1.0 - smoothstep (0.64, 1.78, scales.ground_pixel_m);
+  const float fine_visibility =
+    1.0 - smoothstep (0.16, 0.43, scales.ground_pixel_m);
+  const float gravel_coarse =
+    mix (0.5,
+         moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)),
+         coarse_visibility);
+  const float gravel_fine =
+    mix (0.5,
+         moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9)),
+         fine_visibility);
+  const float gravel = 0.72 * gravel_coarse + 0.28 * gravel_fine;
+  const float worn_bands =
+    (1.0 - smoothstep (0.055, 0.15, abs (trail - 0.64))) *
+    material.close_trail * trail_footprint;
+
+  const float trail_value =
+    mix (0.34, clamp (palette.sand_value, 0.24, 0.56), 0.38);
+  float3 trail_color =
+    mix (palette.scree, trail_value * float3 (0.86, 0.57, 0.31), 0.94);
+  trail_color *= 0.93 + 0.14 * gravel;
+  const float pale_grit = smoothstep (0.66, 0.84, gravel_coarse);
+  trail_color = mix (trail_color,
+                     palette.sand_value * float3 (0.98, 0.82, 0.58),
+                     0.055 * pale_grit * coarse_visibility * trail_core);
+  trail_color *= 1.0 - 0.24 * trail_shoulder;
+  trail_color *= 1.0 - 0.16 * worn_bands;
+  trail_color *= 1.0 + 0.08 * trail_core * material.close_trail;
+
+  material.trail = trail_cover * trail_footprint * (0.60 + 0.36 * trail_core);
+  material.albedo = mix (material.albedo, trail_color, material.trail);
+
+  const float home_base = readings.intentional_ground.g;
+  material.base = smoothstep (0.03, 0.72, home_base) *
+                  (1.0 - readings.submerged) * (1.0 - bands.snow);
+  const float3 base_color =
+    palette.sand_value * mix (float3 (0.70, 0.48, 0.22),
+                              float3 (1.05, 0.88, 0.52),
+                              smoothstep (0.70, 1.0, home_base));
+  material.albedo = mix (material.albedo, base_color, 0.92 * material.base);
+}
+
+static inline void terrain_compose_forest_and_wetness (
+  thread TerrainMaterial& material,
+  thread const TerrainVaryings& in,
+  float distance,
+  thread const TerrainSurfaceReadings& readings) {
+  material.forest_presence = smoothstep (0.035, 0.72, readings.forest_cover);
+  material.canopy_grain =
+    0.68 * moppe_value_noise (in.world_pos.xz * 0.018 + float2 (17.3, 5.7)) +
+    0.32 * moppe_value_noise (in.world_pos.xz * 0.061 + float2 (2.1, 41.9));
+  const float ground_value =
+    dot (material.albedo, float3 (0.299, 0.587, 0.114));
+  const float3 forest_color = ground_value * float3 (0.55, 0.82, 0.40) *
+                              (0.82 + 0.30 * material.canopy_grain);
+  material.forest_distance = smoothstep (280.0, 1450.0, distance);
+  material.forest = material.forest_presence *
+                    mix (0.20, 0.62, material.forest_distance) *
+                    (1.0 - material.base) * (1.0 - material.trail);
+  material.albedo = mix (material.albedo, forest_color, material.forest);
+
+  material.wetness = max (0.62 * readings.damp, readings.submerged);
+  const float wet_luma = dot (material.albedo, float3 (0.299, 0.587, 0.114));
+  material.albedo = mix (
+    material.albedo,
+    mix (material.albedo, float3 (wet_luma), 0.20) * float3 (0.52, 0.58, 0.60),
+    material.wetness * 0.58 * (1.0 - 0.85 * material.grass));
+}
+
+static inline float3
+terrain_apply_micro_relief (float3 normal,
+                            thread const TerrainVaryings& in,
+                            thread const TerrainSurfaceReadings& readings,
+                            thread const TerrainMaterialBands& bands,
+                            thread const TerrainMaterial& material) {
+  // Relief is measured against the world-space width of a pixel so each
+  // octave retires before it aliases.
+  const float pixel_m =
+    max (length (dfdx (in.world_pos)), length (dfdy (in.world_pos)));
+  const float cut_relief = smoothstep (0.10, 0.65, readings.geology.r);
+  const float fill_relief = smoothstep (0.10, 0.65, readings.geology.g);
+  float relief_wavelength =
+    mix (1.05, 2.90, saturate (bands.cliff + 0.45 * bands.scree));
+  relief_wavelength *= mix (1.0, 1.45, material.trail);
+  const float detail_strength =
+    (0.13 + 0.42 * bands.cliff + 0.11 * bands.scree + 0.20 * cut_relief +
+     0.035 * material.trail * material.close_trail) *
+    (1.0 - 0.55 * fill_relief) * (1.0 - 0.85 * bands.snow) *
+    mix (1.0, 0.62, material.trail);
+  normal = terrain_perturb_normal (
+    normal,
+    terrain_relief_volume (in.world_pos, normal, pixel_m, relief_wavelength),
+    detail_strength);
+
+  const float pebble_strength =
+    material.pebble * (0.06 + 0.08 * material.pebble_sample.cap);
+  if (pebble_strength > 0.002)
+    normal = terrain_perturb_normal (normal,
+                                     float3 (material.pebble_sample.gradient.x,
+                                             0.0,
+                                             material.pebble_sample.gradient.y),
+                                     pebble_strength);
+
+  const float rill_strength =
+    smoothstep (0.35, 0.90, readings.channel_activity) *
+    (1.0 - 0.85 * bands.snow) * (1.0 - readings.submerged * 0.5) * 0.26;
+  if (rill_strength > 0.002) {
+    const float2 flow_dir =
+      readings.channel_flux / max (readings.channel_activity, 1e-4);
+    const float2 gradient = terrain_relief_gradient (
+      in.world_pos.xz + float2 (13.7, 41.3), pixel_m, 1.15);
+    const float2 across = gradient - flow_dir * dot (gradient, flow_dir);
+    normal = terrain_perturb_normal (
+      normal, float3 (across.x, 0.0, across.y), rill_strength);
+  }
+  return normal;
+}
+
+struct TerrainLighting {
+  float3 color;
+  float direct_visibility;
+  float canopy_direct;
+  float intensity;
+  float3 half_vector;
+};
+
+static inline TerrainLighting
+terrain_light_ground (float3 albedo,
+                      float3 normal,
+                      float3 view_dir,
+                      thread const TerrainVaryings& in,
+                      thread const TerrainSurfaceReadings& readings,
+                      thread const TerrainScaleMeasures& scales,
+                      thread const TerrainMaterialBands& bands,
+                      thread const TerrainMaterial& material,
+                      constant MoppeTerrainUniforms& u,
+                      depth2d<float> shadow_map) {
+  TerrainLighting lighting;
+  const float3 light = u.sun_dir.xyz;
+  const float shadow = terrain_shadow_factor (in.shadow_coord,
+                                              in.fog,
+                                              normal,
+                                              light,
+                                              u.params1.z,
+                                              u.params1.w,
+                                              shadow_map);
+  lighting.direct_visibility =
+    shadow *
+    moppe_cloud_transmission (in.world_pos, light, u.params2.x, u.params2.y);
+
+  const float canopy_footprint =
+    material.forest_presence * (1.0 - material.base) * (1.0 - material.trail) *
+    (1.0 - bands.snow) * (1.0 - readings.submerged);
+  const float dapple = smoothstep (0.36, 0.72, material.canopy_grain);
+  const float near_canopy_sun = mix (0.42, 1.0, dapple);
+  const float canopy_sun =
+    mix (near_canopy_sun, 0.62, material.forest_distance);
+  lighting.canopy_direct = mix (1.0, canopy_sun, canopy_footprint);
+  const float canopy_ambient = mix (1.0, 0.76, canopy_footprint);
+  lighting.intensity = saturate ((dot (light, normal) + 0.08) / 1.08);
+  const float3 shade_fill =
+    mix (float3 (0.80, 0.92, 1.14), float3 (1.0), shadow);
+  const float3 diffuse_light = lighting.intensity * lighting.direct_visibility *
+                                 lighting.canopy_direct * 0.9 *
+                                 u.sun_diffuse.rgb +
+                               canopy_ambient * shade_fill *
+                                 moppe_hemisphere_light (u.ambient.rgb, normal);
+  lighting.color = albedo * diffuse_light;
+
+  lighting.half_vector = normalize (light - view_dir);
+  const float roughness = mix (0.92, 0.68, bands.cliff);
+  const float material_spec =
+    (0.012 + 0.035 * (1.0 - roughness)) *
+    pow (max (dot (normal, lighting.half_vector), 0.0),
+         mix (18.0, 72.0, 1.0 - roughness));
+  lighting.color += u.sun_specular.rgb * lighting.direct_visibility *
+                    lighting.canopy_direct * material_spec;
+  lighting.color += bands.snow * u.sun_specular.rgb *
+                    lighting.direct_visibility *
+                    pow (max (dot (normal, lighting.half_vector), 0.0), 32.0) *
+                    mix (0.06, 0.24, scales.coarse_detail_visibility);
+  const float wet_spec =
+    material.wetness * pow (max (dot (normal, lighting.half_vector), 0.0),
+                            mix (18.0, 52.0, readings.submerged));
+  lighting.color += u.sun_specular.rgb * lighting.direct_visibility *
+                    lighting.canopy_direct * wet_spec *
+                    mix (0.025, 0.075, readings.submerged);
+  return lighting;
+}
+
+static inline float3
+terrain_light_grass_canopy (float3 color,
+                            float3 albedo,
+                            float3 normal,
+                            float3 view_dir,
+                            thread const TerrainVaryings& in,
+                            thread const TerrainSurfaceReadings& readings,
+                            thread const TerrainMaterialBands& bands,
+                            thread const TerrainPalette& palette,
+                            thread const TerrainMaterial& material,
+                            thread const TerrainLighting& lighting,
+                            constant MoppeTerrainUniforms& u) {
+  const float turf = (1.0 - bands.scree) * (1.0 - bands.cliff) *
+                     (1.0 - bands.snow) * (1.0 - material.shore) *
+                     (1.0 - material.trail) * (1.0 - 0.92 * material.base) *
+                     (1.0 - readings.submerged) * (1.0 - 0.42 * material.wash) *
+                     (1.0 - material.forest) *
+                     smoothstep (0.52, 0.78, normal.y);
+  const float canopy_grass = turf * bands.grass_integrated * palette.turf_cover;
+  if (canopy_grass <= 0.002)
+    return color;
+
+  const float3 light = u.sun_dir.xyz;
+  const float gust = moppe_grass_gust (in.world_pos.xz, u.params2.x);
+  const float wave = 1.0 + 0.11 * gust;
+  const float3 canopy_light =
+    u.sun_diffuse.rgb * lighting.direct_visibility * lighting.canopy_direct;
+  const float toward = saturate (dot (view_dir, light));
+  const float lobe = moppe_grass_toward_lobe (toward);
+  color += sqrt (albedo) * canopy_light * moppe_grass_chlorophyll () * lobe *
+           wave * 0.50 * canopy_grass;
+
+  const float3 canopy_axis =
+    moppe_grass_ensemble_axis (in.world_pos.xz, u.params2.x);
+  const float along_sun = dot (canopy_axis, light);
+  const float blade_diffuse =
+    0.52 * sqrt (saturate (1.0 - along_sun * along_sun));
+  color += albedo * u.sun_diffuse.rgb * lighting.direct_visibility *
+           lighting.canopy_direct * (blade_diffuse - lighting.intensity) * 0.9 *
+           wave * canopy_grass;
+  const float along = dot (canopy_axis, lighting.half_vector);
+  const float sheen = pow (sqrt (saturate (1.0 - along * along)), 8.0) *
+                      (0.10 + 0.90 * toward * toward);
+  color += u.sun_specular.rgb * lighting.direct_visibility *
+           lighting.canopy_direct * sheen * wave * 0.35 * canopy_grass;
+  const float retro = pow (saturate (-dot (view_dir, light)), 4.0);
+  return color + albedo * canopy_light * retro * 0.35 * canopy_grass;
+}
+
 fragment MoppeTemporalOutput terrain_fragment (
   TerrainVaryings in [[stage_in]],
   constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
@@ -593,6 +1286,7 @@ fragment MoppeTemporalOutput terrain_fragment (
   texture2d<float> terrain_channel_flux
   [[texture (MOPPE_TEX_TERRAIN_CHANNEL_FLUX)]],
   sampler smp [[sampler (0)]]) {
+
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
   const float3 view_dir = to_frag / max (dist, 1e-4);
@@ -612,606 +1306,55 @@ fragment MoppeTemporalOutput terrain_fragment (
   float3 n = (u.params6.x > 0.5 && in.lod_step >= 1.0)
                ? normalize (terrain_normal_filtered (in.grid_coord, normals))
                : normalize (in.normal);
-  const float height = in.height;
   const float sea_level = u.params1.y;
 
-  // The typed surface readings become two compact sheets only at the
-  // presentation boundary. One filtered lookup now supplies four fields
-  // which share the same terrain coordinate and lifetime.
-  const float4 landscape =
-    u.params5.z > 0.5 ? terrain_field_sample (in.field_uv, terrain_landscape)
-                      : float4 (0.0);
-  const float4 ground = u.params5.z > 0.5
-                          ? terrain_field_sample (in.field_uv, terrain_ground)
-                          : float4 (1.0, n.y, 0.0, 0.0);
+  const TerrainSurfaceReadings readings =
+    terrain_read_surface (in,
+                          n,
+                          u,
+                          terrain_landscape,
+                          terrain_water,
+                          terrain_ground,
+                          terrain_channel_flux);
+  const float damp = readings.damp;
 
-  // Hydrology is material information.
-  // Standing water makes its bed fully wet; the moisture field feathers that
-  // treatment into banks, drainage lines, and damp low ground.
-  const float moisture = landscape.r;
-  const float water_level =
-    u.params5.y > 0.5 ? terrain_field_sample_read (in.field_uv, terrain_water).r
-                      : -1.0;
-  const float signed_water_depth =
-    u.params5.y > 0.5 ? (water_level - height) * u.params1.x : -100.0;
-  const float water_depth = max (signed_water_depth, 0.0);
-  const float submerged = smoothstep (0.015, 0.22, water_depth);
-  // The sediment ledger (fresh cuts, settled fans) feeds both the
-  // material blend and the micro-relief below.
-  const float2 geology = landscape.gb;
-  // Horizontal distance to the extracted waterline: the damp band hugs
-  // the actual shoreline curve instead of a vertical depth proxy, and
-  // fades on steep banks where ground climbs out of reach of swash.
-  const float shore_m = ground.r * u.params6.y;
-  const float swash_zone =
-    (1.0 - smoothstep (0.3, 2.8, shore_m)) * smoothstep (0.42, 0.62, n.y);
-  const float damp =
-    max (max (submerged, 0.92 * swash_zone), smoothstep (0.22, 0.82, moisture));
-  const float2 intentional_ground = ground.ba;
-  const float trail = intentional_ground.r;
-  const float home_base = intentional_ground.g;
-  const float forest_cover = landscape.a;
-  // Concentrated drainage as a planar vector: direction of flow scaled by a
-  // log-compressed activity that saturates at the visible-channel threshold.
-  const float2 channel_flux =
-    u.params7.y > 0.5
-      ? terrain_field_sample (in.field_uv, terrain_channel_flux).rg
-      : float2 (0.0);
-  const float channel_activity = min (length (channel_flux), 1.0);
+  const TerrainScaleMeasures scales =
+    terrain_measure_scales (in, dist, sea_level, u, grass, smp);
+  const TerrainMaterialBands bands =
+    terrain_classify_material (in, n, dist, sea_level, readings, scales, u);
 
-  const float2 tc = in.uv;
-  const float far_blend = smoothstep (40.0, 350.0, dist);
-  // World-space size of one screen pixel on this surface. Distance alone is
-  // insufficient at a grazing angle: a nearby horizontal pixel can span
-  // several metres. Fade procedural frequencies when they become unresolved
-  // instead of letting them turn into crawling highlights and moire.
-  const float ground_pixel_m =
-    max (length (dfdx (in.world_pos.xz)), length (dfdy (in.world_pos.xz)));
-  const float fine_detail_visibility =
-    1.0 - smoothstep (0.18, 1.15, ground_pixel_m);
-  const float coarse_detail_visibility =
-    1.0 - smoothstep (0.75, 3.0, ground_pixel_m);
+  const TerrainPalette palette = terrain_build_palette (
+    in, n, damp, scales, bands, grass, dirt, snow, rock, u, smp);
 
-  // Independent landscape-scale variation survives after the source texture
-  // has mipmapped away. Two octaves avoid tinting every hill uniformly.
-  const float macro =
-    0.65 * moppe_value_noise (in.world_pos.xz * 0.0027 + float2 (19.1, 7.3)) +
-    0.35 * moppe_value_noise (in.world_pos.xz * 0.0091 + float2 (3.7, 31.9));
+  // These calls are deliberate experiment boundaries. Each stage can be
+  // replaced by a trivial implementation without editing the stages around it.
+  TerrainMaterial material =
+    terrain_compose_substrate (in, n, readings, scales, bands, palette, u);
+  terrain_compose_grass (material, bands, palette);
+  terrain_compose_pebbles (material, in, n, dist, readings, scales, bands);
+  terrain_compose_trail_and_base (
+    material, in, dist, readings, scales, bands, palette);
+  terrain_compose_forest_and_wetness (material, in, dist, readings);
+  float3 texel = material.albedo;
+  texel =
+    terrain_apply_analysis_overlay (texel, in.field_uv, u, terrain_overlay);
 
-  // Large-scale variation shared by every layer; its luminance also
-  // jitters the splat thresholds so band edges wander organically
-  // instead of tracing contour lines.
-  const float coarse =
-    dot (grass.sample (smp, tc * 0.083 + float2 (0.37, 0.19)).rgb,
-         float3 (0.299, 0.587, 0.114));
-  const float jitter = coarse - 0.5;
-  const float hj = height + 0.045 * jitter + 0.012 * (macro - 0.5);
-  // Altitude bands are fractions of this world's own land relief. The
-  // stored elevation is metres above the model datum, so a band constant
-  // only means something against the range it spans: the same 0.55 that
-  // is a snowline here would be ankle-deep read as a metre threshold.
-  const float land_relief = max (u.params7.z, 1.0);
-  const float hn =
-    (height - sea_level) / land_relief + 0.045 * jitter + 0.012 * (macro - 0.5);
+  n = terrain_apply_micro_relief (n, in, readings, bands, material);
 
-  // Texture bands: by altitude AND slope.  Stony cliffs break
-  // through on steep faces, dry scree takes over up high, snow only
-  // settles on flatter ground, sand stays off the cliffs.
-  const float cliff_coef = 1.0 - smoothstep (0.60, 0.80, n.y + 0.06 * jitter);
-  const float scree_coef = smoothstep (0.38, 0.58, hn);
-  // Snow retention is a material-scale reading of the broad hillside. The
-  // detailed normal still lights every fold, but no longer turns each
-  // lattice-scale steepness fluctuation into a hard snow/rock seam.
-  const float snow_support_up = u.params7.x > 0.5 ? ground.g : n.y;
-  const float snow_coef =
-    smoothstep (0.55, 0.68, hn) * smoothstep (0.58, 0.78, snow_support_up);
-  // Use a world-space shoreline rule. The old normalized 0.03
-  // band could mean tens of metres, leaving full grass fields growing from
-  // visually sandy ground on tall worlds.
-  const float beach_low = sea_level + 0.5 / u.params1.x;
-  const float beach_high = sea_level + 3.0 / u.params1.x;
-  const float beach_coef = (1.0 - smoothstep (beach_low, beach_high, hj)) *
-                           smoothstep (0.55, 0.75, n.y);
-
-  const float grass_relative_height =
-    (height - sea_level) / max (land_relief, 1.0);
-  const MoppeGrassMedium grass_medium =
-    moppe_grass_medium (in.world_pos.xz,
-                        moisture,
-                        forest_cover,
-                        intentional_ground,
-                        n.y,
-                        snow_support_up,
-                        grass_relative_height,
-                        signed_water_depth,
-                        u.params7.w);
-  const float grass_focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
-  const float grass_blade_pixels =
-    moppe_grass_blade_pixels (grass_focal_pixels, dist);
-  const float grass_integrated =
-    moppe_grass_integrated_fraction (grass_blade_pixels);
-
-  // -- grass ------------------------------------------------------
-  float3 grass_c = terrain_layer (grass, smp, tc, far_blend);
-
-  // The source is already a restrained diffuse capture. A light palette pull
-  // keeps it coherent with generated blades without crushing its soil tones.
-  const float grass_value = dot (grass_c, float3 (0.299, 0.587, 0.114));
-  const float3 grass_palette =
-    grass_value * moppe_srgb (float3 (0.68, 1.00, 0.52));
-  grass_c = mix (grass_c, grass_palette, 0.34);
-  // The diffuse source is calibrated without baked illumination; compensate
-  // for the legacy terrain energy scale before applying live lighting.
-  grass_c *= 1.36;
-  grass_c *= 0.88 + 0.55 * coarse;
-  grass_c *= mix (float3 (0.84, 0.95, 0.76), float3 (1.10, 1.06, 0.92), macro);
-
-  // Altitude tint: sun-dried gold near the coast, lusher higher up.
-  grass_c *= mix (float3 (1.04, 1.00, 0.90),
-                  float3 (0.96, 1.02, 0.92),
-                  smoothstep (0.08, 0.30, height));
-  grass_c *= mix (float3 (1.0), float3 (0.76, 0.91, 0.70), damp * 0.55);
-
-  // The grass medium's spatial statistics. The mean colour of a patchy
-  // field is brown-green mush; what says GRASS at distance is the second
-  // moment -- crowds of cover with litter gaps between them -- so the
-  // material renders the variance of the same clump-noise field the
-  // undergrowth density samples. Geometry inside reach and material beyond
-  // it are then two renderers of one field, and the patch pattern runs
-  // across the geometry horizon unbroken. (Tsushima's clump lesson,
-  // #66Q3W3: blades inherit clump identity, and the clump scale is what
-  // carries a field's structure at every distance.)
-  const float turf_crowd = grass_medium.clump;
-  // A tuft-scale octave carries the band just past the clumps and retires
-  // once its wavelength falls toward a pixel, the relief octave rule.
-  const float tuft_visibility = 1.0 - smoothstep (0.12, 0.60, ground_pixel_m);
-  const float turf_tuft =
-    mix (0.5,
-         moppe_value_noise (in.world_pos.xz * 0.85 + float2 (7.7, 3.1)),
-         tuft_visibility);
-  const float turf_cover = grass_medium.cover;
-
-  // The covered fraction will show the blade layer's aggregate: the mesh
-  // stage's base tint and moisture response times mean shading, with the
-  // crowd field supplying Tsushima-style patch-to-patch lushness. The mix
-  // happens AFTER the material composition below, because the medium
-  // claims whatever soil it roots in -- a vegetated lakeshore flat is
-  // grass over sand, and blending inside the grass layer let the beach
-  // band erase a field the undergrowth demonstrably grows on.
-  const float3 blade_mean = moppe_srgb (grass_medium.blade_tint * 0.85);
-  const float3 patch_hue = float3 (
-    1.0 + 0.14 * (turf_crowd - 0.5), 1.0, 1.0 - 0.12 * (turf_crowd - 0.5));
-  // -- scree / cliff / snow ---------------------------------------
-  float3 scree_c = terrain_layer_integrated (dirt, smp, tc, far_blend);
-  scree_c *= 0.82 + 0.36 * dirt.sample (smp, tc * 0.061, bias (1.50)).r;
-  // Rein in the linear-space saturation of the pink gravel (ACES
-  // pushes warm midtones hard).
-  const float scree_value = dot (scree_c, float3 (0.299, 0.587, 0.114));
-  scree_c = mix (scree_c, scree_value * float3 (1.00, 0.96, 0.86), 0.72);
-
-  // The stones texture is olive; pull it toward a dry granite gray
-  // and let the macro variation streak it.
-  // The old shader fetched every projection of cliff and snow on every
-  // lowland pixel, even where smoothstep had made their contribution exactly
-  // zero. These branches are spatially coherent material regions and avoid
-  // nine albedo fetches across ordinary grass, paths, and beaches.
-  float3 cliff_c = scree_c;
-  if (cliff_coef > 0.0) {
-    cliff_c = terrain_layer_triplanar (
-      rock, smp, in.world_pos, n, u.params0.w * 1.7, far_blend);
-    const float cliff_value = dot (cliff_c, float3 (0.299, 0.587, 0.114));
-    const float strata =
-      0.5 + 0.5 * sin (in.world_pos.y * 0.075 +
-                       3.5 * moppe_value_noise (in.world_pos.xz * 0.006));
-    const float3 strata_tint =
-      mix (float3 (0.72, 0.77, 0.80), float3 (0.92, 0.83, 0.68), 0.22 * strata);
-    cliff_c = mix (cliff_c, cliff_value * strata_tint, 0.92);
-    cliff_c *= 0.82 + 0.42 * coarse + 0.10 * strata;
-  }
-
-  float3 snow_c = scree_c;
-  if (snow_coef > 0.0) {
-    snow_c = terrain_layer (snow, smp, tc, far_blend);
-    snow_c *=
-      0.75 + 0.5 * snow.sample (smp, tc * 0.053 + float2 (0.21, 0.43)).r;
-  }
-
-  // -- compose ----------------------------------------------------
-  float3 texel = grass_c;
-  texel = mix (texel, scree_c, scree_coef);
-  texel = mix (texel, cliff_c, cliff_coef);
-  texel = mix (texel, snow_c, snow_coef);
-  // Gentler warm ratio than the display-era tint: multiplicative
-  // hue shifts run stronger in linear light.
-  const float sand_value = dot (scree_c, float3 (0.299, 0.587, 0.114));
-  const float3 sand_c =
-    mix (scree_c, sand_value * float3 (1.12, 1.03, 0.82), 0.82);
-  // The extracted waterline describes lakes and rivers as well as the global
-  // sea. Give every gentle shore a narrow water-worked margin instead of
-  // letting turf meet translucent water at a mathematically sharp edge.
-  const float shore_material = max (beach_coef, 0.78 * swash_zone) *
-                               (1.0 - submerged) * (1.0 - snow_coef) *
-                               smoothstep (0.48, 0.74, n.y);
-  texel = mix (texel, sand_c, shore_material);
-  // The sediment ledger is material information the simulation already
-  // proved: fresh cuts expose raw regolith, deposition builds smooth
-  // pale alluvium on gentle ground.  Both defer to snow.
-  if (u.params5.z > 0.5) {
-    const float2 geo = geology;
-    const float cut = smoothstep (0.12, 0.72, geo.r);
-    const float fill = smoothstep (0.12, 0.72, geo.g);
-    const float3 cut_c =
-      mix (scree_c, scree_value * float3 (0.94, 0.84, 0.72), 0.55);
-    texel = mix (texel, cut_c, cut * (1.0 - snow_coef) * 0.42);
-    const float3 alluvium_c =
-      mix (scree_c, sand_value * float3 (1.05, 1.00, 0.88), 0.70);
-    const float fill_flat = smoothstep (0.78, 0.93, n.y);
-    texel = mix (texel, alluvium_c, fill * fill_flat * (1.0 - snow_coef) * 0.5);
-  }
-  // Concentrated drainage leaves worked ground. A stony wash band follows
-  // the channel flux from the headwater gullies down to the visible rivers,
-  // so running water no longer appears from untouched hillside. The band
-  // edge wanders with the coarse jitter instead of tracing the lattice.
-  const float wash = smoothstep (0.30, 0.85, channel_activity + 0.10 * jitter) *
-                     (1.0 - snow_coef) * (1.0 - submerged);
-  const float3 wash_c =
-    mix (scree_c, scree_value * float3 (0.88, 0.84, 0.76), 0.55) *
-    (0.82 + 0.30 * coarse);
-  texel = mix (texel, wash_c, 0.42 * wash);
-
-  // Total leaf area shadows and cools the ground at every LOD. This is an
-  // optical consequence of the stand, not another representation of its
-  // blades, and keeps the substrate beneath resolved grass from looking like
-  // bare sunlit soil. The terrain then integrates exactly the leaf-area
-  // fraction released by the mesh shader.
-  const float3 sward = blade_mean * patch_hue *
-                       (0.72 + 0.56 * turf_crowd + 0.20 * (turf_tuft - 0.5));
-  // Habitat already decides where the medium can root. Do not ask the
-  // substrate palette a second time: grass may cover sand or alluvium just as
-  // its resolved blades do, while their color remains visible underneath.
-  const float grass_claim = turf_cover;
-  const float grass_floor_shadow =
-    grass_claim * mix (0.24, 0.42, 1.0 - grass_integrated);
-  texel = mix (texel, texel * float3 (0.54, 0.66, 0.43), grass_floor_shadow);
-  const float grass_material = grass_claim * grass_integrated;
-  texel = mix (texel, sward, grass_material);
-
-  // Water clarity has something worth revealing. Close flat beds and their
-  // damp margins resolve into individual rounded stones; distance retires the
-  // cellular work before it can shimmer or become a permanent GPU tax.
-  const float pebble_material = max (submerged, 0.52 * swash_zone) *
-                                smoothstep (0.48, 0.90, n.y) *
-                                (1.0 - snow_coef) * fine_detail_visibility *
-                                (1.0 - smoothstep (18.0, 55.0, dist));
-  TerrainPebbleSample pebble = { 0.0, 0.5, float2 (0.0) };
-  if (pebble_material > 0.002) {
-    pebble = terrain_pebble_sample (in.world_pos.xz);
-    const float3 cool_stone (0.28, 0.31, 0.32);
-    const float3 warm_stone (0.39, 0.34, 0.29);
-    const float3 pale_stone (0.47, 0.46, 0.42);
-    float3 stone_srgb =
-      mix (cool_stone, warm_stone, smoothstep (0.18, 0.78, pebble.tone));
-    stone_srgb =
-      mix (stone_srgb, pale_stone, smoothstep (0.76, 0.97, pebble.tone));
-    const float3 stone = moppe_srgb (stone_srgb) * (0.72 + 0.36 * pebble.cap);
-    const float3 interstitial = moppe_srgb (float3 (0.10, 0.11, 0.105));
-    const float3 pebble_c = mix (interstitial, stone, pebble.cap);
-    texel = mix (texel, pebble_c, pebble_material * (0.52 + 0.48 * pebble.cap));
-  }
-  // Read the trail mask as a formed cross-section. Its falloff gives us two
-  // edge-parallel wear bands without imposing a world-aligned texture on a
-  // winding route. Coarse aggregate remains visible from the bike; the broad
-  // shoulder/core contrast survives in the overview. Snow and standing water
-  // are allowed to cover the path naturally.
-  const float trail_cover = (1.0 - snow_coef) * (1.0 - submerged);
-  const float trail_footprint = smoothstep (0.025, 0.32, trail);
-  const float trail_core = smoothstep (0.42, 0.88, trail);
-  const float trail_shoulder =
-    smoothstep (0.04, 0.22, trail) * (1.0 - smoothstep (0.38, 0.64, trail));
-  const float close_trail = 1.0 - smoothstep (55.0, 240.0, dist);
-  // Each octave retires before its wavelength falls through a pixel. The old
-  // generic visibility masks kept the 0.79 m octave alive even when one pixel
-  // covered more than a metre, exactly the recipe for moving glitter.
-  const float trail_coarse_visibility =
-    1.0 - smoothstep (0.64, 1.78, ground_pixel_m);
-  const float trail_fine_visibility =
-    1.0 - smoothstep (0.16, 0.43, ground_pixel_m);
-  const float trail_gravel_coarse =
-    mix (0.5,
-         moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)),
-         trail_coarse_visibility);
-  const float trail_gravel_fine =
-    mix (0.5,
-         moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9)),
-         trail_fine_visibility);
-  const float trail_gravel =
-    0.72 * trail_gravel_coarse + 0.28 * trail_gravel_fine;
-  const float worn_bands =
-    (1.0 - smoothstep (0.055, 0.15, abs (trail - 0.64))) * close_trail *
-    trail_footprint;
-
-  const float trail_value = mix (0.34, clamp (sand_value, 0.24, 0.56), 0.38);
-  float3 trail_c = mix (scree_c, trail_value * float3 (0.86, 0.57, 0.31), 0.94);
-  trail_c *= 0.93 + 0.14 * trail_gravel;
-  const float pale_grit = smoothstep (0.66, 0.84, trail_gravel_coarse);
-  trail_c = mix (trail_c,
-                 sand_value * float3 (0.98, 0.82, 0.58),
-                 0.055 * pale_grit * trail_coarse_visibility * trail_core);
-  trail_c *= 1.0 - 0.24 * trail_shoulder;
-  trail_c *= 1.0 - 0.16 * worn_bands;
-  trail_c *= 1.0 + 0.08 * trail_core * close_trail;
-
-  const float trail_material =
-    trail_cover * trail_footprint * (0.60 + 0.36 * trail_core);
-  texel = mix (texel, trail_c, trail_material);
-  // The home-base clearing is the circuit's visible origin: compacted warm
-  // aggregate with a pale center, legible both from the bike and on the map.
-  const float base_material =
-    smoothstep (0.03, 0.72, home_base) * (1.0 - submerged) * (1.0 - snow_coef);
-  const float3 base_c = sand_value * mix (float3 (0.70, 0.48, 0.22),
-                                          float3 (1.05, 0.88, 0.52),
-                                          smoothstep (0.70, 1.0, home_base));
-  texel = mix (texel, base_c, 0.92 * base_material);
-  // The canopy field is the filtered forest representation. Nearby it only
-  // darkens and cools the forest floor under explicit crown geometry. Farther
-  // away it becomes the integrated tree/ground response, preserving broad
-  // wooded masses after individual crowns become subpixel.
-  const float forest_presence = smoothstep (0.035, 0.72, forest_cover);
-  const float canopy_grain =
-    0.68 * moppe_value_noise (in.world_pos.xz * 0.018 + float2 (17.3, 5.7)) +
-    0.32 * moppe_value_noise (in.world_pos.xz * 0.061 + float2 (2.1, 41.9));
-  const float ground_value = dot (texel, float3 (0.299, 0.587, 0.114));
-  const float3 forest_c =
-    ground_value * float3 (0.55, 0.82, 0.40) * (0.82 + 0.30 * canopy_grain);
-  const float forest_distance = smoothstep (280.0, 1450.0, dist);
-  const float forest_material = forest_presence *
-                                mix (0.20, 0.62, forest_distance) *
-                                (1.0 - base_material) * (1.0 - trail_material);
-  texel = mix (texel, forest_c, forest_material);
-  // Wet soil loses diffuse energy and saturation. Underwater ground is
-  // darkest; moisture alone is a quieter bank/lowland treatment. It is a
-  // SOIL response: where the grass medium covers the pixel it must not
-  // apply, because a wet standing sward deepens its green -- the blade
-  // tint already carries that moisture response -- and greying it here
-  // made damp flats diverge from the lush blades growing on them.
-  const float wetness = max (0.62 * damp, submerged);
-  const float wet_luma = dot (texel, float3 (0.299, 0.587, 0.114));
-  texel = mix (texel,
-               mix (texel, float3 (wet_luma), 0.20) * float3 (0.52, 0.58, 0.60),
-               wetness * 0.58 * (1.0 - 0.85 * grass_material));
-  if (u.params4.x > 0.5) {
-    const uint2 overlay_size (terrain_overlay.get_width (),
-                              terrain_overlay.get_height ());
-    const uint2 overlay_position =
-      uint2 (round (fract (in.field_uv) * float2 (overlay_size))) %
-      overlay_size;
-    const float overlay_value = terrain_overlay.read (overlay_position).r;
-    const float4 overlay = terrain_overlay_color (overlay_value, u);
-    texel = mix (texel, overlay.rgb, overlay.a);
-  }
-
-  // How much world a pixel covers in every axis, not just across the
-  // ground plane: relief on a cliff is read on a vertical plane, where the
-  // XZ footprint says nothing about how much of it one pixel spans. This
-  // is what retires each relief octave at its own distance.
-  const float pixel_m =
-    max (length (dfdx (in.world_pos)), length (dfdy (in.world_pos)));
-
-  // Character, not only amount. Broken stone and fresh cuts fracture at a
-  // coarser wavelength than turf does; settled alluvium answers by losing
-  // amplitude rather than gaining frequency, and snow buries the lot.
-  const float cut_relief = smoothstep (0.10, 0.65, geology.r);
-  const float fill_relief = smoothstep (0.10, 0.65, geology.g);
-  float relief_wavelength =
-    mix (1.05, 2.90, saturate (cliff_coef + 0.45 * scree_coef));
-  // A compacted path has broader, lower relief than untouched gravel. This
-  // both reads as travelled ground and keeps its normal response out of the
-  // one-pixel HDR highlight regime.
-  relief_wavelength *= mix (1.0, 1.45, trail_material);
-  const float detail_strength =
-    (0.13 + 0.42 * cliff_coef + 0.11 * scree_coef + 0.20 * cut_relief +
-     0.035 * trail_material * close_trail) *
-    (1.0 - 0.55 * fill_relief) * (1.0 - 0.85 * snow_coef) *
-    mix (1.0, 0.62, trail_material);
-  n = terrain_perturb_normal (
-    n,
-    terrain_relief_volume (in.world_pos, n, pixel_m, relief_wavelength),
-    detail_strength);
-
-  // The same cellular caps perturb the bed normal. Albedo and relief therefore
-  // describe one set of stones instead of unrelated layers sliding through
-  // each other below the transparent surface.
-  const float pebble_strength = pebble_material * (0.06 + 0.08 * pebble.cap);
-  if (pebble_strength > 0.002)
-    n = terrain_perturb_normal (
-      n, float3 (pebble.gradient.x, 0.0, pebble.gradient.y), pebble_strength);
-
-  // Water-worked ground is anisotropic. The rill relief stays fixed in world
-  // space; removing the along-flow component of its gradient leaves relief
-  // that reads as streaks following the local drainage direction. Rotating
-  // the noise domain by the flow direction instead would swing the sample
-  // coordinate by the full world position wherever the direction turns,
-  // decorrelating into speckle and rings.
-  const float rill_strength = smoothstep (0.35, 0.90, channel_activity) *
-                              (1.0 - 0.85 * snow_coef) *
-                              (1.0 - submerged * 0.5) * 0.26;
-  if (rill_strength > 0.002) {
-    const float2 flow_dir = channel_flux / max (channel_activity, 1e-4);
-    const float2 g = terrain_relief_gradient (
-      in.world_pos.xz + float2 (13.7, 41.3), pixel_m, 1.15);
-    const float2 across = g - flow_dir * dot (g, flow_dir);
-    n = terrain_perturb_normal (
-      n, float3 (across.x, 0.0, across.y), rill_strength);
-  }
-
-  // Per-pixel Lambert with real cast shadows.
-  const float shadow = terrain_shadow_factor (
-    in.shadow_coord, in.fog, n, l, u.params1.z, u.params1.w, shadow_map);
-  const float direct_visibility =
-    shadow *
-    moppe_cloud_transmission (in.world_pos, l, u.params2.x, u.params2.y);
-
-  // Near trees provide their own silhouettes. Beneath and beyond them, stable
-  // canopy-filtered ground radiance preserves forest volume and shade without
-  // asking subpixel geometry to do the work (Bruneton 2012, #5BNBQQ,
-  // #X9PHPN).
-  const float canopy_footprint = forest_presence * (1.0 - base_material) *
-                                 (1.0 - trail_material) * (1.0 - snow_coef) *
-                                 (1.0 - submerged);
-  const float dapple = smoothstep (0.36, 0.72, canopy_grain);
-  const float near_canopy_sun = mix (0.42, 1.0, dapple);
-  const float canopy_sun = mix (near_canopy_sun, 0.62, forest_distance);
-  const float canopy_direct = mix (1.0, canopy_sun, canopy_footprint);
-  const float canopy_ambient = mix (1.0, 0.76, canopy_footprint);
-  // 0.9 is the old GL terrain material diffuse.
-  const float intensity = saturate ((dot (l, n) + 0.08) / 1.08);
-  // Cast shadow also cools the fill: shaded ground is lit by sky alone,
-  // while the hemisphere's warm bounce belongs to sunlit surroundings.
-  const float3 shade_fill =
-    mix (float3 (0.80, 0.92, 1.14), float3 (1.0), shadow);
-  const float3 diffuse_light =
-    intensity * direct_visibility * canopy_direct * 0.9 * u.sun_diffuse.rgb +
-    canopy_ambient * shade_fill * moppe_hemisphere_light (u.ambient.rgb, n);
-  float3 color = texel * diffuse_light;
-
-  // Material roughness gives rock and snow distinct grazing response instead
-  // of treating the whole heightfield as one matte sheet. Specular reflection
-  // is light, not dyed diffuse albedo: keeping it outside the texel product
-  // restores neutral glints on dark wet soil and colored rock.
-  const float3 h = normalize (l - view_dir);
-  const float roughness = mix (0.92, 0.68, cliff_coef);
-  const float material_spec =
-    (0.012 + 0.035 * (1.0 - roughness)) *
-    pow (max (dot (n, h), 0.0), mix (18.0, 72.0, 1.0 - roughness));
-  color +=
-    u.sun_specular.rgb * direct_visibility * canopy_direct * material_spec;
-  // Snowfields retain a broader crystalline sparkle into HDR headroom.
-  color += snow_coef * u.sun_specular.rgb * direct_visibility *
-           pow (max (dot (n, h), 0.0), 32.0) *
-           mix (0.06, 0.24, coarse_detail_visibility);
-  // Damp ground has a broad, low-energy sheen; shallow submerged stones can
-  // catch a tighter glint through the translucent water surface.
-  const float wet_spec =
-    wetness * pow (max (dot (n, h), 0.0), mix (18.0, 52.0, submerged));
-  color += u.sun_specular.rgb * direct_visibility * canopy_direct * wet_spec *
-           mix (0.025, 0.075, submerged);
-
-  // -- grass canopy material --------------------------------------
-  // Beyond blade reach the grass keeps being grass. The undergrowth layer
-  // samples a statistical medium -- individual blades realized from habitat
-  // fields -- and this material renders the same medium by its moments:
-  // aggregate transmission, an orientation-distribution sheen, and the
-  // opposition hotspot every real field shows. Turf is how much of the
-  // pixel that medium owns, mirroring the material mixes above.
-  const float turf = (1.0 - scree_coef) * (1.0 - cliff_coef) *
-                     (1.0 - snow_coef) * (1.0 - shore_material) *
-                     (1.0 - trail_material) * (1.0 - 0.92 * base_material) *
-                     (1.0 - submerged) * (1.0 - 0.42 * wash) *
-                     (1.0 - forest_material) * smoothstep (0.52, 0.78, n.y);
-  // The cover fraction weights the whole response: a litter gap between
-  // crowds neither glows nor shimmers, which keeps the material's lighting
-  // as patchy as its albedo -- the same field again.
-  const float canopy_grass = turf * grass_integrated * turf_cover;
-  if (canopy_grass > 0.002) {
-    // The same gust clock that bends near blades tilts the far orientation
-    // distribution's mean, so waves of sheen roll across distant fields in
-    // phase with the blades moving at the rider's feet: one wind, two
-    // representations.
-    const float gust = moppe_grass_gust (in.world_pos.xz, u.params2.x);
-    const float wave = 1.0 + 0.11 * gust;
-    const float3 canopy_light =
-      u.sun_diffuse.rgb * direct_visibility * canopy_direct;
-
-    // Ensemble backlight: the blade layer's transmission term integrated
-    // over its twist and exposure distributions (mean back-scatter times
-    // mean Beer-Lambert thinness), on the same chlorophyll spectrum and
-    // sqrt-albedo transmittance the blades use. Sun-gated by the same
-    // forward lobe, so a backlit hillside glows and a front-lit one keeps
-    // its diffuse reading.
-    const float toward = saturate (dot (view_dir, l));
-    const float lobe = moppe_grass_toward_lobe (toward);
-    const float3 chlorophyll = moppe_grass_chlorophyll ();
-    color += sqrt (texel) * canopy_light * chlorophyll * lobe * wave * 0.50 *
-             canopy_grass;
-
-    // Orientation-distribution sheen: Kajiya-Kay on the near-vertical mean
-    // axis, wide because the aggregate carries the full blade spread, its
-    // axis leaning along the wind displacement direction the gust drives.
-    const float3 canopy_axis =
-      moppe_grass_ensemble_axis (in.world_pos.xz, u.params2.x);
-
-    // The medium's diffuse moment. A field of near-vertical blades is lit
-    // by how much of each blade's FACE meets the sun -- Kajiya-Kay's sine
-    // term around the axis -- not by how the flat ground beneath it does.
-    // At a low sun that difference is most of why a real field stays
-    // bright while bare ground goes dark, and it is exactly the lighting
-    // seam the geometric band used to end on. Replace the flat-Lambert
-    // contribution for this fraction, including a negative correction when
-    // the blade ensemble intercepts less light, rather than only adding energy.
-    const float along_sun = dot (canopy_axis, l);
-    const float blade_diffuse =
-      0.52 * sqrt (saturate (1.0 - along_sun * along_sun));
-    color += texel * u.sun_diffuse.rgb * direct_visibility * canopy_direct *
-             (blade_diffuse - intensity) * 0.9 * wave * canopy_grass;
-    const float along = dot (canopy_axis, h);
-    const float sheen = pow (sqrt (saturate (1.0 - along * along)), 8.0) *
-                        (0.10 + 0.90 * toward * toward);
-    color += u.sun_specular.rgb * direct_visibility * canopy_direct * sheen *
-             wave * 0.35 * canopy_grass;
-
-    // Opposition surge: blades hide their own shadows around the antisolar
-    // point, so the field brightens mildly where the view runs with the
-    // light. This is what makes a grass hillside read grown rather than
-    // painted when the sun stands behind the rider.
-    const float retro = pow (saturate (-dot (view_dir, l)), 4.0);
-    color += texel * canopy_light * retro * 0.35 * canopy_grass;
-  }
-  if (u.params5.x > 0.0) {
-    // Cyan is the actual vertex-pulled render lattice. Its quarter-cell near
-    // field is allowed to disappear once it becomes sub-pixel instead of
-    // turning into moire. Amber sites are the authoritative source samples:
-    // one row of the materialized surface bundle per site.
-    const float2 cell = fract (in.mesh_coord);
-    const float2 axis_width = max (fwidth (in.mesh_coord), float2 (1e-4));
-    const float axis_edge = min (min (cell.x, 1.0 - cell.x) / axis_width.x,
-                                 min (cell.y, 1.0 - cell.y) / axis_width.y);
-    const float diagonal_width =
-      max (fwidth (in.mesh_coord.x + in.mesh_coord.y), 1e-4);
-    const float diagonal_edge = abs (cell.x + cell.y - 1.0) / diagonal_width;
-    const float edge = min (axis_edge, diagonal_edge);
-    const float line = 1.0 - smoothstep (0.45, 1.25, edge);
-    const float mesh_spacing =
-      1.0 / max (max (axis_width.x, axis_width.y), 1e-4);
-    const float mesh_visible = smoothstep (2.5, 5.0, mesh_spacing);
-    const float2 vertex_distance =
-      min (cell, 1.0 - cell) / max (axis_width, float2 (1e-4));
-    const float mesh_vertex =
-      1.0 - smoothstep (0.75, 1.7, length (vertex_distance));
-
-    const float2 source_cell = fract (in.grid_coord);
-    const float2 source_width = max (fwidth (in.grid_coord), float2 (1e-4));
-    const float2 source_distance =
-      min (source_cell, 1.0 - source_cell) / source_width;
-    const float source_spacing =
-      1.0 / max (max (source_width.x, source_width.y), 1e-4);
-    const float source_visible = smoothstep (2.5, 5.0, source_spacing);
-    const float source_vertex =
-      (1.0 - smoothstep (1.1, 2.5, length (source_distance))) * source_visible;
-
-    const float distance_fade = 1.0 - smoothstep (1400.0, 2200.0, dist);
-    const float lod_band =
-      clamp (log2 (max (in.lod_step, 0.25)) + 2.0, 0.0, 5.0) / 5.0;
-    const float3 lod_tint =
-      mix (float3 (0.82, 0.94, 1.0), float3 (1.0, 0.84, 0.68), lod_band);
-    color = mix (color, color * lod_tint, 0.12 * distance_fade);
-    const float wire = line * mesh_visible * distance_fade;
-    color = mix (color, float3 (0.015, 0.16, 0.19), 0.82 * wire);
-    color = mix (color,
-                 float3 (0.16, 0.95, 1.0),
-                 0.88 * mesh_vertex * mesh_visible * distance_fade);
-    color = mix (
-      color, float3 (1.0, 0.63, 0.08), 0.96 * source_vertex * distance_fade);
-  }
+  const TerrainLighting lighting = terrain_light_ground (
+    texel, n, view_dir, in, readings, scales, bands, material, u, shadow_map);
+  float3 color = terrain_light_grass_canopy (lighting.color,
+                                             texel,
+                                             n,
+                                             view_dir,
+                                             in,
+                                             readings,
+                                             bands,
+                                             palette,
+                                             material,
+                                             lighting,
+                                             u);
+  color = terrain_apply_lattice_overlay (color, in, dist, u);
   return moppe_temporal_output (
     float4 (mix (color, fog_c, fog_factor), 1.0), in.motion, 0.0);
 }
