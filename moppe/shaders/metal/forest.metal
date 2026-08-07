@@ -185,6 +185,48 @@ static inline uint forest_part_count (
   return MOPPE_FOREST_PARTS_PER_TREE;
 }
 
+struct ForestSceneSchedule {
+  uint parts;
+  uint pixel_code;
+};
+
+static inline ForestSceneSchedule
+forest_scene_schedule (uint tree_index,
+                       constant MoppeForestUniforms& u,
+                       device const MoppeForestInstance* trees) {
+  ForestSceneSchedule schedule = { 0u, 0u };
+  if (tree_index >= uint (u.world.z))
+    return schedule;
+
+  const MoppeForestInstance tree = trees[tree_index];
+  const float3 root = forest_root (tree, u, 4u, false);
+  const float3 up = forest_up (tree);
+  const float height = tree.root_height.w;
+  // The bound must contain the whole organism, root to tip to bough reach.
+  const float radius = 0.55 * height + 1.4 * tree.up_radius.w;
+  const float3 centre = root + up * (0.52 * height);
+  const float4 clip = u.view_proj * float4 (centre, 1.0);
+  const float clip_radius =
+    radius * max (abs (u.view_proj[0][0]), abs (u.view_proj[1][1]));
+  const bool visible = clip.w > -radius &&
+                       abs (clip.x) < clip.w + clip_radius &&
+                       abs (clip.y) < clip.w + clip_radius;
+  if (!visible)
+    return schedule;
+
+  // Projected size uses view depth so it stays smooth at every approach
+  // angle and saturates once the rider is beside the organism.
+  const float focal = abs (u.view_proj[1][1]);
+  const float pixels = height * focal * 0.5 * u.temporal.y / max (clip.w, 0.6);
+  schedule.pixel_code = min (uint (pixels), 65535u);
+  schedule.parts = forest_part_count (pixels,
+                                      schedule.pixel_code,
+                                      height,
+                                      tree.identity.x,
+                                      tree.identity.y == 1u);
+  return schedule;
+}
+
 // One object threadgroup considers one individual: thread zero reads the
 // organism and chooses its projected detail, then all threads cooperate to
 // schedule its organs. A hero assembly owns the whole payload, so dense
@@ -197,53 +239,20 @@ static inline uint forest_part_count (
                                [[buffer (MOPPE_BUF_FRAME)]],
                                device const MoppeForestInstance* trees
                                [[buffer (MOPPE_BUF_FOREST)]]) {
-  // Every thread derives the same cheap verdict for its tree, so the
-  // organ schedule needs no shared memory and no barrier.
   const uint tree_index = group.x;
-  const uint tree_count = uint (u.world.z);
-  uint parts = 0u;
-  uint pixel_code = 0u;
-  if (tree_index < tree_count) {
-    const MoppeForestInstance tree = trees[tree_index];
-    const float3 root = forest_root (tree, u, 4u, false);
-    const float3 up = forest_up (tree);
-    const float height = tree.root_height.w;
-    // The bound must contain the whole organism, root to tip to bough
-    // reach: a crown-sized sphere at mid-height excludes the trunk, and a
-    // tree the rider passes under then fails the frustum test and
-    // vanishes while filling the screen.
-    const float radius = 0.55 * height + 1.4 * tree.up_radius.w;
-    const float3 centre = root + up * (0.52 * height);
-    const float4 clip = u.view_proj * float4 (centre, 1.0);
-    const float clip_radius =
-      radius * max (abs (u.view_proj[0][0]), abs (u.view_proj[1][1]));
-    const bool visible = clip.w > -radius &&
-                         abs (clip.x) < clip.w + clip_radius &&
-                         abs (clip.y) < clip.w + clip_radius;
-    float pixels = 0.0;
-    if (visible) {
-      // Projected size from the centre's view depth rather than endpoint
-      // projection: the same smooth, monotone measure at every approach
-      // angle. Endpoint differences collapse discontinuously the moment the
-      // root or tip crosses the camera plane, which used to pop a passing
-      // tree's whole complement of boughs in one frame. The clamped depth
-      // saturates the measure once the rider is beside the organism.
-      const float focal = abs (u.view_proj[1][1]);
-      pixels = height * focal * 0.5 * u.temporal.y / max (clip.w, 0.6);
-      // The scene path never tiles periodic copies, so the copy slot carries
-      // the projected size instead: the mesh stage reads it back to grow the
-      // newest boughs in continuously.
-      pixel_code = min (uint (pixels), 65535u);
-      parts = forest_part_count (
-        pixels, pixel_code, height, tree.identity.x, tree.identity.y == 1u);
-    }
-  }
+  // Every thread derives the same cheap verdict, so scheduling needs no
+  // shared memory or barrier.
+  const ForestSceneSchedule schedule =
+    forest_scene_schedule (tree_index, u, trees);
   if (thread_id == 0u) {
-    payload.count = parts;
-    mesh_grid.set_threadgroups_per_grid (uint3 (parts, 1, 1));
+    payload.count = schedule.parts;
+    mesh_grid.set_threadgroups_per_grid (uint3 (schedule.parts, 1, 1));
   }
-  for (uint part = thread_id; part < parts; part += MOPPE_FOREST_OBJECT_THREADS)
-    payload.parts[part] = { tree_index, part, parts, pixel_code };
+  for (uint part = thread_id; part < schedule.parts;
+       part += MOPPE_FOREST_OBJECT_THREADS)
+    payload.parts[part] = {
+      tree_index, part, schedule.parts, schedule.pixel_code
+    };
 }
 
 // Shadow detail is deliberately coarser: every periodic image contributes one
@@ -325,10 +334,11 @@ struct ForestOrgan {
   float crown;
 };
 
-static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
-                                        constant MoppeForestUniforms& u,
-                                        ForestPart part,
-                                        bool shadow) {
+static inline ForestOrgan
+forest_base_organ (thread const MoppeForestInstance& tree,
+                   constant MoppeForestUniforms& u,
+                   ForestPart part,
+                   bool shadow) {
   ForestOrgan organ;
   organ.root = forest_root (tree, u, part.copy, shadow);
   organ.up = forest_up (tree);
@@ -337,14 +347,13 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
   organ.conifer = tree.identity.y == 1u;
   organ.proxy = part.lod == 1u;
   organ.wood = part.part == 0u && !organ.proxy;
-  // A conifer above proxy size is trunk plus boughs and nothing else: no
-  // shell or cone primitive exists at any visible tier.
   organ.frond = organ.conifer && !organ.proxy && part.part >= 1u;
   organ.bundle = 1u;
   organ.rank = 0u;
   organ.count = 0.0;
   organ.boost = 1.0;
   organ.crown = tree.up_radius.w;
+
   const float heading = 6.2831853 * forest_hash (organ.seed, 3u);
   const float3 reference =
     abs (organ.up.y) > 0.92 ? float3 (0.0, 0.0, 1.0) : float3 (0.0, 1.0, 0.0);
@@ -352,78 +361,88 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
   const float3 tangent = normalize (cross (basis, organ.up));
   organ.across = basis * cos (heading) + tangent * sin (heading);
   organ.forward = normalize (cross (organ.across, organ.up));
+  return organ;
+}
 
-  const float crown = tree.up_radius.w;
-  if (organ.proxy) {
-    organ.centre =
-      organ.root + organ.up * (organ.conifer ? 0.55 : 0.62) * organ.tree_height;
-    organ.radius_x = crown * (organ.conifer ? 0.86 : 1.08);
-    organ.radius_z = crown * (organ.conifer ? 0.80 : 0.98);
-    organ.half_height = organ.tree_height * (organ.conifer ? 0.52 : 0.35);
-    organ.bend = 0.38;
-    organ.flutter = 0.04;
-  } else if (organ.wood) {
-    const float trunk_rise = organ.conifer ? 0.46 : 0.40;
-    organ.centre = organ.root + organ.up * trunk_rise * organ.tree_height;
-    // A spruce bole is slender for its height; the broadleaf keeps its
-    // stouter stem.
-    organ.radius_x = organ.tree_height *
-                     mix (0.018, 0.030, float (tree.identity.z) / 3.0) *
-                     (organ.conifer ? 0.62 : 1.0);
-    organ.radius_z = organ.radius_x;
-    organ.half_height = trunk_rise * organ.tree_height;
-    organ.bend = 0.12;
-    organ.flutter = 0.0;
-  } else if (organ.frond) {
-    // The organ keeps the tree frame; each vertex derives its bough from a
-    // stable rank. Emission ranks permute through the nine-by-seven whorl
-    // grid by a coprime stride, so a partially grown crown samples every
-    // whorl evenly and each bough keeps its geometry at every count. The
-    // newest boughs grow in from nothing as projected size increases, and
-    // while the crown is sparse the surviving tufts widen to hold its
-    // coverage: detail migrates continuously, never switching.
-    organ.count = forest_bough_count (
-      forest_bough_measure (float (part.copy), organ.tree_height),
-      forest_lod_threshold (organ.seed));
-    organ.bundle =
-      forest_bough_bundle (part.copy, forest_lod_threshold (organ.seed));
-    organ.rank = (part.part - 1u) * organ.bundle;
-    // Survivor widening: conservation of foliage. A crown must never thin
-    // with distance -- a removed bough's mass moves into the survivors, so
-    // the square-root area ratio applies at FULL strength at every count.
-    // It converges to exactly one as the complement completes, so near
-    // geometry is stable without any fade, and mid-band trees keep the
-    // same visual density they have up close.
-    const float sparse = clamp (sqrt (63.0 / max (organ.count, 1.0)), 1.0, 2.0);
-    organ.boost =
-      sparse * sqrt (13.0 / float (forest_bough_tufts (organ.bundle)));
-    organ.centre = organ.root;
-    organ.radius_x = crown;
-    organ.radius_z = crown;
-    organ.half_height = 0.0;
-    organ.bend = 0.55;
-    organ.flutter = 0.38;
-  } else {
-    const float lobe = float (part.part - 1u);
-    const float count = float (max (part.lod - 1u, 1u));
-    const float turn =
-      2.3999632 * lobe + 0.55 * forest_hash (organ.seed, part.part + 51u);
-    const float ring =
-      count > 2.0 ? mix (0.26, 0.58, fract (lobe * 0.61)) : 0.30;
-    const float rise = 0.56 + 0.26 * forest_hash (organ.seed, part.part + 61u);
-    organ.centre =
-      organ.root + organ.up * rise * organ.tree_height +
-      (organ.across * cos (turn) + organ.forward * sin (turn)) * crown * ring;
-    const float scale = count > 2.0 ? 0.37 : 0.68;
-    organ.radius_x =
-      crown * scale * (0.84 + 0.28 * forest_hash (organ.seed, part.part + 71u));
-    organ.radius_z =
-      crown * scale * (0.82 + 0.30 * forest_hash (organ.seed, part.part + 79u));
-    organ.half_height =
-      crown * scale * (0.78 + 0.38 * forest_hash (organ.seed, part.part + 83u));
-    organ.bend = 0.40 + 0.48 * rise;
-    organ.flutter = 0.34;
-  }
+static inline void forest_configure_proxy (thread ForestOrgan& organ) {
+  organ.centre =
+    organ.root + organ.up * (organ.conifer ? 0.55 : 0.62) * organ.tree_height;
+  organ.radius_x = organ.crown * (organ.conifer ? 0.86 : 1.08);
+  organ.radius_z = organ.crown * (organ.conifer ? 0.80 : 0.98);
+  organ.half_height = organ.tree_height * (organ.conifer ? 0.52 : 0.35);
+  organ.bend = 0.38;
+  organ.flutter = 0.04;
+}
+
+static inline void
+forest_configure_stem (thread ForestOrgan& organ,
+                       thread const MoppeForestInstance& tree) {
+  const float trunk_rise = organ.conifer ? 0.46 : 0.40;
+  organ.centre = organ.root + organ.up * trunk_rise * organ.tree_height;
+  organ.radius_x = organ.tree_height *
+                   mix (0.018, 0.030, float (tree.identity.z) / 3.0) *
+                   (organ.conifer ? 0.62 : 1.0);
+  organ.radius_z = organ.radius_x;
+  organ.half_height = trunk_rise * organ.tree_height;
+  organ.bend = 0.12;
+  organ.flutter = 0.0;
+}
+
+static inline void forest_configure_frond (thread ForestOrgan& organ,
+                                           ForestPart part) {
+  const float threshold = forest_lod_threshold (organ.seed);
+  organ.count = forest_bough_count (
+    forest_bough_measure (float (part.copy), organ.tree_height), threshold);
+  organ.bundle = forest_bough_bundle (part.copy, threshold);
+  organ.rank = (part.part - 1u) * organ.bundle;
+  // Preserve foliage area while boughs are absent, converging to one once the
+  // full complement has arrived.
+  const float sparse = clamp (sqrt (63.0 / max (organ.count, 1.0)), 1.0, 2.0);
+  organ.boost =
+    sparse * sqrt (13.0 / float (forest_bough_tufts (organ.bundle)));
+  organ.centre = organ.root;
+  organ.radius_x = organ.crown;
+  organ.radius_z = organ.crown;
+  organ.half_height = 0.0;
+  organ.bend = 0.55;
+  organ.flutter = 0.38;
+}
+
+static inline void forest_configure_crown_lobe (thread ForestOrgan& organ,
+                                                ForestPart part) {
+  const float lobe = float (part.part - 1u);
+  const float count = float (max (part.lod - 1u, 1u));
+  const float turn =
+    2.3999632 * lobe + 0.55 * forest_hash (organ.seed, part.part + 51u);
+  const float ring = count > 2.0 ? mix (0.26, 0.58, fract (lobe * 0.61)) : 0.30;
+  const float rise = 0.56 + 0.26 * forest_hash (organ.seed, part.part + 61u);
+  organ.centre = organ.root + organ.up * rise * organ.tree_height +
+                 (organ.across * cos (turn) + organ.forward * sin (turn)) *
+                   organ.crown * ring;
+  const float scale = count > 2.0 ? 0.37 : 0.68;
+  organ.radius_x = organ.crown * scale *
+                   (0.84 + 0.28 * forest_hash (organ.seed, part.part + 71u));
+  organ.radius_z = organ.crown * scale *
+                   (0.82 + 0.30 * forest_hash (organ.seed, part.part + 79u));
+  organ.half_height = organ.crown * scale *
+                      (0.78 + 0.38 * forest_hash (organ.seed, part.part + 83u));
+  organ.bend = 0.40 + 0.48 * rise;
+  organ.flutter = 0.34;
+}
+
+static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
+                                        constant MoppeForestUniforms& u,
+                                        ForestPart part,
+                                        bool shadow) {
+  ForestOrgan organ = forest_base_organ (tree, u, part, shadow);
+  if (organ.proxy)
+    forest_configure_proxy (organ);
+  else if (organ.wood)
+    forest_configure_stem (organ, tree);
+  else if (organ.frond)
+    forest_configure_frond (organ, part);
+  else
+    forest_configure_crown_lobe (organ, part);
   return organ;
 }
 
@@ -472,125 +491,30 @@ struct ForestPoint {
   float exposure;
 };
 
-static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
-                                         uint vertex_index) {
+static inline ForestPoint forest_stem_vertex (thread const ForestOrgan& organ,
+                                              uint vertex_index) {
+  const uint side = vertex_index % 12u;
+  const uint ring = vertex_index / 12u;
+  const float turn = 6.2831853 * float (side) / 12.0 +
+                     0.06 * (forest_hash (organ.seed, side + 171u) - 0.5);
+  const float taper = ring == 0u ? 1.70 : 0.30;
+  const float girth =
+    0.91 + 0.18 * forest_hash (organ.seed, side * 7u + ring + 177u);
+  const float3 radial = organ.across * cos (turn) + organ.forward * sin (turn);
+
   ForestPoint point;
-  if (organ.wood) {
-    // Twelve slightly irregular sides: a trunk is the one organ the camera
-    // meets at arm's length, where an even octagonal cone reads as a bollard.
-    const uint side = vertex_index % 12u;
-    const uint ring = vertex_index / 12u;
-    const float turn = 6.2831853 * float (side) / 12.0 +
-                       0.06 * (forest_hash (organ.seed, side + 171u) - 0.5);
-    const float taper = ring == 0u ? 1.70 : 0.30;
-    const float girth =
-      0.91 + 0.18 * forest_hash (organ.seed, side * 7u + ring + 177u);
-    const float3 radial =
-      organ.across * cos (turn) + organ.forward * sin (turn);
-    point.position =
-      organ.centre +
-      organ.up * (ring == 0u ? -organ.half_height : organ.half_height) +
-      radial * organ.radius_x * taper * girth;
-    point.normal = radial;
-    point.exposure = ring == 0u ? 0.18 : 0.72;
-    return point;
-  }
+  point.position =
+    organ.centre +
+    organ.up * (ring == 0u ? -organ.half_height : organ.half_height) +
+    radial * organ.radius_x * taper * girth;
+  point.normal = radial;
+  point.exposure = ring == 0u ? 0.18 : 0.72;
+  return point;
+}
 
-  if (organ.frond) {
-    // Each bough is a comb of needle tufts along a drooping axis: an apex
-    // plus four separated two-vertex blades per tuft. A twig is mostly air,
-    // so the blades stay disconnected: connected fans read as paddles, and
-    // overlapping paddles rebuild the very cone this tier replaced. The
-    // bough frame derives per vertex from the stable rank, which is what
-    // lets a bundle pack several distant boughs into one meshlet. In the
-    // bundled band a whole tuft is a few pixels, where four overlapping
-    // micro-triangles cost quadruple fragment work for no resolvable
-    // difference, so the coarse tuft is one quad spanning the same splay
-    // (Kuth 2025's pixels-per-triangle discipline at organ scale).
-    const bool coarse = organ.bundle == 4u;
-    const uint per_tuft = coarse ? 4u : 9u;
-    const uint tufts = forest_bough_tufts (organ.bundle);
-    const uint stride = tufts * per_tuft;
-    const uint rank = organ.rank + vertex_index / stride;
-    const uint rem = vertex_index % stride;
-    const uint fan = rem / per_tuft;
-    const uint local = rem % per_tuft;
-    const uint slot = forest_bough_slot (rank);
-    const uint whorl = slot / 7u;
-    const uint spoke = slot % 7u;
-    const float t = float (whorl) / 8.0;
-    const float rise = mix (0.22, 0.97, t);
-    const float turn =
-      6.2831853 * (float (spoke) / 7.0 + 0.618034 * float (whorl) +
-                   0.07 * (forest_hash (organ.seed, slot + 211u) - 0.5));
-    const float3 along =
-      normalize (organ.across * cos (turn) + organ.forward * sin (turn));
-    const float3 side = normalize (cross (organ.up, along));
-    const float reach = 0.72 + 0.50 * forest_hash (organ.seed, slot + 223u);
-    // Large low boughs fade in over many ranks and small high ones over
-    // few, so whatever arrives while the rider is close changes the crown
-    // imperceptibly per frame. The floor complement never arrives -- those
-    // boughs exist at every distance -- so it stands at full growth;
-    // half-grown permanent boughs would leak crown mass at the far end.
-    const float grow =
-      rank < 21u
-        ? 1.0
-        : saturate ((organ.count - float (rank)) / (3.0 + 10.0 * (1.0 - t)));
-    const float length = organ.crown * mix (1.35, 0.18, t) * reach * grow;
-    const float3 origin = organ.root + organ.up * rise * organ.tree_height;
-    const float s = mix (0.08, 1.0, float (fan) / float (max (tufts - 1u, 1u)));
-    // The axis droops in proportion to its reach, so long lower boughs
-    // sweep down through the band beneath their whorl.
-    const float droop = 0.10 - 0.40 * s * s;
-    const float wobble = fan % 2u == 0u ? 1.0 : -1.0;
-    const float3 axis_point =
-      origin + along * length * s +
-      side * length * 0.12 * wobble * forest_hash (organ.seed, fan + 17u) +
-      organ.up * length * droop;
-    const float radius = length * mix (0.22, 0.10, s) * organ.boost *
-                         (0.80 + 0.40 * forest_hash (organ.seed, fan + 31u));
-    if (coarse) {
-      // Two triangles spanning the arc the blades splay over: outer
-      // corners at full reach and rim depth, inner corners high and
-      // tucked toward the axis, so the sheet is TENTED like the fan --
-      // a flat quad in the bough plane disappears edge-on, and the
-      // tuft's silhouette lives in the apex-to-rim drop.
-      const bool inner = local == 1u || local == 2u;
-      const float arc =
-        mix (-2.2, 2.2, float (local) / 3.0) +
-        0.20 * (forest_hash (organ.seed, fan * 13u + local + 41u) - 0.5);
-      const float needle =
-        0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + local + 57u);
-      const float3 rim_dir = normalize (along * cos (arc) + side * sin (arc));
-      point.position = axis_point +
-                       rim_dir * radius * needle * (inner ? 0.40 : 1.0) -
-                       organ.up * radius * (inner ? 0.06 : 0.55);
-      point.normal = normalize (organ.up + rim_dir * 0.35);
-      point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
-      return point;
-    }
-    if (local == 0u) {
-      point.position = axis_point;
-      point.normal = normalize (organ.up + along * 0.2);
-      point.exposure = 0.32;
-      return point;
-    }
-    const uint rim = local - 1u;
-    const uint blade = rim / 2u;
-    const float edge = rim % 2u == 0u ? -1.0 : 1.0;
-    const float arc =
-      mix (-2.5, 2.5, float (blade) / 3.0) + edge * 0.42 +
-      0.20 * (forest_hash (organ.seed, fan * 13u + blade + 41u) - 0.5);
-    const float needle =
-      0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + blade + 57u);
-    const float3 rim_dir = normalize (along * cos (arc) + side * sin (arc));
-    point.position =
-      axis_point + rim_dir * radius * needle - organ.up * radius * 0.55;
-    point.normal = normalize (organ.up + rim_dir * 0.35);
-    point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
-    return point;
-  }
-
+static inline ForestPoint forest_crown_vertex (thread const ForestOrgan& organ,
+                                               uint vertex_index) {
+  ForestPoint point;
   if (vertex_index == 0u || vertex_index == 31u) {
     const float sign = vertex_index == 0u ? -1.0 : 1.0;
     point.position = organ.centre + organ.up * organ.half_height * sign;
@@ -606,24 +530,130 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
   const float turn =
     base_turn +
     0.09 * (forest_hash (organ.seed, ring * 17u + side + 111u) - 0.5);
-  // Conifer shells wear a rougher edge than broadleaf lobes: the cone is a
-  // mass reading, and an even rim is what makes it read as felt.
   const float jitter = organ.conifer ? 0.40 : 0.22;
-  const float r = forest_ring_radius (ring, organ.conifer, organ.proxy) *
-                  (1.0 - 0.5 * jitter +
-                   jitter * forest_hash (organ.seed, ring * 23u + side + 131u));
-  const float y = forest_ring_level (ring, organ.conifer, organ.proxy) +
-                  (organ.conifer ? 0.10 : 0.07) *
-                    (forest_hash (organ.seed, ring * 29u + side + 151u) - 0.5);
-  const float x = cos (turn) * organ.radius_x * r;
-  const float z = sin (turn) * organ.radius_z * r;
+  const float radius =
+    forest_ring_radius (ring, organ.conifer, organ.proxy) *
+    (1.0 - 0.5 * jitter +
+     jitter * forest_hash (organ.seed, ring * 23u + side + 131u));
+  const float level =
+    forest_ring_level (ring, organ.conifer, organ.proxy) +
+    (organ.conifer ? 0.10 : 0.07) *
+      (forest_hash (organ.seed, ring * 29u + side + 151u) - 0.5);
+  const float x = cos (turn) * organ.radius_x * radius;
+  const float z = sin (turn) * organ.radius_z * radius;
   point.position = organ.centre + organ.across * x + organ.forward * z +
-                   organ.up * organ.half_height * y;
+                   organ.up * organ.half_height * level;
   point.normal = normalize (organ.across * (x / max (organ.radius_x, 0.001)) +
                             organ.forward * (z / max (organ.radius_z, 0.001)) +
-                            organ.up * y * 0.72);
-  point.exposure = saturate (0.40 + 0.38 * y + 0.22 * point.normal.y);
+                            organ.up * level * 0.72);
+  point.exposure = saturate (0.40 + 0.38 * level + 0.22 * point.normal.y);
   return point;
+}
+
+static inline ForestPoint forest_frond_vertex (thread const ForestOrgan& organ,
+                                               uint vertex_index) {
+  ForestPoint point;
+  // Each bough is a comb of needle tufts along a drooping axis: an apex
+  // plus four separated two-vertex blades per tuft. A twig is mostly air,
+  // so the blades stay disconnected: connected fans read as paddles, and
+  // overlapping paddles rebuild the very cone this tier replaced. The
+  // bough frame derives per vertex from the stable rank, which is what
+  // lets a bundle pack several distant boughs into one meshlet. In the
+  // bundled band a whole tuft is a few pixels, where four overlapping
+  // micro-triangles cost quadruple fragment work for no resolvable
+  // difference, so the coarse tuft is one quad spanning the same splay
+  // (Kuth 2025's pixels-per-triangle discipline at organ scale).
+  const bool coarse = organ.bundle == 4u;
+  const uint per_tuft = coarse ? 4u : 9u;
+  const uint tufts = forest_bough_tufts (organ.bundle);
+  const uint stride = tufts * per_tuft;
+  const uint rank = organ.rank + vertex_index / stride;
+  const uint rem = vertex_index % stride;
+  const uint fan = rem / per_tuft;
+  const uint local = rem % per_tuft;
+  const uint slot = forest_bough_slot (rank);
+  const uint whorl = slot / 7u;
+  const uint spoke = slot % 7u;
+  const float t = float (whorl) / 8.0;
+  const float rise = mix (0.22, 0.97, t);
+  const float turn =
+    6.2831853 * (float (spoke) / 7.0 + 0.618034 * float (whorl) +
+                 0.07 * (forest_hash (organ.seed, slot + 211u) - 0.5));
+  const float3 along =
+    normalize (organ.across * cos (turn) + organ.forward * sin (turn));
+  const float3 side = normalize (cross (organ.up, along));
+  const float reach = 0.72 + 0.50 * forest_hash (organ.seed, slot + 223u);
+  // Large low boughs fade in over many ranks and small high ones over
+  // few, so whatever arrives while the rider is close changes the crown
+  // imperceptibly per frame. The floor complement never arrives -- those
+  // boughs exist at every distance -- so it stands at full growth;
+  // half-grown permanent boughs would leak crown mass at the far end.
+  const float grow =
+    rank < 21u
+      ? 1.0
+      : saturate ((organ.count - float (rank)) / (3.0 + 10.0 * (1.0 - t)));
+  const float length = organ.crown * mix (1.35, 0.18, t) * reach * grow;
+  const float3 origin = organ.root + organ.up * rise * organ.tree_height;
+  const float s = mix (0.08, 1.0, float (fan) / float (max (tufts - 1u, 1u)));
+  // The axis droops in proportion to its reach, so long lower boughs
+  // sweep down through the band beneath their whorl.
+  const float droop = 0.10 - 0.40 * s * s;
+  const float wobble = fan % 2u == 0u ? 1.0 : -1.0;
+  const float3 axis_point =
+    origin + along * length * s +
+    side * length * 0.12 * wobble * forest_hash (organ.seed, fan + 17u) +
+    organ.up * length * droop;
+  const float radius = length * mix (0.22, 0.10, s) * organ.boost *
+                       (0.80 + 0.40 * forest_hash (organ.seed, fan + 31u));
+  if (coarse) {
+    // Two triangles spanning the arc the blades splay over: outer
+    // corners at full reach and rim depth, inner corners high and
+    // tucked toward the axis, so the sheet is TENTED like the fan --
+    // a flat quad in the bough plane disappears edge-on, and the
+    // tuft's silhouette lives in the apex-to-rim drop.
+    const bool inner = local == 1u || local == 2u;
+    const float arc =
+      mix (-2.2, 2.2, float (local) / 3.0) +
+      0.20 * (forest_hash (organ.seed, fan * 13u + local + 41u) - 0.5);
+    const float needle =
+      0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + local + 57u);
+    const float3 rim_dir = normalize (along * cos (arc) + side * sin (arc));
+    point.position = axis_point +
+                     rim_dir * radius * needle * (inner ? 0.40 : 1.0) -
+                     organ.up * radius * (inner ? 0.06 : 0.55);
+    point.normal = normalize (organ.up + rim_dir * 0.35);
+    point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
+    return point;
+  }
+  if (local == 0u) {
+    point.position = axis_point;
+    point.normal = normalize (organ.up + along * 0.2);
+    point.exposure = 0.32;
+    return point;
+  }
+  const uint rim = local - 1u;
+  const uint blade = rim / 2u;
+  const float edge = rim % 2u == 0u ? -1.0 : 1.0;
+  const float arc =
+    mix (-2.5, 2.5, float (blade) / 3.0) + edge * 0.42 +
+    0.20 * (forest_hash (organ.seed, fan * 13u + blade + 41u) - 0.5);
+  const float needle =
+    0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + blade + 57u);
+  const float3 rim_dir = normalize (along * cos (arc) + side * sin (arc));
+  point.position =
+    axis_point + rim_dir * radius * needle - organ.up * radius * 0.55;
+  point.normal = normalize (organ.up + rim_dir * 0.35);
+  point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
+  return point;
+}
+
+static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
+                                         uint vertex_index) {
+  if (organ.wood)
+    return forest_stem_vertex (organ, vertex_index);
+  if (organ.frond)
+    return forest_frond_vertex (organ, vertex_index);
+  return forest_crown_vertex (organ, vertex_index);
 }
 
 template <typename Mesh>
@@ -672,6 +702,54 @@ static inline void forest_indices (thread Mesh& out,
   out.set_index (slot + 2u, triangle.z);
 }
 
+struct ForestMeshCounts {
+  uint vertices;
+  uint primitives;
+};
+
+static inline ForestMeshCounts
+forest_mesh_counts (thread const ForestOrgan& organ) {
+  const uint tufts = organ.frond ? forest_bough_tufts (organ.bundle) : 0u;
+  const uint per_tuft_vertices = organ.bundle == 4u ? 4u : 9u;
+  const uint per_tuft_primitives = organ.bundle == 4u ? 2u : 4u;
+  return {
+    organ.wood    ? 24u
+    : organ.frond ? organ.bundle * tufts * per_tuft_vertices
+                  : 32u,
+    organ.wood    ? 24u
+    : organ.frond ? organ.bundle * tufts * per_tuft_primitives
+                  : 60u,
+  };
+}
+
+static inline ForestVaryings
+forest_scene_vertex (thread const MoppeForestInstance& tree,
+                     thread const ForestOrgan& organ,
+                     uint vertex_index,
+                     constant MoppeForestUniforms& u) {
+  const ForestPoint base = forest_vertex (organ, vertex_index);
+  const float rise = saturate (dot (base.position - organ.root, organ.up) /
+                               max (organ.tree_height, 0.01));
+  const float bend = organ.bend * rise * rise;
+  const float flutter = organ.flutter * rise;
+  const float3 current = moppe_wind (base.position, bend, flutter, u.params.x);
+  const float3 previous =
+    moppe_wind (base.position, bend, flutter, u.temporal.z);
+
+  ForestVaryings result;
+  result.position = u.view_proj * float4 (current, 1.0);
+  result.world_pos = current;
+  result.normal = base.normal;
+  result.albedo = forest_palette (tree, organ, base.exposure);
+  result.exposure = base.exposure;
+  result.leaf = organ.wood ? 0.0 : 1.0;
+  result.motion =
+    moppe_motion_vector (u.unjittered_view_proj * float4 (current, 1.0),
+                         u.previous_view_proj * float4 (previous, 1.0),
+                         u.temporal.xy);
+  return result;
+}
+
 [[mesh]] void forest_mesh (ForestMesh out,
                            object_data const ForestPayload& payload [[payload]],
                            uint mesh_id [[threadgroup_position_in_grid]],
@@ -683,43 +761,55 @@ static inline void forest_indices (thread Mesh& out,
   const ForestPart part = payload.parts[min (mesh_id, payload.count - 1u)];
   const MoppeForestInstance tree = trees[part.tree];
   const ForestOrgan organ = forest_organ (tree, u, part, false);
-  const uint tufts = organ.frond ? forest_bough_tufts (organ.bundle) : 0u;
-  const uint per_tuft_verts = organ.bundle == 4u ? 4u : 9u;
-  const uint per_tuft_prims = organ.bundle == 4u ? 2u : 4u;
-  const uint vertices = organ.wood    ? 24u
-                        : organ.frond ? organ.bundle * tufts * per_tuft_verts
-                                      : 32u;
-  const uint primitives = organ.wood    ? 24u
-                          : organ.frond ? organ.bundle * tufts * per_tuft_prims
-                                        : 60u;
+  const ForestMeshCounts counts = forest_mesh_counts (organ);
   if (thread_id == 0u)
-    out.set_primitive_count (primitives);
+    out.set_primitive_count (counts.primitives);
 
-  if (thread_id < vertices) {
-    const ForestPoint base = forest_vertex (organ, thread_id);
-    const float rise = saturate (dot (base.position - organ.root, organ.up) /
-                                 max (organ.tree_height, 0.01));
-    const float bend = organ.bend * rise * rise;
-    const float flutter = organ.flutter * rise;
-    const float3 current =
-      moppe_wind (base.position, bend, flutter, u.params.x);
-    const float3 previous =
-      moppe_wind (base.position, bend, flutter, u.temporal.z);
-    ForestVaryings v;
-    v.position = u.view_proj * float4 (current, 1.0);
-    v.world_pos = current;
-    v.normal = base.normal;
-    v.albedo = forest_palette (tree, organ, base.exposure);
-    v.exposure = base.exposure;
-    v.leaf = organ.wood ? 0.0 : 1.0;
-    v.motion =
-      moppe_motion_vector (u.unjittered_view_proj * float4 (current, 1.0),
-                           u.previous_view_proj * float4 (previous, 1.0),
-                           u.temporal.xy);
-    out.set_vertex (thread_id, v);
-  }
-  if (thread_id < primitives)
+  if (thread_id < counts.vertices)
+    out.set_vertex (thread_id, forest_scene_vertex (tree, organ, thread_id, u));
+  if (thread_id < counts.primitives)
     forest_indices (out, organ, thread_id);
+}
+
+static inline float3
+forest_shadow_vertex_position (thread const ForestOrgan& crown,
+                               thread const ForestOrgan& stem,
+                               uint vertex_index) {
+  if (vertex_index == 0u || vertex_index == 11u)
+    return crown.centre +
+           crown.up * crown.half_height * (vertex_index == 0u ? -1.0 : 1.0);
+  if (vertex_index < 11u) {
+    const uint side = vertex_index - 1u;
+    const float turn = 6.2831853 * float (side) / 10.0;
+    return crown.centre + crown.across * cos (turn) * crown.radius_x +
+           crown.forward * sin (turn) * crown.radius_z;
+  }
+
+  const uint index = vertex_index - 12u;
+  const uint side = index % 8u;
+  const uint ring = index / 8u;
+  const float turn = 6.2831853 * float (side) / 8.0;
+  const float taper = ring == 0u ? 1.70 : 0.30;
+  const float3 radial = stem.across * cos (turn) + stem.forward * sin (turn);
+  return stem.centre +
+         stem.up * (ring == 0u ? -stem.half_height : stem.half_height) +
+         radial * stem.radius_x * taper;
+}
+
+static inline uint3 forest_shadow_triangle (uint primitive) {
+  if (primitive < 20u) {
+    const uint side = primitive / 2u;
+    const uint next = (side + 1u) % 10u;
+    return primitive % 2u == 0u ? uint3 (0u, 1u + next, 1u + side)
+                                : uint3 (11u, 1u + side, 1u + next);
+  }
+
+  const uint stem_primitive = primitive - 20u;
+  const uint side = stem_primitive / 2u;
+  const uint next = (side + 1u) % 8u;
+  return (stem_primitive % 2u == 0u ? uint3 (side, next, 8u + next)
+                                    : uint3 (side, 8u + next, 8u + side)) +
+         12u;
 }
 
 [[mesh]] void forest_shadow_mesh (
@@ -746,51 +836,153 @@ static inline void forest_indices (thread Mesh& out,
   if (thread_id == 0u)
     out.set_primitive_count (primitives);
   if (thread_id < vertices) {
-    float3 position;
-    if (thread_id == 0u || thread_id == 11u) {
-      position = organ.centre +
-                 organ.up * organ.half_height * (thread_id == 0u ? -1.0 : 1.0);
-    } else if (thread_id < 11u) {
-      const uint side = thread_id - 1u;
-      const float turn = 6.2831853 * float (side) / 10.0;
-      position = organ.centre + organ.across * cos (turn) * organ.radius_x +
-                 organ.forward * sin (turn) * organ.radius_z;
-    } else {
-      const uint index = thread_id - 12u;
-      const uint side = index % 8u;
-      const uint ring = index / 8u;
-      const float turn = 6.2831853 * float (side) / 8.0;
-      const float taper = ring == 0u ? 1.70 : 0.30;
-      const float3 radial =
-        stem.across * cos (turn) + stem.forward * sin (turn);
-      position = stem.centre +
-                 stem.up * (ring == 0u ? -stem.half_height : stem.half_height) +
-                 radial * stem.radius_x * taper;
-    }
     ForestShadowVaryings v;
-    v.position = u.view_proj * float4 (position, 1.0);
+    v.position =
+      u.view_proj *
+      float4 (forest_shadow_vertex_position (organ, stem, thread_id), 1.0);
     out.set_vertex (thread_id, v);
   }
   if (thread_id < primitives) {
-    uint3 triangle;
-    if (thread_id < 20u) {
-      const uint side = thread_id / 2u;
-      const uint next = (side + 1u) % 10u;
-      triangle = thread_id % 2u == 0u ? uint3 (0u, 1u + next, 1u + side)
-                                      : uint3 (11u, 1u + side, 1u + next);
-    } else {
-      const uint prim = thread_id - 20u;
-      const uint side = prim / 2u;
-      const uint next = (side + 1u) % 8u;
-      triangle = (prim % 2u == 0u ? uint3 (side, next, 8u + next)
-                                  : uint3 (side, 8u + next, 8u + side)) +
-                 12u;
-    }
+    const uint3 triangle = forest_shadow_triangle (thread_id);
     const uint slot = thread_id * 3u;
     out.set_index (slot + 0u, triangle.x);
     out.set_index (slot + 1u, triangle.y);
     out.set_index (slot + 2u, triangle.z);
   }
+}
+
+struct ForestFragmentFrame {
+  float3 normal;
+  float3 light;
+  float3 to_eye;
+  float distance;
+  float fog;
+  float visibility;
+};
+
+static inline float forest_fragment_visibility (float3 world_pos,
+                                                float3 light,
+                                                constant MoppeForestUniforms& u,
+                                                depth2d<float> shadow_map) {
+  float visibility =
+    moppe_cloud_transmission (world_pos, light, u.params.x, u.params.y);
+  if (u.shadow.x <= 0.01)
+    return visibility;
+
+  const float4 shadow_coord = u.light_matrix * float4 (world_pos, 1.0);
+  const float3 projection = shadow_coord.xyz / shadow_coord.w;
+  if (!all (projection >= 0.0) || !all (projection <= 1.0))
+    return visibility;
+
+  // The coarse proxy gets several metres of light-depth margin, preventing
+  // it from becoming precise self-occlusion inside the detailed crown.
+  constexpr sampler shadow_smp (coord::normalized,
+                                address::clamp_to_edge,
+                                filter::linear,
+                                compare_func::less_equal);
+  const float margin = 9.0 / 1240.0;
+  const float lit = shadow_map.sample_compare (
+    shadow_smp, projection.xy, projection.z - margin);
+  return visibility * mix (1.0, mix (0.22, 1.0, lit), u.shadow.x);
+}
+
+static inline ForestFragmentFrame
+forest_fragment_frame (thread const ForestVaryings& in,
+                       bool front_facing,
+                       constant MoppeForestUniforms& u,
+                       depth2d<float> shadow_map) {
+  ForestFragmentFrame frame;
+  frame.normal = normalize (front_facing ? in.normal : -in.normal);
+  frame.light = normalize (u.sun_dir.xyz);
+  frame.to_eye = u.camera_pos.xyz - in.world_pos;
+  frame.distance = length (frame.to_eye);
+  frame.fog =
+    moppe_relief_haze (moppe_distance_fog (frame.distance, u.fog_color.w),
+                       in.world_pos.y,
+                       u.params.z,
+                       u.params.w);
+  frame.visibility =
+    forest_fragment_visibility (in.world_pos, frame.light, u, shadow_map);
+  return frame;
+}
+
+static inline float3 forest_fragment_albedo (thread const ForestVaryings& in,
+                                             float3 normal) {
+  float3 albedo = moppe_srgb (in.albedo);
+  if (in.leaf >= 0.5)
+    return albedo;
+
+  // Bark fissures use two stretched world-space planes blended by facing.
+  const float2 stretch = float2 (3.1, 0.33);
+  const float2 px = float2 (in.world_pos.z, in.world_pos.y) * stretch;
+  const float2 pz = float2 (in.world_pos.x, in.world_pos.y) * stretch;
+  const float sx =
+    0.65 * moppe_value_noise (px) + 0.35 * moppe_value_noise (px * 3.13);
+  const float sz =
+    0.65 * moppe_value_noise (pz) + 0.35 * moppe_value_noise (pz * 3.13);
+  const float wx = normal.x * normal.x;
+  const float wz = normal.z * normal.z;
+  const float stria = (wx * sx + wz * sz) / max (wx + wz, 0.001);
+  return albedo * (0.62 + 0.74 * stria);
+}
+
+struct ForestLeafTransmission {
+  float amount;
+  float toward;
+  float resolvable;
+};
+
+static inline ForestLeafTransmission
+forest_leaf_transmission (thread const ForestVaryings& in,
+                          thread const ForestFragmentFrame& frame,
+                          constant MoppeForestUniforms& u) {
+  const float focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  ForestLeafTransmission transmission = {
+    0.0,
+    0.0,
+    smoothstep (1.5, 4.0, 0.3 * focal_pixels / max (frame.distance, 0.5)),
+  };
+  if (in.leaf <= 0.5)
+    return transmission;
+
+  const float back =
+    mix (0.30,
+         pow (max (dot (-frame.normal, frame.light), 0.0), 1.45),
+         transmission.resolvable);
+  const float thin = exp (-2.5 * (1.0 - in.exposure));
+  transmission.amount = back * thin * frame.visibility;
+  transmission.toward =
+    saturate (dot (-frame.to_eye / max (frame.distance, 0.001), frame.light));
+  return transmission;
+}
+
+static inline float3
+forest_fragment_lighting (thread const ForestVaryings& in,
+                          float3 albedo,
+                          thread const ForestFragmentFrame& frame,
+                          thread const ForestLeafTransmission& transmission,
+                          constant MoppeForestUniforms& u) {
+  const float wrap = saturate ((dot (frame.normal, frame.light) + 0.26) / 1.26);
+  float3 color =
+    albedo * (moppe_hemisphere_light (u.ambient.rgb, frame.normal) *
+                (0.62 + 0.38 * in.exposure) +
+              u.sun_diffuse.rgb * wrap * frame.visibility *
+                (1.0 - 0.45 * transmission.amount));
+  color +=
+    albedo * float3 (0.10, 0.16, 0.20) * (0.35 + 0.65 * in.exposure) * in.leaf;
+  if (in.leaf <= 0.5)
+    return color;
+
+  const float3 chlorophyll (0.92, 1.0, 0.24);
+  const float lobe = 0.20 + 0.80 * transmission.toward * transmission.toward *
+                              transmission.toward;
+  color += sqrt (albedo) * u.sun_diffuse.rgb * chlorophyll *
+           transmission.amount * lobe * 4.0;
+  const float3 half_vector = normalize (frame.light + normalize (frame.to_eye));
+  color += u.sun_specular.rgb *
+           pow (max (dot (frame.normal, half_vector), 0.0), 18.0) *
+           frame.visibility * 0.055;
+  return color;
 }
 
 fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
@@ -800,120 +992,19 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
                                               [[buffer (MOPPE_BUF_FRAME)]],
                                               depth2d<float> shadow_map
                                               [[texture (MOPPE_TEX_SHADOW)]]) {
-  const float3 n = normalize (front_facing ? in.normal : -in.normal);
-  const float3 l = normalize (u.sun_dir.xyz);
-  const float3 to_eye = u.camera_pos.xyz - in.world_pos;
-  const float distance = length (to_eye);
-  const float fog =
-    moppe_relief_haze (moppe_distance_fog (distance, u.fog_color.w),
-                       in.world_pos.y,
-                       u.params.z,
-                       u.params.w);
-  // The shared shadow map contains deliberately coarse tree proxies, so a
-  // plain sample from inside a detailed crown would interpret that proxy as
-  // precise self-occlusion and black out the organism. Instead the compare
-  // gets a margin of several metres of light depth: the tree's own blob and
-  // its close neighbours fall inside the margin, while a hillside or a
-  // distant stand still puts the whole organism in shade. Fine-grained crown
-  // shaping stays with the continuous exposure signal and the cloud field.
-  float visibility =
-    moppe_cloud_transmission (in.world_pos, l, u.params.x, u.params.y);
-  if (u.shadow.x > 0.01) {
-    const float4 shadow_coord = u.light_matrix * float4 (in.world_pos, 1.0);
-    const float3 proj = shadow_coord.xyz / shadow_coord.w;
-    if (all (proj >= 0.0) && all (proj <= 1.0)) {
-      constexpr sampler shadow_smp (coord::normalized,
-                                    address::clamp_to_edge,
-                                    filter::linear,
-                                    compare_func::less_equal);
-      // The local light frustum spans ~1240 m of depth; 9 m in that range.
-      const float margin = 9.0 / 1240.0;
-      const float lit =
-        shadow_map.sample_compare (shadow_smp, proj.xy, proj.z - margin);
-      visibility *= mix (1.0, mix (0.22, 1.0, lit), u.shadow.x);
-    }
-  }
-
-  float3 base = moppe_srgb (in.albedo);
-  if (in.leaf < 0.5) {
-    // Bark fissures: two vertical planes of stretched value noise blended by
-    // facing, so striation follows any trunk without a UV seam.
-    const float2 stretch = float2 (3.1, 0.33);
-    const float2 px = float2 (in.world_pos.z, in.world_pos.y) * stretch;
-    const float2 pz = float2 (in.world_pos.x, in.world_pos.y) * stretch;
-    const float sx =
-      0.65 * moppe_value_noise (px) + 0.35 * moppe_value_noise (px * 3.13);
-    const float sz =
-      0.65 * moppe_value_noise (pz) + 0.35 * moppe_value_noise (pz * 3.13);
-    const float wx = n.x * n.x;
-    const float wz = n.z * n.z;
-    const float stria = (wx * sx + wz * sz) / max (wx + wz, 0.001);
-    base *= 0.62 + 0.74 * stria;
-  }
-  // Transmission through the crown. On a thin backlit leaf the transmitted
-  // radiance exceeds everything reflected around it, so the term is allowed
-  // past the bloom bright-pass rather than staying inside the diffuse range.
-  // Sky exposure doubles as optical depth -- Beer-Lambert keeps the glow on
-  // the thin lit fringe and leaves the needle mass dark -- and sun
-  // visibility gates it, so a backlit crown inside a mountain's shadow
-  // stays dark. Rare is what keeps it precious: lit, thin, against the
-  // light, or nothing.
-  // How many input pixels a needle tuft's blade spans here. Per-blade
-  // lighting variance must not outlive the blade's own pixels: a jittered
-  // single sample cannot revisit a feature it cannot resolve, so once the
-  // fringe geometry is subpixel its individual backlight term collapses to
-  // the ensemble mean and the crown keeps a smooth aggregate glow.
-  const float focal_px = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
-  const float resolvable =
-    smoothstep (1.5, 4.0, 0.3 * focal_px / max (distance, 0.5));
-  float trans = 0.0;
-  float toward = 0.0;
-  if (in.leaf > 0.5) {
-    const float back =
-      mix (0.30, pow (max (dot (-n, l), 0.0), 1.45), resolvable);
-    const float thin = exp (-2.5 * (1.0 - in.exposure));
-    trans = back * thin * visibility;
-    toward = saturate (dot (-to_eye / max (distance, 0.001), l));
-  }
-
-  // A broad wrap term keeps crown volumes legible while retaining a directional
-  // sunward side. It is deliberately separate from the sky exposure signal.
-  // Reflectance plus transmittance cannot exceed one, so the diffuse sun
-  // term gives up what the leaf transmits.
-  const float wrap = saturate ((dot (n, l) + 0.26) / 1.26);
-  float3 color =
-    base *
-    (moppe_hemisphere_light (u.ambient.rgb, n) * (0.62 + 0.38 * in.exposure) +
-     u.sun_diffuse.rgb * wrap * visibility * (1.0 - 0.45 * trans));
-  color +=
-    base * float3 (0.10, 0.16, 0.20) * (0.35 + 0.65 * in.exposure) * in.leaf;
-
-  if (in.leaf > 0.5) {
-    // Chlorophyll transmits green-yellow and almost no blue: the electric
-    // backlit colour is a transmittance spectrum, not a stylistic warm-up.
-    // Transmittance far exceeds reflectance on a thin leaf -- light crosses
-    // half the pigment depth that a reflected ray does -- so the tint rides
-    // on sqrt(base), not on the dark diffuse albedo. The forward lobe
-    // shares its geometry with the sun shafts, so both fire together
-    // looking sunward through partial occlusion.
-    const float3 chlorophyll = float3 (0.92, 1.0, 0.24);
-    const float lobe = 0.20 + 0.80 * toward * toward * toward;
-    color += sqrt (base) * u.sun_diffuse.rgb * chlorophyll * trans * lobe * 4.0;
-    const float3 h = normalize (l + normalize (to_eye));
-    color += u.sun_specular.rgb * pow (max (dot (n, h), 0.0), 18.0) *
-             visibility * 0.055;
-  }
-
-  const float3 fog_color =
-    moppe_warmed_fog (u.fog_color.rgb, -to_eye / max (distance, 0.001), l);
-  color = mix (color, fog_color, smoothstep (0.0, 0.92, fog));
-  // The glow is view- and sun-locked, so it slides across the geometry as
-  // the camera moves; extra history rejection keeps the reconstruction from
-  // smearing the bright fringe. Only while the fringe resolves, though:
-  // subpixel tufts are held steady by accumulated history, and rejecting
-  // it there turns the distant fringe into shimmer.
+  const ForestFragmentFrame frame =
+    forest_fragment_frame (in, front_facing, u, shadow_map);
+  const float3 albedo = forest_fragment_albedo (in, frame.normal);
+  const ForestLeafTransmission transmission =
+    forest_leaf_transmission (in, frame, u);
+  float3 color = forest_fragment_lighting (in, albedo, frame, transmission, u);
+  const float3 fog_color = moppe_warmed_fog (
+    u.fog_color.rgb, -frame.to_eye / max (frame.distance, 0.001), frame.light);
+  color = mix (color, fog_color, smoothstep (0.0, 0.92, frame.fog));
   return moppe_temporal_output (
     float4 (color, 1.0),
     in.motion,
-    in.leaf > 0.5 ? 0.48 + 0.30 * trans * toward * resolvable : 0.12);
+    in.leaf > 0.5 ? 0.48 + 0.30 * transmission.amount * transmission.toward *
+                             transmission.resolvable
+                  : 0.12);
 }
