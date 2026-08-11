@@ -780,16 +780,23 @@ terrain_light (float3 albedo,
   // reading as flat vinyl blobs: the fine octave yields as its cells go
   // subpixel, the coarse one carries the mottle to the horizon.
   if (material.grass > 0.001) {
+    const float2 ground_xz = in.world_pos.xz;
+    // The dynamics moment: blades gust, so their ensemble must too. The
+    // same shared gust function tilts the sward's shading normal, and a
+    // far field carries travelling sheen waves instead of sitting still
+    // like paint.
+    const float gust = moppe_grass_gust (ground_xz, u.params2.x);
+    const float3 swayed = normalize (normal + float3 (0.79, 0.0, 0.53) *
+                                                (0.10 * gust * material.grass));
     const float3 sward =
       moppe_sward_ensemble_light (material.sward,
-                                  normal,
+                                  swayed,
                                   light,
                                   view_dir,
                                   u.sun_diffuse.rgb,
                                   u.ambient.rgb,
                                   shadow,
                                   direct_visibility * canopy_direct);
-    const float2 ground_xz = in.world_pos.xz;
     const float footprint = length (in.world_pos - u.camera_pos.xyz);
     const float fine_visible = 1.0 - smoothstep (30.0, 110.0, footprint);
     const float fine = moppe_value_noise (ground_xz * 1.9);

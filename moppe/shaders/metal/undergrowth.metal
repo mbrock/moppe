@@ -250,7 +250,13 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
                grass.leaf_area * moppe_fern_resolved_fraction (frond_pixels) *
                  smoothstep (0.05, 0.25, ferny));
       }
-      wanted = budget * float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
+      // The window is a cost bound, and a bound must not be a step: the
+      // budget fades over the window's last stretch, so by the boundary
+      // itself there is nothing left to cull. The last first-moment
+      // discontinuity in the ladder becomes a gradient.
+      const float edge_fade =
+        1.0 - smoothstep (0.84 * u.lod.x, 0.99 * u.lod.x, horizontal_distance);
+      wanted = budget * edge_fade * float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
       shoots = undergrowth_lod_shoots (wanted, uint2 (cell));
       valid = shoots > 0u;
     }
@@ -449,7 +455,13 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     // more slowly than the blade resolves.
     resolved_feature = sqrt (moppe_grass_resolved_fraction (blade_pixels));
   }
-  const float family_wanted = grass.leaf_area * resolved_feature *
+  // The same edge fade the object stage applied to the tile: a shoot
+  // near the window boundary grows out through its ordinary presence
+  // transition instead of being cut by the cost bound.
+  const float edge_fade = 1.0 - smoothstep (0.84 * u.lod.x,
+                                            0.99 * u.lod.x,
+                                            length (root_xz - u.camera_pos.xz));
+  const float family_wanted = grass.leaf_area * resolved_feature * edge_fade *
                               float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
 
   // A shoot straddles its LOD threshold by growing into or out of the ground.
