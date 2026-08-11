@@ -154,6 +154,24 @@ Verify with the frame instrumentation of GFX-043, not by eye: the
 per-distance-band texture-energy profile should continue smoothly across
 the tuft band's end instead of falling off a cliff.
 
+*** TODO GFX-044 Ensemble-limit contract for the forest/terrain hand-off
+
+docs/ensemble-continuity.md predicts the forest tint band carries the
+same zeroth-moment bug the sward escaped: terrain colours forested
+ground with a separately authored resemblance (ground_value *
+(0.48, 0.72, 0.34)) rather than the crown shader's own ensemble limit.
+Build moppe_canopy_ensemble_light shared with the forest fragment, and
+judge with a MOPPE_LOOK across a forested basin plus the strip.
+
+*** TODO GFX-045 Calibrate coarse rungs from measured fine-rung statistics
+
+Graduate the instruments from verification to calibration: fit the
+sward grain octaves so the substrate CONTINUES the near field's
+measured variance-versus-distance curve, and once substrate motion
+exists (GFX-042), fit the sheen-wave amplitude so the glide's temporal
+spectrum is continuous across the last rung. The matching conditions
+stop being hand-tuned constants.
+
 *** VERIFY GFX-043 Frame instrumentation for distance rendering
 
 First slice landed: tools/frame-texture-profile maps grass-gradient
