@@ -687,14 +687,15 @@ terrain_compose_material (float3 normal,
                          material.albedo * float3 (0.72, 0.88, 0.58),
                          material.grass);
   // The wash whispers where the heads shout: near the camera resolved
-  // heads carry the drift's colour, so the substrate underneath keeps a
-  // softened, part-desaturated version. A distant flowering hillside then
-  // reads as a hue shift over grass, not as paint poured on the landform.
-  const float3 wash = moppe_srgb (bands.flower_tint);
-  const float wash_luma = dot (wash, float3 (0.299, 0.587, 0.114));
-  material.albedo = mix (material.albedo,
-                         mix (float3 (wash_luma), wash, 0.55) * 0.48,
-                         0.32 * bands.flower);
+  // heads carry the drift's colour, so the substrate underneath keeps the
+  // part-desaturated wash chromaticity — the identical colour a retiring
+  // head collapses to, so the ladder's last hand-off has no seam. A
+  // distant flowering hillside then reads as a hue shift over grass, not
+  // as paint poured on the landform.
+  material.albedo =
+    mix (material.albedo,
+         moppe_srgb (moppe_flower_wash_tint (bands.flower_tint)) * 0.48,
+         0.32 * bands.flower);
   material.trail = 0.0;
   material.base = 0.0;
   material.forest = 0.0;

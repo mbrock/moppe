@@ -253,6 +253,8 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
                            // z=snow support available,
                            // w=standing-water levels available
   MoppeFloat4 temporal;    // xy=input pixels, z=previous time, w=enabled
+  MoppeFloat4 lod;         // x=window reach in metres (the cost bound the
+                           // farthest-resolving family is allowed)
 };
 
 // A forest crosses the renderer boundary as stable individuals, not baked

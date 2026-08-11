@@ -4494,13 +4494,20 @@ namespace moppe {
         // amount of travelling makes the floor reshuffle itself.
         // A sub-metre cell gives the field enough independent roots to read as
         // a sward rather than a lattice of broad four-way plant proxies.
+        //
+        // The window is a cost bound, not the level of detail: each family
+        // retires by its own projected feature size, so the window is sized
+        // for the farthest-resolving family (flower heads and fern fronds
+        // remain repeatable image features well past the last blade).
         const float tile_world = 0.60f;
+        const float window_reach = params.reach * 1.7f;
         const int tiles_side =
-          (int)std::ceil ((2.0f * params.reach) / tile_world);
-        u.tiles.x = std::floor ((m_frame.params.camera_pos[0] - params.reach) /
+          (int)std::ceil ((2.0f * window_reach) / tile_world);
+        u.tiles.x = std::floor ((m_frame.params.camera_pos[0] - window_reach) /
                                 tile_world);
-        u.tiles.y = std::floor ((m_frame.params.camera_pos[2] - params.reach) /
+        u.tiles.y = std::floor ((m_frame.params.camera_pos[2] - window_reach) /
                                 tile_world);
+        u.lod.x = window_reach;
         u.tiles.z = (float)tiles_side;
         u.tiles.w = tile_world;
         u.params.x = params.time;

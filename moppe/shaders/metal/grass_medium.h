@@ -171,11 +171,42 @@ inline float moppe_grass_blade_pixels (float focal_pixels, float distance) {
   return MOPPE_GRASS_BLADE_WIDTH_METRES * focal_pixels / max (distance, 0.5);
 }
 
-// Geometry owns only blades wide enough to remain a repeatable image feature.
-// Blades that are too narrow to remain repeatable retire into the stable
-// habitat-coloured terrain substrate.
+// ---- the level-of-detail ladder ------------------------------------
+//
+// Geometry owns only features wide enough to remain a repeatable image
+// feature, and each family measures its OWN signature feature: the blade
+// its width, the flower its head, the fern its frond. A family therefore
+// descends the ladder -- resolved individuals, then ensemble geometry,
+// then the substrate -- on its own schedule, and the meadow does not lose
+// its flowers at the distance it loses its blades. What retires always
+// dissolves into the stable habitat-coloured terrain substrate, whose
+// grass cover and drift wash are the ladder's last rung.
 inline float moppe_grass_resolved_fraction (float blade_pixels) {
   return smoothstep (0.16, 0.95, blade_pixels);
+}
+
+inline float moppe_feature_pixels (float feature_metres,
+                                   float focal_pixels,
+                                   float distance) {
+  return feature_metres * focal_pixels / max (distance, 0.5);
+}
+
+inline float moppe_flower_resolved_fraction (float head_pixels) {
+  return smoothstep (0.45, 1.5, head_pixels);
+}
+
+#define MOPPE_FERN_FROND_WIDTH_METRES 0.13f
+
+inline float moppe_fern_resolved_fraction (float frond_pixels) {
+  return smoothstep (0.45, 1.5, frond_pixels);
+}
+
+// The chromaticity a drift keeps in the terrain substrate. A retiring
+// head collapses toward this same colour, so the hand-off from geometry
+// to substrate has no seam for a sample to rediscover.
+inline float3 moppe_flower_wash_tint (float3 species_tint) {
+  const float luma = dot (species_tint, float3 (0.299, 0.587, 0.114));
+  return mix (float3 (luma), species_tint, 0.55);
 }
 
 inline float3 moppe_grass_chlorophyll () {

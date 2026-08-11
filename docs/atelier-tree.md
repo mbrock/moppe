@@ -153,15 +153,30 @@ That is the shape the vegetation shelf's `ideas/geometry-from-fields.md`
 proposes, and its payoff is not only that the plants cost no memory. They
 cannot drift out of step with the ground they grow on, because they are read
 from it rather than placed against it; and their count, size, and species can
-change every frame, because nothing is kept that could go stale. The distance
-level of detail is that freedom used directly: the object stage hands each
-tile a smaller plant budget as it recedes, and the mesh stage widens surviving
-blades without making them taller, so the floor keeps the projected coverage
-the thinned-out plants were carrying. Each world tile owns a stable phase for
-spending that fractional budget, and a plant grows through a short transition
-at its threshold. A sward therefore thins plant by plant into the terrain's
-filtered grass material without either a contour line or a camera-window
-boundary reshuffling the floor.
+change every frame, because nothing is kept that could go stale.
+
+The distance level of detail is that freedom used directly, as a ladder
+each family descends on its own schedule. Geometry owns only features wide
+enough to remain repeatable image features, and each family measures its
+OWN signature feature: the blade its 1.8 cm width, the flower its head
+diameter, the fern its frond width. The object stage prices a tile at the
+largest of its families' budgets and the mesh stage re-prices each shoot
+against its family's own resolved fraction, so the meadow does not lose
+its flowers at the distance it loses its blades, and one family's
+retirement never culls another's. Each world tile owns a stable phase for
+spending its fractional budget, and a plant grows through a short
+transition at its threshold. The ladder's middle rung collapses
+sub-resolvable detail to ensemble means — flutter fades, the glint streak
+widens, a flower head widens to the smallest footprint a jittered sample
+can revisit while dimming in proportion and collapsing its chroma to the
+drift's wash. The last rung is the terrain substrate itself, which
+carries the grass cover colour and the drift's part-desaturated wash
+through the same `grass_medium.h` fields — the retiring feature's final
+colour and the substrate's are one number, so the hand-off has no seam. A
+sward therefore thins plant by plant into the terrain's filtered grass
+material without either a contour line or a camera-window boundary
+reshuffling the floor, and the camera window itself is only a cost bound,
+sized for the farthest-resolving family rather than acting as the LOD.
 
 The dense field also has two temporal rules. Fine flutter fades before an
 individual blade becomes subpixel, leaving the slower coherent gust instead
