@@ -251,6 +251,12 @@ inline float3 moppe_sward_ensemble_light (float3 blade_tint_display,
             sun_diffuse * lambert * sun_visibility * (1.0 - 0.45 * trans));
   color += sqrt (base) * sun_diffuse * moppe_grass_chlorophyll () * trans *
            moppe_grass_toward_lobe (toward) * 3.2;
+  // Seen at grazing incidence a sward is mostly the shadowed depth
+  // between blades: without this occlusion the far field renders as
+  // bright clean felt, visibly lighter than the blade belt in front of
+  // it. Head-on (from above) the lit tops dominate and nothing darkens.
+  const float graze = 1.0 - abs (dot (view_dir, normal));
+  color *= mix (1.0, 0.60, graze * graze * graze);
   return color;
 }
 

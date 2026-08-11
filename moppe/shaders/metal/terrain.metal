@@ -798,12 +798,24 @@ terrain_light (float3 albedo,
                                   shadow,
                                   direct_visibility * canopy_direct);
     const float footprint = length (in.world_pos - u.camera_pos.xyz);
+    // A texture cascade, not a pair: some octave must sit near pixel
+    // scale at EVERY distance, or everything past the last visible
+    // octave renders as felt. Each octave fades in as it grows past a
+    // few pixels and yields once the next takes over.
     const float fine_visible = 1.0 - smoothstep (30.0, 110.0, footprint);
+    const float mid_visible = smoothstep (40.0, 120.0, footprint) *
+                              (1.0 - smoothstep (400.0, 900.0, footprint));
+    const float broad_visible = smoothstep (250.0, 700.0, footprint);
     const float fine = moppe_value_noise (ground_xz * 1.9);
+    const float mid = moppe_value_noise (ground_xz * 0.31 + float2 (7.1, 43.9));
     const float coarse =
       moppe_value_noise (ground_xz * 0.16 + float2 (31.7, 8.3));
+    const float broad =
+      moppe_value_noise (ground_xz * 0.037 + float2 (11.3, 71.7));
     const float grain = (1.0 + 0.22 * (coarse - 0.5) * 2.0) *
-                        (1.0 + 0.18 * (fine - 0.5) * 2.0 * fine_visible);
+                        (1.0 + 0.18 * (fine - 0.5) * 2.0 * fine_visible) *
+                        (1.0 + 0.20 * (mid - 0.5) * 2.0 * mid_visible) *
+                        (1.0 + 0.16 * (broad - 0.5) * 2.0 * broad_visible);
     lighting.color = mix (
       lighting.color, sward * material.sward_detail * grain, material.grass);
   }
