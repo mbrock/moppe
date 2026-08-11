@@ -54,22 +54,37 @@ The broadleaf form was removed from the world (the blob-lollipop
 placeholder had received none of the conifer's assembly work); it returns
 only after getting the same treatment, or as part of the aggregate.
 
-## Grass: same religion, faster crossover
+## Grass: a completed representation proof, not a forest template
 
-The first shared-medium pass landed in `42ed47b`: undergrowth still generates
-from a world-lattice tile window, but distant survivors no longer widen to
-carry their retired neighbours. The terrain keeps a stable basal substrate
-from the same habitat, while projected blade width decides only which explicit
-silhouettes remain repeatable. Ground colour no longer changes when those
-narrow ribbons turn edge-on.
+The grass continuation now proves the specific quotient described by
+[RFC-0006](../planning/rfcs/0006-a-continuous-grass-medium.md): resolved blades,
+a ray-integrated terrain-following density column, and a bounded far optical
+response consume one leaf-area claim. The result did not come from extending
+blade distance or scattering larger plants. It came from preserving the
+population's projected coverage, vertical path, lighting moments, texture
+spectrum, and broad gust while individual identity became unrepeatable.
 
-That scalar conservation is only the start. Grass must also conserve projected
-optical depth, vertical density, basal cover, and rootability. A flat far
-material cannot carry the height and occlusion of tall blades through a low
-flight or downhill overview. The proposed continuation -- one semantic medium,
-resolved blades, a terrain-following middle canopy, and a bounded far optical
-response -- is specified in
-[RFC-0006](../planning/rfcs/0006-a-continuous-grass-medium.md).
+That proof sharpens the forest plan without supplying its implementation. A
+grass column is shallow, terrain-bound, and dominated by a continuous leaf
+distribution. A spruce stand has crowns, gaps, trunks, a high canopy roof, and
+an occupiable dark interior. Its quotient therefore needs a height interval
+and at least two spatial claims -- canopy occupancy above and navigable
+understorey below -- not a renamed grass shader.
+
+The reusable discipline is narrower:
+
+- decide which population measure is conserved before choosing geometry;
+- let projected error decide when individual structure is repeatable;
+- make the coarse representation reproduce the fine representation's mean,
+  coverage, variance, and broad motion;
+- anchor every field in the world, never the camera; and
+- use a finite aggregate path rather than an infinite dark sheet.
+
+For the forest, the next proof should therefore be a stand-density atelier on
+one finished density map: a closed canopy height/occupancy field that replaces
+only the unresolvable crown population, preserves gaps and stand edges, and
+leaves near trunks and understorey explicitly navigable. It should not begin by
+making the existing sparse per-tree proxy band larger or denser.
 
 ## Trees influence the surface: analytic ground deformation
 

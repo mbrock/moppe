@@ -133,18 +133,21 @@ edge flowers, lower cover, and occasional roots.  Preserve gameplay clearance.
 
 *** VERIFY GFX-042 Continuous grass medium through the far register
 
-The far substrate now evaluates the blade shader's ensemble lighting limit,
-a distance-spanning world-space grain cascade, and the same broad gust phase.
-The missing middle rung is no longer addressed by widened tufts. A separate
-terrain-following canopy samples the shared medium, owns the projected-height
-interval between resolved blades and integrated material, and returns to zero
-when the entire sward is subpixel. Its dispatch patches share world-space edge
-evaluations, so it is one field surface rather than a second population.
+The far substrate and middle density column now evaluate one bounded optical
+response, one world-space grain cascade, and the same broad gust phase. The
+missing middle rung is no longer addressed by widened tufts or an opaque top
+sheet. A conservative terrain-following envelope enters a four-sample density
+column; its finite view path preserves vertical extent without letting a
+grazing ray become an infinite dark slab. Its dispatch patches share
+world-space edge evaluations, so it is one field rather than a second plant
+population.
 
-This is a Gate 3 proof, not completion. Calibrate its optical-depth and height
-profile in motion, prove the habitat edge from a low aerial pass, and price the
-scene pass. Texture-energy and motion residuals locate a discontinuity; they
-do not decide whether the result feels like one world.
+This is a Gate 3 and Gate 4 proof, not completion. Retiring blades now converge
+their own tint, sky/direct moments, transmission, and glint in place; the
+column owns aggregate coverage and texture. Calibrate the profile in longer
+motion, prove rootability and the habitat edge from a low aerial pass, and
+price the full scene distribution. Texture-energy and motion residuals locate
+a discontinuity; they do not decide whether the result feels like one world.
 
 *** VERIFY GFX-042b The representation frontier, stated honestly
 
@@ -154,16 +157,15 @@ MOPPE_LOOK="1718.75 54.7 39.06 1790 50.5 108 68" -- shows a straight
 boundary where blade geometry ends and a flat band runs to the horizon.
 Every far-grass claim must include THIS frame at low and high scene
 resolution, plus cross-lit, downward, and aerial companions.
-Two defects it isolates: (1) backlit mean mismatch -- the sward glows
-via transmission while the substrate's grazing occlusion darkens it, so
-toward-sun the boundary is a brightness step; the grazing and
-transmission terms must trade against each other by view-sun angle.
-(2) Structural absence -- beyond the frontier nothing stands: no
-verticality, no parallax, no silhouette. Colour cannot fix that. The first
-attempt raised the terrain itself; this violated physics and made the rendered
-ground camera-dependent, so it is removed. The current proof is separate
-canopy geometry above the true terrain. It must be judged as a continuous
-field, never rewarded for adding a few coarse plants to the far band.
+It isolated two defects now addressed structurally. (1) The main dark-register
+mismatch was color space: hardware delivered linear texture samples while the
+far path divided by a display-space mean. Both unresolved evaluations now use
+the measured linear mean. (2) Structural absence required a finite vertical
+density path, not a color correction. The first attempt raised the terrain
+itself; this violated physics and made the rendered ground camera-dependent,
+so it remains removed. The current proof is a density column above the true
+terrain. It must still be judged as a continuous field, never rewarded for
+adding a few coarse plants to the far band.
 
 *** TODO GFX-044a Identify the lattice dabs on open hillsides
 

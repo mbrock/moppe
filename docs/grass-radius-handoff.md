@@ -69,33 +69,65 @@ displacement is removed.
 Grass has three evaluations of one semantic medium:
 
 1. resolved blades where individual leaf width is repeatable;
-2. a terrain-following canopy surface for the resolvable vertical and optical
-   extent of an unresolved population; and
+2. a terrain-following density-column evaluation for the resolvable vertical
+   and optical extent of an unresolved population; and
 3. an integrated optical material when even that extent is subpixel.
 
-The middle evaluation is a field, not another set of individuals. Metal
-samples it as world-anchored patches only to bound dispatch. Adjacent patches
-evaluate identical world-space edge coordinates, so their gluing condition is
-exact. The surface reads the same terrain height, habitat, leaf-area-derived
-cover, clumping, tint, flowering wash, grain cascade, lighting limit, and gust
-field as the other two evaluations. Its height is the complement of the
-resolved-blade weight and returns to zero when the whole sward height is
-subpixel. It sits above the true terrain and never changes physics.
+The middle evaluation is a field, not another set of individuals. Metal uses
+a conservative top envelope, sampled as world-anchored patches only to bound
+dispatch. Adjacent patches evaluate identical world-space edge coordinates,
+so their gluing condition is exact. From that entry envelope, the fragment
+shader follows the view ray toward the local ground and integrates four
+samples of a continuous three-dimensional density field. The optical path is
+capped by the medium's finite lateral correlation length, so a grazing view
+does not turn an infinite mathematical sheet into black paint.
+
+The column reads the same terrain height, habitat, leaf area, basal cover,
+clumping, canopy height, tint, flowering wash, grain cascade, leaf-normal
+distribution, lighting limit, and gust field as the other evaluations. Its
+weight is the complement of resolved blades and returns to zero when the
+whole sward height is subpixel. It sits above the true terrain and never
+changes physics.
 
 This is now implemented as `sward_canopy_*` in
-`moppe/shaders/metal/undergrowth.metal`. It is a Gate 3 proof, not a claim that
-the complete grass medium is finished. In particular, rootability and basal
-cover remain incomplete, and the far optical response still needs calibration
-against the blade ensemble in motion.
+`moppe/shaders/metal/undergrowth.metal`. It is a Gate 3 and Gate 4 proof, not a
+claim that the complete grass medium is finished. Rootability remains absent;
+the basal layer remains visually shallow; and the bounded optical response
+still needs calibration against the blade ensemble in longer motion.
 
-Current evidence covers the 957x538 and 1634x919 cross-lit grass-lab views, the
-steep downward view, a real-world translating meadow pass, and a 60-frame
-autopilot ride. The neutral frames still expose a dark far register; the proof
-has supplied the missing field-valued vertical rung, but has not earned a claim
-that the complete optical transition is finished. Two alternating 32-case GPU
-benchmark runs at a 1280x720 scene put the undergrowth block median at about
-3.10 ms before and 3.14 ms after. Treat the roughly 0.04 ms difference as
-within run spread, not as evidence that the surface is free or faster.
+The last resolved blades do not run that aggregate response again per
+fragment. Their own tint, hemispherical fill, directional term, thin-leaf
+transmission, and glint converge to the shared first moments as blade width
+becomes unrepeatable. The density column beneath them owns aggregate coverage
+and texture. This is both the correct ownership boundary and materially
+cheaper than blending every blade toward a second full material evaluation.
+
+Current evidence covers 957x538 and 1640x922 cross-lit grass-lab views, the
+steep downward view, a 166-frame translating meadow pass, ordinary meadow,
+trail, wetland, eroded-slope and aerial sites, and a 120-frame neutral
+autopilot ride. The former bright-blade/dark-ground circle is gone. A lower
+frequency aggregate remains visible where individual width and then total
+height become subpixel; that is a necessary loss of bandwidth, not a license
+for a camera-centred material change. Longer interactive traversal acceptance
+remains open.
+
+The first six-sample density implementation measured 6.33 ms for the standard
+undergrowth block and was rejected. Per-pass isolation showed that recomputing
+the complete aggregate material on every retiring blade was the dominant
+error, not the density column itself. Four density samples plus in-place
+moment convergence brought the short pass-timed profile to 3.88 ms. The final
+full 32-case run measured 3.85 ms median and 4.82 ms p95 for the undergrowth
+block, versus about 3.10 ms median across the two pre-density runs. Every
+configuration remained below the 60 Hz deadline; the new representation is
+not free, and its roughly 0.75 ms median price must be compared as a
+distribution rather than used to overrule a visible transition.
+
+One color-space bug mattered more than several rounds of lighting tuning. The
+grass photograph is sampled as sRGB and therefore arrives in linear light,
+but the old far path divided its luma by the display-space mean `0.40`. The
+measured linear mean of the shipped texture is `0.0902`. Normalizing both the
+column and far material against that value removed most of the dark register
+without inventing extra light.
 
 ## A separate camera bug found in the reproduction
 

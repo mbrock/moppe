@@ -222,11 +222,10 @@ struct MOPPE_SHADER_ALIGN MoppeOceanUniforms {
 #define MOPPE_UNDERGROWTH_MESH_PRIMITIVES                                      \
   (MOPPE_UNDERGROWTH_MESH_THREADS * MOPPE_UNDERGROWTH_PRIMITIVES_PER_SHOOT)
 
-// The mesoscale sward is one terrain-following surface. Neighbouring patches
-// evaluate the same world-space edge vertices, so this subdivision is only a
-// bounded way to dispatch that surface; it is not a population of grass
-// proxies. Four cells per side keep its terrain sampling finer than one
-// rendered terrain LOD step through the handoff belt.
+// The mesoscale sward mesh is the conservative top envelope of one
+// terrain-following density field. Its fragment shader integrates the column
+// beneath each entry point; this subdivision only bounds dispatch and does not
+// create a population of grass proxies.
 #define MOPPE_SWARD_CANOPY_CELLS 4
 #define MOPPE_SWARD_ENSEMBLE_HEIGHT_METRES 0.42f
 #define MOPPE_SWARD_CANOPY_VERTICES_PER_SIDE (MOPPE_SWARD_CANOPY_CELLS + 1)

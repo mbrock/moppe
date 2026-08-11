@@ -563,6 +563,9 @@ struct TerrainMaterialBands {
   float snow;
   float beach;
   float grass;
+  float leaf_area;
+  float clump;
+  float canopy_height;
   float3 sward_tint; // display-space ensemble blade tint, drift folded in
 };
 
@@ -601,7 +604,10 @@ terrain_classify_material (thread const TerrainVaryings& in,
   // Habitat owns the substrate colour continuously. Resolved blades add
   // silhouette and motion, but turning their narrow ribbons edge-on must not
   // reveal a distance-dependent rocky ground material underneath them.
-  bands.grass = medium.cover;
+  bands.grass = medium.basal_cover;
+  bands.leaf_area = medium.leaf_area;
+  bands.clump = medium.clump;
+  bands.canopy_height = medium.canopy_height;
 
   // The tint the sward ensemble presents: the medium's own blade tint,
   // with the flowering drift's wash chromaticity folded in where a drift
@@ -657,6 +663,9 @@ struct TerrainMaterial {
   float3 sward;       // display-space ensemble blade tint
   float sward_detail; // photo-texture luma keeping fine ground variation
   float grass;
+  float leaf_area;
+  float clump;
+  float canopy_height;
   float trail;
   float base;
   float forest;
@@ -686,9 +695,11 @@ terrain_compose_material (float3 normal,
   // here is the soil that shows wherever cover thins. The photo texture
   // survives as luma detail riding on the ensemble colour.
   material.grass = bands.grass;
+  material.leaf_area = bands.leaf_area;
+  material.clump = bands.clump;
+  material.canopy_height = bands.canopy_height;
   material.sward = bands.sward_tint;
-  material.sward_detail =
-    clamp (dot (palette.grass, float3 (0.299, 0.587, 0.114)) / 0.40, 0.6, 1.6);
+  material.sward_detail = moppe_sward_texture_detail (palette.grass);
   material.trail = 0.0;
   material.base = 0.0;
   material.forest = 0.0;
@@ -773,38 +784,56 @@ terrain_light (float3 albedo,
       moppe_hemisphere_light (u.ambient.rgb, normal);
   lighting.color = albedo * diffuse_light;
 
-  // Grass-covered ground is the blade shader's own ensemble limit, not a
-  // tinted soil texture: near and far grass are one formula, so the
-  // geometry's retirement can have no colour seam to find. Two octaves
-  // of world-anchored grain keep the habitat's broad tint gradients from
-  // reading as flat vinyl blobs: the fine octave yields as its cells go
-  // subpixel, the coarse one carries the mottle to the horizon.
+  // Grass has a floor and an upper-leaf volume. The floor is present at every
+  // distance; it is what walking and downward views see between tall leaves.
+  // The upper population is partitioned among explicit blades, the canopy
+  // strata, and this integrated response by projected feature size.
   if (material.grass > 0.001) {
     const float2 ground_xz = in.world_pos.xz;
-    // The dynamics moment: blades gust, so their ensemble must too. The
-    // same shared gust function tilts the sward's shading normal, and a
-    // far field carries travelling sheen waves instead of sitting still
-    // like paint.
-    const float gust = moppe_grass_gust (ground_xz, u.params2.x);
-    const float3 swayed = normalize (normal + float3 (0.79, 0.0, 0.53) *
-                                                (0.10 * gust * material.grass));
-    const float3 sward =
-      moppe_sward_ensemble_light (material.sward,
-                                  swayed,
-                                  light,
-                                  view_dir,
-                                  u.sun_diffuse.rgb,
-                                  u.ambient.rgb,
-                                  shadow,
-                                  direct_visibility * canopy_direct);
+    const float3 still_axis =
+      moppe_grass_ensemble_axis (ground_xz, normal, u.params2.x);
+    const float3 axis =
+      normalize (mix (float3 (0.0, 1.0, 0.0), still_axis, material.grass));
     const float footprint = length (in.world_pos - u.camera_pos.xyz);
-    // A texture cascade, not a pair: some octave must sit near pixel
-    // scale at EVERY distance, or everything past the last visible
-    // octave renders as felt. Each octave fades in as it grows past a
-    // few pixels and yields once the next takes over.
     const float grain = moppe_sward_grain (ground_xz, footprint);
-    lighting.color = mix (
-      lighting.color, sward * material.sward_detail * grain, material.grass);
+
+    // Short turf and litter are a darker, ground-oriented stratum, not the
+    // old green terrain photograph pretending to be tall grass.
+    const float3 basal_albedo =
+      moppe_srgb (material.sward * float3 (0.74, 0.66, 0.50));
+    const float3 basal = basal_albedo * diffuse_light * material.sward_detail *
+                         mix (0.82, 1.0, grain);
+    lighting.color = mix (lighting.color, basal, material.grass);
+
+    const float focal =
+      moppe_vertical_focal_pixels (u.unjittered_view_proj, u.temporal.y);
+    const float blade_pixels = moppe_grass_blade_pixels (focal, footprint);
+    const float fine = moppe_grass_resolved_fraction (blade_pixels);
+    const float canopy =
+      moppe_sward_canopy_fraction (blade_pixels, focal, footprint);
+    const float aggregate = saturate (1.0 - fine - canopy);
+    // Most grassy pixels are owned by blades or the density column. Avoid
+    // evaluating the far optical integral at a mathematically zero weight;
+    // this coherent gate changes no matching condition and removes a large
+    // amount of irrelevant terrain-fragment work.
+    if (aggregate > 0.001) {
+      const MoppeSwardOpticalResponse upper =
+        moppe_sward_optical_response (material.sward,
+                                      axis,
+                                      material.leaf_area,
+                                      material.clump,
+                                      aggregate,
+                                      0.72,
+                                      light,
+                                      view_dir,
+                                      u.sun_diffuse.rgb,
+                                      u.sun_specular.rgb,
+                                      u.ambient.rgb * canopy_ambient,
+                                      shadow,
+                                      direct_visibility * canopy_direct);
+      const float3 upper_color = upper.radiance * material.sward_detail * grain;
+      lighting.color = mix (lighting.color, upper_color, upper.coverage);
+    }
   }
 
   const float3 half_vector = normalize (light - view_dir);

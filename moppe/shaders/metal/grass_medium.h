@@ -11,12 +11,17 @@
 #include "common.h"
 
 #define MOPPE_GRASS_BLADE_WIDTH_METRES 0.018f
+#define MOPPE_GRASS_TEXTURE_LINEAR_MEAN_LUMA 0.0902f
 
 struct MoppeGrassMedium {
-  // Leaf area is the conserved population measure. Cover is its bounded
-  // optical consequence rather than a separately authored density field.
+  // Leaf area is the conserved upper-leaf population measure. Basal cover is
+  // the short turf and litter immediately above the soil; upper cover is the
+  // vertical stand's top-view optical consequence. Neither is a second
+  // habitat decision.
   float leaf_area;
   float cover;
+  float basal_cover;
+  float canopy_height;
   float clump;
   float moisture;
   float forest_cover;
@@ -80,7 +85,14 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
                        alpine_survival * (1.0 - snow_habitat) * dry_ground *
                        (1.0 + 0.18 * grass.riparian);
   grass.leaf_area = saturate (rooted * density_scale);
-  grass.cover = smoothstep (0.10, 0.82, grass.leaf_area);
+  // These are Beer--Lambert limits of one population, not separately painted
+  // masks. The basal mat is denser in plan view than the upright upper leaves.
+  grass.cover = 1.0 - exp (-1.85 * grass.leaf_area);
+  grass.basal_cover = 1.0 - exp (-2.65 * grass.leaf_area);
+  grass.canopy_height =
+    MOPPE_SWARD_ENSEMBLE_HEIGHT_METRES * (0.72 + 0.22 * grass.moisture) *
+    (0.88 + 0.12 * grass.clump) *
+    mix (0.36, 1.0, smoothstep (0.06, 0.46, grass.leaf_area));
 
   grass.blade_tint = float3 (0.185, 0.315, 0.112);
   grass.blade_tint *= float3 (1.12 - 0.24 * grass.moisture,
@@ -185,6 +197,11 @@ inline float moppe_grass_resolved_fraction (float blade_pixels) {
   return smoothstep (0.16, 0.95, blade_pixels);
 }
 
+inline float moppe_sward_texture_detail (float3 linear_sample) {
+  const float luma = dot (linear_sample, float3 (0.299, 0.587, 0.114));
+  return clamp (luma / MOPPE_GRASS_TEXTURE_LINEAR_MEAN_LUMA, 0.62, 1.55);
+}
+
 inline float moppe_feature_pixels (float feature_metres,
                                    float focal_pixels,
                                    float distance) {
@@ -202,7 +219,7 @@ inline float moppe_flower_resolved_fraction (float head_pixels) {
 inline float moppe_sward_canopy_fraction (float blade_pixels,
                                           float focal_pixels,
                                           float distance_m) {
-  const float fine = sqrt (moppe_grass_resolved_fraction (blade_pixels));
+  const float fine = moppe_grass_resolved_fraction (blade_pixels);
   const float height_pixels = moppe_feature_pixels (
     MOPPE_SWARD_ENSEMBLE_HEIGHT_METRES, focal_pixels, distance_m);
   const float canopy_resolved = smoothstep (0.28, 1.15, height_pixels);
@@ -243,41 +260,189 @@ moppe_grass_leaf_back (float3 normal, float3 sun, float resolvable) {
 // at zero. The terrain substrate colours grassy ground with THIS, so a
 // retiring sward hands off between two evaluations of one formula
 // rather than between two materials that merely resemble each other.
-inline float3 moppe_sward_ensemble_light (float3 blade_tint_display,
-                                          float3 normal,
-                                          float3 sun_dir,
-                                          float3 view_dir,
-                                          float3 sun_diffuse,
-                                          float3 ambient,
-                                          float cast_light,
-                                          float sun_visibility) {
+struct MoppeSwardOpticalResponse {
+  float3 radiance;
+  float coverage;
+  float transmittance;
+  float optical_depth;
+};
+
+// Mean projected area of the upright leaf-normal distribution, multiplied by
+// the finite path through a clump. The lateral correlation length caps the
+// grazing path smoothly: an infinite plane of grass must not become an
+// infinite black slab at the horizon.
+inline float moppe_sward_projected_path (float3 axis, float3 ray, float clump) {
+  const float mu = abs (dot (normalize (axis), normalize (ray)));
+  const float across = sqrt (saturate (1.0 - mu * mu));
+  const float projected_area = mix (0.22, 0.68, across);
+  const float finite_path = mix (2.55, 3.15, saturate (clump));
+  const float limited = projected_area / finite_path;
+  return projected_area / sqrt (mu * mu + limited * limited);
+}
+
+inline float moppe_sward_mean_transmission (float optical_depth) {
+  return optical_depth < 0.001 ? 1.0
+                               : (1.0 - exp (-optical_depth)) / optical_depth;
+}
+
+inline float moppe_sward_extinction (float leaf_area, float clump) {
+  return 3.65 * saturate (leaf_area) * mix (0.88, 1.12, saturate (clump));
+}
+
+inline float moppe_sward_optical_depth (float3 axis,
+                                        float3 ray,
+                                        float leaf_area,
+                                        float clump,
+                                        float density_fraction) {
+  return moppe_sward_extinction (leaf_area, clump) *
+         saturate (density_fraction) *
+         moppe_sward_projected_path (axis, ray, clump);
+}
+
+// Integrate the first moment of a symmetric, two-sided leaf-normal
+// distribution. A sampled normal would merely exchange spatial aliasing for
+// lighting noise. The four lobes have one constant tilt, so their weighted
+// diffuse response can be evaluated as a float4 moment instead of a fragment
+// loop without changing the distribution.
+struct MoppeSwardLightMoments {
+  float3 sky;
+  float3 sun;
+};
+
+inline MoppeSwardLightMoments
+moppe_sward_light_moments (float3 blade_tint_display,
+                           float3 axis,
+                           float3 sun_dir,
+                           float3 view_dir,
+                           float3 sun_diffuse,
+                           float3 sun_specular,
+                           float3 ambient,
+                           float sun_mean_visibility) {
   const float ensemble_exposure = 0.72;
   const float3 base =
     moppe_srgb (blade_tint_display * (0.58 + 0.66 * ensemble_exposure));
-  const float lambert = saturate ((dot (normal, sun_dir) + 0.10) / 1.10);
+
+  const float3 up = normalize (axis);
+  const float3 helper =
+    abs (up.y) < 0.92 ? float3 (0.0, 1.0, 0.0) : float3 (1.0, 0.0, 0.0);
+  const float3 tangent = normalize (cross (helper, up));
+  const float3 bitangent = normalize (cross (up, tangent));
+  // The resolved ribbons bend their shading frames toward the open sky. Keep
+  // that first normal moment here; a horizontal-only distribution would turn
+  // the exact same plants into a dark wall the instant geometry retired.
+  constexpr float upright = 0.872506f;
+  constexpr float spread = 0.488603f;
+  const float up_view = upright * dot (up, view_dir);
+  const float tangent_view = spread * dot (tangent, view_dir);
+  const float bitangent_view = spread * dot (bitangent, view_dir);
+  const float4 view_weight = 0.12 + abs (float4 (up_view + tangent_view,
+                                                 up_view + bitangent_view,
+                                                 up_view - tangent_view,
+                                                 up_view - bitangent_view));
+  const float up_sun = upright * dot (up, sun_dir);
+  const float tangent_sun = spread * dot (tangent, sun_dir);
+  const float bitangent_sun = spread * dot (bitangent, sun_dir);
+  const float4 sun_facing = abs (float4 (up_sun + tangent_sun,
+                                         up_sun + bitangent_sun,
+                                         up_sun - tangent_sun,
+                                         up_sun - bitangent_sun));
+  const float weight_sum = dot (view_weight, float4 (1.0));
+  const float mean_sun =
+    dot (view_weight, sun_facing) / max (weight_sum, 0.001);
+  // Opposite sides of a thin leaf average to the midpoint of the sky/ground
+  // hemisphere, independent of the particular lobe normal.
+  const float3 sky = 0.5 * (moppe_hemisphere_light (ambient, up) +
+                            moppe_hemisphere_light (ambient, -up));
+  const float3 reflected_sun =
+    base * sun_diffuse * mean_sun * sun_mean_visibility;
+
+  const float toward = saturate (dot (view_dir, sun_dir));
+  const float3 transmitted =
+    sqrt (base) * sun_diffuse * moppe_grass_chlorophyll () *
+    (0.14 * sun_mean_visibility) * moppe_grass_toward_lobe (toward);
+
+  // The distribution's axial highlight is broad after individual blades are
+  // unresolved. Its small bounded amplitude supplies coherent field sheen,
+  // never the per-blade HDR spikes owned by resolved geometry.
+  const float3 half_dir = normalize (sun_dir - view_dir);
+  const float along = dot (up, half_dir);
+  const float axial = sqrt (saturate (1.0 - along * along));
+  const float sheen = pow (axial, 10.0) * (0.12 + 0.88 * toward * toward);
+  const float3 specular = sun_specular * (0.055 * sheen * sun_mean_visibility);
+  MoppeSwardLightMoments result;
+  result.sky = base * sky;
+  result.sun = reflected_sun + transmitted + specular;
+  return result;
+}
+
+inline float3 moppe_sward_distribution_light (float3 blade_tint_display,
+                                              float3 axis,
+                                              float3 sun_dir,
+                                              float3 view_dir,
+                                              float3 sun_diffuse,
+                                              float3 sun_specular,
+                                              float3 ambient,
+                                              float cast_light,
+                                              float sun_visibility,
+                                              float sun_mean_visibility) {
+  const MoppeSwardLightMoments moments =
+    moppe_sward_light_moments (blade_tint_display,
+                               axis,
+                               sun_dir,
+                               view_dir,
+                               sun_diffuse,
+                               sun_specular,
+                               ambient,
+                               sun_mean_visibility);
   const float3 shade_fill =
     mix (float3 (0.80, 0.92, 1.14), float3 (1.0), cast_light);
-  const float thin = exp (-2.0 * (1.0 - ensemble_exposure));
-  const float trans = 0.30 * thin * sun_visibility;
-  const float toward = saturate (dot (view_dir, sun_dir));
-  float3 color =
-    base * (shade_fill * moppe_hemisphere_light (ambient, normal) +
-            sun_diffuse * lambert * sun_visibility * (1.0 - 0.45 * trans));
-  color += sqrt (base) * sun_diffuse * moppe_grass_chlorophyll () * trans *
-           moppe_grass_toward_lobe (toward) * 3.2;
-  // Seen at grazing incidence a sward is mostly the shadowed depth
-  // between blades: without this occlusion the far field renders as
-  // bright clean felt, visibly lighter than the blade belt in front of
-  // it. Head-on (from above) the lit tops dominate and nothing darkens.
-  // TOWARD the sun the trade reverses: an edge-on sward transmits light
-  // through its whole depth and glows, so occlusion yields to
-  // transmission with the same lobe the blades' own backlight uses --
-  // otherwise the backlit far field sits dark behind glowing blades.
-  const float graze = 1.0 - abs (dot (view_dir, normal));
-  const float occluded =
-    mix (0.60, 1.04, saturate (toward * toward) * sun_visibility);
-  color *= mix (1.0, occluded, graze * graze * graze);
-  return color;
+  return shade_fill * moments.sky + sun_visibility * moments.sun;
+}
+
+// One bounded response for every unresolved evaluation of the upper leaves.
+// density_fraction is the portion of the conserved upper-leaf population
+// owned by this evaluator or vertical stratum. Coverage is Beer--Lambert
+// extinction; radiance is the directly integrated leaf-normal distribution.
+inline MoppeSwardOpticalResponse
+moppe_sward_optical_response (float3 blade_tint_display,
+                              float3 axis,
+                              float leaf_area,
+                              float clump,
+                              float density_fraction,
+                              float exposure,
+                              float3 sun_dir,
+                              float3 view_dir,
+                              float3 sun_diffuse,
+                              float3 sun_specular,
+                              float3 ambient,
+                              float cast_light,
+                              float sun_visibility) {
+  MoppeSwardOpticalResponse response;
+  const float fraction = saturate (density_fraction);
+  const float extinction = moppe_sward_extinction (leaf_area, clump);
+  const float sun_path = moppe_sward_projected_path (axis, sun_dir, clump);
+  response.optical_depth =
+    moppe_sward_optical_depth (axis, view_dir, leaf_area, clump, fraction);
+  response.transmittance = exp (-response.optical_depth);
+  response.coverage = 1.0 - response.transmittance;
+  // A pixel sees the first optical depth of an opaque stand, not the average
+  // leaf buried through its entire thickness. Retain a skylit/front-layer
+  // floor and let the slab mean describe only the remaining internal shadow.
+  const float slab_sun_mean =
+    moppe_sward_mean_transmission (extinction * sun_path);
+  const float sun_mean = mix (0.92, 1.0, slab_sun_mean);
+  response.radiance = moppe_sward_distribution_light (blade_tint_display,
+                                                      axis,
+                                                      sun_dir,
+                                                      view_dir,
+                                                      sun_diffuse,
+                                                      sun_specular,
+                                                      ambient,
+                                                      cast_light,
+                                                      sun_visibility,
+                                                      sun_mean) *
+                      mix (0.58, 1.0, saturate (exposure));
+  return response;
 }
 
 inline float moppe_grass_gust (float2 world_xz, float time) {
@@ -286,10 +451,12 @@ inline float moppe_grass_gust (float2 world_xz, float time) {
          0.45 * sin (time * 2.63 + phase * 1.7 + 1.3);
 }
 
-inline float3 moppe_grass_ensemble_axis (float2 world_xz, float time) {
+inline float3
+moppe_grass_ensemble_axis (float2 world_xz, float3 ground_normal, float time) {
   const float gust = moppe_grass_gust (world_xz, time);
-  return normalize (float3 (0.0, 1.0, 0.0) +
-                    float3 (0.79, 0.0, 0.53) * (0.14 * gust));
+  return normalize (
+    mix (normalize (ground_normal), float3 (0.0, 1.0, 0.0), 0.72) +
+    float3 (0.79, 0.0, 0.53) * (0.14 * gust));
 }
 
 // The substrate and the mesoscale canopy are two integrations of the same

@@ -35,6 +35,7 @@ struct UndergrowthVaryings {
   float3 color;
   float exposure;
   float petal; // 1 on flower-head fragments: petals are not chlorophyll
+  float grass_blade;
   float2 motion [[center_no_perspective]];
 };
 
@@ -226,11 +227,8 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
       // re-prices per shoot, so a family never spends another's budget.
       const float blade_pixels =
         moppe_grass_blade_pixels (focal_pixels, distance);
-      // Grass counts fall on the gentler square-root curve: survivors
-      // widen to carry the coverage of retired neighbours, so the field
-      // can afford fewer, broader tufts much farther out.
       float budget =
-        grass.leaf_area * sqrt (moppe_grass_resolved_fraction (blade_pixels));
+        grass.leaf_area * moppe_grass_resolved_fraction (blade_pixels);
       const MoppeFlowerDrift drift = moppe_flower_drift (
         center, grass.moisture, grass.forest_cover, grass.leaf_area);
       if (drift.presence > 0.02) {
@@ -452,10 +450,7 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     resolved_feature = moppe_flower_resolved_fraction (
       moppe_feature_pixels (2.0 * drift.head, focal_pixels, camera_distance));
   } else {
-    // The square root matches the object stage: grass survivors widen to
-    // carry retired neighbours' coverage, so the count affords to fall
-    // more slowly than the blade resolves.
-    resolved_feature = sqrt (moppe_grass_resolved_fraction (blade_pixels));
+    resolved_feature = moppe_grass_resolved_fraction (blade_pixels);
   }
   // The same edge fade the object stage applied to the tile: a shoot
   // near the window boundary grows out through its ordinary presence
@@ -469,9 +464,9 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
   // A shoot straddles its LOD threshold by growing into or out of the ground.
   // The short transition keeps motion continuous without turning the whole
   // layer translucent and giving depth ownership to stochastic fragments.
-  // Retiring neighbours leave the stable habitat-coloured terrain substrate,
-  // and a surviving shoot keeps its ecological height; only its width may
-  // grow, bounded, to conserve the coverage its neighbours dropped.
+  // Retiring neighbours enter the continuous density evaluation. A surviving
+  // shoot keeps its ecological height and physical width; no sparse blade is
+  // inflated into a distant tuft to stand in for the population it lost.
   const float presence = undergrowth_lod_presence (family_wanted, shoot, cell);
 
   const float draw = undergrowth_hash (identity, 4u);
@@ -579,12 +574,8 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     s.reach *= 1.0 - 0.18 * grass.riparian;
     s.climb *= 1.0 + 0.28 * grass.riparian;
     s.width *= 1.0 - 0.08 * grass.riparian;
-    // The ladder's middle rung for the sward itself: once a blade is too
-    // narrow to resolve, the survivors widen -- bounded to a tuft, never
-    // a ribbon -- and carry the projected leaf area their retired
-    // neighbours dropped. The field then coarsens in place instead of
-    // visibly assembling a few metres in front of the rider.
-    s.width *= clamp (0.85 / max (blade_pixels, 0.05), 1.0, 4.0);
+    // Width remains a property of the leaf. The density column, not a handful
+    // of enlarged survivors, carries the retired population.
   }
   // Keep blade-to-blade variation subordinate to the continuous habitat
   // fields. High-contrast salt and pepper reads as glitter once the blades
@@ -592,6 +583,16 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
   const float olive = undergrowth_hash (identity, 17u) - 0.5;
   s.tint *= float3 (1.0 + 0.18 * olive, 1.0, 1.0 - 0.16 * olive);
   s.tint *= 0.96 + 0.11 * undergrowth_hash (identity, 19u);
+
+  float3 ensemble_tint = grass.blade_tint;
+  if (family == UNDERGROWTH_GRASS) {
+    ensemble_tint = mix (grass.blade_tint,
+                         moppe_flower_wash_tint (drift.tint) * 0.60,
+                         min (0.32, 0.32 * drift.presence));
+  }
+  if (family == UNDERGROWTH_GRASS)
+    s.tint =
+      mix (ensemble_tint, s.tint, moppe_grass_resolved_fraction (blade_pixels));
 
   const uint vertex_base = thread_id * MOPPE_UNDERGROWTH_VERTICES_PER_SHOOT;
   const uint primitive_base =
@@ -710,6 +711,7 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     v.color = colour;
     v.exposure = exposure;
     v.petal = petal;
+    v.grass_blade = family == UNDERGROWTH_GRASS ? 1.0 : 0.0;
 
     v.world_pos = left;
     v.position = u.view_proj * float4 (left, 1.0);
@@ -750,10 +752,22 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]]) {
   // A leaf has no back. Facing the normal at whoever is looking is what
   // stops half of every rosette reading as a hole cut in the ground.
-  const float3 n = normalize (front_facing ? in.normal : -in.normal);
+  const float3 leaf_normal = normalize (front_facing ? in.normal : -in.normal);
   const float3 l = u.sun_dir.xyz;
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
+
+  // Collapse the existing microscopic theory in place. Once a blade width is
+  // no longer repeatable, its twist cannot keep selecting a full-contrast
+  // lighting sample. Tint already settles in the mesh stage; the ordinary
+  // blade shader now settles its directional and hemispherical terms to the
+  // symmetric leaf-distribution means instead of launching a second shader.
+  const float focal_px =
+    moppe_vertical_focal_pixels (u.unjittered_view_proj, u.temporal.y);
+  const float blade_px = moppe_grass_blade_pixels (focal_px, dist);
+  const float blade_resolved = moppe_grass_resolved_fraction (blade_px);
+  const float shading_resolved = mix (1.0, blade_resolved, in.grass_blade);
+  const float3 n = leaf_normal;
   const float fog = moppe_relief_haze (moppe_distance_fog (dist, u.fog_color.w),
                                        in.world_pos.y,
                                        u.relief.x,
@@ -771,7 +785,9 @@ fragment MoppeTemporalOutput undergrowth_fragment (
     moppe_cloud_transmission (in.world_pos, l, u.params.x, u.params.y);
 
   const float3 base = moppe_srgb (in.color);
-  const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
+  const float leaf_lambert = saturate ((dot (n, l) + 0.10) / 1.10);
+  const float ensemble_lambert = 0.30 + 0.46 * abs (l.y);
+  const float lambert = mix (ensemble_lambert, leaf_lambert, shading_resolved);
 
   // How many input pixels this shoot's width spans here. This, not
   // distance, is the temporal-stability measure: a jittered single sample
@@ -779,9 +795,6 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // variance must not outlive the feature's own pixels. This is the same
   // physical blade width that decides whether explicit blade geometry remains
   // repeatable over the stable substrate.
-  const float focal_px =
-    moppe_vertical_focal_pixels (u.unjittered_view_proj, u.temporal.y);
-  const float blade_px = moppe_grass_blade_pixels (focal_px, dist);
   const float resolvable = smoothstep (1.5, 4.0, blade_px);
 
   // A blade is one leaf thick and glows when the sun is behind it, which is
@@ -794,7 +807,12 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // carrying per-blade HDR spikes no sample can hit twice.
   const float leaf_back = moppe_grass_leaf_back (n, l, resolvable);
   const float thin = exp (-2.0 * (1.0 - in.exposure));
-  const float trans = leaf_back * thin * sun_visibility;
+  const float leaf_trans = leaf_back * thin * sun_visibility;
+  // The resolved shader applies a strong one-leaf transmission gain below.
+  // Its ensemble limit is the bounded 0.14 coefficient used by the density
+  // response, so divide by that gain before the carrier becomes unresolved.
+  const float ensemble_trans = (0.14 / 3.2) * sun_visibility;
+  const float trans = mix (ensemble_trans, leaf_trans, shading_resolved);
   const float3 view = to_frag / max (dist, 1e-4);
   const float toward = saturate (dot (view, l));
 
@@ -803,9 +821,12 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // the diffuse sun term yields as transmission rises.
   const float3 shade_fill =
     mix (float3 (0.80, 0.92, 1.14), float3 (1.0), cast_light);
+  const float3 leaf_sky = moppe_hemisphere_light (u.ambient.rgb, n);
+  const float3 ensemble_sky =
+    0.5 * (leaf_sky + moppe_hemisphere_light (u.ambient.rgb, -n));
   float3 color =
     base *
-    (shade_fill * moppe_hemisphere_light (u.ambient.rgb, n) +
+    (shade_fill * mix (ensemble_sky, leaf_sky, shading_resolved) +
      u.sun_diffuse.rgb * lambert * sun_visibility * (1.0 - 0.45 * trans));
 
   // Chlorophyll transmits green-yellow and almost no blue. Against the
@@ -872,11 +893,16 @@ fragment MoppeTemporalOutput undergrowth_fragment (
 struct SwardCanopyVaryings {
   float4 position [[position]];
   float3 world_pos;
+  float3 ground_pos;
   float3 ground_normal;
+  float3 axis;
   float3 tint;
   float2 field_xz;
+  float leaf_area;
+  float clump;
   float forest_cover;
   float lift;
+  float density_fraction;
   float2 motion [[center_no_perspective]];
 };
 
@@ -938,35 +964,20 @@ using SwardCanopyMesh = metal::mesh<SwardCanopyVaryings,
   }
 }
 
-static inline float sward_canopy_lift (float2 world_xz,
-                                       float ground,
-                                       float3 ground_normal,
-                                       float3 camera,
-                                       float focal_pixels,
-                                       constant MoppeUndergrowthUniforms& u,
-                                       texture2d<float> landscape_materials,
-                                       texture2d<float> ground_materials,
-                                       texture2d<float> water_levels) {
-  const MoppeGrassMedium medium = undergrowth_medium (world_xz,
-                                                      u,
-                                                      landscape_materials,
-                                                      ground_materials,
-                                                      water_levels,
-                                                      ground,
-                                                      ground_normal);
+static inline float sward_canopy_weight (float2 world_xz,
+                                         float ground,
+                                         float3 camera,
+                                         float focal_pixels,
+                                         constant MoppeUndergrowthUniforms& u) {
   const float distance =
     length (float3 (world_xz.x, ground, world_xz.y) - camera);
   const float blade_pixels = moppe_grass_blade_pixels (focal_pixels, distance);
   const float rung =
     moppe_sward_canopy_fraction (blade_pixels, focal_pixels, distance);
-  const float optical_surface = smoothstep (0.24, 0.52, medium.cover);
   const float edge =
     1.0 -
     smoothstep (0.90 * u.lod.y, 0.995 * u.lod.y, length (world_xz - camera.xz));
-  const float height = MOPPE_SWARD_ENSEMBLE_HEIGHT_METRES *
-                       (0.72 + 0.22 * medium.moisture) *
-                       (0.88 + 0.12 * medium.clump);
-  return height * rung * optical_surface * edge;
+  return rung * edge;
 }
 
 [[mesh]] void sward_canopy_mesh (
@@ -1009,46 +1020,34 @@ static inline float sward_canopy_lift (float2 world_xz,
 
     const float focal =
       moppe_vertical_focal_pixels (u.unjittered_view_proj, u.temporal.y);
-    const float previous_focal =
-      moppe_vertical_focal_pixels (u.previous_view_proj, u.temporal.y);
-    const float lift = sward_canopy_lift (field_xz,
-                                          ground,
-                                          ground_normal,
-                                          u.camera_pos.xyz,
-                                          focal,
-                                          u,
-                                          landscape_materials,
-                                          ground_materials,
-                                          water_levels);
-    const float previous_lift = sward_canopy_lift (field_xz,
-                                                   ground,
-                                                   ground_normal,
-                                                   u.previous_camera_pos.xyz,
-                                                   previous_focal,
-                                                   u,
-                                                   landscape_materials,
-                                                   ground_materials,
-                                                   water_levels);
-    const float3 axis = moppe_grass_ensemble_axis (field_xz, u.params.x);
+    const float canopy_weight =
+      sward_canopy_weight (field_xz, ground, u.camera_pos.xyz, focal, u);
+    const float lift = medium.canopy_height;
+    const float3 axis =
+      moppe_grass_ensemble_axis (field_xz, ground_normal, u.params.x);
     const float3 previous_axis =
-      moppe_grass_ensemble_axis (field_xz, u.temporal.z);
+      moppe_grass_ensemble_axis (field_xz, ground_normal, u.temporal.z);
     const float3 world =
       float3 (field_xz.x, ground, field_xz.y) +
       float3 (axis.x * lift * 0.24, lift, axis.z * lift * 0.24);
-    const float3 previous_world =
-      float3 (field_xz.x, ground, field_xz.y) +
-      float3 (previous_axis.x * previous_lift * 0.24,
-              previous_lift,
-              previous_axis.z * previous_lift * 0.24);
+    const float3 previous_world = float3 (field_xz.x, ground, field_xz.y) +
+                                  float3 (previous_axis.x * lift * 0.24,
+                                          lift,
+                                          previous_axis.z * lift * 0.24);
 
     SwardCanopyVaryings v;
     v.position = u.view_proj * float4 (world, 1.0);
     v.world_pos = world;
+    v.ground_pos = float3 (field_xz.x, ground, field_xz.y);
     v.ground_normal = ground_normal;
+    v.axis = axis;
     v.tint = tint;
     v.field_xz = field_xz;
+    v.leaf_area = medium.leaf_area;
+    v.clump = medium.clump;
     v.forest_cover = medium.forest_cover;
     v.lift = lift;
+    v.density_fraction = canopy_weight;
     v.motion =
       moppe_motion_vector (u.unjittered_view_proj * float4 (world, 1.0),
                            u.previous_view_proj * float4 (previous_world, 1.0),
@@ -1074,29 +1073,55 @@ static inline float sward_canopy_lift (float2 world_xz,
   }
 }
 
+#define SWARD_VOLUME_SAMPLES 4
+
+struct SwardVolumeDensity {
+  float density;
+  float2 gradient;
+};
+
+static inline SwardVolumeDensity
+sward_volume_density (float2 rest_xz, float height_fraction, float clump) {
+  // A continuous 3D field redistributes one conserved optical depth through
+  // the column. It is denser toward the basal mat but keeps an upper-leaf
+  // shoulder, so a view ray crosses changing material instead of stacked
+  // copies of one flat texture.
+  const float basal = 0.62 + 0.88 * (1.0 - height_fraction);
+  const float upper = 0.34 * smoothstep (0.48, 0.82, height_fraction);
+  const float2 height_warp =
+    float2 (3.7 * height_fraction, -2.9 * height_fraction);
+  const float3 fine = moppe_value_noise_d (rest_xz * 1.35 + height_warp);
+  const float broad = moppe_value_noise (rest_xz * 0.31 + float2 (11.3, 7.1) -
+                                         0.42 * height_warp);
+  const float variation = mix (0.72, 1.28, fine.x) * mix (0.86, 1.14, broad) *
+                          mix (0.94, 1.06, clump);
+  SwardVolumeDensity result;
+  result.density = max ((basal + upper) * variation, 0.02);
+  result.gradient = fine.yz * (1.35 * (basal + upper) * 0.56);
+  return result;
+}
+
 fragment MoppeTemporalOutput sward_canopy_fragment (
   SwardCanopyVaryings in [[stage_in]],
   constant MoppeUndergrowthUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float> grass_texture [[texture (MOPPE_TEX_GRASS)]],
   depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
   sampler smp [[sampler (0)]]) {
-  if (in.lift < 0.006)
+  if (in.lift < 0.006 || in.density_fraction < 0.001 || in.leaf_area < 0.001)
     discard_fragment ();
 
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float distance = length (to_frag);
   const float3 view = to_frag / max (distance, 1e-4);
   const float3 light = u.sun_dir.xyz;
-  const float gust = moppe_grass_gust (in.field_xz, u.params.x);
-  const float3 normal =
-    normalize (in.ground_normal + float3 (0.79, 0.0, 0.53) * (0.10 * gust));
+  const float3 axis = normalize (in.axis);
   const float fog =
     moppe_relief_haze (moppe_distance_fog (distance, u.fog_color.w),
                        in.world_pos.y,
                        u.relief.x,
                        u.relief.y);
   const float cast_light = moppe_sun_visibility (in.world_pos,
-                                                 normal,
+                                                 axis,
                                                  light,
                                                  fog,
                                                  u.light_matrix,
@@ -1108,24 +1133,88 @@ fragment MoppeTemporalOutput sward_canopy_fragment (
     cast_light *
     moppe_cloud_transmission (in.world_pos, light, u.params.x, u.params.y) *
     canopy_direct;
-  float3 color = moppe_sward_ensemble_light (in.tint,
-                                             normal,
-                                             light,
-                                             view,
-                                             u.sun_diffuse.rgb,
-                                             u.ambient.rgb,
-                                             cast_light,
-                                             sun_visibility);
+  const MoppeSwardOpticalResponse response = moppe_sward_optical_response (
+    in.tint,
+    axis,
+    in.leaf_area,
+    in.clump,
+    in.density_fraction,
+    1.0,
+    light,
+    view,
+    u.sun_diffuse.rgb,
+    u.sun_specular.rgb,
+    u.ambient.rgb * mix (1.0, 0.82, in.forest_cover),
+    cast_light,
+    sun_visibility);
+  if (response.coverage < 0.002)
+    discard_fragment ();
+
+  // The mesh is only the entry envelope. March from it toward the local
+  // terrain plane, capped by the medium's finite lateral correlation length,
+  // and integrate extinction front-to-back. Every density lookup is in rest
+  // world coordinates, with the broad gust used only to advect that field.
+  const float3 ground_normal = normalize (in.ground_normal);
+  const float column_height =
+    max (dot (in.world_pos - in.ground_pos, ground_normal), 0.02);
+  const float toward_ground = max (-dot (view, ground_normal), 0.025);
+  const float floor_path = column_height / toward_ground;
+  const float correlation_length = mix (2.2, 3.1, saturate (in.clump));
+  const float ray_length = min (floor_path, correlation_length);
+  const float column_noise =
+    moppe_value_noise (in.field_xz * 0.57 + float2 (19.7, 3.1));
+  const float total_depth =
+    response.optical_depth * mix (0.82, 1.18, column_noise);
+
+  float density[SWARD_VOLUME_SAMPLES];
+  float2 density_gradient[SWARD_VOLUME_SAMPLES];
+  float height_fraction[SWARD_VOLUME_SAMPLES];
+  float density_sum = 0.0;
+  for (uint i = 0u; i < SWARD_VOLUME_SAMPLES; ++i) {
+    const float along = (float (i) + 0.5) / float (SWARD_VOLUME_SAMPLES);
+    const float3 sample_world = in.world_pos + view * (ray_length * along);
+    const float height = saturate (
+      dot (sample_world - in.ground_pos, ground_normal) / column_height);
+    const float2 rest_xz =
+      sample_world.xz - axis.xz * (in.lift * height * 0.24);
+    const SwardVolumeDensity sample =
+      sward_volume_density (rest_xz, height, in.clump);
+    height_fraction[i] = height;
+    density[i] = sample.density;
+    density_gradient[i] = sample.gradient;
+    density_sum += density[i];
+  }
+
+  float remaining = 1.0;
+  float3 accumulated = float3 (0.0);
+  for (uint i = 0u; i < SWARD_VOLUME_SAMPLES; ++i) {
+    const float segment_depth = total_depth * density[i] / density_sum;
+    const float segment_coverage = 1.0 - exp (-segment_depth);
+    const float exposure = mix (0.46, 1.0, height_fraction[i]);
+    const float local_shape = mix (1.08, 0.86, saturate (density[i] / 2.2));
+    const float3 clump_normal = normalize (
+      axis - float3 (density_gradient[i].x, 0.0, density_gradient[i].y) * 0.38);
+    const float reference_light =
+      0.28 + 0.72 * saturate ((dot (axis, light) + 0.12) / 1.12);
+    const float local_light =
+      0.28 + 0.72 * saturate ((dot (clump_normal, light) + 0.12) / 1.12);
+    const float directional = clamp (local_light / reference_light, 0.68, 1.32);
+    const float3 source =
+      response.radiance * exposure * local_shape * directional;
+    accumulated += remaining * segment_coverage * source;
+    remaining *= 1.0 - segment_coverage;
+  }
+  const float coverage = 1.0 - remaining;
+  float3 color = accumulated / max (coverage, 0.001);
   const float far_blend = smoothstep (40.0, 350.0, distance);
   const float2 uv = in.field_xz * u.params.z;
   const float3 near_detail = grass_texture.sample (smp, uv).rgb;
   const float3 far_detail =
     grass_texture.sample (smp, uv * 0.19 + float2 (0.13, 0.71)).rgb;
-  const float photo_luma = dot (mix (near_detail, far_detail, far_blend),
-                                float3 (0.299, 0.587, 0.114));
-  color *= clamp (photo_luma / 0.40, 0.6, 1.6) *
-           moppe_sward_grain (in.field_xz, distance);
+  color *=
+    moppe_sward_texture_detail (mix (near_detail, far_detail, far_blend)) *
+    moppe_sward_grain (in.field_xz, distance);
   const float3 fog_color = moppe_warmed_fog (u.fog_color.rgb, view, light);
   color = mix (color, fog_color, smoothstep (0.0, 0.9, fog));
-  return moppe_temporal_output (float4 (color, 1.0), in.motion, 0.18);
+  return moppe_temporal_output (float4 (color, coverage), in.motion, 0.18);
 }

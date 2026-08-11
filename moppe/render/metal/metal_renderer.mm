@@ -1812,8 +1812,8 @@ namespace moppe {
 #endif
 
         // The middle rung of the grass medium is one terrain-following
-        // canopy. Its patching is only a bounded dispatch strategy: shared
-        // world-space edges make the result one surface, never coarse tufts.
+        // density column. Its patching is only a bounded dispatch strategy:
+        // shared world-space edges make the strata one field, never tufts.
         MTLMeshRenderPipelineDescriptor* canopy =
           [[MTLMeshRenderPipelineDescriptor alloc] init];
         canopy.objectFunction =
@@ -1824,6 +1824,15 @@ namespace moppe {
           [m_library newFunctionWithName:@"sward_canopy_fragment"];
         canopy.rasterSampleCount = scene_samples;
         canopy.colorAttachments[0].pixelFormat = scene;
+        canopy.colorAttachments[0].blendingEnabled = YES;
+        canopy.colorAttachments[0].sourceRGBBlendFactor =
+          MTLBlendFactorSourceAlpha;
+        canopy.colorAttachments[0].destinationRGBBlendFactor =
+          MTLBlendFactorOneMinusSourceAlpha;
+        canopy.colorAttachments[0].sourceAlphaBlendFactor =
+          MTLBlendFactorSourceAlpha;
+        canopy.colorAttachments[0].destinationAlphaBlendFactor =
+          MTLBlendFactorOneMinusSourceAlpha;
         if (m_temporal_scene_pipelines) {
           canopy.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
           canopy.colorAttachments[2].pixelFormat = MTLPixelFormatR8Unorm;
@@ -4652,6 +4661,10 @@ namespace moppe {
         u.tiles.z = (float)canopy_side;
         u.tiles.w = canopy_patch;
         u.lod.y = canopy_reach;
+        // All three strata must see the terrain and each other. They blend
+        // back-to-front over the already depth-written ground without
+        // claiming one opaque top-sheet depth for the whole medium.
+        [enc setDepthStencilState:m_pipelines.depth[1][0]];
         draw_field (m_pipelines.sward_canopy,
                     u,
                     (NSUInteger)canopy_side * (NSUInteger)canopy_side,
@@ -4678,6 +4691,7 @@ namespace moppe {
         u.lod.x = window_reach;
         u.tiles.z = (float)tiles_side;
         u.tiles.w = tile_world;
+        [enc setDepthStencilState:m_pipelines.depth[1][1]];
         draw_field (m_pipelines.undergrowth,
                     u,
                     (NSUInteger)tiles_side * (NSUInteger)tiles_side,

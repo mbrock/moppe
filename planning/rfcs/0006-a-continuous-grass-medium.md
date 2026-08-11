@@ -1,6 +1,6 @@
 # RFC-0006: A continuous grass medium
 
-Status: proposed; Gate 3 proof implemented, acceptance still open
+Status: proposed; Gate 3 and Gate 4 proofs implemented, acceptance still open
 
 ## Decision
 
@@ -90,8 +90,8 @@ terrain renderer selected.
 ## Current situation
 
 Commit `42ed47b` made the first structural entry into this design. The
-2026-08-11 continuation adds a bounded Gate 3 proof without claiming the whole
-RFC complete.
+2026-08-11 continuation now supplies bounded Gate 3 and Gate 4 proofs without
+claiming the whole RFC complete.
 
 - `moppe/shaders/metal/grass_medium.h` now owns shared habitat, leaf area,
   cover, clumping, blade tint, projected-width partitioning, wind, and several
@@ -99,26 +99,38 @@ RFC complete.
 - The undergrowth mesh shader uses a denser 0.60 m root lattice and keeps
   surviving grass at a physical blade width. The old distant widening into
   shrub-like clumps is gone.
-- The terrain shader keeps habitat-coloured basal cover at every distance;
-  projected blade width controls only the explicit upper-leaf geometry.
+- The terrain shader keeps a distinct leaf-area-derived basal cover at every
+  distance; projected blade width controls only the explicit upper leaves.
 - World-lattice identities remain stable while counts cross their projected
   thresholds, and fine blade flutter and glint retire before the blades that
   carry them become unrepeatable samples.
 - Grass laboratory stills and a moving ride show a much denser near field and
   remove the former bright hedge around the camera.
-- `sward_canopy_*` is a separate terrain-following mesh-shader surface over the
-  shared medium. Its world-anchored dispatch patches share edge evaluations;
-  its height owns only the interval after blade width becomes unresolved and
-  before total sward height becomes subpixel. It uses the same tint, flowering
-  wash, grain, ensemble lighting, and gust field as the integrated terrain.
+- `sward_canopy_*` uses a conservative terrain-following top envelope to enter
+  the middle field. Its fragment shader integrates a world-anchored density
+  column toward the ground, with a finite grazing path and four deterministic
+  vertical samples. The mesh patches merely bound dispatch; they do not stand
+  for tufts or individual plants.
+- Resolved blades, the middle density column, and the far terrain material now
+  partition one leaf-area population. Retiring blades retain physical width;
+  their tint, directional light, transmission, and glint converge in place to
+  the same ensemble moments instead of running a second fragment material.
+- `moppe_sward_optical_response` supplies one Beer--Lambert coverage and
+  bounded reflection, thin-leaf transmission, and broad sheen response to the
+  unresolved evaluations. The four symmetric leaf-normal lobes are evaluated
+  as one compact moment, not sampled stochastically.
+- The shipped grass photograph is decoded by hardware as sRGB. Its aggregate
+  detail is normalized against its measured linear mean (`0.0902`), not the
+  display-space value `0.40`; the earlier mismatch was the main cause of the
+  dark far register.
 - The earlier camera-relative displacement of terrain vertices is removed.
   The canopy is presentation geometry above the true terrain and does not
   alter terrain, physics, or world state.
 - Projected-size gates now use row norms of the unjittered world-to-clip
   matrix, making the result invariant under camera pitch and yaw.
 
-That implementation conserves one useful scalar, but it is not yet the full
-medium described above.
+That implementation establishes the representation and optical contract, but
+it is not yet the full ecological or traversal acceptance described above.
 
 ### Known failures
 
@@ -127,21 +139,24 @@ medium described above.
    soil, alluvium, scree, or exposed bedrock. Its slope and altitude bands
    currently overlap the terrain's cliff and scree bands, so blades grow from
    visibly stony highlands.
-2. **Basal and upper cover are not yet distinct.** The stable substrate and
-   the tall blades currently consume one generic cover scalar. The medium
-   cannot yet distinguish dense short turf from a sparse stand of tall grass.
-3. **The middle-scale volume is only a proof.** The separate canopy restores
-   a vertical and parallax-bearing surface without inventing coarse plants,
-   but its optical-depth profile, coverage edge, and sampling rate still need
-   calibration in ground and aerial motion. It is not yet acceptance evidence
-   for every traversal mode.
-4. **The basal stratum is only a tint.** It now prevents bright photographic
-   gravel appearing between edge-on blades, but does not yet represent short
-   grass, tillers, dead leaves, or deep litter shadow.
-5. **The far optical response is not yet one bounded model.** Transmission,
-   orientation diffuse, sheen, and opposition are related cues, but their
-   present coefficients are applied as separate corrections. They do not yet
-   state one energy or optical-depth budget.
+2. **Basal cover is distinct but still shallow.** It is now a denser
+   Beer--Lambert consequence of the same leaf claim rather than the upper
+   cover scalar, but visually it remains a dark turf-and-litter material. It
+   does not yet represent short tillers, dead leaves, or deep litter shadow.
+3. **The middle-scale volume remains a proof.** It restores a finite vertical
+   path and parallax without inventing coarse plants, but its four-sample
+   profile and correlation length still need acceptance in longer ground and
+   aerial motion. Consecutive glide and ride frames are useful evidence, not a
+   substitute for walking, jumping, riding, and gliding the actual game.
+4. **The optical response is bounded, not calibrated ground truth.** Leaf
+   normals, extinction, transmission, and sheen now share one budget, but the
+   coefficients are matched structurally rather than fitted from a measured
+   blade ensemble. The visual first moment is good enough for a proof; its
+   angular response still needs rotation tests over real sloped habitats.
+5. **The forest is not solved by the grass proof.** Dark forest interiors and
+   distant stands still expose a separate absence of stand-scale canopy and
+   understorey aggregation. Reusing the grass code as a generic vegetation
+   framework would conceal that different quotient rather than solve it.
 
 The beautiful forest-floor case is genuine evidence, not a contradiction.
 Side-on overlap, backlighting, and dark forest context are exactly the
@@ -271,4 +286,5 @@ low aerial pass show no popping, crawling, or angle-dependent material glitch.
 
 If accepted, the work should become a short track following the five gates
 above. Until then, this RFC records the intended invariant and the current
-failure honestly; it does not claim the canopy representation already exists.
+failure honestly; it claims a concrete representation proof, not complete
+ecological or traversal acceptance.

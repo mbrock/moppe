@@ -19,9 +19,9 @@ of machinery built this session:
   ensemble evaluation, then substrate, each family descending by the
   projected size of its own signature feature (blade width, head diameter,
   frond width), with the camera window demoted to a cost bound;
-- an **ensemble-limit substrate** — grassy terrain is lit by
-  `moppe_sward_ensemble_light`, the blade fragment's own formula
-  evaluated at its resolvable→0 limits over the same shared tint.
+- an **ensemble-limit substrate** — grassy terrain and the middle density
+  column use `moppe_sward_optical_response`, while the blade fragment's own
+  terms converge to the same first moments as its carrier becomes unresolved.
 
 ## The core idea
 
@@ -78,8 +78,8 @@ Two disciplines ride on top:
 
 | Boundary | mean | coverage | variance | dynamics |
 |---|---|---|---|---|
-| blades → canopy | shared ensemble limit ✓ | field complement (proof) | settling + shared grain (proof) | gust phase ✓ |
-| canopy → substrate | same formula ✓ | projected-height retirement (proof) | same grain ✓ | same gust phase ✓ |
+| blades → column | in-place moment limit ✓ | field complement (proof) | settling + column grain (proof) | gust phase ✓ |
+| column → substrate | same optical response ✓ | projected-height retirement (proof) | same grain ✓ | same gust phase ✓ |
 | heads → wash | shared chromaticity ✓ | wash ✓ | footprint floor ✓ | rigid heads ✓ |
 | fronds → ? | no far rung (window-culled) | — | — | — |
 | cost bounds | both populations and canopy reach zero before the bound | | | |
