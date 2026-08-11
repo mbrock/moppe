@@ -24,6 +24,19 @@ struct MoppeGrassMedium {
   float3 blade_tint;
 };
 
+// Stable identity for plant-scale lattices. Cells near the origin sit at
+// negative coordinates; two's-complement wrap keeps the hash well defined
+// there, and the same mix serves every population that hashes world cells.
+inline float moppe_plant_hash (uint2 cell, uint lane) {
+  uint value = cell.x * 0x9e3779b9u ^ cell.y * 0x85ebca6bu ^ lane * 0xc2b2ae35u;
+  value ^= value >> 16;
+  value *= 0x7feb352du;
+  value ^= value >> 15;
+  value *= 0x846ca68bu;
+  value ^= value >> 16;
+  return float (value & 0x00ffffffu) / float (0x01000000u);
+}
+
 inline float moppe_grass_clump (float2 world_xz) {
   return 0.55 * moppe_value_noise (world_xz * 0.085) +
          0.45 * moppe_value_noise (world_xz * 0.021 + float2 (17.3, 4.1));
@@ -47,7 +60,10 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
 
   const float canopy = saturate (forest_cover);
   grass.forest_cover = canopy;
-  const float light = 1.0 - 0.30 * smoothstep (0.32, 0.92, canopy);
+  // A closed canopy starves the sward hard rather than merely trimming it:
+  // the forest floor is sparse grass with room for its own populations,
+  // not a shaded copy of the meadow outside.
+  const float light = 1.0 - 0.55 * smoothstep (0.28, 0.90, canopy);
   const float damp = 0.75 + 0.25 * smoothstep (0.02, 0.48, grass.moisture);
   const float standable = smoothstep (0.52, 0.78, ground_up);
   const float cleared =
@@ -73,6 +89,82 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
   grass.blade_tint *=
     mix (float3 (1.0), float3 (0.82, 1.10, 0.88), grass.riparian);
   return grass;
+}
+
+// ---- flowering drifts ----------------------------------------------
+//
+// Meadow flowers arrive in single-species colonies, never as confetti: a
+// coarse world-anchored lattice decides where a drift lies and which
+// species it is, and a finer noise shapes the drift's edge. Flowers are
+// the highest-contrast thing the floor ever carries, so their colour must
+// be organized by these continuous fields or a receding meadow turns to
+// glitter. Both evaluators read the same drift -- the undergrowth mesh
+// shader realizes it as flower shoots, and the terrain substrate keeps its
+// colour wash after the heads have retired -- so a flowering hillside
+// stays flowering from the glider.
+
+struct MoppeFlowerDrift {
+  float presence; // 0..1: how strongly this ground blooms
+  float3 tint;    // display-space petal colour of the local species
+  float head;     // petal-head half-size in metres
+  float stem;     // species stem height over the sward, as a factor
+};
+
+inline MoppeFlowerDrift moppe_flower_drift_species (float choice) {
+  MoppeFlowerDrift drift;
+  if (choice < 0.30) { // oxeye daisy
+    drift.tint = float3 (0.93, 0.93, 0.86);
+    drift.head = 0.021;
+    drift.stem = 1.05;
+  } else if (choice < 0.56) { // buttercup
+    drift.tint = float3 (0.97, 0.78, 0.14);
+    drift.head = 0.013;
+    drift.stem = 0.85;
+  } else if (choice < 0.80) { // harebell
+    drift.tint = float3 (0.44, 0.46, 0.88);
+    drift.head = 0.015;
+    drift.stem = 0.92;
+  } else { // red campion
+    drift.tint = float3 (0.88, 0.46, 0.62);
+    drift.head = 0.016;
+    drift.stem = 0.97;
+  }
+  return drift;
+}
+
+inline MoppeFlowerDrift moppe_flower_drift (float2 world_xz,
+                                            float moisture,
+                                            float forest_cover,
+                                            float leaf_area) {
+  // Species ownership lives on an 11-metre lattice, warped so no colony
+  // border follows a straight line. The border noise shares the warp, so
+  // a species boundary and a drift edge cannot slide apart.
+  const float wander = moppe_value_noise (world_xz * 0.117);
+  const float2 warped = world_xz + (wander - 0.5) * float2 (7.9, -6.1);
+  const float2 cell = floor (warped / 11.0);
+  const uint2 id = uint2 (int2 (cell));
+
+  MoppeFlowerDrift drift =
+    moppe_flower_drift_species (moppe_plant_hash (id, 29u));
+
+  // Most patches never bloom. A fortunate patch lowers the threshold its
+  // edge noise must clear, so colonies are dense where they occur at all
+  // rather than thinly everywhere.
+  const float fortune = moppe_plant_hash (id, 31u);
+  const float rich = fortune * fortune;
+  const float field = moppe_value_noise (warped * 0.22);
+  const float colony =
+    smoothstep (mix (0.88, 0.50, rich), mix (0.97, 0.70, rich), field);
+
+  // Flowers stand in living grass on open, lit, moderately damp ground.
+  // Deep shade belongs to the ferns and the waterlogged margin to the
+  // riparian grasses, so the families partition habitat between them.
+  const float open_sky = 1.0 - smoothstep (0.10, 0.45, forest_cover);
+  const float damp_band = smoothstep (0.08, 0.26, moisture) *
+                          (1.0 - smoothstep (0.55, 0.88, moisture));
+  const float sward = smoothstep (0.12, 0.40, leaf_area);
+  drift.presence = colony * open_sky * damp_band * sward;
+  return drift;
 }
 
 inline float moppe_grass_blade_pixels (float focal_pixels, float distance) {

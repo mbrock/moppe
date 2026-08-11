@@ -563,6 +563,8 @@ struct TerrainMaterialBands {
   float snow;
   float beach;
   float grass;
+  float flower;
+  float3 flower_tint;
 };
 
 static inline TerrainMaterialBands
@@ -601,6 +603,19 @@ terrain_classify_material (thread const TerrainVaryings& in,
   // silhouette and motion, but turning their narrow ribbons edge-on must not
   // reveal a distance-dependent rocky ground material underneath them.
   bands.grass = medium.cover;
+
+  // The same drift the undergrowth realizes as flower shoots: the substrate
+  // keeps its colour wash, so heads that retire with distance dissolve into
+  // a hillside that still reads as flowering.
+  const MoppeFlowerDrift drift = moppe_flower_drift (in.world_pos.xz,
+                                                     readings.moisture,
+                                                     readings.forest_cover,
+                                                     medium.leaf_area);
+  // The wash needs a real sward under it: squaring cover keeps drift
+  // colour out of thinning ground, where a stain with no heads above it
+  // reads as discoloured dirt rather than as flowers.
+  bands.flower = drift.presence * medium.cover * medium.cover;
+  bands.flower_tint = drift.tint;
   return bands;
 }
 
@@ -671,6 +686,9 @@ terrain_compose_material (float3 normal,
   material.albedo = mix (material.albedo,
                          material.albedo * float3 (0.72, 0.88, 0.58),
                          material.grass);
+  material.albedo = mix (material.albedo,
+                         moppe_srgb (bands.flower_tint) * 0.42,
+                         0.30 * bands.flower);
   material.trail = 0.0;
   material.base = 0.0;
   material.forest = 0.0;

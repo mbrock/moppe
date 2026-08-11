@@ -1,5 +1,5 @@
-// Grass and occasional ferns on the forest floor, generated rather than
-// stored.
+// The ground flora -- grass, fern rosettes, and flowering drifts --
+// generated rather than stored.
 //
 // Nothing here is a mesh. The object stage walks a window of ground tiles
 // around the camera and keeps the ones the world's own fields say something
@@ -10,6 +10,14 @@
 // trees use moves it. So undergrowth costs no memory,
 // cannot drift out of step with the ground it grows on, and can change its
 // count and its shape every frame, because nothing is kept to go stale.
+//
+// A family is a way of spending one shoot's fixed vertex allowance. Grass
+// spends it as a narrow upright ribbon and is the substrate everywhere.
+// The accents displace grass shoots where their habitat says so: a fern is
+// one frond of a rosette whose crown a damp-shade lattice owns, and a
+// flower is a stem whose last two cross-sections become a petal head. The
+// families partition habitat -- deep damp shade to ferns, open sunlit
+// meadow to flowers -- so no ground carries two accents at once.
 
 #include "grass_medium.h"
 
@@ -26,6 +34,7 @@ struct UndergrowthVaryings {
   float3 normal;
   float3 color;
   float exposure;
+  float petal; // 1 on flower-head fragments: petals are not chlorophyll
   float2 motion [[center_no_perspective]];
 };
 
@@ -48,13 +57,7 @@ using UndergrowthMesh = metal::mesh<UndergrowthVaryings,
 // ---- reading the world ---------------------------------------------
 
 static inline float undergrowth_hash (uint2 cell, uint lane) {
-  uint value = cell.x * 0x9e3779b9u ^ cell.y * 0x85ebca6bu ^ lane * 0xc2b2ae35u;
-  value ^= value >> 16;
-  value *= 0x7feb352du;
-  value ^= value >> 15;
-  value *= 0x846ca68bu;
-  value ^= value >> 16;
-  return float (value & 0x00ffffffu) / float (0x01000000u);
+  return moppe_plant_hash (cell, lane);
 }
 
 static inline float2
@@ -243,10 +246,16 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
 
 // ---- the mesh stage: what a shoot is -------------------------------
 
+#define UNDERGROWTH_GRASS 0u
+#define UNDERGROWTH_FERN 1u
+#define UNDERGROWTH_FLOWER 2u
+
 // Everything one shoot needs to exist, resolved from a hash and the ground.
-// Reach and climb are kept apart because they are what tell the two forms
-// apart: a fern throws its fronds outward while a grass blade rises.
+// Reach and climb are kept apart because they are what tell the forms
+// apart: a fern throws its fronds outward while a grass blade rises and a
+// flower stem carries its head above the sward.
 struct UndergrowthShoot {
+  uint family;
   float3 root;
   float3 up;
   float3 out;  // horizontal direction the shoot reaches along
@@ -254,10 +263,48 @@ struct UndergrowthShoot {
   float reach; // metres out from the root
   float climb; // metres of rise at the shoot's highest
   float width;
-  float lift;  // how steeply it leaves the crown
-  float arch;  // how far it falls away again before the tip
-  float lobed; // depth of the pinnae riding on the width profile
+  float lift;       // how steeply it leaves the crown
+  float arch;       // how far it falls away again before the tip
+  float lobed;      // depth of the pinnae riding on the width profile
+  float head;       // flower petal-head half-size in metres
+  float3 head_tint; // display-space petal colour
 };
+
+// A fern is a rosette, not a blade. A coarse lattice proposes crown points
+// in damp shade, and every shoot rooted near one becomes a frond radiating
+// from it. The cell owns the crown, so the same rosette assembles from the
+// same fronds no matter where the camera window falls; the crown radius
+// stays inside the jittered centre's own cell so no frond is cut off at a
+// lattice border it cannot see.
+struct UndergrowthCrown {
+  float2 center;
+  bool member;
+};
+
+static inline UndergrowthCrown
+undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
+  const float cell_metres = 1.05;
+  const float2 cell = floor (root_xz / cell_metres);
+  const uint2 id = uint2 (int2 (cell));
+  UndergrowthCrown crown;
+  crown.center = (cell + float2 (0.32 + 0.36 * moppe_plant_hash (id, 61u),
+                                 0.32 + 0.36 * moppe_plant_hash (id, 67u))) *
+                 cell_metres;
+  // Bracken belongs to edges and glades as much as to the deep stand:
+  // asking for a closed canopy kept every rosette in permanent shadow
+  // where nothing reads. Thin woodland already qualifies.
+  const float habitat =
+    smoothstep (0.18, 0.55, canopy) * smoothstep (0.14, 0.55, wet);
+  // Bracken spreads by rhizome, so it arrives as stands: a coarse noise
+  // sampled at the crown's own centre keeps whole colonies together
+  // without letting two fronds of one rosette disagree about existing.
+  const float stand =
+    smoothstep (0.30, 0.62, moppe_value_noise (crown.center * 0.09));
+  const float odds = 0.50 * habitat * (0.25 + 0.75 * stand);
+  crown.member = moppe_plant_hash (id, 71u) < odds &&
+                 distance (root_xz, crown.center) < 0.30;
+  return crown;
+}
 
 // ---- the mesh stage ------------------------------------------------
 
@@ -293,29 +340,56 @@ struct UndergrowthShoot {
   // would pop when its own tile fails a cull its neighbour passed.
   const float2 base =
     (float2 (int2 (u.tiles.xy)) + float2 (tile.index)) * tile_world;
-  const float2 root_xz =
+  float2 root_xz =
     base + tile_world * float2 (0.03 + 0.94 * undergrowth_hash (identity, 1u),
                                 0.03 + 0.94 * undergrowth_hash (identity, 2u));
 
-  const float3 ground_normal = undergrowth_ground_normal (root_xz, u, normals);
-  const float ground = undergrowth_ground (root_xz, u, heights);
-  const float3 root = float3 (root_xz.x, ground, root_xz.y);
+  float3 ground_normal = undergrowth_ground_normal (root_xz, u, normals);
+  float ground = undergrowth_ground (root_xz, u, heights);
 
-  const MoppeGrassMedium grass = undergrowth_medium (root_xz,
-                                                     u,
-                                                     landscape_materials,
-                                                     ground_materials,
-                                                     water_levels,
-                                                     ground,
-                                                     ground_normal);
+  MoppeGrassMedium grass = undergrowth_medium (root_xz,
+                                               u,
+                                               landscape_materials,
+                                               ground_materials,
+                                               water_levels,
+                                               ground,
+                                               ground_normal);
   const float canopy = grass.forest_cover;
   const float wet = grass.moisture;
-  // Grass is the ordinary answer. Ferns are an accent reserved for damp shade,
-  // not a second carpet competing with it.
-  const float fern_habitat =
-    smoothstep (0.28, 0.86, canopy) * smoothstep (0.18, 0.74, wet);
-  const float fern_odds = 0.012 + 0.06 * fern_habitat;
-  const bool fern = undergrowth_hash (identity, 3u) < fern_odds;
+
+  // Grass is the ordinary answer; an accent family takes the shoot only
+  // where its habitat claims the ground. The claims cannot overlap, since
+  // crowns want deep damp shade and drifts want open sky.
+  const UndergrowthCrown crown = undergrowth_fern_crown (root_xz, canopy, wet);
+  uint family = crown.member ? UNDERGROWTH_FERN : UNDERGROWTH_GRASS;
+  MoppeFlowerDrift drift;
+  drift.presence = 0.0;
+  if (family == UNDERGROWTH_GRASS) {
+    drift = moppe_flower_drift (root_xz, wet, canopy, grass.leaf_area);
+    if (undergrowth_hash (identity, 3u) < 0.38 * drift.presence)
+      family = UNDERGROWTH_FLOWER;
+  }
+
+  // A frond leaves from beside its crown, not from wherever its shoot's
+  // hash happened to fall, so the rosette has a centre. The pulled root
+  // re-reads the ground: on a bank the crown must not float.
+  float2 radial = float2 (1.0, 0.0);
+  if (family == UNDERGROWTH_FERN) {
+    const float2 spoke = root_xz - crown.center;
+    const float apart = max (length (spoke), 0.02);
+    radial = spoke / apart;
+    root_xz = crown.center + radial * (0.04 + 0.20 * apart);
+    ground_normal = undergrowth_ground_normal (root_xz, u, normals);
+    ground = undergrowth_ground (root_xz, u, heights);
+    grass = undergrowth_medium (root_xz,
+                                u,
+                                landscape_materials,
+                                ground_materials,
+                                water_levels,
+                                ground,
+                                ground_normal);
+  }
+  const float3 root = float3 (root_xz.x, ground, root_xz.y);
 
   // A shoot straddles its LOD threshold by growing into or out of the ground.
   // The short transition keeps motion continuous without turning the whole
@@ -325,32 +399,86 @@ struct UndergrowthShoot {
   // A surviving shoot therefore stays one physical blade; neither its width
   // nor its ecological height changes to disguise a reduced count.
   const float camera_distance = length (root - u.camera_pos.xyz);
+
+  // Fine-scale motion is meaningful only while a blade spans several pixels.
+  // Beyond that, the coherent gust remains but the fast flick fades before it
+  // can turn a distant field into temporal sparkle.
+  const float focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  const float blade_pixels =
+    moppe_grass_blade_pixels (focal_pixels, camera_distance);
+  const float micro_detail = smoothstep (1.5, 4.0, blade_pixels);
+
   const float draw = undergrowth_hash (identity, 4u);
-  const float scale =
-    sqrt (presence) * (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
-    (0.65 + 0.65 * draw * draw) * (1.0 + 0.18 * grass.riparian);
+  float scale = sqrt (presence) * (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
+                (0.65 + 0.65 * draw * draw) * (1.0 + 0.18 * grass.riparian);
+  // The starved shade sward is short as well as sparse, so the rosettes
+  // and the litter-dark substrate own the forest floor's silhouette.
+  if (family == UNDERGROWTH_GRASS)
+    scale *= 1.0 - 0.32 * smoothstep (0.40, 0.95, canopy);
 
   UndergrowthShoot s;
+  s.family = family;
   s.root = root;
-  // Fronds follow the ground; grass gravitropism makes its blades mostly
-  // upright even when their roots are on a bank.
-  s.up = normalize (mix (ground_normal, float3 (0, 1, 0), fern ? 0.38 : 0.72));
+  s.head = 0.0;
+  s.head_tint = float3 (0.0);
+  // Fronds follow the ground; gravitropism holds grass mostly upright even
+  // on a bank, and flower stems more strongly still.
+  const float upright = family == UNDERGROWTH_FERN     ? 0.38
+                        : family == UNDERGROWTH_FLOWER ? 0.85
+                                                       : 0.72;
+  s.up = normalize (mix (ground_normal, float3 (0, 1, 0), upright));
   const float turn = 6.2831853 * undergrowth_hash (identity, 5u) +
                      0.55 * (undergrowth_hash (identity, 6u) - 0.5);
   const float3 across =
     normalize (cross (s.up, float3 (0.0, 0.0, 1.0)) + float3 (0.001, 0.0, 0.0));
   const float3 along = normalize (cross (across, s.up));
-  s.out = normalize (across * cos (turn) + along * sin (turn));
+  if (family == UNDERGROWTH_FERN) {
+    // Radially out of the rosette, with only a little swirl: the shared
+    // centre is what makes eight fronds read as one plant.
+    const float swirl = 0.45 * (undergrowth_hash (identity, 6u) - 0.5);
+    const float2 spun =
+      float2 (radial.x * cos (swirl) - radial.y * sin (swirl),
+              radial.x * sin (swirl) + radial.y * cos (swirl));
+    s.out = normalize (float3 (spun.x, 0.0, spun.y) -
+                       s.up * dot (s.up, float3 (spun.x, 0.0, spun.y)));
+  } else {
+    s.out = normalize (across * cos (turn) + along * sin (turn));
+  }
 
   const float spread = 0.80 + 0.45 * undergrowth_hash (identity, 11u);
-  if (fern) {
-    s.reach = scale * 0.48 * spread;
-    s.climb = scale * 0.62 * spread;
-    s.width = scale * 0.105;
-    s.lift = 1.88;
-    s.arch = 1.20;
-    s.lobed = 0.38;
-    s.tint = float3 (0.108, 0.262, 0.082);
+  if (family == UNDERGROWTH_FERN) {
+    // Fronds arc up and over the starved shade sward, so the rosette owns
+    // its patch of floor in silhouette rather than hiding green-on-green.
+    s.reach = scale * 0.66 * spread;
+    s.climb = scale * 0.55 * spread;
+    s.width = scale * 0.085;
+    s.lift = 2.0;
+    s.arch = 1.5;
+    s.lobed = 0.42;
+    // Lighter and bluer than the sward: the accent must survive shade,
+    // where the litter substrate beneath it is nearly black.
+    s.tint = float3 (0.155, 0.335, 0.108) * (0.88 + 0.24 * wet);
+  } else if (family == UNDERGROWTH_FLOWER) {
+    s.reach = scale * 0.07;
+    s.climb =
+      scale * drift.stem * (0.80 + 0.30 * undergrowth_hash (identity, 12u));
+    s.width = scale * 0.010;
+    s.lift = 1.0;
+    s.arch = 0.0;
+    s.lobed = 0.0;
+    s.tint = grass.blade_tint * 0.88;
+    // The head keeps species colour only while it spans enough pixels for
+    // a jittered sample to revisit; past that its chroma collapses toward
+    // the sward-and-drift mean the substrate carries, so a receding drift
+    // dissolves into its own wash instead of scintillating.
+    const float head_px =
+      2.0 * drift.head * focal_pixels / max (camera_distance, 0.5);
+    const float resolved_head = smoothstep (1.1, 3.2, head_px);
+    const float3 sward_tint = mix (grass.blade_tint, drift.tint, 0.55);
+    s.head = drift.head * (0.80 + 0.35 * undergrowth_hash (identity, 13u)) *
+             smoothstep (0.05, 0.50, presence);
+    s.head_tint = mix (sward_tint, drift.tint, resolved_head) *
+                  (0.92 + 0.16 * undergrowth_hash (identity, 29u));
   } else {
     // One strip is one blade. Density now supplies the field's visual mass,
     // letting the individual silhouette remain convincingly narrow.
@@ -360,7 +488,7 @@ struct UndergrowthShoot {
     s.lift = 1.22;
     s.arch = 0.20;
     s.lobed = 0.0;
-    s.tint = float3 (0.185, 0.315, 0.112);
+    s.tint = grass.blade_tint;
     // Bank grasses trade their meadow spread for a taller upright profile.
     // This is a continuous habitat response, not a separately scattered row
     // of reeds that could drift away from the waterline.
@@ -368,8 +496,6 @@ struct UndergrowthShoot {
     s.climb *= 1.0 + 0.28 * grass.riparian;
     s.width *= 1.0 - 0.08 * grass.riparian;
   }
-  if (!fern)
-    s.tint = grass.blade_tint;
   // Keep blade-to-blade variation subordinate to the continuous habitat
   // fields. High-contrast salt and pepper reads as glitter once the blades
   // become subpixel, even though every blade has stable identity.
@@ -381,14 +507,6 @@ struct UndergrowthShoot {
   const uint primitive_base =
     thread_id * MOPPE_UNDERGROWTH_PRIMITIVES_PER_SHOOT;
   const uint index_base = primitive_base * 3u;
-
-  // Fine-scale motion is meaningful only while a blade spans several pixels.
-  // Beyond that, the coherent gust remains but the fast flick fades before it
-  // can turn a distant field into temporal sparkle.
-  const float focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
-  const float blade_pixels =
-    moppe_grass_blade_pixels (focal_pixels, camera_distance);
-  const float micro_detail = smoothstep (1.5, 4.0, blade_pixels);
 
   // The active mover parts the field without retaining or rewriting a single
   // blade. Roots stay fixed; upper sections lean away and lie down toward the
@@ -404,34 +522,67 @@ struct UndergrowthShoot {
 
   // The shoot's spine: it leaves the root steeply, then falls away. The
   // last cross-section is closed to a point, so a frond ends in a tip
-  // rather than in a cut edge.
+  // rather than in a cut edge. A flower spends its sections differently:
+  // the stem runs root to top across the first two, and the last two
+  // become the lower and upper edges of the petal head.
   for (uint step = 0; step < MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT; ++step) {
+    const bool head = s.family == UNDERGROWTH_FLOWER && step >= 2u;
     const float t =
-      float (step) / float (MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT - 1);
+      s.family == UNDERGROWTH_FLOWER
+        ? min (float (step), 1.0)
+        : float (step) / float (MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT - 1);
     const float rise = s.lift * t - s.arch * t * t;
     float3 spine = s.root + s.out * (s.reach * t) + s.up * (s.climb * rise);
     const float upper = smoothstep (0.0, 0.58, t) * response;
     spine += float3 (away.x, 0.0, away.y) * (0.42 * upper);
     spine -= s.up * (s.climb * rise * 0.72 * response);
-    // Grass keeps nearly one width until its pointed tip; a fern broadens
-    // through the middle and carries lobes on that profile.
-    const float taper =
-      fern ? 0.42 + 1.25 * t - 1.35 * t * t : 0.72 + 0.28 * sin (3.1415927 * t);
-    const float lobes = 1.0 + s.lobed * cos (12.566371 * t);
-    const float half_width = s.width * (t >= 0.999 ? 0.0 : taper * lobes);
-    const float3 side = normalize (cross (s.out, s.up));
-    // A little twist keeps neighbouring blades from showing identical faces.
-    // Ferns twist more strongly as their broad fronds fall.
-    const float3 face = normalize (
-      s.up + s.out * (0.55 * rise) +
-      side * ((fern ? 0.30 : 0.12) *
-              sin (6.2831853 * undergrowth_hash (identity, 23u) + 2.2 * t)));
-    const float3 edge = normalize (cross (face, s.out));
+
+    float3 face_normal;
+    float3 edge;
+    float half_width;
+    float3 section_tint = s.tint;
+    float petal = 0.0;
+    if (head) {
+      // The head is a disc tilted between its stem's up and the camera:
+      // seen from above it faces the sky, from the saddle it shows its
+      // colour, and the basis never degenerates because up rules the
+      // vertical and the stem's own out-direction rules the horizontal.
+      const float3 to_cam = normalize (u.camera_pos.xyz - spine);
+      const float3 facing = normalize (s.up + 1.25 * to_cam);
+      const float3 disc_r = normalize (cross (facing, s.out));
+      const float3 disc_u = cross (disc_r, facing);
+      spine += facing * 0.012 + s.up * (0.30 * s.head) +
+               disc_u * (s.head * (step == 2u ? -0.62 : 0.66));
+      face_normal = facing;
+      edge = disc_r;
+      half_width = s.head * (step == 2u ? 0.98 : 0.80);
+      section_tint = s.head_tint;
+      petal = 1.0;
+    } else {
+      // Grass keeps nearly one width until its pointed tip; a fern
+      // broadens through the middle and carries lobes on that profile.
+      const float taper = s.family == UNDERGROWTH_FERN
+                            ? 0.30 + 1.60 * t - 1.70 * t * t
+                            : 0.72 + 0.28 * sin (3.1415927 * t);
+      const float lobes = 1.0 + s.lobed * (0.5 - 0.5 * cos (6.2831853 * t));
+      half_width = s.width * (t >= 0.999 ? 0.0 : taper * lobes);
+      const float3 side = normalize (cross (s.out, s.up));
+      // A little twist keeps neighbouring blades from showing identical
+      // faces. Ferns twist more strongly as their broad fronds fall.
+      const float3 face = normalize (
+        s.up + s.out * (0.55 * rise) +
+        side * ((s.family == UNDERGROWTH_FERN ? 0.30 : 0.12) *
+                sin (6.2831853 * undergrowth_hash (identity, 23u) + 2.2 * t)));
+      face_normal = face;
+      edge = normalize (cross (face, s.out));
+    }
 
     // Fine grass edges scintillate easily, so the fast flick remains
     // subordinate to the shared low-frequency bend and disappears at range.
+    // A petal head keeps no flick at all: its four corners share one bend,
+    // so the disc sways rigidly on its stem.
     const float bend = 0.18 + 0.50 * t;
-    const float flutter = (0.06 + 0.18 * t) * micro_detail;
+    const float flutter = (0.06 + 0.18 * t) * micro_detail * (1.0 - petal);
     const float3 left_base = spine - edge * half_width;
     const float3 right_base = spine + edge * half_width;
     const float3 left = moppe_wind (left_base, bend, flutter, u.params.x);
@@ -441,16 +592,21 @@ struct UndergrowthShoot {
     const float3 previous_right =
       moppe_wind (right_base, bend, flutter, u.temporal.z);
 
-    // Exposure along the frond stands in for how much sky its part of the
-    // plant sees: the litter at the base of a rosette is nearly black, the
-    // tips catch everything.
-    const float exposure = 0.12 + 0.88 * t;
-    const float3 colour = s.tint * (0.58 + 0.66 * exposure);
+    // Exposure along the shoot stands in for how much sky its part of the
+    // plant sees: a blade rises out of its own litter shadow, a head above
+    // the sward catches everything, and a frond arcs over the litter
+    // rather than through it, so its whole length stays in the light the
+    // canopy admits.
+    const float exposure = head                           ? 1.0
+                           : s.family == UNDERGROWTH_FERN ? 0.40 + 0.60 * t
+                                                          : 0.12 + 0.88 * t;
+    const float3 colour = section_tint * (0.58 + 0.66 * exposure);
 
     UndergrowthVaryings v;
-    v.normal = face;
+    v.normal = face_normal;
     v.color = colour;
     v.exposure = exposure;
+    v.petal = petal;
 
     v.world_pos = left;
     v.position = u.view_proj * float4 (left, 1.0);
@@ -553,10 +709,13 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // backlit blade exceeds the reflected scene around it -- and the bloom
   // bright-pass supplies the halo for free. Transmittance rides on
   // sqrt(base): a thin blade passes far more light than its dark diffuse
-  // albedo reflects.
-  const float3 chlorophyll = moppe_grass_chlorophyll ();
+  // albedo reflects. A petal is not chlorophyll: backlit it glows warm in
+  // roughly its own colour, and a little less fiercely than a blade.
+  const float3 chlorophyll =
+    mix (moppe_grass_chlorophyll (), float3 (1.0, 0.90, 0.74), in.petal);
   const float lobe = moppe_grass_toward_lobe (toward);
-  color += sqrt (base) * u.sun_diffuse.rgb * chlorophyll * trans * lobe * 3.2;
+  color += sqrt (base) * u.sun_diffuse.rgb * chlorophyll * trans * lobe *
+           mix (3.2, 2.1, in.petal);
 
   // Real backlit grass also glints: a blade is a waxy cylinder carrying an
   // anisotropic streak along its axis (Kajiya-Kay). The axis is near
@@ -580,8 +739,10 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   const float glint = pow (sqrt (saturate (1.0 - along * along)), streak) *
                       (0.10 + 0.90 * toward * toward);
   const float steady = smoothstep (0.40, 2.0, blade_px);
+  // Petals are matte; the waxy axial streak belongs to the blades.
   color += u.sun_specular.rgb * glint * sun_visibility * steady *
-           mix (0.40, 1.0, resolvable) * (0.30 + 0.70 * in.exposure) * 2.4;
+           mix (0.40, 1.0, resolvable) * (0.30 + 0.70 * in.exposure) * 2.4 *
+           (1.0 - 0.78 * in.petal);
 
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);

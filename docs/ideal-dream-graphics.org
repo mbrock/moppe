@@ -120,6 +120,12 @@ Extend the undergrowth mesh-shader population from grass alone to bounded
 assemblies for bunch grass, fern, low herb, flower, seed head, litter, and
 small stone.  Keep projected-size rejection and stable individual decisions.
 
+Landed so far: the family table in undergrowth.metal — fern rosettes
+assembled from re-rooted shoots around a damp-shade crown lattice, and
+flowering forbs in single-species drifts whose colour also washes the
+terrain substrate (grass_medium.h), with head chroma collapsing at range.
+Remaining: seed heads, litter, small stones.
+
 *** TODO GFX-041 Trail and clearing composition
 
 Make the route a material and population event: compressed dirt, loose stone,

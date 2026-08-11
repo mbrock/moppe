@@ -120,19 +120,34 @@ view-dependent while the ground still receives forest-scale occlusion.
 
 ## The floor: geometry that is never stored
 
-`moppe/shaders/metal/undergrowth.metal` grows mostly grass, with occasional
-ferns in damp shade, and nothing about it is a stored mesh. An object stage
-walks a window of ground tiles around the camera and keeps the ones the
-world's own fields say something grows on: light and water in the soil, no
-trail worn across it, ground roots can hold. Each one-metre tile grows up to
-32 independently rooted shoots — almost all narrow grass blades, with rare
-fern fronds in damp shade. Four cross-sections give each shoot a curved
-silhouette, while a shared C++/Metal meshlet contract proves at compile time
-that the tile remains within Metal's output limits. A hash decides where each
-shoot stands and what it is, the height and normal textures root it on the
-terrain by construction, and the same gust function the trees use moves it.
-Each generated root samples the trail field again, so grass grows down at a
+`moppe/shaders/metal/undergrowth.metal` grows the ground flora — grass,
+fern rosettes, and flowering drifts — and nothing about it is a stored
+mesh. An object stage walks a window of ground tiles around the camera and
+keeps the ones the world's own fields say something grows on: light and
+water in the soil, no trail worn across it, ground roots can hold. Each
+sub-metre tile grows up to 32 independently rooted shoots. Four
+cross-sections give each shoot a curved silhouette, while a shared
+C++/Metal meshlet contract proves at compile time that the tile remains
+within Metal's output limits. A hash decides where each shoot stands and
+what it is, the height and normal textures root it on the terrain by
+construction, and the same gust function the trees use moves it. Each
+generated root samples the trail field again, so grass grows down at a
 worn edge instead of exposing the coarser tile that proposed it.
+
+A family is a way of spending one shoot's fixed vertex allowance, and the
+families partition habitat rather than compete for it. Grass is the
+substrate everywhere, and a closed canopy starves it hard, so the forest
+floor is sparse short blades over dark litter rather than a shaded meadow.
+A fern is one frond of a rosette: a coarse damp-shade lattice proposes
+crown points in stands, every shoot rooted near a crown re-roots beside it
+and radiates outward, and the same rosette therefore assembles from the
+same fronds no matter where the camera window falls. A flower is a stem
+whose last two cross-sections become a petal head, a disc tilted between
+sky and camera. Flowers arrive in single-species drifts owned by a warped
+world lattice (`grass_medium.h`), the drift's colour also washes the
+terrain substrate beneath it, and a head whose pixels run out collapses
+its chroma toward that wash — so a receding drift dissolves into a
+hillside that still reads as flowering, and nothing scintillates.
 
 That is the shape the vegetation shelf's `ideas/geometry-from-fields.md`
 proposes, and its payoff is not only that the plants cost no memory. They
