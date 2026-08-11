@@ -245,6 +245,10 @@ def ride_profile(frames_dir: Path) -> list[dict]:
         flat = band[ok].ravel()
         np.add.at(sums[0], flat, residual[ok].ravel())
         np.add.at(sums[1], flat, raw[ok].ravel())
+        # A spawn is a sparse discrete event: a handful of pixels whose
+        # change motion cannot explain at all. The band MEAN buries such
+        # events; the event fraction is the statistic that finds them.
+        np.add.at(sums[2], flat, (residual[ok] > 0.04).ravel())
         np.add.at(counts, flat, 1)
         previous = current
 
@@ -257,6 +261,7 @@ def ride_profile(frames_dir: Path) -> list[dict]:
             "rows": int(counts[index]),
             "residual": float(sums[0][index] / counts[index]),
             "raw_residual": float(sums[1][index] / counts[index]),
+            "event_fraction": float(sums[2][index] / counts[index]),
         })
     return profile
 
@@ -281,21 +286,27 @@ def ride_main(args) -> int:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    figure, axis = plt.subplots(figsize=(8, 4.6))
+    figure, axes = plt.subplots(1, 2, figsize=(12.5, 4.6))
     for label, profile in profiles.items():
         distance = [p["distance_m"] for p in profile]
-        axis.plot(distance, [p["residual"] for p in profile],
-                  marker=".", label=f"{label}: motion-compensated")
-        axis.plot(distance, [p["raw_residual"] for p in profile],
-                  linestyle="--", alpha=0.5, label=f"{label}: raw diff")
-    axis.set_xscale("log")
-    axis.set_yscale("log")
-    axis.set_xlabel("true depth (m)")
-    axis.set_ylabel("mean |residual| per frame pair")
-    axis.set_title("appearance energy: change the motion vectors "
-                   "cannot explain")
-    axis.grid(True, which="both", alpha=0.3)
-    axis.legend()
+        axes[0].plot(distance, [p["residual"] for p in profile],
+                     marker=".", label=f"{label}: motion-compensated")
+        axes[0].plot(distance, [p["raw_residual"] for p in profile],
+                     linestyle="--", alpha=0.5, label=f"{label}: raw diff")
+        axes[1].plot(distance, [p["event_fraction"] for p in profile],
+                     marker=".", label=label)
+    for axis, ylabel, title in (
+            (axes[0], "mean |residual| per frame pair",
+             "appearance energy (band mean)"),
+            (axes[1], "fraction of pixels with residual > 0.04",
+             "appearance events (sparse pops)")):
+        axis.set_xscale("log")
+        axis.set_yscale("log")
+        axis.set_xlabel("true depth (m)")
+        axis.set_ylabel(ylabel)
+        axis.set_title(title)
+        axis.grid(True, which="both", alpha=0.3)
+        axis.legend()
     figure.tight_layout()
     figure.savefig(args.out_dir / "ride-residual.png", dpi=110)
 
@@ -309,6 +320,48 @@ def ride_main(args) -> int:
     return 0
 
 
+def strip_main(args) -> int:
+    """Material-continuity strip: patches of ground at increasing true
+    depth, cut from ONE frame and laid side by side at native scale. If
+    the far representation is really the near material, the strip reads
+    as one material; a representation break reads as a different patch,
+    and no composition can hide it."""
+    distances = [float(v) for v in args.strip.split(",") if v.strip()]
+    png = Path(args.captures[0])
+    motion, depth_m, _ = load_aux(png)
+    image = Image.open(png).convert("RGB")
+    scale_x = image.width / depth_m.shape[1]
+    scale_y = image.height / depth_m.shape[0]
+    patch_w, patch_h = 360, 260
+    from PIL import ImageDraw
+    strip = Image.new("RGB", (patch_w * len(distances), patch_h + 28),
+                      (24, 24, 24))
+    draw = ImageDraw.Draw(strip)
+    center_x = depth_m.shape[1] // 2
+    columns = slice(center_x - 40, center_x + 40)
+    for index, target in enumerate(distances):
+        rows = np.nanmedian(np.where(np.isfinite(depth_m[:, columns]),
+                                     depth_m[:, columns], np.nan), axis=1)
+        good = np.isfinite(rows)
+        if not good.any():
+            continue
+        row = int(np.argmin(np.abs(np.where(good, rows, 1e9) - target)))
+        actual = rows[row]
+        cx = int(center_x * scale_x)
+        cy = int(row * scale_y)
+        top = max(0, min(image.height - patch_h, cy - patch_h // 2))
+        left = max(0, min(image.width - patch_w, cx - patch_w // 2))
+        patch = image.crop((left, top, left + patch_w, top + patch_h))
+        strip.paste(patch, (index * patch_w, 28))
+        draw.text((index * patch_w + 8, 7),
+                  f"{actual:.0f} m", fill=(255, 255, 255))
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    out = args.out_dir / (png.stem + ".strip.png")
+    strip.save(out)
+    print(f"material-continuity strip: {out}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out_dir", type=Path)
@@ -318,7 +371,13 @@ def main() -> int:
     parser.add_argument("--ride", action="store_true",
                         help="captures are directories of consecutive ride "
                              "frames with MOPPE_CAPTURE_AUX dumps")
+    parser.add_argument("--strip", metavar="D1,D2,...",
+                        help="cut same-material patches at these true depths "
+                             "from ONE frame (needs its aux dumps) and lay "
+                             "them side by side")
     args = parser.parse_args()
+    if args.strip:
+        return strip_main(args)
     if args.ride:
         return ride_main(args)
 
