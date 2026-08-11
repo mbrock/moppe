@@ -131,6 +131,48 @@ Remaining: seed heads, litter, small stones.
 Make the route a material and population event: compressed dirt, loose stone,
 edge flowers, lower cover, and occasional roots.  Preserve gameplay clearance.
 
+*** TODO GFX-042 Far-grass substrate material (the ladder's third rung)
+
+Beyond the last widened tuft (~75 m at play resolution) grass is only a
+tinted albedo: no nap, no motion, no aggregate lighting response.  A
+seamless coverage hand-off into inert paint still reads as "the grass
+ends".  Make the substrate behave like the ensemble mean of what retired
+into it, in the terrain fragment shader, gated by the same medium:
+
+- blade-scale, distance-stable noise modulating grassy albedo so far turf
+  has nap at grazing incidence instead of Lambert smoothness;
+- a normal perturbation riding moppe_grass_ensemble_axis /
+  moppe_grass_gust (already shared in grass_medium.h for exactly this) so
+  far fields carry travelling sheen waves — the substrate currently has
+  no motion at all;
+- the aggregate lighting lobes the blades already collapse toward: the
+  widened low-exponent Kajiya sheen and the ensemble-mean backlight glow,
+  gated by cover and sun, so a backlit far meadow is not duller than the
+  near field.
+
+Verify with the frame instrumentation of GFX-043, not by eye: the
+per-distance-band texture-energy profile should continue smoothly across
+the tuft band's end instead of falling off a cliff.
+
+*** TODO GFX-043 Frame instrumentation for distance rendering
+
+Repeated failure mode: static captures pass inspection while play
+immediately reveals blatant mid/far-field vegetation absence.  Judging
+distance rendering from full frames by impression does not work — the
+missing thing is precisely what an eye skims past in a still.  Build the
+instrument: a frame-analysis tool (e.g. tools/frame-texture-profile)
+that turns a gazetteer frame into per-distance-band statistics —
+high-frequency (Laplacian) energy, vertical-gradient energy (the
+verticality signature of grass), green-channel texture energy — and
+plots them against distance.  The grass-gradient frames map image rows
+to ground distance monotonically, so a per-row profile needs no depth;
+arbitrary frames can reproject approximate depth from the gazetteer CSV
+camera pose plus terrain-elevation.f32.  Every claim about distance
+vegetation then ships as a profile curve compared across builds: a
+representation that dies early is a cliff in the curve, visible without
+any eye at all.  Extend to consecutive ride frames (temporal energy per
+band) for motion claims.
+
 ** Terrain, atmosphere, and finishing
 
 *** TODO GFX-050 Material-scale terrain detail

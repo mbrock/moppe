@@ -37,6 +37,30 @@ before a cure; steady-state survivor rates matter more than birth rates.
 Retired experiments remain documented under `research/`, but their obsolete
 executables do not stay in the active build.
 
+## Look with instruments, not with impressions
+
+Judging rendered frames by eye has a specific, recurring blind spot:
+distance. The mid- and far-field representation of vegetation has now
+several times passed still-frame inspection ("the gradient looks
+smooth") while the first minute of actual play revealed something
+obviously and blatantly missing — grass assembling metres in front of
+the rider, drifts that end where the blades do, far ground that is
+paint. A still frame invites the eye to rest on the composed near
+field; what is absent at distance is exactly what an impression skims
+past, and an agent reasoning over downsampled screenshots is worse at
+this than a human, not better.
+
+The remedy is the same one this project applies to terrain pathologies:
+build the instrument before drawing the conclusion. Distance-rendering
+claims should be made from per-distance-band frame statistics —
+high-frequency energy, gradient-direction energy, temporal energy
+between consecutive ride frames — plotted against distance and compared
+across builds (GFX-043 in ideal-dream-graphics.org specifies the tool).
+A representation that dies at 40 metres is a cliff in a curve; no one
+has to notice it. Until that tool exists, treat "the frames look right"
+as a hypothesis, and treat riding the actual game as the test that has
+repeatedly falsified it.
+
 ## Semantics must be explicit, never accidental
 
 If a data structure *happens* to have a useful interpretation (a flood
