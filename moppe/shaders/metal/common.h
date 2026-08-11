@@ -7,6 +7,25 @@
 
 using namespace metal;
 
+// The length of a world-to-clip matrix row recovers the projection scale
+// after an orthonormal view rotation. Reading the combined matrix diagonal
+// does not: it shrinks as the camera pitches or yaws, making projected-detail
+// LOD depend on where the camera looks. These row norms are therefore the
+// camera-orientation-invariant conversion from view-space metres to clip
+// extent. Pass the unjittered matrix for appearance decisions.
+inline float2 moppe_projection_scale (float4x4 world_to_clip) {
+  return float2 (
+    length (
+      float3 (world_to_clip[0][0], world_to_clip[1][0], world_to_clip[2][0])),
+    length (
+      float3 (world_to_clip[0][1], world_to_clip[1][1], world_to_clip[2][1])));
+}
+
+inline float moppe_vertical_focal_pixels (float4x4 world_to_clip,
+                                          float scene_height) {
+  return 0.5 * scene_height * moppe_projection_scale (world_to_clip).y;
+}
+
 // The 40-byte streamed vertex from render::DrawList (see
 // moppe/render/types.hh).
 struct MoppeVertexIn {

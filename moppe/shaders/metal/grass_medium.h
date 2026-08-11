@@ -195,18 +195,18 @@ inline float moppe_flower_resolved_fraction (float head_pixels) {
   return smoothstep (0.45, 1.5, head_pixels);
 }
 
-// The perceptual gates scale with scene resolution, and at real play
-// resolutions the resolved belt collapsed to a few metres: the player
-// watched grass materialise at a fixed close radius that no
-// capture-resolution still ever showed. Standing geometry is therefore
-// GUARANTEED in world distance -- full sward to 40 m, tapering to 80 m
-// -- and the perceptual term may only extend that guarantee at higher
-// resolutions, never shrink it. The sward shell is this term's exact
-// complement, so the ground rises only where blades genuinely end.
-inline float moppe_sward_standing (float blade_pixels, float distance_m) {
-  const float perceptual = sqrt (moppe_grass_resolved_fraction (blade_pixels));
-  const float guaranteed = 1.0 - smoothstep (40.0, 80.0, distance_m);
-  return max (perceptual, guaranteed);
+// The middle rung is a continuous canopy surface, not a distance exception
+// or a second population of coarse plants. It rises from the medium only as
+// individual blades cease to be repeatable and sinks back into the integrated
+// material once the sward's whole vertical extent is subpixel.
+inline float moppe_sward_canopy_fraction (float blade_pixels,
+                                          float focal_pixels,
+                                          float distance_m) {
+  const float fine = sqrt (moppe_grass_resolved_fraction (blade_pixels));
+  const float height_pixels = moppe_feature_pixels (
+    MOPPE_SWARD_ENSEMBLE_HEIGHT_METRES, focal_pixels, distance_m);
+  const float canopy_resolved = smoothstep (0.28, 1.15, height_pixels);
+  return (1.0 - fine) * canopy_resolved;
 }
 
 #define MOPPE_FERN_FROND_WIDTH_METRES 0.13f
@@ -290,6 +290,26 @@ inline float3 moppe_grass_ensemble_axis (float2 world_xz, float time) {
   const float gust = moppe_grass_gust (world_xz, time);
   return normalize (float3 (0.0, 1.0, 0.0) +
                     float3 (0.79, 0.0, 0.53) * (0.14 * gust));
+}
+
+// The substrate and the mesoscale canopy are two integrations of the same
+// medium, so they must not acquire separate procedural mottles. This cascade
+// leaves an octave near pixel scale across the traversal range and gives both
+// representations the same first- and second-order colour structure.
+inline float moppe_sward_grain (float2 world_xz, float footprint_metres) {
+  const float fine_visible = 1.0 - smoothstep (30.0, 110.0, footprint_metres);
+  const float mid_visible = smoothstep (40.0, 120.0, footprint_metres) *
+                            (1.0 - smoothstep (400.0, 900.0, footprint_metres));
+  const float broad_visible = smoothstep (250.0, 700.0, footprint_metres);
+  const float fine = moppe_value_noise (world_xz * 1.9);
+  const float mid = moppe_value_noise (world_xz * 0.31 + float2 (7.1, 43.9));
+  const float coarse = moppe_value_noise (world_xz * 0.16 + float2 (31.7, 8.3));
+  const float broad =
+    moppe_value_noise (world_xz * 0.037 + float2 (11.3, 71.7));
+  return (1.0 + 0.22 * (coarse - 0.5) * 2.0) *
+         (1.0 + 0.18 * (fine - 0.5) * 2.0 * fine_visible) *
+         (1.0 + 0.20 * (mid - 0.5) * 2.0 * mid_visible) *
+         (1.0 + 0.16 * (broad - 0.5) * 2.0 * broad_visible);
 }
 
 #endif

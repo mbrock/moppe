@@ -209,17 +209,17 @@ forest_scene_schedule (uint tree_index,
   const float radius = 0.55 * height + 1.4 * tree.up_radius.w;
   const float3 centre = root + up * (0.52 * height);
   const float4 clip = u.view_proj * float4 (centre, 1.0);
-  const float clip_radius =
-    radius * max (abs (u.view_proj[0][0]), abs (u.view_proj[1][1]));
+  const float2 clip_radius =
+    radius * moppe_projection_scale (u.unjittered_view_proj);
   const bool visible = clip.w > -radius &&
-                       abs (clip.x) < clip.w + clip_radius &&
-                       abs (clip.y) < clip.w + clip_radius;
+                       abs (clip.x) < clip.w + clip_radius.x &&
+                       abs (clip.y) < clip.w + clip_radius.y;
   if (!visible)
     return schedule;
 
   // Projected size uses view depth so it stays smooth at every approach
   // angle and saturates once the rider is beside the organism.
-  const float focal = abs (u.view_proj[1][1]);
+  const float focal = moppe_projection_scale (u.unjittered_view_proj).y;
   const float pixels = height * focal * 0.5 * u.temporal.y / max (clip.w, 0.6);
   schedule.pixel_code = min (uint (pixels), 65535u);
   schedule.parts = forest_part_count (pixels,
@@ -287,10 +287,9 @@ forest_scene_schedule (uint tree_index,
     const float4 clip = u.view_proj * float4 (centre, 1.0);
     const float radius =
       max (individual.up_radius.w, 0.5 * individual.root_height.w);
-    const float clip_radius =
-      radius * max (abs (u.view_proj[0][0]), abs (u.view_proj[1][1]));
-    if (clip.w > -radius && abs (clip.x) < clip.w + clip_radius &&
-        abs (clip.y) < clip.w + clip_radius) {
+    const float2 clip_radius = radius * moppe_projection_scale (u.view_proj);
+    if (clip.w > -radius && abs (clip.x) < clip.w + clip_radius.x &&
+        abs (clip.y) < clip.w + clip_radius.y) {
       const uint slot =
         atomic_fetch_add_explicit (&emitted, 1u, metal::memory_order_relaxed);
       payload.parts[slot] = { tree, 0u, 1u, copy };
@@ -963,7 +962,8 @@ static inline ForestLeafTransmission
 forest_leaf_transmission (thread const ForestVaryings& in,
                           thread const ForestFragmentFrame& frame,
                           constant MoppeForestUniforms& u) {
-  const float focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  const float focal_pixels =
+    moppe_vertical_focal_pixels (u.unjittered_view_proj, u.temporal.y);
   ForestLeafTransmission transmission = {
     0.0,
     0.0,

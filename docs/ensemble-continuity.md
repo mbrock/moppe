@@ -15,10 +15,10 @@ of machinery built this session:
 - a **family table** — a family is a way of spending one shoot's fixed
   vertex allowance, and families partition habitat (sward, fern rosettes
   in damp shade, flowering drifts in open meadow);
-- a **per-family LOD ladder** — resolved individuals, then ensemble
-  geometry, then substrate, each family descending by the projected size
-  of its own signature feature (blade width, head diameter, frond
-  width), with the camera window demoted to a cost bound;
+- a **per-family LOD ladder** — resolved individuals, then a field-valued
+  ensemble evaluation, then substrate, each family descending by the
+  projected size of its own signature feature (blade width, head diameter,
+  frond width), with the camera window demoted to a cost bound;
 - an **ensemble-limit substrate** — grassy terrain is lit by
   `moppe_sward_ensemble_light`, the blade fragment's own formula
   evaluated at its resolvable→0 limits over the same shared tint.
@@ -26,9 +26,9 @@ of machinery built this session:
 ## The core idea
 
 A representation switch is a change of theory. The blade shader is a
-microscopic theory of grass; the tuft band is a coarse-grained theory of
-blades; the substrate is the thermodynamic limit — what an infinite
-field of unresolvable blades presents to one pixel. LOD is therefore a
+microscopic theory of grass; the terrain-following canopy is a coarse-grained
+field theory of blades; the substrate is the thermodynamic limit — what an
+infinite field of unresolvable blades presents to one pixel. LOD is therefore a
 renormalization tower, and **continuity is not a blending problem, it is
 a matching-conditions problem**: at every rung boundary, the coarse
 theory must reproduce the conserved moments of the fine one.
@@ -43,8 +43,8 @@ The moments are concrete and there are only a few:
    so the mean matches *by construction* and cannot regress silently.
 2. **Coverage (first moment): where the stuff is.** Retiring
    individuals must hand their projected area to something — surviving
-   neighbours (tuft widening on the sqrt count curve) or the substrate
-   (cover, drift wash). The mid-field pop-in was a first-moment leak:
+   ensemble canopy or the substrate (cover, drift wash). The mid-field pop-in
+   was a first-moment leak:
    count fell and nothing absorbed the difference.
 3. **Variance (second moment): texture.** Sub-resolvable *variance*
    must collapse to the ensemble mean before its carrier retires
@@ -53,17 +53,19 @@ The moments are concrete and there are only a few:
    resolves (the sward's two grain octaves — currently ad hoc, see
    below). The camouflage-blob regression was a second-moment gap: the
    substrate had the right mean and no spectrum.
-4. **Dynamics: the motion spectrum.** Blades gust; the substrate is
-   static. This moment is currently UNMATCHED at the last rung — a far
-   field that does not move is the remaining tell that it is paint. The
-   shared `moppe_grass_gust`/`moppe_grass_ensemble_axis` exist precisely
-   so the substrate can carry the ensemble's motion as a normal/sheen
-   perturbation.
+4. **Dynamics: the motion spectrum.** Fine blade flick retires with the
+   blades, while broad gust phase survives as canopy displacement and a
+   substrate normal/sheen perturbation. The shared
+   `moppe_grass_gust`/`moppe_grass_ensemble_axis` now carries that phase
+   through all three evaluations; its amplitude still needs calibration in
+   motion.
 
 Two disciplines ride on top:
 
 - **Perceptual gates.** Every descent is triggered by projected pixels,
-  never metres, so the whole tower is resolution-aware for free.
+  never by a hand-authored ground radius. Projected scale must be recovered
+  from the unjittered world-to-clip row norms; a diagonal of a combined
+  view-projection matrix changes with camera pitch and is not a focal length.
 - **One instrument per moment.** The verification failures of this
   session map exactly onto the moments: the texture profiler measures
   the second moment and was blind to a zeroth-moment bug; the motion
@@ -76,11 +78,11 @@ Two disciplines ride on top:
 
 | Boundary | mean | coverage | variance | dynamics |
 |---|---|---|---|---|
-| blades → tufts | shared formula ✓ | widening ✓ | settling ✓ | gust kept ✓ |
-| tufts → substrate | ensemble limit ✓ | cover ✓ | ad hoc grain ~ | MISSING |
+| blades → canopy | shared ensemble limit ✓ | field complement (proof) | settling + shared grain (proof) | gust phase ✓ |
+| canopy → substrate | same formula ✓ | projected-height retirement (proof) | same grain ✓ | same gust phase ✓ |
 | heads → wash | shared chromaticity ✓ | wash ✓ | footprint floor ✓ | rigid heads ✓ |
 | fronds → ? | no far rung (window-culled) | — | — | — |
-| window edge | hard cull — should be a budget fade | | | |
+| cost bounds | both populations and canopy reach zero before the bound | | | |
 
 ## What the doctrine predicts and demands next
 
@@ -99,8 +101,9 @@ Two disciplines ride on top:
   applies to the dynamics moment once substrate motion exists: fit the
   sheen-wave amplitude so the glide's temporal spectrum is continuous
   across the last rung.
-- **The window edge becomes a fade in the budget**, not a cull — the
-  one place a first-moment discontinuity survives by construction.
+- **Do not confuse a dispatch window with an LOD law.** Both the blade
+  population and the canopy now reach zero before their bounded windows. A
+  window may cap work; it may not decide what kind of grass the world is.
 - **Ferns need a far rung** — a rosette is resolvable far beyond the
   window; its ensemble limit is a small dark-green disc in the
   substrate, cheap to add through the same medium.

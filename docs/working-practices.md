@@ -55,6 +55,14 @@ cross-build drift). A measurement may never overrule structural
 knowledge or a plain sight of the frame; when they disagree, the
 instrument is the suspect.
 
+The naive look must also expose the thing being judged. For vegetation LOD,
+make a neutral cross-lit diagnostic with bloom, exposure adaptation, lens
+flare, light shafts, and motion blur disabled before looking at the beauty
+pass. Those effects are valid parts of the final image, but sun glare can hide
+the exact boundary under discussion. `MOPPE_GAZETTEER_DISABLE` forwards a
+comma-separated feature list and records it in `capture.txt`; always return to
+the ordinary effects-on game after the representation itself is legible.
+
 ## Look with instruments, not with impressions
 
 Judging rendered frames by eye has a specific, recurring blind spot:

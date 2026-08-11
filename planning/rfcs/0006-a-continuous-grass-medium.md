@@ -1,6 +1,6 @@
 # RFC-0006: A continuous grass medium
 
-Status: proposed
+Status: proposed; Gate 3 proof implemented, acceptance still open
 
 ## Decision
 
@@ -89,7 +89,9 @@ terrain renderer selected.
 
 ## Current situation
 
-Commit `42ed47b` made the first structural entry into this design.
+Commit `42ed47b` made the first structural entry into this design. The
+2026-08-11 continuation adds a bounded Gate 3 proof without claiming the whole
+RFC complete.
 
 - `moppe/shaders/metal/grass_medium.h` now owns shared habitat, leaf area,
   cover, clumping, blade tint, projected-width partitioning, wind, and several
@@ -104,6 +106,16 @@ Commit `42ed47b` made the first structural entry into this design.
   carry them become unrepeatable samples.
 - Grass laboratory stills and a moving ride show a much denser near field and
   remove the former bright hedge around the camera.
+- `sward_canopy_*` is a separate terrain-following mesh-shader surface over the
+  shared medium. Its world-anchored dispatch patches share edge evaluations;
+  its height owns only the interval after blade width becomes unresolved and
+  before total sward height becomes subpixel. It uses the same tint, flowering
+  wash, grain, ensemble lighting, and gust field as the integrated terrain.
+- The earlier camera-relative displacement of terrain vertices is removed.
+  The canopy is presentation geometry above the true terrain and does not
+  alter terrain, physics, or world state.
+- Projected-size gates now use row norms of the unjittered world-to-clip
+  matrix, making the result invariant under camera pitch and yaw.
 
 That implementation conserves one useful scalar, but it is not yet the full
 medium described above.
@@ -118,9 +130,11 @@ medium described above.
 2. **Basal and upper cover are not yet distinct.** The stable substrate and
    the tall blades currently consume one generic cover scalar. The medium
    cannot yet distinguish dense short turf from a sparse stand of tall grass.
-3. **There is no middle-scale volume.** The resolved fraction becomes color
-   on the ground. From an overview, the image therefore crosses from real
-   vertical blades to a flat green surface at a visible distance.
+3. **The middle-scale volume is only a proof.** The separate canopy restores
+   a vertical and parallax-bearing surface without inventing coarse plants,
+   but its optical-depth profile, coverage edge, and sampling rate still need
+   calibration in ground and aerial motion. It is not yet acceptance evidence
+   for every traversal mode.
 4. **The basal stratum is only a tint.** It now prevents bright photographic
    gravel appearing between edge-on blades, but does not yet represent short
    grass, tillers, dead leaves, or deep litter shadow.

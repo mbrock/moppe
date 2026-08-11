@@ -222,11 +222,29 @@ struct MOPPE_SHADER_ALIGN MoppeOceanUniforms {
 #define MOPPE_UNDERGROWTH_MESH_PRIMITIVES                                      \
   (MOPPE_UNDERGROWTH_MESH_THREADS * MOPPE_UNDERGROWTH_PRIMITIVES_PER_SHOOT)
 
+// The mesoscale sward is one terrain-following surface. Neighbouring patches
+// evaluate the same world-space edge vertices, so this subdivision is only a
+// bounded way to dispatch that surface; it is not a population of grass
+// proxies. Four cells per side keep its terrain sampling finer than one
+// rendered terrain LOD step through the handoff belt.
+#define MOPPE_SWARD_CANOPY_CELLS 4
+#define MOPPE_SWARD_ENSEMBLE_HEIGHT_METRES 0.42f
+#define MOPPE_SWARD_CANOPY_VERTICES_PER_SIDE (MOPPE_SWARD_CANOPY_CELLS + 1)
+#define MOPPE_SWARD_CANOPY_MESH_THREADS                                        \
+  (MOPPE_SWARD_CANOPY_VERTICES_PER_SIDE * MOPPE_SWARD_CANOPY_VERTICES_PER_SIDE)
+#define MOPPE_SWARD_CANOPY_MESH_VERTICES MOPPE_SWARD_CANOPY_MESH_THREADS
+#define MOPPE_SWARD_CANOPY_MESH_PRIMITIVES                                     \
+  (MOPPE_SWARD_CANOPY_CELLS * MOPPE_SWARD_CANOPY_CELLS * 2)
+
 #ifndef __METAL_VERSION__
 static_assert (MOPPE_UNDERGROWTH_MESH_VERTICES <= 256,
                "undergrowth meshlet exceeds Metal vertex limit");
 static_assert (MOPPE_UNDERGROWTH_MESH_PRIMITIVES <= 512,
                "undergrowth meshlet exceeds Metal primitive limit");
+static_assert (MOPPE_SWARD_CANOPY_MESH_VERTICES <= 256,
+               "sward canopy meshlet exceeds Metal vertex limit");
+static_assert (MOPPE_SWARD_CANOPY_MESH_PRIMITIVES <= 512,
+               "sward canopy meshlet exceeds Metal primitive limit");
 #endif
 
 struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
@@ -235,6 +253,7 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
   MoppeMat4 previous_view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
+  MoppeFloat4 previous_camera_pos;
   MoppeFloat4 sun_dir;
   MoppeFloat4 sun_diffuse;
   MoppeFloat4 sun_specular;
@@ -244,7 +263,7 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
                            // w=lattice width in samples
   MoppeFloat4 tiles;       // xy=origin tile indices, z=tiles per side,
                            // w=tile side in metres
-  MoppeFloat4 params;      // x=time, y=cloudiness, z=reach in metres,
+  MoppeFloat4 params;      // x=time, y=cloudiness, z=terrain texture scale,
                            // w=density scale
   MoppeFloat4 interaction; // xyz=current mover,
                            // w=parting radius in metres

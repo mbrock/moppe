@@ -425,6 +425,7 @@ namespace moppe {
         id<MTLRenderPipelineState> dust_mesh_soft = nil;
         id<MTLRenderPipelineState> dust_mesh_add = nil;
         id<MTLRenderPipelineState> water_tiles = nil;
+        id<MTLRenderPipelineState> sward_canopy = nil;
         id<MTLRenderPipelineState> undergrowth = nil;
         id<MTLRenderPipelineState> forest = nil;
         id<MTLRenderPipelineState> forest_shadow = nil;
@@ -1060,6 +1061,7 @@ namespace moppe {
       Mat4 m_current_view_proj;
       Mat4 m_previous_sky_view_proj;
       Mat4 m_current_sky_view_proj;
+      Vec3 m_previous_camera_pos;
       float m_previous_time = 0.0f;
       bool m_camera_history_valid = false;
       std::unordered_map<uint64_t, Mat4> m_previous_models;
@@ -1808,6 +1810,44 @@ namespace moppe {
           }
         }
 #endif
+
+        // The middle rung of the grass medium is one terrain-following
+        // canopy. Its patching is only a bounded dispatch strategy: shared
+        // world-space edges make the result one surface, never coarse tufts.
+        MTLMeshRenderPipelineDescriptor* canopy =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        canopy.objectFunction =
+          [m_library newFunctionWithName:@"sward_canopy_object"];
+        canopy.meshFunction =
+          [m_library newFunctionWithName:@"sward_canopy_mesh"];
+        canopy.fragmentFunction =
+          [m_library newFunctionWithName:@"sward_canopy_fragment"];
+        canopy.rasterSampleCount = scene_samples;
+        canopy.colorAttachments[0].pixelFormat = scene;
+        if (m_temporal_scene_pipelines) {
+          canopy.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
+          canopy.colorAttachments[2].pixelFormat = MTLPixelFormatR8Unorm;
+        }
+        canopy.depthAttachmentPixelFormat = depth;
+        if (!m_temporal_scene_pipelines)
+          canopy.stencilAttachmentPixelFormat = depth;
+        canopy.payloadMemoryLength = 1024;
+        canopy.maxTotalThreadsPerObjectThreadgroup = 64;
+        canopy.maxTotalThreadsPerMeshThreadgroup =
+          MOPPE_SWARD_CANOPY_MESH_THREADS;
+        if (canopy.objectFunction && canopy.meshFunction &&
+            canopy.fragmentFunction) {
+          NSError* error = nil;
+          m_pipelines.sward_canopy = [m_device
+            newRenderPipelineStateWithMeshDescriptor:canopy
+                                             options:MTLPipelineOptionNone
+                                          reflection:nil
+                                               error:&error];
+          if (!m_pipelines.sward_canopy)
+            std::cerr << "moppe: sward canopy pipeline failed: "
+                      << (error ? error.localizedDescription.UTF8String : "?")
+                      << std::endl;
+        }
 
         // Undergrowth: grass and occasional ferns generated per frame from
         // the world's own fields. Opaque, depth-written, no vertex buffer
@@ -4097,22 +4137,6 @@ namespace moppe {
                     MTLRenderStageFragment,
                     MOPPE_TEX_TERRAIN_NORMALS,
                     terrain.normals);
-      // The vertex stage reads the habitat fields for the sward shell.
-      bind_texture (frame,
-                    MTLRenderStageVertex,
-                    MOPPE_TEX_TERRAIN_LANDSCAPE,
-                    terrain.have_materials ? terrain.landscape_materials
-                                           : terrain.heights);
-      bind_texture (frame,
-                    MTLRenderStageVertex,
-                    MOPPE_TEX_TERRAIN_GROUND,
-                    terrain.have_materials ? terrain.ground_materials
-                                           : terrain.heights);
-      bind_texture (frame,
-                    MTLRenderStageVertex,
-                    MOPPE_TEX_TERRAIN_WATER,
-                    water.have_water_levels ? water.water_levels
-                                            : terrain.heights);
       use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
 
       for (int i = 0; i < count; ++i) {
@@ -4512,8 +4536,9 @@ namespace moppe {
     void MetalRenderer::draw_undergrowth (const UndergrowthParams& params) {
       const MetalTerrainResources& terrain = m_terrain_resources;
       const MetalWaterResources& water = m_water_resources;
-      if (!m_pipelines.undergrowth || !terrain.have_terrain ||
-          !terrain.have_materials || !terrain.have_forest)
+      if ((!m_pipelines.sward_canopy && !m_pipelines.undergrowth) ||
+          !terrain.have_terrain || !terrain.have_materials ||
+          !terrain.have_forest)
         return;
       {
         MoppeUndergrowthUniforms u;
@@ -4523,6 +4548,9 @@ namespace moppe {
         u.previous_view_proj = m_frame.uniforms.previous_view_proj;
         u.light_matrix = m_frame.uniforms.light_matrix;
         u.camera_pos = m_frame.uniforms.camera_pos;
+        u.previous_camera_pos =
+          f4 (m_camera_history_valid ? m_previous_camera_pos
+                                     : m_frame.params.camera_pos);
         u.sun_dir = m_frame.uniforms.sun_dir;
         u.sun_diffuse = m_frame.uniforms.sun_diffuse;
         u.sun_specular = m_frame.uniforms.sun_specular;
@@ -4540,6 +4568,94 @@ namespace moppe {
         u.lattice.y = 1.0f / tp.scale[2];
         u.lattice.z = tp.scale[1];
         u.lattice.w = (float)tp.width;
+        u.params.x = params.time;
+        u.params.y = params.cloud_cover;
+        u.params.z = tp.tex_scale;
+        u.params.w = params.density;
+        u.interaction.x = params.interaction_position[0];
+        u.interaction.y = params.interaction_position[1];
+        u.interaction.z = params.interaction_position[2];
+        u.interaction.w = params.interaction_radius;
+
+        id<MTL4RenderCommandEncoder> enc = scene_encoder ();
+        begin_gpu_pass (enc, GpuPass::Scene);
+        [enc setDepthStencilState:m_pipelines.depth[1][1]];
+        [enc setCullMode:MTLCullModeNone];
+
+        const auto draw_field = [&] (id<MTLRenderPipelineState> pipeline,
+                                     const MoppeUndergrowthUniforms& uniforms,
+                                     NSUInteger total,
+                                     NSUInteger mesh_threads) {
+          if (!pipeline)
+            return;
+          [enc setRenderPipelineState:pipeline];
+          const MTLGPUAddress address =
+            m_frame.arena[m_frame.slot].write (uniforms);
+          for (MTLRenderStages stage : { MTLRenderStageObject,
+                                         MTLRenderStageMesh,
+                                         MTLRenderStageFragment })
+            bind_address (m_frame, stage, MOPPE_BUF_FRAME, address);
+          const auto bind = [&] (id<MTLTexture> texture, NSUInteger slot) {
+            bind_texture (m_frame, MTLRenderStageObject, slot, texture);
+            bind_texture (m_frame, MTLRenderStageMesh, slot, texture);
+          };
+          bind (terrain.heights, MOPPE_TEX_HEIGHTS);
+          bind (terrain.normals, MOPPE_TEX_TERRAIN_NORMALS);
+          bind (terrain.landscape_materials, MOPPE_TEX_TERRAIN_LANDSCAPE);
+          bind (terrain.ground_materials, MOPPE_TEX_TERRAIN_GROUND);
+          bind (water.have_water_levels ? water.water_levels : terrain.heights,
+                MOPPE_TEX_TERRAIN_WATER);
+          MetalTexture* fallback =
+            static_cast<MetalTexture*> (m_pipelines.white.get ());
+          MetalTexture* grass =
+            static_cast<MetalTexture*> (terrain.grass.get ());
+          bind_texture (m_frame,
+                        MTLRenderStageFragment,
+                        MOPPE_TEX_GRASS,
+                        (grass ? grass : fallback)->texture);
+          bind_sampler (m_frame,
+                        MTLRenderStageFragment,
+                        0,
+                        (grass ? grass : fallback)->sampler);
+          bind_texture (m_frame,
+                        MTLRenderStageFragment,
+                        MOPPE_TEX_SHADOW,
+                        terrain.shadow_map ? terrain.shadow_map
+                                           : m_pipelines.shadow_fallback);
+          use_arguments (enc,
+                         m_frame,
+                         MTLRenderStageObject | MTLRenderStageMesh |
+                           MTLRenderStageFragment);
+          [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
+            threadsPerObjectThreadgroup:MTLSizeMake (64, 1, 1)
+              threadsPerMeshThreadgroup:MTLSizeMake (mesh_threads, 1, 1)];
+        };
+
+        // The canopy's reach follows the projected height of the whole
+        // sward, not a ground-level camera circle. Looking down from a glider
+        // and pitching while walking therefore ask the same image-space
+        // question. The clamp bounds work; the outer fade reaches zero before
+        // it can expose that bound.
+        const float focal_pixels = 0.5f * (float)m_targets.height *
+                                   std::abs (m_frame.params.proj.element (5));
+        const float canopy_reach =
+          std::clamp (MOPPE_SWARD_ENSEMBLE_HEIGHT_METRES * focal_pixels / 0.28f,
+                      180.0f,
+                      1200.0f);
+        const float canopy_patch = 16.0f;
+        const int canopy_side =
+          (int)std::ceil ((2.0f * canopy_reach) / canopy_patch);
+        u.tiles.x = std::floor ((m_frame.params.camera_pos[0] - canopy_reach) /
+                                canopy_patch);
+        u.tiles.y = std::floor ((m_frame.params.camera_pos[2] - canopy_reach) /
+                                canopy_patch);
+        u.tiles.z = (float)canopy_side;
+        u.tiles.w = canopy_patch;
+        u.lod.y = canopy_reach;
+        draw_field (m_pipelines.sward_canopy,
+                    u,
+                    (NSUInteger)canopy_side * (NSUInteger)canopy_side,
+                    MOPPE_SWARD_CANOPY_MESH_THREADS);
 
         // The tile window is anchored to the world lattice rather than to the
         // camera, so a plant keeps its identity as the rider moves and no
@@ -4562,54 +4678,10 @@ namespace moppe {
         u.lod.x = window_reach;
         u.tiles.z = (float)tiles_side;
         u.tiles.w = tile_world;
-        u.params.x = params.time;
-        u.params.y = params.cloud_cover;
-        u.params.z = params.reach;
-        u.params.w = params.density;
-        u.interaction.x = params.interaction_position[0];
-        u.interaction.y = params.interaction_position[1];
-        u.interaction.z = params.interaction_position[2];
-        u.interaction.w = params.interaction_radius;
-
-        id<MTL4RenderCommandEncoder> enc = scene_encoder ();
-        begin_gpu_pass (enc, GpuPass::Scene);
-        [enc setRenderPipelineState:m_pipelines.undergrowth];
-        [enc setDepthStencilState:m_pipelines.depth[1][1]];
-        [enc setCullMode:MTLCullModeNone];
-        const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
-        for (MTLRenderStages stage : { MTLRenderStageObject,
-                                       MTLRenderStageMesh,
-                                       MTLRenderStageFragment })
-          bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
-        const auto bind = [&] (id<MTLTexture> texture, NSUInteger slot) {
-          bind_texture (m_frame, MTLRenderStageObject, slot, texture);
-          bind_texture (m_frame, MTLRenderStageMesh, slot, texture);
-        };
-        bind (terrain.heights, MOPPE_TEX_HEIGHTS);
-        bind (terrain.normals, MOPPE_TEX_TERRAIN_NORMALS);
-        bind (terrain.have_materials ? terrain.landscape_materials
-                                     : terrain.heights,
-              MOPPE_TEX_TERRAIN_LANDSCAPE);
-        bind (terrain.have_materials ? terrain.ground_materials
-                                     : terrain.heights,
-              MOPPE_TEX_TERRAIN_GROUND);
-        bind (water.have_water_levels ? water.water_levels : terrain.heights,
-              MOPPE_TEX_TERRAIN_WATER);
-        bind_texture (m_frame,
-                      MTLRenderStageFragment,
-                      MOPPE_TEX_SHADOW,
-                      terrain.shadow_map ? terrain.shadow_map
-                                         : m_pipelines.shadow_fallback);
-        use_arguments (enc,
-                       m_frame,
-                       MTLRenderStageObject | MTLRenderStageMesh |
-                         MTLRenderStageFragment);
-        const NSUInteger total =
-          (NSUInteger)tiles_side * (NSUInteger)tiles_side;
-        [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
-          threadsPerObjectThreadgroup:MTLSizeMake (64, 1, 1)
-            threadsPerMeshThreadgroup:MTLSizeMake (
-                                        MOPPE_UNDERGROWTH_MESH_THREADS, 1, 1)];
+        draw_field (m_pipelines.undergrowth,
+                    u,
+                    (NSUInteger)tiles_side * (NSUInteger)tiles_side,
+                    MOPPE_UNDERGROWTH_MESH_THREADS);
       }
     }
 
@@ -6326,6 +6398,7 @@ namespace moppe {
 
       m_previous_view_proj = m_current_view_proj;
       m_previous_sky_view_proj = m_current_sky_view_proj;
+      m_previous_camera_pos = m_frame.params.camera_pos;
       m_previous_time = m_frame.params.time;
       m_camera_history_valid = true;
       m_previous_models = std::move (m_current_models);
