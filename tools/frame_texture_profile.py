@@ -28,9 +28,20 @@ decide its sign.
 Usage:
   tools/frame-texture-profile OUT_DIR LABEL=CAPTURE_DIR [LABEL=DIR ...]
         [--frames NAME[,NAME...]]
+  tools/frame-texture-profile OUT_DIR --ride LABEL=FRAMES_DIR [...]
 
 Writes OUT_DIR/profile.csv, one overlay plot per analyzed frame, and
-prints the texture-horizon table.
+prints the scalar table.
+
+The --ride mode is the temporal instrument. It expects consecutive
+frames captured with MOPPE_CAPTURE_AUX=1 (e.g. via tools/ride-judge), so
+each PNG has ground-truth motion vectors and depth beside it. Warping
+frame t-1 through the renderer's own motion texture and subtracting
+from frame t leaves exactly the change motion cannot explain --
+appearance events -- and binning that residual by true depth yields
+appearance energy versus distance. Camera translation, parallax, and
+wind all cancel because the geometry itself reported where it went; a
+spawn frontier is a residual spike pinned at the distance cutoff.
 """
 
 import argparse
@@ -159,13 +170,152 @@ def mid_hold(profile: list[dict], key: str = "grad_x") -> float:
     return float(np.mean(mid) / np.mean(near))
 
 
+def load_aux(png_path: Path) -> tuple[np.ndarray, np.ndarray, float]:
+    """Motion (H,W,2 float32 pixels), view distance (H,W float32 metres)."""
+    meta = {}
+    for line in (png_path.parent /
+                 (png_path.name + ".aux.txt")).read_text().splitlines():
+        key, _, rest = line.partition(" ")
+        meta[key] = rest.split()
+    width, height = int(meta["size"][0]), int(meta["size"][1])
+    near = float(meta["proj"][14])
+    motion = np.fromfile(png_path.parent / (png_path.name + ".motion.rg16f"),
+                         dtype=np.float16)
+    motion = motion.reshape(height, width, 2).astype(np.float32)
+    depth = np.fromfile(png_path.parent / (png_path.name + ".depth.r32f"),
+                        dtype=np.float32).reshape(height, width)
+    distance = np.full_like(depth, np.inf)
+    hit = depth > 1e-7
+    distance[hit] = near / depth[hit]
+    return motion, distance, near
+
+
+def load_luma(png_path: Path, width: int, height: int) -> np.ndarray:
+    image = Image.open(png_path).convert("RGB")
+    if image.size != (width, height):
+        image = image.resize((width, height), Image.BILINEAR)
+    rgb = np.asarray(image, dtype=np.float32) / 255.0
+    return rgb @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+
+
+def bilinear(image: np.ndarray, sy: np.ndarray, sx: np.ndarray) -> np.ndarray:
+    height, width = image.shape
+    y0 = np.clip(np.floor(sy).astype(np.int32), 0, height - 2)
+    x0 = np.clip(np.floor(sx).astype(np.int32), 0, width - 2)
+    fy = np.clip(sy - y0, 0.0, 1.0)
+    fx = np.clip(sx - x0, 0.0, 1.0)
+    top = image[y0, x0] * (1 - fx) + image[y0, x0 + 1] * fx
+    bottom = image[y0 + 1, x0] * (1 - fx) + image[y0 + 1, x0 + 1] * fx
+    return top * (1 - fy) + bottom * fy
+
+
+def ride_profile(frames_dir: Path) -> list[dict]:
+    """Mean warped and raw temporal residual per distance band, averaged
+    over every consecutive pair in the capture."""
+    pngs = sorted(frames_dir.glob("ride-*.png"))
+    if len(pngs) < 2:
+        raise SystemExit(f"{frames_dir}: need at least two ride frames")
+    edges = band_edges()
+    sums = np.zeros((3, len(edges) - 1), dtype=np.float64)
+    counts = np.zeros(len(edges) - 1, dtype=np.int64)
+
+    motion, distance, _ = load_aux(pngs[0])
+    height, width = distance.shape
+    grid_y, grid_x = np.mgrid[0:height, 0:width].astype(np.float32)
+    previous = load_luma(pngs[0], width, height)
+
+    for png in pngs[1:]:
+        motion, distance, _ = load_aux(png)
+        current = load_luma(png, width, height)
+        sample_x = grid_x + motion[..., 0]
+        sample_y = grid_y + motion[..., 1]
+        valid = ((sample_x >= 0) & (sample_x <= width - 1)
+                 & (sample_y >= 0) & (sample_y <= height - 1)
+                 & np.isfinite(distance))
+        warped = bilinear(previous, sample_y, sample_x)
+        residual = np.abs(current - warped)
+        raw = np.abs(current - previous)
+        band = np.searchsorted(edges, distance, side="right") - 1
+        ok = valid & (band >= 0) & (band < len(edges) - 1)
+        flat = band[ok].ravel()
+        np.add.at(sums[0], flat, residual[ok].ravel())
+        np.add.at(sums[1], flat, raw[ok].ravel())
+        np.add.at(counts, flat, 1)
+        previous = current
+
+    profile = []
+    for index in range(len(edges) - 1):
+        if counts[index] < 500:
+            continue
+        profile.append({
+            "distance_m": math.sqrt(edges[index] * edges[index + 1]),
+            "rows": int(counts[index]),
+            "residual": float(sums[0][index] / counts[index]),
+            "raw_residual": float(sums[1][index] / counts[index]),
+        })
+    return profile
+
+
+def ride_main(args) -> int:
+    labelled = []
+    for spec in args.captures:
+        label, _, path = spec.partition("=")
+        if not path:
+            label, path = Path(spec).name, spec
+        labelled.append((label, Path(path)))
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    profiles = {label: ride_profile(path) for label, path in labelled}
+    with open(args.out_dir / "ride-profile.csv", "w", newline="") as handle:
+        rows = [{"build": label, **point}
+                for label, profile in profiles.items() for point in profile]
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    figure, axis = plt.subplots(figsize=(8, 4.6))
+    for label, profile in profiles.items():
+        distance = [p["distance_m"] for p in profile]
+        axis.plot(distance, [p["residual"] for p in profile],
+                  marker=".", label=f"{label}: motion-compensated")
+        axis.plot(distance, [p["raw_residual"] for p in profile],
+                  linestyle="--", alpha=0.5, label=f"{label}: raw diff")
+    axis.set_xscale("log")
+    axis.set_yscale("log")
+    axis.set_xlabel("true depth (m)")
+    axis.set_ylabel("mean |residual| per frame pair")
+    axis.set_title("appearance energy: change the motion vectors "
+                   "cannot explain")
+    axis.grid(True, which="both", alpha=0.3)
+    axis.legend()
+    figure.tight_layout()
+    figure.savefig(args.out_dir / "ride-residual.png", dpi=110)
+
+    for label, profile in profiles.items():
+        far = [p for p in profile if p["distance_m"] >= 25.0]
+        if far:
+            spike = max(far, key=lambda p: p["residual"])
+            print(f"{label}: largest far-field appearance residual "
+                  f"{spike['residual']:.4f} at {spike['distance_m']:.0f} m")
+    print(f"plot and ride-profile.csv in {args.out_dir}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("captures", nargs="+",
                         help="LABEL=CAPTURE_DIR (gazetteer output directory)")
     parser.add_argument("--frames", default=",".join(DEFAULT_FRAMES))
+    parser.add_argument("--ride", action="store_true",
+                        help="captures are directories of consecutive ride "
+                             "frames with MOPPE_CAPTURE_AUX dumps")
     args = parser.parse_args()
+    if args.ride:
+        return ride_main(args)
 
     frame_names = [f.strip() for f in args.frames.split(",") if f.strip()]
     labelled = []

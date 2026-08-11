@@ -168,9 +168,18 @@ curves decide its sign. (2) The coverage-conserving tuft band removed
 that peak and extended floor-merge from ~85 m to 110 m+. (3) The
 dominant remaining far artifact is a sharp cliff at the tile-window edge
 in front-lit frames, which GFX-042's substrate nap must dissolve (or the
-tuft band must fade approaching the window). Remaining: approximate
-depth reprojection for arbitrary frames, and temporal energy between
-consecutive ride frames for motion claims.
+tuft band must fade approaching the window). Second slice landed: MOPPE_CAPTURE_AUX=1 makes every capture also dump
+the scene-resolution motion texture and depth buffer with a matrix
+sidecar, and frame-texture-profile --ride warps consecutive frames
+through the renderer's own vectors — the residual is change motion
+cannot explain, binned by true depth. Measured on an isolated
+grass-lab ride (flat plain, no trees): the mid-field is temporally calm
+(tuft band ~0.035 mean residual, no churn) and a 2.5x appearance
+residual wall sits at ~90-150 m, pinned at the vegetation window edge.
+That wall is GFX-042's temporal acceptance criterion. Methodology rule
+learned the same hour: isolate the subject (grass lab), never measure
+through demo/gazetteer assemblages. Remaining: approximate depth
+reprojection for arbitrary gazetteer frames.
 
 Repeated failure mode: static captures pass inspection while play
 immediately reveals blatant mid/far-field vegetation absence.  Judging

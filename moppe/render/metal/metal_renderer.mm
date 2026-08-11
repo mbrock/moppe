@@ -299,6 +299,42 @@ namespace moppe {
         CGDataProviderRelease (provider);
         return written;
       }
+
+      // Ground-truth auxiliaries for the frame-analysis instruments
+      // (GFX-043): the scene-resolution motion texture and depth buffer
+      // written beside a captured frame, so temporal analysis can warp
+      // frames with the renderer's own vectors and bin residuals by true
+      // distance instead of estimating either.
+      bool write_capture_aux (const std::string& path,
+                              int width,
+                              int height,
+                              std::size_t row_bytes,
+                              const void* motion,
+                              const void* depth,
+                              const Mat4& view,
+                              const Mat4& proj) {
+        const auto write_plane = [&] (const std::string& suffix,
+                                      const void* source) {
+          std::ofstream file (path + suffix, std::ios::binary);
+          const auto* bytes = static_cast<const unsigned char*> (source);
+          for (int y = 0; y < height; ++y)
+            file.write (reinterpret_cast<const char*> (
+                          bytes + static_cast<std::size_t> (y) * row_bytes),
+                        static_cast<std::streamsize> (width) * 4);
+          return file.good ();
+        };
+        bool ok = write_plane (".motion.rg16f", motion);
+        ok = write_plane (".depth.r32f", depth) && ok;
+        std::ofstream meta (path + ".aux.txt");
+        meta << "size " << width << ' ' << height << '\n' << "proj";
+        for (int i = 0; i < 16; ++i)
+          meta << ' ' << proj.element (i);
+        meta << '\n' << "view";
+        for (int i = 0; i < 16; ++i)
+          meta << ' ' << view.element (i);
+        meta << '\n';
+        return ok && meta.good ();
+      }
 #endif
 
       MoppeFloat4 f4 (const Vec3& v, float w = 0.0f) {
@@ -5907,8 +5943,13 @@ namespace moppe {
 
 #if !TARGET_OS_IPHONE
       id<MTLBuffer> capture = nil;
+      id<MTLBuffer> capture_motion = nil;
+      id<MTLBuffer> capture_depth = nil;
       id<MTLBuffer> reflection_diagnostic = nil;
       id<MTLBuffer> water_reflection_diagnostic = nil;
+      std::size_t aux_row_bytes = 0;
+      int aux_width = 0;
+      int aux_height = 0;
       std::size_t capture_row_bytes = 0;
       std::size_t reflection_row_bytes = 0;
       std::size_t water_reflection_row_bytes = 0;
@@ -5940,6 +5981,38 @@ namespace moppe {
                  destinationOffset:0
             destinationBytesPerRow:capture_row_bytes
           destinationBytesPerImage:capture_row_bytes * capture_height];
+        // The temporal pipeline's own motion vectors and depth are the
+        // ground truth the frame instruments need; both are persistent
+        // single-sample targets whenever temporal upscaling runs.
+        if (::getenv ("MOPPE_CAPTURE_AUX") && m_targets.motion &&
+            m_targets.msaa_depth && m_targets.motion.sampleCount == 1 &&
+            m_targets.msaa_depth.sampleCount == 1 &&
+            m_targets.motion.storageMode != MTLStorageModeMemoryless &&
+            m_targets.msaa_depth.storageMode != MTLStorageModeMemoryless) {
+          aux_width = static_cast<int> (m_targets.motion.width);
+          aux_height = static_cast<int> (m_targets.motion.height);
+          aux_row_bytes = (static_cast<std::size_t> (aux_width) * 4 + 255) &
+                          ~static_cast<std::size_t> (255);
+          const auto copy_texture =
+            [&] (id<MTLTexture> texture) -> id<MTLBuffer> {
+            id<MTLBuffer> buffer =
+              [m_device newBufferWithLength:aux_row_bytes * aux_height
+                                    options:MTLResourceStorageModeShared];
+            make_resident (buffer);
+            [blit copyFromTexture:texture
+                           sourceSlice:0
+                           sourceLevel:0
+                          sourceOrigin:MTLOriginMake (0, 0, 0)
+                            sourceSize:MTLSizeMake (aux_width, aux_height, 1)
+                              toBuffer:buffer
+                     destinationOffset:0
+                destinationBytesPerRow:aux_row_bytes
+              destinationBytesPerImage:aux_row_bytes * aux_height];
+            return buffer;
+          };
+          capture_motion = copy_texture (m_targets.motion);
+          capture_depth = copy_texture (m_targets.msaa_depth);
+        }
         [blit endEncoding];
       }
 
@@ -6178,6 +6251,20 @@ namespace moppe {
                     << std::endl;
         else
           std::cout << "moppe: wrote screenshot " << capture_path << std::endl;
+        if (capture_motion && capture_depth) {
+          if (!write_capture_aux (capture_path,
+                                  aux_width,
+                                  aux_height,
+                                  aux_row_bytes,
+                                  capture_motion.contents,
+                                  capture_depth.contents,
+                                  m_frame.params.view,
+                                  m_frame.params.proj))
+            std::cerr << "moppe: failed to write capture aux " << capture_path
+                      << std::endl;
+          [m_residency removeAllocation:capture_motion];
+          [m_residency removeAllocation:capture_depth];
+        }
         [m_residency removeAllocation:capture];
         [m_residency commit];
       }
