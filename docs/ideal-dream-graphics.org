@@ -172,14 +172,23 @@ tuft band must fade approaching the window). Second slice landed: MOPPE_CAPTURE_
 the scene-resolution motion texture and depth buffer with a matrix
 sidecar, and frame-texture-profile --ride warps consecutive frames
 through the renderer's own vectors — the residual is change motion
-cannot explain, binned by true depth. Measured on an isolated
-grass-lab ride (flat plain, no trees): the mid-field is temporally calm
-(tuft band ~0.035 mean residual, no churn) and a 2.5x appearance
-residual wall sits at ~90-150 m, pinned at the vegetation window edge.
-That wall is GFX-042's temporal acceptance criterion. Methodology rule
-learned the same hour: isolate the subject (grass lab), never measure
-through demo/gazetteer assemblages. Remaining: approximate depth
-reprojection for arbitrary gazetteer frames.
+cannot explain, binned by true depth. Third slice: MOPPE_GLIDE=<shot>
+turns the gazetteer into the isolated moving-camera instrument — the
+named shot's camera translates along its heading, every frame captured,
+no vehicle, no HUD, no particles, frozen wind (MOPPE_GLIDE_FRAMES,
+MOPPE_GLIDE_SPEED).
+
+The isolation flipped a conclusion. A first "measurement" through a
+demo ride (bike, HUD popups, dust, trail dirt, sun glare, and a
+half-compensated every-2nd-frame stride) showed a confident 2.5x
+appearance-residual wall at the vegetation window edge. The clean lab
+glide at 12 m/s shows NO wall: smooth monotone decay through the tuft
+band and across the window edge (~2e-3 there, ~15x below near field).
+Grow-in transitions plus exposure settling really do make arrivals
+quiet at that speed. Open questions for GFX-042's criterion: play-speed
+glides (3x frontier crossing rate), drift-crossing headings, and the
+real world rather than the lab plain. Remaining tooling: approximate
+depth reprojection for arbitrary gazetteer frames.
 
 Repeated failure mode: static captures pass inspection while play
 immediately reveals blatant mid/far-field vegetation absence.  Judging

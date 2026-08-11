@@ -63,15 +63,17 @@ repeatedly falsified it.
 
 And measure in the lab, not in postcards. The gazetteer's composed
 views and the demo ride exist for judging the whole picture; they are
-assemblages — forest, relief, water, dust — and a measurement taken
-through them attributes everything to everything. When the question is
-about one system, isolate it the way the grass laboratory already does
-(MOPPE_GRASS_LAB on a flat plain: saturated cover, no trees), and only
-then instrument. The first isolated temporal profile made this vivid:
-the demo-ride residual curve was unattributable soup, while the same
-instrument on lab flat grass showed a calm mid-field and a 2.5x
-appearance-residual wall pinned at the vegetation window edge — the
-measurement the composed scenes had been hiding.
+assemblages — vehicle, HUD, particles, trail, glare, relief — and a
+measurement taken through them attributes everything to everything.
+When the question is about one system, isolate it: the grass laboratory
+(MOPPE_GRASS_LAB) for the world, and a gazetteer glide (MOPPE_GLIDE)
+for a bare moving camera. The day this rule was written, isolation
+flipped a conclusion's sign: a demo-ride "measurement" showed a
+confident 2.5x appearance-residual wall at the vegetation window edge;
+the clean glide showed smooth decay and no wall — the wall had been
+HUD popups, dust, the bike, and a capture stride that defeated the
+motion compensation. Step zero of any measurement is to actually look
+at what is in the frames being measured.
 
 ## Semantics must be explicit, never accidental
 

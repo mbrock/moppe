@@ -567,6 +567,22 @@ namespace moppe {
                                     sun_direction_for (m_graphics.sun_height));
         if (m_gazetteer_plan.empty ())
           throw std::runtime_error ("landscape gazetteer found no viewpoints");
+        // A glide is the isolated moving-camera instrument: one named
+        // shot's camera advancing in a straight line, one capture per
+        // rendered frame, no vehicle, no HUD, no particles, frozen wind.
+        // Measurement wants exactly one subject in the frame.
+        if (const char* glide = ::getenv ("MOPPE_GLIDE")) {
+          auto& shots = m_gazetteer_plan.shots;
+          const auto found = std::find_if (
+            shots.begin (), shots.end (), [&] (const GazetteerShot& shot) {
+              return shot.name == glide;
+            });
+          if (found == std::end (shots))
+            throw std::runtime_error (
+              std::string ("MOPPE_GLIDE names no gazetteer shot: ") + glide);
+          const GazetteerShot only = *found;
+          shots.assign (1, only);
+        }
         std::filesystem::create_directories (m_gazetteer->output_directory);
         const std::filesystem::path manifest =
           std::filesystem::path (m_gazetteer->output_directory) /
@@ -1186,10 +1202,20 @@ namespace moppe {
           gazetteer_shot && m_gazetteer &&
           m_gazetteer_settle_frame >= m_gazetteer->settle_frames;
         if (captured_gazetteer) {
-          const std::filesystem::path path =
-            std::filesystem::path (m_gazetteer->output_directory) /
-            gazetteer_image_filename (m_gazetteer_shot, gazetteer_shot->name);
-          r.request_screenshot (path.string ());
+          if (glide_frame_limit () > 0) {
+            std::ostringstream name;
+            name << "glide-" << std::setfill ('0') << std::setw (4)
+                 << m_glide_frame << ".png";
+            const std::filesystem::path path =
+              std::filesystem::path (m_gazetteer->output_directory) /
+              name.str ();
+            r.request_screenshot (path.string ());
+          } else {
+            const std::filesystem::path path =
+              std::filesystem::path (m_gazetteer->output_directory) /
+              gazetteer_image_filename (m_gazetteer_shot, gazetteer_shot->name);
+            r.request_screenshot (path.string ());
+          }
         }
         if (m_snapshot_requested) {
           m_snapshot_requested = false;
@@ -1248,6 +1274,9 @@ namespace moppe {
         if (gazetteer_shot) {
           if (!captured_gazetteer) {
             ++m_gazetteer_settle_frame;
+          } else if (glide_frame_limit () > 0) {
+            if (++m_glide_frame >= glide_frame_limit ())
+              platform::request_quit ();
           } else {
             std::cerr << "gazetteer frame " << m_gazetteer_shot + 1 << '/'
                       << m_gazetteer_plan.shots.size () << ": "
@@ -1528,6 +1557,24 @@ namespace moppe {
         return path.str ();
       }
 
+      static int glide_frame_limit () {
+        static const int frames = [] {
+          if (!::getenv ("MOPPE_GLIDE"))
+            return 0;
+          const char* count = ::getenv ("MOPPE_GLIDE_FRAMES");
+          return count ? std::max (2, ::atoi (count)) : 120;
+        }();
+        return frames;
+      }
+
+      static float glide_speed_mps () {
+        static const float speed = [] {
+          const char* value = ::getenv ("MOPPE_GLIDE_SPEED");
+          return value ? std::max (0.1f, (float)::atof (value)) : 12.0f;
+        }();
+        return speed;
+      }
+
       const GazetteerShot* current_gazetteer_shot () const noexcept {
         if (!m_gazetteer || m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
           return nullptr;
@@ -1541,8 +1588,20 @@ namespace moppe {
 
         if (const GazetteerShot* shot = current_gazetteer_shot ()) {
           scene = FrameSceneMode::Gazetteer;
-          const Vec3& eye = position_value (shot->eye);
-          const Vec3& subject = position_value (shot->subject);
+          Vec3 eye = position_value (shot->eye);
+          Vec3 subject = position_value (shot->subject);
+          // A glide translates the frozen shot's camera along its own
+          // horizontal heading, one render frame at a time, so consecutive
+          // captures differ by camera motion and nothing else.
+          if (glide_frame_limit () > 0) {
+            Vec3 heading = subject - eye;
+            heading[1] = 0.0f;
+            const Vec3 step =
+              normalized (heading) * (glide_speed_mps () / 60.0f);
+            const Vec3 travel = step * static_cast<float> (m_glide_frame);
+            eye += travel;
+            subject += travel;
+          }
           camera = {
             .position = eye,
             .forward = normalized (subject - eye),
@@ -1787,6 +1846,7 @@ namespace moppe {
       LandscapeGazetteer m_gazetteer_plan;
       std::size_t m_gazetteer_shot = 0;
       int m_gazetteer_settle_frame = 0;
+      int m_glide_frame = 0;
       int m_screenshot_frames;
       int m_cinematic_capture_frame = 0;
       int m_cinematic_capture_render_frame = 0;

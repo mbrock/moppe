@@ -33,9 +33,13 @@ Usage:
 Writes OUT_DIR/profile.csv, one overlay plot per analyzed frame, and
 prints the scalar table.
 
-The --ride mode is the temporal instrument. It expects consecutive
-frames captured with MOPPE_CAPTURE_AUX=1 (e.g. via tools/ride-judge), so
-each PNG has ground-truth motion vectors and depth beside it. Warping
+The --ride mode is the temporal instrument. It expects EVERY-FRAME
+captures with MOPPE_CAPTURE_AUX=1 — the gazetteer glide
+(MOPPE_GLIDE=<shot-name>) provides them in isolation. Beware
+tools/ride-judge captures: they keep every second render frame, so the
+one-frame motion vectors compensate only half the stride, and the demo
+ride adds HUD, vehicle, and particles to every band; treat those curves
+as qualitative at best. Warping
 frame t-1 through the renderer's own motion texture and subtracting
 from frame t leaves exactly the change motion cannot explain --
 appearance events -- and binning that residual by true depth yields
@@ -212,9 +216,10 @@ def bilinear(image: np.ndarray, sy: np.ndarray, sx: np.ndarray) -> np.ndarray:
 def ride_profile(frames_dir: Path) -> list[dict]:
     """Mean warped and raw temporal residual per distance band, averaged
     over every consecutive pair in the capture."""
-    pngs = sorted(frames_dir.glob("ride-*.png"))
+    pngs = (sorted(frames_dir.glob("glide-*.png"))
+            or sorted(frames_dir.glob("ride-*.png")))
     if len(pngs) < 2:
-        raise SystemExit(f"{frames_dir}: need at least two ride frames")
+        raise SystemExit(f"{frames_dir}: need at least two capture frames")
     edges = band_edges()
     sums = np.zeros((3, len(edges) - 1), dtype=np.float64)
     counts = np.zeros(len(edges) - 1, dtype=np.int64)
