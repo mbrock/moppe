@@ -154,6 +154,24 @@ Verify with the frame instrumentation of GFX-043, not by eye: the
 per-distance-band texture-energy profile should continue smoothly across
 the tuft band's end instead of falling off a cliff.
 
+*** TODO GFX-042b The radius, stated honestly (canonical benchmark)
+
+The canonical scene -- grass lab plain, chase height, sunward:
+MOPPE_GRASS_LAB=1 MOPPE_UPLIFT_YEARS=0 MOPPE_TERRAIN_PROFILE=smoke
+MOPPE_LOOK="1718.75 54.7 39.06 1790 50.5 108 68" -- shows a straight
+boundary at ~90 m where blade/tuft geometry ends and a flat band runs
+to the horizon. Every far-grass claim must be made about THIS frame.
+Two defects it isolates: (1) backlit mean mismatch -- the sward glows
+via transmission while the substrate's grazing occlusion darkens it, so
+toward-sun the boundary is a brightness step; the grazing and
+transmission terms must trade against each other by view-sun angle.
+(2) Structural absence -- beyond the radius nothing stands: no
+verticality, no parallax, no silhouette. Colour cannot fix that. The
+architectural candidate is a sward shell: displace grassy terrain
+upward by sward height with blade-scale relief, so far grass is a rough
+solid that near blades emerge FROM, and the boundary becomes
+rough-solid -> resolved blades instead of flat -> standing.
+
 *** TODO GFX-044a Identify the lattice dabs on open hillsides
 
 MOPPE_LOOK="4217 175 2388 4380 128 2180 55" over the default world shows
