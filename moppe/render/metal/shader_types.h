@@ -46,6 +46,7 @@ struct MoppeUint4 {
 #define MOPPE_TEX_TERRAIN_WATER 8
 #define MOPPE_TEX_TERRAIN_GROUND 9
 #define MOPPE_TEX_TERRAIN_NORMALS 10 /* fragment stage */
+#define MOPPE_TEX_FOREST_CANOPY 11
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1        /* post passes */
 #define MOPPE_TEX_POST_DEPTH 2   /* light shafts: stored scene depth */
@@ -139,7 +140,7 @@ struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
   MoppeFloat4 params1;  // x=height_scale_norm, y=sea_level, z=shadow_strength,
                         // w=shadow_texel
   MoppeFloat4 params2;  // x=time, y=cloudiness
-  MoppeFloat4 params3;  // reserved
+  MoppeFloat4 params3;  // xy=1/forest-period, z=actual canopy field available
   MoppeFloat4 params4;  // x=overlay ramp + 1, y=min, z=max, w=opacity
   MoppeFloat4 params5;  // x=topology opacity, y=water, z=materials
   MoppeFloat4 params6;  // x=fragment normals, y=shore band metres
@@ -271,8 +272,8 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
                            // z=snow support available,
                            // w=standing-water levels available
   MoppeFloat4 temporal;    // xy=input pixels, z=previous time, w=enabled
-  MoppeFloat4 lod;         // x=window reach in metres (the cost bound the
-                           // farthest-resolving family is allowed)
+  MoppeFloat4 lod;         // x=shoot reach, y=sward reach,
+                           // z=actual canopy field available
 };
 
 // A forest crosses the renderer boundary as stable individuals, not baked
@@ -289,6 +290,24 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 #define MOPPE_FOREST_MESH_THREADS 192
 #define MOPPE_FOREST_MESH_VERTICES 128
 #define MOPPE_FOREST_MESH_PRIMITIVES 128
+
+// One aggregate meshlet carries a three-by-three patch of the canopy moment
+// field. Each cell owns a five-vertex roof and four independent side quads;
+// only sides facing a lower-occupancy neighbour survive in the fragment
+// stage, so the work lattice never becomes visible inside a stand.
+#define MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES 6.0f
+#define MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES 32.0f
+#define MOPPE_FOREST_CANOPY_OBJECT_THREADS 64
+#define MOPPE_FOREST_CANOPY_CELLS 3
+#define MOPPE_FOREST_CANOPY_VERTICES_PER_CELL 21
+#define MOPPE_FOREST_CANOPY_PRIMITIVES_PER_CELL 12
+#define MOPPE_FOREST_CANOPY_MESH_VERTICES                                      \
+  (MOPPE_FOREST_CANOPY_CELLS * MOPPE_FOREST_CANOPY_CELLS *                     \
+   MOPPE_FOREST_CANOPY_VERTICES_PER_CELL)
+#define MOPPE_FOREST_CANOPY_MESH_PRIMITIVES                                    \
+  (MOPPE_FOREST_CANOPY_CELLS * MOPPE_FOREST_CANOPY_CELLS *                     \
+   MOPPE_FOREST_CANOPY_PRIMITIVES_PER_CELL)
+#define MOPPE_FOREST_CANOPY_MESH_THREADS 192
 
 struct MOPPE_SHADER_ALIGN MoppeForestInstance {
   MoppeFloat4 root_height; // xyz=root in metres, w=height in metres
@@ -341,6 +360,23 @@ struct MOPPE_SHADER_ALIGN MoppeForestUniforms {
   MoppeFloat4 temporal;  // xy=input pixels, z=previous time, w=enabled
 };
 
+struct MOPPE_SHADER_ALIGN MoppeForestCanopyUniforms {
+  MoppeMat4 view_proj;
+  MoppeMat4 unjittered_view_proj;
+  MoppeMat4 previous_view_proj;
+  MoppeFloat4 camera_pos;
+  MoppeFloat4 sun_dir;
+  MoppeFloat4 sun_diffuse;
+  MoppeFloat4 ambient;
+  MoppeFloat4 fog_color;
+  MoppeFloat4 terrain;  // xy=terrain samples/metre, z=height scale, w=width
+  MoppeFloat4 field;    // xy=1/world period, z=stored height range, w=reserved
+  MoppeFloat4 tiles;    // xy=world patch origin, z=patches/side, w=patch side
+  MoppeFloat4 params;   // x=time, y=cloudiness, z=sea, w=land relief
+  MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
+  MoppeFloat4 lod;      // x=window reach, y=cell side
+};
+
 #ifndef __METAL_VERSION__
 static_assert (sizeof (MoppeMat4) == 64,
                "shader matrices must remain four float4 columns");
@@ -354,6 +390,10 @@ static_assert (MOPPE_FOREST_MESH_VERTICES <= 256,
                "forest meshlet exceeds Metal vertex limit");
 static_assert (MOPPE_FOREST_MESH_PRIMITIVES <= 512,
                "forest meshlet exceeds Metal primitive limit");
+static_assert (MOPPE_FOREST_CANOPY_MESH_VERTICES <= 256,
+               "forest canopy meshlet exceeds Metal vertex limit");
+static_assert (MOPPE_FOREST_CANOPY_MESH_PRIMITIVES <= 512,
+               "forest canopy meshlet exceeds Metal primitive limit");
 #endif
 
 struct MOPPE_SHADER_ALIGN MoppeDustEmission {

@@ -113,11 +113,14 @@ undergrowth_medium (float2 world_xz,
                     texture2d<float> landscape_materials,
                     texture2d<float> ground_materials,
                     texture2d<float> water_levels,
+                    texture2d<float> forest_canopy,
                     float ground_m,
                     float3 ground_normal) {
   const float4 landscape = undergrowth_field (world_xz, u, landscape_materials);
   const float4 ground = undergrowth_field (world_xz, u, ground_materials);
-  const float canopy = landscape.a;
+  const float canopy = u.lod.z > 0.5
+                         ? undergrowth_field (world_xz, u, forest_canopy).r
+                         : landscape.a;
   const float wet = landscape.r;
   const float2 worn = ground.ba;
   const float support = u.relief.z > 0.5 ? ground.g : ground_normal.y;
@@ -181,7 +184,8 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
   texture2d<float> landscape_materials
   [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
   texture2d<float> ground_materials [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
-  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
+  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]],
+  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
   threadgroup atomic_uint survivors;
   if (thread_id == 0u)
     atomic_store_explicit (&survivors, 0u, metal::memory_order_relaxed);
@@ -213,6 +217,7 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
                                                          landscape_materials,
                                                          ground_materials,
                                                          water_levels,
+                                                         forest_canopy,
                                                          ground,
                                                          ground_normal);
       const float focal_pixels =
@@ -355,7 +360,8 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
   texture2d<float> landscape_materials
   [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
   texture2d<float> ground_materials [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
-  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
+  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]],
+  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
   const UndergrowthTile tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
   const uint shoots = max (undergrowth_lod_shoots (tile.wanted, cell), 1u);
@@ -388,6 +394,7 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
                                                landscape_materials,
                                                ground_materials,
                                                water_levels,
+                                               forest_canopy,
                                                ground,
                                                ground_normal);
   const float canopy = grass.forest_cover;
@@ -422,6 +429,7 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
                                 landscape_materials,
                                 ground_materials,
                                 water_levels,
+                                forest_canopy,
                                 ground,
                                 ground_normal);
   }
@@ -991,7 +999,8 @@ static inline float sward_canopy_weight (float2 world_xz,
   texture2d<float> landscape_materials
   [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
   texture2d<float> ground_materials [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
-  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
+  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]],
+  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
   if (thread_id == 0u)
     out.set_primitive_count (MOPPE_SWARD_CANOPY_MESH_PRIMITIVES);
 
@@ -1010,6 +1019,7 @@ static inline float sward_canopy_weight (float2 world_xz,
                                                         landscape_materials,
                                                         ground_materials,
                                                         water_levels,
+                                                        forest_canopy,
                                                         ground,
                                                         ground_normal);
     const MoppeFlowerDrift drift = moppe_flower_drift (

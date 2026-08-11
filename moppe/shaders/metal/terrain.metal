@@ -523,7 +523,8 @@ terrain_read_surface (thread const TerrainVaryings& in,
                       constant MoppeTerrainUniforms& u,
                       texture2d<float> terrain_landscape,
                       texture2d<float, access::read> terrain_water,
-                      texture2d<float> terrain_ground) {
+                      texture2d<float> terrain_ground,
+                      texture2d<float> forest_canopy) {
   // The typed surface readings become two compact sheets only at the
   // presentation boundary. One filtered lookup supplies four fields which
   // share the same terrain coordinate and lifetime.
@@ -553,7 +554,18 @@ terrain_read_surface (thread const TerrainVaryings& in,
   readings.damp = max (max (readings.submerged, 0.92 * readings.swash_zone),
                        smoothstep (0.22, 0.82, readings.moisture));
   readings.intentional_ground = ground.ba;
-  readings.forest_cover = landscape.a;
+  // Habitat predicts where forest can grow; once the actual retained tree
+  // population exists, its crown-area quotient owns closure. This keeps the
+  // forest floor and the distant stand tied to the same individuals instead
+  // of letting a second, obsolete mask paint grass beneath them.
+  if (u.params3.z > 0.5) {
+    constexpr sampler canopy_sampler (
+      coord::normalized, address::repeat, filter::linear);
+    readings.forest_cover =
+      forest_canopy.sample (canopy_sampler, in.world_pos.xz * u.params3.xy).r;
+  } else {
+    readings.forest_cover = landscape.a;
+  }
   return readings;
 }
 
@@ -859,6 +871,7 @@ fragment MoppeTemporalOutput terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_WATER)]],
   texture2d<float> terrain_ground [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
   texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
+  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]],
   sampler smp [[sampler (0)]]) {
 
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
@@ -883,7 +896,7 @@ fragment MoppeTemporalOutput terrain_fragment (
   const float sea_level = u.params1.y;
 
   const TerrainSurfaceReadings readings = terrain_read_surface (
-    in, n, u, terrain_landscape, terrain_water, terrain_ground);
+    in, n, u, terrain_landscape, terrain_water, terrain_ground, forest_canopy);
   const TerrainMaterialBands bands =
     terrain_classify_material (in, n, sea_level, readings, u);
 

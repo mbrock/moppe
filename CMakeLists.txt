@@ -254,6 +254,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/dust.metal
   moppe/shaders/metal/undergrowth.metal
   moppe/shaders/metal/forest.metal
+  moppe/shaders/metal/forest_canopy.metal
   moppe/shaders/metal/reflection_geometry.metal
   moppe/shaders/metal/water_reflection.metal
 )
@@ -261,6 +262,7 @@ set(MOPPE_METAL_SOURCES
 set(MOPPE_METAL_DEPS
   moppe/shaders/metal/common.h
   moppe/shaders/metal/grass_medium.h
+  moppe/shaders/metal/forest_medium.h
   moppe/render/metal/shader_types.h
 )
 
@@ -296,11 +298,17 @@ else()
   string(REPLACE "#include \"common.h\"" ""
     MOPPE_GRASS_MEDIUM "${MOPPE_GRASS_MEDIUM}")
   string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_GRASS_MEDIUM}\n")
+  file(READ moppe/shaders/metal/forest_medium.h MOPPE_FOREST_MEDIUM)
+  string(REPLACE "#include \"common.h\"" ""
+    MOPPE_FOREST_MEDIUM "${MOPPE_FOREST_MEDIUM}")
+  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_FOREST_MEDIUM}\n")
   foreach(src ${MOPPE_METAL_SOURCES})
     file(READ ${src} MOPPE_METAL_PART)
     string(REPLACE "#include \"common.h\"" ""
       MOPPE_METAL_PART "${MOPPE_METAL_PART}")
     string(REPLACE "#include \"grass_medium.h\"" ""
+      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
+    string(REPLACE "#include \"forest_medium.h\"" ""
       MOPPE_METAL_PART "${MOPPE_METAL_PART}")
     string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_PART}\n")
   endforeach()

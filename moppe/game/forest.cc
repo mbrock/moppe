@@ -31,7 +31,7 @@ namespace moppe::game {
         .root = site.position,
         .ground_normal = site.normal,
         .height = height,
-        .crown_radius = (conifer ? 0.19f : 0.25f) * height,
+        .crown_radius = (conifer ? 0.23f : 0.25f) * height,
         .canopy_cover = cover * mp_units::one,
         .moisture = moisture * mp_units::one,
         .seed = site.seed,

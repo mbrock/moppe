@@ -46,7 +46,7 @@ namespace {
           .ground_normal =
             Vec3 (0, 1, 0) * terrain::terrain_normal[mp_units::one],
           .height = m_solo_height * u::m,
-          .crown_radius = 0.19f * m_solo_height * u::m,
+          .crown_radius = 0.23f * m_solo_height * u::m,
           .canopy_cover = 0.5f * mp_units::one,
           .moisture = 0.5f * mp_units::one,
           .seed = 0x51a7c0deu,
@@ -72,7 +72,7 @@ namespace {
           .ground_normal =
             Vec3 (0, 1, 0) * terrain::terrain_normal[mp_units::one],
           .height = height * u::m,
-          .crown_radius = 0.19f * height * u::m,
+          .crown_radius = 0.23f * height * u::m,
           .canopy_cover = 0.5f * mp_units::one,
           .moisture = 0.5f * mp_units::one,
           .seed = 0x51a7c0deu + 977u * (unsigned)i,

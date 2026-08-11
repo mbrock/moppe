@@ -1,18 +1,22 @@
 # Forest density and aggregates: the road to "it feels like a forest"
 
-Status: design intent, August 2026. The implemented LOD system this builds
-on is recorded in [forest LOD](forest-lod.md). The reference image remains
-the golden-hour spruce mockup (dense canopy, long shadows, sunbeams, dark
-interior); the gazetteer's forest-sunward / forest-shadowplay /
-forest-interior studies are the standing comparison views.
+Status: implementation checkpoint, August 2026. The individual-tree system
+and its handoff to the stand quotient are recorded in
+[forest LOD](forest-lod.md). The reference image remains the golden-hour
+spruce mockup (dense canopy, long shadows, sunbeams, dark interior); the
+gazetteer's forest-sunward / forest-shadowplay / forest-interior studies are
+the standing comparison views.
 
 ## The thesis: density is an unlock, not a cost
 
-The current stands are open enough to see through, so every tree presents
-as an individual silhouette -- the world reads as "a bunch of spiny trees",
-not a forest. A real spruce forest at any distance is mostly occlusion: a
-closed canopy surface on hillsides, dark interior gloom between trunks up
-close, individuals legible only at stand edges.
+The failure mode was an open planting lattice in which every tree presented
+as an individual silhouette: "a bunch of spiny trees", not a forest. A spruce
+forest at any distance is mostly occlusion: a closed canopy surface on
+hillsides, dark interior gloom between trunks up close, individuals legible
+at stand edges. The world plan now plants at five-metre spacing, with broad
+jitter inside each cell, and the conifer crown radius is 0.23 of height. This
+keeps roughly 74,000 stable individuals in the reference world while making
+their near-field occlusion credible.
 
 Density also changes what the far field is allowed to be. A sparse stand
 seen from 500 m is still "several distinguishable individuals", and only
@@ -28,27 +32,64 @@ resolvable scale, geometry should stop being triangles and become density
 (their voxel bricks). Our per-tree crown proxy is a first crude step; the
 destination is stand-level.
 
-Occlusion is also free perceptual masking for the LOD system: in a closed
-stand most of every tree is hidden, so organ arrivals happen behind
-foliage instead of against open sky.
+Occlusion is also perceptual masking for the LOD system: in a closed stand
+most of every tree is hidden, so organ arrivals happen behind foliage instead
+of against open sky.
 
-## Plan, in order
+## The implemented stand quotient
 
-1. **Close the canopy.** Raise planting density and per-crown fullness in
-   the near field; darken crown interiors (cheap ambient-occlusion-like
-   shading inside the crown volume -- half of what makes the mockup's
-   interior read). Judge against the gazetteer forest studies and the
-   mockup, on foot with the P-key series. Near-field hero cost is the
-   thing to measure.
-2. **Let occlusion pay for it.** Dense stands only stay cheap if early-Z
-   kills interior fragments; verify draw order is roughly front-to-back in
-   a GPU trace rather than assuming.
-3. **The aggregate far field.** Replace the per-tree proxy band on distant
-   hillsides with a stand-level representation driven by the forest plan's
-   density map: a displaced canopy shell or coarse voxel bricks, lit like
-   felt. Past the mid-field this makes tree count free -- a hillside with
-   4,000 trees costs the same as one with 400. This is the largest
-   remaining structural piece of the forest project.
+`MetalRenderer::set_forest` rasterizes the actual retained `ForestInstance`
+population into one periodic RGBA moment field. It is not a second forest
+guessed from the habitat texture:
+
+- R is optical closure, accumulated as crown area and converted with
+  `1 - exp(-depth)`;
+- G is optical-depth-weighted mean crown height;
+- B is upper crown height; and
+- A is optical-depth-weighted moisture.
+
+The reference population occupies 16.3 percent of the world field. Within
+occupied texels its median closure is 0.325, its ninetieth percentile is
+0.573, and its maximum is 0.763. These are useful population diagnostics,
+not image targets: changing a threshold to improve them without improving the
+ride would be reward hacking.
+
+The renderer turns that field into eight-metre canopy cells, grouped into
+three-by-three mesh patches. A cell has a slightly irregular roof and emits
+side geometry only where its neighbour has less closure or a lower roof. The
+representation is finite, world-anchored, and rendered without depth writes
+after the undergrowth, so its translucent coverage cannot become a dark
+infinite sheet or erase nearer organisms. Its work window is radial only as a
+cost bound; frustum culling and the representation decision use the actual
+terrain height and three-dimensional camera distance. Walking, riding, and
+flying therefore ask the same geometric question.
+
+The handoff is expressed in crown pixels, not tree height or camera altitude.
+The aggregate begins while a mean crown is twelve pixels wide and is mostly
+present by four to five pixels. Each individual retires, with seed-staggered
+thresholds, over the same four-to-five-pixel interval. The overlap preserves
+coverage while the image can still resolve the individual; below it the stand
+field owns the population instead of a grid of subpixel conifers.
+
+The moment field also replaced the obsolete habitat-cover reading in terrain
+and undergrowth shading. The canopy roof, forest floor, blades, ferns, and
+flowers now consume the closure produced by the same retained crowns.
+Understorey light is a bounded Beer--Lambert-style power of the open fraction,
+so a closed stand is sparse beneath while actual gaps remain occupiable.
+
+## What remains
+
+- Inspect the dense individual pass in a GPU trace and make front-to-back
+  rejection deliberate if overdraw remains dominant.
+- Replace the coarse roof's remaining cell-scale faceting with richer
+  stand-shape and lighting moments without reintroducing per-tree identity.
+- Remove the last visible planting correlations; wider jitter reduced the
+  rows, but a jittered lattice is not a blue-noise population.
+- Judge longer walking, riding, and gliding sequences. The short aerial strip
+  proves that the field is world-anchored, but not that every transition is
+  yet perceptually quiet.
+- Give hero trunks roots, base flare, litter, and local ground agreement. That
+  is a near-field forest-floor problem, not an excuse to retain distant trees.
 
 The broadleaf form was removed from the world (the blob-lollipop
 placeholder had received none of the conifer's assembly work); it returns
@@ -80,11 +121,11 @@ The reusable discipline is narrower:
 - anchor every field in the world, never the camera; and
 - use a finite aggregate path rather than an infinite dark sheet.
 
-For the forest, the next proof should therefore be a stand-density atelier on
-one finished density map: a closed canopy height/occupancy field that replaces
-only the unresolvable crown population, preserves gaps and stand edges, and
-leaves near trunks and understorey explicitly navigable. It should not begin by
-making the existing sparse per-tree proxy band larger or denser.
+The forest checkpoint follows that discipline: a closed canopy
+height/occupancy field replaces only the unresolvable crown population,
+preserves gaps and stand edges, and leaves near trunks and understorey
+explicitly navigable. It does not make the old per-tree proxy band larger or
+scatter decorative tufts into the distance.
 
 ## Trees influence the surface: analytic ground deformation
 

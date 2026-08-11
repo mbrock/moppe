@@ -960,9 +960,6 @@ namespace moppe {
         if (visibility.sky_after_terrain)
           draw_world_sky ();
 
-        if (visibility.forest)
-          m_forest.draw (r);
-
         // The floor grows itself from the same canopy and moisture fields the
         // trees were planted from, so it arrives already agreeing with them.
         // Gameplay movers part the generated field locally; cinematics keep
@@ -992,6 +989,12 @@ namespace moppe {
               .interaction_position = frame.hud.subject_position,
               .interaction_radius = interaction_radius });
         }
+
+        // Opaque individuals depth-test normally. The distant stand quotient
+        // follows the ground medium so its non-depth-writing canopy roof
+        // cannot be painted over by the sward's own far density layer.
+        if (visibility.forest)
+          m_forest.draw (r);
       }
 
       void draw_actor_layers (render::Renderer& r, const FrameView& frame) {

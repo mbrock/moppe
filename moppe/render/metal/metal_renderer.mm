@@ -428,6 +428,7 @@ namespace moppe {
         id<MTLRenderPipelineState> sward_canopy = nil;
         id<MTLRenderPipelineState> undergrowth = nil;
         id<MTLRenderPipelineState> forest = nil;
+        id<MTLRenderPipelineState> forest_canopy = nil;
         id<MTLRenderPipelineState> forest_shadow = nil;
         id<MTLRenderPipelineState> river = nil;
 #if !TARGET_OS_IPHONE
@@ -488,7 +489,9 @@ namespace moppe {
 
       struct MetalForestResources {
         id<MTLBuffer> instances = nil;
+        id<MTLTexture> canopy_moments = nil;
         std::uint32_t count = 0;
+        std::uint32_t canopy_size = 0;
         float period_x = 0.0f;
         float period_z = 0.0f;
       };
@@ -726,6 +729,7 @@ namespace moppe {
         id<MTL4RenderCommandEncoder> encoder;
         const MetalPipelines& pipelines;
         MetalTerrainResources& terrain;
+        const MetalForestResources& forest;
         const MetalWaterResources& water;
         MetalFrameEncoding& frame;
       };
@@ -1928,6 +1932,52 @@ namespace moppe {
           if (!m_pipelines.forest)
             throw std::runtime_error (
               std::string ("Could not build forest pipeline: ") +
+              (error ? error.localizedDescription.UTF8String : "unknown"));
+        }
+
+        MTLMeshRenderPipelineDescriptor* forest_canopy =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        forest_canopy.objectFunction =
+          [m_library newFunctionWithName:@"forest_canopy_object"];
+        forest_canopy.meshFunction =
+          [m_library newFunctionWithName:@"forest_canopy_mesh"];
+        forest_canopy.fragmentFunction =
+          [m_library newFunctionWithName:@"forest_canopy_fragment"];
+        forest_canopy.rasterSampleCount = scene_samples;
+        forest_canopy.colorAttachments[0].pixelFormat = scene;
+        forest_canopy.colorAttachments[0].blendingEnabled = YES;
+        forest_canopy.colorAttachments[0].sourceRGBBlendFactor =
+          MTLBlendFactorSourceAlpha;
+        forest_canopy.colorAttachments[0].destinationRGBBlendFactor =
+          MTLBlendFactorOneMinusSourceAlpha;
+        forest_canopy.colorAttachments[0].sourceAlphaBlendFactor =
+          MTLBlendFactorOne;
+        forest_canopy.colorAttachments[0].destinationAlphaBlendFactor =
+          MTLBlendFactorOneMinusSourceAlpha;
+        if (m_temporal_scene_pipelines) {
+          forest_canopy.colorAttachments[1].pixelFormat =
+            MTLPixelFormatRG16Float;
+          forest_canopy.colorAttachments[2].pixelFormat = MTLPixelFormatR8Unorm;
+        }
+        forest_canopy.depthAttachmentPixelFormat = depth;
+        if (!m_temporal_scene_pipelines)
+          forest_canopy.stencilAttachmentPixelFormat = depth;
+        forest_canopy.payloadMemoryLength = 1024;
+        forest_canopy.maxTotalThreadsPerObjectThreadgroup =
+          MOPPE_FOREST_CANOPY_OBJECT_THREADS;
+        forest_canopy.maxTotalThreadsPerMeshThreadgroup =
+          MOPPE_FOREST_CANOPY_MESH_THREADS;
+        if (forest_canopy.objectFunction && forest_canopy.meshFunction &&
+            forest_canopy.fragmentFunction) {
+          NSError* error = nil;
+          m_pipelines.forest_canopy = [m_device
+            newRenderPipelineStateWithMeshDescriptor:forest_canopy
+                                             options:MTLPipelineOptionNone
+                                          reflection:nil
+                                               error:&error];
+          if (!m_pipelines.forest_canopy)
+            throw std::runtime_error (
+              std::string ("Could not build forest canopy pipeline: ") +
               (error ? error.localizedDescription.UTF8String : "unknown"));
         }
 
@@ -3269,15 +3319,22 @@ namespace moppe {
         packed.push_back (gpu);
       }
 
-      if (m_forest_resources.instances && m_frame.sequence &&
+      if ((m_forest_resources.instances || m_forest_resources.canopy_moments) &&
+          m_frame.sequence &&
           ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
                                                   timeoutMS:5000])
         throw std::runtime_error (
-          "Timed out replacing an in-flight forest instance buffer");
+          "Timed out replacing in-flight forest resources");
       if (m_forest_resources.instances) {
         [m_residency removeAllocation:m_forest_resources.instances];
-        [m_residency commit];
+        m_forest_resources.instances = nil;
       }
+      if (m_forest_resources.canopy_moments) {
+        [m_residency removeAllocation:m_forest_resources.canopy_moments];
+        m_forest_resources.canopy_moments = nil;
+      }
+      m_forest_resources.canopy_size = 0;
+      [m_residency commit];
       m_forest_resources.instances =
         create_private_buffer (packed.data (),
                                packed.size () * sizeof (MoppeForestInstance),
@@ -3286,6 +3343,151 @@ namespace moppe {
       const Vec3 period = extent_value (setup.period);
       m_forest_resources.period_x = period[0];
       m_forest_resources.period_z = period[2];
+
+      // A distant closed stand is a quotient of these exact individuals, not
+      // a second forest guessed from habitat colour. Splat projected crown
+      // area into the terrain-resolution lattice, preserving optical closure,
+      // mean and upper height, and moisture. RGBA8 is ample here: its height
+      // quantum is 12.5 cm over the bounded 32 m crown range.
+      const std::uint32_t canopy_size = static_cast<std::uint32_t> (
+        std::clamp (m_terrain_resources.params.width, 256, 1024));
+      if (period[0] > 0.0f && period[2] > 0.0f && !instances.empty ()) {
+        const std::size_t texels =
+          static_cast<std::size_t> (canopy_size) * canopy_size;
+        std::vector<float> optical_depth (texels, 0.0f);
+        std::vector<float> height_moment (texels, 0.0f);
+        std::vector<float> upper_height (texels, 0.0f);
+        std::vector<float> moisture_moment (texels, 0.0f);
+        const float step_x = period[0] / static_cast<float> (canopy_size);
+        const float step_z = period[2] / static_cast<float> (canopy_size);
+        const float cell_area = step_x * step_z;
+        const float min_step = std::min (step_x, step_z);
+        const auto wrap = [&] (int value) {
+          value %= static_cast<int> (canopy_size);
+          return value < 0 ? value + static_cast<int> (canopy_size) : value;
+        };
+        const auto periodic_delta = [] (float value, float extent) {
+          return value - std::round (value / extent) * extent;
+        };
+
+        for (const ForestInstance& instance : instances) {
+          const Vec3 root = position_value (instance.root);
+          const float radius = instance.crown_radius.numerical_value_in (u::m);
+          const float height = instance.height.numerical_value_in (u::m);
+          const float moisture =
+            instance.moisture.numerical_value_in (mp_units::one);
+          const float sigma =
+            std::max (0.58f * radius, 0.45f * std::max (step_x, step_z));
+          const int reach = std::max (
+            1, static_cast<int> (std::ceil (2.4f * sigma / min_step)));
+          const int centre_x = static_cast<int> (std::floor (root[0] / step_x));
+          const int centre_z = static_cast<int> (std::floor (root[2] / step_z));
+          float weight_sum = 0.0f;
+          for (int dz = -reach; dz <= reach; ++dz)
+            for (int dx = -reach; dx <= reach; ++dx) {
+              const int x = wrap (centre_x + dx);
+              const int z = wrap (centre_z + dz);
+              const float world_x = (static_cast<float> (x) + 0.5f) * step_x;
+              const float world_z = (static_cast<float> (z) + 0.5f) * step_z;
+              const float distance_x =
+                periodic_delta (world_x - root[0], period[0]);
+              const float distance_z =
+                periodic_delta (world_z - root[2], period[2]);
+              weight_sum += std::exp (
+                -0.5f * (distance_x * distance_x + distance_z * distance_z) /
+                (sigma * sigma));
+            }
+          const float crown_area = 0.70f * 3.14159265f * radius * radius;
+          const float scale =
+            crown_area / (cell_area * std::max (weight_sum, 0.0001f));
+          for (int dz = -reach; dz <= reach; ++dz)
+            for (int dx = -reach; dx <= reach; ++dx) {
+              const int x = wrap (centre_x + dx);
+              const int z = wrap (centre_z + dz);
+              const float world_x = (static_cast<float> (x) + 0.5f) * step_x;
+              const float world_z = (static_cast<float> (z) + 0.5f) * step_z;
+              const float distance_x =
+                periodic_delta (world_x - root[0], period[0]);
+              const float distance_z =
+                periodic_delta (world_z - root[2], period[2]);
+              const float weight =
+                scale *
+                std::exp (-0.5f *
+                          (distance_x * distance_x + distance_z * distance_z) /
+                          (sigma * sigma));
+              const std::size_t index =
+                static_cast<std::size_t> (z) * canopy_size + x;
+              optical_depth[index] += weight;
+              height_moment[index] += weight * height;
+              upper_height[index] = std::max (upper_height[index], height);
+              moisture_moment[index] += weight * moisture;
+            }
+        }
+
+        std::vector<std::array<std::uint8_t, 4>> moments (texels);
+        std::vector<float> occupied_closure;
+        occupied_closure.reserve (instances.size () * 4);
+        double closure_sum = 0.0;
+        const auto unorm = [] (float value) {
+          return static_cast<std::uint8_t> (
+            std::lround (255.0f * std::clamp (value, 0.0f, 1.0f)));
+        };
+        for (std::size_t index = 0; index < texels; ++index) {
+          const float depth = optical_depth[index];
+          const float closure = 1.0f - std::exp (-depth);
+          const float mean_height =
+            depth > 0.0001f ? height_moment[index] / depth : 0.0f;
+          const float moisture =
+            depth > 0.0001f ? moisture_moment[index] / depth : 0.0f;
+          closure_sum += closure;
+          if (closure >= 1.0f / 255.0f)
+            occupied_closure.push_back (closure);
+          moments[index] = {
+            unorm (closure),
+            unorm (mean_height / MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES),
+            unorm (upper_height[index] /
+                   MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES),
+            unorm (moisture),
+          };
+        }
+
+        MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                       width:canopy_size
+                                      height:canopy_size
+                                   mipmapped:NO];
+        descriptor.storageMode = MTLStorageModePrivate;
+        descriptor.usage = MTLTextureUsageShaderRead;
+        m_forest_resources.canopy_moments =
+          [m_device newTextureWithDescriptor:descriptor];
+        make_resident (m_forest_resources.canopy_moments);
+        upload_texture (m_forest_resources.canopy_moments,
+                        moments.data (),
+                        canopy_size,
+                        canopy_size,
+                        sizeof (moments.front ()),
+                        false);
+        m_forest_resources.canopy_size = canopy_size;
+
+        std::sort (occupied_closure.begin (), occupied_closure.end ());
+        const auto percentile = [&] (float fraction) {
+          if (occupied_closure.empty ())
+            return 0.0f;
+          const std::size_t index = static_cast<std::size_t> (
+            fraction * static_cast<float> (occupied_closure.size () - 1));
+          return occupied_closure[index];
+        };
+        std::cerr << "forest canopy: " << canopy_size << "x" << canopy_size
+                  << ", occupied=" << std::fixed << std::setprecision (1)
+                  << 100.0 * static_cast<double> (occupied_closure.size ()) /
+                       static_cast<double> (texels)
+                  << "% mean=" << std::setprecision (3)
+                  << closure_sum / static_cast<double> (texels)
+                  << " occupied-p50=" << percentile (0.50f)
+                  << " p90=" << percentile (0.90f)
+                  << " max=" << percentile (1.0f) << std::defaultfloat
+                  << std::endl;
+      }
     }
 
     // -- targets -------------------------------------------------------
@@ -4036,6 +4238,7 @@ namespace moppe {
                                  int count) {
       const MetalPipelines& pipelines = inputs.pipelines;
       MetalTerrainResources& terrain = inputs.terrain;
+      const MetalForestResources& forest = inputs.forest;
       const MetalWaterResources& water = inputs.water;
       MetalFrameEncoding& frame = inputs.frame;
       id<MTL4RenderCommandEncoder> enc = inputs.encoder;
@@ -4068,6 +4271,12 @@ namespace moppe {
                                        : 1.0f / 4096.0f;
       u.params2.x = frame.params.time;
       u.params2.y = frame.params.cloud_cover;
+      if (forest.canopy_moments && forest.period_x > 0.0f &&
+          forest.period_z > 0.0f) {
+        u.params3.x = 1.0f / forest.period_x;
+        u.params3.y = 1.0f / forest.period_z;
+        u.params3.z = 1.0f;
+      }
       if (terrain.have_overlay) {
         u.params4.x = 1.0f + static_cast<float> (terrain.overlay_params.ramp);
         u.params4.y = terrain.overlay_params.minimum;
@@ -4146,6 +4355,12 @@ namespace moppe {
                     MTLRenderStageFragment,
                     MOPPE_TEX_TERRAIN_NORMALS,
                     terrain.normals);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_FOREST_CANOPY,
+                    forest.canopy_moments    ? forest.canopy_moments
+                    : terrain.have_materials ? terrain.landscape_materials
+                                             : terrain.heights);
       use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
 
       for (int i = 0; i < count; ++i) {
@@ -4185,6 +4400,7 @@ namespace moppe {
       MetalTerrainPass::draw ({ encoder,
                                 m_pipelines,
                                 m_terrain_resources,
+                                m_forest_resources,
                                 m_water_resources,
                                 m_frame },
                               chunks,
@@ -4544,6 +4760,7 @@ namespace moppe {
 
     void MetalRenderer::draw_undergrowth (const UndergrowthParams& params) {
       const MetalTerrainResources& terrain = m_terrain_resources;
+      const MetalForestResources& forest = m_forest_resources;
       const MetalWaterResources& water = m_water_resources;
       if ((!m_pipelines.sward_canopy && !m_pipelines.undergrowth) ||
           !terrain.have_terrain || !terrain.have_materials ||
@@ -4571,6 +4788,7 @@ namespace moppe {
         u.relief.z = terrain.have_materials ? 1.0f : 0.0f;
         u.relief.w = water.have_water_levels ? 1.0f : 0.0f;
         u.temporal = m_frame.uniforms.temporal;
+        u.lod.z = forest.canopy_moments ? 1.0f : 0.0f;
 
         const TerrainParams& tp = terrain.params;
         u.lattice.x = 1.0f / tp.scale[0];
@@ -4614,6 +4832,9 @@ namespace moppe {
           bind (terrain.ground_materials, MOPPE_TEX_TERRAIN_GROUND);
           bind (water.have_water_levels ? water.water_levels : terrain.heights,
                 MOPPE_TEX_TERRAIN_WATER);
+          bind (forest.canopy_moments ? forest.canopy_moments
+                                      : terrain.landscape_materials,
+                MOPPE_TEX_FOREST_CANOPY);
           MetalTexture* fallback =
             static_cast<MetalTexture*> (m_pipelines.white.get ());
           MetalTexture* grass =
@@ -4752,6 +4973,79 @@ namespace moppe {
                                       MOPPE_FOREST_OBJECT_THREADS, 1, 1)
           threadsPerMeshThreadgroup:MTLSizeMake (
                                       MOPPE_FOREST_MESH_THREADS, 1, 1)];
+
+      if (!m_pipelines.forest_canopy || !forest.canopy_moments ||
+          !terrain.have_terrain)
+        return;
+      MoppeForestCanopyUniforms canopy;
+      std::memset (&canopy, 0, sizeof (canopy));
+      canopy.view_proj = m_frame.uniforms.view_proj;
+      canopy.unjittered_view_proj = m_frame.uniforms.unjittered_view_proj;
+      canopy.previous_view_proj = m_frame.uniforms.previous_view_proj;
+      canopy.camera_pos = m_frame.uniforms.camera_pos;
+      canopy.sun_dir = m_frame.uniforms.sun_dir;
+      canopy.sun_diffuse = m_frame.uniforms.sun_diffuse;
+      canopy.ambient = m_frame.uniforms.ambient;
+      canopy.fog_color = m_frame.uniforms.fog_color;
+      canopy.params = m_frame.uniforms.misc;
+      canopy.temporal = m_frame.uniforms.temporal;
+      const TerrainParams& tp = terrain.params;
+      canopy.terrain.x = 1.0f / tp.scale[0];
+      canopy.terrain.y = 1.0f / tp.scale[2];
+      canopy.terrain.z = tp.scale[1];
+      canopy.terrain.w = static_cast<float> (tp.width);
+      canopy.field.x = 1.0f / forest.period_x;
+      canopy.field.y = 1.0f / forest.period_z;
+      canopy.field.z = MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES;
+
+      const float focal_pixels = 0.5f * static_cast<float> (m_targets.height) *
+                                 std::abs (m_frame.params.proj.element (5));
+      const float reach = std::clamp (MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES *
+                                        focal_pixels / 1.8f,
+                                      1200.0f,
+                                      2400.0f);
+      constexpr float cell_side = 8.0f;
+      constexpr float patch_side = cell_side * MOPPE_FOREST_CANOPY_CELLS;
+      const int patches_side =
+        static_cast<int> (std::ceil ((2.0f * reach) / patch_side));
+      canopy.tiles.x =
+        std::floor ((m_frame.params.camera_pos[0] - reach) / patch_side);
+      canopy.tiles.y =
+        std::floor ((m_frame.params.camera_pos[2] - reach) / patch_side);
+      canopy.tiles.z = static_cast<float> (patches_side);
+      canopy.tiles.w = patch_side;
+      canopy.lod.x = reach;
+      canopy.lod.y = cell_side;
+
+      [enc setRenderPipelineState:m_pipelines.forest_canopy];
+      [enc setDepthStencilState:m_pipelines.depth[1][0]];
+      const MTLGPUAddress canopy_uniforms =
+        m_frame.arena[m_frame.slot].write (canopy);
+      for (MTLRenderStages stage :
+           { MTLRenderStageObject, MTLRenderStageMesh, MTLRenderStageFragment })
+        bind_address (m_frame, stage, MOPPE_BUF_FRAME, canopy_uniforms);
+      for (MTLRenderStages stage : { MTLRenderStageObject, MTLRenderStageMesh })
+        bind_texture (m_frame, stage, MOPPE_TEX_HEIGHTS, terrain.heights);
+      for (MTLRenderStages stage :
+           { MTLRenderStageObject, MTLRenderStageMesh, MTLRenderStageFragment })
+        bind_texture (
+          m_frame, stage, MOPPE_TEX_FOREST_CANOPY, forest.canopy_moments);
+      use_arguments (enc,
+                     m_frame,
+                     MTLRenderStageObject | MTLRenderStageMesh |
+                       MTLRenderStageFragment);
+      const NSUInteger patch_count =
+        static_cast<NSUInteger> (patches_side) * patches_side;
+      [enc drawMeshThreadgroups:MTLSizeMake (
+                                  (patch_count +
+                                   MOPPE_FOREST_CANOPY_OBJECT_THREADS - 1) /
+                                    MOPPE_FOREST_CANOPY_OBJECT_THREADS,
+                                  1,
+                                  1)
+        threadsPerObjectThreadgroup:MTLSizeMake (
+                                      MOPPE_FOREST_CANOPY_OBJECT_THREADS, 1, 1)
+          threadsPerMeshThreadgroup:MTLSizeMake (
+                                      MOPPE_FOREST_CANOPY_MESH_THREADS, 1, 1)];
     }
 
     // -- draw lists ----------------------------------------------------

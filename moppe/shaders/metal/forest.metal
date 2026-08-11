@@ -5,7 +5,7 @@
 // conifer bough tier, broadleaf crown lobe, or distant crown proxy. No complete
 // tree mesh exists in CPU or GPU memory, and no alpha-tested foliage is used.
 
-#include "common.h"
+#include "forest_medium.h"
 
 struct ForestVaryings {
   float4 position [[position]];
@@ -49,18 +49,8 @@ using ForestShadowMesh = metal::mesh<ForestShadowVaryings,
                                      MOPPE_FOREST_MESH_PRIMITIVES,
                                      metal::topology::triangle>;
 
-static inline uint forest_mix (uint value) {
-  value ^= value >> 16;
-  value *= 0x7feb352du;
-  value ^= value >> 15;
-  value *= 0x846ca68bu;
-  value ^= value >> 16;
-  return value;
-}
-
 static inline float forest_hash (uint seed, uint lane) {
-  return float (forest_mix (seed ^ lane * 0x9e3779b9u) & 0x00ffffffu) /
-         float (0x01000000u);
+  return moppe_forest_hash (seed, lane);
 }
 
 static inline float3 forest_root (thread const MoppeForestInstance& tree,
@@ -92,6 +82,14 @@ static inline float3 forest_up (thread const MoppeForestInstance& tree) {
 // whole stand changes construction on the same frame.
 static inline float forest_lod_threshold (uint seed) {
   return 0.88 + 0.24 * forest_hash (seed, 191u);
+}
+
+static inline float forest_individual_vanish_pixels (uint seed) {
+  // By four to five crown pixels the stand field already carries more than
+  // eighty percent of its aggregate response. Keeping a separate conifer
+  // below that point spends mesh work on a silhouette the pixel grid cannot
+  // repeat while making the far stand look spiky instead of closed.
+  return 4.0 + 5.0 * (forest_lod_threshold (seed) - 0.88);
 }
 
 // A conifer's bough count as a continuous function of projected size. Detail
@@ -167,13 +165,19 @@ static inline uint forest_bough_tufts (uint bundle) {
   return bundle == 4u ? 3u : 13u;
 }
 
-static inline uint forest_part_count (
-  float pixels, uint pixel_code, float height, uint seed, bool conifer) {
+static inline uint forest_part_count (float pixels,
+                                      float crown_pixels,
+                                      uint pixel_code,
+                                      float height,
+                                      uint seed,
+                                      bool conifer) {
   const float threshold = forest_lod_threshold (seed);
-  // Departure is per-individual, never a shared ring: a uniform two-pixel
-  // cull made whole hillsides of distant crowns vanish along one circle
-  // that travelled with the camera.
-  if (pixels < 2.0 + 10.0 * (threshold - 0.88))
+  // Individual identity ends when the crown, rather than the much taller
+  // trunk-to-tip measure, is no longer a repeatable image feature. Keeping a
+  // two-pixel-tall tree meant carrying subpixel crown widths across almost the
+  // whole world. Seed staggering prevents the retirement boundary becoming a
+  // camera-centred ring; the stand aggregate receives the same crown measure.
+  if (crown_pixels < forest_individual_vanish_pixels (seed))
     return 0u;
   if (pixels < 14.0 * threshold)
     return 1u;
@@ -221,8 +225,11 @@ forest_scene_schedule (uint tree_index,
   // angle and saturates once the rider is beside the organism.
   const float focal = moppe_projection_scale (u.unjittered_view_proj).y;
   const float pixels = height * focal * 0.5 * u.temporal.y / max (clip.w, 0.6);
+  const float crown_pixels =
+    pixels * (2.0 * tree.up_radius.w / max (height, 0.01));
   schedule.pixel_code = min (uint (pixels), 65535u);
   schedule.parts = forest_part_count (pixels,
+                                      crown_pixels,
                                       schedule.pixel_code,
                                       height,
                                       tree.identity.x,
@@ -383,9 +390,10 @@ static inline void forest_configure_proxy (thread ForestOrgan& organ,
   // sits at full size against the ground one frame before vanishing. The
   // shadow pass keeps whole crowns: its footprint must not breathe.
   if (!shadow) {
-    const float threshold = forest_lod_threshold (organ.seed);
-    const float vanish = 2.0 + 10.0 * (threshold - 0.88);
-    const float presence = smoothstep (vanish, vanish + 5.0, float (part.copy));
+    const float crown_pixels =
+      float (part.copy) * (2.0 * organ.crown / max (organ.tree_height, 0.01));
+    const float vanish = forest_individual_vanish_pixels (organ.seed);
+    const float presence = smoothstep (vanish, vanish + 4.0, crown_pixels);
     organ.radius_x *= presence;
     organ.radius_z *= presence;
     organ.half_height *= presence;
@@ -393,8 +401,7 @@ static inline void forest_configure_proxy (thread ForestOrgan& organ,
     // draw collapses toward the stand mean, exactly as a subpixel blade's
     // olive does, so a hillside of distant crowns reads as one canopy
     // rather than as bright confetti on the planting lattice.
-    organ.ensemble =
-      smoothstep (vanish + 3.0, vanish + 20.0, float (part.copy));
+    organ.ensemble = smoothstep (vanish + 1.0, vanish + 7.0, crown_pixels);
   }
 }
 
@@ -478,18 +485,23 @@ static inline float3 forest_palette (thread const MoppeForestInstance& tree,
 
   const float variation = forest_hash (tree.identity.x, 97u) - 0.5;
   if (organ.wood) {
-    float3 bark = organ.conifer ? float3 (0.170, 0.140, 0.115)
-                                : float3 (0.235, 0.195, 0.150);
+    // These are display-space reflectances and will be decoded to linear in
+    // the fragment stage. The old 0.17 spruce value became nearly zero after
+    // that decode and made every shaded trunk an ink-black cylinder.
+    float3 bark = organ.conifer ? float3 (0.300, 0.235, 0.175)
+                                : float3 (0.335, 0.255, 0.185);
     bark *= 0.88 + 0.18 * wet + 0.16 * variation;
-    return bark * (0.60 + 0.40 * exposure);
+    return bark * (0.72 + 0.28 * exposure);
   }
   // Individuals sit on a warm-olive to cool blue-green axis in addition to
   // the brightness spread; a stand of one green reads as painted, not grown.
   const float hue =
     (forest_hash (tree.identity.x, 113u) - 0.5) * organ.ensemble;
   float3 leaf =
-    organ.conifer ? float3 (0.148, 0.280, 0.152) : float3 (0.275, 0.455, 0.165);
-  leaf *= float3 (1.08 - 0.20 * wet, 0.88 + 0.26 * wet, 0.90 + 0.16 * cover);
+    organ.conifer
+      ? moppe_forest_conifer_tint (wet, cover)
+      : float3 (0.275, 0.455, 0.165) *
+          float3 (1.08 - 0.20 * wet, 0.88 + 0.26 * wet, 0.90 + 0.16 * cover);
   leaf *= float3 (1.0 + 0.30 * hue, 1.0, 1.0 - 0.34 * hue);
   leaf *= 0.90 + 0.24 * variation * organ.ensemble;
   // Spruce is read by the contrast between dark needle mass and its lit

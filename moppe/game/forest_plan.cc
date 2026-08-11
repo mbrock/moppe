@@ -14,7 +14,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 4;
+    constexpr std::uint32_t forest_plan_version = 6;
 
     struct ForestPlanHeader {
       std::uint64_t magic;
@@ -147,11 +147,11 @@ namespace moppe::game {
     for (std::uint32_t row = 0; row < rows; ++row)
       for (std::uint32_t column = 0; column < columns; ++column) {
         const std::uint32_t identity = lattice_hash (column, row, seed);
-        const meters_t x = (static_cast<float> (column) + 0.12f +
-                            0.76f * hash_lane (identity, 0)) *
+        const meters_t x = (static_cast<float> (column) + 0.02f +
+                            0.96f * hash_lane (identity, 0)) *
                            cell_x;
         const meters_t z =
-          (static_cast<float> (row) + 0.12f + 0.76f * hash_lane (identity, 1)) *
+          (static_cast<float> (row) + 0.02f + 0.96f * hash_lane (identity, 1)) *
           cell_z;
         const map::ForestCover cover = cover_at (readings, x, z);
         const proportion_t population = band (0.08f * map::forest_cover[one],

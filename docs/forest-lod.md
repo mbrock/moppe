@@ -1,22 +1,31 @@
-# Forest LOD: the continuous-assembly design
+# Forest LOD: continuous organisms into a continuous stand
 
-Status: implementation record of the conifer LOD system in
-`moppe/shaders/metal/forest.metal` as of August 2026, and of the principles
-and instruments that shaped it. The forward-looking plan is in
+Status: implementation record of the conifer and stand LOD system in
+`moppe/shaders/metal/forest.metal` and
+`moppe/shaders/metal/forest_canopy.metal` as of August 2026, and of the
+principles and instruments that shaped it. The population argument and
+remaining work are in
 [forest density and aggregates](forest-density-and-aggregates.md).
 
 ## The bet
 
-No tree mesh exists in CPU or GPU memory. Every frame, the object stage
-chooses each organism's detail from its projected size and the mesh stage
-grows boughs, tufts, and blades from a seed (Kuth et al. 2025, "Real-Time
-GPU Tree Generation", HPG; Sheaf `#EDURTK`, notes `#6S29CJ`). The memory
-saving is the headline but not the point: because nothing is retained,
-detail can be exactly right for the current frame and vary continuously --
-the whole temporal-stability design below is only expressible because no
-baked LOD meshes exist. The costs are structural: generation is paid every
-frame even when the camera is still, stability of every generation input
-becomes a discipline instead of a given, and ray tracing would need per-frame
+No individual tree mesh exists in CPU or GPU memory. Every frame, the object
+stage chooses each organism's detail from its projected size and the mesh
+stage grows boughs, tufts, and blades from a seed (Kuth et al. 2025,
+"Real-Time GPU Tree Generation", HPG; Sheaf `#EDURTK`, notes `#6S29CJ`). The
+memory saving is the headline but not the point: because nothing is retained,
+detail can be exactly right for the current frame and vary continuously.
+
+Individual identity is not continuous below a few crown pixels, however. A
+retained RGBA moment texture therefore records the closure, height interval,
+and moisture of the actual forest population. A separate mesh stage grows a
+finite stand roof from it. The two paths overlap in projected crown space;
+this is one population changing representation, not a second forest behind
+the first.
+
+The costs are structural: individual generation is paid every frame even when
+the camera is still, stability of every generation input becomes a discipline
+instead of a given, and ray tracing would need per-frame
 acceleration-structure rebuilds.
 
 ## Principles, each learned the hard way
@@ -72,6 +81,19 @@ acceleration-structure rebuilds.
   fan's splay -- a flat quad in the bough plane disappears edge-on); the
   hero band pays one thirteen-tuft fan bough per meshlet. Both
   representation switches align with ramp saturation.
+- Individual retirement is based on projected *crown width*, not full tree
+  height. Each seed retires between four and 5.2 crown pixels. In the same
+  measure the stand quotient fades in from twelve pixels and carries most of
+  the response by the retirement interval. This prevents a two-pixel-tall
+  rule from retaining an almost entirely subpixel crown across the world.
+- The stand object stage samples actual terrain height before projecting a
+  patch. Its LOD distance is three-dimensional, so a glider above a stand and
+  a walker beside it do not receive different rules disguised as the same
+  distance. Horizontal distance only bounds the finite work window.
+- Aggregate geometry uses eight-metre cells and emits a roof plus exposed
+  boundary sides. It has world-space grain and broad wind, but no per-tree
+  spikes once identity has retired. Its source moment field is also the
+  closure input for terrain and undergrowth.
 - `forest_bough_slot` is total over any rank: bundling rounds the
   scheduled range past the sixty-three real slots, and an out-of-range
   read there once rasterized as screen-sized garbage triangles.
@@ -113,16 +135,26 @@ acceleration-structure rebuilds.
   are the only valid judges of motion. The atlas catches structural
   regressions in one glance; an FPS counter happily measures corruption.
 
-## Performance state (August 2026, M2 Pro, windowed 2560x1600)
+## Performance state (August 2026, M2 Pro)
 
-GPU frame ~16.5 ms at the 16.7 ms budget: scene pass ~10.3 ms (terrain +
-forest + actors -- the only content-scaled cost), MetalFX temporal upscale
-~4.4 ms (fixed), everything else ~1.3 ms. Toggleable effects are all under
-0.7 ms. The rider sees 50-59 FPS in tree-heavy views: frames are not
-skipped, presents slip to later vsync slots. Ranked levers, none yet done:
-register pressure/occupancy in the forest mesh stage, half-precision
-*arithmetic* inside fragment shaders (interior math only -- not
-interfaces), the upscaler's fixed cost, hero-bough coalescing once the
-varyings question is settled under the debugger, per-bough back-side
-culling, and a Kuth-style rate-limited auto-LOD governor to hold 60 by
-adaptation rather than heroics.
+The standard 32-case feature partition at 1280x720, native linear output and
+4x MSAA gives the useful implementation sequence. With the dense five-metre
+population and the old retirement rule, the forest median was 5.8932 ms.
+Crown-scale retirement reduced it to 4.6528 ms. With the population-derived
+aggregate, fuller crowns, actual-closure understorey, and stand frustum
+culling, the measured pre-final-handoff median was 3.9211 ms (mean 3.8027,
+p95 7.2666). The all-features case was 14.807 ms median, with no median 60 Hz
+misses.
+
+That last run is an upper bound for the current, slightly earlier individual
+retirement: it predates the final four-to-5.2-pixel threshold, which removes
+geometry, but the final threshold has not itself completed a partition run.
+Do not turn that inference into a measured number.
+
+Remaining performance work starts with a real trace of the dense individual
+pass: register pressure/occupancy, front-to-back rejection, half-precision
+*arithmetic* inside fragment shaders (not interfaces), hero-bough coalescing
+once the varyings question is settled under the debugger, and per-bough
+back-side culling. A Kuth-style rate-limited auto-LOD governor is still useful
+eventually, but only after the representation is visually coherent; it cannot
+repair a bad handoff.

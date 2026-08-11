@@ -65,10 +65,12 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
 
   const float canopy = saturate (forest_cover);
   grass.forest_cover = canopy;
-  // A closed canopy starves the sward hard rather than merely trimming it:
-  // the forest floor is sparse grass with room for its own populations,
-  // not a shaded copy of the meadow outside.
-  const float light = 1.0 - 0.55 * smoothstep (0.28, 0.90, canopy);
+  // Closure is the plan-view optical consequence of the retained crowns.
+  // Recover the light reaching several overlapping conifer layers with a
+  // Beer--Lambert-style power of the open fraction. The small floor keeps
+  // shade-tolerant plants possible without turning a closed stand into the
+  // same sward as the meadow outside.
+  const float light = max (0.07, pow (1.0 - canopy, 3.2));
   const float damp = 0.75 + 0.25 * smoothstep (0.02, 0.48, grass.moisture);
   const float standable = smoothstep (0.52, 0.78, ground_up);
   const float cleared =

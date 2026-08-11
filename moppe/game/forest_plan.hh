@@ -40,7 +40,7 @@ namespace moppe::game {
   plan_global_forest (const map::SurfaceGeometry& surface,
                       const map::SurfaceReadings& readings,
                       std::uint32_t seed,
-                      meters_t spacing = 12.0f * u::m);
+                      meters_t spacing = 5.0f * u::m);
 
   // The plan is renderer-independent and expensive to derive over a large
   // surface, so finished worlds persist it beside their typed fields.
