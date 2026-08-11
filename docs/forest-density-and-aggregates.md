@@ -58,8 +58,10 @@ only after getting the same treatment, or as part of the aggregate.
 
 The first shared-medium pass landed in `42ed47b`: undergrowth still generates
 from a world-lattice tile window, but distant survivors no longer widen to
-carry their retired neighbours. The terrain integrates the released leaf-area
-fraction from the same habitat and optical state.
+carry their retired neighbours. The terrain keeps a stable basal substrate
+from the same habitat, while projected blade width decides only which explicit
+silhouettes remain repeatable. Ground colour no longer changes when those
+narrow ribbons turn edge-on.
 
 That scalar conservation is only the start. Grass must also conserve projected
 optical depth, vertical density, basal cover, and rootability. A flat far

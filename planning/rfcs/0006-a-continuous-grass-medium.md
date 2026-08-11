@@ -97,9 +97,8 @@ Commit `42ed47b` made the first structural entry into this design.
 - The undergrowth mesh shader uses a denser 0.60 m root lattice and keeps
   surviving grass at a physical blade width. The old distant widening into
   shrub-like clumps is gone.
-- The terrain shader integrates the leaf-area fraction released by geometry
-  and shares its broad color, clump, wind, transmission, and orientation
-  response.
+- The terrain shader keeps habitat-coloured basal cover at every distance;
+  projected blade width controls only the explicit upper-leaf geometry.
 - World-lattice identities remain stable while counts cross their projected
   thresholds, and fine blade flutter and glint retire before the blades that
   carry them become unrepeatable samples.
@@ -116,18 +115,15 @@ medium described above.
    soil, alluvium, scree, or exposed bedrock. Its slope and altitude bands
    currently overlap the terrain's cliff and scree bands, so blades grow from
    visibly stony highlands.
-2. **The terrain evaluates habitat twice.** The integrated albedo currently
-   claims every pixel with grass cover, including some rock, while the later
-   canopy-lighting term independently vetoes scree, cliffs, shores, trails,
-   and other materials. This disagreement produces unnaturally green,
-   angle-dependent hillside patches.
+2. **Basal and upper cover are not yet distinct.** The stable substrate and
+   the tall blades currently consume one generic cover scalar. The medium
+   cannot yet distinguish dense short turf from a sparse stand of tall grass.
 3. **There is no middle-scale volume.** The resolved fraction becomes color
    on the ground. From an overview, the image therefore crosses from real
    vertical blades to a flat green surface at a visible distance.
-4. **The basal stratum is only a tint.** The shader darkens visible substrate
-   beneath blades, but it does not represent short grass, tillers, dead
-   leaves, or deep litter shadow. Dense tall grass can therefore reveal bright
-   photographic gravel between its stems.
+4. **The basal stratum is only a tint.** It now prevents bright photographic
+   gravel appearing between edge-on blades, but does not yet represent short
+   grass, tillers, dead leaves, or deep litter shadow.
 5. **The far optical response is not yet one bounded model.** Transmission,
    orientation diffuse, sheen, and opposition are related cues, but their
    present coefficients are applied as separate corrections. They do not yet

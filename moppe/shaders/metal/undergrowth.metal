@@ -321,9 +321,9 @@ struct UndergrowthShoot {
   // The short transition keeps motion continuous without turning the whole
   // layer translucent and giving depth ownership to stochastic fragments.
   const float presence = undergrowth_lod_presence (tile.wanted, shoot, cell);
-  // Retiring neighbours are integrated by the terrain material. A surviving
-  // shoot therefore stays one physical blade; neither its width nor its
-  // ecological height changes to disguise a reduced count.
+  // Retiring neighbours leave the stable habitat-coloured terrain substrate.
+  // A surviving shoot therefore stays one physical blade; neither its width
+  // nor its ecological height changes to disguise a reduced count.
   const float camera_distance = length (root - u.camera_pos.xyz);
   const float draw = undergrowth_hash (identity, 4u);
   const float scale =
@@ -518,7 +518,8 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // distance, is the temporal-stability measure: a jittered single sample
   // can only revisit a feature it can resolve, so per-feature lighting
   // variance must not outlive the feature's own pixels. This is the same
-  // physical blade width that partitions resolved and integrated leaf area.
+  // physical blade width that decides whether explicit blade geometry remains
+  // repeatable over the stable substrate.
   const float focal_px = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
   const float blade_px = moppe_grass_blade_pixels (focal_px, dist);
   const float resolvable = smoothstep (1.5, 4.0, blade_px);

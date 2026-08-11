@@ -424,10 +424,13 @@ transformed lights by the modelview).
 Terrain materials consume standing-water, moisture, broad snow support, and
 formed trails. Submerged beds and damp banks lose diffuse energy and gain one
 restrained wet highlight. Grass roots remain excluded by the signed water
-surface, so mixed shoreline tiles do not plant blades underwater. Cliffs use
-triplanar rock projection; grass, soil, snow, beaches, paths, and forest floor
-are broad material regions rather than independent fields of procedural detail.
-These shading effects do not alter collision geometry.
+surface, so mixed shoreline tiles do not plant blades underwater. Habitat
+cover keeps one muted grass substrate at every distance; the projected blade
+fraction controls explicit geometry only, so an edge-on ribbon cannot expose a
+rock-coloured ground layer. Cliffs use triplanar rock projection; grass, soil,
+snow, beaches, paths, and forest floor are broad material regions rather than
+independent fields of procedural detail. These shading effects do not alter
+collision geometry.
 
 The dirt source is pre-integrated before lighting, so it carries a stable soil
 read without making paths sparkle. Trails are a single warm crushed-stone

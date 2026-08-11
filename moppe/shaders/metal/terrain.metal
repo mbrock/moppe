@@ -568,7 +568,6 @@ struct TerrainMaterialBands {
 static inline TerrainMaterialBands
 terrain_classify_material (thread const TerrainVaryings& in,
                            float3 normal,
-                           float distance,
                            float sea_level,
                            thread const TerrainSurfaceReadings& readings,
                            constant MoppeTerrainUniforms& u) {
@@ -598,11 +597,10 @@ terrain_classify_material (thread const TerrainVaryings& in,
                         normalized_height,
                         readings.signed_water_depth,
                         u.params7.w);
-  const float grass_focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
-  const float grass_blade_pixels =
-    moppe_grass_blade_pixels (grass_focal_pixels, distance);
-  bands.grass =
-    medium.cover * moppe_grass_integrated_fraction (grass_blade_pixels);
+  // Habitat owns the substrate colour continuously. Resolved blades add
+  // silhouette and motion, but turning their narrow ribbons edge-on must not
+  // reveal a distance-dependent rocky ground material underneath them.
+  bands.grass = medium.cover;
   return bands;
 }
 
@@ -806,7 +804,7 @@ fragment MoppeTemporalOutput terrain_fragment (
   const TerrainSurfaceReadings readings = terrain_read_surface (
     in, n, u, terrain_landscape, terrain_water, terrain_ground);
   const TerrainMaterialBands bands =
-    terrain_classify_material (in, n, dist, sea_level, readings, u);
+    terrain_classify_material (in, n, sea_level, readings, u);
 
   const TerrainPalette palette =
     terrain_build_palette (in, n, bands, grass, dirt, snow, rock, u, smp);

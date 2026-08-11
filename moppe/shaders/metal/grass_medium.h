@@ -1,9 +1,10 @@
 // One terrain-bound grass medium, evaluated two ways.
 //
 // The undergrowth mesh shader realizes the resolved fraction as individual
-// blades. The terrain fragment shader integrates the complementary fraction
-// into an effective fibrous material. Both begin with this same habitat,
-// optical state, and projected-size partition; neither owns a second grass.
+// blades. The terrain fragment shader keeps the habitat-coloured substrate
+// beneath them. Both begin with the same medium, but only geometry is
+// projected-size dependent: ground colour must remain stable when a blade
+// turns edge-on.
 #ifndef MOPPE_GRASS_MEDIUM_H
 #define MOPPE_GRASS_MEDIUM_H
 
@@ -79,14 +80,10 @@ inline float moppe_grass_blade_pixels (float focal_pixels, float distance) {
 }
 
 // Geometry owns only blades wide enough to remain a repeatable image feature.
-// Everything it releases is integrated by the terrain material. The overlap
-// is a partition of leaf area, not two unrelated cross-fades.
+// Blades that are too narrow to remain repeatable retire into the stable
+// habitat-coloured terrain substrate.
 inline float moppe_grass_resolved_fraction (float blade_pixels) {
   return smoothstep (0.16, 0.95, blade_pixels);
-}
-
-inline float moppe_grass_integrated_fraction (float blade_pixels) {
-  return 1.0 - moppe_grass_resolved_fraction (blade_pixels);
 }
 
 inline float3 moppe_grass_chlorophyll () {
