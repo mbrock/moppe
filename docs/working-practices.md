@@ -37,6 +37,24 @@ before a cure; steady-state survivor rates matter more than birth rates.
 Retired experiments remain documented under `research/`, but their obsolete
 executables do not stay in the active build.
 
+## The naive look comes first
+
+Before any instrument: render the thing and look at whether it looks
+like the thing. One MOPPE_LOOK frame — a camera placed to answer one
+compositional question — settled in seconds what a day of profilers had
+missed: the "large grass field" was a green fringe around the camera on
+a brown world, because the terrain substrate and the grass geometry had
+never agreed about the colour of grass. Every instrument had been blind
+to it by construction: texture profiles are high-pass (a colour
+mismatch is low-frequency), motion residuals measure change (a colour
+mismatch is state). Instruments answer only the question they encode.
+So the order is fixed: first the naive wide look, judged like a person
+judges a picture; then instruments, to quantify what the look already
+agrees is there or to catch what looks cannot (subpixel, temporal,
+cross-build drift). A measurement may never overrule structural
+knowledge or a plain sight of the frame; when they disagree, the
+instrument is the suspect.
+
 ## Look with instruments, not with impressions
 
 Judging rendered frames by eye has a specific, recurring blind spot:
