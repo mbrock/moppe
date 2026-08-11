@@ -114,20 +114,20 @@ inline MoppeFlowerDrift moppe_flower_drift_species (float choice) {
   MoppeFlowerDrift drift;
   if (choice < 0.30) { // oxeye daisy
     drift.tint = float3 (0.93, 0.93, 0.86);
-    drift.head = 0.021;
-    drift.stem = 1.05;
+    drift.head = 0.026;
+    drift.stem = 1.15;
   } else if (choice < 0.56) { // buttercup
     drift.tint = float3 (0.97, 0.78, 0.14);
-    drift.head = 0.013;
-    drift.stem = 0.85;
+    drift.head = 0.016;
+    drift.stem = 0.95;
   } else if (choice < 0.80) { // harebell
     drift.tint = float3 (0.44, 0.46, 0.88);
-    drift.head = 0.015;
-    drift.stem = 0.92;
+    drift.head = 0.019;
+    drift.stem = 1.02;
   } else { // red campion
     drift.tint = float3 (0.88, 0.46, 0.62);
-    drift.head = 0.016;
-    drift.stem = 0.97;
+    drift.head = 0.020;
+    drift.stem = 1.08;
   }
   return drift;
 }
@@ -147,21 +147,21 @@ inline MoppeFlowerDrift moppe_flower_drift (float2 world_xz,
   MoppeFlowerDrift drift =
     moppe_flower_drift_species (moppe_plant_hash (id, 29u));
 
-  // Most patches never bloom. A fortunate patch lowers the threshold its
-  // edge noise must clear, so colonies are dense where they occur at all
-  // rather than thinly everywhere.
-  const float fortune = moppe_plant_hash (id, 31u);
-  const float rich = fortune * fortune;
+  // This is flowering country: most open patches bloom at least somewhat,
+  // and a fortunate patch blooms wall to wall. The threshold its edge
+  // noise must clear keeps colonies dense where they occur rather than
+  // thinly everywhere, but poverty is the exception, not the rule.
+  const float rich = moppe_plant_hash (id, 31u);
   const float field = moppe_value_noise (warped * 0.22);
   const float colony =
-    smoothstep (mix (0.88, 0.50, rich), mix (0.97, 0.70, rich), field);
+    smoothstep (mix (0.70, 0.36, rich), mix (0.85, 0.54, rich), field);
 
-  // Flowers stand in living grass on open, lit, moderately damp ground.
-  // Deep shade belongs to the ferns and the waterlogged margin to the
-  // riparian grasses, so the families partition habitat between them.
+  // Flowers stand in living grass on open ground. Deep shade belongs to
+  // the ferns and standing water to the riparian grasses, but a damp
+  // meadow blooms as readily as a dry one.
   const float open_sky = 1.0 - smoothstep (0.10, 0.45, forest_cover);
-  const float damp_band = smoothstep (0.08, 0.26, moisture) *
-                          (1.0 - smoothstep (0.55, 0.88, moisture));
+  const float damp_band = smoothstep (0.06, 0.20, moisture) *
+                          (1.0 - smoothstep (0.82, 0.99, moisture));
   const float sward = smoothstep (0.12, 0.40, leaf_area);
   drift.presence = colony * open_sky * damp_band * sward;
   return drift;

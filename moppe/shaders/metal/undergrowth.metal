@@ -366,7 +366,7 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
   drift.presence = 0.0;
   if (family == UNDERGROWTH_GRASS) {
     drift = moppe_flower_drift (root_xz, wet, canopy, grass.leaf_area);
-    if (undergrowth_hash (identity, 3u) < 0.38 * drift.presence)
+    if (undergrowth_hash (identity, 3u) < 0.55 * drift.presence)
       family = UNDERGROWTH_FLOWER;
   }
 
@@ -474,7 +474,7 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     const float head_px =
       2.0 * drift.head * focal_pixels / max (camera_distance, 0.5);
     const float resolved_head = smoothstep (1.1, 3.2, head_px);
-    const float3 sward_tint = mix (grass.blade_tint, drift.tint, 0.55);
+    const float3 sward_tint = mix (grass.blade_tint, drift.tint, 0.72);
     s.head = drift.head * (0.80 + 0.35 * undergrowth_hash (identity, 13u)) *
              smoothstep (0.05, 0.50, presence);
     s.head_tint = mix (sward_tint, drift.tint, resolved_head) *
