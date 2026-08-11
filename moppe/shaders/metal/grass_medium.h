@@ -195,6 +195,20 @@ inline float moppe_flower_resolved_fraction (float head_pixels) {
   return smoothstep (0.45, 1.5, head_pixels);
 }
 
+// The perceptual gates scale with scene resolution, and at real play
+// resolutions the resolved belt collapsed to a few metres: the player
+// watched grass materialise at a fixed close radius that no
+// capture-resolution still ever showed. Standing geometry is therefore
+// GUARANTEED in world distance -- full sward to 40 m, tapering to 80 m
+// -- and the perceptual term may only extend that guarantee at higher
+// resolutions, never shrink it. The sward shell is this term's exact
+// complement, so the ground rises only where blades genuinely end.
+inline float moppe_sward_standing (float blade_pixels, float distance_m) {
+  const float perceptual = sqrt (moppe_grass_resolved_fraction (blade_pixels));
+  const float guaranteed = 1.0 - smoothstep (40.0, 80.0, distance_m);
+  return max (perceptual, guaranteed);
+}
+
 #define MOPPE_FERN_FROND_WIDTH_METRES 0.13f
 
 inline float moppe_fern_resolved_fraction (float frond_pixels) {
