@@ -1,0 +1,14 @@
+#!/bin/sh
+# Per-distance-band texture statistics for gazetteer frames: the
+# instrument for distance-rendering claims (GFX-043). See the Python
+# module for usage.
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is required" >&2
+  exit 1
+fi
+
+exec uv run --quiet "$root/tools/frame_texture_profile.py" "$@"

@@ -154,7 +154,23 @@ Verify with the frame instrumentation of GFX-043, not by eye: the
 per-distance-band texture-energy profile should continue smoothly across
 the tuft band's end instead of falling off a cliff.
 
-*** TODO GFX-043 Frame instrumentation for distance rendering
+*** VERIFY GFX-043 Frame instrumentation for distance rendering
+
+First slice landed: tools/frame-texture-profile maps grass-gradient
+image rows to ground distance through the gazetteer camera pose and
+plots per-band |dI/dx|, Laplacian, and anisotropy across builds, with
+floor-merge and mid-hold scalars. Its calibration run over this
+session's build history immediately taught three things. (1) It
+rediscovered the pre-fix pop-in as an energy PEAK at 25-30 m backlit --
+and thereby exposed that raw energy measures contrast, not quality: the
+artifact outscored the fix, so scalars locate change while the overlaid
+curves decide its sign. (2) The coverage-conserving tuft band removed
+that peak and extended floor-merge from ~85 m to 110 m+. (3) The
+dominant remaining far artifact is a sharp cliff at the tile-window edge
+in front-lit frames, which GFX-042's substrate nap must dissolve (or the
+tuft band must fade approaching the window). Remaining: approximate
+depth reprojection for arbitrary frames, and temporal energy between
+consecutive ride frames for motion claims.
 
 Repeated failure mode: static captures pass inspection while play
 immediately reveals blatant mid/far-field vegetation absence.  Judging
