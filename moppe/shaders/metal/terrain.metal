@@ -182,12 +182,81 @@ terrain_world_pos (uint index,
          chunk.world_offset.xyz;
 }
 
+static inline float4
+terrain_field_sample_read (float2 uv, texture2d<float, access::read> field);
+
+// The vertex stage has no implicit derivatives, so its field samples name
+// their mip level explicitly.
+static inline float4 terrain_field_sample_level (float2 uv,
+                                                 texture2d<float> field) {
+  const float2 size (field.get_width (), field.get_height ());
+  constexpr sampler smp (coord::normalized, address::repeat, filter::linear);
+  return field.sample (smp, uv + 0.5 / size, level (0));
+}
+
+// The sward shell: coverage conservation carried into the vertical. The
+// blade field prices itself by projected blade width; the shell is the
+// complement of that resolved fraction, so as blades retire the ground
+// itself rises by the sward's height and the tuft tips sink into a
+// rising solid instead of vanishing over paint. Beyond the belt, far
+// grass is a raised volume with silhouette and parallax -- a thing the
+// world has, not a picture painted on it. Near the camera the shell is
+// exactly zero, so physics and the rider's own ground stay honest.
+static inline float
+terrain_sward_shell (float2 world_xz,
+                     float2 field_uv,
+                     float height_raw,
+                     float normal_y,
+                     float horizontal_distance,
+                     constant MoppeTerrainUniforms& u,
+                     texture2d<float> landscape_materials,
+                     texture2d<float> ground_materials,
+                     texture2d<float, access::read> terrain_water) {
+  if (u.params5.z < 0.5)
+    return 0.0;
+  const float focal_pixels = abs (u.view_proj[1][1]) * 0.5 * u.temporal.y;
+  const float blade_px =
+    moppe_grass_blade_pixels (focal_pixels, max (horizontal_distance, 0.5));
+  const float standing = sqrt (moppe_grass_resolved_fraction (blade_px));
+  if (standing > 0.999)
+    return 0.0;
+  const float4 landscape =
+    terrain_field_sample_level (field_uv, landscape_materials);
+  const float4 ground = terrain_field_sample_level (field_uv, ground_materials);
+  const float water_level =
+    u.params5.y > 0.5 ? terrain_field_sample_read (field_uv, terrain_water).r
+                      : -1.0;
+  const float signed_water_depth =
+    u.params5.y > 0.5 ? (water_level - height_raw) * u.params1.x : -100.0;
+  const float snow_support = u.params7.x > 0.5 ? ground.g : normal_y;
+  const float normalized_height =
+    (height_raw - u.params1.y) / max (u.params7.z, 1.0);
+  const MoppeGrassMedium medium = moppe_grass_medium (world_xz,
+                                                      landscape.r,
+                                                      landscape.a,
+                                                      ground.ba,
+                                                      normal_y,
+                                                      snow_support,
+                                                      normalized_height,
+                                                      signed_water_depth,
+                                                      u.params7.w);
+  // An ensemble sward stands about as tall as its blades' mean climb.
+  const float sward_height =
+    0.45 * (0.60 + 0.35 * medium.moisture) * medium.cover;
+  return sward_height * (1.0 - standing);
+}
+
 vertex TerrainVaryings terrain_vertex (
   uint index [[vertex_id]],
   constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   constant MoppeChunkUniforms& chunk [[buffer (MOPPE_BUF_CHUNK)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
-  texture2d<float> normals [[texture (MOPPE_TEX_NORMALS)]]) {
+  texture2d<float> normals [[texture (MOPPE_TEX_NORMALS)]],
+  texture2d<float> landscape_materials
+  [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
+  texture2d<float> ground_materials [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
+  texture2d<float, access::read> terrain_water
+  [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
   const float2 grid = terrain_grid_pos (index, chunk);
   float h;
   float3 normal;
@@ -217,7 +286,17 @@ vertex TerrainVaryings terrain_vertex (
     }
   }
 
-  const float3 world (world_xz.x, u.params0.y * h, world_xz.y);
+  float3 world (world_xz.x, u.params0.y * h, world_xz.y);
+  world.y += terrain_sward_shell (
+    world_xz,
+    grid / float2 (heights.get_width (), heights.get_height ()),
+    h,
+    normal.y,
+    length (world_xz - u.camera_pos.xz),
+    u,
+    landscape_materials,
+    ground_materials,
+    terrain_water);
 
   TerrainVaryings out;
   out.position = u.view_proj * float4 (world, 1.0);

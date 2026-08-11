@@ -4097,6 +4097,22 @@ namespace moppe {
                     MTLRenderStageFragment,
                     MOPPE_TEX_TERRAIN_NORMALS,
                     terrain.normals);
+      // The vertex stage reads the habitat fields for the sward shell.
+      bind_texture (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_TEX_TERRAIN_LANDSCAPE,
+                    terrain.have_materials ? terrain.landscape_materials
+                                           : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_TEX_TERRAIN_GROUND,
+                    terrain.have_materials ? terrain.ground_materials
+                                           : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_TEX_TERRAIN_WATER,
+                    water.have_water_levels ? water.water_levels
+                                            : terrain.heights);
       use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
 
       for (int i = 0; i < count; ++i) {

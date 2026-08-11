@@ -255,8 +255,14 @@ inline float3 moppe_sward_ensemble_light (float3 blade_tint_display,
   // between blades: without this occlusion the far field renders as
   // bright clean felt, visibly lighter than the blade belt in front of
   // it. Head-on (from above) the lit tops dominate and nothing darkens.
+  // TOWARD the sun the trade reverses: an edge-on sward transmits light
+  // through its whole depth and glows, so occlusion yields to
+  // transmission with the same lobe the blades' own backlight uses --
+  // otherwise the backlit far field sits dark behind glowing blades.
   const float graze = 1.0 - abs (dot (view_dir, normal));
-  color *= mix (1.0, 0.60, graze * graze * graze);
+  const float occluded =
+    mix (0.60, 1.04, saturate (toward * toward) * sun_visibility);
+  color *= mix (1.0, occluded, graze * graze * graze);
   return color;
 }
 
