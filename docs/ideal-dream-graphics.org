@@ -160,8 +160,11 @@ MOPPE_LOOK="4217 175 2388 4380 128 2180 55" over the default world shows
 pale pink diamond dabs in planting-lattice rows across mid-distance
 open slopes. A magenta tint on proxy organs (lod==1) proved they are
 NOT crown proxies; per-individual hue collapse changed nothing, so the
-pink is a mean, not variance. Next diagnostic: magenta the three-part
-broadleaf band (trunk + crown lobes, 14-48 px), then saplings/ages.
+pink is a mean, not variance. Magenta on all broadleaf FOLIAGE also
+showed nothing: the dabs are neither proxies nor leaf organs. Prime
+remaining suspect: WOOD organs -- broadleaf bark (0.235, 0.195, 0.150)
+matches the pale pink-tan exactly under warm sun, suggesting mid-band
+trees rendering trunk-dominant. Next diagnostic: magenta organ.wood.
 They are the most blatant remaining distance artifact.
 
 *** TODO GFX-044 Ensemble-limit contract for the forest/terrain hand-off
