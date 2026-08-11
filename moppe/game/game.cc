@@ -567,6 +567,24 @@ namespace moppe {
                                     sun_direction_for (m_graphics.sun_height));
         if (m_gazetteer_plan.empty ())
           throw std::runtime_error ("landscape gazetteer found no viewpoints");
+        // The direct observation primitive: put the camera HERE, look
+        // THERE, one settled frame. A question about composition deserves
+        // a frame composed for that question, never the nearest postcard.
+        if (const char* look = ::getenv ("MOPPE_LOOK")) {
+          float ex, ey, ez, sx, sy, sz, fov = 55.0f;
+          const int parsed = std::sscanf (
+            look, "%f %f %f %f %f %f %f", &ex, &ey, &ez, &sx, &sy, &sz, &fov);
+          if (parsed < 6)
+            throw std::runtime_error (
+              "MOPPE_LOOK wants: eye_x eye_y eye_z subj_x subj_y subj_z "
+              "[fov_deg]");
+          GazetteerShot shot;
+          shot.name = "look";
+          shot.eye = position (Vec3 (ex, ey, ez));
+          shot.subject = position (Vec3 (sx, sy, sz));
+          shot.vertical_field_of_view = fov * u::deg;
+          m_gazetteer_plan.shots.assign (1, shot);
+        }
         // A glide is the isolated moving-camera instrument: one named
         // shot's camera advancing in a straight line, one capture per
         // rendered frame, no vehicle, no HUD, no particles, frozen wind.
