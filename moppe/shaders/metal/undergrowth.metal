@@ -225,8 +225,11 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
       // re-prices per shoot, so a family never spends another's budget.
       const float blade_pixels =
         moppe_grass_blade_pixels (focal_pixels, distance);
+      // Grass counts fall on the gentler square-root curve: survivors
+      // widen to carry the coverage of retired neighbours, so the field
+      // can afford fewer, broader tufts much farther out.
       float budget =
-        grass.leaf_area * moppe_grass_resolved_fraction (blade_pixels);
+        grass.leaf_area * sqrt (moppe_grass_resolved_fraction (blade_pixels));
       const MoppeFlowerDrift drift = moppe_flower_drift (
         center, grass.moisture, grass.forest_cover, grass.leaf_area);
       if (drift.presence > 0.02) {
@@ -441,7 +444,10 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     resolved_feature = moppe_flower_resolved_fraction (
       moppe_feature_pixels (2.0 * drift.head, focal_pixels, camera_distance));
   } else {
-    resolved_feature = moppe_grass_resolved_fraction (blade_pixels);
+    // The square root matches the object stage: grass survivors widen to
+    // carry retired neighbours' coverage, so the count affords to fall
+    // more slowly than the blade resolves.
+    resolved_feature = sqrt (moppe_grass_resolved_fraction (blade_pixels));
   }
   const float family_wanted = grass.leaf_area * resolved_feature *
                               float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
@@ -449,9 +455,9 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
   // A shoot straddles its LOD threshold by growing into or out of the ground.
   // The short transition keeps motion continuous without turning the whole
   // layer translucent and giving depth ownership to stochastic fragments.
-  // Retiring neighbours leave the stable habitat-coloured terrain substrate.
-  // A surviving shoot therefore stays one physical blade; neither its width
-  // nor its ecological height changes to disguise a reduced count.
+  // Retiring neighbours leave the stable habitat-coloured terrain substrate,
+  // and a surviving shoot keeps its ecological height; only its width may
+  // grow, bounded, to conserve the coverage its neighbours dropped.
   const float presence = undergrowth_lod_presence (family_wanted, shoot, cell);
 
   const float draw = undergrowth_hash (identity, 4u);
@@ -559,6 +565,12 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     s.reach *= 1.0 - 0.18 * grass.riparian;
     s.climb *= 1.0 + 0.28 * grass.riparian;
     s.width *= 1.0 - 0.08 * grass.riparian;
+    // The ladder's middle rung for the sward itself: once a blade is too
+    // narrow to resolve, the survivors widen -- bounded to a tuft, never
+    // a ribbon -- and carry the projected leaf area their retired
+    // neighbours dropped. The field then coarsens in place instead of
+    // visibly assembling a few metres in front of the rider.
+    s.width *= clamp (0.85 / max (blade_pixels, 0.05), 1.0, 4.0);
   }
   // Keep blade-to-blade variation subordinate to the continuous habitat
   // fields. High-contrast salt and pepper reads as glitter once the blades
@@ -666,10 +678,17 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     // plant sees: a blade rises out of its own litter shadow, a head above
     // the sward catches everything, and a frond arcs over the litter
     // rather than through it, so its whole length stays in the light the
-    // canopy admits.
-    const float exposure = head                           ? 1.0
-                           : s.family == UNDERGROWTH_FERN ? 0.40 + 0.60 * t
-                                                          : 0.12 + 0.88 * t;
+    // canopy admits. A far blade's dark base against the bright substrate
+    // is a visible tick that arrives and departs with the count, so as a
+    // blade's own pixels run out its exposure settles to the field mean:
+    // retiring geometry vacates pixels that already look like the ground
+    // that replaces them.
+    const float ramp =
+      s.family == UNDERGROWTH_FERN ? 0.40 + 0.60 * t : 0.12 + 0.88 * t;
+    const float settled = s.family == UNDERGROWTH_GRASS
+                            ? smoothstep (0.35, 0.95, blade_pixels)
+                            : 1.0;
+    const float exposure = head ? 1.0 : mix (0.72, ramp, settled);
     const float3 colour = section_tint * (0.58 + 0.66 * exposure);
 
     UndergrowthVaryings v;

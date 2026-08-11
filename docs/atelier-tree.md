@@ -169,7 +169,11 @@ transition at its threshold. The ladder's middle rung collapses
 sub-resolvable detail to ensemble means — flutter fades, the glint streak
 widens, a flower head widens to the smallest footprint a jittered sample
 can revisit while dimming in proportion and collapsing its chroma to the
-drift's wash. The last rung is the terrain substrate itself, which
+drift's wash, and the sward's surviving blades widen (bounded to tufts,
+on a gentler square-root count curve) to carry the projected coverage
+their retired neighbours dropped while their exposure settles to the
+field mean — so the field coarsens in place rather than assembling in
+front of the rider. The last rung is the terrain substrate itself, which
 carries the grass cover colour and the drift's part-desaturated wash
 through the same `grass_medium.h` fields — the retiring feature's final
 colour and the substrate's are one number, so the hand-off has no seam. A
