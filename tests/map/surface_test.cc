@@ -408,7 +408,6 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   MOPPE_CHECK (renderer.forest_cover.size () == surface.domain ().size ());
   MOPPE_CHECK (renderer.shore_distance.size () == surface.domain ().size ());
   MOPPE_CHECK (renderer.snow_support.size () == surface.domain ().size ());
-  MOPPE_CHECK (renderer.channel_flux.size () == 2 * surface.domain ().size ());
   MOPPE_CHECK_NEAR (renderer.moisture[4], 0.4f, 1.0f / 255.0f);
   MOPPE_CHECK_NEAR (renderer.shore_distance[4],
                     2.5f,

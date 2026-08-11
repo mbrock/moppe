@@ -214,12 +214,6 @@ namespace moppe::map {
 
   // ---- Analysed readings ----
 
-  // Planar channel direction scaled by log-compressed fluvial activity.
-  QUANTITY_SPEC (channel_flux,
-                 mp_units::dimensionless,
-                 mp_units::quantity_tensor_order::vector,
-                 mp_units::is_kind);
-
   // Normalized exposure of material removed during the world's history.
   QUANTITY_SPEC (erosion_exposure, proportion);
 

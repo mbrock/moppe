@@ -353,12 +353,12 @@ namespace moppe::game {
                     "Rebuilding normals and broad surface readings");
       map::rebuild_geometry (surface);
 
-      HydrologyAnalysis analysis =
+      Hydrology hydrology =
         analyze_hydrology (surface, recipe, [&state] (HydrologyStage stage) {
           const auto [title, detail] = hydrology_report (stage);
           state.report (title, detail);
         });
-      log_standing_water (analysis.hydrology);
+      log_standing_water (hydrology);
 
       state.report ("Assembling the world",
                     "Painting water, moisture, materials, and the opening "
@@ -367,8 +367,8 @@ namespace moppe::game {
         evolved_trails
           ? std::move (*evolved_trails)
           : terrain::analyze_trail_network (surface, recipe.trail_formation ());
-      auto [water, readings] = analyze_surface (
-        surface, recipe, analysis.hydrology, analysis.channels, trails.use);
+      auto [water, readings] =
+        analyze_surface (surface, recipe, hydrology, trails.use);
 
       state.report ("Planting the forests",
                     "Choosing the persistent trees across the landscape");
@@ -379,7 +379,7 @@ namespace moppe::game {
         std::make_unique<GeneratedWorld> (job.params,
                                           recipe,
                                           std::move (surface),
-                                          std::move (analysis.hydrology),
+                                          std::move (hydrology),
                                           std::move (water),
                                           std::move (trails),
                                           std::move (readings),

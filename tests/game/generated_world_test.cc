@@ -44,26 +44,25 @@ namespace {
     fill_test_terrain (surface);
     map::rebuild_geometry (surface);
 
-    game::HydrologyAnalysis analysis =
+    game::Hydrology hydrology =
       game::analyze_hydrology (surface, recipe, progress);
     terrain::TrailNetwork trails {
       .domain = surface.domain (),
       .use = terrain::TrailUseMap (surface.domain ()),
     };
     trails.earthwork_delta_m.resize (surface.domain ().size (), 0.0f);
-    auto [water, readings] = game::analyze_surface (
-      surface, recipe, analysis.hydrology, analysis.channels, trails.use);
+    auto [water, readings] =
+      game::analyze_surface (surface, recipe, hydrology, trails.use);
     game::ForestPlan forest = game::plan_global_forest (
       surface, readings, recipe.seed ().value ^ 0xa34c91e5U);
-    return std::make_unique<game::GeneratedWorld> (
-      params,
-      recipe,
-      std::move (surface),
-      std::move (analysis.hydrology),
-      std::move (water),
-      std::move (trails),
-      std::move (readings),
-      std::move (forest));
+    return std::make_unique<game::GeneratedWorld> (params,
+                                                   recipe,
+                                                   std::move (surface),
+                                                   std::move (hydrology),
+                                                   std::move (water),
+                                                   std::move (trails),
+                                                   std::move (readings),
+                                                   std::move (forest));
   }
 }
 

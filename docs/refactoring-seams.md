@@ -18,7 +18,7 @@ into renderer lanes.
 | --- | --- |
 | Continuous elevation and normal reads reconstruct the authoritative geometry bundle, including across the torus boundary. | `surface_reconstruction_matches_authoritative_geometry` and `surface_reconstruction_wraps_the_torus` in `tests/map/surface_test.cc` |
 | Mutating the elevation column changes surface reads immediately; rebuilding geometry has no copied refresh barrier. | `surface_geometry_is_authoritative_without_a_refresh_barrier` in `tests/map/surface_test.cc` |
-| Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation. | The focused materialization tests in `tests/map/surface_test.cc` |
+| Trail, home-base, moisture, waterline, geology, and ecology readings remain typed until presentation. | The focused materialization tests in `tests/map/surface_test.cc` |
 | Ground and water use the same domain and elevation frame while retaining distinct bundles; ocean setup and texture layout happen only at presentation. | `tests/map/water_surface_test.cc` |
 
 The later harmonization deleted the `Surface`, `SurfaceAtlas`, and

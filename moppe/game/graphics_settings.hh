@@ -24,7 +24,6 @@ namespace moppe::game {
     terrain_topology,
     terrain_fragment_normals,
     snow_support_filter,
-    channel_flux_detail,
     undergrowth,
     light_shafts,
     gtao,
@@ -64,7 +63,6 @@ namespace moppe::game {
     bool terrain_topology = false;
     bool terrain_fragment_normals = true;
     bool snow_support_filter = true;
-    bool channel_flux_detail = true;
     bool undergrowth = true;
     bool light_shafts = true;
     bool gtao = true;
@@ -168,13 +166,6 @@ namespace moppe::game {
     true
   };
 
-  inline constexpr GraphicsFeature channel_flux_detail_feature {
-    GraphicsFeatureId::channel_flux_detail,
-    "channel-flux-detail",
-    &GraphicsSettings::channel_flux_detail,
-    true
-  };
-
   inline constexpr GraphicsFeature undergrowth_feature {
     GraphicsFeatureId::undergrowth,
     "undergrowth",
@@ -193,7 +184,7 @@ namespace moppe::game {
     GraphicsFeatureId::gtao, "gtao", &GraphicsSettings::gtao, true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 18> graphics_features {
+  inline constexpr std::array<const GraphicsFeature*, 17> graphics_features {
     &terrain_shadows_feature,
     &forest_feature,
     &ocean_feature,
@@ -208,7 +199,6 @@ namespace moppe::game {
     &terrain_topology_feature,
     &terrain_fragment_normals_feature,
     &snow_support_filter_feature,
-    &channel_flux_detail_feature,
     &undergrowth_feature,
     &light_shafts_feature,
     &gtao_feature,

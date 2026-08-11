@@ -61,7 +61,6 @@ namespace moppe::game {
     settings.auto_exposure = false;
     settings.lens_flare = false;
     settings.snow_support_filter = false;
-    settings.channel_flux_detail = false;
     settings.undergrowth = false;
     return settings;
   }

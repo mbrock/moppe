@@ -83,22 +83,20 @@ int main (int argc, char** argv) {
     TrailNetwork trails =
       map::form_terrain_trails (surface, recipe.trail_formation ());
     map::rebuild_geometry (surface);
-    game::HydrologyAnalysis analysis =
-      game::analyze_hydrology (surface, recipe);
-    auto [water, readings] = game::analyze_surface (
-      surface, recipe, analysis.hydrology, analysis.channels, trails.use);
+    game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
+    auto [water, readings] =
+      game::analyze_surface (surface, recipe, hydrology, trails.use);
     const std::uint32_t forest_seed = seed ^ 0xa34c91e5U;
     game::ForestPlan forest =
       game::plan_global_forest (surface, readings, forest_seed);
-    auto world =
-      std::make_unique<game::GeneratedWorld> (game::WorldParams {},
-                                              recipe,
-                                              std::move (surface),
-                                              std::move (analysis.hydrology),
-                                              std::move (water),
-                                              std::move (trails),
-                                              std::move (readings),
-                                              std::move (forest));
+    auto world = std::make_unique<game::GeneratedWorld> (game::WorldParams {},
+                                                         recipe,
+                                                         std::move (surface),
+                                                         std::move (hydrology),
+                                                         std::move (water),
+                                                         std::move (trails),
+                                                         std::move (readings),
+                                                         std::move (forest));
     game::save_world_cache (*world, output.string ());
     world.reset ();
     if (!game::try_load_world_cache (

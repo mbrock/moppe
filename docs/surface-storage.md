@@ -6,7 +6,7 @@ typed bundles over one periodic `terrain::TerrainDomain`.
 | Bundle | Owner | Columns |
 | --- | --- | --- |
 | `map::SurfaceGeometry` | `GeneratedWorld` | surface elevation, mobile sediment thickness, terrain normal, geological detachment and deposition history, snow support |
-| `map::SurfaceReadings` | `GeneratedWorld` | channel flux, moisture, waterline distance, erosion exposure, deposition cover, tree habitat, forest cover, trail influence, home-base influence |
+| `map::SurfaceReadings` | `GeneratedWorld` | moisture, waterline distance, erosion exposure, deposition cover, tree habitat, forest cover, trail influence, home-base influence |
 | `terrain::WaterSheets` | `GeneratedWorld` | surface elevation, wave amplitude, water velocity |
 
 No `SurfaceDomain`, `SurfaceAtlas`, `map::Surface`, or `map::WaterSurface`
@@ -32,7 +32,6 @@ stencil; there is no copied refresh surface.
 Each analysis produces the narrowest useful bundle:
 
 ```text
-fractional drainage -> channel flux
 standing water + drainage -> moisture
 painted water -> waterline distance
 material history -> erosion exposure + deposition cover

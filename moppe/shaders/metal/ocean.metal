@@ -682,9 +682,8 @@ fragment MoppeTemporalOutput ocean_fragment (
   }
 
   // A narrow channel cannot survive resampling by the whole-world coarse
-  // grid. The exact lattice owns running water nearby and hands it to the
-  // terrain's channel-flux detail before the 700 m tile boundary; standing
-  // bodies continue seamlessly onto the coarse surface.
+  // grid. The exact lattice owns running water nearby; standing bodies
+  // continue seamlessly onto the coarse surface.
   const bool running_water =
     flow_speed > 0.25 && water_state.y < 0.01 && still_depth < 3.0;
   if (u.tiles.w > 0.5 && running_water)

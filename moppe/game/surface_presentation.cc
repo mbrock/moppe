@@ -65,19 +65,6 @@ namespace moppe::game {
       }
     }
 
-    void write_channel_flux (const void* opaque,
-                             render::PixelFormat format,
-                             std::byte* destination) {
-      const auto& source = *static_cast<const TerrainMaterialSource*> (opaque);
-      const auto& flux = spatial::get<map::channel_flux> (source.readings);
-      const std::size_t stride = render::bytes_per_pixel (format);
-      for (std::size_t pixel = 0; pixel < flux.size (); ++pixel) {
-        const Vec3 value = render::detail::stored_vector (flux[pixel]);
-        std::byte* at = destination + pixel * stride;
-        render::detail::write_channel (at, format, value[0]);
-        render::detail::write_channel (at + 1, format, value[2]);
-      }
-    }
   }
 
   void upload_surface_readings (render::Renderer& renderer,
@@ -98,7 +85,6 @@ namespace moppe::game {
     renderer.set_terrain_materials (
       pixels (render::PixelFormat::rgba8unorm, &write_landscape_materials),
       pixels (render::PixelFormat::rgba8unorm, &write_ground_materials),
-      pixels (render::PixelFormat::rg8snorm, &write_channel_flux),
       include_forest);
   }
 }

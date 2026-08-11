@@ -46,7 +46,6 @@ struct MoppeUint4 {
 #define MOPPE_TEX_TERRAIN_WATER 8
 #define MOPPE_TEX_TERRAIN_GROUND 9
 #define MOPPE_TEX_TERRAIN_NORMALS 10 /* fragment stage */
-#define MOPPE_TEX_TERRAIN_CHANNEL_FLUX 11
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1        /* post passes */
 #define MOPPE_TEX_POST_DEPTH 2   /* light shafts: stored scene depth */
@@ -145,7 +144,7 @@ struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
   MoppeFloat4 params5;  // x=topology opacity, y=water, z=materials
   MoppeFloat4 params6;  // x=fragment normals, y=shore band metres
   MoppeFloat4 params7;  // x=filtered snow-support slope enabled,
-                        // y=channel flux detail enabled,
+                        // y=reserved,
                         // z=land relief above sea level in metres,
                         // w=grass cover boost (1 = habitat-driven)
   MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled

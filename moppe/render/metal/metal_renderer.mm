@@ -431,11 +431,9 @@ namespace moppe {
         bool have_overlay = false;
 
         // Typed terrain readings are packed only at the renderer boundary.
-        // Two RGBA8 sheets carry bounded material scalars; RG8Snorm carries
-        // the signed channel-flow vector.
+        // Two RGBA8 sheets carry bounded material scalars.
         id<MTLTexture> landscape_materials = nil;
         id<MTLTexture> ground_materials = nil;
-        id<MTLTexture> channel_flux = nil;
         bool have_materials = false;
         bool have_forest = false;
 #if !TARGET_OS_IPHONE
@@ -848,7 +846,6 @@ namespace moppe {
       void set_water_flow (const render::TexturePixels& flow) override;
       void set_terrain_materials (const render::TexturePixels& landscape,
                                   const render::TexturePixels& ground,
-                                  const render::TexturePixels& flow,
                                   bool include_forest) override;
       void set_forest (const ForestSetup& setup,
                        std::span<const ForestInstance> instances) override;
@@ -3144,7 +3141,6 @@ namespace moppe {
     void MetalRenderer::set_terrain_materials (
       const render::TexturePixels& landscape,
       const render::TexturePixels& ground,
-      const render::TexturePixels& flow,
       bool include_forest) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_materials");
       const bool have_landscape =
@@ -3157,12 +3153,7 @@ namespace moppe {
                        ground,
                        render::PixelFormat::rgba8unorm,
                        MTLPixelFormatRGBA8Unorm);
-      const bool have_flow = upload_pixels (m_terrain_resources.channel_flux,
-                                            flow,
-                                            render::PixelFormat::rg8snorm,
-                                            MTLPixelFormatRG8Snorm);
-      m_terrain_resources.have_materials =
-        have_landscape && have_ground && have_flow;
+      m_terrain_resources.have_materials = have_landscape && have_ground;
       m_terrain_resources.have_forest =
         m_terrain_resources.have_materials && include_forest;
     }
@@ -4006,9 +3997,6 @@ namespace moppe {
       u.params7.x =
         (terrain.params.snow_support_filter && terrain.have_materials) ? 1.0f
                                                                        : 0.0f;
-      u.params7.y =
-        (terrain.params.channel_flux_detail && terrain.have_materials) ? 1.0f
-                                                                       : 0.0f;
       u.params7.z = terrain.params.land_relief;
       u.params7.w = terrain.params.grass_cover_boost;
       u.temporal = frame.uniforms.temporal;
@@ -4073,11 +4061,6 @@ namespace moppe {
                     MTLRenderStageFragment,
                     MOPPE_TEX_TERRAIN_NORMALS,
                     terrain.normals);
-      bind_texture (frame,
-                    MTLRenderStageFragment,
-                    MOPPE_TEX_TERRAIN_CHANNEL_FLUX,
-                    terrain.have_materials ? terrain.channel_flux
-                                           : terrain.heights);
       use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
 
       for (int i = 0; i < count; ++i) {

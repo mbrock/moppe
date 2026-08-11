@@ -42,13 +42,9 @@ reads a topographic wetness index, the forest mosaic answers to the ground
 instead of overruling it, the wind runs on three clocks, and the river surface
 no longer breathes in unison.
 
-The near-ground material has had its loudest fault removed: relief below the
-lattice is now one band-limited world-space field with analytic gradients,
-rather than a micro-normal read out of the screen derivatives of the albedo.
-That signal had no wavelength, so near ground resolved to a carpet of
-one-pixel static at every distance and crawled with the camera. What remains
-open there is character rather than legibility — the splat sources still
-carry all the close-range identity, and the metre-scale geometry of
+The near-ground material now uses the authoritative terrain normal directly.
+Its character comes from broad material zones and actual terrain geometry, not
+a fragment-stage micro-normal. The metre-scale geometry of
 [RFC-008](../plan/rfc-008-geology-conditioned-tessellation.md) is untouched.
 Horizontal water is now one clipped field: running alignments paint levels
 and current into the same `WaterSheets` value as seas and lakes, exact

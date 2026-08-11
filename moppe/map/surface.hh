@@ -44,7 +44,6 @@ namespace moppe::map {
   using ErodedSurfaceMaterial = quantity<eroded_surface_material[u::m], float>;
   using DepositedSurfaceMaterial =
     quantity<deposited_surface_material[u::m], float>;
-  using ChannelFlux = quantity<channel_flux[one], Vec3>;
   using terrain::SoilWetness;
   using terrain::SurfaceMoisture;
   using terrain::WaterlineDistance;
@@ -66,7 +65,6 @@ namespace moppe::map {
                                           DepositedSurfaceMaterial,
                                           SnowSupport>;
   using SurfaceReadings = spatial::Bundle<terrain::TerrainDomain,
-                                          ChannelFlux,
                                           SurfaceMoisture,
                                           SoilWetness,
                                           WaterlineDistance,
@@ -112,17 +110,10 @@ namespace moppe::map {
   // joins them, in the order SurfaceReadings declares, into the wide store the
   // game samples.
 
-  using ChannelFluxMap = spatial::Bundle<terrain::TerrainDomain, ChannelFlux>;
   using GeologyMaterials =
     spatial::Bundle<terrain::TerrainDomain, ErosionExposure, DepositionCover>;
   using TreeHabitatMap = spatial::Bundle<terrain::TerrainDomain, TreeHabitat>;
   using ForestCoverMap = spatial::Bundle<terrain::TerrainDomain, ForestCover>;
-
-  // The drainage analysis carries a domain of its own, so the surface lattice
-  // its result must agree with is named separately.
-  ChannelFluxMap
-  analyze_channel_flux (const terrain::TerrainDomain& domain,
-                        const terrain::FractionalDrainage& channels);
 
   // Scaled against the material this world's own history moved, so a calm
   // world reads as strongly as a violent one.

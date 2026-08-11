@@ -271,12 +271,9 @@ These fields are stored together as the typed `TrailUseMap` on
 writes them into the R and G channels of one `RG16Float` terrain texture.
 
 The terrain fragment shader interprets trail influence as a formed
-cross-section. It adds a warm crushed-stone base, world-space aggregate
-variation, darker shoulders, paired wear bands, a subtle compacted center,
-and close-range detail normals. Broad color and shoulder contrast remain at
-overview distance. Fine aggregate and micro-normal frequencies fade according
-to their screen-space footprint, so shallow viewing angles cannot turn them
-into moire or temporal sparkle.
+cross-section and applies one warm crushed-stone material. The influence field
+owns its width and falloff; the fragment stage does not add aggregate, wear
+bands, or detail normals.
 
 Snow and standing water suppress the trail material. They do not delete the
 underlying circuit or influence field; the path can remain part of gameplay

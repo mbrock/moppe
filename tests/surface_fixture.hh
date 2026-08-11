@@ -100,8 +100,7 @@ namespace moppe::test {
     map::ForestCoverMap cover =
       map::analyze_forest_cover (habitat, use, recipe.seed);
 
-    return spatial::join (map::ChannelFluxMap (domain),
-                          std::move (moisture),
+    return spatial::join (std::move (moisture),
                           recipe.waterline
                             ? std::move (*recipe.waterline)
                             : terrain::WaterlineProximity (domain),

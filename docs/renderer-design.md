@@ -421,31 +421,17 @@ light matrix, shadow strength) instead of gl_* built-ins. Lighting moves to
 world space (the eye-space detour existed only because fixed-function GL
 transformed lights by the modelview).
 
-Terrain materials also consume the hydrology's standing-water and moisture
-rasters. Submerged beds and damp banks lose diffuse energy and gain a restrained
-wet sheen. Close shallow beds and a quieter share of their dry margins resolve
-into one stable jittered cellular pebble field: size, aspect, orientation,
-mineral albedo, seam, and normal all come from the same stone identity, then
-retire before becoming subpixel. Grass responds more quietly to moisture. Its
-root is tested against the signed water surface at the actual jittered shoot
-position, preventing mixed shoreline tiles from planting blades underwater;
-the dry side of the crossing becomes a subtly denser, taller riparian band.
-Cliff material uses triplanar projection, a slate/taupe palette, and
-world-height strata to avoid stretched red faces. Screen-space world-position
-derivatives suppress aggregate, trail-gravel, pebbles, and snow-specular
-frequencies as they become subpixel, including nearby ground viewed almost
-parallel to its surface. These are shading effects only and do not alter
-collision geometry.
+Terrain materials consume standing-water, moisture, broad snow support, and
+formed trails. Submerged beds and damp banks lose diffuse energy and gain one
+restrained wet highlight. Grass roots remain excluded by the signed water
+surface, so mixed shoreline tiles do not plant blades underwater. Cliffs use
+triplanar rock projection; grass, soil, snow, beaches, paths, and forest floor
+are broad material regions rather than independent fields of procedural detail.
+These shading effects do not alter collision geometry.
 
-The dirt source is a close photograph of loose gravel. Its centimetre-scale
-contrast is pre-integrated with an additive mip bias before lighting, so it
-supplies material color without turning every trail into a field of isolated
-bright and dark grains. Compacted paths then restore deliberate world-scale
-structure with lower-contrast coarse aggregate and broader, weaker normal
-relief. Their 3.2 m and 0.79 m procedural octaves each retire against their own
-pixel footprint; the fine octave is gone before a pixel spans half its
-wavelength. This prevents distant crawl and also keeps EDR from preserving
-single-pixel gravel peaks as false highlights.
+The dirt source is pre-integrated before lighting, so it carries a stable soil
+read without making paths sparkle. Trails are a single warm crushed-stone
+material with the formed influence field providing their width and falloff.
 
 Weather is one lighting system rather than a sky decoration. The game's
 bounded cloudiness reading drives both cloud coverage and a broad layer
@@ -460,72 +446,29 @@ untouched checkpoint measured the final renderer 0.13 ms (0.97%) faster across
 configuration medians and 0.05 ms faster with every feature enabled; those
 small differences are evidence of parity, not a claimed speedup.
 
-Forest cover changes lighting as well as albedo. Explicit nearby crowns still
-provide silhouettes, but their existing filtered canopy grain now attenuates
-direct and hemisphere light on the forest floor. The signal converges toward
-an aggregate response with distance rather than adding subpixel tree or grass
-geometry. This is the small Moppe-specific version of Bruneton and Neyret's
-near-tree plus distant shader-map decomposition: ground radiance carries
-canopy shade as geometry fades (`#5BNBQQ`, `#X9PHPN` in the Sheaf literature
-library). Clearings, trails, snow, and submerged ground explicitly remove the
-canopy footprint.
+Forest cover changes lighting as well as albedo. Explicit nearby crowns provide
+silhouettes, while their ground material is a single dark green aggregate with
+a broad direct- and ambient-light reduction. Clearings, trails, snow, and
+submerged ground explicitly remove that footprint; the fragment shader does
+not synthesize subpixel canopy detail.
 
 The bounded material readings remain distinct typed columns through world
 construction and pack only at the renderer-facing presentation boundary. Two
 RGBA8Unorm sheets carry moisture/erosion/deposition/forest and normalized
-shore-distance/snow-support/trail/home-base; one RG8Snorm sheet carries the
-planar channel flux. A terrain fragment therefore obtains ten semantic lanes
-with three hardware-linear samples and ten stored bytes, rather than seven
-samples and twenty bytes of separate R16F/RG16F fields. The half-texel
-coordinate convention makes an integral terrain site land exactly on its
-stored reading, while repeat addressing preserves the periodic seam. Physical
-elevation and water level remain R32F and retain explicit four-read
-interpolation on Apple GPUs where that format is not filterable. Fragment
-normals similarly filter the RG16Snorm x/z pair once and reconstruct y.
-
-On the local M2 Pro, an order-balanced A/B used two 960-sample,
-32-configuration replays per version at a 1280x800 scene surface. The mean of
-the combined configuration medians moved from 13.719 ms to 13.680 ms: a
-0.039 ms (0.23%) improvement, with 17 of 32 configurations improving. The
-all-features median moved from 15.427 ms to 15.400 ms. This is effective parity,
-not evidence that material-field traffic was the terrain bottleneck; the
-durable gains are three samples instead of seven and 10 MB less resident
-material data for the ordinary 1024x1024 world.
+shore-distance/snow-support/trail/home-base: eight semantic lanes in two
+hardware-linear samples and eight stored bytes. The half-texel coordinate
+convention makes an integral terrain site land exactly on its stored reading,
+while repeat addressing preserves the periodic seam. Physical elevation and
+water level remain R32F and retain explicit four-read interpolation on Apple
+GPUs where that format is not filterable. Fragment normals similarly filter
+the RG16Snorm x/z pair once and reconstruct y.
 
 Splat layers are evaluated only where they can contribute. Lowland grass,
-paths, and beaches do not fetch the six triplanar cliff samples or three snow
+paths, and beaches do not fetch the six triplanar cliff samples or two snow
 samples after their material weights have reached zero. The branches are
-spatially coherent terrain regions rather than per-pixel noise. Terrain
-specular is composed after diffuse albedo: stone, snow, and wet-soil glints
-therefore retain the sun's neutral color instead of being multiplied by the
-ground texture.
-
-Relief below the lattice is one band-limited field, `terrain_relief_gradient`,
-shared by the material micro-normal, the pebble bed, and the drainage rills.
-It is a four-octave sum of `moppe_value_noise_d` — value noise with an
-analytic gradient under a quintic fade, so the slope stays continuous across
-lattice cells — evaluated at world-space wavelengths and normalized to unit
-RMS slope, which makes each caller's strength a micro-gradient it can state:
-0.15 is roughly an eight-degree tilt whatever wavelength carries it. Amplitude
-falls with wavelength at the same rate, so every octave contributes the same
-slope and the sum is an average rather than a runaway. Each octave retires
-once its wavelength approaches the width of a screen pixel, and the pixel
-footprint is measured in all three axes rather than across the ground plane,
-because a cliff's relief is read on a vertical plane. `terrain_relief_volume`
-composes three plane evaluations under the splat triplanar's squared-normal
-weights and skips the ones that carry no weight, so ordinary ground pays for
-one; `terrain_perturb_normal` applies only the tangential part of the
-gradient, so a steep face rolls along itself instead of through itself.
-Character comes from the base wavelength — broken stone and fresh cuts
-fracture coarser than turf; alluvium answers by losing amplitude rather than
-gaining frequency.
-
-This replaced a micro-normal reconstructed from the screen derivatives of the
-composed albedo. That signal has no wavelength: its detail sat on the pixel
-grid at every distance, so near ground could only ever resolve to a carpet of
-one-pixel static, and it crawled whenever the camera moved. Retiring it also
-removed the `dfdx`/`dfdy` tangent-frame reconstruction from the fragment
-stage, and measured slightly cheaper than what it replaced.
+spatially coherent terrain regions rather than per-pixel noise. Lighting is
+Lambert plus hemisphere fill, cloud and shadow visibility, and one wet-ground
+highlight. The authoritative terrain normal supplies all ground relief.
 
 Terrain generation writes directly into the authoritative typed elevation
 column before texture upload. The renderer receives physical metre-valued
@@ -556,9 +499,8 @@ terrain expression graph or own an interactive generation preview.
   ones. The mesh stage fits the 9×9 corners and all 144 possible edge
   crossings into one 225-vertex meshlet, then emits at most 256 triangles by
   clipping each bilinear cell to its exact signed shoreline. The coarse grid
-  keeps the horizon and standing bodies. Narrow running water fades into the
-  terrain's channel-flux reading from 560–700 m and is rejected by the coarse
-  pass rather than being widened into grid-sized distant triangles. Dry
+  keeps the horizon and standing bodies. Narrow running water is rejected by
+  the coarse pass rather than being widened into grid-sized distant triangles. Dry
   cameras reject the underside of elevated inland sheets; the two-sided sea
   remains available to the underwater pass.
 - underwater.vert/frag → fullscreen-triangle post pass.

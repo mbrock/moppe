@@ -126,9 +126,6 @@ namespace moppe {
       // Classify snow retention from a broad material-scale surface reading,
       // leaving the detailed normal available for lighting.
       bool snow_support_filter = true;
-      // Band and rill the ground along the concentrated-drainage flux so
-      // headwater channels read as worked ground below the visible rivers.
-      bool channel_flux_detail = true;
       // Diagnostic cover saturation for the grass canopy material; 1 is
       // ordinary habitat-driven cover (see GraphicsSettings).
       float grass_cover_boost = 1.0f;
@@ -303,17 +300,14 @@ namespace moppe {
       //
       //   landscape RGBA = moisture, erosion, deposition, forest cover
       //   ground RGBA = shore proximity / 8 m, snow support, trail, home base
-      //   flow RG = concentrated drainage x/z
       //
-      // The first two are RGBA8Unorm and flow is RG8Snorm. All are filterable
-      // and consumed synchronously because TexturePixels borrows its source.
+      // Both sheets are RGBA8Unorm, filterable, and consumed synchronously
+      // because TexturePixels borrows its source.
       virtual void set_terrain_materials (const TexturePixels& landscape,
                                           const TexturePixels& ground,
-                                          const TexturePixels& flow,
                                           bool include_forest) {
         (void)landscape;
         (void)ground;
-        (void)flow;
         (void)include_forest;
       }
 

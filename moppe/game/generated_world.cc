@@ -17,9 +17,9 @@ namespace moppe::game {
     return params;
   }
 
-  HydrologyAnalysis analyze_hydrology (const map::SurfaceGeometry& geometry,
-                                       const terrain::WorldRecipe& recipe,
-                                       const HydrologyProgress& progress) {
+  Hydrology analyze_hydrology (const map::SurfaceGeometry& geometry,
+                               const terrain::WorldRecipe& recipe,
+                               const HydrologyProgress& progress) {
     MOPPE_PROFILE_ZONE ("game::analyze_hydrology");
     const auto report = [&progress] (HydrologyStage stage) {
       if (progress)
@@ -49,25 +49,20 @@ namespace moppe::game {
                                       channels,
                                       terrain::visible_river_minimum_area ());
 
-    return { Hydrology (std::move (standing_water),
-                        std::move (lakes),
-                        std::move (drainage),
-                        std::move (rivers)),
-             std::move (channels) };
+    return Hydrology (std::move (standing_water),
+                      std::move (lakes),
+                      std::move (drainage),
+                      std::move (rivers));
   }
 
   std::tuple<terrain::WaterSheets, map::SurfaceReadings>
   analyze_surface (const map::SurfaceGeometry& geometry,
                    const terrain::WorldRecipe& recipe,
                    const Hydrology& hydrology,
-                   const terrain::FractionalDrainage& channels,
                    const terrain::TrailUseMap& use) {
     MOPPE_PROFILE_ZONE ("game::analyze_surface");
     const auto& [standing_water, lakes, drainage, rivers] = hydrology;
     const meters_t water_level = recipe.water_datum ();
-
-    map::ChannelFluxMap channel_flux =
-      map::analyze_channel_flux (geometry.domain (), channels);
 
     terrain::WaterSheets sheets = terrain::paint_watercourses (
       geometry, standing_water, lakes, drainage, rivers);
@@ -100,8 +95,7 @@ namespace moppe::game {
     // The join names the readings in the order the bundle declares them; a
     // world is finished when every one of them is present.
     return { std::move (sheets),
-             spatial::join (std::move (channel_flux),
-                            std::move (moisture),
+             spatial::join (std::move (moisture),
                             terrain::waterline_proximity (waterline),
                             map::analyze_geology_materials (geometry),
                             std::move (habitat),

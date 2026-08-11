@@ -25,7 +25,6 @@ namespace moppe::test {
     std::vector<float> forest_cover;
     std::vector<float> shore_distance;
     std::vector<float> snow_support;
-    std::vector<float> channel_flux;
     render::ForestSetup forest_setup {};
     std::vector<render::ForestInstance> forest_instances;
     std::size_t forest_draws = 0;
@@ -83,11 +82,9 @@ namespace moppe::test {
     }
     void set_terrain_materials (const render::TexturePixels& landscape,
                                 const render::TexturePixels& ground,
-                                const render::TexturePixels& flow,
                                 bool) override {
       const auto landscape_lanes = render::decode_channels (landscape);
       const auto ground_lanes = render::decode_channels (ground);
-      const auto flow_lanes = render::decode_channels (flow);
       if (landscape_lanes.size () == 4) {
         moisture = landscape_lanes[0];
         erosion = landscape_lanes[1];
@@ -101,14 +98,6 @@ namespace moppe::test {
         snow_support = ground_lanes[1];
         trail_influence = ground_lanes[2];
         home_base_influence = ground_lanes[3];
-      }
-      channel_flux.clear ();
-      if (flow_lanes.size () == 2) {
-        channel_flux.reserve (2 * flow_lanes[0].size ());
-        for (std::size_t index = 0; index < flow_lanes[0].size (); ++index) {
-          channel_flux.push_back (flow_lanes[0][index]);
-          channel_flux.push_back (flow_lanes[1][index]);
-        }
       }
     }
     void
