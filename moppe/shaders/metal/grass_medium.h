@@ -222,6 +222,38 @@ moppe_grass_leaf_back (float3 normal, float3 sun, float resolvable) {
   return mix (0.30, pow (max (dot (-normal, sun), 0.0), 1.8), resolvable);
 }
 
+// The blade fragment's own resolvable->0 limits, evaluated as a ground
+// material: what one square metre of settled sward presents when no
+// individual blade is wide enough to matter. Exposure sits at the field
+// mean the far blades settle to, backlight at its ensemble floor, glint
+// at zero. The terrain substrate colours grassy ground with THIS, so a
+// retiring sward hands off between two evaluations of one formula
+// rather than between two materials that merely resemble each other.
+inline float3 moppe_sward_ensemble_light (float3 blade_tint_display,
+                                          float3 normal,
+                                          float3 sun_dir,
+                                          float3 view_dir,
+                                          float3 sun_diffuse,
+                                          float3 ambient,
+                                          float cast_light,
+                                          float sun_visibility) {
+  const float ensemble_exposure = 0.72;
+  const float3 base =
+    moppe_srgb (blade_tint_display * (0.58 + 0.66 * ensemble_exposure));
+  const float lambert = saturate ((dot (normal, sun_dir) + 0.10) / 1.10);
+  const float3 shade_fill =
+    mix (float3 (0.80, 0.92, 1.14), float3 (1.0), cast_light);
+  const float thin = exp (-2.0 * (1.0 - ensemble_exposure));
+  const float trans = 0.30 * thin * sun_visibility;
+  const float toward = saturate (dot (view_dir, sun_dir));
+  float3 color =
+    base * (shade_fill * moppe_hemisphere_light (ambient, normal) +
+            sun_diffuse * lambert * sun_visibility * (1.0 - 0.45 * trans));
+  color += sqrt (base) * sun_diffuse * moppe_grass_chlorophyll () * trans *
+           moppe_grass_toward_lobe (toward) * 3.2;
+  return color;
+}
+
 inline float moppe_grass_gust (float2 world_xz, float time) {
   const float phase = world_xz.x * 0.043 + world_xz.y * 0.051;
   return sin (time * 1.13 + phase) +

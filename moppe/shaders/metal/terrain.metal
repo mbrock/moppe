@@ -563,8 +563,7 @@ struct TerrainMaterialBands {
   float snow;
   float beach;
   float grass;
-  float flower;
-  float3 flower_tint;
+  float3 sward_tint; // display-space ensemble blade tint, drift folded in
 };
 
 static inline TerrainMaterialBands
@@ -604,18 +603,16 @@ terrain_classify_material (thread const TerrainVaryings& in,
   // reveal a distance-dependent rocky ground material underneath them.
   bands.grass = medium.cover;
 
-  // The same drift the undergrowth realizes as flower shoots: the substrate
-  // keeps its colour wash, so heads that retire with distance dissolve into
-  // a hillside that still reads as flowering.
+  // The tint the sward ensemble presents: the medium's own blade tint,
+  // with the flowering drift's wash chromaticity folded in where a drift
+  // stands, so a hillside of retired heads still reads as flowering.
   const MoppeFlowerDrift drift = moppe_flower_drift (in.world_pos.xz,
                                                      readings.moisture,
                                                      readings.forest_cover,
                                                      medium.leaf_area);
-  // The wash needs a real sward under it: squaring cover keeps drift
-  // colour out of thinning ground, where a stain with no heads above it
-  // reads as discoloured dirt rather than as flowers.
-  bands.flower = drift.presence * medium.cover * medium.cover;
-  bands.flower_tint = drift.tint;
+  bands.sward_tint = mix (medium.blade_tint,
+                          moppe_flower_wash_tint (drift.tint) * 0.60,
+                          min (0.32, 0.32 * drift.presence));
   return bands;
 }
 
@@ -657,6 +654,8 @@ terrain_build_palette (thread const TerrainVaryings& in,
 
 struct TerrainMaterial {
   float3 albedo;
+  float3 sward;       // display-space ensemble blade tint
+  float sward_detail; // photo-texture luma keeping fine ground variation
   float grass;
   float trail;
   float base;
@@ -682,20 +681,14 @@ terrain_compose_material (float3 normal,
   const float3 sand = soil_value * float3 (1.12, 1.03, 0.82);
   material.albedo = mix (material.albedo, sand, shore);
 
+  // The grass band no longer tints the ground texture: grassy ground is
+  // lit as the sward ensemble in terrain_light, and the albedo composed
+  // here is the soil that shows wherever cover thins. The photo texture
+  // survives as luma detail riding on the ensemble colour.
   material.grass = bands.grass;
-  material.albedo = mix (material.albedo,
-                         material.albedo * float3 (0.72, 0.88, 0.58),
-                         material.grass);
-  // The wash whispers where the heads shout: near the camera resolved
-  // heads carry the drift's colour, so the substrate underneath keeps the
-  // part-desaturated wash chromaticity — the identical colour a retiring
-  // head collapses to, so the ladder's last hand-off has no seam. A
-  // distant flowering hillside then reads as a hue shift over grass, not
-  // as paint poured on the landform.
-  material.albedo =
-    mix (material.albedo,
-         moppe_srgb (moppe_flower_wash_tint (bands.flower_tint)) * 0.48,
-         0.32 * bands.flower);
+  material.sward = bands.sward_tint;
+  material.sward_detail =
+    clamp (dot (palette.grass, float3 (0.299, 0.587, 0.114)) / 0.40, 0.6, 1.6);
   material.trail = 0.0;
   material.base = 0.0;
   material.forest = 0.0;
@@ -779,6 +772,34 @@ terrain_light (float3 albedo,
     canopy_ambient * shade_fill *
       moppe_hemisphere_light (u.ambient.rgb, normal);
   lighting.color = albedo * diffuse_light;
+
+  // Grass-covered ground is the blade shader's own ensemble limit, not a
+  // tinted soil texture: near and far grass are one formula, so the
+  // geometry's retirement can have no colour seam to find. Two octaves
+  // of world-anchored grain keep the habitat's broad tint gradients from
+  // reading as flat vinyl blobs: the fine octave yields as its cells go
+  // subpixel, the coarse one carries the mottle to the horizon.
+  if (material.grass > 0.001) {
+    const float3 sward =
+      moppe_sward_ensemble_light (material.sward,
+                                  normal,
+                                  light,
+                                  view_dir,
+                                  u.sun_diffuse.rgb,
+                                  u.ambient.rgb,
+                                  shadow,
+                                  direct_visibility * canopy_direct);
+    const float2 ground_xz = in.world_pos.xz;
+    const float footprint = length (in.world_pos - u.camera_pos.xyz);
+    const float fine_visible = 1.0 - smoothstep (30.0, 110.0, footprint);
+    const float fine = moppe_value_noise (ground_xz * 1.9);
+    const float coarse =
+      moppe_value_noise (ground_xz * 0.16 + float2 (31.7, 8.3));
+    const float grain = (1.0 + 0.22 * (coarse - 0.5) * 2.0) *
+                        (1.0 + 0.18 * (fine - 0.5) * 2.0 * fine_visible);
+    lighting.color = mix (
+      lighting.color, sward * material.sward_detail * grain, material.grass);
+  }
 
   const float3 half_vector = normalize (light - view_dir);
   const float wet_spec =
