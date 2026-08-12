@@ -25,6 +25,9 @@ critical_hillslope_gradient=${MOPPE_HILLSLOPE_CRITICAL_GRADIENT:-}
 maximum_hillslope_multiplier=${MOPPE_HILLSLOPE_MAX_MULTIPLIER:-}
 cache_key=${MOPPE_WORLD_CACHE_KEY:-}
 refresh_cache=${MOPPE_REFRESH_WORLD_CACHE:-0}
+glide=${MOPPE_GLIDE:-}
+glide_speed=${MOPPE_GLIDE_SPEED:-0}
+glide_vertical_speed=${MOPPE_GLIDE_VERTICAL_SPEED:-0}
 
 if [[ ! $settle =~ ^[1-9][0-9]*$ ]]; then
   echo "MOPPE_GAZETTEER_SETTLE must be a positive integer" >&2
@@ -115,7 +118,8 @@ MOPPE_METAL_HUD=0 \
 elapsed_seconds=$((SECONDS - start_seconds))
 
 printf '%s\n' \
-  "mode=frozen-frame-composition" \
+  "mode=$([[ -n $glide ]] && echo consecutive-glide || \
+    echo frozen-frame-composition)" \
   "seed=$seed" \
   "terrain=$terrain" \
   "terrain_resolution=${terrain_resolution:-profile-default}" \
@@ -130,8 +134,15 @@ printf '%s\n' \
   "maximum_hillslope_multiplier=${maximum_hillslope_multiplier:-profile-default}" \
   "world_cache_key=${cache_key:-default}" \
   "refresh_world_cache=$refresh_cache" \
+  "glide_shot=${glide:-none}" \
+  "glide_speed_mps=$glide_speed" \
+  "glide_vertical_speed_mps=$glide_vertical_speed" \
   "process_elapsed_seconds=$elapsed_seconds" \
   >"$output/capture.txt"
 
-"$root/tools/gazetteer-report" "$output"
-echo "wrote the landscape gazetteer to $output"
+if [[ -n $glide ]]; then
+  echo "wrote the consecutive glide frames to $output"
+else
+  "$root/tools/gazetteer-report" "$output"
+  echo "wrote the landscape gazetteer to $output"
+fi

@@ -48,14 +48,12 @@ acceleration-structure rebuilds.
    every tree completes near the same distance.
 
 3. **Conservation of foliage.** A crown must never thin with distance;
-   distance changes representation, never mass. Removed boughs move their
-   area into survivors (`sqrt(63/count)` widening, at full strength at
-   every count -- it converges to one at the full complement, so it needs
-   no fade for near stability). Missing stations within a bough likewise
-   widen their stable survivors by the square root of represented area. The
-   floor of twenty-one boughs keeps the sparsest assembly reading as a small
-   solid tree rather than a pole with stubs, and the floor complement stands
-   at full growth (a permanently half-grown bough leaks mass).
+   distance changes representation, never mass. Removed boughs move a bounded
+   share of their area into survivors (`min(sqrt(63/count), 1.22)` widening);
+   the twenty-one-bough floor carries the rest. Stations within a bough
+   subdivide continuous ribbons, so their number changes curvature rather
+   than optical area and needs no width boost. The floor complement stands at
+   full growth (a permanently half-grown bough leaks mass).
 
 4. **Fill evenly; the silhouette is sacred.** The first nine ranks sketch
    the whole silhouette, one bough per whorl bottom-to-top. Later ranks add
@@ -77,19 +75,24 @@ acceleration-structure rebuilds.
   the camera plane). The frustum bound must contain the whole organism
   (`0.55h + 1.4 crown`), or passing trees vanish while filling the screen.
 - Conifer tiers form one nested error hierarchy. Below sixteen threshold
-  *crown* pixels, nine world-space whorl umbrellas carry the unresolved
-  crown. They are aligned with the first nine stable bough ranks rather than
-  being an unrelated cone. From sixteen to twenty-eight crown pixels those
-  parents contract by the square root of their remaining area while resolved
-  boughs receive the complement; the stem grows over the same interval. The
-  boughs themselves use one stable twenty-four-station sequence: the far tier
-  packs four boughs at stations `{0,8,16}`, the middle tier packs two at
-  `{0,4,8,12,16,20}`, and the hero tier carries one bough with every station.
-  New stations grow from zero and surviving stations never move. Thus proxy,
-  bough, and branchlet are refinements of one organism rather than three
-  meshes exchanged at thresholds. The hero still uses only two disconnected
-  sprays per station; close foliage remains graphically comb-like and needs a
-  better branchlet representation without returning to metre-wide shelves.
+  *crown* pixels, coarse tetrahedral envelopes carry the first twenty-one
+  stable bough axes. From sixteen to twenty-eight crown pixels their cross
+  sections contract by the square root of their remaining area while nested
+  bough ribbons receive the complement; the stem grows over the same
+  interval. Rank, azimuth, length, and droop are identical on both sides. The
+  boughs themselves use one stable thirty-two-sample sequence: the far tier
+  packs four boughs at stations `{0,8,16,31}`, the middle tier packs two with
+  every fourth station plus endpoint 31, and the hero tier carries one bough
+  with twenty-four distributed stations. Four vertices at each station form
+  two crossed continuous ribbons along the bough: they have finite support
+  above, below, and across the axis, but never become disconnected triangular
+  particles. Finer stations begin as exact subdivisions of the coarser curve
+  and bend toward their final stable positions over the tier interval. The
+  hero's twenty-four stations remain inside the 96-vertex and 92-primitive
+  mesh-output limit.
+  New stations begin on their coarser segment and existing stations never
+  move. Thus proxy, bough, and branchlet are refinements of one organism
+  rather than three meshes exchanged at thresholds.
 - Individual retirement is based on projected *crown width*, not full tree
   height. Stand response and identity transfer share one broad
   eight-to-thirty-two-pixel interval, but identity transfers only where a
@@ -147,6 +150,14 @@ acceleration-structure rebuilds.
   their crown envelope until they have a resolved lobe shadow construction.
   Reception in the forest fragment shader still uses a depth margin of
   several metres so the tree's own coarse proxy does not black out its crown.
+- A binary local shadow map cannot represent diffuse light scattered through
+  a porous canopy after the direct ray is blocked. Terrain, resolved
+  undergrowth, and the sward medium therefore receive the same bounded
+  green-yellow canopy-scattered term, proportional to retained closure and
+  blocked sunlight. It contributes nothing on open ground or in an actual sun
+  gap and does not erase attributed trunk and bough shadows. This is a
+  receiver-side approximation, not a claim that the depth map stores canopy
+  optical depth.
 
 ## Constraints discovered
 
@@ -168,13 +179,16 @@ acceleration-structure rebuilds.
 
 - `moppe-tree-studio`: render(plane + tree). Solo specimen
   (`MOPPE_STUDIO_SOLO`), interactive dolly/orbit (W/S/A/D, P screenshots),
-  deterministic dolly ladder (`MOPPE_STUDIO_DOLLY`).
+  deterministic dolly ladder (`MOPPE_STUDIO_DOLLY`). It is a microscope for
+  one construction, never acceptance evidence for the world.
 - `tools/tree-lod-atlas`: the dolly cropped to constant apparent size, so
   the only thing changing between tiles is the LOD decision itself.
 - In-game: `F` walks, `P` captures to `screenshots/run-<timestamp>/`.
 - `MOPPE_GLIDE=<gazetteer-shot>` records every consecutive frame of a bare
   translating camera in the actual world renderer. It is the isolation tool
-  for aerial handoff; `moppe-testbed` is not vegetation evidence.
+  for aerial handoff; `MOPPE_GLIDE_SPEED` and
+  `MOPPE_GLIDE_VERTICAL_SPEED` exercise horizontal and altitude-changing
+  paths. `moppe-testbed` is not vegetation evidence.
 - `MOPPE_RIDE_CAPTURE_DIR` records consecutive gameplay frames;
   `tools/ride-judge` encodes them to video and, with `GEMINI_API_KEY`,
   asks a video-capable model for a 1-5 temporal-stability rating.
@@ -193,7 +207,8 @@ measured at 1280x720, native linear output and 4x MSAA: the forest fell from
 first aggregate arrived. Its 14.807 ms all-features median remains historical
 evidence for those changes, not a current baseline.
 
-The current standard 32-case partition is the ordinary temporal path: a
+The following historical full standard 32-case partition is the ordinary
+temporal path: a
 2560x1600 drawable reconstructed from a 1280x800, single-sample scene. On the
 v9 fast-profile seed-123 world (102,047 retained individuals), the first full
 run exposed a 20.3002 ms median forest block and 34.753 ms all-features case.
@@ -231,6 +246,18 @@ mesh workgroup per stratum. The final full run measured:
 - forest block: 11.1703 ms median, 11.7140 ms mean, 14.6704 ms p95;
 - all features: 26.059 ms median, 27.077 ms p95; and
 - 16 of 32 configurations still miss 60 Hz by median.
+
+The continuous conifer hierarchy was remeasured with the same short standard
+partition (60-frame ride prelude, 4 settle, 12 measured frames) against commit
+`92c39cb`; these numbers are attribution, not a replacement for a full run.
+The crossed-ribbon hero is 96 vertices and 92 primitives instead of the old
+120/48 two-spray carrier. Its final short run measured the forest block at
+16.1089 ms median versus 14.7428 ms for the checkpoint, a 1.3661 ms
+regression. That cost is not hidden or accepted as a speedup.
+The current construction buys continuous connected support and removes the
+old shard/confetti failure, but further work must recover the frame time,
+probably by reducing surviving individual bough work before weakening the
+retained stand. Twenty-two of 32 short configurations miss 60 Hz by median.
 
 Against the fixed four-metre volume this is a 0.1104 ms median and 0.3665 ms
 p95 forest-block increase, not a speedup claim. It bounds distant work while

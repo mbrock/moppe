@@ -1596,6 +1596,14 @@ namespace moppe {
         return speed;
       }
 
+      static float glide_vertical_speed_mps () {
+        static const float speed = [] {
+          const char* value = ::getenv ("MOPPE_GLIDE_VERTICAL_SPEED");
+          return value ? (float)::atof (value) : 0.0f;
+        }();
+        return speed;
+      }
+
       const GazetteerShot* current_gazetteer_shot () const noexcept {
         if (!m_gazetteer || m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
           return nullptr;
@@ -1619,7 +1627,10 @@ namespace moppe {
             heading[1] = 0.0f;
             const Vec3 step =
               normalized (heading) * (glide_speed_mps () / 60.0f);
-            const Vec3 travel = step * static_cast<float> (m_glide_frame);
+            const Vec3 vertical_step =
+              Vec3 (0, glide_vertical_speed_mps () / 60.0f, 0);
+            const Vec3 travel =
+              (step + vertical_step) * static_cast<float> (m_glide_frame);
             eye += travel;
             subject += travel;
           }

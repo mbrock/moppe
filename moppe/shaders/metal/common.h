@@ -175,6 +175,22 @@ inline float3 moppe_hemisphere_light (float3 ambient, float3 normal) {
   return ambient * mix (ground, sky, hemi);
 }
 
+// A binary sun map can say that a canopy intercepted a ray, but it cannot
+// represent the light subsequently scattered through needles, small gaps,
+// and the litter below. Return a bounded diffuse fraction only where the
+// retained population says there is canopy and the local ray is blocked.
+// Open ground and actual sun gaps therefore keep their ordinary lighting.
+inline float3 moppe_canopy_scattered_sun (float forest_cover,
+                                          float sun_visibility,
+                                          float3 sun_diffuse,
+                                          float sun_height) {
+  const float intercepted =
+    saturate (forest_cover) * saturate (1.0 - sun_visibility);
+  const float fraction = mix (0.12, 0.20, saturate (sun_height));
+  const float3 woodland_spectrum = float3 (0.92, 1.05, 0.78);
+  return sun_diffuse * woodland_spectrum * fraction * intercepted;
+}
+
 // Shared terrain occlusion for every sun-lit scene material. Only direct
 // sunlight and sun specular use this value; sky fill and reflections remain
 // visible in a mountain's shadow.

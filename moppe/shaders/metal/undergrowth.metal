@@ -34,7 +34,9 @@ struct UndergrowthVaryings {
   float3 normal;
   float3 color;
   float exposure;
-  float petal; // 1 on flower-head fragments: petals are not chlorophyll
+  // Integer part: petal flag. Fractional part: half forest closure. Packing
+  // keeps the 256-vertex mesh output unchanged at Metal's tight limit.
+  float plant;
   float grass_blade;
   float2 motion [[center_no_perspective]];
 };
@@ -718,7 +720,7 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     v.normal = face_normal;
     v.color = colour;
     v.exposure = exposure;
-    v.petal = petal;
+    v.plant = petal + 0.5 * grass.forest_cover;
     v.grass_blade = family == UNDERGROWTH_GRASS ? 1.0 : 0.0;
 
     v.world_pos = left;
@@ -788,6 +790,8 @@ fragment MoppeTemporalOutput undergrowth_fragment (
                                                  u.shadow.x,
                                                  u.shadow.y,
                                                  shadow_map);
+  const float petal = step (0.75, in.plant);
+  const float forest_cover = saturate (2.0 * (in.plant - petal));
   const float sun_visibility =
     cast_light *
     moppe_cloud_transmission (in.world_pos, l, u.params.x, u.params.y);
@@ -832,10 +836,13 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   const float3 leaf_sky = moppe_hemisphere_light (u.ambient.rgb, n);
   const float3 ensemble_sky =
     0.5 * (leaf_sky + moppe_hemisphere_light (u.ambient.rgb, -n));
+  const float3 canopy_scatter = moppe_canopy_scattered_sun (
+    forest_cover, cast_light, u.sun_diffuse.rgb, l.y);
   float3 color =
     base *
     (shade_fill * mix (ensemble_sky, leaf_sky, shading_resolved) +
-     u.sun_diffuse.rgb * lambert * sun_visibility * (1.0 - 0.45 * trans));
+     u.sun_diffuse.rgb * lambert * sun_visibility * (1.0 - 0.45 * trans) +
+     canopy_scatter);
 
   // Chlorophyll transmits green-yellow and almost no blue. Against the
   // light the term spends real HDR headroom -- transmitted radiance on a
@@ -845,10 +852,10 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // albedo reflects. A petal is not chlorophyll: backlit it glows warm in
   // roughly its own colour, and a little less fiercely than a blade.
   const float3 chlorophyll =
-    mix (moppe_grass_chlorophyll (), float3 (1.0, 0.90, 0.74), in.petal);
+    mix (moppe_grass_chlorophyll (), float3 (1.0, 0.90, 0.74), petal);
   const float lobe = moppe_grass_toward_lobe (toward);
   color += sqrt (base) * u.sun_diffuse.rgb * chlorophyll * trans * lobe *
-           mix (3.2, 2.1, in.petal);
+           mix (3.2, 2.1, petal);
 
   // Real backlit grass also glints: a blade is a waxy cylinder carrying an
   // anisotropic streak along its axis (Kajiya-Kay). The axis is near
@@ -875,7 +882,7 @@ fragment MoppeTemporalOutput undergrowth_fragment (
   // Petals are matte; the waxy axial streak belongs to the blades.
   color += u.sun_specular.rgb * glint * sun_visibility * steady *
            mix (0.40, 1.0, resolvable) * (0.30 + 0.70 * in.exposure) * 2.4 *
-           (1.0 - 0.78 * in.petal);
+           (1.0 - 0.78 * petal);
 
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);
@@ -1143,6 +1150,8 @@ fragment MoppeTemporalOutput sward_canopy_fragment (
     cast_light *
     moppe_cloud_transmission (in.world_pos, light, u.params.x, u.params.y) *
     canopy_direct;
+  const float3 canopy_scatter = moppe_canopy_scattered_sun (
+    in.forest_cover, cast_light, u.sun_diffuse.rgb, light.y);
   const MoppeSwardOpticalResponse response = moppe_sward_optical_response (
     in.tint,
     axis,
@@ -1154,7 +1163,7 @@ fragment MoppeTemporalOutput sward_canopy_fragment (
     view,
     u.sun_diffuse.rgb,
     u.sun_specular.rgb,
-    u.ambient.rgb * mix (1.0, 0.82, in.forest_cover),
+    u.ambient.rgb * mix (1.0, 0.82, in.forest_cover) + canopy_scatter,
     cast_light,
     sun_visibility);
   if (response.coverage < 0.002)
