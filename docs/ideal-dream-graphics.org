@@ -203,6 +203,29 @@ exists (GFX-042), fit the sheen-wave amplitude so the glide's temporal
 spectrum is continuous across the last rung. The matching conditions
 stop being hand-tuned constants.
 
+*** VERIFY GFX-046 Nested population hierarchy for distant forest
+
+The four-stratum stand volume now has a real spatial quotient rather than one
+fixed tessellation at every distance. A 24 m world patch has thirty-six 4 m
+children and nine exactly nested 8 m parents. Projected cell width selects the
+partition: child only above 3.5 scene pixels, both complete partitions from
+3.5 to 2 pixels, parent only below 2. During the overlap they divide one
+optical-depth claim before extinction and sample explicit density/moment mips;
+cells never retire independently. Stable input-grid compaction within each
+object group and one coalesced meshlet per patch/height-stratum keep local blend
+order and work topology quiet in motion.
+
+The rejected first version also added a 16 m parent. At the current 2.4 km
+reach the 8 m carrier remains about 2.4 pixels wide, so that rung was premature
+and made the benchmark worse. The accepted 4-to-8 tree measures 11.1703 ms
+median and 14.6704 ms p95 for the forest block, versus 11.0599 / 14.3039 ms for
+the fixed 4 m lattice. A 120-frame 42 m/s bloom-free aerial translation shows
+no event spike through 2.6 km, and a 90-frame actual forest ride shows no
+camera ring or restructuring. Keep VERIFY until longer player-controlled
+flight and varied resolutions exercise the same projected-error law. Extend
+the tree only when projected support demands it; do not add rungs to make the
+system look more sophisticated.
+
 *** VERIFY GFX-043 Frame instrumentation for distance rendering
 
 First slice landed: tools/frame-texture-profile maps grass-gradient

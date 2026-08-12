@@ -27,7 +27,7 @@ decide its sign.
 
 Usage:
   tools/frame-texture-profile OUT_DIR LABEL=CAPTURE_DIR [LABEL=DIR ...]
-        [--frames NAME[,NAME...]]
+        [--frames NAME[,NAME...]] [--max-distance METRES]
   tools/frame-texture-profile OUT_DIR --ride LABEL=FRAMES_DIR [...]
 
 Writes OUT_DIR/profile.csv, one overlay plot per analyzed frame, and
@@ -363,6 +363,7 @@ def strip_main(args) -> int:
 
 
 def main() -> int:
+    global MAX_DISTANCE_M
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("captures", nargs="+",
@@ -371,11 +372,18 @@ def main() -> int:
     parser.add_argument("--ride", action="store_true",
                         help="captures are directories of consecutive ride "
                              "frames with MOPPE_CAPTURE_AUX dumps")
+    parser.add_argument("--max-distance", type=float,
+                        default=MAX_DISTANCE_M, metavar="METRES",
+                        help="last true-depth band to analyze "
+                             f"(default: {MAX_DISTANCE_M:g})")
     parser.add_argument("--strip", metavar="D1,D2,...",
                         help="cut same-material patches at these true depths "
                              "from ONE frame (needs its aux dumps) and lay "
                              "them side by side")
     args = parser.parse_args()
+    if args.max_distance <= 2.5:
+        parser.error("--max-distance must exceed 2.5 metres")
+    MAX_DISTANCE_M = args.max_distance
     if args.strip:
         return strip_main(args)
     if args.ride:

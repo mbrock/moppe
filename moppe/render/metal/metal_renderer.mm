@@ -3512,11 +3512,11 @@ namespace moppe {
         const int stand_reach_x =
           std::max (1,
                     static_cast<int> (std::ceil (
-                      0.5f * MOPPE_FOREST_CANOPY_PATCH_METRES / step_x)));
+                      0.5f * MOPPE_FOREST_STAND_SUPPORT_METRES / step_x)));
         const int stand_reach_z =
           std::max (1,
                     static_cast<int> (std::ceil (
-                      0.5f * MOPPE_FOREST_CANOPY_PATCH_METRES / step_z)));
+                      0.5f * MOPPE_FOREST_STAND_SUPPORT_METRES / step_z)));
         for (MoppeForestInstance& tree : packed) {
           const int centre_x =
             static_cast<int> (std::floor (tree.root_height.x / step_x));

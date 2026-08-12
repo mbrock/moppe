@@ -101,18 +101,29 @@ acceleration-structure rebuilds.
   patch. Its LOD distance is three-dimensional, so a glider above a stand and
   a walker beside it do not receive different rules disguised as the same
   distance. Horizontal distance only bounds the finite work window.
-- Aggregate geometry is a world-stable four-metre lattice inside 24-metre
-  dispatch patches. Each tree contributes separately normalized Gaussian
-  footprints to four height strata: broad lower boughs, two middle bands, and
-  a narrow leader. Their areas sum to the same projected crown area that
-  produced closure. Each cell renders as one soft camera-facing ellipsoid
-  section (two triangles), with previous-frame camera orientation carried into
-  its motion vector. This is not a connected roof: grazing views receive
-  finite crown mass and parallax instead of a horizontal shelf, while top-down
-  gaps remain real. World-cell jitter breaks the visible sampling lattice
-  without making the result camera-relative. Height is band-limited over
-  twelve metres while fine closure controls local extinction. The same field
-  also drives terrain and undergrowth closure.
+- Aggregate geometry is a world-stable nested population lattice inside
+  24-metre dispatch patches. Each tree contributes separately normalized
+  Gaussian footprints to four height strata: broad lower boughs, two middle
+  bands, and a narrow leader. Their areas sum to the same projected crown area
+  that produced closure. A four-metre child partition is authoritative while
+  its cells exceed 3.5 scene pixels; between 3.5 and 2 pixels, all thirty-six
+  children and all nine eight-metre parents coexist; below 2 pixels, only the
+  parent partition remains. The handoff allocates retained optical depth
+  before Beer--Lambert extinction rather than alpha-fading two independently
+  complete forests. Parent and child sample explicit texture mip levels at
+  their own footprint.
+- Each cell renders as one soft camera-facing ellipsoid section (two
+  triangles), with previous-frame camera orientation carried into its motion
+  vector. This is not a connected roof: grazing views receive finite crown
+  mass and parallax instead of a horizontal shelf, while top-down gaps remain
+  real. World-cell jitter breaks the visible sampling lattice without making
+  the result camera-relative. Both complete partitions fit in one bounded
+  meshlet per crown stratum. Within each 64-patch object group, the object
+  stage preserves input-grid order and submits all surviving patches in one
+  stratum before the next; local translucent blend order therefore does not
+  change merely because another patch enters the frustum. The 24-metre
+  stand-support question remains independent of dispatch topology. The same
+  retained population field also drives terrain and undergrowth closure.
 - Before dispatch, the renderer conservatively filters the retained periodic
   population against the actual three-dimensional frustum and the earliest
   four-crown-pixel retirement bound. It sends compact projected-error records
@@ -199,6 +210,21 @@ recovered the cost:
 
 The volume therefore costs 1.2645 ms median over the one-layer stand while
 removing its horizontal-shelf failure. It is not a solved frame budget.
+The first spatial-hierarchy experiment then tried 4-, 8-, and 16-metre cells.
+It was rejected: at the renderer's current 2.4 km reach an eight-metre carrier
+is still about 2.4 scene pixels wide, so the last rung added work and temporal
+change before projected error justified it. A 4-to-8-metre hierarchy is the
+accepted current tree. The parent and complete child partitions are
+coalesced into one meshlet during transition rather than launching a second
+mesh workgroup per stratum. The final full run measured:
+
+- forest block: 11.1703 ms median, 11.7140 ms mean, 14.6704 ms p95;
+- all features: 26.059 ms median, 27.077 ms p95; and
+- 16 of 32 configurations still miss 60 Hz by median.
+
+Against the fixed four-metre volume this is a 0.1104 ms median and 0.3665 ms
+p95 forest-block increase, not a speedup claim. It bounds distant work while
+preserving the image and leaves the real frame-budget problem visible.
 Remaining performance work starts with a real trace of the surviving
 individual pass: register pressure/occupancy, half-precision *arithmetic*
 inside fragment shaders (not interfaces), hero-bough coalescing once the

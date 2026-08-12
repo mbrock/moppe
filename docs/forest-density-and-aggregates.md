@@ -65,18 +65,27 @@ leader -- and the four area weights sum to one tree's original projected crown
 area. The logged seed-123 field has zero saturated strata, so texture clamping
 does not conceal a conservation failure.
 
-The mesh stage reads this volume on a shared four-metre world lattice. One
-meshlet carries a 24-metre patch, but patch ownership is only a work partition:
-each cell is a soft camera-facing ellipsoid section and receives deterministic
+The mesh stage reads this volume through a nested four- and eight-metre world
+lattice. One meshlet carries a 24-metre patch and one height stratum; patch
+ownership is only a work partition. While a four-metre cell crosses from 3.5
+to 2 scene pixels, all thirty-six children and all nine parents coexist in the
+same meshlet and divide one optical-depth claim. Outside that interval only the
+live partition is rasterized. Both levels explicitly sample the retained
+moment and density mip chains at their own footprint. This is a small
+projected-error hierarchy over the actual population, not more distant tree
+objects and not a camera-centred density ring.
+
+Each cell is a soft camera-facing ellipsoid section and receives deterministic
 world-cell jitter. The previous camera orientation is used for its previous
 position, so temporal reconstruction sees billboard rotation rather than an
-unexplained appearance change. Four independently placed height bands give
-real parallax. This replaced both the old checkerboard of independent solids
-and the later connected-roof prototype, which remained a dark horizontal shelf
-from a glider. Fine closure remains available to the fragment. The
-representation is finite, world-anchored, and rendered without depth writes
-after explicit individuals, so it fills population gaps behind them without
-erasing nearer organisms or becoming an infinite sheet.
+unexplained appearance change. Stable object-stage compaction preserves local
+input-grid order for translucent patches. Four independently placed height
+bands give real parallax. This replaced both the old checkerboard of
+independent solids and the later connected-roof prototype, which remained a
+dark horizontal shelf from a glider. Fine closure remains available to the
+fragment. The representation is finite, world-anchored, and rendered without
+depth writes after explicit individuals, so it fills population gaps behind
+them without erasing nearer organisms or becoming an infinite sheet.
 
 The handoff is expressed in crown pixels, not tree height or camera altitude.
 The aggregate and individual transfer share the mean crown's
@@ -107,19 +116,26 @@ so a closed stand is sparse beneath while actual gaps remain occupiable.
 
 - Inspect the surviving dense individual pass in a GPU trace. Conservative
   candidate filtering and front-to-back submission are now deliberate, but
-  the ordinary temporal benchmark still attributes 11.0599 ms median to the
+  the ordinary temporal benchmark still attributes 11.1703 ms median to the
   forest block and the all-features frame is not within 60 Hz.
-- Replace the four fixed height strata with an error-selected brick hierarchy
-  only if longer glides show a real need. The current structure is a modest
-  population-volume rung, inspired by voxel foliage's principle but not a
+- The spatial hierarchy is deliberately only 4-to-8 metres. A trial 16-metre
+  rung was rejected because the current 2.4 km reach still presents an
+  eight-metre carrier at about 2.4 scene pixels. Add another spatial parent
+  only when a longer reach or smaller scene makes that parent necessary.
+  Likewise, replace the four fixed height strata with an error-selected
+  vertical hierarchy only when motion shows their separation becoming a real
+  problem. This is inspired by voxel foliage's quotient, not a claim to be a
   general voxel renderer. Do not reintroduce distant individual spikes to hide
   a weak aggregate.
 - Judge longer walking, jumping, and player-controlled gliding sequences. The
   current proof includes both a 90-frame actual forest ride and a 120-frame,
-  42 m/s translating aerial view with glare effects disabled. The aerial
-  pass's largest motion-compensated far-field residual is 0.0094 at about 142
-  metres, below the instrument's 0.04 sparse appearance-event threshold, but
-  those two paths cannot certify all play.
+  42 m/s translating aerial view with glare effects disabled. With the
+  profiler extended from its old grass-scale 200-metre ceiling to 2.6 km, the
+  hierarchy and fixed-lattice reference both peak at 0.0095
+  motion-compensated residual near 266 metres. The hierarchy adds no event
+  spike at its transition; its sparse-event fraction is 0.00594 versus 0.00583
+  at 0.9--1.4 km and 0.00441 versus 0.00414 at 1.4--2.0 km. Those two paths
+  still cannot certify all play.
 - Give hero trunks taper, roots, base flare, litter, and local ground
   agreement. Bark is now visible under indirect light and hero branchlets no
   longer form metre-wide shelves, but the near tree is still deliberately

@@ -14,13 +14,17 @@ struct ForestCanopyVaryings {
   float3 normal;
   float stand_closure;
   float layer [[flat]];
+  float lod_weight [[flat]];
+  float cell_side [[flat]];
+  float2 sample_xz [[flat]];
   float2 volume_uv;
   float2 motion [[center_no_perspective]];
 };
 
 struct ForestCanopyPayload {
   uint count;
-  uint2 patches[MOPPE_FOREST_CANOPY_OBJECT_THREADS];
+  uint patches[MOPPE_FOREST_CANOPY_OBJECT_THREADS];
+  float parent_fractions[MOPPE_FOREST_CANOPY_OBJECT_THREADS];
 };
 
 using ForestCanopyMesh = metal::mesh<ForestCanopyVaryings,
@@ -51,6 +55,21 @@ forest_canopy_cell_moments (float2 world_xz,
                            0.0,
                            float (canopy.get_num_mip_levels () - 1u));
   return canopy.sample (smp, world_xz * u.field.xy, level (lod));
+}
+
+static inline float4
+forest_canopy_cell_density (float2 world_xz,
+                            float footprint,
+                            constant MoppeForestCanopyUniforms& u,
+                            texture2d<float> density) {
+  constexpr sampler smp (
+    coord::normalized, address::repeat, filter::linear, mip_filter::linear);
+  const float2 texel =
+    1.0 / (u.field.xy * float2 (density.get_width (), density.get_height ()));
+  const float lod = clamp (log2 (max (footprint / max (texel.x, texel.y), 1.0)),
+                           0.0,
+                           float (density.get_num_mip_levels () - 1u));
+  return density.sample (smp, world_xz * u.field.xy, level (lod));
 }
 
 static inline float
@@ -109,6 +128,36 @@ forest_canopy_roof_height (float2 world_xz,
   return max (base_height + 0.8, forest_canopy_height (moments) + variation);
 }
 
+struct ForestCanopyLod {
+  uint fine_cells;
+  uint coarse_cells;
+  float fine_step;
+  float coarse_step;
+  float coarse_fraction;
+  uint active_levels;
+};
+
+static inline ForestCanopyLod forest_canopy_lod (float focal_pixels,
+                                                 float distance_metres) {
+  // A cell is an ensemble carrier, not an organism. Retain about two pixels
+  // across it before asking its parent to take over: that preserves an
+  // irregular population edge while avoiding thousands of sub-pixel cells in
+  // an aerial view. The broad one-pixel interval hands optical depth from a
+  // complete child partition to a complete parent partition; cells never
+  // disappear one by one.
+  const float base_pixels = MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES *
+                            focal_pixels / max (distance_metres, 1.0);
+  ForestCanopyLod lod;
+  if (base_pixels >= 3.5) {
+    lod = { 36u, 0u, 4.0, 8.0, 0.0, 1u };
+  } else if (base_pixels >= 2.0) {
+    lod = { 36u, 9u, 4.0, 8.0, 1.0 - smoothstep (2.0, 3.5, base_pixels), 2u };
+  } else {
+    lod = { 9u, 0u, 8.0, 8.0, 0.0, 1u };
+  }
+  return lod;
+}
+
 [[object]] void forest_canopy_object (
   object_data ForestCanopyPayload& payload [[payload]],
   metal::mesh_grid_properties mesh_grid,
@@ -117,14 +166,15 @@ forest_canopy_roof_height (float2 world_xz,
   constant MoppeForestCanopyUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
   texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
-  threadgroup atomic_uint survivors;
-  if (thread_id == 0u)
-    atomic_store_explicit (&survivors, 0u, metal::memory_order_relaxed);
-  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
+  threadgroup uint visible_patches[MOPPE_FOREST_CANOPY_OBJECT_THREADS];
+  threadgroup uint packed_patches[MOPPE_FOREST_CANOPY_OBJECT_THREADS];
+  threadgroup float packed_fractions[MOPPE_FOREST_CANOPY_OBJECT_THREADS];
 
   const uint patches_side = uint (u.tiles.z);
   const uint index = grid_pos.x;
   bool visible = index < patches_side * patches_side;
+  uint packed = 0u;
+  float parent_fraction = 0.0;
   const uint patch_x = index % max (patches_side, 1u);
   const uint patch_z = index / max (patches_side, 1u);
   if (visible) {
@@ -172,22 +222,40 @@ forest_canopy_roof_height (float2 world_xz,
                 abs (clip.y) < clip.w + clip_radius.y;
     }
     if (visible) {
-      const uint slot =
-        atomic_fetch_add_explicit (&survivors, 1u, metal::memory_order_relaxed);
       // Mesh strata use ordinary alpha blending and must arrive back to
       // front. Pack which side of the stand the camera occupies into a spare
       // coordinate bit; patch coordinates never approach that range.
       const bool camera_above =
         u.camera_pos.y >= centre_world.y + 0.5 * crown_height;
-      payload.patches[slot] =
-        uint2 (patch_x | (camera_above ? 0x80000000u : 0u), patch_z);
+      const ForestCanopyLod lod = forest_canopy_lod (focal, distance);
+      // A reach of at most 2.4 km needs fewer than 1024 patches per side.
+      // Encode the object stage's error decision once: bits 28..29 select
+      // fine, fine/parent transition, or parent. The exact optical-depth
+      // share travels separately; quantizing it made broad transition stands
+      // measurably darker. Mesh work never repeats the terrain, moment,
+      // distance, and projection reads that made the decision.
+      const uint mode = lod.active_levels > 1u ? 1u
+                        : lod.fine_step > 4.0  ? 2u
+                                               : 0u;
+      parent_fraction = lod.coarse_fraction;
+      packed = patch_x | (patch_z << 10u) | (mode << 28u) |
+               (camera_above ? 0x80000000u : 0u);
     }
   }
 
+  visible_patches[thread_id] = visible ? 1u : 0u;
+  packed_patches[thread_id] = packed;
+  packed_fractions[thread_id] = parent_fraction;
   threadgroup_barrier (metal::mem_flags::mem_threadgroup);
   if (thread_id == 0u) {
-    payload.count =
-      atomic_load_explicit (&survivors, metal::memory_order_relaxed);
+    payload.count = 0u;
+    for (uint source = 0u; source < MOPPE_FOREST_CANOPY_OBJECT_THREADS;
+         ++source)
+      if (visible_patches[source] != 0u) {
+        payload.patches[payload.count] = packed_patches[source];
+        payload.parent_fractions[payload.count] = packed_fractions[source];
+        ++payload.count;
+      }
     mesh_grid.set_threadgroups_per_grid (
       uint3 (payload.count * MOPPE_FOREST_CANOPY_DENSITY_SLICES, 1, 1));
   }
@@ -197,24 +265,29 @@ static inline ForestCanopyVaryings
 forest_canopy_vertex (uint vertex_index,
                       uint2 patch,
                       uint layer,
+                      ForestCanopyLod lod,
                       constant MoppeForestCanopyUniforms& u,
                       texture2d<float, access::read> heights,
                       texture2d<float> canopy) {
   const int2 world_patch = int2 (u.tiles.xy) + int2 (patch);
   const float2 patch_origin = float2 (world_patch) * u.tiles.w;
-  const uint cell = vertex_index / 4u;
+  const uint cell_slot = vertex_index / 4u;
   const uint local = vertex_index % 4u;
-  const uint cell_x = cell % MOPPE_FOREST_CANOPY_GRID_CELLS;
-  const uint cell_z = cell / MOPPE_FOREST_CANOPY_GRID_CELLS;
+  const bool coarse = cell_slot >= lod.fine_cells;
+  const uint cell = coarse ? cell_slot - lod.fine_cells : cell_slot;
+  const float cell_side = coarse ? lod.coarse_step : lod.fine_step;
+  const uint cells_side = uint (round (u.tiles.w / cell_side));
+  const uint cell_x = cell % cells_side;
+  const uint cell_z = cell / cells_side;
   const float2 sample_xz =
-    patch_origin + (float2 (cell_x, cell_z) + 0.5) * u.lod.y;
+    patch_origin + (float2 (cell_x, cell_z) + 0.5) * cell_side;
 
   const float4 moments =
-    forest_canopy_cell_moments (sample_xz, u.lod.y, u, canopy);
+    forest_canopy_cell_moments (sample_xz, cell_side, u, canopy);
   const float ground = forest_canopy_ground (sample_xz, u, heights);
   const float base_height = max (1.8, 0.28 * moments.g * u.field.z);
   const float crown_height =
-    forest_canopy_roof_height (sample_xz, 3.0 * u.lod.y, u, canopy);
+    forest_canopy_roof_height (sample_xz, 3.0 * cell_side, u, canopy);
   const float layer_lower =
     float (layer) / float (MOPPE_FOREST_CANOPY_DENSITY_SLICES);
   const float layer_upper =
@@ -223,14 +296,13 @@ forest_canopy_vertex (uint vertex_index,
   const float band_upper = mix (base_height, crown_height, layer_upper);
   const float band_centre = 0.5 * (band_lower + band_upper);
   const float vertical_radius = 0.66 * max (band_upper - band_lower, 0.6);
-  const float horizontal_radius = 0.72 * u.lod.y;
+  const float horizontal_radius = 0.72 * cell_side;
 
-  const int2 world_cell =
-    world_patch * MOPPE_FOREST_CANOPY_GRID_CELLS + int2 (cell_x, cell_z);
+  const int2 world_cell = int2 (floor (sample_xz / cell_side));
   const uint seed =
     moppe_forest_mix (uint (world_cell.x) * 73856093u ^
                       uint (world_cell.y) * 19349663u ^ layer * 83492791u);
-  const float2 jitter = u.lod.y * 0.22 *
+  const float2 jitter = cell_side * 0.22 *
                         float2 (moppe_forest_hash (seed, 29u) - 0.5,
                                 moppe_forest_hash (seed, 31u) - 0.5);
   const float2 world_xz = sample_xz + jitter;
@@ -267,8 +339,15 @@ forest_canopy_vertex (uint vertex_index,
   result.normal =
     normalize (float3 (0.35 * volume_uv.x, 1.0, 0.35 * volume_uv.y));
   result.stand_closure =
-    forest_canopy_cell_moments (sample_xz, u.tiles.w, u, canopy).r;
+    forest_canopy_cell_moments (
+      sample_xz, MOPPE_FOREST_STAND_SUPPORT_METRES, u, canopy)
+      .r;
   result.layer = float (layer);
+  result.lod_weight = lod.coarse_cells == 0u ? 1.0
+                      : coarse               ? lod.coarse_fraction
+                                             : 1.0 - lod.coarse_fraction;
+  result.cell_side = cell_side;
+  result.sample_xz = sample_xz;
   result.volume_uv = volume_uv;
   result.motion =
     moppe_motion_vector (u.unjittered_view_proj * float4 (current, 1.0),
@@ -285,25 +364,38 @@ forest_canopy_vertex (uint vertex_index,
   constant MoppeForestCanopyUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
   texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
-  if (thread_id == 0u)
-    out.set_primitive_count (MOPPE_FOREST_CANOPY_MESH_PRIMITIVES);
-  const uint ordinal = mesh_id % MOPPE_FOREST_CANOPY_DENSITY_SLICES;
-  const uint patch_index = mesh_id / MOPPE_FOREST_CANOPY_DENSITY_SLICES;
-  const uint2 packed_patch =
-    payload.patches[min (patch_index, payload.count - 1u)];
-  const bool camera_above = (packed_patch.x & 0x80000000u) != 0u;
+  // Draw each crown stratum across the complete local population before
+  // advancing to the next; stable compaction keeps blend order fixed as
+  // patches enter and leave the projected work set.
+  const uint ordinal = mesh_id / payload.count;
+  const uint patch_index = mesh_id % payload.count;
+  const uint packed_patch = payload.patches[patch_index];
+  const bool camera_above = (packed_patch & 0x80000000u) != 0u;
+  const uint mode = (packed_patch >> 28u) & 3u;
   const uint layer =
     camera_above ? ordinal : MOPPE_FOREST_CANOPY_DENSITY_SLICES - 1u - ordinal;
-  const uint2 patch = uint2 (packed_patch.x & 0x7fffffffu, packed_patch.y);
-  for (uint vertex_index = thread_id;
-       vertex_index < MOPPE_FOREST_CANOPY_MESH_VERTICES;
+  const uint2 patch =
+    uint2 (packed_patch & 0x3ffu, (packed_patch >> 10u) & 0x3ffu);
+  const float parent_fraction = payload.parent_fractions[patch_index];
+  ForestCanopyLod lod;
+  if (mode == 0u)
+    lod = { 36u, 0u, 4.0, 8.0, 0.0, 1u };
+  else if (mode == 1u)
+    lod = { 36u, 9u, 4.0, 8.0, parent_fraction, 2u };
+  else
+    lod = { 9u, 0u, 8.0, 8.0, 0.0, 1u };
+  const uint cell_count = lod.fine_cells + lod.coarse_cells;
+  const uint vertex_count = 4u * cell_count;
+  const uint primitive_count = 2u * cell_count;
+  if (thread_id == 0u)
+    out.set_primitive_count (primitive_count);
+  for (uint vertex_index = thread_id; vertex_index < vertex_count;
        vertex_index += MOPPE_FOREST_CANOPY_MESH_THREADS)
-    out.set_vertex (
-      vertex_index,
-      forest_canopy_vertex (vertex_index, patch, layer, u, heights, canopy));
+    out.set_vertex (vertex_index,
+                    forest_canopy_vertex (
+                      vertex_index, patch, layer, lod, u, heights, canopy));
 
-  for (uint primitive = thread_id;
-       primitive < MOPPE_FOREST_CANOPY_MESH_PRIMITIVES;
+  for (uint primitive = thread_id; primitive < primitive_count;
        primitive += MOPPE_FOREST_CANOPY_MESH_THREADS) {
     const uint cell = primitive / 2u;
     const uint triangle = primitive & 1u;
@@ -337,10 +429,8 @@ fragment MoppeTemporalOutput forest_canopy_fragment (
   const float closure = moments.r;
   const float support = moppe_forest_stand_support (in.stand_closure);
   float3 normal = normalize (in.normal);
-  constexpr sampler density_smp (
-    coord::normalized, address::repeat, filter::linear, mip_filter::linear);
   const float4 layers =
-    density.sample (density_smp, in.world_pos.xz * u.field.xy);
+    forest_canopy_cell_density (in.sample_xz, in.cell_side, u, density);
   const uint layer =
     min (uint (in.layer + 0.5), uint (MOPPE_FOREST_CANOPY_DENSITY_SLICES - 1));
   // The retained texture stores bounded optical depth in four vertical
@@ -360,7 +450,7 @@ fragment MoppeTemporalOutput forest_canopy_fragment (
   // correction per element so a side view gains population depth without
   // turning the first encountered cell into an opaque wall.
   const float incidence = max (abs (eye.y), 0.45);
-  const float path_depth = vertical_depth / incidence;
+  const float path_depth = vertical_depth / incidence * in.lod_weight;
   const float coverage = 1.0 - exp (-path_depth);
   const float alpha = aggregate * edge * support * coverage * shape;
   if (alpha < 0.012 || closure < 0.035)

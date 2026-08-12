@@ -293,12 +293,14 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 #define MOPPE_FOREST_MESH_PRIMITIVES 128
 
 // One aggregate meshlet carries one height stratum of a 24-metre population
-// patch. Each four-metre sample becomes a soft ellipsoid impostor: four
-// vertices and two faces remain porous from grazing views without rebuilding a
-// connected roof. Four population-derived vertical density slices preserve
-// crown volume after individual triangles become unrepeatable.
+// patch. Projected error selects a four- or eight-metre world cell; during the
+// transition one meshlet carries both complete nested partitions and
+// allocates optical depth between them. A soft ellipsoid impostor needs four
+// vertices and two faces. Four vertical density slices preserve crown volume
+// after individual triangles become unrepeatable.
 #define MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES 6.0f
 #define MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES 32.0f
+#define MOPPE_FOREST_STAND_SUPPORT_METRES 24.0f
 #define MOPPE_FOREST_CANOPY_OBJECT_THREADS 64
 #define MOPPE_FOREST_CANOPY_GRID_CELLS 6
 #define MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES 4.0f
@@ -306,8 +308,11 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
   (MOPPE_FOREST_CANOPY_GRID_CELLS * MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES)
 #define MOPPE_FOREST_CANOPY_CELL_COUNT                                         \
   (MOPPE_FOREST_CANOPY_GRID_CELLS * MOPPE_FOREST_CANOPY_GRID_CELLS)
-#define MOPPE_FOREST_CANOPY_MESH_VERTICES (4 * MOPPE_FOREST_CANOPY_CELL_COUNT)
-#define MOPPE_FOREST_CANOPY_MESH_PRIMITIVES (2 * MOPPE_FOREST_CANOPY_CELL_COUNT)
+#define MOPPE_FOREST_CANOPY_SECOND_CELL_COUNT 9
+#define MOPPE_FOREST_CANOPY_MESH_VERTICES                                      \
+  (4 * (MOPPE_FOREST_CANOPY_CELL_COUNT + MOPPE_FOREST_CANOPY_SECOND_CELL_COUNT))
+#define MOPPE_FOREST_CANOPY_MESH_PRIMITIVES                                    \
+  (2 * (MOPPE_FOREST_CANOPY_CELL_COUNT + MOPPE_FOREST_CANOPY_SECOND_CELL_COUNT))
 #define MOPPE_FOREST_CANOPY_MESH_THREADS 128
 #define MOPPE_FOREST_CANOPY_DENSITY_SLICES 4
 #define MOPPE_FOREST_CANOPY_STRATUM_DEPTH_RANGE 4.0f
@@ -315,7 +320,7 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 struct MOPPE_SHADER_ALIGN MoppeForestInstance {
   MoppeFloat4 root_height; // xyz=root in metres, w=height in metres
   MoppeFloat4 up_radius;   // xyz=ground normal, w=crown radius in metres
-  MoppeFloat4 ecology;     // x=cover, y=moisture, z=24 m stand closure
+  MoppeFloat4 ecology;     // x=cover, y=moisture, z=stand closure
   MoppeUint4 identity;     // x=seed, y=species, z=age, w=reserved
 };
 
