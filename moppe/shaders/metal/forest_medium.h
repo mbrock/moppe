@@ -26,19 +26,87 @@ inline float3 moppe_forest_conifer_tint (float moisture, float closure) {
                                                 0.90 + 0.16 * closure);
 }
 
+struct MoppeForestEnsembleLight {
+  float3 radiance;
+  float coverage;
+};
+
+// The resolved crown and the stand quotient must converge to one material,
+// not merely to two greens that look related. This is the ensemble limit of
+// the conifer leaf path: one display-space population tint, a normal
+// distribution broader than a solid roof, wrapped direct light, and the
+// same restrained chlorophyll transmission lobe. Callers decide how much
+// optical depth the view ray accumulated; this function decides what that
+// first visible foliage presents.
+inline MoppeForestEnsembleLight
+moppe_forest_distribution_light (float3 leaf_display,
+                                 float3 distribution_normal,
+                                 float3 sun_dir,
+                                 float3 to_eye,
+                                 float3 sun_diffuse,
+                                 float3 ambient,
+                                 float sun_visibility,
+                                 float coverage,
+                                 float grain) {
+  MoppeForestEnsembleLight response;
+  response.coverage = saturate (coverage);
+  const float3 normal = normalize (distribution_normal);
+  const float3 leaf = moppe_srgb (leaf_display);
+  const float wrap = saturate ((dot (normal, sun_dir) + 0.30) / 1.30);
+  response.radiance = leaf * grain *
+                      (moppe_hemisphere_light (ambient, normal) * 0.68 +
+                       sun_diffuse * wrap * sun_visibility * 0.68);
+
+  const float back =
+    pow (max (dot (-normal, sun_dir), 0.0), 1.4) * sun_visibility;
+  const float toward = saturate (dot (to_eye, -sun_dir));
+  response.radiance += sqrt (leaf) * sun_diffuse * float3 (0.92, 1.0, 0.28) *
+                       back * (0.08 + 0.26 * toward * toward);
+  return response;
+}
+
+inline MoppeForestEnsembleLight
+moppe_forest_ensemble_light (float moisture,
+                             float closure,
+                             float3 distribution_normal,
+                             float3 sun_dir,
+                             float3 to_eye,
+                             float3 sun_diffuse,
+                             float3 ambient,
+                             float sun_visibility,
+                             float coverage,
+                             float grain) {
+  return moppe_forest_distribution_light (
+    moppe_forest_conifer_tint (moisture, closure),
+    distribution_normal,
+    sun_dir,
+    to_eye,
+    sun_diffuse,
+    ambient,
+    sun_visibility,
+    coverage,
+    grain);
+}
+
 inline float moppe_forest_aggregate_fraction (float focal_pixels,
                                               float distance_metres) {
   const float crown_pixels = MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES *
                              focal_pixels / max (distance_metres, 1.0);
-  // The quotient begins while one eight-metre reconstruction cell still has
-  // a repeatable low-frequency footprint. It becomes authoritative before a
-  // mean crown reaches its four-to-five-pixel individual retirement band, so
-  // closure is already present rather than arriving after the spikes leave.
-  return 1.0 - smoothstep (3.5, 16.0, crown_pixels);
+  // Stand-scale closure is already repeatable while a crown is in the
+  // bundled-bough register. Let the quotient fill the unrepresented gaps
+  // behind those resolved silhouettes instead of waiting until the forest
+  // has become a regiment of porous cones.
+  return 1.0 - smoothstep (8.0, 32.0, crown_pixels);
 }
 
-inline float moppe_forest_aggregate_fraction_pixels (float crown_pixels) {
-  return 1.0 - smoothstep (3.5, 16.0, crown_pixels);
+inline float moppe_forest_identity_transfer (float crown_pixels) {
+  // This is deliberately the same interval as the aggregate arrival above.
+  // In a closed stand, redundant individual identity yields exactly as its
+  // population representation becomes available. A separate later transfer
+  // left a conspicuous register in which rows of solid cone proxies sat in
+  // front of an already complete canopy. Stand support still keeps isolated
+  // trees fully individual.
+  return 1.0 - smoothstep (8.0, 32.0, crown_pixels);
 }
 
 inline float moppe_forest_stand_support (float closure) {

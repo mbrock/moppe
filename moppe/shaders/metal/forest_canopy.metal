@@ -1,7 +1,10 @@
 // Stand-scale quotient of the actual retained forest population. The RGBA
 // moment field is rasterized once from ForestInstances: closure, mean crown
-// height, upper crown height, and mean moisture. Geometry is only the finite
-// outer roof and exposed stand boundary; interior work-cell walls vanish.
+// height, upper crown height, and mean moisture. A second field divides the
+// same conserved optical depth among four crown-height strata. Geometry is a
+// sparse lattice of soft ellipsoid impostors rather than a connected top
+// sheet, so flying beside a stand sees crown mass instead of a horizontal
+// shelf.
 
 #include "forest_medium.h"
 
@@ -10,8 +13,8 @@ struct ForestCanopyVaryings {
   float3 world_pos;
   float3 normal;
   float stand_closure;
-  float boundary;
-  float side;
+  float layer [[flat]];
+  float2 volume_uv;
   float2 motion [[center_no_perspective]];
 };
 
@@ -74,6 +77,20 @@ static inline float forest_canopy_height (float4 moments) {
   const float upper_height =
     moments.b * MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES;
   return mix (mean_height, upper_height, 0.58);
+}
+
+static inline float forest_canopy_variance_grain (float3 world_pos,
+                                                  float footprint_metres) {
+  // Crown-scale variance retires as its carrier becomes sub-pixel while a
+  // stand-scale octave survives. Both phases are fixed in world space and
+  // selected by projected footprint rather than camera radius.
+  const float crown_visible = 1.0 - smoothstep (0.75, 4.0, footprint_metres);
+  const float crown =
+    moppe_value_noise (world_pos.xz * 0.17 + float2 (13.1, 4.7));
+  const float stand =
+    moppe_value_noise (world_pos.xz * 0.047 + float2 (2.9, 31.3));
+  return (1.0 + 0.34 * (crown - 0.5) * crown_visible) *
+         (1.0 + 0.22 * (stand - 0.5));
 }
 
 static inline float
@@ -157,7 +174,13 @@ forest_canopy_roof_height (float2 world_xz,
     if (visible) {
       const uint slot =
         atomic_fetch_add_explicit (&survivors, 1u, metal::memory_order_relaxed);
-      payload.patches[slot] = uint2 (patch_x, patch_z);
+      // Mesh strata use ordinary alpha blending and must arrive back to
+      // front. Pack which side of the stand the camera occupies into a spare
+      // coordinate bit; patch coordinates never approach that range.
+      const bool camera_above =
+        u.camera_pos.y >= centre_world.y + 0.5 * crown_height;
+      payload.patches[slot] =
+        uint2 (patch_x | (camera_above ? 0x80000000u : 0u), patch_z);
     }
   }
 
@@ -165,107 +188,88 @@ forest_canopy_roof_height (float2 world_xz,
   if (thread_id == 0u) {
     payload.count =
       atomic_load_explicit (&survivors, metal::memory_order_relaxed);
-    mesh_grid.set_threadgroups_per_grid (uint3 (payload.count, 1, 1));
+    mesh_grid.set_threadgroups_per_grid (
+      uint3 (payload.count * MOPPE_FOREST_CANOPY_DENSITY_SLICES, 1, 1));
   }
-}
-
-static inline float2 forest_canopy_side_point (uint side, float along) {
-  if (side == 0u)
-    return float2 (0.0, along);
-  if (side == 1u)
-    return float2 (1.0, along);
-  if (side == 2u)
-    return float2 (along, 0.0);
-  return float2 (along, 1.0);
-}
-
-static inline float2 forest_canopy_side_outward (uint side) {
-  return float2 (side == 0u   ? -1.0
-                 : side == 1u ? 1.0
-                              : 0.0,
-                 side == 2u   ? -1.0
-                 : side == 3u ? 1.0
-                              : 0.0);
 }
 
 static inline ForestCanopyVaryings
 forest_canopy_vertex (uint vertex_index,
                       uint2 patch,
+                      uint layer,
                       constant MoppeForestCanopyUniforms& u,
                       texture2d<float, access::read> heights,
                       texture2d<float> canopy) {
   const int2 world_patch = int2 (u.tiles.xy) + int2 (patch);
   const float2 patch_origin = float2 (world_patch) * u.tiles.w;
-  float2 world_xz;
-  bool bottom = false;
-  float boundary = 1.0;
-  float side_face = 0.0;
-  float3 normal = float3 (0.0, 1.0, 0.0);
-  if (vertex_index < MOPPE_FOREST_CANOPY_ROOF_VERTICES) {
-    const uint grid_x = vertex_index % MOPPE_FOREST_CANOPY_GRID_VERTICES;
-    const uint grid_z = vertex_index / MOPPE_FOREST_CANOPY_GRID_VERTICES;
-    world_xz = patch_origin + float2 (grid_x, grid_z) * u.lod.y;
-  } else {
-    const uint local = vertex_index - MOPPE_FOREST_CANOPY_ROOF_VERTICES;
-    const uint side = local / (2u * MOPPE_FOREST_CANOPY_GRID_VERTICES);
-    const uint side_local = local % (2u * MOPPE_FOREST_CANOPY_GRID_VERTICES);
-    bottom = side_local >= MOPPE_FOREST_CANOPY_GRID_VERTICES;
-    const uint along_index = side_local % MOPPE_FOREST_CANOPY_GRID_VERTICES;
-    const float along =
-      float (along_index) / float (MOPPE_FOREST_CANOPY_GRID_CELLS);
-    world_xz =
-      patch_origin + forest_canopy_side_point (side, along) * u.tiles.w;
-    const float2 outward = forest_canopy_side_outward (side);
-    const float2 inside_xz = world_xz - 0.5 * u.lod.y * outward;
-    const float2 outside_xz = world_xz + 0.5 * u.lod.y * outward;
-    const float4 inside =
-      forest_canopy_cell_moments (inside_xz, u.lod.y, u, canopy);
-    const float4 neighbour =
-      forest_canopy_cell_moments (outside_xz, u.lod.y, u, canopy);
-    const float height = forest_canopy_height (inside);
-    const float neighbour_height = forest_canopy_height (neighbour);
-    const float exposure =
-      max (inside.r - neighbour.r,
-           0.35 * saturate ((height - neighbour_height) / max (height, 1.0)));
-    boundary = smoothstep (0.025, 0.30, exposure);
-    side_face = 1.0;
-    normal = normalize (float3 (outward.x, 0.16, outward.y));
-  }
+  const uint cell = vertex_index / 4u;
+  const uint local = vertex_index % 4u;
+  const uint cell_x = cell % MOPPE_FOREST_CANOPY_GRID_CELLS;
+  const uint cell_z = cell / MOPPE_FOREST_CANOPY_GRID_CELLS;
+  const float2 sample_xz =
+    patch_origin + (float2 (cell_x, cell_z) + 0.5) * u.lod.y;
 
   const float4 moments =
-    forest_canopy_cell_moments (world_xz, u.lod.y, u, canopy);
-  const float ground = forest_canopy_ground (world_xz, u, heights);
+    forest_canopy_cell_moments (sample_xz, u.lod.y, u, canopy);
+  const float ground = forest_canopy_ground (sample_xz, u, heights);
   const float base_height = max (1.8, 0.28 * moments.g * u.field.z);
-  // Adjacent quads share these samples, including across patch seams. The
-  // reconstructed roof is therefore one world-space field rather than one
-  // little solid per aggregation cell.
   const float crown_height =
-    forest_canopy_roof_height (world_xz, 3.0 * u.lod.y, u, canopy);
-  if (vertex_index < MOPPE_FOREST_CANOPY_ROOF_VERTICES) {
-    const float step = u.lod.y;
-    const float hx0 = forest_canopy_roof_height (
-      world_xz - float2 (step, 0.0), 3.0 * step, u, canopy);
-    const float hx1 = forest_canopy_roof_height (
-      world_xz + float2 (step, 0.0), 3.0 * step, u, canopy);
-    const float hz0 = forest_canopy_roof_height (
-      world_xz - float2 (0.0, step), 3.0 * step, u, canopy);
-    const float hz1 = forest_canopy_roof_height (
-      world_xz + float2 (0.0, step), 3.0 * step, u, canopy);
-    normal = normalize (float3 (hx0 - hx1, 2.0 * step, hz0 - hz1));
-  }
-  float3 rest = float3 (
-    world_xz.x, ground + (bottom ? base_height : crown_height), world_xz.y);
+    forest_canopy_roof_height (sample_xz, 3.0 * u.lod.y, u, canopy);
+  const float layer_lower =
+    float (layer) / float (MOPPE_FOREST_CANOPY_DENSITY_SLICES);
+  const float layer_upper =
+    float (layer + 1u) / float (MOPPE_FOREST_CANOPY_DENSITY_SLICES);
+  const float band_lower = mix (base_height, crown_height, layer_lower);
+  const float band_upper = mix (base_height, crown_height, layer_upper);
+  const float band_centre = 0.5 * (band_lower + band_upper);
+  const float vertical_radius = 0.66 * max (band_upper - band_lower, 0.6);
+  const float horizontal_radius = 0.72 * u.lod.y;
+
+  const int2 world_cell =
+    world_patch * MOPPE_FOREST_CANOPY_GRID_CELLS + int2 (cell_x, cell_z);
+  const uint seed =
+    moppe_forest_mix (uint (world_cell.x) * 73856093u ^
+                      uint (world_cell.y) * 19349663u ^ layer * 83492791u);
+  const float2 jitter = u.lod.y * 0.22 *
+                        float2 (moppe_forest_hash (seed, 29u) - 0.5,
+                                moppe_forest_hash (seed, 31u) - 0.5);
+  const float2 world_xz = sample_xz + jitter;
+  const float2 volume_uv =
+    float2 (local == 0u || local == 2u ? -1.0 : 1.0, local < 2u ? -1.0 : 1.0);
+  const float3 centre = float3 (world_xz.x, ground + band_centre, world_xz.y);
+  const float3 to_eye = normalize (u.camera_pos.xyz - centre);
+  const float3 previous_to_eye = normalize (u.previous_camera_pos.xyz - centre);
+  const float3 camera_right = normalize (cross (
+    abs (to_eye.y) > 0.96 ? float3 (0.0, 0.0, 1.0) : float3 (0.0, 1.0, 0.0),
+    to_eye));
+  const float3 camera_up = normalize (cross (to_eye, camera_right));
+  const float3 previous_right =
+    normalize (cross (abs (previous_to_eye.y) > 0.96 ? float3 (0.0, 0.0, 1.0)
+                                                     : float3 (0.0, 1.0, 0.0),
+                      previous_to_eye));
+  const float3 previous_up =
+    normalize (cross (previous_to_eye, previous_right));
+  const float up_radius =
+    mix (vertical_radius, horizontal_radius, abs (to_eye.y));
+  const float previous_up_radius =
+    mix (vertical_radius, horizontal_radius, abs (previous_to_eye.y));
+  float3 rest = centre + camera_right * volume_uv.x * horizontal_radius +
+                camera_up * volume_uv.y * up_radius;
+  const float3 previous_rest =
+    centre + previous_right * volume_uv.x * horizontal_radius +
+    previous_up * volume_uv.y * previous_up_radius;
   const float3 current = moppe_wind (rest, 0.34, 0.025, u.params.x);
-  const float3 previous = moppe_wind (rest, 0.34, 0.025, u.temporal.z);
+  const float3 previous = moppe_wind (previous_rest, 0.34, 0.025, u.temporal.z);
 
   ForestCanopyVaryings result;
   result.position = u.view_proj * float4 (current, 1.0);
   result.world_pos = current;
-  result.normal = normal;
+  result.normal =
+    normalize (float3 (0.35 * volume_uv.x, 1.0, 0.35 * volume_uv.y));
   result.stand_closure =
-    forest_canopy_cell_moments (world_xz, u.tiles.w, u, canopy).r;
-  result.boundary = boundary;
-  result.side = side_face;
+    forest_canopy_cell_moments (sample_xz, u.tiles.w, u, canopy).r;
+  result.layer = float (layer);
+  result.volume_uv = volume_uv;
   result.motion =
     moppe_motion_vector (u.unjittered_view_proj * float4 (current, 1.0),
                          u.previous_view_proj * float4 (previous, 1.0),
@@ -283,38 +287,31 @@ forest_canopy_vertex (uint vertex_index,
   texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
   if (thread_id == 0u)
     out.set_primitive_count (MOPPE_FOREST_CANOPY_MESH_PRIMITIVES);
-  const uint2 patch = payload.patches[min (mesh_id, payload.count - 1u)];
-  if (thread_id < MOPPE_FOREST_CANOPY_MESH_VERTICES)
+  const uint ordinal = mesh_id % MOPPE_FOREST_CANOPY_DENSITY_SLICES;
+  const uint patch_index = mesh_id / MOPPE_FOREST_CANOPY_DENSITY_SLICES;
+  const uint2 packed_patch =
+    payload.patches[min (patch_index, payload.count - 1u)];
+  const bool camera_above = (packed_patch.x & 0x80000000u) != 0u;
+  const uint layer =
+    camera_above ? ordinal : MOPPE_FOREST_CANOPY_DENSITY_SLICES - 1u - ordinal;
+  const uint2 patch = uint2 (packed_patch.x & 0x7fffffffu, packed_patch.y);
+  for (uint vertex_index = thread_id;
+       vertex_index < MOPPE_FOREST_CANOPY_MESH_VERTICES;
+       vertex_index += MOPPE_FOREST_CANOPY_MESH_THREADS)
     out.set_vertex (
-      thread_id, forest_canopy_vertex (thread_id, patch, u, heights, canopy));
+      vertex_index,
+      forest_canopy_vertex (vertex_index, patch, layer, u, heights, canopy));
 
-  if (thread_id < MOPPE_FOREST_CANOPY_MESH_PRIMITIVES) {
-    uint3 indices;
-    if (thread_id < MOPPE_FOREST_CANOPY_ROOF_PRIMITIVES) {
-      const uint cell = thread_id / 2u;
-      const uint triangle = thread_id & 1u;
-      const uint cell_x = cell % MOPPE_FOREST_CANOPY_GRID_CELLS;
-      const uint cell_z = cell / MOPPE_FOREST_CANOPY_GRID_CELLS;
-      const uint base = cell_z * MOPPE_FOREST_CANOPY_GRID_VERTICES + cell_x;
-      indices =
-        triangle == 0u
-          ? uint3 (base, base + MOPPE_FOREST_CANOPY_GRID_VERTICES, base + 1u)
-          : uint3 (base + 1u,
-                   base + MOPPE_FOREST_CANOPY_GRID_VERTICES,
-                   base + MOPPE_FOREST_CANOPY_GRID_VERTICES + 1u);
-    } else {
-      const uint local = thread_id - MOPPE_FOREST_CANOPY_ROOF_PRIMITIVES;
-      const uint side = local / (2u * MOPPE_FOREST_CANOPY_GRID_CELLS);
-      const uint side_local = local % (2u * MOPPE_FOREST_CANOPY_GRID_CELLS);
-      const uint segment = side_local / 2u;
-      const uint triangle = side_local & 1u;
-      const uint top = MOPPE_FOREST_CANOPY_ROOF_VERTICES +
-                       side * 2u * MOPPE_FOREST_CANOPY_GRID_VERTICES + segment;
-      const uint bottom = top + MOPPE_FOREST_CANOPY_GRID_VERTICES;
-      indices = triangle == 0u ? uint3 (top, top + 1u, bottom + 1u)
-                               : uint3 (top, bottom + 1u, bottom);
-    }
-    const uint slot = thread_id * 3u;
+  for (uint primitive = thread_id;
+       primitive < MOPPE_FOREST_CANOPY_MESH_PRIMITIVES;
+       primitive += MOPPE_FOREST_CANOPY_MESH_THREADS) {
+    const uint cell = primitive / 2u;
+    const uint triangle = primitive & 1u;
+    const uint base = cell * 4u;
+    const uint3 indices = triangle == 0u
+                            ? uint3 (base, base + 1u, base + 2u)
+                            : uint3 (base + 1u, base + 3u, base + 2u);
+    const uint slot = primitive * 3u;
     out.set_index (slot + 0u, indices.x);
     out.set_index (slot + 1u, indices.y);
     out.set_index (slot + 2u, indices.z);
@@ -323,9 +320,9 @@ forest_canopy_vertex (uint vertex_index,
 
 fragment MoppeTemporalOutput forest_canopy_fragment (
   ForestCanopyVaryings in [[stage_in]],
-  bool front_facing [[front_facing]],
   constant MoppeForestCanopyUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
+  texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]],
+  texture2d<float> density [[texture (MOPPE_TEX_FOREST_DENSITY)]]) {
   const float3 to_eye = u.camera_pos.xyz - in.world_pos;
   const float distance = length (to_eye);
   const float3 eye = to_eye / max (distance, 0.001);
@@ -338,57 +335,57 @@ fragment MoppeTemporalOutput forest_canopy_fragment (
                       length (in.world_pos.xz - u.camera_pos.xz));
   const float4 moments = forest_canopy_moments (in.world_pos.xz, u, canopy);
   const float closure = moments.r;
-  const float support = (in.side > 0.5 ? in.boundary : 1.0) *
-                        moppe_forest_stand_support (in.stand_closure);
-  float3 normal = normalize (front_facing ? in.normal : -in.normal);
-  // The retained field stores vertical crown closure
-  // (closure = 1 - exp(-optical_depth)). A distant oblique view crosses a
-  // longer but still finite path through that same crown band; applying one
-  // view-independent alpha made closed stands turn into transparent grey
-  // decals over their terrain. Boundary faces use the same density along a
-  // roughly height/depth-scaled lateral path. This is an optical quotient of
-  // the population, not extra distant foliage.
-  const float vertical_depth = -log (max (1.0 - closure, 1e-3));
-  const float incidence = in.side > 0.5 ? max (abs (dot (eye, normal)), 0.20)
-                                        : max (abs (eye.y), 0.18);
-  const float path_depth =
-    vertical_depth * (in.side > 0.5 ? 1.8 : 1.0) / incidence;
+  const float support = moppe_forest_stand_support (in.stand_closure);
+  float3 normal = normalize (in.normal);
+  constexpr sampler density_smp (
+    coord::normalized, address::repeat, filter::linear, mip_filter::linear);
+  const float4 layers =
+    density.sample (density_smp, in.world_pos.xz * u.field.xy);
+  const uint layer =
+    min (uint (in.layer + 0.5), uint (MOPPE_FOREST_CANOPY_DENSITY_SLICES - 1));
+  // The retained texture stores bounded optical depth in four vertical
+  // channels. Each tree contributed a separately normalized footprint to
+  // every band, so their sum conserves its projected crown area while the
+  // lower, middle, and upper crown retain different horizontal extents.
+  // Each channel occupies a genuine world-space crown band. The impostor is
+  // only a compact raster domain: an ellipsoid section gives one smooth
+  // optical-depth integration rather than front and back polygon surfaces.
+  const float vertical_depth =
+    MOPPE_FOREST_CANOPY_STRATUM_DEPTH_RANGE * layers[layer];
+  const float radius_squared = dot (in.volume_uv, in.volume_uv);
+  if (radius_squared >= 1.0)
+    discard_fragment ();
+  const float shape = sqrt (max (1.0 - radius_squared, 0.0));
+  // Many cells, not one analytic slab, lengthen a grazing ray. Bound the
+  // correction per element so a side view gains population depth without
+  // turning the first encountered cell into an opaque wall.
+  const float incidence = max (abs (eye.y), 0.45);
+  const float path_depth = vertical_depth / incidence;
   const float coverage = 1.0 - exp (-path_depth);
-  const float alpha = aggregate * edge * support * coverage;
+  const float alpha = aggregate * edge * support * coverage * shape;
   if (alpha < 0.012 || closure < 0.035)
     discard_fragment ();
 
-  if (in.side < 0.5) {
-    const float3 dx = dfdx (in.world_pos);
-    const float3 dy = dfdy (in.world_pos);
-    float3 geometric = normalize (cross (dy, dx));
-    geometric = geometric.y < 0.0 ? -geometric : geometric;
-    // The continuous field slope is reconstructed once at shared roof
-    // vertices and interpolated. Per-fragment finite differences repeated
-    // five filtered height/noise evaluations for every covered pixel.
-    normal = normalize (mix (geometric, normalize (in.normal), 0.78));
-  }
   const float3 light = normalize (u.sun_dir.xyz);
   const float moisture = moments.a;
-  const float3 leaf =
-    moppe_srgb (moppe_forest_conifer_tint (moisture, closure));
-  const float crown_grain =
-    0.72 * moppe_value_noise (in.world_pos.xz / 7.0 + float2 (13.1, 4.7)) +
-    0.28 * moppe_value_noise (in.world_pos.xz / 23.0 + float2 (2.9, 31.3));
   const float3 leaf_normal =
     normalize (mix (normal, float3 (0.0, 1.0, 0.0), 0.25));
   const float visibility =
     moppe_cloud_transmission (in.world_pos, light, u.params.x, u.params.y);
-  const float wrap = saturate ((dot (leaf_normal, light) + 0.30) / 1.30);
-  float3 color = leaf * mix (0.78, 1.18, crown_grain) *
-                 (moppe_hemisphere_light (u.ambient.rgb, leaf_normal) * 0.68 +
-                  u.sun_diffuse.rgb * wrap * visibility * 0.68);
-
-  const float back =
-    pow (max (dot (-leaf_normal, light), 0.0), 1.4) * visibility;
-  const float toward = saturate (dot (eye, -light));
-  color += sqrt (leaf) * u.sun_diffuse.rgb * float3 (0.92, 1.0, 0.28) * back *
-           (0.08 + 0.26 * toward * toward);
+  const float footprint = distance / max (focal, 1.0);
+  const float grain = forest_canopy_variance_grain (in.world_pos, footprint);
+  const MoppeForestEnsembleLight ensemble =
+    moppe_forest_ensemble_light (moisture,
+                                 closure,
+                                 leaf_normal,
+                                 light,
+                                 eye,
+                                 u.sun_diffuse.rgb,
+                                 u.ambient.rgb,
+                                 visibility,
+                                 coverage,
+                                 grain);
+  float3 color = ensemble.radiance;
 
   const float fog =
     moppe_relief_haze (moppe_distance_fog (distance, u.fog_color.w),

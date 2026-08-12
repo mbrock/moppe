@@ -18,10 +18,11 @@ detail can be exactly right for the current frame and vary continuously.
 
 Individual identity is not continuous below a few crown pixels, however. A
 retained RGBA moment texture therefore records the closure, height interval,
-and moisture of the actual forest population. A separate mesh stage grows a
-finite stand roof from it. The two paths overlap in projected crown space;
-this is one population changing representation, not a second forest behind
-the first.
+and moisture of the actual forest population. A second texture partitions the
+same conserved optical depth into four crown-height strata. A separate mesh
+stage evaluates those strata as a finite population volume. The two paths
+overlap in projected crown space; this is one population changing
+representation, not a second forest behind the first.
 
 The costs are structural: individual generation is paid every frame even when
 the camera is still, stability of every generation input becomes a discipline
@@ -87,9 +88,11 @@ acceleration-structure rebuilds.
   a crown instead of encountering a ceiling of triangular shelves. Both
   representation switches align with ramp saturation.
 - Individual retirement is based on projected *crown width*, not full tree
-  height. The stand response begins at sixteen crown pixels, but identity
-  transfers into it only where a 24-metre filtered closure says the organisms
-  actually form a stand. Foliage contracts toward the crown top and wood
+  height. Stand response and identity transfer share one broad
+  eight-to-thirty-two-pixel interval, but identity transfers only where a
+  24-metre filtered closure says the organisms actually form a stand. The old
+  later retirement left solid cone proxies in front of an already complete
+  population field. Foliage contracts toward the crown top and wood
   toward the root as that transfer proceeds; open woodland keeps its real
   silhouettes through their final seed-staggered four-to-5.2-pixel fade.
   Thus sparse trees never dissolve into a false sheet and a closed stand does
@@ -98,17 +101,18 @@ acceleration-structure rebuilds.
   patch. Its LOD distance is three-dimensional, so a glider above a stand and
   a walker beside it do not receive different rules disguised as the same
   distance. Horizontal distance only bounds the finite work window.
-- Aggregate geometry is a shared seven-by-seven roof grid: four-metre samples
-  over one 24-metre mesh patch, with field-gated skirts only on the patch
-  perimeter. Adjacent quads and adjacent patches evaluate the same
-  world-space height, so dispatch ownership cannot appear as pyramids or
-  checkerboard lighting. Height is band-limited over twelve metres while fine
-  closure still preserves actual gaps. Fragment coverage inverts that closure
-  to vertical optical depth and integrates a finite path through the crown
-  band along the actual view ray. Thus a glider's grazing view of a closed
-  stand becomes optically dense without filling a top-down gap or turning the
-  forest into an infinite sheet. The field also drives terrain and undergrowth
-  closure.
+- Aggregate geometry is a world-stable four-metre lattice inside 24-metre
+  dispatch patches. Each tree contributes separately normalized Gaussian
+  footprints to four height strata: broad lower boughs, two middle bands, and
+  a narrow leader. Their areas sum to the same projected crown area that
+  produced closure. Each cell renders as one soft camera-facing ellipsoid
+  section (two triangles), with previous-frame camera orientation carried into
+  its motion vector. This is not a connected roof: grazing views receive
+  finite crown mass and parallax instead of a horizontal shelf, while top-down
+  gaps remain real. World-cell jitter breaks the visible sampling lattice
+  without making the result camera-relative. Height is band-limited over
+  twelve metres while fine closure controls local extinction. The same field
+  also drives terrain and undergrowth closure.
 - Before dispatch, the renderer conservatively filters the retained periodic
   population against the actual three-dimensional frustum and the earliest
   four-crown-pixel retirement bound. It sends compact projected-error records
@@ -173,7 +177,8 @@ The current standard 32-case partition is the ordinary temporal path: a
 v9 fast-profile seed-123 world (102,047 retained individuals), the first full
 run exposed a 20.3002 ms median forest block and 34.753 ms all-features case.
 That regression was not accepted. Moving field slopes from fragment to shared
-roof vertices, making far structure crown-relative, filtering conservative 3D
+aggregate vertices, making far structure crown-relative, filtering conservative
+3D
 candidate records before dispatch, and drawing eight front-to-back bins gives
 the final full run:
 
@@ -181,9 +186,20 @@ the final full run:
 - all features: 24.642 ms median, 25.495 ms p95; and
 - 16 of 32 configurations still miss 60 Hz by median.
 
-This is a 52-percent reduction from the rejected v9 run while keeping the
-denser population and continuous optical stand, but it is not a solved frame
-budget. Remaining performance work starts with a real trace of the surviving
+This was a 52-percent reduction from the rejected run while keeping the denser
+population and first continuous optical stand. The four-stratum population
+volume was then measured, not assumed. Its first closed-octahedron prototype
+regressed the forest block to 14.5577 ms median. Replacing that eight-triangle,
+front-and-back raster domain with one two-triangle ellipsoid section per cell
+recovered the cost:
+
+- forest block: 11.0599 ms median, 11.4177 ms mean, 14.3039 ms p95;
+- all features: 25.624 ms median, 27.009 ms p95; and
+- 16 of 32 configurations still miss 60 Hz by median.
+
+The volume therefore costs 1.2645 ms median over the one-layer stand while
+removing its horizontal-shelf failure. It is not a solved frame budget.
+Remaining performance work starts with a real trace of the surviving
 individual pass: register pressure/occupancy, half-precision *arithmetic*
 inside fragment shaders (not interfaces), hero-bough coalescing once the
 varyings question is settled under the debugger, and per-bough back-side

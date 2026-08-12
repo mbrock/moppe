@@ -180,14 +180,19 @@ matches the pale pink-tan exactly under warm sun, suggesting mid-band
 trees rendering trunk-dominant. Next diagnostic: magenta organ.wood.
 They are the most blatant remaining distance artifact.
 
-*** TODO GFX-044 Ensemble-limit contract for the forest/terrain hand-off
+*** VERIFY GFX-044 Ensemble-limit contract for the forest/terrain hand-off
 
 docs/ensemble-continuity.md predicts the forest tint band carries the
 same zeroth-moment bug the sward escaped: terrain colours forested
 ground with a separately authored resemblance (ground_value *
 (0.48, 0.72, 0.34)) rather than the crown shader's own ensemble limit.
-Build moppe_canopy_ensemble_light shared with the forest fragment, and
-judge with a MOPPE_LOOK across a forested basin plus the strip.
+Implemented as =moppe_forest_distribution_light=: retiring crown fragments and
+the four-stratum stand volume share it, while terrain derives forest-floor
+chromaticity from the same conifer tint rather than its old independent green.
+The bloom-free elevated basin and 120-frame 42 m/s glide show no colour seam;
+the largest motion-compensated far-field residual is 0.0094 near 142 m. Keep
+this VERIFY until varied sun angles and longer player-controlled flight have
+tested the same contract.
 
 *** TODO GFX-045 Calibrate coarse rungs from measured fine-rung statistics
 

@@ -47,6 +47,7 @@ struct MoppeUint4 {
 #define MOPPE_TEX_TERRAIN_GROUND 9
 #define MOPPE_TEX_TERRAIN_NORMALS 10 /* fragment stage */
 #define MOPPE_TEX_FOREST_CANOPY 11
+#define MOPPE_TEX_FOREST_DENSITY 12
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1        /* post passes */
 #define MOPPE_TEX_POST_DEPTH 2   /* light shafts: stored scene depth */
@@ -291,32 +292,25 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 #define MOPPE_FOREST_MESH_VERTICES 128
 #define MOPPE_FOREST_MESH_PRIMITIVES 128
 
-// One aggregate meshlet carries a continuous 24-metre canopy patch. Its
-// seven-by-seven roof samples are shared by adjacent four-metre quads, so the
-// reconstruction's work partition cannot create separate crown pyramids.
-// Boundary skirts exist only around the patch perimeter and fragment coverage
-// hides them unless the moment field actually falls away across that edge.
+// One aggregate meshlet carries one height stratum of a 24-metre population
+// patch. Each four-metre sample becomes a soft ellipsoid impostor: four
+// vertices and two faces remain porous from grazing views without rebuilding a
+// connected roof. Four population-derived vertical density slices preserve
+// crown volume after individual triangles become unrepeatable.
 #define MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES 6.0f
 #define MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES 32.0f
 #define MOPPE_FOREST_CANOPY_OBJECT_THREADS 64
 #define MOPPE_FOREST_CANOPY_GRID_CELLS 6
-#define MOPPE_FOREST_CANOPY_GRID_VERTICES 7
 #define MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES 4.0f
 #define MOPPE_FOREST_CANOPY_PATCH_METRES                                       \
   (MOPPE_FOREST_CANOPY_GRID_CELLS * MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES)
-#define MOPPE_FOREST_CANOPY_ROOF_VERTICES                                      \
-  (MOPPE_FOREST_CANOPY_GRID_VERTICES * MOPPE_FOREST_CANOPY_GRID_VERTICES)
-#define MOPPE_FOREST_CANOPY_SIDE_VERTICES                                      \
-  (4 * 2 * MOPPE_FOREST_CANOPY_GRID_VERTICES)
-#define MOPPE_FOREST_CANOPY_MESH_VERTICES                                      \
-  (MOPPE_FOREST_CANOPY_ROOF_VERTICES + MOPPE_FOREST_CANOPY_SIDE_VERTICES)
-#define MOPPE_FOREST_CANOPY_ROOF_PRIMITIVES                                    \
-  (2 * MOPPE_FOREST_CANOPY_GRID_CELLS * MOPPE_FOREST_CANOPY_GRID_CELLS)
-#define MOPPE_FOREST_CANOPY_SIDE_PRIMITIVES                                    \
-  (4 * 2 * MOPPE_FOREST_CANOPY_GRID_CELLS)
-#define MOPPE_FOREST_CANOPY_MESH_PRIMITIVES                                    \
-  (MOPPE_FOREST_CANOPY_ROOF_PRIMITIVES + MOPPE_FOREST_CANOPY_SIDE_PRIMITIVES)
+#define MOPPE_FOREST_CANOPY_CELL_COUNT                                         \
+  (MOPPE_FOREST_CANOPY_GRID_CELLS * MOPPE_FOREST_CANOPY_GRID_CELLS)
+#define MOPPE_FOREST_CANOPY_MESH_VERTICES (4 * MOPPE_FOREST_CANOPY_CELL_COUNT)
+#define MOPPE_FOREST_CANOPY_MESH_PRIMITIVES (2 * MOPPE_FOREST_CANOPY_CELL_COUNT)
 #define MOPPE_FOREST_CANOPY_MESH_THREADS 128
+#define MOPPE_FOREST_CANOPY_DENSITY_SLICES 4
+#define MOPPE_FOREST_CANOPY_STRATUM_DEPTH_RANGE 4.0f
 
 struct MOPPE_SHADER_ALIGN MoppeForestInstance {
   MoppeFloat4 root_height; // xyz=root in metres, w=height in metres
@@ -381,6 +375,7 @@ struct MOPPE_SHADER_ALIGN MoppeForestCanopyUniforms {
   MoppeMat4 unjittered_view_proj;
   MoppeMat4 previous_view_proj;
   MoppeFloat4 camera_pos;
+  MoppeFloat4 previous_camera_pos;
   MoppeFloat4 sun_dir;
   MoppeFloat4 sun_diffuse;
   MoppeFloat4 ambient;

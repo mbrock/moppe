@@ -490,6 +490,7 @@ namespace moppe {
       struct MetalForestResources {
         id<MTLBuffer> instances = nil;
         id<MTLTexture> canopy_moments = nil;
+        id<MTLTexture> canopy_density = nil;
         std::vector<MoppeForestInstance> cpu_instances;
         std::array<std::vector<MoppeForestCandidate>, 8> scene_candidate_bins;
         std::uint32_t count = 0;
@@ -3321,7 +3322,8 @@ namespace moppe {
         packed.push_back (gpu);
       }
 
-      if ((m_forest_resources.instances || m_forest_resources.canopy_moments) &&
+      if ((m_forest_resources.instances || m_forest_resources.canopy_moments ||
+           m_forest_resources.canopy_density) &&
           m_frame.sequence &&
           ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
                                                   timeoutMS:5000])
@@ -3334,6 +3336,10 @@ namespace moppe {
       if (m_forest_resources.canopy_moments) {
         [m_residency removeAllocation:m_forest_resources.canopy_moments];
         m_forest_resources.canopy_moments = nil;
+      }
+      if (m_forest_resources.canopy_density) {
+        [m_residency removeAllocation:m_forest_resources.canopy_density];
+        m_forest_resources.canopy_density = nil;
       }
       m_forest_resources.canopy_size = 0;
       [m_residency commit];
@@ -3365,6 +3371,8 @@ namespace moppe {
         std::vector<float> height_moment (texels, 0.0f);
         std::vector<float> upper_height (texels, 0.0f);
         std::vector<float> moisture_moment (texels, 0.0f);
+        std::vector<std::array<float, MOPPE_FOREST_CANOPY_DENSITY_SLICES>>
+          stratum_depth (texels);
         const float step_x = period[0] / static_cast<float> (canopy_size);
         const float step_z = period[2] / static_cast<float> (canopy_size);
         const float cell_area = step_x * step_z;
@@ -3377,19 +3385,38 @@ namespace moppe {
           return value - std::round (value / extent) * extent;
         };
 
+        // Low spruce boughs spread broadly, while successive upper bands
+        // narrow toward the leader. Each band's area fraction is normalized
+        // independently below. Their sum is one tree's original projected
+        // crown-area claim, not four heuristic copies of it.
+        constexpr std::array<float, MOPPE_FOREST_CANOPY_DENSITY_SLICES>
+          stratum_area { 0.07f, 0.22f, 0.39f, 0.32f };
+        constexpr std::array<float, MOPPE_FOREST_CANOPY_DENSITY_SLICES>
+          stratum_radius { 1.12f, 0.96f, 0.72f, 0.42f };
+        static_assert (stratum_area[0] + stratum_area[1] + stratum_area[2] +
+                           stratum_area[3] >
+                         0.999f &&
+                       stratum_area[0] + stratum_area[1] + stratum_area[2] +
+                           stratum_area[3] <
+                         1.001f);
+
         for (const ForestInstance& instance : instances) {
           const Vec3 root = position_value (instance.root);
           const float radius = instance.crown_radius.numerical_value_in (u::m);
           const float height = instance.height.numerical_value_in (u::m);
           const float moisture =
             instance.moisture.numerical_value_in (mp_units::one);
-          const float sigma =
-            std::max (0.58f * radius, 0.45f * std::max (step_x, step_z));
+          std::array<float, MOPPE_FOREST_CANOPY_DENSITY_SLICES> sigma;
+          for (std::size_t slice = 0; slice < sigma.size (); ++slice)
+            sigma[slice] = std::max (0.58f * radius * stratum_radius[slice],
+                                     0.45f * std::max (step_x, step_z));
+          const float max_sigma =
+            *std::max_element (sigma.begin (), sigma.end ());
           const int reach = std::max (
-            1, static_cast<int> (std::ceil (2.4f * sigma / min_step)));
+            1, static_cast<int> (std::ceil (2.4f * max_sigma / min_step)));
           const int centre_x = static_cast<int> (std::floor (root[0] / step_x));
           const int centre_z = static_cast<int> (std::floor (root[2] / step_z));
-          float weight_sum = 0.0f;
+          std::array<float, MOPPE_FOREST_CANOPY_DENSITY_SLICES> weight_sum {};
           for (int dz = -reach; dz <= reach; ++dz)
             for (int dx = -reach; dx <= reach; ++dx) {
               const int x = wrap (centre_x + dx);
@@ -3400,13 +3427,17 @@ namespace moppe {
                 periodic_delta (world_x - root[0], period[0]);
               const float distance_z =
                 periodic_delta (world_z - root[2], period[2]);
-              weight_sum += std::exp (
-                -0.5f * (distance_x * distance_x + distance_z * distance_z) /
-                (sigma * sigma));
+              const float distance_squared =
+                distance_x * distance_x + distance_z * distance_z;
+              for (std::size_t slice = 0; slice < sigma.size (); ++slice)
+                weight_sum[slice] += std::exp (-0.5f * distance_squared /
+                                               (sigma[slice] * sigma[slice]));
             }
           const float crown_area = 0.70f * 3.14159265f * radius * radius;
-          const float scale =
-            crown_area / (cell_area * std::max (weight_sum, 0.0001f));
+          std::array<float, MOPPE_FOREST_CANOPY_DENSITY_SLICES> scale;
+          for (std::size_t slice = 0; slice < scale.size (); ++slice)
+            scale[slice] = crown_area * stratum_area[slice] /
+                           (cell_area * std::max (weight_sum[slice], 0.0001f));
           for (int dz = -reach; dz <= reach; ++dz)
             for (int dx = -reach; dx <= reach; ++dx) {
               const int x = wrap (centre_x + dx);
@@ -3417,24 +3448,34 @@ namespace moppe {
                 periodic_delta (world_x - root[0], period[0]);
               const float distance_z =
                 periodic_delta (world_z - root[2], period[2]);
-              const float weight =
-                scale *
-                std::exp (-0.5f *
-                          (distance_x * distance_x + distance_z * distance_z) /
-                          (sigma * sigma));
+              const float distance_squared =
+                distance_x * distance_x + distance_z * distance_z;
               const std::size_t index =
                 static_cast<std::size_t> (z) * canopy_size + x;
-              optical_depth[index] += weight;
-              height_moment[index] += weight * height;
-              upper_height[index] = std::max (upper_height[index], height);
-              moisture_moment[index] += weight * moisture;
+              float tree_depth = 0.0f;
+              for (std::size_t slice = 0; slice < scale.size (); ++slice) {
+                const float depth =
+                  scale[slice] * std::exp (-0.5f * distance_squared /
+                                           (sigma[slice] * sigma[slice]));
+                stratum_depth[index][slice] += depth;
+                tree_depth += depth;
+              }
+              optical_depth[index] += tree_depth;
+              height_moment[index] += tree_depth * height;
+              if (tree_depth > 0.0001f)
+                upper_height[index] = std::max (upper_height[index], height);
+              moisture_moment[index] += tree_depth * moisture;
             }
         }
 
         std::vector<std::array<std::uint8_t, 4>> moments (texels);
+        std::vector<
+          std::array<std::uint8_t, MOPPE_FOREST_CANOPY_DENSITY_SLICES>>
+          density (texels);
         std::vector<float> occupied_closure;
         occupied_closure.reserve (instances.size () * 4);
         double closure_sum = 0.0;
+        std::size_t saturated_strata = 0;
         const auto unorm = [] (float value) {
           return static_cast<std::uint8_t> (
             std::lround (255.0f * std::clamp (value, 0.0f, 1.0f)));
@@ -3456,6 +3497,12 @@ namespace moppe {
                    MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES),
             unorm (moisture),
           };
+          for (std::size_t slice = 0; slice < stratum_area.size (); ++slice) {
+            const float normalized = stratum_depth[index][slice] /
+                                     MOPPE_FOREST_CANOPY_STRATUM_DEPTH_RANGE;
+            saturated_strata += normalized > 1.0f ? 1u : 0u;
+            density[index][slice] = unorm (normalized);
+          }
         }
 
         // The individual-to-stand handoff needs the same broad closure as
@@ -3506,6 +3553,27 @@ namespace moppe {
                         true);
         m_forest_resources.canopy_size = canopy_size;
 
+        // Each channel is one vertical crown-density stratum. Unlike closure,
+        // optical depth is additive across slices. The separately normalized
+        // tree footprints preserve both population area and crown taper after
+        // each layer receives independent parallax.
+        MTLTextureDescriptor* density_descriptor = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                       width:canopy_size
+                                      height:canopy_size
+                                   mipmapped:YES];
+        density_descriptor.storageMode = MTLStorageModePrivate;
+        density_descriptor.usage = MTLTextureUsageShaderRead;
+        m_forest_resources.canopy_density =
+          [m_device newTextureWithDescriptor:density_descriptor];
+        make_resident (m_forest_resources.canopy_density);
+        upload_texture (m_forest_resources.canopy_density,
+                        density.data (),
+                        canopy_size,
+                        canopy_size,
+                        sizeof (density.front ()),
+                        true);
+
         std::sort (occupied_closure.begin (), occupied_closure.end ());
         const auto percentile = [&] (float fraction) {
           if (occupied_closure.empty ())
@@ -3522,8 +3590,9 @@ namespace moppe {
                   << closure_sum / static_cast<double> (texels)
                   << " occupied-p50=" << percentile (0.50f)
                   << " p90=" << percentile (0.90f)
-                  << " max=" << percentile (1.0f) << std::defaultfloat
-                  << std::endl;
+                  << " max=" << percentile (1.0f)
+                  << " saturated-strata=" << saturated_strata
+                  << std::defaultfloat << std::endl;
       }
       m_forest_resources.instances =
         create_private_buffer (packed.data (),
@@ -5105,7 +5174,7 @@ namespace moppe {
       }
 
       if (!m_pipelines.forest_canopy || !forest.canopy_moments ||
-          !terrain.have_terrain)
+          !forest.canopy_density || !terrain.have_terrain)
         return;
       MoppeForestCanopyUniforms canopy;
       std::memset (&canopy, 0, sizeof (canopy));
@@ -5113,6 +5182,9 @@ namespace moppe {
       canopy.unjittered_view_proj = m_frame.uniforms.unjittered_view_proj;
       canopy.previous_view_proj = m_frame.uniforms.previous_view_proj;
       canopy.camera_pos = m_frame.uniforms.camera_pos;
+      canopy.previous_camera_pos =
+        f4 (m_camera_history_valid ? m_previous_camera_pos
+                                   : m_frame.params.camera_pos);
       canopy.sun_dir = m_frame.uniforms.sun_dir;
       canopy.sun_diffuse = m_frame.uniforms.sun_diffuse;
       canopy.ambient = m_frame.uniforms.ambient;
@@ -5160,6 +5232,10 @@ namespace moppe {
            { MTLRenderStageObject, MTLRenderStageMesh, MTLRenderStageFragment })
         bind_texture (
           m_frame, stage, MOPPE_TEX_FOREST_CANOPY, forest.canopy_moments);
+      bind_texture (m_frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_FOREST_DENSITY,
+                    forest.canopy_density);
       use_arguments (enc,
                      m_frame,
                      MTLRenderStageObject | MTLRenderStageMesh |

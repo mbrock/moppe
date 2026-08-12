@@ -82,17 +82,18 @@ Two disciplines ride on top:
 | column → substrate | same optical response ✓ | projected-height retirement (proof) | same grain ✓ | same gust phase ✓ |
 | heads → wash | shared chromaticity ✓ | wash ✓ | footprint floor ✓ | rigid heads ✓ |
 | fronds → ? | no far rung (window-culled) | — | — | — |
+| crowns → stand volume | shared ensemble light ✓ | conserved four-stratum optical depth ✓ | world grain + cell jitter (proof) | shared broad wind; longer play pending |
+| stand volume → forest floor | shared conifer chromaticity ✓ | population closure ✓ | stand octave (proof) | floor dynamics pending |
 | cost bounds | both populations and canopy reach zero before the bound | | | |
 
 ## What the doctrine predicts and demands next
 
-- **The forest tint band has the grass-brown bug.** Terrain colours
-  forested ground with `ground_value * (0.48, 0.72, 0.34)` — a
-  separately authored resemblance, exactly the class of zeroth-moment
-  mismatch the sward just escaped. Prediction: distant canopy colour
-  does not match what crown proxies present, and the seam is visible
-  from the glider. The fix is the same contract: a
-  `moppe_canopy_ensemble_light` shared with the forest fragment shader.
+- **The forest tint prediction held, and the contract is now shared.**
+  Resolved crowns settle into `moppe_forest_distribution_light`; the stand
+  volume evaluates the same ensemble response; terrain derives its forest
+  chromaticity from `moppe_forest_conifer_tint` instead of the old separately
+  authored green multiplier. This closes the zeroth-moment construction, but
+  the full lighting result still needs judging across seasons and sun angles.
 - **Close the loop: calibrate rung N+1 from rung N's measurements.**
   The sward grain octaves are hand-picked. But the texture profiler can
   *measure* the near field's variance-versus-distance curve, and the

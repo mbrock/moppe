@@ -372,9 +372,8 @@ forest_base_organ (thread const MoppeForestInstance& tree,
       float (part.copy) * (2.0 * organ.crown / max (organ.tree_height, 0.01));
     const float vanish = forest_individual_vanish_pixels (organ.seed);
     const float terminal = smoothstep (vanish, vanish + 4.0, crown_pixels);
-    const float transfer =
-      moppe_forest_stand_support (stand_closure) *
-      moppe_forest_aggregate_fraction_pixels (crown_pixels);
+    const float transfer = moppe_forest_stand_support (stand_closure) *
+                           moppe_forest_identity_transfer (crown_pixels);
     // Identity yields throughout the same projected-crown interval in which
     // the stand quotient arrives, but only where closure makes that quotient
     // truthful. Open woodland retains its organisms until their final
@@ -1021,6 +1020,40 @@ forest_fragment_lighting (thread const ForestVaryings& in,
                           thread const ForestFragmentFrame& frame,
                           thread const ForestLeafTransmission& transmission,
                           constant MoppeForestUniforms& u) {
+  if (in.leaf > 0.5 && transmission.resolvable < 0.999) {
+    const float ensemble = 1.0 - transmission.resolvable;
+    const float3 leaf_display = in.albedo;
+    const float grain =
+      mix (1.0,
+           0.84 + 0.32 * moppe_value_noise (in.world_pos.xz * 0.17 +
+                                            float2 (13.1, 4.7)),
+           ensemble);
+    const MoppeForestEnsembleLight limit =
+      moppe_forest_distribution_light (leaf_display,
+                                       frame.normal,
+                                       frame.light,
+                                       normalize (frame.to_eye),
+                                       u.sun_diffuse.rgb,
+                                       u.ambient.rgb,
+                                       frame.visibility,
+                                       1.0,
+                                       grain);
+    if (transmission.resolvable <= 0.001)
+      return limit.radiance;
+
+    // Settle the final crown-proxy shading into exactly the distribution
+    // evaluated by the stand field before individual identity retires. This
+    // is a matching condition, not a distance tint.
+    const float wrap =
+      saturate ((dot (frame.normal, frame.light) + 0.26) / 1.26);
+    const float3 resolved =
+      albedo * (moppe_hemisphere_light (u.ambient.rgb, frame.normal) *
+                  (0.62 + 0.38 * in.exposure) +
+                u.sun_diffuse.rgb * wrap * frame.visibility *
+                  (1.0 - 0.45 * transmission.amount));
+    return mix (limit.radiance, resolved, transmission.resolvable);
+  }
+
   const float wrap = saturate ((dot (frame.normal, frame.light) + 0.26) / 1.26);
   float3 color =
     albedo * (moppe_hemisphere_light (u.ambient.rgb, frame.normal) *

@@ -6,6 +6,7 @@
 // R32F is not linearly filterable on Apple GPUs before Apple9, so the
 // subdivided near field performs its four-tap interpolation manually.
 
+#include "forest_medium.h"
 #include "grass_medium.h"
 
 struct TerrainVaryings {
@@ -745,13 +746,23 @@ terrain_compose_trail_and_base (thread TerrainMaterial& material,
 static inline void terrain_compose_forest_and_wetness (
   thread TerrainMaterial& material,
   thread const TerrainSurfaceReadings& readings) {
-  const float ground_value =
-    dot (material.albedo, float3 (0.299, 0.587, 0.114));
-  const float3 forest_color = ground_value * float3 (0.48, 0.72, 0.34);
   material.forest = smoothstep (0.035, 0.72, readings.forest_cover) *
                     (1.0 - material.base) * (1.0 - material.trail) *
                     (1.0 - readings.submerged);
-  material.albedo = mix (material.albedo, forest_color, material.forest);
+
+  // This is the forest floor beneath the population, not a distant canopy
+  // painted into terrain. Keep its value from the local substrate but derive
+  // its chromaticity from the same conifer ensemble authority as resolved and
+  // aggregate crowns. A separately authored green was a visible zeroth-moment
+  // seam wherever the optical roof became thin.
+  const float ground_value =
+    dot (material.albedo, float3 (0.299, 0.587, 0.114));
+  const float3 canopy_tint =
+    moppe_forest_conifer_tint (readings.moisture, readings.forest_cover);
+  const float canopy_value = dot (canopy_tint, float3 (0.299, 0.587, 0.114));
+  const float3 forest_floor =
+    canopy_tint * (0.72 * ground_value / max (canopy_value, 0.01));
+  material.albedo = mix (material.albedo, forest_floor, material.forest);
 
   material.wetness = max (0.62 * readings.damp, readings.submerged);
   const float wet_luma = dot (material.albedo, float3 (0.299, 0.587, 0.114));

@@ -58,24 +58,29 @@ percentile is 0.795, and the maximum is 0.990. The smaller smoke reference has
 changing a threshold to improve them without improving the ride would be
 reward hacking.
 
-The renderer reconstructs a continuous roof on a shared four-metre grid. One
-meshlet carries a 24-metre patch with 49 roof vertices and 72 roof triangles,
-plus perimeter skirts that survive only at a real closure falloff. The old
-nine independent eight-metre solids announced themselves as a checkerboard
-even after their normals were smoothed; sharing world-space vertices removes
-that ownership from geometry. Roof height is filtered over twelve metres and
-the moment texture is mipmapped, while fine closure remains available to the
-fragment. The representation is finite, world-anchored, and rendered without
-depth writes after the undergrowth, so it cannot become a dark infinite sheet
-or erase nearer organisms. The fragment path treats the stored vertical
-closure as `1 - exp(-optical_depth)` and integrates that finite density along
-the actual view ray through the crown band. Closed stands therefore retain
-mass in a glider's grazing view instead of becoming grey terrain overlays,
-while top-down gaps and navigable interiors remain real.
+The renderer now retains a second RGBA field of vertical optical depth. Every
+tree is splatted independently into four height strata. Each stratum has its
+own normalized horizontal footprint -- broad low boughs through a narrow
+leader -- and the four area weights sum to one tree's original projected crown
+area. The logged seed-123 field has zero saturated strata, so texture clamping
+does not conceal a conservation failure.
+
+The mesh stage reads this volume on a shared four-metre world lattice. One
+meshlet carries a 24-metre patch, but patch ownership is only a work partition:
+each cell is a soft camera-facing ellipsoid section and receives deterministic
+world-cell jitter. The previous camera orientation is used for its previous
+position, so temporal reconstruction sees billboard rotation rather than an
+unexplained appearance change. Four independently placed height bands give
+real parallax. This replaced both the old checkerboard of independent solids
+and the later connected-roof prototype, which remained a dark horizontal shelf
+from a glider. Fine closure remains available to the fragment. The
+representation is finite, world-anchored, and rendered without depth writes
+after explicit individuals, so it fills population gaps behind them without
+erasing nearer organisms or becoming an infinite sheet.
 
 The handoff is expressed in crown pixels, not tree height or camera altitude.
-The aggregate begins while a mean crown is sixteen pixels wide and is mostly
-present by four to five pixels. A separate 24-metre closure sample decides
+The aggregate and individual transfer share the mean crown's
+eight-to-thirty-two-pixel interval. A separate 24-metre closure sample decides
 whether the local population is stand-like at all: sparse woodland retains
 individuals, while closed canopy continuously contracts explicit foliage
 toward the crown top as the field takes ownership. Fine closure controls
@@ -93,7 +98,7 @@ frame, and the optimization makes no assumption about camera height or a
 ground horizon.
 
 The moment field also replaced the obsolete habitat-cover reading in terrain
-and undergrowth shading. The canopy roof, forest floor, blades, ferns, and
+and undergrowth shading. The stand volume, forest floor, blades, ferns, and
 flowers now consume the closure produced by the same retained crowns.
 Understorey light is a bounded Beer--Lambert-style power of the open fraction,
 so a closed stand is sparse beneath while actual gaps remain occupiable.
@@ -102,15 +107,19 @@ so a closed stand is sparse beneath while actual gaps remain occupiable.
 
 - Inspect the surviving dense individual pass in a GPU trace. Conservative
   candidate filtering and front-to-back submission are now deliberate, but
-  the ordinary temporal benchmark still attributes 9.7954 ms median to the
+  the ordinary temporal benchmark still attributes 11.0599 ms median to the
   forest block and the all-features frame is not within 60 Hz.
-- Extend the finite optical roof into a richer crown-band model only where
-  longer glides show that one integrated path cannot reproduce parallax or
-  layered extinction. Do not reintroduce distant individual spikes to hide a
-  weak aggregate.
-- Judge longer walking, riding, jumping, and player-controlled gliding
-  sequences. The current 60-frame, 30-metre neutral aerial glide is spatially
-  anchored, but one path cannot certify temporal behaviour.
+- Replace the four fixed height strata with an error-selected brick hierarchy
+  only if longer glides show a real need. The current structure is a modest
+  population-volume rung, inspired by voxel foliage's principle but not a
+  general voxel renderer. Do not reintroduce distant individual spikes to hide
+  a weak aggregate.
+- Judge longer walking, jumping, and player-controlled gliding sequences. The
+  current proof includes both a 90-frame actual forest ride and a 120-frame,
+  42 m/s translating aerial view with glare effects disabled. The aerial
+  pass's largest motion-compensated far-field residual is 0.0094 at about 142
+  metres, below the instrument's 0.04 sparse appearance-event threshold, but
+  those two paths cannot certify all play.
 - Give hero trunks taper, roots, base flare, litter, and local ground
   agreement. Bark is now visible under indirect light and hero branchlets no
   longer form metre-wide shelves, but the near tree is still deliberately
