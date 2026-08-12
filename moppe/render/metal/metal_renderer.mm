@@ -5125,12 +5125,7 @@ namespace moppe {
             ++bin;
           const float pixels = 0.5f * height * projection_y * scene_height /
                                std::max (clip_w, 0.6f);
-          candidate_bins[bin].push_back (
-            { index,
-              std::min<std::uint32_t> (static_cast<std::uint32_t> (pixels),
-                                       65535u),
-              pixels,
-              crown_pixels });
+          candidate_bins[bin].push_back ({ index, pixels, crown_pixels, 0u });
         }
       }
 

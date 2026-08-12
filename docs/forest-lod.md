@@ -51,11 +51,11 @@ acceleration-structure rebuilds.
    distance changes representation, never mass. Removed boughs move their
    area into survivors (`sqrt(63/count)` widening, at full strength at
    every count -- it converges to one at the full complement, so it needs
-   no fade for near stability). The bundled tier's three-tuft boughs widen
-   by `sqrt(13/3)` to stand in for thirteen-tuft ones. The floor of
-   twenty-one boughs keeps the sparsest assembly reading as a small solid
-   tree rather than a pole with stubs, and the floor complement stands at
-   full growth (a permanently half-grown bough leaks mass).
+   no fade for near stability). Missing stations within a bough likewise
+   widen their stable survivors by the square root of represented area. The
+   floor of twenty-one boughs keeps the sparsest assembly reading as a small
+   solid tree rather than a pole with stubs, and the floor complement stands
+   at full growth (a permanently half-grown bough leaks mass).
 
 4. **Fill evenly; the silhouette is sacred.** The first nine ranks sketch
    the whole silhouette, one bough per whorl bottom-to-top. Later ranks add
@@ -76,17 +76,20 @@ acceleration-structure rebuilds.
   projection (endpoints collapse discontinuously when root or tip crosses
   the camera plane). The frustum bound must contain the whole organism
   (`0.55h + 1.4 crown`), or passing trees vanish while filling the screen.
-- Tiers: below sixteen threshold *crown* pixels one part draws a solid crown
-  proxy; total tree height no longer keeps a six-pixel-wide spruce in a
-  seven-meshlet bough assembly. Above that, the
-  the bundled band packs four three-tuft boughs per meshlet, with each
-  coarse tuft a single tented quad (two triangles spanning the blade
-  fan's splay -- a flat quad in the bough plane disappears edge-on); the
-  hero band pays one thirteen-tuft fan bough per meshlet. Hero tuft width is
-  branchlet-scale rather than inheriting the bundled tier's metre-wide
-  coverage compensation; that distinction is what lets a walker see through
-  a crown instead of encountering a ceiling of triangular shelves. Both
-  representation switches align with ramp saturation.
+- Conifer tiers form one nested error hierarchy. Below sixteen threshold
+  *crown* pixels, nine world-space whorl umbrellas carry the unresolved
+  crown. They are aligned with the first nine stable bough ranks rather than
+  being an unrelated cone. From sixteen to twenty-eight crown pixels those
+  parents contract by the square root of their remaining area while resolved
+  boughs receive the complement; the stem grows over the same interval. The
+  boughs themselves use one stable twenty-four-station sequence: the far tier
+  packs four boughs at stations `{0,8,16}`, the middle tier packs two at
+  `{0,4,8,12,16,20}`, and the hero tier carries one bough with every station.
+  New stations grow from zero and surviving stations never move. Thus proxy,
+  bough, and branchlet are refinements of one organism rather than three
+  meshes exchanged at thresholds. The hero still uses only two disconnected
+  sprays per station; close foliage remains graphically comb-like and needs a
+  better branchlet representation without returning to metre-wide shelves.
 - Individual retirement is based on projected *crown width*, not full tree
   height. Stand response and identity transfer share one broad
   eight-to-thirty-two-pixel interval, but identity transfers only where a
@@ -260,3 +263,15 @@ that is +0.1737 ms forest median, +0.0223 ms forest p95, +0.0894 ms
 all-features median, and -0.1064 ms all-features p95: effectively the same
 frame-budget problem, not a performance win. Sixteen of thirty-two
 configurations still miss 60 Hz by median.
+
+The next conifer pass removed the discrete sealed-cone-to-bough exchange and
+the integer-pixel schedule that drove it. The size-normalized atlas now keeps
+the same whorls through proxy, bundled bough, and hero refinement; a
+bloom-free 120-frame ride from the forest-floor site and a 90-frame, 42 m/s
+aerial translation showed no camera-centred ring or wholesale crown swap.
+A short pass-timed 32-case attribution run at 1600x900 measured a 3.8441 ms
+scene-pass delta with forest enabled versus 4.9572 ms in the preceding
+nine-bough checkpoint's short run. The runs used different sample counts and
+are attribution evidence, not a frame-budget speedup claim. Production stills
+also exposed the honest remaining defects: close stations still read as a
+stylized comb of triangles, and closed forest interiors remain too dark.

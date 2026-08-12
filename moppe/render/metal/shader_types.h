@@ -326,9 +326,9 @@ struct MOPPE_SHADER_ALIGN MoppeForestInstance {
 
 struct MOPPE_SHADER_ALIGN MoppeForestCandidate {
   uint tree;
-  uint pixel_code;
   float pixels;
   float crown_pixels;
+  uint reserved;
 };
 
 // Sun-shaft raymarch: rays come from a camera basis with the frustum

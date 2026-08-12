@@ -26,6 +26,8 @@ struct ForestPart {
   uint part;
   uint lod;
   uint copy;
+  float pixels;
+  float crown_pixels;
 };
 
 struct ForestPayload {
@@ -124,6 +126,16 @@ static inline float forest_bough_measure (float pixels, float tree_height) {
   return pixels * clamp (22.5 / max (tree_height, 0.01), 1.0, 4.5);
 }
 
+// Fraction of a conifer crown whose projected support can be carried by
+// resolved boughs. Before the first bough is a repeatable image feature the
+// compact crown carries all optical area; once several boughs span the crown,
+// it carries none. The broad interval makes the parent residual and its
+// children one conserved hierarchy rather than two unrelated LODs.
+static inline float forest_bough_resolution (float crown_pixels,
+                                             float threshold) {
+  return smoothstep (16.0 * threshold, 28.0 * threshold, crown_pixels);
+}
+
 // Emission rank to whorl-grid slot. The first nine ranks sketch the whole
 // silhouette with one bough per whorl, bottom to top. Later ranks add one
 // spoke per whorl per round, top whorl first, so the crown densifies
@@ -146,32 +158,36 @@ static inline uint forest_bough_slot (uint rank) {
   return (8u - fill % 9u) * 7u + spread[fill / 9u];
 }
 
-// Mesh-group coalescing for the middle band: a small distant assembly
-// bundles four boughs of three tufts into each meshlet instead of paying
-// a mostly idle meshlet per bough, the same cure Kuth 2025 applies to
-// leaves. A hero bough keeps its own meshlet for now: two attempts at
-// packing a pair (234 vertices of output) produced garbage triangles in
-// motion even with fifty-six-byte varyings, so the real interpolant
-// allocation evidently sits closer to Metal's silent 16 KB mesh-output
-// ceiling than the struct arithmetic suggests. Retry only under the
-// Metal debugger, not by arithmetic. The boundary aligns with ramp
-// saturation, so BOTH representation changes finish while the tree is
-// around a tenth of the frame, and the per-individual threshold keeps a
-// stand from crossing on the same frame.
-static inline uint forest_bough_bundle (uint pixel_code, float threshold) {
-  return float (pixel_code) < 90.0 * threshold ? 4u : 1u;
+// Mesh-group coalescing follows the station hierarchy: the far tier packs
+// four three-station boughs, the middle packs two six-station boughs, and a
+// hero meshlet carries one twenty-four-station bough. Every survivor is an
+// identical station at the next level. A hero bough keeps its own meshlet:
+// two attempts at packing a pair produced garbage triangles in motion near
+// Metal's silent 16 KB mesh-output ceiling. Retry only under the debugger.
+// Per-individual thresholds keep a stand from crossing a boundary together.
+static inline uint forest_bough_bundle (float pixels, float threshold) {
+  if (pixels < 55.0 * threshold)
+    return 4u;
+  if (pixels < 90.0 * threshold)
+    return 2u;
+  return 1u;
 }
 
 static inline uint forest_bough_tufts (uint bundle) {
-  return bundle == 4u ? 3u : 13u;
+  return bundle == 4u ? 3u : bundle == 2u ? 6u : 24u;
 }
 
-static inline uint forest_part_count (float pixels,
-                                      float crown_pixels,
-                                      uint pixel_code,
-                                      float height,
-                                      uint seed,
-                                      bool conifer) {
+static inline float
+forest_bough_refinement (float pixels, float threshold, uint bundle) {
+  if (bundle == 4u)
+    return 0.0;
+  if (bundle == 2u)
+    return smoothstep (55.0 * threshold, 75.0 * threshold, pixels);
+  return smoothstep (90.0 * threshold, 120.0 * threshold, pixels);
+}
+
+static inline uint forest_part_count (
+  float pixels, float crown_pixels, float height, uint seed, bool conifer) {
   const float threshold = forest_lod_threshold (seed);
   // Individual identity ends when the crown, rather than the much taller
   // trunk-to-tip measure, is no longer a repeatable image feature. Keeping a
@@ -180,19 +196,23 @@ static inline uint forest_part_count (float pixels,
   // camera-centred ring; the stand aggregate receives the same crown measure.
   if (crown_pixels < forest_individual_vanish_pixels (seed))
     return 0u;
-  // Foliage structure is resolved across the crown, not along the much taller
-  // root-to-tip measure. Using total height here made a six-pixel-wide spruce
-  // pay seven bough meshlets and retain a spiky assembly even though no branch
-  // separation survived in the image. The compact crown remains an actual
-  // individual silhouette while the population-derived stand takes over.
+  if (conifer) {
+    const float resolved = forest_bough_resolution (crown_pixels, threshold);
+    // Part zero is the unresolved parent crown.  Its children begin at the
+    // same sixteen-crown-pixel boundary but grow from zero; there is no frame
+    // in which a closed cone is exchanged wholesale for a porous tree.
+    if (resolved <= 0.0)
+      return 1u;
+    const uint residual_parent = resolved < 1.0 ? 1u : 0u;
+    const float count =
+      forest_bough_count (forest_bough_measure (pixels, height), threshold);
+    const float bundle = float (forest_bough_bundle (pixels, threshold));
+    return 1u + residual_parent + uint (ceil (count / bundle));
+  }
+  // Broadleafs retain the older compact-to-lobe selection until their crown
+  // lobes have an equivalent conserved parent/child construction.
   if (crown_pixels < 16.0 * threshold)
     return 1u;
-  if (conifer) {
-    const float count = forest_bough_count (
-      forest_bough_measure (float (pixel_code), height), threshold);
-    const float bundle = float (forest_bough_bundle (pixel_code, threshold));
-    return 1u + uint (ceil (count / bundle));
-  }
   if (pixels < 48.0 * threshold)
     return 3u;
   return MOPPE_FOREST_PARTS_PER_TREE;
@@ -200,29 +220,24 @@ static inline uint forest_part_count (float pixels,
 
 struct ForestSceneSchedule {
   uint parts;
-  uint pixel_code;
+  float pixels;
 };
 
 static inline ForestSceneSchedule
 forest_scene_schedule (uint tree_index,
                        float pixels,
                        float crown_pixels,
-                       uint pixel_code,
                        constant MoppeForestUniforms& u,
                        device const MoppeForestInstance* trees) {
-  ForestSceneSchedule schedule = { 0u, 0u };
+  ForestSceneSchedule schedule = { 0u, 0.0 };
   if (tree_index >= uint (u.world.z))
     return schedule;
 
   const MoppeForestInstance tree = trees[tree_index];
   const float height = tree.root_height.w;
-  schedule.pixel_code = pixel_code;
-  schedule.parts = forest_part_count (pixels,
-                                      crown_pixels,
-                                      pixel_code,
-                                      height,
-                                      tree.identity.x,
-                                      tree.identity.y == 1u);
+  schedule.pixels = pixels;
+  schedule.parts = forest_part_count (
+    pixels, crown_pixels, height, tree.identity.x, tree.identity.y == 1u);
   return schedule;
 }
 
@@ -245,13 +260,8 @@ forest_scene_schedule (uint tree_index,
   const uint tree_index = candidate.tree;
   // Every thread derives the same cheap verdict, so scheduling needs no
   // shared memory or barrier.
-  const ForestSceneSchedule schedule =
-    forest_scene_schedule (tree_index,
-                           candidate.pixels,
-                           candidate.crown_pixels,
-                           candidate.pixel_code,
-                           u,
-                           trees);
+  const ForestSceneSchedule schedule = forest_scene_schedule (
+    tree_index, candidate.pixels, candidate.crown_pixels, u, trees);
   if (thread_id == 0u) {
     payload.count = schedule.parts;
     payload.stand_closure =
@@ -260,9 +270,9 @@ forest_scene_schedule (uint tree_index,
   }
   for (uint part = thread_id; part < schedule.parts;
        part += MOPPE_FOREST_OBJECT_THREADS)
-    payload.parts[part] = {
-      tree_index, part, schedule.parts, schedule.pixel_code
-    };
+    payload.parts[part] = { tree_index,      part,
+                            schedule.parts,  0u,
+                            schedule.pixels, candidate.crown_pixels };
 }
 
 // Shadow detail is deliberately coarser. The whole-world map receives one
@@ -305,7 +315,7 @@ forest_scene_schedule (uint tree_index,
         abs (clip.y) < clip.w + clip_radius.y) {
       const uint slot =
         atomic_fetch_add_explicit (&emitted, 1u, metal::memory_order_relaxed);
-      payload.parts[slot] = { tree, 0u, 1u, copy };
+      payload.parts[slot] = { tree, 0u, 1u, copy, 0.0, 0.0 };
     }
   }
 
@@ -334,11 +344,9 @@ struct ForestOrgan {
   bool wood;
   bool conifer;
   bool proxy;
-  // A frond organ carries feathered conifer boughs: combs of needle tufts
-  // along drooping axes. Every non-proxy conifer crown is made of these and
-  // nothing else. Bough geometry is evaluated per vertex from a stable
-  // rank, so one meshlet holds one near bough at thirteen tufts or bundles
-  // four distant boughs at three.
+  // A frond organ carries feathered conifer boughs: nested needle stations
+  // along drooping axes. Bough geometry is evaluated per vertex from a stable
+  // rank, so one meshlet holds one hero bough or a bundle of unresolved ones.
   bool frond;
   uint bundle;
   uint rank;
@@ -349,6 +357,9 @@ struct ForestOrgan {
   float boost;
   float crown;
   float individual;
+  float refinement;
+  float resolution;
+  float residual;
 };
 
 static inline ForestOrgan
@@ -364,18 +375,32 @@ forest_base_organ (thread const MoppeForestInstance& tree,
   organ.tree_height = tree.root_height.w;
   organ.seed = tree.identity.x;
   organ.conifer = tree.identity.y == 1u;
-  organ.proxy = part.lod == 1u;
-  organ.wood = part.part == 0u && !organ.proxy;
-  organ.frond = organ.conifer && !organ.proxy && part.part >= 1u;
+  organ.crown = tree.up_radius.w;
+  organ.resolution = 1.0;
+  organ.residual = 1.0;
+  if (organ.conifer && !shadow) {
+    organ.resolution = forest_bough_resolution (
+      part.crown_pixels, forest_lod_threshold (organ.seed));
+    organ.residual = sqrt (max (1.0 - organ.resolution, 0.0));
+  }
+  const bool residual_parent =
+    organ.conifer && !shadow && organ.residual > 0.0 && part.lod > 1u;
+  // A conifer's part zero remains the compact parent throughout its bough
+  // transition. While it exists, the stem is part one and boughs follow;
+  // when its residual reaches zero the old stem/bough numbering is restored.
+  // Broadleafs retain the one-part proxy convention.
+  organ.proxy = part.lod == 1u || (residual_parent && part.part == 0u);
+  const uint stem_part = residual_parent ? 1u : 0u;
+  organ.wood = part.part == stem_part && !organ.proxy;
+  organ.frond = organ.conifer && !organ.proxy && !organ.wood;
   organ.bundle = 1u;
   organ.rank = 0u;
   organ.count = 0.0;
   organ.boost = 1.0;
-  organ.crown = tree.up_radius.w;
   organ.individual = 1.0;
+  organ.refinement = 0.0;
   if (stand_closure >= 0.0) {
-    const float crown_pixels =
-      float (part.copy) * (2.0 * organ.crown / max (organ.tree_height, 0.01));
+    const float crown_pixels = part.crown_pixels;
     const float vanish = forest_individual_vanish_pixels (organ.seed);
     const float terminal = smoothstep (vanish, vanish + 4.0, crown_pixels);
     const float transfer = moppe_forest_stand_support (stand_closure) *
@@ -422,6 +447,8 @@ forest_configure_stem (thread ForestOrgan& organ,
                    (organ.conifer ? 0.62 : 1.0);
   organ.radius_z = organ.radius_x;
   organ.half_height = trunk_rise * organ.tree_height;
+  if (organ.conifer)
+    organ.radius_x = organ.radius_z = organ.radius_x * sqrt (organ.resolution);
   organ.bend = 0.12;
   organ.flutter = 0.0;
 }
@@ -430,14 +457,25 @@ static inline void forest_configure_frond (thread ForestOrgan& organ,
                                            ForestPart part) {
   const float threshold = forest_lod_threshold (organ.seed);
   organ.count = forest_bough_count (
-    forest_bough_measure (float (part.copy), organ.tree_height), threshold);
-  organ.bundle = forest_bough_bundle (part.copy, threshold);
-  organ.rank = (part.part - 1u) * organ.bundle;
-  // Preserve foliage area while boughs are absent, converging to one once the
-  // full complement has arrived.
+    forest_bough_measure (part.pixels, organ.tree_height), threshold);
+  organ.bundle = forest_bough_bundle (part.pixels, threshold);
+  const bool residual_parent = organ.residual > 0.0 && part.lod > 1u;
+  const uint first_bough = residual_parent ? 2u : 1u;
+  organ.rank = (part.part - first_bough) * organ.bundle;
+  organ.refinement =
+    forest_bough_refinement (part.pixels, threshold, organ.bundle);
+  // Preserve foliage area while boughs or within-bough stations are absent.
+  // At each bundle boundary the finer set starts with exactly the same live
+  // stations and area boost as its parent; new stations grow while all
+  // survivors continuously yield their excess area.
   const float sparse = clamp (sqrt (63.0 / max (organ.count, 1.0)), 1.0, 2.0);
-  organ.boost =
-    sparse * sqrt (13.0 / float (forest_bough_tufts (organ.bundle)));
+  const float refinement_area = organ.refinement * organ.refinement;
+  const float live_tufts = organ.bundle == 4u ? 3.0
+                           : organ.bundle == 2u
+                             ? mix (3.0, 6.0, refinement_area)
+                             : mix (6.0, 24.0, refinement_area);
+  organ.boost = sparse * sqrt (13.0 / live_tufts);
+  organ.boost *= sqrt (organ.resolution);
   organ.centre = organ.root;
   organ.radius_x = organ.crown;
   organ.radius_z = organ.crown;
@@ -596,21 +634,61 @@ static inline ForestPoint forest_crown_vertex (thread const ForestOrgan& organ,
   return point;
 }
 
+static inline ForestPoint
+forest_conifer_parent_vertex (thread const ForestOrgan& organ,
+                              uint vertex_index) {
+  // The compact conifer is not an unrelated sealed cone.  It is nine nested
+  // whorl umbrellas, exactly the large-scale organs represented by the first
+  // nine stable bough ranks.  Below branch resolution their overlap reads as
+  // one crown; as bough children take over, every umbrella contracts around
+  // the same axis and height instead of the whole tree changing topology.
+  constexpr uint sides = 10u;
+  constexpr uint vertices_per_whorl = sides + 1u;
+  const uint whorl = vertex_index / vertices_per_whorl;
+  const uint local = vertex_index % vertices_per_whorl;
+  const float t = float (whorl) / 8.0;
+  const float rise = mix (0.22, 0.97, t);
+  const float length = organ.crown * mix (1.35, 0.18, t);
+  const float residual = organ.residual;
+  const float3 origin = organ.root + organ.up * rise * organ.tree_height;
+
+  ForestPoint point;
+  if (local == 0u) {
+    point.position = origin + organ.up * length * 0.08 * residual;
+    point.normal = organ.up;
+    point.exposure = saturate (0.42 + 0.48 * t);
+    return point;
+  }
+
+  const uint side = local - 1u;
+  const float turn =
+    6.2831853 * (float (side) / float (sides) + 0.618034 * float (whorl)) +
+    0.06 * (forest_hash (organ.seed, whorl * 17u + side + 271u) - 0.5);
+  const float3 radial =
+    normalize (organ.across * cos (turn) + organ.forward * sin (turn));
+  const float reach =
+    0.82 + 0.30 * forest_hash (organ.seed, whorl * 23u + side + 293u);
+  point.position = origin + radial * length * reach * residual -
+                   organ.up * length * 0.24 * residual;
+  point.normal = normalize (organ.up + radial * 0.30);
+  point.exposure = saturate (0.32 + 0.50 * t + 0.10 * reach);
+  return point;
+}
+
 static inline ForestPoint forest_frond_vertex (thread const ForestOrgan& organ,
                                                uint vertex_index) {
   ForestPoint point;
-  // Each bough is a comb of needle tufts along a drooping axis: an apex
-  // plus four separated two-vertex blades per tuft. A twig is mostly air,
-  // so the blades stay disconnected: connected fans read as paddles, and
-  // overlapping paddles rebuild the very cone this tier replaced. The
+  // Each bough is a comb of needle tufts along a drooping axis. Every scale
+  // uses the same two disconnected tapered sprays; refinement only adds
+  // nested stations. A twig is mostly air, so the sprays stay disconnected:
+  // connected fans read as paddles, and overlapping paddles rebuild the very
+  // cone this tier replaced. The
   // bough frame derives per vertex from the stable rank, which is what
-  // lets a bundle pack several distant boughs into one meshlet. In the
-  // bundled band a whole tuft is a few pixels, where four overlapping
-  // micro-triangles cost quadruple fragment work for no resolvable
-  // difference, so the coarse tuft is one quad spanning the same splay
-  // (Kuth 2025's pixels-per-triangle discipline at organ scale).
-  const bool coarse = organ.bundle == 4u;
-  const uint per_tuft = coarse ? 4u : 9u;
+  // lets a bundle pack several distant boughs into one meshlet. The same
+  // two-triangle station is retained at every tier; only its nested sampling
+  // density changes (Kuth 2025's pixels-per-triangle discipline at organ
+  // scale).
+  const uint per_tuft = 5u;
   const uint tufts = forest_bough_tufts (organ.bundle);
   const uint stride = tufts * per_tuft;
   const uint rank = organ.rank + vertex_index / stride;
@@ -640,42 +718,32 @@ static inline ForestPoint forest_frond_vertex (thread const ForestOrgan& organ,
       : saturate ((organ.count - float (rank)) / (3.0 + 10.0 * (1.0 - t)));
   const float length = organ.crown * mix (1.35, 0.18, t) * reach * grow;
   const float3 origin = organ.root + organ.up * rise * organ.tree_height;
-  const float s = mix (0.08, 1.0, float (fan) / float (max (tufts - 1u, 1u)));
+  // Every refinement is nested in the 24-station hero sequence. The far
+  // carrier uses {0, 8, 16}; the middle adds {4, 12, 20}; the hero fills all
+  // intervening stations. A survivor therefore never moves when its parent
+  // representation yields to finer work.
+  const uint station = organ.bundle == 4u   ? fan * 8u
+                       : organ.bundle == 2u ? fan * 4u
+                                            : fan;
+  const float s = mix (0.08, 1.0, float (station) / 23.0);
+  const bool new_station = organ.bundle == 2u   ? station % 8u != 0u
+                           : organ.bundle == 1u ? station % 4u != 0u
+                                                : false;
+  const float station_grow = new_station ? organ.refinement : 1.0;
+  const uint sample = slot * 32u + station;
   // The axis droops in proportion to its reach, so long lower boughs
   // sweep down through the band beneath their whorl.
   const float droop = 0.10 - 0.40 * s * s;
-  const float wobble = fan % 2u == 0u ? 1.0 : -1.0;
+  const float wobble = (station / 4u) % 2u == 0u ? 1.0 : -1.0;
   const float3 axis_point =
     origin + along * length * s +
-    side * length * 0.12 * wobble * forest_hash (organ.seed, fan + 17u) +
+    side * length * 0.12 * wobble * forest_hash (organ.seed, sample + 17u) +
     organ.up * length * droop;
-  // The bundled tier represents several unresolved boughs and therefore
-  // keeps its coverage-compensated fan. A hero tuft is a branchlet-scale
-  // needle cluster: using the same metre-wide fan made a walker inside the
-  // crown see overlapping triangular shelves instead of foliage.
-  const float tuft_width = coarse ? mix (0.22, 0.10, s) : mix (0.095, 0.045, s);
-  const float radius = length * tuft_width * organ.boost *
-                       (0.80 + 0.40 * forest_hash (organ.seed, fan + 31u));
-  if (coarse) {
-    // Two triangles spanning the arc the blades splay over: outer
-    // corners at full reach and rim depth, inner corners high and
-    // tucked toward the axis, so the sheet is TENTED like the fan --
-    // a flat quad in the bough plane disappears edge-on, and the
-    // tuft's silhouette lives in the apex-to-rim drop.
-    const bool inner = local == 1u || local == 2u;
-    const float arc =
-      mix (-2.2, 2.2, float (local) / 3.0) +
-      0.20 * (forest_hash (organ.seed, fan * 13u + local + 41u) - 0.5);
-    const float needle =
-      0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + local + 57u);
-    const float3 rim_dir = normalize (along * cos (arc) + side * sin (arc));
-    point.position = axis_point +
-                     rim_dir * radius * needle * (inner ? 0.40 : 1.0) -
-                     organ.up * radius * (inner ? 0.06 : 0.55);
-    point.normal = normalize (organ.up + rim_dir * 0.35);
-    point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
-    return point;
-  }
+  // The boost carries the absent stations' area. As nested stations arrive,
+  // their radii and the survivors' radii meet at the same conserved limit.
+  const float tuft_width = mix (0.11, 0.048, s);
+  const float radius = length * tuft_width * organ.boost * station_grow *
+                       (0.80 + 0.40 * forest_hash (organ.seed, sample + 31u));
   if (local == 0u) {
     point.position = axis_point;
     point.normal = normalize (organ.up + along * 0.2);
@@ -686,13 +754,14 @@ static inline ForestPoint forest_frond_vertex (thread const ForestOrgan& organ,
   const uint blade = rim / 2u;
   const float edge = rim % 2u == 0u ? -1.0 : 1.0;
   const float arc =
-    mix (-2.5, 2.5, float (blade) / 3.0) + edge * 0.42 +
-    0.20 * (forest_hash (organ.seed, fan * 13u + blade + 41u) - 0.5);
+    mix (-1.15, 1.15, float (blade)) + edge * 0.30 +
+    0.20 * (forest_hash (organ.seed, sample * 13u + blade + 41u) - 0.5);
   const float needle =
-    0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + blade + 57u);
+    0.62 + 0.55 * forest_hash (organ.seed, sample * 29u + blade + 57u);
   const float3 rim_dir = normalize (along * cos (arc) + side * sin (arc));
-  point.position =
-    axis_point + rim_dir * radius * needle - organ.up * radius * 0.55;
+  const float width = edge * radius * mix (0.55, 0.32, s);
+  point.position = axis_point + rim_dir * radius * needle + side * width -
+                   organ.up * radius * 0.38;
   point.normal = normalize (organ.up + rim_dir * 0.35);
   point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
   return point;
@@ -704,6 +773,8 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
     return forest_stem_vertex (organ, vertex_index);
   if (organ.frond)
     return forest_frond_vertex (organ, vertex_index);
+  if (organ.conifer && organ.proxy)
+    return forest_conifer_parent_vertex (organ, vertex_index);
   return forest_crown_vertex (organ, vertex_index);
 }
 
@@ -712,25 +783,28 @@ static inline void forest_indices (thread Mesh& out,
                                    thread const ForestOrgan& organ,
                                    uint primitive) {
   uint3 triangle;
-  if (organ.wood) {
+  if (organ.conifer && organ.proxy) {
+    constexpr uint sides = 10u;
+    constexpr uint vertices_per_whorl = sides + 1u;
+    const uint whorl = primitive / sides;
+    const uint side = primitive % sides;
+    const uint base = whorl * vertices_per_whorl;
+    triangle = uint3 (base, base + 1u + (side + 1u) % sides, base + 1u + side);
+  } else if (organ.wood) {
     const uint side = primitive / 2u;
     const uint next = (side + 1u) % 12u;
     triangle = primitive % 2u == 0u ? uint3 (side, next, 12u + next)
                                     : uint3 (side, 12u + next, 12u + side);
   } else if (organ.frond) {
-    const bool coarse = organ.bundle == 4u;
     const uint tufts = forest_bough_tufts (organ.bundle);
-    const uint per_prims = coarse ? 2u : 4u;
-    const uint per_verts = coarse ? 4u : 9u;
+    constexpr uint per_prims = 2u;
+    constexpr uint per_verts = 5u;
     const uint bough = primitive / (tufts * per_prims);
     const uint rem = primitive % (tufts * per_prims);
     const uint fan = rem / per_prims;
     const uint blade = rem % per_prims;
     const uint base = bough * tufts * per_verts + fan * per_verts;
-    triangle = coarse
-                 ? (blade == 0u ? uint3 (base, base + 1u, base + 2u)
-                                : uint3 (base, base + 2u, base + 3u))
-                 : uint3 (base, base + 1u + 2u * blade, base + 2u + 2u * blade);
+    triangle = uint3 (base, base + 1u + 2u * blade, base + 2u + 2u * blade);
   } else if (primitive < 10u) {
     const uint side = primitive;
     triangle = uint3 (0u, 1u + (side + 1u) % 10u, 1u + side);
@@ -761,15 +835,15 @@ struct ForestMeshCounts {
 static inline ForestMeshCounts
 forest_mesh_counts (thread const ForestOrgan& organ) {
   const uint tufts = organ.frond ? forest_bough_tufts (organ.bundle) : 0u;
-  const uint per_tuft_vertices = organ.bundle == 4u ? 4u : 9u;
-  const uint per_tuft_primitives = organ.bundle == 4u ? 2u : 4u;
   return {
-    organ.wood    ? 24u
-    : organ.frond ? organ.bundle * tufts * per_tuft_vertices
-                  : 32u,
-    organ.wood    ? 24u
-    : organ.frond ? organ.bundle * tufts * per_tuft_primitives
-                  : 60u,
+    organ.conifer && organ.proxy ? 99u
+    : organ.wood                 ? 24u
+    : organ.frond                ? organ.bundle * tufts * 5u
+                                 : 32u,
+    organ.conifer && organ.proxy ? 90u
+    : organ.wood                 ? 24u
+    : organ.frond                ? organ.bundle * tufts * 2u
+                                 : 60u,
   };
 }
 
@@ -925,8 +999,8 @@ static inline uint3 forest_shadow_stem_triangle (uint primitive,
   // sun-elongated trunk line attaches the crown's shade to its tree.
   ForestOrgan stem = organ;
   if (!world_map)
-    stem =
-      forest_organ (tree, u, { part.tree, 0u, 2u, part.copy }, world_map, -1.0);
+    stem = forest_organ (
+      tree, u, { part.tree, 0u, 2u, part.copy, 0.0, 0.0 }, world_map, -1.0);
   constexpr uint boughs = 9u;
   constexpr uint bough_vertices = boughs * 4u;
   constexpr uint bough_primitives = boughs * 2u;
