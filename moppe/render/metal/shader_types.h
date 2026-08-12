@@ -291,29 +291,45 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 #define MOPPE_FOREST_MESH_VERTICES 128
 #define MOPPE_FOREST_MESH_PRIMITIVES 128
 
-// One aggregate meshlet carries a three-by-three patch of the canopy moment
-// field. Each cell owns a five-vertex roof and four independent side quads;
-// only sides facing a lower-occupancy neighbour survive in the fragment
-// stage, so the work lattice never becomes visible inside a stand.
+// One aggregate meshlet carries a continuous 24-metre canopy patch. Its
+// seven-by-seven roof samples are shared by adjacent four-metre quads, so the
+// reconstruction's work partition cannot create separate crown pyramids.
+// Boundary skirts exist only around the patch perimeter and fragment coverage
+// hides them unless the moment field actually falls away across that edge.
 #define MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES 6.0f
 #define MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES 32.0f
 #define MOPPE_FOREST_CANOPY_OBJECT_THREADS 64
-#define MOPPE_FOREST_CANOPY_CELLS 3
-#define MOPPE_FOREST_CANOPY_VERTICES_PER_CELL 21
-#define MOPPE_FOREST_CANOPY_PRIMITIVES_PER_CELL 12
+#define MOPPE_FOREST_CANOPY_GRID_CELLS 6
+#define MOPPE_FOREST_CANOPY_GRID_VERTICES 7
+#define MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES 4.0f
+#define MOPPE_FOREST_CANOPY_PATCH_METRES                                       \
+  (MOPPE_FOREST_CANOPY_GRID_CELLS * MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES)
+#define MOPPE_FOREST_CANOPY_ROOF_VERTICES                                      \
+  (MOPPE_FOREST_CANOPY_GRID_VERTICES * MOPPE_FOREST_CANOPY_GRID_VERTICES)
+#define MOPPE_FOREST_CANOPY_SIDE_VERTICES                                      \
+  (4 * 2 * MOPPE_FOREST_CANOPY_GRID_VERTICES)
 #define MOPPE_FOREST_CANOPY_MESH_VERTICES                                      \
-  (MOPPE_FOREST_CANOPY_CELLS * MOPPE_FOREST_CANOPY_CELLS *                     \
-   MOPPE_FOREST_CANOPY_VERTICES_PER_CELL)
+  (MOPPE_FOREST_CANOPY_ROOF_VERTICES + MOPPE_FOREST_CANOPY_SIDE_VERTICES)
+#define MOPPE_FOREST_CANOPY_ROOF_PRIMITIVES                                    \
+  (2 * MOPPE_FOREST_CANOPY_GRID_CELLS * MOPPE_FOREST_CANOPY_GRID_CELLS)
+#define MOPPE_FOREST_CANOPY_SIDE_PRIMITIVES                                    \
+  (4 * 2 * MOPPE_FOREST_CANOPY_GRID_CELLS)
 #define MOPPE_FOREST_CANOPY_MESH_PRIMITIVES                                    \
-  (MOPPE_FOREST_CANOPY_CELLS * MOPPE_FOREST_CANOPY_CELLS *                     \
-   MOPPE_FOREST_CANOPY_PRIMITIVES_PER_CELL)
-#define MOPPE_FOREST_CANOPY_MESH_THREADS 192
+  (MOPPE_FOREST_CANOPY_ROOF_PRIMITIVES + MOPPE_FOREST_CANOPY_SIDE_PRIMITIVES)
+#define MOPPE_FOREST_CANOPY_MESH_THREADS 128
 
 struct MOPPE_SHADER_ALIGN MoppeForestInstance {
   MoppeFloat4 root_height; // xyz=root in metres, w=height in metres
   MoppeFloat4 up_radius;   // xyz=ground normal, w=crown radius in metres
-  MoppeFloat4 ecology;     // x=cover, y=moisture, zw=reserved
+  MoppeFloat4 ecology;     // x=cover, y=moisture, z=24 m stand closure
   MoppeUint4 identity;     // x=seed, y=species, z=age, w=reserved
+};
+
+struct MOPPE_SHADER_ALIGN MoppeForestCandidate {
+  uint tree;
+  uint pixel_code;
+  float pixels;
+  float crown_pixels;
 };
 
 // Sun-shaft raymarch: rays come from a camera basis with the frustum
@@ -386,6 +402,8 @@ static_assert (sizeof (MoppeForestInstance) == 64,
                "forest instance must remain one cache line");
 static_assert (alignof (MoppeForestInstance) == 16,
                "forest instances require GPU alignment");
+static_assert (sizeof (MoppeForestCandidate) == 16,
+               "forest candidate must remain one SIMD lane");
 static_assert (MOPPE_FOREST_MESH_VERTICES <= 256,
                "forest meshlet exceeds Metal vertex limit");
 static_assert (MOPPE_FOREST_MESH_PRIMITIVES <= 512,

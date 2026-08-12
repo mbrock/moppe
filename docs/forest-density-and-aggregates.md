@@ -13,10 +13,12 @@ The failure mode was an open planting lattice in which every tree presented
 as an individual silhouette: "a bunch of spiny trees", not a forest. A spruce
 forest at any distance is mostly occlusion: a closed canopy surface on
 hillsides, dark interior gloom between trunks up close, individuals legible
-at stand edges. The world plan now plants at five-metre spacing, with broad
-jitter inside each cell, and the conifer crown radius is 0.23 of height. This
-keeps roughly 74,000 stable individuals in the reference world while making
-their near-field occlusion credible.
+at stand edges. The world plan now draws a deterministic uniform proposal
+stream over the toroidal world and priority-thins it with a two-metre
+hard-core. There is no final planting lattice. High-suitability habitat is
+dense enough to close while marginal woodland retains approximately its old
+spacing; the conifer crown radius is 0.23 of height. The v9 smoke reference
+contains 98,311 stable individuals.
 
 Density also changes what the far field is allowed to be. A sparse stand
 seen from 500 m is still "several distinguishable individuals", and only
@@ -48,28 +50,47 @@ guessed from the habitat texture:
 - B is upper crown height; and
 - A is optical-depth-weighted moisture.
 
-The reference population occupies 16.3 percent of the world field. Within
-occupied texels its median closure is 0.325, its ninetieth percentile is
-0.573, and its maximum is 0.763. These are useful population diagnostics,
-not image targets: changing a threshold to improve them without improving the
-ride would be reward hacking.
+The v9 fast-profile seed-123 population contains 102,047 individuals and
+occupies 13.3 percent of the 1024-square world field. Its whole-field mean
+closure is 0.058; within occupied texels the median is 0.463, the ninetieth
+percentile is 0.795, and the maximum is 0.990. The smaller smoke reference has
+98,311 individuals. These are population diagnostics, not image targets:
+changing a threshold to improve them without improving the ride would be
+reward hacking.
 
-The renderer turns that field into eight-metre canopy cells, grouped into
-three-by-three mesh patches. A cell has a slightly irregular roof and emits
-side geometry only where its neighbour has less closure or a lower roof. The
-representation is finite, world-anchored, and rendered without depth writes
-after the undergrowth, so its translucent coverage cannot become a dark
-infinite sheet or erase nearer organisms. Its work window is radial only as a
-cost bound; frustum culling and the representation decision use the actual
-terrain height and three-dimensional camera distance. Walking, riding, and
-flying therefore ask the same geometric question.
+The renderer reconstructs a continuous roof on a shared four-metre grid. One
+meshlet carries a 24-metre patch with 49 roof vertices and 72 roof triangles,
+plus perimeter skirts that survive only at a real closure falloff. The old
+nine independent eight-metre solids announced themselves as a checkerboard
+even after their normals were smoothed; sharing world-space vertices removes
+that ownership from geometry. Roof height is filtered over twelve metres and
+the moment texture is mipmapped, while fine closure remains available to the
+fragment. The representation is finite, world-anchored, and rendered without
+depth writes after the undergrowth, so it cannot become a dark infinite sheet
+or erase nearer organisms. The fragment path treats the stored vertical
+closure as `1 - exp(-optical_depth)` and integrates that finite density along
+the actual view ray through the crown band. Closed stands therefore retain
+mass in a glider's grazing view instead of becoming grey terrain overlays,
+while top-down gaps and navigable interiors remain real.
 
 The handoff is expressed in crown pixels, not tree height or camera altitude.
-The aggregate begins while a mean crown is twelve pixels wide and is mostly
-present by four to five pixels. Each individual retires, with seed-staggered
-thresholds, over the same four-to-five-pixel interval. The overlap preserves
-coverage while the image can still resolve the individual; below it the stand
-field owns the population instead of a grid of subpixel conifers.
+The aggregate begins while a mean crown is sixteen pixels wide and is mostly
+present by four to five pixels. A separate 24-metre closure sample decides
+whether the local population is stand-like at all: sparse woodland retains
+individuals, while closed canopy continuously contracts explicit foliage
+toward the crown top as the field takes ownership. Fine closure controls
+coverage in both cases. Actual terrain height and three-dimensional distance
+drive the decision; horizontal distance only bounds work, so walking, riding,
+jumping, and flying do not receive different hidden rules.
+
+Resolved individuals use the same rule before GPU dispatch. The renderer
+conservatively tests the whole organism against the actual world-to-clip
+matrix, rejects crowns that cannot reach the earliest four-pixel retirement
+threshold, and submits the survivors in front-to-back depth bins. The GPU
+still owns seeded retirement and organ detail. Population density therefore
+no longer implies one object threadgroup for every tree in the world on every
+frame, and the optimization makes no assumption about camera height or a
+ground horizon.
 
 The moment field also replaced the obsolete habitat-cover reading in terrain
 and undergrowth shading. The canopy roof, forest floor, blades, ferns, and
@@ -79,17 +100,24 @@ so a closed stand is sparse beneath while actual gaps remain occupiable.
 
 ## What remains
 
-- Inspect the dense individual pass in a GPU trace and make front-to-back
-  rejection deliberate if overdraw remains dominant.
-- Replace the coarse roof's remaining cell-scale faceting with richer
-  stand-shape and lighting moments without reintroducing per-tree identity.
-- Remove the last visible planting correlations; wider jitter reduced the
-  rows, but a jittered lattice is not a blue-noise population.
-- Judge longer walking, riding, and gliding sequences. The short aerial strip
-  proves that the field is world-anchored, but not that every transition is
-  yet perceptually quiet.
-- Give hero trunks roots, base flare, litter, and local ground agreement. That
-  is a near-field forest-floor problem, not an excuse to retain distant trees.
+- Inspect the surviving dense individual pass in a GPU trace. Conservative
+  candidate filtering and front-to-back submission are now deliberate, but
+  the ordinary temporal benchmark still attributes 9.7954 ms median to the
+  forest block and the all-features frame is not within 60 Hz.
+- Extend the finite optical roof into a richer crown-band model only where
+  longer glides show that one integrated path cannot reproduce parallax or
+  layered extinction. Do not reintroduce distant individual spikes to hide a
+  weak aggregate.
+- Judge longer walking, riding, jumping, and player-controlled gliding
+  sequences. The current 60-frame, 30-metre neutral aerial glide is spatially
+  anchored, but one path cannot certify temporal behaviour.
+- Give hero trunks taper, roots, base flare, litter, and local ground
+  agreement. Bark is now visible under indirect light and hero branchlets no
+  longer form metre-wide shelves, but the near tree is still deliberately
+  unfinished.
+- Attribute the positive forest-understorey interaction in a pass-timed trace;
+  the ordinary 32-case run shows it, but cannot say which shared scene work is
+  responsible.
 
 The broadleaf form was removed from the world (the blob-lollipop
 placeholder had received none of the conifer's assembly work); it returns

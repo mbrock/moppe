@@ -75,25 +75,47 @@ acceleration-structure rebuilds.
   projection (endpoints collapse discontinuously when root or tip crosses
   the camera plane). The frustum bound must contain the whole organism
   (`0.55h + 1.4 crown`), or passing trees vanish while filling the screen.
-- Tiers: below ~14 threshold pixels one part draws a solid crown proxy;
+- Tiers: below sixteen threshold *crown* pixels one part draws a solid crown
+  proxy; total tree height no longer keeps a six-pixel-wide spruce in a
+  seven-meshlet bough assembly. Above that, the
   the bundled band packs four three-tuft boughs per meshlet, with each
   coarse tuft a single tented quad (two triangles spanning the blade
   fan's splay -- a flat quad in the bough plane disappears edge-on); the
-  hero band pays one thirteen-tuft fan bough per meshlet. Both
+  hero band pays one thirteen-tuft fan bough per meshlet. Hero tuft width is
+  branchlet-scale rather than inheriting the bundled tier's metre-wide
+  coverage compensation; that distinction is what lets a walker see through
+  a crown instead of encountering a ceiling of triangular shelves. Both
   representation switches align with ramp saturation.
 - Individual retirement is based on projected *crown width*, not full tree
-  height. Each seed retires between four and 5.2 crown pixels. In the same
-  measure the stand quotient fades in from twelve pixels and carries most of
-  the response by the retirement interval. This prevents a two-pixel-tall
-  rule from retaining an almost entirely subpixel crown across the world.
+  height. The stand response begins at sixteen crown pixels, but identity
+  transfers into it only where a 24-metre filtered closure says the organisms
+  actually form a stand. Foliage contracts toward the crown top and wood
+  toward the root as that transfer proceeds; open woodland keeps its real
+  silhouettes through their final seed-staggered four-to-5.2-pixel fade.
+  Thus sparse trees never dissolve into a false sheet and a closed stand does
+  not retain a forest of unrepeatable spikes.
 - The stand object stage samples actual terrain height before projecting a
   patch. Its LOD distance is three-dimensional, so a glider above a stand and
   a walker beside it do not receive different rules disguised as the same
   distance. Horizontal distance only bounds the finite work window.
-- Aggregate geometry uses eight-metre cells and emits a roof plus exposed
-  boundary sides. It has world-space grain and broad wind, but no per-tree
-  spikes once identity has retired. Its source moment field is also the
-  closure input for terrain and undergrowth.
+- Aggregate geometry is a shared seven-by-seven roof grid: four-metre samples
+  over one 24-metre mesh patch, with field-gated skirts only on the patch
+  perimeter. Adjacent quads and adjacent patches evaluate the same
+  world-space height, so dispatch ownership cannot appear as pyramids or
+  checkerboard lighting. Height is band-limited over twelve metres while fine
+  closure still preserves actual gaps. Fragment coverage inverts that closure
+  to vertical optical depth and integrates a finite path through the crown
+  band along the actual view ray. Thus a glider's grazing view of a closed
+  stand becomes optically dense without filling a top-down gap or turning the
+  forest into an infinite sheet. The field also drives terrain and undergrowth
+  closure.
+- Before dispatch, the renderer conservatively filters the retained periodic
+  population against the actual three-dimensional frustum and the earliest
+  four-crown-pixel retirement bound. It sends compact projected-error records
+  in eight front-to-back depth bins. The GPU retains the seeded retirement and
+  exact organ schedule; CPU filtering only removes object groups that must
+  produce no geometry. This is camera-orientation and altitude independent,
+  not a ground-radius LOD.
 - `forest_bough_slot` is total over any rank: bundling rounds the
   scheduled range past the sixty-three real slots, and an out-of-range
   read there once rasterized as screen-sized garbage triangles.
@@ -125,6 +147,9 @@ acceleration-structure rebuilds.
 - `tools/tree-lod-atlas`: the dolly cropped to constant apparent size, so
   the only thing changing between tiles is the LOD decision itself.
 - In-game: `F` walks, `P` captures to `screenshots/run-<timestamp>/`.
+- `MOPPE_GLIDE=<gazetteer-shot>` records every consecutive frame of a bare
+  translating camera in the actual world renderer. It is the isolation tool
+  for aerial handoff; `moppe-testbed` is not vegetation evidence.
 - `MOPPE_RIDE_CAPTURE_DIR` records consecutive gameplay frames;
   `tools/ride-judge` encodes them to video and, with `GEMINI_API_KEY`,
   asks a video-capable model for a 1-5 temporal-stability rating.
@@ -137,24 +162,34 @@ acceleration-structure rebuilds.
 
 ## Performance state (August 2026, M2 Pro)
 
-The standard 32-case feature partition at 1280x720, native linear output and
-4x MSAA gives the useful implementation sequence. With the dense five-metre
-population and the old retirement rule, the forest median was 5.8932 ms.
-Crown-scale retirement reduced it to 4.6528 ms. With the population-derived
-aggregate, fuller crowns, actual-closure understorey, and stand frustum
-culling, the measured pre-final-handoff median was 3.9211 ms (mean 3.8027,
-p95 7.2666). The all-features case was 14.807 ms median, with no median 60 Hz
-misses.
+Keep two output paths distinct. The earlier implementation sequence was
+measured at 1280x720, native linear output and 4x MSAA: the forest fell from
+5.8932 ms to 4.6528 ms and then 3.9211 ms median as crown retirement and the
+first aggregate arrived. Its 14.807 ms all-features median remains historical
+evidence for those changes, not a current baseline.
 
-That last run is an upper bound for the current, slightly earlier individual
-retirement: it predates the final four-to-5.2-pixel threshold, which removes
-geometry, but the final threshold has not itself completed a partition run.
-Do not turn that inference into a measured number.
+The current standard 32-case partition is the ordinary temporal path: a
+2560x1600 drawable reconstructed from a 1280x800, single-sample scene. On the
+v9 fast-profile seed-123 world (102,047 retained individuals), the first full
+run exposed a 20.3002 ms median forest block and 34.753 ms all-features case.
+That regression was not accepted. Moving field slopes from fragment to shared
+roof vertices, making far structure crown-relative, filtering conservative 3D
+candidate records before dispatch, and drawing eight front-to-back bins gives
+the final full run:
 
-Remaining performance work starts with a real trace of the dense individual
-pass: register pressure/occupancy, front-to-back rejection, half-precision
-*arithmetic* inside fragment shaders (not interfaces), hero-bough coalescing
-once the varyings question is settled under the debugger, and per-bough
-back-side culling. A Kuth-style rate-limited auto-LOD governor is still useful
-eventually, but only after the representation is visually coherent; it cannot
-repair a bad handoff.
+- forest block: 9.7954 ms median, 10.0582 ms mean, 12.8311 ms p95;
+- all features: 24.642 ms median, 25.495 ms p95; and
+- 16 of 32 configurations still miss 60 Hz by median.
+
+This is a 52-percent reduction from the rejected v9 run while keeping the
+denser population and continuous optical stand, but it is not a solved frame
+budget. Remaining performance work starts with a real trace of the surviving
+individual pass: register pressure/occupancy, half-precision *arithmetic*
+inside fragment shaders (not interfaces), hero-bough coalescing once the
+varyings question is settled under the debugger, and per-bough back-side
+culling. The host currently builds that conservative set by scanning every
+retained individual; replace that scan with world-space bins or a hierarchy if
+CPU sampling shows it matters, without weakening the camera-independent
+visibility rule. The interaction with undergrowth also needs direct
+attribution. A rate-limited auto-LOD governor is useful only after
+the representation is visually coherent; it cannot repair a bad handoff.

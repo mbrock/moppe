@@ -490,6 +490,8 @@ namespace moppe {
       struct MetalForestResources {
         id<MTLBuffer> instances = nil;
         id<MTLTexture> canopy_moments = nil;
+        std::vector<MoppeForestInstance> cpu_instances;
+        std::array<std::vector<MoppeForestCandidate>, 8> scene_candidate_bins;
         std::uint32_t count = 0;
         std::uint32_t canopy_size = 0;
         float period_x = 0.0f;
@@ -3335,10 +3337,6 @@ namespace moppe {
       }
       m_forest_resources.canopy_size = 0;
       [m_residency commit];
-      m_forest_resources.instances =
-        create_private_buffer (packed.data (),
-                               packed.size () * sizeof (MoppeForestInstance),
-                               @"Moppe forest individuals");
       m_forest_resources.count = static_cast<std::uint32_t> (packed.size ());
       const Vec3 period = extent_value (setup.period);
       m_forest_resources.period_x = period[0];
@@ -3349,8 +3347,17 @@ namespace moppe {
       // area into the terrain-resolution lattice, preserving optical closure,
       // mean and upper height, and moisture. RGBA8 is ample here: its height
       // quantum is 12.5 cm over the bounded 32 m crown range.
+      // Forest and terrain uploads are independent renderer resources. A
+      // cached world can present them in either order, so deriving this from
+      // the current terrain texture made the same population alternate
+      // between 256 and 1024 texels. Aim for two samples across a mean crown
+      // before the memory cap, and let the forest's own period determine its
+      // field.
+      const float target_texel = 0.5f * MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES;
       const std::uint32_t canopy_size = static_cast<std::uint32_t> (
-        std::clamp (m_terrain_resources.params.width, 256, 1024));
+        std::clamp (std::ceil (std::max (period[0], period[2]) / target_texel),
+                    256.0f,
+                    1024.0f));
       if (period[0] > 0.0f && period[2] > 0.0f && !instances.empty ()) {
         const std::size_t texels =
           static_cast<std::size_t> (canopy_size) * canopy_size;
@@ -3451,11 +3458,41 @@ namespace moppe {
           };
         }
 
+        // The individual-to-stand handoff needs the same broad closure as
+        // the aggregate, but it is invariant for this retained population.
+        // Store one 24-metre reading per individual instead of issuing a
+        // random mipmapped texture fetch for every tree on every frame.
+        const int stand_reach_x =
+          std::max (1,
+                    static_cast<int> (std::ceil (
+                      0.5f * MOPPE_FOREST_CANOPY_PATCH_METRES / step_x)));
+        const int stand_reach_z =
+          std::max (1,
+                    static_cast<int> (std::ceil (
+                      0.5f * MOPPE_FOREST_CANOPY_PATCH_METRES / step_z)));
+        for (MoppeForestInstance& tree : packed) {
+          const int centre_x =
+            static_cast<int> (std::floor (tree.root_height.x / step_x));
+          const int centre_z =
+            static_cast<int> (std::floor (tree.root_height.z / step_z));
+          float closure = 0.0f;
+          int samples = 0;
+          for (int dz = -stand_reach_z; dz <= stand_reach_z; ++dz)
+            for (int dx = -stand_reach_x; dx <= stand_reach_x; ++dx) {
+              const std::size_t index =
+                static_cast<std::size_t> (wrap (centre_z + dz)) * canopy_size +
+                wrap (centre_x + dx);
+              closure += static_cast<float> (moments[index][0]) / 255.0f;
+              ++samples;
+            }
+          tree.ecology.z = closure / static_cast<float> (samples);
+        }
+
         MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
           texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
                                        width:canopy_size
                                       height:canopy_size
-                                   mipmapped:NO];
+                                   mipmapped:YES];
         descriptor.storageMode = MTLStorageModePrivate;
         descriptor.usage = MTLTextureUsageShaderRead;
         m_forest_resources.canopy_moments =
@@ -3466,7 +3503,7 @@ namespace moppe {
                         canopy_size,
                         canopy_size,
                         sizeof (moments.front ()),
-                        false);
+                        true);
         m_forest_resources.canopy_size = canopy_size;
 
         std::sort (occupied_closure.begin (), occupied_closure.end ());
@@ -3488,6 +3525,13 @@ namespace moppe {
                   << " max=" << percentile (1.0f) << std::defaultfloat
                   << std::endl;
       }
+      m_forest_resources.instances =
+        create_private_buffer (packed.data (),
+                               packed.size () * sizeof (MoppeForestInstance),
+                               @"Moppe forest individuals");
+      m_forest_resources.cpu_instances = std::move (packed);
+      for (auto& bin : m_forest_resources.scene_candidate_bins)
+        bin.reserve (m_forest_resources.cpu_instances.size () / 8);
     }
 
     // -- targets -------------------------------------------------------
@@ -4921,7 +4965,7 @@ namespace moppe {
     }
 
     void MetalRenderer::draw_forest () {
-      const MetalForestResources& forest = m_forest_resources;
+      MetalForestResources& forest = m_forest_resources;
       const MetalTerrainResources& terrain = m_terrain_resources;
       if (!m_pipelines.forest || !forest.instances || forest.count == 0)
         return;
@@ -4945,6 +4989,82 @@ namespace moppe {
       u.shadow = m_frame.uniforms.shadow;
       u.temporal = m_frame.uniforms.temporal;
 
+      // The retained population covers the whole periodic world, but an
+      // object dispatch is useful only when an organism intersects this 3D
+      // frustum and its crown can still exceed the earliest seeded retirement
+      // threshold. This is the same projected-error bound as the shader,
+      // evaluated conservatively before allocating Metal object threadgroups.
+      // It contains no ground-view radius: pitched, airborne, and walking
+      // cameras all use the actual world-to-clip transform.
+      auto& candidate_bins = forest.scene_candidate_bins;
+      for (auto& bin : candidate_bins)
+        bin.clear ();
+      const Mat4& vp = m_current_view_proj;
+      const auto row_scale = [&] (int row) {
+        return std::sqrt (vp.element (row) * vp.element (row) +
+                          vp.element (4 + row) * vp.element (4 + row) +
+                          vp.element (8 + row) * vp.element (8 + row));
+      };
+      const float projection_x = row_scale (0);
+      const float projection_y = row_scale (1);
+      const float scene_height = static_cast<float> (m_targets.height);
+      for (std::uint32_t index = 0; index < forest.cpu_instances.size ();
+           ++index) {
+        const MoppeForestInstance& tree = forest.cpu_instances[index];
+        Vec3 root (tree.root_height.x, tree.root_height.y, tree.root_height.z);
+        if (forest.period_x > 0.0f)
+          root[0] += std::round ((m_frame.params.camera_pos[0] - root[0]) /
+                                 forest.period_x) *
+                     forest.period_x;
+        if (forest.period_z > 0.0f)
+          root[2] += std::round ((m_frame.params.camera_pos[2] - root[2]) /
+                                 forest.period_z) *
+                     forest.period_z;
+        const float slope_weight = tree.identity.y == 1u ? 0.20f : 0.28f;
+        const Vec3 ground_up (
+          tree.up_radius.x, tree.up_radius.y, tree.up_radius.z);
+        const Vec3 up =
+          normalized (Vec3 (0.0f, 1.0f, 0.0f) * (1.0f - slope_weight) +
+                      ground_up * slope_weight);
+        const float height = tree.root_height.w;
+        const float crown = tree.up_radius.w;
+        const float radius = 0.55f * height + 1.4f * crown;
+        const Vec3 centre = root + up * (0.52f * height);
+        const float clip_x = vp.element (0) * centre[0] +
+                             vp.element (4) * centre[1] +
+                             vp.element (8) * centre[2] + vp.element (12);
+        const float clip_y = vp.element (1) * centre[0] +
+                             vp.element (5) * centre[1] +
+                             vp.element (9) * centre[2] + vp.element (13);
+        const float clip_w = vp.element (3) * centre[0] +
+                             vp.element (7) * centre[1] +
+                             vp.element (11) * centre[2] + vp.element (15);
+        if (clip_w <= -radius ||
+            std::abs (clip_x) >= clip_w + radius * projection_x ||
+            std::abs (clip_y) >= clip_w + radius * projection_y)
+          continue;
+        const float crown_pixels =
+          crown * projection_y * scene_height / std::max (clip_w, 0.6f);
+        if (crown_pixels >= 4.0f) {
+          // Separate draws make depth rejection deliberately front-to-back.
+          // The bins are broad enough that movement cannot reorder an entire
+          // stand at once; order within a bin is irrelevant to identity.
+          constexpr std::array depth_ends { 32.0f,  64.0f,   128.0f, 256.0f,
+                                            512.0f, 1024.0f, 2048.0f };
+          std::size_t bin = 0;
+          while (bin < depth_ends.size () && clip_w > depth_ends[bin])
+            ++bin;
+          const float pixels = 0.5f * height * projection_y * scene_height /
+                               std::max (clip_w, 0.6f);
+          candidate_bins[bin].push_back (
+            { index,
+              std::min<std::uint32_t> (static_cast<std::uint32_t> (pixels),
+                                       65535u),
+              pixels,
+              crown_pixels });
+        }
+      }
+
       id<MTL4RenderCommandEncoder> enc = scene_encoder ();
       begin_gpu_pass (enc, GpuPass::Scene);
       [enc setRenderPipelineState:m_pipelines.forest];
@@ -4962,17 +5082,27 @@ namespace moppe {
                     MOPPE_TEX_SHADOW,
                     terrain.shadow_map ? terrain.shadow_map
                                        : m_pipelines.shadow_fallback);
-      use_arguments (enc,
-                     m_frame,
-                     MTLRenderStageObject | MTLRenderStageMesh |
-                       MTLRenderStageFragment);
       // One object threadgroup per individual: a hero assembly owns the
       // whole payload instead of sharing it with seven neighbours.
-      [enc drawMeshThreadgroups:MTLSizeMake (forest.count, 1, 1)
-        threadsPerObjectThreadgroup:MTLSizeMake (
-                                      MOPPE_FOREST_OBJECT_THREADS, 1, 1)
-          threadsPerMeshThreadgroup:MTLSizeMake (
-                                      MOPPE_FOREST_MESH_THREADS, 1, 1)];
+      for (const std::vector<MoppeForestCandidate>& candidates :
+           candidate_bins) {
+        if (candidates.empty ())
+          continue;
+        bind_address (m_frame,
+                      MTLRenderStageObject,
+                      MOPPE_BUF_DRAW,
+                      m_frame.arena[m_frame.slot].write (
+                        std::span<const MoppeForestCandidate> (candidates)));
+        use_arguments (enc,
+                       m_frame,
+                       MTLRenderStageObject | MTLRenderStageMesh |
+                         MTLRenderStageFragment);
+        [enc drawMeshThreadgroups:MTLSizeMake (candidates.size (), 1, 1)
+          threadsPerObjectThreadgroup:MTLSizeMake (
+                                        MOPPE_FOREST_OBJECT_THREADS, 1, 1)
+            threadsPerMeshThreadgroup:MTLSizeMake (
+                                        MOPPE_FOREST_MESH_THREADS, 1, 1)];
+      }
 
       if (!m_pipelines.forest_canopy || !forest.canopy_moments ||
           !terrain.have_terrain)
@@ -5004,8 +5134,8 @@ namespace moppe {
                                         focal_pixels / 1.8f,
                                       1200.0f,
                                       2400.0f);
-      constexpr float cell_side = 8.0f;
-      constexpr float patch_side = cell_side * MOPPE_FOREST_CANOPY_CELLS;
+      constexpr float sample_step = MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES;
+      constexpr float patch_side = MOPPE_FOREST_CANOPY_PATCH_METRES;
       const int patches_side =
         static_cast<int> (std::ceil ((2.0f * reach) / patch_side));
       canopy.tiles.x =
@@ -5015,7 +5145,7 @@ namespace moppe {
       canopy.tiles.z = static_cast<float> (patches_side);
       canopy.tiles.w = patch_side;
       canopy.lod.x = reach;
-      canopy.lod.y = cell_side;
+      canopy.lod.y = sample_step;
 
       [enc setRenderPipelineState:m_pipelines.forest_canopy];
       [enc setDepthStencilState:m_pipelines.depth[1][0]];

@@ -59,7 +59,9 @@ namespace moppe {
       // MetalFX frame interpolation is available through an explicit flag.
       bool frame_interpolation = false;
       bool fullscreen = false;
-      bool capture_frames = false; // request blit-readable drawables
+      // Automated rendering needs blit-readable drawables and, on macOS, a
+      // run-loop timer that keeps an inactive window progressing.
+      bool capture_frames = false;
       bool activate = true; // let automated runs stay behind the active app
     };
 

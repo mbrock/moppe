@@ -33,9 +33,10 @@ namespace moppe::game {
     spatial_extent_t period {};
   };
 
-  // Convert the continuous canopy field into stable individuals on a
-  // jittered grid. Positions and identities depend only on world seed and
-  // lattice cell, so revisiting an area never produces a different forest.
+  // Convert the continuous canopy field into a deterministic hard-core point
+  // process. A uniform habitat-weighted proposal stream is priority-thinned
+  // on the world torus, so revisiting an area preserves every identity and no
+  // planting grid exists to leak into the rendered population.
   [[nodiscard]] ForestPlan
   plan_global_forest (const map::SurfaceGeometry& surface,
                       const map::SurfaceReadings& readings,

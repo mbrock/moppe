@@ -621,9 +621,10 @@ namespace moppe::game {
         options.world.resolution = 1024;
       if (options.terrain_resolution)
         options.world.resolution = *options.terrain_resolution;
-      options.config.capture_frames = !options.screenshot_path.empty () ||
-                                      options.gazetteer ||
-                                      ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
+      options.config.capture_frames =
+        !options.screenshot_path.empty () || options.gazetteer ||
+        ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
+        ::getenv ("MOPPE_RIDE_CAPTURE_DIR") || options.benchmark;
       // An automated run stays behind whatever the developer is looking at.
       options.config.activate = !options.config.capture_frames &&
                                 !options.benchmark && !options.stay_inactive;

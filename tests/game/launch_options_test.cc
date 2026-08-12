@@ -272,6 +272,7 @@ MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
   MOPPE_CHECK (options.benchmark->partition ==
                game::GraphicsBenchmarkPartition::Standard);
   MOPPE_CHECK (!options.config.fullscreen);
+  MOPPE_CHECK (options.config.capture_frames);
   MOPPE_CHECK (!options.config.activate);
 }
 

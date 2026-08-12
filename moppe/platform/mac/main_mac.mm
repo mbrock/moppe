@@ -335,7 +335,8 @@ static void log_runtime_parameters (MoppeView* view) {
 @property (nonatomic, assign) moppe::render::Renderer* renderer;
 @property (nonatomic, assign) BOOL frameInterpolationRequested;
 - (void)connectGameController;
-- (void)startDisplayLinkForView:(MoppeView*)view;
+- (void)startDisplayLinkForView:(MoppeView*)view
+                  captureFrames:(BOOL)capture_frames;
 - (void)configureFrameInterpolationForView:(MoppeView*)view;
 @end
 
@@ -352,6 +353,7 @@ static void log_runtime_parameters (MoppeView* view) {
   int m_profile_presentations;
   bool m_profile_cpu;
   CAMetalDisplayLink* m_display_link;
+  NSTimer* m_capture_timer;
   bool m_present_rendered_next;
   CGSize m_actual_drawable_size;
   MoppeView* m_view;
@@ -372,6 +374,7 @@ static void log_runtime_parameters (MoppeView* view) {
   m_profile_presentations = 0;
   m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
   m_display_link = nil;
+  m_capture_timer = nil;
   m_present_rendered_next = false;
   m_view = nil;
   return self;
@@ -450,7 +453,27 @@ static void log_runtime_parameters (MoppeView* view) {
   [self drawFrame:view presentationTime:moppe::platform::now ()];
 }
 
-- (void)startDisplayLinkForView:(MoppeView*)view {
+- (void)startDisplayLinkForView:(MoppeView*)view
+                  captureFrames:(BOOL)capture_frames {
+  // CAMetalDisplayLink may stop delivering callbacks when an automated
+  // window remains visible but inactive. Captures need deterministic progress
+  // more than presentation timestamps, and MTKView's ordinary callback still
+  // drives the exact same game and Metal renderer without taking focus.
+  if (capture_frames && !self.frameInterpolationRequested) {
+    m_view = view;
+    view.paused = YES;
+    const NSTimeInterval interval =
+      1.0 / std::max<NSInteger> (view.preferredFramesPerSecond, 1);
+    m_capture_timer =
+      [NSTimer timerWithTimeInterval:interval
+                             repeats:YES
+                               block:^(NSTimer*) { [view draw]; }];
+    [[NSRunLoop mainRunLoop] addTimer:m_capture_timer
+                              forMode:NSRunLoopCommonModes];
+    std::cerr << "moppe: run-loop capture pacing at "
+              << view.preferredFramesPerSecond << " Hz" << std::endl;
+    return;
+  }
   if (@available (macOS 14.0, *)) {
     m_view = view;
     view.paused = YES;
@@ -561,6 +584,7 @@ static void log_runtime_parameters (MoppeView* view) {
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
+  [m_capture_timer invalidate];
   [m_display_link invalidate];
   if (m_controller)
     m_controller->disconnect ();
@@ -631,7 +655,8 @@ namespace moppe {
         window.delegate = delegate;
         NSApp.delegate = delegate;
 
-        [delegate startDisplayLinkForView:view];
+        [delegate startDisplayLinkForView:view
+                            captureFrames:config.capture_frames];
         log_runtime_parameters (view);
 
         if (config.activate) {

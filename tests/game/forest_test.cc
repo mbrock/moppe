@@ -82,6 +82,35 @@ MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
     game::plan_global_forest (surface, readings, 0x31415926U).sites.empty ());
 }
 
+MOPPE_TEST (global_forest_population_has_a_periodic_hard_core) {
+  using namespace moppe;
+  constexpr float period = 160.0f;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (period, 0, period))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    terrain::surface_elevation_point (0.42f * 180.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  map::SurfaceReadings readings = test::complete_readings (surface);
+  std::ranges::fill (spatial::get<map::forest_cover> (readings),
+                     1.0f * map::forest_cover[mp_units::one]);
+
+  const game::ForestPlan plan =
+    game::plan_global_forest (surface, readings, 0x96c41d2bU);
+  MOPPE_CHECK (plan.sites.size () > 700);
+  for (std::size_t i = 0; i < plan.sites.size (); ++i)
+    for (std::size_t j = i + 1; j < plan.sites.size (); ++j) {
+      const Vec3 a = position_value (plan.sites[i].position);
+      const Vec3 b = position_value (plan.sites[j].position);
+      const float dx = std::abs (a[0] - b[0]);
+      const float dz = std::abs (a[2] - b[2]);
+      const float periodic_x = std::min (dx, period - dx);
+      const float periodic_z = std::min (dz, period - dz);
+      MOPPE_CHECK (periodic_x * periodic_x + periodic_z * periodic_z >=
+                   4.0f - 1e-4f);
+    }
+}
+
 MOPPE_TEST (baked_forest_plan_round_trips_and_rejects_bad_identity) {
   using namespace moppe;
   const std::filesystem::path path =

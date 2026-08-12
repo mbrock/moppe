@@ -2,6 +2,7 @@
 
 #include <moppe/gfx/signal.hh>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -14,7 +15,16 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 6;
+    constexpr std::uint32_t forest_plan_version = 9;
+
+    // Marginal woodland stays close to the old proposal density while the
+    // most suitable habitat can form a genuinely closed spruce stand. The
+    // hard-core pass remains the physical upper bound. Proposals themselves
+    // are a uniform deterministic stream, not one draw per square, so no
+    // planting lattice exists to survive the rejection.
+    constexpr float forest_proposal_scale_min = 0.55f;
+    constexpr float forest_proposal_scale_max = 0.95f;
+    constexpr float forest_exclusion_ratio = 0.40f;
 
     struct ForestPlanHeader {
       std::uint64_t magic;
@@ -40,6 +50,14 @@ namespace moppe::game {
     static_assert (std::is_trivially_copyable_v<ForestSiteRecord>);
     static_assert (sizeof (ForestPlanHeader) == 40);
     static_assert (sizeof (ForestSiteRecord) == 48);
+
+    struct ForestCandidate {
+      float x;
+      float z;
+      float cover;
+      float priority;
+      std::uint32_t identity;
+    };
 
     position_t sample_position (meters_t x, meters_t z) {
       return position (
@@ -132,51 +150,130 @@ namespace moppe::game {
     const meters_t depth = domain.period_z ();
     plan.period = spatial_extent_in_metres (Vec3 (
       width.numerical_value_in (u::m), 0, depth.numerical_value_in (u::m)));
-    const std::uint32_t columns =
-      std::max (1U,
-                static_cast<std::uint32_t> (
-                  std::ceil ((width / spacing).numerical_value_in (one))));
-    const std::uint32_t rows =
-      std::max (1U,
-                static_cast<std::uint32_t> (
-                  std::ceil ((depth / spacing).numerical_value_in (one))));
-    const meters_t cell_x = width / static_cast<float> (columns);
-    const meters_t cell_z = depth / static_cast<float> (rows);
-    plan.sites.reserve (static_cast<std::size_t> (columns) * rows / 4);
+    // Draw a deterministic uniform proposal stream over the whole torus, then
+    // use habitat-weighted selection and Matérn-style priority thinning. The
+    // count matches the earlier fine proposal density, but positions have no
+    // cell boundaries or preferred row and column for the hard-core pass to
+    // inherit.
+    const meters_t proposal_spacing = spacing / std::sqrt (2.0f);
+    const std::uint64_t proposal_count = std::max<std::uint64_t> (
+      1,
+      static_cast<std::uint64_t> (
+        std::ceil ((width / proposal_spacing).numerical_value_in (one) *
+                   (depth / proposal_spacing).numerical_value_in (one))));
+    std::vector<ForestCandidate> candidates;
+    candidates.reserve (static_cast<std::size_t> (proposal_count / 12));
 
-    for (std::uint32_t row = 0; row < rows; ++row)
-      for (std::uint32_t column = 0; column < columns; ++column) {
-        const std::uint32_t identity = lattice_hash (column, row, seed);
-        const meters_t x = (static_cast<float> (column) + 0.02f +
-                            0.96f * hash_lane (identity, 0)) *
-                           cell_x;
-        const meters_t z =
-          (static_cast<float> (row) + 0.02f + 0.96f * hash_lane (identity, 1)) *
-          cell_z;
-        const map::ForestCover cover = cover_at (readings, x, z);
-        const proportion_t population = band (0.08f * map::forest_cover[one],
-                                              0.62f * map::forest_cover[one],
-                                              cover);
-        if (cover < 0.06f * map::forest_cover[one] ||
-            hash_lane (identity, 2) >
-              population.numerical_value_in (one) * 0.96f)
-          continue;
-        const terrain::SurfaceElevation elevation =
-          elevation_at (surface, x, z);
-        // A boreal stand: spruce IS the forest. The broadleaf construction
-        // is a placeholder blob that has received none of the conifer's
-        // assembly work, so it stays out of the world until it earns its
-        // place.
-        const ForestAge age = age_from_identity (identity);
-        plan.sites.push_back ({ .position = forest_position (x, elevation, z),
-                                .normal = normal_at (surface, x, z),
-                                .cover = cover,
-                                .moisture = moisture_at (readings, x, z),
-                                .size = size_for_age (age, identity),
-                                .seed = identity,
-                                .form = ForestForm::conifer,
-                                .age = age });
-      }
+    for (std::uint64_t proposal = 0; proposal < proposal_count; ++proposal) {
+      const std::uint32_t identity =
+        lattice_hash (static_cast<std::uint32_t> (proposal),
+                      static_cast<std::uint32_t> (proposal >> 32),
+                      seed);
+      const meters_t x = hash_lane (identity, 0) * width;
+      const meters_t z = hash_lane (identity, 1) * depth;
+      const map::ForestCover cover = cover_at (readings, x, z);
+      const proportion_t population = band (
+        0.08f * map::forest_cover[one], 0.62f * map::forest_cover[one], cover);
+      const float population_value = population.numerical_value_in (one);
+      const float proposal_scale = std::lerp (
+        forest_proposal_scale_min, forest_proposal_scale_max, population_value);
+      if (cover < 0.06f * map::forest_cover[one] ||
+          hash_lane (identity, 2) > population_value * proposal_scale)
+        continue;
+      candidates.push_back ({ .x = x.numerical_value_in (u::m),
+                              .z = z.numerical_value_in (u::m),
+                              .cover = cover.numerical_value_in (one),
+                              .priority = hash_lane (identity, 3),
+                              .identity = identity });
+    }
+
+    std::ranges::sort (
+      candidates, [] (const ForestCandidate& a, const ForestCandidate& b) {
+        return a.priority < b.priority ||
+               (a.priority == b.priority && a.identity < b.identity);
+      });
+    const float width_m = width.numerical_value_in (u::m);
+    const float depth_m = depth.numerical_value_in (u::m);
+    const float exclusion =
+      spacing.numerical_value_in (u::m) * forest_exclusion_ratio;
+    const std::uint32_t bins_x = std::max (
+      1U, static_cast<std::uint32_t> (std::ceil (width_m / exclusion)));
+    const std::uint32_t bins_z = std::max (
+      1U, static_cast<std::uint32_t> (std::ceil (depth_m / exclusion)));
+    const float bin_x = width_m / static_cast<float> (bins_x);
+    const float bin_z = depth_m / static_cast<float> (bins_z);
+    const int reach_x = static_cast<int> (std::ceil (exclusion / bin_x));
+    const int reach_z = static_cast<int> (std::ceil (exclusion / bin_z));
+    std::vector<std::int32_t> heads (static_cast<std::size_t> (bins_x) * bins_z,
+                                     -1);
+    std::vector<std::int32_t> next;
+    std::vector<ForestCandidate> accepted;
+    next.reserve (candidates.size ());
+    accepted.reserve (candidates.size ());
+    const auto wrap = [] (int value, std::uint32_t period) {
+      const int extent = static_cast<int> (period);
+      value %= extent;
+      return static_cast<std::uint32_t> (value < 0 ? value + extent : value);
+    };
+    const auto periodic_delta = [] (float value, float period) {
+      return value - std::round (value / period) * period;
+    };
+    const float exclusion_squared = exclusion * exclusion;
+
+    for (const ForestCandidate& candidate : candidates) {
+      const std::uint32_t bx =
+        std::min (static_cast<std::uint32_t> (candidate.x / bin_x), bins_x - 1);
+      const std::uint32_t bz =
+        std::min (static_cast<std::uint32_t> (candidate.z / bin_z), bins_z - 1);
+      bool separated = true;
+      for (int dz = -reach_z; separated && dz <= reach_z; ++dz)
+        for (int dx = -reach_x; separated && dx <= reach_x; ++dx) {
+          const std::uint32_t nx = wrap (static_cast<int> (bx) + dx, bins_x);
+          const std::uint32_t nz = wrap (static_cast<int> (bz) + dz, bins_z);
+          std::int32_t index =
+            heads[static_cast<std::size_t> (nz) * bins_x + nx];
+          while (index >= 0) {
+            const ForestCandidate& neighbour =
+              accepted[static_cast<std::size_t> (index)];
+            const float delta_x =
+              periodic_delta (candidate.x - neighbour.x, width_m);
+            const float delta_z =
+              periodic_delta (candidate.z - neighbour.z, depth_m);
+            if (delta_x * delta_x + delta_z * delta_z < exclusion_squared) {
+              separated = false;
+              break;
+            }
+            index = next[static_cast<std::size_t> (index)];
+          }
+        }
+      if (!separated)
+        continue;
+      const std::size_t bin = static_cast<std::size_t> (bz) * bins_x + bx;
+      next.push_back (heads[bin]);
+      heads[bin] = static_cast<std::int32_t> (accepted.size ());
+      accepted.push_back (candidate);
+    }
+
+    plan.sites.reserve (accepted.size ());
+    for (const ForestCandidate& candidate : accepted) {
+      const meters_t x = candidate.x * u::m;
+      const meters_t z = candidate.z * u::m;
+      const map::ForestCover cover = candidate.cover * map::forest_cover[one];
+      const terrain::SurfaceElevation elevation = elevation_at (surface, x, z);
+      // A boreal stand: spruce IS the forest. The broadleaf construction
+      // is a placeholder blob that has received none of the conifer's
+      // assembly work, so it stays out of the world until it earns its
+      // place.
+      const ForestAge age = age_from_identity (candidate.identity);
+      plan.sites.push_back ({ .position = forest_position (x, elevation, z),
+                              .normal = normal_at (surface, x, z),
+                              .cover = cover,
+                              .moisture = moisture_at (readings, x, z),
+                              .size = size_for_age (age, candidate.identity),
+                              .seed = candidate.identity,
+                              .form = ForestForm::conifer,
+                              .age = age });
+    }
     return plan;
   }
 
