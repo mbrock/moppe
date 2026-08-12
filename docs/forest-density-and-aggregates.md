@@ -112,6 +112,19 @@ flowers now consume the closure produced by the same retained crowns.
 Understorey light is a bounded Beer--Lambert-style power of the open fraction,
 so a closed stand is sparse beneath while actual gaps remain occupiable.
 
+The local sun-shadow representation now respects the same distinction between
+an organism and its quotient. A coarse whole-world texel still receives a
+sealed crown envelope. At camera-local resolution, every conifer casts its
+trunk and one broad sample from each of the visible organism's nine whorls.
+This is a stable spatial sample of crown occupancy, not nine decorative far
+trees and not a camera-height rule. It leaves the holes that a walker, rider,
+or low glider can actually see through the bough assembly. The previous solid
+proxy turned an overlapping stand into a binary wall to sunlight, so the
+ground and trunks went nearly black even though the rendered crowns were
+porous. A no-GTAO control barely changed that failure; disabling the forest
+shadow did, isolating ownership in the occluder representation rather than
+exposure or ambient grading.
+
 ## What remains
 
 - Inspect the surviving dense individual pass in a GPU trace. Conservative
@@ -137,9 +150,16 @@ so a closed stand is sparse beneath while actual gaps remain occupiable.
   at 0.9--1.4 km and 0.00441 versus 0.00414 at 1.4--2.0 km. Those two paths
   still cannot certify all play.
 - Give hero trunks taper, roots, base flare, litter, and local ground
-  agreement. Bark is now visible under indirect light and hero branchlets no
-  longer form metre-wide shelves, but the near tree is still deliberately
+  agreement. Bark is now visible under indirect light and the earlier
+  metre-wide fans are smaller, but hero branchlets still read as coarse
+  triangular shelves near the camera. The near tree is deliberately
   unfinished.
+- Replace the binary sample-bough approximation with an explicit
+  depth-aware foliage-transmission representation if the shadow hierarchy
+  grows another local level. The current map is temporally stable and keeps
+  real crown holes, but it cannot conserve partial optical depth along a sun
+  ray. Broadleaf local shadows also still use sealed crown envelopes because
+  they do not yet have a resolved lobe occluder.
 - Attribute the positive forest-understorey interaction in a pass-timed trace;
   the ordinary 32-case run shows it, but cannot say which shared scene work is
   responsible.

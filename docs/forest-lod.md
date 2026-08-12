@@ -134,9 +134,16 @@ acceleration-structure rebuilds.
 - `forest_bough_slot` is total over any rank: bundling rounds the
   scheduled range past the sixty-three real slots, and an out-of-range
   read there once rasterized as screen-sized garbage triangles.
-- The shadow pass draws only crown proxies plus trunk prisms; reception in
-  the fragment shader uses a depth margin of several metres so the tree's
-  own coarse proxy does not black out its crown.
+- Shadow representation follows the map's resolvable scale. The whole-world
+  map still draws one sealed crown envelope per tree because a bough is below
+  one of its texels. In the camera-local map, a conifer instead casts one
+  broad, stable sample bough per whorl plus its trunk prism. Those nine boughs
+  are the first nine ranks of the visible organism, not an unrelated cutout.
+  A sealed local cone made a dense but visibly porous spruce stand an opaque
+  wall to the sun and blacked out its navigable interior. Broadleafs retain
+  their crown envelope until they have a resolved lobe shadow construction.
+  Reception in the forest fragment shader still uses a depth margin of
+  several metres so the tree's own coarse proxy does not black out its crown.
 
 ## Constraints discovered
 
@@ -235,3 +242,21 @@ CPU sampling shows it matters, without weakening the camera-independent
 visibility rule. The interaction with undergrowth also needs direct
 attribution. A rate-limited auto-LOD governor is useful only after
 the representation is visually coherent; it cannot repair a bad handoff.
+
+The camera-local conifer shadow correction was separately attributed with
+Metal 4 pass counters at the 1600x900 forest site, with bloom, auto exposure,
+lens flare, light shafts, and motion blur disabled. Over the forest-on
+configurations of the short 32-case attribution run, the accepted nine-bough
+form measured 0.104 ms median / 0.106 ms p95 in the shadow pass. The old
+sealed crowns measured 0.127 / 0.130 ms. An eighteen-bough experiment measured
+0.184 / 0.329 ms and was rejected despite looking similar. These short runs
+attribute the shadow construction; they do not replace the standard frame
+benchmark above.
+
+The ordinary temporal 32-case benchmark was then repeated in full. The forest
+block measured 11.344 ms median / 14.6927 ms p95 and the all-features case
+26.1484 / 26.9706 ms. Relative to the preceding nested-population checkpoint,
+that is +0.1737 ms forest median, +0.0223 ms forest p95, +0.0894 ms
+all-features median, and -0.1064 ms all-features p95: effectively the same
+frame-budget problem, not a performance win. Sixteen of thirty-two
+configurations still miss 60 Hz by median.

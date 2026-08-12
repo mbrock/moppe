@@ -81,6 +81,14 @@ Acceptance: nearby trunks and crowns visibly anchor to the ground; shadow
 resolution follows the player; CPU submission and forest candidate counts are
 bounded by the local region.
 
+The local level no longer seals every conifer in an opaque crown envelope.
+It casts the trunk and one stable sample bough from each whorl, matching the
+holes in the visible organism closely enough for pools of sun to remain
+legible inside a stand.  The far whole-world level retains its envelope,
+where individual boughs are sub-texel.  This is still VERIFY because binary
+depth cannot express partial foliage transmission, and broadleaf local
+shadows still await a resolved lobe occluder.
+
 *** TODO GFX-021 Temporal ground-truth ambient occlusion
 
 Add GTAO from reversed-Z depth and normals, temporally accumulated with motion
@@ -329,6 +337,40 @@ and reach, not silently substitute a different visual language.
    the next highest visual bottleneck.
 
 * Work log
+
+** 2026-08-12
+
+- Reproduced the unreadable forest-interior failure in the production Metal
+  renderer with bloom, auto exposure, lens flare, light shafts, and motion
+  blur disabled.  A no-GTAO control barely changed it; removing forest
+  shadows restored the trunks and floor, isolating the problem to the shadow
+  representation rather than post processing or ambient grading.
+- Found that visible conifers were porous bough assemblies while the
+  camera-local sun map still cast every tree as a sealed crown.  Overlapping
+  solids formed a false wall to the sun.  The local map now emits the trunk
+  plus one broad, world-stable bough per whorl, drawn from the same first nine
+  ranks as the visible organism.  The whole-world map remains a sealed crown
+  because its texels cannot resolve boughs; broadleaf local crowns also remain
+  sealed until a truthful lobe occluder exists.
+- Rejected an eighteen-bough version after Metal pass timing exposed a
+  0.184 ms median / 0.329 ms p95 shadow cost.  The bounded nine-bough form
+  measures 0.104 / 0.106 ms in the same short 32-case attribution run, versus
+  0.127 / 0.130 ms for the old sealed proxy.
+- Repeated the complete ordinary-temporal 32-case benchmark.  Forest measures
+  11.344 ms median / 14.6927 ms p95 and the all-features case 26.1484 /
+  26.9706 ms.  The small mixed deltas from the preceding checkpoint leave the
+  existing frame-budget problem effectively unchanged; this is not recorded
+  as a speedup, and sixteen configurations still miss 60 Hz by median.
+- Captured the full 23-view production gazetteer and a 120-frame, 22 m/s
+  forest-interior translation with glare effects disabled.  The distant and
+  aerial images remain unchanged, while the forest floor gets stable,
+  attributable sunlight instead of a uniform black interior.  Motion-vector
+  compensated residual remains the same fraction of raw image change through
+  the 25--150 metre bands; the greater absolute residual follows the greater
+  visible contrast rather than an unexplained transition event.
+- The next conspicuous defect is not far-field tuft density: hero conifer
+  branchlets still read as coarse triangular shelves near the camera, and
+  binary shadow depth still cannot carry partial foliage optical depth.
 
 ** 2026-08-05
 

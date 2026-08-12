@@ -265,9 +265,15 @@ forest_scene_schedule (uint tree_index,
     };
 }
 
-// Shadow detail is deliberately coarser: every periodic image contributes one
-// opaque crown proxy. This is enough to put forest-scale occlusion on the
-// ground without multiplying the scene-detail budget by the shadow map.
+// Shadow detail is deliberately coarser. The whole-world map receives one
+// crown envelope because its texels are already larger than a bough. The
+// camera-local map instead receives one broad, separated sample bough per
+// conifer whorl. A solid cone makes a closed spruce stand a wall to the sun
+// even though the visible organism is mostly air; the panels preserve
+// crown-scale holes for walking and riding without regenerating the complete
+// hero assembly. Broadleaf crowns remain envelopes until their own resolved
+// shadow construction exists: pretending their lobes are spruce boughs would
+// merely move the representation mismatch.
 [[object]] void forest_shadow_object (
   object_data ForestShadowPayload& payload [[payload]],
   metal::mesh_grid_properties mesh_grid,
@@ -828,22 +834,52 @@ forest_scene_vertex (thread const MoppeForestInstance& tree,
 }
 
 static inline float3
-forest_shadow_vertex_position (thread const ForestOrgan& crown,
-                               thread const ForestOrgan& stem,
-                               uint vertex_index) {
+forest_shadow_crown_vertex (thread const ForestOrgan& crown,
+                            uint vertex_index) {
   if (vertex_index == 0u || vertex_index == 11u)
     return crown.centre +
            crown.up * crown.half_height * (vertex_index == 0u ? -1.0 : 1.0);
-  if (vertex_index < 11u) {
-    const uint side = vertex_index - 1u;
-    const float turn = 6.2831853 * float (side) / 10.0;
-    return crown.centre + crown.across * cos (turn) * crown.radius_x +
-           crown.forward * sin (turn) * crown.radius_z;
-  }
+  const uint side = vertex_index - 1u;
+  const float turn = 6.2831853 * float (side) / 10.0;
+  return crown.centre + crown.across * cos (turn) * crown.radius_x +
+         crown.forward * sin (turn) * crown.radius_z;
+}
 
-  const uint index = vertex_index - 12u;
-  const uint side = index % 8u;
-  const uint ring = index / 8u;
+static inline float3
+forest_shadow_bough_vertex (thread const ForestOrgan& crown,
+                            uint vertex_index) {
+  const uint bough = vertex_index / 4u;
+  const uint local = vertex_index % 4u;
+  // The first nine visible bough ranks are exactly one stable bough in each
+  // whorl. Reuse that organism sample here: a binary depth map cannot carry
+  // foliage transmittance, but spatially separated samples retain its holes
+  // without inventing a second crown construction for shadows.
+  const uint slot = forest_bough_slot (bough);
+  const uint whorl = slot / 7u;
+  const uint spoke = slot % 7u;
+  const float t = float (whorl) / 8.0;
+  const float rise = mix (0.22, 0.97, t);
+  const float turn =
+    6.2831853 * (float (spoke) / 7.0 + 0.618034 * float (whorl) +
+                 0.07 * (forest_hash (crown.seed, slot + 211u) - 0.5));
+  const float3 along =
+    normalize (crown.across * cos (turn) + crown.forward * sin (turn));
+  const float3 side = normalize (cross (crown.up, along));
+  const float reach = 0.72 + 0.50 * forest_hash (crown.seed, slot + 223u);
+  const float length = crown.crown * mix (1.35, 0.18, t) * reach;
+  const float half_width = length * mix (0.18, 0.24, t);
+  const float3 origin = crown.root + crown.up * rise * crown.tree_height;
+  const bool outer = local >= 2u;
+  const float edge = local % 2u == 0u ? -1.0 : 1.0;
+  const float3 axis = outer ? origin + along * length - crown.up * length * 0.28
+                            : origin + along * length * 0.06;
+  return axis + side * half_width * edge * (outer ? 1.0 : 0.32);
+}
+
+static inline float3 forest_shadow_stem_vertex (thread const ForestOrgan& stem,
+                                                uint vertex_index) {
+  const uint side = vertex_index % 8u;
+  const uint ring = vertex_index / 8u;
   const float turn = 6.2831853 * float (side) / 8.0;
   const float taper = ring == 0u ? 1.70 : 0.30;
   const float3 radial = stem.across * cos (turn) + stem.forward * sin (turn);
@@ -852,20 +888,26 @@ forest_shadow_vertex_position (thread const ForestOrgan& crown,
          radial * stem.radius_x * taper;
 }
 
-static inline uint3 forest_shadow_triangle (uint primitive) {
-  if (primitive < 20u) {
-    const uint side = primitive / 2u;
-    const uint next = (side + 1u) % 10u;
-    return primitive % 2u == 0u ? uint3 (0u, 1u + next, 1u + side)
-                                : uint3 (11u, 1u + side, 1u + next);
-  }
+static inline uint3 forest_shadow_crown_triangle (uint primitive) {
+  const uint side = primitive / 2u;
+  const uint next = (side + 1u) % 10u;
+  return primitive % 2u == 0u ? uint3 (0u, 1u + next, 1u + side)
+                              : uint3 (11u, 1u + side, 1u + next);
+}
 
-  const uint stem_primitive = primitive - 20u;
-  const uint side = stem_primitive / 2u;
+static inline uint3 forest_shadow_bough_triangle (uint primitive) {
+  const uint base = (primitive / 2u) * 4u;
+  return primitive % 2u == 0u ? uint3 (base, base + 2u, base + 1u)
+                              : uint3 (base + 1u, base + 2u, base + 3u);
+}
+
+static inline uint3 forest_shadow_stem_triangle (uint primitive,
+                                                 uint vertex_offset) {
+  const uint side = primitive / 2u;
   const uint next = (side + 1u) % 8u;
-  return (stem_primitive % 2u == 0u ? uint3 (side, next, 8u + next)
-                                    : uint3 (side, 8u + next, 8u + side)) +
-         12u;
+  return (primitive % 2u == 0u ? uint3 (side, next, 8u + next)
+                               : uint3 (side, 8u + next, 8u + side)) +
+         vertex_offset;
 }
 
 [[mesh]] void forest_shadow_mesh (
@@ -879,28 +921,47 @@ static inline uint3 forest_shadow_triangle (uint primitive) {
   const MoppeForestInstance tree = trees[part.tree];
   const bool world_map = u.world.w <= 0.5;
   const ForestOrgan organ = forest_organ (tree, u, part, world_map, -1.0);
-  // The camera-local map also carries a trunk prism. A ground shadow reads
-  // as a shadow only when it can be attributed: the sun-elongated trunk line
-  // attaches the crown's shade to its tree. Whole-world images stay
-  // crown-only, where a trunk is sub-texel anyway.
-  const bool trunk = !world_map;
+  // A ground shadow reads as a shadow only when it can be attributed: the
+  // sun-elongated trunk line attaches the crown's shade to its tree.
   ForestOrgan stem = organ;
-  if (trunk)
+  if (!world_map)
     stem =
       forest_organ (tree, u, { part.tree, 0u, 2u, part.copy }, world_map, -1.0);
-  const uint vertices = trunk ? 28u : 12u;
-  const uint primitives = trunk ? 36u : 20u;
+  constexpr uint boughs = 9u;
+  constexpr uint bough_vertices = boughs * 4u;
+  constexpr uint bough_primitives = boughs * 2u;
+  constexpr uint stem_vertices = 16u;
+  constexpr uint stem_primitives = 16u;
+  const bool bough_shadow = !world_map && organ.conifer;
+  const uint crown_vertices = bough_shadow ? bough_vertices : 12u;
+  const uint crown_primitives = bough_shadow ? bough_primitives : 20u;
+  const uint vertices = crown_vertices + (world_map ? 0u : stem_vertices);
+  const uint primitives = crown_primitives + (world_map ? 0u : stem_primitives);
   if (thread_id == 0u)
     out.set_primitive_count (primitives);
   if (thread_id < vertices) {
     ForestShadowVaryings v;
-    v.position =
-      u.view_proj *
-      float4 (forest_shadow_vertex_position (organ, stem, thread_id), 1.0);
+    const float3 position =
+      !bough_shadow
+        ? thread_id < crown_vertices
+            ? forest_shadow_crown_vertex (organ, thread_id)
+            : forest_shadow_stem_vertex (stem, thread_id - crown_vertices)
+      : thread_id < bough_vertices
+        ? forest_shadow_bough_vertex (organ, thread_id)
+        : forest_shadow_stem_vertex (stem, thread_id - bough_vertices);
+    v.position = u.view_proj * float4 (position, 1.0);
     out.set_vertex (thread_id, v);
   }
   if (thread_id < primitives) {
-    const uint3 triangle = forest_shadow_triangle (thread_id);
+    const uint3 triangle =
+      !bough_shadow ? thread_id < crown_primitives
+                        ? forest_shadow_crown_triangle (thread_id)
+                        : forest_shadow_stem_triangle (
+                            thread_id - crown_primitives, crown_vertices)
+      : thread_id < bough_primitives
+        ? forest_shadow_bough_triangle (thread_id)
+        : forest_shadow_stem_triangle (thread_id - bough_primitives,
+                                       bough_vertices);
     const uint slot = thread_id * 3u;
     out.set_index (slot + 0u, triangle.x);
     out.set_index (slot + 1u, triangle.y);
