@@ -6,6 +6,12 @@ manuals that bear directly on Moppe.  It is intentionally smaller than
 while this shelf favors open copies worth returning to during implementation
 and design.
 
+The PDFs are managed by `git-annex`, so Git history contains small links rather
+than the paper contents. On the primary development Mac, the `lootbox`
+directory special remote stores the content on `/Volumes/Lootbox`. Use
+`git annex get research/path/to/paper.pdf` to materialize a paper and
+`git annex copy --to lootbox research/path/to/paper.pdf` after adding one.
+
 The PDFs were fetched and checked in July 2026.  Each file was verified as a
 parseable PDF with plausible page count and extractable title text.  A sample
 from every subject group was also rendered for visual inspection.  Source
