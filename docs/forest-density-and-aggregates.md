@@ -1,6 +1,6 @@
 # Forest density and aggregates: the road to "it feels like a forest"
 
-Status: implementation checkpoint, August 2026. The individual-tree system
+Status: implementation checkpoint, September 2026. The individual-tree system
 and its handoff to the stand quotient are recorded in
 [forest LOD](forest-lod.md). The reference image remains the golden-hour
 spruce mockup (dense canopy, long shadows, sunbeams, dark interior); the
@@ -104,7 +104,9 @@ threshold, and submits the survivors in front-to-back depth bins. The GPU
 still owns seeded retirement and organ detail. Population density therefore
 no longer implies one object threadgroup for every tree in the world on every
 frame, and the optimization makes no assumption about camera height or a
-ground horizon.
+ground horizon. A world-tile index rejects whole groups of individuals by the
+same bounds before any organism is tested, and an organism whose identity
+has fully transferred to the stand is skipped outright.
 
 The moment field also replaced the obsolete habitat-cover reading in terrain
 and undergrowth shading. The stand volume, forest floor, blades, ferns, and
@@ -127,10 +129,14 @@ exposure or ambient grading.
 
 ## What remains
 
-- Inspect the surviving dense individual pass in a GPU trace. Conservative
-  candidate filtering and front-to-back submission are now deliberate, but
-  the ordinary temporal benchmark still attributes 11.1703 ms median to the
-  forest block and the all-features frame is not within 60 Hz.
+- Reduce the remaining forest cost in the order recorded in
+  [forest LOD](forest-lod.md#performance-state-september-2026-m5). Fixed-view
+  attribution found the dense individual pass bound by mesh-stage work and
+  meshlet count rather than rasterization; per-bough station tiers, packed
+  meshlets, shared stations, and detail from the contracted image cut the
+  whole forest to 1.75--2.23 ms at the forest-floor views on an M5, and no
+  short-benchmark configuration now misses 60 Hz. Blended stand overdraw
+  now dominates aerial views.
 - The spatial hierarchy is deliberately only 4-to-8 metres. A trial 16-metre
   rung was rejected because the current 2.4 km reach still presents an
   eight-metre carrier at about 2.4 scene pixels. Add another spatial parent

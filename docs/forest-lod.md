@@ -2,7 +2,7 @@
 
 Status: implementation record of the conifer and stand LOD system in
 `moppe/shaders/metal/forest.metal` and
-`moppe/shaders/metal/forest_canopy.metal` as of August 2026, and of the
+`moppe/shaders/metal/forest_canopy.metal` as of September 2026, and of the
 principles and instruments that shaped it. The population argument and
 remaining work are in
 [forest density and aggregates](forest-density-and-aggregates.md).
@@ -81,18 +81,33 @@ acceleration-structure rebuilds.
   bough ribbons receive the complement; the stem grows over the same
   interval. Rank, azimuth, length, and droop are identical on both sides. The
   boughs themselves use one stable thirty-two-sample sequence: the far tier
-  packs four boughs at stations `{0,8,16,31}`, the middle tier packs two with
-  every fourth station plus endpoint 31, and the hero tier carries one bough
-  with twenty-four distributed stations. Four vertices at each station form
-  two crossed continuous ribbons along the bough: they have finite support
-  above, below, and across the axis, but never become disconnected triangular
-  particles. Finer stations begin as exact subdivisions of the coarser curve
-  and bend toward their final stable positions over the tier interval. The
-  hero's twenty-four stations remain inside the 96-vertex and 92-primitive
-  mesh-output limit.
-  New stations begin on their coarser segment and existing stations never
-  move. Thus proxy, bough, and branchlet are refinements of one organism
-  rather than three meshes exchanged at thresholds.
+  uses stations `{0,8,16,31}`, the middle tier every fourth station plus
+  endpoint 31, and the hero tier twenty-four distributed stations. Four
+  vertices at each station form two crossed continuous ribbons along the
+  bough: they have finite support above, below, and across the axis, but
+  never become disconnected triangular particles. Finer stations begin as
+  exact subdivisions of the coarser curve and bend toward their final stable
+  positions over the tier interval. New stations begin on their coarser
+  segment and existing stations never move; hero station 28, which the
+  middle tier lacks, also grows from the 24-to-31 segment. Thus proxy,
+  bough, and branchlet are refinements of one organism rather than three
+  meshes exchanged at thresholds.
+- Station tier is a per-bough projected-error decision, not a whole-tree
+  one. Refinement moves a station by a few percent of its bough's length, so
+  it becomes visible at the same projected *bough* length everywhere: the
+  middle tier arrives over 21--28.5 threshold pixels of bough length and the
+  hero over 34--45.5, exactly where the former whole-tree schedule (55--75
+  and 90--120 tree pixels) refined the longest skirt bough. Short leader
+  boughs keep coarse stations until they are equally large; the former
+  schedule spent twenty-four stations on four-pixel leaders. One object SIMD
+  group classifies an organism's ranks and compacts them by tier with prefix
+  sums, so a meshlet packs eight far, four middle, or one hero bough (128,
+  128, and 96 vertices). One SIMD group then builds the meshlet's organism
+  frame and at most thirty-two stations -- axis point, ribbon half-widths,
+  normals, and the wind now and one frame ago -- in threadgroup memory; all
+  threads only expand ribbon edges and project them. Wind is evaluated at the
+  station axis, so a ribbon cross-section moves rigidly. Two hero boughs per
+  meshlet would still cross the silent 16 KB mesh-output ceiling.
 - Individual retirement is based on projected *crown width*, not full tree
   height. Stand response and identity transfer share one broad
   eight-to-thirty-two-pixel interval, but identity transfers only where a
@@ -102,7 +117,12 @@ acceleration-structure rebuilds.
   toward the root as that transfer proceeds; open woodland keeps its real
   silhouettes through their final seed-staggered four-to-5.2-pixel fade.
   Thus sparse trees never dissolve into a false sheet and a closed stand does
-  not retain a forest of unrepeatable spikes.
+  not retain a forest of unrepeatable spikes. A retiring organism's detail
+  follows its contracted image, so a crown carrying a third of its identity
+  receives a third of a tree's bough resolution rather than a hero assembly
+  scaled into the canopy roof. An organism whose identity has fully
+  transferred has no extent: the object stage emits nothing for it, and the
+  candidate filter skips it using the same shared transfer constants.
 - The stand object stage samples actual terrain height before projecting a
   patch. Its LOD distance is three-dimensional, so a glider above a stand and
   a walker beside it do not receive different rules disguised as the same
@@ -120,23 +140,33 @@ acceleration-structure rebuilds.
   their own footprint.
 - Each cell renders as one soft camera-facing ellipsoid section (two
   triangles), with previous-frame camera orientation carried into its motion
-  vector. This is not a connected roof: grazing views receive finite crown
-  mass and parallax instead of a horizontal shelf, while top-down gaps remain
-  real. World-cell jitter breaks the visible sampling lattice without making
-  the result camera-relative. Both complete partitions fit in one bounded
-  meshlet per crown stratum. Within each 64-patch object group, the object
-  stage preserves input-grid order and submits all surviving patches in one
-  stratum before the next; local translucent blend order therefore does not
-  change merely because another patch enters the frustum. The 24-metre
-  stand-support question remains independent of dispatch topology. The same
-  retained population field also drives terrain and undergrowth closure.
+  vector. Stratum depth, stand support, and optical-depth share are constant
+  over a cell, so with the most grazing admitted incidence they bound every
+  fragment's opacity; a cell whose bound is below the fragment's discard
+  threshold collapses in the mesh stage instead of being rasterized. This is
+  not a connected roof: grazing views receive finite crown mass and parallax
+  instead of a horizontal shelf, while top-down gaps remain real. World-cell
+  jitter breaks the visible sampling lattice without making the result
+  camera-relative. Both complete partitions fit in one bounded meshlet per
+  crown stratum. Within each 64-patch object group, the object stage preserves
+  input-grid order and submits all surviving patches in one stratum before the
+  next; local translucent blend order therefore does not change merely because
+  another patch enters the frustum. The 24-metre stand-support question
+  remains independent of dispatch topology. The same retained population field
+  also drives terrain and undergrowth closure.
 - Before dispatch, the renderer conservatively filters the retained periodic
   population against the actual three-dimensional frustum and the earliest
   four-crown-pixel retirement bound. It sends compact projected-error records
   in eight front-to-back depth bins. The GPU retains the seeded retirement and
   exact organ schedule; CPU filtering only removes object groups that must
   produce no geometry. This is camera-orientation and altitude independent,
-  not a ground-radius LOD.
+  not a ground-radius LOD. Individuals are indexed by 64-metre world tile,
+  each bounding its members' culling spheres, largest crown, and weakest
+  stand closure, so whole tiles are rejected before any organism is tested.
+  Tile tests use the triangle bound on side-plane normals and the nearest
+  point any member can occupy, so they can only reject what every member's
+  own test would; a tile straddling the half-period line is kept if either
+  periodic copy can contribute.
 - `forest_bough_slot` is total over any rank: bundling rounds the
   scheduled range past the sixty-three real slots, and an out-of-range
   read there once rasterized as screen-sized garbage triangles.
@@ -145,6 +175,10 @@ acceleration-structure rebuilds.
   one of its texels. In the camera-local map, a conifer instead casts one
   broad, stable sample bough per whorl plus its trunk prism. Those nine boughs
   are the first nine ranks of the visible organism, not an unrelated cutout.
+  Shadow organs are built as resolved organisms, never through the scene's
+  detail schedule: once the nested bough hierarchy arrived, the local map's
+  zero-pixel schedule read the stem part as the unresolved parent and sealed
+  every conifer into a crown-wide cone again until September 2026.
   A sealed local cone made a dense but visibly porous spruce stand an opaque
   wall to the sun and blacked out its navigable interior. Broadleafs retain
   their crown envelope until they have a resolved lobe shadow construction.
@@ -302,3 +336,69 @@ nine-bough checkpoint's short run. The runs used different sample counts and
 are attribution evidence, not a frame-budget speedup claim. Production stills
 also exposed the honest remaining defects: close stations still read as a
 stylized comb of triangles, and closed forest interiors remain too dark.
+
+## Performance state (September 2026, M5)
+
+Measured on a 10-core M5 at a 1200x740 scene (2400x1480 temporal drawable).
+On a laptop sharing its GPU with other applications, the ordinary 32-case
+benchmark moved its no-feature configuration between 7.3 and 12 ms across
+identical runs, so attribution used fixed gazetteer cameras with the forest
+toggled on and off in alternating four-frame blocks inside one run; drift
+cancels between neighbouring blocks. That toggle was a temporary instrument,
+not a committed one.
+
+The checkpoint before this pass (`3000786`) spent its forest time in the
+mesh stage, not in rasterization or shading. On the forest-floor view the
+individual pass emitted 3.6 million triangles and 3.9 million vertices in
+47,700 mesh threadgroups from 1,813 candidates; 415 trees past the ninety-
+pixel hero boundary cost 5,820 triangles each. Collapsing every vertex to a
+degenerate triangle still cost about 1 ms, a trivial fragment saved only
+0.4--0.5 ms, and removing six varying components only 0.1--0.25 ms. The
+changes recorded above therefore attack meshlet count and per-vertex work:
+per-bough station tiers with eight/four/one packing, SIMD-group object
+stages (the old eight-thread object groups left three quarters of every SIMD
+group idle), 128-thread mesh groups, stations shared through threadgroup
+memory, detail from the contracted image of retiring organisms, and no work
+for fully transferred ones. The same view now emits 1.6 million triangles in
+17,900 mesh threadgroups; hero boughs are 12 percent of boughs but 43
+percent of triangles.
+
+Whole-forest cost, forest on minus forest off at fixed views, before and
+after the pass (the later measurement includes the restored porous local
+shadow):
+
+| view              | before (ms) | after (ms) |
+|-------------------|------------:|-----------:|
+| forest-floor      |        4.11 |       1.75 |
+| forest-interior   |        5.27 |       2.23 |
+| forest-sunward    |        2.73 |       1.25 |
+| forest-shadowplay |        2.94 |       1.67 |
+| highland-vista    |        0.35 |       0.26 |
+| aerial-basin      |   1.21--1.46 |       1.08 |
+
+The short standard partition on the forest ride (60-frame prelude, 4 settle,
+24 measured frames, two alternated runs per build) moved the forest block
+from 2.98 / 3.12 ms median to 0.59 / 0.96 ms and the all-features case from
+17.22 / 17.23 ms to 13.96 / 14.66 ms; no configuration misses 60 Hz by
+median, against three or four before. Collapsing stand cells that cannot
+reach the fragment's discard threshold took the canopy over the aerial basin
+from 1.21 to 0.79 ms, most of the remainder being blended overdraw of
+overlapping soft cells. The world-tile index took the CPU candidate filter
+from 0.69--0.74 ms to 0.05--0.11 ms per frame.
+
+The image and its motion were checked, not assumed. Six forest stills differ
+from the checkpoint by 0.06--0.33 mean levels out of 255 before the shadow
+fix, and the size-normalized atlas is unchanged. Shadow-free glides match
+the checkpoint's motion-compensated residual through 140 m on the forest
+floor at 12 m/s and through 2.3 km at 42 m/s over the basin; only the two
+sparsely populated forest-floor bins at 172 and 214 m (about 0.1 percent of
+the frame) rise by 6 and 13 percent. With shadows, the restored porous local
+map brightens the forest floor (mean level 52 to 64) and raises absolute
+residual with the added sun-fleck contrast.
+
+Remaining forest work, in measured order: blended overdraw of the stand
+volume in aerial views; hero boughs, which cannot pair in one meshlet under
+the 16 KB output ceiling; forest fragment shading, about 0.4 ms on the
+forest floor; and unresolved parents, stems, and broadleaf lobes, which
+still build every vertex independently.
+

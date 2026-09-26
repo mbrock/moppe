@@ -338,6 +338,38 @@ and reach, not silently substitute a different visual language.
 
 * Work log
 
+** 2026-09-26
+
+- Found the camera-local conifer shadow sealed into crown-wide cones again:
+  since the nested bough hierarchy, the shadow stem was built through the
+  scene's zero-pixel detail schedule and read as the unresolved parent.
+  Shadow organs are now always resolved, restoring the trunk and nine sample
+  boughs recorded on 2026-08-12; the forest floor brightens from mean level
+  52 to 64 in the gazetteer forest views.
+- Attributed the forest cost at fixed gazetteer views with the forest toggled
+  in alternating four-frame blocks, because the 32-case benchmark's
+  no-feature configuration drifted by several milliseconds between identical
+  runs on a shared laptop GPU.  The individual pass was mesh-stage bound:
+  3.6 million triangles in 47,700 meshlets on the forest floor, with
+  degenerate triangles alone still costing about 1 ms.
+- Made station refinement a per-bough projected-error decision, packed eight,
+  four, or one bough per meshlet, shared stations through threadgroup
+  memory, gave retiring organisms detail from their contracted image, and
+  skipped fully transferred ones.  Collapsed stand cells whose opacity bound
+  cannot pass the fragment's discard threshold.  Indexed individuals by
+  world tile for the CPU candidate filter.
+- On an M5 at a 1200x740 scene the whole forest falls from 4.11 to 1.75 ms
+  on the forest floor and from 5.27 to 2.23 ms in the interior; the short
+  standard partition's forest block falls from about 3.0 to 0.6--1.0 ms, the
+  all-features case from 17.2 to 14.0--14.7 ms, and no configuration misses
+  60 Hz.  The CPU filter falls from about 0.7 to 0.1 ms.  Stills and the
+  size-normalized atlas are unchanged at the capture noise floor, and
+  shadow-free glides match the checkpoint's motion residual through 140 m
+  on the forest floor and 2.3 km from the air.
+- The next forest costs are blended stand overdraw from the air, hero
+  boughs that cannot share a meshlet under the 16 KB ceiling, and fragment
+  shading.
+
 ** 2026-08-12
 
 - Reproduced the unreadable forest-interior failure in the production Metal
