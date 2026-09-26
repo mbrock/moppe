@@ -5239,10 +5239,10 @@ namespace moppe {
            { MTLRenderStageObject, MTLRenderStageMesh, MTLRenderStageFragment })
         bind_texture (
           m_frame, stage, MOPPE_TEX_FOREST_CANOPY, forest.canopy_moments);
-      bind_texture (m_frame,
-                    MTLRenderStageFragment,
-                    MOPPE_TEX_FOREST_DENSITY,
-                    forest.canopy_density);
+      for (MTLRenderStages stage :
+           { MTLRenderStageMesh, MTLRenderStageFragment })
+        bind_texture (
+          m_frame, stage, MOPPE_TEX_FOREST_DENSITY, forest.canopy_density);
       use_arguments (enc,
                      m_frame,
                      MTLRenderStageObject | MTLRenderStageMesh |

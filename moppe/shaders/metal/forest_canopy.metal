@@ -261,6 +261,12 @@ static inline ForestCanopyLod forest_canopy_lod (float focal_pixels,
   }
 }
 
+// The most grazing ray a stratum admits: many cells, not one analytic slab,
+// lengthen a side view, so the path correction is bounded per element.
+constant float FOREST_CANOPY_MIN_INCIDENCE = 0.45;
+// Fragments below this opacity are discarded rather than blended.
+constant float FOREST_CANOPY_MIN_ALPHA = 0.012;
+
 static inline ForestCanopyVaryings
 forest_canopy_vertex (uint vertex_index,
                       uint2 patch,
@@ -268,7 +274,8 @@ forest_canopy_vertex (uint vertex_index,
                       ForestCanopyLod lod,
                       constant MoppeForestCanopyUniforms& u,
                       texture2d<float, access::read> heights,
-                      texture2d<float> canopy) {
+                      texture2d<float> canopy,
+                      texture2d<float> density) {
   const int2 world_patch = int2 (u.tiles.xy) + int2 (patch);
   const float2 patch_origin = float2 (world_patch) * u.tiles.w;
   const uint cell_slot = vertex_index / 4u;
@@ -346,6 +353,20 @@ forest_canopy_vertex (uint vertex_index,
   result.lod_weight = lod.coarse_cells == 0u ? 1.0
                       : coarse               ? lod.coarse_fraction
                                              : 1.0 - lod.coarse_fraction;
+  // Stratum depth, stand support, and optical-depth share are constant over
+  // the cell, so they bound every fragment's opacity. A cell whose bound is
+  // below the fragment's discard threshold -- an empty stratum, a sparse
+  // stand, a retiring partition -- cannot produce a pixel; collapsing it
+  // skips its rasterization without changing the image.
+  const float vertical_depth =
+    MOPPE_FOREST_CANOPY_STRATUM_DEPTH_RANGE *
+    forest_canopy_cell_density (sample_xz, cell_side, u, density)[layer];
+  const float opacity_bound =
+    moppe_forest_stand_support (result.stand_closure) *
+    (1.0 -
+     exp (-vertical_depth / FOREST_CANOPY_MIN_INCIDENCE * result.lod_weight));
+  if (opacity_bound < 0.98 * FOREST_CANOPY_MIN_ALPHA)
+    result.position = u.view_proj * float4 (centre, 1.0);
   result.cell_side = cell_side;
   result.sample_xz = sample_xz;
   result.volume_uv = volume_uv;
@@ -363,7 +384,8 @@ forest_canopy_vertex (uint vertex_index,
   uint thread_id [[thread_index_in_threadgroup]],
   constant MoppeForestCanopyUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
-  texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
+  texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]],
+  texture2d<float> density [[texture (MOPPE_TEX_FOREST_DENSITY)]]) {
   // Draw each crown stratum across the complete local population before
   // advancing to the next; stable compaction keeps blend order fixed as
   // patches enter and leave the projected work set.
@@ -391,9 +413,10 @@ forest_canopy_vertex (uint vertex_index,
     out.set_primitive_count (primitive_count);
   for (uint vertex_index = thread_id; vertex_index < vertex_count;
        vertex_index += MOPPE_FOREST_CANOPY_MESH_THREADS)
-    out.set_vertex (vertex_index,
-                    forest_canopy_vertex (
-                      vertex_index, patch, layer, lod, u, heights, canopy));
+    out.set_vertex (
+      vertex_index,
+      forest_canopy_vertex (
+        vertex_index, patch, layer, lod, u, heights, canopy, density));
 
   for (uint primitive = thread_id; primitive < primitive_count;
        primitive += MOPPE_FOREST_CANOPY_MESH_THREADS) {
@@ -415,6 +438,11 @@ fragment MoppeTemporalOutput forest_canopy_fragment (
   constant MoppeForestCanopyUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]],
   texture2d<float> density [[texture (MOPPE_TEX_FOREST_DENSITY)]]) {
+  // The impostor is only a compact raster domain for an ellipsoid section;
+  // its corners carry nothing, so they leave before any texture work.
+  const float radius_squared = dot (in.volume_uv, in.volume_uv);
+  if (radius_squared >= 1.0)
+    discard_fragment ();
   const float3 to_eye = u.camera_pos.xyz - in.world_pos;
   const float distance = length (to_eye);
   const float3 eye = to_eye / max (distance, 0.001);
@@ -442,18 +470,15 @@ fragment MoppeTemporalOutput forest_canopy_fragment (
   // optical-depth integration rather than front and back polygon surfaces.
   const float vertical_depth =
     MOPPE_FOREST_CANOPY_STRATUM_DEPTH_RANGE * layers[layer];
-  const float radius_squared = dot (in.volume_uv, in.volume_uv);
-  if (radius_squared >= 1.0)
-    discard_fragment ();
   const float shape = sqrt (max (1.0 - radius_squared, 0.0));
   // Many cells, not one analytic slab, lengthen a grazing ray. Bound the
   // correction per element so a side view gains population depth without
   // turning the first encountered cell into an opaque wall.
-  const float incidence = max (abs (eye.y), 0.45);
+  const float incidence = max (abs (eye.y), FOREST_CANOPY_MIN_INCIDENCE);
   const float path_depth = vertical_depth / incidence * in.lod_weight;
   const float coverage = 1.0 - exp (-path_depth);
   const float alpha = aggregate * edge * support * coverage * shape;
-  if (alpha < 0.012 || closure < 0.035)
+  if (alpha < FOREST_CANOPY_MIN_ALPHA || closure < 0.035)
     discard_fragment ();
 
   const float3 light = normalize (u.sun_dir.xyz);
