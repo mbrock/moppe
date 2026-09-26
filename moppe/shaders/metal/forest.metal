@@ -376,15 +376,22 @@ struct ForestOrgan {
   float residual;
 };
 
+// The image an organ is built for. Only the scene carries a projected-detail
+// schedule, in which a conifer may still hold its unresolved bough parent.
+// Both shadow maps receive resolved organs numbered by the shadow mesh
+// itself; the whole-world map alone draws the periodic neighbour copies.
+enum class ForestView { scene, local_shadow, world_shadow };
+
 static inline ForestOrgan
 forest_base_organ (thread const MoppeForestInstance& tree,
                    constant MoppeForestUniforms& u,
                    ForestPart part,
-                   bool shadow,
+                   ForestView view,
                    float stand_closure) {
   ForestOrgan organ;
   organ.ensemble = 1.0;
-  organ.root = forest_root (tree, u, part.copy, shadow);
+  organ.root =
+    forest_root (tree, u, part.copy, view == ForestView::world_shadow);
   organ.up = forest_up (tree);
   organ.tree_height = tree.root_height.w;
   organ.seed = tree.identity.x;
@@ -393,15 +400,19 @@ forest_base_organ (thread const MoppeForestInstance& tree,
   organ.stem_radius = organ.tree_height *
                       mix (0.018, 0.030, float (tree.identity.z) / 3.0) *
                       (organ.conifer ? 0.62 : 1.0);
+  // A shadow organ is fully resolved. The camera-local map once received
+  // the scene's zero-pixel schedule here, which read its stem part as the
+  // unresolved parent and sealed every conifer into a crown-wide cone.
   organ.resolution = 1.0;
-  organ.residual = 1.0;
-  if (organ.conifer && !shadow) {
+  organ.residual = 0.0;
+  const bool scene = view == ForestView::scene;
+  if (organ.conifer && scene) {
     organ.resolution = forest_bough_resolution (
       part.crown_pixels, forest_lod_threshold (organ.seed));
     organ.residual = sqrt (max (1.0 - organ.resolution, 0.0));
   }
   const bool residual_parent =
-    organ.conifer && !shadow && organ.residual > 0.0 && part.lod > 1u;
+    organ.conifer && scene && organ.residual > 0.0 && part.lod > 1u;
   // A conifer's part zero remains the coarse bough parent throughout its
   // station transition. While it exists, the stem is part one and boughs
   // follow; when its residual reaches zero the old stem/bough numbering is
@@ -522,9 +533,9 @@ static inline void forest_configure_crown_lobe (thread ForestOrgan& organ,
 static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
                                         constant MoppeForestUniforms& u,
                                         ForestPart part,
-                                        bool shadow,
+                                        ForestView view,
                                         float stand_closure) {
-  ForestOrgan organ = forest_base_organ (tree, u, part, shadow, stand_closure);
+  ForestOrgan organ = forest_base_organ (tree, u, part, view, stand_closure);
   if (organ.proxy)
     forest_configure_proxy (organ, part);
   else if (organ.wood)
@@ -979,7 +990,7 @@ forest_scene_vertex (thread const MoppeForestInstance& tree,
   const ForestPart part = payload.parts[min (mesh_id, payload.count - 1u)];
   const MoppeForestInstance tree = trees[part.tree];
   const ForestOrgan organ =
-    forest_organ (tree, u, part, false, payload.stand_closure);
+    forest_organ (tree, u, part, ForestView::scene, payload.stand_closure);
   const ForestMeshCounts counts = forest_mesh_counts (organ);
   if (thread_id == 0u)
     out.set_primitive_count (counts.primitives);
@@ -1077,13 +1088,15 @@ static inline uint3 forest_shadow_stem_triangle (uint primitive,
   const ForestPart part = payload.parts[min (mesh_id, payload.count - 1u)];
   const MoppeForestInstance tree = trees[part.tree];
   const bool world_map = u.world.w <= 0.5;
-  const ForestOrgan organ = forest_organ (tree, u, part, world_map, -1.0);
+  const ForestView view =
+    world_map ? ForestView::world_shadow : ForestView::local_shadow;
+  const ForestOrgan organ = forest_organ (tree, u, part, view, -1.0);
   // A ground shadow reads as a shadow only when it can be attributed: the
   // sun-elongated trunk line attaches the crown's shade to its tree.
   ForestOrgan stem = organ;
   if (!world_map)
     stem = forest_organ (
-      tree, u, { part.tree, 0u, 2u, part.copy, 0.0, 0.0 }, world_map, -1.0);
+      tree, u, { part.tree, 0u, 2u, part.copy, 0.0, 0.0 }, view, -1.0);
   constexpr uint boughs = 9u;
   constexpr uint bough_vertices = boughs * 4u;
   constexpr uint bough_primitives = boughs * 2u;
