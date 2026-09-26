@@ -18,3 +18,5 @@ zig-out/
 __pycache__/
 Untitled*
 screenshots/studio-shot-*.png
+
+.amp/portals/*

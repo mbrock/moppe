@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Prepare a Debian 12 Amp orb for Moppe's portable work: the Linux unit-test
+# build (clang + libc++), the Emscripten/WebGPU browser build, clang-format,
+# and Étalon's Zig nightly. Metal/Apple targets need macOS and are skipped.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+llvm_version=20
+emsdk_dir="$HOME/emsdk"
+zig_dir="$HOME/.local/opt/zig"
+
+step() {
+  printf '\n==> %s\n' "$*"
+  SECONDS=0
+}
+done_step() { printf '    (%ss)\n' "$SECONDS"; }
+
+apt_install() {
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    --no-install-recommends "$@" >/dev/null
+}
+
+missing_packages() {
+  local pkg
+  for pkg in "$@"; do
+    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null |
+      grep -q "install ok installed" || printf '%s\n' "$pkg"
+  done
+}
+
+step "System packages"
+base_packages=(cmake ninja-build wget gnupg xz-utils ca-certificates)
+mapfile -t missing < <(missing_packages "${base_packages[@]}")
+if ((${#missing[@]})); then
+  sudo apt-get update -qq
+  apt_install "${missing[@]}"
+fi
+done_step
+
+step "LLVM ${llvm_version} (clang, libc++, lld, clang-format)"
+llvm_packages=("clang-$llvm_version" "lld-$llvm_version"
+  "libc++-$llvm_version-dev" "libc++abi-$llvm_version-dev"
+  "clang-format-$llvm_version")
+mapfile -t missing < <(missing_packages "${llvm_packages[@]}")
+if ((${#missing[@]})); then
+  llvm_list=/etc/apt/sources.list.d/llvm-$llvm_version.list
+  if [[ ! -f $llvm_list ]]; then
+    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key |
+      sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+    echo "deb http://apt.llvm.org/bookworm/" \
+      "llvm-toolchain-bookworm-$llvm_version main" |
+      sudo tee "$llvm_list" >/dev/null
+  fi
+  sudo apt-get update -qq
+  apt_install "${missing[@]}"
+fi
+# tools/format expects an unversioned clang-format.
+sudo ln -sf "/usr/bin/clang-format-$llvm_version" /usr/local/bin/clang-format
+done_step
+
+step "Emscripten (emsdk latest)"
+if [[ ! -d $emsdk_dir ]]; then
+  git clone -q --depth 1 https://github.com/emscripten-core/emsdk.git \
+    "$emsdk_dir"
+fi
+if [[ ! -x $emsdk_dir/upstream/emscripten/emcc ]]; then
+  "$emsdk_dir/emsdk" install latest >/dev/null
+  "$emsdk_dir/emsdk" activate latest >/dev/null
+fi
+done_step
+
+step "Zig nightly for Étalon"
+if [[ ! -x $zig_dir/zig ]]; then
+  tarball="$(curl -fsSL https://ziglang.org/download/index.json |
+    python3 -c 'import json,sys
+print(json.load(sys.stdin)["master"]["x86_64-linux"]["tarball"])')"
+  tmp="$(mktemp -d)"
+  curl -fsSL "$tarball" | tar -xJ -C "$tmp"
+  mkdir -p "$(dirname "$zig_dir")"
+  rm -rf "$zig_dir"
+  mv "$tmp"/zig-* "$zig_dir"
+  rmdir "$tmp"
+fi
+mkdir -p "$HOME/.local/bin"
+ln -sf "$zig_dir/zig" "$HOME/.local/bin/zig"
+done_step
+
+step "Login-shell environment"
+# The Linux test build uses clang with libc++; Debian's GCC 12 and its
+# libstdc++ are too old for Moppe's C++23 and mp-units. Emscripten goes last
+# on PATH: its tree contains a cmake/ directory that shadows /usr/bin/cmake
+# for GNU make's PATH lookup.
+profile_marker="# Moppe orb toolchain"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<EOF
+
+$profile_marker
+export CC=clang-$llvm_version CXX=clang++-$llvm_version
+export CXXFLAGS="-stdlib=libc++"
+export LDFLAGS="-stdlib=libc++ -fuse-ld=lld"
+export EMSDK="$emsdk_dir"
+case ":\$PATH:" in
+  *":$emsdk_dir/upstream/emscripten:"*) ;;
+  *) export PATH="\$HOME/.local/bin:\$PATH:$emsdk_dir/upstream/emscripten" ;;
+esac
+EOF
+fi
+done_step
+
+step "Configure and warm the native test build"
+# FetchContent downloads mp-units during configure; building the tests once
+# leaves a warm build directory in the snapshot.
+(
+  cd "$repo_root"
+  export CC="clang-$llvm_version" CXX="clang++-$llvm_version"
+  export CXXFLAGS="-stdlib=libc++" LDFLAGS="-stdlib=libc++ -fuse-ld=lld"
+  [[ -f build/build.ninja ]] || cmake -B build -G Ninja >/dev/null
+  cmake --build build --target moppe-tests
+)
+done_step
+
+step "Orb agent guidance"
+guidance="$HOME/.config/amp/AGENTS.md"
+guidance_marker="# Moppe in this orb"
+mkdir -p "$(dirname "$guidance")"
+if ! grep -Fqx "$guidance_marker" "$guidance" 2>/dev/null; then
+  cat >> "$guidance" <<'EOF'
+
+# Moppe in this orb
+- This orb is Linux: the Metal game, Atelier, Lavoir, and Apple targets do
+  not build here. Unit tests, the WebAssembly build, formatting, and Étalon do.
+- Login shells export CC/CXX (clang 20), libc++ CXXFLAGS/LDFLAGS, and put
+  Emscripten and Zig nightly on PATH. `build/` is preconfigured for tests:
+  `cmake --build build --target moppe-tests && ctest --test-dir build
+  --output-on-failure`.
+- `make web` builds the browser game with Emscripten; `make etalon-test` runs
+  Étalon; `tools/format --check` uses clang-format 20.
+- `periodic_geology_is_bit_deterministic` pins a macOS floating-point hash
+  and fails on Linux libm; other tests should pass.
+EOF
+fi
+done_step
