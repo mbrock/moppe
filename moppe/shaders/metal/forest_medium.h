@@ -96,7 +96,9 @@ inline float moppe_forest_aggregate_fraction (float focal_pixels,
   // bundled-bough register. Let the quotient fill the unrepresented gaps
   // behind those resolved silhouettes instead of waiting until the forest
   // has become a regiment of porous cones.
-  return 1.0 - smoothstep (8.0, 32.0, crown_pixels);
+  return 1.0 - smoothstep (MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS,
+                           MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS,
+                           crown_pixels);
 }
 
 inline float moppe_forest_identity_transfer (float crown_pixels) {
@@ -106,7 +108,9 @@ inline float moppe_forest_identity_transfer (float crown_pixels) {
   // left a conspicuous register in which rows of solid cone proxies sat in
   // front of an already complete canopy. Stand support still keeps isolated
   // trees fully individual.
-  return 1.0 - smoothstep (8.0, 32.0, crown_pixels);
+  return 1.0 - smoothstep (MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS,
+                           MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS,
+                           crown_pixels);
 }
 
 inline float moppe_forest_stand_support (float closure) {
@@ -116,7 +120,9 @@ inline float moppe_forest_stand_support (float closure) {
   // from isolated organisms and forty-two percent is connected canopy. Fine
   // closure still controls every local hole. The broad interval keeps the
   // ecological boundary from becoming a new contour.
-  return smoothstep (0.12, 0.42, closure);
+  return smoothstep (MOPPE_FOREST_STAND_OPEN_CLOSURE,
+                     MOPPE_FOREST_STAND_CLOSED_CLOSURE,
+                     closure);
 }
 
 #endif

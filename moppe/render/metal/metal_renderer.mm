@@ -21,6 +21,7 @@
 #import <ImageIO/ImageIO.h>
 #endif
 
+#include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
 #include <moppe/render/metal/metal4_frame.hh>
 #include <moppe/render/metal/metal_renderer.hh>
@@ -1920,7 +1921,7 @@ namespace moppe {
         forest.depthAttachmentPixelFormat = depth;
         if (!m_temporal_scene_pipelines)
           forest.stencilAttachmentPixelFormat = depth;
-        forest.payloadMemoryLength = 2048;
+        forest.payloadMemoryLength = 128;
         forest.maxTotalThreadsPerObjectThreadgroup =
           MOPPE_FOREST_OBJECT_THREADS;
         forest.maxTotalThreadsPerMeshThreadgroup = MOPPE_FOREST_MESH_THREADS;
@@ -5114,7 +5115,18 @@ namespace moppe {
           continue;
         const float crown_pixels =
           crown * projection_y * scene_height / std::max (clip_w, 0.6f);
-        if (crown_pixels >= 4.0f) {
+        // In a closed stand an organism whose identity has fully transferred
+        // to the stand quotient has no extent, and the object stage would
+        // emit nothing for it. This is the shader's own transfer; the margin
+        // lets float differences only keep a candidate, never drop one.
+        const float transfer =
+          smoothstep (MOPPE_FOREST_STAND_OPEN_CLOSURE,
+                      MOPPE_FOREST_STAND_CLOSED_CLOSURE,
+                      tree.ecology.z) *
+          (1.0f - smoothstep (MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS,
+                              MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS,
+                              crown_pixels));
+        if (crown_pixels >= 4.0f && transfer < 0.999f) {
           // Separate draws make depth rejection deliberately front-to-back.
           // The bins are broad enough that movement cannot reorder an entire
           // stand at once; order within a bin is irrelevant to identity.

@@ -280,15 +280,17 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 // A forest crosses the renderer boundary as stable individuals, not baked
 // vertices. The object stage selects projected detail and schedules reusable
 // trunk/crown assemblies; the mesh stage expands only those assemblies.
-#define MOPPE_FOREST_OBJECT_THREADS 8
+/* One object threadgroup is one SIMD group scheduling one organism. A
+   conifer's crown is the union of at most nine whorls of seven feathered
+   boughs; the object stage sorts their ranks by station tier, and each mesh
+   threadgroup expands the stem, the unresolved bough parent, or a pack of
+   boughs sharing one tier. No shell or cone primitive exists once boughs are
+   resolved. */
+#define MOPPE_FOREST_OBJECT_THREADS 32
 #define MOPPE_FOREST_PARTS_PER_TREE 8
-/* The nearest trees expand into pure bough assemblies: a trunk and nine
-   whorls of seven feathered boughs, one meshlet each. No shell or cone
-   primitive exists at this tier; the crown is the union of its branches. */
-#define MOPPE_FOREST_HERO_PARTS 64
-#define MOPPE_FOREST_PAYLOAD_PARTS                                             \
-  (MOPPE_FOREST_OBJECT_THREADS * MOPPE_FOREST_PARTS_PER_TREE)
-#define MOPPE_FOREST_MESH_THREADS 192
+#define MOPPE_FOREST_BOUGH_RANKS 64
+#define MOPPE_FOREST_MESH_THREADS 128
+#define MOPPE_FOREST_MESH_STATIONS 32
 #define MOPPE_FOREST_MESH_VERTICES 128
 #define MOPPE_FOREST_MESH_PRIMITIVES 128
 
@@ -301,6 +303,13 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 #define MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES 6.0f
 #define MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES 32.0f
 #define MOPPE_FOREST_STAND_SUPPORT_METRES 24.0f
+// Stand support rises over this 24-metre closure interval, and individual
+// identity transfers to the stand quotient over this projected-crown one. The
+// renderer's candidate filter evaluates the same rule as the shaders.
+#define MOPPE_FOREST_STAND_OPEN_CLOSURE 0.12f
+#define MOPPE_FOREST_STAND_CLOSED_CLOSURE 0.42f
+#define MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS 8.0f
+#define MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS 32.0f
 #define MOPPE_FOREST_CANOPY_OBJECT_THREADS 64
 #define MOPPE_FOREST_CANOPY_GRID_CELLS 6
 #define MOPPE_FOREST_CANOPY_SAMPLE_STEP_METRES 4.0f
