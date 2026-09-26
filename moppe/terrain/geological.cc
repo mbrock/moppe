@@ -27,7 +27,9 @@ namespace moppe::terrain {
 
     GeologicalSeeds derive_seeds (Seed root) {
       std::mt19937 rng (root.value);
-      return { Seed { rng () }, Seed { rng () }, Seed { rng () } };
+      // mt19937 yields 32-bit values, but its result_type is wider on Linux.
+      auto next = [&rng] { return static_cast<std::uint32_t> (rng ()); };
+      return { Seed { next () }, Seed { next () }, Seed { next () } };
     }
 
     class PeriodicNoise {

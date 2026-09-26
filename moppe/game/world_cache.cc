@@ -1,6 +1,7 @@
 #include <moppe/game/world_cache.hh>
 
 #include <moppe/spatial/bundle_storage.hh>
+#include <moppe/terrain/domain_storage.hh>
 
 #include <array>
 #include <bit>

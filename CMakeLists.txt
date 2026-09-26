@@ -577,6 +577,8 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
       tests/atelier/embedding_test.cc
       tests/atelier/hex_sheet_test.cc
       tests/atelier/tree_test.cc)
+  else()
+    target_sources(moppe-tests PRIVATE tests/headless_platform.cc)
   endif()
   add_test(NAME moppe-tests COMMAND moppe-tests)
 endif()
