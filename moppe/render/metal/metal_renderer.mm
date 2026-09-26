@@ -488,17 +488,132 @@ namespace moppe {
 #endif
       };
 
+      // The conservative culling sphere of one retained organism: it must
+      // contain the whole organism, or passing trees vanish while filling the
+      // screen.
+      struct ForestCullingSphere {
+        Vec3 centre;
+        float radius;
+      };
+
+      ForestCullingSphere
+      forest_culling_sphere (const MoppeForestInstance& tree, Vec3 root) {
+        const float slope_weight = tree.identity.y == 1u ? 0.20f : 0.28f;
+        const Vec3 ground_up (
+          tree.up_radius.x, tree.up_radius.y, tree.up_radius.z);
+        const Vec3 up =
+          normalized (Vec3 (0.0f, 1.0f, 0.0f) * (1.0f - slope_weight) +
+                      ground_up * slope_weight);
+        const float height = tree.root_height.w;
+        return { root + up * (0.52f * height),
+                 0.55f * height + 1.4f * tree.up_radius.w };
+      }
+
+      // Retained organisms grouped by world tile. A tile bounds its members'
+      // culling spheres, largest crown, and weakest stand closure, so the
+      // per-frame candidate filter can reject every member at once.
+      struct ForestTile {
+        Vec3 centre;
+        float radius;
+        float max_crown;
+        float min_closure;
+        std::uint32_t first;
+        std::uint32_t count;
+      };
+
+      constexpr float FOREST_TILE_METRES = 64.0f;
+
       struct MetalForestResources {
         id<MTLBuffer> instances = nil;
         id<MTLTexture> canopy_moments = nil;
         id<MTLTexture> canopy_density = nil;
         std::vector<MoppeForestInstance> cpu_instances;
+        std::vector<ForestTile> tiles;
+        std::vector<std::uint32_t> tile_members;
         std::array<std::vector<MoppeForestCandidate>, 8> scene_candidate_bins;
         std::uint32_t count = 0;
         std::uint32_t canopy_size = 0;
         float period_x = 0.0f;
         float period_z = 0.0f;
       };
+
+      void build_forest_tiles (MetalForestResources& forest) {
+        const std::vector<MoppeForestInstance>& trees = forest.cpu_instances;
+        forest.tiles.clear ();
+        forest.tile_members.clear ();
+        if (trees.empty ())
+          return;
+        float min_x = trees[0].root_height.x;
+        float min_z = trees[0].root_height.z;
+        float max_x = min_x;
+        float max_z = min_z;
+        for (const MoppeForestInstance& tree : trees) {
+          min_x = std::min (min_x, tree.root_height.x);
+          min_z = std::min (min_z, tree.root_height.z);
+          max_x = std::max (max_x, tree.root_height.x);
+          max_z = std::max (max_z, tree.root_height.z);
+        }
+        const auto cells = [] (float extent) {
+          return static_cast<std::uint32_t> (extent / FOREST_TILE_METRES) + 1u;
+        };
+        const std::uint32_t side_x = cells (max_x - min_x);
+        const std::uint32_t side_z = cells (max_z - min_z);
+        const auto tile_of = [&] (const MoppeForestInstance& tree) {
+          const auto cell = [] (float offset, std::uint32_t side) {
+            return std::min (
+              static_cast<std::uint32_t> (offset / FOREST_TILE_METRES),
+              side - 1u);
+          };
+          return cell (tree.root_height.z - min_z, side_z) * side_x +
+                 cell (tree.root_height.x - min_x, side_x);
+        };
+
+        // Counting sort of organisms by tile keeps each tile one index range.
+        std::vector<std::uint32_t> offsets (
+          static_cast<std::size_t> (side_x) * side_z + 1u, 0u);
+        for (const MoppeForestInstance& tree : trees)
+          ++offsets[tile_of (tree) + 1u];
+        for (std::size_t tile = 1; tile < offsets.size (); ++tile)
+          offsets[tile] += offsets[tile - 1];
+        forest.tile_members.resize (trees.size ());
+        std::vector<std::uint32_t> cursor (offsets.begin (),
+                                           offsets.end () - 1);
+        for (std::uint32_t index = 0; index < trees.size (); ++index)
+          forest.tile_members[cursor[tile_of (trees[index])]++] = index;
+
+        for (std::size_t tile = 0; tile + 1 < offsets.size (); ++tile) {
+          const std::uint32_t first = offsets[tile];
+          const std::uint32_t count = offsets[tile + 1] - first;
+          if (count == 0)
+            continue;
+          constexpr float far = std::numeric_limits<float>::max ();
+          Vec3 low (far, far, far);
+          Vec3 high (-far, -far, -far);
+          float max_crown = 0.0f;
+          float min_closure = 1.0f;
+          for (std::uint32_t member = first; member < first + count; ++member) {
+            const MoppeForestInstance& tree =
+              trees[forest.tile_members[member]];
+            const ForestCullingSphere sphere = forest_culling_sphere (
+              tree,
+              Vec3 (
+                tree.root_height.x, tree.root_height.y, tree.root_height.z));
+            for (int axis = 0; axis < 3; ++axis) {
+              const float centre = sphere.centre[axis];
+              low[axis] = std::min<float> (low[axis], centre - sphere.radius);
+              high[axis] = std::max<float> (high[axis], centre + sphere.radius);
+            }
+            max_crown = std::max (max_crown, tree.up_radius.w);
+            min_closure = std::min (min_closure, tree.ecology.z);
+          }
+          forest.tiles.push_back ({ (low + high) * 0.5f,
+                                    0.5f * length (high - low),
+                                    max_crown,
+                                    min_closure,
+                                    first,
+                                    count });
+        }
+      }
 
       struct MetalWaterResources {
         id<MTLBuffer> ocean_verts = nil;
@@ -3602,6 +3717,7 @@ namespace moppe {
       m_forest_resources.cpu_instances = std::move (packed);
       for (auto& bin : m_forest_resources.scene_candidate_bins)
         bin.reserve (m_forest_resources.cpu_instances.size () / 8);
+      build_forest_tiles (m_forest_resources);
     }
 
     // -- targets -------------------------------------------------------
@@ -5078,66 +5194,121 @@ namespace moppe {
       const float projection_x = row_scale (0);
       const float projection_y = row_scale (1);
       const float scene_height = static_cast<float> (m_targets.height);
-      for (std::uint32_t index = 0; index < forest.cpu_instances.size ();
-           ++index) {
-        const MoppeForestInstance& tree = forest.cpu_instances[index];
-        Vec3 root (tree.root_height.x, tree.root_height.y, tree.root_height.z);
-        if (forest.period_x > 0.0f)
-          root[0] += std::round ((m_frame.params.camera_pos[0] - root[0]) /
-                                 forest.period_x) *
-                     forest.period_x;
-        if (forest.period_z > 0.0f)
-          root[2] += std::round ((m_frame.params.camera_pos[2] - root[2]) /
-                                 forest.period_z) *
-                     forest.period_z;
-        const float slope_weight = tree.identity.y == 1u ? 0.20f : 0.28f;
-        const Vec3 ground_up (
-          tree.up_radius.x, tree.up_radius.y, tree.up_radius.z);
-        const Vec3 up =
-          normalized (Vec3 (0.0f, 1.0f, 0.0f) * (1.0f - slope_weight) +
-                      ground_up * slope_weight);
-        const float height = tree.root_height.w;
-        const float crown = tree.up_radius.w;
-        const float radius = 0.55f * height + 1.4f * crown;
-        const Vec3 centre = root + up * (0.52f * height);
-        const float clip_x = vp.element (0) * centre[0] +
-                             vp.element (4) * centre[1] +
-                             vp.element (8) * centre[2] + vp.element (12);
-        const float clip_y = vp.element (1) * centre[0] +
-                             vp.element (5) * centre[1] +
-                             vp.element (9) * centre[2] + vp.element (13);
-        const float clip_w = vp.element (3) * centre[0] +
-                             vp.element (7) * centre[1] +
-                             vp.element (11) * centre[2] + vp.element (15);
-        if (clip_w <= -radius ||
-            std::abs (clip_x) >= clip_w + radius * projection_x ||
-            std::abs (clip_y) >= clip_w + radius * projection_y)
+      const float projection_w = row_scale (3);
+      const Vec3 camera = m_frame.params.camera_pos;
+      const auto clip = [&] (const Vec3& p, int row) {
+        return vp.element (row) * p[0] + vp.element (4 + row) * p[1] +
+               vp.element (8 + row) * p[2] + vp.element (12 + row);
+      };
+      // Side-plane normals are longer than one row, so a tile uses the
+      // triangle bound on both; its members' own tests can then only reject
+      // more. The retirement bound uses the nearest point any member can
+      // occupy, and a fully closed tile retires at the end of identity
+      // transfer rather than at the subpixel fade.
+      const auto tile_may_contribute = [&] (const ForestTile& tile,
+                                            const Vec3& centre) {
+        const float clip_x = clip (centre, 0);
+        const float clip_y = clip (centre, 1);
+        const float clip_w = clip (centre, 3);
+        if (clip_w <= -tile.radius * std::max (projection_w, 1.0f) ||
+            std::abs (clip_x) - clip_w >=
+              tile.radius * (projection_x + projection_w) ||
+            std::abs (clip_y) - clip_w >=
+              tile.radius * (projection_y + projection_w))
+          return false;
+        const float nearest = clip_w - tile.radius * projection_w;
+        const float largest_crown_pixels = tile.max_crown * projection_y *
+                                           scene_height /
+                                           std::max (nearest, 0.6f);
+        const float retirement =
+          tile.min_closure >= MOPPE_FOREST_STAND_CLOSED_CLOSURE
+            ? MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS
+            : 4.0f;
+        return largest_crown_pixels > retirement;
+      };
+      for (const ForestTile& tile : forest.tiles) {
+        // Each organism wraps toward the camera on its own. A tile far from
+        // the half-period line wraps as one; one that straddles it may hold
+        // members at either neighbouring copy, so it is kept if any copy
+        // can contribute.
+        std::array<float, 2> shifts_x { 0.0f, 0.0f };
+        std::array<float, 2> shifts_z { 0.0f, 0.0f };
+        for (const auto [axis, period, shifts] :
+             { std::tuple { 0, forest.period_x, &shifts_x },
+               std::tuple { 2, forest.period_z, &shifts_z } }) {
+          if (period <= 0.0f)
+            continue;
+          const float offset = camera[axis] - tile.centre[axis];
+          const float shift = std::round (offset / period) * period;
+          const float residue = offset - shift;
+          (*shifts)[0] = shift;
+          (*shifts)[1] = std::abs (residue) + tile.radius > 0.5f * period
+                           ? shift + std::copysign (period, residue)
+                           : shift;
+        }
+        bool contributes = false;
+        for (const float shift_x : shifts_x)
+          for (const float shift_z : shifts_z)
+            contributes = contributes ||
+                          tile_may_contribute (
+                            tile, tile.centre + Vec3 (shift_x, 0.0f, shift_z));
+        if (!contributes)
           continue;
-        const float crown_pixels =
-          crown * projection_y * scene_height / std::max (clip_w, 0.6f);
-        // In a closed stand an organism whose identity has fully transferred
-        // to the stand quotient has no extent, and the object stage would
-        // emit nothing for it. This is the shader's own transfer; the margin
-        // lets float differences only keep a candidate, never drop one.
-        const float transfer =
-          smoothstep (MOPPE_FOREST_STAND_OPEN_CLOSURE,
-                      MOPPE_FOREST_STAND_CLOSED_CLOSURE,
-                      tree.ecology.z) *
-          (1.0f - smoothstep (MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS,
-                              MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS,
-                              crown_pixels));
-        if (crown_pixels >= 4.0f && transfer < 0.999f) {
-          // Separate draws make depth rejection deliberately front-to-back.
-          // The bins are broad enough that movement cannot reorder an entire
-          // stand at once; order within a bin is irrelevant to identity.
-          constexpr std::array depth_ends { 32.0f,  64.0f,   128.0f, 256.0f,
-                                            512.0f, 1024.0f, 2048.0f };
-          std::size_t bin = 0;
-          while (bin < depth_ends.size () && clip_w > depth_ends[bin])
-            ++bin;
-          const float pixels = 0.5f * height * projection_y * scene_height /
-                               std::max (clip_w, 0.6f);
-          candidate_bins[bin].push_back ({ index, pixels, crown_pixels, 0u });
+        for (std::uint32_t member = tile.first;
+             member < tile.first + tile.count;
+             ++member) {
+          const std::uint32_t index = forest.tile_members[member];
+          const MoppeForestInstance& tree = forest.cpu_instances[index];
+          Vec3 root (
+            tree.root_height.x, tree.root_height.y, tree.root_height.z);
+          if (forest.period_x > 0.0f)
+            root[0] += std::round ((camera[0] - root[0]) / forest.period_x) *
+                       forest.period_x;
+          if (forest.period_z > 0.0f)
+            root[2] += std::round ((camera[2] - root[2]) / forest.period_z) *
+                       forest.period_z;
+          const float height = tree.root_height.w;
+          const float crown = tree.up_radius.w;
+          const auto [centre, radius] = forest_culling_sphere (tree, root);
+          const float clip_x = vp.element (0) * centre[0] +
+                               vp.element (4) * centre[1] +
+                               vp.element (8) * centre[2] + vp.element (12);
+          const float clip_y = vp.element (1) * centre[0] +
+                               vp.element (5) * centre[1] +
+                               vp.element (9) * centre[2] + vp.element (13);
+          const float clip_w = vp.element (3) * centre[0] +
+                               vp.element (7) * centre[1] +
+                               vp.element (11) * centre[2] + vp.element (15);
+          if (clip_w <= -radius ||
+              std::abs (clip_x) >= clip_w + radius * projection_x ||
+              std::abs (clip_y) >= clip_w + radius * projection_y)
+            continue;
+          const float crown_pixels =
+            crown * projection_y * scene_height / std::max (clip_w, 0.6f);
+          // In a closed stand an organism whose identity has fully transferred
+          // to the stand quotient has no extent, and the object stage would
+          // emit nothing for it. This is the shader's own transfer; the margin
+          // lets float differences only keep a candidate, never drop one.
+          const float transfer =
+            smoothstep (MOPPE_FOREST_STAND_OPEN_CLOSURE,
+                        MOPPE_FOREST_STAND_CLOSED_CLOSURE,
+                        tree.ecology.z) *
+            (1.0f - smoothstep (MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS,
+                                MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS,
+                                crown_pixels));
+          if (crown_pixels >= 4.0f && transfer < 0.999f) {
+            // Separate draws make depth rejection deliberately front-to-back.
+            // The bins are broad enough that movement cannot reorder an entire
+            // stand at once; order within a bin is irrelevant to identity.
+            constexpr std::array depth_ends { 32.0f,  64.0f,   128.0f, 256.0f,
+                                              512.0f, 1024.0f, 2048.0f };
+            std::size_t bin = 0;
+            while (bin < depth_ends.size () && clip_w > depth_ends[bin])
+              ++bin;
+            const float pixels = 0.5f * height * projection_y * scene_height /
+                                 std::max (clip_w, 0.6f);
+            candidate_bins[bin].push_back ({ index, pixels, crown_pixels, 0u });
+          }
         }
       }
 
