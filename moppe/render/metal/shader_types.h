@@ -279,10 +279,6 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
                            // w=leaf-litter field available
 };
 
-// A forest crosses the renderer boundary as stable individuals, not baked
-// vertices: the renderer culls them and expands each from its record.
-#define MOPPE_FOREST_OBJECT_THREADS 32
-
 // One aggregate meshlet carries one height stratum of a 24-metre population
 // patch. Projected error selects a four- or eight-metre world cell; during the
 // transition one meshlet carries both complete nested partitions and
@@ -387,13 +383,15 @@ moppe_trunk_primitive_count (struct MoppeTrunkTopology t) {
   return t.sides * 6u + t.masses * moppe_trunk_mass_primitive_count (t);
 }
 
-struct MoppeTrunkTriangle {
+// One triangle of an index buffer that the CPU fills from the same function
+// the shaders' vertex numbering follows.
+struct MoppeTriangle {
   unsigned int a, b, c;
 };
 
-static inline struct MoppeTrunkTriangle
+static inline struct MoppeTriangle
 moppe_trunk_triangle (struct MoppeTrunkTopology t, unsigned int primitive) {
-  struct MoppeTrunkTriangle tri;
+  struct MoppeTriangle tri;
   const unsigned int trunk_primitives = t.sides * 6u;
   if (primitive < trunk_primitives) {
     // Three bands of quads between the trunk's four rings.
@@ -439,15 +437,46 @@ moppe_trunk_triangle (struct MoppeTrunkTopology t, unsigned int primitive) {
   return tri;
 }
 
-// Loose rocks: one meshlet shapes one boulder from its record. Near rocks
-// subdivide every icosahedron face into four; distant ones and shadows use
-// the bare icosahedron. Boulder draws bind their records at the population
-// slot the forest uses, since the two never draw together, and share the
-// forest's frame uniforms.
+// Loose rocks: each is shaped from its record. Near rocks subdivide every
+// icosahedron face into four; distant ones and shadows use the bare
+// icosahedron. Boulder draws bind their records at the population slot the
+// forest uses, since the two never draw together, and share the forest's
+// frame uniforms.
 #define MOPPE_BUF_BOULDERS MOPPE_BUF_FOREST
-#define MOPPE_BOULDER_MESH_THREADS 128
-#define MOPPE_BOULDER_MESH_VERTICES 120
-#define MOPPE_BOULDER_MESH_PRIMITIVES 80
+#define MOPPE_BOULDER_FINE_PIXELS 14.0f
+#define MOPPE_BOULDER_COARSE_VERTICES 12u
+#define MOPPE_BOULDER_COARSE_PRIMITIVES 20u
+#define MOPPE_BOULDER_FINE_VERTICES 120u
+#define MOPPE_BOULDER_FINE_PRIMITIVES 80u
+// The icosahedron's twenty faces, as corner triples.
+#define MOPPE_BOULDER_FACE_CORNERS                                             \
+  0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10,  \
+    2, 10, 7, 6, 7, 1, 8, 3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9,   \
+    5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1
+
+// A subdivided face has six vertices -- corners A, B, C in slots 0..2, edge
+// midpoints AB, BC, CA in 3..5 -- and four triangles.
+static inline struct MoppeTriangle
+moppe_boulder_fine_triangle (unsigned int primitive) {
+  const unsigned int first = (primitive / 4u) * 6u;
+  struct MoppeTriangle tri;
+  switch (primitive % 4u) {
+  case 0u:
+    tri.a = 0u, tri.b = 3u, tri.c = 5u;
+    break;
+  case 1u:
+    tri.a = 3u, tri.b = 1u, tri.c = 4u;
+    break;
+  case 2u:
+    tri.a = 5u, tri.b = 4u, tri.c = 2u;
+    break;
+  default:
+    tri.a = 3u, tri.b = 4u, tri.c = 5u;
+    break;
+  }
+  tri.a += first, tri.b += first, tri.c += first;
+  return tri;
+}
 
 struct MOPPE_SHADER_ALIGN MoppeBoulderInstance {
   MoppeFloat4 centre_radius; // xyz=body centre in metres, w=radius in metres
@@ -458,8 +487,8 @@ struct MOPPE_SHADER_ALIGN MoppeBoulderInstance {
 struct MOPPE_SHADER_ALIGN MoppeBoulderCandidate {
   uint boulder;
   float pixels; // projected radius in scene pixels
-  uint reserved0;
-  uint reserved1;
+  uint copy;    // a shadow caster's periodic image, 0..8 with 4 the centre
+  uint reserved;
 };
 
 // Sun-shaft raymarch: rays come from a camera basis with the frustum
@@ -564,9 +593,6 @@ static_assert (sizeof (MoppeBoulderInstance) == 48,
                "boulder instance layout must match the shader");
 static_assert (sizeof (MoppeBoulderCandidate) == 16,
                "boulder candidate layout must match the shader");
-static_assert (MOPPE_BOULDER_MESH_VERTICES <= MOPPE_BOULDER_MESH_THREADS &&
-                 MOPPE_BOULDER_MESH_PRIMITIVES <= MOPPE_BOULDER_MESH_THREADS,
-               "boulder meshlet emits one vertex and one face per thread");
 static_assert (MOPPE_FOREST_CANOPY_MESH_VERTICES <= 256,
                "forest canopy meshlet exceeds Metal vertex limit");
 static_assert (MOPPE_FOREST_CANOPY_MESH_PRIMITIVES <= 512,

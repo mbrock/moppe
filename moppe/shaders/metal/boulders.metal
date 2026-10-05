@@ -1,7 +1,8 @@
 // Boulders: faceted, flat-shaded lumps of rock. Each one is an icosahedron
 // shaped from its seed -- turned, jittered, and cleaved by a few planes so
 // large flat faces break its roundness -- squashed broader than tall and
-// settled into the ground by the planner. One meshlet emits one boulder.
+// settled into the ground by the planner. Each is drawn as an instance of the
+// coarse or fine index buffer.
 
 #include "common.h"
 
@@ -12,28 +13,6 @@ struct BoulderVaryings {
   float moisture [[flat]];
   float rise; // radii above the ground the boulder settled on
   float2 motion [[center_no_perspective]];
-};
-
-using BoulderMesh = metal::mesh<BoulderVaryings,
-                                void,
-                                MOPPE_BOULDER_MESH_VERTICES,
-                                MOPPE_BOULDER_MESH_PRIMITIVES,
-                                metal::topology::triangle>;
-
-struct BoulderShadowVaryings {
-  float4 position [[position]];
-};
-
-using BoulderShadowMesh = metal::mesh<BoulderShadowVaryings,
-                                      void,
-                                      MOPPE_BOULDER_MESH_VERTICES,
-                                      MOPPE_BOULDER_MESH_PRIMITIVES,
-                                      metal::topology::triangle>;
-
-struct BoulderShadowPayload {
-  uint count;
-  uint boulder[MOPPE_FOREST_OBJECT_THREADS];
-  uint copy[MOPPE_FOREST_OBJECT_THREADS];
 };
 
 // The planner's body: vertical half-height and burial, in radii.
@@ -52,15 +31,7 @@ constant float3 boulder_icosahedron[12] = {
   float3 (-0.850651, 0.0, -0.525731), float3 (-0.850651, 0.0, 0.525731),
 };
 
-constant ushort3 boulder_faces[20] = {
-  ushort3 (0, 11, 5), ushort3 (0, 5, 1),   ushort3 (0, 1, 7),
-  ushort3 (0, 7, 10), ushort3 (0, 10, 11), ushort3 (1, 5, 9),
-  ushort3 (5, 11, 4), ushort3 (11, 10, 2), ushort3 (10, 7, 6),
-  ushort3 (7, 1, 8),  ushort3 (3, 9, 4),   ushort3 (3, 4, 2),
-  ushort3 (3, 2, 6),  ushort3 (3, 6, 8),   ushort3 (3, 8, 9),
-  ushort3 (4, 9, 5),  ushort3 (2, 4, 11),  ushort3 (6, 2, 10),
-  ushort3 (8, 6, 7),  ushort3 (9, 8, 1),
-};
+constant ushort boulder_face_corners[60] = { MOPPE_BOULDER_FACE_CORNERS };
 
 static inline float boulder_hash (uint seed, uint lane) {
   uint value = seed ^ lane * 0x9e3779b9u;
@@ -190,9 +161,11 @@ static inline float3 boulder_coarse_vertex (thread const Boulder& b, uint i) {
 // silhouette and only gains facets; it is keyed by its edge, not its face, so
 // neighbouring faces meet without cracks.
 static inline float3 boulder_fine_vertex (thread const Boulder& b, uint i) {
-  const ushort3 face = boulder_faces[i / 6u];
+  const uint face = i / 6u;
   const uint slot = i % 6u;
-  const uint corners[3] = { face.x, face.y, face.z };
+  const uint corners[3] = { boulder_face_corners[3u * face],
+                            boulder_face_corners[3u * face + 1u],
+                            boulder_face_corners[3u * face + 2u] };
   if (slot < 3u)
     return boulder_corner (b, corners[slot]);
   const uint a = corners[slot - 3u];
@@ -202,21 +175,6 @@ static inline float3 boulder_fine_vertex (thread const Boulder& b, uint i) {
   const float lift =
     0.12 * boulder_hash (b.seed, 60u + low * 12u + high) - 0.03;
   return boulder_cleave (b, edge + lift * normalize (edge));
-}
-
-static inline uint3 boulder_fine_triangle (uint primitive) {
-  // Slots 0..2 are the corners A, B, C; 3..5 the midpoints AB, BC, CA.
-  const uint first = (primitive / 4u) * 6u;
-  switch (primitive % 4u) {
-  case 0u:
-    return first + uint3 (0u, 3u, 5u);
-  case 1u:
-    return first + uint3 (3u, 1u, 4u);
-  case 2u:
-    return first + uint3 (5u, 4u, 2u);
-  default:
-    return first + uint3 (3u, 4u, 5u);
-  }
 }
 
 // Honest rock: a neutral grey, each stone a little warmer or cooler,
@@ -229,53 +187,48 @@ static inline float3 boulder_albedo (thread const Boulder& b) {
 }
 
 static inline bool boulder_fine (float pixels) {
-  return pixels > 14.0;
+  return pixels > MOPPE_BOULDER_FINE_PIXELS;
 }
 
 // ---- the scene stage -----------------------------------------------
 
-[[mesh]] void boulders_mesh (BoulderMesh out,
-                             uint mesh_id [[threadgroup_position_in_grid]],
-                             uint thread_id [[thread_index_in_threadgroup]],
-                             constant MoppeForestUniforms& u
-                             [[buffer (MOPPE_BUF_FRAME)]],
-                             device const MoppeBoulderInstance* rocks
-                             [[buffer (MOPPE_BUF_BOULDERS)]],
-                             device const MoppeBoulderCandidate* candidates
-                             [[buffer (MOPPE_BUF_DRAW)]]) {
-  const MoppeBoulderCandidate candidate = candidates[mesh_id];
+// One vertex of a boulder, numbered as the coarse or fine index buffer
+// expects.
+static inline BoulderVaryings
+boulder_scene_vertex (thread const Boulder& b,
+                      thread const MoppeBoulderInstance& rock,
+                      bool fine,
+                      uint index,
+                      constant MoppeForestUniforms& u) {
+  const float3 p =
+    fine ? boulder_fine_vertex (b, index) : boulder_coarse_vertex (b, index);
+  const float3 world = boulder_world (b, p);
+  BoulderVaryings o;
+  o.position = u.view_proj * float4 (world, 1.0);
+  o.world_pos = world;
+  o.albedo = boulder_albedo (b);
+  o.moisture = rock.up_moisture.w;
+  o.rise = p.y * b.stretch.y + (boulder_squash - boulder_burial);
+  // Rocks do not move: only the camera contributes motion.
+  o.motion = moppe_motion_vector (u.unjittered_view_proj * float4 (world, 1.0),
+                                  u.previous_view_proj * float4 (world, 1.0),
+                                  u.temporal.xy);
+  return o;
+}
+
+// One instance per candidate; every candidate of a draw shares its detail,
+// coarse or fine, and that class's index buffer.
+vertex BoulderVaryings boulders_vertex (
+  uint index [[vertex_id]],
+  uint instance [[instance_id]],
+  constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+  device const MoppeBoulderInstance* rocks [[buffer (MOPPE_BUF_BOULDERS)]],
+  device const MoppeBoulderCandidate* candidates [[buffer (MOPPE_BUF_DRAW)]]) {
+  const MoppeBoulderCandidate candidate = candidates[instance];
   const MoppeBoulderInstance rock = rocks[candidate.boulder];
   const Boulder b = boulder_of (rock, boulder_centre (rock, u, 4u, false));
-  const bool fine = boulder_fine (candidate.pixels);
-  const uint vertices = fine ? 120u : 12u;
-  const uint primitives = fine ? 80u : 20u;
-  if (thread_id == 0u)
-    out.set_primitive_count (primitives);
-
-  if (thread_id < vertices) {
-    const float3 p = fine ? boulder_fine_vertex (b, thread_id)
-                          : boulder_coarse_vertex (b, thread_id);
-    const float3 world = boulder_world (b, p);
-    BoulderVaryings o;
-    o.position = u.view_proj * float4 (world, 1.0);
-    o.world_pos = world;
-    o.albedo = boulder_albedo (b);
-    o.moisture = rock.up_moisture.w;
-    o.rise = p.y * b.stretch.y + (boulder_squash - boulder_burial);
-    // Rocks do not move: only the camera contributes motion.
-    o.motion =
-      moppe_motion_vector (u.unjittered_view_proj * float4 (world, 1.0),
-                           u.previous_view_proj * float4 (world, 1.0),
-                           u.temporal.xy);
-    out.set_vertex (thread_id, o);
-  }
-  if (thread_id < primitives) {
-    const uint3 tri = fine ? boulder_fine_triangle (thread_id)
-                           : uint3 (boulder_faces[thread_id]);
-    out.set_index (thread_id * 3u + 0u, tri.x);
-    out.set_index (thread_id * 3u + 1u, tri.y);
-    out.set_index (thread_id * 3u + 2u, tri.z);
-  }
+  return boulder_scene_vertex (
+    b, rock, boulder_fine (candidate.pixels), index, u);
 }
 
 static inline float boulder_visibility (float3 world_pos,
@@ -365,73 +318,19 @@ boulders_fragment (BoulderVaryings in [[stage_in]],
 
 // ---- the shadow stages ---------------------------------------------
 
-[[object]] void boulders_shadow_object (
-  object_data BoulderShadowPayload& payload [[payload]],
-  metal::mesh_grid_properties mesh_grid,
-  uint thread_id [[thread_index_in_threadgroup]],
-  uint3 group [[threadgroup_position_in_grid]],
+// The CPU has already culled the shadow casters against the light; each is
+// the bare icosahedron at its periodic image.
+vertex float4 boulders_shadow_vertex (
+  uint index [[vertex_id]],
+  uint instance [[instance_id]],
   constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  device const MoppeBoulderInstance* rocks [[buffer (MOPPE_BUF_BOULDERS)]]) {
-  threadgroup atomic_uint emitted;
-  if (thread_id == 0u)
-    atomic_store_explicit (&emitted, 0u, metal::memory_order_relaxed);
-  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
-
-  const uint rock_count = uint (u.world.z);
-  const bool local = u.world.w > 0.5;
-  const uint image_count = local ? 1u : 9u;
-  const uint candidate = group.x * MOPPE_FOREST_OBJECT_THREADS + thread_id;
-  if (candidate < rock_count * image_count) {
-    const uint index = candidate % rock_count;
-    const uint copy = local ? 4u : candidate / rock_count;
-    const MoppeBoulderInstance rock = rocks[index];
-    const float radius = rock.centre_radius.w;
-    // The whole-world map's texels are larger than a small stone.
-    if (local || radius >= 1.0) {
-      const float3 centre = boulder_centre (rock, u, copy, !local);
-      const float4 clip = u.view_proj * float4 (centre, 1.0);
-      const float2 clip_radius = radius * moppe_projection_scale (u.view_proj);
-      if (clip.w > -radius && abs (clip.x) < clip.w + clip_radius.x &&
-          abs (clip.y) < clip.w + clip_radius.y) {
-        const uint slot =
-          atomic_fetch_add_explicit (&emitted, 1u, metal::memory_order_relaxed);
-        payload.boulder[slot] = index;
-        payload.copy[slot] = copy;
-      }
-    }
-  }
-  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
-  if (thread_id == 0u) {
-    payload.count =
-      atomic_load_explicit (&emitted, metal::memory_order_relaxed);
-    mesh_grid.set_threadgroups_per_grid (uint3 (payload.count, 1, 1));
-  }
-}
-
-[[mesh]] void boulders_shadow_mesh (
-  BoulderShadowMesh out,
-  object_data const BoulderShadowPayload& payload [[payload]],
-  uint mesh_id [[threadgroup_position_in_grid]],
-  uint thread_id [[thread_index_in_threadgroup]],
-  constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  device const MoppeBoulderInstance* rocks [[buffer (MOPPE_BUF_BOULDERS)]]) {
-  const MoppeBoulderInstance rock = rocks[payload.boulder[mesh_id]];
+  device const MoppeBoulderInstance* rocks [[buffer (MOPPE_BUF_BOULDERS)]],
+  device const MoppeBoulderCandidate* candidates [[buffer (MOPPE_BUF_DRAW)]]) {
+  const MoppeBoulderCandidate candidate = candidates[instance];
+  const MoppeBoulderInstance rock = rocks[candidate.boulder];
   const bool local = u.world.w > 0.5;
   const Boulder b =
-    boulder_of (rock, boulder_centre (rock, u, payload.copy[mesh_id], !local));
-  if (thread_id == 0u)
-    out.set_primitive_count (20u);
-  if (thread_id < 12u) {
-    BoulderShadowVaryings o;
-    o.position =
-      u.view_proj *
-      float4 (boulder_world (b, boulder_coarse_vertex (b, thread_id)), 1.0);
-    out.set_vertex (thread_id, o);
-  }
-  if (thread_id < 20u) {
-    const ushort3 tri = boulder_faces[thread_id];
-    out.set_index (thread_id * 3u + 0u, tri.x);
-    out.set_index (thread_id * 3u + 1u, tri.y);
-    out.set_index (thread_id * 3u + 2u, tri.z);
-  }
+    boulder_of (rock, boulder_centre (rock, u, candidate.copy, !local));
+  return u.view_proj *
+         float4 (boulder_world (b, boulder_coarse_vertex (b, index)), 1.0);
 }

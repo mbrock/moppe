@@ -43,10 +43,8 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -197,20 +195,6 @@ namespace moppe {
         double gpu_max_ms = 0;
         std::array<double, GPU_PASS_COUNT> pass_total_ms {};
         int frames = 0;
-      };
-
-      // MOPPE_PATH_AB=<frames> is a measuring instrument for porting a mesh
-      // shader pass to vertex pulling: it alternates the four combinations of
-      // scene path and shadow path in blocks of that many frames, reversing
-      // their order every other cycle, and at every temporal reset (a
-      // gazetteer shot change) and on exit reports what switching each pass
-      // to vertex pulling changes the GPU frame time by.
-      struct PathTiming {
-        std::mutex mutex;
-        // Frame GPU times of one epoch by alternation cycle and combination,
-        // bit 0 the scene path and bit 1 the shadow path.
-        std::map<std::uint64_t, std::array<std::vector<double>, 4>> cycles;
-        int epoch = 0;
       };
 
       struct BenchmarkSample {
@@ -484,6 +468,8 @@ namespace moppe {
         id<MTLRenderPipelineState> leaf_fall = nil;
         id<MTLRenderPipelineState> boulders = nil;
         id<MTLRenderPipelineState> boulders_shadow = nil;
+        // The bare icosahedron's faces, then the subdivided one's.
+        id<MTLBuffer> boulder_indices = nil;
         id<MTLRenderPipelineState> river = nil;
 #if !TARGET_OS_IPHONE
         id<MTLComputePipelineState> reflection_geometry = nil;
@@ -598,23 +584,31 @@ namespace moppe {
         float period_z = 0.0f;
       };
 
-      // One instanced draw of a trunk class: the class's triangles once per
-      // candidate bound at MOPPE_BUF_DRAW.
+      // One instanced draw of an index-buffer class: the class's triangles
+      // once per candidate bound at MOPPE_BUF_DRAW.
+      void draw_indexed_class (id<MTL4RenderCommandEncoder> enc,
+                               id<MTLBuffer> indices,
+                               std::uint32_t first,
+                               std::uint32_t count,
+                               std::size_t instances) {
+        [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                        indexCount:count
+                         indexType:MTLIndexTypeUInt16
+                       indexBuffer:indices.gpuAddress +
+                                   first * sizeof (std::uint16_t)
+                 indexBufferLength:count * sizeof (std::uint16_t)
+                     instanceCount:instances];
+      }
+
       void draw_trunk_class (id<MTL4RenderCommandEncoder> enc,
                              const MetalPipelines& pipelines,
                              std::size_t trunk_class,
                              std::size_t instances) {
-        const std::uint32_t first =
-          pipelines.forest_trunk_index_first[trunk_class];
-        const std::uint32_t count =
-          pipelines.forest_trunk_index_count[trunk_class];
-        [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                        indexCount:count
-                         indexType:MTLIndexTypeUInt16
-                       indexBuffer:pipelines.forest_trunk_indices.gpuAddress +
-                                   first * sizeof (std::uint16_t)
-                 indexBufferLength:count * sizeof (std::uint16_t)
-                     instanceCount:instances];
+        draw_indexed_class (enc,
+                            pipelines.forest_trunk_indices,
+                            pipelines.forest_trunk_index_first[trunk_class],
+                            pipelines.forest_trunk_index_count[trunk_class],
+                            instances);
       }
 
       void build_forest_tiles (MetalForestResources& forest) {
@@ -700,30 +694,85 @@ namespace moppe {
       // one; one that straddles it may hold members at either neighbouring
       // copy.
       std::array<std::array<float, 2>, 2>
-      forest_tile_shifts (const MetalForestResources& forest,
-                          const ForestTile& tile,
-                          const Vec3& toward) {
+      periodic_tile_shifts (const Vec3& centre,
+                            float radius,
+                            float period_x,
+                            float period_z,
+                            const Vec3& toward) {
         std::array<std::array<float, 2>, 2> shifts {};
         for (const auto [slot, axis, period] :
-             { std::tuple { 0, 0, forest.period_x },
-               std::tuple { 1, 2, forest.period_z } }) {
+             { std::tuple { 0, 0, period_x }, std::tuple { 1, 2, period_z } }) {
           if (period <= 0.0f)
             continue;
-          const float offset = toward[axis] - tile.centre[axis];
+          const float offset = toward[axis] - centre[axis];
           const float shift = std::round (offset / period) * period;
           const float residue = offset - shift;
           shifts[slot][0] = shift;
-          shifts[slot][1] = std::abs (residue) + tile.radius > 0.5f * period
+          shifts[slot][1] = std::abs (residue) + radius > 0.5f * period
                               ? shift + std::copysign (period, residue)
                               : shift;
         }
         return shifts;
       }
 
-      // The vertex-pulled trunk shadow's casters, conifers second: the CPU
-      // twin of forest_trunks_shadow_object's light-frustum test. A local
-      // map wraps each organism toward its focus; the world map draws all
-      // nine periodic images.
+      std::array<std::array<float, 2>, 2>
+      forest_tile_shifts (const MetalForestResources& forest,
+                          const ForestTile& tile,
+                          const Vec3& toward) {
+        return periodic_tile_shifts (
+          tile.centre, tile.radius, forest.period_x, forest.period_z, toward);
+      }
+
+      // A point wrapped by whole periods to the copy nearest a focus.
+      Vec3 wrap_toward (Vec3 point,
+                        float period_x,
+                        float period_z,
+                        const Vec3& focus) {
+        if (period_x > 0.0f)
+          point[0] += std::round ((focus[0] - point[0]) / period_x) * period_x;
+        if (period_z > 0.0f)
+          point[2] += std::round ((focus[2] - point[2]) / period_z) * period_z;
+        return point;
+      }
+
+      // Sphere tests against a world-to-clip transform, as the shadow object
+      // stages made them: exact for one caster at its centre's own w, and
+      // conservative for a group's bound.
+      struct ClipSpheres {
+        const Mat4& vp;
+        float scale_x, scale_y, scale_w;
+
+        explicit ClipSpheres (const Mat4& m)
+            : vp (m), scale_x (row_scale (0)), scale_y (row_scale (1)),
+              scale_w (row_scale (3)) {}
+
+        float row_scale (int row) const {
+          return std::sqrt (vp.element (row) * vp.element (row) +
+                            vp.element (4 + row) * vp.element (4 + row) +
+                            vp.element (8 + row) * vp.element (8 + row));
+        }
+        float clip (const Vec3& p, int row) const {
+          return vp.element (row) * p[0] + vp.element (4 + row) * p[1] +
+                 vp.element (8 + row) * p[2] + vp.element (12 + row);
+        }
+        bool contains (const Vec3& centre, float radius) const {
+          const float w = clip (centre, 3);
+          return w > -radius &&
+                 std::abs (clip (centre, 0)) < w + radius * scale_x &&
+                 std::abs (clip (centre, 1)) < w + radius * scale_y;
+        }
+        bool may_contain (const Vec3& centre, float radius) const {
+          const float w = clip (centre, 3);
+          return w > -radius * std::max (scale_w, 1.0f) &&
+                 std::abs (clip (centre, 0)) <
+                   w + radius * (scale_x + scale_w) &&
+                 std::abs (clip (centre, 1)) < w + radius * (scale_y + scale_w);
+        }
+      };
+
+      // The trunk shadow's casters, conifers second, culled against the
+      // light. A local map wraps each organism toward its focus; the world
+      // map draws all nine periodic images.
       void collect_trunk_shadow_casters (
         const MetalForestResources& forest,
         const Mat4& vp,
@@ -731,28 +780,13 @@ namespace moppe {
         std::array<std::vector<MoppeForestCandidate>, 2>& casters) {
         for (auto& species : casters)
           species.clear ();
-        const auto clip = [&] (const Vec3& p, int row) {
-          return vp.element (row) * p[0] + vp.element (4 + row) * p[1] +
-                 vp.element (8 + row) * p[2] + vp.element (12 + row);
-        };
-        const auto row_scale = [&] (int row) {
-          return std::sqrt (vp.element (row) * vp.element (row) +
-                            vp.element (4 + row) * vp.element (4 + row) +
-                            vp.element (8 + row) * vp.element (8 + row));
-        };
-        const float scale_x = row_scale (0);
-        const float scale_y = row_scale (1);
-        const float scale_w = row_scale (3);
+        const ClipSpheres light (vp);
         const auto add =
           [&] (std::uint32_t index, Vec3 root, std::uint32_t copy) {
             const MoppeForestInstance& tree = forest.cpu_instances[index];
             const float height = tree.root_height.w;
-            const Vec3 centre = root + Vec3 (0.0f, 0.55f * height, 0.0f);
-            const float radius = std::max (tree.up_radius.w, 0.55f * height);
-            const float w = clip (centre, 3);
-            if (w > -radius &&
-                std::abs (clip (centre, 0)) < w + radius * scale_x &&
-                std::abs (clip (centre, 1)) < w + radius * scale_y)
+            if (light.contains (root + Vec3 (0.0f, 0.55f * height, 0.0f),
+                                std::max (tree.up_radius.w, 0.55f * height)))
               casters[tree.identity.y == 1u ? 1 : 0].push_back (
                 { index, 0.0f, 0.0f, copy });
           };
@@ -781,32 +815,21 @@ namespace moppe {
           const auto shifts = forest_tile_shifts (forest, tile, *focus);
           bool contributes = false;
           for (const float shift_x : shifts[0])
-            for (const float shift_z : shifts[1]) {
-              const Vec3 centre = tile.centre + Vec3 (shift_x, 0.0f, shift_z);
-              const float w = clip (centre, 3);
+            for (const float shift_z : shifts[1])
               contributes =
-                contributes || (w > -radius * std::max (scale_w, 1.0f) &&
-                                std::abs (clip (centre, 0)) <
-                                  w + radius * (scale_x + scale_w) &&
-                                std::abs (clip (centre, 1)) <
-                                  w + radius * (scale_y + scale_w));
-            }
+                contributes ||
+                light.may_contain (tile.centre + Vec3 (shift_x, 0.0f, shift_z),
+                                   radius);
           if (!contributes)
             continue;
           for (std::uint32_t member = tile.first;
                member < tile.first + tile.count;
                ++member) {
             const std::uint32_t index = forest.tile_members[member];
-            Vec3 root = root_of (index);
-            if (forest.period_x > 0.0f)
-              root[0] +=
-                std::round (((*focus)[0] - root[0]) / forest.period_x) *
-                forest.period_x;
-            if (forest.period_z > 0.0f)
-              root[2] +=
-                std::round (((*focus)[2] - root[2]) / forest.period_z) *
-                forest.period_z;
-            add (index, root, 4u);
+            add (index,
+                 wrap_toward (
+                   root_of (index), forest.period_x, forest.period_z, *focus),
+                 4u);
           }
         }
       }
@@ -837,10 +860,71 @@ namespace moppe {
         std::vector<BoulderTile> tiles;
         std::vector<std::uint32_t> tile_members;
         std::vector<MoppeBoulderCandidate> candidates;
+        // Candidates by detail, coarse then fine, and shadow casters.
+        std::array<std::vector<MoppeBoulderCandidate>, 2> details;
+        std::vector<MoppeBoulderCandidate> shadow_casters;
         std::uint32_t count = 0;
         float period_x = 0.0f;
         float period_z = 0.0f;
       };
+
+      // The boulder shadow's casters, culled against the light. A local map
+      // wraps each rock toward its focus; the world map, whose texels are
+      // larger than a small stone, draws all nine periodic images of the
+      // rocks a metre or more across.
+      void collect_boulder_shadow_casters (MetalBoulderResources& rocks,
+                                           const Mat4& vp,
+                                           const Vec3* focus) {
+        auto& casters = rocks.shadow_casters;
+        casters.clear ();
+        const ClipSpheres light (vp);
+        const auto centre_of = [&] (std::uint32_t index) {
+          const MoppeBoulderInstance& stone = rocks.cpu_instances[index];
+          return Vec3 (stone.centre_radius.x,
+                       stone.centre_radius.y,
+                       stone.centre_radius.z);
+        };
+        if (!focus) {
+          for (std::uint32_t index = 0; index < rocks.cpu_instances.size ();
+               ++index) {
+            const float radius = rocks.cpu_instances[index].centre_radius.w;
+            if (radius < 1.0f)
+              continue;
+            for (std::uint32_t copy = 0; copy < 9; ++copy)
+              if (light.contains (
+                    centre_of (index) +
+                      Vec3 ((float (copy % 3) - 1.0f) * rocks.period_x,
+                            0.0f,
+                            (float (copy / 3) - 1.0f) * rocks.period_z),
+                    radius))
+                casters.push_back ({ index, 0.0f, copy, 0u });
+          }
+          return;
+        }
+        for (const BoulderTile& tile : rocks.tiles) {
+          const auto shifts = periodic_tile_shifts (
+            tile.centre, tile.radius, rocks.period_x, rocks.period_z, *focus);
+          bool contributes = false;
+          for (const float shift_x : shifts[0])
+            for (const float shift_z : shifts[1])
+              contributes =
+                contributes ||
+                light.may_contain (tile.centre + Vec3 (shift_x, 0.0f, shift_z),
+                                   tile.radius);
+          if (!contributes)
+            continue;
+          for (std::uint32_t member = tile.first;
+               member < tile.first + tile.count;
+               ++member) {
+            const std::uint32_t index = rocks.tile_members[member];
+            if (light.contains (
+                  wrap_toward (
+                    centre_of (index), rocks.period_x, rocks.period_z, *focus),
+                  rocks.cpu_instances[index].centre_radius.w))
+              casters.push_back ({ index, 0.0f, 4u, 0u });
+          }
+        }
+      }
 
       void build_boulder_tiles (MetalBoulderResources& rocks) {
         const std::vector<MoppeBoulderInstance>& stones = rocks.cpu_instances;
@@ -1511,15 +1595,6 @@ namespace moppe {
       bool m_profile_gpu_passes = false;
       std::shared_ptr<FrameTiming> m_frame_timing;
       std::shared_ptr<BenchmarkOutput> m_benchmark;
-      // The passes under MOPPE_PATH_AB comparison draw by vertex pulling
-      // this frame.
-      bool m_frame_vertex_scene = true;
-      bool m_frame_vertex_shadow = true;
-      int m_frame_path_combination = 3;
-      int m_path_ab_block = 0;
-      std::uint64_t m_path_ab_frame = 0;
-      std::shared_ptr<PathTiming> m_path_timing;
-      void report_path_timing ();
       bool m_profile_cpu = false;
       double m_cpu_frame_start = 0;
       double m_cpu_encode_start = 0;
@@ -1602,10 +1677,6 @@ namespace moppe {
       m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
       if (m_profile_gpu)
         m_frame_timing = std::make_shared<FrameTiming> ();
-      if (const char* block = ::getenv ("MOPPE_PATH_AB")) {
-        m_path_ab_block = std::max (1, ::atoi (block));
-        m_path_timing = std::make_shared<PathTiming> ();
-      }
       if (const char* path = ::getenv ("MOPPE_BENCHMARK_OUTPUT")) {
         m_benchmark = std::make_shared<BenchmarkOutput> ();
         m_benchmark->path = path;
@@ -1855,7 +1926,6 @@ namespace moppe {
       if (m_frame.sequence)
         [m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
                                                timeoutMS:5000];
-      report_path_timing ();
 #if !TARGET_OS_IPHONE
       retire_reflection_geometry ();
 #endif
@@ -2153,7 +2223,7 @@ namespace moppe {
               static_cast<std::uint32_t> (indices.size ());
             m_pipelines.forest_trunk_index_count[c] = 3 * primitives;
             for (std::uint32_t p = 0; p < primitives; ++p) {
-              const MoppeTrunkTriangle tri = moppe_trunk_triangle (shape, p);
+              const MoppeTriangle tri = moppe_trunk_triangle (shape, p);
               indices.insert (indices.end (),
                               { static_cast<std::uint16_t> (tri.a),
                                 static_cast<std::uint16_t> (tri.b),
@@ -2167,6 +2237,39 @@ namespace moppe {
           create_private_buffer (indices.data (),
                                  indices.size () * sizeof (std::uint16_t),
                                  @"forest trunk indices");
+      }
+      // Boulders draw the same way, in two classes: the bare icosahedron for
+      // distant rocks and shadows, and its subdivision for near ones.
+      m_pipelines.boulders = make_pipeline (@"boulders_vertex",
+                                            @"boulders_fragment",
+                                            scene,
+                                            depth,
+                                            scene_samples,
+                                            false,
+                                            false,
+                                            m_temporal_scene_pipelines);
+      m_pipelines.boulders_shadow = make_pipeline (@"boulders_shadow_vertex",
+                                                   nil,
+                                                   MTLPixelFormatInvalid,
+                                                   MTLPixelFormatDepth16Unorm,
+                                                   1,
+                                                   false);
+      if (m_pipelines.boulders && !m_pipelines.boulder_indices) {
+        constexpr std::array<std::uint16_t, 60> faces {
+          MOPPE_BOULDER_FACE_CORNERS
+        };
+        std::vector<std::uint16_t> indices (faces.begin (), faces.end ());
+        for (std::uint32_t p = 0; p < MOPPE_BOULDER_FINE_PRIMITIVES; ++p) {
+          const MoppeTriangle tri = moppe_boulder_fine_triangle (p);
+          indices.insert (indices.end (),
+                          { static_cast<std::uint16_t> (tri.a),
+                            static_cast<std::uint16_t> (tri.b),
+                            static_cast<std::uint16_t> (tri.c) });
+        }
+        m_pipelines.boulder_indices =
+          create_private_buffer (indices.data (),
+                                 indices.size () * sizeof (std::uint16_t),
+                                 @"boulder indices");
       }
       m_pipelines.sky = make_pipeline (@"sky_vertex",
                                        @"sky_fragment",
@@ -2461,43 +2564,9 @@ namespace moppe {
         if (!m_temporal_scene_pipelines)
           leaves.stencilAttachmentPixelFormat = depth;
         leaves.maxTotalThreadsPerMeshThreadgroup = MOPPE_LEAF_FALL_THREADS;
-        // Boulders follow the trunk forest's shape: a CPU-culled mesh-only
-        // scene pipeline and an object-culled shadow pipeline.
-        MTLMeshRenderPipelineDescriptor* boulders =
-          [[MTLMeshRenderPipelineDescriptor alloc] init];
-        boulders.meshFunction =
-          [m_library newFunctionWithName:@"boulders_mesh"];
-        boulders.fragmentFunction =
-          [m_library newFunctionWithName:@"boulders_fragment"];
-        boulders.rasterSampleCount = scene_samples;
-        boulders.colorAttachments[0].pixelFormat = scene;
-        if (m_temporal_scene_pipelines) {
-          boulders.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
-          boulders.colorAttachments[2].pixelFormat = MTLPixelFormatR8Unorm;
-        }
-        boulders.depthAttachmentPixelFormat = depth;
-        if (!m_temporal_scene_pipelines)
-          boulders.stencilAttachmentPixelFormat = depth;
-        boulders.maxTotalThreadsPerMeshThreadgroup = MOPPE_BOULDER_MESH_THREADS;
-        MTLMeshRenderPipelineDescriptor* boulders_shadow =
-          [[MTLMeshRenderPipelineDescriptor alloc] init];
-        boulders_shadow.objectFunction =
-          [m_library newFunctionWithName:@"boulders_shadow_object"];
-        boulders_shadow.meshFunction =
-          [m_library newFunctionWithName:@"boulders_shadow_mesh"];
-        boulders_shadow.rasterSampleCount = 1;
-        boulders_shadow.depthAttachmentPixelFormat = MTLPixelFormatDepth16Unorm;
-        boulders_shadow.payloadMemoryLength = 512;
-        boulders_shadow.maxTotalThreadsPerObjectThreadgroup =
-          MOPPE_FOREST_OBJECT_THREADS;
-        boulders_shadow.maxTotalThreadsPerMeshThreadgroup =
-          MOPPE_BOULDER_MESH_THREADS;
-        for (const auto& [descriptor, pipeline, name] :
-             { std::tuple { leaves, &m_pipelines.leaf_fall, "falling leaves" },
-               std::tuple { boulders, &m_pipelines.boulders, "boulder" },
-               std::tuple { boulders_shadow,
-                            &m_pipelines.boulders_shadow,
-                            "boulder shadow" } }) {
+        for (const auto& [descriptor, pipeline, name] : {
+               std::tuple { leaves, &m_pipelines.leaf_fall, "falling leaves" },
+             }) {
           if (!descriptor.meshFunction)
             continue;
           NSError* error = nil;
@@ -3412,11 +3481,12 @@ namespace moppe {
       const float shadow_step = TERRAIN_LOD_STEP[shadow_lod];
       const int chunks = m_terrain_resources.params.width / CHUNK_CELLS;
       const NSUInteger draw_count = 9 * chunks * chunks;
-      // The trunk shadow writes every visible periodic image of every
-      // organism as a caster record.
+      // The trunk and boulder shadows write every visible periodic image of
+      // every caster as a record.
       const NSUInteger caster_bytes =
-        9 * m_forest_resources.count * sizeof (MoppeForestCandidate) + 4 * 256 +
-        sizeof (MoppeForestUniforms);
+        9 * m_forest_resources.count * sizeof (MoppeForestCandidate) +
+        9 * m_boulder_resources.count * sizeof (MoppeBoulderCandidate) +
+        8 * 256 + 2 * sizeof (MoppeForestUniforms);
       MetalFrameEncoding scratch;
       scratch.arena[0].buffer = [m_device
         newBufferWithLength:sizeof (u) +
@@ -4238,7 +4308,7 @@ namespace moppe {
                                           const Mat4& light_view_proj,
                                           const Vec3& focus,
                                           bool local) {
-      const MetalBoulderResources& rocks = m_boulder_resources;
+      MetalBoulderResources& rocks = m_boulder_resources;
       if (!m_pipelines.boulders_shadow || !rocks.instances || rocks.count == 0)
         return;
       MoppeForestUniforms u;
@@ -4249,32 +4319,32 @@ namespace moppe {
       u.world.y = rocks.period_z;
       u.world.z = static_cast<float> (rocks.count);
       u.world.w = local ? 1.0f : 0.0f;
-      const MTLGPUAddress uniforms = arena.write (u);
-      for (MTLRenderStages stage :
-           { MTLRenderStageObject, MTLRenderStageMesh }) {
-        bind_address (encoding, stage, MOPPE_BUF_FRAME, uniforms);
-        bind_address (
-          encoding, stage, MOPPE_BUF_BOULDERS, rocks.instances.gpuAddress);
-      }
-      use_arguments (
-        encoder, encoding, MTLRenderStageObject | MTLRenderStageMesh);
+      // The whole-world map covers every periodic neighbour of the canonical
+      // tile; the camera-local map wraps each rock toward its focus.
+      collect_boulder_shadow_casters (
+        rocks, light_view_proj, local ? &focus : nullptr);
+      if (rocks.shadow_casters.empty ())
+        return;
+      bind_address (
+        encoding, MTLRenderStageVertex, MOPPE_BUF_FRAME, arena.write (u));
+      bind_address (encoding,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_BOULDERS,
+                    rocks.instances.gpuAddress);
+      bind_address (encoding,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_DRAW,
+                    arena.write (std::span<const MoppeBoulderCandidate> (
+                      rocks.shadow_casters)));
+      use_arguments (encoder, encoding, MTLRenderStageVertex);
       [encoder setRenderPipelineState:m_pipelines.boulders_shadow];
       [encoder setDepthStencilState:m_pipelines.shadow_depth];
       [encoder setCullMode:MTLCullModeNone];
-      // The whole-world map covers every periodic neighbour of the canonical
-      // tile; the camera-local map wraps each rock toward its focus.
-      const NSUInteger candidates =
-        static_cast<NSUInteger> (rocks.count) * (local ? 1 : 9);
-      [encoder drawMeshThreadgroups:MTLSizeMake ((candidates +
-                                                  MOPPE_FOREST_OBJECT_THREADS -
-                                                  1) /
-                                                   MOPPE_FOREST_OBJECT_THREADS,
-                                                 1,
-                                                 1)
-        threadsPerObjectThreadgroup:MTLSizeMake (
-                                      MOPPE_FOREST_OBJECT_THREADS, 1, 1)
-          threadsPerMeshThreadgroup:MTLSizeMake (
-                                      MOPPE_BOULDER_MESH_THREADS, 1, 1)];
+      draw_indexed_class (encoder,
+                          m_pipelines.boulder_indices,
+                          0,
+                          3 * MOPPE_BOULDER_COARSE_PRIMITIVES,
+                          rocks.shadow_casters.size ());
     }
 
     // -- targets -------------------------------------------------------
@@ -4769,13 +4839,6 @@ namespace moppe {
       const double targets_done = cpu_time ();
       if (!m_targets.msaa_color)
         return false;
-      if (m_path_ab_block > 0) {
-        const std::uint64_t block = m_path_ab_frame++ / m_path_ab_block;
-        const int position = static_cast<int> (block % 4);
-        m_frame_path_combination = (block / 4) % 2 ? 3 - position : position;
-        m_frame_vertex_scene = (m_frame_path_combination & 1) != 0;
-        m_frame_vertex_shadow = (m_frame_path_combination & 2) != 0;
-      }
 
       const uint64_t next_sequence = m_frame.sequence + 1;
       {
@@ -5856,33 +5919,11 @@ namespace moppe {
         return tile.max_radius * pixel_scale / std::max (nearest, 0.6f) >=
                BOULDER_MIN_PIXELS;
       };
-      const auto wrap_toward_camera = [&] (Vec3 point) {
-        if (rocks.period_x > 0.0f)
-          point[0] += std::round ((camera[0] - point[0]) / rocks.period_x) *
-                      rocks.period_x;
-        if (rocks.period_z > 0.0f)
-          point[2] += std::round ((camera[2] - point[2]) / rocks.period_z) *
-                      rocks.period_z;
-        return point;
-      };
       for (const BoulderTile& tile : rocks.tiles) {
         // A tile straddling the half-period line may hold members at either
         // neighbouring copy, so it is kept if any copy can contribute.
-        std::array<float, 2> shifts_x { 0.0f, 0.0f };
-        std::array<float, 2> shifts_z { 0.0f, 0.0f };
-        for (const auto [axis, period, shifts] :
-             { std::tuple { 0, rocks.period_x, &shifts_x },
-               std::tuple { 2, rocks.period_z, &shifts_z } }) {
-          if (period <= 0.0f)
-            continue;
-          const float offset = camera[axis] - tile.centre[axis];
-          const float shift = std::round (offset / period) * period;
-          const float residue = offset - shift;
-          (*shifts)[0] = shift;
-          (*shifts)[1] = std::abs (residue) + tile.radius > 0.5f * period
-                           ? shift + std::copysign (period, residue)
-                           : shift;
-        }
+        const auto [shifts_x, shifts_z] = periodic_tile_shifts (
+          tile.centre, tile.radius, rocks.period_x, rocks.period_z, camera);
         bool contributes = false;
         for (const float shift_x : shifts_x)
           for (const float shift_z : shifts_z)
@@ -5897,9 +5938,12 @@ namespace moppe {
              ++member) {
           const std::uint32_t index = rocks.tile_members[member];
           const MoppeBoulderInstance& stone = rocks.cpu_instances[index];
-          const Vec3 centre = wrap_toward_camera (Vec3 (stone.centre_radius.x,
-                                                        stone.centre_radius.y,
-                                                        stone.centre_radius.z));
+          const Vec3 centre = wrap_toward (Vec3 (stone.centre_radius.x,
+                                                 stone.centre_radius.y,
+                                                 stone.centre_radius.z),
+                                           rocks.period_x,
+                                           rocks.period_z,
+                                           camera);
           const float bound = BOULDER_BOUND_RATIO * stone.centre_radius.w;
           const float clip_x = clip (centre, 0);
           const float clip_y = clip (centre, 1);
@@ -5913,7 +5957,7 @@ namespace moppe {
             stone.centre_radius.w * pixel_scale /
             std::max (length (centre - m_frame.params.camera_pos), 0.6f);
           if (pixels >= BOULDER_MIN_PIXELS)
-            rocks.candidates.push_back ({ index, pixels, 0u, 0u });
+            rocks.candidates.push_back ({ index, pixels, 4u, 0u });
         }
       }
       if (rocks.candidates.empty ())
@@ -5921,34 +5965,46 @@ namespace moppe {
 
       id<MTL4RenderCommandEncoder> enc = scene_encoder ();
       begin_gpu_pass (enc, GpuPass::Scene);
+      const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
+      // One instanced draw per detail class.
+      for (auto& detail : rocks.details)
+        detail.clear ();
+      for (const MoppeBoulderCandidate& candidate : rocks.candidates)
+        rocks.details[candidate.pixels > MOPPE_BOULDER_FINE_PIXELS ? 1 : 0]
+          .push_back (candidate);
       [enc setRenderPipelineState:m_pipelines.boulders];
       [enc setDepthStencilState:m_pipelines.depth[1][1]];
       [enc setCullMode:MTLCullModeNone];
-      const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
       for (MTLRenderStages stage :
-           { MTLRenderStageMesh, MTLRenderStageFragment })
+           { MTLRenderStageVertex, MTLRenderStageFragment })
         bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
       bind_address (m_frame,
-                    MTLRenderStageMesh,
+                    MTLRenderStageVertex,
                     MOPPE_BUF_BOULDERS,
                     rocks.instances.gpuAddress);
-      bind_address (
-        m_frame,
-        MTLRenderStageMesh,
-        MOPPE_BUF_DRAW,
-        m_frame.arena[m_frame.slot].write (
-          std::span<const MoppeBoulderCandidate> (rocks.candidates)));
       bind_texture (m_frame,
                     MTLRenderStageFragment,
                     MOPPE_TEX_SHADOW,
                     terrain.shadow_map ? terrain.shadow_map
                                        : m_pipelines.shadow_fallback);
-      use_arguments (enc, m_frame, MTLRenderStageMesh | MTLRenderStageFragment);
-      // Without an object stage the grid counts mesh threadgroups.
-      [enc drawMeshThreadgroups:MTLSizeMake (rocks.candidates.size (), 1, 1)
-        threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
-          threadsPerMeshThreadgroup:MTLSizeMake (
-                                      MOPPE_BOULDER_MESH_THREADS, 1, 1)];
+      for (int fine = 0; fine < 2; ++fine) {
+        const auto& members = rocks.details[fine];
+        if (members.empty ())
+          continue;
+        bind_address (m_frame,
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_DRAW,
+                      m_frame.arena[m_frame.slot].write (
+                        std::span<const MoppeBoulderCandidate> (members)));
+        use_arguments (
+          enc, m_frame, MTLRenderStageVertex | MTLRenderStageFragment);
+        draw_indexed_class (enc,
+                            m_pipelines.boulder_indices,
+                            fine ? 3 * MOPPE_BOULDER_COARSE_PRIMITIVES : 0,
+                            fine ? 3 * MOPPE_BOULDER_FINE_PRIMITIVES
+                                 : 3 * MOPPE_BOULDER_COARSE_PRIMITIVES,
+                            members.size ());
+      }
     }
 
     void MetalRenderer::draw_forest () {
@@ -7721,28 +7777,12 @@ namespace moppe {
         m_frame.params.benchmark_partition_mask;
       const uint32_t benchmark_epoch = m_frame.params.benchmark_epoch;
       const uint32_t benchmark_frame = m_frame.params.benchmark_frame;
-      std::shared_ptr<PathTiming> path_timing = m_path_timing;
-      const int path_combination = m_frame_path_combination;
-      const std::uint64_t path_cycle =
-        m_path_ab_block > 0 ? (m_path_ab_frame - 1) / (4 * m_path_ab_block) : 0;
-      int path_epoch = 0;
-      if (path_timing) {
-        std::lock_guard<std::mutex> lock (path_timing->mutex);
-        path_epoch = path_timing->epoch;
-      }
       MTL4CommitOptions* commit_options = [[MTL4CommitOptions alloc] init];
       [commit_options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
         if (feedback.error)
           std::cerr << "moppe: Metal 4 submission failed: "
                     << feedback.error.localizedDescription.UTF8String
                     << std::endl;
-        if (path_timing && !feedback.error &&
-            feedback.GPUEndTime >= feedback.GPUStartTime) {
-          std::lock_guard<std::mutex> lock (path_timing->mutex);
-          if (path_timing->epoch == path_epoch)
-            path_timing->cycles[path_cycle][path_combination].push_back (
-              1000.0 * (feedback.GPUEndTime - feedback.GPUStartTime));
-        }
         std::array<double, GPU_PASS_COUNT> pass_ms {};
         NSData* timestamp_results =
           timestamp_heap && timestamp_count > 1
@@ -7975,56 +8015,6 @@ namespace moppe {
              m_benchmark->completed.load () >= m_benchmark->expected;
     }
 
-    void MetalRenderer::report_path_timing () {
-      if (!m_path_timing)
-        return;
-      std::lock_guard<std::mutex> lock (m_path_timing->mutex);
-      // Each complete cycle yields the mean frame time of each combination's
-      // block. Differences within a cycle cancel drift slower than a cycle
-      // (GPU clocks, thermal state, other applications), and each pass's
-      // effect averages over the other pass's two paths. The first cycles
-      // after a reset still converge temporal history and exposure.
-      constexpr std::size_t settle_cycles = 3;
-      std::vector<double> base, scene, shadow, both;
-      std::size_t seen = 0;
-      for (const auto& [cycle, combinations] : m_path_timing->cycles) {
-        if (seen++ < settle_cycles)
-          continue;
-        if (std::any_of (combinations.begin (),
-                         combinations.end (),
-                         [] (const auto& ms) { return ms.empty (); }))
-          continue;
-        std::array<double, 4> m {};
-        for (int c = 0; c < 4; ++c)
-          m[c] = std::accumulate (
-                   combinations[c].begin (), combinations[c].end (), 0.0) /
-                 combinations[c].size ();
-        base.push_back (m[0]);
-        scene.push_back (0.5 * ((m[1] - m[0]) + (m[3] - m[2])));
-        shadow.push_back (0.5 * ((m[2] - m[0]) + (m[3] - m[1])));
-        both.push_back (m[3] - m[0]);
-      }
-      m_path_timing->cycles.clear ();
-      ++m_path_timing->epoch;
-      if (base.size () < 4)
-        return;
-      const auto print = [] (const char* name, std::vector<double> values) {
-        std::sort (values.begin (), values.end ());
-        const auto at = [&] (double q) {
-          return values[static_cast<std::size_t> (q * (values.size () - 1))];
-        };
-        std::cerr << ' ' << name << '=' << at (0.5) << " [" << at (0.25) << ", "
-                  << at (0.75) << ']';
-      };
-      std::cerr << "trunk path GPU ms over " << base.size ()
-                << " cycles (median [quartiles]):";
-      print ("all-mesh-frame", base);
-      print ("vertex-scene", scene);
-      print ("vertex-shadow", shadow);
-      print ("vertex-both", both);
-      std::cerr << std::endl;
-    }
-
     void MetalRenderer::reset_temporal_state () {
       // Epoch changes restore CPU state while previous frames may still be in
       // flight. A queue fence keeps their exposure blits from racing this
@@ -8034,7 +8024,6 @@ namespace moppe {
                                                   timeoutMS:5000])
         throw std::runtime_error (
           "Timed out waiting to reset Metal temporal state");
-      report_path_timing ();
       m_targets.prev_valid = false;
       m_targets.temporal_history_valid = false;
       m_targets.interpolation_history_valid = false;
