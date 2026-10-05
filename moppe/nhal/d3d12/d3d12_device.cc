@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -31,6 +32,12 @@ using Microsoft::WRL::ComPtr;
 
 namespace moppe::nhal {
   namespace {
+    std::atomic<const char*> current_step { "idle" };
+
+    void step (const char* name) {
+      current_step.store (name, std::memory_order_relaxed);
+    }
+
     constexpr std::uint32_t frames_in_flight = 3;
     constexpr std::uint64_t arena_capacity = 16u << 20;
     constexpr std::uint32_t ring_descriptors = 3 * 16384;
@@ -617,7 +624,9 @@ namespace moppe::nhal {
       bool begin_frame () override {
         const std::uint64_t next = m_serial + 1;
         const std::uint32_t slot = next % frames_in_flight;
+        step ("begin_frame: waiting for the slot's frame");
         wait_for (m_slot_fence[slot]);
+        step ("begin_frame: collecting");
         collect ();
         m_serial = next;
         m_slot = slot;
@@ -633,6 +642,7 @@ namespace moppe::nhal {
         m_list->SetDescriptorHeaps (1, heaps);
         m_current_backbuffer =
           m_backbuffers[m_swapchain->GetCurrentBackBufferIndex ()];
+        step ("recording");
         FrameTiming& timing = m_timing[slot];
         timing.serial = m_serial;
         timing.labels.clear ();
@@ -849,11 +859,16 @@ namespace moppe::nhal {
             m_timestamps.Get (), D3D12_QUERY_TYPE_TIMESTAMP,
             m_slot * max_timestamps, count, m_timestamp_readback.Get (),
             8ull * m_slot * max_timestamps);
+        step ("end_frame: closing");
         check (m_list->Close (), "close list");
         ID3D12CommandList* lists[] = { m_list.Get () };
+        step ("end_frame: executing");
         m_queue->ExecuteCommandLists (1, lists);
+        step ("end_frame: presenting");
         check (m_swapchain->Present (1, 0), "Present");
+        step ("end_frame: signalling");
         check (m_queue->Signal (m_fence.Get (), m_serial), "Signal");
+        step ("between frames");
         m_slot_fence[m_slot] = m_serial;
         m_layout = nullptr;
         m_compute_bound = false;
@@ -1391,5 +1406,9 @@ namespace moppe::nhal {
                                                Format surface_format) {
     return std::make_unique<D3D12Device> (window, width, height,
                                           surface_format);
+  }
+
+  const char* d3d12_device_step () {
+    return current_step.load (std::memory_order_relaxed);
   }
 }

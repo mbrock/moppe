@@ -16,6 +16,9 @@ namespace moppe::nhal {
                                                std::uint32_t width,
                                                std::uint32_t height,
                                                Format surface_format);
+
+  // The step the device is in, for a watchdog to name when frames stall.
+  const char* d3d12_device_step ();
 }
 
 #endif

@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -77,7 +78,9 @@ namespace {
   std::unique_ptr<demo::Scene> _scene;
   std::array<std::string, 11> _msl;
   std::chrono::steady_clock::time_point _start;
+  std::chrono::steady_clock::time_point _last;
   int _rendered;
+  std::set<unsigned short> _keys;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
@@ -130,7 +133,17 @@ namespace {
     std::cerr << "NHAL demo: " << error.what () << std::endl;
     exit (-1);
   }
-  _start = std::chrono::steady_clock::now ();
+  _start = _last = std::chrono::steady_clock::now ();
+  // WASD moves, the arrows look, Q and E sink and rise, Shift hurries.
+  [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                                | NSEventMaskKeyUp
+                                        handler:^NSEvent* (NSEvent* event) {
+    if (event.type == NSEventTypeKeyDown)
+      self->_keys.insert (event.keyCode);
+    else
+      self->_keys.erase (event.keyCode);
+    return nil;
+  }];
   [NSTimer scheduledTimerWithTimeInterval:1.0 / 120
                                    target:self
                                  selector:@selector (tick:)
@@ -145,7 +158,20 @@ namespace {
                                        - _start)
           .count ()
       : 12.0 + _rendered / 60.0;
+  const auto now = std::chrono::steady_clock::now ();
+  const double step =
+    std::min (0.1, std::chrono::duration<double> (now - _last).count ());
+  _last = now;
+  auto held = [&] (unsigned short key) { return _keys.count (key) ? 1.0f : 0.0f; };
+  demo::Flight flight;
+  flight.forward = held (13) - held (1);  // W, S
+  flight.strafe = held (2) - held (0);    // D, A
+  flight.rise = held (14) - held (12);    // E, Q
+  flight.turn = held (124) - held (123);  // right, left
+  flight.pitch = held (126) - held (125); // up, down
+  flight.boost = (NSEvent.modifierFlags & NSEventModifierFlagShift) != 0;
   try {
+    _scene->fly (flight, step);
     if (!_scene->render (seconds))
       return;
     ++_rendered;

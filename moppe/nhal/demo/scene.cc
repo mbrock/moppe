@@ -272,6 +272,29 @@ namespace moppe::nhal::demo {
                                          1, "scene" });
   }
 
+  void Scene::fly (const Flight& input, double seconds) {
+    const bool moved = input.forward || input.strafe || input.rise
+                       || input.turn || input.pitch;
+    if (!m_flying && !moved)
+      return;
+    m_flying = true;
+    const float dt = float (seconds);
+    m_yaw += input.turn * 1.6f * dt;
+    m_pitch = std::clamp (m_pitch + input.pitch * 1.2f * dt, -1.4f, 1.4f);
+    const Vec3 ahead { std::cos (m_yaw), 0, std::sin (m_yaw) };
+    const Vec3 side { -ahead.z, 0, ahead.x };
+    const float speed = (input.boost ? 120.0f : 30.0f) * dt;
+    Vec3 eye = Vec3 { m_eye[0], m_eye[1], m_eye[2] }
+               + ahead * (input.forward * speed)
+               + side * (input.strafe * speed)
+               + Vec3 { 0, input.rise * speed, 0 };
+    const float span = (m_grid - 1) * m_cell;
+    eye.x = std::clamp (eye.x, 0.0f, span);
+    eye.z = std::clamp (eye.z, 0.0f, span);
+    eye.y = std::max (eye.y, height_at (eye.x, eye.z) + 1.7f);
+    m_eye[0] = eye.x, m_eye[1] = eye.y, m_eye[2] = eye.z;
+  }
+
   bool Scene::render (double seconds) {
     if (!m_device.begin_frame ())
       return false;
@@ -279,17 +302,27 @@ namespace moppe::nhal::demo {
         || m_height != m_device.surface_height ())
       make_targets ();
 
-    // A slow orbit around the valley, looking across it.
+    // A slow orbit around the valley, looking across it, until flown.
     const float span = (m_grid - 1) * m_cell;
-    const Vec3 centre { span * 0.5f, 0, span * 0.5f };
-    const float angle = float (seconds) * 0.04f;
-    Vec3 eye = centre + Vec3 { std::cos (angle), 0, std::sin (angle) } * 300;
-    eye.y = height_at (eye.x, eye.z) + 42;
-    Vec3 target = centre
-                  + Vec3 { std::cos (angle + 2.2f), 0,
-                           std::sin (angle + 2.2f) } * 180;
-    target.y = height_at (target.x, target.z) + 20;
-    const Vec3 forward = normalize (target - eye);
+    Vec3 eye, forward;
+    if (m_flying) {
+      eye = { m_eye[0], m_eye[1], m_eye[2] };
+      forward = { std::cos (m_pitch) * std::cos (m_yaw), std::sin (m_pitch),
+                  std::cos (m_pitch) * std::sin (m_yaw) };
+    } else {
+      const Vec3 centre { span * 0.5f, 0, span * 0.5f };
+      const float angle = float (seconds) * 0.04f;
+      eye = centre + Vec3 { std::cos (angle), 0, std::sin (angle) } * 300;
+      eye.y = height_at (eye.x, eye.z) + 42;
+      Vec3 target = centre
+                    + Vec3 { std::cos (angle + 2.2f), 0,
+                             std::sin (angle + 2.2f) } * 180;
+      target.y = height_at (target.x, target.z) + 20;
+      forward = normalize (target - eye);
+      m_eye[0] = eye.x, m_eye[1] = eye.y, m_eye[2] = eye.z;
+      m_yaw = std::atan2 (forward.z, forward.x);
+      m_pitch = std::asin (forward.y);
+    }
     const Vec3 right = normalize (cross (forward, { 0, 1, 0 }));
     const Vec3 up = cross (right, forward);
     const float tan_y = std::tan (27.0f * pi / 180.0f);

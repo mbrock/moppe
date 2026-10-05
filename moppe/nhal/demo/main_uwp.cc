@@ -8,7 +8,9 @@
 
 #include <winrt/Windows.ApplicationModel.Activation.h>
 #include <winrt/Windows.ApplicationModel.Core.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Gaming.Input.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.UI.Core.h>
 
@@ -27,13 +29,18 @@
 #include <shader_trees_fragment.h>
 #include <shader_trees_vertex.h>
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <thread>
+#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <string>
 
 using namespace winrt;
 using namespace winrt::Windows::ApplicationModel::Core;
+using namespace winrt::Windows::Gaming::Input;
 using namespace winrt::Windows::UI::Core;
 using namespace moppe::nhal;
 
@@ -72,6 +79,29 @@ namespace {
       std::fwrite (capture.pixels.data () + std::size_t (y) * capture.row_bytes,
                    1, capture.width * 4, file);
     std::fclose (file);
+  }
+
+  // Sticks with a dead zone, so a resting controller leaves the orbit.
+  float axis (double value) {
+    return std::abs (value) < 0.15 ? 0.0f : float (value);
+  }
+
+  demo::Flight read_gamepad () {
+    demo::Flight flight;
+    auto pads = Gamepad::Gamepads ();
+    if (pads.Size () == 0)
+      return flight;
+    const GamepadReading reading = pads.GetAt (0).GetCurrentReading ();
+    flight.forward = axis (reading.LeftThumbstickY);
+    flight.strafe = axis (reading.LeftThumbstickX);
+    flight.turn = axis (reading.RightThumbstickX);
+    flight.pitch = axis (reading.RightThumbstickY);
+    flight.rise = axis (reading.RightTrigger - reading.LeftTrigger);
+    flight.boost =
+      (reading.Buttons & GamepadButtons::LeftThumbstick)
+      == GamepadButtons::LeftThumbstick
+      || (reading.Buttons & GamepadButtons::A) == GamepadButtons::A;
+    return flight;
   }
 
   StageCode code (const unsigned char* dxil, std::size_t size) {
@@ -120,6 +150,21 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
               + std::to_string (device->surface_width ()) + "x"
               + std::to_string (device->surface_height ()));
 
+      // Names the stuck step if frames stop advancing.
+      std::atomic<int> progress { 0 };
+      std::atomic<bool> stopping { false };
+      std::thread watchdog ([&] {
+        int seen = -1;
+        while (!stopping) {
+          std::this_thread::sleep_for (std::chrono::seconds (2));
+          const int now = progress;
+          if (now == seen)
+            report ("stalled at frame " + std::to_string (now) + ": "
+                    + d3d12_device_step ());
+          seen = now;
+        }
+      });
+
       const auto start = std::chrono::steady_clock::now ();
       auto last = start;
       int frames = 0;
@@ -131,9 +176,10 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
         const auto now = std::chrono::steady_clock::now ();
         const double seconds =
           std::chrono::duration<double> (now - start).count ();
-        slowest = std::max (
-          slowest, std::chrono::duration<double> (now - last).count ());
+        const double step = std::chrono::duration<double> (now - last).count ();
+        slowest = std::max (slowest, step);
         last = now;
+        scene.fly (read_gamepad (), std::min (step, 0.1));
         if (!scene.render (seconds))
           continue;
         if (!captured && seconds > 5) {
@@ -147,6 +193,7 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
         }
         device->end_frame ();
         ++frames;
+        ++progress;
         if (frames <= 3 || frames == 30)
           report ("frame " + std::to_string (frames) + " submitted");
         if (frames % 600 == 0) {
@@ -166,6 +213,8 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
           slowest = 0;
         }
       }
+      stopping = true;
+      watchdog.join ();
       device->wait_idle ();
     } catch (const std::exception& error) {
       report (std::string ("NHAL demo failed: ") + error.what ());

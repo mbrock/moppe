@@ -21,6 +21,13 @@ namespace moppe::nhal::demo {
     StageCode terrain_shadow_vertex, trees_shadow_vertex;
   };
 
+  // One frame's flight controls, each in -1..1.
+  struct Flight {
+    float forward = 0, strafe = 0, rise = 0;
+    float turn = 0, pitch = 0;
+    bool boost = false;
+  };
+
   class Scene {
   public:
     Scene (Device& device, const Shaders& shaders);
@@ -30,6 +37,10 @@ namespace moppe::nhal::demo {
     // host ends the frame (and may capture it first). False when the
     // device had no drawable this time.
     bool render (double seconds);
+
+    // Steers a free camera for `seconds` of travel. The scene orbits the
+    // valley until the first input, and then flies from where it was.
+    void fly (const Flight& input, double seconds);
 
     std::uint32_t tree_count () const { return m_tree_count; }
 
@@ -52,6 +63,9 @@ namespace moppe::nhal::demo {
     float m_cell = 0;
     Texture m_color, m_depth, m_scene;
     std::uint32_t m_width = 0, m_height = 0;
+    bool m_flying = false;
+    float m_eye[3] {};
+    float m_yaw = 0, m_pitch = 0;
   };
 }
 
