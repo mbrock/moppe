@@ -20,3 +20,5 @@ Untitled*
 screenshots/studio-shot-*.png
 
 .amp/portals/*
+*.gputrace/
+*.trace/
