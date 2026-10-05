@@ -503,6 +503,11 @@ static inline float3 terrain_ground_albedo (float3 world,
     mix (float3 (0.46, 0.47, 0.20), float3 (0.25, 0.42, 0.13), lush);
   albedo *= 0.92 + 0.16 * fleck;
 
+  // Upland heath has turned for autumn.
+  const MoppeHeath heath = moppe_upland_heath (
+    xz, (world.y - u.params1.y) / max (u.params7.z, 1.0), moisture);
+  albedo = mix (albedo, heath.tint * (0.90 + 0.20 * fleck), heath.amount);
+
   // Forest floor: moss and needle litter where crowns close overhead.
   const float3 litter =
     mix (float3 (0.24, 0.26, 0.13), float3 (0.30, 0.25, 0.15), fleck);

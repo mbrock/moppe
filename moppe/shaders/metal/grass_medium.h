@@ -47,6 +47,37 @@ inline float moppe_grass_clump (float2 world_xz) {
          0.45 * moppe_value_noise (world_xz * 0.021 + float2 (17.3, 4.1));
 }
 
+// Autumn heath. Above the middle of the land's relief the turf gives way to
+// blueberry, heather, and dry grass, turned red, plum, and straw. Each
+// grows in patches, so an upland hillside is a quilt rather than a smooth
+// gradient. The tint is display-authored; amount is how much of the ground
+// it owns.
+struct MoppeHeath {
+  float amount;
+  float3 tint;
+};
+
+inline MoppeHeath
+moppe_upland_heath (float2 world_xz, float relative_height, float moisture) {
+  const float patch = 0.6 * moppe_value_noise (world_xz * (1.0 / 9.0) + 2.7) +
+                      0.4 * moppe_value_noise (world_xz * (1.0 / 31.0) + 8.1);
+  const float drift = moppe_value_noise (world_xz * (1.0 / 140.0) + 5.3);
+  MoppeHeath heath;
+  // Some ground stays green turf even on the high fells.
+  const float green = 1.0 - smoothstep (0.24, 0.30, patch);
+  heath.amount =
+    smoothstep (0.48, 0.64, relative_height + 0.16 * (drift - 0.5)) *
+    (1.0 - 0.75 * green);
+  const float3 straw (0.45, 0.42, 0.29);
+  const float3 berry (0.40, 0.25, 0.18);
+  const float3 heather (0.33, 0.25, 0.25);
+  heath.tint = mix (straw, berry, smoothstep (0.46, 0.53, patch));
+  heath.tint = mix (heath.tint,
+                    heather,
+                    smoothstep (0.64, 0.71, patch + 0.20 * (moisture - 0.5)));
+  return heath;
+}
+
 // All arguments are already semantic readings. Texture layout and sampling
 // remain with each evaluator; the medium owns what those readings mean for
 // grass. signed_water_depth is positive under water and negative on land.
@@ -104,6 +135,10 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
                               0.82 + 0.22 * grass.moisture);
   grass.blade_tint *=
     mix (float3 (1.0), float3 (0.82, 1.10, 0.88), grass.riparian);
+  const MoppeHeath heath =
+    moppe_upland_heath (world_xz, relative_height, grass.moisture);
+  grass.blade_tint =
+    mix (grass.blade_tint, 0.75 * moppe_srgb (heath.tint), heath.amount);
   return grass;
 }
 
