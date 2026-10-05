@@ -23,3 +23,4 @@ screenshots/studio-shot-*.png
 *.gputrace/
 *.trace/
 .claude/worktrees/
+screenshots/nhal/
