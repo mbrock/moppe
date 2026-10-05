@@ -1,5 +1,6 @@
 #include <moppe/game/forest.hh>
 
+#include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
 
 #include <algorithm>
@@ -41,7 +42,7 @@ namespace moppe::game {
           Vec3 (0.0f, 1.0f, 0.0f) + Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
           Vec3 (std::cos (turn), 0.0f, std::sin (turn)) * lean),
         .height = height * (conifer ? 0.9f : 0.7f),
-        .radius = height * (conifer ? 0.0078f : 0.0068f) *
+        .radius = height * (conifer ? 0.0078f : 0.0085f) *
                   (0.85f + 0.3f * forest_hash (tree.seed, 6u)),
       };
     }
@@ -77,7 +78,7 @@ namespace moppe::game {
       const meters_t height = scale * size * (conifer ? 15.0f : 13.4f) *
                               (0.82f + 0.30f * cover + 0.26f * moisture) * u::m;
       const float crown_share =
-        trunks ? (conifer ? 0.19f : 0.15f) : (conifer ? 0.23f : 0.25f);
+        trunks ? (conifer ? 0.19f : 0.19f) : (conifer ? 0.23f : 0.25f);
       return {
         .root = site.position,
         .ground_normal = site.normal,
@@ -101,6 +102,53 @@ namespace moppe::game {
     rebuild (renderer, plan_global_forest (surface, readings, seed));
   }
 
+  namespace {
+    // Autumn comes first to the uplands. Broadleaves in roughly the upper
+    // half of the forest's own elevation range have turned, earlier or later
+    // by grove and by individual, so riding uphill passes from green valleys
+    // into golden birch standing among dark spruce.
+    void turn_autumn (std::vector<render::ForestInstance>& instances,
+                      spatial_extent_t period) {
+      if (instances.empty ())
+        return;
+      std::vector<float> heights;
+      heights.reserve (instances.size ());
+      for (const render::ForestInstance& tree : instances)
+        heights.push_back (position_value (tree.root)[1]);
+      const auto quantile = [&] (float q) {
+        auto at = heights.begin () +
+                  static_cast<std::ptrdiff_t> (q * (heights.size () - 1));
+        std::nth_element (heights.begin (), at, heights.end ());
+        return *at;
+      };
+      const float low = quantile (0.35f);
+      const float high = quantile (0.70f);
+      const float span = std::max (high - low, 1.0f);
+      const Vec3 extent = extent_value (period);
+      const auto laps = [] (float metres) {
+        return std::max<std::uint32_t> (
+          1, static_cast<std::uint32_t> (std::round (metres / 300.0f)));
+      };
+      for (render::ForestInstance& tree : instances) {
+        if (tree.species == render::ForestSpecies::Conifer)
+          continue;
+        const Vec3 root = position_value (tree.root);
+        const float grove =
+          periodic_noise ((root[0] / extent[0]) * mp_units::one,
+                          (root[2] / extent[2]) * mp_units::one,
+                          laps (extent[0]),
+                          0xa07ae1u)
+            .numerical_value_in (mp_units::one);
+        const float relative = (root[1] - low) / span +
+                               0.25f * (forest_hash (tree.seed, 8u) - 0.5f) +
+                               0.45f * (grove - 0.5f);
+        tree.autumn =
+          smoothstep (0.0f, 1.0f, std::clamp (relative, 0.0f, 1.0f)) *
+          mp_units::one;
+      }
+    }
+  }
+
   void ForestLandscape::rebuild (render::Renderer& renderer,
                                  const ForestPlan& plan,
                                  render::ForestStyle style) {
@@ -115,6 +163,8 @@ namespace moppe::game {
         continue;
       instances.push_back (present (site, style));
     }
+    if (style == render::ForestStyle::Trunks)
+      turn_autumn (instances, plan.period);
     renderer.set_forest ({ .period = plan.period, .style = style }, instances);
     m_trunks.clear ();
     if (style == render::ForestStyle::Trunks) {

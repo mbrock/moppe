@@ -229,6 +229,8 @@ namespace moppe {
       meters_t crown_radius {};
       proportion_t canopy_cover {};
       proportion_t moisture {};
+      // How far the leaves have turned: 0 summer green, 1 full autumn.
+      proportion_t autumn {};
       std::uint32_t seed = 0;
       ForestSpecies species = ForestSpecies::Broadleaf;
       ForestAge age = ForestAge::Mature;

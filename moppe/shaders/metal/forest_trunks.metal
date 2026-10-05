@@ -1,6 +1,7 @@
 // Trunk forest: a deliberately simple tree. Each individual is one tapered
-// trunk and a few faceted crown masses -- stacked cones for a conifer, lobes
-// for a broadleaf -- generated in one meshlet from its retained record. The
+// trunk and a few faceted crown masses -- stacked cones for a conifer, leaf
+// clumps on ascending branches for a birch -- generated in one meshlet from
+// its retained record. The
 // trunk is the element seen at riding height; in a closed stand the crown
 // starts high, so the forest is walked through as a hall of columns.
 
@@ -56,7 +57,9 @@ struct TrunkTree {
   bool conifer;
   uint sides;       // trunk facets
   uint crown_sides; // crown facets
-  uint masses;      // cones or lobes
+  uint masses;      // cones, or a birch's leaf clumps
+  bool branches;    // whether each clump hangs from a visible branch
+  float autumn;     // 0 summer green, 1 fully turned
 };
 
 static inline float trunk_hash (uint seed, uint lane) {
@@ -109,12 +112,14 @@ trunk_tree (thread const MoppeForestInstance& tree, float3 root, float pixels) {
     mix (t.conifer ? 0.04 : 0.40, t.conifer ? 0.20 : 0.60, closure) +
     0.08 * (trunk_hash (t.seed, 5u) - 0.5);
   t.crown_base = t.height * base_share;
-  t.trunk_radius = t.height * (t.conifer ? 0.0078 : 0.0068) *
+  t.trunk_radius = t.height * (t.conifer ? 0.0078 : 0.0085) *
                    (0.85 + 0.3 * trunk_hash (t.seed, 6u));
   t.seed_turn = 6.2831853 * trunk_hash (t.seed, 7u);
   t.sides = pixels > 90.0 ? 10u : pixels > 30.0 ? 7u : 5u;
   t.crown_sides = pixels > 90.0 ? 9u : pixels > 30.0 ? 7u : 5u;
-  t.masses = t.conifer ? 3u : 5u;
+  t.masses = t.conifer ? 3u : pixels > 60.0 ? 10u : pixels > 20.0 ? 7u : 4u;
+  t.branches = !t.conifer && pixels > 40.0;
+  t.autumn = t.conifer ? 0.0 : tree.ecology.w;
   return t;
 }
 
@@ -124,13 +129,13 @@ static inline uint trunk_vertex_count (thread const TrunkTree& t) {
 static inline uint trunk_primitive_count (thread const TrunkTree& t) {
   return t.sides * 6u;
 }
-// A cone is a ring, an apex, and a centre closing it from below; a lobe is
-// two rings between a top and a bottom apex.
+// A cone is a ring, an apex, and a centre closing it from below. A leaf
+// clump is an irregular hexagonal bipyramid, its branch a three-sided prism.
 static inline uint mass_vertex_count (thread const TrunkTree& t) {
-  return t.conifer ? t.crown_sides + 2u : 2u * t.crown_sides + 2u;
+  return t.conifer ? t.crown_sides + 2u : 8u + (t.branches ? 6u : 0u);
 }
 static inline uint mass_primitive_count (thread const TrunkTree& t) {
-  return t.conifer ? 2u * t.crown_sides : 4u * t.crown_sides;
+  return t.conifer ? 2u * t.crown_sides : 12u + (t.branches ? 6u : 0u);
 }
 static inline uint tree_vertex_count (thread const TrunkTree& t) {
   return trunk_vertex_count (t) + t.masses * mass_vertex_count (t);
@@ -154,21 +159,53 @@ struct TreeVertex {
   float2 bark;
   float crown_height;
   bool foliage;
+  bool branch;
   uint mass;
 };
+
+// A birch clump: where it hangs and how large it is. Clumps spiral up the
+// stem by the golden angle inside a narrow oval envelope, so the crown is
+// loose and sky shows between them. Fewer, larger clumps stand in for many
+// at a distance, keeping the crown's projected area.
+struct TrunkClump {
+  float3 centre;
+  float3 attach; // where its branch leaves the trunk
+  float radius;
+  float rise;
+};
+
+static inline TrunkClump trunk_clump (thread const TrunkTree& t, uint mass) {
+  TrunkClump c;
+  const float n = float (t.masses);
+  const float span = t.height - t.crown_base;
+  c.rise = saturate (
+    (float (mass) + 0.5 + 0.6 * (trunk_hash (t.seed, 80u + mass) - 0.5)) / n);
+  const float envelope = pow (sin (3.1415927 * (0.12 + 0.80 * c.rise)), 0.7);
+  const float turn = t.seed_turn + 2.39996 * float (mass) +
+                     0.8 * (trunk_hash (t.seed, 90u + mass) - 0.5);
+  const float reach = t.crown_radius * envelope *
+                      (0.30 + 0.45 * trunk_hash (t.seed, 100u + mass));
+  const float along = t.crown_base + span * (0.06 + 0.86 * c.rise);
+  const float3 out = t.right * cos (turn) + t.forward * sin (turn);
+  c.centre = t.root + t.up * along + reach * out;
+  // Birch branches ascend steeply from the stem.
+  c.attach = t.root + t.up * max (along - 0.9 * reach, 0.92 * t.crown_base);
+  c.radius = t.crown_radius * (0.56 + 0.22 * trunk_hash (t.seed, 110u + mass)) *
+             (1.0 - 0.35 * c.rise) * sqrt (10.0 / n);
+  return c;
+}
 
 static inline TreeVertex tree_vertex (thread const TrunkTree& t, uint index) {
   TreeVertex v;
   v.mass = 0u;
+  v.branch = false;
   const uint trunk_vertices = trunk_vertex_count (t);
   if (index < trunk_vertices) {
     // Rings: flared root, breast height, crown base, tip.
     const uint ring = index / t.sides;
     const uint side = index % t.sides;
     const float turn = t.seed_turn + 6.2831853 * float (side) / float (t.sides);
-    const float top = t.conifer
-                        ? 0.94 * t.height
-                        : t.crown_base + 0.45 * (t.height - t.crown_base);
+    const float top = t.conifer ? 0.94 * t.height : 0.86 * t.height;
     const float heights[4] = { 0.0, 1.3, t.crown_base, top };
     const float widths[4] = { 1.40, 1.0, 0.72, 0.14 };
     const float along = heights[ring];
@@ -215,36 +252,55 @@ static inline TreeVertex tree_vertex (thread const TrunkTree& t, uint index) {
     }
     v.crown_height = saturate ((along - t.crown_base) / max (span, 0.01));
   } else {
-    // Lobes clustered around the upper crown.
-    // A birch crown is tall and loose: lobes stacked up the stem, leaning
-    // apart, rather than one round head.
-    // Lobes spiral up the stem from the crown base, narrowing toward the
-    // top, each taller than it is wide.
-    const float rise = (float (mass) + 0.5) / float (t.masses);
-    const float spiral = t.seed_turn + 2.4 * float (mass);
-    const float apart =
-      (0.55 - 0.35 * rise) * (0.8 + 0.4 * trunk_hash (t.seed, 40u + mass));
-    const float3 centre = t.root +
-                          t.up * (t.crown_base + span * (0.10 + 0.82 * rise)) +
-                          t.crown_radius * apart *
-                            (t.right * cos (spiral) + t.forward * sin (spiral));
-    const float radius = t.crown_radius * (0.78 - 0.30 * rise);
-    const float half_height = 1.25 * radius;
-    float along;
-    if (corner < 2u * t.crown_sides) {
-      const uint ring = corner / t.crown_sides;
-      const uint side = corner % t.crown_sides;
-      const float turn =
-        twist + 6.2831853 * (float (side) + 0.5 * float (ring)) / n;
-      along = (ring == 0u ? -0.42 : 0.38) * half_height;
-      v.position = tree_point (
-        t, along, centre, radius * (ring == 0u ? 0.92 : 0.84), turn);
+    const TrunkClump c = trunk_clump (t, mass);
+    if (corner < 8u) {
+      // An irregular bipyramid, wider than tall and tipped a little off the
+      // vertical, its equator rising and falling around it and its lower tip
+      // hanging below the upper: a lumpy, drooping mass of leaves.
+      const float3 up = normalize (
+        t.up + 0.5 * (trunk_hash (t.seed, 130u + mass) - 0.5) * t.right +
+        0.5 * (trunk_hash (t.seed, 140u + mass) - 0.5) * t.forward);
+      const float3 across = normalize (cross (up, t.forward));
+      const float3 depth = cross (across, up);
+      if (corner == 0u)
+        v.position = c.centre + up * (0.66 * c.radius);
+      else if (corner == 1u)
+        v.position = c.centre - up * (0.92 * c.radius);
+      else {
+        const uint k = corner - 2u;
+        const float turn =
+          twist + 1.0471976 * float (k) +
+          0.5 * (trunk_hash (t.seed, 120u + 6u * mass + k) - 0.5);
+        const float reach =
+          c.radius * (0.74 + 0.42 * trunk_hash (t.seed, 180u + 6u * mass + k));
+        const float lift =
+          (k & 1u ? 0.26 : -0.34) +
+          0.16 * (trunk_hash (t.seed, 240u + 6u * mass + k) - 0.5);
+        v.position = c.centre + up * (lift * c.radius) +
+                     reach * (across * cos (turn) + depth * sin (turn));
+      }
+      v.crown_height = saturate (
+        (dot (v.position - t.root, t.up) - t.crown_base) / max (span, 0.01));
     } else {
-      along = (corner == 2u * t.crown_sides ? 1.0 : -0.9) * half_height;
-      v.position = centre + t.up * along;
+      // The branch: a thin prism from the stem into the clump.
+      const uint k = corner - 8u;
+      const uint ring = k / 3u;
+      const float3 start = c.attach;
+      const float3 end = mix (c.attach, c.centre, 0.85);
+      const float3 axis = normalize (end - start);
+      const float3 side = normalize (cross (axis, t.forward + 0.3 * t.right));
+      const float3 other = cross (axis, side);
+      const float turn = 2.0943951 * float (k % 3u);
+      const float3 around = side * cos (turn) + other * sin (turn);
+      const float radius = t.trunk_radius * (ring == 0u ? 0.34 : 0.10);
+      v.position = (ring == 0u ? start : end) + radius * around;
+      v.normal = around;
+      v.bark = float2 (turn * radius, dot (v.position - t.root, t.up));
+      v.crown_height = 0.0;
+      v.foliage = false;
+      v.branch = true;
+      return v;
     }
-    v.crown_height = saturate (
-      (dot (v.position - t.root, t.up) - t.crown_base) / max (span, 0.01));
   }
   v.normal =
     normalize (v.position - (t.root + t.up * (t.crown_base + 0.5 * span)));
@@ -273,20 +329,16 @@ static inline uint3 tree_triangle (thread const TrunkTree& t, uint primitive) {
     const uint centre = p < n ? n : n + 1u; // apex, then the closing centre
     return uint3 (first + side, first + next, first + centre);
   }
-  const uint side = p % n;
-  const uint next = (side + 1u) % n;
-  const uint lower = first, upper = first + n;
-  const uint top = first + 2u * n, bottom = top + 1u;
-  switch (p / n) {
-  case 0u:
-    return uint3 (upper + side, upper + next, top);
-  case 1u:
-    return uint3 (lower + side, lower + next, bottom);
-  case 2u:
-    return uint3 (lower + side, lower + next, upper + side);
-  default:
-    return uint3 (lower + next, upper + next, upper + side);
+  if (p < 12u) {
+    // Bipyramid: six faces about the top tip, six about the bottom.
+    const uint k = p % 6u;
+    const uint e0 = first + 2u + k, e1 = first + 2u + (k + 1u) % 6u;
+    return p < 6u ? uint3 (first, e0, e1) : uint3 (first + 1u, e1, e0);
   }
+  const uint q = p - 12u;
+  const uint k = q / 2u;
+  const uint a = first + 8u + k, b = first + 8u + (k + 1u) % 3u;
+  return q & 1u ? uint3 (b, b + 3u, a + 3u) : uint3 (a, b, a + 3u);
 }
 
 // Wind sways the crown about its base; the trunk only bends near the top.
@@ -311,22 +363,37 @@ static inline float trunk_individual (thread const MoppeForestInstance& tree,
   return 1.0 - transfer;
 }
 
+// Birch turns yellow-gold, an occasional one toward amber. Clumps turn one
+// by one, so a tree mid-change is green and gold at once.
+static inline float3 trunk_autumn_leaf (thread const TrunkTree& t) {
+  const float amber = pow (trunk_hash (t.seed, 52u), 3.0);
+  return mix (float3 (0.95, 0.73, 0.20), float3 (0.92, 0.48, 0.13), amber);
+}
+
 static inline float3 trunk_palette (thread const TrunkTree& t,
                                     thread const MoppeForestInstance& tree,
                                     bool foliage,
+                                    bool branch,
                                     uint mass) {
   const float moisture = tree.ecology.y;
+  if (branch)
+    return moppe_srgb (float3 (0.34, 0.31, 0.29));
   if (!foliage)
     return t.conifer ? moppe_srgb (float3 (0.38, 0.30, 0.24))
                      : moppe_srgb (float3 (0.80, 0.78, 0.72));
   const float hue = trunk_hash (t.seed, 50u) - 0.5;
-  // Upper masses catch a little more light than the lower ones.
-  const float shade = 0.92 +
-                      0.12 * float (mass) / float (max (t.masses - 1u, 1u)) -
-                      0.06 * trunk_hash (t.seed, 51u);
+  // Upper masses catch a little more light than the lower ones, and each
+  // birch clump is its own shade.
+  const float shade =
+    0.92 + 0.12 * float (mass) / float (max (t.masses - 1u, 1u)) -
+    0.06 * trunk_hash (t.seed, 51u) +
+    (t.conifer ? 0.0 : 0.16 * (trunk_hash (t.seed, 200u + mass) - 0.5));
   const float3 needle =
     float3 (0.20 + 0.05 * hue, 0.36 + 0.06 * moisture, 0.22);
-  const float3 leaf = float3 (0.42 + 0.08 * hue, 0.60 + 0.05 * moisture, 0.22);
+  const float3 green = float3 (0.42 + 0.08 * hue, 0.60 + 0.05 * moisture, 0.22);
+  const float turned =
+    saturate ((t.autumn - 0.35 * trunk_hash (t.seed, 70u + mass)) / 0.65);
+  const float3 leaf = mix (green, trunk_autumn_leaf (t), turned);
   return moppe_srgb ((t.conifer ? needle : leaf) * shade);
 }
 
@@ -360,7 +427,7 @@ static inline float3 trunk_palette (thread const TrunkTree& t,
     o.position = u.view_proj * float4 (current, 1.0);
     o.world_pos = current;
     o.normal = v.normal;
-    o.albedo = trunk_palette (t, tree, v.foliage, v.mass);
+    o.albedo = trunk_palette (t, tree, v.foliage, v.branch, v.mass);
     o.bark = v.bark;
     o.crown_height = v.crown_height;
     o.foliage = v.foliage ? 1.0 : 0.0;
@@ -536,6 +603,7 @@ fragment MoppeTemporalOutput forest_trunks_fragment (
   TrunkTree t =
     trunk_tree (tree, trunk_root (tree, u, payload.copy[mesh_id], !local), 0.0);
   t.crown_radius *= 0.62;
+  t.branches = false;
   const uint vertices = tree_vertex_count (t);
   const uint primitives = tree_primitive_count (t);
   if (thread_id == 0u)

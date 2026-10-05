@@ -3528,6 +3528,7 @@ namespace moppe {
         gpu.ecology.x =
           instance.canopy_cover.numerical_value_in (mp_units::one);
         gpu.ecology.y = instance.moisture.numerical_value_in (mp_units::one);
+        gpu.ecology.w = instance.autumn.numerical_value_in (mp_units::one);
         gpu.identity.x = instance.seed;
         gpu.identity.y = static_cast<std::uint32_t> (instance.species);
         gpu.identity.z = static_cast<std::uint32_t> (instance.age);

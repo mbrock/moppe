@@ -334,7 +334,7 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 struct MOPPE_SHADER_ALIGN MoppeForestInstance {
   MoppeFloat4 root_height; // xyz=root in metres, w=height in metres
   MoppeFloat4 up_radius;   // xyz=ground normal, w=crown radius in metres
-  MoppeFloat4 ecology;     // x=cover, y=moisture, z=stand closure
+  MoppeFloat4 ecology;     // x=cover, y=moisture, z=stand closure, w=autumn
   MoppeUint4 identity;     // x=seed, y=species, z=age, w=reserved
 };
 

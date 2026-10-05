@@ -673,6 +673,31 @@ namespace moppe::game {
                            readings,
                            flood);
 
+    // Autumn reaches the uplands first, and birch pioneers open, damp
+    // ground ahead of the closed forest, so sparse high woodland is where
+    // the gold birch stand in the open.
+    GazetteerCandidate grove = choose_land_site (
+      surface, readings, flood, census, selected, [] (const SiteSample& site) {
+        const float sparse =
+          std::max (0.0f, 1.0f - 4.0f * std::abs (site.forest - 0.22f));
+        return 3.0f * sparse + 0.025f * site.position[1] + 1.2f * site.wetness +
+               1.5f * site.normal[1] - 1.0f * site.trail;
+      });
+    grove.direction = sun_side;
+    append_candidate_view (gazetteer,
+                           selected,
+                           "upland-grove",
+                           GazetteerShotKind::Habitat,
+                           grove,
+                           4.0f * u::m,
+                           3.0f * u::m,
+                           2.4f * u::m,
+                           40.0f * u::m,
+                           70.0f * u::deg,
+                           surface,
+                           readings,
+                           flood);
+
     const GazetteerCandidate meadow = choose_land_site (
       surface, readings, flood, census, selected, [] (const SiteSample& site) {
         return 3.2f * (1.0f - site.forest) + 1.8f * site.normal[1] +
