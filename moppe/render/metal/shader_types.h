@@ -275,7 +275,8 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
                            // w=standing-water levels available
   MoppeFloat4 temporal;    // xy=input pixels, z=previous time, w=enabled
   MoppeFloat4 lod;         // x=shoot reach, y=sward reach,
-                           // z=actual canopy field available
+                           // z=actual canopy field available,
+                           // w=leaf-litter field available
 };
 
 // A forest crosses the renderer boundary as stable individuals, not baked

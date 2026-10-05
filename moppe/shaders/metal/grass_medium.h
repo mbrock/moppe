@@ -89,6 +89,7 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
                                             float snow_support,
                                             float relative_height,
                                             float signed_water_depth,
+                                            float litter,
                                             float density_scale) {
   MoppeGrassMedium grass;
   grass.clump = moppe_grass_clump (world_xz);
@@ -116,9 +117,11 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
   const float shore = 1.0 - smoothstep (0.05, 1.35, abs (signed_water_depth));
   grass.riparian = shore * dry_ground * smoothstep (0.52, 0.80, ground_up);
 
-  const float rooted = light * damp * standable * cleared * variation *
-                       alpine_survival * (1.0 - snow_habitat) * dry_ground *
-                       (1.0 + 0.18 * grass.riparian);
+  // Fallen leaves smother some of the sward beneath a turned grove.
+  const float smothered = 1.0 - 0.45 * saturate (litter);
+  const float rooted = smothered * light * damp * standable * cleared *
+                       variation * alpine_survival * (1.0 - snow_habitat) *
+                       dry_ground * (1.0 + 0.18 * grass.riparian);
   grass.leaf_area = saturate (rooted * density_scale);
   // These are Beer--Lambert limits of one population, not separately painted
   // masks. The basal mat is denser in plan view than the upright upper leaves.
@@ -139,6 +142,10 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
     moppe_upland_heath (world_xz, relative_height, grass.moisture);
   grass.blade_tint =
     mix (grass.blade_tint, 0.75 * moppe_srgb (heath.tint), heath.amount);
+  // Under a turned grove the grass is drying toward straw too.
+  grass.blade_tint = mix (grass.blade_tint,
+                          moppe_srgb (float3 (0.50, 0.46, 0.24)),
+                          0.6 * saturate (litter));
   return grass;
 }
 

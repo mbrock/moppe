@@ -5426,6 +5426,7 @@ namespace moppe {
         u.relief.w = water.have_water_levels ? 1.0f : 0.0f;
         u.temporal = m_frame.uniforms.temporal;
         u.lod.z = forest.canopy_moments ? 1.0f : 0.0f;
+        u.lod.w = forest.litter ? 1.0f : 0.0f;
 
         const TerrainParams& tp = terrain.params;
         u.lattice.x = 1.0f / tp.scale[0];
@@ -5472,6 +5473,8 @@ namespace moppe {
           bind (forest.canopy_moments ? forest.canopy_moments
                                       : terrain.landscape_materials,
                 MOPPE_TEX_FOREST_CANOPY);
+          bind (forest.litter ? forest.litter : terrain.landscape_materials,
+                MOPPE_TEX_FOREST_LITTER);
           MetalTexture* fallback =
             static_cast<MetalTexture*> (m_pipelines.white.get ());
           MetalTexture* grass =
