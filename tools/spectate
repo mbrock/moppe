@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Look at the world with no rider: a free camera starting in the densest
-# conifer stand. WASD moves on any layout, Space/Tab rise and sink, and the
+# conifer stand. WASD flies where you look on any layout, Space/Tab rise and sink, and the
 # mouse or the arrow keys look around; M frees the mouse and takes it back.
 # Extra arguments pass through to moppe.
 set -euo pipefail

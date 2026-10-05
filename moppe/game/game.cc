@@ -228,9 +228,13 @@ namespace moppe {
         view.yaw += 1.6f * dt * (held (Key::Right) - held (Key::Left));
         view.pitch += 1.2f * dt * (held (Key::Up) - held (Key::Down));
         view.pitch = std::clamp (view.pitch, -1.45f, 1.45f);
-        const Vec3 forward (std::cos (view.yaw), 0.0f, std::sin (view.yaw));
-        const Vec3 right (-forward[2], 0.0f, forward[0]);
-        const float speed = 6.0f;
+        // W flies where the eye looks, so looking down and pressing W
+        // descends.
+        const Vec3 forward (std::cos (view.yaw) * std::cos (view.pitch),
+                            std::sin (view.pitch),
+                            std::sin (view.yaw) * std::cos (view.pitch));
+        const Vec3 right (-std::sin (view.yaw), 0.0f, std::cos (view.yaw));
+        const float speed = 22.0f;
         // Letters and QWERTY positions both move, so WASD works on any
         // keyboard layout.
         const auto either = [&held] (Key letter, Key position) {

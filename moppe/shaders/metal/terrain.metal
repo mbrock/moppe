@@ -622,8 +622,21 @@ fragment MoppeTemporalOutput terrain_fragment (
     u.params5.y > 0.5
       ? terrain_water_level (in.field_uv, terrain_water) - in.world_pos.y
       : -100.0;
-  const float3 albedo = terrain_ground_albedo (
-    in.world_pos, n, dist, landscape, ground, canopy, litter, water_depth, u);
+  // Materials are classified from the authoritative full-resolution normal,
+  // never the rendered lattice's: the mesh changes its level of detail as
+  // the camera moves and turns, and a slope near a crisp material threshold
+  // would otherwise flicker between turf and rock with it.
+  const float3 material_n =
+    normalize (terrain_normal_filtered (in.grid_coord, normals));
+  const float3 albedo = terrain_ground_albedo (in.world_pos,
+                                               material_n,
+                                               dist,
+                                               landscape,
+                                               ground,
+                                               canopy,
+                                               litter,
+                                               water_depth,
+                                               u);
   float3 color = terrain_apply_analysis_overlay (
     albedo * light, in.field_uv, u, terrain_overlay);
   color = terrain_apply_lattice_overlay (color, in, dist, u);
