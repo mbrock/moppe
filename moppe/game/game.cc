@@ -849,15 +849,30 @@ namespace moppe {
         // Screenshot autopilot for headless verification: rides in a
         // lazy arc with periodic boost-assisted leaps.
         static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
+        m_trunk_field.focus (session ().subject_position ());
         if (demo && !m_water_inspection) {
           input = {
             .turn = 0.35f * std::sin (total_time * 0.25f),
             .drive = 1.0f,
             .boost = std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f,
           };
+          // Look a few metres ahead; where a trunk stands in the way, steer
+          // hard toward the side its contact pushes, so a ride through the
+          // woods weaves between trees instead of stopping at the first.
+          const Vec3 at = session ().subject_position ();
+          const Vec3 heading = session ().subject_heading ();
+          const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
+          for (const float ahead : { 4.0f, 9.0f }) {
+            const Vec3 probe = at + heading * ahead;
+            const mov::TrunkContact contact =
+              m_trunk_field.collide (probe, probe + Vec3 (0, 1.5f, 0), 1.8f);
+            if (contact.hit) {
+              input.turn = dot (contact.normal, right) >= 0.0f ? 1.0f : -1.0f;
+              break;
+            }
+          }
         }
 
-        m_trunk_field.focus (session ().subject_position ());
         const GameSessionAdvanceResult advance =
           advance_game_session (world (),
                                 surface (),
