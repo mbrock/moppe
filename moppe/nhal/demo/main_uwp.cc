@@ -17,6 +17,8 @@
 
 #include <shader_forest_wind_compute.h>
 #include <shader_sky_fragment.h>
+#include <shader_terrain_shadow_vertex.h>
+#include <shader_trees_shadow_vertex.h>
 #include <shader_sky_vertex.h>
 #include <shader_terrain_fragment.h>
 #include <shader_terrain_vertex.h>
@@ -108,6 +110,8 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
         code (shader_tonemap_vertex, sizeof shader_tonemap_vertex),
         code (shader_tonemap_fragment, sizeof shader_tonemap_fragment),
         code (shader_forest_wind_compute, sizeof shader_forest_wind_compute),
+        code (shader_terrain_shadow_vertex, sizeof shader_terrain_shadow_vertex),
+        code (shader_trees_shadow_vertex, sizeof shader_trees_shadow_vertex),
       };
       demo::Scene scene (*device, shaders);
       report ("NHAL demo: " + device->info ().backend + " on "
@@ -142,7 +146,10 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
           });
         }
         device->end_frame ();
-        if (++frames % 600 == 0) {
+        ++frames;
+        if (frames <= 3 || frames == 30)
+          report ("frame " + std::to_string (frames) + " submitted");
+        if (frames % 600 == 0) {
           char line[128];
           std::snprintf (line, sizeof line,
                          "%d frames, %.2f fps overall, slowest %.1f ms",

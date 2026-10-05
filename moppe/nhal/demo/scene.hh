@@ -18,6 +18,7 @@ namespace moppe::nhal::demo {
     StageCode sky_vertex, sky_fragment;
     StageCode tonemap_vertex, tonemap_fragment;
     StageCode forest_wind_compute;
+    StageCode terrain_shadow_vertex, trees_shadow_vertex;
   };
 
   class Scene {
@@ -37,6 +38,9 @@ namespace moppe::nhal::demo {
 
     Device& m_device;
     Pipeline m_terrain, m_trees, m_sky, m_tonemap, m_wind;
+    Pipeline m_terrain_shadow, m_trees_shadow;
+    // The sun's depth over the whole map, sampled by both receivers.
+    Texture m_shadow_map;
     Buffer m_terrain_samples, m_terrain_indices;
     Buffer m_tree_instances, m_tree_indices;
     // Written each frame by the wind: swaying instances and their draw.

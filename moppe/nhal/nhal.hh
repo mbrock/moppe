@@ -155,6 +155,11 @@ namespace moppe::nhal {
     bool depth_write = true;
     Cull cull = Cull::none;
     bool front_counter_clockwise = true;
+    // Shadow casters push their depth away from the light: a constant in
+    // units of the depth format's resolution, plus a multiple of the
+    // primitive's depth slope.
+    float depth_bias = 0.0f;
+    float slope_scaled_depth_bias = 0.0f;
     std::uint32_t samples = 1;
     Topology topology = Topology::triangle_list;
     const char* label = nullptr;

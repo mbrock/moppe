@@ -4,8 +4,10 @@
 #include <forest_wind.hh>
 #include <sky.hh>
 #include <terrain.hh>
+#include <terrain_shadow.hh>
 #include <tonemap.hh>
 #include <trees.hh>
+#include <trees_shadow.hh>
 
 #include <algorithm>
 #include <array>
@@ -24,6 +26,7 @@ namespace moppe::nhal::demo {
     constexpr std::uint32_t grid = 257;
     constexpr float cell = 4.0f;
     constexpr std::uint32_t samples = 4; // scene multisampling
+    constexpr std::uint32_t shadow_size = 4096;
 
     struct Vec3 {
       float x = 0, y = 0, z = 0;
@@ -211,6 +214,24 @@ namespace moppe::nhal::demo {
     tonemap.color_formats[0] = device.surface_format ();
     m_tonemap = device.create_render_pipeline (tonemap);
 
+    // The sun's view: depth only, conventional Z, biased away from the sun.
+    RenderPipelineDesc caster;
+    caster.color_count = 0;
+    caster.depth_format = Format::d32_float;
+    caster.depth_compare = CompareOp::less_equal;
+    caster.depth_bias = 2;
+    caster.slope_scaled_depth_bias = 2.0f;
+    caster.program = &shaders::terrain_shadow::program;
+    caster.vertex = shaders.terrain_shadow_vertex;
+    m_terrain_shadow = device.create_render_pipeline (caster);
+    caster.program = &shaders::trees_shadow::program;
+    caster.vertex = shaders.trees_shadow_vertex;
+    m_trees_shadow = device.create_render_pipeline (caster);
+    m_shadow_map = device.create_texture ({ shadow_size, shadow_size,
+                                            Format::d32_float,
+                                            usage_depth | usage_sampled, 1,
+                                            "sun shadow" });
+
     // luv-shaderc writes the workgroup size beside the program for now.
     static Program wind = shaders::forest_wind::program;
     for (int axis = 0; axis < 3; ++axis)
@@ -221,13 +242,14 @@ namespace moppe::nhal::demo {
 
   Scene::~Scene () {
     m_device.wait_idle ();
-    for (Texture t : { m_color, m_depth, m_scene })
+    for (Texture t : { m_color, m_depth, m_scene, m_shadow_map })
       if (t)
         m_device.destroy (t);
     for (Buffer b : { m_terrain_samples, m_terrain_indices, m_tree_instances,
                       m_tree_indices, m_tree_animated, m_tree_draw })
       m_device.destroy (b);
-    for (Pipeline p : { m_terrain, m_trees, m_sky, m_tonemap, m_wind })
+    for (Pipeline p : { m_terrain, m_trees, m_sky, m_tonemap, m_wind,
+                        m_terrain_shadow, m_trees_shadow })
       m_device.destroy (p);
   }
 
@@ -285,6 +307,26 @@ namespace moppe::nhal::demo {
     frame.terrain = { m_cell, float (m_grid), 0, 0 };
     frame.forest = { float (m_tree_index_count), float (m_tree_count), 1.0f,
                      0 };
+
+    // An orthographic sun over the whole map: light x and y span -1..1,
+    // depth runs 0..1 away from the sun through the map's bounding sphere.
+    {
+      const Vec3 sun = normalize ({ frame.sun_direction[0],
+                                    frame.sun_direction[1],
+                                    frame.sun_direction[2] });
+      const Vec3 away = sun * -1.0f;
+      const Vec3 across = normalize (cross (away, { 0, 1, 0 }));
+      const Vec3 rise = cross (across, away);
+      const Vec3 middle { span * 0.5f, 120.0f, span * 0.5f };
+      const float reach = span * 0.75f;
+      auto row = [&] (Vec3 axis, float scale, float offset) {
+        return lanes (axis * scale, offset - dot (axis, middle) * scale);
+      };
+      frame.shadow_row_x = row (across, 1 / reach, 0);
+      frame.shadow_row_y = row (rise, 1 / reach, 0);
+      frame.shadow_row_z = row (away, 0.5f / reach, 0.5f);
+      frame.shadow = { 1.0f / shadow_size, 0.0004f, 0, 0 };
+    }
     const Transient uniforms = m_device.allocate (sizeof frame);
     std::memcpy (uniforms.data, &frame, sizeof frame);
 
@@ -297,6 +339,21 @@ namespace moppe::nhal::demo {
     m_device.dispatch ((m_tree_count + 63) / 64);
     m_device.end_compute_pass ();
 
+    RenderPassDesc shadow;
+    shadow.label = "sun shadow";
+    shadow.depth = { m_shadow_map, Load::clear, Store::store, 1.0f };
+    m_device.begin_render_pass (shadow);
+    m_device.set_buffer (0, uniforms);
+    m_device.set_pipeline (m_terrain_shadow);
+    m_device.set_buffer (1, m_terrain_samples);
+    m_device.draw_indexed (m_terrain_indices, IndexType::uint32,
+                           m_terrain_index_count);
+    m_device.set_pipeline (m_trees_shadow);
+    m_device.set_buffer (1, m_tree_animated);
+    m_device.draw_indexed_indirect (m_tree_indices, IndexType::uint16,
+                                    m_tree_draw);
+    m_device.end_render_pass ();
+
     RenderPassDesc pass;
     pass.label = "scene";
     pass.color_count = 1;
@@ -305,6 +362,7 @@ namespace moppe::nhal::demo {
     pass.depth = { m_depth, Load::clear, Store::discard, 0.0f };
     m_device.begin_render_pass (pass);
     m_device.set_buffer (0, uniforms);
+    m_device.set_texture (0, m_shadow_map);
 
     m_device.set_pipeline (m_terrain);
     m_device.set_buffer (1, m_terrain_samples);

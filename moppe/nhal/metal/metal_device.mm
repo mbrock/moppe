@@ -91,6 +91,7 @@ namespace moppe::nhal {
       MTLCullMode cull = MTLCullModeNone;
       MTLWinding winding = MTLWindingCounterClockwise;
       MTLPrimitiveType primitive = MTLPrimitiveTypeTriangle;
+      float depth_bias = 0, slope_scaled_depth_bias = 0;
     };
 
     class MetalDevice final : public Device {
@@ -291,6 +292,8 @@ namespace moppe::nhal {
         pipeline.cull = desc.cull == Cull::back    ? MTLCullModeBack
                         : desc.cull == Cull::front ? MTLCullModeFront
                                                    : MTLCullModeNone;
+        pipeline.depth_bias = desc.depth_bias;
+        pipeline.slope_scaled_depth_bias = desc.slope_scaled_depth_bias;
         pipeline.winding = desc.front_counter_clockwise
                              ? MTLWindingCounterClockwise
                              : MTLWindingClockwise;
@@ -523,6 +526,9 @@ namespace moppe::nhal {
         [m_encoder setDepthStencilState:m_pipeline.depth];
         [m_encoder setCullMode:m_pipeline.cull];
         [m_encoder setFrontFacingWinding:m_pipeline.winding];
+        [m_encoder setDepthBias:m_pipeline.depth_bias
+                     slopeScale:m_pipeline.slope_scaled_depth_bias
+                          clamp:0];
       }
 
       void set_buffer (std::uint32_t binding, Buffer buffer,

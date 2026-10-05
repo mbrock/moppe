@@ -787,15 +787,17 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     endif()
     set(MOPPE_NHAL_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
     set(MOPPE_NHAL_SHADER_OUTPUTS)
-    foreach(program terrain trees sky tonemap)
+    foreach(stage IN ITEMS
+        terrain.vertex terrain.fragment terrain_shadow.vertex
+        trees.vertex trees.fragment trees_shadow.vertex
+        sky.vertex sky.fragment tonemap.vertex tonemap.fragment
+        forest_wind.compute)
+      string(REGEX REPLACE "[.].*" "" program ${stage})
       list(APPEND MOPPE_NHAL_SHADER_OUTPUTS
         ${MOPPE_NHAL_SHADERS}/${program}.hh
-        ${MOPPE_NHAL_SHADERS}/${program}.vertex.metal
-        ${MOPPE_NHAL_SHADERS}/${program}.fragment.metal)
+        ${MOPPE_NHAL_SHADERS}/${stage}.metal)
     endforeach()
-    list(APPEND MOPPE_NHAL_SHADER_OUTPUTS
-      ${MOPPE_NHAL_SHADERS}/forest_wind.hh
-      ${MOPPE_NHAL_SHADERS}/forest_wind.compute.metal)
+    list(REMOVE_DUPLICATES MOPPE_NHAL_SHADER_OUTPUTS)
     add_custom_command(
       OUTPUT ${MOPPE_NHAL_SHADER_OUTPUTS}
       COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_SHADERS}

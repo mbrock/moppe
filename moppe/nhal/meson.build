@@ -8,19 +8,22 @@ project('nhal-demo', 'cpp', default_options: ['cpp_std=c++20'])
 # signed DXIL.
 shaderc = find_program('luv-shaderc', native: true)
 dxc = find_program('dxc', native: true)
-programs = ['terrain', 'trees', 'sky', 'tonemap']
-stages = [['vertex', 'vs_6_0'], ['fragment', 'ps_6_0']]
+profiles = {'vertex': 'vs_6_0', 'fragment': 'ps_6_0', 'compute': 'cs_6_0'}
+programs = [
+  ['terrain', ['vertex', 'fragment']],
+  ['terrain_shadow', ['vertex']],
+  ['trees', ['vertex', 'fragment']],
+  ['trees_shadow', ['vertex']],
+  ['sky', ['vertex', 'fragment']],
+  ['tonemap', ['vertex', 'fragment']],
+  ['forest_wind', ['compute']],
+]
 lowered_outputs = []
 foreach program : programs
-  lowered_outputs += [program + '.hh']
-  foreach stage : stages
-    lowered_outputs += [program + '.' + stage[0] + '.hlsl']
+  lowered_outputs += [program[0] + '.hh']
+  foreach stage : program[1]
+    lowered_outputs += [program[0] + '.' + stage + '.hlsl']
   endforeach
-endforeach
-# Compute programs come last: their header, then their one stage.
-compute_programs = ['forest_wind']
-foreach program : compute_programs
-  lowered_outputs += [program + '.hh', program + '.compute.hlsl']
 endforeach
 lowered = custom_target('luv-shaders',
   input: 'demo/shaders/scene.lisp',
@@ -31,25 +34,15 @@ shaders = []
 index = 0
 foreach program : programs
   index += 1 # the program's header
-  foreach stage : stages
-    entry = program + '_' + stage[0]
+  foreach stage : program[1]
+    entry = program[0] + '_' + stage
     shaders += custom_target('shader_' + entry,
       input: lowered[index],
       output: 'shader_' + entry + '.h',
-      command: [dxc, '-O3', '-T', stage[1], '-E', entry,
+      command: [dxc, '-O3', '-T', profiles[stage], '-E', entry,
                 '-Fh', '@OUTPUT@', '-Vn', 'shader_' + entry, '@INPUT@'])
     index += 1
   endforeach
-endforeach
-foreach program : compute_programs
-  index += 1 # the program's header
-  entry = program + '_compute'
-  shaders += custom_target('shader_' + entry,
-    input: lowered[index],
-    output: 'shader_' + entry + '.h',
-    command: [dxc, '-O3', '-T', 'cs_6_0', '-E', entry,
-              '-Fh', '@OUTPUT@', '-Vn', 'shader_' + entry, '@INPUT@'])
-  index += 1
 endforeach
 
 # Sources include <moppe/nhal/...> from the repository root.

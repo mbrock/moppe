@@ -491,6 +491,8 @@ namespace moppe::nhal {
         pd.RasterizerState.FrontCounterClockwise =
           desc.front_counter_clockwise;
         pd.RasterizerState.DepthClipEnable = TRUE;
+        pd.RasterizerState.DepthBias = INT (desc.depth_bias);
+        pd.RasterizerState.SlopeScaledDepthBias = desc.slope_scaled_depth_bias;
         pd.RasterizerState.MultisampleEnable = desc.samples > 1;
         if (desc.depth_format != Format::undefined) {
           pd.DSVFormat = dxgi_format (desc.depth_format);
@@ -1176,12 +1178,24 @@ namespace moppe::nhal {
         }
       }
 
+      // A frame that never completes is a hung GPU; say which, and why.
       void wait_for (std::uint64_t value) {
         if (m_fence->GetCompletedValue () >= value)
           return;
         check (m_fence->SetEventOnCompletion (value, m_event),
                "SetEventOnCompletion");
-        WaitForSingleObjectEx (m_event, INFINITE, FALSE);
+        if (WaitForSingleObjectEx (m_event, 5000, FALSE) == WAIT_OBJECT_0)
+          return;
+        char message[160];
+        std::snprintf (message, sizeof message,
+                       "NHAL: frame %llu did not complete (fence at %llu, "
+                       "device removed reason 0x%08lx)",
+                       static_cast<unsigned long long> (value),
+                       static_cast<unsigned long long> (
+                         m_fence->GetCompletedValue ()),
+                       static_cast<unsigned long> (
+                         m_device->GetDeviceRemovedReason ()));
+        throw std::runtime_error (message);
       }
 
       void collect () {
