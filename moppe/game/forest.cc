@@ -2,7 +2,9 @@
 
 #include <moppe/profile.hh>
 
+#include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <vector>
 
 namespace moppe::game {
@@ -38,8 +40,8 @@ namespace moppe::game {
         .axis = normalized (
           Vec3 (0.0f, 1.0f, 0.0f) + Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
           Vec3 (std::cos (turn), 0.0f, std::sin (turn)) * lean),
-        .height = height * (conifer ? 0.9f : 0.6f),
-        .radius = height * (conifer ? 0.0078f : 0.0095f) *
+        .height = height * (conifer ? 0.9f : 0.7f),
+        .radius = height * (conifer ? 0.0078f : 0.0068f) *
                   (0.85f + 0.3f * forest_hash (tree.seed, 6u)),
       };
     }
@@ -63,7 +65,10 @@ namespace moppe::game {
       const float size = site.size.numerical_value_in (mp_units::one);
       const float cover = site.cover.numerical_value_in (mp_units::one);
       const float moisture = site.moisture.numerical_value_in (mp_units::one);
-      const bool conifer = site.form == ForestForm::conifer;
+      // The procedural style has only its conifer construction, so it
+      // presents every individual as spruce.
+      const bool conifer = site.form == ForestForm::conifer ||
+                           style == render::ForestStyle::Procedural;
       // The trunk forest stands at the height of a mature stand -- most
       // conifers 20 to 35 metres -- with stout spruce cones and broad
       // broadleaf crowns lifted on clear trunks.
@@ -72,7 +77,7 @@ namespace moppe::game {
       const meters_t height = scale * size * (conifer ? 15.0f : 13.4f) *
                               (0.82f + 0.30f * cover + 0.26f * moisture) * u::m;
       const float crown_share =
-        trunks ? (conifer ? 0.19f : 0.24f) : (conifer ? 0.23f : 0.25f);
+        trunks ? (conifer ? 0.19f : 0.15f) : (conifer ? 0.23f : 0.25f);
       return {
         .root = site.position,
         .ground_normal = site.normal,
@@ -118,6 +123,12 @@ namespace moppe::game {
         m_trunks.push_back (trunk_of (tree));
     }
     m_tree_count = instances.size ();
+    const auto birches =
+      std::ranges::count_if (plan.sites, [] (const ForestSite& site) {
+        return site.form == ForestForm::broadleaf;
+      });
+    std::cerr << "moppe: forest plan: " << plan.sites.size () << " sites, "
+              << birches << " birch" << std::endl;
     m_resident_bytes = instances.size () * sizeof (render::ForestInstance);
   }
 

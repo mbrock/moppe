@@ -15,7 +15,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 9;
+    constexpr std::uint32_t forest_plan_version = 12;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The
@@ -55,9 +55,56 @@ namespace moppe::game {
       float x;
       float z;
       float cover;
+      float moisture;
+      float grove;
+      bool pioneer; // admitted by birch's own open-ground population
       float priority;
       std::uint32_t identity;
     };
+
+    // Where birch may dominate: a coherent field of patches from roughly
+    // eighty to two hundred metres across, so birches arrive as groves
+    // rather than as a sprinkle through the spruce.
+    float birch_grove (meters_t x,
+                       meters_t z,
+                       meters_t width,
+                       meters_t depth,
+                       std::uint32_t seed) {
+      const proportion_t along_x = x / width;
+      const proportion_t along_z = z / depth;
+      const auto laps = [] (meters_t extent, float patch_metres) {
+        return std::max<std::uint32_t> (
+          1,
+          static_cast<std::uint32_t> (
+            std::round (extent.numerical_value_in (u::m) / patch_metres)));
+      };
+      const float field =
+        0.65f *
+          periodic_noise (along_x, along_z, laps (width, 200.0f), seed ^ 0x5b1e)
+            .numerical_value_in (one) +
+        0.35f *
+          periodic_noise (along_x, along_z, laps (depth, 80.0f), seed ^ 0x8c3d)
+            .numerical_value_in (one);
+      return smoothstep (0.54f, 0.68f, field);
+    }
+
+    float wetness (float moisture) {
+      return smoothstep (0.30f, 0.70f, moisture);
+    }
+
+    // Birch is the pioneer: it holds the edges of the spruce, wet ground,
+    // and open land inside its groves. A few birches stand anywhere.
+    bool is_birch (const ForestCandidate& candidate) {
+      if (candidate.pioneer)
+        return true;
+      const float edge = 1.0f - smoothstep (0.15f, 0.55f, candidate.cover);
+      const float odds =
+        0.03f +
+        candidate.grove *
+          (0.30f +
+           0.70f * std::max (edge, 0.8f * wetness (candidate.moisture)));
+      return hash_lane (candidate.identity, 7) < odds;
+    }
 
     position_t sample_position (meters_t x, meters_t z) {
       return position (
@@ -174,15 +221,42 @@ namespace moppe::game {
       const map::ForestCover cover = cover_at (readings, x, z);
       const proportion_t population = band (
         0.08f * map::forest_cover[one], 0.62f * map::forest_cover[one], cover);
-      const float population_value = population.numerical_value_in (one);
+      float population_value = population.numerical_value_in (one);
+      const float grove = birch_grove (x, z, width, depth, seed);
+      // Inside a birch grove, wet open ground carries a sparse stand of its
+      // own: spread-out birches over a meadow the spruce never reaches. Only
+      // the spruce mosaic is waived; habitat, routes, and settlements still
+      // keep their ground clear.
+      float moisture = 0.0f;
+      bool pioneer = false;
+      if (grove > 0.0f) {
+        const auto read = [&] (auto quantity) {
+          return spatial::sample<quantity> (readings, sample_position (x, z))
+            .numerical_value_in (one);
+        };
+        const float habitat =
+          smoothstep (0.25f, 0.60f, read (map::tree_habitat));
+        const float open = (1.0f - read (map::trail_influence)) *
+                           (1.0f - read (map::home_base_influence));
+        moisture = moisture_at (readings, x, z).numerical_value_in (one);
+        const float pioneer_population = 0.22f * grove * wetness (moisture) *
+                                         habitat *
+                                         std::clamp (open, 0.0f, 1.0f);
+        pioneer = pioneer_population > population_value;
+        population_value = std::max (population_value, pioneer_population);
+      }
       const float proposal_scale = std::lerp (
         forest_proposal_scale_min, forest_proposal_scale_max, population_value);
-      if (cover < 0.06f * map::forest_cover[one] ||
+      if ((cover < 0.06f * map::forest_cover[one] &&
+           population_value <= 0.0f) ||
           hash_lane (identity, 2) > population_value * proposal_scale)
         continue;
       candidates.push_back ({ .x = x.numerical_value_in (u::m),
                               .z = z.numerical_value_in (u::m),
                               .cover = cover.numerical_value_in (one),
+                              .moisture = moisture,
+                              .grove = grove,
+                              .pioneer = pioneer,
                               .priority = hash_lane (identity, 3),
                               .identity = identity });
     }
@@ -260,19 +334,20 @@ namespace moppe::game {
       const meters_t z = candidate.z * u::m;
       const map::ForestCover cover = candidate.cover * map::forest_cover[one];
       const terrain::SurfaceElevation elevation = elevation_at (surface, x, z);
-      // A boreal stand: spruce IS the forest. The broadleaf construction
-      // is a placeholder blob that has received none of the conifer's
-      // assembly work, so it stays out of the world until it earns its
-      // place.
+      // A boreal landscape: spruce is the forest, birch its pioneer.
+      ForestCandidate site = candidate;
+      if (site.grove > 0.0f && site.moisture == 0.0f)
+        site.moisture = moisture_at (readings, x, z).numerical_value_in (one);
       const ForestAge age = age_from_identity (candidate.identity);
-      plan.sites.push_back ({ .position = forest_position (x, elevation, z),
-                              .normal = normal_at (surface, x, z),
-                              .cover = cover,
-                              .moisture = moisture_at (readings, x, z),
-                              .size = size_for_age (age, candidate.identity),
-                              .seed = candidate.identity,
-                              .form = ForestForm::conifer,
-                              .age = age });
+      plan.sites.push_back (
+        { .position = forest_position (x, elevation, z),
+          .normal = normal_at (surface, x, z),
+          .cover = cover,
+          .moisture = moisture_at (readings, x, z),
+          .size = size_for_age (age, candidate.identity),
+          .seed = candidate.identity,
+          .form = is_birch (site) ? ForestForm::broadleaf : ForestForm::conifer,
+          .age = age });
     }
     return plan;
   }

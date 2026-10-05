@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <span>
 #include <sstream>
@@ -601,12 +602,22 @@ namespace moppe::game {
       return {};
 
     const std::uint32_t forest_seed = recipe.seed ().value ^ 0xa34c91e5U;
+    const std::string forest_path =
+      file_in (directory, "forest-plan.bin").string ();
     std::optional<ForestPlan> forest =
-      try_load_forest_plan (file_in (directory, "forest-plan.bin").string (),
-                            forest_seed,
-                            forest_period (domain));
-    if (!forest)
-      return {};
+      try_load_forest_plan (forest_path, forest_seed, forest_period (domain));
+    if (!forest) {
+      // The plan is cheap beside the evolved surface it reads: an outdated
+      // plan is re-planted from the cached fields instead of discarding the
+      // whole world.
+      forest = plan_global_forest (surface, readings, forest_seed);
+      try {
+        save_forest_plan (*forest, forest_seed, forest_path);
+      } catch (const std::exception& error) {
+        std::cerr << "moppe: could not refresh the cached forest plan: "
+                  << error.what () << std::endl;
+      }
+    }
 
     Hydrology hydrology (std::move (flood),
                          std::move (lakes),

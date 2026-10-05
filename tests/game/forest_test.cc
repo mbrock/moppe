@@ -59,7 +59,10 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
     MOPPE_CHECK_NEAR (position_value (site.position)[2],
                       position_value (second.sites[index].position)[2],
                       1e-6f);
-    MOPPE_CHECK (site.cover >= 0.06f * map::forest_cover[mp_units::one]);
+    // Spruce follows the canopy field; birch may also pioneer open ground
+    // inside its groves.
+    if (site.form == game::ForestForm::conifer)
+      MOPPE_CHECK (site.cover >= 0.06f * map::forest_cover[mp_units::one]);
     MOPPE_CHECK (site.normal.numerical_value_in (mp_units::one)[1] > 0.99f);
   }
 }

@@ -106,15 +106,15 @@ trunk_tree (thread const MoppeForestInstance& tree, float3 root, float pixels) {
                                     MOPPE_FOREST_STAND_CLOSED_CLOSURE,
                                     tree.ecology.z);
   const float base_share =
-    mix (t.conifer ? 0.04 : 0.22, t.conifer ? 0.20 : 0.58, closure) +
+    mix (t.conifer ? 0.04 : 0.40, t.conifer ? 0.20 : 0.60, closure) +
     0.08 * (trunk_hash (t.seed, 5u) - 0.5);
   t.crown_base = t.height * base_share;
-  t.trunk_radius = t.height * (t.conifer ? 0.0078 : 0.0095) *
+  t.trunk_radius = t.height * (t.conifer ? 0.0078 : 0.0068) *
                    (0.85 + 0.3 * trunk_hash (t.seed, 6u));
   t.seed_turn = 6.2831853 * trunk_hash (t.seed, 7u);
   t.sides = pixels > 90.0 ? 10u : pixels > 30.0 ? 7u : 5u;
   t.crown_sides = pixels > 90.0 ? 9u : pixels > 30.0 ? 7u : 5u;
-  t.masses = 3u;
+  t.masses = t.conifer ? 3u : 5u;
   return t;
 }
 
@@ -216,16 +216,20 @@ static inline TreeVertex tree_vertex (thread const TrunkTree& t, uint index) {
     v.crown_height = saturate ((along - t.crown_base) / max (span, 0.01));
   } else {
     // Lobes clustered around the upper crown.
-    const float3 offsets[3] = { float3 (0.0, 0.62, 0.0),
-                                float3 (0.42, 0.40, 0.18),
-                                float3 (-0.36, 0.44, -0.30) };
-    const float sizes[3] = { 0.80, 0.62, 0.58 };
-    const float3 o = offsets[mass];
-    const float3 centre = t.root + t.up * (t.crown_base + span * o.y) +
-                          t.crown_radius * (t.right * o.x + t.forward * o.z) *
-                            (0.8 + 0.4 * trunk_hash (t.seed, 40u + mass));
-    const float radius = t.crown_radius * sizes[mass];
-    const float half_height = 0.62 * radius;
+    // A birch crown is tall and loose: lobes stacked up the stem, leaning
+    // apart, rather than one round head.
+    // Lobes spiral up the stem from the crown base, narrowing toward the
+    // top, each taller than it is wide.
+    const float rise = (float (mass) + 0.5) / float (t.masses);
+    const float spiral = t.seed_turn + 2.4 * float (mass);
+    const float apart =
+      (0.55 - 0.35 * rise) * (0.8 + 0.4 * trunk_hash (t.seed, 40u + mass));
+    const float3 centre = t.root +
+                          t.up * (t.crown_base + span * (0.10 + 0.82 * rise)) +
+                          t.crown_radius * apart *
+                            (t.right * cos (spiral) + t.forward * sin (spiral));
+    const float radius = t.crown_radius * (0.78 - 0.30 * rise);
+    const float half_height = 1.25 * radius;
     float along;
     if (corner < 2u * t.crown_sides) {
       const uint ring = corner / t.crown_sides;
@@ -316,11 +320,13 @@ static inline float3 trunk_palette (thread const TrunkTree& t,
     return t.conifer ? moppe_srgb (float3 (0.38, 0.30, 0.24))
                      : moppe_srgb (float3 (0.80, 0.78, 0.72));
   const float hue = trunk_hash (t.seed, 50u) - 0.5;
-  const float shade =
-    0.92 + 0.10 * float (mass) - 0.06 * trunk_hash (t.seed, 51u);
+  // Upper masses catch a little more light than the lower ones.
+  const float shade = 0.92 +
+                      0.12 * float (mass) / float (max (t.masses - 1u, 1u)) -
+                      0.06 * trunk_hash (t.seed, 51u);
   const float3 needle =
     float3 (0.20 + 0.05 * hue, 0.36 + 0.06 * moisture, 0.22);
-  const float3 leaf = float3 (0.46 + 0.10 * hue, 0.58 + 0.05 * moisture, 0.22);
+  const float3 leaf = float3 (0.42 + 0.08 * hue, 0.60 + 0.05 * moisture, 0.22);
   return moppe_srgb ((t.conifer ? needle : leaf) * shade);
 }
 
