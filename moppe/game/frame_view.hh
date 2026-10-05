@@ -51,11 +51,20 @@ namespace moppe::game {
     bool bike_attached = false;
   };
 
+  // Everything the avatar's procedural animation reads: where the feet
+  // are and how the body is moving over the ground, not its controls.
   struct WalkerPose {
-    Vec3 position {};
+    Vec3 position {}; // the feet, eased over steps
     Vec3 heading { 0, 0, 1 };
-    float walk = 0.0f;
-    float animation_distance = 0.0f;
+    Vec3 velocity {};
+    Vec3 ground_normal { 0, 1, 0 };
+    float stride_phase = 0.0f;
+    float stride_speed = 0.0f; // m/s
+    bool grounded = true;
+    float airborne_seconds = 0.0f;
+    float vertical_speed = 0.0f; // m/s, up positive
+    float landing_dip = 0.0f;    // metres
+    float look_pitch = 0.0f;     // radians, up positive
   };
 
   struct FrameActors {
@@ -215,7 +224,7 @@ namespace moppe::game {
 
   VehiclePose vehicle_pose (const mov::Vehicle& vehicle);
   GliderPose glider_pose (const mov::Glider& glider);
-  WalkerPose walker_pose (const Walker& walker);
+  WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);
   FrameView compose_frame_view (const FrameViewInput& input);
 
   // The raw, unsmoothed sight line toward the sun.  The game updates its

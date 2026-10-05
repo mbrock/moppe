@@ -129,14 +129,23 @@ namespace moppe::game {
     };
   }
 
-  WalkerPose walker_pose (const Walker& walker) {
+  WalkerPose walker_pose (const Walker& walker, float look_pitch) {
     const Walker::State state = walker.state ();
+    const mov::Character::State& body = state.body;
+    const Vec3 velocity = velocity_value (body.velocity);
     return {
-      .position = position_value (state.position),
+      .position = position_value (body.position) +
+                  Vec3 (0, body.step_offset.numerical_value_in (u::m), 0),
       .heading = state.heading,
-      .walk = state.walk.numerical_value_in (one),
-      .animation_distance =
-        (state.animation_distance).numerical_value_in (moppe::u::m),
+      .velocity = velocity,
+      .ground_normal = body.ground_normal,
+      .stride_phase = state.stride_phase,
+      .stride_speed = state.stride_speed.numerical_value_in (u::m / u::s),
+      .grounded = body.grounded,
+      .airborne_seconds = seconds_value (body.airborne_time),
+      .vertical_speed = velocity[1],
+      .landing_dip = walker.landing_dip (),
+      .look_pitch = look_pitch,
     };
   }
 
@@ -236,7 +245,8 @@ namespace moppe::game {
     if (logic.m_mode == M_GLIDER)
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_mode == M_FOOT)
-      result.actors.walker = walker_pose (input.session.walker ());
+      result.actors.walker =
+        walker_pose (input.session.walker (), logic.m_look_pitch);
     result.actors.active_mode = logic.m_mode;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera = logic.m_cam_mode == CAM_HELMET;

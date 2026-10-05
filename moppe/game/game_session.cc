@@ -229,7 +229,7 @@ namespace moppe::game {
       toggle_mount (*this);
     m_logic.m_cam_mode = CAM_HELMET;
     m_logic.m_look_pitch = 0.0f;
-    m_logic.m_fp_eye = m_walker.position () + Vec3 (0, 1.62f, 0);
+    m_logic.m_fp_eye = m_walker.eye_position ();
   }
 
   void GameSession::clear_controls () {
@@ -624,7 +624,7 @@ namespace moppe::game {
       // not rattle the eyeballs.
       Vec3 eye, look;
       if (logic.m_mode == M_FOOT) {
-        eye = session.walker ().position () + Vec3 (0, 1.62f, 0);
+        eye = session.walker ().eye_position ();
         look = session.walker ().heading () * std::cos (logic.m_look_pitch) +
                Vec3 (0, std::sin (logic.m_look_pitch), 0);
       } else if (logic.m_mode == M_GLIDER) {
@@ -641,11 +641,14 @@ namespace moppe::game {
       session.camera ().place (logic.m_fp_eye, logic.m_fp_eye + look * 10.0f);
     } else {
       const float flip = logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
+      session.camera ().frame (
+        logic.m_mode == M_FOOT ? 10 * u::deg : 18 * u::deg,
+        logic.m_mode == M_FOOT ? 3.8f * u::m : 6.5f * u::m);
       if (logic.m_mode == M_FOOT)
         session.camera ().update (
-          moppe::position (session.walker ().position () + Vec3 (0, 1.0f, 0)),
+          moppe::position (session.walker ().position () + Vec3 (0, 1.35f, 0)),
           session.walker ().heading () * flip,
-          velocity (Vec3 ()),
+          velocity (session.walker ().velocity ()),
           dt);
       else if (logic.m_mode == M_GLIDER)
         session.camera ().update (session.glider ().physical_position (),

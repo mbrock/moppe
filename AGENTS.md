@@ -21,6 +21,11 @@
     strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the third-person
     views, and `F` near the bike mounts it (and steps off again).
     `MOPPE_DEMO`, benchmarks, and the gazetteer still start riding.
+  - Scripted walks for captures: `MOPPE_WALK=walk|run|jump|tour` starts on
+    foot (even with `MOPPE_DEMO=forest`) and drives a deterministic script;
+    `MOPPE_WALK_CAMERA=chase|front|side` picks the view (`side` locks a
+    camera beside the figure to judge the gait). Pair with
+    `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
   - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
     trail map); `MOPPE_HUD=debug` starts with it on.
@@ -201,6 +206,13 @@
   dust, HUD, vehicle rendering; glue in game.cc).
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see
   `docs/game-state.md` for the checkpoint boundary and remaining systems.
+- The on-foot body is `mov::Character` (`moppe/mov/character.*`): a
+  kinematic capsule floating a step above the feet, moved with Box3D's mover
+  planes against `TrunkField` obstacles and heightfield planes, with a ground
+  probe for snapping and stepping, a walkable-slope limit, coyote time, and
+  jump buffering. `game::Walker` turns controls into its intent and counts
+  the stride phase; `game/avatar.*` solves the articulated figure's skeleton
+  (two-bone leg IK, planted stance feet) and `walker_render.cc` draws it.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   The bike is a Box3D assemblage by default (`mov/rigid_bike.*`: chassis,
   two sphere wheels on wheel joints, a streamed height-field ground patch,

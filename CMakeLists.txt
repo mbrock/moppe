@@ -407,6 +407,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/vehicle.cc
   moppe/mov/trunk_field.cc
   moppe/mov/rigid_bike.cc
+  moppe/mov/character.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
   moppe/game/stars.cc
@@ -423,6 +424,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/water_presentation.cc
   moppe/game/waterfall_surface.cc
   moppe/game/cinematic_flight.cc
+  moppe/game/avatar.cc
   moppe/game/walker_render.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
@@ -574,6 +576,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
+    tests/game/walker_test.cc
     tests/game/frame_view_test.cc
     tests/game/terrain_test.cc
     tests/game/graphics_benchmark_test.cc

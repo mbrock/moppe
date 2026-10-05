@@ -669,15 +669,28 @@ namespace moppe {
           1.2f;
         session ().bike ().reset (m_spawn_position);
         session ().bike ().set_heading (trail_direction_from_home ());
-        // It is a walking game first: the rider stands beside the parked
-        // bike. The demo autopilot and benchmarks still start riding.
-        if (!::getenv ("MOPPE_DEMO") && !m_benchmark && !m_gazetteer)
-          session ().start_on_foot ();
-
         const char* demo = ::getenv ("MOPPE_DEMO");
-        if (!demo || std::string_view (demo) != "forest")
-          return;
+        if (demo && std::string_view (demo) == "forest")
+          move_spawn_to_forest ();
+        // It is a walking game first: the rider stands beside the parked
+        // bike. The demo autopilot and benchmarks still start riding,
+        // unless a scripted walk (MOPPE_WALK) asks for the feet.
+        if ((!demo || ::getenv ("MOPPE_WALK")) && !m_benchmark &&
+            !m_gazetteer) {
+          session ().start_on_foot ();
+          // Scripted walks can watch from behind or in front of the figure.
+          if (const char* view = ::getenv ("MOPPE_WALK_CAMERA")) {
+            const std::string_view name (view);
+            if (name == "chase" || name == "side")
+              logic ().m_cam_mode = CAM_CHASE;
+            else if (name == "front")
+              logic ().m_cam_mode = CAM_FRONT;
+          }
+        }
+      }
 
+      // MOPPE_DEMO=forest: park the bike at the world's forest-floor site.
+      void move_spawn_to_forest () {
         const LandscapeGazetteer views =
           plan_landscape_gazetteer (surface (),
                                     surface_readings (),
@@ -971,7 +984,7 @@ namespace moppe {
         const bool automated =
           !m_screenshot_path.empty () || m_benchmark.has_value () ||
           m_water_shot.has_value () || m_gazetteer.has_value () ||
-          ::getenv ("MOPPE_DEMO");
+          ::getenv ("MOPPE_DEMO") || ::getenv ("MOPPE_WALK");
         if (!automated && !m_skip_cinematic_requested &&
             !m_cinematic_plan.empty ()) {
           m_cinematic.start (m_cinematic_plan, surface ());
@@ -1056,6 +1069,54 @@ namespace moppe {
         // integration frequency. Gazetteer views intentionally report zero.
         if (m_ready && !m_gazetteer)
           logic ().m_frame_time = elapsed;
+      }
+
+      // A deterministic on-foot script for automated captures (MOPPE_WALK):
+      // "walk", "run", and "jump" hold one gait, and "tour" stands, walks,
+      // runs, jumps twice from the run, and comes to rest, turning gently
+      // throughout so a following camera sees the figure from changing
+      // sides.
+      InputFrame scripted_walk (std::string_view script, float dt) {
+        const float t = m_walk_script_time;
+        m_walk_script_time += dt;
+        InputFrame input;
+        const auto press = [t, dt] (float at) {
+          return t >= at && t < at + 0.1f + dt ? 1.0f : 0.0f;
+        };
+        if (script == "walk") {
+          input.drive = 1.0f;
+        } else if (script == "run") {
+          input.drive = 1.0f;
+          input.run = true;
+        } else if (script == "jump") {
+          input.drive = 1.0f;
+          input.run = true;
+          // A jump every 1.6 s, each a fresh press.
+          const float beat = std::fmod (t, 1.6f);
+          input.boost = beat >= 1.0f && beat < 1.1f ? 1.0f : 0.0f;
+        } else {
+          input.drive = t > 1.5f && t < 12.5f ? 1.0f : 0.0f;
+          input.run = t > 5.0f && t < 11.0f;
+          input.boost = std::max (press (8.0f), press (9.6f));
+        }
+        input.look_yaw = 0.25f * std::sin (t * 0.35f) * dt;
+        return input;
+      }
+
+      // MOPPE_WALK_CAMERA=side: a camera locked beside the walking figure,
+      // so the gait can be judged against the ground passing beneath it.
+      void walk_side_camera () {
+        static const bool side = [] {
+          const char* view = ::getenv ("MOPPE_WALK_CAMERA");
+          return view && std::string_view (view) == "side";
+        }();
+        if (!side || logic ().m_mode != M_FOOT)
+          return;
+        const Walker& walker = session ().walker ();
+        const Vec3 heading = walker.heading ();
+        const Vec3 right (heading[2], 0.0f, -heading[0]);
+        const Vec3 at = walker.position () + Vec3 (0, 0.9f, 0);
+        session ().camera ().place (at + right * 4.0f + Vec3 (0, 0.25f, 0), at);
       }
 
       void tick_simulation (float dt) {
@@ -1151,7 +1212,10 @@ namespace moppe {
           ::getenv ("MOPPE_ORBIT") != 0 || ::getenv ("MOPPE_PAN") != 0;
         if (m_spectator)
           input = {};
-        if (demo && !m_water_inspection && !orbit) {
+        static const char* walk_script = ::getenv ("MOPPE_WALK");
+        if (walk_script && logic ().m_mode == M_FOOT && !orbit)
+          input = scripted_walk (walk_script, dt);
+        else if (demo && !m_water_inspection && !orbit) {
           input = {
             .turn = 0.35f * std::sin (total_time * 0.25f),
             .drive = 1.0f,
@@ -1192,6 +1256,7 @@ namespace moppe {
         }
         orbit_camera ();
         spectator_camera (dt);
+        walk_side_camera ();
 
         if (m_benchmark)
           finish_benchmark_frame (m_benchmark_replay->finish_frame ());
@@ -2244,6 +2309,7 @@ namespace moppe {
       BoulderLandscape m_boulders;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
+      float m_walk_script_time = 0.0f;
       Hud m_hud;
       render::TextList m_hud_text;
 

@@ -270,7 +270,7 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
   const game::Walker::State walker_state = walker.state ();
   walker.spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
   walker.restore (walker_state);
-  check_position (walker.state ().position, walker_state.position);
+  check_position (walker.state ().body.position, walker_state.body.position);
   check_vector (walker.state ().heading, walker_state.heading);
   MOPPE_CHECK_NEAR (scalar_value (walker.state ().turn),
                     scalar_value (walker_state.turn),
@@ -580,7 +580,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
                     1e-6f);
   check_position (restored.glider.position, saved.glider.position);
   check_vector (restored.glider.heading, saved.glider.heading);
-  check_position (restored.walker.position, saved.walker.position);
+  check_position (restored.walker.body.position, saved.walker.body.position);
   check_position (restored.camera.position, saved.camera.position);
   MOPPE_CHECK (restored.stars.count == saved.stars.count);
   MOPPE_CHECK (restored.stars.collected == saved.stars.collected);
@@ -591,7 +591,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
                     scalar_value (saved.vehicle.thrust),
                     1e-6f);
   check_position (replayed.glider.position, saved.glider.position);
-  check_position (replayed.walker.position, saved.walker.position);
+  check_position (replayed.walker.body.position, saved.walker.body.position);
   check_position (replayed.camera.position, saved.camera.position);
   MOPPE_CHECK (replayed.stars.count == saved.stars.count);
   MOPPE_CHECK (replayed.dust.emissions.size () == saved.dust.emissions.size ());

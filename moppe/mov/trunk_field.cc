@@ -213,6 +213,105 @@ namespace moppe {
       return gathered;
     }
 
+    void TrunkField::collide_mover (const Vec3& origin,
+                                    const Vec3& centre1,
+                                    const Vec3& centre2,
+                                    float radius,
+                                    std::vector<MoverPlane>& planes) const {
+      if (m_impl->resident.empty ())
+        return;
+      b3Capsule mover;
+      mover.center1 = to_b3 (centre1);
+      mover.center2 = to_b3 (centre2);
+      mover.radius = radius;
+      std::vector<b3CollisionPlane> found;
+      b3World_CollideMover (m_impl->world,
+                            to_b3 (origin),
+                            &mover,
+                            b3DefaultQueryFilter (),
+                            gather_plane,
+                            &found);
+      const std::size_t first = planes.size ();
+      for (const b3CollisionPlane& plane : found)
+        planes.push_back ({ from_b3 (plane.plane.normal), plane.plane.offset });
+      // The broadphase reports shapes in tree order, which depends on the
+      // streaming history; the plane solver is order-sensitive, so a replay
+      // must see the same planes in the same order.
+      std::sort (planes.begin () + first,
+                 planes.end (),
+                 [] (const MoverPlane& a, const MoverPlane& b) {
+                   if (a.normal[0] != b.normal[0])
+                     return a.normal[0] < b.normal[0];
+                   if (a.normal[2] != b.normal[2])
+                     return a.normal[2] < b.normal[2];
+                   if (a.normal[1] != b.normal[1])
+                     return a.normal[1] < b.normal[1];
+                   return a.depth < b.depth;
+                 });
+    }
+
+    float TrunkField::cast_mover (const Vec3& origin,
+                                  const Vec3& centre1,
+                                  const Vec3& centre2,
+                                  float radius,
+                                  const Vec3& translation) const {
+      if (m_impl->resident.empty ())
+        return 1.0f;
+      b3Capsule mover;
+      mover.center1 = to_b3 (centre1);
+      mover.center2 = to_b3 (centre2);
+      mover.radius = radius;
+      return b3World_CastMover (m_impl->world,
+                                to_b3 (origin),
+                                &mover,
+                                to_b3 (translation),
+                                b3DefaultQueryFilter (),
+                                nullptr,
+                                nullptr);
+    }
+
+    GroundHit TrunkField::cast_down (const Vec3& centre,
+                                     float radius,
+                                     float distance) const {
+      struct Closest {
+        GroundHit hit;
+        float fraction = 2.0f;
+      } closest;
+      if (m_impl->resident.empty ())
+        return closest.hit;
+      const b3Vec3 point { 0.0f, 0.0f, 0.0f };
+      b3ShapeProxy proxy {};
+      proxy.points = &point;
+      proxy.count = 1;
+      proxy.radius = radius;
+      const auto keep = [] (b3ShapeId,
+                            b3Pos at,
+                            b3Vec3 normal,
+                            float fraction,
+                            uint64_t,
+                            int,
+                            int,
+                            void* context) -> float {
+        // A zero fraction is an initial overlap: no floor to stand on.
+        if (fraction <= 0.0f)
+          return -1.0f;
+        auto& best = *static_cast<Closest*> (context);
+        if (fraction < best.fraction) {
+          best.fraction = fraction;
+          best.hit = { true, from_b3 (at), from_b3 (normal) };
+        }
+        return fraction;
+      };
+      b3World_CastShape (m_impl->world,
+                         to_b3 (centre),
+                         &proxy,
+                         b3Vec3 { 0.0f, -distance, 0.0f },
+                         b3DefaultQueryFilter (),
+                         keep,
+                         &closest);
+      return closest.hit;
+    }
+
     std::size_t TrunkField::trunk_count () const noexcept {
       return m_impl->trunks.size ();
     }

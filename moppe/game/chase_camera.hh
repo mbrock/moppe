@@ -28,6 +28,13 @@ namespace moppe {
           : m_pitch_offset (pitch_offset), m_distance (distance),
             m_speed (0 * u::m / u::s), m_is_uninitialized (true) {}
 
+      // How far behind and how steeply above the subject the camera
+      // sits: a figure on foot wants a closer, lower view than a bike.
+      void frame (degrees_t pitch_offset, meters_t distance) {
+        m_pitch_offset = pitch_offset;
+        m_distance = distance;
+      }
+
       void update (position_t position,
                    const Vec3& orientation,
                    velocity_t velocity,

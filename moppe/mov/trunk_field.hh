@@ -24,6 +24,21 @@ namespace moppe {
       Vec3 normal; // averaged contact normal, away from the trunks
     };
 
+    // One collision plane between a capsule mover and an obstacle, in the
+    // mover's frame: moving by `delta` keeps clear while
+    // dot (normal, delta) >= depth, so a positive depth is penetration.
+    struct MoverPlane {
+      Vec3 normal;
+      float depth = 0.0f;
+    };
+
+    // The first obstacle met by a sphere swept straight down.
+    struct GroundHit {
+      bool hit = false;
+      Vec3 point;  // metres, the contact on the obstacle
+      Vec3 normal; // away from the obstacle
+    };
+
     // The trunks of a periodic forest as Box3D static capsules. The forest is
     // far too large to keep resident, so the world holds only the trunks in
     // cells near a focus, wrapped toward it, and streams cells as the focus
@@ -55,6 +70,27 @@ namespace moppe {
       // here rather than sharing this field's streamed residency.
       [[nodiscard]] std::vector<Trunk> gather (const Vec3& centre,
                                                float reach) const;
+      // Appends the planes between a capsule (hemisphere centres relative to
+      // `origin`) and the resident obstacles it touches, in a canonical
+      // order that does not depend on how cells were streamed in.
+      void collide_mover (const Vec3& origin,
+                          const Vec3& centre1,
+                          const Vec3& centre2,
+                          float radius,
+                          std::vector<MoverPlane>& planes) const;
+
+      // The fraction of `translation` the capsule can sweep before it meets
+      // an obstacle; one when the way is clear.
+      [[nodiscard]] float cast_mover (const Vec3& origin,
+                                      const Vec3& centre1,
+                                      const Vec3& centre2,
+                                      float radius,
+                                      const Vec3& translation) const;
+
+      // Sweeps a sphere from `centre` down by `distance`. Obstacles the
+      // sphere already overlaps are ignored; the mover planes resolve those.
+      [[nodiscard]] GroundHit
+      cast_down (const Vec3& centre, float radius, float distance) const;
 
       [[nodiscard]] std::size_t trunk_count () const noexcept;
       [[nodiscard]] std::size_t resident_cells () const noexcept;
