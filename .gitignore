@@ -22,3 +22,4 @@ screenshots/studio-shot-*.png
 .amp/portals/*
 *.gputrace/
 *.trace/
+.claude/worktrees/
