@@ -39,6 +39,8 @@ namespace moppe::game {
     float m_boost_input = 0.0f;
     Mode m_mode = M_BIKE;
     CamMode m_cam_mode = CAM_CHASE;
+    // Gaze above (positive) or below the walker's horizon, in radians.
+    float m_look_pitch = 0.0f;
     Vec3 m_fp_eye;
     int m_score = 0;
     float m_jump_airtime = 0.0f;

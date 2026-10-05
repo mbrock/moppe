@@ -121,6 +121,7 @@ static Key physical_key (NSEvent* event) {
   std::set<int> m_pointer_buttons;
   float m_pointer_x;
   float m_pointer_y;
+  bool m_shift;
 }
 
 - (BOOL)acceptsFirstResponder {
@@ -169,6 +170,16 @@ static Key physical_key (NSEvent* event) {
     return;
   m_held.insert ((int)k);
   self.game->key (k, true);
+}
+
+// Shift arrives as a modifier change rather than a key event; running is held
+// on it.
+- (void)flagsChanged:(NSEvent*)event {
+  const bool shift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+  if (shift == m_shift)
+    return;
+  m_shift = shift;
+  self.game->key (Key::Shift, shift);
 }
 
 - (void)keyUp:(NSEvent*)event {

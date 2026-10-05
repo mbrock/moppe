@@ -19,9 +19,20 @@ namespace moppe::game {
       m_analog.boost = std::clamp (state.boost, 0.0f, 1.0f);
     }
 
+    // Pointer movement in points becomes head turn in radians.
+    void look (float dx, float dy) {
+      m_look_yaw += 0.0035f * dx;
+      m_look_pitch -= 0.0035f * dy;
+    }
+
     void key (platform::Key key, bool down) {
       using platform::Key;
       const float value = down ? 1.0f : 0.0f;
+
+      if (key == Key::Shift) {
+        m_run = down;
+        return;
+      }
 
       // E has an activation edge plus held state so deployment can wait for
       // the bike to reach a safe height. It skips the mount-combo state
@@ -122,6 +133,11 @@ namespace moppe::game {
       frame.toggle_mount = m_toggle_mount;
       frame.cycle_camera = m_cycle_camera;
       frame.leave_cinematic = m_leave_cinematic;
+      frame.look_yaw = m_look_yaw;
+      frame.look_pitch = m_look_pitch;
+      frame.run = m_run;
+      m_look_yaw = 0.0f;
+      m_look_pitch = 0.0f;
       m_deploy_glider = false;
       m_toggle_mount = false;
       m_cycle_camera = false;
@@ -137,6 +153,9 @@ namespace moppe::game {
       m_toggle_mount = false;
       m_cycle_camera = false;
       m_leave_cinematic = false;
+      m_look_yaw = 0.0f;
+      m_look_pitch = 0.0f;
+      m_run = false;
       m_combo = 0;
     }
 
@@ -161,6 +180,9 @@ namespace moppe::game {
     bool m_toggle_mount = false;
     bool m_cycle_camera = false;
     bool m_leave_cinematic = false;
+    float m_look_yaw = 0.0f;
+    float m_look_pitch = 0.0f;
+    bool m_run = false;
     int m_combo = 0;
   };
 }

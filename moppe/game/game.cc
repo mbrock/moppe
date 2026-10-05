@@ -258,7 +258,12 @@ namespace moppe {
       }
 
       void pointer_move (float, float, float dx, float dy) override {
-        if (!m_spectator || m_spectator->pointer_free)
+        if (!m_spectator) {
+          if (m_ready && !m_pointer_free)
+            m_live_input.look (dx, dy);
+          return;
+        }
+        if (m_spectator->pointer_free)
           return;
         m_spectator->yaw += 0.004f * dx;
         m_spectator->pitch =
@@ -659,6 +664,10 @@ namespace moppe {
           1.2f;
         session ().bike ().reset (m_spawn_position);
         session ().bike ().set_heading (trail_direction_from_home ());
+        // It is a walking game first: the rider stands beside the parked
+        // bike. The demo autopilot and benchmarks still start riding.
+        if (!::getenv ("MOPPE_DEMO") && !m_benchmark && !m_gazetteer)
+          session ().start_on_foot ();
 
         const char* demo = ::getenv ("MOPPE_DEMO");
         if (!demo || std::string_view (demo) != "forest")
@@ -929,6 +938,9 @@ namespace moppe {
         scatter_boulders ();
         settle_obstacles ();
         place_spectator ();
+        // The mouse looks around during play; M hands it back.
+        if (!m_gazetteer && !m_benchmark)
+          platform::set_pointer_captured (true);
         if (m_gazetteer)
           plan_gazetteer_capture ();
         else
@@ -1898,6 +1910,12 @@ namespace moppe {
           return;
         }
 
+        if (k == Key::M && down) {
+          m_pointer_free = !m_pointer_free;
+          platform::set_pointer_captured (!m_pointer_free);
+          return;
+        }
+
         if (k == Key::N && down && m_ready) {
           regenerate_world ();
           return;
@@ -2231,6 +2249,8 @@ namespace moppe {
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
       std::optional<mov::Trunk> m_orbit_tree;
+      // Whether M has handed the mouse back to the desktop during play.
+      bool m_pointer_free = false;
       // A free camera with no rider, for looking at the world as it is.
       struct Spectator {
         Vec3 eye {};

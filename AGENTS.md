@@ -16,8 +16,11 @@
     deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
     and `Y` boosts, flares, or skips the cinematic. The D-pad navigates Terrain
     Lab. Xbox, PlayStation, and compatible MFi controllers use this layout.
-  - On foot: `F` steps off the bike to walk (`W`/`A`/`S`/`D` walk and turn,
-    `Space` jumps); `F` near the bike mounts it again.
+  - The game starts on foot beside the parked bike, in first person: the
+    mouse looks around (captured; `M` frees it), `W`/`S` walk, `A`/`D`
+    strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the third-person
+    views, and `F` near the bike mounts it (and steps off again).
+    `MOPPE_DEMO`, benchmarks, and the gazetteer still start riding.
   - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
     trail map); `MOPPE_HUD=debug` starts with it on.

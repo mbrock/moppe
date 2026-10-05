@@ -49,7 +49,8 @@ namespace moppe {
       PhysicalW,
       PhysicalA,
       PhysicalS,
-      PhysicalD
+      PhysicalD,
+      Shift
     };
 
     struct Config {

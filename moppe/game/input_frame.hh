@@ -16,6 +16,11 @@ namespace moppe::game {
     bool toggle_mount = false;
     bool cycle_camera = false;
     bool leave_cinematic = false;
+    // Head movement since the last tick, in radians: on foot the mouse turns
+    // the walker and tilts the gaze.
+    float look_yaw = 0.0f;
+    float look_pitch = 0.0f;
+    bool run = false;
   };
 
   inline float input_value (control_signal_t value) {

@@ -21,12 +21,15 @@ namespace moppe {
         control_signal_t walk {};
         meters_t animation_distance {};
         bool grounded {};
+        control_signal_t strafe {};
+        bool run {};
       };
 
       Walker ();
 
       State state () const {
-        return { m_pos, m_heading, m_vy, m_turn, m_walk, m_anim, m_grounded };
+        return { m_pos,  m_heading,  m_vy,     m_turn, m_walk,
+                 m_anim, m_grounded, m_strafe, m_run };
       }
 
       void restore (const State& state) {
@@ -37,6 +40,8 @@ namespace moppe {
         m_walk = state.walk;
         m_anim = state.animation_distance;
         m_grounded = state.grounded;
+        m_strafe = state.strafe;
+        m_run = state.run;
       }
 
       void spawn (position_t pos, const Vec3& heading);
@@ -47,6 +52,14 @@ namespace moppe {
       void set_walk (control_signal_t w) {
         m_walk = w;
       }
+      void set_strafe (control_signal_t s) {
+        m_strafe = s;
+      }
+      void set_run (bool run) {
+        m_run = run;
+      }
+      // Mouse look turns the walker directly; positive is to the right.
+      void turn_by (float radians);
       void jump ();
 
       void update (seconds_t dt,
@@ -68,7 +81,8 @@ namespace moppe {
       position_t m_pos;
       Vec3 m_heading;
       velocity_component_t m_vy;
-      control_signal_t m_turn, m_walk;
+      control_signal_t m_turn, m_walk, m_strafe;
+      bool m_run;
       meters_t m_anim;
       bool m_grounded;
     };

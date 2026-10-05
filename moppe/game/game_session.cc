@@ -19,8 +19,9 @@ namespace moppe::game {
     void set_turn (GameSession& session, float value) {
       GameLogicState& logic = session.logic ();
       logic.m_turn_input = value;
+      // On foot the mouse turns; the steering keys step sideways.
       if (logic.m_mode == M_FOOT)
-        session.walker ().set_turn (value);
+        session.walker ().set_strafe (value);
       else if (logic.m_mode == M_GLIDER)
         session.glider ().set_turn (value);
       else
@@ -145,6 +146,13 @@ namespace moppe::game {
       set_turn (session, input_value (input.turn));
       set_go (session, input_value (input.drive));
       set_boost (session, input_value (input.boost));
+      if (session.logic ().m_mode == M_FOOT) {
+        session.walker ().turn_by (input.look_yaw);
+        session.walker ().set_run (input.run);
+        GameLogicState& logic = session.logic ();
+        logic.m_look_pitch =
+          std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
+      }
 
       if (input.deploy_glider)
         use_glider_control (session, terrain);
@@ -212,6 +220,14 @@ namespace moppe::game {
 
   bool GameSession::can_drop_bike () const {
     return m_logic.m_mode == M_GLIDER && m_glider.bike_attached ();
+  }
+
+  void GameSession::start_on_foot () {
+    if (m_logic.m_mode == M_BIKE)
+      toggle_mount (*this);
+    m_logic.m_cam_mode = CAM_HELMET;
+    m_logic.m_look_pitch = 0.0f;
+    m_logic.m_fp_eye = m_walker.position () + Vec3 (0, 1.62f, 0);
   }
 
   void GameSession::clear_controls () {
@@ -602,8 +618,9 @@ namespace moppe::game {
       // not rattle the eyeballs.
       Vec3 eye, look;
       if (logic.m_mode == M_FOOT) {
-        eye = session.walker ().position () + Vec3 (0, 1.55f, 0);
-        look = session.walker ().heading ();
+        eye = session.walker ().position () + Vec3 (0, 1.62f, 0);
+        look = session.walker ().heading () * std::cos (logic.m_look_pitch) +
+               Vec3 (0, std::sin (logic.m_look_pitch), 0);
       } else if (logic.m_mode == M_GLIDER) {
         eye = session.glider ().position () - Vec3 (0, 0.75f, 0);
         look = session.glider ().heading ();

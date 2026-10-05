@@ -83,6 +83,8 @@ namespace moppe::game {
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
     void clear_controls ();
+    // Begin standing beside the parked bike, seeing through your own eyes.
+    void start_on_foot ();
 
     State state () const;
     void restore (const State& state);
