@@ -344,8 +344,118 @@ struct MOPPE_SHADER_ALIGN MoppeForestCandidate {
   uint tree;
   float pixels;
   float crown_pixels;
-  uint reserved;
+  uint copy; // a shadow caster's periodic image, 0..8 with 4 the centre
 };
+
+// The trunk forest's detail is a projected-size tier, and an individual's
+// topology -- facet and mass counts, and which vertices each triangle joins
+// -- is a function of its species and tier alone. The shaders place the
+// vertices; the vertex-pulled path draws each (species, tier) class from an
+// index buffer the CPU fills from these same functions, so the two paths
+// cannot disagree about a tree's faces.
+#define MOPPE_FOREST_TRUNK_TIERS 6u
+
+static inline unsigned int moppe_forest_trunk_tier (float pixels) {
+  return (pixels > 20.0f ? 1u : 0u) + (pixels > 30.0f ? 1u : 0u) +
+         (pixels > 40.0f ? 1u : 0u) + (pixels > 60.0f ? 1u : 0u) +
+         (pixels > 90.0f ? 1u : 0u);
+}
+
+struct MoppeTrunkTopology {
+  unsigned int sides;       // trunk facets
+  unsigned int crown_sides; // crown facets
+  unsigned int masses;      // cones, or a birch's leaf clumps
+  bool conifer;
+  bool branches; // whether each clump hangs from a visible branch
+};
+
+static inline struct MoppeTrunkTopology
+moppe_trunk_topology (bool conifer, unsigned int tier) {
+  struct MoppeTrunkTopology t;
+  t.conifer = conifer;
+  t.sides = tier >= 5u ? 10u : tier >= 2u ? 7u : 5u;
+  t.crown_sides = t.sides == 10u ? 9u : t.sides;
+  t.masses = conifer ? (tier >= 4u   ? 5u
+                        : tier >= 1u ? 4u
+                                     : 3u)
+                     : (tier >= 4u   ? 10u
+                        : tier >= 1u ? 7u
+                                     : 4u);
+  t.branches = !conifer && tier >= 3u;
+  return t;
+}
+
+static inline unsigned int
+moppe_trunk_mass_vertex_count (struct MoppeTrunkTopology t) {
+  // A cone is a ring, an apex, and a centre closing it from below. A leaf
+  // clump is an irregular hexagonal bipyramid, its branch a three-sided
+  // prism.
+  return t.conifer ? t.crown_sides + 2u : 8u + (t.branches ? 6u : 0u);
+}
+static inline unsigned int
+moppe_trunk_mass_primitive_count (struct MoppeTrunkTopology t) {
+  return t.conifer ? 2u * t.crown_sides : 12u + (t.branches ? 6u : 0u);
+}
+static inline unsigned int
+moppe_trunk_vertex_count (struct MoppeTrunkTopology t) {
+  return t.sides * 4u + t.masses * moppe_trunk_mass_vertex_count (t);
+}
+static inline unsigned int
+moppe_trunk_primitive_count (struct MoppeTrunkTopology t) {
+  return t.sides * 6u + t.masses * moppe_trunk_mass_primitive_count (t);
+}
+
+struct MoppeTrunkTriangle {
+  unsigned int a, b, c;
+};
+
+static inline struct MoppeTrunkTriangle
+moppe_trunk_triangle (struct MoppeTrunkTopology t, unsigned int primitive) {
+  struct MoppeTrunkTriangle tri;
+  const unsigned int trunk_primitives = t.sides * 6u;
+  if (primitive < trunk_primitives) {
+    // Three bands of quads between the trunk's four rings.
+    const unsigned int band = primitive / (2u * t.sides);
+    const unsigned int quad = (primitive / 2u) % t.sides;
+    const unsigned int next = (quad + 1u) % t.sides;
+    const unsigned int a = band * t.sides + quad, b = band * t.sides + next;
+    const unsigned int c = a + t.sides, d = b + t.sides;
+    tri.a = (primitive & 1u) ? b : a;
+    tri.b = (primitive & 1u) ? d : b;
+    tri.c = c;
+    return tri;
+  }
+  const unsigned int local = primitive - trunk_primitives;
+  const unsigned int per_mass = moppe_trunk_mass_primitive_count (t);
+  const unsigned int mass = local / per_mass;
+  const unsigned int p = local % per_mass;
+  const unsigned int first =
+    t.sides * 4u + mass * moppe_trunk_mass_vertex_count (t);
+  const unsigned int n = t.crown_sides;
+  if (t.conifer) {
+    const unsigned int side = p % n;
+    tri.a = first + side;
+    tri.b = first + (side + 1u) % n;
+    tri.c = first + (p < n ? n : n + 1u); // apex, then the closing centre
+    return tri;
+  }
+  if (p < 12u) {
+    // Bipyramid: six faces about the top tip, six about the bottom.
+    const unsigned int k = p % 6u;
+    const unsigned int e0 = first + 2u + k, e1 = first + 2u + (k + 1u) % 6u;
+    tri.a = p < 6u ? first : first + 1u;
+    tri.b = p < 6u ? e0 : e1;
+    tri.c = p < 6u ? e1 : e0;
+    return tri;
+  }
+  const unsigned int q = p - 12u;
+  const unsigned int k = q / 2u;
+  const unsigned int a = first + 8u + k, b = first + 8u + (k + 1u) % 3u;
+  tri.a = (q & 1u) ? b : a;
+  tri.b = (q & 1u) ? b + 3u : b;
+  tri.c = a + 3u;
+  return tri;
+}
 
 // Loose rocks: one meshlet shapes one boulder from its record. Near rocks
 // subdivide every icosahedron face into four; distant ones and shadows use

@@ -43,8 +43,10 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -195,6 +197,27 @@ namespace moppe {
         double gpu_max_ms = 0;
         std::array<double, GPU_PASS_COUNT> pass_total_ms {};
         int frames = 0;
+      };
+
+      // How the trunk forest reaches the rasterizer: one meshlet per
+      // individual, or instanced vertex pulling from per-class index
+      // buffers. MOPPE_FOREST_TRUNK_PATH=mesh|vertex selects one.
+      //
+      // MOPPE_FOREST_TRUNK_AB=<frames> is the measuring instrument: it
+      // alternates the four combinations of scene path and shadow path in
+      // blocks of that many frames, reversing their order every other cycle,
+      // and at every temporal reset (a gazetteer shot change) and on exit
+      // reports what switching each pass to vertex pulling changes the GPU
+      // frame time by. Removing the trunks is no baseline: they occlude
+      // terrain, grass, and canopy, so a frame without them can cost more.
+      enum class TrunkPath { Mesh, Vertex };
+
+      struct TrunkPathTiming {
+        std::mutex mutex;
+        // Frame GPU times of one epoch by alternation cycle and combination,
+        // bit 0 the scene path and bit 1 the shadow path.
+        std::map<std::uint64_t, std::array<std::vector<double>, 4>> cycles;
+        int epoch = 0;
       };
 
       struct BenchmarkSample {
@@ -460,6 +483,15 @@ namespace moppe {
         id<MTLRenderPipelineState> forest_shadow = nil;
         id<MTLRenderPipelineState> forest_trunks = nil;
         id<MTLRenderPipelineState> forest_trunks_shadow = nil;
+        id<MTLRenderPipelineState> forest_trunks_vertex = nil;
+        id<MTLRenderPipelineState> forest_trunks_shadow_vertex = nil;
+        // Every (species, tier) class's triangles, concatenated; a class is
+        // conifer * MOPPE_FOREST_TRUNK_TIERS + tier.
+        id<MTLBuffer> forest_trunk_indices = nil;
+        std::array<std::uint32_t, 2 * MOPPE_FOREST_TRUNK_TIERS>
+          forest_trunk_index_first {};
+        std::array<std::uint32_t, 2 * MOPPE_FOREST_TRUNK_TIERS>
+          forest_trunk_index_count {};
         id<MTLRenderPipelineState> leaf_fall = nil;
         id<MTLRenderPipelineState> boulders = nil;
         id<MTLRenderPipelineState> boulders_shadow = nil;
@@ -567,12 +599,35 @@ namespace moppe {
         std::vector<ForestTile> tiles;
         std::vector<std::uint32_t> tile_members;
         std::array<std::vector<MoppeForestCandidate>, 8> scene_candidate_bins;
+        std::array<std::vector<MoppeForestCandidate>,
+                   2 * MOPPE_FOREST_TRUNK_TIERS>
+          trunk_classes;
+        std::array<std::vector<MoppeForestCandidate>, 2> shadow_casters;
         std::uint32_t count = 0;
         std::uint32_t canopy_size = 0;
         float period_x = 0.0f;
         float period_z = 0.0f;
         ForestStyle style = ForestStyle::Procedural;
       };
+
+      // One instanced draw of a trunk class: the class's triangles once per
+      // candidate bound at MOPPE_BUF_DRAW.
+      void draw_trunk_class (id<MTL4RenderCommandEncoder> enc,
+                             const MetalPipelines& pipelines,
+                             std::size_t trunk_class,
+                             std::size_t instances) {
+        const std::uint32_t first =
+          pipelines.forest_trunk_index_first[trunk_class];
+        const std::uint32_t count =
+          pipelines.forest_trunk_index_count[trunk_class];
+        [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                        indexCount:count
+                         indexType:MTLIndexTypeUInt16
+                       indexBuffer:pipelines.forest_trunk_indices.gpuAddress +
+                                   first * sizeof (std::uint16_t)
+                 indexBufferLength:count * sizeof (std::uint16_t)
+                     instanceCount:instances];
+      }
 
       void build_forest_tiles (MetalForestResources& forest) {
         const std::vector<MoppeForestInstance>& trees = forest.cpu_instances;
@@ -649,6 +704,122 @@ namespace moppe {
                                     min_closure,
                                     first,
                                     count });
+        }
+      }
+
+      // The periodic shifts that may carry a tile's members toward a point,
+      // per horizontal axis. A tile far from the half-period line wraps as
+      // one; one that straddles it may hold members at either neighbouring
+      // copy.
+      std::array<std::array<float, 2>, 2>
+      forest_tile_shifts (const MetalForestResources& forest,
+                          const ForestTile& tile,
+                          const Vec3& toward) {
+        std::array<std::array<float, 2>, 2> shifts {};
+        for (const auto [slot, axis, period] :
+             { std::tuple { 0, 0, forest.period_x },
+               std::tuple { 1, 2, forest.period_z } }) {
+          if (period <= 0.0f)
+            continue;
+          const float offset = toward[axis] - tile.centre[axis];
+          const float shift = std::round (offset / period) * period;
+          const float residue = offset - shift;
+          shifts[slot][0] = shift;
+          shifts[slot][1] = std::abs (residue) + tile.radius > 0.5f * period
+                              ? shift + std::copysign (period, residue)
+                              : shift;
+        }
+        return shifts;
+      }
+
+      // The vertex-pulled trunk shadow's casters, conifers second: the CPU
+      // twin of forest_trunks_shadow_object's light-frustum test. A local
+      // map wraps each organism toward its focus; the world map draws all
+      // nine periodic images.
+      void collect_trunk_shadow_casters (
+        const MetalForestResources& forest,
+        const Mat4& vp,
+        const Vec3* focus,
+        std::array<std::vector<MoppeForestCandidate>, 2>& casters) {
+        for (auto& species : casters)
+          species.clear ();
+        const auto clip = [&] (const Vec3& p, int row) {
+          return vp.element (row) * p[0] + vp.element (4 + row) * p[1] +
+                 vp.element (8 + row) * p[2] + vp.element (12 + row);
+        };
+        const auto row_scale = [&] (int row) {
+          return std::sqrt (vp.element (row) * vp.element (row) +
+                            vp.element (4 + row) * vp.element (4 + row) +
+                            vp.element (8 + row) * vp.element (8 + row));
+        };
+        const float scale_x = row_scale (0);
+        const float scale_y = row_scale (1);
+        const float scale_w = row_scale (3);
+        const auto add =
+          [&] (std::uint32_t index, Vec3 root, std::uint32_t copy) {
+            const MoppeForestInstance& tree = forest.cpu_instances[index];
+            const float height = tree.root_height.w;
+            const Vec3 centre = root + Vec3 (0.0f, 0.55f * height, 0.0f);
+            const float radius = std::max (tree.up_radius.w, 0.55f * height);
+            const float w = clip (centre, 3);
+            if (w > -radius &&
+                std::abs (clip (centre, 0)) < w + radius * scale_x &&
+                std::abs (clip (centre, 1)) < w + radius * scale_y)
+              casters[tree.identity.y == 1u ? 1 : 0].push_back (
+                { index, 0.0f, 0.0f, copy });
+          };
+        const auto root_of = [&] (std::uint32_t index) {
+          const MoppeForestInstance& tree = forest.cpu_instances[index];
+          return Vec3 (
+            tree.root_height.x, tree.root_height.y, tree.root_height.z);
+        };
+        if (!focus) {
+          for (std::uint32_t index = 0; index < forest.cpu_instances.size ();
+               ++index)
+            for (std::uint32_t copy = 0; copy < 9; ++copy)
+              add (index,
+                   root_of (index) +
+                     Vec3 ((float (copy % 3) - 1.0f) * forest.period_x,
+                           0.0f,
+                           (float (copy / 3) - 1.0f) * forest.period_z),
+                   copy);
+          return;
+        }
+        for (const ForestTile& tile : forest.tiles) {
+          // A shadow sphere stands upright where the culling sphere follows
+          // lean and slope, so it may reach 0.4 tile radii beyond the tile's
+          // bound; half a radius more keeps the tile test conservative.
+          const float radius = 1.5f * tile.radius;
+          const auto shifts = forest_tile_shifts (forest, tile, *focus);
+          bool contributes = false;
+          for (const float shift_x : shifts[0])
+            for (const float shift_z : shifts[1]) {
+              const Vec3 centre = tile.centre + Vec3 (shift_x, 0.0f, shift_z);
+              const float w = clip (centre, 3);
+              contributes =
+                contributes || (w > -radius * std::max (scale_w, 1.0f) &&
+                                std::abs (clip (centre, 0)) <
+                                  w + radius * (scale_x + scale_w) &&
+                                std::abs (clip (centre, 1)) <
+                                  w + radius * (scale_y + scale_w));
+            }
+          if (!contributes)
+            continue;
+          for (std::uint32_t member = tile.first;
+               member < tile.first + tile.count;
+               ++member) {
+            const std::uint32_t index = forest.tile_members[member];
+            Vec3 root = root_of (index);
+            if (forest.period_x > 0.0f)
+              root[0] +=
+                std::round (((*focus)[0] - root[0]) / forest.period_x) *
+                forest.period_x;
+            if (forest.period_z > 0.0f)
+              root[2] +=
+                std::round (((*focus)[2] - root[2]) / forest.period_z) *
+                forest.period_z;
+            add (index, root, 4u);
+          }
         }
       }
 
@@ -1352,6 +1523,14 @@ namespace moppe {
       bool m_profile_gpu_passes = false;
       std::shared_ptr<FrameTiming> m_frame_timing;
       std::shared_ptr<BenchmarkOutput> m_benchmark;
+      TrunkPath m_trunk_path = TrunkPath::Mesh;
+      TrunkPath m_frame_trunk_path = TrunkPath::Mesh;
+      TrunkPath m_frame_trunk_shadow_path = TrunkPath::Mesh;
+      int m_frame_trunk_combination = 0;
+      int m_trunk_ab_block = 0;
+      std::uint64_t m_trunk_ab_frame = 0;
+      std::shared_ptr<TrunkPathTiming> m_trunk_timing;
+      void report_trunk_path_timing ();
       bool m_profile_cpu = false;
       double m_cpu_frame_start = 0;
       double m_cpu_encode_start = 0;
@@ -1434,6 +1613,18 @@ namespace moppe {
       m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
       if (m_profile_gpu)
         m_frame_timing = std::make_shared<FrameTiming> ();
+      if (const char* path = ::getenv ("MOPPE_FOREST_TRUNK_PATH")) {
+        const std::string_view name (path);
+        if (name == "vertex")
+          m_trunk_path = TrunkPath::Vertex;
+        else if (name != "mesh")
+          throw std::runtime_error (
+            "MOPPE_FOREST_TRUNK_PATH must be mesh or vertex");
+      }
+      if (const char* block = ::getenv ("MOPPE_FOREST_TRUNK_AB")) {
+        m_trunk_ab_block = std::max (1, ::atoi (block));
+        m_trunk_timing = std::make_shared<TrunkPathTiming> ();
+      }
       if (const char* path = ::getenv ("MOPPE_BENCHMARK_OUTPUT")) {
         m_benchmark = std::make_shared<BenchmarkOutput> ();
         m_benchmark->path = path;
@@ -1683,6 +1874,7 @@ namespace moppe {
       if (m_frame.sequence)
         [m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
                                                timeoutMS:5000];
+      report_trunk_path_timing ();
 #if !TARGET_OS_IPHONE
       retire_reflection_geometry ();
 #endif
@@ -1948,6 +2140,55 @@ namespace moppe {
                                                   MTLPixelFormatDepth16Unorm,
                                                   1,
                                                   false);
+      // The trunk forest also draws without mesh shaders: instanced vertex
+      // pulling over CPU-culled candidates, one draw per (species, tier)
+      // class, each class's triangles in one shared index buffer.
+      m_pipelines.forest_trunks_vertex =
+        make_pipeline (@"forest_trunks_vertex",
+                       @"forest_trunks_fragment",
+                       scene,
+                       depth,
+                       scene_samples,
+                       false,
+                       false,
+                       m_temporal_scene_pipelines);
+      m_pipelines.forest_trunks_shadow_vertex =
+        make_pipeline (@"forest_trunks_shadow_vertex",
+                       nil,
+                       MTLPixelFormatInvalid,
+                       MTLPixelFormatDepth16Unorm,
+                       1,
+                       false);
+      if (m_pipelines.forest_trunks_vertex &&
+          !m_pipelines.forest_trunk_indices) {
+        std::vector<std::uint16_t> indices;
+        for (std::uint32_t conifer = 0; conifer < 2; ++conifer)
+          for (std::uint32_t tier = 0; tier < MOPPE_FOREST_TRUNK_TIERS;
+               ++tier) {
+            const MoppeTrunkTopology shape =
+              moppe_trunk_topology (conifer != 0, tier);
+            const std::uint32_t primitives =
+              moppe_trunk_primitive_count (shape);
+            const std::uint32_t c = conifer * MOPPE_FOREST_TRUNK_TIERS + tier;
+            m_pipelines.forest_trunk_index_first[c] =
+              static_cast<std::uint32_t> (indices.size ());
+            m_pipelines.forest_trunk_index_count[c] = 3 * primitives;
+            for (std::uint32_t p = 0; p < primitives; ++p) {
+              const MoppeTrunkTriangle tri = moppe_trunk_triangle (shape, p);
+              indices.insert (indices.end (),
+                              { static_cast<std::uint16_t> (tri.a),
+                                static_cast<std::uint16_t> (tri.b),
+                                static_cast<std::uint16_t> (tri.c) });
+            }
+            // Keep every class's first index four-byte aligned.
+            if (indices.size () % 2)
+              indices.push_back (0);
+          }
+        m_pipelines.forest_trunk_indices =
+          create_private_buffer (indices.data (),
+                                 indices.size () * sizeof (std::uint16_t),
+                                 @"forest trunk indices");
+      }
       m_pipelines.sky = make_pipeline (@"sky_vertex",
                                        @"sky_fragment",
                                        scene,
@@ -3292,10 +3533,22 @@ namespace moppe {
       const float shadow_step = TERRAIN_LOD_STEP[shadow_lod];
       const int chunks = m_terrain_resources.params.width / CHUNK_CELLS;
       const NSUInteger draw_count = 9 * chunks * chunks;
+      // The vertex-pulled trunk shadow writes every visible periodic image
+      // of every organism as a caster record.
+      const bool trunk_shadow_vertex =
+        m_forest_resources.style == ForestStyle::Trunks &&
+        (m_trunk_path == TrunkPath::Vertex ||
+         !m_pipelines.forest_trunks_shadow);
+      const NSUInteger caster_bytes =
+        trunk_shadow_vertex
+          ? 9 * m_forest_resources.count * sizeof (MoppeForestCandidate) +
+              4 * 256 + sizeof (MoppeForestUniforms)
+          : 0;
       MetalFrameEncoding scratch;
       scratch.arena[0].buffer = [m_device
         newBufferWithLength:sizeof (u) +
-                            draw_count * (sizeof (MoppeChunkUniforms) + 256)
+                            draw_count * (sizeof (MoppeChunkUniforms) + 256) +
+                            caster_bytes
                     options:MTLResourceStorageModeShared];
       make_resident (scratch.arena[0].buffer);
       MTL4ArgumentTableDescriptor* argument_desc =
@@ -3366,8 +3619,46 @@ namespace moppe {
                            instanceCount:1];
             }
 
-      if (include_forest && m_pipelines.forest_shadow &&
-          m_forest_resources.instances && m_forest_resources.count > 0) {
+      if (include_forest && m_forest_resources.instances &&
+          m_forest_resources.count > 0 && trunk_shadow_vertex &&
+          m_pipelines.forest_trunks_shadow_vertex) {
+        MoppeForestUniforms forest;
+        std::memset (&forest, 0, sizeof (forest));
+        forest.view_proj = m4 (light_view_proj);
+        forest.world.x = m_forest_resources.period_x;
+        forest.world.y = m_forest_resources.period_z;
+        forest.world.z = static_cast<float> (m_forest_resources.count);
+        auto& casters = m_forest_resources.shadow_casters;
+        collect_trunk_shadow_casters (
+          m_forest_resources, light_view_proj, nullptr, casters);
+        bind_address (scratch,
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_FRAME,
+                      scratch.arena[0].write (forest));
+        bind_address (scratch,
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_FOREST,
+                      m_forest_resources.instances.gpuAddress);
+        [enc setRenderPipelineState:m_pipelines.forest_trunks_shadow_vertex];
+        [enc setDepthStencilState:m_pipelines.shadow_depth];
+        [enc setCullMode:MTLCullModeNone];
+        for (std::size_t conifer = 0; conifer < casters.size (); ++conifer) {
+          if (casters[conifer].empty ())
+            continue;
+          bind_address (
+            scratch,
+            MTLRenderStageVertex,
+            MOPPE_BUF_DRAW,
+            scratch.arena[0].write (
+              std::span<const MoppeForestCandidate> (casters[conifer])));
+          use_arguments (enc, scratch, MTLRenderStageVertex);
+          draw_trunk_class (enc,
+                            m_pipelines,
+                            conifer * MOPPE_FOREST_TRUNK_TIERS,
+                            casters[conifer].size ());
+        }
+      } else if (include_forest && m_pipelines.forest_shadow &&
+                 m_forest_resources.instances && m_forest_resources.count > 0) {
         MoppeForestUniforms forest;
         std::memset (&forest, 0, sizeof (forest));
         forest.view_proj = m4 (light_view_proj);
@@ -3543,8 +3834,50 @@ namespace moppe {
                        instanceCount:1];
         }
 
-      if (params.include_forest && m_pipelines.forest_shadow &&
-          m_forest_resources.instances && m_forest_resources.count > 0) {
+      const bool trunk_style = m_forest_resources.style == ForestStyle::Trunks;
+      if (params.include_forest && m_forest_resources.instances &&
+          m_forest_resources.count > 0 && trunk_style &&
+          m_frame_trunk_shadow_path == TrunkPath::Vertex &&
+          m_pipelines.forest_trunks_shadow_vertex) {
+        MoppeForestUniforms forest;
+        std::memset (&forest, 0, sizeof (forest));
+        forest.view_proj = m4 (params.light_view_proj);
+        forest.camera_pos = f4 (focus);
+        forest.world.x = m_forest_resources.period_x;
+        forest.world.y = m_forest_resources.period_z;
+        forest.world.z = static_cast<float> (m_forest_resources.count);
+        forest.world.w = 1.0f;
+        auto& casters = m_forest_resources.shadow_casters;
+        collect_trunk_shadow_casters (
+          m_forest_resources, params.light_view_proj, &focus, casters);
+        bind_address (m_frame,
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_FRAME,
+                      m_frame.arena[m_frame.slot].write (forest));
+        bind_address (m_frame,
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_FOREST,
+                      m_forest_resources.instances.gpuAddress);
+        [enc setRenderPipelineState:m_pipelines.forest_trunks_shadow_vertex];
+        [enc setDepthStencilState:m_pipelines.shadow_depth];
+        [enc setCullMode:MTLCullModeNone];
+        for (std::size_t conifer = 0; conifer < casters.size (); ++conifer) {
+          if (casters[conifer].empty ())
+            continue;
+          bind_address (
+            m_frame,
+            MTLRenderStageVertex,
+            MOPPE_BUF_DRAW,
+            m_frame.arena[m_frame.slot].write (
+              std::span<const MoppeForestCandidate> (casters[conifer])));
+          use_arguments (enc, m_frame, MTLRenderStageVertex);
+          draw_trunk_class (enc,
+                            m_pipelines,
+                            conifer * MOPPE_FOREST_TRUNK_TIERS,
+                            casters[conifer].size ());
+        }
+      } else if (params.include_forest && m_pipelines.forest_shadow &&
+                 m_forest_resources.instances && m_forest_resources.count > 0) {
         MoppeForestUniforms forest;
         std::memset (&forest, 0, sizeof (forest));
         forest.view_proj = m4 (params.light_view_proj);
@@ -4654,6 +4987,24 @@ namespace moppe {
       const double targets_done = cpu_time ();
       if (!m_targets.msaa_color)
         return false;
+      m_frame_trunk_combination = 0;
+      if (m_trunk_ab_block > 0) {
+        const std::uint64_t block = m_trunk_ab_frame++ / m_trunk_ab_block;
+        const int position = static_cast<int> (block % 4);
+        m_frame_trunk_combination = (block / 4) % 2 ? 3 - position : position;
+      }
+      const bool vertex_scene = m_trunk_ab_block > 0
+                                  ? (m_frame_trunk_combination & 1) != 0
+                                  : m_trunk_path == TrunkPath::Vertex;
+      const bool vertex_shadow = m_trunk_ab_block > 0
+                                   ? (m_frame_trunk_combination & 2) != 0
+                                   : m_trunk_path == TrunkPath::Vertex;
+      m_frame_trunk_path = vertex_scene || !m_pipelines.forest_trunks
+                             ? TrunkPath::Vertex
+                             : TrunkPath::Mesh;
+      m_frame_trunk_shadow_path =
+        vertex_shadow || !m_pipelines.forest_trunks_shadow ? TrunkPath::Vertex
+                                                           : TrunkPath::Mesh;
 
       const uint64_t next_sequence = m_frame.sequence + 1;
       {
@@ -5832,7 +6183,14 @@ namespace moppe {
     void MetalRenderer::draw_forest () {
       MetalForestResources& forest = m_forest_resources;
       const MetalTerrainResources& terrain = m_terrain_resources;
-      if (!m_pipelines.forest || !forest.instances || forest.count == 0)
+      if (!forest.instances || forest.count == 0)
+        return;
+      const bool trunks = forest.style == ForestStyle::Trunks;
+      const TrunkPath trunk_path =
+        trunks ? m_frame_trunk_path : TrunkPath::Mesh;
+      if (trunk_path == TrunkPath::Vertex ? !m_pipelines.forest_trunks_vertex
+          : trunks                        ? !m_pipelines.forest_trunks
+                                          : !m_pipelines.forest)
         return;
 
       MoppeForestUniforms u;
@@ -5910,21 +6268,8 @@ namespace moppe {
         // the half-period line wraps as one; one that straddles it may hold
         // members at either neighbouring copy, so it is kept if any copy
         // can contribute.
-        std::array<float, 2> shifts_x { 0.0f, 0.0f };
-        std::array<float, 2> shifts_z { 0.0f, 0.0f };
-        for (const auto [axis, period, shifts] :
-             { std::tuple { 0, forest.period_x, &shifts_x },
-               std::tuple { 2, forest.period_z, &shifts_z } }) {
-          if (period <= 0.0f)
-            continue;
-          const float offset = camera[axis] - tile.centre[axis];
-          const float shift = std::round (offset / period) * period;
-          const float residue = offset - shift;
-          (*shifts)[0] = shift;
-          (*shifts)[1] = std::abs (residue) + tile.radius > 0.5f * period
-                           ? shift + std::copysign (period, residue)
-                           : shift;
-        }
+        const auto [shifts_x, shifts_z] =
+          forest_tile_shifts (forest, tile, camera);
         bool contributes = false;
         for (const float shift_x : shifts_x)
           for (const float shift_z : shifts_z)
@@ -5997,58 +6342,104 @@ namespace moppe {
         }
       }
 
-      const bool trunks =
-        forest.style == ForestStyle::Trunks && m_pipelines.forest_trunks;
       id<MTL4RenderCommandEncoder> enc = scene_encoder ();
       begin_gpu_pass (enc, GpuPass::Scene);
-      [enc setRenderPipelineState:trunks ? m_pipelines.forest_trunks
-                                         : m_pipelines.forest];
-      [enc setDepthStencilState:m_pipelines.depth[1][1]];
-      [enc setCullMode:MTLCullModeNone];
       const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
-      for (MTLRenderStages stage :
-           { MTLRenderStageObject, MTLRenderStageMesh, MTLRenderStageFragment })
-        bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
-      for (MTLRenderStages stage : { MTLRenderStageObject, MTLRenderStageMesh })
-        bind_address (
-          m_frame, stage, MOPPE_BUF_FOREST, forest.instances.gpuAddress);
-      bind_texture (m_frame,
-                    MTLRenderStageFragment,
-                    MOPPE_TEX_SHADOW,
-                    terrain.shadow_map ? terrain.shadow_map
-                                       : m_pipelines.shadow_fallback);
-      // One object threadgroup per individual: a hero assembly owns the
-      // whole payload instead of sharing it with seven neighbours.
-      for (const std::vector<MoppeForestCandidate>& candidates :
-           candidate_bins) {
-        if (candidates.empty ())
-          continue;
-        const MTLGPUAddress candidate_address =
-          m_frame.arena[m_frame.slot].write (
-            std::span<const MoppeForestCandidate> (candidates));
+      if (trunk_path == TrunkPath::Vertex) {
+        [enc setRenderPipelineState:m_pipelines.forest_trunks_vertex];
+        [enc setDepthStencilState:m_pipelines.depth[1][1]];
+        [enc setCullMode:MTLCullModeNone];
+        for (MTLRenderStages stage :
+             { MTLRenderStageVertex, MTLRenderStageFragment })
+          bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
         bind_address (m_frame,
-                      trunks ? MTLRenderStageMesh : MTLRenderStageObject,
-                      MOPPE_BUF_DRAW,
-                      candidate_address);
-        use_arguments (enc,
-                       m_frame,
-                       MTLRenderStageObject | MTLRenderStageMesh |
-                         MTLRenderStageFragment);
-        if (trunks) {
-          // Without an object stage the grid counts mesh threadgroups.
-          [enc drawMeshThreadgroups:MTLSizeMake (candidates.size (), 1, 1)
-            threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
-              threadsPerMeshThreadgroup:MTLSizeMake (
-                                          MOPPE_FOREST_TRUNK_MESH_THREADS,
-                                          1,
-                                          1)];
-          continue;
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_FOREST,
+                      forest.instances.gpuAddress);
+        bind_texture (m_frame,
+                      MTLRenderStageFragment,
+                      MOPPE_TEX_SHADOW,
+                      terrain.shadow_map ? terrain.shadow_map
+                                         : m_pipelines.shadow_fallback);
+        // Within each depth bin, one instanced draw per (species, tier)
+        // class: every instance of a draw shares its class's triangles.
+        for (const std::vector<MoppeForestCandidate>& candidates :
+             candidate_bins) {
+          for (auto& members : forest.trunk_classes)
+            members.clear ();
+          for (const MoppeForestCandidate& candidate : candidates) {
+            const bool conifer =
+              forest.cpu_instances[candidate.tree].identity.y == 1u;
+            forest
+              .trunk_classes[(conifer ? MOPPE_FOREST_TRUNK_TIERS : 0u) +
+                             moppe_forest_trunk_tier (candidate.pixels)]
+              .push_back (candidate);
+          }
+          for (std::size_t c = 0; c < forest.trunk_classes.size (); ++c) {
+            const auto& members = forest.trunk_classes[c];
+            if (members.empty ())
+              continue;
+            bind_address (m_frame,
+                          MTLRenderStageVertex,
+                          MOPPE_BUF_DRAW,
+                          m_frame.arena[m_frame.slot].write (
+                            std::span<const MoppeForestCandidate> (members)));
+            use_arguments (
+              enc, m_frame, MTLRenderStageVertex | MTLRenderStageFragment);
+            draw_trunk_class (enc, m_pipelines, c, members.size ());
+          }
         }
-        [enc drawMeshThreadgroups:MTLSizeMake (candidates.size (), 1, 1)
-          threadsPerObjectThreadgroup:MTLSizeMake (
-                                        MOPPE_FOREST_OBJECT_THREADS, 1, 1)
-            threadsPerMeshThreadgroup:MTLSizeMake (
-                                        MOPPE_FOREST_MESH_THREADS, 1, 1)];
+      } else {
+        [enc setRenderPipelineState:trunks ? m_pipelines.forest_trunks
+                                           : m_pipelines.forest];
+        [enc setDepthStencilState:m_pipelines.depth[1][1]];
+        [enc setCullMode:MTLCullModeNone];
+        for (MTLRenderStages stage : { MTLRenderStageObject,
+                                       MTLRenderStageMesh,
+                                       MTLRenderStageFragment })
+          bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
+        for (MTLRenderStages stage :
+             { MTLRenderStageObject, MTLRenderStageMesh })
+          bind_address (
+            m_frame, stage, MOPPE_BUF_FOREST, forest.instances.gpuAddress);
+        bind_texture (m_frame,
+                      MTLRenderStageFragment,
+                      MOPPE_TEX_SHADOW,
+                      terrain.shadow_map ? terrain.shadow_map
+                                         : m_pipelines.shadow_fallback);
+        // One object threadgroup per individual: a hero assembly owns the
+        // whole payload instead of sharing it with seven neighbours.
+        for (const std::vector<MoppeForestCandidate>& candidates :
+             candidate_bins) {
+          if (candidates.empty ())
+            continue;
+          const MTLGPUAddress candidate_address =
+            m_frame.arena[m_frame.slot].write (
+              std::span<const MoppeForestCandidate> (candidates));
+          bind_address (m_frame,
+                        trunks ? MTLRenderStageMesh : MTLRenderStageObject,
+                        MOPPE_BUF_DRAW,
+                        candidate_address);
+          use_arguments (enc,
+                         m_frame,
+                         MTLRenderStageObject | MTLRenderStageMesh |
+                           MTLRenderStageFragment);
+          if (trunks) {
+            // Without an object stage the grid counts mesh threadgroups.
+            [enc drawMeshThreadgroups:MTLSizeMake (candidates.size (), 1, 1)
+              threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
+                threadsPerMeshThreadgroup:MTLSizeMake (
+                                            MOPPE_FOREST_TRUNK_MESH_THREADS,
+                                            1,
+                                            1)];
+            continue;
+          }
+          [enc drawMeshThreadgroups:MTLSizeMake (candidates.size (), 1, 1)
+            threadsPerObjectThreadgroup:MTLSizeMake (
+                                          MOPPE_FOREST_OBJECT_THREADS, 1, 1)
+              threadsPerMeshThreadgroup:MTLSizeMake (
+                                          MOPPE_FOREST_MESH_THREADS, 1, 1)];
+        }
       }
 
       if (!m_pipelines.forest_canopy || !forest.canopy_moments ||
@@ -7619,12 +8010,29 @@ namespace moppe {
         m_frame.params.benchmark_partition_mask;
       const uint32_t benchmark_epoch = m_frame.params.benchmark_epoch;
       const uint32_t benchmark_frame = m_frame.params.benchmark_frame;
+      std::shared_ptr<TrunkPathTiming> trunk_timing = m_trunk_timing;
+      const int trunk_combination = m_frame_trunk_combination;
+      const std::uint64_t trunk_cycle =
+        m_trunk_ab_block > 0 ? (m_trunk_ab_frame - 1) / (4 * m_trunk_ab_block)
+                             : 0;
+      int trunk_epoch = 0;
+      if (trunk_timing) {
+        std::lock_guard<std::mutex> lock (trunk_timing->mutex);
+        trunk_epoch = trunk_timing->epoch;
+      }
       MTL4CommitOptions* commit_options = [[MTL4CommitOptions alloc] init];
       [commit_options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
         if (feedback.error)
           std::cerr << "moppe: Metal 4 submission failed: "
                     << feedback.error.localizedDescription.UTF8String
                     << std::endl;
+        if (trunk_timing && !feedback.error &&
+            feedback.GPUEndTime >= feedback.GPUStartTime) {
+          std::lock_guard<std::mutex> lock (trunk_timing->mutex);
+          if (trunk_timing->epoch == trunk_epoch)
+            trunk_timing->cycles[trunk_cycle][trunk_combination].push_back (
+              1000.0 * (feedback.GPUEndTime - feedback.GPUStartTime));
+        }
         std::array<double, GPU_PASS_COUNT> pass_ms {};
         NSData* timestamp_results =
           timestamp_heap && timestamp_count > 1
@@ -7857,6 +8265,56 @@ namespace moppe {
              m_benchmark->completed.load () >= m_benchmark->expected;
     }
 
+    void MetalRenderer::report_trunk_path_timing () {
+      if (!m_trunk_timing)
+        return;
+      std::lock_guard<std::mutex> lock (m_trunk_timing->mutex);
+      // Each complete cycle yields the mean frame time of each combination's
+      // block. Differences within a cycle cancel drift slower than a cycle
+      // (GPU clocks, thermal state, other applications), and each pass's
+      // effect averages over the other pass's two paths. The first cycles
+      // after a reset still converge temporal history and exposure.
+      constexpr std::size_t settle_cycles = 3;
+      std::vector<double> base, scene, shadow, both;
+      std::size_t seen = 0;
+      for (const auto& [cycle, combinations] : m_trunk_timing->cycles) {
+        if (seen++ < settle_cycles)
+          continue;
+        if (std::any_of (combinations.begin (),
+                         combinations.end (),
+                         [] (const auto& ms) { return ms.empty (); }))
+          continue;
+        std::array<double, 4> m {};
+        for (int c = 0; c < 4; ++c)
+          m[c] = std::accumulate (
+                   combinations[c].begin (), combinations[c].end (), 0.0) /
+                 combinations[c].size ();
+        base.push_back (m[0]);
+        scene.push_back (0.5 * ((m[1] - m[0]) + (m[3] - m[2])));
+        shadow.push_back (0.5 * ((m[2] - m[0]) + (m[3] - m[1])));
+        both.push_back (m[3] - m[0]);
+      }
+      m_trunk_timing->cycles.clear ();
+      ++m_trunk_timing->epoch;
+      if (base.size () < 4)
+        return;
+      const auto print = [] (const char* name, std::vector<double> values) {
+        std::sort (values.begin (), values.end ());
+        const auto at = [&] (double q) {
+          return values[static_cast<std::size_t> (q * (values.size () - 1))];
+        };
+        std::cerr << ' ' << name << '=' << at (0.5) << " [" << at (0.25) << ", "
+                  << at (0.75) << ']';
+      };
+      std::cerr << "trunk path GPU ms over " << base.size ()
+                << " cycles (median [quartiles]):";
+      print ("all-mesh-frame", base);
+      print ("vertex-scene", scene);
+      print ("vertex-shadow", shadow);
+      print ("vertex-both", both);
+      std::cerr << std::endl;
+    }
+
     void MetalRenderer::reset_temporal_state () {
       // Epoch changes restore CPU state while previous frames may still be in
       // flight. A queue fence keeps their exposure blits from racing this
@@ -7866,6 +8324,7 @@ namespace moppe {
                                                   timeoutMS:5000])
         throw std::runtime_error (
           "Timed out waiting to reset Metal temporal state");
+      report_trunk_path_timing ();
       m_targets.prev_valid = false;
       m_targets.temporal_history_valid = false;
       m_targets.interpolation_history_valid = false;

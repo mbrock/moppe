@@ -1,9 +1,10 @@
 // Trunk forest: a deliberately simple tree. Each individual is one tapered
 // trunk and a few faceted crown masses -- stacked cones for a conifer, leaf
-// clumps on ascending branches for a birch -- generated in one meshlet from
-// its retained record. The
-// trunk is the element seen at riding height; in a closed stand the crown
-// starts high, so the forest is walked through as a hall of columns.
+// clumps on ascending branches for a birch -- generated from its retained
+// record, either in one meshlet or by instanced vertex pulling against its
+// (species, tier) class's index buffer. The trunk is the element seen at
+// riding height; in a closed stand the crown starts high, so the forest is
+// walked through as a hall of columns.
 
 #include "forest_medium.h"
 
@@ -117,38 +118,36 @@ trunk_tree (thread const MoppeForestInstance& tree, float3 root, float pixels) {
   t.trunk_radius = t.height * (t.conifer ? 0.0078 : 0.0085) *
                    (0.85 + 0.3 * trunk_hash (t.seed, 6u));
   t.seed_turn = 6.2831853 * trunk_hash (t.seed, 7u);
-  t.sides = pixels > 90.0 ? 10u : pixels > 30.0 ? 7u : 5u;
-  t.crown_sides = pixels > 90.0 ? 9u : pixels > 30.0 ? 7u : 5u;
-  t.masses = t.conifer ? (pixels > 60.0   ? 5u
-                          : pixels > 20.0 ? 4u
-                                          : 3u)
-                       : (pixels > 60.0   ? 10u
-                          : pixels > 20.0 ? 7u
-                                          : 4u);
-  t.branches = !t.conifer && pixels > 40.0;
+  const MoppeTrunkTopology shape =
+    moppe_trunk_topology (t.conifer, moppe_forest_trunk_tier (pixels));
+  t.sides = shape.sides;
+  t.crown_sides = shape.crown_sides;
+  t.masses = shape.masses;
+  t.branches = shape.branches;
   t.autumn = t.conifer ? 0.0 : tree.ecology.w;
   return t;
 }
 
+static inline MoppeTrunkTopology trunk_shape (thread const TrunkTree& t) {
+  MoppeTrunkTopology shape;
+  shape.sides = t.sides;
+  shape.crown_sides = t.crown_sides;
+  shape.masses = t.masses;
+  shape.conifer = t.conifer;
+  shape.branches = t.branches;
+  return shape;
+}
 static inline uint trunk_vertex_count (thread const TrunkTree& t) {
   return t.sides * 4u;
 }
-static inline uint trunk_primitive_count (thread const TrunkTree& t) {
-  return t.sides * 6u;
-}
-// A cone is a ring, an apex, and a centre closing it from below. A leaf
-// clump is an irregular hexagonal bipyramid, its branch a three-sided prism.
 static inline uint mass_vertex_count (thread const TrunkTree& t) {
-  return t.conifer ? t.crown_sides + 2u : 8u + (t.branches ? 6u : 0u);
-}
-static inline uint mass_primitive_count (thread const TrunkTree& t) {
-  return t.conifer ? 2u * t.crown_sides : 12u + (t.branches ? 6u : 0u);
+  return moppe_trunk_mass_vertex_count (trunk_shape (t));
 }
 static inline uint tree_vertex_count (thread const TrunkTree& t) {
-  return trunk_vertex_count (t) + t.masses * mass_vertex_count (t);
+  return moppe_trunk_vertex_count (trunk_shape (t));
 }
 static inline uint tree_primitive_count (thread const TrunkTree& t) {
-  return trunk_primitive_count (t) + t.masses * mass_primitive_count (t);
+  return moppe_trunk_primitive_count (trunk_shape (t));
 }
 
 static inline float3 tree_point (thread const TrunkTree& t,
@@ -321,37 +320,9 @@ static inline TreeVertex tree_vertex (thread const TrunkTree& t, uint index) {
 }
 
 static inline uint3 tree_triangle (thread const TrunkTree& t, uint primitive) {
-  const uint trunk_primitives = trunk_primitive_count (t);
-  if (primitive < trunk_primitives) {
-    const uint band = primitive / (2u * t.sides);
-    const uint quad = (primitive / 2u) % t.sides;
-    const uint next = (quad + 1u) % t.sides;
-    const uint a = band * t.sides + quad, b = band * t.sides + next;
-    const uint c = a + t.sides, d = b + t.sides;
-    return primitive & 1u ? uint3 (b, d, c) : uint3 (a, b, c);
-  }
-  const uint local = primitive - trunk_primitives;
-  const uint per_mass = mass_primitive_count (t);
-  const uint mass = local / per_mass;
-  const uint p = local % per_mass;
-  const uint first = trunk_vertex_count (t) + mass * mass_vertex_count (t);
-  const uint n = t.crown_sides;
-  if (t.conifer) {
-    const uint side = p % n;
-    const uint next = (side + 1u) % n;
-    const uint centre = p < n ? n : n + 1u; // apex, then the closing centre
-    return uint3 (first + side, first + next, first + centre);
-  }
-  if (p < 12u) {
-    // Bipyramid: six faces about the top tip, six about the bottom.
-    const uint k = p % 6u;
-    const uint e0 = first + 2u + k, e1 = first + 2u + (k + 1u) % 6u;
-    return p < 6u ? uint3 (first, e0, e1) : uint3 (first + 1u, e1, e0);
-  }
-  const uint q = p - 12u;
-  const uint k = q / 2u;
-  const uint a = first + 8u + k, b = first + 8u + (k + 1u) % 3u;
-  return q & 1u ? uint3 (b, b + 3u, a + 3u) : uint3 (a, b, a + 3u);
+  const MoppeTrunkTriangle tri =
+    moppe_trunk_triangle (trunk_shape (t), primitive);
+  return uint3 (tri.a, tri.b, tri.c);
 }
 
 // Wind sways the crown about its base; the trunk only bends near the top.
@@ -412,6 +383,36 @@ static inline float3 trunk_palette (thread const TrunkTree& t,
 
 // ---- the scene stage -----------------------------------------------
 
+// One vertex of an individual, shared by the meshlet and the vertex-pulled
+// paths: the index is the vertex's place in tree_vertex's numbering.
+static inline TrunkVaryings
+trunk_scene_vertex (thread const TrunkTree& t,
+                    thread const MoppeForestInstance& tree,
+                    float crown_pixels,
+                    uint index,
+                    constant MoppeForestUniforms& u) {
+  const TreeVertex v = tree_vertex (t, index);
+  const float individual = trunk_individual (tree, crown_pixels);
+  const float3 anchor = v.foliage ? t.root + t.up * t.height : t.root;
+  const float3 rest = mix (anchor, v.position, individual);
+  const float3 current = rest + trunk_sway (t, rest, v.foliage, u.params.x);
+  const float3 previous = rest + trunk_sway (t, rest, v.foliage, u.temporal.z);
+  TrunkVaryings o;
+  o.position = u.view_proj * float4 (current, 1.0);
+  o.world_pos = current;
+  o.normal = v.normal;
+  o.albedo = trunk_palette (t, tree, v.foliage, v.branch, v.mass);
+  o.bark = v.bark;
+  o.crown_height = v.crown_height;
+  o.foliage = v.foliage ? 1.0 : 0.0;
+  o.conifer = t.conifer ? 1.0 : 0.0;
+  o.motion =
+    moppe_motion_vector (u.unjittered_view_proj * float4 (current, 1.0),
+                         u.previous_view_proj * float4 (previous, 1.0),
+                         u.temporal.xy);
+  return o;
+}
+
 [[mesh]] void forest_trunks_mesh (
   TrunkMesh out,
   uint mesh_id [[threadgroup_position_in_grid]],
@@ -428,35 +429,32 @@ static inline float3 trunk_palette (thread const TrunkTree& t,
   if (thread_id == 0u)
     out.set_primitive_count (primitives);
 
-  if (thread_id < vertices) {
-    const TreeVertex v = tree_vertex (t, thread_id);
-    const float individual = trunk_individual (tree, candidate.crown_pixels);
-    const float3 anchor = v.foliage ? t.root + t.up * t.height : t.root;
-    const float3 rest = mix (anchor, v.position, individual);
-    const float3 current = rest + trunk_sway (t, rest, v.foliage, u.params.x);
-    const float3 previous =
-      rest + trunk_sway (t, rest, v.foliage, u.temporal.z);
-    TrunkVaryings o;
-    o.position = u.view_proj * float4 (current, 1.0);
-    o.world_pos = current;
-    o.normal = v.normal;
-    o.albedo = trunk_palette (t, tree, v.foliage, v.branch, v.mass);
-    o.bark = v.bark;
-    o.crown_height = v.crown_height;
-    o.foliage = v.foliage ? 1.0 : 0.0;
-    o.conifer = t.conifer ? 1.0 : 0.0;
-    o.motion =
-      moppe_motion_vector (u.unjittered_view_proj * float4 (current, 1.0),
-                           u.previous_view_proj * float4 (previous, 1.0),
-                           u.temporal.xy);
-    out.set_vertex (thread_id, o);
-  }
+  if (thread_id < vertices)
+    out.set_vertex (
+      thread_id,
+      trunk_scene_vertex (t, tree, candidate.crown_pixels, thread_id, u));
   if (thread_id < primitives) {
     const uint3 tri = tree_triangle (t, thread_id);
     out.set_index (thread_id * 3u + 0u, tri.x);
     out.set_index (thread_id * 3u + 1u, tri.y);
     out.set_index (thread_id * 3u + 2u, tri.z);
   }
+}
+
+// The vertex-pulled scene path: one instance per candidate, every candidate
+// of a draw in the same (species, tier) class, whose shared index buffer
+// numbers the same vertices the meshlet would emit.
+vertex TrunkVaryings forest_trunks_vertex (
+  uint index [[vertex_id]],
+  uint instance [[instance_id]],
+  constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+  device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]],
+  device const MoppeForestCandidate* candidates [[buffer (MOPPE_BUF_DRAW)]]) {
+  const MoppeForestCandidate candidate = candidates[instance];
+  const MoppeForestInstance tree = trees[candidate.tree];
+  const TrunkTree t =
+    trunk_tree (tree, trunk_root (tree, u, 4u, false), candidate.pixels);
+  return trunk_scene_vertex (t, tree, candidate.crown_pixels, index, u);
 }
 
 static inline float trunk_visibility (float3 world_pos,
@@ -560,6 +558,19 @@ fragment MoppeTemporalOutput forest_trunks_fragment (
 
 // ---- the shadow stages ---------------------------------------------
 
+// The coarsest facets: shadow texels are already larger than a facet. A
+// crown is porous, so its shadow is a smaller solid core: sun falls between
+// neighbouring cores and dapples the floor of a closed stand.
+static inline TrunkTree trunk_shadow_tree (MoppeForestInstance tree,
+                                           constant MoppeForestUniforms& u,
+                                           uint copy) {
+  const bool local = u.world.w > 0.5;
+  TrunkTree t = trunk_tree (tree, trunk_root (tree, u, copy, !local), 0.0);
+  t.crown_radius *= 0.62;
+  t.branches = false;
+  return t;
+}
+
 [[object]] void forest_trunks_shadow_object (
   object_data TrunkShadowPayload& payload [[payload]],
   metal::mesh_grid_properties mesh_grid,
@@ -608,15 +619,8 @@ fragment MoppeTemporalOutput forest_trunks_fragment (
   uint thread_id [[thread_index_in_threadgroup]],
   constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]]) {
-  const MoppeForestInstance tree = trees[payload.tree[mesh_id]];
-  const bool local = u.world.w > 0.5;
-  // The coarsest facets: shadow texels are already larger than a facet. A
-  // crown is porous, so its shadow is a smaller solid core: sun falls
-  // between neighbouring cores and dapples the floor of a closed stand.
-  TrunkTree t =
-    trunk_tree (tree, trunk_root (tree, u, payload.copy[mesh_id], !local), 0.0);
-  t.crown_radius *= 0.62;
-  t.branches = false;
+  const TrunkTree t =
+    trunk_shadow_tree (trees[payload.tree[mesh_id]], u, payload.copy[mesh_id]);
   const uint vertices = tree_vertex_count (t);
   const uint primitives = tree_primitive_count (t);
   if (thread_id == 0u)
@@ -633,4 +637,18 @@ fragment MoppeTemporalOutput forest_trunks_fragment (
     out.set_index (thread_id * 3u + 1u, tri.y);
     out.set_index (thread_id * 3u + 2u, tri.z);
   }
+}
+
+// The vertex-pulled shadow path: the CPU has already culled the casters
+// against the light, and one draw carries one species at the coarsest tier.
+vertex float4 forest_trunks_shadow_vertex (
+  uint index [[vertex_id]],
+  uint instance [[instance_id]],
+  constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+  device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]],
+  device const MoppeForestCandidate* candidates [[buffer (MOPPE_BUF_DRAW)]]) {
+  const MoppeForestCandidate candidate = candidates[instance];
+  const TrunkTree t =
+    trunk_shadow_tree (trees[candidate.tree], u, candidate.copy);
+  return u.view_proj * float4 (tree_vertex (t, index).position, 1.0);
 }
