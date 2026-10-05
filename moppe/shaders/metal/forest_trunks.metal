@@ -106,7 +106,7 @@ trunk_tree (thread const MoppeForestInstance& tree, float3 root, float pixels) {
                                     MOPPE_FOREST_STAND_CLOSED_CLOSURE,
                                     tree.ecology.z);
   const float base_share =
-    mix (t.conifer ? 0.10 : 0.22, t.conifer ? 0.52 : 0.58, closure) +
+    mix (t.conifer ? 0.04 : 0.22, t.conifer ? 0.20 : 0.58, closure) +
     0.08 * (trunk_hash (t.seed, 5u) - 0.5);
   t.crown_base = t.height * base_share;
   t.trunk_radius = t.height * (t.conifer ? 0.0078 : 0.0095) *

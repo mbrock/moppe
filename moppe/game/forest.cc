@@ -27,14 +27,14 @@ namespace moppe::game {
       const float moisture = site.moisture.numerical_value_in (mp_units::one);
       const bool conifer = site.form == ForestForm::conifer;
       // The trunk forest stands at the height of a mature stand -- most
-      // conifers 25 to 40 metres -- with narrower crowns, so the forest is
-      // a hall of columns rather than a thicket at riding height.
+      // conifers 20 to 35 metres -- with stout spruce cones and broad
+      // broadleaf crowns lifted on clear trunks.
       const bool trunks = style == render::ForestStyle::Trunks;
-      const float scale = trunks ? 1.8f : 1.0f;
+      const float scale = trunks ? 1.5f : 1.0f;
       const meters_t height = scale * size * (conifer ? 15.0f : 13.4f) *
                               (0.82f + 0.30f * cover + 0.26f * moisture) * u::m;
       const float crown_share =
-        trunks ? (conifer ? 0.13f : 0.24f) : (conifer ? 0.23f : 0.25f);
+        trunks ? (conifer ? 0.19f : 0.24f) : (conifer ? 0.23f : 0.25f);
       return {
         .root = site.position,
         .ground_normal = site.normal,
@@ -64,8 +64,14 @@ namespace moppe::game {
     MOPPE_PROFILE_ZONE ("ForestLandscape::upload_instances");
     std::vector<render::ForestInstance> instances;
     instances.reserve (plan.sites.size ());
-    for (const ForestSite& site : plan.sites)
+    for (const ForestSite& site : plan.sites) {
+      // Larger individuals need more room: the trunk forest keeps a stable
+      // share of the plan rather than every planted site.
+      if (style == render::ForestStyle::Trunks &&
+          (site.seed * 2654435761u >> 8) % 1000u >= 550u)
+        continue;
       instances.push_back (present (site, style));
+    }
     renderer.set_forest ({ .period = plan.period, .style = style }, instances);
     m_tree_count = instances.size ();
     m_resident_bytes = instances.size () * sizeof (render::ForestInstance);
