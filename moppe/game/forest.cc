@@ -2,10 +2,48 @@
 
 #include <moppe/profile.hh>
 
+#include <cmath>
 #include <vector>
 
 namespace moppe::game {
   namespace {
+    // moppe_forest_hash from shaders/metal/forest_medium.h: trunk colliders
+    // must draw the same per-individual lean and girth the shader does.
+    std::uint32_t forest_mix (std::uint32_t value) {
+      value ^= value >> 16;
+      value *= 0x7feb352du;
+      value ^= value >> 15;
+      value *= 0x846ca68bu;
+      value ^= value >> 16;
+      return value;
+    }
+
+    float forest_hash (std::uint32_t seed, std::uint32_t lane) {
+      return static_cast<float> (forest_mix (seed ^ lane * 0x9e3779b9u) &
+                                 0x00ffffffu) /
+             static_cast<float> (0x01000000u);
+    }
+
+    // The trunk of forest_trunks.metal's trunk_tree: nearly vertical with a
+    // small lean, girth proportional to height. The collider runs up into
+    // the crown, where a rider or walker can no longer reach anyway.
+    mov::Trunk trunk_of (const render::ForestInstance& tree) {
+      const Vec3 ground = tree.ground_normal.numerical_value_in (mp_units::one);
+      const float turn = 6.2831853f * forest_hash (tree.seed, 3u);
+      const float lean = 0.035f * forest_hash (tree.seed, 4u);
+      const bool conifer = tree.species == render::ForestSpecies::Conifer;
+      const float height = tree.height.numerical_value_in (u::m);
+      return {
+        .root = position_value (tree.root),
+        .axis = normalized (
+          Vec3 (0.0f, 1.0f, 0.0f) + Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
+          Vec3 (std::cos (turn), 0.0f, std::sin (turn)) * lean),
+        .height = height * (conifer ? 0.9f : 0.6f),
+        .radius = height * (conifer ? 0.0078f : 0.0095f) *
+                  (0.85f + 0.3f * forest_hash (tree.seed, 6u)),
+      };
+    }
+
     render::ForestAge presented_age (ForestAge age) {
       switch (age) {
       case ForestAge::sapling:
@@ -73,6 +111,12 @@ namespace moppe::game {
       instances.push_back (present (site, style));
     }
     renderer.set_forest ({ .period = plan.period, .style = style }, instances);
+    m_trunks.clear ();
+    if (style == render::ForestStyle::Trunks) {
+      m_trunks.reserve (instances.size ());
+      for (const render::ForestInstance& tree : instances)
+        m_trunks.push_back (trunk_of (tree));
+    }
     m_tree_count = instances.size ();
     m_resident_bytes = instances.size () * sizeof (render::ForestInstance);
   }

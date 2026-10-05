@@ -2,10 +2,12 @@
 #define MOPPE_GAME_FOREST_HH
 
 #include <moppe/game/forest_plan.hh>
+#include <moppe/mov/trunk_field.hh>
 #include <moppe/render/renderer.hh>
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace moppe::game {
   // Presentation owner for the global population. The game keeps typed sites;
@@ -30,9 +32,16 @@ namespace moppe::game {
       return m_resident_bytes;
     }
 
+    // Trunk colliders matching the presented trees. Only the trunk forest
+    // has solid trunks; the procedural style leaves this empty.
+    const std::vector<mov::Trunk>& trunks () const noexcept {
+      return m_trunks;
+    }
+
   private:
     std::size_t m_tree_count = 0;
     std::size_t m_resident_bytes = 0;
+    std::vector<mov::Trunk> m_trunks;
   };
 }
 

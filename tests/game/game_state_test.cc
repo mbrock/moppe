@@ -622,7 +622,8 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
                                         const std::vector<mov::Box>&,
                                         game::GameSession&,
                                         const game::InputFrame&,
-                                        seconds_t);
+                                        seconds_t,
+                                        const mov::TrunkField*);
   static_assert (
     std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
 

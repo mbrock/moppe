@@ -131,6 +131,27 @@ target_include_directories(nanoarrow SYSTEM PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanoarrow)
 set_target_properties(nanoarrow PROPERTIES UNITY_BUILD OFF)
 
+# Box3D is vendored from upstream (see third_party/box3d/VENDOR.md). Only the
+# library is built; its own CMake files and samples are not vendored.
+file(GLOB BOX3D_SOURCES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/box3d/src/*.c)
+add_library(box3d STATIC ${BOX3D_SOURCES})
+add_library(box3d::box3d ALIAS box3d)
+target_include_directories(box3d
+  SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/box3d/include
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/box3d/src)
+set_target_properties(box3d PROPERTIES
+  C_STANDARD 17
+  C_STANDARD_REQUIRED YES
+  C_EXTENSIONS YES
+  UNITY_BUILD OFF)
+# Upstream builds without floating-point contraction for cross-platform
+# determinism, and maps its SSE2 path onto wasm SIMD128 under Emscripten.
+target_compile_options(box3d PRIVATE -ffp-contract=off)
+if(EMSCRIPTEN)
+  target_compile_options(box3d PRIVATE -msimd128 -msse2)
+endif()
+
 if(MOPPE_ENABLE_TRACY)
   set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
   set(TRACY_ON_DEMAND ON CACHE BOOL "Record only with a connected viewer"
@@ -379,6 +400,7 @@ set(MOPPE_WORLD_SOURCES
 set(MOPPE_SIMULATION_SOURCES
   moppe/mov/glider.cc
   moppe/mov/vehicle.cc
+  moppe/mov/trunk_field.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
   moppe/game/stars.cc
@@ -446,7 +468,8 @@ function(moppe_configure_code_target target)
   target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(${target} PRIVATE
     mp-units::mp-units
-    nanoarrow::nanoarrow)
+    nanoarrow::nanoarrow
+    box3d::box3d)
   if(MOPPE_ENABLE_TRACY)
     target_link_libraries(${target} PRIVATE Tracy::TracyClient)
   endif()
@@ -548,6 +571,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/terrain_test.cc
     tests/game/graphics_benchmark_test.cc
     tests/game/graphics_settings_test.cc
+    tests/mov/trunk_field_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
     tests/game/landscape_gazetteer_test.cc

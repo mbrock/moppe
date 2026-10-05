@@ -249,6 +249,7 @@ namespace moppe {
     }
 
     void Vehicle::collide_with_walls () {
+      collide_with_trunks ();
       if (!m_obstacles)
         return;
 
@@ -282,6 +283,31 @@ namespace moppe {
           m_impact = std::max (m_impact, 0.4f * std::abs (v[2]) * u::m / u::s);
           v[2] *= -0.35f;
         }
+      }
+    }
+
+    // Trunks meet a slimmer body than buildings do: a capsule from just above
+    // the ground to the rider's shoulders, so a bike can thread between trees
+    // its full collision sphere would not fit through. A trunk does not give:
+    // the push resolves the overlap and the velocity into it rebounds weakly,
+    // registering as an impact like a wall.
+    void Vehicle::collide_with_trunks () {
+      if (!m_trunks)
+        return;
+      Vec3& p = position_value (m_position);
+      Vec3& v = velocity_value (m_velocity);
+      constexpr float trunk_radius = 0.45f;
+      const TrunkContact contact =
+        m_trunks->collide (p - Vec3 (0.0f, radius - trunk_radius - 0.1f, 0.0f),
+                           p + Vec3 (0.0f, 0.6f, 0.0f),
+                           trunk_radius);
+      if (!contact.hit)
+        return;
+      p += contact.push;
+      const float into = dot (v, contact.normal);
+      if (into < 0.0f) {
+        m_impact = std::max (m_impact, 0.4f * -into * u::m / u::s);
+        v -= contact.normal * (1.35f * into);
       }
     }
 

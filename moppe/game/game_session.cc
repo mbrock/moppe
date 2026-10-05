@@ -273,13 +273,16 @@ namespace moppe::game {
                         const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,
-                        seconds_t dt) {
+                        seconds_t dt,
+                        const mov::TrunkField* trunks) {
     const float elapsed = dt.numerical_value_in (u::s);
     GameLogicState& logic = session.logic ();
     session.bike ().set_water_level (world.water_level);
     session.car ().set_water_level (world.water_level);
     session.bike ().set_obstacles (&obstacles);
     session.car ().set_obstacles (&obstacles);
+    session.bike ().set_trunks (trunks);
+    session.car ().set_trunks (trunks);
 
     apply_input_frame (session, surface, input);
 
@@ -295,7 +298,7 @@ namespace moppe::game {
         finish_glide (session);
     }
     if (logic.m_mode == M_FOOT)
-      session.walker ().update (dt, surface, obstacles, world);
+      session.walker ().update (dt, surface, obstacles, world, trunks);
 
     const Vec3 vehicle_position = session.subject_position ();
     mov::Vehicle& vehicle = session.active_vehicle ();

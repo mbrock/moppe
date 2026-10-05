@@ -527,6 +527,15 @@ namespace moppe {
                           m_graphics.forest_trunks
                             ? render::ForestStyle::Trunks
                             : render::ForestStyle::Procedural);
+        {
+          const Vec3 period =
+            extent_value (generated_world ().forest ().period);
+          m_trunk_field.set_trunks (m_forest.trunks (), period[0], period[2]);
+          if (m_trunk_field.trunk_count ())
+            std::cerr << "moppe: trunk colliders: "
+                      << m_trunk_field.trunk_count ()
+                      << " (Box3D, streamed around the rider)" << std::endl;
+        }
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)
@@ -851,8 +860,15 @@ namespace moppe {
           };
         }
 
-        const GameSessionAdvanceResult advance = advance_game_session (
-          world (), surface (), m_obstacles, session (), input, seconds (dt));
+        m_trunk_field.focus (session ().subject_position ());
+        const GameSessionAdvanceResult advance =
+          advance_game_session (world (),
+                                surface (),
+                                m_obstacles,
+                                session (),
+                                input,
+                                seconds (dt),
+                                &m_trunk_field);
         if (advance.say_ouchies)
           platform::say ("Ouchies. That hurts.");
 
@@ -1867,6 +1883,7 @@ namespace moppe {
       ForestLandscape m_forest;
       BlobShadow m_blob;
       std::vector<mov::Box> m_obstacles;
+      mov::TrunkField m_trunk_field;
       Hud m_hud;
       std::unique_ptr<render::FontAtlas> m_loading_font;
       std::unique_ptr<render::FontAtlas> m_loading_title_font;

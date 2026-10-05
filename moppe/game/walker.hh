@@ -3,6 +3,7 @@
 
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/mov/trunk_field.hh>
 #include <moppe/mov/vehicle.hh>
 
 #include <vector>
@@ -54,7 +55,8 @@ namespace moppe {
       void update (seconds_t dt,
                    const map::SurfaceGeometry& surface,
                    const std::vector<mov::Box>& boxes,
-                   const WorldParams& world);
+                   const WorldParams& world,
+                   const mov::TrunkField* trunks = nullptr);
 
       Vec3 position () const {
         return position_value (m_pos);

@@ -29,7 +29,8 @@ namespace moppe {
     void Walker::update (seconds_t dt,
                          const map::SurfaceGeometry& surface,
                          const std::vector<mov::Box>& boxes,
-                         const WorldParams& world) {
+                         const WorldParams& world,
+                         const mov::TrunkField* trunks) {
       const float turn = scalar_value (m_turn);
       const float walk = scalar_value (m_walk);
       if (std::abs (turn) > 0.01f)
@@ -46,6 +47,14 @@ namespace moppe {
       m_anim += std::abs (walk) * speed * dt;
 
       collide (boxes);
+      if (trunks) {
+        // Knee to head: a walker steps around trunks and slides along them.
+        Vec3& feet = position_value (m_pos);
+        const mov::TrunkContact contact = trunks->collide (
+          feet + Vec3 (0.0f, 0.6f, 0.0f), feet + Vec3 (0.0f, 1.5f, 0.0f), 0.3f);
+        if (contact.hit)
+          feet += Vec3 (contact.push[0], 0.0f, contact.push[2]);
+      }
 
       // ground is the terrain, or a roof once we're up on one
       Vec3& position = position_value (m_pos);

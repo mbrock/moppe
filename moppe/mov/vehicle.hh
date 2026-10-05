@@ -5,6 +5,7 @@
 #include <moppe/color.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/mov/trunk_field.hh>
 
 #include <algorithm>
 #include <vector>
@@ -100,6 +101,10 @@ namespace moppe {
 
       void set_obstacles (const std::vector<Box>* boxes) {
         m_obstacles = boxes;
+      }
+
+      void set_trunks (const TrunkField* trunks) {
+        m_trunks = trunks;
       }
 
       // Move an inactive bike as a rigid payload beneath the glider.
@@ -234,6 +239,7 @@ namespace moppe {
       void fall_to_ground ();
       void check_ground_collision ();
       void collide_with_walls ();
+      void collide_with_trunks ();
       void bound ();
       bool expected_landing_pose (Vec3& forward,
                                   Vec3& up,
@@ -299,6 +305,7 @@ namespace moppe {
       meters_t m_fall_drop; // set on landing: peak minus touchdown
 
       const std::vector<Box>* m_obstacles;
+      const TrunkField* m_trunks = nullptr;
 
       int m_body_kind;
       DisplayColor m_body_color;

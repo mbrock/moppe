@@ -115,7 +115,8 @@ namespace moppe::game {
                         const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,
-                        seconds_t dt);
+                        seconds_t dt,
+                        const mov::TrunkField* trunks = nullptr);
 }
 
 #endif
