@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Look at the world with no rider: a free camera starting in the densest
+# conifer stand. WASD moves, Space/Tab rise and sink, drag with the mouse or
+# use the arrow keys to look around. Extra arguments pass through to moppe.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+MOPPE_SPECTATOR=1 exec "$build_dir/moppe.app/Contents/MacOS/moppe" "$@"

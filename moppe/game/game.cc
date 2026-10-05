@@ -67,6 +67,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -175,6 +176,88 @@ namespace moppe {
       // circles the camera at a steady pace around the tree nearest the
       // rider, so frame-to-frame discontinuities in the forest stand out
       // against otherwise smooth motion.
+      // The spectator starts in the densest conifer stand the forest holds:
+      // the plan's sites are counted on a 40-metre lattice and the camera
+      // stands at the centre of the fullest cell.
+      void place_spectator () {
+        if (!m_spectator)
+          return;
+        const ForestPlan& plan = generated_world ().forest ();
+        const Vec3 period = extent_value (plan.period);
+        constexpr float cell = 40.0f;
+        const int nx = std::max (1, static_cast<int> (period[0] / cell));
+        const int nz = std::max (1, static_cast<int> (period[2] / cell));
+        std::vector<int> conifers (static_cast<std::size_t> (nx) * nz, 0);
+        for (const ForestSite& site : plan.sites) {
+          if (site.form != ForestForm::conifer)
+            continue;
+          const Vec3 at = position_value (site.position);
+          const int x = std::clamp (static_cast<int> (at[0] / cell), 0, nx - 1);
+          const int z = std::clamp (static_cast<int> (at[2] / cell), 0, nz - 1);
+          ++conifers[static_cast<std::size_t> (z) * nx + x];
+        }
+        const auto densest =
+          std::max_element (conifers.begin (), conifers.end ()) -
+          conifers.begin ();
+        Vec3 eye ((static_cast<float> (densest % nx) + 0.5f) * cell,
+                  0.0f,
+                  (static_cast<float> (densest / nx) + 0.5f) * cell);
+        eye[1] = terrain::surface_elevation_value (
+                   spatial::sample<terrain::surface_elevation> (
+                     surface (), moppe::position (eye))) +
+                 1.7f;
+        m_spectator->eye = eye;
+        std::cerr << "moppe: spectator in the densest conifer stand at " << eye
+                  << " (" << conifers[densest] << " spruce in 40 m)\n";
+      }
+
+      // WASD walks the eye through the air, Space and Tab rise and sink, and
+      // dragging with the mouse or the arrow keys turns the head.
+      void spectator_camera (float dt) {
+        if (!m_spectator)
+          return;
+        Spectator& view = *m_spectator;
+        const auto held = [&view] (platform::Key k) {
+          return view.held.count (k) ? 1.0f : 0.0f;
+        };
+        using platform::Key;
+        view.yaw += 1.6f * dt * (held (Key::Right) - held (Key::Left));
+        view.pitch += 1.2f * dt * (held (Key::Up) - held (Key::Down));
+        view.pitch = std::clamp (view.pitch, -1.45f, 1.45f);
+        const Vec3 forward (std::cos (view.yaw), 0.0f, std::sin (view.yaw));
+        const Vec3 right (-forward[2], 0.0f, forward[0]);
+        const float speed = 6.0f;
+        view.eye += (forward * (held (Key::W) - held (Key::S)) +
+                     right * (held (Key::D) - held (Key::A)) +
+                     Vec3 (0, 1, 0) * (held (Key::Space) - held (Key::Tab))) *
+                    (speed * dt);
+        const float ground = terrain::surface_elevation_value (
+                               spatial::sample<terrain::surface_elevation> (
+                                 surface (), moppe::position (view.eye))) +
+                             0.4f;
+        view.eye[1] = std::max (static_cast<float> (view.eye[1]), ground);
+        const Vec3 look (std::cos (view.yaw) * std::cos (view.pitch),
+                         std::sin (view.pitch),
+                         std::sin (view.yaw) * std::cos (view.pitch));
+        session ().camera ().place (view.eye, view.eye + look * 10.0f);
+      }
+
+      void pointer_button (platform::PointerButton button,
+                           bool down,
+                           float,
+                           float) override {
+        if (m_spectator && button == platform::PointerButton::Primary)
+          m_spectator->dragging = down;
+      }
+
+      void pointer_move (float, float, float dx, float dy) override {
+        if (!m_spectator || !m_spectator->dragging)
+          return;
+        m_spectator->yaw += 0.004f * dx;
+        m_spectator->pitch =
+          std::clamp (m_spectator->pitch - 0.004f * dy, -1.45f, 1.45f);
+      }
+
       void orbit_camera () {
         // MOPPE_PAN="seconds": stand at the rider and sweep the view left
         // and right through a half turn, the way a rider looks around.
@@ -715,6 +798,8 @@ namespace moppe {
 
       void plan_opening_journey () {
         MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
+        if (m_spectator)
+          return;
         m_cinematic_plan = plan_cinematic_flight (surface (),
                                                   standing_water (),
                                                   lake_census (),
@@ -836,6 +921,7 @@ namespace moppe {
         grow_global_forest ();
         scatter_boulders ();
         settle_obstacles ();
+        place_spectator ();
         if (m_gazetteer)
           plan_gazetteer_capture ();
         else
@@ -1039,6 +1125,8 @@ namespace moppe {
         m_trunk_field.focus (session ().subject_position ());
         static const bool orbit =
           ::getenv ("MOPPE_ORBIT") != 0 || ::getenv ("MOPPE_PAN") != 0;
+        if (m_spectator)
+          input = {};
         if (demo && !m_water_inspection && !orbit) {
           input = {
             .turn = 0.35f * std::sin (total_time * 0.25f),
@@ -1079,6 +1167,7 @@ namespace moppe {
           session ().camera ().limit (surface ());
         }
         orbit_camera ();
+        spectator_camera (dt);
 
         if (m_benchmark)
           finish_benchmark_frame (m_benchmark_replay->finish_frame ());
@@ -1233,7 +1322,8 @@ namespace moppe {
 
         // Soft blob shadows under the movers.
         draw_home_base_marker (m_world_dl);
-        m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
+        if (!m_spectator)
+          m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
         if (actors.walker)
           m_blob.draw (m_world_dl,
                        surface (),
@@ -1244,7 +1334,7 @@ namespace moppe {
 
         // In helmet cam you ARE the rider: don't draw yourself.
         const bool helmet = actors.helmet_camera;
-        if (!(helmet && actors.active_mode == M_BIKE))
+        if (!(helmet && actors.active_mode == M_BIKE) && !m_spectator)
           render_vehicle (r, m_world_dl, actors.bike, 0x1000);
         if (actors.walker && !helmet)
           render_walker (m_world_dl, *actors.walker, frame.lighting.time);
@@ -1255,7 +1345,7 @@ namespace moppe {
 
         // Additive glow after the solid list, so it blends over everything
         // already drawn: exhaust and jump-jet flames, then star halos.
-        if (visibility.vehicle_effects &&
+        if (visibility.vehicle_effects && !m_spectator &&
             !(helmet && actors.active_mode == M_BIKE))
           render_vehicle_flames (r, actors.bike, frame.lighting.time, 0x1000);
         if (visibility.star_effects)
@@ -1773,6 +1863,16 @@ namespace moppe {
           return;
         }
 
+        if (m_spectator) {
+          if (down)
+            m_spectator->held.insert (k);
+          else
+            m_spectator->held.erase (k);
+          if (k == Key::Escape && down)
+            platform::request_quit ();
+          return;
+        }
+
         if (m_cinematic.active ()) {
           if (k == Key::Escape && down)
             platform::request_quit ();
@@ -2114,6 +2214,17 @@ namespace moppe {
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
       std::optional<mov::Trunk> m_orbit_tree;
+      // A free camera with no rider, for looking at the world as it is.
+      struct Spectator {
+        Vec3 eye {};
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        std::set<platform::Key> held;
+        bool dragging = false;
+      };
+      std::optional<Spectator> m_spectator =
+        ::getenv ("MOPPE_SPECTATOR") ? std::optional<Spectator> (Spectator {})
+                                     : std::nullopt;
       std::optional<GazetteerCaptureConfig> m_gazetteer;
       LandscapeGazetteer m_gazetteer_plan;
       std::size_t m_gazetteer_shot = 0;
