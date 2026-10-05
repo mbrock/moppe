@@ -19,9 +19,7 @@ namespace moppe::game {
                   const map::SurfaceGeometry& surface,
                   const map::SurfaceReadings& readings,
                   std::uint32_t seed);
-    void rebuild (render::Renderer& renderer,
-                  const ForestPlan& plan,
-                  render::ForestStyle style = render::ForestStyle::Procedural);
+    void rebuild (render::Renderer& renderer, const ForestPlan& plan);
     void draw (render::Renderer& renderer) const;
 
     std::size_t tree_count () const noexcept {
@@ -32,8 +30,7 @@ namespace moppe::game {
       return m_resident_bytes;
     }
 
-    // Trunk colliders matching the presented trees. Only the trunk forest
-    // has solid trunks; the procedural style leaves this empty.
+    // Trunk colliders matching the presented trees.
     const std::vector<mov::Trunk>& trunks () const noexcept {
       return m_trunks;
     }

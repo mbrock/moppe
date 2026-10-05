@@ -1,9 +1,11 @@
 # Forest LOD: continuous organisms into a continuous stand
 
-Status: implementation record of the conifer and stand LOD system in
-`moppe/shaders/metal/forest.metal` and
-`moppe/shaders/metal/forest_canopy.metal` as of September 2026, and of the
-principles and instruments that shaped it. The population argument and
+Status: historical. The bough forest of `forest.metal` described here was
+removed in October 2026; individuals are now the trunk forest
+(`forest_trunks.metal`), drawn by instanced vertex pulling. The stand canopy
+(`forest_canopy.metal`) remains. This was the implementation record of the
+conifer and stand LOD system as of September 2026, and of the principles and
+instruments that shaped it. The population argument and
 remaining work are in
 [forest density and aggregates](forest-density-and-aggregates.md).
 

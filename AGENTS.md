@@ -123,12 +123,9 @@
     heights with long clear trunks in closed stands. Autumn reaches the
     uplands first: birch there turns gold, drops a leaf carpet
     (`leaf_fall.metal` adds falling leaves), and the high heath turns.
-    `--graphics-disable forest-trunks` restores the procedural boughs.
-    It draws by mesh shader by default; `MOPPE_FOREST_TRUNK_PATH=vertex`
-    selects the instanced vertex-pulling path (also the fallback without
-    mesh shaders), and `MOPPE_FOREST_TRUNK_AB=4` with a long
-    `MOPPE_GAZETTEER_SETTLE` alternates the two per pass and prints their
-    GPU frame-time difference for each gazetteer shot.
+    Trees are drawn by instanced vertex pulling: the CPU culls them by
+    tile and sorts them by (species, detail tier), and each class shares
+    one index buffer built from the topology in `shader_types.h`.
   - Boulders (`moppe/game/boulders.cc`, `moppe/shaders/metal/boulders.metal`)
     are planned from the surface fields when a world activates -- talus,
     scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded

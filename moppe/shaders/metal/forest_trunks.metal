@@ -1,8 +1,8 @@
 // Trunk forest: a deliberately simple tree. Each individual is one tapered
 // trunk and a few faceted crown masses -- stacked cones for a conifer, leaf
 // clumps on ascending branches for a birch -- generated from its retained
-// record, either in one meshlet or by instanced vertex pulling against its
-// (species, tier) class's index buffer. The trunk is the element seen at
+// record by instanced vertex pulling against its (species, tier) class's
+// index buffer. The trunk is the element seen at
 // riding height; in a closed stand the crown starts high, so the forest is
 // walked through as a hall of columns.
 
@@ -18,28 +18,6 @@ struct TrunkVaryings {
   float foliage [[flat]];
   float conifer [[flat]];
   float2 motion [[center_no_perspective]];
-};
-
-using TrunkMesh = metal::mesh<TrunkVaryings,
-                              void,
-                              MOPPE_FOREST_TRUNK_MESH_VERTICES,
-                              MOPPE_FOREST_TRUNK_MESH_PRIMITIVES,
-                              metal::topology::triangle>;
-
-struct TrunkShadowVaryings {
-  float4 position [[position]];
-};
-
-using TrunkShadowMesh = metal::mesh<TrunkShadowVaryings,
-                                    void,
-                                    MOPPE_FOREST_TRUNK_MESH_VERTICES,
-                                    MOPPE_FOREST_TRUNK_MESH_PRIMITIVES,
-                                    metal::topology::triangle>;
-
-struct TrunkShadowPayload {
-  uint count;
-  uint tree[MOPPE_FOREST_OBJECT_THREADS];
-  uint copy[MOPPE_FOREST_OBJECT_THREADS];
 };
 
 // ---- the tree ------------------------------------------------------
@@ -142,12 +120,6 @@ static inline uint trunk_vertex_count (thread const TrunkTree& t) {
 }
 static inline uint mass_vertex_count (thread const TrunkTree& t) {
   return moppe_trunk_mass_vertex_count (trunk_shape (t));
-}
-static inline uint tree_vertex_count (thread const TrunkTree& t) {
-  return moppe_trunk_vertex_count (trunk_shape (t));
-}
-static inline uint tree_primitive_count (thread const TrunkTree& t) {
-  return moppe_trunk_primitive_count (trunk_shape (t));
 }
 
 static inline float3 tree_point (thread const TrunkTree& t,
@@ -319,12 +291,6 @@ static inline TreeVertex tree_vertex (thread const TrunkTree& t, uint index) {
   return v;
 }
 
-static inline uint3 tree_triangle (thread const TrunkTree& t, uint primitive) {
-  const MoppeTrunkTriangle tri =
-    moppe_trunk_triangle (trunk_shape (t), primitive);
-  return uint3 (tri.a, tri.b, tri.c);
-}
-
 // Wind sways the crown about its base; the trunk only bends near the top.
 static inline float3
 trunk_sway (thread const TrunkTree& t, float3 p, bool foliage, float time) {
@@ -383,8 +349,8 @@ static inline float3 trunk_palette (thread const TrunkTree& t,
 
 // ---- the scene stage -----------------------------------------------
 
-// One vertex of an individual, shared by the meshlet and the vertex-pulled
-// paths: the index is the vertex's place in tree_vertex's numbering.
+// One vertex of an individual: the index is the vertex's place in
+// tree_vertex's numbering.
 static inline TrunkVaryings
 trunk_scene_vertex (thread const TrunkTree& t,
                     thread const MoppeForestInstance& tree,
@@ -413,37 +379,9 @@ trunk_scene_vertex (thread const TrunkTree& t,
   return o;
 }
 
-[[mesh]] void forest_trunks_mesh (
-  TrunkMesh out,
-  uint mesh_id [[threadgroup_position_in_grid]],
-  uint thread_id [[thread_index_in_threadgroup]],
-  constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]],
-  device const MoppeForestCandidate* candidates [[buffer (MOPPE_BUF_DRAW)]]) {
-  const MoppeForestCandidate candidate = candidates[mesh_id];
-  const MoppeForestInstance tree = trees[candidate.tree];
-  const TrunkTree t =
-    trunk_tree (tree, trunk_root (tree, u, 4u, false), candidate.pixels);
-  const uint vertices = tree_vertex_count (t);
-  const uint primitives = tree_primitive_count (t);
-  if (thread_id == 0u)
-    out.set_primitive_count (primitives);
-
-  if (thread_id < vertices)
-    out.set_vertex (
-      thread_id,
-      trunk_scene_vertex (t, tree, candidate.crown_pixels, thread_id, u));
-  if (thread_id < primitives) {
-    const uint3 tri = tree_triangle (t, thread_id);
-    out.set_index (thread_id * 3u + 0u, tri.x);
-    out.set_index (thread_id * 3u + 1u, tri.y);
-    out.set_index (thread_id * 3u + 2u, tri.z);
-  }
-}
-
-// The vertex-pulled scene path: one instance per candidate, every candidate
-// of a draw in the same (species, tier) class, whose shared index buffer
-// numbers the same vertices the meshlet would emit.
+// One instance per candidate, every candidate of a draw in the same
+// (species, tier) class, whose shared index buffer joins tree_vertex's
+// numbering into triangles.
 vertex TrunkVaryings forest_trunks_vertex (
   uint index [[vertex_id]],
   uint instance [[instance_id]],
@@ -571,76 +509,8 @@ static inline TrunkTree trunk_shadow_tree (MoppeForestInstance tree,
   return t;
 }
 
-[[object]] void forest_trunks_shadow_object (
-  object_data TrunkShadowPayload& payload [[payload]],
-  metal::mesh_grid_properties mesh_grid,
-  uint thread_id [[thread_index_in_threadgroup]],
-  uint3 group [[threadgroup_position_in_grid]],
-  constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]]) {
-  threadgroup atomic_uint emitted;
-  if (thread_id == 0u)
-    atomic_store_explicit (&emitted, 0u, metal::memory_order_relaxed);
-  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
-
-  const uint tree_count = uint (u.world.z);
-  const bool local = u.world.w > 0.5;
-  const uint image_count = local ? 1u : 9u;
-  const uint candidate = group.x * MOPPE_FOREST_OBJECT_THREADS + thread_id;
-  if (candidate < tree_count * image_count) {
-    const uint index = candidate % tree_count;
-    const uint copy = local ? 4u : candidate / tree_count;
-    const MoppeForestInstance tree = trees[index];
-    const float3 root = trunk_root (tree, u, copy, !local);
-    const float3 centre = root + float3 (0.0, 0.55 * tree.root_height.w, 0.0);
-    const float4 clip = u.view_proj * float4 (centre, 1.0);
-    const float radius = max (tree.up_radius.w, 0.55 * tree.root_height.w);
-    const float2 clip_radius = radius * moppe_projection_scale (u.view_proj);
-    if (clip.w > -radius && abs (clip.x) < clip.w + clip_radius.x &&
-        abs (clip.y) < clip.w + clip_radius.y) {
-      const uint slot =
-        atomic_fetch_add_explicit (&emitted, 1u, metal::memory_order_relaxed);
-      payload.tree[slot] = index;
-      payload.copy[slot] = copy;
-    }
-  }
-  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
-  if (thread_id == 0u) {
-    payload.count =
-      atomic_load_explicit (&emitted, metal::memory_order_relaxed);
-    mesh_grid.set_threadgroups_per_grid (uint3 (payload.count, 1, 1));
-  }
-}
-
-[[mesh]] void forest_trunks_shadow_mesh (
-  TrunkShadowMesh out,
-  object_data const TrunkShadowPayload& payload [[payload]],
-  uint mesh_id [[threadgroup_position_in_grid]],
-  uint thread_id [[thread_index_in_threadgroup]],
-  constant MoppeForestUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  device const MoppeForestInstance* trees [[buffer (MOPPE_BUF_FOREST)]]) {
-  const TrunkTree t =
-    trunk_shadow_tree (trees[payload.tree[mesh_id]], u, payload.copy[mesh_id]);
-  const uint vertices = tree_vertex_count (t);
-  const uint primitives = tree_primitive_count (t);
-  if (thread_id == 0u)
-    out.set_primitive_count (primitives);
-  if (thread_id < vertices) {
-    TrunkShadowVaryings o;
-    o.position =
-      u.view_proj * float4 (tree_vertex (t, thread_id).position, 1.0);
-    out.set_vertex (thread_id, o);
-  }
-  if (thread_id < primitives) {
-    const uint3 tri = tree_triangle (t, thread_id);
-    out.set_index (thread_id * 3u + 0u, tri.x);
-    out.set_index (thread_id * 3u + 1u, tri.y);
-    out.set_index (thread_id * 3u + 2u, tri.z);
-  }
-}
-
-// The vertex-pulled shadow path: the CPU has already culled the casters
-// against the light, and one draw carries one species at the coarsest tier.
+// The CPU has already culled the shadow casters against the light, and one
+// draw carries one species at the coarsest tier.
 vertex float4 forest_trunks_shadow_vertex (
   uint index [[vertex_id]],
   uint instance [[instance_id]],

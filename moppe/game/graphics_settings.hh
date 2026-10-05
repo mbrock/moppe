@@ -27,7 +27,6 @@ namespace moppe::game {
     undergrowth,
     light_shafts,
     gtao,
-    forest_trunks,
     boulders,
   };
 
@@ -68,10 +67,6 @@ namespace moppe::game {
     bool undergrowth = true;
     bool light_shafts = true;
     bool gtao = true;
-    // Present individuals as the trunk forest; disabled, the procedural
-    // boughs return. Chosen at world load: it changes the presented
-    // proportions, so it is not toggled mid-frame by the benchmark.
-    bool forest_trunks = true;
     // Loose rock on the ground. Hiding them leaves their colliders in place,
     // so a benchmark replay rides the same world in every configuration.
     bool boulders = true;
@@ -193,18 +188,11 @@ namespace moppe::game {
     GraphicsFeatureId::gtao, "gtao", &GraphicsSettings::gtao, true
   };
 
-  inline constexpr GraphicsFeature forest_trunks_feature {
-    GraphicsFeatureId::forest_trunks,
-    "forest-trunks",
-    &GraphicsSettings::forest_trunks,
-    false
-  };
-
   inline constexpr GraphicsFeature boulders_feature {
     GraphicsFeatureId::boulders, "boulders", &GraphicsSettings::boulders, true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 19> graphics_features {
+  inline constexpr std::array<const GraphicsFeature*, 18> graphics_features {
     &terrain_shadows_feature,
     &forest_feature,
     &ocean_feature,
@@ -222,7 +210,6 @@ namespace moppe::game {
     &undergrowth_feature,
     &light_shafts_feature,
     &gtao_feature,
-    &forest_trunks_feature,
     &boulders_feature,
   };
 

@@ -280,26 +280,8 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 };
 
 // A forest crosses the renderer boundary as stable individuals, not baked
-// vertices. The object stage selects projected detail and schedules reusable
-// trunk/crown assemblies; the mesh stage expands only those assemblies.
-/* One object threadgroup is one SIMD group scheduling one organism. A
-   conifer's crown is the union of at most nine whorls of seven feathered
-   boughs; the object stage sorts their ranks by station tier, and each mesh
-   threadgroup expands the stem, the unresolved bough parent, or a pack of
-   boughs sharing one tier. No shell or cone primitive exists once boughs are
-   resolved. */
+// vertices: the renderer culls them and expands each from its record.
 #define MOPPE_FOREST_OBJECT_THREADS 32
-#define MOPPE_FOREST_PARTS_PER_TREE 8
-#define MOPPE_FOREST_BOUGH_RANKS 64
-#define MOPPE_FOREST_MESH_THREADS 128
-#define MOPPE_FOREST_MESH_STATIONS 32
-#define MOPPE_FOREST_MESH_VERTICES 128
-#define MOPPE_FOREST_MESH_PRIMITIVES 128
-// The trunk forest emits a whole individual -- trunk and crown masses -- from
-// one meshlet, one vertex and one primitive per thread.
-#define MOPPE_FOREST_TRUNK_MESH_THREADS 256
-#define MOPPE_FOREST_TRUNK_MESH_VERTICES 256
-#define MOPPE_FOREST_TRUNK_MESH_PRIMITIVES 256
 
 // One aggregate meshlet carries one height stratum of a 24-metre population
 // patch. Projected error selects a four- or eight-metre world cell; during the
@@ -585,10 +567,6 @@ static_assert (sizeof (MoppeBoulderCandidate) == 16,
 static_assert (MOPPE_BOULDER_MESH_VERTICES <= MOPPE_BOULDER_MESH_THREADS &&
                  MOPPE_BOULDER_MESH_PRIMITIVES <= MOPPE_BOULDER_MESH_THREADS,
                "boulder meshlet emits one vertex and one face per thread");
-static_assert (MOPPE_FOREST_MESH_VERTICES <= 256,
-               "forest meshlet exceeds Metal vertex limit");
-static_assert (MOPPE_FOREST_MESH_PRIMITIVES <= 512,
-               "forest meshlet exceeds Metal primitive limit");
 static_assert (MOPPE_FOREST_CANOPY_MESH_VERTICES <= 256,
                "forest canopy meshlet exceeds Metal vertex limit");
 static_assert (MOPPE_FOREST_CANOPY_MESH_PRIMITIVES <= 512,

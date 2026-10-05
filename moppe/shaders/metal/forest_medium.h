@@ -65,29 +65,6 @@ moppe_forest_distribution_light (float3 leaf_display,
   return response;
 }
 
-inline MoppeForestEnsembleLight
-moppe_forest_ensemble_light (float moisture,
-                             float closure,
-                             float3 distribution_normal,
-                             float3 sun_dir,
-                             float3 to_eye,
-                             float3 sun_diffuse,
-                             float3 ambient,
-                             float sun_visibility,
-                             float coverage,
-                             float grain) {
-  return moppe_forest_distribution_light (
-    moppe_forest_conifer_tint (moisture, closure),
-    distribution_normal,
-    sun_dir,
-    to_eye,
-    sun_diffuse,
-    ambient,
-    sun_visibility,
-    coverage,
-    grain);
-}
-
 inline float moppe_forest_aggregate_fraction (float focal_pixels,
                                               float distance_metres) {
   const float crown_pixels = MOPPE_FOREST_MEAN_CROWN_DIAMETER_METRES *
@@ -96,18 +73,6 @@ inline float moppe_forest_aggregate_fraction (float focal_pixels,
   // bundled-bough register. Let the quotient fill the unrepresented gaps
   // behind those resolved silhouettes instead of waiting until the forest
   // has become a regiment of porous cones.
-  return 1.0 - smoothstep (MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS,
-                           MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS,
-                           crown_pixels);
-}
-
-inline float moppe_forest_identity_transfer (float crown_pixels) {
-  // This is deliberately the same interval as the aggregate arrival above.
-  // In a closed stand, redundant individual identity yields exactly as its
-  // population representation becomes available. A separate later transfer
-  // left a conspicuous register in which rows of solid cone proxies sat in
-  // front of an already complete canopy. Stand support still keeps isolated
-  // trees fully individual.
   return 1.0 - smoothstep (MOPPE_FOREST_TRANSFER_END_CROWN_PIXELS,
                            MOPPE_FOREST_TRANSFER_START_CROWN_PIXELS,
                            crown_pixels);

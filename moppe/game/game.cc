@@ -774,11 +774,9 @@ namespace moppe {
         if (m_water_inspection)
           return;
         static const bool tree_lab = ::getenv ("MOPPE_TREE_LAB") != 0;
-        m_forest.rebuild (
-          *m_renderer,
-          tree_lab ? tree_lab_plan () : generated_world ().forest (),
-          m_graphics.forest_trunks ? render::ForestStyle::Trunks
-                                   : render::ForestStyle::Procedural);
+        m_forest.rebuild (*m_renderer,
+                          tree_lab ? tree_lab_plan ()
+                                   : generated_world ().forest ());
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)

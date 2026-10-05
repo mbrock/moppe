@@ -62,24 +62,17 @@ namespace moppe::game {
       return render::ForestAge::Mature;
     }
 
-    render::ForestInstance present (const ForestSite& site,
-                                    render::ForestStyle style) {
+    render::ForestInstance present (const ForestSite& site) {
       const float size = site.size.numerical_value_in (mp_units::one);
       const float cover = site.cover.numerical_value_in (mp_units::one);
       const float moisture = site.moisture.numerical_value_in (mp_units::one);
-      // The procedural style has only its conifer construction, so it
-      // presents every individual as spruce.
-      const bool conifer = site.form == ForestForm::conifer ||
-                           style == render::ForestStyle::Procedural;
-      // The trunk forest stands at the height of a mature stand -- most
-      // conifers 20 to 35 metres -- with stout spruce cones and broad
-      // broadleaf crowns lifted on clear trunks.
-      const bool trunks = style == render::ForestStyle::Trunks;
-      const float scale = trunks ? 1.5f : 1.0f;
-      const meters_t height = scale * size * (conifer ? 15.0f : 13.4f) *
+      const bool conifer = site.form == ForestForm::conifer;
+      // The forest stands at the height of a mature stand -- most conifers
+      // 20 to 35 metres -- with stout spruce cones and broad broadleaf crowns
+      // lifted on clear trunks.
+      const meters_t height = 1.5f * size * (conifer ? 15.0f : 13.4f) *
                               (0.82f + 0.30f * cover + 0.26f * moisture) * u::m;
-      const float crown_share =
-        trunks ? (conifer ? 0.19f : 0.19f) : (conifer ? 0.23f : 0.25f);
+      const float crown_share = 0.19f;
       return {
         .root = site.position,
         .ground_normal = site.normal,
@@ -240,43 +233,34 @@ namespace moppe::game {
   }
 
   void ForestLandscape::rebuild (render::Renderer& renderer,
-                                 const ForestPlan& plan,
-                                 render::ForestStyle style) {
+                                 const ForestPlan& plan) {
     MOPPE_PROFILE_ZONE ("ForestLandscape::upload_instances");
     std::vector<render::ForestInstance> instances;
     instances.reserve (plan.sites.size ());
     for (const ForestSite& site : plan.sites) {
-      // Larger individuals need more room: the trunk forest keeps a stable
-      // share of the plan rather than every planted site.
-      if (style == render::ForestStyle::Trunks &&
-          (site.seed * 2654435761u >> 8) % 1000u >= 550u)
+      // Larger individuals need more room: the forest keeps a stable share
+      // of the plan rather than every planted site.
+      if ((site.seed * 2654435761u >> 8) % 1000u >= 550u)
         continue;
-      instances.push_back (present (site, style));
+      instances.push_back (present (site));
     }
     m_period = extent_value (plan.period);
     m_litter.clear ();
     m_litter_size = 0;
-    if (style == render::ForestStyle::Trunks) {
-      turn_autumn (instances, plan.period);
-      // About four metres a texel: two samples across a birch crown.
-      const auto size = static_cast<std::uint32_t> (
-        std::clamp (std::ceil (std::max (m_period[0], m_period[2]) / 4.0f),
-                    64.0f,
-                    1024.0f));
-      m_litter = spread_litter (instances, m_period, size);
-      m_litter_size = m_litter.empty () ? 0 : size;
-    }
+    turn_autumn (instances, plan.period);
+    // About four metres a texel: two samples across a birch crown.
+    const auto size = static_cast<std::uint32_t> (std::clamp (
+      std::ceil (std::max (m_period[0], m_period[2]) / 4.0f), 64.0f, 1024.0f));
+    m_litter = spread_litter (instances, m_period, size);
+    m_litter_size = m_litter.empty () ? 0 : size;
     renderer.set_forest ({ .period = plan.period,
-                           .style = style,
                            .litter = m_litter,
                            .litter_size = m_litter_size },
                          instances);
     m_trunks.clear ();
-    if (style == render::ForestStyle::Trunks) {
-      m_trunks.reserve (instances.size ());
-      for (const render::ForestInstance& tree : instances)
-        m_trunks.push_back (trunk_of (tree));
-    }
+    m_trunks.reserve (instances.size ());
+    for (const render::ForestInstance& tree : instances)
+      m_trunks.push_back (trunk_of (tree));
     m_tree_count = instances.size ();
     const auto birches =
       std::ranges::count_if (plan.sites, [] (const ForestSite& site) {

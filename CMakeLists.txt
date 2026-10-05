@@ -274,7 +274,6 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/river.metal
   moppe/shaders/metal/dust.metal
   moppe/shaders/metal/undergrowth.metal
-  moppe/shaders/metal/forest.metal
   moppe/shaders/metal/forest_canopy.metal
   moppe/shaders/metal/forest_trunks.metal
   moppe/shaders/metal/leaf_fall.metal
