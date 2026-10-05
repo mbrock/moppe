@@ -952,8 +952,10 @@ namespace moppe {
           draw_world_sky ();
 
         // Terrain first, chunk-culled to the haze horizon.
-        m_terrain.render (
-          r, camera, frame.camera.forward, frame.terrain_distance);
+        m_terrain.render (r,
+                          camera,
+                          frame.camera.projection * frame.camera.view,
+                          frame.terrain_distance);
 
         // Sky AFTER the terrain: depth testing kills the expensive
         // cloud shader wherever terrain covers it.

@@ -70,6 +70,12 @@ namespace moppe {
                                                          CHUNK_CELLS / 2 + 1,
                                                          CHUNK_CELLS / 4 + 1,
                                                          CHUNK_CELLS / 8 + 1 };
+      // Vertices per row of a terrain_patch_cells patch at `lod`.
+      int terrain_patch_verts (int lod) {
+        return (TERRAIN_LOD_VERTS[lod] - 1) * terrain_patch_cells /
+                 CHUNK_CELLS +
+               1;
+      }
       const int PROBE_W = 32; // auto-exposure luminance probe
       const int PROBE_H = 16;
       const int MAX_TIMESTAMP_SAMPLES = 64;
@@ -462,6 +468,9 @@ namespace moppe {
         id<MTLTexture> normals = nil;
         id<MTLBuffer> indices[TERRAIN_LOD_COUNT] {};
         uint32_t index_count[TERRAIN_LOD_COUNT] {};
+        // The same strips over a terrain_patch_cells square.
+        id<MTLBuffer> patch_indices[TERRAIN_LOD_COUNT] {};
+        uint32_t patch_index_count[TERRAIN_LOD_COUNT] {};
         TerrainParams params;
         bool have_terrain = false;
         TexturePtr grass, dirt, rock, snow;
@@ -2852,13 +2861,11 @@ namespace moppe {
       upload_texture (
         m_terrain_resources.normals, packed.data (), w, h, 4, false);
 
-      // Shared chunk-local index templates.  The finest inserts one
-      // virtual vertex between source samples; progressively coarser
-      // levels use source strides 1, 2, 4, and 8.
-      for (int lod = 0; lod < TERRAIN_LOD_COUNT; ++lod) {
-        if (m_terrain_resources.indices[lod])
-          continue;
-        const int vpr = TERRAIN_LOD_VERTS[lod];
+      // Shared chunk-local index templates.  The finest inserts three
+      // virtual vertices between source samples; progressively coarser
+      // levels use source strides 1, 2, 4, and 8.  Each level also has a
+      // patch-sized template for chunks split around the camera.
+      const auto strip_indices = [] (int vpr) {
         std::vector<uint32_t> indices;
         const int rows = vpr - 1;
         indices.reserve ((size_t)rows * (vpr * 2 + 1));
@@ -2869,12 +2876,28 @@ namespace moppe {
           }
           indices.push_back (0xFFFFFFFFu); // strip restart
         }
+        return indices;
+      };
+      for (int lod = 0; lod < TERRAIN_LOD_COUNT; ++lod) {
+        if (m_terrain_resources.indices[lod])
+          continue;
+        const std::vector<uint32_t> indices =
+          strip_indices (TERRAIN_LOD_VERTS[lod]);
         m_terrain_resources.index_count[lod] =
           static_cast<uint32_t> (indices.size ());
         m_terrain_resources.indices[lod] = create_private_buffer (
           indices.data (),
           indices.size () * sizeof (uint32_t),
           [NSString stringWithFormat:@"Moppe terrain LOD %d indices", lod]);
+        const std::vector<uint32_t> patch =
+          strip_indices (terrain_patch_verts (lod));
+        m_terrain_resources.patch_index_count[lod] =
+          static_cast<uint32_t> (patch.size ());
+        m_terrain_resources.patch_indices[lod] = create_private_buffer (
+          patch.data (),
+          patch.size () * sizeof (uint32_t),
+          [NSString
+            stringWithFormat:@"Moppe terrain LOD %d patch indices", lod]);
       }
 
       m_terrain_resources.have_terrain = true;
@@ -4600,8 +4623,10 @@ namespace moppe {
         std::memset (&c, 0, sizeof (c));
         c.origin_x = chunks[i].x0;
         c.origin_z = chunks[i].z0;
+        const bool patch = chunks[i].cells == terrain_patch_cells;
         c.step = TERRAIN_LOD_STEP[lod];
-        c.verts_per_row = TERRAIN_LOD_VERTS[lod];
+        c.verts_per_row =
+          patch ? terrain_patch_verts (lod) : TERRAIN_LOD_VERTS[lod];
         c.morph_start = chunks[i].morph_start;
         c.morph_end = chunks[i].morph_end;
         c.parent_step = lod + 1 < TERRAIN_LOD_COUNT ? TERRAIN_LOD_STEP[lod + 1]
@@ -4612,11 +4637,14 @@ namespace moppe {
                       MTLRenderStageVertex,
                       MOPPE_BUF_CHUNK,
                       frame.arena[frame.slot].write (c));
+        id<MTLBuffer> indices =
+          patch ? terrain.patch_indices[lod] : terrain.indices[lod];
         [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangleStrip
-                        indexCount:terrain.index_count[lod]
+                        indexCount:patch ? terrain.patch_index_count[lod]
+                                         : terrain.index_count[lod]
                          indexType:MTLIndexTypeUInt32
-                       indexBuffer:terrain.indices[lod].gpuAddress
-                 indexBufferLength:terrain.indices[lod].length
+                       indexBuffer:indices.gpuAddress
+                 indexBufferLength:indices.length
                      instanceCount:1];
       }
     }

@@ -981,6 +981,10 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     std::array<wgpu::Buffer, terrain_lod_count> terrain_vertices;
     std::array<wgpu::Buffer, terrain_lod_count> terrain_indices;
     std::array<uint32_t, terrain_lod_count> terrain_index_counts {};
+    // The same grids over a terrain_patch_cells square.
+    std::array<wgpu::Buffer, terrain_lod_count> terrain_patch_vertices;
+    std::array<wgpu::Buffer, terrain_lod_count> terrain_patch_indices;
+    std::array<uint32_t, terrain_lod_count> terrain_patch_index_counts {};
     TerrainParams terrain_params {};
     TexturePtr terrain_grass;
     TexturePtr terrain_dirt;
@@ -1460,30 +1464,44 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       create_terrain_shadow_texture (1);
 
       for (int lod = 0; lod < terrain_lod_count; ++lod) {
-        const int vertices_per_row = terrain_lod_vertices[lod];
-        std::vector<std::array<float, 2>> vertices;
-        vertices.reserve (vertices_per_row * vertices_per_row);
-        for (int z = 0; z < vertices_per_row; ++z)
-          for (int x = 0; x < vertices_per_row; ++x)
-            vertices.push_back (
-              { static_cast<float> (x), static_cast<float> (z) });
-        terrain_vertices[lod] =
-          upload_buffer (device, vertices, wgpu::BufferUsage::Vertex);
-
-        std::vector<uint32_t> indices;
-        const int cells = vertices_per_row - 1;
-        indices.reserve (cells * (vertices_per_row * 2 + 1));
-        for (int z = 0; z < cells; ++z) {
-          for (int x = 0; x < vertices_per_row; ++x) {
-            indices.push_back (z * vertices_per_row + x);
-            indices.push_back ((z + 1) * vertices_per_row + x);
-          }
-          indices.push_back (0xFFFFFFFFu);
-        }
-        terrain_index_counts[lod] = indices.size ();
-        terrain_indices[lod] =
-          upload_buffer (device, indices, wgpu::BufferUsage::Index);
+        upload_terrain_grid (terrain_lod_vertices[lod],
+                             terrain_vertices[lod],
+                             terrain_indices[lod],
+                             terrain_index_counts[lod]);
+        upload_terrain_grid ((terrain_lod_vertices[lod] - 1) *
+                                 terrain_patch_cells / terrain_chunk_cells +
+                               1,
+                             terrain_patch_vertices[lod],
+                             terrain_patch_indices[lod],
+                             terrain_patch_index_counts[lod]);
       }
+    }
+
+    void upload_terrain_grid (int vertices_per_row,
+                              wgpu::Buffer& vertex_buffer,
+                              wgpu::Buffer& index_buffer,
+                              uint32_t& index_count) {
+      std::vector<std::array<float, 2>> vertices;
+      vertices.reserve (vertices_per_row * vertices_per_row);
+      for (int z = 0; z < vertices_per_row; ++z)
+        for (int x = 0; x < vertices_per_row; ++x)
+          vertices.push_back (
+            { static_cast<float> (x), static_cast<float> (z) });
+      vertex_buffer =
+        upload_buffer (device, vertices, wgpu::BufferUsage::Vertex);
+
+      std::vector<uint32_t> indices;
+      const int cells = vertices_per_row - 1;
+      indices.reserve (cells * (vertices_per_row * 2 + 1));
+      for (int z = 0; z < cells; ++z) {
+        for (int x = 0; x < vertices_per_row; ++x) {
+          indices.push_back (z * vertices_per_row + x);
+          indices.push_back ((z + 1) * vertices_per_row + x);
+        }
+        indices.push_back (0xFFFFFFFFu);
+      }
+      index_count = indices.size ();
+      index_buffer = upload_buffer (device, indices, wgpu::BufferUsage::Index);
     }
 
     void create_terrain_shadow_texture (int size) {
@@ -2232,10 +2250,17 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                                   sizeof (chunk_uniforms));
       m_state->pass.SetBindGroup (
         1, m_state->terrain_chunk_bind_groups[static_cast<std::size_t> (i)]);
-      m_state->pass.SetVertexBuffer (0, m_state->terrain_vertices[lod]);
-      m_state->pass.SetIndexBuffer (m_state->terrain_indices[lod],
+      const bool patch = chunks[i].cells == terrain_patch_cells;
+      m_state->pass.SetVertexBuffer (0,
+                                     patch
+                                       ? m_state->terrain_patch_vertices[lod]
+                                       : m_state->terrain_vertices[lod]);
+      m_state->pass.SetIndexBuffer (patch ? m_state->terrain_patch_indices[lod]
+                                          : m_state->terrain_indices[lod],
                                     wgpu::IndexFormat::Uint32);
-      m_state->pass.DrawIndexed (m_state->terrain_index_counts[lod]);
+      m_state->pass.DrawIndexed (patch
+                                   ? m_state->terrain_patch_index_counts[lod]
+                                   : m_state->terrain_index_counts[lod]);
     }
   }
   void WebGpuRenderer::draw_sky (const SkyParams& params) {

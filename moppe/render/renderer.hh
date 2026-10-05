@@ -160,11 +160,19 @@ namespace moppe {
       Count
     };
 
+    // A terrain draw covers either a whole chunk or one square patch of it.
+    inline constexpr int terrain_chunk_cells = 128;
+    inline constexpr int terrain_patch_cells = 32;
+
     // One culled terrain chunk instance.  The two distances describe
     // where this level morphs onto the exact triangle surface of its
     // parent level, preventing pops and cracks at chunk boundaries.
     struct ChunkDraw {
-      uint16_t x0, z0; // grid sample origin (multiple of 128)
+      uint16_t x0, z0; // grid sample origin (multiple of `cells`)
+      // Source cells along each side: terrain_chunk_cells, or
+      // terrain_patch_cells where a chunk is split so its finest level
+      // only covers the patches that are actually near.
+      uint16_t cells = terrain_chunk_cells;
       TerrainLod lod;
       float morph_start;
       float morph_end;
