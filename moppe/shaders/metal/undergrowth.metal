@@ -210,10 +210,20 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
     const float horizontal_distance = length (center - u.camera_pos.xz);
     valid = horizontal_distance < u.lod.x + 0.75 * tile_world;
 
+    // Most of the window lies outside the view, so the frustum test runs on
+    // the ground height alone, before the habitat is read.
+    if (valid) {
+      ground = undergrowth_ground (center, u, heights);
+      const float4 clip =
+        u.view_proj * float4 (center.x, ground + 0.5, center.y, 1.0);
+      const float margin = 1.25 * clip.w + 2.0 * tile_world;
+      valid =
+        clip.w > -tile_world && abs (clip.x) < margin && abs (clip.y) < margin;
+    }
+
     if (valid) {
       const float3 ground_normal =
         undergrowth_ground_normal (center, u, normals);
-      ground = undergrowth_ground (center, u, heights);
       const MoppeGrassMedium grass = undergrowth_medium (center,
                                                          u,
                                                          landscape_materials,
@@ -265,14 +275,6 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
       wanted = budget * edge_fade * float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
       shoots = undergrowth_lod_shoots (wanted, uint2 (cell));
       valid = shoots > 0u;
-    }
-
-    if (valid) {
-      const float4 clip =
-        u.view_proj * float4 (center.x, ground + 0.5, center.y, 1.0);
-      const float margin = 1.25 * clip.w + 2.0 * tile_world;
-      valid =
-        clip.w > -tile_world && abs (clip.x) < margin && abs (clip.y) < margin;
     }
 
     if (valid) {
