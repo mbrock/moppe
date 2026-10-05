@@ -88,6 +88,12 @@
     gradient of the grass system without habitat confounds. Overrides are `MOPPE_SEED`,
     `MOPPE_TERRAIN_PROFILE`, `MOPPE_GAZETTEER_GRAPHICS`,
     `MOPPE_GAZETTEER_WINDOW`, and `MOPPE_GAZETTEER_SETTLE`.
+    `MOPPE_GAZETTEER_ENABLE` and `MOPPE_GAZETTEER_DISABLE` forward
+    `--graphics-enable` and `--graphics-disable` lists.
+  - Trunk forest prototype: `--graphics-enable forest-trunks` presents every
+    tree as one tapered trunk and a few faceted crown masses
+    (`moppe/shaders/metal/forest_trunks.metal`), with mature-stand heights
+    and long clear trunks in closed stands, instead of procedural boughs.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;
