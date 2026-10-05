@@ -25,6 +25,15 @@ Measured by nixbox's `probes/d3d12-caps` and `probes/swapchain`:
 - A 3840x2160 swapchain for the 1080p CoreWindow reaches the TV natively;
   HDR10 and scRGB swapchains are accepted.
 
+## Sharing the Xbox
+
+The console is shared with other agents. Deploying through nixbox takes the
+console lease that its Device Portal proxy grants (`tools/xbox-proxy` in
+nixbox): `nix run .#deploy-nhal-xbox` waits its turn, installs, and holds the
+console for `--hold` seconds (default 300) so the demo can be watched;
+`nix run github:mbrock/nixbox#xbox-lease -- release` gives it back sooner and
+`-- status` shows who has it.
+
 ## The API
 
 `moppe/nhal/nhal.hh` is the whole surface. Resources are handles into the
@@ -96,14 +105,22 @@ numbers are per kind family, and the families map onto each backend like this:
   | 3 | linear comparison (`less-equal`), clamp to edge |
 
 - The descriptor `:set` is 0 or absent.
-- Uniform blocks hold only `vec4` lanes at 16-byte offsets, so the C++ struct,
+- Uniform blocks hold `vec4` lanes at 16-byte offsets and `mat4` members as
+  four consecutive column lanes (`std::array<float, 16>` in the header,
+  element `[4c + r]`; HLSL declares them `row_major` and multiplies with the
+  operands swapped, so the meaning is column-major everywhere). The C++ struct,
   MSL `constant`, and HLSL `cbuffer` layouts agree without packing rules.
+- Storage buffer elements are 1-, 2-, or 4-component scalars or vectors,
+  `mat4`, or a structure declared with `define-shader-struct` whose fields
+  follow the same rule and start aligned (32-bit scalars at 4, 2-vectors at 8,
+  4-vectors and `mat4` at 16) with a size that is a multiple of its alignment.
+  No padding is implied, so SPIR-V std430, MSL device memory, HLSL
+  `StructuredBuffer`, and C++ agree; the header emits each such structure with
+  `static_assert`s on its size and every field's offset.
 - There are no vertex buffers or input layouts: vertex stages pull from
   storage buffers with the `:vertex-index` and `:instance-index` built-ins.
   Index buffers are allowed.
 
-- Storage buffer elements have 1, 2, or 4 components (no `vec3`), so strides
-  agree between Metal and HLSL.
 
 Inter-stage values: a vertex output or fragment input at `:location n` is HLSL
 semantic `LOCATIONn` and MSL `[[user(locnN)]]`; the `:position` built-in is
