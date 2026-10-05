@@ -355,6 +355,8 @@ namespace moppe {
         (void)params;
       }
       virtual void draw_forest () {}
+      // Leaves drifting down where the forest's crowns have turned.
+      virtual void draw_falling_leaves () {}
       // Vertical nickpoint curtains; horizontal water belongs to draw_ocean.
       virtual void draw_waterfalls (const Mesh& mesh, const Mat4& model) = 0;
       // A nonzero motion id names geometry whose prior transform/vertices

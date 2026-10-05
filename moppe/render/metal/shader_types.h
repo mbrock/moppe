@@ -390,6 +390,31 @@ struct MOPPE_SHADER_ALIGN MoppeForestUniforms {
   MoppeFloat4 temporal;  // xy=input pixels, z=previous time, w=enabled
 };
 
+// Falling leaves: one leaf per cell of a world-anchored lattice around the
+// camera, a block of cells per mesh threadgroup.
+#define MOPPE_LEAF_FALL_BLOCK_CELLS 8
+#define MOPPE_LEAF_FALL_THREADS 64
+#define MOPPE_LEAF_FALL_GRID_BLOCKS 8
+
+struct MOPPE_SHADER_ALIGN MoppeLeafFallUniforms {
+  MoppeMat4 view_proj;
+  MoppeMat4 unjittered_view_proj;
+  MoppeMat4 previous_view_proj;
+  MoppeMat4 light_matrix;
+  MoppeFloat4 camera_pos;
+  MoppeFloat4 sun_dir;
+  MoppeFloat4 sun_diffuse;
+  MoppeFloat4 ambient;
+  MoppeFloat4 fog_color; // rgb; w=fog scale
+  MoppeFloat4 lattice;   // x=1/step_x, y=1/step_z, z=height scale,
+                         // w=lattice width in samples
+  MoppeFloat4 field;     // xy=1/forest period
+  MoppeFloat4 grid;      // xy=first cell index, z=cell metres, w=reach metres
+  MoppeFloat4 params;    // x=time, y=cloudiness, z=sea, w=land relief
+  MoppeFloat4 shadow;    // x=strength, y=shadow texel
+  MoppeFloat4 temporal;  // xy=input pixels, z=previous time, w=enabled
+};
+
 struct MOPPE_SHADER_ALIGN MoppeForestCanopyUniforms {
   MoppeMat4 view_proj;
   MoppeMat4 unjittered_view_proj;

@@ -439,6 +439,7 @@ namespace moppe {
         id<MTLRenderPipelineState> forest_shadow = nil;
         id<MTLRenderPipelineState> forest_trunks = nil;
         id<MTLRenderPipelineState> forest_trunks_shadow = nil;
+        id<MTLRenderPipelineState> leaf_fall = nil;
         id<MTLRenderPipelineState> river = nil;
 #if !TARGET_OS_IPHONE
         id<MTLComputePipelineState> reflection_geometry = nil;
@@ -1071,6 +1072,7 @@ namespace moppe {
                       float logical_time) override;
       void draw_undergrowth (const UndergrowthParams& params) override;
       void draw_forest () override;
+      void draw_falling_leaves () override;
       void draw_waterfalls (const Mesh& mesh, const Mat4& model) override;
       void draw_mesh (const Mesh& mesh,
                       const Mat4& model,
@@ -2171,8 +2173,24 @@ namespace moppe {
           MOPPE_FOREST_OBJECT_THREADS;
         trunks_shadow.maxTotalThreadsPerMeshThreadgroup =
           MOPPE_FOREST_TRUNK_MESH_THREADS;
+        MTLMeshRenderPipelineDescriptor* leaves =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        leaves.meshFunction = [m_library newFunctionWithName:@"leaf_fall_mesh"];
+        leaves.fragmentFunction =
+          [m_library newFunctionWithName:@"leaf_fall_fragment"];
+        leaves.rasterSampleCount = scene_samples;
+        leaves.colorAttachments[0].pixelFormat = scene;
+        if (m_temporal_scene_pipelines) {
+          leaves.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
+          leaves.colorAttachments[2].pixelFormat = MTLPixelFormatR8Unorm;
+        }
+        leaves.depthAttachmentPixelFormat = depth;
+        if (!m_temporal_scene_pipelines)
+          leaves.stencilAttachmentPixelFormat = depth;
+        leaves.maxTotalThreadsPerMeshThreadgroup = MOPPE_LEAF_FALL_THREADS;
         for (const auto& [descriptor, pipeline, name] :
-             { std::tuple {
+             { std::tuple { leaves, &m_pipelines.leaf_fall, "falling leaves" },
+               std::tuple {
                  trunks, &m_pipelines.forest_trunks, "trunk forest" },
                std::tuple { trunks_shadow,
                             &m_pipelines.forest_trunks_shadow,
@@ -5325,6 +5343,72 @@ namespace moppe {
                     (NSUInteger)tiles_side * (NSUInteger)tiles_side,
                     MOPPE_UNDERGROWTH_MESH_THREADS);
       }
+    }
+
+    void MetalRenderer::draw_falling_leaves () {
+      const MetalForestResources& forest = m_forest_resources;
+      const MetalTerrainResources& terrain = m_terrain_resources;
+      if (!m_pipelines.leaf_fall || !forest.litter || !terrain.heights ||
+          forest.period_x <= 0.0f || forest.period_z <= 0.0f)
+        return;
+
+      MoppeLeafFallUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.view_proj = m_frame.uniforms.view_proj;
+      u.unjittered_view_proj = m_frame.uniforms.unjittered_view_proj;
+      u.previous_view_proj = m_frame.uniforms.previous_view_proj;
+      u.light_matrix = m_frame.uniforms.light_matrix;
+      u.camera_pos = m_frame.uniforms.camera_pos;
+      u.sun_dir = m_frame.uniforms.sun_dir;
+      u.sun_diffuse = m_frame.uniforms.sun_diffuse;
+      u.ambient = m_frame.uniforms.ambient;
+      u.fog_color = m_frame.uniforms.fog_color;
+      const auto& tp = terrain.params;
+      u.lattice.x = 1.0f / tp.scale[0];
+      u.lattice.y = 1.0f / tp.scale[2];
+      u.lattice.z = tp.scale[1];
+      u.lattice.w = static_cast<float> (tp.width);
+      u.field.x = 1.0f / forest.period_x;
+      u.field.y = 1.0f / forest.period_z;
+      // The lattice is anchored to world cells, so a leaf keeps its identity
+      // as the camera moves; only the window of cells follows.
+      constexpr float cell_metres = 1.2f;
+      constexpr int side =
+        MOPPE_LEAF_FALL_BLOCK_CELLS * MOPPE_LEAF_FALL_GRID_BLOCKS;
+      const Vec3 camera = m_frame.params.camera_pos;
+      u.grid.x = std::floor (camera[0] / cell_metres) - side / 2;
+      u.grid.y = std::floor (camera[2] / cell_metres) - side / 2;
+      u.grid.z = cell_metres;
+      u.grid.w = 0.5f * side * cell_metres;
+      u.params = m_frame.uniforms.misc;
+      u.shadow = m_frame.uniforms.shadow;
+      u.temporal = m_frame.uniforms.temporal;
+
+      id<MTL4RenderCommandEncoder> enc = scene_encoder ();
+      begin_gpu_pass (enc, GpuPass::Scene);
+      [enc setRenderPipelineState:m_pipelines.leaf_fall];
+      [enc setDepthStencilState:m_pipelines.depth[1][1]];
+      [enc setCullMode:MTLCullModeNone];
+      const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
+      for (MTLRenderStages stage :
+           { MTLRenderStageMesh, MTLRenderStageFragment })
+        bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
+      bind_texture (
+        m_frame, MTLRenderStageMesh, MOPPE_TEX_HEIGHTS, terrain.heights);
+      bind_texture (
+        m_frame, MTLRenderStageMesh, MOPPE_TEX_FOREST_LITTER, forest.litter);
+      bind_texture (m_frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_SHADOW,
+                    terrain.shadow_map ? terrain.shadow_map
+                                       : m_pipelines.shadow_fallback);
+      use_arguments (enc, m_frame, MTLRenderStageMesh | MTLRenderStageFragment);
+      [enc drawMeshThreadgroups:MTLSizeMake (MOPPE_LEAF_FALL_GRID_BLOCKS,
+                                             MOPPE_LEAF_FALL_GRID_BLOCKS,
+                                             1)
+        threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
+          threadsPerMeshThreadgroup:MTLSizeMake (
+                                      MOPPE_LEAF_FALL_THREADS, 1, 1)];
     }
 
     void MetalRenderer::draw_forest () {
