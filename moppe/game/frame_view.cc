@@ -43,6 +43,7 @@ namespace moppe::game {
       visibility.cinematic = cinematic;
       visibility.water_inspection = water;
       visibility.forest = !water && input.graphics.forest;
+      visibility.boulders = !water && input.graphics.boulders;
       visibility.undergrowth = !water && input.graphics.undergrowth;
       visibility.actors = !water;
       visibility.ocean = input.graphics.ocean;

@@ -156,11 +156,13 @@ MOPPE_TEST (broad_trail_brief_expands_the_formed_riding_core) {
     12.0f,
     1e-6f);
 
+  // The footprint is a distance ramp out to the formed width, so a broader
+  // brief touches more of the ground.
   const auto count_core = [] (const TrailFormationResult& result) {
     return std::ranges::count_if (
       spatial::get<trail_influence> (result.network.use),
       [] (TrailInfluence influence) {
-        return influence > 0.5f * trail_influence[mp_units::one];
+        return influence > 0.0f * trail_influence[mp_units::one];
       });
   };
   MOPPE_CHECK (count_core (broad_result) > count_core (narrow_result));

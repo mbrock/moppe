@@ -11,6 +11,7 @@
 #include <moppe/render/text.hh>
 
 #include <moppe/game/blob_shadow.hh>
+#include <moppe/game/boulders.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/dust.hh>
@@ -45,6 +46,7 @@
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/moisture.hh>
+#include <moppe/terrain/readings.hh>
 #include <moppe/terrain/river.hh>
 #include <moppe/terrain/trail.hh>
 #include <moppe/terrain/watercourse.hh>
@@ -53,6 +55,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -561,19 +564,51 @@ namespace moppe {
                           m_graphics.forest_trunks
                             ? render::ForestStyle::Trunks
                             : render::ForestStyle::Procedural);
-        {
-          const Vec3 period =
-            extent_value (generated_world ().forest ().period);
-          m_trunk_field.set_trunks (m_forest.trunks (), period[0], period[2]);
-          if (m_trunk_field.trunk_count ())
-            std::cerr << "moppe: trunk colliders: "
-                      << m_trunk_field.trunk_count ()
-                      << " (Box3D, streamed around the rider)" << std::endl;
-        }
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)
                   << " MB resident\n";
+      }
+
+      // Loose rock is planned from the finished surface each time a world
+      // activates: it is cheap beside the forest and needs no cache.
+      void scatter_boulders () {
+        MOPPE_PROFILE_ZONE ("startup.scatter_boulders");
+        if (m_water_inspection)
+          return;
+        const meters_t sea_level = world ().water_level;
+        const float sea = sea_level.numerical_value_in (u::m);
+        const float highest =
+          terrain::measure_height_range (surface ()).maximum;
+        const auto start = std::chrono::steady_clock::now ();
+        const BoulderPlan plan =
+          plan_boulders (surface (),
+                         surface_readings (),
+                         generated_world ().water_surface (),
+                         recipe ().seed ().value ^ 0x6b0d1e55U,
+                         sea_level,
+                         std::max (highest - sea, 1.0f) * u::m);
+        std::cerr << "moppe: boulder plan: "
+                  << std::chrono::duration_cast<std::chrono::milliseconds> (
+                       std::chrono::steady_clock::now () - start)
+                       .count ()
+                  << " ms" << std::endl;
+        m_boulders.rebuild (*m_renderer, plan);
+      }
+
+      // Trunks and the larger boulders stop the rider alike, so both feed
+      // the one streamed collision field.
+      void settle_obstacles () {
+        std::vector<mov::Trunk> obstacles = m_forest.trunks ();
+        obstacles.insert (obstacles.end (),
+                          m_boulders.colliders ().begin (),
+                          m_boulders.colliders ().end ());
+        const Vec3 period = extent_value (generated_world ().forest ().period);
+        m_trunk_field.set_trunks (std::move (obstacles), period[0], period[2]);
+        if (m_trunk_field.trunk_count ())
+          std::cerr << "moppe: obstacle colliders: "
+                    << m_trunk_field.trunk_count ()
+                    << " (Box3D, streamed around the rider)" << std::endl;
       }
 
       void plan_opening_journey () {
@@ -697,6 +732,8 @@ namespace moppe {
         prepare_world_surface ();
         place_stars_and_player ();
         grow_global_forest ();
+        scatter_boulders ();
+        settle_obstacles ();
         if (m_gazetteer)
           plan_gazetteer_capture ();
         else
@@ -1002,7 +1039,8 @@ namespace moppe {
                                          position (camera),
                                          frame.camera.frame_forward,
                                          frame.lighting.sun_direction,
-                                         m_graphics.forest);
+                                         m_graphics.forest,
+                                         frame.visibility.boulders);
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
           sky.time = frame.lighting.time;
@@ -1061,6 +1099,8 @@ namespace moppe {
         // Opaque individuals depth-test normally. The distant stand quotient
         // follows the ground medium so its non-depth-writing canopy roof
         // cannot be painted over by the sward's own far density layer.
+        if (visibility.boulders)
+          m_boulders.draw (r);
         if (visibility.forest)
           m_forest.draw (r);
       }
@@ -1917,6 +1957,7 @@ namespace moppe {
       WaterfallSurface m_waterfall_surface;
       Terrain m_terrain;
       ForestLandscape m_forest;
+      BoulderLandscape m_boulders;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
       Hud m_hud;

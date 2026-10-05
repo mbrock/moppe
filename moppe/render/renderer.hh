@@ -68,6 +68,7 @@ namespace moppe {
       position_t focus;
       meters_t radius = 160.0f * u::m;
       bool include_forest = true;
+      bool include_boulders = true;
     };
 
     // Sun-shaft raymarch through the camera-local shadow map. The caller
@@ -250,6 +251,21 @@ namespace moppe {
       std::uint32_t litter_size = 0;
     };
 
+    // One loose rock, settled into the ground. The centre is the body's own
+    // centre; the backend shapes a faceted lump of this horizontal radius
+    // from the seed, broader than it is tall.
+    struct BoulderInstance {
+      position_t centre {};
+      terrain::TerrainNormal ground_normal {};
+      meters_t radius {};
+      proportion_t moisture {};
+      std::uint32_t seed = 0;
+    };
+
+    struct BoulderSetup {
+      spatial_extent_t period {};
+    };
+
     struct DustEmission {
       uint64_t id = 0;
       float birth_time = 0.0f;
@@ -342,6 +358,14 @@ namespace moppe {
         (void)instances;
       }
 
+      // Stable rocks cross once when a finished world is activated, like the
+      // forest. Backends without a mesh pipeline may ignore them.
+      virtual void set_boulders (const BoulderSetup& setup,
+                                 std::span<const BoulderInstance> instances) {
+        (void)setup;
+        (void)instances;
+      }
+
       // -- frame -------------------------------------------------------
       virtual bool begin_frame (const FrameParams& params) = 0;
       // Encode before the first scene draw. Backends without a dynamic local
@@ -362,6 +386,7 @@ namespace moppe {
       virtual void draw_forest () {}
       // Leaves drifting down where the forest's crowns have turned.
       virtual void draw_falling_leaves () {}
+      virtual void draw_boulders () {}
       // Vertical nickpoint curtains; horizontal water belongs to draw_ocean.
       virtual void draw_waterfalls (const Mesh& mesh, const Mat4& model) = 0;
       // A nonzero motion id names geometry whose prior transform/vertices

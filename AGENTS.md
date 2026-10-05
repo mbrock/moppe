@@ -3,7 +3,9 @@
 ## Build Commands
 - Configure: `cmake -B build -G Ninja`
 - Build everything: `cmake --build build`
-- Unit tests: `ctest --test-dir build --output-on-failure`
+- Unit tests: `cmake --build build --target moppe-tests && ctest --test-dir
+  build --output-on-failure` (the test binary is excluded from the default
+  build, so plain `ctest` otherwise runs a stale one)
 - WebAssembly/WebGPU: `make web-serve`, then open
   `http://localhost:8080` (renderer testbed: `/moppe-web-testbed.html`)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
@@ -96,6 +98,11 @@
     uplands first: birch there turns gold, drops a leaf carpet
     (`leaf_fall.metal` adds falling leaves), and the high heath turns.
     `--graphics-disable forest-trunks` restores the procedural boughs.
+  - Boulders (`moppe/game/boulders.cc`, `moppe/shaders/metal/boulders.metal`)
+    are planned from the surface fields when a world activates -- talus,
+    scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded
+    rocks, and the larger ones collide; `--graphics-disable boulders` hides
+    them but keeps their colliders.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;

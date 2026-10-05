@@ -196,7 +196,8 @@ namespace moppe {
                                        position_t camera,
                                        const Vec3& view_dir,
                                        const Vec3& sun_dir,
-                                       bool include_forest) {
+                                       bool include_forest,
+                                       bool include_boulders) {
       MOPPE_PROFILE_ZONE ("Terrain::render_local_shadow");
       constexpr meters_t radius = 160.0f * u::m;
       constexpr meters_t look_ahead = 48.0f * u::m;
@@ -237,6 +238,7 @@ namespace moppe {
         .focus = position (centre),
         .radius = radius,
         .include_forest = include_forest,
+        .include_boulders = include_boulders,
       });
     }
 

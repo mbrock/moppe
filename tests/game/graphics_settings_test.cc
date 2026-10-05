@@ -14,6 +14,8 @@ MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
   const game::GraphicsFeature* bloom = game::find_graphics_feature ("bloom");
   MOPPE_CHECK (bloom == &game::bloom_feature);
   MOPPE_CHECK (game::find_graphics_feature ("forest") == &game::forest_feature);
+  MOPPE_CHECK (game::find_graphics_feature ("boulders") ==
+               &game::boulders_feature);
   MOPPE_CHECK (game::find_graphics_feature ("snow-support-filter") ==
                &game::snow_support_filter_feature);
   MOPPE_CHECK (game::find_graphics_feature ("channel-flux-detail") == nullptr);
@@ -32,6 +34,7 @@ MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::lens_flare_feature.hot);
   MOPPE_CHECK (game::terrain_topology_feature.hot);
   MOPPE_CHECK (game::snow_support_filter_feature.hot);
+  MOPPE_CHECK (game::boulders_feature.hot);
 
   MOPPE_CHECK (!game::terrain_shadows_feature.hot);
   MOPPE_CHECK (!game::motion_blur_feature.hot);
@@ -151,13 +154,14 @@ MOPPE_TEST (standard_graphics_benchmark_partition_groups_broad_subsystems) {
   settings.terrain_topology = true;
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << 4, game::GraphicsBenchmarkPartition::Standard);
-  MOPPE_CHECK (resolved == 14136u);
+  MOPPE_CHECK (resolved == 30520u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);
   MOPPE_CHECK (settings.star_effects);
   MOPPE_CHECK (settings.lens_flare);
   MOPPE_CHECK (settings.light_shafts);
   MOPPE_CHECK (settings.gtao);
+  MOPPE_CHECK (settings.boulders);
   MOPPE_CHECK (settings.terrain_fragment_normals);
   MOPPE_CHECK (settings.snow_support_filter);
   MOPPE_CHECK (settings.terrain_topology);

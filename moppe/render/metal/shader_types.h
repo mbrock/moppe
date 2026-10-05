@@ -346,6 +346,29 @@ struct MOPPE_SHADER_ALIGN MoppeForestCandidate {
   uint reserved;
 };
 
+// Loose rocks: one meshlet shapes one boulder from its record. Near rocks
+// subdivide every icosahedron face into four; distant ones and shadows use
+// the bare icosahedron. Boulder draws bind their records at the population
+// slot the forest uses, since the two never draw together, and share the
+// forest's frame uniforms.
+#define MOPPE_BUF_BOULDERS MOPPE_BUF_FOREST
+#define MOPPE_BOULDER_MESH_THREADS 128
+#define MOPPE_BOULDER_MESH_VERTICES 120
+#define MOPPE_BOULDER_MESH_PRIMITIVES 80
+
+struct MOPPE_SHADER_ALIGN MoppeBoulderInstance {
+  MoppeFloat4 centre_radius; // xyz=body centre in metres, w=radius in metres
+  MoppeFloat4 up_moisture;   // xyz=ground normal, w=surface moisture
+  MoppeUint4 identity;       // x=seed, yzw=reserved
+};
+
+struct MOPPE_SHADER_ALIGN MoppeBoulderCandidate {
+  uint boulder;
+  float pixels; // projected radius in scene pixels
+  uint reserved0;
+  uint reserved1;
+};
+
 // Sun-shaft raymarch: rays come from a camera basis with the frustum
 // half-extents folded in, and occlusion comes from projecting each march
 // sample forward through the scene and light matrices — no inverse anywhere.
@@ -444,6 +467,13 @@ static_assert (alignof (MoppeForestInstance) == 16,
                "forest instances require GPU alignment");
 static_assert (sizeof (MoppeForestCandidate) == 16,
                "forest candidate must remain one SIMD lane");
+static_assert (sizeof (MoppeBoulderInstance) == 48,
+               "boulder instance layout must match the shader");
+static_assert (sizeof (MoppeBoulderCandidate) == 16,
+               "boulder candidate layout must match the shader");
+static_assert (MOPPE_BOULDER_MESH_VERTICES <= MOPPE_BOULDER_MESH_THREADS &&
+                 MOPPE_BOULDER_MESH_PRIMITIVES <= MOPPE_BOULDER_MESH_THREADS,
+               "boulder meshlet emits one vertex and one face per thread");
 static_assert (MOPPE_FOREST_MESH_VERTICES <= 256,
                "forest meshlet exceeds Metal vertex limit");
 static_assert (MOPPE_FOREST_MESH_PRIMITIVES <= 512,

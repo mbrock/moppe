@@ -440,6 +440,8 @@ namespace moppe {
         id<MTLRenderPipelineState> forest_trunks = nil;
         id<MTLRenderPipelineState> forest_trunks_shadow = nil;
         id<MTLRenderPipelineState> leaf_fall = nil;
+        id<MTLRenderPipelineState> boulders = nil;
+        id<MTLRenderPipelineState> boulders_shadow = nil;
         id<MTLRenderPipelineState> river = nil;
 #if !TARGET_OS_IPHONE
         id<MTLComputePipelineState> reflection_geometry = nil;
@@ -626,6 +628,109 @@ namespace moppe {
                                     min_closure,
                                     first,
                                     count });
+        }
+      }
+
+      // Retained rocks grouped by world tile, like the forest: a tile bounds
+      // its members and its largest rock, so the per-frame cull can reject a
+      // whole group at once.
+      struct BoulderTile {
+        Vec3 centre;
+        float radius;
+        float max_radius;
+        std::uint32_t first;
+        std::uint32_t count;
+      };
+
+      constexpr float BOULDER_TILE_METRES = 64.0f;
+      // A shaped boulder reaches past its nominal radius where it is
+      // elongated and its corners are jittered outward.
+      constexpr float BOULDER_BOUND_RATIO = 1.45f;
+      // Rocks smaller than this many scene pixels across their radius are
+      // left to the terrain's own colour.
+      constexpr float BOULDER_MIN_PIXELS = 0.75f;
+      constexpr std::size_t BOULDER_MAX_CANDIDATES = 1u << 16;
+
+      struct MetalBoulderResources {
+        id<MTLBuffer> instances = nil;
+        std::vector<MoppeBoulderInstance> cpu_instances;
+        std::vector<BoulderTile> tiles;
+        std::vector<std::uint32_t> tile_members;
+        std::vector<MoppeBoulderCandidate> candidates;
+        std::uint32_t count = 0;
+        float period_x = 0.0f;
+        float period_z = 0.0f;
+      };
+
+      void build_boulder_tiles (MetalBoulderResources& rocks) {
+        const std::vector<MoppeBoulderInstance>& stones = rocks.cpu_instances;
+        rocks.tiles.clear ();
+        rocks.tile_members.clear ();
+        if (stones.empty ())
+          return;
+        float min_x = stones[0].centre_radius.x;
+        float min_z = stones[0].centre_radius.z;
+        float max_x = min_x;
+        float max_z = min_z;
+        for (const MoppeBoulderInstance& stone : stones) {
+          min_x = std::min (min_x, stone.centre_radius.x);
+          min_z = std::min (min_z, stone.centre_radius.z);
+          max_x = std::max (max_x, stone.centre_radius.x);
+          max_z = std::max (max_z, stone.centre_radius.z);
+        }
+        const auto cells = [] (float extent) {
+          return static_cast<std::uint32_t> (extent / BOULDER_TILE_METRES) + 1u;
+        };
+        const std::uint32_t side_x = cells (max_x - min_x);
+        const std::uint32_t side_z = cells (max_z - min_z);
+        const auto tile_of = [&] (const MoppeBoulderInstance& stone) {
+          const auto cell = [] (float offset, std::uint32_t side) {
+            return std::min (
+              static_cast<std::uint32_t> (offset / BOULDER_TILE_METRES),
+              side - 1u);
+          };
+          return cell (stone.centre_radius.z - min_z, side_z) * side_x +
+                 cell (stone.centre_radius.x - min_x, side_x);
+        };
+        std::vector<std::uint32_t> offsets (
+          static_cast<std::size_t> (side_x) * side_z + 1u, 0u);
+        for (const MoppeBoulderInstance& stone : stones)
+          ++offsets[tile_of (stone) + 1u];
+        for (std::size_t tile = 1; tile < offsets.size (); ++tile)
+          offsets[tile] += offsets[tile - 1];
+        rocks.tile_members.resize (stones.size ());
+        std::vector<std::uint32_t> cursor (offsets.begin (),
+                                           offsets.end () - 1);
+        for (std::uint32_t index = 0; index < stones.size (); ++index)
+          rocks.tile_members[cursor[tile_of (stones[index])]++] = index;
+
+        for (std::size_t tile = 0; tile + 1 < offsets.size (); ++tile) {
+          const std::uint32_t first = offsets[tile];
+          const std::uint32_t count = offsets[tile + 1] - first;
+          if (count == 0)
+            continue;
+          constexpr float far = std::numeric_limits<float>::max ();
+          Vec3 low (far, far, far);
+          Vec3 high (-far, -far, -far);
+          float max_radius = 0.0f;
+          for (std::uint32_t member = first; member < first + count; ++member) {
+            const MoppeBoulderInstance& stone =
+              stones[rocks.tile_members[member]];
+            const float bound = BOULDER_BOUND_RATIO * stone.centre_radius.w;
+            const Vec3 centre (stone.centre_radius.x,
+                               stone.centre_radius.y,
+                               stone.centre_radius.z);
+            for (int axis = 0; axis < 3; ++axis) {
+              low[axis] = std::min<float> (low[axis], centre[axis] - bound);
+              high[axis] = std::max<float> (high[axis], centre[axis] + bound);
+            }
+            max_radius = std::max (max_radius, stone.centre_radius.w);
+          }
+          rocks.tiles.push_back ({ (low + high) * 0.5f,
+                                   0.5f * length (high - low),
+                                   max_radius,
+                                   first,
+                                   count });
         }
       }
 
@@ -1023,6 +1128,15 @@ namespace moppe {
                                   bool include_forest) override;
       void set_forest (const ForestSetup& setup,
                        std::span<const ForestInstance> instances) override;
+      void set_boulders (const BoulderSetup& setup,
+                         std::span<const BoulderInstance> instances) override;
+      // Encodes the rocks into a shadow pass whose depth target is bound.
+      void encode_boulder_shadow (id<MTL4RenderCommandEncoder> encoder,
+                                  MetalFrameEncoding& encoding,
+                                  MetalFrameArena& arena,
+                                  const Mat4& light_view_proj,
+                                  const Vec3& focus,
+                                  bool local);
 
       // Shared upload path for typed texture descriptions.
       bool upload_pixels (__strong id<MTLTexture>& texture,
@@ -1073,6 +1187,7 @@ namespace moppe {
       void draw_undergrowth (const UndergrowthParams& params) override;
       void draw_forest () override;
       void draw_falling_leaves () override;
+      void draw_boulders () override;
       void draw_waterfalls (const Mesh& mesh, const Mat4& model) override;
       void draw_mesh (const Mesh& mesh,
                       const Mat4& model,
@@ -1183,6 +1298,7 @@ namespace moppe {
       MetalPipelines m_pipelines;
       MetalTerrainResources m_terrain_resources;
       MetalForestResources m_forest_resources;
+      MetalBoulderResources m_boulder_resources;
       MetalWaterResources m_water_resources;
       MetalSceneResources m_scene_resources;
       MetalFrameTargets m_targets;
@@ -2188,13 +2304,48 @@ namespace moppe {
         if (!m_temporal_scene_pipelines)
           leaves.stencilAttachmentPixelFormat = depth;
         leaves.maxTotalThreadsPerMeshThreadgroup = MOPPE_LEAF_FALL_THREADS;
+        // Boulders follow the trunk forest's shape: a CPU-culled mesh-only
+        // scene pipeline and an object-culled shadow pipeline.
+        MTLMeshRenderPipelineDescriptor* boulders =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        boulders.meshFunction =
+          [m_library newFunctionWithName:@"boulders_mesh"];
+        boulders.fragmentFunction =
+          [m_library newFunctionWithName:@"boulders_fragment"];
+        boulders.rasterSampleCount = scene_samples;
+        boulders.colorAttachments[0].pixelFormat = scene;
+        if (m_temporal_scene_pipelines) {
+          boulders.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
+          boulders.colorAttachments[2].pixelFormat = MTLPixelFormatR8Unorm;
+        }
+        boulders.depthAttachmentPixelFormat = depth;
+        if (!m_temporal_scene_pipelines)
+          boulders.stencilAttachmentPixelFormat = depth;
+        boulders.maxTotalThreadsPerMeshThreadgroup = MOPPE_BOULDER_MESH_THREADS;
+        MTLMeshRenderPipelineDescriptor* boulders_shadow =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        boulders_shadow.objectFunction =
+          [m_library newFunctionWithName:@"boulders_shadow_object"];
+        boulders_shadow.meshFunction =
+          [m_library newFunctionWithName:@"boulders_shadow_mesh"];
+        boulders_shadow.rasterSampleCount = 1;
+        boulders_shadow.depthAttachmentPixelFormat = MTLPixelFormatDepth16Unorm;
+        boulders_shadow.payloadMemoryLength = 512;
+        boulders_shadow.maxTotalThreadsPerObjectThreadgroup =
+          MOPPE_FOREST_OBJECT_THREADS;
+        boulders_shadow.maxTotalThreadsPerMeshThreadgroup =
+          MOPPE_BOULDER_MESH_THREADS;
         for (const auto& [descriptor, pipeline, name] :
              { std::tuple { leaves, &m_pipelines.leaf_fall, "falling leaves" },
                std::tuple {
                  trunks, &m_pipelines.forest_trunks, "trunk forest" },
                std::tuple { trunks_shadow,
                             &m_pipelines.forest_trunks_shadow,
-                            "trunk forest shadow" } }) {
+                            "trunk forest shadow" },
+               std::tuple { boulders, &m_pipelines.boulders, "boulder" },
+               std::tuple { boulders_shadow,
+                            &m_pipelines.boulders_shadow,
+                            "boulder shadow" } }) {
           if (!descriptor.meshFunction)
             continue;
           NSError* error = nil;
@@ -3210,6 +3361,8 @@ namespace moppe {
                                         1,
                                         1)];
       }
+      encode_boulder_shadow (
+        enc, scratch, scratch.arena[0], light_view_proj, Vec3 (0, 0, 0), false);
       [enc endEncoding];
       submit_and_wait (cmd);
       [m_residency removeAllocation:scratch.arena[0].buffer];
@@ -3387,6 +3540,13 @@ namespace moppe {
                                         1,
                                         1)];
       }
+      if (params.include_boulders)
+        encode_boulder_shadow (enc,
+                               m_frame,
+                               m_frame.arena[m_frame.slot],
+                               params.light_view_proj,
+                               focus,
+                               true);
       record_gpu_pass_end (m_frame, enc);
       [enc endEncoding];
 
@@ -3860,6 +4020,98 @@ namespace moppe {
       for (auto& bin : m_forest_resources.scene_candidate_bins)
         bin.reserve (m_forest_resources.cpu_instances.size () / 8);
       build_forest_tiles (m_forest_resources);
+    }
+
+    void
+    MetalRenderer::set_boulders (const BoulderSetup& setup,
+                                 std::span<const BoulderInstance> instances) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_boulders");
+      std::vector<MoppeBoulderInstance> packed;
+      packed.reserve (instances.size ());
+      for (const BoulderInstance& instance : instances) {
+        const float radius = instance.radius.numerical_value_in (u::m);
+        if (!(radius > 0.0f))
+          continue;
+        const Vec3 centre = position_value (instance.centre);
+        const Vec3 up =
+          instance.ground_normal.numerical_value_in (mp_units::one);
+        MoppeBoulderInstance gpu {};
+        gpu.centre_radius = { centre[0], centre[1], centre[2], radius };
+        gpu.up_moisture = { up[0],
+                            up[1],
+                            up[2],
+                            instance.moisture.numerical_value_in (
+                              mp_units::one) };
+        gpu.identity.x = instance.seed;
+        packed.push_back (gpu);
+      }
+      if (m_boulder_resources.instances && m_frame.sequence &&
+          ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                                  timeoutMS:5000])
+        throw std::runtime_error (
+          "Timed out replacing in-flight boulder resources");
+      if (m_boulder_resources.instances) {
+        [m_residency removeAllocation:m_boulder_resources.instances];
+        m_boulder_resources.instances = nil;
+        [m_residency commit];
+      }
+      const Vec3 period = extent_value (setup.period);
+      m_boulder_resources.period_x = period[0];
+      m_boulder_resources.period_z = period[2];
+      m_boulder_resources.count = static_cast<std::uint32_t> (packed.size ());
+      if (!packed.empty ())
+        m_boulder_resources.instances =
+          create_private_buffer (packed.data (),
+                                 packed.size () * sizeof (MoppeBoulderInstance),
+                                 @"Moppe boulders");
+      m_boulder_resources.cpu_instances = std::move (packed);
+      build_boulder_tiles (m_boulder_resources);
+    }
+
+    void
+    MetalRenderer::encode_boulder_shadow (id<MTL4RenderCommandEncoder> encoder,
+                                          MetalFrameEncoding& encoding,
+                                          MetalFrameArena& arena,
+                                          const Mat4& light_view_proj,
+                                          const Vec3& focus,
+                                          bool local) {
+      const MetalBoulderResources& rocks = m_boulder_resources;
+      if (!m_pipelines.boulders_shadow || !rocks.instances || rocks.count == 0)
+        return;
+      MoppeForestUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.view_proj = m4 (light_view_proj);
+      u.camera_pos = f4 (focus);
+      u.world.x = rocks.period_x;
+      u.world.y = rocks.period_z;
+      u.world.z = static_cast<float> (rocks.count);
+      u.world.w = local ? 1.0f : 0.0f;
+      const MTLGPUAddress uniforms = arena.write (u);
+      for (MTLRenderStages stage :
+           { MTLRenderStageObject, MTLRenderStageMesh }) {
+        bind_address (encoding, stage, MOPPE_BUF_FRAME, uniforms);
+        bind_address (
+          encoding, stage, MOPPE_BUF_BOULDERS, rocks.instances.gpuAddress);
+      }
+      use_arguments (
+        encoder, encoding, MTLRenderStageObject | MTLRenderStageMesh);
+      [encoder setRenderPipelineState:m_pipelines.boulders_shadow];
+      [encoder setDepthStencilState:m_pipelines.shadow_depth];
+      [encoder setCullMode:MTLCullModeNone];
+      // The whole-world map covers every periodic neighbour of the canonical
+      // tile; the camera-local map wraps each rock toward its focus.
+      const NSUInteger candidates =
+        static_cast<NSUInteger> (rocks.count) * (local ? 1 : 9);
+      [encoder drawMeshThreadgroups:MTLSizeMake ((candidates +
+                                                  MOPPE_FOREST_OBJECT_THREADS -
+                                                  1) /
+                                                   MOPPE_FOREST_OBJECT_THREADS,
+                                                 1,
+                                                 1)
+        threadsPerObjectThreadgroup:MTLSizeMake (
+                                      MOPPE_FOREST_OBJECT_THREADS, 1, 1)
+          threadsPerMeshThreadgroup:MTLSizeMake (
+                                      MOPPE_BOULDER_MESH_THREADS, 1, 1)];
     }
 
     // -- targets -------------------------------------------------------
@@ -5369,6 +5621,159 @@ namespace moppe {
         threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
           threadsPerMeshThreadgroup:MTLSizeMake (
                                       MOPPE_LEAF_FALL_THREADS, 1, 1)];
+    }
+
+    void MetalRenderer::draw_boulders () {
+      MetalBoulderResources& rocks = m_boulder_resources;
+      const MetalTerrainResources& terrain = m_terrain_resources;
+      if (!m_pipelines.boulders || !rocks.instances || rocks.count == 0)
+        return;
+
+      MoppeForestUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.view_proj = m_frame.uniforms.view_proj;
+      u.unjittered_view_proj = m_frame.uniforms.unjittered_view_proj;
+      u.previous_view_proj = m_frame.uniforms.previous_view_proj;
+      u.light_matrix = m_frame.uniforms.light_matrix;
+      u.camera_pos = m_frame.uniforms.camera_pos;
+      u.sun_dir = m_frame.uniforms.sun_dir;
+      u.sun_diffuse = m_frame.uniforms.sun_diffuse;
+      u.sun_specular = m_frame.uniforms.sun_specular;
+      u.ambient = m_frame.uniforms.ambient;
+      u.fog_color = m_frame.uniforms.fog_color;
+      u.world.x = rocks.period_x;
+      u.world.y = rocks.period_z;
+      u.world.z = static_cast<float> (rocks.count);
+      u.params = m_frame.uniforms.misc;
+      u.shadow = m_frame.uniforms.shadow;
+      u.temporal = m_frame.uniforms.temporal;
+
+      // The forest's culling, simplified: a rock is drawn when its bound
+      // meets the frustum and its radius still covers a fraction of a scene
+      // pixel. Tiles reject whole groups first, wrapped toward the camera.
+      rocks.candidates.clear ();
+      const Mat4& vp = m_current_view_proj;
+      const auto row_scale = [&] (int row) {
+        return std::sqrt (vp.element (row) * vp.element (row) +
+                          vp.element (4 + row) * vp.element (4 + row) +
+                          vp.element (8 + row) * vp.element (8 + row));
+      };
+      const float projection_x = row_scale (0);
+      const float projection_y = row_scale (1);
+      const float projection_w = row_scale (3);
+      const float pixel_scale =
+        0.5f * projection_y * static_cast<float> (m_targets.height);
+      const Vec3 camera = m_frame.params.camera_pos;
+      const auto clip = [&] (const Vec3& p, int row) {
+        return vp.element (row) * p[0] + vp.element (4 + row) * p[1] +
+               vp.element (8 + row) * p[2] + vp.element (12 + row);
+      };
+      const auto tile_may_contribute = [&] (const BoulderTile& tile,
+                                            const Vec3& centre) {
+        const float clip_x = clip (centre, 0);
+        const float clip_y = clip (centre, 1);
+        const float clip_w = clip (centre, 3);
+        if (clip_w <= -tile.radius * std::max (projection_w, 1.0f) ||
+            std::abs (clip_x) - clip_w >=
+              tile.radius * (projection_x + projection_w) ||
+            std::abs (clip_y) - clip_w >=
+              tile.radius * (projection_y + projection_w))
+          return false;
+        const float nearest = clip_w - tile.radius * projection_w;
+        return tile.max_radius * pixel_scale / std::max (nearest, 0.6f) >=
+               BOULDER_MIN_PIXELS;
+      };
+      const auto wrap_toward_camera = [&] (Vec3 point) {
+        if (rocks.period_x > 0.0f)
+          point[0] += std::round ((camera[0] - point[0]) / rocks.period_x) *
+                      rocks.period_x;
+        if (rocks.period_z > 0.0f)
+          point[2] += std::round ((camera[2] - point[2]) / rocks.period_z) *
+                      rocks.period_z;
+        return point;
+      };
+      for (const BoulderTile& tile : rocks.tiles) {
+        // A tile straddling the half-period line may hold members at either
+        // neighbouring copy, so it is kept if any copy can contribute.
+        std::array<float, 2> shifts_x { 0.0f, 0.0f };
+        std::array<float, 2> shifts_z { 0.0f, 0.0f };
+        for (const auto [axis, period, shifts] :
+             { std::tuple { 0, rocks.period_x, &shifts_x },
+               std::tuple { 2, rocks.period_z, &shifts_z } }) {
+          if (period <= 0.0f)
+            continue;
+          const float offset = camera[axis] - tile.centre[axis];
+          const float shift = std::round (offset / period) * period;
+          const float residue = offset - shift;
+          (*shifts)[0] = shift;
+          (*shifts)[1] = std::abs (residue) + tile.radius > 0.5f * period
+                           ? shift + std::copysign (period, residue)
+                           : shift;
+        }
+        bool contributes = false;
+        for (const float shift_x : shifts_x)
+          for (const float shift_z : shifts_z)
+            contributes = contributes ||
+                          tile_may_contribute (
+                            tile, tile.centre + Vec3 (shift_x, 0.0f, shift_z));
+        if (!contributes)
+          continue;
+        for (std::uint32_t member = tile.first;
+             member < tile.first + tile.count &&
+             rocks.candidates.size () < BOULDER_MAX_CANDIDATES;
+             ++member) {
+          const std::uint32_t index = rocks.tile_members[member];
+          const MoppeBoulderInstance& stone = rocks.cpu_instances[index];
+          const Vec3 centre = wrap_toward_camera (Vec3 (stone.centre_radius.x,
+                                                        stone.centre_radius.y,
+                                                        stone.centre_radius.z));
+          const float bound = BOULDER_BOUND_RATIO * stone.centre_radius.w;
+          const float clip_x = clip (centre, 0);
+          const float clip_y = clip (centre, 1);
+          const float clip_w = clip (centre, 3);
+          if (clip_w <= -bound ||
+              std::abs (clip_x) >= clip_w + bound * projection_x ||
+              std::abs (clip_y) >= clip_w + bound * projection_y)
+            continue;
+          const float pixels =
+            stone.centre_radius.w * pixel_scale / std::max (clip_w, 0.6f);
+          if (pixels >= BOULDER_MIN_PIXELS)
+            rocks.candidates.push_back ({ index, pixels, 0u, 0u });
+        }
+      }
+      if (rocks.candidates.empty ())
+        return;
+
+      id<MTL4RenderCommandEncoder> enc = scene_encoder ();
+      begin_gpu_pass (enc, GpuPass::Scene);
+      [enc setRenderPipelineState:m_pipelines.boulders];
+      [enc setDepthStencilState:m_pipelines.depth[1][1]];
+      [enc setCullMode:MTLCullModeNone];
+      const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
+      for (MTLRenderStages stage :
+           { MTLRenderStageMesh, MTLRenderStageFragment })
+        bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
+      bind_address (m_frame,
+                    MTLRenderStageMesh,
+                    MOPPE_BUF_BOULDERS,
+                    rocks.instances.gpuAddress);
+      bind_address (
+        m_frame,
+        MTLRenderStageMesh,
+        MOPPE_BUF_DRAW,
+        m_frame.arena[m_frame.slot].write (
+          std::span<const MoppeBoulderCandidate> (rocks.candidates)));
+      bind_texture (m_frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_SHADOW,
+                    terrain.shadow_map ? terrain.shadow_map
+                                       : m_pipelines.shadow_fallback);
+      use_arguments (enc, m_frame, MTLRenderStageMesh | MTLRenderStageFragment);
+      // Without an object stage the grid counts mesh threadgroups.
+      [enc drawMeshThreadgroups:MTLSizeMake (rocks.candidates.size (), 1, 1)
+        threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
+          threadsPerMeshThreadgroup:MTLSizeMake (
+                                      MOPPE_BOULDER_MESH_THREADS, 1, 1)];
     }
 
     void MetalRenderer::draw_forest () {

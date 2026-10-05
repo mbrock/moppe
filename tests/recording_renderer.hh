@@ -28,6 +28,9 @@ namespace moppe::test {
     render::ForestSetup forest_setup {};
     std::vector<render::ForestInstance> forest_instances;
     std::size_t forest_draws = 0;
+    render::BoulderSetup boulder_setup {};
+    std::vector<render::BoulderInstance> boulder_instances;
+    std::size_t boulder_draws = 0;
     std::optional<render::LocalShadowParams> local_shadow;
 
     render::TexturePtr create_texture (const render::TextureDesc&,
@@ -106,6 +109,12 @@ namespace moppe::test {
       forest_setup = setup;
       forest_instances.assign (instances.begin (), instances.end ());
     }
+    void
+    set_boulders (const render::BoulderSetup& setup,
+                  std::span<const render::BoulderInstance> instances) override {
+      boulder_setup = setup;
+      boulder_instances.assign (instances.begin (), instances.end ());
+    }
     bool begin_frame (const render::FrameParams&) override {
       return true;
     }
@@ -118,6 +127,9 @@ namespace moppe::test {
     void draw_ocean (const render::OceanParams&) override {}
     void draw_forest () override {
       ++forest_draws;
+    }
+    void draw_boulders () override {
+      ++boulder_draws;
     }
     void draw_waterfalls (const render::Mesh&, const Mat4&) override {}
     void draw_mesh (const render::Mesh&, const Mat4&, uint64_t) override {
