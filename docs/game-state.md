@@ -18,10 +18,10 @@ world.
 `game::GameSession` is the concrete owner of running gameplay state. It owns
 `game::GameLogicState` (the clock, weather and camera effects, player mode and
 inputs, health/scoring values, gameplay timers, and effects RNG) along
-with both vehicles, the glider, walker, chase camera, stars, and dust.
+with the bike, the glider, walker, chase camera, stars, and dust.
 `game::GameState` is its copyable checkpoint value: it combines that logic
 with snapshots of those mutable subsystems. Restoring it changes only mutable
-state; immutable terrain and obstacle references, vehicle physical parameters,
+state; immutable terrain and trunk-field references, bike physical parameters,
 and renderer resources remain attached to live objects on the same completed
 world.
 
@@ -32,12 +32,13 @@ readings make rendering independent of later simulation mutation, but they are
 not replay checkpoint state.
 
 Ordinary playable simulation has one public fixed-step operation:
-`game::advance_game_session(world, surface, obstacles, session, input,
-seconds_t)`. Its inputs supply only the completed world's parameters,
-geometry, and collision obstacles; it does not expose `GeneratedWorld`,
-loading, platform, or renderer types. The operation applies the `InputFrame`,
-advances actors and effects, updates score, camera, and FOV, and reports the
-small set of application-side effects it cannot realize itself.
+`game::advance_game_session(world, surface, session, input, seconds_t,
+trunks)`. Its inputs supply only the completed world's parameters,
+geometry, and optional trunk-collision field; it does not expose
+`GeneratedWorld`, loading, platform, or renderer types. The operation applies
+the `InputFrame`, advances actors and effects, updates score, camera, and FOV,
+and reports the small set of application-side effects it cannot realize
+itself.
 `MoppeGame::tick` selects live or recorded input, continues the global clock
 and weather through the paused cinematic mode, then delegates
 ordinary play through that operation.

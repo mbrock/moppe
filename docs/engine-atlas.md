@@ -120,11 +120,11 @@ the visible world is never a half-built candidate.
 
 ## Mutable session and replay
 
-`GameSession` owns `GameLogicState`, two vehicles, the glider, walker, chase
+`GameSession` owns `GameLogicState`, the bike, the glider, walker, chase
 camera, stars, and dust. It borrows the active world's geometry for physical
 readings but does not own loading or a replacement world.
 
-`advance_game_session(world, surface, obstacles, session, input, dt)` is the
+`advance_game_session(world, surface, session, input, dt, trunks)` is the
 ordinary fixed-step operation. Its small result reports application effects
 that portable simulation cannot realize itself.
 

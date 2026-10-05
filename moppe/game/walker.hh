@@ -4,14 +4,11 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/mov/trunk_field.hh>
-#include <moppe/mov/vehicle.hh>
-
-#include <vector>
 
 namespace moppe {
   namespace game {
-    // On-foot mode: park the bike, stretch your legs, walk through
-    // doors into buildings.  Toggled with the secret 7-5-R combo.
+    // On-foot mode: park the bike and stretch your legs.  Toggled with
+    // the secret 7-5-R combo.
     // Port of main.cc's Walker; water_level now arrives through
     // WorldParams and the figure records into a DrawList.
     class Walker {
@@ -54,7 +51,6 @@ namespace moppe {
 
       void update (seconds_t dt,
                    const map::SurfaceGeometry& surface,
-                   const std::vector<mov::Box>& boxes,
                    const WorldParams& world,
                    const mov::TrunkField* trunks = nullptr);
 
@@ -69,8 +65,6 @@ namespace moppe {
       }
 
     private:
-      void collide (const std::vector<mov::Box>& boxes);
-
       position_t m_pos;
       Vec3 m_heading;
       velocity_component_t m_vy;

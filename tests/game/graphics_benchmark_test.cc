@@ -83,7 +83,6 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
   world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
-  std::vector<mov::Box> obstacles;
   game::GameSession session (world, surface);
 
   std::optional<game::GameState> checkpoint;
@@ -121,7 +120,6 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
     const game::GameSessionAdvanceResult result =
       advance_game_session (world,
                             surface,
-                            obstacles,
                             session,
                             frame->input,
                             seconds (game::GRAPHICS_BENCHMARK_DT));

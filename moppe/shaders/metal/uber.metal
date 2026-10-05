@@ -1,5 +1,5 @@
 // The forward "uber" shader for everything the DrawList records:
-// props, vehicles, wildlife, baked city sectors, dust
+// props, vehicles, baked meshes, dust
 // billboards, blob shadows.  Replaces fixed-function GL lighting
 // (one directional sun, AMBIENT_AND_DIFFUSE color material,
 // separate specular) plus the unified distance haze.

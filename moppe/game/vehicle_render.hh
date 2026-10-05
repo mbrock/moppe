@@ -12,13 +12,10 @@ namespace moppe {
     // the bike's rigid assemblies
     // are baked meshes drawn straight through the renderer, while
     // shape-changing parts (suspension links) record into the frame's
-    // draw list.  Dispatches bike vs. commandeered car/truck on the
-    // body kind.  `time` (seconds) replaces the hidden
-    // glutGet(GLUT_ELAPSED_TIME) that drove the flashing light bars.
+    // draw list.
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
-                         float time,
                          uint64_t motion_base);
 
     // The exhaust lick and jump-jet plumes: baked unit cones replayed

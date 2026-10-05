@@ -160,7 +160,7 @@
 - `moppe/platform/` — Game interface, input, assets, speech; `mac/`, `ios/`,
   `web/`, and shared `apple/` layers. The browser host uses Canvas2D glyph
   rasterization and a `requestAnimationFrame` loop.
-- `moppe/game/` — the game systems, one file each (terrain, city, wildlife,
+- `moppe/game/` — the game systems, one file each (terrain, forest, water,
   dust, HUD, vehicle rendering; glue in game.cc).
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see
   `docs/game-state.md` for the checkpoint boundary and remaining systems.

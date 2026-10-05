@@ -115,8 +115,6 @@ namespace moppe::game {
       .thrust = vehicle.thrust ().numerical_value_in (one),
       .boost_level = vehicle.boost_level (),
       .boost_drive = vehicle.boost_drive (),
-      .body_kind = vehicle.body_kind (),
-      .body_color = vehicle.body_color (),
     };
   }
 
@@ -233,8 +231,6 @@ namespace moppe::game {
     };
 
     result.actors.bike = vehicle_pose (input.session.bike ());
-    if (logic.m_car_exists)
-      result.actors.car = vehicle_pose (input.session.car ());
     if (logic.m_mode == M_GLIDER)
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_mode == M_FOOT)
@@ -254,9 +250,8 @@ namespace moppe::game {
         input.session.glider ().vertical_speed ().numerical_value_in (u::m /
                                                                       u::s);
     } else {
-      hud.boost_ready01 = logic.m_mode == M_FOOT
-                            ? 1.0f
-                            : input.session.active_vehicle ().boost_charge ();
+      hud.boost_ready01 =
+        logic.m_mode == M_FOOT ? 1.0f : input.session.bike ().boost_charge ();
     }
     hud.health01 = logic.m_health / 100.0f;
     hud.odometer_m = static_cast<float> (logic.m_odometer);

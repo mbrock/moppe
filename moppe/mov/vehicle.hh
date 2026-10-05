@@ -2,23 +2,15 @@
 #ifndef MOPPE_VEHICLE_HH
 #define MOPPE_VEHICLE_HH
 
-#include <moppe/color.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/mov/trunk_field.hh>
 
 #include <algorithm>
-#include <vector>
 
 namespace moppe {
   namespace mov {
     using namespace moppe::map;
-
-    // An axis-aligned solid block (a building): the vehicle bounces
-    // off its walls, and its top is drivable ground.
-    struct Box {
-      float x0, z0, x1, z1, top;
-    };
 
     class Vehicle {
     public:
@@ -47,8 +39,6 @@ namespace moppe {
         speed_t impact {};
         meters_t fall_top {};
         meters_t fall_drop {};
-        int body_kind {};
-        DisplayColor body_color {};
       };
 
       // max_thrust caps the wheel force (launch punch); power caps
@@ -99,10 +89,6 @@ namespace moppe {
         m_water_level = level;
       }
 
-      void set_obstacles (const std::vector<Box>* boxes) {
-        m_obstacles = boxes;
-      }
-
       void set_trunks (const TrunkField* trunks) {
         m_trunks = trunks;
       }
@@ -135,13 +121,6 @@ namespace moppe {
           m_heading = v;
           m_thrust_orientation = v;
         }
-      }
-
-      // What this vehicle looks like: 0 = the motorcycle,
-      // 1 = civilian car, 2 = police car, 3 = fire truck
-      void set_body_style (int kind, DisplayColor color) {
-        m_body_kind = kind;
-        m_body_color = color;
       }
 
       bool grounded () const {
@@ -209,12 +188,6 @@ namespace moppe {
       Vec3 render_orientation () const {
         return m_render_heading;
       }
-      int body_kind () const {
-        return m_body_kind;
-      }
-      DisplayColor body_color () const {
-        return m_body_color;
-      }
 
       Vec3 position () const {
         return position_value (m_position);
@@ -238,7 +211,6 @@ namespace moppe {
       void calculate_orientation ();
       void fall_to_ground ();
       void check_ground_collision ();
-      void collide_with_walls ();
       void collide_with_trunks ();
       void bound ();
       bool expected_landing_pose (Vec3& forward,
@@ -249,11 +221,7 @@ namespace moppe {
 
       acceleration_t drag () const;
 
-      const Box* roof_under () const;
-
       Vec3 ground_normal () const {
-        if (roof_under ())
-          return Vec3 (0, 1, 0);
         const Vec3& p = position_value (m_position);
         return spatial::sample<terrain::terrain_normal> (
                  m_map, moppe::position (Vec3 (p[0], 0.0f, p[2])))
@@ -261,9 +229,6 @@ namespace moppe {
       }
 
       float ground_height () const {
-        const Box* roof = roof_under ();
-        if (roof)
-          return roof->top;
         const Vec3& p = position_value (m_position);
         return terrain::surface_elevation_value (
           spatial::sample<terrain::surface_elevation> (
@@ -304,11 +269,7 @@ namespace moppe {
       meters_t m_fall_top;  // highest point of the current flight
       meters_t m_fall_drop; // set on landing: peak minus touchdown
 
-      const std::vector<Box>* m_obstacles;
       const TrunkField* m_trunks = nullptr;
-
-      int m_body_kind;
-      DisplayColor m_body_color;
     };
   }
 }

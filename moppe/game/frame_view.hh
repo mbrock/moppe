@@ -37,8 +37,6 @@ namespace moppe::game {
     float thrust = 0.0f;
     float boost_level = 0.0f;
     float boost_drive = 0.0f;
-    int body_kind = 0;
-    DisplayColor body_color {};
   };
 
   struct GliderPose {
@@ -57,7 +55,6 @@ namespace moppe::game {
 
   struct FrameActors {
     VehiclePose bike {};
-    std::optional<VehiclePose> car;
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
     Mode active_mode = M_BIKE;

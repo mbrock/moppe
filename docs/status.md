@@ -22,7 +22,7 @@ the water are allowed to say about themselves.
   `FrameView` per visible frame.
 - A game-shaped renderer with the full Metal presentation on Apple platforms
   and a playable lower-cost WebGPU backend.
-- Motorcycle, car, walking, hang-glider, generated trail circuit, cinematic
+- Motorcycle, walking, hang-glider, generated trail circuit, cinematic
   tour, forests, rivers, lakes, atmosphere, and post-processing.
 - Deterministic captures, graphics replay benchmarks, source analysis, typed
   Arrow bundle persistence, and 207 focused tests.

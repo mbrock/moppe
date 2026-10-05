@@ -266,89 +266,12 @@ namespace moppe {
       }
     }
 
-    // A commandeered car (or truck), drawn in place of the bike.
-    // Expects the orientation frame already on the matrix stack.
-    static void
-    render_car (render::DrawList& dl, const VehiclePose& vehicle, float time) {
-      const bool truck = (vehicle.body_kind == 3);
-      const float t = time;
-
-      // model floor sits where the wheels touch
-      dl.translate (0, -1.0f, 0);
-
-      const DisplayColor body = vehicle.body_color;
-      dl.color (body);
-      dl.push ();
-      dl.translate (0, truck ? 0.8f : 0.55f, 0);
-      model::box (
-        dl, truck ? 2.1f : 1.7f, truck ? 1.5f : 0.85f, truck ? 5.6f : 3.6f);
-      dl.pop ();
-
-      dl.color (0.2f, 0.25f, 0.3f);
-      dl.push ();
-      if (truck) {
-        dl.translate (0, 1.6f, 1.9f);
-        model::box (dl, 1.9f, 0.7f, 1.4f);
-      } else {
-        dl.translate (0, 1.15f, -0.2f);
-        model::box (dl, 1.5f, 0.6f, 1.9f);
-      }
-      dl.pop ();
-
-      if (truck) {
-        dl.color (0.75f, 0.76f, 0.78f);
-        dl.push ();
-        dl.translate (0, 1.75f, -0.8f);
-        dl.rotate (-6 * u::deg, 1, 0, 0);
-        model::box (dl, 0.5f, 0.12f, 4.4f);
-        dl.pop ();
-      }
-
-      dl.color (0.08f, 0.08f, 0.1f);
-      for (int lx = -1; lx <= 1; lx += 2)
-        for (int lz = -1; lz <= 1; lz += 2) {
-          dl.push ();
-          dl.translate (
-            lx * (truck ? 1.0f : 0.8f), 0.3f, lz * (truck ? 1.7f : 1.2f));
-          model::box (dl, 0.25f, 0.6f, 0.65f);
-          dl.pop ();
-        }
-
-      // flashing light bar on police and fire vehicles
-      if (vehicle.body_kind >= 2) {
-        dl.lit (false);
-        const bool phase_a = std::fmod (t * 3.0f, 1.0f) < 0.5f;
-        for (int s = -1; s <= 1; s += 2) {
-          if ((s > 0) == phase_a)
-            dl.color (0.2f, 0.4f, 1.0f);
-          else
-            dl.color (1.0f, 0.15f, 0.1f);
-          dl.push ();
-          dl.translate (s * 0.35f, truck ? 2.05f : 1.55f, truck ? 2.0f : -0.2f);
-          model::box (dl, 0.4f, 0.22f, 0.35f);
-          dl.pop ();
-        }
-        dl.lit (true);
-      }
-
-      // The continuously gimballed jump jets still work in a car; their
-      // additive plumes draw in the late flame pass
-      // (render_vehicle_flames), over the already-drawn solids.
-    }
-
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
-                         float time,
                          uint64_t motion_base) {
       dl.push ();
       dl.mult (vehicle_frame (vehicle));
-
-      if (vehicle.body_kind != 0) {
-        render_car (dl, vehicle, time);
-        dl.pop ();
-        return;
-      }
 
       const BikeMeshes& bm = bike_meshes (r);
       const Mat4 frame = dl.matrix ();
@@ -433,9 +356,8 @@ namespace moppe {
                                 const VehiclePose& vehicle,
                                 float time,
                                 uint64_t motion_base) {
-      const bool bike = (vehicle.body_kind == 0);
       const float thrust = std::abs (vehicle.thrust);
-      const bool exhaust = bike && thrust > 0.1f;
+      const bool exhaust = thrust > 0.1f;
       const bool boosting = vehicle.boost_level > 0.001f;
       if (!exhaust && !boosting)
         return;
@@ -472,22 +394,18 @@ namespace moppe {
       // they overlap, so the middle reads as incandescent.
       if (boosting) {
         const float k = vehicle.boost_level;
-        const float flicker = bike ? 0.88f + 0.12f * std::sin (time * 41.0f) *
-                                               std::sin (time * 27.0f + 1.7f)
-                                   : 0.88f + 0.12f * std::sin (time * 39.0f) *
-                                               std::sin (time * 26.0f + 1.1f);
+        const float flicker = 0.88f + 0.12f * std::sin (time * 41.0f) *
+                                        std::sin (time * 27.0f + 1.7f);
         const float len = k * flicker;
 
-        // Nozzle placement and plume proportions per body: under the
-        // bike frame, or under the commandeered car's floor.
-        const Vec3 nozzle =
-          bike ? Vec3 (0.14f, -0.55f, -0.35f) : Vec3 (0.6f, -0.75f, -0.4f);
-        const float sheath_r = bike ? 0.21f : 0.24f;
-        const float body_r = bike ? 0.12f : 0.14f;
-        const float core_r = bike ? 0.055f : 0.065f;
-        const float sheath_l = bike ? 1.9f : 2.1f;
-        const float body_l = bike ? 2.5f : 2.7f;
-        const float core_l = bike ? 3.0f : 3.2f;
+        // Nozzle placement and plume proportions under the bike frame.
+        const Vec3 nozzle (0.14f, -0.55f, -0.35f);
+        const float sheath_r = 0.21f;
+        const float body_r = 0.12f;
+        const float core_r = 0.055f;
+        const float sheath_l = 1.9f;
+        const float body_l = 2.5f;
+        const float core_l = 3.0f;
 
         for (int s = -1; s <= 1; s += 2) {
           const Mat4 jet =

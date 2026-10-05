@@ -24,7 +24,7 @@ namespace moppe::game {
       else if (logic.m_mode == M_GLIDER)
         session.glider ().set_turn (value);
       else
-        session.active_vehicle ().set_yaw ((90 * value) * u::deg);
+        session.bike ().set_yaw ((90 * value) * u::deg);
     }
 
     void set_go (GameSession& session, float value) {
@@ -35,9 +35,8 @@ namespace moppe::game {
       else if (logic.m_mode == M_GLIDER)
         session.glider ().set_speed_control (value);
       else {
-        session.active_vehicle ().set_thrust (value);
-        session.active_vehicle ().set_boost (logic.m_boost_input,
-                                             logic.m_go_input);
+        session.bike ().set_thrust (value);
+        session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
       }
     }
 
@@ -51,8 +50,7 @@ namespace moppe::game {
       } else if (logic.m_mode == M_GLIDER) {
         session.glider ().set_flare (logic.m_boost_input > 0.1f);
       } else {
-        session.active_vehicle ().set_boost (logic.m_boost_input,
-                                             logic.m_go_input);
+        session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
       }
     }
 
@@ -114,14 +112,12 @@ namespace moppe::game {
         return;
 
       if (logic.m_mode != M_FOOT) {
-        // Step off to the side of whatever we're driving.
-        mov::Vehicle& vehicle = session.active_vehicle ();
+        // Step off to the side of the bike.
+        mov::Vehicle& vehicle = session.bike ();
         const Vec3 heading = vehicle.orientation ();
         const Vec3 side (heading[2], 0, -heading[0]);
         session.walker ().spawn (
-          moppe::position (vehicle.position () +
-                           side * (logic.m_mode == M_CAR ? 2.4f : 1.8f)),
-          heading);
+          moppe::position (vehicle.position () + side * 1.8f), heading);
         vehicle.set_thrust (0);
         vehicle.set_yaw (0 * u::deg);
         vehicle.set_boost (0, 0);
@@ -131,24 +127,12 @@ namespace moppe::game {
         return;
       }
 
-      // On foot: bike first, then our parked car, then grand theft.
+      // On foot: remount the bike when standing next to it.
       if (length2 (session.walker ().position () -
                    session.bike ().position ()) < 5.0f * 5.0f) {
         session.bike ().set_thrust (0);
         session.bike ().set_yaw (0 * u::deg);
         logic.m_mode = M_BIKE;
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
-        set_boost (session, logic.m_boost_input);
-        return;
-      }
-
-      if (logic.m_car_exists &&
-          length2 (session.walker ().position () - session.car ().position ()) <
-            6.0f * 6.0f) {
-        session.car ().set_thrust (0);
-        session.car ().set_yaw (0 * u::deg);
-        logic.m_mode = M_CAR;
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         set_boost (session, logic.m_boost_input);
@@ -189,28 +173,14 @@ namespace moppe::game {
                 2600 * u::N,
                 30 * u::kW,
                 150 * u::kg),
-        m_car (world.spawn_position (),
-               45 * u::deg,
-               surface,
-               14 * u::kN,
-               100 * u::kW,
-               900 * u::kg),
         m_glider (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
-
-  mov::Vehicle& GameSession::active_vehicle () noexcept {
-    return m_logic.m_mode == M_CAR ? m_car : m_bike;
-  }
-
-  const mov::Vehicle& GameSession::active_vehicle () const noexcept {
-    return m_logic.m_mode == M_CAR ? m_car : m_bike;
-  }
 
   Vec3 GameSession::subject_position () const {
     if (m_logic.m_mode == M_FOOT)
       return m_walker.position ();
     if (m_logic.m_mode == M_GLIDER)
       return m_glider.position ();
-    return active_vehicle ().position ();
+    return m_bike.position ();
   }
 
   Vec3 GameSession::subject_heading () const {
@@ -218,7 +188,7 @@ namespace moppe::game {
       return m_walker.heading ();
     if (m_logic.m_mode == M_GLIDER)
       return m_glider.heading ();
-    return active_vehicle ().orientation ();
+    return m_bike.orientation ();
   }
 
   float GameSession::subject_speed_kmh () const {
@@ -226,7 +196,7 @@ namespace moppe::game {
       return 0.0f;
     if (m_logic.m_mode == M_GLIDER)
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
-    return length (active_vehicle ().velocity ()) * 3.6f;
+    return length (m_bike.velocity ()) * 3.6f;
   }
 
   bool
@@ -251,15 +221,14 @@ namespace moppe::game {
   }
 
   GameSession::State GameSession::state () const {
-    return { m_logic,           m_bike.state (),   m_car.state (),
-             m_glider.state (), m_walker.state (), m_camera.state (),
-             m_stars.state (),  m_dust.state () };
+    return { m_logic,           m_bike.state (),   m_glider.state (),
+             m_walker.state (), m_camera.state (), m_stars.state (),
+             m_dust.state () };
   }
 
   void GameSession::restore (const State& state) {
     m_logic = state.logic;
     m_bike.restore (state.vehicle);
-    m_car.restore (state.car);
     m_glider.restore (state.glider);
     m_walker.restore (state.walker);
     m_camera.restore (state.camera);
@@ -270,7 +239,6 @@ namespace moppe::game {
   GameSessionAdvanceResult
   advance_game_session (const WorldParams& world,
                         const map::SurfaceGeometry& surface,
-                        const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,
                         seconds_t dt,
@@ -278,18 +246,12 @@ namespace moppe::game {
     const float elapsed = dt.numerical_value_in (u::s);
     GameLogicState& logic = session.logic ();
     session.bike ().set_water_level (world.water_level);
-    session.car ().set_water_level (world.water_level);
-    session.bike ().set_obstacles (&obstacles);
-    session.car ().set_obstacles (&obstacles);
     session.bike ().set_trunks (trunks);
-    session.car ().set_trunks (trunks);
 
     apply_input_frame (session, surface, input);
 
     if (!session.can_drop_bike ())
       session.bike ().update (dt);
-    if (logic.m_car_exists)
-      session.car ().update (dt);
     if (logic.m_mode == M_GLIDER) {
       const bool landed = session.glider ().update (dt);
       if (session.glider ().bike_attached ())
@@ -298,25 +260,21 @@ namespace moppe::game {
         finish_glide (session);
     }
     if (logic.m_mode == M_FOOT)
-      session.walker ().update (dt, surface, obstacles, world, trunks);
+      session.walker ().update (dt, surface, world, trunks);
 
     const Vec3 vehicle_position = session.subject_position ();
-    mov::Vehicle& vehicle = session.active_vehicle ();
+    mov::Vehicle& vehicle = session.bike ();
 
-    // Parked vehicles' impacts shouldn't linger until remount.
+    // A parked bike's impacts shouldn't linger until remount.
     if (logic.m_mode != M_BIKE) {
       session.bike ().pop_impact ();
       session.bike ().pop_fall_drop ();
-    }
-    if (logic.m_car_exists && logic.m_mode != M_CAR) {
-      session.car ().pop_impact ();
-      session.car ().pop_fall_drop ();
     }
 
     const bool in_water =
       vehicle_position[1] <
       (world.water_level).numerical_value_in (moppe::u::m) + 1.0f;
-    const bool driving = logic.m_mode == M_BIKE || logic.m_mode == M_CAR;
+    const bool driving = logic.m_mode == M_BIKE;
     const float impact = driving ? vehicle.pop_impact () : 0.0f;
 
     // Air steering is a visible motocross whip and a scoring mechanic. The
@@ -476,7 +434,7 @@ namespace moppe::game {
 
     // Exhaust smoke: faint gray puffs rise off the muffler while the
     // throttle is open.
-    if (driving && abs (vehicle.thrust ()) > 0.3f && logic.m_mode == M_BIKE) {
+    if (driving && abs (vehicle.thrust ()) > 0.3f) {
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const probability_t puff (14.0f / u::s * (elapsed * u::s));
       if (chance (logic.m_fx_rng) < scalar_value (puff)) {

@@ -37,8 +37,7 @@ namespace moppe {
           m_boost_level (0), m_boost_charge (1),
           m_boost_recharge_delay (seconds (0)), m_water_level (-1000 * u::m),
           m_airborne_time (seconds (0)), m_impact (0 * u::m / u::s),
-          m_fall_top (0 * u::m), m_fall_drop (0 * u::m), m_obstacles (0),
-          m_body_kind (0), m_body_color (0.8, 0.15, 0.1) {
+          m_fall_top (0 * u::m), m_fall_drop (0 * u::m) {
       calculate_orientation ();
       fall_to_ground ();
     }
@@ -67,9 +66,7 @@ namespace moppe {
                m_airborne_time,
                m_impact,
                m_fall_top,
-               m_fall_drop,
-               m_body_kind,
-               m_body_color };
+               m_fall_drop };
     }
 
     void Vehicle::restore (const State& state) {
@@ -97,8 +94,6 @@ namespace moppe {
       m_impact = state.impact;
       m_fall_top = state.fall_top;
       m_fall_drop = state.fall_drop;
-      m_body_kind = state.body_kind;
-      m_body_color = state.body_color;
     }
 
     void Vehicle::carry (position_t position,
@@ -223,74 +218,11 @@ namespace moppe {
       return false;
     }
 
-    // The obstacle box whose roof is the effective ground under the
-    // bike -- only counts once the bike is up at roof level, so a
-    // building towering overhead is not "ground".
-    const Box* Vehicle::roof_under () const {
-      if (!m_obstacles)
-        return 0;
-
-      const Box* found = 0;
-      const Vec3& p = position_value (m_position);
-      float best = terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (
-          m_map, moppe::position (Vec3 (p[0], 0.0f, p[2]))));
-
-      for (size_t i = 0; i < m_obstacles->size (); ++i) {
-        const Box& b = (*m_obstacles)[i];
-        if (p[0] >= b.x0 && p[0] <= b.x1 && p[2] >= b.z0 && p[2] <= b.z1 &&
-            p[1] > b.top - 2 * radius && b.top > best) {
-          best = b.top;
-          found = &b;
-        }
-      }
-
-      return found;
-    }
-
-    void Vehicle::collide_with_walls () {
-      collide_with_trunks ();
-      if (!m_obstacles)
-        return;
-
-      Vec3& p = position_value (m_position);
-      Vec3& v = velocity_value (m_velocity);
-      for (size_t i = 0; i < m_obstacles->size (); ++i) {
-        const Box& b = (*m_obstacles)[i];
-
-        if (p[1] - radius >= b.top - 0.05f)
-          continue; // on or above the roof
-
-        const float dx0 = p[0] - (b.x0 - radius);
-        const float dx1 = (b.x1 + radius) - p[0];
-        const float dz0 = p[2] - (b.z0 - radius);
-        const float dz1 = (b.z1 + radius) - p[2];
-
-        if (dx0 <= 0 || dx1 <= 0 || dz0 <= 0 || dz1 <= 0)
-          continue; // clear of this block
-
-        // Push out along the axis of least penetration and bounce;
-        // a hard bonk registers as an impact for shake and dust
-        const float px = std::min (dx0, dx1);
-        const float pz = std::min (dz0, dz1);
-
-        if (px < pz) {
-          p[0] = (dx0 < dx1) ? b.x0 - radius : b.x1 + radius;
-          m_impact = std::max (m_impact, 0.4f * std::abs (v[0]) * u::m / u::s);
-          v[0] *= -0.35f;
-        } else {
-          p[2] = (dz0 < dz1) ? b.z0 - radius : b.z1 + radius;
-          m_impact = std::max (m_impact, 0.4f * std::abs (v[2]) * u::m / u::s);
-          v[2] *= -0.35f;
-        }
-      }
-    }
-
-    // Trunks meet a slimmer body than buildings do: a capsule from just above
-    // the ground to the rider's shoulders, so a bike can thread between trees
-    // its full collision sphere would not fit through. A trunk does not give:
-    // the push resolves the overlap and the velocity into it rebounds weakly,
-    // registering as an impact like a wall.
+    // Trunks meet a slimmer body than the collision sphere: a capsule from
+    // just above the ground to the rider's shoulders, so a bike can thread
+    // between trees its full collision sphere would not fit through. A trunk
+    // does not give: the push resolves the overlap and the velocity into it
+    // rebounds weakly, registering as an impact like a wall.
     void Vehicle::collide_with_trunks () {
       if (!m_trunks)
         return;
@@ -472,7 +404,7 @@ namespace moppe {
 
       bound ();
       check_ground_collision ();
-      collide_with_walls ();
+      collide_with_trunks ();
 
       // Landing detection, for camera shake and dust bursts.  What
       // matters is the speed INTO the surface at touchdown -- landing

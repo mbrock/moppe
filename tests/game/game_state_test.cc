@@ -28,12 +28,6 @@ namespace {
     check_vector (moppe::velocity_value (actual),
                   moppe::velocity_value (expected));
   }
-
-  void check_color (moppe::DisplayColor actual, moppe::DisplayColor expected) {
-    MOPPE_CHECK_NEAR (actual.red, expected.red, 1e-6f);
-    MOPPE_CHECK_NEAR (actual.green, expected.green, 1e-6f);
-    MOPPE_CHECK_NEAR (actual.blue, expected.blue, 1e-6f);
-  }
 }
 
 MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
@@ -75,7 +69,6 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   check_vector (restored.thrust_orientation, saved.thrust_orientation);
   check_vector (restored.render_heading, saved.render_heading);
   check_vector (restored.render_normal, saved.render_normal);
-  check_color (restored.body_color, saved.body_color);
   MOPPE_CHECK_NEAR (
     radians_value (restored.yaw), radians_value (saved.yaw), 1e-6f);
   MOPPE_CHECK_NEAR (radians_value (restored.yaw_target),
@@ -107,7 +100,6 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   MOPPE_CHECK_NEAR ((restored.fall_drop).numerical_value_in (moppe::u::m),
                     (saved.fall_drop).numerical_value_in (moppe::u::m),
                     1e-6f);
-  MOPPE_CHECK (restored.body_kind == saved.body_kind);
 }
 
 MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
@@ -193,7 +185,6 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   world.map_size = spatial_extent_in_metres (Vec3 (160, 20, 160));
   world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
-  std::vector<mov::Box> obstacles;
   game::GameSession session (world, surface);
 
   mov::Vehicle::State flight = session.bike ().state ();
@@ -210,7 +201,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
 
   const seconds_t step = seconds (1.0f / 60.0f);
   game::advance_game_session (
-    world, surface, obstacles, session, game::InputFrame {}, step);
+    world, surface, session, game::InputFrame {}, step);
 
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (15, 0, 0));
@@ -219,7 +210,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   flight.render_heading = flight.heading;
   session.bike ().restore (flight);
   game::advance_game_session (
-    world, surface, obstacles, session, game::InputFrame {}, step);
+    world, surface, session, game::InputFrame {}, step);
   MOPPE_CHECK_NEAR (
     std::abs (session.logic ().m_jump_spin_radians), 1.5707963f, 1e-4f);
   MOPPE_CHECK_NEAR (
@@ -232,7 +223,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   flight.render_heading = flight.heading;
   session.bike ().restore (flight);
   game::advance_game_session (
-    world, surface, obstacles, session, game::InputFrame {}, step);
+    world, surface, session, game::InputFrame {}, step);
   MOPPE_CHECK_NEAR (
     std::abs (session.logic ().m_jump_spin_radians), 0.0f, 1e-4f);
   MOPPE_CHECK_NEAR (
@@ -245,7 +236,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   flight.fall_top = 18 * u::m;
   session.bike ().restore (flight);
   game::advance_game_session (
-    world, surface, obstacles, session, game::InputFrame {}, seconds (0.1f));
+    world, surface, session, game::InputFrame {}, seconds (0.1f));
 
   MOPPE_CHECK (session.logic ().m_landed_clean);
   MOPPE_CHECK_NEAR (session.logic ().m_landed_spin_degrees, 90.0f, 1e-3f);
@@ -406,13 +397,12 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
-  std::vector<mov::Box> obstacles;
   game::GameSession session (world, surface);
 
   game::InputFrame held;
   held.deploy_glider_held = true;
   game::advance_game_session (
-    world, surface, obstacles, session, held, seconds (1.0f / 60.0f));
+    world, surface, session, held, seconds (1.0f / 60.0f));
   MOPPE_CHECK (session.logic ().m_mode == game::M_BIKE);
 
   mov::Vehicle::State airborne = session.bike ().state ();
@@ -425,7 +415,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   session.bike ().restore (airborne);
 
   game::advance_game_session (
-    world, surface, obstacles, session, held, seconds (1.0f / 60.0f));
+    world, surface, session, held, seconds (1.0f / 60.0f));
 
   MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
   MOPPE_CHECK (session.glider ().bike_attached ());
@@ -436,13 +426,13 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
     1e-4f);
 
   game::advance_game_session (
-    world, surface, obstacles, session, held, seconds (1.0f / 60.0f));
+    world, surface, session, held, seconds (1.0f / 60.0f));
   MOPPE_CHECK (session.glider ().bike_attached ());
 
   game::InputFrame drop;
   drop.deploy_glider = true;
   game::advance_game_session (
-    world, surface, obstacles, session, drop, seconds (1.0f / 60.0f));
+    world, surface, session, drop, seconds (1.0f / 60.0f));
   const Vec3 dropped_position = session.bike ().position ();
 
   MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
@@ -450,12 +440,8 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   MOPPE_CHECK (!session.can_drop_bike ());
 
   for (int i = 0; i < 60; ++i)
-    game::advance_game_session (world,
-                                surface,
-                                obstacles,
-                                session,
-                                game::InputFrame {},
-                                seconds (1.0f / 60.0f));
+    game::advance_game_session (
+      world, surface, session, game::InputFrame {}, seconds (1.0f / 60.0f));
   MOPPE_CHECK (session.bike ().position ()[1] < dropped_position[1]);
   MOPPE_CHECK (length (session.glider ().position () -
                        session.bike ().position ()) > 2.0f);
@@ -554,7 +540,6 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.logic ().m_total_time = 12.5;
   session.logic ().m_score = 400;
   session.bike ().set_thrust (0.8f);
-  session.car ().set_thrust (-0.4f);
   session.glider ().launch (
     position (Vec3 (80, 70, 80)), velocity (Vec3 (8, 1, 14)), Vec3 (0, 0, 1));
   session.glider ().set_turn (0.6f);
@@ -570,7 +555,6 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.logic ().m_total_time = 20.0;
   session.logic ().m_score = 900;
   session.bike ().set_thrust (-1.0f);
-  session.car ().set_thrust (1.0f);
   session.glider ().set_turn (-1.0f);
   session.walker ().spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
   session.camera ().place (Vec3 (100, 100, 100), Vec3 ());
@@ -592,8 +576,6 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   MOPPE_CHECK_NEAR (scalar_value (restored.vehicle.thrust),
                     scalar_value (saved.vehicle.thrust),
                     1e-6f);
-  MOPPE_CHECK_NEAR (
-    scalar_value (restored.car.thrust), scalar_value (saved.car.thrust), 1e-6f);
   check_position (restored.glider.position, saved.glider.position);
   check_vector (restored.glider.heading, saved.glider.heading);
   check_position (restored.walker.position, saved.walker.position);
@@ -619,7 +601,6 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   using AdvanceGameSession =
     game::GameSessionAdvanceResult (*) (const game::WorldParams&,
                                         const map::SurfaceGeometry&,
-                                        const std::vector<mov::Box>&,
                                         game::GameSession&,
                                         const game::InputFrame&,
                                         seconds_t,
@@ -637,7 +618,6 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
-  std::vector<mov::Box> obstacles;
 
   game::InputFrameAdapter recorder;
   recorder.key (platform::Key::D, true);
@@ -653,7 +633,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   game::GameSession live (world, surface);
   const game::GameSession::State checkpoint = live.state ();
   for (const game::InputFrame& frame : tape)
-    game::advance_game_session (world, surface, obstacles, live, frame, step);
+    game::advance_game_session (world, surface, live, frame, step);
   const game::GameSession::State live_state = live.state ();
 
   // This must be more than a checkpoint round trip: the recorded keyboard
@@ -667,7 +647,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   game::GameSession replay (world, surface);
   replay.restore (checkpoint);
   for (const game::InputFrame& frame : tape)
-    game::advance_game_session (world, surface, obstacles, replay, frame, step);
+    game::advance_game_session (world, surface, replay, frame, step);
   const game::GameSession::State replayed = replay.state ();
 
   MOPPE_CHECK (replayed.logic.m_mode == live_state.logic.m_mode);

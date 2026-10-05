@@ -438,9 +438,6 @@ namespace moppe {
       void prepare_world_surface () {
         MOPPE_PROFILE_ZONE ("startup.prepare_world_surface");
         session ().bike ().set_water_level (world ().water_level);
-        session ().car ().set_water_level (world ().water_level);
-        session ().bike ().set_obstacles (&m_obstacles);
-        session ().car ().set_obstacles (&m_obstacles);
 
         if (m_water_shot) {
           m_water_inspection = choose_water_inspection (*m_water_shot,
@@ -864,7 +861,6 @@ namespace moppe {
         const GameSessionAdvanceResult advance =
           advance_game_session (world (),
                                 surface (),
-                                m_obstacles,
                                 session (),
                                 input,
                                 seconds (dt),
@@ -996,9 +992,6 @@ namespace moppe {
             case M_FOOT:
               interaction_radius = 0.55f;
               break;
-            case M_CAR:
-              interaction_radius = 1.55f;
-              break;
             case M_GLIDER:
               break;
             }
@@ -1031,8 +1024,6 @@ namespace moppe {
         // Soft blob shadows under the movers.
         draw_home_base_marker (m_world_dl);
         m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
-        if (actors.car)
-          m_blob.draw (m_world_dl, surface (), actors.car->position, 2.9f);
         if (actors.walker)
           m_blob.draw (m_world_dl,
                        surface (),
@@ -1044,11 +1035,7 @@ namespace moppe {
         // In helmet cam you ARE the rider: don't draw yourself.
         const bool helmet = actors.helmet_camera;
         if (!(helmet && actors.active_mode == M_BIKE))
-          render_vehicle (
-            r, m_world_dl, actors.bike, frame.lighting.time, 0x1000);
-        if (actors.car && !(helmet && actors.active_mode == M_CAR))
-          render_vehicle (
-            r, m_world_dl, *actors.car, frame.lighting.time, 0x2000);
+          render_vehicle (r, m_world_dl, actors.bike, 0x1000);
         if (actors.walker && !helmet)
           render_walker (m_world_dl, *actors.walker, frame.lighting.time);
         if (actors.glider && !helmet)
@@ -1061,9 +1048,6 @@ namespace moppe {
         if (visibility.vehicle_effects &&
             !(helmet && actors.active_mode == M_BIKE))
           render_vehicle_flames (r, actors.bike, frame.lighting.time, 0x1000);
-        if (visibility.vehicle_effects && actors.car &&
-            !(helmet && actors.active_mode == M_CAR))
-          render_vehicle_flames (r, *actors.car, frame.lighting.time, 0x2000);
         if (visibility.star_effects)
           session ().stars ().render (r, frame.environment);
       }
@@ -1824,7 +1808,6 @@ namespace moppe {
           recipe ().evolution ().critical_hillslope_gradient,
           recipe ().evolution ().maximum_hillslope_diffusivity_multiplier);
         logic ().m_mode = M_BIKE;
-        logic ().m_car_exists = false;
         logic ().m_game_over = false;
         logic ().m_health = 100.0f;
         m_params = bind_world_params (m_params, next_recipe);
@@ -1882,7 +1865,6 @@ namespace moppe {
       Terrain m_terrain;
       ForestLandscape m_forest;
       BlobShadow m_blob;
-      std::vector<mov::Box> m_obstacles;
       mov::TrunkField m_trunk_field;
       Hud m_hud;
       std::unique_ptr<render::FontAtlas> m_loading_font;

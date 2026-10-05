@@ -110,7 +110,6 @@ namespace {
     MOPPE_CHECK (actual.m_mode == expected.m_mode);
     MOPPE_CHECK (actual.m_cam_mode == expected.m_cam_mode);
     frame_view_check_vector (actual.m_fp_eye, expected.m_fp_eye);
-    MOPPE_CHECK (actual.m_car_exists == expected.m_car_exists);
     MOPPE_CHECK (actual.m_score == expected.m_score);
     MOPPE_CHECK (actual.m_fx_rng == expected.m_fx_rng);
   }

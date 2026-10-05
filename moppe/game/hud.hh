@@ -15,10 +15,10 @@ namespace moppe {
     // Game state consumed by the compact overlay.  Hud::draw clamps
     // normalized inputs before deriving dial geometry.
     struct HudState {
-      // length(active_vehicle().velocity()) * 3.6f; ignored (treated
+      // length(bike().velocity()) * 3.6f; ignored (treated
       // as 0) while on_foot, as at the old call site.
       float speed_kmh;
-      // active_vehicle().boost_charge(): 0..1.  Drives the boost dial's
+      // bike().boost_charge(): 0..1.  Drives the boost dial's
       // blue reserve arc; ignored (treated as 1.0) on foot.
       float boost_ready01;
       // m_health / 100: 0..1.  Drives the health bar fill and color.

@@ -6,8 +6,6 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 
-#include <vector>
-
 namespace moppe::game {
   // Observable application-side effects of an ordinary simulation step.
   // The application decides how to realize these, keeping platform services
@@ -17,7 +15,7 @@ namespace moppe::game {
   };
 
   // The mutable state of one playable session on a completed world.  The
-  // world retains the surface; vehicles and the glider borrow it for their
+  // world retains the surface; the bike and the glider borrow it for their
   // physical readings. A checkpoint is therefore meaningful only on the same
   // completed world.
   class GameSession {
@@ -42,13 +40,6 @@ namespace moppe::game {
     }
     const mov::Vehicle& bike () const noexcept {
       return m_bike;
-    }
-
-    mov::Vehicle& car () noexcept {
-      return m_car;
-    }
-    const mov::Vehicle& car () const noexcept {
-      return m_car;
     }
 
     mov::Glider& glider () noexcept {
@@ -86,8 +77,6 @@ namespace moppe::game {
       return m_dust;
     }
 
-    mov::Vehicle& active_vehicle () noexcept;
-    const mov::Vehicle& active_vehicle () const noexcept;
     Vec3 subject_position () const;
     Vec3 subject_heading () const;
     float subject_speed_kmh () const;
@@ -101,7 +90,6 @@ namespace moppe::game {
   private:
     GameLogicState m_logic;
     mov::Vehicle m_bike;
-    mov::Vehicle m_car;
     mov::Glider m_glider;
     Walker m_walker;
     ChaseCamera m_camera;
@@ -112,7 +100,6 @@ namespace moppe::game {
   GameSessionAdvanceResult
   advance_game_session (const WorldParams& world,
                         const map::SurfaceGeometry& surface,
-                        const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,
                         seconds_t dt,

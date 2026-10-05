@@ -14,7 +14,7 @@
 namespace moppe::game {
   using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
 
-  enum Mode { M_BIKE, M_FOOT, M_CAR, M_GLIDER };
+  enum Mode { M_BIKE, M_FOOT, M_GLIDER };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
   // The directly copyable logical state owned by GameSession. Generated world
@@ -40,7 +40,6 @@ namespace moppe::game {
     Mode m_mode = M_BIKE;
     CamMode m_cam_mode = CAM_CHASE;
     Vec3 m_fp_eye;
-    bool m_car_exists = false;
     int m_score = 0;
     float m_jump_airtime = 0.0f;
     float m_jump_spin_radians = 0.0f;
@@ -60,7 +59,6 @@ namespace moppe::game {
   struct GameState {
     GameLogicState logic;
     mov::Vehicle::State vehicle;
-    mov::Vehicle::State car;
     mov::Glider::State glider;
     Walker::State walker;
     ChaseCamera::State camera;

@@ -40,7 +40,7 @@ Its copyable `game::GameState` checkpoint intentionally excludes generated
 terrain, resident resources, renderer history, and asynchronous loading. Each
 system that participates exposes a plain `state()` / `restore()` pair.
 
-`advance_game_session(world, surface, obstacles, session, input, seconds_t)`
+`advance_game_session(world, surface, session, input, seconds_t, trunks)`
 is the ordinary fixed-step seam. Its arguments name the completed-world values
 simulation reads without coupling it to `GeneratedWorld`; the application
 still selects input,

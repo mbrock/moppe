@@ -186,7 +186,7 @@ The dense field also has two temporal rules. Fine flutter fades before an
 individual blade becomes subpixel, leaving the slower coherent gust instead
 of distant glitter; and high-frequency blade-to-blade colour differences stay
 subordinate to the continuous moisture and canopy fields. In gameplay the
-current bike, car, or walker contributes one small interaction footprint.
+current bike or walker contributes one small interaction footprint.
 Roots remain fixed, but upper sections lean out and lie down as the mover
 passes, so the field participates in motion without acquiring a retained
 plant simulation.

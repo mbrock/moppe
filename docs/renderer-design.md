@@ -85,9 +85,7 @@ amended the first draft. The deltas, now integrated below, were:
   underdamped. A dense terrain-corridor test raises the eye immediately over
   slopes and ridges; the spring owns the gentler descent afterward.
 - The uber shader's haze uses the terrain's **distance term only** — the
-  valley-mist term stays terrain-exclusive, because the whole city sits at
-  exactly the mist's full-strength altitude (H_CITY = 45) and would change
-  atmosphere noticeably.
+  valley-mist term stays terrain-exclusive.
 - HUD pipeline: **cull none** (the y-down ortho flips winding; this exact
   bug is documented at main.cc:3182). HUD coordinates are view **points**.
   On macOS the default drawable uses the view's full backing-pixel extent up
@@ -148,7 +146,7 @@ this, not Vulkan-esque generality. Three tiers:
   (repeat/clamp, filter, anisotropy, optional depth-compare).
 - `Mesh` — immutable vertex (+ optional index) buffer with a list of
   `(DrawState, range)` runs. Built by `MeshBuilder`. Replaces display lists;
-  used for city sectors, sky dome, ocean grid, and solid primitives.
+  used for the sky dome, ocean grid, and solid primitives.
 - Terrain is special-cased (see below), not a Mesh.
 - Terrain inspection can bind one generic R32F surface overlay with a value
   range, opacity, and palette. The renderer does not know whether its values
@@ -193,7 +191,7 @@ Fixed pass structure per frame, expressed as explicit API on `Renderer`:
        temporal: jittered 1x sceneA + persistent reversed-Z depth +
                  RG16F motion + R8 reactive mask
        terrain → sky → forest assemblies → undergrowth → immediate world
-       draw list (stars, wildlife, fish, vehicles, walker, people, cars,
+       draw list (stars, wildlife, fish, vehicles, walker,
        blob shadows) → water (sea, lakes, and painted rivers) → dust
     reconstruction (when scene < drawable)
        MetalFX temporal: color/depth/motion/exposure/reactive → native HDR
