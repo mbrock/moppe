@@ -433,10 +433,14 @@ namespace moppe::map {
       const auto seeded =
         band (gate - 0.085f * signal, gate + 0.085f * signal, mosaic);
 
-      // A route keeps almost all canopy off itself; a settlement clears its
-      // ground completely.
+      // A route keeps almost all canopy off a corridor about its formed
+      // width; a settlement clears its ground completely.
       const auto trodden = use[site];
-      const auto route_clearance = 1 - 0.96f * get<trail_influence> (trodden);
+      constexpr auto trail = map::trail_influence[one];
+      const auto route_clearance =
+        1 - 0.96f * band (0.35f * trail,
+                          0.65f * trail,
+                          get<trail_influence> (trodden));
       const auto settled_clearance = 1 - get<home_base_influence> (trodden);
 
       // Every factor is a soft yes between 0 and 1, and multiplying them is

@@ -160,7 +160,7 @@ MOPPE_TEST (broad_trail_brief_expands_the_formed_riding_core) {
     return std::ranges::count_if (
       spatial::get<trail_influence> (result.network.use),
       [] (TrailInfluence influence) {
-        return influence > 0.99f * trail_influence[mp_units::one];
+        return influence > 0.5f * trail_influence[mp_units::one];
       });
   };
   MOPPE_CHECK (count_core (broad_result) > count_core (narrow_result));

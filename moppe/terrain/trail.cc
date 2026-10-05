@@ -1414,9 +1414,12 @@ namespace moppe::terrain {
     std::vector<TrailInfluence> influence (count, 0.0f * trail_influence[one]);
     std::vector<HomeBaseInfluence> home_base_influence (
       count, 0.0f * terrain::home_base_influence[one]);
-    // Unlike the constructed height stamp, the material footprint keeps its
-    // authored width. Sampling a distance to the continuous alignment makes
-    // a narrow path legible without inflating its core to a whole grid cell.
+    // Unlike the constructed height stamp, the material footprint is a
+    // distance to the continuous alignment: one on the centreline, falling
+    // linearly to nothing at the formed width plus its shoulder. Each
+    // consumer then cuts its own width from the same field -- a narrow dirt
+    // tread, a grass verge, a wider forest corridor -- and bilinear sampling
+    // of a distance keeps even a tread narrower than a grid cell legible.
     const float half_width =
       0.5f * (parameters.width).numerical_value_in (moppe::u::m);
     const float blend =
@@ -1427,9 +1430,8 @@ namespace moppe::terrain {
     for (std::size_t cell = 0; cell < count; ++cell)
       if (flood.water_depth_m (cell) <= 1e-7f &&
           material_raster.distance_m[cell] < radius)
-        influence[cell] =
-          shoulder_ramp (material_raster.distance_m[cell], half_width, blend) *
-          trail_influence[one];
+        influence[cell] = (1.0f - material_raster.distance_m[cell] / radius) *
+                          trail_influence[one];
 
     const float base_radius =
       (parameters.home_base_pad_radius).numerical_value_in (moppe::u::m);

@@ -73,8 +73,10 @@ inline MoppeGrassMedium moppe_grass_medium (float2 world_xz,
   const float light = max (0.07, pow (1.0 - canopy, 3.2));
   const float damp = 0.75 + 0.25 * smoothstep (0.02, 0.48, grass.moisture);
   const float standable = smoothstep (0.52, 0.78, ground_up);
+  // The trail footprint is a distance ramp; grass grows right up to the
+  // edge of its trodden tread.
   const float cleared =
-    1.0 - saturate (max (saturate (worn.x), saturate (worn.y)) * 1.6);
+    (1.0 - smoothstep (0.80, 0.86, worn.x)) * (1.0 - saturate (worn.y * 1.6));
   const float variation = 0.88 + 0.24 * smoothstep (0.18, 0.72, grass.clump);
   const float snow_habitat = smoothstep (0.55, 0.68, relative_height) *
                              smoothstep (0.58, 0.78, snow_support);

@@ -24,7 +24,7 @@ namespace moppe::game {
                                                  'O', 'R', 'L', 'D', '0', '1' };
     // Version 13 reconstructs the full hillslope gradient before applying the
     // nonlinear transport law. Version 12 used one cardinal component.
-    constexpr std::uint32_t CACHE_VERSION = 13;
+    constexpr std::uint32_t CACHE_VERSION = 14;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());
