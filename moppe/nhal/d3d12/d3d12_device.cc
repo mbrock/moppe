@@ -35,6 +35,7 @@ namespace moppe::nhal {
     constexpr std::uint64_t arena_capacity = 16u << 20;
     constexpr std::uint32_t ring_descriptors = 3 * 16384;
     constexpr std::uint32_t max_bindings = 16;
+    constexpr std::uint32_t max_timestamps = 64;
 
     void check (HRESULT hr, const char* what) {
       if (FAILED (hr)) {
@@ -277,6 +278,27 @@ namespace moppe::nhal {
         null_uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         m_device->CreateUnorderedAccessView (nullptr, nullptr, &null_uav,
                                              m_srv_pool.cpu (m_null_uav));
+
+        // Timestamps: a range of the query heap per frame slot, resolved
+        // into one readback buffer.
+        UINT64 frequency = 0;
+        m_queue->GetTimestampFrequency (&frequency);
+        m_ticks_per_ms = double (frequency) / 1000.0;
+        D3D12_QUERY_HEAP_DESC queries { D3D12_QUERY_HEAP_TYPE_TIMESTAMP,
+                                        max_timestamps * frames_in_flight };
+        check (m_device->CreateQueryHeap (&queries,
+                                          IID_PPV_ARGS (&m_timestamps)),
+               "timestamp heap");
+        {
+          const auto readback = heap (D3D12_HEAP_TYPE_READBACK);
+          const auto desc =
+            buffer_desc (8ull * max_timestamps * frames_in_flight);
+          check (m_device->CreateCommittedResource (
+                   &readback, D3D12_HEAP_FLAG_NONE, &desc,
+                   D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                   IID_PPV_ARGS (&m_timestamp_readback)),
+                 "timestamp readback");
+        }
 
         // Indirect commands that carry only their arguments.
         auto signature = [&] (D3D12_INDIRECT_ARGUMENT_TYPE type, UINT stride,
@@ -611,6 +633,11 @@ namespace moppe::nhal {
         m_list->SetDescriptorHeaps (1, heaps);
         m_current_backbuffer =
           m_backbuffers[m_swapchain->GetCurrentBackBufferIndex ()];
+        FrameTiming& timing = m_timing[slot];
+        timing.serial = m_serial;
+        timing.labels.clear ();
+        timing.count = 0;
+        timing.resolved = false;
         return true;
       }
 
@@ -625,6 +652,7 @@ namespace moppe::nhal {
       }
 
       void begin_render_pass (const RenderPassDesc& desc) override {
+        timestamp_pass (desc.label ? desc.label : "render");
         m_pass = desc;
         std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 8> rtvs {};
         std::uint32_t width = 0, height = 0;
@@ -672,6 +700,7 @@ namespace moppe::nhal {
                                       dxgi_format (target.desc.format));
         }
         m_pass = {};
+        timestamp ();
       }
 
       void set_pipeline (Pipeline handle) override {
@@ -759,8 +788,15 @@ namespace moppe::nhal {
                                  args.resource.Get (), offset, nullptr, 0);
       }
 
-      void begin_compute_pass (const char*) override {}
-      void end_compute_pass () override {}
+      void begin_compute_pass (const char* label) override {
+        timestamp_pass (label ? label : "compute");
+      }
+
+      void end_compute_pass () override { timestamp (); }
+
+      std::span<const PassTiming> pass_timings () const override {
+        return m_pass_timings;
+      }
 
       void dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z)
         override {
@@ -808,6 +844,11 @@ namespace moppe::nhal {
         if (m_capture_request)
           encode_capture (back);
         transition (m_list.Get (), back, D3D12_RESOURCE_STATE_PRESENT);
+        if (const std::uint32_t count = m_timing[m_slot].count)
+          m_list->ResolveQueryData (
+            m_timestamps.Get (), D3D12_QUERY_TYPE_TIMESTAMP,
+            m_slot * max_timestamps, count, m_timestamp_readback.Get (),
+            8ull * m_slot * max_timestamps);
         check (m_list->Close (), "close list");
         ID3D12CommandList* lists[] = { m_list.Get () };
         m_queue->ExecuteCommandLists (1, lists);
@@ -828,6 +869,56 @@ namespace moppe::nhal {
       }
 
     private:
+      struct FrameTiming {
+        std::uint64_t serial = 0;
+        std::vector<std::string> labels;
+        std::uint32_t count = 0;
+        bool resolved = true;
+      };
+
+      void timestamp_pass (const char* label) {
+        FrameTiming& timing = m_timing[m_slot];
+        if (timing.count + 2 > max_timestamps)
+          return;
+        timing.labels.emplace_back (label);
+        timestamp ();
+      }
+
+      void timestamp () {
+        FrameTiming& timing = m_timing[m_slot];
+        if (timing.count >= max_timestamps
+            || timing.count >= 2 * timing.labels.size ())
+          return;
+        m_list->EndQuery (m_timestamps.Get (), D3D12_QUERY_TYPE_TIMESTAMP,
+                          m_slot * max_timestamps + timing.count);
+        ++timing.count;
+      }
+
+      void resolve_timings (std::uint64_t completed) {
+        for (std::uint32_t slot = 0; slot < frames_in_flight; ++slot) {
+          FrameTiming& timing = m_timing[slot];
+          if (timing.resolved || timing.serial > completed
+              || timing.count < 2)
+            continue;
+          timing.resolved = true;
+          const D3D12_RANGE range { 8ull * slot * max_timestamps,
+                                    8ull * (slot * max_timestamps
+                                            + timing.count) };
+          void* mapped = nullptr;
+          if (FAILED (m_timestamp_readback->Map (0, &range, &mapped)))
+            continue;
+          const auto* ticks = static_cast<const std::uint64_t*> (mapped)
+                              + slot * max_timestamps;
+          m_pass_timings.clear ();
+          for (std::uint32_t i = 0; i + 1 < timing.count; i += 2)
+            m_pass_timings.push_back (
+              { timing.labels[i / 2],
+                double (ticks[i + 1] - ticks[i]) / m_ticks_per_ms });
+          const D3D12_RANGE none { 0, 0 };
+          m_timestamp_readback->Unmap (0, &none);
+        }
+      }
+
       struct PendingCapture {
         std::uint64_t serial = 0;
         ComPtr<ID3D12Resource> readback;
@@ -1210,6 +1301,7 @@ namespace moppe::nhal {
           if (r.dsv != no_slot)
             m_dsv_pool.free.push_back (r.dsv);
         });
+        resolve_timings (completed);
         for (auto it = m_captures.begin (); it != m_captures.end ();) {
           if (it->serial > completed) {
             ++it;
@@ -1283,6 +1375,11 @@ namespace moppe::nhal {
       ComPtr<ID3D12CommandSignature> m_draw_signature;
       ComPtr<ID3D12CommandSignature> m_draw_indexed_signature;
       ComPtr<ID3D12CommandSignature> m_dispatch_signature;
+      ComPtr<ID3D12QueryHeap> m_timestamps;
+      ComPtr<ID3D12Resource> m_timestamp_readback;
+      std::array<FrameTiming, frames_in_flight> m_timing;
+      std::vector<PassTiming> m_pass_timings;
+      double m_ticks_per_ms = 1e6;
       std::function<void (const Capture&)> m_capture_request;
       std::vector<PendingCapture> m_captures;
     };

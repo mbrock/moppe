@@ -159,6 +159,13 @@ namespace {
       });
     }
     _device->end_frame ();
+    if (_rendered % 120 == 0 || last) {
+      std::cerr << "NHAL demo: GPU";
+      for (const PassTiming& pass : _device->pass_timings ())
+        std::fprintf (stderr, " %s %.2f ms", pass.label.c_str (),
+                      pass.milliseconds);
+      std::cerr << std::endl;
+    }
     if (last) {
       _device->wait_idle ();
       [NSApp terminate:nil];

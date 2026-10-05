@@ -25,6 +25,7 @@ namespace moppe::nhal {
     constexpr NSUInteger max_textures = 32;
     constexpr NSUInteger storage_texture_base = 16;
     constexpr NSUInteger max_samplers = 4;
+    constexpr NSUInteger max_timestamps = 64;
 
     std::string describe (NSError* error) {
       return error ? error.localizedDescription.UTF8String : "unknown error";
@@ -165,6 +166,15 @@ namespace moppe::nhal {
           throw std::runtime_error ("NHAL: argument table: "
                                     + describe (error));
         make_samplers ();
+
+        m_ticks_per_ms = [m_device queryTimestampFrequency] / 1000.0;
+        MTL4CounterHeapDescriptor* counters =
+          [[MTL4CounterHeapDescriptor alloc] init];
+        counters.type = MTL4CounterHeapTypeTimestamp;
+        counters.count = max_timestamps;
+        for (std::uint32_t i = 0; i < frames_in_flight; ++i)
+          m_timing[i].heap = [m_device newCounterHeapWithDescriptor:counters
+                                                              error:&error];
 
         m_backbuffer = m_textures.insert<Texture> (MetalTexture {});
       }
@@ -379,6 +389,12 @@ namespace moppe::nhal {
         [m_allocators[slot] reset];
         m_commands = [m_device newCommandBuffer];
         [m_commands beginCommandBufferWithAllocator:m_allocators[slot]];
+        FrameTiming& timing = m_timing[slot];
+        timing.serial = m_serial;
+        timing.labels.clear ();
+        timing.count = 0;
+        if (timing.heap)
+          [timing.heap invalidateCounterRange:NSMakeRange (0, max_timestamps)];
         return true;
       }
 
@@ -428,6 +444,7 @@ namespace moppe::nhal {
           width = t.desc.width;
           height = t.desc.height;
         }
+        timestamp_pass (desc.label ? desc.label : "render");
         m_encoder = [m_commands renderCommandEncoderWithDescriptor:pass];
         if (desc.label)
           m_encoder.label = @(desc.label);
@@ -440,6 +457,7 @@ namespace moppe::nhal {
       }
 
       void begin_compute_pass (const char* label) override {
+        timestamp_pass (label ? label : "compute");
         m_compute = [m_commands computeCommandEncoder];
         if (label)
           m_compute.label = @(label);
@@ -453,6 +471,7 @@ namespace moppe::nhal {
       void end_compute_pass () override {
         [m_compute endEncoding];
         m_compute = nil;
+        timestamp ();
       }
 
       void copy_to_buffer (Buffer target, std::uint64_t offset,
@@ -514,6 +533,7 @@ namespace moppe::nhal {
       void end_render_pass () override {
         [m_encoder endEncoding];
         m_encoder = nil;
+        timestamp ();
       }
 
       void set_pipeline (Pipeline handle) override {
@@ -618,6 +638,10 @@ namespace moppe::nhal {
         m_textures[m_backbuffer].texture = nil;
       }
 
+      std::span<const PassTiming> pass_timings () const override {
+        return m_pass_timings;
+      }
+
       void wait_idle () override {
         if (m_serial)
           [m_event waitUntilSignaledValue:m_serial timeoutMS:5000];
@@ -625,6 +649,54 @@ namespace moppe::nhal {
       }
 
     private:
+      // One frame slot's timestamps: a pair around each pass.
+      struct FrameTiming {
+        id<MTL4CounterHeap> heap = nil;
+        std::uint64_t serial = 0;
+        std::vector<std::string> labels;
+        NSUInteger count = 0;
+        bool resolved = true;
+      };
+
+      void timestamp_pass (const char* label) {
+        FrameTiming& timing = m_timing[m_slot];
+        if (!timing.heap || timing.count + 2 > max_timestamps)
+          return;
+        timing.labels.emplace_back (label);
+        timestamp ();
+      }
+
+      void timestamp () {
+        FrameTiming& timing = m_timing[m_slot];
+        if (!timing.heap || timing.count >= max_timestamps
+            || timing.count >= 2 * timing.labels.size ())
+          return;
+        [m_commands writeTimestampIntoHeap:timing.heap atIndex:timing.count];
+        ++timing.count;
+        timing.resolved = false;
+      }
+
+      void resolve_timings (std::uint64_t completed) {
+        for (FrameTiming& timing : m_timing) {
+          if (timing.resolved || timing.serial > completed
+              || timing.count < 2)
+            continue;
+          timing.resolved = true;
+          NSData* data =
+            [timing.heap resolveCounterRange:NSMakeRange (0, timing.count)];
+          if (!data)
+            continue;
+          const auto* ticks =
+            static_cast<const MTL4TimestampHeapEntry*> (data.bytes);
+          m_pass_timings.clear ();
+          for (std::size_t i = 0; i + 1 < timing.count; i += 2)
+            m_pass_timings.push_back (
+              { timing.labels[i / 2],
+                double (ticks[i + 1].timestamp - ticks[i].timestamp)
+                  / m_ticks_per_ms });
+        }
+      }
+
       struct PendingCapture {
         std::uint64_t serial = 0;
         id<MTLBuffer> buffer = nil;
@@ -734,6 +806,7 @@ namespace moppe::nhal {
           m_residency_dirty = true;
         });
         m_retired_objects.collect (completed, [] (id) {});
+        resolve_timings (completed);
         for (auto it = m_captures.begin (); it != m_captures.end ();) {
           if (it->serial > completed) {
             ++it;
@@ -811,6 +884,9 @@ namespace moppe::nhal {
       std::uint32_t m_slot = 0;
       MetalPipeline m_pipeline;
       std::function<void (const Capture&)> m_capture_request;
+      std::array<FrameTiming, frames_in_flight> m_timing;
+      std::vector<PassTiming> m_pass_timings;
+      double m_ticks_per_ms = 1e6;
       std::vector<PendingCapture> m_captures;
     };
   }

@@ -25,6 +25,44 @@ Measured by nixbox's `probes/d3d12-caps` and `probes/swapchain`:
 - A 3840x2160 swapchain for the 1080p CoreWindow reaches the TV natively;
   HDR10 and scRGB swapchains are accepted.
 
+## The API
+
+`moppe/nhal/nhal.hh` is the whole surface. Resources are handles into the
+device's tables; destroying one retires it once the frames that might use
+it have completed. Between `begin_frame` and `end_frame` the device records
+one command stream:
+
+- render passes (colour attachments with load, store, clear, and MSAA
+  resolve; a depth attachment) and compute passes, each labelled;
+- pipelines made from a program's reflection plus each backend's code (MSL
+  source compiled at pipeline creation, DXIL compiled ahead of time);
+- bindings by binding number, in the families below: buffers by GPU
+  address (device buffers or slices of the frame's upload arena), textures,
+  and storage textures;
+- draws and indexed draws, direct or indirect, and dispatches, direct or
+  indirect, with arguments a compute pass may have written;
+- `copy_to_buffer` from the arena, `capture_frame` for readback, and
+  `pass_timings`, the GPU time of each labelled pass of the last completed
+  frame.
+
+Barriers are the device's: Metal 4 orders passes with queue-stage barriers
+and dispatches with encoder barriers; Direct3D 12 tracks texture states,
+and each buffer's state within the frame (buffers decay to COMMON between
+command lists), transitioning where a binding, an index buffer, or an
+indirect argument needs it, with UAV barriers between writes.
+
+The demo (`moppe/nhal/demo`) exercises all of it: a compute pass sways
+9000 spruces and writes their indirect draw, a depth-only pass casts their
+sun shadows, and a 4x MSAA RGBA16F scene with reversed-Z draws terrain,
+trees, and sky before the tonemap. GPU time per pass, measured by NHAL:
+
+| Pass | Xbox Series X, 3840x2160 | Apple M5, 2560x1440 |
+| --- | --- | --- |
+| wind (compute) | 0.01 ms | 0.02 ms |
+| sun shadow, 4096x4096 | 0.61 ms | 1.9 ms |
+| scene, 4x MSAA | 6.9 ms | 7.1 ms |
+| tonemap | 0.27 ms | 0.2 ms |
+
 ## The binding contract
 
 A program is a set of stages (vertex + fragment, or compute) whose resources

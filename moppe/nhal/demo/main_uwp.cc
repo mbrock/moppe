@@ -155,6 +155,14 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
                          "%d frames, %.2f fps overall, slowest %.1f ms",
                          frames, frames / seconds, slowest * 1000);
           report (line);
+          std::string passes = "  GPU:";
+          for (const PassTiming& pass : device->pass_timings ()) {
+            char part[64];
+            std::snprintf (part, sizeof part, " %s %.2f ms",
+                           pass.label.c_str (), pass.milliseconds);
+            passes += part;
+          }
+          report (passes);
           slowest = 0;
         }
       }

@@ -222,6 +222,12 @@ namespace moppe::nhal {
     std::span<const std::byte> pixels;
   };
 
+  // GPU time spent in one pass of a completed frame.
+  struct PassTiming {
+    std::string label;
+    double milliseconds = 0;
+  };
+
   class Device {
   public:
     virtual ~Device () = default;
@@ -318,6 +324,10 @@ namespace moppe::nhal {
     // runs on the rendering thread, in a later begin_frame or wait_idle.
     virtual void capture_frame (std::function<void (const Capture&)> done)
       = 0;
+
+    // The passes of the most recently completed frame, in encoding order,
+    // by their labels; the GPU's timestamps around each pass.
+    virtual std::span<const PassTiming> pass_timings () const = 0;
 
     // Submits the frame and presents its drawable.
     virtual void end_frame () = 0;
