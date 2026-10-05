@@ -60,6 +60,7 @@ struct TrunkTree {
   uint masses;      // cones, or a birch's leaf clumps
   bool branches;    // whether each clump hangs from a visible branch
   float autumn;     // 0 summer green, 1 fully turned
+  float closure;    // 0 open-grown, 1 in a closed stand
 };
 
 static inline float trunk_hash (uint seed, uint lane) {
@@ -108,6 +109,7 @@ trunk_tree (thread const MoppeForestInstance& tree, float3 root, float pixels) {
   const float closure = smoothstep (MOPPE_FOREST_STAND_OPEN_CLOSURE,
                                     MOPPE_FOREST_STAND_CLOSED_CLOSURE,
                                     tree.ecology.z);
+  t.closure = closure;
   const float base_share =
     mix (t.conifer ? 0.04 : 0.40, t.conifer ? 0.20 : 0.60, closure) +
     0.08 * (trunk_hash (t.seed, 5u) - 0.5);
@@ -117,7 +119,12 @@ trunk_tree (thread const MoppeForestInstance& tree, float3 root, float pixels) {
   t.seed_turn = 6.2831853 * trunk_hash (t.seed, 7u);
   t.sides = pixels > 90.0 ? 10u : pixels > 30.0 ? 7u : 5u;
   t.crown_sides = pixels > 90.0 ? 9u : pixels > 30.0 ? 7u : 5u;
-  t.masses = t.conifer ? 3u : pixels > 60.0 ? 10u : pixels > 20.0 ? 7u : 4u;
+  t.masses = t.conifer ? (pixels > 60.0   ? 5u
+                          : pixels > 20.0 ? 4u
+                                          : 3u)
+                       : (pixels > 60.0   ? 10u
+                          : pixels > 20.0 ? 7u
+                                          : 4u);
   t.branches = !t.conifer && pixels > 40.0;
   t.autumn = t.conifer ? 0.0 : tree.ecology.w;
   return t;
@@ -228,15 +235,21 @@ static inline TreeVertex tree_vertex (thread const TrunkTree& t, uint index) {
   const float n = float (t.crown_sides);
   const float twist = t.seed_turn + 1.7 * float (mass);
   if (t.conifer) {
-    // Three overlapping tiers, narrowing upward like a spruce.
-    const float bases[3] = { 0.0, 0.30, 0.56 };
-    const float tops[3] = { 0.58, 0.82, 1.0 };
-    const float radii[3] = { 1.0, 0.74, 0.46 };
-    const float jitter = 0.08 * (trunk_hash (t.seed, 20u + mass) - 0.5);
-    const float base = t.crown_base + span * (bases[mass] + jitter);
-    const float top = t.crown_base + span * tops[mass];
-    const float radius = t.crown_radius * radii[mass] *
-                         (0.9 + 0.2 * trunk_hash (t.seed, 30u + mass));
+    // Overlapping tiers narrowing upward, like a spruce. Fewer tiers stand
+    // in for more at a distance. A spruce grown in the open keeps a broad
+    // skirt; crowded in a closed stand it grows into a narrow spire.
+    const float tiers = float (t.masses);
+    const float f0 = float (mass) / tiers;
+    const float f1 = float (mass + 1u) / tiers;
+    const float jitter = 0.10 * (trunk_hash (t.seed, 20u + mass) - 0.5) / tiers;
+    const float base = t.crown_base + span * (0.90 * f0 + jitter);
+    const float top =
+      mass + 1u == t.masses
+        ? t.height
+        : t.crown_base + span * min (0.90 * f1 + 0.95 / tiers, 1.0);
+    const float spire = mix (1.0, 0.72, t.closure);
+    const float radius = t.crown_radius * spire * (1.0 - 0.80 * f0) *
+                         (0.88 + 0.24 * trunk_hash (t.seed, 30u + mass));
     float along;
     if (corner < t.crown_sides) {
       const float turn = twist + 6.2831853 * float (corner) / n;
