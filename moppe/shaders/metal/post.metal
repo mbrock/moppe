@@ -142,33 +142,15 @@ fragment float4 present_fragment (QuadVaryings in [[stage_in]],
   color *= q.tint.w;
   color += bloom.sample (smp, in.uv).rgb * 0.45;
 
-  // Lens flare: warm veil + anamorphic streak on the sun, plus a
-  // few tinted ghosts mirrored through the screen center.  sun.z
-  // already folds in terrain occlusion, clouds, and edge fade.
+  // A warm veil around the sun: the glare of looking toward it, without
+  // the streaks and ghosts of a camera lens the rider is not looking
+  // through. sun.z already folds in terrain occlusion, clouds, and edge
+  // fade.
   if (q.sun.z > 0.001) {
     float2 d = in.uv - q.sun.xy;
     d.x *= q.sun.w;
-    const float dist = length (d);
-
-    const float veil = exp (-dist * 2.6) * 0.15;
-    const float streak =
-      exp (-abs (d.y) * 46.0) * exp (-abs (d.x) * 3.2) * 0.42;
-    color += float3 (1.0, 0.86, 0.62) * (veil + streak) * q.sun.z;
-
-    const float2 sun_c = q.sun.xy - 0.5;
-    const float ghost_k[3] = { 0.45, 0.9, 1.5 };
-    const float ghost_r[3] = { 0.05, 0.085, 0.13 };
-    const float3 ghost_tint[3] = {
-      float3 (0.45, 0.75, 1.0),
-      float3 (1.0, 0.62, 0.38),
-      float3 (0.55, 1.0, 0.65),
-    };
-    for (int g = 0; g < 3; ++g) {
-      float2 gd = in.uv - (0.5 - sun_c * ghost_k[g]);
-      gd.x *= q.sun.w;
-      const float falloff = exp (-dot (gd, gd) / (ghost_r[g] * ghost_r[g]));
-      color += ghost_tint[g] * falloff * 0.05 * q.sun.z;
-    }
+    const float veil = exp (-length (d) * 2.6) * 0.15;
+    color += float3 (1.0, 0.86, 0.62) * veil * q.sun.z;
   }
 
   const float3 hdr_color = color;
