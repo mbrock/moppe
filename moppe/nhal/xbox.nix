@@ -1,5 +1,5 @@
 # The NHAL demo for Xbox, built by nixbox; `xbox` is nixbox.lib.<system>.
-xbox:
+{ xbox, luv-shaderc }:
 xbox.mkXboxApp {
   pname = "nhal-demo";
   version = "0.1.0";
@@ -21,5 +21,6 @@ xbox.mkXboxApp {
     meson
     ninja
     directx-shader-compiler
+    luv-shaderc
   ];
 }

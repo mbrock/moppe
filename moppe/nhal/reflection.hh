@@ -11,6 +11,7 @@ namespace moppe::nhal {
   enum class ResourceKind : std::uint8_t {
     uniform_block,
     storage_buffer,
+    read_write_storage_buffer,
     texture_2d,
     depth_texture_2d,
     uint_texture_2d,
@@ -44,7 +45,8 @@ namespace moppe::nhal {
 
   constexpr bool is_buffer (ResourceKind kind) {
     return kind == ResourceKind::uniform_block
-      || kind == ResourceKind::storage_buffer;
+      || kind == ResourceKind::storage_buffer
+      || kind == ResourceKind::read_write_storage_buffer;
   }
 
   constexpr bool is_texture (ResourceKind kind) {

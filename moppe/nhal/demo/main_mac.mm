@@ -9,6 +9,7 @@
 #include <moppe/nhal/demo/scene.hh>
 #include <moppe/nhal/metal/metal_device.hh>
 
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -74,7 +75,7 @@ namespace {
   DemoView* _view;
   std::unique_ptr<Device> _device;
   std::unique_ptr<demo::Scene> _scene;
-  std::string _msl;
+  std::array<std::string, 8> _msl;
   std::chrono::steady_clock::time_point _start;
   int _rendered;
 }
@@ -108,11 +109,17 @@ namespace {
                                    frame.size.height * scale);
   try {
     _device = create_metal_device (layer, Format::bgra8_unorm);
-    _msl = read_file (self.shaderPath);
-    const StageCode code { _msl, {} };
+    // One MSL document per program stage, as luv-shaderc writes them.
+    const char* files[] = { "terrain.vertex", "terrain.fragment",
+                            "trees.vertex", "trees.fragment",
+                            "sky.vertex", "sky.fragment",
+                            "tonemap.vertex", "tonemap.fragment" };
+    for (int i = 0; i < 8; ++i)
+      _msl[i] = read_file (self.shaderPath + "/" + files[i] + ".metal");
+    auto code = [&] (int i) { return StageCode { _msl[i], {} }; };
     _scene = std::make_unique<demo::Scene> (
-      *_device, demo::Shaders { code, code, code, code, code, code, code,
-                                code });
+      *_device, demo::Shaders { code (0), code (1), code (2), code (3),
+                                code (4), code (5), code (6), code (7) });
     std::cerr << "NHAL demo: " << _device->info ().backend << " on "
               << _device->info ().adapter << ", " << _scene->tree_count ()
               << " trees" << std::endl;
@@ -160,6 +167,8 @@ namespace {
 }
 
 - (void)windowDidResize:(NSNotification*)notification {
+  if (!_device)
+    return;
   const CGFloat scale = _window.backingScaleFactor;
   const NSSize size = _view.bounds.size;
   _device->resize_surface (std::uint32_t (size.width * scale),
@@ -179,7 +188,7 @@ namespace {
 int main (int argc, const char** argv) {
   @autoreleasepool {
     DemoDelegate* delegate = [[DemoDelegate alloc] init];
-    delegate.shaderPath = MOPPE_NHAL_DEMO_SHADERS "/scene.metal";
+    delegate.shaderPath = MOPPE_NHAL_DEMO_SHADERS;
     delegate.frames = 30;
     for (int i = 1; i < argc; ++i) {
       const std::string arg = argv[i];

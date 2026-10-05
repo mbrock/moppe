@@ -35,6 +35,7 @@ numbers are per kind family, and the families map onto each backend like this:
 | --- | --- | --- | --- | --- |
 | `:uniform-block` | buffer | `constant B& n [[buffer(i)]]` | `cbuffer n : register(b i)` | root CBV |
 | `:storage-buffer` (read) | buffer | `device const T* n [[buffer(i)]]` | `StructuredBuffer<T> n : register(t i, space0)` | root SRV |
+| `:storage-buffer :access :read-write` | buffer | `device T* n [[buffer(i)]]` | `RWStructuredBuffer<T> n : register(u i)` | root UAV |
 | `:texture-2d`, `:depth-texture-2d`, `:uint-texture-2d` | texture | `texture2d<…> n [[texture(i)]]` | `Texture2D<…> n : register(t i, space1)` | one descriptor table, t0–t15 space1 |
 | `:sampler` | sampler | `sampler n [[sampler(i)]]` | `SamplerState` or `SamplerComparisonState n : register(s i)` | static samplers |
 
@@ -60,14 +61,28 @@ numbers are per kind family, and the families map onto each backend like this:
   storage buffers with the `:vertex-index` and `:instance-index` built-ins.
   Index buffers are allowed.
 
+- Storage buffer elements have 1, 2, or 4 components (no `vec3`), so strides
+  agree between Metal and HLSL.
+
 Inter-stage values: a vertex output or fragment input at `:location n` is HLSL
-semantic `LOCATIONn` and MSL `[[user(locn)]]`; the `:position` built-in is
-`SV_Position`; fragment output `:location n` is `SV_Target n`. Clip space is
-Metal's and Direct3D's: y up, depth 0..1. Renderers use reversed-Z.
+semantic `LOCATIONn` and MSL `[[user(locnN)]]`; the `:position` built-in is
+`SV_Position`; fragment output `:location n` is `SV_Target n`. The HLSL
+fragment input signature is always `SV_Position` followed by every vertex
+output, since Direct3D matches stages by layout.
+
+Clip space: shaders write `:position` in the language's convention, y down
+(Vulkan's), and both lowerings negate y, so what reaches Metal and Direct3D
+is their y up with depth 0..1. Renderers use reversed-Z.
 
 ## What `luv-shaderc` produces
 
-For each program named in a shader source file, into the output directory:
+`nix run .#luv-shaderc -- --out DIR [--target msl] [--target hlsl] FILE.lisp`
+(this repository's flake pins the Luv version). Source files are plain
+`define-shader`, `define-shader-function`, and
+`(define-shader-program NAME :vertex V :fragment F)` (or `:compute C`) forms
+in the `luv.shader-user` package. Entry points are `NAME_STAGE`; file names
+and namespaces are the program name in snake_case. For each program, into the
+output directory:
 
 - `NAME.STAGE.metal`, one MSL document per stage.
 - `NAME.STAGE.hlsl`, one HLSL document per stage, compiled by DXC with

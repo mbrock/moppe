@@ -775,16 +775,46 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
 
     # NHAL, the next renderer's hardware layer (docs/nhal.md), and its demo
     # scene on Metal 4. The Direct3D 12 build for Xbox lives in
-    # moppe/nhal/meson.build.
+    # moppe/nhal/meson.build. The demo's shaders are Luv's Lisp, lowered by
+    # luv-shaderc: from PATH, or else the version this repository's flake
+    # pins.
+    find_program(MOPPE_LUV_SHADERC luv-shaderc)
+    if(MOPPE_LUV_SHADERC)
+      set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
+    else()
+      set(MOPPE_LUV_SHADERC_COMMAND
+        nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
+    endif()
+    set(MOPPE_NHAL_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
+    set(MOPPE_NHAL_SHADER_OUTPUTS)
+    foreach(program terrain trees sky tonemap)
+      list(APPEND MOPPE_NHAL_SHADER_OUTPUTS
+        ${MOPPE_NHAL_SHADERS}/${program}.hh
+        ${MOPPE_NHAL_SHADERS}/${program}.vertex.metal
+        ${MOPPE_NHAL_SHADERS}/${program}.fragment.metal)
+    endforeach()
+    add_custom_command(
+      OUTPUT ${MOPPE_NHAL_SHADER_OUTPUTS}
+      COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_SHADERS}
+        --target msl
+        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+      COMMENT "Lowering the NHAL demo's Lisp shaders"
+      VERBATIM)
+    # The MSL is read and compiled at run time, not linked.
+    set_source_files_properties(${MOPPE_NHAL_SHADER_OUTPUTS} PROPERTIES
+      HEADER_FILE_ONLY ON)
     add_executable(nhal-demo EXCLUDE_FROM_ALL
       moppe/nhal/metal/metal_device.mm
       moppe/nhal/demo/scene.cc
-      moppe/nhal/demo/main_mac.mm)
-    target_include_directories(nhal-demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+      moppe/nhal/demo/main_mac.mm
+      ${MOPPE_NHAL_SHADER_OUTPUTS})
+    target_include_directories(nhal-demo PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_NHAL_SHADERS})
     target_compile_options(nhal-demo PRIVATE
       $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
     target_compile_definitions(nhal-demo PRIVATE
-      MOPPE_NHAL_DEMO_SHADERS="${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders")
+      MOPPE_NHAL_DEMO_SHADERS="${MOPPE_NHAL_SHADERS}")
     target_link_libraries(nhal-demo PRIVATE
       "-framework AppKit"
       "-framework Metal"
