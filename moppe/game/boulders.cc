@@ -16,7 +16,7 @@ namespace moppe::game {
     // pitch bounds the density of the rockiest ground; thinning by habitat
     // decides everywhere else.
     constexpr float boulder_cell_metres = 6.0f;
-    constexpr float boulder_cell_odds = 0.45f;
+    constexpr float boulder_cell_odds = 0.70f;
     // Stones smaller than this are ridden over rather than into.
     constexpr float boulder_collider_radius = 0.5f;
     // The tread a rider follows; no part of a rock's footprint enters it.

@@ -344,9 +344,14 @@ boulders_fragment (BoulderVaryings in [[stage_in]],
     boulder_visibility (in.world_pos, light, u, shadow_map);
   const float sun = saturate (dot (n, light));
   const float occlusion = mix (0.55, 0.92, contact);
+  // Sunlit ground around the stone throws warm light back up into its
+  // shaded lower faces, which the sky alone would leave cold and blue.
+  const float3 bounce = u.sun_diffuse.rgb * float3 (0.30, 0.26, 0.15) *
+                        saturate (0.55 - 0.45 * n.y);
   float3 color =
-    albedo * (sun * visibility * 0.95 * u.sun_diffuse.rgb +
-              occlusion * moppe_hemisphere_light (u.ambient.rgb, n));
+    albedo *
+    (sun * visibility * 0.95 * u.sun_diffuse.rgb +
+     occlusion * (moppe_hemisphere_light (u.ambient.rgb, n) + 0.45 * bounce));
 
   const float fog =
     moppe_relief_haze (moppe_distance_fog (distance, u.fog_color.w),
