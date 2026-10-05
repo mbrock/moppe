@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Ride the real game on a rolling plain with the forest replaced by a few
+# specimens ahead of the spawn: a spruce, a birch, and a taller spruce.
+# Extra arguments pass through to moppe (e.g. --fullscreen).
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+MOPPE_TREE_LAB=1 exec "$build_dir/moppe.app/Contents/MacOS/moppe" \
+  --uplift-years 0 "$@"

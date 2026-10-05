@@ -180,6 +180,72 @@ namespace moppe {
         return generated_world ().surface ();
       }
 
+      // Temporal-stability inspection: MOPPE_ORBIT="radius,height,seconds"
+      // circles the camera at a steady pace around the tree nearest the
+      // rider, so frame-to-frame discontinuities in the forest stand out
+      // against otherwise smooth motion.
+      void orbit_camera () {
+        // MOPPE_PAN="seconds": stand at the rider and sweep the view left
+        // and right through a half turn, the way a rider looks around.
+        if (static const char* pan = ::getenv ("MOPPE_PAN"); pan) {
+          const float period = std::max (1.0f, (float)::atof (pan));
+          const float yaw =
+            1.5707963f * std::sin (6.2831853f * logic ().m_total_time / period);
+          const Vec3 eye = session ().subject_position () + Vec3 (0, 1.6f, 0);
+          session ().camera ().place (
+            eye, eye + Vec3 (std::cos (yaw), 0.08f, std::sin (yaw)) * 10.0f);
+          return;
+        }
+        static const char* orbit = ::getenv ("MOPPE_ORBIT");
+        if (!orbit)
+          return;
+        float radius = 14.0f, height = 3.0f, period = 24.0f;
+        std::sscanf (orbit, "%f,%f,%f", &radius, &height, &period);
+        if (!m_orbit_tree) {
+          // The tallest-standing loner near the rider: the tree whose nearest
+          // neighbour is farthest away, so it fills the frame by itself.
+          const Vec3 at = session ().subject_position ();
+          std::vector<const mov::Trunk*> near;
+          for (const mov::Trunk& trunk : m_forest.trunks ()) {
+            const Vec3 d = trunk.root - at;
+            if (d[0] * d[0] + d[2] * d[2] < 400.0f * 400.0f)
+              near.push_back (&trunk);
+          }
+          float loneliest = 0.0f;
+          for (const mov::Trunk* trunk : near) {
+            if (trunk->height < 12.0f)
+              continue;
+            float nearest = std::numeric_limits<float>::infinity ();
+            for (const mov::Trunk* other : near)
+              if (other != trunk) {
+                const Vec3 d = other->root - trunk->root;
+                nearest = std::min (nearest, d[0] * d[0] + d[2] * d[2]);
+              }
+            if (nearest > loneliest) {
+              loneliest = nearest;
+              m_orbit_tree = *trunk;
+            }
+          }
+          if (!m_orbit_tree)
+            return;
+          std::cerr << "moppe: orbiting tree at " << m_orbit_tree->root
+                    << " height " << m_orbit_tree->height << '\n';
+        }
+        const float turn =
+          6.2831853f * logic ().m_total_time / std::max (period, 1.0f);
+        const Vec3 centre = m_orbit_tree->root;
+        Vec3 eye =
+          centre +
+          Vec3 (radius * std::cos (turn), 0.0f, radius * std::sin (turn));
+        eye[1] = spatial::sample<terrain::surface_elevation> (
+                   surface (), moppe::position (eye))
+                   .quantity_from_zero ()
+                   .numerical_value_in (u::m) +
+                 height;
+        session ().camera ().place (
+          eye, centre + Vec3 (0, 0.45f * m_orbit_tree->height, 0));
+      }
+
       // The trodden trail tread is loose dirt; bare eroded faces are soil;
       // turf holds most of its dust and throws up clods of itself, and
       // fallen leaves lie wherever the turned groves have dropped them.
@@ -555,15 +621,56 @@ namespace moppe {
                   << '\n';
       }
 
+      // The tree laboratory (MOPPE_TREE_LAB, best with --uplift-years 0 for
+      // a rolling plain): the whole forest is replaced by a few specimens
+      // standing in the open ahead of the spawn -- a spruce, a birch, and a
+      // taller spruce -- so their behaviour can be studied with nothing else
+      // in view.
+      ForestPlan tree_lab_plan () const {
+        ForestPlan plan;
+        plan.period = generated_world ().forest ().period;
+        const Vec3 ahead = trail_direction_from_home ();
+        const Vec3 side (-ahead[2], 0.0f, ahead[0]);
+        // Seeds the trunk forest's stable thinning keeps.
+        struct Specimen {
+          float ahead, side, size;
+          ForestForm form;
+          std::uint32_t seed;
+        };
+        const Specimen specimens[] = {
+          { 28.0f, 0.0f, 1.0f, ForestForm::conifer, 0x7a3e11u },
+          { 26.0f, -18.0f, 1.0f, ForestForm::broadleaf, 0x7a3e12u },
+          { 48.0f, 16.0f, 1.3f, ForestForm::conifer, 0x7a3e15u },
+        };
+        for (const Specimen& specimen : specimens) {
+          Vec3 at =
+            m_spawn_position + ahead * specimen.ahead + side * specimen.side;
+          at[1] = terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              surface (), moppe::position (Vec3 (at[0], 0.0f, at[2]))));
+          plan.sites.push_back (
+            { .position = moppe::position (at),
+              .normal = Vec3 (0, 1, 0) * terrain::terrain_normal[one],
+              .cover = 0.5f * map::forest_cover[one],
+              .moisture = 0.5f * map::surface_moisture[one],
+              .size = specimen.size * tree_size_factor[one],
+              .seed = specimen.seed,
+              .form = specimen.form,
+              .age = ForestAge::mature });
+        }
+        return plan;
+      }
+
       void grow_global_forest () {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_water_inspection)
           return;
-        m_forest.rebuild (*m_renderer,
-                          generated_world ().forest (),
-                          m_graphics.forest_trunks
-                            ? render::ForestStyle::Trunks
-                            : render::ForestStyle::Procedural);
+        static const bool tree_lab = ::getenv ("MOPPE_TREE_LAB") != 0;
+        m_forest.rebuild (
+          *m_renderer,
+          tree_lab ? tree_lab_plan () : generated_world ().forest (),
+          m_graphics.forest_trunks ? render::ForestStyle::Trunks
+                                   : render::ForestStyle::Procedural);
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)
@@ -576,6 +683,10 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.scatter_boulders");
         if (m_water_inspection)
           return;
+        if (::getenv ("MOPPE_TREE_LAB")) {
+          m_boulders.rebuild (*m_renderer, BoulderPlan {});
+          return;
+        }
         const meters_t sea_level = world ().water_level;
         const float sea = sea_level.numerical_value_in (u::m);
         const float highest =
@@ -823,6 +934,17 @@ namespace moppe {
           tick_simulation (elapsed);
           return;
         }
+        // Orbit inspections and ride captures advance exactly one 60 Hz frame
+        // of world time per rendered frame, so captured motion is even
+        // however slowly the frames are written.
+        static const bool capture_locked = ::getenv ("MOPPE_ORBIT") ||
+                                           ::getenv ("MOPPE_PAN") ||
+                                           ::getenv ("MOPPE_RIDE_CAPTURE_DIR");
+        if (capture_locked) {
+          m_simulation_clock.reset ();
+          tick_simulation (1.0f / 60.0f);
+          return;
+        }
 
         const int steps = m_simulation_clock.consume (elapsed);
         MOPPE_PROFILE_PLOT ("simulation.steps", steps);
@@ -924,7 +1046,9 @@ namespace moppe {
         // lazy arc with periodic boost-assisted leaps.
         static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
         m_trunk_field.focus (session ().subject_position ());
-        if (demo && !m_water_inspection) {
+        static const bool orbit =
+          ::getenv ("MOPPE_ORBIT") != 0 || ::getenv ("MOPPE_PAN") != 0;
+        if (demo && !m_water_inspection && !orbit) {
           input = {
             .turn = 0.35f * std::sin (total_time * 0.25f),
             .drive = 1.0f,
@@ -963,6 +1087,7 @@ namespace moppe {
                                       m_water_inspection->target);
           session ().camera ().limit (surface ());
         }
+        orbit_camera ();
 
         if (m_benchmark)
           finish_benchmark_frame (m_benchmark_replay->finish_frame ());
@@ -1973,6 +2098,7 @@ namespace moppe {
       int m_snapshot_count = 0;
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
+      std::optional<mov::Trunk> m_orbit_tree;
       std::optional<GazetteerCaptureConfig> m_gazetteer;
       LandscapeGazetteer m_gazetteer_plan;
       std::size_t m_gazetteer_shot = 0;

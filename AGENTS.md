@@ -72,6 +72,14 @@
     is set -- asks a video-capable model to rate whether trees morph or
     restructure in motion. Still frames cannot verify this; only video (or
     a human) judges temporal behaviour.
+  - Tree laboratory: `tools/tree-lab [--fullscreen]` rides the real game on a
+    rolling plain with the forest replaced by a spruce, a birch, and a tall
+    spruce ahead of the spawn (`MOPPE_TREE_LAB=1` with `--uplift-years 0`).
+  - Temporal inspection cameras: `MOPPE_PAN=<seconds>` stands at the rider
+    and sweeps the view left and right; `MOPPE_ORBIT=<radius>,<height>,
+    <seconds>` circles the loneliest tall tree near the rider. Both, and
+    `MOPPE_RIDE_CAPTURE_DIR` captures, advance exactly 1/60 s of world time
+    per rendered frame so captured motion is even.
   - Representative still survey along the cinematic drone route:
     `tools/capture-terrain-survey /tmp/terrain-survey 12`. This writes the
     individual frames, a contact sheet, and the deterministic capture settings.
