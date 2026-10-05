@@ -522,7 +522,11 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_water_inspection)
           return;
-        m_forest.rebuild (*m_renderer, generated_world ().forest ());
+        m_forest.rebuild (*m_renderer,
+                          generated_world ().forest (),
+                          m_graphics.forest_trunks
+                            ? render::ForestStyle::Trunks
+                            : render::ForestStyle::Procedural);
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)

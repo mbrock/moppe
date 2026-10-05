@@ -16,6 +16,7 @@ terrain=${MOPPE_TERRAIN_PROFILE:-play}
 terrain_resolution=${MOPPE_TERRAIN_RESOLUTION:-}
 graphics=${MOPPE_GAZETTEER_GRAPHICS:-high}
 graphics_disable=${MOPPE_GAZETTEER_DISABLE:-}
+graphics_enable=${MOPPE_GAZETTEER_ENABLE:-}
 settle=${MOPPE_GAZETTEER_SETTLE:-18}
 window=${MOPPE_GAZETTEER_WINDOW:-1600x900}
 uplift_years=${MOPPE_UPLIFT_YEARS:-}
@@ -86,6 +87,9 @@ arguments=(
 if [[ -n $graphics_disable ]]; then
   arguments+=(--graphics-disable "$graphics_disable")
 fi
+if [[ -n $graphics_enable ]]; then
+  arguments+=(--graphics-enable "$graphics_enable")
+fi
 if [[ -n $uplift_years ]]; then
   arguments+=(--uplift-years "$uplift_years")
 fi
@@ -125,6 +129,7 @@ printf '%s\n' \
   "terrain_resolution=${terrain_resolution:-profile-default}" \
   "graphics=$graphics" \
   "graphics_disable=${graphics_disable:-none}" \
+  "graphics_enable=${graphics_enable:-none}" \
   "window=$window" \
   "settle_frames=$settle" \
   "uplift_years=${uplift_years:-profile-default}" \

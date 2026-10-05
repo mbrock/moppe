@@ -17,7 +17,9 @@ namespace moppe::game {
                   const map::SurfaceGeometry& surface,
                   const map::SurfaceReadings& readings,
                   std::uint32_t seed);
-    void rebuild (render::Renderer& renderer, const ForestPlan& plan);
+    void rebuild (render::Renderer& renderer,
+                  const ForestPlan& plan,
+                  render::ForestStyle style = render::ForestStyle::Procedural);
     void draw (render::Renderer& renderer) const;
 
     std::size_t tree_count () const noexcept {

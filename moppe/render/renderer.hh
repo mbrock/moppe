@@ -234,8 +234,14 @@ namespace moppe {
       ForestAge age = ForestAge::Mature;
     };
 
+    // How individuals are presented. Procedural assembles conifer boughs
+    // with continuous LOD; Trunks is one tapered trunk and a few faceted crown
+    // masses per individual.
+    enum class ForestStyle : uint8_t { Procedural, Trunks };
+
     struct ForestSetup {
       spatial_extent_t period {};
+      ForestStyle style = ForestStyle::Procedural;
     };
 
     struct DustEmission {

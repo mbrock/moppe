@@ -293,6 +293,11 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
 #define MOPPE_FOREST_MESH_STATIONS 32
 #define MOPPE_FOREST_MESH_VERTICES 128
 #define MOPPE_FOREST_MESH_PRIMITIVES 128
+// The trunk forest emits a whole individual -- trunk and crown masses -- from
+// one meshlet, one vertex and one primitive per thread.
+#define MOPPE_FOREST_TRUNK_MESH_THREADS 256
+#define MOPPE_FOREST_TRUNK_MESH_VERTICES 256
+#define MOPPE_FOREST_TRUNK_MESH_PRIMITIVES 256
 
 // One aggregate meshlet carries one height stratum of a 24-metre population
 // patch. Projected error selects a four- or eight-metre world cell; during the

@@ -27,6 +27,7 @@ namespace moppe::game {
     undergrowth,
     light_shafts,
     gtao,
+    forest_trunks,
   };
 
   struct GraphicsSettings {
@@ -66,6 +67,10 @@ namespace moppe::game {
     bool undergrowth = true;
     bool light_shafts = true;
     bool gtao = true;
+    // Present individuals as the trunk forest instead of procedural boughs.
+    // Chosen at world load: it changes the presented proportions, so it is
+    // not toggled mid-frame by the benchmark.
+    bool forest_trunks = false;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -184,7 +189,14 @@ namespace moppe::game {
     GraphicsFeatureId::gtao, "gtao", &GraphicsSettings::gtao, true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 17> graphics_features {
+  inline constexpr GraphicsFeature forest_trunks_feature {
+    GraphicsFeatureId::forest_trunks,
+    "forest-trunks",
+    &GraphicsSettings::forest_trunks,
+    false
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 18> graphics_features {
     &terrain_shadows_feature,
     &forest_feature,
     &ocean_feature,
@@ -202,6 +214,7 @@ namespace moppe::game {
     &undergrowth_feature,
     &light_shafts_feature,
     &gtao_feature,
+    &forest_trunks_feature,
   };
 
   // Ordinary play favors stable high-refresh presentation. Explicit quality
