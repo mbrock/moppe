@@ -173,6 +173,37 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
   return presence * smoothstep (0.0, UNDERGROWTH_LOD_TRANSITION, wanted);
 }
 
+// moppe_wind's three clocks, factored for a shoot. The gust and bough waves
+// vary with horizontal position at a few hundredths of a radian per metre,
+// so one evaluation at the root serves the whole shoot; only the flick,
+// which also follows height, is taken per section, and both edges of a
+// section share it. The displacement is otherwise moppe_wind's own.
+struct UndergrowthGust {
+  float gust;
+  float bough;
+};
+
+static inline UndergrowthGust undergrowth_gust (float3 root, float t) {
+  const float ph = root.x * 0.043 + root.z * 0.051;
+  UndergrowthGust g;
+  g.gust = sin (t * 1.13 + ph) + 0.45 * sin (t * 2.63 + ph * 1.7 + 1.3);
+  g.bough = sin (t * 3.90 + ph * 2.3 + 0.7);
+  return g;
+}
+
+static inline float3 undergrowth_sway (
+  float3 spine, UndergrowthGust g, float bend, float flutter, float t) {
+  const float ph = spine.x * 0.043 + spine.z * 0.051;
+  const float flick = sin (t * 8.40 + ph * 13.0 + spine.y * 1.9);
+  const float driven = 0.55 + 0.45 * abs (g.gust);
+  const float lean = 0.26 * bend;
+  const float shake = 0.11 * flutter * driven;
+  return float3 (0.79 * g.gust * lean + (0.62 * g.bough + 0.44 * flick) * shake,
+                 -0.15 * abs (g.gust) * lean - 0.10 * abs (g.bough) * shake,
+                 0.53 * g.gust * lean +
+                   (0.47 * g.bough - 0.38 * flick) * shake);
+}
+
 // ---- the object stage: which tiles are worth a threadgroup ---------
 
 [[object]] void undergrowth_object (
@@ -622,6 +653,8 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
           smoothstep (0.18 * u.interaction.w, u.interaction.w, mover_distance)
       : 0.0;
   const float2 away = from_mover / max (mover_distance, 0.08);
+  const UndergrowthGust gust_now = undergrowth_gust (s.root, u.params.x);
+  const UndergrowthGust gust_before = undergrowth_gust (s.root, u.temporal.z);
 
   // The shoot's spine: it leaves the root steeply, then falls away. The
   // last cross-section is closed to a point, so a frond ends in a tip
@@ -694,12 +727,14 @@ undergrowth_fern_crown (float2 root_xz, float canopy, float wet) {
     const float flutter = (0.06 + 0.18 * t) * micro_detail * (1.0 - petal);
     const float3 left_base = spine - edge * half_width;
     const float3 right_base = spine + edge * half_width;
-    const float3 left = moppe_wind (left_base, bend, flutter, u.params.x);
-    const float3 right = moppe_wind (right_base, bend, flutter, u.params.x);
-    const float3 previous_left =
-      moppe_wind (left_base, bend, flutter, u.temporal.z);
-    const float3 previous_right =
-      moppe_wind (right_base, bend, flutter, u.temporal.z);
+    const float3 sway =
+      undergrowth_sway (spine, gust_now, bend, flutter, u.params.x);
+    const float3 previous_sway =
+      undergrowth_sway (spine, gust_before, bend, flutter, u.temporal.z);
+    const float3 left = left_base + sway;
+    const float3 right = right_base + sway;
+    const float3 previous_left = left_base + previous_sway;
+    const float3 previous_right = right_base + previous_sway;
 
     // Exposure along the shoot stands in for how much sky its part of the
     // plant sees: a blade rises out of its own litter shadow, a head above
