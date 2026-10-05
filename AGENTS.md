@@ -1,7 +1,9 @@
 # Moppe Development Guidelines
 
 ## Build Commands
-- Configure: `cmake -B build -G Ninja`
+- Configure: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo`
+  (without a build type the project defaults to Debug, whose world
+  generation is many times slower)
 - Build everything: `cmake --build build`
 - Unit tests: `cmake --build build --target moppe-tests && ctest --test-dir
   build --output-on-failure` (the test binary is excluded from the default
