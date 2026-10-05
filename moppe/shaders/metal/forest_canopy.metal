@@ -437,7 +437,8 @@ fragment MoppeTemporalOutput forest_canopy_fragment (
   ForestCanopyVaryings in [[stage_in]],
   constant MoppeForestCanopyUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float> canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]],
-  texture2d<float> density [[texture (MOPPE_TEX_FOREST_DENSITY)]]) {
+  texture2d<float> density [[texture (MOPPE_TEX_FOREST_DENSITY)]],
+  texture2d<float> litter [[texture (MOPPE_TEX_FOREST_LITTER)]]) {
   // The impostor is only a compact raster domain for an ellipsoid section;
   // its corners carry nothing, so they leave before any texture work.
   const float radius_squared = dot (in.volume_uv, in.volume_uv);
@@ -489,17 +490,31 @@ fragment MoppeTemporalOutput forest_canopy_fragment (
     moppe_cloud_transmission (in.world_pos, light, u.params.x, u.params.y);
   const float footprint = distance / max (focal, 1.0);
   const float grain = forest_canopy_variance_grain (in.world_pos, footprint);
+  // The litter field holds the leaf area that has turned, with the same
+  // optical-depth normalisation as closure; their ratio is the share of
+  // this stand's crowns that are gold, so a distant grove stays gold after
+  // its individuals hand over to the stand.
+  float turned = 0.0;
+  if (u.field.w > 0.5) {
+    constexpr sampler field (
+      coord::normalized, address::repeat, filter::linear);
+    const float cover = litter.sample (field, in.world_pos.xz * u.field.xy).r;
+    turned = saturate ((-log (max (1.0 - cover, 1e-3)) / 2.5) /
+                       max (-log (max (1.0 - closure, 1e-3)), 0.05));
+  }
+  const float3 leaf = mix (moppe_forest_conifer_tint (moisture, closure),
+                           float3 (0.90, 0.64, 0.20),
+                           turned);
   const MoppeForestEnsembleLight ensemble =
-    moppe_forest_ensemble_light (moisture,
-                                 closure,
-                                 leaf_normal,
-                                 light,
-                                 eye,
-                                 u.sun_diffuse.rgb,
-                                 u.ambient.rgb,
-                                 visibility,
-                                 coverage,
-                                 grain);
+    moppe_forest_distribution_light (leaf,
+                                     leaf_normal,
+                                     light,
+                                     eye,
+                                     u.sun_diffuse.rgb,
+                                     u.ambient.rgb,
+                                     visibility,
+                                     coverage,
+                                     grain);
   float3 color = ensemble.radiance;
 
   const float fog =

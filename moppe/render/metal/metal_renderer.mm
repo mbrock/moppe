@@ -5613,6 +5613,7 @@ namespace moppe {
       canopy.field.x = 1.0f / forest.period_x;
       canopy.field.y = 1.0f / forest.period_z;
       canopy.field.z = MOPPE_FOREST_CANOPY_HEIGHT_RANGE_METRES;
+      canopy.field.w = forest.litter ? 1.0f : 0.0f;
 
       const float focal_pixels = 0.5f * static_cast<float> (m_targets.height) *
                                  std::abs (m_frame.params.proj.element (5));
@@ -5650,6 +5651,10 @@ namespace moppe {
            { MTLRenderStageMesh, MTLRenderStageFragment })
         bind_texture (
           m_frame, stage, MOPPE_TEX_FOREST_DENSITY, forest.canopy_density);
+      bind_texture (m_frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_FOREST_LITTER,
+                    forest.litter ? forest.litter : forest.canopy_moments);
       use_arguments (enc,
                      m_frame,
                      MTLRenderStageObject | MTLRenderStageMesh |

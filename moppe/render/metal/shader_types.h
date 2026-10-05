@@ -426,7 +426,7 @@ struct MOPPE_SHADER_ALIGN MoppeForestCanopyUniforms {
   MoppeFloat4 ambient;
   MoppeFloat4 fog_color;
   MoppeFloat4 terrain;  // xy=terrain samples/metre, z=height scale, w=width
-  MoppeFloat4 field;    // xy=1/world period, z=stored height range, w=reserved
+  MoppeFloat4 field;    // xy=1/world period, z=stored height range, w=litter
   MoppeFloat4 tiles;    // xy=world patch origin, z=patches/side, w=patch side
   MoppeFloat4 params;   // x=time, y=cloudiness, z=sea, w=land relief
   MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
