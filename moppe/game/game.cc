@@ -177,6 +177,43 @@ namespace moppe {
         return generated_world ().surface ();
       }
 
+      // The trodden trail tread is loose dirt; bare eroded faces are soil;
+      // turf holds most of its dust and throws up clods of itself, and
+      // fallen leaves lie wherever the turned groves have dropped them.
+      GroundCover ground_cover (const Vec3& at) const {
+        const auto read = [&] (auto quantity) {
+          return spatial::sample<quantity> (surface_readings (),
+                                            moppe::position (at))
+            .numerical_value_in (one);
+        };
+        const float tread =
+          smoothstep (0.80f, 0.88f, read (map::trail_influence));
+        const float bare =
+          smoothstep (0.50f, 0.70f, read (map::erosion_exposure));
+        const float wet =
+          smoothstep (0.45f, 0.80f, read (map::surface_moisture));
+        GroundCover ground;
+        ground.leaves = m_forest.litter_at (at);
+        const float loose = std::max (tread, bare);
+        ground.dust = (0.2f + 0.8f * loose) * (1.0f - 0.6f * wet) *
+                      (1.0f - 0.7f * ground.leaves);
+        const auto blend = [] (DisplayColor a, DisplayColor b, float t) {
+          return DisplayColor (a.red + (b.red - a.red) * t,
+                               a.green + (b.green - a.green) * t,
+                               a.blue + (b.blue - a.blue) * t);
+        };
+        ground.dust_color = blend (DisplayColor (0.56f, 0.53f, 0.43f),
+                                   DisplayColor (0.60f, 0.52f, 0.40f),
+                                   loose);
+        ground.clod_color = blend (DisplayColor (0.27f, 0.32f, 0.16f),
+                                   DisplayColor (0.42f, 0.34f, 0.24f),
+                                   loose);
+        // Under fallen leaves the wheel digs up dark forest soil.
+        ground.clod_color = blend (
+          ground.clod_color, DisplayColor (0.34f, 0.26f, 0.17f), ground.leaves);
+        return ground;
+      }
+
       const map::SurfaceReadings& surface_readings () const noexcept {
         return generated_world ().readings ();
       }
@@ -879,7 +916,8 @@ namespace moppe {
                                 session (),
                                 input,
                                 seconds (dt),
-                                &m_trunk_field);
+                                &m_trunk_field,
+                                ground_cover (session ().subject_position ()));
         if (advance.say_ouchies)
           platform::say ("Ouchies. That hurts.");
 

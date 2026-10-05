@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <span>
 #include <vector>
 
 namespace moppe::game {
@@ -149,6 +150,95 @@ namespace moppe::game {
     }
   }
 
+  namespace {
+    // Turned leaves fall around and a little beyond each crown. Every
+    // broadleaf spreads its turned leaf area over a Gaussian footprint
+    // normalised on the lattice, so a grove's carpet is proportional to the
+    // leaf area that has actually turned, and closes where crowns crowd.
+    std::vector<std::uint8_t>
+    spread_litter (std::span<const render::ForestInstance> instances,
+                   const Vec3& period,
+                   std::uint32_t size) {
+      std::vector<std::uint8_t> cover;
+      if (size == 0 || period[0] <= 0.0f || period[2] <= 0.0f)
+        return cover;
+      const float step_x = period[0] / static_cast<float> (size);
+      const float step_z = period[2] / static_cast<float> (size);
+      const float cell_area = step_x * step_z;
+      const int count = static_cast<int> (size);
+      const auto wrap = [count] (int value) {
+        value %= count;
+        return value < 0 ? value + count : value;
+      };
+      const auto periodic = [] (float value, float extent) {
+        return value - std::round (value / extent) * extent;
+      };
+      std::vector<float> depth (static_cast<std::size_t> (size) * size, 0.0f);
+      bool any = false;
+      for (const render::ForestInstance& tree : instances) {
+        const float autumn = tree.autumn.numerical_value_in (mp_units::one);
+        if (tree.species != render::ForestSpecies::Broadleaf || autumn <= 0.0f)
+          continue;
+        any = true;
+        const Vec3 root = position_value (tree.root);
+        const float radius = tree.crown_radius.numerical_value_in (u::m);
+        const float spread =
+          std::max (0.95f * radius, 0.45f * std::max (step_x, step_z));
+        const int reach =
+          std::max (1,
+                    static_cast<int> (
+                      std::ceil (2.4f * spread / std::min (step_x, step_z))));
+        const int centre_x = static_cast<int> (std::floor (root[0] / step_x));
+        const int centre_z = static_cast<int> (std::floor (root[2] / step_z));
+        const auto weight = [&] (int x, int z) {
+          const float dx = periodic (
+            (static_cast<float> (x) + 0.5f) * step_x - root[0], period[0]);
+          const float dz = periodic (
+            (static_cast<float> (z) + 0.5f) * step_z - root[2], period[2]);
+          return std::exp (-0.5f * (dx * dx + dz * dz) / (spread * spread));
+        };
+        float sum = 0.0f;
+        for (int z = centre_z - reach; z <= centre_z + reach; ++z)
+          for (int x = centre_x - reach; x <= centre_x + reach; ++x)
+            sum += weight (wrap (x), wrap (z));
+        const float leaf_area = 0.70f * 3.14159265f * radius * radius * autumn;
+        for (int z = centre_z - reach; z <= centre_z + reach; ++z)
+          for (int x = centre_x - reach; x <= centre_x + reach; ++x)
+            depth[static_cast<std::size_t> (wrap (z)) * size + wrap (x)] +=
+              leaf_area * weight (wrap (x), wrap (z)) /
+              (cell_area * std::max (sum, 0.0001f));
+      }
+      if (!any)
+        return cover;
+      cover.resize (depth.size ());
+      for (std::size_t index = 0; index < depth.size (); ++index)
+        cover[index] = static_cast<std::uint8_t> (
+          std::lround (255.0f * (1.0f - std::exp (-2.5f * depth[index]))));
+      return cover;
+    }
+  }
+
+  float ForestLandscape::litter_at (const Vec3& position) const {
+    if (m_litter.empty ())
+      return 0.0f;
+    const float size = static_cast<float> (m_litter_size);
+    float gx = position[0] / m_period[0] * size - 0.5f;
+    float gz = position[2] / m_period[2] * size - 0.5f;
+    gx -= std::floor (gx / size) * size;
+    gz -= std::floor (gz / size) * size;
+    const auto x0 = static_cast<std::uint32_t> (gx) % m_litter_size;
+    const auto z0 = static_cast<std::uint32_t> (gz) % m_litter_size;
+    const std::uint32_t x1 = (x0 + 1) % m_litter_size;
+    const std::uint32_t z1 = (z0 + 1) % m_litter_size;
+    const float fx = gx - std::floor (gx);
+    const float fz = gz - std::floor (gz);
+    const auto at = [&] (std::uint32_t x, std::uint32_t z) {
+      return static_cast<float> (m_litter[z * m_litter_size + x]) / 255.0f;
+    };
+    return (at (x0, z0) * (1 - fx) + at (x1, z0) * fx) * (1 - fz) +
+           (at (x0, z1) * (1 - fx) + at (x1, z1) * fx) * fz;
+  }
+
   void ForestLandscape::rebuild (render::Renderer& renderer,
                                  const ForestPlan& plan,
                                  render::ForestStyle style) {
@@ -163,9 +253,24 @@ namespace moppe::game {
         continue;
       instances.push_back (present (site, style));
     }
-    if (style == render::ForestStyle::Trunks)
+    m_period = extent_value (plan.period);
+    m_litter.clear ();
+    m_litter_size = 0;
+    if (style == render::ForestStyle::Trunks) {
       turn_autumn (instances, plan.period);
-    renderer.set_forest ({ .period = plan.period, .style = style }, instances);
+      // About four metres a texel: two samples across a birch crown.
+      const auto size = static_cast<std::uint32_t> (
+        std::clamp (std::ceil (std::max (m_period[0], m_period[2]) / 4.0f),
+                    64.0f,
+                    1024.0f));
+      m_litter = spread_litter (instances, m_period, size);
+      m_litter_size = m_litter.empty () ? 0 : size;
+    }
+    renderer.set_forest ({ .period = plan.period,
+                           .style = style,
+                           .litter = m_litter,
+                           .litter_size = m_litter_size },
+                         instances);
     m_trunks.clear ();
     if (style == render::ForestStyle::Trunks) {
       m_trunks.reserve (instances.size ());

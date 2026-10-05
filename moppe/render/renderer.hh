@@ -244,6 +244,10 @@ namespace moppe {
     struct ForestSetup {
       spatial_extent_t period {};
       ForestStyle style = ForestStyle::Procedural;
+      // Cover of fallen leaves over one world period, a square lattice of
+      // litter_size texels per side; empty when nothing has turned.
+      std::span<const std::uint8_t> litter {};
+      std::uint32_t litter_size = 0;
     };
 
     struct DustEmission {
@@ -258,6 +262,7 @@ namespace moppe {
       float spread = 1.0f;
       uint32_t particle_count = 0;
       bool additive = false;
+      bool flake = false;
     };
 
     // The renderer: a game-shaped interface, not a general RHI.  Sky,

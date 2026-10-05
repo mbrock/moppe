@@ -22,6 +22,9 @@ namespace moppe {
           0.0f * isq::acceleration[u::m / pow<2> (u::s)];
         magnitude_t spread = 1.0f * one;
         bool additive = false; // glow (embers) vs. soft dust
+        // A flake -- a leaf or a chip -- keeps its size and a hard edge
+        // instead of billowing out like a puff of dust.
+        bool flake = false;
       };
 
       Dust ();

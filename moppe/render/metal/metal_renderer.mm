@@ -3608,8 +3608,6 @@ namespace moppe {
         std::vector<float> height_moment (texels, 0.0f);
         std::vector<float> upper_height (texels, 0.0f);
         std::vector<float> moisture_moment (texels, 0.0f);
-        std::vector<float> litter_depth (texels, 0.0f);
-        bool any_litter = false;
         std::vector<std::array<float, MOPPE_FOREST_CANOPY_DENSITY_SLICES>>
           stratum_depth (texels);
         const float step_x = period[0] / static_cast<float> (canopy_size);
@@ -3705,43 +3703,6 @@ namespace moppe {
                 upper_height[index] = std::max (upper_height[index], height);
               moisture_moment[index] += tree_depth * moisture;
             }
-
-          // Turned leaves fall around and a little beyond the crown. The
-          // same footprint normalisation keeps a grove's carpet proportional
-          // to the leaf area that has actually turned.
-          const float autumn =
-            instance.autumn.numerical_value_in (mp_units::one);
-          if (instance.species == ForestSpecies::Broadleaf && autumn > 0.0f) {
-            any_litter = true;
-            const float spread =
-              std::max (0.95f * radius, 0.45f * std::max (step_x, step_z));
-            const int litter_reach = std::max (
-              1, static_cast<int> (std::ceil (2.4f * spread / min_step)));
-            float litter_sum = 0.0f;
-            for (int pass = 0; pass < 2; ++pass)
-              for (int dz = -litter_reach; dz <= litter_reach; ++dz)
-                for (int dx = -litter_reach; dx <= litter_reach; ++dx) {
-                  const int x = wrap (centre_x + dx);
-                  const int z = wrap (centre_z + dz);
-                  const float distance_x = periodic_delta (
-                    (static_cast<float> (x) + 0.5f) * step_x - root[0],
-                    period[0]);
-                  const float distance_z = periodic_delta (
-                    (static_cast<float> (z) + 0.5f) * step_z - root[2],
-                    period[2]);
-                  const float weight = std::exp (
-                    -0.5f *
-                    (distance_x * distance_x + distance_z * distance_z) /
-                    (spread * spread));
-                  if (pass == 0)
-                    litter_sum += weight;
-                  else
-                    litter_depth[static_cast<std::size_t> (z) * canopy_size +
-                                 x] +=
-                      autumn * crown_area * weight /
-                      (cell_area * std::max (litter_sum, 0.0001f));
-                }
-          }
         }
 
         std::vector<std::array<std::uint8_t, 4>> moments (texels);
@@ -3829,15 +3790,13 @@ namespace moppe {
                         true);
         m_forest_resources.canopy_size = canopy_size;
 
-        if (any_litter) {
-          std::vector<std::uint8_t> litter (texels);
-          for (std::size_t index = 0; index < texels; ++index)
-            litter[index] =
-              unorm (1.0f - std::exp (-2.5f * litter_depth[index]));
+        if (setup.litter_size > 0 &&
+            setup.litter.size () ==
+              std::size_t (setup.litter_size) * setup.litter_size) {
           MTLTextureDescriptor* litter_descriptor = [MTLTextureDescriptor
             texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
-                                         width:canopy_size
-                                        height:canopy_size
+                                         width:setup.litter_size
+                                        height:setup.litter_size
                                      mipmapped:YES];
           litter_descriptor.storageMode = MTLStorageModePrivate;
           litter_descriptor.usage = MTLTextureUsageShaderRead;
@@ -3845,10 +3804,10 @@ namespace moppe {
             [m_device newTextureWithDescriptor:litter_descriptor];
           make_resident (m_forest_resources.litter);
           upload_texture (m_forest_resources.litter,
-                          litter.data (),
-                          canopy_size,
-                          canopy_size,
-                          sizeof (litter.front ()),
+                          setup.litter.data (),
+                          setup.litter_size,
+                          setup.litter_size,
+                          1,
                           true);
         }
 
@@ -5115,6 +5074,7 @@ namespace moppe {
           p.style.y = emission.life;
           p.style.z = emission.gravity;
           p.style.w = emission.spread;
+          p.shape.x = emission.flake ? 1.0f : 0.0f;
           packed.push_back (p);
         }
         if (packed.empty ())

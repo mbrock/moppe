@@ -604,7 +604,8 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
                                         game::GameSession&,
                                         const game::InputFrame&,
                                         seconds_t,
-                                        const mov::TrunkField*);
+                                        const mov::TrunkField*,
+                                        const game::GroundCover&);
   static_assert (
     std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
 

@@ -38,10 +38,17 @@ namespace moppe::game {
       return m_trunks;
     }
 
+    // How thickly fallen leaves cover the ground at a place, from zero to
+    // one: the turned leaf area of the broadleaves standing around it.
+    float litter_at (const Vec3& position) const;
+
   private:
     std::size_t m_tree_count = 0;
     std::size_t m_resident_bytes = 0;
     std::vector<mov::Trunk> m_trunks;
+    std::vector<std::uint8_t> m_litter;
+    std::uint32_t m_litter_size = 0;
+    Vec3 m_period {};
   };
 }
 

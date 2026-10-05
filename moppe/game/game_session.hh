@@ -97,13 +97,24 @@ namespace moppe::game {
     Dust m_dust;
   };
 
+  // What the wheels roll over, read from the world by the caller: how much
+  // loose dust the ground gives up and its colour, and how thickly fallen
+  // leaves lie there to be thrown up.
+  struct GroundCover {
+    float dust = 1.0f;
+    DisplayColor dust_color { 0.60f, 0.52f, 0.40f };
+    DisplayColor clod_color { 0.42f, 0.34f, 0.24f };
+    float leaves = 0.0f;
+  };
+
   GameSessionAdvanceResult
   advance_game_session (const WorldParams& world,
                         const map::SurfaceGeometry& surface,
                         GameSession& session,
                         const InputFrame& input,
                         seconds_t dt,
-                        const mov::TrunkField* trunks = nullptr);
+                        const mov::TrunkField* trunks = nullptr,
+                        const GroundCover& ground = {});
 }
 
 #endif

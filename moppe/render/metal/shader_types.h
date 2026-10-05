@@ -459,6 +459,7 @@ struct MOPPE_SHADER_ALIGN MoppeDustEmission {
   MoppeFloat4 velocity_count; // xyz base velocity, w particle count
   MoppeFloat4 color_id;       // rgb display-space color, w emission id
   MoppeFloat4 style;          // size, life, gravity, spread
+  MoppeFloat4 shape;          // x=1 for a hard-edged flake that keeps its size
 };
 
 struct MOPPE_SHADER_ALIGN MoppeDustUniforms {

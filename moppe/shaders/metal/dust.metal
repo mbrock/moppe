@@ -4,6 +4,7 @@ struct DustVaryings {
   float4 position [[position]];
   float2 uv;
   float4 color;
+  float flake [[flat]];
   float2 motion [[center_no_perspective]];
 };
 
@@ -48,7 +49,8 @@ inline DustVaryings dust_vertex_for (constant MoppeFrameUniforms& frame,
 
   const float base_size =
     emission.style.x * (0.3 + 0.8 * dust_random (eid, particle, 7));
-  const float size = base_size * (1.7 - 0.7 * life01);
+  const bool flake = emission.shape.x > 0.5;
+  const float size = flake ? base_size : base_size * (1.7 - 0.7 * life01);
   const float rotation =
     (dust_random (eid, particle, 8) * 2.0 - 1.0) * 3.14159 +
     (dust_random (eid, particle, 9) * 2.0 - 1.0) * 2.2 * age;
@@ -65,7 +67,8 @@ inline DustVaryings dust_vertex_for (constant MoppeFrameUniforms& frame,
     emission.position_birth.xyz + offset + velocity * previous_age;
   previous_center.y -= 0.5 * emission.style.z * previous_age * previous_age;
   const float previous_life01 = saturate (1.0 - previous_age / lifetime);
-  const float previous_size = base_size * (1.7 - 0.7 * previous_life01);
+  const float previous_size =
+    flake ? base_size : base_size * (1.7 - 0.7 * previous_life01);
   const float previous_rotation =
     (dust_random (eid, particle, 8) * 2.0 - 1.0) * 3.14159 +
     (dust_random (eid, particle, 9) * 2.0 - 1.0) * 2.2 * previous_age;
@@ -85,8 +88,10 @@ inline DustVaryings dust_vertex_for (constant MoppeFrameUniforms& frame,
   out.position =
     life01 > 0.0 ? frame.view_proj * float4 (world, 1.0) : float4 (0, 0, -1, 0);
   out.uv = q;
+  out.flake = flake ? 1.0 : 0.0;
   out.color =
-    float4 (moppe_srgb (emission.color_id.xyz * value), fade_in * life01);
+    float4 (moppe_srgb (emission.color_id.xyz * value),
+            fade_in * (flake ? smoothstep (0.0, 0.25, life01) : life01));
   out.motion = moppe_motion_vector (
     frame.unjittered_view_proj * float4 (world, 1.0),
     frame.previous_view_proj * float4 (previous_world, 1.0),
@@ -136,7 +141,13 @@ using DustMesh =
 
 fragment MoppeTemporalOutput dust_fragment (DustVaryings in [[stage_in]]) {
   const float radius = length (in.uv);
-  const float soft = 1.0 - smoothstep (0.15, 1.0, radius);
+  float soft = 1.0 - smoothstep (0.15, 1.0, radius);
+  if (in.flake > 0.5) {
+    // A leaf: a pointed oval with a crisp, antialiased edge.
+    const float2 p = in.uv * float2 (1.0, 1.0 + 0.35 * in.uv.y);
+    const float edge = 1.0 - (p.x * p.x / 0.30 + p.y * p.y);
+    soft = saturate (edge / max (fwidth (edge), 1e-4));
+  }
   return moppe_temporal_output (
     float4 (in.color.rgb, in.color.a * soft), in.motion, 1.0);
 }

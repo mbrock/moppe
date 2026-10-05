@@ -242,7 +242,8 @@ namespace moppe::game {
                         GameSession& session,
                         const InputFrame& input,
                         seconds_t dt,
-                        const mov::TrunkField* trunks) {
+                        const mov::TrunkField* trunks,
+                        const GroundCover& ground) {
     const float elapsed = dt.numerical_value_in (u::s);
     GameLogicState& logic = session.logic ();
     session.bike ().set_water_level (world.water_level);
@@ -352,8 +353,12 @@ namespace moppe::game {
       logic.m_jump_peak_spin_radians = 0.0f;
       logic.m_landed_age += elapsed;
     }
-    const DisplayColor dust_color (0.60f, 0.52f, 0.40f);
-    const DisplayColor clod_color (0.42f, 0.34f, 0.24f);
+    const DisplayColor dust_color = ground.dust_color;
+    const DisplayColor clod_color = ground.clod_color;
+    // Loose ground gives up its dust; turf and litter hold most of theirs.
+    const auto loose = [&ground] (float count) {
+      return static_cast<int> (std::round (count * ground.dust));
+    };
     const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
     const Vec3 forward = session.subject_heading ();
     const Vec3 rear_wheel =
@@ -377,11 +382,38 @@ namespace moppe::game {
 
     // Drift kicks up dirt from the rear wheel (or spray).
     if (driving && vehicle.grounded () && vehicle.drift_speed () > 6.0f) {
-      const int count = std::min (4, (int)(vehicle.drift_speed () * 0.2f));
+      const float count = std::min (4.0f, vehicle.drift_speed () * 0.2f);
       session.dust ().emit (moppe::position (rear_wheel),
                             velocity (vehicle.velocity () * 0.15f),
-                            count,
+                            in_water ? (int)count : loose (count),
                             in_water ? spray_color : dust_color);
+    }
+
+    // Fallen leaves fly up behind the rear wheel and flutter back down.
+    if (driving && vehicle.grounded () && !in_water && ground.leaves > 0.15f) {
+      const float speed = length (vehicle.velocity ());
+      const int count =
+        static_cast<int> (std::min (3.0f, ground.leaves * speed * 0.08f));
+      if (count > 0) {
+        Dust::Style leaf;
+        leaf.size = 0.08f * u::m;
+        leaf.lifetime = 1.8f * u::s;
+        leaf.downward_acceleration =
+          1.6f * isq::acceleration[u::m / pow<2> (u::s)];
+        leaf.spread = 1.1f * one;
+        leaf.flake = true;
+        const Vec3 lift = vehicle.velocity () * 0.25f + Vec3 (0, 2.4f, 0);
+        session.dust ().emit (moppe::position (rear_wheel),
+                              velocity (lift),
+                              (count + 1) / 2,
+                              DisplayColor (0.93f, 0.67f, 0.20f),
+                              leaf);
+        session.dust ().emit (moppe::position (rear_wheel),
+                              velocity (lift),
+                              count / 2,
+                              DisplayColor (0.86f, 0.44f, 0.14f),
+                              leaf);
+      }
     }
 
     // Roost: hard throttle sprays an arc of dirt clods backward off the rear
@@ -393,7 +425,8 @@ namespace moppe::game {
                          (1.0f - std::min (1.0f, speed / 30.0f));
       if (slip > 0.15f) {
         Dust::Style roost;
-        roost.size = 0.45f * u::m;
+        roost.size = 0.16f * u::m;
+        roost.flake = true;
         roost.lifetime = 0.9f * u::s;
         roost.downward_acceleration =
           12.0f * isq::acceleration[u::m / pow<2> (u::s)];
@@ -470,11 +503,12 @@ namespace moppe::game {
       session.dust ().emit (
         moppe::position (vehicle_position + Vec3 (0, -0.7f, 0)),
         velocity (vehicle.velocity () * 0.2f),
-        12,
+        in_water ? 12 : loose (12.0f),
         in_water ? spray_color : dust_color);
       if (!in_water) {
         Dust::Style burst;
-        burst.size = 0.5f * u::m;
+        burst.size = 0.2f * u::m;
+        burst.flake = true;
         burst.lifetime = 1.1f * u::s;
         burst.downward_acceleration =
           10.0f * isq::acceleration[u::m / pow<2> (u::s)];

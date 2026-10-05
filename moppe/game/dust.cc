@@ -71,7 +71,8 @@ namespace moppe::game {
             u::m / pow<2> (u::s)),
           .spread = scalar_value (emission.style.spread),
           .particle_count = emission.particle_count,
-          .additive = emission.style.additive });
+          .additive = emission.style.additive,
+          .flake = emission.style.flake });
     }
     renderer.draw_dust (payload, seconds_value (m_logical_time));
   }
