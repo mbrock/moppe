@@ -90,10 +90,12 @@
     `MOPPE_GAZETTEER_WINDOW`, and `MOPPE_GAZETTEER_SETTLE`.
     `MOPPE_GAZETTEER_ENABLE` and `MOPPE_GAZETTEER_DISABLE` forward
     `--graphics-enable` and `--graphics-disable` lists.
-  - Trunk forest prototype: `--graphics-enable forest-trunks` presents every
-    tree as one tapered trunk and a few faceted crown masses
-    (`moppe/shaders/metal/forest_trunks.metal`), with mature-stand heights
-    and long clear trunks in closed stands, instead of procedural boughs.
+  - The forest is the trunk forest (`moppe/shaders/metal/forest_trunks.metal`):
+    tiered spruce and birch with leaf clumps on branches, at mature-stand
+    heights with long clear trunks in closed stands. Autumn reaches the
+    uplands first: birch there turns gold, drops a leaf carpet
+    (`leaf_fall.metal` adds falling leaves), and the high heath turns.
+    `--graphics-disable forest-trunks` restores the procedural boughs.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;

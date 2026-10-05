@@ -58,8 +58,7 @@ MOPPE_TEST (balanced_graphics_reduces_resolution_without_removing_features) {
   MOPPE_CHECK (settings.upscaling == render::UpscalingMode::Temporal);
   MOPPE_CHECK_NEAR (settings.scene_scale, 2.0f / 3.0f, 0.0f);
   for (const game::GraphicsFeature* feature : game::graphics_features)
-    if (feature != &game::terrain_topology_feature &&
-        feature != &game::forest_trunks_feature)
+    if (feature != &game::terrain_topology_feature)
       MOPPE_CHECK (feature->enabled (settings));
 }
 

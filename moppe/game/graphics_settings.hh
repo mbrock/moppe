@@ -67,10 +67,10 @@ namespace moppe::game {
     bool undergrowth = true;
     bool light_shafts = true;
     bool gtao = true;
-    // Present individuals as the trunk forest instead of procedural boughs.
-    // Chosen at world load: it changes the presented proportions, so it is
-    // not toggled mid-frame by the benchmark.
-    bool forest_trunks = false;
+    // Present individuals as the trunk forest; disabled, the procedural
+    // boughs return. Chosen at world load: it changes the presented
+    // proportions, so it is not toggled mid-frame by the benchmark.
+    bool forest_trunks = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
