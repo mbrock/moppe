@@ -159,6 +159,14 @@
     `scene_megapixel_budget`, so a display attached at 1x — a 7680x2160 one
     asks for twice a 4K frame — costs resolution rather than frame rate.
 - Renderer smoke test: `./build/moppe-testbed`
+- NHAL, the next renderer's hardware layer (Metal 4 + Direct3D 12 for Xbox;
+  `docs/nhal.md`): `cmake --build build --target nhal-demo` (configure with
+  `-DMOPPE_BUILD_DEVELOPER_TOOLS=ON`), then `./build/nhal-demo`, or
+  `./build/nhal-demo --capture /tmp/nhal.png --frames 30` to write one frame
+  without taking focus. On Xbox: `nix build .#nhal-xbox` and
+  `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net nix run .#deploy-nhal-xbox`;
+  the app writes `nhal.txt` (and one captured `nhal.tga`) to its LocalState,
+  readable through Device Portal's file API.
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS
   -DCMAKE_OSX_SYSROOT=iphonesimulator` then build the `moppe-ios` target
   with `CODE_SIGNING_ALLOWED=NO`

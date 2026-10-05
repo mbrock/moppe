@@ -1,0 +1,285 @@
+// NHAL: a small hardware layer for Metal 4 and Direct3D 12 (docs/nhal.md).
+//
+// Resources are handles into the device's tables. Destroying one retires it
+// once the frames that might still read it have completed. Between
+// begin_frame and end_frame the device records one command stream: render
+// passes, draws, and their bindings by binding number, in the families the
+// program's reflection declares. Uniforms and other per-frame data go into
+// the frame's upload arena and are bound by GPU address.
+//
+// Barriers are the device's business: Direct3D 12 tracks each texture's
+// state and transitions it where a pass or a binding needs it; Metal 4
+// orders passes with queue-stage barriers.
+#ifndef MOPPE_NHAL_NHAL_HH
+#define MOPPE_NHAL_NHAL_HH
+
+#include <moppe/nhal/reflection.hh>
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <memory>
+#include <span>
+#include <string>
+#include <string_view>
+
+namespace moppe::nhal {
+  enum class Format : std::uint8_t {
+    undefined,
+    rgba8_unorm,
+    rgba8_unorm_srgb,
+    bgra8_unorm,
+    bgra8_unorm_srgb,
+    rgb10a2_unorm,
+    rgba16_float,
+    rg16_float,
+    r16_float,
+    r8_unorm,
+    r32_float,
+    rg32_float,
+    rgba32_float,
+    r32_uint,
+    d32_float,
+  };
+
+  constexpr bool is_depth (Format format) {
+    return format == Format::d32_float;
+  }
+
+  constexpr std::uint32_t bytes_per_pixel (Format format) {
+    switch (format) {
+    case Format::undefined: return 0;
+    case Format::rgba8_unorm:
+    case Format::rgba8_unorm_srgb:
+    case Format::bgra8_unorm:
+    case Format::bgra8_unorm_srgb:
+    case Format::rgb10a2_unorm:
+    case Format::rg16_float:
+    case Format::r32_float:
+    case Format::r32_uint:
+    case Format::d32_float: return 4;
+    case Format::r16_float: return 2;
+    case Format::r8_unorm: return 1;
+    case Format::rgba16_float:
+    case Format::rg32_float: return 8;
+    case Format::rgba32_float: return 16;
+    }
+    return 0;
+  }
+
+  // Upload memory is written by the CPU and read by the GPU in place;
+  // device memory is the GPU's own and is filled by staged copies.
+  enum class Memory : std::uint8_t { device, upload };
+
+  struct BufferDesc {
+    std::uint64_t size = 0;
+    Memory memory = Memory::device;
+    const char* label = nullptr;
+  };
+
+  using TextureUsage = std::uint8_t;
+  inline constexpr TextureUsage usage_sampled = 1;
+  inline constexpr TextureUsage usage_render_target = 2;
+  inline constexpr TextureUsage usage_depth = 4;
+
+  struct TextureDesc {
+    std::uint32_t width = 1;
+    std::uint32_t height = 1;
+    Format format = Format::rgba8_unorm;
+    TextureUsage usage = usage_sampled;
+    std::uint32_t samples = 1;
+    const char* label = nullptr;
+  };
+
+  // Handles index the device's tables; the generation catches stale use.
+  struct Handle {
+    std::uint32_t index = 0;
+    std::uint32_t generation = 0;
+    explicit operator bool () const { return generation != 0; }
+    bool operator== (const Handle&) const = default;
+  };
+  struct Buffer : Handle {};
+  struct Texture : Handle {};
+  struct Pipeline : Handle {};
+
+  // One stage's code in each backend's form: MSL source, compiled when the
+  // pipeline is made, and DXIL compiled ahead of time by DXC.
+  struct StageCode {
+    std::string_view msl;
+    std::span<const unsigned char> dxil;
+  };
+
+  enum class CompareOp : std::uint8_t {
+    never, less, equal, less_equal, greater, not_equal, greater_equal, always
+  };
+  enum class Blend : std::uint8_t { none, alpha, additive };
+  enum class Cull : std::uint8_t { none, back, front };
+  enum class Topology : std::uint8_t { triangle_list, triangle_strip,
+                                       line_list };
+
+  struct RenderPipelineDesc {
+    const Program* program = nullptr;
+    StageCode vertex;
+    StageCode fragment;
+    std::array<Format, 8> color_formats {};
+    std::array<Blend, 8> blend {};
+    std::uint32_t color_count = 1;
+    Format depth_format = Format::undefined;
+    // Reversed-Z by default: nearer is greater.
+    CompareOp depth_compare = CompareOp::greater_equal;
+    bool depth_write = true;
+    Cull cull = Cull::none;
+    bool front_counter_clockwise = true;
+    std::uint32_t samples = 1;
+    Topology topology = Topology::triangle_list;
+    const char* label = nullptr;
+  };
+
+  enum class Load : std::uint8_t { load, clear, discard };
+  enum class Store : std::uint8_t { store, discard };
+
+  struct ColorAttachment {
+    Texture texture;
+    Load load = Load::clear;
+    Store store = Store::store;
+    std::array<float, 4> clear {0, 0, 0, 1};
+    // Resolves a multisampled attachment into this single-sampled one.
+    Texture resolve;
+  };
+
+  struct DepthAttachment {
+    Texture texture;
+    Load load = Load::clear;
+    Store store = Store::discard;
+    float clear = 0.0f; // reversed-Z: far is zero
+  };
+
+  struct RenderPassDesc {
+    std::array<ColorAttachment, 8> colors {};
+    std::uint32_t color_count = 0;
+    DepthAttachment depth {};
+    const char* label = nullptr;
+  };
+
+  enum class IndexType : std::uint8_t { uint16, uint32 };
+
+  struct DeviceInfo {
+    std::string backend;
+    std::string adapter;
+    std::uint32_t frames_in_flight = 0;
+  };
+
+  // A slice of the frame's upload arena: CPU-writable, GPU-readable until
+  // the frame completes.
+  struct Transient {
+    void* data = nullptr;
+    std::uint64_t gpu_address = 0;
+    std::uint64_t size = 0;
+  };
+
+  // A completed frame's drawable, read back for screenshots and tests.
+  struct Capture {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    Format format = Format::undefined;
+    std::uint32_t row_bytes = 0;
+    std::span<const std::byte> pixels;
+  };
+
+  class Device {
+  public:
+    virtual ~Device () = default;
+
+    virtual DeviceInfo info () const = 0;
+
+    // -- resources ----------------------------------------------------
+    virtual Buffer create_buffer (const BufferDesc& desc,
+                                  std::span<const std::byte> initial = {})
+      = 0;
+    // Upload buffers only: the CPU address, valid for the buffer's life.
+    virtual void* contents (Buffer buffer) = 0;
+    virtual Texture create_texture (const TextureDesc& desc) = 0;
+    // Replaces the whole texture; rows are tightly packed unless
+    // row_bytes says otherwise. Completes before the next frame's work.
+    virtual void write_texture (Texture texture,
+                                std::span<const std::byte> pixels,
+                                std::uint32_t row_bytes = 0)
+      = 0;
+    virtual Pipeline create_render_pipeline (const RenderPipelineDesc& desc)
+      = 0;
+    virtual void destroy (Buffer buffer) = 0;
+    virtual void destroy (Texture texture) = 0;
+    virtual void destroy (Pipeline pipeline) = 0;
+
+    // -- the drawable -------------------------------------------------
+    virtual Format surface_format () const = 0;
+    virtual std::uint32_t surface_width () const = 0;
+    virtual std::uint32_t surface_height () const = 0;
+    virtual void resize_surface (std::uint32_t width, std::uint32_t height)
+      = 0;
+
+    // -- a frame ------------------------------------------------------
+    // Waits for the frame slot and the next drawable. False means there
+    // is nothing to draw into this time (a minimized window, say).
+    virtual bool begin_frame () = 0;
+    // This frame's drawable, valid until end_frame.
+    virtual Texture backbuffer () = 0;
+    virtual Transient allocate (std::uint64_t size,
+                                std::uint64_t alignment = 256)
+      = 0;
+
+    virtual void begin_render_pass (const RenderPassDesc& desc) = 0;
+    virtual void end_render_pass () = 0;
+    virtual void set_pipeline (Pipeline pipeline) = 0;
+    virtual void set_buffer (std::uint32_t binding, Buffer buffer,
+                             std::uint64_t offset = 0)
+      = 0;
+    virtual void set_buffer (std::uint32_t binding, const Transient& slice)
+      = 0;
+    virtual void set_texture (std::uint32_t binding, Texture texture) = 0;
+    virtual void set_viewport (float x, float y, float width, float height)
+      = 0;
+    virtual void draw (std::uint32_t vertex_count,
+                       std::uint32_t instance_count = 1,
+                       std::uint32_t first_vertex = 0,
+                       std::uint32_t first_instance = 0)
+      = 0;
+    virtual void draw_indexed (Buffer indices, IndexType type,
+                               std::uint32_t index_count,
+                               std::uint32_t instance_count = 1,
+                               std::uint32_t first_index = 0,
+                               std::int32_t base_vertex = 0,
+                               std::uint32_t first_instance = 0)
+      = 0;
+
+    // Reads this frame's drawable back once the frame completes. `done`
+    // runs on the rendering thread, in a later begin_frame or wait_idle.
+    virtual void capture_frame (std::function<void (const Capture&)> done)
+      = 0;
+
+    // Submits the frame and presents its drawable.
+    virtual void end_frame () = 0;
+    // Waits until the GPU has finished everything submitted.
+    virtual void wait_idle () = 0;
+
+    // Copies a value into the arena and binds it.
+    template <typename T>
+    void set_uniforms (std::uint32_t binding, const T& value) {
+      Transient slice = allocate (sizeof (T));
+      std::memcpy (slice.data, &value, sizeof (T));
+      set_buffer (binding, slice);
+    }
+
+    template <typename T>
+    Transient upload (std::span<const T> values) {
+      Transient slice = allocate (values.size_bytes ());
+      if (!values.empty ())
+        std::memcpy (slice.data, values.data (), values.size_bytes ());
+      return slice;
+    }
+  };
+}
+
+#endif

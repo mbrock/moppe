@@ -1,0 +1,299 @@
+#include <moppe/nhal/demo/programs.hh>
+#include <moppe/nhal/demo/scene.hh>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
+namespace moppe::nhal::demo {
+  namespace {
+    constexpr float pi = 3.14159265358979f;
+    constexpr std::uint32_t grid = 257;
+    constexpr float cell = 4.0f;
+    constexpr std::uint32_t samples = 4; // scene multisampling
+
+    struct Vec3 {
+      float x = 0, y = 0, z = 0;
+      Vec3 operator+ (Vec3 o) const { return { x + o.x, y + o.y, z + o.z }; }
+      Vec3 operator- (Vec3 o) const { return { x - o.x, y - o.y, z - o.z }; }
+      Vec3 operator* (float s) const { return { x * s, y * s, z * s }; }
+    };
+
+    float dot (Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+    Vec3 cross (Vec3 a, Vec3 b) {
+      return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
+               a.x * b.y - a.y * b.x };
+    }
+    Vec3 normalize (Vec3 v) { return v * (1.0f / std::sqrt (dot (v, v))); }
+    std::array<float, 4> lanes (Vec3 v, float w) { return { v.x, v.y, v.z, w }; }
+
+    float hash (int x, int z) {
+      std::uint32_t h = std::uint32_t (x) * 374761393u
+                        + std::uint32_t (z) * 668265263u;
+      h = (h ^ (h >> 13)) * 1274126177u;
+      return float ((h ^ (h >> 16)) & 0xffffff) / float (0x1000000);
+    }
+
+    float value_noise (float x, float z) {
+      const int ix = int (std::floor (x)), iz = int (std::floor (z));
+      float fx = x - ix, fz = z - iz;
+      fx = fx * fx * (3 - 2 * fx);
+      fz = fz * fz * (3 - 2 * fz);
+      const float a = hash (ix, iz), b = hash (ix + 1, iz);
+      const float c = hash (ix, iz + 1), d = hash (ix + 1, iz + 1);
+      return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
+    }
+
+    float fbm (float x, float z) {
+      float sum = 0, amplitude = 0.5f;
+      for (int octave = 0; octave < 6; ++octave) {
+        sum += amplitude * value_noise (x, z);
+        x = x * 2.03f + 17.1f;
+        z = z * 2.03f - 9.7f;
+        amplitude *= 0.5f;
+      }
+      return sum;
+    }
+
+    // A valley: noise ridges rising away from the middle of the map.
+    float height_at (float x, float z) {
+      const float span = (grid - 1) * cell;
+      const float dx = x / span - 0.5f, dz = z / span - 0.5f;
+      const float rim = dx * dx + dz * dz;
+      return 170.0f * std::pow (fbm (x / 330.0f, z / 330.0f), 1.4f)
+             + 260.0f * rim;
+    }
+
+    struct Rng {
+      std::uint32_t state = 0x9e3779b9u;
+      float next () {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return float (state & 0xffffff) / float (0x1000000);
+      }
+    };
+
+    template <typename T>
+    std::span<const std::byte> bytes (const std::vector<T>& values) {
+      return std::as_bytes (std::span (values));
+    }
+
+  }
+
+  Scene::Scene (Device& device, const Shaders& shaders)
+    : m_device (device), m_grid (grid), m_cell (cell) {
+    // Terrain samples: height and normal per grid point.
+    std::vector<float> heights (grid * grid);
+    for (std::uint32_t z = 0; z < grid; ++z)
+      for (std::uint32_t x = 0; x < grid; ++x)
+        heights[z * grid + x] = height_at (x * cell, z * cell);
+    auto h = [&] (int x, int z) {
+      x = std::clamp (x, 0, int (grid) - 1);
+      z = std::clamp (z, 0, int (grid) - 1);
+      return heights[z * grid + x];
+    };
+    std::vector<std::array<float, 4>> terrain (grid * grid);
+    for (int z = 0; z < int (grid); ++z)
+      for (int x = 0; x < int (grid); ++x) {
+        const Vec3 n = normalize ({ h (x - 1, z) - h (x + 1, z), 2 * cell,
+                                    h (x, z - 1) - h (x, z + 1) });
+        terrain[z * grid + x] = { h (x, z), n.x, n.y, n.z };
+      }
+    std::vector<std::uint32_t> indices;
+    for (std::uint32_t z = 0; z + 1 < grid; ++z)
+      for (std::uint32_t x = 0; x + 1 < grid; ++x) {
+        const std::uint32_t a = z * grid + x, b = a + 1, c = a + grid,
+                            d = c + 1;
+        indices.insert (indices.end (), { a, c, b, b, c, d });
+      }
+    m_terrain_index_count = std::uint32_t (indices.size ());
+    m_terrain_samples = device.create_buffer (
+      { terrain.size () * 16, Memory::device, "terrain samples" },
+      bytes (terrain));
+    m_terrain_indices = device.create_buffer (
+      { indices.size () * 4, Memory::device, "terrain indices" },
+      bytes (indices));
+
+    // A spruce stand on the gentler mid slopes, thinned by a density field.
+    float highest = 0;
+    for (float value : heights)
+      highest = std::max (highest, value);
+    std::vector<std::array<float, 4>> trees;
+    Rng rng;
+    const float span = (grid - 1) * cell;
+    for (int attempt = 0; attempt < 60000 && trees.size () < 2 * 9000;
+         ++attempt) {
+      const float x = rng.next () * span, z = rng.next () * span;
+      const int gx = int (x / cell), gz = int (z / cell);
+      const auto& sample = terrain[gz * grid + gx];
+      const float y = sample[0];
+      const float density = fbm (x / 140.0f + 40, z / 140.0f - 13);
+      if (sample[2] < 0.82f || y > highest * 0.62f || density < 0.47f)
+        continue;
+      const float tall = 14.0f + 13.0f * rng.next ();
+      trees.push_back ({ x, y, z, tall });
+      trees.push_back ({ tall * 0.017f, tall * (0.19f + 0.05f * rng.next ()),
+                         0.22f + 0.1f * rng.next (), rng.next () });
+    }
+    m_tree_count = std::uint32_t (trees.size () / 2);
+    m_tree_instances = device.create_buffer (
+      { trees.size () * 16, Memory::device, "tree instances" }, bytes (trees));
+
+    // One spruce: an 8-facet trunk and three crown tiers, 48 vertices made
+    // by the vertex shader from its index.
+    std::vector<std::uint16_t> tree;
+    for (std::uint16_t f = 0; f < 8; ++f) {
+      const std::uint16_t a = f, b = f + 1, c = 9 + f, d = 10 + f;
+      tree.insert (tree.end (), { a, b, c, b, d, c });
+    }
+    for (std::uint16_t tier = 0; tier < 3; ++tier) {
+      const std::uint16_t base = 18 + tier * 10, apex = base + 9;
+      for (std::uint16_t f = 0; f < 8; ++f)
+        tree.insert (tree.end (), { std::uint16_t (base + f),
+                                    std::uint16_t (base + f + 1), apex });
+    }
+    m_tree_index_count = std::uint32_t (tree.size ());
+    m_tree_indices = device.create_buffer (
+      { tree.size () * 2, Memory::device, "tree indices" }, bytes (tree));
+
+    // Pipelines: the scene draws into multisampled RGBA16F over reversed-Z
+    // depth; the tonemap writes the drawable.
+    RenderPipelineDesc scene;
+    scene.color_formats[0] = Format::rgba16_float;
+    scene.depth_format = Format::d32_float;
+    scene.samples = samples;
+
+    RenderPipelineDesc desc = scene;
+    desc.program = &shaders::terrain::program;
+    desc.vertex = shaders.terrain_vertex;
+    desc.fragment = shaders.terrain_fragment;
+    m_terrain = device.create_render_pipeline (desc);
+
+    desc.program = &shaders::trees::program;
+    desc.vertex = shaders.trees_vertex;
+    desc.fragment = shaders.trees_fragment;
+    m_trees = device.create_render_pipeline (desc);
+
+    // The sky fills only what nothing nearer covered: it sits at the far
+    // plane, which reversed-Z clears to zero.
+    desc.program = &shaders::sky::program;
+    desc.vertex = shaders.sky_vertex;
+    desc.fragment = shaders.sky_fragment;
+    desc.depth_write = false;
+    m_sky = device.create_render_pipeline (desc);
+
+    RenderPipelineDesc tonemap;
+    tonemap.program = &shaders::tonemap::program;
+    tonemap.vertex = shaders.tonemap_vertex;
+    tonemap.fragment = shaders.tonemap_fragment;
+    tonemap.color_formats[0] = device.surface_format ();
+    m_tonemap = device.create_render_pipeline (tonemap);
+  }
+
+  Scene::~Scene () {
+    m_device.wait_idle ();
+    for (Texture t : { m_color, m_depth, m_scene })
+      if (t)
+        m_device.destroy (t);
+    for (Buffer b : { m_terrain_samples, m_terrain_indices, m_tree_instances,
+                      m_tree_indices })
+      m_device.destroy (b);
+    for (Pipeline p : { m_terrain, m_trees, m_sky, m_tonemap })
+      m_device.destroy (p);
+  }
+
+  void Scene::make_targets () {
+    for (Texture t : { m_color, m_depth, m_scene })
+      if (t)
+        m_device.destroy (t);
+    m_width = m_device.surface_width ();
+    m_height = m_device.surface_height ();
+    m_color = m_device.create_texture ({ m_width, m_height,
+                                         Format::rgba16_float,
+                                         usage_render_target, samples,
+                                         "scene samples" });
+    m_depth = m_device.create_texture ({ m_width, m_height, Format::d32_float,
+                                         usage_depth, samples,
+                                         "scene depth" });
+    m_scene = m_device.create_texture ({ m_width, m_height,
+                                         Format::rgba16_float,
+                                         usage_render_target | usage_sampled,
+                                         1, "scene" });
+  }
+
+  bool Scene::render (double seconds) {
+    if (!m_device.begin_frame ())
+      return false;
+    if (m_width != m_device.surface_width ()
+        || m_height != m_device.surface_height ())
+      make_targets ();
+
+    // A slow orbit around the valley, looking across it.
+    const float span = (m_grid - 1) * m_cell;
+    const Vec3 centre { span * 0.5f, 0, span * 0.5f };
+    const float angle = float (seconds) * 0.04f;
+    Vec3 eye = centre + Vec3 { std::cos (angle), 0, std::sin (angle) } * 300;
+    eye.y = height_at (eye.x, eye.z) + 28;
+    Vec3 target = centre
+                  + Vec3 { std::cos (angle + 2.2f), 0,
+                           std::sin (angle + 2.2f) } * 180;
+    target.y = height_at (target.x, target.z) + 20;
+    const Vec3 forward = normalize (target - eye);
+    const Vec3 right = normalize (cross (forward, { 0, 1, 0 }));
+    const Vec3 up = cross (right, forward);
+    const float tan_y = std::tan (27.0f * pi / 180.0f);
+    const float tan_x = tan_y * float (m_width) / float (m_height);
+
+    shaders::FrameState frame;
+    frame.camera_position = lanes (eye, float (seconds));
+    frame.camera_right = lanes (right * (1 / tan_x), tan_x);
+    frame.camera_up = lanes (up * (1 / tan_y), tan_y);
+    frame.camera_forward = lanes (forward, 0.5f);
+    frame.sun_direction = lanes (normalize ({ 0.55f, 0.32f, 0.35f }), 0);
+    frame.sun_color = { 3.2f, 2.75f, 2.2f, 0 };
+    frame.sky_zenith = { 0.22f, 0.36f, 0.66f, 0 };
+    frame.sky_horizon = { 0.66f, 0.70f, 0.74f, 0.0011f };
+    frame.terrain = { m_cell, float (m_grid), 0, 0 };
+    const Transient uniforms = m_device.allocate (sizeof frame);
+    std::memcpy (uniforms.data, &frame, sizeof frame);
+
+    RenderPassDesc pass;
+    pass.label = "scene";
+    pass.color_count = 1;
+    pass.colors[0] = { m_color, Load::clear, Store::discard, { 0, 0, 0, 1 },
+                       m_scene };
+    pass.depth = { m_depth, Load::clear, Store::discard, 0.0f };
+    m_device.begin_render_pass (pass);
+    m_device.set_buffer (0, uniforms);
+
+    m_device.set_pipeline (m_terrain);
+    m_device.set_buffer (1, m_terrain_samples);
+    m_device.draw_indexed (m_terrain_indices, IndexType::uint32,
+                           m_terrain_index_count);
+
+    m_device.set_pipeline (m_trees);
+    m_device.set_buffer (1, m_tree_instances);
+    m_device.draw_indexed (m_tree_indices, IndexType::uint16,
+                           m_tree_index_count, m_tree_count);
+
+    m_device.set_pipeline (m_sky);
+    m_device.draw (3);
+    m_device.end_render_pass ();
+
+    RenderPassDesc present;
+    present.label = "tonemap";
+    present.color_count = 1;
+    present.colors[0] = { m_device.backbuffer (), Load::discard,
+                          Store::store };
+    m_device.begin_render_pass (present);
+    m_device.set_pipeline (m_tonemap);
+    m_device.set_buffer (0, uniforms);
+    m_device.set_texture (0, m_scene);
+    m_device.draw (3);
+    m_device.end_render_pass ();
+    return true;
+  }
+}

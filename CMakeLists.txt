@@ -772,6 +772,25 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     target_compile_definitions(moppe-tree-studio PRIVATE
       MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
     target_link_libraries(moppe-tree-studio PRIVATE "-framework AppKit")
+
+    # NHAL, the next renderer's hardware layer (docs/nhal.md), and its demo
+    # scene on Metal 4. The Direct3D 12 build for Xbox lives in
+    # moppe/nhal/meson.build.
+    add_executable(nhal-demo EXCLUDE_FROM_ALL
+      moppe/nhal/metal/metal_device.mm
+      moppe/nhal/demo/scene.cc
+      moppe/nhal/demo/main_mac.mm)
+    target_include_directories(nhal-demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(nhal-demo PRIVATE
+      $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    target_compile_definitions(nhal-demo PRIVATE
+      MOPPE_NHAL_DEMO_SHADERS="${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders")
+    target_link_libraries(nhal-demo PRIVATE
+      "-framework AppKit"
+      "-framework Metal"
+      "-framework QuartzCore"
+      "-framework ImageIO"
+      "-framework UniformTypeIdentifiers")
   endif()
 
   # The game, as a proper .app bundle with the assets inside.

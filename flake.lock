@@ -1,0 +1,135 @@
+{
+  "nodes": {
+    "cppwinrt": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1741044126,
+        "narHash": "sha256-sAGF79t4WPehpZICrPlXjLGmCH14iyY/SJrv47QvlMQ=",
+        "owner": "microsoft",
+        "repo": "cppwinrt",
+        "rev": "69c78cfc7920367c4ce9cc024cf8c5b8d217fb1b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "microsoft",
+        "ref": "2.0.250303.1",
+        "repo": "cppwinrt",
+        "type": "github"
+      }
+    },
+    "nixbox": {
+      "inputs": {
+        "cppwinrt": "cppwinrt",
+        "nixpkgs": "nixpkgs",
+        "nxtui": "nxtui",
+        "openappx": "openappx",
+        "uwp-crossbuild": "uwp-crossbuild",
+        "winmd": "winmd"
+      },
+      "locked": {
+        "lastModified": 1791236779,
+        "narHash": "sha256-j4gMUd2MxxH95cOihqSbek3TzQfv8KQA+kB19KmBZ1k=",
+        "owner": "mbrock",
+        "repo": "nixbox",
+        "rev": "c13b04930e9c477b67816f419ccb38e66e9b4347",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mbrock",
+        "repo": "nixbox",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1790981744,
+        "narHash": "sha256-sm6DclXJudZfP/pcDBQQsRqyMxBcQsuw+7yQr4rBBLE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "55ba7f49ef2962b42cbd126522b7df5f95037679",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nxtui": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791201580,
+        "narHash": "sha256-XkwxTuVY7QB0T5bCGtr10iiXTwT89KZhc8qU2fUwBYQ=",
+        "owner": "mbrock",
+        "repo": "nxtui",
+        "rev": "965e6fc01852ade13fa4c4b520f05cc4e508eff1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mbrock",
+        "repo": "nxtui",
+        "rev": "965e6fc01852ade13fa4c4b520f05cc4e508eff1",
+        "type": "github"
+      }
+    },
+    "openappx": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790866348,
+        "narHash": "sha256-lc4/qHrPHdbkpGRYZhtzKft1Z1zyNUj3w6RVdwYGsaw=",
+        "owner": "gianlucamazza",
+        "repo": "openappx",
+        "rev": "da05f7f66e2ac9071253aea954088d3159b734fd",
+        "type": "github"
+      },
+      "original": {
+        "owner": "gianlucamazza",
+        "repo": "openappx",
+        "rev": "da05f7f66e2ac9071253aea954088d3159b734fd",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixbox": "nixbox"
+      }
+    },
+    "uwp-crossbuild": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1787078767,
+        "narHash": "sha256-7WeL75Y3azXtdJzAw1F4tunEIJOBB8os36ifroy09rc=",
+        "owner": "gianlucamazza",
+        "repo": "uwp-crossbuild",
+        "rev": "d40e8de6b16d1edc78276c14157bf735d2744d5b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "gianlucamazza",
+        "repo": "uwp-crossbuild",
+        "rev": "d40e8de6b16d1edc78276c14157bf735d2744d5b",
+        "type": "github"
+      }
+    },
+    "winmd": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1669508062,
+        "narHash": "sha256-TARhV+xENHiBnVuozlDdQAStGXPjQrUenrMdpXKgPcM=",
+        "owner": "microsoft",
+        "repo": "winmd",
+        "rev": "0f1eae3bfa63fa2ba3c2912cbfe72a01db94cc5a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "microsoft",
+        "repo": "winmd",
+        "rev": "0f1eae3bfa63fa2ba3c2912cbfe72a01db94cc5a",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
