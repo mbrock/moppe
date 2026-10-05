@@ -395,6 +395,8 @@ namespace moppe {
 
     void set_window_title (const std::string&) {}
 
+    void set_pointer_captured (bool) {}
+
     Insets safe_insets () {
       Insets r;
       if (!g_window)

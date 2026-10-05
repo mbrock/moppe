@@ -167,6 +167,8 @@ namespace moppe::platform {
 
   void set_window_title (const std::string&) {}
 
+  void set_pointer_captured (bool) {}
+
   Insets safe_insets () {
     Insets result;
     if (!g_window)

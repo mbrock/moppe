@@ -80,7 +80,9 @@
     spruce ahead of the spawn (`MOPPE_TREE_LAB=1` with `--uplift-years 0`).
   - Spectator: `tools/spectate [--fullscreen]` (`MOPPE_SPECTATOR=1`) starts
     a free camera with no rider in the world's densest conifer stand: WASD
-    moves, Space/Tab rise and sink, mouse drag or arrow keys look around.
+    moves (letters or QWERTY positions, so any layout works), Space/Tab
+    rise and sink, and the captured mouse or the arrow keys look around; M
+    frees the mouse (e.g. for a ⌘⇧5 window recording) and takes it back.
   - Temporal inspection cameras: `MOPPE_PAN=<seconds>` stands at the rider
     and sweeps the view left and right; `MOPPE_ORBIT=<radius>,<height>,
     <seconds>` circles the loneliest tall tree near the rider. Both, and

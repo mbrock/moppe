@@ -207,12 +207,16 @@ namespace moppe {
                      surface (), moppe::position (eye))) +
                  1.7f;
         m_spectator->eye = eye;
+        // The pointer is captured: moving the mouse looks around, as in any
+        // first-person view, without a button held.
+        platform::set_pointer_captured (true);
         std::cerr << "moppe: spectator in the densest conifer stand at " << eye
                   << " (" << conifers[densest] << " spruce in 40 m)\n";
       }
 
       // WASD walks the eye through the air, Space and Tab rise and sink, and
-      // dragging with the mouse or the arrow keys turns the head.
+      // the mouse (captured, no button needed) or the arrow keys turn the
+      // head.
       void spectator_camera (float dt) {
         if (!m_spectator)
           return;
@@ -227,8 +231,15 @@ namespace moppe {
         const Vec3 forward (std::cos (view.yaw), 0.0f, std::sin (view.yaw));
         const Vec3 right (-forward[2], 0.0f, forward[0]);
         const float speed = 6.0f;
-        view.eye += (forward * (held (Key::W) - held (Key::S)) +
-                     right * (held (Key::D) - held (Key::A)) +
+        // Letters and QWERTY positions both move, so WASD works on any
+        // keyboard layout.
+        const auto either = [&held] (Key letter, Key position) {
+          return std::max (held (letter), held (position));
+        };
+        view.eye += (forward * (either (Key::W, Key::PhysicalW) -
+                                either (Key::S, Key::PhysicalS)) +
+                     right * (either (Key::D, Key::PhysicalD) -
+                              either (Key::A, Key::PhysicalA)) +
                      Vec3 (0, 1, 0) * (held (Key::Space) - held (Key::Tab))) *
                     (speed * dt);
         const float ground = terrain::surface_elevation_value (
@@ -242,16 +253,8 @@ namespace moppe {
         session ().camera ().place (view.eye, view.eye + look * 10.0f);
       }
 
-      void pointer_button (platform::PointerButton button,
-                           bool down,
-                           float,
-                           float) override {
-        if (m_spectator && button == platform::PointerButton::Primary)
-          m_spectator->dragging = down;
-      }
-
       void pointer_move (float, float, float dx, float dy) override {
-        if (!m_spectator || !m_spectator->dragging)
+        if (!m_spectator || m_spectator->pointer_free)
           return;
         m_spectator->yaw += 0.004f * dx;
         m_spectator->pitch =
@@ -1864,6 +1867,12 @@ namespace moppe {
         }
 
         if (m_spectator) {
+          // M frees the mouse -- to start a screen recording, say -- and
+          // takes it back.
+          if (k == Key::M && down) {
+            m_spectator->pointer_free = !m_spectator->pointer_free;
+            platform::set_pointer_captured (!m_spectator->pointer_free);
+          }
           if (down)
             m_spectator->held.insert (k);
           else
@@ -1872,6 +1881,10 @@ namespace moppe {
             platform::request_quit ();
           return;
         }
+        // Riding reads letters; physical positions are for free flight.
+        if (k == Key::PhysicalW || k == Key::PhysicalA || k == Key::PhysicalS ||
+            k == Key::PhysicalD)
+          return;
 
         if (m_cinematic.active ()) {
           if (k == Key::Escape && down)
@@ -2220,7 +2233,7 @@ namespace moppe {
         float yaw = 0.0f;
         float pitch = 0.0f;
         std::set<platform::Key> held;
-        bool dragging = false;
+        bool pointer_free = false;
       };
       std::optional<Spectator> m_spectator =
         ::getenv ("MOPPE_SPECTATOR") ? std::optional<Spectator> (Spectator {})

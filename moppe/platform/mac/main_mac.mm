@@ -92,6 +92,22 @@ static Key map_key (NSEvent* event) {
   }
 }
 
+// The key at a QWERTY W, A, S, or D position, by hardware key code.
+static Key physical_key (NSEvent* event) {
+  switch (event.keyCode) {
+  case 13:
+    return Key::PhysicalW;
+  case 0:
+    return Key::PhysicalA;
+  case 1:
+    return Key::PhysicalS;
+  case 2:
+    return Key::PhysicalD;
+  default:
+    return Key::Unknown;
+  }
+}
+
 // ------------------------------------------------------------------
 
 @interface MoppeView : MTKView
@@ -121,8 +137,10 @@ static Key map_key (NSEvent* event) {
 
 - (void)updatePointer:(NSEvent*)event {
   const NSPoint p = [self pointerPoint:event];
-  const float dx = p.x - m_pointer_x;
-  const float dy = p.y - m_pointer_y;
+  // The event's own deltas keep arriving while a captured pointer is pinned
+  // in place, when position differences would read zero.
+  const float dx = event.deltaX;
+  const float dy = event.deltaY;
   m_pointer_x = p.x;
   m_pointer_y = p.y;
   self.game->pointer_move (m_pointer_x, m_pointer_y, dx, dy);
@@ -144,6 +162,8 @@ static Key map_key (NSEvent* event) {
 - (void)keyDown:(NSEvent*)event {
   if (event.isARepeat)
     return;
+  if (const Key physical = physical_key (event); physical != Key::Unknown)
+    self.game->key (physical, true);
   Key k = map_key (event);
   if (k == Key::Unknown)
     return;
@@ -152,6 +172,8 @@ static Key map_key (NSEvent* event) {
 }
 
 - (void)keyUp:(NSEvent*)event {
+  if (const Key physical = physical_key (event); physical != Key::Unknown)
+    self.game->key (physical, false);
   Key k = map_key (event);
   if (k == Key::Unknown)
     return;
@@ -709,6 +731,45 @@ namespace moppe {
 
     void request_quit () {
       dispatch_async (dispatch_get_main_queue (), ^{ [NSApp terminate:nil]; });
+    }
+
+    // The game's wish; the pointer is actually held only while moppe is the
+    // active app, so switching away (or starting a screen recording) always
+    // gets the cursor back.
+    static bool pointer_wanted = false;
+
+    static void apply_pointer_capture () {
+      const bool hold = pointer_wanted && NSApp.isActive;
+      static bool held = false;
+      if (hold == held)
+        return;
+      held = hold;
+      CGAssociateMouseAndMouseCursorPosition (hold ? false : true);
+      if (hold)
+        [NSCursor hide];
+      else
+        [NSCursor unhide];
+    }
+
+    void set_pointer_captured (bool captured) {
+      dispatch_async (dispatch_get_main_queue (), ^{
+        static bool observing = false;
+        if (!observing) {
+          observing = true;
+          NSNotificationCenter* centre = NSNotificationCenter.defaultCenter;
+          for (NSNotificationName name :
+               { NSApplicationDidBecomeActiveNotification,
+                 NSApplicationDidResignActiveNotification })
+            [centre addObserverForName:name
+                                object:nil
+                                 queue:NSOperationQueue.mainQueue
+                            usingBlock:^(NSNotification*) {
+                              apply_pointer_capture ();
+                            }];
+        }
+        pointer_wanted = captured;
+        apply_pointer_capture ();
+      });
     }
 
     void set_window_title (const std::string& title) {

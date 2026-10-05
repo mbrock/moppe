@@ -321,6 +321,8 @@ namespace moppe::platform {
       active_context->quit = true;
   }
 
+  void set_pointer_captured (bool) {}
+
   void set_window_title (const std::string& title) {
     browser_set_title (title.c_str ());
   }

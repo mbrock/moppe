@@ -42,7 +42,14 @@ namespace moppe {
       Four,
       Five,
       Six,
-      Seven
+      Seven,
+      // Physical positions of the QWERTY W, A, S, and D keys, whatever the
+      // layout types there; free-flight controls read these so movement
+      // sits under the left hand on any layout.
+      PhysicalW,
+      PhysicalA,
+      PhysicalS,
+      PhysicalD
     };
 
     struct Config {
@@ -131,6 +138,11 @@ namespace moppe {
     // Updates desktop window chrome without touching the rendered drawable.
     // No-op on platforms without a titled window.
     void set_window_title (const std::string& title);
+
+    // Hides the pointer and keeps it from leaving the window, so pointer
+    // movement turns a free camera without a button held. No-op on
+    // platforms without a pointer.
+    void set_pointer_captured (bool captured);
 
     // Resolve an asset-relative path ("textures/grass2.tga") to an
     // absolute path: the app bundle on Apple platforms, or the
