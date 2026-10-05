@@ -1,5 +1,6 @@
 // Terrain: vertex-pulled from the height/normal textures (no vertex
-// buffers), splat-textured by altitude and slope, PCF-shadowed.
+// buffers), coloured by the surface fields the world generator produced,
+// PCF-shadowed.
 // Port of shaders/test.vert + test.frag with explicit uniforms.
 //
 // The height texture is R32Float and is accessed via integer read().
@@ -434,16 +435,130 @@ terrain_apply_lattice_overlay (float3 color,
     color, float3 (1.0, 0.63, 0.08), 0.96 * source_vertex * distance_fade);
 }
 
-// A deliberately plain ground: one albedo under the sun, sky, shadow, and
-// haze that the rest of the scene shares. Material variation returns only
-// as it earns its place.
+// Material readings use filterable formats; the repeat mode preserves the
+// world's periodic seam.
+static inline float4 terrain_field_sample (float2 uv, texture2d<float> field) {
+  const float2 size (field.get_width (), field.get_height ());
+  constexpr sampler smp (coord::normalized, address::repeat, filter::linear);
+  return field.sample (smp, uv + 0.5 / size);
+}
+
+// R32F water levels are not linearly filterable on the oldest supported
+// Apple GPUs, so they keep explicit four-tap filtering.
+static inline float terrain_water_level (float2 uv,
+                                         texture2d<float, access::read> field) {
+  const uint2 size (field.get_width (), field.get_height ());
+  const float2 grid = fract (uv) * float2 (size);
+  const uint2 p00 = uint2 (floor (grid)) % size;
+  const uint2 p11 = (p00 + uint2 (1)) % size;
+  const float2 f = fract (grid);
+  const float a =
+    mix (field.read (p00).r, field.read (uint2 (p11.x, p00.y)).r, f.x);
+  const float b =
+    mix (field.read (uint2 (p00.x, p11.y)).r, field.read (p11).r, f.x);
+  return mix (a, b, f.y);
+}
+
+// A material boundary drawn crisply. The fields are coarser than the
+// ground seen up close, so their bilinear ramps are cut at a threshold and
+// the cut is broken by noise finer than the field: hard, ragged edges in
+// the manner of a painted landscape rather than blurred blotches. The
+// filter width keeps the edge antialiased at every distance.
+static inline float terrain_band (float value, float threshold) {
+  const float width = max (fwidth (value), 0.015);
+  return smoothstep (threshold - width, threshold + width, value);
+}
+
+// The ground is a few flat, honest colours, each one a surface the world's
+// history actually produced: turf whose hue follows moisture, bare soil where
+// erosion stripped it, gravel where rivers laid it down, banded rock on
+// faces too steep to hold soil, litter under closed canopy, packed dirt on
+// the trails. Low-frequency mottling keeps a meadow from reading as one
+// sheet of paint.
+static inline float3 terrain_ground_albedo (float3 world,
+                                            float3 n,
+                                            float distance,
+                                            float4 landscape,
+                                            float4 ground,
+                                            float canopy,
+                                            float water_depth,
+                                            constant MoppeTerrainUniforms& u) {
+  const float moisture = landscape.r;
+  const float erosion = landscape.g;
+  const float deposition = landscape.b;
+  const float2 xz = world.xz;
+  const float patch = moppe_value_noise (xz * (1.0 / 41.0));
+  const float near = 1.0 - smoothstep (150.0, 700.0, distance);
+  const float fleck =
+    mix (0.5, moppe_value_noise (xz * (1.0 / 6.1) + 11.7), near);
+  const float grit = mix (0.5,
+                          moppe_value_noise (xz * (1.0 / 1.7) + 3.1),
+                          1.0 - smoothstep (30.0, 120.0, distance));
+  const float edge = 0.6 * (fleck - 0.5) + 0.25 * (grit - 0.5);
+
+  // Turf: dry straw-olive to lush green, shifted by broad patches.
+  const float lush =
+    saturate (smoothstep (0.08, 0.62, moisture) + 0.55 * (patch - 0.5));
+  float3 albedo =
+    mix (float3 (0.46, 0.47, 0.20), float3 (0.25, 0.42, 0.13), lush);
+  albedo *= 0.92 + 0.16 * fleck;
+
+  // Forest floor: moss and needle litter where crowns close overhead.
+  const float3 litter =
+    mix (float3 (0.24, 0.26, 0.13), float3 (0.30, 0.25, 0.15), fleck);
+  albedo = mix (albedo, litter, terrain_band (canopy + 0.3 * edge, 0.68));
+
+  // Temperate ground heals over: erosion leaves bare soil only on faces
+  // steep enough to keep shedding it, and deposition stays bare gravel only
+  // in active channels and bars beside the water. Floodplains are turf.
+  const float shore = ground.r * u.params6.y;
+  const float3 soil = float3 (0.38, 0.33, 0.27) * (0.92 + 0.16 * grit);
+  const float3 gravel = float3 (0.47, 0.44, 0.39) * (0.88 + 0.24 * grit);
+  const float shedding = 1.0 - smoothstep (0.80, 0.92, n.y);
+  albedo =
+    mix (albedo, soil, terrain_band (erosion * shedding + 0.35 * edge, 0.45));
+  const float channel = 1.0 - smoothstep (2.0, 6.0, shore);
+  albedo = mix (
+    albedo, gravel, terrain_band (deposition * channel + 0.35 * edge, 0.50));
+
+  // Rock: faces too steep for soil, banded by the strata they cut.
+  const float cliff = 1.0 - terrain_band (n.y + 0.10 * edge, 0.72);
+  const float strata =
+    moppe_value_noise (float2 (world.y * 0.45 + 3.0 * patch, 0.5 * fleck));
+  const float3 rock = mix (float3 (0.33, 0.33, 0.33),
+                           float3 (0.53, 0.52, 0.49),
+                           smoothstep (0.3, 0.7, strata));
+  albedo = mix (albedo, rock * (0.94 + 0.12 * grit), cliff);
+
+  // The trail's trodden tread, a few metres of packed dirt down the
+  // centre of its footprint.
+  const float worn = ground.b;
+  albedo = mix (albedo,
+                float3 (0.44, 0.37, 0.29) * (0.92 + 0.16 * grit),
+                terrain_band (worn + 0.06 * edge, 0.87));
+
+  // Wet margins darken; the swash band hugs the extracted waterline.
+  const float swash =
+    (1.0 - smoothstep (0.4, 3.0, shore)) * smoothstep (0.42, 0.62, n.y);
+  const float wet = max (swash, smoothstep (0.0, 0.25, water_depth));
+  albedo = mix (albedo, albedo * float3 (0.62, 0.60, 0.56), wet);
+  return moppe_srgb (albedo);
+}
+
+// The ground's material under the sun, sky, shadow, and haze that the rest
+// of the scene shares.
 fragment MoppeTemporalOutput terrain_fragment (
   TerrainVaryings in [[stage_in]],
   constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
   texture2d<float, access::read> terrain_overlay
   [[texture (MOPPE_TEX_TERRAIN_OVERLAY)]],
-  texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]]) {
+  texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
+  texture2d<float> terrain_landscape [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
+  texture2d<float, access::read> terrain_water
+  [[texture (MOPPE_TEX_TERRAIN_WATER)]],
+  texture2d<float> terrain_ground [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
+  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
   const float3 view_dir = to_frag / max (dist, 1e-4);
@@ -472,7 +587,26 @@ fragment MoppeTemporalOutput terrain_fragment (
   const float3 light = sun * direct * 0.9 * u.sun_diffuse.rgb +
                        shade_fill * moppe_hemisphere_light (u.ambient.rgb, n);
 
-  const float3 albedo = moppe_srgb (float3 (0.30, 0.42, 0.16));
+  const bool materials = u.params5.z > 0.5;
+  const float4 landscape =
+    materials ? terrain_field_sample (in.field_uv, terrain_landscape)
+              : float4 (0.5, 0.0, 0.0, 0.0);
+  const float4 ground = materials
+                          ? terrain_field_sample (in.field_uv, terrain_ground)
+                          : float4 (1.0, n.y, 0.0, 0.0);
+  float canopy = landscape.a;
+  if (u.params3.z > 0.5) {
+    constexpr sampler canopy_sampler (
+      coord::normalized, address::repeat, filter::linear);
+    canopy =
+      forest_canopy.sample (canopy_sampler, in.world_pos.xz * u.params3.xy).r;
+  }
+  const float water_depth =
+    u.params5.y > 0.5
+      ? terrain_water_level (in.field_uv, terrain_water) - in.world_pos.y
+      : -100.0;
+  const float3 albedo = terrain_ground_albedo (
+    in.world_pos, n, dist, landscape, ground, canopy, water_depth, u);
   float3 color = terrain_apply_analysis_overlay (
     albedo * light, in.field_uv, u, terrain_overlay);
   color = terrain_apply_lattice_overlay (color, in, dist, u);
