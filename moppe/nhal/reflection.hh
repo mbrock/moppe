@@ -15,6 +15,11 @@ namespace moppe::nhal {
     texture_2d,
     depth_texture_2d,
     uint_texture_2d,
+    texture_2d_array,
+    depth_texture_2d_array,
+    texture_cube,
+    texture_3d,
+    read_write_texture_2d,
     sampler,
     comparison_sampler,
   };
@@ -41,6 +46,8 @@ namespace moppe::nhal {
     const char* compute_entry;
     std::span<const Resource> resources;
     std::uint32_t color_outputs;
+    // Compute programs: threads per workgroup.
+    std::uint32_t workgroup_size[3] = { 0, 0, 0 };
   };
 
   constexpr bool is_buffer (ResourceKind kind) {
@@ -49,10 +56,22 @@ namespace moppe::nhal {
       || kind == ResourceKind::read_write_storage_buffer;
   }
 
+  // Sampled and read-only textures share the texture binding family.
   constexpr bool is_texture (ResourceKind kind) {
     return kind == ResourceKind::texture_2d
       || kind == ResourceKind::depth_texture_2d
-      || kind == ResourceKind::uint_texture_2d;
+      || kind == ResourceKind::uint_texture_2d
+      || kind == ResourceKind::texture_2d_array
+      || kind == ResourceKind::depth_texture_2d_array
+      || kind == ResourceKind::texture_cube
+      || kind == ResourceKind::texture_3d;
+  }
+
+  // Storage textures are their own binding family: Metal texture(16 + i)
+  // with access::read_write, past the sampled textures' range, and HLSL
+  // u-registers in space 1 (buffers' UAVs are u-registers in space 0).
+  constexpr bool is_storage_texture (ResourceKind kind) {
+    return kind == ResourceKind::read_write_texture_2d;
   }
 
   constexpr bool is_sampler (ResourceKind kind) {

@@ -37,11 +37,14 @@ numbers are per kind family, and the families map onto each backend like this:
 | `:storage-buffer` (read) | buffer | `device const T* n [[buffer(i)]]` | `StructuredBuffer<T> n : register(t i, space0)` | root SRV |
 | `:storage-buffer :access :read-write` | buffer | `device T* n [[buffer(i)]]` | `RWStructuredBuffer<T> n : register(u i)` | root UAV |
 | `:texture-2d`, `:depth-texture-2d`, `:uint-texture-2d` | texture | `texture2d<…> n [[texture(i)]]` | `Texture2D<…> n : register(t i, space1)` | one descriptor table, t0–t15 space1 |
+| `:texture-2d-array`, `:depth-texture-2d-array`, `:texture-cube`, `:texture-3d` | texture | `texture2d_array<…>`, `depth2d_array<float>`, `texturecube<…>`, `texture3d<…>` at `[[texture(i)]]` | `Texture2DArray`, `TextureCube`, `Texture3D` at `register(t i, space1)` | same table |
+| `:read-write-texture-2d` | storage texture | `texture2d<…, access::read_write> n [[texture(16 + i)]]` | `RWTexture2D<…> n : register(u i, space1)` | a UAV table, u0–u15 space1 |
 | `:sampler` | sampler | `sampler n [[sampler(i)]]` | `SamplerState` or `SamplerComparisonState n : register(s i)` | static samplers |
 
 - Buffer binding numbers are unique across uniform blocks and storage buffers
   (Metal shares one buffer index space); 0–15.
-- Texture binding numbers are 0–15. NHAL copies each draw's textures into a
+- Texture binding numbers are 0–15, and so are storage texture binding
+  numbers, which are a separate family. NHAL copies each draw's textures into a
   contiguous range of the shader-visible heap; true bindless (an unbounded
   table indexed by the shader) is a later, separate resource kind.
 - Samplers are a fixed standard set, chosen by binding number. A sampler used
