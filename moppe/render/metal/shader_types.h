@@ -48,6 +48,7 @@ struct MoppeUint4 {
 #define MOPPE_TEX_TERRAIN_NORMALS 10 /* fragment stage */
 #define MOPPE_TEX_FOREST_CANOPY 11
 #define MOPPE_TEX_FOREST_DENSITY 12
+#define MOPPE_TEX_FOREST_LITTER 13
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1        /* post passes */
 #define MOPPE_TEX_POST_DEPTH 2   /* light shafts: stored scene depth */
@@ -141,7 +142,7 @@ struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
   MoppeFloat4 params1;  // x=height_scale_norm, y=sea_level, z=shadow_strength,
                         // w=shadow_texel
   MoppeFloat4 params2;  // x=time, y=cloudiness
-  MoppeFloat4 params3;  // xy=1/forest-period, z=actual canopy field available
+  MoppeFloat4 params3;  // xy=1/forest-period, z=canopy field, w=litter field
   MoppeFloat4 params4;  // x=overlay ramp + 1, y=min, z=max, w=opacity
   MoppeFloat4 params5;  // x=topology opacity, y=water, z=materials
   MoppeFloat4 params6;  // x=fragment normals, y=shore band metres

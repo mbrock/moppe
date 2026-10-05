@@ -481,6 +481,7 @@ static inline float3 terrain_ground_albedo (float3 world,
                                             float4 landscape,
                                             float4 ground,
                                             float canopy,
+                                            float litter,
                                             float water_depth,
                                             constant MoppeTerrainUniforms& u) {
   const float moisture = landscape.r;
@@ -509,9 +510,15 @@ static inline float3 terrain_ground_albedo (float3 world,
   albedo = mix (albedo, heath.tint * (0.90 + 0.20 * fleck), heath.amount);
 
   // Forest floor: moss and needle litter where crowns close overhead.
-  const float3 litter =
+  const float3 floor =
     mix (float3 (0.24, 0.26, 0.13), float3 (0.30, 0.25, 0.15), fleck);
-  albedo = mix (albedo, litter, terrain_band (canopy + 0.3 * edge, 0.68));
+  albedo = mix (albedo, floor, terrain_band (canopy + 0.3 * edge, 0.68));
+
+  // Fallen birch leaves carpet the ground beneath groves that have turned.
+  const float3 leaves =
+    mix (float3 (0.70, 0.52, 0.21), float3 (0.58, 0.34, 0.15), grit) *
+    (0.88 + 0.24 * fleck);
+  albedo = mix (albedo, leaves, terrain_band (litter + 0.30 * edge, 0.24));
 
   // Temperate ground heals over: erosion leaves bare soil only on faces
   // steep enough to keep shedding it, and deposition stays bare gravel only
@@ -563,7 +570,8 @@ fragment MoppeTemporalOutput terrain_fragment (
   texture2d<float, access::read> terrain_water
   [[texture (MOPPE_TEX_TERRAIN_WATER)]],
   texture2d<float> terrain_ground [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
-  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]]) {
+  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]],
+  texture2d<float> forest_litter [[texture (MOPPE_TEX_FOREST_LITTER)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
   const float3 view_dir = to_frag / max (dist, 1e-4);
@@ -600,18 +608,22 @@ fragment MoppeTemporalOutput terrain_fragment (
                           ? terrain_field_sample (in.field_uv, terrain_ground)
                           : float4 (1.0, n.y, 0.0, 0.0);
   float canopy = landscape.a;
+  float litter = 0.0;
   if (u.params3.z > 0.5) {
     constexpr sampler canopy_sampler (
       coord::normalized, address::repeat, filter::linear);
-    canopy =
-      forest_canopy.sample (canopy_sampler, in.world_pos.xz * u.params3.xy).r;
+    const float2 forest_uv = in.world_pos.xz * u.params3.xy;
+    // A stand's floor, not one tree's: closure read over about ten metres.
+    canopy = forest_canopy.sample (canopy_sampler, forest_uv, level (1.2)).r;
+    if (u.params3.w > 0.5)
+      litter = forest_litter.sample (canopy_sampler, forest_uv).r;
   }
   const float water_depth =
     u.params5.y > 0.5
       ? terrain_water_level (in.field_uv, terrain_water) - in.world_pos.y
       : -100.0;
   const float3 albedo = terrain_ground_albedo (
-    in.world_pos, n, dist, landscape, ground, canopy, water_depth, u);
+    in.world_pos, n, dist, landscape, ground, canopy, litter, water_depth, u);
   float3 color = terrain_apply_analysis_overlay (
     albedo * light, in.field_uv, u, terrain_overlay);
   color = terrain_apply_lattice_overlay (color, in, dist, u);
