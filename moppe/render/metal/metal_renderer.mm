@@ -5738,8 +5738,10 @@ namespace moppe {
               std::abs (clip_x) >= clip_w + bound * projection_x ||
               std::abs (clip_y) >= clip_w + bound * projection_y)
             continue;
+          // True distance, so turning the head never re-tessellates a stone.
           const float pixels =
-            stone.centre_radius.w * pixel_scale / std::max (clip_w, 0.6f);
+            stone.centre_radius.w * pixel_scale /
+            std::max (length (centre - m_frame.params.camera_pos), 0.6f);
           if (pixels >= BOULDER_MIN_PIXELS)
             rocks.candidates.push_back ({ index, pixels, 0u, 0u });
         }
@@ -5912,8 +5914,14 @@ namespace moppe {
               std::abs (clip_x) >= clip_w + radius * projection_x ||
               std::abs (clip_y) >= clip_w + radius * projection_y)
             continue;
+          // Projected size follows the true distance, not the depth along the
+          // view axis: turning the head must not resize a tree. With view
+          // depth, a crown sliding toward the edge of the screen grew by up
+          // to half again, flipping its tiers and its stand hand-off while
+          // the rider stood still.
+          const float distance = std::max (length (centre - camera), 0.6f);
           const float crown_pixels =
-            crown * projection_y * scene_height / std::max (clip_w, 0.6f);
+            crown * projection_y * scene_height / distance;
           // In a closed stand an organism whose identity has fully transferred
           // to the stand quotient has no extent, and the object stage would
           // emit nothing for it. This is the shader's own transfer; the margin
@@ -5934,8 +5942,8 @@ namespace moppe {
             std::size_t bin = 0;
             while (bin < depth_ends.size () && clip_w > depth_ends[bin])
               ++bin;
-            const float pixels = 0.5f * height * projection_y * scene_height /
-                                 std::max (clip_w, 0.6f);
+            const float pixels =
+              0.5f * height * projection_y * scene_height / distance;
             candidate_bins[bin].push_back ({ index, pixels, crown_pixels, 0u });
           }
         }
