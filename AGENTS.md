@@ -167,7 +167,9 @@
   - Pair the Apple TV in Xcode's Device Hub first. Overrides:
     `MOPPE_TVOS_DEVICE`, `MOPPE_TVOS_TEAM`, `MOPPE_TVOS_CONFIGURATION`, and
     `MOPPE_TVOS_BUILD_DIR`.
-- iPhone (build, install, launch): `make phone`
+- iPhone (build, install, launch): `make phone` (Release by default, on
+  the first connected iPhone). Touch: left thumb walks/steers, dragging on
+  the right looks around, the bottom-right button jumps or boosts.
   - The paired phone must be unlocked and reachable; its Personal Hotspot
     works when other Wi-Fi networks isolate clients.
   - Overrides: `MOPPE_IOS_DEVICE`, `MOPPE_IOS_TEAM`,

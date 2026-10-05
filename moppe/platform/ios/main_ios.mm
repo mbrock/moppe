@@ -1,8 +1,10 @@
 // iOS platform layer: UIKit + MTKView with two floating analog controls.
 // Landscape only.
 //
-//   lower-left half                  steer + throttle/brake/reverse
-//   lower-right half                 continuous jump-jet boost
+//   lower-left half                  walk + strafe on foot; steer +
+//                                    throttle/brake/reverse riding
+//   right half                       drag to look around
+//   bottom-right button              jump on foot, jump-jet boost riding
 //   top-right corner                 camera cycle (Tab)
 //   top-left corner                  mount/dismount (synthesizes the
 //                                    secret 7-5-R combo; on the game
@@ -47,16 +49,14 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   std::map<void*, int> m_touch_keys; // corner action touches
   std::map<int, int> m_key_refs;
   UITouch* m_drive_touch;
-  UITouch* m_boost_touch;
+  UITouch* m_look_touch;
   CGPoint m_drive_center;
-  CGPoint m_boost_center;
+  CGPoint m_look_last;
   float m_steer;
   float m_drive;
-  float m_boost;
   CAShapeLayer* m_drive_base;
   CAShapeLayer* m_drive_knob;
-  CAShapeLayer* m_boost_base;
-  CAShapeLayer* m_boost_knob;
+  CAShapeLayer* m_jump_button;
 }
 
 - (CAShapeLayer*)controlLayerWithRadius:(CGFloat)radius
@@ -80,11 +80,11 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   if (self) {
     self.multipleTouchEnabled = YES;
     UIColor* drive = [UIColor colorWithRed:0.72 green:0.86 blue:1.0 alpha:1.0];
-    UIColor* boost = [UIColor colorWithRed:0.25 green:0.72 blue:1.0 alpha:1.0];
     m_drive_base = [self controlLayerWithRadius:62 color:drive fill:0.08];
     m_drive_knob = [self controlLayerWithRadius:22 color:drive fill:0.28];
-    m_boost_base = [self controlLayerWithRadius:56 color:boost fill:0.09];
-    m_boost_knob = [self controlLayerWithRadius:23 color:boost fill:0.34];
+    // The jump button stays faintly visible in its corner.
+    m_jump_button = [self controlLayerWithRadius:34 color:drive fill:0.06];
+    m_jump_button.hidden = NO;
   }
   return self;
 }
@@ -111,7 +111,21 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
     if (x < 0.18)
       return Key::Seven;
   }
+  if (x > 0.84 && y > 0.66)
+    return Key::Space;
   return Key::Unknown;
+}
+
+// Keeps the jump button centred in its corner as the safe area changes.
+- (void)layoutSubviews {
+  [super layoutSubviews];
+  const UIEdgeInsets si = self.safeAreaInsets;
+  const CGFloat w = self.bounds.size.width - si.left - si.right;
+  const CGFloat h = self.bounds.size.height - si.top - si.bottom;
+  [CATransaction begin];
+  [CATransaction setDisableActions:YES];
+  m_jump_button.position = CGPointMake (si.left + w * 0.92, si.top + h * 0.83);
+  [CATransaction commit];
 }
 
 - (void)sendControls {
@@ -120,7 +134,6 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   ControlState state;
   state.steer = m_steer;
   state.drive = m_drive;
-  state.boost = m_boost;
   g_game->controls (state);
 }
 
@@ -147,15 +160,6 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   const CGFloat scale = length > travel ? travel / length : 1;
   m_drive_knob.position =
     CGPointMake (m_drive_center.x + dx * scale, m_drive_center.y - dy * scale);
-}
-
-- (void)updateBoost:(CGPoint)p {
-  const CGFloat travel = 56, dead_zone = 5;
-  const CGFloat dy = m_boost_center.y - p.y;
-  m_boost = std::max (0.0f, control_axis (dy, dead_zone, travel));
-  const CGFloat shown = std::max ((CGFloat)0, std::min (travel, dy));
-  m_boost_knob.position =
-    CGPointMake (m_boost_center.x, m_boost_center.y - shown);
 }
 
 - (void)pressKey:(Key)k down:(bool)down {
@@ -201,11 +205,9 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
       m_drive_center = p;
       [self showBase:m_drive_base knob:m_drive_knob center:p];
       [self updateDrive:p];
-    } else if (x >= 0.5 && !m_boost_touch) {
-      m_boost_touch = t;
-      m_boost_center = p;
-      [self showBase:m_boost_base knob:m_boost_knob center:p];
-      [self updateBoost:p];
+    } else if (x >= 0.5 && !m_look_touch) {
+      m_look_touch = t;
+      m_look_last = p;
     }
     [CATransaction commit];
     [self sendControls];
@@ -220,9 +222,12 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
     if (t == m_drive_touch) {
       [self updateDrive:[t locationInView:self]];
       changed = true;
-    } else if (t == m_boost_touch) {
-      [self updateBoost:[t locationInView:self]];
-      changed = true;
+    } else if (t == m_look_touch && g_game) {
+      // Dragging on the right turns the head, as the mouse does on a Mac.
+      const CGPoint p = [t locationInView:self];
+      g_game->pointer_move (
+        p.x, p.y, 1.4f * (p.x - m_look_last.x), 1.4f * (p.y - m_look_last.y));
+      m_look_last = p;
     }
   }
   [CATransaction commit];
@@ -248,12 +253,8 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
       m_drive_base.hidden = YES;
       m_drive_knob.hidden = YES;
       changed = true;
-    } else if (t == m_boost_touch) {
-      m_boost_touch = nil;
-      m_boost = 0;
-      m_boost_base.hidden = YES;
-      m_boost_knob.hidden = YES;
-      changed = true;
+    } else if (t == m_look_touch) {
+      m_look_touch = nil;
     }
   }
   [CATransaction commit];

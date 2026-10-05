@@ -3,9 +3,15 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-device="${MOPPE_IOS_DEVICE:-Restless}"
+# Without an explicit device, use the first connected physical iPhone.
+device="${MOPPE_IOS_DEVICE:-$(xcrun devicectl list devices 2>/dev/null |
+  awk '/iPhone/ && /physical/ && /connected/ {
+         for (i = 1; i <= NF; ++i)
+           if ($i ~ /^[0-9A-F]+-[0-9A-F]+$/) { print $i; exit }
+       }')}"
 team="${MOPPE_IOS_TEAM:-AA8RNDKMB9}"
-configuration="${MOPPE_IOS_CONFIGURATION:-Debug}"
+# Release: world generation in a Debug build is many times slower.
+configuration="${MOPPE_IOS_CONFIGURATION:-Release}"
 build_dir="${MOPPE_IOS_BUILD_DIR:-$root/build-ios-device}"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -31,6 +37,12 @@ if ! xcrun devicectl device info details \
   exit 1
 fi
 
+if [[ $device =~ ^[0-9A-F]+-[0-9A-F]+$ ]]; then
+  destination="id=$device"
+else
+  destination="platform=iOS,name=$device"
+fi
+
 echo "Configuring the physical-device build..."
 cmake -S "$root" -B "$build_dir" -G Xcode \
   -DCMAKE_SYSTEM_NAME=iOS \
@@ -42,7 +54,8 @@ xcodebuild -quiet \
   -project "$build_dir/moppe.xcodeproj" \
   -scheme moppe-ios \
   -configuration "$configuration" \
-  -destination "platform=iOS,name=$device" \
+  -destination "$destination" \
+  -allowProvisioningUpdates \
   CODE_SIGN_STYLE=Automatic \
   DEVELOPMENT_TEAM="$team" \
   build
