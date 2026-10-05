@@ -13,10 +13,8 @@ struct TerrainVaryings {
   float4 position [[position]];
   float3 world_pos;
   float3 normal; // world space
-  float height;  // altitude in metres
   float fog;     // haze factor incl. valley mist
   float4 shadow_coord;
-  float2 uv;
   float2 field_uv;
   float2 grid_coord;       // authoritative source-height lattice
   float2 mesh_coord;       // actual rendered lattice
@@ -224,7 +222,6 @@ vertex TerrainVaryings terrain_vertex (
   out.position = u.view_proj * float4 (world, 1.0);
   out.world_pos = world;
   out.normal = normal;
-  out.height = h;
 
   // Distance haze plus valley mist that pools on low ground (the
   // mist term is terrain-exclusive by design).
@@ -242,7 +239,6 @@ vertex TerrainVaryings terrain_vertex (
 
   const float3 canonical_world (canonical_xz.x, world.y, canonical_xz.y);
   out.shadow_coord = u.light_matrix * float4 (canonical_world, 1.0);
-  out.uv = world.xz * u.params0.w;
   out.field_uv = grid / float2 (heights.get_width (), heights.get_height ());
   out.grid_coord = grid;
   out.mesh_coord =
@@ -305,75 +301,6 @@ static float terrain_shadow_factor (float4 shadow_coord,
   // Fade shadows out into the haze.
   const float fade = saturate (2.5 * (1.0 - fog));
   return mix (1.0, shadow, shadow_strength * fade);
-}
-
-// Sample a splat layer at two scales and crossfade by distance:
-// near ground keeps fine detail, far ground switches to a coarser,
-// uncorrelated repeat so the tiling never shows.
-static inline float3
-terrain_layer (texture2d<float> tex, sampler smp, float2 tc, float far_blend) {
-  const float3 near_c = tex.sample (smp, tc).rgb;
-  const float3 far_c = tex.sample (smp, tc * 0.19 + float2 (0.13, 0.71)).rgb;
-  return mix (near_c, far_c, far_blend);
-}
-
-// Dirt is sourced from a close photograph of loose gravel. Its centimetre
-// contrast is useful as material evidence, but resolving every photographed
-// grain makes an entire trail look like salt and pepper and gives HDR a field
-// of isolated bright pixels to preserve. An additive mip bias integrates that
-// source before lighting while the world-space fields below restore the
-// metre-scale structure a rider should actually read.
-static inline float3 terrain_layer_integrated (texture2d<float> tex,
-                                               sampler smp,
-                                               float2 tc,
-                                               float far_blend) {
-  const float3 near_c = tex.sample (smp, tc, bias (1.35)).rgb;
-  const float3 far_c =
-    tex.sample (smp, tc * 0.19 + float2 (0.13, 0.71), bias (1.10)).rgb;
-  return mix (near_c, far_c, far_blend);
-}
-
-// Steep faces cannot use the ground's XZ projection without smearing the
-// texture vertically. Blend three world-space projections by surface normal;
-// squaring the weights keeps broad faces crisp while rounding transitions.
-static inline float3 terrain_layer_triplanar (texture2d<float> tex,
-                                              sampler smp,
-                                              float3 world,
-                                              float3 normal,
-                                              float scale,
-                                              float far_blend) {
-  float3 w = abs (normalize (normal));
-  w = w * w;
-  w /= max (w.x + w.y + w.z, 1e-4);
-  const float3 x = terrain_layer (tex, smp, world.zy * scale, far_blend);
-  const float3 y = terrain_layer (tex, smp, world.xz * scale, far_blend);
-  const float3 z = terrain_layer (tex, smp, world.xy * scale, far_blend);
-  return x * w.x + y * w.y + z * w.z;
-}
-
-// R32F water levels are not linearly filterable on the oldest supported
-// Apple GPUs, so that one physical field retains explicit four-tap filtering.
-static inline float4
-terrain_field_sample_read (float2 uv, texture2d<float, access::read> field) {
-  const uint2 size (field.get_width (), field.get_height ());
-  const float2 grid = fract (uv) * float2 (size);
-  const uint2 p00 = uint2 (floor (grid)) % size;
-  const uint2 p11 = (p00 + uint2 (1)) % size;
-  const float2 f = fract (grid);
-  const float4 a =
-    mix (field.read (p00), field.read (uint2 (p11.x, p00.y)), f.x);
-  const float4 b =
-    mix (field.read (uint2 (p00.x, p11.y)), field.read (p11), f.x);
-  return mix (a, b, f.y);
-}
-
-// Material readings use filterable half formats. Sampling them directly turns
-// four explicit reads and three mixes into one texture operation, while the
-// repeat mode preserves the world's periodic seam.
-static inline float4 terrain_field_sample (float2 uv, texture2d<float> field) {
-  const float2 size (field.get_width (), field.get_height ());
-  constexpr sampler smp (coord::normalized, address::repeat, filter::linear);
-  return field.sample (smp, uv + 0.5 / size);
 }
 
 static inline float3 terrain_heat_palette (float t) {
@@ -507,427 +434,47 @@ terrain_apply_lattice_overlay (float3 color,
     color, float3 (1.0, 0.63, 0.08), 0.96 * source_vertex * distance_fade);
 }
 
-struct TerrainSurfaceReadings {
-  float moisture;
-  float signed_water_depth;
-  float submerged;
-  float ground_up;
-  float swash_zone;
-  float damp;
-  float2 intentional_ground;
-  float forest_cover;
-};
-
-static inline TerrainSurfaceReadings
-terrain_read_surface (thread const TerrainVaryings& in,
-                      float3 normal,
-                      constant MoppeTerrainUniforms& u,
-                      texture2d<float> terrain_landscape,
-                      texture2d<float, access::read> terrain_water,
-                      texture2d<float> terrain_ground,
-                      texture2d<float> forest_canopy) {
-  // The typed surface readings become two compact sheets only at the
-  // presentation boundary. One filtered lookup supplies four fields which
-  // share the same terrain coordinate and lifetime.
-  const float4 landscape =
-    u.params5.z > 0.5 ? terrain_field_sample (in.field_uv, terrain_landscape)
-                      : float4 (0.0);
-  const float4 ground = u.params5.z > 0.5
-                          ? terrain_field_sample (in.field_uv, terrain_ground)
-                          : float4 (1.0, normal.y, 0.0, 0.0);
-
-  TerrainSurfaceReadings readings;
-  readings.moisture = landscape.r;
-  const float water_level =
-    u.params5.y > 0.5 ? terrain_field_sample_read (in.field_uv, terrain_water).r
-                      : -1.0;
-  readings.signed_water_depth =
-    u.params5.y > 0.5 ? (water_level - in.height) * u.params1.x : -100.0;
-  const float water_depth = max (readings.signed_water_depth, 0.0);
-  readings.submerged = smoothstep (0.015, 0.22, water_depth);
-  readings.ground_up = ground.g;
-
-  // Horizontal distance to the extracted waterline: the damp band hugs the
-  // actual shoreline curve and fades on steep banks.
-  const float shore_m = ground.r * u.params6.y;
-  readings.swash_zone =
-    (1.0 - smoothstep (0.3, 2.8, shore_m)) * smoothstep (0.42, 0.62, normal.y);
-  readings.damp = max (max (readings.submerged, 0.92 * readings.swash_zone),
-                       smoothstep (0.22, 0.82, readings.moisture));
-  readings.intentional_ground = ground.ba;
-  // Habitat predicts where forest can grow; once the actual retained tree
-  // population exists, its crown-area quotient owns closure. This keeps the
-  // forest floor and the distant stand tied to the same individuals instead
-  // of letting a second, obsolete mask paint grass beneath them.
-  if (u.params3.z > 0.5) {
-    constexpr sampler canopy_sampler (
-      coord::normalized, address::repeat, filter::linear);
-    readings.forest_cover =
-      forest_canopy.sample (canopy_sampler, in.world_pos.xz * u.params3.xy).r;
-  } else {
-    readings.forest_cover = landscape.a;
-  }
-  return readings;
-}
-
-struct TerrainMaterialBands {
-  float cliff;
-  float scree;
-  float snow;
-  float beach;
-  float grass;
-  float leaf_area;
-  float clump;
-  float canopy_height;
-  float3 sward_tint; // display-space ensemble blade tint, drift folded in
-};
-
-static inline TerrainMaterialBands
-terrain_classify_material (thread const TerrainVaryings& in,
-                           float3 normal,
-                           float sea_level,
-                           thread const TerrainSurfaceReadings& readings,
-                           constant MoppeTerrainUniforms& u) {
-  TerrainMaterialBands bands;
-  const float land_relief = max (u.params7.z, 1.0);
-  const float normalized_height = (in.height - sea_level) / land_relief;
-  bands.cliff = 1.0 - smoothstep (0.60, 0.80, normal.y);
-  bands.scree = smoothstep (0.38, 0.58, normalized_height);
-
-  const float snow_support_up =
-    u.params7.x > 0.5 ? readings.ground_up : normal.y;
-  bands.snow = smoothstep (0.55, 0.68, normalized_height) *
-               smoothstep (0.58, 0.78, snow_support_up);
-
-  const float beach_low = sea_level + 0.5 / u.params1.x;
-  const float beach_high = sea_level + 3.0 / u.params1.x;
-  bands.beach = (1.0 - smoothstep (beach_low, beach_high, in.height)) *
-                smoothstep (0.55, 0.75, normal.y);
-
-  const MoppeGrassMedium medium =
-    moppe_grass_medium (in.world_pos.xz,
-                        readings.moisture,
-                        readings.forest_cover,
-                        readings.intentional_ground,
-                        normal.y,
-                        snow_support_up,
-                        normalized_height,
-                        readings.signed_water_depth,
-                        u.params7.w);
-  // Habitat owns the substrate colour continuously. Resolved blades add
-  // silhouette and motion, but turning their narrow ribbons edge-on must not
-  // reveal a distance-dependent rocky ground material underneath them.
-  bands.grass = medium.basal_cover;
-  bands.leaf_area = medium.leaf_area;
-  bands.clump = medium.clump;
-  bands.canopy_height = medium.canopy_height;
-
-  // The tint the sward ensemble presents: the medium's own blade tint,
-  // with the flowering drift's wash chromaticity folded in where a drift
-  // stands, so a hillside of retired heads still reads as flowering.
-  const MoppeFlowerDrift drift = moppe_flower_drift (in.world_pos.xz,
-                                                     readings.moisture,
-                                                     readings.forest_cover,
-                                                     medium.leaf_area);
-  bands.sward_tint = mix (medium.blade_tint,
-                          moppe_flower_wash_tint (drift.tint) * 0.60,
-                          min (0.32, 0.32 * drift.presence));
-  return bands;
-}
-
-struct TerrainPalette {
-  float3 grass;
-  float3 soil;
-  float3 cliff;
-  float3 snow;
-};
-
-static inline TerrainPalette
-terrain_build_palette (thread const TerrainVaryings& in,
-                       float3 normal,
-                       thread const TerrainMaterialBands& bands,
-                       texture2d<float> grass,
-                       texture2d<float> dirt,
-                       texture2d<float> snow,
-                       texture2d<float> rock,
-                       constant MoppeTerrainUniforms& u,
-                       sampler smp) {
-  TerrainPalette palette;
-  const float far_blend =
-    smoothstep (40.0, 350.0, length (in.world_pos - u.camera_pos.xyz));
-  palette.grass = terrain_layer (grass, smp, in.uv, far_blend);
-  palette.soil = terrain_layer_integrated (dirt, smp, in.uv, far_blend);
-
-  palette.cliff = palette.soil;
-  if (bands.cliff > 0.01) {
-    palette.cliff = terrain_layer_triplanar (
-      rock, smp, in.world_pos, normal, u.params0.w * 1.7, far_blend);
-  }
-
-  palette.snow = palette.soil;
-  if (bands.snow > 0.01) {
-    palette.snow = terrain_layer (snow, smp, in.uv, far_blend);
-  }
-  return palette;
-}
-
-struct TerrainMaterial {
-  float3 albedo;
-  float3 sward;       // display-space ensemble blade tint
-  float sward_detail; // photo-texture luma keeping fine ground variation
-  float grass;
-  float leaf_area;
-  float clump;
-  float canopy_height;
-  float trail;
-  float base;
-  float forest;
-  float wetness;
-};
-
-static inline TerrainMaterial
-terrain_compose_material (float3 normal,
-                          thread const TerrainSurfaceReadings& readings,
-                          thread const TerrainMaterialBands& bands,
-                          thread const TerrainPalette& palette) {
-  TerrainMaterial material;
-  material.albedo = palette.grass;
-  material.albedo = mix (material.albedo, palette.soil, bands.scree);
-  material.albedo = mix (material.albedo, palette.cliff, bands.cliff);
-  material.albedo = mix (material.albedo, palette.snow, bands.snow);
-
-  const float shore = max (bands.beach, 0.78 * readings.swash_zone) *
-                      (1.0 - readings.submerged) * (1.0 - bands.snow) *
-                      smoothstep (0.48, 0.74, normal.y);
-  const float soil_value = dot (palette.soil, float3 (0.299, 0.587, 0.114));
-  const float3 sand = soil_value * float3 (1.12, 1.03, 0.82);
-  material.albedo = mix (material.albedo, sand, shore);
-
-  // The grass band no longer tints the ground texture: grassy ground is
-  // lit as the sward ensemble in terrain_light, and the albedo composed
-  // here is the soil that shows wherever cover thins. The photo texture
-  // survives as luma detail riding on the ensemble colour.
-  material.grass = bands.grass;
-  material.leaf_area = bands.leaf_area;
-  material.clump = bands.clump;
-  material.canopy_height = bands.canopy_height;
-  material.sward = bands.sward_tint;
-  material.sward_detail = moppe_sward_texture_detail (palette.grass);
-  material.trail = 0.0;
-  material.base = 0.0;
-  material.forest = 0.0;
-  material.wetness = 0.0;
-  return material;
-}
-
-static inline void
-terrain_compose_trail_and_base (thread TerrainMaterial& material,
-                                thread const TerrainSurfaceReadings& readings,
-                                thread const TerrainMaterialBands& bands,
-                                thread const TerrainPalette& palette) {
-  const float trail = readings.intentional_ground.r;
-  const float trail_cover = (1.0 - bands.snow) * (1.0 - readings.submerged);
-  const float trail_footprint = smoothstep (0.025, 0.32, trail);
-  material.trail = trail_cover * trail_footprint;
-  const float trail_value = dot (palette.soil, float3 (0.299, 0.587, 0.114));
-  const float3 trail_color = trail_value * float3 (0.72, 0.49, 0.28);
-  material.albedo = mix (material.albedo, trail_color, material.trail);
-
-  const float home_base = readings.intentional_ground.g;
-  material.base = smoothstep (0.03, 0.72, home_base) *
-                  (1.0 - readings.submerged) * (1.0 - bands.snow);
-  const float3 base_color =
-    trail_value * mix (float3 (0.70, 0.48, 0.22),
-                       float3 (1.05, 0.88, 0.52),
-                       smoothstep (0.70, 1.0, home_base));
-  material.albedo = mix (material.albedo, base_color, 0.92 * material.base);
-}
-
-static inline void terrain_compose_forest_and_wetness (
-  thread TerrainMaterial& material,
-  thread const TerrainSurfaceReadings& readings) {
-  material.forest = smoothstep (0.035, 0.72, readings.forest_cover) *
-                    (1.0 - material.base) * (1.0 - material.trail) *
-                    (1.0 - readings.submerged);
-
-  // This is the forest floor beneath the population, not a distant canopy
-  // painted into terrain. Keep its value from the local substrate but derive
-  // its chromaticity from the same conifer ensemble authority as resolved and
-  // aggregate crowns. A separately authored green was a visible zeroth-moment
-  // seam wherever the optical roof became thin.
-  const float ground_value =
-    dot (material.albedo, float3 (0.299, 0.587, 0.114));
-  const float3 canopy_tint =
-    moppe_forest_conifer_tint (readings.moisture, readings.forest_cover);
-  const float canopy_value = dot (canopy_tint, float3 (0.299, 0.587, 0.114));
-  const float3 forest_floor =
-    canopy_tint * (0.72 * ground_value / max (canopy_value, 0.01));
-  material.albedo = mix (material.albedo, forest_floor, material.forest);
-
-  material.wetness = max (0.62 * readings.damp, readings.submerged);
-  const float wet_luma = dot (material.albedo, float3 (0.299, 0.587, 0.114));
-  material.albedo = mix (
-    material.albedo,
-    mix (material.albedo, float3 (wet_luma), 0.20) * float3 (0.52, 0.58, 0.60),
-    material.wetness * 0.58 * (1.0 - 0.85 * material.grass));
-}
-
-struct TerrainLighting {
-  float3 color;
-};
-
-static inline TerrainLighting
-terrain_light (float3 albedo,
-               float3 normal,
-               float3 view_dir,
-               thread const TerrainVaryings& in,
-               thread const TerrainMaterial& material,
-               constant MoppeTerrainUniforms& u,
-               depth2d<float> shadow_map) {
-  TerrainLighting lighting;
-  const float3 light = u.sun_dir.xyz;
-  const float shadow = terrain_shadow_factor (in.shadow_coord,
-                                              in.fog,
-                                              normal,
-                                              light,
-                                              u.params1.z,
-                                              u.params1.w,
-                                              shadow_map);
-  const float direct_visibility =
-    shadow *
-    moppe_cloud_transmission (in.world_pos, light, u.params2.x, u.params2.y);
-  const float canopy_direct = mix (1.0, 0.68, material.forest);
-  const float canopy_ambient = mix (1.0, 0.82, material.forest);
-  const float intensity = saturate ((dot (light, normal) + 0.08) / 1.08);
-  const float3 shade_fill =
-    mix (float3 (0.80, 0.92, 1.14), float3 (1.0), shadow);
-  const float3 canopy_scatter = moppe_canopy_scattered_sun (
-    material.forest, shadow, u.sun_diffuse.rgb, light.y);
-  const float3 diffuse_light =
-    intensity * direct_visibility * canopy_direct * 0.9 * u.sun_diffuse.rgb +
-    canopy_ambient * shade_fill *
-      moppe_hemisphere_light (u.ambient.rgb, normal) +
-    canopy_scatter;
-  lighting.color = albedo * diffuse_light;
-
-  // Grass has a floor and an upper-leaf volume. The floor is present at every
-  // distance; it is what walking and downward views see between tall leaves.
-  // The upper population is partitioned among explicit blades, the canopy
-  // strata, and this integrated response by projected feature size.
-  if (material.grass > 0.001) {
-    const float2 ground_xz = in.world_pos.xz;
-    const float3 still_axis =
-      moppe_grass_ensemble_axis (ground_xz, normal, u.params2.x);
-    const float3 axis =
-      normalize (mix (float3 (0.0, 1.0, 0.0), still_axis, material.grass));
-    const float footprint = length (in.world_pos - u.camera_pos.xyz);
-    const float grain = moppe_sward_grain (ground_xz, footprint);
-
-    // Short turf and litter are a darker, ground-oriented stratum, not the
-    // old green terrain photograph pretending to be tall grass.
-    const float3 basal_albedo =
-      moppe_srgb (material.sward * float3 (0.74, 0.66, 0.50));
-    const float3 basal = basal_albedo * diffuse_light * material.sward_detail *
-                         mix (0.82, 1.0, grain);
-    lighting.color = mix (lighting.color, basal, material.grass);
-
-    const float focal =
-      moppe_vertical_focal_pixels (u.unjittered_view_proj, u.temporal.y);
-    const float blade_pixels = moppe_grass_blade_pixels (focal, footprint);
-    const float fine = moppe_grass_resolved_fraction (blade_pixels);
-    const float canopy =
-      moppe_sward_canopy_fraction (blade_pixels, focal, footprint);
-    const float aggregate = saturate (1.0 - fine - canopy);
-    // Most grassy pixels are owned by blades or the density column. Avoid
-    // evaluating the far optical integral at a mathematically zero weight;
-    // this coherent gate changes no matching condition and removes a large
-    // amount of irrelevant terrain-fragment work.
-    if (aggregate > 0.001) {
-      const MoppeSwardOpticalResponse upper =
-        moppe_sward_optical_response (material.sward,
-                                      axis,
-                                      material.leaf_area,
-                                      material.clump,
-                                      aggregate,
-                                      0.72,
-                                      light,
-                                      view_dir,
-                                      u.sun_diffuse.rgb,
-                                      u.sun_specular.rgb,
-                                      u.ambient.rgb * canopy_ambient,
-                                      shadow,
-                                      direct_visibility * canopy_direct);
-      const float3 upper_color = upper.radiance * material.sward_detail * grain;
-      lighting.color = mix (lighting.color, upper_color, upper.coverage);
-    }
-  }
-
-  const float3 half_vector = normalize (light - view_dir);
-  const float wet_spec =
-    material.wetness * pow (max (dot (normal, half_vector), 0.0), 32.0);
-  lighting.color +=
-    u.sun_specular.rgb * direct_visibility * canopy_direct * wet_spec * 0.055;
-  return lighting;
-}
-
+// A deliberately plain ground: one albedo under the sun, sky, shadow, and
+// haze that the rest of the scene shares. Material variation returns only
+// as it earns its place.
 fragment MoppeTemporalOutput terrain_fragment (
   TerrainVaryings in [[stage_in]],
   constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  texture2d<float> grass [[texture (MOPPE_TEX_GRASS)]],
-  texture2d<float> dirt [[texture (MOPPE_TEX_DIRT)]],
-  texture2d<float> snow [[texture (MOPPE_TEX_SNOW)]],
-  texture2d<float> rock [[texture (MOPPE_TEX_ROCK)]],
   depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
   texture2d<float, access::read> terrain_overlay
   [[texture (MOPPE_TEX_TERRAIN_OVERLAY)]],
-  texture2d<float> terrain_landscape [[texture (MOPPE_TEX_TERRAIN_LANDSCAPE)]],
-  texture2d<float, access::read> terrain_water
-  [[texture (MOPPE_TEX_TERRAIN_WATER)]],
-  texture2d<float> terrain_ground [[texture (MOPPE_TEX_TERRAIN_GROUND)]],
-  texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
-  texture2d<float> forest_canopy [[texture (MOPPE_TEX_FOREST_CANOPY)]],
-  sampler smp [[sampler (0)]]) {
-
+  texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
   const float3 view_dir = to_frag / max (dist, 1e-4);
   const float3 l = u.sun_dir.xyz;
 
   const float3 fog_c = moppe_warmed_fog (u.fog_color.rgb, view_dir, l);
-
-  // Fully fogged: skip all texture and shadow work.
   const float fog_factor = smoothstep (0.0, 0.9, in.fog);
   if (fog_factor >= 0.995)
     return moppe_temporal_output (float4 (fog_c, 1.0), in.motion, 0.0);
 
-  // Native and coarser LODs light from the full-resolution normal
-  // texture at fragment rate: a stride-8 silhouette carries full
-  // shading detail, exactly as a normal-mapped mesh does.  The
+  // Native and coarser LODs light from the full-resolution normal texture,
+  // so a stride-8 silhouette still carries full shading detail. The
   // subdivided near field keeps its analytic surface normals.
-  float3 n = (u.params6.x > 0.5 && in.lod_step >= 1.0)
-               ? normalize (terrain_normal_filtered (in.grid_coord, normals))
-               : normalize (in.normal);
-  const float sea_level = u.params1.y;
+  const float3 n =
+    (u.params6.x > 0.5 && in.lod_step >= 1.0)
+      ? normalize (terrain_normal_filtered (in.grid_coord, normals))
+      : normalize (in.normal);
 
-  const TerrainSurfaceReadings readings = terrain_read_surface (
-    in, n, u, terrain_landscape, terrain_water, terrain_ground, forest_canopy);
-  const TerrainMaterialBands bands =
-    terrain_classify_material (in, n, sea_level, readings, u);
+  const float shadow = terrain_shadow_factor (
+    in.shadow_coord, in.fog, n, l, u.params1.z, u.params1.w, shadow_map);
+  const float direct = shadow * moppe_cloud_transmission (
+                                  in.world_pos, l, u.params2.x, u.params2.y);
+  const float sun = saturate ((dot (l, n) + 0.08) / 1.08);
+  const float3 shade_fill =
+    mix (float3 (0.80, 0.92, 1.14), float3 (1.0), shadow);
+  const float3 light = sun * direct * 0.9 * u.sun_diffuse.rgb +
+                       shade_fill * moppe_hemisphere_light (u.ambient.rgb, n);
 
-  const TerrainPalette palette =
-    terrain_build_palette (in, n, bands, grass, dirt, snow, rock, u, smp);
-
-  TerrainMaterial material =
-    terrain_compose_material (n, readings, bands, palette);
-  terrain_compose_trail_and_base (material, readings, bands, palette);
-  terrain_compose_forest_and_wetness (material, readings);
-  float3 texel = material.albedo;
-  texel =
-    terrain_apply_analysis_overlay (texel, in.field_uv, u, terrain_overlay);
-
-  const TerrainLighting lighting =
-    terrain_light (texel, n, view_dir, in, material, u, shadow_map);
-  float3 color = lighting.color;
+  const float3 albedo = moppe_srgb (float3 (0.30, 0.42, 0.16));
+  float3 color = terrain_apply_analysis_overlay (
+    albedo * light, in.field_uv, u, terrain_overlay);
   color = terrain_apply_lattice_overlay (color, in, dist, u);
   return moppe_temporal_output (
     float4 (mix (color, fog_c, fog_factor), 1.0), in.motion, 0.0);
