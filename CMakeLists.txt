@@ -281,6 +281,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/boulders.metal
   moppe/shaders/metal/reflection_geometry.metal
   moppe/shaders/metal/water_reflection.metal
+  moppe/shaders/metal/slug.metal
 )
 
 set(MOPPE_METAL_DEPS
@@ -368,7 +369,9 @@ endif()
 set(MOPPE_RENDER_SOURCES
   moppe/render/draw.cc
   moppe/render/reflection_geometry.cc
+  moppe/render/slug.cc
   moppe/render/text.cc
+  moppe/render/truetype.cc
 )
 
 set(MOPPE_TERRAIN_SOURCES
@@ -589,8 +592,12 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/map/water_surface_test.cc
     tests/map/terrain_generation_test.cc
     tests/render/reflection_geometry_test.cc
+    tests/render/slug_test.cc
+    tests/render/text_test.cc
   )
   moppe_configure_code_target(moppe-tests)
+  target_compile_definitions(moppe-tests PRIVATE
+    MOPPE_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   if(APPLE)
     target_sources(moppe-tests PRIVATE
       ${MOPPE_APPLE_COMMON_SOURCES})
@@ -657,6 +664,9 @@ if(APPLE AND MOPPE_IOS)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/data
       $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/data
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/fonts
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/fonts
     COMMENT "Bundling assets into Moppe.app (iOS)")
 endif()
 
@@ -709,6 +719,9 @@ if(APPLE AND MOPPE_TVOS)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/data
       $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/data
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/fonts
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/fonts
     COMMENT "Bundling assets into Moppe.app (tvOS)")
   if(MOPPE_TVOS_BAKED_WORLD)
     add_custom_command(TARGET moppe-tvos POST_BUILD
@@ -798,6 +811,9 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/data
       $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/data
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/fonts
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/fonts
     COMMENT "Bundling assets into moppe.app")
   # POST_BUILD bundling only runs when the executable relinks, which lets
   # shader-only edits go stale inside the bundle. Refresh them every build.

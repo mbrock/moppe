@@ -15,6 +15,9 @@
 
 namespace moppe {
   namespace render {
+    struct SlugGlyphData;
+    class TextList;
+
     inline constexpr float terrain_shore_band_metres = 8.0f;
 
     // Per-frame environment.  The view matrix already includes the
@@ -297,6 +300,13 @@ namespace moppe {
       virtual TexturePtr create_texture (const TextureDesc& desc,
                                          const void* pixels) = 0;
       virtual MeshPtr create_mesh (const DrawList& recorded) = 0;
+      // Uploads Slug curve and band data once (render/slug.hh). Backends
+      // without a Slug pipeline return null, and text drawn from it is
+      // silently skipped.
+      virtual GlyphSetPtr create_glyph_set (const SlugGlyphData& data) {
+        (void)data;
+        return nullptr;
+      }
 
       // -- world setup -------------------------------------------------
       virtual void
@@ -409,6 +419,11 @@ namespace moppe {
       virtual void apply_motion_blur (float strength) = 0;
       // Soft-focus the completed 3D scene; HUD drawn afterwards stays crisp.
       virtual void apply_scene_blur () = 0;
+      // Slug text and vector shapes for this frame's HUD, in the same point
+      // coordinates. Call before draw_hud, which paints them over its list.
+      virtual void draw_hud_text (const TextList& text) {
+        (void)text;
+      }
       // 2D overlay in point coordinates, y-down, origin top-left.
       virtual void draw_hud (const DrawList& list) = 0;
       // Development capture: the backend writes the next completed frame.

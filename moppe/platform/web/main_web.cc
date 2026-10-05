@@ -123,6 +123,8 @@ namespace {
       return Key::E;
     if (std::strcmp (code, "KeyG") == 0)
       return Key::G;
+    if (std::strcmp (code, "KeyH") == 0)
+      return Key::H;
     if (std::strcmp (code, "KeyM") == 0)
       return Key::M;
     if (std::strcmp (code, "KeyN") == 0)

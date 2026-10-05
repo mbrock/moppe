@@ -104,8 +104,33 @@ namespace moppe {
       virtual ~Mesh () {}
     };
 
+    // Slug outline data uploaded once by Renderer::create_glyph_set: the
+    // curve and band buffers of render/slug.hh.
+    class GlyphSet {
+    public:
+      virtual ~GlyphSet () {}
+    };
+
     typedef std::shared_ptr<Texture> TexturePtr;
     typedef std::shared_ptr<Mesh> MeshPtr;
+    typedef std::shared_ptr<GlyphSet> GlyphSetPtr;
+
+    // One placed Slug glyph, the instance a backend expands into a quad;
+    // mirrored by MoppeGlyphQuad in the Metal shader types.  The glyph's
+    // em-space point (u, v) lands at origin + u * axis_x + v * axis_y in the
+    // draw's target space, so a quad may be scaled, rotated, or sheared.
+    // The axes carry three components so the same record can later place
+    // text on a plane in the world; the HUD reads only x and y.
+    struct alignas (16) GlyphQuad {
+      float origin[4]; // w: coverage filter width in pixels (1 is crisp)
+      float axis_x[4];
+      float axis_y[4];
+      float
+        bounds[4];    // the glyph's exact em bounds: min x, min y, max x, max y
+      float color[4]; // straight-alpha display RGBA
+      uint32_t glyph[4]; // band offset, horizontal bands, vertical bands, 0
+    };
+    static_assert (sizeof (GlyphQuad) == 96, "glyph quad is 96 bytes");
   }
 }
 

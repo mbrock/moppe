@@ -18,6 +18,9 @@
     Lab. Xbox, PlayStation, and compatible MFi controllers use this layout.
   - On foot: `F` steps off the bike to walk (`W`/`A`/`S`/`D` walk and turn,
     `Space` jumps); `F` near the bike mounts it again.
+  - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
+    toggles the diagnostic overlay (frame rate, stunt and score readings,
+    trail map); `MOPPE_HUD=debug` starts with it on.
   - `P` captures the current frame to `screenshots/run-<timestamp>/shot-NNN.png`
     (gitignored, one directory per run; `MOPPE_SCREENSHOT_DIR` overrides the
     base). Start the game, walk around, press `P` at each view worth
@@ -171,6 +174,13 @@
   concrete `quantity`/`quantity_point` aliases built on a spec stay with the
   code that owns the concept, since those need units and vectors the registry
   has no dependency on.
+- Text and HUD vector shapes render with Slug, straight from quadratic
+  outlines: `render/truetype.*` reads TrueType glyphs, `render/slug.*` builds
+  the band/curve buffers (and a CPU coverage mirror for tests),
+  `render/text.*` lays out a `Font` into a `TextList`, and
+  `shaders/metal/slug.metal` draws it via `Renderer::draw_hud_text`. The
+  bundled face is `fonts/IosevkaAile-Regular.ttf` (SIL OFL, licence beside
+  it). `GlyphQuad` carries 3D axes so world-space text can reuse it.
 - `moppe/render/` — portable renderer API (DrawList immediate mode,
   MeshBuilder-baked meshes, game-shaped Renderer interface); no GL/Metal
   types in headers. `moppe/render/metal/` and `moppe/render/webgpu/` own the

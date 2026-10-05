@@ -510,7 +510,23 @@ struct MOPPE_SHADER_ALIGN MoppeQuadUniforms {
 
 struct MOPPE_SHADER_ALIGN MoppeHudUniforms {
   MoppeMat4 proj;     // point coords, y-down
-  MoppeFloat4 params; // x=extended-linear output
+  MoppeFloat4 params; // x=extended-linear output, y=pixels per point
+};
+
+// Slug glyph instances (render::GlyphQuad) and their outline buffers. The
+// instances are vertex-stage data; the curve and band buffers are read by
+// the fragment stage only.
+#define MOPPE_BUF_GLYPH_QUADS 0
+#define MOPPE_BUF_GLYPH_CURVES 2
+#define MOPPE_BUF_GLYPH_BANDS 3
+
+struct MOPPE_SHADER_ALIGN MoppeGlyphQuad {
+  MoppeFloat4 origin; // xyz=target position of em (0,0); w=filter pixels
+  MoppeFloat4 axis_x; // xyz=target displacement per em along u
+  MoppeFloat4 axis_y; // xyz=target displacement per em along v (font up)
+  MoppeFloat4 bounds; // exact em bounds: min u, min v, max u, max v
+  MoppeFloat4 color;  // straight-alpha display RGBA
+  MoppeUint4 glyph;   // band offset, horizontal bands, vertical bands
 };
 
 #undef MOPPE_SHADER_ALIGN

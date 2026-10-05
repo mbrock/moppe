@@ -2,190 +2,227 @@
 #include <moppe/render/renderer.hh>
 #include <moppe/render/text.hh>
 
-#include <vector>
+#include <algorithm>
+#include <cmath>
 
 namespace moppe {
   namespace render {
-    namespace {
-      // Shelf-pack the glyph bitmaps left-to-right into rows of the
-      // given atlas width (2 px spacing against linear-filter bleed).
-      // Optionally records each glyph's position; returns the packed
-      // height, or 0 when nothing needed pixels.
-      int shelf_pack (const platform::GlyphBitmap* bitmaps,
-                      const bool* ok,
-                      int count,
-                      int atlas_w,
-                      int* out_x,
-                      int* out_y) {
-        const int spacing = 2;
-        int pen_x = spacing;
-        int pen_y = spacing;
-        int row_h = 0;
-        bool any = false;
+    void TextList::add (const GlyphSetPtr& glyphs, const GlyphQuad& quad) {
+      if (m_runs.empty () || m_runs.back ().glyphs != glyphs)
+        m_runs.push_back (
+          { glyphs, static_cast<std::uint32_t> (m_quads.size ()), 0 });
+      m_quads.push_back (quad);
+      ++m_runs.back ().count;
+    }
 
-        for (int i = 0; i < count; ++i) {
-          if (out_x) {
-            out_x[i] = -1;
-            out_y[i] = -1;
-          }
-          if (!ok[i] || bitmaps[i].width <= 0 || bitmaps[i].height <= 0)
-            continue;
-
-          const int w = bitmaps[i].width;
-          const int h = bitmaps[i].height;
-          if (pen_x + w + spacing > atlas_w && pen_x > spacing) {
-            pen_y += row_h + spacing;
-            pen_x = spacing;
-            row_h = 0;
-          }
-          if (out_x) {
-            out_x[i] = pen_x;
-            out_y[i] = pen_y;
-          }
-          if (h > row_h)
-            row_h = h;
-          pen_x += w + spacing;
-          any = true;
-        }
-        return any ? pen_y + row_h + spacing : 0;
+    void TextList::translate (float dx, float dy) {
+      for (GlyphQuad& quad : m_quads) {
+        quad.origin[0] += dx;
+        quad.origin[1] += dy;
       }
     }
 
-    FontAtlas::FontAtlas (Renderer& renderer,
-                          const char* family,
-                          float point_size,
-                          float scale)
-        : m_point_size (point_size), m_scale (scale > 0.0f ? scale : 1.0f) {
-      platform::GlyphBitmap bitmaps[GLYPH_COUNT];
-      bool ok[GLYPH_COUNT];
-
-      for (int i = 0; i < GLYPH_COUNT; ++i)
-        ok[i] = platform::rasterize_glyph (family,
-                                           point_size,
-                                           m_scale,
-                                           (unsigned int)(FIRST_CHAR + i),
-                                           bitmaps[i]);
-
-      // Widen the atlas until every glyph fits on a shelf and the
-      // packing is roughly square.
-      int max_w = 0;
-      for (int i = 0; i < GLYPH_COUNT; ++i)
-        if (ok[i] && bitmaps[i].width > max_w)
-          max_w = bitmaps[i].width;
-
-      int atlas_w = 128;
-      while (atlas_w < max_w + 2)
-        atlas_w *= 2;
-      while (shelf_pack (bitmaps, ok, GLYPH_COUNT, atlas_w, 0, 0) > atlas_w &&
-             atlas_w < 2048)
-        atlas_w *= 2;
-
-      int xs[GLYPH_COUNT], ys[GLYPH_COUNT];
-      const int atlas_h =
-        shelf_pack (bitmaps, ok, GLYPH_COUNT, atlas_w, xs, ys);
-
-      for (int i = 0; i < GLYPH_COUNT; ++i) {
-        Glyph& g = m_glyphs[i];
-        g = Glyph ();
-        g.present = ok[i];
-        if (!ok[i])
-          continue;
-
-        const platform::GlyphBitmap& bm = bitmaps[i];
-        g.advance = bm.advance;
-        if (xs[i] < 0)
-          continue; // blank glyph (space): advance only
-
-        g.x_off = bm.bearing_x / m_scale;
-        g.y_top = bm.bearing_y / m_scale;
-        g.w = bm.width / m_scale;
-        g.h = bm.height / m_scale;
-        g.u0 = (float)xs[i] / atlas_w;
-        g.v0 = (float)ys[i] / atlas_h;
-        g.u1 = (float)(xs[i] + bm.width) / atlas_w;
-        g.v1 = (float)(ys[i] + bm.height) / atlas_h;
-      }
-
-      if (atlas_h <= 0)
-        return; // no rasterizer on this platform
-
-      // White glyphs, coverage in alpha.
-      std::vector<unsigned char> pixels ((size_t)atlas_w * atlas_h * 4, 0);
-      for (int i = 0; i < GLYPH_COUNT; ++i) {
-        if (!ok[i] || xs[i] < 0)
-          continue;
-        const platform::GlyphBitmap& bm = bitmaps[i];
-        for (int y = 0; y < bm.height; ++y) {
-          for (int x = 0; x < bm.width; ++x) {
-            const unsigned char c = bm.pixels[(size_t)y * bm.width + x];
-            unsigned char* dst =
-              &pixels[((size_t)(ys[i] + y) * atlas_w + (xs[i] + x)) * 4];
-            dst[0] = dst[1] = dst[2] = 255;
-            dst[3] = c;
-          }
+    std::u32string decode_utf8 (std::string_view utf8) {
+      std::u32string out;
+      out.reserve (utf8.size ());
+      for (std::size_t i = 0; i < utf8.size ();) {
+        const unsigned char lead = utf8[i];
+        int length = lead < 0x80           ? 1
+                     : (lead >> 5) == 0x06 ? 2
+                     : (lead >> 4) == 0x0E ? 3
+                     : (lead >> 3) == 0x1E ? 4
+                                           : 0;
+        char32_t codepoint = length == 1   ? lead
+                             : length == 2 ? (lead & 0x1F)
+                             : length == 3 ? (lead & 0x0F)
+                                           : (lead & 0x07);
+        bool valid = length > 0 && i + length <= utf8.size ();
+        for (int k = 1; valid && k < length; ++k) {
+          const unsigned char next = utf8[i + k];
+          valid = (next & 0xC0) == 0x80;
+          codepoint = (codepoint << 6) | (next & 0x3F);
         }
+        out.push_back (valid ? codepoint : U'�');
+        i += valid ? length : 1;
       }
-
-      TextureDesc desc;
-      desc.width = atlas_w;
-      desc.height = atlas_h;
-      desc.format = TextureFormat::RGBA8;
-      desc.filter = TextureFilter::Linear;
-      desc.wrap = TextureWrap::Clamp;
-      m_texture = renderer.create_texture (desc, &pixels[0]);
+      return out;
     }
 
-    float FontAtlas::draw (DrawList& dl,
-                           float x,
-                           float y,
-                           const std::string& text) const {
-      float pen = x;
-      if (!m_texture)
-        return pen;
-
-      dl.set_texture (m_texture.get ());
-      dl.begin (Prim::Quads);
-      for (size_t i = 0; i < text.size (); ++i) {
-        const unsigned char c = (unsigned char)text[i];
-        if (c < FIRST_CHAR || c > LAST_CHAR)
-          continue;
-        const Glyph& g = m_glyphs[c - FIRST_CHAR];
-        if (!g.present)
-          continue;
-
-        if (g.w > 0 && g.h > 0) {
-          const float x0 = pen + g.x_off;
-          const float y0 = y - g.y_top;
-          const float x1 = x0 + g.w;
-          const float y1 = y0 + g.h;
-          dl.uv (g.u0, g.v0);
-          dl.vertex (x0, y0);
-          dl.uv (g.u1, g.v0);
-          dl.vertex (x1, y0);
-          dl.uv (g.u1, g.v1);
-          dl.vertex (x1, y1);
-          dl.uv (g.u0, g.v1);
-          dl.vertex (x0, y1);
-        }
-        pen += g.advance;
-      }
-      dl.end ();
-      dl.set_texture (0);
-      dl.uv (0, 0);
-      return pen;
+    std::u32string_view Font::latin_repertoire () {
+      static const std::u32string repertoire = [] {
+        std::u32string chars;
+        for (char32_t c = 0x20; c < 0x7F; ++c)
+          chars.push_back (c);
+        for (char32_t c = 0xA0; c <= 0xFF; ++c)
+          chars.push_back (c);
+        for (char32_t c : U"  –—‘’“”"
+                          U"•…′″‹›←↑"
+                          U"→↓−·�")
+          chars.push_back (c);
+        return chars;
+      }();
+      return repertoire;
     }
 
-    float FontAtlas::measure (const std::string& text) const {
-      float w = 0;
-      for (size_t i = 0; i < text.size (); ++i) {
-        const unsigned char c = (unsigned char)text[i];
-        if (c < FIRST_CHAR || c > LAST_CHAR)
+    Font::Font (TrueTypeFont face, std::u32string_view repertoire)
+        : m_face (std::move (face)) {
+      const float em = 1.0f / m_face.units_per_em ();
+      const auto prepare = [&] (std::uint16_t index) {
+        std::vector<OutlineContour> contours = m_face.outline (index);
+        for (OutlineContour& contour : contours)
+          for (OutlineCurve& curve : contour)
+            for (OutlinePoint* p : { &curve.p1, &curve.p2, &curve.p3 }) {
+              p->x *= em;
+              p->y *= em;
+            }
+        Entry entry;
+        entry.index = index;
+        entry.advance = m_face.advance_width (index) * em;
+        entry.slug = m_builder.add (contours);
+        return entry;
+      };
+
+      m_notdef = prepare (0);
+      // Several codepoints often share one glyph (no-break space and
+      // space); prepare each glyph once.
+      std::unordered_map<std::uint16_t, Entry> by_index;
+      for (char32_t codepoint : repertoire) {
+        const std::uint16_t index = m_face.glyph_index (codepoint);
+        if (index == 0)
           continue;
-        const Glyph& g = m_glyphs[c - FIRST_CHAR];
-        if (g.present)
-          w += g.advance;
+        auto found = by_index.find (index);
+        if (found == by_index.end ())
+          found = by_index.emplace (index, prepare (index)).first;
+        m_entries[codepoint] = found->second;
       }
-      return w;
+      for (char32_t digit = U'0'; digit <= U'9'; ++digit)
+        m_digit_advance = std::max (m_digit_advance, entry (digit).advance);
+    }
+
+    std::unique_ptr<Font> Font::load (Renderer& renderer,
+                                      const std::string& asset) {
+      auto font = std::make_unique<Font> (
+        TrueTypeFont::load (platform::asset_path (asset)));
+      font->upload (renderer);
+      return font;
+    }
+
+    void Font::upload (Renderer& renderer) {
+      m_glyph_set = renderer.create_glyph_set (m_builder.data ());
+      m_pixels_per_point = renderer.scale_factor ();
+    }
+
+    const Font::Entry& Font::entry (char32_t codepoint) const {
+      const auto found = m_entries.find (codepoint);
+      return found == m_entries.end () ? m_notdef : found->second;
+    }
+
+    const SlugGlyph* Font::glyph (char32_t codepoint) const {
+      const auto found = m_entries.find (codepoint);
+      return found == m_entries.end () ? nullptr : &found->second.slug;
+    }
+
+    float Font::ascender (float size) const {
+      return size * m_face.ascender () / m_face.units_per_em ();
+    }
+
+    float Font::descender (float size) const {
+      return size * m_face.descender () / m_face.units_per_em ();
+    }
+
+    float Font::cap_height (float size) const {
+      const int cap = m_face.cap_height ();
+      return cap ? size * cap / m_face.units_per_em () : 0.7f * size;
+    }
+
+    float Font::x_height (float size) const {
+      const int x = m_face.x_height ();
+      return x ? size * x / m_face.units_per_em () : 0.5f * size;
+    }
+
+    float Font::pen_advance (const Entry& entry,
+                             char32_t codepoint,
+                             const TextStyle& style) const {
+      const bool digit = codepoint >= U'0' && codepoint <= U'9';
+      const float advance =
+        style.tabular_figures && digit ? m_digit_advance : entry.advance;
+      return (advance + style.tracking) * style.size;
+    }
+
+    float Font::measure (std::string_view utf8, const TextStyle& style) const {
+      const std::u32string text = decode_utf8 (utf8);
+      const float em = style.size / m_face.units_per_em ();
+      float width = 0.0f;
+      const Entry* previous = nullptr;
+      for (char32_t codepoint : text) {
+        const Entry& current = entry (codepoint);
+        if (previous)
+          width += m_face.kerning (previous->index, current.index) * em;
+        width += pen_advance (current, codepoint, style);
+        previous = &current;
+      }
+      // Tracking belongs between glyphs, not after the last one.
+      if (!text.empty ())
+        width -= style.tracking * style.size;
+      return width;
+    }
+
+    float Font::draw (TextList& list,
+                      float x,
+                      float y,
+                      std::string_view utf8,
+                      const TextStyle& style,
+                      TextAlign align) const {
+      if (!m_glyph_set)
+        return x;
+      if (align != TextAlign::Left) {
+        const float width = measure (utf8, style);
+        x -= align == TextAlign::Center ? 0.5f * width : width;
+      }
+      // Slug needs no hinting, but a baseline and starting edge on whole
+      // device pixels keep horizontal stems and the line's left edge from
+      // straddling two pixel rows.
+      if (m_pixels_per_point > 0.0f) {
+        x = std::round (x * m_pixels_per_point) / m_pixels_per_point;
+        y = std::round (y * m_pixels_per_point) / m_pixels_per_point;
+      }
+
+      const std::u32string text = decode_utf8 (utf8);
+      const float em = style.size / m_face.units_per_em ();
+      const Entry* previous = nullptr;
+      for (char32_t codepoint : text) {
+        const Entry& current = entry (codepoint);
+        if (previous)
+          x += m_face.kerning (previous->index, current.index) * em;
+        float offset = 0.0f;
+        const bool digit = codepoint >= U'0' && codepoint <= U'9';
+        if (style.tabular_figures && digit)
+          offset = 0.5f * (m_digit_advance - current.advance) * style.size;
+        if (!current.slug.empty ()) {
+          const SlugGlyph& g = current.slug;
+          GlyphQuad quad {};
+          quad.origin[0] = x + offset;
+          quad.origin[1] = y;
+          quad.origin[3] = style.softness;
+          quad.axis_x[0] = style.size;
+          quad.axis_y[1] = -style.size; // font y is up, the HUD's is down
+          quad.bounds[0] = g.min_x;
+          quad.bounds[1] = g.min_y;
+          quad.bounds[2] = g.max_x;
+          quad.bounds[3] = g.max_y;
+          quad.color[0] = style.red;
+          quad.color[1] = style.green;
+          quad.color[2] = style.blue;
+          quad.color[3] = style.alpha;
+          quad.glyph[0] = g.band_offset;
+          quad.glyph[1] = g.horizontal_bands;
+          quad.glyph[2] = g.vertical_bands;
+          list.add (m_glyph_set, quad);
+        }
+        x += pen_advance (current, codepoint, style);
+        previous = &current;
+      }
+      return text.empty () ? x : x - style.tracking * style.size;
     }
   }
 }

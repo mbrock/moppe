@@ -61,6 +61,8 @@ static Key map_key (NSEvent* event) {
     return Key::Screenshot;
   case 'g':
     return Key::G;
+  case 'h':
+    return Key::H;
   case 'm':
     return Key::M;
   case 'n':

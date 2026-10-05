@@ -84,6 +84,7 @@ namespace moppe::game {
     bool gliding = false;
     bool can_deploy_glider = false;
     bool can_drop_bike = false;
+    bool can_mount = false;
     float vertical_speed_mps = 0.0f;
     float frame_time_s = 1.0f / 60.0f;
     float heading_radians = 0.0f;

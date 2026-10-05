@@ -30,6 +30,7 @@ namespace moppe {
       Screenshot,
       E,
       G,
+      H,
       M,
       N,
       R,

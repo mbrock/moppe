@@ -270,6 +270,10 @@ namespace moppe::game {
     hud.gliding = logic.m_mode == M_GLIDER;
     hud.can_deploy_glider = input.session.can_deploy_glider (input.surface);
     hud.can_drop_bike = input.session.can_drop_bike ();
+    // The remount reach of GameSession's toggle_mount, five metres.
+    hud.can_mount = logic.m_mode == M_FOOT &&
+                    length2 (input.session.walker ().position () -
+                             input.session.bike ().position ()) < 5.0f * 5.0f;
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();

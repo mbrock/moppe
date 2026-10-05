@@ -27,6 +27,8 @@
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/render/metal/shader_types.h>
 #include <moppe/render/reflection_geometry.hh>
+#include <moppe/render/slug.hh>
+#include <moppe/render/text.hh>
 
 #include <algorithm>
 #include <array>
@@ -407,6 +409,24 @@ namespace moppe {
         }
       };
 
+      // Slug outline data: curve texels and band lists, read only by the
+      // text fragment stage.
+      struct MetalGlyphSet : public GlyphSet {
+        id<MTLBuffer> curves = nil;
+        id<MTLBuffer> bands = nil;
+        id<MTLResidencySet> residency = nil;
+
+        ~MetalGlyphSet () override {
+          if (!residency)
+            return;
+          if (curves)
+            [residency removeAllocation:curves];
+          if (bands)
+            [residency removeAllocation:bands];
+          [residency commit];
+        }
+      };
+
       // The private Metal backend keeps long-lived GPU state in concrete
       // owners.  Passes borrow these owners explicitly below; this is a fixed
       // game-shaped frame path, not a render-graph abstraction.
@@ -414,6 +434,7 @@ namespace moppe {
         id<MTLRenderPipelineState> uber_opaque = nil, uber_blend = nil;
         id<MTLRenderPipelineState> uber_add = nil;
         id<MTLRenderPipelineState> hud = nil;
+        id<MTLRenderPipelineState> slug_hud = nil;
         id<MTLRenderPipelineState> present = nil, ghost = nil;
         id<MTLRenderPipelineState> copy = nil;
         id<MTLRenderPipelineState> underwater = nil;
@@ -1087,7 +1108,8 @@ namespace moppe {
       class MetalHudPass {
       public:
         static void draw (const MetalHudPassInputs& inputs,
-                          const DrawList& list);
+                          const DrawList& list,
+                          const TextList& text);
       };
     }
 
@@ -1103,6 +1125,7 @@ namespace moppe {
       TexturePtr create_texture (const TextureDesc& desc,
                                  const void* pixels) override;
       MeshPtr create_mesh (const DrawList& recorded) override;
+      GlyphSetPtr create_glyph_set (const SlugGlyphData& data) override;
 
       // world setup
       void
@@ -1199,6 +1222,7 @@ namespace moppe {
       void apply_underwater (float time) override;
       void apply_motion_blur (float strength) override;
       void apply_scene_blur () override;
+      void draw_hud_text (const TextList& text) override;
       void draw_hud (const DrawList& list) override;
       void request_screenshot (const std::string& path) override;
       void end_frame () override;
@@ -1296,6 +1320,8 @@ namespace moppe {
 #endif
 
       MetalPipelines m_pipelines;
+      // Text queued for this frame's HUD pass by draw_hud_text.
+      TextList m_hud_text;
       MetalTerrainResources m_terrain_resources;
       MetalForestResources m_forest_resources;
       MetalBoulderResources m_boulder_resources;
@@ -1824,6 +1850,12 @@ namespace moppe {
                                        MTLPixelFormatInvalid,
                                        1,
                                        true);
+      m_pipelines.slug_hud = make_pipeline (@"slug_hud_vertex",
+                                            @"slug_hud_fragment",
+                                            drawable,
+                                            MTLPixelFormatInvalid,
+                                            1,
+                                            true);
       m_pipelines.present = make_pipeline (@"quad_vertex",
                                            @"present_fragment",
                                            drawable,
@@ -3019,6 +3051,22 @@ namespace moppe {
                                  recorded.vertices ().size () * sizeof (Vertex),
                                  @"Moppe retained mesh");
       return MeshPtr (m);
+    }
+
+    GlyphSetPtr MetalRenderer::create_glyph_set (const SlugGlyphData& data) {
+      if (data.curves.empty () || data.bands.empty () || !m_pipelines.slug_hud)
+        return nullptr;
+      auto set = std::make_shared<MetalGlyphSet> ();
+      set->residency = m_residency;
+      set->curves =
+        create_private_buffer (data.curves.data (),
+                               data.curves.size () * sizeof (SlugCurveTexel),
+                               @"Moppe Slug curves");
+      set->bands =
+        create_private_buffer (data.bands.data (),
+                               data.bands.size () * sizeof (std::uint32_t),
+                               @"Moppe Slug bands");
+      return set;
     }
 
     // -- world setup ---------------------------------------------------
@@ -6937,7 +6985,8 @@ namespace moppe {
     // -- hud + present ---------------------------------------------------
 
     void MetalHudPass::draw (const MetalHudPassInputs& inputs,
-                             const DrawList& list) {
+                             const DrawList& list,
+                             const TextList& text) {
       id<MTLDevice> device = inputs.device;
       const MetalPipelines& pipelines = inputs.pipelines;
       const MetalTerrainResources& terrain = inputs.terrain;
@@ -7134,8 +7183,10 @@ namespace moppe {
                 vertexCount:3];
       }
 
+      const bool have_text = !text.empty () && pipelines.slug_hud;
+      const bool have_overlay = (!list.empty () && pipelines.hud) || have_text;
       const auto draw_hud_overlay = [&] (id<MTL4RenderCommandEncoder> target) {
-        if (list.empty () || !pipelines.hud)
+        if (!have_overlay)
           return;
         MoppeHudUniforms hu;
         std::memset (&hu, 0, sizeof (hu));
@@ -7144,14 +7195,51 @@ namespace moppe {
 #if !TARGET_OS_IPHONE
         hu.params.x = 1;
 #endif
+        hu.params.y = frame.width_pts > 0
+                        ? (float)targets.output_width / (float)frame.width_pts
+                        : 1.0f;
         const MTLGPUAddress uniforms = frame.arena[frame.slot].write (hu);
         bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
         bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
-        MetalDrawListEncoder::play (
-          { device, target, pipelines, terrain, frame },
-          list.vertices (),
-          list.runs (),
-          true);
+        if (!list.empty () && pipelines.hud)
+          MetalDrawListEncoder::play (
+            { device, target, pipelines, terrain, frame },
+            list.vertices (),
+            list.runs (),
+            true);
+        if (!have_text)
+          return;
+
+        // Slug text paints over the shapes: one instanced draw of six
+        // vertices per glyph quad for each run of a single glyph set.
+        [target setRenderPipelineState:pipelines.slug_hud];
+        [target setCullMode:MTLCullModeNone];
+        const MTLGPUAddress quads = frame.arena[frame.slot].write (
+          std::span<const GlyphQuad> (text.quads ()));
+        for (const TextList::Run& run : text.runs ()) {
+          const MetalGlyphSet* glyphs =
+            static_cast<const MetalGlyphSet*> (run.glyphs.get ());
+          if (!glyphs || !glyphs->curves || !glyphs->bands || !run.count)
+            continue;
+          bind_address (frame,
+                        MTLRenderStageVertex,
+                        MOPPE_BUF_GLYPH_QUADS,
+                        quads + run.first * sizeof (GlyphQuad));
+          bind_address (frame,
+                        MTLRenderStageFragment,
+                        MOPPE_BUF_GLYPH_CURVES,
+                        glyphs->curves.gpuAddress);
+          bind_address (frame,
+                        MTLRenderStageFragment,
+                        MOPPE_BUF_GLYPH_BANDS,
+                        glyphs->bands.gpuAddress);
+          use_arguments (
+            target, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+          [target drawPrimitives:MTLPrimitiveTypeTriangle
+                     vertexStart:0
+                     vertexCount:6
+                   instanceCount:run.count];
+        }
       };
 
       if (!interpolate) {
@@ -7187,7 +7275,7 @@ namespace moppe {
                  afterEncoderStages:MTLStageBlit];
       [composite_copy endEncoding];
 
-      if (!list.empty () && pipelines.hud) {
+      if (have_overlay) {
         MTL4RenderPassDescriptor* composite_pass =
           [[MTL4RenderPassDescriptor alloc] init];
         composite_pass.colorAttachments[0].texture =
@@ -7293,11 +7381,17 @@ namespace moppe {
       [display endEncoding];
     }
 
+    void MetalRenderer::draw_hud_text (const TextList& text) {
+      m_hud_text = text;
+    }
+
     void MetalRenderer::draw_hud (const DrawList& list) {
       reconstruct_scene ();
       MetalHudPass::draw (
         { m_device, m_pipelines, m_terrain_resources, m_targets, m_frame },
-        list);
+        list,
+        m_hud_text);
+      m_hud_text.clear ();
     }
 
     bool MetalRenderer::present_rendered_frame (id<CAMetalDrawable> drawable) {

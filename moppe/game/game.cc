@@ -123,15 +123,6 @@ namespace moppe {
           m_hud.load (r);
         }
         {
-          MOPPE_PROFILE_ZONE ("startup.load_loading_font");
-          m_loading_font.reset (new render::FontAtlas (
-            r, "AvenirNext-Medium", 16, r.scale_factor ()));
-          m_loading_title_font.reset (new render::FontAtlas (
-            r, "AvenirNext-DemiBold", 30, r.scale_factor ()));
-          m_loading_meta_font.reset (
-            new render::FontAtlas (r, "Menlo", 11, r.scale_factor ()));
-        }
-        {
           MOPPE_PROFILE_ZONE ("startup.load_blob_shadow");
           m_blob.load (r);
         }
@@ -1150,6 +1141,7 @@ namespace moppe {
         state.gliding = reading.gliding;
         state.can_deploy_glider = reading.can_deploy_glider;
         state.can_drop_bike = reading.can_drop_bike;
+        state.can_mount = reading.can_mount;
         state.vertical_speed_mps = reading.vertical_speed_mps;
         state.frame_time_s = reading.frame_time_s;
         state.heading_radians = reading.heading_radians;
@@ -1355,6 +1347,7 @@ namespace moppe {
 
         // HUD, kept inside the safe area (notch / home indicator).
         m_hud_dl.clear ();
+        m_hud_text.clear ();
         const platform::Insets safe_insets = platform::safe_insets ();
         m_hud_dl.translate (safe_insets.left, safe_insets.top, 0);
         const int hud_width =
@@ -1362,28 +1355,25 @@ namespace moppe {
         const int hud_height =
           r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
         if (visibility.cinematic_hud) {
-          if (m_loading_font && m_loading_font->ok ()) {
-            const std::string prompt = "SPACE TO RIDE";
-            m_hud_dl.color (
-              0.91f, 1.0f, 0.92f, frame.overlay.cinematic_prompt_alpha);
-            m_loading_font->draw (m_hud_dl,
-                                  hud_width - m_loading_font->measure (prompt) -
-                                    28.0f,
-                                  hud_height - 42.0f,
-                                  prompt);
-          }
+          m_hud.draw_ride_prompt (m_hud_text,
+                                  frame.overlay.cinematic_prompt_alpha,
+                                  hud_width,
+                                  hud_height);
         } else if (visibility.game_hud) {
           const HudState hud_state = hud_state_for (frame.hud);
-          m_hud.draw (m_hud_dl, hud_state, hud_width, hud_height);
-          draw_trail_map (m_hud_dl,
-                          hud_width,
-                          hud_height,
-                          frame.hud.subject_position,
-                          frame.hud.subject_heading);
+          m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
+          if (m_hud.diagnostics ())
+            draw_trail_map (m_hud_dl,
+                            hud_width,
+                            hud_height,
+                            frame.hud.subject_position,
+                            frame.hud.subject_heading);
         }
+        m_hud_text.translate (safe_insets.left, safe_insets.top);
 
         // Even a clean inspection capture needs this empty HUD pass: it is
         // also the final post-chain composite into the drawable.
+        r.draw_hud_text (m_hud_text);
         r.draw_hud (m_hud_dl);
       }
 
@@ -1592,6 +1582,7 @@ namespace moppe {
         r.draw_sky (sky);
 
         m_hud_dl.clear ();
+        m_hud_text.clear ();
         render::DrawState state;
         state.blend = true;
         state.depth_test = false;
@@ -1601,15 +1592,52 @@ namespace moppe {
         m_hud_dl.lit (false);
         m_hud_dl.fogged (false);
 
-        if (m_loading_font && m_loading_font->ok () && m_loading_title_font &&
-            m_loading_title_font->ok () && m_loading_meta_font &&
-            m_loading_meta_font->ok ()) {
-          const float panel_x = 24.0f;
-          const float panel_width = std::min (660.0f, width - 48.0f);
-          const float panel_height = 214.0f;
-          const float panel_y = std::max (24.0f, height - panel_height - 24.0f);
-          const float text_x = panel_x + 24.0f;
-          const float content_width = panel_width - 48.0f;
+        // No panel: a soft dusk rises from the bottom edge behind a few
+        // lines of type, and the sky stays the picture.
+        if (m_hud.font ()) {
+          const float scrim = std::min (height, 300.0f);
+          m_hud_dl.begin (render::Prim::Quads);
+          m_hud_dl.color (0.0f, 0.02f, 0.03f, 0.0f);
+          m_hud_dl.vertex (0.0f, height - scrim);
+          m_hud_dl.vertex (width, height - scrim);
+          m_hud_dl.color (0.0f, 0.02f, 0.03f, 0.42f);
+          m_hud_dl.vertex (width, height);
+          m_hud_dl.vertex (0.0f, height);
+          m_hud_dl.end ();
+
+          const float left = 44.0f;
+          const float content_width = std::min (520.0f, width - 2.0f * left);
+          const float bottom = height - 44.0f;
+          const auto style = [] (float size, float alpha, float tracking) {
+            render::TextStyle s;
+            s.size = size;
+            s.red = s.green = s.blue = 0.96f;
+            s.alpha = alpha;
+            s.tracking = tracking;
+            s.tabular_figures = true;
+            return s;
+          };
+
+          std::ostringstream eyebrow;
+          eyebrow << "SEED " << loading.seed;
+          m_hud.draw_shaded (m_hud_text,
+                             left,
+                             bottom - 118.0f,
+                             eyebrow.str (),
+                             style (9.0f, 0.62f, 0.16f));
+          m_hud.draw_shaded (m_hud_text,
+                             left,
+                             bottom - 86.0f,
+                             loading.title,
+                             style (27.0f, 0.96f, 0.0f));
+          m_hud.draw_shaded (m_hud_text,
+                             left,
+                             bottom - 62.0f,
+                             loading.detail,
+                             style (14.0f, 0.74f, 0.01f));
+
+          // The rail fills only with a real measurement; stages that cannot
+          // measure themselves show their text and nothing else.
           const auto fill_rect = [this] (float x, float y, float w, float h) {
             m_hud_dl.begin (render::Prim::Quads);
             m_hud_dl.vertex (x, y);
@@ -1618,64 +1646,44 @@ namespace moppe {
             m_hud_dl.vertex (x, y + h);
             m_hud_dl.end ();
           };
-
-          m_hud_dl.color (0.025f, 0.055f, 0.045f, 0.78f);
-          fill_rect (panel_x, panel_y, panel_width, panel_height);
-          m_hud_dl.color (0.69f, 0.89f, 0.70f, 0.78f);
-          fill_rect (panel_x, panel_y, 3.0f, panel_height);
-
-          std::ostringstream eyebrow;
-          eyebrow << "WORLD GENERATION  /  SEED " << loading.seed;
-          m_hud_dl.color (0.72f, 0.86f, 0.74f, 0.88f);
-          m_loading_meta_font->draw (
-            m_hud_dl, text_x, panel_y + 29.0f, eyebrow.str ());
-
-          m_hud_dl.color (0.95f, 1.0f, 0.94f, 0.98f);
-          m_loading_title_font->draw (
-            m_hud_dl, text_x, panel_y + 67.0f, loading.title);
-
-          m_hud_dl.color (0.78f, 0.88f, 0.79f, 0.94f);
-          m_loading_font->draw (
-            m_hud_dl, text_x, panel_y + 94.0f, loading.detail);
-
-          // The rail fills only with a real measurement; stages that cannot
-          // measure themselves show their text and nothing else.
-          const float rail_y = panel_y + 119.0f;
-          m_hud_dl.color (0.28f, 0.38f, 0.31f, 0.82f);
-          fill_rect (text_x, rail_y, content_width, 3.0f);
+          const float rail_y = bottom - 44.0f;
+          m_hud_dl.color (0.96f, 0.96f, 0.96f, 0.16f);
+          fill_rect (left, rail_y, content_width, 1.0f);
           if (loading.progress >= 0.0f) {
-            m_hud_dl.color (0.70f, 0.94f, 0.71f, 0.98f);
-            fill_rect (text_x,
+            m_hud_dl.color (0.96f, 0.96f, 0.96f, 0.78f);
+            fill_rect (left,
                        rail_y,
                        content_width *
                          std::clamp (loading.progress, 0.0f, 1.0f),
-                       3.0f);
+                       1.0f);
             std::ostringstream percent;
             percent << static_cast<int> (
                          std::lround (loading.progress * 100.0f))
                     << '%';
-            m_hud_dl.color (0.72f, 0.86f, 0.74f, 0.90f);
-            m_loading_meta_font->draw (
-              m_hud_dl,
-              text_x + content_width -
-                m_loading_meta_font->measure (percent.str ()),
-              panel_y + 143.0f,
-              percent.str ());
+            m_hud.draw_shaded (m_hud_text,
+                               left + content_width,
+                               rail_y - 8.0f,
+                               percent.str (),
+                               style (9.0f, 0.62f, 0.06f),
+                               render::TextAlign::Right);
           }
 
           const std::size_t history_end =
             loading.events.empty () ? 0 : loading.events.size () - 1;
           const std::size_t history_begin =
             history_end > 2 ? history_end - 2 : 0;
-          float line_y = panel_y + 174.0f;
+          float line_y = bottom - 20.0f;
           for (std::size_t i = history_begin; i < history_end; ++i) {
             const LoadingEvent& event = loading.events[i];
             std::ostringstream line;
             line << std::fixed << std::setprecision (1) << event.elapsed
-                 << "s  " << event.title;
-            m_hud_dl.color (0.64f, 0.75f, 0.65f, 0.76f);
-            m_loading_meta_font->draw (m_hud_dl, text_x, line_y, line.str ());
-            line_y += 20.0f;
+                 << " s   " << event.title;
+            m_hud.draw_shaded (m_hud_text,
+                               left,
+                               line_y,
+                               line.str (),
+                               style (10.0f, 0.46f, 0.02f));
+            line_y += 16.0f;
           }
         }
 
@@ -1686,6 +1694,7 @@ namespace moppe {
             captured = true;
           }
         }
+        r.draw_hud_text (m_hud_text);
         r.draw_hud (m_hud_dl);
         r.end_frame ();
         if (captured)
@@ -1709,7 +1718,10 @@ namespace moppe {
           return;
 
         m_hud_dl.clear ();
-        m_hud.draw_game_over (m_hud_dl, r.width_pts (), r.height_pts ());
+        m_hud_text.clear ();
+        m_hud.draw_game_over (
+          m_hud_dl, m_hud_text, r.width_pts (), r.height_pts ());
+        r.draw_hud_text (m_hud_text);
         r.draw_hud (m_hud_dl);
         r.end_frame ();
       }
@@ -1739,6 +1751,11 @@ namespace moppe {
             revive ();
           else if (k == Key::Escape && down)
             platform::request_quit ();
+          return;
+        }
+
+        if (k == Key::H && down) {
+          m_hud.set_diagnostics (!m_hud.diagnostics ());
           return;
         }
 
@@ -2086,9 +2103,7 @@ namespace moppe {
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
       Hud m_hud;
-      std::unique_ptr<render::FontAtlas> m_loading_font;
-      std::unique_ptr<render::FontAtlas> m_loading_title_font;
-      std::unique_ptr<render::FontAtlas> m_loading_meta_font;
+      render::TextList m_hud_text;
 
       render::Renderer* m_renderer;
       bool m_automated_regeneration_done = false;

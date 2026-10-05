@@ -5,6 +5,7 @@
 #include <moppe/render/text.hh>
 
 #include <memory>
+#include <string>
 
 namespace moppe {
   namespace render {
@@ -12,24 +13,18 @@ namespace moppe {
   }
 
   namespace game {
-    // Game state consumed by the compact overlay.  Hud::draw clamps
-    // normalized inputs before deriving dial geometry.
+    // Game state consumed by the overlay.  Hud::draw clamps normalized
+    // inputs before deriving geometry.
     struct HudState {
-      // length(bike().velocity()) * 3.6f; ignored (treated
-      // as 0) while on_foot, as at the old call site.
+      // length(bike().velocity()) * 3.6f; ignored while on_foot.
       float speed_kmh;
-      // bike().boost_charge(): 0..1.  Drives the boost dial's
-      // blue reserve arc; ignored (treated as 1.0) on foot.
+      // bike().boost_charge(): 0..1.  The gauge's reserve dashes.
       float boost_ready01;
-      // m_health / 100: 0..1.  Drives the health bar fill and color.
+      // The remaining readings feed only the diagnostic overlay.
       float health01;
-      // m_odometer: meters ridden; displayed as km with one decimal.
       float odometer_m;
-      // m_lives: 0..10 filled hearts.
       int lives;
-      // m_star_field.collected(): the "x N" star counter.
       int stars;
-      // Accumulated stunt score and the current/resulting air whip.
       int score;
       float airtime_s;
       float spin_degrees;
@@ -38,16 +33,17 @@ namespace moppe {
       int landed_points;
       bool landed_clean;
       float landed_age_s;
-      // m_mode == M_FOOT: zeroes the speed, parks the boost dial and
-      // shows the "ON FOOT" tag.
       bool on_foot;
-      // Soaring reuses the speed cluster as an airspeed instrument; the boost
-      // dial becomes a variometer and an airborne bike gets a deploy prompt.
+      // Soaring turns the gauge into an airspeed instrument with a climb
+      // readout; an airborne bike earns the deploy prompt.
       bool gliding;
       bool can_deploy_glider;
       bool can_drop_bike;
+      // On foot within reach of the bike.
+      bool can_mount;
       float vertical_speed_mps;
-      // Real draw-callback interval, used by the ECU telemetry trace.
+      // Real draw-callback interval: paces the fades and feeds the
+      // diagnostic frame rate.
       float frame_time_s;
       // Heading in radians: zero is world +Z (north), positive turns east.
       float heading_radians;
@@ -58,49 +54,123 @@ namespace moppe {
             spin_degrees (0), landed_airtime_s (0), landed_spin_degrees (0),
             landed_points (0), landed_clean (false), landed_age_s (10),
             on_foot (false), gliding (false), can_deploy_glider (false),
-            can_drop_bike (false), vertical_speed_mps (0),
+            can_drop_bike (false), can_mount (false), vertical_speed_mps (0),
             frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
     };
 
-    // Compact instrument cluster: a digital speed arc with overlapping
-    // boost mini dial, plus top-left star, health, and life
-    // readouts.  Records into the caller's HUD DrawList in point
-    // coordinates, y-down, origin top-left.
+    // The overlay keeps out of the way of the landscape.  In ordinary play
+    // it is a single quiet speedometer -- a hairline arc with a riding
+    // notch around a numeral -- and, only when they apply, short prompts
+    // that fade in and out.  Everything is set in one TrueType face through
+    // Slug, so text and the gauge's arcs are exact at any display scale.
+    // The old instrument chrome (score, hearts, trick callouts, compass,
+    // frame telemetry, trail map) survives as a diagnostic overlay behind
+    // set_diagnostics (the H key, or MOPPE_HUD=debug).
     class Hud {
     public:
       Hud ();
 
-      // Builds the font atlases; call once after the renderer is up.
+      // Loads the face and the gauge shapes; call once after the renderer
+      // is up.  A missing font leaves the overlay blank rather than
+      // stopping the game.
       void load (render::Renderer& renderer);
 
       void draw (render::DrawList& dl,
+                 render::TextList& text,
                  const HudState& state,
                  int width_pts,
                  int height_pts);
 
-      // "Sorry.  You are in great pain."  Covers the frame in black
-      // (the GL build cleared to black instead of rendering a scene).
-      void draw_game_over (render::DrawList& dl, int width_pts, int height_pts);
+      // "Sorry.  You are in great pain."  Covers the frame in black.
+      void draw_game_over (render::DrawList& dl,
+                           render::TextList& text,
+                           int width_pts,
+                           int height_pts);
+
+      // A centred key-and-action prompt at the bottom of the frame, as
+      // used in play; the cinematic reuses it for its ride prompt.
+      void draw_prompt (render::TextList& text,
+                        const std::string& key,
+                        const std::string& action,
+                        float alpha,
+                        int width_pts,
+                        int height_pts) const;
+
+      // The opening cinematic's prompt to skip ahead and ride; nothing on a
+      // touch screen, which has no key for it.
+      void draw_ride_prompt (render::TextList& text,
+                             float alpha,
+                             int width_pts,
+                             int height_pts) const;
+
+      // Text with a soft shade beneath it, so light lettering stays
+      // legible over snow and sky alike.
+      void
+      draw_shaded (render::TextList& text,
+                   float x,
+                   float y,
+                   const std::string& line,
+                   const render::TextStyle& style,
+                   render::TextAlign align = render::TextAlign::Left) const;
+
+      bool diagnostics () const {
+        return m_diagnostics;
+      }
+
+      void set_diagnostics (bool on) {
+        m_diagnostics = on;
+      }
+
+      // The HUD face, for other overlays (loading screen); null until
+      // load() succeeds.
+      const render::Font* font () const {
+        return m_font.get ();
+      }
 
     private:
-      void rebuild_static (int width_pts, int height_pts);
+      struct Shape;
 
-      std::unique_ptr<render::FontAtlas> m_helv10;    // dial labels
-      std::unique_ptr<render::FontAtlas> m_helv12;    // ON FOOT etc.
-      std::unique_ptr<render::FontAtlas> m_display24; // digital speed
-      std::unique_ptr<render::FontAtlas> m_times24;   // game over
-      float m_fps_history[48];
+      void draw_gauge (render::TextList& text,
+                       const HudState& state,
+                       float dt,
+                       int width_pts,
+                       int height_pts);
+      void draw_prompts (render::TextList& text,
+                         const HudState& state,
+                         float dt,
+                         int width_pts,
+                         int height_pts);
+      void draw_diagnostics (render::DrawList& dl,
+                             render::TextList& text,
+                             const HudState& state,
+                             int width_pts,
+                             int height_pts);
+      void place_shape (render::TextList& text,
+                        const render::SlugGlyph& shape,
+                        float cx,
+                        float cy,
+                        float scale,
+                        float angle_radians,
+                        float red,
+                        float green,
+                        float blue,
+                        float alpha,
+                        float softness = 1.0f) const;
+
+      std::unique_ptr<render::Font> m_font;
+      render::GlyphSetPtr m_shapes;
+      std::unique_ptr<Shape> m_shape;
+
+      bool m_diagnostics;
       float m_fps;
-      int m_fps_cursor;
-      int m_fps_count;
-
-      // Everything that only depends on the layout (dial faces, ticks,
-      // panels, fixed labels) is tessellated once into this list and
-      // spliced into the frame each draw; only needles, arcs, bars, and
-      // live text re-record.
-      render::DrawList m_static;
-      int m_static_width;
-      int m_static_height;
+      // Smoothed visibility of each element; a prompt keeps its last words
+      // while it fades out.
+      float m_gauge_alpha;
+      float m_reserve_alpha;
+      float m_reserve_hold;
+      float m_prompt_alpha;
+      std::string m_prompt_key;
+      std::string m_prompt_action;
     };
   }
 }

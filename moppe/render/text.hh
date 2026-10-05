@@ -1,77 +1,157 @@
 #ifndef MOPPE_RENDER_TEXT_HH
 #define MOPPE_RENDER_TEXT_HH
 
-#include <moppe/render/draw.hh>
+#include <moppe/render/slug.hh>
+#include <moppe/render/truetype.hh>
 #include <moppe/render/types.hh>
 
 #include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
 
 namespace moppe {
   namespace render {
     class Renderer;
 
-    // Glyph atlas for one font at one size: the port of the GLUT
-    // bitmap fonts.  At construction every ASCII glyph (32..126) is
-    // rasterized through platform::rasterize_glyph at point_size x
-    // scale (the display's backing scale, so text stays sharp on
-    // Retina) and packed into a single RGBA8 texture.  Glyphs are
-    // stored white with coverage in alpha, so the DrawList vertex
-    // color tints the text exactly like glColor tinted glutBitmap
-    // characters.
-    //
-    // draw() emits textured quads into the caller's DrawList; the
-    // caller owns all state (the HUD sets blend on, depth off, cull
-    // off, lit/fogged off).  (x, y) is the BASELINE origin in points,
-    // y-down with the origin top-left, matching the glRasterPos
-    // convention of the GL build closely enough that the old HUD
-    // layout constants keep working.
-    class FontAtlas {
+    // Placed Slug glyphs awaiting a draw, grouped into runs that share one
+    // uploaded glyph set.  It is the text counterpart of DrawList: the
+    // caller records GlyphQuads in whatever target space the draw call
+    // expects (HUD points for Renderer::draw_hud_text) and the backend
+    // expands each into a dilated quad.
+    class TextList {
     public:
-      FontAtlas (Renderer& renderer,
-                 const char* family,
-                 float point_size,
-                 float scale);
+      struct Run {
+        GlyphSetPtr glyphs;
+        std::uint32_t first;
+        std::uint32_t count;
+      };
 
-      // Draws text with the DrawList's current color; leaves the
-      // list's texture unset (null) afterwards.  Returns the pen x
-      // position after the last glyph.
-      float
-      draw (DrawList& dl, float x, float y, const std::string& text) const;
-
-      // Width of the string in points.
-      float measure (const std::string& text) const;
-
-      float point_size () const {
-        return m_point_size;
+      void clear () {
+        m_quads.clear ();
+        m_runs.clear ();
       }
 
-      // False when the platform has no glyph rasterizer (draw and
-      // measure become no-ops).
-      bool ok () const {
-        return (bool)m_texture;
+      bool empty () const {
+        return m_quads.empty ();
+      }
+
+      void add (const GlyphSetPtr& glyphs, const GlyphQuad& quad);
+
+      // Moves every recorded quad, as DrawList::translate moves what
+      // follows it; the HUD uses it to step inside the safe area.
+      void translate (float dx, float dy);
+
+      const std::vector<GlyphQuad>& quads () const {
+        return m_quads;
+      }
+
+      const std::vector<Run>& runs () const {
+        return m_runs;
       }
 
     private:
-      enum {
-        FIRST_CHAR = 32,
-        LAST_CHAR = 126,
-        GLYPH_COUNT = LAST_CHAR - FIRST_CHAR + 1
-      };
-
-      struct Glyph {
-        float u0, v0, u1, v1; // atlas rect
-        float x_off;          // pen -> quad left edge, points
-        float y_top;          // baseline up to quad top edge, points
-        float w, h;           // quad size, points
-        float advance;        // pen advance, points
-        bool present;
-      };
-
-      Glyph m_glyphs[GLYPH_COUNT];
-      TexturePtr m_texture;
-      float m_point_size;
-      float m_scale;
+      std::vector<GlyphQuad> m_quads;
+      std::vector<Run> m_runs;
     };
+
+    struct TextStyle {
+      float size = 16.0f; // points per em
+      float red = 1.0f, green = 1.0f, blue = 1.0f, alpha = 1.0f;
+      // Extra space after every glyph, in em: letterspacing for small
+      // capitals and labels.
+      float tracking = 0.0f;
+      // The coverage filter's width in pixels.  One is exact, crisp
+      // text; a wide filter draws the same outline softly, which is how
+      // the HUD lays a gentle shadow beneath light text.
+      float softness = 1.0f;
+      // Give every digit the widest digit's advance so changing numbers
+      // hold still.
+      bool tabular_figures = false;
+    };
+
+    enum class TextAlign : std::uint8_t { Left, Center, Right };
+
+    // A TrueType face prepared for Slug: the outlines of a fixed
+    // repertoire are converted to band data once, at construction, and
+    // uploaded as one glyph set.  Layout is single-line, by advance and
+    // pair kerning, in HUD points with y down; glyph outlines keep their
+    // y-up em frame and the quad's axes flip them onto the screen.
+    class Font {
+    public:
+      // Prepares every codepoint of `repertoire` the face maps, plus
+      // .notdef.  Without a renderer (tests) nothing is uploaded and
+      // draw() records nothing.
+      explicit Font (TrueTypeFont face,
+                     std::u32string_view repertoire = latin_repertoire ());
+
+      // Parses the font file at an asset-relative path and uploads it.
+      static std::unique_ptr<Font> load (Renderer& renderer,
+                                         const std::string& asset);
+
+      // Printable ASCII, Latin-1, and the punctuation typographers reach
+      // for: dashes, curly quotes, ellipsis, bullets, primes, arrows.
+      static std::u32string_view latin_repertoire ();
+
+      void upload (Renderer& renderer);
+
+      bool ok () const {
+        return (bool)m_glyph_set;
+      }
+
+      const TrueTypeFont& face () const {
+        return m_face;
+      }
+
+      const SlugGlyphData& data () const {
+        return m_builder.data ();
+      }
+
+      // The prepared glyph for a codepoint, or null when the face lacks it
+      // (layout then falls back to .notdef).
+      const SlugGlyph* glyph (char32_t codepoint) const;
+
+      // Vertical metrics in points at a given size.
+      float ascender (float size) const;
+      float descender (float size) const;
+      float cap_height (float size) const;
+      float x_height (float size) const;
+
+      float measure (std::string_view utf8, const TextStyle& style) const;
+
+      // Records one line with its baseline at (x, y) in HUD points.  The
+      // anchor is the line's left edge, centre, or right edge per `align`.
+      // Returns the pen position after the last glyph.
+      float draw (TextList& list,
+                  float x,
+                  float y,
+                  std::string_view utf8,
+                  const TextStyle& style,
+                  TextAlign align = TextAlign::Left) const;
+
+    private:
+      struct Entry {
+        SlugGlyph slug;
+        std::uint16_t index = 0;
+        float advance = 0.0f; // em
+      };
+
+      const Entry& entry (char32_t codepoint) const;
+      float pen_advance (const Entry& entry,
+                         char32_t codepoint,
+                         const TextStyle& style) const;
+
+      TrueTypeFont m_face;
+      SlugAtlasBuilder m_builder;
+      std::unordered_map<char32_t, Entry> m_entries;
+      Entry m_notdef;
+      float m_digit_advance = 0.0f; // em
+      float m_pixels_per_point = 0.0f;
+      GlyphSetPtr m_glyph_set;
+    };
+
+    // Decodes UTF-8, substituting U+FFFD for malformed sequences.
+    std::u32string decode_utf8 (std::string_view utf8);
   }
 }
 
