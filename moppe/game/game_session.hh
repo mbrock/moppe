@@ -22,7 +22,10 @@ namespace moppe::game {
   public:
     using State = GameState;
 
-    GameSession (const WorldParams& world, const map::SurfaceGeometry& surface);
+    // The bike physics is chosen once per session; see mov::BikePhysics.
+    GameSession (const WorldParams& world,
+                 const map::SurfaceGeometry& surface,
+                 mov::BikePhysics physics = mov::default_bike_physics);
     GameSession (const GameSession&) = delete;
     GameSession& operator= (const GameSession&) = delete;
     GameSession (GameSession&&) = delete;

@@ -4,13 +4,21 @@
 
 #include <moppe/gfx/math.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/mov/rigid_bike.hh>
 #include <moppe/mov/trunk_field.hh>
 
 #include <algorithm>
+#include <memory>
 
 namespace moppe {
   namespace mov {
     using namespace moppe::map;
+
+    // Which simulation moves the bike. Classic is the original point mass
+    // with a hand-written heading, grip and lean; rigid is the Box3D
+    // assemblage of chassis, wheels and suspension in rigid_bike.hh.
+    enum class BikePhysics { classic, rigid };
+    inline constexpr BikePhysics default_bike_physics = BikePhysics::rigid;
 
     class Vehicle {
     public:
@@ -39,6 +47,12 @@ namespace moppe {
         speed_t impact {};
         meters_t fall_top {};
         meters_t fall_drop {};
+        // The rigid assemblage, when that physics drives the bike. Its
+        // coarse pose is also published above as position, velocity, and
+        // heading; restoring a state whose coarse pose was edited moves the
+        // assemblage rigidly to match.
+        RigidBikeState rigid {};
+        bool parked {};
       };
 
       // max_thrust caps the wheel force (launch punch); power caps
@@ -49,7 +63,13 @@ namespace moppe {
                const SurfaceGeometry& surface,
                newtons_t max_thrust,
                watts_t power,
-               kilograms_t mass);
+               kilograms_t mass,
+               BikePhysics physics = BikePhysics::classic);
+      ~Vehicle ();
+
+      BikePhysics physics () const {
+        return m_rigid ? BikePhysics::rigid : BikePhysics::classic;
+      }
 
       void update (seconds_t dt);
 
@@ -85,12 +105,23 @@ namespace moppe {
         m_boost_charge = std::min (1.0f, m_boost_charge + amount);
       }
 
+      // A bike nobody rides stays where it was left: its wheels lock and,
+      // once it has settled on the ground, it is held still until mounted.
+      void set_parked (bool parked) {
+        m_parked = parked;
+      }
+      bool parked () const {
+        return m_parked;
+      }
+
       void set_water_level (meters_t level) {
         m_water_level = level;
       }
 
       void set_trunks (const TrunkField* trunks) {
         m_trunks = trunks;
+        if (m_rigid)
+          m_rigid->set_trunks (trunks);
       }
 
       // Move an inactive bike as a rigid payload beneath the glider.
@@ -100,31 +131,12 @@ namespace moppe {
                   const Vec3& up);
 
       // Respawn: back to a spot, stationary, jets cooled down
-      void reset (const Vec3& position) {
-        m_position = moppe::position (position);
-        m_velocity = moppe::velocity (Vec3 ());
-        m_boost_input = 0;
-        m_boost_drive = 0;
-        m_boost_level = 0;
-        m_boost_charge = 1;
-        m_boost_recharge_delay = seconds (0);
-        m_boost_flight = false;
-        m_impact = 0 * u::m / u::s;
-        m_render_heading = m_heading;
-        m_render_normal = Vec3 (0, 1, 0);
-      }
+      void reset (const Vec3& position);
 
-      void set_heading (const Vec3& h) {
-        Vec3 v (h[0], 0, h[2]);
-        if (length2 (v) > 0.0001f) {
-          normalize (v);
-          m_heading = v;
-          m_thrust_orientation = v;
-        }
-      }
+      void set_heading (const Vec3& h);
 
       bool grounded () const {
-        return is_grounded ();
+        return m_rigid ? m_rigid->grounded () : is_grounded ();
       }
 
       // Sideways speed relative to where the bike points; big when
@@ -188,6 +200,25 @@ namespace moppe {
       Vec3 render_orientation () const {
         return m_render_heading;
       }
+      // Where the drawn frame stands: the classic bike bobs it on its
+      // visual spring, while the rigid chassis is drawn where it is.
+      Vec3 render_position () const {
+        if (m_rigid)
+          return position ();
+        return position () + Vec3 (0.0f, m_susp, 0.0f);
+      }
+      // How far each wheel hangs below its drawn rest position along the
+      // chassis' down axis, in metres; negative is compressed.
+      float rear_wheel_drop () const {
+        return m_rigid ? m_rear_drop : 0.675f * m_susp;
+      }
+      float front_wheel_drop () const {
+        return m_rigid ? m_front_drop : 0.4725f * m_susp;
+      }
+      // The fork's angle about the steering head; positive turns right.
+      radians_t fork_angle () const {
+        return m_rigid ? m_fork * u::rad : 0.4f * m_yaw;
+      }
 
       Vec3 position () const {
         return position_value (m_position);
@@ -206,6 +237,9 @@ namespace moppe {
       }
 
     private:
+      void update_jets (seconds_t dt, bool grounded);
+      void update_rigid (seconds_t dt);
+      void sync_rigid ();
       void steer (seconds_t dt);
       void apply_grip (seconds_t dt, const Vec3& n);
       void calculate_orientation ();
@@ -270,6 +304,14 @@ namespace moppe {
       meters_t m_fall_drop; // set on landing: peak minus touchdown
 
       const TrunkField* m_trunks = nullptr;
+
+      // Present only for rigid physics, which then owns the motion; the
+      // members above are kept as its published readings.
+      std::unique_ptr<RigidBike> m_rigid;
+      bool m_parked = false;
+      float m_rear_drop = 0.0f;
+      float m_front_drop = 0.0f;
+      float m_fork = 0.0f;
     };
   }
 }

@@ -21,12 +21,17 @@ namespace moppe {
     static const float boost_reserve_charge = 0.06f;
     static const float boost_emergency_level = 0.18f;
 
+    // The rigid bike integrates at the game's own fixed rate; longer steps
+    // are split into equal substeps of at most this length.
+    static const float rigid_step_seconds = 1.0f / 120.0f;
+
     Vehicle::Vehicle (position_t position,
                       degrees_t orientation,
                       const SurfaceGeometry& surface,
                       newtons_t max_thrust,
                       watts_t power,
-                      kilograms_t mass)
+                      kilograms_t mass,
+                      BikePhysics physics)
         : m_position (position), m_velocity (moppe::velocity (Vec3 ())),
           m_heading (sin (orientation), 0, cos (orientation)),
           m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
@@ -40,33 +45,59 @@ namespace moppe {
           m_fall_top (0 * u::m), m_fall_drop (0 * u::m) {
       calculate_orientation ();
       fall_to_ground ();
+      if (physics == BikePhysics::rigid) {
+        RigidBike::Params params;
+        params.max_drive_force = m_max_thrust.numerical_value_in (u::N);
+        params.power = m_power.numerical_value_in (u::W);
+        params.mass = m_mass.numerical_value_in (u::kg);
+        const Vec3 ground = position_value (m_position);
+        m_rigid = std::make_unique<RigidBike> (
+          surface,
+          params,
+          ground + Vec3 (0.0f, RigidBike::ride_height, 0.0f),
+          m_heading);
+        sync_rigid ();
+      }
     }
 
+    Vehicle::~Vehicle () = default;
+
     Vehicle::State Vehicle::state () const {
-      return { m_position,
-               m_velocity,
-               m_heading,
-               m_thrust_orientation,
-               m_yaw,
-               m_yaw_target,
-               m_lean,
-               m_render_heading,
-               m_render_normal,
-               m_susp,
-               m_susp_v,
-               m_wheel_spin,
-               m_boost_flight,
-               m_thrust,
-               m_boost_input,
-               m_boost_drive,
-               m_boost_level,
-               m_boost_charge,
-               m_boost_recharge_delay,
-               m_water_level,
-               m_airborne_time,
-               m_impact,
-               m_fall_top,
-               m_fall_drop };
+      State state { m_position,
+                    m_velocity,
+                    m_heading,
+                    m_thrust_orientation,
+                    m_yaw,
+                    m_yaw_target,
+                    m_lean,
+                    m_render_heading,
+                    m_render_normal,
+                    m_susp,
+                    m_susp_v,
+                    m_wheel_spin,
+                    m_boost_flight,
+                    m_thrust,
+                    m_boost_input,
+                    m_boost_drive,
+                    m_boost_level,
+                    m_boost_charge,
+                    m_boost_recharge_delay,
+                    m_water_level,
+                    m_airborne_time,
+                    m_impact,
+                    m_fall_top,
+                    m_fall_drop };
+      state.parked = m_parked;
+      if (m_rigid) {
+        // The coarse pose is derived from the snapshot itself, so restoring
+        // an unedited state finds them equal bit for bit.
+        state.rigid = m_rigid->state ();
+        state.position =
+          moppe::position (RigidBike::reference_of (state.rigid));
+        state.velocity = moppe::velocity (state.rigid.chassis.linear_velocity);
+        state.heading = RigidBike::forward_of (state.rigid);
+      }
+      return state;
     }
 
     void Vehicle::restore (const State& state) {
@@ -94,6 +125,52 @@ namespace moppe {
       m_impact = state.impact;
       m_fall_top = state.fall_top;
       m_fall_drop = state.fall_drop;
+      m_parked = state.parked;
+      if (m_rigid) {
+        RigidBikeState rigid = state.rigid;
+        const Vec3& position = position_value (state.position);
+        const Vec3& velocity = velocity_value (state.velocity);
+        if (!(position == RigidBike::reference_of (rigid) &&
+              velocity == rigid.chassis.linear_velocity &&
+              state.heading == RigidBike::forward_of (rigid)))
+          rigid = RigidBike::repose (rigid, position, state.heading, velocity);
+        m_rigid->restore (rigid);
+        sync_rigid ();
+      }
+    }
+
+    void Vehicle::reset (const Vec3& position) {
+      m_position = moppe::position (position);
+      m_velocity = moppe::velocity (Vec3 ());
+      m_boost_input = 0;
+      m_boost_drive = 0;
+      m_boost_level = 0;
+      m_boost_charge = 1;
+      m_boost_recharge_delay = seconds (0);
+      m_boost_flight = false;
+      m_impact = 0 * u::m / u::s;
+      m_render_heading = m_heading;
+      m_render_normal = Vec3 (0, 1, 0);
+      if (m_rigid) {
+        m_rigid->place (position, m_heading, Vec3 (0, 1, 0), Vec3 ());
+        sync_rigid ();
+      }
+    }
+
+    void Vehicle::set_heading (const Vec3& h) {
+      Vec3 v (h[0], 0, h[2]);
+      if (length2 (v) <= 0.0001f)
+        return;
+      normalize (v);
+      m_heading = v;
+      m_thrust_orientation = v;
+      if (m_rigid) {
+        m_rigid->place (m_rigid->reference_position (),
+                        v,
+                        Vec3 (0, 1, 0),
+                        m_rigid->velocity ());
+        sync_rigid ();
+      }
     }
 
     void Vehicle::carry (position_t position,
@@ -116,6 +193,13 @@ namespace moppe {
       m_airborne_time = seconds (0.2f);
       m_fall_top = std::max (
         m_fall_top, static_cast<float> (position_value (m_position)[1]) * u::m);
+      if (m_rigid) {
+        m_rigid->place (position_value (position),
+                        m_heading,
+                        m_render_normal,
+                        velocity_value (velocity));
+        sync_rigid ();
+      }
     }
 
     void Vehicle::calculate_orientation () {
@@ -299,20 +383,11 @@ namespace moppe {
       velocity = fwd * vf + vn + lat * decay (grip, dt);
     }
 
-    void Vehicle::update (seconds_t dt) {
+    // The trigger meters a finite reserve.  Recharging pauses after a
+    // burn and is deliberately slower in the air, so feathering the
+    // jets cannot produce permanent flight.
+    void Vehicle::update_jets (seconds_t dt, bool grounded) {
       const float dt_s = seconds_value (dt);
-      // Steering input ramps in rather than snapping: smooth onset
-      // for the heading, the grip model, and the fork visual at once
-      m_yaw += (m_yaw_target - m_yaw) * smoothing_alpha (9.0f / u::s, dt);
-
-      steer (dt);
-      calculate_orientation ();
-
-      const bool contact = driving_contact ();
-
-      // The trigger meters a finite reserve.  Recharging pauses after a
-      // burn and is deliberately slower in the air, so feathering the
-      // jets cannot produce permanent flight.
       if (m_boost_input > 0.001f) {
         if (m_boost_charge > boost_reserve_charge) {
           const float available = (m_boost_charge - boost_reserve_charge) *
@@ -335,13 +410,39 @@ namespace moppe {
         if (m_boost_recharge_delay > seconds (0))
           m_boost_recharge_delay -= dt;
         else {
-          const float recharge_scale = is_grounded () ? 1.0f : 0.35f;
+          const float recharge_scale = grounded ? 1.0f : 0.35f;
           m_boost_charge =
             std::min (1.0f,
                       m_boost_charge + recharge_scale * dt_s /
                                          seconds_value (boost_recharge_time));
         }
       }
+    }
+
+    void Vehicle::update (seconds_t dt) {
+      if (m_rigid) {
+        update_rigid (dt);
+        return;
+      }
+      const float dt_s = seconds_value (dt);
+      // Steering input ramps in rather than snapping: smooth onset
+      // for the heading, the grip model, and the fork visual at once
+      m_yaw += (m_yaw_target - m_yaw) * smoothing_alpha (9.0f / u::s, dt);
+
+      // A parked classic bike resting on the ground simply stays put.
+      if (m_parked && is_grounded ()) {
+        m_velocity = moppe::velocity (Vec3 ());
+        update_jets (dt, true);
+        check_ground_collision ();
+        m_airborne_time = seconds (0);
+        return;
+      }
+
+      steer (dt);
+      calculate_orientation ();
+
+      const bool contact = driving_contact ();
+      update_jets (dt, is_grounded ());
 
       const radians_t tilt = boost_max_tilt * std::abs (m_boost_drive);
       const float drive_sign = m_boost_drive < 0 ? -1.0f : 1.0f;
@@ -511,6 +612,99 @@ namespace moppe {
         m_wheel_spin =
           std::fmod (m_wheel_spin + rate * dt_s, 2.0f * 3.14159265f);
       }
+    }
+
+    // The rigid bike keeps the classic bike's controls, jets, and scoring
+    // signals; only the motion is the assemblage's. A landing's impact is the
+    // speed into the ground just before the wheels touched, and collisions
+    // of the chassis itself report their approach speed: a trunk as the
+    // classic bike felt it, the frame slamming the ground in full.
+    void Vehicle::update_rigid (seconds_t dt) {
+      const int steps =
+        std::max (1,
+                  static_cast<int> (std::ceil (
+                    seconds_value (dt) / rigid_step_seconds - 0.001f)));
+      const seconds_t h = dt / static_cast<float> (steps);
+      const float h_s = seconds_value (h);
+      const float boost =
+        boost_acceleration.numerical_value_in (u::m / pow<2> (u::s));
+      for (int i = 0; i < steps; ++i) {
+        m_yaw += (m_yaw_target - m_yaw) * smoothing_alpha (9.0f / u::s, h);
+        update_jets (h, m_rigid->grounded ());
+
+        Vec3 ahead = m_rigid->forward ();
+        ahead[1] = 0.0f;
+        if (length2 (ahead) < 1e-6f)
+          ahead = Vec3 (m_heading[0], 0.0f, m_heading[2]);
+        if (length2 (ahead) > 1e-6f)
+          normalize (ahead);
+        const radians_t tilt = boost_max_tilt * std::abs (m_boost_drive);
+        const float drive_sign = m_boost_drive < 0 ? -1.0f : 1.0f;
+        const Vec3 boost_direction =
+          Vec3 (0, cos (tilt), 0) + ahead * (drive_sign * sin (tilt));
+
+        RigidBikeControls controls;
+        controls.throttle = scalar_value (m_thrust);
+        controls.steer = radians_value (m_yaw);
+        controls.boost_acceleration = boost_direction * (boost * m_boost_level);
+        controls.parked = m_parked;
+        controls.wading = m_rigid->reference_position ()[1] - radius <
+                          m_water_level.numerical_value_in (u::m);
+
+        const Vec3 before = m_rigid->velocity ();
+        m_rigid->step (controls, h);
+        const Vec3 at = m_rigid->reference_position ();
+        const meters_t height = at[1] * u::m;
+
+        if (m_rigid->grounded ()) {
+          if (m_airborne_time > seconds (0.25f)) {
+            const Vec3 n = spatial::sample<terrain::terrain_normal> (
+                             m_map, moppe::position (Vec3 (at[0], 0.0f, at[2])))
+                             .numerical_value_in (mp_units::one);
+            m_impact = std::max (
+              m_impact, std::max (0.0f, -dot (before, n)) * u::m / u::s);
+            // Boost-assisted landings are partly forgiven, as on the
+            // classic bike.
+            if (m_boost_flight)
+              m_impact *= 0.75f;
+            m_fall_drop = m_fall_top - height;
+          }
+          if (m_boost_level <= 0)
+            m_boost_flight = false;
+          m_airborne_time = seconds (0);
+          m_fall_top = height;
+        } else {
+          m_airborne_time += h;
+          m_fall_top = std::max (m_fall_top, height);
+        }
+        m_impact =
+          std::max (m_impact, 0.4f * m_rigid->trunk_hit () * u::m / u::s);
+        m_impact = std::max (m_impact, m_rigid->body_hit () * u::m / u::s);
+
+        m_wheel_spin = std::fmod (
+          m_wheel_spin + m_rigid->wheel_spin_rate () * h_s, 2.0f * 3.14159265f);
+        if (m_wheel_spin < 0.0f)
+          m_wheel_spin += 2.0f * 3.14159265f;
+      }
+      sync_rigid ();
+    }
+
+    // Publishes the assemblage's pose through the members every reader of
+    // the bike already uses. The chassis carries its own roll, so there is
+    // no separate visual lean.
+    void Vehicle::sync_rigid () {
+      m_position = moppe::position (m_rigid->reference_position ());
+      m_velocity = moppe::velocity (m_rigid->velocity ());
+      m_heading = m_rigid->forward ();
+      m_thrust_orientation = m_heading;
+      m_render_heading = m_heading;
+      m_render_normal = m_rigid->up ();
+      m_lean = 0.0f;
+      m_front_drop = m_rigid->front_extension ();
+      m_rear_drop = m_rigid->rear_extension ();
+      m_susp = 0.5f * (m_front_drop + m_rear_drop);
+      m_susp_v = 0.0f;
+      m_fork = m_rigid->steer_angle ();
     }
 
     void Vehicle::set_boost (float boost, float drive) {

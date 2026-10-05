@@ -11,3 +11,11 @@ Erin Catto's 3D physics engine, MIT licensed (see `LICENSE`).
 
 To update: copy `include/` and `src/*.{c,h,inl}` from a newer upstream
 checkout over these files and record the new commit here.
+
+Local patches (reapply after an update unless upstream has fixed them):
+
+- `src/wheel_joint.c`, `b3WarmStartWheelJoint`: a wheel joint without
+  steering added the spin-motor impulse to an angular impulse that already
+  held it, so every substep warm-started the motor twice and a driven wheel
+  received up to double its maximum motor torque. The non-steering branch now
+  assigns, as the steering branch does.

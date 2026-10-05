@@ -59,6 +59,19 @@ or effect history across incompatible terrain. A `GameState` checkpoint is
 therefore portable between sessions prepared against the same world, not
 between generated worlds.
 
+The rigid bike (`mov::RigidBike`) owns a private, single-threaded Box3D
+world. Its checkpoint, `Vehicle::State::rigid`, holds the three bodies'
+poses and velocities about their centres of mass, the ground patch origin,
+and the last step's contact readings and rider lean. `restore` destroys and
+rebuilds that world in one canonical order, so every restore of a checkpoint
+replays identically; Box3D's warm-start impulses and cached contacts are not
+captured, so a restored ride tracks the uninterrupted one closely but not bit
+for bit. The graphics benchmark therefore restores before every epoch,
+including the first. The vehicle's coarse `position`, `velocity`, and
+`heading` are derived from the snapshot; a state whose coarse pose was edited
+moves the whole assemblage rigidly to match on restore. The session marks the
+bike `parked` whenever nobody rides it.
+
 This is the first replayable slice, not yet a claim of complete determinism.
 Renderer history is not in `GameState`. World generation,
 terrain analysis,

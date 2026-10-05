@@ -130,6 +130,9 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
       break;
     case game::GraphicsBenchmarkReplay::Boundary::prelude_complete:
       checkpoint = session.state ();
+      // As the game does, every epoch including the first starts from a
+      // restored checkpoint.
+      session.restore (*checkpoint);
       ++prelude_complete_count;
       break;
     case game::GraphicsBenchmarkReplay::Boundary::epoch_complete:

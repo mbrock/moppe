@@ -99,7 +99,8 @@ namespace moppe {
             m_water_shot (options.water_shot), m_gazetteer (options.gazetteer),
             m_screenshot_frames (0), m_ready (false),
             m_benchmark (options.benchmark),
-            m_benchmark_baseline (options.graphics) {
+            m_benchmark_baseline (options.graphics),
+            m_bike_physics (options.bike_physics) {
         if (m_benchmark)
           m_benchmark_replay.emplace (GraphicsBenchmarkReplay::Config {
             m_benchmark->prelude_frames,
@@ -115,7 +116,10 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("MoppeGame::setup");
         m_renderer = &r;
         std::cerr << "moppe: simulation: fixed-step=120 Hz, catch-up-limit="
-                  << MAX_SIMULATION_CATCH_UP_STEPS << " steps" << std::endl;
+                  << MAX_SIMULATION_CATCH_UP_STEPS << " steps, bike-physics="
+                  << (m_bike_physics == mov::BikePhysics::rigid ? "rigid"
+                                                                : "classic")
+                  << std::endl;
 
         // Fast, main-thread resource setup; the heavy world build
         // runs behind the loading screen.
@@ -613,7 +617,8 @@ namespace moppe {
         m_generated_world = std::move (completed);
         m_params = m_generated_world->params ();
         m_recipe = m_generated_world->recipe ();
-        m_session = std::make_unique<GameSession> (world (), surface ());
+        m_session =
+          std::make_unique<GameSession> (world (), surface (), m_bike_physics);
         retired_session.reset ();
         retired_world.reset ();
       }
@@ -2073,8 +2078,10 @@ namespace moppe {
         if (!frame || frame->prelude || !m_benchmark_checkpoint)
           throw std::logic_error ("graphics benchmark lost its checkpoint");
 
-        if (frame->epoch > 0)
-          session ().restore (*m_benchmark_checkpoint);
+        // The first epoch restores too: a restore rebuilds the rigid bike's
+        // physics world without the solver's warm-start history, so only a
+        // restored session replays exactly like every other epoch.
+        session ().restore (*m_benchmark_checkpoint);
         m_renderer->reset_temporal_state ();
         m_graphics = m_benchmark_baseline;
         m_benchmark_mask = apply_graphics_benchmark_mask (
@@ -2275,6 +2282,7 @@ namespace moppe {
       std::atomic<bool> m_ready;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;
+      mov::BikePhysics m_bike_physics;
       std::optional<GraphicsBenchmarkReplay> m_benchmark_replay;
       std::optional<GameState> m_benchmark_checkpoint;
       std::optional<GraphicsBenchmarkReplay::Frame> m_benchmark_render_frame;

@@ -27,13 +27,18 @@ namespace moppe::game {
   // Renderer-facing snapshots of the parts of a vehicle that actually affect
   // its visible pose.  They intentionally omit controls and physical state.
   struct VehiclePose {
+    // The drawn frame's origin, about a metre above the ground at rest.
     Vec3 position {};
     Vec3 render_orientation { 0, 0, 1 };
     Vec3 render_normal { 0, 1, 0 };
-    float suspension = 0.0f;
+    // Metres each wheel hangs below its rest position along the frame's
+    // down axis; negative is compressed.
+    float rear_wheel_drop = 0.0f;
+    float front_wheel_drop = 0.0f;
     float lean_radians = 0.0f;
     float wheel_spin_radians = 0.0f;
-    float yaw_radians = 0.0f;
+    // Fork angle about the steering head; positive turns right.
+    float fork_radians = 0.0f;
     float thrust = 0.0f;
     float boost_level = 0.0f;
     float boost_drive = 0.0f;

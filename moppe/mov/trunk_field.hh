@@ -49,6 +49,13 @@ namespace moppe {
       [[nodiscard]] TrunkContact
       collide (const Vec3& bottom, const Vec3& top, float radius) const;
 
+      // The trunks rooted in the cells within `reach` of `centre`, each moved
+      // to its periodic copy nearest the centre, in a stable order. A world
+      // that simulates bodies among the trunks takes its own copies from
+      // here rather than sharing this field's streamed residency.
+      [[nodiscard]] std::vector<Trunk> gather (const Vec3& centre,
+                                               float reach) const;
+
       [[nodiscard]] std::size_t trunk_count () const noexcept;
       [[nodiscard]] std::size_t resident_cells () const noexcept;
 

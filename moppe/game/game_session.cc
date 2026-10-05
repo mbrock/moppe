@@ -174,13 +174,15 @@ namespace moppe::game {
   }
 
   GameSession::GameSession (const WorldParams& world,
-                            const map::SurfaceGeometry& surface)
+                            const map::SurfaceGeometry& surface,
+                            mov::BikePhysics physics)
       : m_bike (world.spawn_position (),
                 45 * u::deg,
                 surface,
                 2600 * u::N,
                 30 * u::kW,
-                150 * u::kg),
+                150 * u::kg,
+                physics),
         m_glider (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
@@ -266,6 +268,10 @@ namespace moppe::game {
     session.bike ().set_trunks (trunks);
 
     apply_input_frame (session, surface, input);
+    // Only a ridden bike moves under its own physics; one left standing is
+    // parked until someone mounts it again.
+    session.bike ().set_parked (logic.m_mode != M_BIKE &&
+                                !session.can_drop_bike ());
 
     if (!session.can_drop_bike ())
       session.bike ().update (dt);

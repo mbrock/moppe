@@ -577,9 +577,9 @@ void b3WarmStartWheelJoint( b3JointSim* base, b3StepContext* context )
 			0.5f, b3RotateVector( quatA, b3Add( b3MulSV( relQ.s, b3Vec3_axisX ), b3Cross( relQ.v, b3Vec3_axisX ) ) ) );
 		b3Vec3 perpAxisY = b3MulSV(
 			0.5f, b3RotateVector( quatA, b3Add( b3MulSV( relQ.s, b3Vec3_axisY ), b3Cross( relQ.v, b3Vec3_axisY ) ) ) );
-		angularImpulse = b3Add(
-			angularImpulse,
-			b3Blend3( angularImpulseX, perpAxisX, angularImpulseY, perpAxisY, joint->spinImpulse, spinAxis ) );
+		// moppe: assign rather than add, as the steering branch does; adding
+		// warm-started the spin motor's impulse twice (see VENDOR.md).
+		angularImpulse = b3Blend3( angularImpulseX, perpAxisX, angularImpulseY, perpAxisY, joint->spinImpulse, spinAxis );
 	}
 
 	if ( stateA->flags & b3_dynamicFlag )

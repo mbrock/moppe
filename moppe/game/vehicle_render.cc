@@ -257,9 +257,7 @@ namespace moppe {
 
         // Follow the smoothed surface frame on the ground and the velocity
         // arc in flight; lean into the corner.
-        return Mat4::translation (
-                 Vec3 (pos[0], pos[1] + vehicle.suspension, pos[2])) *
-               Mat4::basis (right, up, fwd) *
+        return Mat4::translation (pos) * Mat4::basis (right, up, fwd) *
                Mat4::rotation (vehicle.lean_radians * u::rad, Vec3 (0, 0, 1)) *
                Mat4::translation (Vec3 (0, 0.5f, 0)) *
                Mat4::scaling (Vec3 (1.5f, 1.5f, 1.5f));
@@ -286,10 +284,11 @@ namespace moppe {
         Mat4::rotation (90 * u::deg, y_axis) *
         Mat4::rotation (vehicle.wheel_spin_radians * u::rad, z_axis);
 
-      // Suspension: the frame bobs on susp() at the root while the
-      // wheels press back toward the ground, so landings visibly
-      // compress the travel.  (Model space is 2/3 world scale.)
-      const float wheel_drop = -vehicle.suspension * 0.45f;
+      // Suspension: the pose places the frame and says how far each wheel
+      // hangs from its rest position, so landings visibly compress the
+      // travel.  (Model space is 2/3 world scale.)
+      const float wheel_drop = -vehicle.rear_wheel_drop / 1.5f;
+      const float fork_drop = -vehicle.front_wheel_drop / 1.5f;
 
       // Rear wheel on the swingarm.
       draw_part (*bm.wheel,
@@ -315,7 +314,7 @@ namespace moppe {
       draw_part (*bm.chassis, frame);
 
       // Steering assembly: triple clamp cluster, fork legs, front wheel.
-      const radians_t steer = -vehicle.yaw_radians * 0.4f * u::rad;
+      const radians_t steer = -vehicle.fork_radians * u::rad;
       const Mat4 steering = frame * Mat4::translation (Vec3 (0, 0.05f, 0.55f)) *
                             Mat4::rotation (steer, y_axis);
       draw_part (*bm.steering, steering);
@@ -328,15 +327,14 @@ namespace moppe {
       for (int s = -1; s <= 1; s += 2)
         model::link (dl,
                      Vec3 (s * 0.10f, 0.10f, -0.02f),
-                     Vec3 (s * 0.09f, -0.60f + wheel_drop * 0.7f, 0.20f),
+                     Vec3 (s * 0.09f, -0.60f + fork_drop, 0.20f),
                      0.055f);
       dl.pop ();
 
-      draw_part (
-        *bm.wheel,
-        steering *
-          Mat4::translation (Vec3 (0, -0.60f + wheel_drop * 0.7f, 0.20f)) *
-          axle);
+      draw_part (*bm.wheel,
+                 steering *
+                   Mat4::translation (Vec3 (0, -0.60f + fork_drop, 0.20f)) *
+                   axle);
 
       // Gimballed jump-jet nozzles under the frame.
       for (int s = -1; s <= 1; s += 2)

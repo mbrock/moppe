@@ -106,13 +106,14 @@ namespace moppe::game {
 
   VehiclePose vehicle_pose (const mov::Vehicle& vehicle) {
     return {
-      .position = vehicle.position (),
+      .position = vehicle.render_position (),
       .render_orientation = vehicle.render_orientation (),
       .render_normal = vehicle.render_normal (),
-      .suspension = vehicle.susp (),
+      .rear_wheel_drop = vehicle.rear_wheel_drop (),
+      .front_wheel_drop = vehicle.front_wheel_drop (),
       .lean_radians = radians_value (vehicle.lean ()),
       .wheel_spin_radians = radians_value (vehicle.wheel_spin ()),
-      .yaw_radians = radians_value (vehicle.yaw ()),
+      .fork_radians = radians_value (vehicle.fork_angle ()),
       .thrust = vehicle.thrust ().numerical_value_in (one),
       .boost_level = vehicle.boost_level (),
       .boost_drive = vehicle.boost_drive (),

@@ -406,6 +406,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/glider.cc
   moppe/mov/vehicle.cc
   moppe/mov/trunk_field.cc
+  moppe/mov/rigid_bike.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
   moppe/game/stars.cc
@@ -578,6 +579,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/graphics_benchmark_test.cc
     tests/game/graphics_settings_test.cc
     tests/mov/trunk_field_test.cc
+    tests/mov/rigid_bike_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
     tests/game/landscape_gazetteer_test.cc

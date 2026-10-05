@@ -1,3 +1,4 @@
+#include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/trunk_field.hh>
 
 #include <algorithm>
@@ -23,14 +24,6 @@ namespace moppe {
       int wrap (int value, int count) {
         const int r = value % count;
         return r < 0 ? r + count : r;
-      }
-
-      b3Vec3 b3 (const Vec3& v) {
-        return { v[0], v[1], v[2] };
-      }
-
-      Vec3 vec (const b3Vec3& v) {
-        return Vec3 (v.x, v.y, v.z);
       }
 
       bool gather_plane (b3ShapeId,
@@ -91,8 +84,8 @@ namespace moppe {
         for (const std::uint32_t index : found->second) {
           const Trunk& trunk = trunks[index];
           b3Capsule capsule;
-          capsule.center1 = b3 (trunk.root + trunk.axis * trunk.radius);
-          capsule.center2 = b3 (trunk.root + trunk.axis * trunk.height);
+          capsule.center1 = to_b3 (trunk.root + trunk.axis * trunk.radius);
+          capsule.center2 = to_b3 (trunk.root + trunk.axis * trunk.height);
           capsule.radius = trunk.radius;
           b3CreateCapsuleShape (body, &shape_def, &capsule);
         }
@@ -168,11 +161,11 @@ namespace moppe {
         return contact;
       b3Capsule mover;
       mover.center1 = { 0.0f, 0.0f, 0.0f };
-      mover.center2 = b3 (top - bottom);
+      mover.center2 = to_b3 (top - bottom);
       mover.radius = radius;
       std::vector<b3CollisionPlane> planes;
       b3World_CollideMover (m_impl->world,
-                            b3 (bottom),
+                            to_b3 (bottom),
                             &mover,
                             b3DefaultQueryFilter (),
                             gather_plane,
@@ -184,13 +177,40 @@ namespace moppe {
       Vec3 normal (0, 0, 0);
       for (const b3CollisionPlane& plane : planes)
         if (plane.push > 0.0f)
-          normal += vec (plane.plane.normal) * plane.push;
+          normal += from_b3 (plane.plane.normal) * plane.push;
       if (length2 (normal) <= 0.0f)
         return contact;
       contact.hit = true;
-      contact.push = vec (solved.delta);
+      contact.push = from_b3 (solved.delta);
       contact.normal = normalized (normal);
       return contact;
+    }
+
+    std::vector<Trunk> TrunkField::gather (const Vec3& centre,
+                                           float reach) const {
+      const Impl& m = *m_impl;
+      std::vector<Trunk> gathered;
+      if (m.trunks.empty ())
+        return gathered;
+      const int x0 = m.cell_index (centre[0] - reach, m.cell_x);
+      const int x1 = m.cell_index (centre[0] + reach, m.cell_x);
+      const int z0 = m.cell_index (centre[2] - reach, m.cell_z);
+      const int z1 = m.cell_index (centre[2] + reach, m.cell_z);
+      for (int z = z0; z <= z1; ++z)
+        for (int x = x0; x <= x1; ++x) {
+          const int wx = m.wraps ? wrap (x, m.cells_x) : x;
+          const int wz = m.wraps ? wrap (z, m.cells_z) : z;
+          const auto found = m.cells.find (cell_key (wx, wz));
+          if (found == m.cells.end ())
+            continue;
+          const Vec3 offset ((x - wx) * m.cell_x, 0.0f, (z - wz) * m.cell_z);
+          for (const std::uint32_t index : found->second) {
+            Trunk trunk = m.trunks[index];
+            trunk.root += offset;
+            gathered.push_back (trunk);
+          }
+        }
+      return gathered;
     }
 
     std::size_t TrunkField::trunk_count () const noexcept {

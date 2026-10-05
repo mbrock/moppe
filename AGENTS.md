@@ -202,6 +202,12 @@
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see
   `docs/game-state.md` for the checkpoint boundary and remaining systems.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
+  The bike is a Box3D assemblage by default (`mov/rigid_bike.*`: chassis,
+  two sphere wheels on wheel joints, a streamed height-field ground patch,
+  trunk capsules, arcade assists); `--bike-physics classic` selects the old
+  point mass in `mov/vehicle.cc`. An unridden bike is parked (wheels locked,
+  held still once settled). Vendored Box3D carries one local fix
+  (`third_party/box3d/VENDOR.md`).
   Both are GL-free and portable.
 - `moppe/terrain/` owns finite terrain algorithms and typed analysis values;
   see `docs/terrain-expressions.md`.

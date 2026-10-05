@@ -5,6 +5,7 @@
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/world.hh>
 #include <moppe/game/world_cache.hh>
+#include <moppe/mov/vehicle.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/terrain/world_recipe.hh>
 
@@ -64,6 +65,8 @@ namespace moppe::game {
     // Keeps a hand-started run behind the active application, the way
     // captures and benchmarks already stay out of the way.
     bool stay_inactive = false;
+    // Which simulation moves the bike for this launch.
+    mov::BikePhysics bike_physics = mov::default_bike_physics;
     // Negative until the launch either names a seed or recalls a remembered
     // one; a capture always pins its own so comparisons stay reproducible.
     int seed = -1;
