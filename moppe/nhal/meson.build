@@ -17,6 +17,11 @@ foreach program : programs
     lowered_outputs += [program + '.' + stage[0] + '.hlsl']
   endforeach
 endforeach
+# Compute programs come last: their header, then their one stage.
+compute_programs = ['forest_wind']
+foreach program : compute_programs
+  lowered_outputs += [program + '.hh', program + '.compute.hlsl']
+endforeach
 lowered = custom_target('luv-shaders',
   input: 'demo/shaders/scene.lisp',
   output: lowered_outputs,
@@ -35,6 +40,16 @@ foreach program : programs
                 '-Fh', '@OUTPUT@', '-Vn', 'shader_' + entry, '@INPUT@'])
     index += 1
   endforeach
+endforeach
+foreach program : compute_programs
+  index += 1 # the program's header
+  entry = program + '_compute'
+  shaders += custom_target('shader_' + entry,
+    input: lowered[index],
+    output: 'shader_' + entry + '.h',
+    command: [dxc, '-O3', '-T', 'cs_6_0', '-E', entry,
+              '-Fh', '@OUTPUT@', '-Vn', 'shader_' + entry, '@INPUT@'])
+  index += 1
 endforeach
 
 # Sources include <moppe/nhal/...> from the repository root.

@@ -18,7 +18,8 @@
       (sun-color :vec4)
       (sky-zenith :vec4)
       (sky-horizon :vec4)       ; w: fog density per metre
-      (terrain :vec4))))        ; cell, samples per side, x0, z0
+      (terrain :vec4)           ; cell, samples per side, x0, z0
+      (forest :vec4))))         ; indices per tree, trees, wind, unused
 
 ;;; Reversed-Z with an infinite far plane: depth is near / view distance.
 (define-shader-function project-relative (rel right up forward near)
@@ -115,10 +116,55 @@
   :vertex terrain-vertex
   :fragment terrain-fragment)
 
+;;; -- wind ---------------------------------------------------------------
+
+;;; Each frame one invocation per tree copies its two placement lanes and
+;;; adds a third, the sway of its crown top in metres, from gusts that
+;;; travel across the valley.  Invocation zero also writes the trees'
+;;; indexed indirect draw (index count, instances, first index, base
+;;; vertex, first instance), so the draw's size comes from the GPU.
+(define-shader forest-wind-compute
+    (:stage :compute
+     :workgroup-size (64 1 1)
+     :inputs ((invocation :uvec3 :built-in :global-invocation-id))
+     :resources ((frame-state :uniform-block :binding 0
+                  :members #.*frame-state*)
+                 (instances :storage-buffer :binding 1 :element :vec4)
+                 (animated :storage-buffer :binding 2 :element :vec4
+                           :access :read-write)
+                 (draw-arguments :storage-buffer :binding 3 :element :uint
+                                 :access :read-write)))
+  (let* ((tree (swizzle invocation :x))
+         (count (uint (swizzle forest :y)))
+         (root (buffer-element instances (* tree (uint 2.0))))
+         (shape (buffer-element instances (+ (* tree (uint 2.0)) (uint 1.0))))
+         (time (swizzle camera-position :w))
+         (travel (+ (* (swizzle root :x) 0.021) (* (swizzle root :z) 0.013)))
+         (gust (+ (sin (- (* time 1.1) travel))
+                  (* 0.35 (sin (+ (* time 2.9) (* travel 2.7))))
+                  0.6))
+         (lean (* gust (* (swizzle forest :z) (* (swizzle root :w) 0.012))))
+         (out (* tree (uint 3.0))))
+    (when (< tree count)
+      (set-buffer-element animated out root)
+      (set-buffer-element animated (+ out (uint 1.0)) shape)
+      (set-buffer-element animated (+ out (uint 2.0))
+                          (vec4 (* lean 0.8) 0.0 (* lean 0.6) 0.0)))
+    (when (= tree (uint 0.0))
+      (set-buffer-element draw-arguments (uint 0.0) (uint (swizzle forest :x)))
+      (set-buffer-element draw-arguments (uint 1.0) count)
+      (set-buffer-element draw-arguments (uint 2.0) (uint 0.0))
+      (set-buffer-element draw-arguments (uint 3.0) (uint 0.0))
+      (set-buffer-element draw-arguments (uint 4.0) (uint 0.0)))))
+
+(define-shader-program forest-wind
+  :compute forest-wind-compute)
+
 ;;; -- trees --------------------------------------------------------------
 
-;;; An instance is two lanes: (root x, y, z, height) and (trunk radius,
-;;; crown radius, crown base as a fraction of height, tint).  Vertices 0-17
+;;; An instance is three lanes, as the wind writes them: (root x, y, z,
+;;; height), (trunk radius, crown radius, crown base as a fraction of
+;;; height, tint), and (sway x, 0, sway z, 0) at the top.  Vertices 0-17
 ;;; are the trunk's two rings of nine; then three crown tiers of a nine-
 ;;; vertex base ring and an apex.
 (define-shader trees-vertex
@@ -132,9 +178,10 @@
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)
                  (instances :storage-buffer :binding 1 :element :vec4)))
-  (let* ((root (buffer-element instances (* instance-index (uint 2.0))))
-         (shape (buffer-element instances
-                                (+ (* instance-index (uint 2.0)) (uint 1.0))))
+  (let* ((first (* instance-index (uint 3.0)))
+         (root (buffer-element instances first))
+         (shape (buffer-element instances (+ first (uint 1.0))))
+         (sway (buffer-element instances (+ first (uint 2.0))))
          (height (swizzle root :w))
          (crown-base (* (swizzle shape :z) height))
          (index (float vertex-index))
@@ -177,7 +224,9 @@
                       trunk))
          (needles (mix (vec3 0.035 0.07 0.04) (vec3 0.06 0.10 0.045)
                        (swizzle shape :w)))
-         (position (+ (swizzle root :xyz) local)))
+         (bend (* (/ (swizzle local :y) height) (/ (swizzle local :y) height)))
+         (position (+ (swizzle root :xyz) local
+                      (* (vec3 (swizzle sway :x) 0.0 (swizzle sway :z)) bend))))
     (set-output clip-position
                 (project-relative (- position (swizzle camera-position :xyz))
                                   (swizzle camera-right :xyz)

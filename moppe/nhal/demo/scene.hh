@@ -1,6 +1,7 @@
 // The NHAL demo scene: a valley of procedural terrain under a spruce stand,
 // drawn by vertex pulling into a 4x multisampled HDR target with reversed-Z,
-// then sky-filled and tonemapped into the drawable. It is the first moppe-
+// then sky-filled and tonemapped into the drawable. A compute pass sways
+// the trees in the wind and writes their indirect draw. It is the first moppe-
 // shaped workload for NHAL, identical on Metal 4 and Direct3D 12.
 #ifndef MOPPE_NHAL_DEMO_SCENE_HH
 #define MOPPE_NHAL_DEMO_SCENE_HH
@@ -16,6 +17,7 @@ namespace moppe::nhal::demo {
     StageCode trees_vertex, trees_fragment;
     StageCode sky_vertex, sky_fragment;
     StageCode tonemap_vertex, tonemap_fragment;
+    StageCode forest_wind_compute;
   };
 
   class Scene {
@@ -34,9 +36,11 @@ namespace moppe::nhal::demo {
     void make_targets ();
 
     Device& m_device;
-    Pipeline m_terrain, m_trees, m_sky, m_tonemap;
+    Pipeline m_terrain, m_trees, m_sky, m_tonemap, m_wind;
     Buffer m_terrain_samples, m_terrain_indices;
     Buffer m_tree_instances, m_tree_indices;
+    // Written each frame by the wind: swaying instances and their draw.
+    Buffer m_tree_animated, m_tree_draw;
     std::uint32_t m_terrain_index_count = 0;
     std::uint32_t m_tree_index_count = 0;
     std::uint32_t m_tree_count = 0;

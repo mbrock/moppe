@@ -21,7 +21,9 @@ namespace moppe::nhal {
     constexpr std::uint32_t frames_in_flight = 3;
     constexpr std::uint64_t arena_capacity = 16u << 20;
     constexpr NSUInteger max_buffers = 16;
-    constexpr NSUInteger max_textures = 16;
+    // Sampled textures at 0-15, storage textures at 16-31.
+    constexpr NSUInteger max_textures = 32;
+    constexpr NSUInteger storage_texture_base = 16;
     constexpr NSUInteger max_samplers = 4;
 
     std::string describe (NSError* error) {
@@ -83,6 +85,8 @@ namespace moppe::nhal {
 
     struct MetalPipeline {
       id<MTLRenderPipelineState> state = nil;
+      id<MTLComputePipelineState> compute = nil;
+      MTLSize threads = MTLSizeMake (1, 1, 1);
       id<MTLDepthStencilState> depth = nil;
       MTLCullMode cull = MTLCullModeNone;
       MTLWinding winding = MTLWindingCounterClockwise;
@@ -153,7 +157,10 @@ namespace moppe::nhal {
         table.label = @"NHAL fragment bindings";
         m_fragment_table = [m_device newArgumentTableWithDescriptor:table
                                                               error:&error];
-        if (!m_vertex_table || !m_fragment_table)
+        table.label = @"NHAL compute bindings";
+        m_compute_table = [m_device newArgumentTableWithDescriptor:table
+                                                             error:&error];
+        if (!m_vertex_table || !m_fragment_table || !m_compute_table)
           throw std::runtime_error ("NHAL: argument table: "
                                     + describe (error));
         make_samplers ();
@@ -202,6 +209,8 @@ namespace moppe::nhal {
           td.usage |= MTLTextureUsageShaderRead;
         if (desc.usage & (usage_render_target | usage_depth))
           td.usage |= MTLTextureUsageRenderTarget;
+        if (desc.usage & usage_storage)
+          td.usage |= MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
         // Sampled-only textures are written in place by the CPU.
         td.storageMode = desc.usage == usage_sampled
                            ? MTLStorageModeShared
@@ -292,6 +301,25 @@ namespace moppe::nhal {
         return m_pipelines.insert<Pipeline> (pipeline);
       }
 
+      Pipeline create_compute_pipeline (const ComputePipelineDesc& desc)
+        override {
+        const Program& program = *desc.program;
+        NSError* error = nil;
+        MetalPipeline pipeline;
+        pipeline.compute = [m_device
+          newComputePipelineStateWithFunction:function (desc.compute.msl,
+                                                        program.compute_entry)
+                                        error:&error];
+        if (!pipeline.compute)
+          throw std::runtime_error (std::string ("NHAL: compute pipeline ")
+                                    + program.name + ": " + describe (error));
+        pipeline.threads = MTLSizeMake (
+          std::max (1u, program.workgroup_size[0]),
+          std::max (1u, program.workgroup_size[1]),
+          std::max (1u, program.workgroup_size[2]));
+        return m_pipelines.insert<Pipeline> (pipeline);
+      }
+
       void destroy (Buffer buffer) override {
         m_retired_allocations.retire (m_serial, m_buffers.take (buffer).buffer);
       }
@@ -303,8 +331,12 @@ namespace moppe::nhal {
 
       void destroy (Pipeline pipeline) override {
         MetalPipeline p = m_pipelines.take (pipeline);
-        m_retired_objects.retire (m_serial, p.state);
-        m_retired_objects.retire (m_serial, p.depth);
+        if (p.state)
+          m_retired_objects.retire (m_serial, p.state);
+        if (p.depth)
+          m_retired_objects.retire (m_serial, p.depth);
+        if (p.compute)
+          m_retired_objects.retire (m_serial, p.compute);
       }
 
       Format surface_format () const override { return m_surface_format; }
@@ -338,6 +370,7 @@ namespace moppe::nhal {
 
         m_serial = next;
         const std::uint32_t slot = (m_serial - 1) % frames_in_flight;
+        m_slot = slot;
         m_arena = { static_cast<std::byte*> (m_arena_buffers[slot].contents),
                     m_arena_buffers[slot].gpuAddress, arena_capacity, 0 };
         [m_allocators[slot] reset];
@@ -403,6 +436,78 @@ namespace moppe::nhal {
         set_viewport (0, 0, float (width), float (height));
       }
 
+      void begin_compute_pass (const char* label) override {
+        m_compute = [m_commands computeCommandEncoder];
+        if (label)
+          m_compute.label = @(label);
+        [m_compute barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
+                                           | MTLStageBlit | MTLStageDispatch
+                              beforeStages:MTLStageDispatch | MTLStageBlit
+                         visibilityOptions:MTL4VisibilityOptionDevice];
+        m_dispatched = false;
+      }
+
+      void end_compute_pass () override {
+        [m_compute endEncoding];
+        m_compute = nil;
+      }
+
+      void copy_to_buffer (Buffer target, std::uint64_t offset,
+                           const Transient& source) override {
+        id<MTL4ComputeCommandEncoder> copy = [m_commands computeCommandEncoder];
+        [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
+                                      | MTLStageBlit | MTLStageDispatch
+                         beforeStages:MTLStageBlit
+                    visibilityOptions:MTL4VisibilityOptionDevice];
+        id<MTLBuffer> arena = m_arena_buffers[m_slot];
+        [copy copyFromBuffer:arena
+                sourceOffset:source.gpu_address - arena.gpuAddress
+                    toBuffer:m_buffers[target].buffer
+           destinationOffset:offset
+                        size:source.size];
+        [copy endEncoding];
+      }
+
+      void dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z)
+        override {
+        before_dispatch ();
+        [m_compute dispatchThreadgroups:MTLSizeMake (x, y, z)
+                  threadsPerThreadgroup:m_pipeline.threads];
+      }
+
+      void dispatch_indirect (Buffer arguments, std::uint64_t offset)
+        override {
+        before_dispatch ();
+        [m_compute
+          dispatchThreadgroupsWithIndirectBuffer:m_buffers[arguments]
+                                                   .buffer.gpuAddress
+                                                 + offset
+                           threadsPerThreadgroup:m_pipeline.threads];
+      }
+
+      void draw_indirect (Buffer arguments, std::uint64_t offset) override {
+        use_arguments ();
+        [m_encoder drawPrimitives:m_pipeline.primitive
+                   indirectBuffer:m_buffers[arguments].buffer.gpuAddress
+                                  + offset];
+      }
+
+      void draw_indexed_indirect (Buffer indices, IndexType type,
+                                  Buffer arguments, std::uint64_t offset)
+        override {
+        use_arguments ();
+        id<MTLBuffer> index_buffer = m_buffers[indices].buffer;
+        [m_encoder
+          drawIndexedPrimitives:m_pipeline.primitive
+                      indexType:type == IndexType::uint16
+                                  ? MTLIndexTypeUInt16
+                                  : MTLIndexTypeUInt32
+                    indexBuffer:index_buffer.gpuAddress
+              indexBufferLength:index_buffer.length
+                 indirectBuffer:m_buffers[arguments].buffer.gpuAddress
+                                + offset];
+      }
+
       void end_render_pass () override {
         [m_encoder endEncoding];
         m_encoder = nil;
@@ -410,6 +515,10 @@ namespace moppe::nhal {
 
       void set_pipeline (Pipeline handle) override {
         m_pipeline = m_pipelines[handle];
+        if (m_pipeline.compute) {
+          [m_compute setComputePipelineState:m_pipeline.compute];
+          return;
+        }
         [m_encoder setRenderPipelineState:m_pipeline.state];
         [m_encoder setDepthStencilState:m_pipeline.depth];
         [m_encoder setCullMode:m_pipeline.cull];
@@ -427,9 +536,13 @@ namespace moppe::nhal {
       }
 
       void set_texture (std::uint32_t binding, Texture texture) override {
-        const MTLResourceID id = m_textures[texture].texture.gpuResourceID;
-        [m_vertex_table setTexture:id atIndex:binding];
-        [m_fragment_table setTexture:id atIndex:binding];
+        bind_texture (binding, m_textures[texture].texture.gpuResourceID);
+      }
+
+      void set_storage_texture (std::uint32_t binding, Texture texture)
+        override {
+        bind_texture (storage_texture_base + binding,
+                      m_textures[texture].texture.gpuResourceID);
       }
 
       void set_viewport (float x, float y, float width, float height)
@@ -477,6 +590,8 @@ namespace moppe::nhal {
       void end_frame () override {
         if (m_encoder)
           end_render_pass ();
+        if (m_compute)
+          end_compute_pass ();
         if (m_capture_request)
           encode_capture ();
         [m_commands endCommandBuffer];
@@ -595,6 +710,8 @@ namespace moppe::nhal {
                                   atIndex:i];
           [m_fragment_table setSamplerState:m_samplers[i].gpuResourceID
                                     atIndex:i];
+          [m_compute_table setSamplerState:m_samplers[i].gpuResourceID
+                                   atIndex:i];
         }
       }
 
@@ -630,6 +747,23 @@ namespace moppe::nhal {
       void bind_address (std::uint32_t binding, std::uint64_t address) {
         [m_vertex_table setAddress:address atIndex:binding];
         [m_fragment_table setAddress:address atIndex:binding];
+        [m_compute_table setAddress:address atIndex:binding];
+      }
+
+      void bind_texture (NSUInteger index, MTLResourceID id) {
+        [m_vertex_table setTexture:id atIndex:index];
+        [m_fragment_table setTexture:id atIndex:index];
+        [m_compute_table setTexture:id atIndex:index];
+      }
+
+      // Dispatches in one pass may read what earlier ones wrote.
+      void before_dispatch () {
+        if (m_dispatched)
+          [m_compute barrierAfterEncoderStages:MTLStageDispatch
+                           beforeEncoderStages:MTLStageDispatch
+                             visibilityOptions:MTL4VisibilityOptionDevice];
+        m_dispatched = true;
+        [m_compute setArgumentTable:m_compute_table];
       }
 
       void use_arguments () {
@@ -650,6 +784,7 @@ namespace moppe::nhal {
       std::array<id<MTLBuffer>, frames_in_flight> m_arena_buffers;
       id<MTL4ArgumentTable> m_vertex_table = nil;
       id<MTL4ArgumentTable> m_fragment_table = nil;
+      id<MTL4ArgumentTable> m_compute_table = nil;
       std::array<id<MTLSamplerState>, max_samplers> m_samplers;
       std::unordered_map<std::string, id<MTLLibrary>> m_libraries;
 
@@ -665,6 +800,9 @@ namespace moppe::nhal {
       id<CAMetalDrawable> m_drawable = nil;
       id<MTL4CommandBuffer> m_commands = nil;
       id<MTL4RenderCommandEncoder> m_encoder = nil;
+      id<MTL4ComputeCommandEncoder> m_compute = nil;
+      bool m_dispatched = false;
+      std::uint32_t m_slot = 0;
       MetalPipeline m_pipeline;
       std::function<void (const Capture&)> m_capture_request;
       std::vector<PendingCapture> m_captures;

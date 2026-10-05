@@ -73,16 +73,39 @@ namespace moppe::nhal {
   // device memory is the GPU's own and is filled by staged copies.
   enum class Memory : std::uint8_t { device, upload };
 
+  using BufferUsage = std::uint8_t;
+  // Read by shaders as a storage buffer, or as indices: always allowed.
+  inline constexpr BufferUsage buffer_read = 0;
+  // Written by shaders (read-write storage buffers).
+  inline constexpr BufferUsage buffer_storage_write = 1;
+  // Holds draw or dispatch arguments read by indirect commands.
+  inline constexpr BufferUsage buffer_indirect = 2;
+
   struct BufferDesc {
     std::uint64_t size = 0;
     Memory memory = Memory::device;
+    BufferUsage usage = buffer_read;
     const char* label = nullptr;
+  };
+
+  // Indirect argument records, laid out as both APIs read them.
+  struct DrawIndirectArgs {
+    std::uint32_t vertex_count, instance_count, first_vertex, first_instance;
+  };
+  struct DrawIndexedIndirectArgs {
+    std::uint32_t index_count, instance_count, first_index;
+    std::int32_t base_vertex;
+    std::uint32_t first_instance;
+  };
+  struct DispatchIndirectArgs {
+    std::uint32_t x, y, z;
   };
 
   using TextureUsage = std::uint8_t;
   inline constexpr TextureUsage usage_sampled = 1;
   inline constexpr TextureUsage usage_render_target = 2;
   inline constexpr TextureUsage usage_depth = 4;
+  inline constexpr TextureUsage usage_storage = 8;
 
   struct TextureDesc {
     std::uint32_t width = 1;
@@ -134,6 +157,12 @@ namespace moppe::nhal {
     bool front_counter_clockwise = true;
     std::uint32_t samples = 1;
     Topology topology = Topology::triangle_list;
+    const char* label = nullptr;
+  };
+
+  struct ComputePipelineDesc {
+    const Program* program = nullptr;
+    StageCode compute;
     const char* label = nullptr;
   };
 
@@ -209,6 +238,8 @@ namespace moppe::nhal {
       = 0;
     virtual Pipeline create_render_pipeline (const RenderPipelineDesc& desc)
       = 0;
+    virtual Pipeline create_compute_pipeline (const ComputePipelineDesc& desc)
+      = 0;
     virtual void destroy (Buffer buffer) = 0;
     virtual void destroy (Texture texture) = 0;
     virtual void destroy (Pipeline pipeline) = 0;
@@ -232,6 +263,14 @@ namespace moppe::nhal {
 
     virtual void begin_render_pass (const RenderPassDesc& desc) = 0;
     virtual void end_render_pass () = 0;
+    // Compute passes hold dispatches; they may not overlap render passes.
+    virtual void begin_compute_pass (const char* label = nullptr) = 0;
+    virtual void end_compute_pass () = 0;
+    // Outside any pass: copies bytes from the frame arena into a buffer,
+    // ordered before the work that follows.
+    virtual void copy_to_buffer (Buffer target, std::uint64_t offset,
+                                 const Transient& source)
+      = 0;
     virtual void set_pipeline (Pipeline pipeline) = 0;
     virtual void set_buffer (std::uint32_t binding, Buffer buffer,
                              std::uint64_t offset = 0)
@@ -239,6 +278,8 @@ namespace moppe::nhal {
     virtual void set_buffer (std::uint32_t binding, const Transient& slice)
       = 0;
     virtual void set_texture (std::uint32_t binding, Texture texture) = 0;
+    virtual void set_storage_texture (std::uint32_t binding, Texture texture)
+      = 0;
     virtual void set_viewport (float x, float y, float width, float height)
       = 0;
     virtual void draw (std::uint32_t vertex_count,
@@ -252,6 +293,20 @@ namespace moppe::nhal {
                                std::uint32_t first_index = 0,
                                std::int32_t base_vertex = 0,
                                std::uint32_t first_instance = 0)
+      = 0;
+    // Arguments come from a buffer made with buffer_indirect, often
+    // written by an earlier compute pass.
+    virtual void draw_indirect (Buffer arguments, std::uint64_t offset = 0)
+      = 0;
+    virtual void draw_indexed_indirect (Buffer indices, IndexType type,
+                                        Buffer arguments,
+                                        std::uint64_t offset = 0)
+      = 0;
+    virtual void dispatch (std::uint32_t groups_x, std::uint32_t groups_y = 1,
+                           std::uint32_t groups_z = 1)
+      = 0;
+    virtual void dispatch_indirect (Buffer arguments,
+                                    std::uint64_t offset = 0)
       = 0;
 
     // Reads this frame's drawable back once the frame completes. `done`

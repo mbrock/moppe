@@ -75,7 +75,7 @@ namespace {
   DemoView* _view;
   std::unique_ptr<Device> _device;
   std::unique_ptr<demo::Scene> _scene;
-  std::array<std::string, 8> _msl;
+  std::array<std::string, 9> _msl;
   std::chrono::steady_clock::time_point _start;
   int _rendered;
 }
@@ -113,13 +113,15 @@ namespace {
     const char* files[] = { "terrain.vertex", "terrain.fragment",
                             "trees.vertex", "trees.fragment",
                             "sky.vertex", "sky.fragment",
-                            "tonemap.vertex", "tonemap.fragment" };
-    for (int i = 0; i < 8; ++i)
+                            "tonemap.vertex", "tonemap.fragment",
+                            "forest_wind.compute" };
+    for (int i = 0; i < 9; ++i)
       _msl[i] = read_file (self.shaderPath + "/" + files[i] + ".metal");
     auto code = [&] (int i) { return StageCode { _msl[i], {} }; };
     _scene = std::make_unique<demo::Scene> (
       *_device, demo::Shaders { code (0), code (1), code (2), code (3),
-                                code (4), code (5), code (6), code (7) });
+                                code (4), code (5), code (6), code (7),
+                                code (8) });
     std::cerr << "NHAL demo: " << _device->info ().backend << " on "
               << _device->info ().adapter << ", " << _scene->tree_count ()
               << " trees" << std::endl;

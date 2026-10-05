@@ -15,6 +15,7 @@
 #include <moppe/nhal/d3d12/d3d12_device.hh>
 #include <moppe/nhal/demo/scene.hh>
 
+#include <shader_forest_wind_compute.h>
 #include <shader_sky_fragment.h>
 #include <shader_sky_vertex.h>
 #include <shader_terrain_fragment.h>
@@ -106,6 +107,7 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
         code (shader_sky_fragment, sizeof shader_sky_fragment),
         code (shader_tonemap_vertex, sizeof shader_tonemap_vertex),
         code (shader_tonemap_fragment, sizeof shader_tonemap_fragment),
+        code (shader_forest_wind_compute, sizeof shader_forest_wind_compute),
       };
       demo::Scene scene (*device, shaders);
       report ("NHAL demo: " + device->info ().backend + " on "

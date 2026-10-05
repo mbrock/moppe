@@ -127,36 +127,54 @@ namespace moppe::nhal {
 
     constexpr std::uint32_t no_slot = ~0u;
 
+    // Default-heap buffers decay to COMMON whenever a command list
+    // finishes, so a state is only meaningful in the frame that set it.
     struct D3DBuffer {
       ComPtr<ID3D12Resource> resource;
       void* mapped = nullptr;
+      D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+      std::uint64_t state_serial = 0;
     };
 
     struct D3DTexture {
       ComPtr<ID3D12Resource> resource;
       TextureDesc desc {};
       D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
-      std::uint32_t srv = no_slot, rtv = no_slot, dsv = no_slot;
+      std::uint32_t srv = no_slot, uav = no_slot, rtv = no_slot,
+                    dsv = no_slot;
     };
+
+    enum class RootBuffer : std::uint8_t { none, constants, read, write };
 
     // How a program's bindings land in its root signature.
     struct RootLayout {
       ComPtr<ID3D12RootSignature> signature;
       std::array<int, max_bindings> buffer_parameter;
-      std::array<bool, max_bindings> buffer_is_constant {};
+      std::array<RootBuffer, max_bindings> buffer_kind {};
       int texture_parameter = -1;
       std::uint32_t texture_count = 0;
+      int storage_parameter = -1;
+      std::uint32_t storage_count = 0;
     };
 
     struct D3DPipeline {
       ComPtr<ID3D12PipelineState> state;
       const RootLayout* layout = nullptr;
       D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+      bool compute = false;
     };
 
     struct Retired {
       ComPtr<ID3D12Object> object;
-      std::uint32_t srv = no_slot, rtv = no_slot, dsv = no_slot;
+      std::uint32_t srv = no_slot, uav = no_slot, rtv = no_slot,
+                    dsv = no_slot;
+    };
+
+    // A binding: the buffer, when it is one of the device's (arena slices
+    // are upload memory and need no barriers), and the address.
+    struct BoundBuffer {
+      Buffer buffer;
+      std::uint64_t address = 0;
     };
 
     D3D12_STATIC_SAMPLER_DESC standard_sampler (std::uint32_t binding,
@@ -253,6 +271,30 @@ namespace moppe::nhal {
         null.Texture2D.MipLevels = 1;
         m_device->CreateShaderResourceView (nullptr, &null,
                                             m_srv_pool.cpu (m_null_srv));
+        m_null_uav = m_srv_pool.allocate ();
+        D3D12_UNORDERED_ACCESS_VIEW_DESC null_uav {};
+        null_uav.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        null_uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        m_device->CreateUnorderedAccessView (nullptr, nullptr, &null_uav,
+                                             m_srv_pool.cpu (m_null_uav));
+
+        // Indirect commands that carry only their arguments.
+        auto signature = [&] (D3D12_INDIRECT_ARGUMENT_TYPE type, UINT stride,
+                              ComPtr<ID3D12CommandSignature>& out) {
+          D3D12_INDIRECT_ARGUMENT_DESC argument {};
+          argument.Type = type;
+          const D3D12_COMMAND_SIGNATURE_DESC desc { stride, 1, &argument, 0 };
+          check (m_device->CreateCommandSignature (&desc, nullptr,
+                                                   IID_PPV_ARGS (&out)),
+                 "command signature");
+        };
+        signature (D3D12_INDIRECT_ARGUMENT_TYPE_DRAW,
+                   sizeof (DrawIndirectArgs), m_draw_signature);
+        signature (D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED,
+                   sizeof (DrawIndexedIndirectArgs),
+                   m_draw_indexed_signature);
+        signature (D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH,
+                   sizeof (DispatchIndirectArgs), m_dispatch_signature);
 
         ComPtr<IDXGIFactory2> factory;
         check (CreateDXGIFactory2 (0, IID_PPV_ARGS (&factory)), "DXGI");
@@ -298,7 +340,9 @@ namespace moppe::nhal {
       Buffer create_buffer (const BufferDesc& desc,
                             std::span<const std::byte> initial) override {
         D3DBuffer buffer;
-        const auto resource_desc = buffer_desc (desc.size);
+        auto resource_desc = buffer_desc (desc.size);
+        if (desc.usage & buffer_storage_write)
+          resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         if (desc.memory == Memory::upload) {
           const auto upload = heap (D3D12_HEAP_TYPE_UPLOAD);
           check (m_device->CreateCommittedResource (
@@ -353,6 +397,8 @@ namespace moppe::nhal {
           rd.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
         if (depth && !(desc.usage & usage_sampled))
           rd.Flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+        if (desc.usage & usage_storage)
+          rd.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
         D3D12_CLEAR_VALUE clear {};
         clear.Format = format;
@@ -481,6 +527,29 @@ namespace moppe::nhal {
         return m_pipelines.insert<Pipeline> (std::move (pipeline));
       }
 
+      Pipeline create_compute_pipeline (const ComputePipelineDesc& desc)
+        override {
+        const RootLayout& layout = root_layout (*desc.program);
+        D3D12_COMPUTE_PIPELINE_STATE_DESC pd {};
+        pd.pRootSignature = layout.signature.Get ();
+        pd.CS = { desc.compute.dxil.data (), desc.compute.dxil.size () };
+        D3DPipeline pipeline;
+        pipeline.layout = &layout;
+        pipeline.compute = true;
+        const HRESULT hr = m_device->CreateComputePipelineState (
+          &pd, IID_PPV_ARGS (&pipeline.state));
+        if (FAILED (hr)) {
+          char message[160];
+          std::snprintf (message, sizeof message,
+                         "NHAL: compute pipeline %s failed: 0x%08lx",
+                         desc.program->name, static_cast<unsigned long> (hr));
+          throw std::runtime_error (message);
+        }
+        name (pipeline.state.Get (),
+              desc.label ? desc.label : desc.program->name);
+        return m_pipelines.insert<Pipeline> (std::move (pipeline));
+      }
+
       void destroy (Buffer buffer) override {
         m_retired.retire (m_serial, { m_buffers.take (buffer).resource });
       }
@@ -488,7 +557,7 @@ namespace moppe::nhal {
       void destroy (Texture texture) override {
         D3DTexture t = m_textures.take (texture);
         m_retired.retire (m_serial,
-                          { t.resource, t.srv, t.rtv, t.dsv });
+                          { t.resource, t.srv, t.uav, t.rtv, t.dsv });
       }
 
       void destroy (Pipeline pipeline) override {
@@ -606,26 +675,38 @@ namespace moppe::nhal {
       void set_pipeline (Pipeline handle) override {
         const D3DPipeline& pipeline = m_pipelines[handle];
         m_list->SetPipelineState (pipeline.state.Get ());
-        if (m_layout != pipeline.layout) {
+        if (m_layout != pipeline.layout
+            || m_compute_bound != pipeline.compute) {
           m_layout = pipeline.layout;
-          m_list->SetGraphicsRootSignature (m_layout->signature.Get ());
+          m_compute_bound = pipeline.compute;
+          if (pipeline.compute)
+            m_list->SetComputeRootSignature (m_layout->signature.Get ());
+          else
+            m_list->SetGraphicsRootSignature (m_layout->signature.Get ());
         }
-        m_list->IASetPrimitiveTopology (pipeline.topology);
+        if (!pipeline.compute)
+          m_list->IASetPrimitiveTopology (pipeline.topology);
       }
 
       void set_buffer (std::uint32_t binding, Buffer buffer,
                        std::uint64_t offset) override {
-        m_buffer_addresses.at (binding) =
-          m_buffers[buffer].resource->GetGPUVirtualAddress () + offset;
+        m_bound_buffers.at (binding) = {
+          buffer, m_buffers[buffer].resource->GetGPUVirtualAddress ()
+                    + offset };
       }
 
       void set_buffer (std::uint32_t binding, const Transient& slice)
         override {
-        m_buffer_addresses.at (binding) = slice.gpu_address;
+        m_bound_buffers.at (binding) = { Buffer {}, slice.gpu_address };
       }
 
       void set_texture (std::uint32_t binding, Texture texture) override {
         m_bound_textures.at (binding) = texture;
+      }
+
+      void set_storage_texture (std::uint32_t binding, Texture texture)
+        override {
+        m_bound_storage.at (binding) = texture;
       }
 
       void set_viewport (float x, float y, float width, float height)
@@ -651,21 +732,73 @@ namespace moppe::nhal {
                          std::uint32_t first_index, std::int32_t base_vertex,
                          std::uint32_t first_instance) override {
         bind_arguments ();
-        const D3DBuffer& buffer = m_buffers[indices];
+        set_index_buffer (indices, type);
+        m_list->DrawIndexedInstanced (index_count, instance_count,
+                                      first_index, base_vertex,
+                                      first_instance);
+      }
+
+      void draw_indirect (Buffer arguments, std::uint64_t offset) override {
+        bind_arguments ();
+        D3DBuffer& args = m_buffers[arguments];
+        buffer_state (args, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+        m_list->ExecuteIndirect (m_draw_signature.Get (), 1,
+                                 args.resource.Get (), offset, nullptr, 0);
+      }
+
+      void draw_indexed_indirect (Buffer indices, IndexType type,
+                                  Buffer arguments, std::uint64_t offset)
+        override {
+        bind_arguments ();
+        set_index_buffer (indices, type);
+        D3DBuffer& args = m_buffers[arguments];
+        buffer_state (args, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+        m_list->ExecuteIndirect (m_draw_indexed_signature.Get (), 1,
+                                 args.resource.Get (), offset, nullptr, 0);
+      }
+
+      void begin_compute_pass (const char*) override {}
+      void end_compute_pass () override {}
+
+      void dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z)
+        override {
+        bind_arguments ();
+        m_list->Dispatch (x, y, z);
+      }
+
+      void dispatch_indirect (Buffer arguments, std::uint64_t offset)
+        override {
+        bind_arguments ();
+        D3DBuffer& args = m_buffers[arguments];
+        buffer_state (args, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+        m_list->ExecuteIndirect (m_dispatch_signature.Get (), 1,
+                                 args.resource.Get (), offset, nullptr, 0);
+      }
+
+      void copy_to_buffer (Buffer target, std::uint64_t offset,
+                           const Transient& source) override {
+        D3DBuffer& b = m_buffers[target];
+        buffer_state (b, D3D12_RESOURCE_STATE_COPY_DEST);
+        m_list->CopyBufferRegion (
+          b.resource.Get (), offset, m_arena_buffers[m_slot].Get (),
+          source.gpu_address - m_arena_buffers[m_slot]->GetGPUVirtualAddress (),
+          source.size);
+      }
+
+      void capture_frame (std::function<void (const Capture&)> done)
+        override {
+        m_capture_request = std::move (done);
+      }
+
+      void set_index_buffer (Buffer indices, IndexType type) {
+        D3DBuffer& buffer = m_buffers[indices];
+        buffer_state (buffer, D3D12_RESOURCE_STATE_INDEX_BUFFER);
         const D3D12_INDEX_BUFFER_VIEW view {
           buffer.resource->GetGPUVirtualAddress (),
           UINT (buffer.resource->GetDesc ().Width),
           type == IndexType::uint16 ? DXGI_FORMAT_R16_UINT
                                     : DXGI_FORMAT_R32_UINT };
         m_list->IASetIndexBuffer (&view);
-        m_list->DrawIndexedInstanced (index_count, instance_count,
-                                      first_index, base_vertex,
-                                      first_instance);
-      }
-
-      void capture_frame (std::function<void (const Capture&)> done)
-        override {
-        m_capture_request = std::move (done);
       }
 
       void end_frame () override {
@@ -680,8 +813,10 @@ namespace moppe::nhal {
         check (m_queue->Signal (m_fence.Get (), m_serial), "Signal");
         m_slot_fence[m_slot] = m_serial;
         m_layout = nullptr;
-        m_buffer_addresses.fill (0);
+        m_compute_bound = false;
+        m_bound_buffers.fill (BoundBuffer {});
         m_bound_textures.fill (Texture {});
+        m_bound_storage.fill (Texture {});
       }
 
       void wait_idle () override {
@@ -731,6 +866,14 @@ namespace moppe::nhal {
           m_device->CreateShaderResourceView (t.resource.Get (), &view,
                                               m_srv_pool.cpu (t.srv));
         }
+        if (t.desc.usage & usage_storage) {
+          t.uav = m_srv_pool.allocate ();
+          D3D12_UNORDERED_ACCESS_VIEW_DESC view {};
+          view.Format = format;
+          view.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+          m_device->CreateUnorderedAccessView (t.resource.Get (), nullptr,
+                                               &view, m_srv_pool.cpu (t.uav));
+        }
         if (t.desc.usage & usage_render_target) {
           t.rtv = m_rtv_pool.allocate ();
           m_device->CreateRenderTargetView (t.resource.Get (), nullptr,
@@ -760,15 +903,23 @@ namespace moppe::nhal {
         for (const Resource& r : program.resources) {
           if (is_buffer (r.kind)) {
             D3D12_ROOT_PARAMETER p {};
-            p.ParameterType = r.kind == ResourceKind::uniform_block
-                                ? D3D12_ROOT_PARAMETER_TYPE_CBV
-                                : D3D12_ROOT_PARAMETER_TYPE_SRV;
+            RootBuffer kind = RootBuffer::read;
+            p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+            if (r.kind == ResourceKind::uniform_block) {
+              kind = RootBuffer::constants;
+              p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+            } else if (r.kind == ResourceKind::read_write_storage_buffer) {
+              kind = RootBuffer::write;
+              p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;
+            }
             p.Descriptor.ShaderRegister = r.binding;
             p.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
             layout->buffer_parameter.at (r.binding) = int (parameters.size ());
-            layout->buffer_is_constant.at (r.binding) =
-              r.kind == ResourceKind::uniform_block;
+            layout->buffer_kind.at (r.binding) = kind;
             parameters.push_back (p);
+          } else if (is_storage_texture (r.kind)) {
+            layout->storage_count =
+              std::max (layout->storage_count, r.binding + 1);
           } else if (is_texture (r.kind)) {
             layout->texture_count =
               std::max (layout->texture_count, r.binding + 1);
@@ -776,6 +927,18 @@ namespace moppe::nhal {
             samplers.push_back (standard_sampler (
               r.binding, r.kind == ResourceKind::comparison_sampler));
           }
+        }
+        D3D12_DESCRIPTOR_RANGE storage_range {};
+        if (layout->storage_count) {
+          storage_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+          storage_range.NumDescriptors = layout->storage_count;
+          storage_range.RegisterSpace = 1;
+          D3D12_ROOT_PARAMETER p {};
+          p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+          p.DescriptorTable = { 1, &storage_range };
+          p.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+          layout->storage_parameter = int (parameters.size ());
+          parameters.push_back (p);
         }
         D3D12_DESCRIPTOR_RANGE range {};
         if (layout->texture_count) {
@@ -809,21 +972,54 @@ namespace moppe::nhal {
         return *cached;
       }
 
+      // Root arguments for the next draw or dispatch, with the barriers
+      // its buffers and textures need first.
       void bind_arguments () {
+        const bool compute = m_compute_bound;
         for (std::uint32_t b = 0; b < max_bindings; ++b) {
           const int parameter = m_layout->buffer_parameter[b];
           if (parameter < 0)
             continue;
-          if (m_layout->buffer_is_constant[b])
-            m_list->SetGraphicsRootConstantBufferView (
-              parameter, m_buffer_addresses[b]);
-          else
-            m_list->SetGraphicsRootShaderResourceView (
-              parameter, m_buffer_addresses[b]);
+          const BoundBuffer& bound = m_bound_buffers[b];
+          const RootBuffer kind = m_layout->buffer_kind[b];
+          if (bound.buffer && kind != RootBuffer::constants)
+            buffer_state (m_buffers[bound.buffer],
+                          kind == RootBuffer::write ? state_write
+                                                    : state_read);
+          switch (kind) {
+          case RootBuffer::constants:
+            compute ? m_list->SetComputeRootConstantBufferView (parameter,
+                                                                bound.address)
+                    : m_list->SetGraphicsRootConstantBufferView (
+                        parameter, bound.address);
+            break;
+          case RootBuffer::read:
+            compute ? m_list->SetComputeRootShaderResourceView (parameter,
+                                                                bound.address)
+                    : m_list->SetGraphicsRootShaderResourceView (
+                        parameter, bound.address);
+            break;
+          case RootBuffer::write:
+            compute ? m_list->SetComputeRootUnorderedAccessView (parameter,
+                                                                 bound.address)
+                    : m_list->SetGraphicsRootUnorderedAccessView (
+                        parameter, bound.address);
+            break;
+          case RootBuffer::none: break;
+          }
         }
-        if (m_layout->texture_parameter < 0)
-          return;
-        const std::uint32_t count = m_layout->texture_count;
+        if (m_layout->texture_parameter >= 0)
+          bind_table (m_layout->texture_parameter, m_layout->texture_count,
+                      m_bound_textures, false);
+        if (m_layout->storage_parameter >= 0)
+          bind_table (m_layout->storage_parameter, m_layout->storage_count,
+                      m_bound_storage, true);
+      }
+
+      // Copies a table's descriptors into the frame's ring and binds it.
+      void bind_table (int parameter, std::uint32_t count,
+                       const std::array<Texture, max_bindings>& bound,
+                       bool storage) {
         if (m_ring_next + count > m_ring_end)
           throw std::runtime_error ("NHAL: descriptor ring exhausted");
         const std::uint32_t first = m_ring_next;
@@ -832,13 +1028,19 @@ namespace moppe::nhal {
           m_ring->GetCPUDescriptorHandleForHeapStart ();
         to.ptr += SIZE_T (first) * m_ring_step;
         for (std::uint32_t i = 0; i < count; ++i) {
-          std::uint32_t source = m_null_srv;
-          if (const Texture handle = m_bound_textures[i]) {
+          std::uint32_t source = storage ? m_null_uav : m_null_srv;
+          if (const Texture handle = bound[i]) {
             D3DTexture& t = m_textures[handle];
-            transition (m_list.Get (), t,
-                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-                          | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            source = t.srv;
+            if (storage) {
+              if (t.state == D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+                uav_barrier (t.resource.Get ());
+              transition (m_list.Get (), t,
+                          D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+              source = t.uav;
+            } else {
+              transition (m_list.Get (), t, state_read);
+              source = t.srv;
+            }
           }
           D3D12_CPU_DESCRIPTOR_HANDLE slot = to;
           slot.ptr += SIZE_T (i) * m_ring_step;
@@ -849,8 +1051,48 @@ namespace moppe::nhal {
         D3D12_GPU_DESCRIPTOR_HANDLE table =
           m_ring->GetGPUDescriptorHandleForHeapStart ();
         table.ptr += UINT64 (first) * m_ring_step;
-        m_list->SetGraphicsRootDescriptorTable (m_layout->texture_parameter,
-                                                table);
+        if (m_compute_bound)
+          m_list->SetComputeRootDescriptorTable (parameter, table);
+        else
+          m_list->SetGraphicsRootDescriptorTable (parameter, table);
+      }
+
+      static constexpr D3D12_RESOURCE_STATES state_read =
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+        | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+      static constexpr D3D12_RESOURCE_STATES state_write =
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+
+      // Moves a device buffer into `state` for the next command. Upload
+      // buffers stay GENERIC_READ. Writes after writes get a UAV barrier
+      // so successive dispatches see each other's results.
+      void buffer_state (D3DBuffer& b, D3D12_RESOURCE_STATES state) {
+        if (b.mapped)
+          return;
+        const D3D12_RESOURCE_STATES current =
+          b.state_serial == m_serial ? b.state : D3D12_RESOURCE_STATE_COMMON;
+        if (current == state) {
+          if (state == state_write)
+            uav_barrier (b.resource.Get ());
+        } else {
+          D3D12_RESOURCE_BARRIER barrier {};
+          barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+          barrier.Transition.pResource = b.resource.Get ();
+          barrier.Transition.Subresource =
+            D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+          barrier.Transition.StateBefore = current;
+          barrier.Transition.StateAfter = state;
+          m_list->ResourceBarrier (1, &barrier);
+        }
+        b.state = state;
+        b.state_serial = m_serial;
+      }
+
+      void uav_barrier (ID3D12Resource* resource) {
+        D3D12_RESOURCE_BARRIER barrier {};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        barrier.UAV.pResource = resource;
+        m_list->ResourceBarrier (1, &barrier);
       }
 
       void transition (ID3D12GraphicsCommandList* list, D3DTexture& t,
@@ -947,6 +1189,8 @@ namespace moppe::nhal {
         m_retired.collect (completed, [&] (Retired& r) {
           if (r.srv != no_slot)
             m_srv_pool.free.push_back (r.srv);
+          if (r.uav != no_slot)
+            m_srv_pool.free.push_back (r.uav);
           if (r.rtv != no_slot)
             m_rtv_pool.free.push_back (r.rtv);
           if (r.dsv != no_slot)
@@ -1017,8 +1261,14 @@ namespace moppe::nhal {
       Texture m_current_backbuffer;
       RenderPassDesc m_pass;
       const RootLayout* m_layout = nullptr;
-      std::array<std::uint64_t, max_bindings> m_buffer_addresses {};
+      std::array<BoundBuffer, max_bindings> m_bound_buffers {};
       std::array<Texture, max_bindings> m_bound_textures {};
+      std::array<Texture, max_bindings> m_bound_storage {};
+      bool m_compute_bound = false;
+      std::uint32_t m_null_uav = 0;
+      ComPtr<ID3D12CommandSignature> m_draw_signature;
+      ComPtr<ID3D12CommandSignature> m_draw_indexed_signature;
+      ComPtr<ID3D12CommandSignature> m_dispatch_signature;
       std::function<void (const Capture&)> m_capture_request;
       std::vector<PendingCapture> m_captures;
     };

@@ -793,6 +793,9 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         ${MOPPE_NHAL_SHADERS}/${program}.vertex.metal
         ${MOPPE_NHAL_SHADERS}/${program}.fragment.metal)
     endforeach()
+    list(APPEND MOPPE_NHAL_SHADER_OUTPUTS
+      ${MOPPE_NHAL_SHADERS}/forest_wind.hh
+      ${MOPPE_NHAL_SHADERS}/forest_wind.compute.metal)
     add_custom_command(
       OUTPUT ${MOPPE_NHAL_SHADER_OUTPUTS}
       COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_SHADERS}
