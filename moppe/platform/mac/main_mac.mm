@@ -572,6 +572,28 @@ static void log_runtime_parameters (MoppeView* view) {
   }
 }
 
+// An opaque layer filling a fullscreen space is scanned out directly, and
+// direct scanout latches a frame only if its GPU work completes within about
+// one refresh of the display-link callback. A full game frame -- scene
+// encoding on the CPU, then the GPU work behind it -- takes longer, so every
+// frame slipped a refresh and the cadence settled at two frames per three
+// vsyncs: 40 Hz from a GPU that sustains 60. A non-opaque layer keeps the
+// window server compositing it, which grants the same extra refresh of
+// latency a windowed run gets and holds the full display rate.
+static void set_fullscreen_layer_opacity (NSNotification* note, BOOL opaque) {
+  NSWindow* window = note.object;
+  if ([window.contentView isKindOfClass:[MoppeView class]])
+    window.contentView.layer.opaque = opaque;
+}
+
+- (void)windowWillEnterFullScreen:(NSNotification*)note {
+  set_fullscreen_layer_opacity (note, NO);
+}
+
+- (void)windowDidExitFullScreen:(NSNotification*)note {
+  set_fullscreen_layer_opacity (note, YES);
+}
+
 - (void)windowDidResize:(NSNotification*)note {
   NSWindow* window = note.object;
   if ([window.contentView isKindOfClass:[MoppeView class]]) {
