@@ -213,6 +213,9 @@ namespace moppe::game {
     float aspect = 1.0f;
     float cinematic_motion_blur = 0.0f;
     float cinematic_elapsed = 0.0f;
+    // A cinematic camera away from the player's eyes shows the figure that
+    // the first-person view otherwise leaves undrawn.
+    bool reveal_player = false;
     FrameBenchmarkTag benchmark {};
   };
 

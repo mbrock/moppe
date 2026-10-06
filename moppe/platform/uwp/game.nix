@@ -40,6 +40,7 @@ xbox.mkXboxApp {
       (root + "/atelier/tree.cc")
       (root + "/third_party/box3d")
       (root + "/third_party/nanoarrow")
+      (root + "/data")
       (root + "/fonts")
       (root + "/textures")
     ];

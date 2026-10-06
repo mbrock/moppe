@@ -13,6 +13,7 @@
 
 #include <moppe/game/blob_shadow.hh>
 #include <moppe/game/boulders.hh>
+#include <moppe/game/cairn.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/dust.hh>
@@ -29,6 +30,7 @@
 #include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
+#include <moppe/game/opening.hh>
 #include <moppe/game/seed_memory.hh>
 #include <moppe/game/simulation_clock.hh>
 #include <moppe/game/stars.hh>
@@ -443,35 +445,21 @@ namespace moppe {
                                            : Vec3 (0, 0, 1);
       }
 
-      void draw_home_base_marker (render::DrawList& dl) const {
-        const Vec3 base = m_home_base_position;
-        render::DrawState marker_state;
-        marker_state.cull = false;
-        dl.state (marker_state);
-        dl.lit (true);
-        dl.fogged (true);
-        dl.push ();
-        dl.translate (base + Vec3 (0, 2.8f, 0));
-        dl.color (0.18f, 0.14f, 0.08f);
-        dl.scale (0.22f, 5.6f, 0.22f);
-        dl.cube (1.0f);
-        dl.pop ();
+      // The trailhead is marked by a cairn at the path's edge, built once
+      // per world.
+      void build_home_base_marker () {
+        m_home_base_marker.clear ();
+        build_cairn (m_home_base_marker,
+                     m_home_base_position,
+                     trail_direction_from_home (),
+                     static_cast<std::uint32_t> (recipe ().seed ().value),
+                     [this] (float x, float z) {
+                       return ground_height (Vec3 (x, 0.0f, z));
+                     });
+      }
 
-        const Vec3 along = trail_direction_from_home ();
-        Vec3 side = cross (Vec3 (0, 1, 0), along);
-        if (length2 (side) < 1e-5f)
-          side = Vec3 (1, 0, 0);
-        side = normalized (side);
-        const Vec3 flag_top = base + Vec3 (0, 5.5f, 0);
-        dl.lit (false);
-        dl.color (1.0f, 0.55f, 0.08f);
-        dl.begin (render::Prim::Triangles);
-        dl.vertex (flag_top);
-        dl.vertex (flag_top + Vec3 (0, -2.0f, 0));
-        dl.vertex (flag_top + side * 2.8f + Vec3 (0, -0.8f, 0));
-        dl.end ();
-        dl.lit (true);
-        dl.state (render::DrawState ());
+      void draw_home_base_marker (render::DrawList& dl) const {
+        dl.append (m_home_base_marker);
       }
 
       void draw_trail_map (render::DrawList& dl,
@@ -662,6 +650,7 @@ namespace moppe {
         session ().stars ().generate (surface (), world (), 80);
         m_home_base_position =
           trail_cell_position (trail_network ().plan.home_base);
+        build_home_base_marker ();
         m_spawn_position =
           m_home_base_position - trail_direction_from_home () * 8.0f;
         m_spawn_position[1] =
@@ -832,10 +821,25 @@ namespace moppe {
                     << " (Box3D, streamed around the rider)" << std::endl;
       }
 
+      // The opening is the authored shot list (data/opening.txt) when it
+      // was composed in this world, and otherwise one generated still of
+      // the trailhead; either ends in the player's eyes.  MOPPE_OPENING
+      // names another shot list, `generated` for the still, or `flight`
+      // for the old drone flight through the planned landmarks, which the
+      // terrain survey still samples.
       void plan_opening_journey () {
-        MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
+        MOPPE_PROFILE_ZONE ("startup.plan_opening");
+        m_opening_shots.clear ();
         if (m_spectator)
           return;
+        const char* choice = moppe::environment ("MOPPE_OPENING");
+        const bool flight =
+          (choice && std::string_view (choice) == "flight") ||
+          moppe::environment ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
+        if (!flight) {
+          plan_opening_reel (choice);
+          return;
+        }
         m_cinematic_plan = plan_cinematic_flight (surface (),
                                                   standing_water (),
                                                   lake_census (),
@@ -854,6 +858,135 @@ namespace moppe {
             m_cinematic_plan.landmarks[i].kind);
         }
         std::cerr << '\n';
+      }
+
+      float ground_height (const Vec3& at) const {
+        return terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface (), moppe::position (Vec3 (at[0], 0.0f, at[2]))));
+      }
+
+      // Reads the authored shots, keeping them only if they were composed
+      // in this world and every camera stands above its ground.
+      std::optional<OpeningReel> authored_opening (const char* choice) const {
+        if (choice && std::string_view (choice) == "generated")
+          return std::nullopt;
+        const std::string path = choice
+                                   ? std::string (choice)
+                                   : platform::asset_path ("data/opening.txt");
+        std::ifstream input (path);
+        if (!input) {
+          std::cerr << "moppe: opening: no shot list at " << path << '\n';
+          return std::nullopt;
+        }
+        std::string error;
+        std::optional<OpeningReel> reel = parse_opening_reel (input, error);
+        if (!reel) {
+          std::cerr << "moppe: opening: " << path << ": " << error << '\n';
+          return std::nullopt;
+        }
+        if (!reel->matches (
+              static_cast<int> (recipe ().seed ().value),
+              recipe ().resolution (),
+              terrain::profile_id (recipe ().generation_profile ()))) {
+          std::cerr << "moppe: opening: " << path
+                    << " was composed for another world\n";
+          return std::nullopt;
+        }
+        for (const OpeningShot& shot : reel->shots) {
+          if (shot.eye[1] < ground_height (shot.eye) + 0.2f) {
+            std::cerr << "moppe: opening: shot " << shot.name
+                      << " stands underground in this world\n";
+            return std::nullopt;
+          }
+          if (shot.sun && std::fabs (*shot.sun - m_graphics.sun_height) > 0.01f)
+            std::cerr << "moppe: opening: shot " << shot.name
+                      << " was composed under sun " << *shot.sun
+                      << ", the world is lit at " << m_graphics.sun_height
+                      << '\n';
+        }
+        return reel;
+      }
+
+      // Any world's opening: one long still looking back at the trailhead
+      // from up the trail, with the titles over it.
+      std::vector<OpeningShot> generated_opening () const {
+        const Vec3 along = trail_direction_from_home ();
+        Vec3 eye = m_home_base_position + along * 20.0f;
+        eye[1] = ground_height (eye) + 3.6f;
+        Vec3 look = m_spawn_position - eye;
+        look[1] = 0.0f;
+        OpeningShot still;
+        still.name = "trailhead";
+        still.eye = eye;
+        still.heading_deg = heading_degrees (look);
+        still.pitch_deg = -3.0f;
+        still.fov_deg = 46.0f;
+        still.hold = 11.0f;
+        still.push = 3.0f;
+        still.fade = 2.5f;
+        still.captions.push_back (
+          { OpeningCaption::Style::Title, "moppe", 1.6f, 4.4f, 0.28f });
+        still.captions.push_back ({ OpeningCaption::Style::Credit,
+                                    "a game by Mikael Brockman",
+                                    6.2f,
+                                    3.8f });
+        return { still };
+      }
+
+      void plan_opening_reel (const char* choice) {
+        const std::optional<OpeningReel> reel = authored_opening (choice);
+        m_opening_shots = reel ? reel->shots : generated_opening ();
+        const OpeningArrival arrival =
+          reel && reel->arrival ? *reel->arrival : OpeningArrival {};
+        Vec3 eye = session ().subject_position () + Vec3 (0, 1.6f, 0);
+        if (logic ().m_mode == M_FOOT)
+          eye = session ().walker ().eye_position ();
+        m_opening_shots.push_back (
+          arrival_shot (arrival, eye, subject_heading (), 70.0f));
+        std::cerr << "moppe: opening: the player starts at "
+                  << format_opening_shot ("start",
+                                          eye,
+                                          subject_heading (),
+                                          70.0f,
+                                          logic ().m_total_time,
+                                          m_graphics.sun_height)
+                  << '\n';
+        float duration = 0.0f;
+        for (const OpeningShot& shot : m_opening_shots)
+          duration += shot.hold;
+        std::cerr << "moppe: opening: " << m_opening_shots.size ()
+                  << (reel ? " authored" : " generated") << " shots, "
+                  << duration << " s\n";
+      }
+
+      void start_opening () {
+        if (!m_cinematic_plan.empty ()) {
+          m_cinematic.start (m_cinematic_plan, surface ());
+          return;
+        }
+        if (m_opening_shots.empty ())
+          return;
+        m_opening.start (m_opening_shots);
+        m_opening_shot_seen = SIZE_MAX;
+        m_opening_rendered_shot = SIZE_MAX;
+        follow_opening_clock ();
+      }
+
+      // Each shot may set the world's clock at its cut, choosing its sky.
+      void follow_opening_clock () {
+        if (!m_opening.active () ||
+            m_opening.shot_index () == m_opening_shot_seen)
+          return;
+        m_opening_shot_seen = m_opening.shot_index ();
+        if (const std::optional<float> clock = m_opening.shot ().clock) {
+          logic ().m_total_time = *clock + m_opening.shot_time ();
+          update_world_atmosphere (logic ().m_total_time);
+        }
+      }
+
+      bool opening_active () const noexcept {
+        return m_cinematic.active () || m_opening.active ();
       }
 
       void plan_gazetteer_capture () {
@@ -990,9 +1123,8 @@ namespace moppe {
           m_water_shot.has_value () || m_gazetteer.has_value () ||
           moppe::environment ("MOPPE_DEMO") ||
           moppe::environment ("MOPPE_WALK");
-        if (!automated && !m_skip_cinematic_requested &&
-            !m_cinematic_plan.empty ()) {
-          m_cinematic.start (m_cinematic_plan, surface ());
+        if (!automated && !m_skip_cinematic_requested) {
+          start_opening ();
           m_live_input.clear ();
         }
       }
@@ -1051,7 +1183,7 @@ namespace moppe {
         // presentation interval through a fixed 120 Hz clock.
         const bool frame_locked =
           m_benchmark.has_value () ||
-          (m_cinematic.active () &&
+          (opening_active () &&
            moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR"));
         if (frame_locked) {
           m_simulation_clock.reset ();
@@ -1146,9 +1278,9 @@ namespace moppe {
         heading[1] = 0.0f;
         heading = normalized (heading);
         const Vec3 right (heading[2], 0.0f, -heading[0]);
-        const Vec3 at = gliding ? session ().glider ().position () -
-                                    Vec3 (0, 0.9f, 0)
-                                : bike.render_position () + Vec3 (0, 0.4f, 0);
+        const Vec3 at = gliding
+                          ? session ().glider ().position () - Vec3 (0, 0.9f, 0)
+                          : bike.render_position () + Vec3 (0, 0.4f, 0);
         const float away = gliding ? 7.0f : 4.5f;
         const Vec3 from = view == "front"
                             ? heading * away + right * (away * 0.27f)
@@ -1159,7 +1291,7 @@ namespace moppe {
       void tick_simulation (float dt) {
         MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
         std::optional<InputFrame> scripted_input;
-        if (m_cinematic.active () &&
+        if (opening_active () &&
             moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
           const int fps = [] {
             if (const char* value =
@@ -1238,6 +1370,23 @@ namespace moppe {
             m_cinematic.tick (dt, surface (), controls);
             if (!m_cinematic.active ())
               leave_cinematic ();
+            update_frame_flare ();
+            return;
+          }
+        }
+        if (m_opening.active ()) {
+          if (input.leave_cinematic) {
+            leave_cinematic ();
+            input = {};
+          } else {
+            m_opening.tick (dt);
+            follow_opening_clock ();
+            if (!m_opening.active ()) {
+              leave_cinematic ();
+              // A capture of the opening is done when it is.
+              if (moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR"))
+                platform::request_quit ();
+            }
             update_frame_flare ();
             return;
           }
@@ -1588,6 +1737,7 @@ namespace moppe {
         const int hud_height =
           r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
         if (visibility.cinematic_hud) {
+          draw_opening_titles (hud_width, hud_height);
           m_hud.draw_ride_prompt (m_hud_text,
                                   frame.overlay.cinematic_prompt_alpha,
                                   hud_width,
@@ -1610,6 +1760,39 @@ namespace moppe {
         r.draw_hud (m_hud_dl);
       }
 
+      // The opening's fades are a black veil over the frame, and its
+      // captions are set over that.
+      void draw_opening_titles (int width_pts, int height_pts) {
+        if (!m_opening.active ())
+          return;
+        if (const float veil = m_opening.veil (); veil > 0.002f) {
+          render::DrawState over;
+          over.blend = true;
+          over.depth_test = false;
+          over.depth_write = false;
+          over.cull = false;
+          m_hud_dl.state (over);
+          m_hud_dl.lit (false);
+          m_hud_dl.fogged (false);
+          m_hud_dl.color (0.0f, 0.0f, 0.0f, veil);
+          m_hud_dl.begin (render::Prim::Quads);
+          m_hud_dl.vertex (-64.0f, -64.0f);
+          m_hud_dl.vertex (width_pts + 64.0f, -64.0f);
+          m_hud_dl.vertex (width_pts + 64.0f, height_pts + 64.0f);
+          m_hud_dl.vertex (-64.0f, height_pts + 64.0f);
+          m_hud_dl.end ();
+          m_hud_dl.state (render::DrawState ());
+        }
+        for (const OpeningCaptionView& caption : m_opening.captions ())
+          m_hud.draw_title_card (m_hud_text,
+                                 caption.style == OpeningCaption::Style::Title,
+                                 *caption.text,
+                                 caption.alpha,
+                                 caption.y,
+                                 width_pts,
+                                 height_pts);
+      }
+
       void render (render::Renderer& r) override {
         MOPPE_PROFILE_FRAME ();
         MOPPE_PROFILE_ZONE ("MoppeGame::render");
@@ -1627,6 +1810,14 @@ namespace moppe {
         const FrameView frame = compose_frame_view (frame_view_input (aspect));
         const bool cinematic = frame.visibility.cinematic;
         const GazetteerShot* gazetteer_shot = current_gazetteer_shot ();
+        // A cut is a new view: the temporal history of the last one would
+        // only smear into it.
+        if (m_opening.active () &&
+            m_opening.shot_index () != m_opening_rendered_shot) {
+          if (m_opening_rendered_shot != SIZE_MAX)
+            r.reset_temporal_state ();
+          m_opening_rendered_shot = m_opening.shot_index ();
+        }
 
         static const int screenshot_delay = [] {
           if (const char* frames =
@@ -1642,6 +1833,7 @@ namespace moppe {
                 moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
             const int capture_count = cinematic_capture_frame_limit ();
             const bool survey =
+              m_cinematic.active () &&
               moppe::environment ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
             const float next_progress =
               (m_cinematic_capture_frame + 0.5f) / capture_count;
@@ -1689,7 +1881,9 @@ namespace moppe {
         }
         if (m_snapshot_requested) {
           m_snapshot_requested = false;
-          r.request_screenshot (next_snapshot_path ());
+          const std::string path = next_snapshot_path ();
+          r.request_screenshot (path);
+          record_shot_pose (frame, path);
         }
         // A ride capture records CONSECUTIVE gameplay frames: the stimulus a
         // rider actually receives, per-frame LOD transitions included --
@@ -2030,7 +2224,7 @@ namespace moppe {
             k == Key::PhysicalD)
           return;
 
-        if (m_cinematic.active ()) {
+        if (opening_active ()) {
           if (k == Key::Escape && down)
             platform::request_quit ();
           else
@@ -2082,6 +2276,25 @@ namespace moppe {
         return path.str ();
       }
 
+      // Beside each screenshot, the camera that took it as a `shot` line for
+      // data/opening.txt: printed to the log (on the Xbox, LocalState's
+      // log.txt) and gathered in the run directory's shots.txt.
+      void record_shot_pose (const FrameView& frame, const std::string& path) {
+        const std::string name = std::filesystem::path (path).stem ().string ();
+        const std::string line = format_opening_shot (
+          name,
+          frame.camera.position,
+          frame.camera.forward,
+          frame.camera.field_of_view.numerical_value_in (u::deg),
+          logic ().m_total_time,
+          m_graphics.sun_height);
+        std::cerr << "moppe: pose: " << line << '\n';
+        std::ofstream shots (std::filesystem::path (m_snapshot_directory) /
+                               "shots.txt",
+                             std::ios::app);
+        shots << line << '\n';
+      }
+
       static int glide_frame_limit () {
         static const int frames = [] {
           if (!moppe::environment ("MOPPE_GLIDE"))
@@ -2117,7 +2330,7 @@ namespace moppe {
       FrameViewInput frame_view_input (float aspect) const {
         FrameSceneMode scene = FrameSceneMode::Gameplay;
         FrameCameraReading camera;
-        const bool cinematic = m_cinematic.active ();
+        const bool cinematic = opening_active ();
 
         if (const GazetteerShot* shot = current_gazetteer_shot ()) {
           scene = FrameSceneMode::Gazetteer;
@@ -2143,6 +2356,14 @@ namespace moppe {
             .forward = normalized (subject - eye),
             .view = Mat4::look_at (eye, subject, Vec3 (0, 1, 0)),
             .field_of_view = shot->vertical_field_of_view,
+          };
+        } else if (m_opening.active ()) {
+          scene = FrameSceneMode::Cinematic;
+          camera = {
+            .position = m_opening.position (),
+            .forward = m_opening.forward (),
+            .view = m_opening.view_matrix (),
+            .field_of_view = m_opening.field_of_view () * u::deg,
           };
         } else if (cinematic) {
           scene = FrameSceneMode::Cinematic;
@@ -2180,8 +2401,11 @@ namespace moppe {
           .scene = scene,
           .aspect = aspect,
           .cinematic_motion_blur =
-            cinematic ? m_cinematic.motion_blur () : 0.0f,
-          .cinematic_elapsed = cinematic ? m_cinematic.elapsed () : 0.0f,
+            m_cinematic.active () ? m_cinematic.motion_blur () : 0.0f,
+          .cinematic_elapsed = m_opening.active () ? m_opening.elapsed ()
+                               : cinematic         ? m_cinematic.elapsed ()
+                                                   : 0.0f,
+          .reveal_player = m_opening.active () && !m_opening.shot ().settle,
           .benchmark = benchmark,
         };
       }
@@ -2271,7 +2495,15 @@ namespace moppe {
 
       void leave_cinematic () {
         m_cinematic.stop ();
+        m_opening.stop ();
         m_live_input.clear ();
+        // On foot the opening has already arrived in the player's eyes.
+        if (logic ().m_cam_mode == CAM_HELMET) {
+          const Vec3 look = session ().subject_heading ();
+          session ().camera ().place (logic ().m_fp_eye,
+                                      logic ().m_fp_eye + look * 10.0f);
+          return;
+        }
         const Vec3 subject =
           subject_position () +
           (logic ().m_mode == M_FOOT ? Vec3 (0, 1.0f, 0) : Vec3 ());
@@ -2293,6 +2525,8 @@ namespace moppe {
         m_skip_cinematic_requested = false;
         m_cinematic.stop ();
         m_cinematic_plan = {};
+        m_opening.stop ();
+        m_opening_shots.clear ();
         m_waterfall_surface.clear ();
         m_water_inspection.reset ();
         const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());
@@ -2356,9 +2590,14 @@ namespace moppe {
       GraphicsSettings m_graphics;
       Vec3 m_spawn_position;
       Vec3 m_home_base_position;
+      render::DrawList m_home_base_marker;
       bool m_skip_cinematic_requested = false;
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
+      std::vector<OpeningShot> m_opening_shots;
+      OpeningPlayer m_opening;
+      std::size_t m_opening_shot_seen = SIZE_MAX;
+      std::size_t m_opening_rendered_shot = SIZE_MAX;
       InputFrameAdapter m_live_input;
       SimulationClock m_simulation_clock;
       WaterfallSurface m_waterfall_surface;

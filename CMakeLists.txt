@@ -442,6 +442,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/water_presentation.cc
   moppe/game/waterfall_surface.cc
   moppe/game/cinematic_flight.cc
+  moppe/game/opening.cc
+  moppe/game/cairn.cc
   moppe/game/avatar.cc
   moppe/game/walker_render.cc
   moppe/game/figure.cc
@@ -616,6 +618,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/forest_test.cc
     tests/game/boulders_test.cc
     tests/game/cinematic_flight_test.cc
+    tests/game/opening_test.cc
     tests/map/surface_test.cc
     tests/map/water_surface_test.cc
     tests/map/terrain_generation_test.cc
@@ -1118,7 +1121,7 @@ if(WIN32)
       NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS
       MOPPE_BUNDLED_WORLD_CACHE="world/default")
     install(TARGETS moppe-xbox RUNTIME DESTINATION bin)
-    install(DIRECTORY fonts textures DESTINATION share/moppe-xbox)
+    install(DIRECTORY fonts textures data DESTINATION share/moppe-xbox)
     if(MOPPE_XBOX_BAKED_WORLD)
       if(NOT EXISTS "${MOPPE_XBOX_BAKED_WORLD}/topology.bin")
         message(FATAL_ERROR

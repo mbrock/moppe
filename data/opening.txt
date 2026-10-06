@@ -1,0 +1,31 @@
+# The opening of moppe: a few held views of the default world, the title
+# and a credit fading over them, ending in the player's own eyes beside the
+# parked bike.  Grammar and units are in moppe/game/opening.hh.
+#
+# To author a shot, play (or `tools/spectate`), frame a view, and press P:
+# the log prints a `shot` line for that camera (also gathered in the
+# screenshot run's shots.txt), ready to paste here.  Test a list without
+# rebuilding with MOPPE_OPENING=path/to/list.txt, or MOPPE_ASSETS=<repo>.
+#
+# The shots belong to one world.  Another seed or resolution plays a
+# single generated still of the trailhead instead.
+
+world seed 123 resolution 2048 profile play
+
+# Low in the flowering grass east of the lake, a line of birches gone gold
+# under a wide sky: the name rises into the sky.
+shot meadow eye 4562.60 154.28 3542.60 heading -135 pitch 0 fov 54 hold 9 push 2 fade 3
+caption title "moppe" at 2.4 for 5.6 y 0.28
+
+# Among them: the birches up close, the red range beyond the water.
+shot birches eye 4630.00 159.44 3380.00 heading -95 pitch 0.5 fov 58 hold 7 pan -3 truck 1
+caption credit "a game by Mikael Brockman" at 1.0 for 5
+
+# Across the lake toward the low sun, the shallows lit.
+shot shallows eye 4237.40 154.87 3217.40 heading 45 pitch 0 fov 55 hold 6 push 1.5
+
+# The trailhead: the cairn, the parked bike, and the hiker beside it.
+shot trailhead eye 4201.50 161.30 3953.50 heading -42 pitch 0 fov 50 hold 6 truck 0.8 fade 1.6
+
+# Then over the hiker's shoulder and into their eyes.
+arrival hold 5.5 push 5 rise 1.2

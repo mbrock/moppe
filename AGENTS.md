@@ -14,7 +14,7 @@
   (or `open build/moppe.app`)
   - Game controller: left stick drives and steers; right trigger boosts; `A`
     deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
-    and `Y` boosts, flares, or skips the cinematic. The D-pad navigates Terrain
+    and `Y` boosts, flares, or skips the opening. The D-pad navigates Terrain
     Lab. Xbox, PlayStation, and compatible MFi controllers use this layout.
   - The game starts on foot beside the parked bike, in first person: the
     mouse looks around (captured; `M` frees it), `W`/`S` walk, `A`/`D`
@@ -32,7 +32,23 @@
   - `P` captures the current frame to `screenshots/run-<timestamp>/shot-NNN.png`
     (gitignored, one directory per run; `MOPPE_SCREENSHOT_DIR` overrides the
     base). Start the game, walk around, press `P` at each view worth
-    discussing, then point at the latest run directory.
+    discussing, then point at the latest run directory. Each press also
+    logs the camera as a pasteable `shot` line for the opening (`moppe:
+    pose: shot shot-NNN eye X Y Z heading H pitch P fov F clock T sun S`),
+    gathered in the run directory's `shots.txt`; on the Xbox,
+    `tools/xbox-control send 'tap P'` then `log` reads it back.
+  - The opening is authored: `data/opening.txt` lists a few held shots of the
+    default world (seed 123, 2048 samples, play), each drifting gently
+    (`push`/`truck`/`rise` metres, `pan`/`tilt`/`zoom` degrees, a breathing
+    `sway`), joined by cuts or a dip through black (`fade`), with the title
+    and a credit set in Slug fading over them (`caption`), ending with an
+    `arrival` into the player's first-person view beside the parked bike.
+    The grammar is in `moppe/game/opening.hh`. Author by framing a view in
+    play or `tools/spectate` and pressing `P`; try a list without
+    rebuilding with `MOPPE_OPENING=path/to/list.txt` (or
+    `MOPPE_ASSETS=<repo>`). Another world plays one generated still of the
+    trailhead (`MOPPE_OPENING=generated` forces it); `MOPPE_OPENING=flight`
+    flies the old drone route through the planned landmarks. `Space` skips.
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
     the motocross stays tethered beneath the wing. Press `E` again to drop it
@@ -76,10 +92,11 @@
     - `--window-size WIDTHxHEIGHT` picks the windowed size, and `--inactive`
       keeps a hand-started run behind the active app. Together they profile a
       large surface without taking over the display.
-  - Deterministic opening-cinematic video:
-    `tools/capture-cinematic /tmp/cinematic.mp4 12`. Set `MOPPE_SEED`,
-    `MOPPE_TERRAIN_PROFILE`, or `MOPPE_CINEMATIC_CAPTURE_FPS` to override the
-    defaults.
+  - Deterministic opening video: `tools/capture-cinematic
+    /tmp/opening.mp4` (it stops when the opening ends; a second argument
+    caps the seconds). Set `MOPPE_SEED`, `MOPPE_TERRAIN_PROFILE`,
+    `MOPPE_CINEMATIC_CAPTURE_FPS`, or `MOPPE_OPENING` to override the
+    defaults, and add `--renderer nhal` after the arguments for NHAL.
   - Temporal-stability verification of the riding experience:
     `tools/ride-judge /tmp/ride-judge` captures a deterministic autopilot
     ride as consecutive frames (`MOPPE_RIDE_CAPTURE_DIR`, with `_START` and
