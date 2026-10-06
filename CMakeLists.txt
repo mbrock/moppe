@@ -861,9 +861,11 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
         ${MOPPE_NHAL_WORLD}/${program}.fragment.metal)
     endforeach()
-    list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
-      ${MOPPE_NHAL_WORLD}/forest_cull.hh
-      ${MOPPE_NHAL_WORLD}/forest_cull.compute.metal)
+    foreach(program IN ITEMS forest_cull exposure)
+      list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
+        ${MOPPE_NHAL_WORLD}/${program}.hh
+        ${MOPPE_NHAL_WORLD}/${program}.compute.metal)
+    endforeach()
     add_custom_command(
       OUTPUT ${MOPPE_NHAL_WORLD_OUTPUTS}
       COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_WORLD}

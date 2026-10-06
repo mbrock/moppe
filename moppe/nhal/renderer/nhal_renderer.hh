@@ -23,6 +23,7 @@ namespace moppe::nhal {
     StageCode slug_text[2];
     StageCode forest[2];
     StageCode forest_cull;
+    StageCode exposure;
   };
 
   // The programs' MSL, embedded in the binary at build time.

@@ -59,6 +59,9 @@ namespace moppe::nhal {
     const char forest_cull_compute[] = {
 #embed "forest_cull.compute.metal"
       , 0 };
+    const char exposure_compute[] = {
+#embed "exposure.compute.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -72,6 +75,7 @@ namespace moppe::nhal {
       { { slug_text_vertex, {} }, { slug_text_fragment, {} } },
       { { forest_vertex, {} }, { forest_fragment, {} } },
       { forest_cull_compute, {} },
+      { exposure_compute, {} },
     };
     return shaders;
   }

@@ -1362,7 +1362,56 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *present*
-    '((grade :vec4))))             ; exposure, 1 when the drawable is 8-bit
+    '((grade :vec4))))             ; exposure bias, 1 when the drawable is
+                                   ; 8-bit, seconds, 0
+
+;;; Auto-exposure, on the GPU alone: 256 wide taps of the resolved image,
+;;; log-averaged, ease the stored exposure toward mid-grey -- clamped to
+;;; about a stop either way so night stays night, and faster down than up,
+;;; like eyes.  As MetalRenderer::update_exposure, without the readback.
+(define-shader exposure-compute
+    (:stage :compute
+     :workgroup-size (256 1 1)
+     :inputs ((local :uint :built-in :local-invocation-index))
+     :shared ((brightness :float 256))
+     :resources ((image :texture-2d :binding 0)
+                 (linear-clamp :sampler :binding 0)
+                 (exposure :storage-buffer :binding 1 :element :float
+                           :access :read-write)))
+  (let* ((cell (vec2 (float (mod local (uint 16))) (float (/ local (uint 16)))))
+         (uv (/ (+ cell (vec2 0.5 0.5)) 16.0))
+         (o (vec2 0.008 0.014))
+         (c (* 0.2 (+ (swizzle (sample-level image linear-clamp uv 0.0) :rgb)
+                      (swizzle (sample-level image linear-clamp (+ uv o) 0.0)
+                               :rgb)
+                      (swizzle (sample-level image linear-clamp (- uv o) 0.0)
+                               :rgb)
+                      (swizzle (sample-level image linear-clamp
+                                             (+ uv (vec2 (swizzle o :x)
+                                                         (* -1.0 (swizzle o :y))))
+                                             0.0)
+                               :rgb)
+                      (swizzle (sample-level image linear-clamp
+                                             (+ uv (vec2 (* -1.0 (swizzle o :x))
+                                                         (swizzle o :y)))
+                                             0.0)
+                               :rgb))))
+         (luminance (dot c (vec3 0.2126 0.7152 0.0722))))
+    (set-shared-element brightness local (log (max luminance 0.0001)))
+    (workgroup-barrier)
+    (when (= local (uint 0))
+      (let* ((sum (counted-fold (index (uint 256) total 0.0)
+                    (+ total (shared-element brightness index))))
+             (average (exp (/ sum 256.0)))
+             (old (buffer-element exposure (uint 0)))
+             (target (clamp (/ 0.16 average) 0.55 1.9))
+             (rate (if (< target old) 0.10 0.04)))
+        (when (> average 0.00015)
+          (set-buffer-element exposure (uint 0)
+                              (+ old (* (- target old) rate))))))))
+
+(define-shader-program exposure
+  :compute exposure-compute)
 
 (define-shader present-vertex
     (:stage :vertex
@@ -1375,25 +1424,67 @@
                       0.0 1.0))
     (set-output uv (ndc-uv corner))))
 
-;;; Narkowicz's ACES fit; the display's gamma only for an 8-bit drawable,
-;;; since an RGBA16F drawable is extended linear sRGB.
+(define-shader-function aces (x)
+  (clamp (/ (* x (+ (* x 2.51) (vec3 0.03 0.03 0.03)))
+            (+ (* x (+ (* x 2.43) (vec3 0.59 0.59 0.59))) (vec3 0.14 0.14 0.14)))
+         (vec3 0.0 0.0 0.0) (vec3 1.0 1.0 1.0)))
+
+(define-shader-function gamma-encode (c)
+  (vec3 (expt (swizzle c :x) 0.4545454) (expt (swizzle c :y) 0.4545454)
+        (expt (swizzle c :z) 0.4545454)))
+
+;;; As post.metal's present: adapted exposure, ACES, then -- in display
+;;; space -- a warm print-film base with cool shadow density, vibrance,
+;;; animated grain heavier in the shadows, and a light vignette.  An RGBA16F
+;;; drawable is extended linear sRGB, so the graded frame is decoded again.
 (define-shader present-fragment
     (:stage :fragment
      :inputs ((uv :vec2 :location 0))
      :outputs ((color :vec4 :location 0))
      :resources ((present :uniform-block :binding 0 :members #.*present*)
+                 (exposure :storage-buffer :binding 1 :element :float)
                  (image :texture-2d :binding 0)
                  (linear-clamp :sampler :binding 0)))
-  (let* ((x (* (swizzle (sample image linear-clamp uv) :rgb)
-               (swizzle grade :x)))
-         (mapped (clamp (/ (* x (+ (* x 2.51) (vec3 0.03 0.03 0.03)))
-                           (+ (* x (+ (* x 2.43) (vec3 0.59 0.59 0.59)))
-                              (vec3 0.14 0.14 0.14)))
-                        (vec3 0.0 0.0 0.0) (vec3 1.0 1.0 1.0)))
-         (encoded (vec3 (expt (swizzle mapped :x) 0.4545454)
-                        (expt (swizzle mapped :y) 0.4545454)
-                        (expt (swizzle mapped :z) 0.4545454))))
-    (set-output color (vec4 (mix mapped encoded (swizzle grade :y)) 1.0))))
+  (let* ((exposed (* (swizzle (sample image linear-clamp uv) :rgb)
+                     (* (buffer-element exposure (uint 0)) (swizzle grade :x))))
+         (display (gamma-encode (aces exposed)))
+         (film (+ (* display (vec3 1.045 1.005 0.955))
+                  (vec3 -0.004 0.002 0.012)))
+         (curved (vec3 (expt (max (swizzle film :x) 0.0) 1.05)
+                       (expt (max (swizzle film :y) 0.0) 1.02)
+                       (max (swizzle film :z) 0.0)))
+         (grade-luma (dot curved (vec3 0.299 0.587 0.114)))
+         (toned (+ curved
+                   (* (vec3 -0.004 0.004 0.010)
+                      (- 1.0 (smoothstep 0.10 0.48 grade-luma)))
+                   (* (vec3 0.010 0.006 -0.004)
+                      (smoothstep 0.58 0.96 grade-luma))))
+         (luma (dot toned (vec3 0.299 0.587 0.114)))
+         (high (max (swizzle toned :x) (max (swizzle toned :y)
+                                            (swizzle toned :z))))
+         (low (min (swizzle toned :x) (min (swizzle toned :y)
+                                           (swizzle toned :z))))
+         (vibrant (mix (vec3 luma luma luma) toned
+                       (+ 1.0 (* 0.10 (- 1.0 (- high low))))))
+         (time (swizzle grade :z))
+         (pixel (* uv (vec2 1920.0 1080.0)))
+         (grain-at (- (+ pixel (vec2 (* time 173.0) (* time 251.0)))
+                      (* (floor (/ (+ pixel (vec2 (* time 173.0)
+                                                  (* time 251.0)))
+                                   1024.0))
+                         1024.0)))
+         (grain (fract (* (sin (dot grain-at (vec2 12.9898 78.233)))
+                          43758.5453)))
+         (speck (* (- grain 0.5)
+                   (* 0.020 (- 1.0 (* 0.65 (dot vibrant
+                                                (vec3 0.299 0.587 0.114)))))))
+         (grained (+ vibrant (vec3 speck speck speck)))
+         (centred (* (- uv (vec2 0.5 0.5)) (vec2 1.0 0.72)))
+         (vignette (- 1.0 (* 0.09 (smoothstep 0.22 0.72
+                                              (dot centred centred)))))
+         (final (clamp (* grained vignette) (vec3 0.0 0.0 0.0)
+                       (vec3 1.0 1.0 1.0))))
+    (set-output color (vec4 (mix (srgb final) final (swizzle grade :y)) 1.0))))
 
 (define-shader-program present
   :vertex present-vertex
