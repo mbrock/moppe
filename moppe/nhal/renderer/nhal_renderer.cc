@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <map>
@@ -911,6 +912,31 @@ namespace moppe::nhal {
         }
         m_previous_models.swap (m_current_models);
         m_current_models.clear ();
+        report_timings ();
+      }
+
+      // MOPPE_NHAL_TIMINGS=1 prints each pass's GPU time every two
+      // seconds, averaged over the frames since the last report.
+      void report_timings () {
+        static const bool wanted = [] {
+          const char* v = std::getenv ("MOPPE_NHAL_TIMINGS");
+          return v && *v && *v != '0';
+        }();
+        if (!wanted)
+          return;
+        for (const PassTiming& pass : m_device->pass_timings ())
+          m_timing_sums[pass.label] += pass.milliseconds;
+        if (++m_timing_frames < 120)
+          return;
+        double total = 0;
+        std::cerr << "moppe: NHAL GPU ms:";
+        for (const auto& [label, sum] : m_timing_sums) {
+          std::cerr << ' ' << label << '=' << sum / m_timing_frames;
+          total += sum / m_timing_frames;
+        }
+        std::cerr << " total=" << total << std::endl;
+        m_timing_sums.clear ();
+        m_timing_frames = 0;
       }
 
       void reset_temporal_state () override { m_restart = true; }
@@ -1277,6 +1303,8 @@ namespace moppe::nhal {
       bool m_scene_open = false, m_resolved = false, m_presented = false;
       std::map<std::uint64_t, Mat4> m_previous_models, m_current_models;
       std::string m_screenshot;
+      std::map<std::string, double> m_timing_sums;
+      int m_timing_frames = 0;
     };
   }
 
