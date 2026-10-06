@@ -57,8 +57,21 @@ an instance of 32 four-section blades that the vertex stage grows from hashes
 and the terrain's own fields, with the medium's tint, wind, the mover's
 parting, and the fragment stage's transmission, glint, and ensemble limits.
 The cull uses the previous frame's `UndergrowthParams`, since compute may not
-interrupt the scene pass. Ferns, flower drifts, and the mesoscale sward
-canopy are not ported yet.
+interrupt the scene pass. Flower drifts are a shoot family of the same
+draw: an 11-metre warped lattice of single-species colonies (daisy,
+buttercup, harebell, campion) claims shoots in open, damp sward, whose last
+two sections become a petal head that widens and washes toward its drift's
+colour as it retires.
+
+The mesoscale sward canopy is undergrowth.metal's middle rung: `sward-patches`
+keeps the 16-metre patches in view out to 180-1200 metres (the reach follows
+the sward's projected height), each an instance of a 4x4 grid lifted to the
+sward's height, drawn translucent before the blades. Its fragments march
+four samples down through the canopy column and integrate the leaf-normal
+distribution's radiance front to back, with the ground texture's grain, so
+fields read as grass to the horizon after single blades have retired.
+Ferns are not ported yet. The ground under the grass is the terrain's turf
+palette, as in Metal.
 
 Bloom is post.metal's: a bright pass at a quarter of the drawable, a
 separable nine-tap Gaussian, added before the tonemap.

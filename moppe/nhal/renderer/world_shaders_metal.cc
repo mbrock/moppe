@@ -89,6 +89,15 @@ namespace moppe::nhal {
     const char grass_tiles_compute[] = {
 #embed "grass_tiles.compute.metal"
       , 0 };
+    const char sward_vertex[] = {
+#embed "sward.vertex.metal"
+      , 0 };
+    const char sward_fragment[] = {
+#embed "sward.fragment.metal"
+      , 0 };
+    const char sward_patches_compute[] = {
+#embed "sward_patches.compute.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -109,6 +118,8 @@ namespace moppe::nhal {
       { { bloom_blur_vertex, {} }, { bloom_blur_fragment, {} } },
       { { grass_vertex, {} }, { grass_fragment, {} } },
       { grass_tiles_compute, {} },
+      { { sward_vertex, {} }, { sward_fragment, {} } },
+      { sward_patches_compute, {} },
     };
     return shaders;
   }

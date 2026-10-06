@@ -23,6 +23,8 @@
 #include <forest_shadow.hh>
 #include <grass.hh>
 #include <grass_tiles.hh>
+#include <sward.hh>
+#include <sward_patches.hh>
 #include <hud.hh>
 #include <present.hh>
 #include <resolve.hh>
@@ -78,6 +80,8 @@ namespace moppe::nhal {
     // The most grass tiles a window side may hold: 0.6-metre tiles over
     // 2 x 1.7 x the requested reach.
     constexpr std::uint32_t grass_window_side = 512;
+    // The canopy's 16-metre patches over twice its farthest reach.
+    constexpr std::uint32_t sward_window_side = 160;
     constexpr std::uint32_t forest_classes = 2 * forest_tiers;
 
     struct TreeTopology {
@@ -308,6 +312,10 @@ namespace moppe::nhal {
         m_resolve_code.keep (shaders.resolve);
         m_present_code.keep (shaders.present);
         m_grass_code.keep (shaders.grass);
+        m_sward_code.keep (shaders.sward);
+        m_sward_patches_code = std::string (shaders.sward_patches.msl);
+        m_sward_patches_dxil.assign (shaders.sward_patches.dxil.begin (),
+                                     shaders.sward_patches.dxil.end ());
         m_grass_tiles_code = std::string (shaders.grass_tiles.msl);
         m_grass_tiles_dxil.assign (shaders.grass_tiles.dxil.begin (),
                                    shaders.grass_tiles.dxil.end ());
@@ -772,6 +780,21 @@ namespace moppe::nhal {
         shaders::grass::Grass grass = m_grass_block;
         grass.interaction = lanes (params.interaction_position,
                                    params.interaction_radius);
+        // The canopy first: translucent, it blends over the ground it sits
+        // on, and the blades it hands over to stand in it.
+        m_device->set_pipeline (m_sward_pipeline);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, m_sward_block);
+        m_device->set_buffer (2, m_sward_patches);
+        m_device->set_texture (0, m_heights);
+        m_device->set_texture (1, m_normals);
+        m_device->set_texture (2, texture_or_white (m_grass));
+        m_device->set_texture (6, m_landscape);
+        m_device->set_texture (7, m_ground);
+        m_device->set_texture (8, m_shadow_map);
+        m_device->draw_indexed_indirect (m_sward_indices, IndexType::uint16,
+                                         m_sward_arguments);
+
         m_device->set_pipeline (m_grass_pipeline);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_uniforms (1, grass);
@@ -1056,6 +1079,17 @@ namespace moppe::nhal {
         grass.cull = Cull::none;
         grass.label = "grass";
         m_grass_pipeline = m_device->create_render_pipeline (grass);
+        RenderPipelineDesc sward = grass;
+        sward.program = &shaders::sward::program;
+        sward.vertex = m_sward_code.stage (0);
+        sward.fragment = m_sward_code.stage (1);
+        sward.blend[0] = Blend::alpha;
+        sward.depth_write = false;
+        sward.label = "sward canopy";
+        m_sward_pipeline = m_device->create_render_pipeline (sward);
+        m_sward_patches_pipeline = m_device->create_compute_pipeline (
+          { &shaders::sward_patches::program,
+            { m_sward_patches_code, m_sward_patches_dxil }, "sward patches" });
         m_grass_tiles_pipeline = m_device->create_compute_pipeline (
           { &shaders::grass_tiles::program,
             { m_grass_tiles_code, m_grass_tiles_dxil }, "grass tiles" });
@@ -1136,6 +1170,28 @@ namespace moppe::nhal {
           m_grass_indices = m_device->create_buffer (
             { .size = indices.size () * 2, .label = "grass blades" },
             std::as_bytes (std::span (indices)));
+
+          m_sward_patches = m_device->create_buffer (
+            { .size = std::uint64_t (sward_window_side) * sward_window_side
+                      * 8,
+              .usage = buffer_storage_write,
+              .label = "sward patches" });
+          m_sward_arguments = m_device->create_buffer (
+            { .size = sizeof (DrawIndexedIndirectArgs),
+              .usage = buffer_storage_write | buffer_indirect,
+              .label = "sward draw" });
+          std::vector<std::uint16_t> grid;
+          for (std::uint16_t z = 0; z < 4; ++z)
+            for (std::uint16_t x = 0; x < 4; ++x) {
+              const std::uint16_t a = std::uint16_t (z * 5 + x);
+              const std::uint16_t b = std::uint16_t (a + 1);
+              const std::uint16_t c = std::uint16_t (a + 5);
+              const std::uint16_t d = std::uint16_t (c + 1);
+              grid.insert (grid.end (), { a, c, b, b, c, d });
+            }
+          m_sward_indices = m_device->create_buffer (
+            { .size = grid.size () * 2, .label = "sward patch" },
+            std::as_bytes (std::span (grid)));
         }
         const auto& t = m_terrain_params;
         shaders::grass::Grass grass {};
@@ -1145,11 +1201,35 @@ namespace moppe::nhal {
           tile };
         grass.lattice = { 1.0f / t.scale[0], 1.0f / t.scale[2], t.scale[1],
                           float (t.width) };
-        grass.habitat = { reach, m_grass_params.density, 0,
-                          0.5f * float (m_scene_height)
-                            * std::abs (params.proj.at (1, 1)) };
+        const float focal =
+          0.5f * float (m_scene_height) * std::abs (params.proj.at (1, 1));
+        grass.habitat = { reach, m_grass_params.density, t.tex_scale, focal };
         m_grass_block = grass;
-        (void)view_proj;
+
+        // The canopy's reach follows the projected height of the whole
+        // sward, so looking down from the glider asks the same image-space
+        // question as riding.
+        constexpr float patch = 16.0f;
+        const float canopy_reach =
+          std::clamp (0.42f * focal / 0.28f, 180.0f, 1200.0f);
+        const std::uint32_t patches =
+          std::min (std::uint32_t (std::ceil (2.0f * canopy_reach / patch)),
+                    sward_window_side);
+        auto row = [&] (int r) {
+          return std::sqrt (view_proj.element (r) * view_proj.element (r)
+                            + view_proj.element (4 + r)
+                                * view_proj.element (4 + r)
+                            + view_proj.element (8 + r)
+                                * view_proj.element (8 + r));
+        };
+        shaders::grass::Grass sward = grass;
+        sward.window = {
+          std::floor ((params.camera_pos[0] - canopy_reach) / patch),
+          std::floor ((params.camera_pos[2] - canopy_reach) / patch),
+          float (patches), patch };
+        sward.habitat[0] = canopy_reach;
+        sward.interaction = { row (0), row (1), 0, 0 };
+        m_sward_block = sward;
 
         const DrawIndexedIndirectArgs reset {
           shoots * indices_per_shoot, 0, 0, 0, 0 };
@@ -1168,6 +1248,21 @@ namespace moppe::nhal {
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
         m_device->dispatch ((side * side + 63) / 64);
+        m_device->end_compute_pass ();
+
+        const DrawIndexedIndirectArgs sward_reset { 96, 0, 0, 0, 0 };
+        m_device->copy_to_buffer (
+          m_sward_arguments, 0,
+          m_device->upload (std::span<const DrawIndexedIndirectArgs> (
+            &sward_reset, 1)));
+        m_device->begin_compute_pass ("sward patches");
+        m_device->set_pipeline (m_sward_patches_pipeline);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, sward);
+        m_device->set_buffer (2, m_sward_patches);
+        m_device->set_buffer (3, m_sward_arguments);
+        m_device->set_texture (0, m_heights);
+        m_device->dispatch ((patches * patches + 63) / 64);
         m_device->end_compute_pass ();
         m_grass_culled = true;
       }
@@ -1477,6 +1572,12 @@ namespace moppe::nhal {
       std::string m_grass_tiles_code;
       std::vector<unsigned char> m_grass_tiles_dxil;
       Pipeline m_grass_pipeline, m_grass_tiles_pipeline;
+      ProgramCode m_sward_code;
+      std::string m_sward_patches_code;
+      std::vector<unsigned char> m_sward_patches_dxil;
+      Pipeline m_sward_pipeline, m_sward_patches_pipeline;
+      Buffer m_sward_patches, m_sward_arguments, m_sward_indices;
+      shaders::grass::Grass m_sward_block {};
       Buffer m_grass_tiles, m_grass_arguments, m_grass_indices;
       render::UndergrowthParams m_grass_params {};
       shaders::grass::Grass m_grass_block {};
