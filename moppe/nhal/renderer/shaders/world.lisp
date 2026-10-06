@@ -1565,7 +1565,7 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *present*
     '((grade :vec4))))             ; exposure bias, 1 when the drawable is
-                                   ; 8-bit, seconds, 0
+                                   ; 8-bit, seconds, bloom strength
 
 ;;; Auto-exposure, on the GPU alone: 256 wide taps of the resolved image,
 ;;; log-averaged, ease the stored exposure toward mid-grey -- clamped to
@@ -1626,6 +1626,53 @@
                       0.0 1.0))
     (set-output uv (ndc-uv corner))))
 
+;;; Bloom, as post.metal's: the exposed scene's bright parts at a quarter of
+;;; the drawable's size, softened by a separable nine-tap Gaussian taken in
+;;; five linear samples, then added before the tonemap.
+(define-shader bloom-bright-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0))
+     :outputs ((color :vec4 :location 0))
+     :resources ((present :uniform-block :binding 0 :members #.*present*)
+                 (exposure :storage-buffer :binding 1 :element :float)
+                 (image :texture-2d :binding 0)
+                 (linear-clamp :sampler :binding 0)))
+  (let* ((c (* (swizzle (sample image linear-clamp uv) :rgb)
+               (* (buffer-element exposure (uint 0)) (swizzle grade :x))))
+         (luma (dot c (vec3 0.2126 0.7152 0.0722))))
+    (set-output color (vec4 (* c (smoothstep 0.85 1.35 luma)) 1.0))))
+
+(define-shader-program bloom-bright
+  :vertex present-vertex
+  :fragment bloom-bright-fragment)
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *blur*
+    '((direction :vec4))))         ; texel step x, y
+
+(define-shader bloom-blur-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0))
+     :outputs ((color :vec4 :location 0))
+     :resources ((blur :uniform-block :binding 0 :members #.*blur*)
+                 (source :texture-2d :binding 0)
+                 (linear-clamp :sampler :binding 0)))
+  (let* ((step (swizzle direction :xy))
+         (near (* step 1.3846154))
+         (far (* step 3.2307692))
+         (c (+ (* (swizzle (sample source linear-clamp uv) :rgb) 0.227027)
+               (* (+ (swizzle (sample source linear-clamp (+ uv near)) :rgb)
+                     (swizzle (sample source linear-clamp (- uv near)) :rgb))
+                  0.3162162)
+               (* (+ (swizzle (sample source linear-clamp (+ uv far)) :rgb)
+                     (swizzle (sample source linear-clamp (- uv far)) :rgb))
+                  0.0702700))))
+    (set-output color (vec4 c 1.0))))
+
+(define-shader-program bloom-blur
+  :vertex present-vertex
+  :fragment bloom-blur-fragment)
+
 (define-shader-function aces (x)
   (clamp (/ (* x (+ (* x 2.51) (vec3 0.03 0.03 0.03)))
             (+ (* x (+ (* x 2.43) (vec3 0.59 0.59 0.59))) (vec3 0.14 0.14 0.14)))
@@ -1646,10 +1693,18 @@
      :resources ((present :uniform-block :binding 0 :members #.*present*)
                  (exposure :storage-buffer :binding 1 :element :float)
                  (image :texture-2d :binding 0)
+                 (bloom :texture-2d :binding 1)
                  (linear-clamp :sampler :binding 0)))
   (let* ((exposed (* (swizzle (sample image linear-clamp uv) :rgb)
                      (* (buffer-element exposure (uint 0)) (swizzle grade :x))))
-         (display (gamma-encode (aces exposed)))
+         ;; The bright pass saw the exposed scene, so the glow adds in the
+         ;; same units.
+         (glowing (if (> (swizzle grade :w) 0.0)
+                      (+ exposed (* (swizzle (sample bloom linear-clamp uv)
+                                             :rgb)
+                                    (* 0.45 (swizzle grade :w))))
+                      exposed))
+         (display (gamma-encode (aces glowing)))
          (film (+ (* display (vec3 1.045 1.005 0.955))
                   (vec3 -0.004 0.002 0.012)))
          (curved (vec3 (expt (max (swizzle film :x) 0.0) 1.05)

@@ -2,6 +2,10 @@
 // world.lisp into byte-array headers in the build directory.
 #include <moppe/nhal/renderer/nhal_renderer.hh>
 
+#include <shader_bloom_blur_fragment.h>
+#include <shader_bloom_blur_vertex.h>
+#include <shader_bloom_bright_fragment.h>
+#include <shader_bloom_bright_vertex.h>
 #include <shader_exposure_compute.h>
 #include <shader_forest_cull_compute.h>
 #include <shader_forest_fragment.h>
@@ -47,6 +51,9 @@ namespace moppe::nhal {
       dxil (shader_exposure_compute),
       { dxil (shader_terrain_shadow_vertex), {} },
       { dxil (shader_forest_shadow_vertex), {} },
+      { dxil (shader_bloom_bright_vertex),
+        dxil (shader_bloom_bright_fragment) },
+      { dxil (shader_bloom_blur_vertex), dxil (shader_bloom_blur_fragment) },
     };
     return shaders;
   }
