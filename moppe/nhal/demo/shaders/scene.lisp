@@ -493,14 +493,33 @@
   (uvec2 (clamp (+ centre (vec2 dx dy)) (vec2 0.0 0.0)
                 (- size (vec2 1.0 1.0)))))
 
-;;; The smallest and largest colour among the 3x3 scene texels around one.
+;;; Luminance and two chroma axes, as Luft's resolve clips its history:
+;;; a box in this space hugs a neighbourhood's colours more tightly than one
+;;; in RGB, so less stale colour survives the clamp.
+(define-shader-function rgb-to-ycocg (rgb)
+  (vec3 (+ (* (swizzle rgb :x) 0.25) (* (swizzle rgb :y) 0.5)
+           (* (swizzle rgb :z) 0.25))
+        (* 0.5 (- (swizzle rgb :x) (swizzle rgb :z)))
+        (+ (* (swizzle rgb :x) -0.25) (* (swizzle rgb :y) 0.5)
+           (* (swizzle rgb :z) -0.25))))
+
+(define-shader-function ycocg-to-rgb (value)
+  (vec3 (- (+ (swizzle value :x) (swizzle value :y)) (swizzle value :z))
+        (+ (swizzle value :x) (swizzle value :z))
+        (- (- (swizzle value :x) (swizzle value :y)) (swizzle value :z))))
+
+;;; The smallest and largest YCoCg colour among the 3x3 scene texels around
+;;; one.
 (define-shader-abstraction neighbourhood (extreme scene centre size)
   (let ((taps (loop for dy in '(-1.0 0.0 1.0)
                     append (loop for dx in '(-1.0 0.0 1.0)
-                                 collect `(swizzle (texel-load ,scene
-                                                    (scene-texel ,centre ,dx
-                                                                 ,dy ,size))
-                                                   :rgb)))))
+                                 collect `(rgb-to-ycocg
+                                           (swizzle
+                                            (texel-load ,scene
+                                                        (scene-texel ,centre
+                                                                     ,dx ,dy
+                                                                     ,size))
+                                            :rgb))))))
     (reduce (lambda (a b) `(,extreme ,a ,b)) taps)))
 
 ;;; The history through a Catmull-Rom filter, in five bilinear taps
@@ -584,10 +603,17 @@
          (at0 (/ (- middle (vec2 1.0 1.0)) output-size))
          (at3 (/ (+ middle (vec2 2.0 2.0)) output-size))
          (at12 (/ (+ middle (/ w2 w12)) output-size))
-         (remembered (clamp (catmull-rom-taps history linear-clamp
-                                              w0 w12 w3 at0 at12 at3)
-                            low high))
-         (weight (max (swizzle temporal-blend :x) (- 1.0 inside))))
+         (remembered (ycocg-to-rgb
+                      (clamp (rgb-to-ycocg
+                              (catmull-rom-taps history linear-clamp
+                                                w0 w12 w3 at0 at12 at3))
+                             low high)))
+         ;; Fast-moving pixels trust their history less, as in Luft.
+         (travel (- then-uv (ndc-uv ndc)))
+         (speed (clamp (* (sqrt (dot travel travel)) 48.0) 0.0 1.0))
+         (weight (max (- 1.0 (* (- 1.0 (swizzle temporal-blend :x))
+                                (- 1.0 (* speed 0.35))))
+                      (- 1.0 inside))))
     (set-output color (vec4 (mix remembered fresh weight) 1.0))))
 
 (define-shader-program resolve
