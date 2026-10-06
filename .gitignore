@@ -24,3 +24,4 @@ screenshots/studio-shot-*.png
 *.trace/
 .claude/worktrees/
 screenshots/nhal/
+*.blend1
