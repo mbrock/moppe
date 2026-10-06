@@ -80,6 +80,15 @@ namespace moppe::nhal {
     const char bloom_blur_fragment[] = {
 #embed "bloom_blur.fragment.metal"
       , 0 };
+    const char grass_vertex[] = {
+#embed "grass.vertex.metal"
+      , 0 };
+    const char grass_fragment[] = {
+#embed "grass.fragment.metal"
+      , 0 };
+    const char grass_tiles_compute[] = {
+#embed "grass_tiles.compute.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -98,6 +107,8 @@ namespace moppe::nhal {
       { { forest_shadow_vertex, {} }, {} },
       { { bloom_bright_vertex, {} }, { bloom_bright_fragment, {} } },
       { { bloom_blur_vertex, {} }, { bloom_blur_fragment, {} } },
+      { { grass_vertex, {} }, { grass_fragment, {} } },
+      { grass_tiles_compute, {} },
     };
     return shaders;
   }

@@ -21,6 +21,8 @@
 #include <forest.hh>
 #include <forest_cull.hh>
 #include <forest_shadow.hh>
+#include <grass.hh>
+#include <grass_tiles.hh>
 #include <hud.hh>
 #include <present.hh>
 #include <resolve.hh>
@@ -73,6 +75,9 @@ namespace moppe::nhal {
     // vertices in the same numbering.
     constexpr std::uint32_t forest_tiers = 6;
     constexpr std::uint32_t shadow_size = 2048;
+    // The most grass tiles a window side may hold: 0.6-metre tiles over
+    // 2 x 1.7 x the requested reach.
+    constexpr std::uint32_t grass_window_side = 512;
     constexpr std::uint32_t forest_classes = 2 * forest_tiers;
 
     struct TreeTopology {
@@ -302,6 +307,10 @@ namespace moppe::nhal {
         m_hud_code.keep (shaders.hud);
         m_resolve_code.keep (shaders.resolve);
         m_present_code.keep (shaders.present);
+        m_grass_code.keep (shaders.grass);
+        m_grass_tiles_code = std::string (shaders.grass_tiles.msl);
+        m_grass_tiles_dxil.assign (shaders.grass_tiles.dxil.begin (),
+                                   shaders.grass_tiles.dxil.end ());
         m_bloom_bright_code.keep (shaders.bloom_bright);
         m_bloom_blur_code.keep (shaders.bloom_blur);
         m_forest_code.keep (shaders.forest);
@@ -603,6 +612,7 @@ namespace moppe::nhal {
         upload_frame ();
         cull_trees (view_proj, params.camera_pos, float (m_scene_height),
                     false);
+        cull_grass (view_proj, params);
 
         m_previous_view_proj = view_proj;
         m_previous_time = params.time;
@@ -748,6 +758,31 @@ namespace moppe::nhal {
             m_tree_indices, IndexType::uint16, m_tree_arguments,
             c * sizeof (DrawIndexedIndirectArgs));
         }
+      }
+
+      void draw_undergrowth (const render::UndergrowthParams& params)
+        override {
+        // This frame draws the tiles begin_frame chose with the last
+        // parameters; the next frame's cull takes these.
+        m_grass_params = params;
+        m_grass_wanted = true;
+        if (!m_grass_culled)
+          return;
+        open_scene ();
+        shaders::grass::Grass grass = m_grass_block;
+        grass.interaction = lanes (params.interaction_position,
+                                   params.interaction_radius);
+        m_device->set_pipeline (m_grass_pipeline);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, grass);
+        m_device->set_buffer (2, m_grass_tiles);
+        m_device->set_texture (0, m_heights);
+        m_device->set_texture (1, m_normals);
+        m_device->set_texture (6, m_landscape);
+        m_device->set_texture (7, m_ground);
+        m_device->set_texture (8, m_shadow_map);
+        m_device->draw_indexed_indirect (m_grass_indices, IndexType::uint16,
+                                         m_grass_arguments);
       }
 
       void draw_sky (const render::SkyParams&) override {
@@ -1014,6 +1049,17 @@ namespace moppe::nhal {
           { shadow_size, shadow_size, Format::d32_float,
             usage_depth | usage_sampled, 1, "sun shadow" });
 
+        RenderPipelineDesc grass = scene;
+        grass.program = &shaders::grass::program;
+        grass.vertex = m_grass_code.stage (0);
+        grass.fragment = m_grass_code.stage (1);
+        grass.cull = Cull::none;
+        grass.label = "grass";
+        m_grass_pipeline = m_device->create_render_pipeline (grass);
+        m_grass_tiles_pipeline = m_device->create_compute_pipeline (
+          { &shaders::grass_tiles::program,
+            { m_grass_tiles_code, m_grass_tiles_dxil }, "grass tiles" });
+
         RenderPipelineDesc resolve;
         resolve.program = &shaders::resolve::program;
         resolve.vertex = m_resolve_code.stage (0);
@@ -1052,6 +1098,78 @@ namespace moppe::nhal {
         text.vertex = m_slug_text_code.stage (0);
         text.fragment = m_slug_text_code.stage (1);
         m_slug_text = m_device->create_render_pipeline (text);
+      }
+
+      // The ground tiles around the camera that carry blades, counted into
+      // the sward's indirect draw: a window of 0.6-metre cells anchored to
+      // the world lattice, so a blade keeps its identity as the rider moves.
+      void cull_grass (const Mat4& view_proj, const FrameParams& params) {
+        m_grass_culled = false;
+        if (!m_grass_wanted || !m_have_terrain || !m_landscape || !m_ground)
+          return;
+        constexpr float tile = 0.60f;
+        constexpr std::uint32_t shoots = 32, indices_per_shoot = 18;
+        const float reach = std::max (m_grass_params.reach, 1.0f) * 1.7f;
+        const std::uint32_t side =
+          std::min (std::uint32_t (std::ceil (2.0f * reach / tile)),
+                    grass_window_side);
+        if (!m_grass_tiles) {
+          m_grass_tiles = m_device->create_buffer (
+            { .size = std::uint64_t (grass_window_side) * grass_window_side
+                      * 16,
+              .usage = buffer_storage_write,
+              .label = "grass tiles" });
+          m_grass_arguments = m_device->create_buffer (
+            { .size = sizeof (DrawIndexedIndirectArgs),
+              .usage = buffer_storage_write | buffer_indirect,
+              .label = "grass draw" });
+          std::vector<std::uint16_t> indices;
+          for (std::uint32_t shoot = 0; shoot < shoots; ++shoot)
+            for (std::uint32_t quad = 0; quad < 3; ++quad) {
+              const std::uint16_t c = std::uint16_t (shoot * 8 + quad * 2);
+              indices.insert (indices.end (),
+                              { c, std::uint16_t (c + 1),
+                                std::uint16_t (c + 3), c,
+                                std::uint16_t (c + 3),
+                                std::uint16_t (c + 2) });
+            }
+          m_grass_indices = m_device->create_buffer (
+            { .size = indices.size () * 2, .label = "grass blades" },
+            std::as_bytes (std::span (indices)));
+        }
+        const auto& t = m_terrain_params;
+        shaders::grass::Grass grass {};
+        grass.window = {
+          std::floor ((params.camera_pos[0] - reach) / tile),
+          std::floor ((params.camera_pos[2] - reach) / tile), float (side),
+          tile };
+        grass.lattice = { 1.0f / t.scale[0], 1.0f / t.scale[2], t.scale[1],
+                          float (t.width) };
+        grass.habitat = { reach, m_grass_params.density, 0,
+                          0.5f * float (m_scene_height)
+                            * std::abs (params.proj.at (1, 1)) };
+        m_grass_block = grass;
+        (void)view_proj;
+
+        const DrawIndexedIndirectArgs reset {
+          shoots * indices_per_shoot, 0, 0, 0, 0 };
+        m_device->copy_to_buffer (
+          m_grass_arguments, 0,
+          m_device->upload (std::span<const DrawIndexedIndirectArgs> (
+            &reset, 1)));
+        m_device->begin_compute_pass ("grass tiles");
+        m_device->set_pipeline (m_grass_tiles_pipeline);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, grass);
+        m_device->set_buffer (2, m_grass_tiles);
+        m_device->set_buffer (3, m_grass_arguments);
+        m_device->set_texture (0, m_heights);
+        m_device->set_texture (1, m_normals);
+        m_device->set_texture (6, m_landscape);
+        m_device->set_texture (7, m_ground);
+        m_device->dispatch ((side * side + 63) / 64);
+        m_device->end_compute_pass ();
+        m_grass_culled = true;
       }
 
       void upload_frame () {
@@ -1355,6 +1473,14 @@ namespace moppe::nhal {
       std::uint32_t m_scene_width = 0, m_scene_height = 0;
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];
       Texture m_bloom[2];
+      ProgramCode m_grass_code;
+      std::string m_grass_tiles_code;
+      std::vector<unsigned char> m_grass_tiles_dxil;
+      Pipeline m_grass_pipeline, m_grass_tiles_pipeline;
+      Buffer m_grass_tiles, m_grass_arguments, m_grass_indices;
+      render::UndergrowthParams m_grass_params {};
+      shaders::grass::Grass m_grass_block {};
+      bool m_grass_wanted = false, m_grass_culled = false;
       std::uint32_t m_bloom_width = 1, m_bloom_height = 1;
       ProgramCode m_bloom_bright_code, m_bloom_blur_code;
       Pipeline m_bloom_bright, m_bloom_blur;

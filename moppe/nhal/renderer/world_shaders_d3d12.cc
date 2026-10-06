@@ -11,6 +11,9 @@
 #include <shader_forest_fragment.h>
 #include <shader_forest_shadow_vertex.h>
 #include <shader_forest_vertex.h>
+#include <shader_grass_fragment.h>
+#include <shader_grass_tiles_compute.h>
+#include <shader_grass_vertex.h>
 #include <shader_hud_fragment.h>
 #include <shader_hud_vertex.h>
 #include <shader_present_fragment.h>
@@ -54,6 +57,8 @@ namespace moppe::nhal {
       { dxil (shader_bloom_bright_vertex),
         dxil (shader_bloom_bright_fragment) },
       { dxil (shader_bloom_blur_vertex), dxil (shader_bloom_blur_fragment) },
+      { dxil (shader_grass_vertex), dxil (shader_grass_fragment) },
+      dxil (shader_grass_tiles_compute),
     };
     return shaders;
   }

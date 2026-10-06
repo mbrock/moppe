@@ -1308,6 +1308,430 @@
 (define-shader-program forest-shadow
   :vertex forest-shadow-vertex)
 
+;;; -- grass ------------------------------------------------------------------
+;;;
+;;; As undergrowth.metal's grass, without its mesh stages.  Nothing is
+;;; stored: a window of 0.6-metre ground tiles anchored to the world lattice
+;;; surrounds the camera, and GRASS-TILES keeps those in view that the grass
+;;; medium says carry blades -- light and water, no trail worn across, ground
+;;; a root could hold -- appending each with its blade count and counting it
+;;; into one indexed indirect draw.  Each surviving tile is an instance of
+;;; 32 four-section blades, which GRASS-VERTEX grows from hashes and the
+;;; terrain's own fields, so the sward cannot drift from the ground it
+;;; stands on.  A blade's count and shape follow its projected width: the
+;;; field thins blade by blade into the ground's own turf colour.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *grass*
+    '((window :vec4)               ; first cell x, z, tiles per side, tile m
+      (lattice :vec4)              ; 1/step x, 1/step z, height scale, samples
+      (habitat :vec4)              ; window reach, density, 0, focal pixels
+      (interaction :vec4))))       ; the mover's position, footprint radius
+
+(define-shader-function plant-hash (cell lane)
+  (/ (float (logand (tree-mix (logxor (* (swizzle cell :x) (uint #x9e3779b9))
+                                      (* (swizzle cell :y) (uint #x85ebca6b))
+                                      (* lane (uint #xc2b2ae35))))
+                    (uint #x00ffffff)))
+     16777216.0))
+
+;;; A world cell's lattice identity; two's-complement wrap keeps negative
+;;; cells well defined.
+(define-shader-function cell-identity (cell)
+  (uvec2 (uint (int (swizzle cell :x))) (uint (int (swizzle cell :y)))))
+
+(define-shader-function field-uv (xz lattice)
+  (/ (* xz (swizzle lattice :xy)) (swizzle lattice :w)))
+
+;;; The ground's height under a world point, bilinear between samples.
+(define-shader-abstraction sample-ground (heights xz lattice)
+  `(* (height-between ,heights
+                      (* ,xz (swizzle ,lattice :xy))
+                      (vec2 (swizzle ,lattice :w) (swizzle ,lattice :w)))
+      (swizzle ,lattice :z)))
+
+(define-shader-struct grass-medium
+  (leaf-area :float) (moisture :float) (forest-cover :float)
+  (riparian :float) (blade-tint :vec3))
+
+;;; How much sward one patch carries, as moppe_grass_medium: closed canopy
+;;; thins it, soil water sets how lush it is, a trail clears it, a slope
+;;; past what roots hold sheds it, and the high fells give way to heath.
+(define-shader-function read-grass-medium (xz land floor up rise density)
+  (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
+         (canopy (clamp (swizzle land :w) 0.0 1.0))
+         (clump (+ (* 0.55 (value-noise (* xz 0.085)))
+                   (* 0.45 (value-noise (+ (* xz 0.021) (vec2 17.3 4.1))))))
+         (light (max 0.07 (expt (- 1.0 canopy) 3.2)))
+         (damp (+ 0.75 (* 0.25 (smoothstep 0.02 0.48 moisture))))
+         (standable (smoothstep 0.52 0.78 up))
+         (cleared (* (- 1.0 (smoothstep 0.80 0.86 (swizzle floor :z)))
+                     (- 1.0 (clamp (* (swizzle floor :w) 1.6) 0.0 1.0))))
+         (variation (+ 0.88 (* 0.24 (smoothstep 0.18 0.72 clump))))
+         (snow (* (smoothstep 0.55 0.68 rise)
+                  (smoothstep 0.58 0.78 (swizzle floor :y))))
+         (alpine (- 1.0 (smoothstep 0.50 0.67 rise)))
+         (rooted (* light damp standable cleared variation alpine
+                    (- 1.0 snow)))
+         (tint (* (vec3 0.185 0.315 0.112)
+                  (vec3 (- 1.12 (* 0.24 moisture)) (+ 0.84 (* 0.30 moisture))
+                        (+ 0.82 (* 0.22 moisture))))))
+    (make-grass-medium
+     :leaf-area (clamp (* rooted density) 0.0 1.0)
+     :moisture moisture
+     :forest-cover canopy
+     :riparian 0.0
+     :blade-tint (mix tint (* (srgb (heath-tint xz moisture)) 0.75)
+                      (heath-amount xz rise)))))
+
+(define-shader-function blade-pixels (focal distance)
+  (/ (* 0.018 focal) (max distance 0.5)))
+
+(define-shader-function blade-resolved (pixels)
+  (smoothstep 0.16 0.95 pixels))
+
+;;; Each world tile owns one phase for thinning its ordered shoots.
+(define-shader-function lod-phase (cell)
+  (plant-hash cell (uint #x51a7)))
+
+(define-shader-function lod-shoots (wanted cell)
+  (min (uint (* -1.0 (floor (* -1.0 (max (+ (- wanted (lod-phase cell)) 0.52)
+                                         0.0)))))
+       (uint 32)))
+
+(define-shader-function lod-presence (wanted shoot cell)
+  (let* ((threshold (+ (float shoot) (lod-phase cell))))
+    (* (smoothstep (- threshold 0.52) (+ threshold 0.52) wanted)
+       (smoothstep 0.0 0.52 wanted))))
+
+(define-shader grass-tiles-compute
+    (:stage :compute
+     :workgroup-size (64 1 1)
+     :inputs ((invocation :uvec3 :built-in :global-invocation-id))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (grass :uniform-block :binding 1 :members #.*grass*)
+                 (tiles :storage-buffer :binding 2 :element :uint
+                        :access :read-write)
+                 (arguments :storage-buffer :binding 3 :element :uint
+                            :access :read-write)
+                 (heights :texture-2d :binding 0)
+                 (normals :texture-2d :binding 1)
+                 (landscape :texture-2d :binding 6)
+                 (ground :texture-2d :binding 7)
+                 (linear-repeat :sampler :binding 1)))
+  (let* ((index (swizzle invocation :x))
+         (side (uint (swizzle window :z))))
+    (when (< index (* side side))
+      (let* ((tile (swizzle window :w))
+             (cell (+ (swizzle window :xy)
+                      (vec2 (float (mod index side)) (float (/ index side)))))
+             (centre (* (+ cell (vec2 0.5 0.5)) tile))
+             (eye (swizzle camera-position :xyz))
+             (across (- centre (swizzle eye :xz)))
+             (horizontal (sqrt (dot across across)))
+             (reach (swizzle habitat :x))
+             (height (sample-ground heights centre lattice))
+             (clip (* view-proj (vec4 (swizzle centre :x) (+ height 0.5)
+                                      (swizzle centre :y) 1.0)))
+             (w (swizzle clip :w))
+             (margin (+ (* 1.25 w) (* 2.0 tile)))
+             (inside (and (< horizontal (+ reach (* 0.75 tile)))
+                          (> w (* -1.0 tile))
+                          (< (abs (swizzle clip :x)) margin)
+                          (< (abs (swizzle clip :y)) margin)))
+             (uv (field-uv centre lattice))
+             (normal (unpack-normal
+                      (swizzle (sample-level normals linear-repeat uv 0.0)
+                               :xy)))
+             (medium (read-grass-medium
+                      centre (sample-level landscape linear-repeat uv 0.0)
+                      (sample-level ground linear-repeat uv 0.0)
+                      (swizzle normal :y)
+                      (/ (- height (swizzle relief :x))
+                         (max (swizzle relief :y) 1.0))
+                      (swizzle habitat :y)))
+             (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
+                        eye))
+             (pixels (blade-pixels (swizzle habitat :w)
+                                   (sqrt (dot offset offset))))
+             (fade (- 1.0 (smoothstep (* 0.84 reach) (* 0.99 reach)
+                                      horizontal)))
+             (wanted (* (grass-medium-leaf-area medium)
+                        (blade-resolved pixels) fade 32.0))
+             (identity (cell-identity cell))
+             (shoots (lod-shoots wanted identity)))
+        (when (and inside (> shoots (uint 0)))
+          (let* ((slot (atomic-add arguments (uint 1) (uint 1)))
+                 (at (* slot (uint 4))))
+            (set-buffer-element tiles at (bit-cast :uint (swizzle cell :x)))
+            (set-buffer-element tiles (+ at (uint 1))
+                                (bit-cast :uint (swizzle cell :y)))
+            (set-buffer-element tiles (+ at (uint 2)) (bit-cast :uint wanted))
+            (set-buffer-element tiles (+ at (uint 3)) shoots)))))))
+
+(define-shader-program grass-tiles
+  :compute grass-tiles-compute)
+
+;;; moppe_wind for a blade: the gust and bough at its root, the flick per
+;;; section.
+(define-shader-function blade-sway (spine root bend flutter time)
+  (let* ((root-phase (+ (* (swizzle root :x) 0.043)
+                        (* (swizzle root :z) 0.051)))
+         (gust (+ (sin (+ (* time 1.13) root-phase))
+                  (* 0.45 (sin (+ (* time 2.63) (* root-phase 1.7) 1.3)))))
+         (bough (sin (+ (* time 3.90) (* root-phase 2.3) 0.7)))
+         (phase (+ (* (swizzle spine :x) 0.043) (* (swizzle spine :z) 0.051)))
+         (flick (sin (+ (* time 8.40) (* phase 13.0)
+                        (* (swizzle spine :y) 1.9))))
+         (driven (+ 0.55 (* 0.45 (abs gust))))
+         (lean (* 0.26 bend))
+         (shake (* 0.11 flutter driven)))
+    (vec3 (+ (* 0.79 gust lean) (* (+ (* 0.62 bough) (* 0.44 flick)) shake))
+          (- (* -0.15 (abs gust) lean) (* 0.10 (abs bough) shake))
+          (+ (* 0.53 gust lean) (* (- (* 0.47 bough) (* 0.38 flick)) shake)))))
+
+(define-shader grass-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (world-position :vec3 :location 0)
+               (blade-normal :vec3 :location 1)
+               (albedo :vec3 :location 2)
+               (exposure :float :location 3)
+               (shade :float :location 4 :interpolation :flat)
+               (here :vec4 :location 5)
+               (then :vec4 :location 6))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (grass :uniform-block :binding 1 :members #.*grass*)
+                 (tiles :storage-buffer :binding 2 :element :uint)
+                 (heights :texture-2d :binding 0)
+                 (normals :texture-2d :binding 1)
+                 (landscape :texture-2d :binding 6)
+                 (ground :texture-2d :binding 7)
+                 (linear-repeat :sampler :binding 1)))
+  (let* ((record (* instance-index (uint 4)))
+         (cell (vec2 (bit-cast :float (buffer-element tiles record))
+                     (bit-cast :float (buffer-element tiles
+                                                      (+ record (uint 1))))))
+         (wanted (bit-cast :float (buffer-element tiles (+ record (uint 2)))))
+         (shoots (buffer-element tiles (+ record (uint 3))))
+         (shoot (/ vertex-index (uint 8)))
+         (corner (mod vertex-index (uint 8)))
+         (section (float (/ corner (uint 2))))
+         (right-edge (if (= (mod corner (uint 2)) (uint 1)) 1.0 -1.0))
+         (tile (swizzle window :w))
+         (id (cell-identity cell))
+         (identity (uvec2 (+ (* (swizzle id :x) (uint 73856093)) shoot)
+                          (+ (* (swizzle id :y) (uint 19349663))
+                             (* shoot (uint 83492791)))))
+         ;; Where the blade stands, jittered inside its own tile.
+         (root-xz (+ (* cell tile)
+                     (* (vec2 (+ 0.03 (* 0.94 (plant-hash identity (uint 1))))
+                              (+ 0.03 (* 0.94 (plant-hash identity (uint 2)))))
+                        tile)))
+         (uv (field-uv root-xz lattice))
+         (ground-normal (normalize
+                         (unpack-normal
+                          (swizzle (sample-level normals linear-repeat uv 0.0)
+                                   :xy))))
+         (height (sample-ground heights root-xz lattice))
+         (medium (read-grass-medium
+                  root-xz (sample-level landscape linear-repeat uv 0.0)
+                  (sample-level ground linear-repeat uv 0.0)
+                  (swizzle ground-normal :y)
+                  (/ (- height (swizzle relief :x))
+                     (max (swizzle relief :y) 1.0))
+                  (swizzle habitat :y)))
+         (wet (grass-medium-moisture medium))
+         (canopy (grass-medium-forest-cover medium))
+         (root (vec3 (swizzle root-xz :x) height (swizzle root-xz :y)))
+         (eye (swizzle camera-position :xyz))
+         (offset (- root eye))
+         (pixels (blade-pixels (swizzle habitat :w)
+                               (sqrt (dot offset offset))))
+         (resolved (blade-resolved pixels))
+         (micro (smoothstep 1.5 4.0 pixels))
+         (reach (swizzle habitat :x))
+         (across-eye (- root-xz (swizzle eye :xz)))
+         (fade (- 1.0 (smoothstep (* 0.84 reach) (* 0.99 reach)
+                                  (sqrt (dot across-eye across-eye)))))
+         ;; A blade straddles its threshold by growing into or out of the
+         ;; ground, never by fading.
+         (presence (lod-presence (* (grass-medium-leaf-area medium) resolved
+                                    fade 32.0)
+                                 shoot (cell-identity cell)))
+         (draw (plant-hash identity (uint 4)))
+         (scale (* (sqrt presence)
+                   (+ 0.60 (* 0.35 wet) (* 0.08 (- 1.0 canopy)))
+                   (+ 0.65 (* 0.65 draw draw))
+                   (- 1.0 (* 0.32 (smoothstep 0.40 0.95 canopy)))))
+         (up (normalize (mix ground-normal (vec3 0.0 1.0 0.0) 0.72)))
+         (turn (+ (* 6.2831853 (plant-hash identity (uint 5)))
+                  (* 0.55 (- (plant-hash identity (uint 6)) 0.5))))
+         (sideways (normalize (+ (cross3 up (vec3 0.0 0.0 1.0))
+                                 (vec3 0.001 0.0 0.0))))
+         (along (normalize (cross3 sideways up)))
+         (out (normalize (+ (* sideways (cos turn)) (* along (sin turn)))))
+         (spread (+ 0.80 (* 0.45 (plant-hash identity (uint 11)))))
+         (blade-reach (* scale 0.16 spread))
+         (climb (* scale 0.65 spread))
+         (width (* scale 0.018))
+         ;; Blade-to-blade variation stays subordinate to the habitat, and
+         ;; settles to the field's colour as the blade's pixels run out.
+         (olive (- (plant-hash identity (uint 17)) 0.5))
+         (own (* (grass-medium-blade-tint medium)
+                 (vec3 (+ 1.0 (* 0.18 olive)) 1.0 (- 1.0 (* 0.16 olive)))
+                 (+ 0.96 (* 0.11 (plant-hash identity (uint 19))))))
+         (tint (mix (grass-medium-blade-tint medium) own resolved))
+         ;; The mover parts the field: upper sections lean away and lie
+         ;; down toward the centre of its footprint.
+         (from-mover (- root-xz (swizzle interaction :xz)))
+         (mover-distance (sqrt (dot from-mover from-mover)))
+         (radius (swizzle interaction :w))
+         (response (if (> radius 0.0)
+                       (- 1.0 (smoothstep (* 0.18 radius) radius
+                                          mover-distance))
+                       0.0))
+         (away (/ from-mover (max mover-distance 0.08)))
+         ;; The spine leaves the root steeply, then falls away to a point.
+         (t0 (/ section 3.0))
+         (rise (- (* 1.22 t0) (* 0.20 t0 t0)))
+         (upper (* (smoothstep 0.0 0.58 t0) response))
+         (spine (- (+ root (* out (* blade-reach t0)) (* up (* climb rise))
+                      (* (vec3 (swizzle away :x) 0.0 (swizzle away :y))
+                         (* 0.42 upper)))
+                   (* up (* climb rise 0.72 response))))
+         (half-width (if (>= t0 0.999) 0.0
+                         (* width (+ 0.72 (* 0.28 (sin (* 3.1415927 t0)))))))
+         (side (normalize (cross3 out up)))
+         (face (normalize (+ up (* out (* 0.55 rise))
+                             (* side (* 0.12 (sin (+ (* 6.2831853
+                                                        (plant-hash identity
+                                                                    (uint 23)))
+                                                     (* 2.2 t0))))))))
+         (edge (normalize (cross3 face out)))
+         (bend (+ 0.18 (* 0.50 t0)))
+         (flutter (* (+ 0.06 (* 0.18 t0)) micro))
+         (rest (+ spine (* edge (* half-width right-edge))))
+         (current (+ rest (blade-sway spine root bend flutter
+                                      (swizzle camera-position :w))))
+         (previous (+ rest (blade-sway spine root bend flutter
+                                       (swizzle relief :z))))
+         ;; Exposure stands in for how much sky this part of the blade
+         ;; sees; far blades settle to the field's mean.
+         (ramp (+ 0.12 (* 0.88 t0)))
+         (light (mix 0.72 ramp (smoothstep 0.35 0.95 pixels)))
+         (alive (and (< shoot shoots) (> presence 0.001)))
+         (here-clip (* view-proj (vec4 current 1.0))))
+    (set-output clip-position
+                (if alive (clip here-clip (swizzle temporal :zw))
+                    (vec4 0.0 0.0 2.0 1.0)))
+    (set-output world-position current)
+    (set-output blade-normal face)
+    (set-output albedo (srgb (* tint (+ 0.58 (* 0.66 light)))))
+    (set-output exposure light)
+    (set-output shade canopy)
+    (set-output here here-clip)
+    (set-output then (* previous-view-proj (vec4 previous 1.0)))))
+
+(define-shader grass-fragment
+    (:stage :fragment
+     :inputs ((world-position :vec3 :location 0)
+              (blade-normal :vec3 :location 1)
+              (albedo :vec3 :location 2)
+              (exposure :float :location 3)
+              (shade :float :location 4 :interpolation :flat)
+              (here :vec4 :location 5)
+              (then :vec4 :location 6))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (grass :uniform-block :binding 1 :members #.*grass*)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((eye (swizzle camera-position :xyz))
+         (to-fragment (- world-position eye))
+         (distance (sqrt (dot to-fragment to-fragment)))
+         (view (/ to-fragment (max distance 0.0001)))
+         ;; A leaf has no back: it faces whoever looks at it.
+         (n0 (normalize blade-normal))
+         (n (if (> (dot n0 view) 0.0) (* -1.0 n0) n0))
+         (l (swizzle sun-direction :xyz))
+         (pixels (blade-pixels (swizzle habitat :w) distance))
+         (resolved (blade-resolved pixels))
+         (resolvable (smoothstep 1.5 4.0 pixels))
+         ;; The sun's shadow, four taps.
+         (at (sun-map-coordinate sun-view world-position))
+         (texel (swizzle shadow :y))
+         (bias 0.0015)
+         (taps (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
+                                      texel bias)
+                          (shadow-tap shadow-map shadow-compare at 0.5 -0.5
+                                      texel bias)
+                          (shadow-tap shadow-map shadow-compare at -0.5 0.5
+                                      texel bias)
+                          (shadow-tap shadow-map shadow-compare at 0.5 0.5
+                                      texel bias))))
+         (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
+                           (swizzle world-position :y) (swizzle relief :x)
+                           (swizzle relief :y)))
+         (cast (mix 1.0 taps (* (swizzle shadow :x)
+                                (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)
+                                (inside-sun-map at))))
+         ;; Once a blade is too thin to revisit, its twist stops choosing a
+         ;; full-contrast lighting sample: the terms settle to the leaf
+         ;; distribution's symmetric means.
+         (lambert (mix (+ 0.30 (* 0.46 (abs (swizzle l :y))))
+                       (clamp (/ (+ (dot n l) 0.10) 1.10) 0.0 1.0)
+                       resolved))
+         ;; One leaf thick: against the sun it glows, Beer-Lambert pinning
+         ;; the glow to the thin lit fringe.
+         (back (mix 0.30 (expt (max (dot (* -1.0 n) l) 0.0) 1.8) resolvable))
+         (transmitted (mix (* (/ 0.14 3.2) cast)
+                           (* back (exp (* -2.0 (- 1.0 exposure))) cast)
+                           resolved))
+         (toward (clamp (dot view l) 0.0 1.0))
+         (ambient-light (swizzle ambient :xyz))
+         (sky (hemisphere-light ambient-light n))
+         (ensemble-sky (* 0.5 (+ sky (hemisphere-light ambient-light
+                                                       (* -1.0 n)))))
+         (sun-light (swizzle sun-diffuse :xyz))
+         (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) cast))
+         (scatter (* sun-light (vec3 0.92 1.05 0.78)
+                     (mix 0.12 0.20 (clamp (swizzle l :y) 0.0 1.0))
+                     (clamp shade 0.0 1.0) (clamp (- 1.0 cast) 0.0 1.0)))
+         (lit (* albedo (+ (* fill (mix ensemble-sky sky resolved))
+                           (* sun-light (* lambert cast
+                                           (- 1.0 (* 0.45 transmitted))))
+                           scatter)))
+         (glow (* (vec3 (sqrt (swizzle albedo :x)) (sqrt (swizzle albedo :y))
+                        (sqrt (swizzle albedo :z)))
+                  sun-light (vec3 0.92 1.0 0.24)
+                  (* transmitted (+ 0.20 (* 0.80 toward toward toward)) 3.2)))
+         ;; A waxy blade glints along its axis (Kajiya-Kay), the streak
+         ;; widening and steadying as the blade's pixels run out.
+         (wobble (* 0.25 resolvable))
+         (axis (normalize (vec3 (* wobble (swizzle n :x)) 1.0
+                                (* wobble (swizzle n :z)))))
+         (half (normalize (- l view)))
+         (axial (dot axis half))
+         (glint (* (expt (sqrt (clamp (- 1.0 (* axial axial)) 0.0 1.0))
+                         (mix 10.0 64.0 resolvable))
+                   (+ 0.10 (* 0.90 toward toward))))
+         (sheen (* (swizzle sun-specular :xyz)
+                   (* glint cast (smoothstep 0.40 2.0 pixels)
+                      (mix 0.40 1.0 resolvable)
+                      (+ 0.30 (* 0.70 exposure)) 2.4))))
+    (set-output color (vec4 (hazed (+ lit glow sheen) world-position eye
+                                   fog-color l relief)
+                            1.0))
+    (set-output motion (- (clip-uv then) (clip-uv here)))))
+
+(define-shader-program grass
+  :vertex grass-vertex
+  :fragment grass-fragment)
+
 ;;; -- HUD text -------------------------------------------------------------
 ;;;
 ;;; Glyphs and vector shapes by Slug, from moppe's glyph quads

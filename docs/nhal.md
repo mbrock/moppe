@@ -48,8 +48,22 @@ struct (`tree-vertex-at`), shared by the scene and the shadow programs as
 `tree_vertex` is in Metal. Terrain samples it with five comparison taps,
 trees with four.
 
-Boulders, undergrowth, falling leaves, dust, bloom, and the remaining post
-effects come next.
+Grass is undergrowth.metal's blades without its mesh stages. A window of
+0.6-metre tiles anchored to the world lattice surrounds the camera; at
+`begin_frame`, `grass-tiles` keeps those in view that the grass medium says
+carry blades (leaf area, priced by the blades' projected width, thinned by a
+per-cell phase) and counts each into one indexed indirect draw. Each tile is
+an instance of 32 four-section blades that the vertex stage grows from hashes
+and the terrain's own fields, with the medium's tint, wind, the mover's
+parting, and the fragment stage's transmission, glint, and ensemble limits.
+The cull uses the previous frame's `UndergrowthParams`, since compute may not
+interrupt the scene pass. Ferns, flower drifts, and the mesoscale sward
+canopy are not ported yet.
+
+Bloom is post.metal's: a bright pass at a quarter of the drawable, a
+separable nine-tap Gaussian, added before the tonemap.
+
+Boulders, falling leaves, dust, and the remaining post effects come next.
 
 ## The game on Xbox
 

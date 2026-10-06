@@ -883,7 +883,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     set(MOPPE_NHAL_WORLD_OUTPUTS)
     foreach(program IN ITEMS
         terrain sky uber hud resolve present slug_text forest
-        bloom_bright bloom_blur)
+        bloom_bright bloom_blur grass)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
@@ -894,7 +894,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal)
     endforeach()
-    foreach(program IN ITEMS forest_cull exposure)
+    foreach(program IN ITEMS forest_cull exposure grass_tiles)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.compute.metal)
@@ -1028,7 +1028,8 @@ if(WIN32)
       forest_cull.compute exposure.compute
       terrain_shadow.vertex forest_shadow.vertex
       bloom_bright.vertex bloom_bright.fragment
-      bloom_blur.vertex bloom_blur.fragment)
+      bloom_blur.vertex bloom_blur.fragment
+      grass.vertex grass.fragment grass_tiles.compute)
     set(MOPPE_XBOX_LOWERED)
     foreach(stage IN LISTS MOPPE_XBOX_STAGES)
       string(REGEX REPLACE "[.].*" "" program ${stage})
