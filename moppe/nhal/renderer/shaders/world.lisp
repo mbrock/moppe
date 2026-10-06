@@ -904,7 +904,7 @@
   (let* ((seed (bit-cast :uint (swizzle identity :x)))
          (conifer (= (bit-cast :uint (swizzle identity :y)) (uint 1)))
          (lean-turn (* 6.2831853 (tree-hash seed (uint 3))))
-         (lean (* 0.035 (tree-hash seed (uint 4))))
+         (lean (* 0.065 (tree-hash seed (uint 4))))
          (up (normalize (+ (vec3 0.0 1.0 0.0)
                            (* 0.08 (vec3 (swizzle up-radius :x) 0.0
                                          (swizzle up-radius :z)))
@@ -966,12 +966,18 @@
          (ring (/ index sides))
          (trunk-turn (+ seed-turn (/ (* pi2 (float (mod index sides)))
                                      (float sides))))
-         (trunk-along (if (= ring (uint 0)) 0.0
-                          (if (= ring (uint 1)) 1.3
+         ;; The trunk grows out of the soil rather than standing on it: its
+         ;; first ring sits below the ground and flares into uneven root
+         ;; buttresses, narrowing to the bole within a metre.
+         (trunk-along (if (= ring (uint 0)) -0.35
+                          (if (= ring (uint 1)) 0.9
                               (if (= ring (uint 2)) crown-base
                                   (* height (if conifer 0.94 0.86))))))
-         (trunk-width (if (= ring (uint 0)) 1.40
-                          (if (= ring (uint 1)) 1.0
+         (trunk-width (if (= ring (uint 0))
+                          (+ 1.75 (* 0.65 (tree-hash seed
+                                                     (+ (uint 300)
+                                                        (mod index sides)))))
+                          (if (= ring (uint 1)) 1.05
                               (if (= ring (uint 2)) 0.72 0.14))))
          (trunk-out (+ (* right (cos trunk-turn)) (* forward (sin trunk-turn))))
          (trunk-point (+ root (* up trunk-along)
@@ -990,7 +996,7 @@
          ;; the open and a narrow spire in a closed stand.
          (f0 (/ fmass tiers))
          (f1 (/ (+ fmass 1.0) tiers))
-         (jitter (/ (* 0.10 (- (tree-hash seed (+ (uint 20) mass)) 0.5)) tiers))
+         (jitter (/ (* 0.18 (- (tree-hash seed (+ (uint 20) mass)) 0.5)) tiers))
          (cone-base (+ crown-base (* span (+ (* 0.90 f0) jitter))))
          (cone-top (if (= (+ mass (uint 1)) masses) height
                        (+ crown-base (* span (min (+ (* 0.90 f1) (/ 0.95 tiers))
@@ -998,7 +1004,7 @@
          (cone-radius (* crown-radius
                          (mix 1.0 0.72 (tree-shape-closure tree))
                          (- 1.0 (* 0.80 f0))
-                         (+ 0.88 (* 0.24 (tree-hash seed (+ (uint 30) mass))))))
+                         (+ 0.82 (* 0.36 (tree-hash seed (+ (uint 30) mass))))))
          (cone-turn (+ twist (/ (* pi2 (float corner)) (float crown-sides))))
          (on-ring (< corner crown-sides))
          (cone-along (if on-ring
@@ -1033,7 +1039,7 @@
          (attach (+ root (* up (max (- clump-along (* 0.9 reach))
                                     (* 0.92 crown-base)))))
          (clump-radius (* crown-radius
-                          (+ 0.56 (* 0.22 (tree-hash seed (+ (uint 110) mass))))
+                          (+ 0.50 (* 0.34 (tree-hash seed (+ (uint 110) mass))))
                           (- 1.0 (* 0.35 rise)) (sqrt (/ 10.0 tiers))))
          (clump-up (normalize
                     (+ up (* right (* 0.5 (- (tree-hash seed (+ (uint 130) mass))
@@ -1236,8 +1242,16 @@
                                    (derivative-y world-position))))
          (facing (if (< (dot facet view) 0.0) (* -1.0 facet) facet))
          (n (if (> foliage 0.5) facing (normalize surface-normal)))
+         ;; Where the trunk meets the ground the light fails and the bark
+         ;; changes: moss climbs a spruce's buttresses, and a birch's pale
+         ;; bark gives way to its dark, fissured base.
+         (base (- 1.0 (smoothstep -0.1 1.4 (swizzle bark :y))))
+         (rooted (mix (mix (srgb (vec3 0.24 0.22 0.20))
+                           (srgb (vec3 0.27 0.34 0.15)) (swizzle kind :y))
+                      albedo (- 1.0 (* 0.75 base))))
          (surface (if (> foliage 0.5) albedo
-                      (* albedo (bark-shade bark (swizzle kind :y)))))
+                      (* rooted (bark-shade bark (swizzle kind :y))
+                         (mix 1.0 0.55 (* base base)))))
          ;; Crowns keep metres of light-depth margin so a crown does not
          ;; shadow itself solid; trunks stay precise.
          (at (sun-map-coordinate sun-view world-position))
