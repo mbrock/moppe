@@ -325,7 +325,7 @@ def main() -> int:
             check=True,
         )
     subprocess.run(
-        ["cmake", "--build", str(build), "--target", "moppe_bundle_shaders"],
+        ["cmake", "--build", str(build), "--target", "moppe"],
         check=True,
     )
 

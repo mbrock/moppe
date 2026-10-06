@@ -6,7 +6,7 @@
 	test \
 	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
-	web web-deploy web-serve xbox xcode
+	xbox xcode
 
 all: moppe
 
@@ -153,21 +153,6 @@ tv:
 # Bake the default world here, then build and deploy the Xbox game with it.
 xbox:
 	./tools/deploy-xbox $(XBOX_DEPLOY_ARGS)
-
-# Build the browser testbed and the real WebAssembly/WebGPU game.
-web:
-	@[ -f build-web/build.ninja ] || \
-		emcmake cmake -B build-web -G Ninja -DBUILD_TESTING=OFF \
-			-DMOPPE_UNITY_BUILD=OFF
-	cmake --build build-web --target moppe-web-testbed moppe-web
-
-# Serve the browser build with the cross-origin isolation pthreads require.
-web-serve: web
-	bun run tools/serve-web.ts
-
-# Publish an immutable browser release and point moppe.less.rest at it.
-web-deploy:
-	./tools/deploy-web
 
 # Build the canonical terrain with the Fast profile, capture the Lab, and exit.
 # Build a deterministic grove from surface habitat and capture it in-game.

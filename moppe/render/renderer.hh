@@ -50,7 +50,6 @@ namespace moppe {
       // game raymarches the terrain and folds in cloud cover.
       // Drives the present pass's lens flare.
       float sun_visibility = 0.0f;
-      UpscalingMode upscaling = UpscalingMode::Temporal;
       float scene_scale = 1.0f;
       float render_scale_override = 0.0f;
       float scene_megapixel_budget = 0.0f;

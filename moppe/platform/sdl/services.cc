@@ -1,11 +1,13 @@
-// Platform services for Linux: assets beside the executable or in the
-// source tree, caches under XDG_CACHE_HOME, threads for background work,
-// and a main-thread queue for their completions. The window, input, and
-// platform::run are the SDL3 host's (main_linux.cc).
+// Platform services for the SDL host: assets in the app bundle, beside the
+// executable, or in the source tree; caches in the platform's user cache
+// folder; threads for background work, and a main-thread queue for their
+// completions. The window, input, and platform::run are host.cc's.
 
 #include <moppe/environment.hh>
-#include <moppe/platform/linux/linux.hh>
 #include <moppe/platform/platform.hh>
+#include <moppe/platform/sdl/sdl.hh>
+
+#include <SDL3/SDL.h>
 
 #include <chrono>
 #include <cstdint>
@@ -21,14 +23,29 @@
 #include <utility>
 #include <vector>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <spawn.h>
+#include <sys/wait.h>
+extern char** environ;
+#endif
+
 namespace moppe::platform {
   namespace {
     std::mutex main_queue_mutex;
     std::deque<std::function<void ()>> main_queue;
 
     std::filesystem::path executable_path () {
+#ifdef __APPLE__
+      char buffer[4096];
+      std::uint32_t size = sizeof buffer;
+      if (_NSGetExecutablePath (buffer, &size) == 0)
+        return std::filesystem::path (buffer);
+      return {};
+#else
       std::error_code error;
       return std::filesystem::read_symlink ("/proc/self/exe", error);
+#endif
     }
   }
 
@@ -36,6 +53,9 @@ namespace moppe::platform {
     namespace fs = std::filesystem;
     std::vector<fs::path> roots;
     if (const char* base = moppe::environment ("MOPPE_ASSETS"))
+      roots.emplace_back (base);
+    // An app bundle's resources, or the executable's folder.
+    if (const char* base = SDL_GetBasePath ())
       roots.emplace_back (base);
     const fs::path bin = executable_path ().parent_path ();
     if (!bin.empty ()) {
@@ -80,13 +100,21 @@ namespace moppe::platform {
   std::string cache_path (const std::string& relative) {
     static const std::string base = [] {
       std::filesystem::path root;
+      const char* home = moppe::environment ("HOME");
+#ifdef __APPLE__
+      // Where the Mac has always kept them, so finished worlds carry over.
+      root = home ? std::filesystem::path (home) / "Library" / "Caches"
+                        / "Moppe"
+                  : std::filesystem::temp_directory_path () / "Moppe";
+#else
       if (const char* xdg = moppe::environment ("XDG_CACHE_HOME"); xdg && *xdg)
         root = xdg;
-      else if (const char* home = moppe::environment ("HOME"))
+      else if (home)
         root = std::filesystem::path (home) / ".cache";
       else
         root = std::filesystem::temp_directory_path ();
       root /= "moppe";
+#endif
       std::error_code ignored;
       std::filesystem::create_directories (root, ignored);
       return root.string ();
@@ -107,6 +135,14 @@ namespace moppe::platform {
 
   void say (const std::string& phrase) {
     std::cerr << "moppe: say: " << phrase << std::endl;
+#ifdef __APPLE__
+    // The Mac speaks it, as it always has, without waiting for the voice.
+    const char* argv[] = { "say", phrase.c_str (), nullptr };
+    pid_t child = 0;
+    if (posix_spawnp (&child, "say", nullptr, nullptr,
+                      const_cast<char* const*> (argv), environ) == 0)
+      std::thread ([child] { waitpid (child, nullptr, 0); }).detach ();
+#endif
   }
 
   void async (void (*work) (void*),
@@ -124,7 +160,7 @@ namespace moppe::platform {
     return false;
   }
 
-  namespace linux_host {
+  namespace sdl {
     void run_main_thread_tasks () {
       std::deque<std::function<void ()>> tasks;
       {

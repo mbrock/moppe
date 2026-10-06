@@ -9,8 +9,6 @@
 
 namespace moppe {
   namespace render {
-    enum class UpscalingMode : uint8_t { Linear, Spatial, Temporal };
-
     // Primitive topologies accepted by the recording API.  Everything
     // is triangulated (or line-expanded) at record time; backends only
     // ever see triangles.

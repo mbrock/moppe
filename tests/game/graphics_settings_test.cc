@@ -58,7 +58,6 @@ MOPPE_TEST (graphics_feature_lists_apply_to_settings) {
 
 MOPPE_TEST (balanced_graphics_reduces_resolution_without_removing_features) {
   const game::GraphicsSettings settings = game::balanced_graphics_settings ();
-  MOPPE_CHECK (settings.upscaling == render::UpscalingMode::Temporal);
   MOPPE_CHECK_NEAR (settings.scene_scale, 2.0f / 3.0f, 0.0f);
   for (const game::GraphicsFeature* feature : game::graphics_features)
     if (feature != &game::terrain_topology_feature)
@@ -68,7 +67,6 @@ MOPPE_TEST (balanced_graphics_reduces_resolution_without_removing_features) {
 MOPPE_TEST (apple_tv_graphics_keeps_effects_but_avoids_full_frame_costs) {
   const game::GraphicsSettings settings = game::apple_tv_graphics_settings ();
   MOPPE_CHECK_NEAR (settings.scene_scale, 0.5f, 0.0f);
-  MOPPE_CHECK (settings.upscaling == render::UpscalingMode::Temporal);
   MOPPE_CHECK (settings.ocean);
   MOPPE_CHECK (settings.waterfall_curtains);
   MOPPE_CHECK (settings.particles);
@@ -101,22 +99,10 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
   std::ostringstream output;
   game::print_graphics_settings (output, settings);
   const std::string text = output.str ();
-  MOPPE_CHECK (text.find ("upscaling=temporal") != std::string::npos);
   MOPPE_CHECK (text.find ("scene-scale=0.5") != std::string::npos);
   MOPPE_CHECK (text.find ("ocean=on(hot)") != std::string::npos);
   MOPPE_CHECK (text.find ("bloom=off(hot)") != std::string::npos);
   MOPPE_CHECK (text.find ("terrain-shadows=off(not-hot)") != std::string::npos);
-}
-
-MOPPE_TEST (graphics_upscaling_modes_parse_and_print_canonically) {
-  render::UpscalingMode mode = render::UpscalingMode::Spatial;
-  MOPPE_CHECK (game::parse_upscaling_mode ("linear", mode));
-  MOPPE_CHECK (mode == render::UpscalingMode::Linear);
-  MOPPE_CHECK (std::string (game::upscaling_mode_name (mode)) == "linear");
-  MOPPE_CHECK (game::parse_upscaling_mode ("temporal", mode));
-  MOPPE_CHECK (mode == render::UpscalingMode::Temporal);
-  MOPPE_CHECK (std::string (game::upscaling_mode_name (mode)) == "temporal");
-  MOPPE_CHECK (!game::parse_upscaling_mode ("neural", mode));
 }
 
 MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {

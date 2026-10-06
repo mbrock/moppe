@@ -57,22 +57,8 @@ namespace moppe {
       std::string title;
       int width = 1280; // ignored when fullscreen
       int height = 800;
-      // Final drawable dimensions relative to display backing pixels. Zero
-      // selects the macOS display-size-aware default; explicit flags are
-      // positive. The 3D render scale remains independent of this.
-      float drawable_scale = 0.0f;
-      // Zero asks the renderer for its platform default. A positive value is
-      // fixed before pipelines and multisampled targets are created.
-      int msaa_samples = 0;
-      // Ordinary desktop play renders and presents directly at 60 Hz.
-      // MetalFX frame interpolation is available through an explicit flag.
-      bool frame_interpolation = false;
-      // The next renderer, over NHAL (docs/nhal.md), instead of the Metal
-      // renderer. It draws terrain, sky, and the game's meshes so far.
-      bool nhal_renderer = false;
       bool fullscreen = false;
-      // Automated rendering needs blit-readable drawables and, on macOS, a
-      // run-loop timer that keeps an inactive window progressing.
+      // An automated run: screenshots, captures, and benchmarks.
       bool capture_frames = false;
       bool activate = true; // let automated runs stay behind the active app
     };

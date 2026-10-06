@@ -1,12 +1,12 @@
-// The game on Linux: an SDL3 window whose Vulkan surface the NHAL renderer
-// draws into, with the keyboard, mouse, and first gamepad as the Mac host
-// reads them. The window is sized in points; the drawable is its pixels.
+// The game in an SDL3 window, on every desktop SDL carries: the NHAL
+// renderer draws into the window through the platform's device (sdl.hh),
+// and the keyboard, mouse, and first gamepad drive the game. The window is
+// sized in points; the drawable is its pixels.
 
 #include <moppe/environment.hh>
 #include <moppe/nhal/renderer/nhal_renderer.hh>
-#include <moppe/nhal/vulkan/vulkan_device.hh>
-#include <moppe/platform/linux/linux.hh>
 #include <moppe/platform/platform.hh>
+#include <moppe/platform/sdl/sdl.hh>
 
 #include <algorithm>
 #include <atomic>
@@ -19,7 +19,6 @@
 #include <string>
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 
 namespace {
   using moppe::platform::Game;
@@ -198,7 +197,11 @@ namespace moppe::platform {
   int run (Game& game, const Config& config) {
     if (!SDL_Init (SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
       throw std::runtime_error (std::string ("SDL_Init: ") + SDL_GetError ());
-    SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
+    // Automated runs leave the active app in front.
+    if (!config.activate)
+      SDL_SetHint (SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
+    SDL_WindowFlags flags = SDL_WindowFlags (sdl::window_flags ())
+                            | SDL_WINDOW_RESIZABLE
                             | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     if (config.fullscreen)
       flags |= SDL_WINDOW_FULLSCREEN;
@@ -210,32 +213,20 @@ namespace moppe::platform {
                                 + SDL_GetError ());
     active_window = window;
 
-    nhal::VulkanSurface surface;
-    Uint32 count = 0;
-    const char* const* names = SDL_Vulkan_GetInstanceExtensions (&count);
-    surface.instance_extensions.assign (names, names + count);
-    surface.create = [window] (VkInstance instance) {
-      VkSurfaceKHR made = VK_NULL_HANDLE;
-      if (!SDL_Vulkan_CreateSurface (window, instance, nullptr, &made))
-        throw std::runtime_error (std::string ("SDL_Vulkan_CreateSurface: ")
-                                  + SDL_GetError ());
-      return made;
-    };
     int width = 0, height = 0, pixels_wide = 0, pixels_high = 0;
     SDL_GetWindowSize (window, &width, &height);
     pixel_size (window, pixels_wide, pixels_high);
     const float scale =
       width > 0 ? float (pixels_wide) / float (width) : 1.0f;
-    auto device = nhal::create_vulkan_device (
-      surface, std::uint32_t (pixels_wide), std::uint32_t (pixels_high),
-      nhal::Format::bgra8_unorm);
+    auto device = sdl::create_device (window, std::uint32_t (pixels_wide),
+                                      std::uint32_t (pixels_high));
     std::cerr << "moppe: NHAL on " << device->info ().backend << ", "
               << device->info ().adapter << ", " << pixels_wide << "x"
               << pixels_high << " pixels at " << scale << " per point"
               << std::endl;
     nhal::Device& surface_device = *device;
     std::unique_ptr<render::Renderer> renderer = nhal::create_renderer (
-      std::move (device), nhal::world_shaders_vulkan (), scale);
+      std::move (device), sdl::world_shaders (), scale);
     game.setup (*renderer, renderer->width_pts (), renderer->height_pts ());
 
     Pad pad (game);
@@ -305,7 +296,7 @@ namespace moppe::platform {
         default: break;
         }
       }
-      linux_host::run_main_thread_tasks ();
+      sdl::run_main_thread_tasks ();
       pad.poll ();
       const auto now = std::chrono::steady_clock::now ();
       const double dt = std::chrono::duration<double> (now - last).count ();

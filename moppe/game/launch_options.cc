@@ -165,52 +165,6 @@ namespace moppe::game {
             return unknown ("graphics quality", values[0], error);
           return true;
         } },
-      { "--upscaling",
-        "",
-        1,
-        "<linear|spatial|temporal>",
-        "Select temporal/spatial MetalFX reconstruction or linear scaling.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          if (!parse_upscaling_mode (values[0], options.graphics.upscaling))
-            return unknown ("upscaling mode", values[0], error);
-          return true;
-        } },
-      { "--frame-interpolation",
-        "",
-        1,
-        "<on|off>",
-        "Enable or disable MetalFX frame interpolation on high-refresh macOS.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          const std::string_view value = values[0];
-          if (value == "on")
-            options.config.frame_interpolation = true;
-          else if (value == "off")
-            options.config.frame_interpolation = false;
-          else
-            return unknown ("frame interpolation mode", values[0], error);
-          return true;
-        } },
-      { "--renderer",
-        "",
-        1,
-        "<metal|nhal>",
-        "Draw with the Metal renderer or the portable NHAL renderer.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          const std::string_view value = values[0];
-          if (value == "metal")
-            options.config.nhal_renderer = false;
-          else if (value == "nhal")
-            options.config.nhal_renderer = true;
-          else
-            return unknown ("renderer", values[0], error);
-          return true;
-        } },
       { "--bike-physics",
         "",
         1,
@@ -226,24 +180,6 @@ namespace moppe::game {
             options.bike_physics = mov::BikePhysics::classic;
           else
             return unknown ("bike physics", values[0], error);
-          return true;
-        } },
-      { "--msaa",
-        "",
-        1,
-        "<1|2|4>",
-        "Set the scene multisample count before pipelines are built.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          char* end = nullptr;
-          const long samples = std::strtol (values[0], &end, 10);
-          if (end == values[0] || *end != '\0' ||
-              (samples != 1 && samples != 2 && samples != 4)) {
-            error = "--msaa must be 1, 2, or 4";
-            return false;
-          }
-          options.config.msaa_samples = static_cast<int> (samples);
           return true;
         } },
       { "--render-scale",
@@ -273,19 +209,6 @@ namespace moppe::game {
             return false;
           options.scene_megapixel_budget = budget;
           return true;
-        } },
-      { "--drawable-scale",
-        "",
-        1,
-        "<0.25..1>",
-        "Override the automatic macOS drawable backing-pixel scale.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          return parse_scale (values[0],
-                              "--drawable-scale",
-                              options.config.drawable_scale,
-                              error);
         } },
       { "--graphics-enable",
         "",

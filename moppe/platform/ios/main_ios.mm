@@ -14,7 +14,8 @@
 #import <UIKit/UIKit.h>
 
 #include <moppe/platform/platform.hh>
-#include <moppe/render/metal/metal_renderer.hh>
+#include <moppe/nhal/metal/metal_device.hh>
+#include <moppe/nhal/renderer/nhal_renderer.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <algorithm>
@@ -299,8 +300,7 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
     dt = 0.05f;
   if (dt > 0)
     g_game->tick (dt);
-  moppe::render::set_metal_drawable (*self.renderer,
-                                     (__bridge void*)view.currentDrawable);
+  self.renderer->offer_platform_drawable ((__bridge void*)view.currentDrawable);
   g_game->render (*self.renderer);
 }
 
@@ -337,9 +337,13 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   view.sampleCount = 1;
   vc.view = view;
 
-  std::string lib = moppe::platform::asset_path ("moppe.metallib");
-  moppe::render::Renderer* renderer = moppe::render::create_metal_renderer (
-    (__bridge void*)view.layer, lib, g_config.msaa_samples);
+  const float pixels_per_point = (float)view.contentScaleFactor;
+  moppe::render::Renderer* renderer =
+    moppe::nhal::create_renderer (
+      moppe::nhal::create_metal_device ((CAMetalLayer*)view.layer,
+                                        moppe::nhal::Format::bgra8_unorm),
+      moppe::nhal::world_shaders_metal (), pixels_per_point)
+      .release ();
   vc.renderer = renderer;
   view.delegate = vc;
 

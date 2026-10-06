@@ -72,7 +72,7 @@ namespace moppe::game {
     // A15 has to feed a 4K television as well as reconstruct the scene. Keep
     // the water and moment-to-moment effects, but avoid the passes whose cost
     // scales across the whole image or explodes into dense procedural
-    // geometry. MetalFX restores the output footprint from this 540p scene.
+    // geometry. The temporal resolve restores the output footprint from this 540p scene.
     settings.scene_scale = 0.5f;
     settings.terrain_shadows = false;
     settings.motion_blur = false;
@@ -80,31 +80,6 @@ namespace moppe::game {
     settings.auto_exposure = false;
     settings.undergrowth = false;
     return settings;
-  }
-
-  const char* upscaling_mode_name (render::UpscalingMode mode) {
-    switch (mode) {
-    case render::UpscalingMode::Linear:
-      return "linear";
-    case render::UpscalingMode::Spatial:
-      return "spatial";
-    case render::UpscalingMode::Temporal:
-      return "temporal";
-    }
-    return "unknown";
-  }
-
-  bool parse_upscaling_mode (std::string_view name,
-                             render::UpscalingMode& mode) {
-    if (name == "linear")
-      mode = render::UpscalingMode::Linear;
-    else if (name == "spatial")
-      mode = render::UpscalingMode::Spatial;
-    else if (name == "temporal")
-      mode = render::UpscalingMode::Temporal;
-    else
-      return false;
-    return true;
   }
 
   const GraphicsFeature* find_graphics_feature (std::string_view name) {
@@ -183,9 +158,7 @@ namespace moppe::game {
 
   void print_graphics_settings (std::ostream& output,
                                 const GraphicsSettings& settings) {
-    output << "moppe: graphics: upscaling="
-           << upscaling_mode_name (settings.upscaling)
-           << " scene-scale=" << settings.scene_scale
+    output << "moppe: graphics: scene-scale=" << settings.scene_scale
            << " render-scale-override=" << settings.render_scale_override
            << " scene-megapixel-budget=" << settings.scene_megapixel_budget
            << " sun-height=" << settings.sun_height;

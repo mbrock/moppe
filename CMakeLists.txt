@@ -37,19 +37,6 @@ endif()
 
 project(moppe LANGUAGES C CXX)
 
-if(APPLE)
-  # CMake does not yet ship Metal as a first-class language.  The vendored
-  # language module lets shader libraries participate in the target graph for
-  # Ninja and Xcode instead of living behind unrelated custom commands.
-  list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-  include(CheckLanguage)
-  check_language(Metal)
-  if(CMAKE_Metal_COMPILER)
-    enable_language(Metal)
-    include(MetalShaderSupport)
-  endif()
-endif()
-
 # Keep editor tooling in sync with the normal Ninja and Makefile builds.
 # Multi-config generators such as Xcode do not support this output.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -66,15 +53,6 @@ set(CMAKE_C_EXTENSIONS OFF)
 add_compile_options(-Wall)
 if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
   add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
-endif()
-
-# A Moppe web build keeps world generation off the browser UI thread. Every
-# object in a shared-memory WebAssembly executable must be compiled with the
-# atomics/bulk-memory feature set, not only the platform target which creates
-# the worker.
-if(EMSCRIPTEN)
-  add_compile_options(-pthread)
-  add_link_options(-pthread)
 endif()
 
 set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
@@ -153,11 +131,8 @@ set_target_properties(box3d PROPERTIES
   C_EXTENSIONS YES
   UNITY_BUILD OFF)
 # Upstream builds without floating-point contraction for cross-platform
-# determinism, and maps its SSE2 path onto wasm SIMD128 under Emscripten.
+# determinism.
 target_compile_options(box3d PRIVATE -ffp-contract=off)
-if(EMSCRIPTEN)
-  target_compile_options(box3d PRIVATE -msimd128 -msse2)
-endif()
 # nixbox's Xbox compiler searches the MSVC headers before Clang's own, so
 # <emmintrin.h> declares the SSE intrinsics as external functions nothing
 # defines. Box3D's SIMD kernels need Clang's inline definitions first.
@@ -280,103 +255,6 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
 endif()
 
 # ---------------------------------------------------------------
-# Metal shader library: one metallib target per Apple SDK. AIR is
-# platform-targeted, so each app must embed a library built for its OS.
-
-if(APPLE)
-set(MOPPE_METAL_SOURCES
-  moppe/shaders/metal/uber.metal
-  moppe/shaders/metal/post.metal
-  moppe/shaders/metal/terrain.metal
-  moppe/shaders/metal/sky.metal
-  moppe/shaders/metal/ocean.metal
-  moppe/shaders/metal/river.metal
-  moppe/shaders/metal/dust.metal
-  moppe/shaders/metal/undergrowth.metal
-  moppe/shaders/metal/forest_canopy.metal
-  moppe/shaders/metal/forest_trunks.metal
-  moppe/shaders/metal/leaf_fall.metal
-  moppe/shaders/metal/boulders.metal
-  moppe/shaders/metal/reflection_geometry.metal
-  moppe/shaders/metal/water_reflection.metal
-  moppe/shaders/metal/slug.metal
-)
-
-set(MOPPE_METAL_DEPS
-  moppe/shaders/metal/common.h
-  moppe/shaders/metal/grass_medium.h
-  moppe/shaders/metal/forest_medium.h
-  moppe/render/metal/shader_types.h
-)
-
-if(CMAKE_Metal_COMPILER)
-  add_metal_shader_library(moppe_shaders
-    STANDARD metal4.0
-    ${MOPPE_METAL_SOURCES})
-  target_sources(moppe_shaders PRIVATE ${MOPPE_METAL_DEPS})
-  set_target_properties(moppe_shaders PROPERTIES OUTPUT_NAME moppe)
-
-  # Debug line tables and embedded sources let Xcode's shader profiler
-  # attribute GPU time to shader source lines. The vendored Metal language
-  # module supplies these flags for Debug and RelWithDebInfo builds.
-  set(MOPPE_SHADER_ASSET "$<TARGET_FILE:moppe_shaders>")
-  set(MOPPE_SHADER_NAME moppe.metallib)
-else()
-  if(MOPPE_MOBILE_APPLE)
-    message(FATAL_ERROR
-      "The iOS/tvOS build requires Xcode's Metal toolchain")
-  endif()
-
-  # Command Line Tools includes the Metal runtime but not the offline shader
-  # compiler.  Build one self-contained source file for runtime compilation.
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${MOPPE_METAL_SOURCES} ${MOPPE_METAL_DEPS})
-  file(READ moppe/render/metal/shader_types.h MOPPE_METAL_SOURCE)
-  file(READ moppe/shaders/metal/common.h MOPPE_METAL_COMMON)
-  string(REPLACE
-    "#include \"../../render/metal/shader_types.h\"" ""
-    MOPPE_METAL_COMMON "${MOPPE_METAL_COMMON}")
-  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_COMMON}\n")
-  file(READ moppe/shaders/metal/grass_medium.h MOPPE_GRASS_MEDIUM)
-  string(REPLACE "#include \"common.h\"" ""
-    MOPPE_GRASS_MEDIUM "${MOPPE_GRASS_MEDIUM}")
-  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_GRASS_MEDIUM}\n")
-  file(READ moppe/shaders/metal/forest_medium.h MOPPE_FOREST_MEDIUM)
-  string(REPLACE "#include \"common.h\"" ""
-    MOPPE_FOREST_MEDIUM "${MOPPE_FOREST_MEDIUM}")
-  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_FOREST_MEDIUM}\n")
-  foreach(src ${MOPPE_METAL_SOURCES})
-    file(READ ${src} MOPPE_METAL_PART)
-    string(REPLACE "#include \"common.h\"" ""
-      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
-    string(REPLACE "#include \"grass_medium.h\"" ""
-      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
-    string(REPLACE "#include \"forest_medium.h\"" ""
-      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
-    string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_PART}\n")
-  endforeach()
-  set(MOPPE_SHADER_ASSET ${CMAKE_CURRENT_BINARY_DIR}/moppe.metal)
-  set(MOPPE_SHADER_NAME moppe.metal)
-  file(WRITE ${MOPPE_SHADER_ASSET} "${MOPPE_METAL_SOURCE}")
-  message(STATUS
-    "Metal compiler not found; shaders will compile at runtime on macOS")
-  add_custom_target(moppe_shaders DEPENDS ${MOPPE_SHADER_ASSET})
-endif()
-
-function(moppe_embed_metal_shaders target)
-  if(CMAKE_Metal_COMPILER)
-    target_embed_metal_shader_libraries(${target} moppe_shaders)
-  else()
-    add_custom_command(TARGET ${target} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${MOPPE_SHADER_ASSET}
-        $<TARGET_BUNDLE_CONTENT_DIR:${target}>/Resources/${MOPPE_SHADER_NAME}
-      VERBATIM)
-  endif()
-endfunction()
-endif()
-
-# ---------------------------------------------------------------
 # Source composition.
 #
 # Directories and namespaces describe ownership. They are deliberately not
@@ -386,7 +264,6 @@ endif()
 
 set(MOPPE_RENDER_SOURCES
   moppe/render/draw.cc
-  moppe/render/reflection_geometry.cc
   moppe/render/slug.cc
   moppe/render/text.cc
   moppe/render/truetype.cc
@@ -481,22 +358,6 @@ set(MOPPE_APPLE_COMMON_SOURCES
   moppe/platform/apple/game_controller.mm
 )
 
-if(MOPPE_APPLE_SIMULATOR)
-  # Apple's simulator SDK deliberately omits the Metal 4 core Objective-C
-  # API. Keep simulator projects buildable, but fail explicitly at launch
-  # instead of compiling a second, legacy command-submission backend.
-  set(MOPPE_METAL_RENDER_SOURCES
-    moppe/render/metal/metal4_simulator_unavailable.mm)
-else()
-  set(MOPPE_METAL_RENDER_SOURCES
-    moppe/render/metal/metal_renderer.mm)
-endif()
-
-set(MOPPE_WEBGPU_SOURCES
-  moppe/render/webgpu/webgpu_renderer.cc
-  moppe/render/webgpu/webgpu_renderer.hh
-)
-
 function(moppe_configure_code_target target)
   target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(${target} PRIVATE
@@ -521,20 +382,89 @@ function(moppe_configure_apple_target target)
     "-framework GameController")
 endfunction()
 
-function(moppe_configure_metal_target target)
-  target_link_libraries(${target} PRIVATE
-    "-framework Metal"
-    "-framework MetalKit"
-    "-framework QuartzCore"
-    "-framework ImageIO")
-  # Apple simulator SDKs omit MetalFX along with the Metal 4 core API; those
-  # targets compile the explicit unavailable renderer stub above. Physical
-  # macOS, iOS, and tvOS targets all use the shared MetalFX reconstruction
-  # path when the device reports support.
-  if(NOT MOPPE_APPLE_SIMULATOR)
-    target_link_libraries(${target} PRIVATE "-framework MetalFX")
+# NHAL, the renderer's hardware layer (docs/nhal.md). Its world programs are
+# Luv's Lisp, lowered by luv-shaderc: from PATH, or else the version this
+# repository's flake pins. The lowered shaders depend on the compiler too,
+# so a new luv-shaderc relowers them.
+find_program(MOPPE_LUV_SHADERC luv-shaderc NO_CACHE)
+if(MOPPE_LUV_SHADERC)
+  set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
+else()
+  set(MOPPE_LUV_SHADERC "")
+  set(MOPPE_LUV_SHADERC_COMMAND
+    nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
+endif()
+
+set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
+set(MOPPE_NHAL_WORLD_SOURCE
+  ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp)
+# The world programs by their stages.
+set(MOPPE_NHAL_WORLD_DRAWN
+  terrain sky uber hud resolve present slug_text forest
+  bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
+  rain water leaves)
+set(MOPPE_NHAL_WORLD_CASTERS terrain_shadow forest_shadow boulders_shadow)
+set(MOPPE_NHAL_WORLD_COMPUTED
+  forest_cull exposure grass_tiles sward_patches boulder_cull)
+set(MOPPE_NHAL_WORLD_STAGES)
+foreach(program IN LISTS MOPPE_NHAL_WORLD_DRAWN)
+  list(APPEND MOPPE_NHAL_WORLD_STAGES ${program}.vertex ${program}.fragment)
+endforeach()
+foreach(program IN LISTS MOPPE_NHAL_WORLD_CASTERS)
+  list(APPEND MOPPE_NHAL_WORLD_STAGES ${program}.vertex)
+endforeach()
+foreach(program IN LISTS MOPPE_NHAL_WORLD_COMPUTED)
+  list(APPEND MOPPE_NHAL_WORLD_STAGES ${program}.compute)
+endforeach()
+
+# Lowers world.lisp to LANGUAGE (msl, hlsl, or spirv), whose stage files end
+# in EXTENSION, once per build: the custom target moppe_nhal_world_LANGUAGE
+# owns the command (Xcode lets one target own it). Sets OUTPUTS to every file
+# it writes: each program's reflection header and stages.
+function(moppe_lower_world_shaders language extension outputs)
+  set(written)
+  foreach(stage IN LISTS MOPPE_NHAL_WORLD_STAGES)
+    string(REGEX REPLACE "[.].*" "" program ${stage})
+    list(APPEND written
+      ${MOPPE_NHAL_WORLD}/${program}.hh
+      ${MOPPE_NHAL_WORLD}/${stage}.${extension})
+  endforeach()
+  list(REMOVE_DUPLICATES written)
+  if(NOT TARGET moppe_nhal_world_${language})
+    add_custom_command(
+      OUTPUT ${written}
+      COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_WORLD}
+        --target ${language} ${MOPPE_NHAL_WORLD_SOURCE}
+      DEPENDS ${MOPPE_NHAL_WORLD_SOURCE} ${MOPPE_LUV_SHADERC}
+      COMMENT "Lowering the NHAL renderer's Lisp shaders to ${language}"
+      VERBATIM)
+    add_custom_target(moppe_nhal_world_${language} DEPENDS ${written})
   endif()
-  add_dependencies(${target} moppe_shaders)
+  set(${outputs} ${written} PARENT_SCOPE)
+endfunction()
+
+# Adds the NHAL renderer to TARGET, with its world programs embedded in
+# LANGUAGE through WORLD_SHADERS (world_shaders_<backend>.cc).
+function(moppe_add_nhal_renderer target language extension world_shaders)
+  moppe_lower_world_shaders(${language} ${extension} lowered)
+  add_dependencies(${target} moppe_nhal_world_${language})
+  target_sources(${target} PRIVATE
+    moppe/nhal/renderer/nhal_renderer.cc ${world_shaders})
+  target_include_directories(${target} PRIVATE ${MOPPE_NHAL_WORLD})
+  set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
+    TARGET_DIRECTORY ${target} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  set_source_files_properties(${world_shaders}
+    TARGET_DIRECTORY ${target} PROPERTIES
+    COMPILE_OPTIONS "--embed-dir=${MOPPE_NHAL_WORLD}"
+    SKIP_UNITY_BUILD_INCLUSION ON)
+  # Relowered shaders recompile what includes or embeds them. Xcode's
+  # browsing target lists these sources too, and an object dependency there
+  # would give the lowering a second owner; the target dependency orders it.
+  if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+    set_source_files_properties(
+      moppe/nhal/renderer/nhal_renderer.cc ${world_shaders}
+      TARGET_DIRECTORY ${target} PROPERTIES OBJECT_DEPENDS "${lowered}")
+  endif()
 endfunction()
 
 # Developer tools for inspecting and iterating on terrain generation.
@@ -622,7 +552,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/map/surface_test.cc
     tests/map/water_surface_test.cc
     tests/map/terrain_generation_test.cc
-    tests/render/reflection_geometry_test.cc
     tests/render/slug_test.cc
     tests/render/text_test.cc
   )
@@ -633,9 +562,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     target_sources(moppe-tests PRIVATE
       ${MOPPE_APPLE_COMMON_SOURCES})
     moppe_configure_apple_target(moppe-tests)
-    moppe_configure_metal_target(moppe-tests)
-    target_compile_definitions(moppe-tests PRIVATE
-      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
     target_sources(moppe-tests PRIVATE
       atelier/embedding.cc
       atelier/hex_sheet.cc
@@ -661,14 +587,19 @@ if(APPLE AND MOPPE_IOS)
     ${MOPPE_ENGINE_SOURCES}
     ${MOPPE_APPLICATION_SOURCES}
     ${MOPPE_APPLE_COMMON_SOURCES}
-    ${MOPPE_METAL_RENDER_SOURCES}
+    moppe/nhal/metal/metal_device.mm
     moppe/platform/ios/main_ios.mm
     ${MOPPE_IOS_ASSETS}
   )
   moppe_configure_code_target(moppe-ios)
   moppe_configure_apple_target(moppe-ios)
-  moppe_configure_metal_target(moppe-ios)
-  moppe_embed_metal_shaders(moppe-ios)
+  moppe_add_nhal_renderer(moppe-ios msl metal
+    moppe/nhal/renderer/world_shaders_metal.cc)
+  set_source_files_properties(moppe/nhal/metal/metal_device.mm
+    moppe/platform/ios/main_ios.mm
+    TARGET_DIRECTORY moppe-ios PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  target_link_libraries(moppe-ios PRIVATE
+    "-framework Metal" "-framework QuartzCore" "-framework MetalKit")
   target_link_libraries(moppe-ios PRIVATE "-framework UIKit")
   set_target_properties(moppe-ios PROPERTIES
     OUTPUT_NAME "Moppe"
@@ -707,13 +638,18 @@ if(APPLE AND MOPPE_TVOS)
     ${MOPPE_ENGINE_SOURCES}
     ${MOPPE_APPLICATION_SOURCES}
     ${MOPPE_APPLE_COMMON_SOURCES}
-    ${MOPPE_METAL_RENDER_SOURCES}
+    moppe/nhal/metal/metal_device.mm
     moppe/platform/tvos/main_tvos.mm
   )
   moppe_configure_code_target(moppe-tvos)
   moppe_configure_apple_target(moppe-tvos)
-  moppe_configure_metal_target(moppe-tvos)
-  moppe_embed_metal_shaders(moppe-tvos)
+  moppe_add_nhal_renderer(moppe-tvos msl metal
+    moppe/nhal/renderer/world_shaders_metal.cc)
+  set_source_files_properties(moppe/nhal/metal/metal_device.mm
+    moppe/platform/tvos/main_tvos.mm
+    TARGET_DIRECTORY moppe-tvos PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  target_link_libraries(moppe-tvos PRIVATE
+    "-framework Metal" "-framework QuartzCore" "-framework MetalKit")
   target_compile_definitions(moppe-tvos PRIVATE
     MOPPE_DEFAULT_APPLE_TV_GRAPHICS)
   if(MOPPE_TVOS_BAKED_WORLD)
@@ -767,99 +703,190 @@ if(APPLE AND MOPPE_TVOS)
   endif()
 endif()
 
-if(APPLE AND NOT MOPPE_MOBILE_APPLE)
-  # Luv's Lisp shaders are lowered by luv-shaderc: from PATH, or else the
-  # version this repository's flake pins.
-  find_program(MOPPE_LUV_SHADERC luv-shaderc NO_CACHE)
-  if(MOPPE_LUV_SHADERC)
-    set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
-  else()
-    # Lowered shaders depend on the compiler itself only when it is found.
-    set(MOPPE_LUV_SHADERC "")
-    set(MOPPE_LUV_SHADERC_COMMAND
-      nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
+# ---------------------------------------------------------------
+# The desktop game: an SDL3 window on macOS and Linux, drawn by the NHAL
+# renderer through Metal 4 or Vulkan (moppe/platform/sdl/). On Linux,
+# `nix develop` provides SDL3, Vulkan, and luv-shaderc; elsewhere a missing
+# SDL3 is built from its release.
+
+if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(SDL3 CONFIG QUIET)
+  if(NOT SDL3_FOUND)
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+    set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(SDL3
+      URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.14/SDL3-3.4.14.tar.gz
+      URL_HASH
+        SHA256=30d4aa2b3037718142b32dffd4e72f917ebb6cc5227150e7bb9c45efb2153aeb
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(SDL3)
   endif()
 
+  if(APPLE)
+    set(MOPPE_SDL_DEVICE
+      moppe/nhal/metal/metal_device.mm
+      moppe/platform/sdl/device_metal.mm)
+    set(MOPPE_SDL_SHADERS msl metal moppe/nhal/renderer/world_shaders_metal.cc)
+  else()
+    find_package(Vulkan REQUIRED)
+    set(MOPPE_SDL_DEVICE
+      moppe/nhal/vulkan/vulkan_device.cc
+      moppe/platform/sdl/device_vulkan.cc)
+    set(MOPPE_SDL_SHADERS spirv spv
+      moppe/nhal/renderer/world_shaders_vulkan.cc)
+  endif()
+
+  # A Game (platform.hh) hosted in an SDL window: TARGET's own sources plus
+  # the host, its services, the device, and the NHAL renderer.
+  function(moppe_add_sdl_host target)
+    target_sources(${target} PRIVATE
+      moppe/platform/sdl/host.cc
+      moppe/platform/sdl/services.cc
+      ${MOPPE_SDL_DEVICE})
+    moppe_configure_code_target(${target})
+    moppe_add_nhal_renderer(${target} ${MOPPE_SDL_SHADERS})
+    # SDL, Vulkan, and Objective-C stay out of the game's unity translation
+    # unit; the services find assets in the source tree in development.
+    set_source_files_properties(
+      moppe/platform/sdl/host.cc ${MOPPE_SDL_DEVICE}
+      TARGET_DIRECTORY ${target} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    set_source_files_properties(moppe/platform/sdl/services.cc
+      TARGET_DIRECTORY ${target} PROPERTIES
+      COMPILE_DEFINITIONS "MOPPE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\""
+      SKIP_UNITY_BUILD_INCLUSION ON)
+    target_link_libraries(${target} PRIVATE SDL3::SDL3)
+    if(APPLE)
+      target_compile_options(${target} PRIVATE
+        $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+      target_link_libraries(${target} PRIVATE
+        "-framework Foundation"
+        "-framework Metal"
+        "-framework QuartzCore")
+    else()
+      target_link_libraries(${target} PRIVATE Vulkan::Vulkan)
+    endif()
+  endfunction()
+
+  # The game. On the Mac it is an app bundle with the assets inside, still
+  # runnable from a shell: build/moppe.app/Contents/MacOS/moppe.
+  if(APPLE)
+    add_executable(moppe MACOSX_BUNDLE
+      moppe/game/main.cc
+      ${MOPPE_ENGINE_SOURCES}
+      ${MOPPE_APPLICATION_SOURCES})
+    set_target_properties(moppe PROPERTIES
+      MACOSX_BUNDLE_INFO_PLIST
+        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/mac/Info.plist.in
+      MACOSX_BUNDLE_BUNDLE_NAME "Moppe"
+      MACOSX_BUNDLE_GUI_IDENTIFIER "se.brockman.moppe"
+      MACOSX_BUNDLE_SHORT_VERSION_STRING "${MOPPE_VERSION}"
+      MACOSX_BUNDLE_BUNDLE_VERSION "${MOPPE_BUILD_NUMBER}"
+      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe")
+    add_custom_command(TARGET moppe POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/textures
+        $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/textures
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/data
+        $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/data
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/fonts
+        $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/fonts
+      COMMENT "Bundling assets into moppe.app")
+  else()
+    add_executable(moppe
+      moppe/game/main.cc
+      ${MOPPE_ENGINE_SOURCES}
+      ${MOPPE_APPLICATION_SOURCES})
+    install(TARGETS moppe RUNTIME DESTINATION bin)
+    install(DIRECTORY fonts textures data DESTINATION share/moppe)
+  endif()
+  moppe_add_sdl_host(moppe)
+  set_source_files_properties(moppe/game/main.cc
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
   if(MOPPE_BUILD_DEVELOPER_TOOLS)
-    # Renderer testbed: spinning solids + HUD shapes, no game.
+    # Renderer testbed: spinning solids and HUD shapes, no game.
     add_executable(moppe-testbed EXCLUDE_FROM_ALL
       moppe/game/testbed.cc
       ${MOPPE_RENDER_SOURCES}
-      ${MOPPE_TERRAIN_SOURCES}
-      ${MOPPE_APPLE_COMMON_SOURCES}
-      ${MOPPE_METAL_RENDER_SOURCES}
-      moppe/platform/mac/main_mac.mm)
-    moppe_configure_code_target(moppe-testbed)
-    moppe_configure_apple_target(moppe-testbed)
-    moppe_configure_metal_target(moppe-testbed)
-    target_compile_definitions(moppe-testbed PRIVATE
-      MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
-    target_link_libraries(moppe-testbed PRIVATE "-framework AppKit")
+      ${MOPPE_TERRAIN_SOURCES})
+    moppe_add_sdl_host(moppe-testbed)
 
     # Tree studio: a flat plane and a lineup of conifer specimens, the fast
     # instrument for iterating on tree geometry without a generated world.
     add_executable(moppe-tree-studio EXCLUDE_FROM_ALL
       moppe/game/tree_studio.cc
       ${MOPPE_RENDER_SOURCES}
-      ${MOPPE_TERRAIN_SOURCES}
-      ${MOPPE_APPLE_COMMON_SOURCES}
-      ${MOPPE_METAL_RENDER_SOURCES}
-      moppe/platform/mac/main_mac.mm)
-    moppe_configure_code_target(moppe-tree-studio)
-    moppe_configure_apple_target(moppe-tree-studio)
-    moppe_configure_metal_target(moppe-tree-studio)
-    target_compile_definitions(moppe-tree-studio PRIVATE
-      MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
-    target_link_libraries(moppe-tree-studio PRIVATE "-framework AppKit")
+      ${MOPPE_TERRAIN_SOURCES})
+    moppe_add_sdl_host(moppe-tree-studio)
+  endif()
 
-    # NHAL, the next renderer's hardware layer (docs/nhal.md), and its demo
-    # scene on Metal 4. The Direct3D 12 build for Xbox lives in
-    # moppe/nhal/meson.build. The demo's shaders are Luv's Lisp, lowered by
-    # luv-shaderc (found above).
-    set(MOPPE_NHAL_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
-    set(MOPPE_NHAL_SHADER_OUTPUTS)
-    foreach(stage IN ITEMS
-        terrain.vertex terrain.fragment terrain_shadow.vertex
-        trees.vertex trees.fragment trees_shadow.vertex
-        sky.vertex sky.fragment tonemap.vertex tonemap.fragment
-        forest_wind.compute resolve.vertex resolve.fragment)
-      string(REGEX REPLACE "[.].*" "" program ${stage})
-      list(APPEND MOPPE_NHAL_SHADER_OUTPUTS
-        ${MOPPE_NHAL_SHADERS}/${program}.hh
-        ${MOPPE_NHAL_SHADERS}/${stage}.metal)
-    endforeach()
-    list(REMOVE_DUPLICATES MOPPE_NHAL_SHADER_OUTPUTS)
-    add_custom_command(
-      OUTPUT ${MOPPE_NHAL_SHADER_OUTPUTS}
-      COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_SHADERS}
-        --target msl
-        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
-      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+  # The NHAL demo (docs/nhal.md): a valley, a spruce stand, and their sun
+  # shadow on Metal 4 or Vulkan. Its shaders are read at run time.
+  set(MOPPE_NHAL_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
+  if(APPLE)
+    set(MOPPE_NHAL_DEMO_LANGUAGE msl)
+    set(MOPPE_NHAL_DEMO_EXTENSION metal)
+  else()
+    set(MOPPE_NHAL_DEMO_LANGUAGE spirv)
+    set(MOPPE_NHAL_DEMO_EXTENSION spv)
+  endif()
+  set(MOPPE_NHAL_SHADER_OUTPUTS)
+  foreach(stage IN ITEMS
+      terrain.vertex terrain.fragment terrain_shadow.vertex
+      trees.vertex trees.fragment trees_shadow.vertex
+      sky.vertex sky.fragment tonemap.vertex tonemap.fragment
+      forest_wind.compute resolve.vertex resolve.fragment)
+    string(REGEX REPLACE "[.].*" "" program ${stage})
+    list(APPEND MOPPE_NHAL_SHADER_OUTPUTS
+      ${MOPPE_NHAL_SHADERS}/${program}.hh
+      ${MOPPE_NHAL_SHADERS}/${stage}.${MOPPE_NHAL_DEMO_EXTENSION})
+  endforeach()
+  list(REMOVE_DUPLICATES MOPPE_NHAL_SHADER_OUTPUTS)
+  add_custom_command(
+    OUTPUT ${MOPPE_NHAL_SHADER_OUTPUTS}
+    COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_SHADERS}
+      --target ${MOPPE_NHAL_DEMO_LANGUAGE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
       ${MOPPE_LUV_SHADERC}
-      COMMENT "Lowering the NHAL demo's Lisp shaders"
-      VERBATIM)
-    # The MSL is read and compiled at run time, not linked.
-    set_source_files_properties(${MOPPE_NHAL_SHADER_OUTPUTS} PROPERTIES
-      HEADER_FILE_ONLY ON)
+    COMMENT "Lowering the NHAL demo's Lisp shaders"
+    VERBATIM)
+  set_source_files_properties(${MOPPE_NHAL_SHADER_OUTPUTS} PROPERTIES
+    HEADER_FILE_ONLY ON)
+  if(APPLE)
     add_executable(nhal-demo EXCLUDE_FROM_ALL
       moppe/nhal/metal/metal_device.mm
       moppe/nhal/demo/scene.cc
       moppe/nhal/demo/main_mac.mm
       ${MOPPE_NHAL_SHADER_OUTPUTS})
-    target_include_directories(nhal-demo PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_NHAL_SHADERS})
     target_compile_options(nhal-demo PRIVATE
       $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
-    target_compile_definitions(nhal-demo PRIVATE
-      MOPPE_NHAL_DEMO_SHADERS="${MOPPE_NHAL_SHADERS}")
     target_link_libraries(nhal-demo PRIVATE
       "-framework AppKit"
       "-framework Metal"
       "-framework QuartzCore"
       "-framework ImageIO"
       "-framework UniformTypeIdentifiers")
+  else()
+    add_executable(nhal-demo EXCLUDE_FROM_ALL
+      moppe/nhal/vulkan/vulkan_device.cc
+      moppe/nhal/demo/scene.cc
+      moppe/nhal/demo/main_linux.cc
+      ${MOPPE_NHAL_SHADER_OUTPUTS})
+    target_link_libraries(nhal-demo PRIVATE Vulkan::Vulkan SDL3::SDL3)
   endif()
+  target_include_directories(nhal-demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_NHAL_SHADERS})
+  target_compile_definitions(nhal-demo PRIVATE
+    MOPPE_NHAL_DEMO_SHADERS="${MOPPE_NHAL_SHADERS}")
+endif()
 
+if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   # The core probe from the command line (moppe/game/core_probe.hh): the
   # headless world generation and simulation measurement moppe-core-xbox
   # makes on the console, for comparison.
@@ -871,158 +898,9 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     moppe/platform/mac/core_probe_mac.cc)
   moppe_configure_code_target(moppe-core-probe)
   moppe_configure_apple_target(moppe-core-probe)
-
-  # The game, as a proper .app bundle with the assets inside.
-  # (Still runnable from a shell: build/moppe.app/Contents/MacOS/moppe,
-  # and MOPPE_ASSETS=<repo> overrides asset resolution for dev.)
-  add_executable(moppe MACOSX_BUNDLE
-    moppe/game/main.cc
-    ${MOPPE_ENGINE_SOURCES}
-    ${MOPPE_APPLICATION_SOURCES}
-    ${MOPPE_APPLE_COMMON_SOURCES}
-    ${MOPPE_METAL_RENDER_SOURCES}
-    moppe/platform/mac/main_mac.mm)
-  moppe_configure_code_target(moppe)
-  moppe_configure_apple_target(moppe)
-  moppe_configure_metal_target(moppe)
-  moppe_embed_metal_shaders(moppe)
-  target_compile_definitions(moppe PRIVATE
-    MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
-  target_link_libraries(moppe PRIVATE "-framework AppKit")
-  # The next renderer over NHAL, chosen with --renderer nhal. Its world
-  # programs are Luv's Lisp, lowered to MSL and embedded at build time.
-  if(MOPPE_NHAL_RENDERER)
-    set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
-    set(MOPPE_NHAL_WORLD_OUTPUTS)
-    foreach(program IN ITEMS
-        terrain sky uber hud resolve present slug_text forest
-        bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
-        rain water leaves)
-      list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
-        ${MOPPE_NHAL_WORLD}/${program}.hh
-        ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
-        ${MOPPE_NHAL_WORLD}/${program}.fragment.metal)
-    endforeach()
-    foreach(program IN ITEMS terrain_shadow forest_shadow boulders_shadow)
-      list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
-        ${MOPPE_NHAL_WORLD}/${program}.hh
-        ${MOPPE_NHAL_WORLD}/${program}.vertex.metal)
-    endforeach()
-    foreach(program IN ITEMS
-        forest_cull exposure grass_tiles sward_patches boulder_cull)
-      list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
-        ${MOPPE_NHAL_WORLD}/${program}.hh
-        ${MOPPE_NHAL_WORLD}/${program}.compute.metal)
-    endforeach()
-    add_custom_command(
-      OUTPUT ${MOPPE_NHAL_WORLD_OUTPUTS}
-      COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_WORLD}
-        --target msl
-        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
-      DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
-      ${MOPPE_LUV_SHADERC}
-        ${MOPPE_LUV_SHADERC}
-      COMMENT "Lowering the NHAL renderer's Lisp shaders"
-      VERBATIM)
-    set_source_files_properties(${MOPPE_NHAL_WORLD_OUTPUTS} PROPERTIES
-      HEADER_FILE_ONLY ON)
-    set_source_files_properties(
-      moppe/nhal/renderer/world_shaders_metal.cc PROPERTIES
-      OBJECT_DEPENDS "${MOPPE_NHAL_WORLD_OUTPUTS}"
-      COMPILE_OPTIONS "--embed-dir=${MOPPE_NHAL_WORLD}"
-      SKIP_UNITY_BUILD_INCLUSION ON)
-    set_source_files_properties(
-      moppe/nhal/metal/metal_device.mm
-      moppe/nhal/renderer/nhal_renderer.cc PROPERTIES
-      SKIP_UNITY_BUILD_INCLUSION ON)
-    target_sources(moppe PRIVATE
-      moppe/nhal/metal/metal_device.mm
-      moppe/nhal/renderer/nhal_renderer.cc
-      moppe/nhal/renderer/world_shaders_metal.cc
-      ${MOPPE_NHAL_WORLD_OUTPUTS})
-    target_include_directories(moppe PRIVATE ${MOPPE_NHAL_WORLD})
-    target_compile_definitions(moppe PRIVATE MOPPE_NHAL_RENDERER=1)
-  endif()
-  set_target_properties(moppe PROPERTIES
-    XCODE_GENERATE_SCHEME TRUE
-    XCODE_SCHEME_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    # Xcode's GPU capture layer crashes the MetalFX temporal scaler under
-    # Metal 4 (GPUToolsCapture wraps the scaler, MetalFX then calls
-    # globalTraceObjectID on the MTL4 debug encoder, which lacks it), so
-    # plain Run keeps capture injection off. For a GPU trace, run with
-    # --upscaling linear -- the exact non-MetalFX fallback.
-    XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Enabled"
-    XCODE_SCHEME_ENABLE_GPU_API_VALIDATION TRUE
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe"
-    MACOSX_BUNDLE_INFO_PLIST
-      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/mac/Info.plist.in
-    MACOSX_BUNDLE_BUNDLE_NAME "Moppe"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "se.brockman.moppe"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
-    MACOSX_BUNDLE_BUNDLE_VERSION "1")
-  add_custom_command(TARGET moppe POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      ${CMAKE_CURRENT_SOURCE_DIR}/textures
-      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/textures
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      ${CMAKE_CURRENT_SOURCE_DIR}/data
-      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/data
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      ${CMAKE_CURRENT_SOURCE_DIR}/fonts
-      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/fonts
-    COMMENT "Bundling assets into moppe.app")
-  # POST_BUILD bundling only runs when the executable relinks, which lets
-  # shader-only edits go stale inside the bundle. Refresh them every build.
-  add_custom_target(moppe_bundle_shaders ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${MOPPE_SHADER_ASSET}
-      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/${MOPPE_SHADER_NAME}
-    DEPENDS moppe_shaders moppe
-    COMMENT "Refreshing bundled shaders")
 endif()
 
-if(EMSCRIPTEN)
-  function(moppe_configure_web_target target)
-    moppe_configure_code_target(${target})
-    target_compile_options(${target} PRIVATE
-      --use-port=emdawnwebgpu)
-    target_link_options(${target} PRIVATE
-      --use-port=emdawnwebgpu
-      -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency
-      -sALLOW_MEMORY_GROWTH=1
-      -sINITIAL_MEMORY=268435456
-      -sDISABLE_EXCEPTION_CATCHING=0)
-  endfunction()
 
-  function(moppe_configure_web_executable target)
-    moppe_configure_web_target(${target})
-    set_target_properties(${target} PROPERTIES
-      SUFFIX ".html"
-      LINK_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/web/shell.html")
-    target_link_options(${target} PRIVATE
-      "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/web/shell.html"
-      "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/textures@/textures"
-      -sASSERTIONS=1)
-  endfunction()
-
-  add_executable(moppe-web-testbed
-    moppe/game/testbed.cc
-    ${MOPPE_RENDER_SOURCES}
-    ${MOPPE_TERRAIN_SOURCES}
-    ${MOPPE_WEBGPU_SOURCES}
-    moppe/platform/web/main_web.cc)
-  moppe_configure_web_executable(moppe-web-testbed)
-
-  add_executable(moppe-web
-    moppe/game/main.cc
-    ${MOPPE_ENGINE_SOURCES}
-    ${MOPPE_APPLICATION_SOURCES}
-    ${MOPPE_WEBGPU_SOURCES}
-    moppe/platform/web/main_web.cc)
-  moppe_configure_web_executable(moppe-web)
-endif()
 
 # Xbox Series consoles in Developer Mode: x86_64 UWP, cross-built by nixbox.
 # MOPPE_XBOX_GAME chooses the game (moppe/platform/uwp/game.nix; `nix build
@@ -1034,44 +912,13 @@ if(WIN32)
   # lowers the renderer's Lisp shaders to HLSL and DXC compiles each stage
   # to a header of signed DXIL.
   if(MOPPE_XBOX_GAME)
-    find_program(MOPPE_LUV_SHADERC luv-shaderc REQUIRED NO_CACHE)
+    if(NOT MOPPE_LUV_SHADERC)
+      message(FATAL_ERROR "The Xbox game needs luv-shaderc on PATH")
+    endif()
     find_program(MOPPE_DXC dxc REQUIRED)
-    set(MOPPE_XBOX_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
-    set(MOPPE_XBOX_STAGES
-      terrain.vertex terrain.fragment sky.vertex sky.fragment
-      uber.vertex uber.fragment hud.vertex hud.fragment
-      resolve.vertex resolve.fragment present.vertex present.fragment
-      slug_text.vertex slug_text.fragment forest.vertex forest.fragment
-      forest_cull.compute exposure.compute
-      terrain_shadow.vertex forest_shadow.vertex
-      bloom_bright.vertex bloom_bright.fragment
-      bloom_blur.vertex bloom_blur.fragment
-      grass.vertex grass.fragment grass_tiles.compute
-      sward.vertex sward.fragment sward_patches.compute
-      gtao.vertex gtao.fragment gtao_blur.vertex gtao_blur.fragment
-      shafts.vertex shafts.fragment boulders.vertex boulders.fragment
-      boulders_shadow.vertex boulder_cull.compute
-      rain.vertex rain.fragment water.vertex water.fragment
-      leaves.vertex leaves.fragment)
-    set(MOPPE_XBOX_LOWERED)
-    foreach(stage IN LISTS MOPPE_XBOX_STAGES)
-      string(REGEX REPLACE "[.].*" "" program ${stage})
-      list(APPEND MOPPE_XBOX_LOWERED
-        ${MOPPE_XBOX_SHADERS}/${program}.hh
-        ${MOPPE_XBOX_SHADERS}/${stage}.hlsl)
-    endforeach()
-    list(REMOVE_DUPLICATES MOPPE_XBOX_LOWERED)
-    add_custom_command(
-      OUTPUT ${MOPPE_XBOX_LOWERED}
-      COMMAND ${MOPPE_LUV_SHADERC} --out ${MOPPE_XBOX_SHADERS}
-        --target hlsl
-        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
-      DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
-      ${MOPPE_LUV_SHADERC}
-        ${MOPPE_LUV_SHADERC}
-      COMMENT "Lowering the NHAL renderer's Lisp shaders to HLSL"
-      VERBATIM)
+    set(MOPPE_XBOX_SHADERS ${MOPPE_NHAL_WORLD})
+    set(MOPPE_XBOX_STAGES ${MOPPE_NHAL_WORLD_STAGES})
+    moppe_lower_world_shaders(hlsl hlsl MOPPE_XBOX_LOWERED)
     set(MOPPE_XBOX_DXIL)
     foreach(stage IN LISTS MOPPE_XBOX_STAGES)
       string(REPLACE "." "_" entry ${stage})
@@ -1161,129 +1008,7 @@ if(WIN32)
   endif()
 endif()
 
-# Linux: the game drawn by the NHAL renderer through Vulkan, in an SDL3
-# window (moppe/platform/linux/; `nix develop` provides the toolchain).
-# luv-shaderc lowers the renderer's Lisp shaders to SPIR-V, which the game
-# embeds and the demo reads at run time.
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  find_package(Vulkan REQUIRED)
-  find_package(SDL3 REQUIRED CONFIG)
-  find_program(MOPPE_LUV_SHADERC luv-shaderc NO_CACHE)
-  if(MOPPE_LUV_SHADERC)
-    set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
-  else()
-    # Lowered shaders depend on the compiler itself only when it is found.
-    set(MOPPE_LUV_SHADERC "")
-    set(MOPPE_LUV_SHADERC_COMMAND
-      nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
-  endif()
 
-  set(MOPPE_NHAL_DEMO_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
-  set(MOPPE_NHAL_DEMO_OUTPUTS)
-  foreach(stage IN ITEMS
-      terrain.vertex terrain.fragment terrain_shadow.vertex
-      trees.vertex trees.fragment trees_shadow.vertex
-      sky.vertex sky.fragment tonemap.vertex tonemap.fragment
-      forest_wind.compute resolve.vertex resolve.fragment)
-    string(REGEX REPLACE "[.].*" "" program ${stage})
-    list(APPEND MOPPE_NHAL_DEMO_OUTPUTS
-      ${MOPPE_NHAL_DEMO_SHADERS}/${program}.hh
-      ${MOPPE_NHAL_DEMO_SHADERS}/${stage}.spv)
-  endforeach()
-  list(REMOVE_DUPLICATES MOPPE_NHAL_DEMO_OUTPUTS)
-  add_custom_command(
-    OUTPUT ${MOPPE_NHAL_DEMO_OUTPUTS}
-    COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_DEMO_SHADERS}
-      --target spirv
-      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
-      ${MOPPE_LUV_SHADERC}
-    COMMENT "Lowering the NHAL demo's Lisp shaders to SPIR-V"
-    VERBATIM)
-  set_source_files_properties(${MOPPE_NHAL_DEMO_OUTPUTS} PROPERTIES
-    HEADER_FILE_ONLY ON)
-  add_executable(nhal-demo EXCLUDE_FROM_ALL
-    moppe/nhal/vulkan/vulkan_device.cc
-    moppe/nhal/demo/scene.cc
-    moppe/nhal/demo/main_linux.cc
-    ${MOPPE_NHAL_DEMO_OUTPUTS})
-  target_include_directories(nhal-demo PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_NHAL_DEMO_SHADERS})
-  target_compile_definitions(nhal-demo PRIVATE
-    MOPPE_NHAL_DEMO_SHADERS="${MOPPE_NHAL_DEMO_SHADERS}")
-  target_link_libraries(nhal-demo PRIVATE Vulkan::Vulkan SDL3::SDL3)
-
-  set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
-  set(MOPPE_NHAL_WORLD_OUTPUTS)
-  foreach(program IN ITEMS
-      terrain sky uber hud resolve present slug_text forest
-      bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
-      rain water leaves)
-    list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
-      ${MOPPE_NHAL_WORLD}/${program}.hh
-      ${MOPPE_NHAL_WORLD}/${program}.vertex.spv
-      ${MOPPE_NHAL_WORLD}/${program}.fragment.spv)
-  endforeach()
-  foreach(program IN ITEMS terrain_shadow forest_shadow boulders_shadow)
-    list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
-      ${MOPPE_NHAL_WORLD}/${program}.hh
-      ${MOPPE_NHAL_WORLD}/${program}.vertex.spv)
-  endforeach()
-  foreach(program IN ITEMS
-      forest_cull exposure grass_tiles sward_patches boulder_cull)
-    list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
-      ${MOPPE_NHAL_WORLD}/${program}.hh
-      ${MOPPE_NHAL_WORLD}/${program}.compute.spv)
-  endforeach()
-  add_custom_command(
-    OUTPUT ${MOPPE_NHAL_WORLD_OUTPUTS}
-    COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_WORLD}
-      --target spirv
-      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
-    DEPENDS
-      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
-      ${MOPPE_LUV_SHADERC}
-    COMMENT "Lowering the NHAL renderer's Lisp shaders to SPIR-V"
-    VERBATIM)
-  set_source_files_properties(${MOPPE_NHAL_WORLD_OUTPUTS} PROPERTIES
-    HEADER_FILE_ONLY ON)
-
-  add_executable(moppe
-    moppe/game/main.cc
-    ${MOPPE_ENGINE_SOURCES}
-    ${MOPPE_APPLICATION_SOURCES}
-    moppe/nhal/vulkan/vulkan_device.cc
-    moppe/nhal/renderer/nhal_renderer.cc
-    moppe/nhal/renderer/world_shaders_vulkan.cc
-    moppe/platform/linux/platform_linux.cc
-    moppe/platform/linux/main_linux.cc
-    ${MOPPE_NHAL_WORLD_OUTPUTS})
-  moppe_configure_code_target(moppe)
-  target_include_directories(moppe PRIVATE ${MOPPE_NHAL_WORLD})
-  # The device, renderer, and host keep Vulkan's and SDL's headers out of
-  # the game's unity translation unit.
-  set_source_files_properties(
-    moppe/game/main.cc
-    moppe/nhal/vulkan/vulkan_device.cc
-    moppe/nhal/renderer/nhal_renderer.cc
-    moppe/platform/linux/main_linux.cc
-    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
-  set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
-    PROPERTIES OBJECT_DEPENDS "${MOPPE_NHAL_WORLD_OUTPUTS}")
-  set_source_files_properties(
-    moppe/nhal/renderer/world_shaders_vulkan.cc PROPERTIES
-    OBJECT_DEPENDS "${MOPPE_NHAL_WORLD_OUTPUTS}"
-    COMPILE_OPTIONS "--embed-dir=${MOPPE_NHAL_WORLD}"
-    SKIP_UNITY_BUILD_INCLUSION ON)
-  # Development builds find their assets in the source tree.
-  set_source_files_properties(moppe/platform/linux/platform_linux.cc
-    PROPERTIES COMPILE_DEFINITIONS
-      "MOPPE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\""
-      SKIP_UNITY_BUILD_INCLUSION ON)
-  target_link_libraries(moppe PRIVATE Vulkan::Vulkan SDL3::SDL3)
-  install(TARGETS moppe RUNTIME DESTINATION bin)
-  install(DIRECTORY fonts textures data DESTINATION share/moppe)
-endif()
 
 # CMake's Xcode generator normally presents sources target-by-target, which is
 # useful for building but awkward for browsing. Add one read-only source tree
@@ -1303,11 +1028,4 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
   source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}
     FILES ${MOPPE_XCODE_SOURCES})
 
-  foreach(target
-      moppe_bundle_shaders
-      moppe_shaders)
-    if(TARGET ${target})
-      set_target_properties(${target} PROPERTIES FOLDER "Build Internals")
-    endif()
-  endforeach()
 endif()

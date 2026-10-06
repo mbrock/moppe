@@ -67,7 +67,7 @@
         // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           # The game on Linux: NHAL on Vulkan, in an SDL3 window
           # (`nix develop`, then the usual cmake configure and build).
-          default = import ./moppe/platform/linux/shell.nix {
+          default = import ./moppe/platform/sdl/shell.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };

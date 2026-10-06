@@ -8,10 +8,10 @@
 - Unit tests: `cmake --build build --target moppe-tests && ctest --test-dir
   build --output-on-failure` (the test binary is excluded from the default
   build, so plain `ctest` otherwise runs a stale one)
-- WebAssembly/WebGPU: `make web-serve`, then open
-  `http://localhost:8080` (renderer testbed: `/moppe-web-testbed.html`)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
-  (or `open build/moppe.app`)
+  (or `open build/moppe.app`) on macOS, `./build/moppe` on Linux. Both are
+  the same SDL3 host (`moppe/platform/sdl/`) drawing through the NHAL
+  renderer, on Metal 4 or Vulkan; on Linux, run cmake inside `nix develop`.
   - Game controller: left stick drives and steers; right trigger boosts; `A`
     deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
     and `Y` boosts, flares, or skips the opening. The D-pad navigates Terrain
@@ -62,31 +62,12 @@
       additional developer cache namespace;
       `--refresh-world-cache` replaces its selected entry, and
       `--no-world-cache` bypasses finished-world caching for one launch.
-    - `--upscaling temporal|spatial|linear` requests MetalFX temporal or
-      spatial reconstruction, or the exact linear fallback. Temporal is the
-      default; startup prints the requested and backend-resolved mode.
-      Temporal uses a single-sample jittered scene with persistent depth,
-      motion vectors, exposure, and a reactive mask rather than scene MSAA.
-    - `--frame-interpolation on|off` controls macOS MetalFX frame generation.
-      It defaults off, with ordinary play paced directly at 60 Hz. Explicit
-      `on` requests the high-refresh display cadence and alternates a generated
-      midpoint with the retained real frame when supported.
-    - `--renderer nhal` draws the game with the next renderer
-      (`moppe/nhal/renderer/`, shaders in `moppe/nhal/renderer/shaders/
-      world.lisp`) instead of the Metal one: terrain, sky, meshes, and draw
-      lists so far, temporally upscaled. See `docs/nhal.md`.
-    - On macOS, `--drawable-scale <0.25..1>` selects the final drawable as a
-      fraction of display backing resolution. `--render-scale <0.25..1>`
-      independently selects the 3D scene as a fraction of that drawable;
-      `MOPPE_RENDERSCALE` remains its environment equivalent. Ordinary play
-      keeps the drawable native up to a 4.2 MP area cap, then scales it down;
-      the 3D scene defaults to half that drawable. Explicit flags override
-      either, and an explicit quality preset replaces the ordinary graphics
-      baseline.
-    - `--msaa 1|2|4` fixes the scene sample count before pipeline creation.
-      `--scene-megapixels <0..64>` controls the desktop scene-area safety cap;
-      zero disables it. Explicit flags override their legacy environment
-      equivalents.
+    - `--render-scale <0.25..1>` selects the 3D scene as a fraction of the
+      drawable (`MOPPE_RENDERSCALE` is its environment equivalent); the
+      scene defaults to half the drawable, temporally upscaled.
+      `--scene-megapixels <0..64>` controls the desktop scene-area safety
+      cap; zero disables it. An explicit quality preset replaces the
+      ordinary graphics baseline.
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
     - `--window-size WIDTHxHEIGHT` picks the windowed size, and `--inactive`
@@ -96,7 +77,7 @@
     /tmp/opening.mp4` (it stops when the opening ends; a second argument
     caps the seconds). Set `MOPPE_SEED`, `MOPPE_TERRAIN_PROFILE`,
     `MOPPE_CINEMATIC_CAPTURE_FPS`, or `MOPPE_OPENING` to override the
-    defaults, and add `--renderer nhal` after the arguments for NHAL.
+    defaults.
   - Temporal-stability verification of the riding experience:
     `tools/ride-judge /tmp/ride-judge` captures a deterministic autopilot
     ride as consecutive frames (`MOPPE_RIDE_CAPTURE_DIR`, with `_START` and
@@ -139,14 +120,14 @@
     `MOPPE_GAZETTEER_WINDOW`, and `MOPPE_GAZETTEER_SETTLE`.
     `MOPPE_GAZETTEER_ENABLE` and `MOPPE_GAZETTEER_DISABLE` forward
     `--graphics-enable` and `--graphics-disable` lists.
-  - The forest is the trunk forest (`moppe/shaders/metal/forest_trunks.metal`):
+  - The forest is the trunk forest (`moppe/nhal/renderer/shaders/world.lisp`):
     tiered spruce and birch with leaf clumps on branches, at mature-stand
     heights with long clear trunks in closed stands. Autumn reaches the
     uplands first: birch there turns gold, drops a leaf carpet
-    (`leaf_fall.metal` adds falling leaves), and the high heath turns.
-    Trees are drawn by instanced vertex pulling: the CPU culls them by
-    tile and sorts them by (species, detail tier), and each class shares
-    one index buffer built from the topology in `shader_types.h`.
+    (the `leaves` program adds falling leaves), and the high heath turns.
+    Trees are drawn by instanced vertex pulling: a compute pass culls every
+    individual and counts each (species, detail tier) class's indirect
+    draw, and each class shares one index buffer.
   - The on-foot hiker is a rigged model, `models/hiker.blend`: smooth
     subdivided parts, each a separate object with its modifiers and skin
     weights, exported to `moppe/game/figure_mesh.cc` (generated; do not
@@ -170,7 +151,7 @@
     `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
     ahead of the bike or glider.
-  - Boulders (`moppe/game/boulders.cc`, `moppe/shaders/metal/boulders.metal`)
+  - Boulders (`moppe/game/boulders.cc`, the `boulders` program)
     are planned from the surface fields when a world activates -- talus,
     scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded
     rocks, and the larger ones collide; `--graphics-disable boulders` hides
@@ -179,7 +160,9 @@
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
-  - Automated screenshots and graphics benchmarks keep their macOS windows
+    The NHAL water is a placeholder (the terrain's chunks drawn at the water
+    sheet's level) until water is designed properly.
+  - Automated screenshots and graphics benchmarks keep their windows
     inactive, so repeated captures do not steal focus from the current app.
   - Partitioned hot-feature GPU benchmark (32 configurations by default;
     prefix with `MOPPE_DEMO=1` so it measures a ride rather than the spawn
@@ -188,10 +171,12 @@
     --windowed --seed 123 --terrain-quality fast`. Development overrides are
     `--benchmark-prelude`, `--benchmark-settle`, `--benchmark-frames`,
     `--benchmark-partition detailed` for the 128-configuration refinement, and
-    `--benchmark-pass-timing` for precise Metal 4 pass columns (with profiling
-    overhead).
+    `--benchmark-pass-timing` for pass columns.
     Analyze a completed CSV with
-    `tools/graphics-benchmark-analyze INPUT.csv [OUTPUT_DIR]`.
+    `tools/graphics-benchmark-analyze INPUT.csv [OUTPUT_DIR]`. The
+    measurement lived in the retired Metal renderer; until the NHAL renderer
+    implements `write_benchmark_results` from its pass timings, the replay
+    runs but writes nothing.
   - Weather is authored, not simulated: `MOPPE_WEATHER=clear|mist|drizzle`
     (`moppe/game/weather.hh`) sets the sky, fog, and light, and the NHAL
     renderer draws valley mist and a fine rain for it.
@@ -199,17 +184,17 @@
     (autopilot for screenshots; use `MOPPE_DEMO=forest` to start the same
     rider at the world's selected forest-floor site),
     `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
-    `MOPPE_RENDERSCALE=<0.25..1>`, `MOPPE_SCENEPIXELS=<megapixels>` (the
-    scene-resolution budget; `0` restores the point-relative rule alone), and
-    `MOPPE_MSAA=1|2|4` (sample count, fixed before the pipelines are built)
+    `MOPPE_RENDERSCALE=<0.25..1>`, and `MOPPE_SCENEPIXELS=<megapixels>`
+    (the scene-resolution budget; `0` restores the point-relative rule
+    alone)
   - The desktop scene resolution is the smaller of the point-relative rule and
     `scene_megapixel_budget`, so a display attached at 1x — a 7680x2160 one
     asks for twice a 4K frame — costs resolution rather than frame rate.
-- Renderer smoke test: `./build/moppe-testbed`
-- NHAL, the next renderer's hardware layer (Metal 4, Direct3D 12 for Xbox,
+- Renderer smoke test: `./build/moppe-testbed` (configure with
+  `-DMOPPE_BUILD_DEVELOPER_TOOLS=ON`)
+- NHAL, the renderer's hardware layer (Metal 4, Direct3D 12 for Xbox,
   Vulkan on Linux; `docs/nhal.md`): `cmake --build build --target
-  nhal-demo` (configure with `-DMOPPE_BUILD_DEVELOPER_TOOLS=ON` on macOS),
-  then `./build/nhal-demo`, or
+  nhal-demo`, then `./build/nhal-demo`, or
   `./build/nhal-demo --capture /tmp/nhal.png --frames 30` to write one frame
   without taking focus. On Xbox: `nix build .#nhal-xbox` and
   `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net nix run .#deploy-nhal-xbox`;
@@ -217,11 +202,13 @@
   readable through Device Portal's file API.
 - Linux (NHAL on Vulkan, in an SDL3 window): `nix develop`, then the usual
   configure and `cmake --build build --target moppe`, and `./build/moppe`
-  (the same controls as the Mac). `cmake --build build --target nhal-demo`
-  and `./build/nhal-demo --capture /tmp/nhal.tga --frames 30` render the
-  demo without a window. `MOPPE_VULKAN_VALIDATION=1` turns on the Khronos
-  validation layer. The device is `moppe/nhal/vulkan/`, the host
-  `moppe/platform/linux/`; see docs/nhal.md.
+  (the same controls as the Mac). `./build/nhal-demo --capture
+  /tmp/nhal.tga --frames 30` renders the demo without a window.
+  `MOPPE_VULKAN_VALIDATION=1` turns on the Khronos validation layer. The
+  device is `moppe/nhal/vulkan/`; see docs/nhal.md. Two bit-determinism
+  tests (the geology hash and the benchmark tape) fail on x86 Linux: world
+  generation is not yet bit-identical across architectures, so a Linux
+  world differs from the Mac's with the same seed.
 - The game's core on Xbox, before NHAL renders it: `nix build
   .#moppe-core-xbox` and `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net
   nix run .#deploy-moppe-core-xbox -- --hold 600` (package
@@ -286,18 +273,21 @@
 - Text and HUD vector shapes render with Slug, straight from quadratic
   outlines: `render/truetype.*` reads TrueType glyphs, `render/slug.*` builds
   the band/curve buffers (and a CPU coverage mirror for tests),
-  `render/text.*` lays out a `Font` into a `TextList`, and
-  `shaders/metal/slug.metal` draws it via `Renderer::draw_hud_text`. The
+  `render/text.*` lays out a `Font` into a `TextList`, and the NHAL
+  renderer's `slug-text` program draws it via `Renderer::draw_hud_text`. The
   bundled face is `fonts/IosevkaAile-Regular.ttf` (SIL OFL, licence beside
   it). `GlyphQuad` carries 3D axes so world-space text can reuse it.
-- `moppe/render/` — portable renderer API (DrawList immediate mode,
-  MeshBuilder-baked meshes, game-shaped Renderer interface); no GL/Metal
-  types in headers. `moppe/render/metal/` and `moppe/render/webgpu/` own the
-  native Metal and browser WGSL/WebGPU backends.
-- `moppe/shaders/metal/` — MSL shaders, built into moppe.metallib per SDK.
-- `moppe/platform/` — Game interface, input, assets, speech; `mac/`, `ios/`,
-  `web/`, and shared `apple/` layers. The browser host uses Canvas2D glyph
-  rasterization and a `requestAnimationFrame` loop.
+- `moppe/render/` — the game-shaped renderer API (DrawList immediate mode,
+  MeshBuilder-baked meshes, the Renderer interface); no GPU API types.
+  `moppe/nhal/renderer/` implements it over NHAL (`moppe/nhal/`), the one
+  renderer on every platform, with its shaders in Luv's Lisp
+  (`moppe/nhal/renderer/shaders/world.lisp`) lowered by luv-shaderc to MSL,
+  HLSL, and SPIR-V.
+- `moppe/platform/` — the Game interface, input, assets, speech. `sdl/` is
+  the desktop host (macOS and Linux): an SDL3 window, its input, and the
+  NHAL device (`device_metal.mm`, `device_vulkan.cc`). `ios/` and `tvos/`
+  are UIKit hosts over NHAL's Metal device, `uwp/` the Xbox's, and `apple/`
+  services the Apple hosts share.
 - `moppe/game/` — the game systems, one file each (terrain, forest, water,
   dust, HUD, vehicle rendering; glue in game.cc).
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see
@@ -328,8 +318,9 @@
   only place those quantities become renderer texture lanes.
 - Terrain renders by vertex-pulling from an R32F height texture +
   RG16Snorm normals; physics keeps the authoritative CPU heightmap.
-- Reversed-Z scene pass (MSAA→resolve), post chain (underwater grade,
-  motion-blur feedback), then HUD in point coordinates.
+- A jittered, reversed-Z scene at a fraction of the drawable, a temporal
+  resolve to the drawable, occlusion, shafts, bloom, and the tonemap, then
+  the HUD in point coordinates (docs/nhal.md).
 - World generation runs on a background thread behind a loading screen.
 
 ## Code Style Guidelines

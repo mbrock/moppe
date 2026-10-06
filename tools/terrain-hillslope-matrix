@@ -75,7 +75,6 @@ for multiplier in $multipliers; do
   "$root/tools/terrain-spectrum" "$variant"
 
   mkdir -p "$variant/cache-check"
-  MOPPE_METAL_HUD=0 \
   MOPPE_CINEMATIC_CAPTURE_DIR="$variant/cache-check" \
   MOPPE_CINEMATIC_CAPTURE_FRAMES=1 \
   "$root/build/moppe.app/Contents/MacOS/moppe" \

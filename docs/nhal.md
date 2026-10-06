@@ -1,12 +1,11 @@
 # NHAL: the next renderer's hardware layer
 
-NHAL is a small C++ hardware layer for moppe's next renderer, in the spirit
+NHAL is a small C++ hardware layer for moppe's renderer, in the spirit
 of Luv's WebGPU-shaped HAL but shaped by what the targets actually offer. It
 has three backends: Metal 4 on Apple platforms, Direct3D 12 for Xbox Series
 consoles in Developer Mode (UWP, feature level 11_0, shader model 6.4), and
-Vulkan 1.3 on Linux. It lives in `moppe/nhal/`, beside the current renderer,
-which it does not touch until it can carry a moppe-like scene on every
-platform.
+Vulkan 1.3 on Linux. It lives in `moppe/nhal/`, and its renderer is the
+game's only one: the Metal and WebGPU renderers it grew beside are retired.
 
 Shaders are written in Luv's mathematical shader language and lowered ahead of
 time by `luv-shaderc` (a package of the Luv flake) into MSL, HLSL, and SPIR-V
@@ -15,10 +14,12 @@ pipelines from.
 
 ## The renderer
 
-`moppe/nhal/renderer/` implements the game's `render::Renderer` over NHAL;
-`--renderer nhal` selects it on macOS. Its programs live in one Lisp file,
-`shaders/world.lisp`, which CMake lowers into `build/nhal-world/` and embeds
-(`world_shaders_metal.cc`, by `#embed`). A frame draws the scene into a
+`moppe/nhal/renderer/` implements the game's `render::Renderer` over NHAL
+on every platform. Its programs live in one Lisp file, `shaders/world.lisp`,
+which CMake lowers into `build/nhal-world/` (`moppe_lower_world_shaders`)
+and embeds in each backend's form (`world_shaders_metal.cc`,
+`world_shaders_vulkan.cc`, by `#embed`; `world_shaders_d3d12.cc`, from
+DXC's headers). A frame draws the scene into a
 half-size RGBA16F colour, RG16F motion, and reversed-Z depth, jittered;
 resolves it temporally into a drawable-size history; then tonemaps into the
 drawable and draws the HUD over it.
@@ -28,8 +29,15 @@ parent levels, the ground material ported from `terrain.metal`), a
 provisional sky, the game's draw lists and meshes through one "uber" program
 with a pipeline per draw state, and the HUD: its draw lists, then its Slug
 text and vector shapes, whose band walk is Luv's own (`luv/slug-shader`,
-called as `luv.slug::slug-horizontal-band-step` and friends). Water is left
-out on purpose, to be reinvented rather than ported.
+called as `luv.slug::slug-horizontal-band-step` and friends).
+
+Water is a placeholder until it is designed properly, rather than a port
+of the old renderer's: `draw_ocean` draws the terrain's chunks again with
+the `water` program, each vertex lifted to the water sheet (RG32F on the
+terrain grid: the surface and the swell's amplitude), dry fragments
+discarded, and the rest a depth tint under the sky's Fresnel reflection
+with a sun glint from two drifting ripple fields, over the opaque scene.
+Waterfalls are not drawn.
 
 The trunk forest keeps `forest_trunks.metal`'s trees -- tapered trunks,
 stacked spruce cones, birch clumps on branches, the same twelve (species,
@@ -93,7 +101,13 @@ renderer lays a valley mist into its haze (below about two fifths of the
 land's relief, thickening with distance) and draws a drizzle of
 world-anchored streaks around the camera.
 
-Falling leaves, dust, and water come next.
+Falling leaves are leaf_fall.metal's: a window of world-anchored
+1.2-metre cells around the camera, one leaf each, whose fall, drift, and
+tumble are a function of the cell and the time, wherever the fallen-leaf
+raster says gold crowns stand (the `leaves` program, 64 x 64 instances).
+
+Dust and the old underwater, motion-blur, and scene-blur passes are not
+drawn yet.
 
 ## The game on Xbox
 
@@ -149,19 +163,28 @@ The log reports the frame rate every ten seconds and, since the host turns
 sun shadow 0.6, temporal resolve 0.7, present 0.3, both tree culls 0.17, at
 a steady 60 fps. The same view on an M5 MacBook at 2498x1600 costs 12-13 ms.
 
+## The desktop host
+
+macOS and Linux run the same host, `moppe/platform/sdl/`: an SDL3 window,
+sized in points, whose pixels are the drawable, with the keyboard, the
+captured mouse, and the first gamepad driving the game (`host.cc`), and the
+platform services (`services.cc`). The device is the only per-platform part
+(`sdl.hh`): `device_metal.mm` makes a Metal 4 device on the layer of an SDL
+Metal view, in extended linear sRGB for EDR, and `device_vulkan.cc` a Vulkan
+device on the window's surface. Assets come from `MOPPE_ASSETS`, then the
+app bundle's resources or the executable's folder, then `share/moppe` beside
+it, then the source tree; caches live in `~/Library/Caches/Moppe` on the Mac
+and `$XDG_CACHE_HOME/moppe` on Linux. Where SDL3 is not installed, CMake
+builds its release.
+
 ## The game on Linux
 
 `nix develop` gives a shell with Clang, CMake, Ninja, SDL3, the Vulkan
 loader, headers, and validation layers, and `luv-shaderc`
-(`moppe/platform/linux/shell.nix`). The usual configure and
+(`moppe/platform/sdl/shell.nix`). The usual configure and
 `cmake --build build --target moppe` then build `build/moppe`: the whole
 game, drawn by the NHAL renderer through `moppe/nhal/vulkan/`, with
-luv-shaderc's SPIR-V embedded (`world_shaders_vulkan.cc`, by `#embed`).
-`moppe/platform/linux/main_linux.cc` is the host: an SDL3 window, sized in
-points, whose pixels are the swapchain, read like the Mac's keyboard and
-mouse and the Xbox's gamepad. Assets come from `MOPPE_ASSETS`, then
-`share/moppe` beside the executable, then the source tree; caches live under
-`$XDG_CACHE_HOME/moppe`.
+luv-shaderc's SPIR-V embedded, in the desktop host above.
 
 `cmake --build build --target nhal-demo` builds the demo for Vulkan;
 `./build/nhal-demo --capture /tmp/nhal.tga --frames 30` renders without a

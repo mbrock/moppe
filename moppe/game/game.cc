@@ -1484,7 +1484,6 @@ namespace moppe {
         params.mist = frame.lighting.mist;
         params.rain = frame.lighting.rain;
         params.sun_visibility = frame.lighting.sun_visibility;
-        params.upscaling = frame.graphics.upscaling;
         params.scene_scale = frame.graphics.scene_scale;
         params.render_scale_override = frame.graphics.render_scale_override;
         params.scene_megapixel_budget = frame.graphics.scene_megapixel_budget;
@@ -1976,7 +1975,6 @@ namespace moppe {
         const Vec3 eye (0.0f, 34.0f, 0.0f);
         const Vec3 target (0.0f, 27.0f, -100.0f);
         render::FrameParams fp;
-        fp.upscaling = m_graphics.upscaling;
         // The loading screen sizes the same render targets the game will use.
         // Leaving the budget off here would build a full-drawable set only to
         // replace it on the first world frame.
@@ -2138,7 +2136,6 @@ namespace moppe {
       }
       void render_game_over (render::Renderer& r) {
         render::FrameParams fp;
-        fp.upscaling = m_graphics.upscaling;
         fp.scene_scale = m_graphics.scene_scale;
         fp.render_scale_override = m_graphics.render_scale_override;
         fp.scene_megapixel_budget = m_graphics.scene_megapixel_budget;
