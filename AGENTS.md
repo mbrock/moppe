@@ -130,13 +130,15 @@
     Trees are drawn by instanced vertex pulling: the CPU culls them by
     tile and sorts them by (species, detail tier), and each class shares
     one index buffer built from the topology in `shader_types.h`.
-  - The on-foot hiker is a rigged model, `models/hiker.blend`, exported
-    to `moppe/game/figure_mesh.cc` (generated; do not edit) and skinned
-    rigidly on the CPU from `pose_avatar`'s skeleton (`game/figure.*`).
-    `make figure` re-exports it and renders a pose lineup to
-    `FIGURE_PREVIEW` (default `/tmp/hiker.png`); `make figure-model`
-    regenerates the .blend from `tools/figure/build.py`, discarding hand
-    edits. Bone joints and lengths must match `avatar_size`.
+  - The on-foot hiker is a rigged model, `models/hiker.blend`: smooth
+    subdivided parts, each a separate object with its modifiers and skin
+    weights, exported to `moppe/game/figure_mesh.cc` (generated; do not
+    edit) and skinned on the CPU from `pose_avatar`'s skeleton
+    (`game/figure.*`). `make figure` re-exports it and renders a pose
+    lineup to `FIGURE_PREVIEW` (default `/tmp/hiker.png`);
+    `make figure-model` regenerates the .blend from
+    `tools/figure/build.py`, discarding hand edits. Bone joints and lengths
+    must match `avatar_size`.
   - Boulders (`moppe/game/boulders.cc`, `moppe/shaders/metal/boulders.metal`)
     are planned from the surface fields when a world activates -- talus,
     scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded

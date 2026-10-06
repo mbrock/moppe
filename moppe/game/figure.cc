@@ -33,8 +33,12 @@ namespace moppe::game::figure {
     struct Motion {
       Vec3 x, y, z, offset;
 
+      Vec3 turn (const Vec3& v) const {
+        return x * v[0] + y * v[1] + z * v[2];
+      }
+
       Vec3 apply (const Vec3& p) const {
-        return x * p[0] + y * p[1] + z * p[2] + offset;
+        return turn (p) + offset;
       }
     };
 
@@ -74,38 +78,53 @@ namespace moppe::game::figure {
     return f;
   }
 
-  void draw (render::DrawList& dl, const AvatarSkeleton& k) {
+  void skin (const AvatarSkeleton& k,
+             std::vector<Vec3>& points,
+             std::vector<Vec3>& normals) {
     const std::array<Frame, bone_count> posed = pose (k);
     std::array<Motion, bone_count> moves;
     for (int b = 0; b < bone_count; ++b)
       moves[b] = motion (rest[b], posed[b]);
 
-    static thread_local std::vector<Vec3> skinned;
-    skinned.resize (vertices.size ());
+    const Vec3 origin = k.pelvis;
+    points.resize (vertices.size ());
+    normals.resize (vertices.size ());
     for (std::size_t i = 0; i < vertices.size (); ++i) {
       const Vertex& v = vertices[i];
       const Vec3 p = vec (v.position);
-      const Vec3 a = moves[v.bone[0]].apply (p);
-      skinned[i] =
-        v.bone[1] == v.bone[0]
-          ? a
-          : a * v.weight + moves[v.bone[1]].apply (p) * (1.0f - v.weight);
+      const Vec3 n = vec (v.normal);
+      // Blend offsets from the pelvis rather than world positions, and
+      // renormalise the weights, so rounding in the exported weights
+      // cannot shift a vertex by a fraction of its distance from the
+      // world origin.
+      Vec3 point (0, 0, 0), normal (0, 0, 0);
+      float total = 0.0f;
+      for (int j = 0; j < 4; ++j) {
+        const float w = v.weight[j];
+        if (w <= 0.0f)
+          continue;
+        const Motion& m = moves[v.bone[j]];
+        point += (m.apply (p) - origin) * w;
+        normal += m.turn (n) * w;
+        total += w;
+      }
+      points[i] = origin + point * (1.0f / total);
+      normals[i] = length2 (normal) > 1e-12f ? normalized (normal) : n;
     }
+  }
+
+  void draw (render::DrawList& dl, const AvatarSkeleton& k) {
+    static thread_local std::vector<Vec3> points, normals;
+    skin (k, points, normals);
 
     dl.set_texture (nullptr);
     dl.begin (render::Prim::Triangles);
     for (const Triangle& t : triangles) {
-      const Vec3& a = skinned[t.vertex[0]];
-      const Vec3& b = skinned[t.vertex[1]];
-      const Vec3& c = skinned[t.vertex[2]];
-      Vec3 n = cross (b - a, c - a);
-      if (length2 (n) < 1e-14f)
-        continue;
       dl.color (colours[t.colour]);
-      dl.normal (normalized (n));
-      dl.vertex (a);
-      dl.vertex (b);
-      dl.vertex (c);
+      for (const std::uint16_t i : t.vertex) {
+        dl.normal (normals[i]);
+        dl.vertex (points[i]);
+      }
     }
     dl.end ();
   }

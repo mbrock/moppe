@@ -17,7 +17,7 @@ out = sys.argv[sys.argv.index("--") + 1] if "--" in sys.argv else \
     "/tmp/hiker.png"
 scene = bpy.context.scene
 rig = bpy.data.objects["hiker_rig"]
-body = bpy.data.objects["hiker"]
+parts = [o for o in rig.children if o.type == "MESH"]
 D = math.radians
 
 # Rotations about each bone's local Z (the body's right for limbs, so a
@@ -53,11 +53,12 @@ LINEUP = [
 
 def copy(x, angle, pose):
     r = rig.copy()
-    b = body.copy()
     scene.collection.objects.link(r)
-    scene.collection.objects.link(b)
-    b.parent = r
-    b.modifiers["rig"].object = r
+    for part in parts:
+        b = part.copy()
+        scene.collection.objects.link(b)
+        b.parent = r
+        b.modifiers["rig"].object = r
     r.location = (x, 0, 0)
     r.rotation_euler = (0, 0, D(angle))
     r.show_in_front = False
@@ -72,10 +73,9 @@ def copy(x, angle, pose):
 spacing = 0.85
 for i, (angle, pose) in enumerate(LINEUP):
     copy((i - (len(LINEUP) - 1) / 2) * spacing, angle, pose)
-rig.hide_render = True
-body.hide_render = True
-rig.hide_viewport = True
-body.hide_viewport = True
+for o in [rig] + parts:
+    o.hide_render = True
+    o.hide_viewport = True
 
 bpy.ops.mesh.primitive_plane_add(size=200, location=(0, 0, 0))
 ground = bpy.context.active_object
