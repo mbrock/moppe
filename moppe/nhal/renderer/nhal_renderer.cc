@@ -308,19 +308,30 @@ namespace moppe::nhal {
       }
     };
 
-    // Owned copies of a program's stage code, which pipelines made on
-    // demand need after construction.
-    struct ProgramCode {
-      std::string msl[2];
-      std::vector<unsigned char> dxil[2];
+    // An owned copy of one stage's code in every backend's form, which
+    // pipelines made on demand need after construction.
+    struct OwnedStage {
+      std::string msl;
+      std::vector<unsigned char> dxil;
+      std::vector<std::uint32_t> spirv;
 
-      void keep (const StageCode (&stages)[2]) {
-        for (int i = 0; i < 2; ++i) {
-          msl[i] = std::string (stages[i].msl);
-          dxil[i].assign (stages[i].dxil.begin (), stages[i].dxil.end ());
-        }
+      void keep (const StageCode& stage) {
+        msl = std::string (stage.msl);
+        dxil.assign (stage.dxil.begin (), stage.dxil.end ());
+        spirv.assign (stage.spirv.begin (), stage.spirv.end ());
       }
-      StageCode stage (int i) const { return { msl[i], dxil[i] }; }
+      StageCode code () const { return { msl, dxil, spirv }; }
+    };
+
+    // A program's vertex and fragment stages.
+    struct ProgramCode {
+      OwnedStage stages[2];
+
+      void keep (const StageCode (&code)[2]) {
+        for (int i = 0; i < 2; ++i)
+          stages[i].keep (code[i]);
+      }
+      StageCode stage (int i) const { return stages[i].code (); }
     };
 
     class NhalRenderer final : public render::Renderer {
@@ -336,12 +347,8 @@ namespace moppe::nhal {
         m_present_code.keep (shaders.present);
         m_grass_code.keep (shaders.grass);
         m_sward_code.keep (shaders.sward);
-        m_sward_patches_code = std::string (shaders.sward_patches.msl);
-        m_sward_patches_dxil.assign (shaders.sward_patches.dxil.begin (),
-                                     shaders.sward_patches.dxil.end ());
-        m_grass_tiles_code = std::string (shaders.grass_tiles.msl);
-        m_grass_tiles_dxil.assign (shaders.grass_tiles.dxil.begin (),
-                                   shaders.grass_tiles.dxil.end ());
+        m_sward_patches_code.keep (shaders.sward_patches);
+        m_grass_tiles_code.keep (shaders.grass_tiles);
         m_bloom_bright_code.keep (shaders.bloom_bright);
         m_bloom_blur_code.keep (shaders.bloom_blur);
         m_gtao_code.keep (shaders.gtao);
@@ -351,17 +358,11 @@ namespace moppe::nhal {
         m_rain_code.keep (shaders.rain);
         m_boulders_code.keep (shaders.boulders);
         m_boulders_shadow_code.keep (shaders.boulders_shadow);
-        m_boulder_cull_code = std::string (shaders.boulder_cull.msl);
-        m_boulder_cull_dxil.assign (shaders.boulder_cull.dxil.begin (),
-                                    shaders.boulder_cull.dxil.end ());
+        m_boulder_cull_code.keep (shaders.boulder_cull);
         m_terrain_shadow_code.keep (shaders.terrain_shadow);
         m_forest_shadow_code.keep (shaders.forest_shadow);
-        m_forest_cull_code = std::string (shaders.forest_cull.msl);
-        m_forest_cull_dxil.assign (shaders.forest_cull.dxil.begin (),
-                                   shaders.forest_cull.dxil.end ());
-        m_exposure_code = std::string (shaders.exposure.msl);
-        m_exposure_dxil.assign (shaders.exposure.dxil.begin (),
-                                shaders.exposure.dxil.end ());
+        m_forest_cull_code.keep (shaders.forest_cull);
+        m_exposure_code.keep (shaders.exposure);
         m_slug_text_code.keep (shaders.slug_text);
         make_pipelines ();
         const float neutral = 1.0f;
@@ -1432,10 +1433,10 @@ namespace moppe::nhal {
         m_forest = m_device->create_render_pipeline (forest);
         m_exposure = m_device->create_compute_pipeline (
           { &shaders::exposure::program,
-            { m_exposure_code, m_exposure_dxil }, "exposure" });
+            m_exposure_code.code (), "exposure" });
         m_forest_cull = m_device->create_compute_pipeline (
           { &shaders::forest_cull::program,
-            { m_forest_cull_code, m_forest_cull_dxil }, "forest culling" });
+            m_forest_cull_code.code (), "forest culling" });
 
         RenderPipelineDesc caster;
         caster.color_count = 0;
@@ -1472,7 +1473,7 @@ namespace moppe::nhal {
         m_boulders = m_device->create_render_pipeline (rock);
         m_boulder_cull = m_device->create_compute_pipeline (
           { &shaders::boulder_cull::program,
-            { m_boulder_cull_code, m_boulder_cull_dxil }, "boulder culling" });
+            m_boulder_cull_code.code (), "boulder culling" });
 
         RenderPipelineDesc rain = scene;
         rain.program = &shaders::rain::program;
@@ -1501,10 +1502,10 @@ namespace moppe::nhal {
         m_sward_pipeline = m_device->create_render_pipeline (sward);
         m_sward_patches_pipeline = m_device->create_compute_pipeline (
           { &shaders::sward_patches::program,
-            { m_sward_patches_code, m_sward_patches_dxil }, "sward patches" });
+            m_sward_patches_code.code (), "sward patches" });
         m_grass_tiles_pipeline = m_device->create_compute_pipeline (
           { &shaders::grass_tiles::program,
-            { m_grass_tiles_code, m_grass_tiles_dxil }, "grass tiles" });
+            m_grass_tiles_code.code (), "grass tiles" });
 
         RenderPipelineDesc resolve;
         resolve.program = &shaders::resolve::program;
@@ -2094,8 +2095,7 @@ namespace moppe::nhal {
         m_resolve_code, m_present_code, m_slug_text_code;
       Pipeline m_terrain, m_sky, m_resolve, m_present, m_hud, m_slug_text;
       ProgramCode m_forest_code;
-      std::string m_forest_cull_code;
-      std::vector<unsigned char> m_forest_cull_dxil;
+      OwnedStage m_forest_cull_code;
       Pipeline m_forest, m_forest_cull, m_exposure;
       ProgramCode m_terrain_shadow_code, m_forest_shadow_code;
       Pipeline m_terrain_shadow, m_forest_shadow;
@@ -2103,8 +2103,7 @@ namespace moppe::nhal {
       Buffer m_shadow_candidates, m_shadow_arguments;
       Transient m_shadow_forest_block;
       FrameBlock m_frame_values {};
-      std::string m_exposure_code;
-      std::vector<unsigned char> m_exposure_dxil;
+      OwnedStage m_exposure_code;
       Buffer m_exposure_value;
       Buffer m_trees, m_tree_candidates, m_tree_arguments, m_tree_indices;
       std::uint32_t m_tree_count = 0;
@@ -2134,8 +2133,7 @@ namespace moppe::nhal {
       ProgramCode m_rain_code;
       Pipeline m_rain;
       ProgramCode m_boulders_code, m_boulders_shadow_code;
-      std::string m_boulder_cull_code;
-      std::vector<unsigned char> m_boulder_cull_dxil;
+      OwnedStage m_boulder_cull_code;
       Pipeline m_boulders, m_boulders_shadow, m_boulder_cull;
       Buffer m_rocks, m_rock_candidates, m_rock_arguments,
         m_rock_shadow_candidates, m_rock_shadow_arguments, m_rock_corners,
@@ -2148,12 +2146,10 @@ namespace moppe::nhal {
       shaders::gtao::Post m_post_block {};
       bool m_ao_ready = false, m_shafts_ready = false;
       ProgramCode m_grass_code;
-      std::string m_grass_tiles_code;
-      std::vector<unsigned char> m_grass_tiles_dxil;
+      OwnedStage m_grass_tiles_code;
       Pipeline m_grass_pipeline, m_grass_tiles_pipeline;
       ProgramCode m_sward_code;
-      std::string m_sward_patches_code;
-      std::vector<unsigned char> m_sward_patches_dxil;
+      OwnedStage m_sward_patches_code;
       Pipeline m_sward_pipeline, m_sward_patches_pipeline;
       Buffer m_sward_patches, m_sward_arguments, m_sward_indices;
       shaders::grass::Grass m_sward_block {};

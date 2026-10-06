@@ -1,11 +1,12 @@
 {
-  description = "moppe builds that need Nix: NHAL on Xbox, and Luv's shader compiler";
+  description = "moppe builds that need Nix: NHAL on Xbox and Linux, and Luv's shader compiler";
 
   inputs.nixbox.url = "github:mbrock/nixbox";
   inputs.luv.url = "github:mbrock/luv";
+  inputs.nixpkgs.follows = "luv/nixpkgs";
 
   outputs =
-    { self, nixbox, luv }:
+    { self, nixbox, luv, nixpkgs }:
     let
       forEachSystem = f: builtins.mapAttrs f nixbox.lib;
       # A finished world baked on the host, shipped in the Xbox package so
@@ -57,10 +58,19 @@
         }
       );
       devShells = forEachSystem (
-        system: _: {
+        system: _:
+        {
           nhal-xbox = self.packages.${system}.nhal-xbox.devShell;
           moppe-core-xbox = self.packages.${system}.moppe-core-xbox.devShell;
           moppe-xbox = self.packages.${system}.moppe-xbox.devShell;
+        }
+        // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
+          # The game on Linux: NHAL on Vulkan, in an SDL3 window
+          # (`nix develop`, then the usual cmake configure and build).
+          default = import ./moppe/platform/linux/shell.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            luv-shaderc = self.packages.${system}.luv-shaderc;
+          };
         }
       );
     };

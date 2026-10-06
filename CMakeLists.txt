@@ -1153,6 +1153,126 @@ if(WIN32)
   endif()
 endif()
 
+# Linux: the game drawn by the NHAL renderer through Vulkan, in an SDL3
+# window (moppe/platform/linux/; `nix develop` provides the toolchain).
+# luv-shaderc lowers the renderer's Lisp shaders to SPIR-V, which the game
+# embeds and the demo reads at run time.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(Vulkan REQUIRED)
+  find_package(SDL3 REQUIRED CONFIG)
+  find_program(MOPPE_LUV_SHADERC luv-shaderc)
+  if(MOPPE_LUV_SHADERC)
+    set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
+  else()
+    set(MOPPE_LUV_SHADERC_COMMAND
+      nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
+  endif()
+
+  set(MOPPE_NHAL_DEMO_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
+  set(MOPPE_NHAL_DEMO_OUTPUTS)
+  foreach(stage IN ITEMS
+      terrain.vertex terrain.fragment terrain_shadow.vertex
+      trees.vertex trees.fragment trees_shadow.vertex
+      sky.vertex sky.fragment tonemap.vertex tonemap.fragment
+      forest_wind.compute resolve.vertex resolve.fragment)
+    string(REGEX REPLACE "[.].*" "" program ${stage})
+    list(APPEND MOPPE_NHAL_DEMO_OUTPUTS
+      ${MOPPE_NHAL_DEMO_SHADERS}/${program}.hh
+      ${MOPPE_NHAL_DEMO_SHADERS}/${stage}.spv)
+  endforeach()
+  list(REMOVE_DUPLICATES MOPPE_NHAL_DEMO_OUTPUTS)
+  add_custom_command(
+    OUTPUT ${MOPPE_NHAL_DEMO_OUTPUTS}
+    COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_DEMO_SHADERS}
+      --target spirv
+      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+    COMMENT "Lowering the NHAL demo's Lisp shaders to SPIR-V"
+    VERBATIM)
+  set_source_files_properties(${MOPPE_NHAL_DEMO_OUTPUTS} PROPERTIES
+    HEADER_FILE_ONLY ON)
+  add_executable(nhal-demo EXCLUDE_FROM_ALL
+    moppe/nhal/vulkan/vulkan_device.cc
+    moppe/nhal/demo/scene.cc
+    moppe/nhal/demo/main_linux.cc
+    ${MOPPE_NHAL_DEMO_OUTPUTS})
+  target_include_directories(nhal-demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_NHAL_DEMO_SHADERS})
+  target_compile_definitions(nhal-demo PRIVATE
+    MOPPE_NHAL_DEMO_SHADERS="${MOPPE_NHAL_DEMO_SHADERS}")
+  target_link_libraries(nhal-demo PRIVATE Vulkan::Vulkan SDL3::SDL3)
+
+  set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
+  set(MOPPE_NHAL_WORLD_OUTPUTS)
+  foreach(program IN ITEMS
+      terrain sky uber hud resolve present slug_text forest
+      bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
+      rain)
+    list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
+      ${MOPPE_NHAL_WORLD}/${program}.hh
+      ${MOPPE_NHAL_WORLD}/${program}.vertex.spv
+      ${MOPPE_NHAL_WORLD}/${program}.fragment.spv)
+  endforeach()
+  foreach(program IN ITEMS terrain_shadow forest_shadow boulders_shadow)
+    list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
+      ${MOPPE_NHAL_WORLD}/${program}.hh
+      ${MOPPE_NHAL_WORLD}/${program}.vertex.spv)
+  endforeach()
+  foreach(program IN ITEMS
+      forest_cull exposure grass_tiles sward_patches boulder_cull)
+    list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
+      ${MOPPE_NHAL_WORLD}/${program}.hh
+      ${MOPPE_NHAL_WORLD}/${program}.compute.spv)
+  endforeach()
+  add_custom_command(
+    OUTPUT ${MOPPE_NHAL_WORLD_OUTPUTS}
+    COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_WORLD}
+      --target spirv
+      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+    DEPENDS
+      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+    COMMENT "Lowering the NHAL renderer's Lisp shaders to SPIR-V"
+    VERBATIM)
+  set_source_files_properties(${MOPPE_NHAL_WORLD_OUTPUTS} PROPERTIES
+    HEADER_FILE_ONLY ON)
+
+  add_executable(moppe
+    moppe/game/main.cc
+    ${MOPPE_ENGINE_SOURCES}
+    ${MOPPE_APPLICATION_SOURCES}
+    moppe/nhal/vulkan/vulkan_device.cc
+    moppe/nhal/renderer/nhal_renderer.cc
+    moppe/nhal/renderer/world_shaders_vulkan.cc
+    moppe/platform/linux/platform_linux.cc
+    moppe/platform/linux/main_linux.cc
+    ${MOPPE_NHAL_WORLD_OUTPUTS})
+  moppe_configure_code_target(moppe)
+  target_include_directories(moppe PRIVATE ${MOPPE_NHAL_WORLD})
+  # The device, renderer, and host keep Vulkan's and SDL's headers out of
+  # the game's unity translation unit.
+  set_source_files_properties(
+    moppe/game/main.cc
+    moppe/nhal/vulkan/vulkan_device.cc
+    moppe/nhal/renderer/nhal_renderer.cc
+    moppe/platform/linux/main_linux.cc
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
+    PROPERTIES OBJECT_DEPENDS "${MOPPE_NHAL_WORLD_OUTPUTS}")
+  set_source_files_properties(
+    moppe/nhal/renderer/world_shaders_vulkan.cc PROPERTIES
+    OBJECT_DEPENDS "${MOPPE_NHAL_WORLD_OUTPUTS}"
+    COMPILE_OPTIONS "--embed-dir=${MOPPE_NHAL_WORLD}"
+    SKIP_UNITY_BUILD_INCLUSION ON)
+  # Development builds find their assets in the source tree.
+  set_source_files_properties(moppe/platform/linux/platform_linux.cc
+    PROPERTIES COMPILE_DEFINITIONS
+      "MOPPE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\""
+      SKIP_UNITY_BUILD_INCLUSION ON)
+  target_link_libraries(moppe PRIVATE Vulkan::Vulkan SDL3::SDL3)
+  install(TARGETS moppe RUNTIME DESTINATION bin)
+  install(DIRECTORY fonts textures data DESTINATION share/moppe)
+endif()
+
 # CMake's Xcode generator normally presents sources target-by-target, which is
 # useful for building but awkward for browsing. Add one read-only source tree
 # and tuck the shader plumbing into a collapsed folder.

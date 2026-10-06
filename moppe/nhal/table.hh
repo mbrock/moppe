@@ -55,6 +55,14 @@ namespace moppe::nhal {
       return value;
     }
 
+    // Calls `f` on every live value, for a device releasing what is left.
+    template <typename F>
+    void each (F&& f) {
+      for (Row& row : m_rows)
+        if (row.live)
+          f (row.value);
+    }
+
   private:
     struct Row {
       Value value {};

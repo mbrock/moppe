@@ -2,14 +2,16 @@
 
 NHAL is a small C++ hardware layer for moppe's next renderer, in the spirit
 of Luv's WebGPU-shaped HAL but shaped by what the targets actually offer. It
-has two backends: Metal 4 on Apple platforms and Direct3D 12 for Xbox Series
-consoles in Developer Mode (UWP, feature level 11_0, shader model 6.4). Vulkan
-can follow. It lives in `moppe/nhal/`, beside the current renderer, which it
-does not touch until it can carry a moppe-like scene on both platforms.
+has three backends: Metal 4 on Apple platforms, Direct3D 12 for Xbox Series
+consoles in Developer Mode (UWP, feature level 11_0, shader model 6.4), and
+Vulkan 1.3 on Linux. It lives in `moppe/nhal/`, beside the current renderer,
+which it does not touch until it can carry a moppe-like scene on every
+platform.
 
 Shaders are written in Luv's mathematical shader language and lowered ahead of
-time by `luv-shaderc` (a package of the Luv flake) into MSL and HLSL, plus the
-reflection NHAL builds its pipelines from.
+time by `luv-shaderc` (a package of the Luv flake) into MSL, HLSL, and SPIR-V
+(through Luv's own Vulkan lowering), plus the reflection NHAL builds its
+pipelines from.
 
 ## The renderer
 
@@ -147,6 +149,37 @@ The log reports the frame rate every ten seconds and, since the host turns
 sun shadow 0.6, temporal resolve 0.7, present 0.3, both tree culls 0.17, at
 a steady 60 fps. The same view on an M5 MacBook at 2498x1600 costs 12-13 ms.
 
+## The game on Linux
+
+`nix develop` gives a shell with Clang, CMake, Ninja, SDL3, the Vulkan
+loader, headers, and validation layers, and `luv-shaderc`
+(`moppe/platform/linux/shell.nix`). The usual configure and
+`cmake --build build --target moppe` then build `build/moppe`: the whole
+game, drawn by the NHAL renderer through `moppe/nhal/vulkan/`, with
+luv-shaderc's SPIR-V embedded (`world_shaders_vulkan.cc`, by `#embed`).
+`moppe/platform/linux/main_linux.cc` is the host: an SDL3 window, sized in
+points, whose pixels are the swapchain, read like the Mac's keyboard and
+mouse and the Xbox's gamepad. Assets come from `MOPPE_ASSETS`, then
+`share/moppe` beside the executable, then the source tree; caches live under
+`$XDG_CACHE_HOME/moppe`.
+
+`cmake --build build --target nhal-demo` builds the demo for Vulkan;
+`./build/nhal-demo --capture /tmp/nhal.tga --frames 30` renders without a
+window and writes the last frame. `MOPPE_VULKAN_VALIDATION=1` turns on the
+Khronos validation layer, `MOPPE_VULKAN_DEVICE=N` picks a physical device,
+and `MOPPE_VULKAN_PRESENT=mailbox|immediate` replaces FIFO presentation.
+
+The Vulkan device needs 1.3's dynamic rendering and synchronization2,
+timeline semaphores, push descriptors, and robustness2's null descriptors.
+Each program's resources form one push-descriptor set (luv-shaderc folds
+the families into set 0, below), its samplers immutable, and every draw
+pushes its bindings; unbound slots are null. Image layouts are tracked per
+texture, and a full memory barrier precedes every render pass, dispatch,
+and copy, carrying the layout changes the command needs. A pass's sampled
+textures are known only as its draws arrive, so each render pass records
+into a secondary command buffer that the frame's primary executes after
+the pass's barriers. A timeline semaphore counts frames.
+
 ## What the Xbox allows
 
 Measured by nixbox's `probes/d3d12-caps` and `probes/swapchain`:
@@ -240,15 +273,15 @@ A program is a set of stages (vertex + fragment, or compute) whose resources
 are linked by name. Every resource has a kind and a binding number. Binding
 numbers are per kind family, and the families map onto each backend like this:
 
-| Luv resource | Family | Metal 4 | Direct3D 12 HLSL | D3D12 root signature |
-| --- | --- | --- | --- | --- |
-| `:uniform-block` | buffer | `constant B& n [[buffer(i)]]` | `cbuffer n : register(b i)` | root CBV |
-| `:storage-buffer` (read) | buffer | `device const T* n [[buffer(i)]]` | `StructuredBuffer<T> n : register(t i, space0)` | root SRV |
-| `:storage-buffer :access :read-write` | buffer | `device T* n [[buffer(i)]]` | `RWStructuredBuffer<T> n : register(u i)` | root UAV |
-| `:texture-2d`, `:depth-texture-2d`, `:uint-texture-2d` | texture | `texture2d<…> n [[texture(i)]]` | `Texture2D<…> n : register(t i, space1)` | one descriptor table, t0–t15 space1 |
-| `:texture-2d-array`, `:depth-texture-2d-array`, `:texture-cube`, `:texture-3d` | texture | `texture2d_array<…>`, `depth2d_array<float>`, `texturecube<…>`, `texture3d<…>` at `[[texture(i)]]` | `Texture2DArray`, `TextureCube`, `Texture3D` at `register(t i, space1)` | same table |
-| `:read-write-texture-2d` | storage texture | `texture2d<…, access::read_write> n [[texture(16 + i)]]` | `RWTexture2D<…> n : register(u i, space1)` | a UAV table, u0–u15 space1 |
-| `:sampler` | sampler | `sampler n [[sampler(i)]]` | `SamplerState` or `SamplerComparisonState n : register(s i)` | static samplers |
+| Luv resource | Family | Metal 4 | Direct3D 12 HLSL | D3D12 root signature | Vulkan (set 0) |
+| --- | --- | --- | --- | --- | --- |
+| `:uniform-block` | buffer | `constant B& n [[buffer(i)]]` | `cbuffer n : register(b i)` | root CBV | uniform buffer at `i` |
+| `:storage-buffer` (read) | buffer | `device const T* n [[buffer(i)]]` | `StructuredBuffer<T> n : register(t i, space0)` | root SRV | storage buffer at `i` |
+| `:storage-buffer :access :read-write` | buffer | `device T* n [[buffer(i)]]` | `RWStructuredBuffer<T> n : register(u i)` | root UAV | storage buffer at `i` |
+| `:texture-2d`, `:depth-texture-2d`, `:uint-texture-2d` | texture | `texture2d<…> n [[texture(i)]]` | `Texture2D<…> n : register(t i, space1)` | one descriptor table, t0–t15 space1 | sampled image at `16 + i` |
+| `:texture-2d-array`, `:depth-texture-2d-array`, `:texture-cube`, `:texture-3d` | texture | `texture2d_array<…>`, `depth2d_array<float>`, `texturecube<…>`, `texture3d<…>` at `[[texture(i)]]` | `Texture2DArray`, `TextureCube`, `Texture3D` at `register(t i, space1)` | same table | sampled image at `16 + i` |
+| `:read-write-texture-2d` | storage texture | `texture2d<…, access::read_write> n [[texture(16 + i)]]` | `RWTexture2D<…> n : register(u i, space1)` | a UAV table, u0–u15 space1 | storage image at `32 + i` |
+| `:sampler` | sampler | `sampler n [[sampler(i)]]` | `SamplerState` or `SamplerComparisonState n : register(s i)` | static samplers | immutable sampler at `48 + i` |
 
 - Buffer binding numbers are unique across uniform blocks and storage buffers
   (Metal shares one buffer index space); 0–15.
@@ -291,8 +324,9 @@ fragment input signature is always `SV_Position` followed by every vertex
 output, since Direct3D matches stages by layout.
 
 Clip space: shaders write `:position` in the language's convention, y down
-(Vulkan's), and both lowerings negate y, so what reaches Metal and Direct3D
-is their y up with depth 0..1. Renderers use reversed-Z.
+(Vulkan's), and the MSL and HLSL lowerings negate y, so what reaches Metal
+and Direct3D is their y up with depth 0..1; SPIR-V keeps it as written, under
+an ordinary viewport. Renderers use reversed-Z.
 
 In fragment stages `:frag-coord` is pixels from the top-left at pixel
 centres, depth in z, and 1/clip-w in w on every backend (HLSL rebuilds w from
@@ -308,7 +342,7 @@ storage texture table is visible to every stage.
 
 ## What `luv-shaderc` produces
 
-`nix run .#luv-shaderc -- --out DIR [--target msl] [--target hlsl] FILE.lisp`
+`nix run .#luv-shaderc -- --out DIR [--target msl|hlsl|spirv]... FILE.lisp`
 (this repository's flake pins the Luv version). Source files are plain
 `define-shader`, `define-shader-function`, and
 `(define-shader-program NAME :vertex V :fragment F)` (or `:compute C`) forms
@@ -320,6 +354,9 @@ output directory:
 - `NAME.STAGE.hlsl`, one HLSL document per stage, compiled by DXC with
   `-T vs_6_0` / `ps_6_0` / `cs_6_0` (or higher, up to 6.4) and the entry point
   named in the manifest.
+- `NAME.STAGE.spv`, one SPIR-V module per stage, from Luv's Vulkan lowering,
+  its entry point named as in the other languages and every resource in
+  set 0 at its family's base plus its binding (the table above).
 - `NAME.json`, the reflection manifest: stages and entry points, every
   resource (name, kind, binding, stages, byte size, uniform members and
   offsets, storage element type), and the fragment outputs.

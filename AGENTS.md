@@ -214,6 +214,13 @@
   `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net nix run .#deploy-nhal-xbox`;
   the app writes `nhal.txt` (and one captured `nhal.tga`) to its LocalState,
   readable through Device Portal's file API.
+- Linux (NHAL on Vulkan, in an SDL3 window): `nix develop`, then the usual
+  configure and `cmake --build build --target moppe`, and `./build/moppe`
+  (the same controls as the Mac). `cmake --build build --target nhal-demo`
+  and `./build/nhal-demo --capture /tmp/nhal.tga --frames 30` render the
+  demo without a window. `MOPPE_VULKAN_VALIDATION=1` turns on the Khronos
+  validation layer. The device is `moppe/nhal/vulkan/`, the host
+  `moppe/platform/linux/`; see docs/nhal.md.
 - The game's core on Xbox, before NHAL renders it: `nix build
   .#moppe-core-xbox` and `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net
   nix run .#deploy-moppe-core-xbox -- --hold 600` (package

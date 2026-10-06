@@ -107,11 +107,11 @@
         "tracy": "tracy"
       },
       "locked": {
-        "lastModified": 1791250583,
-        "narHash": "sha256-0BhjsNx4ZciYg87LJSbENJ0Z+bBk9u02wCAAepnKLxY=",
+        "lastModified": 1791291462,
+        "narHash": "sha256-XjgCQRKdfEbWc2qQRGr10Mw7EM7a3fzblZwFrBR5WRM=",
         "owner": "mbrock",
         "repo": "luv",
-        "rev": "bf120f08309bfb512b3f47a27a519ecf93e88b57",
+        "rev": "d07206e1f36d40499df87bdd4e5928de2066fcf2",
         "type": "github"
       },
       "original": {
@@ -293,7 +293,11 @@
     "root": {
       "inputs": {
         "luv": "luv",
-        "nixbox": "nixbox"
+        "nixbox": "nixbox",
+        "nixpkgs": [
+          "luv",
+          "nixpkgs"
+        ]
       }
     },
     "swash": {

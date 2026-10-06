@@ -1,4 +1,5 @@
-// NHAL: a small hardware layer for Metal 4 and Direct3D 12 (docs/nhal.md).
+// NHAL: a small hardware layer for Metal 4, Direct3D 12, and Vulkan
+// (docs/nhal.md).
 //
 // Resources are handles into the device's tables. Destroying one retires it
 // once the frames that might still read it have completed. Between
@@ -9,7 +10,8 @@
 //
 // Barriers are the device's business: Direct3D 12 tracks each texture's
 // state and transitions it where a pass or a binding needs it; Metal 4
-// orders passes with queue-stage barriers.
+// orders passes with queue-stage barriers; Vulkan tracks image layouts and
+// puts a full memory barrier before each pass, dispatch, and copy.
 #ifndef MOPPE_NHAL_NHAL_HH
 #define MOPPE_NHAL_NHAL_HH
 
@@ -130,10 +132,12 @@ namespace moppe::nhal {
   struct Pipeline : Handle {};
 
   // One stage's code in each backend's form: MSL source, compiled when the
-  // pipeline is made, and DXIL compiled ahead of time by DXC.
+  // pipeline is made, DXIL compiled ahead of time by DXC, and SPIR-V
+  // lowered ahead of time by luv-shaderc.
   struct StageCode {
     std::string_view msl;
     std::span<const unsigned char> dxil;
+    std::span<const std::uint32_t> spirv;
   };
 
   enum class CompareOp : std::uint8_t {

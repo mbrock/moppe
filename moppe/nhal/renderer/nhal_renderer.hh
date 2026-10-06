@@ -1,7 +1,7 @@
 // moppe's renderer over NHAL: the game-shaped render::Renderer interface,
-// drawn with Luv-language shaders through Metal 4 or Direct3D 12. It grows
-// feature by feature beside the Metal renderer; the host chooses one with
-// --renderer.
+// drawn with Luv-language shaders through Metal 4, Direct3D 12, or Vulkan.
+// It grows feature by feature beside the Metal renderer; the Mac host
+// chooses one with --renderer, and the Linux host has only this one.
 #ifndef MOPPE_NHAL_RENDERER_HH
 #define MOPPE_NHAL_RENDERER_HH
 
@@ -46,6 +46,8 @@ namespace moppe::nhal {
   const WorldShaders& world_shaders_metal ();
   // Their DXIL, compiled ahead of time by DXC.
   const WorldShaders& world_shaders_d3d12 ();
+  // Their SPIR-V, embedded in the binary at build time.
+  const WorldShaders& world_shaders_vulkan ();
 
   // A renderer drawing into the device's surface. `scale` is the
   // surface's pixels per point, which the HUD and the game's layout use.
