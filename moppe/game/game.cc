@@ -1126,22 +1126,28 @@ namespace moppe {
       }
 
       // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
-      // ridden bike, to judge the rider and the suspension at work.
+      // ridden bike or the glider, to judge the rider and the machine.
       void ride_capture_camera () {
         static const std::string_view view = [] {
           const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
           return std::string_view (name ? name : "");
         }();
-        if (view.empty () || logic ().m_mode != M_BIKE)
+        if (view.empty () || logic ().m_mode == M_FOOT)
           return;
+        const bool gliding = logic ().m_mode == M_GLIDER;
         const auto& bike = session ().bike ();
-        Vec3 heading = bike.render_orientation ();
+        Vec3 heading = gliding ? session ().glider ().heading ()
+                               : bike.render_orientation ();
         heading[1] = 0.0f;
         heading = normalized (heading);
         const Vec3 right (heading[2], 0.0f, -heading[0]);
-        const Vec3 at = bike.render_position () + Vec3 (0, 0.4f, 0);
-        const Vec3 from = view == "front" ? heading * 4.5f + right * 1.2f
-                                          : right * 4.5f + heading * 0.6f;
+        const Vec3 at = gliding ? session ().glider ().position () -
+                                    Vec3 (0, 0.9f, 0)
+                                : bike.render_position () + Vec3 (0, 0.4f, 0);
+        const float away = gliding ? 7.0f : 4.5f;
+        const Vec3 from = view == "front"
+                            ? heading * away + right * (away * 0.27f)
+                            : right * away + heading * 0.6f;
         session ().camera ().place (at + from + Vec3 (0, 0.5f, 0), at);
       }
 
@@ -1235,6 +1241,10 @@ namespace moppe {
         // Screenshot autopilot for headless verification: rides in a
         // lazy arc with periodic boost-assisted leaps.
         static const bool demo = moppe::environment ("MOPPE_DEMO") != 0;
+        static const bool demo_glides = [] {
+          const char* name = moppe::environment ("MOPPE_DEMO");
+          return name && std::string_view (name) == "glide";
+        }();
         m_trunk_field.focus (session ().subject_position ());
         static const bool orbit = moppe::environment ("MOPPE_ORBIT") != 0 ||
                                   moppe::environment ("MOPPE_PAN") != 0;
@@ -1247,7 +1257,13 @@ namespace moppe {
           input = {
             .turn = 0.35f * std::sin (total_time * 0.25f),
             .drive = 1.0f,
-            .boost = std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f,
+            .boost =
+              std::fmod (total_time, 11.0f) < (demo_glides ? 3.5f : 1.35f)
+                ? 1.0f
+                : 0.0f,
+            // MOPPE_DEMO=glide opens the wing on the first leap high
+            // enough to allow it.
+            .deploy_glider_held = demo_glides,
           };
           // Look a few metres ahead; where a trunk stands in the way, steer
           // hard toward the side its contact pushes, so a ride through the
@@ -1458,7 +1474,8 @@ namespace moppe {
         if (actors.walker && !helmet)
           render_walker (m_world_dl, *actors.walker, frame.lighting.time);
         if (actors.glider && !helmet)
-          render_glider (m_world_dl, *actors.glider, frame.lighting.time);
+          render_glider (
+            r, m_world_dl, *actors.glider, frame.lighting.time, 0x2000);
 
         r.draw_list (m_world_dl, 0x0001);
 

@@ -2,7 +2,7 @@
 .PHONY: all lavoir moppe archive atelier etalon etalon-test etalon-watch \
 	callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity figure figure-model format gazetteer grass-lab hooks plan plan-graph phone profile \
+	complexity figure figure-model format models gazetteer grass-lab hooks plan plan-graph phone profile \
 	test \
 	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
@@ -22,6 +22,19 @@ figure:
 # Regenerate models/hiker.blend from its script (discards hand edits).
 figure-model:
 	$(BLENDER) -b --factory-startup --python tools/figure/build.py
+
+# Re-export the bike and glider from their .blend files and render their
+# turnarounds beside FIGURE_PREVIEW. MODELS_REBUILD=1 first regenerates
+# the .blend files from their scripts (discarding hand edits).
+models:
+	for m in bike glider; do \
+	  if [ -n "$(MODELS_REBUILD)" ]; then \
+	    $(BLENDER) -b --factory-startup --python tools/figure/$$m.py; fi; \
+	  $(BLENDER) -b models/$$m.blend --python tools/figure/export_model.py \
+	    -- $${m}_model && \
+	  $(BLENDER) -b models/$$m.blend --python tools/figure/preview_model.py \
+	    -- $(basename $(FIGURE_PREVIEW))-$$m.png || exit 1; \
+	done
 
 # Configure (if needed) and build only Lavoir.
 lavoir:

@@ -139,6 +139,20 @@
     `make figure-model` regenerates the .blend from
     `tools/figure/build.py`, discarding hand edits. Bone joints and lengths
     must match `avatar_size`.
+  - The bike and glider are modelled the same way, `models/bike.blend` and
+    `models/glider.blend` (scripts `tools/figure/bike.py`, `glider.py`), as
+    rigid assemblies: empties marked `moppe_mesh` export their children in
+    the empty's frame, and empties marked `moppe_point` export model-space
+    points (axles, pivots, grips, pegs, saddle, harness) that the game
+    places parts and the rider by. `tools/figure/export_model.py` writes
+    the generated `moppe/game/{bike,glider}_model.{hh,cc}`; `make models`
+    re-exports both (`MODELS_REBUILD=1` regenerates the .blend files).
+    Ridden, the bike carries the hiker posed by `pose_holding` (hands on
+    the grips, feet on the pegs), drawn 1.3x because the bike's physics is
+    half again life size; the glider's pilot hangs prone at the basebar.
+    `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
+    and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
+    ahead of the bike or glider.
   - Boulders (`moppe/game/boulders.cc`, `moppe/shaders/metal/boulders.metal`)
     are planned from the surface fields when a world activates -- talus,
     scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded

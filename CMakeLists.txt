@@ -448,9 +448,9 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/figure_mesh.cc
   moppe/game/model_mesh.cc
   moppe/game/bike_model.cc
+  moppe/game/glider_model.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
-  moppe/game/model.cc
   moppe/game/glider_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc

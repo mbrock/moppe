@@ -60,3 +60,38 @@ MOPPE_TEST (figure_skin_never_tears_through_a_stride) {
       MOPPE_CHECK (stretch < 2.5f);
     }
 }
+
+MOPPE_TEST (holding_pose_reaches_its_targets_with_true_limbs) {
+  // A rider's targets, all within reach: the hands land exactly on them
+  // and every limb keeps its length; the knees bend toward their poles.
+  game::HoldPose hold;
+  hold.pelvis = Vec3 (300, 40, -200);
+  hold.lean = 0.5f;
+  const Vec3 forward = hold.facing, up = hold.up, right (1, 0, 0);
+  for (int i = 0; i < 2; ++i) {
+    const float side = i == 0 ? -1.0f : 1.0f;
+    hold.wrist[i] =
+      hold.pelvis + forward * 0.45f + up * 0.35f + right * (side * 0.3f);
+    hold.ankle[i] = hold.pelvis - up * 0.6f + right * (side * 0.18f);
+    hold.elbow_pole[i] = right * side;
+    hold.knee_pole[i] = forward;
+  }
+  const game::AvatarSkeleton k = game::pose_holding (hold);
+  namespace size = game::avatar_size;
+  for (int i = 0; i < 2; ++i) {
+    MOPPE_CHECK (length (k.wrist[i] - hold.wrist[i]) < 1e-4f);
+    MOPPE_CHECK (length (k.ankle[i] - hold.ankle[i]) < 1e-4f);
+    MOPPE_CHECK_NEAR (
+      length (k.elbow[i] - k.shoulder[i]), size::upper_arm, 1e-3f);
+    MOPPE_CHECK_NEAR (length (k.wrist[i] - k.elbow[i]), size::forearm, 1e-3f);
+    MOPPE_CHECK_NEAR (length (k.knee[i] - k.hip[i]), size::thigh, 1e-3f);
+    MOPPE_CHECK_NEAR (length (k.ankle[i] - k.knee[i]), size::shin, 1e-3f);
+    MOPPE_CHECK (dot (k.knee[i] - (k.hip[i] + k.ankle[i]) * 0.5f, forward) >
+                 0.0f);
+  }
+
+  // Skinned to that pose, far from the origin, nothing tears.
+  std::vector<Vec3> points, normals;
+  game::figure::skin (k, points, normals);
+  MOPPE_CHECK (worst_stretch (points) < 2.5f);
+}
