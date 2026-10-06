@@ -26,6 +26,7 @@ critical_hillslope_gradient=${MOPPE_HILLSLOPE_CRITICAL_GRADIENT:-}
 maximum_hillslope_multiplier=${MOPPE_HILLSLOPE_MAX_MULTIPLIER:-}
 cache_key=${MOPPE_WORLD_CACHE_KEY:-}
 refresh_cache=${MOPPE_REFRESH_WORLD_CACHE:-0}
+renderer=${MOPPE_GAZETTEER_RENDERER:-metal}
 glide=${MOPPE_GLIDE:-}
 glide_speed=${MOPPE_GLIDE_SPEED:-0}
 glide_vertical_speed=${MOPPE_GLIDE_VERTICAL_SPEED:-0}
@@ -83,6 +84,7 @@ arguments=(
   --seed "$seed"
   --terrain-quality "$terrain"
   --graphics-quality "$graphics"
+  --renderer "$renderer"
 )
 if [[ -n $graphics_disable ]]; then
   arguments+=(--graphics-disable "$graphics_disable")
@@ -128,6 +130,7 @@ printf '%s\n' \
   "terrain=$terrain" \
   "terrain_resolution=${terrain_resolution:-profile-default}" \
   "graphics=$graphics" \
+  "renderer=$renderer" \
   "graphics_disable=${graphics_disable:-none}" \
   "graphics_enable=${graphics_enable:-none}" \
   "window=$window" \
