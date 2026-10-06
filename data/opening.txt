@@ -12,12 +12,20 @@
 
 world seed 123 resolution 2048 profile play
 
-shot lake-shore eye 4454.04 155.39 3617.93 heading -79.1 pitch -4 fov 52 hold 9 pan -3 fade 3 clock 300
-caption title "moppe" at 2.2 for 5.4
+# Low in the flowering grass east of the lake, a line of birches gone gold
+# under a wide sky: the name rises into the sky.
+shot meadow eye 4562.60 154.28 3542.60 heading -135 pitch 0 fov 54 hold 9 push 2 fade 3
+caption title "moppe" at 2.4 for 5.6 y 0.28
 
-shot meadow eye 4217.64 130.40 2388.08 heading 148.2 pitch -2 fov 55 hold 7 push 2.5
+# Among them: the birches up close, the red range beyond the water.
+shot birches eye 4630.00 159.44 3380.00 heading -95 pitch 0.5 fov 58 hold 7 pan -3 truck 1
+caption credit "a game by Mikael Brockman" at 1.0 for 5
 
-shot lake-overview eye 4416.38 229.36 3217.02 heading -5.2 pitch -22 fov 50 hold 8 truck 6 fade 1.6
-caption credit "a game by Mikael Brockman" at 1.4 for 5.2
+# Across the lake toward the low sun, the shallows lit.
+shot shallows eye 4237.40 154.87 3217.40 heading 45 pitch 0 fov 55 hold 6 push 1.5
 
-arrival hold 6 push 5 rise 1.2 fade 1.2
+# The trailhead: the cairn, the parked bike, and the hiker beside it.
+shot trailhead eye 4201.50 161.30 3953.50 heading -42 pitch 0 fov 50 hold 6 truck 0.8 fade 1.6
+
+# Then over the hiker's shoulder and into their eyes.
+arrival hold 5.5 push 5 rise 1.2

@@ -249,7 +249,8 @@ namespace moppe::game {
         walker_pose (input.session.walker (), logic.m_look_pitch);
     result.actors.active_mode = logic.m_mode;
     result.actors.camera_mode = logic.m_cam_mode;
-    result.actors.helmet_camera = logic.m_cam_mode == CAM_HELMET;
+    result.actors.helmet_camera =
+      logic.m_cam_mode == CAM_HELMET && !input.reveal_player;
 
     FrameHud& hud = result.hud;
     hud.speed_kmh = input.session.subject_speed_kmh ();

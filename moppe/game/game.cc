@@ -912,8 +912,8 @@ namespace moppe {
       // from up the trail, with the titles over it.
       std::vector<OpeningShot> generated_opening () const {
         const Vec3 along = trail_direction_from_home ();
-        Vec3 eye = m_home_base_position + along * 34.0f;
-        eye[1] = ground_height (eye) + 2.4f;
+        Vec3 eye = m_home_base_position + along * 20.0f;
+        eye[1] = ground_height (eye) + 3.6f;
         Vec3 look = m_spawn_position - eye;
         look[1] = 0.0f;
         OpeningShot still;
@@ -921,12 +921,12 @@ namespace moppe {
         still.eye = eye;
         still.heading_deg = heading_degrees (look);
         still.pitch_deg = -3.0f;
-        still.fov_deg = 50.0f;
+        still.fov_deg = 46.0f;
         still.hold = 11.0f;
         still.push = 3.0f;
         still.fade = 2.5f;
         still.captions.push_back (
-          { OpeningCaption::Style::Title, "moppe", 1.6f, 4.4f });
+          { OpeningCaption::Style::Title, "moppe", 1.6f, 4.4f, 0.28f });
         still.captions.push_back ({ OpeningCaption::Style::Credit,
                                     "a game by Mikael Brockman",
                                     6.2f,
@@ -944,6 +944,14 @@ namespace moppe {
           eye = session ().walker ().eye_position ();
         m_opening_shots.push_back (
           arrival_shot (arrival, eye, subject_heading (), 70.0f));
+        std::cerr << "moppe: opening: the player starts at "
+                  << format_opening_shot ("start",
+                                          eye,
+                                          subject_heading (),
+                                          70.0f,
+                                          logic ().m_total_time,
+                                          m_graphics.sun_height)
+                  << '\n';
         float duration = 0.0f;
         for (const OpeningShot& shot : m_opening_shots)
           duration += shot.hold;
@@ -2391,6 +2399,7 @@ namespace moppe {
           .cinematic_elapsed = m_opening.active () ? m_opening.elapsed ()
                                : cinematic         ? m_cinematic.elapsed ()
                                                    : 0.0f,
+          .reveal_player = m_opening.active () && !m_opening.shot ().settle,
           .benchmark = benchmark,
         };
       }
