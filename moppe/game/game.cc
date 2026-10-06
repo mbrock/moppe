@@ -870,9 +870,9 @@ namespace moppe {
       std::optional<OpeningReel> authored_opening (const char* choice) const {
         if (choice && std::string_view (choice) == "generated")
           return std::nullopt;
-        const std::string path =
-          choice ? std::string (choice)
-                 : platform::asset_path ("data/opening.txt");
+        const std::string path = choice
+                                   ? std::string (choice)
+                                   : platform::asset_path ("data/opening.txt");
         std::ifstream input (path);
         if (!input) {
           std::cerr << "moppe: opening: no shot list at " << path << '\n';
@@ -884,10 +884,10 @@ namespace moppe {
           std::cerr << "moppe: opening: " << path << ": " << error << '\n';
           return std::nullopt;
         }
-        if (!reel->matches (static_cast<int> (recipe ().seed ().value),
-                            recipe ().resolution (),
-                            terrain::profile_id (
-                              recipe ().generation_profile ()))) {
+        if (!reel->matches (
+              static_cast<int> (recipe ().seed ().value),
+              recipe ().resolution (),
+              terrain::profile_id (recipe ().generation_profile ()))) {
           std::cerr << "moppe: opening: " << path
                     << " was composed for another world\n";
           return std::nullopt;
@@ -898,8 +898,7 @@ namespace moppe {
                       << " stands underground in this world\n";
             return std::nullopt;
           }
-          if (shot.sun &&
-              std::fabs (*shot.sun - m_graphics.sun_height) > 0.01f)
+          if (shot.sun && std::fabs (*shot.sun - m_graphics.sun_height) > 0.01f)
             std::cerr << "moppe: opening: shot " << shot.name
                       << " was composed under sun " << *shot.sun
                       << ", the world is lit at " << m_graphics.sun_height
@@ -1274,9 +1273,9 @@ namespace moppe {
         heading[1] = 0.0f;
         heading = normalized (heading);
         const Vec3 right (heading[2], 0.0f, -heading[0]);
-        const Vec3 at = gliding ? session ().glider ().position () -
-                                    Vec3 (0, 0.9f, 0)
-                                : bike.render_position () + Vec3 (0, 0.4f, 0);
+        const Vec3 at = gliding
+                          ? session ().glider ().position () - Vec3 (0, 0.9f, 0)
+                          : bike.render_position () + Vec3 (0, 0.4f, 0);
         const float away = gliding ? 7.0f : 4.5f;
         const Vec3 from = view == "front"
                             ? heading * away + right * (away * 0.27f)
@@ -2283,9 +2282,9 @@ namespace moppe {
           logic ().m_total_time,
           m_graphics.sun_height);
         std::cerr << "moppe: pose: " << line << '\n';
-        std::ofstream shots (
-          std::filesystem::path (m_snapshot_directory) / "shots.txt",
-          std::ios::app);
+        std::ofstream shots (std::filesystem::path (m_snapshot_directory) /
+                               "shots.txt",
+                             std::ios::app);
         shots << line << '\n';
       }
 

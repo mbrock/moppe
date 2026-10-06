@@ -672,12 +672,8 @@ namespace moppe {
         style.alpha = 0.94f * alpha;
         const float baseline = (y >= 0.0f ? y : 0.47f) * height +
                                0.5f * m_font->x_height (style.size);
-        draw_shaded (text,
-                     0.5f * width_pts,
-                     baseline,
-                     line,
-                     style,
-                     TextAlign::Center);
+        draw_shaded (
+          text, 0.5f * width_pts, baseline, line, style, TextAlign::Center);
       } else {
         // A credit, small, in the lower third.
         style.size = std::clamp (0.027f * height, 13.0f, 40.0f);

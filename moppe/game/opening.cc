@@ -431,8 +431,7 @@ namespace moppe::game {
     const float travel =
       shot.settle ? 1.0f - (1.0f - progress) * (1.0f - progress) : progress;
     const float sway =
-      shot.sway *
-      (shot.settle ? (1.0f - progress) * (1.0f - progress) : 1.0f);
+      shot.sway * (shot.settle ? (1.0f - progress) * (1.0f - progress) : 1.0f);
 
     const Vec3 up (0, 1, 0);
     const Vec3 base = forward_from (shot.heading_deg, shot.pitch_deg);
@@ -452,8 +451,7 @@ namespace moppe::game {
     m_roll = sway * wave (5, 0.053f, 0.12f) * opening_degree;
 
     m_position = shot.eye + base * (shot.push * travel) +
-                 right * (shot.truck * travel) +
-                 up * (shot.rise * travel) +
+                 right * (shot.truck * travel) + up * (shot.rise * travel) +
                  up * (sway * wave (6, 0.061f, 0.035f)) +
                  right * (sway * wave (7, 0.043f, 0.05f));
     m_forward = forward_from (shot.heading_deg + shot.pan_deg * travel + yaw,
@@ -470,8 +468,8 @@ namespace moppe::game {
     if (m_shot + 1 < m_shots.size ()) {
       const float next = m_shots[m_shot + 1].fade;
       if (next > 0.0f)
-        veil = std::max (
-          veil, 1.0f - opening_ease ((shot.hold - t) / (0.5f * next)));
+        veil = std::max (veil,
+                         1.0f - opening_ease ((shot.hold - t) / (0.5f * next)));
     }
     m_veil = veil;
   }
@@ -490,17 +488,16 @@ namespace moppe::game {
       return showing;
     const OpeningShot& shot = m_shots[m_shot];
     for (const OpeningCaption& caption : shot.captions) {
-      const float length = caption.length > 0.0f
-                             ? caption.length
-                             : shot.hold - caption.at - 1.2f;
+      const float length =
+        caption.length > 0.0f ? caption.length : shot.hold - caption.at - 1.2f;
       if (length <= 0.0f)
         continue;
       const float ramp = std::min (1.8f, 0.4f * length);
       const float t = m_shot_time - caption.at;
-      const float alpha = opening_ease (t / ramp) * opening_ease ((length - t) / ramp);
+      const float alpha =
+        opening_ease (t / ramp) * opening_ease ((length - t) / ramp);
       if (alpha > 0.002f)
-        showing.push_back (
-          { caption.style, &caption.text, alpha, caption.y });
+        showing.push_back ({ caption.style, &caption.text, alpha, caption.y });
     }
     return showing;
   }

@@ -27,9 +27,9 @@ namespace moppe::game {
     };
 
     void cairn_facet (render::DrawList& list,
-                const Vec3& a,
-                const Vec3& b,
-                const Vec3& c) {
+                      const Vec3& a,
+                      const Vec3& b,
+                      const Vec3& c) {
       Vec3 n = cross (b - a, c - a);
       if (length2 (n) < 1e-12f)
         return;
@@ -44,12 +44,12 @@ namespace moppe::game {
     // slightly domed top and a flat bottom, every face flat-shaded like the
     // world's boulders.  `centre` is the middle of its bottom face.
     void cairn_stone (render::DrawList& list,
-                CairnRandom& random,
-                const Vec3& centre,
-                float radius,
-                float thickness,
-                float yaw,
-                const Vec3& tilt) {
+                      CairnRandom& random,
+                      const Vec3& centre,
+                      float radius,
+                      float thickness,
+                      float yaw,
+                      const Vec3& tilt) {
       constexpr int sides = 7;
       std::array<Vec3, sides> lower, upper;
       const Vec3 up = normalized (Vec3 (0, 1, 0) + tilt);
@@ -120,10 +120,10 @@ namespace moppe::game {
     for (int i = 0; i < 6; ++i) {
       const float angle = 2.0f * PI * (i + random.between (-0.2f, 0.2f)) / 6;
       const float out = i == 5 ? 0.0f : random.between (0.34f, 0.42f);
-      Vec3 at = foot + (side * std::cos (angle) + forward * std::sin (angle)) *
-                         out;
-      at[1] = std::min (static_cast<float> (at[1]),
-                        ground (at[0], at[2]) - 0.06f);
+      Vec3 at =
+        foot + (side * std::cos (angle) + forward * std::sin (angle)) * out;
+      at[1] =
+        std::min (static_cast<float> (at[1]), ground (at[0], at[2]) - 0.06f);
       const float radius = random.between (0.3f, 0.4f);
       const float thickness = radius * random.between (0.6f, 0.85f);
       course = std::max (course, thickness);
@@ -142,9 +142,8 @@ namespace moppe::game {
     Vec3 at = foot + Vec3 (0, course * 0.8f, 0);
     for (const float radius : radii) {
       const float thickness = radius * random.between (0.42f, 0.8f);
-      const Vec3 tilt (random.between (-0.1f, 0.1f),
-                       0.0f,
-                       random.between (-0.1f, 0.1f));
+      const Vec3 tilt (
+        random.between (-0.1f, 0.1f), 0.0f, random.between (-0.1f, 0.1f));
       cairn_stone_colour (list, random);
       cairn_stone (list,
                    random,
@@ -161,20 +160,21 @@ namespace moppe::game {
     // A few stones left lying at its foot.
     for (int i = 0; i < 4; ++i) {
       const float angle = random.between (0.0f, 2.0f * PI);
-      Vec3 loose = foot + (side * std::cos (angle) + forward * std::sin (angle)) *
-                            random.between (0.8f, 1.3f);
+      Vec3 loose =
+        foot + (side * std::cos (angle) + forward * std::sin (angle)) *
+                 random.between (0.8f, 1.3f);
       loose[1] = ground (loose[0], loose[2]) - 0.04f;
       const float radius = random.between (0.12f, 0.24f);
       cairn_stone_colour (list, random);
       cairn_stone (list,
-             random,
-             loose,
-             radius,
-             radius * random.between (0.45f, 0.7f),
-             random.between (0.0f, 2.0f * PI),
-             Vec3 (random.between (-0.15f, 0.15f),
-                   0.0f,
-                   random.between (-0.15f, 0.15f)));
+                   random,
+                   loose,
+                   radius,
+                   radius * random.between (0.45f, 0.7f),
+                   random.between (0.0f, 2.0f * PI),
+                   Vec3 (random.between (-0.15f, 0.15f),
+                         0.0f,
+                         random.between (-0.15f, 0.15f)));
     }
     list.end ();
     list.state (render::DrawState ());
