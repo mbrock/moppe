@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace moppe::game::figure {
   // The hiker, modelled and rigged in models/hiker.blend and exported to
@@ -35,11 +36,13 @@ namespace moppe::game::figure {
     std::array<float, 3> x, y, z;
   };
 
+  // A vertex of the rest mesh with its smooth normal and up to four bones,
+  // whose weights sum to one.
   struct Vertex {
     std::array<float, 3> position;
-    std::uint8_t bone[2];
-    // The weight of bone[0]; bone[1] takes the rest.
-    float weight;
+    std::array<float, 3> normal;
+    std::uint8_t bone[4];
+    float weight[4];
   };
 
   struct Triangle {
@@ -55,7 +58,13 @@ namespace moppe::game::figure {
   // Each bone's frame in the posed skeleton.
   std::array<Frame, bone_count> pose (const AvatarSkeleton& k);
 
-  // Skins the figure to `k` and draws it as flat-shaded triangles.
+  // The rest mesh's vertices and normals carried to the pose `k`, by
+  // linear blend skinning; the normals take the blended rotation.
+  void skin (const AvatarSkeleton& k,
+             std::vector<Vec3>& points,
+             std::vector<Vec3>& normals);
+
+  // Skins the figure to `k` and draws it as smooth-shaded triangles.
   void draw (render::DrawList& dl, const AvatarSkeleton& k);
 }
 
