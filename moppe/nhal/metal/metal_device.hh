@@ -14,6 +14,10 @@ namespace moppe::nhal {
   // bgra8_unorm or rgba16_float (extended linear sRGB, for EDR).
   std::unique_ptr<Device> create_metal_device (CAMetalLayer* layer,
                                                Format surface_format);
+
+  // The next frame's drawable, from a host driving frames by a display
+  // link; without one, begin_frame takes the layer's next drawable.
+  void offer_metal_drawable (Device& device, void* drawable);
 }
 
 #endif

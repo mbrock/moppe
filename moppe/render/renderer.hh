@@ -432,6 +432,13 @@ namespace moppe {
       virtual void reset_temporal_state () {}
       virtual void write_benchmark_results () {}
 
+      // A host that paces frames by a display link offers each frame's
+      // drawable before begin_frame; backends that acquire their own ignore
+      // it.
+      virtual void offer_platform_drawable (void* drawable) {
+        (void)drawable;
+      }
+
       // -- geometry of the drawable -------------------------------------
       virtual int width_pts () const = 0;
       virtual int height_pts () const = 0;

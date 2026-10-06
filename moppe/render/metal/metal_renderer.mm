@@ -1423,6 +1423,9 @@ namespace moppe {
       void set_next_drawable (id<CAMetalDrawable> drawable) {
         m_frame.pending_drawable = drawable;
       }
+      void offer_platform_drawable (void* drawable) override {
+        set_next_drawable ((__bridge id<CAMetalDrawable>)drawable);
+      }
       void set_edr_headroom (float headroom) {
         m_frame.edr_headroom = std::max (1.0f, headroom);
       }
@@ -8091,41 +8094,43 @@ namespace moppe {
                                 request_frame_interpolation);
     }
 
+    // The host hooks below serve whichever backend the host made: the
+    // drawable goes to any renderer, and the Metal-only features answer
+    // as unavailable for others.
     void set_metal_drawable (Renderer& renderer, void* drawable) {
-      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
-      metal.set_next_drawable ((__bridge id<CAMetalDrawable>)drawable);
+      renderer.offer_platform_drawable (drawable);
     }
 
     void set_metal_edr_headroom (Renderer& renderer, float headroom) {
-      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
-      metal.set_edr_headroom (headroom);
+      if (auto* metal = dynamic_cast<MetalRenderer*> (&renderer))
+        metal->set_edr_headroom (headroom);
     }
 
     bool metal_frame_interpolation_supported (Renderer& renderer) {
-      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
-      return metal.frame_interpolation_supported ();
+      auto* metal = dynamic_cast<MetalRenderer*> (&renderer);
+      return metal && metal->frame_interpolation_supported ();
     }
 
     bool metal_frame_interpolation_active (Renderer& renderer) {
-      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
-      return metal.frame_interpolation_active ();
+      auto* metal = dynamic_cast<MetalRenderer*> (&renderer);
+      return metal && metal->frame_interpolation_active ();
     }
 
     void set_metal_frame_interpolation_enabled (Renderer& renderer,
                                                 bool enabled) {
-      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
-      metal.set_frame_interpolation_enabled (enabled);
+      if (auto* metal = dynamic_cast<MetalRenderer*> (&renderer))
+        metal->set_frame_interpolation_enabled (enabled);
     }
 
     void set_metal_frame_delta_time (Renderer& renderer, float delta_time) {
-      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
-      metal.set_frame_delta_time (delta_time);
+      if (auto* metal = dynamic_cast<MetalRenderer*> (&renderer))
+        metal->set_frame_delta_time (delta_time);
     }
 
     bool present_metal_rendered_frame (Renderer& renderer, void* drawable) {
-      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
-      return metal.present_rendered_frame (
-        (__bridge id<CAMetalDrawable>)drawable);
+      auto* metal = dynamic_cast<MetalRenderer*> (&renderer);
+      return metal && metal->present_rendered_frame (
+                        (__bridge id<CAMetalDrawable>)drawable);
     }
   }
 }

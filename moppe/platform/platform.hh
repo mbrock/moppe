@@ -67,6 +67,9 @@ namespace moppe {
       // Ordinary desktop play renders and presents directly at 60 Hz.
       // MetalFX frame interpolation is available through an explicit flag.
       bool frame_interpolation = false;
+      // The next renderer, over NHAL (docs/nhal.md), instead of the Metal
+      // renderer. It draws terrain, sky, and the game's meshes so far.
+      bool nhal_renderer = false;
       bool fullscreen = false;
       // Automated rendering needs blit-readable drawables and, on macOS, a
       // run-loop timer that keeps an inactive window progressing.

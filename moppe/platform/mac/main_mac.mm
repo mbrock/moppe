@@ -5,6 +5,10 @@
 #import <MetalKit/MetalKit.h>
 #import <QuartzCore/CAMetalDisplayLink.h>
 
+#if MOPPE_NHAL_RENDERER
+#include <moppe/nhal/metal/metal_device.hh>
+#include <moppe/nhal/renderer/nhal_renderer.hh>
+#endif
 #include <moppe/platform/apple/game_controller.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
@@ -699,10 +703,20 @@ namespace moppe {
         // Metal 4 submission contract beneath it.
         std::string lib = asset_path (MOPPE_SHADER_NAME);
         render::Renderer* renderer =
-          render::create_metal_renderer ((__bridge void*)view.layer,
-                                         lib,
-                                         config.msaa_samples,
-                                         config.frame_interpolation);
+#if MOPPE_NHAL_RENDERER
+          config.nhal_renderer
+            ? nhal::create_renderer (
+                nhal::create_metal_device ((CAMetalLayer*)view.layer,
+                                           nhal::Format::rgba16_float),
+                nhal::world_shaders_metal (),
+                (float)(window.backingScaleFactor * view.drawableScale))
+                .release ()
+            :
+#endif
+            render::create_metal_renderer ((__bridge void*)view.layer,
+                                           lib,
+                                           config.msaa_samples,
+                                           config.frame_interpolation);
         MoppeDelegate* delegate = [[MoppeDelegate alloc] init];
         delegate.game = &game;
         delegate.renderer = renderer;

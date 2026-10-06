@@ -79,6 +79,8 @@ endif()
 
 set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
 set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
+option(MOPPE_NHAL_RENDERER
+  "Build the NHAL renderer into the macOS game (needs luv-shaderc or nix)" ON)
 option(MOPPE_BUILD_DEVELOPER_TOOLS
   "Build demos, experiments, testbeds, and command-line tools" OFF)
 option(MOPPE_UNITY_BUILD
@@ -741,6 +743,16 @@ if(APPLE AND MOPPE_TVOS)
 endif()
 
 if(APPLE AND NOT MOPPE_MOBILE_APPLE)
+  # Luv's Lisp shaders are lowered by luv-shaderc: from PATH, or else the
+  # version this repository's flake pins.
+  find_program(MOPPE_LUV_SHADERC luv-shaderc)
+  if(MOPPE_LUV_SHADERC)
+    set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
+  else()
+    set(MOPPE_LUV_SHADERC_COMMAND
+      nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
+  endif()
+
   if(MOPPE_BUILD_DEVELOPER_TOOLS)
     # Renderer testbed: spinning solids + HUD shapes, no game.
     add_executable(moppe-testbed EXCLUDE_FROM_ALL
@@ -776,15 +788,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     # NHAL, the next renderer's hardware layer (docs/nhal.md), and its demo
     # scene on Metal 4. The Direct3D 12 build for Xbox lives in
     # moppe/nhal/meson.build. The demo's shaders are Luv's Lisp, lowered by
-    # luv-shaderc: from PATH, or else the version this repository's flake
-    # pins.
-    find_program(MOPPE_LUV_SHADERC luv-shaderc)
-    if(MOPPE_LUV_SHADERC)
-      set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
-    else()
-      set(MOPPE_LUV_SHADERC_COMMAND
-        nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
-    endif()
+    # luv-shaderc (found above).
     set(MOPPE_NHAL_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
     set(MOPPE_NHAL_SHADER_OUTPUTS)
     foreach(stage IN ITEMS
@@ -845,6 +849,45 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   target_compile_definitions(moppe PRIVATE
     MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
   target_link_libraries(moppe PRIVATE "-framework AppKit")
+  # The next renderer over NHAL, chosen with --renderer nhal. Its world
+  # programs are Luv's Lisp, lowered to MSL and embedded at build time.
+  if(MOPPE_NHAL_RENDERER)
+    set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
+    set(MOPPE_NHAL_WORLD_OUTPUTS)
+    foreach(program IN ITEMS terrain sky uber hud resolve present)
+      list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
+        ${MOPPE_NHAL_WORLD}/${program}.hh
+        ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
+        ${MOPPE_NHAL_WORLD}/${program}.fragment.metal)
+    endforeach()
+    add_custom_command(
+      OUTPUT ${MOPPE_NHAL_WORLD_OUTPUTS}
+      COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_WORLD}
+        --target msl
+        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+      DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+      COMMENT "Lowering the NHAL renderer's Lisp shaders"
+      VERBATIM)
+    set_source_files_properties(${MOPPE_NHAL_WORLD_OUTPUTS} PROPERTIES
+      HEADER_FILE_ONLY ON)
+    set_source_files_properties(
+      moppe/nhal/renderer/world_shaders_metal.cc PROPERTIES
+      OBJECT_DEPENDS "${MOPPE_NHAL_WORLD_OUTPUTS}"
+      COMPILE_OPTIONS "--embed-dir=${MOPPE_NHAL_WORLD}"
+      SKIP_UNITY_BUILD_INCLUSION ON)
+    set_source_files_properties(
+      moppe/nhal/metal/metal_device.mm
+      moppe/nhal/renderer/nhal_renderer.cc PROPERTIES
+      SKIP_UNITY_BUILD_INCLUSION ON)
+    target_sources(moppe PRIVATE
+      moppe/nhal/metal/metal_device.mm
+      moppe/nhal/renderer/nhal_renderer.cc
+      moppe/nhal/renderer/world_shaders_metal.cc
+      ${MOPPE_NHAL_WORLD_OUTPUTS})
+    target_include_directories(moppe PRIVATE ${MOPPE_NHAL_WORLD})
+    target_compile_definitions(moppe PRIVATE MOPPE_NHAL_RENDERER=1)
+  endif()
   set_target_properties(moppe PROPERTIES
     XCODE_GENERATE_SCHEME TRUE
     XCODE_SCHEME_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

@@ -55,6 +55,10 @@
       It defaults off, with ordinary play paced directly at 60 Hz. Explicit
       `on` requests the high-refresh display cadence and alternates a generated
       midpoint with the retained real frame when supported.
+    - `--renderer nhal` draws the game with the next renderer
+      (`moppe/nhal/renderer/`, shaders in `moppe/nhal/renderer/shaders/
+      world.lisp`) instead of the Metal one: terrain, sky, meshes, and draw
+      lists so far, temporally upscaled. See `docs/nhal.md`.
     - On macOS, `--drawable-scale <0.25..1>` selects the final drawable as a
       fraction of display backing resolution. `--render-scale <0.25..1>`
       independently selects the 3D scene as a fraction of that drawable;

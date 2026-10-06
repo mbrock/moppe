@@ -41,6 +41,7 @@ namespace moppe::nhal {
       case Format::rgb10a2_unorm: return MTLPixelFormatRGB10A2Unorm;
       case Format::rgba16_float: return MTLPixelFormatRGBA16Float;
       case Format::rg16_float: return MTLPixelFormatRG16Float;
+      case Format::rg16_snorm: return MTLPixelFormatRG16Snorm;
       case Format::r16_float: return MTLPixelFormatR16Float;
       case Format::r8_unorm: return MTLPixelFormatR8Unorm;
       case Format::r32_float: return MTLPixelFormatR32Float;
@@ -270,8 +271,7 @@ namespace moppe::nhal {
             continue;
           color.blendingEnabled = YES;
           const bool additive = desc.blend[i] == Blend::additive;
-          color.sourceRGBBlendFactor =
-            additive ? MTLBlendFactorOne : MTLBlendFactorSourceAlpha;
+          color.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
           color.destinationRGBBlendFactor =
             additive ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
           color.sourceAlphaBlendFactor = MTLBlendFactorOne;
@@ -372,7 +372,8 @@ namespace moppe::nhal {
           throw std::runtime_error ("NHAL: timed out waiting for a frame");
         collect ();
 
-        m_drawable = [m_layer nextDrawable];
+        m_drawable = m_offered ? m_offered : [m_layer nextDrawable];
+        m_offered = nil;
         if (!m_drawable)
           return false;
         m_textures[m_backbuffer].texture = m_drawable.texture;
@@ -399,6 +400,10 @@ namespace moppe::nhal {
       }
 
       Texture backbuffer () override { return m_backbuffer; }
+
+      void offer_drawable (void* drawable) override {
+        m_offered = (__bridge id<CAMetalDrawable>)drawable;
+      }
 
       Transient allocate (std::uint64_t size, std::uint64_t alignment)
         override {
@@ -877,6 +882,8 @@ namespace moppe::nhal {
       Arena m_arena;
       Texture m_backbuffer;
       id<CAMetalDrawable> m_drawable = nil;
+      // A host driving frames from a display link offers each drawable.
+      id<CAMetalDrawable> m_offered = nil;
       id<MTL4CommandBuffer> m_commands = nil;
       id<MTL4RenderCommandEncoder> m_encoder = nil;
       id<MTL4ComputeCommandEncoder> m_compute = nil;
@@ -894,5 +901,9 @@ namespace moppe::nhal {
   std::unique_ptr<Device> create_metal_device (CAMetalLayer* layer,
                                                Format surface_format) {
     return std::make_unique<MetalDevice> (layer, surface_format);
+  }
+
+  void offer_metal_drawable (Device& device, void* drawable) {
+    device.offer_drawable (drawable);
   }
 }

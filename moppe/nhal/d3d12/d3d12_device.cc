@@ -67,6 +67,7 @@ namespace moppe::nhal {
       case Format::rgb10a2_unorm: return DXGI_FORMAT_R10G10B10A2_UNORM;
       case Format::rgba16_float: return DXGI_FORMAT_R16G16B16A16_FLOAT;
       case Format::rg16_float: return DXGI_FORMAT_R16G16_FLOAT;
+      case Format::rg16_snorm: return DXGI_FORMAT_R16G16_SNORM;
       case Format::r16_float: return DXGI_FORMAT_R16_FLOAT;
       case Format::r8_unorm: return DXGI_FORMAT_R8_UNORM;
       case Format::r32_float: return DXGI_FORMAT_R32_FLOAT;
@@ -511,7 +512,7 @@ namespace moppe::nhal {
             continue;
           const bool additive = desc.blend[i] == Blend::additive;
           blend.BlendEnable = TRUE;
-          blend.SrcBlend = additive ? D3D12_BLEND_ONE : D3D12_BLEND_SRC_ALPHA;
+          blend.SrcBlend = D3D12_BLEND_SRC_ALPHA;
           blend.DestBlend = additive ? D3D12_BLEND_ONE
                                      : D3D12_BLEND_INV_SRC_ALPHA;
           blend.DestBlendAlpha = additive ? D3D12_BLEND_ONE
@@ -543,6 +544,9 @@ namespace moppe::nhal {
                                      ? D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE
                                      : D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         pd.SampleDesc.Count = desc.samples;
+        // Strips restart at the all-ones index, as Metal's always do.
+        if (desc.topology == Topology::triangle_strip)
+          pd.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFFFFFF;
 
         D3DPipeline pipeline;
         pipeline.layout = &layout;

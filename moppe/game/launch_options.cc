@@ -192,6 +192,23 @@ namespace moppe::game {
             return unknown ("frame interpolation mode", values[0], error);
           return true;
         } },
+      { "--renderer",
+        "",
+        1,
+        "<metal|nhal>",
+        "Draw with the Metal renderer or the portable NHAL renderer.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          const std::string_view value = values[0];
+          if (value == "metal")
+            options.config.nhal_renderer = false;
+          else if (value == "nhal")
+            options.config.nhal_renderer = true;
+          else
+            return unknown ("renderer", values[0], error);
+          return true;
+        } },
       { "--bike-physics",
         "",
         1,

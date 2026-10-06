@@ -35,6 +35,7 @@ namespace moppe::nhal {
     rgb10a2_unorm,
     rgba16_float,
     rg16_float,
+    rg16_snorm,
     r16_float,
     r8_unorm,
     r32_float,
@@ -57,6 +58,7 @@ namespace moppe::nhal {
     case Format::bgra8_unorm_srgb:
     case Format::rgb10a2_unorm:
     case Format::rg16_float:
+    case Format::rg16_snorm:
     case Format::r32_float:
     case Format::r32_uint:
     case Format::d32_float: return 4;
@@ -137,6 +139,8 @@ namespace moppe::nhal {
   enum class CompareOp : std::uint8_t {
     never, less, equal, less_equal, greater, not_equal, greater_equal, always
   };
+  // Alpha: source alpha over one minus it. Additive: source alpha onto
+  // what is there, a glow that sums toward white.
   enum class Blend : std::uint8_t { none, alpha, additive };
   enum class Cull : std::uint8_t { none, back, front };
   enum class Topology : std::uint8_t { triangle_list, triangle_strip,
@@ -261,6 +265,11 @@ namespace moppe::nhal {
     virtual std::uint32_t surface_height () const = 0;
     virtual void resize_surface (std::uint32_t width, std::uint32_t height)
       = 0;
+
+    // A host pacing frames by a display link offers the next frame's
+    // drawable (a CAMetalDrawable on Metal); devices that acquire their own
+    // ignore it.
+    virtual void offer_drawable (void* drawable) { (void)drawable; }
 
     // -- a frame ------------------------------------------------------
     // Waits for the frame slot and the next drawable. False means there

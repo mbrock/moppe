@@ -11,6 +11,24 @@ Shaders are written in Luv's mathematical shader language and lowered ahead of
 time by `luv-shaderc` (a package of the Luv flake) into MSL and HLSL, plus the
 reflection NHAL builds its pipelines from.
 
+## The renderer
+
+`moppe/nhal/renderer/` implements the game's `render::Renderer` over NHAL;
+`--renderer nhal` selects it on macOS. Its programs live in one Lisp file,
+`shaders/world.lisp`, which CMake lowers into `build/nhal-world/` and embeds
+(`world_shaders_metal.cc`, by `#embed`). A frame draws the scene into a
+half-size RGBA16F colour, RG16F motion, and reversed-Z depth, jittered;
+resolves it temporally into a drawable-size history; then tonemaps into the
+drawable and draws the HUD over it.
+
+So far it draws the terrain (vertex-pulled chunk strips morphing onto their
+parent levels, the ground material ported from `terrain.metal`), a
+provisional sky, the game's draw lists and meshes through one "uber" program
+with a pipeline per draw state, and the HUD's draw lists. Water is left out
+on purpose, to be reinvented rather than ported; the forest, boulders,
+undergrowth, dust, shadows, clouds, Slug text (Luv has Slug shaders to
+reuse), and the post effects come next.
+
 ## What the Xbox allows
 
 Measured by nixbox's `probes/d3d12-caps` and `probes/swapchain`:
