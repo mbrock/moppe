@@ -1,5 +1,7 @@
 #include <moppe/game/graphics_settings.hh>
 
+#include <moppe/environment.hh>
+
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
@@ -26,7 +28,7 @@ namespace moppe::game {
     }
 
     bool env_enabled (const char* name) {
-      const char* value = std::getenv (name);
+      const char* value = moppe::environment (name);
       return value && std::string_view (value) != "0";
     }
   }
@@ -144,19 +146,19 @@ namespace moppe::game {
 
   bool apply_graphics_environment (GraphicsSettings& settings,
                                    std::string& error) {
-    if (const char* scale = std::getenv ("MOPPE_RENDERSCALE")) {
+    if (const char* scale = moppe::environment ("MOPPE_RENDERSCALE")) {
       if (!parse_float (scale, 0.25f, 1.0f, settings.render_scale_override)) {
         error = "MOPPE_RENDERSCALE must be between 0.25 and 1";
         return false;
       }
     }
-    if (const char* budget = std::getenv ("MOPPE_SCENEPIXELS")) {
+    if (const char* budget = moppe::environment ("MOPPE_SCENEPIXELS")) {
       if (!parse_float (budget, 0.0f, 64.0f, settings.scene_megapixel_budget)) {
         error = "MOPPE_SCENEPIXELS must be between 0 and 64 (megapixels)";
         return false;
       }
     }
-    if (const char* sun = std::getenv ("MOPPE_SUNHEIGHT")) {
+    if (const char* sun = moppe::environment ("MOPPE_SUNHEIGHT")) {
       if (!parse_float (sun, 0.0f, 1.0f, settings.sun_height)) {
         error = "MOPPE_SUNHEIGHT must be between 0 and 1";
         return false;

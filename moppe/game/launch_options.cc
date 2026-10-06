@@ -2,6 +2,8 @@
 
 #include <moppe/game/graphics_benchmark.hh>
 
+#include <moppe/environment.hh>
+
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -640,8 +642,8 @@ namespace moppe::game {
         options.world.resolution = *options.terrain_resolution;
       options.config.capture_frames =
         !options.screenshot_path.empty () || options.gazetteer ||
-        ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
-        ::getenv ("MOPPE_RIDE_CAPTURE_DIR") || options.benchmark;
+        moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
+        moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") || options.benchmark;
       // An automated run stays behind whatever the developer is looking at.
       options.config.activate = !options.config.capture_frames &&
                                 !options.benchmark && !options.stay_inactive;
@@ -746,9 +748,10 @@ namespace moppe::game {
     const int expected =
       benchmark.measured_frames *
       (1 << graphics_benchmark_dimension_count (benchmark.partition));
-    ::setenv ("MOPPE_BENCHMARK_OUTPUT", benchmark.output_path.c_str (), 1);
+    moppe::set_environment ("MOPPE_BENCHMARK_OUTPUT",
+                            benchmark.output_path.c_str ());
     const std::string expected_text = std::to_string (expected);
-    ::setenv ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str (), 1);
+    moppe::set_environment ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str ());
     std::string feature_names;
     for (const GraphicsFeature* feature : graphics_features)
       if (graphics_benchmark_includes (*feature)) {
@@ -756,17 +759,17 @@ namespace moppe::game {
           feature_names += ',';
         feature_names += feature->name;
       }
-    ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
-    ::setenv ("MOPPE_BENCHMARK_PARTITION",
-              graphics_benchmark_partition_name (benchmark.partition),
-              1);
+    moppe::set_environment ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str ());
+    moppe::set_environment (
+      "MOPPE_BENCHMARK_PARTITION",
+      graphics_benchmark_partition_name (benchmark.partition));
     const std::string block_names =
       graphics_benchmark_block_names (benchmark.partition);
-    ::setenv ("MOPPE_BENCHMARK_BLOCKS", block_names.c_str (), 1);
+    moppe::set_environment ("MOPPE_BENCHMARK_BLOCKS", block_names.c_str ());
     if (benchmark.pass_timing)
-      ::setenv ("MOPPE_BENCHMARK_PASSES", "1", 1);
+      moppe::set_environment ("MOPPE_BENCHMARK_PASSES", "1");
     else
-      ::unsetenv ("MOPPE_BENCHMARK_PASSES");
+      moppe::set_environment ("MOPPE_BENCHMARK_PASSES", nullptr);
   }
 
   terrain::WorldRecipe make_launch_recipe (const LaunchOptions& options) {

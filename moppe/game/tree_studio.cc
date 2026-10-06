@@ -9,6 +9,7 @@
 // MOPPE_STUDIO_DISTANCE overrides the camera distance in metres, so the same
 // lineup documents the hero, middle, and proxy detail tiers.
 
+#include <moppe/environment.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/render/renderer.hh>
 
@@ -26,15 +27,15 @@ namespace {
   class TreeStudio : public platform::Game {
   public:
     TreeStudio () {
-      if (const char* out = ::getenv ("MOPPE_STUDIO_OUT"))
+      if (const char* out = moppe::environment ("MOPPE_STUDIO_OUT"))
         m_output = out;
-      if (const char* distance = ::getenv ("MOPPE_STUDIO_DISTANCE"))
+      if (const char* distance = moppe::environment ("MOPPE_STUDIO_DISTANCE"))
         m_distance = std::max (10.0f, (float)::atof (distance));
-      if (const char* dolly = ::getenv ("MOPPE_STUDIO_DOLLY"))
+      if (const char* dolly = moppe::environment ("MOPPE_STUDIO_DOLLY"))
         m_dolly_directory = dolly;
       // A solo specimen removes the lineup: one conifer of the given height
       // at the origin, so a study is never distracted by neighbours.
-      if (const char* solo = ::getenv ("MOPPE_STUDIO_SOLO"))
+      if (const char* solo = moppe::environment ("MOPPE_STUDIO_SOLO"))
         m_solo_height = std::max (2.0f, (float)::atof (solo));
     }
 
@@ -252,7 +253,7 @@ int main (int, char**) {
   config.title = "Moppe Tree Studio";
   config.fullscreen = false;
   // Captures need blit-readable drawables, exactly like game screenshots.
-  config.capture_frames = ::getenv ("MOPPE_STUDIO_OUT") != nullptr ||
-                          ::getenv ("MOPPE_STUDIO_DOLLY") != nullptr;
+  config.capture_frames = moppe::environment ("MOPPE_STUDIO_OUT") != nullptr ||
+                          moppe::environment ("MOPPE_STUDIO_DOLLY") != nullptr;
   return platform::run (studio, config);
 }

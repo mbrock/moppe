@@ -290,8 +290,10 @@ namespace atelier {
   }
 
   std::size_t Tree::tip_count () const {
-    return std::ranges::count_if (
+    // The cast matters to MSVC's library, whose 64-bit iota counts in a
+    // 128-bit integer class.
+    return static_cast<std::size_t> (std::ranges::count_if (
       std::views::iota (TreeVertexId (0), topology ().vertex_count ()),
-      [this] (TreeVertexId vertex) { return topology ().is_tip (vertex); });
+      [this] (TreeVertexId vertex) { return topology ().is_tip (vertex); }));
   }
 }
