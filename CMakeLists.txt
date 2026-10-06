@@ -151,6 +151,18 @@ target_compile_options(box3d PRIVATE -ffp-contract=off)
 if(EMSCRIPTEN)
   target_compile_options(box3d PRIVATE -msimd128 -msse2)
 endif()
+# nixbox's Xbox compiler searches the MSVC headers before Clang's own, so
+# <emmintrin.h> declares the SSE intrinsics as external functions nothing
+# defines. Box3D's SIMD kernels need Clang's inline definitions first.
+if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "Clang"
+    AND CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
+  execute_process(
+    COMMAND ${CMAKE_C_COMPILER} -print-resource-dir
+    OUTPUT_VARIABLE MOPPE_CLANG_RESOURCE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  target_include_directories(box3d SYSTEM BEFORE PRIVATE
+    ${MOPPE_CLANG_RESOURCE_DIR}/include)
+endif()
 
 if(MOPPE_ENABLE_TRACY)
   set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
@@ -828,6 +840,18 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
       "-framework UniformTypeIdentifiers")
   endif()
 
+  # The core probe from the command line (moppe/game/core_probe.hh): the
+  # headless world generation and simulation measurement moppe-core-xbox
+  # makes on the console, for comparison.
+  add_executable(moppe-core-probe EXCLUDE_FROM_ALL
+    ${MOPPE_ENGINE_SOURCES}
+    ${MOPPE_APPLICATION_SOURCES}
+    moppe/game/core_probe.cc
+    moppe/platform/apple/apple_common.mm
+    moppe/platform/mac/core_probe_mac.cc)
+  moppe_configure_code_target(moppe-core-probe)
+  moppe_configure_apple_target(moppe-core-probe)
+
   # The game, as a proper .app bundle with the assets inside.
   # (Still runnable from a shell: build/moppe.app/Contents/MacOS/moppe,
   # and MOPPE_ASSETS=<repo> overrides asset resolution for dev.)
@@ -923,6 +947,31 @@ if(EMSCRIPTEN)
     ${MOPPE_WEBGPU_SOURCES}
     moppe/platform/web/main_web.cc)
   moppe_configure_web_executable(moppe-web)
+endif()
+
+# Xbox Series consoles in Developer Mode: x86_64 UWP, cross-built by nixbox
+# (moppe/platform/uwp/xbox.nix; `nix build .#moppe-core-xbox`). The core app
+# runs the game's world generation and simulation headlessly on the console
+# and reports how they fare; rendering arrives with NHAL.
+if(WIN32)
+  add_executable(moppe-core-xbox WIN32
+    ${MOPPE_ENGINE_SOURCES}
+    ${MOPPE_APPLICATION_SOURCES}
+    moppe/game/core_probe.cc
+    moppe/platform/uwp/platform_uwp.cc
+    moppe/platform/uwp/core_main.cc)
+  moppe_configure_code_target(moppe-core-xbox)
+  # windows.h and C++/WinRT stay out of the game's unity translation unit.
+  set_source_files_properties(
+    moppe/platform/uwp/platform_uwp.cc
+    moppe/platform/uwp/core_main.cc
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  target_link_libraries(moppe-core-xbox PRIVATE -ld3d11 -ldxgi)
+  target_compile_definitions(moppe-core-xbox PRIVATE
+    NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+  install(TARGETS moppe-core-xbox RUNTIME DESTINATION bin)
+  install(DIRECTORY fonts textures
+    DESTINATION share/moppe-core-xbox)
 endif()
 
 # CMake's Xcode generator normally presents sources target-by-target, which is

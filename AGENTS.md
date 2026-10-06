@@ -167,6 +167,24 @@
   `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net nix run .#deploy-nhal-xbox`;
   the app writes `nhal.txt` (and one captured `nhal.tga`) to its LocalState,
   readable through Device Portal's file API.
+- The game's core on Xbox, before NHAL renders it: `nix build
+  .#moppe-core-xbox` and `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net
+  nix run .#deploy-moppe-core-xbox -- --hold 600` (package
+  `Moppe.core-xbox`) build the whole game except a renderer for x86_64 UWP
+  from CMakeLists.txt (`moppe/platform/uwp/`). It runs the core probe
+  (`moppe/game/core_probe.hh`): generates the default world from scratch,
+  reloads it from the world cache, walks and rides it, then drives
+  `game.cc` against `tests/recording_renderer.hh`, writing
+  `LocalState/report.txt` (phase timings, peak memory) and `log.txt`; the
+  screen turns green on a pass. Read them with `curl
+  "$UWP_DEVICE_URL/api/filesystem/apps/file?knownfolderid=LocalAppData&packagefullname=<PFN>&path=%5C%5CLocalState&filename=report.txt"`.
+  `LocalState/environment.txt` (`NAME=VALUE` lines) stands in for the
+  environment UWP lacks; game code reads switches through
+  `moppe::environment` (`moppe/environment.hh`), never `getenv`. For
+  comparison, `cmake --build build --target moppe-core-probe && ./build/moppe-core-probe`
+  runs the same probe on macOS. Incremental Xbox builds: `nix develop
+  .#moppe-core-xbox`, then `cmake -B build-xbox -G Ninja
+  -DBUILD_TESTING=OFF` and `cmake --build build-xbox`.
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS
   -DCMAKE_OSX_SYSROOT=iphonesimulator` then build the `moppe-ios` target
   with `CODE_SIGNING_ALLOWED=NO`
