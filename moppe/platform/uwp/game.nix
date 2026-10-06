@@ -1,7 +1,13 @@
 # moppe on Xbox: the game, drawn by the NHAL renderer through Direct3D 12,
 # built by nixbox from the repository's CMakeLists.txt with MOPPE_XBOX_GAME.
-# `xbox` is nixbox.lib.<system>.
-{ xbox, luv-shaderc }:
+# `xbox` is nixbox.lib.<system>. `bakedWorld`, a finished-world cache baked
+# on the host (tools/bake-world), ships in the package so the console starts
+# in it instead of generating a world; without one the console generates.
+{
+  xbox,
+  luv-shaderc,
+  bakedWorld ? null,
+}:
 let
   inherit (xbox.pkgs) lib fetchurl runCommand;
   # The same mp-units revision CMakeLists.txt fetches; the Nix sandbox has no
@@ -50,5 +56,6 @@ xbox.mkXboxApp {
     "-DMOPPE_XBOX_GAME=ON"
     "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
     "-DFETCHCONTENT_SOURCE_DIR_MP-UNITS=${mp-units}"
-  ];
+  ]
+  ++ lib.optional (bakedWorld != null) "-DMOPPE_XBOX_BAKED_WORLD=${bakedWorld}";
 }

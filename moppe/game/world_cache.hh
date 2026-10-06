@@ -3,7 +3,9 @@
 
 #include <moppe/game/generated_world.hh>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace moppe::game {
@@ -30,6 +32,18 @@ namespace moppe::game {
 
   void save_world_cache (const GeneratedWorld& world,
                          const std::string& directory);
+
+  // Which world a cache directory holds, read from its header alone. A
+  // package that ships a baked world lets this choose the default recipe;
+  // the full recipe is still validated when the world loads.
+  struct WorldCacheIdentity {
+    int resolution = 0;
+    std::uint32_t seed = 0;
+    terrain::TerrainGenerationProfile profile {};
+  };
+
+  std::optional<WorldCacheIdentity>
+  read_world_cache_identity (const std::string& directory);
 }
 
 #endif

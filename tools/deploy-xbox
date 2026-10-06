@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Bakes the default world on this machine, builds the Xbox game with it in
+# the package, and deploys it under the console lease.
+#
+#   tools/deploy-xbox [DEPLOY ARGS...]    (e.g. --hold 900 --screenshot x.png)
+#
+# UWP_DEVICE_URL names the console, as for nix run .#deploy-moppe-xbox,
+# which this wraps. MOPPE_XBOX_BAKED_WORLD ships a specific baked world
+# instead; MOPPE_XBOX_WORLD="RESOLUTION PROFILE SEED" bakes another one.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -z "${MOPPE_XBOX_BAKED_WORLD:-}" ]]; then
+  # shellcheck disable=SC2086
+  MOPPE_XBOX_BAKED_WORLD="$("$root/tools/bake-world" \
+    ${MOPPE_XBOX_WORLD:-2048 play 123})"
+fi
+export MOPPE_XBOX_BAKED_WORLD
+echo "Shipping $MOPPE_XBOX_BAKED_WORLD" >&2
+exec nix run --impure "$root#deploy-moppe-xbox" -- "$@"

@@ -76,11 +76,34 @@ main (compiled as `moppe_main`), whose `platform::run` opens a
 CoreApplication view with a 3840x2160 swapchain, two pixels per HUD point,
 and reads the first gamepad as the Apple hosts read a controller.
 `nix run .#deploy-moppe-xbox` installs and launches it under the console
-lease. The console generates a 1024-sample world (seed 123) at first launch,
-about a minute, and caches it in LocalCache; `LocalState/log.txt` holds
-everything the game logs, and `environment.txt` there (or in the package)
-sets `moppe::environment` variables, `MOPPE_ARGS` being the command line.
-A reinstall clears the cache, so each deploy generates the world again.
+lease. `LocalState/log.txt` holds everything the game logs, and
+`environment.txt` there (or in the package) sets `moppe::environment`
+variables, `MOPPE_ARGS` being the command line.
+
+The console does not run the geology simulator if it need not:
+`tools/deploy-xbox [DEPLOY ARGS]` (or `make xbox`) bakes the default world
+on the Mac -- the same 2048-sample Play world, seed 123, that the Mac plays
+-- and ships it in the package at `world/default`, where the game finds it
+(`bundled_world_cache` in `world_loading.cc`) and starts in it. On the
+Series X the bundled world reads in 6.5 s and the game is ready to play
+7.3 s after loading begins; generating the same world there took about
+five minutes, and every reinstall threw it away with LocalCache.
+`tools/bake-world [RESOLUTION [PROFILE [SEED]]]` does the baking: it builds
+the native `terrain-cache-bake` in `build-bake/`, runs it (about 100 s on
+an M5), and keeps the result in `~/Library/Caches/Moppe/baked/` under the
+baker's hash, so the world is baked again only when the terrain code that
+made it changes. The finished-world cache is portable data -- fixed-width
+little-endian scalars, and Arrow bundles whose schema names match on both
+compilers -- so the console loads the Mac's world as-is. The package grows
+to 274 MB (557 MB installed), and a whole deploy takes under a minute.
+
+The bake reaches the sandboxed Nix build through `MOPPE_XBOX_BAKED_WORLD`,
+which `flake.nix` reads only under `--impure`: the script runs
+`MOPPE_XBOX_BAKED_WORLD=<dir> nix run --impure .#deploy-moppe-xbox`, and
+setting the variable yourself ships another bake. A plain, pure
+`nix run .#deploy-moppe-xbox` ships no world, and the console generates a
+1024-sample one (seed 123) at first launch, about a minute, cached in
+LocalCache until the next reinstall.
 
 `tools/xbox-control` drives the running game from the Mac, with the lease
 the last deploy took: `send 'tap Space' 'wait 1' 'tap F' 'stick 0 1 1'`

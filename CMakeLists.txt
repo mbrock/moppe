@@ -91,6 +91,8 @@ option(MOPPE_UNITY_BUILD
 option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
 set(MOPPE_TVOS_BAKED_WORLD "" CACHE PATH
   "Host-baked default finished-world cache to bundle into the tvOS app")
+set(MOPPE_XBOX_BAKED_WORLD "" CACHE PATH
+  "Host-baked finished-world cache to ship in the Xbox game package")
 
 # Moppe's implementation files are deliberately small, but compiling every one
 # separately makes heavily-templated headers (notably mp-units) dominate build
@@ -1101,10 +1103,22 @@ if(WIN32)
     set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
       PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_LOWERED}")
     target_link_libraries(moppe-xbox PRIVATE -ld3d12 -ldxgi)
+    # A package may ship a finished world baked on the host
+    # (tools/bake-world); the game starts in it instead of generating one.
     target_compile_definitions(moppe-xbox PRIVATE
-      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS
+      MOPPE_BUNDLED_WORLD_CACHE="world/default")
     install(TARGETS moppe-xbox RUNTIME DESTINATION bin)
     install(DIRECTORY fonts textures DESTINATION share/moppe-xbox)
+    if(MOPPE_XBOX_BAKED_WORLD)
+      if(NOT EXISTS "${MOPPE_XBOX_BAKED_WORLD}/topology.bin")
+        message(FATAL_ERROR
+          "MOPPE_XBOX_BAKED_WORLD is not a finished-world cache: "
+          "${MOPPE_XBOX_BAKED_WORLD}")
+      endif()
+      install(DIRECTORY ${MOPPE_XBOX_BAKED_WORLD}/
+        DESTINATION share/moppe-xbox/world/default)
+    endif()
   else()
     add_executable(moppe-core-xbox WIN32
       ${MOPPE_ENGINE_SOURCES}

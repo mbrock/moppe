@@ -7,12 +7,14 @@
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/seed_memory.hh>
+#include <moppe/game/world_loading.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
 
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 
 int main (int argc, char** argv) {
@@ -31,11 +33,20 @@ int main (int argc, char** argv) {
   options.seed = 123;
 #endif
 #ifdef MOPPE_DEFAULT_XBOX_WORLD
-  // The console generates its world at first launch, three times slower
-  // than an M5; a 1024-sample world keeps that first wait short.
+  // A console package without a baked world generates one at first launch,
+  // three times slower than an M5; a 1024-sample world keeps that wait
+  // to about a minute.
   options.world.resolution = 1024;
   options.seed = 123;
 #endif
+  // A package carrying a host-baked world starts in that world by default;
+  // the command line can still ask for another, which is then generated.
+  if (const std::optional bundled =
+        game::read_world_cache_identity (game::bundled_world_cache ())) {
+    options.world.resolution = bundled->resolution;
+    options.seed = bundled->seed;
+    options.generation_profile = bundled->profile;
+  }
 
   std::string error;
   if (!game::parse_launch_options (argc, argv, options, error)) {

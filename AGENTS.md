@@ -208,6 +208,11 @@
   builds the game with the NHAL renderer on Direct3D 12, installs it under
   the shared console lease, and launches it (see docs/nhal.md);
   `nix run .#deploy-moppe-core-xbox` runs the headless core probe.
+  `tools/deploy-xbox [DEPLOY ARGS]` (or `make xbox`) is the same deploy
+  with the default 2048 world baked on the Mac (`tools/bake-world`, kept
+  in `~/Library/Caches/Moppe/baked/` until the terrain code changes) in
+  the package, so the console starts in seconds instead of generating
+  for minutes; the pure `nix run` ships none and generates a 1024 world.
   `tools/xbox-control send 'tap Space' 'tap F' 'stick 0 1 1'`, `shot`, and
   `log` drive the running game, take its screen, and read its log.
 - Apple TV (build, install, launch): `make tv`
