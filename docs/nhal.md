@@ -61,16 +61,22 @@ command lists), transitioning where a binding, an index buffer, or an
 indirect argument needs it, with UAV barriers between writes.
 
 The demo (`moppe/nhal/demo`) exercises all of it: a compute pass sways
-9000 spruces and writes their indirect draw, a depth-only pass casts their
-sun shadows, and a 4x MSAA RGBA16F scene with reversed-Z draws terrain,
-trees, and sky before the tonemap. GPU time per pass, measured by NHAL:
+9000 spruces, culls their bounding spheres to the view frustum, and appends
+the visible ones through an atomic into the camera's indirect draw (the
+host zeroes its instance count first); a depth-only pass casts every tree's
+sun shadow from a second record; and a 4x MSAA RGBA16F scene with reversed-Z
+draws terrain, trees, and sky before the tonemap. GPU time per pass,
+measured by NHAL:
 
 | Pass | Xbox Series X, 3840x2160 | Apple M5, 2560x1440 |
 | --- | --- | --- |
-| wind (compute) | 0.01 ms | 0.02 ms |
-| sun shadow, 4096x4096 | 0.61 ms | 1.9 ms |
-| scene, 4x MSAA | 6.9 ms | 7.1 ms |
-| tonemap | 0.27 ms | 0.2 ms |
+| wind and culling (compute) | 0.01 ms | 0.04 ms |
+| sun shadow, 4096x4096 | 0.61 ms | 1.9-3.7 ms |
+| scene, 4x MSAA | 6.8 ms (6.9 without culling) | 3.1-3.4 ms (7.1 without) |
+| tonemap | 0.27 ms | 0.2-0.4 ms |
+
+At 4K with 4x MSAA the Xbox's scene is bound by fill rather than geometry,
+so culling saves it little; the M5 at 1440p halves.
 
 ## The binding contract
 
@@ -131,6 +137,18 @@ output, since Direct3D matches stages by layout.
 Clip space: shaders write `:position` in the language's convention, y down
 (Vulkan's), and both lowerings negate y, so what reaches Metal and Direct3D
 is their y up with depth 0..1. Renderers use reversed-Z.
+
+In fragment stages `:frag-coord` is pixels from the top-left at pixel
+centres, depth in z, and 1/clip-w in w on every backend (HLSL rebuilds w from
+`SV_Position`). Which winding is front, for `:front-facing` and culling, is
+pipeline state (`front_counter_clockwise`).
+
+Storage textures declare a format (rgba32f, rgba16f, rgba8, r32f, r32ui),
+which the JSON records. Reading rgba16f or rgba8 storage textures needs typed
+UAV loads beyond the base formats on Direct3D 12: the Xbox reports the
+additional-formats option, though its per-format query lists typed loads
+only for R32F and R32 uint, so prefer r32f/r32ui for read-modify-write. The
+storage texture table is visible to every stage.
 
 ## What `luv-shaderc` produces
 

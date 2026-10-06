@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -162,7 +163,14 @@ namespace moppe::nhal::demo {
     m_tree_draw = device.create_buffer (
       { .size = sizeof (DrawIndexedIndirectArgs),
         .usage = buffer_storage_write | buffer_indirect,
-        .label = "tree draw" });
+        .label = "visible tree draw" });
+    m_tree_shadow_draw = device.create_buffer (
+      { .size = sizeof (DrawIndexedIndirectArgs),
+        .usage = buffer_storage_write | buffer_indirect,
+        .label = "shadow tree draw" });
+    m_tree_visible = device.create_buffer (
+      { .size = std::uint64_t (m_tree_count) * 4,
+        .usage = buffer_storage_write, .label = "visible trees" });
 
     // One spruce: an 8-facet trunk and three crown tiers, 48 vertices made
     // by the vertex shader from its index.
@@ -232,12 +240,9 @@ namespace moppe::nhal::demo {
                                             usage_depth | usage_sampled, 1,
                                             "sun shadow" });
 
-    // luv-shaderc writes the workgroup size beside the program for now.
-    static Program wind = shaders::forest_wind::program;
-    for (int axis = 0; axis < 3; ++axis)
-      wind.workgroup_size[axis] = shaders::forest_wind::workgroup_size[axis];
     m_wind = device.create_compute_pipeline (
-      { &wind, shaders.forest_wind_compute, "forest wind" });
+      { &shaders::forest_wind::program, shaders.forest_wind_compute,
+        "forest wind" });
   }
 
   Scene::~Scene () {
@@ -246,7 +251,8 @@ namespace moppe::nhal::demo {
       if (t)
         m_device.destroy (t);
     for (Buffer b : { m_terrain_samples, m_terrain_indices, m_tree_instances,
-                      m_tree_indices, m_tree_animated, m_tree_draw })
+                      m_tree_indices, m_tree_animated, m_tree_draw,
+                      m_tree_shadow_draw, m_tree_visible })
       m_device.destroy (b);
     for (Pipeline p : { m_terrain, m_trees, m_sky, m_tonemap, m_wind,
                         m_terrain_shadow, m_trees_shadow })
@@ -341,6 +347,18 @@ namespace moppe::nhal::demo {
     frame.forest = { float (m_tree_index_count), float (m_tree_count), 1.0f,
                      0 };
 
+    // The frustum's planes as (normal, offset), normals pointing inward:
+    // each side leans from the view direction by the half-angle's tangent.
+    auto plane = [&] (Vec3 normal) {
+      normal = normalize (normal);
+      return lanes (normal, -dot (normal, eye));
+    };
+    frame.frustum_left = plane (right + forward * tan_x);
+    frame.frustum_right = plane (right * -1.0f + forward * tan_x);
+    frame.frustum_top = plane (up * -1.0f + forward * tan_y);
+    frame.frustum_bottom = plane (up + forward * tan_y);
+    frame.frustum_near = lanes (forward, -dot (forward, eye) - 0.5f);
+
     // An orthographic sun over the whole map: light x and y span -1..1,
     // depth runs 0..1 away from the sun through the map's bounding sphere.
     {
@@ -363,12 +381,19 @@ namespace moppe::nhal::demo {
     const Transient uniforms = m_device.allocate (sizeof frame);
     std::memcpy (uniforms.data, &frame, sizeof frame);
 
-    m_device.begin_compute_pass ("wind");
+    // The wind counts the visible trees into the draw's instance count.
+    const std::uint32_t none = 0;
+    m_device.copy_to_buffer (
+      m_tree_draw, offsetof (DrawIndexedIndirectArgs, instance_count),
+      m_device.upload (std::span (&none, 1)));
+    m_device.begin_compute_pass ("wind and culling");
     m_device.set_pipeline (m_wind);
     m_device.set_buffer (0, uniforms);
     m_device.set_buffer (1, m_tree_instances);
     m_device.set_buffer (2, m_tree_animated);
     m_device.set_buffer (3, m_tree_draw);
+    m_device.set_buffer (4, m_tree_shadow_draw);
+    m_device.set_buffer (5, m_tree_visible);
     m_device.dispatch ((m_tree_count + 63) / 64);
     m_device.end_compute_pass ();
 
@@ -384,7 +409,7 @@ namespace moppe::nhal::demo {
     m_device.set_pipeline (m_trees_shadow);
     m_device.set_buffer (1, m_tree_animated);
     m_device.draw_indexed_indirect (m_tree_indices, IndexType::uint16,
-                                    m_tree_draw);
+                                    m_tree_shadow_draw);
     m_device.end_render_pass ();
 
     RenderPassDesc pass;
@@ -404,6 +429,7 @@ namespace moppe::nhal::demo {
 
     m_device.set_pipeline (m_trees);
     m_device.set_buffer (1, m_tree_animated);
+    m_device.set_buffer (2, m_tree_visible);
     m_device.draw_indexed_indirect (m_tree_indices, IndexType::uint16,
                                     m_tree_draw);
 

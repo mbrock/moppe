@@ -26,7 +26,14 @@
       (shadow-row-x :vec4)
       (shadow-row-y :vec4)
       (shadow-row-z :vec4)
-      (shadow :vec4))))         ; texel size, receiver bias, unused, unused
+      (shadow :vec4)            ; texel size, receiver bias, unused, unused
+      ;; The view frustum's sides and near plane, each (normal, offset): a
+      ;; point is inside when dot(normal, p) + offset >= 0.
+      (frustum-left :vec4)
+      (frustum-right :vec4)
+      (frustum-top :vec4)
+      (frustum-bottom :vec4)
+      (frustum-near :vec4))))
 
 ;;; Reversed-Z with an infinite far plane: depth is near / view distance.
 (define-shader-function project-relative (rel right up forward near)
@@ -180,9 +187,16 @@
 
 ;;; Each frame one invocation per tree copies its two placement lanes and
 ;;; adds a third, the sway of its crown top in metres, from gusts that
-;;; travel across the valley.  Invocation zero also writes the trees'
-;;; indexed indirect draw (index count, instances, first index, base
-;;; vertex, first instance), so the draw's size comes from the GPU.
+;;; travel across the valley.  It then tests the tree's bounding sphere
+;;; against the view frustum and appends the visible ones to a list, whose
+;;; length an atomic counts into the camera's indexed indirect draw (index
+;;; count, instances, first index, base vertex, first instance); the host
+;;; zeroes that count before the dispatch.  The sun's shadow draws every
+;;; tree, since trees out of view still shade it, from a second record.
+(define-shader-function sphere-inside (plane centre radius)
+  (>= (+ (dot (swizzle plane :xyz) centre) (swizzle plane :w))
+      (* -1.0 radius)))
+
 (define-shader forest-wind-compute
     (:stage :compute
      :workgroup-size (64 1 1)
@@ -193,7 +207,11 @@
                  (animated :storage-buffer :binding 2 :element :vec4
                            :access :read-write)
                  (draw-arguments :storage-buffer :binding 3 :element :uint
-                                 :access :read-write)))
+                                 :access :read-write)
+                 (shadow-arguments :storage-buffer :binding 4 :element :uint
+                                   :access :read-write)
+                 (visible :storage-buffer :binding 5 :element :uint
+                          :access :read-write)))
   (let* ((tree (swizzle invocation :x))
          (count (uint (swizzle forest :y)))
          (root (buffer-element instances (* tree (uint 2.0))))
@@ -204,18 +222,34 @@
                   (* 0.35 (sin (+ (* time 2.9) (* travel 2.7))))
                   0.6))
          (lean (* gust (* (swizzle forest :z) (* (swizzle root :w) 0.012))))
-         (out (* tree (uint 3.0))))
+         (out (* tree (uint 3.0)))
+         (height (swizzle root :w))
+         (centre (+ (swizzle root :xyz) (vec3 0.0 (* height 0.5) 0.0)))
+         (radius (+ (* height 0.55) (abs lean)))
+         (seen (and (< tree count)
+                    (sphere-inside frustum-left centre radius)
+                    (sphere-inside frustum-right centre radius)
+                    (sphere-inside frustum-top centre radius)
+                    (sphere-inside frustum-bottom centre radius)
+                    (sphere-inside frustum-near centre radius))))
     (when (< tree count)
       (set-buffer-element animated out root)
       (set-buffer-element animated (+ out (uint 1.0)) shape)
       (set-buffer-element animated (+ out (uint 2.0))
                           (vec4 (* lean 0.8) 0.0 (* lean 0.6) 0.0)))
+    (when seen
+      (let* ((slot (atomic-add draw-arguments (uint 1.0) (uint 1.0))))
+        (set-buffer-element visible slot tree)))
     (when (= tree (uint 0.0))
       (set-buffer-element draw-arguments (uint 0.0) (uint (swizzle forest :x)))
-      (set-buffer-element draw-arguments (uint 1.0) count)
       (set-buffer-element draw-arguments (uint 2.0) (uint 0.0))
       (set-buffer-element draw-arguments (uint 3.0) (uint 0.0))
-      (set-buffer-element draw-arguments (uint 4.0) (uint 0.0)))))
+      (set-buffer-element draw-arguments (uint 4.0) (uint 0.0))
+      (set-buffer-element shadow-arguments (uint 0.0) (uint (swizzle forest :x)))
+      (set-buffer-element shadow-arguments (uint 1.0) count)
+      (set-buffer-element shadow-arguments (uint 2.0) (uint 0.0))
+      (set-buffer-element shadow-arguments (uint 3.0) (uint 0.0))
+      (set-buffer-element shadow-arguments (uint 4.0) (uint 0.0)))))
 
 (define-shader-program forest-wind
   :compute forest-wind-compute)
@@ -299,8 +333,9 @@
                (shadow-at :vec3 :location 3))
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)
-                 (instances :storage-buffer :binding 1 :element :vec4)))
-  (let* ((first (* instance-index (uint 3.0)))
+                 (instances :storage-buffer :binding 1 :element :vec4)
+                 (visible :storage-buffer :binding 2 :element :uint)))
+  (let* ((first (* (buffer-element visible instance-index) (uint 3.0)))
          (root (buffer-element instances first))
          (shape (buffer-element instances (+ first (uint 1.0))))
          (sway (buffer-element instances (+ first (uint 2.0))))
