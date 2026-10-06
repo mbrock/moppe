@@ -96,12 +96,23 @@ namespace moppe {
                         int width_pts,
                         int height_pts) const;
 
-      // The opening cinematic's prompt to skip ahead and ride; nothing on a
+      // The opening's prompt to skip ahead and begin; nothing on a
       // touch screen, which has no key for it.
       void draw_ride_prompt (render::TextList& text,
                              float alpha,
                              int width_pts,
                              int height_pts) const;
+
+      // One line of the opening's titles: the game's name large at the
+      // centre of the frame, or a small credit in its lower third, unless
+      // `y` (a fraction of the frame's height) places it.
+      void draw_title_card (render::TextList& text,
+                            bool title,
+                            const std::string& line,
+                            float alpha,
+                            float y,
+                            int width_pts,
+                            int height_pts) const;
 
       // Text with a soft shade beneath it, so light lettering stays
       // legible over snow and sky alike.

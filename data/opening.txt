@@ -1,0 +1,23 @@
+# The opening of moppe: a few held views of the default world, the title
+# and a credit fading over them, ending in the player's own eyes beside the
+# parked bike.  Grammar and units are in moppe/game/opening.hh.
+#
+# To author a shot, play (or `tools/spectate`), frame a view, and press P:
+# the log prints a `shot` line for that camera (also gathered in the
+# screenshot run's shots.txt), ready to paste here.  Test a list without
+# rebuilding with MOPPE_OPENING=path/to/list.txt, or MOPPE_ASSETS=<repo>.
+#
+# The shots belong to one world.  Another seed or resolution plays a
+# single generated still of the trailhead instead.
+
+world seed 123 resolution 2048 profile play
+
+shot lake-shore eye 4454.04 155.39 3617.93 heading -79.1 pitch -4 fov 52 hold 9 pan -3 fade 3 clock 300
+caption title "moppe" at 2.2 for 5.4
+
+shot meadow eye 4217.64 130.40 2388.08 heading 148.2 pitch -2 fov 55 hold 7 push 2.5
+
+shot lake-overview eye 4416.38 229.36 3217.02 heading -5.2 pitch -22 fov 50 hold 8 truck 6 fade 1.6
+caption credit "a game by Mikael Brockman" at 1.4 for 5.2
+
+arrival hold 6 push 5 rise 1.2 fade 1.2

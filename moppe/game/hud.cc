@@ -649,7 +649,47 @@ namespace moppe {
                                 int width_pts,
                                 int height_pts) const {
       if (*ride_key)
-        draw_prompt (text, ride_key, "Ride", alpha, width_pts, height_pts);
+        draw_prompt (text, ride_key, "Begin", alpha, width_pts, height_pts);
+    }
+
+    void Hud::draw_title_card (render::TextList& text,
+                               bool title,
+                               const std::string& line,
+                               float alpha,
+                               float y,
+                               int width_pts,
+                               int height_pts) const {
+      if (!m_font || alpha <= 0.002f)
+        return;
+      const float height = static_cast<float> (height_pts);
+      TextStyle style;
+      style.red = style.green = style.blue = ink;
+      if (title) {
+        // The name alone, large and widely spaced, at the frame's optical
+        // centre.
+        style.size = std::clamp (0.105f * height, 30.0f, 140.0f);
+        style.tracking = 0.14f;
+        style.alpha = 0.94f * alpha;
+        const float baseline = (y >= 0.0f ? y : 0.47f) * height +
+                               0.5f * m_font->x_height (style.size);
+        draw_shaded (text,
+                     0.5f * width_pts,
+                     baseline,
+                     line,
+                     style,
+                     TextAlign::Center);
+      } else {
+        // A credit, small, in the lower third.
+        style.size = std::clamp (0.027f * height, 13.0f, 40.0f);
+        style.tracking = 0.09f;
+        style.alpha = 0.9f * alpha;
+        draw_shaded (text,
+                     0.5f * width_pts,
+                     (y >= 0.0f ? y : 0.74f) * height,
+                     line,
+                     style,
+                     TextAlign::Center);
+      }
     }
   }
 }
