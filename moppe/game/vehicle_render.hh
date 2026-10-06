@@ -9,13 +9,13 @@ namespace moppe {
   namespace game {
     // The drawing half of the old Vehicle::render, split out so the
     // simulation stays renderer-free.  Reads one immutable vehicle pose;
-    // the bike's rigid assemblies
-    // are baked meshes drawn straight through the renderer, while
-    // shape-changing parts (suspension links) record into the frame's
-    // draw list.
+    // the bike's rigid assemblies (models/bike.blend) are baked meshes
+    // drawn straight through the renderer. A ridden bike carries the
+    // hiker, skinned into the frame's draw list.
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
+                         bool ridden,
                          uint64_t motion_base);
 
     // The exhaust lick and jump-jet plumes: baked unit cones replayed

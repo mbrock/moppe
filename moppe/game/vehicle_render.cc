@@ -1,8 +1,12 @@
-#include <moppe/game/model.hh>
+#include <moppe/game/avatar.hh>
+#include <moppe/game/bike_model.hh>
+#include <moppe/game/figure.hh>
+#include <moppe/game/model_mesh.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/render/renderer.hh>
 
+#include <algorithm>
 #include <cmath>
 
 namespace moppe {
@@ -15,184 +19,59 @@ namespace moppe {
 
     // -- baked bike assemblies ------------------------------------------
     //
-    // The bike's rigid clusters are recorded once into retained meshes
-    // and replayed with a model matrix, so no per-vertex CPU work
-    // remains on the hot path.  Only geometry that actually changes
-    // shape per frame -- the suspension links and the additive flames
-    // -- still records immediate vertices.
+    // The bike is modelled in models/bike.blend as rigid assemblies, each
+    // exported in its own frame (game/bike_model.*), recorded once into
+    // retained meshes, and replayed with a model matrix. The suspension
+    // moves rigid parts rather than stretching any: the swingarm swings,
+    // the shock's halves turn to stay aimed at each other, and the fork
+    // sliders telescope along the fork tubes.
     namespace {
       struct BikeMeshes {
-        render::MeshPtr wheel;    // spoked wheel around z; spin is Rz
+        render::MeshPtr wheel;    // spoked wheel around the x axle
         render::MeshPtr chassis;  // rigid frame cluster in bike space
-        render::MeshPtr steering; // clamp cluster in steering space
-        render::MeshPtr nozzle;   // one jump-jet cone along +z
+        render::MeshPtr steering; // clamp cluster about the steering head
+        render::MeshPtr sliders;  // fork lowers about the front axle
+        render::MeshPtr swingarm; // about its pivot
+        render::MeshPtr shock_body;
+        render::MeshPtr shock_shaft;
+        render::MeshPtr nozzle; // one jump-jet bell along +z
       };
 
-      // The dirt bike's spoked wheel with a knobby tire, around the z
-      // axis; the model matrix lays the axle on x and applies the spin.
-      void record_wheel (render::DrawList& dl) {
-        // Tire carcass and a ring of knobs.
-        dl.color (0.055f, 0.055f, 0.065f);
-        dl.torus (0.115f, 0.30f, 8, 18);
-        for (int k = 0; k < 10; ++k) {
-          dl.push ();
-          dl.rotate ((k * 36.0f) * u::deg, 0, 0, 1);
-          dl.translate (0.375f, 0, 0);
-          model::box (dl, 0.055f, 0.11f, 0.17f);
-          dl.pop ();
-        }
-
-        // Silver rim, three crossed spoke pairs, hub.
-        dl.color (0.70f, 0.72f, 0.76f);
-        dl.torus (0.028f, 0.20f, 6, 16);
-        for (int k = 0; k < 3; ++k) {
-          dl.push ();
-          dl.rotate ((k * 60.0f + 30.0f) * u::deg, 0, 0, 1);
-          model::box (dl, 0.022f, 0.40f, 0.022f);
-          dl.pop ();
-        }
-        dl.color (0.42f, 0.44f, 0.48f);
-        dl.sphere (0.075f, 10, 8);
-      }
-
-      void record_chassis (render::DrawList& dl) {
-        // Engine block under the tank.
-        dl.color (0.16f, 0.17f, 0.19f);
-        dl.push ();
-        dl.translate (0, -0.34f, 0.05f);
-        model::box (dl, 0.26f, 0.30f, 0.42f);
-        dl.pop ();
-
-        // Gas tank in glorious metallic blue, with white side plates.
-        dl.color (0.15f, 0.5f, 1.0f);
-        dl.push ();
-        dl.translate (0, -0.04f, 0.16f);
-        model::ellipsoid (dl, 0.21f, 0.20f, 0.44f);
-        dl.pop ();
-        dl.color (0.92f, 0.93f, 0.95f);
-        for (int s = -1; s <= 1; s += 2) {
-          dl.push ();
-          dl.translate (s * 0.15f, -0.14f, -0.42f);
-          dl.rotate ((s * 8.0f) * u::deg, 0, 1, 0);
-          model::box (dl, 0.02f, 0.18f, 0.26f);
-          dl.pop ();
-        }
-
-        // Seat, low and flat like a real dirt bike's.
-        dl.color (0.10f, 0.10f, 0.14f);
-        dl.push ();
-        dl.translate (0, 0.02f, -0.35f);
-        model::box (dl, 0.26f, 0.09f, 0.62f);
-        dl.pop ();
-
-        // Blue tail fender kicked up over the rear wheel.
-        dl.color (0.15f, 0.5f, 1.0f);
-        dl.push ();
-        dl.translate (0, 0.10f, -0.70f);
-        dl.rotate (14 * u::deg, 1, 0, 0);
-        model::box (dl, 0.20f, 0.035f, 0.38f);
-        dl.pop ();
-
-        // Exhaust: header pipe sweeping back into a fat silver muffler.
-        dl.color (0.60f, 0.62f, 0.65f);
-        model::link (
-          dl, Vec3 (0.13f, -0.36f, 0.22f), Vec3 (0.17f, -0.30f, -0.50f), 0.07f);
-        dl.push ();
-        dl.translate (0.17f, -0.27f, -0.62f);
-        dl.rotate (-6 * u::deg, 1, 0, 0);
-        model::box (dl, 0.11f, 0.13f, 0.42f);
-        dl.pop ();
-
-        // Footpegs.
-        dl.color (0.45f, 0.47f, 0.50f);
-        for (int s = -1; s <= 1; s += 2) {
-          dl.push ();
-          dl.translate (s * 0.16f, -0.285f, 0.02f);
-          model::box (dl, 0.10f, 0.03f, 0.06f);
-          dl.pop ();
-        }
-      }
-
-      // Everything rigidly attached to the triple clamp: fender,
-      // number plate, handlebars, headlight.  The fork legs stretch
-      // with the suspension, so they stay immediate.
-      void record_steering (render::DrawList& dl) {
-        // Front fender arching over the wheel.
-        dl.color (0.15f, 0.5f, 1.0f);
-        dl.push ();
-        dl.translate (0, -0.24f, 0.24f);
-        dl.rotate (-20 * u::deg, 1, 0, 0);
-        model::box (dl, 0.20f, 0.035f, 0.52f);
-        dl.pop ();
-
-        // Number plate on the forks.
-        dl.color (0.92f, 0.93f, 0.95f);
-        dl.push ();
-        dl.translate (0, 0.02f, 0.06f);
-        dl.rotate (-16 * u::deg, 1, 0, 0);
-        model::box (dl, 0.20f, 0.26f, 0.03f);
-        dl.pop ();
-
-        // Handlebars: crossbar, grips, risers.
-        dl.color (0.1f, 0.1f, 0.12f);
-        dl.push ();
-        dl.translate (0, 0.14f, -0.02f);
-        model::box (dl, 0.72f, 0.05f, 0.05f);
-        dl.pop ();
-        for (int s = -1; s <= 1; s += 2) {
-          dl.push ();
-          dl.translate (s * 0.30f, 0.14f, -0.02f);
-          model::box (dl, 0.12f, 0.065f, 0.065f);
-          dl.pop ();
-        }
-        dl.color (0.35f, 0.37f, 0.40f);
-        for (int s = -1; s <= 1; s += 2)
-          model::link (dl,
-                       Vec3 (s * 0.06f, 0.02f, 0.0f),
-                       Vec3 (s * 0.06f, 0.13f, -0.02f),
-                       0.04f);
-
-        // Headlight, drawn unlit so it always looks switched on, with
-        // a soft additive halo that the bloom pass picks up.
-        dl.push ();
-        dl.lit (false);
-        dl.color (1.0f, 0.95f, 0.7f);
-        dl.translate (0, -0.06f, 0.16f);
-        dl.sphere (0.075f, 10, 10);
-        {
-          render::DrawState glow;
-          glow.blend = true;
-          glow.additive = true;
-          glow.depth_write = false;
-          dl.state (glow);
-          dl.color (1.0f, 0.85f, 0.5f, 0.22f);
-          dl.sphere (0.13f, 10, 10);
-          dl.state (render::DrawState ());
-        }
-        dl.lit (true);
-        dl.pop ();
-      }
-
-      void record_nozzle (render::DrawList& dl) {
-        dl.color (0.6f, 0.62f, 0.68f);
-        dl.cone (0.09f, 0.22f, 8, 2);
+      render::MeshPtr bake (render::Renderer& r, const model_mesh::Mesh& mesh) {
+        render::DrawList dl;
+        model_mesh::record (dl, mesh);
+        return r.create_mesh (dl);
       }
 
       const BikeMeshes& bike_meshes (render::Renderer& r) {
         static const BikeMeshes meshes = [&r] {
           BikeMeshes b;
+          b.wheel = bake (r, bike_model::wheel);
+          b.chassis = bake (r, bike_model::chassis);
+          b.sliders = bake (r, bike_model::fork_sliders);
+          b.swingarm = bake (r, bike_model::swingarm);
+          b.shock_body = bake (r, bike_model::shock_body);
+          b.shock_shaft = bake (r, bike_model::shock_shaft);
+          b.nozzle = bake (r, bike_model::nozzle);
+
+          // The headlight's lens is unlit in the model; a soft additive
+          // halo around it is what the bloom pass picks up.
           render::DrawList dl;
-          record_wheel (dl);
-          b.wheel = r.create_mesh (dl);
-          dl.clear ();
-          record_chassis (dl);
-          b.chassis = r.create_mesh (dl);
-          dl.clear ();
-          record_steering (dl);
+          model_mesh::record (dl, bike_model::steering);
+          render::DrawState glow;
+          glow.blend = true;
+          glow.additive = true;
+          glow.depth_write = false;
+          dl.push ();
+          dl.translate (bike_model::headlight - bike_model::steering_head);
+          dl.state (glow);
+          dl.lit (false);
+          dl.color (1.0f, 0.85f, 0.5f, 0.22f);
+          dl.sphere (0.11f, 10, 10);
+          dl.state (render::DrawState ());
+          dl.lit (true);
+          dl.pop ();
           b.steering = r.create_mesh (dl);
-          dl.clear ();
-          record_nozzle (dl);
-          b.nozzle = r.create_mesh (dl);
           return b;
         }();
         return meshes;
@@ -264,25 +143,113 @@ namespace moppe {
       }
     }
 
+    namespace {
+      // The rotation about x carrying direction `from` to `to`, both in the
+      // bike's yz plane.
+      Mat4 turn_about_x (const Vec3& from, const Vec3& to) {
+        const float angle =
+          std::atan2 (to[2], to[1]) - std::atan2 (from[2], from[1]);
+        return Mat4::rotation (angle * u::rad, Vec3 (1, 0, 0));
+      }
+    }
+
+    namespace {
+      // The bike is half again life size, as its physics is, and no
+      // life-size rider could sit on it; the rider is drawn larger too,
+      // scaled about the bike's origin.
+      constexpr float rider_scale = 1.3f;
+
+      // The hiker riding: seated on the saddle, feet on the pegs, hands on
+      // the grips, the trunk leaning forward just far enough to reach the
+      // bars, eyes a little down the trail. Posed in the bike's frame
+      // shrunk by rider_scale, so the caller draws it scaled back up.
+      AvatarSkeleton pose_rider (const VehiclePose& vehicle) {
+        const Mat4 frame =
+          Mat4::translation (vehicle.position) *
+          Mat4::scaling (Vec3 (1, 1, 1) * (1.0f / rider_scale)) *
+          Mat4::translation (-vehicle.position) * vehicle_frame (vehicle);
+        const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
+        const Vec3 facing =
+          normalized (frame.transform_vector (Vec3 (0, 0, 1)));
+        const Vec3 right = normalized (cross (up, facing));
+        const Vec3 head = bike_model::steering_head;
+        const Mat4 steering =
+          frame * Mat4::translation (head) *
+          Mat4::rotation (-vehicle.fork_radians * u::rad, Vec3 (0, 1, 0));
+        const Vec3 grip[2] = {
+          steering.transform_point (bike_model::grip_left - head),
+          steering.transform_point (bike_model::grip_right - head)
+        };
+        const Vec3 peg[2] = { frame.transform_point (bike_model::peg_left),
+                              frame.transform_point (bike_model::peg_right) };
+
+        HoldPose hold;
+        hold.facing = facing;
+        hold.up = up;
+        hold.pelvis = frame.transform_point (bike_model::saddle) + up * 0.1f;
+        hold.gaze = facing * std::cos (0.2f) - up * std::sin (0.2f);
+        hold.head_up = up;
+        hold.sole = facing;
+        hold.instep = up;
+
+        // The most upright lean whose shoulders reach the grips, or failing
+        // that, the lean that comes closest.
+        const float reach =
+          0.88f * (avatar_size::upper_arm + avatar_size::forearm);
+        float best_lean = 0.0f, best_span = 1e9f;
+        for (float lean = 0.0f; lean <= 1.2f; lean += 0.04f) {
+          hold.lean = lean;
+          const float span =
+            std::max (length (held_shoulder (hold, 0) - grip[0]),
+                      length (held_shoulder (hold, 1) - grip[1]));
+          if (span <= reach) {
+            best_lean = lean;
+            break;
+          }
+          if (span < best_span) {
+            best_span = span;
+            best_lean = lean;
+          }
+        }
+        hold.lean = best_lean;
+
+        for (int i = 0; i < 2; ++i) {
+          const float side = i == 0 ? -1.0f : 1.0f;
+          const Vec3 shoulder = held_shoulder (hold, i);
+          hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
+          hold.elbow_pole[i] = right * side - up * 0.3f - facing * 0.3f;
+          hold.ankle[i] = peg[i] + up * 0.085f - facing * 0.03f;
+          hold.knee_pole[i] = facing + right * (side * 0.35f);
+        }
+        return pose_holding (hold);
+      }
+    }
+
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
+                         bool ridden,
                          uint64_t motion_base) {
-      dl.push ();
-      dl.mult (vehicle_frame (vehicle));
+      if (ridden) {
+        dl.push ();
+        dl.translate (vehicle.position);
+        dl.scale (rider_scale, rider_scale, rider_scale);
+        dl.translate (-vehicle.position);
+        figure::draw (dl, pose_rider (vehicle));
+        dl.pop ();
+      }
 
       const BikeMeshes& bm = bike_meshes (r);
-      const Mat4 frame = dl.matrix ();
+      const Mat4 frame = vehicle_frame (vehicle);
       uint64_t motion_part = motion_base;
       const auto draw_part = [&] (const render::Mesh& mesh,
                                   const Mat4& transform) {
         r.draw_mesh (mesh, transform, ++motion_part);
       };
 
-      const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0), z_axis (0, 0, 1);
-      const Mat4 axle =
-        Mat4::rotation (90 * u::deg, y_axis) *
-        Mat4::rotation (vehicle.wheel_spin_radians * u::rad, z_axis);
+      const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0);
+      const Mat4 spin =
+        Mat4::rotation (vehicle.wheel_spin_radians * u::rad, x_axis);
 
       // Suspension: the pose places the frame and says how far each wheel
       // hangs from its rest position, so landings visibly compress the
@@ -290,60 +257,53 @@ namespace moppe {
       const float wheel_drop = -vehicle.rear_wheel_drop / 1.5f;
       const float fork_drop = -vehicle.front_wheel_drop / 1.5f;
 
-      // Rear wheel on the swingarm.
+      // The swingarm swings about its pivot until the rear axle sits
+      // `wheel_drop` from rest, carrying the wheel and the shock's foot.
+      const Vec3 pivot = bike_model::swingarm_pivot;
+      const Vec3 arm = bike_model::rear_axle - pivot;
+      const float reach = length (arm);
+      const float arm_y =
+        std::clamp (arm[1] + wheel_drop, -0.95f * reach, 0.95f * reach);
+      const Vec3 swung (0, arm_y, -std::sqrt (reach * reach - arm_y * arm_y));
+      const Mat4 swing = turn_about_x (arm, swung);
+      const Mat4 swingarm = frame * Mat4::translation (pivot) * swing;
+      draw_part (*bm.swingarm, swingarm);
       draw_part (*bm.wheel,
-                 frame *
-                   Mat4::translation (Vec3 (0, -0.55f + wheel_drop, -0.75f)) *
-                   axle);
+                 frame * Mat4::translation (pivot + swung) * swing * spin);
 
-      // Rear swingarm down to the axle, with a bright shock absorber;
-      // both stretch with the suspension, so they stay immediate.
-      dl.color (0.55f, 0.57f, 0.62f);
-      for (int s = -1; s <= 1; s += 2)
-        model::link (dl,
-                     Vec3 (s * 0.09f, -0.30f, -0.12f),
-                     Vec3 (s * 0.09f, -0.55f + wheel_drop, -0.75f),
-                     0.05f);
-      dl.color (0.85f, 0.25f, 0.10f);
-      model::link (dl,
-                   Vec3 (0, -0.12f, -0.28f),
-                   Vec3 (0, -0.42f + wheel_drop * 0.6f, -0.55f),
-                   0.055f);
+      // The shock's body hangs from the frame aimed at its foot on the
+      // swingarm; the shaft rises from the foot aimed back at the body.
+      const Vec3 top = bike_model::shock_top;
+      const Vec3 foot =
+        pivot + swing.transform_vector (bike_model::shock_bottom - pivot);
+      const Mat4 aim =
+        turn_about_x (bike_model::shock_bottom - top, foot - top);
+      draw_part (*bm.shock_body, frame * Mat4::translation (top) * aim);
+      draw_part (*bm.shock_shaft, frame * Mat4::translation (foot) * aim);
 
       // The rigid frame cluster: engine, tank, seat, fenders, exhaust.
       draw_part (*bm.chassis, frame);
 
-      // Steering assembly: triple clamp cluster, fork legs, front wheel.
+      // Steering assembly: the clamp cluster turns about the steering
+      // head, and the sliders and front wheel telescope along the forks.
       const radians_t steer = -vehicle.fork_radians * u::rad;
-      const Mat4 steering = frame * Mat4::translation (Vec3 (0, 0.05f, 0.55f)) *
-                            Mat4::rotation (steer, y_axis);
+      const Vec3 head = bike_model::steering_head;
+      const Mat4 steering =
+        frame * Mat4::translation (head) * Mat4::rotation (steer, y_axis);
       draw_part (*bm.steering, steering);
-
-      // Fork legs run from the clamp down to the front axle.
-      dl.push ();
-      dl.translate (0, 0.05f, 0.55f);
-      dl.rotate (steer, y_axis);
-      dl.color (0.72f, 0.74f, 0.78f);
-      for (int s = -1; s <= 1; s += 2)
-        model::link (dl,
-                     Vec3 (s * 0.10f, 0.10f, -0.02f),
-                     Vec3 (s * 0.09f, -0.60f + fork_drop, 0.20f),
-                     0.055f);
-      dl.pop ();
-
-      draw_part (*bm.wheel,
-                 steering *
-                   Mat4::translation (Vec3 (0, -0.60f + fork_drop, 0.20f)) *
-                   axle);
+      const Vec3 fork =
+        normalized (bike_model::front_axle - bike_model::fork_top);
+      const Vec3 axle =
+        bike_model::front_axle - head + fork * (fork_drop / fork[1]);
+      draw_part (*bm.sliders, steering * Mat4::translation (axle));
+      draw_part (*bm.wheel, steering * Mat4::translation (axle) * spin);
 
       // Gimballed jump-jet nozzles under the frame.
-      for (int s = -1; s <= 1; s += 2)
+      for (const Vec3& nozzle :
+           { bike_model::nozzle_left, bike_model::nozzle_right })
         draw_part (*bm.nozzle,
-                   frame *
-                     Mat4::translation (Vec3 (s * 0.14f, -0.45f, -0.35f)) *
+                   frame * Mat4::translation (nozzle) *
                      Mat4::rotation (boost_nozzle_angle (vehicle), x_axis));
-
-      dl.pop ();
     }
 
     // The additive exhaust lick and jump-jet plumes, replayed as baked
@@ -375,7 +335,7 @@ namespace moppe {
         const float lick =
           0.85f + 0.15f * std::sin (time * 47.0f + std::sin (time * 31.0f));
         const Mat4 muffler = frame *
-                             Mat4::translation (Vec3 (0.17f, -0.30f, -0.80f)) *
+                             Mat4::translation (bike_model::muffler_tip) *
                              Mat4::rotation (180 * u::deg, y_axis);
         draw_part (*fm.lick_outer,
                    muffler * Mat4::scaling (Vec3 (
@@ -396,8 +356,7 @@ namespace moppe {
                                         std::sin (time * 27.0f + 1.7f);
         const float len = k * flicker;
 
-        // Nozzle placement and plume proportions under the bike frame.
-        const Vec3 nozzle (0.14f, -0.55f, -0.35f);
+        // Plume proportions; each starts inside its nozzle's bell.
         const float sheath_r = 0.21f;
         const float body_r = 0.12f;
         const float core_r = 0.055f;
@@ -405,11 +364,12 @@ namespace moppe {
         const float body_l = 2.5f;
         const float core_l = 3.0f;
 
-        for (int s = -1; s <= 1; s += 2) {
+        for (const Vec3& nozzle :
+             { bike_model::nozzle_left, bike_model::nozzle_right }) {
           const Mat4 jet =
-            frame *
-            Mat4::translation (Vec3 (s * nozzle[0], nozzle[1], nozzle[2])) *
-            Mat4::rotation (boost_nozzle_angle (vehicle), x_axis);
+            frame * Mat4::translation (nozzle) *
+            Mat4::rotation (boost_nozzle_angle (vehicle), x_axis) *
+            Mat4::translation (Vec3 (0, 0, 0.1f));
           draw_part (
             *fm.plume_sheath,
             jet * Mat4::scaling (Vec3 (sheath_r, sheath_r, sheath_l * len)));

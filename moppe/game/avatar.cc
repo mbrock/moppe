@@ -234,4 +234,72 @@ namespace moppe::game {
     }
     return k;
   }
+
+  namespace {
+    struct Trunk {
+      Vec3 right, chest_up, chest_forward, chest_right, waist, chest, neck;
+    };
+
+    Trunk hold_trunk (const HoldPose& h) {
+      Trunk t;
+      t.right = normalized (cross (h.up, h.facing));
+      t.chest_up = h.up * std::cos (h.lean) + h.facing * std::sin (h.lean);
+      t.chest_forward = h.facing * std::cos (h.lean) - h.up * std::sin (h.lean);
+      t.chest_right = normalized (cross (t.chest_up, t.chest_forward));
+      t.waist = h.pelvis + h.up * 0.10f;
+      t.chest = t.waist + t.chest_up * 0.27f;
+      t.neck = t.waist + t.chest_up * 0.47f;
+      return t;
+    }
+
+    Vec3 shoulder_of (const Trunk& t, int side) {
+      return t.neck - t.chest_up * 0.07f +
+             t.chest_right *
+               ((side == 0 ? -1.0f : 1.0f) * avatar_size::shoulder_width);
+    }
+  }
+
+  Vec3 held_shoulder (const HoldPose& hold, int side) {
+    return shoulder_of (hold_trunk (hold), side);
+  }
+
+  AvatarSkeleton pose_holding (const HoldPose& h) {
+    using avatar_pose::bend;
+    namespace size = avatar_size;
+    const Trunk t = hold_trunk (h);
+    AvatarSkeleton k;
+    k.forward = h.facing;
+    k.right = t.right;
+    k.up = h.up;
+    k.chest_up = t.chest_up;
+    k.chest_forward = t.chest_forward;
+    k.pelvis = h.pelvis;
+    k.waist = t.waist;
+    k.chest = t.chest;
+    k.neck = t.neck;
+
+    k.head_forward = normalized (h.gaze);
+    Vec3 head_up = h.head_up - k.head_forward * dot (h.head_up, k.head_forward);
+    k.head_up = length2 (head_up) > 1e-6f ? normalized (head_up) : t.chest_up;
+    k.head = k.neck + k.head_up * 0.15f + k.head_forward * 0.015f;
+
+    for (int i = 0; i < 2; ++i) {
+      const float side = i == 0 ? -1.0f : 1.0f;
+      k.shoulder[i] = shoulder_of (t, i);
+      k.wrist[i] = h.wrist[i];
+      k.elbow[i] = bend (k.shoulder[i],
+                         k.wrist[i],
+                         size::upper_arm,
+                         size::forearm,
+                         h.elbow_pole[i]);
+
+      k.hip[i] = h.pelvis + t.right * (side * size::hip_width);
+      k.ankle[i] = h.ankle[i];
+      k.knee[i] =
+        bend (k.hip[i], k.ankle[i], size::thigh, size::shin, h.knee_pole[i]);
+      k.heel[i] = k.ankle[i] - h.sole * 0.07f - h.instep * 0.07f;
+      k.toe[i] = k.ankle[i] + h.sole * 0.19f - h.instep * 0.07f;
+    }
+    return k;
+  }
 }
