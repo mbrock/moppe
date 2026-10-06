@@ -5,6 +5,7 @@
 
 #include <moppe/environment.hh>
 #include <moppe/nhal/renderer/nhal_renderer.hh>
+#include <moppe/platform/input.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/platform/sdl/sdl.hh>
 
@@ -21,9 +22,11 @@
 #include <SDL3/SDL.h>
 
 namespace {
+  using moppe::platform::ControlState;
   using moppe::platform::Game;
   using moppe::platform::Key;
   using moppe::platform::PointerButton;
+  using moppe::platform::RemoteControl;
 
   std::atomic<bool> quitting = false;
   SDL_Window* active_window = nullptr;
@@ -79,18 +82,10 @@ namespace {
     }
   }
 
-  float axis (Sint16 value) {
-    const float v = std::clamp (float (value) / 32767.0f, -1.0f, 1.0f);
-    return std::abs (v) < 0.15f ? 0.0f : v;
-  }
-
-  // The gamepad as the other hosts read a controller: the left stick (or
-  // the D-pad) drives and steers, the right trigger boosts; A deploys the
-  // glider or restarts, B mounts, X cycles the camera, Y boosts or flares,
-  // and the D-pad also presses the arrow keys for menus.
+  // The first gamepad, read into the shared mapping (input.hh).
   class Pad {
   public:
-    explicit Pad (Game& game) : m_game (game) {}
+    explicit Pad (Game& game) : m_mapper (game) {}
 
     ~Pad () {
       if (m_pad)
@@ -98,79 +93,53 @@ namespace {
     }
 
     void added (SDL_JoystickID id) {
-      if (!m_pad)
-        m_pad = SDL_OpenGamepad (id);
+      if (m_pad)
+        return;
+      m_pad = SDL_OpenGamepad (id);
+      if (const char* name = m_pad ? SDL_GetGamepadName (m_pad) : nullptr)
+        std::cerr << "moppe: gamepad connected: " << name << std::endl;
     }
 
     void removed (SDL_JoystickID id) {
       if (!m_pad || SDL_GetGamepadID (m_pad) != id)
         return;
-      release ();
+      m_mapper.release ();
       SDL_CloseGamepad (m_pad);
       m_pad = nullptr;
     }
 
-    void poll () {
+    bool connected () const { return m_pad != nullptr; }
+
+    // The controls the sticks and triggers ask for, after pressing and
+    // releasing the buttons' keys.
+    moppe::platform::ControlState poll () {
       if (!m_pad)
-        return;
+        return {};
       auto held = [&] (SDL_GamepadButton b) {
         return SDL_GetGamepadButton (m_pad, b);
       };
-      const float dpad_x = (held (SDL_GAMEPAD_BUTTON_DPAD_RIGHT) ? 1.0f : 0)
-                           - (held (SDL_GAMEPAD_BUTTON_DPAD_LEFT) ? 1.0f : 0);
-      const float dpad_y = (held (SDL_GAMEPAD_BUTTON_DPAD_UP) ? 1.0f : 0)
-                           - (held (SDL_GAMEPAD_BUTTON_DPAD_DOWN) ? 1.0f : 0);
-      const float stick_x =
-        axis (SDL_GetGamepadAxis (m_pad, SDL_GAMEPAD_AXIS_LEFTX));
+      auto axis = [&] (SDL_GamepadAxis a) {
+        return float (SDL_GetGamepadAxis (m_pad, a)) / 32767.0f;
+      };
+      moppe::platform::GamepadReading r;
+      r.left_x = axis (SDL_GAMEPAD_AXIS_LEFTX);
       // SDL's sticks point down for positive y; driving forward is up.
-      const float stick_y =
-        -axis (SDL_GetGamepadAxis (m_pad, SDL_GAMEPAD_AXIS_LEFTY));
-      const float trigger = std::max (
-        0.0f, float (SDL_GetGamepadAxis (m_pad,
-                                         SDL_GAMEPAD_AXIS_RIGHT_TRIGGER))
-                / 32767.0f);
-      moppe::platform::ControlState controls;
-      controls.steer = stick_x != 0 ? stick_x : dpad_x;
-      controls.drive = stick_y != 0 ? stick_y : dpad_y;
-      controls.boost = std::max (
-        trigger, held (SDL_GAMEPAD_BUTTON_NORTH) ? 1.0f : 0.0f);
-      edge (0, held (SDL_GAMEPAD_BUTTON_SOUTH), Key::E);
-      edge (1, held (SDL_GAMEPAD_BUTTON_SOUTH), Key::Restart);
-      edge (2, held (SDL_GAMEPAD_BUTTON_EAST), Key::Mount);
-      edge (3, held (SDL_GAMEPAD_BUTTON_WEST), Key::Tab);
-      edge (4, held (SDL_GAMEPAD_BUTTON_DPAD_LEFT), Key::Left);
-      edge (5, held (SDL_GAMEPAD_BUTTON_DPAD_RIGHT), Key::Right);
-      edge (6, held (SDL_GAMEPAD_BUTTON_DPAD_UP), Key::Up);
-      edge (7, held (SDL_GAMEPAD_BUTTON_DPAD_DOWN), Key::Down);
-      edge (8, held (SDL_GAMEPAD_BUTTON_NORTH), Key::Space);
-      m_game.controls (controls);
+      r.left_y = -axis (SDL_GAMEPAD_AXIS_LEFTY);
+      r.right_trigger = axis (SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+      r.a = held (SDL_GAMEPAD_BUTTON_SOUTH);
+      r.b = held (SDL_GAMEPAD_BUTTON_EAST);
+      r.x = held (SDL_GAMEPAD_BUTTON_WEST);
+      r.y = held (SDL_GAMEPAD_BUTTON_NORTH);
+      r.dpad_left = held (SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+      r.dpad_right = held (SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+      r.dpad_up = held (SDL_GAMEPAD_BUTTON_DPAD_UP);
+      r.dpad_down = held (SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+      return m_mapper.map (r);
     }
 
   private:
-    static constexpr Key keys[] = { Key::E,   Key::Restart, Key::Mount,
-                                    Key::Tab, Key::Left,    Key::Right,
-                                    Key::Up,  Key::Down,    Key::Space };
-
-    void edge (int index, bool down, Key key) {
-      if (m_buttons[index] == down)
-        return;
-      m_buttons[index] = down;
-      m_game.key (key, down);
-    }
-
-    // A controller that disappears lets go of everything it held.
-    void release () {
-      for (int i = 0; i < 9; ++i)
-        if (m_buttons[i]) {
-          m_game.key (keys[i], false);
-          m_buttons[i] = false;
-        }
-      m_game.controls ({});
-    }
-
-    Game& m_game;
+    moppe::platform::GamepadMapper m_mapper;
     SDL_Gamepad* m_pad = nullptr;
-    bool m_buttons[9] {};
   };
 
   // Keys and buttons held, so losing focus can let go of them all.
@@ -216,14 +185,22 @@ namespace moppe::platform {
     int width = 0, height = 0, pixels_wide = 0, pixels_high = 0;
     SDL_GetWindowSize (window, &width, &height);
     pixel_size (window, pixels_wide, pixels_high);
-    const float scale =
-      width > 0 ? float (pixels_wide) / float (width) : 1.0f;
     auto device = sdl::create_device (window, std::uint32_t (pixels_wide),
                                       std::uint32_t (pixels_high));
+    // The device may choose its own drawable (the Xbox's is 4K behind a
+    // 1080p window); the HUD's points follow the window, and resizes keep
+    // the device's ratio to the window's pixels.
+    const float scale =
+      width > 0 ? float (device->surface_width ()) / float (width) : 1.0f;
+    const float oversample =
+      pixels_wide > 0
+        ? float (device->surface_width ()) / float (pixels_wide)
+        : 1.0f;
     std::cerr << "moppe: NHAL on " << device->info ().backend << ", "
-              << device->info ().adapter << ", " << pixels_wide << "x"
-              << pixels_high << " pixels at " << scale << " per point"
-              << std::endl;
+              << device->info ().adapter << ", "
+              << device->surface_width () << "x"
+              << device->surface_height () << " pixels at " << scale
+              << " per point" << std::endl;
     nhal::Device& surface_device = *device;
     std::unique_ptr<render::Renderer> renderer = nhal::create_renderer (
       std::move (device), sdl::world_shaders (), scale);
@@ -231,16 +208,28 @@ namespace moppe::platform {
 
     Pad pad (game);
     Held held;
+    // MOPPE_CONTROL_FILE names a remote-control file (input.hh).
+    std::unique_ptr<RemoteControl> remote;
+    if (const char* path = moppe::environment ("MOPPE_CONTROL_FILE"))
+      remote = std::make_unique<RemoteControl> (game, path);
+    // MOPPE_FPS_REPORT=1 logs the frame rate every ten seconds.
+    const char* fps_report = moppe::environment ("MOPPE_FPS_REPORT");
+    const bool report_fps = fps_report && *fps_report && *fps_report != '0';
     float pointer_x = 0, pointer_y = 0;
-    auto last = std::chrono::steady_clock::now ();
+    const auto start = std::chrono::steady_clock::now ();
+    auto last = start;
+    auto report_start = last;
+    long report_frames = 0;
+    double slowest = 0;
     while (!quitting) {
       SDL_Event event;
       while (SDL_PollEvent (&event)) {
         switch (event.type) {
         case SDL_EVENT_QUIT: quitting = true; break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-          surface_device.resize_surface (std::uint32_t (event.window.data1),
-                                         std::uint32_t (event.window.data2));
+          surface_device.resize_surface (
+            std::uint32_t (std::lround (event.window.data1 * oversample)),
+            std::uint32_t (std::lround (event.window.data2 * oversample)));
           game.resize (renderer->width_pts (), renderer->height_pts ());
           break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:
@@ -297,12 +286,32 @@ namespace moppe::platform {
         }
       }
       sdl::run_main_thread_tasks ();
-      pad.poll ();
+      const ControlState held_controls = pad.poll ();
       const auto now = std::chrono::steady_clock::now ();
+      if (remote)
+        remote->poll (std::chrono::duration<double> (now - start).count ());
+      if (remote && remote->controls ())
+        game.controls (*remote->controls ());
+      else if (pad.connected ())
+        game.controls (held_controls);
       const double dt = std::chrono::duration<double> (now - last).count ();
       last = now;
       game.tick (float (std::clamp (dt, 0.0, 0.05)));
       game.render (*renderer);
+      sdl::frame_rendered ();
+      if (report_fps) {
+        slowest = std::max (slowest, dt);
+        const double span =
+          std::chrono::duration<double> (now - report_start).count ();
+        if (++report_frames > 1 && span >= 10.0) {
+          std::cerr << "moppe: " << report_frames / span
+                    << " fps, slowest frame " << slowest * 1000 << " ms"
+                    << std::endl;
+          report_start = now;
+          report_frames = 0;
+          slowest = 0;
+        }
+      }
     }
     // The game keeps the renderer's textures and meshes until main returns,
     // so the renderer outlives this function, as on the Mac; the GPU

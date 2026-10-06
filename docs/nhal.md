@@ -115,14 +115,20 @@ drawn yet.
 renderer on Direct3D 12 (`moppe/platform/uwp/game.nix`, CMake's
 `MOPPE_XBOX_GAME`): luv-shaderc lowers `world.lisp` to HLSL, DXC compiles each
 stage to a DXIL header, and `world_shaders_d3d12.cc` gathers them.
-`moppe/platform/uwp/main_uwp.cc` is the host: `wWinMain` calls `main.cc`'s
-main (compiled as `moppe_main`), whose `platform::run` opens a
-CoreApplication view with a 3840x2160 swapchain, two pixels per HUD point,
-and reads the first gamepad as the Apple hosts read a controller.
+The host is the desktop's SDL host, on nixbox's SDL3 with its C++/WinRT
+UWP backend (`xbox.pkgsXbox.SDL3`): SDL's entry point runs the
+CoreApplication and calls `moppe/platform/uwp/main_uwp.cc`'s main, the
+console's prelude, which calls `main.cc`'s main (compiled as `moppe_main`).
+`device_d3d12.cc` takes the window's CoreWindow and makes a 3840x2160
+swapchain, two pixels per HUD point; `platform_uwp.cc` supplies the
+package's assets, LocalCache, and background work.
 `nix run .#deploy-moppe-xbox` installs and launches it under the console
 lease. `LocalState/log.txt` holds everything the game logs, and
 `environment.txt` there (or in the package) sets `moppe::environment`
-variables, `MOPPE_ARGS` being the command line.
+variables, `MOPPE_ARGS` being the command line. The prelude turns on the
+pass timings and the frame-rate report (`MOPPE_FPS_REPORT`), points the
+remote-control file at `LocalState/control.txt`, and watches for stalled
+frames.
 
 The console does not run the geology simulator if it need not:
 `tools/deploy-xbox [DEPLOY ARGS]` (or `make xbox`) bakes the default world
@@ -175,7 +181,13 @@ device on the window's surface. Assets come from `MOPPE_ASSETS`, then the
 app bundle's resources or the executable's folder, then `share/moppe` beside
 it, then the source tree; caches live in `~/Library/Caches/Moppe` on the Mac
 and `$XDG_CACHE_HOME/moppe` on Linux. Where SDL3 is not installed, CMake
-builds its release.
+builds its release. The Xbox runs the same host (below).
+
+The gamepad's mapping onto the game and the remote-control file are shared
+by every host (`moppe/platform/input.hh`): `MOPPE_CONTROL_FILE` names a file
+whose `seq N` header and timeline of `tap`, `hold`, `stick`, `look`, `wait`,
+and `env` commands drive the game, as `tools/xbox-control` does the
+console's.
 
 ## The game on Linux
 

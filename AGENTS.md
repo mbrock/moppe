@@ -184,6 +184,9 @@
     (autopilot for screenshots; use `MOPPE_DEMO=forest` to start the same
     rider at the world's selected forest-floor site),
     `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
+    `MOPPE_CONTROL_FILE=<path>` (a remote-control timeline, as
+    `tools/xbox-control` writes; see `moppe/platform/input.hh`),
+    `MOPPE_FPS_REPORT=1`,
     `MOPPE_RENDERSCALE=<0.25..1>`, and `MOPPE_SCENEPIXELS=<megapixels>`
     (the scene-resolution budget; `0` restores the point-relative rule
     alone)

@@ -243,6 +243,16 @@ private:
   std::ofstream m_log;
 };
 
+// The windowed host's half of platform.hh, which the headless probe has no
+// use for; platform_uwp.cc supplies the rest.
+namespace moppe::platform {
+  void request_quit () {
+    uwp::request_quit ();
+  }
+  void set_window_title (const std::string&) {}
+  void set_pointer_captured (bool) {}
+}
+
 int __stdcall wWinMain (HINSTANCE, HINSTANCE, PWSTR, int) {
   init_apartment ();
   CoreApplication::Run (make<App> ());

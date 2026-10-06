@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Drives moppe on the Xbox from here (see moppe/platform/uwp/main_uwp.cc).
+# Drives moppe on the Xbox from here (the remote-control file is
+# moppe/platform/input.hh's RemoteControl).
 #
 #   tools/xbox-control send 'tap Space' 'wait 1' 'stick 0 1 1' ...
 #   tools/xbox-control shot [FILE.png]   the console's screen (default

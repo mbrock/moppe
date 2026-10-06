@@ -16,10 +16,5 @@ namespace moppe {
       }
       return relative;
     }
-
-    bool
-    rasterize_glyph (const char*, float, float, unsigned int, GlyphBitmap&) {
-      return false;
-    }
   }
 }

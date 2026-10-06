@@ -156,11 +156,10 @@ namespace moppe::platform {
     }).detach ();
   }
 
-  bool rasterize_glyph (const char*, float, float, unsigned int, GlyphBitmap&) {
-    return false;
-  }
 
   namespace sdl {
+    void frame_rendered () {}
+
     void run_main_thread_tasks () {
       std::deque<std::function<void ()>> tasks;
       {

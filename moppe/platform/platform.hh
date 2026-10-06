@@ -163,22 +163,6 @@ namespace moppe {
     void async (void (*work) (void*),
                 void (*done) (void*),
                 std::shared_ptr<void> context);
-
-    // Rasterize a glyph run for the font atlas: platform-specific text
-    // rendering behind a portable call.  Returns an 8-bit coverage
-    // bitmap; caller owns interpretation.  Defined in render/text.cc
-    // terms -- see text.hh for the atlas builder that consumes this.
-    struct GlyphBitmap {
-      int width = 0, height = 0;
-      float bearing_x = 0, bearing_y = 0; // origin to bitmap top-left
-      float advance = 0;
-      std::vector<unsigned char> pixels; // width*height coverage
-    };
-    bool rasterize_glyph (const char* font_family,
-                          float point_size,
-                          float scale,
-                          unsigned int codepoint,
-                          GlyphBitmap& out);
   }
 }
 

@@ -1,10 +1,7 @@
-// Platform services shared by the macOS and iOS layers: asset
-// resolution, monotonic time, speech, background work, and CoreText
-// glyph rasterization for the font atlas.
+// Platform services shared by the Apple UIKit hosts and the Mac's core
+// probe: asset resolution, monotonic time, speech, and background work.
 
 #import <AVFoundation/AVFoundation.h>
-#import <CoreGraphics/CoreGraphics.h>
-#import <CoreText/CoreText.h>
 #import <Foundation/Foundation.h>
 #import <TargetConditionals.h>
 
@@ -125,96 +122,6 @@ namespace moppe {
           delete retained;
         });
       });
-    }
-
-    bool rasterize_glyph (const char* font_family,
-                          float point_size,
-                          float scale,
-                          unsigned int codepoint,
-                          GlyphBitmap& out) {
-      CFStringRef name =
-        CFStringCreateWithCString (NULL, font_family, kCFStringEncodingUTF8);
-      CTFontRef font = CTFontCreateWithName (name, point_size * scale, NULL);
-      CFRelease (name);
-      if (!font)
-        return false;
-
-      UniChar chars[2];
-      CGGlyph glyphs[2];
-      int nchars = 0;
-      if (codepoint <= 0xFFFF) {
-        chars[0] = (UniChar)codepoint;
-        nchars = 1;
-      } else {
-        const unsigned int v = codepoint - 0x10000;
-        chars[0] = (UniChar)(0xD800 + (v >> 10));
-        chars[1] = (UniChar)(0xDC00 + (v & 0x3FF));
-        nchars = 2;
-      }
-      if (!CTFontGetGlyphsForCharacters (font, chars, glyphs, nchars)) {
-        CFRelease (font);
-        return false;
-      }
-
-      CGGlyph glyph = glyphs[0];
-      CGSize advance;
-      CTFontGetAdvancesForGlyphs (
-        font, kCTFontOrientationHorizontal, &glyph, &advance, 1);
-      CGRect box;
-      CTFontGetBoundingRectsForGlyphs (
-        font, kCTFontOrientationHorizontal, &glyph, &box, 1);
-
-      // Align both sides independently.  ceil(width) is insufficient when a
-      // fractional origin makes the outline cross one more pixel boundary;
-      // that clipped curved edges and descenders on letters such as p and g.
-      const int pad = 2;
-      const float min_x = (float)floor (CGRectGetMinX (box));
-      const float min_y = (float)floor (CGRectGetMinY (box));
-      const float max_x = (float)ceil (CGRectGetMaxX (box));
-      const float max_y = (float)ceil (CGRectGetMaxY (box));
-      const int w = (int)(max_x - min_x) + pad * 2;
-      const int h = (int)(max_y - min_y) + pad * 2;
-      out.advance = (float)advance.width / scale;
-      out.bearing_x = min_x - pad;
-      // Distance from baseline up to the bitmap's top edge.
-      out.bearing_y = max_y + pad;
-      out.width = w > pad * 2 ? w : 0;
-      out.height = h > pad * 2 ? h : 0;
-      if (out.width == 0 || out.height == 0) {
-        // Space or other blank glyph.
-        out.pixels.clear ();
-        CFRelease (font);
-        return true;
-      }
-
-      std::vector<unsigned char> pixels ((size_t)w * h, 0);
-
-      CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray ();
-      CGContextRef ctx =
-        CGBitmapContextCreate (&pixels[0], w, h, 8, w, gray, kCGImageAlphaNone);
-      CGColorSpaceRelease (gray);
-      if (!ctx) {
-        CFRelease (font);
-        return false;
-      }
-      CGContextSetAllowsAntialiasing (ctx, true);
-      CGContextSetShouldAntialias (ctx, true);
-      CGContextSetAllowsFontSmoothing (ctx, true);
-      CGContextSetShouldSmoothFonts (ctx, true);
-      CGContextSetAllowsFontSubpixelPositioning (ctx, true);
-      CGContextSetShouldSubpixelPositionFonts (ctx, true);
-      CGContextSetTextMatrix (ctx, CGAffineTransformIdentity);
-      CGContextSetGrayFillColor (ctx, 1.0, 1.0);
-      // Place the glyph so its bounding box lands inside the bitmap;
-      // CG user space has a bottom-left origin, but the buffer's
-      // row 0 is already the TOP scanline -- no flip needed.
-      CGPoint pos = CGPointMake (-min_x + pad, -min_y + pad);
-      CTFontDrawGlyphs (font, &glyph, &pos, 1, ctx);
-      CGContextRelease (ctx);
-      CFRelease (font);
-
-      out.pixels = pixels;
-      return true;
     }
   }
 }

@@ -11,8 +11,12 @@ namespace moppe::platform::uwp {
   // it first.
   void run_main_thread_tasks ();
 
-  // True once platform::request_quit has been called.
+  // True once request_quit has been called.
   bool quit_requested ();
+  void request_quit ();
+
+  // Frames the SDL host has rendered, for a watchdog.
+  long frames_rendered ();
 
   // The app's LocalState folder, which Device Portal's file explorer shows,
   // with a trailing separator.

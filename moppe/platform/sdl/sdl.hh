@@ -29,6 +29,9 @@ namespace moppe::platform::sdl {
 
   // The world programs in the device's form.
   const nhal::WorldShaders& world_shaders ();
+
+  // Called after each frame the host renders, for a platform's watchdog.
+  void frame_rendered ();
 }
 
 #endif

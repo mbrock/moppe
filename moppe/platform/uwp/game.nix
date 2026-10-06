@@ -1,5 +1,6 @@
-# moppe on Xbox: the game, drawn by the NHAL renderer through Direct3D 12,
-# built by nixbox from the repository's CMakeLists.txt with MOPPE_XBOX_GAME.
+# moppe on Xbox: the game in the SDL host, drawn by the NHAL renderer
+# through Direct3D 12, built by nixbox from the repository's CMakeLists.txt
+# with MOPPE_XBOX_GAME.
 # `xbox` is nixbox.lib.<system>. `bakedWorld`, a finished-world cache baked
 # on the host (tools/bake-world), ships in the package so the console starts
 # in it instead of generating a world; without one the console generates.
@@ -51,6 +52,8 @@ xbox.mkXboxApp {
     directx-shader-compiler
     luv-shaderc
   ];
+  # SDL3 with the fork's C++/WinRT UWP backend runs the app and its window.
+  buildInputs = [ xbox.pkgsXbox.SDL3 ];
   cmakeFlags = [
     "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
     "-DBUILD_TESTING=OFF"

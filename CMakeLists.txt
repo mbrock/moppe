@@ -348,6 +348,7 @@ set(MOPPE_ENGINE_SOURCES
 
 set(MOPPE_APPLICATION_SOURCES
   moppe/game/game.cc
+  moppe/platform/input.cc
   moppe/game/seed_memory.cc
   moppe/game/terrain.cc
   moppe/game/world_loading.cc
@@ -376,7 +377,6 @@ function(moppe_configure_apple_target target)
     XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES")
   target_link_libraries(${target} PRIVATE
     "-framework Foundation"
-    "-framework CoreText"
     "-framework CoreGraphics"
     "-framework AVFoundation"
     "-framework GameController")
@@ -505,6 +505,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
   add_executable(moppe-tests EXCLUDE_FROM_ALL
     ${MOPPE_ENGINE_SOURCES}
     moppe/game/terrain.cc
+    moppe/platform/input.cc
     tests/test_main.cc
     tests/mat4_test.cc
     tests/quaternion_test.cc
@@ -942,6 +943,8 @@ if(WIN32)
     set_source_files_properties(${MOPPE_XBOX_LOWERED} ${MOPPE_XBOX_DXIL}
       PROPERTIES HEADER_FILE_ONLY ON)
 
+    # The SDL host, on nixbox's SDL3 with its UWP backend.
+    find_package(SDL3 CONFIG REQUIRED)
     add_executable(moppe-xbox WIN32
       moppe/game/main.cc
       ${MOPPE_ENGINE_SOURCES}
@@ -949,13 +952,16 @@ if(WIN32)
       moppe/nhal/d3d12/d3d12_device.cc
       moppe/nhal/renderer/nhal_renderer.cc
       moppe/nhal/renderer/world_shaders_d3d12.cc
+      moppe/platform/sdl/host.cc
+      moppe/platform/sdl/device_d3d12.cc
       moppe/platform/uwp/platform_uwp.cc
       moppe/platform/uwp/main_uwp.cc
       ${MOPPE_XBOX_LOWERED}
       ${MOPPE_XBOX_DXIL})
     moppe_configure_code_target(moppe-xbox)
     target_include_directories(moppe-xbox PRIVATE ${MOPPE_XBOX_SHADERS})
-    # main.cc's main is the game's entry, which wWinMain calls.
+    # main.cc's main is the game's entry, which main_uwp.cc's main, under
+    # SDL's UWP entry point, calls after the console's prelude.
     set_source_files_properties(moppe/game/main.cc PROPERTIES
       COMPILE_DEFINITIONS "main=moppe_main;MOPPE_DEFAULT_XBOX_WORLD")
     set_source_files_properties(
@@ -963,13 +969,16 @@ if(WIN32)
       moppe/nhal/d3d12/d3d12_device.cc
       moppe/nhal/renderer/nhal_renderer.cc
       moppe/nhal/renderer/world_shaders_d3d12.cc
+      moppe/platform/sdl/host.cc
+      moppe/platform/sdl/device_d3d12.cc
+      moppe/platform/uwp/platform_uwp.cc
       moppe/platform/uwp/main_uwp.cc
       PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
     set_source_files_properties(moppe/nhal/renderer/world_shaders_d3d12.cc
       PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_DXIL}")
     set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
       PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_LOWERED}")
-    target_link_libraries(moppe-xbox PRIVATE -ld3d12 -ldxgi)
+    target_link_libraries(moppe-xbox PRIVATE SDL3::SDL3 -ld3d12 -ldxgi)
     # A package may ship a finished world baked on the host
     # (tools/bake-world); the game starts in it instead of generating one.
     target_compile_definitions(moppe-xbox PRIVATE

@@ -1,9 +1,8 @@
 // Platform services for UWP (Xbox Series consoles in Developer Mode): the
 // package folder for assets, LocalCache for caches, threads for background
-// work, and a main-thread queue for their completions.
-//
-// platform::run is not defined here yet: it belongs with a renderer, and
-// NHAL's Direct3D 12 backend will provide the one this platform runs.
+// work, and a main-thread queue for their completions. The game's
+// platform::run is the SDL host's (moppe/platform/sdl/host.cc); the core
+// probe (core_main.cc) runs its own loop.
 
 #include <moppe/environment.hh>
 #include <moppe/platform/platform.hh>
@@ -66,14 +65,6 @@ namespace moppe::platform {
       return winrt::to_string (std::wstring_view (buffer, length));
     }
   }
-
-  void request_quit () {
-    quitting = true;
-  }
-
-  void set_window_title (const std::string&) {}
-
-  void set_pointer_captured (bool) {}
 
   std::string asset_path (const std::string& relative) {
     if (const char* base = moppe::environment ("MOPPE_ASSETS")) {
@@ -153,11 +144,14 @@ namespace moppe::platform {
     }).detach ();
   }
 
-  bool rasterize_glyph (const char*, float, float, unsigned int, GlyphBitmap&) {
-    return false;
-  }
 
   namespace uwp {
+    std::atomic<long> frames { 0 };
+
+    long frames_rendered () {
+      return frames;
+    }
+
     void run_main_thread_tasks () {
       std::deque<std::function<void ()>> tasks;
       {
@@ -170,6 +164,10 @@ namespace moppe::platform {
 
     bool quit_requested () {
       return quitting;
+    }
+
+    void request_quit () {
+      quitting = true;
     }
 
     std::string local_state_path () {
@@ -195,6 +193,21 @@ namespace moppe::platform {
         ++count;
       }
       return count;
+    }
+  }
+
+  // The SDL host's seams (sdl.hh), declared here because the core probe's
+  // build has no NHAL for that header to name.
+  namespace sdl {
+    void run_main_thread_tasks ();
+    void frame_rendered ();
+
+    void run_main_thread_tasks () {
+      uwp::run_main_thread_tasks ();
+    }
+
+    void frame_rendered () {
+      ++uwp::frames;
     }
   }
 }
