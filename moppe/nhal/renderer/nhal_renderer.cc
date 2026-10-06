@@ -370,6 +370,10 @@ namespace moppe::nhal {
         m_white = m_device->create_texture ({ 1, 1, Format::rgba8_unorm,
                                               usage_sampled, 1, "white" });
         m_device->write_texture (m_white, std::as_bytes (std::span (white)));
+        const std::uint8_t black[4] = { 0, 0, 0, 255 };
+        m_black = m_device->create_texture ({ 1, 1, Format::rgba8_unorm,
+                                              usage_sampled, 1, "black" });
+        m_device->write_texture (m_black, std::as_bytes (std::span (black)));
         std::cerr << "moppe: NHAL renderer on " << m_device->info ().backend
                   << " (" << m_device->info ().adapter << ")" << std::endl;
       }
@@ -518,8 +522,11 @@ namespace moppe::nhal {
         m_tree_count = std::uint32_t (instances.size ());
         if (instances.empty ())
           return;
+        const Vec3 forest_period = extent_value (setup.period);
+        const std::vector<float> closure =
+          spread_stand (setup, instances, forest_period);
         // Four rows a tree. The stand closure that decides where a crown
-        // starts is approximated by the habitat's canopy cover for now.
+        // starts is read from the splatted canopy over 24 metres.
         std::vector<std::array<float, 4>> rows;
         rows.reserve (instances.size () * 4);
         for (const render::ForestInstance& tree : instances) {
@@ -534,7 +541,8 @@ namespace moppe::nhal {
                             tree.crown_radius.numerical_value_in (u::m) });
           rows.push_back ({ cover,
                             tree.moisture.numerical_value_in (mp_units::one),
-                            cover,
+                            closure.empty () ? cover
+                                             : closure[rows.size () / 4],
                             tree.autumn.numerical_value_in (mp_units::one) });
           rows.push_back ({ bits (tree.seed),
                             bits (std::uint32_t (tree.species)),
@@ -647,6 +655,125 @@ namespace moppe::nhal {
             { .size = indices.size () * 2, .label = "boulder topology" },
             std::as_bytes (std::span (indices)));
         }
+      }
+
+      // The stand's rasters over the forest's period: the canopy's optical
+      // closure, splatted from each crown's projected area as Metal splats
+      // its stand moments, and the fallen leaves the game spread. Returns
+      // each tree's stand closure, the 24-metre mean the crown shapes read.
+      std::vector<float>
+      spread_stand (const render::ForestSetup& setup,
+                    std::span<const render::ForestInstance> instances,
+                    const Vec3& period) {
+        for (Texture* t : { &m_closure, &m_litter })
+          if (*t)
+            m_device->destroy (*t), *t = {};
+        m_stand_inverse_period = { 0, 0 };
+        if (period[0] <= 0.0f || period[2] <= 0.0f)
+          return {};
+        const std::uint32_t size = std::uint32_t (std::clamp (
+          std::ceil (std::max (period[0], period[2]) / 3.0f), 256.0f,
+          1024.0f));
+        const float step_x = period[0] / float (size);
+        const float step_z = period[2] / float (size);
+        const auto wrap = [&] (int v) {
+          v %= int (size);
+          return v < 0 ? v + int (size) : v;
+        };
+        const auto periodic = [] (float v, float extent) {
+          return v - std::round (v / extent) * extent;
+        };
+        std::vector<float> depth (std::size_t (size) * size, 0.0f);
+        for (const render::ForestInstance& tree : instances) {
+          const Vec3 root = position_value (tree.root);
+          const float radius = tree.crown_radius.numerical_value_in (u::m);
+          const float sigma =
+            std::max (0.49f * radius, 0.45f * std::max (step_x, step_z));
+          const int reach = std::max (
+            1, int (std::ceil (2.4f * sigma / std::min (step_x, step_z))));
+          const int cx = int (std::floor (root[0] / step_x));
+          const int cz = int (std::floor (root[2] / step_z));
+          auto weight = [&] (int x, int z) {
+            const float dx = periodic ((x + 0.5f) * step_x - root[0],
+                                       period[0]);
+            const float dz = periodic ((z + 0.5f) * step_z - root[2],
+                                       period[2]);
+            return std::exp (-0.5f * (dx * dx + dz * dz) / (sigma * sigma));
+          };
+          float sum = 0;
+          for (int z = cz - reach; z <= cz + reach; ++z)
+            for (int x = cx - reach; x <= cx + reach; ++x)
+              sum += weight (wrap (x), wrap (z));
+          const float scale = 0.70f * 3.14159265f * radius * radius
+                              / (step_x * step_z * std::max (sum, 0.0001f));
+          for (int z = cz - reach; z <= cz + reach; ++z)
+            for (int x = cx - reach; x <= cx + reach; ++x)
+              depth[std::size_t (wrap (z)) * size + wrap (x)] +=
+                scale * weight (wrap (x), wrap (z));
+        }
+        std::vector<float> closure (depth.size ());
+        for (std::size_t i = 0; i < depth.size (); ++i)
+          closure[i] = 1.0f - std::exp (-depth[i]);
+
+        // Each tree's stand: the mean closure over 24 metres around it.
+        std::vector<float> stands;
+        stands.reserve (instances.size ());
+        const int reach_x = std::max (1, int (std::ceil (12.0f / step_x)));
+        const int reach_z = std::max (1, int (std::ceil (12.0f / step_z)));
+        for (const render::ForestInstance& tree : instances) {
+          const Vec3 root = position_value (tree.root);
+          const int cx = int (std::floor (root[0] / step_x));
+          const int cz = int (std::floor (root[2] / step_z));
+          float sum = 0;
+          int samples = 0;
+          for (int z = cz - reach_z; z <= cz + reach_z; ++z)
+            for (int x = cx - reach_x; x <= cx + reach_x; ++x, ++samples)
+              sum += closure[std::size_t (wrap (z)) * size + wrap (x)];
+          stands.push_back (sum / float (samples));
+        }
+
+        // The ground reads a stand, not one tree: blur the closure over a
+        // few texels, as Metal reads it from a coarser mip.
+        std::vector<float> blurred = closure, line (size);
+        for (int pass = 0; pass < 2; ++pass)
+          for (int axis = 0; axis < 2; ++axis)
+            for (std::uint32_t a = 0; a < size; ++a) {
+              auto at = [&] (int b) -> float& {
+                const std::uint32_t w = std::uint32_t (wrap (b));
+                return axis == 0 ? blurred[std::size_t (a) * size + w]
+                                 : blurred[std::size_t (w) * size + a];
+              };
+              for (int b = 0; b < int (size); ++b)
+                line[b] = (at (b - 1) + at (b) + at (b + 1)) / 3.0f;
+              for (int b = 0; b < int (size); ++b)
+                at (b) = line[b];
+            }
+        std::vector<std::uint8_t> bytes (blurred.size ());
+        for (std::size_t i = 0; i < blurred.size (); ++i)
+          bytes[i] = std::uint8_t (
+            std::lround (255.0f * std::clamp (blurred[i], 0.0f, 1.0f)));
+        m_closure = m_device->create_texture (
+          { size, size, Format::r8_unorm, usage_sampled, 1, "canopy closure" });
+        m_device->write_texture (m_closure, std::as_bytes (std::span (bytes)));
+        if (setup.litter_size && !setup.litter.empty ()) {
+          m_litter = m_device->create_texture (
+            { setup.litter_size, setup.litter_size, Format::r8_unorm,
+              usage_sampled, 1, "fallen leaves" });
+          m_device->write_texture (m_litter, std::as_bytes (setup.litter));
+        }
+        m_stand_inverse_period = { 1.0f / period[0], 1.0f / period[2] };
+        return stands;
+      }
+
+      // Binds the stand's rasters where the ground and grass read them.
+      void bind_stand () {
+        m_device->set_texture (9, m_closure ? m_closure : m_white);
+        m_device->set_texture (10, m_litter ? m_litter : m_black);
+      }
+
+      std::array<float, 4> stand_field () const {
+        return { m_closure ? 1.0f : 0.0f, m_stand_inverse_period[0],
+                 m_stand_inverse_period[1], 0 };
       }
 
       void set_terrain_materials (const render::TexturePixels& landscape,
@@ -854,6 +981,7 @@ namespace moppe::nhal {
         m_device->set_texture (6, m_landscape ? m_landscape : m_white);
         m_device->set_texture (7, m_ground ? m_ground : m_white);
         m_device->set_texture (8, m_shadow_map);
+        bind_stand ();
         for (int i = 0; i < count; ++i) {
           const ChunkDraw& c = chunks[i];
           const int lod = std::clamp (int (c.lod), 0, lod_count - 1);
@@ -917,6 +1045,7 @@ namespace moppe::nhal {
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
         m_device->set_texture (8, m_shadow_map);
+        bind_stand ();
         m_device->draw_indexed_indirect (m_sward_indices, IndexType::uint16,
                                          m_sward_arguments);
 
@@ -929,6 +1058,7 @@ namespace moppe::nhal {
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
         m_device->set_texture (8, m_shadow_map);
+        bind_stand ();
         m_device->draw_indexed_indirect (m_grass_indices, IndexType::uint16,
                                          m_grass_arguments);
       }
@@ -1463,6 +1593,7 @@ namespace moppe::nhal {
         const float focal =
           0.5f * float (m_scene_height) * std::abs (params.proj.at (1, 1));
         grass.habitat = { reach, m_grass_params.density, t.tex_scale, focal };
+        grass.stand_field = stand_field ();
         m_grass_block = grass;
 
         // The canopy's reach follows the projected height of the whole
@@ -1506,6 +1637,7 @@ namespace moppe::nhal {
         m_device->set_texture (1, m_normals);
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
+        bind_stand ();
         m_device->dispatch ((side * side + 63) / 64);
         m_device->end_compute_pass ();
 
@@ -1548,7 +1680,9 @@ namespace moppe::nhal {
         shaders::terrain::Terrain terrain {};
         const auto& p = m_terrain_params;
         terrain.scale = { p.scale[0], p.scale[1], p.scale[2], p.tex_scale };
-        terrain.fields = { m_landscape && m_ground ? 1.0f : 0.0f, 0, 0, 0 };
+        terrain.fields = { m_landscape && m_ground ? 1.0f : 0.0f,
+                           m_closure ? 1.0f : 0.0f, m_stand_inverse_period[0],
+                           m_stand_inverse_period[1] };
         terrain.size = { float (p.width), float (p.height), 0, 0 };
         return terrain;
       }
@@ -1920,7 +2054,9 @@ namespace moppe::nhal {
       Transient m_forest_block;
       render::TextList m_hud_text;
       std::unordered_map<int, Pipeline> m_uber;
-      Texture m_white;
+      Texture m_white, m_black;
+      Texture m_closure, m_litter;
+      std::array<float, 2> m_stand_inverse_period {};
 
       render::TerrainParams m_terrain_params {};
       bool m_have_terrain = false;

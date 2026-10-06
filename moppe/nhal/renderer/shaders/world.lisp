@@ -118,7 +118,7 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *terrain*
     '((scale :vec4)                ; grid step x, height scale, step z, tex
-      (fields :vec4)               ; have materials, 0, 0, 0
+      (fields :vec4)               ; have materials, have stand, 1 / period
       (size :vec4))))              ; samples per side x, z
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -225,6 +225,24 @@
     (set-output here current)
     (set-output then (* previous-view-proj point))))
 
+;;; -- the stand ------------------------------------------------------------
+;;;
+;;; Two rasters over the forest's period, splatted from the actual trees: the
+;;; canopy's optical closure (how much sky the crowns hide, read over about
+;;; ten metres) and the fallen birch leaves.  Without them the habitat's
+;;; forest cover stands in for closure and nothing has fallen.
+
+(define-shader-abstraction read-stand (closure litter sampler xz have
+                                       inverse-period fallback)
+  `(mix (vec2 ,fallback 0.0)
+        (vec2 (swizzle (sample-level ,closure ,sampler
+                                     (* ,xz ,inverse-period) 0.0)
+                       :x)
+              (swizzle (sample-level ,litter ,sampler
+                                     (* ,xz ,inverse-period) 0.0)
+                       :x))
+        ,have))
+
 ;;; -- the ground's material ----------------------------------------------
 ;;;
 ;;; A few flat, honest colours, each a surface the world's history made:
@@ -271,7 +289,8 @@
 ;;; Display-space albedo; the caller decodes it.  LAND is moisture,
 ;;; erosion, deposition, forest cover; FLOOR is shore proximity / 8 m, snow
 ;;; support, trail, home base.
-(define-shader-function ground-albedo (world up distance land floor rise)
+(define-shader-function ground-albedo (world up distance land floor rise
+                                       stand)
   (let* ((moisture (swizzle land :x))
          (xz (swizzle world :xz))
          (patch (value-noise (/ xz 41.0)))
@@ -290,10 +309,16 @@
          (forest-floor (mix heath
                             (mix (vec3 0.24 0.26 0.13) (vec3 0.30 0.25 0.15)
                                  fleck)
-                            (band (+ (swizzle land :w) (* 0.3 edge)) 0.68)))
+                            (band (+ (swizzle stand :x) (* 0.3 edge)) 0.68)))
+         ;; Fallen birch leaves carpet the ground beneath turned groves.
+         (leaves (mix forest-floor
+                      (* (mix (vec3 0.70 0.52 0.21) (vec3 0.58 0.34 0.15)
+                              grit)
+                         (+ 0.88 (* 0.24 fleck)))
+                      (band (+ (swizzle stand :y) (* 0.30 edge)) 0.24)))
          (shore (* (swizzle floor :x) 8.0))
          (shedding (- 1.0 (smoothstep 0.80 0.92 up)))
-         (soil (mix forest-floor
+         (soil (mix leaves
                     (* (vec3 0.38 0.33 0.27) (+ 0.92 (* 0.16 grit)))
                     (band (+ (* (swizzle land :y) shedding) (* 0.35 edge))
                           0.45)))
@@ -331,6 +356,8 @@
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
                  (shadow-map :depth-texture-2d :binding 8)
+                 (closure :texture-2d :binding 9)
+                 (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)
                  (shadow-compare :sampler :binding 3)))
   (let* ((extent (swizzle size :xy))
@@ -352,8 +379,11 @@
          (distance (sqrt (dot (- world eye) (- world eye))))
          (rise (/ (- (swizzle world :y) (swizzle relief :x))
                   (max (swizzle relief :y) 1.0)))
+         (stand (read-stand closure litter linear-repeat (swizzle world :xz)
+                            (swizzle fields :y) (swizzle fields :zw)
+                            (swizzle land :w)))
          (albedo (srgb (ground-albedo world (swizzle normal :y) distance
-                                      land floor-fields rise)))
+                                      land floor-fields rise stand)))
          (sun (swizzle sun-direction :xyz))
          (lambert (clamp (/ (+ (dot normal sun) 0.08) 1.08) 0.0 1.0))
          ;; The sun's shadow: five comparison taps, a slope-scaled bias
@@ -1326,7 +1356,8 @@
     '((window :vec4)               ; first cell x, z, tiles per side, tile m
       (lattice :vec4)              ; 1/step x, 1/step z, height scale, samples
       (habitat :vec4)              ; window reach, density, 0, focal pixels
-      (interaction :vec4))))       ; the mover's position, footprint radius
+      (interaction :vec4)          ; the mover's position, footprint radius
+      (stand-field :vec4))))       ; have stand, 1 / period x, z, 0
 
 (define-shader-function plant-hash (cell lane)
   (/ (float (logand (tree-mix (logxor (* (swizzle cell :x) (uint #x9e3779b9))
@@ -1358,9 +1389,12 @@
 ;;; How much sward one patch carries, as moppe_grass_medium: closed canopy
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
-(define-shader-function read-grass-medium (xz land floor up rise density)
+(define-shader-function read-grass-medium (xz land floor up rise density
+                                           stand)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
-         (canopy (clamp (swizzle land :w) 0.0 1.0))
+         (canopy (clamp (swizzle stand :x) 0.0 1.0))
+         ;; Fallen leaves smother some of the sward beneath a turned grove.
+         (smothered (- 1.0 (* 0.45 (clamp (swizzle stand :y) 0.0 1.0))))
          (clump (+ (* 0.55 (value-noise (* xz 0.085)))
                    (* 0.45 (value-noise (+ (* xz 0.021) (vec2 17.3 4.1))))))
          (light (max 0.07 (expt (- 1.0 canopy) 3.2)))
@@ -1372,7 +1406,7 @@
          (snow (* (smoothstep 0.55 0.68 rise)
                   (smoothstep 0.58 0.78 (swizzle floor :y))))
          (alpine (- 1.0 (smoothstep 0.50 0.67 rise)))
-         (rooted (* light damp standable cleared variation alpine
+         (rooted (* smothered light damp standable cleared variation alpine
                     (- 1.0 snow)))
          (tint (* (vec3 0.185 0.315 0.112)
                   (vec3 (- 1.12 (* 0.24 moisture)) (+ 0.84 (* 0.30 moisture))
@@ -1387,8 +1421,11 @@
                        (mix 0.36 1.0 (smoothstep 0.06 0.46
                                                  (clamp (* rooted density)
                                                         0.0 1.0))))
-     :blade-tint (mix tint (* (srgb (heath-tint xz moisture)) 0.75)
-                      (heath-amount xz rise)))))
+     ;; Under a turned grove the grass is drying toward straw too.
+     :blade-tint (mix (mix tint (* (srgb (heath-tint xz moisture)) 0.75)
+                           (heath-amount xz rise))
+                      (srgb (vec3 0.50 0.46 0.24))
+                      (* 0.6 (clamp (swizzle stand :y) 0.0 1.0))))))
 
 ;;; Meadow flowers arrive in single-species colonies, never as confetti:
 ;;; an 11-metre lattice, warped so no border runs straight, decides where a
@@ -1466,6 +1503,8 @@
                  (normals :texture-2d :binding 1)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
+                 (closure :texture-2d :binding 9)
+                 (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
   (let* ((index (swizzle invocation :x))
          (side (uint (swizzle window :z))))
@@ -1497,7 +1536,13 @@
                       (swizzle normal :y)
                       (/ (- height (swizzle relief :x))
                          (max (swizzle relief :y) 1.0))
-                      (swizzle habitat :y)))
+                      (swizzle habitat :y)
+                      (read-stand closure litter linear-repeat centre
+                                  (swizzle stand-field :x)
+                                  (swizzle stand-field :yz)
+                                  (swizzle (sample-level landscape
+                                                         linear-repeat uv 0.0)
+                                           :w))))
              (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
                         eye))
              (distance (sqrt (dot offset offset)))
@@ -1569,6 +1614,8 @@
                  (normals :texture-2d :binding 1)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
+                 (closure :texture-2d :binding 9)
+                 (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
   (let* ((record (* instance-index (uint 4)))
          (cell (vec2 (bit-cast :float (buffer-element tiles record))
@@ -1602,7 +1649,13 @@
                   (swizzle ground-normal :y)
                   (/ (- height (swizzle relief :x))
                      (max (swizzle relief :y) 1.0))
-                  (swizzle habitat :y)))
+                  (swizzle habitat :y)
+                  (read-stand closure litter linear-repeat root-xz
+                              (swizzle stand-field :x)
+                              (swizzle stand-field :yz)
+                              (swizzle (sample-level landscape linear-repeat
+                                                     uv 0.0)
+                                       :w))))
          (wet (grass-medium-moisture medium))
          (canopy (grass-medium-forest-cover medium))
          (root (vec3 (swizzle root-xz :x) height (swizzle root-xz :y)))
@@ -1968,6 +2021,8 @@
                  (normals :texture-2d :binding 1)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
+                 (closure :texture-2d :binding 9)
+                 (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
   (let* ((at (* instance-index (uint 2)))
          (cell (vec2 (bit-cast :float (buffer-element tiles at))
@@ -1987,7 +2042,13 @@
                       (swizzle normal :y)
                       (/ (- height (swizzle relief :x))
                          (max (swizzle relief :y) 1.0))
-                      (swizzle habitat :y)))
+                      (swizzle habitat :y)
+                      (read-stand closure litter linear-repeat xz
+                                  (swizzle stand-field :x)
+                                  (swizzle stand-field :yz)
+                                  (swizzle (sample-level landscape
+                                                         linear-repeat uv 0.0)
+                                           :w))))
          (drift (read-flower-drift xz (grass-medium-moisture grass-here)
                                    (grass-medium-forest-cover grass-here)
                                    (grass-medium-leaf-area grass-here)))
