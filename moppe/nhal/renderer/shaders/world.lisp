@@ -362,6 +362,89 @@
 
 ;;; A provisional sky: the haze at the horizon deepening to blue overhead,
 ;;; and the sun.  Behind everything, at the reversed-Z far plane.
+;;; As in sky.metal: a three-stop atmosphere with Mie lobes about the sun,
+;;; high cirrus veils, a cumulus deck of value-noise fBm, the sun's disc,
+;;; corona, and bloom, and stars at night.
+
+(define-shader-function sky-hash (n)
+  (fract (* (sin n) 43758.5453)))
+
+(define-shader-function sky-noise (p)
+  (let* ((i (floor p))
+         (f0 (fract p))
+         (f (* f0 (* f0 (- (vec3 3.0 3.0 3.0) (* f0 2.0)))))
+         (n (+ (swizzle i :x) (* (swizzle i :y) 57.0) (* (swizzle i :z) 113.0)))
+         (fx (swizzle f :x))
+         (fy (swizzle f :y)))
+    (mix (mix (mix (sky-hash n) (sky-hash (+ n 1.0)) fx)
+              (mix (sky-hash (+ n 57.0)) (sky-hash (+ n 58.0)) fx) fy)
+         (mix (mix (sky-hash (+ n 113.0)) (sky-hash (+ n 114.0)) fx)
+              (mix (sky-hash (+ n 170.0)) (sky-hash (+ n 171.0)) fx) fy)
+         (swizzle f :z))))
+
+;;; The fBm's domain turns between octaves to break the lattice's grain.
+(define-shader-function sky-octave (p)
+  (* 2.03 (vec3 (+ (* 0.8 (swizzle p :x)) (* 0.6 (swizzle p :z)))
+                (+ (swizzle p :y) 7.31)
+                (+ (* -0.6 (swizzle p :x)) (* 0.8 (swizzle p :z))))))
+
+(define-shader-function sky-fbm (p0)
+  (let* ((p1 (sky-octave p0))
+         (p2 (sky-octave p1))
+         (p3 (sky-octave p2)))
+    (+ (* 0.5 (sky-noise p0)) (* 0.25 (sky-noise p1))
+       (* 0.125 (sky-noise p2)) (* 0.0625 (sky-noise p3)))))
+
+(define-shader-function sky-atmosphere (ray sun)
+  (let* ((daylight (smoothstep -0.08 0.18 (swizzle sun :y)))
+         (golden (* daylight (- 1.0 (smoothstep 0.15 0.65 (swizzle sun :y)))))
+         (thickness (- 1.0 (abs (swizzle ray :y))))
+         (zenith (mix (srgb (vec3 0.004 0.009 0.05)) (srgb (vec3 0.06 0.20 0.55))
+                      daylight))
+         (middle (mix (srgb (vec3 0.015 0.022 0.06)) (srgb (vec3 0.25 0.46 0.78))
+                      daylight))
+         (horizon (mix (srgb (vec3 0.035 0.045 0.09))
+                       (srgb (vec3 0.55 0.68 0.84)) daylight))
+         (t0 (expt thickness 0.72))
+         (gradient (if (< t0 0.62) (mix zenith middle (/ t0 0.62))
+                       (mix middle horizon (/ (- t0 0.62) 0.38))))
+         (band (expt thickness 4.0))
+         (warmed (mix gradient (srgb (vec3 0.94 0.52 0.26))
+                      (* 0.16 golden band)))
+         (toward (max (dot ray sun) 0.0))
+         (scatter (mix (srgb (vec3 1.0 0.96 0.82)) (srgb (vec3 1.0 0.55 0.24))
+                       golden))
+         (above (+ warmed
+                   (* scatter
+                      (* daylight
+                         (+ (* (expt toward 4.0) (+ 0.07 (* 0.12 golden)))
+                            (* (expt toward 32.0) (+ 0.10 (* 0.22 golden))
+                               (+ 0.4 (* 0.6 band))))))))
+         (below (mix (* (srgb (vec3 0.08 0.09 0.13)) (+ 0.2 (* 0.8 daylight)))
+                     horizon (expt thickness 8.0))))
+    (if (>= (swizzle ray :y) 0.0) above below)))
+
+(define-shader-function cloud-shape (p coverage time)
+  (let* ((base (sky-fbm (* p 0.3)))
+         (detail (sky-fbm (+ (* p 1.2) (vec3 (* time 0.05) 0.0 (* time 0.03)))))
+         (edge (mix 0.72 0.40 (clamp coverage 0.0 1.0))))
+    (smoothstep edge (+ edge 0.13) (+ base (* detail 0.2)))))
+
+(define-shader-function cloud-light (density ray sun)
+  (let* ((daylight (smoothstep -0.08 0.18 (swizzle sun :y)))
+         (golden (* daylight (- 1.0 (smoothstep 0.15 0.65 (swizzle sun :y)))))
+         (sunset (* golden golden))
+         (lit (mix (srgb (vec3 1.04 1.03 1.00)) (srgb (vec3 1.05 0.76 0.50))
+                   sunset))
+         (shade (mix (srgb (vec3 0.55 0.63 0.76)) (srgb (vec3 0.48 0.44 0.58))
+                     sunset))
+         (core (expt (clamp density 0.0 1.0) 0.75))
+         (toward (expt (max (dot ray sun) 0.0) 16.0))
+         (cloud (+ (mix lit shade (* 0.85 core))
+                   (* lit (* toward (- 1.0 core) (+ 0.5 (* 0.7 golden))
+                             daylight)))))
+    (mix (* cloud 0.12) cloud daylight)))
+
 (define-shader sky-fragment
     (:stage :fragment
      :inputs ((ndc :vec2 :location 0))
@@ -371,15 +454,53 @@
   (let* ((ray (normalize (+ (swizzle view-forward :xyz)
                             (* (swizzle view-right :xyz) (swizzle ndc :x))
                             (* (swizzle view-up :xyz) (swizzle ndc :y)))))
-         (sun (swizzle sun-direction :xyz))
-         (up (clamp (swizzle ray :y) 0.0 1.0))
-         (haze (warmed-fog (swizzle fog-color :xyz) ray sun))
-         (zenith (* (swizzle fog-color :xyz) (vec3 0.55 0.72 1.05)))
+         (sun (normalize (swizzle sun-direction :xyz)))
+         (time (swizzle camera-position :w))
+         (cloudiness (swizzle sun-direction :w))
+         (rise (swizzle ray :y))
+         (lifted (max rise 0.05))
+         (daylight (smoothstep -0.08 0.18 (swizzle sun :y)))
+         (golden (* daylight (- 1.0 (smoothstep 0.15 0.65 (swizzle sun :y)))))
+         (atmosphere (sky-atmosphere ray sun))
+         ;; High cirrus: soft wind-sheared veils far above the deck.
+         (cirrus-at (+ (* ray (/ 900.0 lifted))
+                       (vec3 (* time 0.6) 0.0 (* time 0.25))))
+         (streak (* (smoothstep 0.48 0.85
+                                (sky-fbm (* cirrus-at
+                                            (vec3 0.0035 0.008 0.0065))))
+                    (smoothstep 0.08 0.25 rise)
+                    (+ 0.10 (* 0.08 cloudiness))))
+         (cirrus (mix (srgb (vec3 0.9 0.95 1.05)) (srgb (vec3 1.0 0.9 0.8))
+                      (expt (max (dot ray sun) 0.0) 4.0)))
+         (veiled (mix atmosphere cirrus
+                      (* streak (+ 0.25 (* 0.75 daylight)))))
+         ;; The cumulus deck, projected onto a dome.
+         (deck-at (+ (* ray (/ 200.0 lifted))
+                     (vec3 (* time 2.0) 0.0 (* time 1.0))))
+         (clouds (* (cloud-shape (* deck-at 0.01) cloudiness time)
+                    (smoothstep 0.05 0.1 rise)))
+         (clouded (mix veiled (cloud-light clouds ray sun) (* clouds 0.9)))
+         ;; The horizon meets the exact fog colour the ground fades to.
+         (fogged (mix clouded (swizzle fog-color :xyz)
+                      (expt (- 1.0 (clamp rise 0.0 1.0)) 6.0)))
          (toward (max (dot ray sun) 0.0))
-         (glow (* (swizzle sun-diffuse :xyz)
-                  (+ (* (expt toward 1200.0) 8.0) (* (expt toward 16.0) 0.1))))
+         (sun-color (mix (srgb (vec3 1.0 0.96 0.84)) (srgb (vec3 1.0 0.58 0.28))
+                         golden))
+         (occlude (- 1.0 (* (clamp clouds 0.0 1.0) 0.92)))
+         (sunlit (+ fogged
+                    (* sun-color
+                       (+ (* occlude (+ (* (expt toward 2600.0) 1.35 3.0)
+                                        (* (expt toward 160.0) 0.30 1.7)))
+                          (* (expt toward 14.0) 0.075 daylight)))))
+         ;; Stars at night.
+         (stars (* (expt (sky-noise (* ray 100.0)) 20.0)
+                   (max 0.0 (* (- 1.0 daylight) 0.3
+                               (smoothstep 0.0 0.4 rise)))
+                   (- 1.0 (step 0.2 daylight))))
+         (star-color (mix (srgb (vec3 0.8 0.9 1.0)) (srgb (vec3 1.0 0.9 0.8))
+                          (sky-noise (* ray 10.0))))
          (far (vec4 ray 0.0)))
-    (set-output color (vec4 (+ (mix haze zenith (expt up 0.55)) glow) 1.0))
+    (set-output color (vec4 (+ sunlit (* star-color stars)) 1.0))
     (set-output motion (- (clip-uv (* previous-view-proj far))
                           (clip-uv (* view-proj far))))))
 
