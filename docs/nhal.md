@@ -48,8 +48,35 @@ struct (`tree-vertex-at`), shared by the scene and the shadow programs as
 `tree_vertex` is in Metal. Terrain samples it with five comparison taps,
 trees with four.
 
-Boulders, undergrowth, falling leaves, dust, bloom, and the remaining post
-effects come next.
+Grass is undergrowth.metal's blades without its mesh stages. A window of
+0.6-metre tiles anchored to the world lattice surrounds the camera; at
+`begin_frame`, `grass-tiles` keeps those in view that the grass medium says
+carry blades (leaf area, priced by the blades' projected width, thinned by a
+per-cell phase) and counts each into one indexed indirect draw. Each tile is
+an instance of 32 four-section blades that the vertex stage grows from hashes
+and the terrain's own fields, with the medium's tint, wind, the mover's
+parting, and the fragment stage's transmission, glint, and ensemble limits.
+The cull uses the previous frame's `UndergrowthParams`, since compute may not
+interrupt the scene pass. Flower drifts are a shoot family of the same
+draw: an 11-metre warped lattice of single-species colonies (daisy,
+buttercup, harebell, campion) claims shoots in open, damp sward, whose last
+two sections become a petal head that widens and washes toward its drift's
+colour as it retires.
+
+The mesoscale sward canopy is undergrowth.metal's middle rung: `sward-patches`
+keeps the 16-metre patches in view out to 180-1200 metres (the reach follows
+the sward's projected height), each an instance of a 4x4 grid lifted to the
+sward's height, drawn translucent before the blades. Its fragments march
+four samples down through the canopy column and integrate the leaf-normal
+distribution's radiance front to back, with the ground texture's grain, so
+fields read as grass to the horizon after single blades have retired.
+Ferns are not ported yet. The ground under the grass is the terrain's turf
+palette, as in Metal.
+
+Bloom is post.metal's: a bright pass at a quarter of the drawable, a
+separable nine-tap Gaussian, added before the tonemap.
+
+Boulders, falling leaves, dust, and the remaining post effects come next.
 
 ## The game on Xbox
 
@@ -62,11 +89,42 @@ main (compiled as `moppe_main`), whose `platform::run` opens a
 CoreApplication view with a 3840x2160 swapchain, two pixels per HUD point,
 and reads the first gamepad as the Apple hosts read a controller.
 `nix run .#deploy-moppe-xbox` installs and launches it under the console
-lease. The console generates a 1024-sample world (seed 123) at first launch,
-about a minute, and caches it in LocalCache; `LocalState/log.txt` holds
-everything the game logs, and `environment.txt` there (or in the package)
-sets `moppe::environment` variables, `MOPPE_ARGS` being the command line.
-A reinstall clears the cache, so each deploy generates the world again.
+lease. `LocalState/log.txt` holds everything the game logs, and
+`environment.txt` there (or in the package) sets `moppe::environment`
+variables, `MOPPE_ARGS` being the command line.
+
+The console does not run the geology simulator if it need not:
+`tools/deploy-xbox [DEPLOY ARGS]` (or `make xbox`) bakes the default world
+on the Mac -- the same 2048-sample Play world, seed 123, that the Mac plays
+-- and ships it in the package at `world/default`, where the game finds it
+(`bundled_world_cache` in `world_loading.cc`) and starts in it. On the
+Series X the bundled world reads in 6.5 s and the game is ready to play
+7.3 s after loading begins; generating the same world there took about
+five minutes, and every reinstall threw it away with LocalCache.
+`tools/bake-world [RESOLUTION [PROFILE [SEED]]]` does the baking: it builds
+the native `terrain-cache-bake` in `build-bake/`, runs it (about 100 s on
+an M5), and keeps the result in `~/Library/Caches/Moppe/baked/` under the
+baker's hash, so the world is baked again only when the terrain code that
+made it changes. The finished-world cache is portable data -- fixed-width
+little-endian scalars, and Arrow bundles whose schema names match on both
+compilers -- so the console loads the Mac's world as-is. The package grows
+to 274 MB (557 MB installed), and a whole deploy takes under a minute.
+
+The bake reaches the sandboxed Nix build through `MOPPE_XBOX_BAKED_WORLD`,
+which `flake.nix` reads only under `--impure`: the script runs
+`MOPPE_XBOX_BAKED_WORLD=<dir> nix run --impure .#deploy-moppe-xbox`, and
+setting the variable yourself ships another bake. A plain, pure
+`nix run .#deploy-moppe-xbox` ships no world, and the console generates a
+1024-sample one (seed 123) at first launch, about a minute, cached in
+LocalCache until the next reinstall.
+
+`tools/xbox-control` drives the running game from the Mac, with the lease
+the last deploy took: `send 'tap Space' 'wait 1' 'tap F' 'stick 0 1 1'`
+uploads `LocalState/control.txt`, whose commands the host plays as a
+timeline (`tap`, `hold`, `down`, `up` with Mac key names, `stick STEER
+DRIVE BOOST` or `stick off`, `look DX DY`, `wait SECONDS`) and logs as they
+run; `shot` saves the console's screen and `log` tails its log. Space skips
+the opening cinematic, F mounts the bike.
 
 The log reports the frame rate every ten seconds and, since the host turns
 `MOPPE_NHAL_TIMINGS` on, each pass's GPU time. On the Series X at 3840x2160

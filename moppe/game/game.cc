@@ -981,6 +981,8 @@ namespace moppe {
           r.reset_temporal_state ();
         m_ready = true;
         MOPPE_PROFILE_PLOT ("startup.ready", 1);
+        std::cerr << "moppe: world ready " << m_loading.status ().elapsed
+                  << " s after loading began" << std::endl;
 
         const bool automated =
           !m_screenshot_path.empty () || m_benchmark.has_value () ||

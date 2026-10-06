@@ -82,34 +82,19 @@ namespace moppe::game {
            << ".arrows";
       return platform::cache_path (name.str ());
     }
+  }
 
-    std::string bundled_world_cache_path (const terrain::WorldRecipe& recipe) {
+  // A package may carry a finished world baked on the build host. Which
+  // world it is lives in the cache's own header, so the build names only
+  // where it is; a different recipe is rejected by the header check.
+  std::string bundled_world_cache () {
 #ifdef MOPPE_BUNDLED_WORLD_CACHE
-      const Vec3 extent = extent_value (recipe.extent ());
-      const bool is_apple_tv_default =
-        recipe.generation_profile () ==
-          terrain::TerrainGenerationProfile::Play &&
-        recipe.resolution () == 1024 && recipe.seed ().value == 123 &&
-        extent[0] == 5000.0f && extent[1] == 320.0f && extent[2] == 5000.0f &&
-        recipe.water_datum ().numerical_value_in (moppe::u::m) == 50.0f &&
-        recipe.evolution ().uplift_duration ==
-          500000.0f * mp_units::astronomy::Julian_year &&
-        recipe.evolution ().channel_initiation_area == 1.0f * u::m * u::m &&
-        recipe.evolution ().fluvial_transport.runoff_rate ==
-          1.0f * u::m / mp_units::astronomy::Julian_year &&
-        recipe.evolution ().fluvial_transport.concentration_at_unit_slope ==
-          2e-5f * terrain::sediment_concentration[mp_units::one] &&
-        recipe.evolution ().critical_hillslope_gradient ==
-          1.0f * proportion[mp_units::one] &&
-        recipe.evolution ().maximum_hillslope_diffusivity_multiplier ==
-          1.0f * proportion[mp_units::one];
-      if (is_apple_tv_default)
-        return platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE);
-#else
-      (void)recipe;
+    const std::string directory =
+      platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE);
+    if (read_world_cache_identity (directory))
+      return directory;
 #endif
-      return {};
-    }
+    return {};
   }
 
   // -- the channel between the worker and the loading screen -------------
@@ -290,17 +275,18 @@ namespace moppe::game {
       MOPPE_PROFILE_ZONE ("WorldLoading::build_world");
       WorldLoadingState& state = *job.state;
       const terrain::WorldRecipe& recipe = job.recipe;
-      if (const std::string bundled = bundled_world_cache_path (recipe);
+      if (const std::string bundled = bundled_world_cache ();
           !bundled.empty ()) {
-        state.report ("Reading bundled world",
-                      "Loading finished Apple TV terrain and analysis");
+        state.report ("Reading the bundled world",
+                      "Loading the finished terrain baked into this package");
         if (std::unique_ptr<GeneratedWorld> world =
               try_load_world_cache (job.params, recipe, bundled)) {
-          std::cerr << "moppe: world cache: bundled=" << bundled << std::endl;
+          std::cerr << "moppe: world cache: bundled=" << bundled << " in "
+                    << state.elapsed () << " s" << std::endl;
           state.publish_completed (std::move (world));
           return;
         }
-        std::cerr << "moppe: bundled world cache rejected; rebuilding"
+        std::cerr << "moppe: the bundled world is another recipe's"
                   << std::endl;
       }
 

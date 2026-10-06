@@ -18,6 +18,12 @@
 #include <utility>
 #include <vector>
 
+// The cache is portable data: every value is written as a fixed-width
+// little-endian scalar (the Arrow bundles carry their own schema), so a world
+// baked on an arm64 Mac loads unchanged on an x86-64 Xbox.
+static_assert (std::endian::native == std::endian::little,
+               "world caches are stored little-endian");
+
 namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
@@ -593,14 +599,26 @@ namespace moppe::game {
       .domain = domain,
       .use = terrain::TrailUseMap (domain),
     };
-    if (!load_bundle (surface, file_in (directory, "surface.arrows")) ||
-        !load_bundle (flood_surface, file_in (directory, "flood.arrows")) ||
-        !load_bundle (drainage_readings,
-                      file_in (directory, "drainage.arrows")) ||
-        !load_bundle (water, file_in (directory, "water.arrows")) ||
-        !load_bundle (readings, file_in (directory, "readings.arrows")) ||
-        !load_bundle (trails.use, file_in (directory, "trail-use.arrows")))
-      return {};
+    // Past a matching header, a rejection means a damaged or incompatible
+    // cache rather than another world, so it says which part failed.
+    const auto rejected = [&directory] (const char* part) {
+      std::cerr << "moppe: world cache " << directory << ": " << part
+                << " did not validate" << std::endl;
+      return std::unique_ptr<GeneratedWorld> {};
+    };
+    if (!load_bundle (surface, file_in (directory, "surface.arrows")))
+      return rejected ("surface.arrows");
+    if (!load_bundle (flood_surface, file_in (directory, "flood.arrows")))
+      return rejected ("flood.arrows");
+    if (!load_bundle (drainage_readings,
+                      file_in (directory, "drainage.arrows")))
+      return rejected ("drainage.arrows");
+    if (!load_bundle (water, file_in (directory, "water.arrows")))
+      return rejected ("water.arrows");
+    if (!load_bundle (readings, file_in (directory, "readings.arrows")))
+      return rejected ("readings.arrows");
+    if (!load_bundle (trails.use, file_in (directory, "trail-use.arrows")))
+      return rejected ("trail-use.arrows");
 
     terrain::FloodField flood { .surface = std::move (flood_surface) };
     terrain::LakeCensus lakes;
@@ -613,7 +631,7 @@ namespace moppe::game {
         drainage.receiver.size () != cells ||
         !read_rivers (topology, rivers, cells, lakes.domain ().size ()) ||
         !read_trails (topology, trails, cells))
-      return {};
+      return rejected ("topology.bin");
 
     const std::uint32_t forest_seed = recipe.seed ().value ^ 0xa34c91e5U;
     const std::string forest_path =
@@ -669,5 +687,30 @@ namespace moppe::game {
     write_rivers (topology, rivers);
     write_trails (topology, world.trails ());
     topology.finish ();
+  }
+
+  std::optional<WorldCacheIdentity>
+  read_world_cache_identity (const std::string& directory) {
+    if (directory.empty ())
+      return std::nullopt;
+    BinaryReader input (file_in (directory, "topology.bin"));
+    std::array<char, CACHE_MAGIC.size ()> magic {};
+    std::uint32_t version = 0;
+    std::uint32_t resolution = 0;
+    std::uint32_t seed = 0;
+    std::uint32_t profile = 0;
+    if (!input || !input.bytes (magic.data (), magic.size ()) ||
+        !input.scalar (version) || !input.scalar (resolution) ||
+        !input.scalar (seed) || !input.scalar (profile) ||
+        magic != CACHE_MAGIC || version != CACHE_VERSION || resolution == 0 ||
+        resolution > 1u << 16 ||
+        profile > static_cast<std::uint32_t> (
+                    terrain::TerrainGenerationProfile::Research))
+      return std::nullopt;
+    return WorldCacheIdentity {
+      .resolution = static_cast<int> (resolution),
+      .seed = seed,
+      .profile = static_cast<terrain::TerrainGenerationProfile> (profile),
+    };
   }
 }

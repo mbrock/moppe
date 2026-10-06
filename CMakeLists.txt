@@ -91,6 +91,8 @@ option(MOPPE_UNITY_BUILD
 option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
 set(MOPPE_TVOS_BAKED_WORLD "" CACHE PATH
   "Host-baked default finished-world cache to bundle into the tvOS app")
+set(MOPPE_XBOX_BAKED_WORLD "" CACHE PATH
+  "Host-baked finished-world cache to ship in the Xbox game package")
 
 # Moppe's implementation files are deliberately small, but compiling every one
 # separately makes heavily-templated headers (notably mp-units) dominate build
@@ -887,7 +889,8 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
     set(MOPPE_NHAL_WORLD_OUTPUTS)
     foreach(program IN ITEMS
-        terrain sky uber hud resolve present slug_text forest)
+        terrain sky uber hud resolve present slug_text forest
+        bloom_bright bloom_blur grass sward)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
@@ -898,7 +901,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal)
     endforeach()
-    foreach(program IN ITEMS forest_cull exposure)
+    foreach(program IN ITEMS forest_cull exposure grass_tiles sward_patches)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.compute.metal)
@@ -1030,7 +1033,11 @@ if(WIN32)
       resolve.vertex resolve.fragment present.vertex present.fragment
       slug_text.vertex slug_text.fragment forest.vertex forest.fragment
       forest_cull.compute exposure.compute
-      terrain_shadow.vertex forest_shadow.vertex)
+      terrain_shadow.vertex forest_shadow.vertex
+      bloom_bright.vertex bloom_bright.fragment
+      bloom_blur.vertex bloom_blur.fragment
+      grass.vertex grass.fragment grass_tiles.compute
+      sward.vertex sward.fragment sward_patches.compute)
     set(MOPPE_XBOX_LOWERED)
     foreach(stage IN LISTS MOPPE_XBOX_STAGES)
       string(REGEX REPLACE "[.].*" "" program ${stage})
@@ -1099,10 +1106,22 @@ if(WIN32)
     set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
       PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_LOWERED}")
     target_link_libraries(moppe-xbox PRIVATE -ld3d12 -ldxgi)
+    # A package may ship a finished world baked on the host
+    # (tools/bake-world); the game starts in it instead of generating one.
     target_compile_definitions(moppe-xbox PRIVATE
-      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS
+      MOPPE_BUNDLED_WORLD_CACHE="world/default")
     install(TARGETS moppe-xbox RUNTIME DESTINATION bin)
     install(DIRECTORY fonts textures DESTINATION share/moppe-xbox)
+    if(MOPPE_XBOX_BAKED_WORLD)
+      if(NOT EXISTS "${MOPPE_XBOX_BAKED_WORLD}/topology.bin")
+        message(FATAL_ERROR
+          "MOPPE_XBOX_BAKED_WORLD is not a finished-world cache: "
+          "${MOPPE_XBOX_BAKED_WORLD}")
+      endif()
+      install(DIRECTORY ${MOPPE_XBOX_BAKED_WORLD}/
+        DESTINATION share/moppe-xbox/world/default)
+    endif()
   else()
     add_executable(moppe-core-xbox WIN32
       ${MOPPE_ENGINE_SOURCES}

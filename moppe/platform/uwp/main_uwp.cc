@@ -5,6 +5,8 @@
 // shows natively, and reads the first gamepad.
 //
 // Everything the game writes to std::cerr goes to LocalState/log.txt.
+// LocalState/control.txt drives the game remotely (tools/xbox-control
+// uploads it through Device Portal); see Remote below.
 // environment.txt in the package, then in LocalState, holds NAME=VALUE
 // lines for moppe::environment; MOPPE_ARGS there is the command line.
 
@@ -16,6 +18,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <filesystem>
+#include <functional>
+#include <map>
 #include <chrono>
 #include <cmath>
 #include <exception>
@@ -52,6 +57,150 @@ namespace {
     return std::abs (value) < 0.15 ? 0.0f : float (value);
   }
 
+  Key key_named (const std::string& name) {
+    static const std::map<std::string, Key> keys {
+      { "Left", Key::Left },   { "Right", Key::Right },
+      { "Up", Key::Up },       { "Down", Key::Down },
+      { "W", Key::W },         { "A", Key::A },
+      { "S", Key::S },         { "D", Key::D },
+      { "Space", Key::Space }, { "Tab", Key::Tab },
+      { "Escape", Key::Escape }, { "Mount", Key::Mount },
+      { "F", Key::Mount },     { "Restart", Key::Restart },
+      { "E", Key::E },         { "G", Key::G },
+      { "H", Key::H },         { "M", Key::M },
+      { "N", Key::N },         { "R", Key::R },
+      { "T", Key::T },         { "Y", Key::Y },
+      { "1", Key::One },       { "2", Key::Two },
+      { "3", Key::Three },     { "4", Key::Four },
+      { "5", Key::Five },      { "6", Key::Six },
+      { "7", Key::Seven },     { "Shift", Key::Shift },
+      { "P", Key::Screenshot },
+    };
+    const auto found = keys.find (name);
+    return found == keys.end () ? Key::Unknown : found->second;
+  }
+
+  // The game driven from afar: LocalState/control.txt, rewritten whole by
+  // tools/xbox-control, starts with "seq N" and is read once per new N.
+  // Its commands form a timeline from the moment it arrives:
+  //
+  //   tap KEY             press and release (KEY as on a Mac keyboard)
+  //   hold KEY SECONDS    press, release after SECONDS
+  //   down KEY / up KEY   press or release
+  //   stick STEER DRIVE BOOST   analog controls, held until changed;
+  //                       "stick off" gives them back to the gamepad
+  //   look DX DY          turn the view as a mouse would, in points
+  //   wait SECONDS        later commands start that much later
+  //
+  // Each command is logged as it runs.
+  class Remote {
+  public:
+    Remote (Game& game, std::string path)
+      : m_game (game), m_path (std::move (path)) {}
+
+    // The analog controls the remote holds, if it holds them.
+    const moppe::platform::ControlState* controls () const {
+      return m_stick ? &m_controls : nullptr;
+    }
+
+    void poll (double now) {
+      if (now >= m_next_check) {
+        m_next_check = now + 0.2;
+        read (now);
+      }
+      while (!m_timeline.empty () && m_timeline.begin ()->first <= now) {
+        auto event = m_timeline.begin ();
+        event->second ();
+        m_timeline.erase (event);
+      }
+    }
+
+  private:
+    void read (double now) {
+      std::error_code error;
+      const auto stamp = std::filesystem::last_write_time (m_path, error);
+      if (error || stamp == m_stamp)
+        return;
+      m_stamp = stamp;
+      std::ifstream input (m_path);
+      std::string word;
+      long long sequence = -1;
+      if (!(input >> word) || word != "seq" || !(input >> sequence)
+          || sequence == m_sequence)
+        return;
+      m_sequence = sequence;
+      std::cerr << "moppe-xbox: control " << sequence << std::endl;
+      double at = now;
+      std::string line;
+      std::getline (input, line);
+      while (std::getline (input, line)) {
+        std::istringstream words (line);
+        std::string verb;
+        if (!(words >> verb) || verb[0] == '#')
+          continue;
+        schedule (verb, words, line, at);
+      }
+    }
+
+    void schedule (const std::string& verb, std::istringstream& words,
+                   const std::string& line, double& at) {
+      auto later = [&] (double when, std::function<void ()> action) {
+        m_timeline.emplace (when, [line, action] {
+          std::cerr << "moppe-xbox: remote " << line << std::endl;
+          action ();
+        });
+      };
+      std::string name;
+      double seconds = 0;
+      if (verb == "wait" && words >> seconds) {
+        at += seconds;
+      } else if ((verb == "tap" || verb == "down" || verb == "up"
+                  || verb == "hold")
+                 && words >> name && key_named (name) != Key::Unknown) {
+        const Key key = key_named (name);
+        if (verb == "hold" && !(words >> seconds))
+          seconds = 0.5;
+        if (verb != "up")
+          later (at, [this, key] { m_game.key (key, true); });
+        if (verb == "tap" || verb == "hold")
+          m_timeline.emplace (at + (verb == "tap" ? 0.1 : seconds),
+                              [this, key] { m_game.key (key, false); });
+        else if (verb == "up")
+          later (at, [this, key] { m_game.key (key, false); });
+      } else if (verb == "stick") {
+        moppe::platform::ControlState c;
+        std::string first;
+        words >> first;
+        const bool off = first == "off";
+        if (!off) {
+          c.steer = std::stof (first);
+          words >> c.drive >> c.boost;
+        }
+        later (at, [this, c, off] {
+          m_stick = !off;
+          m_controls = c;
+          if (off)
+            m_game.controls ({});
+        });
+      } else if (verb == "look") {
+        float dx = 0, dy = 0;
+        words >> dx >> dy;
+        later (at, [this, dx, dy] { m_game.pointer_move (0, 0, dx, dy); });
+      } else {
+        std::cerr << "moppe-xbox: remote cannot " << line << std::endl;
+      }
+    }
+
+    Game& m_game;
+    std::string m_path;
+    std::filesystem::file_time_type m_stamp {};
+    long long m_sequence = -1;
+    double m_next_check = 0;
+    std::multimap<double, std::function<void ()>> m_timeline;
+    bool m_stick = false;
+    moppe::platform::ControlState m_controls {};
+  };
+
   // The gamepad as the Apple hosts read a controller: the left stick (or
   // the D-pad) drives and steers, the right trigger boosts; A deploys the
   // glider or restarts, B mounts, X cycles the camera, Y boosts or flares,
@@ -60,11 +209,13 @@ namespace {
   public:
     explicit Pad (Game& game) : m_game (game) {}
 
-    void poll () {
+    // Presses and releases the buttons' keys, and returns the sticks and
+    // triggers, which the host gives the game unless the remote holds them.
+    moppe::platform::ControlState poll () {
       auto pads = Gamepad::Gamepads ();
       if (pads.Size () == 0) {
         release ();
-        return;
+        return {};
       }
       const GamepadReading r = pads.GetAt (0).GetCurrentReading ();
       auto held = [&] (GamepadButtons b) { return (r.Buttons & b) == b; };
@@ -88,9 +239,11 @@ namespace {
       edge (6, held (GamepadButtons::DPadUp), Key::Up);
       edge (7, held (GamepadButtons::DPadDown), Key::Down);
       edge (8, held (GamepadButtons::Y), Key::Space);
-      m_game.controls (controls);
       m_connected = true;
+      return controls;
     }
+
+    bool connected () const { return m_connected; }
 
   private:
     void edge (int index, bool down, Key key) {
@@ -182,6 +335,9 @@ namespace {
       });
 
       Pad pad (m_game);
+      Remote remote (m_game,
+                     platform::uwp::local_state_path () + "control.txt");
+      const auto start = std::chrono::steady_clock::now ();
       auto last = std::chrono::steady_clock::now ();
       auto report_start = last;
       long report_frames = 0;
@@ -190,8 +346,13 @@ namespace {
         m_window.Dispatcher ().ProcessEvents (
           CoreProcessEventsOption::ProcessAllIfPresent);
         platform::uwp::run_main_thread_tasks ();
-        pad.poll ();
+        const platform::ControlState held = pad.poll ();
         const auto now = std::chrono::steady_clock::now ();
+        remote.poll (std::chrono::duration<double> (now - start).count ());
+        if (remote.controls ())
+          m_game.controls (*remote.controls ());
+        else if (pad.connected ())
+          m_game.controls (held);
         const double dt = std::chrono::duration<double> (now - last).count ();
         last = now;
         m_game.tick (float (std::clamp (dt, 0.0, 0.05)));

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Drives moppe on the Xbox from here (see moppe/platform/uwp/main_uwp.cc).
+#
+#   tools/xbox-control send 'tap Space' 'wait 1' 'stick 0 1 1' ...
+#   tools/xbox-control shot [FILE.png]   the console's screen (default
+#                                        /tmp/xbox-shot.png)
+#   tools/xbox-control log [LINES]       the tail of LocalState/log.txt
+#
+# send uploads LocalState/control.txt through Device Portal with the
+# console lease the last deploy took (~/.config/nixbox/lease), so it works
+# while that deploy's hold lasts. UWP_DEVICE_URL and MOPPE_XBOX_PACKAGE
+# override the console and the package's full name.
+set -euo pipefail
+device=${UWP_DEVICE_URL:-https://xbox.whale-justice.ts.net}
+package=${MOPPE_XBOX_PACKAGE:-Moppe.game_0.1.0.0_x64__qscf1nrdzxz2p}
+files="$device/api/filesystem/apps/file?knownfolderid=LocalAppData&packagefullname=$package&path=%5C%5CLocalState"
+
+case "${1:-}" in
+  send)
+    shift
+    token=$(python3 -c 'import json, os; print(json.load(open(os.path.expanduser("~/.config/nixbox/lease")))["token"])')
+    dir=$(mktemp -d)
+    trap 'rm -rf "$dir"' EXIT
+    { echo "seq $(( $(date +%s) % 100000000 * 10 + RANDOM % 10 ))"; printf '%s\n' "$@"; } > "$dir/control.txt"
+    # Device Portal wants its CSRF cookie echoed on changing requests.
+    curl -sf -m 30 -c "$dir/jar" "$device/api/os/info" > /dev/null
+    csrf=$(awk '/CSRF-Token/ { print $7 }' "$dir/jar")
+    curl -sf -m 30 -b "$dir/jar" -H "X-CSRF-Token: $csrf" \
+      -H "X-Xbox-Lease: $token" \
+      -F "file=@$dir/control.txt;filename=control.txt" "$files" > /dev/null
+    echo "sent: $*"
+    ;;
+  shot)
+    out=${2:-/tmp/xbox-shot.png}
+    curl -sf -m 30 "$device/ext/screenshot?hdr=false" -o "$out"
+    echo "$out"
+    ;;
+  log)
+    curl -sf -m 30 "$files&filename=log.txt" | tail -n "${2:-20}"
+    ;;
+  *)
+    sed -n '2,13p' "$0"
+    exit 1
+    ;;
+esac

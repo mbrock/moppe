@@ -6,7 +6,7 @@
 	test \
 	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
-	web web-deploy web-serve xcode
+	web web-deploy web-serve xbox xcode
 
 all: moppe
 
@@ -136,6 +136,10 @@ phone:
 # Build, install, and launch Moppe on the paired Apple TV.
 tv:
 	./tools/install-tvos
+
+# Bake the default world here, then build and deploy the Xbox game with it.
+xbox:
+	./tools/deploy-xbox $(XBOX_DEPLOY_ARGS)
 
 # Build the browser testbed and the real WebAssembly/WebGPU game.
 web:
