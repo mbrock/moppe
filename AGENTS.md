@@ -199,6 +199,8 @@
   builds the game with the NHAL renderer on Direct3D 12, installs it under
   the shared console lease, and launches it (see docs/nhal.md);
   `nix run .#deploy-moppe-core-xbox` runs the headless core probe.
+  `tools/xbox-control send 'tap Space' 'tap F' 'stick 0 1 1'`, `shot`, and
+  `log` drive the running game, take its screen, and read its log.
 - Apple TV (build, install, launch): `make tv`
   - Pair the Apple TV in Xcode's Device Hub first. Overrides:
     `MOPPE_TVOS_DEVICE`, `MOPPE_TVOS_TEAM`, `MOPPE_TVOS_CONFIGURATION`, and

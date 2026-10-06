@@ -82,6 +82,14 @@ everything the game logs, and `environment.txt` there (or in the package)
 sets `moppe::environment` variables, `MOPPE_ARGS` being the command line.
 A reinstall clears the cache, so each deploy generates the world again.
 
+`tools/xbox-control` drives the running game from the Mac, with the lease
+the last deploy took: `send 'tap Space' 'wait 1' 'tap F' 'stick 0 1 1'`
+uploads `LocalState/control.txt`, whose commands the host plays as a
+timeline (`tap`, `hold`, `down`, `up` with Mac key names, `stick STEER
+DRIVE BOOST` or `stick off`, `look DX DY`, `wait SECONDS`) and logs as they
+run; `shot` saves the console's screen and `log` tails its log. Space skips
+the opening cinematic, F mounts the bike.
+
 The log reports the frame rate every ten seconds and, since the host turns
 `MOPPE_NHAL_TIMINGS` on, each pass's GPU time. On the Series X at 3840x2160
 (the scene at 1920x1080) a frame in the valley costs about 4 ms: scene 2.0,
