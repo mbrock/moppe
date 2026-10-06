@@ -854,7 +854,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   if(MOPPE_NHAL_RENDERER)
     set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
     set(MOPPE_NHAL_WORLD_OUTPUTS)
-    foreach(program IN ITEMS terrain sky uber hud resolve present)
+    foreach(program IN ITEMS terrain sky uber hud resolve present slug_text)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal

@@ -535,7 +535,8 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *hud*
     '((projection :mat4)           ; points to clip, y down
-      (output :vec4))))            ; 1 when the drawable is linear
+      (output :vec4))))            ; x: 1 if the drawable is linear;
+                                   ; y: pixels per point
 
 (define-shader hud-vertex
     (:stage :vertex
@@ -576,6 +577,123 @@
 (define-shader-program hud
   :vertex hud-vertex
   :fragment hud-fragment)
+
+;;; -- HUD text -------------------------------------------------------------
+;;;
+;;; Glyphs and vector shapes by Slug, from moppe's glyph quads
+;;; (render::GlyphQuad, six vec4 rows) and its curve and band buffers
+;;; (render/slug.hh).  The per-pixel band walk is Luv's: LUV.SLUG's band
+;;; steps fold each sorted band's curves into a coverage, a weight, and
+;;; whether the walk may stop.
+
+(define-shader-function quad-corner (vertex-index)
+  (let* ((i (float vertex-index)))
+    (vec2 (if (= i 1.0) 1.0 (if (= i 4.0) 1.0 (if (= i 5.0) 1.0 0.0)))
+          (if (= i 2.0) 1.0 (if (= i 3.0) 1.0 (if (= i 5.0) 1.0 0.0))))))
+
+(define-shader slug-text-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (em :vec2 :location 0)
+               (bounds :vec4 :location 1 :interpolation :flat)
+               (ink :vec4 :location 2 :interpolation :flat)
+               (glyph :vec4 :location 3 :interpolation :flat))
+     :resources ((hud :uniform-block :binding 0 :members #.*hud*)
+                 (quads :storage-buffer :binding 1 :element :vec4)))
+  (let* ((row (* instance-index (uint 6.0)))
+         (origin (buffer-element quads row))
+         (axis-x (swizzle (buffer-element quads (+ row (uint 1.0))) :xy))
+         (axis-y (swizzle (buffer-element quads (+ row (uint 2.0))) :xy))
+         (glyph-bounds (buffer-element quads (+ row (uint 3.0))))
+         (color (buffer-element quads (+ row (uint 4.0))))
+         (words (buffer-element quads (+ row (uint 5.0))))
+         (corner (quad-corner vertex-index))
+         (filter-pixels (max (swizzle origin :w) 1.0))
+         ;; Grow the quad past the outline by half the filter and a little
+         ;; more, in em along each axis, so every pixel the filter can
+         ;; touch is drawn.
+         (pixels-per-point (max (swizzle output :y) 0.001))
+         (pixels-per-em (max (* (vec2 (sqrt (dot axis-x axis-x))
+                                      (sqrt (dot axis-y axis-y)))
+                                pixels-per-point)
+                             (vec2 0.001 0.001)))
+         (dilation (/ (vec2 (+ (* 0.5 filter-pixels) 0.75)
+                            (+ (* 0.5 filter-pixels) 0.75))
+                      pixels-per-em))
+         (low (- (swizzle glyph-bounds :xy) dilation))
+         (at (+ low (* (- (+ (swizzle glyph-bounds :zw) dilation) low)
+                       corner)))
+         (point (+ (swizzle origin :xy) (* axis-x (swizzle at :x))
+                   (* axis-y (swizzle at :y)))))
+    (set-output clip-position
+                (clip (* projection (vec4 point 0.0 1.0)) (vec2 0.0 0.0)))
+    (set-output em at)
+    (set-output bounds glyph-bounds)
+    (set-output ink color)
+    (set-output glyph (vec4 (float (bit-cast :uint (swizzle words :x)))
+                            (float (bit-cast :uint (swizzle words :y)))
+                            (float (bit-cast :uint (swizzle words :z)))
+                            filter-pixels))))
+
+(define-shader-function slug-band-of (value low high count)
+  (let* ((span (- high low))
+         (band (if (> span 0.0) (floor (* (/ (- value low) span) count)) 0.0)))
+    (uint (clamp band 0.0 (- count 1.0)))))
+
+(define-shader slug-text-fragment
+    (:stage :fragment
+     :inputs ((em :vec2 :location 0)
+              (bounds :vec4 :location 1 :interpolation :flat)
+              (ink :vec4 :location 2 :interpolation :flat)
+              (glyph :vec4 :location 3 :interpolation :flat))
+     :outputs ((color :vec4 :location 0))
+     :resources ((hud :uniform-block :binding 0 :members #.*hud*)
+                 (curves :storage-buffer :binding 2 :element :vec4)
+                 (bands :storage-buffer :binding 3 :element :uint)))
+  (let* ((one (uint 1.0))
+         (two (uint 2.0))
+         (base (uint (swizzle glyph :x)))
+         (rows (swizzle glyph :y))
+         (columns (swizzle glyph :z))
+         (pixels-per-em (/ (luv.slug::slug-pixels-per-em em)
+                           (swizzle glyph :w)))
+         (row (slug-band-of (swizzle em :y) (swizzle bounds :y)
+                            (swizzle bounds :w) rows))
+         (column (+ (uint rows)
+                    (slug-band-of (swizzle em :x) (swizzle bounds :x)
+                                  (swizzle bounds :z) columns)))
+         (row-count (buffer-element bands (+ base (* two row))))
+         (row-list (buffer-element bands (+ base (* two row) one)))
+         (column-count (buffer-element bands (+ base (* two column))))
+         (column-list (buffer-element bands (+ base (* two column) one)))
+         (horizontal
+           (counted-fold
+               (index row-count state (vec3 0.0 0.0 0.0)
+                :until (luv.slug::slug-band-done-p state))
+             (let* ((texel (buffer-element bands (+ row-list index))))
+               (luv.slug::slug-horizontal-band-step
+                state (buffer-element curves texel)
+                (buffer-element curves (+ texel one)) em pixels-per-em))))
+         (vertical
+           (counted-fold
+               (index column-count state (vec3 0.0 0.0 0.0)
+                :until (luv.slug::slug-band-done-p state))
+             (let* ((texel (buffer-element bands (+ column-list index))))
+               (luv.slug::slug-vertical-band-step
+                state (buffer-element curves texel)
+                (buffer-element curves (+ texel one)) em pixels-per-em))))
+         (coverage (luv.slug::slug-combine-band-coverage
+                    (swizzle horizontal :x) (swizzle horizontal :y)
+                    (swizzle vertical :x) (swizzle vertical :y)))
+         (rgb (swizzle ink :xyz)))
+    (set-output color (vec4 (mix rgb (srgb rgb) (swizzle output :x))
+                            (* (swizzle ink :w) coverage)))))
+
+(define-shader-program slug-text
+  :vertex slug-text-vertex
+  :fragment slug-text-fragment)
 
 ;;; -- temporal resolve and presentation ------------------------------------
 

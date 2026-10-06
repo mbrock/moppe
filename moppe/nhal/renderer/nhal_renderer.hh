@@ -20,6 +20,7 @@ namespace moppe::nhal {
     StageCode hud[2];
     StageCode resolve[2];
     StageCode present[2];
+    StageCode slug_text[2];
   };
 
   // The programs' MSL, embedded in the binary at build time.

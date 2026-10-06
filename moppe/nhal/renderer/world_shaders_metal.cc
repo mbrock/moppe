@@ -44,6 +44,12 @@ namespace moppe::nhal {
     const char present_fragment[] = {
 #embed "present.fragment.metal"
       , 0 };
+    const char slug_text_vertex[] = {
+#embed "slug_text.vertex.metal"
+      , 0 };
+    const char slug_text_fragment[] = {
+#embed "slug_text.fragment.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -54,6 +60,7 @@ namespace moppe::nhal {
       { { hud_vertex, {} }, { hud_fragment, {} } },
       { { resolve_vertex, {} }, { resolve_fragment, {} } },
       { { present_vertex, {} }, { present_fragment, {} } },
+      { { slug_text_vertex, {} }, { slug_text_fragment, {} } },
     };
     return shaders;
   }

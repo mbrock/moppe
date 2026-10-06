@@ -7,6 +7,8 @@
 #include <moppe/nhal/renderer/nhal_renderer.hh>
 
 #include <moppe/render/draw.hh>
+#include <moppe/render/slug.hh>
+#include <moppe/render/text.hh>
 #include <moppe/render/texture_pixels.hh>
 #include <moppe/render/types.hh>
 
@@ -15,6 +17,7 @@
 #include <present.hh>
 #include <resolve.hh>
 #include <sky.hh>
+#include <slug_text.hh>
 #include <terrain.hh>
 #include <uber.hh>
 
@@ -184,6 +187,15 @@ namespace moppe::nhal {
       }
     };
 
+    struct NhalGlyphSet final : render::GlyphSet {
+      Device* device = nullptr;
+      Buffer curves, bands;
+      ~NhalGlyphSet () override {
+        device->destroy (curves);
+        device->destroy (bands);
+      }
+    };
+
     // Owned copies of a program's stage code, which pipelines made on
     // demand need after construction.
     struct ProgramCode {
@@ -210,6 +222,7 @@ namespace moppe::nhal {
         m_hud_code.keep (shaders.hud);
         m_resolve_code.keep (shaders.resolve);
         m_present_code.keep (shaders.present);
+        m_slug_text_code.keep (shaders.slug_text);
         make_pipelines ();
         const std::uint8_t white[4] = { 255, 255, 255, 255 };
         m_white = m_device->create_texture ({ 1, 1, Format::rgba8_unorm,
@@ -259,6 +272,23 @@ namespace moppe::nhal {
             std::as_bytes (std::span (vertices)));
         mesh->runs = recorded.runs ();
         return mesh;
+      }
+
+      render::GlyphSetPtr
+      create_glyph_set (const render::SlugGlyphData& data) override {
+        if (data.curves.empty () || data.bands.empty ())
+          return nullptr;
+        auto set = std::make_shared<NhalGlyphSet> ();
+        set->device = m_device.get ();
+        set->curves = m_device->create_buffer (
+          { .size = data.curves.size () * sizeof (render::SlugCurveTexel),
+            .label = "slug curves" },
+          std::as_bytes (std::span (data.curves)));
+        set->bands = m_device->create_buffer (
+          { .size = data.bands.size () * sizeof (std::uint32_t),
+            .label = "slug bands" },
+          std::as_bytes (std::span (data.bands)));
+        return set;
       }
 
       // -- world setup ----------------------------------------------------
@@ -514,24 +544,50 @@ namespace moppe::nhal {
       void apply_motion_blur (float) override {}
       void apply_scene_blur () override {}
 
+      void draw_hud_text (const render::TextList& text) override {
+        m_hud_text = text;
+      }
+
+      // The HUD's draw list, then its Slug text over it.
       void draw_hud (const DrawList& list) override {
         open_present ();
-        if (list.empty ())
-          return;
-        m_device->set_pipeline (m_hud);
         shaders::hud::Hud hud {};
         hud.projection = matrix (Mat4::hud_ortho (width_pts (), height_pts ()));
         hud.output = { m_device->surface_format () == Format::rgba16_float
                          ? 1.0f
                          : 0.0f,
-                       0, 0, 0 };
-        m_device->set_uniforms (0, hud);
-        m_device->set_buffer (1, m_device->upload (std::span (list.vertices ())));
-        for (const DrawList::Run& run : list.runs ()) {
-          if (!run.count)
-            continue;
-          m_device->set_texture (0, texture_or_white (run.texture));
-          m_device->draw (run.count, 1, run.first);
+                       m_scale, 0, 0 };
+        if (!list.empty ()) {
+          m_device->set_pipeline (m_hud);
+          m_device->set_uniforms (0, hud);
+          m_device->set_buffer (
+            1, m_device->upload (std::span (list.vertices ())));
+          for (const DrawList::Run& run : list.runs ()) {
+            if (!run.count)
+              continue;
+            m_device->set_texture (0, texture_or_white (run.texture));
+            m_device->draw (run.count, 1, run.first);
+          }
+        }
+        if (!m_hud_text.empty ()) {
+          m_device->set_pipeline (m_slug_text);
+          m_device->set_uniforms (0, hud);
+          const auto& quads = m_hud_text.quads ();
+          for (const render::TextList::Run& run : m_hud_text.runs ()) {
+            const auto* glyphs =
+              static_cast<const NhalGlyphSet*> (run.glyphs.get ());
+            if (!glyphs || !run.count)
+              continue;
+            // Each run's quads in a slice of their own: Direct3D's instance
+            // index does not count from a draw's first instance.
+            m_device->set_buffer (
+              1, m_device->upload (std::span (quads).subspan (run.first,
+                                                              run.count)));
+            m_device->set_buffer (2, glyphs->curves);
+            m_device->set_buffer (3, glyphs->bands);
+            m_device->draw (6, run.count);
+          }
+          m_hud_text.clear ();
         }
       }
 
@@ -639,6 +695,12 @@ namespace moppe::nhal {
         hud.fragment = m_hud_code.stage (1);
         hud.blend[0] = Blend::alpha;
         m_hud = m_device->create_render_pipeline (hud);
+
+        RenderPipelineDesc text = hud;
+        text.program = &shaders::slug_text::program;
+        text.vertex = m_slug_text_code.stage (0);
+        text.fragment = m_slug_text_code.stage (1);
+        m_slug_text = m_device->create_render_pipeline (text);
       }
 
       // The draw-list pipeline for a run's fixed-function state.
@@ -795,8 +857,9 @@ namespace moppe::nhal {
       std::unique_ptr<Device> m_device;
       float m_scale;
       ProgramCode m_terrain_code, m_sky_code, m_uber_code, m_hud_code,
-        m_resolve_code, m_present_code;
-      Pipeline m_terrain, m_sky, m_resolve, m_present, m_hud;
+        m_resolve_code, m_present_code, m_slug_text_code;
+      Pipeline m_terrain, m_sky, m_resolve, m_present, m_hud, m_slug_text;
+      render::TextList m_hud_text;
       std::unordered_map<int, Pipeline> m_uber;
       Texture m_white;
 
