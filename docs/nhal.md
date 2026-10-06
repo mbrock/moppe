@@ -51,6 +51,22 @@ trees with four.
 Boulders, undergrowth, falling leaves, dust, bloom, and the remaining post
 effects come next.
 
+## The game on Xbox
+
+`nix build .#moppe-xbox` builds the whole game for the console with the NHAL
+renderer on Direct3D 12 (`moppe/platform/uwp/game.nix`, CMake's
+`MOPPE_XBOX_GAME`): luv-shaderc lowers `world.lisp` to HLSL, DXC compiles each
+stage to a DXIL header, and `world_shaders_d3d12.cc` gathers them.
+`moppe/platform/uwp/main_uwp.cc` is the host: `wWinMain` calls `main.cc`'s
+main (compiled as `moppe_main`), whose `platform::run` opens a
+CoreApplication view with a 3840x2160 swapchain, two pixels per HUD point,
+and reads the first gamepad as the Apple hosts read a controller.
+`nix run .#deploy-moppe-xbox` installs and launches it under the console
+lease. The console generates a 1024-sample world (seed 123) at first launch,
+about a minute, and caches it in LocalCache; `LocalState/log.txt` holds
+everything the game logs, and `environment.txt` there (or in the package)
+sets `moppe::environment` variables, `MOPPE_ARGS` being the command line.
+
 ## What the Xbox allows
 
 Measured by nixbox's `probes/d3d12-caps` and `probes/swapchain`:

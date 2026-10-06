@@ -31,6 +31,8 @@ namespace moppe::nhal {
 
   // The programs' MSL, embedded in the binary at build time.
   const WorldShaders& world_shaders_metal ();
+  // Their DXIL, compiled ahead of time by DXC.
+  const WorldShaders& world_shaders_d3d12 ();
 
   // A renderer drawing into the device's surface. `scale` is the
   // surface's pixels per point, which the HUD and the game's layout use.

@@ -79,6 +79,9 @@ endif()
 
 set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
 set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
+option(MOPPE_XBOX_GAME
+  "On Windows, build the game for Xbox rather than the headless core probe"
+  OFF)
 option(MOPPE_NHAL_RENDERER
   "Build the NHAL renderer into the macOS game (needs luv-shaderc or nix)" ON)
 option(MOPPE_BUILD_DEVELOPER_TOOLS
@@ -1003,29 +1006,118 @@ if(EMSCRIPTEN)
   moppe_configure_web_executable(moppe-web)
 endif()
 
-# Xbox Series consoles in Developer Mode: x86_64 UWP, cross-built by nixbox
-# (moppe/platform/uwp/xbox.nix; `nix build .#moppe-core-xbox`). The core app
-# runs the game's world generation and simulation headlessly on the console
-# and reports how they fare; rendering arrives with NHAL.
+# Xbox Series consoles in Developer Mode: x86_64 UWP, cross-built by nixbox.
+# MOPPE_XBOX_GAME chooses the game (moppe/platform/uwp/game.nix; `nix build
+# .#moppe-xbox`) over the core probe (moppe/platform/uwp/xbox.nix; `nix build
+# .#moppe-core-xbox`), which runs world generation and simulation headlessly
+# on the console and reports how they fare.
 if(WIN32)
-  add_executable(moppe-core-xbox WIN32
-    ${MOPPE_ENGINE_SOURCES}
-    ${MOPPE_APPLICATION_SOURCES}
-    moppe/game/core_probe.cc
-    moppe/platform/uwp/platform_uwp.cc
-    moppe/platform/uwp/core_main.cc)
-  moppe_configure_code_target(moppe-core-xbox)
-  # windows.h and C++/WinRT stay out of the game's unity translation unit.
-  set_source_files_properties(
-    moppe/platform/uwp/platform_uwp.cc
-    moppe/platform/uwp/core_main.cc
-    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
-  target_link_libraries(moppe-core-xbox PRIVATE -ld3d11 -ldxgi)
-  target_compile_definitions(moppe-core-xbox PRIVATE
-    NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
-  install(TARGETS moppe-core-xbox RUNTIME DESTINATION bin)
-  install(DIRECTORY fonts textures
-    DESTINATION share/moppe-core-xbox)
+  # The game is drawn by the NHAL renderer through Direct3D 12. luv-shaderc
+  # lowers the renderer's Lisp shaders to HLSL and DXC compiles each stage
+  # to a header of signed DXIL.
+  if(MOPPE_XBOX_GAME)
+    find_program(MOPPE_LUV_SHADERC luv-shaderc REQUIRED)
+    find_program(MOPPE_DXC dxc REQUIRED)
+    set(MOPPE_XBOX_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
+    set(MOPPE_XBOX_STAGES
+      terrain.vertex terrain.fragment sky.vertex sky.fragment
+      uber.vertex uber.fragment hud.vertex hud.fragment
+      resolve.vertex resolve.fragment present.vertex present.fragment
+      slug_text.vertex slug_text.fragment forest.vertex forest.fragment
+      forest_cull.compute exposure.compute
+      terrain_shadow.vertex forest_shadow.vertex)
+    set(MOPPE_XBOX_LOWERED)
+    foreach(stage IN LISTS MOPPE_XBOX_STAGES)
+      string(REGEX REPLACE "[.].*" "" program ${stage})
+      list(APPEND MOPPE_XBOX_LOWERED
+        ${MOPPE_XBOX_SHADERS}/${program}.hh
+        ${MOPPE_XBOX_SHADERS}/${stage}.hlsl)
+    endforeach()
+    list(REMOVE_DUPLICATES MOPPE_XBOX_LOWERED)
+    add_custom_command(
+      OUTPUT ${MOPPE_XBOX_LOWERED}
+      COMMAND ${MOPPE_LUV_SHADERC} --out ${MOPPE_XBOX_SHADERS}
+        --target hlsl
+        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+      DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+      COMMENT "Lowering the NHAL renderer's Lisp shaders to HLSL"
+      VERBATIM)
+    set(MOPPE_XBOX_DXIL)
+    foreach(stage IN LISTS MOPPE_XBOX_STAGES)
+      string(REPLACE "." "_" entry ${stage})
+      string(REGEX REPLACE "^[^.]*[.]" "" kind ${stage})
+      if(kind STREQUAL "vertex")
+        set(profile vs_6_0)
+      elseif(kind STREQUAL "fragment")
+        set(profile ps_6_0)
+      else()
+        set(profile cs_6_0)
+      endif()
+      add_custom_command(
+        OUTPUT ${MOPPE_XBOX_SHADERS}/shader_${entry}.h
+        COMMAND ${MOPPE_DXC} -O3 -T ${profile} -E ${entry}
+          -Fh ${MOPPE_XBOX_SHADERS}/shader_${entry}.h -Vn shader_${entry}
+          ${MOPPE_XBOX_SHADERS}/${stage}.hlsl
+        DEPENDS ${MOPPE_XBOX_SHADERS}/${stage}.hlsl
+        VERBATIM)
+      list(APPEND MOPPE_XBOX_DXIL ${MOPPE_XBOX_SHADERS}/shader_${entry}.h)
+    endforeach()
+    set_source_files_properties(${MOPPE_XBOX_LOWERED} ${MOPPE_XBOX_DXIL}
+      PROPERTIES HEADER_FILE_ONLY ON)
+
+    add_executable(moppe-xbox WIN32
+      moppe/game/main.cc
+      ${MOPPE_ENGINE_SOURCES}
+      ${MOPPE_APPLICATION_SOURCES}
+      moppe/nhal/d3d12/d3d12_device.cc
+      moppe/nhal/renderer/nhal_renderer.cc
+      moppe/nhal/renderer/world_shaders_d3d12.cc
+      moppe/platform/uwp/platform_uwp.cc
+      moppe/platform/uwp/main_uwp.cc
+      ${MOPPE_XBOX_LOWERED}
+      ${MOPPE_XBOX_DXIL})
+    moppe_configure_code_target(moppe-xbox)
+    target_include_directories(moppe-xbox PRIVATE ${MOPPE_XBOX_SHADERS})
+    # main.cc's main is the game's entry, which wWinMain calls.
+    set_source_files_properties(moppe/game/main.cc PROPERTIES
+      COMPILE_DEFINITIONS "main=moppe_main;MOPPE_DEFAULT_XBOX_WORLD")
+    set_source_files_properties(
+      moppe/game/main.cc
+      moppe/nhal/d3d12/d3d12_device.cc
+      moppe/nhal/renderer/nhal_renderer.cc
+      moppe/nhal/renderer/world_shaders_d3d12.cc
+      moppe/platform/uwp/main_uwp.cc
+      PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    set_source_files_properties(moppe/nhal/renderer/world_shaders_d3d12.cc
+      PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_DXIL}")
+    set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
+      PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_LOWERED}")
+    target_link_libraries(moppe-xbox PRIVATE -ld3d12 -ldxgi)
+    target_compile_definitions(moppe-xbox PRIVATE
+      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    install(TARGETS moppe-xbox RUNTIME DESTINATION bin)
+    install(DIRECTORY fonts textures DESTINATION share/moppe-xbox)
+  else()
+    add_executable(moppe-core-xbox WIN32
+      ${MOPPE_ENGINE_SOURCES}
+      ${MOPPE_APPLICATION_SOURCES}
+      moppe/game/core_probe.cc
+      moppe/platform/uwp/platform_uwp.cc
+      moppe/platform/uwp/core_main.cc)
+    moppe_configure_code_target(moppe-core-xbox)
+    # windows.h and C++/WinRT stay out of the game's unity translation unit.
+    set_source_files_properties(
+      moppe/platform/uwp/platform_uwp.cc
+      moppe/platform/uwp/core_main.cc
+      PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    target_link_libraries(moppe-core-xbox PRIVATE -ld3d11 -ldxgi)
+    target_compile_definitions(moppe-core-xbox PRIVATE
+      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    install(TARGETS moppe-core-xbox RUNTIME DESTINATION bin)
+    install(DIRECTORY fonts textures
+      DESTINATION share/moppe-core-xbox)
+  endif()
 endif()
 
 # CMake's Xcode generator normally presents sources target-by-target, which is

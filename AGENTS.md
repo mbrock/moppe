@@ -195,6 +195,10 @@
 - tvOS (simulator): `cmake -B build-tvos -G Xcode -DCMAKE_SYSTEM_NAME=tvOS
   -DCMAKE_OSX_SYSROOT=appletvsimulator` then build the `moppe-tvos` target
   with `CODE_SIGNING_ALLOWED=NO`
+- Xbox Series (Developer Mode, via nixbox): `nix run .#deploy-moppe-xbox`
+  builds the game with the NHAL renderer on Direct3D 12, installs it under
+  the shared console lease, and launches it (see docs/nhal.md);
+  `nix run .#deploy-moppe-core-xbox` runs the headless core probe.
 - Apple TV (build, install, launch): `make tv`
   - Pair the Apple TV in Xcode's Device Hub first. Overrides:
     `MOPPE_TVOS_DEVICE`, `MOPPE_TVOS_TEAM`, `MOPPE_TVOS_CONFIGURATION`, and

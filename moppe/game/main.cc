@@ -30,6 +30,12 @@ int main (int argc, char** argv) {
   options.world.resolution = 1024;
   options.seed = 123;
 #endif
+#ifdef MOPPE_DEFAULT_XBOX_WORLD
+  // The console generates its world at first launch, three times slower
+  // than an M5; a 1024-sample world keeps that first wait short.
+  options.world.resolution = 1024;
+  options.seed = 123;
+#endif
 
   std::string error;
   if (!game::parse_launch_options (argc, argv, options, error)) {
