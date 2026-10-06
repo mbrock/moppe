@@ -6,6 +6,10 @@
 #include <shader_bloom_blur_vertex.h>
 #include <shader_bloom_bright_fragment.h>
 #include <shader_bloom_bright_vertex.h>
+#include <shader_boulder_cull_compute.h>
+#include <shader_boulders_fragment.h>
+#include <shader_boulders_shadow_vertex.h>
+#include <shader_boulders_vertex.h>
 #include <shader_exposure_compute.h>
 #include <shader_forest_cull_compute.h>
 #include <shader_forest_fragment.h>
@@ -73,6 +77,9 @@ namespace moppe::nhal {
       { dxil (shader_gtao_vertex), dxil (shader_gtao_fragment) },
       { dxil (shader_gtao_blur_vertex), dxil (shader_gtao_blur_fragment) },
       { dxil (shader_shafts_vertex), dxil (shader_shafts_fragment) },
+      { dxil (shader_boulders_vertex), dxil (shader_boulders_fragment) },
+      { dxil (shader_boulders_shadow_vertex), {} },
+      dxil (shader_boulder_cull_compute),
     };
     return shaders;
   }

@@ -116,6 +116,18 @@ namespace moppe::nhal {
     const char shafts_fragment[] = {
 #embed "shafts.fragment.metal"
       , 0 };
+    const char boulders_vertex[] = {
+#embed "boulders.vertex.metal"
+      , 0 };
+    const char boulders_fragment[] = {
+#embed "boulders.fragment.metal"
+      , 0 };
+    const char boulders_shadow_vertex[] = {
+#embed "boulders_shadow.vertex.metal"
+      , 0 };
+    const char boulder_cull_compute[] = {
+#embed "boulder_cull.compute.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -141,6 +153,9 @@ namespace moppe::nhal {
       { { gtao_vertex, {} }, { gtao_fragment, {} } },
       { { gtao_blur_vertex, {} }, { gtao_blur_fragment, {} } },
       { { shafts_vertex, {} }, { shafts_fragment, {} } },
+      { { boulders_vertex, {} }, { boulders_fragment, {} } },
+      { { boulders_shadow_vertex, {} }, {} },
+      { boulder_cull_compute, {} },
     };
     return shaders;
   }

@@ -36,6 +36,9 @@ namespace moppe::nhal {
     StageCode gtao[2];
     StageCode gtao_blur[2];
     StageCode shafts[2];
+    StageCode boulders[2];
+    StageCode boulders_shadow[2];
+    StageCode boulder_cull;
   };
 
   // The programs' MSL, embedded in the binary at build time.

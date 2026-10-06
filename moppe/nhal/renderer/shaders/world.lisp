@@ -2270,6 +2270,309 @@
   :vertex sward-vertex
   :fragment sward-fragment)
 
+;;; -- boulders ---------------------------------------------------------------
+;;;
+;;; As boulders.metal: faceted, flat-shaded lumps of rock, each an
+;;; icosahedron shaped from its seed -- turned, jittered, and cleaved by a
+;;; few planes so broad flat faces break its roundness -- squashed broader
+;;; than tall and settled into the ground.  BOULDER-CULL sorts the visible
+;;; ones into the coarse (12 corners) and fine (every face split in four)
+;;; classes; the shadow view takes them all coarse.  A record is three vec4
+;;; rows: centre and radius; ground normal and moisture; the seed's bits.
+;;; The icosahedron's corners and its faces' corner triples arrive as small
+;;; storage buffers.
+
+(define-shader boulder-cull-compute
+    (:stage :compute
+     :workgroup-size (64 1 1)
+     :inputs ((invocation :uvec3 :built-in :global-invocation-id))
+     :resources ((forest :uniform-block :binding 1 :members #.*forest*)
+                 (rocks :storage-buffer :binding 2 :element :vec4)
+                 (candidates :storage-buffer :binding 3 :element :uint
+                             :access :read-write)
+                 (arguments :storage-buffer :binding 4 :element :uint
+                            :access :read-write)))
+  (let* ((index (swizzle invocation :x)))
+    (when (< index (uint (swizzle world :z)))
+      (let* ((rock (buffer-element rocks (* index (uint 3))))
+             (radius (swizzle rock :w))
+             (centre-of (swizzle eye :xyz))
+             (centre (tree-root (swizzle rock :xyz) (swizzle world :xy)
+                                centre-of))
+             (bound (* 1.45 radius))
+             (clip (* view (vec4 centre 1.0)))
+             (w (swizzle clip :w))
+             (inside (and (> w (* -1.0 bound))
+                          (< (abs (swizzle clip :x))
+                             (+ w (* bound (swizzle cull :x))))
+                          (< (abs (swizzle clip :y))
+                             (+ w (* bound (swizzle cull :y))))))
+             (offset (- centre centre-of))
+             (pixels (/ (* radius 0.5 (swizzle cull :y) (swizzle cull :w))
+                        (max (sqrt (dot offset offset)) 0.6)))
+             (shadow (> (swizzle mode :x) 0.5)))
+        (when (and inside (or shadow (>= pixels 0.75)))
+          (let* ((class (if (and (not shadow) (> pixels 14.0)) (uint 1)
+                            (uint 0)))
+                 (slot (atomic-add arguments (+ (* class (uint 5)) (uint 1))
+                                   (uint 1)))
+                 (at (* (+ (* class (uint (swizzle world :w))) slot)
+                        (uint 2))))
+            (set-buffer-element candidates at index)
+            (set-buffer-element candidates (+ at (uint 1))
+                                (bit-cast :uint pixels))))))))
+
+(define-shader-program boulder-cull
+  :compute boulder-cull-compute)
+
+(define-shader-struct boulder-shape
+  (centre :vec3) (up :vec3) (right :vec3) (forward :vec3) (radius :float)
+  (stretch :vec3) (turn-x :vec3) (turn-y :vec3) (turn-z :vec3)
+  (cleave-0 :vec4) (cleave-1 :vec4) (cleave-2 :vec4) (cleave-3 :vec4)
+  (seed :uint))
+
+(define-shader-function rock-direction (seed lane)
+  (let* ((z (- (* 2.0 (tree-hash seed lane)) 1.0))
+         (a (* 6.2831853 (tree-hash seed (+ lane (uint 1)))))
+         (s (sqrt (max (- 1.0 (* z z)) 0.0))))
+    (vec3 (* s (cos a)) z (* s (sin a)))))
+
+(define-shader-function cleave-plane (seed k)
+  (let* ((n (rock-direction seed (+ (uint 10) (* (uint 2) k))))
+         (flat (normalize (vec3 (swizzle n :x) (* (abs (swizzle n :y)) 0.6)
+                                (swizzle n :z)))))
+    (vec4 flat (+ 0.50 (* 0.22 (tree-hash seed (+ (uint 20) k)))))))
+
+;;; The body: half-way between plumb and the ground normal, turned about its
+;;; own axis, and split along a tilted crown and three flanks.
+(define-shader-function shape-boulder (rock ground identity centre)
+  (let* ((seed (bit-cast :uint (swizzle identity :x)))
+         (up (normalize (+ (vec3 0.0 1.0 0.0) (swizzle ground :xyz))))
+         (yaw (* 6.2831853 (tree-hash seed (uint 1))))
+         (heading (vec3 (cos yaw) 0.0 (sin yaw)))
+         (right (normalize (- heading (* up (dot heading up)))))
+         (elongation (+ 0.85 (* 0.40 (tree-hash seed (uint 2)))))
+         (axis (rock-direction seed (uint 4)))
+         (angle (* 6.2831853 (tree-hash seed (uint 6))))
+         (c (cos angle))
+         (s (sin angle))
+         (k (- 1.0 c))
+         (x (swizzle axis :x))
+         (y (swizzle axis :y))
+         (z (swizzle axis :z))
+         (crown (rock-direction seed (uint 8))))
+    (make-boulder-shape
+     :centre centre :up up :right right :forward (cross3 right up)
+     :radius (swizzle rock :w)
+     :stretch (vec3 elongation
+                    (* 0.7 (+ 0.88 (* 0.24 (tree-hash seed (uint 3)))))
+                    (/ 1.0 (sqrt elongation)))
+     :turn-x (vec3 (+ (* k x x) c) (+ (* k x y) (* s z)) (- (* k x z) (* s y)))
+     :turn-y (vec3 (- (* k x y) (* s z)) (+ (* k y y) c) (+ (* k y z) (* s x)))
+     :turn-z (vec3 (+ (* k x z) (* s y)) (- (* k y z) (* s x)) (+ (* k z z) c))
+     :cleave-0 (vec4 (normalize (+ (vec3 0.0 1.0 0.0) (* crown 0.45)))
+                     (+ 0.55 (* 0.20 (tree-hash seed (uint 19)))))
+     :cleave-1 (cleave-plane seed (uint 1))
+     :cleave-2 (cleave-plane seed (uint 2))
+     :cleave-3 (cleave-plane seed (uint 3))
+     :seed seed)))
+
+(define-shader-function cleave-by (p plane)
+  (let* ((reach (- (dot p (swizzle plane :xyz)) (swizzle plane :w))))
+    (if (> reach 0.0) (- p (* (swizzle plane :xyz) reach)) p)))
+
+(define-shader-function boulder-cleave (b p)
+  (cleave-by (cleave-by (cleave-by (cleave-by p (boulder-shape-cleave-0 b))
+                                   (boulder-shape-cleave-1 b))
+                        (boulder-shape-cleave-2 b))
+             (boulder-shape-cleave-3 b)))
+
+;;; A corner of the unit lump; below its girth it reaches deeper than it
+;;; stands tall, so its underside stays buried on a slope.
+(define-shader-function boulder-corner (b unit i)
+  (let* ((turned (+ (* (boulder-shape-turn-x b) (swizzle unit :x))
+                    (* (boulder-shape-turn-y b) (swizzle unit :y))
+                    (* (boulder-shape-turn-z b) (swizzle unit :z))))
+         (p (boulder-cleave b (* turned
+                                 (+ 0.80 (* 0.36 (tree-hash
+                                                  (boulder-shape-seed b)
+                                                  (+ (uint 40) i))))))))
+    (if (< (swizzle p :y) 0.0)
+        (vec3 (swizzle p :x) (* (swizzle p :y) 1.6) (swizzle p :z))
+        p)))
+
+(define-shader-function boulder-world (b p)
+  (let* ((local (* p (boulder-shape-stretch b) (boulder-shape-radius b))))
+    (+ (boulder-shape-centre b) (* (boulder-shape-right b) (swizzle local :x))
+       (* (boulder-shape-up b) (swizzle local :y))
+       (* (boulder-shape-forward b) (swizzle local :z)))))
+
+(define-shader-abstraction rock-corner (corners b i)
+  `(boulder-corner ,b (swizzle (buffer-element ,corners ,i) :xyz) ,i))
+
+(define-shader boulders-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (world-position :vec3 :location 0)
+               (albedo :vec3 :location 1 :interpolation :flat)
+               (moisture :float :location 2 :interpolation :flat)
+               (rise :float :location 3)
+               (here :vec4 :location 4)
+               (then :vec4 :location 5))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (forest :uniform-block :binding 1 :members #.*forest*)
+                 (draw :uniform-block :binding 2 :members #.*forest-class*)
+                 (rocks :storage-buffer :binding 3 :element :vec4)
+                 (candidates :storage-buffer :binding 4 :element :uint)
+                 (corners :storage-buffer :binding 5 :element :vec4)
+                 (faces :storage-buffer :binding 6 :element :uint)))
+  (let* ((at (* (+ (uint (swizzle class :x)) instance-index) (uint 2)))
+         (row (* (buffer-element candidates at) (uint 3)))
+         (rock (buffer-element rocks row))
+         (ground (buffer-element rocks (+ row (uint 1))))
+         (b (shape-boulder rock ground (buffer-element rocks (+ row (uint 2)))
+                           (tree-root (swizzle rock :xyz) (swizzle world :xy)
+                                      (swizzle camera-position :xyz))))
+         ;; A coarse vertex is a corner; a fine face has its corners in
+         ;; slots 0-2 and its edge midpoints, lifted a little and keyed by
+         ;; their edge so neighbouring faces meet, in slots 3-5.
+         (fine (> (swizzle class :y) 0.5))
+         (face (/ vertex-index (uint 6)))
+         (slot (mod vertex-index (uint 6)))
+         (first (* face (uint 3)))
+         (corner-a (buffer-element faces (+ first (mod slot (uint 3)))))
+         (corner-b (buffer-element faces (+ first (mod (+ slot (uint 1))
+                                                       (uint 3)))))
+         (pa (rock-corner corners b corner-a))
+         (pb (rock-corner corners b corner-b))
+         (low (min corner-a corner-b))
+         (high (max corner-a corner-b))
+         (midpoint (* (+ pa pb) 0.5))
+         (lift (- (* 0.12 (tree-hash (boulder-shape-seed b)
+                                     (+ (uint 60) (* low (uint 12)) high)))
+                  0.03))
+         (fine-point (if (< slot (uint 3)) pa
+                         (boulder-cleave b (+ midpoint
+                                              (* (normalize midpoint) lift)))))
+         (p (if fine fine-point (rock-corner corners b vertex-index)))
+         (point (boulder-world b p))
+         (seed (boulder-shape-seed b))
+         (hue (- (tree-hash seed (uint 30)) 0.5))
+         (value (+ 0.86 (* 0.24 (tree-hash seed (uint 31)))))
+         (here-clip (* view-proj (vec4 point 1.0))))
+    (set-output clip-position (clip here-clip (swizzle temporal :zw)))
+    (set-output world-position point)
+    (set-output albedo (srgb (* (vec3 (+ 0.56 (* 0.07 hue)) 0.54
+                                      (- 0.51 (* 0.07 hue)))
+                                value)))
+    (set-output moisture (swizzle ground :w))
+    (set-output rise (+ (* (swizzle p :y) (swizzle (boulder-shape-stretch b) :y))
+                        0.4))
+    (set-output here here-clip)
+    (set-output then (* previous-view-proj (vec4 point 1.0)))))
+
+(define-shader boulders-fragment
+    (:stage :fragment
+     :inputs ((world-position :vec3 :location 0)
+              (albedo :vec3 :location 1 :interpolation :flat)
+              (moisture :float :location 2 :interpolation :flat)
+              (rise :float :location 3)
+              (here :vec4 :location 4)
+              (then :vec4 :location 5))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((eye (swizzle camera-position :xyz))
+         (to-eye (- eye world-position))
+         (view (/ to-eye (max (sqrt (dot to-eye to-eye)) 0.001)))
+         (light (swizzle sun-direction :xyz))
+         ;; One normal per facet, from the surface's own derivatives.
+         (facet-normal (normalize (cross3 (derivative-x world-position)
+                                          (derivative-y world-position))))
+         (n (if (< (dot facet-normal view) 0.0) (* -1.0 facet-normal)
+                facet-normal))
+         ;; Each facet is its own shade of the stone; lichen crusts the dry
+         ;; tops and moss the damp ones, in patches on the upward faces.
+         (facet (hash12 (+ (floor (* (swizzle n :xz) 7.0))
+                           (vec2 (floor (* (swizzle n :y) 5.0))
+                                 (floor (* (swizzle n :y) 5.0))))))
+         (patches (value-noise (+ (* (swizzle world-position :xz) 1.7)
+                                  (vec2 (* (swizzle world-position :y) 0.9)
+                                        (* (swizzle world-position :y) 0.9)))))
+         (growth (* (smoothstep 0.55 0.90 (swizzle n :y))
+                    (smoothstep 0.45 0.75 (- (+ patches (* 0.35 moisture))
+                                             0.10))))
+         (crust (mix (srgb (vec3 0.64 0.63 0.52)) (srgb (vec3 0.30 0.38 0.16))
+                     (smoothstep 0.30 0.65 moisture)))
+         ;; The soil darkens and the light fails where stone meets ground.
+         (contact (smoothstep -0.05 0.40 rise))
+         (surface (* (mix (* albedo (+ 0.88 (* 0.22 facet))) crust
+                          (* 0.55 growth))
+                     (mix 0.55 1.0 contact)))
+         (at (sun-map-coordinate sun-view world-position))
+         (texel (swizzle shadow :y))
+         (margin (/ 0.5 1240.0))
+         (lit (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
+                                     texel margin)
+                         (shadow-tap shadow-map shadow-compare at 0.5 -0.5
+                                     texel margin)
+                         (shadow-tap shadow-map shadow-compare at -0.5 0.5
+                                     texel margin)
+                         (shadow-tap shadow-map shadow-compare at 0.5 0.5
+                                     texel margin))))
+         (visibility (mix 1.0 (mix 0.18 1.0 lit)
+                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (sun-light (swizzle sun-diffuse :xyz))
+         ;; Sunlit ground throws warm light back into the shaded lower faces.
+         (bounce (* sun-light (vec3 0.30 0.26 0.15)
+                    (clamp (- 0.55 (* 0.45 (swizzle n :y))) 0.0 1.0)))
+         (shaded (* surface
+                    (+ (* sun-light (* (clamp (dot n light) 0.0 1.0)
+                                       visibility 0.95))
+                       (* (+ (hemisphere-light (swizzle ambient :xyz) n)
+                             (* bounce 0.45))
+                          (mix 0.55 0.92 contact))))))
+    (set-output color (vec4 (hazed shaded world-position eye fog-color light
+                                   relief)
+                            1.0))
+    (set-output motion (- (clip-uv then) (clip-uv here)))))
+
+(define-shader-program boulders
+  :vertex boulders-vertex
+  :fragment boulders-fragment)
+
+(define-shader boulders-shadow-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position))
+     :resources ((caster :uniform-block :binding 0 :members #.*caster*)
+                 (forest :uniform-block :binding 1 :members #.*forest*)
+                 (draw :uniform-block :binding 2 :members #.*forest-class*)
+                 (rocks :storage-buffer :binding 3 :element :vec4)
+                 (candidates :storage-buffer :binding 4 :element :uint)
+                 (corners :storage-buffer :binding 5 :element :vec4)))
+  (let* ((at (* (+ (uint (swizzle class :x)) instance-index) (uint 2)))
+         (row (* (buffer-element candidates at) (uint 3)))
+         (rock (buffer-element rocks row))
+         (b (shape-boulder rock (buffer-element rocks (+ row (uint 1)))
+                           (buffer-element rocks (+ row (uint 2)))
+                           (tree-root (swizzle rock :xyz) (swizzle world :xy)
+                                      (swizzle focus :xyz)))))
+    (set-output clip-position
+                (clip (* light-view
+                         (vec4 (boulder-world b (rock-corner corners b
+                                                             vertex-index))
+                               1.0))
+                      (vec2 0.0 0.0)))))
+
+(define-shader-program boulders-shadow
+  :vertex boulders-shadow-vertex)
+
 ;;; -- HUD text -------------------------------------------------------------
 ;;;
 ;;; Glyphs and vector shapes by Slug, from moppe's glyph quads
