@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "usage: tools/capture-cinematic OUTPUT.mp4 [SECONDS]" >&2
+if [[ $# -lt 1 ]]; then
+  echo "usage: tools/capture-cinematic OUTPUT.mp4 [SECONDS [MOPPE ARGS...]]" >&2
   exit 2
 fi
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=$1
-seconds=${2:-12}
+# The capture stops by itself when the opening ends; SECONDS only caps it.
+seconds=${2:-60}
+shift $(( $# >= 2 ? 2 : 1 ))
 fps=${MOPPE_CINEMATIC_CAPTURE_FPS:-30}
 seed=${MOPPE_SEED:-123}
-terrain=${MOPPE_TERRAIN_PROFILE:-fast}
+# The authored opening belongs to the default play world.
+terrain=${MOPPE_TERRAIN_PROFILE:-play}
 frames=$((seconds * fps))
 capture_dir=$(mktemp -d "${TMPDIR:-/tmp}/moppe-cinematic.XXXXXX")
 trap 'rm -rf "$capture_dir"' EXIT
@@ -33,7 +36,8 @@ MOPPE_CINEMATIC_CAPTURE_FPS="$fps" \
     --windowed \
     --seed "$seed" \
     --terrain-quality "$terrain" \
-    --graphics-quality high
+    --graphics-quality high \
+    "$@"
 
 ffmpeg -y -loglevel error \
   -framerate "$fps" \
