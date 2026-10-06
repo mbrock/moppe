@@ -18,7 +18,8 @@
       (sun-specular :vec4)
       (ambient :vec4)
       (fog-color :vec4)            ; w: fog scale
-      (relief :vec4)               ; sea level, land relief, previous time, 0
+      (relief :vec4)               ; sea level, land relief, previous time,
+                                   ; valley mist
       (view-right :vec4)           ; right * tan(fov x / 2), for view rays
       (view-up :vec4)              ; up * tan(fov y / 2)
       (view-forward :vec4)
@@ -79,15 +80,27 @@
                      (* (expt toward 24.0) (+ 0.04 (* 0.10 golden)))))))))
 
 ;;; The haze over a point at a distance, coloured for the view direction.
+;;; Haze toward the warmed fog, then the authored valley mist: it lies in
+;;; the low ground, below about two fifths of the land's relief, and thickens
+;;; with the distance a ray travels through it.
 (define-shader-function hazed (color world camera fog-color sun relief)
   (let* ((rel (- world camera))
          (distance (sqrt (dot rel rel)))
          (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
                            (swizzle world :y) (swizzle relief :x)
-                           (swizzle relief :y))))
-    (mix color
-         (warmed-fog (swizzle fog-color :xyz) (/ rel (max distance 0.0001)) sun)
-         (smoothstep 0.0 0.9 fog))))
+                           (swizzle relief :y)))
+         (fogged (mix color
+                      (warmed-fog (swizzle fog-color :xyz)
+                                  (/ rel (max distance 0.0001)) sun)
+                      (smoothstep 0.0 0.9 fog)))
+         (low (- 1.0 (smoothstep 0.10 0.42
+                                 (/ (- (* 0.5 (+ (swizzle world :y)
+                                                 (swizzle camera :y)))
+                                       (swizzle relief :x))
+                                    (max (swizzle relief :y) 1.0)))))
+         (mist (* (swizzle relief :w) low
+                  (- 1.0 (exp (/ (* -1.0 distance) 32.0))))))
+    (mix fogged (* (swizzle fog-color :xyz) 1.06) (* 0.92 mist))))
 
 ;;; Where a world point falls in the sun's shadow map: (u, v, depth).  The
 ;;; light matrix is Metal's clip convention, y up.
@@ -570,6 +583,15 @@
                                         (* (expt toward 160.0) 0.30 1.7)))
                           (* (expt toward 14.0) 0.075 daylight)))))
          ;; Stars at night.
+         ;; A heavy overcast closes into a soft grey, its brightness falling
+         ;; toward the horizon, and hides the sun.
+         (overcast (smoothstep 0.70 1.0 cloudiness))
+         (grey (* (swizzle fog-color :xyz)
+                  (+ 0.92 (* 0.14 (clamp rise 0.0 1.0)))))
+         (closed (mix sunlit grey (* overcast 0.9)))
+         (misted (mix closed (* (swizzle fog-color :xyz) 1.06)
+                      (* (swizzle relief :w)
+                         (- 1.0 (smoothstep -0.02 0.22 rise)))))
          (stars (* (expt (sky-noise (* ray 100.0)) 20.0)
                    (max 0.0 (* (- 1.0 daylight) 0.3
                                (smoothstep 0.0 0.4 rise)))
@@ -577,7 +599,8 @@
          (star-color (mix (srgb (vec3 0.8 0.9 1.0)) (srgb (vec3 1.0 0.9 0.8))
                           (sky-noise (* ray 10.0))))
          (far (vec4 ray 0.0)))
-    (set-output color (vec4 (+ sunlit (* star-color stars)) 1.0))
+    (set-output color (vec4 (+ misted (* star-color (* stars (- 1.0 overcast))))
+                            1.0))
     (set-output motion (- (clip-uv (* previous-view-proj far))
                           (clip-uv (* view-proj far))))))
 
@@ -2647,6 +2670,85 @@
 
 (define-shader-program boulders-shadow
   :vertex boulders-shadow-vertex)
+
+;;; -- drizzle ----------------------------------------------------------------
+;;;
+;;; A fine rain: streaks in a 44-metre box around the camera, each anchored
+;;; to the world (so walking through the rain does not drag it along) and
+;;; falling at seven metres a second with a little wind.  The camera-side
+;;; streaks are kept faint and thin; the rain reads as a whole.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *rain*
+    '((rain :vec4))))              ; amount, drops, 0, 0
+
+(define-shader-function drop-position (seed eye time)
+  (let* ((reach 22.0)
+         (span 18.0)
+         (anchor (vec2 (* (tree-hash seed (uint 1)) 2.0 reach)
+                       (* (tree-hash seed (uint 2)) 2.0 reach)))
+         (wrapped (- (fract (/ (- anchor (swizzle eye :xz)) (* 2.0 reach)))
+                     (vec2 0.5 0.5)))
+         (fall (fract (+ (/ (* time 7.0) span) (tree-hash seed (uint 3)))))
+         (drift (* fall span 0.17)))
+    (vec3 (+ (swizzle eye :x) (* (swizzle wrapped :x) 2.0 reach) drift)
+          (- (+ (swizzle eye :y) (* 0.45 span)) (* fall span))
+          (+ (swizzle eye :z) (* (swizzle wrapped :y) 2.0 reach)
+             (* drift 0.4)))))
+
+(define-shader rain-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (shade :vec4 :location 0)
+               (here :vec4 :location 1)
+               (then :vec4 :location 2))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (weather :uniform-block :binding 1 :members #.*rain*)))
+  (let* ((seed (+ (* instance-index (uint 2654435761)) (uint 977)))
+         (eye (swizzle camera-position :xyz))
+         (time (swizzle camera-position :w))
+         (head (drop-position seed eye time))
+         (velocity (vec3 1.19 -7.0 0.48))
+         (tail (- head (* velocity 0.055)))
+         (corner (mod vertex-index (uint 6)))
+         (at-tail (or (= corner (uint 1)) (= corner (uint 2))
+                      (= corner (uint 4))))
+         (side (if (or (= corner (uint 2)) (= corner (uint 3))
+                       (= corner (uint 4)))
+                   1.0 -1.0))
+         (to-eye (- eye head))
+         (distance (sqrt (dot to-eye to-eye)))
+         (across (normalize (cross3 velocity to-eye)))
+         (width (max 0.004 (* distance 0.0011)))
+         (point (+ (if at-tail tail head) (* across (* width side))))
+         (previous (- point (* velocity (- time (swizzle relief :z)))))
+         (here-clip (* view-proj (vec4 point 1.0)))
+         (near-fade (smoothstep 0.6 3.0 distance))
+         (far-fade (- 1.0 (smoothstep 14.0 22.0 distance)))
+         (light (+ (* (swizzle ambient :xyz) 1.4)
+                   (* (swizzle sun-diffuse :xyz) 0.25))))
+    (set-output clip-position (clip here-clip (swizzle temporal :zw)))
+    (set-output shade (vec4 light (* (swizzle rain :x) 0.22 near-fade far-fade
+                                     (if at-tail 0.15 1.0))))
+    (set-output here here-clip)
+    (set-output then (* previous-view-proj (vec4 previous 1.0)))))
+
+(define-shader rain-fragment
+    (:stage :fragment
+     :inputs ((shade :vec4 :location 0)
+              (here :vec4 :location 1)
+              (then :vec4 :location 2))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1)))
+  (let* ((motion-uv (- (clip-uv then) (clip-uv here))))
+    (set-output color shade)
+    (set-output motion motion-uv)))
+
+(define-shader-program rain
+  :vertex rain-vertex
+  :fragment rain-fragment)
 
 ;;; -- HUD text -------------------------------------------------------------
 ;;;

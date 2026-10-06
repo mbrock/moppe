@@ -76,7 +76,22 @@ palette, as in Metal.
 Bloom is post.metal's: a bright pass at a quarter of the drawable, a
 separable nine-tap Gaussian, added before the tonemap.
 
-Boulders, falling leaves, dust, and the remaining post effects come next.
+Boulders are boulders.metal's cleaved icosahedra, culled on the GPU into
+coarse and fine classes. Ambient occlusion and sun shafts (post.metal's)
+render after the temporal resolve into their own targets, which the
+present pass multiplies and adds, so the history stays clean; the present
+also draws Metal's veil around the sun. The stand's rasters -- canopy
+closure splatted from the crowns, and the game's fallen leaves -- shade
+the forest floor and thin and dry the grass beneath them. Trunks root into
+the soil with flared buttresses.
+
+Weather (`MOPPE_WEATHER`, `game/weather.hh`) is authored: mist and drizzle
+grey and lower the sky, dim the sun, and raise the sky's light; the
+renderer lays a valley mist into its haze (below about two fifths of the
+land's relief, thickening with distance) and draws a drizzle of
+world-anchored streaks around the camera.
+
+Falling leaves, dust, and water come next.
 
 ## The game on Xbox
 

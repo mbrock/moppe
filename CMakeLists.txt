@@ -890,7 +890,8 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     set(MOPPE_NHAL_WORLD_OUTPUTS)
     foreach(program IN ITEMS
         terrain sky uber hud resolve present slug_text forest
-        bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders)
+        bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
+        rain)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
@@ -1041,7 +1042,8 @@ if(WIN32)
       sward.vertex sward.fragment sward_patches.compute
       gtao.vertex gtao.fragment gtao_blur.vertex gtao_blur.fragment
       shafts.vertex shafts.fragment boulders.vertex boulders.fragment
-      boulders_shadow.vertex boulder_cull.compute)
+      boulders_shadow.vertex boulder_cull.compute
+      rain.vertex rain.fragment)
     set(MOPPE_XBOX_LOWERED)
     foreach(stage IN LISTS MOPPE_XBOX_STAGES)
       string(REGEX REPLACE "[.].*" "" program ${stage})

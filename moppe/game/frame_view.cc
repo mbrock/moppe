@@ -1,4 +1,5 @@
 #include <moppe/game/frame_view.hh>
+#include <moppe/game/weather.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -206,17 +207,23 @@ namespace moppe::game {
 
     result.lighting.fog_color = logic.m_fog;
     result.lighting.clear_color = logic.m_fog;
-    result.lighting.fog_scale = input.world.fog_scale;
+    const Weather& weather = current_weather ();
+    result.lighting.fog_scale = input.world.fog_scale * weather.fog_density;
+    result.lighting.mist = weather.mist;
+    result.lighting.rain = weather.rain;
     result.lighting.sun_direction =
       sun_direction_for (input.graphics.sun_height);
     sun_light_colors_for (input.graphics.sun_height,
                           result.lighting.sun_diffuse,
                           result.lighting.sun_specular);
     result.lighting.sun_specular =
-      scale_display (result.lighting.sun_specular, 0.5f);
+      scale_display (result.lighting.sun_specular, 0.5f * weather.sunlight);
+    result.lighting.sun_diffuse =
+      scale_display (result.lighting.sun_diffuse, weather.sunlight);
     result.lighting.ambient =
       scale_display (DisplayColor (0.39f, 0.43f, 0.49f),
-                     0.35f + 0.65f * daylight_for (input.graphics.sun_height));
+                     (0.35f + 0.65f * daylight_for (input.graphics.sun_height))
+                       * weather.skylight);
     result.lighting.time = static_cast<float> (logic.m_total_time);
     result.lighting.sun_height = input.graphics.sun_height;
     result.lighting.cloudiness = logic.m_cloudiness;

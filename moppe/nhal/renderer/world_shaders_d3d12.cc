@@ -26,6 +26,8 @@
 #include <shader_hud_vertex.h>
 #include <shader_present_fragment.h>
 #include <shader_present_vertex.h>
+#include <shader_rain_fragment.h>
+#include <shader_rain_vertex.h>
 #include <shader_resolve_fragment.h>
 #include <shader_resolve_vertex.h>
 #include <shader_shafts_fragment.h>
@@ -80,6 +82,7 @@ namespace moppe::nhal {
       { dxil (shader_boulders_vertex), dxil (shader_boulders_fragment) },
       { dxil (shader_boulders_shadow_vertex), {} },
       dxil (shader_boulder_cull_compute),
+      { dxil (shader_rain_vertex), dxil (shader_rain_fragment) },
     };
     return shaders;
   }

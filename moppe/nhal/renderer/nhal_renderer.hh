@@ -39,6 +39,7 @@ namespace moppe::nhal {
     StageCode boulders[2];
     StageCode boulders_shadow[2];
     StageCode boulder_cull;
+    StageCode rain[2];
   };
 
   // The programs' MSL, embedded in the binary at build time.

@@ -175,6 +175,9 @@
     overhead).
     Analyze a completed CSV with
     `tools/graphics-benchmark-analyze INPUT.csv [OUTPUT_DIR]`.
+  - Weather is authored, not simulated: `MOPPE_WEATHER=clear|mist|drizzle`
+    (`moppe/game/weather.hh`) sets the sky, fog, and light, and the NHAL
+    renderer draws valley mist and a fine rain for it.
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots; use `MOPPE_DEMO=forest` to start the same
     rider at the world's selected forest-floor site),

@@ -32,6 +32,7 @@
 #include <sward_patches.hh>
 #include <hud.hh>
 #include <present.hh>
+#include <rain.hh>
 #include <resolve.hh>
 #include <shafts.hh>
 #include <sky.hh>
@@ -347,6 +348,7 @@ namespace moppe::nhal {
         m_gtao_blur_code.keep (shaders.gtao_blur);
         m_shafts_code.keep (shaders.shafts);
         m_forest_code.keep (shaders.forest);
+        m_rain_code.keep (shaders.rain);
         m_boulders_code.keep (shaders.boulders);
         m_boulders_shadow_code.keep (shaders.boulders_shadow);
         m_boulder_cull_code = std::string (shaders.boulder_cull.msl);
@@ -839,7 +841,8 @@ namespace moppe::nhal {
         frame.ambient = linear (params.ambient);
         frame.fog_color = linear (params.clear_color, params.fog_scale);
         frame.relief = { m_terrain_params.sea_level,
-                         m_terrain_params.land_relief, m_previous_time, 0 };
+                         m_terrain_params.land_relief, m_previous_time,
+                         std::clamp (params.mist, 0.0f, 1.0f) };
         frame.view_right = lanes (params.cam_right * tan_x);
         frame.view_up = lanes (params.cam_up * tan_y);
         frame.view_forward = lanes (params.cam_forward);
@@ -1124,6 +1127,18 @@ namespace moppe::nhal {
         if (m_resolved)
           return;
         open_scene ();
+        if (m_params.rain > 0.0f) {
+          // The drizzle, last in the scene so it falls in front of
+          // everything it does not pass behind.
+          constexpr std::uint32_t drops = 7000;
+          m_device->set_pipeline (m_rain);
+          m_device->set_buffer (0, m_frame_block);
+          shaders::rain::Weather weather {};
+          weather.rain = { std::clamp (m_params.rain, 0.0f, 1.0f),
+                           float (drops), 0, 0 };
+          m_device->set_uniforms (1, weather);
+          m_device->draw (6, drops);
+        }
         m_device->end_render_pass ();
         m_scene_open = false;
         Texture& previous = m_history[m_frame % 2];
@@ -1442,6 +1457,16 @@ namespace moppe::nhal {
         m_boulder_cull = m_device->create_compute_pipeline (
           { &shaders::boulder_cull::program,
             { m_boulder_cull_code, m_boulder_cull_dxil }, "boulder culling" });
+
+        RenderPipelineDesc rain = scene;
+        rain.program = &shaders::rain::program;
+        rain.vertex = m_rain_code.stage (0);
+        rain.fragment = m_rain_code.stage (1);
+        rain.blend[0] = Blend::alpha;
+        rain.depth_write = false;
+        rain.cull = Cull::none;
+        rain.label = "drizzle";
+        m_rain = m_device->create_render_pipeline (rain);
 
         RenderPipelineDesc grass = scene;
         grass.program = &shaders::grass::program;
@@ -2071,6 +2096,8 @@ namespace moppe::nhal {
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];
       Texture m_bloom[2];
       Texture m_ao[2], m_shafts;
+      ProgramCode m_rain_code;
+      Pipeline m_rain;
       ProgramCode m_boulders_code, m_boulders_shadow_code;
       std::string m_boulder_cull_code;
       std::vector<unsigned char> m_boulder_cull_dxil;

@@ -39,6 +39,7 @@
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/water_presentation.hh>
 #include <moppe/game/waterfall_surface.hh>
+#include <moppe/game/weather.hh>
 #include <moppe/game/world.hh>
 #include <moppe/game/world_loading.hh>
 #include <moppe/map/surface.hh>
@@ -1022,15 +1023,19 @@ namespace moppe {
            0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
            std::sin (total_time * 0.02f) * 0.05f) *
           cloud_cover[one];
-        cloudiness = std::clamp (
-          cloudiness, 0.0f * cloud_cover[one], 1.0f * cloud_cover[one]);
+        const Weather& weather = current_weather ();
+        cloudiness = std::clamp (cloudiness,
+                                 weather.cloud_floor * cloud_cover[one],
+                                 1.0f * cloud_cover[one]);
         logic ().m_cloudiness = cloudiness;
 
         // Fog stays mostly sky-blue. Directional warmth is added in the
         // shaders only when looking toward the sun.
         const DisplayColor horizon = horizon_color_for (m_graphics.sun_height);
         logic ().m_fog =
-          mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
+          mix_display (mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f),
+                                    0.18f),
+                       weather.fog_tint, weather.fog_tint_amount);
       }
 
       // -- simulation --------------------------------------------------
@@ -1327,6 +1332,8 @@ namespace moppe {
         params.exposure_bias = frame.lighting.exposure_bias;
         params.time = frame.lighting.time;
         params.cloud_cover = frame.lighting.cloudiness.numerical_value_in (one);
+        params.mist = frame.lighting.mist;
+        params.rain = frame.lighting.rain;
         params.sun_visibility = frame.lighting.sun_visibility;
         params.upscaling = frame.graphics.upscaling;
         params.scene_scale = frame.graphics.scene_scale;

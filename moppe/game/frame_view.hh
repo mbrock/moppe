@@ -160,6 +160,8 @@ namespace moppe::game {
     cloud_cover_t cloudiness = 0.0f * cloud_cover[mp_units::one];
     float sun_visibility = 0.0f;
     float exposure_bias = 1.0f;
+    float mist = 0.0f;
+    float rain = 0.0f;
   };
 
   struct FrameGraphics {
