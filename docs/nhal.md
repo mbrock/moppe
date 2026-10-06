@@ -27,8 +27,20 @@ provisional sky, the game's draw lists and meshes through one "uber" program
 with a pipeline per draw state, and the HUD: its draw lists, then its Slug
 text and vector shapes, whose band walk is Luv's own (`luv/slug-shader`,
 called as `luv.slug::slug-horizontal-band-step` and friends). Water is left
-out on purpose, to be reinvented rather than ported; the forest, boulders,
-undergrowth, dust, shadows, clouds, and the post effects come next.
+out on purpose, to be reinvented rather than ported.
+
+The trunk forest keeps `forest_trunks.metal`'s trees -- tapered trunks,
+stacked spruce cones, birch clumps on branches, the same twelve (species,
+tier) topologies -- but the GPU chooses them: `forest-cull` tests every
+individual against the view in a compute pass at `begin_frame`, appends it
+to its class's candidate list with an atomic, and counts the class's indexed
+indirect draw, which `draw_forest` issues twelve times. There is no stand
+canopy yet, so closed stands stay individuals until their crowns are four
+pixels across, and the stand closure is approximated by the habitat's canopy
+cover.
+
+Boulders, undergrowth, falling leaves, dust, shadows, clouds, and the post
+effects come next.
 
 ## What the Xbox allows
 

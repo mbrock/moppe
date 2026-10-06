@@ -107,11 +107,11 @@
         "tracy": "tracy"
       },
       "locked": {
-        "lastModified": 1791250332,
-        "narHash": "sha256-9ItYkLtDNbnvHn6xaWwEBp21uPM0ViQrCpj/0ln4MCQ=",
+        "lastModified": 1791250583,
+        "narHash": "sha256-0BhjsNx4ZciYg87LJSbENJ0Z+bBk9u02wCAAepnKLxY=",
         "owner": "mbrock",
         "repo": "luv",
-        "rev": "ce9d4e93f68e6b36e331d385e2d614c758e8f204",
+        "rev": "bf120f08309bfb512b3f47a27a519ecf93e88b57",
         "type": "github"
       },
       "original": {
