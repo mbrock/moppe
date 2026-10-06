@@ -2752,6 +2752,285 @@
   :vertex rain-vertex
   :fragment rain-fragment)
 
+;;; -- water ------------------------------------------------------------------
+;;;
+;;; A placeholder until water is designed properly.  The water sheet (RG32F
+;;; on the terrain grid: the surface in the heights' units, and the swell's
+;;; amplitude) is drawn over the terrain's own chunks, each vertex lifted to
+;;; the water instead of the ground, so sea and lakes share the terrain's
+;;; levels of detail.  Dry fragments are discarded; the rest are a depth
+;;; tint under the sky's Fresnel reflection, with a sun glint from two
+;;; drifting ripple fields.
+
+(define-shader water-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (world :vec3 :location 0)
+               (depth :float :location 1)
+               (here :vec4 :location 2)
+               (then :vec4 :location 3))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (chunk :uniform-block :binding 2 :members #.*chunk*)
+                 (heights :texture-2d :binding 0)
+                 (water-levels :texture-2d :binding 11)))
+  (let* ((row-length (uint (swizzle placement :w)))
+         (stride (swizzle placement :z))
+         (grid (+ (swizzle placement :xy)
+                  (* (vec2 (float (mod vertex-index row-length))
+                           (float (/ vertex-index row-length)))
+                     stride)))
+         (extent (swizzle size :xy))
+         (ground (height-between heights grid extent))
+         (water (height-between water-levels grid extent))
+         (xz (+ (* grid (vec2 (swizzle scale :x) (swizzle scale :z)))
+                (swizzle offset :xz)))
+         (position (vec3 (swizzle xz :x) (* water (swizzle scale :y))
+                         (swizzle xz :y)))
+         (point (vec4 position 1.0))
+         (current (* view-proj point)))
+    (set-output clip-position (clip current (swizzle temporal :zw)))
+    (set-output world position)
+    (set-output depth (* (- water ground) (swizzle scale :y)))
+    (set-output here current)
+    (set-output then (* previous-view-proj point))))
+
+(define-shader water-fragment
+    (:stage :fragment
+     :inputs ((world :vec3 :location 0)
+              (depth :float :location 1)
+              (here :vec4 :location 2)
+              (then :vec4 :location 3))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((eye (swizzle camera-position :xyz))
+         (time (swizzle camera-position :w))
+         (to-eye (- eye world))
+         (distance (sqrt (dot to-eye to-eye)))
+         (view (/ to-eye (max distance 0.001)))
+         (light (swizzle sun-direction :xyz))
+         ;; Ripples fade with distance, where they would only alias.
+         (calm (- 1.0 (smoothstep 40.0 400.0 distance)))
+         (slope (* (+ (swizzle (value-noise-gradient
+                                (+ (* (swizzle world :xz) 0.9)
+                                   (* (vec2 0.31 0.17) time)))
+                               :yz)
+                      (* 0.5 (swizzle (value-noise-gradient
+                                       (- (* (swizzle world :xz) 2.3)
+                                          (* (vec2 0.12 0.41) time)))
+                                      :yz)))
+                   (* 0.25 calm)))
+         (n (normalize (vec3 (* -1.0 (swizzle slope :x)) 1.0
+                             (* -1.0 (swizzle slope :y)))))
+         (cosine (clamp (dot n view) 0.0 1.0))
+         (fresnel (+ 0.02 (* 0.98 (expt (- 1.0 cosine) 5.0))))
+         (reflected (- (* 2.0 (dot n view) n) view))
+         (sky (mix (* (swizzle fog-color :xyz) 1.05)
+                   (* (swizzle ambient :xyz) 1.7)
+                   (smoothstep 0.0 0.6 (swizzle reflected :y))))
+         (sun-light (swizzle sun-diffuse :xyz))
+         ;; Shallow water shows the bed's warm green; deep water is dark.
+         (body (mix (srgb (vec3 0.16 0.24 0.20)) (srgb (vec3 0.03 0.07 0.10))
+                    (smoothstep 0.3 6.0 depth)))
+         (at (sun-map-coordinate sun-view world))
+         (lit (shadow-tap shadow-map shadow-compare at 0.0 0.0
+                          (swizzle shadow :y) (/ 1.0 1240.0)))
+         (visibility (mix 1.0 (mix 0.2 1.0 lit)
+                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (diffuse (* body (+ (* sun-light (* (max (swizzle light :y) 0.0)
+                                             visibility 0.6))
+                             (swizzle ambient :xyz))))
+         (glint (* sun-light visibility 4.0
+                   (expt (clamp (dot reflected light) 0.0 1.0) 180.0)))
+         (shaded (+ (mix diffuse sky fresnel) glint))
+         ;; The shore fades in over the first few centimetres of depth.
+         (cover (mix 0.55 0.96 (smoothstep 0.05 1.5 depth))))
+    (when (< depth 0.02)
+      (discard))
+    (set-output color (vec4 (hazed shaded world eye fog-color light relief)
+                            (* cover (smoothstep 0.02 0.12 depth))))
+    (set-output motion (- (clip-uv then) (clip-uv here)))))
+
+(define-shader-program water
+  :vertex water-vertex
+  :fragment water-fragment)
+
+;;; -- falling leaves -------------------------------------------------------
+;;;
+;;; In a grove that has turned, leaves drift down from the crowns, swaying and
+;;; spinning on the way.  A window of 1.2-metre cells anchored to the world
+;;; follows the camera; each cell owns one leaf whose whole fall is a function
+;;; of its identity and the time, so nothing is simulated or stored.  The
+;;; fallen-leaf raster -- the turned leaf area the birches hold -- decides
+;;; which cells have a leaf, so leaves fall only under gold crowns.  Near the
+;;; ground a leaf shrinks away: the litter is the leaves that have landed.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *leaves*
+    '((window :vec4)               ; first cell x, z, cells per side, cell m
+      (lattice :vec4)              ; 1/step x, 1/step z, height scale, samples
+      (stand-field :vec4))))       ; have litter, 1/period x, z, reach metres
+
+(define-shader-struct falling-leaf
+  (centre :vec3) (across :vec3) (along :vec3))
+
+;;; Where a cell's leaf is at a time, over the ground below it.  It falls
+;;; from the crowns at about a metre a second, drifting downwind and swinging
+;;; side to side, and turns over as it goes.
+(define-shader-function leaf-flight (id time cell-metres)
+  (let* ((drop (+ 6.0 (* 9.0 (plant-hash id (uint 1)))))
+         (speed (+ 0.8 (* 0.5 (plant-hash id (uint 2)))))
+         (fall (fract (+ (/ (* time speed) drop) (plant-hash id (uint 3)))))
+         (swing-phase (* 6.2831853 (plant-hash id (uint 4))))
+         (wind (vec2 0.79 0.53))
+         (home (* (+ (vec2 (float (int (swizzle id :x)))
+                           (float (int (swizzle id :y))))
+                     (vec2 (plant-hash id (uint 5)) (plant-hash id (uint 6))))
+                  cell-metres))
+         (swing (* 0.55 (vec2 (sin (+ (* time 1.3) swing-phase))
+                              (cos (+ (* time 1.1) (* 1.7 swing-phase))))))
+         ;; Start upwind, so the leaf lands near its own cell.
+         (xz (+ home (* wind (* 2.2 (- fall 0.5))) swing))
+         (spin (+ (* time (+ 2.0 (* 3.0 (plant-hash id (uint 7)))))
+                  swing-phase))
+         (tumble (* time (+ 1.1 (* 1.5 (plant-hash id (uint 8))))))
+         (axis (normalize (vec3 (cos tumble) (+ 0.6 (* 0.4 (sin tumble)))
+                                (sin tumble))))
+         (side (normalize (cross3 axis (vec3 (cos spin) 0.0 (sin spin)))))
+         (height (* drop (- 1.0 fall)))
+         (size (* 0.09 (smoothstep 0.0 0.35 height))))
+    (make-falling-leaf
+     :centre (vec3 (swizzle xz :x) height (swizzle xz :y))
+     :across (* side size)
+     :along (* (cross3 axis side) (* 0.7 size)))))
+
+(define-shader-function leaf-corner (leaf corner scale)
+  (let* ((ax (if (= (logand corner (uint 1)) (uint 1)) 1.0 -1.0))
+         (ay (if (= (logand corner (uint 2)) (uint 2)) 1.0 -1.0))
+         ;; The tip narrows: a leaf, not a card.
+         (taper (if (> ay 0.0) 0.45 1.0)))
+    (+ (falling-leaf-centre leaf)
+       (* scale (+ (* (* ax taper) (falling-leaf-across leaf))
+                   (* ay (falling-leaf-along leaf)))))))
+
+(define-shader leaves-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (world-position :vec3 :location 0)
+               (leaf-normal :vec3 :location 1)
+               (albedo :vec3 :location 2 :interpolation :flat)
+               (here :vec4 :location 3)
+               (then :vec4 :location 4))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (leaves :uniform-block :binding 1 :members #.*leaves*)
+                 (heights :texture-2d :binding 0)
+                 (litter :texture-2d :binding 10)
+                 (linear-repeat :sampler :binding 1)))
+  (let* ((side (uint (swizzle window :z)))
+         (cell (+ (swizzle window :xy)
+                  (vec2 (float (mod instance-index side))
+                        (float (/ instance-index side)))))
+         (id (cell-identity cell))
+         (cell-metres (swizzle window :w))
+         (centre (* (+ cell (vec2 0.5 0.5)) cell-metres))
+         (density (* (swizzle stand-field :x)
+                     (swizzle (sample-level litter linear-repeat
+                                            (* centre (swizzle stand-field :yz))
+                                            0.0)
+                              :x)))
+         (away (- centre (swizzle camera-position :xz)))
+         (reach (- 1.0 (smoothstep 0.70 1.0 (/ (sqrt (dot away away))
+                                                (swizzle stand-field :w)))))
+         (scale (if (< (plant-hash id (uint 0)) (* 0.85 density reach))
+                    1.0 0.0))
+         (time (swizzle camera-position :w))
+         (now-flight (leaf-flight id time cell-metres))
+         (before-flight (leaf-flight id (swizzle relief :z) cell-metres))
+         (now-over (falling-leaf-centre now-flight))
+         (before-over (falling-leaf-centre before-flight))
+         (now (make-falling-leaf
+               :centre (+ now-over
+                          (vec3 0.0 (sample-ground heights (swizzle now-over :xz)
+                                                   lattice)
+                                0.0))
+               :across (falling-leaf-across now-flight)
+               :along (falling-leaf-along now-flight)))
+         (before (make-falling-leaf
+                  :centre (+ before-over
+                             (vec3 0.0 (sample-ground heights
+                                                      (swizzle before-over :xz)
+                                                      lattice)
+                                   0.0))
+                  :across (falling-leaf-across before-flight)
+                  :along (falling-leaf-along before-flight)))
+         ;; Two triangles: corners 0 1 2 and 1 3 2.
+         (k (mod vertex-index (uint 6)))
+         (corner (if (= k (uint 3)) (uint 1)
+                     (if (= k (uint 4)) (uint 3)
+                         (if (= k (uint 5)) (uint 2) k))))
+         (point (leaf-corner now corner scale))
+         (previous (leaf-corner before corner scale))
+         (amber (plant-hash id (uint 9)))
+         (here-clip (* view-proj (vec4 point 1.0))))
+    (set-output clip-position (clip here-clip (swizzle temporal :zw)))
+    (set-output world-position point)
+    (set-output leaf-normal (normalize (cross3 (falling-leaf-across now)
+                                               (falling-leaf-along now))))
+    (set-output albedo (srgb (mix (vec3 0.95 0.74 0.22) (vec3 0.90 0.46 0.13)
+                                  (* amber amber))))
+    (set-output here here-clip)
+    (set-output then (* previous-view-proj (vec4 previous 1.0)))))
+
+(define-shader leaves-fragment
+    (:stage :fragment
+     :inputs ((world-position :vec3 :location 0)
+              (leaf-normal :vec3 :location 1)
+              (albedo :vec3 :location 2 :interpolation :flat)
+              (here :vec4 :location 3)
+              (then :vec4 :location 4))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((eye (swizzle camera-position :xyz))
+         (to-eye (- eye world-position))
+         (view (/ to-eye (max (sqrt (dot to-eye to-eye)) 0.001)))
+         (light (swizzle sun-direction :xyz))
+         (n (if (< (dot leaf-normal view) 0.0) (* -1.0 leaf-normal)
+                leaf-normal))
+         (at (sun-map-coordinate sun-view world-position))
+         (texel (swizzle shadow :y))
+         (margin (/ 2.0 1240.0))
+         (lit (* 0.5 (+ (shadow-tap shadow-map shadow-compare at -0.5 0.0
+                                    texel margin)
+                        (shadow-tap shadow-map shadow-compare at 0.5 0.0
+                                    texel margin))))
+         (visibility (mix 1.0 (mix 0.25 1.0 lit)
+                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (sun-light (swizzle sun-diffuse :xyz))
+         ;; A thin leaf is lit from either side and glows against the sun.
+         (sun (abs (dot n light)))
+         (shaded (+ (* albedo (+ (* sun-light (* sun visibility 0.95))
+                                 (* 0.9 (hemisphere-light
+                                         (swizzle ambient :xyz) n))))
+                    (* albedo sun-light visibility 0.5
+                       (expt (clamp (dot (* -1.0 view) light) 0.0 1.0) 3.0)))))
+    (set-output color (vec4 (hazed shaded world-position eye fog-color light
+                                   relief)
+                            1.0))
+    (set-output motion (- (clip-uv then) (clip-uv here)))))
+
+(define-shader-program leaves
+  :vertex leaves-vertex
+  :fragment leaves-fragment)
+
 ;;; -- HUD text -------------------------------------------------------------
 ;;;
 ;;; Glyphs and vector shapes by Slug, from moppe's glyph quads

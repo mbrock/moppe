@@ -770,10 +770,12 @@ endif()
 if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   # Luv's Lisp shaders are lowered by luv-shaderc: from PATH, or else the
   # version this repository's flake pins.
-  find_program(MOPPE_LUV_SHADERC luv-shaderc)
+  find_program(MOPPE_LUV_SHADERC luv-shaderc NO_CACHE)
   if(MOPPE_LUV_SHADERC)
     set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
   else()
+    # Lowered shaders depend on the compiler itself only when it is found.
+    set(MOPPE_LUV_SHADERC "")
     set(MOPPE_LUV_SHADERC_COMMAND
       nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
   endif()
@@ -833,6 +835,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         --target msl
         ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
       DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+      ${MOPPE_LUV_SHADERC}
       COMMENT "Lowering the NHAL demo's Lisp shaders"
       VERBATIM)
     # The MSL is read and compiled at run time, not linked.
@@ -894,7 +897,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     foreach(program IN ITEMS
         terrain sky uber hud resolve present slug_text forest
         bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
-        rain)
+        rain water leaves)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
@@ -918,6 +921,8 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
       DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+      ${MOPPE_LUV_SHADERC}
+        ${MOPPE_LUV_SHADERC}
       COMMENT "Lowering the NHAL renderer's Lisp shaders"
       VERBATIM)
     set_source_files_properties(${MOPPE_NHAL_WORLD_OUTPUTS} PROPERTIES
@@ -1029,7 +1034,7 @@ if(WIN32)
   # lowers the renderer's Lisp shaders to HLSL and DXC compiles each stage
   # to a header of signed DXIL.
   if(MOPPE_XBOX_GAME)
-    find_program(MOPPE_LUV_SHADERC luv-shaderc REQUIRED)
+    find_program(MOPPE_LUV_SHADERC luv-shaderc REQUIRED NO_CACHE)
     find_program(MOPPE_DXC dxc REQUIRED)
     set(MOPPE_XBOX_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
     set(MOPPE_XBOX_STAGES
@@ -1046,7 +1051,8 @@ if(WIN32)
       gtao.vertex gtao.fragment gtao_blur.vertex gtao_blur.fragment
       shafts.vertex shafts.fragment boulders.vertex boulders.fragment
       boulders_shadow.vertex boulder_cull.compute
-      rain.vertex rain.fragment)
+      rain.vertex rain.fragment water.vertex water.fragment
+      leaves.vertex leaves.fragment)
     set(MOPPE_XBOX_LOWERED)
     foreach(stage IN LISTS MOPPE_XBOX_STAGES)
       string(REGEX REPLACE "[.].*" "" program ${stage})
@@ -1062,6 +1068,8 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
       DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+      ${MOPPE_LUV_SHADERC}
+        ${MOPPE_LUV_SHADERC}
       COMMENT "Lowering the NHAL renderer's Lisp shaders to HLSL"
       VERBATIM)
     set(MOPPE_XBOX_DXIL)
@@ -1160,10 +1168,12 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   find_package(Vulkan REQUIRED)
   find_package(SDL3 REQUIRED CONFIG)
-  find_program(MOPPE_LUV_SHADERC luv-shaderc)
+  find_program(MOPPE_LUV_SHADERC luv-shaderc NO_CACHE)
   if(MOPPE_LUV_SHADERC)
     set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
   else()
+    # Lowered shaders depend on the compiler itself only when it is found.
+    set(MOPPE_LUV_SHADERC "")
     set(MOPPE_LUV_SHADERC_COMMAND
       nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
   endif()
@@ -1187,6 +1197,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       --target spirv
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/demo/shaders/scene.lisp
+      ${MOPPE_LUV_SHADERC}
     COMMENT "Lowering the NHAL demo's Lisp shaders to SPIR-V"
     VERBATIM)
   set_source_files_properties(${MOPPE_NHAL_DEMO_OUTPUTS} PROPERTIES
@@ -1207,7 +1218,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   foreach(program IN ITEMS
       terrain sky uber hud resolve present slug_text forest
       bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
-      rain)
+      rain water leaves)
     list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
       ${MOPPE_NHAL_WORLD}/${program}.hh
       ${MOPPE_NHAL_WORLD}/${program}.vertex.spv
@@ -1231,6 +1242,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
     DEPENDS
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp
+      ${MOPPE_LUV_SHADERC}
     COMMENT "Lowering the NHAL renderer's Lisp shaders to SPIR-V"
     VERBATIM)
   set_source_files_properties(${MOPPE_NHAL_WORLD_OUTPUTS} PROPERTIES

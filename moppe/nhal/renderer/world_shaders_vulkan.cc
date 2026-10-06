@@ -139,6 +139,19 @@ namespace moppe::nhal {
 #embed "rain.fragment.spv"
     };
 
+    alignas (4) const unsigned char water_vertex[] = {
+#embed "water.vertex.spv"
+    };
+    alignas (4) const unsigned char water_fragment[] = {
+#embed "water.fragment.spv"
+    };
+    alignas (4) const unsigned char leaves_vertex[] = {
+#embed "leaves.vertex.spv"
+    };
+    alignas (4) const unsigned char leaves_fragment[] = {
+#embed "leaves.fragment.spv"
+    };
+
     template <std::size_t N>
     StageCode spirv (const unsigned char (&code)[N]) {
       static_assert (N % 4 == 0);
@@ -174,6 +187,8 @@ namespace moppe::nhal {
       { spirv (boulders_shadow_vertex), {} },
       spirv (boulder_cull_compute),
       { spirv (rain_vertex), spirv (rain_fragment) },
+      { spirv (water_vertex), spirv (water_fragment) },
+      { spirv (leaves_vertex), spirv (leaves_fragment) },
     };
     return shaders;
   }

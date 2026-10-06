@@ -134,6 +134,18 @@ namespace moppe::nhal {
     const char rain_fragment[] = {
 #embed "rain.fragment.metal"
       , 0 };
+    const char water_vertex[] = {
+#embed "water.vertex.metal"
+      , 0 };
+    const char water_fragment[] = {
+#embed "water.fragment.metal"
+      , 0 };
+    const char leaves_vertex[] = {
+#embed "leaves.vertex.metal"
+      , 0 };
+    const char leaves_fragment[] = {
+#embed "leaves.fragment.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -163,6 +175,8 @@ namespace moppe::nhal {
       { { boulders_shadow_vertex, {} }, {} },
       { boulder_cull_compute, {} },
       { { rain_vertex, {} }, { rain_fragment, {} } },
+      { { water_vertex, {} }, { water_fragment, {} } },
+      { { leaves_vertex, {} }, { leaves_fragment, {} } },
     };
     return shaders;
   }

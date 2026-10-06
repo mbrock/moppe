@@ -32,6 +32,7 @@
 #include <sward_patches.hh>
 #include <hud.hh>
 #include <present.hh>
+#include <leaves.hh>
 #include <rain.hh>
 #include <resolve.hh>
 #include <shafts.hh>
@@ -40,6 +41,7 @@
 #include <terrain.hh>
 #include <terrain_shadow.hh>
 #include <uber.hh>
+#include <water.hh>
 
 #include <algorithm>
 #include <array>
@@ -356,6 +358,8 @@ namespace moppe::nhal {
         m_shafts_code.keep (shaders.shafts);
         m_forest_code.keep (shaders.forest);
         m_rain_code.keep (shaders.rain);
+        m_water_code.keep (shaders.water);
+        m_leaves_code.keep (shaders.leaves);
         m_boulders_code.keep (shaders.boulders);
         m_boulders_shadow_code.keep (shaders.boulders_shadow);
         m_boulder_cull_code.keep (shaders.boulder_cull);
@@ -512,8 +516,24 @@ namespace moppe::nhal {
                                 std::span<const float>) override {}
       void clear_terrain_overlay () override {}
       void render_terrain_shadow (const Mat4&, bool) override {}
+      // The water sheet on the terrain grid: the surface in the heights'
+      // units, and the swell's amplitude. A placeholder water draws it
+      // (draw_ocean) until water is designed properly.
       void set_ocean (const render::OceanSetup&,
-                      const render::TexturePixels&) override {}
+                      const render::TexturePixels& levels) override {
+        if (m_water_levels)
+          m_device->destroy (m_water_levels);
+        m_water_levels = {};
+        if (levels.empty ()
+            || levels.format () != render::PixelFormat::rg32f)
+          return;
+        m_water_levels = m_device->create_texture (
+          { std::uint32_t (levels.width ()), std::uint32_t (levels.height ()),
+            Format::rg32_float, usage_sampled, 1, "water levels" });
+        std::vector<std::byte> bytes (levels.byte_size ());
+        levels.write_into (bytes.data ());
+        m_device->write_texture (m_water_levels, bytes);
+      }
 
       void set_forest (const render::ForestSetup& setup,
                        std::span<const render::ForestInstance> instances)
@@ -822,6 +842,7 @@ namespace moppe::nhal {
             || m_scene_width != scene_width || m_scene_height != scene_height)
           make_targets (scene_width, scene_height);
         m_params = params;
+        m_chunks.clear ();
         m_scene_open = m_resolved = m_presented = false;
         // MOPPE_NHAL_PROBE switches a diagnostic for consoles where the
         // renderer cannot be debugged directly: "white" draws every draw
@@ -999,8 +1020,14 @@ namespace moppe::nhal {
         m_device->set_texture (7, m_ground ? m_ground : m_white);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
-        for (int i = 0; i < count; ++i) {
-          const ChunkDraw& c = chunks[i];
+        m_chunks.assign (chunks, chunks + count);
+        draw_chunks ();
+      }
+
+      // The terrain's chunks as draw_terrain last placed them, under the
+      // bound pipeline.
+      void draw_chunks () {
+        for (const ChunkDraw& c : m_chunks) {
           const int lod = std::clamp (int (c.lod), 0, lod_count - 1);
           const bool patch = c.cells == render::terrain_patch_cells;
           shaders::terrain::Chunk chunk {};
@@ -1109,7 +1136,50 @@ namespace moppe::nhal {
         m_device->draw (3);
       }
 
-      void draw_ocean (const render::OceanParams&) override {}
+      // Placeholder water: the terrain's chunks again, lifted to the water
+      // sheet, over the opaque scene.
+      void draw_ocean (const render::OceanParams&) override {
+        if (!m_have_terrain || !m_water_levels || m_chunks.empty ()
+            || m_resolved)
+          return;
+        open_scene ();
+        m_device->set_pipeline (m_water);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, terrain_block ());
+        m_device->set_texture (0, m_heights);
+        m_device->set_texture (8, m_shadow_map);
+        m_device->set_texture (11, m_water_levels);
+        draw_chunks ();
+      }
+
+      // Leaves drifting down where the crowns have turned: a window of
+      // world-anchored cells around the camera, one leaf each, those the
+      // fallen-leaf raster says stand under gold crowns.
+      void draw_falling_leaves () override {
+        if (!m_have_terrain || !m_litter || m_resolved)
+          return;
+        open_scene ();
+        constexpr float cell_metres = 1.2f;
+        constexpr int side = 64;
+        const Vec3 camera = m_params.camera_pos;
+        const auto& t = m_terrain_params;
+        shaders::leaves::Leaves leaves {};
+        leaves.window = { std::floor (camera[0] / cell_metres) - side / 2,
+                          std::floor (camera[2] / cell_metres) - side / 2,
+                          float (side), cell_metres };
+        leaves.lattice = { 1.0f / t.scale[0], 1.0f / t.scale[2], t.scale[1],
+                           float (t.width) };
+        leaves.stand_field = { 1.0f, m_stand_inverse_period[0],
+                               m_stand_inverse_period[1],
+                               0.5f * side * cell_metres };
+        m_device->set_pipeline (m_leaves);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, leaves);
+        m_device->set_texture (0, m_heights);
+        m_device->set_texture (8, m_shadow_map);
+        bind_stand ();
+        m_device->draw (6, side * side);
+      }
       void draw_waterfalls (const render::Mesh&, const Mat4&) override {}
 
       void draw_list (const DrawList& list, std::uint64_t) override {
@@ -1474,6 +1544,25 @@ namespace moppe::nhal {
         m_boulder_cull = m_device->create_compute_pipeline (
           { &shaders::boulder_cull::program,
             m_boulder_cull_code.code (), "boulder culling" });
+
+        RenderPipelineDesc water = scene;
+        water.program = &shaders::water::program;
+        water.vertex = m_water_code.stage (0);
+        water.fragment = m_water_code.stage (1);
+        water.topology = Topology::triangle_strip;
+        water.blend[0] = Blend::alpha;
+        water.depth_write = false;
+        water.cull = Cull::none;
+        water.label = "water";
+        m_water = m_device->create_render_pipeline (water);
+
+        RenderPipelineDesc leaves = scene;
+        leaves.program = &shaders::leaves::program;
+        leaves.vertex = m_leaves_code.stage (0);
+        leaves.fragment = m_leaves_code.stage (1);
+        leaves.cull = Cull::none;
+        leaves.label = "falling leaves";
+        m_leaves = m_device->create_render_pipeline (leaves);
 
         RenderPipelineDesc rain = scene;
         rain.program = &shaders::rain::program;
@@ -2130,7 +2219,10 @@ namespace moppe::nhal {
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];
       Texture m_bloom[2];
       Texture m_ao[2], m_shafts;
-      ProgramCode m_rain_code;
+      ProgramCode m_rain_code, m_water_code, m_leaves_code;
+      Pipeline m_water, m_leaves;
+      Texture m_water_levels;
+      std::vector<ChunkDraw> m_chunks;
       Pipeline m_rain;
       ProgramCode m_boulders_code, m_boulders_shadow_code;
       OwnedStage m_boulder_cull_code;
