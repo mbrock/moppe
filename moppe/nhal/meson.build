@@ -16,6 +16,7 @@ programs = [
   ['trees_shadow', ['vertex']],
   ['sky', ['vertex', 'fragment']],
   ['tonemap', ['vertex', 'fragment']],
+  ['resolve', ['vertex', 'fragment']],
   ['forest_wind', ['compute']],
 ]
 lowered_outputs = []

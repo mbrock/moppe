@@ -107,11 +107,11 @@
         "tracy": "tracy"
       },
       "locked": {
-        "lastModified": 1791244672,
-        "narHash": "sha256-mOxa4GypLqQwCQ2UmSg1rPTVuK6N2+VHez5rQ+jqMCk=",
+        "lastModified": 1791245841,
+        "narHash": "sha256-1LO5ZM6DsSlPeiYZIxTWJYTaHr3+47muE/QjTKEzdds=",
         "owner": "mbrock",
         "repo": "luv",
-        "rev": "23b36577eb448648432416e5023bea9dd366e8af",
+        "rev": "79897d4c2bbd6036e7f4e2086c61da6bde1536ad",
         "type": "github"
       },
       "original": {
@@ -165,11 +165,11 @@
         "winmd": "winmd"
       },
       "locked": {
-        "lastModified": 1791243695,
-        "narHash": "sha256-9rahxkcwkz8YV956KJB/y4dXVZfGW+z3W+9J1onXWYU=",
+        "lastModified": 1791246755,
+        "narHash": "sha256-dYyBnzfOKurxRe2H+Arg4/fn/Bfv+jRqlDBuL3BNT4k=",
         "owner": "mbrock",
         "repo": "nixbox",
-        "rev": "19c1deae7880326d482b0286c9cfa3826f957f78",
+        "rev": "e163646767158024316a7a59c8394fb7bc33313f",
         "type": "github"
       },
       "original": {

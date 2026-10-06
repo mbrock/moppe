@@ -33,6 +33,10 @@ using Microsoft::WRL::ComPtr;
 namespace moppe::nhal {
   namespace {
     std::atomic<const char*> current_step { "idle" };
+    // The live device's fence and device, for a watchdog's report.
+    std::atomic<ID3D12Fence*> watched_fence { nullptr };
+    std::atomic<ID3D12Device*> watched_device { nullptr };
+    std::atomic<std::uint64_t> awaited_value { 0 };
 
     void step (const char* name) {
       current_step.store (name, std::memory_order_relaxed);
@@ -224,6 +228,8 @@ namespace moppe::nhal {
         check (m_device->CreateFence (0, D3D12_FENCE_FLAG_NONE,
                                       IID_PPV_ARGS (&m_setup_fence)),
                "setup fence");
+        watched_fence = m_fence.Get ();
+        watched_device = m_device.Get ();
         m_event = CreateEventExW (nullptr, nullptr, 0, EVENT_ALL_ACCESS);
 
         for (std::uint32_t i = 0; i < frames_in_flight; ++i) {
@@ -356,6 +362,8 @@ namespace moppe::nhal {
 
       ~D3D12Device () override {
         wait_idle ();
+        watched_fence = nullptr;
+        watched_device = nullptr;
         if (m_event)
           CloseHandle (m_event);
       }
@@ -1288,6 +1296,7 @@ namespace moppe::nhal {
       void wait_for (std::uint64_t value) {
         if (m_fence->GetCompletedValue () >= value)
           return;
+        awaited_value = value;
         check (m_fence->SetEventOnCompletion (value, m_event),
                "SetEventOnCompletion");
         if (WaitForSingleObjectEx (m_event, 5000, FALSE) == WAIT_OBJECT_0)
@@ -1408,7 +1417,22 @@ namespace moppe::nhal {
                                           surface_format);
   }
 
-  const char* d3d12_device_step () {
-    return current_step.load (std::memory_order_relaxed);
+  std::string d3d12_device_step () {
+    std::string text = current_step.load (std::memory_order_relaxed);
+    ID3D12Fence* fence = watched_fence;
+    ID3D12Device* device = watched_device;
+    if (fence && device) {
+      char detail[160];
+      std::snprintf (detail, sizeof detail,
+                     " (awaiting frame %llu, GPU completed %llu, device "
+                     "removed reason 0x%08lx)",
+                     static_cast<unsigned long long> (awaited_value.load ()),
+                     static_cast<unsigned long long> (
+                       fence->GetCompletedValue ()),
+                     static_cast<unsigned long> (
+                       device->GetDeviceRemovedReason ()));
+      text += detail;
+    }
+    return text;
   }
 }

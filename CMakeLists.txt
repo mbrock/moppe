@@ -791,7 +791,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         terrain.vertex terrain.fragment terrain_shadow.vertex
         trees.vertex trees.fragment trees_shadow.vertex
         sky.vertex sky.fragment tonemap.vertex tonemap.fragment
-        forest_wind.compute)
+        forest_wind.compute resolve.vertex resolve.fragment)
       string(REGEX REPLACE "[.].*" "" program ${stage})
       list(APPEND MOPPE_NHAL_SHADER_OUTPUTS
         ${MOPPE_NHAL_SHADERS}/${program}.hh

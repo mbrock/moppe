@@ -69,6 +69,7 @@ namespace {
 @property (nonatomic) std::string shaderPath;
 @property (nonatomic) std::string capturePath;
 @property (nonatomic) int frames;
+@property (nonatomic) bool native;
 @end
 
 @implementation DemoDelegate {
@@ -76,7 +77,7 @@ namespace {
   DemoView* _view;
   std::unique_ptr<Device> _device;
   std::unique_ptr<demo::Scene> _scene;
-  std::array<std::string, 11> _msl;
+  std::array<std::string, 13> _msl;
   std::chrono::steady_clock::time_point _start;
   std::chrono::steady_clock::time_point _last;
   int _rendered;
@@ -118,14 +119,17 @@ namespace {
                             "sky.vertex", "sky.fragment",
                             "tonemap.vertex", "tonemap.fragment",
                             "forest_wind.compute", "terrain_shadow.vertex",
-                            "trees_shadow.vertex" };
-    for (int i = 0; i < 11; ++i)
+                            "trees_shadow.vertex", "resolve.vertex",
+                            "resolve.fragment" };
+    for (int i = 0; i < 13; ++i)
       _msl[i] = read_file (self.shaderPath + "/" + files[i] + ".metal");
     auto code = [&] (int i) { return StageCode { _msl[i], {} }; };
     _scene = std::make_unique<demo::Scene> (
       *_device, demo::Shaders { code (0), code (1), code (2), code (3),
                                 code (4), code (5), code (6), code (7),
-                                code (8), code (9), code (10) });
+                                code (8), code (9), code (10), code (11),
+                                code (12) });
+    _scene->set_temporal (!self.native);
     std::cerr << "NHAL demo: " << _device->info ().backend << " on "
               << _device->info ().adapter << ", " << _scene->tree_count ()
               << " trees" << std::endl;
@@ -138,6 +142,15 @@ namespace {
   [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
                                                 | NSEventMaskKeyUp
                                         handler:^NSEvent* (NSEvent* event) {
+    // U switches between temporal upscaling and native 4x MSAA.
+    if (event.type == NSEventTypeKeyDown && event.keyCode == 32
+        && !event.isARepeat && self->_scene) {
+      self->_scene->set_temporal (!self->_scene->temporal ());
+      std::cerr << "NHAL demo: "
+                << (self->_scene->temporal () ? "temporal upscaling"
+                                              : "native 4x MSAA")
+                << std::endl;
+    }
     if (event.type == NSEventTypeKeyDown)
       self->_keys.insert (event.keyCode);
     else
@@ -234,6 +247,8 @@ int main (int argc, const char** argv) {
         delegate.frames = std::max (1, std::atoi (argv[++i]));
       else if (arg == "--shaders" && i + 1 < argc)
         delegate.shaderPath = argv[++i];
+      else if (arg == "--native")
+        delegate.native = true;
     }
     NSApplication* app = [NSApplication sharedApplication];
     app.activationPolicy = delegate.capturePath.empty ()

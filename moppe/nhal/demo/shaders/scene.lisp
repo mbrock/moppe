@@ -33,14 +33,26 @@
       (frustum-right :vec4)
       (frustum-top :vec4)
       (frustum-bottom :vec4)
-      (frustum-near :vec4))))
+      (frustum-near :vec4)
+      ;; Temporal upscaling: last frame's camera, in the same scaled forms,
+      ;; the scene's size, this frame's sub-pixel jitter in y-up NDC, and
+      ;; the history's blend (weight of the new frame, 1 when restarting).
+      (previous-position :vec4)
+      (previous-right :vec4)
+      (previous-up :vec4)
+      (previous-forward :vec4)
+      (temporal :vec4)          ; scene width, height, jitter x, jitter y
+      (temporal-blend :vec4))))       ; new frame's weight, unused, output size
 
 ;;; Reversed-Z with an infinite far plane: depth is near / view distance.
-(define-shader-function project-relative (rel right up forward near)
-  (vec4 (dot rel right)
-        (* -1.0 (dot rel up))
-        near
-        (dot rel forward)))
+;;; The jitter moves the whole image by a fraction of a scene pixel (y-up
+;;; NDC; the clip position is written y-down) for temporal upscaling.
+(define-shader-function project-relative (rel right up forward near jitter)
+  (let* ((depth (dot rel forward)))
+    (vec4 (+ (dot rel right) (* (swizzle jitter :x) depth))
+          (- (* -1.0 (dot rel up)) (* (swizzle jitter :y) depth))
+          near
+          depth)))
 
 ;;; Where a world point lands in the sun's view: (x, y, depth).
 (define-shader-function light-space (position row-x row-y row-z)
@@ -123,7 +135,8 @@
                                   (swizzle camera-right :xyz)
                                   (swizzle camera-up :xyz)
                                   (swizzle camera-forward :xyz)
-                                  (swizzle camera-forward :w)))
+                                  (swizzle camera-forward :w)
+                                  (swizzle temporal :zw)))
     (set-output world position)
     (set-output surface-normal (swizzle sample :yzw))
     (set-output albedo (vec3 0.0 0.0 0.0))
@@ -348,7 +361,8 @@
                                   (swizzle camera-right :xyz)
                                   (swizzle camera-up :xyz)
                                   (swizzle camera-forward :xyz)
-                                  (swizzle camera-forward :w)))
+                                  (swizzle camera-forward :w)
+                                  (swizzle temporal :zw)))
     (set-output world position)
     (set-output surface-normal (tree-normal index root shape))
     (set-output albedo (mix needles (vec3 0.13 0.09 0.06)
@@ -452,6 +466,133 @@
 (define-shader-program sky
   :vertex sky-vertex
   :fragment sky-fragment)
+
+;;; -- temporal upscaling -------------------------------------------------
+
+;;; A jittered scene smaller than the output accumulates into a history at
+;;; the output's size.  Each output pixel finds its point in this frame's
+;;; scene, rebuilds the world position from the depth there and the camera
+;;; basis, and asks where last frame's camera saw it; the history from there,
+;;; clamped to this frame's neighbourhood, blends with the new sample.
+;;; Only the camera moves things in this reprojection: the wind's sway is
+;;; small enough to leave to the clamp.
+
+(define-shader-function view-ray (ndc right up forward)
+  (+ forward
+     (* (swizzle right :xyz) (* (swizzle ndc :x) (* (swizzle right :w)
+                                                      (swizzle right :w))))
+     (* (swizzle up :xyz) (* (swizzle ndc :y) (* (swizzle up :w)
+                                                 (swizzle up :w))))))
+
+(define-shader-function ndc-uv (ndc)
+  (vec2 (+ (* (swizzle ndc :x) 0.5) 0.5) (- 0.5 (* (swizzle ndc :y) 0.5))))
+
+;;; The scene texel at a whole-pixel offset from a centre texel, clamped to
+;;; the image.
+(define-shader-function scene-texel (centre dx dy size)
+  (uvec2 (clamp (+ centre (vec2 dx dy)) (vec2 0.0 0.0)
+                (- size (vec2 1.0 1.0)))))
+
+;;; The smallest and largest colour among the 3x3 scene texels around one.
+(define-shader-abstraction neighbourhood (extreme scene centre size)
+  (let ((taps (loop for dy in '(-1.0 0.0 1.0)
+                    append (loop for dx in '(-1.0 0.0 1.0)
+                                 collect `(swizzle (texel-load ,scene
+                                                    (scene-texel ,centre ,dx
+                                                                 ,dy ,size))
+                                                   :rgb)))))
+    (reduce (lambda (a b) `(,extreme ,a ,b)) taps)))
+
+;;; The history through a Catmull-Rom filter, in five bilinear taps
+;;; (Jimenez's arrangement): sharper than one bilinear fetch, which would
+;;; blur a little more with every frame the history is resampled.  The
+;;; resolve computes the filter's weights (w0, w12, w3) and tap positions
+;;; (at0, at12, at3); this sums the taps.
+(define-shader-abstraction catmull-rom-taps (texture sampler w0 w12 w3 at0 at12 at3)
+  (flet ((tap (x y wx wy)
+           `(* (swizzle (sample ,texture ,sampler
+                                (vec2 (swizzle ,x :x) (swizzle ,y :y)))
+                        :rgb)
+               (* (swizzle ,wx :x) (swizzle ,wy :y)))))
+    `(/ (+ ,(tap at12 at0 w12 w0) ,(tap at0 at12 w0 w12)
+           ,(tap at12 at12 w12 w12) ,(tap at3 at12 w3 w12)
+           ,(tap at12 at3 w12 w3))
+        (+ (* (swizzle ,w12 :x) (swizzle ,w0 :y))
+           (* (swizzle ,w0 :x) (swizzle ,w12 :y))
+           (* (swizzle ,w12 :x) (swizzle ,w12 :y))
+           (* (swizzle ,w3 :x) (swizzle ,w12 :y))
+           (* (swizzle ,w12 :x) (swizzle ,w3 :y))))))
+
+(define-shader resolve-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (ndc :vec2 :location 0)))
+  (let* ((corner (fullscreen-corner (float vertex-index))))
+    (set-output clip-position
+                (vec4 (swizzle corner :x) (* -1.0 (swizzle corner :y))
+                      0.0 1.0))
+    (set-output ndc corner)))
+
+(define-shader resolve-fragment
+    (:stage :fragment
+     :inputs ((ndc :vec2 :location 0))
+     :outputs ((color :vec4 :location 0))
+     :resources ((frame-state :uniform-block :binding 0
+                  :members #.*frame-state*)
+                 (scene :texture-2d :binding 0)
+                 (scene-depth :depth-texture-2d :binding 1)
+                 (history :texture-2d :binding 2)
+                 (linear-clamp :sampler :binding 0)))
+  (let* ((size (swizzle temporal :xy))
+         (jitter (swizzle temporal :zw))
+         ;; Where this output point landed in the jittered scene.
+         (here (ndc-uv (+ ndc jitter)))
+         (centre (floor (* here size)))
+         (fresh (swizzle (sample scene linear-clamp here) :rgb))
+         (low (neighbourhood min scene centre size))
+         (high (neighbourhood max scene centre size))
+         (depth (swizzle (texel-load scene-depth
+                                     (scene-texel centre 0.0 0.0 size))
+                         :x))
+         ;; The world point, relative to this frame's eye; the sky (depth
+         ;; zero) is a direction far away.
+         (distance (/ (swizzle camera-forward :w) (max depth 0.0000001)))
+         (rel (* (view-ray ndc camera-right camera-up
+                           (swizzle camera-forward :xyz))
+                 distance))
+         (before (+ rel (- (swizzle camera-position :xyz)
+                           (swizzle previous-position :xyz))))
+         (behind (dot before (swizzle previous-forward :xyz)))
+         (then (vec2 (/ (dot before (swizzle previous-right :xyz)) behind)
+                     (/ (dot before (swizzle previous-up :xyz)) behind)))
+         (then-uv (ndc-uv then))
+         (inside (* (step 0.0 (swizzle then-uv :x))
+                    (step (swizzle then-uv :x) 1.0)
+                    (step 0.0 (swizzle then-uv :y))
+                    (step (swizzle then-uv :y) 1.0)
+                    (step 0.0 behind)))
+         (output-size (swizzle temporal-blend :zw))
+         (position (* then-uv output-size))
+         (middle (+ (floor (- position (vec2 0.5 0.5))) (vec2 0.5 0.5)))
+         (f (- position middle))
+         (w0 (* f (+ (vec2 -0.5 -0.5) (* f (- (vec2 1.0 1.0) (* f 0.5))))))
+         (w1 (+ (vec2 1.0 1.0) (* f (* f (+ (vec2 -2.5 -2.5) (* f 1.5))))))
+         (w2 (* f (+ (vec2 0.5 0.5) (* f (- (vec2 2.0 2.0) (* f 1.5))))))
+         (w3 (* f (* f (- (* f 0.5) (vec2 0.5 0.5)))))
+         (w12 (+ w1 w2))
+         (at0 (/ (- middle (vec2 1.0 1.0)) output-size))
+         (at3 (/ (+ middle (vec2 2.0 2.0)) output-size))
+         (at12 (/ (+ middle (/ w2 w12)) output-size))
+         (remembered (clamp (catmull-rom-taps history linear-clamp
+                                              w0 w12 w3 at0 at12 at3)
+                            low high))
+         (weight (max (swizzle temporal-blend :x) (- 1.0 inside))))
+    (set-output color (vec4 (mix remembered fresh weight) 1.0))))
+
+(define-shader-program resolve
+  :vertex resolve-vertex
+  :fragment resolve-fragment)
 
 (define-shader tonemap-vertex
     (:stage :vertex

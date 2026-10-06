@@ -9,6 +9,7 @@
 
 #include <moppe/nhal/nhal.hh>
 
+#include <array>
 #include <cstdint>
 
 namespace moppe::nhal::demo {
@@ -20,6 +21,7 @@ namespace moppe::nhal::demo {
     StageCode tonemap_vertex, tonemap_fragment;
     StageCode forest_wind_compute;
     StageCode terrain_shadow_vertex, trees_shadow_vertex;
+    StageCode resolve_vertex, resolve_fragment;
   };
 
   // One frame's flight controls, each in -1..1.
@@ -31,7 +33,9 @@ namespace moppe::nhal::demo {
 
   class Scene {
   public:
-    Scene (Device& device, const Shaders& shaders);
+    // A temporal scene renders at render_scale of the drawable per axis
+    // and accumulates into a history at the drawable's size.
+    Scene (Device& device, const Shaders& shaders, float render_scale = 0.5f);
     ~Scene ();
 
     // Begins a frame and records the scene at `seconds` of scene time; the
@@ -45,11 +49,18 @@ namespace moppe::nhal::demo {
 
     std::uint32_t tree_count () const { return m_tree_count; }
 
+    // Temporal upscaling (jittered, smaller scene; the default) or the
+    // native scene with 4x MSAA at the drawable's size.
+    void set_temporal (bool temporal);
+    bool temporal () const { return m_temporal; }
+
   private:
     void make_targets ();
 
     Device& m_device;
-    Pipeline m_terrain, m_trees, m_sky, m_tonemap, m_wind;
+    // Scene pipelines by mode: [0] native 4x MSAA, [1] temporal.
+    Pipeline m_terrain[2], m_trees[2], m_sky[2];
+    Pipeline m_tonemap, m_wind, m_resolve;
     Pipeline m_terrain_shadow, m_trees_shadow;
     // The sun's depth over the whole map, sampled by both receivers.
     Texture m_shadow_map;
@@ -64,7 +75,14 @@ namespace moppe::nhal::demo {
     std::uint32_t m_grid = 0;
     float m_cell = 0;
     Texture m_color, m_depth, m_scene;
+    Texture m_low_color, m_low_depth, m_history[2];
     std::uint32_t m_width = 0, m_height = 0;
+    std::uint32_t m_low_width = 0, m_low_height = 0;
+    float m_render_scale;
+    bool m_temporal = true;
+    bool m_restart = true;
+    std::uint32_t m_frame = 0;
+    std::array<std::array<float, 4>, 4> m_previous {};
     bool m_flying = false;
     float m_eye[3] {};
     float m_yaw = 0, m_pitch = 0;

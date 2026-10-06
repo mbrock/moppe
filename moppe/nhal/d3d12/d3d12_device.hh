@@ -5,6 +5,7 @@
 #include <moppe/nhal/nhal.hh>
 
 #include <memory>
+#include <string>
 
 struct IUnknown;
 
@@ -18,7 +19,7 @@ namespace moppe::nhal {
                                                Format surface_format);
 
   // The step the device is in, for a watchdog to name when frames stall.
-  const char* d3d12_device_step ();
+  std::string d3d12_device_step ();
 }
 
 #endif

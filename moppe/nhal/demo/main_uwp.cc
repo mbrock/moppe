@@ -18,6 +18,8 @@
 #include <moppe/nhal/demo/scene.hh>
 
 #include <shader_forest_wind_compute.h>
+#include <shader_resolve_fragment.h>
+#include <shader_resolve_vertex.h>
 #include <shader_sky_fragment.h>
 #include <shader_terrain_shadow_vertex.h>
 #include <shader_trees_shadow_vertex.h>
@@ -86,12 +88,27 @@ namespace {
     return std::abs (value) < 0.15 ? 0.0f : float (value);
   }
 
-  demo::Flight read_gamepad () {
+  bool x_was_down = false;
+
+  // X switches between temporal upscaling and native 4x MSAA.
+  bool x_pressed (const GamepadReading& reading) {
+    const bool down =
+      (reading.Buttons & GamepadButtons::X) == GamepadButtons::X;
+    const bool pressed = down && !x_was_down;
+    x_was_down = down;
+    return pressed;
+  }
+
+  demo::Flight read_gamepad (demo::Scene& scene) {
     demo::Flight flight;
     auto pads = Gamepad::Gamepads ();
     if (pads.Size () == 0)
       return flight;
     const GamepadReading reading = pads.GetAt (0).GetCurrentReading ();
+    if (x_pressed (reading)) {
+      scene.set_temporal (!scene.temporal ());
+      report (scene.temporal () ? "temporal upscaling" : "native 4x MSAA");
+    }
     flight.forward = axis (reading.LeftThumbstickY);
     flight.strafe = axis (reading.LeftThumbstickX);
     flight.turn = axis (reading.RightThumbstickX);
@@ -113,8 +130,9 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
   IFrameworkView CreateView () { return *this; }
 
   void Initialize (CoreApplicationView const& view) {
-    view.Activated ([] (auto&&, auto&&) {
+    view.Activated ([this] (auto&&, auto&&) {
       CoreWindow::GetForCurrentThread ().Activate ();
+      m_activated = true;
     });
   }
 
@@ -127,6 +145,14 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
   void Uninitialize () {}
 
   void Run () {
+    // Present nothing until the window is activated, so frames never queue
+    // behind a window the compositor is not showing yet. (The stalls once
+    // seen on fresh installs came instead from deploy replacing a running
+    // app, whose suspended process kept the GPU; nixbox's deploy now stops
+    // it first.)
+    while (!m_activated && !m_closed)
+      m_window.Dispatcher ().ProcessEvents (
+        CoreProcessEventsOption::ProcessOneAndAllPending);
     try {
       auto device = create_d3d12_device (winrt::get_unknown (m_window), 3840,
                                          2160, Format::bgra8_unorm);
@@ -142,6 +168,8 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
         code (shader_forest_wind_compute, sizeof shader_forest_wind_compute),
         code (shader_terrain_shadow_vertex, sizeof shader_terrain_shadow_vertex),
         code (shader_trees_shadow_vertex, sizeof shader_trees_shadow_vertex),
+        code (shader_resolve_vertex, sizeof shader_resolve_vertex),
+        code (shader_resolve_fragment, sizeof shader_resolve_fragment),
       };
       demo::Scene scene (*device, shaders);
       report ("NHAL demo: " + device->info ().backend + " on "
@@ -179,7 +207,7 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
         const double step = std::chrono::duration<double> (now - last).count ();
         slowest = std::max (slowest, step);
         last = now;
-        scene.fly (read_gamepad (), std::min (step, 0.1));
+        scene.fly (read_gamepad (scene), std::min (step, 0.1));
         if (!scene.render (seconds))
           continue;
         if (!captured && seconds > 5) {
@@ -226,6 +254,7 @@ struct App : implements<App, IFrameworkViewSource, IFrameworkView> {
 private:
   CoreWindow m_window { nullptr };
   bool m_closed = false;
+  bool m_activated = false;
 };
 
 int __stdcall wWinMain (HINSTANCE, HINSTANCE, PWSTR, int) {

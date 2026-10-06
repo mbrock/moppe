@@ -64,19 +64,36 @@ The demo (`moppe/nhal/demo`) exercises all of it: a compute pass sways
 9000 spruces, culls their bounding spheres to the view frustum, and appends
 the visible ones through an atomic into the camera's indirect draw (the
 host zeroes its instance count first); a depth-only pass casts every tree's
-sun shadow from a second record; and a 4x MSAA RGBA16F scene with reversed-Z
-draws terrain, trees, and sky before the tonemap. GPU time per pass,
-measured by NHAL:
+sun shadow from a second record; the scene draws terrain, trees, and sky in
+RGBA16F with reversed-Z; and the tonemap writes the drawable.
+
+The scene has two modes (U on the Mac, X on a controller):
+
+- **Temporal upscaling**, the default: the scene renders at half the
+  drawable's size per axis with a 16-step Halton jitter, single-sampled. A
+  resolve pass at the drawable's size rebuilds each pixel's world position
+  from depth and the camera basis, reprojects it with last frame's camera,
+  fetches the history there through a five-tap Catmull-Rom filter, clamps it
+  to this frame's 3x3 neighbourhood, and blends in a tenth of the new sample.
+  Only the camera moves things in this reprojection; the wind's sway is left
+  to the clamp, and motion vectors can follow. It is portable Luv code, so
+  the Xbox, which has no MetalFX, gets it too. It is softer than 4x MSAA.
+- **Native**: the scene at the drawable's size with 4x MSAA, resolved.
+
+GPU time per pass, measured by NHAL:
 
 | Pass | Xbox Series X, 3840x2160 | Apple M5, 2560x1440 |
 | --- | --- | --- |
-| wind and culling (compute) | 0.01 ms | 0.04 ms |
-| sun shadow, 4096x4096 | 0.61 ms | 1.9-3.7 ms |
-| scene, 4x MSAA | 6.8 ms (6.9 without culling) | 3.1-3.4 ms (7.1 without) |
-| tonemap | 0.27 ms | 0.2-0.4 ms |
+| wind and culling (compute) | 0.01 ms | 0.03 ms |
+| sun shadow, 4096x4096 | 0.60 ms | 1.9-3.7 ms |
+| scene, temporal (half size) | 0.61 ms | 1.0-1.4 ms |
+| temporal resolve | 0.45 ms | 0.9-1.7 ms |
+| scene, native 4x MSAA | 6.8 ms | 3.1-3.4 ms |
+| tonemap | 0.30 ms | 0.3-0.5 ms |
 
-At 4K with 4x MSAA the Xbox's scene is bound by fill rather than geometry,
-so culling saves it little; the M5 at 1440p halves.
+At 4K with 4x MSAA the Xbox's scene is bound by fill, which culling barely
+helps and upscaling cuts from 6.8 ms to about 1.1 ms with its resolve; the
+M5's timings vary with its clocks.
 
 ## The binding contract
 
