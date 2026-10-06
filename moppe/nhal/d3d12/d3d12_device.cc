@@ -23,6 +23,7 @@
 #include <array>
 #include <atomic>
 #include <cstdio>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -155,6 +156,7 @@ namespace moppe::nhal {
       D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
       std::uint32_t srv = no_slot, uav = no_slot, rtv = no_slot,
                     dsv = no_slot;
+      bool warned = false;
     };
 
     enum class RootBuffer : std::uint8_t { none, constants, read, write };
@@ -175,6 +177,7 @@ namespace moppe::nhal {
       const RootLayout* layout = nullptr;
       D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
       bool compute = false;
+      const char* name = "";
     };
 
     struct Retired {
@@ -550,6 +553,7 @@ namespace moppe::nhal {
 
         D3DPipeline pipeline;
         pipeline.layout = &layout;
+        pipeline.name = desc.program->name;
         pipeline.topology =
           desc.topology == Topology::triangle_strip
             ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP
@@ -578,6 +582,7 @@ namespace moppe::nhal {
         pd.CS = { desc.compute.dxil.data (), desc.compute.dxil.size () };
         D3DPipeline pipeline;
         pipeline.layout = &layout;
+        pipeline.name = desc.program->name;
         pipeline.compute = true;
         const HRESULT hr = m_device->CreateComputePipelineState (
           &pd, IID_PPV_ARGS (&pipeline.state));
@@ -727,6 +732,7 @@ namespace moppe::nhal {
 
       void set_pipeline (Pipeline handle) override {
         const D3DPipeline& pipeline = m_pipelines[handle];
+        m_pipeline_name = pipeline.name;
         m_list->SetPipelineState (pipeline.state.Get ());
         if (m_layout != pipeline.layout
             || m_compute_bound != pipeline.compute) {
@@ -1157,6 +1163,17 @@ namespace moppe::nhal {
               transition (m_list.Get (), t,
                           D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
               source = t.uav;
+            } else if (attached (handle)) {
+              // A texture the open pass renders into cannot be read: the
+              // transition would pull it out of its attachment state
+              // mid-pass. The slot reads as null instead.
+              if (!t.warned) {
+                t.warned = true;
+                std::cerr << "NHAL: " << m_pipeline_name
+                          << " binds attachment "
+                          << (t.desc.label ? t.desc.label : "(unnamed)")
+                          << " at texture " << i << std::endl;
+              }
             } else {
               transition (m_list.Get (), t, state_read);
               source = t.srv;
@@ -1175,6 +1192,13 @@ namespace moppe::nhal {
           m_list->SetComputeRootDescriptorTable (parameter, table);
         else
           m_list->SetGraphicsRootDescriptorTable (parameter, table);
+      }
+
+      bool attached (Texture handle) const {
+        for (std::uint32_t i = 0; i < m_pass.color_count; ++i)
+          if (m_pass.colors[i].texture == handle)
+            return true;
+        return m_pass.depth.texture == handle;
       }
 
       static constexpr D3D12_RESOURCE_STATES state_read =
@@ -1395,6 +1419,7 @@ namespace moppe::nhal {
       Texture m_current_backbuffer;
       RenderPassDesc m_pass;
       const RootLayout* m_layout = nullptr;
+      const char* m_pipeline_name = "";
       std::array<BoundBuffer, max_bindings> m_bound_buffers {};
       std::array<Texture, max_bindings> m_bound_textures {};
       std::array<Texture, max_bindings> m_bound_storage {};

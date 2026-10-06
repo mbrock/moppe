@@ -822,6 +822,18 @@ namespace moppe::nhal {
           make_targets (scene_width, scene_height);
         m_params = params;
         m_scene_open = m_resolved = m_presented = false;
+        // MOPPE_NHAL_PROBE switches a diagnostic for consoles where the
+        // renderer cannot be debugged directly: "white" draws every draw
+        // list untextured, "additive" draws alpha-blended runs additively,
+        // "nohistory" resolves every frame from itself alone, "nomotion" resolves
+        // ignoring motion, "scene" presents the unresolved scene, and "noao"
+        // and "noshafts" leave out the occlusion and the sun shafts.
+        {
+          const char* probe = moppe::environment ("MOPPE_NHAL_PROBE");
+          m_probe = probe ? probe : "";
+        }
+        if (m_probe == "nohistory")
+          m_restart = true;
         m_ao_ready = m_shafts_ready = false;
 
         const Mat4 view_proj = params.proj * params.view;
@@ -851,8 +863,9 @@ namespace moppe::nhal {
                              / float (m_scene_width),
                            (halton (phase, 3) - 0.5f) * 2
                              / float (m_scene_height) };
-        frame.temporal_blend = { m_restart ? 1.0f : 0.1f, 0, float (m_width),
-                                 float (m_height) };
+        frame.temporal_blend = { m_restart ? 1.0f : 0.1f,
+                                 m_probe == "nomotion" ? 1.0f : 0.0f,
+                                 float (m_width), float (m_height) };
         frame.shadow = { 0, 1.0f / shadow_size, 0, 0 };
         m_frame_values = frame;
         upload_frame ();
@@ -1267,13 +1280,16 @@ namespace moppe::nhal {
         if (!list.empty ()) {
           m_device->set_pipeline (m_hud);
           m_device->set_uniforms (0, hud);
-          m_device->set_buffer (
-            1, m_device->upload (std::span (list.vertices ())));
+          const Transient vertices =
+            m_device->upload (std::span (list.vertices ()));
           for (const DrawList::Run& run : list.runs ()) {
             if (!run.count)
               continue;
+            m_device->set_buffer (
+              1, advanced (vertices,
+                           std::uint64_t (run.first) * sizeof (render::Vertex)));
             m_device->set_texture (0, texture_or_white (run.texture));
-            m_device->draw (run.count, 1, run.first);
+            m_device->draw (run.count, 1, 0);
           }
         }
         if (!m_hud_text.empty ()) {
@@ -1826,6 +1842,11 @@ namespace moppe::nhal {
         desc.depth_write = state.depth_write;
         desc.cull = state.cull ? Cull::back : Cull::none;
         pipeline = m_device->create_render_pipeline (desc);
+        std::cerr << "moppe: NHAL draw-list pipeline " << key << " (blend "
+                  << state.blend << ", additive " << state.additive
+                  << ", depth test " << state.depth_test << ", write "
+                  << state.depth_write << ", cull " << state.cull << ")"
+                  << std::endl;
         return pipeline;
       }
 
@@ -1865,15 +1886,27 @@ namespace moppe::nhal {
             current = run.state;
             first = false;
           }
+          // Each run's vertices bound from its first: Direct3D's vertex
+          // index does not count from a draw's first vertex.
+          const std::uint64_t offset =
+            std::uint64_t (run.first) * sizeof (render::Vertex);
           m_device->set_buffer (0, m_frame_block);
           if (baked)
-            m_device->set_buffer (1, baked);
+            m_device->set_buffer (1, baked, offset);
           else
-            m_device->set_buffer (1, streamed);
+            m_device->set_buffer (1, advanced (streamed, offset));
           m_device->set_buffer (2, block);
           m_device->set_texture (0, texture_or_white (run.texture));
-          m_device->draw (run.count, 1, run.first);
+          m_device->draw (run.count, 1, 0);
         }
+      }
+
+      // The part of an upload from `bytes` on.
+      static Transient advanced (Transient slice, std::uint64_t bytes) {
+        slice.data = static_cast<std::byte*> (slice.data) + bytes;
+        slice.gpu_address += bytes;
+        slice.size -= bytes;
+        return slice;
       }
 
       Texture texture_or_white (const render::Texture* texture) const {
@@ -2031,8 +2064,10 @@ namespace moppe::nhal {
                             : 1.0f,
                           std::fmod (m_params.time, 1000.0f),
                           m_params.bloom ? 1.0f : 0.0f };
-        present.effects = { m_ao_ready ? 1.0f : 0.0f,
-                            m_shafts_ready ? 1.0f : 0.0f, 0, 0 };
+        present.effects = { m_ao_ready && m_probe != "noao" ? 1.0f : 0.0f,
+                            m_shafts_ready && m_probe != "noshafts" ? 1.0f
+                                                                    : 0.0f,
+                            0, 0 };
         present.sun_glare = sun_glare ();
         if (m_params.bloom)
           bloom (present);
@@ -2045,7 +2080,7 @@ namespace moppe::nhal {
         m_device->set_pipeline (m_present);
         m_device->set_uniforms (0, present);
         m_device->set_buffer (1, m_exposure_value);
-        m_device->set_texture (0, m_image);
+        m_device->set_texture (0, m_probe == "scene" ? m_scene_color : m_image);
         m_device->set_texture (1, m_bloom[0]);
         m_device->set_texture (2, m_ao[0]);
         m_device->set_texture (3, m_shafts);
@@ -2140,6 +2175,7 @@ namespace moppe::nhal {
       bool m_scene_open = false, m_resolved = false, m_presented = false;
       std::map<std::uint64_t, Mat4> m_previous_models, m_current_models;
       std::string m_screenshot;
+      std::string m_probe;
       std::map<std::string, double> m_timing_sums;
       int m_timing_frames = 0;
     };

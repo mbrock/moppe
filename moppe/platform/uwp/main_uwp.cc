@@ -91,6 +91,8 @@ namespace {
   //                       "stick off" gives them back to the gamepad
   //   look DX DY          turn the view as a mouse would, in points
   //   wait SECONDS        later commands start that much later
+  //   env NAME VALUE      sets a moppe::environment switch (VALUE "-"
+  //                       clears it), e.g. renderer probes
   //
   // Each command is logged as it runs.
   class Remote {
@@ -181,6 +183,13 @@ namespace {
           m_controls = c;
           if (off)
             m_game.controls ({});
+        });
+      } else if (verb == "env" && words >> name) {
+        std::string value;
+        words >> value;
+        later (at, [name, value] {
+          moppe::set_environment (name.c_str (),
+                                  value == "-" ? nullptr : value.c_str ());
         });
       } else if (verb == "look") {
         float dx = 0, dy = 0;

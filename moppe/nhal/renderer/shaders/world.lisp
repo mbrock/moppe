@@ -719,7 +719,9 @@
          ;; it needs no sorting and keeps its depth.
          (stippled (* (step 0.001 foliage) (step 0.999 (- 1.0 (swizzle base :w)))))
          (threshold (dither (floor (* world 24.0))))
-         (n (normalize surface-normal))
+         ;; Unlit geometry may carry no normal at all, and normalizing
+         ;; zero is NaN, which survives even the unlit mix below.
+         (n (normalize (+ surface-normal (vec3 0.0 0.00001 0.0))))
          (sun (swizzle sun-direction :xyz))
          (camera (swizzle camera-position :xyz))
          (eye (normalize (- camera world)))
@@ -2970,8 +2972,11 @@
          (fresh (swizzle (sample scene linear-clamp here) :rgb))
          (low (neighbourhood min scene centre size))
          (high (neighbourhood max scene centre size))
-         (motion (swizzle (nearest-motion scene-motion scene-depth centre size)
-                          :xy))
+         ;; temporal-blend y set ignores motion: a renderer probe.
+         (motion (* (swizzle (nearest-motion scene-motion scene-depth centre
+                                             size)
+                             :xy)
+                    (- 1.0 (swizzle temporal-blend :y))))
          (then-uv (+ (ndc-uv ndc) motion))
          (inside (* (step 0.0 (swizzle then-uv :x))
                     (step (swizzle then-uv :x) 1.0)
