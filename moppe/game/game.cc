@@ -5,6 +5,7 @@
 // that configures a launch is resolved before this file is reached; see
 // launch_options.hh and main.cc.
 
+#include <moppe/environment.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
 #include <moppe/render/renderer.hh>
@@ -76,13 +77,15 @@
 namespace moppe {
   namespace game {
     static int cinematic_capture_frame_limit () {
-      if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_FRAMES"))
+      if (const char* value =
+            moppe::environment ("MOPPE_CINEMATIC_CAPTURE_FRAMES"))
         return std::max (1, ::atoi (value));
       return 450;
     }
 
     static int cinematic_capture_frame_step () {
-      if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_STEP"))
+      if (const char* value =
+            moppe::environment ("MOPPE_CINEMATIC_CAPTURE_STEP"))
         return std::max (1, ::atoi (value));
       return 1;
     }
@@ -277,7 +280,7 @@ namespace moppe {
       void orbit_camera () {
         // MOPPE_PAN="seconds": stand at the rider and sweep the view left
         // and right through a half turn, the way a rider looks around.
-        if (static const char* pan = ::getenv ("MOPPE_PAN"); pan) {
+        if (static const char* pan = moppe::environment ("MOPPE_PAN"); pan) {
           const float period = std::max (1.0f, (float)::atof (pan));
           const float yaw =
             1.5707963f * std::sin (6.2831853f * logic ().m_total_time / period);
@@ -286,7 +289,7 @@ namespace moppe {
             eye, eye + Vec3 (std::cos (yaw), 0.08f, std::sin (yaw)) * 10.0f);
           return;
         }
-        static const char* orbit = ::getenv ("MOPPE_ORBIT");
+        static const char* orbit = moppe::environment ("MOPPE_ORBIT");
         if (!orbit)
           return;
         float radius = 14.0f, height = 3.0f, period = 24.0f;
@@ -669,17 +672,17 @@ namespace moppe {
           1.2f;
         session ().bike ().reset (m_spawn_position);
         session ().bike ().set_heading (trail_direction_from_home ());
-        const char* demo = ::getenv ("MOPPE_DEMO");
+        const char* demo = moppe::environment ("MOPPE_DEMO");
         if (demo && std::string_view (demo) == "forest")
           move_spawn_to_forest ();
         // It is a walking game first: the rider stands beside the parked
         // bike. The demo autopilot and benchmarks still start riding,
         // unless a scripted walk (MOPPE_WALK) asks for the feet.
-        if ((!demo || ::getenv ("MOPPE_WALK")) && !m_benchmark &&
+        if ((!demo || moppe::environment ("MOPPE_WALK")) && !m_benchmark &&
             !m_gazetteer) {
           session ().start_on_foot ();
           // Scripted walks can watch from behind or in front of the figure.
-          if (const char* view = ::getenv ("MOPPE_WALK_CAMERA")) {
+          if (const char* view = moppe::environment ("MOPPE_WALK_CAMERA")) {
             const std::string_view name (view);
             if (name == "chase" || name == "side")
               logic ().m_cam_mode = CAM_CHASE;
@@ -773,7 +776,7 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_water_inspection)
           return;
-        static const bool tree_lab = ::getenv ("MOPPE_TREE_LAB") != 0;
+        static const bool tree_lab = moppe::environment ("MOPPE_TREE_LAB") != 0;
         m_forest.rebuild (*m_renderer,
                           tree_lab ? tree_lab_plan ()
                                    : generated_world ().forest ());
@@ -789,7 +792,7 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.scatter_boulders");
         if (m_water_inspection)
           return;
-        if (::getenv ("MOPPE_TREE_LAB")) {
+        if (moppe::environment ("MOPPE_TREE_LAB")) {
           m_boulders.rebuild (*m_renderer, BoulderPlan {});
           return;
         }
@@ -871,7 +874,7 @@ namespace moppe {
         // The direct observation primitive: put the camera HERE, look
         // THERE, one settled frame. A question about composition deserves
         // a frame composed for that question, never the nearest postcard.
-        if (const char* look = ::getenv ("MOPPE_LOOK")) {
+        if (const char* look = moppe::environment ("MOPPE_LOOK")) {
           float ex, ey, ez, sx, sy, sz, fov = 55.0f;
           const int parsed = std::sscanf (
             look, "%f %f %f %f %f %f %f", &ex, &ey, &ez, &sx, &sy, &sz, &fov);
@@ -890,7 +893,7 @@ namespace moppe {
         // shot's camera advancing in a straight line, one capture per
         // rendered frame, no vehicle, no HUD, no particles, frozen wind.
         // Measurement wants exactly one subject in the frame.
-        if (const char* glide = ::getenv ("MOPPE_GLIDE")) {
+        if (const char* glide = moppe::environment ("MOPPE_GLIDE")) {
           auto& shots = m_gazetteer_plan.shots;
           const auto found = std::find_if (
             shots.begin (), shots.end (), [&] (const GazetteerShot& shot) {
@@ -964,7 +967,7 @@ namespace moppe {
         remember_seed (world (),
                        recipe ().generation_profile (),
                        static_cast<int> (recipe ().seed ().value));
-        if (::getenv ("MOPPE_REGENERATE_ONCE") &&
+        if (moppe::environment ("MOPPE_REGENERATE_ONCE") &&
             !m_automated_regeneration_done) {
           m_automated_regeneration_done = true;
           regenerate_world ();
@@ -982,7 +985,8 @@ namespace moppe {
         const bool automated =
           !m_screenshot_path.empty () || m_benchmark.has_value () ||
           m_water_shot.has_value () || m_gazetteer.has_value () ||
-          ::getenv ("MOPPE_DEMO") || ::getenv ("MOPPE_WALK");
+          moppe::environment ("MOPPE_DEMO") ||
+          moppe::environment ("MOPPE_WALK");
         if (!automated && !m_skip_cinematic_requested &&
             !m_cinematic_plan.empty ()) {
           m_cinematic.start (m_cinematic_plan, surface ());
@@ -1040,7 +1044,8 @@ namespace moppe {
         // presentation interval through a fixed 120 Hz clock.
         const bool frame_locked =
           m_benchmark.has_value () ||
-          (m_cinematic.active () && ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR"));
+          (m_cinematic.active () &&
+           moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR"));
         if (frame_locked) {
           m_simulation_clock.reset ();
           tick_simulation (elapsed);
@@ -1049,9 +1054,10 @@ namespace moppe {
         // Orbit inspections and ride captures advance exactly one 60 Hz frame
         // of world time per rendered frame, so captured motion is even
         // however slowly the frames are written.
-        static const bool capture_locked = ::getenv ("MOPPE_ORBIT") ||
-                                           ::getenv ("MOPPE_PAN") ||
-                                           ::getenv ("MOPPE_RIDE_CAPTURE_DIR");
+        static const bool capture_locked =
+          moppe::environment ("MOPPE_ORBIT") ||
+          moppe::environment ("MOPPE_PAN") ||
+          moppe::environment ("MOPPE_RIDE_CAPTURE_DIR");
         if (capture_locked) {
           m_simulation_clock.reset ();
           tick_simulation (1.0f / 60.0f);
@@ -1105,7 +1111,7 @@ namespace moppe {
       // so the gait can be judged against the ground passing beneath it.
       void walk_side_camera () {
         static const bool side = [] {
-          const char* view = ::getenv ("MOPPE_WALK_CAMERA");
+          const char* view = moppe::environment ("MOPPE_WALK_CAMERA");
           return view && std::string_view (view) == "side";
         }();
         if (!side || logic ().m_mode != M_FOOT)
@@ -1120,9 +1126,11 @@ namespace moppe {
       void tick_simulation (float dt) {
         MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
         std::optional<InputFrame> scripted_input;
-        if (m_cinematic.active () && ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
+        if (m_cinematic.active () &&
+            moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
           const int fps = [] {
-            if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_FPS"))
+            if (const char* value =
+                  moppe::environment ("MOPPE_CINEMATIC_CAPTURE_FPS"))
               return std::clamp (::atoi (value), 1, 120);
             return 30;
           }();
@@ -1204,13 +1212,13 @@ namespace moppe {
 
         // Screenshot autopilot for headless verification: rides in a
         // lazy arc with periodic boost-assisted leaps.
-        static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
+        static const bool demo = moppe::environment ("MOPPE_DEMO") != 0;
         m_trunk_field.focus (session ().subject_position ());
-        static const bool orbit =
-          ::getenv ("MOPPE_ORBIT") != 0 || ::getenv ("MOPPE_PAN") != 0;
+        static const bool orbit = moppe::environment ("MOPPE_ORBIT") != 0 ||
+                                  moppe::environment ("MOPPE_PAN") != 0;
         if (m_spectator)
           input = {};
-        static const char* walk_script = ::getenv ("MOPPE_WALK");
+        static const char* walk_script = moppe::environment ("MOPPE_WALK");
         if (walk_script && logic ().m_mode == M_FOOT && !orbit)
           input = scripted_walk (walk_script, dt);
         else if (demo && !m_water_inspection && !orbit) {
@@ -1573,7 +1581,8 @@ namespace moppe {
         const GazetteerShot* gazetteer_shot = current_gazetteer_shot ();
 
         static const int screenshot_delay = [] {
-          if (const char* frames = ::getenv ("MOPPE_SCREENSHOT_FRAMES"))
+          if (const char* frames =
+                moppe::environment ("MOPPE_SCREENSHOT_FRAMES"))
             return std::max (1, ::atoi (frames));
           return 30;
         }();
@@ -1582,9 +1591,10 @@ namespace moppe {
         bool captured_cinematic = false;
         if (cinematic) {
           if (const char* directory =
-                ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
+                moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
             const int capture_count = cinematic_capture_frame_limit ();
-            const bool survey = ::getenv ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
+            const bool survey =
+              moppe::environment ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
             const float next_progress =
               (m_cinematic_capture_frame + 0.5f) / capture_count;
             const bool sample_frame =
@@ -1639,13 +1649,14 @@ namespace moppe {
         // MOPPE_DEMO=1 for a deterministic autopilot ride.
         if (!cinematic && m_ready) {
           static const char* ride_directory =
-            ::getenv ("MOPPE_RIDE_CAPTURE_DIR");
+            moppe::environment ("MOPPE_RIDE_CAPTURE_DIR");
           static const int ride_start = [] {
-            const char* start = ::getenv ("MOPPE_RIDE_CAPTURE_START");
+            const char* start = moppe::environment ("MOPPE_RIDE_CAPTURE_START");
             return start ? std::max (0, ::atoi (start)) : 600;
           }();
           static const int ride_count = [] {
-            const char* count = ::getenv ("MOPPE_RIDE_CAPTURE_FRAMES");
+            const char* count =
+              moppe::environment ("MOPPE_RIDE_CAPTURE_FRAMES");
             return count ? std::max (1, ::atoi (count)) : 90;
           }();
           if (ride_directory) {
@@ -1865,7 +1876,8 @@ namespace moppe {
         }
 
         bool captured = false;
-        if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
+        if (const char* path =
+              moppe::environment ("MOPPE_LOADING_SCREENSHOT")) {
           if (m_loading.claim_loading_capture (completed != nullptr)) {
             r.request_screenshot (path);
             captured = true;
@@ -2000,7 +2012,7 @@ namespace moppe {
       std::string next_snapshot_path () {
         namespace fs = std::filesystem;
         if (m_snapshot_directory.empty ()) {
-          const char* base = ::getenv ("MOPPE_SCREENSHOT_DIR");
+          const char* base = moppe::environment ("MOPPE_SCREENSHOT_DIR");
           char stamp[32];
           const std::time_t now = std::time (nullptr);
           std::strftime (
@@ -2024,9 +2036,9 @@ namespace moppe {
 
       static int glide_frame_limit () {
         static const int frames = [] {
-          if (!::getenv ("MOPPE_GLIDE"))
+          if (!moppe::environment ("MOPPE_GLIDE"))
             return 0;
-          const char* count = ::getenv ("MOPPE_GLIDE_FRAMES");
+          const char* count = moppe::environment ("MOPPE_GLIDE_FRAMES");
           return count ? std::max (2, ::atoi (count)) : 120;
         }();
         return frames;
@@ -2034,7 +2046,7 @@ namespace moppe {
 
       static float glide_speed_mps () {
         static const float speed = [] {
-          const char* value = ::getenv ("MOPPE_GLIDE_SPEED");
+          const char* value = moppe::environment ("MOPPE_GLIDE_SPEED");
           return value ? std::max (0.1f, (float)::atof (value)) : 12.0f;
         }();
         return speed;
@@ -2042,7 +2054,7 @@ namespace moppe {
 
       static float glide_vertical_speed_mps () {
         static const float speed = [] {
-          const char* value = ::getenv ("MOPPE_GLIDE_VERTICAL_SPEED");
+          const char* value = moppe::environment ("MOPPE_GLIDE_VERTICAL_SPEED");
           return value ? (float)::atof (value) : 0.0f;
         }();
         return speed;
@@ -2331,8 +2343,9 @@ namespace moppe {
         bool pointer_free = false;
       };
       std::optional<Spectator> m_spectator =
-        ::getenv ("MOPPE_SPECTATOR") ? std::optional<Spectator> (Spectator {})
-                                     : std::nullopt;
+        moppe::environment ("MOPPE_SPECTATOR")
+          ? std::optional<Spectator> (Spectator {})
+          : std::nullopt;
       std::optional<GazetteerCaptureConfig> m_gazetteer;
       LandscapeGazetteer m_gazetteer_plan;
       std::size_t m_gazetteer_shot = 0;

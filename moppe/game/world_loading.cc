@@ -9,6 +9,7 @@
 
 #include <moppe/game/world_cache.hh>
 
+#include <moppe/environment.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
 
@@ -330,7 +331,7 @@ namespace moppe::game {
           recipe.resolution (), recipe.resolution (), recipe.extent ()));
       std::optional<terrain::TrailNetwork> evolved_trails;
 
-      const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
+      const char* cache_override = moppe::environment ("MOPPE_MAPCACHE");
       const std::string cache =
         cache_override ? cache_override : terrain_cache_path (recipe);
 

@@ -3,6 +3,7 @@
 // deliberately the only file compiled per executable, so a platform's own
 // defaults are the one thing that varies here.
 
+#include <moppe/environment.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/seed_memory.hh>
@@ -16,7 +17,7 @@
 
 int main (int argc, char** argv) {
   using namespace moppe;
-  if (::getenv ("MOPPE_TRACY_WAIT"))
+  if (moppe::environment ("MOPPE_TRACY_WAIT"))
     MOPPE_PROFILE_WAIT ();
   MOPPE_PROFILE_THREAD ("Main");
   MOPPE_PROFILE_ZONE ("main");

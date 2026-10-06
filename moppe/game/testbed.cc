@@ -3,6 +3,7 @@
 // Temporary scaffolding for the Metal port; replaced by the real
 // game once the port lands.
 
+#include <moppe/environment.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/render/renderer.hh>
 
@@ -16,7 +17,7 @@ namespace {
   class Testbed : public platform::Game {
   public:
     Testbed () : m_time (0), m_frames (0), m_max_frames (0) {
-      if (const char* f = ::getenv ("MOPPE_FRAMES"))
+      if (const char* f = moppe::environment ("MOPPE_FRAMES"))
         m_max_frames = ::atoi (f);
     }
 

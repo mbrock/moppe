@@ -1,6 +1,8 @@
 #include <moppe/game/hud.hh>
 #include <moppe/render/renderer.hh>
 
+#include <moppe/environment.hh>
+
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #endif
@@ -207,7 +209,7 @@ namespace moppe {
     Hud::Hud ()
         : m_diagnostics (false), m_fps (0), m_gauge_alpha (0),
           m_reserve_alpha (0), m_reserve_hold (0), m_prompt_alpha (0) {
-      if (const char* mode = ::getenv ("MOPPE_HUD"))
+      if (const char* mode = moppe::environment ("MOPPE_HUD"))
         m_diagnostics = std::string (mode) == "debug";
     }
 

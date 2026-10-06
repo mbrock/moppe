@@ -71,6 +71,20 @@ namespace moppe::game {
               domain.period_z ().numerical_value_in (u::m)));
     }
 
+    // Creates the directory and whichever of its parents are missing,
+    // without asking for the ones that exist: a UWP app container refuses
+    // even to "create" an existing ancestor it may not write, which
+    // std::filesystem::create_directories does.
+    void create_missing_directories (const std::filesystem::path& directory) {
+      std::error_code error;
+      if (std::filesystem::create_directory (directory, error) || !error)
+        return;
+      const std::filesystem::path parent = directory.parent_path ();
+      if (!parent.empty () && parent != directory)
+        create_missing_directories (parent);
+      std::filesystem::create_directory (directory);
+    }
+
     std::filesystem::path file_in (const std::string& directory,
                                    const char* name) {
       return std::filesystem::path (directory) / name;
@@ -635,7 +649,7 @@ namespace moppe::game {
 
   void save_world_cache (const GeneratedWorld& world,
                          const std::string& directory) {
-    std::filesystem::create_directories (directory);
+    create_missing_directories (directory);
     save_bundle (world.surface (), file_in (directory, "surface.arrows"));
     const auto& [flood, lakes, drainage, rivers] = world.hydrology ();
     save_bundle (flood.surface, file_in (directory, "flood.arrows"));
