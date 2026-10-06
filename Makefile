@@ -2,13 +2,26 @@
 .PHONY: all lavoir moppe archive atelier etalon etalon-test etalon-watch \
 	callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity format gazetteer grass-lab hooks plan plan-graph phone profile \
+	complexity figure figure-model format gazetteer grass-lab hooks plan plan-graph phone profile \
 	test \
 	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
 	web web-deploy web-serve xcode
 
 all: moppe
+
+BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
+FIGURE_PREVIEW ?= /tmp/hiker.png
+
+# Re-export the hiker from models/hiker.blend and render its lineup.
+figure:
+	$(BLENDER) -b models/hiker.blend --python tools/figure/export.py
+	$(BLENDER) -b models/hiker.blend --python tools/figure/preview.py -- \
+	  $(FIGURE_PREVIEW)
+
+# Regenerate models/hiker.blend from its script (discards hand edits).
+figure-model:
+	$(BLENDER) -b --factory-startup --python tools/figure/build.py
 
 # Configure (if needed) and build only Lavoir.
 lavoir:

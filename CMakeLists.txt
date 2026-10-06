@@ -442,6 +442,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/cinematic_flight.cc
   moppe/game/avatar.cc
   moppe/game/walker_render.cc
+  moppe/game/figure.cc
+  moppe/game/figure_mesh.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/model.cc
