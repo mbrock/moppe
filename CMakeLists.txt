@@ -861,6 +861,11 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
         ${MOPPE_NHAL_WORLD}/${program}.vertex.metal
         ${MOPPE_NHAL_WORLD}/${program}.fragment.metal)
     endforeach()
+    foreach(program IN ITEMS terrain_shadow forest_shadow)
+      list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
+        ${MOPPE_NHAL_WORLD}/${program}.hh
+        ${MOPPE_NHAL_WORLD}/${program}.vertex.metal)
+    endforeach()
     foreach(program IN ITEMS forest_cull exposure)
       list(APPEND MOPPE_NHAL_WORLD_OUTPUTS
         ${MOPPE_NHAL_WORLD}/${program}.hh

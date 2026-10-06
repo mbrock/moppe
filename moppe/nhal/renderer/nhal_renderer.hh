@@ -24,6 +24,9 @@ namespace moppe::nhal {
     StageCode forest[2];
     StageCode forest_cull;
     StageCode exposure;
+    // Vertex stages only; their fragment code is empty.
+    StageCode terrain_shadow[2];
+    StageCode forest_shadow[2];
   };
 
   // The programs' MSL, embedded in the binary at build time.

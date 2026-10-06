@@ -39,7 +39,16 @@ canopy yet, so closed stands stay individuals until their crowns are four
 pixels across, and the stand closure is approximated by the habitat's canopy
 cover.
 
-Boulders, undergrowth, falling leaves, dust, shadows, clouds, and the post
+The sun's shadow is a 2048-texel depth map over the 160 metres around the
+rider, rendered each frame by `render_local_shadow`: terrain chunks at
+native detail, then the trees, culled for the sun by the same compute
+program into two classes (each species at its coarsest tier, with a
+smaller, porous crown). The tree geometry is one Luv function returning a
+struct (`tree-vertex-at`), shared by the scene and the shadow programs as
+`tree_vertex` is in Metal. Terrain samples it with five comparison taps,
+trees with four.
+
+Boulders, undergrowth, falling leaves, dust, bloom, and the remaining post
 effects come next.
 
 ## What the Xbox allows

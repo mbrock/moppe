@@ -62,6 +62,12 @@ namespace moppe::nhal {
     const char exposure_compute[] = {
 #embed "exposure.compute.metal"
       , 0 };
+    const char terrain_shadow_vertex[] = {
+#embed "terrain_shadow.vertex.metal"
+      , 0 };
+    const char forest_shadow_vertex[] = {
+#embed "forest_shadow.vertex.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -76,6 +82,8 @@ namespace moppe::nhal {
       { { forest_vertex, {} }, { forest_fragment, {} } },
       { forest_cull_compute, {} },
       { exposure_compute, {} },
+      { { terrain_shadow_vertex, {} }, {} },
+      { { forest_shadow_vertex, {} }, {} },
     };
     return shaders;
   }
