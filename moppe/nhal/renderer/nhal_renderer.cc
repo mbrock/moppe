@@ -581,9 +581,16 @@ namespace moppe::nhal {
       bool begin_frame (const FrameParams& params) override {
         if (!m_device->begin_frame ())
           return false;
+        const float scale = scene_scale (params);
+        const std::uint32_t scene_width = std::max (
+          1u, std::uint32_t (std::lround (m_device->surface_width () * scale)));
+        const std::uint32_t scene_height = std::max (
+          1u,
+          std::uint32_t (std::lround (m_device->surface_height () * scale)));
         if (m_width != m_device->surface_width ()
-            || m_height != m_device->surface_height ())
-          make_targets ();
+            || m_height != m_device->surface_height ()
+            || m_scene_width != scene_width || m_scene_height != scene_height)
+          make_targets (scene_width, scene_height);
         m_params = params;
         m_scene_open = m_resolved = m_presented = false;
 
@@ -1415,7 +1422,26 @@ namespace moppe::nhal {
         return texture_or_white (texture.get ());
       }
 
-      void make_targets () {
+      // The 3D scene's share of the drawable, by the Metal renderer's rule:
+      // point resolution, capped by the megapixel budget, unless overridden.
+      float scene_scale (const FrameParams& params) const {
+        const float point_relative = 1.0f / std::max (1.0f, m_scale);
+        const double pixels = double (m_device->surface_width ())
+                              * m_device->surface_height ();
+        const float affordable =
+          params.scene_megapixel_budget > 0.0f && pixels > 0
+            ? float (std::sqrt (params.scene_megapixel_budget * 1.0e6
+                                / pixels))
+            : 1.0f;
+        float scale =
+          params.scene_scale * std::min (point_relative, affordable);
+        if (params.render_scale_override > 0.0f)
+          scale = params.render_scale_override;
+        return std::clamp (scale, 0.25f, 1.0f);
+      }
+
+      void make_targets (std::uint32_t scene_width,
+                         std::uint32_t scene_height) {
         for (Texture t : { m_scene_color, m_scene_motion, m_scene_depth,
                            m_history[0], m_history[1], m_bloom[0],
                            m_bloom[1] })
@@ -1423,10 +1449,9 @@ namespace moppe::nhal {
             m_device->destroy (t);
         m_width = m_device->surface_width ();
         m_height = m_device->surface_height ();
-        // The scene at half the drawable's size per axis, upscaled
-        // temporally.
-        m_scene_width = std::max (1u, m_width / 2);
-        m_scene_height = std::max (1u, m_height / 2);
+        // The scene at its share of the drawable, upscaled temporally.
+        m_scene_width = scene_width;
+        m_scene_height = scene_height;
         m_scene_color = m_device->create_texture (
           { m_scene_width, m_scene_height, Format::rgba16_float,
             usage_render_target | usage_sampled, 1, "scene" });
