@@ -98,6 +98,24 @@ namespace moppe::nhal {
     const char sward_patches_compute[] = {
 #embed "sward_patches.compute.metal"
       , 0 };
+    const char gtao_vertex[] = {
+#embed "gtao.vertex.metal"
+      , 0 };
+    const char gtao_fragment[] = {
+#embed "gtao.fragment.metal"
+      , 0 };
+    const char gtao_blur_vertex[] = {
+#embed "gtao_blur.vertex.metal"
+      , 0 };
+    const char gtao_blur_fragment[] = {
+#embed "gtao_blur.fragment.metal"
+      , 0 };
+    const char shafts_vertex[] = {
+#embed "shafts.vertex.metal"
+      , 0 };
+    const char shafts_fragment[] = {
+#embed "shafts.fragment.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -120,6 +138,9 @@ namespace moppe::nhal {
       { grass_tiles_compute, {} },
       { { sward_vertex, {} }, { sward_fragment, {} } },
       { sward_patches_compute, {} },
+      { { gtao_vertex, {} }, { gtao_fragment, {} } },
+      { { gtao_blur_vertex, {} }, { gtao_blur_fragment, {} } },
+      { { shafts_vertex, {} }, { shafts_fragment, {} } },
     };
     return shaders;
   }

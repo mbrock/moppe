@@ -22,12 +22,15 @@
 #include <forest_cull.hh>
 #include <forest_shadow.hh>
 #include <grass.hh>
+#include <gtao.hh>
+#include <gtao_blur.hh>
 #include <grass_tiles.hh>
 #include <sward.hh>
 #include <sward_patches.hh>
 #include <hud.hh>
 #include <present.hh>
 #include <resolve.hh>
+#include <shafts.hh>
 #include <sky.hh>
 #include <slug_text.hh>
 #include <terrain.hh>
@@ -321,6 +324,9 @@ namespace moppe::nhal {
                                    shaders.grass_tiles.dxil.end ());
         m_bloom_bright_code.keep (shaders.bloom_bright);
         m_bloom_blur_code.keep (shaders.bloom_blur);
+        m_gtao_code.keep (shaders.gtao);
+        m_gtao_blur_code.keep (shaders.gtao_blur);
+        m_shafts_code.keep (shaders.shafts);
         m_forest_code.keep (shaders.forest);
         m_terrain_shadow_code.keep (shaders.terrain_shadow);
         m_forest_shadow_code.keep (shaders.forest_shadow);
@@ -593,6 +599,7 @@ namespace moppe::nhal {
           make_targets (scene_width, scene_height);
         m_params = params;
         m_scene_open = m_resolved = m_presented = false;
+        m_ao_ready = m_shafts_ready = false;
 
         const Mat4 view_proj = params.proj * params.view;
         if (m_restart)
@@ -884,6 +891,84 @@ namespace moppe::nhal {
         }
       }
 
+      // Occlusion over the stored scene depth, kept out of the temporal
+      // history: the present pass multiplies it in.
+      void apply_gtao (const render::GtaoParams& params) override {
+        reconstruct_scene ();
+        shaders::gtao::Post post = post_block (params.camera_pos,
+                                               params.forward,
+                                               params.right_span,
+                                               params.up_span);
+        post.occlusion = {
+          params.radius.numerical_value_in (u::m),
+          params.strength.numerical_value_in (mp_units::one),
+          params.near_plane.numerical_value_in (u::m),
+          params.far_plane.numerical_value_in (u::m) };
+        m_post_block = post;
+        auto pass = [&] (Texture target, const char* label) {
+          RenderPassDesc desc;
+          desc.label = label;
+          desc.color_count = 1;
+          desc.colors[0] = { target, Load::discard, Store::store };
+          m_device->begin_render_pass (desc);
+        };
+        pass (m_ao[0], "occlusion");
+        m_device->set_pipeline (m_gtao);
+        m_device->set_uniforms (0, post);
+        m_device->set_texture (0, m_scene_depth);
+        m_device->draw (3);
+        m_device->end_render_pass ();
+        const std::array<float, 2> steps[2] = {
+          { 1.0f / float (m_scene_width), 0.0f },
+          { 0.0f, 1.0f / float (m_scene_height) },
+        };
+        for (int i = 0; i < 2; ++i) {
+          pass (m_ao[1 - i], "occlusion blur");
+          m_device->set_pipeline (m_gtao_blur);
+          shaders::gtao::Post blurred = post;
+          blurred.blur = { steps[i][0], steps[i][1], 0, 0 };
+          m_device->set_uniforms (0, blurred);
+          m_device->set_texture (0, m_ao[i]);
+          m_device->set_texture (1, m_scene_depth);
+          m_device->draw (3);
+          m_device->end_render_pass ();
+        }
+        m_ao_ready = true;
+      }
+
+      // Sun shafts marched through the shadow map, added at present.
+      void apply_light_shafts (const render::LightShaftParams& params)
+        override {
+        if (m_frame_values.shadow[0] <= 0.0f)
+          return;
+        reconstruct_scene ();
+        shaders::gtao::Post post = post_block (params.camera_pos,
+                                               params.forward,
+                                               params.right_span,
+                                               params.up_span);
+        post.shafts = { params.max_distance.numerical_value_in (u::m), 0.011f,
+                        24.0f, 0 };
+        post.shaft_color =
+          linear (params.sun_color,
+                  params.strength.numerical_value_in (mp_units::one));
+        const float strength = post.shaft_color[3];
+        for (int c = 0; c < 3; ++c)
+          post.shaft_color[c] *= strength;
+        RenderPassDesc desc;
+        desc.label = "sun shafts";
+        desc.color_count = 1;
+        desc.colors[0] = { m_shafts, Load::discard, Store::store };
+        m_device->begin_render_pass (desc);
+        m_device->set_pipeline (m_shafts_pipeline);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, post);
+        m_device->set_texture (0, m_scene_depth);
+        m_device->set_texture (8, m_shadow_map);
+        m_device->draw (3);
+        m_device->end_render_pass ();
+        m_shafts_ready = true;
+      }
+
       void apply_underwater (float) override {}
       void apply_motion_blur (float) override {}
       void apply_scene_blur () override {}
@@ -1127,6 +1212,24 @@ namespace moppe::nhal {
         blur.fragment = m_bloom_blur_code.stage (1);
         m_bloom_blur = m_device->create_render_pipeline (blur);
 
+        RenderPipelineDesc occlusion = present;
+        occlusion.program = &shaders::gtao::program;
+        occlusion.vertex = m_gtao_code.stage (0);
+        occlusion.fragment = m_gtao_code.stage (1);
+        occlusion.color_formats[0] = Format::r16_float;
+        m_gtao = m_device->create_render_pipeline (occlusion);
+        RenderPipelineDesc occlusion_blur = occlusion;
+        occlusion_blur.program = &shaders::gtao_blur::program;
+        occlusion_blur.vertex = m_gtao_blur_code.stage (0);
+        occlusion_blur.fragment = m_gtao_blur_code.stage (1);
+        m_gtao_blur = m_device->create_render_pipeline (occlusion_blur);
+        RenderPipelineDesc shafts = present;
+        shafts.program = &shaders::shafts::program;
+        shafts.vertex = m_shafts_code.stage (0);
+        shafts.fragment = m_shafts_code.stage (1);
+        shafts.color_formats[0] = Format::rgba16_float;
+        m_shafts_pipeline = m_device->create_render_pipeline (shafts);
+
         RenderPipelineDesc hud = present;
         hud.program = &shaders::hud::program;
         hud.vertex = m_hud_code.stage (0);
@@ -1272,6 +1375,18 @@ namespace moppe::nhal {
         m_device->dispatch ((patches * patches + 63) / 64);
         m_device->end_compute_pass ();
         m_grass_culled = true;
+      }
+
+      shaders::gtao::Post post_block (const position_t& eye,
+                                      const Vec3& forward, const Vec3& right,
+                                      const Vec3& up) const {
+        shaders::gtao::Post post {};
+        post.eye = lanes (position_value (eye));
+        post.ray_forward = lanes (forward);
+        post.ray_right = lanes (right);
+        post.ray_up = lanes (up);
+        post.occlusion = m_post_block.occlusion;
+        return post;
       }
 
       void upload_frame () {
@@ -1444,7 +1559,7 @@ namespace moppe::nhal {
                          std::uint32_t scene_height) {
         for (Texture t : { m_scene_color, m_scene_motion, m_scene_depth,
                            m_history[0], m_history[1], m_bloom[0],
-                           m_bloom[1] })
+                           m_bloom[1], m_ao[0], m_ao[1], m_shafts })
           if (t)
             m_device->destroy (t);
         m_width = m_device->surface_width ();
@@ -1467,6 +1582,13 @@ namespace moppe::nhal {
               usage_render_target | usage_sampled, 1, "temporal history" });
         m_bloom_width = std::max (1u, m_width / 4);
         m_bloom_height = std::max (1u, m_height / 4);
+        for (Texture& t : m_ao)
+          t = m_device->create_texture (
+            { m_scene_width, m_scene_height, Format::r16_float,
+              usage_render_target | usage_sampled, 1, "occlusion" });
+        m_shafts = m_device->create_texture (
+          { m_scene_width, m_scene_height, Format::rgba16_float,
+            usage_render_target | usage_sampled, 1, "sun shafts" });
         for (Texture& t : m_bloom)
           t = m_device->create_texture (
             { m_bloom_width, m_bloom_height, Format::rgba16_float,
@@ -1490,6 +1612,31 @@ namespace moppe::nhal {
         pass.depth = { m_scene_depth, Load::clear, Store::store, 0.0f };
         m_device->begin_render_pass (pass);
         m_scene_open = true;
+      }
+
+      // Where the sun sits on screen and how much of it the camera sees,
+      // fading as it nears the frame's edge: the present pass's glare.
+      std::array<float, 4> sun_glare () const {
+        const Mat4 view_proj = m_params.proj * m_params.view;
+        const Vec3 sun = m_params.sun_dir;
+        auto row = [&] (int r) {
+          return view_proj.element (r) * sun[0]
+                 + view_proj.element (4 + r) * sun[1]
+                 + view_proj.element (8 + r) * sun[2];
+        };
+        const float w = row (3);
+        if (w <= 0.0f || m_params.sun_visibility <= 0.0f)
+          return { 0, 0, 0, 1 };
+        const float nx = row (0) / w, ny = row (1) / w;
+        const float edge =
+          1.0f
+          - std::max (0.0f, (std::max (std::abs (nx), std::abs (ny)) - 0.85f)
+                              / 0.45f);
+        if (edge <= 0.0f)
+          return { 0, 0, 0, 1 };
+        return { nx * 0.5f + 0.5f, 1.0f - (ny * 0.5f + 0.5f),
+                 m_params.sun_visibility * std::min (edge, 1.0f),
+                 float (m_width) / float (std::max (m_height, 1u)) };
       }
 
       // The exposed scene's bright parts at a quarter of the drawable's
@@ -1536,6 +1683,9 @@ namespace moppe::nhal {
                             : 1.0f,
                           std::fmod (m_params.time, 1000.0f),
                           m_params.bloom ? 1.0f : 0.0f };
+        present.effects = { m_ao_ready ? 1.0f : 0.0f,
+                            m_shafts_ready ? 1.0f : 0.0f, 0, 0 };
+        present.sun_glare = sun_glare ();
         if (m_params.bloom)
           bloom (present);
         RenderPassDesc pass;
@@ -1549,6 +1699,8 @@ namespace moppe::nhal {
         m_device->set_buffer (1, m_exposure_value);
         m_device->set_texture (0, m_image);
         m_device->set_texture (1, m_bloom[0]);
+        m_device->set_texture (2, m_ao[0]);
+        m_device->set_texture (3, m_shafts);
         m_device->draw (3);
         m_presented = true;
       }
@@ -1593,6 +1745,11 @@ namespace moppe::nhal {
       std::uint32_t m_scene_width = 0, m_scene_height = 0;
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];
       Texture m_bloom[2];
+      Texture m_ao[2], m_shafts;
+      ProgramCode m_gtao_code, m_gtao_blur_code, m_shafts_code;
+      Pipeline m_gtao, m_gtao_blur, m_shafts_pipeline;
+      shaders::gtao::Post m_post_block {};
+      bool m_ao_ready = false, m_shafts_ready = false;
       ProgramCode m_grass_code;
       std::string m_grass_tiles_code;
       std::vector<unsigned char> m_grass_tiles_dxil;

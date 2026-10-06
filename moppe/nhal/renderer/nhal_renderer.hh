@@ -33,6 +33,9 @@ namespace moppe::nhal {
     StageCode grass_tiles;
     StageCode sward[2];
     StageCode sward_patches;
+    StageCode gtao[2];
+    StageCode gtao_blur[2];
+    StageCode shafts[2];
   };
 
   // The programs' MSL, embedded in the binary at build time.

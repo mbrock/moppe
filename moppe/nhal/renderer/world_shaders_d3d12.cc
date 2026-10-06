@@ -14,12 +14,18 @@
 #include <shader_grass_fragment.h>
 #include <shader_grass_tiles_compute.h>
 #include <shader_grass_vertex.h>
+#include <shader_gtao_blur_fragment.h>
+#include <shader_gtao_blur_vertex.h>
+#include <shader_gtao_fragment.h>
+#include <shader_gtao_vertex.h>
 #include <shader_hud_fragment.h>
 #include <shader_hud_vertex.h>
 #include <shader_present_fragment.h>
 #include <shader_present_vertex.h>
 #include <shader_resolve_fragment.h>
 #include <shader_resolve_vertex.h>
+#include <shader_shafts_fragment.h>
+#include <shader_shafts_vertex.h>
 #include <shader_sky_fragment.h>
 #include <shader_sky_vertex.h>
 #include <shader_slug_text_fragment.h>
@@ -64,6 +70,9 @@ namespace moppe::nhal {
       dxil (shader_grass_tiles_compute),
       { dxil (shader_sward_vertex), dxil (shader_sward_fragment) },
       dxil (shader_sward_patches_compute),
+      { dxil (shader_gtao_vertex), dxil (shader_gtao_fragment) },
+      { dxil (shader_gtao_blur_vertex), dxil (shader_gtao_blur_fragment) },
+      { dxil (shader_shafts_vertex), dxil (shader_shafts_fragment) },
     };
     return shaders;
   }

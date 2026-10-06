@@ -2526,8 +2526,10 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *present*
-    '((grade :vec4))))             ; exposure bias, 1 when the drawable is
+    '((grade :vec4)                ; exposure bias, 1 when the drawable is
                                    ; 8-bit, seconds, bloom strength
+      (effects :vec4)              ; occlusion on, shafts on, 0, 0
+      (sun-glare :vec4))))         ; the sun's uv, its visibility, aspect
 
 ;;; Auto-exposure, on the GPU alone: 256 wide taps of the resolved image,
 ;;; log-averaged, ease the stored exposure toward mid-grey -- clamped to
@@ -2635,6 +2637,183 @@
   :vertex present-vertex
   :fragment bloom-blur-fragment)
 
+;;; -- ambient occlusion and sun shafts --------------------------------------
+;;;
+;;; As post.metal's, but kept out of the temporal history: both render into
+;;; their own scene-sized targets after the resolve, and the present pass
+;;; multiplies the occlusion in and adds the shafts.  The camera basis has
+;;; the frustum's half-extents folded into its right and up spans, so a
+;;; pixel's view ray needs no matrix inverse.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *post*
+    '((eye :vec4)                  ; camera position
+      (ray-forward :vec4)
+      (ray-right :vec4)            ; right * tan(fov / 2) * aspect
+      (ray-up :vec4)               ; up * tan(fov / 2)
+      (occlusion :vec4)            ; radius m, strength, near m, far m
+      (shafts :vec4)               ; reach m, extinction / m, steps, 0
+      (shaft-color :vec4)          ; linear sun colour times strength
+      (blur :vec4))))              ; texel step x, y
+
+(define-shader-function view-ray (uv forward right up)
+  (normalize (+ forward (* right (- (* 2.0 (swizzle uv :x)) 1.0))
+                (* up (- 1.0 (* 2.0 (swizzle uv :y)))))))
+
+;;; Reversed-Z perspective: near maps to 1, far to 0.
+(define-shader-function view-depth (z near far)
+  (/ (* near far) (+ (* z (- far near)) near)))
+
+(define-shader-function depth-position (uv z eye forward right up near far)
+  (let* ((ray (view-ray uv forward right up)))
+    (+ eye (* ray (/ (view-depth z near far) (dot ray forward))))))
+
+(define-shader-function interleaved-noise (pixel)
+  (fract (* 52.9829189 (fract (+ (* 0.06711056 (swizzle pixel :x))
+                                 (* 0.00583715 (swizzle pixel :y)))))))
+
+;;; Alchemy-style obscurance over a jittered spiral of depth taps: crevices,
+;;; trunk bases, and the floor of the sward darken by how much nearby
+;;; geometry leans over them.
+(define-shader gtao-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0)
+              (pixel :vec4 :built-in :frag-coord))
+     :outputs ((color :vec4 :location 0))
+     :resources ((post :uniform-block :binding 0 :members #.*post*)
+                 (scene-depth :depth-texture-2d :binding 0)
+                 (nearest-clamp :sampler :binding 2)))
+  (let* ((forward (swizzle ray-forward :xyz))
+         (right (swizzle ray-right :xyz))
+         (up (swizzle ray-up :xyz))
+         (camera (swizzle eye :xyz))
+         (near (swizzle occlusion :z))
+         (far (swizzle occlusion :w))
+         (z (swizzle (sample scene-depth nearest-clamp uv) :x))
+         (position (depth-position uv z camera forward right up near far))
+         (normal (normalize (cross3 (derivative-y position)
+                                    (derivative-x position))))
+         (depth (view-depth z near far))
+         (radius (swizzle occlusion :x))
+         (uv-radius (* (/ radius (* 2.0 depth))
+                       (vec2 (/ 1.0 (sqrt (dot right right)))
+                             (/ 1.0 (sqrt (dot up up))))))
+         (jitter (interleaved-noise (swizzle pixel :xy)))
+         (bias (+ 0.02 (* 0.002 depth)))
+         (obscurance
+           (counted-fold (i (uint 10) total 0.0)
+             (let* ((angle (* 6.2831853 (+ jitter (* (float i) 0.618034))))
+                    (reach (expt (/ (+ (float i) 0.5 jitter) 10.0) 0.7))
+                    (tap-uv (+ uv (* (vec2 (cos angle) (sin angle))
+                                     (* uv-radius reach))))
+                    (tap-z (swizzle (sample scene-depth nearest-clamp tap-uv)
+                                    :x))
+                    (tap (depth-position tap-uv tap-z camera forward right up
+                                         near far))
+                    (to-tap (- tap position))
+                    (lean (/ (* (max 0.0 (- (dot to-tap normal) bias)) radius)
+                             (max (dot to-tap to-tap) 0.01))))
+               (+ total (if (> tap-z 0.000001) lean 0.0)))))
+         (ao (clamp (- 1.0 (/ (* (swizzle occlusion :y) obscurance) 10.0))
+                    0.0 1.0)))
+    (set-output color (vec4 (if (> z 0.000001) ao 1.0) 0.0 0.0 1.0))))
+
+(define-shader-program gtao
+  :vertex present-vertex
+  :fragment gtao-fragment)
+
+;;; A separable depth-aware blur: neighbours vote only when they lie on the
+;;; same surface, so occlusion never bleeds across a silhouette.
+(define-shader gtao-blur-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0))
+     :outputs ((color :vec4 :location 0))
+     :resources ((post :uniform-block :binding 0 :members #.*post*)
+                 (occluded :texture-2d :binding 0)
+                 (scene-depth :depth-texture-2d :binding 1)
+                 (linear-clamp :sampler :binding 0)
+                 (nearest-clamp :sampler :binding 2)))
+  (let* ((near (swizzle occlusion :z))
+         (far (swizzle occlusion :w))
+         (step (swizzle blur :xy))
+         (centre (view-depth (swizzle (sample scene-depth nearest-clamp uv) :x)
+                             near far))
+         (sum (counted-fold (i (uint 5) acc (vec2 0.0 0.0))
+                (let* ((k (- (float i) 2.0))
+                       (at (+ uv (* step k)))
+                       (d (view-depth (swizzle (sample scene-depth
+                                                       nearest-clamp at)
+                                               :x)
+                                      near far))
+                       (same (clamp (- 1.0 (/ (* 8.0 (abs (- d centre)))
+                                              centre))
+                                    0.0 1.0))
+                       (w (* same (if (= (abs k) 2.0) 0.153388
+                                      (if (= (abs k) 1.0) 0.221461
+                                          0.250301)))))
+                  (+ acc (vec2 (* w (swizzle (sample occluded linear-clamp at)
+                                             :x))
+                               w))))))
+    (set-output color
+                (vec4 (if (> (swizzle sum :y) 0.0)
+                          (/ (swizzle sum :x) (swizzle sum :y)) 1.0)
+                      0.0 0.0 1.0))))
+
+(define-shader-program gtao-blur
+  :vertex present-vertex
+  :fragment gtao-blur-fragment)
+
+;;; Sun shafts: march each view ray through the sun's shadow map and gather
+;;; forward-scattered sunlight over its lit spans, stopping at the first
+;;; surface; a Henyey-Greenstein lobe keeps the beams about the sun.
+(define-shader shafts-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0)
+              (pixel :vec4 :built-in :frag-coord))
+     :outputs ((color :vec4 :location 0))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (post :uniform-block :binding 1 :members #.*post*)
+                 (scene-depth :depth-texture-2d :binding 0)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (nearest-clamp :sampler :binding 2)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((ray (view-ray uv (swizzle ray-forward :xyz) (swizzle ray-right :xyz)
+                        (swizzle ray-up :xyz)))
+         (camera (swizzle eye :xyz))
+         (surface (swizzle (sample scene-depth nearest-clamp uv) :x))
+         (jitter (interleaved-noise (swizzle pixel :xy)))
+         (steps (swizzle shafts :z))
+         (dt (/ (swizzle shafts :x) steps))
+         (sigma (swizzle shafts :y))
+         (march
+           (counted-fold (i (uint steps) state (vec2 0.0 0.0)
+                          :until (> (swizzle state :y) 0.5))
+             (let* ((distance (* (+ (float i) jitter) dt))
+                    (world (+ camera (* ray distance)))
+                    (c (* view-proj (vec4 world 1.0)))
+                    (beyond (or (<= (swizzle c :w) 0.0)
+                                (< (/ (swizzle c :z) (swizzle c :w)) surface)))
+                    (at (sun-map-coordinate sun-view world))
+                    (lit (mix 1.0 (shadow-tap shadow-map shadow-compare at
+                                              0.0 0.0 0.0 0.0015)
+                              (inside-sun-map at))))
+               (if beyond (vec2 (swizzle state :x) 1.0)
+                   (vec2 (+ (swizzle state :x)
+                            (* lit (exp (* -1.0 sigma distance))))
+                         0.0)))))
+         (scatter (* (swizzle march :x) sigma dt))
+         (mu (dot ray (normalize (swizzle sun-direction :xyz))))
+         (g 0.60)
+         (phase (/ (- 1.0 (* g g))
+                   (* 4.0 3.14159265
+                      (expt (- (+ 1.0 (* g g)) (* 2.0 g mu)) 1.5)))))
+    (set-output color (vec4 (* (swizzle shaft-color :xyz) (* phase scatter))
+                            1.0))))
+
+(define-shader-program shafts
+  :vertex present-vertex
+  :fragment shafts-fragment)
+
 (define-shader-function aces (x)
   (clamp (/ (* x (+ (* x 2.51) (vec3 0.03 0.03 0.03)))
             (+ (* x (+ (* x 2.43) (vec3 0.59 0.59 0.59))) (vec3 0.14 0.14 0.14)))
@@ -2656,9 +2835,25 @@
                  (exposure :storage-buffer :binding 1 :element :float)
                  (image :texture-2d :binding 0)
                  (bloom :texture-2d :binding 1)
+                 (occluded :texture-2d :binding 2)
+                 (shafts-image :texture-2d :binding 3)
                  (linear-clamp :sampler :binding 0)))
-  (let* ((exposed (* (swizzle (sample image linear-clamp uv) :rgb)
-                     (* (buffer-element exposure (uint 0)) (swizzle grade :x))))
+  (let* ((adapted (* (buffer-element exposure (uint 0)) (swizzle grade :x)))
+         (scene (swizzle (sample image linear-clamp uv) :rgb))
+         (shaded (* scene (if (> (swizzle effects :x) 0.5)
+                              (swizzle (sample occluded linear-clamp uv) :x)
+                              1.0)))
+         (lit (if (> (swizzle effects :y) 0.5)
+                  (+ shaded (swizzle (sample shafts-image linear-clamp uv)
+                                     :rgb))
+                  shaded))
+         ;; A warm veil around the sun: the glare of looking toward it.
+         (from-sun (* (- uv (swizzle sun-glare :xy))
+                      (vec2 (swizzle sun-glare :w) 1.0)))
+         (veil (* (vec3 1.0 0.86 0.62)
+                  (* (exp (* -2.6 (sqrt (dot from-sun from-sun)))) 0.15
+                     (swizzle sun-glare :z))))
+         (exposed (+ (* lit adapted) (* veil adapted)))
          ;; The bright pass saw the exposed scene, so the glow adds in the
          ;; same units.
          (glowing (if (> (swizzle grade :w) 0.0)
