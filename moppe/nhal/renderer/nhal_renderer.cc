@@ -6,6 +6,8 @@
 // undergrowth, dust, shadows, and the post effects are not drawn yet.
 #include <moppe/nhal/renderer/nhal_renderer.hh>
 
+#include <moppe/environment.hh>
+
 #include <moppe/render/draw.hh>
 #include <moppe/render/slug.hh>
 #include <moppe/render/text.hh>
@@ -919,7 +921,7 @@ namespace moppe::nhal {
       // seconds, averaged over the frames since the last report.
       void report_timings () {
         static const bool wanted = [] {
-          const char* v = std::getenv ("MOPPE_NHAL_TIMINGS");
+          const char* v = moppe::environment ("MOPPE_NHAL_TIMINGS");
           return v && *v && *v != '0';
         }();
         if (!wanted)
