@@ -206,8 +206,11 @@ namespace moppe::nhal::demo {
     // multisampled natively or single-sampled for the temporal resolve; the
     // tonemap writes the drawable.
     for (int mode = 0; mode < 2; ++mode) {
+      // Colour and screen motion, which the temporal resolve follows.
       RenderPipelineDesc desc;
       desc.color_formats[0] = Format::rgba16_float;
+      desc.color_formats[1] = Format::rg16_float;
+      desc.color_count = 2;
       desc.depth_format = Format::d32_float;
       desc.samples = mode == 0 ? samples : 1;
       desc.program = &shaders::terrain::program;
@@ -268,8 +271,9 @@ namespace moppe::nhal::demo {
 
   Scene::~Scene () {
     m_device.wait_idle ();
-    for (Texture t : { m_color, m_depth, m_scene, m_low_color, m_low_depth,
-                       m_history[0], m_history[1], m_shadow_map })
+    for (Texture t : { m_color, m_motion, m_depth, m_scene, m_low_color,
+                       m_low_motion, m_low_depth, m_history[0], m_history[1],
+                       m_shadow_map })
       if (t)
         m_device.destroy (t);
     for (Buffer b : { m_terrain_samples, m_terrain_indices, m_tree_instances,
@@ -289,8 +293,8 @@ namespace moppe::nhal::demo {
   }
 
   void Scene::make_targets () {
-    for (Texture t : { m_color, m_depth, m_scene, m_low_color, m_low_depth,
-                       m_history[0], m_history[1] })
+    for (Texture t : { m_color, m_motion, m_depth, m_scene, m_low_color,
+                       m_low_motion, m_low_depth, m_history[0], m_history[1] })
       if (t)
         m_device.destroy (t);
     m_width = m_device.surface_width ();
@@ -302,6 +306,11 @@ namespace moppe::nhal::demo {
                                              usage_render_target
                                                | usage_sampled,
                                              1, "jittered scene" });
+    m_low_motion = m_device.create_texture ({ m_low_width, m_low_height,
+                                              Format::rg16_float,
+                                              usage_render_target
+                                                | usage_sampled,
+                                              1, "jittered motion" });
     m_low_depth = m_device.create_texture ({ m_low_width, m_low_height,
                                              Format::d32_float,
                                              usage_depth | usage_sampled, 1,
@@ -315,6 +324,10 @@ namespace moppe::nhal::demo {
                                          Format::rgba16_float,
                                          usage_render_target, samples,
                                          "scene samples" });
+    m_motion = m_device.create_texture ({ m_width, m_height,
+                                          Format::rg16_float,
+                                          usage_render_target, samples,
+                                          "scene motion" });
     m_depth = m_device.create_texture ({ m_width, m_height, Format::d32_float,
                                          usage_depth, samples,
                                          "scene depth" });
@@ -486,14 +499,18 @@ namespace moppe::nhal::demo {
     const int mode = m_temporal ? 1 : 0;
     RenderPassDesc pass;
     pass.label = m_temporal ? "jittered scene" : "scene, 4x MSAA";
-    pass.color_count = 1;
+    pass.color_count = 2;
     if (m_temporal) {
       pass.colors[0] = { m_low_color, Load::clear, Store::store,
                          { 0, 0, 0, 1 } };
+      pass.colors[1] = { m_low_motion, Load::clear, Store::store,
+                         { 0, 0, 0, 0 } };
       pass.depth = { m_low_depth, Load::clear, Store::store, 0.0f };
     } else {
       pass.colors[0] = { m_color, Load::clear, Store::discard,
                          { 0, 0, 0, 1 }, m_scene };
+      pass.colors[1] = { m_motion, Load::clear, Store::discard,
+                         { 0, 0, 0, 0 } };
       pass.depth = { m_depth, Load::clear, Store::discard, 0.0f };
     }
     m_device.begin_render_pass (pass);
@@ -529,8 +546,9 @@ namespace moppe::nhal::demo {
       m_device.set_pipeline (m_resolve);
       m_device.set_buffer (0, uniforms);
       m_device.set_texture (0, m_low_color);
-      m_device.set_texture (1, m_low_depth);
-      m_device.set_texture (2, previous);
+      m_device.set_texture (1, m_low_motion);
+      m_device.set_texture (2, m_low_depth);
+      m_device.set_texture (3, previous);
       m_device.draw (3);
       m_device.end_render_pass ();
       image = next;

@@ -74,8 +74,8 @@ namespace moppe::nhal::demo {
     std::uint32_t m_tree_count = 0;
     std::uint32_t m_grid = 0;
     float m_cell = 0;
-    Texture m_color, m_depth, m_scene;
-    Texture m_low_color, m_low_depth, m_history[2];
+    Texture m_color, m_motion, m_depth, m_scene;
+    Texture m_low_color, m_low_motion, m_low_depth, m_history[2];
     std::uint32_t m_width = 0, m_height = 0;
     std::uint32_t m_low_width = 0, m_low_height = 0;
     float m_render_scale;

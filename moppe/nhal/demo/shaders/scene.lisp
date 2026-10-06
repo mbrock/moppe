@@ -54,6 +54,24 @@
           near
           depth)))
 
+;;; Screen motion for temporal upscaling.  A point's place in a camera's
+;;; view as (x, y, depth) with the camera's scaled basis, interpolated
+;;; across a triangle and divided per fragment; motion is where last
+;;; frame's camera saw the point minus where this frame's sees it, in
+;;; texture coordinates and without jitter.
+(define-shader-function ndc-uv (ndc)
+  (vec2 (+ (* (swizzle ndc :x) 0.5) 0.5) (- 0.5 (* (swizzle ndc :y) 0.5))))
+
+(define-shader-function view-place (rel right up forward)
+  (vec3 (dot rel right) (dot rel up) (dot rel forward)))
+
+(define-shader-function place-uv (place)
+  (ndc-uv (vec2 (/ (swizzle place :x) (swizzle place :z))
+                (/ (swizzle place :y) (swizzle place :z)))))
+
+(define-shader-function screen-motion (here then)
+  (- (place-uv then) (place-uv here)))
+
 ;;; Where a world point lands in the sun's view: (x, y, depth).
 (define-shader-function light-space (position row-x row-y row-z)
   (let* ((point (vec4 position 1.0)))
@@ -124,7 +142,9 @@
                (world :vec3 :location 0)
                (surface-normal :vec3 :location 1)
                (albedo :vec3 :location 2)
-               (shadow-at :vec3 :location 3))
+               (shadow-at :vec3 :location 3)
+               (here :vec3 :location 4)
+               (then :vec3 :location 5))
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)
                  (samples :storage-buffer :binding 1 :element :vec4)))
@@ -143,15 +163,26 @@
     (set-output shadow-at
                 (shadow-coordinate
                  (light-space position shadow-row-x shadow-row-y
-                              shadow-row-z)))))
+                              shadow-row-z)))
+    (set-output here (view-place (- position (swizzle camera-position :xyz))
+                                 (swizzle camera-right :xyz)
+                                 (swizzle camera-up :xyz)
+                                 (swizzle camera-forward :xyz)))
+    (set-output then (view-place (- position (swizzle previous-position :xyz))
+                                 (swizzle previous-right :xyz)
+                                 (swizzle previous-up :xyz)
+                                 (swizzle previous-forward :xyz)))))
 
 (define-shader terrain-fragment
     (:stage :fragment
      :inputs ((world :vec3 :location 0)
               (surface-normal :vec3 :location 1)
               (albedo :vec3 :location 2)
-              (shadow-at :vec3 :location 3))
-     :outputs ((color :vec4 :location 0))
+              (shadow-at :vec3 :location 3)
+              (here :vec3 :location 4)
+              (then :vec3 :location 5))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)
                  (shadow-map :depth-texture-2d :binding 0)
@@ -173,7 +204,8 @@
                              (swizzle sky-zenith :xyz)
                              (swizzle sky-horizon :xyz)
                              (swizzle sky-horizon :w))
-                      1.0))))
+                      1.0))
+    (set-output motion (screen-motion here then))))
 
 (define-shader-program terrain
   :vertex terrain-vertex
@@ -206,6 +238,15 @@
 ;;; count, instances, first index, base vertex, first instance); the host
 ;;; zeroes that count before the dispatch.  The sun's shadow draws every
 ;;; tree, since trees out of view still shade it, from a second record.
+;;; A tree's lean in metres at a time, from gusts that travel across the
+;;; valley.
+(define-shader-function tree-lean (time root wind)
+  (let* ((travel (+ (* (swizzle root :x) 0.021) (* (swizzle root :z) 0.013)))
+         (gust (+ (sin (- (* time 1.1) travel))
+                  (* 0.35 (sin (+ (* time 2.9) (* travel 2.7))))
+                  0.6)))
+    (* gust (* wind (* (swizzle root :w) 0.012)))))
+
 (define-shader-function sphere-inside (plane centre radius)
   (>= (+ (dot (swizzle plane :xyz) centre) (swizzle plane :w))
       (* -1.0 radius)))
@@ -229,12 +270,11 @@
          (count (uint (swizzle forest :y)))
          (root (buffer-element instances (* tree (uint 2.0))))
          (shape (buffer-element instances (+ (* tree (uint 2.0)) (uint 1.0))))
-         (time (swizzle camera-position :w))
-         (travel (+ (* (swizzle root :x) 0.021) (* (swizzle root :z) 0.013)))
-         (gust (+ (sin (- (* time 1.1) travel))
-                  (* 0.35 (sin (+ (* time 2.9) (* travel 2.7))))
-                  0.6))
-         (lean (* gust (* (swizzle forest :z) (* (swizzle root :w) 0.012))))
+         (lean (tree-lean (swizzle camera-position :w) root
+                          (swizzle forest :z)))
+         ;; Last frame's lean, at last frame's time, for motion vectors.
+         (leaned (tree-lean (swizzle previous-position :w) root
+                            (swizzle forest :z)))
          (out (* tree (uint 3.0)))
          (height (swizzle root :w))
          (centre (+ (swizzle root :xyz) (vec3 0.0 (* height 0.5) 0.0)))
@@ -249,7 +289,8 @@
       (set-buffer-element animated out root)
       (set-buffer-element animated (+ out (uint 1.0)) shape)
       (set-buffer-element animated (+ out (uint 2.0))
-                          (vec4 (* lean 0.8) 0.0 (* lean 0.6) 0.0)))
+                          (vec4 (* lean 0.8) (* leaned 0.8)
+                                (* lean 0.6) (* leaned 0.6))))
     (when seen
       (let* ((slot (atomic-add draw-arguments (uint 1.0) (uint 1.0))))
         (set-buffer-element visible slot tree)))
@@ -271,7 +312,8 @@
 
 ;;; An instance is three lanes, as the wind writes them: (root x, y, z,
 ;;; height), (trunk radius, crown radius, crown base as a fraction of
-;;; height, tint), and (sway x, 0, sway z, 0) at the top.  Vertices 0-17
+;;; height, tint), and (sway x, last frame's sway x, sway z, last frame's
+;;; sway z) at the top.  Vertices 0-17
 ;;; are the trunk's two rings of nine; then three crown tiers of a nine-
 ;;; vertex base ring and an apex.  Each function below reads the vertex's
 ;;; part of that shape: 1 on the trunk, 0 in the crown.
@@ -343,7 +385,9 @@
                (world :vec3 :location 0)
                (surface-normal :vec3 :location 1)
                (albedo :vec3 :location 2)
-               (shadow-at :vec3 :location 3))
+               (shadow-at :vec3 :location 3)
+               (here :vec3 :location 4)
+               (then :vec3 :location 5))
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)
                  (instances :storage-buffer :binding 1 :element :vec4)
@@ -354,6 +398,9 @@
          (sway (buffer-element instances (+ first (uint 2.0))))
          (index (float vertex-index))
          (position (tree-world index root shape sway))
+         (previous (tree-world index root shape
+                               (vec4 (swizzle sway :y) 0.0 (swizzle sway :w)
+                                     0.0)))
          (needles (mix (vec3 0.035 0.07 0.04) (vec3 0.06 0.10 0.045)
                        (swizzle shape :w))))
     (set-output clip-position
@@ -370,15 +417,26 @@
     (set-output shadow-at
                 (shadow-coordinate
                  (light-space position shadow-row-x shadow-row-y
-                              shadow-row-z)))))
+                              shadow-row-z)))
+    (set-output here (view-place (- position (swizzle camera-position :xyz))
+                                 (swizzle camera-right :xyz)
+                                 (swizzle camera-up :xyz)
+                                 (swizzle camera-forward :xyz)))
+    (set-output then (view-place (- previous (swizzle previous-position :xyz))
+                                 (swizzle previous-right :xyz)
+                                 (swizzle previous-up :xyz)
+                                 (swizzle previous-forward :xyz)))))
 
 (define-shader trees-fragment
     (:stage :fragment
      :inputs ((world :vec3 :location 0)
               (surface-normal :vec3 :location 1)
               (albedo :vec3 :location 2)
-              (shadow-at :vec3 :location 3))
-     :outputs ((color :vec4 :location 0))
+              (shadow-at :vec3 :location 3)
+              (here :vec3 :location 4)
+              (then :vec3 :location 5))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)
                  (shadow-map :depth-texture-2d :binding 0)
@@ -393,7 +451,8 @@
                              (swizzle sky-zenith :xyz)
                              (swizzle sky-horizon :xyz)
                              (swizzle sky-horizon :w))
-                      1.0))))
+                      1.0))
+    (set-output motion (screen-motion here then))))
 
 (define-shader-program trees
   :vertex trees-vertex
@@ -444,7 +503,8 @@
 (define-shader sky-fragment
     (:stage :fragment
      :inputs ((ndc :vec2 :location 0))
-     :outputs ((color :vec4 :location 0))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)))
   (let* ((tan-x (swizzle camera-right :w))
@@ -461,7 +521,13 @@
                                  (swizzle sky-zenith :xyz)
                                  (swizzle sun-direction :xyz)
                                  (swizzle sun-color :xyz))
-                      1.0))))
+                      1.0))
+    ;; The sky is a direction: only the camera's turning moves it.
+    (set-output motion
+                (- (place-uv (view-place ray (swizzle previous-right :xyz)
+                                         (swizzle previous-up :xyz)
+                                         (swizzle previous-forward :xyz)))
+                   (ndc-uv ndc)))))
 
 (define-shader-program sky
   :vertex sky-vertex
@@ -471,21 +537,10 @@
 
 ;;; A jittered scene smaller than the output accumulates into a history at
 ;;; the output's size.  Each output pixel finds its point in this frame's
-;;; scene, rebuilds the world position from the depth there and the camera
-;;; basis, and asks where last frame's camera saw it; the history from there,
-;;; clamped to this frame's neighbourhood, blends with the new sample.
-;;; Only the camera moves things in this reprojection: the wind's sway is
-;;; small enough to leave to the clamp.
-
-(define-shader-function view-ray (ndc right up forward)
-  (+ forward
-     (* (swizzle right :xyz) (* (swizzle ndc :x) (* (swizzle right :w)
-                                                      (swizzle right :w))))
-     (* (swizzle up :xyz) (* (swizzle ndc :y) (* (swizzle up :w)
-                                                 (swizzle up :w))))))
-
-(define-shader-function ndc-uv (ndc)
-  (vec2 (+ (* (swizzle ndc :x) 0.5) 0.5) (- 0.5 (* (swizzle ndc :y) 0.5))))
+;;; scene and follows that surface's motion vector (written by the scene
+;;; with the camera's and the wind's movement) back to where last frame saw
+;;; it; the history from there, clamped to this frame's neighbourhood,
+;;; blends with the new sample.
 
 ;;; The scene texel at a whole-pixel offset from a centre texel, clamped to
 ;;; the image.
@@ -542,6 +597,29 @@
            (* (swizzle ,w3 :x) (swizzle ,w12 :y))
            (* (swizzle ,w12 :x) (swizzle ,w3 :y))))))
 
+;;; The motion of the nearest surface (reversed-Z: the greatest depth) among
+;;; the 3x3 scene texels around one, so an edge carries its foreground's
+;;; motion rather than smearing the background's over it.
+(define-shader-function motion-tap (motion depth)
+  (vec3 (swizzle motion :x) (swizzle motion :y) (swizzle depth :x)))
+
+(define-shader-function nearer (a b)
+  (mix a b (step (swizzle a :z) (swizzle b :z))))
+
+(define-shader-abstraction nearest-motion (motion depth centre size)
+  (let ((taps (loop for dy in '(-1.0 0.0 1.0)
+                    append (loop for dx in '(-1.0 0.0 1.0)
+                                 collect `(motion-tap
+                                           (texel-load ,motion
+                                                       (scene-texel ,centre
+                                                                    ,dx ,dy
+                                                                    ,size))
+                                           (texel-load ,depth
+                                                       (scene-texel ,centre
+                                                                    ,dx ,dy
+                                                                    ,size)))))))
+    (reduce (lambda (a b) `(nearer ,a ,b)) taps)))
+
 (define-shader resolve-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index))
@@ -560,8 +638,9 @@
      :resources ((frame-state :uniform-block :binding 0
                   :members #.*frame-state*)
                  (scene :texture-2d :binding 0)
-                 (scene-depth :depth-texture-2d :binding 1)
-                 (history :texture-2d :binding 2)
+                 (scene-motion :texture-2d :binding 1)
+                 (scene-depth :depth-texture-2d :binding 2)
+                 (history :texture-2d :binding 3)
                  (linear-clamp :sampler :binding 0)))
   (let* ((size (swizzle temporal :xy))
          (jitter (swizzle temporal :zw))
@@ -571,26 +650,14 @@
          (fresh (swizzle (sample scene linear-clamp here) :rgb))
          (low (neighbourhood min scene centre size))
          (high (neighbourhood max scene centre size))
-         (depth (swizzle (texel-load scene-depth
-                                     (scene-texel centre 0.0 0.0 size))
-                         :x))
-         ;; The world point, relative to this frame's eye; the sky (depth
-         ;; zero) is a direction far away.
-         (distance (/ (swizzle camera-forward :w) (max depth 0.0000001)))
-         (rel (* (view-ray ndc camera-right camera-up
-                           (swizzle camera-forward :xyz))
-                 distance))
-         (before (+ rel (- (swizzle camera-position :xyz)
-                           (swizzle previous-position :xyz))))
-         (behind (dot before (swizzle previous-forward :xyz)))
-         (then (vec2 (/ (dot before (swizzle previous-right :xyz)) behind)
-                     (/ (dot before (swizzle previous-up :xyz)) behind)))
-         (then-uv (ndc-uv then))
+         (motion (swizzle (nearest-motion scene-motion scene-depth centre
+                                          size)
+                          :xy))
+         (then-uv (+ (ndc-uv ndc) motion))
          (inside (* (step 0.0 (swizzle then-uv :x))
                     (step (swizzle then-uv :x) 1.0)
                     (step 0.0 (swizzle then-uv :y))
-                    (step (swizzle then-uv :y) 1.0)
-                    (step 0.0 behind)))
+                    (step (swizzle then-uv :y) 1.0)))
          (output-size (swizzle temporal-blend :zw))
          (position (* then-uv output-size))
          (middle (+ (floor (- position (vec2 0.5 0.5))) (vec2 0.5 0.5)))
@@ -609,8 +676,7 @@
                                                 w0 w12 w3 at0 at12 at3))
                              low high)))
          ;; Fast-moving pixels trust their history less, as in Luft.
-         (travel (- then-uv (ndc-uv ndc)))
-         (speed (clamp (* (sqrt (dot travel travel)) 48.0) 0.0 1.0))
+         (speed (clamp (* (sqrt (dot motion motion)) 48.0) 0.0 1.0))
          (weight (max (- 1.0 (* (- 1.0 (swizzle temporal-blend :x))
                                 (- 1.0 (* speed 0.35))))
                       (- 1.0 inside))))

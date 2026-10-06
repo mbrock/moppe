@@ -70,14 +70,17 @@ RGBA16F with reversed-Z; and the tonemap writes the drawable.
 The scene has two modes (U on the Mac, X on a controller):
 
 - **Temporal upscaling**, the default: the scene renders at half the
-  drawable's size per axis with a 16-step Halton jitter, single-sampled. A
-  resolve pass at the drawable's size rebuilds each pixel's world position
-  from depth and the camera basis, reprojects it with last frame's camera,
-  fetches the history there through a five-tap Catmull-Rom filter, clamps it
-  to this frame's 3x3 neighbourhood, and blends in a tenth of the new sample.
-  Only the camera moves things in this reprojection; the wind's sway is left
-  to the clamp, and motion vectors can follow. It is portable Luv code, so
-  the Xbox, which has no MetalFX, gets it too. It is softer than 4x MSAA.
+  drawable's size per axis with a 16-step Halton jitter, single-sampled, and
+  writes each pixel's screen motion (RG16F, unjittered, last frame's place
+  minus this frame's, in texture coordinates): the terrain by the camera's
+  movement, the trees by the camera's and the wind's (the wind pass keeps
+  last frame's sway too), the sky by the camera's turning. A resolve pass at
+  the drawable's size follows the motion of the nearest surface in each
+  pixel's 3x3 neighbourhood back into the history, fetches it through a
+  five-tap Catmull-Rom filter, clamps it to the neighbourhood in YCoCg, and
+  blends in a tenth of the new sample, more as the pixel moves faster (as
+  Luft's resolve does). It is portable Luv code, so the Xbox, which has no
+  MetalFX, gets it too. It is softer than 4x MSAA.
 - **Native**: the scene at the drawable's size with 4x MSAA, resolved.
 
 GPU time per pass, measured by NHAL:
@@ -86,13 +89,13 @@ GPU time per pass, measured by NHAL:
 | --- | --- | --- |
 | wind and culling (compute) | 0.01 ms | 0.03 ms |
 | sun shadow, 4096x4096 | 0.60 ms | 1.9-3.7 ms |
-| scene, temporal (half size) | 0.61 ms | 1.0-1.4 ms |
-| temporal resolve | 0.45 ms | 0.9-1.7 ms |
+| scene, temporal (half size, with motion) | 0.75 ms | 1.0-2.4 ms |
+| temporal resolve | 0.70 ms | 0.9-3.8 ms |
 | scene, native 4x MSAA | 6.8 ms | 3.1-3.4 ms |
 | tonemap | 0.30 ms | 0.3-0.5 ms |
 
 At 4K with 4x MSAA the Xbox's scene is bound by fill, which culling barely
-helps and upscaling cuts from 6.8 ms to about 1.1 ms with its resolve; the
+helps and upscaling cuts from 6.8 ms to about 1.5 ms with its resolve; the
 M5's timings vary with its clocks.
 
 ## The binding contract
