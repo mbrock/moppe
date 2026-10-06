@@ -66,6 +66,13 @@ lease. The console generates a 1024-sample world (seed 123) at first launch,
 about a minute, and caches it in LocalCache; `LocalState/log.txt` holds
 everything the game logs, and `environment.txt` there (or in the package)
 sets `moppe::environment` variables, `MOPPE_ARGS` being the command line.
+A reinstall clears the cache, so each deploy generates the world again.
+
+The log reports the frame rate every ten seconds and, since the host turns
+`MOPPE_NHAL_TIMINGS` on, each pass's GPU time. On the Series X at 3840x2160
+(the scene at 1920x1080) a frame in the valley costs about 4 ms: scene 2.0,
+sun shadow 0.6, temporal resolve 0.7, present 0.3, both tree culls 0.17, at
+a steady 60 fps. The same view on an M5 MacBook at 2498x1600 costs 12-13 ms.
 
 ## What the Xbox allows
 

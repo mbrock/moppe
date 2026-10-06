@@ -183,6 +183,9 @@ namespace {
 
       Pad pad (m_game);
       auto last = std::chrono::steady_clock::now ();
+      auto report_start = last;
+      long report_frames = 0;
+      double slowest = 0;
       while (!m_closed && !platform::uwp::quit_requested ()) {
         m_window.Dispatcher ().ProcessEvents (
           CoreProcessEventsOption::ProcessAllIfPresent);
@@ -194,6 +197,19 @@ namespace {
         m_game.tick (float (std::clamp (dt, 0.0, 0.05)));
         m_game.render (*renderer);
         ++frames;
+        // The frame rate every ten seconds, beside the renderer's own
+        // pass timings (MOPPE_NHAL_TIMINGS).
+        slowest = std::max (slowest, dt);
+        const double span =
+          std::chrono::duration<double> (now - report_start).count ();
+        if (++report_frames > 1 && span >= 10.0) {
+          std::cerr << "moppe-xbox: " << report_frames / span
+                    << " fps, slowest frame " << slowest * 1000 << " ms"
+                    << std::endl;
+          report_start = now;
+          report_frames = 0;
+          slowest = 0;
+        }
       }
       stopping = true;
       watchdog.join ();
@@ -232,6 +248,9 @@ int __stdcall wWinMain (HINSTANCE, HINSTANCE, PWSTR, int) {
     moppe::platform::asset_path ("environment.txt"));
   const int local_variables =
     uwp::load_environment_file (local + "environment.txt");
+  // A development console reports where its GPU time goes.
+  if (!moppe::environment ("MOPPE_NHAL_TIMINGS"))
+    moppe::set_environment ("MOPPE_NHAL_TIMINGS", "1");
   std::cerr << "moppe-xbox: " << packaged << " packaged and "
             << local_variables << " local environment variables" << std::endl;
 
