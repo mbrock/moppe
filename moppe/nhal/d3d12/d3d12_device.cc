@@ -17,6 +17,7 @@
 #include <wrl/client.h>
 
 #include <moppe/nhal/d3d12/d3d12_device.hh>
+#include <moppe/nhal/presentation.hh>
 #include <moppe/nhal/table.hh>
 
 #include <algorithm>
@@ -884,6 +885,7 @@ namespace moppe::nhal {
         m_queue->ExecuteCommandLists (1, lists);
         step ("end_frame: presenting");
         check (m_swapchain->Present (1, 0), "Present");
+        observe_presentation ();
         step ("end_frame: signalling");
         check (m_queue->Signal (m_fence.Get (), m_serial), "Signal");
         step ("between frames");
@@ -901,6 +903,10 @@ namespace moppe::nhal {
         collect ();
       }
 
+      nhal::FrameTiming next_frame_timing () const override {
+        return m_presentation.predict (m_serial + 1, steady_seconds ());
+      }
+
     private:
       struct FrameTiming {
         std::uint64_t serial = 0;
@@ -908,6 +914,39 @@ namespace moppe::nhal {
         std::uint32_t count = 0;
         bool resolved = true;
       };
+
+      // Which of our frames DXGI showed last, and at which vsync: each
+      // Present's count names its frame, the statistics name the latest
+      // count shown and its vsync's QPC time, and consecutive vsyncs give
+      // the refresh period.
+      void observe_presentation () {
+        UINT count = 0;
+        if (SUCCEEDED (m_swapchain->GetLastPresentCount (&count)))
+          m_present_serials[count % m_present_serials.size ()] = {
+            count, m_serial };
+        DXGI_FRAME_STATISTICS stats {};
+        if (FAILED (m_swapchain->GetFrameStatistics (&stats))
+            || !stats.SyncQPCTime.QuadPart)
+          return;
+        LARGE_INTEGER now {};
+        QueryPerformanceCounter (&now);
+        const double frequency = double (m_qpc_frequency.QuadPart);
+        const double offset = steady_seconds ()
+                              - double (now.QuadPart) / frequency;
+        const auto& known =
+          m_present_serials[stats.PresentCount % m_present_serials.size ()];
+        if (known.first == stats.PresentCount && known.second)
+          m_presentation.presented (
+            known.second,
+            double (stats.SyncQPCTime.QuadPart) / frequency + offset);
+        if (m_last_sync_refresh && stats.SyncRefreshCount > m_last_sync_refresh
+            && stats.SyncQPCTime.QuadPart > m_last_sync_qpc)
+          m_presentation.set_refresh (
+            double (stats.SyncQPCTime.QuadPart - m_last_sync_qpc) / frequency
+            / double (stats.SyncRefreshCount - m_last_sync_refresh));
+        m_last_sync_refresh = stats.SyncRefreshCount;
+        m_last_sync_qpc = stats.SyncQPCTime.QuadPart;
+      }
 
       void timestamp_pass (const char* label) {
         FrameTiming& timing = m_timing[m_slot];
@@ -1433,6 +1472,15 @@ namespace moppe::nhal {
       std::array<FrameTiming, frames_in_flight> m_timing;
       std::vector<PassTiming> m_pass_timings;
       double m_ticks_per_ms = 1e6;
+      PresentationClock m_presentation;
+      std::array<std::pair<UINT, std::uint64_t>, 16> m_present_serials {};
+      LARGE_INTEGER m_qpc_frequency = [] {
+        LARGE_INTEGER f {};
+        QueryPerformanceFrequency (&f);
+        return f;
+      }();
+      UINT m_last_sync_refresh = 0;
+      LONGLONG m_last_sync_qpc = 0;
       std::function<void (const Capture&)> m_capture_request;
       std::vector<PendingCapture> m_captures;
     };

@@ -5,12 +5,15 @@
 // buffers and sampled textures are shared storage and written in place.
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import <QuartzCore/QuartzCore.h>
 
 #include <moppe/nhal/metal/metal_device.hh>
+#include <moppe/nhal/presentation.hh>
 #include <moppe/nhal/table.hh>
 
 #include <array>
 #include <functional>
+#include <memory>
 #include <vector>
 #include <stdexcept>
 #include <string>
@@ -626,6 +629,16 @@ namespace moppe::nhal {
         if (m_capture_request)
           encode_capture ();
         [m_commands endCommandBuffer];
+        // When the drawable appears, on Core Animation's media clock, which
+        // the steady clock is read against as the report arrives.
+        const std::uint64_t serial = m_serial;
+        std::shared_ptr<PresentationClock> clock = m_presentation;
+        [m_drawable addPresentedHandler:^(id<MTLDrawable> drawable) {
+          const CFTimeInterval at = drawable.presentedTime;
+          if (at > 0)
+            clock->presented (serial,
+                              at + (steady_seconds () - CACurrentMediaTime ()));
+        }];
         [m_queue waitForDrawable:m_drawable];
         MTL4CommitOptions* options = [[MTL4CommitOptions alloc] init];
         [options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
@@ -645,6 +658,10 @@ namespace moppe::nhal {
 
       std::span<const PassTiming> pass_timings () const override {
         return m_pass_timings;
+      }
+
+      nhal::FrameTiming next_frame_timing () const override {
+        return m_presentation->predict (m_serial + 1, steady_seconds ());
       }
 
       void wait_idle () override {
@@ -879,6 +896,9 @@ namespace moppe::nhal {
       Retirement<id> m_retired_objects;
 
       std::uint64_t m_serial = 0;
+      // Shared with presented handlers, which may outlive the device.
+      std::shared_ptr<PresentationClock> m_presentation =
+        std::make_shared<PresentationClock> ();
       Arena m_arena;
       Texture m_backbuffer;
       id<CAMetalDrawable> m_drawable = nil;

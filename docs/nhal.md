@@ -189,6 +189,36 @@ whose `seq N` header and timeline of `tap`, `hold`, `stick`, `look`, `wait`,
 and `env` commands drive the game, as `tools/xbox-control` does the
 console's.
 
+## Frame pacing
+
+The host steps the simulation by when frames appear, not by when its loop
+comes round: before each frame it asks the device for
+`next_frame_timing ()`, the predicted display time of the frame about to be
+built on the steady clock, and ticks by the difference from the last one
+(`MOPPE_FRAME_CLOCK=host` keeps the loop's own time). Each device records
+when its presents actually appeared and `PresentationClock`
+(`moppe/nhal/presentation.hh`) predicts from them: one frame period after
+the latest observed, the period being the frames' own cadence in whole
+refreshes, and no sooner than a period from now when the loop falls behind.
+Luv's Vulkan canvas measures presentation the same way.
+
+- Vulkan: `VK_EXT_present_timing` with `VK_KHR_present_id2`; each present
+  carries its frame's serial and asks when its first pixel became visible
+  (or went out), in the swapchain's time domain, calibrated against
+  `CLOCK_MONOTONIC` with `VK_KHR_calibrated_timestamps`. The swapchain
+  states its refresh period.
+- Metal: each drawable's presented handler reports its `presentedTime` on
+  Core Animation's media clock. Drawables that are never shown (a locked
+  screen) report zero, and the host keeps its own time.
+- Direct3D 12: DXGI's frame statistics name the latest present shown and
+  its vsync's QPC time; consecutive vsyncs give the refresh period.
+
+`MOPPE_FPS_REPORT=1` logs the range of steps and how many came from the
+display. On Linux (RADV, Wayland, 60 Hz) the loop's own time varied from 10
+to 41 ms a frame at 59.5 fps; stepped by display time every frame takes one
+refresh, 16.68 ms, or two, 33.36 ms, where one was missed. On the Xbox every
+step is 16.68 ms.
+
 ## The game on Linux
 
 `nix develop` gives a shell with Clang, CMake, Ninja, SDL3, the Vulkan

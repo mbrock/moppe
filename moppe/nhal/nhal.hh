@@ -230,6 +230,16 @@ namespace moppe::nhal {
     std::span<const std::byte> pixels;
   };
 
+  // When a frame is expected on screen and how often the display refreshes,
+  // in seconds on the host's steady clock (std::chrono::steady_clock).
+  // `predicted` is false where the device cannot observe its presentations;
+  // the host then keeps its own time.
+  struct FrameTiming {
+    double display_seconds = 0;
+    double refresh_seconds = 0;
+    bool predicted = false;
+  };
+
   // GPU time spent in one pass of a completed frame.
   struct PassTiming {
     std::string label;
@@ -341,6 +351,12 @@ namespace moppe::nhal {
     // The passes of the most recently completed frame, in encoding order,
     // by their labels; the GPU's timestamps around each pass.
     virtual std::span<const PassTiming> pass_timings () const = 0;
+
+    // Before begin_frame: when the next frame is expected on screen, from
+    // the presentations the device has observed (presentation.hh). A host
+    // steps its simulation by the difference between consecutive
+    // predictions.
+    virtual FrameTiming next_frame_timing () const { return {}; }
 
     // Submits the frame and presents its drawable.
     virtual void end_frame () = 0;

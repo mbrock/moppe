@@ -216,11 +216,19 @@ namespace moppe::platform {
     const char* fps_report = moppe::environment ("MOPPE_FPS_REPORT");
     const bool report_fps = fps_report && *fps_report && *fps_report != '0';
     float pointer_x = 0, pointer_y = 0;
+    // The simulation steps by when frames appear, where the device can say
+    // (nhal::Device::next_frame_timing); MOPPE_FRAME_CLOCK=host keeps the
+    // loop's own time.
+    const char* frame_clock = moppe::environment ("MOPPE_FRAME_CLOCK");
+    const bool display_clock =
+      !(frame_clock && std::string (frame_clock) == "host");
+    double last_display = 0;
+    bool announced_display = false;
     const auto start = std::chrono::steady_clock::now ();
     auto last = start;
     auto report_start = last;
-    long report_frames = 0;
-    double slowest = 0;
+    long report_frames = 0, report_displayed = 0;
+    double slowest = 0, shortest_step = 1, longest_step = 0;
     while (!quitting) {
       SDL_Event event;
       while (SDL_PollEvent (&event)) {
@@ -294,22 +302,47 @@ namespace moppe::platform {
         game.controls (*remote->controls ());
       else if (pad.connected ())
         game.controls (held_controls);
-      const double dt = std::chrono::duration<double> (now - last).count ();
+      const double wall = std::chrono::duration<double> (now - last).count ();
       last = now;
+      double dt = wall;
+      if (display_clock) {
+        const nhal::FrameTiming timing = surface_device.next_frame_timing ();
+        if (timing.predicted) {
+          if (last_display > 0 && timing.display_seconds > last_display) {
+            dt = timing.display_seconds - last_display;
+            ++report_displayed;
+            if (!announced_display) {
+              announced_display = true;
+              std::cerr << "moppe: stepping by display time, "
+                        << timing.refresh_seconds * 1000 << " ms refresh"
+                        << std::endl;
+            }
+          }
+          last_display = timing.display_seconds;
+        } else {
+          last_display = 0;
+        }
+      }
+      shortest_step = std::min (shortest_step, dt);
+      longest_step = std::max (longest_step, dt);
       game.tick (float (std::clamp (dt, 0.0, 0.05)));
       game.render (*renderer);
       sdl::frame_rendered ();
       if (report_fps) {
-        slowest = std::max (slowest, dt);
+        slowest = std::max (slowest, wall);
         const double span =
           std::chrono::duration<double> (now - report_start).count ();
         if (++report_frames > 1 && span >= 10.0) {
           std::cerr << "moppe: " << report_frames / span
-                    << " fps, slowest frame " << slowest * 1000 << " ms"
-                    << std::endl;
+                    << " fps, slowest frame " << slowest * 1000
+                    << " ms, steps " << shortest_step * 1000 << "-"
+                    << longest_step * 1000 << " ms, "
+                    << report_displayed << " of " << report_frames
+                    << " by display time" << std::endl;
           report_start = now;
-          report_frames = 0;
-          slowest = 0;
+          report_frames = report_displayed = 0;
+          slowest = longest_step = 0;
+          shortest_step = 1;
         }
       }
     }

@@ -13,7 +13,13 @@
 // but a pass learns which textures its draws sample only as they come, so
 // each render pass records into a secondary command buffer, and the
 // primary takes the barriers, then begins rendering and executes it.
+//
+// Where the surface reports present timing (VK_EXT_present_timing with
+// VK_KHR_present_id2), every present carries its frame's serial and asks
+// when its first pixel became visible; the answers, in CLOCK_MONOTONIC,
+// predict when the next frame will be (presentation.hh).
 #include <moppe/environment.hh>
+#include <moppe/nhal/presentation.hh>
 #include <moppe/nhal/table.hh>
 #include <moppe/nhal/vulkan/vulkan_device.hh>
 
@@ -28,6 +34,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <time.h>
 
 namespace moppe::nhal {
   namespace {
@@ -527,6 +535,8 @@ namespace moppe::nhal {
         Frame& frame = m_frames[slot];
         wait_for (frame.serial);
         collect ();
+        warm_present_timing ();
+        drain_present_timing ();
         if (m_surface) {
           if (m_stale)
             rebuild_backbuffers ();
@@ -878,6 +888,21 @@ namespace moppe::nhal {
 
         if (m_surface) {
           VkPresentInfoKHR present { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+          // The frame's serial names the present, and asks when it appears.
+          const std::uint64_t present_id = m_serial;
+          VkPresentTimingInfoEXT timing {
+            VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT };
+          timing.presentStageQueries = m_monotonic ? m_present_stage : 0;
+          VkPresentTimingsInfoEXT timings {
+            VK_STRUCTURE_TYPE_PRESENT_TIMINGS_INFO_EXT };
+          timings.swapchainCount = 1;
+          timings.pTimingInfos = &timing;
+          VkPresentId2KHR ids { VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR };
+          ids.pNext = m_monotonic ? &timings : nullptr;
+          ids.swapchainCount = 1;
+          ids.pPresentIds = &present_id;
+          if (m_present_stage)
+            present.pNext = &ids;
           present.waitSemaphoreCount = 1;
           present.pWaitSemaphores = &m_render_done[m_image_index];
           present.swapchainCount = 1;
@@ -887,6 +912,14 @@ namespace moppe::nhal {
           if (result == VK_ERROR_OUT_OF_DATE_KHR
               || result == VK_SUBOPTIMAL_KHR)
             m_stale = true;
+          else if (result == VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT) {
+            // Reports are drained every frame, so a full queue means the
+            // surface stopped answering; stop asking.
+            std::cerr << "NHAL: present timing queue full; frames keep the "
+                         "host's time"
+                      << std::endl;
+            m_monotonic = false;
+          }
           else
             check (result, "vkQueuePresentKHR");
         }
@@ -897,6 +930,12 @@ namespace moppe::nhal {
         if (m_serial)
           wait_for (m_serial);
         collect ();
+      }
+
+      FrameTiming next_frame_timing () const override {
+        if (!m_monotonic)
+          return {};
+        return m_presentation.predict (m_serial + 1, steady_seconds ());
       }
 
     private:
@@ -949,6 +988,16 @@ namespace moppe::nhal {
             m_debug_utils = true;
         if (m_debug_utils)
           extensions.push_back (VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        // Present timing asks the surface through its second capabilities
+        // query.
+        for (const auto& e : available)
+          if (surface.create
+              && !std::strcmp (e.extensionName,
+                               VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)) {
+            m_surface_capabilities_2 = true;
+            extensions.push_back (
+              VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+          }
         if (m_validation)
           layers.push_back ("VK_LAYER_KHRONOS_validation");
 
@@ -1097,6 +1146,20 @@ namespace moppe::nhal {
           VK_EXT_ROBUSTNESS_2_EXTENSION_NAME };
         if (m_surface)
           extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        VkPhysicalDevicePresentId2FeaturesKHR want_id2 {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR };
+        VkPhysicalDevicePresentTimingFeaturesEXT want_timing {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT };
+        if (choose_present_timing ()) {
+          extensions.push_back (VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
+          extensions.push_back (VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
+          extensions.push_back (VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+          want_id2.presentId2 = VK_TRUE;
+          want_timing.presentTiming = VK_TRUE;
+          want_timing.pNext = &want_id2;
+          want_id2.pNext = want.pNext;
+          want.pNext = &want_timing;
+        }
         const float priority = 1.0f;
         VkDeviceQueueCreateInfo queue {
           VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
@@ -1120,6 +1183,217 @@ namespace moppe::nhal {
         if (m_debug_utils)
           m_set_name = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT> (
             vkGetDeviceProcAddr (m_device, "vkSetDebugUtilsObjectNameEXT"));
+        if (m_present_stage) {
+          auto load = [&] (const char* name) {
+            return vkGetDeviceProcAddr (m_device, name);
+          };
+          m_timing_queue_size =
+            reinterpret_cast<PFN_vkSetSwapchainPresentTimingQueueSizeEXT> (
+              load ("vkSetSwapchainPresentTimingQueueSizeEXT"));
+          m_timing_properties =
+            reinterpret_cast<PFN_vkGetSwapchainTimingPropertiesEXT> (
+              load ("vkGetSwapchainTimingPropertiesEXT"));
+          m_time_domains =
+            reinterpret_cast<PFN_vkGetSwapchainTimeDomainPropertiesEXT> (
+              load ("vkGetSwapchainTimeDomainPropertiesEXT"));
+          m_past_timing = reinterpret_cast<PFN_vkGetPastPresentationTimingEXT> (
+            load ("vkGetPastPresentationTimingEXT"));
+          m_calibrate = reinterpret_cast<PFN_vkGetCalibratedTimestampsKHR> (
+            load ("vkGetCalibratedTimestampsKHR"));
+          if (!m_timing_queue_size || !m_timing_properties || !m_time_domains
+              || !m_past_timing || !m_calibrate)
+            m_present_stage = 0;
+        }
+      }
+
+      // Whether the device and surface can say when presents appear, and
+      // at which stage to ask: the first pixel visible, else sent out.
+      bool choose_present_timing () {
+        m_present_stage = 0;
+        if (!m_surface || !m_surface_capabilities_2)
+          return false;
+        std::uint32_t count = 0;
+        vkEnumerateDeviceExtensionProperties (m_physical, nullptr, &count,
+                                              nullptr);
+        std::vector<VkExtensionProperties> available (count);
+        vkEnumerateDeviceExtensionProperties (m_physical, nullptr, &count,
+                                              available.data ());
+        auto has = [&] (const char* name) {
+          return std::any_of (available.begin (), available.end (),
+                              [&] (const VkExtensionProperties& e) {
+                                return !std::strcmp (e.extensionName, name);
+                              });
+        };
+        if (!has (VK_EXT_PRESENT_TIMING_EXTENSION_NAME)
+            || !has (VK_KHR_PRESENT_ID_2_EXTENSION_NAME)
+            || !has (VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME))
+          return false;
+        VkPhysicalDevicePresentId2FeaturesKHR id2 {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR };
+        VkPhysicalDevicePresentTimingFeaturesEXT timing {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT };
+        timing.pNext = &id2;
+        VkPhysicalDeviceFeatures2 features {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        features.pNext = &timing;
+        vkGetPhysicalDeviceFeatures2 (m_physical, &features);
+        if (!timing.presentTiming || !id2.presentId2)
+          return false;
+
+        auto surface_capabilities =
+          reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR> (
+            vkGetInstanceProcAddr (m_instance,
+                                   "vkGetPhysicalDeviceSurfaceCapabilities2KHR"));
+        if (!surface_capabilities)
+          return false;
+        VkSurfaceCapabilitiesPresentId2KHR surface_id2 {
+          VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR };
+        VkPresentTimingSurfaceCapabilitiesEXT surface_timing {
+          VK_STRUCTURE_TYPE_PRESENT_TIMING_SURFACE_CAPABILITIES_EXT };
+        surface_timing.pNext = &surface_id2;
+        VkSurfaceCapabilities2KHR capabilities {
+          VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR };
+        capabilities.pNext = &surface_timing;
+        VkPhysicalDeviceSurfaceInfo2KHR info {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR };
+        info.surface = m_surface;
+        if (surface_capabilities (m_physical, &info, &capabilities)
+              != VK_SUCCESS
+            || !surface_timing.presentTimingSupported
+            || !surface_id2.presentId2Supported)
+          return false;
+        for (VkPresentStageFlagsEXT stage :
+             { VkPresentStageFlagsEXT (
+                 VK_PRESENT_STAGE_IMAGE_FIRST_PIXEL_VISIBLE_BIT_EXT),
+               VkPresentStageFlagsEXT (
+                 VK_PRESENT_STAGE_IMAGE_FIRST_PIXEL_OUT_BIT_EXT) })
+          if (surface_timing.presentStageQueries & stage) {
+            m_present_stage = stage;
+            return true;
+          }
+        return false;
+      }
+
+      // Once the swapchain knows them, its refresh period and the time
+      // domain its reports use: CLOCK_MONOTONIC, the steady clock's, or else
+      // the swapchain's own, calibrated against it.
+      void warm_present_timing () {
+        if (!m_present_stage || !m_swapchain)
+          return;
+        if (!m_time_domain_ready) {
+          VkSwapchainTimeDomainPropertiesEXT domains {
+            VK_STRUCTURE_TYPE_SWAPCHAIN_TIME_DOMAIN_PROPERTIES_EXT };
+          std::uint64_t counter = 0;
+          if (m_time_domains (m_device, m_swapchain, &domains, &counter)
+              == VK_NOT_READY)
+            return;
+          std::vector<VkTimeDomainKHR> kinds (domains.timeDomainCount);
+          std::vector<std::uint64_t> ids (domains.timeDomainCount);
+          domains.pTimeDomains = kinds.data ();
+          domains.pTimeDomainIds = ids.data ();
+          if (m_time_domains (m_device, m_swapchain, &domains, &counter)
+              == VK_NOT_READY)
+            return;
+          m_time_domain_ready = true;
+          for (VkTimeDomainKHR wanted :
+               { VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR,
+                 VK_TIME_DOMAIN_SWAPCHAIN_LOCAL_EXT,
+                 VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT })
+            for (std::uint32_t i = 0; !m_monotonic && i < domains.timeDomainCount;
+                 ++i)
+              if (kinds[i] == wanted) {
+                m_time_domain = kinds[i];
+                m_time_domain_id = ids[i];
+                m_monotonic = true;
+              }
+          if (!m_monotonic)
+            std::cerr << "NHAL: present timing offers no usable time "
+                         "domain; frames keep the host's time"
+                      << std::endl;
+        }
+        if (m_monotonic && !m_refresh_known) {
+          VkSwapchainTimingPropertiesEXT properties {
+            VK_STRUCTURE_TYPE_SWAPCHAIN_TIMING_PROPERTIES_EXT };
+          std::uint64_t counter = 0;
+          if (m_timing_properties (m_device, m_swapchain, &properties,
+                                   &counter)
+                == VK_SUCCESS
+              && properties.refreshDuration) {
+            m_refresh_known = true;
+            m_presentation.set_refresh (
+              double (properties.refreshDuration) * 1e-9);
+          }
+        }
+      }
+
+      // Records the presents that have reported when they appeared.
+      void drain_present_timing () {
+        if (!m_monotonic)
+          return;
+        VkPastPresentationTimingInfoEXT info {
+          VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_INFO_EXT };
+        info.swapchain = m_swapchain;
+        VkPastPresentationTimingPropertiesEXT properties {
+          VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_PROPERTIES_EXT };
+        if (m_past_timing (m_device, &info, &properties) != VK_SUCCESS
+            || !properties.presentationTimingCount)
+          return;
+        const std::uint32_t count = properties.presentationTimingCount;
+        std::vector<VkPastPresentationTimingEXT> timings (count);
+        std::vector<VkPresentStageTimeEXT> stages (count);
+        for (std::uint32_t i = 0; i < count; ++i) {
+          timings[i].sType = VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_EXT;
+          timings[i].presentStageCount = 1;
+          timings[i].pPresentStages = &stages[i];
+        }
+        properties.pPresentationTimings = timings.data ();
+        const VkResult result = m_past_timing (m_device, &info, &properties);
+        if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+          return;
+        // Nanoseconds in the swapchain's domain, then in CLOCK_MONOTONIC,
+        // then seconds on the steady clock (which on Linux is the same,
+        // though the offset keeps them honest anywhere it is not).
+        std::int64_t to_monotonic = 0;
+        if (m_time_domain != VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR) {
+          VkSwapchainCalibratedTimestampInfoEXT local {
+            VK_STRUCTURE_TYPE_SWAPCHAIN_CALIBRATED_TIMESTAMP_INFO_EXT };
+          local.swapchain = m_swapchain;
+          local.presentStage =
+            m_time_domain == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT
+              ? m_present_stage
+              : 0;
+          local.timeDomainId = m_time_domain_id;
+          std::array<VkCalibratedTimestampInfoKHR, 2> clocks {};
+          clocks[0].sType = clocks[1].sType =
+            VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR;
+          clocks[0].pNext = &local;
+          clocks[0].timeDomain = m_time_domain;
+          clocks[1].timeDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR;
+          std::array<std::uint64_t, 2> stamps {};
+          std::uint64_t deviation = 0;
+          if (m_calibrate (m_device, 2, clocks.data (), stamps.data (),
+                           &deviation)
+              != VK_SUCCESS)
+            return;
+          to_monotonic = std::int64_t (stamps[1]) - std::int64_t (stamps[0]);
+        }
+        timespec monotonic {};
+        clock_gettime (CLOCK_MONOTONIC, &monotonic);
+        const double offset = steady_seconds ()
+                              - (double (monotonic.tv_sec)
+                                 + double (monotonic.tv_nsec) * 1e-9);
+        for (std::uint32_t i = 0; i < properties.presentationTimingCount;
+             ++i) {
+          const VkPastPresentationTimingEXT& t = timings[i];
+          if (!t.reportComplete || !t.presentStageCount
+              || t.timeDomain != m_time_domain
+              || t.timeDomainId != m_time_domain_id || !stages[i].time)
+            continue;
+          const std::int64_t nanoseconds =
+            std::int64_t (stages[i].time) + to_monotonic;
+          m_presentation.presented (t.presentId,
+                                    double (nanoseconds) * 1e-9 + offset);
+        }
       }
 
       void create_frames () {
@@ -1282,8 +1556,17 @@ namespace moppe::nhal {
                 & -caps.supportedCompositeAlpha);
         info.presentMode = mode;
         info.clipped = VK_TRUE;
+        if (m_present_stage)
+          info.flags |= VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR
+                        | VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT;
         check (vkCreateSwapchainKHR (m_device, &info, nullptr, &m_swapchain),
                "vkCreateSwapchainKHR");
+        if (m_present_stage) {
+          // Room for the reports of a second of frames between drains.
+          check (m_timing_queue_size (m_device, m_swapchain, 64),
+                 "vkSetSwapchainPresentTimingQueueSizeEXT");
+          m_time_domain_ready = m_monotonic = m_refresh_known = false;
+        }
 
         vkGetSwapchainImagesKHR (m_device, m_swapchain, &count, nullptr);
         std::vector<VkImage> images (count);
@@ -1843,6 +2126,18 @@ namespace moppe::nhal {
       VkQueue m_queue = VK_NULL_HANDLE;
       PFN_vkCmdPushDescriptorSetKHR m_push_descriptors = nullptr;
       PFN_vkSetDebugUtilsObjectNameEXT m_set_name = nullptr;
+      bool m_surface_capabilities_2 = false;
+      VkPresentStageFlagsEXT m_present_stage = 0;
+      PFN_vkSetSwapchainPresentTimingQueueSizeEXT m_timing_queue_size = nullptr;
+      PFN_vkGetSwapchainTimingPropertiesEXT m_timing_properties = nullptr;
+      PFN_vkGetSwapchainTimeDomainPropertiesEXT m_time_domains = nullptr;
+      PFN_vkGetPastPresentationTimingEXT m_past_timing = nullptr;
+      bool m_time_domain_ready = false, m_monotonic = false;
+      bool m_refresh_known = false;
+      VkTimeDomainKHR m_time_domain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR;
+      std::uint64_t m_time_domain_id = 0;
+      PFN_vkGetCalibratedTimestampsKHR m_calibrate = nullptr;
+      PresentationClock m_presentation;
       VkSemaphore m_timeline = VK_NULL_HANDLE;
       std::array<Frame, frames_in_flight> m_frames;
       VkCommandPool m_setup_pool = VK_NULL_HANDLE;

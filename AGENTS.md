@@ -186,7 +186,9 @@
     `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
     `MOPPE_CONTROL_FILE=<path>` (a remote-control timeline, as
     `tools/xbox-control` writes; see `moppe/platform/input.hh`),
-    `MOPPE_FPS_REPORT=1`,
+    `MOPPE_FPS_REPORT=1` (the frame rate and simulation steps),
+    `MOPPE_FRAME_CLOCK=host` (step by the loop's time rather than the
+    display's; docs/nhal.md's frame pacing),
     `MOPPE_RENDERSCALE=<0.25..1>`, and `MOPPE_SCENEPIXELS=<megapixels>`
     (the scene-resolution budget; `0` restores the point-relative rule
     alone)
