@@ -26,19 +26,19 @@ hand edits to the .blend.
 
 import math
 import os
+import sys
 
 import bpy
 from mathutils import Vector
+
+sys.path.insert(0, os.path.dirname(__file__))
+from shapes import blender, loft, blob, slab, material  # noqa: E402
+from shapes import segment_distance  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "models", "hiker.blend")
 
 V = Vector
-
-
-def blender(g):
-    """Game (x right, y up, z forward) to Blender (z up, facing -y)."""
-    return V((g[0], -g[2], g[1]))
 
 
 # Joints of the rest pose, in the game's frame. Left is side -1 (game -x).
@@ -122,143 +122,12 @@ PALETTE = {
 }
 
 
-def to_linear(c):
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-
-
-def segment_distance(p, a, b):
-    ab = b - a
-    t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
-    return (p - (a + ab * t)).length
-
-
-class Cage:
-    """A coarse mesh in the game frame, before it becomes an object."""
-
-    def __init__(self):
-        self.verts = []
-        self.faces = []
-
-    def ring(self, centre, axis, ref, width, depth, sides, turn):
-        axis = axis.normalized()
-        u = (ref - axis * ref.dot(axis)).normalized()
-        v = axis.cross(u)
-        base = len(self.verts)
-        for i in range(sides):
-            t = turn + 2 * math.pi * i / sides
-            self.verts.append(centre + u * (width * math.cos(t)) +
-                              v * (depth * math.sin(t)))
-        return list(range(base, base + sides))
-
-    def orient(self, inside):
-        """Winds every face counter-clockwise seen from outside."""
-        for k, f in enumerate(self.faces):
-            p = [self.verts[i] for i in f]
-            n = V((0, 0, 0))
-            for i in range(len(p)):
-                n += p[i].cross(p[(i + 1) % len(p)])
-            centre = sum(p, V((0, 0, 0))) / len(p)
-            if n.dot(centre - inside(centre)) < 0:
-                self.faces[k] = list(reversed(f))
-
-
-def loft(sections, ref, sides=8, turn=0.0, close=(True, True)):
-    """Sweeps rings through `sections`, each (centre, width, depth): width
-    along `ref` squared to the path, depth square to both. The ends are
-    closed with flat caps, which the subdivision rounds."""
-    cage = Cage()
-    rings = []
-    n = len(sections)
-    for i, (c, w, d) in enumerate(sections):
-        prev = sections[max(0, i - 1)][0]
-        nxt = sections[min(n - 1, i + 1)][0]
-        rings.append(cage.ring(c, nxt - prev, ref, w, d, sides, turn))
-    for a, b in zip(rings, rings[1:]):
-        for i in range(sides):
-            k = (i + 1) % sides
-            cage.faces.append([a[i], a[k], b[k], b[i]])
-    if close[0]:
-        cage.faces.append(list(rings[0]))
-    if close[1]:
-        cage.faces.append(list(rings[-1]))
-    centres = [c for c, _, _ in sections]
-
-    def inside(p):
-        best = min(range(len(centres) - 1),
-                   key=lambda i: segment_distance(p, centres[i],
-                                                  centres[i + 1]))
-        a, b = centres[best], centres[best + 1]
-        ab = b - a
-        t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
-        return a + ab * t
-
-    cage.orient(inside)
-    return cage
-
-
-def blob(centre, radii, slices=10, stacks=6, shape=None):
-    """A UV ellipsoid; `shape` may move each point (given its unit
-    direction) before it is placed."""
-    cage = Cage()
-    rx, ry, rz = radii
-    cage.verts.append(centre + V((0, -ry, 0)))
-    rows = []
-    for i in range(1, stacks):
-        lat = -math.pi / 2 + math.pi * i / stacks
-        row = []
-        for j in range(slices):
-            lon = 2 * math.pi * j / slices
-            unit = V((math.cos(lat) * math.cos(lon), math.sin(lat),
-                      math.cos(lat) * math.sin(lon)))
-            p = V((unit.x * rx, unit.y * ry, unit.z * rz))
-            if shape:
-                p = shape(unit, p)
-            cage.verts.append(centre + p)
-            row.append(len(cage.verts) - 1)
-        rows.append(row)
-    cage.verts.append(centre + V((0, ry, 0)))
-    top = len(cage.verts) - 1
-    for j in range(slices):
-        k = (j + 1) % slices
-        cage.faces.append([0, rows[0][k], rows[0][j]])
-        cage.faces.append([top, rows[-1][j], rows[-1][k]])
-        for a, b in zip(rows, rows[1:]):
-            cage.faces.append([a[j], a[k], b[k], b[j]])
-    cage.orient(lambda p: centre)
-    return cage
-
-
-def slab(centre, half, axes=(RIGHT, UP, FORWARD)):
-    """A box, to be rounded by a bevel and subdivision."""
-    cage = Cage()
-    x, y, z = axes
-    hx, hy, hz = half
-    for sy in (-1, 1):
-        for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-            cage.verts.append(centre + x * (hx * sx) + y * (hy * sy) +
-                              z * (hz * sz))
-    cage.faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5],
-                  [2, 3, 7, 6], [3, 0, 4, 7]]
-    cage.orient(lambda p: centre)
-    return cage
-
-
 class Builder:
     def __init__(self, rig, collection):
         self.rig = rig
         self.collection = collection
-        self.materials = {}
-        for name, colour in PALETTE.items():
-            mat = bpy.data.materials.new(name)
-            lin = tuple(to_linear(c) for c in colour) + (1.0,)
-            mat.diffuse_color = lin
-            mat.roughness = 0.8
-            mat.use_nodes = True
-            bsdf = mat.node_tree.nodes.get("Principled BSDF")
-            if bsdf:
-                bsdf.inputs["Base Color"].default_value = lin
-                bsdf.inputs["Roughness"].default_value = 0.8
-            self.materials[name] = mat
+        self.materials = {name: material(name, colour)
+                          for name, colour in PALETTE.items()}
 
     def part(self, name, cage, colour, bones, levels=1, bevel=0.0,
              sharpness=6.0):

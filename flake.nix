@@ -8,6 +8,20 @@
     { self, nixbox, luv }:
     let
       forEachSystem = f: builtins.mapAttrs f nixbox.lib;
+      # A finished world baked on the host, shipped in the Xbox package so
+      # the console need not generate one: tools/deploy-xbox bakes it and
+      # names it here, which needs --impure. Pure evaluation ships none.
+      xboxBakedWorld =
+        let
+          directory = builtins.getEnv "MOPPE_XBOX_BAKED_WORLD";
+        in
+        if directory == "" then
+          null
+        else
+          builtins.path {
+            path = directory;
+            name = "moppe-baked-world";
+          };
     in
     {
       packages = forEachSystem (
@@ -23,6 +37,7 @@
           # The game, drawn by the NHAL renderer through Direct3D 12.
           moppe-xbox = import ./moppe/platform/uwp/game.nix {
             inherit xbox;
+            bakedWorld = xboxBakedWorld;
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
         }

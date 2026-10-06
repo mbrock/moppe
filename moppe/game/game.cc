@@ -981,6 +981,8 @@ namespace moppe {
           r.reset_temporal_state ();
         m_ready = true;
         MOPPE_PROFILE_PLOT ("startup.ready", 1);
+        std::cerr << "moppe: world ready " << m_loading.status ().elapsed
+                  << " s after loading began" << std::endl;
 
         const bool automated =
           !m_screenshot_path.empty () || m_benchmark.has_value () ||
@@ -1123,6 +1125,26 @@ namespace moppe {
         session ().camera ().place (at + right * 4.0f + Vec3 (0, 0.25f, 0), at);
       }
 
+      // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
+      // ridden bike, to judge the rider and the suspension at work.
+      void ride_capture_camera () {
+        static const std::string_view view = [] {
+          const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
+          return std::string_view (name ? name : "");
+        }();
+        if (view.empty () || logic ().m_mode != M_BIKE)
+          return;
+        const auto& bike = session ().bike ();
+        Vec3 heading = bike.render_orientation ();
+        heading[1] = 0.0f;
+        heading = normalized (heading);
+        const Vec3 right (heading[2], 0.0f, -heading[0]);
+        const Vec3 at = bike.render_position () + Vec3 (0, 0.4f, 0);
+        const Vec3 from = view == "front" ? heading * 4.5f + right * 1.2f
+                                          : right * 4.5f + heading * 0.6f;
+        session ().camera ().place (at + from + Vec3 (0, 0.5f, 0), at);
+      }
+
       void tick_simulation (float dt) {
         MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
         std::optional<InputFrame> scripted_input;
@@ -1263,6 +1285,7 @@ namespace moppe {
         orbit_camera ();
         spectator_camera (dt);
         walk_side_camera ();
+        ride_capture_camera ();
 
         if (m_benchmark)
           finish_benchmark_frame (m_benchmark_replay->finish_frame ());
@@ -1430,7 +1453,8 @@ namespace moppe {
         // In helmet cam you ARE the rider: don't draw yourself.
         const bool helmet = actors.helmet_camera;
         if (!(helmet && actors.active_mode == M_BIKE) && !m_spectator)
-          render_vehicle (r, m_world_dl, actors.bike, 0x1000);
+          render_vehicle (
+            r, m_world_dl, actors.bike, actors.active_mode == M_BIKE, 0x1000);
         if (actors.walker && !helmet)
           render_walker (m_world_dl, *actors.walker, frame.lighting.time);
         if (actors.glider && !helmet)

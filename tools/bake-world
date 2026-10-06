@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Bakes a finished world on this machine and prints its directory.
+#
+#   tools/bake-world [RESOLUTION [PROFILE [SEED]]]   (default 2048 play 123)
+#
+# The world is a finished-world cache (moppe/game/world_cache.*): portable
+# data that a console or Apple TV package ships and loads as-is instead of
+# running the geology simulator itself. Bakes are kept by the baker's own
+# hash, so one is reused until the terrain code that made it changes.
+#
+# Overrides: MOPPE_BAKE_BUILD_DIR (the native baker's build directory) and
+# MOPPE_BAKED_WORLDS (where finished bakes are kept).
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+resolution="${1:-2048}"
+profile="${2:-play}"
+seed="${3:-123}"
+build_dir="${MOPPE_BAKE_BUILD_DIR:-$root/build-bake}"
+if [[ "$(uname)" == Darwin ]]; then
+  default_store="$HOME/Library/Caches/Moppe/baked"
+else
+  default_store="${XDG_CACHE_HOME:-$HOME/.cache}/moppe/baked"
+fi
+store="${MOPPE_BAKED_WORLDS:-$default_store}"
+
+if [[ ! -f "$build_dir/build.ninja" ]]; then
+  echo "Configuring the native terrain baker in $build_dir..." >&2
+  cmake -S "$root" -B "$build_dir" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_TESTING=OFF \
+    -DMOPPE_BUILD_DEVELOPER_TOOLS=ON >&2
+fi
+cmake --build "$build_dir" --target terrain-cache-bake >&2
+baker="$build_dir/terrain-cache-bake"
+baker_id="$(shasum -a 256 "$baker" | awk '{ print substr($1, 1, 16) }')"
+world="$store/world-$profile-$resolution-seed-$seed-$baker_id"
+
+if [[ -f "$world/topology.bin" && -f "$world/forest-plan.bin" ]]; then
+  echo "Reusing the baked world $world" >&2
+else
+  echo "Baking the $profile world ($resolution square, seed $seed)..." >&2
+  rm -rf "$world.partial"
+  mkdir -p "$store"
+  "$baker" "$world.partial" "$resolution" "$profile" "$seed" >&2
+  rm -rf "$world"
+  mv "$world.partial" "$world"
+fi
+echo "$world"

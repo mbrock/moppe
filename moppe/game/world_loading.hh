@@ -29,6 +29,11 @@ namespace moppe::game {
     std::vector<LoadingEvent> events;
   };
 
+  // The finished-world cache directory this package carries, or empty when
+  // it carries none (MOPPE_BUNDLED_WORLD_CACHE names it, relative to the
+  // package's assets).
+  std::string bundled_world_cache ();
+
   class WorldLoadingState;
 
   // Owns one single-flight world build on a background thread.  The worker

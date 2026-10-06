@@ -45,6 +45,35 @@ namespace moppe::game {
     inline constexpr float shoulder_width = 0.22f;
   }
 
+  // A body holding on to something -- a bike's bars and pegs, a glider's
+  // control bar -- given as its trunk's frame and where its hands and feet
+  // must go. Elbows and knees bend toward their poles; a target out of
+  // reach is pulled in to what the limb can touch.
+  struct HoldPose {
+    // The way the belly faces, and head-ward along the spine before lean.
+    Vec3 facing { 0, 0, 1 };
+    Vec3 up { 0, 1, 0 };
+    Vec3 pelvis;
+    // The trunk's tilt from `up` toward `facing`, radians.
+    float lean = 0.0f;
+    // Where the head looks, and roughly which way is up for it.
+    Vec3 gaze { 0, 0, 1 };
+    Vec3 head_up { 0, 1, 0 };
+    Vec3 wrist[2];
+    Vec3 ankle[2];
+    Vec3 elbow_pole[2];
+    Vec3 knee_pole[2];
+    // The feet's heel-to-toe and instep directions.
+    Vec3 sole { 0, 0, 1 };
+    Vec3 instep { 0, 1, 0 };
+  };
+
+  AvatarSkeleton pose_holding (const HoldPose& hold);
+
+  // The shoulder the posed trunk would carry, for choosing a lean that
+  // lets the hands reach.
+  Vec3 held_shoulder (const HoldPose& hold, int side);
+
   // Procedural animation: idle breathing, a walk that becomes a run with
   // ground speed, a tucked jump, and knees that take a landing. Feet in
   // stance stay where they were planted, because the stride phase advances
