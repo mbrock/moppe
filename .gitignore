@@ -25,3 +25,5 @@ screenshots/studio-shot-*.png
 .claude/worktrees/
 screenshots/nhal/
 *.blend1
+/result
+/result-*
