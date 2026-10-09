@@ -30,9 +30,11 @@ is verified" at the end, and correct this file with what you find.
   most of it Mesa and LLVM, plus the build's intermediate store paths.
 - Time: no binary cache serves moppe yet, so the first install builds the
   shader compiler and the game from source on the Deck (expect tens of
-  minutes), and the first launch generates the world (about 3.3 minutes
-  on eight threads of a 5 GHz desktop i7; expect 5-8 minutes on the
-  Deck), which is then cached.
+  minutes). The package carries the default world's land
+  (docs/land.md), so the first launch only derives the rest of the world
+  (12 s on a desktop i7; perhaps 20-30 s on the Deck) and caches it. A
+  world with no published land generates instead: about 95 s on the i7,
+  so a few minutes on the Deck.
 
 ## Setup
 
@@ -54,9 +56,9 @@ is verified" at the end, and correct this file with what you find.
 
    This puts `moppe` at `~/.nix-profile/bin/moppe`.
 
-3. Run it once from Konsole, in a window, and let it generate the world.
-   Doing this in Desktop Mode keeps Game Mode from giving up on a game
-   that shows a loading screen for minutes:
+3. Run it once from Konsole, in a window, and let it finish the world.
+   Doing this in Desktop Mode keeps Game Mode from giving up on a slow
+   first load:
 
    ```bash
    moppe
@@ -117,9 +119,10 @@ A seed makes the same valley on the Deck as on the Mac
 nix profile upgrade moppe
 ```
 
-The world cache is keyed by the world's recipe, so an update keeps the
-generated world unless the terrain code changed; then the next launch
-generates again (do it from Desktop Mode, as in step 3).
+An update keeps the cached world unless the land changed
+(`LAND_VERSION`, docs/land.md); then the next launch rebuilds it from the
+updated package's land, or generates it when none is published yet (do
+that from Desktop Mode, as in step 3).
 
 ## Troubleshooting
 
