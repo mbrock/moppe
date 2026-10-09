@@ -42,6 +42,14 @@
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
         }
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          # The game on Linux, with its own Vulkan driver where the host has
+          # none from NixOS; docs/steam-deck.md runs it on a Steam Deck.
+          moppe = import ./moppe/platform/sdl/linux.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            luv-shaderc = self.packages.${system}.luv-shaderc;
+          };
+        }
       );
       apps = forEachSystem (
         system: xbox: {

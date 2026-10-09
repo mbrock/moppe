@@ -217,6 +217,11 @@
   tests (the geology hash and the benchmark tape) fail on x86 Linux: world
   generation is not yet bit-identical across architectures, so a Linux
   world differs from the Mac's with the same seed.
+- Linux package and Steam Deck: `nix build .#moppe` (x86_64-linux) builds
+  the game with its own Mesa Vulkan driver for hosts without NixOS's;
+  docs/steam-deck.md installs it on a Deck (`nix profile install
+  github:mbrock/moppe#moppe`, a Steam shortcut) and tests it Deck-like on
+  chapel (an RDNA2 GPU) under headless gamescope at 1280x800.
 - The game's core on Xbox, before NHAL renders it: `nix build
   .#moppe-core-xbox` and `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net
   nix run .#deploy-moppe-core-xbox -- --hold 600` (package
