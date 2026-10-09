@@ -245,15 +245,8 @@ namespace moppe {
                             std::sin (view.yaw) * std::cos (view.pitch));
         const Vec3 right (-std::sin (view.yaw), 0.0f, std::cos (view.yaw));
         const float speed = 22.0f;
-        // Letters and QWERTY positions both move, so WASD works on any
-        // keyboard layout.
-        const auto either = [&held] (Key letter, Key position) {
-          return std::max (held (letter), held (position));
-        };
-        view.eye += (forward * (either (Key::W, Key::PhysicalW) -
-                                either (Key::S, Key::PhysicalS)) +
-                     right * (either (Key::D, Key::PhysicalD) -
-                              either (Key::A, Key::PhysicalA)) +
+        view.eye += (forward * (held (Key::W) - held (Key::S)) +
+                     right * (held (Key::D) - held (Key::A)) +
                      Vec3 (0, 1, 0) * (held (Key::Space) - held (Key::Tab))) *
                     (speed * dt);
         const float ground = terrain::surface_elevation_value (
@@ -2216,11 +2209,6 @@ namespace moppe {
             platform::request_quit ();
           return;
         }
-        // Riding reads letters; physical positions are for free flight.
-        if (k == Key::PhysicalW || k == Key::PhysicalA || k == Key::PhysicalS ||
-            k == Key::PhysicalD)
-          return;
-
         if (opening_active ()) {
           if (k == Key::Escape && down)
             platform::request_quit ();

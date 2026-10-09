@@ -21,6 +21,9 @@
     strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the third-person
     views, and `F` near the bike mounts it (and steps off again).
     `MOPPE_DEMO`, benchmarks, and the gazetteer still start riding.
+    `W`/`A`/`S`/`D`, `E`, and `F` are QWERTY key positions on every layout
+    (on Dvorak, `,` `A` `O` `E`, `.`, and `U`); the other letters go by
+    what they type.
   - Scripted walks for captures: `MOPPE_WALK=walk|run|jump|tour` starts on
     foot (even with `MOPPE_DEMO=forest`) and drives a deterministic script;
     `MOPPE_WALK_CAMERA=chase|front|side` picks the view (`side` locks a
@@ -90,7 +93,7 @@
     spruce ahead of the spawn (`MOPPE_TREE_LAB=1` with `--uplift-years 0`).
   - Spectator: `tools/spectate [--fullscreen]` (`MOPPE_SPECTATOR=1`) starts
     a free camera with no rider in the world's densest conifer stand: WASD
-    moves (letters or QWERTY positions, so any layout works), Space/Tab
+    moves (by QWERTY position, so any layout works), Space/Tab
     rise and sink, and the captured mouse or the arrow keys look around; M
     frees the mouse (e.g. for a ⌘⇧5 window recording) and takes it back.
   - Temporal inspection cameras: `MOPPE_PAN=<seconds>` stands at the rider

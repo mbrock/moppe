@@ -43,13 +43,6 @@ namespace moppe {
       Five,
       Six,
       Seven,
-      // Physical positions of the QWERTY W, A, S, and D keys, whatever the
-      // layout types there; free-flight controls read these so movement
-      // sits under the left hand on any layout.
-      PhysicalW,
-      PhysicalA,
-      PhysicalS,
-      PhysicalD,
       Shift
     };
 
