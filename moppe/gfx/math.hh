@@ -1,6 +1,7 @@
 #ifndef MOPPE_MATH_HH
 #define MOPPE_MATH_HH
 
+#include <moppe/correct_math.hh>
 #include <moppe/quantities.hh>
 
 #include <mp-units/framework.h>
@@ -88,7 +89,7 @@ namespace moppe {
   // typed rate is the point, making the exponent's dimensionlessness
   // (frame-rate independence) a compile-time fact.
   inline float decay (damping_t k, seconds_t dt) {
-    return std::exp (-scalar_value (k * dt));
+    return cr::exp (-scalar_value (k * dt));
   }
 
   // The complementary smoothing weight: how far toward a target a
@@ -101,13 +102,13 @@ namespace moppe {
   // (float representation), so sin (45 * u::deg) works; the plain
   // float result feeds unit-blind geometry code.
   inline float sin (radians_t a) {
-    return std::sin (radians_value (a));
+    return cr::sin (radians_value (a));
   }
   inline float cos (radians_t a) {
-    return std::cos (radians_value (a));
+    return cr::cos (radians_value (a));
   }
   inline float tan (radians_t a) {
-    return std::tan (radians_value (a));
+    return cr::tan (radians_value (a));
   }
 
   template <typename T>
@@ -180,10 +181,16 @@ namespace moppe {
                      linear_interpolate (from[2], to[2], alpha));
   }
 
-#ifdef __APPLE__
+  // Clang's three-lane float vector, which Apple's simd names simd_float3.
+  using Float3 = float __attribute__ ((ext_vector_type (3)));
+
   // mp-units deliberately accepts user-owned linear-algebra representations.
   // Keep the general Vec3T available for non-float component types while the
-  // ubiquitous gameplay Vec3 uses Apple's native SIMD register and ABI.
+  // ubiquitous gameplay Vec3 is one SIMD register on every platform. Lanewise
+  // arithmetic is exact IEEE; the reductions (dot, length, cross) are
+  // spelled out in a fixed order, because the platforms' own -- simd's and
+  // the standard library's hypot -- round differently, and a world must
+  // generate the same everywhere (docs/determinism.md).
   class Vec3 {
   public:
     using value_type = float;
@@ -232,7 +239,7 @@ namespace moppe {
 
     Vec3 (float x, float y = 0.0f, float z = 0.0f) : m_value { x, y, z } {}
 
-    explicit Vec3 (simd_float3 value) : m_value (value) {}
+    explicit Vec3 (Float3 value) : m_value (value) {}
 
     component_ref operator[] (std::size_t index) {
       return component_ref (*this, index);
@@ -243,7 +250,7 @@ namespace moppe {
     }
 
     float magnitude () const {
-      return simd_length (m_value);
+      return std::sqrt (scalar_product (*this, *this));
     }
 
     float norm () const {
@@ -251,7 +258,7 @@ namespace moppe {
     }
 
     Vec3 unit () const {
-      return Vec3 (simd_normalize (m_value));
+      return *this / magnitude ();
     }
 
     Vec3& operator+= (const Vec3& other) {
@@ -274,11 +281,11 @@ namespace moppe {
       return *this;
     }
 
-    const simd_float3& native () const {
+    const Float3& native () const {
       return m_value;
     }
 
-    simd_float3& native () {
+    Float3& native () {
       return m_value;
     }
 
@@ -307,15 +314,17 @@ namespace moppe {
     }
 
     friend bool operator== (const Vec3& left, const Vec3& right) {
-      return simd_all (left.m_value == right.m_value);
+      return left[0] == right[0] && left[1] == right[1] && left[2] == right[2];
     }
 
     friend float scalar_product (const Vec3& left, const Vec3& right) {
-      return simd_dot (left.m_value, right.m_value);
+      return (left[0] * right[0] + left[1] * right[1]) + left[2] * right[2];
     }
 
     friend Vec3 vector_product (const Vec3& left, const Vec3& right) {
-      return Vec3 (simd_cross (left.m_value, right.m_value));
+      return Vec3 (left[1] * right[2] - left[2] * right[1],
+                   left[2] * right[0] - left[0] * right[2],
+                   left[0] * right[1] - left[1] * right[0]);
     }
 
     friend std::ostream& operator<< (std::ostream& stream, const Vec3& value) {
@@ -324,7 +333,7 @@ namespace moppe {
     }
 
   private:
-    simd_float3 m_value;
+    Float3 m_value;
   };
 
   inline float length (const Vec3& value) {
@@ -359,9 +368,6 @@ namespace moppe {
   linear_vector_interpolate (const Vec3& from, const Vec3& to, float alpha) {
     return (1.0f - alpha) * from + alpha * to;
   }
-#else
-  using Vec3 = Vec3T<float>;
-#endif
 
   template <Quantity Q1, Quantity Q2>
   auto dot (const Q1& left, const Q2& right) {

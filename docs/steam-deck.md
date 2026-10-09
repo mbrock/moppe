@@ -108,8 +108,8 @@ falls short, try these launch options in turn:
 The scene already renders at half the drawable by default and is
 temporally upscaled.
 
-Linux on x86 does not yet generate bit-identical worlds to the Mac's, so
-the Deck's valley differs from the Mac's for the same seed (CLAUDE.md).
+A seed makes the same valley on the Deck as on the Mac
+(docs/determinism.md).
 
 ## Updating
 

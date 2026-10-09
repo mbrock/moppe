@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/terrain/trail.hh>
 
 #include <moppe/profile.hh>
@@ -44,7 +45,7 @@ namespace moppe::terrain {
     }
 
     float distance (TrailAlignmentPoint a, TrailAlignmentPoint b) {
-      return std::hypot (a.x_m - b.x_m, a.z_m - b.z_m);
+      return cr::hypot (a.x_m - b.x_m, a.z_m - b.z_m);
     }
 
     float wrapped_delta (float delta, float period) {
@@ -269,8 +270,8 @@ namespace moppe::terrain {
       }
 
       float distance (std::size_t a, std::size_t b) const {
-        return std::hypot (delta_x (x (a), x (b)) * spacing_x,
-                           delta_y (y (a), y (b)) * spacing_y);
+        return cr::hypot (delta_x (x (a), x (b)) * spacing_x,
+                          delta_y (y (a), y (b)) * spacing_y);
       }
 
       float grade (std::size_t node) const {
@@ -332,10 +333,10 @@ namespace moppe::terrain {
                           source_y_at (current_y));
           maximum_elevation = std::max (maximum_elevation, current_elevation);
           const float run =
-            std::hypot ((current_x - previous_x) *
-                          domain.spacing_x ().numerical_value_in (u::m),
-                        (current_y - previous_y) *
-                          domain.spacing_z ().numerical_value_in (u::m));
+            cr::hypot ((current_x - previous_x) *
+                         domain.spacing_x ().numerical_value_in (u::m),
+                       (current_y - previous_y) *
+                         domain.spacing_z ().numerical_value_in (u::m));
           if (run > 0.0f) {
             const float rise =
               std::fabs (current_elevation - previous_elevation);
@@ -574,9 +575,9 @@ namespace moppe::terrain {
           const float angle =
             2.0f * std::numbers::pi_v<float> * direction / directions;
           const int dx =
-            static_cast<int> (std::round (std::cos (angle) * shelter_reach));
+            static_cast<int> (std::round (cr::cos (angle) * shelter_reach));
           const int dy =
-            static_cast<int> (std::round (std::sin (angle) * shelter_reach));
+            static_cast<int> (std::round (cr::sin (angle) * shelter_reach));
           const float rise = grid.elevation (grid.node (grid.x (node) + dx,
                                                         grid.y (node) + dy)) -
                              elevation;
@@ -778,7 +779,7 @@ namespace moppe::terrain {
           const float alpine =
             highland_ratio (grid.elevation (node), grid, parameters);
           const float score =
-            std::hypot (static_cast<float> (dx), static_cast<float> (dy)) +
+            cr::hypot (static_cast<float> (dx), static_cast<float> (dy)) +
             12.0f * grid.grade (node) + 18.0f * alpine * alpine;
           if (score < best_score) {
             best_score = score;
@@ -926,7 +927,7 @@ namespace moppe::terrain {
                  heading_y[next_heading] * heading_y[next_heading])));
             turn = 1.0f - dot;
           }
-          const float valley = std::fabs (std::log (
+          const float valley = std::fabs (cr::log (
             std::max (grid.catchment (next), 1.0f) / target_catchment));
           const float alpine =
             highland_ratio (profile.maximum_elevation, grid, parameters);
@@ -1129,7 +1130,7 @@ namespace moppe::terrain {
           planner.delta_x (planner.x (home_base), planner.x (focus));
         float forward_y =
           planner.delta_y (planner.y (home_base), planner.y (focus));
-        const float forward_length = std::hypot (forward_x, forward_y);
+        const float forward_length = cr::hypot (forward_x, forward_y);
         forward_x /= std::max (forward_length, 1.0f);
         forward_y /= std::max (forward_length, 1.0f);
         const float focus_x = static_cast<float> (planner.x (focus));
@@ -1452,9 +1453,9 @@ namespace moppe::terrain {
       for (int dx = -base_reach_x; dx <= base_reach_x; ++dx) {
         const int x = wrap_index (base_x + dx, width);
         const int y = wrap_index (base_y + dy, height);
-        const float distance = std::hypot (
-          dx * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
-          dy * (grid.spacing_z ()).numerical_value_in (moppe::u::m));
+        const float distance =
+          cr::hypot (dx * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+                     dy * (grid.spacing_z ()).numerical_value_in (moppe::u::m));
         const std::size_t cell = static_cast<std::size_t> (y) * width + x;
         if (flood.water_depth_m (cell) <= 1e-7f)
           home_base_influence[cell] =

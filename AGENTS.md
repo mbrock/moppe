@@ -213,10 +213,13 @@
   (the same controls as the Mac). `./build/nhal-demo --capture
   /tmp/nhal.tga --frames 30` renders the demo without a window.
   `MOPPE_VULKAN_VALIDATION=1` turns on the Khronos validation layer. The
-  device is `moppe/nhal/vulkan/`; see docs/nhal.md. Two bit-determinism
-  tests (the geology hash and the benchmark tape) fail on x86 Linux: world
-  generation is not yet bit-identical across architectures, so a Linux
-  world differs from the Mac's with the same seed.
+  device is `moppe/nhal/vulkan/`; see docs/nhal.md.
+- World generation is bit-identical across platforms (docs/determinism.md):
+  the project builds with `-ffp-contract=off`, generation code calls
+  `moppe::cr::` (correctly rounded CORE-MATH) instead of `std::sin`,
+  `std::pow`, `std::hypot` and the like, and `Vec3`'s reductions are spelled
+  out. `world-fingerprint` (a developer tool) hashes every stage so two
+  machines can be diffed line by line.
 - Linux package and Steam Deck: `nix build .#moppe` (x86_64-linux) builds
   the game with its own Mesa Vulkan driver for hosts without NixOS's;
   docs/steam-deck.md installs it on a Deck (`nix profile install

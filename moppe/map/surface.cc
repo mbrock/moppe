@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/map/surface.hh>
 
@@ -415,7 +416,7 @@ namespace moppe::map {
 
       // Habitat raised slightly above one: good ground stays good, and
       // marginal ground gives up a little faster than it otherwise would.
-      const auto habitable = std::pow (
+      const auto habitable = cr::pow (
         get<tree_habitat> (habitat[site]).numerical_value_in (one), 1.15f);
 
       // The ground decides how hard the mosaic has to try. Multiplying the

@@ -51,6 +51,11 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 add_compile_options(-Wall)
+# A world generates bit for bit the same on every platform: no fused
+# multiply-adds the source does not ask for (an arm64 build would fuse where
+# baseline x86-64 cannot), and correctly rounded transcendental functions
+# from CORE-MATH below (docs/determinism.md).
+add_compile_options(-ffp-contract=off)
 if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
   add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
 endif()
@@ -145,6 +150,27 @@ if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "Clang"
   target_include_directories(box3d SYSTEM BEFORE PRIVATE
     ${MOPPE_CLANG_RESOURCE_DIR}/include)
 endif()
+
+# CORE-MATH's correctly rounded sin, cos, tan, atan2, exp, log, log2, pow,
+# and hypot in both precisions: each has one right answer, so they agree on
+# every platform where the C libraries' do not (moppe/correct_math.hh).
+set(CORE_MATH_FUNCTIONS sin cos tan atan2 exp log log2 pow hypot)
+set(CORE_MATH_SOURCES)
+foreach(function IN LISTS CORE_MATH_FUNCTIONS)
+  list(APPEND CORE_MATH_SOURCES
+    third_party/core-math/binary32/${function}/${function}f.c
+    third_party/core-math/binary64/${function}/${function}.c)
+endforeach()
+add_library(core-math STATIC ${CORE_MATH_SOURCES})
+set_target_properties(core-math PROPERTIES
+  C_STANDARD 11
+  C_EXTENSIONS YES
+  UNITY_BUILD OFF)
+target_compile_options(core-math PRIVATE -w)
+# Nothing reads the floating-point exception flags, which hypot and pow
+# would otherwise save and restore around every call (a library call on
+# arm64; third_party/core-math/VENDOR.md).
+target_compile_definitions(core-math PRIVATE CORE_MATH_IGNORE_FLAGS)
 
 if(MOPPE_ENABLE_TRACY)
   set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
@@ -364,7 +390,8 @@ function(moppe_configure_code_target target)
   target_link_libraries(${target} PRIVATE
     mp-units::mp-units
     nanoarrow::nanoarrow
-    box3d::box3d)
+    box3d::box3d
+    core-math)
   if(MOPPE_ENABLE_TRACY)
     target_link_libraries(${target} PRIVATE Tracy::TracyClient)
   endif()
@@ -496,6 +523,15 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_WORLD_SOURCES}
   )
   moppe_configure_code_target(terrain-cache-bake)
+
+  # A hash after every generation stage and geological step, for comparing
+  # builds and machines line by line.
+  add_executable(world-fingerprint EXCLUDE_FROM_ALL
+    moppe/terrain/world_fingerprint.cc
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WORLD_SOURCES}
+  )
+  moppe_configure_code_target(world-fingerprint)
 endif()
 
 # Tests are configured for IDEs and CTest, but excluded from the default build.

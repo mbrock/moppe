@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/game/forest.hh>
 
 #include <moppe/gfx/signal.hh>
@@ -39,9 +40,9 @@ namespace moppe::game {
       const float height = tree.height.numerical_value_in (u::m);
       return {
         .root = position_value (tree.root),
-        .axis = normalized (
-          Vec3 (0.0f, 1.0f, 0.0f) + Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
-          Vec3 (std::cos (turn), 0.0f, std::sin (turn)) * lean),
+        .axis = normalized (Vec3 (0.0f, 1.0f, 0.0f) +
+                            Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
+                            Vec3 (cr::cos (turn), 0.0f, cr::sin (turn)) * lean),
         .height = height * (conifer ? 0.9f : 0.7f),
         .radius = height * (conifer ? 0.0078f : 0.0085f) *
                   (0.85f + 0.3f * forest_hash (tree.seed, 6u)),
@@ -188,7 +189,7 @@ namespace moppe::game {
             (static_cast<float> (x) + 0.5f) * step_x - root[0], period[0]);
           const float dz = periodic (
             (static_cast<float> (z) + 0.5f) * step_z - root[2], period[2]);
-          return std::exp (-0.5f * (dx * dx + dz * dz) / (spread * spread));
+          return cr::exp (-0.5f * (dx * dx + dz * dz) / (spread * spread));
         };
         float sum = 0.0f;
         for (int z = centre_z - reach; z <= centre_z + reach; ++z)
@@ -206,7 +207,7 @@ namespace moppe::game {
       cover.resize (depth.size ());
       for (std::size_t index = 0; index < depth.size (); ++index)
         cover[index] = static_cast<std::uint8_t> (
-          std::lround (255.0f * (1.0f - std::exp (-2.5f * depth[index]))));
+          std::lround (255.0f * (1.0f - cr::exp (-2.5f * depth[index]))));
       return cover;
     }
   }

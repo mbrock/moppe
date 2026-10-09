@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/game/boulders.hh>
 
 #include <moppe/gfx/signal.hh>
@@ -140,7 +141,7 @@ namespace moppe::game {
                             const StoneGround& ground,
                             float x,
                             float z) {
-      const float across = std::hypot (ground.normal[0], ground.normal[2]);
+      const float across = cr::hypot (ground.normal[0], ground.normal[2]);
       if (across < 1e-3f)
         return 1.0f - ground.normal[1];
       // The normal leans downhill, so uphill is against its lean.
@@ -175,7 +176,7 @@ namespace moppe::game {
       if (hash_lane (identity, 5) < large_odds) {
         const float ceiling = std::lerp (2.0f, 3.0f, rock.erratic);
         radius =
-          1.2f + (ceiling - 1.2f) * std::pow (hash_lane (identity, 6), 1.6f);
+          1.2f + (ceiling - 1.2f) * cr::pow (hash_lane (identity, 6), 1.6f);
       }
       return std::max (radius, 0.25f);
     }
@@ -200,8 +201,8 @@ namespace moppe::game {
       float deepest = ground.water_depth;
       for (int k = 0; k < 4; ++k) {
         const float angle = turn + 0.25f * boulder_tau * static_cast<float> (k);
-        const float px = x + 0.85f * radius * std::cos (angle);
-        const float pz = z + 0.85f * radius * std::sin (angle);
+        const float px = x + 0.85f * radius * cr::cos (angle);
+        const float pz = z + 0.85f * radius * cr::sin (angle);
         if (stone_trail (readings, px, pz) > boulder_trail_tread)
           return { .settled = 0.0f, .clear = false };
         const float height = stone_elevation (surface, px, pz);
@@ -339,9 +340,9 @@ namespace moppe::game {
           const float angle = boulder_tau * hash_lane (child, 1);
           const float reach = 0.95f * radius + 0.6f * small;
           const float sx =
-            std::fmod (x + reach * std::cos (angle) + width, width);
+            std::fmod (x + reach * cr::cos (angle) + width, width);
           const float sz =
-            std::fmod (z + reach * std::sin (angle) + depth, depth);
+            std::fmod (z + reach * cr::sin (angle) + depth, depth);
           const StoneGround beside =
             read_stone_ground (surface, readings, water, sx, sz);
           if (beside.elevation < sea || beside.home > 0.02f ||

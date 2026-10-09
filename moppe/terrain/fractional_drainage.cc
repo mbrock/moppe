@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 
 #include <moppe/profile.hh>
@@ -57,7 +58,7 @@ namespace moppe::terrain {
 
     meters_t
     offset_distance (int columns, int rows, const TerrainDomain& grid) {
-      return std::hypot (
+      return cr::hypot (
                static_cast<float> (columns) *
                  (grid.spacing_x ()).numerical_value_in (moppe::u::m),
                static_cast<float> (rows) *
@@ -71,14 +72,14 @@ namespace moppe::terrain {
                       (grid.spacing_x ()).numerical_value_in (moppe::u::m);
       const float z = static_cast<float> (rows) *
                       (grid.spacing_z ()).numerical_value_in (moppe::u::m);
-      return normalized_angle (std::atan2 (z, x)) *
+      return normalized_angle (cr::atan2 (z, x)) *
              drainage_direction[mp_units::angular::radian];
     }
 
     Vec3 direction_vector (DrainageDirection direction) {
       const float radians =
         direction.numerical_value_in (mp_units::angular::radian);
-      return Vec3 (std::cos (radians), 0.0f, std::sin (radians));
+      return Vec3 (cr::cos (radians), 0.0f, cr::sin (radians));
     }
 
     struct NeighbourGeometry {
@@ -130,7 +131,7 @@ namespace moppe::terrain {
             .offsets = offsets,
             .d1 = d1,
             .d2 = d2,
-            .extent = std::atan2 (d2_m, d1_m),
+            .extent = cr::atan2 (d2_m, d1_m),
             .u1_x = offsets.cardinal_x *
                     (grid.spacing_x ()).numerical_value_in (moppe::u::m) / d1_m,
             .u1_z = offsets.cardinal_y *
@@ -270,23 +271,23 @@ namespace moppe::terrain {
         if (s1 <= 0.0f || s2 <= 0.0f)
           continue;
 
-        const float relative = std::atan2 (s2, s1);
+        const float relative = cr::atan2 (s2, s1);
         if (!(relative > 0.0f && relative < geometry.extent))
           continue;
-        const float facet_slope = std::hypot (s1, s2);
+        const float facet_slope = cr::hypot (s1, s2);
 
-        const float direction_x = std::cos (relative) * geometry.u1_x +
-                                  std::sin (relative) * geometry.u2_x;
-        const float direction_z = std::cos (relative) * geometry.u1_z +
-                                  std::sin (relative) * geometry.u2_z;
+        const float direction_x = cr::cos (relative) * geometry.u1_x +
+                                  cr::sin (relative) * geometry.u2_x;
+        const float direction_z = cr::cos (relative) * geometry.u1_z +
+                                  cr::sin (relative) * geometry.u2_z;
         const float diagonal_fraction = relative / geometry.extent;
         const float interpolation = std::clamp (
-          (geometry.d1).numerical_value_in (moppe::u::m) * std::tan (relative) /
+          (geometry.d1).numerical_value_in (moppe::u::m) * cr::tan (relative) /
             (geometry.d2).numerical_value_in (moppe::u::m),
           0.0f,
           1.0f);
         const DrainageDirection direction =
-          normalized_angle (std::atan2 (direction_z, direction_x)) *
+          normalized_angle (cr::atan2 (direction_z, direction_x)) *
           drainage_direction[mp_units::angular::radian];
         const float score =
           route_score (facet_slope, direction, previous_tangent, persistence);
@@ -304,7 +305,7 @@ namespace moppe::terrain {
         best.route.receiver_interpolation =
           interpolation * facet_coordinate[mp_units::one];
         best.route.run = (geometry.d1).numerical_value_in (moppe::u::m) /
-                         std::cos (relative) * mp_units::si::metre;
+                         cr::cos (relative) * mp_units::si::metre;
         best.direction = direction;
         best.slope = facet_slope * terrain_slope[mp_units::one];
       }

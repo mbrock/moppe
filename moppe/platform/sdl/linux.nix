@@ -39,6 +39,7 @@ pkgs.llvmPackages_21.stdenv.mkDerivation {
       (root + "/atelier/tree.cc")
       (root + "/third_party/box3d")
       (root + "/third_party/nanoarrow")
+      (root + "/third_party/core-math")
       (root + "/data")
       (root + "/fonts")
       (root + "/textures")
@@ -61,6 +62,10 @@ pkgs.llvmPackages_21.stdenv.mkDerivation {
     "-DBUILD_TESTING=OFF"
     "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
     "-DFETCHCONTENT_SOURCE_DIR_MP-UNITS=${mp-units}"
+    # Hardware FMA for CORE-MATH's exact arithmetic (Haswell and later,
+    # every Steam Deck); results are the same bits either way.
+    "-DCMAKE_C_FLAGS=-march=x86-64-v3"
+    "-DCMAKE_CXX_FLAGS=-march=x86-64-v3"
   ];
   # mp-units installs its headers whatever MP_UNITS_BUILD_INSTALL says.
   postInstall = ''

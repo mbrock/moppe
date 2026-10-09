@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <moppe/gfx/signal.hh>
@@ -329,11 +330,13 @@ namespace moppe::terrain {
           const double channel_share = static_cast<double> (
             smoothstep (-1.0f,
                         1.0f,
-                        std::log2 (static_cast<float> (
+                        cr::log2 (static_cast<float> (
                           (area / parameters.channel_initiation_area)
                             .numerical_value_in (mp_units::one)))));
           const auto incision_velocity =
-            channel_share * std::pow (area_growth, parameters.area_exponent) *
+            channel_share *
+            cr::pow (area_growth,
+                     static_cast<double> (parameters.area_exponent)) *
             parameters.reference_incision_rate;
           const auto coupling = incision_velocity / run;
           const auto weight = dt * coupling;

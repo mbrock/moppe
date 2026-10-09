@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/terrain/sediment_transport.hh>
 
 #include <algorithm>
@@ -78,11 +79,11 @@ namespace moppe::terrain {
                             run.numerical_value_in (mp_units::si::metre);
       if (axis == HillslopeFaceAxis::x) {
         const double tangent = 0.5 * (gradient_z[first] + gradient_z[second]);
-        return std::hypot (normal, tangent);
+        return cr::hypot (normal, tangent);
       }
 
       const double tangent = 0.5 * (gradient_x[first] + gradient_x[second]);
-      return std::hypot (tangent, normal);
+      return cr::hypot (tangent, normal);
     }
 
     int hillslope_sweep_count (const TerrainDomain& domain,
@@ -497,7 +498,7 @@ namespace moppe::terrain {
       domain.spacing_x ().numerical_value_in (mp_units::si::metre);
     const float spacing_z_m =
       domain.spacing_z ().numerical_value_in (mp_units::si::metre);
-    const float along_radius_m = 0.75f * std::hypot (spacing_x_m, spacing_z_m);
+    const float along_radius_m = 0.75f * cr::hypot (spacing_x_m, spacing_z_m);
     const float minimum_wall_relief_m = std::max (
       0.0f,
       parameters.minimum_wall_relief.numerical_value_in (mp_units::si::metre));
@@ -542,7 +543,7 @@ namespace moppe::terrain {
 
       Vec3 tangent =
         channel_tangents[source].numerical_value_in (mp_units::one);
-      float tangent_length = std::hypot (tangent[0], tangent[2]);
+      float tangent_length = cr::hypot (tangent[0], tangent[2]);
       if (tangent_length <= 1e-6f) {
         const CellIndex source_cell { static_cast<std::uint32_t> (source) };
         const FractionalFlowRoute& route = flow.route (source_cell);
@@ -558,7 +559,7 @@ namespace moppe::terrain {
             (static_cast<float> (to.row) - static_cast<float> (from.row)) *
               spacing_z_m,
             domain.period_z ().numerical_value_in (mp_units::si::metre));
-          tangent_length = std::hypot (tangent[0], tangent[2]);
+          tangent_length = cr::hypot (tangent[0], tangent[2]);
         }
       }
       if (tangent_length <= 1e-6f) {
@@ -680,7 +681,7 @@ namespace moppe::terrain {
       domain.spacing_x ().numerical_value_in (mp_units::si::metre);
     const float spacing_z_m =
       domain.spacing_z ().numerical_value_in (mp_units::si::metre);
-    const float cell_diagonal_m = std::hypot (spacing_x_m, spacing_z_m);
+    const float cell_diagonal_m = cr::hypot (spacing_x_m, spacing_z_m);
     const std::size_t no_footprint_position =
       std::numeric_limits<std::size_t>::max ();
     std::vector<std::size_t> footprint_position (count, no_footprint_position);
@@ -722,7 +723,7 @@ namespace moppe::terrain {
         continue;
 
       Vec3 tangent = channel_tangents[cell].numerical_value_in (mp_units::one);
-      const float length = std::hypot (tangent[0], tangent[2]);
+      const float length = cr::hypot (tangent[0], tangent[2]);
       tangent = length > 1e-6f ? tangent / length : Vec3 (0.0f, 0.0f, 1.0f);
       const float width_m =
         alluvial_valley_width (square_meters_t (contributing_areas[cell]),
@@ -761,7 +762,7 @@ namespace moppe::terrain {
             continue;
           if (remaining_capacity_m3[destination] <= 0.0)
             continue;
-          const double distance_m = std::hypot (offset_x_m, offset_z_m);
+          const double distance_m = cr::hypot (offset_x_m, offset_z_m);
           const double weight = remaining_capacity_m3[destination] *
                                 (1.0 - 0.5 * distance_m / search_m);
           std::size_t& position = footprint_position[destination];

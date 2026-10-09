@@ -56,8 +56,9 @@ MOPPE_TEST (periodic_geology_is_bit_deterministic) {
     column_hash (spatial::get<continent_shape> (first));
   const std::uint64_t uplift_hash =
     column_hash (spatial::get<uplift_weight> (first));
-  MOPPE_CHECK (continent_hash == 9660056523240721466ull);
-  MOPPE_CHECK (uplift_hash == 3395522322764541502ull);
+  // The same on every platform (docs/determinism.md).
+  MOPPE_CHECK (continent_hash == 9834051075308174421ull);
+  MOPPE_CHECK (uplift_hash == 18154744984572707574ull);
   MOPPE_CHECK (continent_hash ==
                column_hash (spatial::get<continent_shape> (second)));
   MOPPE_CHECK (column_hash (spatial::get<uplift_weight> (first)) ==

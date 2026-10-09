@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/terrain/watercourse.hh>
 
 #include <moppe/gfx/signal.hh>
@@ -140,7 +141,7 @@ namespace moppe::terrain {
             points[point + 1 < points.size () ? point + 1 : point];
           const float run_x = after.x_m - before.x_m;
           const float run_z = after.z_m - before.z_m;
-          const float run = std::hypot (run_x, run_z);
+          const float run = cr::hypot (run_x, run_z);
           const float tangent_x = run > 1e-5f ? run_x / run : 0.0f;
           const float tangent_z = run > 1e-5f ? run_z / run : 1.0f;
           const float across_x = -tangent_z;
@@ -253,7 +254,7 @@ namespace moppe::terrain {
               const float center_x = std::lerp (start.x_m, end.x_m, t);
               const float center_z = std::lerp (start.z_m, end.z_m, t);
               const float distance =
-                std::hypot (world_x - center_x, world_z - center_z);
+                cr::hypot (world_x - center_x, world_z - center_z);
               const float half_width =
                 std::lerp (start.half_width_m, end.half_width_m, t);
               const float profile =
@@ -265,7 +266,7 @@ namespace moppe::terrain {
               const int z = wrap_index (unwrapped_z, height);
               const std::size_t cell = static_cast<std::size_t> (z) * width + x;
               const float weight =
-                std::pow (1.0f - distance / local_radius, 2.0f);
+                cr::pow (1.0f - distance / local_radius, 2.0f);
               const float speed =
                 (parameters.base_speed +
                  parameters.rapid_speed *

@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/terrain/moisture.hh>
 
 #include <moppe/profile.hh>
@@ -71,8 +72,7 @@ namespace moppe::terrain {
         const float distance = steps[cell] == far_away
                                  ? 4.0f * parameters.water_reach_m
                                  : steps[cell] * spacing;
-        const float near_water =
-          std::exp (-distance / parameters.water_reach_m);
+        const float near_water = cr::exp (-distance / parameters.water_reach_m);
         const float area =
           drainage.contributing_area_at (cell).numerical_value_in (u::m * u::m);
         // How many cells' worth of ground drains through this one. A cell
@@ -80,7 +80,7 @@ namespace moppe::terrain {
         // starts.
         const float upstream = std::max (area / cell_area, 1.0f);
         const float damp = std::clamp (
-          std::log2 (upstream) / parameters.drainage_span_log2, 0.0f, 1.0f);
+          cr::log2 (upstream) / parameters.drainage_span_log2, 0.0f, 1.0f);
         moisture[cell] =
           std::clamp ((1.0f - parameters.drainage_weight) * near_water +
                         parameters.drainage_weight * damp,
@@ -91,7 +91,7 @@ namespace moppe::terrain {
         const float fall =
           std::max (drainage.slope_at (cell).numerical_value_in (one),
                     parameters.flattest_believable_slope);
-        const float index = std::log2 (upstream) - std::log2 (fall);
+        const float index = cr::log2 (upstream) - cr::log2 (fall);
         wetness[cell] =
           std::clamp (index / parameters.wetness_span_octaves, 0.0f, 1.0f) *
           soil_wetness[one];

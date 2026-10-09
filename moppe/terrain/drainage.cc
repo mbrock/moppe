@@ -1,3 +1,4 @@
+#include <moppe/correct_math.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
@@ -52,7 +53,7 @@ namespace moppe::terrain {
         dy -= height;
       if (dy < -height / 2)
         dy += height;
-      return std::hypot (
+      return cr::hypot (
                static_cast<float> (dx) *
                  (grid.spacing_x ()).numerical_value_in (moppe::u::m),
                static_cast<float> (dy) *
@@ -84,8 +85,8 @@ namespace moppe::terrain {
     void align_knot_tangent (float& tangent_x,
                              float& tangent_z,
                              const Vec3& channel) {
-      const float finite_length = std::hypot (tangent_x, tangent_z);
-      const float channel_length = std::hypot (channel[0], channel[2]);
+      const float finite_length = cr::hypot (tangent_x, tangent_z);
+      const float channel_length = cr::hypot (channel[0], channel[2]);
       if (finite_length < 1e-6f || channel_length < 1e-6f)
         return;
       const float unit_x = tangent_x / finite_length;
@@ -98,7 +99,7 @@ namespace moppe::terrain {
         return;
       const float blended_x = 0.5f * (unit_x + channel_x);
       const float blended_z = 0.5f * (unit_z + channel_z);
-      const float blended_length = std::hypot (blended_x, blended_z);
+      const float blended_length = cr::hypot (blended_x, blended_z);
       if (blended_length < 1e-6f)
         return;
       tangent_x = finite_length * blended_x / blended_length;
@@ -153,7 +154,7 @@ namespace moppe::terrain {
           align_knot_tangent (
             tangent_bx, tangent_bz, knot_tangents[segment + 1]);
         }
-        const float run = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
+        const float run = cr::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
         const int subdivisions =
           std::max (1, static_cast<int> (std::ceil (run / sample_spacing)));
         for (int step = 0; step < subdivisions; ++step) {
@@ -179,7 +180,7 @@ namespace moppe::terrain {
         const auto& before = alignment.points[point - 1];
         auto& current = alignment.points[point];
         length_m +=
-          std::hypot (current.x_m - before.x_m, current.z_m - before.z_m);
+          cr::hypot (current.x_m - before.x_m, current.z_m - before.z_m);
         current.distance_m = static_cast<float> (length_m);
       }
       alignment.length = length_m * mp_units::si::metre;
@@ -395,7 +396,7 @@ namespace moppe::terrain {
             const std::size_t ny = wrapped (raw_y, height);
             const float neighbor_elevation =
               elevation_at (domain, elevations, nx, ny);
-            const float distance = std::hypot (
+            const float distance = cr::hypot (
               offset.x * domain.spacing_x ().numerical_value_in (u::m),
               offset.y * domain.spacing_z ().numerical_value_in (u::m));
             const float candidate = (elevation - neighbor_elevation) / distance;
@@ -459,7 +460,7 @@ namespace moppe::terrain {
             const std::size_t nx = wrapped (raw_x, width);
             const std::size_t ny = wrapped (raw_y, height);
             const std::size_t next = index (nx, ny);
-            const float distance = std::hypot (
+            const float distance = cr::hypot (
               offset.x * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
               offset.y * (grid.spacing_z ()).numerical_value_in (moppe::u::m));
             const float candidate = (surface_elevation_value (surface[cell]) -
