@@ -164,39 +164,32 @@
     (vec3 (+ (swizzle at :x) (* 0.5 dx texel)) (+ (swizzle at :y) (* dy texel))
           (swizzle at :z))))
 
-(define-shader-abstraction shadow-tap (map compare world bias dx dy)
-  `(sample-compare
-    ,map ,compare
-    (swizzle (sun-tap-at (sun-cascade ,world ,bias sun-view sun-view-far
-                                      shadow)
-                         ,dx ,dy (swizzle shadow :y))
-             :xy)
-    (swizzle (sun-tap-at (sun-cascade ,world ,bias sun-view sun-view-far
-                                      shadow)
-                         ,dx ,dy (swizzle shadow :y))
-             :z)))
-
-(define-shader-abstraction sun-trust (world bias)
-  `(sun-place-trust (sun-cascade ,world ,bias sun-view sun-view-far shadow)))
+(define-shader-abstraction shadow-tap (map compare place dx dy)
+  `(let* ((tap (sun-tap-at ,place ,dx ,dy (swizzle shadow :y))))
+     (sample-compare ,map ,compare (swizzle tap :xy) (swizzle tap :z))))
 
 ;;; The fraction of the sun reaching WORLD: four comparison taps SPREAD
 ;;; texels apart, already eased to fully lit by the shadow's strength and
 ;;; wherever no cascade reaches.  BIAS is in metres along the light.
 (define-shader-abstraction sun-lit (map compare world bias spread)
-  `(mix 1.0
-        (* 0.25 (+ (shadow-tap ,map ,compare ,world ,bias
-                               (* -1.0 ,spread) (* -1.0 ,spread))
-                   (shadow-tap ,map ,compare ,world ,bias
-                               ,spread (* -1.0 ,spread))
-                   (shadow-tap ,map ,compare ,world ,bias
-                               (* -1.0 ,spread) ,spread)
-                   (shadow-tap ,map ,compare ,world ,bias ,spread ,spread)))
-        (sun-trust ,world ,bias)))
+  `(let* ((sun-place (sun-cascade ,world ,bias sun-view sun-view-far shadow))
+          (sun-spread ,spread)
+          (sun-taps (* 0.25 (+ (shadow-tap ,map ,compare sun-place
+                                           (* -1.0 sun-spread)
+                                           (* -1.0 sun-spread))
+                               (shadow-tap ,map ,compare sun-place
+                                           sun-spread (* -1.0 sun-spread))
+                               (shadow-tap ,map ,compare sun-place
+                                           (* -1.0 sun-spread) sun-spread)
+                               (shadow-tap ,map ,compare sun-place
+                                           sun-spread sun-spread)))))
+     (mix 1.0 sun-taps (sun-place-trust sun-place))))
 
 ;;; As SUN-LIT, from a single tap, for marches that read it many times.
 (define-shader-abstraction sun-lit-once (map compare world bias)
-  `(mix 1.0 (shadow-tap ,map ,compare ,world ,bias 0.0 0.0)
-        (sun-trust ,world ,bias)))
+  `(let* ((sun-place (sun-cascade ,world ,bias sun-view sun-view-far shadow)))
+     (mix 1.0 (shadow-tap ,map ,compare sun-place 0.0 0.0)
+          (sun-place-trust sun-place))))
 
 ;;; -- terrain --------------------------------------------------------------
 
@@ -237,13 +230,20 @@
 
 ;;; Bilinear height inside a source cell, for the sub-sample near field.
 (define-shader-abstraction height-between (heights grid size)
-  `(mix (mix (height-at ,heights (floor ,grid) ,size)
-             (height-at ,heights (+ (floor ,grid) (vec2 1.0 0.0)) ,size)
-             (swizzle (fract ,grid) :x))
-        (mix (height-at ,heights (+ (floor ,grid) (vec2 0.0 1.0)) ,size)
-             (height-at ,heights (+ (floor ,grid) (vec2 1.0 1.0)) ,size)
-             (swizzle (fract ,grid) :x))
-        (swizzle (fract ,grid) :y)))
+  `(let* ((between-size ,size)
+          (between-grid ,grid)
+          (between-cell (floor between-grid))
+          (between-f (fract between-grid)))
+     (mix (mix (height-at ,heights between-cell between-size)
+               (height-at ,heights (+ between-cell (vec2 1.0 0.0))
+                          between-size)
+               (swizzle between-f :x))
+          (mix (height-at ,heights (+ between-cell (vec2 0.0 1.0))
+                          between-size)
+               (height-at ,heights (+ between-cell (vec2 1.0 1.0))
+                          between-size)
+               (swizzle between-f :x))
+          (swizzle between-f :y))))
 
 ;;; A value on the triangle surface a coarser level draws: its strips split
 ;;; each cell along the bottom-left to top-right diagonal.
@@ -325,14 +325,11 @@
 
 (define-shader-abstraction read-stand (closure litter sampler xz have
                                        inverse-period fallback)
-  `(mix (vec2 ,fallback 0.0)
-        (vec2 (swizzle (sample-level ,closure ,sampler
-                                     (* ,xz ,inverse-period) 0.0)
-                       :x)
-              (swizzle (sample-level ,litter ,sampler
-                                     (* ,xz ,inverse-period) 0.0)
-                       :x))
-        ,have))
+  `(let* ((stand-uv (* ,xz ,inverse-period)))
+     (mix (vec2 ,fallback 0.0)
+          (vec2 (swizzle (sample-level ,closure ,sampler stand-uv 0.0) :x)
+                (swizzle (sample-level ,litter ,sampler stand-uv 0.0) :x))
+          ,have)))
 
 ;;; -- the ground's material ----------------------------------------------
 ;;;
@@ -2884,13 +2881,17 @@
 
 ;;; Both lanes of the water sheet, bilinear inside a source cell.
 (define-shader-abstraction sheet-between (sheet grid size)
-  `(mix (mix (sheet-at ,sheet (floor ,grid) ,size)
-             (sheet-at ,sheet (+ (floor ,grid) (vec2 1.0 0.0)) ,size)
-             (swizzle (fract ,grid) :x))
-        (mix (sheet-at ,sheet (+ (floor ,grid) (vec2 0.0 1.0)) ,size)
-             (sheet-at ,sheet (+ (floor ,grid) (vec2 1.0 1.0)) ,size)
-             (swizzle (fract ,grid) :x))
-        (swizzle (fract ,grid) :y)))
+  `(let* ((between-size ,size)
+          (between-grid ,grid)
+          (between-cell (floor between-grid))
+          (between-f (fract between-grid)))
+     (mix (mix (sheet-at ,sheet between-cell between-size)
+               (sheet-at ,sheet (+ between-cell (vec2 1.0 0.0)) between-size)
+               (swizzle between-f :x))
+          (mix (sheet-at ,sheet (+ between-cell (vec2 0.0 1.0)) between-size)
+               (sheet-at ,sheet (+ between-cell (vec2 1.0 1.0)) between-size)
+               (swizzle between-f :x))
+          (swizzle between-f :y))))
 
 ;;; BODY's value where TEST holds and ZERO elsewhere, evaluated only where
 ;;; it holds: the language's IF selects between two values it has already
