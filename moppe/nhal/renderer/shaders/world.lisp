@@ -3008,20 +3008,20 @@
          (footprint (/ (* distance pixel)
                        (sqrt (max (abs (swizzle view :y)) 0.02))))
          ;; The current, and where it came from a few metres upstream.
-         (step (vec2 (swizzle scale :x) (swizzle scale :z)))
+         (cell (vec2 (swizzle scale :x) (swizzle scale :z)))
          (extent (swizzle size :xy))
-         (uv (/ (+ (/ xz step) (vec2 0.5 0.5)) extent))
+         (uv (/ (+ (/ xz cell) (vec2 0.5 0.5)) extent))
          (stream (swizzle (sample-level flow linear-repeat uv 0.0) :xy))
          (speed (sqrt (dot stream stream)))
          (downstream (/ stream (max speed 0.001)))
          (upstream-near (swizzle (sample-level flow linear-repeat
                                                (- uv (/ (* downstream 5.0)
-                                                        (* step extent)))
+                                                        (* cell extent)))
                                                0.0)
                                  :xy))
          (upstream-far (swizzle (sample-level flow linear-repeat
                                               (- uv (/ (* downstream 13.0)
-                                                       (* step extent)))
+                                                       (* cell extent)))
                                               0.0)
                                 :xy))
          (running (smoothstep 0.15 0.9 speed))
@@ -3074,7 +3074,7 @@
          ;; Down a cascade the sheet itself slopes: central differences at
          ;; the cell's corners, bilinear between them so the slope turns
          ;; smoothly from cell to cell.
-         (grid (/ xz step))
+         (grid (/ xz cell))
          (tilt
            (only-where (> speed 3.0) (vec2 0.0 0.0)
              (let* ((corner (floor grid))
@@ -3092,7 +3092,7 @@
                                                 extent)
                                     (swizzle within :x))
                                (swizzle within :y)))
-                    (gradient (/ (* rise (swizzle scale :y)) (* 2.0 step)))
+                    (gradient (/ (* rise (swizzle scale :y)) (* 2.0 cell)))
                     (steepness (sqrt (dot gradient gradient))))
                (* gradient (/ (min steepness 1.5)
                               (max steepness 0.0001))))))
