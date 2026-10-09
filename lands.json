@@ -1,3 +1,13 @@
 {
-  "lands": []
+  "lands": [
+    {
+      "version": 2,
+      "profile": "play",
+      "resolution": 2048,
+      "seed": 123,
+      "file": "land-v2-play-2048-123-446e21d0.arrows",
+      "url": "https://github.com/mbrock/moppe/releases/download/land-v2/land-v2-play-2048-123-446e21d0.arrows.tar.zst",
+      "sha256": "f1d1da46c911209d60be9456c0e52d61aa85f1f5d444c8c654170d0e711b6031"
+    }
+  ]
 }
