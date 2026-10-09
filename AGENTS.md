@@ -65,6 +65,10 @@
       additional developer cache namespace;
       `--refresh-world-cache` replaces its selected entry, and
       `--no-world-cache` bypasses finished-world caching for one launch.
+      Beneath it, the land (the geology's output, docs/land.md) comes from
+      the package's `worlds/`, the cache, or is generated and saved;
+      `tools/fetch-land` downloads the published default land
+      (`lands.json`), and `tools/publish-land` shares one.
     - `--render-scale <0.25..1>` selects the 3D scene as a fraction of the
       drawable (`MOPPE_RENDERSCALE` is its environment equivalent); the
       scene defaults to half the drawable, temporally upscaled.

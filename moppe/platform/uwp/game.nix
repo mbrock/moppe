@@ -23,6 +23,9 @@ let
     } --strip-components=1 -C $out
   '';
   root = ../../..;
+  # Published land (moppe/game/land.hh): without a baked world, the console
+  # starts from it instead of running the geology itself.
+  lands = import ../../game/lands.nix { pkgs = xbox.pkgs; };
 in
 xbox.mkXboxApp {
   pname = "moppe-xbox";
@@ -61,6 +64,7 @@ xbox.mkXboxApp {
     "-DMOPPE_XBOX_GAME=ON"
     "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
     "-DFETCHCONTENT_SOURCE_DIR_MP-UNITS=${mp-units}"
+    "-DMOPPE_LANDS_DIR=${lands}"
   ]
   ++ lib.optional (bakedWorld != null) "-DMOPPE_XBOX_BAKED_WORLD=${bakedWorld}";
 }

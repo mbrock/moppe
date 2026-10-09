@@ -76,6 +76,8 @@ set(MOPPE_TVOS_BAKED_WORLD "" CACHE PATH
   "Host-baked default finished-world cache to bundle into the tvOS app")
 set(MOPPE_XBOX_BAKED_WORLD "" CACHE PATH
   "Host-baked finished-world cache to ship in the Xbox game package")
+set(MOPPE_LANDS_DIR "" CACHE PATH
+  "Land files (moppe/game/land.hh) to ship in the game's worlds/ folder")
 
 # Moppe's implementation files are deliberately small, but compiling every one
 # separately makes heavily-templated headers (notably mp-units) dominate build
@@ -317,6 +319,7 @@ set(MOPPE_WORLD_SOURCES
   moppe/map/surface.cc
   moppe/game/generated_world.cc
   moppe/game/world_cache.cc
+  moppe/game/land.cc
   moppe/game/forest_plan.cc
   moppe/game/water_capture.cc
   moppe/game/landscape_gazetteer.cc
@@ -524,6 +527,15 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   )
   moppe_configure_code_target(terrain-cache-bake)
 
+  # A recipe's land as the game makes it, under its land file name
+  # (tools/bake-land, tools/publish-land).
+  add_executable(land-bake EXCLUDE_FROM_ALL
+    moppe/terrain/land_bake.cc
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WORLD_SOURCES}
+  )
+  moppe_configure_code_target(land-bake)
+
   # A hash after every generation stage and geological step, for comparing
   # builds and machines line by line.
   add_executable(world-fingerprint EXCLUDE_FROM_ALL
@@ -567,6 +579,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
+    tests/game/land_test.cc
     tests/game/walker_test.cc
     tests/game/figure_test.cc
     tests/game/frame_view_test.cc
@@ -833,6 +846,12 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         ${CMAKE_CURRENT_SOURCE_DIR}/fonts
         $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/fonts
       COMMENT "Bundling assets into moppe.app")
+    if(MOPPE_LANDS_DIR)
+      add_custom_command(TARGET moppe POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${MOPPE_LANDS_DIR}
+          $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/worlds
+        COMMENT "Bundling land into moppe.app")
+    endif()
   else()
     add_executable(moppe
       moppe/game/main.cc
@@ -840,6 +859,10 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
       ${MOPPE_APPLICATION_SOURCES})
     install(TARGETS moppe RUNTIME DESTINATION bin)
     install(DIRECTORY fonts textures data DESTINATION share/moppe)
+    if(MOPPE_LANDS_DIR)
+      install(DIRECTORY ${MOPPE_LANDS_DIR}/ DESTINATION share/moppe/worlds
+        FILES_MATCHING PATTERN "land-*.arrows")
+    endif()
   endif()
   moppe_add_sdl_host(moppe)
   set_source_files_properties(moppe/game/main.cc
@@ -1030,6 +1053,10 @@ if(WIN32)
       endif()
       install(DIRECTORY ${MOPPE_XBOX_BAKED_WORLD}/
         DESTINATION share/moppe-xbox/world/default)
+    endif()
+    if(MOPPE_LANDS_DIR)
+      install(DIRECTORY ${MOPPE_LANDS_DIR}/ DESTINATION share/moppe-xbox/worlds
+        FILES_MATCHING PATTERN "land-*.arrows")
     endif()
   else()
     add_executable(moppe-core-xbox WIN32

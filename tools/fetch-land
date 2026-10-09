@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Downloads a recipe's published land (lands.json) into the game's cache
+# folder, so the game starts from it instead of generating it, and prints
+# its path.
+#
+#   tools/fetch-land [RESOLUTION [PROFILE [SEED]]]   (default 2048 play 123)
+#
+# Land is the same on every platform (docs/determinism.md): what this
+# downloads is exactly what the game would generate. It exits non-zero when
+# nothing is published for the recipe; the game then generates it, and
+# tools/publish-land can share it. MOPPE_LAND_DIR overrides the folder.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+resolution="${1:-2048}"
+profile="${2:-play}"
+seed="${3:-123}"
+if [[ "$(uname)" == Darwin ]]; then
+  default_store="$HOME/Library/Caches/Moppe"
+else
+  default_store="${XDG_CACHE_HOME:-$HOME/.cache}/moppe"
+fi
+store="${MOPPE_LAND_DIR:-$default_store}"
+version="$(sed -n 's/.*LAND_VERSION = \([0-9]*\);.*/\1/p' \
+  "$root/moppe/game/land.hh")"
+
+entry="$(python3 -I - "$root/lands.json" "$version" "$profile" \
+  "$resolution" "$seed" <<'EOF'
+import json, sys
+path, version, profile, resolution, seed = sys.argv[1:]
+for land in json.load(open(path))["lands"]:
+    if (land["version"], land["profile"], land["resolution"], land["seed"]) == \
+       (int(version), profile, int(resolution), int(seed)):
+        print(land["file"], land["url"], land["sha256"])
+        break
+EOF
+)"
+if [[ -z "$entry" ]]; then
+  echo "No land v$version is published for $profile $resolution seed $seed;" \
+    "the game will generate it." >&2
+  exit 1
+fi
+read -r file url sha256 <<<"$entry"
+
+if [[ -f "$store/$file" ]]; then
+  echo "Already have $store/$file" >&2
+  echo "$store/$file"
+  exit 0
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+echo "Downloading $url..." >&2
+curl -fL --progress-bar -o "$work/land.tar.zst" "$url"
+actual="$(shasum -a 256 "$work/land.tar.zst" 2>/dev/null \
+  || sha256sum "$work/land.tar.zst")"
+if [[ "${actual%% *}" != "$sha256" ]]; then
+  echo "Checksum mismatch for $url: expected $sha256, got ${actual%% *}" >&2
+  exit 1
+fi
+zstd -dc "$work/land.tar.zst" | tar -xf - -C "$work"
+mkdir -p "$store"
+mv "$work/worlds/$file" "$store/$file.partial"
+mv "$store/$file.partial" "$store/$file"
+echo "$store/$file"

@@ -7,6 +7,7 @@
 
 #include <moppe/game/world_loading.hh>
 
+#include <moppe/game/land.hh>
 #include <moppe/game/world_cache.hh>
 
 #include <moppe/environment.hh>
@@ -28,6 +29,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace moppe::game {
   namespace {
@@ -40,48 +42,6 @@ namespace moppe::game {
       return result;
     }
 
-    // Cache files are keyed by everything that determines their contents,
-    // so a stale cache is impossible by construction.  Extents encode as
-    // hex float bits because a rounded decimal would blur that key.
-    std::string terrain_cache_path (const terrain::WorldRecipe& recipe) {
-      const Vec3 extent = extent_value (recipe.extent ());
-      const auto bits = [] (float value) {
-        return std::bit_cast<std::uint32_t> (value);
-      };
-      std::ostringstream name;
-      name << "terrain-" << platform::executable_build_id () << '-'
-           << terrain::profile_id (recipe.generation_profile ()) << '-'
-           << recipe.resolution () << '-' << recipe.seed ().value << std::hex
-           << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
-           << bits (extent[2]) << "-water-"
-           << bits ((recipe.water_datum ()).numerical_value_in (moppe::u::m))
-           << "-uplift-"
-           << bits (recipe.evolution ().uplift_duration.numerical_value_in (
-                mp_units::astronomy::Julian_year))
-           << "-channel-"
-           << bits (
-                recipe.evolution ().channel_initiation_area.numerical_value_in (
-                  u::m * u::m))
-           << "-runoff-"
-           << bits (recipe.evolution ()
-                      .fluvial_transport.runoff_rate.numerical_value_in (
-                        u::m / mp_units::astronomy::Julian_year))
-           << "-concentration-"
-           << bits (recipe.evolution ()
-                      .fluvial_transport.concentration_at_unit_slope
-                      .numerical_value_in (mp_units::one))
-           << "-slope-"
-           << bits (recipe.evolution ()
-                      .critical_hillslope_gradient.numerical_value_in (
-                        mp_units::one))
-           << "-waste-"
-           << bits (
-                recipe.evolution ()
-                  .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
-                    mp_units::one))
-           << ".arrows";
-      return platform::cache_path (name.str ());
-    }
   }
 
   // A package may carry a finished world baked on the build host. Which
@@ -180,10 +140,12 @@ namespace moppe::game {
     }
 
     // Build the surface in its one real order: geology, erosion, then trails.
-    std::optional<terrain::TrailNetwork>
-    evolve_terrain (WorldLoadingState& state,
-                    const terrain::WorldRecipe& recipe,
-                    map::SurfaceGeometry& terrain) {
+    // The formed trails' network is left behind: a world finds its trails
+    // in the formed surface, so one evolved here and one read from saved
+    // land are the same world (docs/determinism.md).
+    void evolve_terrain (WorldLoadingState& state,
+                         const terrain::WorldRecipe& recipe,
+                         map::SurfaceGeometry& terrain) {
       const auto report_geological_time =
         [&state, &recipe] (terrain::IterationCount completed_steps,
                            terrain::IterationCount total_steps,
@@ -230,7 +192,7 @@ namespace moppe::game {
         terrain, uplift, recipe.evolution (), report_geological_time);
       state.report ("Refining the terrain",
                     "Shaping coasts, channels, and the overland route");
-      return map::form_terrain_trails (terrain, recipe.trail_formation ());
+      (void)map::form_terrain_trails (terrain, recipe.trail_formation ());
     }
 
     std::pair<const char*, const char*>
@@ -315,25 +277,37 @@ namespace moppe::game {
       map::SurfaceGeometry surface =
         map::SurfaceGeometry (terrain::TerrainDomain (
           recipe.resolution (), recipe.resolution (), recipe.extent ()));
-      std::optional<terrain::TrailNetwork> evolved_trails;
 
-      const char* cache_override = moppe::environment ("MOPPE_MAPCACHE");
-      const std::string cache =
-        cache_override ? cache_override : terrain_cache_path (recipe);
+      // The land: packaged with the game, downloaded (tools/fetch-land),
+      // or saved by an earlier launch are all the same land (land.hh), so
+      // the first found is used; failing all, it is generated and saved.
+      // MOPPE_MAPCACHE names the one file to read or write instead.
+      const std::string land_name = land_file_name (recipe);
+      const char* land_override = moppe::environment ("MOPPE_MAPCACHE");
+      const std::string saved_land =
+        land_override ? land_override : platform::cache_path (land_name);
+      std::vector<std::string> land_paths;
+      if (!land_override)
+        land_paths.push_back (platform::asset_path ("worlds/" + land_name));
+      land_paths.push_back (saved_land);
 
-      state.report ("Looking for saved terrain",
-                    "Checking this build, profile, and seed");
-      if (map::try_load_cache (surface, cache)) {
-        std::cerr << "moppe: terrain cache: local=" << cache << std::endl;
-        state.report ("Reading saved terrain",
-                      "Reusing the finished heightfield");
+      state.report ("Looking for the land",
+                    "Checking for this profile and seed's finished land");
+      const auto found =
+        std::ranges::find_if (land_paths, [&surface] (const std::string& path) {
+          return try_load_land (surface, path);
+        });
+      if (found != land_paths.end ()) {
+        std::cerr << "moppe: land: " << *found << std::endl;
+        state.report ("Reading the land", "Reusing the finished heightfield");
       } else {
         state.report ("Drawing the continents",
                       "Materializing the geological field");
-        evolved_trails = evolve_terrain (state, recipe, surface);
-        state.report ("Saving the terrain",
+        evolve_terrain (state, recipe, surface);
+        state.report ("Saving the land",
                       "Keeping this expensive result for the next launch");
-        map::save_cache (surface, cache);
+        save_land (surface, saved_land);
+        std::cerr << "moppe: land saved: " << saved_land << std::endl;
       }
 
       state.report ("Calculating slopes",
@@ -351,9 +325,7 @@ namespace moppe::game {
                     "Painting water, moisture, materials, and the opening "
                     "route");
       terrain::TrailNetwork trails =
-        evolved_trails
-          ? std::move (*evolved_trails)
-          : terrain::analyze_trail_network (surface, recipe.trail_formation ());
+        terrain::analyze_trail_network (surface, recipe.trail_formation ());
       auto [water, readings] =
         analyze_surface (surface, recipe, hydrology, trails.use);
 

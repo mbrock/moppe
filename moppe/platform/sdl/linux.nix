@@ -21,6 +21,9 @@ let
     } --strip-components=1 -C $out
   '';
   root = ../../..;
+  # Published land for the default world, so the first launch skips the
+  # minutes of geology (moppe/game/land.hh).
+  lands = import ../../game/lands.nix { inherit pkgs; };
   drivers = lib.concatMapStringsSep ":" (name: "${pkgs.mesa}/share/vulkan/icd.d/${name}_icd.x86_64.json") [
     "radeon"
     "intel"
@@ -66,6 +69,7 @@ pkgs.llvmPackages_21.stdenv.mkDerivation {
     # every Steam Deck); results are the same bits either way.
     "-DCMAKE_C_FLAGS=-march=x86-64-v3"
     "-DCMAKE_CXX_FLAGS=-march=x86-64-v3"
+    "-DMOPPE_LANDS_DIR=${lands}"
   ];
   # mp-units installs its headers whatever MP_UNITS_BUILD_INSTALL says.
   postInstall = ''

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Bakes a recipe's land, uploads it to the repository's land-vN GitHub
+# release (creating the release if need be), and records it in lands.json,
+# which tools/fetch-land and the Nix packages read.
+#
+#   tools/publish-land [RESOLUTION [PROFILE [SEED]]]   (default 2048 play 123)
+#
+# Commit lands.json afterwards. Needs gh (authenticated) and zstd.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+resolution="${1:-2048}"
+profile="${2:-play}"
+seed="${3:-123}"
+repository="${MOPPE_LAND_REPOSITORY:-mbrock/moppe}"
+version="$(sed -n 's/.*LAND_VERSION = \([0-9]*\);.*/\1/p' \
+  "$root/moppe/game/land.hh")"
+tag="land-v$version"
+
+land="$("$root/tools/bake-land" "$resolution" "$profile" "$seed")"
+file="$(basename "$land")"
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+mkdir "$work/worlds"
+cp "$land" "$work/worlds/$file"
+archive="$work/$file.tar.zst"
+echo "Compressing $file..." >&2
+tar -cf - -C "$work" "worlds/$file" | zstd -19 -T0 -q -o "$archive"
+sha256="$(shasum -a 256 "$archive" 2>/dev/null || sha256sum "$archive")"
+sha256="${sha256%% *}"
+
+if ! gh release view "$tag" --repo "$repository" > /dev/null 2>&1; then
+  gh release create "$tag" --repo "$repository" --title "Land v$version" \
+    --notes "Finished land for moppe's LAND_VERSION $version \
+(moppe/game/land.hh): the same bits any platform generates for each \
+recipe. tools/fetch-land downloads it; lands.json lists it."
+fi
+gh release upload "$tag" "$archive" --repo "$repository" --clobber
+url="https://github.com/$repository/releases/download/$tag/$file.tar.zst"
+
+python3 -I - "$root/lands.json" "$version" "$profile" "$resolution" "$seed" \
+  "$file" "$url" "$sha256" <<'EOF'
+import json, sys
+path, version, profile, resolution, seed, file, url, sha256 = sys.argv[1:]
+try:
+    manifest = json.load(open(path))
+except FileNotFoundError:
+    manifest = {"lands": []}
+key = (int(version), profile, int(resolution), int(seed))
+lands = [land for land in manifest["lands"]
+         if (land["version"], land["profile"], land["resolution"],
+             land["seed"]) != key]
+lands.append({"version": int(version), "profile": profile,
+              "resolution": int(resolution), "seed": int(seed),
+              "file": file, "url": url, "sha256": sha256})
+lands.sort(key=lambda land: (land["version"], land["profile"],
+                             land["resolution"], land["seed"]))
+manifest["lands"] = lands
+with open(path, "w") as out:
+    json.dump(manifest, out, indent=2)
+    out.write("\n")
+EOF
+echo "Published $url (sha256 $sha256); commit lands.json." >&2

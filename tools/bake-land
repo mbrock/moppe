@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Bakes a recipe's land (moppe/game/land.hh) into the game's cache folder,
+# where the game will find it, and prints its path.
+#
+#   tools/bake-land [RESOLUTION [PROFILE [SEED]]]   (default 2048 play 123)
+#
+# Land is the same on every platform (docs/determinism.md), so a land already
+# in the cache under its name is reused. Overrides: MOPPE_BAKE_BUILD_DIR (the
+# native baker's build directory) and MOPPE_LAND_DIR (where land is written).
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+resolution="${1:-2048}"
+profile="${2:-play}"
+seed="${3:-123}"
+build_dir="${MOPPE_BAKE_BUILD_DIR:-$root/build-bake}"
+if [[ "$(uname)" == Darwin ]]; then
+  default_store="$HOME/Library/Caches/Moppe"
+else
+  default_store="${XDG_CACHE_HOME:-$HOME/.cache}/moppe"
+fi
+store="${MOPPE_LAND_DIR:-$default_store}"
+version="$(sed -n 's/.*LAND_VERSION = \([0-9]*\);.*/\1/p' \
+  "$root/moppe/game/land.hh")"
+
+existing=$(ls "$store"/land-v"$version"-"$profile"-"$resolution"-"$seed"-*.arrows \
+  2>/dev/null | head -1 || true)
+if [[ -n "$existing" ]]; then
+  echo "Reusing the land $existing" >&2
+  echo "$existing"
+  exit 0
+fi
+
+if [[ ! -f "$build_dir/build.ninja" ]]; then
+  echo "Configuring the native land baker in $build_dir..." >&2
+  cmake -S "$root" -B "$build_dir" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_TESTING=OFF \
+    -DMOPPE_BUILD_DEVELOPER_TOOLS=ON >&2
+fi
+cmake --build "$build_dir" --target land-bake >&2
+echo "Baking the $profile land ($resolution square, seed $seed)..." >&2
+"$build_dir/land-bake" "$store" "$resolution" "$profile" "$seed"

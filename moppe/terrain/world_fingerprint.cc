@@ -125,10 +125,14 @@ int main (int argc, char** argv) {
               hash_of (elevations));
       });
     surface_lines ("evolved", surface);
-    TrailNetwork trails =
-      map::form_terrain_trails (surface, recipe.trail_formation ());
+    // As the game does: form the trails, then find their network in the
+    // formed surface, so a world from saved land is the same.
+    line ("trails earthwork",
+          hash_of (map::form_terrain_trails (surface, recipe.trail_formation ())
+                     .earthwork_delta_m));
     surface_lines ("trails", surface);
-    line ("trails earthwork", hash_of (trails.earthwork_delta_m));
+    TrailNetwork trails =
+      analyze_trail_network (surface, recipe.trail_formation ());
     map::rebuild_geometry (surface);
     surface_lines ("geometry", surface);
     game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);

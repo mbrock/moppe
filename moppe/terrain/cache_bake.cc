@@ -80,8 +80,11 @@ int main (int argc, char** argv) {
     const auto uplift =
       map::initialize_terrain (surface, recipe.seed (), recipe.water_datum ());
     map::evolve_terrain (surface, uplift, recipe.evolution ());
+    // As the game does: form the trails, then find their network in the
+    // formed surface, so a world from saved land is the same.
+    (void)map::form_terrain_trails (surface, recipe.trail_formation ());
     TrailNetwork trails =
-      map::form_terrain_trails (surface, recipe.trail_formation ());
+      analyze_trail_network (surface, recipe.trail_formation ());
     map::rebuild_geometry (surface);
     game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
     auto [water, readings] =

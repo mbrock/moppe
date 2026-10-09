@@ -1,3 +1,4 @@
+#include <moppe/game/land.hh>
 #include <moppe/game/seed_memory.hh>
 
 #include <moppe/platform/platform.hh>
@@ -46,15 +47,20 @@ namespace moppe::game {
       if (error)
         continue;
       const std::string name = entry.path ().filename ().string ();
+      // Land files replaced the per-build terrain caches; land from an
+      // older LAND_VERSION is another world's.
       const bool terrain_file =
-        entry.is_regular_file () && name.starts_with ("terrain-");
+        entry.is_regular_file () &&
+        (name.starts_with ("terrain-") ||
+         (name.starts_with ("land-v") &&
+          !name.starts_with ("land-v" + std::to_string (LAND_VERSION) + "-")));
       const bool legacy_seed =
         entry.is_regular_file () && name.starts_with ("last-seed-");
       const bool legacy_automatic_world = entry.is_directory () &&
                                           name.starts_with ("world-") &&
                                           !name.starts_with ("world-key-") &&
                                           !name.starts_with ("world-default-");
-      if (terrain_file && name.find (build_id) == std::string::npos)
+      if (terrain_file)
         std::filesystem::remove (entry.path (), error);
       else if (legacy_seed)
         std::filesystem::remove (entry.path (), error);
