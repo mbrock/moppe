@@ -39,7 +39,8 @@ published `.tar.zst`; the fields are noisy enough that zstd gains little).
 erosion, or trail formation change their output on purpose,
 `tests/game/land_test.cc` fails; bump `LAND_VERSION` and pin the new hash.
 Older land is then another world's: the game ignores it and prunes it from
-the cache.
+the cache, and finished worlds record the `LAND_VERSION` they were derived
+from, so they are rebuilt too.
 
 ## Sharing it
 

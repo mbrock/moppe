@@ -1,5 +1,7 @@
 #include <moppe/game/world_cache.hh>
 
+#include <moppe/game/land.hh>
+
 #include <moppe/spatial/bundle_storage.hh>
 #include <moppe/terrain/domain_storage.hh>
 
@@ -33,6 +35,11 @@ namespace moppe::game {
     // Version 13 reconstructs the full hillslope gradient before applying the
     // nonlinear transport law. Version 12 used one cardinal component.
     constexpr std::uint32_t CACHE_VERSION = 15;
+    // A finished world is derived from its land, so a change to what land a
+    // recipe makes (LAND_VERSION) retires the finished worlds made from the
+    // old land as surely as a change to their own layout does.
+    constexpr std::uint32_t STORED_VERSION =
+      CACHE_VERSION * 1000 + static_cast<std::uint32_t> (LAND_VERSION);
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());
@@ -222,7 +229,7 @@ namespace moppe::game {
     void write_recipe (BinaryWriter& output,
                        const terrain::WorldRecipe& recipe) {
       output.bytes (CACHE_MAGIC.data (), CACHE_MAGIC.size ());
-      output.scalar (CACHE_VERSION);
+      output.scalar (STORED_VERSION);
       output.scalar (static_cast<std::uint32_t> (recipe.resolution ()));
       output.scalar (recipe.seed ().value);
       output.scalar (static_cast<std::uint32_t> (recipe.generation_profile ()));
@@ -280,7 +287,7 @@ namespace moppe::game {
              input.scalar (concentration_at_unit_slope) &&
              input.scalar (critical_hillslope_gradient) &&
              input.scalar (maximum_hillslope_multiplier) &&
-             magic == CACHE_MAGIC && version == CACHE_VERSION &&
+             magic == CACHE_MAGIC && version == STORED_VERSION &&
              resolution == static_cast<std::uint32_t> (recipe.resolution ()) &&
              seed == recipe.seed ().value &&
              profile ==
@@ -704,7 +711,7 @@ namespace moppe::game {
     if (!input || !input.bytes (magic.data (), magic.size ()) ||
         !input.scalar (version) || !input.scalar (resolution) ||
         !input.scalar (seed) || !input.scalar (profile) ||
-        magic != CACHE_MAGIC || version != CACHE_VERSION || resolution == 0 ||
+        magic != CACHE_MAGIC || version != STORED_VERSION || resolution == 0 ||
         resolution > 1u << 16 ||
         profile > static_cast<std::uint32_t> (
                     terrain::TerrainGenerationProfile::Research))
