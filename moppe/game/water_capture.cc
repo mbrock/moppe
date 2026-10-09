@@ -1,5 +1,7 @@
 #include <moppe/game/water_capture.hh>
 
+#include <moppe/environment.hh>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -345,6 +347,17 @@ namespace moppe::game {
       sideways = 26.0f;
       height = 20.0f;
     }
+    // MOPPE_WATER_VIEW=bank stands on the bank at eye height instead, as
+    // a rider sees the water.
+    const char* view = moppe::environment ("MOPPE_WATER_VIEW");
+    const bool bank = view && std::string_view (view) == "bank";
+    float clearance = 4.0f;
+    if (bank) {
+      back *= 0.4f;
+      sideways = shot == WaterShot::Lake ? 0.4f * sideways : 9.0f;
+      height = 0.0f;
+      clearance = 1.7f;
+    }
     target[1] += shot == WaterShot::Lake ? 2.0f : 0.7f;
     Vec3 eye = target - flow * back + side * sideways + Vec3 (0, height, 0);
     eye[1] =
@@ -352,7 +365,7 @@ namespace moppe::game {
                 terrain::surface_elevation_value (
                   spatial::sample<terrain::surface_elevation> (
                     surface, moppe::position (Vec3 (eye[0], 0.0f, eye[2])))) +
-                  4.0f);
+                  clearance);
     if (shot == WaterShot::Waterfall) {
       Vec3 opposite =
         target - flow * back - side * sideways + Vec3 (0, height, 0);
@@ -361,7 +374,7 @@ namespace moppe::game {
         terrain::surface_elevation_value (
           spatial::sample<terrain::surface_elevation> (
             surface, moppe::position (Vec3 (opposite[0], 0.0f, opposite[2])))) +
-          4.0f);
+          clearance);
       if (camera_obstruction (opposite, target, surface) <
           camera_obstruction (eye, target, surface))
         eye = opposite;

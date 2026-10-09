@@ -42,6 +42,8 @@ namespace moppe::nhal {
     StageCode rain[2];
     StageCode water[2];
     StageCode leaves[2];
+    StageCode waterfall[2];
+    StageCode scene_copy[2];
   };
 
   // The programs' MSL, embedded in the binary at build time.

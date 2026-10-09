@@ -181,8 +181,13 @@
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
-    The NHAL water is a placeholder (the terrain's chunks drawn at the water
-    sheet's level) until water is designed properly.
+    `MOPPE_WATER_VIEW=bank` stands on the bank at eye height instead. Rivers
+    stream along the painted current (flow-mapped ripples, foam from rapids,
+    drifting specks), and water reflects the scene by a screen-space march
+    (docs/nhal.md). To judge the flow, capture consecutive frames:
+    `MOPPE_SCREENSHOT_FRAMES=100000 MOPPE_RIDE_CAPTURE_DIR=/tmp/w
+    MOPPE_RIDE_CAPTURE_START=60 ./build/moppe --water-screenshot river
+    /tmp/unused.png` writes `/tmp/w/ride-NNNN.png` at 30 fps.
   - Automated screenshots and graphics benchmarks keep their windows
     inactive, so repeated captures do not steal focus from the current app.
   - Partitioned hot-feature GPU benchmark (32 configurations by default;

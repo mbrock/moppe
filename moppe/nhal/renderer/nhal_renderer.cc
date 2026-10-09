@@ -33,6 +33,8 @@
 #include <hud.hh>
 #include <present.hh>
 #include <leaves.hh>
+#include <waterfall.hh>
+#include <scene_copy.hh>
 #include <rain.hh>
 #include <resolve.hh>
 #include <shafts.hh>
@@ -360,6 +362,8 @@ namespace moppe::nhal {
         m_rain_code.keep (shaders.rain);
         m_water_code.keep (shaders.water);
         m_leaves_code.keep (shaders.leaves);
+        m_waterfall_code.keep (shaders.waterfall);
+        m_scene_copy_code.keep (shaders.scene_copy);
         m_boulders_code.keep (shaders.boulders);
         m_boulders_shadow_code.keep (shaders.boulders_shadow);
         m_boulder_cull_code.keep (shaders.boulder_cull);
@@ -381,6 +385,12 @@ namespace moppe::nhal {
         m_black = m_device->create_texture ({ 1, 1, Format::rgba8_unorm,
                                               usage_sampled, 1, "black" });
         m_device->write_texture (m_black, std::as_bytes (std::span (black)));
+        // No current at all, for water drawn before (or without) a flow.
+        const std::uint16_t still[2] = { 0, 0 };
+        m_still_water = m_device->create_texture (
+          { 1, 1, Format::rg16_float, usage_sampled, 1, "still water" });
+        m_device->write_texture (m_still_water,
+                                 std::as_bytes (std::span (still)));
         std::cerr << "moppe: NHAL renderer on " << m_device->info ().backend
                   << " (" << m_device->info ().adapter << ")" << std::endl;
       }
@@ -517,8 +527,7 @@ namespace moppe::nhal {
       void clear_terrain_overlay () override {}
       void render_terrain_shadow (const Mat4&, bool) override {}
       // The water sheet on the terrain grid: the surface in the heights'
-      // units, and the swell's amplitude. A placeholder water draws it
-      // (draw_ocean) until water is designed properly.
+      // units, and the swell's amplitude.
       void set_ocean (const render::OceanSetup&,
                       const render::TexturePixels& levels) override {
         if (m_water_levels)
@@ -533,6 +542,22 @@ namespace moppe::nhal {
         std::vector<std::byte> bytes (levels.byte_size ());
         levels.write_into (bytes.data ());
         m_device->write_texture (m_water_levels, bytes);
+      }
+
+      // The current on the terrain grid, metres a second along x and z;
+      // the water's ripples and foam stream along it.
+      void set_water_flow (const render::TexturePixels& flow) override {
+        if (m_water_flow)
+          m_device->destroy (m_water_flow);
+        m_water_flow = {};
+        if (flow.empty () || flow.format () != render::PixelFormat::rg16f)
+          return;
+        m_water_flow = m_device->create_texture (
+          { std::uint32_t (flow.width ()), std::uint32_t (flow.height ()),
+            Format::rg16_float, usage_sampled, 1, "water flow" });
+        std::vector<std::byte> bytes (flow.byte_size ());
+        flow.write_into (bytes.data ());
+        m_device->write_texture (m_water_flow, bytes);
       }
 
       void set_forest (const render::ForestSetup& setup,
@@ -843,7 +868,7 @@ namespace moppe::nhal {
           make_targets (scene_width, scene_height);
         m_params = params;
         m_chunks.clear ();
-        m_scene_open = m_resolved = m_presented = false;
+        m_scene_open = m_scene_begun = m_resolved = m_presented = false;
         // MOPPE_NHAL_PROBE switches a diagnostic for consoles where the
         // renderer cannot be debugged directly: "white" draws every draw
         // list untextured, "additive" draws alpha-blended runs additively,
@@ -1136,19 +1161,23 @@ namespace moppe::nhal {
         m_device->draw (3);
       }
 
-      // Placeholder water: the terrain's chunks again, lifted to the water
-      // sheet, over the opaque scene.
+      // Sea, lakes, and rivers: the terrain's chunks again, lifted to the
+      // water sheet, over the opaque scene; the rivers' ripples and foam
+      // stream along the current.
       void draw_ocean (const render::OceanParams&) override {
         if (!m_have_terrain || !m_water_levels || m_chunks.empty ()
             || m_resolved)
           return;
-        open_scene ();
+        copy_beneath_water ();
         m_device->set_pipeline (m_water);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_uniforms (1, terrain_block ());
         m_device->set_texture (0, m_heights);
         m_device->set_texture (8, m_shadow_map);
         m_device->set_texture (11, m_water_levels);
+        m_device->set_texture (12, m_water_flow ? m_water_flow : m_still_water);
+        m_device->set_texture (13, m_beneath);
+        m_device->set_texture (14, m_beneath_depth);
         draw_chunks ();
       }
 
@@ -1180,7 +1209,15 @@ namespace moppe::nhal {
         bind_stand ();
         m_device->draw (6, side * side);
       }
-      void draw_waterfalls (const render::Mesh&, const Mat4&) override {}
+      // The nickpoints' curtains, falling over the water they feed.
+      void draw_waterfalls (const render::Mesh& mesh,
+                            const Mat4& model) override {
+        const auto& m = static_cast<const NhalMesh&> (mesh);
+        if (!m.vertices || m_resolved)
+          return;
+        open_scene ();
+        draw_runs ({}, m.vertices, m.runs, model, model, m_waterfall);
+      }
 
       void draw_list (const DrawList& list, std::uint64_t) override {
         if (list.empty ())
@@ -1550,7 +1587,7 @@ namespace moppe::nhal {
         water.vertex = m_water_code.stage (0);
         water.fragment = m_water_code.stage (1);
         water.topology = Topology::triangle_strip;
-        water.blend[0] = Blend::alpha;
+        water.blend[0] = Blend::premultiplied;
         water.depth_write = false;
         water.cull = Cull::none;
         water.label = "water";
@@ -1563,6 +1600,16 @@ namespace moppe::nhal {
         leaves.cull = Cull::none;
         leaves.label = "falling leaves";
         m_leaves = m_device->create_render_pipeline (leaves);
+
+        RenderPipelineDesc waterfall = scene;
+        waterfall.program = &shaders::waterfall::program;
+        waterfall.vertex = m_waterfall_code.stage (0);
+        waterfall.fragment = m_waterfall_code.stage (1);
+        waterfall.blend[0] = Blend::alpha;
+        waterfall.depth_write = false;
+        waterfall.cull = Cull::none;
+        waterfall.label = "waterfalls";
+        m_waterfall = m_device->create_render_pipeline (waterfall);
 
         RenderPipelineDesc rain = scene;
         rain.program = &shaders::rain::program;
@@ -1639,6 +1686,14 @@ namespace moppe::nhal {
         shafts.fragment = m_shafts_code.stage (1);
         shafts.color_formats[0] = Format::rgba16_float;
         m_shafts_pipeline = m_device->create_render_pipeline (shafts);
+        RenderPipelineDesc copy = present;
+        copy.program = &shaders::scene_copy::program;
+        copy.vertex = m_scene_copy_code.stage (0);
+        copy.fragment = m_scene_copy_code.stage (1);
+        copy.color_count = 2;
+        copy.color_formats[0] = Format::rgba16_float;
+        copy.color_formats[1] = Format::r32_float;
+        m_scene_copy = m_device->create_render_pipeline (copy);
 
         RenderPipelineDesc hud = present;
         hud.program = &shaders::hud::program;
@@ -1940,9 +1995,12 @@ namespace moppe::nhal {
         return pipeline;
       }
 
+      // Draws runs through their states' uber pipelines, or all of them
+      // through `program` when one is given.
       void draw_runs (const Transient& streamed, Buffer baked,
                       const std::vector<DrawList::Run>& runs,
-                      const Mat4& model, const Mat4& previous) {
+                      const Mat4& model, const Mat4& previous,
+                      Pipeline program = {}) {
         shaders::uber::Draw draw {};
         draw.model = matrix (model);
         draw.previous_model = matrix (previous);
@@ -1972,7 +2030,7 @@ namespace moppe::nhal {
           if (!run.count)
             continue;
           if (first || run.state != current) {
-            m_device->set_pipeline (uber (run.state));
+            m_device->set_pipeline (program ? program : uber (run.state));
             current = run.state;
             first = false;
           }
@@ -1987,6 +2045,8 @@ namespace moppe::nhal {
             m_device->set_buffer (1, advanced (streamed, offset));
           m_device->set_buffer (2, block);
           m_device->set_texture (0, texture_or_white (run.texture));
+          if (program)
+            m_device->set_texture (8, m_shadow_map);
           m_device->draw (run.count, 1, 0);
         }
       }
@@ -2029,6 +2089,7 @@ namespace moppe::nhal {
       void make_targets (std::uint32_t scene_width,
                          std::uint32_t scene_height) {
         for (Texture t : { m_scene_color, m_scene_motion, m_scene_depth,
+                           m_beneath, m_beneath_depth,
                            m_history[0], m_history[1], m_bloom[0],
                            m_bloom[1], m_ao[0], m_ao[1], m_shafts })
           if (t)
@@ -2047,6 +2108,13 @@ namespace moppe::nhal {
         m_scene_depth = m_device->create_texture (
           { m_scene_width, m_scene_height, Format::d32_float,
             usage_depth | usage_sampled, 1, "scene depth" });
+        m_beneath = m_device->create_texture (
+          { m_scene_width, m_scene_height, Format::rgba16_float,
+            usage_render_target | usage_sampled, 1, "scene beneath water" });
+        m_beneath_depth = m_device->create_texture (
+          { m_scene_width, m_scene_height, Format::r32_float,
+            usage_render_target | usage_sampled, 1,
+            "scene depth beneath water" });
         for (Texture& t : m_history)
           t = m_device->create_texture (
             { m_width, m_height, Format::rgba16_float,
@@ -2067,22 +2135,45 @@ namespace moppe::nhal {
         m_restart = true;
       }
 
+      // Begins the frame's scene pass, or resumes it where an interlude
+      // (the copy beneath the water) closed it.
       void open_scene () {
         if (m_scene_open || m_resolved)
           return;
         RenderPassDesc pass;
-        pass.label = "scene";
+        pass.label = m_scene_begun ? "scene, resumed" : "scene";
         pass.color_count = 2;
+        const Load load = m_scene_begun ? Load::load : Load::clear;
         const auto& fog = m_params.clear_color;
         auto lin = [] (float x) { return std::pow (std::max (x, 0.0f), 2.2f); };
-        pass.colors[0] = { m_scene_color, Load::clear, Store::store,
+        pass.colors[0] = { m_scene_color, load, Store::store,
                            { lin (fog.red), lin (fog.green), lin (fog.blue),
                              1 } };
-        pass.colors[1] = { m_scene_motion, Load::clear, Store::store,
+        pass.colors[1] = { m_scene_motion, load, Store::store,
                            { 0, 0, 0, 0 } };
-        pass.depth = { m_scene_depth, Load::clear, Store::store, 0.0f };
+        pass.depth = { m_scene_depth, load, Store::store, 0.0f };
         m_device->begin_render_pass (pass);
-        m_scene_open = true;
+        m_scene_open = m_scene_begun = true;
+      }
+
+      // Copies the opaque scene's colour and depth out for the water to
+      // read, closing the scene pass around the copy.
+      void copy_beneath_water () {
+        open_scene ();
+        m_device->end_render_pass ();
+        m_scene_open = false;
+        RenderPassDesc pass;
+        pass.label = "scene beneath water";
+        pass.color_count = 2;
+        pass.colors[0] = { m_beneath, Load::discard, Store::store };
+        pass.colors[1] = { m_beneath_depth, Load::discard, Store::store };
+        m_device->begin_render_pass (pass);
+        m_device->set_pipeline (m_scene_copy);
+        m_device->set_texture (0, m_scene_color);
+        m_device->set_texture (1, m_scene_depth);
+        m_device->draw (3);
+        m_device->end_render_pass ();
+        open_scene ();
       }
 
       // Where the sun sits on screen and how much of it the camera sees,
@@ -2217,11 +2308,14 @@ namespace moppe::nhal {
       std::uint32_t m_width = 0, m_height = 0;
       std::uint32_t m_scene_width = 0, m_scene_height = 0;
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];
+      // The opaque scene copied out before the water: its colour and depth.
+      Texture m_beneath, m_beneath_depth;
       Texture m_bloom[2];
       Texture m_ao[2], m_shafts;
-      ProgramCode m_rain_code, m_water_code, m_leaves_code;
-      Pipeline m_water, m_leaves;
-      Texture m_water_levels;
+      ProgramCode m_rain_code, m_water_code, m_leaves_code, m_waterfall_code,
+        m_scene_copy_code;
+      Pipeline m_water, m_leaves, m_waterfall, m_scene_copy;
+      Texture m_water_levels, m_water_flow, m_still_water;
       std::vector<ChunkDraw> m_chunks;
       Pipeline m_rain;
       ProgramCode m_boulders_code, m_boulders_shadow_code;
@@ -2260,7 +2354,8 @@ namespace moppe::nhal {
       float m_previous_time = 0;
       std::uint32_t m_frame = 0;
       bool m_restart = true;
-      bool m_scene_open = false, m_resolved = false, m_presented = false;
+      bool m_scene_open = false, m_scene_begun = false, m_resolved = false,
+           m_presented = false;
       std::map<std::uint64_t, Mat4> m_previous_models, m_current_models;
       std::string m_screenshot;
       std::string m_probe;

@@ -31,13 +31,27 @@ with a pipeline per draw state, and the HUD: its draw lists, then its Slug
 text and vector shapes, whose band walk is Luv's own (`luv/slug-shader`,
 called as `luv.slug::slug-horizontal-band-step` and friends).
 
-Water is a placeholder until it is designed properly, rather than a port
-of the old renderer's: `draw_ocean` draws the terrain's chunks again with
-the `water` program, each vertex lifted to the water sheet (RG32F on the
-terrain grid: the surface and the swell's amplitude), dry fragments
-discarded, and the rest a depth tint under the sky's Fresnel reflection
-with a sun glint from two drifting ripple fields, over the opaque scene.
-Waterfalls are not drawn.
+Water is designed afresh rather than ported from the old renderer.
+`draw_ocean` first copies the opaque scene's colour and depth out
+(`scene-copy`, closing and resuming the scene pass around it), then draws
+the terrain's chunks again with the `water` program, each vertex lifted to
+the water sheet (RG32F on the terrain grid: the surface and the swell's
+amplitude) and dry vertices sunk below the ground so the depth test drops
+them. The current (`set_water_flow`, RG16F metres a second) carries the
+rivers' ripples and foam by flow mapping, slower in the shallows; rapids
+roughen and whiten, and their foam drifts on downstream, drawn out into
+streaks along the current. Through the surface the copied bed is bent by
+the ripples and dimmed channel by channel over the view's path under
+water; the reflection marches the mirrored ray across the copied depth to
+find banks, trees, and hills, falling back on the sky. The fragment's
+motion is the current's. Blending is premultiplied (`Blend::premultiplied`)
+so the waterline fades out. Cascades shade the sheet's own slope; the
+nickpoints' vertical curtains (`game/waterfall_surface.cc`) are drawn by
+the `waterfall` program, streaks laid out by fall time so they lengthen as
+gravity speeds them. The shader's `only-where` runs costly parts (river or
+lake ripples, foam noise, cascade slope) only where they show: the
+language's `if` selects between computed values, while a loop run once or
+never truly branches.
 
 The trunk forest keeps `forest_trunks.metal`'s trees -- tapered trunks,
 stacked spruce cones, birch clumps on branches, the same twelve (species,
