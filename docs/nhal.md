@@ -63,14 +63,24 @@ canopy yet, so closed stands stay individuals until their crowns are four
 pixels across, and the stand closure is approximated by the habitat's canopy
 cover.
 
-The sun's shadow is a 2048-texel depth map over the 160 metres around the
-rider, rendered each frame by `render_local_shadow`: terrain chunks at
-native detail, then the trees, culled for the sun by the same compute
-program into two classes (each species at its coarsest tier, with a
-smaller, porous crown). The tree geometry is one Luv function returning a
-struct (`tree-vertex-at`), shared by the scene and the shadow programs as
-`tree_vertex` is in Metal. Terrain samples it with five comparison taps,
-trees with four.
+The sun's shadow is two 2048-texel cascades side by side in one 4096x2048
+depth atlas, rendered each frame by `render_local_shadow`. The near
+cascade covers the 160 metres around the rider: terrain chunks at native
+detail, then the trees, culled for the sun by the same compute program into
+two classes (each species at its coarsest tier, with a smaller, porous
+crown), then the boulders. The far cascade covers 1600 metres, centred
+700 metres ahead, so shadows reach as far as a glider sees: terrain at
+every second sample, and each tree with a crown over 1.2 metres as a
+six-sided double cone (`forest-far-shadow`), since growing the full tree
+for every vertex of tens of thousands of distant casters cost about 5 ms;
+the cones cost about 1. The `distant-shadows` feature turns the far cascade
+off. The tree geometry is one Luv function returning a struct
+(`tree-vertex-at`), shared by the scene and the near shadow programs as
+`tree_vertex` is in Metal. Every program reads the shadow through
+`sun-lit` (four comparison taps) or `sun-lit-once`, which take the near
+cascade inside it and the far one beyond, stippled across a band so the
+change of resolution leaves no seam, fade the far one out toward its edge,
+and take biases in metres.
 
 Grass is undergrowth.metal's blades without its mesh stages. A window of
 0.6-metre tiles anchored to the world lattice surrounds the camera; at

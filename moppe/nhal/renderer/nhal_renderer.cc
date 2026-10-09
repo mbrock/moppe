@@ -23,6 +23,7 @@
 #include <exposure.hh>
 #include <forest.hh>
 #include <forest_cull.hh>
+#include <forest_far_shadow.hh>
 #include <forest_shadow.hh>
 #include <grass.hh>
 #include <gtao.hh>
@@ -88,6 +89,8 @@ namespace moppe::nhal {
     // vertices in the same numbering.
     constexpr std::uint32_t forest_tiers = 6;
     constexpr std::uint32_t shadow_size = 2048;
+    // Indices of the far cascade's stand-in for a tree: a double cone.
+    constexpr std::uint32_t far_tree_indices = 36;
     // The most grass tiles a window side may hold: 0.6-metre tiles over
     // 2 x 1.7 x the requested reach.
     constexpr std::uint32_t grass_window_side = 512;
@@ -369,6 +372,7 @@ namespace moppe::nhal {
         m_boulder_cull_code.keep (shaders.boulder_cull);
         m_terrain_shadow_code.keep (shaders.terrain_shadow);
         m_forest_shadow_code.keep (shaders.forest_shadow);
+        m_forest_far_shadow_code.keep (shaders.forest_far_shadow);
         m_forest_cull_code.keep (shaders.forest_cull);
         m_exposure_code.keep (shaders.exposure);
         m_slug_text_code.keep (shaders.slug_text);
@@ -563,8 +567,10 @@ namespace moppe::nhal {
       void set_forest (const render::ForestSetup& setup,
                        std::span<const render::ForestInstance> instances)
         override {
-        for (Buffer* b : { &m_trees, &m_tree_candidates, &m_tree_arguments,
-                           &m_shadow_candidates, &m_shadow_arguments })
+        for (Buffer* b :
+             { &m_trees, &m_tree_candidates, &m_tree_arguments,
+               &m_shadow_candidates[0], &m_shadow_arguments[0],
+               &m_shadow_candidates[1], &m_shadow_arguments[1] })
           if (*b)
             m_device->destroy (*b), *b = {};
         m_tree_count = std::uint32_t (instances.size ());
@@ -608,14 +614,16 @@ namespace moppe::nhal {
           { .size = forest_classes * sizeof (DrawIndexedIndirectArgs),
             .usage = buffer_storage_write | buffer_indirect,
             .label = "forest draws" });
-        m_shadow_candidates = m_device->create_buffer (
-          { .size = 2ull * m_tree_count * 8,
-            .usage = buffer_storage_write,
-            .label = "shadow tree candidates" });
-        m_shadow_arguments = m_device->create_buffer (
-          { .size = 2 * sizeof (DrawIndexedIndirectArgs),
-            .usage = buffer_storage_write | buffer_indirect,
-            .label = "shadow tree draws" });
+        for (std::size_t cascade = 0; cascade < 2; ++cascade) {
+          m_shadow_candidates[cascade] = m_device->create_buffer (
+            { .size = 2ull * m_tree_count * 8,
+              .usage = buffer_storage_write,
+              .label = "shadow tree candidates" });
+          m_shadow_arguments[cascade] = m_device->create_buffer (
+            { .size = 2 * sizeof (DrawIndexedIndirectArgs),
+              .usage = buffer_storage_write | buffer_indirect,
+              .label = "shadow tree draws" });
+        }
         const Vec3 period = extent_value (setup.period);
         m_tree_period[0] = period[0];
         m_tree_period[1] = period[2];
@@ -928,25 +936,65 @@ namespace moppe::nhal {
         return true;
       }
 
-      // The sun's shadow over the rider's neighbourhood: terrain chunks at
-      // native detail and the trees, each species at its coarsest tier.
+      // The sun's shadow in two cascades, side by side in one atlas: terrain
+      // chunks and the trees, each species at its coarsest tier, in both;
+      // the boulders, too small to matter far off, in the near one alone.
+      // Both cascades are culled first, since compute may not run inside
+      // the shadow's render pass.
       void render_local_shadow (const render::LocalShadowParams& params)
         override {
         if (!m_have_terrain || m_scene_open || m_resolved)
           return;
-        const Vec3 focus = position_value (params.focus);
-        const Mat4& light = params.light_view_proj;
+        using Shadow = render::LocalShadowParams;
         const bool trees = params.include_forest && m_tree_count;
-        if (trees)
-          cull_trees (light, focus, 1.0f, true);
         const bool rocks = params.include_boulders && m_rock_count;
+        const std::size_t cascades = params.include_far ? 2 : 1;
+        for (std::size_t c = 0; c < cascades; ++c) {
+          const render::ShadowCascade& cascade = params.cascades[c];
+          if (trees)
+            cull_trees (cascade.light_view_proj,
+                        position_value (cascade.focus), 1.0f, true, c);
+        }
+        const render::ShadowCascade& near = params.cascades[Shadow::near];
         if (rocks)
-          cull_rocks (light, focus, 1.0f, true);
+          cull_rocks (near.light_view_proj, position_value (near.focus), 1.0f,
+                      true);
 
         RenderPassDesc pass;
         pass.label = "sun shadow";
         pass.depth = { m_shadow_map, Load::clear, Store::store, 1.0f };
         m_device->begin_render_pass (pass);
+        for (std::size_t c = 0; c < cascades; ++c) {
+          m_device->set_viewport (float (c * shadow_size), 0,
+                                  float (shadow_size), float (shadow_size));
+          draw_shadow_cascade (params.cascades[c], c, trees,
+                               rocks && c == Shadow::near);
+        }
+        m_device->end_render_pass ();
+
+        // Normalised light depth per metre, for biases given in metres:
+        // a cascade's box runs from a quarter to eight times its reach.
+        const auto per_metre = [] (const render::ShadowCascade& cascade) {
+          return 1.0f / (7.75f * cascade.radius.numerical_value_in (u::m));
+        };
+        m_frame_values.sun_view = matrix (near.light_view_proj);
+        m_frame_values.sun_view_far =
+          matrix (params.cascades[Shadow::far].light_view_proj);
+        m_frame_values.shadow = { m_terrain_params.shadow_strength,
+                                  1.0f / shadow_size, per_metre (near),
+                                  params.include_far
+                                    ? per_metre (params.cascades[Shadow::far])
+                                    : 0.0f };
+        upload_frame ();
+      }
+
+      // One cascade's casters into the viewport already set on the pass.
+      // The far cascade draws the ground two samples a cell: its texels are
+      // metres wide.
+      void draw_shadow_cascade (const render::ShadowCascade& cascade,
+                                std::size_t index, bool trees, bool rocks) {
+        const Vec3 focus = position_value (cascade.focus);
+        const Mat4& light = cascade.light_view_proj;
         shaders::terrain_shadow::Caster caster {};
         caster.light_view = matrix (light);
         caster.focus = lanes (focus, m_params.time);
@@ -962,7 +1010,7 @@ namespace moppe::nhal {
         const int chunks_z = t.height / chunk_cells;
         const float chunk_width = chunk_cells * t.scale[0];
         const float chunk_depth = chunk_cells * t.scale[2];
-        const float reach = params.radius.numerical_value_in (u::m);
+        const float reach = cascade.radius.numerical_value_in (u::m);
         const float draw_reach =
           reach + 0.5f * std::hypot (chunk_width, chunk_depth);
         const int centre_x = int (std::floor (focus[0] / chunk_width));
@@ -972,7 +1020,9 @@ namespace moppe::nhal {
         auto floor_div = [] (int v, int d) {
           return v / d - (v % d < 0 ? 1 : 0);
         };
-        constexpr int native = int (render::TerrainLod::Native);
+        const int lod = int (index == render::LocalShadowParams::near
+                               ? render::TerrainLod::Native
+                               : render::TerrainLod::Stride2);
         for (int z = centre_z - reach_z; z <= centre_z + reach_z; ++z)
           for (int x = centre_x - reach_x; x <= centre_x + reach_x; ++x) {
             const float dx = (x + 0.5f) * chunk_width - focus[0];
@@ -984,27 +1034,28 @@ namespace moppe::nhal {
             shaders::terrain_shadow::Chunk chunk {};
             chunk.placement = { float ((x - wrap_x * chunks_x) * chunk_cells),
                                 float ((z - wrap_z * chunks_z) * chunk_cells),
-                                lod_step[native], float (lod_verts[native]) };
+                                lod_step[lod], float (lod_verts[lod]) };
             chunk.offset = { wrap_x * chunks_x * chunk_width, 0,
                              wrap_z * chunks_z * chunk_depth, 0 };
             m_device->set_uniforms (2, chunk);
-            m_device->draw_indexed (m_chunk_indices[native],
-                                    IndexType::uint32,
-                                    m_chunk_index_count[native]);
+            m_device->draw_indexed (m_chunk_indices[lod], IndexType::uint32,
+                                    m_chunk_index_count[lod]);
           }
 
         if (trees) {
-          m_device->set_pipeline (m_forest_shadow);
+          const bool far = index == render::LocalShadowParams::far;
+          m_device->set_pipeline (far ? m_forest_far_shadow : m_forest_shadow);
           m_device->set_buffer (0, caster_block);
-          m_device->set_buffer (1, m_shadow_forest_block);
+          m_device->set_buffer (1, m_shadow_forest_block[index]);
           m_device->set_buffer (3, m_trees);
-          m_device->set_buffer (4, m_shadow_candidates);
+          m_device->set_buffer (4, m_shadow_candidates[index]);
           for (std::uint32_t species = 0; species < 2; ++species) {
             shaders::forest_shadow::Draw draw {};
             draw.class_ = { float (species * m_tree_count), 0, 0, 0 };
             m_device->set_uniforms (2, draw);
             m_device->draw_indexed_indirect (
-              m_tree_indices, IndexType::uint16, m_shadow_arguments,
+              far ? m_far_tree_indices : m_tree_indices, IndexType::uint16,
+              m_shadow_arguments[index],
               species * sizeof (DrawIndexedIndirectArgs));
           }
         }
@@ -1020,12 +1071,6 @@ namespace moppe::nhal {
           m_device->draw_indexed_indirect (m_rock_indices, IndexType::uint16,
                                            m_rock_shadow_arguments);
         }
-        m_device->end_render_pass ();
-
-        m_frame_values.sun_view = matrix (light);
-        m_frame_values.shadow = { m_terrain_params.shadow_strength,
-                           1.0f / shadow_size, 0, 0 };
-        upload_frame ();
       }
 
       void draw_terrain (const ChunkDraw* chunks, int count) override {
@@ -1562,13 +1607,35 @@ namespace moppe::nhal {
         tree_caster.vertex = m_forest_shadow_code.stage (0);
         tree_caster.label = "forest shadow";
         m_forest_shadow = m_device->create_render_pipeline (tree_caster);
+        RenderPipelineDesc far_tree_caster = caster;
+        far_tree_caster.program = &shaders::forest_far_shadow::program;
+        far_tree_caster.vertex = m_forest_far_shadow_code.stage (0);
+        far_tree_caster.cull = Cull::none;
+        far_tree_caster.label = "far forest shadow";
+        m_forest_far_shadow =
+          m_device->create_render_pipeline (far_tree_caster);
+        {
+          // The far casters' double cone: six faces up to the top (vertex
+          // 0) and six down to the base (1) from the ring (2 to 7).
+          std::array<std::uint16_t, far_tree_indices> cone {};
+          for (std::uint16_t side = 0; side < 6; ++side) {
+            const std::uint16_t a = 2 + side, b = 2 + (side + 1) % 6;
+            const std::array<std::uint16_t, 6> faces { 0, a, b, 1, b, a };
+            std::copy (faces.begin (), faces.end (), cone.begin () + 6 * side);
+          }
+          m_far_tree_indices = m_device->create_buffer (
+            { .size = sizeof cone, .label = "far tree shadow cone" },
+            std::as_bytes (std::span (cone)));
+        }
         RenderPipelineDesc rock_caster = caster;
         rock_caster.program = &shaders::boulders_shadow::program;
         rock_caster.vertex = m_boulders_shadow_code.stage (0);
         rock_caster.label = "boulder shadow";
         m_boulders_shadow = m_device->create_render_pipeline (rock_caster);
+        // The sun's two cascades side by side: near on the left, far on
+        // the right.
         m_shadow_map = m_device->create_texture (
-          { shadow_size, shadow_size, Format::d32_float,
+          { 2 * shadow_size, shadow_size, Format::d32_float,
             usage_depth | usage_sampled, 1, "sun shadow" });
 
         RenderPipelineDesc rock = scene;
@@ -1918,7 +1985,7 @@ namespace moppe::nhal {
       // camera, two (a species each, coarsest tier) for the sun's shadow.
       // Runs outside render passes, which compute passes may not overlap.
       void cull_trees (const Mat4& view, const Vec3& eye, float height,
-                       bool shadow) {
+                       bool shadow, std::size_t cascade = 0) {
         if (!m_tree_count)
           return;
         auto row = [&] (int r) {
@@ -1932,8 +1999,9 @@ namespace moppe::nhal {
         forest.world = { m_tree_period[0], m_tree_period[1],
                          float (m_tree_count), float (m_tree_count) };
         forest.cull = { row (0), row (1), row (3), height };
-        forest.mode = { shadow ? 1.0f : 0.0f, 0, 0, 0 };
-        Transient& block = shadow ? m_shadow_forest_block : m_forest_block;
+        forest.mode = { shadow ? 1.0f + float (cascade) : 0.0f, 0, 0, 0 };
+        Transient& block =
+          shadow ? m_shadow_forest_block[cascade] : m_forest_block;
         block = m_device->allocate (sizeof forest);
         std::memcpy (block.data, &forest, sizeof forest);
 
@@ -1941,12 +2009,14 @@ namespace moppe::nhal {
         for (std::uint32_t c = 0; c < forest_classes; ++c) {
           // The shadow's two classes are each species' tier 0.
           const std::uint32_t topology = shadow ? c * forest_tiers : c;
-          if (topology < forest_classes)
+          if (shadow && cascade == render::LocalShadowParams::far)
+            reset[c] = { far_tree_indices, 0, 0, 0, 0 };
+          else if (topology < forest_classes)
             reset[c] = { m_tree_class_count[topology], 0,
                          m_tree_class_first[topology], 0, 0 };
         }
         const Buffer arguments =
-          shadow ? m_shadow_arguments : m_tree_arguments;
+          shadow ? m_shadow_arguments[cascade] : m_tree_arguments;
         m_device->copy_to_buffer (
           arguments, 0,
           m_device->upload (std::span<const DrawIndexedIndirectArgs> (
@@ -1956,8 +2026,8 @@ namespace moppe::nhal {
         m_device->set_pipeline (m_forest_cull);
         m_device->set_buffer (1, block);
         m_device->set_buffer (2, m_trees);
-        m_device->set_buffer (3,
-                              shadow ? m_shadow_candidates : m_tree_candidates);
+        m_device->set_buffer (3, shadow ? m_shadow_candidates[cascade]
+                                        : m_tree_candidates);
         m_device->set_buffer (4, arguments);
         m_device->dispatch ((m_tree_count + 63) / 64);
         m_device->end_compute_pass ();
@@ -2276,11 +2346,14 @@ namespace moppe::nhal {
       ProgramCode m_forest_code;
       OwnedStage m_forest_cull_code;
       Pipeline m_forest, m_forest_cull, m_exposure;
-      ProgramCode m_terrain_shadow_code, m_forest_shadow_code;
-      Pipeline m_terrain_shadow, m_forest_shadow;
+      ProgramCode m_terrain_shadow_code, m_forest_shadow_code,
+        m_forest_far_shadow_code;
+      Pipeline m_terrain_shadow, m_forest_shadow, m_forest_far_shadow;
+      Buffer m_far_tree_indices;
       Texture m_shadow_map;
-      Buffer m_shadow_candidates, m_shadow_arguments;
-      Transient m_shadow_forest_block;
+      // Per cascade of the sun's map, culled before its pass begins.
+      std::array<Buffer, 2> m_shadow_candidates, m_shadow_arguments;
+      std::array<Transient, 2> m_shadow_forest_block;
       FrameBlock m_frame_values {};
       OwnedStage m_exposure_code;
       Buffer m_exposure_value;

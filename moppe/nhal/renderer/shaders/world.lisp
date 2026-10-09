@@ -25,8 +25,10 @@
       (view-forward :vec4)
       (temporal :vec4)             ; scene width, height, jitter x, y (NDC)
       (temporal-blend :vec4)       ; new frame's weight, 0, output size
-      (sun-view :mat4)             ; world to the sun's clip, for the map
-      (shadow :vec4))))            ; strength, texel size, 0, 0
+      (sun-view :mat4)             ; world to the near cascade's clip
+      (shadow :vec4)               ; strength, a cascade's texel size, and
+                                   ; per metre of light depth: near, far
+      (sun-view-far :mat4))))      ; world to the far cascade's clip
 
 ;;; -- shared ---------------------------------------------------------------
 
@@ -115,10 +117,86 @@
      (step 0.0 (swizzle at :y)) (step (swizzle at :y) 1.0)
      (step 0.0 (swizzle at :z)) (step (swizzle at :z) 1.0)))
 
-(define-shader-abstraction shadow-tap (map compare at dx dy texel bias)
-  `(sample-compare ,map ,compare
-                   (+ (swizzle ,at :xy) (* (vec2 ,dx ,dy) ,texel))
-                   (- (swizzle ,at :z) ,bias)))
+;;; The sun's shadow lives in two cascades side by side in one atlas: the
+;;; near one, sharp, over the camera's neighbourhood on the left half, and
+;;; the far one, coarse, reaching out to the haze on the right.  A point
+;;; reads the near cascade inside it and the far one beyond, stippled
+;;; across a band so the change of resolution has no seam, and the far
+;;; one fades out toward its edge so no line marks where shadows end.
+
+(define-shader-function shadow-dither (world)
+  (fract (* (sin (dot (floor (* world 3.0)) (vec3 12.9898 78.233 37.719)))
+            43758.5453)))
+
+;;; How far from a cascade's centre a point falls: 0 there, 1 at its edge.
+(define-shader-function cascade-edge (at)
+  (* 2.0 (max (abs (- (swizzle at :x) 0.5)) (abs (- (swizzle at :y) 0.5)))))
+
+(define-shader-struct sun-place (at :vec4) (trust :float))
+
+;;; Where WORLD falls in the atlas, biased BIAS metres toward the sun:
+;;; (u, v, depth, which), which 1 for the near cascade and 0 for the far;
+;;; and how much of the shadow to trust there, 0 where neither sees.
+(define-shader-function sun-cascade (world bias near-view far-view shadow)
+  (let* ((near-at (sun-map-coordinate near-view world))
+         (far-at (sun-map-coordinate far-view world))
+         (near-weight (* (- 1.0 (smoothstep 0.86 0.96 (cascade-edge near-at)))
+                         (inside-sun-map near-at)))
+         (near (step (shadow-dither world) near-weight))
+         ;; A far depth scale of zero says the far cascade is off.
+         (far-weight (* (- 1.0 (smoothstep 0.75 0.97 (cascade-edge far-at)))
+                        (inside-sun-map far-at)
+                        (step 0.0000001 (swizzle shadow :w))))
+         (at (mix far-at near-at near))
+         ;; The far cascade's texels are metres wide: its bias grows with
+         ;; them.
+         (depth-bias (mix (* (+ bias 3.0) (swizzle shadow :w))
+                          (* bias (swizzle shadow :z)) near)))
+    (make-sun-place
+     :at (vec4 (* 0.5 (+ (swizzle at :x) (- 1.0 near))) (swizzle at :y)
+               (- (swizzle at :z) depth-bias) near)
+     :trust (* (swizzle shadow :x) (mix far-weight 1.0 near)))))
+
+;;; One comparison tap DX, DY texels from a place.  A cascade fills half
+;;; the atlas's width, so its texels are half as wide in u.
+(define-shader-function sun-tap-at (place dx dy texel)
+  (let* ((at (sun-place-at place)))
+    (vec3 (+ (swizzle at :x) (* 0.5 dx texel)) (+ (swizzle at :y) (* dy texel))
+          (swizzle at :z))))
+
+(define-shader-abstraction shadow-tap (map compare world bias dx dy)
+  `(sample-compare
+    ,map ,compare
+    (swizzle (sun-tap-at (sun-cascade ,world ,bias sun-view sun-view-far
+                                      shadow)
+                         ,dx ,dy (swizzle shadow :y))
+             :xy)
+    (swizzle (sun-tap-at (sun-cascade ,world ,bias sun-view sun-view-far
+                                      shadow)
+                         ,dx ,dy (swizzle shadow :y))
+             :z)))
+
+(define-shader-abstraction sun-trust (world bias)
+  `(sun-place-trust (sun-cascade ,world ,bias sun-view sun-view-far shadow)))
+
+;;; The fraction of the sun reaching WORLD: four comparison taps SPREAD
+;;; texels apart, already eased to fully lit by the shadow's strength and
+;;; wherever no cascade reaches.  BIAS is in metres along the light.
+(define-shader-abstraction sun-lit (map compare world bias spread)
+  `(mix 1.0
+        (* 0.25 (+ (shadow-tap ,map ,compare ,world ,bias
+                               (* -1.0 ,spread) (* -1.0 ,spread))
+                   (shadow-tap ,map ,compare ,world ,bias
+                               ,spread (* -1.0 ,spread))
+                   (shadow-tap ,map ,compare ,world ,bias
+                               (* -1.0 ,spread) ,spread)
+                   (shadow-tap ,map ,compare ,world ,bias ,spread ,spread)))
+        (sun-trust ,world ,bias)))
+
+;;; As SUN-LIT, from a single tap, for marches that read it many times.
+(define-shader-abstraction sun-lit-once (map compare world bias)
+  `(mix 1.0 (shadow-tap ,map ,compare ,world ,bias 0.0 0.0)
+        (sun-trust ,world ,bias)))
 
 ;;; -- terrain --------------------------------------------------------------
 
@@ -399,28 +477,16 @@
                                       land floor-fields rise stand)))
          (sun (swizzle sun-direction :xyz))
          (lambert (clamp (/ (+ (dot normal sun) 0.08) 1.08) 0.0 1.0))
-         ;; The sun's shadow: five comparison taps, a slope-scaled bias
-         ;; against acne on raking ground, faded out into the haze.
-         (at (sun-map-coordinate sun-view world))
-         (bias (+ 0.0006 (* 0.0025 (- 1.0 (max (dot normal sun) 0.0)))))
-         (texel (swizzle shadow :y))
-         (taps (+ (* 0.4 (shadow-tap shadow-map shadow-compare at 0.0 0.0
-                                     texel bias))
-                  (* 0.15 (+ (shadow-tap shadow-map shadow-compare at -1.5 -1.5
-                                         texel bias)
-                             (shadow-tap shadow-map shadow-compare at 1.5 -1.5
-                                         texel bias)
-                             (shadow-tap shadow-map shadow-compare at -1.5 1.5
-                                         texel bias)
-                             (shadow-tap shadow-map shadow-compare at 1.5 1.5
-                                         texel bias)))))
+         ;; The sun's shadow: a slope-scaled bias against acne on raking
+         ;; ground, faded out into the haze.
+         (taps (sun-lit shadow-map shadow-compare world
+                        (+ 0.75 (* 3.1 (- 1.0 (max (dot normal sun) 0.0))))
+                        1.0))
          (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
                            (swizzle world :y) (swizzle relief :x)
                            (swizzle relief :y)))
          (direct (mix 1.0 (expt taps 1.3)
-                      (* (swizzle shadow :x)
-                         (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)
-                         (inside-sun-map at))))
+                      (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)))
          (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) direct))
          (lit (* albedo (+ (* (hemisphere-light (swizzle ambient :xyz) normal)
                               fill)
@@ -737,18 +803,7 @@
          ;; The rider, the bike, and the props stand in the same sun as the
          ;; ground: under a crown or a hill's shadow they lose the direct
          ;; light and keep the bluer sky, as the terrain does.
-         (at (sun-map-coordinate sun-view world))
-         (texel (swizzle shadow :y))
-         (margin (/ 0.15 1240.0))
-         (taps (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
-                                      texel margin)
-                          (shadow-tap shadow-map shadow-compare at 0.5 -0.5
-                                      texel margin)
-                          (shadow-tap shadow-map shadow-compare at -0.5 0.5
-                                      texel margin)
-                          (shadow-tap shadow-map shadow-compare at 0.5 0.5
-                                      texel margin))))
-         (direct (mix 1.0 taps (* (swizzle shadow :x) (inside-sun-map at))))
+         (direct (sun-lit shadow-map shadow-compare world 0.15 0.5))
          (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) direct))
          (sun-light (* (swizzle sun-diffuse :xyz) direct))
          ;; Sunlit ground throws warm light up into the lower faces, so a
@@ -851,7 +906,8 @@
       (eye :vec4)                  ; the view's centre, toward which trees wrap
       (world :vec4)                ; period x, period z, count, class capacity
       (cull :vec4)                 ; |row x|, |row y|, |row w|, scene height
-      (mode :vec4)))               ; x: 1 for the sun's shadow view
+      (mode :vec4)))               ; x: 1 for the sun's near cascade, 2
+                                   ; for its far one
   (defparameter *forest-class*
     '((class :vec4))))             ; first candidate, 0, 0, 0
 
@@ -923,7 +979,12 @@
              (distance (max (sqrt (dot offset offset)) 0.6))
              (scale (/ (* (swizzle cull :y) (swizzle cull :w)) distance))
              (crown-pixels (* crown scale)))
-        (when (and inside (or shadow (>= crown-pixels 4.0)))
+        ;; The far cascade's texels are a metre and a half: a sapling's
+        ;; crown is under one and casts nothing there.
+        (when (and inside
+                   (or (and shadow (or (< (swizzle mode :x) 1.5)
+                                       (> crown 1.2)))
+                       (>= crown-pixels 4.0)))
           (let* ((pixels (* 0.5 height scale))
                  (species (if conifer (uint 1) (uint 0)))
                  (class (if shadow species
@@ -1306,19 +1367,9 @@
                          (mix 1.0 0.55 (* base base)))))
          ;; Crowns keep metres of light-depth margin so a crown does not
          ;; shadow itself solid; trunks stay precise.
-         (at (sun-map-coordinate sun-view world-position))
-         (margin (/ (if (> foliage 0.5) 7.0 1.5) 1240.0))
-         (texel (swizzle shadow :y))
-         (lit (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
-                                     texel margin)
-                         (shadow-tap shadow-map shadow-compare at 0.5 -0.5
-                                     texel margin)
-                         (shadow-tap shadow-map shadow-compare at -0.5 0.5
-                                     texel margin)
-                         (shadow-tap shadow-map shadow-compare at 0.5 0.5
-                                     texel margin))))
-         (visibility (mix 1.0 (mix 0.18 1.0 lit)
-                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (lit (sun-lit shadow-map shadow-compare world-position
+                       (if (> foliage 0.5) 7.0 1.5) 0.5))
+         (visibility (mix 0.18 1.0 lit))
          ;; Foliage wraps the light a little: a crown is porous.
          (sun (if (> foliage 0.5)
                   (clamp (/ (+ (dot n light) 0.35) 1.35) 0.0 1.0)
@@ -1403,6 +1454,49 @@
 
 (define-shader-program forest-shadow
   :vertex forest-shadow-vertex)
+
+;;; A tree in the far cascade, whose texels are metres wide: its crown as
+;;; a six-sided double cone between the crown's base and the top, widest
+;;; low on a spruce and halfway up a birch.  Vertex 0 is the top, 1 the
+;;; bottom, and 2 to 7 the ring; growing the full tree for every vertex of
+;;; tens of thousands of distant casters cost more than all the rest.
+(define-shader forest-far-shadow-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position))
+     :resources ((caster :uniform-block :binding 0 :members #.*caster*)
+                 (forest :uniform-block :binding 1 :members #.*forest*)
+                 (draw :uniform-block :binding 2 :members #.*forest-class*)
+                 (trees :storage-buffer :binding 3 :element :vec4)
+                 (candidates :storage-buffer :binding 4 :element :uint)))
+  (let* ((at (* (+ (uint (swizzle class :x)) instance-index) (uint 2)))
+         (row (* (buffer-element candidates at) (uint 4)))
+         (root-height (buffer-element trees row))
+         (tree (grow-tree root-height (buffer-element trees (+ row (uint 1)))
+                          (buffer-element trees (+ row (uint 2)))
+                          (buffer-element trees (+ row (uint 3)))
+                          (tree-root (swizzle root-height :xyz)
+                                     (swizzle world :xy) (swizzle focus :xyz))
+                          0.0 1.0))
+         (base (tree-shape-crown-base tree))
+         (top (tree-shape-height tree))
+         (waist (mix base top (if (tree-shape-conifer tree) 0.15 0.5)))
+         (radius (* (tree-shape-crown-radius tree)
+                    (if (tree-shape-conifer tree) 1.05 1.0)))
+         (corner (float (- vertex-index (uint 2))))
+         (turn (+ (tree-shape-seed-turn tree) (* corner 1.0471976)))
+         (ring (* radius (+ (* (cos turn) (tree-shape-right tree))
+                            (* (sin turn) (tree-shape-forward tree)))))
+         (along (if (= vertex-index (uint 0)) top
+                    (if (= vertex-index (uint 1)) base waist)))
+         (out (if (< vertex-index (uint 2)) (vec3 0.0 0.0 0.0) ring))
+         (point (+ (tree-shape-root tree) (* along (tree-shape-up tree)) out)))
+    (set-output clip-position
+                (clip (* light-view (vec4 point 1.0)) (vec2 0.0 0.0)))))
+
+(define-shader-program forest-far-shadow
+  :vertex forest-far-shadow-vertex)
 
 ;;; -- grass ------------------------------------------------------------------
 ;;;
@@ -1935,23 +2029,11 @@
          (resolvable (smoothstep 1.5 4.0 pixels))
          (petal (step 0.5 petals))
          ;; The sun's shadow, four taps.
-         (at (sun-map-coordinate sun-view world-position))
-         (texel (swizzle shadow :y))
-         (bias 0.0015)
-         (taps (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
-                                      texel bias)
-                          (shadow-tap shadow-map shadow-compare at 0.5 -0.5
-                                      texel bias)
-                          (shadow-tap shadow-map shadow-compare at -0.5 0.5
-                                      texel bias)
-                          (shadow-tap shadow-map shadow-compare at 0.5 0.5
-                                      texel bias))))
+         (taps (sun-lit shadow-map shadow-compare world-position 1.86 0.5))
          (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
                            (swizzle world-position :y) (swizzle relief :x)
                            (swizzle relief :y)))
-         (cast (mix 1.0 taps (* (swizzle shadow :x)
-                                (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)
-                                (inside-sun-map at))))
+         (cast (mix 1.0 taps (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)))
          ;; Once a blade is too thin to revisit, its twist stops choosing a
          ;; full-contrast lighting sample: the terms settle to the leaf
          ;; distribution's symmetric means.
@@ -2326,19 +2408,8 @@
          (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
                            (swizzle world-position :y) (swizzle relief :x)
                            (swizzle relief :y)))
-         (at (sun-map-coordinate sun-view world-position))
-         (texel (swizzle shadow :y))
-         (taps (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
-                                      texel 0.0015)
-                          (shadow-tap shadow-map shadow-compare at 0.5 -0.5
-                                      texel 0.0015)
-                          (shadow-tap shadow-map shadow-compare at -0.5 0.5
-                                      texel 0.0015)
-                          (shadow-tap shadow-map shadow-compare at 0.5 0.5
-                                      texel 0.0015))))
-         (cast (mix 1.0 taps (* (swizzle shadow :x)
-                                (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)
-                                (inside-sun-map at))))
+         (taps (sun-lit shadow-map shadow-compare world-position 1.86 0.5))
+         (cast (mix 1.0 taps (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)))
          (visibility (* cast (mix 1.0 0.68 forest)))
          (sun-light (swizzle sun-diffuse :xyz))
          (scatter (* sun-light (vec3 0.92 1.05 0.78)
@@ -2653,19 +2724,8 @@
          (surface (* (mix (* albedo (+ 0.88 (* 0.22 facet))) crust
                           (* 0.55 growth))
                      (mix 0.55 1.0 contact)))
-         (at (sun-map-coordinate sun-view world-position))
-         (texel (swizzle shadow :y))
-         (margin (/ 0.5 1240.0))
-         (lit (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
-                                     texel margin)
-                         (shadow-tap shadow-map shadow-compare at 0.5 -0.5
-                                     texel margin)
-                         (shadow-tap shadow-map shadow-compare at -0.5 0.5
-                                     texel margin)
-                         (shadow-tap shadow-map shadow-compare at 0.5 0.5
-                                     texel margin))))
-         (visibility (mix 1.0 (mix 0.18 1.0 lit)
-                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (lit (sun-lit shadow-map shadow-compare world-position 0.5 0.5))
+         (visibility (mix 0.18 1.0 lit))
          (sun-light (swizzle sun-diffuse :xyz))
          ;; Sunlit ground throws warm light back into the shaded lower faces.
          (bounce (* sun-light (vec3 0.30 0.26 0.15)
@@ -3144,11 +3204,8 @@
                              (* -1.0 (+ (swizzle slope :y)
                                         (swizzle tilt :y))))))
          ;; The sun's shadow falls across water and foam alike.
-         (at (sun-map-coordinate sun-view world))
-         (lit (shadow-tap shadow-map shadow-compare at 0.0 0.0
-                          (swizzle shadow :y) (/ 1.0 1240.0)))
-         (visibility (mix 1.0 (mix 0.2 1.0 lit)
-                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (lit (sun-lit-once shadow-map shadow-compare world 1.0))
+         (visibility (mix 0.2 1.0 lit))
          (sun-light (* (swizzle sun-diffuse :xyz) visibility))
          (sky-light (swizzle ambient :xyz))
          ;; Ripples too fine to resolve still roughen the water: at a
@@ -3438,11 +3495,8 @@
                     torn))
          (edge (swizzle tint :w))
          (cover (* edge (mix 0.45 0.92 body)))
-         (at (sun-map-coordinate sun-view world))
-         (lit (shadow-tap shadow-map shadow-compare at 0.0 0.0
-                          (swizzle shadow :y) (/ 1.0 1240.0)))
-         (visibility (mix 1.0 (mix 0.25 1.0 lit)
-                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (lit (sun-lit-once shadow-map shadow-compare world 1.0))
+         (visibility (mix 0.25 1.0 lit))
          ;; Aerated water scatters nearly white; light through the sheet
          ;; from behind glows where it thins.
          (front (max (dot facing light) 0.0))
@@ -3609,15 +3663,8 @@
          (light (swizzle sun-direction :xyz))
          (n (if (< (dot leaf-normal view) 0.0) (* -1.0 leaf-normal)
                 leaf-normal))
-         (at (sun-map-coordinate sun-view world-position))
-         (texel (swizzle shadow :y))
-         (margin (/ 2.0 1240.0))
-         (lit (* 0.5 (+ (shadow-tap shadow-map shadow-compare at -0.5 0.0
-                                    texel margin)
-                        (shadow-tap shadow-map shadow-compare at 0.5 0.0
-                                    texel margin))))
-         (visibility (mix 1.0 (mix 0.25 1.0 lit)
-                          (* (swizzle shadow :x) (inside-sun-map at))))
+         (lit (sun-lit-once shadow-map shadow-compare world-position 2.0))
+         (visibility (mix 0.25 1.0 lit))
          (sun-light (swizzle sun-diffuse :xyz))
          ;; A thin leaf is lit from either side and glows against the sun.
          (sun (abs (dot n light)))
@@ -4182,10 +4229,7 @@
                     (c (* view-proj (vec4 world 1.0)))
                     (beyond (or (<= (swizzle c :w) 0.0)
                                 (< (/ (swizzle c :z) (swizzle c :w)) surface)))
-                    (at (sun-map-coordinate sun-view world))
-                    (lit (mix 1.0 (shadow-tap shadow-map shadow-compare at
-                                              0.0 0.0 0.0 0.0015)
-                              (inside-sun-map at))))
+                    (lit (sun-lit-once shadow-map shadow-compare world 1.86)))
                (if beyond (vec2 (swizzle state :x) 1.0)
                    (vec2 (+ (swizzle state :x)
                             (* lit (exp (* -1.0 sigma distance))))

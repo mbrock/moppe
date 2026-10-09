@@ -1669,7 +1669,8 @@ namespace moppe {
                                          frame.camera.frame_forward,
                                          frame.lighting.sun_direction,
                                          m_graphics.forest,
-                                         frame.visibility.boulders);
+                                         frame.visibility.boulders,
+                                         m_graphics.distant_shadows);
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
           sky.time = frame.lighting.time;

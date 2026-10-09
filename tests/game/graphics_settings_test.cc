@@ -140,7 +140,7 @@ MOPPE_TEST (standard_graphics_benchmark_partition_groups_broad_subsystems) {
   settings.terrain_topology = true;
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << 4, game::GraphicsBenchmarkPartition::Standard);
-  MOPPE_CHECK (resolved == 30520u);
+  MOPPE_CHECK (resolved == 63288u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);
   MOPPE_CHECK (settings.star_effects);
@@ -148,6 +148,7 @@ MOPPE_TEST (standard_graphics_benchmark_partition_groups_broad_subsystems) {
   MOPPE_CHECK (settings.light_shafts);
   MOPPE_CHECK (settings.gtao);
   MOPPE_CHECK (settings.boulders);
+  MOPPE_CHECK (settings.distant_shadows);
   MOPPE_CHECK (settings.terrain_fragment_normals);
   MOPPE_CHECK (settings.snow_support_filter);
   MOPPE_CHECK (settings.terrain_topology);

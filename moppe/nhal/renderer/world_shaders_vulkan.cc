@@ -72,6 +72,9 @@ namespace moppe::nhal {
     alignas (4) const unsigned char forest_shadow_vertex[] = {
 #embed "forest_shadow.vertex.spv"
     };
+    alignas (4) const unsigned char forest_far_shadow_vertex[] = {
+#embed "forest_far_shadow.vertex.spv"
+    };
     alignas (4) const unsigned char bloom_bright_vertex[] = {
 #embed "bloom_bright.vertex.spv"
     };
@@ -186,6 +189,7 @@ namespace moppe::nhal {
       spirv (exposure_compute),
       { spirv (terrain_shadow_vertex), {} },
       { spirv (forest_shadow_vertex), {} },
+      { spirv (forest_far_shadow_vertex), {} },
       { spirv (bloom_bright_vertex), spirv (bloom_bright_fragment) },
       { spirv (bloom_blur_vertex), spirv (bloom_blur_fragment) },
       { spirv (grass_vertex), spirv (grass_fragment) },

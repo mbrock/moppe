@@ -434,7 +434,8 @@ set(MOPPE_NHAL_WORLD_DRAWN
   terrain sky uber hud resolve present slug_text forest
   bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
   rain water leaves waterfall scene_copy)
-set(MOPPE_NHAL_WORLD_CASTERS terrain_shadow forest_shadow boulders_shadow)
+set(MOPPE_NHAL_WORLD_CASTERS
+  terrain_shadow forest_shadow forest_far_shadow boulders_shadow)
 set(MOPPE_NHAL_WORLD_COMPUTED
   forest_cull exposure grass_tiles sward_patches boulder_cull)
 set(MOPPE_NHAL_WORLD_STAGES)

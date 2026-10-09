@@ -9,6 +9,8 @@
 #include <moppe/render/types.hh>
 #include <moppe/terrain/domain.hh>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -69,10 +71,19 @@ namespace moppe {
     // A bounded sun-shadow reading for the current camera neighborhood.
     // Geometry becomes unit-blind only at the backend boundary: callers keep
     // the focus as a position point and the reach as a length quantity.
-    struct LocalShadowParams {
+    struct ShadowCascade {
       Mat4 light_view_proj;
       position_t focus;
       meters_t radius = 160.0f * u::m;
+    };
+
+    // Two cascades share the sun's map: a sharp one over the camera's
+    // neighbourhood and a coarse one reaching out to the haze, so shadows
+    // reach as far as a glider can see instead of stopping at a radius.
+    struct LocalShadowParams {
+      static constexpr std::size_t near = 0, far = 1;
+      std::array<ShadowCascade, 2> cascades;
+      bool include_far = true;
       bool include_forest = true;
       bool include_boulders = true;
     };

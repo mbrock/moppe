@@ -28,6 +28,7 @@ namespace moppe::game {
     light_shafts,
     gtao,
     boulders,
+    distant_shadows,
   };
 
   struct GraphicsSettings {
@@ -69,6 +70,9 @@ namespace moppe::game {
     // Loose rock on the ground. Hiding them leaves their colliders in place,
     // so a benchmark replay rides the same world in every configuration.
     bool boulders = true;
+    // The sun's far shadow cascade, out to the haze; without it shadows
+    // reach only the near cascade's 160 metres.
+    bool distant_shadows = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -191,7 +195,14 @@ namespace moppe::game {
     GraphicsFeatureId::boulders, "boulders", &GraphicsSettings::boulders, true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 18> graphics_features {
+  inline constexpr GraphicsFeature distant_shadows_feature {
+    GraphicsFeatureId::distant_shadows,
+    "distant-shadows",
+    &GraphicsSettings::distant_shadows,
+    true
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 19> graphics_features {
     &terrain_shadows_feature,
     &forest_feature,
     &ocean_feature,
@@ -210,6 +221,7 @@ namespace moppe::game {
     &light_shafts_feature,
     &gtao_feature,
     &boulders_feature,
+    &distant_shadows_feature,
   };
 
   // Ordinary play favors stable high-refresh presentation. Explicit quality

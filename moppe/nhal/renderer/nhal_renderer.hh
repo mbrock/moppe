@@ -27,6 +27,7 @@ namespace moppe::nhal {
     // Vertex stages only; their fragment code is empty.
     StageCode terrain_shadow[2];
     StageCode forest_shadow[2];
+    StageCode forest_far_shadow[2];
     StageCode bloom_bright[2];
     StageCode bloom_blur[2];
     StageCode grass[2];

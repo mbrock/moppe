@@ -37,7 +37,8 @@ namespace moppe {
                                 const Vec3& view_dir,
                                 const Vec3& sun_dir,
                                 bool include_forest,
-                                bool include_boulders = true);
+                                bool include_boulders = true,
+                                bool include_far = true);
 
       // Emits culled chunk draws: distance cull against max_dist plus
       // the view frustum's side planes.  Five nested LODs run from a

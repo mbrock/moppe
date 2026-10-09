@@ -68,6 +68,9 @@ namespace moppe::nhal {
     const char forest_shadow_vertex[] = {
 #embed "forest_shadow.vertex.metal"
       , 0 };
+    const char forest_far_shadow_vertex[] = {
+#embed "forest_far_shadow.vertex.metal"
+      , 0 };
     const char bloom_bright_vertex[] = {
 #embed "bloom_bright.vertex.metal"
       , 0 };
@@ -174,6 +177,7 @@ namespace moppe::nhal {
       { exposure_compute, {} },
       { { terrain_shadow_vertex, {} }, {} },
       { { forest_shadow_vertex, {} }, {} },
+      { { forest_far_shadow_vertex, {} }, {} },
       { { bloom_bright_vertex, {} }, { bloom_bright_fragment, {} } },
       { { bloom_blur_vertex, {} }, { bloom_blur_fragment, {} } },
       { { grass_vertex, {} }, { grass_fragment, {} } },

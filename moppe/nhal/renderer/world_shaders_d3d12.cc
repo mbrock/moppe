@@ -12,6 +12,7 @@
 #include <shader_boulders_vertex.h>
 #include <shader_exposure_compute.h>
 #include <shader_forest_cull_compute.h>
+#include <shader_forest_far_shadow_vertex.h>
 #include <shader_forest_fragment.h>
 #include <shader_forest_shadow_vertex.h>
 #include <shader_forest_vertex.h>
@@ -77,6 +78,7 @@ namespace moppe::nhal {
       dxil (shader_exposure_compute),
       { dxil (shader_terrain_shadow_vertex), {} },
       { dxil (shader_forest_shadow_vertex), {} },
+      { dxil (shader_forest_far_shadow_vertex), {} },
       { dxil (shader_bloom_bright_vertex),
         dxil (shader_bloom_bright_fragment) },
       { dxil (shader_bloom_blur_vertex), dxil (shader_bloom_blur_fragment) },

@@ -192,51 +192,76 @@ namespace moppe {
       r.render_terrain_shadow (proj * view, include_forest);
     }
 
+    namespace {
+      // One cascade of the sun's map: an orthographic box of `radius`
+      // about a centre `look_ahead` along the horizontal view.
+      render::ShadowCascade shadow_cascade (position_t camera,
+                                            const Vec3& horizontal,
+                                            const Vec3& sun_dir,
+                                            meters_t radius,
+                                            meters_t look_ahead) {
+        constexpr int shadow_texels = 2048;
+        Vec3 centre = position_value (camera + horizontal * look_ahead);
+        const float reach = radius.numerical_value_in (u::m);
+        const Vec3 light_forward = normalized (-sun_dir);
+        const Vec3 light_right = normalized (
+          cross (light_forward,
+                 std::fabs (light_forward[1]) > 0.98f ? Vec3 (0, 0, 1)
+                                                      : Vec3 (0, 1, 0)));
+        const Vec3 light_up = cross (light_right, light_forward);
+
+        // Quantize the moving light-space origin, not the camera, so the
+        // shadow projection advances exactly one texel at a time instead of
+        // swimming over otherwise stationary terrain.
+        const float texel = 2.0f * reach / shadow_texels;
+        const float right_coordinate = dot (centre, light_right);
+        const float up_coordinate = dot (centre, light_up);
+        centre +=
+          light_right *
+            (std::round (right_coordinate / texel) * texel - right_coordinate) +
+          light_up *
+            (std::round (up_coordinate / texel) * texel - up_coordinate);
+
+        const Vec3 light_position = centre + sun_dir * (reach * 4.0f);
+        const Mat4 view =
+          Mat4::look_at (light_position, centre, Vec3 (0, 1, 0));
+        const Mat4 projection = Mat4::ortho (
+          -reach, reach, -reach, reach, reach * 0.25f, reach * 8.0f);
+        return { .light_view_proj = projection * view,
+                 .focus = position (centre),
+                 .radius = radius };
+      }
+    }
+
     void Terrain::render_local_shadow (render::Renderer& r,
                                        position_t camera,
                                        const Vec3& view_dir,
                                        const Vec3& sun_dir,
                                        bool include_forest,
-                                       bool include_boulders) {
+                                       bool include_boulders,
+                                       bool include_far) {
       MOPPE_PROFILE_ZONE ("Terrain::render_local_shadow");
-      constexpr meters_t radius = 160.0f * u::m;
-      constexpr meters_t look_ahead = 48.0f * u::m;
-      constexpr int shadow_texels = 2048;
-
       Vec3 horizontal (view_dir[0], 0.0f, view_dir[2]);
       if (length2 (horizontal) < 1e-6f)
         horizontal = Vec3 (0, 0, 1);
       else
         horizontal = normalized (horizontal);
 
-      Vec3 centre = position_value (camera + horizontal * look_ahead);
-      const float reach = radius.numerical_value_in (u::m);
-      const Vec3 light_forward = normalized (-sun_dir);
-      const Vec3 light_right = normalized (
-        cross (light_forward,
-               std::fabs (light_forward[1]) > 0.98f ? Vec3 (0, 0, 1)
-                                                    : Vec3 (0, 1, 0)));
-      const Vec3 light_up = cross (light_right, light_forward);
-
-      // Quantize the moving light-space origin, not the camera, so the shadow
-      // projection advances exactly one texel at a time instead of swimming
-      // over otherwise stationary terrain.
-      const float texel = 2.0f * reach / shadow_texels;
-      const float right_coordinate = dot (centre, light_right);
-      const float up_coordinate = dot (centre, light_up);
-      centre +=
-        light_right *
-          (std::round (right_coordinate / texel) * texel - right_coordinate) +
-        light_up * (std::round (up_coordinate / texel) * texel - up_coordinate);
-
-      const Vec3 light_position = centre + sun_dir * (reach * 4.0f);
-      const Mat4 view = Mat4::look_at (light_position, centre, Vec3 (0, 1, 0));
-      const Mat4 projection =
-        Mat4::ortho (-reach, reach, -reach, reach, reach * 0.25f, reach * 8.0f);
+      // The near cascade keeps the rider's surroundings sharp; the far one,
+      // ten times coarser, reaches out to where the haze closes, mostly
+      // ahead, which is what a glider sees.
       r.render_local_shadow ({
-        .light_view_proj = projection * view,
-        .focus = position (centre),
-        .radius = radius,
+        .cascades = { shadow_cascade (camera,
+                                      horizontal,
+                                      sun_dir,
+                                      160.0f * u::m,
+                                      48.0f * u::m),
+                      shadow_cascade (camera,
+                                      horizontal,
+                                      sun_dir,
+                                      1600.0f * u::m,
+                                      700.0f * u::m) },
+        .include_far = include_far,
         .include_forest = include_forest,
         .include_boulders = include_boulders,
       });
