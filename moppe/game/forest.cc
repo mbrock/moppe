@@ -92,9 +92,10 @@ namespace moppe::game {
   void ForestLandscape::rebuild (render::Renderer& renderer,
                                  const map::SurfaceGeometry& surface,
                                  const map::SurfaceReadings& readings,
+                                 const terrain::WaterSheets& water,
                                  std::uint32_t seed) {
     MOPPE_PROFILE_ZONE ("ForestLandscape::rebuild");
-    rebuild (renderer, plan_global_forest (surface, readings, seed));
+    rebuild (renderer, plan_global_forest (surface, readings, water, seed));
   }
 
   namespace {

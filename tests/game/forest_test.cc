@@ -44,10 +44,10 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
       .seed = 0xdecafbadU });
 
-  const game::ForestPlan first =
-    game::plan_global_forest (surface, readings, 0xa511e9b3U);
-  const game::ForestPlan second =
-    game::plan_global_forest (surface, readings, 0xa511e9b3U);
+  const game::ForestPlan first = game::plan_global_forest (
+    surface, readings, test::dry_water (surface), 0xa511e9b3U);
+  const game::ForestPlan second = game::plan_global_forest (
+    surface, readings, test::dry_water (surface), 0xa511e9b3U);
   MOPPE_CHECK (first.sites.size () > 100);
   MOPPE_CHECK (first.sites.size () == second.sites.size ());
   for (std::size_t index = 0; index < first.sites.size (); ++index) {
@@ -81,8 +81,9 @@ MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
       .use = test::uniform_use (surface.domain (), 0.0f, 1.0f),
       .seed = 0xfeed1234U });
 
-  MOPPE_CHECK (
-    game::plan_global_forest (surface, readings, 0x31415926U).sites.empty ());
+  MOPPE_CHECK (game::plan_global_forest (
+                 surface, readings, test::dry_water (surface), 0x31415926U)
+                 .sites.empty ());
 }
 
 MOPPE_TEST (global_forest_population_has_a_periodic_hard_core) {
@@ -98,8 +99,8 @@ MOPPE_TEST (global_forest_population_has_a_periodic_hard_core) {
   std::ranges::fill (spatial::get<map::forest_cover> (readings),
                      1.0f * map::forest_cover[mp_units::one]);
 
-  const game::ForestPlan plan =
-    game::plan_global_forest (surface, readings, 0x96c41d2bU);
+  const game::ForestPlan plan = game::plan_global_forest (
+    surface, readings, test::dry_water (surface), 0x96c41d2bU);
   MOPPE_CHECK (plan.sites.size () > 700);
   for (std::size_t i = 0; i < plan.sites.size (); ++i)
     for (std::size_t j = i + 1; j < plan.sites.size (); ++j) {
@@ -112,6 +113,40 @@ MOPPE_TEST (global_forest_population_has_a_periodic_hard_core) {
       MOPPE_CHECK (periodic_x * periodic_x + periodic_z * periodic_z >=
                    4.0f - 1e-4f);
     }
+}
+
+MOPPE_TEST (global_forest_keeps_its_roots_out_of_the_water) {
+  using namespace moppe;
+  constexpr float period = 160.0f;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (period, 0, period))));
+  const auto ground =
+    terrain::surface_elevation_point (0.42f * 180.0f * mp_units::si::metre);
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     ground);
+  map::rebuild_geometry (surface);
+  map::SurfaceReadings readings = test::complete_readings (surface);
+  std::ranges::fill (spatial::get<map::forest_cover> (readings),
+                     1.0f * map::forest_cover[mp_units::one]);
+
+  // A lake a metre deep fills the band 60 m < x < 100 m.
+  terrain::WaterSheets water = test::dry_water (surface);
+  const terrain::TerrainDomain& domain = surface.domain ();
+  auto& level = spatial::get<terrain::surface_elevation> (water);
+  for (std::size_t offset = 0; offset < domain.size (); ++offset) {
+    const float x = period * static_cast<float> (offset % domain.width ()) /
+                    static_cast<float> (domain.width ());
+    if (x > 60.0f && x < 100.0f)
+      level[offset] = ground + 1.0f * mp_units::si::metre;
+  }
+
+  const game::ForestPlan plan =
+    game::plan_global_forest (surface, readings, water, 0x96c41d2bU);
+  MOPPE_CHECK (plan.sites.size () > 300);
+  for (const game::ForestSite& site : plan.sites) {
+    const float x = position_value (site.position)[0];
+    MOPPE_CHECK (x < 57.5f || x > 102.5f);
+  }
 }
 
 MOPPE_TEST (baked_forest_plan_round_trips_and_rejects_bad_identity) {
@@ -166,7 +201,8 @@ MOPPE_TEST (forest_uploads_typed_individuals_without_baking_tree_meshes) {
 
   test::RecordingRenderer renderer;
   game::ForestLandscape forest;
-  forest.rebuild (renderer, surface, readings, 0xa511e9b3U);
+  forest.rebuild (
+    renderer, surface, readings, test::dry_water (surface), 0xa511e9b3U);
 
   MOPPE_CHECK (forest.tree_count () > 1000);
   MOPPE_CHECK (renderer.forest_instances.size () == forest.tree_count ());

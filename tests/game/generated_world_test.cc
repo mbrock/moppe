@@ -54,7 +54,7 @@ namespace {
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
     game::ForestPlan forest = game::plan_global_forest (
-      surface, readings, recipe.seed ().value ^ 0xa34c91e5U);
+      surface, readings, water, recipe.seed ().value ^ 0xa34c91e5U);
     return std::make_unique<game::GeneratedWorld> (params,
                                                    recipe,
                                                    std::move (surface),

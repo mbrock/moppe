@@ -91,7 +91,7 @@ int main (int argc, char** argv) {
       game::analyze_surface (surface, recipe, hydrology, trails.use);
     const std::uint32_t forest_seed = seed ^ 0xa34c91e5U;
     game::ForestPlan forest =
-      game::plan_global_forest (surface, readings, forest_seed);
+      game::plan_global_forest (surface, readings, water, forest_seed);
     auto world = std::make_unique<game::GeneratedWorld> (game::WorldParams {},
                                                          recipe,
                                                          std::move (surface),

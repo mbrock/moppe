@@ -139,7 +139,7 @@ int main (int argc, char** argv) {
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
     game::ForestPlan forest =
-      game::plan_global_forest (surface, readings, seed ^ 0xa34c91e5U);
+      game::plan_global_forest (surface, readings, water, seed ^ 0xa34c91e5U);
     auto world = std::make_unique<game::GeneratedWorld> (game::WorldParams {},
                                                          recipe,
                                                          std::move (surface),

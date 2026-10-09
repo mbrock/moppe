@@ -2,6 +2,7 @@
 #define MOPPE_TESTS_SURFACE_FIXTURE_HH
 
 #include <moppe/map/surface.hh>
+#include <moppe/terrain/watercourse.hh>
 #include <moppe/terrain/waterline.hh>
 
 #include <cstdint>
@@ -85,6 +86,15 @@ namespace moppe::test {
     meters_t tree_line = 160.0f * u::m;
     std::uint32_t seed = 0xdecafbadU;
   };
+
+  // A water sheet with no water: every level is the ground's own.
+  inline terrain::WaterSheets dry_water (const map::SurfaceGeometry& surface) {
+    terrain::WaterSheets water (surface.domain ());
+    std::ranges::copy (
+      spatial::get<terrain::surface_elevation> (surface),
+      spatial::get<terrain::surface_elevation> (water).begin ());
+    return water;
+  }
 
   inline map::SurfaceReadings
   complete_readings (const map::SurfaceGeometry& surface,

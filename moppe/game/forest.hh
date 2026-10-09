@@ -18,6 +18,7 @@ namespace moppe::game {
     void rebuild (render::Renderer& renderer,
                   const map::SurfaceGeometry& surface,
                   const map::SurfaceReadings& readings,
+                  const terrain::WaterSheets& water,
                   std::uint32_t seed);
     void rebuild (render::Renderer& renderer, const ForestPlan& plan);
     void draw (render::Renderer& renderer) const;

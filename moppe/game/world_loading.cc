@@ -332,7 +332,7 @@ namespace moppe::game {
       state.report ("Planting the forests",
                     "Choosing the persistent trees across the landscape");
       ForestPlan forest = plan_global_forest (
-        surface, readings, recipe.seed ().value ^ 0xa34c91e5U);
+        surface, readings, water, recipe.seed ().value ^ 0xa34c91e5U);
 
       std::unique_ptr<GeneratedWorld> world =
         std::make_unique<GeneratedWorld> (job.params,

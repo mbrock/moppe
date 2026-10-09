@@ -15,7 +15,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 12;
+    constexpr std::uint32_t forest_plan_version = 13;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The
@@ -135,6 +135,38 @@ namespace moppe::game {
                                                      sample_position (x, z));
     }
 
+    // A tree needs dry roots: the trunk's foot and a ring about its root
+    // plate must all stand above the painted water. The ring keeps trunks
+    // off a bank so steep that their crowns would lean out over the stream.
+    bool roots_dry (const map::SurfaceGeometry& surface,
+                    const terrain::WaterSheets& water,
+                    meters_t x,
+                    meters_t z) {
+      constexpr float root_plate_m = 1.6f;
+      constexpr float wet_depth_m = 0.02f;
+      constexpr std::array<std::array<float, 2>, 7> probes { {
+        { 0.0f, 0.0f },
+        { 1.0f, 0.0f },
+        { 0.5f, 0.866f },
+        { -0.5f, 0.866f },
+        { -1.0f, 0.0f },
+        { -0.5f, -0.866f },
+        { 0.5f, -0.866f },
+      } };
+      for (const auto& [dx, dz] : probes) {
+        const meters_t px = x + root_plate_m * dx * u::m;
+        const meters_t pz = z + root_plate_m * dz * u::m;
+        const position_t where = sample_position (px, pz);
+        const float ground = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (surface, where));
+        const float level = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (water, where));
+        if (level - ground > wet_depth_m)
+          return false;
+      }
+      return true;
+    }
+
     position_t forest_position (meters_t x,
                                 terrain::SurfaceElevation elevation,
                                 meters_t z) {
@@ -187,6 +219,7 @@ namespace moppe::game {
 
   ForestPlan plan_global_forest (const map::SurfaceGeometry& surface,
                                  const map::SurfaceReadings& readings,
+                                 const terrain::WaterSheets& water,
                                  std::uint32_t seed,
                                  meters_t spacing) {
     if (spacing <= 0.0f * u::m)
@@ -249,7 +282,8 @@ namespace moppe::game {
         forest_proposal_scale_min, forest_proposal_scale_max, population_value);
       if ((cover < 0.06f * map::forest_cover[one] &&
            population_value <= 0.0f) ||
-          hash_lane (identity, 2) > population_value * proposal_scale)
+          hash_lane (identity, 2) > population_value * proposal_scale ||
+          !roots_dry (surface, water, x, z))
         continue;
       candidates.push_back ({ .x = x.numerical_value_in (u::m),
                               .z = z.numerical_value_in (u::m),

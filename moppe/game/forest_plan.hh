@@ -3,6 +3,7 @@
 
 #include <moppe/game/foliage_kind.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <cstdint>
 #include <optional>
@@ -36,10 +37,12 @@ namespace moppe::game {
   // Convert the continuous canopy field into a deterministic hard-core point
   // process. A uniform habitat-weighted proposal stream is priority-thinned
   // on the world torus, so revisiting an area preserves every identity and no
-  // planting grid exists to leak into the rendered population.
+  // planting grid exists to leak into the rendered population. No tree
+  // stands where the painted water covers its roots.
   [[nodiscard]] ForestPlan
   plan_global_forest (const map::SurfaceGeometry& surface,
                       const map::SurfaceReadings& readings,
+                      const terrain::WaterSheets& water,
                       std::uint32_t seed,
                       meters_t spacing = 5.0f * u::m);
 
