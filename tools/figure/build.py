@@ -99,25 +99,25 @@ SEGMENTS = {name: (head, tail) for name, _, head, tail, _ in BONES}
 # Palette, display-referred like the game's DisplayColor. Materials store
 # the linear equivalent; the exporter converts back.
 PALETTE = {
-    "jacket": (0.20, 0.38, 0.72),
-    "jacket_dark": (0.13, 0.25, 0.50),
+    "jacket": (0.20, 0.35, 0.60),
+    "jacket_dark": (0.13, 0.23, 0.42),
     "pants": (0.33, 0.28, 0.23),
     "boot": (0.45, 0.27, 0.14),
     "sole": (0.12, 0.10, 0.09),
-    "sock": (0.90, 0.86, 0.75),
+    "sock": (0.74, 0.70, 0.61),
     "cap": (0.76, 0.22, 0.14),
     "cap_dark": (0.60, 0.16, 0.10),
     "scarf": (0.90, 0.66, 0.20),
     "mitten": (0.86, 0.60, 0.18),
-    "skin": (0.92, 0.70, 0.56),
-    "nose": (0.92, 0.60, 0.50),
+    "skin": (0.86, 0.64, 0.50),
+    "nose": (0.86, 0.56, 0.46),
     "hair": (0.48, 0.30, 0.17),
     "eye": (0.06, 0.05, 0.05),
     "glint": (1.0, 1.0, 1.0),
     "pack": (0.40, 0.42, 0.25),
     "pack_dark": (0.30, 0.32, 0.19),
     "strap": (0.22, 0.17, 0.12),
-    "buckle": (0.75, 0.72, 0.65),
+    "buckle": (0.66, 0.63, 0.57),
     "bedroll": (0.72, 0.34, 0.15),
 }
 

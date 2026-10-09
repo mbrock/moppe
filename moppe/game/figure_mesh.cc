@@ -62,21 +62,21 @@ namespace moppe::game::figure {
       {0.72f, 0.34f, 0.15f}, // bedroll
       {0.45f, 0.27f, 0.14f}, // boot
       {0.6f, 0.16f, 0.1f}, // cap_dark
-      {0.75f, 0.72f, 0.65f}, // buckle
+      {0.66f, 0.63f, 0.57f}, // buckle
       {0.76f, 0.22f, 0.14f}, // cap
-      {0.13f, 0.25f, 0.5f}, // jacket_dark
-      {0.92f, 0.7f, 0.56f}, // skin
+      {0.13f, 0.23f, 0.42f}, // jacket_dark
+      {0.86f, 0.64f, 0.5f}, // skin
       {0.06f, 0.05f, 0.05f}, // eye
       {1.0f, 1.0f, 1.0f}, // glint
-      {0.2f, 0.38f, 0.72f}, // jacket
+      {0.2f, 0.35f, 0.6f}, // jacket
       {0.3f, 0.32f, 0.19f}, // pack_dark
       {0.86f, 0.6f, 0.18f}, // mitten
-      {0.92f, 0.6f, 0.5f}, // nose
+      {0.86f, 0.56f, 0.46f}, // nose
       {0.4f, 0.42f, 0.25f}, // pack
       {0.9f, 0.66f, 0.2f}, // scarf
       {0.22f, 0.17f, 0.12f}, // strap
       {0.33f, 0.28f, 0.23f}, // pants
-      {0.9f, 0.86f, 0.75f}, // sock
+      {0.74f, 0.7f, 0.61f}, // sock
       {0.12f, 0.1f, 0.09f}, // sole
     };
 

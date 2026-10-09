@@ -690,8 +690,9 @@
                                        (byte-of packed (uint 8.0))
                                        (byte-of packed (uint 16.0))))
                            (byte-of packed (uint 24.0))))
-    (set-output shading (vec4 (byte-of flags (uint 0.0))
-                              (byte-of flags (uint 8.0))
+    ;; Lit and fogged are switches, 0 or 1 in their bytes, not fractions.
+    (set-output shading (vec4 (min (* 255.0 (byte-of flags (uint 0.0))) 1.0)
+                              (min (* 255.0 (byte-of flags (uint 8.0))) 1.0)
                               flutter 0.0))
     (set-output here current)
     (set-output then (* previous-view-proj (vec4 before 1.0)))))
@@ -712,7 +713,9 @@
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (picture :texture-2d :binding 0)
-                 (linear-repeat :sampler :binding 1)))
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (linear-repeat :sampler :binding 1)
+                 (shadow-compare :sampler :binding 3)))
   (let* ((base (* tint (sample picture linear-repeat uv)))
          (foliage (swizzle shading :z))
          ;; Translucent foliage becomes a stipple of opaque fragments, so
@@ -725,17 +728,41 @@
          (sun (swizzle sun-direction :xyz))
          (camera (swizzle camera-position :xyz))
          (eye (normalize (- camera world)))
-         (lambert (clamp (/ (+ (dot n sun) 0.1) 1.1) 0.0 1.0))
+         (lambert (clamp (dot n sun) 0.0 1.0))
          (half-way (normalize (+ sun eye)))
          (shine (* (smoothstep 0.82 0.98 (swizzle base :w)) (- 1.0 foliage)))
          (rim (* (expt (- 1.0 (max (dot n eye) 0.0)) 3.0)
                  (+ 0.35 (* 0.65 (max (swizzle n :y) 0.0)))))
          (albedo (swizzle base :xyz))
-         (lit (+ (* albedo (+ (hemisphere-light (swizzle ambient :xyz) n)
-                              (* (swizzle sun-diffuse :xyz) lambert)))
+         ;; The rider, the bike, and the props stand in the same sun as the
+         ;; ground: under a crown or a hill's shadow they lose the direct
+         ;; light and keep the bluer sky, as the terrain does.
+         (at (sun-map-coordinate sun-view world))
+         (texel (swizzle shadow :y))
+         (margin (/ 0.15 1240.0))
+         (taps (* 0.25 (+ (shadow-tap shadow-map shadow-compare at -0.5 -0.5
+                                      texel margin)
+                          (shadow-tap shadow-map shadow-compare at 0.5 -0.5
+                                      texel margin)
+                          (shadow-tap shadow-map shadow-compare at -0.5 0.5
+                                      texel margin)
+                          (shadow-tap shadow-map shadow-compare at 0.5 0.5
+                                      texel margin))))
+         (direct (mix 1.0 taps (* (swizzle shadow :x) (inside-sun-map at))))
+         (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) direct))
+         (sun-light (* (swizzle sun-diffuse :xyz) direct))
+         ;; Sunlit ground throws warm light up into the lower faces, so a
+         ;; figure's underside is not the sky's flat blue.
+         (bounce (* (swizzle sun-diffuse :xyz) (vec3 0.20 0.17 0.11)
+                    (clamp (- 0.45 (* 0.55 (swizzle n :y))) 0.0 1.0)
+                    (max (swizzle sun :y) 0.0)))
+         (lit (+ (* albedo (+ (* (hemisphere-light (swizzle ambient :xyz) n)
+                                 fill)
+                              (* sun-light lambert)
+                              bounce))
                  (* (mix albedo (vec3 1.0 1.0 1.0) 0.2)
-                    (* (swizzle sun-specular :xyz)
-                       (* 0.22 (* (expt (max (dot n half-way) 0.0) 64.0)
+                    (* (swizzle sun-specular :xyz) direct
+                       (* 0.10 (* (expt (max (dot n half-way) 0.0) 48.0)
                                   shine))))
                  (* albedo (* (vec3 0.025 0.04 0.065)
                               (* rim (- 1.0 (* 0.75 foliage)))))))

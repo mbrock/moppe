@@ -2045,8 +2045,7 @@ namespace moppe::nhal {
             m_device->set_buffer (1, advanced (streamed, offset));
           m_device->set_buffer (2, block);
           m_device->set_texture (0, texture_or_white (run.texture));
-          if (program)
-            m_device->set_texture (8, m_shadow_map);
+          m_device->set_texture (8, m_shadow_map);
           m_device->draw (run.count, 1, 0);
         }
       }

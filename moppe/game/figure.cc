@@ -117,7 +117,13 @@ namespace moppe::game::figure {
     static thread_local std::vector<Vec3> points, normals;
     skin (k, points, normals);
 
+    // The figure sets its own shading rather than inheriting whatever the
+    // list last drew: after the unlit blob shadow it would otherwise come
+    // out as flat albedo, untouched by the sun.
     dl.set_texture (nullptr);
+    dl.state (render::DrawState ());
+    dl.lit (true);
+    dl.fogged (true);
     dl.begin (render::Prim::Triangles);
     for (const Triangle& t : triangles) {
       dl.color (colours[t.colour]);

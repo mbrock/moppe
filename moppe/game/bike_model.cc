@@ -11,24 +11,24 @@ namespace moppe::game::bike_model {
     using model_mesh::Vertex;
 
     constexpr Paint paints[] = {
-      {{0.5f, 0.52f, 0.55f}, false}, // engine_light
+      {{0.44f, 0.46f, 0.49f}, false}, // engine_light
       {{0.2f, 0.21f, 0.23f}, false}, // engine
       {{0.24f, 0.25f, 0.28f}, false}, // frame
       {{0.08f, 0.08f, 0.1f}, false}, // black
-      {{0.66f, 0.68f, 0.72f}, false}, // silver
-      {{0.15f, 0.5f, 1.0f}, false}, // blue
+      {{0.5f, 0.52f, 0.56f}, false}, // silver
+      {{0.12f, 0.4f, 0.78f}, false}, // blue
       {{0.1f, 0.1f, 0.14f}, false}, // seat
-      {{0.92f, 0.93f, 0.95f}, false}, // white
-      {{0.8f, 0.82f, 0.86f}, false}, // chrome
+      {{0.7f, 0.71f, 0.73f}, false}, // white
+      {{0.56f, 0.58f, 0.62f}, false}, // chrome
       {{1.0f, 0.22f, 0.12f}, true}, // tail_light
-      {{0.82f, 0.62f, 0.24f}, false}, // gold
+      {{0.7f, 0.52f, 0.21f}, false}, // gold
       {{0.55f, 0.57f, 0.62f}, false}, // nozzle
       {{0.12f, 0.12f, 0.14f}, false}, // nozzle_inner
       {{0.88f, 0.28f, 0.1f}, false}, // spring
       {{1.0f, 0.95f, 0.7f}, true}, // lens
       {{0.42f, 0.44f, 0.48f}, false}, // hub
       {{0.06f, 0.06f, 0.07f}, false}, // tire
-      {{0.72f, 0.74f, 0.78f}, false}, // rim
+      {{0.52f, 0.54f, 0.58f}, false}, // rim
     };
 
     constexpr Vertex chassis_vertices[] = {
