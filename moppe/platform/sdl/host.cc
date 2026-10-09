@@ -31,9 +31,18 @@ namespace {
   std::atomic<bool> quitting = false;
   SDL_Window* active_window = nullptr;
 
-  // The game's keys by what the key types, so letters follow the layout.
+  // The game's keys. The left hand's cluster goes by where the QWERTY
+  // W, A, S, D, E, and F keys sit, so it stays under the hand on any
+  // layout; the rest go by what the key types, so their letters follow
+  // the layout.
   Key map_key (const SDL_KeyboardEvent& key) {
     switch (key.scancode) {
+    case SDL_SCANCODE_W: return Key::W;
+    case SDL_SCANCODE_A: return Key::A;
+    case SDL_SCANCODE_S: return Key::S;
+    case SDL_SCANCODE_D: return Key::D;
+    case SDL_SCANCODE_E: return Key::E;
+    case SDL_SCANCODE_F: return Key::Mount;
     case SDL_SCANCODE_LEFT: return Key::Left;
     case SDL_SCANCODE_RIGHT: return Key::Right;
     case SDL_SCANCODE_UP: return Key::Up;
@@ -46,12 +55,6 @@ namespace {
     default: break;
     }
     switch (key.key) {
-    case SDLK_W: return Key::W;
-    case SDLK_A: return Key::A;
-    case SDLK_S: return Key::S;
-    case SDLK_D: return Key::D;
-    case SDLK_E: return Key::E;
-    case SDLK_F: return Key::Mount;
     case SDLK_P: return Key::Screenshot;
     case SDLK_G: return Key::G;
     case SDLK_H: return Key::H;
@@ -67,17 +70,6 @@ namespace {
     case SDLK_5: return Key::Five;
     case SDLK_6: return Key::Six;
     case SDLK_7: return Key::Seven;
-    default: return Key::Unknown;
-    }
-  }
-
-  // Where the QWERTY W, A, S, and D keys sit, whatever they type.
-  Key physical_key (SDL_Scancode scancode) {
-    switch (scancode) {
-    case SDL_SCANCODE_W: return Key::PhysicalW;
-    case SDL_SCANCODE_A: return Key::PhysicalA;
-    case SDL_SCANCODE_S: return Key::PhysicalS;
-    case SDL_SCANCODE_D: return Key::PhysicalD;
     default: return Key::Unknown;
     }
   }
@@ -202,9 +194,13 @@ namespace moppe::platform {
               << device->surface_height () << " pixels at " << scale
               << " per point" << std::endl;
     nhal::Device& surface_device = *device;
-    std::unique_ptr<render::Renderer> renderer = nhal::create_renderer (
-      std::move (device), sdl::world_shaders (), scale);
-    game.setup (*renderer, renderer->width_pts (), renderer->height_pts ());
+    // The game keeps the renderer's textures and meshes until main returns,
+    // so the renderer outlives this function, even when an error leaves it;
+    // the process's end releases it.
+    render::Renderer& renderer =
+      *nhal::create_renderer (std::move (device), sdl::world_shaders (), scale)
+         .release ();
+    game.setup (renderer, renderer.width_pts (), renderer.height_pts ());
 
     Pad pad (game);
     Held held;
@@ -238,7 +234,7 @@ namespace moppe::platform {
           surface_device.resize_surface (
             std::uint32_t (std::lround (event.window.data1 * oversample)),
             std::uint32_t (std::lround (event.window.data2 * oversample)));
-          game.resize (renderer->width_pts (), renderer->height_pts ());
+          game.resize (renderer.width_pts (), renderer.height_pts ());
           break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:
           held.release (game, pointer_x, pointer_y);
@@ -248,9 +244,6 @@ namespace moppe::platform {
           const bool down = event.type == SDL_EVENT_KEY_DOWN;
           if (down && event.key.repeat)
             break;
-          if (const Key physical = physical_key (event.key.scancode);
-              physical != Key::Unknown)
-            game.key (physical, down);
           const Key k = map_key (event.key);
           if (k == Key::Unknown)
             break;
@@ -326,7 +319,7 @@ namespace moppe::platform {
       shortest_step = std::min (shortest_step, dt);
       longest_step = std::max (longest_step, dt);
       game.tick (float (std::clamp (dt, 0.0, 0.05)));
-      game.render (*renderer);
+      game.render (renderer);
       sdl::frame_rendered ();
       if (report_fps) {
         slowest = std::max (slowest, wall);
@@ -346,11 +339,7 @@ namespace moppe::platform {
         }
       }
     }
-    // The game keeps the renderer's textures and meshes until main returns,
-    // so the renderer outlives this function, as on the Mac; the GPU
-    // finishes first, and the process's end releases the rest.
     surface_device.wait_idle ();
-    (void)renderer.release ();
     active_window = nullptr;
     return 0;
   }
