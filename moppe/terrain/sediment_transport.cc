@@ -1,4 +1,5 @@
 #include <moppe/correct_math.hh>
+#include <moppe/parallel.hh>
 #include <moppe/terrain/sediment_transport.hh>
 
 #include <algorithm>
@@ -51,21 +52,25 @@ namespace moppe::terrain {
         2.0 * domain.spacing_x ().numerical_value_in (mp_units::si::metre);
       const double run_z =
         2.0 * domain.spacing_z ().numerical_value_in (mp_units::si::metre);
-      for (std::size_t row = 0; row < height; ++row) {
-        const std::size_t prior_row = row == 0 ? height - 1 : row - 1;
-        const std::size_t next_row = row + 1 == height ? 0 : row + 1;
-        for (std::size_t column = 0; column < width; ++column) {
-          const std::size_t prior_column = column == 0 ? width - 1 : column - 1;
-          const std::size_t next_column = column + 1 == width ? 0 : column + 1;
-          const std::size_t cell = row * width + column;
-          gradient_x[cell] = (height_m[row * width + next_column] -
-                              height_m[row * width + prior_column]) /
-                             run_x;
-          gradient_z[cell] = (height_m[next_row * width + column] -
-                              height_m[prior_row * width + column]) /
-                             run_z;
+      parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
+        for (std::size_t row = first; row < last; ++row) {
+          const std::size_t prior_row = row == 0 ? height - 1 : row - 1;
+          const std::size_t next_row = row + 1 == height ? 0 : row + 1;
+          for (std::size_t column = 0; column < width; ++column) {
+            const std::size_t prior_column =
+              column == 0 ? width - 1 : column - 1;
+            const std::size_t next_column =
+              column + 1 == width ? 0 : column + 1;
+            const std::size_t cell = row * width + column;
+            gradient_x[cell] = (height_m[row * width + next_column] -
+                                height_m[row * width + prior_column]) /
+                               run_x;
+            gradient_z[cell] = (height_m[next_row * width + column] -
+                                height_m[prior_row * width + column]) /
+                               run_z;
+          }
         }
-      }
+      });
     }
 
     double reconstructed_face_gradient (std::span<const double> height_m,
@@ -890,33 +895,40 @@ namespace moppe::terrain {
     }
     reconstruct_centered_gradients (domain, height_m, gradient_x, gradient_z);
 
-    bool nonlinear_flux_active = false;
     const std::size_t width = domain.width ();
     const std::size_t height = domain.height ();
-    for (std::size_t row = 0; row < height; ++row) {
-      const std::size_t next_row = row + 1 == height ? 0 : row + 1;
-      for (std::size_t column = 0; column < width; ++column) {
-        const std::size_t next_column = column + 1 == width ? 0 : column + 1;
-        const std::size_t cell = row * width + column;
-        if (fixed[cell])
-          continue;
-        const auto inspect_face =
-          [&] (std::size_t other, HillslopeFaceAxis axis, meters_t run) {
+    std::vector<std::uint8_t> row_nonlinear (height, 0);
+    parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
+      for (std::size_t row = first; row < last; ++row) {
+        const std::size_t next_row = row + 1 == height ? 0 : row + 1;
+        for (std::size_t column = 0; column < width; ++column) {
+          const std::size_t next_column = column + 1 == width ? 0 : column + 1;
+          const std::size_t cell = row * width + column;
+          if (fixed[cell])
+            continue;
+          const auto inspect_face = [&] (std::size_t other,
+                                         HillslopeFaceAxis axis,
+                                         meters_t run) {
             if (fixed[other])
               return;
             const double gradient = reconstructed_face_gradient (
               height_m, gradient_x, gradient_z, cell, other, axis, run);
-            nonlinear_flux_active |=
-              hillslope_diffusivity_multiplier (
-                gradient, critical_gradient, maximum_diffusivity_multiplier) >
-              1.0;
+            if (hillslope_diffusivity_multiplier (
+                  gradient, critical_gradient, maximum_diffusivity_multiplier) >
+                1.0)
+              row_nonlinear[row] = 1;
           };
-        inspect_face (
-          row * width + next_column, HillslopeFaceAxis::x, domain.spacing_x ());
-        inspect_face (
-          next_row * width + column, HillslopeFaceAxis::z, domain.spacing_z ());
+          inspect_face (row * width + next_column,
+                        HillslopeFaceAxis::x,
+                        domain.spacing_x ());
+          inspect_face (next_row * width + column,
+                        HillslopeFaceAxis::z,
+                        domain.spacing_z ());
+        }
       }
-    }
+    });
+    const bool nonlinear_flux_active = std::ranges::any_of (
+      row_nonlinear, [] (std::uint8_t row) { return row != 0; });
     const double stability_multiplier =
       nonlinear_flux_active
         ? maximum_diffusivity_multiplier.numerical_value_in (mp_units::one)
@@ -928,78 +940,109 @@ namespace moppe::terrain {
       return result;
 
     const julian_years_f64_t sweep_duration = duration / sweep_count;
-    std::vector<double> net_m3 (count);
-    std::vector<double> outgoing_m3 (count);
-    std::vector<double> incoming_m3 (count);
+    // Each face's flux, positive from a cell to its neighbour in +x or +z,
+    // then each cell's four faces gathered in one order: every pass writes
+    // only its own cells or faces, and the totals add by row, then rows in
+    // order, so the sweep computes the same bits on any number of threads.
+    std::vector<double> flux_x (count);
+    std::vector<double> flux_z (count);
+    std::vector<double> row_bedrock_m3 (height);
+    std::vector<double> row_residual_m3 (height);
+    std::vector<double> row_transferred_m3 (height);
+    const auto face_flux = [&] (std::size_t first,
+                                std::size_t second,
+                                HillslopeFaceAxis axis,
+                                meters_t face_width,
+                                meters_t run) {
+      if (fixed[first] || fixed[second])
+        return 0.0;
+      const double difference_m = height_m[first] - height_m[second];
+      if (difference_m == 0.0)
+        return 0.0;
+      const double gradient = reconstructed_face_gradient (
+        height_m, gradient_x, gradient_z, first, second, axis, run);
+      const double local_multiplier = hillslope_diffusivity_multiplier (
+        gradient, critical_gradient, maximum_diffusivity_multiplier);
+      const double conductance_m2 =
+        (local_multiplier * diffusivity * sweep_duration * face_width / run)
+          .numerical_value_in (mp_units::si::metre * mp_units::si::metre);
+      return difference_m * conductance_m2;
+    };
 
     double transferred_m3 = 0.0;
     double bedrock_detached_m3 = 0.0;
     double residual_m3 = 0.0;
     for (int sweep = 0; sweep < sweep_count; ++sweep) {
-      std::fill (net_m3.begin (), net_m3.end (), 0.0);
-      std::fill (outgoing_m3.begin (), outgoing_m3.end (), 0.0);
-      std::fill (incoming_m3.begin (), incoming_m3.end (), 0.0);
       reconstruct_centered_gradients (domain, height_m, gradient_x, gradient_z);
-
-      const auto post_face = [&] (std::size_t first,
-                                  std::size_t second,
-                                  HillslopeFaceAxis axis,
-                                  meters_t face_width,
-                                  meters_t run) {
-        if (fixed[first] || fixed[second])
-          return;
-        const double difference_m = height_m[first] - height_m[second];
-        if (difference_m == 0.0)
-          return;
-        const double gradient = reconstructed_face_gradient (
-          height_m, gradient_x, gradient_z, first, second, axis, run);
-        const double local_multiplier = hillslope_diffusivity_multiplier (
-          gradient, critical_gradient, maximum_diffusivity_multiplier);
-        const double conductance_m2 =
-          (local_multiplier * diffusivity * sweep_duration * face_width / run)
-            .numerical_value_in (mp_units::si::metre * mp_units::si::metre);
-        const double volume_m3 = std::abs (difference_m) * conductance_m2;
-        const std::size_t source = difference_m > 0.0 ? first : second;
-        const std::size_t destination = difference_m > 0.0 ? second : first;
-        net_m3[source] -= volume_m3;
-        net_m3[destination] += volume_m3;
-        outgoing_m3[source] += volume_m3;
-        incoming_m3[destination] += volume_m3;
-      };
-
-      for (std::size_t row = 0; row < height; ++row) {
-        const std::size_t next_row = row + 1 == height ? 0 : row + 1;
-        for (std::size_t column = 0; column < width; ++column) {
-          const std::size_t next_column = column + 1 == width ? 0 : column + 1;
-          const std::size_t cell = row * width + column;
-          post_face (cell,
-                     row * width + next_column,
-                     HillslopeFaceAxis::x,
-                     domain.spacing_z (),
-                     domain.spacing_x ());
-          post_face (cell,
-                     next_row * width + column,
-                     HillslopeFaceAxis::z,
-                     domain.spacing_x (),
-                     domain.spacing_z ());
+      parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
+        for (std::size_t row = first; row < last; ++row) {
+          const std::size_t next_row = row + 1 == height ? 0 : row + 1;
+          for (std::size_t column = 0; column < width; ++column) {
+            const std::size_t next_column =
+              column + 1 == width ? 0 : column + 1;
+            const std::size_t cell = row * width + column;
+            flux_x[cell] = face_flux (cell,
+                                      row * width + next_column,
+                                      HillslopeFaceAxis::x,
+                                      domain.spacing_z (),
+                                      domain.spacing_x ());
+            flux_z[cell] = face_flux (cell,
+                                      next_row * width + column,
+                                      HillslopeFaceAxis::z,
+                                      domain.spacing_x (),
+                                      domain.spacing_z ());
+          }
         }
-      }
+      });
 
-      for (std::size_t cell = 0; cell < count; ++cell) {
-        const double cover_removed =
-          std::min (sediment_m3[cell], outgoing_m3[cell]);
-        bedrock_detached_m3 += outgoing_m3[cell] - cover_removed;
-        sediment_m3[cell] =
-          std::max (0.0, sediment_m3[cell] - cover_removed + incoming_m3[cell]);
-        height_m[cell] += net_m3[cell] / cell_area_m2;
-        result.eroded_thickness[cell] +=
-          static_cast<float> (outgoing_m3[cell] / cell_area_m2) *
-          sediment_thickness[mp_units::si::metre];
-        result.deposited_thickness[cell] +=
-          static_cast<float> (incoming_m3[cell] / cell_area_m2) *
-          sediment_thickness[mp_units::si::metre];
-        residual_m3 += net_m3[cell];
-        transferred_m3 += outgoing_m3[cell];
+      parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
+        for (std::size_t row = first; row < last; ++row) {
+          const std::size_t prior_row = row == 0 ? height - 1 : row - 1;
+          double bedrock_m3 = 0.0;
+          double row_net_m3 = 0.0;
+          double moved_m3 = 0.0;
+          for (std::size_t column = 0; column < width; ++column) {
+            const std::size_t prior_column =
+              column == 0 ? width - 1 : column - 1;
+            const std::size_t cell = row * width + column;
+            // Positive flux on a face leaves its lower-indexed cell: the
+            // left and upper faces bring it in, this cell's own take it out.
+            double net = 0.0;
+            double incoming = 0.0;
+            double outgoing = 0.0;
+            for (const double into : { flux_x[row * width + prior_column],
+                                       flux_z[prior_row * width + column],
+                                       -flux_x[cell],
+                                       -flux_z[cell] }) {
+              net += into;
+              if (into > 0.0)
+                incoming += into;
+              else
+                outgoing -= into;
+            }
+            const double cover_removed = std::min (sediment_m3[cell], outgoing);
+            bedrock_m3 += outgoing - cover_removed;
+            sediment_m3[cell] =
+              std::max (0.0, sediment_m3[cell] - cover_removed + incoming);
+            height_m[cell] += net / cell_area_m2;
+            result.eroded_thickness[cell] +=
+              static_cast<float> (outgoing / cell_area_m2) *
+              sediment_thickness[mp_units::si::metre];
+            result.deposited_thickness[cell] +=
+              static_cast<float> (incoming / cell_area_m2) *
+              sediment_thickness[mp_units::si::metre];
+            row_net_m3 += net;
+            moved_m3 += outgoing;
+          }
+          row_bedrock_m3[row] = bedrock_m3;
+          row_residual_m3[row] = row_net_m3;
+          row_transferred_m3[row] = moved_m3;
+        }
+      });
+      for (std::size_t row = 0; row < height; ++row) {
+        bedrock_detached_m3 += row_bedrock_m3[row];
+        residual_m3 += row_residual_m3[row];
+        transferred_m3 += row_transferred_m3[row];
       }
     }
 

@@ -1,4 +1,5 @@
 #include <moppe/correct_math.hh>
+#include <moppe/parallel.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
@@ -449,30 +450,38 @@ namespace moppe::terrain {
     std::vector<float> slope (count, 0.0f);
     {
       MOPPE_PROFILE_ZONE ("wet_drainage.choose_receivers");
-      for (std::size_t y = 0; y < height; ++y)
-        for (std::size_t x = 0; x < width; ++x) {
-          const std::size_t cell = index (x, y);
-          receiver[cell] = flood.spill_receiver[cell];
-          float steepest = 0.0f;
-          for (const Offset offset : neighbors) {
-            const int raw_x = static_cast<int> (x) + offset.x;
-            const int raw_y = static_cast<int> (y) + offset.y;
-            const std::size_t nx = wrapped (raw_x, width);
-            const std::size_t ny = wrapped (raw_y, height);
-            const std::size_t next = index (nx, ny);
-            const float distance = cr::hypot (
-              offset.x * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
-              offset.y * (grid.spacing_z ()).numerical_value_in (moppe::u::m));
-            const float candidate = (surface_elevation_value (surface[cell]) -
-                                     surface_elevation_value (surface[next])) /
-                                    distance;
-            if (candidate > steepest) {
-              steepest = candidate;
-              receiver[cell] = static_cast<std::uint32_t> (next);
+      std::array<float, neighbors.size ()> distance;
+      for (std::size_t n = 0; n < neighbors.size (); ++n)
+        distance[n] = cr::hypot (
+          neighbors[n].x * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+          neighbors[n].y *
+            (grid.spacing_z ()).numerical_value_in (moppe::u::m));
+      // Each cell reads its neighbours and writes only itself, so the rows
+      // divide among threads without changing a bit.
+      parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
+        for (std::size_t y = first; y < last; ++y)
+          for (std::size_t x = 0; x < width; ++x) {
+            const std::size_t cell = index (x, y);
+            receiver[cell] = flood.spill_receiver[cell];
+            float steepest = 0.0f;
+            for (std::size_t n = 0; n < neighbors.size (); ++n) {
+              const int raw_x = static_cast<int> (x) + neighbors[n].x;
+              const int raw_y = static_cast<int> (y) + neighbors[n].y;
+              const std::size_t nx = wrapped (raw_x, width);
+              const std::size_t ny = wrapped (raw_y, height);
+              const std::size_t next = index (nx, ny);
+              const float candidate =
+                (surface_elevation_value (surface[cell]) -
+                 surface_elevation_value (surface[next])) /
+                distance[n];
+              if (candidate > steepest) {
+                steepest = candidate;
+                receiver[cell] = static_cast<std::uint32_t> (next);
+              }
             }
+            slope[cell] = steepest;
           }
-          slope[cell] = steepest;
-        }
+      });
     }
 
     // A flat inland body has one route-proven spill. Replace any incidental

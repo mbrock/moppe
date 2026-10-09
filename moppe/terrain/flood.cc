@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <queue>
@@ -37,12 +38,62 @@ namespace moppe::terrain {
       std::uint32_t index;
     };
 
-    struct HigherCell {
-      bool operator() (const Cell& left, const Cell& right) const noexcept {
-        if (left.level != right.level)
-          return left.level > right.level;
-        return left.index > right.index;
+    // A radix heap over cells by level: a priority queue for keys that never
+    // fall below the last one taken, which a priority-flood's are. Levels
+    // map to unsigned keys in the same order; bucket b holds the cells whose
+    // key first differs from the last taken in bit b - 1, so taking the
+    // least is a scan of 33 buckets and a redistribution of one. Cells at
+    // the current level leave in the order they came, so the flood is
+    // deterministic and the first reached is the first flooded.
+    class LevelHeap {
+    public:
+      bool empty () const {
+        return m_size == 0;
       }
+
+      void push (Cell cell) {
+        const std::uint32_t key = level_key (cell.level);
+        m_buckets[bucket_of (key)].push_back ({ key, cell });
+        ++m_size;
+      }
+
+      Cell pop () {
+        if (m_head == m_buckets[0].size ()) {
+          m_buckets[0].clear ();
+          m_head = 0;
+          std::size_t bucket = 1;
+          while (m_buckets[bucket].empty ())
+            ++bucket;
+          std::vector<Entry>& spill = m_buckets[bucket];
+          m_last = std::ranges::min_element (spill, {}, &Entry::key)->key;
+          for (const Entry& entry : spill)
+            m_buckets[bucket_of (entry.key)].push_back (entry);
+          spill.clear ();
+        }
+        --m_size;
+        return m_buckets[0][m_head++].cell;
+      }
+
+    private:
+      struct Entry {
+        std::uint32_t key;
+        Cell cell;
+      };
+
+      static std::uint32_t level_key (float level) {
+        const std::uint32_t bits = std::bit_cast<std::uint32_t> (level);
+        return bits & 0x80000000u ? ~bits : bits | 0x80000000u;
+      }
+
+      std::size_t bucket_of (std::uint32_t key) const {
+        return static_cast<std::size_t> (std::bit_width (key ^ m_last));
+      }
+
+      std::array<std::vector<Entry>, 33> m_buckets;
+      std::uint32_t m_last = 0;
+      std::size_t m_size = 0;
+      // The first cell of bucket 0 not yet taken.
+      std::size_t m_head = 0;
     };
   }
 
@@ -65,7 +116,7 @@ namespace moppe::terrain {
     std::vector<float> depth (count, 0.0f);
     std::vector<CellIndex> receiver (count, CellIndex { 0 });
     std::vector<std::uint8_t> visited (count, 0);
-    std::priority_queue<Cell, std::vector<Cell>, HigherCell> frontier;
+    LevelHeap frontier;
 
     // A torus has no exterior boundary that identifies the ocean. Treat the
     // largest connected below-sea component as the global ocean; enclosed
@@ -166,10 +217,21 @@ namespace moppe::terrain {
     }
 
     {
+      // Barnes, Lehman, and Mulla's improved priority-flood (2014): a cell
+      // the water rises over -- a pit, a flat, the sea -- floods at its
+      // neighbour's level, which is already the lowest in the frontier, so
+      // it waits in a plain queue drained before the heap. The levels are
+      // the classic algorithm's.
       MOPPE_PROFILE_ZONE ("flood.priority_flood");
-      while (!frontier.empty ()) {
-        const Cell current = frontier.top ();
-        frontier.pop ();
+      std::queue<Cell> pit;
+      while (!pit.empty () || !frontier.empty ()) {
+        Cell current;
+        if (!pit.empty ()) {
+          current = pit.front ();
+          pit.pop ();
+        } else {
+          current = frontier.pop ();
+        }
         const std::size_t x = current.index % width;
         const std::size_t y = current.index / width;
         for (const FloodOffset offset : flood_neighbors) {
@@ -182,10 +244,15 @@ namespace moppe::terrain {
           if (visited[next])
             continue;
           visited[next] = 1;
-          water[next] =
-            std::max (elevation_at (grid, elevations, nx, ny), current.level);
           receiver[next] = current.index;
-          frontier.push ({ water[next], next });
+          const float ground = elevation_at (grid, elevations, nx, ny);
+          if (ground <= current.level) {
+            water[next] = current.level;
+            pit.push ({ current.level, next });
+          } else {
+            water[next] = ground;
+            frontier.push ({ ground, next });
+          }
         }
       }
     }
@@ -268,6 +335,7 @@ namespace moppe::terrain {
                        .inradius = 0.0f * mp_units::si::metre,
                        .channel_like = false };
       double surface_sum_m = 0.0;
+      float lowest_level = std::numeric_limits<float>::infinity ();
       std::vector<std::uint32_t> members;
       body_at_cell[origin] = id;
       frontier.push (origin);
@@ -284,6 +352,8 @@ namespace moppe::terrain {
         body.volume += depth_m * cell_area;
         surface_sum_m +=
           static_cast<double> (surface_elevation_value (level[cell]));
+        lowest_level =
+          std::min (lowest_level, surface_elevation_value (level[cell]));
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
@@ -312,10 +382,13 @@ namespace moppe::terrain {
         // A priority-flood path can leave a connected flat, cross a dry
         // saddle, and re-enter the same flat.  Use its final departure as the
         // body's spill; rebuilding the body as one drainage tree at an earlier
-        // departure would point that tree back into itself.
+        // departure would point that tree back into itself. A cell's level
+        // is never below its spill receiver's, so once the path is below
+        // the body's lowest level it cannot come back, and the walk ends.
         std::uint32_t cell = members.front ();
         std::size_t steps = 0;
-        while (flood.spill_receiver[cell] != cell && steps < count) {
+        while (flood.spill_receiver[cell] != cell && steps < count &&
+               !(surface_elevation_value (level[cell]) < lowest_level)) {
           const std::uint32_t next = flood.spill_receiver[cell];
           if (body_at_cell[cell] == id && body_at_cell[next] != id) {
             body.outlet_cell = cell;
@@ -354,10 +427,23 @@ namespace moppe::terrain {
       const float cell_step_m = std::min (
         (flood.domain ().spacing_x ()).numerical_value_in (moppe::u::m),
         (flood.domain ().spacing_z ()).numerical_value_in (moppe::u::m));
+      // Only wet cells' distances are read, and the nearest dry cell to a
+      // wet one is a shore cell, so the sweep starts at the shore and
+      // spreads through water alone.
       std::vector<std::int32_t> shore_distance (count, -1);
       std::queue<std::uint32_t> sweep;
+      const auto neighbour = [&] (std::uint32_t cell, FloodOffset offset) {
+        const std::size_t nx =
+          flood_wrapped (static_cast<int> (cell % width) + offset.x, width);
+        const std::size_t ny =
+          flood_wrapped (static_cast<int> (cell / width) + offset.y, height);
+        return static_cast<std::uint32_t> (ny * width + nx);
+      };
       for (std::uint32_t cell = 0; cell < count; ++cell)
-        if (body_at_cell[cell] == LakeCensus::dry) {
+        if (body_at_cell[cell] == LakeCensus::dry &&
+            std::ranges::any_of (flood_neighbors, [&] (FloodOffset offset) {
+              return body_at_cell[neighbour (cell, offset)] != LakeCensus::dry;
+            })) {
           shore_distance[cell] = 0;
           sweep.push (cell);
         }
@@ -373,7 +459,8 @@ namespace moppe::terrain {
           const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
-          if (shore_distance[next] < 0) {
+          if (shore_distance[next] < 0 &&
+              body_at_cell[next] != LakeCensus::dry) {
             shore_distance[next] = shore_distance[cell] + 1;
             sweep.push (next);
           }

@@ -122,6 +122,36 @@ The full transform and render workload contend for the same GPU. Metal was
 this animated-loading run, without a meaningful frame-time improvement. That
 is why the prototype is opt-in rather than the production default.
 
+## Deterministic threads and algebra (2026-10)
+
+With worlds bit-identical across platforms (docs/determinism.md), every
+optimization had to keep them so on any thread count. Per stage, 1025
+samples, 40 play-profile steps, M2 Pro (10 threads), seconds over the whole
+evolution:
+
+| Stage | Before | After | Change |
+|---|---:|---:|---|
+| D-infinity route selection | 6.17 | 1.04 | threads; one `hypot` per facet, angles only for the winner |
+| Accumulation | 3.01 | 2.73 | the routes' unit vectors instead of `cos`/`sin` of their angles |
+| Priority-flood | 4.23 | 2.34 | Barnes's pit queue and a radix heap (levels only rise) |
+| Lake census | 1.74 | 0.69 | spill walks end below the body; shore sweep through water only |
+| Wet routing | 1.95 | 0.33 | eight neighbour distances, not eight per cell; threads |
+| Hillslope | 1.97 | 0.52 | face fluxes, then each cell gathers its four; threads |
+| Incision, sediment | 4.11 | 4.08 | unchanged: topological walks |
+
+The whole 1025 land went from 25.2 s to 13.5 s, the default 2048 land from
+113 s to 56 s on the M2 and from 198 s to 95 s on the i7, with the same
+sha256 on both. The census and wet-routing changes are exact; the rest
+changed bits once, as `LAND_VERSION` 2.
+
+The topological walks -- accumulation, the incision solve, sediment routing
+-- are now most of what remains, each a loop over the drainage order whose
+order also sets its float sums. Running them level by level, every cell
+pulling from its donors in a fixed order, would let each level's cells run
+in parallel; that is the next candidate. The order itself matters for speed:
+Kahn's FIFO order and an order by longest-path level each cost as much in
+the walks' cache misses as the heap order costs to build.
+
 ## Remaining GPU candidates
 
 - Hillslope diffusion is a regular stencil and would be a good GPU kernel when

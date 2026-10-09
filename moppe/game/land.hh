@@ -19,7 +19,7 @@ namespace moppe::game {
   // The version counts changes to what land a recipe makes. Bump it with
   // the pinned hash in tests/game/land_test.cc whenever the geology,
   // erosion, or trail formation change their output.
-  inline constexpr int LAND_VERSION = 1;
+  inline constexpr int LAND_VERSION = 2;
 
   using Land = spatial::Bundle<terrain::TerrainDomain,
                                terrain::SurfaceElevation,

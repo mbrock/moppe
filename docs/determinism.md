@@ -62,13 +62,26 @@ field, which therefore holds on every platform. A change that alters the
 world on purpose updates the pinned hashes and bumps `CACHE_VERSION` in
 `moppe/game/world_cache.cc`.
 
+## Threads
+
+Generation runs on every hardware thread and computes the same bits on any
+number of them. `moppe::parallel_for` (`moppe/parallel.hh`) hands each
+thread a contiguous range, and the rule is that a body writes only its own
+range's elements: a cell's route, a face's flux, a row's partial sum.
+Totals are added by row and then the rows in order, never per thread, since
+float addition does not associate. `MOPPE_THREADS=N` overrides the count;
+the default 2048 land hashes the same with 10 threads on the M2 and 16 on
+the i7.
+
 ## Cost
 
-About 15% of generation time on the M2 (23.8 s to 27.4 s for a 1025 world):
-CORE-MATH's `hypotf`, `cosf`, `atan2f`, and `sinf` are slower than Apple's,
-and the loops lose their fused operations. x86 builds should target
-x86-64-v3 so CORE-MATH's exact arithmetic uses hardware FMA (7% faster on
-the i7; the same bits).
+Correct rounding cost about 15% of generation on the M2 at first (23.8 s to
+27.4 s for a 1025 world): CORE-MATH's `hypotf`, `cosf`, `atan2f`, and `sinf`
+are slower than Apple's, and the loops lose their fused operations. The
+speed work that followed more than repaid it (docs/orogeny-performance.md):
+most of those calls were algebra that plain arithmetic does exactly. x86
+builds target x86-64-v3 so CORE-MATH's exact arithmetic uses hardware FMA
+(7% faster on the i7; the same bits).
 
 ## Not covered
 

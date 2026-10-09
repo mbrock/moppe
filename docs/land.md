@@ -5,8 +5,8 @@ geology, erosion, and the trails' earthworks leave behind, as four fields --
 elevation, sediment, and the eroded and deposited material
 (`moppe/game/land.hh`). Everything else in a world (normals, standing water,
 lakes, drainage, rivers, readings, the forest plan) follows from the land in
-seconds. For the default 2048 world on an M2 Pro the geology takes about
-100 s; the rest takes about 7.
+seconds. For the default 2048 world on an M2 Pro the land takes about 56 s
+to make; the rest takes about 7.
 
 Worlds generate bit for bit the same on every platform
 (docs/determinism.md), so land is a cache anyone can share. The game takes
@@ -29,7 +29,7 @@ seconds.
 
 ## The file
 
-`land-v1-play-2048-123-446e21d0.arrows` names its `LAND_VERSION`, profile,
+`land-v2-play-2048-123-446e21d0.arrows` names its `LAND_VERSION`, profile,
 resolution, seed, and a hash of the recipe's adjustable settings (extent,
 datum, uplift years, transport parameters). It is an Arrow IPC stream of the
 four columns over the terrain domain, 67 MB for 2048 (58 MB as the
@@ -56,7 +56,8 @@ GitHub release (creating it if need be) and records the URL and sha256 in
 
 ## Checked
 
-On 2026-10-09: the default land baked on an M2 Pro (macOS) and on an
-i7-10700K (NixOS) has the same sha256; a 513 world launched from scratch
-and again from its saved land wrote byte-identical finished-world caches;
-and the default world launches from its land in 8.7 s on the M2.
+On 2026-10-09: the default land baked on an M2 Pro (macOS, 10 threads) and
+on an i7-10700K (NixOS, 16 threads) has the same sha256 (LAND_VERSION 1 and
+again at 2); a 513 world launched from scratch and again from its saved land
+wrote byte-identical finished-world caches; and the default world launches
+from its land in 8.7 s on the M2.
