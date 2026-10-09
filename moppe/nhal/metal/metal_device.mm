@@ -639,12 +639,15 @@ namespace moppe::nhal {
             clock->presented (serial,
                               at + (steady_seconds () - CACurrentMediaTime ()));
         }];
+        commit_residency ();
         [m_queue waitForDrawable:m_drawable];
         MTL4CommitOptions* options = [[MTL4CommitOptions alloc] init];
         [options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
           if (feedback.error)
-            NSLog (@"NHAL: Metal 4 submission failed: %@",
-                   feedback.error.localizedDescription);
+            NSLog (@"NHAL: Metal 4 submission %llu failed after %.1f ms: %@",
+                   serial,
+                   (feedback.GPUEndTime - feedback.GPUStartTime) * 1000,
+                   feedback.error);
         }];
         const id<MTL4CommandBuffer> commands[] = { m_commands };
         [m_queue commit:commands count:1 options:options];
@@ -740,8 +743,7 @@ namespace moppe::nhal {
         pending.buffer =
           [m_device newBufferWithLength:size
                                 options:MTLResourceStorageModeShared];
-        [m_residency addAllocation:pending.buffer];
-        [m_residency commit];
+        make_resident (pending.buffer);
         id<MTL4ComputeCommandEncoder> copy = [m_commands computeCommandEncoder];
         [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
                          beforeStages:MTLStageBlit
@@ -839,6 +841,12 @@ namespace moppe::nhal {
           m_residency_dirty = true;
           it = m_captures.erase (it);
         }
+        commit_residency ();
+      }
+
+      // Resources created since the last commit, during this frame too,
+      // must be resident before the frame that uses them is submitted.
+      void commit_residency () {
         if (m_residency_dirty) {
           [m_residency commit];
           m_residency_dirty = false;
