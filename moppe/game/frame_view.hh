@@ -120,6 +120,7 @@ namespace moppe::game {
     bool sky_after_terrain = true;
     bool forest = true;
     bool boulders = true;
+    bool mushrooms = true;
     bool undergrowth = true;
     bool actors = true;
     bool ocean = true;

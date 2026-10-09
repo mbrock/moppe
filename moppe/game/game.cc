@@ -30,6 +30,7 @@
 #include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
+#include <moppe/game/mushrooms.hh>
 #include <moppe/game/opening.hh>
 #include <moppe/game/seed_memory.hh>
 #include <moppe/game/simulation_clock.hh>
@@ -799,6 +800,74 @@ namespace moppe {
         m_boulders.rebuild (*m_renderer, plan);
       }
 
+      // The autumn's mushrooms come up around the trees each time a world
+      // activates; like the boulders they are cheap and need no cache.
+      void grow_mushrooms () {
+        MOPPE_PROFILE_ZONE ("startup.grow_mushrooms");
+        if (m_water_inspection || moppe::environment ("MOPPE_TREE_LAB")) {
+          m_mushrooms.rebuild ({});
+          return;
+        }
+        m_mushrooms.rebuild (
+          plan_mushrooms (generated_world ().forest (),
+                          surface (),
+                          surface_readings (),
+                          generated_world ().water_surface (),
+                          recipe ().seed ().value ^ 0x3c5f00d5U,
+                          world ().water_level,
+                          m_home_base_position));
+        if (const auto first = m_mushrooms.nearest (m_spawn_position, 400.0f)) {
+          const Vec3 at = m_mushrooms.site (*first).base;
+          std::cerr << "moppe: nearest mushrooms ("
+                    << mushroom_plural (m_mushrooms.site (*first).kind)
+                    << ") "
+                    << std::hypot (at[0] - m_spawn_position[0],
+                                   at[2] - m_spawn_position[2])
+                    << " m from the spawn" << std::endl;
+          // The foraging script starts a few steps from them.
+          const char* walk = moppe::environment ("MOPPE_WALK");
+          if (walk && std::string_view (walk) == "forage" &&
+              logic ().m_mode == M_FOOT) {
+            Vec3 away = m_spawn_position - at;
+            away[1] = 0.0f;
+            away = length2 (away) > 1e-4f ? normalized (away) : Vec3 (1, 0, 0);
+            Vec3 stand = at + away * 4.0f;
+            stand[1] = ground_height (stand) + 0.1f;
+            session ().walker ().spawn (moppe::position (stand), away * -1.0f);
+            logic ().m_fp_eye = session ().walker ().eye_position ();
+          }
+        }
+      }
+
+      // A walker reaches for the mushroom at hand: an edible one goes in
+      // the basket, a poisonous one is left where it grows.
+      void reach_for_mushroom (const InputFrame& input) {
+        if (logic ().m_mode != M_FOOT)
+          return;
+        const Vec3 feet = session ().walker ().position ();
+        // F still remounts the bike when it is close enough; otherwise it
+        // picks too, for the touch screen's single action button.
+        const bool bike_near =
+          length2 (feet - session ().bike ().position ()) < 5.0f * 5.0f;
+        if (!input.deploy_glider && !(input.toggle_mount && !bike_near))
+          return;
+        const std::optional<std::uint32_t> found =
+          m_mushrooms.within_reach (feet, session ().walker ().heading ());
+        if (!found)
+          return;
+        const MushroomSite& site = m_mushrooms.site (*found);
+        m_mushrooms.follow (logic ().m_basket);
+        Basket& basket = logic ().m_basket;
+        basket.last_reach_time = logic ().m_total_time;
+        basket.last_kind = site.kind;
+        basket.last_refused = !mushroom_edible (site.kind);
+        if (basket.last_refused)
+          return;
+        basket.picked.push_back (*found);
+        ++basket.count[static_cast<int> (site.kind)];
+        m_mushrooms.follow (basket);
+      }
+
       // Trunks and the larger boulders stop the rider alike, so both feed
       // the one streamed collision field.
       void settle_obstacles () {
@@ -1082,6 +1151,7 @@ namespace moppe {
         place_stars_and_player ();
         grow_global_forest ();
         scatter_boulders ();
+        grow_mushrooms ();
         settle_obstacles ();
         place_spectator ();
         // The mouse looks around during play; M hands it back.
@@ -1208,10 +1278,11 @@ namespace moppe {
       }
 
       // A deterministic on-foot script for automated captures (MOPPE_WALK):
-      // "walk", "run", and "jump" hold one gait, and "tour" stands, walks,
+      // "walk", "run", and "jump" hold one gait, "tour" stands, walks,
       // runs, jumps twice from the run, and comes to rest, turning gently
       // throughout so a following camera sees the figure from changing
-      // sides.
+      // sides, and "forage" starts beside the mushrooms nearest the spawn
+      // and picks its way from one to the next.
       InputFrame scripted_walk (std::string_view script, float dt) {
         const float t = m_walk_script_time;
         m_walk_script_time += dt;
@@ -1219,6 +1290,45 @@ namespace moppe {
         const auto press = [t, dt] (float at) {
           return t >= at && t < at + 0.1f + dt ? 1.0f : 0.0f;
         };
+        if (script == "forage") {
+          // Walk to the nearest mushroom, turning toward it, and pick it
+          // once within reach; poisonous ones are left after one try.
+          const Walker& walker = session ().walker ();
+          const Vec3 feet = walker.position ();
+          const auto target =
+            m_mushrooms.nearest (feet, 60.0f, m_forage_refused);
+          if (target) {
+            Vec3 toward = m_mushrooms.site (*target).base - feet;
+            toward[1] = 0.0f;
+            const float distance = length (toward);
+            const Vec3 heading = walker.heading ();
+            const Vec3 left (heading[2], 0.0f, -heading[0]);
+            const float leftward =
+              dot (toward, left) / std::max (distance, 1e-3f);
+            const float ahead =
+              dot (toward, heading) / std::max (distance, 1e-3f);
+            // Look yaw turns to the right.
+            const float turn = ahead < 0.0f
+                                 ? (leftward >= 0.0f ? -1.0f : 1.0f)
+                                 : -std::asin (leftward);
+            input.look_yaw = std::clamp (turn, -2.5f * dt, 2.5f * dt);
+            input.look_pitch = std::clamp (-0.6f - logic ().m_look_pitch,
+                                           -1.0f * dt,
+                                           1.0f * dt);
+            const bool reachable =
+              m_mushrooms.within_reach (feet, heading) == target;
+            input.drive = !reachable && ahead > 0.7f
+                            ? std::min (1.0f, 0.3f + 0.3f * distance)
+                            : 0.0f;
+            const float beat = std::fmod (t, 0.9f);
+            if (reachable && beat < dt + 1e-4f) {
+              input.deploy_glider = true;
+              if (!mushroom_edible (m_mushrooms.site (*target).kind))
+                m_forage_refused.push_back (*target);
+            }
+          }
+          return input;
+        }
         if (script == "walk") {
           input.drive = 1.0f;
         } else if (script == "run") {
@@ -1429,6 +1539,7 @@ namespace moppe {
           }
         }
 
+        reach_for_mushroom (input);
         const GameSessionAdvanceResult advance =
           advance_game_session (world (),
                                 surface (),
@@ -1519,6 +1630,25 @@ namespace moppe {
         return state;
       }
 
+      // The mushroom at hand and the basket, for the prompts and the tally.
+      void add_basket_readings (HudState& state) const {
+        const Basket& basket = logic ().m_basket;
+        state.basket_total = basket.total ();
+        state.reached_name = mushroom_name (basket.last_kind);
+        state.reached_age_s =
+          static_cast<float> (logic ().m_total_time - basket.last_reach_time);
+        state.reached_refused = basket.last_refused;
+        if (logic ().m_mode != M_FOOT)
+          return;
+        if (const std::optional<std::uint32_t> found =
+              m_mushrooms.within_reach (session ().walker ().position (),
+                                        session ().walker ().heading ())) {
+          const MushroomKind kind = m_mushrooms.site (*found).kind;
+          state.mushroom_in_reach = mushroom_name (kind);
+          state.mushroom_edible = mushroom_edible (kind);
+        }
+      }
+
       void draw_world_layers (render::Renderer& r, const FrameView& frame) {
         const FrameVisibility& visibility = frame.visibility;
         const Vec3& camera = frame.camera.position;
@@ -1589,6 +1719,10 @@ namespace moppe {
         // cannot be painted over by the sward's own far density layer.
         if (visibility.boulders)
           m_boulders.draw (r);
+        if (visibility.mushrooms) {
+          m_mushrooms.follow (logic ().m_basket);
+          m_mushrooms.draw (r, camera);
+        }
         if (visibility.forest)
           m_forest.draw (r);
       }
@@ -1619,8 +1753,43 @@ namespace moppe {
         if (!(helmet && actors.active_mode == M_BIKE) && !m_spectator)
           render_vehicle (
             r, m_world_dl, actors.bike, actors.active_mode == M_BIKE, 0x1000);
+        const Basket& basket = logic ().m_basket;
+        m_basket_contents.clear ();
+        for (const std::uint32_t index : basket.picked)
+          m_basket_contents.push_back (m_mushrooms.site (index));
         if (actors.walker && !helmet)
-          render_walker (m_world_dl, *actors.walker, frame.lighting.time);
+          render_walker (m_world_dl,
+                         *actors.walker,
+                         frame.lighting.time,
+                         m_basket_contents);
+        else if (actors.walker)
+          render_basket (m_world_dl,
+                         *actors.walker,
+                         frame.lighting.time,
+                         m_basket_contents);
+        // The mushroom just picked rises from the moss into the basket.
+        if (actors.walker && !basket.picked.empty () &&
+            !basket.last_refused) {
+          const float age = static_cast<float> (logic ().m_total_time -
+                                                basket.last_reach_time);
+          if (age >= 0.0f && age < 0.45f) {
+            const float t = age / 0.45f;
+            MushroomSite rising = m_mushrooms.site (basket.picked.back ());
+            const Vec3 to = actors.walker->position +
+                            normalized (actors.walker->heading) * 0.2f +
+                            Vec3 (0, 0.55f, 0);
+            rising.base = rising.base + (to - rising.base) * t +
+                          Vec3 (0, 0.35f * std::sin (PI * t), 0);
+            rising.scale *= 1.0f - 0.5f * t;
+            rising.yaw += 3.0f * t;
+            m_world_dl.state (render::DrawState ());
+            m_world_dl.lit (true);
+            m_world_dl.fogged (true);
+            m_world_dl.begin (render::Prim::Triangles);
+            draw_mushroom (m_world_dl, rising);
+            m_world_dl.end ();
+          }
+        }
         if (actors.glider && !helmet)
           render_glider (
             r, m_world_dl, *actors.glider, frame.lighting.time, 0x2000);
@@ -1735,7 +1904,8 @@ namespace moppe {
                                   hud_width,
                                   hud_height);
         } else if (visibility.game_hud) {
-          const HudState hud_state = hud_state_for (frame.hud);
+          HudState hud_state = hud_state_for (frame.hud);
+          add_basket_readings (hud_state);
           m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
           if (m_hud.diagnostics ())
             draw_trail_map (m_hud_dl,
@@ -2589,6 +2759,11 @@ namespace moppe {
       Terrain m_terrain;
       ForestLandscape m_forest;
       BoulderLandscape m_boulders;
+      MushroomPatch m_mushrooms;
+      // The poisonous mushrooms the foraging script has left be.
+      std::vector<std::uint32_t> m_forage_refused;
+      // Scratch for the basket's contents as drawn.
+      std::vector<MushroomSite> m_basket_contents;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
       float m_walk_script_time = 0.0f;

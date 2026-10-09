@@ -47,6 +47,17 @@ namespace moppe {
       float frame_time_s;
       // Heading in radians: zero is world +Z (north), positive turns east.
       float heading_radians;
+      // On foot: the mushroom within reach, if any, and whether it may go
+      // in the basket.
+      const char* mushroom_in_reach = nullptr;
+      bool mushroom_edible = true;
+      // How many mushrooms the basket holds.
+      int basket_total = 0;
+      // The last mushroom reached for and how long ago; a refused one was
+      // poisonous and stayed where it grew.
+      const char* reached_name = nullptr;
+      float reached_age_s = 100.0f;
+      bool reached_refused = false;
 
       HudState ()
           : speed_kmh (0), boost_ready01 (1.0f), health01 (1.0f),
@@ -146,6 +157,11 @@ namespace moppe {
                        float dt,
                        int width_pts,
                        int height_pts);
+      void draw_basket (render::TextList& text,
+                        const HudState& state,
+                        float dt,
+                        int width_pts,
+                        int height_pts);
       void draw_prompts (render::TextList& text,
                          const HudState& state,
                          float dt,
@@ -180,6 +196,7 @@ namespace moppe {
       float m_reserve_alpha;
       float m_reserve_hold;
       float m_prompt_alpha;
+      float m_basket_alpha;
       std::string m_prompt_key;
       std::string m_prompt_action;
     };

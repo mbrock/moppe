@@ -24,8 +24,10 @@
     `W`/`A`/`S`/`D`, `E`, and `F` are QWERTY key positions on every layout
     (on Dvorak, `,` `A` `O` `E`, `.`, and `U`); the other letters go by
     what they type.
-  - Scripted walks for captures: `MOPPE_WALK=walk|run|jump|tour` starts on
-    foot (even with `MOPPE_DEMO=forest`) and drives a deterministic script;
+  - Scripted walks for captures: `MOPPE_WALK=walk|run|jump|tour|forage`
+    starts on foot (even with `MOPPE_DEMO=forest`) and drives a deterministic
+    script (`forage` starts beside the mushrooms nearest the spawn and picks
+    its way from one to the next);
     `MOPPE_WALK_CAMERA=chase|front|side` picks the view (`side` locks a
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
@@ -158,6 +160,15 @@
     `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
     ahead of the bike or glider.
+  - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few
+    percent of the trees, more near the trailhead: chanterelles and funnel
+    chanterelles under spruce, porcini under both, fly agaric under birch,
+    drawn larger than life so they show over the forest floor. On foot,
+    `E` (controller `A`; `F` too when the bike is out of reach) picks the
+    one at hand into the basket the hiker carries in their left hand, which
+    fills visibly; fly agaric is poisonous and stays. The picked indices
+    live in `GameLogicState::m_basket` (`game/basket.hh`), and the ground
+    follows them, meshed in 16 m tiles near the camera.
   - Boulders (`moppe/game/boulders.cc`, the `boulders` program)
     are planned from the surface fields when a world activates -- talus,
     scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded

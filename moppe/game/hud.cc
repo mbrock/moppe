@@ -70,6 +70,13 @@ namespace moppe {
         return target + (value - target) * std::exp (-rate * dt);
       }
 
+      std::string capitalized (const char* name) {
+        std::string word (name);
+        if (!word.empty () && word[0] >= 'a' && word[0] <= 'z')
+          word[0] = static_cast<char> (word[0] - 'a' + 'A');
+        return word;
+      }
+
       float ease (float t) {
         t = clamp01 (t);
         return t * t * (3.0f - 2.0f * t);
@@ -208,7 +215,8 @@ namespace moppe {
 
     Hud::Hud ()
         : m_diagnostics (false), m_fps (0), m_gauge_alpha (0),
-          m_reserve_alpha (0), m_reserve_hold (0), m_prompt_alpha (0) {
+          m_reserve_alpha (0), m_reserve_hold (0), m_prompt_alpha (0),
+          m_basket_alpha (0) {
       if (const char* mode = moppe::environment ("MOPPE_HUD"))
         m_diagnostics = std::string (mode) == "debug";
     }
@@ -481,13 +489,84 @@ namespace moppe {
       }
     }
 
+    void Hud::draw_basket (render::TextList& text,
+                           const HudState& st,
+                           float dt,
+                           int width_pts,
+                           int height_pts) {
+      if (!m_font)
+        return;
+      // The tally takes the gauge's corner while walking with a basket that
+      // has something in it.
+      const bool showing = st.on_foot && st.basket_total > 0;
+      m_basket_alpha =
+        approach (m_basket_alpha, showing ? 1.0f : 0.0f, 4.0f, dt);
+      const float alpha = ease (m_basket_alpha);
+      // A pick is celebrated for a moment just above the prompt.
+      const float fresh = clamp01 (1.0f - (st.reached_age_s - 1.4f) / 0.8f) *
+                          clamp01 (st.reached_age_s / 0.12f);
+      if (fresh > 0.002f && st.reached_name) {
+        TextStyle cheer;
+        cheer.size = st.reached_refused ? 15.0f : 21.0f;
+        cheer.red = cheer.green = cheer.blue = ink;
+        cheer.alpha = 0.95f * ease (fresh);
+        cheer.tracking = 0.02f;
+        const std::string name (st.reached_name);
+        const std::string line =
+          st.reached_refused
+            ? "Not that one -- the " + name + " is poisonous!"
+            : "A " + name + "!";
+        draw_shaded (text,
+                     0.5f * width_pts,
+                     height_pts - 96.0f - 10.0f * (1.0f - ease (fresh)),
+                     line,
+                     cheer,
+                     TextAlign::Center);
+      }
+      if (alpha <= 0.002f)
+        return;
+      const float cx = width_pts - gauge_margin - gauge_radius;
+      const float cy = height_pts - gauge_margin - gauge_radius;
+      TextStyle numeral;
+      numeral.size = 25.0f;
+      numeral.red = numeral.green = numeral.blue = ink;
+      numeral.alpha = 0.94f * alpha;
+      numeral.tabular_figures = true;
+      draw_shaded (text,
+                   cx,
+                   cy + 0.5f * m_font->cap_height (numeral.size),
+                   std::to_string (st.basket_total),
+                   numeral,
+                   TextAlign::Center);
+      TextStyle unit;
+      unit.size = 8.5f;
+      unit.red = unit.green = unit.blue = ink;
+      unit.alpha = 0.55f * alpha;
+      unit.tracking = 0.08f;
+      draw_shaded (text,
+                   cx,
+                   cy + 0.80f * gauge_radius,
+                   "in the basket",
+                   unit,
+                   TextAlign::Center);
+    }
+
     void Hud::draw_prompts (render::TextList& text,
                             const HudState& st,
                             float dt,
                             int width_pts,
                             int height_pts) {
       std::string key, action;
-      if (st.can_drop_bike) {
+      if (st.on_foot && st.mushroom_in_reach) {
+        const std::string name = capitalized (st.mushroom_in_reach);
+        if (!st.mushroom_edible) {
+          action = name + " -- poisonous, leave it be";
+        } else {
+          key = deploy_key;
+          action = *deploy_key ? "Pick the " + std::string (st.mushroom_in_reach)
+                               : name + " within reach";
+        }
+      } else if (st.can_drop_bike) {
         key = deploy_key;
         action = "Release the motocross";
       } else if (st.can_deploy_glider) {
@@ -597,6 +676,7 @@ namespace moppe {
       m_fps = m_fps > 0.0f ? m_fps * 0.9f + instant_fps * 0.1f : instant_fps;
 
       draw_gauge (text, st, dt, width_pts, height_pts);
+      draw_basket (text, st, dt, width_pts, height_pts);
       draw_prompts (text, st, dt, width_pts, height_pts);
       if (m_diagnostics)
         draw_diagnostics (dl, text, st, width_pts, height_pts);

@@ -364,6 +364,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/hud.cc
   moppe/game/forest.cc
   moppe/game/boulders.cc
+  moppe/game/mushrooms.cc
 )
 
 set(MOPPE_ENGINE_SOURCES
@@ -597,6 +598,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/water_capture_test.cc
     tests/game/forest_test.cc
     tests/game/boulders_test.cc
+    tests/game/mushrooms_test.cc
     tests/game/cinematic_flight_test.cc
     tests/game/opening_test.cc
     tests/map/surface_test.cc

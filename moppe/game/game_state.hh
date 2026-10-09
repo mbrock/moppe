@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_GAME_STATE_HH
 #define MOPPE_GAME_GAME_STATE_HH
 
+#include <moppe/game/basket.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/stars.hh>
@@ -53,6 +54,7 @@ namespace moppe::game {
     bool m_landed_clean = false;
     float m_landed_age = 10.0f;
     std::mt19937 m_fx_rng { 7 };
+    Basket m_basket;
   };
 
   // First replayable slice of a GameSession. Immutable world/resource
