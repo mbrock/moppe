@@ -651,7 +651,7 @@ namespace moppe::game {
       // The plan is cheap beside the evolved surface it reads: an outdated
       // plan is re-planted from the cached fields instead of discarding the
       // whole world.
-      forest = plan_global_forest (surface, readings, forest_seed);
+      forest = plan_global_forest (surface, readings, water, forest_seed);
       try {
         save_forest_plan (*forest, forest_seed, forest_path);
       } catch (const std::exception& error) {
