@@ -1474,11 +1474,24 @@
          (alpine (- 1.0 (smoothstep 0.50 0.67 rise)))
          (rooted (* smothered light damp standable cleared variation alpine
                     (- 1.0 snow)))
+         (cover (clamp (* rooted density) 0.0 1.0))
+         ;; Grass is a turf or it is not there, never a scatter of single
+         ;; stalks. Whether roots hold -- the slope, bare rock or dirt,
+         ;; snow, the fells -- is a threshold: past it the sward closes,
+         ;; below it the ground is bare, and the clump noise moves the
+         ;; threshold so marginal ground breaks into ragged patches. How
+         ;; lush the turf grows -- shade, water -- only thins it toward a
+         ;; floor that still reads as a sward.
+         (holds (* standable cleared alpine (- 1.0 snow)))
+         (edge (mix 0.25 0.60 clump))
+         (turf (* (smoothstep (- edge 0.05) (+ edge 0.05) holds)
+                  (step 0.001 density)
+                  (mix 0.38 1.0 cover)))
          (tint (* (vec3 0.185 0.315 0.112)
                   (vec3 (- 1.12 (* 0.24 moisture)) (+ 0.84 (* 0.30 moisture))
                         (+ 0.82 (* 0.22 moisture))))))
     (make-grass-medium
-     :leaf-area (clamp (* rooted density) 0.0 1.0)
+     :leaf-area turf
      :moisture moisture
      :forest-cover canopy
      :riparian 0.0
