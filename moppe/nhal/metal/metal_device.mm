@@ -274,7 +274,9 @@ namespace moppe::nhal {
             continue;
           color.blendingEnabled = YES;
           const bool additive = desc.blend[i] == Blend::additive;
-          color.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+          color.sourceRGBBlendFactor = desc.blend[i] == Blend::premultiplied
+                                         ? MTLBlendFactorOne
+                                         : MTLBlendFactorSourceAlpha;
           color.destinationRGBBlendFactor =
             additive ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
           color.sourceAlphaBlendFactor = MTLBlendFactorOne;

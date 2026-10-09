@@ -516,7 +516,9 @@ namespace moppe::nhal {
             continue;
           const bool additive = desc.blend[i] == Blend::additive;
           blend.BlendEnable = TRUE;
-          blend.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+          blend.SrcBlend = desc.blend[i] == Blend::premultiplied
+                             ? D3D12_BLEND_ONE
+                             : D3D12_BLEND_SRC_ALPHA;
           blend.DestBlend = additive ? D3D12_BLEND_ONE
                                      : D3D12_BLEND_INV_SRC_ALPHA;
           blend.DestBlendAlpha = additive ? D3D12_BLEND_ONE

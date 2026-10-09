@@ -144,8 +144,10 @@ namespace moppe::nhal {
     never, less, equal, less_equal, greater, not_equal, greater_equal, always
   };
   // Alpha: source alpha over one minus it. Additive: source alpha onto
-  // what is there, a glow that sums toward white.
-  enum class Blend : std::uint8_t { none, alpha, additive };
+  // what is there, a glow that sums toward white. Premultiplied: the source
+  // colour whole over one minus source alpha, so a surface can add light it
+  // reflects while covering only what it fails to transmit.
+  enum class Blend : std::uint8_t { none, alpha, additive, premultiplied };
   enum class Cull : std::uint8_t { none, back, front };
   enum class Topology : std::uint8_t { triangle_list, triangle_strip,
                                        line_list };

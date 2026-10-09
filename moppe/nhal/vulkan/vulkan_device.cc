@@ -405,7 +405,9 @@ namespace moppe::nhal {
             continue;
           const bool additive = desc.blend[i] == Blend::additive;
           b.blendEnable = VK_TRUE;
-          b.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+          b.srcColorBlendFactor = desc.blend[i] == Blend::premultiplied
+                                    ? VK_BLEND_FACTOR_ONE
+                                    : VK_BLEND_FACTOR_SRC_ALPHA;
           b.dstColorBlendFactor = additive
                                     ? VK_BLEND_FACTOR_ONE
                                     : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
