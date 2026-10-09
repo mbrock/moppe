@@ -2,6 +2,7 @@
 #include <moppe/game/bike_model.hh>
 #include <moppe/game/figure.hh>
 #include <moppe/game/model_mesh.hh>
+#include <moppe/game/sprites.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/render/renderer.hh>
@@ -85,11 +86,8 @@ namespace moppe {
       // engine flicker.  Unlit, so the non-uniform scale needs no
       // normal correction.
       struct FlameMeshes {
-        render::MeshPtr lick_outer;   // exhaust flame, warm sheath
-        render::MeshPtr lick_core;    // exhaust flame, pale core
-        render::MeshPtr plume_sheath; // jump jet, wide warm wrap
-        render::MeshPtr plume_body;   // jump jet, orange body
-        render::MeshPtr plume_core;   // jump jet, white-hot core
+        render::MeshPtr lick_outer; // exhaust flame, warm sheath
+        render::MeshPtr lick_core;  // exhaust flame, pale core
       };
 
       render::MeshPtr record_flame_cone (render::Renderer& r,
@@ -116,11 +114,6 @@ namespace moppe {
           FlameMeshes f;
           f.lick_outer = record_flame_cone (r, 8, 2, 1.0f, 0.45f, 0.08f, 0.55f);
           f.lick_core = record_flame_cone (r, 8, 2, 1.0f, 0.85f, 0.45f, 0.75f);
-          f.plume_sheath =
-            record_flame_cone (r, 10, 3, 1.0f, 0.42f, 0.10f, 0.28f);
-          f.plume_body =
-            record_flame_cone (r, 10, 3, 1.0f, 0.62f, 0.18f, 0.55f);
-          f.plume_core = record_flame_cone (r, 8, 3, 0.90f, 0.95f, 1.0f, 0.85f);
           return f;
         }();
         return meshes;
@@ -306,12 +299,159 @@ namespace moppe {
                      Mat4::rotation (boost_nozzle_angle (vehicle), x_axis));
     }
 
+    namespace {
+      // One soft additive sprite about `centre`, stretched `half_length`
+      // along `axis` as the camera sees it and `half_width` across.
+      void jet_sprite (render::DrawList& dl,
+                       const Vec3& camera,
+                       const Vec3& centre,
+                       const Vec3& axis,
+                       float half_length,
+                       float half_width,
+                       DisplayColor colour,
+                       float alpha) {
+        const Vec3 view = normalized (camera - centre);
+        Vec3 side = cross (axis, view);
+        if (length2 (side) < 1e-8f)
+          side = cross (Vec3 (0, 1, 0), view);
+        side = normalized (side);
+        const Vec3 up = cross (view, side);
+        const float end_on = std::fabs (dot (axis, view));
+        const float along =
+          half_length + (half_width - half_length) * end_on * end_on;
+        const Vec3 u = up * along, v = side * half_width;
+        dl.color (colour, alpha);
+        dl.uv (0, 0);
+        dl.vertex (centre - u - v);
+        dl.uv (1, 0);
+        dl.vertex (centre - u + v);
+        dl.uv (1, 1);
+        dl.vertex (centre + u + v);
+        dl.uv (0, 1);
+        dl.vertex (centre + u - v);
+      }
+
+      void render_jets (render::Renderer& r,
+                        const VehiclePose& vehicle,
+                        const Mat4& frame,
+                        const Vec3& camera,
+                        float time,
+                        uint64_t motion_id) {
+        static const render::TexturePtr disc = make_soft_disc_texture (r);
+        static render::DrawList dl;
+        dl.clear ();
+        render::DrawState glow;
+        glow.blend = true;
+        glow.additive = true;
+        glow.depth_write = false;
+        glow.cull = false;
+        dl.state (glow);
+        dl.lit (false);
+        dl.fogged (true);
+        dl.set_texture (disc.get ());
+        dl.begin (render::Prim::Quads);
+
+        const float k = vehicle.boost_level;
+        const Vec3 x_axis (1, 0, 0);
+        for (const Vec3& nozzle :
+             { bike_model::nozzle_left, bike_model::nozzle_right }) {
+          const Mat4 jet =
+            frame * Mat4::translation (nozzle) *
+            Mat4::rotation (boost_nozzle_angle (vehicle), x_axis);
+          const Vec3 mouth = jet.transform_point (Vec3 (0, 0, 0.12f));
+          const Vec3 axis = normalized (jet.transform_vector (Vec3 (0, 0, 1)));
+          // Each jet flickers on its own phase.
+          const float phase = nozzle[0] > 0 ? 0.0f : 2.1f;
+          const float flicker =
+            0.85f + 0.15f * std::sin (time * 53.0f + phase) *
+                      std::sin (time * 31.0f + 1.3f * phase);
+          const float length = (1.4f + 2.6f * k) * flicker;
+
+          // The heat round the mouth, and the white-hot throat.
+          jet_sprite (dl,
+                      camera,
+                      mouth,
+                      axis,
+                      0.34f,
+                      0.34f,
+                      DisplayColor (1.0f, 0.55f, 0.20f),
+                      0.35f * k);
+          jet_sprite (dl,
+                      camera,
+                      mouth + axis * 0.10f,
+                      axis,
+                      0.20f,
+                      0.11f,
+                      DisplayColor (0.85f, 0.92f, 1.0f),
+                      0.95f * k);
+
+          // The body: blobs cooling and widening down the jet.
+          constexpr int blobs = 7;
+          for (int i = 0; i < blobs; ++i) {
+            const float t = (i + 0.5f) / blobs;
+            const float wobble =
+              0.03f * std::sin (time * 37.0f + 5.0f * t + phase);
+            const Vec3 centre = mouth + axis * (t * length) +
+                                cross (axis, Vec3 (0, 1, 0)) * (wobble * t);
+            const DisplayColor colour =
+              t < 0.35f   ? DisplayColor (1.0f, 0.86f, 0.52f)
+              : t < 0.70f ? DisplayColor (1.0f, 0.52f, 0.16f)
+                          : DisplayColor (0.95f, 0.26f, 0.08f);
+            const float fade = (1.0f - t) * (1.0f - t);
+            jet_sprite (dl,
+                        camera,
+                        centre,
+                        axis,
+                        0.75f * length / blobs + 0.12f,
+                        0.08f + 0.20f * t,
+                        colour,
+                        (0.25f + 0.55f * fade) * k);
+          }
+
+          // The core: narrow and near white, burning through the first
+          // half, so the additive layers sum past what bloom picks up.
+          constexpr int cores = 4;
+          for (int i = 0; i < cores; ++i) {
+            const float t = (i + 0.5f) / cores * 0.45f;
+            jet_sprite (dl,
+                        camera,
+                        mouth + axis * (t * length),
+                        axis,
+                        0.16f * length / cores + 0.08f,
+                        0.05f + 0.06f * t,
+                        DisplayColor (1.0f, 0.95f, 0.80f),
+                        (0.85f - 0.8f * t) * k);
+          }
+
+          // Shock diamonds: knots that pulse where the jet re-compresses.
+          for (int i = 0; i < 3; ++i) {
+            const float t = 0.16f + 0.15f * i;
+            const float pulse =
+              0.65f + 0.35f * std::sin (time * 61.0f + 2.4f * i + phase);
+            jet_sprite (dl,
+                        camera,
+                        mouth + axis * (t * length),
+                        axis,
+                        0.10f,
+                        0.075f - 0.012f * i,
+                        DisplayColor (1.0f, 0.96f, 0.86f),
+                        (0.9f - 0.2f * i) * pulse * k);
+          }
+        }
+        dl.end ();
+        dl.set_texture (nullptr);
+        dl.state (render::DrawState ());
+        r.draw_list (dl, motion_id);
+      }
+    }
+
     // The additive exhaust lick and jump-jet plumes, replayed as baked
     // unit cones under breathing scale matrices.  Called after the
     // world draw list plays so the glow blends over the solids, the
     // same reason the star halos draw last.
     void render_vehicle_flames (render::Renderer& r,
                                 const VehiclePose& vehicle,
+                                const Vec3& camera,
                                 float time,
                                 uint64_t motion_base) {
       const float thrust = std::abs (vehicle.thrust);
@@ -322,7 +462,7 @@ namespace moppe {
 
       const FlameMeshes& fm = flame_meshes (r);
       const Mat4 frame = vehicle_frame (vehicle);
-      const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0);
+      const Vec3 y_axis (0, 1, 0);
       uint64_t motion_part = motion_base + 0x100;
       const auto draw_part = [&] (const render::Mesh& mesh,
                                   const Mat4& transform) {
@@ -346,39 +486,15 @@ namespace moppe {
                        Vec3 (0.035f, 0.035f, (0.22f + 0.36f * thrust) * lick)));
       }
 
-      // Live jump-jet output: a layered additive plume -- a wide warm
-      // sheath around an orange body around a white-hot core, all
-      // shivering with engine flicker.  Additive layers sum where
-      // they overlap, so the middle reads as incandescent.
-      if (boosting) {
-        const float k = vehicle.boost_level;
-        const float flicker = 0.88f + 0.12f * std::sin (time * 41.0f) *
-                                        std::sin (time * 27.0f + 1.7f);
-        const float len = k * flicker;
-
-        // Plume proportions; each starts inside its nozzle's bell.
-        const float sheath_r = 0.21f;
-        const float body_r = 0.12f;
-        const float core_r = 0.055f;
-        const float sheath_l = 1.9f;
-        const float body_l = 2.5f;
-        const float core_l = 3.0f;
-
-        for (const Vec3& nozzle :
-             { bike_model::nozzle_left, bike_model::nozzle_right }) {
-          const Mat4 jet =
-            frame * Mat4::translation (nozzle) *
-            Mat4::rotation (boost_nozzle_angle (vehicle), x_axis) *
-            Mat4::translation (Vec3 (0, 0, 0.1f));
-          draw_part (
-            *fm.plume_sheath,
-            jet * Mat4::scaling (Vec3 (sheath_r, sheath_r, sheath_l * len)));
-          draw_part (*fm.plume_body,
-                     jet * Mat4::scaling (Vec3 (body_r, body_r, body_l * len)));
-          draw_part (*fm.plume_core,
-                     jet * Mat4::scaling (Vec3 (core_r, core_r, core_l * len)));
-        }
-      }
+      // Live jump-jet output, built fresh each frame from soft sprites that
+      // face the camera: a white-hot throat, then overlapping blobs
+      // stretched along the jet that cool from yellow through orange to a
+      // fading red tail, with shock diamonds -- bright knots standing in
+      // the exhaust -- pulsing down its first half and a heat glow round
+      // each nozzle's mouth. Seen end-on, the stretched blobs round out, so
+      // the jet never shows an edge.
+      if (boosting)
+        render_jets (r, vehicle, frame, camera, time, motion_part);
     }
   }
 }

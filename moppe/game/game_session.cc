@@ -473,28 +473,65 @@ namespace moppe::game {
       }
     }
 
-    // Jet embers: hot additive sparks stream out of the nozzles while the
-    // jets burn, arcing down and dying fast.
+    // While the jets burn: hot additive embers shot out along them, a
+    // thin smoke trailing off their ends, and, close over the ground, a
+    // blast of whatever the ground is made of. The nozzles swing from
+    // straight down at rest to back and down under full drive.
     if (driving && vehicle.boost_level () > 0.05f) {
+      const float level = vehicle.boost_level ();
+      const float swing = 1.047f * vehicle.boost_drive ();
+      const Vec3 jet = normalized (Vec3 (0, -std::cos (swing), 0) -
+                                   forward * std::sin (swing));
+      const Vec3 nozzles =
+        vehicle_position - forward * 0.3f + Vec3 (0, -0.45f, 0);
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-      const probability_t spark (34.0f / u::s * vehicle.boost_level () *
-                                 (elapsed * u::s));
-      if (chance (logic.m_fx_rng) < scalar_value (spark)) {
+      const auto happens = [&] (float per_second) {
+        const probability_t odds (per_second / u::s * (elapsed * u::s));
+        return chance (logic.m_fx_rng) < scalar_value (odds);
+      };
+      if (happens (90.0f * level)) {
         Dust::Style ember;
-        ember.size = 0.15f * u::m;
-        ember.lifetime = 0.45f * u::s;
+        ember.size = 0.12f * u::m;
+        ember.lifetime = 0.40f * u::s;
         ember.downward_acceleration =
           6.0f * isq::acceleration[u::m / pow<2> (u::s)];
-        ember.spread = 0.3f * one;
+        ember.spread = 0.35f * one;
         ember.additive = true;
-        session.dust ().emit (moppe::position (vehicle_position -
-                                               forward * 0.5f +
-                                               Vec3 (0, -0.5f, 0)),
-                              velocity (vehicle.velocity () * 0.5f -
-                                        forward * 2.0f + Vec3 (0, -4.0f, 0)),
-                              1,
-                              DisplayColor (1.0f, 0.55f, 0.18f),
-                              ember);
+        session.dust ().emit (
+          moppe::position (nozzles + jet * 0.4f),
+          velocity (vehicle.velocity () * 0.6f + jet * 16.0f),
+          2,
+          chance (logic.m_fx_rng) < 0.5f ? DisplayColor (1.0f, 0.62f, 0.20f)
+                                         : DisplayColor (1.0f, 0.86f, 0.50f),
+          ember);
+      }
+      if (happens (22.0f * level)) {
+        Dust::Style smoke;
+        smoke.size = 0.55f * u::m;
+        smoke.lifetime = 1.1f * u::s;
+        smoke.downward_acceleration =
+          -1.5f * isq::acceleration[u::m / pow<2> (u::s)];
+        smoke.spread = 0.45f * one;
+        session.dust ().emit (
+          moppe::position (nozzles + jet * (2.0f + 2.5f * level)),
+          velocity (vehicle.velocity () * 0.3f + jet * 3.0f),
+          1,
+          DisplayColor (0.62f, 0.60f, 0.58f),
+          smoke);
+      }
+      if (vehicle.grounded () && jet[1] < -0.5f && happens (40.0f * level)) {
+        Dust::Style blast;
+        blast.size = 0.30f * u::m;
+        blast.lifetime = 0.9f * u::s;
+        blast.downward_acceleration =
+          3.0f * isq::acceleration[u::m / pow<2> (u::s)];
+        blast.spread = 1.4f * one;
+        const float around = 6.2831853f * chance (logic.m_fx_rng);
+        const Vec3 out (std::cos (around), 0, std::sin (around));
+        session.dust ().emit (moppe::position (nozzles + Vec3 (0, -0.4f, 0)),
+                              velocity (out * 7.0f + Vec3 (0, 1.5f, 0)),
+                              in_water ? 3 : std::max (1, loose (3.0f)),
+                              in_water ? spray_color : dust_color);
       }
     }
 

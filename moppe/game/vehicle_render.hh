@@ -18,13 +18,14 @@ namespace moppe {
                          bool ridden,
                          uint64_t motion_base);
 
-    // The exhaust lick and jump-jet plumes: baked unit cones replayed
-    // with breathing scale matrices.  Additive glow must blend over the
-    // already-drawn solids, so the caller invokes this after playing
-    // the world draw list (alongside the star halos), not at vehicle
-    // draw time.
+    // The exhaust lick, a baked cone under a breathing scale, and the
+    // jump-jet plumes, soft sprites facing the camera.  Additive glow must
+    // blend over the already-drawn solids, so the caller invokes this
+    // after playing the world draw list (alongside the star halos), not at
+    // vehicle draw time.
     void render_vehicle_flames (render::Renderer& r,
                                 const VehiclePose& vehicle,
+                                const Vec3& camera,
                                 float time,
                                 uint64_t motion_base);
   }

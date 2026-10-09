@@ -1812,7 +1812,11 @@ namespace moppe {
         // already drawn: exhaust and jump-jet flames, then star halos.
         if (visibility.vehicle_effects && !m_spectator &&
             !(helmet && actors.active_mode == M_BIKE))
-          render_vehicle_flames (r, actors.bike, frame.lighting.time, 0x1000);
+          render_vehicle_flames (r,
+                                 actors.bike,
+                                 frame.camera.position,
+                                 frame.lighting.time,
+                                 0x1000);
         if (visibility.star_effects)
           session ().stars ().render (r, frame.environment);
       }
