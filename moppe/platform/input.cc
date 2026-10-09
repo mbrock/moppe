@@ -22,6 +22,19 @@ namespace moppe::platform {
       std::min (1.0f, (magnitude - dead_zone) / (1.0f - dead_zone)), value);
   }
 
+  void look_axes (float x, float y, float& look_x, float& look_y) {
+    constexpr float dead_zone = 0.15f;
+    const float magnitude = std::sqrt (x * x + y * y);
+    look_x = look_y = 0;
+    if (magnitude <= dead_zone)
+      return;
+    const float travel =
+      std::min (1.0f, (magnitude - dead_zone) / (1.0f - dead_zone));
+    const float rate = travel * (0.25f + 0.75f * travel * travel);
+    look_x = x / magnitude * rate;
+    look_y = y / magnitude * rate;
+  }
+
   ControlState GamepadMapper::map (const GamepadReading& r) {
     const float dpad_x = (r.dpad_right ? 1.0f : 0) - (r.dpad_left ? 1.0f : 0);
     const float dpad_y = (r.dpad_up ? 1.0f : 0) - (r.dpad_down ? 1.0f : 0);
@@ -32,6 +45,7 @@ namespace moppe::platform {
     controls.drive = stick_y != 0 ? stick_y : dpad_y;
     controls.boost = std::max (std::clamp (r.right_trigger, 0.0f, 1.0f),
                                r.y ? 1.0f : 0.0f);
+    look_axes (r.right_x, r.right_y, controls.look_x, controls.look_y);
     edge (0, r.a, Key::E);
     edge (1, r.a, Key::Restart);
     edge (2, r.b, Key::Mount);

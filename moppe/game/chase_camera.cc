@@ -24,6 +24,48 @@ namespace moppe {
       }
     }
 
+    void ChaseCamera::turn (float yaw, float pitch) {
+      const Vec3 up (0, 1, 0);
+      if (yaw != 0) {
+        // Turning right is a negative rotation about up, as the walker's.
+        const radians_t angle = -yaw * u::rad;
+        m_avg_orientation =
+          Quaternion::rotate (m_avg_orientation, up, angle);
+        if (m_is_uninitialized)
+          return;
+        Vec3& target = position_value (m_target);
+        Vec3& camera = position_value (m_position);
+        camera = target + Quaternion::rotate (camera - target, up, angle);
+        Vec3& velocity = velocity_value (m_position_velocity);
+        velocity = Quaternion::rotate (velocity, up, angle);
+      }
+      if (pitch != 0 && !m_is_uninitialized) {
+        Vec3& target = position_value (m_target);
+        Vec3& camera = position_value (m_position);
+        const Vec3 offset = camera - target;
+        // The same right axis update() raises the camera about.
+        Vec3 right = cross (up, Vec3 (-offset[0], 0, -offset[2]));
+        if (length2 (right) < 1e-6f)
+          return;
+        normalize (right);
+        camera = target + Quaternion::rotate (offset, right, pitch * u::rad);
+        Vec3& velocity = velocity_value (m_position_velocity);
+        velocity = Quaternion::rotate (velocity, right, pitch * u::rad);
+      }
+    }
+
+    void ChaseCamera::aim (float yaw, float pitch) {
+      const float turn_yaw = yaw - m_orbit_yaw;
+      const float turn_pitch = pitch - m_orbit_pitch;
+      m_orbit_yaw = yaw;
+      m_orbit_pitch = pitch;
+      // turn() would also swing the carried heading, which aim's offset is
+      // measured from; swing the camera alone.
+      const Vec3 heading = m_avg_orientation;
+      turn (turn_yaw, turn_pitch);
+      m_avg_orientation = heading;
+    }
+
     void ChaseCamera::update (position_t position,
                               const Vec3& orientation,
                               velocity_t velocity,
@@ -44,13 +86,15 @@ namespace moppe {
 
       // Sit behind the heading, tilted up by the pitch offset around
       // a well-defined horizontal right axis.
-      Vec3 o = m_avg_orientation;
+      Vec3 o = Quaternion::rotate (
+        m_avg_orientation, Vec3 (0, 1, 0), -m_orbit_yaw * u::rad);
       Vec3 right = cross (Vec3 (0, 1, 0), o);
       if (length2 (right) < 1e-6f)
         right = Vec3 (1, 0, 0);
       normalize (right);
 
-      Vec3 d = Quaternion::rotate (-o, right, m_pitch_offset);
+      Vec3 d = Quaternion::rotate (
+        -o, right, m_pitch_offset + m_orbit_pitch * u::rad);
       normalize (d);
 
       // Look slightly ahead of the motion so corners open up; the

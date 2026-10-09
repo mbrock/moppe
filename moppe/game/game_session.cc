@@ -146,12 +146,23 @@ namespace moppe::game {
       set_turn (session, input_value (input.turn));
       set_go (session, input_value (input.drive));
       set_boost (session, input_value (input.boost));
-      if (session.logic ().m_mode == M_FOOT) {
+      GameLogicState& logic = session.logic ();
+      logic.m_look_pitch =
+        std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
+      if (input.look_yaw != 0.0f || input.look_pitch != 0.0f)
+        logic.m_look_idle = 0.0f;
+      if (logic.m_mode == M_FOOT) {
+        // The walker turns with the look, and a following camera turns
+        // with them at once rather than catching up.
         session.walker ().turn_by (input.look_yaw);
         session.walker ().set_run (input.run);
-        GameLogicState& logic = session.logic ();
-        logic.m_look_pitch =
-          std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
+        if (logic.m_cam_mode != CAM_HELMET)
+          session.camera ().turn (input.look_yaw, 0.0f);
+        logic.m_look_yaw = 0.0f;
+      } else {
+        // Riding, the look swings about the way ahead, all the way round.
+        logic.m_look_yaw =
+          std::remainder (logic.m_look_yaw + input.look_yaw, 6.2831853f);
       }
 
       if (input.deploy_glider)
@@ -619,6 +630,14 @@ namespace moppe::game {
     logic.m_shake_time += elapsed;
     logic.m_shake *= decay (7.0f / u::s, elapsed * u::s);
 
+    // Riding or gliding, a look left alone drifts back to the way ahead.
+    logic.m_look_idle += elapsed;
+    if (logic.m_mode != M_FOOT && logic.m_look_idle > 1.2f) {
+      const float settle = 1.0f - decay (2.5f / u::s, elapsed * u::s);
+      logic.m_look_yaw -= logic.m_look_yaw * settle;
+      logic.m_look_pitch -= logic.m_look_pitch * settle;
+    }
+
     if (logic.m_cam_mode == CAM_HELMET) {
       // Ride inside the rider's head; lightly smoothed so terrain bumps do
       // not rattle the eyeballs.
@@ -627,13 +646,26 @@ namespace moppe::game {
         eye = session.walker ().eye_position ();
         look = session.walker ().heading () * std::cos (logic.m_look_pitch) +
                Vec3 (0, std::sin (logic.m_look_pitch), 0);
-      } else if (logic.m_mode == M_GLIDER) {
-        eye = session.glider ().position () - Vec3 (0, 0.75f, 0);
-        look = session.glider ().heading ();
       } else {
-        eye = vehicle.position () + Vec3 (0, 0.95f, 0) +
-              vehicle.orientation () * 0.4f;
-        look = vehicle.orientation ();
+        Vec3 ahead;
+        if (logic.m_mode == M_GLIDER) {
+          eye = session.glider ().position () - Vec3 (0, 0.75f, 0);
+          ahead = session.glider ().heading ();
+        } else {
+          eye = vehicle.position () + Vec3 (0, 0.95f, 0) +
+                vehicle.orientation () * 0.4f;
+          ahead = vehicle.orientation ();
+        }
+        // The head turns about the vertical and then nods about its own
+        // right, from the machine's heading.
+        const Vec3 up (0, 1, 0);
+        look = Quaternion::rotate (ahead, up, -logic.m_look_yaw * u::rad);
+        Vec3 right = cross (look, up);
+        if (length2 (right) > 1e-6f) {
+          normalize (right);
+          look =
+            Quaternion::rotate (look, right, logic.m_look_pitch * u::rad);
+        }
       }
       logic.m_fp_eye =
         logic.m_fp_eye +
@@ -641,9 +673,16 @@ namespace moppe::game {
       session.camera ().place (logic.m_fp_eye, logic.m_fp_eye + look * 10.0f);
     } else {
       const float flip = logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
-      session.camera ().frame (
-        logic.m_mode == M_FOOT ? 10 * u::deg : 18 * u::deg,
-        logic.m_mode == M_FOOT ? 3.8f * u::m : 6.5f * u::m);
+      const float elevation = logic.m_mode == M_FOOT ? 10.0f : 18.0f;
+      session.camera ().frame (elevation * u::deg,
+                               logic.m_mode == M_FOOT ? 3.8f * u::m
+                                                      : 6.5f * u::m);
+      // Looking up swings the camera down behind the subject and looking
+      // down lifts it, between skimming the ground and nearly overhead.
+      const float base = elevation * 0.017453293f;
+      const float raised =
+        std::clamp (base - logic.m_look_pitch, -0.12f, 1.25f);
+      session.camera ().aim (logic.m_look_yaw, raised - base);
       if (logic.m_mode == M_FOOT)
         session.camera ().update (
           moppe::position (session.walker ().position () + Vec3 (0, 1.35f, 0)),

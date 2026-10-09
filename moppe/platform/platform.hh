@@ -62,6 +62,10 @@ namespace moppe {
       float steer = 0;
       float drive = 0;
       float boost = 0;
+      // How fast to turn the view, -1..1 rightward and upward: a stick
+      // held over, as the mouse's pointer_move turns it by distance.
+      float look_x = 0;
+      float look_y = 0;
     };
 
     enum class PointerButton { Primary, Secondary, Middle };

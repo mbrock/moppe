@@ -1452,7 +1452,7 @@ namespace moppe {
           return;
         }
 
-        InputFrame input = m_live_input.take_frame ();
+        InputFrame input = m_live_input.take_frame (dt);
         if (scripted_input)
           input = *scripted_input;
 
@@ -1505,12 +1505,21 @@ namespace moppe {
         m_trunk_field.focus (session ().subject_position ());
         static const bool orbit = moppe::environment ("MOPPE_ORBIT") != 0 ||
                                   moppe::environment ("MOPPE_PAN") != 0;
-        if (m_spectator)
+        if (m_spectator) {
+          // The mouse turns the spectator directly; the right stick's look
+          // arrives with the frame.
+          m_spectator->yaw += input.look_yaw;
+          m_spectator->pitch = std::clamp (
+            m_spectator->pitch + input.look_pitch, -1.45f, 1.45f);
           input = {};
+        }
         static const char* walk_script = moppe::environment ("MOPPE_WALK");
         if (walk_script && logic ().m_mode == M_FOOT && !orbit)
           input = scripted_walk (walk_script, dt);
         else if (demo && !m_water_inspection && !orbit) {
+          // The autopilot rides; the player may still look around.
+          const float look_yaw = input.look_yaw;
+          const float look_pitch = input.look_pitch;
           input = {
             .turn = 0.35f * std::sin (total_time * 0.25f),
             .drive = 1.0f,
@@ -1521,6 +1530,8 @@ namespace moppe {
             // MOPPE_DEMO=glide opens the wing on the first leap high
             // enough to allow it.
             .deploy_glider_held = demo_glides,
+            .look_yaw = look_yaw,
+            .look_pitch = look_pitch,
           };
           // Look a few metres ahead; where a trunk stands in the way, steer
           // hard toward the side its contact pushes, so a ride through the

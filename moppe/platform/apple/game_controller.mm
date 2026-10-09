@@ -46,6 +46,8 @@ namespace moppe::platform {
       if (GCExtendedGamepad* pad = controller.extendedGamepad) {
         r.left_x = pad.leftThumbstick.xAxis.value;
         r.left_y = pad.leftThumbstick.yAxis.value;
+        r.right_x = pad.rightThumbstick.xAxis.value;
+        r.right_y = pad.rightThumbstick.yAxis.value;
         r.right_trigger = pad.rightTrigger.value;
         r.a = button_down (pad.buttonA);
         r.b = button_down (pad.buttonB);

@@ -21,6 +21,8 @@ namespace moppe {
         velocity_t position_velocity {};
         velocity_t target_velocity {};
         speed_t speed {};
+        float orbit_yaw {};
+        float orbit_pitch {};
         bool is_uninitialized {};
       };
 
@@ -34,6 +36,17 @@ namespace moppe {
         m_pitch_offset = pitch_offset;
         m_distance = distance;
       }
+
+      // Swings the camera about its look point at once, `yaw` radians
+      // rightward and `pitch` radians higher, rather than through the
+      // follow spring, so the mouse and the right stick feel direct. The
+      // carried heading turns too, for a subject that turned with it.
+      void turn (float yaw, float pitch);
+
+      // Where the player has looked away from the default view behind the
+      // subject: `yaw` radians around to the right, `pitch` radians above
+      // the framing's own elevation. Changes take effect at once (turn).
+      void aim (float yaw, float pitch);
 
       void update (position_t position,
                    const Vec3& orientation,
@@ -49,6 +62,8 @@ namespace moppe {
                  m_position_velocity,
                  m_target_velocity,
                  m_speed,
+                 m_orbit_yaw,
+                 m_orbit_pitch,
                  m_is_uninitialized };
       }
 
@@ -60,6 +75,8 @@ namespace moppe {
         m_position_velocity = state.position_velocity;
         m_target_velocity = state.target_velocity;
         m_speed = state.speed;
+        m_orbit_yaw = state.orbit_yaw;
+        m_orbit_pitch = state.orbit_pitch;
         m_is_uninitialized = state.is_uninitialized;
       }
 
@@ -99,6 +116,8 @@ namespace moppe {
       velocity_t m_position_velocity;
       velocity_t m_target_velocity;
       speed_t m_speed;
+      float m_orbit_yaw = 0;
+      float m_orbit_pitch = 0;
       bool m_is_uninitialized;
     };
   }

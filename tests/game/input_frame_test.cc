@@ -1,4 +1,5 @@
 #include <moppe/game/input_frame_adapter.hh>
+#include <moppe/platform/input.hh>
 
 #include <tests/test.hh>
 
@@ -97,4 +98,36 @@ MOPPE_TEST (input_frame_adapter_combines_keyboard_and_controller_controls) {
   input.key (platform::Key::A, false);
   frame = input.take_frame ();
   MOPPE_CHECK_NEAR (game::input_value (frame.turn), 0.5f, 0.0f);
+}
+
+MOPPE_TEST (input_frame_adapter_turns_the_head_at_the_stick_rate) {
+  game::InputFrameAdapter input;
+  input.controls ({ .look_x = 1.0f, .look_y = -0.5f });
+  game::InputFrame frame = input.take_frame (0.5f);
+  MOPPE_CHECK_NEAR (frame.look_yaw,
+                    0.5f * game::InputFrameAdapter::look_yaw_rate, 1e-6f);
+  MOPPE_CHECK_NEAR (frame.look_pitch,
+                    -0.25f * game::InputFrameAdapter::look_pitch_rate,
+                    1e-6f);
+  // The mouse adds to it within the same frame.
+  input.look (10.0f, 0.0f);
+  frame = input.take_frame (0.0f);
+  MOPPE_CHECK_NEAR (frame.look_yaw, 0.035f, 1e-6f);
+  input.controls ({});
+  frame = input.take_frame (1.0f);
+  MOPPE_CHECK_NEAR (frame.look_yaw, 0.0f, 0.0f);
+}
+
+MOPPE_TEST (right_stick_looks_through_a_round_dead_zone) {
+  float x = 1, y = 1;
+  platform::look_axes (0.1f, 0.1f, x, y);
+  MOPPE_CHECK_NEAR (x, 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (y, 0.0f, 0.0f);
+  // Straight up stays straight up, and full travel is full rate.
+  platform::look_axes (0.0f, 1.0f, x, y);
+  MOPPE_CHECK_NEAR (x, 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (y, 1.0f, 1e-6f);
+  // Half travel turns well under half as fast, for fine aiming.
+  platform::look_axes (0.575f, 0.0f, x, y);
+  MOPPE_CHECK (x > 0.0f && x < 0.3f);
 }

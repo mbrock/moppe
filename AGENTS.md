@@ -12,7 +12,10 @@
   (or `open build/moppe.app`) on macOS, `./build/moppe` on Linux. Both are
   the same SDL3 host (`moppe/platform/sdl/`) drawing through the NHAL
   renderer, on Metal 4 or Vulkan; on Linux, run cmake inside `nix develop`.
-  - Game controller: left stick drives and steers; right trigger boosts; `A`
+  - Game controller: left stick drives and steers; right stick looks around
+    (on foot it turns the hiker, riding or gliding it swings the view about
+    the way ahead until it drifts back after a moment; the mouse does the
+    same); right trigger boosts; `A`
     deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
     and `Y` boosts, flares, or skips the opening. The D-pad navigates Terrain
     Lab. Xbox, PlayStation, and compatible MFi controllers use this layout.

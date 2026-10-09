@@ -117,6 +117,8 @@ namespace {
       r.left_x = axis (SDL_GAMEPAD_AXIS_LEFTX);
       // SDL's sticks point down for positive y; driving forward is up.
       r.left_y = -axis (SDL_GAMEPAD_AXIS_LEFTY);
+      r.right_x = axis (SDL_GAMEPAD_AXIS_RIGHTX);
+      r.right_y = -axis (SDL_GAMEPAD_AXIS_RIGHTY);
       r.right_trigger = axis (SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
       r.a = held (SDL_GAMEPAD_BUTTON_SOUTH);
       r.b = held (SDL_GAMEPAD_BUTTON_EAST);

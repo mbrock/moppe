@@ -19,6 +19,7 @@ namespace moppe::platform {
   // before any dead zone; the trigger runs 0..1.
   struct GamepadReading {
     float left_x = 0, left_y = 0;
+    float right_x = 0, right_y = 0;
     float right_trigger = 0;
     bool a = false, b = false, x = false, y = false;
     bool dpad_left = false, dpad_right = false;
@@ -29,8 +30,14 @@ namespace moppe::platform {
   // reads zero and full travel one.
   float stick_axis (float value);
 
+  // The right stick's deflection as a look rate: a round dead zone, so a
+  // push straight up does not leak sideways, and a curve that keeps small
+  // deflections fine for aiming and full ones quick for turning around.
+  void look_axes (float x, float y, float& look_x, float& look_y);
+
   // The gamepad as every host reads one: the left stick (or the D-pad)
-  // drives and steers, the right trigger boosts; A deploys the glider or
+  // drives and steers, the right stick looks around, the right trigger
+  // boosts; A deploys the glider or
   // restarts, B mounts, X cycles the camera, Y boosts or flares, and the
   // D-pad also presses the arrow keys for menus.
   class GamepadMapper {

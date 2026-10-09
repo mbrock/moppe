@@ -42,6 +42,11 @@ namespace moppe::game {
     CamMode m_cam_mode = CAM_CHASE;
     // Gaze above (positive) or below the walker's horizon, in radians.
     float m_look_pitch = 0.0f;
+    // Riding or gliding, the player's look away from straight ahead:
+    // radians around to the right, and seconds since they last moved it
+    // (the view drifts back ahead after a moment).
+    float m_look_yaw = 0.0f;
+    float m_look_idle = 0.0f;
     Vec3 m_fp_eye;
     int m_score = 0;
     float m_jump_airtime = 0.0f;

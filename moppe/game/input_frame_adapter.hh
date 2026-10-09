@@ -17,6 +17,8 @@ namespace moppe::game {
       m_analog.turn = std::clamp (state.steer, -1.0f, 1.0f);
       m_analog.drive = std::clamp (state.drive, -1.0f, 1.0f);
       m_analog.boost = std::clamp (state.boost, 0.0f, 1.0f);
+      m_look_rate_x = std::clamp (state.look_x, -1.0f, 1.0f);
+      m_look_rate_y = std::clamp (state.look_y, -1.0f, 1.0f);
     }
 
     // Pointer movement in points becomes head turn in radians.
@@ -118,8 +120,15 @@ namespace moppe::game {
       }
     }
 
-    InputFrame take_frame () {
+    // A held look stick turns the head at up to these rates, in radians
+    // per second, over the `dt` the frame covers.
+    static constexpr float look_yaw_rate = 3.2f;
+    static constexpr float look_pitch_rate = 2.0f;
+
+    InputFrame take_frame (float dt = 0.0f) {
       InputFrame frame = m_analog;
+      m_look_yaw += look_yaw_rate * m_look_rate_x * dt;
+      m_look_pitch += look_pitch_rate * m_look_rate_y * dt;
       if (std::abs (input_value (m_keys.turn)) >
           std::abs (input_value (frame.turn)))
         frame.turn = m_keys.turn;
@@ -155,6 +164,8 @@ namespace moppe::game {
       m_leave_cinematic = false;
       m_look_yaw = 0.0f;
       m_look_pitch = 0.0f;
+      m_look_rate_x = 0.0f;
+      m_look_rate_y = 0.0f;
       m_run = false;
       m_combo = 0;
     }
@@ -182,6 +193,8 @@ namespace moppe::game {
     bool m_leave_cinematic = false;
     float m_look_yaw = 0.0f;
     float m_look_pitch = 0.0f;
+    float m_look_rate_x = 0.0f;
+    float m_look_rate_y = 0.0f;
     bool m_run = false;
     int m_combo = 0;
   };
