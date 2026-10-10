@@ -7,8 +7,9 @@ its WebGPU device (`moppe/nhal/webgpu/`, docs/nhal.md), with `world.lisp`
 lowered to WGSL by luv-shaderc. Nothing in the game or its shaders is
 written again for the web.
 
-It is published at <https://moppe.swa.sh> and on GitHub Pages, both built
-from `master` as it moves (below).
+It is published at <https://moppe.swa.sh> and at
+<https://mbrock.github.io/moppe/>, both built from `master` as it moves
+(below).
 
 ## Build and run
 
@@ -134,7 +135,7 @@ in the checkout builds and publishes at once.
 runners at each push to master: Nix for luv-shaderc and the land's
 compiler, a pinned emsdk, `make web`, and the four files as the site, the
 page as `index.html`. The baked land is kept between runs until the
-terrain's code changes.
+terrain's code changes. A run from nothing takes five minutes.
 
 ## The build's particulars
 
