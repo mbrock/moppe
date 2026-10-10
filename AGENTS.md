@@ -224,8 +224,8 @@
 - Renderer smoke test: `./build/moppe-testbed` (configure with
   `-DMOPPE_BUILD_DEVELOPER_TOOLS=ON`)
 - NHAL, the renderer's hardware layer (Metal 4, Direct3D 12 for Xbox,
-  Vulkan on Linux; `docs/nhal.md`): `cmake --build build --target
-  nhal-demo`, then `./build/nhal-demo`, or
+  Vulkan on Linux, WebGPU in the browser; `docs/nhal.md`): `cmake --build
+  build --target nhal-demo`, then `./build/nhal-demo`, or
   `./build/nhal-demo --capture /tmp/nhal.png --frames 30` to write one frame
   without taking focus. On Xbox: `nix build .#nhal-xbox` and
   `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net nix run .#deploy-nhal-xbox`;
@@ -237,6 +237,15 @@
   /tmp/nhal.tga --frames 30` renders the demo without a window.
   `MOPPE_VULKAN_VALIDATION=1` turns on the Khronos validation layer. The
   device is `moppe/nhal/vulkan/`; see docs/nhal.md.
+- Browser (NHAL on WebGPU, the SDL host built by Emscripten; docs/web.md):
+  `make web-serve` builds `build-web/moppe.html` and serves it at
+  <http://localhost:8080> with the cross-origin isolation its threads need
+  (`make web` only builds; `brew install emscripten bun`). The page's
+  address carries the command line and switches:
+  `?args=--seed+7&MOPPE_FPS_REPORT=1&MOPPE_NHAL_TIMINGS=1`, reporting to the
+  browser's console. The device is `moppe/nhal/webgpu/`, the page
+  `moppe/platform/web/`. WebGPU validates what the other devices let
+  pass, so a renderer change is worth a look at the console there.
 - World generation is bit-identical across platforms (docs/determinism.md):
   the project builds with `-ffp-contract=off`, generation code calls
   `moppe::cr::` (correctly rounded CORE-MATH) instead of `std::sin`,
@@ -321,12 +330,13 @@
   `moppe/nhal/renderer/` implements it over NHAL (`moppe/nhal/`), the one
   renderer on every platform, with its shaders in Luv's Lisp
   (`moppe/nhal/renderer/shaders/world.lisp`) lowered by luv-shaderc to MSL,
-  HLSL, and SPIR-V.
+  HLSL, SPIR-V, and WGSL.
 - `moppe/platform/` — the Game interface, input, assets, speech. `sdl/` is
-  the desktop host (macOS and Linux): an SDL3 window, its input, and the
-  NHAL device (`device_metal.mm`, `device_vulkan.cc`). `ios/` and `tvos/`
-  are UIKit hosts over NHAL's Metal device, `uwp/` the Xbox's, and `apple/`
-  services the Apple hosts share.
+  the desktop host (macOS and Linux) and the browser's: an SDL3 window, its
+  input, and the NHAL device (`device_metal.mm`, `device_vulkan.cc`,
+  `device_webgpu.cc`). `ios/` and `tvos/` are UIKit hosts over NHAL's Metal
+  device, `uwp/` the Xbox's, `apple/` services the Apple hosts share, and
+  `web/` the browser's page.
 - `moppe/game/` — the game systems, one file each (terrain, forest, water,
   dust, HUD, vehicle rendering; glue in game.cc).
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see

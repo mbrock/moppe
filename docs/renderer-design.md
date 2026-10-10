@@ -3,9 +3,9 @@
 Status: current Metal/backend implementation record. This document preserves
 the port's technical decisions and implementation detail; the
 [engine atlas](engine-atlas.md) is the current map of source ownership, state,
-and CMake targets. A playable browser backend now implements the same renderer
-contract through WebGPU; see [WebAssembly and WebGPU](web.md). Android remains
-a future possibility.
+and CMake targets. The browser runs the same game and renderer through NHAL's
+WebGPU device; see [The game in the browser](web.md). Android remains a future
+possibility.
 
 ## Port goals and retained constraints
 

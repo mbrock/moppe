@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "moppe-web",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "tools/serve-web.ts"],
+      "port": 8080
+    }
+  ]
+}

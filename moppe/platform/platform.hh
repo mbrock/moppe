@@ -116,7 +116,9 @@ namespace moppe {
       }
     };
 
-    // Runs the platform main loop; returns the process exit code.
+    // Runs the platform main loop; returns the process exit code. A
+    // browser's loop is the page's: there run returns once the game is set
+    // up, and the game lives on after main.
     int run (Game& game, const Config& config);
 
     // Ask the run loop to quit (no-op on iOS, where apps don't exit).

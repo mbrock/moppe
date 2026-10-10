@@ -74,6 +74,11 @@ namespace moppe::platform {
   }
 
   std::string executable_build_id () {
+#ifdef __EMSCRIPTEN__
+    // A page's caches go with the page, so its builds need no telling
+    // apart.
+    return "web";
+#else
     static const std::string id = [] {
       std::ifstream input (executable_path (), std::ios::binary);
       if (!input)
@@ -95,6 +100,7 @@ namespace moppe::platform {
       return text.str ();
     }();
     return id;
+#endif
   }
 
   std::string cache_path (const std::string& relative) {

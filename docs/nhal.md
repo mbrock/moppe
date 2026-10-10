@@ -2,15 +2,16 @@
 
 NHAL is a small C++ hardware layer for moppe's renderer, in the spirit
 of Luv's WebGPU-shaped HAL but shaped by what the targets actually offer. It
-has three backends: Metal 4 on Apple platforms, Direct3D 12 for Xbox Series
-consoles in Developer Mode (UWP, feature level 11_0, shader model 6.4), and
-Vulkan 1.3 on Linux. It lives in `moppe/nhal/`, and its renderer is the
-game's only one: the Metal and WebGPU renderers it grew beside are retired.
+has four backends: Metal 4 on Apple platforms, Direct3D 12 for Xbox Series
+consoles in Developer Mode (UWP, feature level 11_0, shader model 6.4),
+Vulkan 1.3 on Linux, and WebGPU in the browser (docs/web.md). It lives in
+`moppe/nhal/`, and its renderer is the game's only one: the Metal and
+WebGPU renderers it grew beside are retired.
 
 Shaders are written in Luv's mathematical shader language and lowered ahead of
-time by `luv-shaderc` (a package of the Luv flake) into MSL, HLSL, and SPIR-V
-(through Luv's own Vulkan lowering), plus the reflection NHAL builds its
-pipelines from.
+time by `luv-shaderc` (a package of the Luv flake) into MSL, HLSL, SPIR-V
+(through Luv's own Vulkan lowering), and WGSL, plus the reflection NHAL builds
+its pipelines from.
 
 ## The renderer
 
@@ -18,8 +19,8 @@ pipelines from.
 on every platform. Its programs live in one Lisp file, `shaders/world.lisp`,
 which CMake lowers into `build/nhal-world/` (`moppe_lower_world_shaders`)
 and embeds in each backend's form (`world_shaders_metal.cc`,
-`world_shaders_vulkan.cc`, by `#embed`; `world_shaders_d3d12.cc`, from
-DXC's headers). A frame draws the scene into a
+`world_shaders_vulkan.cc`, `world_shaders_webgpu.cc`, by `#embed`;
+`world_shaders_d3d12.cc`, from DXC's headers). A frame draws the scene into a
 half-size RGBA16F colour, RG16F motion, and reversed-Z depth, jittered;
 resolves it temporally into a drawable-size history; then tonemaps into the
 drawable and draws the HUD over it.
@@ -269,6 +270,51 @@ textures are known only as its draws arrive, so each render pass records
 into a secondary command buffer that the frame's primary executes after
 the pass's barriers. A timeline semaphore counts frames.
 
+## The WebGPU device
+
+`moppe/nhal/webgpu/` is NHAL on WebGPU, through Dawn's `webgpu.h` as
+Emscripten binds it to the page's `GPUDevice` (docs/web.md has the build
+and the page). It differs from the other devices where WebGPU does:
+
+- Bindings are bind groups, which are immutable. luv-shaderc lowers each
+  program's WGSL with its buffers in group 0, its textures in group 1, and
+  its samplers in group 2 (the table below), and the device builds those
+  three layouts from the program's reflection. It keeps every group it has
+  made, keyed by what it binds, and releases those unused for 240 frames:
+  the samplers' group is made once per program, a textures' group once per
+  set of textures, and a buffers' group once per set of buffers. Uniform
+  blocks bind at dynamic offsets, and so do read-only storage buffers as
+  far as `maxDynamicStorageBuffersPerPipelineLayout` allows, so every slice
+  of the frame arena shares a group: a slice binds a power of two of the
+  arena from its start, whatever its place. After the first frames a frame
+  makes no bind groups.
+- Buffers bind only from multiples of 256 bytes. The renderer draws part of
+  a vertex buffer by the draw's first vertex wherever the shader's index
+  counts from it (`DeviceInfo::indices_count_from_first`: Metal, Vulkan,
+  and WebGPU; Direct3D 12 binds the buffer from that vertex instead).
+- The frame arena is ordinary memory, written to its GPU buffer when the
+  frame is submitted; `Memory::upload` buffers are a CPU copy written whole
+  each frame. WebGPU has no memory the CPU and GPU share.
+- Slots a draw leaves unbound bind a zeroed buffer or a one-texel texture,
+  as Vulkan's null descriptors read; a texture the pass renders into reads
+  the same way.
+- A triangle strip's pipeline names the index type whose all-ones value
+  restarts it, so a strip has a pipeline per index type, made on first use.
+- Depth textures and other unfilterable formats read through the nearest
+  sampler (binding 2) or a comparison, never a filtering one. The terrain's
+  32-bit float textures are filtered, which needs the `float32-filterable`
+  feature. WebGPU's RG16Snorm is optional and, in Dawn, unfiltered, so the
+  device keeps such textures as RG16Float.
+- Nothing may wait for the GPU on the page's thread: `wait_idle` returns at
+  once, and captures and pass timings (the `timestamp-query` feature, read
+  back one frame at a time when `MOPPE_NHAL_TIMINGS` asks) arrive in a
+  later frame. The browser presents the canvas when the animation frame's
+  callback returns, and `next_frame_timing` is that frame's time on the
+  document's timeline.
+- Storage textures, texture arrays, cubes, and volumes are not bound yet:
+  the reflection does not carry a storage texture's format, and no world
+  program uses them.
+
 ## What the Xbox allows
 
 Measured by nixbox's `probes/d3d12-caps` and `probes/swapchain`:
@@ -372,6 +418,15 @@ numbers are per kind family, and the families map onto each backend like this:
 | `:read-write-texture-2d` | storage texture | `texture2d<…, access::read_write> n [[texture(16 + i)]]` | `RWTexture2D<…> n : register(u i, space1)` | a UAV table, u0–u15 space1 | storage image at `32 + i` |
 | `:sampler` | sampler | `sampler n [[sampler(i)]]` | `SamplerState` or `SamplerComparisonState n : register(s i)` | static samplers | immutable sampler at `48 + i` |
 
+WGSL puts each family in a bind group of its own, at its binding number:
+
+| Family | WebGPU WGSL |
+| --- | --- |
+| buffer | `var<uniform> n: B`, `var<storage, read> n: array<T>`, or `var<storage, read_write> n: array<T>` at `@group(0) @binding(i)` |
+| texture | `texture_2d<f32>`, `texture_depth_2d`, `texture_2d<u32>`, and the arrays, cubes, and volumes at `@group(1) @binding(i)` |
+| storage texture | `texture_storage_2d<format, access>` at `@group(1) @binding(16 + i)` |
+| sampler | `sampler` or `sampler_comparison` at `@group(2) @binding(i)` |
+
 - Buffer binding numbers are unique across uniform blocks and storage buffers
   (Metal shares one buffer index space); 0–15.
 - Texture binding numbers are 0–15, and so are storage texture binding
@@ -413,9 +468,9 @@ fragment input signature is always `SV_Position` followed by every vertex
 output, since Direct3D matches stages by layout.
 
 Clip space: shaders write `:position` in the language's convention, y down
-(Vulkan's), and the MSL and HLSL lowerings negate y, so what reaches Metal
-and Direct3D is their y up with depth 0..1; SPIR-V keeps it as written, under
-an ordinary viewport. Renderers use reversed-Z.
+(Vulkan's), and the MSL, HLSL, and WGSL lowerings negate y, so what reaches
+Metal, Direct3D, and WebGPU is their y up with depth 0..1; SPIR-V keeps it as
+written, under an ordinary viewport. Renderers use reversed-Z.
 
 In fragment stages `:frag-coord` is pixels from the top-left at pixel
 centres, depth in z, and 1/clip-w in w on every backend (HLSL rebuilds w from
@@ -431,7 +486,7 @@ storage texture table is visible to every stage.
 
 ## What `luv-shaderc` produces
 
-`nix run .#luv-shaderc -- --out DIR [--target msl|hlsl|spirv]... FILE.lisp`
+`nix run .#luv-shaderc -- --out DIR [--target msl|hlsl|spirv|wgsl]... FILE.lisp`
 (this repository's flake pins the Luv version). Source files are plain
 `define-shader`, `define-shader-function`, and
 `(define-shader-program NAME :vertex V :fragment F)` (or `:compute C`) forms
@@ -446,6 +501,8 @@ output directory:
 - `NAME.STAGE.spv`, one SPIR-V module per stage, from Luv's Vulkan lowering,
   its entry point named as in the other languages and every resource in
   set 0 at its family's base plus its binding (the table above).
+- `NAME.STAGE.wgsl`, one WGSL module per stage, each family in its bind
+  group (the table above).
 - `NAME.json`, the reflection manifest: stages and entry points, every
   resource (name, kind, binding, stages, byte size, uniform members and
   offsets, storage element type), and the fragment outputs.

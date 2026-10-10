@@ -56,6 +56,13 @@ add_compile_options(-Wall)
 # baseline x86-64 cannot), and correctly rounded transcendental functions
 # from CORE-MATH below (docs/determinism.md).
 add_compile_options(-ffp-contract=off)
+# In the browser (docs/web.md) the world generates on worker threads, which
+# need shared memory, and errors are WebAssembly's own exceptions. Every
+# object of the program is compiled alike.
+if(EMSCRIPTEN)
+  add_compile_options(-pthread -fwasm-exceptions)
+  add_link_options(-pthread -fwasm-exceptions)
+endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
   add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
 endif()
@@ -138,8 +145,15 @@ set_target_properties(box3d PROPERTIES
   C_EXTENSIONS YES
   UNITY_BUILD OFF)
 # Upstream builds without floating-point contraction for cross-platform
-# determinism.
+# determinism, and maps its SSE2 path onto wasm SIMD128 under Emscripten.
 target_compile_options(box3d PRIVATE -ffp-contract=off)
+if(EMSCRIPTEN)
+  target_compile_options(box3d PRIVATE -msimd128 -msse2)
+  # Emscripten 6.0.3's clang recurses without end selecting WebAssembly
+  # SIMD instructions for b3CreateShape at -O2; -O1 compiles it.
+  set_source_files_properties(third_party/box3d/src/shape.c
+    PROPERTIES COMPILE_OPTIONS -O1)
+endif()
 # nixbox's Xbox compiler searches the MSVC headers before Clang's own, so
 # <emmintrin.h> declares the SSE intrinsics as external functions nothing
 # defines. Box3D's SIMD kernels need Clang's inline definitions first.
@@ -173,6 +187,12 @@ target_compile_options(core-math PRIVATE -w)
 # would otherwise save and restore around every call (a library call on
 # arm64; third_party/core-math/VENDOR.md).
 target_compile_definitions(core-math PRIVATE CORE_MATH_IGNORE_FLAGS)
+# WebAssembly has no floating-point exception flags, and Emscripten's
+# <fenv.h> names none; raising none of them is what CORE-MATH then does.
+if(EMSCRIPTEN)
+  target_compile_definitions(core-math PRIVATE
+    FE_INVALID=0 FE_DIVBYZERO=0 FE_OVERFLOW=0 FE_UNDERFLOW=0 FE_INEXACT=0)
+endif()
 
 if(MOPPE_ENABLE_TRACY)
   set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
@@ -449,10 +469,11 @@ foreach(program IN LISTS MOPPE_NHAL_WORLD_COMPUTED)
   list(APPEND MOPPE_NHAL_WORLD_STAGES ${program}.compute)
 endforeach()
 
-# Lowers world.lisp to LANGUAGE (msl, hlsl, or spirv), whose stage files end
-# in EXTENSION, once per build: the custom target moppe_nhal_world_LANGUAGE
-# owns the command (Xcode lets one target own it). Sets OUTPUTS to every file
-# it writes: each program's reflection header and stages.
+# Lowers world.lisp to LANGUAGE (msl, hlsl, spirv, or wgsl), whose stage
+# files end in EXTENSION, once per build: the custom target
+# moppe_nhal_world_LANGUAGE owns the command (Xcode lets one target own it).
+# Sets OUTPUTS to every file it writes: each program's reflection header and
+# stages.
 function(moppe_lower_world_shaders language extension outputs)
   set(written)
   foreach(stage IN LISTS MOPPE_NHAL_WORLD_STAGES)
@@ -760,11 +781,20 @@ endif()
 # The desktop game: an SDL3 window on macOS and Linux, drawn by the NHAL
 # renderer through Metal 4 or Vulkan (moppe/platform/sdl/). On Linux,
 # `nix develop` provides SDL3, Vulkan, and luv-shaderc; elsewhere a missing
-# SDL3 is built from its release.
+# SDL3 is built from its release. The browser's game is the same host on
+# Emscripten, whose window is the page's canvas, drawn through WebGPU
+# (docs/web.md); SDL3 and Dawn's WebGPU bindings are Emscripten's ports.
 
-if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  find_package(SDL3 CONFIG QUIET)
-  if(NOT SDL3_FOUND)
+if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
+    OR EMSCRIPTEN)
+  if(EMSCRIPTEN)
+    add_library(SDL3::SDL3 INTERFACE IMPORTED)
+    target_compile_options(SDL3::SDL3 INTERFACE --use-port=sdl3)
+    target_link_options(SDL3::SDL3 INTERFACE --use-port=sdl3)
+  else()
+    find_package(SDL3 CONFIG QUIET)
+  endif()
+  if(NOT SDL3_FOUND AND NOT EMSCRIPTEN)
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
@@ -778,7 +808,13 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     FetchContent_MakeAvailable(SDL3)
   endif()
 
-  if(APPLE)
+  if(EMSCRIPTEN)
+    set(MOPPE_SDL_DEVICE
+      moppe/nhal/webgpu/webgpu_device.cc
+      moppe/platform/sdl/device_webgpu.cc)
+    set(MOPPE_SDL_SHADERS wgsl wgsl
+      moppe/nhal/renderer/world_shaders_webgpu.cc)
+  elseif(APPLE)
     set(MOPPE_SDL_DEVICE
       moppe/nhal/metal/metal_device.mm
       moppe/platform/sdl/device_metal.mm)
@@ -811,7 +847,39 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
       COMPILE_DEFINITIONS "MOPPE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\""
       SKIP_UNITY_BUILD_INCLUSION ON)
     target_link_libraries(${target} PRIVATE SDL3::SDL3)
-    if(APPLE)
+    if(EMSCRIPTEN)
+      # The page: shell.html around the program, pre.js acquiring its
+      # WebGPU device, and the assets as a preloaded file system. A thread
+      # waits in the pool for each core and for the world's generation, so
+      # none has to be started while the page is busy.
+      set(web ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/web)
+      target_compile_options(${target} PRIVATE --use-port=emdawnwebgpu)
+      target_link_options(${target} PRIVATE
+        --use-port=emdawnwebgpu
+        --shell-file=${web}/shell.html
+        --pre-js=${web}/pre.js
+        --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/textures@/textures
+        --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/data@/data
+        --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/fonts@/fonts
+        # The page keeps function names for its stack traces but no DWARF,
+        # which would also hold back Binaryen's optimizer.
+        -g0 --profiling-funcs
+        -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency+2
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=536870912
+        -sMAXIMUM_MEMORY=4294967296
+        -sSTACK_SIZE=1048576
+        -sDEFAULT_PTHREAD_STACK_SIZE=4194304
+        "-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$ENV,$addRunDependency,$removeRunDependency")
+      set_target_properties(${target} PROPERTIES
+        SUFFIX ".html"
+        LINK_DEPENDS "${web}/shell.html;${web}/pre.js")
+      # Land in the page's package spares the visitor its generation.
+      if(MOPPE_LANDS_DIR)
+        target_link_options(${target} PRIVATE
+          --preload-file=${MOPPE_LANDS_DIR}@/worlds)
+      endif()
+    elseif(APPLE)
       target_compile_options(${target} PRIVATE
         $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
       target_link_libraries(${target} PRIVATE
@@ -855,6 +923,12 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
           $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/worlds
         COMMENT "Bundling land into moppe.app")
     endif()
+  elseif(EMSCRIPTEN)
+    # build-web/moppe.html, with its .js, .wasm, and .data beside it.
+    add_executable(moppe
+      moppe/game/main.cc
+      ${MOPPE_ENGINE_SOURCES}
+      ${MOPPE_APPLICATION_SOURCES})
   else()
     add_executable(moppe
       moppe/game/main.cc
@@ -888,8 +962,11 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     moppe_add_sdl_host(moppe-tree-studio)
   endif()
 
-  # The NHAL demo (docs/nhal.md): a valley, a spruce stand, and their sun
-  # shadow on Metal 4 or Vulkan. Its shaders are read at run time.
+endif()
+
+# The NHAL demo (docs/nhal.md): a valley, a spruce stand, and their sun
+# shadow on Metal 4 or Vulkan. Its shaders are read at run time.
+if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(MOPPE_NHAL_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/nhal-shaders)
   if(APPLE)
     set(MOPPE_NHAL_DEMO_LANGUAGE msl)

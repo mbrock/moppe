@@ -1,7 +1,8 @@
-// The game in an SDL3 window, on every desktop SDL carries: the NHAL
-// renderer draws into the window through the platform's device (sdl.hh),
-// and the keyboard, mouse, and first gamepad drive the game. The window is
-// sized in points; the drawable is its pixels.
+// The game in an SDL3 window, on every desktop SDL carries and in the
+// browser, where the window is the page's canvas: the NHAL renderer draws
+// into the window through the platform's device (sdl.hh), and the keyboard,
+// mouse, and first gamepad drive the game. The window is sized in points;
+// the drawable is its pixels.
 
 #include <moppe/environment.hh>
 #include <moppe/nhal/renderer/nhal_renderer.hh>
@@ -20,6 +21,10 @@
 #include <string>
 
 #include <SDL3/SDL.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 namespace {
   using moppe::platform::ControlState;
@@ -157,89 +162,143 @@ namespace {
 }
 
 namespace moppe::platform {
-  int run (Game& game, const Config& config) {
-    if (!SDL_Init (SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
-      throw std::runtime_error (std::string ("SDL_Init: ") + SDL_GetError ());
-    // Automated runs leave the active app in front.
-    if (!config.activate)
-      SDL_SetHint (SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
-    SDL_WindowFlags flags = SDL_WindowFlags (sdl::window_flags ())
-                            | SDL_WINDOW_RESIZABLE
-                            | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    if (config.fullscreen)
-      flags |= SDL_WINDOW_FULLSCREEN;
-    SDL_Window* window =
-      SDL_CreateWindow (config.title.empty () ? "Moppe" : config.title.c_str (),
-                        config.width, config.height, flags);
-    if (!window)
-      throw std::runtime_error (std::string ("SDL_CreateWindow: ")
-                                + SDL_GetError ());
-    active_window = window;
+  namespace {
+    // The window, the renderer drawing into it, and the loop's state from
+    // one turn to the next.
+    class Host {
+    public:
+      Host (Game& game, const Config& config) : m_game (game), m_pad (game) {
+        if (!SDL_Init (SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
+          throw std::runtime_error (std::string ("SDL_Init: ")
+                                    + SDL_GetError ());
+        // Automated runs leave the active app in front.
+        if (!config.activate)
+          SDL_SetHint (SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
+        SDL_WindowFlags flags = SDL_WindowFlags (sdl::window_flags ())
+                                | SDL_WINDOW_RESIZABLE
+                                | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        if (config.fullscreen)
+          flags |= SDL_WINDOW_FULLSCREEN;
+        m_window = SDL_CreateWindow (
+          config.title.empty () ? "Moppe" : config.title.c_str (),
+          config.width, config.height, flags);
+        if (!m_window)
+          throw std::runtime_error (std::string ("SDL_CreateWindow: ")
+                                    + SDL_GetError ());
+        active_window = m_window;
 
-    int width = 0, height = 0, pixels_wide = 0, pixels_high = 0;
-    SDL_GetWindowSize (window, &width, &height);
-    pixel_size (window, pixels_wide, pixels_high);
-    auto device = sdl::create_device (window, std::uint32_t (pixels_wide),
-                                      std::uint32_t (pixels_high));
-    // The device may choose its own drawable (the Xbox's is 4K behind a
-    // 1080p window); the HUD's points follow the window, and resizes keep
-    // the device's ratio to the window's pixels.
-    const float scale =
-      width > 0 ? float (device->surface_width ()) / float (width) : 1.0f;
-    const float oversample =
-      pixels_wide > 0
-        ? float (device->surface_width ()) / float (pixels_wide)
-        : 1.0f;
-    std::cerr << "moppe: NHAL on " << device->info ().backend << ", "
-              << device->info ().adapter << ", "
-              << device->surface_width () << "x"
-              << device->surface_height () << " pixels at " << scale
-              << " per point" << std::endl;
-    nhal::Device& surface_device = *device;
-    // The game keeps the renderer's textures and meshes until main returns,
-    // so the renderer outlives this function, even when an error leaves it;
-    // the process's end releases it.
-    render::Renderer& renderer =
-      *nhal::create_renderer (std::move (device), sdl::world_shaders (), scale)
-         .release ();
-    game.setup (renderer, renderer.width_pts (), renderer.height_pts ());
+        int width = 0, height = 0, pixels_wide = 0, pixels_high = 0;
+        SDL_GetWindowSize (m_window, &width, &height);
+        pixel_size (m_window, pixels_wide, pixels_high);
+        auto device = sdl::create_device (m_window,
+                                          std::uint32_t (pixels_wide),
+                                          std::uint32_t (pixels_high));
+        // The device may choose its own drawable (the Xbox's is 4K behind a
+        // 1080p window); the HUD's points follow the window, and resizes
+        // keep the device's ratio to the window's pixels. A browser's
+        // canvas has no size until the page lays it out, only a density.
+        const float scale =
+          width > 0 && device->surface_width () > 0
+            ? float (device->surface_width ()) / float (width)
+            : SDL_GetWindowPixelDensity (m_window);
+        m_oversample = pixels_wide > 0 ? float (device->surface_width ())
+                                           / float (pixels_wide)
+                                       : 1.0f;
+        std::cerr << "moppe: NHAL on " << device->info ().backend << ", "
+                  << device->info ().adapter << ", "
+                  << device->surface_width () << "x"
+                  << device->surface_height () << " pixels at " << scale
+                  << " per point" << std::endl;
+        m_device = device.get ();
+        // The game keeps the renderer's textures and meshes until main
+        // returns, so the renderer outlives the host, even when an error
+        // ends it; the process's end releases it.
+        m_renderer = nhal::create_renderer (std::move (device),
+                                            sdl::world_shaders (), scale)
+                       .release ();
+        m_game.setup (*m_renderer, m_renderer->width_pts (),
+                      m_renderer->height_pts ());
 
-    Pad pad (game);
-    Held held;
-    // MOPPE_CONTROL_FILE names a remote-control file (input.hh).
-    std::unique_ptr<RemoteControl> remote;
-    if (const char* path = moppe::environment ("MOPPE_CONTROL_FILE"))
-      remote = std::make_unique<RemoteControl> (game, path);
-    // MOPPE_FPS_REPORT=1 logs the frame rate every ten seconds.
-    const char* fps_report = moppe::environment ("MOPPE_FPS_REPORT");
-    const bool report_fps = fps_report && *fps_report && *fps_report != '0';
-    float pointer_x = 0, pointer_y = 0;
-    // The simulation steps by when frames appear, where the device can say
-    // (nhal::Device::next_frame_timing); MOPPE_FRAME_CLOCK=host keeps the
-    // loop's own time.
-    const char* frame_clock = moppe::environment ("MOPPE_FRAME_CLOCK");
-    const bool display_clock =
-      !(frame_clock && std::string (frame_clock) == "host");
-    double last_display = 0;
-    bool announced_display = false;
-    const auto start = std::chrono::steady_clock::now ();
-    auto last = start;
-    auto report_start = last;
-    long report_frames = 0, report_displayed = 0;
-    double slowest = 0, shortest_step = 1, longest_step = 0;
-    while (!quitting) {
-      SDL_Event event;
-      while (SDL_PollEvent (&event)) {
+        // MOPPE_CONTROL_FILE names a remote-control file (input.hh).
+        if (const char* path = moppe::environment ("MOPPE_CONTROL_FILE"))
+          m_remote = std::make_unique<RemoteControl> (m_game, path);
+        // MOPPE_FPS_REPORT=1 logs the frame rate every ten seconds.
+        const char* fps_report = moppe::environment ("MOPPE_FPS_REPORT");
+        m_report_fps = fps_report && *fps_report && *fps_report != '0';
+        // The simulation steps by when frames appear, where the device can
+        // say (nhal::Device::next_frame_timing); MOPPE_FRAME_CLOCK=host
+        // keeps the loop's own time.
+        const char* frame_clock = moppe::environment ("MOPPE_FRAME_CLOCK");
+        m_display_clock =
+          !(frame_clock && std::string (frame_clock) == "host");
+        m_start = m_last = m_report_start = std::chrono::steady_clock::now ();
+      }
+
+      ~Host () {
+        m_device->wait_idle ();
+        active_window = nullptr;
+      }
+
+      // One turn of the loop: the events since the last, a step of the
+      // game, and a frame.
+      void turn () {
+        SDL_Event event;
+        while (SDL_PollEvent (&event))
+          handle (event);
+        sdl::run_main_thread_tasks ();
+        const ControlState held_controls = m_pad.poll ();
+        const auto now = std::chrono::steady_clock::now ();
+        if (m_remote)
+          m_remote->poll (
+            std::chrono::duration<double> (now - m_start).count ());
+        if (m_remote && m_remote->controls ())
+          m_game.controls (*m_remote->controls ());
+        else if (m_pad.connected ())
+          m_game.controls (held_controls);
+        const double wall =
+          std::chrono::duration<double> (now - m_last).count ();
+        m_last = now;
+        double dt = wall;
+        if (m_display_clock) {
+          const nhal::FrameTiming timing = m_device->next_frame_timing ();
+          if (timing.predicted) {
+            if (m_last_display > 0
+                && timing.display_seconds > m_last_display) {
+              dt = timing.display_seconds - m_last_display;
+              ++m_report_displayed;
+              if (!m_announced_display) {
+                m_announced_display = true;
+                std::cerr << "moppe: stepping by display time, "
+                          << timing.refresh_seconds * 1000 << " ms refresh"
+                          << std::endl;
+              }
+            }
+            m_last_display = timing.display_seconds;
+          } else {
+            m_last_display = 0;
+          }
+        }
+        m_shortest_step = std::min (m_shortest_step, dt);
+        m_longest_step = std::max (m_longest_step, dt);
+        m_game.tick (float (std::clamp (dt, 0.0, 0.05)));
+        m_game.render (*m_renderer);
+        sdl::frame_rendered ();
+        if (m_report_fps)
+          report (now, wall);
+      }
+
+    private:
+      void handle (const SDL_Event& event) {
         switch (event.type) {
         case SDL_EVENT_QUIT: quitting = true; break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-          surface_device.resize_surface (
-            std::uint32_t (std::lround (event.window.data1 * oversample)),
-            std::uint32_t (std::lround (event.window.data2 * oversample)));
-          game.resize (renderer.width_pts (), renderer.height_pts ());
+          m_device->resize_surface (
+            std::uint32_t (std::lround (event.window.data1 * m_oversample)),
+            std::uint32_t (std::lround (event.window.data2 * m_oversample)));
+          m_game.resize (m_renderer->width_pts (), m_renderer->height_pts ());
           break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:
-          held.release (game, pointer_x, pointer_y);
+          m_held.release (m_game, m_pointer_x, m_pointer_y);
           break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP: {
@@ -250,101 +309,125 @@ namespace moppe::platform {
           if (k == Key::Unknown)
             break;
           if (down)
-            held.keys.insert (k);
+            m_held.keys.insert (k);
           else
-            held.keys.erase (k);
-          game.key (k, down);
+            m_held.keys.erase (k);
+          m_game.key (k, down);
           break;
         }
         case SDL_EVENT_MOUSE_MOTION:
-          pointer_x = event.motion.x;
-          pointer_y = event.motion.y;
-          game.pointer_move (pointer_x, pointer_y, event.motion.xrel,
-                             event.motion.yrel);
+          m_pointer_x = event.motion.x;
+          m_pointer_y = event.motion.y;
+          m_game.pointer_move (m_pointer_x, m_pointer_y, event.motion.xrel,
+                               event.motion.yrel);
           break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP: {
           const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+          const Uint8 pressed = event.button.button;
           const PointerButton button =
-            event.button.button == SDL_BUTTON_RIGHT    ? PointerButton::Secondary
-            : event.button.button == SDL_BUTTON_MIDDLE ? PointerButton::Middle
-                                                       : PointerButton::Primary;
-          pointer_x = event.button.x;
-          pointer_y = event.button.y;
+            pressed == SDL_BUTTON_RIGHT    ? PointerButton::Secondary
+            : pressed == SDL_BUTTON_MIDDLE ? PointerButton::Middle
+                                           : PointerButton::Primary;
+          m_pointer_x = event.button.x;
+          m_pointer_y = event.button.y;
           if (down)
-            held.buttons.insert (button);
+            m_held.buttons.insert (button);
           else
-            held.buttons.erase (button);
-          game.pointer_button (button, down, pointer_x, pointer_y);
+            m_held.buttons.erase (button);
+          m_game.pointer_button (button, down, m_pointer_x, m_pointer_y);
           break;
         }
         case SDL_EVENT_MOUSE_WHEEL:
-          game.pointer_scroll (pointer_x, pointer_y, event.wheel.y);
+          m_game.pointer_scroll (m_pointer_x, m_pointer_y, event.wheel.y);
           break;
-        case SDL_EVENT_GAMEPAD_ADDED: pad.added (event.gdevice.which); break;
+        case SDL_EVENT_GAMEPAD_ADDED: m_pad.added (event.gdevice.which); break;
         case SDL_EVENT_GAMEPAD_REMOVED:
-          pad.removed (event.gdevice.which);
+          m_pad.removed (event.gdevice.which);
           break;
         default: break;
         }
       }
-      sdl::run_main_thread_tasks ();
-      const ControlState held_controls = pad.poll ();
-      const auto now = std::chrono::steady_clock::now ();
-      if (remote)
-        remote->poll (std::chrono::duration<double> (now - start).count ());
-      if (remote && remote->controls ())
-        game.controls (*remote->controls ());
-      else if (pad.connected ())
-        game.controls (held_controls);
-      const double wall = std::chrono::duration<double> (now - last).count ();
-      last = now;
-      double dt = wall;
-      if (display_clock) {
-        const nhal::FrameTiming timing = surface_device.next_frame_timing ();
-        if (timing.predicted) {
-          if (last_display > 0 && timing.display_seconds > last_display) {
-            dt = timing.display_seconds - last_display;
-            ++report_displayed;
-            if (!announced_display) {
-              announced_display = true;
-              std::cerr << "moppe: stepping by display time, "
-                        << timing.refresh_seconds * 1000 << " ms refresh"
-                        << std::endl;
-            }
-          }
-          last_display = timing.display_seconds;
-        } else {
-          last_display = 0;
-        }
-      }
-      shortest_step = std::min (shortest_step, dt);
-      longest_step = std::max (longest_step, dt);
-      game.tick (float (std::clamp (dt, 0.0, 0.05)));
-      game.render (renderer);
-      sdl::frame_rendered ();
-      if (report_fps) {
-        slowest = std::max (slowest, wall);
+
+      void report (std::chrono::steady_clock::time_point now, double wall) {
+        m_slowest = std::max (m_slowest, wall);
         const double span =
-          std::chrono::duration<double> (now - report_start).count ();
-        if (++report_frames > 1 && span >= 10.0) {
-          std::cerr << "moppe: " << report_frames / span
-                    << " fps, slowest frame " << slowest * 1000
-                    << " ms, steps " << shortest_step * 1000 << "-"
-                    << longest_step * 1000 << " ms, "
-                    << report_displayed << " of " << report_frames
+          std::chrono::duration<double> (now - m_report_start).count ();
+        if (++m_report_frames > 1 && span >= 10.0) {
+          std::cerr << "moppe: " << m_report_frames / span
+                    << " fps, slowest frame " << m_slowest * 1000
+                    << " ms, steps " << m_shortest_step * 1000 << "-"
+                    << m_longest_step * 1000 << " ms, "
+                    << m_report_displayed << " of " << m_report_frames
                     << " by display time" << std::endl;
-          report_start = now;
-          report_frames = report_displayed = 0;
-          slowest = longest_step = 0;
-          shortest_step = 1;
+          m_report_start = now;
+          m_report_frames = m_report_displayed = 0;
+          m_slowest = m_longest_step = 0;
+          m_shortest_step = 1;
         }
       }
+
+      Game& m_game;
+      SDL_Window* m_window = nullptr;
+      nhal::Device* m_device = nullptr;
+      render::Renderer* m_renderer = nullptr;
+      float m_oversample = 1.0f;
+      Pad m_pad;
+      Held m_held;
+      std::unique_ptr<RemoteControl> m_remote;
+      float m_pointer_x = 0, m_pointer_y = 0;
+      bool m_display_clock = true;
+      double m_last_display = 0;
+      bool m_announced_display = false;
+      std::chrono::steady_clock::time_point m_start, m_last, m_report_start;
+      bool m_report_fps = false;
+      long m_report_frames = 0, m_report_displayed = 0;
+      double m_slowest = 0, m_shortest_step = 1, m_longest_step = 0;
+    };
+  }
+
+#ifdef __EMSCRIPTEN__
+  namespace {
+    // Says what stopped the game where the player sees it (pre.js).
+    void fail (const std::exception& error) {
+      std::cerr << "moppe: " << error.what () << std::endl;
+      EM_ASM ({ Module['moppeFail'] (UTF8ToString ($0)); }, error.what ());
     }
-    surface_device.wait_idle ();
-    active_window = nullptr;
+  }
+
+  // A browser's loop is the page's: it calls for a turn at each animation
+  // frame, and run returns once that is arranged, leaving the host (and the
+  // caller's game) to live as long as the page.
+  int run (Game& game, const Config& config) {
+    try {
+      Host* host = new Host (game, config);
+      emscripten_set_main_loop_arg (
+        [] (void* state) {
+          if (quitting)
+            return;
+          try {
+            static_cast<Host*> (state)->turn ();
+          } catch (const std::exception& e) {
+            fail (e);
+            quitting = true;
+            emscripten_cancel_main_loop ();
+          }
+        },
+        host, 0, false);
+    } catch (const std::exception& e) {
+      fail (e);
+      return -1;
+    }
     return 0;
   }
+#else
+  int run (Game& game, const Config& config) {
+    Host host (game, config);
+    while (!quitting)
+      host.turn ();
+    return 0;
+  }
+#endif
 
   void request_quit () {
     quitting = true;

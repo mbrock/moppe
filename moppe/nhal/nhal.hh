@@ -1,5 +1,5 @@
-// NHAL: a small hardware layer for Metal 4, Direct3D 12, and Vulkan
-// (docs/nhal.md).
+// NHAL: a small hardware layer for Metal 4, Direct3D 12, Vulkan, and
+// WebGPU (docs/nhal.md).
 //
 // Resources are handles into the device's tables. Destroying one retires it
 // once the frames that might still read it have completed. Between
@@ -11,7 +11,8 @@
 // Barriers are the device's business: Direct3D 12 tracks each texture's
 // state and transitions it where a pass or a binding needs it; Metal 4
 // orders passes with queue-stage barriers; Vulkan tracks image layouts and
-// puts a full memory barrier before each pass, dispatch, and copy.
+// puts a full memory barrier before each pass, dispatch, and copy; WebGPU
+// orders and synchronizes passes itself.
 #ifndef MOPPE_NHAL_NHAL_HH
 #define MOPPE_NHAL_NHAL_HH
 
@@ -132,12 +133,14 @@ namespace moppe::nhal {
   struct Pipeline : Handle {};
 
   // One stage's code in each backend's form: MSL source, compiled when the
-  // pipeline is made, DXIL compiled ahead of time by DXC, and SPIR-V
-  // lowered ahead of time by luv-shaderc.
+  // pipeline is made, DXIL compiled ahead of time by DXC, SPIR-V lowered
+  // ahead of time by luv-shaderc, and WGSL source, compiled by the browser
+  // when the pipeline is made.
   struct StageCode {
     std::string_view msl;
     std::span<const unsigned char> dxil;
     std::span<const std::uint32_t> spirv;
+    std::string_view wgsl;
   };
 
   enum class CompareOp : std::uint8_t {
@@ -213,6 +216,11 @@ namespace moppe::nhal {
     std::string backend;
     std::string adapter;
     std::uint32_t frames_in_flight = 0;
+    // Whether the vertex and instance indices a shader sees count from a
+    // draw's first vertex and first instance (Metal, Vulkan, WebGPU) or
+    // from zero (Direct3D 12). Where they do, a renderer draws part of a
+    // buffer by its first vertex; elsewhere, by binding the buffer from it.
+    bool indices_count_from_first = true;
   };
 
   // A slice of the frame's upload arena: CPU-writable, GPU-readable until
@@ -308,6 +316,7 @@ namespace moppe::nhal {
                                  const Transient& source)
       = 0;
     virtual void set_pipeline (Pipeline pipeline) = 0;
+    // WebGPU binds buffers only from multiples of 256 bytes.
     virtual void set_buffer (std::uint32_t binding, Buffer buffer,
                              std::uint64_t offset = 0)
       = 0;

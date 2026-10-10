@@ -39,6 +39,14 @@ int main (int argc, char** argv) {
   options.world.resolution = 1024;
   options.seed = 123;
 #endif
+#ifdef __EMSCRIPTEN__
+  // A page makes its world on every visit, in WebAssembly's four gigabytes
+  // and with nowhere to keep it: the 1024-sample world, whose land the
+  // page carries (docs/web.md), and no finished-world cache.
+  options.world.resolution = 1024;
+  options.seed = 123;
+  options.world_cache.mode = game::WorldCacheMode::Disabled;
+#endif
   // A package carrying a host-baked world starts in that world by default;
   // the command line can still ask for another, which is then generated.
   if (const std::optional bundled =
@@ -76,7 +84,13 @@ int main (int argc, char** argv) {
     game::make_moppe_game (options, game::make_launch_recipe (options));
 
   try {
-    return platform::run (*game, options.config);
+    const int status = platform::run (*game, options.config);
+#ifdef __EMSCRIPTEN__
+    // A browser's run returns once the page has taken up the loop, and the
+    // game plays on after main.
+    (void)game.release ();
+#endif
+    return status;
   } catch (const std::exception& e) {
     std::cerr << "\nError: " << e.what () << "\n";
     return -1;

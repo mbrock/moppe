@@ -321,13 +321,15 @@ namespace moppe::nhal {
       std::string msl;
       std::vector<unsigned char> dxil;
       std::vector<std::uint32_t> spirv;
+      std::string wgsl;
 
       void keep (const StageCode& stage) {
         msl = std::string (stage.msl);
         dxil.assign (stage.dxil.begin (), stage.dxil.end ());
         spirv.assign (stage.spirv.begin (), stage.spirv.end ());
+        wgsl = std::string (stage.wgsl);
       }
-      StageCode code () const { return { msl, dxil, spirv }; }
+      StageCode code () const { return { msl, dxil, spirv, wgsl }; }
     };
 
     // A program's vertex and fragment stages.
@@ -345,7 +347,9 @@ namespace moppe::nhal {
     public:
       NhalRenderer (std::unique_ptr<Device> device,
                     const WorldShaders& shaders, float scale)
-        : m_device (std::move (device)), m_scale (scale) {
+        : m_device (std::move (device)), m_scale (scale),
+          m_first_vertex_counts (
+            m_device->info ().indices_count_from_first) {
         m_terrain_code.keep (shaders.terrain);
         m_sky_code.keep (shaders.sky);
         m_uber_code.keep (shaders.uber);
@@ -1438,11 +1442,12 @@ namespace moppe::nhal {
           for (const DrawList::Run& run : list.runs ()) {
             if (!run.count)
               continue;
+            const std::uint32_t first = m_first_vertex_counts ? run.first : 0;
             m_device->set_buffer (
-              1, advanced (vertices,
-                           std::uint64_t (run.first) * sizeof (render::Vertex)));
+              1, advanced (vertices, std::uint64_t (run.first - first)
+                                       * sizeof (render::Vertex)));
             m_device->set_texture (0, texture_or_white (run.texture));
-            m_device->draw (run.count, 1, 0);
+            m_device->draw (run.count, 1, first);
           }
         }
         if (!m_hud_text.empty ()) {
@@ -2104,10 +2109,12 @@ namespace moppe::nhal {
             current = run.state;
             first = false;
           }
-          // Each run's vertices bound from its first: Direct3D's vertex
-          // index does not count from a draw's first vertex.
+          // Each run's vertices from its first: by the draw's first vertex
+          // where the shader's index counts from it, and otherwise
+          // (Direct3D) by binding the buffer from that vertex.
+          const std::uint32_t first = m_first_vertex_counts ? run.first : 0;
           const std::uint64_t offset =
-            std::uint64_t (run.first) * sizeof (render::Vertex);
+            std::uint64_t (run.first - first) * sizeof (render::Vertex);
           m_device->set_buffer (0, m_frame_block);
           if (baked)
             m_device->set_buffer (1, baked, offset);
@@ -2116,7 +2123,7 @@ namespace moppe::nhal {
           m_device->set_buffer (2, block);
           m_device->set_texture (0, texture_or_white (run.texture));
           m_device->set_texture (8, m_shadow_map);
-          m_device->draw (run.count, 1, 0);
+          m_device->draw (run.count, 1, first);
         }
       }
 
@@ -2340,6 +2347,8 @@ namespace moppe::nhal {
 
       std::unique_ptr<Device> m_device;
       float m_scale;
+      // DeviceInfo::indices_count_from_first.
+      bool m_first_vertex_counts;
       ProgramCode m_terrain_code, m_sky_code, m_uber_code, m_hud_code,
         m_resolve_code, m_present_code, m_slug_text_code;
       Pipeline m_terrain, m_sky, m_resolve, m_present, m_hud, m_slug_text;

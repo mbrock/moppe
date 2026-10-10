@@ -374,7 +374,7 @@ namespace moppe::nhal {
       }
 
       DeviceInfo info () const override {
-        return { "Direct3D 12", m_adapter, frames_in_flight };
+        return { "Direct3D 12", m_adapter, frames_in_flight, false };
       }
 
       // -- resources --------------------------------------------------
