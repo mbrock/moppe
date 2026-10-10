@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Publishes the browser game (docs/web.md) from this checkout into a folder
+# a web server serves: when origin's master has moved, it checks that out,
+# builds it, copies the page into a new folder under releases/, and then
+# replaces the small homepage that points at the latest release, so a visit
+# finds the newest build while a loaded one never mixes two.
+#
+#   tools/publish-web [--force]
+#
+# It is what the moppe-web timer runs on the web host (tools/web-host/), so
+# it does nothing when there is nothing new, and builds a commit that fails
+# only once. --force builds and publishes whatever origin has now.
+#
+# MOPPE_WEB_ROOT is the served folder (default /var/www/moppe) and
+# MOPPE_EMSDK an emsdk to take Emscripten from when emcc is not on PATH
+# (default ~/moppe-web/emsdk). The land is baked in the flake's shell where
+# Nix is installed, for its compiler.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+site="${MOPPE_WEB_ROOT:-/var/www/moppe}"
+emsdk="${MOPPE_EMSDK:-$HOME/moppe-web/emsdk}"
+keep=5
+cd "$root"
+
+git fetch --quiet origin master
+commit="$(git rev-parse FETCH_HEAD)"
+if [[ "${1-}" != --force ]]; then
+  for seen in "$site/commit" "$site/attempted"; do
+    if [[ -f "$seen" && "$(cat "$seen")" == "$commit" ]]; then
+      exit 0
+    fi
+  done
+fi
+mkdir -p "$site/releases"
+echo "$commit" > "$site/attempted"
+echo "Building $commit..."
+git checkout --quiet --detach "$commit"
+
+if ! command -v emcc > /dev/null && [[ -f "$emsdk/emsdk_env.sh" ]]; then
+  # shellcheck disable=SC1091
+  EMSDK_QUIET=1 source "$emsdk/emsdk_env.sh"
+fi
+
+mkdir -p build-web/lands
+bake=(env "MOPPE_LAND_DIR=$root/build-web/lands" tools/bake-land 1024 play 123)
+if command -v nix > /dev/null; then
+  nix develop --command "${bake[@]}"
+else
+  "${bake[@]}"
+fi
+make web
+
+release="$(date -u +%Y%m%dT%H%M%SZ)-${commit:0:12}"
+upload="$site/releases/.$release.uploading"
+rm -rf "$upload"
+mkdir "$upload"
+cp build-web/moppe.html build-web/moppe.js build-web/moppe.wasm \
+  build-web/moppe.data "$upload/"
+mv "$upload" "$site/releases/$release"
+sed "s|__MOPPE_RELEASE__|$release|g" tools/web-index.html \
+  > "$site/.index-$release.html"
+mv "$site/.index-$release.html" "$site/index.html"
+echo "$commit" > "$site/commit"
+
+# Older releases go, but for the few a visitor may still have loaded.
+ls -1d "$site"/releases/*/ | sort -r | tail -n +$((keep + 1)) |
+  while read -r old; do
+    rm -rf "$old"
+  done
+echo "Published $release"

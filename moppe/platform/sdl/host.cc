@@ -196,11 +196,18 @@ namespace moppe::platform {
         // The device may choose its own drawable (the Xbox's is 4K behind a
         // 1080p window); the HUD's points follow the window, and resizes
         // keep the device's ratio to the window's pixels. A browser's
-        // canvas has no size until the page lays it out, only a density.
+        // canvas has no size until the page lays it out (nor ever, in a
+        // tab not yet shown), only the display's density.
+#ifdef __EMSCRIPTEN__
+        const float density = float (emscripten_get_device_pixel_ratio ());
+#else
+        const float density = SDL_GetWindowPixelDensity (m_window);
+#endif
         const float scale =
           width > 0 && device->surface_width () > 0
             ? float (device->surface_width ()) / float (width)
-            : SDL_GetWindowPixelDensity (m_window);
+          : density > 0 ? density
+                        : 1.0f;
         m_oversample = pixels_wide > 0 ? float (device->surface_width ())
                                            / float (pixels_wide)
                                        : 1.0f;

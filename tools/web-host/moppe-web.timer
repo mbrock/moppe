@@ -1,0 +1,11 @@
+# Looks for a new commit to publish every minute. A build in progress is
+# not started again.
+[Unit]
+Description=Look for a new Moppe to publish
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,19 @@
+# Builds and publishes the browser game when the repository has moved
+# (tools/publish-web; docs/web.md). Installed as
+# /etc/systemd/system/moppe-web.service, started by moppe-web.timer.
+[Unit]
+Description=Publish Moppe's browser game when its repository has moved
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=mbrock
+WorkingDirectory=/home/mbrock/moppe-web/src
+Environment=HOME=/home/mbrock
+Environment=PATH=/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin
+Environment=MOPPE_WEB_ROOT=/var/www/moppe
+Environment=MOPPE_EMSDK=/home/mbrock/moppe-web/emsdk
+ExecStart=/home/mbrock/moppe-web/src/tools/publish-web
+Nice=10
+TimeoutStartSec=3600

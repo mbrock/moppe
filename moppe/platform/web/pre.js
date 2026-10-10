@@ -8,8 +8,7 @@
 // The page's address carries the command line and the development
 // switches: ?args=--seed+5+--graphics-quality+low&MOPPE_WEATHER=mist.
 
-// Workers load this file too; only the page has a document.
-if (typeof document !== 'undefined') {
+{
   const query = new URLSearchParams(location.search);
   Module['arguments'] =
     (query.get('args') || '').split(/\s+/).filter((word) => word.length);

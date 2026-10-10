@@ -1,0 +1,92 @@
+# Builds the browser game (docs/web.md) and publishes it to GitHub Pages
+# whenever master moves.
+name: Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A newer push replaces a build still under way.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  EMSCRIPTEN_VERSION: 6.0.3
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Nix supplies luv-shaderc, which lowers the shaders, and the
+      # compiler the land is baked with.
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: accept-flake-config = true
+
+      - name: Install Ninja
+        run: sudo apt-get install --yes ninja-build
+
+      - name: Install Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git \
+            "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMSCRIPTEN_VERSION"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMSCRIPTEN_VERSION"
+
+      # The page carries its world's land, which only the terrain code
+      # changes: a land baked for the same code is used again.
+      - name: Find a baked land
+        id: land
+        uses: actions/cache@v4
+        with:
+          path: build-web/lands
+          key: >-
+            land-1024-play-123-${{ hashFiles('moppe/terrain/**',
+            'moppe/map/**', 'moppe/spatial/**', 'moppe/game/land.*',
+            'moppe/*.hh', 'third_party/core-math/**', 'CMakeLists.txt',
+            'flake.lock') }}
+
+      - name: Bake the land
+        if: steps.land.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build-web/lands
+          nix develop --command env \
+            MOPPE_LAND_DIR="$PWD/build-web/lands" \
+            tools/bake-land 1024 play 123
+
+      - name: Build the page
+        run: |
+          nix build .#luv-shaderc --out-link "$RUNNER_TEMP/luv-shaderc"
+          export PATH="$RUNNER_TEMP/luv-shaderc/bin:$PATH"
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          make web
+
+      - name: Lay out the site
+        run: |
+          mkdir site
+          cp build-web/moppe.js build-web/moppe.wasm build-web/moppe.data \
+            site/
+          cp build-web/moppe.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

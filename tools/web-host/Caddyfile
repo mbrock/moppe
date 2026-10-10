@@ -1,0 +1,20 @@
+# The browser game's site (docs/web.md), as a block of the web host's
+# Caddyfile. tools/publish-web fills the folder: the homepage redirects to
+# the latest release and is never cached; a release never changes.
+moppe.swa.sh {
+	encode zstd gzip
+	root * /var/www/moppe
+
+	header X-Content-Type-Options "nosniff"
+
+	@entry path / /index.html
+	header @entry Cache-Control "no-store"
+
+	@release path /releases/*
+	header @release Cache-Control "public, max-age=31536000, immutable"
+
+	@private path /commit /attempted
+	respond @private 404
+
+	file_server
+}

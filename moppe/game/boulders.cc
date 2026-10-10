@@ -375,17 +375,21 @@ namespace moppe::game {
       cells_z, std::max<std::size_t> (1, hardware_threads));
     std::vector<std::vector<BoulderSite>> bands (band_count);
     {
+      const auto plan_band = [&] (std::size_t band) {
+        const auto first =
+          static_cast<std::uint32_t> (band * cells_z / band_count);
+        const auto last =
+          static_cast<std::uint32_t> ((band + 1) * cells_z / band_count);
+        for (std::uint32_t iz = first; iz < last; ++iz)
+          plan_row (iz, bands[band]);
+      };
+      // The caller plans the first band, so a host with one hardware
+      // thread (a browser page) starts none.
       std::vector<std::jthread> workers;
-      workers.reserve (band_count);
-      for (std::size_t band = 0; band < band_count; ++band)
-        workers.emplace_back ([&, band] {
-          const auto first =
-            static_cast<std::uint32_t> (band * cells_z / band_count);
-          const auto last =
-            static_cast<std::uint32_t> ((band + 1) * cells_z / band_count);
-          for (std::uint32_t iz = first; iz < last; ++iz)
-            plan_row (iz, bands[band]);
-        });
+      workers.reserve (band_count - 1);
+      for (std::size_t band = 1; band < band_count; ++band)
+        workers.emplace_back (plan_band, band);
+      plan_band (0);
     }
     for (const std::vector<BoulderSite>& band : bands)
       plan.sites.insert (plan.sites.end (), band.begin (), band.end ());

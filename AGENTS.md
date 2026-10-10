@@ -239,13 +239,16 @@
   device is `moppe/nhal/vulkan/`; see docs/nhal.md.
 - Browser (NHAL on WebGPU, the SDL host built by Emscripten; docs/web.md):
   `make web-serve` builds `build-web/moppe.html` and serves it at
-  <http://localhost:8080> with the cross-origin isolation its threads need
-  (`make web` only builds; `brew install emscripten bun`). The page's
-  address carries the command line and switches:
-  `?args=--seed+7&MOPPE_FPS_REPORT=1&MOPPE_NHAL_TIMINGS=1`, reporting to the
-  browser's console. The device is `moppe/nhal/webgpu/`, the page
-  `moppe/platform/web/`. WebGPU validates what the other devices let
-  pass, so a renderer change is worth a look at the console there.
+  <http://localhost:8080> (`make web` only builds; `brew install emscripten
+  bun`). The page's address carries the command line and switches:
+  `?MOPPE_FPS_REPORT=1&MOPPE_NHAL_TIMINGS=1&args=--graphics-quality+low`,
+  reporting to the browser's console. The device is `moppe/nhal/webgpu/`,
+  the page `moppe/platform/web/`. The page has one thread, so it starts
+  from baked land and never generates by default. WebGPU validates what the
+  other devices let pass, so a renderer change is worth a look at the
+  console there. Every push to master is published at
+  <https://moppe.swa.sh> (a timer on swa running `tools/publish-web`) and
+  on GitHub Pages (`.github/workflows/pages.yml`).
 - World generation is bit-identical across platforms (docs/determinism.md):
   the project builds with `-ffp-contract=off`, generation code calls
   `moppe::cr::` (correctly rounded CORE-MATH) instead of `std::sin`,

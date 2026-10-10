@@ -6,7 +6,7 @@
 	test \
 	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
-	web web-deploy web-serve xbox xcode
+	web web-serve xbox xcode
 
 all: moppe
 
@@ -165,13 +165,9 @@ web:
 			-DMOPPE_LANDS_DIR=$(CURDIR)/build-web/lands
 	cmake --build build-web --target moppe
 
-# Serve it with the cross-origin isolation WebAssembly threads need.
+# Serve it at http://localhost:8080.
 web-serve: web
 	bun run tools/serve-web.ts
-
-# Publish a browser release and point moppe.less.rest at it.
-web-deploy:
-	./tools/deploy-web
 
 # Build the canonical terrain with the Fast profile, capture the Lab, and exit.
 # Build a deterministic grove from surface habitat and capture it in-game.

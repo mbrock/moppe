@@ -30,10 +30,27 @@
 extern char** environ;
 #endif
 
+// A browser page built without threads (docs/web.md) has only its own.
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#define MOPPE_THREADLESS 1
+#else
+#define MOPPE_THREADLESS 0
+#endif
+
 namespace moppe::platform {
   namespace {
     std::mutex main_queue_mutex;
     std::deque<std::function<void ()>> main_queue;
+
+#if MOPPE_THREADLESS
+    // What platform::async was asked for, and the turns of the host's loop
+    // still to pass before the page's thread takes it up.
+    struct WaitingWork {
+      int turns;
+      std::function<void ()> work;
+    };
+    std::deque<WaitingWork> waiting_work;
+#endif
 
     std::filesystem::path executable_path () {
 #ifdef __APPLE__
@@ -154,12 +171,22 @@ namespace moppe::platform {
   void async (void (*work) (void*),
               void (*done) (void*),
               std::shared_ptr<void> context) {
+#if MOPPE_THREADLESS
+    // The page's own thread does the work, a few turns from now, so that
+    // the frame saying what the page waits for is on screen meanwhile.
+    waiting_work.push_back (
+      { 4, [work, done, context = std::move (context)] {
+         work (context.get ());
+         done (context.get ());
+       } });
+#else
     std::thread ([work, done, context = std::move (context)] () mutable {
       work (context.get ());
       const std::lock_guard<std::mutex> lock (main_queue_mutex);
       main_queue.push_back (
         [done, context = std::move (context)] { done (context.get ()); });
     }).detach ();
+#endif
   }
 
 
@@ -167,6 +194,14 @@ namespace moppe::platform {
     void frame_rendered () {}
 
     void run_main_thread_tasks () {
+#if MOPPE_THREADLESS
+      if (!waiting_work.empty () && --waiting_work.front ().turns <= 0) {
+        const std::function<void ()> work =
+          std::move (waiting_work.front ().work);
+        waiting_work.pop_front ();
+        work ();
+      }
+#endif
       std::deque<std::function<void ()>> tasks;
       {
         const std::lock_guard<std::mutex> lock (main_queue_mutex);

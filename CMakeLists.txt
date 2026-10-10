@@ -56,12 +56,13 @@ add_compile_options(-Wall)
 # baseline x86-64 cannot), and correctly rounded transcendental functions
 # from CORE-MATH below (docs/determinism.md).
 add_compile_options(-ffp-contract=off)
-# In the browser (docs/web.md) the world generates on worker threads, which
-# need shared memory, and errors are WebAssembly's own exceptions. Every
-# object of the program is compiled alike.
+# In the browser (docs/web.md) errors are WebAssembly's own exceptions, and
+# every object of the program is compiled alike. The page has one thread:
+# threads would need a cross-origin isolated page, which few hosts serve,
+# and only generating a world gains from them.
 if(EMSCRIPTEN)
-  add_compile_options(-pthread -fwasm-exceptions)
-  add_link_options(-pthread -fwasm-exceptions)
+  add_compile_options(-fwasm-exceptions)
+  add_link_options(-fwasm-exceptions)
 endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
   add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
@@ -849,14 +850,15 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
     target_link_libraries(${target} PRIVATE SDL3::SDL3)
     if(EMSCRIPTEN)
       # The page: shell.html around the program, pre.js acquiring its
-      # WebGPU device, and the assets as a preloaded file system. A thread
-      # waits in the pool for each core and for the world's generation, so
-      # none has to be started while the page is busy.
+      # WebGPU device, and the assets as a preloaded file system. The world
+      # is assembled on the page's own stack, hence its size.
       set(web ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/web)
+      set(MOPPE_WEB_PROGRAM ${target})
+      configure_file(${web}/shell.html
+        ${CMAKE_CURRENT_BINARY_DIR}/${target}.html @ONLY)
       target_compile_options(${target} PRIVATE --use-port=emdawnwebgpu)
       target_link_options(${target} PRIVATE
         --use-port=emdawnwebgpu
-        --shell-file=${web}/shell.html
         --pre-js=${web}/pre.js
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/textures@/textures
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/data@/data
@@ -864,16 +866,14 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
         # The page keeps function names for its stack traces but no DWARF,
         # which would also hold back Binaryen's optimizer.
         -g0 --profiling-funcs
-        -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency+2
         -sALLOW_MEMORY_GROWTH=1
         -sINITIAL_MEMORY=536870912
         -sMAXIMUM_MEMORY=4294967296
-        -sSTACK_SIZE=1048576
-        -sDEFAULT_PTHREAD_STACK_SIZE=4194304
+        -sSTACK_SIZE=8388608
         "-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$ENV,$addRunDependency,$removeRunDependency")
       set_target_properties(${target} PROPERTIES
-        SUFFIX ".html"
-        LINK_DEPENDS "${web}/shell.html;${web}/pre.js")
+        SUFFIX ".js"
+        LINK_DEPENDS "${web}/pre.js")
       # Land in the page's package spares the visitor its generation.
       if(MOPPE_LANDS_DIR)
         target_link_options(${target} PRIVATE

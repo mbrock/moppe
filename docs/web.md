@@ -7,6 +7,9 @@ its WebGPU device (`moppe/nhal/webgpu/`, docs/nhal.md), with `world.lisp`
 lowered to WGSL by luv-shaderc. Nothing in the game or its shaders is
 written again for the web.
 
+It is published at <https://moppe.swa.sh> and on GitHub Pages, both built
+from `master` as it moves (below).
+
 ## Build and run
 
 Emscripten and Bun, once (`brew install emscripten bun` on the Mac), and
@@ -20,12 +23,8 @@ and open <http://localhost:8080>. `make web` only builds: it bakes the
 page's land with the native baker (`tools/bake-land 1024 play 123`, into
 `build-web/lands/`), configures `build-web/` with `emcmake cmake`, and
 builds the `moppe` target into `build-web/moppe.html` with its `.js`,
-`.wasm`, and `.data` (the textures, fonts, opening, and land, 35 MB).
-
-The server (`tools/serve-web.ts`) sends the `Cross-Origin-Opener-Policy`
-and `Cross-Origin-Embedder-Policy` headers that make the page cross-origin
-isolated, which WebAssembly threads need; the files do not work opened from
-disk or served without them.
+`.wasm`, and `.data` (the textures, fonts, opening, and land, 35 MB). The
+four files are the whole page, and any server of static files serves them.
 
 The page's address carries the command line and the development switches:
 
@@ -41,17 +40,53 @@ browser's console.
 
 ## What the browser needs
 
-- WebGPU with the `float32-filterable` feature, which the terrain's height
-  and water textures are filtered through. The page says so when it is
-  missing. `timestamp-query` is used for pass timings where offered.
-- WebAssembly threads (shared memory), exceptions, and SIMD.
+WebGPU with the `float32-filterable` feature, which the terrain's height
+and water textures are filtered through; the page says so when it is
+missing. `timestamp-query` is used for pass timings where offered. Beyond
+that, WebAssembly with exceptions and SIMD.
 
 It has been run in Chromium on macOS (Dawn on Metal) and in Chrome 151 on
 Linux (Dawn on Vulkan, started with `--enable-unsafe-webgpu
 --enable-features=Vulkan`); Safari and Firefox have not been tried. On an
 RX 6600 under Linux, in a 950x1045 window, the default world holds the
 display's 60 frames a second with about 7 ms of GPU time a frame, and is
-ready to play eight or nine seconds after loading begins.
+ready to play about ten seconds after loading begins.
+
+## One thread
+
+The page has no threads. Threads in a browser need shared memory, which
+needs a cross-origin isolated page, which needs a server that sends two
+particular headers; GitHub Pages, for one, cannot. And the game uses
+threads only to make a world: for the parallel loops of the geology, and to
+keep the loading screen moving meanwhile. Rendering and simulation have one
+thread everywhere, and assembling the world from baked land takes one
+thread as long as it takes sixteen (3.0 s either way on an M5).
+
+So a page built without threads loses little. `platform::async` there
+(`moppe/platform/sdl/services.cc`) does its work on the page's own thread,
+a few frames after it is asked, so the loading screen is up first; the
+screen then stands still for the nine seconds the world takes, and the
+browser may call the page unresponsive if it is clicked meanwhile.
+`parallel_for` and the generators find one hardware thread and start none.
+
+## The world
+
+A page keeps nothing between visits, so it does not save or look for a
+finished-world cache, and its default world is the 1024-sample Play world,
+seed 123, whose land (the geology's output, docs/land.md) is in the page's
+package: land is the same on every platform (docs/determinism.md), so the
+build bakes natively what the browser would have generated. Land is a
+fifth the download a finished world would be (14 MB against 83 MB,
+compressed), and finishing it is most of those nine seconds.
+
+Another seed or resolution (`?args=--seed+7`) is generated in the page from
+nothing, on its one thread: minutes with the page standing still, a way to
+try something rather than a way to play. The memory starts at half a
+gigabyte, which the default world stays within, and can grow to
+WebAssembly's four.
+
+The cache folder is in memory. Screenshots (`P`) are written into the
+page's in-memory file system and go no further yet.
 
 ## The page
 
@@ -78,42 +113,35 @@ key pressed. Its gamepad support is compiled in but has not been tried.
 Frames are stepped by the document timeline's time, which the browser
 advances once per displayed frame.
 
-World generation runs on worker threads, as everywhere, from a pool the
-page starts with (one per core and two over), so none has to be started
-while the page's thread is busy.
-
-## The world
-
-A page keeps nothing between visits, so it does not save or look for a
-finished-world cache, and its default world is the 1024-sample Play world,
-seed 123, whose land (the geology's output, docs/land.md) is in the page's
-package: land is the same on every platform (docs/determinism.md), so the
-Mac bakes what the browser would have generated. From it the page plants
-its forests and finishes the world in under ten seconds. Another seed or
-resolution (`?args=--seed+7`) is generated in the page from nothing, which
-for a 1024-sample world takes about a minute, within the half gigabyte of
-memory the page starts with; the memory can grow to WebAssembly's four.
-
-The cache folder is in memory. Screenshots (`P`) are written into the
-page's in-memory file system and go no further yet.
-
 ## Publishing
 
-`make web-deploy` (`tools/deploy-web`) builds, uploads the four files to a
-new folder under `/releases/` on the web host, and then replaces the small
-homepage (`tools/web-index.html`) that redirects to the latest release, so
-a visit to the stable address finds the newest build while a loaded one
-never mixes files from two. `tools/moppe.Caddyfile` is the site: it
-compresses, sends the isolation headers, caches releases forever, and never
-caches the homepage. `MOPPE_WEB_HOST` and `MOPPE_WEB_ROOT` override the
-host (`igloo`) and its folder.
+Two places build and publish `master` as it moves, each on its own.
+
+**moppe.swa.sh.** On the web host a timer (`tools/web-host/moppe-web.timer`
+and `.service`) runs `tools/publish-web` from a checkout every minute. When
+origin's master has moved, the script checks it out, bakes the land in the
+flake's shell, builds with the host's Emscripten, copies the four files
+into a new folder under `/var/www/moppe/releases/`, and then replaces the
+small homepage (`tools/web-index.html`) that redirects to the latest
+release, so a visit finds the newest build while a loaded one never mixes
+two. It keeps five releases, and tries a commit that fails to build only
+once. `tools/web-host/Caddyfile` is the site's block of the host's
+Caddyfile: compressed, releases cached forever, the homepage never.
+`journalctl -u moppe-web` says what it did, and `tools/publish-web --force`
+in the checkout builds and publishes at once.
+
+**GitHub Pages.** `.github/workflows/pages.yml` does the same on GitHub's
+runners at each push to master: Nix for luv-shaderc and the land's
+compiler, a pinned emsdk, `make web`, and the four files as the site, the
+page as `index.html`. The baked land is kept between runs until the
+terrain's code changes.
 
 ## The build's particulars
 
-- Every object is compiled with `-pthread` and `-fwasm-exceptions`.
-  WebAssembly's own exceptions unwind C++ frames even for the JavaScript
-  exception Emscripten's "infinite loop" emulation throws, which would
-  destroy the game on `main`'s stack; hence `run` returning instead.
+- Every object is compiled with `-fwasm-exceptions`. WebAssembly's own
+  exceptions unwind C++ frames even for the JavaScript exception
+  Emscripten's "infinite loop" emulation throws, which would destroy the
+  game on `main`'s stack; hence `run` returning instead.
 - The page keeps function names (`--profiling-funcs`) but no DWARF, which
   Binaryen 6.0.3 cannot rewrite for this program and which would hold back
   its optimizer.

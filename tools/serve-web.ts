@@ -1,5 +1,4 @@
-// Serves build-web/ for the browser game (docs/web.md), with the
-// cross-origin isolation headers WebAssembly threads need:
+// Serves build-web/ for the browser game (docs/web.md), never cached:
 // `bun run tools/serve-web.ts`, then http://localhost:8080.
 import { serve } from "bun"
 import { extname, join, normalize } from "node:path"
@@ -35,8 +34,6 @@ serve({
       headers: {
         "Cache-Control": "no-cache",
         "Content-Type": contentTypes[extname(path)] ?? "application/octet-stream",
-        "Cross-Origin-Embedder-Policy": "require-corp",
-        "Cross-Origin-Opener-Policy": "same-origin",
       },
     })
   },
