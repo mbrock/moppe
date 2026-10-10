@@ -66,8 +66,11 @@ jobs:
       - name: Build the page
         run: |
           nix build .#luv-shaderc --out-link "$RUNNER_TEMP/luv-shaderc"
-          export PATH="$RUNNER_TEMP/luv-shaderc/bin:$PATH"
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          # Emscripten's folder has a cmake directory, which this runner's
+          # make 4.3 would take for the cmake command; the system's comes
+          # first.
+          export PATH="$RUNNER_TEMP/luv-shaderc/bin:/usr/bin:$PATH"
           make web
 
       - name: Lay out the site
