@@ -2,6 +2,7 @@
 #define MOPPE_GAME_GAME_STATE_HH
 
 #include <moppe/game/basket.hh>
+#include <moppe/game/camp_state.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/stars.hh>
@@ -24,6 +25,10 @@ namespace moppe::game {
   struct GameLogicState {
     // double avoids losing tick precision during long-running sessions.
     double m_total_time = 0.0;
+    // The hour of the day, counted on from the first midnight, and how
+    // many times faster than usual it is passing.
+    double m_day_hours = 9.0;
+    float m_day_haste = 1.0f;
     float m_frame_time = 1.0f / 60.0f;
     cloud_cover_t m_cloudiness = 0.5f * cloud_cover[mp_units::one];
     float m_flare = 0.0f;
@@ -60,6 +65,7 @@ namespace moppe::game {
     float m_landed_age = 10.0f;
     std::mt19937 m_fx_rng { 7 };
     Basket m_basket;
+    Camp m_camp;
   };
 
   // First replayable slice of a GameSession. Immutable world/resource

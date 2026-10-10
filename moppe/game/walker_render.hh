@@ -23,6 +23,13 @@ namespace moppe::game {
                       const WalkerPose& walker,
                       float time,
                       std::span<const MushroomSite> basket);
+
+  // The basket set down on the ground at `floor`, its length along
+  // `forward`, while its owner rests.
+  void render_basket_set_down (render::DrawList& draw,
+                               const Vec3& floor,
+                               const Vec3& forward,
+                               std::span<const MushroomSite> basket);
 }
 
 #endif

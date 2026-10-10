@@ -1,4 +1,6 @@
 #include <moppe/game/frame_view.hh>
+
+#include <moppe/game/camp.hh>
 #include <moppe/game/weather.hh>
 
 #include <algorithm>
@@ -7,31 +9,22 @@
 
 namespace moppe::game {
   namespace {
-    constexpr float SUN_AZIMUTH = 0.8f;
     constexpr degrees_t CHASE_FIELD_OF_VIEW = 78.0f * u::deg;
     constexpr degrees_t CHASE_SPEED_WIDENING = 8.0f * u::deg;
     // Keep the historical art-direction calculations bit-for-bit aligned
     // with the game loop while moving them behind the presentation seam.
     constexpr float ART_PI = 3.14159f;
 
-    float smooth_curve (float edge0, float edge1, float value) {
-      const float t =
-        std::clamp ((value - edge0) / (edge1 - edge0), 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
-    }
-
     float sun_elevation_for (float sun_height) {
       return std::sin ((sun_height - 0.5f) * ART_PI);
     }
 
     float daylight_for (float sun_height) {
-      return smooth_curve (-0.08f, 0.18f, sun_elevation_for (sun_height));
+      return daylight_for_elevation (sun_elevation_for (sun_height));
     }
 
     float golden_light_for (float sun_height) {
-      const float elevation = sun_elevation_for (sun_height);
-      return daylight_for (sun_height) *
-             (1.0f - smooth_curve (0.15f, 0.65f, elevation));
+      return golden_light_for_elevation (sun_elevation_for (sun_height));
     }
 
     FrameVisibility visibility_for (const FrameViewInput& input,
@@ -74,10 +67,7 @@ namespace moppe::game {
   }
 
   Vec3 sun_direction_for (float sun_height) {
-    const float elevation = (sun_height - 0.5f) * ART_PI;
-    return Vec3 (std::cos (elevation) * std::sin (SUN_AZIMUTH),
-                 std::sin (elevation),
-                 std::cos (elevation) * std::cos (SUN_AZIMUTH));
+    return authored_sun_direction (sun_height);
   }
 
   void sun_light_colors_for (float sun_height,
@@ -212,21 +202,31 @@ namespace moppe::game {
     result.lighting.fog_scale = input.world.fog_scale * weather.fog_density;
     result.lighting.mist = weather.mist;
     result.lighting.rain = weather.rain;
-    result.lighting.sun_direction =
-      sun_direction_for (input.graphics.sun_height);
-    sun_light_colors_for (input.graphics.sun_height,
-                          result.lighting.sun_diffuse,
-                          result.lighting.sun_specular);
+    const SkyReading sky =
+      input.sky ? *input.sky : Almanac ().held (input.graphics.sun_height);
+    result.lighting.sun_direction = sky.light;
     result.lighting.sun_specular =
-      scale_display (result.lighting.sun_specular, 0.5f * weather.sunlight);
+      scale_display (sky.light_specular, 0.5f * weather.sunlight);
     result.lighting.sun_diffuse =
-      scale_display (result.lighting.sun_diffuse, weather.sunlight);
-    result.lighting.ambient =
-      scale_display (DisplayColor (0.39f, 0.43f, 0.49f),
-                     (0.35f + 0.65f * daylight_for (input.graphics.sun_height))
-                       * weather.skylight);
+      scale_display (sky.light_diffuse, weather.sunlight);
+    result.lighting.ambient = scale_display (sky.ambient, weather.skylight);
+    result.lighting.sky_sun = sky.sun;
+    result.lighting.sky_moon = sky.moon;
+    result.lighting.sky_pole = sky.pole;
+    result.lighting.sky_turn = sky.turn;
+    result.lighting.moonlight = sky.moonlight;
+    result.lighting.daylight = sky.daylight;
     result.lighting.time = static_cast<float> (logic.m_total_time);
-    result.lighting.sun_height = input.graphics.sun_height;
+    // The campfire lights what stands round it, most of all at night.
+    if (const float burn = fire_burn (logic.m_camp, logic.m_total_time);
+        burn > 0.01f) {
+      result.lighting.lamp_position = fire_light_position (logic.m_camp);
+      result.lighting.lamp_reach = fire_light_reach;
+      result.lighting.lamp_color =
+        scale_display (fire_light_color (burn, result.lighting.time),
+                       1.0f - 0.25f * sky.daylight);
+    }
+    result.lighting.sun_height = sky.sun_height;
     result.lighting.cloudiness = logic.m_cloudiness;
     result.lighting.sun_visibility = logic.m_flare;
 
@@ -343,7 +343,8 @@ namespace moppe::game {
         }
       }
     }
-    return visibility *
+    // The moon dazzles no one.
+    return visibility * view.lighting.daylight *
            (1.0f - 0.65f * view.lighting.cloudiness.numerical_value_in (one));
   }
 }

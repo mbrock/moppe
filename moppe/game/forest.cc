@@ -46,6 +46,17 @@ namespace moppe::game {
         .height = height * (conifer ? 0.9f : 0.7f),
         .radius = height * (conifer ? 0.0078f : 0.0085f) *
                   (0.85f + 0.3f * forest_hash (tree.seed, 6u)),
+        // The crown's base, as the forest program's grow-tree places it:
+        // low on an open-grown tree, higher in a closed stand, and far
+        // higher on a birch than on a spruce.
+        .clear = height *
+                 (std::lerp (conifer ? 0.04f : 0.40f,
+                             conifer ? 0.20f : 0.60f,
+                             smoothstep (0.12f,
+                                         0.42f,
+                                         tree.canopy_cover.numerical_value_in (
+                                           mp_units::one))) +
+                  0.08f * (forest_hash (tree.seed, 5u) - 0.5f)),
       };
     }
 

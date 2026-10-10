@@ -171,9 +171,8 @@ namespace moppe::game {
     }
 
     void draw_basket (render::DrawList& dl,
-                      const AvatarSkeleton& k,
+                      const BasketFrame& b,
                       std::span<const MushroomSite> basket) {
-      const BasketFrame b = basket_frame (k);
       render::DrawState solid;
       solid.cull = false;
       dl.state (solid);
@@ -193,13 +192,29 @@ namespace moppe::game {
                       std::span<const MushroomSite> basket) {
     const AvatarSkeleton k = pose_avatar (walker, time);
     figure::draw (draw, k);
-    draw_basket (draw, k, basket);
+    draw_basket (draw, basket_frame (k), basket);
   }
 
   void render_basket (render::DrawList& draw,
                       const WalkerPose& walker,
                       float time,
                       std::span<const MushroomSite> basket) {
-    draw_basket (draw, pose_avatar (walker, time), basket);
+    draw_basket (draw, basket_frame (pose_avatar (walker, time)), basket);
+  }
+
+  void render_basket_set_down (render::DrawList& draw,
+                               const Vec3& floor,
+                               const Vec3& forward,
+                               std::span<const MushroomSite> basket) {
+    const Vec3 up (0, 1, 0);
+    Vec3 along = forward;
+    along[1] = 0.0f;
+    along = length2 (along) > 1e-6f ? normalized (along) : Vec3 (0, 0, 1);
+    draw_basket (draw,
+                 { .rim = floor + up * basket_depth,
+                   .forward = along,
+                   .side = cross (up, along),
+                   .up = up },
+                 basket);
   }
 }

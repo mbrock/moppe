@@ -83,6 +83,12 @@ namespace moppe::game {
       case Key::Space:
         m_keys.boost = value;
         break;
+      case Key::R:
+        m_hang_hammock = m_hang_hammock || down;
+        break;
+      case Key::T:
+        m_light_fire = m_light_fire || down;
+        break;
       default:
         break;
       }
@@ -142,6 +148,8 @@ namespace moppe::game {
       frame.toggle_mount = m_toggle_mount;
       frame.cycle_camera = m_cycle_camera;
       frame.leave_cinematic = m_leave_cinematic;
+      frame.hang_hammock = m_hang_hammock;
+      frame.light_fire = m_light_fire;
       frame.look_yaw = m_look_yaw;
       frame.look_pitch = m_look_pitch;
       frame.run = m_run;
@@ -151,6 +159,8 @@ namespace moppe::game {
       m_toggle_mount = false;
       m_cycle_camera = false;
       m_leave_cinematic = false;
+      m_hang_hammock = false;
+      m_light_fire = false;
       return frame;
     }
 
@@ -162,6 +172,8 @@ namespace moppe::game {
       m_toggle_mount = false;
       m_cycle_camera = false;
       m_leave_cinematic = false;
+      m_hang_hammock = false;
+      m_light_fire = false;
       m_look_yaw = 0.0f;
       m_look_pitch = 0.0f;
       m_look_rate_x = 0.0f;
@@ -191,6 +203,8 @@ namespace moppe::game {
     bool m_toggle_mount = false;
     bool m_cycle_camera = false;
     bool m_leave_cinematic = false;
+    bool m_hang_hammock = false;
+    bool m_light_fire = false;
     float m_look_yaw = 0.0f;
     float m_look_pitch = 0.0f;
     float m_look_rate_x = 0.0f;

@@ -10,7 +10,8 @@ namespace moppe::platform {
   namespace {
     constexpr Key gamepad_keys[] = { Key::E,   Key::Restart, Key::Mount,
                                      Key::Tab, Key::Left,    Key::Right,
-                                     Key::Up,  Key::Down,    Key::Space };
+                                     Key::Up,  Key::Down,    Key::Space,
+                                     Key::R,   Key::T };
   }
 
   float stick_axis (float value) {
@@ -55,11 +56,13 @@ namespace moppe::platform {
     edge (6, r.dpad_up, Key::Up);
     edge (7, r.dpad_down, Key::Down);
     edge (8, r.y, Key::Space);
+    edge (9, r.left_shoulder, Key::R);
+    edge (10, r.right_shoulder, Key::T);
     return controls;
   }
 
   void GamepadMapper::release () {
-    for (int i = 0; i < 9; ++i)
+    for (int i = 0; i < 11; ++i)
       if (m_buttons[i]) {
         m_game.key (gamepad_keys[i], false);
         m_buttons[i] = false;
@@ -91,7 +94,7 @@ namespace moppe::platform {
       { "3", Key::Three },       { "4", Key::Four },
       { "5", Key::Five },        { "6", Key::Six },
       { "7", Key::Seven },       { "Shift", Key::Shift },
-      { "P", Key::Screenshot },
+      { "P", Key::Screenshot },  { "V", Key::Record },
     };
     const auto found = keys.find (name);
     return found == keys.end () ? Key::Unknown : found->second;

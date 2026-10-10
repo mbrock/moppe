@@ -14,9 +14,12 @@
 #include <moppe/game/blob_shadow.hh>
 #include <moppe/game/boulders.hh>
 #include <moppe/game/cairn.hh>
+#include <moppe/game/camp.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
+#include <moppe/game/daylight.hh>
 #include <moppe/game/dust.hh>
+#include <moppe/game/figure.hh>
 #include <moppe/game/forest.hh>
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/game_session.hh>
@@ -38,6 +41,7 @@
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/vehicle_render.hh>
+#include <moppe/game/video.hh>
 #include <moppe/game/walker_render.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/water_presentation.hh>
@@ -108,6 +112,8 @@ namespace moppe {
             m_benchmark (options.benchmark),
             m_benchmark_baseline (options.graphics),
             m_bike_physics (options.bike_physics) {
+        m_day = plan_day ();
+        m_sky = m_almanac.held (m_graphics.sun_height);
         if (m_benchmark)
           m_benchmark_replay.emplace (GraphicsBenchmarkReplay::Config {
             m_benchmark->prelude_frames,
@@ -642,6 +648,7 @@ namespace moppe {
       void place_stars_and_player () {
         MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
         session ().stars ().generate (surface (), world (), 80);
+        begin_day ();
         m_home_base_position =
           trail_cell_position (trail_network ().plan.home_base);
         build_home_base_marker ();
@@ -687,7 +694,7 @@ namespace moppe {
                                     rivers (),
                                     trail_network (),
                                     position (m_spawn_position),
-                                    sun_direction_for (m_graphics.sun_height));
+                                    m_sky.sun);
         const auto forest = std::find_if (
           views.shots.begin (), views.shots.end (), [] (const auto& shot) {
             return shot.name == "forest-floor";
@@ -883,18 +890,452 @@ namespace moppe {
                     << " (Box3D, streamed around the rider)" << std::endl;
       }
 
+      // -- camp --------------------------------------------------------
+
+      GroundHeight ground_reader () const {
+        return [this] (float x, float z) {
+          return ground_height (Vec3 (x, 0.0f, z));
+        };
+      }
+
+      // The pair of trees the walker stands between, if a hammock would
+      // hang there; looked for again only once they have moved.
+      void seek_hammock_site () {
+        const Vec3 feet = session ().walker ().position ();
+        if (m_hammock_sought &&
+            length2 (feet - m_hammock_sought_from) < 0.3f * 0.3f)
+          return;
+        m_hammock_sought = true;
+        m_hammock_sought_from = feet;
+        const std::vector<mov::Trunk> near = m_trunk_field.gather (feet, 8.0f);
+        m_hammock_at_hand = hammock_site_at (near, feet, ground_reader ());
+      }
+
+      // Within a step of the hung hammock, beside its length.
+      bool beside_hammock () const {
+        const Camp& camp = logic ().m_camp;
+        return camp.hung &&
+               hammock_distance (camp.hammock,
+                                 session ().walker ().position ()) < 1.5f;
+      }
+
+      // A fire is laid a step ahead of the walker, on dry and fairly
+      // level ground.
+      std::optional<Vec3> hearth_ahead () const {
+        const Walker& walker = session ().walker ();
+        Vec3 ahead = walker.heading ();
+        ahead[1] = 0.0f;
+        if (length2 (ahead) < 1e-6f)
+          return std::nullopt;
+        ahead = normalized (ahead);
+        Vec3 hearth = walker.position () + ahead * 1.3f;
+        hearth[1] = ground_height (hearth);
+        if (hearth[1] < world ().water_level.numerical_value_in (u::m) + 0.2f)
+          return std::nullopt;
+        const Vec3 side (ahead[2], 0.0f, -ahead[0]);
+        for (const Vec3& off :
+             { ahead * 0.5f, ahead * -0.5f, side * 0.5f, side * -0.5f })
+          if (std::fabs (ground_height (hearth + off) - hearth[1]) > 0.22f)
+            return std::nullopt;
+        return hearth;
+      }
+
+      // Lying in the hammock the hours run forty times as fast: one goes
+      // by every three seconds of an ordinary day.
+      static constexpr float RESTING_HASTE = 40.0f;
+
+      // Hanging and taking down the hammock, lighting and dousing the fire,
+      // lying down and getting up; and, while lying there, rocking it and
+      // looking about, which is all that a sleeper's controls do.
+      void tend_camp (InputFrame& input, float dt) {
+        Camp& camp = logic ().m_camp;
+        const double now = logic ().m_total_time;
+        float haste = 1.0f;
+        float push = 0.0f;
+        if (logic ().m_mode != M_FOOT) {
+          if (camp.resting) {
+            camp.resting = false;
+            camp.rest_time = now;
+          }
+        } else if (camp.resting) {
+          const bool rise = input.deploy_glider || input.toggle_mount ||
+                            input_value (input.boost) > 0.5f;
+          if (rise && now - camp.rest_time > 0.8) {
+            camp.resting = false;
+            camp.rest_time = now;
+          } else {
+            push = input_value (input.turn);
+            camp.gaze_yaw =
+              std::clamp (camp.gaze_yaw + input.look_yaw, -2.6f, 2.6f);
+            camp.gaze_pitch =
+              std::clamp (camp.gaze_pitch + input.look_pitch, -0.2f, 1.5f);
+            // After a quiet moment the hours begin to run; holding back
+            // keeps them at their ordinary pace.
+            if (input_value (input.drive) > -0.3f)
+              haste =
+                1.0f + (RESTING_HASTE - 1.0f) *
+                         smoothstep (2.5f,
+                                     7.0f,
+                                     static_cast<float> (now - camp.rest_time));
+          }
+          const bool cycle = input.cycle_camera;
+          input = {};
+          input.cycle_camera = cycle;
+        } else {
+          seek_hammock_site ();
+          const Walker& walker = session ().walker ();
+          const Vec3 feet = walker.position ();
+          if (input.hang_hammock) {
+            if (beside_hammock ()) {
+              camp.hung = false;
+            } else if (m_hammock_at_hand) {
+              camp.hung = true;
+              camp.hammock = *m_hammock_at_hand;
+              camp.swing = 0.0f;
+              camp.swing_rate = 0.5f;
+            }
+          }
+          if (input.light_fire) {
+            Vec3 to_fire = feet - camp.hearth;
+            to_fire[1] = 0.0f;
+            if (camp.fire && length2 (to_fire) < 3.0f * 3.0f) {
+              camp.fire = false;
+              camp.fire_time = now;
+            } else if (const std::optional<Vec3> hearth = hearth_ahead ()) {
+              camp.fire = true;
+              camp.hearth = *hearth;
+              camp.fire_time = now;
+              camp.next_spark = camp.next_smoke = now;
+            }
+          }
+          const bool picking =
+            m_mushrooms.within_reach (feet, walker.heading ()).has_value ();
+          if (input.deploy_glider && !picking && beside_hammock ()) {
+            camp.resting = true;
+            camp.rest_time = now;
+            camp.swing_rate += 0.8f;
+            camp.gaze_yaw = 0.0f;
+            camp.gaze_pitch = 1.1f;
+            input = {};
+          }
+        }
+        // The hammock is a pendulum, damped more when no one is in it.
+        camp.swing_rate +=
+          (-6.8f * camp.swing -
+           (camp.resting ? 0.30f : 0.9f) * camp.swing_rate + 1.5f * push) *
+          dt;
+        camp.swing =
+          std::clamp (camp.swing + camp.swing_rate * dt, -0.6f, 0.6f);
+        logic ().m_day_haste +=
+          (haste - logic ().m_day_haste) * std::min (1.0f, 1.5f * dt);
+        feed_fire ();
+      }
+
+      // Sparks fly up from a burning fire and its smoke drifts off; a
+      // doused one smoulders a while.
+      void feed_fire () {
+        Camp& camp = logic ().m_camp;
+        const double now = logic ().m_total_time;
+        const float burn = fire_burn (camp, now);
+        const bool smouldering = !camp.fire && now - camp.fire_time < 8.0;
+        if (burn <= 0.02f && !smouldering)
+          return;
+        std::uniform_real_distribution<float> unit (0.0f, 1.0f);
+        std::mt19937& rng = logic ().m_fx_rng;
+        const auto scatter = [&] (float reach) {
+          return (unit (rng) - 0.5f) * 2.0f * reach;
+        };
+        if (burn > 0.3f && now >= camp.next_spark) {
+          camp.next_spark = now + 0.10 + 0.55 * unit (rng);
+          Dust::Style spark;
+          spark.size = 0.05f * u::m;
+          spark.lifetime = (1.2f + unit (rng)) * u::s;
+          spark.downward_acceleration =
+            -0.6f * isq::acceleration[u::m / pow<2> (u::s)];
+          spark.spread = 0.5f * one;
+          spark.additive = true;
+          session ().dust ().emit (
+            moppe::position (camp.hearth +
+                             Vec3 (scatter (0.12f), 0.4f, scatter (0.12f))),
+            velocity (
+              Vec3 (scatter (0.5f), 1.3f + 1.4f * unit (rng), scatter (0.5f))),
+            unit (rng) < 0.3f ? 2 : 1,
+            DisplayColor (1.0f, 0.62f, 0.22f),
+            spark);
+        }
+        if (now >= camp.next_smoke) {
+          camp.next_smoke = now + (smouldering ? 0.22 : 0.5);
+          // Smoke shows by the light there is to see it in.
+          const float shade = 0.06f + 0.36f * m_sky.daylight;
+          Dust::Style smoke;
+          smoke.size = 0.5f * u::m;
+          smoke.lifetime = 4.0f * u::s;
+          smoke.downward_acceleration =
+            -0.35f * isq::acceleration[u::m / pow<2> (u::s)];
+          smoke.spread = 0.45f * one;
+          session ().dust ().emit (
+            moppe::position (camp.hearth + Vec3 (0, 0.9f, 0)),
+            velocity (Vec3 (0.35f, 0.7f, 0.12f)),
+            1,
+            DisplayColor (shade * 1.06f, shade, shade * 0.95f),
+            smoke);
+        }
+      }
+
+      // Someone in the hammock sees through eyes that lie back in it; any
+      // other camera stands off and can be walked round with the look.
+      // Both ease from and to where the walker stood.
+      void rest_camera () {
+        const Camp& camp = logic ().m_camp;
+        const float load = hammock_load (camp, logic ().m_total_time);
+        if (!camp.hung || load <= 0.001f || logic ().m_mode != M_FOOT)
+          return;
+        ChaseCamera& camera = session ().camera ();
+        const Vec3 from = camera.position ();
+        const Vec3 looking = camera.forward ();
+        Vec3 eye, toward;
+        if (logic ().m_cam_mode == CAM_HELMET) {
+          eye = resting_eye (camp.hammock, camp.swing);
+          toward = resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch);
+        } else {
+          const Vec3 subject =
+            hammock_middle (camp.hammock) - Vec3 (0, 0.45f, 0);
+          const float around = camp.gaze_yaw + 0.45f;
+          eye = subject +
+                (hammock_across (camp.hammock) * std::cos (around) +
+                 hammock_along (camp.hammock) * std::sin (around)) *
+                  3.7f +
+                Vec3 (0, 0.75f + 1.2f * (1.1f - camp.gaze_pitch), 0);
+          eye[1] =
+            std::max (static_cast<float> (eye[1]), ground_height (eye) + 0.4f);
+          toward = normalized (subject - eye);
+        }
+        const Vec3 at = from + (eye - from) * load;
+        const Vec3 gaze = normalized (looking + (toward - looking) * load);
+        camera.place (at, at + gaze * 10.0f);
+      }
+
+      // What there is to do about the camp where the walker stands.
+      void add_camp_readings (HudState& state) const {
+        const Camp& camp = logic ().m_camp;
+        state.resting = camp.resting;
+        state.clock_hours = m_sky.clock;
+        if (logic ().m_mode != M_FOOT || state.mushroom_in_reach)
+          return;
+        if (camp.resting)
+          state.camp = HudState::Camp::get_up;
+        else if (beside_hammock ())
+          state.camp = HudState::Camp::lie_down;
+        else if (m_hammock_at_hand)
+          state.camp = HudState::Camp::hang;
+        else if (camp.hung && camp.fire_time < -50.0 &&
+                 hammock_distance (camp.hammock,
+                                   session ().walker ().position ()) < 12.0f)
+          state.camp = HudState::Camp::light_fire;
+      }
+
+      void draw_camp (render::DrawList& dl) {
+        const Camp& camp = logic ().m_camp;
+        const double now = logic ().m_total_time;
+        if (camp.hung)
+          draw_hammock (dl, camp.hammock, hammock_load (camp, now), camp.swing);
+        if (camp.fire_time > -50.0)
+          draw_hearth (dl, camp.hearth, fire_burn (camp, now));
+      }
+
+      // Whether the figure is drawn lying in the hammock rather than
+      // standing beside it.
+      bool lying_down () const {
+        const Camp& camp = logic ().m_camp;
+        return camp.hung && logic ().m_mode == M_FOOT &&
+               hammock_load (camp, logic ().m_total_time) > 0.5f;
+      }
+
+      void
+      draw_sleeper (render::DrawList& dl, bool through_own_eyes, float time) {
+        const Camp& camp = logic ().m_camp;
+        if (!through_own_eyes)
+          figure::draw (
+            dl,
+            pose_resting (
+              camp.hammock,
+              camp.swing,
+              resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch),
+              time));
+        // The basket waits on the ground under the foot of the hammock.
+        Vec3 floor = hammock_middle (camp.hammock) +
+                     hammock_across (camp.hammock) * 0.75f -
+                     hammock_along (camp.hammock) * 0.5f;
+        floor[1] = ground_height (floor);
+        render_basket_set_down (
+          dl, floor, hammock_along (camp.hammock), m_basket_contents);
+      }
+
+      // MOPPE_WALK=camp: the walker starts a few steps from the fit pair of
+      // trees nearest the spawn, on whichever side is clearer to walk in
+      // from.
+      void stage_camp_script () {
+        const char* walk = moppe::environment ("MOPPE_WALK");
+        if (!walk || std::string_view (walk) != "camp" ||
+            logic ().m_mode != M_FOOT)
+          return;
+        const std::vector<mov::Trunk> near =
+          m_trunk_field.gather (m_spawn_position, 700.0f);
+        // Under open sky, so there are stars to lie and look at.
+        m_camp_script.site = nearest_hammock_site (
+          near, m_spawn_position, ground_reader (), 60.0f);
+        if (!m_camp_script.site) {
+          std::cerr << "moppe: camp script: no two trees near the spawn "
+                       "would take a hammock\n";
+          return;
+        }
+        const HammockSite& site = *m_camp_script.site;
+        const Vec3 middle = hammock_middle (site);
+        const Vec3 across = hammock_across (site);
+        // How near the nearest trunk stands to the walk in from a side.
+        const auto clearance = [&] (float side) {
+          float least = 100.0f;
+          for (const mov::Trunk& trunk : near) {
+            Vec3 to = trunk.root - middle;
+            to[1] = 0.0f;
+            const float out = dot (to, across) * side;
+            if (out < 1.0f || out > 9.0f)
+              continue;
+            least = std::min (least, length (to - across * (out * side)));
+          }
+          return least;
+        };
+        m_camp_script.side =
+          clearance (1.0f) >= clearance (-1.0f) ? 1.0f : -1.0f;
+        Vec3 stand = middle + across * (m_camp_script.side * 8.5f) +
+                     hammock_along (site) * 1.5f;
+        stand[1] = ground_height (stand) + 0.1f;
+        Vec3 facing = middle - stand;
+        facing[1] = 0.0f;
+        session ().walker ().spawn (moppe::position (stand),
+                                    normalized (facing));
+        logic ().m_fp_eye = session ().walker ().eye_position ();
+        std::cerr << "moppe: camp script: two trees "
+                  << length (site.strap[1] - site.strap[0]) << " m apart, "
+                  << length (middle - m_spawn_position) << " m from the spawn"
+                  << std::endl;
+      }
+
+      // The script itself: walk in between the trees and hang the hammock,
+      // step out and light a fire, come back and lie down, and after a
+      // while see the sky through the sleeper's eyes.
+      InputFrame camp_script (float dt) {
+        InputFrame input;
+        CampScript& script = m_camp_script;
+        if (!script.site)
+          return input;
+        const HammockSite& site = *script.site;
+        const Walker& walker = session ().walker ();
+        const Vec3 feet = walker.position ();
+        const float t = m_walk_script_time;
+        const float waited = t - script.since;
+        const auto next = [&] {
+          ++script.step;
+          script.since = t;
+        };
+        // Turns toward `target` and walks until within `near` of it.
+        const auto walk_to = [&] (const Vec3& target, float near) {
+          Vec3 toward = target - feet;
+          toward[1] = 0.0f;
+          const float distance = length (toward);
+          if (distance <= near)
+            return true;
+          const Vec3 heading = walker.heading ();
+          const Vec3 left (heading[2], 0.0f, -heading[0]);
+          const float leftward = dot (toward, left) / distance;
+          const float ahead = dot (toward, heading) / distance;
+          const float turn = ahead < 0.0f ? (leftward >= 0.0f ? -1.0f : 1.0f)
+                                          : -std::asin (leftward);
+          input.look_yaw = std::clamp (turn, -2.2f * dt, 2.2f * dt);
+          input.drive =
+            ahead > 0.8f ? std::min (0.8f, 0.3f + 0.3f * distance) : 0.0f;
+          return false;
+        };
+        Vec3 middle = hammock_middle (site);
+        middle[1] = ground_height (middle);
+        const Vec3 fireside = middle +
+                              hammock_across (site) * (script.side * 3.6f) -
+                              hammock_along (site) * 0.6f;
+        // The walker's gaze levels out as they go.
+        input.look_pitch =
+          std::clamp (-0.12f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+        switch (script.step) {
+        case 0:
+          if (walk_to (middle, 0.45f))
+            next ();
+          break;
+        case 1:
+          if (waited > 0.7f) {
+            input.hang_hammock = true;
+            next ();
+          }
+          break;
+        case 2:
+          if (waited > 1.6f)
+            next ();
+          break;
+        case 3:
+          // The fire is laid a step ahead of where the walker stops.
+          if (walk_to (fireside, 1.35f))
+            next ();
+          break;
+        case 4:
+          if (waited > 0.5f) {
+            input.light_fire = true;
+            next ();
+          }
+          break;
+        case 5:
+          if (waited > 4.0f)
+            next ();
+          break;
+        case 6:
+          if (walk_to (middle, 1.0f))
+            next ();
+          break;
+        case 7:
+          // E picks a mushroom first if one is at hand; press until lying.
+          if (logic ().m_camp.resting)
+            next ();
+          else if (std::fmod (waited, 0.9f) < dt + 1e-4f && waited > 0.5f)
+            input.deploy_glider = true;
+          break;
+        default:
+          // Lying there: after a look from outside, through their eyes,
+          // gaze wandering a little over the sky.
+          if (script.step == 8 && waited > 5.0f &&
+              logic ().m_cam_mode == CAM_CHASE) {
+            logic ().m_cam_mode = CAM_HELMET;
+            m_renderer->reset_temporal_state ();
+            next ();
+          }
+          input.look_pitch = 0.0f;
+          input.look_yaw = 0.10f * std::sin (waited * 0.21f) * dt;
+          input.turn = 0.25f * std::sin (waited * 0.9f);
+          break;
+        }
+        return input;
+      }
+
       // The opening is the authored shot list (data/opening.txt) when it
       // was composed in this world, and otherwise one generated still of
       // the trailhead; either ends in the player's eyes.  MOPPE_OPENING
-      // names another shot list, `generated` for the still, or `flight`
-      // for the old drone flight through the planned landmarks, which the
-      // terrain survey still samples.
+      // names another shot list, `generated` for the still, `flight` for
+      // the old drone flight through the planned landmarks, which the
+      // terrain survey still samples, or `none` to begin in play.
       void plan_opening_journey () {
         MOPPE_PROFILE_ZONE ("startup.plan_opening");
         m_opening_shots.clear ();
         if (m_spectator)
           return;
         const char* choice = moppe::environment ("MOPPE_OPENING");
+        if (choice && std::string_view (choice) == "none")
+          return;
         const bool flight =
           (choice && std::string_view (choice) == "flight") ||
           moppe::environment ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
@@ -961,11 +1402,10 @@ namespace moppe {
                       << " stands underground in this world\n";
             return std::nullopt;
           }
-          if (shot.sun && std::fabs (*shot.sun - m_graphics.sun_height) > 0.01f)
+          if (shot.sun && std::fabs (*shot.sun - m_sky.sun_height) > 0.01f)
             std::cerr << "moppe: opening: shot " << shot.name
                       << " was composed under sun " << *shot.sun
-                      << ", the world is lit at " << m_graphics.sun_height
-                      << '\n';
+                      << ", the world is lit at " << m_sky.sun_height << '\n';
         }
         return reel;
       }
@@ -1012,7 +1452,7 @@ namespace moppe {
                                           subject_heading (),
                                           70.0f,
                                           logic ().m_total_time,
-                                          m_graphics.sun_height)
+                                          m_sky.sun_height)
                   << '\n';
         float duration = 0.0f;
         for (const OpeningShot& shot : m_opening_shots)
@@ -1064,7 +1504,7 @@ namespace moppe {
                                     rivers (),
                                     trail_network (),
                                     position (m_spawn_position),
-                                    sun_direction_for (m_graphics.sun_height));
+                                    m_sky.sun);
         if (m_gazetteer_plan.empty ())
           throw std::runtime_error ("landscape gazetteer found no viewpoints");
         // The direct observation primitive: put the camera HERE, look
@@ -1153,6 +1593,7 @@ namespace moppe {
         scatter_boulders ();
         grow_mushrooms ();
         settle_obstacles ();
+        stage_camp_script ();
         place_spectator ();
         // The mouse looks around during play; M hands it back.
         if (!m_gazetteer && !m_benchmark)
@@ -1207,8 +1648,7 @@ namespace moppe {
 
       void cast_world_shadows (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.cast_world_shadows");
-        m_terrain.render_shadow (
-          r, sun_direction_for (m_graphics.sun_height), m_graphics.forest);
+        m_terrain.render_shadow (r, m_sky.sun, m_graphics.forest);
       }
 
       void update_world_atmosphere (float total_time) {
@@ -1226,11 +1666,70 @@ namespace moppe {
 
         // Fog stays mostly sky-blue. Directional warmth is added in the
         // shaders only when looking toward the sun.
-        const DisplayColor horizon = horizon_color_for (m_graphics.sun_height);
-        logic ().m_fog =
-          mix_display (mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f),
-                                    0.18f),
-                       weather.fog_tint, weather.fog_tint_amount);
+        read_sky ();
+        // By night the haze keeps the sky's own dark blue, and an overcast
+        // greys only as far as there is light to grey it.
+        const float lit = 0.12f + 0.88f * m_sky.daylight;
+        logic ().m_fog = mix_display (
+          mix_display (m_sky.horizon,
+                       scale_display (DisplayColor (0.90f, 0.94f, 1.0f), lit),
+                       0.18f),
+          scale_display (weather.fog_tint, lit),
+          weather.fog_tint_amount);
+      }
+
+      // The day: MOPPE_DAY is how many minutes of play one takes (48
+      // unless told; 0 holds the sun still), and MOPPE_CLOCK the hour it
+      // starts at. Composed views -- the gazetteer, benchmarks, water
+      // captures, and any launch that names a sun height without asking
+      // for a day -- keep the fixed sun they were made under.
+      struct Day {
+        // Hours of the clock per second of play.
+        double pace = 0.0;
+        // Whether the sky follows the clock, or holds the authored sun.
+        bool turning = false;
+        std::optional<float> first_hour;
+      };
+
+      Day plan_day () const {
+        Day day;
+        const char* minutes = moppe::environment ("MOPPE_DAY");
+        const char* hour = moppe::environment ("MOPPE_CLOCK");
+        if (hour)
+          day.first_hour = std::clamp ((float)::atof (hour), 0.0f, 24.0f);
+        const bool composed =
+          m_gazetteer || m_benchmark || m_water_shot ||
+          (moppe::environment ("MOPPE_SUNHEIGHT") && !minutes && !hour);
+        const float length = minutes ? (float)::atof (minutes) : 48.0f;
+        if (!composed && length > 0.0f)
+          day.pace = 24.0 / (60.0 * length);
+        day.turning = !composed && (day.pace > 0.0 || hour);
+        return day;
+      }
+
+      void begin_day () {
+        logic ().m_day_hours =
+          m_day.first_hour
+            ? *m_day.first_hour
+            : m_almanac.clock_for_sun_height (m_graphics.sun_height);
+        read_sky ();
+        if (m_day.turning)
+          std::cerr << "moppe: the day begins at " << m_sky.clock
+                    << " h and takes "
+                    << (m_day.pace > 0.0 ? 24.0 / (60.0 * m_day.pace) : 0.0)
+                    << " minutes" << std::endl;
+      }
+
+      void read_sky () {
+        m_sky = m_day.turning && m_session
+                  ? m_almanac.at (logic ().m_day_hours)
+                  : m_almanac.held (m_graphics.sun_height);
+      }
+
+      // The clock runs with play, and faster for someone lying down to
+      // watch it.
+      void pass_time (float dt) {
+        logic ().m_day_hours += m_day.pace * dt * logic ().m_day_haste;
       }
 
       // -- simulation --------------------------------------------------
@@ -1259,7 +1758,8 @@ namespace moppe {
         static const bool capture_locked =
           moppe::environment ("MOPPE_ORBIT") ||
           moppe::environment ("MOPPE_PAN") ||
-          moppe::environment ("MOPPE_RIDE_CAPTURE_DIR");
+          moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") ||
+          moppe::environment ("MOPPE_VIDEO");
         if (capture_locked) {
           m_simulation_clock.reset ();
           tick_simulation (1.0f / 60.0f);
@@ -1290,6 +1790,8 @@ namespace moppe {
         const auto press = [t, dt] (float at) {
           return t >= at && t < at + 0.1f + dt ? 1.0f : 0.0f;
         };
+        if (script == "camp")
+          return camp_script (dt);
         if (script == "forage") {
           // Walk to the nearest mushroom, turning toward it, and pick it
           // once within reach; poisonous ones are left after one try.
@@ -1550,6 +2052,8 @@ namespace moppe {
           }
         }
 
+        pass_time (dt);
+        tend_camp (input, dt);
         reach_for_mushroom (input);
         const GameSessionAdvanceResult advance =
           advance_game_session (world (),
@@ -1569,6 +2073,7 @@ namespace moppe {
         }
         orbit_camera ();
         spectator_camera (dt);
+        rest_camera ();
         walk_side_camera ();
         ride_capture_camera ();
 
@@ -1599,6 +2104,14 @@ namespace moppe {
         params.mist = frame.lighting.mist;
         params.rain = frame.lighting.rain;
         params.sun_visibility = frame.lighting.sun_visibility;
+        params.sky_sun_dir = frame.lighting.sky_sun;
+        params.sky_moon_dir = frame.lighting.sky_moon;
+        params.sky_pole = frame.lighting.sky_pole;
+        params.sky_turn = frame.lighting.sky_turn;
+        params.moonlight = frame.lighting.moonlight;
+        params.lamp_pos = frame.lighting.lamp_position;
+        params.lamp_reach = frame.lighting.lamp_reach;
+        params.lamp_color = frame.lighting.lamp_color;
         params.scene_scale = frame.graphics.scene_scale;
         params.render_scale_override = frame.graphics.render_scale_override;
         params.scene_megapixel_budget = frame.graphics.scene_megapixel_budget;
@@ -1769,7 +2282,10 @@ namespace moppe {
         m_basket_contents.clear ();
         for (const std::uint32_t index : basket.picked)
           m_basket_contents.push_back (m_mushrooms.site (index));
-        if (actors.walker && !helmet)
+        draw_camp (m_world_dl);
+        if (actors.walker && lying_down ())
+          draw_sleeper (m_world_dl, helmet, frame.lighting.time);
+        else if (actors.walker && !helmet)
           render_walker (m_world_dl,
                          *actors.walker,
                          frame.lighting.time,
@@ -1817,6 +2333,12 @@ namespace moppe {
                                  frame.camera.position,
                                  frame.lighting.time,
                                  0x1000);
+        if (logic ().m_camp.fire_time > -50.0)
+          draw_fire (r,
+                     logic ().m_camp.hearth,
+                     frame.camera.position,
+                     fire_burn (logic ().m_camp, logic ().m_total_time),
+                     frame.lighting.time);
         if (visibility.star_effects)
           session ().stars ().render (r, frame.environment);
       }
@@ -1922,6 +2444,7 @@ namespace moppe {
         } else if (visibility.game_hud) {
           HudState hud_state = hud_state_for (frame.hud);
           add_basket_readings (hud_state);
+          add_camp_readings (hud_state);
           m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
           if (m_hud.diagnostics ())
             draw_trail_map (m_hud_dl,
@@ -2094,6 +2617,7 @@ namespace moppe {
               platform::request_quit ();
           }
         }
+        record_frame (r);
         if (!r.begin_frame (frame_params_for (frame)))
           return;
 
@@ -2335,6 +2859,15 @@ namespace moppe {
 
       // -- input -------------------------------------------------------
 
+      // A launch recording itself runs its remote control by the frames of
+      // play it has drawn, starting with the first.
+      std::optional<double> script_seconds () const override {
+        if (!m_video_plan)
+          return std::nullopt;
+        return m_ready && !opening_active () ? m_video_render_frame / 60.0
+                                             : -1.0;
+      }
+
       void controls (const platform::ControlState& state) override {
         if (!m_ready || logic ().m_game_over)
           return;
@@ -2380,6 +2913,17 @@ namespace moppe {
           return;
         }
 
+        // V starts a video of what is on screen, and V again ends it.
+        if (k == Key::Record && down) {
+          if (m_video.recording ())
+            m_video.finish ();
+          else if (!m_video_plan)
+            m_video.begin (next_clip_path (), 30);
+          return;
+        }
+        if (k == Key::Escape && down)
+          m_video.finish ();
+
         if (m_spectator) {
           // M frees the mouse -- to start a screen recording, say -- and
           // takes it back.
@@ -2420,9 +2964,87 @@ namespace moppe {
       }
 
     private:
-      // The in-game screenshot key drops frames into one per-run timestamped
-      // directory, so a walk through the world becomes a reviewable series.
-      std::string next_snapshot_path () {
+      // A launch told to record itself: MOPPE_VIDEO names the file, and
+      // beside it MOPPE_VIDEO_SECONDS how long the video runs before the
+      // game quits (otherwise until it is quit), MOPPE_VIDEO_START the
+      // seconds of play to let pass first, MOPPE_VIDEO_FPS 30 or 60,
+      // MOPPE_VIDEO_SPEED a whole number of times faster than life, and
+      // MOPPE_VIDEO_HEIGHT a height to scale to. The world then advances a
+      // sixtieth of a second per rendered frame, so the video is even
+      // however long its frames took (tools/record).
+      struct VideoPlan {
+        std::string path;
+        int fps = 30;
+        float seconds = 0.0f;
+        float start = 0.0f;
+        int speed = 1;
+        int height = 0;
+      };
+
+      static std::optional<VideoPlan> plan_video () {
+        const char* path = moppe::environment ("MOPPE_VIDEO");
+        if (!path || !*path)
+          return std::nullopt;
+        VideoPlan plan;
+        plan.path = path;
+        const auto number = [] (const char* name, float otherwise) {
+          const char* value = moppe::environment (name);
+          return value ? (float)::atof (value) : otherwise;
+        };
+        plan.fps = number ("MOPPE_VIDEO_FPS", 30.0f) > 45.0f ? 60 : 30;
+        plan.seconds = std::max (0.0f, number ("MOPPE_VIDEO_SECONDS", 0.0f));
+        plan.start = std::max (0.0f, number ("MOPPE_VIDEO_START", 0.0f));
+        plan.speed =
+          std::max (1, static_cast<int> (number ("MOPPE_VIDEO_SPEED", 1.0f)));
+        plan.height =
+          std::max (0, static_cast<int> (number ("MOPPE_VIDEO_HEIGHT", 0.0f)));
+        return plan;
+      }
+
+      // Hands this frame to the video being recorded, if it is one of the
+      // frames the video takes.
+      void record_frame (render::Renderer& r) {
+        const auto take = [&] {
+          r.request_frame (
+            [this] (const render::FramePixels& frame) { m_video.add (frame); });
+        };
+        const int index = m_video_render_frame++;
+        if (!m_video_plan) {
+          // A video begun with V takes every second frame as they come.
+          if (m_video.recording () && index % 2 == 0)
+            take ();
+          return;
+        }
+        if (m_video_done)
+          return;
+        const VideoPlan& plan = *m_video_plan;
+        const int first = static_cast<int> (std::lround (plan.start * 60.0f));
+        if (index < first)
+          return;
+        if (index == first)
+          m_video.begin (plan.path, plan.fps, plan.height);
+        if (!m_video.recording () ||
+            (plan.seconds > 0.0f &&
+             m_video.frames () >= std::lround (plan.seconds * plan.fps))) {
+          m_video.finish ();
+          m_video_done = true;
+          platform::request_quit ();
+          return;
+        }
+        if ((index - first) % (60 / plan.fps * plan.speed) == 0)
+          take ();
+      }
+
+      std::string next_clip_path () {
+        std::ostringstream path;
+        path << snapshot_directory () << "/clip-" << std::setfill ('0')
+             << std::setw (3) << m_clip_count++ << ".mp4";
+        return path.str ();
+      }
+
+      // The screenshot key and the video key drop their files into one
+      // per-run timestamped directory.
+      const std::string& snapshot_directory () {
         namespace fs = std::filesystem;
         if (m_snapshot_directory.empty ()) {
           const char* base = moppe::environment ("MOPPE_SCREENSHOT_DIR");
@@ -2440,8 +3062,14 @@ namespace moppe {
           }
           m_snapshot_directory = directory.string ();
         }
+        return m_snapshot_directory;
+      }
+
+      // The in-game screenshot key's frames number on through a run, so a
+      // walk through the world becomes a reviewable series.
+      std::string next_snapshot_path () {
         std::ostringstream path;
-        path << m_snapshot_directory << "/shot-" << std::setfill ('0')
+        path << snapshot_directory () << "/shot-" << std::setfill ('0')
              << std::setw (3) << m_snapshot_count++ << ".png";
         std::cerr << "moppe: screenshot " << path.str () << '\n';
         return path.str ();
@@ -2458,7 +3086,7 @@ namespace moppe {
           frame.camera.forward,
           frame.camera.field_of_view.numerical_value_in (u::deg),
           logic ().m_total_time,
-          m_graphics.sun_height);
+          m_sky.sun_height);
         std::cerr << "moppe: pose: " << line << '\n';
         std::ofstream shots (std::filesystem::path (m_snapshot_directory) /
                                "shots.txt",
@@ -2578,6 +3206,7 @@ namespace moppe {
                                                    : 0.0f,
           .reveal_player = m_opening.active () && !m_opening.shot ().settle,
           .benchmark = benchmark,
+          .sky = m_sky,
         };
       }
 
@@ -2759,6 +3388,9 @@ namespace moppe {
       std::unique_ptr<GameSession> m_session;
       WorldLoading m_loading;
       GraphicsSettings m_graphics;
+      Almanac m_almanac;
+      Day m_day;
+      SkyReading m_sky;
       Vec3 m_spawn_position;
       Vec3 m_home_base_position;
       render::DrawList m_home_base_marker;
@@ -2782,7 +3414,21 @@ namespace moppe {
       std::vector<MushroomSite> m_basket_contents;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
+      // The trees the walker stands between that would take the hammock,
+      // and where they last stood when that was worked out.
+      std::optional<HammockSite> m_hammock_at_hand;
+      Vec3 m_hammock_sought_from;
+      bool m_hammock_sought = false;
       float m_walk_script_time = 0.0f;
+      // MOPPE_WALK=camp: the trees it camps between, the side it walks in
+      // from, and how far through its steps it is.
+      struct CampScript {
+        std::optional<HammockSite> site;
+        float side = 1.0f;
+        int step = 0;
+        float since = 0.0f;
+      };
+      CampScript m_camp_script;
       Hud m_hud;
       render::TextList m_hud_text;
 
@@ -2792,6 +3438,11 @@ namespace moppe {
       bool m_snapshot_requested = false;
       std::string m_snapshot_directory;
       int m_snapshot_count = 0;
+      VideoRecorder m_video;
+      std::optional<VideoPlan> m_video_plan = plan_video ();
+      int m_video_render_frame = 0;
+      int m_clip_count = 0;
+      bool m_video_done = false;
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
       std::optional<mov::Trunk> m_orbit_tree;

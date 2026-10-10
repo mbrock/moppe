@@ -12,6 +12,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 
@@ -52,6 +53,21 @@ namespace moppe {
       // game raymarches the terrain and folds in cloud cover.
       // Drives the present pass's lens flare.
       float sun_visibility = 0.0f;
+      // The sky itself, where `sun_dir` is only the key light (the moon,
+      // at night): toward the true sun and the moon, the celestial pole
+      // and how far the stars have turned about it in radians, and how
+      // brightly the moon shines, 0..1. A zero `sky_sun_dir` means the
+      // sun is the key light and it is day.
+      Vec3 sky_sun_dir;
+      Vec3 sky_moon_dir { 0, -1, 0 };
+      Vec3 sky_pole { 0, 1, 0 };
+      float sky_turn = 0.0f;
+      float moonlight = 0.0f;
+      // One warm point light -- a campfire: its position, how many metres
+      // it reaches (0: none), and its colour at full strength.
+      Vec3 lamp_pos;
+      float lamp_reach = 0.0f;
+      DisplayColor lamp_color;
       float scene_scale = 1.0f;
       float render_scale_override = 0.0f;
       float scene_megapixel_budget = 0.0f;
@@ -292,6 +308,14 @@ namespace moppe {
       bool flake = false;
     };
 
+    // One finished frame as the display shows it: rows of 8-bit RGB, the
+    // top row first, borrowed for the length of the call.
+    struct FramePixels {
+      int width = 0;
+      int height = 0;
+      std::span<const std::uint8_t> rgb;
+    };
+
     // The renderer: a game-shaped interface, not a general RHI.  Sky,
     // ocean, terrain and the post effects are backend features with
     // dedicated shaders; a WebGPU backend reimplements this interface
@@ -438,6 +462,14 @@ namespace moppe {
       // Unsupported platforms may leave this as a no-op.
       virtual void request_screenshot (const std::string& path) {
         (void)path;
+      }
+      // Development capture: the backend hands the frame being drawn to
+      // `sink` once it is complete -- before end_frame returns where the
+      // device can wait for it, a frame later where it cannot. A video is
+      // this asked of every frame (game/video.hh).
+      virtual void
+      request_frame (std::function<void (const FramePixels&)> sink) {
+        (void)sink;
       }
       virtual void end_frame () = 0;
       virtual bool benchmark_complete () const {

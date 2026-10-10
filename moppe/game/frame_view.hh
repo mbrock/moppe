@@ -2,6 +2,7 @@
 #define MOPPE_GAME_FRAME_VIEW_HH
 
 #include <moppe/color.hh>
+#include <moppe/game/daylight.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/gfx/mat4.hh>
@@ -163,6 +164,19 @@ namespace moppe::game {
     float exposure_bias = 1.0f;
     float mist = 0.0f;
     float rain = 0.0f;
+    // `sun_direction` is the key light, which at night is the moon; these
+    // are the sky itself (game/daylight.hh).
+    Vec3 sky_sun { 0, 1, 0 };
+    Vec3 sky_moon { 0, -1, 0 };
+    Vec3 sky_pole { 0, 1, 0 };
+    float sky_turn = 0.0f;
+    float moonlight = 0.0f;
+    float daylight = 1.0f;
+    // A fire's light: where it burns, how far it reaches, and its colour
+    // at full strength. No reach, no fire.
+    Vec3 lamp_position {};
+    float lamp_reach = 0.0f;
+    DisplayColor lamp_color {};
   };
 
   struct FrameGraphics {
@@ -217,6 +231,9 @@ namespace moppe::game {
     // the first-person view otherwise leaves undrawn.
     bool reveal_player = false;
     FrameBenchmarkTag benchmark {};
+    // The sky at this moment of the day; absent, the fixed sun at the
+    // graphics settings' height.
+    std::optional<SkyReading> sky;
   };
 
   // Shared pure art-direction readings.  The application can update its

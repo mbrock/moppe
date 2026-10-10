@@ -36,16 +36,22 @@ namespace moppe {
       constexpr const char* mount_key = "B";
       constexpr const char* restart_key = "A";
       constexpr const char* ride_key = "Y";
+      constexpr const char* hammock_key = "LB";
+      constexpr const char* fire_key = "RB";
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
       constexpr const char* deploy_key = "";
       constexpr const char* mount_key = "";
       constexpr const char* restart_key = "";
       constexpr const char* ride_key = "";
+      constexpr const char* hammock_key = "";
+      constexpr const char* fire_key = "";
 #else
       constexpr const char* deploy_key = "E";
       constexpr const char* mount_key = "F";
       constexpr const char* restart_key = "R";
       constexpr const char* ride_key = "Space";
+      constexpr const char* hammock_key = "R";
+      constexpr const char* fire_key = "T";
 #endif
 
       // The gauge: a hairline arc of radius gauge_radius points, open at the
@@ -551,6 +557,37 @@ namespace moppe {
                    TextAlign::Center);
     }
 
+    // Someone lying in the hammock watches the hours go by: the time of
+    // day, small, over the prompt.
+    void Hud::draw_clock (render::TextList& text,
+                          const HudState& st,
+                          float dt,
+                          int width_pts,
+                          int height_pts) {
+      m_clock_alpha =
+        approach (m_clock_alpha, st.resting ? 1.0f : 0.0f, 1.5f, dt);
+      const float alpha = ease (m_clock_alpha);
+      if (!m_font || alpha <= 0.002f)
+        return;
+      const int minutes =
+        static_cast<int> (std::floor (st.clock_hours * 60.0f)) % (24 * 60);
+      char reading[8];
+      std::snprintf (
+        reading, sizeof reading, "%02d:%02d", minutes / 60, minutes % 60);
+      TextStyle hour;
+      hour.size = 17.0f;
+      hour.red = hour.green = hour.blue = ink;
+      hour.alpha = 0.72f * alpha;
+      hour.tracking = 0.06f;
+      hour.tabular_figures = true;
+      draw_shaded (text,
+                   0.5f * width_pts,
+                   height_pts - 92.0f,
+                   reading,
+                   hour,
+                   TextAlign::Center);
+    }
+
     void Hud::draw_prompts (render::TextList& text,
                             const HudState& st,
                             float dt,
@@ -565,6 +602,28 @@ namespace moppe {
           key = deploy_key;
           action = *deploy_key ? "Pick the " + std::string (st.mushroom_in_reach)
                                : name + " within reach";
+        }
+      } else if (st.on_foot && st.camp != HudState::Camp::none) {
+        switch (st.camp) {
+        case HudState::Camp::hang:
+          key = hammock_key;
+          action = *hammock_key ? "Hang the hammock"
+                                : "Two good trees for the hammock";
+          break;
+        case HudState::Camp::lie_down:
+          key = deploy_key;
+          action = *deploy_key ? "Lie down" : "The hammock";
+          break;
+        case HudState::Camp::get_up:
+          key = deploy_key;
+          action = "Get up";
+          break;
+        case HudState::Camp::light_fire:
+          key = fire_key;
+          action = "Light a fire";
+          break;
+        case HudState::Camp::none:
+          break;
         }
       } else if (st.can_drop_bike) {
         key = deploy_key;
@@ -677,6 +736,7 @@ namespace moppe {
 
       draw_gauge (text, st, dt, width_pts, height_pts);
       draw_basket (text, st, dt, width_pts, height_pts);
+      draw_clock (text, st, dt, width_pts, height_pts);
       draw_prompts (text, st, dt, width_pts, height_pts);
       if (m_diagnostics)
         draw_diagnostics (dl, text, st, width_pts, height_pts);

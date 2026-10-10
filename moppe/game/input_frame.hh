@@ -16,6 +16,10 @@ namespace moppe::game {
     bool toggle_mount = false;
     bool cycle_camera = false;
     bool leave_cinematic = false;
+    // Making camp, on foot (game/camp.hh): hang the hammock between the
+    // trees at hand or take it down, and light the fire or put it out.
+    bool hang_hammock = false;
+    bool light_fire = false;
     // Head movement since the last tick, in radians, from the mouse or the
     // right stick: on foot it turns the walker and tilts the gaze; riding
     // or gliding it looks around the way ahead.

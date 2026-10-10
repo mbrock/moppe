@@ -61,6 +61,8 @@ namespace {
     }
     switch (key.key) {
     case SDLK_P: return Key::Screenshot;
+    case SDLK_V:
+      return Key::Record;
     case SDLK_G: return Key::G;
     case SDLK_H: return Key::H;
     case SDLK_M: return Key::M;
@@ -129,6 +131,8 @@ namespace {
       r.b = held (SDL_GAMEPAD_BUTTON_EAST);
       r.x = held (SDL_GAMEPAD_BUTTON_WEST);
       r.y = held (SDL_GAMEPAD_BUTTON_NORTH);
+      r.left_shoulder = held (SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+      r.right_shoulder = held (SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
       r.dpad_left = held (SDL_GAMEPAD_BUTTON_DPAD_LEFT);
       r.dpad_right = held (SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
       r.dpad_up = held (SDL_GAMEPAD_BUTTON_DPAD_UP);
@@ -255,9 +259,16 @@ namespace moppe::platform {
         sdl::run_main_thread_tasks ();
         const ControlState held_controls = m_pad.poll ();
         const auto now = std::chrono::steady_clock::now ();
-        if (m_remote)
-          m_remote->poll (
-            std::chrono::duration<double> (now - m_start).count ());
+        // A game recording itself steps its world frame by frame however
+        // long frames take, so its remote control keeps the game's time.
+        if (m_remote) {
+          const std::optional<double> script = m_game.script_seconds ();
+          if (!script)
+            m_remote->poll (
+              std::chrono::duration<double> (now - m_start).count ());
+          else if (*script >= 0.0)
+            m_remote->poll (*script);
+        }
         if (m_remote && m_remote->controls ())
           m_game.controls (*m_remote->controls ());
         else if (m_pad.connected ())

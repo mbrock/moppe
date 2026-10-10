@@ -58,6 +58,12 @@ namespace moppe {
       const char* reached_name = nullptr;
       float reached_age_s = 100.0f;
       bool reached_refused = false;
+      // On foot: what there is to do about the camp here (game/camp.hh).
+      enum class Camp { none, hang, lie_down, get_up, light_fire };
+      Camp camp = Camp::none;
+      // Lying in the hammock: the hour of the day, 0..24.
+      bool resting = false;
+      float clock_hours = 0.0f;
 
       HudState ()
           : speed_kmh (0), boost_ready01 (1.0f), health01 (1.0f),
@@ -162,6 +168,11 @@ namespace moppe {
                         float dt,
                         int width_pts,
                         int height_pts);
+      void draw_clock (render::TextList& text,
+                       const HudState& state,
+                       float dt,
+                       int width_pts,
+                       int height_pts);
       void draw_prompts (render::TextList& text,
                          const HudState& state,
                          float dt,
@@ -197,6 +208,7 @@ namespace moppe {
       float m_reserve_hold;
       float m_prompt_alpha;
       float m_basket_alpha;
+      float m_clock_alpha = 0.0f;
       std::string m_prompt_key;
       std::string m_prompt_action;
     };

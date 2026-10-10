@@ -28,7 +28,14 @@
       (sun-view :mat4)             ; world to the near cascade's clip
       (shadow :vec4)               ; strength, a cascade's texel size, and
                                    ; per metre of light depth: near, far
-      (sun-view-far :mat4))))      ; world to the far cascade's clip
+      (sun-view-far :mat4)         ; world to the far cascade's clip
+      ;; `sun-direction` is the key light, which at night is the moon.
+      ;; These are the sky itself.
+      (sky-sun :vec4)              ; toward the sun; w: the stars' turn
+      (sky-moon :vec4)             ; toward the moon; w: its light, 0..1
+      (sky-pole :vec4)             ; the celestial pole
+      (lamp :vec4)                 ; a fire's place; w: its reach, metres
+      (lamp-color :vec4))))        ; its colour at full strength
 
 ;;; -- shared ---------------------------------------------------------------
 
@@ -64,6 +71,21 @@
 (define-shader-function hemisphere-light (ambient normal)
   (* ambient (mix (srgb (vec3 0.92 0.74 0.58)) (srgb (vec3 0.74 0.92 1.12))
                   (+ 0.5 (* 0.5 (swizzle (normalize normal) :y))))))
+
+;;; A fire's light on a surface: falling off with the square of the
+;;; distance and gone at its reach, wrapped a little round the form so a
+;;; trunk or a face is not cut in half.  Nothing shadows it.
+(define-shader-function lamp-light (lamp lamp-color world normal)
+  (let* ((to (- (swizzle lamp :xyz) world))
+         (d2 (dot to to))
+         (reach (max (swizzle lamp :w) 0.001))
+         (within (clamp (- 1.0 (/ d2 (* reach reach))) 0.0 1.0))
+         (facing (clamp (/ (+ (dot normal (/ to (sqrt (max d2 0.0001)))) 0.3)
+                           1.3)
+                        0.0 1.0)))
+    (* (swizzle lamp-color :xyz)
+       (* within within facing (/ 1.0 (+ 1.0 (* 0.5 d2)))
+          (step 0.001 (swizzle lamp :w))))))
 
 ;;; Haze warmed toward the sun and faintly blue away from it.
 (define-shader-function warmed-fog (fog-color view sun)
@@ -488,8 +510,11 @@
          (lit (* albedo (+ (* (hemisphere-light (swizzle ambient :xyz) normal)
                               fill)
                            (* (swizzle sun-diffuse :xyz)
-                              (* 0.9 lambert direct))))))
-    (set-output color (vec4 (hazed lit world eye fog-color sun relief) 1.0))
+                              (* 0.9 lambert direct))
+                           (lamp-light lamp lamp-color world normal)))))
+    (set-output color (vec4 (hazed lit world eye fog-color
+                                   (swizzle sky-sun :xyz) relief)
+                            1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
 (define-shader-program terrain
@@ -517,7 +542,7 @@
 ;;; and the sun.  Behind everything, at the reversed-Z far plane.
 ;;; As in sky.metal: a three-stop atmosphere with Mie lobes about the sun,
 ;;; high cirrus veils, a cumulus deck of value-noise fBm, the sun's disc,
-;;; corona, and bloom, and stars at night.
+;;; corona, and bloom, and at night the moon and the turning stars.
 
 (define-shader-function sky-hash (n)
   (fract (* (sin n) 43758.5453)))
@@ -552,9 +577,9 @@
   (let* ((daylight (smoothstep -0.08 0.18 (swizzle sun :y)))
          (golden (* daylight (- 1.0 (smoothstep 0.15 0.65 (swizzle sun :y)))))
          (thickness (- 1.0 (abs (swizzle ray :y))))
-         (zenith (mix (srgb (vec3 0.004 0.009 0.05)) (srgb (vec3 0.06 0.20 0.55))
+         (zenith (mix (srgb (vec3 0.020 0.035 0.105)) (srgb (vec3 0.06 0.20 0.55))
                       daylight))
-         (middle (mix (srgb (vec3 0.015 0.022 0.06)) (srgb (vec3 0.25 0.46 0.78))
+         (middle (mix (srgb (vec3 0.026 0.042 0.11)) (srgb (vec3 0.25 0.46 0.78))
                       daylight))
          (horizon (mix (srgb (vec3 0.035 0.045 0.09))
                        (srgb (vec3 0.55 0.68 0.84)) daylight))
@@ -596,7 +621,111 @@
          (cloud (+ (mix lit shade (* 0.85 core))
                    (* lit (* toward (- 1.0 core) (+ 0.5 (* 0.7 golden))
                              daylight)))))
-    (mix (* cloud 0.12) cloud daylight)))
+    (mix (* cloud (vec3 0.030 0.038 0.060)) cloud daylight)))
+
+;;; The night sky, after Luv's: a hash of a whole lattice site without a
+;;; sine (a collapsed x + 57y + 113z sine hash streaks at the stars'
+;;; frequencies), and value noise over it.
+(define-shader-function lattice-hash (site)
+  (let* ((scattered (fract (* site 0.1031)))
+         (shift (dot scattered (+ (swizzle scattered :zyx)
+                                  (vec3 31.32 31.32 31.32))))
+         (folded (+ scattered (vec3 shift shift shift))))
+    (fract (* (+ (swizzle folded :x) (swizzle folded :y))
+              (swizzle folded :z)))))
+
+(define-shader-function lattice-noise (p)
+  (let* ((i (floor p))
+         (f0 (fract p))
+         (f (* f0 (* f0 (- (vec3 3.0 3.0 3.0) (* f0 2.0)))))
+         (fx (swizzle f :x))
+         (fy (swizzle f :y)))
+    (mix (mix (mix (lattice-hash i)
+                   (lattice-hash (+ i (vec3 1.0 0.0 0.0))) fx)
+              (mix (lattice-hash (+ i (vec3 0.0 1.0 0.0)))
+                   (lattice-hash (+ i (vec3 1.0 1.0 0.0))) fx) fy)
+         (mix (mix (lattice-hash (+ i (vec3 0.0 0.0 1.0)))
+                   (lattice-hash (+ i (vec3 1.0 0.0 1.0))) fx)
+              (mix (lattice-hash (+ i (vec3 0.0 1.0 1.0)))
+                   (lattice-hash (+ i (vec3 1.0 1.0 1.0))) fx) fy)
+         (swizzle f :z))))
+
+;;; A direction turned about a unit axis by an angle.
+(define-shader-function turned (v axis angle)
+  (let* ((c (cos angle))
+         (across (vec3 (- (* (swizzle axis :y) (swizzle v :z))
+                          (* (swizzle axis :z) (swizzle v :y)))
+                       (- (* (swizzle axis :z) (swizzle v :x))
+                          (* (swizzle axis :x) (swizzle v :z)))
+                       (- (* (swizzle axis :x) (swizzle v :y))
+                          (* (swizzle axis :y) (swizzle v :x))))))
+    (+ (* v c) (* across (sin angle))
+       (* axis (* (dot axis v) (- 1.0 c))))))
+
+;;; One layer of stars: the sky's directions fall into a lattice of cells,
+;;; one star in each, kept clear of its cell's walls so its glow is never
+;;; cut.  A few are bright and most faint; each twinkles on its own phase.
+;;; Returns the light in x and a hash to colour it by in y.
+(define-shader-function star-layer (direction cells sharpness time)
+  (let* ((point (* direction cells))
+         (cell (floor point))
+         (local (fract point))
+         (place-x (lattice-hash (+ cell (vec3 19.7 5.3 11.1))))
+         (place-y (lattice-hash (+ cell (vec3 3.1 23.9 7.7))))
+         (place-z (lattice-hash (+ cell (vec3 41.3 13.7 29.5))))
+         (bright (lattice-hash (+ cell (vec3 7.9 31.1 17.3))))
+         (centre (+ (vec3 0.25 0.25 0.25)
+                    (* (vec3 place-x place-y place-z) 0.5)))
+         (offset (- local centre))
+         (magnitude (expt bright 9.0))
+         (twinkle (+ 0.74 (* 0.26 (sin (+ (* time 2.3) (* place-x 43.0)))))))
+    (vec2 (* magnitude twinkle (exp (* -1.0 sharpness (dot offset offset))))
+          place-y)))
+
+;;; The night: stars in two layers, the Milky Way's band with its dust
+;;; lane, and the moon, its face lit from wherever the sun is.  `stars-at`
+;;; is the view ray carried back to where the stars stood at midnight.
+(define-shader-function night-sky (ray stars-at sun moon moonlight daylight
+                                   time)
+  (let* ((rise (swizzle ray :y))
+         (night (- 1.0 (smoothstep 0.0 0.30 daylight)))
+         (clear (* night (smoothstep -0.02 0.16 rise)
+                   (- 1.0 (* 0.4 moonlight))))
+         (galaxy-axis (vec3 0.42 0.55 -0.72))
+         (off-band (dot stars-at galaxy-axis))
+         (band (exp (* -20.0 (* off-band off-band))))
+         (structure (+ (* 0.58 (lattice-noise (* stars-at 15.0)))
+                       (* 0.42 (lattice-noise (* stars-at 44.0)))))
+         (galaxy (* band (+ 0.10 (* 1.25 structure))
+                    (- 1.0 (* 0.55 (smoothstep
+                                    0.42 0.66
+                                    (lattice-noise (* stars-at 7.0)))))))
+         (near (star-layer stars-at 46.0 150.0 time))
+         (far (star-layer stars-at 110.0 190.0 time))
+         (tint (mix (vec3 0.72 0.82 1.0) (vec3 1.0 0.86 0.68)
+                    (smoothstep 0.35 0.95 (swizzle near :y))))
+         (starlight (+ (* tint (* 2.6 (swizzle near :x)))
+                       (* (vec3 0.90 0.93 1.0)
+                          (* 1.1 (swizzle far :x) (+ 1.0 (* 1.6 band))))
+                       (* (vec3 0.60 0.66 0.94) (* 0.085 galaxy))))
+         ;; The moon: a disc drawn larger than life, shaded as the sphere
+         ;; it is.
+         (radius 0.017)
+         (along (dot ray moon))
+         (face (/ (- ray (* moon along)) radius))
+         (r2 (dot face face))
+         (disc (* (- 1.0 (smoothstep 0.86 1.0 r2)) (step 0.0 along)))
+         (normal (- face (* moon (sqrt (max (- 1.0 r2) 0.0)))))
+         (lit (smoothstep -0.05 0.20 (dot normal sun)))
+         (maria (lattice-noise (+ (* face 1.8) (vec3 13.0 5.0 9.0))))
+         (surface (* (+ 0.66 (* 0.50 maria)) (+ 0.05 (* 0.95 lit))))
+         (up (smoothstep -0.03 0.03 (swizzle moon :y)))
+         (moon-light (* (vec3 0.94 0.95 1.0) up
+                        (+ (* disc surface (mix 0.42 2.4 night))
+                           (* moonlight
+                              (+ (* 0.30 (expt (max along 0.0) 260.0))
+                                 (* 0.05 (expt (max along 0.0) 18.0))))))))
+    (+ (* starlight clear (- 1.0 disc)) moon-light)))
 
 (define-shader sky-fragment
     (:stage :fragment
@@ -607,14 +736,21 @@
   (let* ((ray (normalize (+ (swizzle view-forward :xyz)
                             (* (swizzle view-right :xyz) (swizzle ndc :x))
                             (* (swizzle view-up :xyz) (swizzle ndc :y)))))
-         (sun (normalize (swizzle sun-direction :xyz)))
+         (sun (normalize (swizzle sky-sun :xyz)))
+         (moon (normalize (swizzle sky-moon :xyz)))
          (time (swizzle camera-position :w))
          (cloudiness (swizzle sun-direction :w))
          (rise (swizzle ray :y))
          (lifted (max rise 0.05))
          (daylight (smoothstep -0.08 0.18 (swizzle sun :y)))
          (golden (* daylight (- 1.0 (smoothstep 0.15 0.65 (swizzle sun :y)))))
-         (atmosphere (sky-atmosphere ray sun))
+         ;; The stars turn about the pole with the hours; the clouds pass
+         ;; in front of them and of the moon.
+         (stars-at (turned ray (normalize (swizzle sky-pole :xyz))
+                           (swizzle sky-sun :w)))
+         (atmosphere (+ (sky-atmosphere ray sun)
+                        (night-sky ray stars-at sun moon (swizzle sky-moon :w)
+                                   daylight time)))
          ;; High cirrus: soft wind-sheared veils far above the deck.
          (cirrus-at (+ (* ray (/ 900.0 lifted))
                        (vec3 (* time 0.6) 0.0 (* time 0.25))))
@@ -625,7 +761,7 @@
                     (+ 0.10 (* 0.08 cloudiness))))
          (cirrus (mix (srgb (vec3 0.9 0.95 1.05)) (srgb (vec3 1.0 0.9 0.8))
                       (expt (max (dot ray sun) 0.0) 4.0)))
-         (veiled (mix atmosphere cirrus
+         (veiled (mix atmosphere (* cirrus (+ 0.05 (* 0.95 daylight)))
                       (* streak (+ 0.25 (* 0.75 daylight)))))
          ;; The cumulus deck, projected onto a dome.
          (deck-at (+ (* ray (/ 200.0 lifted))
@@ -645,7 +781,6 @@
                        (+ (* occlude (+ (* (expt toward 2600.0) 1.35 3.0)
                                         (* (expt toward 160.0) 0.30 1.7)))
                           (* (expt toward 14.0) 0.075 daylight)))))
-         ;; Stars at night.
          ;; A heavy overcast closes into a soft grey, its brightness falling
          ;; toward the horizon, and hides the sun.
          (overcast (smoothstep 0.70 1.0 cloudiness))
@@ -655,15 +790,8 @@
          (misted (mix closed (* (swizzle fog-color :xyz) 1.06)
                       (* (swizzle relief :w)
                          (- 1.0 (smoothstep -0.02 0.22 rise)))))
-         (stars (* (expt (sky-noise (* ray 100.0)) 20.0)
-                   (max 0.0 (* (- 1.0 daylight) 0.3
-                               (smoothstep 0.0 0.4 rise)))
-                   (- 1.0 (step 0.2 daylight))))
-         (star-color (mix (srgb (vec3 0.8 0.9 1.0)) (srgb (vec3 1.0 0.9 0.8))
-                          (sky-noise (* ray 10.0))))
          (far (vec4 ray 0.0)))
-    (set-output color (vec4 (+ misted (* star-color (* stars (- 1.0 overcast))))
-                            1.0))
+    (set-output color (vec4 misted 1.0))
     (set-output motion (- (clip-uv (* previous-view-proj far))
                           (clip-uv (* view-proj far))))))
 
@@ -811,7 +939,8 @@
          (lit (+ (* albedo (+ (* (hemisphere-light (swizzle ambient :xyz) n)
                                  fill)
                               (* sun-light lambert)
-                              bounce))
+                              bounce
+                              (lamp-light lamp lamp-color world n)))
                  (* (mix albedo (vec3 1.0 1.0 1.0) 0.2)
                     (* (swizzle sun-specular :xyz) direct
                        (* 0.10 (* (expt (max (dot n half-way) 0.0) 48.0)
@@ -820,7 +949,8 @@
                               (* rim (- 1.0 (* 0.75 foliage)))))))
          (shaded (mix albedo lit (swizzle shading :x)))
          (fogged (mix shaded
-                      (hazed shaded world camera fog-color sun relief)
+                      (hazed shaded world camera fog-color
+                             (swizzle sky-sun :xyz) relief)
                       (swizzle shading :y))))
     (when (> stippled 0.5)
       (when (<= (swizzle base :w) threshold)
@@ -1375,13 +1505,15 @@
          (sun-light (swizzle sun-diffuse :xyz))
          (shaded (* surface (+ (* sun-light (* sun visibility 0.95))
                                (* (hemisphere-light (swizzle ambient :xyz) n)
-                                  occlusion))))
+                                  occlusion)
+                               (lamp-light lamp lamp-color world-position
+                                           n))))
          ;; Against the sun, needles and leaves glow with transmitted light.
          (glow (* surface sun-light
                   (* foliage visibility 0.35
                      (expt (clamp (dot (* -1.0 view) light) 0.0 1.0) 4.0)))))
     (set-output color (vec4 (hazed (+ shaded glow) world-position eye fog-color
-                                   light relief)
+                                   (swizzle sky-sun :xyz) relief)
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
@@ -2056,7 +2188,9 @@
          (lit (* albedo (+ (* fill (mix ensemble-sky sky resolved))
                            (* sun-light (* lambert cast
                                            (- 1.0 (* 0.45 transmitted))))
-                           scatter)))
+                           scatter
+                           (lamp-light lamp lamp-color world-position
+                                       (vec3 0.0 1.0 0.0)))))
          ;; Chlorophyll passes green-yellow; a backlit petal glows warm in
          ;; roughly its own colour, a little less fiercely.
          (glow (* (vec3 (sqrt (swizzle albedo :x)) (sqrt (swizzle albedo :y))
@@ -2081,7 +2215,7 @@
                       (+ 0.30 (* 0.70 exposure)) 2.4
                       (- 1.0 (* 0.78 petal))))))
     (set-output color (vec4 (hazed (+ lit glow sheen) world-position eye
-                                   fog-color l relief)
+                                   fog-color (swizzle sky-sun :xyz) relief)
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
@@ -2469,8 +2603,8 @@
     (when (or (< lift 0.006) (< density-fraction 0.001) (< leaf 0.001)
               (< coverage-limit 0.002))
       (discard))
-    (set-output color (vec4 (hazed shaded world-position eye fog-color l
-                                   relief)
+    (set-output color (vec4 (hazed shaded world-position eye fog-color
+                                   (swizzle sky-sun :xyz) relief)
                             coverage))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
@@ -2732,9 +2866,10 @@
                                        visibility 0.95))
                        (* (+ (hemisphere-light (swizzle ambient :xyz) n)
                              (* bounce 0.45))
-                          (mix 0.55 0.92 contact))))))
-    (set-output color (vec4 (hazed shaded world-position eye fog-color light
-                                   relief)
+                          (mix 0.55 0.92 contact))
+                       (lamp-light lamp lamp-color world-position n)))))
+    (set-output color (vec4 (hazed shaded world-position eye fog-color
+                                   (swizzle sky-sun :xyz) relief)
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
@@ -3228,7 +3363,8 @@
                                     (max (swizzle reflected :y) 0.002)
                                     (swizzle reflected :z))))
          ;; Off screen, the sky, and low in a channel the banks above it.
-         (sky (water-sky mirrored light (swizzle fog-color :xyz)
+         (sky (water-sky mirrored (swizzle sky-sun :xyz)
+                         (swizzle fog-color :xyz)
                          (swizzle sun-direction :w) (swizzle relief :w)))
          (bank (* (srgb (vec3 0.13 0.17 0.09))
                   (+ sky-light (* sun-light
@@ -3415,8 +3551,10 @@
          (whole (+ (* foam foam-color) (* (- 1.0 foam) surface-light)))
          ;; Haze over the surface as over any other; the bed seen through it
          ;; is already hazed for its own distance, and only dimmed here.
-         (haze (hazed (vec3 0.0 0.0 0.0) world eye fog-color light relief))
-         (clear (- (hazed (vec3 1.0 1.0 1.0) world eye fog-color light relief)
+         (haze (hazed (vec3 0.0 0.0 0.0) world eye fog-color
+                      (swizzle sky-sun :xyz) relief))
+         (clear (- (hazed (vec3 1.0 1.0 1.0) world eye fog-color
+                          (swizzle sky-sun :xyz) relief)
                    haze))
          (hazy (+ haze (* whole clear)
                   (* bed lit-through clear
@@ -3508,7 +3646,8 @@
                              (* sun-light (+ (* 0.75 front) (* 0.35 behind)
                                              0.15)))
                     (+ 0.72 (* 0.36 streak))))
-         (hazy (hazed shaded world eye fog-color light relief)))
+         (hazy (hazed shaded world eye fog-color (swizzle sky-sun :xyz)
+                      relief)))
     (when (< cover 0.01)
       (discard))
     (set-output color (vec4 hazy cover))
@@ -3674,8 +3813,8 @@
                                          (swizzle ambient :xyz) n))))
                     (* albedo sun-light visibility 0.5
                        (expt (clamp (dot (* -1.0 view) light) 0.0 1.0) 3.0)))))
-    (set-output color (vec4 (hazed shaded world-position eye fog-color light
-                                   relief)
+    (set-output color (vec4 (hazed shaded world-position eye fog-color
+                                   (swizzle sky-sun :xyz) relief)
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 

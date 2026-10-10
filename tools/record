@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# Record a video of the game, to show a feature or to judge one in motion.
+#
+#   tools/record OUTPUT.mp4 [SCENE] [OPTIONS] [-- MOPPE ARGS...]
+#
+# The game records itself (MOPPE_VIDEO, moppe/game/video.hh): it steps the
+# world a sixtieth of a second per rendered frame and pipes the frames to
+# ffmpeg, so the video is even and repeatable however fast the machine is.
+# On Linux it runs without a window, inside a headless gamescope of the
+# size asked for; elsewhere, or with --window, in its own inactive window.
+#
+# Scenes set the stage; without one the game simply starts in play:
+#   play      on foot at the trailhead, no opening (the default)
+#   ride      the autopilot's ride                     (MOPPE_DEMO=1)
+#   forest    the same from the forest floor           (MOPPE_DEMO=forest)
+#   glide     the ride, opening the wing on a leap     (MOPPE_DEMO=glide)
+#   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
+#   forage    picking mushrooms                        (MOPPE_WALK=forage)
+#   camp      hang the hammock, light a fire, lie down at dusk and watch
+#             the night go by                          (MOPPE_WALK=camp)
+#   opening   the opening titles
+#
+# Options:
+#   --seconds N     how long the video runs (each scene has its own)
+#   --start N       seconds of play to let pass before recording
+#   --speed N       a time-lapse, N times faster than life
+#   --fps 30|60     frames a second (30)
+#   --size WxH      the picture's size (1280x720)
+#   --clock HOURS   the hour of the day to start at, e.g. 21.5
+#   --control CMD.. drive the game: remote-control commands (see
+#                   moppe/platform/input.hh), one per argument, such as
+#                   'hold W 3' 'tap R' 'wait 2' 'look 200 0' 'tap T'
+#   --sheet         also write OUTPUT.png, a contact sheet of the video
+#   --window        record the game's own window rather than a hidden one
+#
+# The environment passes through, so MOPPE_WEATHER=mist, MOPPE_SEED, a
+# scene's own switches (MOPPE_WALK_CAMERA=front) and the rest all apply.
+#
+#   tools/record /tmp/camp.mp4 camp
+#   tools/record /tmp/fire.mp4 --clock 21 --seconds 12 \
+#     --control 'hold W 2' 'tap T' 'wait 4' 'look 400 0'
+set -euo pipefail
+
+usage () {
+  sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "$0" >&2
+  exit 2
+}
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+
+# ffmpeg comes from the development shell where there is one, and from
+# nixpkgs otherwise; MOPPE_FFMPEG names one outright.
+if [[ -z ${MOPPE_FFMPEG:-} ]] && ! command -v ffmpeg >/dev/null &&
+   [[ -z ${MOPPE_RECORD_SHELL:-} ]] && command -v nix >/dev/null; then
+  export MOPPE_RECORD_SHELL=1
+  if [[ $(uname) == Linux ]]; then
+    exec nix develop "$root" -c "$0" "$@"
+  fi
+  exec nix shell --inputs-from "$root" nixpkgs#ffmpeg -c "$0" "$@"
+fi
+ffmpeg=${MOPPE_FFMPEG:-ffmpeg}
+if ! command -v "$ffmpeg" >/dev/null; then
+  echo "record: no ffmpeg (install one, or name it in MOPPE_FFMPEG)" >&2
+  exit 1
+fi
+
+[[ $# -ge 1 ]] || usage
+case $1 in -h|--help) usage ;; esac
+output=$1
+shift
+mkdir -p "$(dirname "$output")"
+output=$(cd "$(dirname "$output")" && pwd)/$(basename "$output")
+
+scene=play
+if [[ $# -gt 0 && $1 != -* ]]; then
+  scene=$1
+  shift
+fi
+
+seconds=
+start=0
+speed=1
+fps=30
+size=1280x720
+sheet=
+window=
+control=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --seconds) seconds=$2; shift 2 ;;
+    --start) start=$2; shift 2 ;;
+    --speed) speed=$2; shift 2 ;;
+    --fps) fps=$2; shift 2 ;;
+    --size) size=$2; shift 2 ;;
+    --clock) export MOPPE_CLOCK=$2; shift 2 ;;
+    --sheet) sheet=1; shift ;;
+    --window) window=1; shift ;;
+    --control)
+      shift
+      while [[ $# -gt 0 && $1 != --* ]]; do
+        control+=("$1")
+        shift
+      done ;;
+    --) shift; break ;;
+    -h|--help) usage ;;
+    *) echo "record: unknown option $1" >&2; usage ;;
+  esac
+done
+
+# A scene's switches give way to the same ones set by the caller.
+stage () {
+  local pair
+  for pair in "$@"; do
+    local name=${pair%%=*}
+    [[ -n ${!name:-} ]] || export "$pair"
+  done
+}
+case $scene in
+  play) stage MOPPE_OPENING=none; : "${seconds:=20}" ;;
+  ride) stage MOPPE_DEMO=1; : "${seconds:=20}" ;;
+  forest) stage MOPPE_DEMO=forest; : "${seconds:=20}" ;;
+  glide) stage MOPPE_DEMO=glide; : "${seconds:=30}" ;;
+  walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
+  forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
+  camp)
+    stage MOPPE_WALK=camp MOPPE_WALK_CAMERA=chase MOPPE_CLOCK=17.3
+    : "${seconds:=75}" ;;
+  opening) : "${seconds:=34}" ;;
+  *) echo "record: no scene called $scene" >&2; usage ;;
+esac
+
+if [[ $(uname) == Darwin ]]; then
+  game=$build_dir/moppe.app/Contents/MacOS/moppe
+else
+  game=$build_dir/moppe
+fi
+if [[ ! -x $game ]]; then
+  echo "record: moppe is not built; run cmake --build build first" >&2
+  exit 1
+fi
+
+if [[ ${#control[@]} -gt 0 ]]; then
+  control_file=$(mktemp "${TMPDIR:-/tmp}/moppe-control.XXXXXX")
+  trap 'rm -f "$control_file"' EXIT
+  printf '%s\n' "seq 1" "${control[@]}" > "$control_file"
+  export MOPPE_CONTROL_FILE=$control_file
+fi
+
+export MOPPE_VIDEO=$output
+export MOPPE_VIDEO_SECONDS=$seconds
+export MOPPE_VIDEO_START=$start
+export MOPPE_VIDEO_SPEED=$speed
+export MOPPE_VIDEO_FPS=$fps
+export MOPPE_FFMPEG=$ffmpeg
+width=${size%x*}
+height=${size#*x}
+
+rm -f "$output"
+if [[ -z $window && $(uname) == Linux ]] &&
+   command -v gamescope >/dev/null; then
+  # gamescope and the X server it starts say a good deal; the game's own
+  # lines are the ones that matter.
+  said='^moppe: \(video\|camp\|the day\)\|[Ee]rror\|what()'
+  gamescope -W "$width" -H "$height" -w "$width" -h "$height" \
+    --backend headless -- "$game" --fullscreen "$@" 2>&1 |
+    grep --line-buffered "$said" >&2 || true
+else
+  MOPPE_VIDEO_HEIGHT=$height \
+    "$game" --windowed --inactive --window-size "$size" "$@"
+fi
+
+if [[ ! -s $output ]]; then
+  echo "record: no video was produced" >&2
+  exit 1
+fi
+
+if [[ -n $sheet ]]; then
+  frames=$(awk "BEGIN { print int ($seconds * $fps) }")
+  every=$((frames / 12 > 0 ? frames / 12 : 1))
+  "$ffmpeg" -hide_banner -loglevel error -y -i "$output" \
+    -vf "select='not(mod(n\,$every))',scale=480:-2,tile=4x3" \
+    -frames:v 1 "${output%.*}.png"
+  echo "${output%.*}.png"
+fi
+echo "$output"

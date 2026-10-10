@@ -926,6 +926,14 @@ namespace moppe::nhal {
                                  m_probe == "nomotion" ? 1.0f : 0.0f,
                                  float (m_width), float (m_height) };
         frame.shadow = { 0, 1.0f / shadow_size, 0, 0 };
+        const Vec3 sky_sun = length2 (params.sky_sun_dir) > 1e-6f
+                               ? params.sky_sun_dir
+                               : params.sun_dir;
+        frame.sky_sun = lanes (sky_sun, params.sky_turn);
+        frame.sky_moon = lanes (params.sky_moon_dir, params.moonlight);
+        frame.sky_pole = lanes (params.sky_pole);
+        frame.lamp = lanes (params.lamp_pos, params.lamp_reach);
+        frame.lamp_color = linear (params.lamp_color);
         m_frame_values = frame;
         upload_frame ();
         cull_trees (view_proj, params.camera_pos, float (m_scene_height),
@@ -1476,41 +1484,56 @@ namespace moppe::nhal {
         m_screenshot = path;
       }
 
+      void request_frame (
+        std::function<void (const render::FramePixels&)> sink) override {
+        m_frame_sink = std::move (sink);
+      }
+
+      // A captured drawable as rows of 8-bit RGB.
+      static std::vector<std::uint8_t> capture_rgb (const Capture& capture) {
+        const Format format = capture.format;
+        std::vector<std::uint8_t> rgb (std::size_t (capture.width) *
+                                       capture.height * 3);
+        for (std::uint32_t y = 0; y < capture.height; ++y)
+          for (std::uint32_t x = 0; x < capture.width; ++x) {
+            const std::byte* p = capture.pixels.data () +
+                                 std::size_t (y) * capture.row_bytes +
+                                 std::size_t (x) * bytes_per_pixel (format);
+            std::uint8_t* out = &rgb[(std::size_t (y) * capture.width + x) * 3];
+            if (format == Format::rgba16_float) {
+              for (int c = 0; c < 3; ++c) {
+                std::uint16_t h;
+                std::memcpy (&h, p + c * 2, 2);
+                const float v = std::clamp (half_to_float (h), 0.0f, 1.0f);
+                out[c] = std::uint8_t (std::pow (v, 1 / 2.2f) * 255 + 0.5f);
+              }
+            } else {
+              const bool bgra = format == Format::bgra8_unorm;
+              out[0] = std::uint8_t (p[bgra ? 2 : 0]);
+              out[1] = std::uint8_t (p[1]);
+              out[2] = std::uint8_t (p[bgra ? 0 : 2]);
+            }
+          }
+        return rgb;
+      }
+
       void end_frame () override {
         open_present ();
         m_device->end_render_pass ();
-        if (!m_screenshot.empty ()) {
-          m_device->capture_frame ([path = m_screenshot] (
-                                     const Capture& capture) {
-            const Format format = capture.format;
-            std::vector<std::uint8_t> rgb (std::size_t (capture.width)
-                                           * capture.height * 3);
-            for (std::uint32_t y = 0; y < capture.height; ++y)
-              for (std::uint32_t x = 0; x < capture.width; ++x) {
-                const std::byte* p = capture.pixels.data ()
-                                     + std::size_t (y) * capture.row_bytes
-                                     + std::size_t (x)
-                                         * bytes_per_pixel (format);
-                std::uint8_t* out = &rgb[(std::size_t (y) * capture.width + x)
-                                         * 3];
-                if (format == Format::rgba16_float) {
-                  for (int c = 0; c < 3; ++c) {
-                    std::uint16_t h;
-                    std::memcpy (&h, p + c * 2, 2);
-                    const float v = std::clamp (half_to_float (h), 0.0f, 1.0f);
-                    out[c] = std::uint8_t (std::pow (v, 1 / 2.2f) * 255 + 0.5f);
-                  }
-                } else {
-                  const bool bgra = format == Format::bgra8_unorm;
-                  out[0] = std::uint8_t (p[bgra ? 2 : 0]);
-                  out[1] = std::uint8_t (p[1]);
-                  out[2] = std::uint8_t (p[bgra ? 0 : 2]);
-                }
+        if (!m_screenshot.empty () || m_frame_sink) {
+          m_device->capture_frame (
+            [path = std::move (m_screenshot),
+             sink = std::move (m_frame_sink)] (const Capture& capture) {
+              const std::vector<std::uint8_t> rgb = capture_rgb (capture);
+              if (sink)
+                sink ({ int (capture.width), int (capture.height), rgb });
+              if (!path.empty ()) {
+                write_png (path, capture.width, capture.height, rgb);
+                std::cerr << "moppe: wrote " << path << std::endl;
               }
-            write_png (path, capture.width, capture.height, rgb);
-            std::cerr << "moppe: wrote " << path << std::endl;
-          });
+            });
           m_screenshot.clear ();
+          m_frame_sink = nullptr;
           // Hosts may quit straight after the frame they asked to capture,
           // so the readback completes here rather than next frame.
           m_device->end_frame ();
@@ -2439,6 +2462,7 @@ namespace moppe::nhal {
            m_presented = false;
       std::map<std::uint64_t, Mat4> m_previous_models, m_current_models;
       std::string m_screenshot;
+      std::function<void (const render::FramePixels&)> m_frame_sink;
       std::string m_probe;
       std::map<std::string, double> m_timing_sums;
       int m_timing_frames = 0;

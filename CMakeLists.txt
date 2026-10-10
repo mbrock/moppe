@@ -364,6 +364,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/graphics_settings.cc
   moppe/game/launch_options.cc
   moppe/game/frame_view.cc
+  moppe/game/daylight.cc
   moppe/gfx/tga.cc
   moppe/game/surface_presentation.cc
   moppe/game/water_presentation.cc
@@ -386,6 +387,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/forest.cc
   moppe/game/boulders.cc
   moppe/game/mushrooms.cc
+  moppe/game/camp.cc
+  moppe/game/video.cc
 )
 
 set(MOPPE_ENGINE_SOURCES
@@ -622,6 +625,8 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/forest_test.cc
     tests/game/boulders_test.cc
     tests/game/mushrooms_test.cc
+    tests/game/camp_test.cc
+    tests/game/daylight_test.cc
     tests/game/cinematic_flight_test.cc
     tests/game/opening_test.cc
     tests/map/surface_test.cc

@@ -17,8 +17,10 @@
     the way ahead until it drifts back after a moment; the mouse does the
     same); right trigger boosts; `A`
     deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
-    and `Y` boosts, flares, or skips the opening. The D-pad navigates Terrain
-    Lab. Xbox, PlayStation, and compatible MFi controllers use this layout.
+    and `Y` boosts, flares, or skips the opening. On foot the left shoulder
+    hangs the hammock and the right lights the fire. The D-pad navigates
+    Terrain Lab. Xbox, PlayStation, and compatible MFi controllers use this
+    layout.
   - The game starts on foot beside the parked bike, in first person: the
     mouse looks around (captured; `M` frees it), `W`/`S` walk, `A`/`D`
     strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the third-person
@@ -27,10 +29,38 @@
     `W`/`A`/`S`/`D`, `E`, and `F` are QWERTY key positions on every layout
     (on Dvorak, `,` `A` `O` `E`, `.`, and `U`); the other letters go by
     what they type.
-  - Scripted walks for captures: `MOPPE_WALK=walk|run|jump|tour|forage`
+  - Camp (`moppe/game/camp.hh`): on foot, standing between two trees 2.6 to
+    5.2 m apart whose trunks are bare to above head height (birches mostly;
+    a spruce keeps its skirts) on nearly level ground, `R` hangs the
+    hammock, and `R` beside it takes it down. `E` beside it lies down and
+    `E` (or `F`, or `Space`) gets up; lying there the view looks up through
+    the crowns, the mouse looks about, `A`/`D` rock it, and after a few
+    seconds the hours run forty times as fast (one every three seconds; the
+    clock shows over the prompt) until you get up -- holding `S` keeps them
+    at their ordinary pace. `Tab` gives a view from outside that the mouse
+    walks round. `T` lights a fire a step ahead on dry, fairly level
+    ground, and `T` near it puts it out; it throws sparks and smoke and
+    lights what stands round it (the renderer's one point light,
+    `FrameParams::lamp_*`). The camp is `GameLogicState::m_camp`.
+  - The day turns (`moppe/game/daylight.hh`): the world lies at 60 degrees
+    north on the autumn equinox with north along -Z, which makes the sun
+    the game was always lit by a quarter-past-nine morning sun, so play
+    begins there and the opening is lit as authored. The sun rises due
+    east at six and sets due west at eighteen; at night the moon (waxing
+    gibbous on the first day, down by half past two) is the key light that
+    shades and shadows the world, the stars turn about the pole, and the
+    Milky Way shows in the dark hours. `MOPPE_DAY=<minutes>` is how long a
+    day takes (48; `0` holds the sun still) and `MOPPE_CLOCK=<hours>` the
+    hour it starts at (`MOPPE_CLOCK=21.5` for night). The gazetteer,
+    benchmarks, water captures, and a launch that sets `MOPPE_SUNHEIGHT`
+    without either keep the fixed sun they were composed under.
+  - Scripted walks for captures: `MOPPE_WALK=walk|run|jump|tour|forage|camp`
     starts on foot (even with `MOPPE_DEMO=forest`) and drives a deterministic
     script (`forage` starts beside the mushrooms nearest the spawn and picks
-    its way from one to the next);
+    its way from one to the next; `camp` starts by the nearest pair of
+    hammock trees under open sky, hangs the hammock, lights a fire, lies
+    down, and after a look from outside watches the sky through the
+    sleeper's eyes);
     `MOPPE_WALK_CAMERA=chase|front|side` picks the view (`side` locks a
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
@@ -45,6 +75,27 @@
     pose: shot shot-NNN eye X Y Z heading H pitch P fov F clock T sun S`),
     gathered in the run directory's `shots.txt`; on the Xbox,
     `tools/xbox-control send 'tap P'` then `log` reads it back.
+  - Videos: `tools/record OUTPUT.mp4 [SCENE] [OPTIONS]` records the game
+    to an H.264 MP4 -- `tools/record /tmp/camp.mp4 camp` is the camp at dusk
+    through to morning. Scenes are `play` (the default: on foot at the
+    trailhead, no opening), `ride`, `forest`, `glide`, `walk`, `forage`,
+    `camp`, and `opening`; `--seconds`, `--start`, `--speed N` (a
+    time-lapse), `--fps 30|60`, `--size WxH`, and `--clock HOURS` shape it,
+    `--sheet` adds a contact sheet beside it, and `--control 'hold W 2'
+    'tap T' 'wait 4' 'look 300 0'` drives the game with remote-control
+    commands (`moppe/platform/input.hh`) on the video's own clock, so a
+    feature can be shown without writing a script in C++. The environment
+    passes through (`MOPPE_WEATHER=mist tools/record ...`). The game
+    records itself (`MOPPE_VIDEO=<file>`, with `MOPPE_VIDEO_SECONDS`,
+    `_START`, `_FPS`, `_SPEED`, `_HEIGHT`; `moppe/game/video.hh`): the
+    world advances a sixtieth of a second per rendered frame and the
+    frames go down a pipe to ffmpeg, so the video is even however fast the
+    machine is. On Linux it runs with no window at all, in a headless
+    gamescope of the size asked for (`--window` uses the game's own);
+    ffmpeg and gamescope come from `nix develop`, which the tool enters by
+    itself when ffmpeg is not on PATH (`MOPPE_FFMPEG` names another).
+    In play, `V` starts a video of what is on screen and `V` again ends
+    it: `clip-NNN.mp4` in the run's screenshot directory.
   - The opening is authored: `data/opening.txt` lists a few held shots of the
     default world (seed 123, 2048 samples, play), each drifting gently
     (`push`/`truck`/`rise` metres, `pan`/`tilt`/`zoom` degrees, a breathing
@@ -56,7 +107,8 @@
     rebuilding with `MOPPE_OPENING=path/to/list.txt` (or
     `MOPPE_ASSETS=<repo>`). Another world plays one generated still of the
     trailhead (`MOPPE_OPENING=generated` forces it); `MOPPE_OPENING=flight`
-    flies the old drone route through the planned landmarks. `Space` skips.
+    flies the old drone route through the planned landmarks, and
+    `MOPPE_OPENING=none` begins in play. `Space` skips.
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
     the motocross stays tethered beneath the wing. Press `E` again to drop it
@@ -209,7 +261,8 @@
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots; use `MOPPE_DEMO=forest` to start the same
     rider at the world's selected forest-floor site),
-    `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
+    `MOPPE_SUNHEIGHT=<0..1>` (a fixed sun: 0.5 on the horizon, 1 overhead),
+    `MOPPE_NOSHADOW=1`,
     `MOPPE_CONTROL_FILE=<path>` (a remote-control timeline, as
     `tools/xbox-control` writes; see `moppe/platform/input.hh`),
     `MOPPE_FPS_REPORT=1` (the frame rate and simulation steps),

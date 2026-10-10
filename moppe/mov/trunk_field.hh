@@ -15,6 +15,9 @@ namespace moppe {
       Vec3 axis;           // unit growth direction
       float height = 0.0f; // collidable length along the axis, metres
       float radius = 0.0f; // metres
+      // How far up from the root it stands bare, before its first
+      // branches, metres; nothing collides with this.
+      float clear = 0.0f;
     };
 
     // The result of pushing a vertical capsule out of nearby trunks.

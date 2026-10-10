@@ -4,6 +4,7 @@
 #include <moppe/render/renderer.hh>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,7 @@ namespace moppe {
       Mount,
       Restart,
       Screenshot,
+      Record,
       E,
       G,
       H,
@@ -113,6 +115,13 @@ namespace moppe {
         (void)x;
         (void)y;
         (void)delta;
+      }
+      // The seconds a remote-control timeline (input.hh) should keep, for
+      // a game that is not stepping by the wall's clock -- one recording
+      // itself frame by frame; negative before it wants the timeline to
+      // start. Absent, the host keeps the wall's time.
+      virtual std::optional<double> script_seconds () const {
+        return std::nullopt;
       }
     };
 

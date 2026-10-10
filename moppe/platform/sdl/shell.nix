@@ -1,7 +1,9 @@
 # The Linux development shell: Clang, CMake, and Ninja; the Vulkan loader,
 # headers, and validation layers; SDL3 for the window, input, and the
-# Vulkan surface; spirv-tools for checking modules; and luv-shaderc, which
-# lowers the NHAL renderer's Lisp shaders to SPIR-V.
+# Vulkan surface; spirv-tools for checking modules; luv-shaderc, which
+# lowers the NHAL renderer's Lisp shaders to SPIR-V; and, for recording the
+# game (tools/record), ffmpeg to encode its frames and gamescope to run it
+# without a window at a chosen size.
 { pkgs, luv-shaderc }:
 pkgs.mkShell.override { stdenv = pkgs.llvmPackages_21.stdenv; } {
   packages = [
@@ -14,6 +16,8 @@ pkgs.mkShell.override { stdenv = pkgs.llvmPackages_21.stdenv; } {
     pkgs.vulkan-validation-layers
     pkgs.vulkan-tools
     pkgs.spirv-tools
+    pkgs.ffmpeg
+    pkgs.gamescope
     luv-shaderc
   ];
   # The loader finds the validation layer here when MOPPE_VULKAN_VALIDATION

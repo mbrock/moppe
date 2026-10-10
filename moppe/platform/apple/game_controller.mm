@@ -53,6 +53,8 @@ namespace moppe::platform {
         r.b = button_down (pad.buttonB);
         r.x = button_down (pad.buttonX);
         r.y = button_down (pad.buttonY);
+        r.left_shoulder = button_down (pad.leftShoulder);
+        r.right_shoulder = button_down (pad.rightShoulder);
         read_dpad (pad.dpad, r);
       } else if (GCMicroGamepad* remote = controller.microGamepad) {
         // The Siri Remote: its touch surface steers and drives, its play
