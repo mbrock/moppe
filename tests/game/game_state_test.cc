@@ -674,3 +674,56 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
                     seconds_value (live_state.dust.logical_time),
                     1e-6f);
 }
+
+MOPPE_TEST (walking_and_riding_each_keep_their_own_view) {
+  using namespace moppe;
+
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::GameSession session (world, surface);
+  const auto press = [&] (bool game::InputFrame::* control) {
+    game::InputFrame input;
+    input.*control = true;
+    game::advance_game_session (world, surface, session, input, step);
+  };
+  const game::GameLogicState& logic = session.logic ();
+
+  // The game begins on foot, through the walker's eyes.
+  session.start_on_foot ();
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
+
+  // Mounting the bike beside them, the view is from behind it.
+  press (&game::InputFrame::toggle_mount);
+  MOPPE_CHECK (logic.m_mode == game::M_BIKE);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
+
+  // Stepping off returns to their eyes; a view chosen on foot is kept for
+  // the next time they walk, and the bike's for the next ride.
+  press (&game::InputFrame::toggle_mount);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
+  press (&game::InputFrame::cycle_camera);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
+  press (&game::InputFrame::toggle_mount);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
+  press (&game::InputFrame::cycle_camera);
+  press (&game::InputFrame::cycle_camera);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
+  press (&game::InputFrame::toggle_mount);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
+  press (&game::InputFrame::toggle_mount);
+  MOPPE_CHECK (logic.m_mode == game::M_BIKE);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
+}

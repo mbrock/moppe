@@ -3341,7 +3341,7 @@ namespace moppe {
           recipe ().evolution ().fluvial_transport.concentration_at_unit_slope,
           recipe ().evolution ().critical_hillslope_gradient,
           recipe ().evolution ().maximum_hillslope_diffusivity_multiplier);
-        logic ().m_mode = M_BIKE;
+        session ().set_mode (M_BIKE);
         logic ().m_game_over = false;
         logic ().m_health = 100.0f;
         m_params = bind_world_params (m_params, next_recipe);
@@ -3358,7 +3358,7 @@ namespace moppe {
         logic ().m_jump_spin_radians = 0.0f;
         logic ().m_jump_peak_spin_radians = 0.0f;
         logic ().m_landed_age = 10.0f;
-        logic ().m_mode = M_BIKE;
+        session ().set_mode (M_BIKE);
         // Back to the start, but ON the ground rather than 600 m
         // over it.
         const float ground =

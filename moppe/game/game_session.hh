@@ -88,6 +88,10 @@ namespace moppe::game {
     void clear_controls ();
     // Begin standing beside the parked bike, seeing through your own eyes.
     void start_on_foot ();
+    // Changes how the player gets about, and with it the view: mounting
+    // takes up the view last used for riding (from behind, unless Tab
+    // chose another) and stepping off the one last used on foot.
+    void set_mode (Mode mode);
 
     State state () const;
     void restore (const State& state);

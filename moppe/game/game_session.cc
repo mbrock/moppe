@@ -70,7 +70,7 @@ namespace moppe::game {
                                 heading,
                                 true);
       GameLogicState& logic = session.logic ();
-      logic.m_mode = M_GLIDER;
+      session.set_mode (M_GLIDER);
       session.glider ().set_turn (logic.m_turn_input);
       session.glider ().set_speed_control (logic.m_go_input);
       session.glider ().set_flare (logic.m_boost_input > 0.1f);
@@ -91,7 +91,7 @@ namespace moppe::game {
       if (session.glider ().bike_attached ()) {
         sync_attached_bike (session);
         session.glider ().drop_bike ();
-        logic.m_mode = M_BIKE;
+        session.set_mode (M_BIKE);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         set_boost (session, 0);
@@ -101,7 +101,7 @@ namespace moppe::game {
       const Vec3 position = session.glider ().position ();
       session.walker ().spawn (moppe::position (position + Vec3 (0, 0.15f, 0)),
                                session.glider ().heading ());
-      logic.m_mode = M_FOOT;
+      session.set_mode (M_FOOT);
       set_turn (session, logic.m_turn_input);
       set_go (session, logic.m_go_input);
       set_boost (session, 0);
@@ -122,7 +122,7 @@ namespace moppe::game {
         vehicle.set_thrust (0);
         vehicle.set_yaw (0 * u::deg);
         vehicle.set_boost (0, 0);
-        logic.m_mode = M_FOOT;
+        session.set_mode (M_FOOT);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
@@ -133,7 +133,7 @@ namespace moppe::game {
                    session.bike ().position ()) < 5.0f * 5.0f) {
         session.bike ().set_thrust (0);
         session.bike ().set_yaw (0 * u::deg);
-        logic.m_mode = M_BIKE;
+        session.set_mode (M_BIKE);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         set_boost (session, logic.m_boost_input);
@@ -233,6 +233,21 @@ namespace moppe::game {
 
   bool GameSession::can_drop_bike () const {
     return m_logic.m_mode == M_GLIDER && m_glider.bike_attached ();
+  }
+
+  void GameSession::set_mode (Mode mode) {
+    const bool was_on_foot = m_logic.m_mode == M_FOOT;
+    const bool on_foot = mode == M_FOOT;
+    m_logic.m_mode = mode;
+    if (was_on_foot == on_foot)
+      return;
+    (was_on_foot ? m_logic.m_foot_cam : m_logic.m_ride_cam) =
+      m_logic.m_cam_mode;
+    m_logic.m_cam_mode = on_foot ? m_logic.m_foot_cam : m_logic.m_ride_cam;
+    // Eyes open where the camera was and settle into the head, as when
+    // Tab chooses them.
+    if (m_logic.m_cam_mode == CAM_HELMET)
+      m_logic.m_fp_eye = m_camera.position ();
   }
 
   void GameSession::start_on_foot () {

@@ -24,7 +24,10 @@
   - The game starts on foot beside the parked bike, in first person: the
     mouse looks around (captured; `M` frees it), `W`/`S` walk, `A`/`D`
     strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the third-person
-    views, and `F` near the bike mounts it (and steps off again).
+    views, and `F` near the bike mounts it (and steps off again). Riding
+    and gliding are seen from behind: walking and riding each keep the
+    view last chosen for them with `Tab`, so mounting leaves the walker's
+    eyes for the chase camera and stepping off returns to them.
     `MOPPE_DEMO`, benchmarks, and the gazetteer still start riding.
     `W`/`A`/`S`/`D`, `E`, and `F` are QWERTY key positions on every layout
     (on Dvorak, `,` `A` `O` `E`, `.`, and `U`); the other letters go by
