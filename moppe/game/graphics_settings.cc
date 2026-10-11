@@ -82,6 +82,16 @@ namespace moppe::game {
     return settings;
   }
 
+  GraphicsSettings phone_graphics_settings () {
+    // A phone's GPU is the Apple TV's or thereabouts, so the same passes
+    // go; the scene is half the drawable each way, which the host keeps
+    // to two pixels a point (MOPPE_PIXELDENSITY).
+    GraphicsSettings settings = apple_tv_graphics_settings ();
+    settings.scene_scale = 1.0f;
+    settings.render_scale_override = 0.5f;
+    return settings;
+  }
+
   const GraphicsFeature* find_graphics_feature (std::string_view name) {
     const auto found = std::find_if (graphics_features.begin (),
                                      graphics_features.end (),

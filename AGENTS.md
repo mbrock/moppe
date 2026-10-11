@@ -140,7 +140,7 @@
     continues on the bike. On iOS, the mount/dismount corner deploys the wing
     while airborne and drops the attached bike while gliding.
   - Modes: `--fullscreen`, `--windowed`,
-    `--graphics-quality low|balanced|high`
+    `--graphics-quality low|phone|balanced|high`
     - Finished worlds automatically load from and save to a stable cache keyed
       by the complete world recipe. `--world-cache-key <name>` selects an
       additional developer cache namespace;

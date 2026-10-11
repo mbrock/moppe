@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -232,27 +233,36 @@ namespace moppe::platform {
         int width = 0, height = 0, pixels_wide = 0, pixels_high = 0;
         SDL_GetWindowSize (m_window, &width, &height);
         pixel_size (m_window, pixels_wide, pixels_high);
-        auto device = sdl::create_device (m_window,
-                                          std::uint32_t (pixels_wide),
-                                          std::uint32_t (pixels_high));
-        // The device may choose its own drawable (the Xbox's is 4K behind a
-        // 1080p window); the HUD's points follow the window, and resizes
-        // keep the device's ratio to the window's pixels. A browser's
-        // canvas has no size until the page lays it out (nor ever, in a
-        // tab not yet shown), only the display's density.
 #ifdef __EMSCRIPTEN__
         const float density = float (emscripten_get_device_pixel_ratio ());
 #else
         const float density = SDL_GetWindowPixelDensity (m_window);
 #endif
+        // MOPPE_PIXELDENSITY is the most pixels a point's width may be
+        // drawn with: a phone's three make a drawable its GPU labours to
+        // fill, and two are hard to tell from them (the page asks for
+        // that, web/pre.js). The window's pixels are then stretched over.
+        float drawn = 1.0f;
+        if (const char* most = moppe::environment ("MOPPE_PIXELDENSITY"))
+          if (const float cap = float (std::atof (most));
+              cap > 0 && density > cap)
+            drawn = cap / density;
+        auto device = sdl::create_device (
+          m_window, std::uint32_t (std::lround (pixels_wide * drawn)),
+          std::uint32_t (std::lround (pixels_high * drawn)));
+        // The device may choose its own drawable (the Xbox's is 4K behind a
+        // 1080p window); the HUD's points follow the window, and resizes
+        // keep the device's ratio to the window's pixels. A browser's
+        // canvas has no size until the page lays it out (nor ever, in a
+        // tab not yet shown), only the display's density.
         const float scale =
           width > 0 && device->surface_width () > 0
             ? float (device->surface_width ()) / float (width)
-          : density > 0 ? density
+          : density > 0 ? density * drawn
                         : 1.0f;
         m_oversample = pixels_wide > 0 ? float (device->surface_width ())
                                            / float (pixels_wide)
-                                       : 1.0f;
+                                       : drawn;
         std::cerr << "moppe: NHAL on " << device->info ().backend << ", "
                   << device->info ().adapter << ", "
                   << device->surface_width () << "x"

@@ -10,8 +10,13 @@
 
 {
   const query = new URLSearchParams(location.search);
-  Module['arguments'] =
-    (query.get('args') || '').split(/\s+/).filter((word) => word.length);
+  // A phone -- fingers and nothing to hover with -- starts with the
+  // graphics its GPU can carry, which the address can still replace: the
+  // phone preset, and a drawable of two pixels a point where the screen
+  // has three (docs/web.md).
+  const phone = matchMedia('(pointer: coarse) and (hover: none)').matches;
+  Module['arguments'] = (phone ? ['--graphics-quality', 'phone'] : []).concat(
+    (query.get('args') || '').split(/\s+/).filter((word) => word.length));
 
   // Shows `message` over the canvas, for failures the player should see.
   Module['moppeFail'] = (message) => {
@@ -70,6 +75,8 @@
 
   Module['preRun'] = Module['preRun'] || [];
   Module['preRun'].push(() => {
+    if (phone)
+      ENV['MOPPE_PIXELDENSITY'] = '2';
     for (const [name, value] of query)
       if (name.startsWith('MOPPE_'))
         ENV[name] = value;

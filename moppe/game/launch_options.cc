@@ -149,7 +149,7 @@ namespace moppe::game {
       { "--graphics-quality",
         "",
         1,
-        "<low|balanced|high>",
+        "<low|phone|balanced|high>",
         "Select a graphics preset.",
         [] (LaunchOptions& options,
             const char* const* values,
@@ -157,6 +157,8 @@ namespace moppe::game {
           const std::string_view quality = values[0];
           if (quality == "low")
             options.graphics = low_graphics_settings ();
+          else if (quality == "phone")
+            options.graphics = phone_graphics_settings ();
           else if (quality == "balanced")
             options.graphics = balanced_graphics_settings ();
           else if (quality == "high")

@@ -240,6 +240,8 @@ namespace moppe::game {
   // preset. Water, particles, vehicle effects, and temporal reconstruction
   // remain enabled by default.
   GraphicsSettings apple_tv_graphics_settings ();
+  // A phone in the browser (docs/web.md).
+  GraphicsSettings phone_graphics_settings ();
   const GraphicsFeature* find_graphics_feature (std::string_view name);
 
   // Parses a comma-separated list of canonical feature names.
