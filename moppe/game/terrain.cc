@@ -195,36 +195,68 @@ namespace moppe {
     namespace {
       // One cascade of the sun's map: an orthographic box of `radius`
       // about a centre `look_ahead` along the horizontal view.
+      //
+      // The map's texels are a lattice in the plane square to the light.
+      // Snapping the centre to that lattice keeps it still under the
+      // camera's travel, but the light turns all day, and a turning
+      // lattice slides under the world by the angle turned times the
+      // distance to whatever it pivots about. Snapped to a lattice through
+      // the world's origin, a map kilometres from it slid many texels a
+      // second, and every shadow edge crawled and jumped. So the centre
+      // is an anchor that persists from frame to frame and walks after
+      // the camera in whole texels of this frame's lattice: the lattice
+      // turns about a point at the camera, where the slide is nothing.
+      //
+      // The lattice's roll about the light is free to choose, and is
+      // squared to `pole`, the axis the light turns about. The light
+      // keeps one angle to that axis all day, so the lattice simply turns
+      // with it; squared to the zenith it would spin fastest at noon.
       render::ShadowCascade shadow_cascade (position_t camera,
                                             const Vec3& horizontal,
                                             const Vec3& sun_dir,
+                                            const Vec3& pole,
                                             meters_t radius,
-                                            meters_t look_ahead) {
+                                            meters_t look_ahead,
+                                            Terrain::ShadowAnchor& anchor) {
         constexpr int shadow_texels = 2048;
-        Vec3 centre = position_value (camera + horizontal * look_ahead);
+        const Vec3 wanted = position_value (camera + horizontal * look_ahead);
         const float reach = radius.numerical_value_in (u::m);
         const Vec3 light_forward = normalized (-sun_dir);
-        const Vec3 light_right = normalized (
-          cross (light_forward,
-                 std::fabs (light_forward[1]) > 0.98f ? Vec3 (0, 0, 1)
-                                                      : Vec3 (0, 1, 0)));
+        Vec3 light_right = cross (light_forward, pole);
+        if (length2 (light_right) < 1e-4f)
+          light_right =
+            cross (light_forward,
+                   std::fabs (light_forward[1]) > 0.98f ? Vec3 (0, 0, 1)
+                                                        : Vec3 (0, 1, 0));
+        light_right = normalized (light_right);
         const Vec3 light_up = cross (light_right, light_forward);
 
-        // Quantize the moving light-space origin, not the camera, so the
-        // shadow projection advances exactly one texel at a time instead of
-        // swimming over otherwise stationary terrain.
-        const float texel = 2.0f * reach / shadow_texels;
-        const float right_coordinate = dot (centre, light_right);
-        const float up_coordinate = dot (centre, light_up);
-        centre +=
-          light_right *
-            (std::round (right_coordinate / texel) * texel - right_coordinate) +
-          light_up *
-            (std::round (up_coordinate / texel) * texel - up_coordinate);
+        const double texel = 2.0 * reach / shadow_texels;
+        const std::array<double, 3> start =
+          anchor ? *anchor
+                 : std::array<double, 3> { wanted[0], wanted[1], wanted[2] };
+        const auto along = [&] (const Vec3& axis) {
+          double sum = 0.0;
+          for (std::size_t i = 0; i < 3; ++i)
+            sum += (static_cast<double> (wanted[i]) - start[i]) *
+                   static_cast<double> (axis[i]);
+          return sum;
+        };
+        const double right_steps = std::round (along (light_right) / texel);
+        const double up_steps = std::round (along (light_up) / texel);
+        const double forward_way = along (light_forward);
+        std::array<double, 3> walked;
+        for (std::size_t i = 0; i < 3; ++i)
+          walked[i] = start[i] + right_steps * texel * light_right[i] +
+                      up_steps * texel * light_up[i] +
+                      forward_way * light_forward[i];
+        anchor = walked;
+        const Vec3 centre (static_cast<float> (walked[0]),
+                           static_cast<float> (walked[1]),
+                           static_cast<float> (walked[2]));
 
         const Vec3 light_position = centre + sun_dir * (reach * 4.0f);
-        const Mat4 view =
-          Mat4::look_at (light_position, centre, Vec3 (0, 1, 0));
+        const Mat4 view = Mat4::look_at (light_position, centre, light_up);
         const Mat4 projection = Mat4::ortho (
           -reach, reach, -reach, reach, reach * 0.25f, reach * 8.0f);
         return { .light_view_proj = projection * view,
@@ -237,6 +269,7 @@ namespace moppe {
                                        position_t camera,
                                        const Vec3& view_dir,
                                        const Vec3& sun_dir,
+                                       const Vec3& sky_pole,
                                        bool include_forest,
                                        bool include_boulders,
                                        bool include_far) {
@@ -254,13 +287,17 @@ namespace moppe {
         .cascades = { shadow_cascade (camera,
                                       horizontal,
                                       sun_dir,
+                                      sky_pole,
                                       160.0f * u::m,
-                                      48.0f * u::m),
+                                      48.0f * u::m,
+                                      m_shadow_anchors[0]),
                       shadow_cascade (camera,
                                       horizontal,
                                       sun_dir,
+                                      sky_pole,
                                       1600.0f * u::m,
-                                      700.0f * u::m) },
+                                      700.0f * u::m,
+                                      m_shadow_anchors[1]) },
         .include_far = include_far,
         .include_forest = include_forest,
         .include_boulders = include_boulders,

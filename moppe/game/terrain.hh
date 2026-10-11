@@ -6,6 +6,8 @@
 #include <moppe/map/surface.hh>
 #include <moppe/render/renderer.hh>
 
+#include <array>
+#include <optional>
 #include <vector>
 
 namespace moppe {
@@ -30,12 +32,20 @@ namespace moppe {
                           const Vec3& sun_dir,
                           bool include_forest);
 
+      // Where a cascade of the sun's map is centred: a point that follows
+      // the camera in whole texels, kept in double precision so that its
+      // walk does not itself wobble the map.
+      using ShadowAnchor = std::optional<std::array<double, 3>>;
+
       // Updates the production camera-local shadow level. The focus and
-      // radius remain dimensional until the renderer boundary.
+      // radius remain dimensional until the renderer boundary. `sky_pole`
+      // is the axis the key light turns about through the day; the map is
+      // squared to it rather than to the zenith.
       void render_local_shadow (render::Renderer& r,
                                 position_t camera,
                                 const Vec3& view_dir,
                                 const Vec3& sun_dir,
+                                const Vec3& sky_pole,
                                 bool include_forest,
                                 bool include_boulders = true,
                                 bool include_far = true);
@@ -70,6 +80,7 @@ namespace moppe {
       Vec3 m_period;
       Vec3 m_extent;
       float m_lod_scale = 1;
+      std::array<ShadowAnchor, 2> m_shadow_anchors;
       render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
       bool m_textures_loaded = false;
     };

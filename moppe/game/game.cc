@@ -2542,6 +2542,7 @@ namespace moppe {
                                          position (camera),
                                          frame.camera.frame_forward,
                                          frame.lighting.sun_direction,
+                                         frame.lighting.sky_pole,
                                          m_graphics.forest,
                                          frame.visibility.boulders,
                                          m_graphics.distant_shadows);
