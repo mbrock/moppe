@@ -190,10 +190,27 @@ namespace moppe::game {
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
+          // An explicit scale is held, whatever the frame rate.
+          options.graphics.target_frame_rate = 0.0f;
           return parse_scale (values[0],
                               "--render-scale",
                               options.graphics.render_scale_override,
                               error);
+        } },
+      { "--target-fps",
+        "",
+        1,
+        "<0..240>",
+        "Hold this frame rate by shedding scene resolution; zero never does.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float rate = 0.0f;
+          if (!parse_float_option (
+                values[0], "--target-fps", 0.0f, 240.0f, rate, error))
+            return false;
+          options.target_frame_rate = rate;
+          return true;
         } },
       { "--scene-megapixels",
         "",

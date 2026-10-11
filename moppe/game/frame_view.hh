@@ -200,6 +200,7 @@ namespace moppe::game {
     float scene_scale = 1.0f;
     float render_scale_override = 0.0f;
     float scene_megapixel_budget = 0.0f;
+    float target_frame_rate = 0.0f;
     bool bloom = true;
     bool auto_exposure = true;
     bool lens_flare = true;

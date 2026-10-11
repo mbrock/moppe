@@ -212,6 +212,22 @@ scene: at `MOPPE_RENDERSCALE=0.35` the ride holds 60 fps there.
 `MOPPE_NHAL_PROBE=nosky`, `nosward`, and `noblades` leave one part of the
 scene pass out, to time it by the difference.
 
+So the scene's size follows the frame rate (`render::DynamicResolution`,
+`moppe/render/dynamic_resolution.hh`). Each frame the renderer sums the
+device's pass timings for the last finished frame and tells the controller,
+with how often frames are due: the game's target (`--target-fps`, 60) or the
+display's refresh, whichever is slower. Every eight frames the controller
+compares the mean with nine tenths of that period; over it, or under a quiet
+band below it, it scales the scene's pixel count by the ratio, sharply down
+and gently up, and yields the scene's share of its ordinary width and height
+in thirty-seconds, from a half to the whole. Only the targets at the scene's
+size are rebuilt when the share changes: nothing in them outlives a frame
+and the history is the drawable's, so the picture carries on. That M2 Pro
+then holds 60 fps on the ride with the scene near 2640x743, a GPU time of 13
+to 14.7 ms, and no frame slower for the resizing. A device that times no
+passes (WebGPU, unless asked) keeps the whole size, as do captures,
+recordings, benchmarks, and an explicit render scale.
+
 ## The desktop host
 
 macOS and Linux run the same host, `moppe/platform/sdl/`: an SDL3 window,

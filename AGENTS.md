@@ -156,6 +156,14 @@
       `--scene-megapixels <0..64>` controls the desktop scene-area safety
       cap; zero disables it. An explicit quality preset replaces the
       ordinary graphics baseline.
+    - Dynamic resolution (`moppe/render/dynamic_resolution.hh`): play
+      holds 60 frames a second by drawing the scene smaller, down to half
+      its ordinary width and height, while the GPU cannot keep up, and
+      gives the size back when it can. `--target-fps <0..240>`
+      (`MOPPE_TARGET_FPS`) names another rate, and `0` never sheds any;
+      nor does an explicit render scale, nor a capture, recording, or
+      benchmark, whose pictures must not follow the machine's speed.
+      `MOPPE_NHAL_TIMINGS=1` reports the scene's size with the passes.
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
     - `--window-size WIDTHxHEIGHT` picks the windowed size, and `--inactive`

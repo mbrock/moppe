@@ -124,6 +124,13 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
   MOPPE_CHECK (high.graphics.motion_blur);
   const game::LaunchOptions scales = parsed ({ "--render-scale", "0.375" });
   MOPPE_CHECK_NEAR (scales.graphics.render_scale_override, 0.375f, 0.0f);
+  // Play sheds resolution to hold 60 frames a second, unless a scale is
+  // asked for outright or another rate is.
+  MOPPE_CHECK_NEAR (parsed ({}).graphics.target_frame_rate, 60.0f, 0.0f);
+  MOPPE_CHECK_NEAR (scales.graphics.target_frame_rate, 0.0f, 0.0f);
+  const game::LaunchOptions paced = parsed ({ "--target-fps", "30" });
+  MOPPE_CHECK (paced.target_frame_rate.has_value ());
+  MOPPE_CHECK_NEAR (*paced.target_frame_rate, 30.0f, 0.0f);
   const game::LaunchOptions raster = parsed ({ "--scene-megapixels", "1.25" });
   MOPPE_CHECK (raster.scene_megapixel_budget.has_value ());
   MOPPE_CHECK_NEAR (*raster.scene_megapixel_budget, 1.25f, 0.0f);

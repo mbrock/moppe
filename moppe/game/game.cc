@@ -1659,6 +1659,21 @@ namespace moppe {
         return m_cinematic.active () || m_opening.active ();
       }
 
+      // Whether frames are drawn to keep up with the display. A capture, a
+      // recording, or a benchmark draws each frame it is given however
+      // long that takes, and its picture must not follow the machine's
+      // speed: those hold their resolution.
+      bool keeping_pace () const {
+        static const bool frame_by_frame =
+          moppe::environment ("MOPPE_ORBIT") ||
+          moppe::environment ("MOPPE_PAN") ||
+          moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") ||
+          moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
+          moppe::environment ("MOPPE_VIDEO");
+        return !frame_by_frame && m_screenshot_path.empty () &&
+               !m_benchmark && !m_gazetteer && !m_water_shot;
+      }
+
       void plan_gazetteer_capture () {
         if (!m_gazetteer)
           return;
@@ -2802,6 +2817,7 @@ namespace moppe {
         params.scene_scale = frame.graphics.scene_scale;
         params.render_scale_override = frame.graphics.render_scale_override;
         params.scene_megapixel_budget = frame.graphics.scene_megapixel_budget;
+        params.frame_rate_target = frame.graphics.target_frame_rate;
         params.bloom = frame.graphics.bloom;
         params.auto_exposure = frame.graphics.auto_exposure;
         params.lens_flare = frame.graphics.lens_flare;
@@ -3344,7 +3360,10 @@ namespace moppe {
           }
         }
         record_frame (r);
-        if (!r.begin_frame (frame_params_for (frame)))
+        render::FrameParams params = frame_params_for (frame);
+        if (!keeping_pace ())
+          params.frame_rate_target = 0.0f;
+        if (!r.begin_frame (params))
           return;
 
         draw_world_layers (r, frame);

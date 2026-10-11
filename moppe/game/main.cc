@@ -71,6 +71,8 @@ int main (int argc, char** argv) {
   }
   if (options.scene_megapixel_budget)
     options.graphics.scene_megapixel_budget = *options.scene_megapixel_budget;
+  if (options.target_frame_rate)
+    options.graphics.target_frame_rate = *options.target_frame_rate;
   game::print_graphics_settings (std::cerr, options.graphics);
   if (options.benchmark)
     game::publish_benchmark_environment (*options.benchmark);

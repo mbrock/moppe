@@ -9,6 +9,7 @@
 #include <moppe/environment.hh>
 
 #include <moppe/render/draw.hh>
+#include <moppe/render/dynamic_resolution.hh>
 #include <moppe/render/slug.hh>
 #include <moppe/render/text.hh>
 #include <moppe/render/texture_pixels.hh>
@@ -873,6 +874,7 @@ namespace moppe::nhal {
       bool begin_frame (const FrameParams& params) override {
         if (!m_device->begin_frame ())
           return false;
+        hold_frame_rate (params);
         const float scale = scene_scale (params);
         const std::uint32_t scene_width = std::max (
           1u, std::uint32_t (std::lround (m_device->surface_width () * scale)));
@@ -880,9 +882,10 @@ namespace moppe::nhal {
           1u,
           std::uint32_t (std::lround (m_device->surface_height () * scale)));
         if (m_width != m_device->surface_width ()
-            || m_height != m_device->surface_height ()
-            || m_scene_width != scene_width || m_scene_height != scene_height)
-          make_targets (scene_width, scene_height);
+            || m_height != m_device->surface_height ())
+          make_drawable_targets ();
+        if (m_scene_width != scene_width || m_scene_height != scene_height)
+          make_scene_targets (scene_width, scene_height);
         m_params = params;
         m_chunks.clear ();
         m_scene_open = m_scene_begun = m_resolved = m_presented = false;
@@ -1629,7 +1632,8 @@ namespace moppe::nhal {
           std::cerr << ' ' << label << '=' << sum / m_timing_frames;
           total += sum / m_timing_frames;
         }
-        std::cerr << " total=" << total << std::endl;
+        std::cerr << " total=" << total << ", the scene at " << m_scene_width
+                  << 'x' << m_scene_height << std::endl;
         m_timing_sums.clear ();
         m_timing_frames = 0;
       }
@@ -2255,20 +2259,60 @@ namespace moppe::nhal {
           params.scene_scale * std::min (point_relative, affordable);
         if (params.render_scale_override > 0.0f)
           scale = params.render_scale_override;
-        return std::clamp (scale, 0.25f, 1.0f);
+        return std::clamp (scale * m_dynamic.share (), 0.25f, 1.0f);
       }
 
-      void make_targets (std::uint32_t scene_width,
-                         std::uint32_t scene_height) {
-        for (Texture t : { m_scene_color, m_scene_motion, m_scene_depth,
-                           m_beneath, m_beneath_depth, m_bounds[0],
-                           m_bounds[1],
-                           m_history[0], m_history[1], m_bloom[0],
-                           m_bloom[1], m_ao[0], m_ao[1], m_shafts })
+      // Tells the dynamic resolution what the last finished frame cost the
+      // GPU, where the game asks for a frame rate and the device times its
+      // passes; otherwise the scene keeps its whole size. Frames are due at
+      // the rate asked or the display's, whichever is slower.
+      void hold_frame_rate (const FrameParams& params) {
+        if (params.frame_rate_target <= 0.0f) {
+          m_dynamic = {};
+          return;
+        }
+        double milliseconds = 0;
+        for (const PassTiming& pass : m_device->pass_timings ())
+          milliseconds += pass.milliseconds;
+        const float refresh =
+          float (m_device->next_frame_timing ().refresh_seconds);
+        m_dynamic.observe (
+          seconds (float (milliseconds) * 0.001f),
+          seconds (std::max (1.0f / params.frame_rate_target, refresh)));
+      }
+
+      // The targets at the drawable's size: the temporal history and the
+      // bloom's quarter of it. A new history starts from the scene alone.
+      void make_drawable_targets () {
+        for (Texture t :
+             { m_history[0], m_history[1], m_bloom[0], m_bloom[1] })
           if (t)
             m_device->destroy (t);
         m_width = m_device->surface_width ();
         m_height = m_device->surface_height ();
+        for (Texture& t : m_history)
+          t = m_device->create_texture (
+            { m_width, m_height, Format::rgba16_float,
+              usage_render_target | usage_sampled, 1, "temporal history" });
+        m_bloom_width = std::max (1u, m_width / 4);
+        m_bloom_height = std::max (1u, m_height / 4);
+        for (Texture& t : m_bloom)
+          t = m_device->create_texture (
+            { m_bloom_width, m_bloom_height, Format::rgba16_float,
+              usage_render_target | usage_sampled, 1, "bloom" });
+        m_restart = true;
+      }
+
+      // The targets at the scene's size. Nothing in them outlives a frame,
+      // and the history is the drawable's, so the scene may change size
+      // from one frame to the next with nothing to start over.
+      void make_scene_targets (std::uint32_t scene_width,
+                               std::uint32_t scene_height) {
+        for (Texture t : { m_scene_color, m_scene_motion, m_scene_depth,
+                           m_beneath, m_beneath_depth, m_bounds[0],
+                           m_bounds[1], m_ao[0], m_ao[1], m_shafts })
+          if (t)
+            m_device->destroy (t);
         // The scene at its share of the drawable, upscaled temporally.
         m_scene_width = scene_width;
         m_scene_height = scene_height;
@@ -2293,12 +2337,6 @@ namespace moppe::nhal {
             { m_scene_width, m_scene_height, Format::rgba16_float,
               usage_render_target | usage_sampled, 1,
               "temporal neighbourhood" });
-        for (Texture& t : m_history)
-          t = m_device->create_texture (
-            { m_width, m_height, Format::rgba16_float,
-              usage_render_target | usage_sampled, 1, "temporal history" });
-        m_bloom_width = std::max (1u, m_width / 4);
-        m_bloom_height = std::max (1u, m_height / 4);
         for (Texture& t : m_ao)
           t = m_device->create_texture (
             { m_scene_width, m_scene_height, Format::r16_float,
@@ -2306,11 +2344,6 @@ namespace moppe::nhal {
         m_shafts = m_device->create_texture (
           { m_scene_width, m_scene_height, Format::rgba16_float,
             usage_render_target | usage_sampled, 1, "sun shafts" });
-        for (Texture& t : m_bloom)
-          t = m_device->create_texture (
-            { m_bloom_width, m_bloom_height, Format::rgba16_float,
-              usage_render_target | usage_sampled, 1, "bloom" });
-        m_restart = true;
       }
 
       // Begins the frame's scene pass, or resumes it where an interlude
@@ -2492,6 +2525,7 @@ namespace moppe::nhal {
 
       std::uint32_t m_width = 0, m_height = 0;
       std::uint32_t m_scene_width = 0, m_scene_height = 0;
+      render::DynamicResolution m_dynamic;
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];
       // The scene's neighbourhoods for the resolve: low and high bounds,
       // with the motion to follow in their fourth lanes.

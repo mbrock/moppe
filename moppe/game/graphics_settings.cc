@@ -126,6 +126,13 @@ namespace moppe::game {
         error = "MOPPE_RENDERSCALE must be between 0.25 and 1";
         return false;
       }
+      settings.target_frame_rate = 0.0f;
+    }
+    if (const char* rate = moppe::environment ("MOPPE_TARGET_FPS")) {
+      if (!parse_float (rate, 0.0f, 240.0f, settings.target_frame_rate)) {
+        error = "MOPPE_TARGET_FPS must be between 0 and 240";
+        return false;
+      }
     }
     if (const char* budget = moppe::environment ("MOPPE_SCENEPIXELS")) {
       if (!parse_float (budget, 0.0f, 64.0f, settings.scene_megapixel_budget)) {
@@ -161,6 +168,7 @@ namespace moppe::game {
     output << "moppe: graphics: scene-scale=" << settings.scene_scale
            << " render-scale-override=" << settings.render_scale_override
            << " scene-megapixel-budget=" << settings.scene_megapixel_budget
+           << " target-frame-rate=" << settings.target_frame_rate
            << " sun-height=" << settings.sun_height;
     for (const GraphicsFeature* feature : graphics_features)
       output << ' ' << feature->name << '='

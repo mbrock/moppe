@@ -257,6 +257,7 @@ namespace moppe::game {
       .scene_scale = input.graphics.scene_scale,
       .render_scale_override = input.graphics.render_scale_override,
       .scene_megapixel_budget = input.graphics.scene_megapixel_budget,
+      .target_frame_rate = input.graphics.target_frame_rate,
       .bloom = input.graphics.bloom,
       .auto_exposure = input.graphics.auto_exposure,
       .lens_flare = input.graphics.lens_flare,

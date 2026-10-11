@@ -62,6 +62,9 @@ namespace moppe::game {
     // Applied after legacy environment settings so an explicit command-line
     // budget wins. Zero disables the desktop megapixel safety cap.
     std::optional<float> scene_megapixel_budget;
+    // Applied after them too, so an explicit rate holds beside an explicit
+    // render scale, which would otherwise mean no shedding.
+    std::optional<float> target_frame_rate;
     // Keeps a hand-started run behind the active application, the way
     // captures and benchmarks already stay out of the way.
     bool stay_inactive = false;

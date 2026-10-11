@@ -42,6 +42,11 @@ namespace moppe::game {
     // drawable costing resolution rather than frame rate.  Zero disables
     // the budget and restores the point-relative rule on its own.
     float scene_megapixel_budget = 4.2f;
+    // The frame rate play holds by shedding scene resolution, down to half
+    // of what the rules above give, while the GPU cannot keep up. Zero
+    // never sheds any; so does an explicit render scale, which is a
+    // promise about the scene's size.
+    float target_frame_rate = 60.0f;
     // Late afternoon: a lower, warmer sun with longer shadows.
     float sun_height = 0.62f;
     // Diagnostic override: saturates grass cover in both the undergrowth

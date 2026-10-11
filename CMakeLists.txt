@@ -640,6 +640,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/map/surface_test.cc
     tests/map/water_surface_test.cc
     tests/map/terrain_generation_test.cc
+    tests/render/dynamic_resolution_test.cc
     tests/render/slug_test.cc
     tests/render/text_test.cc
   )

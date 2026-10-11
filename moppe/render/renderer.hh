@@ -72,6 +72,10 @@ namespace moppe {
       float scene_scale = 1.0f;
       float render_scale_override = 0.0f;
       float scene_megapixel_budget = 0.0f;
+      // Frames a second to hold by drawing the scene smaller than those
+      // rules ask, down to half their size, while the GPU cannot keep up
+      // (render/dynamic_resolution.hh). Zero draws it as asked.
+      float frame_rate_target = 0.0f;
       bool bloom = true;
       bool auto_exposure = true;
       bool lens_flare = true;
