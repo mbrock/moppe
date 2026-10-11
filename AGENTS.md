@@ -67,6 +67,11 @@
     `MOPPE_WALK_CAMERA=chase|front|side` picks the view (`side` locks a
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
+  - Waymarks: a small arrow with a name and a distance marks the other
+    player (in their jacket's colour), and the bike and the jeep once they
+    are more than some thirty metres off: over the thing when it is in
+    view, at the frame's edge pointing the way when it is not
+    (`HudState::Waymark`, placed by `add_waymarks` in game.cc).
   - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
     trail map); `MOPPE_HUD=debug` starts with it on.

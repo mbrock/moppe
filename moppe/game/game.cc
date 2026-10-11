@@ -2100,6 +2100,117 @@ namespace moppe {
           1.0f - 0.25f * lighting.daylight);
       }
 
+      // One waymark: where `at` falls in the frame, or which way it lies.
+      // Nothing is marked nearer than `near`, and it fades in to `far`.
+      static void add_waymark (HudState& state,
+                               const FrameView& frame,
+                               int width,
+                               int height,
+                               const char* name,
+                               const Vec3& at,
+                               float near,
+                               float far,
+                               const DisplayColor& tint) {
+        if (state.waymark_count >= static_cast<int> (state.waymarks.size ()))
+          return;
+        const FrameCamera& camera = frame.camera;
+        const Vec3 to = at - camera.position;
+        const float metres = length (to);
+        const float shown =
+          std::clamp ((metres - near) / (far - near), 0.0f, 1.0f);
+        if (shown <= 0.0f)
+          return;
+        const float across = dot (to, camera.right);
+        const float above = dot (to, camera.up);
+        const float ahead = dot (to, camera.frame_forward);
+        const float half =
+          std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad));
+        HudState::Waymark mark;
+        mark.name = name;
+        mark.metres = metres;
+        mark.alpha = shown;
+        mark.red = tint.red;
+        mark.green = tint.green;
+        mark.blue = tint.blue;
+        const float x =
+          ahead > 0.1f ? across / (ahead * half * camera.aspect) : 0.0f;
+        const float y = ahead > 0.1f ? above / (ahead * half) : 0.0f;
+        if (ahead > 0.1f && std::fabs (x) < 0.86f && std::fabs (y) < 0.80f) {
+          // In view: a small arrow over it, pointing down at it.
+          mark.in_view = true;
+          mark.x = (0.5f + 0.5f * x) * width;
+          mark.y = (0.5f - 0.5f * y) * height - 12.0f;
+          mark.angle = -1.5707963f;
+        } else {
+          // Out of view: at the edge, toward where turning would find it.
+          float angle = std::atan2 (above, across);
+          if (std::fabs (across) + std::fabs (above) < 1e-3f)
+            angle = -1.5707963f;
+          mark.angle = angle;
+          mark.x = 0.5f * width + 0.43f * width * std::cos (angle);
+          mark.y = 0.5f * height - 0.40f * height * std::sin (angle);
+        }
+        state.waymarks[state.waymark_count++] = mark;
+      }
+
+      // The way to the other player and to whatever of one's own is
+      // parked out of reach.
+      void add_waymarks (HudState& state,
+                         const FrameView& frame,
+                         int width,
+                         int height) const {
+        if (m_spectator)
+          return;
+        const Mode mode = logic ().m_mode;
+        const DisplayColor pale (0.96f, 0.96f, 0.96f);
+        if (m_companion && mode != M_PASSENGER &&
+            m_companion->mode != M_PASSENGER) {
+          const CompanionSnapshot& theirs = *m_companion;
+          Vec3 at = theirs.bike.position;
+          if (theirs.walker)
+            at = theirs.walker->position;
+          else if (theirs.glider)
+            at = theirs.glider->position;
+          else if (theirs.mode == M_JEEP)
+            at = theirs.jeep.position;
+          // In the colour of the jacket they wear.
+          DisplayColor jacket = pale;
+          for (std::size_t c = 0; c < figure::colours.size (); ++c)
+            if (std::string_view (figure::colour_names[c]) == "jacket")
+              jacket = mix_display (
+                figure::outfit_colour (c, their_outfit ()), pale, 0.35f);
+          add_waymark (state,
+                       frame,
+                       width,
+                       height,
+                       "companion",
+                       at + Vec3 (0, 2.0f, 0),
+                       12.0f,
+                       24.0f,
+                       jacket);
+        }
+        if (mode != M_BIKE && !session ().can_drop_bike ())
+          add_waymark (state,
+                       frame,
+                       width,
+                       height,
+                       "bike",
+                       session ().bike ().position () + Vec3 (0, 1.6f, 0),
+                       30.0f,
+                       50.0f,
+                       pale);
+        if (mode != M_JEEP)
+          add_waymark (state,
+                       frame,
+                       width,
+                       height,
+                       "jeep",
+                       session ().jeep ().position () + Vec3 (0, 1.9f, 0),
+                       30.0f,
+                       50.0f,
+                       pale);
+      }
+
       void add_company_readings (HudState& state) const {
         state.can_ride_along = can_ride_along ();
         if (!m_link || !m_notice)
@@ -2858,6 +2969,7 @@ namespace moppe {
           add_basket_readings (hud_state);
           add_camp_readings (hud_state);
           add_company_readings (hud_state);
+          add_waymarks (hud_state, frame, hud_width, hud_height);
           m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
           if (m_hud.diagnostics ())
             draw_trail_map (m_hud_dl,

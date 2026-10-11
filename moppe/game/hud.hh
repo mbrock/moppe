@@ -4,6 +4,7 @@
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -68,6 +69,22 @@ namespace moppe {
       // Lying in the hammock: the hour of the day, 0..24.
       bool resting = false;
       float clock_hours = 0.0f;
+      // Something worth finding that is out of the way -- the other
+      // player, the bike, the jeep -- as a small arrow: over it when it
+      // is in view, and otherwise at the frame's edge pointing the way.
+      struct Waymark {
+        const char* name = "";
+        // Where the arrow goes, in points, and which way it points:
+        // radians counterclockwise from screen right.
+        float x = 0.0f, y = 0.0f;
+        float angle = 0.0f;
+        bool in_view = false;
+        float metres = 0.0f;
+        float alpha = 0.0f;
+        float red = 1.0f, green = 1.0f, blue = 1.0f;
+      };
+      std::array<Waymark, 4> waymarks {};
+      int waymark_count = 0;
       // A word about the other player, when there is one, and how long
       // ago it was said.
       const char* notice = nullptr;
@@ -181,6 +198,7 @@ namespace moppe {
                        float dt,
                        int width_pts,
                        int height_pts);
+      void draw_waymarks (render::TextList& text, const HudState& state);
       void draw_prompts (render::TextList& text,
                          const HudState& state,
                          float dt,

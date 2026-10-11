@@ -11,7 +11,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -214,6 +216,7 @@ namespace moppe {
       SlugGlyph track;
       SlugGlyph notch;
       SlugGlyph dash;
+      SlugGlyph arrow;
       SlugGlyph shade;
       SlugGlyph key;
       SlugGlyph wide_key;
@@ -260,6 +263,14 @@ namespace moppe {
         const float sweep = slot - 7.0f * PI / 180.0f;
         m_shape->dash = add (
           { stroked_arc (0.8f, 0.45f / gauge_radius, -0.5f * sweep, sweep) });
+      }
+      {
+        // A waymark's arrowhead, pointing along +x, notched behind.
+        Pen pen ({ 1.0f, 0.0f });
+        pen.line ({ -0.62f, 0.78f });
+        pen.line ({ -0.22f, 0.0f });
+        pen.line ({ -0.62f, -0.78f });
+        m_shape->arrow = add ({ pen.close () });
       }
       m_shape->shade = add ({ disc (1.0f) });
       m_shape->key = add ({ rounded_rect (1.55f, 1.55f, 0.32f, false),
@@ -599,6 +610,74 @@ namespace moppe {
                    TextAlign::Center);
     }
 
+    void Hud::draw_waymarks (render::TextList& text, const HudState& st) {
+      if (!m_font)
+        return;
+      for (int i = 0; i < st.waymark_count; ++i) {
+        const HudState::Waymark& mark = st.waymarks[i];
+        if (mark.alpha <= 0.002f)
+          continue;
+        // Quieter over the thing itself than out at the edge.
+        const float alpha = mark.alpha * (mark.in_view ? 0.7f : 0.82f);
+        const float size = mark.in_view ? 5.5f : 7.0f;
+        place_shape (text,
+                     m_shape->arrow,
+                     mark.x,
+                     mark.y,
+                     size + 1.5f,
+                     mark.angle,
+                     0.0f,
+                     0.0f,
+                     0.0f,
+                     0.4f * alpha,
+                     4.0f);
+        place_shape (text,
+                     m_shape->arrow,
+                     mark.x,
+                     mark.y,
+                     size,
+                     mark.angle,
+                     mark.red,
+                     mark.green,
+                     mark.blue,
+                     alpha);
+
+        std::ostringstream reading;
+        if (*mark.name)
+          reading << mark.name << "  ";
+        if (mark.metres >= 1000.0f)
+          reading << std::fixed << std::setprecision (1)
+                  << mark.metres / 1000.0f << " km";
+        else
+          reading << static_cast<int> (std::round (mark.metres / 5.0f) * 5.0f)
+                  << " m";
+        TextStyle label;
+        label.size = 11.0f;
+        label.red = label.green = label.blue = ink;
+        label.alpha = alpha;
+        label.tracking = 0.04f;
+        label.tabular_figures = true;
+        // Behind the arrow: above the thing, or inward from the edge,
+        // set to whichever side keeps the words clear of the arrowhead.
+        const float across = std::cos (mark.angle);
+        const float upward = std::sin (mark.angle);
+        float x = mark.x, y = mark.y + 3.5f;
+        TextAlign align = TextAlign::Center;
+        if (mark.in_view) {
+          y -= 15.0f;
+        } else if (across > 0.35f) {
+          x -= 13.0f;
+          align = TextAlign::Right;
+        } else if (across < -0.35f) {
+          x += 13.0f;
+          align = TextAlign::Left;
+        } else {
+          y += upward > 0.0f ? 18.0f : -18.0f;
+        }
+        draw_shaded (text, x, y, reading.str (), label, align);
+      }
+    }
+
     void Hud::draw_prompts (render::TextList& text,
                             const HudState& st,
                             float dt,
@@ -752,6 +831,7 @@ namespace moppe {
         std::min (240.0f, 1.0f / std::max (st.frame_time_s, 0.001f));
       m_fps = m_fps > 0.0f ? m_fps * 0.9f + instant_fps * 0.1f : instant_fps;
 
+      draw_waymarks (text, st);
       draw_gauge (text, st, dt, width_pts, height_pts);
       draw_basket (text, st, dt, width_pts, height_pts);
       draw_clock (text, st, dt, width_pts, height_pts);
