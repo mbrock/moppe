@@ -62,6 +62,14 @@
 (define-shader-function distance-fog (distance scale)
   (clamp (- 1.0 (exp (* -1.0 (expt (* distance scale) 1.5)))) 0.0 1.0))
 
+;;; BODY's value where TEST holds and ZERO elsewhere, evaluated only where
+;;; it holds: the language's IF selects between two values it has already
+;;; computed, while a loop run once or never truly branches.  A shader
+;;; function, which takes no abstractions, spells the loop out.
+(define-shader-abstraction only-where (test zero body)
+  `(counted-fold (once (if ,test (uint 1) (uint 0)) unused ,zero)
+     ,body))
+
 ;;; High ground rises above the valley haze.
 (define-shader-function relief-haze (fog altitude sea-level land-relief)
   (* fog (mix 1.0 0.58 (smoothstep 0.36 0.82
@@ -619,10 +627,17 @@
                      horizon (expt thickness 8.0))))
     (if (>= (swizzle ray :y) 0.0) above below)))
 
+;;; The detail only moves a cloud's edge: it adds less than a fifth, so
+;;; where the base alone falls that far short of the edge, or already past
+;;; it, the answer is clear sky or solid cloud without it.
 (define-shader-function cloud-shape (p coverage time)
   (let* ((base (sky-fbm (* p 0.3)))
-         (detail (sky-fbm (+ (* p 1.2) (vec3 (* time 0.05) 0.0 (* time 0.03)))))
-         (edge (mix 0.72 0.40 (clamp coverage 0.0 1.0))))
+         (edge (mix 0.72 0.40 (clamp coverage 0.0 1.0)))
+         (near-edge (and (> base (- edge 0.2)) (< base (+ edge 0.13))))
+         (detail (counted-fold (once (if near-edge (uint 1) (uint 0)) unused
+                                0.0)
+                   (sky-fbm (+ (* p 1.2)
+                               (vec3 (* time 0.05) 0.0 (* time 0.03)))))))
     (smoothstep edge (+ edge 0.13) (+ base (* detail 0.2)))))
 
 (define-shader-function cloud-light (density ray sun)
@@ -708,23 +723,6 @@
          (night (- 1.0 (smoothstep 0.0 0.30 daylight)))
          (clear (* night (smoothstep -0.02 0.16 rise)
                    (- 1.0 (* 0.4 moonlight))))
-         (galaxy-axis (vec3 0.42 0.55 -0.72))
-         (off-band (dot stars-at galaxy-axis))
-         (band (exp (* -20.0 (* off-band off-band))))
-         (structure (+ (* 0.58 (lattice-noise (* stars-at 15.0)))
-                       (* 0.42 (lattice-noise (* stars-at 44.0)))))
-         (galaxy (* band (+ 0.10 (* 1.25 structure))
-                    (- 1.0 (* 0.55 (smoothstep
-                                    0.42 0.66
-                                    (lattice-noise (* stars-at 7.0)))))))
-         (near (star-layer stars-at 46.0 150.0 time))
-         (far (star-layer stars-at 110.0 190.0 time))
-         (tint (mix (vec3 0.72 0.82 1.0) (vec3 1.0 0.86 0.68)
-                    (smoothstep 0.35 0.95 (swizzle near :y))))
-         (starlight (+ (* tint (* 2.6 (swizzle near :x)))
-                       (* (vec3 0.90 0.93 1.0)
-                          (* 1.1 (swizzle far :x) (+ 1.0 (* 1.6 band))))
-                       (* (vec3 0.60 0.66 0.94) (* 0.085 galaxy))))
          ;; The moon: a disc drawn larger than life, shaded as the sphere
          ;; it is.
          (radius 0.017)
@@ -732,9 +730,35 @@
          (face (/ (- ray (* moon along)) radius))
          (r2 (dot face face))
          (disc (* (- 1.0 (smoothstep 0.86 1.0 r2)) (step 0.0 along)))
+         ;; By day, below the horizon, and behind the moon no star shows,
+         ;; and none is looked for.
+         (starry (> (* clear (- 1.0 disc)) 0.0))
+         (starlight
+           (counted-fold (once (if starry (uint 1) (uint 0)) unused
+                          (vec3 0.0 0.0 0.0))
+             (let* ((galaxy-axis (vec3 0.42 0.55 -0.72))
+                    (off-band (dot stars-at galaxy-axis))
+                    (band (exp (* -20.0 (* off-band off-band))))
+                    (structure (+ (* 0.58 (lattice-noise (* stars-at 15.0)))
+                                  (* 0.42 (lattice-noise (* stars-at 44.0)))))
+                    (galaxy (* band (+ 0.10 (* 1.25 structure))
+                               (- 1.0 (* 0.55 (smoothstep
+                                               0.42 0.66
+                                               (lattice-noise
+                                                (* stars-at 7.0)))))))
+                    (near (star-layer stars-at 46.0 150.0 time))
+                    (far (star-layer stars-at 110.0 190.0 time))
+                    (tint (mix (vec3 0.72 0.82 1.0) (vec3 1.0 0.86 0.68)
+                               (smoothstep 0.35 0.95 (swizzle near :y)))))
+               (+ (* tint (* 2.6 (swizzle near :x)))
+                  (* (vec3 0.90 0.93 1.0)
+                     (* 1.1 (swizzle far :x) (+ 1.0 (* 1.6 band))))
+                  (* (vec3 0.60 0.66 0.94) (* 0.085 galaxy))))))
          (normal (- face (* moon (sqrt (max (- 1.0 r2) 0.0)))))
          (lit (smoothstep -0.05 0.20 (dot normal sun)))
-         (maria (lattice-noise (+ (* face 1.8) (vec3 13.0 5.0 9.0))))
+         (maria (counted-fold (once (if (> disc 0.0) (uint 1) (uint 0)) unused
+                               0.0)
+                  (lattice-noise (+ (* face 1.8) (vec3 13.0 5.0 9.0)))))
          (surface (* (+ 0.66 (* 0.50 maria)) (+ 0.05 (* 0.95 lit))))
          (up (smoothstep -0.03 0.03 (swizzle moon :y)))
          (moon-light (* (vec3 0.94 0.95 1.0) up
@@ -3064,13 +3088,6 @@
                (sheet-at ,sheet (+ between-cell (vec2 1.0 1.0)) between-size)
                (swizzle between-f :x))
           (swizzle between-f :y))))
-
-;;; BODY's value where TEST holds and ZERO elsewhere, evaluated only where
-;;; it holds: the language's IF selects between two values it has already
-;;; computed, while a loop run once or never truly branches.
-(define-shader-abstraction only-where (test zero body)
-  `(counted-fold (once (if ,test (uint 1) (uint 0)) unused ,zero)
-     ,body))
 
 ;;; The water level's rise across a sample, x and z, in the heights' units.
 (define-shader-abstraction sheet-rise (sheet cell size)
