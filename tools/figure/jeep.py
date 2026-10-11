@@ -2,8 +2,8 @@
 
     Blender -b --factory-startup --python tools/figure/jeep.py
 
-The jeep is authored life size in the game's frame -- x right, y up, z
-forward -- with its origin on the centre line, midway between the axles
+The jeep is authored life size in the game's frame -- x to the driver's
+left, y up, z forward -- with its origin on the centre line, midway between the axles
 and at their height when it stands on level ground. Its assemblies are
 the body, one wheel (the game draws it four times, turned about for the
 right-hand side), and the steering wheel, which turns about its column;
@@ -38,8 +38,8 @@ SILL = 0.12        # the floor above the axles
 RAIL = 0.74        # the top of the body's sides
 SEAT = 0.33        # a front seat's distance from the centre line
 
-STEERING_WHEEL = V((-SEAT, 0.82, 0.16))
-COLUMN = (V((-SEAT, 0.62, 0.46)) - STEERING_WHEEL).normalized()
+STEERING_WHEEL = V((SEAT, 0.82, 0.16))
+COLUMN = (V((SEAT, 0.62, 0.46)) - STEERING_WHEEL).normalized()
 
 PALETTE = {
     "olive": (0.33, 0.39, 0.22),
@@ -99,14 +99,14 @@ def build():
     steering(coll, m)
 
     # Where the riders sit and put their feet.
-    assembly("seat_driver", coll, V((-SEAT, 0.43, -0.16)),
+    assembly("seat_driver", coll, V((SEAT, 0.43, -0.16)),
              point="seat_driver")
-    assembly("seat_passenger", coll, V((SEAT, 0.43, -0.16)),
+    assembly("seat_passenger", coll, V((-SEAT, 0.43, -0.16)),
              point="seat_passenger")
-    for s, tag in ((-1, "left"), (1, "right")):
-        assembly(f"pedal_{tag}", coll, V((-SEAT + 0.10 * s, 0.20, 0.36)),
+    for s, tag in ((1, "left"), (-1, "right")):
+        assembly(f"pedal_{tag}", coll, V((SEAT + 0.10 * s, 0.20, 0.36)),
                  point=f"pedal_{tag}")
-        assembly(f"footrest_{tag}", coll, V((SEAT + 0.10 * s, 0.20, 0.36)),
+        assembly(f"footrest_{tag}", coll, V((-SEAT + 0.10 * s, 0.20, 0.36)),
                  point=f"footrest_{tag}")
         assembly(f"headlight_{tag}", coll, V((0.33 * s, 0.56, 1.69)),
                  point=f"headlight_{tag}")
@@ -155,12 +155,12 @@ def tyre(asm, m, axis, ref, prefix=""):
 
 
 def wheels(coll, m):
-    """The left front wheel exports; the other three only display it."""
+    """The right front wheel exports; the other three only display it."""
     first = assembly("wheel", coll, V((-TRACK, 0, AXLE)), mesh="wheel",
-                     point="wheel_fl")
+                     point="wheel_fr")
     tyre(first, m, RIGHT, UP)
-    for tag, x, z in (("fr", TRACK, AXLE), ("rl", -TRACK, -AXLE),
-                      ("rr", TRACK, -AXLE)):
+    for tag, x, z in (("fl", TRACK, AXLE), ("rr", -TRACK, -AXLE),
+                      ("rl", TRACK, -AXLE)):
         other = assembly(f"wheel_{tag}", coll, V((x, 0, z)),
                          point=f"wheel_{tag}")
         if x > 0:
@@ -199,9 +199,9 @@ def body(coll, m):
     part(b, "dash", slab(V((0, 0.63, 0.452)), (TUB - 0.08, 0.085, 0.012)),
          m["trim"], levels=0, bevel=0.008)
     for x in (-0.10, 0.02):
-        part(b, f"dial{x}", loft([(V((-SEAT + x + 0.04, 0.64, 0.445)),
+        part(b, f"dial{x}", loft([(V((SEAT + x + 0.04, 0.64, 0.445)),
                                    0.04, 0.04),
-                                  (V((-SEAT + x + 0.04, 0.64, 0.435)),
+                                  (V((SEAT + x + 0.04, 0.64, 0.435)),
                                    0.036, 0.036)], UP, sides=12),
              m["steel"], levels=0)
 
@@ -389,9 +389,9 @@ def steering(coll, m):
 
     assembly("steering_column", coll, STEERING_WHEEL + COLUMN,
              point="steering_column")
-    assembly("grip_left", coll, STEERING_WHEEL - RIGHT * radius,
+    assembly("grip_left", coll, STEERING_WHEEL + RIGHT * radius,
              point="grip_left")
-    assembly("grip_right", coll, STEERING_WHEEL + RIGHT * radius,
+    assembly("grip_right", coll, STEERING_WHEEL - RIGHT * radius,
              point="grip_right")
 
 

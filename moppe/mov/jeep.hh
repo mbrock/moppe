@@ -2,52 +2,45 @@
 #define MOPPE_MOV_JEEP_HH
 
 #include <moppe/map/surface.hh>
+#include <moppe/mov/rigid_bike.hh>
 #include <moppe/mov/trunk_field.hh>
 
 #include <array>
+#include <memory>
 
 namespace moppe::mov {
-  // The jeep: one rigid body on four sprung wheels. Each wheel is a ray
-  // down its suspension strut onto the heightfield; where it finds the
-  // ground the spring pushes the body up, and the tyre grips sideways and
-  // drives or brakes along its heading, as far as its load lets it. The
-  // body's corners and its roll cage hold it off the ground when the
-  // wheels cannot, trunks stop it, and a jeep left on its back rights
-  // itself. Lengths are metres, times seconds, and angles radians.
+  // The jeep, a Box3D assemblage like the rigid bike: a chassis of two
+  // boxes (the tub and the roll cage) on four sphere wheels, each on a
+  // wheel joint that springs it, spins it for the engine and the brakes,
+  // and, at the front, steers it. It stands in a private world holding a
+  // streamed patch of the height field and the trunks near it. All four
+  // wheels drive, each within what its load lets it put down; a jeep left
+  // on its side or back is set on its wheels again; a parked one locks
+  // its wheels and, once still, is not stepped at all.
+  //
+  // Its frame is the world's: x to the driver's left, y up, z forward.
+  // Lengths are metres, times seconds, and angles radians.
   class Jeep {
   public:
     // Front left, front right, rear left, rear right.
     static constexpr int wheel_count = 4;
     static constexpr float wheel_radius = 0.40f;
-    // Each wheel's centre in the body's frame (x right, y up, z forward)
-    // when the jeep stands on level ground; models/jeep.blend agrees.
+    // The origin is on the centre line, midway between the axles and at
+    // their height when the jeep stands on level ground; each wheel's
+    // centre is this far to the side of it and ahead of or behind it.
+    // models/jeep.blend agrees.
     static constexpr float track = 0.80f;
     static constexpr float axle = 1.20f;
-    // Where the driver and the passenger sit, in the same frame.
+    // The driver's seat, on the left; the passenger's mirrors it.
     static constexpr float seat[3] = { 0.33f, 0.43f, -0.16f };
-    Vec3 driver_seat () const {
-      return point (Vec3 (-seat[0], seat[1], seat[2]));
-    }
-    Vec3 passenger_seat () const {
-      return point (Vec3 (seat[0], seat[1], seat[2]));
-    }
 
     struct State {
-      // The origin: on the centre line, midway between the axles, at
-      // their standing height.
-      Vec3 position {};
-      Vec3 right { 1, 0, 0 };
-      Vec3 up { 0, 1, 0 };
-      Vec3 forward { 0, 0, 1 };
-      Vec3 velocity {};
-      Vec3 spin {};
-      // How far each wheel hangs below where it stands; negative when
-      // its spring is pressed further.
-      std::array<float, wheel_count> drop {};
+      RigidBodyState chassis;
+      std::array<RigidBodyState, wheel_count> wheels;
+      int ground_column = 0, ground_row = 0;
       std::array<bool, wheel_count> touching {};
-      // The front wheels' turn, positive to the right, and how far the
-      // wheels have rolled round.
-      float steer = 0.0f;
+      std::array<float, wheel_count> load {};
+      // How far the wheels have rolled round, for drawing them.
       float wheel_spin = 0.0f;
       float drive = 0.0f;
       float turn = 0.0f;
@@ -59,60 +52,55 @@ namespace moppe::mov {
       bool asleep = false;
     };
 
-    const State& state () const noexcept {
-      return m_state;
-    }
-    void restore (const State& state) {
-      m_state = state;
-    }
+    explicit Jeep (const map::SurfaceGeometry& surface);
+    ~Jeep ();
+    Jeep (const Jeep&) = delete;
+    Jeep& operator= (const Jeep&) = delete;
+
+    State state () const;
+    // Rebuilds the assemblage from a snapshot, in one canonical order.
+    void restore (const State& state);
 
     // Stands the jeep on the ground at `at`, facing along `heading`.
-    void place (const Vec3& at,
-                const Vec3& heading,
-                const map::SurfaceGeometry& surface);
+    void place (const Vec3& at, const Vec3& heading);
+    // The obstacles its chassis meets; rebuilt into its world when the
+    // field changes.
+    void set_trunks (const TrunkField* trunks);
 
     // Forward (positive) or back, -1..1; right (positive) or left.
-    void set_drive (float drive) {
-      m_state.drive = drive;
-    }
-    void set_turn (float turn) {
-      m_state.turn = turn;
-    }
-    void set_brake (bool brake) {
-      m_state.brake = brake;
-    }
-    // A parked jeep holds its brakes and, once still, stays put.
+    void set_drive (float drive);
+    void set_turn (float turn);
+    void set_brake (bool brake);
     void set_parked (bool parked);
 
-    void update (float dt,
-                 const map::SurfaceGeometry& surface,
-                 float water_level,
-                 const TrunkField* trunks = nullptr);
+    void update (float dt, float water_level);
 
-    Vec3 position () const {
-      return m_state.position;
-    }
-    Vec3 forward () const {
-      return m_state.forward;
-    }
-    Vec3 up () const {
-      return m_state.up;
-    }
-    Vec3 velocity () const {
-      return m_state.velocity;
-    }
+    Vec3 position () const;
+    Vec3 forward () const;
+    Vec3 up () const;
+    Vec3 left () const;
+    Vec3 velocity () const;
     bool grounded () const;
-    // A point given in the body's frame, in the world.
+    bool asleep () const;
+    // A point given in the jeep's frame, in the world.
     Vec3 point (const Vec3& local) const;
+    Vec3 driver_seat () const {
+      return point (Vec3 (seat[0], seat[1], seat[2]));
+    }
+    Vec3 passenger_seat () const {
+      return point (Vec3 (-seat[0], seat[1], seat[2]));
+    }
+
+    // How far a wheel hangs below where it stands; negative when its
+    // spring is pressed further.
+    float wheel_drop (int wheel) const;
+    // The front wheels' turn, positive to the right.
+    float steer () const;
+    float wheel_spin () const;
 
   private:
-    void step (float dt,
-               const map::SurfaceGeometry& surface,
-               float water_level,
-               const TrunkField* trunks);
-    void push (const Vec3& impulse, const Vec3& at);
-
-    State m_state;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
   };
 }
 

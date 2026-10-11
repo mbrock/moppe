@@ -694,7 +694,8 @@ namespace moppe {
           session ().set_mode (M_JEEP);
       }
 
-      // The jeep waits beside the bike, a few steps to its right.
+      // The jeep waits beside the bike, a few steps to its left, beyond
+      // where the rider stands.
       void park_jeep () {
         const mov::Vehicle& bike = session ().bike ();
         Vec3 heading = bike.orientation ();
@@ -702,8 +703,7 @@ namespace moppe {
         heading =
           length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
         const Vec3 side (heading[2], 0, -heading[0]);
-        session ().jeep ().place (
-          bike.position () + side * 4.5f, heading, surface ());
+        session ().jeep ().place (bike.position () + side * 4.5f, heading);
       }
 
       // MOPPE_DEMO=forest: park the bike at the world's forest-floor site.
@@ -1898,8 +1898,8 @@ namespace moppe {
       // The passenger's seat of the other player's jeep, in the world.
       static Vec3 companion_seat (const CompanionSnapshot& theirs) {
         const JeepPose& jeep = theirs.jeep;
-        const Vec3 right = normalized (cross (jeep.up, jeep.forward));
-        return jeep.position + right * mov::Jeep::seat[0] +
+        const Vec3 left = normalized (cross (jeep.up, jeep.forward));
+        return jeep.position - left * mov::Jeep::seat[0] +
                jeep.up * mov::Jeep::seat[1] + jeep.forward * mov::Jeep::seat[2];
       }
 
@@ -1921,10 +1921,11 @@ namespace moppe {
         GameLogicState& state = logic ();
         if (state.m_mode == M_PASSENGER) {
           if (!m_companion || input.toggle_mount) {
-            const Vec3 right =
+            // Out on the passenger's side, the right.
+            const Vec3 left =
               normalized (cross (state.m_seat_up, state.m_seat_heading));
             session ().walker ().spawn (
-              moppe::position (state.m_seat_position + right * 1.4f),
+              moppe::position (state.m_seat_position - left * 1.4f),
               state.m_seat_heading);
             session ().set_mode (M_FOOT);
             input.toggle_mount = false;

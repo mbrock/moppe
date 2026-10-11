@@ -127,7 +127,7 @@ namespace moppe::game {
         jeep.set_turn (0);
         jeep.set_brake (false);
         session.walker ().spawn (
-          moppe::position (jeep.point (Vec3 (-1.75f, 0.3f, -0.1f))),
+          moppe::position (jeep.point (Vec3 (1.75f, 0.3f, -0.1f))),
           jeep.forward ());
         session.set_mode (M_FOOT);
         set_turn (session, logic.m_turn_input);
@@ -225,7 +225,8 @@ namespace moppe::game {
                 30 * u::kW,
                 150 * u::kg,
                 physics),
-        m_glider (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
+        m_glider (surface), m_jeep (surface),
+        m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
     if (m_logic.m_mode == M_FOOT)
@@ -364,14 +365,13 @@ namespace moppe::game {
       session.walker ().update (dt, surface, world, trunks);
     // The jeep stands braked wherever its driver left it.
     mov::Jeep& jeep = session.jeep ();
+    jeep.set_trunks (trunks);
     jeep.set_parked (logic.m_mode != M_JEEP);
-    jeep.update (
-      elapsed, surface, world.water_level.numerical_value_in (u::m), trunks);
+    jeep.update (elapsed, world.water_level.numerical_value_in (u::m));
     if (logic.m_mode == M_JEEP) {
       logic.m_odometer += length (jeep.velocity ()) * elapsed;
       // Sliding wheels throw up what they slide on.
-      const float slide =
-        std::fabs (dot (jeep.velocity (), cross (jeep.up (), jeep.forward ())));
+      const float slide = std::fabs (dot (jeep.velocity (), jeep.left ()));
       if (jeep.grounded () && slide > 3.0f)
         session.dust ().emit (
           moppe::position (jeep.point (Vec3 (0, -0.3f, -1.2f))),

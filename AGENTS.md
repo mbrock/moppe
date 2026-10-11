@@ -211,13 +211,29 @@
     points (axles, pivots, grips, pegs, saddle, harness) that the game
     places parts and the rider by. `tools/figure/export_model.py` writes
     the generated `moppe/game/{bike,glider}_model.{hh,cc}`; `make models`
-    re-exports both (`MODELS_REBUILD=1` regenerates the .blend files).
+    re-exports both and the jeep (`MODELS_REBUILD=1` regenerates the .blend
+    files).
     Ridden, the bike carries the hiker posed by `pose_holding` (hands on
     the grips, feet on the pegs), drawn 1.3x because the bike's physics is
     half again life size; the glider's pilot hangs prone at the basebar.
     `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
     ahead of the bike or glider.
+  - The jeep (`moppe/mov/jeep.*`, `models/jeep.blend` from
+    `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits a few
+    steps to the bike's left. On foot, `F` beside it drives it (nearer it
+    than the bike; the prompt says which) and `F` again steps out; `W`/`S`
+    drive and reverse, `A`/`D` steer, `Space` brakes, `Tab` cycles the
+    view. It is life size and seats two: in multiplayer, `F` beside the
+    other player's jeep takes the passenger seat (`M_PASSENGER`), and the
+    jeep's pose travels in the companion snapshot. Like the bike it is a
+    Box3D assemblage: a chassis of two box hulls on four sphere wheels,
+    each on a wheel joint that springs, drives, brakes, and (in front)
+    steers it, over its own streamed height-field patch and trunk
+    capsules. Its frame is the world's, x to the driver's left.
+    `MOPPE_DEMO=jeep` has the autopilot drive it (`tools/record OUT.mp4
+    jeep`), and `MOPPE_RIDE_ALONG=1` takes the other player's passenger
+    seat as soon as they appear, for captures.
   - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few
     percent of the trees, more near the trailhead: chanterelles and funnel
     chanterelles under spruce, porcini under both, fly agaric under birch,
@@ -264,7 +280,7 @@
     broadcasts do not carry. Neither serves: each simulates its own player
     and sends its poses thirty times a second over UDP port 27960
     (`game/companion_link.*`), and the other draws them a tenth of a
-    second behind as a second hiker, bike, or glider, with their camp;
+    second behind as a second hiker, bike, jeep, or glider, with their camp;
     picked mushrooms and the hour of the day are shared (the clock that
     is ahead leads), and nothing collides between the two. Both must launch
     the same world, so without `--seed` multiplayer plays seed 123. Two

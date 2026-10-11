@@ -72,6 +72,11 @@ including the first. The vehicle's coarse `position`, `velocity`, and
 moves the whole assemblage rigidly to match on restore. The session marks the
 bike `parked` whenever nobody rides it.
 
+The jeep (`mov::Jeep`) is the same kind of thing with five bodies: its
+checkpoint, `GameState::jeep`, holds the chassis and the four wheels, the
+ground patch origin, the controls, and the last step's wheel contacts, and
+`restore` rebuilds its private world in one canonical order.
+
 This is the first replayable slice, not yet a claim of complete determinism.
 Renderer history is not in `GameState`. World generation,
 terrain analysis,

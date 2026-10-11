@@ -44,10 +44,10 @@ namespace moppe::game {
 
     Mat4 jeep_frame (const JeepPose& jeep) {
       const Vec3 forward = normalized (jeep.forward);
-      const Vec3 right = normalized (cross (jeep.up, forward));
-      const Vec3 up = cross (forward, right);
+      const Vec3 left = normalized (cross (jeep.up, forward));
+      const Vec3 up = cross (forward, left);
       return Mat4::translation (jeep.position) *
-             Mat4::basis (right, up, forward);
+             Mat4::basis (left, up, forward);
     }
 
     Mat4 steering_turn (const JeepPose& jeep) {
@@ -63,12 +63,14 @@ namespace moppe::game {
     pose_seated (const JeepPose& jeep, const Mat4& frame, bool driving) {
       const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
       const Vec3 facing = normalized (frame.transform_vector (Vec3 (0, 0, 1)));
-      const Vec3 right = normalized (cross (up, facing));
+      const Vec3 left = normalized (cross (up, facing));
       const Vec3 seat =
         driving ? jeep_model::seat_driver : jeep_model::seat_passenger;
+      // The figure's first arm and leg are those on its -x side, which
+      // is the jeep's right.
       const Vec3 foot[2] = {
-        driving ? jeep_model::pedal_left : jeep_model::footrest_left,
-        driving ? jeep_model::pedal_right : jeep_model::footrest_right
+        driving ? jeep_model::pedal_right : jeep_model::footrest_right,
+        driving ? jeep_model::pedal_left : jeep_model::footrest_left
       };
 
       HoldPose hold;
@@ -84,9 +86,9 @@ namespace moppe::game {
 
       const Mat4 wheel = frame * Mat4::translation (jeep_model::steering_hub) *
                          steering_turn (jeep);
-      const Vec3 grip[2] = { wheel.transform_point (jeep_model::grip_left -
+      const Vec3 grip[2] = { wheel.transform_point (jeep_model::grip_right -
                                                     jeep_model::steering_hub),
-                             wheel.transform_point (jeep_model::grip_right -
+                             wheel.transform_point (jeep_model::grip_left -
                                                     jeep_model::steering_hub) };
       for (int i = 0; i < 2; ++i) {
         const float side = i == 0 ? -1.0f : 1.0f;
@@ -95,11 +97,11 @@ namespace moppe::game {
           hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
         } else {
           hold.wrist[i] =
-            hold.pelvis + right * (side * 0.13f) + facing * 0.33f + up * 0.10f;
+            hold.pelvis + left * (side * 0.13f) + facing * 0.33f + up * 0.10f;
         }
-        hold.elbow_pole[i] = right * side - up * 0.6f - facing * 0.2f;
+        hold.elbow_pole[i] = left * side - up * 0.6f - facing * 0.2f;
         hold.ankle[i] = frame.transform_point (foot[i]) + up * 0.085f;
-        hold.knee_pole[i] = up + facing * 0.5f + right * (side * 0.2f);
+        hold.knee_pole[i] = up + facing * 0.5f + left * (side * 0.2f);
       }
       return pose_holding (hold);
     }
@@ -136,16 +138,16 @@ namespace moppe::game {
                             jeep_model::wheel_rl,
                             jeep_model::wheel_rr };
     for (int wheel = 0; wheel < 4; ++wheel) {
-      const bool right_side = wheel % 2 == 1;
+      const bool left_side = wheel % 2 == 0;
       Mat4 turn = Mat4::identity ();
       if (wheel < 2)
         turn = Mat4::rotation (-jeep.steer_radians * u::rad, y_axis);
-      // The model's wheel faces left; the right-hand ones are turned
-      // about, which turns their roll about with them.
-      if (right_side)
+      // The model's wheel is a right-hand one; the left-hand ones are
+      // turned about, which turns their roll about with them.
+      if (left_side)
         turn = turn * Mat4::rotation (3.14159265f * u::rad, y_axis);
       const float roll =
-        right_side ? -jeep.wheel_spin_radians : jeep.wheel_spin_radians;
+        left_side ? -jeep.wheel_spin_radians : jeep.wheel_spin_radians;
       draw_part (*meshes.wheel,
                  frame *
                    Mat4::translation (axles[wheel] -

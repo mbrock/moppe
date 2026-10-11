@@ -113,14 +113,16 @@ namespace moppe::game {
   }
 
   JeepPose jeep_pose (const mov::Jeep& jeep) {
-    const mov::Jeep::State& state = jeep.state ();
     return {
-      .position = state.position,
-      .forward = state.forward,
-      .up = state.up,
-      .wheel_drop = state.drop,
-      .steer_radians = state.steer,
-      .wheel_spin_radians = state.wheel_spin,
+      .position = jeep.position (),
+      .forward = jeep.forward (),
+      .up = jeep.up (),
+      .wheel_drop = { jeep.wheel_drop (0),
+                      jeep.wheel_drop (1),
+                      jeep.wheel_drop (2),
+                      jeep.wheel_drop (3) },
+      .steer_radians = jeep.steer (),
+      .wheel_spin_radians = jeep.wheel_spin (),
     };
   }
 
