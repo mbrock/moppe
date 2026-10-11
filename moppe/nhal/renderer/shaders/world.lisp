@@ -133,6 +133,12 @@
     (vec3 (+ (* (swizzle l :x) 0.5) 0.5) (- 0.5 (* (swizzle l :y) 0.5))
           (swizzle l :z))))
 
+;;; How that place moves with a step along a direction: the sun's view is
+;;; orthographic, so a ray's places in the map lie along a line.
+(define-shader-function sun-map-direction (sun-view direction)
+  (let* ((l (* sun-view (vec4 direction 0.0))))
+    (vec3 (* (swizzle l :x) 0.5) (* (swizzle l :y) -0.5) (swizzle l :z))))
+
 ;;; 1 inside the map, 0 beyond it, where the sun is unshadowed.
 (define-shader-function inside-sun-map (at)
   (* (step 0.0 (swizzle at :x)) (step (swizzle at :x) 1.0)
@@ -159,10 +165,9 @@
 ;;; Where WORLD falls in the atlas, biased BIAS metres toward the sun:
 ;;; (u, v, depth, which), which 1 for the near cascade and 0 for the far;
 ;;; and how much of the shadow to trust there, 0 where neither sees.
-(define-shader-function sun-cascade (world bias near-view far-view shadow)
-  (let* ((near-at (sun-map-coordinate near-view world))
-         (far-at (sun-map-coordinate far-view world))
-         (near-weight (* (- 1.0 (smoothstep 0.86 0.96 (cascade-edge near-at)))
+;;; NEAR-AT and FAR-AT are its places in the two cascades' maps.
+(define-shader-function sun-cascade-at (near-at far-at world bias shadow)
+  (let* ((near-weight (* (- 1.0 (smoothstep 0.86 0.96 (cascade-edge near-at)))
                          (inside-sun-map near-at)))
          (near (step (shadow-dither world) near-weight))
          ;; A far depth scale of zero says the far cascade is off.
@@ -178,6 +183,10 @@
      :at (vec4 (* 0.5 (+ (swizzle at :x) (- 1.0 near))) (swizzle at :y)
                (- (swizzle at :z) depth-bias) near)
      :trust (* (swizzle shadow :x) (mix far-weight 1.0 near)))))
+
+(define-shader-function sun-cascade (world bias near-view far-view shadow)
+  (sun-cascade-at (sun-map-coordinate near-view world)
+                  (sun-map-coordinate far-view world) world bias shadow))
 
 ;;; One comparison tap DX, DY texels from a place.  A cascade fills half
 ;;; the atlas's width, so its texels are half as wide in u.
@@ -207,9 +216,17 @@
                                            sun-spread sun-spread)))))
      (mix 1.0 sun-taps (sun-place-trust sun-place))))
 
-;;; As SUN-LIT, from a single tap, for marches that read it many times.
+;;; As SUN-LIT, from a single tap.
 (define-shader-abstraction sun-lit-once (map compare world bias)
   `(let* ((sun-place (sun-cascade ,world ,bias sun-view sun-view-far shadow)))
+     (mix 1.0 (shadow-tap ,map ,compare sun-place 0.0 0.0)
+          (sun-place-trust sun-place))))
+
+;;; As SUN-LIT-ONCE, for marches that read it many times and know where
+;;; each step falls in the two cascades' maps.
+(define-shader-abstraction sun-lit-once-at (map compare near-at far-at world
+                                            bias)
+  `(let* ((sun-place (sun-cascade-at ,near-at ,far-at ,world ,bias shadow)))
      (mix 1.0 (shadow-tap ,map ,compare sun-place 0.0 0.0)
           (sun-place-trust sun-place))))
 
@@ -4290,7 +4307,12 @@
          (normal (normalize (cross3 (derivative-y position)
                                     (derivative-x position))))
          (depth (view-depth z near far))
-         (radius (swizzle occlusion :x))
+         ;; Close to the eye the radius would span most of the frame, its
+         ;; taps each a cache miss of their own; it shrinks there to a
+         ;; twelfth of the frame's height, and the obscurance with it.
+         (reach-up (/ (swizzle occlusion :x)
+                      (* 2.0 depth (sqrt (dot up up)))))
+         (radius (* (swizzle occlusion :x) (min 1.0 (/ 0.083 reach-up))))
          (uv-radius (* (/ radius (* 2.0 depth))
                        (vec2 (/ 1.0 (sqrt (dot right right)))
                              (/ 1.0 (sqrt (dot up up))))))
@@ -4361,7 +4383,10 @@
 
 ;;; Sun shafts: march each view ray through the sun's shadow map and gather
 ;;; forward-scattered sunlight over its lit spans, stopping at the first
-;;; surface; a Henyey-Greenstein lobe keeps the beams about the sun.
+;;; surface; a Henyey-Greenstein lobe keeps the beams about the sun.  A
+;;; step's clip position and its places in the sun's maps lie along lines
+;;; from the eye, so the matrices are applied once a pixel, not once a step,
+;;; and the light's extinction is a product carried along the march.
 (define-shader shafts-fragment
     (:stage :fragment
      :inputs ((uv :vec2 :location 0)
@@ -4381,19 +4406,30 @@
          (steps (swizzle shafts :z))
          (dt (/ (swizzle shafts :x) steps))
          (sigma (swizzle shafts :y))
+         (clip-eye (* view-proj (vec4 camera 1.0)))
+         (clip-ray (* view-proj (vec4 ray 0.0)))
+         (near-eye (sun-map-coordinate sun-view camera))
+         (near-ray (sun-map-direction sun-view ray))
+         (far-eye (sun-map-coordinate sun-view-far camera))
+         (far-ray (sun-map-direction sun-view-far ray))
+         (fading (exp (* -1.0 sigma dt)))
+         ;; The light gathered, whether the march has ended, and how much
+         ;; of the light at this step reaches the eye.
          (march
-           (counted-fold (i (uint steps) state (vec2 0.0 0.0)
+           (counted-fold (i (uint steps) state
+                          (vec3 0.0 0.0 (exp (* -1.0 sigma jitter dt)))
                           :until (> (swizzle state :y) 0.5))
              (let* ((distance (* (+ (float i) jitter) dt))
-                    (world (+ camera (* ray distance)))
-                    (c (* view-proj (vec4 world 1.0)))
+                    (c (+ clip-eye (* clip-ray distance)))
                     (beyond (or (<= (swizzle c :w) 0.0)
                                 (< (/ (swizzle c :z) (swizzle c :w)) surface)))
-                    (lit (sun-lit-once shadow-map shadow-compare world 1.86)))
-               (if beyond (vec2 (swizzle state :x) 1.0)
-                   (vec2 (+ (swizzle state :x)
-                            (* lit (exp (* -1.0 sigma distance))))
-                         0.0)))))
+                    (lit (sun-lit-once-at shadow-map shadow-compare
+                                          (+ near-eye (* near-ray distance))
+                                          (+ far-eye (* far-ray distance))
+                                          (+ camera (* ray distance)) 1.86)))
+               (if beyond (vec3 (swizzle state :x) 1.0 (swizzle state :z))
+                   (vec3 (+ (swizzle state :x) (* lit (swizzle state :z)))
+                         0.0 (* (swizzle state :z) fading))))))
          (scatter (* (swizzle march :x) sigma dt))
          (mu (dot ray (normalize (swizzle sun-direction :xyz))))
          (g 0.60)

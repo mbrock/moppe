@@ -890,7 +890,8 @@ namespace moppe::nhal {
         // "nohistory" resolves every frame from itself alone, "nomotion" resolves
         // ignoring motion, "scene" presents the unresolved scene, "noao"
         // and "noshafts" leave out the occlusion and the sun shafts, and
-        // "nosward" and "noblades" the grass's canopy and its blades.
+        // "nosky", "nosward", and "noblades" the sky and the grass's
+        // canopy and blades, to time each apart.
         {
           const char* probe = moppe::environment ("MOPPE_NHAL_PROBE");
           m_probe = probe ? probe : "";
@@ -1253,6 +1254,8 @@ namespace moppe::nhal {
 
       void draw_sky (const render::SkyParams&) override {
         open_scene ();
+        if (m_probe == "nosky")
+          return;
         m_device->set_pipeline (m_sky);
         m_device->set_buffer (0, m_frame_block);
         m_device->draw (3);
