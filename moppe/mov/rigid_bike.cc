@@ -1,4 +1,5 @@
 #include <moppe/mov/box3d_vec.hh>
+#include <moppe/mov/ground_patch.hh>
 #include <moppe/mov/rigid_bike.hh>
 
 #include <algorithm>
@@ -90,18 +91,6 @@ namespace moppe {
         bike_rig::reference_height - RigidBike::ride_height;
       static_assert (ride_height_error * ride_height_error < 1e-10f);
 
-      b3Quat quat_of (const std::array<float, 4>& q) {
-        return { { q[0], q[1], q[2] }, q[3] };
-      }
-
-      std::array<float, 4> array_of (const b3Quat& q) {
-        return { q.v.x, q.v.y, q.v.z, q.s };
-      }
-
-      Vec3 rotated (const std::array<float, 4>& q, const Vec3& v) {
-        return from_b3 (b3RotateVector (quat_of (q), to_b3 (v)));
-      }
-
       // The chassis frame: x to the rider's left, y up, z forward.
       b3Quat chassis_rotation (const Vec3& forward, const Vec3& up) {
         Vec3 f = normalized (forward);
@@ -113,15 +102,6 @@ namespace moppe {
         normalize (left);
         const Vec3 u = cross (f, left);
         const b3Matrix3 m { to_b3 (left), to_b3 (u), to_b3 (f) };
-        return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
-      }
-
-      // A wheel joint slides along its frame's x axis and spins about z:
-      // here x points down the chassis and z along the axle to the left.
-      b3Quat suspension_rotation () {
-        const b3Matrix3 m { { 0.0f, -1.0f, 0.0f },
-                            { 0.0f, 0.0f, -1.0f },
-                            { 1.0f, 0.0f, 0.0f } };
         return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
       }
 
@@ -141,13 +121,6 @@ namespace moppe {
         if (length2 (a) < 1e-10f || length2 (b) < 1e-10f)
           return 0.0f;
         return std::atan2 (dot (cross (a, b), axis), dot (a, b));
-      }
-
-      float
-      elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
-        return terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface, moppe::position (Vec3 (x, 0.0f, z))));
       }
 
       Vec3 normal_at (const map::SurfaceGeometry& surface, float x, float z) {
@@ -173,8 +146,9 @@ namespace moppe {
           sample[1] -= 0.5f * bike_rig::gravity * t * t;
           if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
             return false;
-          const float ground = elevation_at (surface, sample[0], sample[2]) +
-                               RigidBike::ride_height;
+          const float ground =
+            surface_elevation_at (surface, sample[0], sample[2]) +
+            RigidBike::ride_height;
           if (sample[1] > ground)
             continue;
           normal = normal_at (surface, sample[0], sample[2]);
@@ -183,26 +157,6 @@ namespace moppe {
         return false;
       }
 
-      // Whether a wheel touched the ground in the last step, and the mean
-      // normal force the ground pressed it with.
-      bool touches_ground (b3BodyId wheel, float dt, float& load) {
-        b3ContactData contacts[8];
-        const int count = b3Body_GetContactData (wheel, contacts, 8);
-        bool touching = false;
-        float impulse = 0.0f;
-        for (int i = 0; i < count; ++i)
-          for (int m = 0; m < contacts[i].manifoldCount; ++m) {
-            const b3Manifold& manifold = contacts[i].manifolds[m];
-            for (int p = 0; p < manifold.pointCount; ++p) {
-              const b3ManifoldPoint& point = manifold.points[p];
-              impulse += point.totalNormalImpulse;
-              touching = touching || point.totalNormalImpulse > 0.0f ||
-                         point.separation < 0.02f;
-            }
-          }
-        load = impulse / dt;
-        return touching;
-      }
     }
 
     struct RigidBike::Impl {
@@ -212,19 +166,15 @@ namespace moppe {
       Vec3 chassis_inertia; // pitch, yaw, roll about the centre of mass
       float front_hertz = 0.0f, front_damping = 0.0f;
       float rear_hertz = 0.0f, rear_damping = 0.0f;
-      float patch_dx, patch_dz;
+      GroundPatch patch;
 
       const TrunkField* trunks = nullptr;
       b3WorldId world = b3_nullWorldId;
-      b3BodyId ground = b3_nullBodyId;
-      b3BodyId obstacles = b3_nullBodyId;
       b3BodyId chassis = b3_nullBodyId;
       b3BodyId front = b3_nullBodyId;
       b3BodyId rear = b3_nullBodyId;
       b3JointId front_joint = b3_nullJointId;
       b3JointId rear_joint = b3_nullJointId;
-      b3HeightFieldData* height_field = nullptr;
-      int ground_column = 0, ground_row = 0;
       bool front_contact = false, rear_contact = false;
       float rear_load = 0.0f;
       float lean = 0.0f;
@@ -234,10 +184,17 @@ namespace moppe {
           : surface (surface), params (params),
             chassis_mass (
               std::max (40.0f, params.mass - 2.0f * bike_rig::wheel_mass)),
-            patch_dx (0.5f *
-                      surface.domain ().spacing_x ().numerical_value_in (u::m)),
-            patch_dz (
-              0.5f * surface.domain ().spacing_z ().numerical_value_in (u::m)) {
+            patch (surface,
+                   { .ground_friction = bike_rig::ground_friction,
+                     .obstacle_friction = 0.3f,
+                     .obstacle_restitution = 0.3f,
+                     .ground_bit = bike_rig::ground_bit,
+                     .ground_mask = bike_rig::wheel_bit | bike_rig::chassis_bit,
+                     .obstacle_bit = bike_rig::trunk_bit,
+                     .obstacle_mask = bike_rig::chassis_bit,
+                     .samples = bike_rig::patch_samples,
+                     .recentre_distance = bike_rig::patch_recentre_distance,
+                     .trunk_reach = bike_rig::trunk_reach }) {
         // A box of frame and rider about 0.5 m wide, 1.2 m tall and 2 m long.
         const float k = chassis_mass / 12.0f;
         chassis_inertia =
@@ -271,95 +228,9 @@ namespace moppe {
         if (B3_IS_NON_NULL (world))
           b3DestroyWorld (world);
         world = b3_nullWorldId;
-        ground = obstacles = chassis = front = rear = b3_nullBodyId;
+        chassis = front = rear = b3_nullBodyId;
         front_joint = rear_joint = b3_nullJointId;
-        if (height_field)
-          b3DestroyHeightField (height_field);
-        height_field = nullptr;
-      }
-
-      void patch_origin_for (const Vec3& p, int& column, int& row) const {
-        constexpr int half = (bike_rig::patch_samples - 1) / 2;
-        column = static_cast<int> (std::floor (p[0] / patch_dx)) - half;
-        row = static_cast<int> (std::floor (p[2] / patch_dz)) - half;
-      }
-
-      Vec3 patch_centre () const {
-        constexpr float half = 0.5f * (bike_rig::patch_samples - 1);
-        return Vec3 ((ground_column + half) * patch_dx,
-                     0.0f,
-                     (ground_row + half) * patch_dz);
-      }
-
-      void destroy_ground () {
-        if (B3_IS_NON_NULL (obstacles))
-          b3DestroyBody (obstacles);
-        if (B3_IS_NON_NULL (ground))
-          b3DestroyBody (ground);
-        obstacles = ground = b3_nullBodyId;
-        if (height_field)
-          b3DestroyHeightField (height_field);
-        height_field = nullptr;
-      }
-
-      void build_ground (int column, int row) {
-        constexpr int n = bike_rig::patch_samples;
-        ground_column = column;
-        ground_row = row;
-        std::vector<float> heights (n * n);
-        float lowest = 1e30f, highest = -1e30f;
-        for (int j = 0; j < n; ++j)
-          for (int i = 0; i < n; ++i) {
-            const float h =
-              elevation_at (surface,
-                            static_cast<float> (column + i) * patch_dx,
-                            static_cast<float> (row + j) * patch_dz);
-            heights[j * n + i] = h;
-            lowest = std::min (lowest, h);
-            highest = std::max (highest, h);
-          }
-        // Quantization spans only this patch, so the height steps stay at a
-        // millimetre or so even on a mountainside.
-        b3HeightFieldDef field {};
-        field.heights = heights.data ();
-        field.scale = { patch_dx, 1.0f, patch_dz };
-        field.countX = n;
-        field.countZ = n;
-        field.globalMinimumHeight = lowest - 1.0f;
-        field.globalMaximumHeight = highest + 1.0f;
-        height_field = b3CreateHeightField (&field);
-
-        b3BodyDef body = b3DefaultBodyDef ();
-        body.type = b3_staticBody;
-        body.position = { column * patch_dx, 0.0f, row * patch_dz };
-        ground = b3CreateBody (world, &body);
-        b3ShapeDef shape = b3DefaultShapeDef ();
-        shape.baseMaterial.friction = bike_rig::ground_friction;
-        shape.filter.categoryBits = bike_rig::ground_bit;
-        shape.filter.maskBits = bike_rig::wheel_bit | bike_rig::chassis_bit;
-        b3CreateHeightFieldShape (ground, &shape, height_field);
-
-        if (!trunks)
-          return;
-        const std::vector<Trunk> nearby =
-          trunks->gather (patch_centre (), bike_rig::trunk_reach);
-        if (nearby.empty ())
-          return;
-        b3BodyDef obstacle_body = b3DefaultBodyDef ();
-        obstacle_body.type = b3_staticBody;
-        obstacles = b3CreateBody (world, &obstacle_body);
-        b3ShapeDef obstacle = b3DefaultShapeDef ();
-        obstacle.baseMaterial.friction = 0.3f;
-        obstacle.baseMaterial.restitution = 0.3f;
-        obstacle.filter.categoryBits = bike_rig::trunk_bit;
-        obstacle.filter.maskBits = bike_rig::chassis_bit;
-        for (const Trunk& trunk : nearby) {
-          b3Capsule capsule;
-          capsule.center1 = to_b3 (trunk.root + trunk.axis * trunk.radius);
-          capsule.center2 = to_b3 (trunk.root + trunk.axis * trunk.height);
-          capsule.radius = trunk.radius;
-          b3CreateCapsuleShape (obstacles, &obstacle, &capsule);
-        }
+        patch.forget ();
       }
 
       b3BodyId create_body (const RigidBodyState& s) {
@@ -470,7 +341,7 @@ namespace moppe {
         def.workerCount = 1;
         def.hitEventThreshold = 1.5f;
         world = b3CreateWorld (&def);
-        build_ground (s.ground_column, s.ground_row);
+        patch.build (world, trunks, s.ground_column, s.ground_row);
         create_chassis (s.chassis);
         front = create_wheel (s.front_wheel);
         rear = create_wheel (s.rear_wheel);
@@ -509,8 +380,8 @@ namespace moppe {
         s.chassis = read (chassis);
         s.front_wheel = read (front);
         s.rear_wheel = read (rear);
-        s.ground_column = ground_column;
-        s.ground_row = ground_row;
+        s.ground_column = patch.column ();
+        s.ground_row = patch.row ();
         s.front_contact = front_contact;
         s.rear_contact = rear_contact;
         s.rear_load = rear_load;
@@ -519,15 +390,7 @@ namespace moppe {
       }
 
       void recentre_ground () {
-        const Vec3 p = from_b3 (b3Body_GetPosition (chassis));
-        const Vec3 centre = patch_centre ();
-        if (std::abs (p[0] - centre[0]) < bike_rig::patch_recentre_distance &&
-            std::abs (p[2] - centre[2]) < bike_rig::patch_recentre_distance)
-          return;
-        int column = 0, row = 0;
-        patch_origin_for (p, column, row);
-        destroy_ground ();
-        build_ground (column, row);
+        patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (chassis)));
       }
 
       float extension (b3BodyId wheel, const Vec3& axle) const {
@@ -791,8 +654,8 @@ namespace moppe {
         b3World_Step (world, dt, bike_rig::substeps);
 
         float front_load = 0.0f;
-        front_contact = touches_ground (front, dt, front_load);
-        rear_contact = touches_ground (rear, dt, rear_load);
+        front_contact = wheel_touches_ground (front, dt, front_load);
+        rear_contact = wheel_touches_ground (rear, dt, rear_load);
         trunk_hit = body_hit = 0.0f;
         const b3ContactEvents events = b3World_GetContactEvents (world);
         for (int i = 0; i < events.hitCount; ++i) {
@@ -803,9 +666,9 @@ namespace moppe {
             return B3_IS_NON_NULL (body) &&
                    (B3_ID_EQUALS (a, body) || B3_ID_EQUALS (b, body));
           };
-          if (is (obstacles))
+          if (is (patch.obstacles ()))
             trunk_hit = std::max (trunk_hit, hit.approachSpeed);
-          else if (is (ground))
+          else if (is (patch.ground ()))
             body_hit = std::max (body_hit, hit.approachSpeed);
         }
       }
@@ -843,7 +706,7 @@ namespace moppe {
       s.rear_wheel = {
         centre + rotated (rotation, rear_axle ()), rotation, velocity, roll
       };
-      m.patch_origin_for (centre, s.ground_column, s.ground_row);
+      m.patch.origin_for (centre, s.ground_column, s.ground_row);
 
       // A bike already standing in a world is moved in it; only a patch
       // left far behind costs a rebuild.

@@ -353,6 +353,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/trunk_field.cc
   moppe/mov/rigid_bike.cc
   moppe/mov/character.cc
+  moppe/mov/ground_patch.cc
   moppe/mov/jeep.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc

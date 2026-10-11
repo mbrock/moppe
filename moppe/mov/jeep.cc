@@ -1,4 +1,5 @@
 #include <moppe/mov/box3d_vec.hh>
+#include <moppe/mov/ground_patch.hh>
 #include <moppe/mov/jeep.hh>
 
 #include <algorithm>
@@ -65,18 +66,6 @@ namespace moppe::mov {
       constexpr std::uint64_t wheel_bit = 4;
       constexpr std::uint64_t chassis_bit = 8;
 
-      b3Quat quat_of (const std::array<float, 4>& q) {
-        return { { q[0], q[1], q[2] }, q[3] };
-      }
-
-      std::array<float, 4> array_of (const b3Quat& q) {
-        return { q.v.x, q.v.y, q.v.z, q.s };
-      }
-
-      Vec3 rotated (const std::array<float, 4>& q, const Vec3& v) {
-        return from_b3 (b3RotateVector (quat_of (q), to_b3 (v)));
-      }
-
       // The jeep's frame for a level heading.
       b3Quat level_rotation (const Vec3& heading) {
         Vec3 f = heading;
@@ -88,65 +77,24 @@ namespace moppe::mov {
         return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
       }
 
-      // A wheel joint slides along its frame's x axis and spins about z:
-      // here x points down the chassis and z along the axle to the left.
-      b3Quat suspension_rotation () {
-        const b3Matrix3 m { { 0.0f, -1.0f, 0.0f },
-                            { 0.0f, 0.0f, -1.0f },
-                            { 1.0f, 0.0f, 0.0f } };
-        return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
-      }
-
       Vec3 axle_of (int wheel) {
         return Vec3 (wheel % 2 == 0 ? Jeep::track : -Jeep::track,
                      0.0f,
                      wheel < 2 ? Jeep::axle : -Jeep::axle);
-      }
-
-      float
-      elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
-        return terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface, moppe::position (Vec3 (x, 0.0f, z))));
-      }
-
-      // Whether a wheel touched the ground in the last step, and the
-      // mean normal force the ground pressed it with.
-      bool touches_ground (b3BodyId wheel, float dt, float& load) {
-        b3ContactData contacts[8];
-        const int count = b3Body_GetContactData (wheel, contacts, 8);
-        bool touching = false;
-        float impulse = 0.0f;
-        for (int i = 0; i < count; ++i)
-          for (int m = 0; m < contacts[i].manifoldCount; ++m) {
-            const b3Manifold& manifold = contacts[i].manifolds[m];
-            for (int p = 0; p < manifold.pointCount; ++p) {
-              const b3ManifoldPoint& point = manifold.points[p];
-              impulse += point.totalNormalImpulse;
-              touching = touching || point.totalNormalImpulse > 0.0f ||
-                         point.separation < 0.02f;
-            }
-          }
-        load = impulse / dt;
-        return touching;
       }
     }
   }
 
   struct Jeep::Impl {
     const map::SurfaceGeometry& surface;
-    float patch_dx, patch_dz;
+    GroundPatch patch;
     float hertz = 0.0f, damping = 0.0f;
 
     const TrunkField* trunks = nullptr;
     b3WorldId world = b3_nullWorldId;
-    b3BodyId ground = b3_nullBodyId;
-    b3BodyId obstacles = b3_nullBodyId;
     b3BodyId chassis = b3_nullBodyId;
     std::array<b3BodyId, wheel_count> wheels {};
     std::array<b3JointId, wheel_count> joints {};
-    b3HeightFieldData* height_field = nullptr;
-    int ground_column = 0, ground_row = 0;
 
     // What is not in the bodies: the controls and the last step's
     // readings.
@@ -154,10 +102,17 @@ namespace moppe::mov {
 
     explicit Impl (const map::SurfaceGeometry& surface)
         : surface (surface),
-          patch_dx (0.5f *
-                    surface.domain ().spacing_x ().numerical_value_in (u::m)),
-          patch_dz (0.5f *
-                    surface.domain ().spacing_z ().numerical_value_in (u::m)) {
+          patch (surface,
+                 { .ground_friction = jeep_rig::ground_friction,
+                   .obstacle_friction = 0.3f,
+                   .obstacle_restitution = 0.15f,
+                   .ground_bit = jeep_rig::ground_bit,
+                   .ground_mask = jeep_rig::wheel_bit | jeep_rig::chassis_bit,
+                   .obstacle_bit = jeep_rig::trunk_bit,
+                   .obstacle_mask = jeep_rig::chassis_bit,
+                   .samples = jeep_rig::patch_samples,
+                   .recentre_distance = jeep_rig::patch_recentre_distance,
+                   .trunk_reach = jeep_rig::trunk_reach }) {
       wheels.fill (b3_nullBodyId);
       joints.fill (b3_nullJointId);
       // The joint springs are soft constraints tuned in hertz against
@@ -184,101 +139,17 @@ namespace moppe::mov {
       if (B3_IS_NON_NULL (world))
         b3DestroyWorld (world);
       world = b3_nullWorldId;
-      ground = obstacles = chassis = b3_nullBodyId;
+      chassis = b3_nullBodyId;
       wheels.fill (b3_nullBodyId);
       joints.fill (b3_nullJointId);
-      if (height_field)
-        b3DestroyHeightField (height_field);
-      height_field = nullptr;
-    }
-
-    void patch_origin_for (const Vec3& p, int& column, int& row) const {
-      constexpr int half = (jeep_rig::patch_samples - 1) / 2;
-      column = static_cast<int> (std::floor (p[0] / patch_dx)) - half;
-      row = static_cast<int> (std::floor (p[2] / patch_dz)) - half;
-    }
-
-    Vec3 patch_centre () const {
-      constexpr float half = 0.5f * (jeep_rig::patch_samples - 1);
-      return Vec3 ((ground_column + half) * patch_dx,
-                   0.0f,
-                   (ground_row + half) * patch_dz);
-    }
-
-    void destroy_ground () {
-      if (B3_IS_NON_NULL (obstacles))
-        b3DestroyBody (obstacles);
-      if (B3_IS_NON_NULL (ground))
-        b3DestroyBody (ground);
-      obstacles = ground = b3_nullBodyId;
-      if (height_field)
-        b3DestroyHeightField (height_field);
-      height_field = nullptr;
-    }
-
-    void build_ground (int column, int row) {
-      constexpr int n = jeep_rig::patch_samples;
-      ground_column = column;
-      ground_row = row;
-      std::vector<float> heights (n * n);
-      float lowest = 1e30f, highest = -1e30f;
-      for (int j = 0; j < n; ++j)
-        for (int i = 0; i < n; ++i) {
-          const float h =
-            jeep_rig::elevation_at (surface,
-                                    static_cast<float> (column + i) * patch_dx,
-                                    static_cast<float> (row + j) * patch_dz);
-          heights[j * n + i] = h;
-          lowest = std::min (lowest, h);
-          highest = std::max (highest, h);
-        }
-      b3HeightFieldDef field {};
-      field.heights = heights.data ();
-      field.scale = { patch_dx, 1.0f, patch_dz };
-      field.countX = n;
-      field.countZ = n;
-      field.globalMinimumHeight = lowest - 1.0f;
-      field.globalMaximumHeight = highest + 1.0f;
-      height_field = b3CreateHeightField (&field);
-
-      b3BodyDef body = b3DefaultBodyDef ();
-      body.type = b3_staticBody;
-      body.position = { column * patch_dx, 0.0f, row * patch_dz };
-      ground = b3CreateBody (world, &body);
-      b3ShapeDef shape = b3DefaultShapeDef ();
-      shape.baseMaterial.friction = jeep_rig::ground_friction;
-      shape.filter.categoryBits = jeep_rig::ground_bit;
-      shape.filter.maskBits = jeep_rig::wheel_bit | jeep_rig::chassis_bit;
-      b3CreateHeightFieldShape (ground, &shape, height_field);
-
-      if (!trunks)
-        return;
-      const std::vector<Trunk> nearby =
-        trunks->gather (patch_centre (), jeep_rig::trunk_reach);
-      if (nearby.empty ())
-        return;
-      b3BodyDef obstacle_body = b3DefaultBodyDef ();
-      obstacle_body.type = b3_staticBody;
-      obstacles = b3CreateBody (world, &obstacle_body);
-      b3ShapeDef obstacle = b3DefaultShapeDef ();
-      obstacle.baseMaterial.friction = 0.3f;
-      obstacle.baseMaterial.restitution = 0.15f;
-      obstacle.filter.categoryBits = jeep_rig::trunk_bit;
-      obstacle.filter.maskBits = jeep_rig::chassis_bit;
-      for (const Trunk& trunk : nearby) {
-        b3Capsule capsule;
-        capsule.center1 = to_b3 (trunk.root + trunk.axis * trunk.radius);
-        capsule.center2 = to_b3 (trunk.root + trunk.axis * trunk.height);
-        capsule.radius = trunk.radius;
-        b3CreateCapsuleShape (obstacles, &obstacle, &capsule);
-      }
+      patch.forget ();
     }
 
     b3BodyId create_body (const RigidBodyState& s) {
       b3BodyDef def = b3DefaultBodyDef ();
       def.type = b3_dynamicBody;
       def.position = to_b3 (s.position);
-      def.rotation = jeep_rig::quat_of (s.rotation);
+      def.rotation = quat_of (s.rotation);
       def.linearVelocity = to_b3 (s.linear_velocity);
       def.angularVelocity = to_b3 (s.angular_velocity);
       def.enableSleep = false;
@@ -333,7 +204,7 @@ namespace moppe::mov {
     }
 
     b3JointId create_suspension (int wheel) {
-      const b3Quat frame = jeep_rig::suspension_rotation ();
+      const b3Quat frame = suspension_rotation ();
       b3WheelJointDef def = b3DefaultWheelJointDef ();
       def.base.bodyIdA = chassis;
       def.base.bodyIdB = wheels[wheel];
@@ -371,7 +242,7 @@ namespace moppe::mov {
       def.enableSleep = false;
       def.workerCount = 1;
       world = b3CreateWorld (&def);
-      build_ground (s.ground_column, s.ground_row);
+      patch.build (world, trunks, s.ground_column, s.ground_row);
       create_chassis (s.chassis);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         wheels[wheel] = create_wheel (s.wheels[wheel]);
@@ -383,7 +254,7 @@ namespace moppe::mov {
     RigidBodyState read (b3BodyId body) const {
       RigidBodyState s;
       s.position = from_b3 (b3Body_GetPosition (body));
-      s.rotation = jeep_rig::array_of (b3Body_GetRotation (body));
+      s.rotation = array_of (b3Body_GetRotation (body));
       s.linear_velocity = from_b3 (b3Body_GetLinearVelocity (body));
       s.angular_velocity = from_b3 (b3Body_GetAngularVelocity (body));
       return s;
@@ -394,21 +265,13 @@ namespace moppe::mov {
       s.chassis = read (chassis);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         s.wheels[wheel] = read (wheels[wheel]);
-      s.ground_column = ground_column;
-      s.ground_row = ground_row;
+      s.ground_column = patch.column ();
+      s.ground_row = patch.row ();
       return s;
     }
 
     void recentre_ground () {
-      const Vec3 p = from_b3 (b3Body_GetPosition (chassis));
-      const Vec3 centre = patch_centre ();
-      if (std::abs (p[0] - centre[0]) < jeep_rig::patch_recentre_distance &&
-          std::abs (p[2] - centre[2]) < jeep_rig::patch_recentre_distance)
-        return;
-      int column = 0, row = 0;
-      patch_origin_for (p, column, row);
-      destroy_ground ();
-      build_ground (column, row);
+      patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (chassis)));
     }
 
     Vec3 axis (const Vec3& local) const {
@@ -424,25 +287,24 @@ namespace moppe::mov {
     // wheel so that none starts inside it; the springs settle the rest.
     State standing (const Vec3& at, const Vec3& heading) const {
       const b3Quat q = jeep_rig::level_rotation (heading);
-      const std::array<float, 4> rotation = jeep_rig::array_of (q);
+      const std::array<float, 4> rotation = array_of (q);
       Vec3 centre = at;
       float highest = -1e30f;
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
-        const Vec3 under =
-          at + jeep_rig::rotated (rotation, jeep_rig::axle_of (wheel));
-        highest = std::max (
-          highest, jeep_rig::elevation_at (surface, under[0], under[2]));
+        const Vec3 under = at + rotated (rotation, jeep_rig::axle_of (wheel));
+        highest = std::max (highest,
+                            surface_elevation_at (surface, under[0], under[2]));
       }
       centre[1] = highest + wheel_radius + 0.04f;
       State s = kept;
       s.chassis = { centre, rotation, Vec3 (), Vec3 () };
       for (int wheel = 0; wheel < wheel_count; ++wheel)
-        s.wheels[wheel] = { centre + jeep_rig::rotated (
-                                       rotation, jeep_rig::axle_of (wheel)),
+        s.wheels[wheel] = { centre +
+                              rotated (rotation, jeep_rig::axle_of (wheel)),
                             rotation,
                             Vec3 (),
                             Vec3 () };
-      patch_origin_for (centre, s.ground_column, s.ground_row);
+      patch.origin_for (centre, s.ground_column, s.ground_row);
       s.touching.fill (false);
       s.load.fill (0.0f);
       s.still = s.overturned = 0.0f;
@@ -459,8 +321,7 @@ namespace moppe::mov {
         return;
       }
       const auto move = [] (b3BodyId body, const RigidBodyState& b) {
-        b3Body_SetTransform (
-          body, to_b3 (b.position), jeep_rig::quat_of (b.rotation));
+        b3Body_SetTransform (body, to_b3 (b.position), quat_of (b.rotation));
         b3Body_SetLinearVelocity (body, to_b3 (b.linear_velocity));
         b3Body_SetAngularVelocity (body, to_b3 (b.angular_velocity));
       };
@@ -538,7 +399,7 @@ namespace moppe::mov {
 
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         kept.touching[wheel] =
-          jeep_rig::touches_ground (wheels[wheel], dt, kept.load[wheel]);
+          wheel_touches_ground (wheels[wheel], dt, kept.load[wheel]);
       kept.wheel_spin = std::remainder (
         kept.wheel_spin + b3WheelJoint_GetSpinSpeed (joints[2]) * dt,
         6.2831853f);
