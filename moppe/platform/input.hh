@@ -13,6 +13,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace moppe::platform {
   // One reading of a gamepad in the Xbox layout. Sticks run -1..1 with y up,
@@ -62,6 +63,25 @@ namespace moppe::platform {
   // A Key by the name a Mac keyboard gives it ("Space", "F", "1"), or
   // Key::Unknown.
   Key key_named (const std::string& name);
+
+  // Something the player can do just now, and the key that does it: the
+  // prompt's words, and beside it what needs no prompt at a keyboard
+  // (jumping, stepping off, dousing the fire).
+  struct Offer {
+    Key key = Key::Unknown;
+    std::string action;
+  };
+
+  // Tells the host what there is to do, each frame. A host that draws its
+  // own buttons for them -- a phone's page (web/touch.js) -- answers true,
+  // and the HUD then leaves the keyed prompts to it.
+  bool offer_actions (const std::vector<Offer>& offers);
+
+  // The key a touch button stands for, by the character the page knows it
+  // by, and back: letters as key_named has them, a space, a tab, and '^'
+  // for Shift.
+  Key touch_key (int character);
+  int touch_character (Key key);
 
   // The game driven from a file, rewritten whole by a script or agent
   // (tools/xbox-control on the console). It starts with "seq N" and is

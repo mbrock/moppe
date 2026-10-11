@@ -111,8 +111,43 @@ SDL's window fills the document and follows the browser window's size, at
 the display's pixel density; SDL maps the keyboard by key position, as on
 the desktop, and captures the pointer once the page has been clicked or a
 key pressed. Its gamepad support is compiled in but has not been tried.
-Frames are stepped by the document timeline's time, which the browser
-advances once per displayed frame.
+
+## On a phone
+
+`moppe/platform/web/touch.js` (a second `--pre-js`) draws controls over the
+canvas, styled in `shell.html`, where a finger is the pointer, and on any
+page once a finger touches it; a mouse moved over them puts them away
+again. The stick and the look are the iPhone host's:
+
+- A thumb put down anywhere on the left half finds a stick under it, which
+  walks and steers; pushed half again past its rim, it runs (`Shift`).
+- Dragging on the right half looks around, as the mouse does.
+- The buttons are whatever can be done just now, in words. The game tells
+  the host each frame (`platform::offer_actions`, `moppe/platform/input.hh`):
+  the HUD's prompt (Ride, Pick the chanterelle, Hang the hammock, Fry the
+  mushrooms, Begin), and beside it what a keyboard needs no prompt for --
+  what `Space` does here (Jump, Boost, Brake, Flare), getting off the bike
+  or out of the jeep, taking the hammock down, lighting a fire or putting
+  it out. `Space`'s is the round button under the right thumb; the others
+  stack above it, the prompt's nearest. Each presses its key, so the game
+  knows nothing of buttons, and while the page shows them the HUD leaves
+  its keyed prompts out.
+- `View` cycles the camera (`Tab`), and `Full`, where the browser can fill
+  the screen, does that and asks it to hold the screen sideways.
+
+The page calls the host for each (`moppe_touch_key`, `moppe_touch_stick`,
+`moppe_touch_look` in `moppe/platform/sdl/host.cc`), which hands them to
+the game as it does a gamepad's. The page also forbids its own scrolling,
+zooming, and selecting, covers the whole screen (`viewport-fit=cover`),
+and measures the notch and home bar, which the HUD and the buttons stay
+inside (`platform::safe_insets`). Added to an iPhone's home screen it opens
+without the browser's bars.
+
+The controls have been driven in desktop Chrome emulating a phone's
+touches (walking, looking, lighting a fire), not yet on a phone; whether a
+phone's GPU offers `float32-filterable` and the memory the world wants is
+its own question. SDL's window takes the page's body for the canvas alone,
+so the controls stand beside the body, as the failure note does.
 
 ## Publishing
 

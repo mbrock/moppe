@@ -874,6 +874,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       target_link_options(${target} PRIVATE
         --use-port=emdawnwebgpu
         --pre-js=${web}/pre.js
+        --pre-js=${web}/touch.js
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/textures@/textures
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/data@/data
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/fonts@/fonts
@@ -887,7 +888,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
         "-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$ENV,$addRunDependency,$removeRunDependency")
       set_target_properties(${target} PROPERTIES
         SUFFIX ".js"
-        LINK_DEPENDS "${web}/pre.js")
+        LINK_DEPENDS "${web}/pre.js;${web}/touch.js")
       # Land in the page's package spares the visitor its generation.
       if(MOPPE_LANDS_DIR)
         target_link_options(${target} PRIVATE

@@ -23,6 +23,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <spawn.h>
@@ -153,7 +157,16 @@ namespace moppe::platform {
   }
 
   Insets safe_insets () {
+#ifdef __EMSCRIPTEN__
+    // A phone's notch and home bar, which the page measures (touch.js).
+    const auto inset = [] (int side) {
+      return float (EM_ASM_DOUBLE (
+        { return (Module['moppeInsets'] || [ 0, 0, 0, 0 ])[$0]; }, side));
+    };
+    return { inset (0), inset (1), inset (2), inset (3) };
+#else
     return {};
+#endif
   }
 
   void say (const std::string& phrase) {

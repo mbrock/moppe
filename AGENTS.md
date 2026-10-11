@@ -363,7 +363,10 @@
   `?MOPPE_FPS_REPORT=1&MOPPE_NHAL_TIMINGS=1&args=--graphics-quality+low`,
   reporting to the browser's console. The device is `moppe/nhal/webgpu/`,
   the page `moppe/platform/web/`. The page has one thread, so it starts
-  from baked land and never generates by default. WebGPU validates what the
+  from baked land and never generates by default. On a phone the page
+  draws touch controls (`touch.js`: a stick under the left thumb, look
+  under the right, and a button for each thing the game says can be done
+  just now, `platform::offer_actions`). WebGPU validates what the
   other devices let pass, so a renderer change is worth a look at the
   console there. Every push to master is published at
   <https://moppe.swa.sh> (a timer on swa running `tools/publish-web`) and

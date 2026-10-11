@@ -1274,6 +1274,35 @@ namespace moppe {
           state.meal_age_s =
             static_cast<float> (logic ().m_total_time - camp.ate_time);
         }
+        // What Space and F do here, and what can be done about the camp
+        // without a prompt for it (HudState::thumb).
+        switch (logic ().m_mode) {
+        case M_FOOT:
+          if (!camp.resting) {
+            state.thumb = "Jump";
+            state.can_take_down = beside_hammock ();
+            Vec3 to_fire = session ().walker ().position () - camp.hearth;
+            to_fire[1] = 0.0f;
+            state.can_douse_fire =
+              camp.fire && length2 (to_fire) < 3.0f * 3.0f;
+            state.can_light_fire = !camp.fire && hearth_ahead ().has_value ();
+          }
+          break;
+        case M_BIKE:
+          state.thumb = "Boost";
+          state.dismount = "Get off";
+          break;
+        case M_GLIDER:
+          state.thumb = "Flare";
+          break;
+        case M_JEEP:
+          state.thumb = "Brake";
+          state.dismount = "Step out";
+          break;
+        case M_PASSENGER:
+          state.dismount = "Step out";
+          break;
+        }
         if (logic ().m_mode != M_FOOT || state.mushroom_in_reach)
           return;
         state.cook = supper_at_hand ();
@@ -3194,6 +3223,7 @@ namespace moppe {
                             frame.hud.subject_position,
                             frame.hud.subject_heading);
         }
+        m_hud.publish_offers ();
         m_hud_text.translate (safe_insets.left, safe_insets.top);
 
         // Even a clean inspection capture needs this empty HUD pass: it is
@@ -3597,6 +3627,7 @@ namespace moppe {
         m_hud_text.clear ();
         m_hud.draw_game_over (
           m_hud_dl, m_hud_text, r.width_pts (), r.height_pts ());
+        m_hud.publish_offers ();
         r.draw_hud_text (m_hud_text);
         r.draw_hud (m_hud_dl);
         r.end_frame ();

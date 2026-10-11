@@ -6,6 +6,10 @@
 #include <fstream>
 #include <iostream>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 namespace moppe::platform {
   namespace {
     constexpr Key gamepad_keys[] = { Key::E,   Key::Restart, Key::Mount,
@@ -98,6 +102,48 @@ namespace moppe::platform {
     };
     const auto found = keys.find (name);
     return found == keys.end () ? Key::Unknown : found->second;
+  }
+
+  Key touch_key (int character) {
+    switch (character) {
+    case ' ': return Key::Space;
+    case '\t': return Key::Tab;
+    case '^': return Key::Shift;
+    default: return key_named (std::string (1, char (character)));
+    }
+  }
+
+  int touch_character (Key key) {
+    switch (key) {
+    case Key::Space: return ' ';
+    case Key::Tab: return '\t';
+    case Key::Shift: return '^';
+    case Key::Mount: return 'F';
+    case Key::E: return 'E';
+    case Key::R: return 'R';
+    case Key::T: return 'T';
+    default: return 0;
+    }
+  }
+
+  bool offer_actions (const std::vector<Offer>& offers) {
+#ifdef __EMSCRIPTEN__
+    // One line an offer, its key's character and its words; the page hears
+    // of them only when they change.
+    static std::string told = "\n";
+    std::string lines;
+    for (const Offer& offer : offers)
+      if (const int character = touch_character (offer.key))
+        lines += std::to_string (character) + ' ' + offer.action + '\n';
+    if (lines != told) {
+      told = lines;
+      EM_ASM ({ Module['moppeOffers'] (UTF8ToString ($0)); }, lines.c_str ());
+    }
+    return EM_ASM_INT ({ return Module['moppeTouching'] ? 1 : 0; }) != 0;
+#else
+    (void)offers;
+    return false;
+#endif
   }
 
   void RemoteControl::poll (double now) {

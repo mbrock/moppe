@@ -767,6 +767,19 @@ namespace moppe {
         key = mount_key;
         action = *mount_key ? "Ride" : "Bike within reach";
       }
+      // The prompt's action leads the offers, then what needs no prompt.
+      offer (key, action);
+      if (st.thumb)
+        offer ("Space", st.thumb);
+      if (st.dismount)
+        offer (mount_key, st.dismount);
+      if (st.can_take_down)
+        offer (hammock_key, "Take down the hammock");
+      if (st.can_douse_fire)
+        offer (fire_key, "Put out the fire");
+      else if (st.can_light_fire)
+        offer (fire_key, "Light a fire");
+
       const bool wanted = !action.empty ();
       if (wanted) {
         // A different prompt replaces the old one only once it has faded.
@@ -778,12 +791,30 @@ namespace moppe {
       const bool showing = wanted && action == m_prompt_action;
       m_prompt_alpha = approach (
         m_prompt_alpha, showing ? 1.0f : 0.0f, showing ? 7.0f : 5.0f, dt);
-      draw_prompt (text,
-                   m_prompt_key,
-                   m_prompt_action,
-                   ease (m_prompt_alpha),
-                   width_pts,
-                   height_pts);
+      // A host with a button for it shows a keyed prompt itself.
+      if (!m_host_offers || m_prompt_key.empty ())
+        draw_prompt (text,
+                     m_prompt_key,
+                     m_prompt_action,
+                     ease (m_prompt_alpha),
+                     width_pts,
+                     height_pts);
+    }
+
+    void Hud::offer (const std::string& key, const std::string& action) {
+      const platform::Key code = platform::key_named (key);
+      if (code == platform::Key::Unknown || action.empty ())
+        return;
+      // One button a key: the first to ask for it has it.
+      for (const platform::Offer& made : m_offers)
+        if (made.key == code)
+          return;
+      m_offers.push_back ({ code, action });
+    }
+
+    void Hud::publish_offers () {
+      m_host_offers = platform::offer_actions (m_offers);
+      m_offers.clear ();
     }
 
     void Hud::draw_diagnostics (render::DrawList& dl,
@@ -913,15 +944,18 @@ namespace moppe {
                     "You are in great pain.",
                     line,
                     TextAlign::Center);
-      draw_prompt (
-        text, restart_key, "Ride again", 0.8f, width_pts, height_pts);
+      offer (restart_key, "Ride again");
+      if (!m_host_offers)
+        draw_prompt (
+          text, restart_key, "Ride again", 0.8f, width_pts, height_pts);
     }
 
     void Hud::draw_ride_prompt (render::TextList& text,
                                 float alpha,
                                 int width_pts,
-                                int height_pts) const {
-      if (*ride_key)
+                                int height_pts) {
+      offer (ride_key, "Begin");
+      if (*ride_key && !m_host_offers)
         draw_prompt (text, ride_key, "Begin", alpha, width_pts, height_pts);
     }
 

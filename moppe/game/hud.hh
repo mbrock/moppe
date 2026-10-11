@@ -1,12 +1,14 @@
 #ifndef MOPPE_GAME_HUD_HH
 #define MOPPE_GAME_HUD_HH
 
+#include <moppe/platform/input.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
 
 #include <array>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace moppe {
   namespace render {
@@ -69,6 +71,16 @@ namespace moppe {
       // On foot by a fire: what there is to do about supper.
       enum class Cook { none, fry, frying, eat, eat_burnt };
       Cook cook = Cook::none;
+      // What a keyboard needs no prompt for, said for a host that offers
+      // every action as a button (platform::offer_actions): what Space
+      // does here, what F does from the saddle or the seat, and whether
+      // the hammock beside the walker can come down and a fire be lit or
+      // put out.
+      const char* thumb = nullptr;
+      const char* dismount = nullptr;
+      bool can_take_down = false;
+      bool can_light_fire = false;
+      bool can_douse_fire = false;
       // What was last eaten, said for a moment afterwards.
       const char* meal = nullptr;
       float meal_age_s = 100.0f;
@@ -135,6 +147,10 @@ namespace moppe {
                            int width_pts,
                            int height_pts);
 
+      // Notes that `key` (by its name; none offers nothing) does `action`
+      // just now.
+      void offer (const std::string& key, const std::string& action);
+
       // A centred key-and-action prompt at the bottom of the frame, as
       // used in play; the cinematic reuses it for its ride prompt.
       void draw_prompt (render::TextList& text,
@@ -144,12 +160,17 @@ namespace moppe {
                         int width_pts,
                         int height_pts) const;
 
+      // Hands the host this frame's offers -- the prompts drawn since the
+      // last call and what else there was to do -- and learns whether it
+      // shows them itself. Call once a frame, after drawing.
+      void publish_offers ();
+
       // The opening's prompt to skip ahead and begin; nothing on a
       // touch screen, which has no key for it.
       void draw_ride_prompt (render::TextList& text,
                              float alpha,
                              int width_pts,
-                             int height_pts) const;
+                             int height_pts);
 
       // One line of the opening's titles: the game's name large at the
       // centre of the frame, or a small credit in its lower third, unless
@@ -243,6 +264,9 @@ namespace moppe {
       float m_clock_alpha = 0.0f;
       std::string m_prompt_key;
       std::string m_prompt_action;
+      // What this frame offers the player, and whether the host shows it.
+      std::vector<platform::Offer> m_offers;
+      bool m_host_offers = false;
     };
   }
 }

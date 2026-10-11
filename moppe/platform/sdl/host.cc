@@ -36,6 +36,11 @@ namespace {
   std::atomic<bool> quitting = false;
   SDL_Window* active_window = nullptr;
 
+  // The game the page's touch controls drive (below), once it is set up,
+  // and whether a thumb is on their stick, which then outranks a gamepad.
+  Game* touched_game = nullptr;
+  bool touch_stick_held = false;
+
   // The game's keys. The left hand's cluster goes by where the QWERTY
   // W, A, S, D, E, and F keys sit, so it stays under the hand on any
   // layout; the rest go by what the key types, so their letters follow
@@ -165,6 +170,39 @@ namespace {
   }
 }
 
+#ifdef __EMSCRIPTEN__
+// A phone's page draws its own controls over the canvas and reads the
+// fingers on them (moppe/platform/web/touch.js), as the iOS host does;
+// these are what it calls. Its buttons are what the game offers to do
+// (platform::offer_actions), and a key goes by its character there.
+extern "C" {
+  EMSCRIPTEN_KEEPALIVE void moppe_touch_key (int character, int down) {
+    const Key key = moppe::platform::touch_key (character);
+    if (touched_game && key != Key::Unknown)
+      touched_game->key (key, down != 0);
+  }
+
+  // The stick, -1..1 rightward and forward; `held` while a thumb is on it.
+  EMSCRIPTEN_KEEPALIVE void
+  moppe_touch_stick (float steer, float drive, int held) {
+    touch_stick_held = held != 0;
+    if (!touched_game)
+      return;
+    ControlState state;
+    state.steer = steer;
+    state.drive = drive;
+    touched_game->controls (state);
+  }
+
+  // A finger dragged across the view turns it, as the mouse does.
+  EMSCRIPTEN_KEEPALIVE void
+  moppe_touch_look (float x, float y, float dx, float dy) {
+    if (touched_game)
+      touched_game->pointer_move (x, y, dx, dy);
+  }
+}
+#endif
+
 namespace moppe::platform {
   namespace {
     // The window, the renderer drawing into it, and the loop's state from
@@ -229,6 +267,7 @@ namespace moppe::platform {
                        .release ();
         m_game.setup (*m_renderer, m_renderer->width_pts (),
                       m_renderer->height_pts ());
+        touched_game = &m_game;
 
         // MOPPE_CONTROL_FILE names a remote-control file (input.hh).
         if (const char* path = moppe::environment ("MOPPE_CONTROL_FILE"))
@@ -247,6 +286,7 @@ namespace moppe::platform {
 
       ~Host () {
         m_device->wait_idle ();
+        touched_game = nullptr;
         active_window = nullptr;
       }
 
@@ -271,7 +311,7 @@ namespace moppe::platform {
         }
         if (m_remote && m_remote->controls ())
           m_game.controls (*m_remote->controls ());
-        else if (m_pad.connected ())
+        else if (m_pad.connected () && !touch_stick_held)
           m_game.controls (held_controls);
         const double wall =
           std::chrono::duration<double> (now - m_last).count ();
