@@ -143,6 +143,14 @@ namespace moppe::game {
     bool active () const noexcept {
       return m_active;
     }
+    // Aims the reel's last shot, the arrival, at a player who has moved
+    // since it was planned; it lasts as long as it did.
+    void replace_arrival (OpeningShot shot) {
+      if (m_shots.empty ())
+        return;
+      shot.hold = m_shots.back ().hold;
+      m_shots.back () = std::move (shot);
+    }
     float elapsed () const noexcept {
       return m_elapsed;
     }

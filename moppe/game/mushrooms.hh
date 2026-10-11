@@ -83,6 +83,10 @@ namespace moppe::game {
     // longer standing. Cheap when nothing changed.
     void follow (const Basket& basket);
 
+    // Someone else picked this one: it no longer stands, though no
+    // basket here holds it.
+    void take (std::uint32_t index);
+
     void draw (render::Renderer& renderer, const Vec3& camera);
 
   private:

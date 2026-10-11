@@ -557,6 +557,14 @@ namespace moppe::game {
     return best;
   }
 
+  void MushroomPatch::take (std::uint32_t index) {
+    if (index >= m_picked.size () || m_picked[index])
+      return;
+    m_picked[index] = true;
+    if (Tile* tile = tile_at (m_plan.sites[index].base))
+      tile->dirty = true;
+  }
+
   void MushroomPatch::follow (const Basket& basket) {
     if (basket.picked.size () == m_followed)
       return;

@@ -86,6 +86,8 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--water-screenshot",
          "--window-size",
          "--inactive",
+         "--multiplayer",
+         "--join",
          "--seed",
        })
     MOPPE_CHECK (help.find (option) != std::string::npos);
@@ -93,6 +95,16 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
   MOPPE_CHECK (help.find ("Graphics features:") != std::string::npos);
   MOPPE_CHECK (help.find ("forest") != std::string::npos);
   MOPPE_CHECK (help.find ("undergrowth") != std::string::npos);
+}
+
+MOPPE_TEST (launch_multiplayer_pins_the_shared_world) {
+  MOPPE_CHECK (!parsed ({}).multiplayer);
+  const game::LaunchOptions found = parsed ({ "--multiplayer" });
+  MOPPE_CHECK (found.multiplayer && found.multiplayer->empty ());
+  MOPPE_CHECK (found.seed == 123);
+  const game::LaunchOptions named = parsed ({ "--join", "chapel:27961" });
+  MOPPE_CHECK (named.multiplayer && *named.multiplayer == "chapel:27961");
+  MOPPE_CHECK (parsed ({ "--join", "chapel", "--seed", "7" }).seed == 7);
 }
 
 MOPPE_TEST (launch_quality_flags_select_settings) {

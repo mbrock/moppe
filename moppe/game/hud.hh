@@ -64,6 +64,10 @@ namespace moppe {
       // Lying in the hammock: the hour of the day, 0..24.
       bool resting = false;
       float clock_hours = 0.0f;
+      // A word about the other player, when there is one, and how long
+      // ago it was said.
+      const char* notice = nullptr;
+      float notice_age_s = 100.0f;
 
       HudState ()
           : speed_kmh (0), boost_ready01 (1.0f), health01 (1.0f),

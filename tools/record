@@ -161,7 +161,7 @@ if [[ -z $window && $(uname) == Linux ]] &&
    command -v gamescope >/dev/null; then
   # gamescope and the X server it starts say a good deal; the game's own
   # lines are the ones that matter.
-  said='^moppe: \(video\|camp\|the day\)\|[Ee]rror\|what()'
+  said='^moppe: \(video\|camp\|the day\|multiplayer\)\|[Ee]rror\|what()'
   gamescope -W "$width" -H "$height" -w "$width" -h "$height" \
     --backend headless -- "$game" --fullscreen "$@" 2>&1 |
     grep --line-buffered "$said" >&2 || true

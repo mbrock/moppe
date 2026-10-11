@@ -31,6 +31,7 @@
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/landscape_gazetteer.hh>
 #include <moppe/game/landscape_summary.hh>
+#include <moppe/game/companion_link.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/mushrooms.hh>
@@ -121,6 +122,9 @@ namespace moppe {
             m_benchmark->measured_frames,
             m_benchmark->partition,
           });
+        if (options.multiplayer && !m_benchmark && !m_gazetteer &&
+            !m_water_shot)
+          seek_company (*options.multiplayer);
       }
 
       // -- lifecycle ---------------------------------------------------
@@ -649,6 +653,7 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
         session ().stars ().generate (surface (), world (), 80);
         begin_day ();
+        forget_companion ();
         m_home_base_position =
           trail_cell_position (trail_network ().plan.home_base);
         build_home_base_marker ();
@@ -1439,13 +1444,13 @@ namespace moppe {
       void plan_opening_reel (const char* choice) {
         const std::optional<OpeningReel> reel = authored_opening (choice);
         m_opening_shots = reel ? reel->shots : generated_opening ();
-        const OpeningArrival arrival =
+        m_opening_arrival =
           reel && reel->arrival ? *reel->arrival : OpeningArrival {};
         Vec3 eye = session ().subject_position () + Vec3 (0, 1.6f, 0);
         if (logic ().m_mode == M_FOOT)
           eye = session ().walker ().eye_position ();
         m_opening_shots.push_back (
-          arrival_shot (arrival, eye, subject_heading (), 70.0f));
+          arrival_shot (m_opening_arrival, eye, subject_heading (), 70.0f));
         std::cerr << "moppe: opening: the player starts at "
                   << format_opening_shot ("start",
                                           eye,
@@ -1729,7 +1734,279 @@ namespace moppe {
       // The clock runs with play, and faster for someone lying down to
       // watch it.
       void pass_time (float dt) {
-        logic ().m_day_hours += m_day.pace * dt * logic ().m_day_haste;
+        double& hours = logic ().m_day_hours;
+        hours += m_day.pace * dt * logic ().m_day_haste;
+        // Two players share one sky: whoever's clock is ahead leads, as
+        // when one of them lies down to let the hours run. A little ahead
+        // is caught up smoothly, a long way at once.
+        const double behind = m_companion_hours - hours;
+        if (m_day.turning && behind > 0.0)
+          hours +=
+            behind > 0.25 ? behind : std::min (behind, behind * 6.0 * dt);
+      }
+
+      // -- company -----------------------------------------------------
+
+      // Opens the link to another player (game/companion_link.hh). A
+      // launch that cannot have one plays on alone.
+      void seek_company (const std::string& address) {
+        CompanionLink::Config config { .address = address };
+        if (const char* port = moppe::environment ("MOPPE_MULTIPLAYER_PORT"))
+          config.port = static_cast<std::uint16_t> (::atoi (port));
+        std::string error;
+        m_link = CompanionLink::open (config, error);
+        if (!m_link) {
+          std::cerr << "moppe: multiplayer: " << error << std::endl;
+          return;
+        }
+        std::cerr << "moppe: multiplayer: listening on port " << m_link->port ()
+                  << (address.empty ()
+                        ? ", calling on the local network"
+                        : ", calling " + address)
+                  << std::endl;
+      }
+
+      std::uint32_t this_world () const {
+        return world_tag (
+          static_cast<std::uint32_t> (recipe ().seed ().value),
+          recipe ().resolution (),
+          static_cast<int> (recipe ().generation_profile ()));
+      }
+
+      void forget_companion () {
+        m_track.clear ();
+        m_companion.reset ();
+        m_companion_picks.clear ();
+        m_companion_hours = -1.0;
+        m_companion_met = false;
+        m_companion_elsewhere = false;
+      }
+
+      void notice (const char* words) {
+        m_notice = words;
+        m_notice_at = m_link ? m_link->now () : 0.0;
+        std::cerr << "moppe: multiplayer: " << words << std::endl;
+      }
+
+      // How this player looks now, for the other to draw.
+      CompanionSnapshot my_snapshot () const {
+        const GameLogicState& state = logic ();
+        CompanionSnapshot mine;
+        mine.world = this_world ();
+        mine.day_hours = m_day.turning ? state.m_day_hours : -1.0;
+        mine.mode = state.m_mode;
+        mine.bike = vehicle_pose (session ().bike ());
+        if (state.m_mode == M_GLIDER)
+          mine.glider = glider_pose (session ().glider ());
+        if (state.m_mode == M_FOOT)
+          mine.walker = walker_pose (session ().walker (), state.m_look_pitch);
+        const Camp& camp = state.m_camp;
+        mine.hung = camp.hung;
+        mine.hammock = camp.hammock;
+        mine.hammock_load = hammock_load (camp, state.m_total_time);
+        mine.swing = camp.swing;
+        mine.gaze_yaw = camp.gaze_yaw;
+        mine.gaze_pitch = camp.gaze_pitch;
+        mine.hearth_laid = camp.fire_time > -50.0;
+        mine.hearth = camp.hearth;
+        mine.fire_burn = fire_burn (camp, state.m_total_time);
+        return mine;
+      }
+
+      // The companion's picks leave the ground here too, and fill the
+      // basket they are seen carrying.
+      void hear_of_picks (const CompanionSnapshot& theirs) {
+        if (theirs.pick_count < m_companion_picks.size ())
+          m_companion_picks.clear ();
+        constexpr std::uint32_t unknown = UINT32_MAX;
+        // No one has picked more mushrooms than grow.
+        if (theirs.pick_count > m_mushrooms.mushroom_count ())
+          return;
+        m_companion_picks.resize (theirs.pick_count, unknown);
+        for (std::size_t i = 0; i < theirs.picks.size (); ++i) {
+          const std::size_t ordinal = theirs.picks_from + i;
+          const std::uint32_t index = theirs.picks[i];
+          if (ordinal >= m_companion_picks.size () ||
+              index >= m_mushrooms.mushroom_count ())
+            continue;
+          m_companion_picks[ordinal] = index;
+          m_mushrooms.take (index);
+        }
+      }
+
+      // Both players begin beside a bike parked on the same spot. Whoever
+      // came later moves theirs a few steps aside, and themselves with it
+      // if they have not yet walked off.
+      void make_room (const CompanionSnapshot& theirs) {
+        if (m_spectator || logic ().m_mode != M_FOOT)
+          return;
+        const double here = m_link->now ();
+        if (here > theirs.sent ||
+            (here == theirs.sent && m_link->player () < theirs.player))
+          return;
+        mov::Vehicle& bike = session ().bike ();
+        Vec3 apart = bike.position () - theirs.bike.position;
+        apart[1] = 0.0f;
+        if (length2 (apart) > 2.5f * 2.5f)
+          return;
+        Vec3 heading = bike.orientation ();
+        heading[1] = 0.0f;
+        heading = length2 (heading) > 1e-6f ? normalized (heading)
+                                            : Vec3 (0, 0, 1);
+        const Vec3 side (heading[2], 0, -heading[0]);
+        const bool beside =
+          length2 (session ().walker ().position () - bike.position ()) <
+          6.0f * 6.0f;
+        Vec3 place = bike.position () - side * 4.0f;
+        place[1] = ground_height (place) + 1.2f;
+        bike.reset (place);
+        bike.set_heading (heading);
+        m_spawn_position = place;
+        if (!beside)
+          return;
+        session ().walker ().spawn (moppe::position (place + side * 1.8f),
+                                    heading);
+        logic ().m_fp_eye = session ().walker ().eye_position ();
+        if (m_opening.active ())
+          m_opening.replace_arrival (
+            arrival_shot (m_opening_arrival,
+                          session ().walker ().eye_position (),
+                          subject_heading (),
+                          70.0f));
+      }
+
+      // Once a frame: hears what the other player has sent, works out how
+      // they look just now, and tells them how this one does.
+      void keep_company () {
+        if (!m_link)
+          return;
+        m_arrived.clear ();
+        m_link->receive (m_arrived);
+        const double now = m_link->now ();
+        const bool was_present = m_track.present (now);
+        for (CompanionSnapshot& theirs : m_arrived) {
+          if (theirs.world != this_world ()) {
+            if (!m_companion_elsewhere) {
+              forget_companion ();
+              m_companion_elsewhere = true;
+              notice ("Someone is playing, but in another world");
+              std::cerr << "moppe: multiplayer: launch both games with the "
+                           "same --seed and terrain options"
+                        << std::endl;
+            }
+            continue;
+          }
+          m_companion_elsewhere = false;
+          if (!m_track.present (now))
+            m_companion_picks.clear ();
+          hear_of_picks (theirs);
+          m_companion_hours = theirs.day_hours;
+          if (!m_companion_met) {
+            m_companion_met = true;
+            make_room (theirs);
+          }
+          m_track.push (std::move (theirs), now);
+        }
+        const bool present = m_track.present (now);
+        if (present && !was_present) {
+          notice ("Your companion has arrived");
+          std::cerr << "moppe: multiplayer: companion at "
+                    << m_link->companion_address () << std::endl;
+        } else if (!present && was_present) {
+          notice ("Your companion has gone");
+          m_companion_hours = -1.0;
+          m_companion_met = false;
+        }
+        m_companion = m_track.sample (now);
+
+        // A spectator has no one to show.
+        if (m_spectator || !m_link->due ())
+          return;
+        CompanionSnapshot mine = my_snapshot ();
+        const std::vector<std::uint32_t>& picked = logic ().m_basket.picked;
+        mine.pick_count = static_cast<std::uint32_t> (picked.size ());
+        mine.picks_from =
+          companion_pick_window_start (picked.size (), m_snapshots_sent++);
+        for (std::size_t i = mine.picks_from;
+             i < picked.size () && mine.picks.size () < companion_pick_window;
+             ++i)
+          mine.picks.push_back (picked[i]);
+        m_link->send (std::move (mine));
+      }
+
+      // The other player as the world's second figure: their bike where
+      // they left or ride it, themselves on foot, in the hammock, or
+      // under the wing, and their camp.
+      void draw_companion (render::Renderer& r,
+                           render::DrawList& dl,
+                           float time) {
+        if (!m_companion)
+          return;
+        const CompanionSnapshot& theirs = *m_companion;
+        m_blob.draw (dl, surface (), theirs.bike.position, 2.2f);
+        render_vehicle (r, dl, theirs.bike, theirs.mode == M_BIKE, 0x3000);
+        if (theirs.hung)
+          draw_hammock (
+            dl, theirs.hammock, theirs.hammock_load, theirs.swing);
+        if (theirs.hearth_laid)
+          draw_hearth (dl, theirs.hearth, theirs.fire_burn);
+
+        m_companion_basket.clear ();
+        for (const std::uint32_t index : m_companion_picks)
+          if (index < m_mushrooms.mushroom_count ())
+            m_companion_basket.push_back (m_mushrooms.site (index));
+        if (theirs.walker && theirs.lying_down ()) {
+          figure::draw (dl,
+                        pose_resting (theirs.hammock,
+                                      theirs.swing,
+                                      resting_gaze (theirs.hammock,
+                                                    theirs.gaze_yaw,
+                                                    theirs.gaze_pitch),
+                                      time));
+          Vec3 floor = hammock_middle (theirs.hammock) +
+                       hammock_across (theirs.hammock) * 0.75f -
+                       hammock_along (theirs.hammock) * 0.5f;
+          floor[1] = ground_height (floor);
+          render_basket_set_down (
+            dl, floor, hammock_along (theirs.hammock), m_companion_basket);
+        } else if (theirs.walker) {
+          m_blob.draw (
+            dl, surface (), theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
+          render_walker (dl, *theirs.walker, time, m_companion_basket);
+        }
+        if (theirs.glider) {
+          m_blob.draw (dl, surface (), theirs.glider->position, 3.4f);
+          render_glider (r, dl, *theirs.glider, time, 0x4000);
+        }
+      }
+
+      // The renderer has one lamp. With two fires burning it is the one
+      // nearer the eye.
+      void light_companion_fire (FrameView& frame) const {
+        if (!m_companion || !m_companion->hearth_laid ||
+            m_companion->fire_burn <= 0.01f)
+          return;
+        Camp theirs;
+        theirs.hearth = m_companion->hearth;
+        const Vec3 lamp = fire_light_position (theirs);
+        FrameLighting& lighting = frame.lighting;
+        if (lighting.lamp_reach > 0.0f &&
+            length2 (lighting.lamp_position - frame.camera.position) <=
+              length2 (lamp - frame.camera.position))
+          return;
+        lighting.lamp_position = lamp;
+        lighting.lamp_reach = fire_light_reach;
+        lighting.lamp_color =
+          scale_display (fire_light_color (m_companion->fire_burn,
+                                           lighting.time),
+                         1.0f - 0.25f * lighting.daylight);
+      }
+
+      void add_company_readings (HudState& state) const {
+        if (!m_link || !m_notice)
+          return;
+        state.notice = m_notice;
+        state.notice_age_s = static_cast<float> (m_link->now () - m_notice_at);
       }
 
       // -- simulation --------------------------------------------------
@@ -1739,6 +2016,7 @@ namespace moppe {
           m_simulation_clock.reset ();
           return;
         }
+        keep_company ();
 
         // Offline replay and cinematic capture deliberately bind one logical
         // step to one rendered frame. Ordinary play instead consumes the
@@ -2321,6 +2599,7 @@ namespace moppe {
         if (actors.glider && !helmet)
           render_glider (
             r, m_world_dl, *actors.glider, frame.lighting.time, 0x2000);
+        draw_companion (r, m_world_dl, frame.lighting.time);
 
         r.draw_list (m_world_dl, 0x0001);
 
@@ -2339,6 +2618,20 @@ namespace moppe {
                      frame.camera.position,
                      fire_burn (logic ().m_camp, logic ().m_total_time),
                      frame.lighting.time);
+        if (m_companion) {
+          if (visibility.vehicle_effects)
+            render_vehicle_flames (r,
+                                   m_companion->bike,
+                                   frame.camera.position,
+                                   frame.lighting.time,
+                                   0x3000);
+          if (m_companion->hearth_laid)
+            draw_fire (r,
+                       m_companion->hearth,
+                       frame.camera.position,
+                       m_companion->fire_burn,
+                       frame.lighting.time);
+        }
         if (visibility.star_effects)
           session ().stars ().render (r, frame.environment);
       }
@@ -2445,6 +2738,7 @@ namespace moppe {
           HudState hud_state = hud_state_for (frame.hud);
           add_basket_readings (hud_state);
           add_camp_readings (hud_state);
+          add_company_readings (hud_state);
           m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
           if (m_hud.diagnostics ())
             draw_trail_map (m_hud_dl,
@@ -2508,7 +2802,8 @@ namespace moppe {
 
         const float aspect =
           (float)r.width_pts () / std::max (1, r.height_pts ());
-        const FrameView frame = compose_frame_view (frame_view_input (aspect));
+        FrameView frame = compose_frame_view (frame_view_input (aspect));
+        light_companion_fire (frame);
         const bool cinematic = frame.visibility.cinematic;
         const GazetteerShot* gazetteer_shot = current_gazetteer_shot ();
         // A cut is a new view: the temporal history of the last one would
@@ -3412,6 +3707,24 @@ namespace moppe {
       std::vector<std::uint32_t> m_forage_refused;
       // Scratch for the basket's contents as drawn.
       std::vector<MushroomSite> m_basket_contents;
+      // The other player, when there is one (game/companion.hh): the wire
+      // to them, what they have lately sent, and how they look this frame.
+      std::unique_ptr<CompanionLink> m_link;
+      CompanionTrack m_track;
+      std::vector<CompanionSnapshot> m_arrived;
+      std::optional<CompanionSnapshot> m_companion;
+      // Their picks in the order they made them, as far as heard, and
+      // the same as mushrooms for the basket they carry.
+      std::vector<std::uint32_t> m_companion_picks;
+      std::vector<MushroomSite> m_companion_basket;
+      // Their hour of the day; negative with no one to keep time with.
+      double m_companion_hours = -1.0;
+      bool m_companion_met = false;
+      bool m_companion_elsewhere = false;
+      std::uint32_t m_snapshots_sent = 0;
+      const char* m_notice = nullptr;
+      double m_notice_at = 0.0;
+      OpeningArrival m_opening_arrival;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
       // The trees the walker stands between that would take the hammock,

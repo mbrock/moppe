@@ -544,6 +544,25 @@ namespace moppe::game {
           options.stay_inactive = true;
           return true;
         } },
+      { "--multiplayer",
+        "",
+        0,
+        "",
+        "Play with whoever else is playing this world on the local network.",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          if (!options.multiplayer)
+            options.multiplayer = std::string ();
+          return true;
+        } },
+      { "--join",
+        "",
+        1,
+        "<HOST[:PORT]>",
+        "Play with the player on that machine.",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          options.multiplayer = std::string (values[0]);
+          return true;
+        } },
       { "--seed",
         "",
         1,
@@ -589,6 +608,18 @@ namespace moppe::game {
                                 !options.benchmark && !options.stay_inactive;
       // A capture pins its own seed so repeated runs compare like with like.
       if (options.config.capture_frames && options.seed < 0)
+        options.seed = 123;
+      // MOPPE_MULTIPLAYER=1 finds a companion on the local network; any
+      // other value is their address.
+      if (const char* companion = moppe::environment ("MOPPE_MULTIPLAYER");
+          companion && !options.multiplayer) {
+        const std::string_view value (companion);
+        options.multiplayer =
+          value == "1" ? std::string () : std::string (value);
+      }
+      // Two players must stand in the same world, so neither launch may
+      // fall back on whichever seed its own machine last remembered.
+      if (options.multiplayer && options.seed < 0)
         options.seed = 123;
       return true;
     }

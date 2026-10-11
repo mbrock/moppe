@@ -529,6 +529,22 @@ namespace moppe {
                      cheer,
                      TextAlign::Center);
       }
+      // News of the other player, small at the top of the frame.
+      const float told = clamp01 (1.0f - (st.notice_age_s - 4.0f) / 1.2f) *
+                         clamp01 (st.notice_age_s / 0.4f);
+      if (told > 0.002f && st.notice) {
+        TextStyle news;
+        news.size = 15.0f;
+        news.red = news.green = news.blue = ink;
+        news.alpha = 0.9f * ease (told);
+        news.tracking = 0.04f;
+        draw_shaded (text,
+                     0.5f * width_pts,
+                     54.0f,
+                     st.notice,
+                     news,
+                     TextAlign::Center);
+      }
       if (alpha <= 0.002f)
         return;
       const float cx = width_pts - gauge_margin - gauge_radius;

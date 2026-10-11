@@ -388,6 +388,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/boulders.cc
   moppe/game/mushrooms.cc
   moppe/game/camp.cc
+  moppe/game/companion.cc
+  moppe/game/companion_link.cc
   moppe/game/video.cc
 )
 
@@ -626,6 +628,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/boulders_test.cc
     tests/game/mushrooms_test.cc
     tests/game/camp_test.cc
+    tests/game/companion_test.cc
     tests/game/daylight_test.cc
     tests/game/cinematic_flight_test.cc
     tests/game/opening_test.cc

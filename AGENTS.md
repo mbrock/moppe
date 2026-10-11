@@ -258,6 +258,19 @@
     measurement lived in the retired Metal renderer; until the NHAL renderer
     implements `write_benchmark_results` from its pass timings, the replay
     runs but writes nothing.
+  - Two players (`moppe/game/companion.hh`): `--multiplayer` on two
+    machines of one network (`MOPPE_MULTIPLAYER=1`) puts both players in
+    one world, and `--join <host[:port]>` names the other machine where
+    broadcasts do not carry. Neither serves: each simulates its own player
+    and sends its poses thirty times a second over UDP port 27960
+    (`game/companion_link.*`), and the other draws them a tenth of a
+    second behind as a second hiker, bike, or glider, with their camp;
+    picked mushrooms and the hour of the day are shared (the clock that
+    is ahead leads), and nothing collides between the two. Both must launch
+    the same world, so without `--seed` multiplayer plays seed 123. Two
+    games on one machine find each other too (the second takes a free
+    port); `MOPPE_MULTIPLAYER_PORT` picks the port. A firewall must let
+    UDP 27960 in, or each side must `--join` the other.
   - Weather is authored, not simulated: `MOPPE_WEATHER=clear|mist|drizzle`
     (`moppe/game/weather.hh`) sets the sky, fog, and light, and the NHAL
     renderer draws valley mist and a fine rain for it.
