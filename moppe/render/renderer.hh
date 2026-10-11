@@ -15,6 +15,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace moppe {
   namespace render {
@@ -227,6 +228,11 @@ namespace moppe {
       Vec3 center;
       float half_extent;
       int cells; // 300
+      // Which terrain patches (terrain_patch_cells square, row by row) hold
+      // water: nonzero where the sheet stands above the ground at any of a
+      // patch's samples, its far edges included. A dry patch's water would
+      // draw nothing, so a backend may skip it. Empty when unknown.
+      std::vector<std::uint8_t> wet_patches {};
     };
 
     struct OceanParams {

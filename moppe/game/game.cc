@@ -1808,6 +1808,7 @@ namespace moppe {
         // set_terrain has established the texture dimensions.
         upload_water (r,
                       generated_world ().water_surface (),
+                      spatial::get<terrain::surface_elevation> (surface ()),
                       world ().water_level,
                       world ().map_size);
         upload_surface_readings (

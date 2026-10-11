@@ -538,11 +538,12 @@ namespace moppe::nhal {
       void render_terrain_shadow (const Mat4&, bool) override {}
       // The water sheet on the terrain grid: the surface in the heights'
       // units, and the swell's amplitude.
-      void set_ocean (const render::OceanSetup&,
+      void set_ocean (const render::OceanSetup& setup,
                       const render::TexturePixels& levels) override {
         if (m_water_levels)
           m_device->destroy (m_water_levels);
         m_water_levels = {};
+        m_wet_patches = setup.wet_patches;
         if (levels.empty ()
             || levels.format () != render::PixelFormat::rg32f)
           return;
@@ -1109,10 +1110,28 @@ namespace moppe::nhal {
         draw_chunks ();
       }
 
+      // Whether a chunk holds any water; every chunk may until the game has
+      // said which patches are dry.
+      bool wet (const ChunkDraw& c) const {
+        const int patch = render::terrain_patch_cells;
+        const int across = m_terrain_params.width / patch;
+        const int down = m_terrain_params.height / patch;
+        if (across <= 0 || down <= 0
+            || m_wet_patches.size () != std::size_t (across) * down)
+          return true;
+        for (int z = c.z0 / patch; z < (c.z0 + c.cells) / patch; ++z)
+          for (int x = c.x0 / patch; x < (c.x0 + c.cells) / patch; ++x)
+            if (m_wet_patches[std::size_t (z % down) * across + x % across])
+              return true;
+        return false;
+      }
+
       // The terrain's chunks as draw_terrain last placed them, under the
-      // bound pipeline.
-      void draw_chunks () {
+      // bound pipeline; the water's pass takes only the wet ones.
+      void draw_chunks (bool only_wet = false) {
         for (const ChunkDraw& c : m_chunks) {
+          if (only_wet && !wet (c))
+            continue;
           const int lod = std::clamp (int (c.lod), 0, lod_count - 1);
           const bool patch = c.cells == render::terrain_patch_cells;
           shaders::terrain::Chunk chunk {};
@@ -1243,8 +1262,11 @@ namespace moppe::nhal {
       // water sheet, over the opaque scene; the rivers' ripples and foam
       // stream along the current.
       void draw_ocean (const render::OceanParams&) override {
-        if (!m_have_terrain || !m_water_levels || m_chunks.empty ()
-            || m_resolved)
+        if (!m_have_terrain || !m_water_levels || m_resolved)
+          return;
+        // A view of dry land needs neither the copy nor the pass's break.
+        if (std::ranges::none_of (
+              m_chunks, [this] (const ChunkDraw& c) { return wet (c); }))
           return;
         copy_beneath_water ();
         m_device->set_pipeline (m_water);
@@ -1256,7 +1278,7 @@ namespace moppe::nhal {
         m_device->set_texture (12, m_water_flow ? m_water_flow : m_still_water);
         m_device->set_texture (13, m_beneath);
         m_device->set_texture (14, m_beneath_depth);
-        draw_chunks ();
+        draw_chunks (true);
       }
 
       // Leaves drifting down where the crowns have turned: a window of
@@ -2443,6 +2465,7 @@ namespace moppe::nhal {
         m_scene_copy_code;
       Pipeline m_water, m_leaves, m_waterfall, m_scene_copy;
       Texture m_water_levels, m_water_flow, m_still_water;
+      std::vector<std::uint8_t> m_wet_patches;
       std::vector<ChunkDraw> m_chunks;
       Pipeline m_rain;
       ProgramCode m_boulders_code, m_boulders_shadow_code;
