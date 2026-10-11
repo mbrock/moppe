@@ -115,9 +115,10 @@ namespace moppe::game {
     const JeepMeshes& meshes = jeep_meshes (r);
     const Mat4 frame = jeep_frame (jeep);
     if (riders.driver)
-      figure::draw (dl, pose_seated (jeep, frame, true));
+      figure::draw (dl, pose_seated (jeep, frame, true), riders.driver_outfit);
     if (riders.passenger)
-      figure::draw (dl, pose_seated (jeep, frame, false));
+      figure::draw (
+        dl, pose_seated (jeep, frame, false), riders.passenger_outfit);
 
     uint64_t motion_part = motion_base;
     const auto draw_part = [&] (const render::Mesh& mesh,

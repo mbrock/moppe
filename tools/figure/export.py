@@ -119,6 +119,9 @@ def main():
     lines += ["    };", "", "    constexpr DisplayColor palette[] = {"]
     for name, c in palette:
         lines.append(f"      {{{', '.join(f(x) for x in c)}}}, // {name}")
+    lines += ["    };", "", "    constexpr const char* palette_names[] = {"]
+    for name, _ in palette:
+        lines.append(f'      "{name}",')
     lines += ["    };", "", "    constexpr Vertex rest_vertices[] = {"]
     for p, n, weights in vertices:
         bones = ", ".join(str(b) for _, b in weights)
@@ -134,6 +137,7 @@ def main():
         "",
         "  const std::span<const Frame, bone_count> rest {rest_frames};",
         "  const std::span<const DisplayColor> colours {palette};",
+        "  const std::span<const char* const> colour_names {palette_names};",
         "  const std::span<const Vertex> vertices {rest_vertices};",
         "  const std::span<const Triangle> triangles {mesh_triangles};",
         "}",

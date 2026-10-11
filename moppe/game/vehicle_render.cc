@@ -222,13 +222,14 @@ namespace moppe {
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
                          bool ridden,
-                         uint64_t motion_base) {
+                         uint64_t motion_base,
+                         Outfit outfit) {
       if (ridden) {
         dl.push ();
         dl.translate (vehicle.position);
         dl.scale (rider_scale, rider_scale, rider_scale);
         dl.translate (-vehicle.position);
-        figure::draw (dl, pose_rider (vehicle));
+        figure::draw (dl, pose_rider (vehicle), outfit);
         dl.pop ();
       }
 

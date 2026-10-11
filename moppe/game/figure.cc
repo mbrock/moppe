@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include <string_view>
+
 namespace moppe::game::figure {
   namespace {
     Vec3 vec (const std::array<float, 3>& a) {
@@ -113,7 +115,47 @@ namespace moppe::game::figure {
     }
   }
 
-  void draw (render::DrawList& dl, const AvatarSkeleton& k) {
+  namespace {
+    // The green outfit repaints the clothes and leaves the rest -- skin,
+    // boots, trousers, buckles -- as modelled.
+    struct Repaint {
+      std::string_view name;
+      DisplayColor colour;
+    };
+    const Repaint green_outfit[] = {
+      { "jacket", { 0.30f, 0.46f, 0.24f } },
+      { "jacket_dark", { 0.20f, 0.32f, 0.17f } },
+      { "cap", { 0.93f, 0.52f, 0.12f } },
+      { "cap_dark", { 0.76f, 0.38f, 0.08f } },
+      { "scarf", { 0.80f, 0.26f, 0.18f } },
+      { "mitten", { 0.24f, 0.36f, 0.58f } },
+      { "pack", { 0.50f, 0.40f, 0.27f } },
+      { "pack_dark", { 0.38f, 0.30f, 0.20f } },
+      { "bedroll", { 0.24f, 0.38f, 0.56f } },
+      { "hair", { 0.80f, 0.62f, 0.30f } },
+    };
+  }
+
+  DisplayColor outfit_colour (std::size_t colour, Outfit outfit) {
+    if (outfit == Outfit::green_jacket)
+      for (const Repaint& repaint : green_outfit)
+        if (repaint.name == colour_names[colour])
+          return repaint.colour;
+    return colours[colour];
+  }
+
+  void draw (render::DrawList& dl, const AvatarSkeleton& k, Outfit outfit) {
+    // Each outfit's paints, looked up by name once.
+    static const std::array<std::vector<DisplayColor>, 2> wardrobe = [] {
+      std::array<std::vector<DisplayColor>, 2> outfits;
+      for (std::size_t o = 0; o < outfits.size (); ++o)
+        for (std::size_t c = 0; c < colours.size (); ++c)
+          outfits[o].push_back (outfit_colour (c, static_cast<Outfit> (o)));
+      return outfits;
+    }();
+    const std::vector<DisplayColor>& paints =
+      wardrobe[static_cast<std::size_t> (outfit)];
+
     static thread_local std::vector<Vec3> points, normals;
     skin (k, points, normals);
 
@@ -126,7 +168,7 @@ namespace moppe::game::figure {
     dl.fogged (true);
     dl.begin (render::Prim::Triangles);
     for (const Triangle& t : triangles) {
-      dl.color (colours[t.colour]);
+      dl.color (paints[t.colour]);
       for (const std::uint16_t i : t.vertex) {
         dl.normal (normals[i]);
         dl.vertex (points[i]);

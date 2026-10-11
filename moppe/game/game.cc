@@ -1184,7 +1184,8 @@ namespace moppe {
               camp.hammock,
               camp.swing,
               resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch),
-              time));
+              time),
+            m_outfit);
         // The basket waits on the ground under the foot of the hammock.
         Vec3 floor = hammock_middle (camp.hammock) +
                      hammock_across (camp.hammock) * 0.75f -
@@ -1895,6 +1896,11 @@ namespace moppe {
                           70.0f));
       }
 
+      Outfit their_outfit () const {
+        return m_outfit == Outfit::blue_jacket ? Outfit::green_jacket
+                                               : Outfit::blue_jacket;
+      }
+
       // The passenger's seat of the other player's jeep, in the world.
       static Vec3 companion_seat (const CompanionSnapshot& theirs) {
         const JeepPose& jeep = theirs.jeep;
@@ -1979,6 +1985,11 @@ namespace moppe {
           m_companion_hours = theirs.day_hours;
           if (!m_companion_met) {
             m_companion_met = true;
+            // So that the two can be told apart, and each machine agrees
+            // on who is who, the player with the greater number changes
+            // into the green jacket.
+            m_outfit = m_link->player () > theirs.player ? Outfit::green_jacket
+                                                         : Outfit::blue_jacket;
             make_room (theirs);
           }
           m_track.push (std::move (theirs), now);
@@ -2019,7 +2030,8 @@ namespace moppe {
           return;
         const CompanionSnapshot& theirs = *m_companion;
         m_blob.draw (dl, surface (), theirs.bike.position, 2.2f);
-        render_vehicle (r, dl, theirs.bike, theirs.mode == M_BIKE, 0x3000);
+        render_vehicle (
+          r, dl, theirs.bike, theirs.mode == M_BIKE, 0x3000, their_outfit ());
         m_blob.draw (dl, surface (), theirs.jeep.position, 3.4f);
         // This player beside them, unless seeing through their own eyes.
         render_jeep (r,
@@ -2027,7 +2039,9 @@ namespace moppe {
                      theirs.jeep,
                      { .driver = theirs.mode == M_JEEP,
                        .passenger = logic ().m_mode == M_PASSENGER &&
-                                    logic ().m_cam_mode != CAM_HELMET },
+                                    logic ().m_cam_mode != CAM_HELMET,
+                       .driver_outfit = their_outfit (),
+                       .passenger_outfit = m_outfit },
                      0x6000);
         if (theirs.hung)
           draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
@@ -2045,7 +2059,8 @@ namespace moppe {
               theirs.hammock,
               theirs.swing,
               resting_gaze (theirs.hammock, theirs.gaze_yaw, theirs.gaze_pitch),
-              time));
+              time),
+            their_outfit ());
           Vec3 floor = hammock_middle (theirs.hammock) +
                        hammock_across (theirs.hammock) * 0.75f -
                        hammock_along (theirs.hammock) * 0.5f;
@@ -2055,11 +2070,12 @@ namespace moppe {
         } else if (theirs.walker) {
           m_blob.draw (
             dl, surface (), theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
-          render_walker (dl, *theirs.walker, time, m_companion_basket);
+          render_walker (
+            dl, *theirs.walker, time, m_companion_basket, their_outfit ());
         }
         if (theirs.glider) {
           m_blob.draw (dl, surface (), theirs.glider->position, 3.4f);
-          render_glider (r, dl, *theirs.glider, time, 0x4000);
+          render_glider (r, dl, *theirs.glider, time, 0x4000, their_outfit ());
         }
       }
 
@@ -2642,8 +2658,12 @@ namespace moppe {
         // In helmet cam you ARE the rider: don't draw yourself.
         const bool helmet = actors.helmet_camera;
         if (!(helmet && actors.active_mode == M_BIKE) && !m_spectator)
-          render_vehicle (
-            r, m_world_dl, actors.bike, actors.active_mode == M_BIKE, 0x1000);
+          render_vehicle (r,
+                          m_world_dl,
+                          actors.bike,
+                          actors.active_mode == M_BIKE,
+                          0x1000,
+                          m_outfit);
         if (!m_spectator) {
           m_blob.draw (m_world_dl, surface (), actors.jeep.position, 3.4f);
           render_jeep (
@@ -2651,7 +2671,9 @@ namespace moppe {
             m_world_dl,
             actors.jeep,
             { .driver = actors.active_mode == M_JEEP && !helmet,
-              .passenger = m_companion && m_companion->mode == M_PASSENGER },
+              .passenger = m_companion && m_companion->mode == M_PASSENGER,
+              .driver_outfit = m_outfit,
+              .passenger_outfit = their_outfit () },
             0x5000);
         }
         const Basket& basket = logic ().m_basket;
@@ -2662,8 +2684,11 @@ namespace moppe {
         if (actors.walker && lying_down ())
           draw_sleeper (m_world_dl, helmet, frame.lighting.time);
         else if (actors.walker && !helmet)
-          render_walker (
-            m_world_dl, *actors.walker, frame.lighting.time, m_basket_contents);
+          render_walker (m_world_dl,
+                         *actors.walker,
+                         frame.lighting.time,
+                         m_basket_contents,
+                         m_outfit);
         else if (actors.walker)
           render_basket (
             m_world_dl, *actors.walker, frame.lighting.time, m_basket_contents);
@@ -2690,8 +2715,12 @@ namespace moppe {
           }
         }
         if (actors.glider && !helmet)
-          render_glider (
-            r, m_world_dl, *actors.glider, frame.lighting.time, 0x2000);
+          render_glider (r,
+                         m_world_dl,
+                         *actors.glider,
+                         frame.lighting.time,
+                         0x2000,
+                         m_outfit);
         draw_companion (r, m_world_dl, frame.lighting.time);
 
         r.draw_list (m_world_dl, 0x0001);
@@ -3811,6 +3840,8 @@ namespace moppe {
       double m_companion_hours = -1.0;
       bool m_companion_met = false;
       bool m_rode_along = false;
+      // What this player wears; the other wears the other.
+      Outfit m_outfit = Outfit::blue_jacket;
       bool m_companion_elsewhere = false;
       std::uint32_t m_snapshots_sent = 0;
       const char* m_notice = nullptr;

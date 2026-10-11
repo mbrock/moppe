@@ -33,8 +33,8 @@ namespace moppe::game {
       const Vec3 up (0, 1, 0);
       Vec3 forward = k.forward;
       forward[1] = 0.0f;
-      forward = length2 (forward) > 1e-6f ? normalized (forward)
-                                          : Vec3 (0, 0, 1);
+      forward =
+        length2 (forward) > 1e-6f ? normalized (forward) : Vec3 (0, 0, 1);
       const Vec3 side = cross (up, forward);
       Vec3 hand = k.wrist[0];
       const Vec3 along = k.wrist[0] - k.elbow[0];
@@ -153,9 +153,9 @@ namespace moppe::game {
         const std::uint32_t seed = basket[i].seed;
         // A ring of places around the floor, then another a layer up.
         const float layer = static_cast<float> (place / 7);
-        const float around = basket_tau * (static_cast<float> (place % 7) / 7 +
-                                           0.5f * layer / 3 +
-                                           0.08f * hash_lane (seed, 21));
+        const float around =
+          basket_tau * (static_cast<float> (place % 7) / 7 + 0.5f * layer / 3 +
+                        0.08f * hash_lane (seed, 21));
         const float out = place % 7 == 6 ? 0.0f : 0.55f;
         const float depth = std::max (0.25f, 0.85f - 0.3f * layer);
         MushroomSite lying = basket[i];
@@ -189,9 +189,10 @@ namespace moppe::game {
   void render_walker (render::DrawList& draw,
                       const WalkerPose& walker,
                       float time,
-                      std::span<const MushroomSite> basket) {
+                      std::span<const MushroomSite> basket,
+                      Outfit outfit) {
     const AvatarSkeleton k = pose_avatar (walker, time);
-    figure::draw (draw, k);
+    figure::draw (draw, k, outfit);
     draw_basket (draw, basket_frame (k), basket);
   }
 

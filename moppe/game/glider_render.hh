@@ -2,6 +2,7 @@
 #define MOPPE_GAME_GLIDER_RENDER_HH
 
 #include <moppe/game/frame_view.hh>
+#include <moppe/game/outfit.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
@@ -13,7 +14,8 @@ namespace moppe::game {
                       render::DrawList& dl,
                       const GliderPose& glider,
                       float time,
-                      uint64_t motion_base);
+                      uint64_t motion_base,
+                      Outfit outfit = Outfit::blue_jacket);
 }
 
 #endif

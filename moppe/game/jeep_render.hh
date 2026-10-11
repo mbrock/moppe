@@ -2,14 +2,17 @@
 #define MOPPE_GAME_JEEP_RENDER_HH
 
 #include <moppe/game/frame_view.hh>
+#include <moppe/game/outfit.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
 namespace moppe::game {
-  // Who is seen sitting in a jeep.
+  // Who is seen sitting in a jeep, and what each wears.
   struct JeepRiders {
     bool driver = false;
     bool passenger = false;
+    Outfit driver_outfit = Outfit::blue_jacket;
+    Outfit passenger_outfit = Outfit::blue_jacket;
   };
 
   // The jeep (models/jeep.blend) as baked meshes drawn through the

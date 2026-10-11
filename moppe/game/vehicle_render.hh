@@ -2,6 +2,7 @@
 #define MOPPE_GAME_VEHICLE_RENDER_HH
 
 #include <moppe/game/frame_view.hh>
+#include <moppe/game/outfit.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
@@ -16,7 +17,8 @@ namespace moppe {
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
                          bool ridden,
-                         uint64_t motion_base);
+                         uint64_t motion_base,
+                         Outfit outfit = Outfit::blue_jacket);
 
     // The exhaust lick, a baked cone under a breathing scale, and the
     // jump-jet plumes, soft sprites facing the camera.  Additive glow must

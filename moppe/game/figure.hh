@@ -3,6 +3,7 @@
 
 #include <moppe/color.hh>
 #include <moppe/game/avatar.hh>
+#include <moppe/game/outfit.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
 
@@ -52,6 +53,8 @@ namespace moppe::game::figure {
 
   extern const std::span<const Frame, bone_count> rest;
   extern const std::span<const DisplayColor> colours;
+  // Each colour's name in the model: jacket, cap, scarf, and so on.
+  extern const std::span<const char* const> colour_names;
   extern const std::span<const Vertex> vertices;
   extern const std::span<const Triangle> triangles;
 
@@ -64,8 +67,14 @@ namespace moppe::game::figure {
              std::vector<Vec3>& points,
              std::vector<Vec3>& normals);
 
-  // Skins the figure to `k` and draws it as smooth-shaded triangles.
-  void draw (render::DrawList& dl, const AvatarSkeleton& k);
+  // The colour a paint of the model takes in an outfit.
+  DisplayColor outfit_colour (std::size_t colour, Outfit outfit);
+
+  // Skins the figure to `k` and draws it as smooth-shaded triangles,
+  // dressed in `outfit`.
+  void draw (render::DrawList& dl,
+             const AvatarSkeleton& k,
+             Outfit outfit = Outfit::blue_jacket);
 }
 
 #endif

@@ -3,6 +3,7 @@
 
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/mushrooms.hh>
+#include <moppe/game/outfit.hh>
 #include <moppe/render/draw.hh>
 
 #include <span>
@@ -15,7 +16,8 @@ namespace moppe::game {
   void render_walker (render::DrawList& draw,
                       const WalkerPose& walker,
                       float time,
-                      std::span<const MushroomSite> basket = {});
+                      std::span<const MushroomSite> basket = {},
+                      Outfit outfit = Outfit::blue_jacket);
 
   // The basket alone, where the walker's hand holds it: what a walker
   // seeing through their own eyes finds when looking down.

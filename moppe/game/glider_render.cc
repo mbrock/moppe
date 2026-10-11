@@ -77,12 +77,13 @@ namespace moppe::game {
                       render::DrawList& dl,
                       const GliderPose& glider,
                       float time,
-                      uint64_t motion_base) {
+                      uint64_t motion_base,
+                      Outfit outfit) {
     const GliderMeshes& meshes = glider_meshes (r);
     const Mat4 frame = glider_frame (glider);
     r.draw_mesh (*meshes.glider, frame, motion_base + 1);
     if (glider.bike_attached)
       r.draw_mesh (*meshes.tether, frame, motion_base + 2);
-    figure::draw (dl, pose_pilot (frame, time));
+    figure::draw (dl, pose_pilot (frame, time), outfit);
   }
 }
