@@ -148,23 +148,16 @@ and measures the notch and home bar, which the HUD and the buttons stay
 inside (`platform::safe_insets`). Added to an iPhone's home screen it opens
 without the browser's bars.
 
-A phone -- fingers, and nothing to hover with -- also starts with lighter
-graphics, since its GPU has a screen of three pixels a point to fill and
-is the Apple TV's or thereabouts (`pre.js`):
-
-- `--graphics-quality phone` ahead of the address's own arguments, which
-  can replace it (`?args=--graphics-quality+high`): the Apple TV's preset
-  -- no terrain shadows, bloom, auto-exposure, or undergrowth -- with the
-  scene at half the drawable each way.
-- `MOPPE_PIXELDENSITY=2`, the most pixels a point's width is drawn with
-  (the SDL host's, on any platform): the drawable is two pixels a point
-  and the browser stretches the canvas over the screen's three, so every
-  pass fills less than half the pixels. `?MOPPE_PIXELDENSITY=3` restores
-  them, and `1.5` sheds more.
-
-Resolution is shed to hold the frame rate only where the browser offers
-`timestamp-query` (render::DynamicResolution wants GPU times), which a
-phone's may not. `?MOPPE_HUD=debug` shows the frame rate on the phone.
+A phone -- fingers, and nothing to hover with -- also draws fewer pixels
+(`pre.js`): `MOPPE_PIXELDENSITY=2`, the most pixels a point's width is
+drawn with (the SDL host's, on any platform). Its screen has three, so the
+drawable is two a point and the browser stretches the canvas over them,
+and every pass fills less than half the pixels; that was what an iPhone
+laboured under, and with it the ordinary graphics run smoothly there.
+`?MOPPE_PIXELDENSITY=3` restores them, and `1.5` sheds more. Beyond that
+the scene's resolution is shed to hold the frame rate as on the desktop,
+where the browser offers `timestamp-query`. `?MOPPE_HUD=debug` shows the
+frame rate on the phone.
 
 The controls have been driven in desktop Chrome emulating a phone's
 touches (walking, looking, lighting a fire), not yet on a phone; whether a
