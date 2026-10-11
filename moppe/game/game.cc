@@ -2546,7 +2546,8 @@ namespace moppe {
       }
 
       // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
-      // ridden bike or the glider, to judge the rider and the machine.
+      // ridden bike, the glider, or the driven jeep, to judge the rider and
+      // the machine.
       void ride_capture_camera () {
         static const std::string_view view = [] {
           const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
@@ -2555,16 +2556,20 @@ namespace moppe {
         if (view.empty () || logic ().m_mode == M_FOOT)
           return;
         const bool gliding = logic ().m_mode == M_GLIDER;
+        const bool driving = logic ().m_mode == M_JEEP;
         const auto& bike = session ().bike ();
-        Vec3 heading = gliding ? session ().glider ().heading ()
-                               : bike.render_orientation ();
+        const auto& jeep = session ().jeep ();
+        Vec3 heading = gliding   ? session ().glider ().heading ()
+                       : driving ? jeep.forward ()
+                                 : bike.render_orientation ();
         heading[1] = 0.0f;
         heading = normalized (heading);
         const Vec3 right (heading[2], 0.0f, -heading[0]);
-        const Vec3 at = gliding
-                          ? session ().glider ().position () - Vec3 (0, 0.9f, 0)
-                          : bike.render_position () + Vec3 (0, 0.4f, 0);
-        const float away = gliding ? 7.0f : 4.5f;
+        const Vec3 at =
+          gliding   ? session ().glider ().position () - Vec3 (0, 0.9f, 0)
+          : driving ? jeep.position () + Vec3 (0, 0.5f, 0)
+                    : bike.render_position () + Vec3 (0, 0.4f, 0);
+        const float away = gliding ? 7.0f : driving ? 6.0f : 4.5f;
         const Vec3 from = view == "front"
                             ? heading * away + right * (away * 0.27f)
                             : right * away + heading * 0.6f;

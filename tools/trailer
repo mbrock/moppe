@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""Record and cut the trailer: a vertical video of what there is to do.
+
+  tools/trailer OUTPUT.mp4 [--work DIR] [--url TEXT] [--fresh] [--draft]
+
+The game records every clip itself (tools/record), so the film is the
+same on any machine: a morning title over the birches, a few views of the
+default world, then walking, riding, gliding, two in the jeep, mushrooms,
+supper, and a night in the hammock, ending on the title's birches under
+the stars.  The clips are kept in DIR (build/trailer) and only missing
+ones are recorded, so a change to the cut alone takes a few minutes;
+--fresh records them all again.  --url sets the address on the end card
+("" for none) and --draft encodes quickly.
+
+The shot lists below are of the default world (seed 123, 2048 samples),
+like data/opening.txt; the viewpoints came from the gazetteer's
+gazetteer.csv.  To change the film, edit CLIPS (what is recorded) and
+FILM (what is cut from it, and the captions).
+"""
+
+import argparse
+import concurrent.futures
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FONT = os.path.join(ROOT, "fonts", "IosevkaAile-Regular.ttf")
+WIDTH, HEIGHT, FPS = 1080, 1920, 60
+
+WORLD = "world seed 123 resolution 2048 profile play\n"
+BIRCHES = ("shot birches eye 4667.97 156.42 3750.00 heading 45.8"
+           " pitch -2.1 fov 62 hold 5 push 4 rise 0.3 sway 0.6\n")
+REELS = {
+  "day": WORLD + BIRCHES +
+  "shot grove eye 4414.70 194.72 639.57 heading -40.3 pitch -5.6"
+  " fov 70 hold 5 push 2 pan 4 sway 0.6\n"
+  "shot waterfall eye 3092.44 125.91 2583.59 heading -98.1 pitch -25.0"
+  " fov 58 hold 5 rise 2 tilt -3 sway 0.6\n",
+  "dusk": WORLD +
+  "shot coast eye 654.09 57.50 1243.59 heading -93.2 pitch -1.9"
+  " fov 68 hold 5 push 5 pan 3 sway 0.6\n",
+  "night": WORLD + BIRCHES,
+}
+
+# name: (scene, seconds, tools/record options, environment)
+CLIPS = {
+  "day": ("opening", 15, [], {"MOPPE_OPENING": "day"}),
+  "dusk": ("opening", 5, ["--clock", "17.1"], {"MOPPE_OPENING": "dusk"}),
+  "night": ("opening", 5, ["--clock", "22"], {"MOPPE_OPENING": "night"}),
+  "walk": ("walk", 8, [],
+           {"MOPPE_DEMO": "forest", "MOPPE_WALK_CAMERA": "front"}),
+  "ride-side": ("ride", 13, ["--start", "3"],
+                {"MOPPE_RIDE_CAMERA": "side"}),
+  "ride": ("ride", 35, ["--start", "3"], {}),
+  "glide-side": ("glide", 12, [], {"MOPPE_RIDE_CAMERA": "side"}),
+  "glide": ("glide", 16, [], {}),
+  # Two players: a second game rides along in the jeep's other seat.
+  "jeep": ("jeep", 16, ["--start", "4"],
+           {"MOPPE_RIDE_CAMERA": "front", "MOPPE_MULTIPLAYER": "1"}),
+  "forage": ("forage", 7, [], {"MOPPE_WALK_CAMERA": "front"}),
+  "fire": ("supper", 22, [], {"MOPPE_WALK_CAMERA": "front"}),
+  "supper": ("supper", 25, [], {}),
+  "camp": ("camp", 32, [], {}),
+}
+TWO_PLAYERS = {"jeep"}
+
+# The opening's skip prompt sits at the foot of its frames; crop it away.
+REEL = dict(zoom=1.05, y=0.0)
+
+# The film: a caption over a run of cuts, each (clip, start, seconds) and
+# perhaps a speed, or a zoom about a height in the frame.
+FILM = [
+  ("title", [("day", 0.2, 4.6, REEL)]),
+  (None, [("day", 5.3, 2.0, REEL),
+          ("day", 10.5, 2.0, REEL),
+          ("dusk", 0.3, 2.2, REEL)]),
+  ("walk", [("walk", 5.25, 2.15, {})]),
+  ("ride", [("ride-side", 9.3, 2.7, {}),
+            ("ride", 16.3, 3.0, {}),
+            ("ride", 32.8, 1.8, {})]),
+  ("fly", [("glide-side", 8.0, 3.6, {}),
+           ("glide", 12.5, 3.0, {})]),
+  ("bring a friend", [("jeep", 12.2, 3.2, dict(zoom=1.25, y=0.56))]),
+  ("pick mushrooms", [("forage", 3.5, 2.5, dict(zoom=1.25, y=0.5))]),
+  ("fry them", [("fire", 19.3, 2.0, dict(zoom=1.25, y=0.7)),
+                ("supper", 21.8, 2.8, {})]),
+  ("sleep under the stars", [("camp", 3.3, 2.0, {}),
+                             ("camp", 11.6, 2.0, {}),
+                             ("camp", 15.0, 2.6, {}),
+                             ("camp", 19.5, 12.0, dict(speed=4))]),
+  ("end", [("night", 0.2, 4.7, REEL)]),
+]
+NAME = "moppe"
+TAGLINE = "a small game about being outdoors"
+INVITATION = "play it in your browser"
+# Ink and the soft shade behind it: light on the land, dark on a morning sky.
+LIGHT, DARK = ("0xffffff", "0x000000"), ("0x2b2118", "0xfff4dc")
+
+
+def ffmpeg (*arguments):
+  subprocess.run (["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                   *arguments], check=True)
+
+
+def game_path ():
+  build = os.environ.get ("MOPPE_BUILD_DIR", os.path.join (ROOT, "build"))
+  if sys.platform == "darwin":
+    return os.path.join (build, "moppe.app", "Contents", "MacOS", "moppe")
+  return os.path.join (build, "moppe")
+
+
+def start_passenger (log):
+  """A second game on this machine that takes the jeep's other seat."""
+  environment = dict (os.environ, MOPPE_RIDE_ALONG="1",
+                      MOPPE_OPENING="none", MOPPE_MULTIPLAYER="1")
+  command = [game_path (), "--graphics-quality", "low"]
+  if sys.platform == "linux" and shutil.which ("gamescope"):
+    command = ["gamescope", "-W", "640", "-H", "360", "-w", "640", "-h",
+               "360", "--backend", "headless", "--", *command,
+               "--fullscreen"]
+  else:
+    command += ["--windowed", "--inactive", "--window-size", "640x360"]
+  passenger = subprocess.Popen (command, env=environment, stdout=log,
+                                stderr=subprocess.STDOUT,
+                                start_new_session=True)
+  # It must be in the world before the driver sets off.
+  time.sleep (14)
+  return passenger
+
+
+def record (work, name):
+  scene, seconds, options, switches = CLIPS[name]
+  output = os.path.join (work, f"{name}.mp4")
+  environment = dict (os.environ, **switches)
+  if scene == "opening":
+    reel = os.path.join (work, f"{name}.txt")
+    with open (reel, "w") as file:
+      file.write (REELS[switches["MOPPE_OPENING"]])
+    environment["MOPPE_OPENING"] = reel
+  with open (os.path.join (work, f"{name}.log"), "w") as log:
+    passenger = start_passenger (log) if name in TWO_PLAYERS else None
+    try:
+      subprocess.run ([os.path.join (ROOT, "tools", "record"), output,
+                       scene, "--seconds", str (seconds), "--fps",
+                       str (FPS), "--size", f"{WIDTH}x{HEIGHT}", *options],
+                      env=environment, stdout=log,
+                      stderr=subprocess.STDOUT, check=True)
+    finally:
+      if passenger:
+        os.killpg (passenger.pid, signal.SIGKILL)
+        passenger.wait ()
+  print (f"trailer: recorded {name}", file=sys.stderr)
+
+
+def cut (work, index, clip):
+  name, start, seconds, how = clip
+  speed, zoom = how.get ("speed", 1), how.get ("zoom", 1)
+  output = os.path.join (work, "cut", f"{index:02d}-{name}.mp4")
+  filters = []
+  if speed != 1:
+    filters.append (f"setpts=PTS/{speed}")
+  if zoom != 1:
+    width, height = WIDTH / zoom, HEIGHT / zoom
+    top = HEIGHT * how.get ("y", 0.5) - height / 2
+    top = min (max (top, 0), HEIGHT - height)
+    filters.append (f"crop={width:.0f}:{height:.0f}:"
+                    f"{(WIDTH - width) / 2:.0f}:{top:.0f},"
+                    f"scale={WIDTH}:{HEIGHT}:flags=lanczos")
+  filters.append (f"fps={FPS},setsar=1")
+  ffmpeg ("-ss", str (start), "-t", str (seconds), "-i",
+          os.path.join (work, f"{name}.mp4"), "-vf", ",".join (filters),
+          "-an", "-c:v", "libx264", "-crf", "10", "-preset", "veryfast",
+          "-pix_fmt", "yuv420p", output)
+  return output, seconds / speed
+
+
+def caption_image (work, index, lines, colours):
+  """A transparent frame with `lines` of (text, size, height) set in the
+  ink colour over a soft shade of the other."""
+  ink, shade = colours
+  path = os.path.join (work, "cut", f"caption-{index}.png")
+
+  def text (colour):
+    drawn = []
+    for row, (words, size, height) in enumerate (lines):
+      file = os.path.join (work, "cut", f"caption-{index}-{row}.txt")
+      with open (file, "w") as out:
+        out.write (words)
+      drawn.append (f"drawtext=fontfile={FONT}:textfile={file}:"
+                    f"fontcolor={colour}:fontsize={size}:"
+                    f"x=(w-text_w)/2:y=h*{height}-ascent")
+    return ",".join (drawn)
+
+  def canvas (colour):
+    return f"color={colour}@0:s={WIDTH}x{HEIGHT},format=rgba"
+
+  ffmpeg ("-f", "lavfi", "-i", canvas (shade), "-f", "lavfi", "-i",
+          canvas (ink), "-filter_complex",
+          f"[0]split[a][b];"
+          f"[a]{text (shade)},gblur=sigma=12,colorchannelmixer=aa=0.6[wide];"
+          f"[b]{text (shade)},gblur=sigma=3,colorchannelmixer=aa=0.4[near];"
+          f"[1]{text (ink)}[text];[wide][near]overlay=format=auto[shade];"
+          f"[shade][text]overlay=format=auto", "-frames:v", "1", path)
+  return path
+
+
+def assemble (work, output, url, draft):
+  os.makedirs (os.path.join (work, "cut"), exist_ok=True)
+  cuts, captions, now = [], [], 0.0
+  for caption, section in FILM:
+    begin = now
+    for clip in section:
+      path, length = cut (work, len (cuts), clip)
+      cuts.append (path)
+      now += length
+    # (lines, appears, goes, seconds of fade, colours)
+    if caption == "title":
+      captions.append (([(NAME, 230, 0.26), (TAGLINE, 44, 0.345)],
+                        begin + 1.1, now - 0.35, 0.9, DARK))
+    elif caption == "end":
+      lines = [(NAME, 230, 0.26)]
+      if url:
+        lines += [(INVITATION, 44, 0.345), (url, 64, 0.4)]
+      captions.append ((lines, begin + 0.5, now, 0.8, LIGHT))
+    elif caption:
+      size = min (92, 92 * 15 // len (caption))
+      captions.append (([(caption, size, 0.76)], begin + 0.12,
+                        min (now - 0.25, begin + 2.6), 0.22, LIGHT))
+  total = now
+
+  listing = os.path.join (work, "cut", "list.txt")
+  with open (listing, "w") as file:
+    for path in cuts:
+      file.write (f"file '{path}'\n")
+  inputs = ["-f", "concat", "-safe", "0", "-i", listing]
+  # The film rises from black and falls to it under the last caption.
+  graph = [f"[0:v]fade=in:st=0:d=0.9,"
+           f"fade=out:st={total - 0.8:.2f}:d=0.8[v0]"]
+  for n, (lines, appears, goes, fade, colours) in enumerate (captions, 1):
+    image = caption_image (work, n, lines, colours)
+    inputs += ["-loop", "1", "-framerate", str (FPS), "-t", f"{total:.2f}",
+               "-i", image]
+    leave = "" if goes >= total else \
+      f",fade=out:st={goes - fade:.2f}:d={fade}:alpha=1"
+    graph.append (f"[{n}:v]format=rgba,"
+                  f"fade=in:st={appears:.2f}:d={fade}:alpha=1{leave}[c{n}]")
+    graph.append (f"[v{n - 1}][c{n}]overlay=enable="
+                  f"'between(t,{appears:.2f},{goes:.2f})'[v{n}]")
+  # A silent track: some players and uploaders want one.
+  inputs += ["-f", "lavfi", "-t", f"{total:.2f}", "-i",
+             "anullsrc=channel_layout=stereo:sample_rate=48000"]
+  ffmpeg (*inputs, "-filter_complex", ";".join (graph), "-map",
+          f"[v{len (captions)}]", "-map", f"{len (captions) + 1}:a",
+          "-c:v", "libx264", "-crf", "19", "-preset",
+          "veryfast" if draft else "slow", "-pix_fmt", "yuv420p", "-r",
+          str (FPS), "-c:a", "aac", "-b:a", "96k", "-movflags",
+          "+faststart", "-t", f"{total:.2f}", output)
+  print (f"{output}: {total:.1f} s")
+
+
+def main ():
+  parser = argparse.ArgumentParser (
+    description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+  parser.add_argument ("output")
+  parser.add_argument ("--work", default=os.path.join (ROOT, "build",
+                                                       "trailer"))
+  parser.add_argument ("--url", default="moppe.swa.sh")
+  parser.add_argument ("--fresh", action="store_true")
+  parser.add_argument ("--draft", action="store_true")
+  options = parser.parse_args ()
+
+  # ffmpeg and gamescope come from the development shell, as for
+  # tools/record.
+  if not shutil.which ("ffmpeg") and shutil.which ("nix") and \
+     not os.environ.get ("MOPPE_RECORD_SHELL"):
+    os.environ["MOPPE_RECORD_SHELL"] = "1"
+    os.execvp ("nix", ["nix", "develop", ROOT, "-c", *sys.argv])
+  if not os.access (game_path (), os.X_OK):
+    sys.exit ("trailer: moppe is not built; run cmake --build build first")
+
+  work = os.path.abspath (options.work)
+  os.makedirs (work, exist_ok=True)
+  missing = [name for name in CLIPS if options.fresh or
+             not os.path.exists (os.path.join (work, f"{name}.mp4"))]
+  # The two-player clip has the default port to itself: the others play
+  # alone, and it is recorded after them.
+  alone = [name for name in missing if name not in TWO_PLAYERS]
+  with concurrent.futures.ThreadPoolExecutor (max_workers=2) as pool:
+    list (pool.map (lambda name: record (work, name), alone))
+  for name in missing:
+    if name in TWO_PLAYERS:
+      record (work, name)
+  assemble (work, os.path.abspath (options.output), options.url,
+            options.draft)
+
+
+if __name__ == "__main__":
+  main ()

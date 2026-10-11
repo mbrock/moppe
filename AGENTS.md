@@ -112,6 +112,14 @@
     itself when ffmpeg is not on PATH (`MOPPE_FFMPEG` names another).
     In play, `V` starts a video of what is on screen and `V` again ends
     it: `clip-NNN.mp4` in the run's screenshot directory.
+  - The trailer: `tools/trailer OUTPUT.mp4` records a dozen clips with
+    `tools/record` (views of the default world from an opening shot list,
+    the scripted walks and rides, and the jeep with a second game riding
+    along) and cuts them into a vertical 1080x1920 film of under a minute
+    with captions in the bundled face. The clips are kept in
+    `build/trailer`, so a change to the cut (`FILM` in the script) takes a
+    few minutes; `--fresh` records them again, `--url ""` drops the
+    address from the end card, and `--draft` encodes quickly.
   - The opening is authored: `data/opening.txt` lists a few held shots of the
     default world (seed 123, 2048 samples, play), each drifting gently
     (`push`/`truck`/`rise` metres, `pan`/`tilt`/`zoom` degrees, a breathing
@@ -231,7 +239,7 @@
     half again life size; the glider's pilot hangs prone at the basebar.
     `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
-    ahead of the bike or glider.
+    ahead of the bike, the glider, or the driven jeep.
   - The jeep (`moppe/mov/jeep.*`, `models/jeep.blend` from
     `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits a few
     steps to the bike's left. On foot, `F` beside it drives it (nearer it
