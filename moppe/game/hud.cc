@@ -539,6 +539,22 @@ namespace moppe {
                      cheer,
                      TextAlign::Center);
       }
+      // A word on supper, where a pick is celebrated.
+      const float sated = clamp01 (1.0f - (st.meal_age_s - 3.2f) / 1.0f) *
+                          clamp01 (st.meal_age_s / 0.25f);
+      if (sated > 0.002f && st.meal) {
+        TextStyle word;
+        word.size = 19.0f;
+        word.red = word.green = word.blue = ink;
+        word.alpha = 0.95f * ease (sated);
+        word.tracking = 0.02f;
+        draw_shaded (text,
+                     0.5f * width_pts,
+                     height_pts - 96.0f - 10.0f * (1.0f - ease (sated)),
+                     st.meal,
+                     word,
+                     TextAlign::Center);
+      }
       // News of the other player, small at the top of the frame.
       const float told = clamp01 (1.0f - (st.notice_age_s - 4.0f) / 1.2f) *
                          clamp01 (st.notice_age_s / 0.4f);
@@ -693,6 +709,25 @@ namespace moppe {
           action = *deploy_key
                      ? "Pick the " + std::string (st.mushroom_in_reach)
                      : name + " within reach";
+        }
+      } else if (st.on_foot && st.cook != HudState::Cook::none) {
+        key = deploy_key;
+        switch (st.cook) {
+        case HudState::Cook::fry:
+          action = *deploy_key ? "Fry the mushrooms" : "Mushrooms to fry";
+          break;
+        case HudState::Cook::frying:
+          key = "";
+          action = "The mushrooms are frying";
+          break;
+        case HudState::Cook::eat:
+          action = *deploy_key ? "Eat" : "Supper is ready";
+          break;
+        case HudState::Cook::eat_burnt:
+          action = *deploy_key ? "Eat them anyway" : "Supper is burnt";
+          break;
+        case HudState::Cook::none:
+          break;
         }
       } else if (st.on_foot && st.camp != HudState::Camp::none) {
         switch (st.camp) {

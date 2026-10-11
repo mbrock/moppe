@@ -547,6 +547,94 @@ namespace moppe::game {
       std::pow (std::clamp (burn * flicker, 0.0f, 1.0f), 1.0f / 2.2f));
   }
 
+  float pan_cooked (const Pan& pan, double now) {
+    const float age = static_cast<float> (now - pan.since);
+    if (!pan.on || age <= 0.0f)
+      return 0.0f;
+    if (age < 9.0f)
+      return age / 9.0f;
+    if (age < 40.0f)
+      return 1.0f;
+    return std::min (2.0f, 1.0f + (age - 40.0f) / 14.0f);
+  }
+
+  Pan pan_set_on (const Vec3& hearth, const Vec3& feet) {
+    using namespace camp_parts;
+    Vec3 toward = feet - hearth;
+    toward[1] = 0.0f;
+    toward = length2 (toward) > 1e-6f ? normalized (toward) : Vec3 (0, 0, 1);
+    Pan pan;
+    pan.on = true;
+    pan.place = hearth + toward * 0.36f + world_up * 0.17f;
+    pan.yaw = std::atan2 (toward[2], toward[0]);
+    return pan;
+  }
+
+  void draw_pan (render::DrawList& dl,
+                 const Vec3& place,
+                 float yaw,
+                 std::span<const MushroomSite> mushrooms,
+                 float cooked) {
+    using namespace camp_parts;
+    constexpr float radius = 0.17f;
+    constexpr float wall = 0.045f;
+    constexpr int rim = 14;
+    render::DrawState solid;
+    solid.cull = false;
+    dl.state (solid);
+    dl.lit (true);
+    dl.fogged (true);
+    dl.begin (render::Prim::Triangles);
+    const auto round = [&] (int i, float r, float height) {
+      const float a = tau * i / rim;
+      return place + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r +
+             world_up * height;
+    };
+    // The floor, glistening a little, and the wall round it.
+    dl.color (0.11f, 0.10f, 0.10f);
+    dl.normal (world_up);
+    for (int i = 0; i < rim; ++i) {
+      dl.vertex (place);
+      dl.vertex (round (i + 1, radius, 0.0f));
+      dl.vertex (round (i, radius, 0.0f));
+    }
+    dl.color (0.07f, 0.07f, 0.075f);
+    for (int i = 0; i < rim; ++i) {
+      const float a = tau * (i + 0.5f) / rim;
+      dl.normal (normalized (Vec3 (std::cos (a), 0.4f, std::sin (a))));
+      dl.vertex (round (i, radius, 0.0f));
+      dl.vertex (round (i + 1, radius, 0.0f));
+      dl.vertex (round (i + 1, radius * 1.1f, wall));
+      dl.vertex (round (i, radius, 0.0f));
+      dl.vertex (round (i + 1, radius * 1.1f, wall));
+      dl.vertex (round (i, radius * 1.1f, wall));
+    }
+    const Vec3 out (std::cos (yaw), 0.0f, std::sin (yaw));
+    tube (dl,
+          place + out * (radius * 1.05f) + world_up * wall,
+          place + out * (radius + 0.27f) + world_up * (wall + 0.035f),
+          0.014f,
+          6);
+
+    // The mushrooms lie on their sides around the middle.
+    for (std::size_t i = 0; i < mushrooms.size (); ++i) {
+      MushroomSite lying = mushrooms[i];
+      const float around =
+        tau * (i + 0.5f) / mushrooms.size () + hash_lane (lying.seed, 31);
+      lying.base = place +
+                   Vec3 (std::cos (around), 0.0f, std::sin (around)) *
+                     (mushrooms.size () > 1 ? 0.07f : 0.0f) +
+                   world_up * 0.03f;
+      lying.scale = 0.5f * mushrooms[i].scale;
+      lying.lean = 1.3f;
+      lying.lean_toward = around + 1.9f;
+      lying.cooked = cooked;
+      draw_mushroom (dl, lying);
+    }
+    dl.end ();
+    dl.state (render::DrawState ());
+  }
+
   void draw_hearth (render::DrawList& dl, const Vec3& hearth, float burn) {
     using namespace camp_parts;
     const auto seed = static_cast<std::uint32_t> (

@@ -56,6 +56,17 @@ namespace moppe::game {
     Vec3 hearth {};
     float fire_burn = 0.0f;
 
+    // Their frying pan, if it is on a fire: where, its handle's way,
+    // how done (camp.hh's pan_cooked), and the mushrooms in it.
+    bool pan_on = false;
+    Vec3 pan_place {};
+    float pan_yaw = 0.0f;
+    float pan_cooked = 0.0f;
+    std::uint8_t pan_count = 0;
+    std::uint32_t pan_mushrooms[Pan::room] {};
+
+    // How many of their picks have left their basket for the pan.
+    std::uint32_t pick_used = 0;
     // How many mushrooms they have picked in all, and some of them: the
     // plan's indices of picks `picks_from`, `picks_from + 1`, ...
     std::uint32_t pick_count = 0;

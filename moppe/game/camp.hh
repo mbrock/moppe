@@ -15,6 +15,7 @@
 #include <moppe/color.hh>
 #include <moppe/game/avatar.hh>
 #include <moppe/game/camp_state.hh>
+#include <moppe/game/mushrooms.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/trunk_field.hh>
 #include <moppe/render/draw.hh>
@@ -90,6 +91,24 @@ namespace moppe::game {
   Vec3 fire_light_position (const Camp& camp);
   DisplayColor fire_light_color (float burn, float time);
   inline constexpr float fire_light_reach = 17.0f;
+
+  // How done what is in the pan is: rising to one, fried golden, over
+  // the first nine seconds; held there for half a minute; then on to
+  // two, burnt black, for anyone who forgets it.
+  float pan_cooked (const Pan& pan, double now);
+  inline constexpr float pan_reach = 2.6f;
+
+  // Where a cook standing at `feet` sets a pan on the hearth's stones:
+  // on their side of the fire, its handle toward them.
+  Pan pan_set_on (const Vec3& hearth, const Vec3& feet);
+
+  // A small iron pan at `place`, its handle along `yaw`, and the
+  // mushrooms lying in it as done as `cooked`.
+  void draw_pan (render::DrawList& dl,
+                 const Vec3& place,
+                 float yaw,
+                 std::span<const MushroomSite> mushrooms,
+                 float cooked);
 
   // The ring of stones, the logs, and the bed of ash and embers.
   void draw_hearth (render::DrawList& dl, const Vec3& hearth, float burn);

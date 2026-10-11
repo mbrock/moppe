@@ -45,6 +45,14 @@
     ground, and `T` near it puts it out; it throws sparks and smoke and
     lights what stands round it (the renderer's one point light,
     `FrameParams::lamp_*`). The camp is `GameLogicState::m_camp`.
+  - Supper: on foot within a couple of steps of a burning fire (one's
+    own or the other player's) with mushrooms in the basket, `E` sets a
+    pan of up to four on the hearth's stones (`Camp::pan`); they fry in
+    nine seconds, keep for half a minute, and then burn. `E` by the pan
+    eats them, which mends the walker (less so burnt). The fried ones
+    leave the basket (`Basket::used`) but stay picked. `MOPPE_WALK=supper`
+    (`tools/record OUT.mp4 supper`) forages three, lights a fire, fries,
+    and eats.
   - The day turns (`moppe/game/daylight.hh`): the world lies at 60 degrees
     north on the autumn equinox with north along -Z, which makes the sun
     the game was always lit by a quarter-past-nine morning sun, so play

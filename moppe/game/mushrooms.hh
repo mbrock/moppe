@@ -32,6 +32,9 @@ namespace moppe::game {
     float lean_toward = 0.0f;
     std::uint32_t seed = 0;
     MushroomKind kind = MushroomKind::chanterelle;
+    // How long over a fire: none raw, one fried golden brown, two burnt
+    // black.
+    float cooked = 0.0f;
   };
 
   struct MushroomPlan {

@@ -855,7 +855,9 @@ namespace moppe {
                     << " m from the spawn" << std::endl;
           // The foraging script starts a few steps from them.
           const char* walk = moppe::environment ("MOPPE_WALK");
-          if (walk && std::string_view (walk) == "forage" &&
+          if (walk &&
+              (std::string_view (walk) == "forage" ||
+               std::string_view (walk) == "supper") &&
               logic ().m_mode == M_FOOT) {
             Vec3 away = m_spawn_position - at;
             away[1] = 0.0f;
@@ -961,6 +963,126 @@ namespace moppe {
           if (std::fabs (ground_height (hearth + off) - hearth[1]) > 0.22f)
             return std::nullopt;
         return hearth;
+      }
+
+      // The fire a walker could cook on: the nearest one burning well
+      // within a couple of steps, their own or the other player's.
+      std::optional<Vec3> fire_at_hand () const {
+        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+          return std::nullopt;
+        const Vec3 feet = session ().walker ().position ();
+        const Camp& camp = logic ().m_camp;
+        std::optional<Vec3> found;
+        float nearest = 2.4f * 2.4f;
+        const auto consider = [&] (const Vec3& hearth, float burn) {
+          Vec3 to = feet - hearth;
+          to[1] = 0.0f;
+          if (burn > 0.5f && length2 (to) < nearest) {
+            nearest = length2 (to);
+            found = hearth;
+          }
+        };
+        consider (camp.hearth, fire_burn (camp, logic ().m_total_time));
+        if (m_companion && m_companion->hearth_laid)
+          consider (m_companion->hearth, m_companion->fire_burn);
+        return found;
+      }
+
+      bool beside_pan () const {
+        const Pan& pan = logic ().m_camp.pan;
+        if (!pan.on || logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+          return false;
+        Vec3 to = session ().walker ().position () - pan.place;
+        to[1] = 0.0f;
+        return length2 (to) < pan_reach * pan_reach;
+      }
+
+      // What there is to do about supper where the walker stands.
+      HudState::Cook supper_at_hand () const {
+        const Camp& camp = logic ().m_camp;
+        const Basket& basket = logic ().m_basket;
+        if (beside_pan ()) {
+          const float cooked = pan_cooked (camp.pan, logic ().m_total_time);
+          return cooked < 1.0f   ? HudState::Cook::frying
+                 : cooked > 1.4f ? HudState::Cook::eat_burnt
+                                 : HudState::Cook::eat;
+        }
+        if (!camp.pan.on && basket.used < basket.picked.size () &&
+            fire_at_hand ())
+          return HudState::Cook::fry;
+        return HudState::Cook::none;
+      }
+
+      // By a fire, the pick key sets a pan of mushrooms from the basket
+      // on its stones; once they are fried it eats them, which mends the
+      // walker -- less so when they were left to burn.
+      void cook_supper (InputFrame& input) {
+        Camp& camp = logic ().m_camp;
+        Basket& basket = logic ().m_basket;
+        const double now = logic ().m_total_time;
+        if (logic ().m_mode == M_FOOT && input.deploy_glider &&
+            !m_mushrooms
+               .within_reach (session ().walker ().position (),
+                              session ().walker ().heading ())
+               .has_value ()) {
+          switch (supper_at_hand ()) {
+          case HudState::Cook::fry: {
+            Pan pan =
+              pan_set_on (*fire_at_hand (), session ().walker ().position ());
+            pan.since = now;
+            pan.next_steam = now + 1.0;
+            while (pan.count < Pan::room &&
+                   basket.used < basket.picked.size ()) {
+              const std::uint32_t index = basket.picked[basket.used++];
+              pan.mushrooms[pan.count++] = index;
+              if (index < m_mushrooms.mushroom_count ())
+                --basket
+                    .count[static_cast<int> (m_mushrooms.site (index).kind)];
+            }
+            camp.pan = pan;
+            input.deploy_glider = false;
+            break;
+          }
+          case HudState::Cook::eat:
+          case HudState::Cook::eat_burnt:
+            camp.ate_cooked = pan_cooked (camp.pan, now);
+            camp.ate_count = camp.pan.count;
+            camp.ate_time = now;
+            camp.pan.on = false;
+            logic ().m_health = std::min (
+              100.0f,
+              logic ().m_health +
+                (camp.ate_cooked > 1.4f ? 5.0f : 20.0f) * camp.ate_count);
+            input.deploy_glider = false;
+            break;
+          case HudState::Cook::frying:
+            input.deploy_glider = false;
+            break;
+          case HudState::Cook::none:
+            break;
+          }
+        }
+
+        // What fries gives off a little steam, and then smoke.
+        Pan& pan = camp.pan;
+        if (!pan.on || now < pan.next_steam)
+          return;
+        const float cooked = pan_cooked (pan, now);
+        pan.next_steam = now + (cooked > 1.2f ? 0.25 : 0.45);
+        const float shade =
+          cooked > 1.2f ? 0.18f : 0.55f + 0.35f * m_sky.daylight;
+        Dust::Style steam;
+        steam.size = 0.16f * u::m;
+        steam.lifetime = 1.6f * u::s;
+        steam.downward_acceleration =
+          -0.5f * isq::acceleration[u::m / pow<2> (u::s)];
+        steam.spread = 0.25f * one;
+        session ().dust ().emit (
+          moppe::position (pan.place + Vec3 (0, 0.08f, 0)),
+          velocity (Vec3 (0, 0.5f, 0)),
+          1,
+          DisplayColor (shade, shade, shade),
+          steam);
       }
 
       // Lying in the hammock the hours run forty times as fast: one goes
@@ -1143,8 +1265,18 @@ namespace moppe {
         const Camp& camp = logic ().m_camp;
         state.resting = camp.resting;
         state.clock_hours = m_sky.clock;
+        if (static_cast<float> (logic ().m_total_time - camp.ate_time) < 6.0f) {
+          m_meal_note =
+            camp.ate_cooked > 1.4f ? "Burnt to a cinder. Still, it is supper."
+            : camp.ate_count > 1   ? "Fried mushrooms by the fire. Lovely."
+                                   : "A fried mushroom by the fire. Lovely.";
+          state.meal = m_meal_note;
+          state.meal_age_s =
+            static_cast<float> (logic ().m_total_time - camp.ate_time);
+        }
         if (logic ().m_mode != M_FOOT || state.mushroom_in_reach)
           return;
+        state.cook = supper_at_hand ();
         if (camp.resting)
           state.camp = HudState::Camp::get_up;
         else if (beside_hammock ())
@@ -1164,6 +1296,18 @@ namespace moppe {
           draw_hammock (dl, camp.hammock, hammock_load (camp, now), camp.swing);
         if (camp.fire_time > -50.0)
           draw_hearth (dl, camp.hearth, fire_burn (camp, now));
+        if (camp.pan.on) {
+          m_pan_contents.clear ();
+          for (int i = 0; i < camp.pan.count; ++i)
+            if (camp.pan.mushrooms[i] < m_mushrooms.mushroom_count ())
+              m_pan_contents.push_back (
+                m_mushrooms.site (camp.pan.mushrooms[i]));
+          draw_pan (dl,
+                    camp.pan.place,
+                    camp.pan.yaw,
+                    m_pan_contents,
+                    pan_cooked (camp.pan, now));
+        }
       }
 
       // Whether the figure is drawn lying in the hammock rather than
@@ -1829,6 +1973,15 @@ namespace moppe {
         mine.hearth_laid = camp.fire_time > -50.0;
         mine.hearth = camp.hearth;
         mine.fire_burn = fire_burn (camp, state.m_total_time);
+        mine.pan_on = camp.pan.on;
+        mine.pan_place = camp.pan.place;
+        mine.pan_yaw = camp.pan.yaw;
+        mine.pan_cooked = pan_cooked (camp.pan, state.m_total_time);
+        mine.pan_count = static_cast<std::uint8_t> (camp.pan.count);
+        std::copy (std::begin (camp.pan.mushrooms),
+                   std::end (camp.pan.mushrooms),
+                   std::begin (mine.pan_mushrooms));
+        mine.pick_used = static_cast<std::uint32_t> (state.m_basket.used);
         return mine;
       }
 
@@ -2049,9 +2202,23 @@ namespace moppe {
           draw_hearth (dl, theirs.hearth, theirs.fire_burn);
 
         m_companion_basket.clear ();
-        for (const std::uint32_t index : m_companion_picks)
-          if (index < m_mushrooms.mushroom_count ())
-            m_companion_basket.push_back (m_mushrooms.site (index));
+        for (std::size_t i = theirs.pick_used; i < m_companion_picks.size ();
+             ++i)
+          if (m_companion_picks[i] < m_mushrooms.mushroom_count ())
+            m_companion_basket.push_back (
+              m_mushrooms.site (m_companion_picks[i]));
+        if (theirs.pan_on) {
+          m_pan_contents.clear ();
+          for (int i = 0; i < theirs.pan_count; ++i)
+            if (theirs.pan_mushrooms[i] < m_mushrooms.mushroom_count ())
+              m_pan_contents.push_back (
+                m_mushrooms.site (theirs.pan_mushrooms[i]));
+          draw_pan (dl,
+                    theirs.pan_place,
+                    theirs.pan_yaw,
+                    m_pan_contents,
+                    theirs.pan_cooked);
+        }
         if (theirs.walker && theirs.lying_down ()) {
           figure::draw (
             dl,
@@ -2280,7 +2447,23 @@ namespace moppe {
         };
         if (script == "camp")
           return camp_script (dt);
-        if (script == "forage") {
+        if (script == "forage" || script == "supper") {
+          // "supper" forages three mushrooms, walks a few steps on,
+          // lights a fire, fries them, and eats.
+          if (script == "supper" && m_supper_since < 0.0f &&
+              logic ().m_basket.total () >= 3)
+            m_supper_since = t;
+          if (m_supper_since >= 0.0f) {
+            const float since = t - m_supper_since;
+            input.drive = since < 2.5f ? 1.0f : 0.0f;
+            input.look_pitch = std::clamp (
+              -0.55f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+            input.light_fire =
+              press (m_supper_since + 3.2f) > 0.0f && !logic ().m_camp.fire;
+            input.deploy_glider = press (6.5f + m_supper_since) > 0.0f ||
+                                  press (18.0f + m_supper_since) > 0.0f;
+            return input;
+          }
           // Walk to the nearest mushroom, turning toward it, and pick it
           // once within reach; poisonous ones are left after one try.
           const Walker& walker = session ().walker ();
@@ -2540,6 +2723,7 @@ namespace moppe {
 
         pass_time (dt);
         ride_along (input);
+        cook_supper (input);
         tend_camp (input, dt);
         reach_for_mushroom (input);
         const GameSessionAdvanceResult advance =
@@ -2789,8 +2973,8 @@ namespace moppe {
         }
         const Basket& basket = logic ().m_basket;
         m_basket_contents.clear ();
-        for (const std::uint32_t index : basket.picked)
-          m_basket_contents.push_back (m_mushrooms.site (index));
+        for (std::size_t i = basket.used; i < basket.picked.size (); ++i)
+          m_basket_contents.push_back (m_mushrooms.site (basket.picked[i]));
         draw_camp (m_world_dl);
         if (actors.walker && lying_down ())
           draw_sleeper (m_world_dl, helmet, frame.lighting.time);
@@ -3948,6 +4132,9 @@ namespace moppe {
       // the same as mushrooms for the basket they carry.
       std::vector<std::uint32_t> m_companion_picks;
       std::vector<MushroomSite> m_companion_basket;
+      // Scratch for a pan's contents as drawn, and the last meal's note.
+      std::vector<MushroomSite> m_pan_contents;
+      mutable const char* m_meal_note = nullptr;
       // Their hour of the day; negative with no one to keep time with.
       double m_companion_hours = -1.0;
       bool m_companion_met = false;
@@ -3967,6 +4154,8 @@ namespace moppe {
       Vec3 m_hammock_sought_from;
       bool m_hammock_sought = false;
       float m_walk_script_time = 0.0f;
+      // MOPPE_WALK=supper: when the foraging was done.
+      float m_supper_since = -1.0f;
       // MOPPE_WALK=camp: the trees it camps between, the side it walks in
       // from, and how far through its steps it is.
       struct CampScript {

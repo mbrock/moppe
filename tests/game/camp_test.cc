@@ -176,3 +176,26 @@ MOPPE_TEST (the_fire_catches_burns_and_dies) {
   MOPPE_CHECK_NEAR (hammock_load (camp, 50.0), 1.0f, 1e-5f);
   MOPPE_CHECK (hammock_load (camp, 52.0) == 0.0f);
 }
+
+MOPPE_TEST (mushrooms_fry_then_keep_then_burn) {
+  const Pan pan = [] {
+    Pan set = pan_set_on (Vec3 (10, 5, 10), Vec3 (12, 5, 10));
+    set.since = 100.0;
+    return set;
+  }();
+  // On the cook's side of the fire, the handle toward them.
+  MOPPE_CHECK (pan.place[0] > 10.2f && pan.place[0] < 10.6f);
+  MOPPE_CHECK_NEAR (pan.yaw, 0.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (pan_cooked (pan, 100.0), 0.0f, 1e-6f);
+  MOPPE_CHECK (pan_cooked (pan, 104.0) > 0.3f);
+  MOPPE_CHECK (pan_cooked (pan, 104.0) < 1.0f);
+  // Fried, and good for half a minute.
+  MOPPE_CHECK_NEAR (pan_cooked (pan, 110.0), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (pan_cooked (pan, 139.0), 1.0f, 1e-6f);
+  // Then it burns.
+  MOPPE_CHECK (pan_cooked (pan, 150.0) > 1.4f);
+  MOPPE_CHECK_NEAR (pan_cooked (pan, 400.0), 2.0f, 1e-6f);
+  Pan off = pan;
+  off.on = false;
+  MOPPE_CHECK_NEAR (pan_cooked (off, 120.0), 0.0f, 1e-6f);
+}

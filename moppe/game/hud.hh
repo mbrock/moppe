@@ -66,6 +66,12 @@ namespace moppe {
       // On foot: what there is to do about the camp here (game/camp.hh).
       enum class Camp { none, hang, lie_down, get_up, light_fire };
       Camp camp = Camp::none;
+      // On foot by a fire: what there is to do about supper.
+      enum class Cook { none, fry, frying, eat, eat_burnt };
+      Cook cook = Cook::none;
+      // What was last eaten, said for a moment afterwards.
+      const char* meal = nullptr;
+      float meal_age_s = 100.0f;
       // Lying in the hammock: the hour of the day, 0..24.
       bool resting = false;
       float clock_hours = 0.0f;

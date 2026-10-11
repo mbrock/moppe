@@ -9,7 +9,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 2;
+    constexpr std::uint8_t wire_version = 3;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -17,6 +17,7 @@ namespace moppe::game {
     constexpr std::uint8_t has_hearth = 1 << 3;
     constexpr std::uint8_t glider_carries_bike = 1 << 4;
     constexpr std::uint8_t walker_grounded = 1 << 5;
+    constexpr std::uint8_t has_pan = 1 << 6;
 
     // Farther than this between two snapshots was not travelled: a
     // restart, or a new world's spawn.
@@ -196,6 +197,8 @@ namespace moppe::game {
       flags |= is_hung;
     if (snapshot.hearth_laid)
       flags |= has_hearth;
+    if (snapshot.pan_on)
+      flags |= has_pan;
     out.put (flags);
 
     const VehiclePose& bike = snapshot.bike;
@@ -254,8 +257,18 @@ namespace moppe::game {
       out.put (snapshot.fire_burn);
     }
 
+    if (snapshot.pan_on) {
+      out.put (snapshot.pan_place);
+      out.put (snapshot.pan_yaw);
+      out.put (snapshot.pan_cooked);
+      out.put (snapshot.pan_count);
+      for (const std::uint32_t mushroom : snapshot.pan_mushrooms)
+        out.put (mushroom);
+    }
+
     const std::size_t carried =
       std::min (snapshot.picks.size (), companion_pick_window);
+    out.put (snapshot.pick_used);
     out.put (snapshot.pick_count);
     out.put (snapshot.picks_from);
     out.put (static_cast<std::uint8_t> (carried));
@@ -349,6 +362,19 @@ namespace moppe::game {
       snapshot.fire_burn = std::clamp (in.number (), 0.0f, 1.0f);
     }
 
+    if (flags & has_pan) {
+      snapshot.pan_on = true;
+      snapshot.pan_place = in.point ();
+      snapshot.pan_yaw = in.number ();
+      snapshot.pan_cooked = std::clamp (in.number (), 0.0f, 2.0f);
+      snapshot.pan_count = in.get<std::uint8_t> ();
+      if (snapshot.pan_count > Pan::room)
+        return std::nullopt;
+      for (std::uint32_t& mushroom : snapshot.pan_mushrooms)
+        mushroom = in.get<std::uint32_t> ();
+    }
+
+    snapshot.pick_used = in.get<std::uint32_t> ();
     snapshot.pick_count = in.get<std::uint32_t> ();
     snapshot.picks_from = in.get<std::uint32_t> ();
     const std::size_t carried = in.get<std::uint8_t> ();

@@ -17,6 +17,8 @@
 #   jeep      the autopilot driving the jeep           (MOPPE_DEMO=jeep)
 #   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
+#   supper    picking three, frying them on a fire, and eating
+#                                                      (MOPPE_WALK=supper)
 #   camp      hang the hammock, light a fire, lie down at dusk and watch
 #             the night go by                          (MOPPE_WALK=camp)
 #   opening   the opening titles
@@ -125,6 +127,7 @@ case $scene in
   jeep) stage MOPPE_DEMO=jeep; : "${seconds:=20}" ;;
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
+  supper) stage MOPPE_WALK=supper; : "${seconds:=50}" ;;
   camp)
     stage MOPPE_WALK=camp MOPPE_WALK_CAMERA=chase MOPPE_CLOCK=17.3
     : "${seconds:=75}" ;;

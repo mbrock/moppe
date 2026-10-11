@@ -2,6 +2,7 @@
 #define MOPPE_GAME_BASKET_HH
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -23,6 +24,9 @@ namespace moppe::game {
   // order they were picked, and how many of each kind lie in the basket.
   struct Basket {
     std::vector<std::uint32_t> picked;
+    // How many of them, from the first, have left the basket for the
+    // pan. They stay picked: the ground does not grow them back.
+    std::size_t used = 0;
     std::array<int, mushroom_kind_count> count {};
     // Simulation time of the last reach for a mushroom, for its little
     // celebration, and what it was; a refused one was poisonous and was

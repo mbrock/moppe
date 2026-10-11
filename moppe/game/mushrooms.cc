@@ -63,7 +63,21 @@ namespace moppe::game {
       Vec3 east;
       Vec3 north;
       float height;
+      float cooked;
     };
+
+    // A colour as the pan leaves it: browned, then charred.
+    DisplayColor seared (const DisplayColor& raw, float cooked) {
+      const DisplayColor brown (0.46f, 0.27f, 0.11f);
+      const DisplayColor char_black (0.06f, 0.05f, 0.045f);
+      if (cooked <= 0.0f)
+        return raw;
+      if (cooked <= 1.0f)
+        return mix_display (raw, brown, 0.72f * cooked);
+      return mix_display (mix_display (raw, brown, 0.72f),
+                          char_black,
+                          std::min (1.0f, cooked - 1.0f));
+    }
 
     MushroomFrame mushroom_frame (const MushroomSite& site) {
       const Vec3 tilt (std::cos (site.lean_toward) * std::sin (site.lean),
@@ -77,8 +91,8 @@ namespace moppe::game {
                .up = up,
                .east = east,
                .north = north,
-               .height = kind_height (site.kind) * site.scale *
-                         storybook_scale };
+               .height = kind_height (site.kind) * site.scale * storybook_scale,
+               .cooked = site.cooked };
     }
 
     // The outward normal of a profile segment, in (radius, height).
@@ -115,8 +129,8 @@ namespace moppe::game {
         normals[i] = n;
       }
       const auto point = [&] (std::size_t i, int side) {
-        const float angle = mushroom_tau * static_cast<float> (side) /
-                            static_cast<float> (sides);
+        const float angle =
+          mushroom_tau * static_cast<float> (side) / static_cast<float> (sides);
         const Vec3 way =
           frame.east * std::cos (angle) + frame.north * std::sin (angle);
         const float r = profile[i].radius * wobble (i, angle);
@@ -124,15 +138,15 @@ namespace moppe::game {
                frame.up * (profile[i].height * frame.height);
       };
       const auto normal = [&] (std::size_t i, int side) {
-        const float angle = mushroom_tau * static_cast<float> (side) /
-                            static_cast<float> (sides);
+        const float angle =
+          mushroom_tau * static_cast<float> (side) / static_cast<float> (sides);
         const Vec3 way =
           frame.east * std::cos (angle) + frame.north * std::sin (angle);
         const Vec3 n = way * normals[i][0] + frame.up * normals[i][1];
         return length2 (n) > 1e-8f ? normalized (n) : frame.up;
       };
       const auto emit = [&] (std::size_t i, int side) {
-        list.color (profile[i].colour);
+        list.color (seared (profile[i].colour, frame.cooked));
         list.normal (normal (i, side));
         list.vertex (point (i, side));
       };
@@ -159,17 +173,14 @@ namespace moppe::game {
       const DisplayColor pale (0.98f, 0.76f, 0.30f);
       const DisplayColor deep (0.90f, 0.56f, 0.08f);
       const ProfilePoint profile[] = {
-        { 0.10f, -0.05f, pale },  { 0.10f, 0.25f, pale },
-        { 0.15f, 0.52f, pale },   { 0.30f, 0.80f, pale },
-        { 0.50f, 0.93f, gold },   { 0.54f, 0.88f, deep },
-        { 0.50f, 0.97f, gold },   { 0.30f, 0.99f, gold },
-        { 0.00f, 0.90f, deep },
+        { 0.10f, -0.05f, pale }, { 0.10f, 0.25f, pale }, { 0.15f, 0.52f, pale },
+        { 0.30f, 0.80f, pale },  { 0.50f, 0.93f, gold }, { 0.54f, 0.88f, deep },
+        { 0.50f, 0.97f, gold },  { 0.30f, 0.99f, gold }, { 0.00f, 0.90f, deep },
       };
       const float phase = mushroom_tau * hash_lane (seed, 11);
       const float lobes = 4.0f + std::floor (3.0f * hash_lane (seed, 12));
       revolve (list, frame, profile, 14, [&] (std::size_t i, float angle) {
-        return i >= 3 ? 1.0f + 0.13f * std::sin (lobes * angle + phase)
-                      : 1.0f;
+        return i >= 3 ? 1.0f + 0.13f * std::sin (lobes * angle + phase) : 1.0f;
       });
     }
 
@@ -245,14 +256,15 @@ namespace moppe::game {
         const float h = 1.03f - 0.17f * along * along;
         const Vec3 way =
           frame.east * std::cos (angle) + frame.north * std::sin (angle);
-        const Vec3 normal = normalized (frame.up * (1.0f - 0.6f * along) +
-                                        way * (0.9f * along));
+        const Vec3 normal =
+          normalized (frame.up * (1.0f - 0.6f * along) + way * (0.9f * along));
         const Vec3 centre = frame.base + way * (r * frame.height) +
                             frame.up * (h * frame.height) +
                             normal * (0.006f * frame.height);
         const Vec3 tangent = normalized (cross (normal, way));
         const Vec3 bitangent = cross (tangent, normal);
-        const float size = frame.height * (0.025f + 0.025f * hash_lane (wart, 2));
+        const float size =
+          frame.height * (0.025f + 0.025f * hash_lane (wart, 2));
         list.color (white);
         list.normal (normal);
         constexpr int corners = 5;
@@ -364,9 +376,8 @@ namespace moppe::game {
     const auto clear_of_trunks = [&] (float x, float z) {
       for (int dz = -1; dz <= 1; ++dz)
         for (int dx = -1; dx <= 1; ++dx) {
-          const auto found =
-            trunks.find (cell_key (x + dx * trunk_cell_metres,
-                                   z + dz * trunk_cell_metres));
+          const auto found = trunks.find (
+            cell_key (x + dx * trunk_cell_metres, z + dz * trunk_cell_metres));
           if (found == trunks.end ())
             continue;
           for (const Vec3& trunk : found->second)
@@ -385,11 +396,10 @@ namespace moppe::game {
       const float from_trailhead =
         std::hypot (at[0] - trailhead[0], at[2] - trailhead[2]);
       const float odds =
-        host_odds *
-        (1.0f + (trailhead_bonus - 1.0f) *
-                  (1.0f - smoothstep (0.4f * trailhead_reach,
-                                      trailhead_reach,
-                                      from_trailhead)));
+        host_odds * (1.0f + (trailhead_bonus - 1.0f) *
+                              (1.0f - smoothstep (0.4f * trailhead_reach,
+                                                  trailhead_reach,
+                                                  from_trailhead)));
       if (hash_lane (identity, 0) >= odds)
         continue;
 
@@ -463,15 +473,14 @@ namespace moppe::game {
   }
 
   std::uint64_t MushroomPatch::tile_key (int x, int z) {
-    return (static_cast<std::uint64_t> (static_cast<std::uint32_t> (x))
-            << 32) |
+    return (static_cast<std::uint64_t> (static_cast<std::uint32_t> (x)) << 32) |
            static_cast<std::uint32_t> (z);
   }
 
   MushroomPatch::Tile* MushroomPatch::tile_at (const Vec3& at) {
-    const auto found =
-      m_tiles.find (tile_key (static_cast<int> (std::floor (at[0] / tile_metres)),
-                              static_cast<int> (std::floor (at[2] / tile_metres))));
+    const auto found = m_tiles.find (
+      tile_key (static_cast<int> (std::floor (at[0] / tile_metres)),
+                static_cast<int> (std::floor (at[2] / tile_metres))));
     return found == m_tiles.end () ? nullptr : &found->second;
   }
 
@@ -528,10 +537,8 @@ namespace moppe::game {
     return best;
   }
 
-  std::optional<std::uint32_t>
-  MushroomPatch::nearest (const Vec3& at,
-                          float within,
-                          std::span<const std::uint32_t> skip) const {
+  std::optional<std::uint32_t> MushroomPatch::nearest (
+    const Vec3& at, float within, std::span<const std::uint32_t> skip) const {
     const int tx = static_cast<int> (std::floor (at[0] / tile_metres));
     const int tz = static_cast<int> (std::floor (at[2] / tile_metres));
     const int span = static_cast<int> (std::ceil (within / tile_metres));

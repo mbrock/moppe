@@ -6,6 +6,8 @@
 
 #include <moppe/gfx/math.hh>
 
+#include <cstdint>
+
 namespace moppe::game {
   // Where a hammock's straps go round two trunks, each on its trunk's
   // axis, and the trunks' radii there. The sleeper's head lies toward the
@@ -13,6 +15,21 @@ namespace moppe::game {
   struct HammockSite {
     Vec3 strap[2] {};
     float girth[2] {};
+  };
+
+  // A frying pan set on a hearth's stones with a few mushrooms in it.
+  // It is its cook's, on whichever fire they set it.
+  struct Pan {
+    static constexpr int room = 4;
+    bool on = false;
+    // Where it sits and which way its handle points, radians about up.
+    Vec3 place {};
+    float yaw = 0.0f;
+    // When it went on, and the mushrooms in it: the plan's indices.
+    double since = -100.0;
+    int count = 0;
+    std::uint32_t mushrooms[room] {};
+    double next_steam = 0.0;
   };
 
   // The camp as it stands; part of the session's copyable state.
@@ -36,6 +53,13 @@ namespace moppe::game {
     double fire_time = -100.0;
     double next_spark = 0.0;
     double next_smoke = 0.0;
+
+    Pan pan;
+    // The last meal: when it was eaten, how done it was (see
+    // pan_cooked), and how many mushrooms it was.
+    double ate_time = -100.0;
+    float ate_cooked = 0.0f;
+    int ate_count = 0;
   };
 }
 
