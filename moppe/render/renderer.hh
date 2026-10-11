@@ -373,10 +373,9 @@ namespace moppe {
       // Hot development control: changes only terrain shading state, leaving
       // height/normal textures and chunk geometry intact.
       virtual void set_terrain_topology_overlay (bool enabled) = 0;
-      virtual void set_terrain_textures (TexturePtr grass,
-                                         TexturePtr dirt,
-                                         TexturePtr rock,
-                                         TexturePtr snow) = 0;
+      // The photograph of turf whose grain the far sward's canopy carries.
+      // The ground itself reads no image: render/ground_detail.hh.
+      virtual void set_sward_texture (TexturePtr grain) = 0;
       virtual void set_terrain_overlay (const TerrainOverlayParams& params,
                                         std::span<const float> values) = 0;
       virtual void clear_terrain_overlay () = 0;

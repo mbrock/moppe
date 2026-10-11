@@ -532,14 +532,8 @@ namespace moppe::nhal {
 
       void set_terrain_topology_overlay (bool) override {}
 
-      void set_terrain_textures (render::TexturePtr grass,
-                                 render::TexturePtr dirt,
-                                 render::TexturePtr rock,
-                                 render::TexturePtr snow) override {
-        m_grass = grass;
-        m_dirt = dirt;
-        m_rock = rock;
-        m_snow = snow;
+      void set_sward_texture (render::TexturePtr grain) override {
+        m_grass = grain;
       }
 
       void set_terrain_overlay (const render::TerrainOverlayParams&,
@@ -2522,7 +2516,7 @@ namespace moppe::nhal {
       render::TerrainParams m_terrain_params {};
       bool m_have_terrain = false;
       Texture m_heights, m_normals, m_landscape, m_ground;
-      render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
+      render::TexturePtr m_grass;
       Buffer m_chunk_indices[lod_count], m_patch_indices[lod_count];
       std::uint32_t m_chunk_index_count[lod_count] {};
       std::uint32_t m_patch_index_count[lod_count] {};

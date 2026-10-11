@@ -142,7 +142,7 @@ namespace moppe {
     // platforms without a pointer.
     void set_pointer_captured (bool captured);
 
-    // Resolve an asset-relative path ("textures/grass2.tga") to an
+    // Resolve an asset-relative path ("textures/grass3.tga") to an
     // absolute path: the app bundle on Apple platforms, or the
     // executable/source directory for loose development builds.
     std::string asset_path (const std::string& relative);

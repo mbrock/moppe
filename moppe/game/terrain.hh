@@ -81,8 +81,7 @@ namespace moppe {
       Vec3 m_extent;
       float m_lod_scale = 1;
       std::array<ShadowAnchor, 2> m_shadow_anchors;
-      render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
-      bool m_textures_loaded = false;
+      render::TexturePtr m_grass;
     };
   }
 }

@@ -57,7 +57,7 @@ namespace moppe {
 
       render::TexturePtr load_tga (render::Renderer& r,
                                    const std::string& rel) {
-        MOPPE_PROFILE_ZONE ("terrain.load_material_texture");
+        MOPPE_PROFILE_ZONE ("terrain.load_sward_texture");
         tga_image::TGAImg img;
         const std::string path = platform::asset_path (rel);
         if (img.Load (const_cast<char*> (path.c_str ())) != IMG_OK)
@@ -111,14 +111,9 @@ namespace moppe {
                        spatial::get<terrain::terrain_normal> (surface));
       }
 
-      if (!m_textures_loaded) {
-        MOPPE_PROFILE_ZONE ("terrain.load_material_textures");
+      if (!m_grass) {
         m_grass = load_tga (r, "textures/grass3.tga");
-        m_dirt = load_tga (r, "textures/dirt.tga");
-        m_rock = load_tga (r, "textures/stones.tga");
-        m_snow = load_tga (r, "textures/snow.tga");
-        r.set_terrain_textures (m_grass, m_dirt, m_rock, m_snow);
-        m_textures_loaded = true;
+        r.set_sward_texture (m_grass);
       }
 
       // Chunk bounds from the actual height range, per patch.
