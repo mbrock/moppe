@@ -1634,11 +1634,18 @@
 ;;; surrounds the camera, and GRASS-TILES keeps those in view that the grass
 ;;; medium says carry blades -- light and water, no trail worn across, ground
 ;;; a root could hold -- appending each with its blade count and counting it
-;;; into one indexed indirect draw.  Each surviving tile is an instance of
+;;; into its class's indexed indirect draw.  A tile is an instance of up to
 ;;; 32 four-section blades, which GRASS-VERTEX grows from hashes and the
 ;;; terrain's own fields, so the sward cannot drift from the ground it
 ;;; stands on.  A blade's count and shape follow its projected width: the
 ;;; field thins blade by blade into the ground's own turf colour.
+;;;
+;;; A tile's shoots are ordered, the first few standing where the field has
+;;; thinned, so a tile's class is how many it draws: 1, 2, 4, 8, 16, or 32,
+;;; the least that holds its live ones.  Most tiles in view are far and
+;;; keep a shoot or two; drawing each as all 32 and collapsing the rest
+;;; grew sixteen times the blades anyone saw.  A tile's record is one word:
+;;; its index in the window, and its live shoots above bit 18.
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *grass*
@@ -1646,7 +1653,24 @@
       (lattice :vec4)              ; 1/step x, 1/step z, height scale, samples
       (habitat :vec4)              ; window reach, density, 0, focal pixels
       (interaction :vec4)          ; the mover's position, footprint radius
-      (stand-field :vec4))))       ; have stand, 1 / period x, z, 0
+      (stand-field :vec4)))        ; have stand, 1 / period x, z, 0
+  (defparameter *grass-class*
+    '((class :vec4))))             ; first record, 0, 0, 0
+
+;;; The class of a tile with this many live shoots, 0 to 5: it draws two to
+;;; that power.
+(define-shader-function grass-class (shoots)
+  (+ (if (> shoots (uint 1)) (uint 1) (uint 0))
+     (if (> shoots (uint 2)) (uint 1) (uint 0))
+     (if (> shoots (uint 4)) (uint 1) (uint 0))
+     (if (> shoots (uint 8)) (uint 1) (uint 0))
+     (if (> shoots (uint 16)) (uint 1) (uint 0))))
+
+;;; The cell of the window's INDEXth tile, row by row.
+(define-shader-function window-cell (window index)
+  (let* ((side (uint (swizzle window :z))))
+    (+ (swizzle window :xy)
+       (vec2 (float (mod index side)) (float (/ index side))))))
 
 (define-shader-function plant-hash (cell lane)
   (/ (float (logand (tree-mix (logxor (* (swizzle cell :x) (uint #x9e3779b9))
@@ -1812,8 +1836,7 @@
          (side (uint (swizzle window :z))))
     (when (< index (* side side))
       (let* ((tile (swizzle window :w))
-             (cell (+ (swizzle window :xy)
-                      (vec2 (float (mod index side)) (float (/ index side)))))
+             (cell (window-cell window index))
              (centre (* (+ cell (vec2 0.5 0.5)) tile))
              (eye (swizzle camera-position :xyz))
              (across (- centre (swizzle eye :xz)))
@@ -1866,13 +1889,11 @@
              (identity (cell-identity cell))
              (shoots (lod-shoots wanted identity)))
         (when (and inside (> shoots (uint 0)))
-          (let* ((slot (atomic-add arguments (uint 1) (uint 1)))
-                 (at (* slot (uint 4))))
-            (set-buffer-element tiles at (bit-cast :uint (swizzle cell :x)))
-            (set-buffer-element tiles (+ at (uint 1))
-                                (bit-cast :uint (swizzle cell :y)))
-            (set-buffer-element tiles (+ at (uint 2)) (bit-cast :uint wanted))
-            (set-buffer-element tiles (+ at (uint 3)) shoots)))))))
+          (let* ((class (grass-class shoots))
+                 (slot (atomic-add arguments (+ (* class (uint 5)) (uint 1))
+                                   (uint 1))))
+            (set-buffer-element tiles (+ (* class side side) slot)
+                                (+ index (* shoots (uint 262144))))))))))
 
 (define-shader-program grass-tiles
   :compute grass-tiles-compute)
@@ -1912,6 +1933,7 @@
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (grass :uniform-block :binding 1 :members #.*grass*)
                  (tiles :storage-buffer :binding 2 :element :uint)
+                 (draw :uniform-block :binding 3 :members #.*grass-class*)
                  (heights :texture-2d :binding 0)
                  (normals :texture-2d :binding 1)
                  (landscape :texture-2d :binding 6)
@@ -1919,12 +1941,10 @@
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
-  (let* ((record (* instance-index (uint 4)))
-         (cell (vec2 (bit-cast :float (buffer-element tiles record))
-                     (bit-cast :float (buffer-element tiles
-                                                      (+ record (uint 1))))))
-         (wanted (bit-cast :float (buffer-element tiles (+ record (uint 2)))))
-         (shoots (buffer-element tiles (+ record (uint 3))))
+  (let* ((record (buffer-element tiles (+ (uint (swizzle class :x))
+                                          instance-index)))
+         (cell (window-cell window (logand record (uint 262143))))
+         (shoots (shift-right record (uint 18)))
          (shoot (/ vertex-index (uint 8)))
          (corner (mod vertex-index (uint 8)))
          (section (float (/ corner (uint 2))))
@@ -1987,10 +2007,10 @@
                                         resolved)
                                     fade 32.0)
                                  shoot (cell-identity cell)))
-         (draw (plant-hash identity (uint 4)))
+         (vigour (plant-hash identity (uint 4)))
          (scale (* (sqrt presence)
                    (+ 0.60 (* 0.35 wet) (* 0.08 (- 1.0 canopy)))
-                   (+ 0.65 (* 0.65 draw draw))
+                   (+ 0.65 (* 0.65 vigour vigour))
                    (if flower 1.0
                        (- 1.0 (* 0.32 (smoothstep 0.40 0.95 canopy))))))
          (up (normalize (mix ground-normal (vec3 0.0 1.0 0.0)

@@ -94,6 +94,8 @@ namespace moppe::nhal {
     // The most grass tiles a window side may hold: 0.6-metre tiles over
     // 2 x 1.7 x the requested reach.
     constexpr std::uint32_t grass_window_side = 512;
+    // A grass tile draws 1, 2, 4, 8, 16, or all 32 of its shoots.
+    constexpr std::uint32_t grass_classes = 6;
     // The canopy's 16-metre patches over twice its farthest reach.
     constexpr std::uint32_t sward_window_side = 160;
     constexpr std::uint32_t forest_classes = 2 * forest_tiers;
@@ -885,8 +887,9 @@ namespace moppe::nhal {
         // renderer cannot be debugged directly: "white" draws every draw
         // list untextured, "additive" draws alpha-blended runs additively,
         // "nohistory" resolves every frame from itself alone, "nomotion" resolves
-        // ignoring motion, "scene" presents the unresolved scene, and "noao"
-        // and "noshafts" leave out the occlusion and the sun shafts.
+        // ignoring motion, "scene" presents the unresolved scene, "noao"
+        // and "noshafts" leave out the occlusion and the sun shafts, and
+        // "nosward" and "noblades" the grass's canopy and its blades.
         {
           const char* probe = moppe::environment ("MOPPE_NHAL_PROBE");
           m_probe = probe ? probe : "";
@@ -1156,11 +1159,15 @@ namespace moppe::nhal {
         if (!m_grass_culled)
           return;
         open_scene ();
-        shaders::grass::Grass grass = m_grass_block;
-        grass.interaction = lanes (params.interaction_position,
-                                   params.interaction_radius);
         // The canopy first: translucent, it blends over the ground it sits
         // on, and the blades it hands over to stand in it.
+        if (m_probe != "nosward")
+          draw_sward ();
+        if (m_probe != "noblades")
+          draw_blades (params);
+      }
+
+      void draw_sward () {
         m_device->set_pipeline (m_sward_pipeline);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_uniforms (1, m_sward_block);
@@ -1174,7 +1181,14 @@ namespace moppe::nhal {
         bind_stand ();
         m_device->draw_indexed_indirect (m_sward_indices, IndexType::uint16,
                                          m_sward_arguments);
+      }
 
+      // Each class of tile with the shoots it keeps, from the records the
+      // cull sorted into the class's stretch of the window.
+      void draw_blades (const render::UndergrowthParams& params) {
+        shaders::grass::Grass grass = m_grass_block;
+        grass.interaction = lanes (params.interaction_position,
+                                   params.interaction_radius);
         m_device->set_pipeline (m_grass_pipeline);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_uniforms (1, grass);
@@ -1185,8 +1199,15 @@ namespace moppe::nhal {
         m_device->set_texture (7, m_ground);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
-        m_device->draw_indexed_indirect (m_grass_indices, IndexType::uint16,
-                                         m_grass_arguments);
+        const float tiles = grass.window[2] * grass.window[2];
+        for (std::uint32_t c = 0; c < grass_classes; ++c) {
+          shaders::grass::Draw draw {};
+          draw.class_ = { float (c) * tiles, 0, 0, 0 };
+          m_device->set_uniforms (3, draw);
+          m_device->draw_indexed_indirect (
+            m_grass_indices, IndexType::uint16, m_grass_arguments,
+            c * sizeof (DrawIndexedIndirectArgs));
+        }
       }
 
       void draw_boulders () override {
@@ -1818,13 +1839,14 @@ namespace moppe::nhal {
           std::min (std::uint32_t (std::ceil (2.0f * reach / tile)),
                     grass_window_side);
         if (!m_grass_tiles) {
+          // A word a tile, and room in every class for the whole window.
           m_grass_tiles = m_device->create_buffer (
-            { .size = std::uint64_t (grass_window_side) * grass_window_side
-                      * 16,
+            { .size = std::uint64_t (grass_classes) * grass_window_side
+                      * grass_window_side * 4,
               .usage = buffer_storage_write,
               .label = "grass tiles" });
           m_grass_arguments = m_device->create_buffer (
-            { .size = sizeof (DrawIndexedIndirectArgs),
+            { .size = grass_classes * sizeof (DrawIndexedIndirectArgs),
               .usage = buffer_storage_write | buffer_indirect,
               .label = "grass draw" });
           std::vector<std::uint16_t> indices;
@@ -1902,12 +1924,13 @@ namespace moppe::nhal {
         sward.interaction = { row (0), row (1), 0, 0 };
         m_sward_block = sward;
 
-        const DrawIndexedIndirectArgs reset {
-          shoots * indices_per_shoot, 0, 0, 0, 0 };
+        std::array<DrawIndexedIndirectArgs, grass_classes> reset {};
+        for (std::uint32_t c = 0; c < grass_classes; ++c)
+          reset[c] = { (1u << c) * indices_per_shoot, 0, 0, 0, 0 };
         m_device->copy_to_buffer (
           m_grass_arguments, 0,
           m_device->upload (std::span<const DrawIndexedIndirectArgs> (
-            &reset, 1)));
+            reset)));
         m_device->begin_compute_pass ("grass tiles");
         m_device->set_pipeline (m_grass_tiles_pipeline);
         m_device->set_buffer (0, m_frame_block);
