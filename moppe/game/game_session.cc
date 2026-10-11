@@ -24,7 +24,9 @@ namespace moppe::game {
         session.walker ().set_strafe (value);
       else if (logic.m_mode == M_GLIDER)
         session.glider ().set_turn (value);
-      else
+      else if (logic.m_mode == M_JEEP)
+        session.jeep ().set_turn (value);
+      else if (logic.m_mode == M_BIKE)
         session.bike ().set_yaw ((90 * value) * u::deg);
     }
 
@@ -35,7 +37,9 @@ namespace moppe::game {
         session.walker ().set_walk (value > 0 ? value : value * 0.6f);
       else if (logic.m_mode == M_GLIDER)
         session.glider ().set_speed_control (value);
-      else {
+      else if (logic.m_mode == M_JEEP)
+        session.jeep ().set_drive (value);
+      else if (logic.m_mode == M_BIKE) {
         session.bike ().set_thrust (value);
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
       }
@@ -50,7 +54,10 @@ namespace moppe::game {
           session.walker ().jump ();
       } else if (logic.m_mode == M_GLIDER) {
         session.glider ().set_flare (logic.m_boost_input > 0.1f);
-      } else {
+      } else if (logic.m_mode == M_JEEP) {
+        // What boosts the bike brakes the jeep.
+        session.jeep ().set_brake (logic.m_boost_input > 0.1f);
+      } else if (logic.m_mode == M_BIKE) {
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
       }
     }
@@ -109,8 +116,32 @@ namespace moppe::game {
 
     void toggle_mount (GameSession& session) {
       GameLogicState& logic = session.logic ();
-      if (logic.m_mode == M_GLIDER)
+      // A passenger's seat is the game's to give and take away.
+      if (logic.m_mode == M_GLIDER || logic.m_mode == M_PASSENGER)
         return;
+
+      if (logic.m_mode == M_JEEP) {
+        // Step out on the driver's side.
+        mov::Jeep& jeep = session.jeep ();
+        jeep.set_drive (0);
+        jeep.set_turn (0);
+        jeep.set_brake (false);
+        session.walker ().spawn (
+          moppe::position (jeep.point (Vec3 (-1.75f, 0.3f, -0.1f))),
+          jeep.forward ());
+        session.set_mode (M_FOOT);
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        return;
+      }
+
+      if (session.can_drive ()) {
+        session.set_mode (M_JEEP);
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        set_boost (session, logic.m_boost_input);
+        return;
+      }
 
       if (logic.m_mode != M_FOOT) {
         // Step off to the side of the bike.
@@ -201,6 +232,10 @@ namespace moppe::game {
       return m_walker.position ();
     if (m_logic.m_mode == M_GLIDER)
       return m_glider.position ();
+    if (m_logic.m_mode == M_JEEP)
+      return m_jeep.position ();
+    if (m_logic.m_mode == M_PASSENGER)
+      return m_logic.m_seat_position;
     return m_bike.position ();
   }
 
@@ -209,6 +244,10 @@ namespace moppe::game {
       return m_walker.heading ();
     if (m_logic.m_mode == M_GLIDER)
       return m_glider.heading ();
+    if (m_logic.m_mode == M_JEEP)
+      return m_jeep.forward ();
+    if (m_logic.m_mode == M_PASSENGER)
+      return m_logic.m_seat_heading;
     return m_bike.orientation ();
   }
 
@@ -217,7 +256,19 @@ namespace moppe::game {
       return 0.0f;
     if (m_logic.m_mode == M_GLIDER)
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
+    if (m_logic.m_mode == M_JEEP)
+      return length (m_jeep.velocity ()) * 3.6f;
+    if (m_logic.m_mode == M_PASSENGER)
+      return length (m_logic.m_seat_velocity) * 3.6f;
     return length (m_bike.velocity ()) * 3.6f;
+  }
+
+  bool GameSession::can_drive () const {
+    if (m_logic.m_mode != M_FOOT)
+      return false;
+    const float to_jeep = length2 (m_walker.position () - m_jeep.position ());
+    return to_jeep < 4.5f * 4.5f &&
+           to_jeep <= length2 (m_walker.position () - m_bike.position ());
   }
 
   bool
@@ -267,7 +318,7 @@ namespace moppe::game {
   GameSession::State GameSession::state () const {
     return { m_logic,           m_bike.state (),   m_glider.state (),
              m_walker.state (), m_camera.state (), m_stars.state (),
-             m_dust.state () };
+             m_dust.state (),   m_jeep.state () };
   }
 
   void GameSession::restore (const State& state) {
@@ -278,6 +329,7 @@ namespace moppe::game {
     m_camera.restore (state.camera);
     m_stars.restore (state.stars);
     m_dust.restore (state.dust);
+    m_jeep.restore (state.jeep);
   }
 
   GameSessionAdvanceResult
@@ -310,6 +362,24 @@ namespace moppe::game {
     }
     if (logic.m_mode == M_FOOT)
       session.walker ().update (dt, surface, world, trunks);
+    // The jeep stands braked wherever its driver left it.
+    mov::Jeep& jeep = session.jeep ();
+    jeep.set_parked (logic.m_mode != M_JEEP);
+    jeep.update (
+      elapsed, surface, world.water_level.numerical_value_in (u::m), trunks);
+    if (logic.m_mode == M_JEEP) {
+      logic.m_odometer += length (jeep.velocity ()) * elapsed;
+      // Sliding wheels throw up what they slide on.
+      const float slide =
+        std::fabs (dot (jeep.velocity (), cross (jeep.up (), jeep.forward ())));
+      if (jeep.grounded () && slide > 3.0f)
+        session.dust ().emit (
+          moppe::position (jeep.point (Vec3 (0, -0.3f, -1.2f))),
+          velocity (jeep.velocity () * 0.15f),
+          static_cast<int> (
+            std::round (std::min (3.0f, slide * 0.25f) * ground.dust)),
+          ground.dust_color);
+    }
 
     const Vec3 vehicle_position = session.subject_position ();
     mov::Vehicle& vehicle = session.bike ();
@@ -703,6 +773,15 @@ namespace moppe::game {
         if (logic.m_mode == M_GLIDER) {
           eye = session.glider ().position () - Vec3 (0, 0.75f, 0);
           ahead = session.glider ().heading ();
+        } else if (logic.m_mode == M_JEEP) {
+          const mov::Jeep& jeep = session.jeep ();
+          eye =
+            jeep.driver_seat () + jeep.up () * 0.78f + jeep.forward () * 0.08f;
+          ahead = jeep.forward ();
+        } else if (logic.m_mode == M_PASSENGER) {
+          eye = logic.m_seat_position + logic.m_seat_up * 0.78f +
+                logic.m_seat_heading * 0.08f;
+          ahead = logic.m_seat_heading;
         } else {
           eye = vehicle.position () + Vec3 (0, 0.95f, 0) +
                 vehicle.orientation () * 0.4f;
@@ -715,8 +794,7 @@ namespace moppe::game {
         Vec3 right = cross (look, up);
         if (length2 (right) > 1e-6f) {
           normalize (right);
-          look =
-            Quaternion::rotate (look, right, logic.m_look_pitch * u::rad);
+          look = Quaternion::rotate (look, right, logic.m_look_pitch * u::rad);
         }
       }
       logic.m_fp_eye =
@@ -725,9 +803,12 @@ namespace moppe::game {
       session.camera ().place (logic.m_fp_eye, logic.m_fp_eye + look * 10.0f);
     } else {
       const float flip = logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
+      const bool in_jeep =
+        logic.m_mode == M_JEEP || logic.m_mode == M_PASSENGER;
       const float elevation = logic.m_mode == M_FOOT ? 10.0f : 18.0f;
       session.camera ().frame (elevation * u::deg,
                                logic.m_mode == M_FOOT ? 3.8f * u::m
+                               : in_jeep              ? 8.0f * u::m
                                                       : 6.5f * u::m);
       // Looking up swings the camera down behind the subject and looking
       // down lifts it, between skimming the ground and nearly overhead.
@@ -746,6 +827,18 @@ namespace moppe::game {
                                   session.glider ().heading () * flip,
                                   session.glider ().physical_velocity (),
                                   dt);
+      else if (logic.m_mode == M_JEEP)
+        session.camera ().update (
+          moppe::position (session.jeep ().position () + Vec3 (0, 0.9f, 0)),
+          session.jeep ().forward () * flip,
+          velocity (session.jeep ().velocity ()),
+          dt);
+      else if (logic.m_mode == M_PASSENGER)
+        session.camera ().update (
+          moppe::position (logic.m_seat_position + Vec3 (0, 0.5f, 0)),
+          logic.m_seat_heading * flip,
+          velocity (logic.m_seat_velocity),
+          dt);
       else
         session.camera ().update (vehicle.physical_position (),
                                   vehicle.orientation () * flip,
@@ -755,9 +848,8 @@ namespace moppe::game {
     }
 
     // Speed widens the field of view a touch.
-    const float kmh = (driving || logic.m_mode == M_GLIDER)
-                        ? session.subject_speed_kmh ()
-                        : 0.0f;
+    const float kmh =
+      logic.m_mode != M_FOOT ? session.subject_speed_kmh () : 0.0f;
     const float fov_target =
       std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
     logic.m_fov_k += (fov_target - logic.m_fov_k) *

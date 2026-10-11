@@ -14,6 +14,7 @@
 #   ride      the autopilot's ride                     (MOPPE_DEMO=1)
 #   forest    the same from the forest floor           (MOPPE_DEMO=forest)
 #   glide     the ride, opening the wing on a leap     (MOPPE_DEMO=glide)
+#   jeep      the autopilot driving the jeep           (MOPPE_DEMO=jeep)
 #   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
 #   camp      hang the hammock, light a fire, lie down at dusk and watch
@@ -121,6 +122,7 @@ case $scene in
   ride) stage MOPPE_DEMO=1; : "${seconds:=20}" ;;
   forest) stage MOPPE_DEMO=forest; : "${seconds:=20}" ;;
   glide) stage MOPPE_DEMO=glide; : "${seconds:=30}" ;;
+  jeep) stage MOPPE_DEMO=jeep; : "${seconds:=20}" ;;
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
   camp)

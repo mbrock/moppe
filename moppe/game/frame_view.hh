@@ -7,6 +7,7 @@
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/gfx/mat4.hh>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -45,6 +46,19 @@ namespace moppe::game {
     float boost_drive = 0.0f;
   };
 
+  // The jeep as drawn: its origin (midway between the axles, at their
+  // standing height) and frame, how far each wheel hangs below where it
+  // stands (front left, front right, rear left, rear right; negative is
+  // pressed), the front wheels' turn to the right, and the wheels' roll.
+  struct JeepPose {
+    Vec3 position {};
+    Vec3 forward { 0, 0, 1 };
+    Vec3 up { 0, 1, 0 };
+    std::array<float, 4> wheel_drop {};
+    float steer_radians = 0.0f;
+    float wheel_spin_radians = 0.0f;
+  };
+
   struct GliderPose {
     Vec3 position {};
     Vec3 heading { 0, 0, 1 };
@@ -70,6 +84,7 @@ namespace moppe::game {
 
   struct FrameActors {
     VehiclePose bike {};
+    JeepPose jeep {};
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
     Mode active_mode = M_BIKE;
@@ -100,6 +115,8 @@ namespace moppe::game {
     bool can_deploy_glider = false;
     bool can_drop_bike = false;
     bool can_mount = false;
+    // On foot beside the jeep, which the mount key would drive.
+    bool can_drive = false;
     float vertical_speed_mps = 0.0f;
     float frame_time_s = 1.0f / 60.0f;
     float heading_radians = 0.0f;
@@ -245,6 +262,7 @@ namespace moppe::game {
   DisplayColor horizon_color_for (float sun_height);
 
   VehiclePose vehicle_pose (const mov::Vehicle& vehicle);
+  JeepPose jeep_pose (const mov::Jeep& jeep);
   GliderPose glider_pose (const mov::Glider& glider);
   WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);
   FrameView compose_frame_view (const FrameViewInput& input);

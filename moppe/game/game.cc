@@ -17,6 +17,7 @@
 #include <moppe/game/camp.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
+#include <moppe/game/companion_link.hh>
 #include <moppe/game/daylight.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/figure.hh>
@@ -29,9 +30,9 @@
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame_adapter.hh>
+#include <moppe/game/jeep_render.hh>
 #include <moppe/game/landscape_gazetteer.hh>
 #include <moppe/game/landscape_summary.hh>
-#include <moppe/game/companion_link.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/mushrooms.hh>
@@ -686,6 +687,23 @@ namespace moppe {
               logic ().m_cam_mode = CAM_FRONT;
           }
         }
+        park_jeep ();
+        // MOPPE_DEMO=jeep: the autopilot drives the jeep instead.
+        if (demo && std::string_view (demo) == "jeep" && !m_benchmark &&
+            !m_gazetteer && logic ().m_mode == M_BIKE)
+          session ().set_mode (M_JEEP);
+      }
+
+      // The jeep waits beside the bike, a few steps to its right.
+      void park_jeep () {
+        const mov::Vehicle& bike = session ().bike ();
+        Vec3 heading = bike.orientation ();
+        heading[1] = 0.0f;
+        heading =
+          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
+        const Vec3 side (heading[2], 0, -heading[0]);
+        session ().jeep ().place (
+          bike.position () + side * 4.5f, heading, surface ());
       }
 
       // MOPPE_DEMO=forest: park the bike at the world's forest-floor site.
@@ -831,8 +849,7 @@ namespace moppe {
         if (const auto first = m_mushrooms.nearest (m_spawn_position, 400.0f)) {
           const Vec3 at = m_mushrooms.site (*first).base;
           std::cerr << "moppe: nearest mushrooms ("
-                    << mushroom_plural (m_mushrooms.site (*first).kind)
-                    << ") "
+                    << mushroom_plural (m_mushrooms.site (*first).kind) << ") "
                     << std::hypot (at[0] - m_spawn_position[0],
                                    at[2] - m_spawn_position[2])
                     << " m from the spawn" << std::endl;
@@ -860,7 +877,8 @@ namespace moppe {
         // F still remounts the bike when it is close enough; otherwise it
         // picks too, for the touch screen's single action button.
         const bool bike_near =
-          length2 (feet - session ().bike ().position ()) < 5.0f * 5.0f;
+          length2 (feet - session ().bike ().position ()) < 5.0f * 5.0f ||
+          session ().can_drive ();
         if (!input.deploy_glider && !(input.toggle_mount && !bike_near))
           return;
         const std::optional<std::uint32_t> found =
@@ -1760,17 +1778,15 @@ namespace moppe {
           return;
         }
         std::cerr << "moppe: multiplayer: listening on port " << m_link->port ()
-                  << (address.empty ()
-                        ? ", calling on the local network"
-                        : ", calling " + address)
+                  << (address.empty () ? ", calling on the local network"
+                                       : ", calling " + address)
                   << std::endl;
       }
 
       std::uint32_t this_world () const {
-        return world_tag (
-          static_cast<std::uint32_t> (recipe ().seed ().value),
-          recipe ().resolution (),
-          static_cast<int> (recipe ().generation_profile ()));
+        return world_tag (static_cast<std::uint32_t> (recipe ().seed ().value),
+                          recipe ().resolution (),
+                          static_cast<int> (recipe ().generation_profile ()));
       }
 
       void forget_companion () {
@@ -1796,6 +1812,8 @@ namespace moppe {
         mine.day_hours = m_day.turning ? state.m_day_hours : -1.0;
         mine.mode = state.m_mode;
         mine.bike = vehicle_pose (session ().bike ());
+        mine.jeep = jeep_pose (session ().jeep ());
+        mine.jeep_velocity = session ().jeep ().velocity ();
         if (state.m_mode == M_GLIDER)
           mine.glider = glider_pose (session ().glider ());
         if (state.m_mode == M_FOOT)
@@ -1834,9 +1852,9 @@ namespace moppe {
         }
       }
 
-      // Both players begin beside a bike parked on the same spot. Whoever
-      // came later moves theirs a few steps aside, and themselves with it
-      // if they have not yet walked off.
+      // Both players begin beside a bike and a jeep parked on the same
+      // spots. Whoever came later moves theirs a few steps aside, and
+      // themselves with them if they have not yet walked off.
       void make_room (const CompanionSnapshot& theirs) {
         if (m_spectator || logic ().m_mode != M_FOOT)
           return;
@@ -1851,17 +1869,19 @@ namespace moppe {
           return;
         Vec3 heading = bike.orientation ();
         heading[1] = 0.0f;
-        heading = length2 (heading) > 1e-6f ? normalized (heading)
-                                            : Vec3 (0, 0, 1);
+        heading =
+          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
         const Vec3 side (heading[2], 0, -heading[0]);
-        const bool beside =
-          length2 (session ().walker ().position () - bike.position ()) <
-          6.0f * 6.0f;
-        Vec3 place = bike.position () - side * 4.0f;
+        const bool beside = length2 (session ().walker ().position () -
+                                     bike.position ()) < 6.0f * 6.0f;
+        // Far enough that this jeep, parked beyond the bike, clears
+        // theirs.
+        Vec3 place = bike.position () - side * 7.0f;
         place[1] = ground_height (place) + 1.2f;
         bike.reset (place);
         bike.set_heading (heading);
         m_spawn_position = place;
+        park_jeep ();
         if (!beside)
           return;
         session ().walker ().spawn (moppe::position (place + side * 1.8f),
@@ -1873,6 +1893,61 @@ namespace moppe {
                           session ().walker ().eye_position (),
                           subject_heading (),
                           70.0f));
+      }
+
+      // The passenger's seat of the other player's jeep, in the world.
+      static Vec3 companion_seat (const CompanionSnapshot& theirs) {
+        const JeepPose& jeep = theirs.jeep;
+        const Vec3 right = normalized (cross (jeep.up, jeep.forward));
+        return jeep.position + right * mov::Jeep::seat[0] +
+               jeep.up * mov::Jeep::seat[1] + jeep.forward * mov::Jeep::seat[2];
+      }
+
+      // On foot beside the other player's jeep, and nearer it than
+      // anything of one's own to ride.
+      bool can_ride_along () const {
+        if (!m_companion || m_spectator || logic ().m_mode != M_FOOT)
+          return false;
+        const Vec3 feet = session ().walker ().position ();
+        const float theirs = length2 (feet - m_companion->jeep.position);
+        return theirs < 4.5f * 4.5f &&
+               theirs < length2 (feet - session ().jeep ().position ()) &&
+               theirs < length2 (feet - session ().bike ().position ());
+      }
+
+      // Taking the seat beside the other player, keeping it as their jeep
+      // moves, and leaving it: by the mount key, or when they have gone.
+      void ride_along (InputFrame& input) {
+        GameLogicState& state = logic ();
+        if (state.m_mode == M_PASSENGER) {
+          if (!m_companion || input.toggle_mount) {
+            const Vec3 right =
+              normalized (cross (state.m_seat_up, state.m_seat_heading));
+            session ().walker ().spawn (
+              moppe::position (state.m_seat_position + right * 1.4f),
+              state.m_seat_heading);
+            session ().set_mode (M_FOOT);
+            input.toggle_mount = false;
+            return;
+          }
+        } else if (input.toggle_mount && can_ride_along ()) {
+          session ().clear_controls ();
+          session ().set_mode (M_PASSENGER);
+          input.toggle_mount = false;
+        } else if (m_companion && !m_rode_along &&
+                   moppe::environment ("MOPPE_RIDE_ALONG")) {
+          // For captures: take the seat as soon as there is one, from
+          // wherever this player stands.
+          m_rode_along = true;
+          session ().clear_controls ();
+          session ().set_mode (M_PASSENGER);
+        }
+        if (state.m_mode != M_PASSENGER)
+          return;
+        state.m_seat_position = companion_seat (*m_companion);
+        state.m_seat_heading = m_companion->jeep.forward;
+        state.m_seat_up = m_companion->jeep.up;
+        state.m_seat_velocity = m_companion->jeep_velocity;
       }
 
       // Once a frame: hears what the other player has sent, works out how
@@ -1937,17 +2012,24 @@ namespace moppe {
       // The other player as the world's second figure: their bike where
       // they left or ride it, themselves on foot, in the hammock, or
       // under the wing, and their camp.
-      void draw_companion (render::Renderer& r,
-                           render::DrawList& dl,
-                           float time) {
+      void
+      draw_companion (render::Renderer& r, render::DrawList& dl, float time) {
         if (!m_companion)
           return;
         const CompanionSnapshot& theirs = *m_companion;
         m_blob.draw (dl, surface (), theirs.bike.position, 2.2f);
         render_vehicle (r, dl, theirs.bike, theirs.mode == M_BIKE, 0x3000);
+        m_blob.draw (dl, surface (), theirs.jeep.position, 3.4f);
+        // This player beside them, unless seeing through their own eyes.
+        render_jeep (r,
+                     dl,
+                     theirs.jeep,
+                     { .driver = theirs.mode == M_JEEP,
+                       .passenger = logic ().m_mode == M_PASSENGER &&
+                                    logic ().m_cam_mode != CAM_HELMET },
+                     0x6000);
         if (theirs.hung)
-          draw_hammock (
-            dl, theirs.hammock, theirs.hammock_load, theirs.swing);
+          draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
         if (theirs.hearth_laid)
           draw_hearth (dl, theirs.hearth, theirs.fire_burn);
 
@@ -1956,13 +2038,13 @@ namespace moppe {
           if (index < m_mushrooms.mushroom_count ())
             m_companion_basket.push_back (m_mushrooms.site (index));
         if (theirs.walker && theirs.lying_down ()) {
-          figure::draw (dl,
-                        pose_resting (theirs.hammock,
-                                      theirs.swing,
-                                      resting_gaze (theirs.hammock,
-                                                    theirs.gaze_yaw,
-                                                    theirs.gaze_pitch),
-                                      time));
+          figure::draw (
+            dl,
+            pose_resting (
+              theirs.hammock,
+              theirs.swing,
+              resting_gaze (theirs.hammock, theirs.gaze_yaw, theirs.gaze_pitch),
+              time));
           Vec3 floor = hammock_middle (theirs.hammock) +
                        hammock_across (theirs.hammock) * 0.75f -
                        hammock_along (theirs.hammock) * 0.5f;
@@ -1996,13 +2078,13 @@ namespace moppe {
           return;
         lighting.lamp_position = lamp;
         lighting.lamp_reach = fire_light_reach;
-        lighting.lamp_color =
-          scale_display (fire_light_color (m_companion->fire_burn,
-                                           lighting.time),
-                         1.0f - 0.25f * lighting.daylight);
+        lighting.lamp_color = scale_display (
+          fire_light_color (m_companion->fire_burn, lighting.time),
+          1.0f - 0.25f * lighting.daylight);
       }
 
       void add_company_readings (HudState& state) const {
+        state.can_ride_along = can_ride_along ();
         if (!m_link || !m_notice)
           return;
         state.notice = m_notice;
@@ -2088,13 +2170,11 @@ namespace moppe {
             const float ahead =
               dot (toward, heading) / std::max (distance, 1e-3f);
             // Look yaw turns to the right.
-            const float turn = ahead < 0.0f
-                                 ? (leftward >= 0.0f ? -1.0f : 1.0f)
-                                 : -std::asin (leftward);
+            const float turn = ahead < 0.0f ? (leftward >= 0.0f ? -1.0f : 1.0f)
+                                            : -std::asin (leftward);
             input.look_yaw = std::clamp (turn, -2.5f * dt, 2.5f * dt);
-            input.look_pitch = std::clamp (-0.6f - logic ().m_look_pitch,
-                                           -1.0f * dt,
-                                           1.0f * dt);
+            input.look_pitch =
+              std::clamp (-0.6f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
             const bool reachable =
               m_mushrooms.within_reach (feet, heading) == target;
             input.drive = !reachable && ahead > 0.7f
@@ -2289,8 +2369,8 @@ namespace moppe {
           // The mouse turns the spectator directly; the right stick's look
           // arrives with the frame.
           m_spectator->yaw += input.look_yaw;
-          m_spectator->pitch = std::clamp (
-            m_spectator->pitch + input.look_pitch, -1.45f, 1.45f);
+          m_spectator->pitch =
+            std::clamp (m_spectator->pitch + input.look_pitch, -1.45f, 1.45f);
           input = {};
         }
         static const char* walk_script = moppe::environment ("MOPPE_WALK");
@@ -2331,6 +2411,7 @@ namespace moppe {
         }
 
         pass_time (dt);
+        ride_along (input);
         tend_camp (input, dt);
         reach_for_mushroom (input);
         const GameSessionAdvanceResult advance =
@@ -2426,6 +2507,7 @@ namespace moppe {
         state.can_deploy_glider = reading.can_deploy_glider;
         state.can_drop_bike = reading.can_drop_bike;
         state.can_mount = reading.can_mount;
+        state.can_drive = reading.can_drive;
         state.vertical_speed_mps = reading.vertical_speed_mps;
         state.frame_time_s = reading.frame_time_s;
         state.heading_radians = reading.heading_radians;
@@ -2504,7 +2586,11 @@ namespace moppe {
             case M_FOOT:
               interaction_radius = 0.55f;
               break;
+            case M_JEEP:
+              interaction_radius = 1.7f;
+              break;
             case M_GLIDER:
+            case M_PASSENGER:
               break;
             }
           }
@@ -2556,6 +2642,16 @@ namespace moppe {
         if (!(helmet && actors.active_mode == M_BIKE) && !m_spectator)
           render_vehicle (
             r, m_world_dl, actors.bike, actors.active_mode == M_BIKE, 0x1000);
+        if (!m_spectator) {
+          m_blob.draw (m_world_dl, surface (), actors.jeep.position, 3.4f);
+          render_jeep (
+            r,
+            m_world_dl,
+            actors.jeep,
+            { .driver = actors.active_mode == M_JEEP && !helmet,
+              .passenger = m_companion && m_companion->mode == M_PASSENGER },
+            0x5000);
+        }
         const Basket& basket = logic ().m_basket;
         m_basket_contents.clear ();
         for (const std::uint32_t index : basket.picked)
@@ -2564,20 +2660,15 @@ namespace moppe {
         if (actors.walker && lying_down ())
           draw_sleeper (m_world_dl, helmet, frame.lighting.time);
         else if (actors.walker && !helmet)
-          render_walker (m_world_dl,
-                         *actors.walker,
-                         frame.lighting.time,
-                         m_basket_contents);
+          render_walker (
+            m_world_dl, *actors.walker, frame.lighting.time, m_basket_contents);
         else if (actors.walker)
-          render_basket (m_world_dl,
-                         *actors.walker,
-                         frame.lighting.time,
-                         m_basket_contents);
+          render_basket (
+            m_world_dl, *actors.walker, frame.lighting.time, m_basket_contents);
         // The mushroom just picked rises from the moss into the basket.
-        if (actors.walker && !basket.picked.empty () &&
-            !basket.last_refused) {
-          const float age = static_cast<float> (logic ().m_total_time -
-                                                basket.last_reach_time);
+        if (actors.walker && !basket.picked.empty () && !basket.last_refused) {
+          const float age =
+            static_cast<float> (logic ().m_total_time - basket.last_reach_time);
           if (age >= 0.0f && age < 0.45f) {
             const float t = age / 0.45f;
             MushroomSite rising = m_mushrooms.site (basket.picked.back ());
@@ -2607,11 +2698,8 @@ namespace moppe {
         // already drawn: exhaust and jump-jet flames, then star halos.
         if (visibility.vehicle_effects && !m_spectator &&
             !(helmet && actors.active_mode == M_BIKE))
-          render_vehicle_flames (r,
-                                 actors.bike,
-                                 frame.camera.position,
-                                 frame.lighting.time,
-                                 0x1000);
+          render_vehicle_flames (
+            r, actors.bike, frame.camera.position, frame.lighting.time, 0x1000);
         if (logic ().m_camp.fire_time > -50.0)
           draw_fire (r,
                      logic ().m_camp.hearth,
@@ -3720,6 +3808,7 @@ namespace moppe {
       // Their hour of the day; negative with no one to keep time with.
       double m_companion_hours = -1.0;
       bool m_companion_met = false;
+      bool m_rode_along = false;
       bool m_companion_elsewhere = false;
       std::uint32_t m_snapshots_sent = 0;
       const char* m_notice = nullptr;

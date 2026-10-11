@@ -45,6 +45,13 @@ namespace moppe::game {
       return m_bike;
     }
 
+    mov::Jeep& jeep () noexcept {
+      return m_jeep;
+    }
+    const mov::Jeep& jeep () const noexcept {
+      return m_jeep;
+    }
+
     mov::Glider& glider () noexcept {
       return m_glider;
     }
@@ -85,6 +92,8 @@ namespace moppe::game {
     float subject_speed_kmh () const;
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
+    // On foot within reach of the jeep, and nearer it than the bike.
+    bool can_drive () const;
     void clear_controls ();
     // Begin standing beside the parked bike, seeing through your own eyes.
     void start_on_foot ();
@@ -100,6 +109,7 @@ namespace moppe::game {
     GameLogicState m_logic;
     mov::Vehicle m_bike;
     mov::Glider m_glider;
+    mov::Jeep m_jeep;
     Walker m_walker;
     ChaseCamera m_camera;
     Stars m_stars;

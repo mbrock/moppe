@@ -41,6 +41,10 @@ namespace moppe {
       bool can_drop_bike;
       // On foot within reach of the bike.
       bool can_mount;
+      // On foot beside this player's jeep, or the other player's with a
+      // seat free.
+      bool can_drive = false;
+      bool can_ride_along = false;
       float vertical_speed_mps;
       // Real draw-callback interval: paces the fades and feeds the
       // diagnostic frame rate.

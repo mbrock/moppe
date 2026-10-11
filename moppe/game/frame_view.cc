@@ -112,6 +112,18 @@ namespace moppe::game {
     };
   }
 
+  JeepPose jeep_pose (const mov::Jeep& jeep) {
+    const mov::Jeep::State& state = jeep.state ();
+    return {
+      .position = state.position,
+      .forward = state.forward,
+      .up = state.up,
+      .wheel_drop = state.drop,
+      .steer_radians = state.steer,
+      .wheel_spin_radians = state.wheel_spin,
+    };
+  }
+
   GliderPose glider_pose (const mov::Glider& glider) {
     return {
       .position = glider.position (),
@@ -249,6 +261,7 @@ namespace moppe::game {
     };
 
     result.actors.bike = vehicle_pose (input.session.bike ());
+    result.actors.jeep = jeep_pose (input.session.jeep ());
     if (logic.m_mode == M_GLIDER)
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_mode == M_FOOT)
@@ -271,7 +284,7 @@ namespace moppe::game {
                                                                       u::s);
     } else {
       hud.boost_ready01 =
-        logic.m_mode == M_FOOT ? 1.0f : input.session.bike ().boost_charge ();
+        logic.m_mode == M_BIKE ? input.session.bike ().boost_charge () : 1.0f;
     }
     hud.health01 = logic.m_health / 100.0f;
     hud.odometer_m = static_cast<float> (logic.m_odometer);
@@ -293,6 +306,7 @@ namespace moppe::game {
     hud.can_mount = logic.m_mode == M_FOOT &&
                     length2 (input.session.walker ().position () -
                              input.session.bike ().position ()) < 5.0f * 5.0f;
+    hud.can_drive = input.session.can_drive ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();

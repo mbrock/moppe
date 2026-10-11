@@ -519,9 +519,8 @@ namespace moppe {
         cheer.tracking = 0.02f;
         const std::string name (st.reached_name);
         const std::string line =
-          st.reached_refused
-            ? "Not that one -- the " + name + " is poisonous!"
-            : "A " + name + "!";
+          st.reached_refused ? "Not that one -- the " + name + " is poisonous!"
+                             : "A " + name + "!";
         draw_shaded (text,
                      0.5f * width_pts,
                      height_pts - 96.0f - 10.0f * (1.0f - ease (fresh)),
@@ -538,12 +537,8 @@ namespace moppe {
         news.red = news.green = news.blue = ink;
         news.alpha = 0.9f * ease (told);
         news.tracking = 0.04f;
-        draw_shaded (text,
-                     0.5f * width_pts,
-                     54.0f,
-                     st.notice,
-                     news,
-                     TextAlign::Center);
+        draw_shaded (
+          text, 0.5f * width_pts, 54.0f, st.notice, news, TextAlign::Center);
       }
       if (alpha <= 0.002f)
         return;
@@ -616,8 +611,9 @@ namespace moppe {
           action = name + " -- poisonous, leave it be";
         } else {
           key = deploy_key;
-          action = *deploy_key ? "Pick the " + std::string (st.mushroom_in_reach)
-                               : name + " within reach";
+          action = *deploy_key
+                     ? "Pick the " + std::string (st.mushroom_in_reach)
+                     : name + " within reach";
         }
       } else if (st.on_foot && st.camp != HudState::Camp::none) {
         switch (st.camp) {
@@ -647,6 +643,12 @@ namespace moppe {
       } else if (st.can_deploy_glider) {
         key = deploy_key;
         action = *deploy_key ? "Deploy glider" : "Glider ready";
+      } else if (st.can_ride_along) {
+        key = mount_key;
+        action = *mount_key ? "Ride along" : "A seat is free";
+      } else if (st.can_drive) {
+        key = mount_key;
+        action = *mount_key ? "Drive" : "Jeep within reach";
       } else if (st.can_mount) {
         key = mount_key;
         action = *mount_key ? "Ride" : "Bike within reach";

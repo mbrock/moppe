@@ -9,6 +9,7 @@
 #include <moppe/game/walker.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/glider.hh>
+#include <moppe/mov/jeep.hh>
 #include <moppe/mov/vehicle.hh>
 
 #include <random>
@@ -16,7 +17,9 @@
 namespace moppe::game {
   using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
 
-  enum Mode { M_BIKE, M_FOOT, M_GLIDER };
+  // M_JEEP drives this player's jeep; M_PASSENGER rides in the other
+  // player's (game/companion.hh).
+  enum Mode { M_BIKE, M_FOOT, M_GLIDER, M_JEEP, M_PASSENGER };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
   // The directly copyable logical state owned by GameSession. Generated world
@@ -58,6 +61,12 @@ namespace moppe::game {
     float m_look_yaw = 0.0f;
     float m_look_idle = 0.0f;
     Vec3 m_fp_eye;
+    // Riding along (M_PASSENGER): the seat in the other player's jeep,
+    // how it faces, and how it moves, as last heard.
+    Vec3 m_seat_position;
+    Vec3 m_seat_heading { 0, 0, 1 };
+    Vec3 m_seat_up { 0, 1, 0 };
+    Vec3 m_seat_velocity;
     int m_score = 0;
     float m_jump_airtime = 0.0f;
     float m_jump_spin_radians = 0.0f;
@@ -84,6 +93,7 @@ namespace moppe::game {
     ChaseCamera::State camera;
     Stars::State stars;
     Dust::State dust;
+    mov::Jeep::State jeep;
   };
 }
 

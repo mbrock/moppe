@@ -9,7 +9,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 1;
+    constexpr std::uint8_t wire_version = 2;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -134,6 +134,11 @@ namespace moppe::game {
       return phase - std::floor (phase);
     }
 
+    // Between two angles, the short way round.
+    float mix_angle (float a, float b, float t) {
+      return a + std::remainder (b - a, 6.2831853f) * t;
+    }
+
     bool leapt (const Vec3& a, const Vec3& b) {
       return length2 (b - a) > leap_metres * leap_metres;
     }
@@ -206,6 +211,16 @@ namespace moppe::game {
     out.put (bike.boost_level);
     out.put (bike.boost_drive);
 
+    const JeepPose& jeep = snapshot.jeep;
+    out.put (jeep.position);
+    out.put (jeep.forward);
+    out.put (jeep.up);
+    for (const float drop : jeep.wheel_drop)
+      out.put (drop);
+    out.put (jeep.steer_radians);
+    out.put (jeep.wheel_spin_radians);
+    out.put (snapshot.jeep_velocity);
+
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
       out.put (snapshot.glider->heading);
@@ -262,7 +277,7 @@ namespace moppe::game {
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
     const std::uint8_t mode = in.get<std::uint8_t> ();
-    if (mode > M_GLIDER)
+    if (mode > M_PASSENGER)
       return std::nullopt;
     snapshot.mode = static_cast<Mode> (mode);
     const std::uint8_t flags = in.get<std::uint8_t> ();
@@ -279,6 +294,16 @@ namespace moppe::game {
     bike.thrust = in.number ();
     bike.boost_level = in.number ();
     bike.boost_drive = in.number ();
+
+    JeepPose& jeep = snapshot.jeep;
+    jeep.position = in.point ();
+    jeep.forward = in.direction (Vec3 (0, 0, 1));
+    jeep.up = in.direction (Vec3 (0, 1, 0));
+    for (float& drop : jeep.wheel_drop)
+      drop = std::clamp (in.number (), -0.5f, 0.5f);
+    jeep.steer_radians = in.number ();
+    jeep.wheel_spin_radians = in.number ();
+    snapshot.jeep_velocity = in.point ();
 
     if (flags & has_glider) {
       GliderPose glider;
@@ -358,6 +383,19 @@ namespace moppe::game {
       mix (a.bike.wheel_spin_radians, b.bike.wheel_spin_radians, t);
     bike.fork_radians = mix (a.bike.fork_radians, b.bike.fork_radians, t);
 
+    if (!leapt (a.jeep.position, b.jeep.position)) {
+      JeepPose& jeep = result.jeep;
+      jeep.position = mix (a.jeep.position, b.jeep.position, t);
+      jeep.forward = mix_direction (a.jeep.forward, b.jeep.forward, t);
+      jeep.up = mix_direction (a.jeep.up, b.jeep.up, t);
+      for (std::size_t i = 0; i < jeep.wheel_drop.size (); ++i)
+        jeep.wheel_drop[i] =
+          mix (a.jeep.wheel_drop[i], b.jeep.wheel_drop[i], t);
+      jeep.steer_radians = mix (a.jeep.steer_radians, b.jeep.steer_radians, t);
+      jeep.wheel_spin_radians =
+        mix_angle (a.jeep.wheel_spin_radians, b.jeep.wheel_spin_radians, t);
+      result.jeep_velocity = mix (a.jeep_velocity, b.jeep_velocity, t);
+    }
     if (a.glider && b.glider &&
         !leapt (a.glider->position, b.glider->position)) {
       GliderPose& glider = *result.glider;
