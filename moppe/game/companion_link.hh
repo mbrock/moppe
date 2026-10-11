@@ -46,8 +46,9 @@ namespace moppe::game {
     // companion, once a second while calling out for one.
     bool due () const;
     // Stamps the snapshot with this player, the next sequence number,
-    // and the time, and sends it.
-    void send (CompanionSnapshot snapshot);
+    // and `taken`, the moment on this link's clock that its poses were
+    // true, and sends it.
+    void send (CompanionSnapshot snapshot, double taken);
 
     // Every snapshot that has arrived from the companion since the last
     // call, oldest first. The first player heard becomes the companion

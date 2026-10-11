@@ -178,12 +178,12 @@ namespace moppe::game {
       new CompanionLink (std::move (socket)));
   }
 
-  void CompanionLink::send (CompanionSnapshot snapshot) {
+  void CompanionLink::send (CompanionSnapshot snapshot, double taken) {
     Socket& socket = *m_socket;
     snapshot.player = socket.player;
     snapshot.sequence = socket.sequence++;
-    snapshot.sent = socket.now ();
-    socket.sent = snapshot.sent;
+    snapshot.sent = taken;
+    socket.sent = socket.now ();
     const std::vector<std::uint8_t> bytes = encode (snapshot);
     if (socket.speaking ())
       socket.send_to (socket.companion_address, bytes);
@@ -247,7 +247,7 @@ namespace moppe::game {
     return nullptr;
   }
 
-  void CompanionLink::send (CompanionSnapshot) {}
+  void CompanionLink::send (CompanionSnapshot, double) {}
   void CompanionLink::receive (std::vector<CompanionSnapshot>&) {}
 
   std::string CompanionLink::companion_address () const {
@@ -269,8 +269,12 @@ namespace moppe::game {
   }
 
   bool CompanionLink::due () const {
+    // A little under the interval, so that a game drawing sixty frames
+    // a second speaks on every other one and not now on the second, now
+    // on the third.
     return m_socket->now () - m_socket->sent >=
-           (m_socket->speaking () ? speaking_interval : calling_interval);
+           (m_socket->speaking () ? speaking_interval - 0.004
+                                  : calling_interval);
   }
 
   std::uint16_t CompanionLink::port () const {

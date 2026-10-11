@@ -113,29 +113,107 @@ MOPPE_TEST (every_pick_is_told_in_the_end) {
   MOPPE_CHECK (companion_pick_window_start (5, 3) == 0);
 }
 
-MOPPE_TEST (a_companion_is_drawn_between_snapshots) {
-  CompanionTrack track;
-  // Sent every tenth of a second, a metre on each time; this machine's
-  // clock reads a hundred seconds more than theirs.
-  for (int i = 0; i <= 5; ++i)
-    track.push (companion_test_walker (static_cast<float> (i), 0.1 * i),
-                100.0 + 0.1 * i);
-  MOPPE_CHECK (track.present (100.5));
-  // Drawn a tenth of a second behind: at 100.45, where they were at 0.35.
-  const std::optional<CompanionSnapshot> seen = track.sample (100.45);
-  MOPPE_CHECK (seen && seen->walker);
-  if (seen && seen->walker)
-    MOPPE_CHECK_NEAR (seen->walker->position[0], 3.5f, 1e-3f);
-  // With no more word they are carried on a little, then stand.
-  const std::optional<CompanionSnapshot> later = track.sample (101.5);
-  MOPPE_CHECK (later && later->walker);
-  if (later && later->walker) {
-    MOPPE_CHECK (later->walker->position[0] > 5.0f);
-    MOPPE_CHECK (later->walker->position[0] < 8.0f);
+namespace {
+  // A companion walking ten metres a second along x, heard from every
+  // thirtieth of a second except in `silence`, and drawn sixty times a
+  // second for `seconds`. Returns where they were drawn each frame.
+  struct CompanionPlayback {
+    CompanionTrack track;
+    std::vector<float> drawn;
+    double now = 100.0;
+    int told = 0;
+
+    void play (double seconds, double silent_from = 1e9, double until = 0) {
+      const int frames = static_cast<int> (seconds * 60.0 + 0.5);
+      for (int frame = 0; frame < frames; ++frame) {
+        now += 1.0 / 60.0;
+        const double theirs = now - 100.0;
+        // Late word comes all at once.
+        const bool silent = theirs >= silent_from && theirs < until;
+        while (!silent && told / 30.0 <= theirs) {
+          track.push (
+            companion_test_walker (
+              static_cast<float> (told / 3.0), told / 30.0),
+            now);
+          ++told;
+        }
+        const std::optional<CompanionSnapshot> seen =
+          track.advance (now, 1.0 / 60.0);
+        MOPPE_CHECK (seen && seen->walker);
+        if (seen && seen->walker)
+          drawn.push_back (seen->walker->position[0]);
+      }
+    }
+  };
+}
+
+MOPPE_TEST (a_companion_is_drawn_evenly_a_moment_behind) {
+  CompanionPlayback playback;
+  playback.play (4.0);
+  // A steady link is followed closely.
+  const double delay = playback.track.delay ();
+  MOPPE_CHECK (delay >= 0.05 && delay < 0.09);
+  MOPPE_CHECK_NEAR (playback.drawn.back (),
+                    static_cast<float> ((4.0 - delay) * 10.0),
+                    0.25f);
+  // Once settled every frame moves them as far as the last, though
+  // snapshots come only with every other one.
+  const float pace = 10.0f / 60.0f;
+  for (std::size_t i = 180; i < playback.drawn.size (); ++i)
+    MOPPE_CHECK_NEAR (
+      playback.drawn[i] - playback.drawn[i - 1], pace, 0.02f * pace);
+}
+
+MOPPE_TEST (a_companion_does_not_jump_when_late_word_comes) {
+  CompanionPlayback playback;
+  playback.play (3.0, 2.0, 2.3);
+  // Through the silence they are carried on, slowing; when word comes
+  // they make up the ground without going back or leaping ahead.
+  const float pace = 10.0f / 60.0f;
+  for (std::size_t i = 120; i < playback.drawn.size (); ++i) {
+    const float step = playback.drawn[i] - playback.drawn[i - 1];
+    MOPPE_CHECK (step > -1e-4f && step < 2.5f * pace);
   }
-  // And after long silence they have gone.
-  MOPPE_CHECK (!track.present (104.0));
-  MOPPE_CHECK (!track.sample (104.0));
+  // An uneven link is followed from farther back.
+  MOPPE_CHECK (playback.track.delay () > 0.2);
+}
+
+MOPPE_TEST (a_silent_companion_stands_and_then_is_gone) {
+  CompanionPlayback playback;
+  playback.play (1.0);
+  const float last = static_cast<float> ((playback.told - 1) / 3.0);
+  CompanionTrack& track = playback.track;
+  double now = playback.now;
+  float before = playback.drawn.back ();
+  for (int frame = 0; frame < 120; ++frame) {
+    now += 1.0 / 60.0;
+    const std::optional<CompanionSnapshot> seen =
+      track.advance (now, 1.0 / 60.0);
+    MOPPE_CHECK (seen && seen->walker);
+    if (!seen || !seen->walker)
+      return;
+    MOPPE_CHECK (seen->walker->position[0] >= before - 1e-4f);
+    before = seen->walker->position[0];
+  }
+  // Carried on a little past the last word, and no farther.
+  MOPPE_CHECK (before > last + 1.0f && before < last + 2.1f);
+  MOPPE_CHECK (track.present (now));
+  MOPPE_CHECK (!track.present (now + 3.0));
+  MOPPE_CHECK (!track.advance (now + 3.0, 1.0 / 60.0));
+}
+
+MOPPE_TEST (a_companion_rounds_the_corners_between_snapshots) {
+  // Gathering speed: x = t * t, told at t = 0, 1, 2, 3.
+  CompanionSnapshot told[4];
+  for (int i = 0; i < 4; ++i)
+    told[i] = companion_test_walker (static_cast<float> (i * i), 0.1 * i);
+  // Straight between the middle two is 2.5; the truth is 2.25.
+  MOPPE_CHECK_NEAR (
+    blend (told[1], told[2], 0.5f).walker->position[0], 2.5f, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    blend (&told[0], told[1], told[2], &told[3], 0.5f).walker->position[0],
+    2.25f,
+    1e-4f);
 }
 
 MOPPE_TEST (a_companion_does_not_slide_across_a_leap) {
@@ -168,11 +246,11 @@ MOPPE_TEST (two_links_on_one_machine_find_each_other) {
   std::vector<CompanionSnapshot> at_first, at_second;
   for (int round = 0; round < 100 && (at_first.empty () || at_second.empty ());
        ++round) {
-    second->send (companion_test_walker (2.0f, 0.0));
+    second->send (companion_test_walker (2.0f, 0.0), second->now ());
     // The first answers whoever called.
     first->receive (at_first);
     if (!at_first.empty ())
-      first->send (companion_test_walker (1.0f, 0.0));
+      first->send (companion_test_walker (1.0f, 0.0), first->now ());
     second->receive (at_second);
     std::this_thread::sleep_for (std::chrono::milliseconds (5));
   }

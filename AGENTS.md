@@ -292,8 +292,10 @@
     one world, and `--join <host[:port]>` names the other machine where
     broadcasts do not carry. Neither serves: each simulates its own player
     and sends its poses thirty times a second over UDP port 27960
-    (`game/companion_link.*`), and the other draws them a tenth of a
-    second behind as a second hiker, bike, jeep, or glider, with their camp;
+    (`game/companion_link.*`), and the other draws them a moment behind
+    (some sixty milliseconds on a steady link, more on an uneven one;
+    `CompanionTrack`) as a second hiker, bike, jeep, or glider, with their
+    camp;
     picked mushrooms and the hour of the day are shared (the clock that
     is ahead leads), and nothing collides between the two. So that they
     can be told apart, the player with the greater number wears the green

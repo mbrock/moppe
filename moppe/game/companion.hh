@@ -6,13 +6,14 @@
 // poses the renderer already draws from, the camp as it stands, the hour,
 // and which mushrooms have been picked. The other machine draws that as a
 // second hiker, bike, jeep, or glider -- the companion -- a moment in the past,
-// eased between the readings on either side. Nothing here touches a
+// on a curve through the readings around it. Nothing here touches a
 // socket (game/companion_link.hh does); these are the values and how they
 // travel.
 
 #include <moppe/game/camp_state.hh>
 #include <moppe/game/frame_view.hh>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -27,7 +28,7 @@ namespace moppe::game {
     // snapshots this is.
     std::uint64_t player = 0;
     std::uint32_t sequence = 0;
-    // The sender's clock when it was taken, seconds.
+    // The sender's clock when the poses were true, seconds.
     double sent = 0.0;
     // Which world they stand in (world_tag): poses mean nothing across
     // two different worlds.
@@ -107,14 +108,23 @@ namespace moppe::game {
   CompanionSnapshot
   blend (const CompanionSnapshot& a, const CompanionSnapshot& b, float t);
 
+  // The same, knowing the snapshots on either side (either may be
+  // null): between `a` and `b` they then move along a curve that passes
+  // each snapshot without a corner.
+  CompanionSnapshot blend (const CompanionSnapshot* before,
+                           const CompanionSnapshot& a,
+                           const CompanionSnapshot& b,
+                           const CompanionSnapshot* after,
+                           float t);
+
   // The companion's recent snapshots, played back a little behind their
   // arrival so that there is nearly always one on either side of the
-  // moment drawn.
+  // moment drawn. Snapshots arrive unevenly; the moment drawn moves on
+  // evenly, with the frames, and is only steered by the arrivals.
   class CompanionTrack {
   public:
-    // How far in the past the companion is drawn, and how long after
-    // their last word they are taken to have gone, seconds.
-    static constexpr double delay = 0.1;
+    // How long after their last word they are taken to have gone,
+    // seconds.
     static constexpr double patience = 3.0;
 
     // Takes a snapshot that arrived at `now` on this machine's clock;
@@ -124,16 +134,40 @@ namespace moppe::game {
     // Whether the companion has been heard from lately.
     bool present (double now) const;
 
-    // How they look at `now`; nothing once they have gone.
-    std::optional<CompanionSnapshot> sample (double now) const;
+    // How far in the past the companion is drawn, seconds: enough to
+    // cover the longest wait between arrivals of late, so a steady link
+    // is followed closely and an uneven one from farther back.
+    double delay () const;
+
+    // Moves the moment drawn on by `elapsed`, the frame's length, and
+    // tells how they look then; nothing once they have gone. Where word
+    // has run out they are carried on a little way and slow to a stand,
+    // and what later word corrects is eased rather than jumped.
+    std::optional<CompanionSnapshot> advance (double now, double elapsed);
 
     void clear ();
 
   private:
+    // How they looked at `at` on their clock, going by the first
+    // `count` snapshots held.
+    CompanionSnapshot look (std::size_t count, double at) const;
+
     std::deque<CompanionSnapshot> m_snapshots;
-    // This machine's clock less the sender's, eased over arrivals.
+    // The sender's clock less this machine's, eased over arrivals.
     double m_offset = 0.0;
     double m_heard = -1e9;
+    // The longest wait between arrivals of late.
+    double m_gap = 0.05;
+    // How many snapshots have come since the last advance.
+    std::size_t m_fresh = 0;
+    // The moment drawn, on the sender's clock, and how fast that clock
+    // is found to run against this one.
+    bool m_playing = false;
+    double m_play = 0.0;
+    double m_rate = 1.0;
+    // How far the bike, jeep, walker, and glider are still drawn from
+    // where the snapshots put them.
+    std::array<Vec3, 4> m_slip {};
   };
 }
 

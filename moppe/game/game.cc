@@ -2112,12 +2112,21 @@ namespace moppe {
 
       // Once a frame: hears what the other player has sent, works out how
       // they look just now, and tells them how this one does.
-      void keep_company () {
+      void keep_company (float elapsed) {
         if (!m_link)
           return;
         m_arrived.clear ();
         m_link->receive (m_arrived);
         const double now = m_link->now ();
+        // The poses told are the simulation's, which moves on in whole
+        // steps, now two to a frame and now three. They are stamped by a
+        // clock that moves with it, so that the other machine sees even
+        // motion however unevenly the frames fall.
+        m_pose_clock = m_pose_heard < 0.0 ? now
+                       : m_pose_clock +
+                           (m_stepped > 0.0 ? m_stepped : now - m_pose_heard);
+        m_pose_heard = now;
+        m_stepped = 0.0;
         const bool was_present = m_track.present (now);
         for (CompanionSnapshot& theirs : m_arrived) {
           if (theirs.world != this_world ()) {
@@ -2157,7 +2166,7 @@ namespace moppe {
           m_companion_hours = -1.0;
           m_companion_met = false;
         }
-        m_companion = m_track.sample (now);
+        m_companion = m_track.advance (now, elapsed);
 
         // A spectator has no one to show.
         if (m_spectator || !m_link->due ())
@@ -2171,7 +2180,7 @@ namespace moppe {
              i < picked.size () && mine.picks.size () < companion_pick_window;
              ++i)
           mine.picks.push_back (picked[i]);
-        m_link->send (std::move (mine));
+        m_link->send (std::move (mine), m_pose_clock);
       }
 
       // The other player as the world's second figure: their bike where
@@ -2393,7 +2402,7 @@ namespace moppe {
           m_simulation_clock.reset ();
           return;
         }
-        keep_company ();
+        keep_company (elapsed);
 
         // Offline replay and cinematic capture deliberately bind one logical
         // step to one rendered frame. Ordinary play instead consumes the
@@ -2564,6 +2573,7 @@ namespace moppe {
 
       void tick_simulation (float dt) {
         MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
+        m_stepped += dt;
         std::optional<InputFrame> scripted_input;
         if (opening_active () &&
             moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
@@ -4143,6 +4153,12 @@ namespace moppe {
       Outfit m_outfit = Outfit::blue_jacket;
       bool m_companion_elsewhere = false;
       std::uint32_t m_snapshots_sent = 0;
+      // The clock this player's snapshots are stamped by, the link's
+      // clock when it was last read, and how far the simulation has
+      // stepped since.
+      double m_pose_clock = 0.0;
+      double m_pose_heard = -1.0;
+      double m_stepped = 0.0;
       const char* m_notice = nullptr;
       double m_notice_at = 0.0;
       OpeningArrival m_opening_arrival;
