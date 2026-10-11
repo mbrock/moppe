@@ -23,7 +23,11 @@ and embeds in each backend's form (`world_shaders_metal.cc`,
 `world_shaders_d3d12.cc`, from DXC's headers). A frame draws the scene into a
 half-size RGBA16F colour, RG16F motion, and reversed-Z depth, jittered;
 resolves it temporally into a drawable-size history; then tonemaps into the
-drawable and draws the HUD over it.
+drawable and draws the HUD over it. The resolve's clamp and its motion
+belong to the scene texel an output pixel falls in, and several output
+pixels share each, so a pass at the scene's size gathers them first
+(`neighbourhood`: the 3x3 YCoCg bounds and the nearest surface's motion,
+in two RGBA16F targets) and the resolve reads one texel of each.
 
 So far it draws the terrain (vertex-pulled chunk strips morphing onto their
 parent levels, the ground material ported from `terrain.metal`), a
@@ -87,8 +91,11 @@ Grass is undergrowth.metal's blades without its mesh stages. A window of
 0.6-metre tiles anchored to the world lattice surrounds the camera; at
 `begin_frame`, `grass-tiles` keeps those in view that the grass medium says
 carry blades (leaf area, priced by the blades' projected width, thinned by a
-per-cell phase) and counts each into one indexed indirect draw. Each tile is
-an instance of 32 four-section blades that the vertex stage grows from hashes
+per-cell phase) and counts each into its class's indexed indirect draw. A
+tile's shoots are ordered, so its class is how many it draws -- 1, 2, 4, 8,
+16, or all 32, the least that holds its live ones -- and most tiles in view
+are far and keep one or two. Each is an instance of that many four-section
+blades that the vertex stage grows from hashes
 and the terrain's own fields, with the medium's tint, wind, the mover's
 parting, and the fragment stage's transmission, glint, and ensemble limits.
 The cull uses the previous frame's `UndergrowthParams`, since compute may not
@@ -193,6 +200,17 @@ The log reports the frame rate every ten seconds and, since the host turns
 (the scene at 1920x1080) a frame in the valley costs about 4 ms: scene 2.0,
 sun shadow 0.6, temporal resolve 0.7, present 0.3, both tree culls 0.17, at
 a steady 60 fps. The same view on an M5 MacBook at 2498x1600 costs 12-13 ms.
+
+An M2 Pro filling a 7680x2160 display (the scene at 3840x1080) spends 17 to
+19 ms: on the autopilot's ride the scene 8.0 (the sward's canopy 2.0, the
+sky 1.4, the trees 1.4, the blades 1.2, the ground and the rest 2.2), the
+occlusion and its blur 2.2, the shafts 2.1, the sun's shadow 1.8 (nearly
+all of it the far cascade's trees), the present 1.6, the resolve 1.3 after
+0.8 gathering its neighbourhoods, and the water's copy and pass 1.0. What
+scales with the drawable is about 4 ms of that and the rest follows the
+scene: at `MOPPE_RENDERSCALE=0.35` the ride holds 60 fps there.
+`MOPPE_NHAL_PROBE=nosky`, `nosward`, and `noblades` leave one part of the
+scene pass out, to time it by the difference.
 
 ## The desktop host
 
