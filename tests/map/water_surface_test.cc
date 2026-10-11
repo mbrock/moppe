@@ -7,7 +7,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <span>
+#include <vector>
 
 namespace {
   // Water sheets normally come out of the watercourse painter. These tests
@@ -82,11 +85,21 @@ MOPPE_TEST (water_presentation_writes_typed_sections_directly) {
   const terrain::WaterSheets water =
     water_sheets (domain, level_and_amplitude, flow);
 
+  const std::array ground {
+    terrain::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]),
+    terrain::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]),
+    terrain::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]),
+    terrain::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]),
+  };
+
   test::RecordingRenderer renderer;
   game::upload_water (renderer,
                       water,
+                      ground,
                       10.0f * u::m,
                       spatial_extent_in_metres (Vec3 (200, 100, 300)));
+  // A lattice smaller than a terrain patch says nothing about dry ground.
+  MOPPE_CHECK (renderer.ocean.wet_patches.empty ());
   MOPPE_CHECK_NEAR (renderer.ocean.level, 10.0f, 1e-6f);
   MOPPE_CHECK_NEAR (renderer.ocean.center[0], 100.0f, 1e-6f);
   MOPPE_CHECK_NEAR (renderer.ocean.center[2], 150.0f, 1e-6f);
@@ -94,4 +107,30 @@ MOPPE_TEST (water_presentation_writes_typed_sections_directly) {
   MOPPE_CHECK (renderer.ocean.cells == 300);
   MOPPE_CHECK (std::ranges::equal (renderer.water_levels, level_and_amplitude));
   MOPPE_CHECK (std::ranges::equal (renderer.water_flow, flow));
+}
+
+MOPPE_TEST (water_presentation_names_the_terrain_patches_that_hold_water) {
+  using namespace moppe;
+  // Two patches a side. The sheet lies on the ground but for one sample
+  // on the edge between the lower two, which wets both of them alone.
+  const std::size_t patch = render::terrain_patch_cells, side = 2 * patch;
+  const terrain::TerrainDomain domain (side, side, 10.0f * u::m, 10.0f * u::m);
+  std::vector<float> level_and_amplitude (2 * side * side, 0.0f);
+  for (std::size_t offset = 0; offset < side * side; ++offset)
+    level_and_amplitude[2 * offset] = 15.0f;
+  const std::size_t pool = (patch + 8) * side + patch;
+  level_and_amplitude[2 * pool] = 20.0f;
+  const std::vector<float> flow (2 * side * side, 0.0f);
+  const std::vector ground (
+    side * side,
+    terrain::SurfaceElevation (15.0f * terrain::surface_elevation[u::m]));
+
+  test::RecordingRenderer renderer;
+  game::upload_water (renderer,
+                      water_sheets (domain, level_and_amplitude, flow),
+                      ground,
+                      10.0f * u::m,
+                      spatial_extent_in_metres (Vec3 (200, 100, 300)));
+  const std::array<std::uint8_t, 4> expected { 0, 0, 1, 1 };
+  MOPPE_CHECK (std::ranges::equal (renderer.ocean.wet_patches, expected));
 }
