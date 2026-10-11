@@ -400,25 +400,6 @@
                      0.04)))
     (smoothstep (- threshold width) (+ threshold width) value)))
 
-;;; Where the sward's blades turn with the heath, and to what: the same
-;;; band of the land's relief as the ground's own heath (GROUND-SURFACE),
-;;; from noise a vertex can afford.
-(define-shader-function heath-amount (xz rise)
-  (let* ((patch (+ (* 0.6 (value-noise (+ (/ xz 9.0) (vec2 2.7 2.7))))
-                   (* 0.4 (value-noise (+ (/ xz 31.0) (vec2 8.1 8.1))))))
-         (drift (value-noise (+ (/ xz 140.0) (vec2 5.3 5.3))))
-         (green (- 1.0 (smoothstep 0.24 0.30 patch))))
-    (* (smoothstep 0.48 0.64 (+ rise (* 0.16 (- drift 0.5))))
-       (- 1.0 (* 0.75 green)))))
-
-(define-shader-function heath-tint (xz moisture)
-  (let* ((patch (+ (* 0.6 (value-noise (+ (/ xz 9.0) (vec2 2.7 2.7))))
-                   (* 0.4 (value-noise (+ (/ xz 31.0) (vec2 8.1 8.1)))))))
-    (mix (mix (vec3 0.45 0.42 0.29) (vec3 0.40 0.25 0.18)
-              (smoothstep 0.46 0.53 patch))
-         (vec3 0.33 0.25 0.25)
-         (smoothstep 0.64 0.71 (+ patch (* 0.20 (- moisture 0.5)))))))
-
 ;;; -- the ground's detail ---------------------------------------------------
 ;;;
 ;;; Below the terrain's own samples the ground is read from one small tiling
@@ -486,6 +467,49 @@
 
 (define-shader-function stone-tone (stone)
   (clamp (/ (- stone 0.4) 0.6) 0.0 1.0))
+
+;;; -- the heath --------------------------------------------------------------
+;;;
+;;; Above the meadows the ground and the sward's blades turn together, so
+;;; both ask the same questions of the same grain: how far up the land's
+;;; relief the heath has come, which plant holds a place, and what colour
+;;; it is in autumn.
+
+;;; How far the heath has taken ground at RISE of the land's relief; DRIFT,
+;;; the region's grain, moves its lower edge.
+(define-shader-function heath-reach (rise drift)
+  (smoothstep 0.48 0.64 (+ rise (* 0.16 (- drift 0.5)))))
+
+;;; Which plant holds a place, 0 to 1, from the grain at every scale.
+(define-shader-function heath-plant (patch drift fleck grain)
+  (+ (* 0.45 patch) (* 0.25 drift) (* 0.22 fleck) (* 0.08 grain)))
+
+;;; Its colour, display space: sedge still green, straw, russet dwarf
+;;; birch, and the wine of crowberry where it is damp.  WIDTH is half the
+;;; blend between one plant and the next.
+(define-shader-function heath-colour (plant moisture width)
+  (let* ((damp (+ plant (* 0.20 (- moisture 0.5)))))
+    (mix (mix (mix (vec3 0.41 0.42 0.23) (vec3 0.51 0.45 0.27)
+                   (smoothstep (- 0.42 width) (+ 0.42 width) plant))
+              (vec3 0.45 0.33 0.22)
+              (smoothstep (- 0.55 width) (+ 0.55 width) plant))
+         (vec3 0.36 0.26 0.23)
+         (smoothstep (- 0.65 width) (+ 0.65 width) damp))))
+
+;;; The plant at a place and the region's drift there, for a vertex that
+;;; must match the ground without its finer scales: they rest at their
+;;; mean.
+(define-shader-abstraction read-heath (sheet sampler uv)
+  (flet ((grain (lattice)
+           `(swizzle (sample-level ,sheet ,sampler
+                                   (turn-uv heath-uv ,(first lattice)
+                                            ,(second lattice))
+                                   0.0)
+                     :x)))
+    `(let* ((heath-uv ,uv)
+            (heath-drift ,(grain *detail-region*)))
+       (vec2 (heath-plant ,(grain *detail-macro*) heath-drift 0.5 0.5)
+             heath-drift))))
 
 ;;; -- the ground's surface --------------------------------------------------
 ;;;
@@ -574,15 +598,12 @@
                          (* 0.55 (- patch 0.5)) (* 0.35 (- drift 0.5)))
                       0.0 1.0))
          (turf (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush))
-         (fell (smoothstep 0.48 0.64 (+ rise (* 0.16 (- drift 0.5)))))
-         (shrub (+ (* 0.45 patch) (* 0.25 drift) (* 0.22 fleck)
-                   (* 0.08 grain)))
-         (heather (mix (mix (mix (vec3 0.41 0.42 0.23) (vec3 0.51 0.45 0.27)
-                                 (band shrub 0.42))
-                            (vec3 0.45 0.33 0.22)
-                            (band shrub 0.55))
-                       (vec3 0.36 0.26 0.23)
-                       (band (+ shrub (* 0.20 (- moisture 0.5))) 0.65)))
+         (fell (heath-reach rise drift))
+         (shrub (heath-plant patch drift fleck grain))
+         (heather (heath-colour shrub moisture
+                                (max (+ (abs (derivative-x shrub))
+                                        (abs (derivative-y shrub)))
+                                     0.04)))
          (heath (mix turf
                      (mix (* heather (- 1.0 (* 0.26 sprig)))
                           (vec3 0.64 0.58 0.37) (* 0.75 tuft))
@@ -654,7 +675,10 @@
          (rocky (mix shoreline rock cliff))
 
          (trodden (mix rocky
-                       (mix (vec3 0.56 0.48 0.37) pale-pebble
+                       ;; Warm enough to stay earth under the sky's blue
+                       ;; where trees shade it.
+                       (mix (vec3 0.56 0.45 0.30)
+                            (* pale-pebble (vec3 1.06 1.0 0.86))
                             (* 0.8 pebbled))
                        (band (+ (swizzle floor :z) (* 0.12 edge)) 0.87)))
 
@@ -1988,7 +2012,7 @@
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
 (define-shader-function read-grass-medium (xz land floor up rise density
-                                           stand)
+                                           stand heath)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
          (canopy (clamp (swizzle stand :x) 0.0 1.0))
          ;; Fallen leaves smother some of the sward beneath a turned grove.
@@ -2035,8 +2059,11 @@
                                                  (clamp (* rooted density)
                                                         0.0 1.0))))
      ;; Under a turned grove the grass is drying toward straw too.
-     :blade-tint (mix (mix tint (* (srgb (heath-tint xz moisture)) 0.75)
-                           (heath-amount xz rise))
+     :blade-tint (mix (mix tint
+                           (* (srgb (heath-colour (swizzle heath :x) moisture
+                                                  0.04))
+                              0.92)
+                           (heath-reach rise (swizzle heath :y)))
                       (srgb (vec3 0.50 0.46 0.24))
                       (* 0.6 (clamp (swizzle stand :y) 0.0 1.0))))))
 
@@ -2154,7 +2181,9 @@
                                   (swizzle stand-field :yz)
                                   (swizzle (sample-level landscape
                                                          linear-repeat uv 0.0)
-                                           :w))))
+                                           :w))
+                      ;; A tile's count asks nothing of its blades' tint.
+                      (vec2 0.5 0.5)))
              (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
                         eye))
              (distance (sqrt (dot offset offset)))
@@ -2223,6 +2252,7 @@
                  (draw :uniform-block :binding 3 :members #.*grass-class*)
                  (heights :texture-2d :binding 0)
                  (normals :texture-2d :binding 1)
+                 (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
                  (closure :texture-2d :binding 9)
@@ -2264,7 +2294,8 @@
                               (swizzle stand-field :yz)
                               (swizzle (sample-level landscape linear-repeat
                                                      uv 0.0)
-                                       :w))))
+                                       :w))
+                  (read-heath detail linear-repeat uv)))
          (wet (grass-medium-moisture medium))
          (canopy (grass-medium-forest-cover medium))
          (root (vec3 (swizzle root-xz :x) height (swizzle root-xz :y)))
@@ -2618,6 +2649,7 @@
                  (tiles :storage-buffer :binding 2 :element :uint)
                  (heights :texture-2d :binding 0)
                  (normals :texture-2d :binding 1)
+                 (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
                  (closure :texture-2d :binding 9)
@@ -2647,7 +2679,8 @@
                                   (swizzle stand-field :yz)
                                   (swizzle (sample-level landscape
                                                          linear-repeat uv 0.0)
-                                           :w))))
+                                           :w))
+                      (read-heath detail linear-repeat uv)))
          (drift (read-flower-drift xz (grass-medium-moisture grass-here)
                                    (grass-medium-forest-cover grass-here)
                                    (grass-medium-leaf-area grass-here)))

@@ -44,6 +44,10 @@ bed, bedded rock on faces too steep for soil, the trail's packed dirt, and
 the autumn's first snow on the highest level ground. The shore lane of the
 ground sheet is signed (`render::terrain_shore_lane`: negative under
 water), so the bed is never turf and the sward stands back from the strand.
+Where the heath begins, which plant holds a place, and its autumn colour
+are three functions (`heath-reach`, `heath-plant`, `heath-colour`) that the
+ground and the grass medium both call, so blades turn with the ground under
+them.
 
 Everything finer than the terrain's samples comes from one 512-texel tiling
 sheet made at start-up (`render/ground_detail.hh`): grain, that grain's

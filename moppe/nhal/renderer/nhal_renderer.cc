@@ -1198,6 +1198,7 @@ namespace moppe::nhal {
         m_device->set_texture (0, m_heights);
         m_device->set_texture (1, m_normals);
         m_device->set_texture (2, texture_or_white (m_grass));
+        m_device->set_texture (3, m_ground_detail);
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
         m_device->set_texture (8, m_shadow_map);
@@ -1218,6 +1219,7 @@ namespace moppe::nhal {
         m_device->set_buffer (2, m_grass_tiles);
         m_device->set_texture (0, m_heights);
         m_device->set_texture (1, m_normals);
+        m_device->set_texture (3, m_ground_detail);
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
         m_device->set_texture (8, m_shadow_map);
