@@ -164,6 +164,20 @@
         pointer-events: auto;
       }
 
+      #touch .how {
+        position: absolute;
+        left: calc(var(--left) + 78px);
+        top: calc(var(--top) + 12px);
+        max-width: 280px;
+        padding: 10px 14px;
+        border: 1.5px solid rgba(var(--ink), 0.5);
+        border-radius: 14px;
+        background: rgba(8, 16, 13, 0.7);
+        color: rgba(var(--ink), 0.9);
+        font: 13px/1.4 ui-sans-serif, system-ui, sans-serif;
+      }
+
+      #touch .how[hidden],
       #touch .key[hidden] {
         display: none;
       }

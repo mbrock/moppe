@@ -198,20 +198,39 @@
     view.textContent = 'View';
 
     // Where the browser can fill the screen, a button asks it to, and to
-    // hold the phone's screen sideways if it will.
-    if (document.fullscreenEnabled) {
+    // hold the phone's screen sideways if it will. An iPhone's browser
+    // cannot, but a page on its home screen opens without the browser's
+    // bars, so there the button says how.
+    const enter = page.requestFullscreen || page.webkitRequestFullscreen;
+    const leave = document.exitFullscreen || document.webkitExitFullscreen;
+    const filling = () =>
+      document.fullscreenElement || document.webkitFullscreenElement;
+    const alone = navigator.standalone ||
+                  matchMedia('(display-mode: standalone)').matches ||
+                  matchMedia('(display-mode: fullscreen)').matches;
+    if ((document.fullscreenEnabled || document.webkitFullscreenEnabled) &&
+        enter && leave) {
       const full = element('key full', controls, 'Full');
       full.addEventListener('click', () => {
-        if (document.fullscreenElement)
-          document.exitFullscreen();
+        if (filling())
+          leave.call(document);
         else
-          document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+          Promise.resolve(enter.call(page, { navigationUI: 'hide' }))
             .then(() => screen.orientation.lock('landscape'))
             .catch(() => {});
       });
-      document.addEventListener('fullscreenchange', () => {
-        full.textContent = document.fullscreenElement ? 'Exit' : 'Full';
-      });
+      for (const type of ['fullscreenchange', 'webkitfullscreenchange'])
+        document.addEventListener(type, () => {
+          full.textContent = filling() ? 'Exit' : 'Full';
+        });
+    } else if (!alone && navigator.standalone === false) {
+      const full = element('key full', controls, 'Full');
+      const how = element('how', controls,
+        'For the whole screen: Share, then Add to Home Screen, ' +
+        'and open Moppe from there.');
+      how.hidden = true;
+      full.addEventListener('click', () => { how.hidden = !how.hidden; });
+      how.addEventListener('click', () => { how.hidden = true; });
     }
 
     for (const type of ['contextmenu', 'gesturestart', 'dblclick'])

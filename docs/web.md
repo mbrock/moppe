@@ -133,7 +133,12 @@ again. The stick and the look are the iPhone host's:
   knows nothing of buttons, and while the page shows them the HUD leaves
   its keyed prompts out.
 - `View` cycles the camera (`Tab`), and `Full`, where the browser can fill
-  the screen, does that and asks it to hold the screen sideways.
+  the screen, does that and asks it to hold the screen sideways. An
+  iPhone's Safari has no fullscreen for a page, only for a video; there
+  `Full` says to add the page to the home screen, from where it opens
+  without the browser's bars.
+- The gauge and the basket's tally stand in from the lower right corner,
+  clear of the thumb's button (`thumb_room` in `moppe/game/hud.cc`).
 
 The page calls the host for each (`moppe_touch_key`, `moppe_touch_stick`,
 `moppe_touch_look` in `moppe/platform/sdl/host.cc`), which hands them to

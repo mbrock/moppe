@@ -61,6 +61,10 @@ namespace moppe {
       // scale at lower right.
       constexpr float gauge_radius = 30.0f;
       constexpr float gauge_margin = 30.0f;
+      // A host's own buttons (platform::offer_actions) have the lower
+      // right corner, under the thumb; the gauge and the basket's tally
+      // then stand this far in from it.
+      constexpr float thumb_room = 92.0f;
       constexpr float gauge_start = 225.0f * PI / 180.0f;
       constexpr float gauge_sweep = 270.0f * PI / 180.0f;
       constexpr float gauge_full_scale_kmh = 160.0f;
@@ -413,7 +417,8 @@ namespace moppe {
         return;
 
       const float r = gauge_radius;
-      const float cx = width_pts - gauge_margin - r;
+      const float cx =
+        width_pts - gauge_margin - r - (m_host_offers ? thumb_room : 0.0f);
       const float cy = height_pts - gauge_margin - r;
 
       // A broad, faint shade under the instrument keeps it legible over
@@ -569,7 +574,8 @@ namespace moppe {
       }
       if (alpha <= 0.002f)
         return;
-      const float cx = width_pts - gauge_margin - gauge_radius;
+      const float cx = width_pts - gauge_margin - gauge_radius -
+                       (m_host_offers ? thumb_room : 0.0f);
       const float cy = height_pts - gauge_margin - gauge_radius;
       TextStyle numeral;
       numeral.size = 25.0f;
