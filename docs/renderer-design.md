@@ -455,7 +455,7 @@ not synthesize subpixel canopy detail.
 
 The bounded material readings remain distinct typed columns through world
 construction and pack only at the renderer-facing presentation boundary. Two
-RGBA8Unorm sheets carry moisture/erosion/deposition/forest and normalized
+RGBA8Unorm sheets carry moisture/erosion/deposition/forest and signed
 shore-distance/snow-support/trail/home-base: eight semantic lanes in two
 hardware-linear samples and eight stored bytes. The half-texel coordinate
 convention makes an integral terrain site land exactly on its stored reading,

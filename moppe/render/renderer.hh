@@ -9,6 +9,7 @@
 #include <moppe/render/types.hh>
 #include <moppe/terrain/domain.hh>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +23,21 @@ namespace moppe {
     struct SlugGlyphData;
     class TextList;
 
+    // The ground sheet's shore lane: the distance to the waterline over a
+    // band this wide on either side of it, counted negative under water, so
+    // the lane is a half at the line, 1 on ground far from water, and 0 on
+    // a bed far from its shore.
     inline constexpr float terrain_shore_band_metres = 8.0f;
+
+    inline float terrain_shore_lane (float metres, bool submerged) {
+      const float reach =
+        std::clamp (metres / terrain_shore_band_metres, 0.0f, 1.0f);
+      return 0.5f + (submerged ? -0.5f : 0.5f) * reach;
+    }
+
+    inline float terrain_shore_metres (float lane) {
+      return (2.0f * lane - 1.0f) * terrain_shore_band_metres;
+    }
 
     // Per-frame environment.  The view matrix already includes the
     // camera-shake rotation; the right/up/forward basis is derived
@@ -388,7 +403,8 @@ namespace moppe {
       // them only at this final boundary:
       //
       //   landscape RGBA = moisture, erosion, deposition, forest cover
-      //   ground RGBA = shore proximity / 8 m, snow support, trail, home base
+      //   ground RGBA = signed shore distance (terrain_shore_lane), snow
+      //                 support, trail, home base
       //
       // Both sheets are RGBA8Unorm, filterable, and consumed synchronously
       // because TexturePixels borrows its source.

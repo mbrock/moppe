@@ -378,12 +378,7 @@
                 (swizzle (sample-level ,litter ,sampler stand-uv 0.0) :x))
           ,have)))
 
-;;; -- the ground's material ----------------------------------------------
-;;;
-;;; A few flat, honest colours, each a surface the world's history made:
-;;; turf whose hue follows moisture, heath on the high ground, litter under
-;;; closed canopy, bare soil where erosion strips it, gravel in channels,
-;;; banded rock on faces too steep for soil, and packed dirt on the trails.
+;;; -- noise ----------------------------------------------------------------
 
 (define-shader-function hash12 (p)
   (fract (* (sin (dot p (vec2 127.1 311.7))) 43758.5453)))
@@ -398,13 +393,16 @@
          (d (hash12 (+ i (vec2 1.0 1.0)))))
     (mix (mix a b (swizzle u :x)) (mix c d (swizzle u :x)) (swizzle u :y))))
 
-;;; A material boundary cut crisply from a coarse field, antialiased by its
-;;; own screen-space rate of change.
+;;; A material boundary cut from a coarse field: a narrow blend, never
+;;; narrower than a pixel of the field's own rate of change.
 (define-shader-function band (value threshold)
   (let* ((width (max (+ (abs (derivative-x value)) (abs (derivative-y value)))
-                     0.015)))
+                     0.04)))
     (smoothstep (- threshold width) (+ threshold width) value)))
 
+;;; Where the sward's blades turn with the heath, and to what: the same
+;;; band of the land's relief as the ground's own heath (GROUND-SURFACE),
+;;; from noise a vertex can afford.
 (define-shader-function heath-amount (xz rise)
   (let* ((patch (+ (* 0.6 (value-noise (+ (/ xz 9.0) (vec2 2.7 2.7))))
                    (* 0.4 (value-noise (+ (/ xz 31.0) (vec2 8.1 8.1))))))
@@ -421,60 +419,270 @@
          (vec3 0.33 0.25 0.25)
          (smoothstep 0.64 0.71 (+ patch (* 0.20 (- moisture 0.5)))))))
 
-;;; Display-space albedo; the caller decodes it.  LAND is moisture,
-;;; erosion, deposition, forest cover; FLOOR is shore proximity / 8 m, snow
-;;; support, trail, home base.
-(define-shader-function ground-albedo (world up distance land floor rise
-                                       stand)
-  (let* ((moisture (swizzle land :x))
-         (xz (swizzle world :xz))
-         (patch (value-noise (/ xz 41.0)))
-         (near (- 1.0 (smoothstep 150.0 700.0 distance)))
-         (fleck (mix 0.5 (value-noise (+ (/ xz 6.1) (vec2 11.7 11.7))) near))
-         (grit (mix 0.5 (value-noise (+ (/ xz 1.7) (vec2 3.1 3.1)))
-                    (- 1.0 (smoothstep 30.0 120.0 distance))))
-         (edge (+ (* 0.6 (- fleck 0.5)) (* 0.25 (- grit 0.5))))
+;;; -- the ground's detail ---------------------------------------------------
+;;;
+;;; Below the terrain's own samples the ground is read from one small tiling
+;;; sheet (render/ground_detail.hh): grain, the slope of that grain, and a
+;;; mosaic of stones.  A fragment reads it at four scales, each a whole
+;;; number of tiles across the world so the world's seam stays shut, and
+;;; each turned by a different lattice step so the scales never line up.
+;;; Across a world five kilometres wide:
+;;;
+;;;   micro    2.7 m a tile   grain from 4 cm, pebbles of 8 cm
+;;;   meso     17 m           hummocks from 27 cm, stones of half a metre
+;;;   macro    110 m          patches from 1.7 m
+;;;   region   700 m          drifts from 11 m
+;;;
+;;; The sheet has no mipmaps and needs none: nothing in it is finer than
+;;; eight texels, and a scale fades to the sheet's mean as its finest
+;;; wavelength nears the width of a pixel.  Four fetches so stand in for
+;;; the dozen evaluations of noise the ground would otherwise ask for, and
+;;; stay exact far from the origin, where a sine hash grows coarse.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  ;; Tiles across the world along x and along z; a scale's count is the
+  ;; step's length.
+  (defparameter *detail-micro* '(1851.0 0.0))
+  (defparameter *detail-meso* '(263.0 129.0))
+  (defparameter *detail-macro* '(40.0 21.0))
+  (defparameter *detail-region* '(6.0 4.0))
+  (defun detail-tiles (lattice)
+    (sqrt (+ (* (first lattice) (first lattice))
+             (* (second lattice) (second lattice))))))
+
+(define-shader-function turn-uv (uv a b)
+  (vec2 (- (* a (swizzle uv :x)) (* b (swizzle uv :y)))
+        (+ (* b (swizzle uv :x)) (* a (swizzle uv :y)))))
+
+;;; One scale of the sheet at a place in the world (UV, 0 to 1 across it),
+;;; faded to the sheet's mean where a pixel of FOOTPRINT metres no longer
+;;; resolves it.  EXTENT is the world's width in metres.
+(define-shader-abstraction read-detail (sheet sampler uv lattice extent
+                                        footprint)
+  (let ((a (first (symbol-value lattice)))
+        (b (second (symbol-value lattice)))
+        (tiles (detail-tiles (symbol-value lattice))))
+    `(let* ((detail-wavelength (/ ,extent ,(* tiles 64.0))))
+       (mix (vec4 0.5 0.5 0.5 0.7)
+            (sample-level ,sheet ,sampler (turn-uv ,uv ,a ,b) 0.0)
+            (- 1.0 (smoothstep (* 0.3 detail-wavelength)
+                               (* 0.8 detail-wavelength)
+                               ,footprint))))))
+
+;;; The relief's slope along the world's x and z at one root-mean-square a
+;;; unit, from a read at that lattice step.
+(define-shader-abstraction detail-slope (texel lattice)
+  (let* ((a (first (symbol-value lattice)))
+         (b (second (symbol-value lattice)))
+         (tiles (detail-tiles (symbol-value lattice))))
+    `(let* ((slope-uv (* (- (* (swizzle ,texel :yz) 2.0) (vec2 1.0 1.0))
+                         ,(/ 4.0 tiles))))
+       (vec2 (+ (* ,a (swizzle slope-uv :x)) (* ,b (swizzle slope-uv :y)))
+             (- (* ,a (swizzle slope-uv :y)) (* ,b (swizzle slope-uv :x)))))))
+
+;;; A stone's face (1) against its seams (0), and its own tone, 0 to 1.
+(define-shader-function stone-face (stone)
+  (smoothstep 0.10 0.34 stone))
+
+(define-shader-function stone-tone (stone)
+  (clamp (/ (- stone 0.4) 0.6) 0.0 1.0))
+
+;;; -- the ground's surface --------------------------------------------------
+;;;
+;;; What lies on the ground follows from the world's own history, and each
+;;; surface keeps to a few colours broken by the detail sheet:
+;;;
+;;;   turf        its hue follows soil water
+;;;   heath       above the meadows, patches of straw, russet, and wine
+;;;   fell        above the heath, frost-shattered stones
+;;;   forest      needle litter and moss under closed canopy
+;;;   leaves      fallen under turned birch groves
+;;;   soil        where erosion strips a slope
+;;;   gravel      cobbles in the channels
+;;;   shore       sand where the water laid fine sediment, cobbles
+;;;               elsewhere, and silt on the bed out in the deep
+;;;   rock        bedded, on faces too steep for soil
+;;;   trail       packed dirt
+;;;   snow        the first of the autumn on the highest ground
+;;;
+;;; The sheet's relief tilts the normal the ground is lit by, so raking
+;;; light finds hummocks and stones the terrain's own samples are too
+;;; coarse to hold.
+
+;;; How much snow the ground at RISE of the land's relief carries, on the
+;;; broad plane SUPPORT (1 level) facing NORTHING (1 due north); WANDER, a
+;;; drift of noise about 0, moves the snow line.
+(define-shader-function snow-reach (rise support northing wander)
+  (* (smoothstep 0.74 0.90 (+ rise (* 0.05 northing) wander))
+     (smoothstep 0.55 0.78 support)))
+
+(define-shader-struct ground-surface
+  (albedo :vec3)                   ; display space; the caller decodes it
+  (relief :float)                  ; how steep its relief is, as a slope
+  (gloss :float))                  ; how much of the sun it mirrors
+
+;;; The shore lane as metres from the waterline, negative under water.
+(define-shader-function shore-metres (lane)
+  (* (- (* lane 2.0) 1.0) 8.0))
+
+;;; LAND is moisture, erosion, deposition, forest cover; FLOOR is the
+;;; signed shore lane, snow support, trail, home base; STAND the canopy's
+;;; closure and the fallen leaves.  ABOVE-SEA is in metres.
+(define-shader-function ground-surface (world normal land floor rise
+                                        above-sea stand micro meso macro
+                                        region)
+  (let* ((up (swizzle normal :y))
+         (moisture (swizzle land :x))
+         (grain (swizzle micro :x))
+         (fleck (swizzle meso :x))
+         (patch (swizzle macro :x))
+         (drift (swizzle region :x))
+         ;; What moves a boundary: every scale at once, so an edge is
+         ;; ragged from across a valley and from a step away.
+         (edge (+ (* 0.45 (- patch 0.5)) (* 0.35 (- fleck 0.5))
+                  (* 0.20 (- grain 0.5))))
+         (mottle (* (+ 0.88 (* 0.24 fleck))
+                    (mix 0.86 1.08 (smoothstep 0.30 0.70 grain))
+                    (+ 0.93 (* 0.14 patch))))
+         (shore (shore-metres (swizzle floor :x)))
+         (sunk (smoothstep 0.0 0.5 (* -1.0 shore)))
+
+         ;; Stones.  A bed of cobbles is every cell of the mosaic; ground
+         ;; that merely has stones in it shows the palest cell in five.
+         (pebble (swizzle micro :w))
+         (block (swizzle meso :w))
+         (cobbles (mix (vec3 0.27 0.26 0.25)
+                       (mix (vec3 0.38 0.38 0.39) (vec3 0.60 0.57 0.51)
+                            (stone-tone pebble))
+                       (stone-face pebble)))
+         (pebbled (* (stone-face pebble)
+                     (smoothstep 0.74 0.80 (stone-tone pebble))))
+         (pale-pebble (mix (vec3 0.47 0.46 0.45) (vec3 0.66 0.64 0.58)
+                           (smoothstep 0.80 1.0 (stone-tone pebble))))
+         ;; What grows is strewn with specks: dark sprigs in the grain's
+         ;; hollows, and the mosaic's palest cell in eight a dry tuft.
+         (sprig (- 1.0 (smoothstep 0.17 0.27 grain)))
+         (tuft (* (stone-face pebble)
+                  (smoothstep 0.86 0.92 (stone-tone pebble))))
+         (flagged (* (stone-face block)
+                     (smoothstep 0.76 0.82 (stone-tone block))))
+         (flagstone (mix (vec3 0.43 0.43 0.44) (vec3 0.58 0.56 0.52)
+                         (smoothstep 0.82 1.0 (stone-tone block))))
+
+         ;; Turf, and the heath above it.
          (lush (clamp (+ (smoothstep 0.08 0.62 moisture)
-                         (* 0.55 (- patch 0.5)))
+                         (* 0.55 (- patch 0.5)) (* 0.35 (- drift 0.5)))
                       0.0 1.0))
-         (turf (* (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush)
-                  (+ 0.92 (* 0.16 fleck))))
-         (heath (mix turf (* (heath-tint xz moisture) (+ 0.90 (* 0.20 fleck)))
-                     (heath-amount xz rise)))
-         (forest-floor (mix heath
-                            (mix (vec3 0.24 0.26 0.13) (vec3 0.30 0.25 0.15)
-                                 fleck)
-                            (band (+ (swizzle stand :x) (* 0.3 edge)) 0.68)))
+         (turf (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush))
+         (fell (smoothstep 0.48 0.64 (+ rise (* 0.16 (- drift 0.5)))))
+         (shrub (+ (* 0.45 patch) (* 0.25 drift) (* 0.22 fleck)
+                   (* 0.08 grain)))
+         (heather (mix (mix (mix (vec3 0.41 0.42 0.23) (vec3 0.51 0.45 0.27)
+                                 (band shrub 0.42))
+                            (vec3 0.45 0.33 0.22)
+                            (band shrub 0.55))
+                       (vec3 0.36 0.26 0.23)
+                       (band (+ shrub (* 0.20 (- moisture 0.5))) 0.65)))
+         (heath (mix turf
+                     (mix (* heather (- 1.0 (* 0.26 sprig)))
+                          (vec3 0.64 0.58 0.37) (* 0.75 tuft))
+                     fell))
+
+         ;; Higher still the plants give out on frost-shattered ground.
+         (scree (mix (mix (vec3 0.45 0.42 0.37) pale-pebble pebbled)
+                     flagstone flagged))
+         (barren (band (+ (smoothstep 0.62 0.92 rise) (* 0.9 edge)
+                          (* 0.25 (swizzle land :y)))
+                       0.55))
+         (upland (mix heath scree barren))
+
+         ;; Under closed canopy: needle litter, and moss where it is damp.
+         (litter (mix (* (mix (vec3 0.31 0.25 0.16) (vec3 0.23 0.29 0.13)
+                              (band (+ fleck (* 0.30 (- moisture 0.5)))
+                                    0.56))
+                         (- 1.0 (* 0.26 sprig)))
+                      (vec3 0.50 0.40 0.24) (* 0.6 tuft)))
+         (forest-floor (mix upland litter
+                            (band (+ (swizzle stand :x) (* 0.6 edge)) 0.68)))
          ;; Fallen birch leaves carpet the ground beneath turned groves.
          (leaves (mix forest-floor
-                      (* (mix (vec3 0.70 0.52 0.21) (vec3 0.58 0.34 0.15)
-                              grit)
-                         (+ 0.88 (* 0.24 fleck)))
-                      (band (+ (swizzle stand :y) (* 0.30 edge)) 0.24)))
-         (shore (* (swizzle floor :x) 8.0))
+                      (mix (vec3 0.70 0.52 0.21) (vec3 0.58 0.34 0.15) grain)
+                      (band (+ (swizzle stand :y) (* 0.60 edge)) 0.24)))
+
+         ;; Bare soil where erosion strips a slope, with the odd stone in
+         ;; it; cobbles in the channels.
          (shedding (- 1.0 (smoothstep 0.80 0.92 up)))
-         (soil (mix leaves
-                    (* (vec3 0.38 0.33 0.27) (+ 0.92 (* 0.16 grit)))
-                    (band (+ (* (swizzle land :y) shedding) (* 0.35 edge))
+         (dirt (mix (vec3 0.39 0.32 0.25) pale-pebble pebbled))
+         (soil (mix leaves dirt
+                    (band (+ (* (swizzle land :y) shedding) (* 0.7 edge))
                           0.45)))
-         (channel (- 1.0 (smoothstep 2.0 6.0 shore)))
-         (gravel (mix soil
-                      (* (vec3 0.47 0.44 0.39) (+ 0.88 (* 0.24 grit)))
-                      (band (+ (* (swizzle land :z) channel) (* 0.35 edge))
+         (channel (- 1.0 (smoothstep 2.0 6.0 (abs shore))))
+         (gravel (mix soil cobbles
+                      (band (+ (* (swizzle land :z) channel) (* 0.7 edge))
                             0.50)))
-         (cliff (- 1.0 (band (+ up (* 0.10 edge)) 0.72)))
-         (strata (value-noise (vec2 (+ (* (swizzle world :y) 0.45)
-                                       (* 3.0 patch))
-                                    (* 0.5 fleck))))
-         (rock (mix (vec3 0.33 0.33 0.33) (vec3 0.53 0.52 0.49)
-                    (smoothstep 0.3 0.7 strata)))
-         (rocky (mix gravel (* rock (+ 0.94 (* 0.12 grit))) cliff))
+
+         ;; The water's edge and its bed: sand where the water laid fine
+         ;; sediment and along the sea, cobbles by the streams, and silt
+         ;; out in the deep.
+         (level (smoothstep 0.74 0.90 up))
+         (strand (max sunk
+                      (* level
+                         (max (- 1.0 (smoothstep 1.4 3.4
+                                                 (+ shore (* 3.0 edge))))
+                              (- 1.0 (smoothstep 0.9 2.4
+                                                 (+ above-sea
+                                                    (* 2.0 edge))))))))
+         (sand (* (mix (vec3 0.74 0.67 0.50) (vec3 0.80 0.75 0.60) fleck)
+                  (mix 0.84 1.0 (smoothstep 0.25 0.45 grain))))
+         (beach (mix cobbles (mix sand pale-pebble (* 0.7 pebbled))
+                     (band (+ (swizzle land :z) (* 0.5 edge)
+                              (- 1.0 (smoothstep 1.0 3.0 above-sea)))
+                           0.42)))
+         (bed (mix beach (vec3 0.33 0.32 0.26)
+                   (smoothstep 2.0 7.0 (- (* 2.0 edge) shore))))
+         (shoreline (mix gravel bed (band strand 0.5)))
+
+         ;; Rock on faces too steep for soil, bedded along the contours.
+         (cliff (- 1.0 (band (+ up (* 0.20 edge)) 0.72)))
+         (bedding (+ (sin (+ (* (swizzle world :y) 0.9) (* 2.0 patch)
+                             (* 4.0 drift)))
+                     (* 0.6 (sin (+ (* (swizzle world :y) 2.3)
+                                    (* 5.0 drift))))))
+         (rock (* (mix (vec3 0.34 0.34 0.35) (vec3 0.54 0.52 0.48)
+                       (smoothstep -0.8 0.8 bedding))
+                  (+ 0.86 (* 0.28 patch))))
+         (rocky (mix shoreline rock cliff))
+
          (trodden (mix rocky
-                       (* (vec3 0.44 0.37 0.29) (+ 0.92 (* 0.16 grit)))
-                       (band (+ (swizzle floor :z) (* 0.06 edge)) 0.87)))
-         (swash (* (- 1.0 (smoothstep 0.4 3.0 shore))
-                   (smoothstep 0.42 0.62 up))))
-    (mix trodden (* trodden (vec3 0.62 0.60 0.56)) swash)))
+                       (mix (vec3 0.56 0.48 0.37) pale-pebble
+                            (* 0.8 pebbled))
+                       (band (+ (swizzle floor :z) (* 0.12 edge)) 0.87)))
+
+         ;; Snow lies where the ground is level enough to hold it, deeper
+         ;; the higher it is, and a trail is ridden through it.
+         (snow (* (band (+ (snow-reach rise (swizzle floor :y)
+                                       (* -1.0 (swizzle normal :z))
+                                       (* 0.10 (- drift 0.5)))
+                           (* 0.9 edge))
+                        0.5)
+                  (- 1.0 cliff)
+                  (- 1.0 sunk)
+                  (- 1.0 (band (swizzle floor :z) 0.80))))
+         (snowy (mix trodden
+                     (mix (vec3 0.86 0.89 0.95) (vec3 0.95 0.96 0.97) fleck)
+                     snow))
+
+         ;; The swash darkens whatever the water laps.
+         (swash (* (- 1.0 (smoothstep 0.3 2.0 (+ shore (* 1.5 edge))))
+                   (max sunk (smoothstep 0.42 0.62 up))))
+         (stony (max cliff (* barren (- 1.0 snow))))
+         ;; Sand and snow lie smooth.
+         (smooth (max snow (* (band strand 0.5) (- 1.0 cliff)))))
+    (make-ground-surface
+     :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
+                (mix mottle 1.0 (* 0.65 smooth)))
+     :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth))
+     :gloss (max (* 0.30 snow) (* 0.22 swash (- 1.0 sunk))))))
 
 (define-shader terrain-fragment
     (:stage :fragment
@@ -488,6 +696,7 @@
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (terrain :uniform-block :binding 1 :members #.*terrain*)
                  (normals :texture-2d :binding 1)
+                 (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
                  (shadow-map :depth-texture-2d :binding 8)
@@ -512,15 +721,45 @@
                             have-fields))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
-         (rise (/ (- (swizzle world :y) (swizzle relief :x))
-                  (max (swizzle relief :y) 1.0)))
+         (above-sea (- (swizzle world :y) (swizzle relief :x)))
+         (rise (/ above-sea (max (swizzle relief :y) 1.0)))
          (stand (read-stand closure litter linear-repeat (swizzle world :xz)
                             (swizzle fields :y) (swizzle fields :zw)
                             (swizzle land :w)))
-         (albedo (srgb (ground-albedo world (swizzle normal :y) distance
-                                      land floor-fields rise stand)))
+         ;; A pixel's width on the ground: the mean of its two axes, so
+         ;; ground seen at a grazing angle keeps the detail its width
+         ;; still resolves.
+         (across (derivative-x world))
+         (along (derivative-y world))
+         (footprint (expt (* (dot across across) (dot along along)) 0.25))
+         (metres (* (swizzle scale :x) (swizzle extent :x)))
+         (micro (read-detail detail linear-repeat field-uv *detail-micro*
+                             metres footprint))
+         (meso (read-detail detail linear-repeat field-uv *detail-meso*
+                            metres footprint))
+         (macro (read-detail detail linear-repeat field-uv *detail-macro*
+                             metres footprint))
+         (region (read-detail detail linear-repeat field-uv *detail-region*
+                              metres footprint))
+         (surface (ground-surface world normal land floor-fields rise
+                                  above-sea stand micro meso macro region))
+         (albedo (srgb (ground-surface-albedo surface)))
+         ;; The relief tilts the normal within the surface: only the part
+         ;; of its slope that lies along the ground counts.
+         (slope (* (+ (* 0.65 (detail-slope meso *detail-meso*))
+                      (* 0.35 (detail-slope micro *detail-micro*)))
+                   (ground-surface-relief surface)))
+         (tilt (vec3 (swizzle slope :x) 0.0 (swizzle slope :y)))
+         (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
          (sun (swizzle sun-direction :xyz))
-         (lambert (clamp (/ (+ (dot normal sun) 0.08) 1.08) 0.0 1.0))
+         ;; The relief brightens and dims the sun the ground itself
+         ;; catches, more where that is little, and never puts it out:
+         ;; one tilted normal stands for a pixel's worth of facets.
+         (facing (clamp (/ (+ (dot normal sun) 0.08) 1.08) 0.0 1.0))
+         (lambert (* facing
+                     (+ 1.0 (clamp (/ (- (dot shaded sun) (dot normal sun))
+                                      (+ facing 0.35))
+                                   -0.6 0.8))))
          ;; The sun's shadow: a slope-scaled bias against acne on raking
          ;; ground, faded out into the haze.
          (taps (sun-lit shadow-map shadow-compare world
@@ -532,11 +771,16 @@
          (direct (mix 1.0 (expt taps 1.3)
                       (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)))
          (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) direct))
-         (lit (* albedo (+ (* (hemisphere-light (swizzle ambient :xyz) normal)
-                              fill)
-                           (* (swizzle sun-diffuse :xyz)
-                              (* 0.9 lambert direct))
-                           (lamp-light lamp lamp-color world normal)))))
+         (half (normalize (- sun (/ (- world eye) (max distance 0.0001)))))
+         (glint (* (ground-surface-gloss surface) direct
+                   (expt (max (dot shaded half) 0.0) 40.0)))
+         (lit (+ (* albedo (+ (* (hemisphere-light (swizzle ambient :xyz)
+                                                   shaded)
+                                 fill)
+                              (* (swizzle sun-diffuse :xyz)
+                                 (* 0.9 lambert direct))
+                              (lamp-light lamp lamp-color world shaded)))
+                 (* (swizzle sun-specular :xyz) glint))))
     (set-output color (vec4 (hazed lit world eye fog-color
                                    (swizzle sky-sun :xyz) relief)
                             1.0))
@@ -1757,11 +2001,13 @@
          (cleared (* (- 1.0 (smoothstep 0.80 0.86 (swizzle floor :z)))
                      (- 1.0 (clamp (* (swizzle floor :w) 1.6) 0.0 1.0))))
          (variation (+ 0.88 (* 0.24 (smoothstep 0.18 0.72 clump))))
-         (snow (* (smoothstep 0.55 0.68 rise)
-                  (smoothstep 0.58 0.78 (swizzle floor :y))))
+         (snow (snow-reach rise (swizzle floor :y) 0.0 0.0))
          (alpine (- 1.0 (smoothstep 0.50 0.67 rise)))
+         ;; Nothing roots under water, or on the strand beside it.
+         (ashore (smoothstep 1.0 2.4 (+ (shore-metres (swizzle floor :x))
+                                        (* 1.6 (- clump 0.5)))))
          (rooted (* smothered light damp standable cleared variation alpine
-                    (- 1.0 snow)))
+                    (- 1.0 snow) ashore))
          (cover (clamp (* rooted density) 0.0 1.0))
          ;; Grass is a turf or it is not there, never a scatter of single
          ;; stalks. Whether roots hold -- the slope, bare rock or dirt,
@@ -1770,7 +2016,7 @@
          ;; threshold so marginal ground breaks into ragged patches. How
          ;; lush the turf grows -- shade, water -- only thins it toward a
          ;; floor that still reads as a sward.
-         (holds (* standable cleared alpine (- 1.0 snow)))
+         (holds (* standable cleared alpine (- 1.0 snow) ashore))
          (edge (mix 0.25 0.60 clump))
          (turf (* (smoothstep (- edge 0.05) (+ edge 0.05) holds)
                   (step 0.001 density)

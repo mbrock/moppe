@@ -10,6 +10,7 @@
 
 #include <moppe/render/draw.hh>
 #include <moppe/render/dynamic_resolution.hh>
+#include <moppe/render/ground_detail.hh>
 #include <moppe/render/slug.hh>
 #include <moppe/render/text.hh>
 #include <moppe/render/texture_pixels.hh>
@@ -398,6 +399,12 @@ namespace moppe::nhal {
         m_black = m_device->create_texture ({ 1, 1, Format::rgba8_unorm,
                                               usage_sampled, 1, "black" });
         m_device->write_texture (m_black, std::as_bytes (std::span (black)));
+        const render::GroundDetail detail = render::make_ground_detail ();
+        m_ground_detail = m_device->create_texture (
+          { render::GroundDetail::size, render::GroundDetail::size,
+            Format::rgba8_unorm, usage_sampled, 1, "ground detail" });
+        m_device->write_texture (m_ground_detail,
+                                 std::as_bytes (std::span (detail.pixels)));
         // No current at all, for water drawn before (or without) a flow.
         const std::uint16_t still[2] = { 0, 0 };
         m_still_water = m_device->create_texture (
@@ -1104,10 +1111,7 @@ namespace moppe::nhal {
         m_device->set_uniforms (1, terrain_block ());
         m_device->set_texture (0, m_heights);
         m_device->set_texture (1, m_normals);
-        m_device->set_texture (2, texture_or_white (m_grass));
-        m_device->set_texture (3, texture_or_white (m_dirt));
-        m_device->set_texture (4, texture_or_white (m_rock));
-        m_device->set_texture (5, texture_or_white (m_snow));
+        m_device->set_texture (3, m_ground_detail);
         m_device->set_texture (6, m_landscape ? m_landscape : m_white);
         m_device->set_texture (7, m_ground ? m_ground : m_white);
         m_device->set_texture (8, m_shadow_map);
@@ -2511,7 +2515,7 @@ namespace moppe::nhal {
       Transient m_forest_block;
       render::TextList m_hud_text;
       std::unordered_map<int, Pipeline> m_uber;
-      Texture m_white, m_black;
+      Texture m_white, m_black, m_ground_detail;
       Texture m_closure, m_litter;
       std::array<float, 2> m_stand_inverse_period {};
 

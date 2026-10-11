@@ -283,6 +283,15 @@
     scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded
     rocks, and the larger ones collide; `--graphics-disable boulders` hides
     them but keeps their colliders.
+  - The ground (`ground-surface` in world.lisp; docs/nhal.md) is surfaced
+    from the world's fields: turf, heath and stony fell above it, forest
+    litter, soil, cobbles, sand along the water and silt on its bed, bedded
+    rock, the trail, and snow on the highest level ground. Everything finer
+    than the terrain's samples is read at four scales from one generated
+    tiling sheet (`moppe/render/ground_detail.hh`: grain, its slope, a
+    mosaic of stones), which also tilts the lit normal. The gazetteer's
+    `trail-scenic-turn`, `highland-vista`, `eroded-slope`, `coastline`, and
+    `confluence` frames show most of it.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;

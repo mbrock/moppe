@@ -30,11 +30,33 @@ pixels share each, so a pass at the scene's size gathers them first
 in two RGBA16F targets) and the resolve reads one texel of each.
 
 So far it draws the terrain (vertex-pulled chunk strips morphing onto their
-parent levels, the ground material ported from `terrain.metal`), a
-provisional sky, the game's draw lists and meshes through one "uber" program
+parent levels, surfaced as below), a provisional sky, the game's draw lists and meshes through one "uber" program
 with a pipeline per draw state, and the HUD: its draw lists, then its Slug
 text and vector shapes, whose band walk is Luv's own (`luv/slug-shader`,
 called as `luv.slug::slug-horizontal-band-step` and friends).
+
+The ground's surface (`ground-surface` in world.lisp) is decided a fragment
+at a time from the world's own fields: turf whose hue follows soil water,
+heath above the meadows and frost-shattered fell above that, needle litter
+and fallen leaves under the stands, soil where erosion strips a slope,
+cobbles in the channels, sand or cobbles along the water and silt on its
+bed, bedded rock on faces too steep for soil, the trail's packed dirt, and
+the autumn's first snow on the highest level ground. The shore lane of the
+ground sheet is signed (`render::terrain_shore_lane`: negative under
+water), so the bed is never turf and the sward stands back from the strand.
+
+Everything finer than the terrain's samples comes from one 512-texel tiling
+sheet made at start-up (`render/ground_detail.hh`): grain, that grain's
+slope, and a cellular mosaic of stones. A fragment reads it at four scales,
+2.7 to 700 metres a tile, each a whole number of tiles across the world and
+turned by its own lattice step; the grain mottles colour and moves every
+boundary, the slope tilts the lit normal so raking light finds relief, and
+the mosaic is pebbles, flagstones, and dry tufts. The sheet has no mipmaps:
+nothing in it is finer than eight texels, and each scale fades to the
+sheet's mean as a pixel grows past its finest wavelength. Those four
+fetches replaced about a dozen evaluations of sine-hashed value noise at
+the same GPU time (the scene pass on an M2 Pro at 1600x900: 2.90 ms against
+2.85 on bare fell).
 
 Water is designed afresh rather than ported from the old renderer.
 `draw_ocean` first copies the opaque scene's colour and depth out

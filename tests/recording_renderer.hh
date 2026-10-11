@@ -97,7 +97,7 @@ namespace moppe::test {
       if (ground_lanes.size () == 4) {
         shore_distance = ground_lanes[0];
         for (float& distance : shore_distance)
-          distance *= render::terrain_shore_band_metres;
+          distance = render::terrain_shore_metres (distance);
         snow_support = ground_lanes[1];
         trail_influence = ground_lanes[2];
         home_base_influence = ground_lanes[3];

@@ -8,6 +8,7 @@ namespace moppe::game {
     struct TerrainMaterialSource {
       const map::SurfaceGeometry& geometry;
       const map::SurfaceReadings& readings;
+      const terrain::WaterSheets& water;
       bool include_forest;
     };
 
@@ -46,16 +47,22 @@ namespace moppe::game {
       const auto& shore =
         spatial::get<map::waterline_distance> (source.readings);
       const auto& snow = spatial::get<map::snow_support> (source.geometry);
+      const auto& ground =
+        spatial::get<terrain::surface_elevation> (source.geometry);
+      const auto& level =
+        spatial::get<terrain::surface_elevation> (source.water);
       const auto& trail = spatial::get<map::trail_influence> (source.readings);
       const auto& home =
         spatial::get<map::home_base_influence> (source.readings);
       const std::size_t stride = render::bytes_per_pixel (format);
       for (std::size_t pixel = 0; pixel < shore.size (); ++pixel) {
         std::byte* at = destination + pixel * stride;
-        const float shore_fraction =
-          render::detail::stored_scalar (shore[pixel]) /
-          render::terrain_shore_band_metres;
-        render::detail::write_channel (at, format, shore_fraction);
+        render::detail::write_channel (
+          at,
+          format,
+          render::terrain_shore_lane (
+            render::detail::stored_scalar (shore[pixel]),
+            level[pixel] > ground[pixel]));
         render::detail::write_channel (
           at + 1, format, render::detail::stored_scalar (snow[pixel]));
         render::detail::write_channel (
@@ -70,9 +77,12 @@ namespace moppe::game {
   void upload_surface_readings (render::Renderer& renderer,
                                 const map::SurfaceGeometry& geometry,
                                 const map::SurfaceReadings& readings,
+                                const terrain::WaterSheets& water,
                                 bool include_forest) {
     MOPPE_PROFILE_ZONE ("surface.upload_readings");
-    const TerrainMaterialSource source { geometry, readings, include_forest };
+    const TerrainMaterialSource source {
+      geometry, readings, water, include_forest
+    };
     const auto pixels = [&] (render::PixelFormat format,
                              render::TexturePixels::Writer writer) {
       return render::TexturePixels (readings.domain ().width (),

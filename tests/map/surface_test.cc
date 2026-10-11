@@ -394,14 +394,20 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   trail[4] = 0.75f;
   home[4] = 0.25f;
   shore[4] = 2.5f;
+  shore[0] = 3.0f;
   const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::moisture_map (surface.domain (), moisture),
       .waterline = test::waterline_map (surface.domain (), shore),
       .use = test::trail_use_map (surface.domain (), trail, home) });
 
+  // One corner lies under water; its shore distance arrives negative.
+  terrain::WaterSheets water = test::dry_water (surface);
+  spatial::get<terrain::surface_elevation> (water)[0] =
+    moppe::terrain::surface_elevation_point (3.0f * mp_units::si::metre);
+
   test::RecordingRenderer renderer;
-  game::upload_surface_readings (renderer, surface, readings, true);
+  game::upload_surface_readings (renderer, surface, readings, water, true);
   MOPPE_CHECK (renderer.moisture.size () == surface.domain ().size ());
   MOPPE_CHECK (renderer.erosion.size () == surface.domain ().size ());
   MOPPE_CHECK (renderer.deposition.size () == surface.domain ().size ());
@@ -411,11 +417,14 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   MOPPE_CHECK_NEAR (renderer.moisture[4], 0.4f, 1.0f / 255.0f);
   MOPPE_CHECK_NEAR (renderer.shore_distance[4],
                     2.5f,
-                    render::terrain_shore_band_metres / 255.0f);
+                    2.0f * render::terrain_shore_band_metres / 255.0f);
+  MOPPE_CHECK_NEAR (renderer.shore_distance[0],
+                    -3.0f,
+                    2.0f * render::terrain_shore_band_metres / 255.0f);
   MOPPE_CHECK_NEAR (renderer.trail_influence[4], 0.75f, 1.0f / 255.0f);
   MOPPE_CHECK_NEAR (renderer.home_base_influence[4], 0.25f, 1.0f / 255.0f);
 
-  game::upload_surface_readings (renderer, surface, readings, false);
+  game::upload_surface_readings (renderer, surface, readings, water, false);
   MOPPE_CHECK (std::ranges::all_of (
     renderer.forest_cover, [] (float cover) { return cover == 0.0f; }));
 

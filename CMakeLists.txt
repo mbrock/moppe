@@ -313,6 +313,7 @@ endif()
 
 set(MOPPE_RENDER_SOURCES
   moppe/render/draw.cc
+  moppe/render/ground_detail.cc
   moppe/render/slug.cc
   moppe/render/text.cc
   moppe/render/truetype.cc
@@ -642,6 +643,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/map/water_surface_test.cc
     tests/map/terrain_generation_test.cc
     tests/render/dynamic_resolution_test.cc
+    tests/render/ground_detail_test.cc
     tests/render/slug_test.cc
     tests/render/text_test.cc
   )

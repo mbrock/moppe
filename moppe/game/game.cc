@@ -1855,8 +1855,11 @@ namespace moppe {
                       spatial::get<terrain::surface_elevation> (surface ()),
                       world ().water_level,
                       world ().map_size);
-        upload_surface_readings (
-          r, surface (), surface_readings (), !m_water_shot);
+        upload_surface_readings (r,
+                                 surface (),
+                                 surface_readings (),
+                                 generated_world ().water_surface (),
+                                 !m_water_shot);
       }
 
       void cast_world_shadows (render::Renderer& r) {
