@@ -71,6 +71,12 @@ namespace moppe::mov {
     m_state.velocity = moppe::velocity (Vec3 ());
   }
 
+  void Character::spawn (position_t feet, velocity_t velocity) {
+    spawn (feet);
+    m_state.velocity = velocity;
+    m_state.grounded = false;
+  }
+
   Character::Support Character::probe (const Vec3& feet,
                                        float reach_down,
                                        const map::SurfaceGeometry& surface,

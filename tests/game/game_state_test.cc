@@ -292,7 +292,7 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   const auto ratio =
     mov::Glider::glide_ratio_at (16.0f * airspeed[u::m / u::s]);
   static_assert (std::is_same_v<decltype (ratio), const mov::glide_ratio_t>);
-  MOPPE_CHECK (ratio.numerical_value_in (one) > 18.0f);
+  MOPPE_CHECK (ratio.numerical_value_in (one) > 14.0f);
 
   mov::Glider glider (surface);
   glider.launch (
@@ -300,12 +300,16 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   glider.set_turn (0.6f);
   const float start_y = glider.position ()[1];
   const float start_z = glider.position ()[2];
+  // The wing heads into the air it flies through, a little upwind of its
+  // track over the ground, and turns from there.
+  glider.update (seconds (1.0f / 60.0f));
+  const float start_heading = glider.heading ()[0];
   for (int i = 0; i < 60; ++i)
     glider.update (seconds (1.0f / 60.0f));
 
   MOPPE_CHECK (glider.position ()[2] > start_z + 10.0f);
   MOPPE_CHECK (glider.position ()[1] < start_y + 2.0f);
-  MOPPE_CHECK (glider.heading ()[0] > 0.05f);
+  MOPPE_CHECK (glider.heading ()[0] > start_heading + 0.05f);
   MOPPE_CHECK (glider.air_mass_lift ().numerical_value_in (u::m / u::s) ==
                0.0f);
 

@@ -622,6 +622,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/mov/trunk_field_test.cc
     tests/mov/rigid_bike_test.cc
     tests/mov/jeep_test.cc
+    tests/mov/glider_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
     tests/game/landscape_gazetteer_test.cc

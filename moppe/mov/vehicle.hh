@@ -124,6 +124,23 @@ namespace moppe {
           m_rigid->set_trunks (trunks);
       }
 
+      // What a glider's wing does to the bike hanging from it over the next
+      // update: the acceleration the air gives the whole weight, and the
+      // way the harness holds the chassis. Only the rigid bike flies this
+      // way; the classic one is carried.
+      struct Hang {
+        Vec3 acceleration;
+        Vec3 forward { 0, 0, 1 };
+        Vec3 up { 0, 1, 0 };
+      };
+      void hang (const Hang& hang) {
+        m_hang = hang;
+        m_hung = true;
+      }
+      void unhang () {
+        m_hung = false;
+      }
+
       // Move an inactive bike as a rigid payload beneath the glider.
       void carry (position_t position,
                   velocity_t velocity,
@@ -309,6 +326,9 @@ namespace moppe {
       // members above are kept as its published readings.
       std::unique_ptr<RigidBike> m_rigid;
       bool m_parked = false;
+      // Set afresh by the session each step of a glide, never restored.
+      bool m_hung = false;
+      Hang m_hang {};
       float m_rear_drop = 0.0f;
       float m_front_drop = 0.0f;
       float m_fork = 0.0f;

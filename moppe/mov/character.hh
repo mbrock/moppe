@@ -49,6 +49,9 @@ namespace moppe::mov {
     static constexpr float jump_speed = 5.4f;
 
     void spawn (position_t feet);
+    // Arrives in the air and already moving -- off a bike, out of a
+    // glider's harness -- and lands and runs it out like any other fall.
+    void spawn (position_t feet, velocity_t velocity);
 
     void step (seconds_t dt,
                const CharacterIntent& intent,

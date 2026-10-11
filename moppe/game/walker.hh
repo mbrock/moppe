@@ -47,6 +47,9 @@ namespace moppe {
       void restore (const State& state);
 
       void spawn (position_t pos, const Vec3& heading);
+      // Let go of something moving: the body keeps that motion until its
+      // feet have braked it.
+      void spawn (position_t pos, const Vec3& heading, velocity_t velocity);
 
       void set_turn (control_signal_t t) {
         m_turn = t;

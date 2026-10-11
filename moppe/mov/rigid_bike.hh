@@ -52,6 +52,13 @@ namespace moppe {
       // Jump-jet acceleration of the whole bike, world frame.
       Vec3 boost_acceleration {};
       bool wading = false;
+      // Hanging under the glider's wing. The wing's pull on the whole
+      // weight arrives as `boost_acceleration`, with all the drag there is,
+      // and in the air the chassis hangs as the harness holds it: facing
+      // `hang_forward` with `hang_up` as its top.
+      bool hung = false;
+      Vec3 hang_forward { 0, 0, 1 };
+      Vec3 hang_up { 0, 1, 0 };
       // Nobody aboard: both wheels are locked, and once the bike has come
       // to rest on the ground it is held there, as on a stand.
       bool parked = false;

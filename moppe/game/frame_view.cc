@@ -129,7 +129,7 @@ namespace moppe::game {
   GliderPose glider_pose (const mov::Glider& glider) {
     return {
       .position = glider.position (),
-      .heading = glider.heading (),
+      .heading = glider.nose (),
       .bank_radians = radians_value (glider.bank ()),
       .bike_attached = glider.bike_attached (),
     };

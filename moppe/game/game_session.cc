@@ -6,14 +6,46 @@
 
 namespace moppe::game {
   namespace {
+    // The classic bike is a payload the glider carries about.
     void sync_attached_bike (GameSession& session) {
       const mov::Glider& glider = session.glider ();
-      const Vec3 up =
-        Quaternion::rotate (Vec3 (0, 1, 0), glider.heading (), -glider.bank ());
-      session.bike ().carry (glider.physical_position () - up * 2.4f * u::m,
+      const Vec3 up = glider.up ();
+      session.bike ().carry (glider.physical_position () -
+                               up * mov::Glider::bike_hang * u::m,
                              glider.physical_velocity (),
                              glider.heading (),
                              up);
+    }
+
+    // The rigid bike flies: its own world moves it, wheels and all, with
+    // the wing's pull on it, and the wing rides where the bike takes it.
+    bool flies_bike (const GameSession& session) {
+      return session.can_drop_bike () &&
+             session.bike ().physics () == mov::BikePhysics::rigid;
+    }
+
+    position_t wing_over_bike (const mov::Vehicle& bike) {
+      return moppe::position (bike.position () +
+                              bike.render_normal () * mov::Glider::bike_hang);
+    }
+
+    // True once a wheel is down.
+    bool fly_bike (GameSession& session, seconds_t dt) {
+      mov::Vehicle& bike = session.bike ();
+      mov::Glider& glider = session.glider ();
+      const Vec3 pull =
+        glider.fly (dt, wing_over_bike (bike), bike.physical_velocity ());
+      // The wing crabs into the wind; the wheels should meet the ground
+      // the way they are going over it.
+      Vec3 track = bike.velocity ();
+      track[1] = 0.0f;
+      const Vec3 ahead =
+        length2 (track) > 4.0f ? normalized (track) : glider.heading ();
+      bike.hang ({ pull, ahead, glider.up () });
+      bike.update (dt);
+      bike.unhang ();
+      glider.follow (wing_over_bike (bike), bike.physical_velocity ());
+      return bike.grounded ();
     }
 
     void set_turn (GameSession& session, float value) {
@@ -72,16 +104,18 @@ namespace moppe::game {
       session.bike ().set_thrust (0);
       session.bike ().set_yaw (0 * u::deg);
       session.bike ().set_boost (0, 0);
-      session.glider ().launch (moppe::position (position + Vec3 (0, 2.4f, 0)),
-                                inherited,
-                                heading,
-                                true);
+      session.glider ().launch (
+        moppe::position (position + Vec3 (0, mov::Glider::bike_hang, 0)),
+        inherited,
+        heading,
+        true);
       GameLogicState& logic = session.logic ();
       session.set_mode (M_GLIDER);
       session.glider ().set_turn (logic.m_turn_input);
       session.glider ().set_speed_control (logic.m_go_input);
       session.glider ().set_flare (logic.m_boost_input > 0.1f);
-      sync_attached_bike (session);
+      if (!flies_bike (session))
+        sync_attached_bike (session);
     }
 
     void use_glider_control (GameSession& session,
@@ -96,7 +130,9 @@ namespace moppe::game {
     void finish_glide (GameSession& session) {
       GameLogicState& logic = session.logic ();
       if (session.glider ().bike_attached ()) {
-        sync_attached_bike (session);
+        // The bike rides on with everything the glide gave it.
+        if (!flies_bike (session))
+          sync_attached_bike (session);
         session.glider ().drop_bike ();
         session.set_mode (M_BIKE);
         set_turn (session, logic.m_turn_input);
@@ -105,9 +141,13 @@ namespace moppe::game {
         return;
       }
 
-      const Vec3 position = session.glider ().position ();
-      session.walker ().spawn (moppe::position (position + Vec3 (0, 0.15f, 0)),
-                               session.glider ().heading ());
+      // The pilot's feet swing down out of the harness and run the
+      // landing out.
+      const mov::Glider& glider = session.glider ();
+      const Vec3 feet =
+        glider.position () - Vec3 (0, mov::Glider::pilot_clearance - 0.1f, 0);
+      session.walker ().spawn (
+        moppe::position (feet), glider.heading (), glider.physical_velocity ());
       session.set_mode (M_FOOT);
       set_turn (session, logic.m_turn_input);
       set_go (session, logic.m_go_input);
@@ -128,7 +168,8 @@ namespace moppe::game {
         jeep.set_brake (false);
         session.walker ().spawn (
           moppe::position (jeep.point (Vec3 (1.75f, 0.3f, -0.1f))),
-          jeep.forward ());
+          jeep.forward (),
+          moppe::velocity (jeep.velocity ()));
         session.set_mode (M_FOOT);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
@@ -149,7 +190,9 @@ namespace moppe::game {
         const Vec3 heading = vehicle.orientation ();
         const Vec3 side (heading[2], 0, -heading[0]);
         session.walker ().spawn (
-          moppe::position (vehicle.position () + side * 1.8f), heading);
+          moppe::position (vehicle.position () + side * 1.8f),
+          heading,
+          vehicle.physical_velocity ());
         vehicle.set_thrust (0);
         vehicle.set_yaw (0 * u::deg);
         vehicle.set_boost (0, 0);
@@ -352,14 +395,21 @@ namespace moppe::game {
     session.bike ().set_parked (logic.m_mode != M_BIKE &&
                                 !session.can_drop_bike ());
 
-    if (!session.can_drop_bike ())
-      session.bike ().update (dt);
-    if (logic.m_mode == M_GLIDER) {
-      const bool landed = session.glider ().update (dt);
-      if (session.glider ().bike_attached ())
-        sync_attached_bike (session);
-      if (landed)
+    if (flies_bike (session)) {
+      if (fly_bike (session, dt)) {
+        session.glider ().land ();
         finish_glide (session);
+      }
+    } else {
+      if (!session.can_drop_bike ())
+        session.bike ().update (dt);
+      if (logic.m_mode == M_GLIDER) {
+        const bool landed = session.glider ().update (dt);
+        if (session.glider ().bike_attached ())
+          sync_attached_bike (session);
+        if (landed)
+          finish_glide (session);
+      }
     }
     if (logic.m_mode == M_FOOT)
       session.walker ().update (dt, surface, world, trunks);

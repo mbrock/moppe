@@ -648,6 +648,14 @@ namespace moppe {
         controls.steer = radians_value (m_yaw);
         controls.boost_acceleration = boost_direction * (boost * m_boost_level);
         controls.parked = m_parked;
+        if (m_hung) {
+          controls.throttle = 0.0f;
+          controls.steer = 0.0f;
+          controls.boost_acceleration = m_hang.acceleration;
+          controls.hung = true;
+          controls.hang_forward = m_hang.forward;
+          controls.hang_up = m_hang.up;
+        }
         controls.wading = m_rigid->reference_position ()[1] - radius <
                           m_water_level.numerical_value_in (u::m);
 
@@ -675,7 +683,8 @@ namespace moppe {
           m_fall_top = height;
         } else {
           m_airborne_time += h;
-          m_fall_top = std::max (m_fall_top, height);
+          // A glide is no fall, however far down it ends.
+          m_fall_top = m_hung ? height : std::max (m_fall_top, height);
         }
         m_impact =
           std::max (m_impact, 0.4f * m_rigid->trunk_hit () * u::m / u::s);

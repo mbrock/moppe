@@ -506,6 +506,14 @@ namespace moppe {
           (vf < -1.0f ? -1.0f : 1.0f);
         if (grounded) {
           steer_rate (ground_normal, wanted_yaw, yaw_inertia, 12.0f, dt);
+        } else if (controls.hung) {
+          // Under the wing the bike swings round to face the way it flies.
+          steer_rate (world_up,
+                      angle_about (world_up, forward, controls.hang_forward) *
+                        4.0f,
+                      yaw_inertia,
+                      6.0f,
+                      dt);
         } else {
           // Mid-air the handlebar whips the bike about the vertical.
           steer_rate (world_up,
@@ -524,8 +532,9 @@ namespace moppe {
         normalize (level);
         const Vec3 right = cross (forward, level);
         Vec3 landing_normal = world_up;
+        const bool hanging = controls.hung && !grounded;
         const bool landing =
-          !grounded &&
+          !grounded && !hanging &&
           predict_landing (
             surface, p + up * bike_rig::reference_height, v, landing_normal);
         // The rider's intended lean is a smoothed state of its own, so a
@@ -538,6 +547,10 @@ namespace moppe {
           // feeds back through the wheels' gyroscopic coupling into a weave.
           const Vec3 centripetal = cross (Vec3 (0.0f, wanted_yaw, 0.0f), v);
           goal = std::atan2 (dot (centripetal, right), bike_rig::gravity);
+        } else if (hanging) {
+          // The harness banks the bike with the wing.
+          goal = std::atan2 (dot (controls.hang_up, right),
+                             dot (controls.hang_up, level));
         } else if (landing) {
           goal = std::atan2 (dot (landing_normal, right),
                              dot (landing_normal, level));
@@ -570,9 +583,11 @@ namespace moppe {
           if (length2 (tangent) > 1e-6f)
             nose = angle_about (left, forward, normalized (tangent));
         }
-        if (!grounded && speed > 2.0f) {
+        if (hanging || (!grounded && speed > 2.0f)) {
           Vec3 aim;
-          if (landing) {
+          if (hanging) {
+            aim = controls.hang_forward;
+          } else if (landing) {
             aim = forward - landing_normal * dot (forward, landing_normal);
           } else {
             Vec3 horizontal (forward[0], 0.0f, forward[2]);
@@ -647,10 +662,11 @@ namespace moppe {
         b3WheelJoint_SetMaxSpinTorque (front_joint, front_torque);
 
         // Drag, wading, and the jump jets act on the whole bike's mass.
-        Vec3 force =
-          v * (-(bike_rig::rolling_drag + bike_rig::air_drag * speed) *
-               total_mass) +
-          controls.boost_acceleration * total_mass;
+        // A bike under the wing has its drag counted in the wing's pull.
+        Vec3 force = controls.boost_acceleration * total_mass;
+        if (!hanging)
+          force -= v * ((bike_rig::rolling_drag + bike_rig::air_drag * speed) *
+                        total_mass);
         if (controls.wading)
           force -= v * (bike_rig::water_drag * total_mass);
         b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);

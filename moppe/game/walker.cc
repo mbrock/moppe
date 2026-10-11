@@ -49,6 +49,12 @@ namespace moppe {
       m_stride_speed = 0 * u::m / u::s;
     }
 
+    void
+    Walker::spawn (position_t pos, const Vec3& heading, velocity_t velocity) {
+      spawn (pos, heading);
+      m_body.spawn (pos, velocity);
+    }
+
     void Walker::update (seconds_t dt,
                          const map::SurfaceGeometry& surface,
                          const WorldParams& world,

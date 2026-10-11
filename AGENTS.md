@@ -139,6 +139,12 @@
     and reduce wing loading; otherwise touching down folds the wing and
     continues on the bike. On iOS, the mount/dismount corner deploys the wing
     while airborne and drops the attached bike while gliding.
+    The wing (`moppe/mov/glider.*`) is lift and drag on a point mass in a
+    moving air mass, so a dive buys speed and a pull-up spends it on height;
+    a held flare rounds the path out level and brakes until the wing stalls.
+    Under it the rigid bike stays a live Box3D assemblage that the wing's
+    pull flies (`Vehicle::hang`), so it lands on its wheels with the glide's
+    speed and meets trunks on the way; a pilot alone lands running.
   - Modes: `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
     - Finished worlds automatically load from and save to a stable cache keyed
