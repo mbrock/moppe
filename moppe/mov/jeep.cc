@@ -51,8 +51,10 @@ namespace moppe::mov {
       constexpr float full_lock = 0.55f;
       constexpr float lock_fade_speed = 13.0f;
 
-      constexpr float rolling_drag = 0.03f;
-      constexpr float air_drag = 0.0012f;
+      // What it costs a loaded tyre to roll, as a share of its load: the
+      // wheels' own rolling resistance, so there is none in the air.
+      constexpr float rolling_resistance = 0.025f;
+      constexpr float air_drag = 0.003f;
       constexpr float water_drag = 1.6f;
 
       // The ground patch, as the bike's: samples at half the terrain
@@ -163,6 +165,7 @@ namespace moppe::mov {
       shape.baseMaterial.friction = jeep_rig::tyre_friction *
                                     jeep_rig::tyre_friction /
                                     jeep_rig::ground_friction;
+      shape.baseMaterial.rollingResistance = jeep_rig::rolling_resistance;
       shape.filter.categoryBits = jeep_rig::wheel_bit;
       shape.filter.maskBits = jeep_rig::ground_bit;
       const b3Sphere sphere { { 0.0f, 0.0f, 0.0f }, wheel_radius };
@@ -386,12 +389,12 @@ namespace moppe::mov {
         b3WheelJoint_SetMaxSpinTorque (joints[wheel], torque);
       }
 
-      // Drag, and water up to the sills, on the whole jeep's mass.
+      // The air's drag, and water's up to the sills, on the whole jeep's
+      // mass.
       const float wet = std::clamp (
         (water_level - (point (Vec3 (0, -0.3f, 0))[1])) / 0.8f, 0.0f, 1.0f);
       const Vec3 force =
-        v * (-(jeep_rig::rolling_drag + jeep_rig::air_drag * speed +
-               jeep_rig::water_drag * wet) *
+        v * (-(jeep_rig::air_drag * speed + jeep_rig::water_drag * wet) *
              jeep_rig::total_mass);
       b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
 

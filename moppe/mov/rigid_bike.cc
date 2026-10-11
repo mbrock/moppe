@@ -403,7 +403,7 @@ namespace moppe {
       }
 
       // Velocity-level attitude control: nudge one component of the chassis'
-      // angular velocity toward a target, as an impulse sized by the inertia
+      // angular velocity toward a target, by a torque sized by the inertia
       // the assemblage presents about that axis. `rate` is the inverse time
       // constant of the correction.
       //
@@ -421,14 +421,18 @@ namespace moppe {
         const Vec3 w = from_b3 (b3Body_GetAngularVelocity (chassis));
         const float gain = 1.0f - std::exp (-rate * dt);
         const float change = (target - dot (w, axis)) * gain;
-        b3Body_ApplyAngularImpulse (
-          chassis, to_b3 (axis * (inertia * change)), true);
+        // The correction is asked for every step, so it goes in as the
+        // torque (and force) that delivers it over the step: Box3D spreads
+        // those evenly across its substeps, where an impulse would land
+        // whole in the first and leave the tires to answer it at once.
+        b3Body_ApplyTorque (
+          chassis, to_b3 (axis * (inertia * change / dt)), true);
         if (!pivot)
           return;
         const Vec3 centre = from_b3 (b3Body_GetPosition (chassis));
         const Vec3 swing = cross (axis * change, centre - *pivot);
-        b3Body_ApplyLinearImpulseToCenter (
-          chassis, to_b3 (swing * chassis_mass), true);
+        b3Body_ApplyForceToCenter (
+          chassis, to_b3 (swing * (chassis_mass / dt)), true);
       }
 
       // A parked bike that has settled on its wheels stops simulating, so

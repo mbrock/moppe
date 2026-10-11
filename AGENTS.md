@@ -230,7 +230,7 @@
     Box3D assemblage: a chassis of two box hulls on four sphere wheels,
     each on a wheel joint that springs, drives, brakes, and (in front)
     steers it, over its own streamed height-field patch and trunk
-    capsules. Its frame is the world's, x to the driver's left.
+    capsules (`mov::GroundPatch`, which the bike shares). Its frame is the world's, x to the driver's left.
     `MOPPE_DEMO=jeep` has the autopilot drive it (`tools/record OUT.mp4
     jeep`), and `MOPPE_RIDE_ALONG=1` takes the other player's passenger
     seat as soon as they appear, for captures.
@@ -282,7 +282,10 @@
     (`game/companion_link.*`), and the other draws them a tenth of a
     second behind as a second hiker, bike, jeep, or glider, with their camp;
     picked mushrooms and the hour of the day are shared (the clock that
-    is ahead leads), and nothing collides between the two. Both must launch
+    is ahead leads), and nothing collides between the two. So that they
+    can be told apart, the player with the greater number wears the green
+    jacket and orange cap (`game/outfit.hh`; the paints are swapped by name
+    in `game/figure.cc`). Both must launch
     the same world, so without `--seed` multiplayer plays seed 123. Two
     games on one machine find each other too (the second takes a free
     port); `MOPPE_MULTIPLAYER_PORT` picks the port. A firewall must let
