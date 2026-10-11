@@ -31,6 +31,8 @@
 #include <shader_rain_vertex.h>
 #include <shader_scene_copy_fragment.h>
 #include <shader_scene_copy_vertex.h>
+#include <shader_neighbourhood_fragment.h>
+#include <shader_neighbourhood_vertex.h>
 #include <shader_leaves_fragment.h>
 #include <shader_leaves_vertex.h>
 #include <shader_water_fragment.h>
@@ -97,6 +99,8 @@ namespace moppe::nhal {
       { dxil (shader_leaves_vertex), dxil (shader_leaves_fragment) },
       { dxil (shader_waterfall_vertex), dxil (shader_waterfall_fragment) },
       { dxil (shader_scene_copy_vertex), dxil (shader_scene_copy_fragment) },
+      { dxil (shader_neighbourhood_vertex),
+        dxil (shader_neighbourhood_fragment) },
     };
     return shaders;
   }

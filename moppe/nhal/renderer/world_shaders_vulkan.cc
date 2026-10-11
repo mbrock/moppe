@@ -166,6 +166,12 @@ namespace moppe::nhal {
     alignas (4) const unsigned char scene_copy_fragment[] = {
 #embed "scene_copy.fragment.spv"
     };
+    alignas (4) const unsigned char neighbourhood_vertex[] = {
+#embed "neighbourhood.vertex.spv"
+    };
+    alignas (4) const unsigned char neighbourhood_fragment[] = {
+#embed "neighbourhood.fragment.spv"
+    };
 
     template <std::size_t N>
     StageCode spirv (const unsigned char (&code)[N]) {
@@ -207,6 +213,7 @@ namespace moppe::nhal {
       { spirv (leaves_vertex), spirv (leaves_fragment) },
       { spirv (waterfall_vertex), spirv (waterfall_fragment) },
       { spirv (scene_copy_vertex), spirv (scene_copy_fragment) },
+      { spirv (neighbourhood_vertex), spirv (neighbourhood_fragment) },
     };
     return shaders;
   }

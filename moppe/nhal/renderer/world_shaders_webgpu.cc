@@ -161,6 +161,12 @@ namespace moppe::nhal {
     const char scene_copy_fragment[] = {
 #embed "scene_copy.fragment.wgsl"
       , 0 };
+    const char neighbourhood_vertex[] = {
+#embed "neighbourhood.vertex.wgsl"
+      , 0 };
+    const char neighbourhood_fragment[] = {
+#embed "neighbourhood.fragment.wgsl"
+      , 0 };
 
     StageCode wgsl (const char* code) {
       return { {}, {}, {}, code };
@@ -199,6 +205,7 @@ namespace moppe::nhal {
       { wgsl (leaves_vertex), wgsl (leaves_fragment) },
       { wgsl (waterfall_vertex), wgsl (waterfall_fragment) },
       { wgsl (scene_copy_vertex), wgsl (scene_copy_fragment) },
+      { wgsl (neighbourhood_vertex), wgsl (neighbourhood_fragment) },
     };
     return shaders;
   }

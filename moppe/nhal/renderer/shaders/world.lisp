@@ -4069,6 +4069,30 @@
            (* (swizzle ,w3 :x) (swizzle ,w12 :y))
            (* (swizzle ,w12 :x) (swizzle ,w3 :y))))))
 
+;;; The history's clamp and the motion it follows belong to the scene texel
+;;; an output pixel falls in, and the resolve draws four output pixels or
+;;; more to each: gathered there, the nine taps of colour, motion, and depth
+;;; were taken four times over.  So the neighbourhood is gathered once a
+;;; scene texel, into two targets: the low and high YCoCg bounds, with the
+;;; nearest surface's motion in their fourth lanes, x and y.
+(define-shader neighbourhood-fragment
+    (:stage :fragment
+     :inputs ((ndc :vec2 :location 0)
+              (pixel :vec4 :built-in :frag-coord))
+     :outputs ((low :vec4 :location 0)
+               (high :vec4 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (scene :texture-2d :binding 0)
+                 (scene-motion :texture-2d :binding 1)
+                 (scene-depth :depth-texture-2d :binding 2)))
+  (let* ((size (swizzle temporal :xy))
+         (centre (floor (swizzle pixel :xy)))
+         (motion (nearest-motion scene-motion scene-depth centre size)))
+    (set-output low (vec4 (neighbourhood min scene centre size)
+                          (swizzle motion :x)))
+    (set-output high (vec4 (neighbourhood max scene centre size)
+                           (swizzle motion :y)))))
+
 (define-shader resolve-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index))
@@ -4086,20 +4110,20 @@
      :outputs ((color :vec4 :location 0))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (scene :texture-2d :binding 0)
-                 (scene-motion :texture-2d :binding 1)
-                 (scene-depth :depth-texture-2d :binding 2)
+                 (bounds-low :texture-2d :binding 1)
+                 (bounds-high :texture-2d :binding 2)
                  (history :texture-2d :binding 3)
                  (linear-clamp :sampler :binding 0)))
   (let* ((size (swizzle temporal :xy))
          (here (ndc-uv (+ ndc (swizzle temporal :zw))))
-         (centre (floor (* here size)))
+         (centre (scene-texel (floor (* here size)) 0.0 0.0 size))
          (fresh (swizzle (sample scene linear-clamp here) :rgb))
-         (low (neighbourhood min scene centre size))
-         (high (neighbourhood max scene centre size))
+         (below (texel-load bounds-low centre))
+         (above (texel-load bounds-high centre))
+         (low (swizzle below :xyz))
+         (high (swizzle above :xyz))
          ;; temporal-blend y set ignores motion: a renderer probe.
-         (motion (* (swizzle (nearest-motion scene-motion scene-depth centre
-                                             size)
-                             :xy)
+         (motion (* (vec2 (swizzle below :w) (swizzle above :w))
                     (- 1.0 (swizzle temporal-blend :y))))
          (then-uv (+ (ndc-uv ndc) motion))
          (inside (* (step 0.0 (swizzle then-uv :x))
@@ -4132,6 +4156,10 @@
 (define-shader-program resolve
   :vertex resolve-vertex
   :fragment resolve-fragment)
+
+(define-shader-program neighbourhood
+  :vertex resolve-vertex
+  :fragment neighbourhood-fragment)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *present*

@@ -34,6 +34,7 @@
 #include <hud.hh>
 #include <present.hh>
 #include <leaves.hh>
+#include <neighbourhood.hh>
 #include <waterfall.hh>
 #include <scene_copy.hh>
 #include <rain.hh>
@@ -373,6 +374,7 @@ namespace moppe::nhal {
         m_leaves_code.keep (shaders.leaves);
         m_waterfall_code.keep (shaders.waterfall);
         m_scene_copy_code.keep (shaders.scene_copy);
+        m_neighbourhood_code.keep (shaders.neighbourhood);
         m_boulders_code.keep (shaders.boulders);
         m_boulders_shadow_code.keep (shaders.boulders_shadow);
         m_boulder_cull_code.keep (shaders.boulder_cull);
@@ -1365,6 +1367,22 @@ namespace moppe::nhal {
         }
         m_device->end_render_pass ();
         m_scene_open = false;
+        // What every output pixel in a scene texel shares, gathered once
+        // for the texel: its neighbourhood's bounds and the motion to
+        // follow.
+        RenderPassDesc gather;
+        gather.label = "temporal neighbourhood";
+        gather.color_count = 2;
+        gather.colors[0] = { m_bounds[0], Load::discard, Store::store };
+        gather.colors[1] = { m_bounds[1], Load::discard, Store::store };
+        m_device->begin_render_pass (gather);
+        m_device->set_pipeline (m_neighbourhood);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_texture (0, m_scene_color);
+        m_device->set_texture (1, m_scene_motion);
+        m_device->set_texture (2, m_scene_depth);
+        m_device->draw (3);
+        m_device->end_render_pass ();
         Texture& previous = m_history[m_frame % 2];
         Texture& next = m_history[(m_frame + 1) % 2];
         RenderPassDesc pass;
@@ -1375,8 +1393,8 @@ namespace moppe::nhal {
         m_device->set_pipeline (m_resolve);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_texture (0, m_scene_color);
-        m_device->set_texture (1, m_scene_motion);
-        m_device->set_texture (2, m_scene_depth);
+        m_device->set_texture (1, m_bounds[0]);
+        m_device->set_texture (2, m_bounds[1]);
         m_device->set_texture (3, previous);
         m_device->draw (3);
         m_device->end_render_pass ();
@@ -1790,6 +1808,13 @@ namespace moppe::nhal {
         resolve.fragment = m_resolve_code.stage (1);
         resolve.color_formats[0] = Format::rgba16_float;
         m_resolve = m_device->create_render_pipeline (resolve);
+        RenderPipelineDesc neighbourhood = resolve;
+        neighbourhood.program = &shaders::neighbourhood::program;
+        neighbourhood.vertex = m_neighbourhood_code.stage (0);
+        neighbourhood.fragment = m_neighbourhood_code.stage (1);
+        neighbourhood.color_count = 2;
+        neighbourhood.color_formats[1] = Format::rgba16_float;
+        m_neighbourhood = m_device->create_render_pipeline (neighbourhood);
 
         RenderPipelineDesc present;
         present.program = &shaders::present::program;
@@ -2236,7 +2261,8 @@ namespace moppe::nhal {
       void make_targets (std::uint32_t scene_width,
                          std::uint32_t scene_height) {
         for (Texture t : { m_scene_color, m_scene_motion, m_scene_depth,
-                           m_beneath, m_beneath_depth,
+                           m_beneath, m_beneath_depth, m_bounds[0],
+                           m_bounds[1],
                            m_history[0], m_history[1], m_bloom[0],
                            m_bloom[1], m_ao[0], m_ao[1], m_shafts })
           if (t)
@@ -2262,6 +2288,11 @@ namespace moppe::nhal {
           { m_scene_width, m_scene_height, Format::r32_float,
             usage_render_target | usage_sampled, 1,
             "scene depth beneath water" });
+        for (Texture& t : m_bounds)
+          t = m_device->create_texture (
+            { m_scene_width, m_scene_height, Format::rgba16_float,
+              usage_render_target | usage_sampled, 1,
+              "temporal neighbourhood" });
         for (Texture& t : m_history)
           t = m_device->create_texture (
             { m_width, m_height, Format::rgba16_float,
@@ -2421,8 +2452,10 @@ namespace moppe::nhal {
       // DeviceInfo::indices_count_from_first.
       bool m_first_vertex_counts;
       ProgramCode m_terrain_code, m_sky_code, m_uber_code, m_hud_code,
-        m_resolve_code, m_present_code, m_slug_text_code;
-      Pipeline m_terrain, m_sky, m_resolve, m_present, m_hud, m_slug_text;
+        m_resolve_code, m_neighbourhood_code, m_present_code,
+        m_slug_text_code;
+      Pipeline m_terrain, m_sky, m_resolve, m_neighbourhood, m_present,
+        m_hud, m_slug_text;
       ProgramCode m_forest_code;
       OwnedStage m_forest_cull_code;
       Pipeline m_forest, m_forest_cull, m_exposure;
@@ -2460,6 +2493,9 @@ namespace moppe::nhal {
       std::uint32_t m_width = 0, m_height = 0;
       std::uint32_t m_scene_width = 0, m_scene_height = 0;
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];
+      // The scene's neighbourhoods for the resolve: low and high bounds,
+      // with the motion to follow in their fourth lanes.
+      Texture m_bounds[2];
       // The opaque scene copied out before the water: its colour and depth.
       Texture m_beneath, m_beneath_depth;
       Texture m_bloom[2];
