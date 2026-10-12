@@ -184,7 +184,10 @@ if [[ -z $window && $(uname) == Linux ]] &&
     --backend headless -- "$game" --fullscreen "$@" 2>&1 |
     grep --line-buffered "$said" >&2 || true
 else
-  MOPPE_VIDEO_HEIGHT=$height \
+  # A window cannot be larger than the screen it opens on, but its pixels
+  # may be finer than its points: MOPPE_VIDEO_HEIGHT asks for more lines
+  # than the size's, as a 1280x720 window on a 2x display has to give.
+  MOPPE_VIDEO_HEIGHT=${MOPPE_VIDEO_HEIGHT:-$height} \
     "$game" --windowed --inactive --window-size "$size" "$@"
 fi
 
