@@ -7,9 +7,11 @@
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/trail.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -41,9 +43,34 @@ namespace moppe::game {
     float field_of_view = 58.0f;
   };
 
+  // How a flight carries itself over the ground: the opening's is a fast,
+  // high swoop between landmarks; a river's is low and slow enough to watch
+  // the water.
+  struct CinematicFlightStyle {
+    // The route keeps this far over the ground beneath it, climbing before
+    // a rise over about ANTICIPATION metres, and the aircraft itself never
+    // comes lower than FLOOR.
+    float clearance = 22.0f;
+    float floor = 18.0f;
+    float anticipation = 95.0f;
+    // The slowest a tight bend brings it down to, metres a second.
+    float slowest_turn = 42.0f;
+    // The stretch of route ahead its gimbal aims along, as the least and
+    // most metres to that stretch's near and far ends.
+    float look_near_least = 35.0f;
+    float look_near_most = 90.0f;
+    float look_far_least = 220.0f;
+    float look_far_most = 430.0f;
+    // How much of its aim is the waypoints' subject and not the route.
+    float subject_weight = 0.52f;
+    // The steepest it banks into a turn, radians.
+    float bank = 0.30f;
+  };
+
   struct CinematicFlightPlan {
     std::vector<CinematicLandmark> landmarks;
     std::vector<CinematicFlightWaypoint> waypoints;
+    CinematicFlightStyle style;
 
     bool empty () const noexcept {
       return waypoints.size () < 2;
@@ -62,6 +89,20 @@ namespace moppe::game {
                          const terrain::RiverNetwork& rivers,
                          const Vec3& arrival,
                          const terrain::TrailNetwork* trail = nullptr);
+
+  // A flight down the world's greatest watercourse: from the top of its
+  // catchment down the dry valley to where the stream first shows, along
+  // it through its lakes, and out over the sea. It flies low over open
+  // water and clear of the crowns where trees stand by the stream: TREES
+  // gives each tree's place, with its height for y. SECONDS is how long the
+  // whole flight should take; zero or less leaves it at a watching pace.
+  CinematicFlightPlan plan_river_flight (const map::SurfaceGeometry& surface,
+                                         std::span<const Vec3> trees,
+                                         const terrain::WaterSheets& water,
+                                         const terrain::LakeCensus& census,
+                                         const terrain::DrainageGraph& drainage,
+                                         const terrain::RiverNetwork& rivers,
+                                         float seconds);
 
   struct CinematicFlightControls {
     // Body-relative pilot trim. The automatic opening leaves these at zero;
@@ -135,6 +176,7 @@ namespace moppe::game {
     void build_flight_ribbon (const map::SurfaceGeometry& surface);
 
     std::vector<CinematicFlightWaypoint> m_waypoints;
+    CinematicFlightStyle m_style;
     std::vector<ArcSample> m_arc_samples;
     Vec3 m_position {};
     Vec3 m_velocity {};

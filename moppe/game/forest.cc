@@ -11,6 +11,16 @@
 #include <vector>
 
 namespace moppe::game {
+  // The forest stands at the height of a mature stand -- most conifers 20
+  // to 35 metres.
+  meters_t tree_height (const ForestSite& site) noexcept {
+    const float size = site.size.numerical_value_in (mp_units::one);
+    const float cover = site.cover.numerical_value_in (mp_units::one);
+    const float moisture = site.moisture.numerical_value_in (mp_units::one);
+    return 1.5f * size * (site.form == ForestForm::conifer ? 15.0f : 13.4f) *
+           (0.82f + 0.30f * cover + 0.26f * moisture) * u::m;
+  }
+
   namespace {
     // moppe_forest_hash from shaders/metal/forest_medium.h: trunk colliders
     // must draw the same per-individual lean and girth the shader does.
@@ -82,8 +92,7 @@ namespace moppe::game {
       // The forest stands at the height of a mature stand -- most conifers
       // 20 to 35 metres -- with stout spruce cones and broad broadleaf crowns
       // lifted on clear trunks.
-      const meters_t height = 1.5f * size * (conifer ? 15.0f : 13.4f) *
-                              (0.82f + 0.30f * cover + 0.26f * moisture) * u::m;
+      const meters_t height = tree_height (site);
       const float crown_share = 0.19f;
       return {
         .root = site.position,

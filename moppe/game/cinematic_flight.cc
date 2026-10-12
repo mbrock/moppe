@@ -1,10 +1,14 @@
 #include <moppe/game/cinematic_flight.hh>
 
+#include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <iostream>
 #include <limits>
+#include <utility>
 
 namespace moppe::game {
   namespace {
@@ -577,6 +581,269 @@ namespace moppe::game {
     return plan;
   }
 
+  CinematicFlightPlan plan_river_flight (const map::SurfaceGeometry& surface,
+                                         std::span<const Vec3> trees,
+                                         const terrain::WaterSheets& water,
+                                         const terrain::LakeCensus& census,
+                                         const terrain::DrainageGraph& drainage,
+                                         const terrain::RiverNetwork& rivers,
+                                         float seconds) {
+    MOPPE_PROFILE_ZONE ("plan_river_flight");
+    using terrain::RiverReach;
+    CinematicFlightPlan plan;
+
+    // The greatest river to reach the sea, and from its mouth upward the
+    // larger branch at every confluence and the larger inflow of every
+    // lake, to the reach where it first shows.
+    const auto reaches_sea = [&] (const RiverReach& reach) {
+      return reach.downstream_ocean ||
+             (census.domain ().contains (reach.downstream_body) &&
+              census.water_body (reach.downstream_body).classification ==
+                terrain::WaterBodyClass::Sea);
+    };
+    const RiverReach* mouth = nullptr;
+    for (const RiverReach& reach : rivers.reaches)
+      if (reach.downstream_reach == RiverReach::no_id && reaches_sea (reach) &&
+          reach.alignment.points.size () >= 2 &&
+          (!mouth || reach.downstream_area > mouth->downstream_area))
+        mouth = &reach;
+    if (!mouth)
+      return plan;
+    std::vector<const RiverReach*> course { mouth };
+    std::vector<std::uint8_t> taken (rivers.reaches.size (), 0);
+    taken[mouth->id] = 1;
+    for (;;) {
+      const RiverReach& lowest = *course.back ();
+      const RiverReach* above = nullptr;
+      for (const RiverReach& reach : rivers.reaches) {
+        if (taken[reach.id] || reach.alignment.points.size () < 2)
+          continue;
+        const bool joins = reach.downstream_reach == lowest.id;
+        const bool feeds = reach.downstream_reach == RiverReach::no_id &&
+                           !reaches_sea (reach) &&
+                           census.domain ().contains (lowest.upstream_body) &&
+                           reach.downstream_body == lowest.upstream_body;
+        if ((joins || feeds) &&
+            (!above || reach.downstream_area > above->downstream_area))
+          above = &reach;
+      }
+      if (!above)
+        break;
+      taken[above->id] = 1;
+      course.push_back (above);
+    }
+
+    // Above that, the dry valley: from cell to cell by whichever sends the
+    // most water down, up to the divide.
+    const int width = static_cast<int> (drainage.width ());
+    const int height = static_cast<int> (drainage.height ());
+    const float spacing_x =
+      surface.domain ().spacing_x ().numerical_value_in (u::m);
+    const float spacing_z =
+      surface.domain ().spacing_z ().numerical_value_in (u::m);
+    std::vector<Vec3> line;
+    if (!course.back ()->cells.empty ()) {
+      std::vector<terrain::CellIndex> ascent;
+      terrain::CellIndex cell = course.back ()->cells.front ();
+      for (int step = 0; step < 4096; ++step) {
+        terrain::CellIndex donor = no_cell;
+        float most = 0.0f;
+        for (int dz = -1; dz <= 1; ++dz)
+          for (int dx = -1; dx <= 1; ++dx) {
+            const terrain::CellIndex next = static_cast<std::uint32_t> (
+              terrain::wrap_index (static_cast<int> (cell / width) + dz,
+                                   height) *
+                width +
+              terrain::wrap_index (static_cast<int> (cell % width) + dx,
+                                   width));
+            if (next == cell || drainage.receiver[next] != cell)
+              continue;
+            const float area =
+              drainage.contributing_area_at (next).numerical_value_in (u::m *
+                                                                       u::m);
+            if (area > most) {
+              most = area;
+              donor = next;
+            }
+          }
+        if (donor == no_cell)
+          break;
+        ascent.push_back (donor);
+        cell = donor;
+      }
+      for (auto from = ascent.rbegin (); from != ascent.rend (); ++from) {
+        const Vec3 point (static_cast<float> (*from % width) * spacing_x,
+                          0.0f,
+                          static_cast<float> (*from / width) * spacing_z);
+        line.push_back (
+          line.empty () ? point : unwrap_near (point, line.back (), surface));
+      }
+    }
+    for (auto reach = course.rbegin (); reach != course.rend (); ++reach)
+      for (const terrain::RiverAlignmentPoint& point :
+           (*reach)->alignment.points) {
+        const Vec3 at (point.x_m, 0.0f, point.z_m);
+        line.push_back (
+          line.empty () ? at : unwrap_near (at, line.back (), surface));
+      }
+    if (line.size () < 2)
+      return plan;
+    // And a little way out to sea.
+    {
+      Vec3 seaward = line.back () - line[line.size () - 2];
+      for (std::size_t back = 3; back <= 40 && back <= line.size (); ++back)
+        if (length2 (seaward) < 1.0f)
+          seaward = line.back () - line[line.size () - back];
+      if (length2 (seaward) > 1e-6f)
+        line.push_back (line.back () + normalized (seaward) * 160.0f);
+    }
+
+    // The flight's gates, a few seconds apart, their line eased of the
+    // lattice's corners and the stream's wriggles.
+    constexpr float gate_spacing = 30.0f;
+    std::vector<Vec3> gates { line.front () };
+    {
+      float carried = 0.0f;
+      for (std::size_t point = 1; point < line.size (); ++point) {
+        Vec3 from = line[point - 1];
+        const Vec3 to = line[point];
+        float span = length (to - from);
+        while (carried + span >= gate_spacing) {
+          const float step = gate_spacing - carried;
+          from = from + (to - from) * (step / span);
+          span -= step;
+          carried = 0.0f;
+          gates.push_back (from);
+        }
+        carried += span;
+      }
+      gates.push_back (line.back ());
+    }
+    for (int pass = 0; pass < 3; ++pass) {
+      std::vector<Vec3> eased = gates;
+      for (std::size_t gate = 1; gate + 1 < gates.size (); ++gate)
+        eased[gate] = gates[gate - 1] * 0.25f + gates[gate] * 0.5f +
+                      gates[gate + 1] * 0.25f;
+      gates = std::move (eased);
+    }
+
+    // Each gate stands over the water, or the ground where there is none
+    // yet: low where the country is open, and clear of the crowns where
+    // trees stand by the stream, which it climbs over ahead of time.
+    const auto elevation = [] (const auto& bundle, const Vec3& at) {
+      return terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          bundle, moppe::position (Vec3 (at[0], 0.0f, at[2]))));
+    };
+    const Vec3 period (surface.domain ().period_x ().numerical_value_in (u::m),
+                       0.0f,
+                       surface.domain ().period_z ().numerical_value_in (u::m));
+    std::vector<float> level (gates.size ());
+    std::vector<float> above (gates.size (), 9.0f);
+    for (std::size_t gate = 0; gate < gates.size (); ++gate)
+      level[gate] = std::max (elevation (surface, gates[gate]),
+                              elevation (water, gates[gate]));
+    constexpr float beside = 22.0f;
+    {
+      // The gates by the tile of the world they stand in, so that each
+      // tree asks only those about it.
+      const int tiles_x = std::max (1, static_cast<int> (period[0] / 32.0f));
+      const int tiles_z = std::max (1, static_cast<int> (period[2] / 32.0f));
+      const auto tile = [&] (float x, float z) {
+        const auto along = [] (float at, float extent, int tiles) {
+          const float lap = at - extent * std::floor (at / extent);
+          return std::min (tiles - 1, static_cast<int> (lap / extent * tiles));
+        };
+        return std::pair { along (x, period[0], tiles_x),
+                           along (z, period[2], tiles_z) };
+      };
+      std::vector<std::vector<std::uint32_t>> standing (
+        static_cast<std::size_t> (tiles_x) * tiles_z);
+      for (std::size_t gate = 0; gate < gates.size (); ++gate) {
+        const auto [x, z] = tile (gates[gate][0], gates[gate][2]);
+        standing[static_cast<std::size_t> (z) * tiles_x + x].push_back (
+          static_cast<std::uint32_t> (gate));
+      }
+      for (const Vec3& tree : trees) {
+        const auto [x, z] = tile (tree[0], tree[2]);
+        for (int dz = -1; dz <= 1; ++dz)
+          for (int dx = -1; dx <= 1; ++dx)
+            for (const std::uint32_t gate :
+                 standing[static_cast<std::size_t> (
+                            terrain::wrap_index (z + dz, tiles_z)) *
+                            tiles_x +
+                          terrain::wrap_index (x + dx, tiles_x)]) {
+              const float away_x =
+                std::remainder (tree[0] - gates[gate][0], period[0]);
+              const float away_z =
+                std::remainder (tree[2] - gates[gate][2], period[2]);
+              if (away_x * away_x + away_z * away_z > beside * beside)
+                continue;
+              // The tree's top over the water here, and room over that.
+              const float top =
+                elevation (surface, tree) + tree[1] - level[gate];
+              above[gate] = std::max (above[gate], top + 7.0f);
+            }
+      }
+    }
+    {
+      std::vector<float> highest = above;
+      for (std::size_t gate = 0; gate < gates.size (); ++gate)
+        for (std::size_t near = gate >= 2 ? gate - 2 : 0;
+             near < std::min (gate + 3, gates.size ());
+             ++near)
+          highest[gate] = std::max (highest[gate], above[near]);
+      above = std::move (highest);
+      for (int pass = 0; pass < 4; ++pass) {
+        std::vector<float> eased = above;
+        for (std::size_t gate = 1; gate + 1 < gates.size (); ++gate)
+          eased[gate] = 0.25f * above[gate - 1] + 0.5f * above[gate] +
+                        0.25f * above[gate + 1];
+        above = std::move (eased);
+      }
+    }
+
+    const float distance =
+      gate_spacing * static_cast<float> (gates.size () - 1);
+    const float pace =
+      seconds > 0.0f ? std::clamp (distance / seconds, 5.0f, 90.0f) : 22.0f;
+    plan.waypoints.reserve (gates.size ());
+    for (std::size_t gate = 0; gate < gates.size (); ++gate) {
+      // It watches the water some way ahead: farther from higher up, but
+      // more steeply down.
+      const std::size_t ahead =
+        std::min (gates.size () - 1,
+                  gate + 1 +
+                    static_cast<std::size_t> ((18.0f + 1.25f * above[gate]) /
+                                              gate_spacing));
+      Vec3 position = gates[gate];
+      position[1] = level[gate] + above[gate];
+      Vec3 subject = gates[ahead];
+      subject[1] = level[ahead];
+      if (ahead == gate)
+        subject = position + (gates[gate] - gates[gate - 1]) -
+                  Vec3 (0.0f, 0.4f * above[gate], 0.0f);
+      plan.waypoints.push_back ({ .position = position,
+                                  .subject = subject,
+                                  .cruise_speed = pace,
+                                  .field_of_view = 60.0f });
+    }
+    plan.style = { .clearance = 5.0f,
+                   .floor = 3.5f,
+                   .anticipation = 30.0f,
+                   .slowest_turn = 6.0f,
+                   .look_near_least = 12.0f,
+                   .look_near_most = 30.0f,
+                   .look_far_least = 45.0f,
+                   .look_far_most = 110.0f,
+                   .subject_weight = 0.6f,
+                   .bank = 0.16f };
+    std::cerr << "moppe: river flight: " << course.size () << " reaches, "
+              << distance << " m at " << pace << " m/s, about "
+              << distance / pace << " s\n";
+    return plan;
+  }
+
   Vec3 CinematicFlight::curve_position (std::size_t segment, float t) const {
     const auto tangent = [this] (std::size_t index) {
       const Vec3& current = m_waypoints[index].position;
@@ -686,7 +953,8 @@ namespace moppe::game {
           { .distance = distance,
             .segment = segment,
             .t = t,
-            .terrain_lift = std::max (0.0f, ground + 22.0f - point[1]),
+            .terrain_lift =
+              std::max (0.0f, ground + m_style.clearance - point[1]),
             .speed_limit = 360.0f });
         previous = point;
       }
@@ -700,8 +968,8 @@ namespace moppe::game {
     minimum_lift.reserve (m_arc_samples.size ());
     for (const ArcSample& sample : m_arc_samples)
       minimum_lift.push_back (sample.terrain_lift);
-    constexpr float anticipation = 95.0f;
-    constexpr float horizon = 300.0f;
+    const float anticipation = m_style.anticipation;
+    const float horizon = 3.2f * anticipation;
     for (std::size_t i = 0; i < m_arc_samples.size (); ++i) {
       float lift = minimum_lift[i];
       for (std::size_t j = i; j > 0; --j) {
@@ -784,8 +1052,8 @@ namespace moppe::game {
         0.5f * (m_arc_samples[right].distance - m_arc_samples[left].distance);
       const float curvature = angle / std::max (1.0f, tangent_separation);
       if (curvature > 1e-5f)
-        m_arc_samples[i].speed_limit =
-          std::clamp (std::sqrt (24.0f / curvature), 42.0f, 360.0f);
+        m_arc_samples[i].speed_limit = std::clamp (
+          std::sqrt (24.0f / curvature), m_style.slowest_turn, 360.0f);
     }
     for (std::size_t i = m_arc_samples.size () - 1; i > 0; --i) {
       const float span =
@@ -810,6 +1078,7 @@ namespace moppe::game {
   void CinematicFlight::start (const CinematicFlightPlan& plan,
                                const map::SurfaceGeometry& surface) {
     m_waypoints = plan.waypoints;
+    m_style = plan.style;
     for (int pass = 0; pass < 4 && m_waypoints.size () >= 2; ++pass) {
       std::vector<CinematicFlightWaypoint> rounded;
       rounded.reserve (m_waypoints.size () * 2);
@@ -925,15 +1194,17 @@ namespace moppe::game {
         spatial::sample<terrain::surface_elevation> (
           surface,
           moppe::position (Vec3 (m_position[0], 0.0f, m_position[2])))) +
-      18.0f;
+      m_style.floor;
     m_position[1] = std::max (static_cast<float> (m_position[1]), floor);
     m_velocity = (m_position - previous_position) / dt;
 
     // Aim through a long corridor of future flight instead of continually
     // correcting toward the nearest landmark. A stabilized drone gimbal sees
     // one committed swoop; the terrain feature still shaped the route itself.
-    const float look_near = std::clamp (m_speed * 0.28f, 35.0f, 90.0f);
-    const float look_far = std::clamp (m_speed * 1.45f, 220.0f, 430.0f);
+    const float look_near = std::clamp (
+      m_speed * 0.28f, m_style.look_near_least, m_style.look_near_most);
+    const float look_far = std::clamp (
+      m_speed * 1.45f, m_style.look_far_least, m_style.look_far_most);
     const RouteState view_near = route_state (m_route_distance + look_near);
     const RouteState view_far = route_state (m_route_distance + look_far);
     Vec3 wanted_look = view_far.position - view_near.position;
@@ -944,7 +1215,8 @@ namespace moppe::game {
     Vec3 framed_subject = current.subject - current.position;
     if (length2 (framed_subject) > 1e-5f) {
       normalize (framed_subject);
-      wanted_look = wanted_look * 0.48f + framed_subject * 0.52f;
+      wanted_look = wanted_look * (1.0f - m_style.subject_weight) +
+                    framed_subject * m_style.subject_weight;
       if (length2 (wanted_look) > 1e-5f)
         normalize (wanted_look);
     }
@@ -974,7 +1246,8 @@ namespace moppe::game {
       turn =
         std::atan2 (cross (arc_now, arc_future)[1], dot (arc_now, arc_future));
     }
-    const float wanted_bank = std::clamp (-turn * 0.48f, -0.30f, 0.30f);
+    const float wanted_bank =
+      std::clamp (-turn * 0.48f, -m_style.bank, m_style.bank);
     m_bank += (wanted_bank - m_bank) * (1.0f - std::exp (-0.85f * dt));
 
     if (m_route_distance >= route_end - 0.01f) {

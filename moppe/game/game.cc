@@ -1524,7 +1524,9 @@ namespace moppe {
       // the trailhead; either ends in the player's eyes.  MOPPE_OPENING
       // names another shot list, `generated` for the still, `flight` for
       // the old drone flight through the planned landmarks, which the
-      // terrain survey still samples, or `none` to begin in play.
+      // terrain survey still samples, `river` for a flight down the
+      // greatest watercourse from its divide to the sea (at a watching
+      // pace, or in MOPPE_FLYOVER_SECONDS), or `none` to begin in play.
       void plan_opening_journey () {
         MOPPE_PROFILE_ZONE ("startup.plan_opening");
         m_opening_shots.clear ();
@@ -1536,6 +1538,26 @@ namespace moppe {
         const bool flight =
           (choice && std::string_view (choice) == "flight") ||
           moppe::environment ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
+        if (choice && std::string_view (choice) == "river") {
+          const char* seconds = moppe::environment ("MOPPE_FLYOVER_SECONDS");
+          std::vector<Vec3> trees;
+          trees.reserve (generated_world ().forest ().sites.size ());
+          for (const ForestSite& site : generated_world ().forest ().sites) {
+            Vec3 tree = position_value (site.position);
+            tree[1] = tree_height (site).numerical_value_in (u::m);
+            trees.push_back (tree);
+          }
+          m_cinematic_plan =
+            plan_river_flight (surface (),
+                               trees,
+                               generated_world ().water_surface (),
+                               lake_census (),
+                               drainage (),
+                               rivers (),
+                               seconds ? std::strtof (seconds, nullptr)
+                                       : 0.0f);
+          return;
+        }
         if (!flight) {
           plan_opening_reel (choice);
           return;

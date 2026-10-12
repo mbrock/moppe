@@ -10,6 +10,9 @@
 #include <vector>
 
 namespace moppe::game {
+  // How tall a planned tree stands.
+  meters_t tree_height (const ForestSite& site) noexcept;
+
   // Presentation owner for the global population. The game keeps typed sites;
   // the renderer keeps compact GPU instances and decides projected detail.
   // No complete tree mesh is retained on the CPU.

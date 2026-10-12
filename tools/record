@@ -22,6 +22,11 @@
 #   camp      hang the hammock, light a fire, lie down at dusk and watch
 #             the night go by                          (MOPPE_WALK=camp)
 #   opening   the opening titles
+#   river     a drone's flight down the greatest watercourse, from the top
+#             of its catchment to the sea: seven minutes, or fitted into
+#             --seconds; with MOPPE_FLYOVER_SECONDS=440 set, --start and
+#             --seconds cut a stretch out of the whole
+#                                                  (MOPPE_OPENING=river)
 #
 # Options:
 #   --seconds N     how long the video runs (each scene has its own)
@@ -132,6 +137,14 @@ case $scene in
     stage MOPPE_WALK=camp MOPPE_WALK_CAMERA=chase MOPPE_CLOCK=17.3
     : "${seconds:=75}" ;;
   opening) : "${seconds:=34}" ;;
+  river)
+    # The flight is paced to end as the video does, which without a length
+    # asked for is some seven minutes, a pace to watch the water at. With
+    # MOPPE_FLYOVER_SECONDS setting the pace instead, --start and --seconds
+    # cut a stretch out of it.
+    : "${seconds:=440}"
+    stage MOPPE_OPENING=river \
+      MOPPE_FLYOVER_SECONDS=$((${seconds%.*} + ${start%.*})) ;;
   *) echo "record: no scene called $scene" >&2; usage ;;
 esac
 
