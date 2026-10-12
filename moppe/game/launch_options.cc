@@ -365,6 +365,21 @@ namespace moppe::game {
             return unknown ("terrain quality", values[0], error);
           return true;
         } },
+      { "--world-size",
+        "",
+        1,
+        "<KM>",
+        "Make the world this many kilometres across (5; up to 10).",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float kilometres = 0.0f;
+          if (!parse_float_option (
+                values[0], "--world-size", 2.5f, 10.0f, kilometres, error))
+            return false;
+          options.world_size = kilometres * 1000.0f * u::m;
+          return true;
+        } },
       { "--terrain-resolution",
         "",
         1,
@@ -614,6 +629,16 @@ namespace moppe::game {
             terrain::TerrainGenerationProfile::Smoke ||
           options.generation_profile == terrain::TerrainGenerationProfile::Fast)
         options.world.resolution = 1024;
+      if (options.world_size) {
+        // More country over the same samples, so a wider world costs no
+        // more memory and is coarser underfoot; --terrain-resolution buys
+        // the grain back where there is the memory for it (a 4096 world
+        // wants several times what a 2048 one does).
+        const float across = options.world_size->numerical_value_in (u::m);
+        const float height = extent_value (options.world.map_size)[1];
+        options.world.map_size =
+          spatial_extent_in_metres (Vec3 (across, height, across));
+      }
       if (options.terrain_resolution)
         options.world.resolution = *options.terrain_resolution;
       options.config.capture_frames =

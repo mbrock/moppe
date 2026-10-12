@@ -44,6 +44,9 @@ namespace moppe::game {
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;
     std::optional<int> terrain_resolution;
+    // How far the world runs before it comes round again, when not the
+    // usual five kilometres.
+    std::optional<meters_t> world_size;
     // A development experiment may replace the profile's tectonic clock
     // without changing its total evolution age or any process law.
     std::optional<julian_years_t> uplift_duration;

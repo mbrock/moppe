@@ -3,7 +3,8 @@
 // compilers, a serial and a parallel version of a stage -- can be compared
 // line by line. The first differing line names where they part.
 //
-//   world-fingerprint [RESOLUTION [PROFILE [SEED]]]   (default 257 play 123)
+//   world-fingerprint [RESOLUTION [PROFILE [SEED [KM]]]]
+//   (default 257 play 123 5)
 
 #include <moppe/game/forest.hh>
 #include <moppe/game/generated_world.hh>
@@ -96,9 +97,11 @@ int main (int argc, char** argv) {
       parse_profile (argc > 2 ? argv[2] : "play");
     const std::uint32_t seed =
       argc > 3 ? static_cast<std::uint32_t> (std::stoul (argv[3])) : 123;
-    // The game's default extent, as tools/bake-world bakes it.
+    // The game's default extent, as tools/bake-world bakes it, or as wide
+    // as --world-size would make it.
+    const float across_m = argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f;
     const WorldRecipe recipe = make_world_recipe (
-      spatial_extent_in_metres (Vec3 (5000.0f, 320.0f, 5000.0f)),
+      spatial_extent_in_metres (Vec3 (across_m, 320.0f, across_m)),
       resolution,
       Seed { seed },
       50.0f * u::m,
@@ -159,7 +162,8 @@ int main (int argc, char** argv) {
     const std::filesystem::path directory =
       std::filesystem::temp_directory_path () /
       ("world-fingerprint-" + std::to_string (seed) + "-" +
-       std::to_string (resolution));
+       std::to_string (resolution) + "-" +
+       std::to_string (static_cast<int> (across_m)));
     std::filesystem::remove_all (directory);
     game::save_world_cache (*world, directory.string ());
     std::vector<std::filesystem::path> files;

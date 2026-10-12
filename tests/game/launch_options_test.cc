@@ -162,6 +162,7 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--graphics-quality", "medium" }));
   MOPPE_CHECK (rejects ({ "--scene-megapixels", "65" }));
   MOPPE_CHECK (rejects ({ "--render-scale", "1.1" }));
+  MOPPE_CHECK (rejects ({ "--world-size", "40" }));
   MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
   MOPPE_CHECK (rejects ({ "--terrain-resolution", "1024.5" }));
   MOPPE_CHECK (rejects ({ "--terrain-resolution", "64" }));
@@ -243,6 +244,15 @@ MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
   MOPPE_CHECK (
     parsed ({ "--terrain-quality", "play", "--terrain-resolution", "1024" })
       .world.resolution == 1024);
+  // A wider world is spread over the same samples unless more are asked
+  // for.
+  const game::LaunchOptions wide = parsed ({ "--world-size", "10" });
+  MOPPE_CHECK (extent_value (wide.world.map_size)[0] == 10000.0f);
+  MOPPE_CHECK (extent_value (wide.world.map_size)[1] ==
+               extent_value (parsed ({}).world.map_size)[1]);
+  MOPPE_CHECK (wide.world.resolution == parsed ({}).world.resolution);
+  MOPPE_CHECK (parsed ({ "--world-size", "10", "--terrain-resolution", "4096" })
+                 .world.resolution == 4096);
 }
 
 MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {

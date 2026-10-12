@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cmath>
 #include <random>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -140,10 +141,29 @@ namespace moppe::terrain {
       PerlinPermutation m_permutation;
     };
 
-    constexpr NoiseShape warp_shape { 3, 4, 2, 0.5f };
-    constexpr NoiseShape continent_noise_shape { 3, 4, 2, 0.5f };
-    constexpr NoiseShape plains_shape { 12, 4, 2, 0.5f };
-    constexpr NoiseShape mountain_shape { 4, 6, 2, 0.55f };
+    // The shapes are counted in cycles across the five kilometres the
+    // world ordinarily runs.
+    constexpr float ordinary_period_m = 5000.0f;
+    constexpr NoiseShape ordinary_warp_shape { 3, 4, 2, 0.5f };
+    constexpr NoiseShape ordinary_continent_shape { 3, 4, 2, 0.5f };
+    constexpr NoiseShape ordinary_plains_shape { 12, 4, 2, 0.5f };
+    constexpr NoiseShape ordinary_mountain_shape { 4, 6, 2, 0.55f };
+
+    // A wider world holds more country rather than the same country
+    // stretched: each shape keeps its length on the ground, to the nearest
+    // whole cycle, which a periodic world needs. The lattice wraps at 256,
+    // so the finest octave bounds how wide that can go.
+    NoiseShape across (NoiseShape shape, float scale) {
+      shape.cycles = std::max (1,
+                               static_cast<int> (std::lround (
+                                 static_cast<float> (shape.cycles) * scale)));
+      int finest = shape.cycles;
+      for (int octave = 1; octave < shape.octaves; ++octave)
+        finest *= shape.lacunarity;
+      if (finest > 256)
+        throw std::invalid_argument ("the world is too wide for its geology");
+      return shape;
+    }
   }
 
   GeologicalSections generate_geology (TerrainDomain domain,
@@ -159,6 +179,23 @@ namespace moppe::terrain {
     const PeriodicNoise warp (seeds.warp);
     const std::size_t width = result.domain ().width ();
     const std::size_t height = result.domain ().height ();
+    // Only a wider world: a narrower one, as the tests and laboratories
+    // make them, is the ordinary country in small. In quarters, so a
+    // period that does not divide evenly by its samples still counts as
+    // the round number it was meant as.
+    const float scale =
+      std::max (1.0f,
+                std::round (result.domain ().period_x ().numerical_value_in (
+                              moppe::u::m) /
+                            (0.25f * ordinary_period_m)) *
+                  0.25f);
+    const NoiseShape warp_shape = across (ordinary_warp_shape, scale);
+    const NoiseShape continent_noise_shape =
+      across (ordinary_continent_shape, scale);
+    const NoiseShape plains_shape = across (ordinary_plains_shape, scale);
+    const NoiseShape mountain_shape = across (ordinary_mountain_shape, scale);
+    // The warp reaches as far over the ground as it ever did.
+    const float warp_reach = 0.15f / scale;
     const float inv_width = 1.0f / static_cast<float> (width);
     const float inv_height = 1.0f / static_cast<float> (height);
     std::atomic<std::size_t> next_row = 0;
@@ -178,8 +215,8 @@ namespace moppe::terrain {
             u * warp_cycles + 11.3f, v * warp_cycles + 7.7f, warp_shape);
           const float warp_y = warp.fbm (
             u * warp_cycles + 91.1f, v * warp_cycles + 33.9f, warp_shape);
-          const float warped_x = std::fma (0.15f, warp_x, u);
-          const float warped_y = std::fma (0.15f, warp_y, v);
+          const float warped_x = std::fma (warp_reach, warp_x, u);
+          const float warped_y = std::fma (warp_reach, warp_y, v);
 
           const float continent_cycles =
             static_cast<float> (continent_noise_shape.cycles);
