@@ -1,7 +1,8 @@
 # Land
 
 A world's land is what the minutes of generation produce: the surface that
-geology, erosion, and the trails' earthworks leave behind, as four fields --
+geology, erosion, the rivers' beds, and the trails' earthworks leave behind,
+as four fields --
 elevation, sediment, and the eroded and deposited material
 (`moppe/game/land.hh`). Everything else in a world (normals, standing water,
 lakes, drainage, rivers, readings, the forest plan) follows from the land in
@@ -36,11 +37,40 @@ four columns over the terrain domain, 67 MB for 2048 (58 MB as the
 published `.tar.zst`; the fields are noisy enough that zstd gains little).
 
 `LAND_VERSION` counts changes to what land a recipe makes. When geology,
-erosion, or trail formation change their output on purpose,
+erosion, channel or trail formation change their output on purpose,
 `tests/game/land_test.cc` fails; bump `LAND_VERSION` and pin the new hash.
 Older land is then another world's: the game ignores it and prunes it from
 the cache, and finished worlds record the `LAND_VERSION` they were derived
 from, so they are rebuilt too.
+
+## The rivers' beds
+
+Erosion leaves each river a valley, and along the valley's floor a string of
+hollows and sills a few samples long, which the flood analysis would fill
+into a stair of ponds. Before the trails are laid, `map::form_river_channels`
+(`moppe/terrain/channel.hh`) gives every visible river its bed. The long
+profile is graded along the drainage graph between filling each hollow to
+its sill and cutting the sill down to it, then eased along the stream, with
+a lake's sill, the sea's shore, and a waterfall's lip left where they are.
+Along the smooth alignment a parabolic bed is then cut and filled, as wide
+as three quarters of the river's regime width where the valley gives it
+room and deep in proportion (a quarter of a metre for a brook, over a metre
+for the trunk), with banks cut back at a slope a walker climbs. Valley
+walls are not moved, a lake's sill keeps its level, and toward the sea the
+bed runs out below sea level.
+
+A lake keeps its sill only if it is a lake by its river's measure: a
+pond covering less than four squares of the regime width of the river
+leaving it is that river's pool, and its sill is cut like any other. So
+the trunk, forty metres wide at its mouth, cuts through the small lagoons
+behind the beach bar and reaches the sea by an inlet.
+
+On the default world that cuts 207,000 m3 of ground and lays down 27,000
+along 34 km of river, half a metre at the median (the game logs it as
+`moppe: river beds:` when it generates land). The share of river length
+lying in flooded hollows falls from two thirds to a fifth, which is its
+real pools and the backwater above its lakes, and the median fall of
+running reaches from five in a hundred to two.
 
 ## Sharing it
 

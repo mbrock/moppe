@@ -95,7 +95,10 @@
     to an H.264 MP4 -- `tools/record /tmp/camp.mp4 camp` is the camp at dusk
     through to morning. Scenes are `play` (the default: on foot at the
     trailhead, no opening), `ride`, `forest`, `glide`, `walk`, `forage`,
-    `camp`, and `opening`; `--seconds`, `--start`, `--speed N` (a
+    `camp`, `opening`, and `river` (a drone's flight down the greatest
+    watercourse, from the top of its catchment to the sea: seven minutes,
+    or fitted into `--seconds`; with `MOPPE_FLYOVER_SECONDS=440` set,
+    `--start` and `--seconds` cut a stretch out of the whole); `--seconds`, `--start`, `--speed N` (a
     time-lapse), `--fps 30|60`, `--size WxH`, and `--clock HOURS` shape it,
     `--sheet` adds a contact sheet beside it, and `--control 'hold W 2'
     'tap T' 'wait 4' 'look 300 0'` drives the game with remote-control
@@ -131,7 +134,10 @@
     rebuilding with `MOPPE_OPENING=path/to/list.txt` (or
     `MOPPE_ASSETS=<repo>`). Another world plays one generated still of the
     trailhead (`MOPPE_OPENING=generated` forces it); `MOPPE_OPENING=flight`
-    flies the old drone route through the planned landmarks, and
+    flies the old drone route through the planned landmarks,
+    `MOPPE_OPENING=river` flies down the greatest river from its divide to
+    the sea (`plan_river_flight` in `game/cinematic_flight.*`, low over
+    open water and clear of the crowns where trees stand by it), and
     `MOPPE_OPENING=none` begins in play. `Space` skips.
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
@@ -303,7 +309,11 @@
     backed up behind them), so a brook is a stair of pools and a trunk river
     drowns the same sills. Rivers stream along that current (flow-mapped
     ripples, foam where the water descends fast, drifting specks), and water
-    reflects the scene by a screen-space march (docs/nhal.md). To judge the flow, capture consecutive frames:
+    reflects the scene by a screen-space march (docs/nhal.md). Each river
+    has a bed, cut into the land before the trails are laid
+    (`terrain/channel.hh`, docs/land.md): its long profile graded through
+    the hollows and sills erosion leaves, and a parabolic bed with banks
+    as wide as its water makes it. To judge the flow, capture consecutive frames:
     `MOPPE_SCREENSHOT_FRAMES=100000 MOPPE_RIDE_CAPTURE_DIR=/tmp/w
     MOPPE_RIDE_CAPTURE_START=60 ./build/moppe --water-screenshot river
     /tmp/unused.png` writes `/tmp/w/ride-NNNN.png` at 30 fps.

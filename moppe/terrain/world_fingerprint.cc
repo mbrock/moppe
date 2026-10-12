@@ -125,8 +125,14 @@ int main (int argc, char** argv) {
               hash_of (elevations));
       });
     surface_lines ("evolved", surface);
-    // As the game does: form the trails, then find their network in the
-    // formed surface, so a world from saved land is the same.
+    // As the game does: give the rivers their beds, form the trails, then
+    // find their network in the formed surface, so a world from saved land
+    // is the same.
+    line (
+      "channels cut and fill",
+      hash_of (
+        map::form_river_channels (surface, recipe.water_datum ()).change_m));
+    surface_lines ("channels", surface);
     line ("trails earthwork",
           hash_of (map::form_terrain_trails (surface, recipe.trail_formation ())
                      .earthwork_delta_m));

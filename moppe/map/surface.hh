@@ -2,6 +2,7 @@
 #define MOPPE_MAP_SURFACE_HH
 
 #include <moppe/spatial/bundle.hh>
+#include <moppe/terrain/channel.hh>
 #include <moppe/terrain/domain.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/geological.hh>
@@ -97,6 +98,15 @@ namespace moppe::map {
                   std::span<const meters_per_julian_year_t> uplift,
                   const terrain::StreamPowerEvolution& parameters,
                   const terrain::StreamPowerProgress& progress = {});
+
+  // Give every river its bed (terrain/channel.hh): grade its long profile
+  // through the hollows and sills erosion left along it, and cut the bed
+  // and banks its discharge makes. The cut and the fill join the surface's
+  // eroded and deposited material.
+  terrain::ChannelFormationResult
+  form_river_channels (SurfaceGeometry& surface,
+                       meters_t water_datum,
+                       const terrain::ChannelFormation& parameters = {});
 
   // Form the canonical built circuit in place and return its useful network.
   terrain::TrailNetwork

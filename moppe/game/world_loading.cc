@@ -192,6 +192,13 @@ namespace moppe::game {
         terrain, uplift, recipe.evolution (), report_geological_time);
       state.report ("Refining the terrain",
                     "Shaping coasts, channels, and the overland route");
+      const terrain::ChannelFormationResult beds =
+        map::form_river_channels (terrain, recipe.water_datum ());
+      std::cerr << "moppe: river beds: "
+                << beds.cut.numerical_value_in (u::m * u::m * u::m)
+                << " m3 cut, "
+                << beds.filled.numerical_value_in (u::m * u::m * u::m)
+                << " m3 filled" << std::endl;
       (void)map::form_terrain_trails (terrain, recipe.trail_formation ());
     }
 

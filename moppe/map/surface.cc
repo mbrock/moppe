@@ -245,6 +245,52 @@ namespace moppe::map {
     return result.report;
   }
 
+  terrain::ChannelFormationResult
+  form_river_channels (SurfaceGeometry& surface,
+                       meters_t water_datum,
+                       const terrain::ChannelFormation& parameters) {
+    MOPPE_PROFILE_ZONE ("terrain.form_channels");
+    // The rivers as the finished world will find them, but for the beds
+    // this is about to give them.
+    const terrain::FloodField flood = terrain::analyze_standing_water (
+      surface, water_datum.numerical_value_in (u::m));
+    const terrain::LakeCensus lakes = terrain::census_lakes (flood);
+    const terrain::DrainageGraph drainage =
+      terrain::analyze_wet_drainage (flood, lakes);
+    const terrain::RiverNetwork rivers = terrain::extract_river_network (
+      flood,
+      lakes,
+      drainage,
+      terrain::analyze_fractional_drainage (flood, lakes),
+      terrain::visible_river_minimum_area ());
+    terrain::ChannelFormationResult result = terrain::form_channels (
+      surface, flood, lakes, drainage, rivers, parameters);
+    const terrain::TerrainDomain& domain = surface.domain ();
+    for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+      const std::size_t offset = domain.offset (site);
+      const float change = result.change_m[offset];
+      if (change == 0.0f)
+        continue;
+      const auto row = surface[site];
+      spatial::get<terrain::surface_elevation> (row) = result.heights[offset];
+      // What a river lays down is loose; what it cuts, it cuts from the
+      // loose cover first.
+      auto& sediment = spatial::get<terrain::sediment_thickness> (row);
+      if (change > 0.0f) {
+        sediment += change * terrain::sediment_thickness[u::m];
+        spatial::get<deposited_surface_material> (row) +=
+          change * deposited_surface_material[u::m];
+      } else {
+        sediment =
+          std::max (sediment + change * terrain::sediment_thickness[u::m],
+                    0.0f * terrain::sediment_thickness[u::m]);
+        spatial::get<eroded_surface_material> (row) +=
+          -change * eroded_surface_material[u::m];
+      }
+    }
+    return result;
+  }
+
   terrain::TrailNetwork
   form_terrain_trails (SurfaceGeometry& surface,
                        const terrain::TrailFormation& parameters) {

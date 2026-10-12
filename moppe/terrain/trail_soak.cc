@@ -70,6 +70,7 @@ int main (int argc, char** argv) {
         map::initialize_terrain (
           surface, recipe.seed (), recipe.water_datum ());
       map::evolve_terrain (surface, uplift, recipe.evolution ());
+      (void)map::form_river_channels (surface, recipe.water_datum ());
       std::cout << "seed " << seed << ": " << std::flush;
       try {
         const TrailNetwork network =

@@ -169,6 +169,32 @@ What this does not do is cut a channel: the terrain still has swales, not
 beds and banks, so depth and width stay tied by the valley's side slope, and
 long profiles stay as steep as erosion left them.
 
+## Implemented surface and bed slice (2026-10-12)
+
+The first hydraulic sheet read wrong in motion: water seemed to run uphill
+in places. The currents were right (98% of alignment points ran downstream);
+the surface was not. Each cell took the stage of its single nearest
+section, so the surface stepped on the inside of bends and between
+neighbouring reaches, and a river's wide stamp lifted patches of the lake
+it ran into to its own level. Now a cell takes the nearest section of each
+reach that covers it and a level between reaches by nearness; a segment
+paints the strip its own section wets, left and right; still water ends a
+river's surface as a bank does, and a river brings a lake a current, never
+a level. Cells running visibly uphill fell by four fifths. In the shader,
+water with any current rides that current rather than the wind's ripples,
+which had crossed every pool one way whichever way the river ran, and the
+pattern never drifts slower than a stroll, since a pool's centimetres a
+second are nothing a one-second flow-map cycle can show.
+
+Rivers also have beds now, cut into the land itself (docs/land.md,
+`terrain/channel.hh`): the long profile graded between filling each hollow
+and breaching its sill, and a parabolic bed with banks along the smooth
+alignment. With beds the sheet solves through real channels, and two
+thirds of river length no longer lies in flooded hollows.
+
+`tools/record OUT.mp4 river` films the result: a flight down the greatest
+watercourse from its divide to the sea.
+
 ## Production flow maps
 
 - `vlachos-2010-water-flow-portal-2.pdf` — Alex Vlachos, “Water Flow in

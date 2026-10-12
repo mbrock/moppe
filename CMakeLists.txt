@@ -325,6 +325,7 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/drainage.cc
   moppe/terrain/fractional_drainage.cc
   moppe/terrain/river.cc
+  moppe/terrain/channel.cc
   moppe/terrain/flood.cc
   moppe/terrain/merge_tree.cc
   moppe/terrain/waterline.cc
@@ -604,6 +605,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/drainage_test.cc
     tests/terrain/fractional_drainage_test.cc
     tests/terrain/river_test.cc
+    tests/terrain/channel_test.cc
     tests/terrain/flood_test.cc
     tests/terrain/merge_tree_test.cc
     tests/terrain/waterline_test.cc

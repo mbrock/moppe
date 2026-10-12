@@ -7,11 +7,11 @@
 #include <string>
 
 namespace moppe::game {
-  // A world's land: the surface geology, erosion, and the trails' earthworks
-  // leave behind -- elevation, sediment, and the eroded and deposited
-  // material -- which is all the minutes of generation produce. Everything
-  // else in a world (normals, water, rivers, readings, forest) follows from
-  // it in seconds. A seed makes the same land on every platform
+  // A world's land: the surface geology, erosion, the rivers' beds, and the
+  // trails' earthworks leave behind -- elevation, sediment, and the eroded and
+  // deposited material -- which is all the minutes of generation produce.
+  // Everything else in a world (normals, water, rivers, readings, forest)
+  // follows from it in seconds. A seed makes the same land on every platform
   // (docs/determinism.md), so a land file is a cache anyone may share: one
   // packaged with the game, downloaded (tools/fetch-land), or saved after
   // generating are interchangeable.
@@ -19,7 +19,7 @@ namespace moppe::game {
   // The version counts changes to what land a recipe makes. Bump it with
   // the pinned hash in tests/game/land_test.cc whenever the geology,
   // erosion, or trail formation change their output.
-  inline constexpr int LAND_VERSION = 2;
+  inline constexpr int LAND_VERSION = 3;
 
   using Land = spatial::Bundle<terrain::TerrainDomain,
                                terrain::SurfaceElevation,

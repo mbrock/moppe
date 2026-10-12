@@ -64,6 +64,7 @@ int main (int argc, char** argv) {
     const auto uplift =
       map::initialize_terrain (surface, recipe.seed (), recipe.water_datum ());
     map::evolve_terrain (surface, uplift, recipe.evolution ());
+    (void)map::form_river_channels (surface, recipe.water_datum ());
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
 
     std::filesystem::create_directories (output);

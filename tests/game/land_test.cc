@@ -27,12 +27,14 @@ namespace {
       recipe.resolution (), recipe.resolution (), recipe.extent ()));
   }
 
-  // The land as the game makes it: geology, erosion, then the trails.
+  // The land as the game makes it: geology, erosion, the rivers' beds, then
+  // the trails.
   map::SurfaceGeometry generate (const terrain::WorldRecipe& recipe) {
     map::SurfaceGeometry surface = make_surface (recipe);
     const auto uplift =
       map::initialize_terrain (surface, recipe.seed (), recipe.water_datum ());
     map::evolve_terrain (surface, uplift, recipe.evolution ());
+    (void)map::form_river_channels (surface, recipe.water_datum ());
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
     return surface;
   }
@@ -66,13 +68,14 @@ MOPPE_TEST (land_file_names_carry_version_profile_resolution_and_seed) {
 }
 
 // A recipe names its land on every platform, so a changed land needs a new
-// name. When this fails because the geology, erosion, or trails changed on
-// purpose, bump LAND_VERSION in moppe/game/land.hh and pin the new hash.
+// name. When this fails because the geology, erosion, channels, or trails
+// changed on purpose, bump LAND_VERSION in moppe/game/land.hh and pin the
+// new hash.
 MOPPE_TEST (land_version_pins_what_a_recipe_makes) {
   const std::uint64_t hash =
     land_hash (game::extract_land (generate (small_recipe ())));
-  MOPPE_CHECK (game::LAND_VERSION == 2);
-  MOPPE_CHECK (hash == 0xa1c40bf20bd8a1a4ull);
+  MOPPE_CHECK (game::LAND_VERSION == 3);
+  MOPPE_CHECK (hash == 0x613f1ab4be4f2be0ull);
 }
 
 MOPPE_TEST (saved_land_reads_back_exactly) {
