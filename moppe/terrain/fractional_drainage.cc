@@ -5,6 +5,7 @@
 #include <moppe/profile.hh>
 #include <moppe/spatial/bundle_operations.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/lowest_ready.hh>
 
 #include <algorithm>
 #include <array>
@@ -356,10 +357,7 @@ namespace moppe::terrain {
 
       // Every cell after its donors, the lowest ready index first, which
       // sweeps the lattice nearly in sequence for the walks that follow.
-      std::priority_queue<std::uint32_t,
-                          std::vector<std::uint32_t>,
-                          std::greater<std::uint32_t>>
-        ready;
+      LowestReady ready (lattice.size ());
       for (std::uint32_t cell = 0; cell < lattice.size (); ++cell)
         if (donors[cell] == 0)
           ready.push (cell);
@@ -368,8 +366,7 @@ namespace moppe::terrain {
       order.reserve (lattice.size ());
       std::vector<Vec3> incoming_area_flux (lattice.size (), Vec3 ());
       while (!ready.empty ()) {
-        const CellIndex cell { ready.top () };
-        ready.pop ();
+        const CellIndex cell { ready.pop () };
         order.push_back (cell);
         const FractionalFlowRoute& route = routes[cell.value];
         const float area_m2 = areas[cell.value].numerical_value_in (

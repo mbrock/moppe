@@ -234,18 +234,26 @@ namespace moppe::terrain {
         }
         const std::size_t x = current.index % width;
         const std::size_t y = current.index / width;
+        // Away from the seam a neighbour is a fixed step through the
+        // lattice; only the edge cells wrap.
+        const bool inside = x > 0 && x + 1 < width && y > 0 && y + 1 < height;
         for (const FloodOffset offset : flood_neighbors) {
-          const int raw_x = static_cast<int> (x) + offset.x;
-          const int raw_y = static_cast<int> (y) + offset.y;
-          const std::size_t nx = flood_wrapped (raw_x, width);
-          const std::size_t ny = flood_wrapped (raw_y, height);
-          const std::uint32_t next =
-            static_cast<std::uint32_t> (index (nx, ny));
+          std::uint32_t next;
+          if (inside) {
+            next = static_cast<std::uint32_t> (
+              static_cast<std::int64_t> (current.index) +
+              offset.y * static_cast<std::int64_t> (width) + offset.x);
+          } else {
+            const int raw_x = static_cast<int> (x) + offset.x;
+            const int raw_y = static_cast<int> (y) + offset.y;
+            next = static_cast<std::uint32_t> (index (
+              flood_wrapped (raw_x, width), flood_wrapped (raw_y, height)));
+          }
           if (visited[next])
             continue;
           visited[next] = 1;
           receiver[next] = current.index;
-          const float ground = elevation_at (grid, elevations, nx, ny);
+          const float ground = surface_elevation_value (elevations[next]);
           if (ground <= current.level) {
             water[next] = current.level;
             pit.push ({ current.level, next });
@@ -432,20 +440,33 @@ namespace moppe::terrain {
       // spreads through water alone.
       std::vector<std::int32_t> shore_distance (count, -1);
       std::queue<std::uint32_t> sweep;
-      const auto neighbour = [&] (std::uint32_t cell, FloodOffset offset) {
+      // The neighbour of a cell whose column and row are known: a fixed
+      // step through the lattice except at the seam.
+      const auto neighbour = [&] (std::uint32_t cell,
+                                  std::size_t x,
+                                  std::size_t y,
+                                  FloodOffset offset) {
+        if (x > 0 && x + 1 < width && y > 0 && y + 1 < height)
+          return static_cast<std::uint32_t> (
+            static_cast<std::int64_t> (cell) +
+            offset.y * static_cast<std::int64_t> (width) + offset.x);
         const std::size_t nx =
-          flood_wrapped (static_cast<int> (cell % width) + offset.x, width);
+          flood_wrapped (static_cast<int> (x) + offset.x, width);
         const std::size_t ny =
-          flood_wrapped (static_cast<int> (cell / width) + offset.y, height);
+          flood_wrapped (static_cast<int> (y) + offset.y, height);
         return static_cast<std::uint32_t> (ny * width + nx);
       };
-      for (std::uint32_t cell = 0; cell < count; ++cell)
-        if (body_at_cell[cell] == LakeCensus::dry &&
-            std::ranges::any_of (flood_neighbors, [&] (FloodOffset offset) {
-              return body_at_cell[neighbour (cell, offset)] != LakeCensus::dry;
-            })) {
-          shore_distance[cell] = 0;
-          sweep.push (cell);
+      for (std::size_t y = 0; y < height; ++y)
+        for (std::size_t x = 0; x < width; ++x) {
+          const std::uint32_t cell = static_cast<std::uint32_t> (y * width + x);
+          if (body_at_cell[cell] == LakeCensus::dry &&
+              std::ranges::any_of (flood_neighbors, [&] (FloodOffset offset) {
+                return body_at_cell[neighbour (cell, x, y, offset)] !=
+                       LakeCensus::dry;
+              })) {
+            shore_distance[cell] = 0;
+            sweep.push (cell);
+          }
         }
       while (!sweep.empty ()) {
         const std::uint32_t cell = sweep.front ();

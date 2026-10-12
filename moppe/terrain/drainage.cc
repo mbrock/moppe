@@ -3,6 +3,7 @@
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
+#include <moppe/terrain/lowest_ready.hh>
 
 #include <moppe/profile.hh>
 
@@ -549,17 +550,13 @@ namespace moppe::terrain {
         if (receiver[cell] != cell)
           ++donors[receiver[cell]];
 
-      std::priority_queue<std::uint32_t,
-                          std::vector<std::uint32_t>,
-                          std::greater<std::uint32_t>>
-        ready;
+      LowestReady ready (count);
       for (std::uint32_t cell = 0; cell < count; ++cell)
         if (donors[cell] == 0)
           ready.push (cell);
 
       while (!ready.empty ()) {
-        const std::uint32_t cell = ready.top ();
-        ready.pop ();
+        const std::uint32_t cell = ready.pop ();
         order.push_back (cell);
         if (receiver[cell] == cell)
           continue;

@@ -152,6 +152,44 @@ in parallel; that is the next candidate. The order itself matters for speed:
 Kahn's FIFO order and an order by longest-path level each cost as much in
 the walks' cache misses as the heap order costs to build.
 
+## Measuring a whole world, and exact savings (2026-10-12)
+
+`MOPPE_FINGERPRINT_COST=1 world-fingerprint 2048 play 123 10` prints, beside
+the hashes, what every stage and geological step cost: seconds, memory
+resident, and the most there has been. On macOS `sample <pid> 8` then says
+where a step's time goes, and `MallocStackLogging=lite` with
+`malloc_history <pid> -allBySize` which call sites hold its memory. A
+ten-kilometre world at 2048 samples on an M5, before and after changes that
+leave every hash the same:
+
+| | Before | After |
+|---|---:|---:|
+| One geological step | 0.97 s | 0.76 s |
+| Whole world, 40 steps and the rest | 52 s | 43.5 s |
+| Resident during the evolution | 1.56 GB | 1.43 GB |
+
+- The flow accumulation took a quarter of a step, most of it a binary heap
+  whose keys were only ever cell indices. `LowestReady`
+  (`terrain/lowest_ready.hh`), a bitmap with a summary word over every
+  sixty-four bits, takes the lowest ready cell in the same order.
+- The priority-flood and the lake census's shore scan wrapped all eight
+  neighbours of every cell with a division and two remainders each; away
+  from the seam a neighbour is a fixed step through the lattice.
+- Valley deposition allocated two vectors for every source cell.
+- A step let its drainage's unused columns (direction, slope, area flux)
+  and most of its sediment routing live to the end of the step, and copied
+  the channel tangents it could take. Each column of a 4096 world is 67 to
+  270 MB.
+
+What a step costs now, by share: flow routing 29% (half of it the
+accumulation walk), priority-flood 21%, sediment routing 14%, incision 10%,
+lake census 8%, valley deposition 6%, hillslope 5%. A step still holds
+about 340 bytes a cell: the long-lived state is some 130 of them, and the
+rest is the step's own work -- routes at 28 bytes a cell, sixteen-byte
+vectors for directions that have two components, and sediment volumes in
+double precision. Narrowing those would change the sums' bits, so it waits
+for a change that bumps `LAND_VERSION` anyway.
+
 ## Remaining GPU candidates
 
 - Hillslope diffusion is a regular stencil and would be a good GPU kernel when

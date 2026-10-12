@@ -536,6 +536,9 @@ namespace moppe::terrain {
     };
     double input_total_m3 = 0.0;
     double output_total_m3 = 0.0;
+    // One footprint and one list of candidates serve every source.
+    std::vector<std::size_t> footprint;
+    std::vector<Candidate> candidates;
     for (std::size_t source = 0; source < count; ++source) {
       const double source_volume_m3 =
         sediment_volume_value (centerline_deposition[source]);
@@ -587,7 +590,7 @@ namespace moppe::terrain {
       const TerrainIndex center = domain.index (source);
       const double ceiling_m = working_height_m[source] + wall_relief_m;
 
-      std::vector<std::size_t> footprint;
+      footprint.clear ();
       for (int dz = -radius_z; dz <= radius_z; ++dz)
         for (int dx = -radius_x; dx <= radius_x; ++dx) {
           const float offset_x_m = static_cast<float> (dx) * spacing_x_m;
@@ -609,8 +612,7 @@ namespace moppe::terrain {
       if (footprint.empty ())
         footprint.push_back (source);
 
-      std::vector<Candidate> candidates;
-      candidates.reserve (footprint.size ());
+      candidates.clear ();
       for (const std::size_t cell : footprint)
         candidates.push_back ({ cell, working_height_m[cell] });
       std::ranges::sort (candidates, {}, &Candidate::height_m);

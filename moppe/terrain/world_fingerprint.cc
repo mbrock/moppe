@@ -5,6 +5,10 @@
 //
 //   world-fingerprint [RESOLUTION [PROFILE [SEED [KM]]]]
 //   (default 257 play 123 5)
+//
+// MOPPE_FINGERPRINT_COST=1 adds, on the error stream so the hashes still
+// diff, what each line cost: the seconds since the line before, the memory
+// resident now, and the most that has been resident so far.
 
 #include <moppe/game/forest.hh>
 #include <moppe/game/generated_world.hh>
@@ -12,8 +16,12 @@
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/world_recipe.hh>
 
+#include <moppe/environment.hh>
+
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -26,7 +34,65 @@
 #include <string>
 #include <vector>
 
+#include <sys/resource.h>
+#ifdef __APPLE__
+#include <mach/mach.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace {
+  // Megabytes resident now.
+  double resident_mb () {
+#ifdef __APPLE__
+    mach_task_basic_info_data_t info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info (mach_task_self (),
+                   MACH_TASK_BASIC_INFO,
+                   reinterpret_cast<task_info_t> (&info),
+                   &count) != KERN_SUCCESS)
+      return 0.0;
+    return static_cast<double> (info.resident_size) / 1048576.0;
+#else
+    long pages = 0, resident = 0;
+    if (std::FILE* statm = std::fopen ("/proc/self/statm", "r")) {
+      if (std::fscanf (statm, "%ld %ld", &pages, &resident) != 2)
+        resident = 0;
+      std::fclose (statm);
+    }
+    return static_cast<double> (resident) *
+           static_cast<double> (sysconf (_SC_PAGESIZE)) / 1048576.0;
+#endif
+  }
+
+  // Megabytes at the most there has been.
+  double peak_mb () {
+    rusage usage {};
+    getrusage (RUSAGE_SELF, &usage);
+#ifdef __APPLE__
+    return static_cast<double> (usage.ru_maxrss) / 1048576.0;
+#else
+    return static_cast<double> (usage.ru_maxrss) / 1024.0;
+#endif
+  }
+
+  void cost (const std::string& stage) {
+    static const bool wanted =
+      moppe::environment ("MOPPE_FINGERPRINT_COST") != nullptr;
+    if (!wanted)
+      return;
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point before = Clock::now ();
+    const Clock::time_point now = Clock::now ();
+    std::fprintf (stderr,
+                  "%-36s %7.2f s %7.0f MB now %7.0f MB peak\n",
+                  stage.c_str (),
+                  std::chrono::duration<double> (now - before).count (),
+                  resident_mb (),
+                  peak_mb ());
+    before = Clock::now ();
+  }
+
   // FNV-1a over bytes.
   struct Hash {
     std::uint64_t value = 1469598103934665603ull;
@@ -47,6 +113,7 @@ namespace {
   }
 
   void line (const std::string& stage, std::uint64_t hash) {
+    cost (stage);
     std::cout << std::setw (36) << std::left << stage << ' ' << std::hex
               << std::setw (16) << std::setfill ('0') << std::right << hash
               << std::setfill (' ') << std::dec << '\n';
@@ -145,10 +212,13 @@ int main (int argc, char** argv) {
     map::rebuild_geometry (surface);
     surface_lines ("geometry", surface);
     game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
+    cost ("hydrology");
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
+    cost ("water and readings");
     game::ForestPlan forest =
       game::plan_global_forest (surface, readings, water, seed ^ 0xa34c91e5U);
+    cost ("forest plan");
     auto world = std::make_unique<game::GeneratedWorld> (game::WorldParams {},
                                                          recipe,
                                                          std::move (surface),
@@ -166,6 +236,7 @@ int main (int argc, char** argv) {
        std::to_string (static_cast<int> (across_m)));
     std::filesystem::remove_all (directory);
     game::save_world_cache (*world, directory.string ());
+    cost ("world cache saved");
     std::vector<std::filesystem::path> files;
     for (const auto& entry : std::filesystem::directory_iterator (directory))
       files.push_back (entry.path ());

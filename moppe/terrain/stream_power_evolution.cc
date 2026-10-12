@@ -153,6 +153,12 @@ namespace moppe::terrain {
     // finite and unit-length at once, and the dot with the vertical answers
     // horizontal without naming which lane of the vector is up. A missing
     // memory starts every channel from rest.
+    // Gives a column's storage back at once, not at the end of its scope.
+    template <typename Column>
+    void release (Column& column) {
+      Column ().swap (column);
+    }
+
     std::vector<ChannelTangent>
     validated_channel_memory (std::span<const ChannelTangent> tangents,
                               std::size_t count) {
@@ -296,9 +302,15 @@ namespace moppe::terrain {
                  stream_sediment_volume_from (maximum_deposition_m3));
       std::size_t fixed_boundaries = 0;
 
-      const FractionalDrainage drainage = analyze_fractional_drainage (
+      FractionalDrainage drainage = analyze_fractional_drainage (
         flood, census, channel_memory, parameters.channel_persistence);
-      channel_memory = spatial::get<channel_tangent> (drainage);
+      // The step reads the routes, the areas, and the tangents, which it
+      // takes for the next step's memory. What else the analysis made is
+      // let go here: at this size every column is a great deal of room.
+      channel_memory = std::move (spatial::get<channel_tangent> (drainage));
+      release (spatial::get<drainage_direction> (drainage));
+      release (spatial::get<terrain_slope> (drainage));
+      release (spatial::get<channel_area_flux> (drainage));
 
       {
         MOPPE_PROFILE_ZONE ("orogeny.solve_uplift_and_incision");
@@ -435,7 +447,7 @@ namespace moppe::terrain {
             spatial::get<fractional_contributing_area> (drainage),
             maximum_deposition,
             parameters.valley_deposition);
-        const SedimentRoutingResult routed =
+        SedimentRoutingResult routed =
           route_sediment (drainage.domain (),
                           potential_detachment,
                           transport_capacity,
@@ -465,13 +477,19 @@ namespace moppe::terrain {
             static_cast<float> (detached_m) * sediment_thickness[u::m];
         }
 
+        // Only what settled is still wanted of the routing.
+        release (routed.detached);
+        release (routed.entrained_cover);
+        release (routed.bedrock_detached);
+        release (routed.outgoing);
+
         const StandingWaterDepositionResult standing =
           spread_standing_water_deposition (
             flood,
             census,
             drainage.domain (),
             spatial::get<fractional_contributing_area> (drainage),
-            spatial::get<channel_tangent> (drainage),
+            channel_memory,
             routed.deposited,
             maximum_deposition,
             parameters.valley_deposition);
@@ -489,7 +507,7 @@ namespace moppe::terrain {
           drainage.domain (),
           next_heights,
           spatial::get<fractional_contributing_area> (drainage),
-          spatial::get<channel_tangent> (drainage),
+          channel_memory,
           standing.dry_centerline,
           flood.ocean,
           parameters.valley_deposition);
