@@ -94,8 +94,9 @@
     same country stretched (`terrain/geological.cc` counts its noise in
     cycles per five kilometres). It keeps the ordinary 2048 samples, so
     the ground is coarser; `--terrain-resolution 4096` buys the grain
-    back, but generating that needs some 10 GB and must not be tried on
-    a 16 GB machine.
+    back: generating that peaks at 5 GB and takes some seven minutes
+    (measured on swa), so on a 16 GB machine run nothing else heavy
+    beside it.
   - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
     trail map); `MOPPE_HUD=debug` starts with it on.

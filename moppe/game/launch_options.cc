@@ -632,8 +632,8 @@ namespace moppe::game {
       if (options.world_size) {
         // More country over the same samples, so a wider world costs no
         // more memory and is coarser underfoot; --terrain-resolution buys
-        // the grain back where there is the memory for it (a 4096 world
-        // wants several times what a 2048 one does).
+        // the grain back where there is the memory for it (generating a
+        // 4096 world peaks at 5 GB).
         const float across = options.world_size->numerical_value_in (u::m);
         const float height = extent_value (options.world.map_size)[1];
         options.world.map_size =
