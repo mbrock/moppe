@@ -8,7 +8,16 @@ Verified on 2026-10-09 with `world-fingerprint 2048 play 123` (the default
 world) on an Apple M2 Pro (macOS, AppleClang, libc++) and an Intel i7-10700K
 (NixOS, Clang 21, libstdc++), and again at 257 and 1025 samples, with x86-64
 and x86-64-v3 code generation: every stage, every geological step, and every
-file of the finished world agree.
+file of the finished world agree. Verified again on 2026-10-12, with the
+rivers' beds in the land (v3), on an Apple M5, an AMD Ryzen 9 7950X3D, and
+the i7: all 76 lines the same, and the same as the files the game itself
+had cached on the Mac.
+
+Two machines that show different worlds for one seed are therefore running
+different code. A finished world is cached under the version of the code
+that made it, so a checkout a few commits behind keeps playing the land of
+its own commit; compare `git log -1` on both before suspecting the
+arithmetic.
 
 ## What the rules are
 
