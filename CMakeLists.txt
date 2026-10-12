@@ -347,6 +347,7 @@ set(MOPPE_WORLD_SOURCES
   moppe/game/water_capture.cc
   moppe/game/landscape_gazetteer.cc
   moppe/game/landscape_summary.cc
+  moppe/game/relief_map.cc
 )
 
 set(MOPPE_SIMULATION_SOURCES
@@ -390,6 +391,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/jeep_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
+  moppe/game/map_sheet.cc
   moppe/game/forest.cc
   moppe/game/boulders.cc
   moppe/game/mushrooms.cc
@@ -616,6 +618,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
     tests/game/land_test.cc
+    tests/game/relief_map_test.cc
     tests/game/walker_test.cc
     tests/game/figure_test.cc
     tests/game/frame_view_test.cc

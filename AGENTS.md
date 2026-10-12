@@ -22,7 +22,7 @@
     Terrain Lab. Xbox, PlayStation, and compatible MFi controllers use this
     layout.
   - The game starts on foot beside the parked bike, in first person: the
-    mouse looks around (captured; `M` frees it), `W`/`S` walk, `A`/`D`
+    mouse looks around (captured; `L` lets it loose), `W`/`S` walk, `A`/`D`
     strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the third-person
     views, and `F` near the bike mounts it (and steps off again). Riding
     and gliding are seen from behind: walking and riding each keep the
@@ -80,6 +80,22 @@
     are more than some thirty metres off: over the thing when it is in
     view, at the frame's edge pointing the way when it is not
     (`HudState::Waymark`, placed by `add_waymarks` in game.cc).
+  - The map: `M` unfolds a sheet of the whole world over the view, `M`
+    again looks closer at the 1.8 km round the walker, and a third folds
+    it away. It is painted once per world on the CPU
+    (`moppe/game/relief_map.*`: relief shaded from the north-west, forest
+    green, brown contours every 10 m, water, rivers by their catchments,
+    a kilometre grid, the trail in red dashes) and set on paper with a
+    scale, spot heights, and marks for the walker, bike, jeep, companion,
+    camp, and trailhead (`moppe/game/map_sheet.*`). `MOPPE_MAP=whole|near`
+    starts with it open, for captures.
+  - A wider world: `--world-size <KM>` (5 by default, up to 10) makes the
+    world that many kilometres across, with more country rather than the
+    same country stretched (`terrain/geological.cc` counts its noise in
+    cycles per five kilometres). It keeps the ordinary 2048 samples, so
+    the ground is coarser; `--terrain-resolution 4096` buys the grain
+    back, but generating that needs some 10 GB and must not be tried on
+    a 16 GB machine.
   - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
     trail map); `MOPPE_HUD=debug` starts with it on.
@@ -199,8 +215,9 @@
   - Spectator: `tools/spectate [--fullscreen]` (`MOPPE_SPECTATOR=1`) starts
     a free camera with no rider in the world's densest conifer stand: WASD
     moves (by QWERTY position, so any layout works), Space/Tab
-    rise and sink, and the captured mouse or the arrow keys look around; M
-    frees the mouse (e.g. for a ⌘⇧5 window recording) and takes it back.
+    rise and sink, and the captured mouse or the arrow keys look around; L
+    lets the mouse loose (e.g. for a ⌘⇧5 window recording) and takes it
+    back.
   - Temporal inspection cameras: `MOPPE_PAN=<seconds>` stands at the rider
     and sweeps the view left and right; `MOPPE_ORBIT=<radius>,<height>,
     <seconds>` circles the loneliest tall tree near the rider. Both, and

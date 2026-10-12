@@ -34,6 +34,7 @@
 #include <moppe/game/landscape_gazetteer.hh>
 #include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
+#include <moppe/game/map_sheet.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/mushrooms.hh>
 #include <moppe/game/opening.hh>
@@ -618,6 +619,7 @@ namespace moppe {
           std::make_unique<GameSession> (world (), surface (), m_bike_physics);
         retired_session.reset ();
         retired_world.reset ();
+        m_map.forget ();
       }
 
       void prepare_world_water () {
@@ -1610,7 +1612,8 @@ namespace moppe {
         if (!reel->matches (
               static_cast<int> (recipe ().seed ().value),
               recipe ().resolution (),
-              terrain::profile_id (recipe ().generation_profile ()))) {
+              terrain::profile_id (recipe ().generation_profile ())) ||
+            recipe ().extent () != WorldParams ().map_size) {
           std::cerr << "moppe: opening: " << path
                     << " was composed for another world\n";
           return std::nullopt;
@@ -3247,6 +3250,17 @@ namespace moppe {
                             hud_height,
                             frame.hud.subject_position,
                             frame.hud.subject_heading);
+          // MOPPE_MAP=whole|near starts with the map unfolded, for
+          // captures.
+          if (!m_map_asked) {
+            m_map_asked = true;
+            if (const char* map = moppe::environment ("MOPPE_MAP"))
+              m_map.show (std::string_view (map) == "near"
+                            ? MapSheet::View::Near
+                            : MapSheet::View::Whole);
+          }
+          if (m_map.open ())
+            draw_map (r, hud_width, hud_height);
         }
         m_hud.publish_offers ();
         m_hud_text.translate (safe_insets.left, safe_insets.top);
@@ -3255,6 +3269,93 @@ namespace moppe {
         // also the final post-chain composite into the drawable.
         r.draw_hud_text (m_hud_text);
         r.draw_hud (m_hud_dl);
+      }
+
+      // The map over the view (M): the sheet is painted the first time it
+      // is unfolded in a world, and what moves is marked on it each frame.
+      // It takes the place of the rest of the HUD while it is open.
+      void draw_map (render::Renderer& r, int width_pts, int height_pts) {
+        if (!m_map.painted ()) {
+#ifdef __EMSCRIPTEN__
+          // A browser's page has less to spare for one picture.
+          const int limit = 2048;
+#else
+          const int limit = 4096;
+#endif
+          const int size = std::min (limit, 2 * recipe ().resolution ());
+          m_map.set (r,
+                     paint_relief_map (surface (),
+                                       surface_readings (),
+                                       generated_world ().water_surface (),
+                                       rivers (),
+                                       trail_network (),
+                                       world ().water_level,
+                                       size));
+        }
+        m_hud_dl.clear ();
+        m_hud_text.clear ();
+        const platform::Insets safe_insets = platform::safe_insets ();
+        m_hud_dl.translate (safe_insets.left, safe_insets.top, 0);
+
+        using Mark = MapSheet::Mark;
+        const DisplayColor dark (0.09f, 0.09f, 0.10f);
+        std::vector<Mark> marks;
+        const Mode mode = logic ().m_mode;
+        marks.push_back ({ .kind = Mark::Kind::Walker,
+                           .position = session ().subject_position (),
+                           .heading = subject_heading (),
+                           .colour = dark,
+                           .name = "" });
+        if (m_companion && mode != M_PASSENGER &&
+            m_companion->mode != M_PASSENGER) {
+          const CompanionSnapshot& theirs = *m_companion;
+          Vec3 at = theirs.bike.position;
+          if (theirs.walker)
+            at = theirs.walker->position;
+          else if (theirs.glider)
+            at = theirs.glider->position;
+          else if (theirs.mode == M_JEEP)
+            at = theirs.jeep.position;
+          DisplayColor jacket = dark;
+          for (std::size_t c = 0; c < figure::colours.size (); ++c)
+            if (std::string_view (figure::colour_names[c]) == "jacket")
+              jacket = figure::outfit_colour (c, their_outfit ());
+          marks.push_back ({ .kind = Mark::Kind::Companion,
+                             .position = at,
+                             .heading = Vec3 (0, 0, -1),
+                             .colour = jacket,
+                             .name = "companion" });
+        }
+        if (mode != M_BIKE && !session ().can_drop_bike ())
+          marks.push_back ({ .kind = Mark::Kind::Bike,
+                             .position = session ().bike ().position (),
+                             .colour = dark,
+                             .name = "bike" });
+        if (mode != M_JEEP)
+          marks.push_back ({ .kind = Mark::Kind::Jeep,
+                             .position = session ().jeep ().position (),
+                             .colour = dark,
+                             .name = "jeep" });
+        const Camp& camp = logic ().m_camp;
+        if (camp.hung || camp.fire)
+          marks.push_back (
+            { .kind = Mark::Kind::Camp,
+              .position = camp.hung ? hammock_middle (camp.hammock)
+                                    : camp.hearth,
+              .colour = DisplayColor (0.80f, 0.38f, 0.08f),
+              .name = "camp" });
+        marks.push_back ({ .kind = Mark::Kind::Trailhead,
+                           .position = m_home_base_position,
+                           .colour = DisplayColor (0.80f, 0.13f, 0.11f),
+                           .name = "trailhead" });
+        m_map.draw (m_hud_dl,
+                    m_hud_text,
+                    m_hud.font (),
+                    marks,
+                    "MOPPE  \u00b7  SEED " +
+                      std::to_string (recipe ().seed ().value),
+                    width_pts,
+                    height_pts);
       }
 
       // The opening's fades are a black veil over the frame, and its
@@ -3726,9 +3827,9 @@ namespace moppe {
           m_video.finish ();
 
         if (m_spectator) {
-          // M frees the mouse -- to start a screen recording, say -- and
-          // takes it back.
-          if (k == Key::M && down) {
+          // L lets the mouse loose -- to start a screen recording, say --
+          // and takes it back.
+          if (k == Key::L && down) {
             m_spectator->pointer_free = !m_spectator->pointer_free;
             platform::set_pointer_captured (!m_spectator->pointer_free);
           }
@@ -3748,9 +3849,15 @@ namespace moppe {
           return;
         }
 
-        if (k == Key::M && down) {
+        if (k == Key::L && down) {
           m_pointer_free = !m_pointer_free;
           platform::set_pointer_captured (!m_pointer_free);
+          return;
+        }
+
+        // M unfolds the map, looks closer, and folds it away.
+        if (k == Key::M && down && m_ready) {
+          m_map.turn ();
           return;
         }
 
@@ -4279,8 +4386,10 @@ namespace moppe {
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
       std::optional<mov::Trunk> m_orbit_tree;
-      // Whether M has handed the mouse back to the desktop during play.
+      // Whether L has handed the mouse back to the desktop during play.
       bool m_pointer_free = false;
+      MapSheet m_map;
+      bool m_map_asked = false;
       // A free camera with no rider, for looking at the world as it is.
       struct Spectator {
         Vec3 eye {};

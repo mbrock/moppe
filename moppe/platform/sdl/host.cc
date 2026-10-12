@@ -71,6 +71,7 @@ namespace {
       return Key::Record;
     case SDLK_G: return Key::G;
     case SDLK_H: return Key::H;
+    case SDLK_L: return Key::L;
     case SDLK_M: return Key::M;
     case SDLK_N: return Key::N;
     case SDLK_R: return Key::R;
