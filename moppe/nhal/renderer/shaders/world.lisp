@@ -3330,14 +3330,16 @@
 ;;; grid: the surface in the heights' units, and the swell's amplitude),
 ;;; drawn over the terrain's own chunks with each vertex lifted to the water
 ;;; instead of the ground, so they share the terrain's levels of detail.
-;;; Beside it lies the current (RG16F: metres a second along x and z), which
-;;; the rivers carry and still water lacks.
+;;; Beside it lies the current (RGBA16F: metres a second along x and z, and
+;;; then up), which the rivers carry and still water lacks.  It is the
+;;; water's own pace (terrain/watercourse.hh): quick over a sill, slow
+;;; through a pool, quicker in the deep middle than along the banks.
 ;;;
 ;;; The surface's detail rides the current by flow mapping: two copies of
 ;;; the ripple field, each dragged downstream for one cycle and snapped back
 ;;; while the other is at its strongest, so the pattern streams without ever
-;;; tearing apart.  The banks drag on the current, so the middle runs fast
-;;; and the shallows lag; rapids roughen the water and churn up foam, which
+;;; tearing apart.  How fast the water descends is the head it sheds, which
+;;; is what breaks it: rapids roughen the water and churn up foam, which
 ;;; drifts on below them.  Still water has the wind's ripples, the sea a
 ;;; swell, and both lap at the shore.
 ;;;
@@ -3522,10 +3524,14 @@
     (mix (streak-at xz first) (streak-at xz (+ first 1.0))
          (- bins first))))
 
-;;; How hard the current churns at a speed: rapids from a little over the
-;;; plain current's two metres a second, the plunge below a fall from six.
-(define-shader-function churn (speed)
-  (+ (* 0.85 (smoothstep 2.4 5.0 speed)) (smoothstep 5.6 7.5 speed)))
+;;; How broken the water is that descends DESCENT metres a second: a riffle
+;;; from six centimetres, a cascade at half a metre.
+(define-shader-function rapid (descent)
+  (smoothstep 0.06 0.5 descent))
+
+;;; How hard it churns: its rapids, and the plunge below a fall.
+(define-shader-function churn (descent)
+  (+ (* 0.85 (rapid descent)) (smoothstep 0.9 2.6 descent)))
 
 ;;; The sky seen in the water: the sky program's atmosphere, haze, overcast,
 ;;; and valley mist, without the clouds' detail, which ripples would break.
@@ -3580,23 +3586,28 @@
          (cell (vec2 (swizzle scale :x) (swizzle scale :z)))
          (extent (swizzle size :xy))
          (uv (/ (+ (/ xz cell) (vec2 0.5 0.5)) extent))
-         (stream (swizzle (sample-level flow linear-repeat uv 0.0) :xy))
+         (moving (swizzle (sample-level flow linear-repeat uv 0.0) :xyz))
+         (stream (swizzle moving :xy))
          (speed (sqrt (dot stream stream)))
+         (descent (max (- 0.0 (swizzle moving :z)) 0.0))
          (downstream (/ stream (max speed 0.001)))
-         (upstream-near (swizzle (sample-level flow linear-repeat
-                                               (- uv (/ (* downstream 5.0)
-                                                        (* cell extent)))
-                                               0.0)
-                                 :xy))
-         (upstream-far (swizzle (sample-level flow linear-repeat
-                                              (- uv (/ (* downstream 13.0)
-                                                       (* cell extent)))
-                                              0.0)
-                                :xy))
-         (running (smoothstep 0.15 0.9 speed))
-         ;; The banks drag on the current: the shallows lag the middle.
-         (current (* stream (mix 0.3 1.0 (smoothstep 0.05 0.9 depth))))
-         (rapids (smoothstep 2.4 5.0 speed))
+         (upstream-near (- 0.0 (swizzle (sample-level flow linear-repeat
+                                                      (- uv
+                                                         (/ (* downstream 5.0)
+                                                            (* cell extent)))
+                                                      0.0)
+                                        :z)))
+         (upstream-far (- 0.0 (swizzle (sample-level flow linear-repeat
+                                                     (- uv
+                                                        (/ (* downstream 13.0)
+                                                           (* cell extent)))
+                                                     0.0)
+                                       :z)))
+         (running (smoothstep 0.04 0.35 speed))
+         ;; The current already runs as the root of the depth at each
+         ;; sample; between samples the last of the shallows lags a little.
+         (current (* stream (mix 0.6 1.0 (smoothstep 0.02 0.25 depth))))
+         (rapids (rapid descent))
          ;; Flow mapping.  Each copy's cycle starts at a place's own time,
          ;; so no two reaches pulse together, and jumps to fresh noise when
          ;; it snaps back unseen.
@@ -3645,7 +3656,7 @@
          ;; smoothly from cell to cell.
          (grid (/ xz cell))
          (tilt
-           (only-where (> speed 3.0) (vec2 0.0 0.0)
+           (only-where (> descent 0.15) (vec2 0.0 0.0)
              (let* ((corner (floor grid))
                     (within (fract grid))
                     (rise (mix (mix (sheet-rise water-levels corner extent)
@@ -3812,18 +3823,18 @@
          ;; Foam: the rapids' churn, and what it shed upstream drifting on;
          ;; a fringe where a current runs over the shallows; and where still
          ;; water laps a shore.
-         (trail (max (* 0.75 (churn (sqrt (dot upstream-near upstream-near))))
-                     (* 0.45 (churn (sqrt (dot upstream-far upstream-far))))))
+         (trail (max (* 0.75 (churn upstream-near))
+                     (* 0.45 (churn upstream-far))))
          (fringe (* (- 1.0 (smoothstep 0.01 0.07 depth))
-                    (smoothstep 0.8 2.4 speed) 0.3))
+                    (smoothstep 0.25 0.7 speed) 0.3))
          (reach (+ 0.07 (* 0.06 (sin (+ (* time 1.1) (* 9.0 stagger))))))
          (lap (* (- 1.0 (smoothstep 0.01 reach depth)) (- 1.0 running)
                  (+ 0.3 (* 0.4 swell))))
-         (source (clamp (max (max (churn speed) trail) (max fringe lap))
+         (source (clamp (max (max (churn descent) trail) (max fringe lap))
                         0.0 0.82))
          ;; Fast water draws its foam out into streaks along the current.
          (heading (heading-of downstream))
-         (drawn (smoothstep 1.5 4.5 speed))
+         (drawn (smoothstep 0.8 2.4 speed))
          (pattern
            (only-where (> source 0.002) 0.5
              (let* ((pattern-a (mix (foam-pattern at-a) (streaks at-a heading)

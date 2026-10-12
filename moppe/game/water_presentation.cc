@@ -68,7 +68,7 @@ namespace moppe::game {
                                                terrain::wave_amplitude> (
                           water, PixelFormat::rg32f));
     renderer.set_water_flow (
-      render::planar_texture_pixels<terrain::water_velocity> (
-        water, PixelFormat::rg16f));
+      render::spatial_texture_pixels<terrain::water_velocity> (
+        water, PixelFormat::rgba16f));
   }
 }

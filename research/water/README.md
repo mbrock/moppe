@@ -131,6 +131,44 @@ bounded terrain-aware approximation, not screen-space reflection, and avoids
 adding a scene-color pass until actual displaced reflection/refraction earns
 one.
 
+## Implemented hydraulic slice (2026-10-12)
+
+Running water had stood at a zero-discharge level: a film on the bed, capped
+so it could not spill past a nominal width that stopped at 24 m, and across
+every pit in a valley floor (two thirds of the default world's river length)
+the pit's spill level exactly. More catchment never made water stand higher,
+so the 13.7 km2 trunk was the 0.2 km2 brook again, a little wider, and the
+surface was a stair of ponds rather than a grade. The current was 2 m/s
+everywhere, plus a bonus for slope.
+
+The painter now solves a one-dimensional steady profile along each
+alignment, in the manner of the standard step method but with only what the
+picture needs. Discharge is the catchment's in spate, 2.5 m3/s from each
+square kilometre. Each alignment point reads its valley's cross-section from
+the terrain; from the mouth upward, the level at each is the least that
+passes the discharge at the critical pace (Froude number one, where a
+mobile-bed stream steeper than about one in forty holds itself) and stands
+above the water below by the head Chezy friction takes on the way. Sills are
+therefore controls, pools are backwater behind them, and a long mild reach
+settles to normal depth without being told to. A lake or pool the river
+leaves stands at the stage its outflow needs, unless its rim is low
+elsewhere: a pour-height flood over the shore finds the other weirs, and the
+body stands where channel and weirs together pass the outflow.
+
+The current follows from the same sections as u = c sqrt(d), with c the
+discharge over the section's conveyance, so continuity holds along a river
+and the deep middle outruns the margins. Its vertical component is the rate
+the water descends its own surface, g times which is the power it sheds per
+kilogram; the shader whitens water by that instead of by speed. The flow
+sheet grew a lane to carry it.
+
+On the default world running water grew from 39 to 59 hectares. Headwaters
+are much as they were (9 m wide, 17 cm deep); the trunk's lower course is
+27 to 60 m wide and a metre deep where it was 23 m and a patchwork of films.
+What this does not do is cut a channel: the terrain still has swales, not
+beds and banks, so depth and width stay tied by the valley's side slope, and
+long profiles stay as steep as erosion left them.
+
 ## Production flow maps
 
 - `vlachos-2010-water-flow-portal-2.pdf` — Alex Vlachos, “Water Flow in

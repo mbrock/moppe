@@ -390,10 +390,11 @@ namespace moppe {
       // plane.
       virtual void set_ocean (const OceanSetup& setup,
                               const TexturePixels& water_levels) = 0;
-      // Water flow following the terrain grid: (x, z) world velocity in
-      // metres per second per sample. Rivers carry strong downstream arrows,
-      // lakes almost none; the water shader advects its surface detail along
-      // them. Optional; an empty description clears.
+      // Water flow following the terrain grid: world velocity in metres per
+      // second per sample, as (x, z, y, 0). Rivers carry downstream arrows,
+      // lakes almost none, and the water shader advects its surface detail
+      // along them; the vertical lane is how fast the water descends, which
+      // is what whitens it. Optional; an empty description clears.
       virtual void set_water_flow (const TexturePixels& flow) {
         (void)flow;
       }

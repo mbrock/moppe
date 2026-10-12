@@ -68,10 +68,12 @@ Water is designed afresh rather than ported from the old renderer.
 the terrain's chunks again with the `water` program, each vertex lifted to
 the water sheet (RG32F on the terrain grid: the surface and the swell's
 amplitude) and dry vertices sunk below the ground so the depth test drops
-them. The current (`set_water_flow`, RG16F metres a second) carries the
-rivers' ripples and foam by flow mapping, slower in the shallows; rapids
-roughen and whiten, and their foam drifts on downstream, drawn out into
-streaks along the current. Through the surface the copied bed is bent by
+them. The current (`set_water_flow`, RGBA16F metres a second along x, z,
+and up) carries the rivers' ripples and foam by flow mapping. It is the
+water's own pace (`terrain/watercourse.hh`), slow through a pool and quick
+over a sill, and its vertical lane is how fast the water descends: where
+that is fast the water roughens and whitens, and the foam drifts on
+downstream, drawn out into streaks along the current. Through the surface the copied bed is bent by
 the ripples and dimmed channel by channel over the view's path under
 water; the reflection marches the mirrored ray across the copied depth to
 find banks, trees, and hills, falling back on the sky. The fragment's

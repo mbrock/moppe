@@ -43,8 +43,15 @@ namespace {
     return heights;
   }
 
+  // Nine samples of fifty metres: a catchment of a fifth of a square
+  // kilometre, enough to make a brook.
   TerrainDomain valley_grid () {
-    return { 9, 9, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre };
+    return { 9, 9, 50.0f * mp_units::si::metre, 50.0f * mp_units::si::metre };
+  }
+
+  float sheet_speed (const WaterSheets& sheets, std::size_t cell) {
+    const Vec3 velocity = sheet_velocity (sheets, cell);
+    return std::hypot (velocity[0], velocity[2]);
   }
 
   struct PaintedValley {
@@ -62,11 +69,11 @@ namespace {
     FloodField flood = analyze_standing_water (terrain, 0.0f);
     LakeCensus census = census_lakes (flood);
     DrainageGraph drainage = analyze_wet_drainage (flood, census);
-    RiverNetwork rivers = extract_river_network (flood,
-                                                 census,
-                                                 drainage,
-                                                 100.0f * mp_units::si::metre *
-                                                   mp_units::si::metre);
+    RiverNetwork rivers = extract_river_network (
+      flood,
+      census,
+      drainage,
+      20000.0f * mp_units::si::metre * mp_units::si::metre);
     WaterSheets sheets =
       paint_watercourses (terrain, flood, census, drainage, rivers);
     return { std::move (heights),  std::move (flood),  std::move (census),
@@ -106,18 +113,43 @@ MOPPE_TEST (standing_water_keeps_its_level_and_wave_character) {
   MOPPE_CHECK_NEAR (sheet_wave (valley.sheets, sea), 1.0f, 0.0f);
 }
 
-MOPPE_TEST (river_current_continues_through_the_mouth) {
+MOPPE_TEST (a_river_runs_on_into_the_sea_and_slows_to_nothing_there) {
   const PaintedValley valley = paint_valley ();
-  bool found_ocean_current = false;
-  for (std::size_t cell = 0; cell < valley.flood.ocean.size (); ++cell) {
-    if (!valley.flood.ocean[cell])
-      continue;
-    const Vec3 velocity = sheet_velocity (valley.sheets, cell);
-    const float x = velocity[0];
-    const float z = velocity[2];
-    found_ocean_current = found_ocean_current || std::hypot (x, z) > 0.1f;
-  }
-  MOPPE_CHECK (found_ocean_current);
+  // The valley's axis: the brook two rows above the shore, and the sea
+  // ten metres deep off its mouth.
+  const std::size_t brook = 6 * 9 + 4;
+  MOPPE_CHECK (sheet_speed (valley.sheets, brook) > 0.5f);
+  const std::size_t sea = 8 * 9 + 4;
+  MOPPE_CHECK (valley.flood.ocean[sea]);
+  const Vec3 seaward = sheet_velocity (valley.sheets, sea);
+  MOPPE_CHECK (seaward[2] > 0.0f);
+  MOPPE_CHECK (sheet_speed (valley.sheets, sea) <
+               0.05f * sheet_speed (valley.sheets, brook));
+}
+
+MOPPE_TEST (more_water_stands_deeper_and_runs_faster) {
+  // One valley, one slope, one cross-section: all that changes down it is
+  // how much water has gathered.
+  const PaintedValley valley = paint_valley ();
+  const std::size_t upper = 5 * 9 + 4;
+  const std::size_t lower = 7 * 9 + 4;
+  const auto depth = [&] (std::size_t cell) {
+    return sheet_level_m (valley.sheets, cell) - valley.heights[cell];
+  };
+  MOPPE_CHECK (valley.drainage.contributing_area_at (upper) <
+               valley.drainage.contributing_area_at (lower));
+  MOPPE_CHECK (depth (upper) > 0.03f);
+  MOPPE_CHECK (depth (lower) > 1.2f * depth (upper));
+  MOPPE_CHECK (depth (lower) < 0.5f);
+  MOPPE_CHECK (sheet_speed (valley.sheets, lower) >
+               sheet_speed (valley.sheets, upper));
+  // Down so steep a bed the water runs at the critical pace, and descends
+  // as fast as its surface falls.
+  MOPPE_CHECK_NEAR (sheet_speed (valley.sheets, lower),
+                    std::sqrt (9.81f * depth (lower)),
+                    0.05f);
+  MOPPE_CHECK (-sheet_velocity (valley.sheets, lower)[1] >
+               0.05f * sheet_speed (valley.sheets, lower));
 }
 
 MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
@@ -218,16 +250,25 @@ MOPPE_TEST (traversed_channel_like_bodies_join_the_running_water_field) {
     }
   MOPPE_CHECK (pooled_point);
 
-  // The shared sheet retains the pool's physical level and adds current,
-  // while the sea keeps its standing plate.
+  // The shared sheet holds the pool a little above the level it would
+  // only just spill at, by the head its outflow needs over the sill, and
+  // level from end to end. Its current is the river's, slowed to what so
+  // deep a section needs to pass the same water; the sea keeps its
+  // standing plate.
   const WaterSheets sheets =
     paint_watercourses (terrain, flood, census, drainage, rivers);
   const std::size_t pond_cell = 1 * width + 6;
-  MOPPE_CHECK_NEAR (
-    sheet_level_m (sheets, pond_cell), flood.water_level_m (pond_cell), 1e-4f);
+  const float pond_level = sheet_level_m (sheets, pond_cell);
+  MOPPE_CHECK (pond_level > flood.water_level_m (pond_cell));
+  MOPPE_CHECK (pond_level < flood.water_level_m (pond_cell) + 0.5f);
+  MOPPE_CHECK_NEAR (sheet_level_m (sheets, 1 * width + 4), pond_level, 0.02f);
+  MOPPE_CHECK_NEAR (sheet_level_m (sheets, 1 * width + 8), pond_level, 0.02f);
   MOPPE_CHECK_NEAR (sheet_wave (sheets, pond_cell), 0.0f, 0.0f);
   const Vec3 pond_velocity = sheet_velocity (sheets, pond_cell);
-  MOPPE_CHECK (std::hypot (pond_velocity[0], pond_velocity[2]) > 0.25f);
+  MOPPE_CHECK (pond_velocity[0] > 0.0f);
+  MOPPE_CHECK (std::hypot (pond_velocity[0], pond_velocity[2]) <
+               0.1f * sheet_speed (sheets, 1 * width + 10));
+  MOPPE_CHECK (-pond_velocity[1] < 0.001f);
   const std::size_t sea_cell = 1 * width + 12;
   MOPPE_CHECK_NEAR (sheet_level_m (sheets, sea_cell), 0.0f, 1e-5f);
 }

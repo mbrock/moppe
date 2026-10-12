@@ -56,8 +56,8 @@ falling sheet.
 
 Water and ground readings use borrowed `TexturePixels` descriptions that
 write their final format directly into backend staging memory. Physical water
-elevation and amplitude write `RG32F`; planar velocity narrows once into
-`RG16F`.
+elevation and amplitude write `RG32F`; velocity narrows once into
+`RGBA16F`, its horizontal lanes first and its vertical third.
 
 ## Persistence
 

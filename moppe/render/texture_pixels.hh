@@ -39,6 +39,7 @@ namespace moppe::render {
     rg32f,
     r16f,
     rg16f,
+    rgba16f,
     rg16snorm,
     rgba8unorm,
     rg8snorm
@@ -54,6 +55,7 @@ namespace moppe::render {
     case PixelFormat::rg16snorm:
     case PixelFormat::rg8snorm:
       return 2;
+    case PixelFormat::rgba16f:
     case PixelFormat::rgba8unorm:
       return 4;
     }
@@ -67,6 +69,7 @@ namespace moppe::render {
       return 4;
     case PixelFormat::r16f:
     case PixelFormat::rg16f:
+    case PixelFormat::rgba16f:
     case PixelFormat::rg16snorm:
       return 2;
     case PixelFormat::rgba8unorm:
@@ -133,7 +136,8 @@ namespace moppe::render {
         std::memcpy (at, &value, sizeof (float));
         return;
       case PixelFormat::r16f:
-      case PixelFormat::rg16f: {
+      case PixelFormat::rg16f:
+      case PixelFormat::rgba16f: {
         const std::uint16_t half = float_to_half (value);
         std::memcpy (at, &half, sizeof half);
         return;
@@ -300,6 +304,24 @@ namespace moppe::render {
         write_channel (destination + pixel * stride + lane, format, value[2]);
       }
     }
+
+    template <typename Bundle, auto QS>
+    void write_xzy_channels (const void* source,
+                             PixelFormat format,
+                             std::byte* destination) {
+      const Bundle& bundle = *static_cast<const Bundle*> (source);
+      const auto& column = spatial::get<QS> (bundle);
+      const std::size_t stride = bytes_per_pixel (format);
+      const std::size_t lane = channel_bytes (format);
+      for (std::size_t pixel = 0; pixel < column.size (); ++pixel) {
+        const Vec3 value = stored_vector (column[pixel]);
+        std::byte* at = destination + pixel * stride;
+        write_channel (at, format, value[0]);
+        write_channel (at + lane, format, value[2]);
+        write_channel (at + 2 * lane, format, value[1]);
+        write_channel (at + 3 * lane, format, 0.0f);
+      }
+    }
   }
 
   // One channel per named section, in the order named. The bundle is borrowed
@@ -329,6 +351,21 @@ namespace moppe::render {
                           format,
                           &bundle,
                           &detail::write_xz_channels<Bundle, QS>);
+  }
+
+  // A whole vector-valued section, for the one consumer that wants the
+  // vertical component too: the horizontal two first, as a planar section
+  // has them, then the vertical, and a spare lane of zeros.
+  template <auto QS, typename Bundle>
+  TexturePixels spatial_texture_pixels (const Bundle& bundle,
+                                        PixelFormat format) {
+    if (channels_in (format) != 4)
+      throw std::invalid_argument ("a spatial section needs four channels");
+    return TexturePixels (bundle.domain ().width (),
+                          bundle.domain ().height (),
+                          format,
+                          &bundle,
+                          &detail::write_xzy_channels<Bundle, QS>);
   }
 }
 

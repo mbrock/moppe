@@ -296,10 +296,14 @@
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
-    `MOPPE_WATER_VIEW=bank` stands on the bank at eye height instead. Rivers
-    stream along the painted current (flow-mapped ripples, foam from rapids,
-    drifting specks), and water reflects the scene by a screen-space march
-    (docs/nhal.md). To judge the flow, capture consecutive frames:
+    `MOPPE_WATER_VIEW=bank` stands on the bank at eye height instead. Running
+    water stands and moves as its discharge has it (`terrain/watercourse.hh`:
+    2.5 m3/s from each square kilometre of catchment, a steady profile
+    through the terrain's own cross-sections, critical over sills and
+    backed up behind them), so a brook is a stair of pools and a trunk river
+    drowns the same sills. Rivers stream along that current (flow-mapped
+    ripples, foam where the water descends fast, drifting specks), and water
+    reflects the scene by a screen-space march (docs/nhal.md). To judge the flow, capture consecutive frames:
     `MOPPE_SCREENSHOT_FRAMES=100000 MOPPE_RIDE_CAPTURE_DIR=/tmp/w
     MOPPE_RIDE_CAPTURE_START=60 ./build/moppe --water-screenshot river
     /tmp/unused.png` writes `/tmp/w/ride-NNNN.png` at 30 fps.

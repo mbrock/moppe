@@ -17,6 +17,7 @@ namespace moppe::test {
     render::OceanSetup ocean {};
     std::vector<float> water_levels;
     std::vector<float> water_flow;
+    std::vector<float> water_descent;
     std::vector<float> trail_influence;
     std::vector<float> home_base_influence;
     std::vector<float> moisture;
@@ -72,8 +73,10 @@ namespace moppe::test {
     void set_water_flow (const render::TexturePixels& flow) override {
       const auto lanes = render::decode_channels (flow);
       water_flow.clear ();
-      if (lanes.size () != 2)
+      water_descent.clear ();
+      if (lanes.size () != 4)
         return;
+      water_descent = lanes[2];
       water_flow.reserve (2 * lanes[0].size ());
       for (std::size_t index = 0; index < lanes[0].size (); ++index) {
         water_flow.push_back (lanes[0][index]);

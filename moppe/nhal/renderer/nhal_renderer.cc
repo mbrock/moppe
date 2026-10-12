@@ -406,9 +406,9 @@ namespace moppe::nhal {
         m_device->write_texture (m_ground_detail,
                                  std::as_bytes (std::span (detail.pixels)));
         // No current at all, for water drawn before (or without) a flow.
-        const std::uint16_t still[2] = { 0, 0 };
+        const std::uint16_t still[4] = { 0, 0, 0, 0 };
         m_still_water = m_device->create_texture (
-          { 1, 1, Format::rg16_float, usage_sampled, 1, "still water" });
+          { 1, 1, Format::rgba16_float, usage_sampled, 1, "still water" });
         m_device->write_texture (m_still_water,
                                  std::as_bytes (std::span (still)));
         std::cerr << "moppe: NHAL renderer on " << m_device->info ().backend
@@ -559,17 +559,18 @@ namespace moppe::nhal {
         m_device->write_texture (m_water_levels, bytes);
       }
 
-      // The current on the terrain grid, metres a second along x and z;
-      // the water's ripples and foam stream along it.
+      // The current on the terrain grid, metres a second along x, z, and
+      // up; the water's ripples and foam stream along it, and it whitens
+      // as it descends.
       void set_water_flow (const render::TexturePixels& flow) override {
         if (m_water_flow)
           m_device->destroy (m_water_flow);
         m_water_flow = {};
-        if (flow.empty () || flow.format () != render::PixelFormat::rg16f)
+        if (flow.empty () || flow.format () != render::PixelFormat::rgba16f)
           return;
         m_water_flow = m_device->create_texture (
           { std::uint32_t (flow.width ()), std::uint32_t (flow.height ()),
-            Format::rg16_float, usage_sampled, 1, "water flow" });
+            Format::rgba16_float, usage_sampled, 1, "water flow" });
         std::vector<std::byte> bytes (flow.byte_size ());
         flow.write_into (bytes.data ());
         m_device->write_texture (m_water_flow, bytes);
