@@ -168,6 +168,15 @@ leave every hash the same:
 | Whole world, 40 steps and the rest | 52 s | 43.5 s |
 | Resident during the evolution | 1.56 GB | 1.43 GB |
 
+The same world at 4096 samples -- the ordinary grain over ten kilometres
+-- takes 195 s on the M5 at 3.4 s a step and peaks at 5.0 GB; in the game,
+with the renderer beside it, 7.5 GB, which a 16 GB machine holds. On a Ryzen
+7950X3D it went from 7 min 23 s to 6 min 42 s and from 5.0 to 4.8 GB: there
+a quarter of the time is the kernel's (74 million page faults), because
+glibc maps and unmaps every one of a step's large buffers afresh, so
+keeping a step's buffers from one step to the next is the next exact
+saving on Linux.
+
 - The flow accumulation took a quarter of a step, most of it a binary heap
   whose keys were only ever cell indices. `LowestReady`
   (`terrain/lowest_ready.hh`), a bitmap with a summary word over every

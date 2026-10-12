@@ -94,9 +94,11 @@
     same country stretched (`terrain/geological.cc` counts its noise in
     cycles per five kilometres). It keeps the ordinary 2048 samples, so
     the ground is coarser; `--terrain-resolution 4096` buys the grain
-    back: generating that peaks at 5 GB and takes some seven minutes
-    (measured on swa), so on a 16 GB machine run nothing else heavy
-    beside it.
+    back: generating that takes three and a quarter minutes on an M5 and
+    peaks at 5 GB (7.5 GB in the game, which fits a 16 GB machine with
+    nothing else heavy beside it), and the world then loads from its
+    cache. `MOPPE_FINGERPRINT_COST=1 world-fingerprint 4096 play 123 10`
+    says what each stage costs (docs/orogeny-performance.md).
   - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
     trail map); `MOPPE_HUD=debug` starts with it on.
