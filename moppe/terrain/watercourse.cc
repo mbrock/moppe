@@ -6,6 +6,7 @@
 #include <moppe/terrain/river.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -25,6 +26,8 @@ namespace moppe::terrain {
     // wider than that.
     struct Section {
       std::span<const float> ground;
+      // The level of the sea or lake each sample lies in; infinite on land.
+      std::span<const float> still;
       float step = 1.0f;
       int centre = 0;
       int thalweg = 0;
@@ -48,6 +51,9 @@ namespace moppe::terrain {
       // Wet as far as the section goes: ground that falls away rather than
       // a bank.
       bool unbanked = false;
+      // The level of the still water it runs out into, if it meets any
+      // lower than itself; otherwise infinite.
+      float drains = std::numeric_limits<float>::infinity ();
     };
 
     Wetted wetted (const Section& section, float level) {
@@ -63,10 +69,17 @@ namespace moppe::terrain {
       int first = section.thalweg;
       int last = section.thalweg;
       carry (first);
-      while (first > 0 && section.ground[first - 1] < level)
+      // Lower still water ends the river's own surface as a bank does.
+      while (first > 0 && section.ground[first - 1] < level &&
+             !(section.still[first - 1] < level))
         carry (--first);
-      while (last + 1 < count && section.ground[last + 1] < level)
+      while (last + 1 < count && section.ground[last + 1] < level &&
+             !(section.still[last + 1] < level))
         carry (++last);
+      if (first > 0 && section.still[first - 1] < level)
+        water.drains = section.still[first - 1];
+      if (last + 1 < count && section.still[last + 1] < level)
+        water.drains = std::min (water.drains, section.still[last + 1]);
       water.open_left = first <= section.centre - section.spread;
       water.open_right = last >= section.centre + section.spread;
       water.unbanked = first == 0 || last + 1 == count;
@@ -168,6 +181,17 @@ namespace moppe::terrain {
     std::vector<float> amplitude (count);
     for (std::size_t cell = 0; cell < count; ++cell)
       amplitude[cell] = wave_factor (flood, census, cell);
+    // Where the sea or a sheet-drawn body stands: a river running into one
+    // brings it a current, never a level of its own.
+    std::vector<std::uint8_t> still (count, 0);
+    for (std::size_t cell = 0; cell < count; ++cell) {
+      const WaterBodyId body =
+        census.body_at (CellIndex { static_cast<std::uint32_t> (cell) });
+      still[cell] =
+        flood.ocean[cell] || (census.domain ().contains (body) &&
+                              water_body_is_permanent (census.water_body (body),
+                                                       parameters.permanence));
+    }
 
     // The current's direction, its pace (speed over the root of depth), the
     // grade of the surface it runs down, and the falls it passes, each
@@ -183,7 +207,9 @@ namespace moppe::terrain {
       float x_m;
       float z_m;
       float level_m;
-      float half_width_m;
+      // How far its water reaches to the left and right of the alignment.
+      float left_m;
+      float right_m;
       // The depth of the pit it stands in, if it stands in one.
       float depth_m;
       float pace;
@@ -391,6 +417,7 @@ namespace moppe::terrain {
         if (place.pour < stands && surface[place.cell] < stands) {
           surface[place.cell] = stands;
           amplitude[place.cell] = wave_factor (record.classification);
+          still[place.cell] = 1;
         }
       return stands;
     };
@@ -399,6 +426,7 @@ namespace moppe::terrain {
       rivers.reaches.size ());
     // Each reach's cross-sections, kept until its levels are final.
     std::vector<std::vector<float>> reach_ground (rivers.reaches.size ());
+    std::vector<std::vector<float>> reach_still (rivers.reaches.size ());
     std::vector<std::vector<Section>> reach_sections (rivers.reaches.size ());
     const float section_step =
       std::clamp (0.4f * std::min (spacing_x, spacing_z), 0.5f, 1.0f);
@@ -444,6 +472,8 @@ namespace moppe::terrain {
         auto& ground_samples = reach_ground[reach.id];
         auto& sections = reach_sections[reach.id];
         ground_samples.resize (first[length]);
+        auto& still_samples = reach_still[reach.id];
+        still_samples.assign (first[length], unraised);
         sections.resize (length);
         std::vector<float> discharge (length);
         std::vector<float> bed (length);
@@ -466,8 +496,12 @@ namespace moppe::terrain {
                                          2 * reach_n + 1);
           for (int sample = -reach_n; sample <= reach_n; ++sample) {
             const float offset = static_cast<float> (sample) * section_step;
-            across[sample + reach_n] = sample_ground (
-              center.x_m + across_x * offset, center.z_m + across_z * offset);
+            const float world_x = center.x_m + across_x * offset;
+            const float world_z = center.z_m + across_z * offset;
+            across[sample + reach_n] = sample_ground (world_x, world_z);
+            const std::size_t cell = cell_at (world_x, world_z);
+            if (still[cell])
+              still_samples[first[point] + sample + reach_n] = surface[cell];
           }
           int thalweg = reach_n;
           const int search = std::min (thalweg_reach, spread_samples[point]);
@@ -476,6 +510,9 @@ namespace moppe::terrain {
             if (across[sample] < across[thalweg])
               thalweg = sample;
           sections[point] = { .ground = across,
+                              .still =
+                                std::span<const float> (still_samples)
+                                  .subspan (first[point], 2 * reach_n + 1),
                               .step = section_step,
                               .centre = reach_n,
                               .thalweg = thalweg,
@@ -563,6 +600,10 @@ namespace moppe::terrain {
                                         parameters);
             if (!sheet && !leaving) {
               const Wetted water = wetted (section, stood);
+              // Water that reaches lower still water across its section
+              // has no bank there to stand against: it runs off into it.
+              if (water.drains < stood)
+                stood = water.drains + 0.045f;
               if (water.open_left)
                 stood = std::min (
                   stood,
@@ -647,7 +688,8 @@ namespace moppe::terrain {
               .z_m = center.z_m,
               .level_m = ground + 0.01f +
                          source_profile * (level[point] - ground - 0.01f),
-              .half_width_m = 0.0f,
+              .left_m = 0.0f,
+              .right_m = 0.0f,
               .depth_m = 0.0f,
               .pace = 0.0f,
               .grade = 0.0f,
@@ -705,6 +747,7 @@ namespace moppe::terrain {
             const int margin = within.centre - within.spread;
             within.ground =
               within.ground.subspan (margin, 2 * within.spread + 1);
+            within.still = within.still.subspan (margin, 2 * within.spread + 1);
             within.centre -= margin;
             within.thalweg -= margin;
             water = wetted (within, running.level_m);
@@ -712,14 +755,16 @@ namespace moppe::terrain {
           const float discharge =
             river_discharge (points[point].contributing_area_m2 * u::m * u::m)
               .numerical_value_in (u::m * u::m * u::m / u::s);
-          running.half_width_m = std::max (water.left, water.right);
+          running.left_m = water.left;
+          running.right_m = water.right;
           // In a lake or the sea the river is a current, not a surface: it
           // keeps the width it came with.
-          if (points[point].standing_water >= 0.5f)
-            running.half_width_m =
-              std::min (running.half_width_m,
-                        static_cast<float> (sections[point].spread) *
-                          sections[point].step);
+          if (points[point].standing_water >= 0.5f) {
+            const float spread = static_cast<float> (sections[point].spread) *
+                                 sections[point].step;
+            running.left_m = std::min (running.left_m, spread);
+            running.right_m = std::min (running.right_m, spread);
+          }
           // Only a pit may hold water deeper than a running surface is let
           // stand over the ground.
           running.depth_m = points[point].pooled > 0.25f ? water.deepest : 0.0f;
@@ -740,24 +785,50 @@ namespace moppe::terrain {
         }
         // A stamp covers the widest water near it, so a section that opens
         // into a hollow is covered from the narrower ones beside it too.
-        std::vector<float> wet (length);
+        std::vector<std::array<float, 2>> wet (length);
         for (std::size_t point = 0; point < length; ++point)
-          wet[point] = prepared[point].half_width_m;
+          wet[point] = { prepared[point].left_m, prepared[point].right_m };
         for (std::size_t point = 0; point < length; ++point) {
-          float widest = 0.0f;
+          std::array<float, 2> widest { 0.0f, 0.0f };
           for (std::size_t other = point >= 3 ? point - 3 : 0;
                other < std::min (point + 4, length);
-               ++other)
-            widest = std::max (widest, wet[other]);
-          prepared[point].half_width_m =
-            widest * prepared[point].source_profile;
+               ++other) {
+            widest[0] = std::max (widest[0], wet[other][0]);
+            widest[1] = std::max (widest[1], wet[other][1]);
+          }
+          prepared[point].left_m = widest[0] * prepared[point].source_profile;
+          prepared[point].right_m = widest[1] * prepared[point].source_profile;
         }
       }
     }
 
-    std::vector<float> running_score (count,
-                                      std::numeric_limits<float>::infinity ());
+    // The running surface at a cell is the stage of the section it lies in:
+    // the nearest of each reach that covers it. Where reaches lie alongside,
+    // on the inside of a bend or at a confluence, it is a level between
+    // theirs, each weighed by its nearness, since taking either's would
+    // leave a step.
+    const float cell_reach = std::max (spacing_x, spacing_z);
+    // The distance over which one reach's say gives way to another's.
+    constexpr float blend_reach = 2.5f;
+    std::vector<float> running_weight (count, 0.0f);
     std::vector<float> running_level (count, 0.0f);
+    struct Nearest {
+      float distance;
+      float level;
+      RiverReachId reach = RiverReach::no_id;
+    };
+    std::vector<Nearest> nearest (count);
+    const auto settle_nearest = [&] (std::size_t cell) {
+      Nearest& found = nearest[cell];
+      if (found.reach == RiverReach::no_id)
+        return;
+      const float near =
+        blend_reach * blend_reach /
+        (found.distance * found.distance + blend_reach * blend_reach);
+      running_level[cell] += near * near * found.level;
+      running_weight[cell] += near * near;
+      found.reach = RiverReach::no_id;
+    };
     {
       MOPPE_PROFILE_ZONE ("watercourse.paint_running_surface");
       const float margin = parameters.bank_margin.numerical_value_in (u::m);
@@ -777,9 +848,10 @@ namespace moppe::terrain {
           const float direction_x = run_x / run;
           const float direction_z = run_z / run;
           const bool falling = std::max (start.waterfall, end.waterfall) > 0.5f;
-          const float radius =
-            std::max (start.half_width_m + margin * start.source_profile,
-                      end.half_width_m + margin * end.source_profile);
+          const float radius = std::max (
+            std::max (start.left_m, start.right_m) +
+              margin * start.source_profile,
+            std::max (end.left_m, end.right_m) + margin * end.source_profile);
           if (radius <= 0.01f)
             continue;
           const int minimum_x = static_cast<int> (
@@ -796,29 +868,38 @@ namespace moppe::terrain {
                  ++unwrapped_x) {
               const float world_x = unwrapped_x * spacing_x;
               const float world_z = unwrapped_z * spacing_z;
-              const float t = std::clamp (((world_x - start.x_m) * run_x +
-                                           (world_z - start.z_m) * run_z) /
-                                            run2,
-                                          0.0f,
-                                          1.0f);
+              // The cell's place in the segment's own frame: how far
+              // along it, and how far to its left (negative) or right. A
+              // segment owns the strip beside itself and a cell's reach
+              // past its ends, where its neighbours' strips part at a bend.
+              const float along = ((world_x - start.x_m) * run_x +
+                                   (world_z - start.z_m) * run_z) /
+                                  run;
+              if (along < -cell_reach || along > run + cell_reach)
+                continue;
+              const float t = std::clamp (along / run, 0.0f, 1.0f);
               const float center_x = std::lerp (start.x_m, end.x_m, t);
               const float center_z = std::lerp (start.z_m, end.z_m, t);
               const float from_x = world_x - center_x;
               const float from_z = world_z - center_z;
-              const float distance =
-                std::sqrt (from_x * from_x + from_z * from_z);
-              const float half_width =
-                std::lerp (start.half_width_m, end.half_width_m, t);
+              const float side = from_z * direction_x - from_x * direction_z;
               const float profile =
                 std::lerp (start.source_profile, end.source_profile, t);
-              const float local_radius = half_width + margin * profile;
-              if (distance >= local_radius || local_radius <= 1e-4f)
+              const float reach_m =
+                (side < 0.0f ? std::lerp (start.left_m, end.left_m, t)
+                             : std::lerp (start.right_m, end.right_m, t)) +
+                margin * profile;
+              if (std::abs (side) >= reach_m)
                 continue;
+              const float distance =
+                std::sqrt (from_x * from_x + from_z * from_z);
               const int x = wrap_index (unwrapped_x, width);
               const int z = wrap_index (unwrapped_z, height);
               const std::size_t cell = static_cast<std::size_t> (z) * width + x;
-              const float nearness = 1.0f - distance / local_radius;
-              const float weight = nearness * nearness;
+              const float near =
+                blend_reach * blend_reach /
+                (distance * distance + blend_reach * blend_reach);
+              const float weight = near * near;
               // Where currents meet they mix by the water each brings: a
               // brook does not turn the river it joins.
               const float flowing =
@@ -845,22 +926,81 @@ namespace moppe::terrain {
                 ground +
                   std::max (depth_limit,
                             std::lerp (start.depth_m, end.depth_m, t) + 0.5f));
-              // The nearest section's level: the stage is level across a
-              // section, and each cell lies in the one it is nearest.
-              const float score = distance;
-              if (candidate > ground + 0.005f && score < running_score[cell]) {
-                running_score[cell] = score;
-                running_level[cell] = candidate;
+              Nearest& found = nearest[cell];
+              if (found.reach != reach.id) {
+                settle_nearest (cell);
+                found = { distance, candidate, reach.id };
+              } else if (distance < found.distance) {
+                found.distance = distance;
+                found.level = candidate;
               }
             }
         }
       }
+      for (std::size_t cell = 0; cell < count; ++cell)
+        settle_nearest (cell);
     }
 
     for (std::size_t cell = 0; cell < count; ++cell) {
-      if (std::isfinite (running_score[cell])) {
-        surface[cell] = std::max (surface[cell], running_level[cell]);
+      if (!(running_weight[cell] > 0.0f))
+        continue;
+      // A current through still water calms its swell.
+      if (still[cell]) {
         amplitude[cell] = 0.0f;
+        continue;
+      }
+      const float stands = running_level[cell] / running_weight[cell];
+      if (stands > surface_elevation_value (elevations[cell]) + 0.005f) {
+        surface[cell] = std::max (surface[cell], stands);
+        amplitude[cell] = 0.0f;
+      }
+    }
+
+    // Beside still water a river's surface draws down to it: within a few
+    // cells of a lake or the sea it stands no higher over that level than
+    // an easy fall from there allows, so the two meet on a slope, not a
+    // step.
+    {
+      MOPPE_PROFILE_ZONE ("watercourse.draw_down");
+      constexpr float fall = 0.12f;
+      constexpr std::uint8_t reach = 4;
+      const float stride = std::min (spacing_x, spacing_z);
+      const auto wet = [&] (std::size_t cell) {
+        return surface[cell] >
+               surface_elevation_value (elevations[cell]) + 0.005f;
+      };
+      std::vector<std::uint8_t> steps (count, 0);
+      std::vector<float> beside (count, 0.0f);
+      std::vector<std::uint32_t> front;
+      for (std::size_t cell = 0; cell < count; ++cell)
+        if (still[cell] && wet (cell)) {
+          beside[cell] = surface[cell];
+          front.push_back (static_cast<std::uint32_t> (cell));
+        }
+      for (std::size_t next = 0; next < front.size (); ++next) {
+        const std::uint32_t cell = front[next];
+        if (steps[cell] == reach)
+          continue;
+        const int x = static_cast<int> (cell % width);
+        const int z = static_cast<int> (cell / width);
+        for (int dz = -1; dz <= 1; ++dz)
+          for (int dx = -1; dx <= 1; ++dx) {
+            const std::size_t near =
+              static_cast<std::size_t> (wrap_index (z + dz, height)) * width +
+              wrap_index (x + dx, width);
+            if (still[near] || steps[near] || !wet (near))
+              continue;
+            steps[near] = steps[cell] + 1;
+            beside[near] = beside[cell];
+            front.push_back (static_cast<std::uint32_t> (near));
+            // Over ground that stands above the still water it is the
+            // depth that eases off, so a cascade keeps its bed wet down
+            // to the shore.
+            const float ground = surface_elevation_value (elevations[near]);
+            surface[near] = std::min (surface[near],
+                                      std::max (beside[near], ground) +
+                                        fall * stride * steps[near]);
+          }
       }
     }
 
@@ -882,6 +1022,78 @@ namespace moppe::terrain {
         flow[cell] = Vec3 (flow_x[cell] * share * speed,
                            -flow_grade[cell] * share * speed,
                            flow_z[cell] * share * speed);
+      }
+    }
+
+    // Where still water stands a step above the water next to it, over a
+    // lake's rim or off a perched pool, it spills: it runs toward the lower
+    // water as fast as the drop makes it, and sheds that drop.
+    {
+      MOPPE_PROFILE_ZONE ("watercourse.spills");
+      constexpr float least_drop = 0.12f;
+      const auto wet = [&] (std::size_t cell) {
+        return surface[cell] >
+               surface_elevation_value (elevations[cell]) + 0.005f;
+      };
+      std::vector<Vec3> spills (count, Vec3 (0.0f, 0.0f, 0.0f));
+      for (int z = 0; z < height; ++z)
+        for (int x = 0; x < width; ++x) {
+          const std::size_t cell = static_cast<std::size_t> (z) * width + x;
+          // Running water already descends its own grade; this is for
+          // water with no current to say so.
+          const Vec3 current = flow[cell];
+          if (!wet (cell) || current[0] != 0.0f || current[2] != 0.0f)
+            continue;
+          float drop = least_drop;
+          int toward_x = 0;
+          int toward_z = 0;
+          for (int dz = -1; dz <= 1; ++dz)
+            for (int dx = -1; dx <= 1; ++dx) {
+              const std::size_t near =
+                static_cast<std::size_t> (wrap_index (z + dz, height)) * width +
+                wrap_index (x + dx, width);
+              if (near == cell || !wet (near) ||
+                  !(surface[cell] - surface[near] > drop))
+                continue;
+              drop = surface[cell] - surface[near];
+              toward_x = dx;
+              toward_z = dz;
+            }
+          if (toward_x == 0 && toward_z == 0)
+            continue;
+          const float run_x = static_cast<float> (toward_x) * spacing_x;
+          const float run_z = static_cast<float> (toward_z) * spacing_z;
+          const float run = std::sqrt (run_x * run_x + run_z * run_z);
+          const float speed =
+            std::min (std::sqrt (2.0f * gravity * drop), 5.0f);
+          const Vec3 spill (speed * run_x / run,
+                            -speed * std::min (drop / run, 1.0f),
+                            speed * run_z / run);
+          // The lip and the water it lands in both.
+          spills[cell] = spill;
+          const std::size_t below =
+            static_cast<std::size_t> (wrap_index (z + toward_z, height)) *
+              width +
+            wrap_index (x + toward_x, width);
+          const float landing = spills[below][1];
+          const float falling = spill[1];
+          if (landing > 0.5f * falling)
+            spills[below] = spill * 0.5f;
+        }
+      for (std::size_t cell = 0; cell < count; ++cell) {
+        const Vec3& spill = spills[cell];
+        const float falling = spill[1];
+        if (falling >= 0.0f)
+          continue;
+        // A current already there keeps its heading and takes the fall.
+        const Vec3 current = flow[cell];
+        if (current[0] != 0.0f || current[2] != 0.0f)
+          flow[cell] =
+            Vec3 (current[0],
+                  std::min (static_cast<float> (current[1]), falling),
+                  current[2]);
+        else
+          flow[cell] = spill;
       }
     }
 

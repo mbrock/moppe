@@ -3603,10 +3603,19 @@
                                                            (* cell extent)))
                                                      0.0)
                                        :z)))
-         (running (smoothstep 0.04 0.35 speed))
-         ;; The current already runs as the root of the depth at each
-         ;; sample; between samples the last of the shallows lags a little.
-         (current (* stream (mix 0.6 1.0 (smoothstep 0.02 0.25 depth))))
+         ;; Water with any current to speak of is the river's: its ripples
+         ;; are the current's, not the wind's, which would send them one
+         ;; way across every pool whichever way the river ran.
+         (running (smoothstep 0.02 0.12 speed))
+         (lively (smoothstep 0.15 0.9 speed))
+         ;; The pace the eye is shown.  A pool creeps at centimetres a
+         ;; second, which the ripples' short cycle would show as nothing at
+         ;; all, so the pattern never drifts slower than a stroll; faster
+         ;; water moves at its own pace.  The current already runs as the
+         ;; root of the depth at each sample; between samples the last of
+         ;; the shallows lags a little.
+         (current (* downstream (max speed 0.3)
+                     (mix 0.6 1.0 (smoothstep 0.02 0.25 depth))))
          (rapids (rapid descent))
          ;; Flow mapping.  Each copy's cycle starts at a place's own time,
          ;; so no two reaches pulse together, and jumps to fresh noise when
@@ -3676,8 +3685,10 @@
                     (steepness (sqrt (dot gradient gradient))))
                (* gradient (/ (min steepness 1.5)
                               (max steepness 0.0001))))))
+         ;; A slow reach is nearly glass; a quick one is lively before it
+         ;; ever breaks.
          (slope (mix (* still (+ (* 0.03 gusts) (* 0.10 swell)))
-                     (* flowing (+ 0.15 (* 0.30 rapids)))
+                     (* flowing (+ (mix 0.05 0.15 lively) (* 0.30 rapids)))
                      running))
          (n (normalize (vec3 (* -1.0 (+ (swizzle slope :x) (swizzle tilt :x)))
                              1.0
@@ -3692,7 +3703,7 @@
          ;; grazing angle their facets turn toward the eye, so gusts darken
          ;; a distant lake between its bright slicks.
          (roughness (mix (+ (* 0.03 gusts) (* 0.10 swell))
-                         (+ 0.15 (* 0.30 rapids)) running))
+                         (+ (mix 0.05 0.15 lively) (* 0.30 rapids)) running))
          (unresolved (* (smoothstep 0.1 0.9 footprint)
                         (clamp (* roughness 7.0) 0.0 1.0)))
          ;; This fragment's place on the copied scene, and its depth there

@@ -25,6 +25,13 @@ namespace moppe::terrain {
   // and a river with eighty times the water drowns the same sills and runs
   // wide over them on one grade.
   //
+  // A cell takes the stage of the section it lies in, the nearest of each
+  // reach that covers it, and where reaches lie alongside a level between
+  // theirs. Still water is a boundary: a river's own surface ends at a
+  // lake or the sea as at a bank, brings it a current but never a level,
+  // and draws down to it over the last few cells; and still water standing
+  // a step above its neighbour, over a rim, spills there.
+  //
   // The current follows from the same sections. Along a river the discharge
   // is what it is, so the water is quick where the section is small and
   // slow where it is large, and across one it runs as the root of its
