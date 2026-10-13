@@ -27,10 +27,18 @@ The original `moppe` and `moppe-steamdeck` packages remain available.
 
 `demo-video` reuses `tools/record` and its river camera scene, which shares the
 recording facilities used by `tools/trailer`. It records 20 seconds at 1280x720,
-30 fps. Xvfb supplies the window surface, while host RADV renders the frames.
+30 fps. Headless gamescope supplies the window surface, while host RADV renders the frames.
 It requires a Nix builder advertising `gpu` with `/dev/dri` and
 `/run/opengl-driver` exposed to its sandbox. Video rendering depends on the
 host driver; byte-for-byte reproducibility is not claimed.
 
 The output attrset can later include a signed macOS app requiring a Mac runner.
 No signing credentials or Mac derivation are included now.
+
+The web toolchain uses nixpkgs' Emscripten with LLVM 23 explicitly selected;
+LLVM 22 rejects quantity concepts used by this revision. SDL's source copy is
+writable inside the sandbox because the Emscripten port installs a generated
+configuration header. These are build inputs and do not require a host SDK.
+
+`node tools/test-web-terrain.mjs` checks successful terrain startup and keeps
+startup blocked for missing artifacts or invalid manifest filenames.

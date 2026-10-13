@@ -1,5 +1,7 @@
 { pkgs, luv-shaderc, terrain }:
 let
+  # Emscripten needs LLVM 23 for the quantity concepts used by this tree.
+  emscripten = pkgs.emscripten.override { llvmPackages = pkgs.llvmPackages_23; };
   sources = import ../moppe/platform/sdl/sources.nix { inherit pkgs; };
   sdl = pkgs.fetchzip {
     url = "https://github.com/libsdl-org/SDL/archive/release-3.4.2.zip";
@@ -13,14 +15,16 @@ in pkgs.stdenvNoCC.mkDerivation {
   pname = "moppe-web";
   version = "1";
   inherit (sources) src;
-  nativeBuildInputs = [ pkgs.emscripten pkgs.cmake pkgs.ninja pkgs.python3 luv-shaderc ];
+  nativeBuildInputs = [ emscripten pkgs.cmake pkgs.ninja pkgs.python3 luv-shaderc ];
   dontFixup = true;
   configurePhase = ''
     export HOME=$TMPDIR/home EM_CACHE=$TMPDIR/em-cache EMCC_CORES=$NIX_BUILD_CORES
     mkdir -p "$HOME" "$EM_CACHE"
-    cp -r ${pkgs.emscripten}/share/emscripten/cache/. "$EM_CACHE/"
+    cp -r ${emscripten}/share/emscripten/cache/. "$EM_CACHE/"
     chmod -R u+w "$EM_CACHE"
-    export EMCC_LOCAL_PORTS="sdl3=${sdl}"
+    cp -r ${sdl} "$TMPDIR/sdl3"
+    chmod -R u+w "$TMPDIR/sdl3"
+    export EMCC_LOCAL_PORTS="sdl3=$TMPDIR/sdl3"
     emcmake cmake -S . -B build-web -G Ninja \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
       -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
