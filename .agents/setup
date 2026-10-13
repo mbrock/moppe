@@ -229,9 +229,10 @@ replace_block "$HOME/.config/amp/AGENTS.md" "<!-- BEGIN Moppe orb -->" \
   the CPU). Gazetteer, water captures, `MOPPE_WALK` scripts, and
   `tools/record` (which skips gamescope without a GPU) work the same way,
   slowly: two seconds of 640x360 video take nearly two minutes. Show
-  results by reading the PNG, or a `--sheet` contact sheet.
+  results by reading the PNG, or a `--sheet` contact sheet; AGENTS.md's
+  Visual Validation says how to spend frames this dear.
 - `./build/nhal-demo --capture /tmp/nhal.tga --frames 30` renders the NHAL
-  demo in seconds. `vulkaninfo --summary` shows the driver.
+  demo in seconds. The game's first line names the driver (`llvmpipe`).
 - `make web` builds the browser game with Emscripten; `make etalon-test`
   runs Étalon; `tools/format --check` uses the shell's clang-format 21.
 EOF

@@ -489,6 +489,46 @@
   - Overrides: `MOPPE_IOS_DEVICE`, `MOPPE_IOS_TEAM`,
     `MOPPE_IOS_CONFIGURATION`, and `MOPPE_IOS_BUILD_DIR`.
 
+## Visual Validation: Look for the GPU First
+- Agents run either on the developer's machines (a Mac, or a Linux runner
+  with a GPU) or in Amp orbs: Linux VMs with no GPU and no display, where
+  Mesa's lavapipe (llvmpipe) draws every frame on the CPU (see the Linux
+  entry above). Before choosing how to see a change, find out which:
+  `uname`; on Linux, no `/dev/dri/renderD*` or a `VK_DRIVER_FILES` naming
+  `lvp_icd` means the CPU, and the game's first line says for certain
+  (`moppe: NHAL renderer on Vulkan (llvmpipe ...)`).
+- On the CPU, frames are dear: a 640x360 still of the cached default world
+  takes about half a minute, a 1280x720 one about a minute, and two
+  seconds of 640x360 video nearly two minutes, so a scene's default
+  `tools/record` would take hours. There, as a rule of thumb:
+  - Settle what can be settled without pixels: unit tests,
+    `world-fingerprint`, logs, and analysis of the fields and state.
+  - Keep to the default world (seed 123, 2048 samples, play): its land
+    comes from `tools/fetch-land` and the finished world loads from the
+    cache after the first launch. Generate another, or pass
+    `--refresh-world-cache` or `--no-world-cache`, only when generation is
+    what changed. Pin the scene (`MOPPE_OPENING=none`, `MOPPE_CLOCK` or
+    `MOPPE_SUNHEIGHT`, a `MOPPE_WALK` or `MOPPE_DEMO` script) so a before
+    and after differ only by the change.
+  - Take a few targeted stills, small: `--screenshot` with `--window-size
+    640x360` (into a directory that exists: a missing one is reported
+    written but nothing is saved), `--water-screenshot`,
+    `tools/capture-water`; for the renderer alone, `./build/nhal-demo
+    --capture` takes seconds.
+  - Render one thing at a time: lavapipe already fills every core, so
+    parallel captures only slow each other. Run long ones in the
+    background with a timeout.
+  - Record video only when motion is the question, and then briefly:
+    `tools/record OUT.mp4 SCENE --size 640x360 --seconds 2` (it skips
+    gamescope without a GPU), with `--start` to reach the moment cheaply
+    and `--sheet` for a contact sheet to read.
+- With a GPU the workflows above run at their ordinary speeds: full-length
+  recordings at 720p or 1080p, the gazetteer, `tools/ride-judge`, and the
+  trailer are reasonable ways to check work.
+- These are defaults, not rules. When only a long or full-size capture can
+  answer the question and there is no GPU, say what it would cost, or ask
+  for it to be run on a machine with one.
+
 ## Research Library
 - The hosted Sheaf research library is available through `tools/sheaf`; start
   with `tools/sheaf help`, then use `search`, `read`, and `note`.
