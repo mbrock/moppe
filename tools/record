@@ -8,6 +8,8 @@
 # ffmpeg, so the video is even and repeatable however fast the machine is.
 # On Linux it runs without a window, inside a headless gamescope of the
 # size asked for; elsewhere, or with --window, in its own inactive window.
+# gamescope needs a GPU: without one (lavapipe in an Amp orb) the game's
+# window is SDL's offscreen one where SDL_VIDEO_DRIVER allows it.
 #
 # Scenes set the stage; without one the game simply starts in play:
 #   play      on foot at the trailhead, no opening (the default)
@@ -181,7 +183,8 @@ height=${size#*x}
 
 rm -f "$output"
 if [[ -z $window && $(uname) == Linux ]] &&
-   command -v gamescope >/dev/null; then
+   command -v gamescope >/dev/null && compgen -G '/dev/dri/renderD*' >/dev/null
+then
   # gamescope and the X server it starts say a good deal; the game's own
   # lines are the ones that matter.
   said='^moppe: \(video\|camp\|the day\|multiplayer\)\|[Ee]rror\|what()'

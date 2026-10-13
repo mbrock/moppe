@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
-# Prepare a Debian 12 Amp orb for Moppe's portable work: the Linux unit-test
-# build (clang + libc++), the Emscripten/WebGPU browser build, clang-format,
-# and Étalon's Zig nightly. Metal/Apple targets need macOS and are skipped.
+# Prepare a Debian 12 Amp orb for Moppe on Linux: Nix and the flake's
+# development shell (clang 21 and clang-format, SDL3, Vulkan, luv-shaderc,
+# ffmpeg) for the game, its tests, and tools/record; Mesa's lavapipe, so
+# the game renders on the CPU without a GPU or a display; Emscripten for
+# the browser build; and Étalon's Zig nightly. Apple targets need macOS.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-llvm_version=20
 emsdk_dir="$HOME/emsdk"
 zig_dir="$HOME/.local/opt/zig"
+nix_profile="$HOME/.nix-profile"
+devenv="$HOME/.local/bin/moppe-devenv"
+# The browser build uses the Emscripten the Pages workflow publishes with.
+emscripten_version="$(sed -n 's/^ *EMSCRIPTEN_VERSION: *//p' \
+  "$repo_root/.github/workflows/pages.yml")"
 
 step() {
   printf '\n==> %s\n' "$*"
@@ -28,8 +34,26 @@ missing_packages() {
   done
 }
 
+# Replace the block between "$2" and "$3" in file "$1" with stdin.
+replace_block() {
+  local file="$1" begin="$2" end="$3" body
+  body="$(cat)"
+  touch "$file"
+  python3 -I - "$file" "$begin" "$end" "$body" <<'EOF'
+import sys
+path, begin, end, body = sys.argv[1:]
+text = open(path).read()
+start = text.find(begin + "\n")
+if start >= 0:
+    stop = text.index(end + "\n", start) + len(end) + 1
+    text = text[:start] + text[stop:]
+text = text.rstrip("\n") + "\n\n" + begin + "\n" + body + "\n" + end + "\n"
+open(path, "w").write(text)
+EOF
+}
+
 step "System packages"
-base_packages=(cmake ninja-build wget gnupg xz-utils ca-certificates)
+base_packages=(xz-utils ca-certificates)
 mapfile -t missing < <(missing_packages "${base_packages[@]}")
 if ((${#missing[@]})); then
   sudo apt-get update -qq
@@ -37,35 +61,78 @@ if ((${#missing[@]})); then
 fi
 done_step
 
-step "LLVM ${llvm_version} (clang, libc++, lld, clang-format)"
-llvm_packages=("clang-$llvm_version" "lld-$llvm_version"
-  "libc++-$llvm_version-dev" "libc++abi-$llvm_version-dev"
-  "clang-format-$llvm_version")
-mapfile -t missing < <(missing_packages "${llvm_packages[@]}")
-if ((${#missing[@]})); then
-  llvm_list=/etc/apt/sources.list.d/llvm-$llvm_version.list
-  if [[ ! -f $llvm_list ]]; then
-    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key |
-      sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
-    echo "deb http://apt.llvm.org/bookworm/" \
-      "llvm-toolchain-bookworm-$llvm_version main" |
-      sudo tee "$llvm_list" >/dev/null
-  fi
-  sudo apt-get update -qq
-  apt_install "${missing[@]}"
+step "Nix (single-user)"
+if [[ ! -x $nix_profile/bin/nix ]]; then
+  sudo mkdir -m 0755 -p /nix
+  sudo chown "$(id -u):$(id -g)" /nix
+  installer="$(mktemp)"
+  curl -fsSL https://nixos.org/nix/install -o "$installer"
+  sh "$installer" --no-daemon --yes --no-modify-profile >/dev/null
+  rm -f "$installer"
 fi
-# tools/format expects an unversioned clang-format.
-sudo ln -sf "/usr/bin/clang-format-$llvm_version" /usr/local/bin/clang-format
+mkdir -p "$HOME/.config/nix"
+grep -q '^experimental-features' "$HOME/.config/nix/nix.conf" 2>/dev/null ||
+  echo "experimental-features = nix-command flakes" \
+    >> "$HOME/.config/nix/nix.conf"
+# The installer cannot change this running script's environment.
+# shellcheck disable=SC1091
+source "$nix_profile/etc/profile.d/nix.sh"
 done_step
 
-step "Emscripten (emsdk latest)"
+step "The development shell and lavapipe"
+# moppe-devenv prints the flake's development shell as shell code, cached
+# by the files that define it (and kept from the garbage collector), plus
+# Mesa's CPU Vulkan driver when the machine has no GPU of its own, and
+# SDL's offscreen video when it has no display: the game then renders
+# into an invisible window and its screenshots and videos still work.
+mkdir -p "$(dirname "$devenv")"
+cat > "$devenv" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+root="$repo_root"
+cache="\${XDG_CACHE_HOME:-\$HOME/.cache}/moppe-devenv"
+mkdir -p "\$cache"
+key="\$(cat "\$root/flake.nix" "\$root/flake.lock" \\
+  "\$root/moppe/platform/sdl/shell.nix" | sha256sum | cut -c1-16)"
+if [[ ! -s \$cache/\$key.sh ]]; then
+  nix print-dev-env --profile "\$cache/profile" "\$root" \\
+    > "\$cache/\$key.sh.tmp" 2>"\$cache/last-error.log" || {
+    cat "\$cache/last-error.log" >&2
+    exit 1
+  }
+  find "\$cache" -name '*.sh' -delete
+  mv "\$cache/\$key.sh.tmp" "\$cache/\$key.sh"
+fi
+# The development shell's compiler sets its own flags; a login shell's
+# (an older version of this setup exported libc++ ones) would break it.
+echo "unset CFLAGS CXXFLAGS LDFLAGS"
+cat "\$cache/\$key.sh"
+if [[ ! -s \$cache/mesa ]]; then
+  nix build --out-link "\$cache/mesa-root" --print-out-paths \\
+    --inputs-from "\$root" nixpkgs#mesa > "\$cache/mesa"
+fi
+cat <<EOS
+if ! compgen -G '/dev/dri/renderD*' >/dev/null &&
+   [[ -z \\\${VK_DRIVER_FILES:-}\\\${VK_ICD_FILENAMES:-} ]]; then
+  export VK_DRIVER_FILES=\$(cat "\$cache/mesa")/share/vulkan/icd.d/lvp_icd.x86_64.json
+fi
+export SDL_VIDEO_DRIVER=\\\${SDL_VIDEO_DRIVER:-wayland,x11,offscreen}
+EOS
+EOF
+chmod +x "$devenv"
+"$devenv" >/dev/null
+done_step
+
+step "Emscripten $emscripten_version"
 if [[ ! -d $emsdk_dir ]]; then
   git clone -q --depth 1 https://github.com/emscripten-core/emsdk.git \
     "$emsdk_dir"
 fi
-if [[ ! -x $emsdk_dir/upstream/emscripten/emcc ]]; then
-  "$emsdk_dir/emsdk" install latest >/dev/null
-  "$emsdk_dir/emsdk" activate latest >/dev/null
+version_file="$emsdk_dir/upstream/emscripten/emscripten-version.txt"
+if [[ "$(tr -d '"' < "$version_file" 2>/dev/null)" != "$emscripten_version" ]]
+then
+  "$emsdk_dir/emsdk" install "$emscripten_version" >/dev/null
+  "$emsdk_dir/emsdk" activate "$emscripten_version" >/dev/null
 fi
 done_step
 
@@ -81,62 +148,84 @@ print(json.load(sys.stdin)["master"]["x86_64-linux"]["tarball"])')"
   mv "$tmp"/zig-* "$zig_dir"
   rmdir "$tmp"
 fi
-mkdir -p "$HOME/.local/bin"
 ln -sf "$zig_dir/zig" "$HOME/.local/bin/zig"
 done_step
 
 step "Login-shell environment"
-# The Linux test build uses clang with libc++; Debian's GCC 12 and its
-# libstdc++ are too old for Moppe's C++23 and mp-units. Emscripten goes last
-# on PATH: its tree contains a cmake/ directory that shadows /usr/bin/cmake
-# for GNU make's PATH lookup.
-profile_marker="# Moppe orb toolchain"
-if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
-  cat >> "$HOME/.bash_profile" <<EOF
-
-$profile_marker
-export CC=clang-$llvm_version CXX=clang++-$llvm_version
-export CXXFLAGS="-stdlib=libc++"
-export LDFLAGS="-stdlib=libc++ -fuse-ld=lld"
+# Earlier versions of this script exported a Debian clang with libc++,
+# which the development shell's compiler cannot link with.
+sed -i '/^# Moppe orb toolchain$/,/^esac$/d' "$HOME/.bash_profile"
+# Login shells in the repository get the development shell. Emscripten
+# goes last on PATH: its tree contains a cmake/ directory that shadows
+# cmake for GNU make's PATH lookup.
+replace_block "$HOME/.bash_profile" "# BEGIN Moppe orb environment" \
+  "# END Moppe orb environment" <<EOF
+if [ -e "$nix_profile/etc/profile.d/nix.sh" ]; then
+  . "$nix_profile/etc/profile.d/nix.sh"
+fi
 export EMSDK="$emsdk_dir"
 case ":\$PATH:" in
   *":$emsdk_dir/upstream/emscripten:"*) ;;
   *) export PATH="\$HOME/.local/bin:\$PATH:$emsdk_dir/upstream/emscripten" ;;
 esac
+case "\$PWD/" in
+  "$repo_root"/*)
+    if [ -z "\${IN_NIX_SHELL:-}" ]; then
+      eval "\$("$devenv")"
+      export PATH="\$PATH:$emsdk_dir/upstream/emscripten"
+    fi ;;
+esac
 EOF
-fi
 done_step
 
-step "Configure and warm the native test build"
-# FetchContent downloads mp-units during configure; building the tests once
-# leaves a warm build directory in the snapshot.
+step "Configure and warm the native build"
+# The game, the NHAL demo, and the unit tests, as CLAUDE.md builds them. A
+# build/ configured by another compiler (an older snapshot's) starts over.
 (
   cd "$repo_root"
-  export CC="clang-$llvm_version" CXX="clang++-$llvm_version"
-  export CXXFLAGS="-stdlib=libc++" LDFLAGS="-stdlib=libc++ -fuse-ld=lld"
-  [[ -f build/build.ninja ]] || cmake -B build -G Ninja >/dev/null
-  cmake --build build --target moppe-tests
+  eval "$("$devenv")"
+  compiler="$(command -v "$CXX")"
+  if [[ ! -f build/build.ninja ]] ||
+     ! grep -qx "CMAKE_CXX_COMPILER:[A-Z]*=$compiler" build/CMakeCache.txt
+  then
+    rm -rf build
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo >/dev/null
+  fi
+  log="$(mktemp)"
+  if ! cmake --build build --target moppe nhal-demo moppe-tests \
+    >"$log" 2>&1; then
+    grep -E 'error|FAILED' "$log" | head -40
+    exit 1
+  fi
+  rm -f "$log"
 )
 done_step
 
-step "Orb agent guidance"
-guidance="$HOME/.config/amp/AGENTS.md"
-guidance_marker="# Moppe in this orb"
-mkdir -p "$(dirname "$guidance")"
-if ! grep -Fqx "$guidance_marker" "$guidance" 2>/dev/null; then
-  cat >> "$guidance" <<'EOF'
+step "The default world's land"
+"$repo_root/tools/fetch-land" >/dev/null || true
+done_step
 
+step "Orb agent guidance"
+replace_block "$HOME/.config/amp/AGENTS.md" "<!-- BEGIN Moppe orb -->" \
+  "<!-- END Moppe orb -->" <<'EOF'
 # Moppe in this orb
-- This orb is Linux: the Metal game, Atelier, Lavoir, and Apple targets do
-  not build here. Unit tests, the WebAssembly build, formatting, and Étalon do.
-- Login shells export CC/CXX (clang 20), libc++ CXXFLAGS/LDFLAGS, and put
-  Emscripten and Zig nightly on PATH. `build/` is preconfigured for tests:
-  `cmake --build build --target moppe-tests && ctest --test-dir build
-  --output-on-failure`.
-- `make web` builds the browser game with Emscripten; `make etalon-test` runs
-  Étalon; `tools/format --check` uses clang-format 20.
-- `periodic_geology_is_bit_deterministic` pins a macOS floating-point hash
-  and fails on Linux libm; other tests should pass.
+- Linux with no GPU and no display. Login shells in the repository load the
+  flake's `nix develop` shell (clang 21, SDL3, Vulkan, luv-shaderc,
+  ffmpeg), point Vulkan at Mesa's lavapipe (CPU), and let SDL fall back to
+  its offscreen driver, so the real game renders headless. Apple targets
+  do not build here.
+- `build/` is configured RelWithDebInfo with the game, `nhal-demo`, and
+  the tests built: `cmake --build build --target moppe-tests && ctest
+  --test-dir build --output-on-failure`.
+- A frame of the game: `MOPPE_OPENING=none ./build/moppe --windowed
+  --window-size 1280x720 --screenshot /tmp/shot.png` (about a minute on
+  the CPU). Gazetteer, water captures, `MOPPE_WALK` scripts, and
+  `tools/record` (which skips gamescope without a GPU) work the same way,
+  slowly: two seconds of 640x360 video take nearly two minutes. Show
+  results by reading the PNG, or a `--sheet` contact sheet.
+- `./build/nhal-demo --capture /tmp/nhal.tga --frames 30` renders the NHAL
+  demo in seconds. `vulkaninfo --summary` shows the driver.
+- `make web` builds the browser game with Emscripten; `make etalon-test`
+  runs Étalon; `tools/format --check` uses the shell's clang-format 21.
 EOF
-fi
 done_step

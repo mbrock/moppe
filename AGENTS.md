@@ -411,7 +411,11 @@
   (the same controls as the Mac). `./build/nhal-demo --capture
   /tmp/nhal.tga --frames 30` renders the demo without a window.
   `MOPPE_VULKAN_VALIDATION=1` turns on the Khronos validation layer. The
-  device is `moppe/nhal/vulkan/`; see docs/nhal.md.
+  device is `moppe/nhal/vulkan/`; see docs/nhal.md. With no GPU or display
+  (an Amp orb, set up by `.agents/setup`), Mesa's lavapipe
+  (`VK_DRIVER_FILES`) and SDL's offscreen video
+  (`SDL_VIDEO_DRIVER=wayland,x11,offscreen`) run the real game headless on
+  the CPU: `--screenshot`, captures, and `tools/record` all work, slowly.
 - Browser (NHAL on WebGPU, the SDL host built by Emscripten; docs/web.md):
   `make web-serve` builds `build-web/moppe.html` and serves it at
   <http://localhost:8080> (`make web` only builds; `brew install emscripten
