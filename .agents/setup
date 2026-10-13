@@ -129,7 +129,7 @@ if [[ ! -d $emsdk_dir ]]; then
     "$emsdk_dir"
 fi
 version_file="$emsdk_dir/upstream/emscripten/emscripten-version.txt"
-if [[ "$(tr -d '"' < "$version_file" 2>/dev/null)" != "$emscripten_version" ]]
+if [[ "$(tr -d '"' 2>/dev/null < "$version_file")" != "$emscripten_version" ]]
 then
   "$emsdk_dir/emsdk" install "$emscripten_version" >/dev/null
   "$emsdk_dir/emsdk" activate "$emscripten_version" >/dev/null
@@ -152,6 +152,13 @@ ln -sf "$zig_dir/zig" "$HOME/.local/bin/zig"
 done_step
 
 step "Login-shell environment"
+# A fresh orb has no ~/.bash_profile yet (Amp writes its own lines there
+# after setup); one created here must still read Debian's ~/.profile,
+# which bash skips once ~/.bash_profile exists.
+if [[ ! -e $HOME/.bash_profile ]]; then
+  printf '%s\n' '[ -f "$HOME/.profile" ] && . "$HOME/.profile"' \
+    > "$HOME/.bash_profile"
+fi
 # Earlier versions of this script exported a Debian clang with libc++,
 # which the development shell's compiler cannot link with.
 sed -i '/^# Moppe orb toolchain$/,/^esac$/d' "$HOME/.bash_profile"
