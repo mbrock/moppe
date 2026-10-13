@@ -702,12 +702,16 @@ MOPPE_TEST (walking_and_riding_each_keep_their_own_view) {
   };
   const game::GameLogicState& logic = session.logic ();
 
-  // The game begins on foot, through the walker's eyes.
+  // The game begins on foot, seen from behind.
   session.start_on_foot ();
   MOPPE_CHECK (logic.m_mode == game::M_FOOT);
-  MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
 
-  // Mounting the bike beside them, the view is from behind it.
+  // Through their eyes, then mounting the bike beside them, the view is
+  // from behind it.
+  press (&game::InputFrame::cycle_camera);
+  press (&game::InputFrame::cycle_camera);
+  MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
   press (&game::InputFrame::toggle_mount);
   MOPPE_CHECK (logic.m_mode == game::M_BIKE);
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);

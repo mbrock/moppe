@@ -16,6 +16,10 @@ namespace moppe::game {
   // deliberately concrete application modes, not a generic scene hierarchy.
   enum class FrameSceneMode { Gameplay, Cinematic, WaterInspection, Gazetteer };
 
+  // The following cameras' vertical field of view, at rest; speed widens
+  // it a little.
+  inline constexpr degrees_t CHASE_FIELD_OF_VIEW = 78.0f * u::deg;
+
   // A camera has already been selected by the application before composing a
   // frame.  Keeping its view matrix here preserves cinematics' banked camera
   // while still letting FrameView apply riding-only shake afterward.

@@ -1,4 +1,5 @@
 #include <moppe/game/game_session.hh>
+#include <moppe/gfx/signal.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -214,6 +215,27 @@ namespace moppe::game {
       }
     }
 
+    // Riding, driving, or gliding, a look the player has let go of finds
+    // its way back to the way ahead: soon after a glance, later after a
+    // long look aside, and gently, gathering pace as it comes round. A
+    // machine at rest leaves the view where it was put, there being no
+    // way ahead to watch. On foot the walker turns with the look, so it
+    // is always ahead.
+    void settle_look (GameLogicState& logic, float speed, float elapsed) {
+      logic.m_look_idle += elapsed;
+      if (logic.m_mode == M_FOOT)
+        return;
+      const float aside =
+        std::max (std::abs (logic.m_look_yaw), std::abs (logic.m_look_pitch));
+      const float wait = 0.6f + 1.4f * smoothstep (0.15f, 1.2f, aside);
+      const float rate = 1.3f *
+                         smoothstep (wait, wait + 1.0f, logic.m_look_idle) *
+                         smoothstep (0.5f, 6.0f, speed);
+      const float settle = smoothing_alpha (rate / u::s, elapsed * u::s);
+      logic.m_look_yaw -= logic.m_look_yaw * settle;
+      logic.m_look_pitch -= logic.m_look_pitch * settle;
+    }
+
     void apply_input_frame (GameSession& session,
                             const map::SurfaceGeometry& terrain,
                             const InputFrame& input) {
@@ -348,9 +370,101 @@ namespace moppe::game {
   void GameSession::start_on_foot () {
     if (m_logic.m_mode == M_BIKE)
       toggle_mount (*this);
-    m_logic.m_cam_mode = CAM_HELMET;
+    m_logic.m_cam_mode = CAM_CHASE;
     m_logic.m_look_pitch = 0.0f;
     m_logic.m_fp_eye = m_walker.eye_position ();
+    m_camera.reset ();
+  }
+
+  CameraRig GameSession::camera_rig () const {
+    CameraRig rig;
+    switch (m_logic.m_mode) {
+    case M_FOOT:
+      rig.eye = m_walker.eye_position ();
+      rig.ahead = m_walker.heading ();
+      rig.pivot = m_walker.position () + Vec3 (0, 1.35f, 0);
+      rig.velocity = m_walker.velocity ();
+      rig.distance = 3.8f * u::m;
+      rig.nearest = 0.9f * u::m;
+      rig.elevation = 10.0f * u::deg;
+      break;
+    case M_GLIDER:
+      rig.eye = m_glider.position () - Vec3 (0, 0.75f, 0);
+      rig.ahead = m_glider.heading ();
+      rig.pivot = position_value (m_glider.physical_position ());
+      rig.velocity = velocity_value (m_glider.physical_velocity ());
+      break;
+    case M_JEEP:
+      rig.eye = m_jeep.driver_seat () + m_jeep.up () * 0.78f +
+                m_jeep.forward () * 0.08f;
+      rig.ahead = m_jeep.forward ();
+      rig.pivot = m_jeep.position () + Vec3 (0, 0.9f, 0);
+      rig.velocity = m_jeep.velocity ();
+      rig.distance = 8.0f * u::m;
+      rig.nearest = 3.4f * u::m;
+      break;
+    case M_PASSENGER:
+      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.78f +
+                m_logic.m_seat_heading * 0.08f;
+      rig.ahead = m_logic.m_seat_heading;
+      rig.pivot = m_logic.m_seat_position + Vec3 (0, 0.5f, 0);
+      rig.velocity = m_logic.m_seat_velocity;
+      rig.distance = 8.0f * u::m;
+      rig.nearest = 3.4f * u::m;
+      break;
+    case M_BIKE:
+      rig.eye =
+        m_bike.position () + Vec3 (0, 0.95f, 0) + m_bike.orientation () * 0.4f;
+      rig.ahead = m_bike.orientation ();
+      rig.pivot = position_value (m_bike.physical_position ());
+      rig.velocity = velocity_value (m_bike.physical_velocity ());
+      break;
+    }
+    return rig;
+  }
+
+  void GameSession::follow_camera (const map::SurfaceGeometry& surface,
+                                   seconds_t dt) {
+    const CameraRig rig = camera_rig ();
+    if (m_logic.m_cam_mode == CAM_HELMET) {
+      // Ride inside the head, lightly smoothed so terrain bumps do not
+      // rattle the eyeballs. The head turns about the vertical and then
+      // nods about its own right, from the way ahead.
+      const Vec3 up (0, 1, 0);
+      Vec3 look =
+        Quaternion::rotate (rig.ahead, up, -m_logic.m_look_yaw * u::rad);
+      Vec3 right = cross (look, up);
+      if (length2 (right) > 1e-6f) {
+        normalize (right);
+        look = Quaternion::rotate (look, right, m_logic.m_look_pitch * u::rad);
+      }
+      m_logic.m_fp_eye +=
+        (rig.eye - m_logic.m_fp_eye) * smoothing_alpha (25.0f / u::s, dt);
+      m_camera.place (m_logic.m_fp_eye, m_logic.m_fp_eye + look * 10.0f);
+      return;
+    }
+    // Looking up swings the camera down behind the subject, below its
+    // level and in close over the ground; looking down lifts it nearly
+    // overhead. The look is held to what the camera can show, so turning
+    // back answers at once.
+    const float base = rig.elevation.numerical_value_in (u::rad);
+    const float raised =
+      std::clamp (base - m_logic.m_look_pitch, -0.75f, 1.35f);
+    m_logic.m_look_pitch = base - raised;
+    const float flip = m_logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
+    m_camera.frame (rig.elevation, rig.distance, rig.nearest);
+    m_camera.aim (m_logic.m_look_yaw, raised - base);
+    m_camera.update (moppe::position (rig.pivot),
+                     rig.ahead * flip,
+                     moppe::velocity (rig.velocity),
+                     dt);
+    m_camera.limit (surface, dt);
+  }
+
+  void GameSession::settle_camera (const map::SurfaceGeometry& surface) {
+    m_logic.m_fp_eye = camera_rig ().eye;
+    m_camera.reset ();
+    follow_camera (surface, 0 * u::s);
   }
 
   void GameSession::clear_controls () {
@@ -802,100 +916,8 @@ namespace moppe::game {
     logic.m_shake_time += elapsed;
     logic.m_shake *= decay (7.0f / u::s, elapsed * u::s);
 
-    // Riding or gliding, a look left alone drifts back to the way ahead.
-    logic.m_look_idle += elapsed;
-    if (logic.m_mode != M_FOOT && logic.m_look_idle > 1.2f) {
-      const float settle = 1.0f - decay (2.5f / u::s, elapsed * u::s);
-      logic.m_look_yaw -= logic.m_look_yaw * settle;
-      logic.m_look_pitch -= logic.m_look_pitch * settle;
-    }
-
-    if (logic.m_cam_mode == CAM_HELMET) {
-      // Ride inside the rider's head; lightly smoothed so terrain bumps do
-      // not rattle the eyeballs.
-      Vec3 eye, look;
-      if (logic.m_mode == M_FOOT) {
-        eye = session.walker ().eye_position ();
-        look = session.walker ().heading () * std::cos (logic.m_look_pitch) +
-               Vec3 (0, std::sin (logic.m_look_pitch), 0);
-      } else {
-        Vec3 ahead;
-        if (logic.m_mode == M_GLIDER) {
-          eye = session.glider ().position () - Vec3 (0, 0.75f, 0);
-          ahead = session.glider ().heading ();
-        } else if (logic.m_mode == M_JEEP) {
-          const mov::Jeep& jeep = session.jeep ();
-          eye =
-            jeep.driver_seat () + jeep.up () * 0.78f + jeep.forward () * 0.08f;
-          ahead = jeep.forward ();
-        } else if (logic.m_mode == M_PASSENGER) {
-          eye = logic.m_seat_position + logic.m_seat_up * 0.78f +
-                logic.m_seat_heading * 0.08f;
-          ahead = logic.m_seat_heading;
-        } else {
-          eye = vehicle.position () + Vec3 (0, 0.95f, 0) +
-                vehicle.orientation () * 0.4f;
-          ahead = vehicle.orientation ();
-        }
-        // The head turns about the vertical and then nods about its own
-        // right, from the machine's heading.
-        const Vec3 up (0, 1, 0);
-        look = Quaternion::rotate (ahead, up, -logic.m_look_yaw * u::rad);
-        Vec3 right = cross (look, up);
-        if (length2 (right) > 1e-6f) {
-          normalize (right);
-          look = Quaternion::rotate (look, right, logic.m_look_pitch * u::rad);
-        }
-      }
-      logic.m_fp_eye =
-        logic.m_fp_eye +
-        (eye - logic.m_fp_eye) * smoothing_alpha (25.0f / u::s, elapsed * u::s);
-      session.camera ().place (logic.m_fp_eye, logic.m_fp_eye + look * 10.0f);
-    } else {
-      const float flip = logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
-      const bool in_jeep =
-        logic.m_mode == M_JEEP || logic.m_mode == M_PASSENGER;
-      const float elevation = logic.m_mode == M_FOOT ? 10.0f : 18.0f;
-      session.camera ().frame (elevation * u::deg,
-                               logic.m_mode == M_FOOT ? 3.8f * u::m
-                               : in_jeep              ? 8.0f * u::m
-                                                      : 6.5f * u::m);
-      // Looking up swings the camera down behind the subject and looking
-      // down lifts it, between skimming the ground and nearly overhead.
-      const float base = elevation * 0.017453293f;
-      const float raised =
-        std::clamp (base - logic.m_look_pitch, -0.12f, 1.25f);
-      session.camera ().aim (logic.m_look_yaw, raised - base);
-      if (logic.m_mode == M_FOOT)
-        session.camera ().update (
-          moppe::position (session.walker ().position () + Vec3 (0, 1.35f, 0)),
-          session.walker ().heading () * flip,
-          velocity (session.walker ().velocity ()),
-          dt);
-      else if (logic.m_mode == M_GLIDER)
-        session.camera ().update (session.glider ().physical_position (),
-                                  session.glider ().heading () * flip,
-                                  session.glider ().physical_velocity (),
-                                  dt);
-      else if (logic.m_mode == M_JEEP)
-        session.camera ().update (
-          moppe::position (session.jeep ().position () + Vec3 (0, 0.9f, 0)),
-          session.jeep ().forward () * flip,
-          velocity (session.jeep ().velocity ()),
-          dt);
-      else if (logic.m_mode == M_PASSENGER)
-        session.camera ().update (
-          moppe::position (logic.m_seat_position + Vec3 (0, 0.5f, 0)),
-          logic.m_seat_heading * flip,
-          velocity (logic.m_seat_velocity),
-          dt);
-      else
-        session.camera ().update (vehicle.physical_position (),
-                                  vehicle.orientation () * flip,
-                                  vehicle.physical_velocity (),
-                                  dt);
-      session.camera ().limit (surface);
-    }
+    settle_look (logic, length (session.camera_rig ().velocity), elapsed);
+    session.follow_camera (surface, dt);
 
     // Speed widens the field of view a touch.
     const float kmh =

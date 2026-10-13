@@ -36,8 +36,8 @@ namespace moppe::game {
   // hard cut (on the first shot it is the fade up from black).  sun records
   // the sun height the pose was taken under; the opening does not relight.
   // A caption belongs to the shot before it.  arrival ends the opening in
-  // the player's first-person view, approached from `push` metres behind
-  // and `rise` metres above.
+  // the view play begins with (from behind the walker, or through their
+  // eyes), approached from `push` metres behind and `rise` metres above.
 
   struct OpeningCaption {
     enum class Style { Title, Credit };
@@ -117,12 +117,11 @@ namespace moppe::game {
                                    float clock,
                                    float sun);
 
-  // The final shot of a reel, flying the last few metres into the
-  // player's first-person view (eye and level heading) at its field of
-  // view.
+  // The final shot of a reel, flying the last few metres into the view
+  // play begins with (eye and forward) at its field of view.
   OpeningShot arrival_shot (const OpeningArrival& arrival,
                             const Vec3& eye,
-                            const Vec3& heading,
+                            const Vec3& forward,
                             float fov_deg);
 
   struct OpeningCaptionView {

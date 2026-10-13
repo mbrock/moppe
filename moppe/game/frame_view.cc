@@ -9,7 +9,6 @@
 
 namespace moppe::game {
   namespace {
-    constexpr degrees_t CHASE_FIELD_OF_VIEW = 78.0f * u::deg;
     constexpr degrees_t CHASE_SPEED_WIDENING = 8.0f * u::deg;
     // Keep the historical art-direction calculations bit-for-bit aligned
     // with the game loop while moving them behind the presentation seam.

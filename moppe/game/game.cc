@@ -687,6 +687,8 @@ namespace moppe {
               logic ().m_cam_mode = CAM_CHASE;
             else if (name == "front")
               logic ().m_cam_mode = CAM_FRONT;
+            else if (name == "eyes")
+              logic ().m_cam_mode = CAM_HELMET;
           }
         }
         park_jeep ();
@@ -1663,16 +1665,14 @@ namespace moppe {
         m_opening_shots = reel ? reel->shots : generated_opening ();
         m_opening_arrival =
           reel && reel->arrival ? *reel->arrival : OpeningArrival {};
-        Vec3 eye = session ().subject_position () + Vec3 (0, 1.6f, 0);
-        if (logic ().m_mode == M_FOOT)
-          eye = session ().walker ().eye_position ();
-        m_opening_shots.push_back (
-          arrival_shot (m_opening_arrival, eye, subject_heading (), 70.0f));
+        const OpeningShot last = arrival ();
+        m_opening_shots.push_back (last);
+        const Vec3 start = session ().camera ().position ();
         std::cerr << "moppe: opening: the player starts at "
                   << format_opening_shot ("start",
-                                          eye,
-                                          subject_heading (),
-                                          70.0f,
+                                          start,
+                                          session ().camera ().forward (),
+                                          last.fov_deg,
                                           logic ().m_total_time,
                                           m_sky.sun_height)
                   << '\n';
@@ -2115,11 +2115,7 @@ namespace moppe {
                                     heading);
         logic ().m_fp_eye = session ().walker ().eye_position ();
         if (m_opening.active ())
-          m_opening.replace_arrival (
-            arrival_shot (m_opening_arrival,
-                          session ().walker ().eye_position (),
-                          subject_heading (),
-                          70.0f));
+          m_opening.replace_arrival (arrival ());
       }
 
       Outfit their_outfit () const {
@@ -2843,7 +2839,7 @@ namespace moppe {
         if (m_water_inspection) {
           session ().camera ().place (m_water_inspection->eye,
                                       m_water_inspection->target);
-          session ().camera ().limit (surface ());
+          session ().camera ().keep_above (surface ());
         }
         orbit_camera ();
         spectator_camera (dt);
@@ -4231,25 +4227,20 @@ namespace moppe {
         m_cinematic.stop ();
         m_opening.stop ();
         m_live_input.clear ();
-        // On foot the opening has already arrived in the player's eyes.
-        if (logic ().m_cam_mode == CAM_HELMET) {
-          const Vec3 look = session ().subject_heading ();
-          session ().camera ().place (logic ().m_fp_eye,
-                                      logic ().m_fp_eye + look * 10.0f);
-          return;
-        }
-        const Vec3 subject =
-          subject_position () +
-          (logic ().m_mode == M_FOOT ? Vec3 (0, 1.0f, 0) : Vec3 ());
-        Vec3 heading = subject_heading ();
-        heading[1] = 0.0f;
-        if (length2 (heading) < 1e-5f)
-          heading = Vec3 (0, 0, 1);
-        else
-          normalize (heading);
-        const Vec3 eye = subject - heading * 6.2f + Vec3 (0, 2.5f, 0);
-        session ().camera ().place (eye, subject + heading * 2.0f);
-        session ().camera ().limit (surface ());
+        // The opening has already arrived where play takes up the view.
+        session ().settle_camera (surface ());
+      }
+
+      // The opening's last shot lands where play takes up the view: at
+      // the following camera's place behind the player, or in their eyes.
+      OpeningShot arrival () {
+        session ().settle_camera (surface ());
+        const ChaseCamera& camera = session ().camera ();
+        const float fov = logic ().m_cam_mode == CAM_HELMET
+                            ? 70.0f
+                            : CHASE_FIELD_OF_VIEW.numerical_value_in (u::deg);
+        return arrival_shot (
+          m_opening_arrival, camera.position (), camera.forward (), fov);
       }
 
       void regenerate_world () {

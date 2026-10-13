@@ -48,16 +48,17 @@ namespace moppe::game {
     float m_boost_input = 0.0f;
     Mode m_mode = M_BIKE;
     CamMode m_cam_mode = CAM_CHASE;
-    // Each way of getting about keeps the view last chosen for it: on
-    // foot through the walker's own eyes, riding and gliding from behind.
-    // The one not in use waits here.
-    CamMode m_foot_cam = CAM_HELMET;
+    // Each way of getting about keeps the view last chosen for it, from
+    // behind until Tab chooses another. The one not in use waits here.
+    CamMode m_foot_cam = CAM_CHASE;
     CamMode m_ride_cam = CAM_CHASE;
-    // Gaze above (positive) or below the walker's horizon, in radians.
+    // Gaze above (positive) or below the walker's horizon, in radians;
+    // from outside, looking up lowers the camera and looking down lifts it.
     float m_look_pitch = 0.0f;
     // Riding or gliding, the player's look away from straight ahead:
     // radians around to the right, and seconds since they last moved it
-    // (the view drifts back ahead after a moment).
+    // (the view comes back round ahead once it has been let be; see
+    // settle_look in game_session.cc).
     float m_look_yaw = 0.0f;
     float m_look_idle = 0.0f;
     Vec3 m_fp_eye;

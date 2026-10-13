@@ -40,7 +40,7 @@ namespace {
                        glider.heading (),
                        glider.physical_velocity (),
                        dt);
-        camera.limit (surface);
+        camera.limit (surface, dt);
       }
     }
     return { glider.state (), camera.state () };

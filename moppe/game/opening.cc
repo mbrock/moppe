@@ -363,16 +363,17 @@ namespace moppe::game {
 
   OpeningShot arrival_shot (const OpeningArrival& arrival,
                             const Vec3& eye,
-                            const Vec3& heading,
+                            const Vec3& forward,
                             float fov_deg) {
     OpeningShot shot;
     shot.name = "arrival";
-    shot.heading_deg = heading_degrees (heading);
-    shot.pitch_deg = 0.0f;
+    shot.heading_deg = heading_degrees (forward);
+    shot.pitch_deg = pitch_degrees (forward);
     shot.fov_deg = fov_deg;
     shot.hold = arrival.hold;
-    const Vec3 forward = forward_from (shot.heading_deg, 0.0f);
-    shot.eye = eye - forward * arrival.push + Vec3 (0, arrival.rise, 0);
+    // The push runs along the view, as OpeningPlayer::pose moves it.
+    const Vec3 along = forward_from (shot.heading_deg, shot.pitch_deg);
+    shot.eye = eye - along * arrival.push + Vec3 (0, arrival.rise, 0);
     shot.push = arrival.push;
     shot.rise = -arrival.rise;
     shot.sway = arrival.sway;

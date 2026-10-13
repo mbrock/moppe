@@ -14,6 +14,21 @@ namespace moppe::game {
     bool say_ouchies = false;
   };
 
+  // How the view follows whatever the player is doing, the same for every
+  // way of getting about: the eyes and the way ahead they look along, and
+  // for the following cameras the point on the subject they swing about,
+  // how it moves, and how far behind and how high above it they stand.
+  struct CameraRig {
+    Vec3 eye;
+    Vec3 ahead { 0, 0, 1 };
+    Vec3 pivot;
+    Vec3 velocity;
+    meters_t distance = 6.5f * u::m;
+    // As near as the ground may pull the camera in.
+    meters_t nearest = 2.6f * u::m;
+    degrees_t elevation = 18.0f * u::deg;
+  };
+
   // The mutable state of one playable session on a completed world.  The
   // world retains the surface; the bike and the glider borrow it for their
   // physical readings. A checkpoint is therefore meaningful only on the same
@@ -95,8 +110,16 @@ namespace moppe::game {
     // On foot within reach of the jeep, and nearer it than the bike.
     bool can_drive () const;
     void clear_controls ();
-    // Begin standing beside the parked bike, seeing through your own eyes.
+    // Begin standing beside the parked bike, seen from behind.
     void start_on_foot ();
+    CameraRig camera_rig () const;
+    // Moves the camera the way the current view follows the player over
+    // `dt`; a following camera reset beforehand stands straight at its
+    // place (settle_camera).
+    void follow_camera (const map::SurfaceGeometry& surface, seconds_t dt);
+    // Puts the camera straight where the current view rests, with no
+    // easing: after a cinematic hands the view back.
+    void settle_camera (const map::SurfaceGeometry& surface);
     // Changes how the player gets about, and with it the view: mounting
     // takes up the view last used for riding (from behind, unless Tab
     // chose another) and stepping off the one last used on foot.

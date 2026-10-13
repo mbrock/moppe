@@ -13,22 +13,30 @@
   the same SDL3 host (`moppe/platform/sdl/`) drawing through the NHAL
   renderer, on Metal 4 or Vulkan; on Linux, run cmake inside `nix develop`.
   - Game controller: left stick drives and steers; right stick looks around
-    (on foot it turns the hiker, riding or gliding it swings the view about
-    the way ahead until it drifts back after a moment; the mouse does the
-    same); right trigger boosts; `A`
+    (on foot it turns the hiker, riding, driving, or gliding it swings the
+    view about the way ahead, which it comes back round to once let be and
+    under way; the mouse does the same); right trigger boosts; `A`
     deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
     and `Y` boosts, flares, or skips the opening. On foot the left shoulder
     hangs the hammock and the right lights the fire. The D-pad navigates
     Terrain Lab. Xbox, PlayStation, and compatible MFi controllers use this
     layout.
-  - The game starts on foot beside the parked bike, in first person: the
+  - The game starts on foot beside the parked bike, seen from behind: the
     mouse looks around (captured; `L` lets it loose), `W`/`S` walk, `A`/`D`
-    strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the third-person
-    views, and `F` near the bike mounts it (and steps off again). Riding
-    and gliding are seen from behind: walking and riding each keep the
-    view last chosen for them with `Tab`, so mounting leaves the walker's
-    eyes for the chase camera and stepping off returns to them.
+    strafe, `Shift` runs, `Space` jumps, `Tab` cycles to the view from in
+    front and then through the walker's eyes, and `F` near the bike mounts
+    it (and steps off again). Walking and riding each keep the view last
+    chosen for them with `Tab`.
     `MOPPE_DEMO`, benchmarks, and the gazetteer still start riding.
+  - The following camera (`game/chase_camera.*`, placed for each way of
+    getting about by `GameSession::camera_rig`) is a boom swung about a
+    point on the subject. Looking up lowers it below the subject and in
+    close over the ground (the ground shortens the boom rather than lifting
+    the camera), looking down lifts it nearly overhead. Riding, driving, or
+    gliding, the look swings it all the way round and it stays where it is
+    put, beside the machine at any speed; once the look is let be (sooner
+    after a glance than a long look aside) and while the machine is under
+    way, it eases back behind (`settle_look` in game_session.cc).
     `W`/`A`/`S`/`D`, `E`, and `F` are QWERTY key positions on every layout
     (on Dvorak, `,` `A` `O` `E`, `.`, and `U`); the other letters go by
     what they type.
@@ -72,7 +80,7 @@
     hammock trees under open sky, hangs the hammock, lights a fire, lies
     down, and after a look from outside watches the sky through the
     sleeper's eyes);
-    `MOPPE_WALK_CAMERA=chase|front|side` picks the view (`side` locks a
+    `MOPPE_WALK_CAMERA=chase|front|side|eyes` picks the view (`side` locks a
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
   - Waymarks: a small arrow with a name and a distance marks the other
@@ -154,7 +162,8 @@
     (`push`/`truck`/`rise` metres, `pan`/`tilt`/`zoom` degrees, a breathing
     `sway`), joined by cuts or a dip through black (`fade`), with the title
     and a credit set in Slug fading over them (`caption`), ending with an
-    `arrival` into the player's first-person view beside the parked bike.
+    `arrival` into the view play begins with, behind the hiker beside the
+    parked bike.
     The grammar is in `moppe/game/opening.hh`. Author by framing a view in
     play or `tools/spectate` and pressing `P`; try a list without
     rebuilding with `MOPPE_OPENING=path/to/list.txt` (or
