@@ -217,6 +217,7 @@ namespace moppe::game {
         world.surface (),
         world.readings (),
         world.water_surface (),
+        std::get<terrain::RiverNetwork> (world.hydrology ()),
         world.recipe ().seed ().value ^ 0x6b0d1e55U,
         sea,
         std::max (highest - sea.numerical_value_in (u::m), 1.0f) * u::m);
@@ -267,7 +268,9 @@ namespace moppe::game {
                                 session,
                                 input,
                                 seconds (dt),
-                                &trunks);
+                                &trunks,
+                                {},
+                                &world.water_surface ());
           times.micros.push_back (
             std::chrono::duration<double, std::micro> (clock::now () - before)
               .count ());
@@ -325,7 +328,9 @@ namespace moppe::game {
                                 session,
                                 input,
                                 seconds (dt),
-                                &trunks);
+                                &trunks,
+                                {},
+                                &world.water_surface ());
           times.micros.push_back (
             std::chrono::duration<double, std::micro> (clock::now () - before)
               .count ());

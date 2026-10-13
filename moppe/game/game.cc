@@ -823,6 +823,7 @@ namespace moppe {
           plan_boulders (surface (),
                          surface_readings (),
                          generated_world ().water_surface (),
+                         rivers (),
                          recipe ().seed ().value ^ 0x6b0d1e55U,
                          sea_level,
                          std::max (highest - sea, 1.0f) * u::m);
@@ -832,6 +833,22 @@ namespace moppe {
                        .count ()
                   << " ms" << std::endl;
         m_boulders.rebuild (*m_renderer, plan);
+        // Where to cross a river dry-shod, for whoever wants to find one.
+        const auto nearest = std::ranges::min_element (
+          plan.crossings, {}, [this] (const StoneCrossing& crossing) {
+            const Vec3 at = position_value (crossing.from);
+            return std::hypot (at[0] - m_spawn_position[0],
+                               at[2] - m_spawn_position[2]);
+          });
+        if (nearest != plan.crossings.end ()) {
+          const Vec3 at = position_value (nearest->from);
+          std::cerr << "moppe: stepping stones: " << plan.crossings.size ()
+                    << " crossings, the nearest "
+                    << std::hypot (at[0] - m_spawn_position[0],
+                                   at[2] - m_spawn_position[2])
+                    << " m from the spawn, at " << at[0] << ' ' << at[2]
+                    << std::endl;
+        }
       }
 
       // The autumn's mushrooms come up around the trees each time a world
@@ -2832,7 +2849,8 @@ namespace moppe {
                                 input,
                                 seconds (dt),
                                 &m_trunk_field,
-                                ground_cover (session ().subject_position ()));
+                                ground_cover (session ().subject_position ()),
+                                &generated_world ().water_surface ());
         if (advance.say_ouchies)
           platform::say ("Ouchies. That hurts.");
 

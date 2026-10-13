@@ -51,7 +51,9 @@ namespace moppe {
       float steer = 0.0f;
       // Jump-jet acceleration of the whole bike, world frame.
       Vec3 boost_acceleration {};
-      bool wading = false;
+      // How deep the wheels run in water, from 0 dry to 1 a little over
+      // the axles, where the water holds the whole bike back.
+      float wading = 0.0f;
       // Hanging under the glider's wing. The wing's pull on the whole
       // weight arrives as `boost_acceleration`, with all the drag there is,
       // and in the air the chassis hangs as the harness holds it: facing

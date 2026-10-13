@@ -322,9 +322,20 @@
     follows them, meshed in 16 m tiles near the camera.
   - Boulders (`moppe/game/boulders.cc`, the `boulders` program)
     are planned from the surface fields when a world activates -- talus,
-    scree, stream cobbles, upland erratics -- drawn as faceted flat-shaded
+    scree, shore cobbles, upland erratics -- drawn as faceted flat-shaded
     rocks, and the larger ones collide; `--graphics-disable boulders` hides
-    them but keeps their colliders.
+    them but keeps their colliders. Running water lays its own
+    (`game/river_stones.*`) by what its spate can move, a Shields
+    competence of depth times grade: keystone steps and boulders in steep
+    headwaters, cobbles on riffles and on bars inside bends and below
+    confluences, nothing where it is slow, the odd great rock; the same
+    competence makes the bed and the bars beside it (`read_river_bed`, in
+    the ground's deposition and shore lanes) sand or cobbles. Where a
+    stream is shallow and narrow a row of solid stepping stones crosses
+    it, some 80 in the default world (the log names the nearest); the
+    walker steps across dry, and wading -- slower the deeper, pushed by
+    the current -- and riding through rivers are held back
+    (`water_surface_at` in walker.hh).
   - The ground (`ground-surface` in world.lisp; docs/nhal.md) is surfaced
     from the world's fields: turf, heath and stony fell above it, forest
     litter, soil, cobbles, sand along the water and silt on its bed, bedded

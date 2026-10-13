@@ -1,10 +1,21 @@
 #include <moppe/mov/vehicle.hh>
 
+#include <algorithm>
 #include <cmath>
 
 namespace moppe {
   namespace mov {
     static const float radius = 1; // metres
+
+    // How deep the wheels of a bike with its centre at `height` run in
+    // water standing at `level`: 0 dry, 1 from 0.6 m, a little over the
+    // axles.
+    static float wading_depth (meters_t height, meters_t level) {
+      return std::clamp (((level - height).numerical_value_in (u::m) + radius) /
+                           0.6f,
+                         0.0f,
+                         1.0f);
+    }
 
     // How fast full steering input swings the bike itself, in radians
     // per second per radian of yaw input.  Grip then drags the
@@ -495,11 +506,14 @@ namespace moppe {
         apply_grip (grip_dt, n);
       }
 
-      // Wading through the ocean is slow going
-      if (static_cast<float> (position_value (m_position)[1]) * u::m -
-            radius * u::m <
-          m_water_level)
-        m_velocity *= decay (1.4f / u::s, dt);
+      // Wading through the water is slow going, the deeper the slower.
+      m_velocity *=
+        decay (1.4f *
+                 wading_depth (
+                   static_cast<float> (position_value (m_position)[1]) * u::m,
+                   m_water_level) /
+                 u::s,
+               dt);
 
       m_position += quantity_cast<isq::position_vector> (m_velocity * dt);
 
@@ -656,8 +670,9 @@ namespace moppe {
           controls.hang_forward = m_hang.forward;
           controls.hang_up = m_hang.up;
         }
-        controls.wading = m_rigid->reference_position ()[1] - radius <
-                          m_water_level.numerical_value_in (u::m);
+        controls.wading = wading_depth (
+          static_cast<float> (m_rigid->reference_position ()[1]) * u::m,
+          m_water_level);
 
         const Vec3 before = m_rigid->velocity ();
         m_rigid->step (controls, h);

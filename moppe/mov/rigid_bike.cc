@@ -667,8 +667,7 @@ namespace moppe {
         if (!hanging)
           force -= v * ((bike_rig::rolling_drag + bike_rig::air_drag * speed) *
                         total_mass);
-        if (controls.wading)
-          force -= v * (bike_rig::water_drag * total_mass);
+        force -= v * (bike_rig::water_drag * controls.wading * total_mass);
         b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
 
         b3World_Step (world, dt, bike_rig::substeps);

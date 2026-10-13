@@ -5,6 +5,39 @@
 
 namespace moppe {
   namespace game {
+    meters_t water_surface_at (const WorldParams& world,
+                               const map::SurfaceGeometry& surface,
+                               const terrain::WaterSheets* water,
+                               const Vec3& at) {
+      if (!water)
+        return world.water_level;
+      const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
+      const float level = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (*water, where));
+      const float ground = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (surface, where));
+      return level > ground ? std::max (level * u::m, world.water_level)
+                            : world.water_level;
+    }
+
+    float wading_speed (float depth) {
+      // Through the ankles, the shins, the knees, the waist, and the chest.
+      constexpr int stages = 5;
+      constexpr float depths[stages] = { 0.1f, 0.3f, 0.5f, 1.0f, 1.5f };
+      constexpr float speeds[stages] = {
+        Walker::run_speed, 3.0f, Walker::wade_speed, 1.2f, 0.8f
+      };
+      if (depth <= depths[0])
+        return speeds[0];
+      for (int k = 1; k < stages; ++k)
+        if (depth < depths[k])
+          return std::lerp (speeds[k - 1],
+                            speeds[k],
+                            (depth - depths[k - 1]) /
+                              (depths[k] - depths[k - 1]));
+      return speeds[stages - 1];
+    }
+
     Walker::Walker ()
         : m_heading (0, 0, 1), m_turn (0), m_walk (0), m_strafe (0),
           m_run (false), m_jump_request (false), m_phase (0),
@@ -58,7 +91,8 @@ namespace moppe {
     void Walker::update (seconds_t dt,
                          const map::SurfaceGeometry& surface,
                          const WorldParams& world,
-                         const mov::TrunkField* trunks) {
+                         const mov::TrunkField* trunks,
+                         const terrain::WaterSheets* water) {
       const float turn = scalar_value (m_turn);
       if (std::abs (turn) > 0.01f)
         m_heading = Quaternion::rotate (
@@ -66,9 +100,11 @@ namespace moppe {
 
       // A brisk walk, or a run with Shift held; wading slows either.
       const Vec3 feet = position ();
-      float speed = m_run ? run_speed : walk_speed;
-      if (feet[1] * u::m < world.water_level + 0.5f * u::m)
-        speed = wade_speed;
+      const float depth =
+        (water_surface_at (world, surface, water, feet) - feet[1] * u::m)
+          .numerical_value_in (u::m);
+      const float speed =
+        std::min (m_run ? run_speed : walk_speed, wading_speed (depth));
 
       const Vec3 right (m_heading[2], 0.0f, -m_heading[0]);
       Vec3 wish =
@@ -76,6 +112,16 @@ namespace moppe {
       const float amount = std::min (1.0f, length (wish));
       if (amount > 0.0f)
         wish = normalized (wish) * (amount * speed);
+      // A current over the knees pushes the legs downstream, and more the
+      // deeper they stand in it.
+      if (water && depth > 0.15f) {
+        const Vec3 current =
+          spatial::sample<terrain::water_velocity> (
+            *water, moppe::position (Vec3 (feet[0], 0.0f, feet[2])))
+            .numerical_value_in (u::m / u::s);
+        wish += Vec3 (current[0], 0.0f, current[2]) *
+                (0.6f * std::min (1.0f, depth - 0.15f));
+      }
 
       m_body.step (dt, { wish, m_jump_request }, surface, trunks);
       m_jump_request = false;

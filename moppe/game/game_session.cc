@@ -497,10 +497,15 @@ namespace moppe::game {
                         const InputFrame& input,
                         seconds_t dt,
                         const mov::TrunkField* trunks,
-                        const GroundCover& ground) {
+                        const GroundCover& ground,
+                        const terrain::WaterSheets* water) {
     const float elapsed = dt.numerical_value_in (u::s);
     GameLogicState& logic = session.logic ();
-    session.bike ().set_water_level (world.water_level);
+    // Rivers and lakes hold back what goes through them as the sea does.
+    const auto water_at = [&] (const Vec3& at) {
+      return water_surface_at (world, surface, water, at);
+    };
+    session.bike ().set_water_level (water_at (session.bike ().position ()));
     session.bike ().set_trunks (trunks);
 
     apply_input_frame (session, surface, input);
@@ -526,12 +531,13 @@ namespace moppe::game {
       }
     }
     if (logic.m_mode == M_FOOT)
-      session.walker ().update (dt, surface, world, trunks);
+      session.walker ().update (dt, surface, world, trunks, water);
     // The jeep stands braked wherever its driver left it.
     mov::Jeep& jeep = session.jeep ();
     jeep.set_trunks (trunks);
     jeep.set_parked (logic.m_mode != M_JEEP);
-    jeep.update (elapsed, world.water_level.numerical_value_in (u::m));
+    jeep.update (elapsed,
+                 water_at (jeep.position ()).numerical_value_in (u::m));
     if (logic.m_mode == M_JEEP) {
       logic.m_odometer += length (jeep.velocity ()) * elapsed;
       // Sliding wheels throw up what they slide on.
@@ -556,7 +562,7 @@ namespace moppe::game {
 
     const bool in_water =
       vehicle_position[1] <
-      (world.water_level).numerical_value_in (moppe::u::m) + 1.0f;
+      water_at (vehicle_position).numerical_value_in (moppe::u::m) + 1.0f;
     const bool driving = logic.m_mode == M_BIKE;
     const float impact = driving ? vehicle.pop_impact () : 0.0f;
 

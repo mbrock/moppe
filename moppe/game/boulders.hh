@@ -4,6 +4,7 @@
 #include <moppe/map/surface.hh>
 #include <moppe/mov/trunk_field.hh>
 #include <moppe/render/renderer.hh>
+#include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/watercourse.hh>
 
 #include <cstddef>
@@ -21,10 +22,21 @@ namespace moppe::game {
     meters_t radius {};
     map::SurfaceMoisture moisture {};
     std::uint32_t seed = 0;
+    // Collides whatever its size: a stone standing out of the water that a
+    // walker may step onto.
+    bool solid = false;
+  };
+
+  // A row of stepping stones across running water, from the dry ground on
+  // one bank to the other's.
+  struct StoneCrossing {
+    position_t from {};
+    position_t to {};
   };
 
   struct BoulderPlan {
     std::vector<BoulderSite> sites;
+    std::vector<StoneCrossing> crossings;
     spatial_extent_t period {};
   };
 
@@ -34,15 +46,18 @@ namespace moppe::game {
   inline constexpr float boulder_burial = 0.3f;
 
   // Where the world's history would have left loose rock: talus on steep
-  // eroded slopes, scree below cliffs, cobbles along streams and shores, and
-  // erratics on the high open ground. Rocks are scarce on the forest floor
-  // and in lush meadows and absent from the trail tread, the home base, and
-  // deep water. A jittered lattice of candidates is thinned by that
-  // rockiness and by low-frequency clustering, so rocks come in groups, and
-  // larger rocks gather a few smaller ones around them.
+  // eroded slopes, scree below cliffs, cobbles along the shores of still
+  // water, and erratics on the high open ground. Rocks are scarce on the
+  // forest floor and in lush meadows and absent from the trail tread, the
+  // home base, and deep water. A jittered lattice of candidates is thinned
+  // by that rockiness and by low-frequency clustering, so rocks come in
+  // groups, and larger rocks gather a few smaller ones around them. Running
+  // water sorts its own stones by what it can move (river_stones.hh), and
+  // those join the plan after the lattice's.
   [[nodiscard]] BoulderPlan plan_boulders (const map::SurfaceGeometry& surface,
                                            const map::SurfaceReadings& readings,
                                            const terrain::WaterSheets& water,
+                                           const terrain::RiverNetwork& rivers,
                                            std::uint32_t seed,
                                            meters_t sea_level,
                                            meters_t land_relief);
@@ -58,8 +73,8 @@ namespace moppe::game {
       return m_boulder_count;
     }
 
-    // Short buried capsules in the shape of the larger boulders. Stones a
-    // dirt bike simply rides over have none.
+    // Short buried capsules in the shape of the larger boulders and of the
+    // solid stones in water. Stones a dirt bike simply rides over have none.
     const std::vector<mov::Trunk>& colliders () const noexcept {
       return m_colliders;
     }

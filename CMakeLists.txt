@@ -396,6 +396,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/map_sheet.cc
   moppe/game/forest.cc
   moppe/game/boulders.cc
+  moppe/game/river_stones.cc
   moppe/game/mushrooms.cc
   moppe/game/camp.cc
   moppe/game/companion.cc
@@ -650,6 +651,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/water_capture_test.cc
     tests/game/forest_test.cc
     tests/game/boulders_test.cc
+    tests/game/river_stones_test.cc
     tests/game/mushrooms_test.cc
     tests/game/camp_test.cc
     tests/game/companion_test.cc

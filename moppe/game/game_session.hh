@@ -156,7 +156,8 @@ namespace moppe::game {
                         const InputFrame& input,
                         seconds_t dt,
                         const mov::TrunkField* trunks = nullptr,
-                        const GroundCover& ground = {});
+                        const GroundCover& ground = {},
+                        const terrain::WaterSheets* water = nullptr);
 }
 
 #endif

@@ -1,5 +1,6 @@
 #include <moppe/correct_math.hh>
 #include <moppe/game/boulders.hh>
+#include <moppe/game/river_stones.hh>
 
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
@@ -36,6 +37,8 @@ namespace moppe::game {
       float home;
       float waterline;
       float water_depth;
+      // Running water within reach, which lays its own stones.
+      bool by_running_water;
     };
 
     position_t stone_probe (float x, float z) {
@@ -65,9 +68,64 @@ namespace moppe::game {
         .numerical_value_in (one);
     }
 
+    // Every lattice cell within a waterline band's reach of a current. The
+    // river planner places the stones there by what the current can move,
+    // so the generic shore cobbles keep to still water.
+    std::vector<std::uint8_t>
+    running_water_reach (const map::SurfaceGeometry& surface,
+                         const terrain::WaterSheets& water) {
+      const terrain::TerrainDomain& domain = surface.domain ();
+      const int width = static_cast<int> (domain.width ());
+      const int height = static_cast<int> (domain.height ());
+      const auto& ground = spatial::get<terrain::surface_elevation> (surface);
+      const auto& level = spatial::get<terrain::surface_elevation> (water);
+      const auto& current = spatial::get<terrain::water_velocity> (water);
+      const int reach = static_cast<int> (
+        std::ceil (8.0f / domain.spacing_x ().numerical_value_in (u::m)));
+      std::vector<std::uint8_t> running (domain.size (), 0);
+      std::vector<std::uint8_t> near (domain.size (), 0);
+      for (std::size_t cell = 0; cell < domain.size (); ++cell) {
+        const Vec3 flow = current[cell].numerical_value_in (u::m / u::s);
+        running[cell] = level[cell] > ground[cell] &&
+                        flow[0] * flow[0] + flow[2] * flow[2] > 0.03f * 0.03f;
+      }
+      // Rows, then columns: a square of the reach around each current.
+      std::vector<std::uint8_t> rows (domain.size (), 0);
+      for (int z = 0; z < height; ++z)
+        for (int x = 0; x < width; ++x)
+          if (running[static_cast<std::size_t> (z) * width + x])
+            for (int dx = -reach; dx <= reach; ++dx)
+              rows[static_cast<std::size_t> (z) * width +
+                   terrain::wrap_index (x + dx, width)] = 1;
+      for (int z = 0; z < height; ++z)
+        for (int x = 0; x < width; ++x)
+          if (rows[static_cast<std::size_t> (z) * width + x])
+            for (int dz = -reach; dz <= reach; ++dz)
+              near[static_cast<std::size_t> (
+                     terrain::wrap_index (z + dz, height)) *
+                     width +
+                   x] = 1;
+      return near;
+    }
+
+    std::size_t
+    nearest_cell (const terrain::TerrainDomain& domain, float x, float z) {
+      const auto nearest =
+        [] (float along, meters_t spacing, std::size_t count) {
+          return static_cast<std::size_t> (
+            terrain::wrap_index (static_cast<int> (std::lround (
+                                   along / spacing.numerical_value_in (u::m))),
+                                 static_cast<int> (count)));
+        };
+      return domain.offset (
+        { .column = nearest (x, domain.spacing_x (), domain.width ()),
+          .row = nearest (z, domain.spacing_z (), domain.height ()) });
+    }
+
     StoneGround read_stone_ground (const map::SurfaceGeometry& surface,
                                    const map::SurfaceReadings& readings,
                                    const terrain::WaterSheets& water,
+                                   const std::vector<std::uint8_t>& running,
                                    float x,
                                    float z) {
       const position_t where = stone_probe (x, z);
@@ -88,6 +146,8 @@ namespace moppe::game {
         .waterline = spatial::sample<map::waterline_distance> (readings, where)
                        .numerical_value_in (u::m),
         .water_depth = stone_water_depth (surface, water, x, z),
+        .by_running_water =
+          running[nearest_cell (surface.domain (), x, z)] != 0,
       };
     }
 
@@ -117,9 +177,12 @@ namespace moppe::game {
       const float erratic = 0.45f * smoothstep (0.45f, 0.80f, altitude) *
                             (1.0f - ground.forest) *
                             (1.0f - smoothstep (0.15f, 0.35f, steepness));
-      // Cobbles along a stream or a shore, more where it deposits.
-      const float stream = (1.0f - smoothstep (0.5f, 7.5f, ground.waterline)) *
-                           (0.35f + 0.65f * ground.deposition);
+      // Cobbles along a shore, more where it deposits.
+      const float stream =
+        ground.by_running_water
+          ? 0.0f
+          : (1.0f - smoothstep (0.5f, 7.5f, ground.waterline)) *
+              (0.35f + 0.65f * ground.deposition);
       // A lush, level meadow has buried what rock it had.
       const float lush = smoothstep (0.45f, 0.80f, ground.moisture) *
                          (1.0f - smoothstep (0.03f, 0.12f, steepness)) *
@@ -167,7 +230,7 @@ namespace moppe::game {
     }
 
     // Mostly knee-high stones, with a heavy tail of rare large ones. Cobbles
-    // by water run smaller; erratics and scree run larger.
+    // on a shore run smaller; erratics and scree run larger.
     float stone_radius (std::uint32_t identity, const Rockiness& rock) {
       const float draw = hash_lane (identity, 4);
       float radius = (0.3f + 0.9f * draw * draw) * (1.0f - 0.25f * rock.stream);
@@ -236,6 +299,7 @@ namespace moppe::game {
   BoulderPlan plan_boulders (const map::SurfaceGeometry& surface,
                              const map::SurfaceReadings& readings,
                              const terrain::WaterSheets& water,
+                             const terrain::RiverNetwork& rivers,
                              std::uint32_t seed,
                              meters_t sea_level,
                              meters_t land_relief) {
@@ -249,6 +313,8 @@ namespace moppe::game {
     const float relief = land_relief.numerical_value_in (u::m);
     BoulderPlan plan;
     plan.period = spatial_extent_in_metres (Vec3 (width, 0.0f, depth));
+    const std::vector<std::uint8_t> running =
+      running_water_reach (surface, water);
 
     const auto cells = [] (float extent) {
       return std::max<std::uint32_t> (
@@ -296,7 +362,7 @@ namespace moppe::game {
           continue;
 
         const StoneGround ground =
-          read_stone_ground (surface, readings, water, x, z);
+          read_stone_ground (surface, readings, water, running, x, z);
         if (ground.elevation < sea || ground.home > 0.02f ||
             ground.trail > boulder_trail_tread || ground.water_depth > 0.6f)
           continue;
@@ -344,7 +410,7 @@ namespace moppe::game {
           const float sz =
             std::fmod (z + reach * cr::sin (angle) + depth, depth);
           const StoneGround beside =
-            read_stone_ground (surface, readings, water, sx, sz);
+            read_stone_ground (surface, readings, water, running, sx, sz);
           if (beside.elevation < sea || beside.home > 0.02f ||
               beside.trail > boulder_trail_tread)
             continue;
@@ -393,17 +459,25 @@ namespace moppe::game {
     }
     for (const std::vector<BoulderSite>& band : bands)
       plan.sites.insert (plan.sites.end (), band.begin (), band.end ());
+    RiverStones river =
+      plan_river_stones (surface, readings, water, rivers, seed ^ 0x51e7u);
+    plan.sites.insert (
+      plan.sites.end (), river.sites.begin (), river.sites.end ());
+    plan.crossings = std::move (river.crossings);
     return plan;
   }
 
   namespace {
     // A buried vertical capsule in the boulder's shape: its upper cap meets
     // the top of the body, and its walls run down into the ground, so a bike
-    // meets a rock's flank rather than tripping on a buried sphere.
+    // meets a rock's flank rather than tripping on a buried sphere. A stone
+    // made solid to be stood on takes nearly its whole breadth, which
+    // follows its flattened top more closely, so that feet passing from one
+    // stepping stone to the next find a footing in the crease between them.
     mov::Trunk boulder_collider (const BoulderSite& site) {
       const Vec3 centre = position_value (site.centre);
       const float radius = site.radius.numerical_value_in (u::m);
-      const float girth = 0.8f * radius;
+      const float girth = (site.solid ? 0.95f : 0.8f) * radius;
       const float upper = centre[1] + boulder_squash * radius - girth;
       const float lower = upper - 0.6f * radius;
       return { .root = Vec3 (centre[0], lower - girth, centre[2]),
@@ -427,7 +501,7 @@ namespace moppe::game {
         .moisture = site.moisture.numerical_value_in (one) * one,
         .seed = site.seed,
       });
-      if (site.radius >= boulder_collider_radius * u::m)
+      if (site.solid || site.radius >= boulder_collider_radius * u::m)
         m_colliders.push_back (boulder_collider (site));
     }
     renderer.set_boulders ({ .period = plan.period }, instances);

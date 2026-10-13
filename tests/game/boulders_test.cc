@@ -94,8 +94,13 @@ namespace {
                                        const terrain::WaterSheets& water,
                                        std::uint32_t seed,
                                        float relief) {
-    return game::plan_boulders (
-      surface, readings, water, seed, 50.0f * u::m, relief * u::m);
+    return game::plan_boulders (surface,
+                                readings,
+                                water,
+                                terrain::RiverNetwork {},
+                                seed,
+                                50.0f * u::m,
+                                relief * u::m);
   }
 }
 

@@ -5,6 +5,7 @@
 #include <moppe/map/surface.hh>
 #include <moppe/mov/character.hh>
 #include <moppe/mov/trunk_field.hh>
+#include <moppe/terrain/watercourse.hh>
 
 namespace moppe {
   namespace game {
@@ -16,6 +17,19 @@ namespace moppe {
       return 1.3f + 0.27f * speed;
     }
 
+    // The surface of the water standing or running at a place: a river's
+    // or a lake's where the painted sheet stands over the ground there,
+    // otherwise the sea's. Without a sheet, the sea's.
+    meters_t water_surface_at (const WorldParams& world,
+                               const map::SurfaceGeometry& surface,
+                               const terrain::WaterSheets* water,
+                               const Vec3& at);
+
+    // How fast a body wades through water `depth` metres deep, at most:
+    // unhindered at the ankles, a walk at the shins, two metres a second at
+    // the knees, and hardly more than a shuffle at the chest.
+    float wading_speed (float depth);
+
     // On foot: the rider parked the bike and walks. The body is a
     // mov::Character capsule; the walker turns controls into its intent,
     // keeps the facing, and counts out the stride the avatar animates.
@@ -23,7 +37,7 @@ namespace moppe {
     public:
       static constexpr float walk_speed = 3.6f; // m/s
       static constexpr float run_speed = 8.5f;
-      static constexpr float wade_speed = 2.0f;
+      static constexpr float wade_speed = 2.0f; // knee deep
       static constexpr float eye_height = 1.62f;
 
       struct State {
@@ -71,10 +85,13 @@ namespace moppe {
         m_jump_request = true;
       }
 
+      // Water slows the body by its depth at the feet and its current
+      // carries the body along; a body standing on a stone above it is dry.
       void update (seconds_t dt,
                    const map::SurfaceGeometry& surface,
                    const WorldParams& world,
-                   const mov::TrunkField* trunks = nullptr);
+                   const mov::TrunkField* trunks = nullptr,
+                   const terrain::WaterSheets* water = nullptr);
 
       Vec3 position () const {
         return m_body.position ();
