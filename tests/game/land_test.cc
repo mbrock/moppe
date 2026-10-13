@@ -74,8 +74,8 @@ MOPPE_TEST (land_file_names_carry_version_profile_resolution_and_seed) {
 MOPPE_TEST (land_version_pins_what_a_recipe_makes) {
   const std::uint64_t hash =
     land_hash (game::extract_land (generate (small_recipe ())));
-  MOPPE_CHECK (game::LAND_VERSION == 3);
-  MOPPE_CHECK (hash == 0x613f1ab4be4f2be0ull);
+  MOPPE_CHECK (game::LAND_VERSION == 4);
+  MOPPE_CHECK (hash == 0x71b8e4c3c32bfbdaull);
 }
 
 MOPPE_TEST (saved_land_reads_back_exactly) {

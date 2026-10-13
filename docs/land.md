@@ -65,8 +65,19 @@ leaving it is that river's pool, and its sill is cut like any other. So
 the trunk, forty metres wide at its mouth, cuts through the small lagoons
 behind the beach bar and reaches the sea by an inlet.
 
-On the default world that cuts 207,000 m3 of ground and lays down 27,000
-along 34 km of river, half a metre at the median (the game logs it as
+The bed is cut on the terrain's lattice too. Where the course steps
+diagonally from one sample to the next, the two samples beside the step
+stand over it like a dam, and a surface read bilinearly between the
+course's samples, the ground's or the water's, pinches shut there: a bed
+narrower than a sample is a string of hollows touching at their corners,
+and its water a string of pools with dry spots between. So at each such
+step the lower of the two is cut to the bed between (unless it stands more
+than three metres over it), and the bed runs on from sample to neighbouring
+sample. The water painter does the same for its own sheet
+(`terrain/watercourse.hh`).
+
+On the default world that cuts 214,000 m3 of ground and lays down 27,000
+along 33 km of river, half a metre at the median (the game logs it as
 `moppe: river beds:` when it generates land). The share of river length
 lying in flooded hollows falls from two thirds to a fifth, which is its
 real pools and the backwater above its lakes, and the median fall of

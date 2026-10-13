@@ -349,10 +349,18 @@
     has a bed, cut into the land before the trails are laid
     (`terrain/channel.hh`, docs/land.md): its long profile graded through
     the hollows and sills erosion leaves, and a parabolic bed with banks
-    as wide as its water makes it. To judge the flow, capture consecutive frames:
+    as wide as its water makes it, running on from cell to neighbouring
+    cell where it steps diagonally so that no stream pinches shut at a
+    corner. To judge the flow, capture consecutive frames:
     `MOPPE_SCREENSHOT_FRAMES=100000 MOPPE_RIDE_CAPTURE_DIR=/tmp/w
     MOPPE_RIDE_CAPTURE_START=60 ./build/moppe --water-screenshot river
-    /tmp/unused.png` writes `/tmp/w/ride-NNNN.png` at 30 fps.
+    /tmp/unused.png` writes `/tmp/w/ride-NNNN.png` at 30 fps. To find where
+    rivers run dry, `cmake --build build --target river-census` (with
+    `-DMOPPE_BUILD_DEVELOPER_TOOLS=ON`) and `./build/river-census
+    /tmp/rivers [RESOLUTION SEED KM]` walks every river reading the water
+    as the renderer does: the dry length and its gaps, how the reaches
+    begin and end, the greatest river's gaps, and a map (~2 minutes for the
+    default world, the geology kept for the next run).
   - Automated screenshots and graphics benchmarks keep their windows
     inactive, so repeated captures do not steal focus from the current app.
   - Partitioned hot-feature GPU benchmark (32 configurations by default;

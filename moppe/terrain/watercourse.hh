@@ -62,7 +62,9 @@ namespace moppe::terrain {
 
   // The painted water sheet over the terrain lattice. Dry cells hold ground
   // elevation, except beside water where the neighboring level is kept just
-  // below ground so bilinear reconstruction crosses the true waterline.
+  // below ground so bilinear reconstruction crosses the true waterline; and
+  // where running water steps diagonally between two dry cells, those keep
+  // a level just under their own ground, so the stream crosses the corner.
   // Velocity is zero for still water; overlapping channel currents blend.
   using WaterSheets = spatial::
     Bundle<TerrainDomain, SurfaceElevation, WaveAmplitude, WaterVelocity>;

@@ -30,6 +30,8 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
+    // Version 18 carries running water across the corner where a stream
+    // steps diagonally from cell to cell.
     // Version 17 takes each reach's nearest section for a cell's level and
     // keeps running levels off standing water.
     // Version 16 stands running water at the stage its discharge needs
@@ -38,7 +40,7 @@ namespace moppe::game {
     // (docs/determinism.md); earlier caches hold their platform's own.
     // Version 13 reconstructs the full hillslope gradient before applying the
     // nonlinear transport law. Version 12 used one cardinal component.
-    constexpr std::uint32_t CACHE_VERSION = 17;
+    constexpr std::uint32_t CACHE_VERSION = 18;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.

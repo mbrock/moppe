@@ -25,7 +25,10 @@ namespace moppe::terrain {
   // cut, and its hollows filled, to a parabolic bed as wide as the river's
   // discharge makes it (river.hh) and deep in proportion, its deepest
   // below the graded profile and its edges at it, with banks cut back at a
-  // slope a walker climbs. Below a lake the bed starts at the sill and
+  // slope a walker climbs. Where the course steps diagonally between
+  // samples, one of the two beside the step is cut to the bed too, so that
+  // read bilinearly the bed runs on from sample to sample rather than
+  // through a corner between two banks. Below a lake the bed starts at the sill and
   // deepens downstream, so the lake stands as it did; toward the sea
   // nothing holds it up, and the last of the river lies below sea level.
   struct ChannelFormation {
@@ -60,6 +63,10 @@ namespace moppe::terrain {
     // A hollow beside the stream deeper than this below the bed is another
     // place, a drop or a side gully, and is not filled.
     meters_t deepest_fill = 1.5f * mp_units::si::metre;
+    // Where the course steps diagonally between cells, the lower of the
+    // two cells beside the step is cut to the bed, unless it stands more
+    // than this over it.
+    meters_t deepest_corner = 3.0f * mp_units::si::metre;
     WaterPermanence permanence = {};
   };
 

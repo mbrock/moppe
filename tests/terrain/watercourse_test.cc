@@ -284,3 +284,46 @@ MOPPE_TEST (dry_ridges_remain_still) {
   MOPPE_CHECK_NEAR (velocity[0], 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (velocity[2], 0.0f, 0.0f);
 }
+
+MOPPE_TEST (a_stream_stepping_diagonally_runs_on_across_each_corner) {
+  // A narrow valley five metres a sample running corner to corner down to
+  // the sea, its sides steep: the brook steps diagonally from cell to cell,
+  // and at every step the two cells beside it stand well over its water.
+  constexpr int size = 24;
+  constexpr int shore = 2 * size - 8;
+  std::vector<float> heights (size * size);
+  for (int z = 0; z < size; ++z)
+    for (int x = 0; x < size; ++x)
+      heights[static_cast<std::size_t> (z) * size + x] =
+        x + z >= shore ? -3.0f
+                       : 1.0f + 0.15f * static_cast<float> (shore - x - z) +
+                           0.6f * static_cast<float> (std::abs (x - z));
+  const TerrainDomain grid (
+    size, size, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre);
+  const ElevationMap terrain = make_elevation_map (grid, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
+  const RiverNetwork rivers =
+    extract_river_network (flood,
+                           census,
+                           drainage,
+                           200.0f * mp_units::si::metre * mp_units::si::metre);
+  const WaterSheets sheets =
+    paint_watercourses (terrain, flood, census, drainage, rivers);
+  const auto depth = [&] (int x, int z) {
+    const std::size_t cell = static_cast<std::size_t> (z) * size + x;
+    return sheet_level_m (sheets, cell) - heights[cell];
+  };
+  // Water stands on the course, not on the sides, and between each cell
+  // and the next the field read bilinearly, as the renderer reads it,
+  // stays wet across the corner.
+  for (int step = 4; step + 1 < shore / 2; ++step) {
+    MOPPE_CHECK (depth (step, step) > 0.0f);
+    MOPPE_CHECK (depth (step + 1, step) < 0.0f);
+    MOPPE_CHECK (depth (step, step + 1) < 0.0f);
+    MOPPE_CHECK (depth (step, step) + depth (step + 1, step + 1) +
+                   depth (step + 1, step) + depth (step, step + 1) >
+                 0.0f);
+  }
+}

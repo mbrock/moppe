@@ -2,6 +2,7 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -128,4 +129,43 @@ MOPPE_TEST (a_lake_keeps_its_sill_and_a_pool_loses_it) {
   parameters.lake_widths = 1e6f;
   const Formed cut = form (rows, heights, parameters);
   MOPPE_CHECK (cut.after[at (18)] < cut.before[at (18)] - 0.2f);
+}
+
+MOPPE_TEST (a_bed_stepping_diagonally_runs_on_from_cell_to_cell) {
+  // A narrow valley running corner to corner down to the sea, its sides
+  // steep: the river steps diagonally from cell to cell all the way, and
+  // at every step the two cells beside it stand over its bed.
+  constexpr int size = 24;
+  constexpr int shore = 2 * size - 8;
+  std::vector<float> heights (size * size);
+  for (int z = 0; z < size; ++z)
+    for (int x = 0; x < size; ++x)
+      heights[static_cast<std::size_t> (z) * size + x] =
+        x + z >= shore ? -3.0f
+                       : 1.0f + 0.15f * static_cast<float> (shore - x - z) +
+                           0.6f * static_cast<float> (std::abs (x - z));
+  const TerrainDomain grid (
+    size, size, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre);
+  const ElevationMap terrain = make_elevation_map (grid, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
+  const RiverNetwork rivers =
+    extract_river_network (flood,
+                           census,
+                           drainage,
+                           200.0f * mp_units::si::metre * mp_units::si::metre);
+  const ChannelFormationResult result =
+    form_channels (terrain, flood, census, drainage, rivers);
+  const auto formed = [&] (int x, int z) {
+    return surface_elevation_value (
+      result.heights[static_cast<std::size_t> (z) * size + x]);
+  };
+  // At each step one of the cells beside it is cut to the bed between, so
+  // the bed runs on from cell to neighbouring cell and never only through
+  // a corner.
+  for (int step = 4; step + 1 < shore / 2; ++step)
+    MOPPE_CHECK (std::min (formed (step + 1, step), formed (step, step + 1)) <=
+                 0.5f * (formed (step, step) + formed (step + 1, step + 1)) +
+                   1e-4f);
 }

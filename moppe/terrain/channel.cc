@@ -417,14 +417,9 @@ namespace moppe::terrain {
       }
     }
 
-    ChannelFormationResult result;
-    result.heights.assign (elevations.begin (), elevations.end ());
-    result.change_m.assign (count, 0.0f);
     const float deepest_fill =
       parameters.deepest_fill.numerical_value_in (u::m);
-    const double cell_area = static_cast<double> (spacing_x) * spacing_z;
-    double cut_m3 = 0.0;
-    double filled_m3 = 0.0;
+    std::vector<float> formed = ground;
     for (std::size_t cell = 0; cell < count; ++cell) {
       const Foot& foot = feet[cell];
       if (foot.distance == nowhere || kept[cell])
@@ -433,13 +428,12 @@ namespace moppe::terrain {
       // it another place, a drop or a gully beside the stream: neither is
       // the river's to move.
       const float bank = parameters.bank_height (foot.depth);
-      float formed = ground[cell];
       if (foot.distance <= foot.half_width) {
         const float across = foot.distance / foot.half_width;
         const float bed = foot.bed - foot.depth * (1.0f - across * across);
         if (ground[cell] >= bed - deepest_fill &&
             ground[cell] <= foot.bed + 2.0f * bank)
-          formed = bed;
+          formed[cell] = bed;
       } else {
         // Beside the bed the banks are cut back to a slope, and a hollow
         // there is filled level with the bed's edge, or it would stand as
@@ -448,15 +442,62 @@ namespace moppe::terrain {
           foot.bed + parameters.bank_slope * (foot.distance - foot.half_width);
         if (ground[cell] < foot.bed) {
           if (ground[cell] >= foot.bed - deepest_fill)
-            formed = foot.bed;
+            formed[cell] = foot.bed;
         } else if (ground[cell] <= ramp + bank)
-          formed = std::min (formed, ramp);
+          formed[cell] = std::min (formed[cell], ramp);
       }
-      const float change = formed - ground[cell];
+    }
+
+    // The bed as the lattice draws it. Where the course steps diagonally
+    // from one cell to the next, the two cells beside the step stand over
+    // it like a dam, and a surface drawn bilinearly between the course's
+    // cells -- the ground's or the water's -- pinches shut there: a bed
+    // narrower than a cell is a string of hollows touching at their
+    // corners, and its water a string of puddles. So the lower of the two
+    // is cut to the bed between, and the bed runs on from cell to
+    // neighbouring cell.
+    {
+      MOPPE_PROFILE_ZONE ("channels.lattice");
+      const float deepest_corner =
+        parameters.deepest_corner.numerical_value_in (u::m);
+      for (const std::uint32_t cell : downstream) {
+        const std::uint32_t next = receives (cell);
+        if (next == none)
+          continue;
+        const int x = static_cast<int> (cell % width);
+        const int z = static_cast<int> (cell / width);
+        const int next_x = static_cast<int> (next % width);
+        const int next_z = static_cast<int> (next / width);
+        if (x == next_x || z == next_z)
+          continue;
+        const std::uint32_t beside[2] = {
+          static_cast<std::uint32_t> (z * width + next_x),
+          static_cast<std::uint32_t> (next_z * width + x)
+        };
+        // Standing water already joins them.
+        if (kept[beside[0]] || kept[beside[1]] || kept[cell] || kept[next])
+          continue;
+        const std::uint32_t lower =
+          formed[beside[0]] <= formed[beside[1]] ? beside[0] : beside[1];
+        const float between = 0.5f * (formed[cell] + formed[next]);
+        if (formed[lower] > between &&
+            formed[lower] - between <= deepest_corner)
+          formed[lower] = between;
+      }
+    }
+
+    ChannelFormationResult result;
+    result.heights.assign (elevations.begin (), elevations.end ());
+    result.change_m.assign (count, 0.0f);
+    const double cell_area = static_cast<double> (spacing_x) * spacing_z;
+    double cut_m3 = 0.0;
+    double filled_m3 = 0.0;
+    for (std::size_t cell = 0; cell < count; ++cell) {
+      const float change = formed[cell] - ground[cell];
       if (change == 0.0f)
         continue;
       result.heights[cell] =
-        SurfaceElevation (formed * surface_elevation[u::m]);
+        SurfaceElevation (formed[cell] * surface_elevation[u::m]);
       result.change_m[cell] = change;
       (change < 0.0f ? cut_m3 : filled_m3) += std::abs (change) * cell_area;
     }

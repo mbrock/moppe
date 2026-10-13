@@ -195,6 +195,26 @@ thirds of river length no longer lies in flooded hollows.
 `tools/record OUT.mp4 river` films the result: a flight down the greatest
 watercourse from its divide to the sea.
 
+## Implemented lattice continuity slice (2026-10-13)
+
+With beds, rivers broke into strings of pools with dry spots between, a few
+metres each, every few hundred metres of a brook. The sheet was wet on
+every cell of the course; the gaps were where the course stepped diagonally
+between samples. The two samples beside such a step stand over a bed
+narrower than a sample, and the renderer, reading water and ground
+bilinearly, saw the stream pinch shut across the corner. Beds cut to a
+regime width made those banks steeper, so there were more gaps than before.
+
+Now the bed is cut on the lattice too (docs/land.md): at each diagonal step
+the lower of the two samples beside it is cut to the bed between. And the
+painter, where running water still steps diagonally between two dry
+samples, stores their levels just under their own ground rather than at
+the water's, so the field crosses the corner. `river-census` measures it,
+reading the water as the renderer does: on the default world dry gaps along
+the rivers fell from 115 to 9 (0.5% of 34 km to under a tenth of a
+percent); on a ten-kilometre world at 2048 samples, where a brook is one
+sample wide, from 1,360 to 65 (3% of 134 km to 0.2%).
+
 ## Production flow maps
 
 - `vlachos-2010-water-flow-portal-2.pdf` — Alex Vlachos, “Water Flow in

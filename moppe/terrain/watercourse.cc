@@ -1129,6 +1129,42 @@ namespace moppe::terrain {
           if (std::isfinite (lowest_wet))
             signed_surface[cell] = std::min (lowest_wet, ground - dry_margin);
         }
+      // Running water that steps diagonally from one wet cell to the next
+      // passes between two dry ones, and read from their levels below their
+      // banks the bilinear field pinches shut at the corner: a stream no
+      // wider than a cell would be a string of pools. There both banks
+      // stand their water just under their own ground instead, and the
+      // stream crosses the corner as a thin sheet.
+      const auto wet = [&] (std::size_t cell) {
+        return surface[cell] - surface_elevation_value (elevations[cell]) >
+               dry_margin;
+      };
+      const auto running = [&] (std::size_t cell) {
+        return wet (cell) && flow_weight[cell] > 0.0f && !still[cell];
+      };
+      for (int z = 0; z < height; ++z)
+        for (int x = 0; x < width; ++x) {
+          const int right = wrap_index (x + 1, width);
+          const int below = wrap_index (z + 1, height);
+          const std::size_t corner[4] = {
+            static_cast<std::size_t> (z) * width + x,
+            static_cast<std::size_t> (z) * width + right,
+            static_cast<std::size_t> (below) * width + right,
+            static_cast<std::size_t> (below) * width + x
+          };
+          for (int diagonal = 0; diagonal < 2; ++diagonal) {
+            const std::size_t a = corner[diagonal];
+            const std::size_t b = corner[diagonal + 2];
+            const std::size_t c = corner[diagonal + 1];
+            const std::size_t d = corner[(diagonal + 3) % 4];
+            if (!running (a) || !running (b) || wet (c) || wet (d))
+              continue;
+            for (const std::size_t bank : { c, d })
+              signed_surface[bank] = std::max (
+                signed_surface[bank],
+                surface_elevation_value (elevations[bank]) - dry_margin);
+          }
+        }
       surface = std::move (signed_surface);
     }
 
