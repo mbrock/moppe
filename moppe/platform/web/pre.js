@@ -79,6 +79,25 @@
     for (const [name, value] of query)
       if (name.startsWith('MOPPE_'))
         ENV[name] = value;
+    // A Nix web artifact can refer to separately retained, immutable terrain.
+    // A missing artifact is an error, never a request to simulate erosion here.
+    if (Module['terrainManifest']) {
+      addRunDependency('terrain');
+      fetch(Module['terrainManifest']).then(async (response) => {
+        if (!response.ok) throw new Error('Terrain manifest: ' + response.status);
+        const manifest = await response.json();
+        const base = new URL(Module['terrainManifest'], location.href);
+        FS.mkdirTree('/worlds');
+        for (const file of manifest.files) {
+          if (!/^land-[a-zA-Z0-9.-]+\.arrows$/.test(file))
+            throw new Error('Invalid terrain filename');
+          const response = await fetch(new URL(file, base));
+          if (!response.ok) throw new Error('Terrain: ' + response.status);
+          FS.writeFile('/worlds/' + file, new Uint8Array(await response.arrayBuffer()));
+        }
+        removeRunDependency('terrain');
+      }).catch((error) => Module['moppeFail'](error.message));
+    }
     addRunDependency('webgpu');
     acquireDevice().then(
       (device) => {

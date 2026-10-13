@@ -49,6 +49,11 @@
           };
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          terrain = self.forge.${system}.terrain;
+          web = self.forge.${system}.web;
+          steam-deck = self.forge.${system}.steam-deck;
+          linux-portable = self.forge.${system}.linux-portable;
+          demo-video = self.forge.${system}.demo-video;
           # A portable tarball using the host's Vulkan driver; no Nix at runtime.
           moppe-steamdeck = import ./moppe/platform/sdl/steamdeck.nix {
             pkgs = nixpkgs.legacyPackages.${system};
@@ -61,6 +66,12 @@
           };
         }
       );
+      # The forge enumerates this attrset; adding a platform adds a component.
+      # A signed Darwin app can be added here once a Mac signing runner exists.
+      forge.x86_64-linux = import ./nix/forge.nix {
+        pkgs = nixpkgs.legacyPackages.x86_64-linux;
+        luv-shaderc = self.packages.x86_64-linux.luv-shaderc;
+      };
       apps = forEachSystem (
         system: xbox: {
           luv-shaderc = {

@@ -1,9 +1,9 @@
 # A relocatable Linux build. Only the build machine needs Nix; runtime
 # libraries (including Vulkan and the display/input stack) come from the host.
-{ pkgs, luv-shaderc }:
+{ pkgs, luv-shaderc, terrain ? null, cpu ? "x86_64_v3", archiveName ? "moppe-steamdeck" }:
 let
   sources = import ./sources.nix { inherit pkgs; };
-  lands = import ../../game/lands.nix { inherit pkgs; };
+  lands = if terrain == null then import ../../game/lands.nix { inherit pkgs; } else terrain;
   # Sniper is based on Debian 11 and ships glibc 2.31. Zig supplies its
   # versioned libc ABI and static libc++/compiler runtime, including C++23
   # and Clang 21's #embed support, without a Nix glibc sysroot.
@@ -12,7 +12,7 @@ let
     for language in cc c++; do
       cat > $out/bin/$language <<SCRIPT
     #!${pkgs.runtimeShell}
-    exec ${pkgs.zig_0_16}/bin/zig $language -target x86_64-linux-gnu.2.31 -mcpu=x86_64_v3 "\$@"
+    exec ${pkgs.zig_0_16}/bin/zig $language -target x86_64-linux-gnu.2.31 -mcpu=${cpu} "\$@"
     SCRIPT
       chmod +x $out/bin/$language
     done
@@ -134,7 +134,7 @@ let
     }
   );
 in
-pkgs.runCommand "moppe-steamdeck"
+pkgs.runCommand archiveName
   {
     nativeBuildInputs = [
       pkgs.binutils
@@ -161,5 +161,5 @@ pkgs.runCommand "moppe-steamdeck"
     done
     python3 ${./verify-steamdeck.py} staging/moppe/bin/moppe > $out/verification.txt
     tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner \
-      -czf $out/moppe-steamdeck.tar.gz -C staging moppe
+      -czf $out/${archiveName}.tar.gz -C staging moppe
   ''

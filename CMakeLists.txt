@@ -86,6 +86,8 @@ set(MOPPE_TVOS_BAKED_WORLD "" CACHE PATH
   "Host-baked default finished-world cache to bundle into the tvOS app")
 set(MOPPE_XBOX_BAKED_WORLD "" CACHE PATH
   "Host-baked finished-world cache to ship in the Xbox game package")
+set(MOPPE_WEBGPU_PORT "emdawnwebgpu" CACHE STRING
+  "Emscripten WebGPU port name or a local pinned port file")
 set(MOPPE_LANDS_DIR "" CACHE PATH
   "Land files (moppe/game/land.hh) to ship in the game's worlds/ folder")
 
@@ -897,9 +899,9 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       set(MOPPE_WEB_PROGRAM ${target})
       configure_file(${web}/shell.html
         ${CMAKE_CURRENT_BINARY_DIR}/${target}.html @ONLY)
-      target_compile_options(${target} PRIVATE --use-port=emdawnwebgpu)
+      target_compile_options(${target} PRIVATE --use-port=${MOPPE_WEBGPU_PORT})
       target_link_options(${target} PRIVATE
-        --use-port=emdawnwebgpu
+        --use-port=${MOPPE_WEBGPU_PORT}
         --pre-js=${web}/pre.js
         --pre-js=${web}/touch.js
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/textures@/textures

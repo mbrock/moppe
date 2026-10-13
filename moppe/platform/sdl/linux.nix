@@ -6,13 +6,13 @@
 # loader at this nixpkgs' Mesa (RADV for AMD, ANV for Intel), so the game
 # needs nothing from the host but its kernel's GPU driver and a display.
 # docs/steam-deck.md runs it on a Steam Deck.
-{ pkgs, luv-shaderc }:
+{ pkgs, luv-shaderc, terrain ? null }:
 let
   inherit (pkgs) lib;
   sources = import ./sources.nix { inherit pkgs; };
   # Published land for the default world, so the first launch skips the
   # minutes of geology (moppe/game/land.hh).
-  lands = import ../../game/lands.nix { inherit pkgs; };
+  lands = if terrain == null then import ../../game/lands.nix { inherit pkgs; } else terrain;
   drivers =
     lib.concatMapStringsSep ":" (name: "${pkgs.mesa}/share/vulkan/icd.d/${name}_icd.x86_64.json")
       [
