@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Build and stage the browser game without a CI-specific workflow.
+# Usage: tools/ci-web [OUTPUT_DIRECTORY]
+# Put Emscripten 6.0.3 and luv-shaderc on PATH. The native terrain baker uses
+# Nix by default, or MOPPE_NATIVE_ENV can name an already prepared shell file.
+set -euo pipefail
+out="${1:-$PWD/site}"
+mkdir -p "$out" build-web/lands
+out="$(cd "$out" && pwd)"
+export CMAKE_BUILD_PARALLEL_LEVEL=4
+export MAKEFLAGS=-j4
+
+# The native compiler and shader compiler come from a reviewed, pinned Nix closure.
+(
+  if [[ -n "${MOPPE_NATIVE_ENV:-}" ]]; then
+    source "$MOPPE_NATIVE_ENV"
+    export NIX_BUILD_TOP="$PWD"
+    export TMPDIR=/tmp
+    MOPPE_LAND_DIR="$PWD/build-web/lands" tools/bake-land 1024 play 123
+  else
+    nix develop --command env MOPPE_LAND_DIR="$PWD/build-web/lands" tools/bake-land 1024 play 123
+  fi
+)
+# Do not carry the native CC/CXX into Emscripten's CMake configure.
+
+make web
+for name in moppe.js moppe.wasm moppe.data; do
+  test -s "build-web/$name"
+  cp --dereference "build-web/$name" "$out/$name"
+done
+test -s build-web/moppe.html
+cp --dereference build-web/moppe.html "$out/index.html"
