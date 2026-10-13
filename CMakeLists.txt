@@ -583,6 +583,14 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_WORLD_SOURCES}
   )
   moppe_configure_code_target(world-fingerprint)
+
+  # Where each river's water stands and where it runs dry.
+  add_executable(river-census EXCLUDE_FROM_ALL
+    moppe/terrain/river_census.cc
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WORLD_SOURCES}
+  )
+  moppe_configure_code_target(river-census)
 endif()
 
 # Tests are configured for IDEs and CTest, but excluded from the default build.
