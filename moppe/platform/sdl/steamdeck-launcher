@@ -1,0 +1,6 @@
+#!/bin/sh
+# Keep Steam's overlay, library search path, and host Vulkan selection intact.
+# Assets are resolved relative to bin/moppe, independent of the working dir.
+set -eu
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$here/bin/moppe" "$@"

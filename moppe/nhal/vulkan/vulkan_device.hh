@@ -5,7 +5,11 @@
 
 #include <moppe/nhal/nhal.hh>
 
+#ifdef MOPPE_VULKAN_DYNAMIC
+#include <volk.h>
+#else
 #include <vulkan/vulkan_core.h>
+#endif
 
 #include <functional>
 #include <memory>

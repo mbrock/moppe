@@ -1015,6 +1015,9 @@ namespace moppe::nhal {
         info.ppEnabledLayerNames = layers.data ();
         check (vkCreateInstance (&info, nullptr, &m_instance),
                "vkCreateInstance");
+#ifdef MOPPE_VULKAN_DYNAMIC
+        volkLoadInstance (m_instance);
+#endif
 
         if (m_debug_utils && m_validation) {
           VkDebugUtilsMessengerCreateInfoEXT messenger {
@@ -2185,6 +2188,9 @@ namespace moppe::nhal {
                                                 std::uint32_t width,
                                                 std::uint32_t height,
                                                 Format surface_format) {
+#ifdef MOPPE_VULKAN_DYNAMIC
+    check (volkInitialize (), "load host Vulkan loader");
+#endif
     return std::make_unique<VulkanDevice> (surface, width, height,
                                            surface_format);
   }

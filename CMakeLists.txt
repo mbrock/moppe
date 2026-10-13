@@ -79,6 +79,8 @@ option(MOPPE_BUILD_DEVELOPER_TOOLS
   "Build demos, experiments, testbeds, and command-line tools" OFF)
 option(MOPPE_UNITY_BUILD
   "Compile each target as a single unity translation unit" ON)
+option(MOPPE_VULKAN_DYNAMIC
+  "Load the host Vulkan loader with volk instead of linking libvulkan" OFF)
 option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
 set(MOPPE_TVOS_BAKED_WORLD "" CACHE PATH
   "Host-baked default finished-world cache to bundle into the tvOS app")
@@ -844,13 +846,28 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       moppe/platform/sdl/device_metal.mm)
     set(MOPPE_SDL_SHADERS msl metal moppe/nhal/renderer/world_shaders_metal.cc)
   else()
-    find_package(Vulkan REQUIRED)
+    if(MOPPE_VULKAN_DYNAMIC)
+      find_package(VulkanHeaders CONFIG REQUIRED)
+      find_package(volk CONFIG REQUIRED)
+    else()
+      find_package(Vulkan REQUIRED)
+    endif()
     set(MOPPE_SDL_DEVICE
       moppe/nhal/vulkan/vulkan_device.cc
       moppe/platform/sdl/device_vulkan.cc)
     set(MOPPE_SDL_SHADERS spirv spv
       moppe/nhal/renderer/world_shaders_vulkan.cc)
   endif()
+
+  # The game and the optional demo must use the same Vulkan dispatch model.
+  function(moppe_link_vulkan target)
+    if(MOPPE_VULKAN_DYNAMIC)
+      target_compile_definitions(${target} PRIVATE MOPPE_VULKAN_DYNAMIC)
+      target_link_libraries(${target} PRIVATE volk::volk Vulkan::Headers)
+    else()
+      target_link_libraries(${target} PRIVATE Vulkan::Vulkan)
+    endif()
+  endfunction()
 
   # A Game (platform.hh) hosted in an SDL window: TARGET's own sources plus
   # the host, its services, the device, and the NHAL renderer.
@@ -911,7 +928,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
         "-framework Metal"
         "-framework QuartzCore")
     else()
-      target_link_libraries(${target} PRIVATE Vulkan::Vulkan)
+      moppe_link_vulkan(${target})
     endif()
   endfunction()
 
@@ -1042,7 +1059,8 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
       moppe/nhal/demo/scene.cc
       moppe/nhal/demo/main_linux.cc
       ${MOPPE_NHAL_SHADER_OUTPUTS})
-    target_link_libraries(nhal-demo PRIVATE Vulkan::Vulkan SDL3::SDL3)
+    moppe_link_vulkan(nhal-demo)
+    target_link_libraries(nhal-demo PRIVATE SDL3::SDL3)
   endif()
   target_include_directories(nhal-demo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_NHAL_SHADERS})

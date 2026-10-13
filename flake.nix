@@ -6,7 +6,12 @@
   inputs.nixpkgs.follows = "luv/nixpkgs";
 
   outputs =
-    { self, nixbox, luv, nixpkgs }:
+    {
+      self,
+      nixbox,
+      luv,
+      nixpkgs,
+    }:
     let
       forEachSystem = f: builtins.mapAttrs f nixbox.lib;
       # A finished world baked on the host, shipped in the Xbox package so
@@ -26,7 +31,8 @@
     in
     {
       packages = forEachSystem (
-        system: xbox: {
+        system: xbox:
+        {
           # Lowers moppe/nhal's Lisp shaders to MSL, HLSL, and reflection.
           luv-shaderc = luv.packages.${system}.luv-shaderc;
           nhal-xbox = import ./moppe/nhal/xbox.nix {
@@ -43,8 +49,12 @@
           };
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          # The game on Linux, with its own Vulkan driver where the host has
-          # none from NixOS; docs/steam-deck.md runs it on a Steam Deck.
+          # A portable tarball using the host's Vulkan driver; no Nix at runtime.
+          moppe-steamdeck = import ./moppe/platform/sdl/steamdeck.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            luv-shaderc = self.packages.${system}.luv-shaderc;
+          };
+          # The Nix-native package carries its own Vulkan driver.
           moppe = import ./moppe/platform/sdl/linux.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             luv-shaderc = self.packages.${system}.luv-shaderc;
