@@ -5,6 +5,7 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/render/renderer.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <array>
 #include <optional>
@@ -20,9 +21,11 @@ namespace moppe {
     public:
       // Uploads heights/normals and the splat textures; call again
       // after the surface changes.  The surface owns the typed
-      // elevation and normal columns uploaded here.
+      // elevation and normal columns uploaded here; `water` is the sheet
+      // drawn over the same chunks, which their bounds must hold too.
       void setup (render::Renderer& r,
                   const map::SurfaceGeometry& surface,
+                  const terrain::WaterSheets& water,
                   const WorldParams& world,
                   const GraphicsSettings& graphics);
 

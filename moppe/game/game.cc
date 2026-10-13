@@ -1872,7 +1872,11 @@ namespace moppe {
 
       void upload_world_terrain (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.upload_world_terrain");
-        m_terrain.setup (r, surface (), world (), m_graphics);
+        m_terrain.setup (r,
+                         surface (),
+                         generated_world ().water_surface (),
+                         world (),
+                         m_graphics);
         // The typed water and ground presentations can upload only after
         // set_terrain has established the texture dimensions.
         upload_water (r,

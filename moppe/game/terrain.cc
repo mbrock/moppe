@@ -77,6 +77,7 @@ namespace moppe {
 
     void Terrain::setup (render::Renderer& r,
                          const map::SurfaceGeometry& surface,
+                         const terrain::WaterSheets& water,
                          const WorldParams& world,
                          const GraphicsSettings& graphics) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
@@ -116,10 +117,18 @@ namespace moppe {
         r.set_sward_texture (m_grass);
       }
 
-      // Chunk bounds from the actual height range, per patch.
+      // Chunk bounds from the actual height range, per patch.  The water
+      // is drawn over the same chunks, so where it stands above the ground
+      // a bound reaches up to its surface: the bed of a lake seen from low
+      // over it leaves the view well before the water over it does.
       MOPPE_PROFILE_NAMED_ZONE (build_chunks, "terrain.build_chunk_bounds");
       const int chunks_per_side =
         static_cast<int> (surface.domain ().width ()) / CHUNK;
+      const int width = static_cast<int> (surface.domain ().width ());
+      const int height = static_cast<int> (surface.domain ().height ());
+      const auto ground = spatial::get<terrain::surface_elevation> (surface);
+      const auto levels = spatial::get<terrain::surface_elevation> (water);
+      const bool sheeted = levels.size () == ground.size ();
       m_chunks.clear ();
       m_chunks.reserve ((size_t)chunks_per_side * chunks_per_side);
       for (int cz = 0; cz < chunks_per_side; ++cz)
@@ -130,15 +139,18 @@ namespace moppe {
           float ymin = 1e9f, ymax = -1e9f;
           for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
             for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-              const float h = terrain::surface_elevation_value (
-                spatial::get<terrain::surface_elevation> (
-                  surface[terrain::TerrainIndex {
-                    static_cast<std::size_t> (terrain::wrap_index (
-                      x, static_cast<int> (surface.domain ().width ()))),
-                    static_cast<std::size_t> (terrain::wrap_index (
-                      z, static_cast<int> (surface.domain ().height ()))) }]));
+              const std::size_t cell =
+                static_cast<std::size_t> (terrain::wrap_index (z, height)) *
+                  static_cast<std::size_t> (width) +
+                static_cast<std::size_t> (terrain::wrap_index (x, width));
+              const float h = terrain::surface_elevation_value (ground[cell]);
+              const float top =
+                sheeted ? std::max (h,
+                                    terrain::surface_elevation_value (
+                                      levels[cell]))
+                        : h;
               ymin = std::min (ymin, h);
-              ymax = std::max (ymax, h);
+              ymax = std::max (ymax, top);
               // Samples on a patch border belong to both patches.
               const int px = x - cx * CHUNK, pz = z - cz * CHUNK;
               for (int j = std::max (0, (pz - 1) / PATCH);
@@ -150,7 +162,7 @@ namespace moppe {
                   float& lo = c.patch_ymin[j * PATCHES + i];
                   float& hi = c.patch_ymax[j * PATCHES + i];
                   lo = std::min (lo, h);
-                  hi = std::max (hi, h);
+                  hi = std::max (hi, top);
                 }
             }
 
