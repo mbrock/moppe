@@ -11,9 +11,11 @@
 // The evolved land, before its rivers' beds or trails, is kept in the work
 // directory, so a second run skips the geology. "bare" lays the trails
 // without giving the rivers their beds, for comparison. The work directory
-// also gets a map (VARIANT-KM.ppm: water blue, dry river red) and an opening
+// also gets a map (VARIANT-...ppm: water blue, dry river red), a map of what
+// the beds moved (...-moved.ppm: cut red, filled blue), and an opening
 // shot list (VARIANT-KM-views.txt) that looks down the greatest river at its
-// source, a confluence half way, and its mouth, for MOPPE_OPENING.
+// source, a confluence half way, and its mouth, and at the river nearest
+// each place RC_SPOTS names ("x,z;x,z"), for MOPPE_OPENING.
 
 #include <moppe/game/generated_world.hh>
 #include <moppe/game/land.hh>
@@ -26,6 +28,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -74,8 +77,10 @@ int main (int argc, char** argv) {
       map::evolve_terrain (surface, uplift, recipe.evolution ());
       game::save_land (surface, evolved.string ());
     }
+    std::vector<float> change;
     if (variant == "beds")
-      (void)map::form_river_channels (surface, recipe.water_datum ());
+      change =
+        map::form_river_channels (surface, recipe.water_datum ()).change_m;
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
     map::rebuild_geometry (surface);
     const game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
@@ -198,6 +203,81 @@ int main (int argc, char** argv) {
                  depth_bins[4] / 1000,
                  depth_bins[5] / 1000,
                  depth_bins[6] / 1000);
+
+    // The banks: from the water's edge on either side, how steeply the
+    // ground rises over the next three metres, by how steeply the river
+    // falls. A bank under one in eight is a strand to walk along; over one
+    // in three, a cut bank.
+    {
+      const auto ground_at = [&] (float x_m, float z_m) {
+        const float gx = wrap_coordinate (x_m / spacing, float (width));
+        const float gz = wrap_coordinate (z_m / spacing, float (width));
+        const int x0 = int (std::floor (gx));
+        const int z0 = int (std::floor (gz));
+        const int x1 = wrap_index (x0 + 1, width);
+        const int z1 = wrap_index (z0 + 1, width);
+        const auto at = [&] (int x, int z) {
+          return surface_elevation_value (ground[std::size_t (z) * width + x]);
+        };
+        const float tx = gx - x0;
+        const float tz = gz - z0;
+        return std::lerp (std::lerp (at (x0, z0), at (x1, z0), tx),
+                          std::lerp (at (x0, z1), at (x1, z1), tx),
+                          tz);
+      };
+      // Gentle, middling, and steep banks along rivers falling under one
+      // in a hundred, one to three, and more.
+      std::array<std::array<double, 3>, 3> banks {};
+      for (const RiverReach& reach : rivers.reaches) {
+        const auto& points = reach.alignment.points;
+        for (std::size_t point = 8; point + 8 < points.size (); point += 2) {
+          const auto& here = points[point];
+          if (here.waterfall >= 0.5f || here.standing_water > 0.0f ||
+              here.pooled > 0.0f || !reach_wet[reach.id][point])
+            continue;
+          const auto& above = points[point - 8];
+          const auto& below = points[point + 8];
+          const float run = below.distance_m - above.distance_m;
+          const float fall = (ground_at (above.x_m, above.z_m) -
+                              ground_at (below.x_m, below.z_m)) /
+                             std::max (run, 1.0f);
+          const std::size_t grade = fall < 0.01f ? 0 : fall < 0.03f ? 1 : 2;
+          float tx = points[point + 2].x_m - points[point - 2].x_m;
+          float tz = points[point + 2].z_m - points[point - 2].z_m;
+          const float length = std::max (std::hypot (tx, tz), 1e-3f);
+          tx /= length;
+          tz /= length;
+          const float step =
+            points[point + 2].distance_m - points[point].distance_m;
+          for (const float side : { -1.0f, 1.0f }) {
+            float edge = 0.0f;
+            while (edge < 40.0f &&
+                   depth_at (here.x_m - side * tz * edge,
+                             here.z_m + side * tx * edge) > 0.0f)
+              edge += 0.5f;
+            const auto rise = [&] (float out) {
+              return ground_at (here.x_m - side * tz * out,
+                                here.z_m + side * tx * out);
+            };
+            const float slope = (rise (edge + 3.0f) - rise (edge)) / 3.0f;
+            banks[grade][slope < 0.125f        ? 0
+                         : slope < 1.0f / 3.0f ? 1
+                                               : 2] += 0.5 * step;
+          }
+        }
+      }
+      const char* names[] = { "under 1%", "1-3%", "over 3%" };
+      for (std::size_t grade = 0; grade < 3; ++grade) {
+        const double all = banks[grade][0] + banks[grade][1] + banks[grade][2];
+        std::printf ("banks where rivers fall %s: %.1f km, %.0f%% strand, "
+                     "%.0f%% middling, %.0f%% cut\n",
+                     names[grade],
+                     all / 1000.0,
+                     100.0 * banks[grade][0] / std::max (all, 1.0),
+                     100.0 * banks[grade][1] / std::max (all, 1.0),
+                     100.0 * banks[grade][2] / std::max (all, 1.0));
+      }
+    }
 
     // How the reaches begin and end.
     const auto into_sea = [&] (const RiverReach& reach) {
@@ -355,6 +435,36 @@ int main (int argc, char** argv) {
       view ("confluence", rivers.reaches[middle].alignment.points, 0);
       const auto& last = rivers.reaches[path.back ()].alignment.points;
       view ("mouth", last, last.size () > 30 ? last.size () - 30 : 0);
+      // And the river nearest each place in RC_SPOTS ("x,z;x,z").
+      if (const char* spots = std::getenv ("RC_SPOTS")) {
+        const std::string list = spots;
+        int index = 0;
+        for (std::size_t from = 0; from < list.size ();) {
+          const std::size_t to = std::min (list.find (';', from), list.size ());
+          const std::string spot = list.substr (from, to - from);
+          const std::size_t comma = spot.find (',');
+          const float x = std::stof (spot.substr (0, comma));
+          const float z = std::stof (spot.substr (comma + 1));
+          const RiverReach* nearest = nullptr;
+          std::size_t at = 0;
+          float best = std::numeric_limits<float>::infinity ();
+          for (const RiverReach& reach : rivers.reaches)
+            for (std::size_t point = 0; point < reach.alignment.points.size ();
+                 ++point) {
+              const auto& here = reach.alignment.points[point];
+              const float d = std::hypot (here.x_m - x, here.z_m - z);
+              if (d < best) {
+                best = d;
+                nearest = &reach;
+                at = point;
+              }
+            }
+          if (nearest)
+            view (
+              "spot" + std::to_string (index++), nearest->alignment.points, at);
+          from = to + 1;
+        }
+      }
     }
 
     // The map: shaded ground, water blue, and the rivers red where dry.
@@ -386,6 +496,22 @@ int main (int argc, char** argv) {
           rgb[1] = 30;
           rgb[2] = 30;
         }
+    }
+    // What the beds moved: cut red, filled blue, a metre to full colour.
+    if (!change.empty ()) {
+      std::vector<std::uint8_t> moved (change.size () * 3);
+      for (std::size_t cell = 0; cell < change.size (); ++cell) {
+        const float c = std::clamp (change[cell], -1.0f, 1.0f);
+        moved[cell * 3] = std::uint8_t (255.0f * (1.0f - std::max (c, 0.0f)));
+        moved[cell * 3 + 1] = std::uint8_t (255.0f * (1.0f - std::abs (c)));
+        moved[cell * 3 + 2] =
+          std::uint8_t (255.0f * (1.0f + std::min (c, 0.0f)));
+      }
+      std::ofstream out (work / (variant + "-" + world + "-moved.ppm"),
+                         std::ios::binary);
+      out << "P6\n" << width << ' ' << width << "\n255\n";
+      out.write (reinterpret_cast<const char*> (moved.data ()),
+                 std::streamsize (moved.size ()));
     }
     const std::filesystem::path map = work / (variant + "-" + world + ".ppm");
     std::ofstream out (map, std::ios::binary);

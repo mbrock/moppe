@@ -243,9 +243,15 @@ namespace moppe::terrain {
     struct Foot {
       float distance = std::numeric_limits<float>::infinity ();
       float bed = 0.0f;
-      // The bed's reach on this cell's side of the stream.
+      // The bed's reach on this cell's side of the stream, and that side's
+      // bank: how far a bar shoals it (0 to 1), how far a cut steepens it,
+      // the bank's slope, and how far out the river works it.
       float half_width = 0.0f;
       float depth = 0.0f;
+      float bar = 0.0f;
+      float cut = 0.0f;
+      float slope = 0.0f;
+      float reach = 0.0f;
     };
     const auto ground_at = [&] (float world_x, float world_z) {
       const float gx =
@@ -267,6 +273,16 @@ namespace moppe::terrain {
     };
     std::vector<Foot> feet (count);
     constexpr float bank_reach = 6.0f;
+    const float bar_reach = parameters.bar_reach.numerical_value_in (u::m);
+    const float bar_widths = parameters.bar_widths;
+    // How far a full bar runs out from a bed of this half width.
+    const auto strand_reach = [&] (float half_width) {
+      return std::max (bar_reach, bar_widths * 2.0f * half_width);
+    };
+    const float bar_lowering =
+      parameters.bar_lowering.numerical_value_in (u::m);
+    // How far beyond a strand the ground is still eased toward it.
+    constexpr float bar_riser = 8.0f;
     constexpr float section_step = 1.0f;
     const float cell_reach = std::max (spacing_x, spacing_z);
     const float least_width = parameters.least_width.numerical_value_in (u::m);
@@ -285,8 +301,13 @@ namespace moppe::terrain {
         float depth;
         // A fixed point of the profile, which easing leaves be.
         bool fixed;
+        // Each side's bar and cut (Foot), left and right.
+        float bar[2];
+        float cut[2];
       };
       std::vector<Bed> beds;
+      std::vector<float> along;
+      std::vector<float> turning;
       for (const RiverReach& reach : rivers.reaches) {
         const auto& points = reach.alignment.points;
         const bool springs =
@@ -317,7 +338,9 @@ namespace moppe::terrain {
                             .left = 0.0f,
                             .right = 0.0f,
                             .depth = depth,
-                            .fixed = fixed[cell] != 0 });
+                            .fixed = fixed[cell] != 0,
+                            .bar = { 0.0f, 0.0f },
+                            .cut = { 0.0f, 0.0f } });
         }
         // The chain's corners out of the alignment's levels, which still
         // only fall.
@@ -329,9 +352,75 @@ namespace moppe::terrain {
                                 0.25f * beds[bed + 1].level;
         for (std::size_t bed = 1; bed < beds.size (); ++bed)
           beds[bed].level = std::min (beds[bed].level, beds[bed - 1].level);
+        // How the river runs here: how steeply its bed falls, and how
+        // sharply it bends, over a window of some lengths of its width.
+        // A river falling gently over a mobile bed meanders and builds bars
+        // of what it carries on the inside of its bends while it cuts into
+        // the outside; a steep one runs straight down steps of boulders
+        // between whatever banks its valley gives it.
+        along.assign (beds.size (), 0.0f);
+        for (std::size_t bed = 1; bed < beds.size (); ++bed)
+          along[bed] =
+            along[bed - 1] + cr::hypot (beds[bed].x_m - beds[bed - 1].x_m,
+                                        beds[bed].z_m - beds[bed - 1].z_m);
+        turning.assign (beds.size (), 0.0f);
+        std::vector<float> grades (beds.size (), 0.0f);
+        {
+          std::size_t first = 0;
+          std::size_t last = 0;
+          for (std::size_t bed = 0; bed < beds.size (); ++bed) {
+            const float window = std::max (8.0f, 3.0f * beds[bed].half_width);
+            while (along[bed] - along[first] > window)
+              ++first;
+            while (last + 1 < beds.size () &&
+                   along[last + 1] - along[bed] <= window)
+              ++last;
+            const float run = along[last] - along[first];
+            if (run < 1.0f)
+              continue;
+            grades[bed] = (beds[first].level - beds[last].level) / run;
+            const float in_x = beds[bed].x_m - beds[first].x_m;
+            const float in_z = beds[bed].z_m - beds[first].z_m;
+            const float out_x = beds[last].x_m - beds[bed].x_m;
+            const float out_z = beds[last].z_m - beds[bed].z_m;
+            const float in = cr::hypot (in_x, in_z);
+            const float out = cr::hypot (out_x, out_z);
+            if (in < 0.5f || out < 0.5f)
+              continue;
+            // The angle turned, toward the right positive, over the
+            // distance it turns in: the curvature.
+            const float turned = std::atan2 (in_x * out_z - in_z * out_x,
+                                             in_x * out_x + in_z * out_z);
+            turning[bed] = turned / (0.5f * run);
+          }
+          for (int pass = 0; pass < 4; ++pass)
+            for (std::size_t bed = 1; bed + 1 < beds.size (); ++bed)
+              turning[bed] = 0.25f * turning[bed - 1] + 0.5f * turning[bed] +
+                             0.25f * turning[bed + 1];
+        }
+        for (std::size_t bed = 0; bed < beds.size (); ++bed) {
+          Bed& here = beds[bed];
+          const float calm = 1.0f - smoothstep (parameters.calm_grade,
+                                                parameters.steep_grade,
+                                                grades[bed]);
+          // A bend is tight when its radius is a few widths of its river.
+          const float width = 2.0f * here.half_width;
+          const float bend =
+            1.0f - smoothstep (
+                     parameters.tight_bend,
+                     parameters.open_bend,
+                     1.0f / std::max (std::abs (turning[bed]) * width, 1e-4f));
+          // Right is the inside of a bend turning right.
+          const int inside = turning[bed] > 0.0f ? 1 : 0;
+          here.bar[inside] =
+            calm * std::lerp (parameters.straight_bar, 1.0f, bend);
+          here.bar[1 - inside] = calm * parameters.straight_bar * (1.0f - bend);
+          here.cut[inside] = 0.0f;
+          here.cut[1 - inside] = calm * bend;
+        }
         // A river is as wide as its water makes it only where the valley
         // gives it room: its bed ends where the ground already stands a
-        // bank's height over it.
+        // bank's height over it. A bar widens it on its own side.
         for (std::size_t bed = 0; bed < beds.size (); ++bed) {
           Bed& here = beds[bed];
           const Bed& before = beds[bed ? bed - 1 : bed];
@@ -344,24 +433,37 @@ namespace moppe::terrain {
           const float across_x = -run_z / run;
           const float across_z = run_x / run;
           const float bank = here.level + parameters.bank_height (here.depth);
-          for (float* reach : { &here.left, &here.right }) {
-            const float side = reach == &here.left ? -1.0f : 1.0f;
+          for (int side = 0; side < 2; ++side) {
+            const float sign = side ? 1.0f : -1.0f;
+            const float widest =
+              here.half_width *
+              (1.0f + parameters.bar_widening * here.bar[side]);
             float room = section_step;
-            while (room < here.half_width &&
-                   ground_at (here.x_m + side * across_x * room,
-                              here.z_m + side * across_z * room) < bank)
+            while (room < widest &&
+                   ground_at (here.x_m + sign * across_x * room,
+                              here.z_m + sign * across_z * room) < bank)
               room += section_step;
-            *reach = std::min (room, here.half_width);
+            (side ? here.right : here.left) = std::min (room, widest);
           }
         }
-        // A bed does not narrow and widen from one step to the next.
+        // A bed and its banks do not change from one step to the next.
         for (int pass = 0; pass < 3; ++pass)
           for (std::size_t bed = 1; bed + 1 < beds.size (); ++bed) {
-            beds[bed].left = 0.25f * beds[bed - 1].left +
-                             0.5f * beds[bed].left + 0.25f * beds[bed + 1].left;
-            beds[bed].right = 0.25f * beds[bed - 1].right +
-                              0.5f * beds[bed].right +
-                              0.25f * beds[bed + 1].right;
+            const auto ease = [&] (auto member) {
+              beds[bed].*member = 0.25f * beds[bed - 1].*member +
+                                  0.5f * beds[bed].*member +
+                                  0.25f * beds[bed + 1].*member;
+            };
+            ease (&Bed::left);
+            ease (&Bed::right);
+            for (int side = 0; side < 2; ++side) {
+              beds[bed].bar[side] = 0.25f * beds[bed - 1].bar[side] +
+                                    0.5f * beds[bed].bar[side] +
+                                    0.25f * beds[bed + 1].bar[side];
+              beds[bed].cut[side] = 0.25f * beds[bed - 1].cut[side] +
+                                    0.5f * beds[bed].cut[side] +
+                                    0.25f * beds[bed + 1].cut[side];
+            }
           }
 
         for (std::size_t bed = 0; bed + 1 < beds.size (); ++bed) {
@@ -372,8 +474,10 @@ namespace moppe::terrain {
           const float run = std::sqrt (run_x * run_x + run_z * run_z);
           if (run < 1e-3f)
             continue;
+          const float widest =
+            std::max ({ start.left, start.right, end.left, end.right });
           const float radius =
-            std::max (start.half_width, end.half_width) + bank_reach;
+            widest + bank_reach + strand_reach (widest) + bar_riser;
           const int minimum_x = static_cast<int> (
             std::floor ((std::min (start.x_m, end.x_m) - radius) / spacing_x));
           const int maximum_x = static_cast<int> (
@@ -398,20 +502,29 @@ namespace moppe::terrain {
                 std::sqrt (from_x * from_x + from_z * from_z);
               const float side =
                 from_z * (run_x / run) - from_x * (run_z / run);
-              const float half_width =
-                side < 0.0f ? std::lerp (start.left, end.left, t)
-                            : std::lerp (start.right, end.right, t);
+              const int on = side < 0.0f ? 0 : 1;
+              const float half_width = on
+                                         ? std::lerp (start.right, end.right, t)
+                                         : std::lerp (start.left, end.left, t);
+              const float bar = std::lerp (start.bar[on], end.bar[on], t);
+              const float cut = std::lerp (start.cut[on], end.cut[on], t);
+              const float reach =
+                bank_reach + bar * (strand_reach (half_width) + bar_riser);
               Foot& foot =
                 feet[static_cast<std::size_t> (wrap_index (at_z, height)) *
                        width +
                      wrap_index (at_x, width)];
-              if (distance >= half_width + bank_reach ||
-                  distance >= foot.distance)
+              if (distance >= half_width + reach || distance >= foot.distance)
                 continue;
               foot = { .distance = distance,
                        .bed = std::lerp (start.level, end.level, t),
                        .half_width = half_width,
-                       .depth = std::lerp (start.depth, end.depth, t) };
+                       .depth = std::lerp (start.depth, end.depth, t),
+                       .bar = bar,
+                       .cut = cut,
+                       .slope = std::lerp (
+                         parameters.bank_slope, parameters.cut_bank_slope, cut),
+                       .reach = reach };
             }
         }
       }
@@ -420,6 +533,11 @@ namespace moppe::terrain {
     const float deepest_fill =
       parameters.deepest_fill.numerical_value_in (u::m);
     std::vector<float> formed = ground;
+    // What a bar planes off beside the bed, beyond the bank, and the least
+    // it may leave: kept apart until it is smoothed, since the nearest
+    // section changes from cell to cell where a bend's sections fan out.
+    std::vector<float> planed (count, 0.0f);
+    std::vector<float> floor (count, nowhere);
     for (std::size_t cell = 0; cell < count; ++cell) {
       const Foot& foot = feet[cell];
       if (foot.distance == nowhere || kept[cell])
@@ -429,23 +547,84 @@ namespace moppe::terrain {
       // the river's to move.
       const float bank = parameters.bank_height (foot.depth);
       if (foot.distance <= foot.half_width) {
+        // Under a bar the bed shoals from the deep water to the strand;
+        // under a cut bank it stays deep up to the bank's foot.
         const float across = foot.distance / foot.half_width;
-        const float bed = foot.bed - foot.depth * (1.0f - across * across);
+        const float shoaling = (1.0f - across) * (1.0f - across);
+        const float plunging = 1.0f - across * across * across * across;
+        const float section =
+          std::lerp (std::lerp (1.0f - across * across, shoaling, foot.bar),
+                     plunging,
+                     foot.cut);
+        const float bed = foot.bed - foot.depth * section;
         if (ground[cell] >= bed - deepest_fill &&
             ground[cell] <= foot.bed + 2.0f * bank)
           formed[cell] = bed;
-      } else {
-        // Beside the bed the banks are cut back to a slope, and a hollow
-        // there is filled level with the bed's edge, or it would stand as
-        // a pocket of water the river had passed by.
-        const float ramp =
-          foot.bed + parameters.bank_slope * (foot.distance - foot.half_width);
-        if (ground[cell] < foot.bed) {
-          if (ground[cell] >= foot.bed - deepest_fill)
-            formed[cell] = foot.bed;
-        } else if (ground[cell] <= ramp + bank)
-          formed[cell] = std::min (formed[cell], ramp);
+        continue;
       }
+      // Beside the bed the banks are cut back to a slope, and a hollow
+      // there is filled level with the bed's edge, or it would stand as a
+      // pocket of water the river had passed by.
+      const float beyond = foot.distance - foot.half_width;
+      if (ground[cell] < foot.bed) {
+        if (beyond < bank_reach && ground[cell] >= foot.bed - deepest_fill)
+          formed[cell] = foot.bed;
+        continue;
+      }
+      const float ramp = foot.bed + foot.slope * beyond;
+      if (beyond < bank_reach && ground[cell] <= ramp + bank)
+        formed[cell] = std::min (ground[cell], ramp);
+      // A calm river swinging across its floor has planed it down beside
+      // itself: a strand as far as its bar reaches, rising beyond like any
+      // bank to the floor it has not yet worked, and lowered no more than
+      // its bar has room to have done.
+      if (foot.bar > 0.0f) {
+        const float strand_run = foot.bar * strand_reach (foot.half_width);
+        const float strand_slope =
+          std::lerp (parameters.bank_slope, parameters.bar_slope, foot.bar);
+        const float strand =
+          foot.bed + strand_slope * std::min (beyond, strand_run) +
+          parameters.bank_slope * std::max (beyond - strand_run, 0.0f);
+        const float lowering =
+          bar_lowering * foot.bar *
+          (1.0f - smoothstep (strand_run, strand_run + bar_riser, beyond));
+        planed[cell] = std::min (
+          0.0f, std::max (strand, ground[cell] - lowering) - formed[cell]);
+        floor[cell] = std::min (formed[cell], strand);
+      }
+    }
+    {
+      MOPPE_PROFILE_ZONE ("channels.planing");
+      std::vector<float> eased (count);
+      for (int pass = 0; pass < 3; ++pass) {
+        for (int z = 0; z < height; ++z)
+          for (int x = 0; x < width; ++x) {
+            const std::size_t cell = static_cast<std::size_t> (z) * width + x;
+            eased[cell] = planed[cell];
+            if (floor[cell] == nowhere)
+              continue;
+            // Among the planed cells only: the bed beside them is not
+            // planed, and would hold the bank's foot up.
+            float sum = 0.0f;
+            int among = 0;
+            for (int dz = -1; dz <= 1; ++dz)
+              for (int dx = -1; dx <= 1; ++dx) {
+                const std::size_t near =
+                  static_cast<std::size_t> (wrap_index (z + dz, height)) *
+                    width +
+                  wrap_index (x + dx, width);
+                if (floor[near] == nowhere)
+                  continue;
+                sum += planed[near];
+                ++among;
+              }
+            eased[cell] = sum / static_cast<float> (among);
+          }
+        planed.swap (eased);
+      }
+      for (std::size_t cell = 0; cell < count; ++cell)
+        if (floor[cell] != nowhere)
+          formed[cell] = std::max (formed[cell] + planed[cell], floor[cell]);
     }
 
     // The bed as the lattice draws it. Where the course steps diagonally

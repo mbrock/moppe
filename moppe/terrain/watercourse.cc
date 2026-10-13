@@ -529,6 +529,7 @@ namespace moppe::terrain {
             bed[point] + 0.035f,
             bed[point] + 0.35f);
           discharge[point] =
+            parameters.flow *
             river_discharge (center.contributing_area_m2 * u::m * u::m)
               .numerical_value_in (u::m * u::m * u::m / u::s);
           if (center.standing_water > 0.0f || center.pooled > 0.25f)
@@ -753,6 +754,7 @@ namespace moppe::terrain {
             water = wetted (within, running.level_m);
           }
           const float discharge =
+            parameters.flow *
             river_discharge (points[point].contributing_area_m2 * u::m * u::m)
               .numerical_value_in (u::m * u::m * u::m / u::s);
           running.left_m = water.left;

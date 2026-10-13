@@ -25,12 +25,15 @@ namespace moppe::terrain {
   // cut, and its hollows filled, to a parabolic bed as wide as the river's
   // discharge makes it (river.hh) and deep in proportion, its deepest
   // below the graded profile and its edges at it, with banks cut back at a
-  // slope a walker climbs. Where the course steps diagonally between
-  // samples, one of the two beside the step is cut to the bed too, so that
-  // read bilinearly the bed runs on from sample to sample rather than
-  // through a corner between two banks. Below a lake the bed starts at the sill and
-  // deepens downstream, so the lake stands as it did; toward the sea
-  // nothing holds it up, and the last of the river lies below sea level.
+  // slope a walker climbs; or, where the river runs calm, a bar shoaling
+  // the bed toward a strand it has planed along its bank, most on the
+  // inside of a bend, with the outside cut back steep. Where the course
+  // steps diagonally between samples, one of the two beside the step is
+  // cut to the bed too, so that read bilinearly the bed runs on from
+  // sample to sample rather than through a corner between two banks.
+  // Below a lake the bed starts at the sill and deepens downstream, so the
+  // lake stands as it did; toward the sea nothing holds it up, and the
+  // last of the river lies below sea level.
   struct ChannelFormation {
     // The bed is this share of the regime width, and no narrower than a
     // visible river.
@@ -48,6 +51,31 @@ namespace moppe::terrain {
     int easing = 24;
     // Rise over run of the banks cut back from the bed's edges.
     float bank_slope = 0.4f;
+    // Where a river runs calm, under the first of these falls, it lays
+    // bars of what it carries along its banks, most on the inside of a
+    // bend, and cuts into the outside; above the second it runs steep
+    // between whatever banks its valley gives it.
+    float calm_grade = 0.005f;
+    float steep_grade = 0.03f;
+    // A bend is tight, radius over its river's width, under the first and
+    // straight over the second.
+    float tight_bend = 2.5f;
+    float open_bend = 8.0f;
+    // A full bar: its slope, a strand to walk along; how far it runs out
+    // from the bed, so many of the bed's widths and no less than a few
+    // strides; and how much wider it makes the bed on its side.
+    float bar_slope = 0.07f;
+    float bar_widths = 1.5f;
+    meters_t bar_reach = 6.0f * mp_units::si::metre;
+    float bar_widening = 0.6f;
+    // How much of a full bar a calm river lays along a straight reach,
+    // where its bars alternate from one bank to the other.
+    float straight_bar = 0.7f;
+    // The most a full bar planes the ground beside it down: the river has
+    // worked its floor this deep since it last stood higher.
+    meters_t bar_lowering = 4.0f * mp_units::si::metre;
+    // The outside of a tight calm bend, cut back by the current.
+    float cut_bank_slope = 0.8f;
     // A sill is cut no deeper than this; what that leaves of a hollow
     // behind it fills.
     meters_t deepest_cut = 1.2f * mp_units::si::metre;

@@ -169,3 +169,32 @@ MOPPE_TEST (a_bed_stepping_diagonally_runs_on_from_cell_to_cell) {
                  0.5f * (formed (step, step) + formed (step + 1, step + 1)) +
                    1e-4f);
 }
+
+MOPPE_TEST (a_calm_river_lays_a_strand_where_a_steep_one_keeps_its_banks) {
+  // Two valleys with the same steep sides, one falling three in a hundred
+  // and the other two in a thousand.
+  constexpr int rows = 26;
+  const auto valley_falling = [] (float fall) {
+    std::vector<float> heights (static_cast<std::size_t> (wide) * rows);
+    for (int row = 0; row < rows; ++row)
+      for (int x = 0; x < wide; ++x)
+        heights[at (row, x)] =
+          row == rows - 1
+            ? -3.0f
+            : 1.0f + 5.0f * fall * static_cast<float> (rows - 2 - row) +
+                1.5f * static_cast<float> (std::abs (x - axis));
+    return heights;
+  };
+  const Formed steep = form (rows, valley_falling (0.03f));
+  const Formed calm = form (rows, valley_falling (0.002f));
+  // Five metres from the axis, half way down, the steep river's bank is
+  // cut back as any bank is, while the calm one has planed its side down
+  // to a strand rising gently from its water.
+  const int row = rows / 2;
+  for (const int x : { axis - 1, axis + 1 }) {
+    const float steep_rise = steep.after[at (row, x)] - steep.after[at (row)];
+    const float calm_rise = calm.after[at (row, x)] - calm.after[at (row)];
+    MOPPE_CHECK (steep_rise > 1.0f);
+    MOPPE_CHECK (calm_rise < 0.6f * steep_rise);
+  }
+}

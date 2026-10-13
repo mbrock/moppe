@@ -63,7 +63,7 @@ namespace {
     WaterSheets sheets;
   };
 
-  PaintedValley paint_valley () {
+  PaintedValley paint_valley (const WatercoursePaint& parameters = {}) {
     std::vector<float> heights = valley_to_sea ();
     const ElevationMap terrain = make_elevation_map (valley_grid (), heights);
     FloodField flood = analyze_standing_water (terrain, 0.0f);
@@ -75,7 +75,7 @@ namespace {
       drainage,
       20000.0f * mp_units::si::metre * mp_units::si::metre);
     WaterSheets sheets =
-      paint_watercourses (terrain, flood, census, drainage, rivers);
+      paint_watercourses (terrain, flood, census, drainage, rivers, parameters);
     return { std::move (heights),  std::move (flood),  std::move (census),
              std::move (drainage), std::move (rivers), std::move (sheets) };
   }
@@ -129,8 +129,9 @@ MOPPE_TEST (a_river_runs_on_into_the_sea_and_slows_to_nothing_there) {
 
 MOPPE_TEST (more_water_stands_deeper_and_runs_faster) {
   // One valley, one slope, one cross-section: all that changes down it is
-  // how much water has gathered.
-  const PaintedValley valley = paint_valley ();
+  // how much water has gathered. In spate, so that the brook stands deeper
+  // than the thread every river is at least.
+  const PaintedValley valley = paint_valley ({ .flow = 1.0f });
   const std::size_t upper = 5 * 9 + 4;
   const std::size_t lower = 7 * 9 + 4;
   const auto depth = [&] (std::size_t cell) {

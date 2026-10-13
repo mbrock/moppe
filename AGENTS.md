@@ -340,7 +340,8 @@
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
     `MOPPE_WATER_VIEW=bank` stands on the bank at eye height instead. Running
     water stands and moves as its discharge has it (`terrain/watercourse.hh`:
-    2.5 m3/s from each square kilometre of catchment, a steady profile
+    a spate of 2.5 m3/s from each square kilometre of catchment, of which
+    it carries four tenths on the day seen, a steady profile
     through the terrain's own cross-sections, critical over sills and
     backed up behind them), so a brook is a stair of pools and a trunk river
     drowns the same sills. Rivers stream along that current (flow-mapped
@@ -349,7 +350,10 @@
     has a bed, cut into the land before the trails are laid
     (`terrain/channel.hh`, docs/land.md): its long profile graded through
     the hollows and sills erosion leaves, and a parabolic bed with banks
-    as wide as its water makes it, running on from cell to neighbouring
+    as wide as its water makes it -- where it falls gently, bars and a
+    planed strand along its banks, most on the inside of a bend, and a cut
+    bank on the outside; where steep, whatever banks its valley gives it --
+    running on from cell to neighbouring
     cell where it steps diagonally so that no stream pinches shut at a
     corner. To judge the flow, capture consecutive frames:
     `MOPPE_SCREENSHOT_FRAMES=100000 MOPPE_RIDE_CAPTURE_DIR=/tmp/w

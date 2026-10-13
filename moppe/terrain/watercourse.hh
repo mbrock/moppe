@@ -40,6 +40,10 @@ namespace moppe::terrain {
   // how fast the water descends its own surface, which is the head it
   // sheds and so what whitens it.
   struct WatercoursePaint {
+    // The share of its spate (river.hh) a river carries the day the world
+    // is seen. Its bed and bars were shaped by the spate; most days it runs
+    // well inside them.
+    float flow = 0.4f;
     // Chezy's coefficient for a cobble bed, sqrt(m)/s: u = C sqrt(d S).
     float roughness = 20.0f;
     // The Froude number steep water holds itself to; a stream on a mobile

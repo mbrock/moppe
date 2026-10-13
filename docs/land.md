@@ -59,6 +59,24 @@ for the trunk), with banks cut back at a slope a walker climbs. Valley
 walls are not moved, a lake's sill keeps its level, and toward the sea the
 bed runs out below sea level.
 
+How a river shapes its banks depends on how it runs. Where its bed falls
+less than about one in two hundred over a few of its widths it runs calm,
+as a meandering gravel river does; over three in a hundred it runs steep,
+down steps between whatever banks its valley gives it, and between the two
+it is something of each. A calm river lays bars of what it carries: along
+a straight reach seven tenths of a full bar on both banks, standing for
+the bars that alternate from one to the other;
+in a bend, a full bar on the inside and a cut bank (rise over run 0.8) on
+the outside, where the current bears. A bar shoals the bed toward it,
+widens the bed a little on its side, and beyond the bed planes the ground
+down to a strand rising one in fourteen for one and a half of the bed's
+widths (six metres at least), then up like any bank to the ground it has
+not worked, lowering nothing by more than four metres. The planing is
+smoothed across neighbouring cells, since the nearest section changes
+from cell to cell where a bend's sections fan out. The bend is read from
+the alignment's curvature: tight under two and a half widths of radius,
+straight over eight.
+
 A lake keeps its sill only if it is a lake by its river's measure: a
 pond covering less than four squares of the regime width of the river
 leaving it is that river's pool, and its sill is cut like any other. So
@@ -76,7 +94,7 @@ than three metres over it), and the bed runs on from sample to neighbouring
 sample. The water painter does the same for its own sheet
 (`terrain/watercourse.hh`).
 
-On the default world that cuts 214,000 m3 of ground and lays down 27,000
+On the default world that cuts 590,000 m3 of ground and lays down 27,000
 along 33 km of river, half a metre at the median (the game logs it as
 `moppe: river beds:` when it generates land). The share of river length
 lying in flooded hollows falls from two thirds to a fifth, which is its
