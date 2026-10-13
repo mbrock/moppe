@@ -27,6 +27,13 @@
 #include <emscripten.h>
 #endif
 
+#ifdef __APPLE__
+extern "C" {
+void* objc_autoreleasePoolPush (void);
+void objc_autoreleasePoolPop (void* pool);
+}
+#endif
+
 namespace {
   using moppe::platform::ControlState;
   using moppe::platform::Game;
@@ -36,6 +43,21 @@ namespace {
 
   std::atomic<bool> quitting = false;
   SDL_Window* active_window = nullptr;
+
+  // What a turn of the loop autoreleases goes when the turn ends. This
+  // loop is not Cocoa's, so nothing else drains the main thread's pool,
+  // and a drawable left in it is never given back to its layer: the layer
+  // then makes a new one for every frame, at a frame's worth of memory
+  // each, which it does from the first time the window changes hands.
+  struct TurnPool {
+#ifdef __APPLE__
+    void* pool = objc_autoreleasePoolPush ();
+    ~TurnPool () { objc_autoreleasePoolPop (pool); }
+#endif
+    TurnPool () = default;
+    TurnPool (const TurnPool&) = delete;
+    TurnPool& operator= (const TurnPool&) = delete;
+  };
 
   // The game the page's touch controls drive (below), once it is set up,
   // and whether a thumb is on their stick, which then outranks a gamepad.
@@ -304,6 +326,7 @@ namespace moppe::platform {
       // One turn of the loop: the events since the last, a step of the
       // game, and a frame.
       void turn () {
+        const TurnPool pool;
         SDL_Event event;
         while (SDL_PollEvent (&event))
           handle (event);
