@@ -7,6 +7,7 @@
 #include <moppe/nhal/renderer/nhal_renderer.hh>
 
 #include <moppe/environment.hh>
+#include <moppe/parallel.hh>
 
 #include <moppe/render/draw.hh>
 #include <moppe/render/dynamic_resolution.hh>
@@ -59,6 +60,7 @@
 #include <cstring>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -1557,31 +1559,55 @@ namespace moppe::nhal {
         m_frame_sink = std::move (sink);
       }
 
-      // A captured drawable as rows of 8-bit RGB.
+      // What every half-float value shows as on an 8-bit display: the
+      // gamma curve, worked out once for all 65536 of them, so a frame's
+      // conversion is a lookup for each channel.
+      static const std::array<std::uint8_t, 65536>& display_bytes () {
+        static const std::unique_ptr<std::array<std::uint8_t, 65536>> table =
+          [] {
+            auto bytes = std::make_unique<std::array<std::uint8_t, 65536>> ();
+            for (std::uint32_t h = 0; h < 65536; ++h) {
+              const float v = std::clamp (
+                half_to_float (static_cast<std::uint16_t> (h)), 0.0f, 1.0f);
+              (*bytes)[h] = std::uint8_t (std::pow (v, 1 / 2.2f) * 255 + 0.5f);
+            }
+            return bytes;
+          }();
+        return *table;
+      }
+
+      // A captured drawable as rows of 8-bit RGB. A recording asks for
+      // this sixty times for every second of video, so the rows are shared
+      // out among the threads.
       static std::vector<std::uint8_t> capture_rgb (const Capture& capture) {
         const Format format = capture.format;
+        const std::size_t pixel_bytes = bytes_per_pixel (format);
         std::vector<std::uint8_t> rgb (std::size_t (capture.width) *
                                        capture.height * 3);
-        for (std::uint32_t y = 0; y < capture.height; ++y)
-          for (std::uint32_t x = 0; x < capture.width; ++x) {
-            const std::byte* p = capture.pixels.data () +
-                                 std::size_t (y) * capture.row_bytes +
-                                 std::size_t (x) * bytes_per_pixel (format);
-            std::uint8_t* out = &rgb[(std::size_t (y) * capture.width + x) * 3];
-            if (format == Format::rgba16_float) {
-              for (int c = 0; c < 3; ++c) {
-                std::uint16_t h;
-                std::memcpy (&h, p + c * 2, 2);
-                const float v = std::clamp (half_to_float (h), 0.0f, 1.0f);
-                out[c] = std::uint8_t (std::pow (v, 1 / 2.2f) * 255 + 0.5f);
+        const std::array<std::uint8_t, 65536>& shown = display_bytes ();
+        const bool bgra = format == Format::bgra8_unorm;
+        parallel_for (
+          capture.height, 64, [&] (std::size_t begin, std::size_t end) {
+            for (std::size_t y = begin; y < end; ++y) {
+              const std::byte* p =
+                capture.pixels.data () + y * capture.row_bytes;
+              std::uint8_t* out = &rgb[y * capture.width * 3];
+              for (std::uint32_t x = 0; x < capture.width;
+                   ++x, p += pixel_bytes, out += 3) {
+                if (format == Format::rgba16_float) {
+                  std::uint16_t h[3];
+                  std::memcpy (h, p, sizeof (h));
+                  out[0] = shown[h[0]];
+                  out[1] = shown[h[1]];
+                  out[2] = shown[h[2]];
+                } else {
+                  out[0] = std::uint8_t (p[bgra ? 2 : 0]);
+                  out[1] = std::uint8_t (p[1]);
+                  out[2] = std::uint8_t (p[bgra ? 0 : 2]);
+                }
               }
-            } else {
-              const bool bgra = format == Format::bgra8_unorm;
-              out[0] = std::uint8_t (p[bgra ? 2 : 0]);
-              out[1] = std::uint8_t (p[1]);
-              out[2] = std::uint8_t (p[bgra ? 0 : 2]);
             }
-          }
+          });
         return rgb;
       }
 

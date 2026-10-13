@@ -128,8 +128,15 @@
     `_START`, `_FPS`, `_SPEED`, `_HEIGHT`; `moppe/game/video.hh`): the
     world advances a sixtieth of a second per rendered frame and the
     frames go down a pipe to ffmpeg, so the video is even however fast the
-    machine is. On Linux it runs with no window at all, in a headless
-    gamescope of the size asked for (`--window` uses the game's own);
+    machine is. On an M5 it records some forty frames a second at 1080p
+    (frames leave the HDR drawable through a lookup table, and the time
+    `--start` lets pass goes by at twenty steps a drawn frame); the river
+    flight's video ends when the drone lands. A window cannot be larger
+    than the screen, so on a 2x laptop `MOPPE_VIDEO_HEIGHT=1080` with
+    `--size 1232x693` gives 1080p, and `MOPPE_VIDEO_HEIGHT=1920` with
+    `--size 486x864` a vertical 1080x1920. On Linux it runs with no window
+    at all, in a headless gamescope of the size asked for (`--window` uses
+    the game's own);
     ffmpeg and gamescope come from `nix develop`, which the tool enters by
     itself when ffmpeg is not on PATH (`MOPPE_FFMPEG` names another).
     In play, `V` starts a video of what is on screen and `V` again ends

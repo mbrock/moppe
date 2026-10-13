@@ -2499,7 +2499,22 @@ namespace moppe {
           moppe::environment ("MOPPE_VIDEO");
         if (capture_locked) {
           m_simulation_clock.reset ();
-          tick_simulation (1.0f / 60.0f);
+          // The time a video lets pass before it begins is not looked at,
+          // so it goes by many steps to a drawn frame, until two seconds
+          // before the first frame taken, which gives the picture's
+          // history time to settle.
+          // A remote control's taps are timed by drawn frames, so a
+          // driven video keeps to one step each.
+          int steps = 1;
+          if (m_video_plan && !m_video_done &&
+              !moppe::environment ("MOPPE_CONTROL_FILE")) {
+            const int first =
+              static_cast<int> (std::lround (m_video_plan->start * 60.0f));
+            steps = std::clamp (first - 120 - m_video_render_frame, 1, 20);
+          }
+          for (int step = 0; step < steps; ++step)
+            tick_simulation (1.0f / 60.0f);
+          m_video_render_frame += steps - 1;
           return;
         }
 
@@ -3931,7 +3946,18 @@ namespace moppe {
           return;
         if (index == first)
           m_video.begin (plan.path, plan.fps, plan.height);
-        if (!m_video.recording () ||
+        // A video of the river flight is over when the flight is: the
+        // drone comes down a little sooner than its planned seconds, and
+        // what follows is only the walker standing at the trailhead.
+        static const bool flight_only = [] {
+          const char* opening = moppe::environment ("MOPPE_OPENING");
+          return opening && std::string_view (opening) == "river";
+        }();
+        if (flight_only && opening_active ())
+          m_video_saw_flight = true;
+        const bool landed =
+          flight_only && m_video_saw_flight && !opening_active ();
+        if (!m_video.recording () || landed ||
             (plan.seconds > 0.0f &&
              m_video.frames () >= std::lround (plan.seconds * plan.fps))) {
           m_video.finish ();
@@ -4381,6 +4407,7 @@ namespace moppe {
       VideoRecorder m_video;
       std::optional<VideoPlan> m_video_plan = plan_video ();
       int m_video_render_frame = 0;
+      bool m_video_saw_flight = false;
       int m_clip_count = 0;
       bool m_video_done = false;
       std::optional<WaterShot> m_water_shot;

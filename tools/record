@@ -41,6 +41,11 @@
 #   --sheet         also write OUTPUT.png, a contact sheet of the video
 #   --window        record the game's own window rather than a hidden one
 #
+# MOPPE_VIDEO_HEIGHT asks for more lines than the window has points, which
+# a 2x display can give: MOPPE_VIDEO_HEIGHT=1080 with --size 1232x693 is
+# 1080p on a laptop, and MOPPE_VIDEO_HEIGHT=1920 with --size 486x864 a
+# vertical 1080x1920.
+#
 # The environment passes through, so MOPPE_WEATHER=mist, MOPPE_SEED, a
 # scene's own switches (MOPPE_WALK_CAMERA=front) and the rest all apply.
 #
