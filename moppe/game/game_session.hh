@@ -67,6 +67,13 @@ namespace moppe::game {
       return m_jeep;
     }
 
+    mov::Helicopter& helicopter () noexcept {
+      return m_helicopter;
+    }
+    const mov::Helicopter& helicopter () const noexcept {
+      return m_helicopter;
+    }
+
     mov::Glider& glider () noexcept {
       return m_glider;
     }
@@ -109,6 +116,11 @@ namespace moppe::game {
     bool can_drop_bike () const;
     // On foot within reach of the jeep, and nearer it than the bike.
     bool can_drive () const;
+    // On foot within reach of the helicopter, and nearer it than the
+    // bike or the jeep.
+    bool can_fly () const;
+    // Flying low and slow enough to step out.
+    bool can_step_out_of_helicopter () const;
     void clear_controls ();
     // Begin standing beside the parked bike, seen from behind.
     void start_on_foot ();
@@ -133,6 +145,7 @@ namespace moppe::game {
     mov::Vehicle m_bike;
     mov::Glider m_glider;
     mov::Jeep m_jeep;
+    mov::Helicopter m_helicopter;
     Walker m_walker;
     ChaseCamera m_camera;
     Stars m_stars;

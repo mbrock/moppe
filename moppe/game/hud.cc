@@ -766,6 +766,9 @@ namespace moppe {
       } else if (st.can_ride_along) {
         key = mount_key;
         action = *mount_key ? "Ride along" : "A seat is free";
+      } else if (st.can_fly) {
+        key = mount_key;
+        action = *mount_key ? "Fly the helicopter" : "Helicopter within reach";
       } else if (st.can_drive) {
         key = mount_key;
         action = *mount_key ? "Drive" : "Jeep within reach";
@@ -777,6 +780,8 @@ namespace moppe {
       offer (key, action);
       if (st.thumb)
         offer ("Space", st.thumb);
+      if (st.flying)
+        offer ("Shift", "Descend");
       if (st.dismount)
         offer (mount_key, st.dismount);
       if (st.can_take_down)

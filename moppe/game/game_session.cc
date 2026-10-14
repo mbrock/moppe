@@ -59,6 +59,8 @@ namespace moppe::game {
         session.glider ().set_turn (value);
       else if (logic.m_mode == M_JEEP)
         session.jeep ().set_turn (value);
+      else if (logic.m_mode == M_HELICOPTER)
+        session.helicopter ().set_turn (value);
       else if (logic.m_mode == M_BIKE)
         session.bike ().set_yaw ((90 * value) * u::deg);
     }
@@ -72,6 +74,8 @@ namespace moppe::game {
         session.glider ().set_speed_control (value);
       else if (logic.m_mode == M_JEEP)
         session.jeep ().set_drive (value);
+      else if (logic.m_mode == M_HELICOPTER)
+        session.helicopter ().set_drive (value);
       else if (logic.m_mode == M_BIKE) {
         session.bike ().set_thrust (value);
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
@@ -155,11 +159,50 @@ namespace moppe::game {
       set_boost (session, 0);
     }
 
+    // The helicopter climbs on what boosts the bike and descends on what
+    // runs on foot (or the held deploy key, a controller's A).
+    void set_lift (GameSession& session, const InputFrame& input) {
+      if (session.logic ().m_mode != M_HELICOPTER)
+        return;
+      const float climb = input_value (input.boost);
+      const bool descend = input.run || input.deploy_glider_held;
+      session.helicopter ().set_lift (climb > 0.1f ? climb
+                                      : descend    ? -1.0f
+                                                   : 0.0f);
+    }
+
     void toggle_mount (GameSession& session) {
       GameLogicState& logic = session.logic ();
       // A passenger's seat is the game's to give and take away.
       if (logic.m_mode == M_GLIDER || logic.m_mode == M_PASSENGER)
         return;
+
+      if (logic.m_mode == M_HELICOPTER) {
+        // Out on the pilot's side, the right, once down near the ground.
+        if (!session.can_step_out_of_helicopter ())
+          return;
+        mov::Helicopter& heli = session.helicopter ();
+        heli.set_drive (0);
+        heli.set_turn (0);
+        heli.set_lift (0);
+        Vec3 heading = heli.forward ();
+        heading[1] = 0.0f;
+        session.walker ().spawn (
+          moppe::position (heli.point (Vec3 (-2.0f, 0.3f, 0.4f))),
+          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1),
+          moppe::velocity (heli.velocity ()));
+        session.set_mode (M_FOOT);
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        return;
+      }
+
+      if (session.can_fly ()) {
+        session.set_mode (M_HELICOPTER);
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        return;
+      }
 
       if (logic.m_mode == M_JEEP) {
         // Step out on the driver's side.
@@ -242,6 +285,7 @@ namespace moppe::game {
       set_turn (session, input_value (input.turn));
       set_go (session, input_value (input.drive));
       set_boost (session, input_value (input.boost));
+      set_lift (session, input);
       GameLogicState& logic = session.logic ();
       logic.m_look_pitch =
         std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
@@ -290,7 +334,7 @@ namespace moppe::game {
                 30 * u::kW,
                 150 * u::kg,
                 physics),
-        m_glider (surface), m_jeep (surface),
+        m_glider (surface), m_jeep (surface), m_helicopter (surface),
         m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
@@ -300,6 +344,8 @@ namespace moppe::game {
       return m_glider.position ();
     if (m_logic.m_mode == M_JEEP)
       return m_jeep.position ();
+    if (m_logic.m_mode == M_HELICOPTER)
+      return m_helicopter.position ();
     if (m_logic.m_mode == M_PASSENGER)
       return m_logic.m_seat_position;
     return m_bike.position ();
@@ -312,6 +358,8 @@ namespace moppe::game {
       return m_glider.heading ();
     if (m_logic.m_mode == M_JEEP)
       return m_jeep.forward ();
+    if (m_logic.m_mode == M_HELICOPTER)
+      return m_helicopter.forward ();
     if (m_logic.m_mode == M_PASSENGER)
       return m_logic.m_seat_heading;
     return m_bike.orientation ();
@@ -324,6 +372,8 @@ namespace moppe::game {
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
     if (m_logic.m_mode == M_JEEP)
       return length (m_jeep.velocity ()) * 3.6f;
+    if (m_logic.m_mode == M_HELICOPTER)
+      return length (m_helicopter.velocity ()) * 3.6f;
     if (m_logic.m_mode == M_PASSENGER)
       return length (m_logic.m_seat_velocity) * 3.6f;
     return length (m_bike.velocity ()) * 3.6f;
@@ -334,7 +384,25 @@ namespace moppe::game {
       return false;
     const float to_jeep = length2 (m_walker.position () - m_jeep.position ());
     return to_jeep < 4.5f * 4.5f &&
-           to_jeep <= length2 (m_walker.position () - m_bike.position ());
+           to_jeep <= length2 (m_walker.position () - m_bike.position ()) &&
+           !can_fly ();
+  }
+
+  bool GameSession::can_fly () const {
+    if (m_logic.m_mode != M_FOOT)
+      return false;
+    const Vec3 feet = m_walker.position ();
+    // Measured from the cabin's middle, a little ahead of the mast.
+    const float to_heli =
+      length2 (feet - m_helicopter.point (Vec3 (0, 0, 0.4f)));
+    return to_heli < 4.0f * 4.0f &&
+           to_heli <= length2 (feet - m_bike.position ()) &&
+           to_heli <= length2 (feet - m_jeep.position ());
+  }
+
+  bool GameSession::can_step_out_of_helicopter () const {
+    return m_logic.m_mode == M_HELICOPTER && m_helicopter.altitude () < 1.2f &&
+           length (m_helicopter.velocity ()) < 4.0f;
   }
 
   bool
@@ -412,6 +480,20 @@ namespace moppe::game {
       rig.distance = 8.0f * u::m;
       rig.nearest = 3.4f * u::m;
       break;
+    case M_HELICOPTER: {
+      rig.eye = m_helicopter.pilot_seat () + m_helicopter.up () * 0.78f +
+                m_helicopter.forward () * 0.1f;
+      // Behind the way it heads, level, whatever its nose is doing.
+      Vec3 ahead = m_helicopter.forward ();
+      ahead[1] = 0.0f;
+      rig.ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
+      rig.pivot = m_helicopter.position () + Vec3 (0, 1.6f, 0);
+      rig.velocity = m_helicopter.velocity ();
+      rig.distance = 12.0f * u::m;
+      rig.nearest = 5.0f * u::m;
+      rig.elevation = 21.0f * u::deg;
+      break;
+    }
     case M_BIKE:
       rig.eye =
         m_bike.position () + Vec3 (0, 0.95f, 0) + m_bike.orientation () * 0.4f;
@@ -438,6 +520,11 @@ namespace moppe::game {
         normalize (right);
         look = Quaternion::rotate (look, right, m_logic.m_look_pitch * u::rad);
       }
+      // A helicopter flies too fast for the eye to chase: it is carried
+      // along, and only what the cabin does about it is smoothed.
+      if (m_logic.m_mode == M_HELICOPTER)
+        m_logic.m_fp_eye +=
+          rig.velocity * static_cast<float> (dt.numerical_value_in (u::s));
       m_logic.m_fp_eye +=
         (rig.eye - m_logic.m_fp_eye) * smoothing_alpha (25.0f / u::s, dt);
       m_camera.place (m_logic.m_fp_eye, m_logic.m_fp_eye + look * 10.0f);
@@ -476,7 +563,7 @@ namespace moppe::game {
   GameSession::State GameSession::state () const {
     return { m_logic,           m_bike.state (),   m_glider.state (),
              m_walker.state (), m_camera.state (), m_stars.state (),
-             m_dust.state (),   m_jeep.state () };
+             m_dust.state (),   m_jeep.state (),   m_helicopter.state () };
   }
 
   void GameSession::restore (const State& state) {
@@ -488,6 +575,7 @@ namespace moppe::game {
     m_stars.restore (state.stars);
     m_dust.restore (state.dust);
     m_jeep.restore (state.jeep);
+    m_helicopter.restore (state.helicopter);
   }
 
   GameSessionAdvanceResult
@@ -538,6 +626,37 @@ namespace moppe::game {
     jeep.set_parked (logic.m_mode != M_JEEP);
     jeep.update (elapsed,
                  water_at (jeep.position ()).numerical_value_in (u::m));
+    // The helicopter's rotor runs down once its pilot has stepped out.
+    mov::Helicopter& heli = session.helicopter ();
+    heli.set_trunks (trunks);
+    heli.set_parked (logic.m_mode != M_HELICOPTER);
+    heli.update (elapsed,
+                 water_at (heli.position ()).numerical_value_in (u::m));
+    if (logic.m_mode == M_HELICOPTER) {
+      logic.m_odometer += length (heli.velocity ()) * elapsed;
+      // Low over the ground, the downwash blows up what lies there.
+      const float height = heli.altitude ();
+      if (heli.rotor () > 0.6f && height < 9.0f) {
+        std::uniform_real_distribution<float> chance (0.0f, 1.0f);
+        const float strength = heli.rotor () * (1.0f - height / 9.0f);
+        if (chance (logic.m_fx_rng) < strength * 0.8f) {
+          const float around = 6.2831853f * chance (logic.m_fx_rng);
+          const Vec3 out (std::cos (around), 0, std::sin (around));
+          Vec3 under =
+            heli.position () + out * (2.0f + 2.0f * chance (logic.m_fx_rng));
+          under[1] -= height - 0.2f;
+          const bool wet =
+            under[1] < water_at (under).numerical_value_in (u::m) + 0.3f;
+          session.dust ().emit (
+            moppe::position (under),
+            velocity (out * (7.0f + 5.0f * strength) + Vec3 (0, 1.2f, 0)),
+            wet ? 2
+                : std::max (1,
+                            static_cast<int> (std::round (2.0f * ground.dust))),
+            wet ? DisplayColor (0.85f, 0.92f, 1.0f) : ground.dust_color);
+        }
+      }
+    }
     if (logic.m_mode == M_JEEP) {
       logic.m_odometer += length (jeep.velocity ()) * elapsed;
       // Sliding wheels throw up what they slide on.

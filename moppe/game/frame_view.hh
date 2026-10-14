@@ -63,6 +63,16 @@ namespace moppe::game {
     float wheel_spin_radians = 0.0f;
   };
 
+  // The helicopter as drawn: its origin (under the mast, level with the
+  // skids' bottoms) and frame, and how far round each rotor has turned.
+  struct HelicopterPose {
+    Vec3 position {};
+    Vec3 forward { 0, 0, 1 };
+    Vec3 up { 0, 1, 0 };
+    float rotor_radians = 0.0f;
+    float tail_radians = 0.0f;
+  };
+
   struct GliderPose {
     Vec3 position {};
     Vec3 heading { 0, 0, 1 };
@@ -89,6 +99,7 @@ namespace moppe::game {
   struct FrameActors {
     VehiclePose bike {};
     JeepPose jeep {};
+    HelicopterPose helicopter {};
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
     Mode active_mode = M_BIKE;
@@ -121,6 +132,8 @@ namespace moppe::game {
     bool can_mount = false;
     // On foot beside the jeep, which the mount key would drive.
     bool can_drive = false;
+    // On foot beside the helicopter, which the mount key would fly.
+    bool can_fly = false;
     float vertical_speed_mps = 0.0f;
     float frame_time_s = 1.0f / 60.0f;
     float heading_radians = 0.0f;
@@ -268,6 +281,7 @@ namespace moppe::game {
 
   VehiclePose vehicle_pose (const mov::Vehicle& vehicle);
   JeepPose jeep_pose (const mov::Jeep& jeep);
+  HelicopterPose helicopter_pose (const mov::Helicopter& helicopter);
   GliderPose glider_pose (const mov::Glider& glider);
   WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);
   FrameView compose_frame_view (const FrameViewInput& input);

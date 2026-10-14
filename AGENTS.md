@@ -288,8 +288,8 @@
     points (axles, pivots, grips, pegs, saddle, harness) that the game
     places parts and the rider by. `tools/figure/export_model.py` writes
     the generated `moppe/game/{bike,glider}_model.{hh,cc}`; `make models`
-    re-exports both and the jeep (`MODELS_REBUILD=1` regenerates the .blend
-    files).
+    re-exports both, the jeep, and the helicopter (`MODELS_REBUILD=1`
+    regenerates the .blend files).
     Ridden, the bike carries the hiker posed by `pose_holding` (hands on
     the grips, feet on the pegs), drawn 1.3x because the bike's physics is
     half again life size; the glider's pilot hangs prone at the basebar.
@@ -311,6 +311,20 @@
     `MOPPE_DEMO=jeep` has the autopilot drive it (`tools/record OUT.mp4
     jeep`), and `MOPPE_RIDE_ALONG=1` takes the other player's passenger
     seat as soon as they appear, for captures.
+  - The helicopter (`moppe/mov/helicopter.*`, `models/helicopter.blend`
+    from `tools/figure/helicopter.py`, drawn by `game/helicopter_render.*`)
+    stands on open, level ground some tens of metres from the bike, where
+    no tree is within reach of its rotor (`park_helicopter` in game.cc).
+    On foot, `F` beside it takes the pilot's seat; the rotor spools up for
+    a few seconds before it will lift. `W`/`S` fly ahead and back, `A`/`D`
+    turn, `Space` (right trigger) climbs, and `Shift` (or holding `E`,
+    controller `A`) descends; `F` steps out once it is down. It is one
+    Box3D body on skids whose rotor thrust acts along its up, so it goes
+    where it leans, but a flight computer flies the attitude and the
+    collective: let go and it holds its height and comes to a hover, low
+    and fast it keeps clear of the ground ahead, and descending it slows
+    for the touchdown. `MOPPE_DEMO=helicopter` (`tools/record OUT.mp4
+    helicopter`) has the autopilot take it up.
   - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few
     percent of the trees, more near the trailhead: chanterelles and funnel
     chanterelles under spruce, porcini under both, fly agaric under birch,

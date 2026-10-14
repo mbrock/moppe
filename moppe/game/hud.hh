@@ -48,6 +48,11 @@ namespace moppe {
       // seat free.
       bool can_drive = false;
       bool can_ride_along = false;
+      // On foot beside the helicopter.
+      bool can_fly = false;
+      // Flying it: whether it is low and slow enough to step out.
+      bool flying = false;
+      bool can_step_out = false;
       float vertical_speed_mps;
       // Real draw-callback interval: paces the fades and feeds the
       // diagnostic frame rate.

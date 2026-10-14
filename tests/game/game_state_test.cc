@@ -736,3 +736,51 @@ MOPPE_TEST (walking_and_riding_each_keep_their_own_view) {
   MOPPE_CHECK (logic.m_mode == game::M_BIKE);
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
 }
+
+MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
+  using namespace moppe;
+
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (256, 20, 256));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::GameSession session (world, surface);
+  const auto run = [&] (game::InputFrame input, float seconds_held) {
+    for (int i = 0; i < static_cast<int> (seconds_held * 60.0f); ++i) {
+      game::advance_game_session (world, surface, session, input, step);
+      input.toggle_mount = false;
+    }
+  };
+  const game::GameLogicState& logic = session.logic ();
+
+  session.start_on_foot ();
+  // Away from the bike and the jeep, a few steps from the helicopter.
+  session.helicopter ().place (Vec3 (180, 0, 180), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (178, 10.1f, 180)), Vec3 (0, 0, 1));
+  MOPPE_CHECK (session.can_fly ());
+  MOPPE_CHECK (!session.can_drive ());
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+
+  // Spooled up, Space climbs it away; up there, F does nothing.
+  run ({}, 4.0f);
+  run ({ .boost = 1.0f }, 3.0f);
+  MOPPE_CHECK (session.helicopter ().altitude () > 10.0f);
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+
+  // Shift brings it down, and on the ground F steps out.
+  run ({ .run = true }, 25.0f);
+  MOPPE_CHECK (session.helicopter ().grounded ());
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (session.walker ().position ()[1] < 12.0f);
+}

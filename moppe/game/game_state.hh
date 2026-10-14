@@ -9,6 +9,7 @@
 #include <moppe/game/walker.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/glider.hh>
+#include <moppe/mov/helicopter.hh>
 #include <moppe/mov/jeep.hh>
 #include <moppe/mov/vehicle.hh>
 
@@ -18,8 +19,8 @@ namespace moppe::game {
   using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
 
   // M_JEEP drives this player's jeep; M_PASSENGER rides in the other
-  // player's (game/companion.hh).
-  enum Mode { M_BIKE, M_FOOT, M_GLIDER, M_JEEP, M_PASSENGER };
+  // player's (game/companion.hh); M_HELICOPTER flies the helicopter.
+  enum Mode { M_BIKE, M_FOOT, M_GLIDER, M_JEEP, M_PASSENGER, M_HELICOPTER };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
   // The directly copyable logical state owned by GameSession. Generated world
@@ -95,6 +96,7 @@ namespace moppe::game {
     Stars::State stars;
     Dust::State dust;
     mov::Jeep::State jeep;
+    mov::Helicopter::State helicopter;
   };
 }
 

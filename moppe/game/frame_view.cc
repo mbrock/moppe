@@ -125,6 +125,16 @@ namespace moppe::game {
     };
   }
 
+  HelicopterPose helicopter_pose (const mov::Helicopter& helicopter) {
+    return {
+      .position = helicopter.position (),
+      .forward = helicopter.forward (),
+      .up = helicopter.up (),
+      .rotor_radians = helicopter.rotor_angle (),
+      .tail_radians = helicopter.tail_angle (),
+    };
+  }
+
   GliderPose glider_pose (const mov::Glider& glider) {
     return {
       .position = glider.position (),
@@ -264,6 +274,7 @@ namespace moppe::game {
 
     result.actors.bike = vehicle_pose (input.session.bike ());
     result.actors.jeep = jeep_pose (input.session.jeep ());
+    result.actors.helicopter = helicopter_pose (input.session.helicopter ());
     if (logic.m_mode == M_GLIDER)
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_mode == M_FOOT)
@@ -309,6 +320,7 @@ namespace moppe::game {
                     length2 (input.session.walker ().position () -
                              input.session.bike ().position ()) < 5.0f * 5.0f;
     hud.can_drive = input.session.can_drive ();
+    hud.can_fly = input.session.can_fly ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();

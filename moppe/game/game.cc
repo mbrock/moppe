@@ -28,6 +28,7 @@
 #include <moppe/game/glider_render.hh>
 #include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
+#include <moppe/game/helicopter_render.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/jeep_render.hh>
@@ -710,6 +711,88 @@ namespace moppe {
         session ().jeep ().place (bike.position () + side * 4.5f, heading);
       }
 
+      // The helicopter stands a little way off from the bike, where the
+      // ground is open and level enough to land on and no tree stands
+      // within reach of its rotor; clear of `avoid` (the other player's)
+      // when given one.
+      void park_helicopter (std::optional<Vec3> avoid = std::nullopt) {
+        const Vec3 centre = m_spawn_position;
+        const float water = world ().water_level.numerical_value_in (u::m);
+        const std::vector<mov::Trunk> near =
+          m_trunk_field.gather (centre, 140.0f);
+        const float reach = mov::Helicopter::rotor_radius + 2.5f;
+        std::optional<Vec3> best;
+        float best_score = 1e30f;
+        for (float r = 24.0f; r <= 110.0f; r += 3.0f) {
+          const int around = static_cast<int> (6.2831853f * r / 3.0f);
+          for (int k = 0; k < around; ++k) {
+            const float a = 6.2831853f * (k + 0.5f * (int (r) % 2)) / around;
+            Vec3 at = centre + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
+            at[1] = ground_height (at);
+            if (at[1] < water + 1.0f)
+              continue;
+            if (avoid && length2 (Vec3 (at[0] - (*avoid)[0],
+                                        0.0f,
+                                        at[2] - (*avoid)[2])) < 15.0f * 15.0f)
+              continue;
+            // Level under the skids and the tail, and not much less so
+            // under the rotor's reach.
+            float low = at[1], high = at[1], wide = 0.0f;
+            for (int i = 0; i < 12; ++i) {
+              const float b = 6.2831853f * i / 12.0f;
+              const Vec3 out (std::cos (b), 0.0f, std::sin (b));
+              const float inner = ground_height (at + out * 3.0f);
+              const float outer = ground_height (at + out * 6.5f);
+              low = std::min (low, inner);
+              high = std::max (high, inner);
+              wide = std::max (wide, std::abs (outer - at[1]));
+            }
+            if (high - low > 0.6f || wide > 1.6f)
+              continue;
+            bool clear = true;
+            for (const mov::Trunk& trunk : near) {
+              const float dx = trunk.root[0] - at[0];
+              const float dz = trunk.root[2] - at[2];
+              const float room = reach + trunk.radius;
+              if (dx * dx + dz * dz < room * room) {
+                clear = false;
+                break;
+              }
+            }
+            if (!clear)
+              continue;
+            const float score = r * 0.04f + (high - low) * 4.0f + wide;
+            if (score < best_score) {
+              best_score = score;
+              best = at;
+            }
+          }
+          // The nearest ring with a good site wins over far better ones.
+          if (best && r > 40.0f)
+            break;
+        }
+        Vec3 heading = trail_direction_from_home ();
+        Vec3 at;
+        if (best) {
+          at = *best;
+          // Side on to the spawn, so it shows its whole length from there.
+          const Vec3 to =
+            normalized (Vec3 (at[0] - centre[0], 0.0f, at[2] - centre[2]));
+          heading = Vec3 (to[2], 0.0f, -to[0]);
+        } else {
+          heading[1] = 0.0f;
+          heading =
+            length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
+          at = centre - Vec3 (heading[2], 0.0f, -heading[0]) * 14.0f;
+        }
+        session ().helicopter ().set_trunks (&m_trunk_field);
+        session ().helicopter ().place (at, heading);
+        std::cerr << "moppe: helicopter parked "
+                  << length (Vec3 (at[0] - centre[0], 0.0f, at[2] - centre[2]))
+                  << " m from the spawn"
+                  << (best ? "" : " (no clear site found)") << std::endl;
+      }
+
       // MOPPE_DEMO=forest: park the bike at the world's forest-floor site.
       void move_spawn_to_forest () {
         const LandscapeGazetteer views =
@@ -1304,8 +1387,7 @@ namespace moppe {
             state.can_take_down = beside_hammock ();
             Vec3 to_fire = session ().walker ().position () - camp.hearth;
             to_fire[1] = 0.0f;
-            state.can_douse_fire =
-              camp.fire && length2 (to_fire) < 3.0f * 3.0f;
+            state.can_douse_fire = camp.fire && length2 (to_fire) < 3.0f * 3.0f;
             state.can_light_fire = !camp.fire && hearth_ahead ().has_value ();
           }
           break;
@@ -1322,6 +1404,13 @@ namespace moppe {
           break;
         case M_PASSENGER:
           state.dismount = "Step out";
+          break;
+        case M_HELICOPTER:
+          state.thumb = "Climb";
+          state.flying = true;
+          state.can_step_out = session ().can_step_out_of_helicopter ();
+          if (state.can_step_out)
+            state.dismount = "Step out";
           break;
         }
         if (logic ().m_mode != M_FOOT || state.mushroom_in_reach)
@@ -1575,8 +1664,7 @@ namespace moppe {
                                lake_census (),
                                drainage (),
                                rivers (),
-                               seconds ? std::strtof (seconds, nullptr)
-                                       : 0.0f);
+                               seconds ? std::strtof (seconds, nullptr) : 0.0f);
           return;
         }
         if (!flight) {
@@ -1741,8 +1829,8 @@ namespace moppe {
           moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") ||
           moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
           moppe::environment ("MOPPE_VIDEO");
-        return !frame_by_frame && m_screenshot_path.empty () &&
-               !m_benchmark && !m_gazetteer && !m_water_shot;
+        return !frame_by_frame && m_screenshot_path.empty () && !m_benchmark &&
+               !m_gazetteer && !m_water_shot;
       }
 
       void plan_gazetteer_capture () {
@@ -1847,6 +1935,14 @@ namespace moppe {
         scatter_boulders ();
         grow_mushrooms ();
         settle_obstacles ();
+        park_helicopter ();
+        // MOPPE_DEMO=helicopter: the autopilot takes it up instead.
+        if (const char* demo = moppe::environment ("MOPPE_DEMO");
+            demo && std::string_view (demo) == "helicopter" && !m_benchmark &&
+            !m_gazetteer) {
+          session ().set_mode (M_HELICOPTER);
+          logic ().m_cam_mode = CAM_CHASE;
+        }
         stage_camp_script ();
         place_spectator ();
         // The mouse looks around during play; M hands it back.
@@ -2049,6 +2145,7 @@ namespace moppe {
         mine.bike = vehicle_pose (session ().bike ());
         mine.jeep = jeep_pose (session ().jeep ());
         mine.jeep_velocity = session ().jeep ().velocity ();
+        mine.helicopter = helicopter_pose (session ().helicopter ());
         if (state.m_mode == M_GLIDER)
           mine.glider = glider_pose (session ().glider ());
         if (state.m_mode == M_FOOT)
@@ -2126,6 +2223,7 @@ namespace moppe {
         bike.set_heading (heading);
         m_spawn_position = place;
         park_jeep ();
+        park_helicopter (theirs.helicopter.position);
         if (!beside)
           return;
         session ().walker ().spawn (moppe::position (place + side * 1.8f),
@@ -2208,9 +2306,10 @@ namespace moppe {
         // steps, now two to a frame and now three. They are stamped by a
         // clock that moves with it, so that the other machine sees even
         // motion however unevenly the frames fall.
-        m_pose_clock = m_pose_heard < 0.0 ? now
-                       : m_pose_clock +
-                           (m_stepped > 0.0 ? m_stepped : now - m_pose_heard);
+        m_pose_clock =
+          m_pose_heard < 0.0
+            ? now
+            : m_pose_clock + (m_stepped > 0.0 ? m_stepped : now - m_pose_heard);
         m_pose_heard = now;
         m_stepped = 0.0;
         const bool was_present = m_track.present (now);
@@ -2291,6 +2390,8 @@ namespace moppe {
                        .driver_outfit = their_outfit (),
                        .passenger_outfit = m_outfit },
                      0x6000);
+        m_blob.draw (dl, surface (), theirs.helicopter.position, 4.5f);
+        render_helicopter (r, theirs.helicopter, 0x7000);
         if (theirs.hung)
           draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
         if (theirs.hearth_laid)
@@ -2435,6 +2536,8 @@ namespace moppe {
             at = theirs.glider->position;
           else if (theirs.mode == M_JEEP)
             at = theirs.jeep.position;
+          else if (theirs.mode == M_HELICOPTER)
+            at = theirs.helicopter.position + Vec3 (0, 1.0f, 0);
           // In the colour of the jacket they wear.
           DisplayColor jacket = pale;
           for (std::size_t c = 0; c < figure::colours.size (); ++c)
@@ -2468,6 +2571,16 @@ namespace moppe {
                        height,
                        "jeep",
                        session ().jeep ().position () + Vec3 (0, 1.9f, 0),
+                       30.0f,
+                       50.0f,
+                       pale);
+        if (mode != M_HELICOPTER)
+          add_waymark (state,
+                       frame,
+                       width,
+                       height,
+                       "helicopter",
+                       session ().helicopter ().position () + Vec3 (0, 3.4f, 0),
                        30.0f,
                        50.0f,
                        pale);
@@ -2654,7 +2767,8 @@ namespace moppe {
           const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
           return std::string_view (name ? name : "");
         }();
-        if (view.empty () || logic ().m_mode == M_FOOT)
+        if (view.empty () || logic ().m_mode == M_FOOT ||
+            logic ().m_mode == M_HELICOPTER)
           return;
         const bool gliding = logic ().m_mode == M_GLIDER;
         const bool driving = logic ().m_mode == M_JEEP;
@@ -2666,10 +2780,10 @@ namespace moppe {
         heading[1] = 0.0f;
         heading = normalized (heading);
         const Vec3 right (heading[2], 0.0f, -heading[0]);
-        const Vec3 at =
-          gliding   ? session ().glider ().position () - Vec3 (0, 0.9f, 0)
-          : driving ? jeep.position () + Vec3 (0, 0.5f, 0)
-                    : bike.render_position () + Vec3 (0, 0.4f, 0);
+        const Vec3 at = gliding
+                          ? session ().glider ().position () - Vec3 (0, 0.9f, 0)
+                        : driving ? jeep.position () + Vec3 (0, 0.5f, 0)
+                                  : bike.render_position () + Vec3 (0, 0.4f, 0);
         const float away = gliding ? 7.0f : driving ? 6.0f : 4.5f;
         const Vec3 from = view == "front"
                             ? heading * away + right * (away * 0.27f)
@@ -2807,32 +2921,44 @@ namespace moppe {
           // The autopilot rides; the player may still look around.
           const float look_yaw = input.look_yaw;
           const float look_pitch = input.look_pitch;
-          input = {
-            .turn = 0.35f * std::sin (total_time * 0.25f),
-            .drive = 1.0f,
-            .boost =
-              std::fmod (total_time, 11.0f) < (demo_glides ? 3.5f : 1.35f)
-                ? 1.0f
-                : 0.0f,
-            // MOPPE_DEMO=glide opens the wing on the first leap high
-            // enough to allow it.
-            .deploy_glider_held = demo_glides,
-            .look_yaw = look_yaw,
-            .look_pitch = look_pitch,
-          };
-          // Look a few metres ahead; where a trunk stands in the way, steer
-          // hard toward the side its contact pushes, so a ride through the
-          // woods weaves between trees instead of stopping at the first.
-          const Vec3 at = session ().subject_position ();
-          const Vec3 heading = session ().subject_heading ();
-          const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
-          for (const float ahead : { 4.0f, 9.0f }) {
-            const Vec3 probe = at + heading * ahead;
-            const mov::TrunkContact contact =
-              m_trunk_field.collide (probe, probe + Vec3 (0, 1.5f, 0), 1.8f);
-            if (contact.hit) {
-              input.turn = dot (contact.normal, right) >= 0.0f ? 1.0f : -1.0f;
-              break;
+          if (logic ().m_mode == M_HELICOPTER) {
+            // Spool up, climb out, and cruise in long easy curves.
+            const float t = total_time;
+            input = {
+              .turn = t > 9.0f ? 0.45f * std::sin ((t - 9.0f) * 0.22f) : 0.0f,
+              .drive = t > 8.0f ? 1.0f : 0.0f,
+              .boost = t > 4.0f && t < 9.0f ? 1.0f : 0.0f,
+              .look_yaw = look_yaw,
+              .look_pitch = look_pitch,
+            };
+          } else {
+            input = {
+              .turn = 0.35f * std::sin (total_time * 0.25f),
+              .drive = 1.0f,
+              .boost =
+                std::fmod (total_time, 11.0f) < (demo_glides ? 3.5f : 1.35f)
+                  ? 1.0f
+                  : 0.0f,
+              // MOPPE_DEMO=glide opens the wing on the first leap high
+              // enough to allow it.
+              .deploy_glider_held = demo_glides,
+              .look_yaw = look_yaw,
+              .look_pitch = look_pitch,
+            };
+            // Look a few metres ahead; where a trunk stands in the way, steer
+            // hard toward the side its contact pushes, so a ride through the
+            // woods weaves between trees instead of stopping at the first.
+            const Vec3 at = session ().subject_position ();
+            const Vec3 heading = session ().subject_heading ();
+            const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
+            for (const float ahead : { 4.0f, 9.0f }) {
+              const Vec3 probe = at + heading * ahead;
+              const mov::TrunkContact contact =
+                m_trunk_field.collide (probe, probe + Vec3 (0, 1.5f, 0), 1.8f);
+              if (contact.hit) {
+                input.turn = dot (contact.normal, right) >= 0.0f ? 1.0f : -1.0f;
+                break;
+              }
             }
           }
         }
@@ -2938,6 +3064,7 @@ namespace moppe {
         state.can_drop_bike = reading.can_drop_bike;
         state.can_mount = reading.can_mount;
         state.can_drive = reading.can_drive;
+        state.can_fly = reading.can_fly;
         state.vertical_speed_mps = reading.vertical_speed_mps;
         state.frame_time_s = reading.frame_time_s;
         state.heading_radians = reading.heading_radians;
@@ -3020,6 +3147,10 @@ namespace moppe {
             case M_JEEP:
               interaction_radius = 1.7f;
               break;
+            case M_HELICOPTER:
+              // The downwash flattens the grass under it.
+              interaction_radius = 4.0f;
+              break;
             case M_GLIDER:
             case M_PASSENGER:
               break;
@@ -3088,6 +3219,9 @@ namespace moppe {
               .driver_outfit = m_outfit,
               .passenger_outfit = their_outfit () },
             0x5000);
+          m_blob.draw (
+            m_world_dl, surface (), actors.helicopter.position, 4.5f);
+          render_helicopter (r, actors.helicopter, 0x8000);
         }
         const Basket& basket = logic ().m_basket;
         m_basket_contents.clear ();
