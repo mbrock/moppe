@@ -61,6 +61,8 @@ namespace moppe::game {
         session.jeep ().set_turn (value);
       else if (logic.m_mode == M_HELICOPTER)
         session.helicopter ().set_turn (value);
+      else if (logic.m_mode == M_TRACTOR)
+        session.tractor ().set_turn (value);
       else if (logic.m_mode == M_BIKE)
         session.bike ().set_yaw ((90 * value) * u::deg);
     }
@@ -76,6 +78,8 @@ namespace moppe::game {
         session.jeep ().set_drive (value);
       else if (logic.m_mode == M_HELICOPTER)
         session.helicopter ().set_drive (value);
+      else if (logic.m_mode == M_TRACTOR)
+        session.tractor ().set_drive (value);
       else if (logic.m_mode == M_BIKE) {
         session.bike ().set_thrust (value);
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
@@ -94,6 +98,8 @@ namespace moppe::game {
       } else if (logic.m_mode == M_JEEP) {
         // What boosts the bike brakes the jeep.
         session.jeep ().set_brake (logic.m_boost_input > 0.1f);
+      } else if (logic.m_mode == M_TRACTOR) {
+        session.tractor ().set_brake (logic.m_boost_input > 0.1f);
       } else if (logic.m_mode == M_BIKE) {
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
       }
@@ -194,6 +200,30 @@ namespace moppe::game {
         session.set_mode (M_FOOT);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
+        return;
+      }
+
+      if (logic.m_mode == M_TRACTOR) {
+        // Down off the left side, ahead of the big wheel.
+        mov::Tractor& tractor = session.tractor ();
+        tractor.set_drive (0);
+        tractor.set_turn (0);
+        tractor.set_brake (false);
+        session.walker ().spawn (
+          moppe::position (tractor.point (Vec3 (1.2f, 0.1f, 0.35f))),
+          tractor.forward (),
+          moppe::velocity (tractor.velocity ()));
+        session.set_mode (M_FOOT);
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        return;
+      }
+
+      if (session.can_drive_tractor ()) {
+        session.set_mode (M_TRACTOR);
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        set_boost (session, logic.m_boost_input);
         return;
       }
 
@@ -335,7 +365,7 @@ namespace moppe::game {
                 150 * u::kg,
                 physics),
         m_glider (surface), m_jeep (surface), m_helicopter (surface),
-        m_camera (18 * u::deg, 6.5f * u::m) {}
+        m_tractor (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
     if (m_logic.m_mode == M_FOOT)
@@ -346,6 +376,8 @@ namespace moppe::game {
       return m_jeep.position ();
     if (m_logic.m_mode == M_HELICOPTER)
       return m_helicopter.position ();
+    if (m_logic.m_mode == M_TRACTOR)
+      return m_tractor.position ();
     if (m_logic.m_mode == M_PASSENGER)
       return m_logic.m_seat_position;
     return m_bike.position ();
@@ -360,6 +392,8 @@ namespace moppe::game {
       return m_jeep.forward ();
     if (m_logic.m_mode == M_HELICOPTER)
       return m_helicopter.forward ();
+    if (m_logic.m_mode == M_TRACTOR)
+      return m_tractor.forward ();
     if (m_logic.m_mode == M_PASSENGER)
       return m_logic.m_seat_heading;
     return m_bike.orientation ();
@@ -374,6 +408,8 @@ namespace moppe::game {
       return length (m_jeep.velocity ()) * 3.6f;
     if (m_logic.m_mode == M_HELICOPTER)
       return length (m_helicopter.velocity ()) * 3.6f;
+    if (m_logic.m_mode == M_TRACTOR)
+      return length (m_tractor.velocity ()) * 3.6f;
     if (m_logic.m_mode == M_PASSENGER)
       return length (m_logic.m_seat_velocity) * 3.6f;
     return length (m_bike.velocity ()) * 3.6f;
@@ -385,7 +421,7 @@ namespace moppe::game {
     const float to_jeep = length2 (m_walker.position () - m_jeep.position ());
     return to_jeep < 4.5f * 4.5f &&
            to_jeep <= length2 (m_walker.position () - m_bike.position ()) &&
-           !can_fly ();
+           !can_fly () && !can_drive_tractor ();
   }
 
   bool GameSession::can_fly () const {
@@ -397,7 +433,21 @@ namespace moppe::game {
       length2 (feet - m_helicopter.point (Vec3 (0, 0, 0.4f)));
     return to_heli < 4.0f * 4.0f &&
            to_heli <= length2 (feet - m_bike.position ()) &&
-           to_heli <= length2 (feet - m_jeep.position ());
+           to_heli <= length2 (feet - m_jeep.position ()) &&
+           !can_drive_tractor ();
+  }
+
+  bool GameSession::can_drive_tractor () const {
+    if (m_logic.m_mode != M_FOOT)
+      return false;
+    const Vec3 feet = m_walker.position ();
+    // Measured from between the axles.
+    const float to_tractor = length2 (feet - m_tractor.position ());
+    return to_tractor < 3.6f * 3.6f &&
+           to_tractor <= length2 (feet - m_bike.position ()) &&
+           to_tractor <= length2 (feet - m_jeep.position ()) &&
+           to_tractor <=
+             length2 (feet - m_helicopter.point (Vec3 (0, 0, 0.4f)));
   }
 
   bool GameSession::can_step_out_of_helicopter () const {
@@ -479,6 +529,15 @@ namespace moppe::game {
       rig.velocity = m_logic.m_seat_velocity;
       rig.distance = 8.0f * u::m;
       rig.nearest = 3.4f * u::m;
+      break;
+    case M_TRACTOR:
+      rig.eye = m_tractor.driver_seat () + m_tractor.up () * 0.80f +
+                m_tractor.forward () * 0.1f;
+      rig.ahead = m_tractor.forward ();
+      rig.pivot = m_tractor.position () + Vec3 (0, 1.5f, 0);
+      rig.velocity = m_tractor.velocity ();
+      rig.distance = 6.0f * u::m;
+      rig.nearest = 3.0f * u::m;
       break;
     case M_HELICOPTER: {
       rig.eye = m_helicopter.pilot_seat () + m_helicopter.up () * 0.78f +
@@ -563,7 +622,8 @@ namespace moppe::game {
   GameSession::State GameSession::state () const {
     return { m_logic,           m_bike.state (),   m_glider.state (),
              m_walker.state (), m_camera.state (), m_stars.state (),
-             m_dust.state (),   m_jeep.state (),   m_helicopter.state () };
+             m_dust.state (),   m_jeep.state (),   m_helicopter.state (),
+             m_tractor.state () };
   }
 
   void GameSession::restore (const State& state) {
@@ -576,6 +636,7 @@ namespace moppe::game {
     m_dust.restore (state.dust);
     m_jeep.restore (state.jeep);
     m_helicopter.restore (state.helicopter);
+    m_tractor.restore (state.tractor);
   }
 
   GameSessionAdvanceResult
@@ -656,6 +717,37 @@ namespace moppe::game {
             wet ? DisplayColor (0.85f, 0.92f, 1.0f) : ground.dust_color);
         }
       }
+    }
+    // The tractor too, and it smokes while someone sits at its wheel:
+    // a puff from the stack now and then at idle, a stream under load.
+    mov::Tractor& tractor = session.tractor ();
+    tractor.set_trunks (trunks);
+    tractor.set_parked (logic.m_mode != M_TRACTOR);
+    tractor.update (elapsed,
+                    water_at (tractor.position ()).numerical_value_in (u::m));
+    if (logic.m_mode == M_TRACTOR) {
+      logic.m_odometer += length (tractor.velocity ()) * elapsed;
+      std::uniform_real_distribution<float> chance (0.0f, 1.0f);
+      const float throttle = tractor.throttle ();
+      if (chance (logic.m_fx_rng) < 0.12f + 0.5f * throttle) {
+        const float shade = 0.30f + 0.25f * chance (logic.m_fx_rng);
+        session.dust ().emit (
+          moppe::position (tractor.exhaust ()),
+          velocity (tractor.velocity () * 0.6f +
+                    tractor.up () * (1.2f + 2.0f * throttle)),
+          1,
+          DisplayColor (shade, shade, shade * 1.02f));
+      }
+      // Spinning or sliding wheels throw up what they turn on.
+      const float slide =
+        std::fabs (dot (tractor.velocity (), tractor.left ()));
+      if (tractor.grounded () && slide > 2.5f)
+        session.dust ().emit (
+          moppe::position (tractor.point (Vec3 (0, 0.1f, -0.8f))),
+          velocity (tractor.velocity () * 0.15f),
+          static_cast<int> (
+            std::round (std::min (3.0f, slide * 0.3f) * ground.dust)),
+          ground.dust_color);
     }
     if (logic.m_mode == M_JEEP) {
       logic.m_odometer += length (jeep.velocity ()) * elapsed;

@@ -74,6 +74,13 @@ namespace moppe::game {
       return m_helicopter;
     }
 
+    mov::Tractor& tractor () noexcept {
+      return m_tractor;
+    }
+    const mov::Tractor& tractor () const noexcept {
+      return m_tractor;
+    }
+
     mov::Glider& glider () noexcept {
       return m_glider;
     }
@@ -119,6 +126,9 @@ namespace moppe::game {
     // On foot within reach of the helicopter, and nearer it than the
     // bike or the jeep.
     bool can_fly () const;
+    // On foot within reach of the tractor, and nearer it than the bike,
+    // the jeep, or the helicopter.
+    bool can_drive_tractor () const;
     // Flying low and slow enough to step out.
     bool can_step_out_of_helicopter () const;
     void clear_controls ();
@@ -146,6 +156,7 @@ namespace moppe::game {
     mov::Glider m_glider;
     mov::Jeep m_jeep;
     mov::Helicopter m_helicopter;
+    mov::Tractor m_tractor;
     Walker m_walker;
     ChaseCamera m_camera;
     Stars m_stars;

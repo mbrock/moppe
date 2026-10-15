@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 4;
+    constexpr std::uint8_t wire_version = 5;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -287,6 +287,16 @@ namespace moppe::game {
     out.put (heli.rotor_radians);
     out.put (heli.tail_radians);
 
+    const TractorPose& tractor = snapshot.tractor;
+    out.put (tractor.position);
+    out.put (tractor.forward);
+    out.put (tractor.up);
+    for (const float drop : tractor.wheel_drop)
+      out.put (drop);
+    out.put (tractor.steer_radians);
+    out.put (tractor.front_spin_radians);
+    out.put (tractor.rear_spin_radians);
+
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
       out.put (snapshot.glider->heading);
@@ -353,7 +363,7 @@ namespace moppe::game {
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
     const std::uint8_t mode = in.get<std::uint8_t> ();
-    if (mode > M_HELICOPTER)
+    if (mode > M_TRACTOR)
       return std::nullopt;
     snapshot.mode = static_cast<Mode> (mode);
     const std::uint8_t flags = in.get<std::uint8_t> ();
@@ -387,6 +397,16 @@ namespace moppe::game {
     heli.up = in.direction (Vec3 (0, 1, 0));
     heli.rotor_radians = in.number ();
     heli.tail_radians = in.number ();
+
+    TractorPose& tractor = snapshot.tractor;
+    tractor.position = in.point ();
+    tractor.forward = in.direction (Vec3 (0, 0, 1));
+    tractor.up = in.direction (Vec3 (0, 1, 0));
+    for (float& drop : tractor.wheel_drop)
+      drop = std::clamp (in.number (), -0.5f, 0.5f);
+    tractor.steer_radians = in.number ();
+    tractor.front_spin_radians = in.number ();
+    tractor.rear_spin_radians = in.number ();
 
     if (flags & has_glider) {
       GliderPose glider;
@@ -523,6 +543,24 @@ namespace moppe::game {
         mix_angle (a.helicopter.rotor_radians, b.helicopter.rotor_radians, t);
       heli.tail_radians =
         mix_angle (a.helicopter.tail_radians, b.helicopter.tail_radians, t);
+    }
+    if (!leapt (a.tractor.position, b.tractor.position)) {
+      TractorPose& tractor = result.tractor;
+      tractor.position =
+        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
+          return &each.tractor.position;
+        });
+      tractor.forward = mix_direction (a.tractor.forward, b.tractor.forward, t);
+      tractor.up = mix_direction (a.tractor.up, b.tractor.up, t);
+      for (std::size_t i = 0; i < tractor.wheel_drop.size (); ++i)
+        tractor.wheel_drop[i] =
+          mix (a.tractor.wheel_drop[i], b.tractor.wheel_drop[i], within);
+      tractor.steer_radians =
+        mix (a.tractor.steer_radians, b.tractor.steer_radians, within);
+      tractor.front_spin_radians = mix_angle (
+        a.tractor.front_spin_radians, b.tractor.front_spin_radians, t);
+      tractor.rear_spin_radians =
+        mix_angle (a.tractor.rear_spin_radians, b.tractor.rear_spin_radians, t);
     }
     if (a.glider && b.glider &&
         !leapt (a.glider->position, b.glider->position)) {

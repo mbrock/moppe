@@ -784,3 +784,52 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   MOPPE_CHECK (logic.m_mode == game::M_FOOT);
   MOPPE_CHECK (session.walker ().position ()[1] < 12.0f);
 }
+
+MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
+  using namespace moppe;
+
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (256, 20, 256));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::GameSession session (world, surface);
+  const auto run = [&] (game::InputFrame input, float seconds_held) {
+    for (int i = 0; i < static_cast<int> (seconds_held * 60.0f); ++i) {
+      game::advance_game_session (world, surface, session, input, step);
+      input.toggle_mount = false;
+    }
+  };
+  const game::GameLogicState& logic = session.logic ();
+
+  session.start_on_foot ();
+  // Away from everything else, a couple of steps from the tractor.
+  session.tractor ().place (Vec3 (60, 0, 180), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (62, 10.1f, 180)), Vec3 (0, 0, 1));
+  MOPPE_CHECK (session.can_drive_tractor ());
+  MOPPE_CHECK (!session.can_drive ());
+  MOPPE_CHECK (!session.can_fly ());
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_TRACTOR);
+
+  // W drives it off, no faster than a tractor goes.
+  run ({ .drive = 1.0f }, 5.0f);
+  MOPPE_CHECK (session.tractor ().position ()[2] > 195.0f);
+  MOPPE_CHECK (session.subject_speed_kmh () < 33.0f);
+
+  // Space brings it to a stand, and F climbs down beside it.
+  run ({ .boost = 1.0f }, 3.0f);
+  MOPPE_CHECK (length (session.tractor ().velocity ()) < 0.5f);
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  const Vec3 apart =
+    session.walker ().position () - session.tractor ().position ();
+  MOPPE_CHECK (length (apart) < 3.0f);
+}

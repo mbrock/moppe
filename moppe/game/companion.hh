@@ -5,8 +5,9 @@
 // tells the other, some thirty times a second, how that player looks: the
 // poses the renderer already draws from, the camp as it stands, the hour,
 // and which mushrooms have been picked. The other machine draws that as a
-// second hiker, bike, jeep, helicopter, or glider -- the companion -- a moment in the past,
-// on a curve through the readings around it. Nothing here touches a
+// second hiker, bike, jeep, tractor, helicopter, or glider -- the
+// companion -- a moment in the past, on a curve through the readings
+// around it. Nothing here touches a
 // socket (game/companion_link.hh does); these are the values and how they
 // travel.
 
@@ -44,6 +45,8 @@ namespace moppe::game {
     Vec3 jeep_velocity {};
     // Their helicopter, wherever it stands or flies.
     HelicopterPose helicopter {};
+    // Their tractor, and them at its wheel when they drive it.
+    TractorPose tractor {};
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
 

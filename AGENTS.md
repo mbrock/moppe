@@ -84,8 +84,8 @@
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
   - Waymarks: a small arrow with a name and a distance marks the other
-    player (in their jacket's colour), and the bike and the jeep once they
-    are more than some thirty metres off: over the thing when it is in
+    player (in their jacket's colour), and the bike, the jeep, the
+    tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in
     view, at the frame's edge pointing the way when it is not
     (`HudState::Waymark`, placed by `add_waymarks` in game.cc).
   - The map: `M` unfolds a sheet of the whole world over the view, `M`
@@ -94,8 +94,8 @@
     (`moppe/game/relief_map.*`: relief shaded from the north-west, forest
     green, brown contours every 10 m, water, rivers by their catchments,
     a kilometre grid, the trail in red dashes) and set on paper with a
-    scale, spot heights, and marks for the walker, bike, jeep, companion,
-    camp, and trailhead (`moppe/game/map_sheet.*`). `MOPPE_MAP=whole|near`
+    scale, spot heights, and marks for the walker, bike, jeep, tractor,
+    companion, camp, and trailhead (`moppe/game/map_sheet.*`). `MOPPE_MAP=whole|near`
     starts with it open, for captures.
   - A wider world: `--world-size <KM>` (5 by default, up to 10) makes the
     world that many kilometres across, with more country rather than the
@@ -288,7 +288,7 @@
     points (axles, pivots, grips, pegs, saddle, harness) that the game
     places parts and the rider by. `tools/figure/export_model.py` writes
     the generated `moppe/game/{bike,glider}_model.{hh,cc}`; `make models`
-    re-exports both, the jeep, and the helicopter (`MODELS_REBUILD=1`
+    re-exports both, the jeep, the helicopter, and the tractor (`MODELS_REBUILD=1`
     regenerates the .blend files).
     Ridden, the bike carries the hiker posed by `pose_holding` (hands on
     the grips, feet on the pegs), drawn 1.3x because the bike's physics is
@@ -325,6 +325,22 @@
     and fast it keeps clear of the ground ahead, and descending it slows
     for the touchdown. `MOPPE_DEMO=helicopter` (`tools/record OUT.mp4
     helicopter`) has the autopilot take it up.
+  - The tractor (`moppe/mov/tractor.*`, `models/tractor.blend` from
+    `tools/figure/tractor.py`, drawn by `game/tractor_render.*`) is a
+    little red farm tractor of the old kind, open, with a pan seat
+    between big ribbed rear wheels. It waits a few steps ahead on the
+    bike's other side from the jeep (`park_tractor` in game.cc). On foot,
+    `F` beside it climbs up to drive and `F` again climbs down; `W`/`S`
+    drive and reverse, `A`/`D` steer, `Space` brakes, and off the
+    throttle it comes to a stand by itself. Its frame's origin is on the
+    ground between the axles. Like the jeep it is a Box3D assemblage, a
+    rear-heavy chassis of three box hulls on four sphere wheels, but only
+    the big rear pair drive it: hard and slowly, the engine governed to
+    some thirty kilometres an hour, easing off if its nose lifts so that
+    it does not rear over. The stack smokes while someone sits at the
+    wheel. The other player sees it and its driver (companion wire
+    version 5); `MOPPE_DEMO=tractor` (`tools/record OUT.mp4 tractor`)
+    has the autopilot drive it.
   - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few
     percent of the trees, more near the trailhead: chanterelles and funnel
     chanterelles under spruce, porcini under both, fly agaric under birch,
