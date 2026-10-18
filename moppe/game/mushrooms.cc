@@ -12,20 +12,24 @@ namespace moppe::game {
   namespace {
     constexpr float mushroom_tau = 6.2831853f;
     // Mushrooms are drawn larger than life, so a child walking through the
-    // woods spots them over the moss as an eager forager would.
-    constexpr float storybook_scale = 2.4f;
+    // woods spots them over the moss and the long grass as an eager
+    // forager would.
+    constexpr float storybook_scale = 3.4f;
     // The share of trees with a group of mushrooms around them, and how
-    // much likelier one is near the trailhead.
-    constexpr float host_odds = 0.03f;
-    constexpr float trailhead_bonus = 4.0f;
-    constexpr float trailhead_reach = 220.0f;
+    // much likelier one is near the trailhead: a good autumn, so that a
+    // walk from it finds some.
+    constexpr float host_odds = 0.09f;
+    constexpr float trailhead_bonus = 5.0f;
+    constexpr float trailhead_reach = 350.0f;
+    // Nor in the trailhead's own clearing, though they come up close by.
+    constexpr float mushroom_home_base_clearing = 0.35f;
     // No mushroom grows in the tread a rider follows.
     constexpr float mushroom_trail_tread = 0.5f;
     // The tiles the ground's mushrooms are meshed in, the distance they are
     // drawn to, and the distance past which a tile's mesh is let go.
     constexpr float tile_metres = 16.0f;
-    constexpr float draw_reach = 75.0f;
-    constexpr float keep_reach = 130.0f;
+    constexpr float draw_reach = 95.0f;
+    constexpr float keep_reach = 150.0f;
     // No mushroom stands closer than this to a tree's axis.
     constexpr float trunk_clearance = 1.1f;
     constexpr float trunk_cell_metres = 4.0f;
@@ -436,7 +440,7 @@ namespace moppe::game {
         };
         if (ground < sea || level > ground ||
             read (map::trail_influence) > mushroom_trail_tread ||
-            read (map::home_base_influence) > 0.02f)
+            read (map::home_base_influence) > mushroom_home_base_clearing)
           continue;
         MushroomSite site;
         site.kind = kind;
