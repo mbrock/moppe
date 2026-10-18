@@ -132,6 +132,9 @@ namespace moppe::nhal {
     alignas (4) const unsigned char boulders_shadow_vertex[] = {
 #embed "boulders_shadow.vertex.spv"
     };
+    alignas (4) const unsigned char mesh_shadow_vertex[] = {
+#embed "mesh_shadow.vertex.spv"
+    };
     alignas (4) const unsigned char boulder_cull_compute[] = {
 #embed "boulder_cull.compute.spv"
     };
@@ -214,6 +217,7 @@ namespace moppe::nhal {
       { spirv (waterfall_vertex), spirv (waterfall_fragment) },
       { spirv (scene_copy_vertex), spirv (scene_copy_fragment) },
       { spirv (neighbourhood_vertex), spirv (neighbourhood_fragment) },
+      { spirv (mesh_shadow_vertex), {} },
     };
     return shaders;
   }

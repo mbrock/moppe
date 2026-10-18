@@ -22,6 +22,7 @@
 #include <boulder_cull.hh>
 #include <boulders.hh>
 #include <boulders_shadow.hh>
+#include <mesh_shadow.hh>
 #include <bloom_bright.hh>
 #include <exposure.hh>
 #include <forest.hh>
@@ -381,6 +382,7 @@ namespace moppe::nhal {
         m_neighbourhood_code.keep (shaders.neighbourhood);
         m_boulders_code.keep (shaders.boulders);
         m_boulders_shadow_code.keep (shaders.boulders_shadow);
+        m_mesh_shadow_code.keep (shaders.mesh_shadow);
         m_boulder_cull_code.keep (shaders.boulder_cull);
         m_terrain_shadow_code.keep (shaders.terrain_shadow);
         m_forest_shadow_code.keep (shaders.forest_shadow);
@@ -967,10 +969,21 @@ namespace moppe::nhal {
       // the boulders, too small to matter far off, in the near one alone.
       // Both cascades are culled first, since compute may not run inside
       // the shadow's render pass.
+      void begin_shadow_casters () override {
+        m_casting = true;
+        m_casters.clear ();
+      }
+
+      void end_shadow_casters () override {
+        m_casting = false;
+      }
+
       void render_local_shadow (const render::LocalShadowParams& params)
         override {
-        if (!m_have_terrain || m_scene_open || m_resolved)
+        if (!m_have_terrain || m_scene_open || m_resolved) {
+          m_casters.clear ();
           return;
+        }
         using Shadow = render::LocalShadowParams;
         const bool trees = params.include_forest && m_tree_count;
         const bool rocks = params.include_boulders && m_rock_count;
@@ -997,6 +1010,7 @@ namespace moppe::nhal {
                                rocks && c == Shadow::near);
         }
         m_device->end_render_pass ();
+        m_casters.clear ();
 
         // Normalised light depth per metre, for biases given in metres:
         // a cascade's box runs from a quarter to eight times its reach.
@@ -1085,6 +1099,8 @@ namespace moppe::nhal {
               species * sizeof (DrawIndexedIndirectArgs));
           }
         }
+        if (index == render::LocalShadowParams::near && !m_casters.empty ())
+          draw_mesh_casters (caster_block);
         if (rocks) {
           m_device->set_pipeline (m_boulders_shadow);
           m_device->set_buffer (0, caster_block);
@@ -1096,6 +1112,30 @@ namespace moppe::nhal {
           m_device->set_uniforms (2, draw);
           m_device->draw_indexed_indirect (m_rock_indices, IndexType::uint16,
                                            m_rock_shadow_arguments);
+        }
+      }
+
+      // The lent meshes' opaque runs: what is blended or glows lets the
+      // sun through.
+      void draw_mesh_casters (const Transient& caster_block) {
+        m_device->set_pipeline (m_mesh_shadow);
+        for (const Caster& c : m_casters) {
+          shaders::mesh_shadow::Draw draw {};
+          draw.model = matrix (c.model);
+          draw.previous_model = draw.model;
+          const Transient block = m_device->allocate (sizeof draw);
+          std::memcpy (block.data, &draw, sizeof draw);
+          for (const DrawList::Run& run : c.mesh->runs) {
+            if (!run.count || run.state.blend || run.state.additive)
+              continue;
+            const std::uint32_t first = m_first_vertex_counts ? run.first : 0;
+            const std::uint64_t offset =
+              std::uint64_t (run.first - first) * sizeof (render::Vertex);
+            m_device->set_buffer (0, caster_block);
+            m_device->set_buffer (1, c.mesh->vertices, offset);
+            m_device->set_buffer (2, block);
+            m_device->draw (run.count, 1, first);
+          }
         }
       }
 
@@ -1331,7 +1371,7 @@ namespace moppe::nhal {
       }
 
       void draw_list (const DrawList& list, std::uint64_t) override {
-        if (list.empty ())
+        if (list.empty () || m_casting)
           return;
         open_scene ();
         const Transient vertices =
@@ -1344,6 +1384,10 @@ namespace moppe::nhal {
         const auto& m = static_cast<const NhalMesh&> (mesh);
         if (!m.vertices)
           return;
+        if (m_casting) {
+          m_casters.push_back ({ &m, model });
+          return;
+        }
         open_scene ();
         Mat4 previous = model;
         if (motion_id) {
@@ -1755,6 +1799,13 @@ namespace moppe::nhal {
         rock_caster.vertex = m_boulders_shadow_code.stage (0);
         rock_caster.label = "boulder shadow";
         m_boulders_shadow = m_device->create_render_pipeline (rock_caster);
+        // Baked meshes are not all closed, so both their faces cast.
+        RenderPipelineDesc mesh_caster = caster;
+        mesh_caster.program = &shaders::mesh_shadow::program;
+        mesh_caster.vertex = m_mesh_shadow_code.stage (0);
+        mesh_caster.cull = Cull::none;
+        mesh_caster.label = "mesh shadow";
+        m_mesh_shadow = m_device->create_render_pipeline (mesh_caster);
         // The sun's two cascades side by side: near on the left, far on
         // the right.
         m_shadow_map = m_device->create_texture (
@@ -2569,6 +2620,15 @@ namespace moppe::nhal {
       std::vector<ChunkDraw> m_chunks;
       Pipeline m_rain;
       ProgramCode m_boulders_code, m_boulders_shadow_code;
+      ProgramCode m_mesh_shadow_code;
+      Pipeline m_mesh_shadow;
+      // The meshes lent to the next sun shadow (begin_shadow_casters).
+      struct Caster {
+        const NhalMesh* mesh;
+        Mat4 model;
+      };
+      std::vector<Caster> m_casters;
+      bool m_casting = false;
       OwnedStage m_boulder_cull_code;
       Pipeline m_boulders, m_boulders_shadow, m_boulder_cull;
       Buffer m_rocks, m_rock_candidates, m_rock_arguments,

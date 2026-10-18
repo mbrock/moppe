@@ -128,6 +128,9 @@ namespace moppe::nhal {
     const char boulders_shadow_vertex[] = {
 #embed "boulders_shadow.vertex.metal"
       , 0 };
+    const char mesh_shadow_vertex[] = {
+#embed "mesh_shadow.vertex.metal"
+      , 0 };
     const char boulder_cull_compute[] = {
 #embed "boulder_cull.compute.metal"
       , 0 };
@@ -202,6 +205,7 @@ namespace moppe::nhal {
       { { waterfall_vertex, {} }, { waterfall_fragment, {} } },
       { { scene_copy_vertex, {} }, { scene_copy_fragment, {} } },
       { { neighbourhood_vertex, {} }, { neighbourhood_fragment, {} } },
+      { { mesh_shadow_vertex, {} }, {} },
     };
     return shaders;
   }

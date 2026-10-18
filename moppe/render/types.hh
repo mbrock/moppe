@@ -40,6 +40,28 @@ namespace moppe {
       }
     };
 
+    // What a lit surface is made of beyond its colour, as a Principled
+    // BSDF has it: how metallic and how rough, how much clear coat lies
+    // over it, and the sheen of cloth. All zero, as a draw list has it
+    // until told otherwise, is the plain shading draw lists always had;
+    // a material sets the top bit of `a` to say it is one.
+    struct Surface {
+      uint8_t metallic = 0, roughness = 0, coat = 0, a = 0;
+
+      static Surface of (float metallic,
+                         float roughness,
+                         float coat,
+                         float sheen) {
+        Surface s;
+        s.metallic = PackedRgba8::quantize (metallic);
+        s.roughness = PackedRgba8::quantize (roughness);
+        s.coat = PackedRgba8::quantize (coat);
+        s.a = static_cast<uint8_t> (
+          128 + PackedRgba8::quantize (sheen) * 127 / 255);
+        return s;
+      }
+    };
+
     // One streamed vertex; layout is mirrored by the shaders.
     struct Vertex {
       float px, py, pz;
@@ -50,8 +72,9 @@ namespace moppe {
       uint8_t fogged;  // distance haze applied
       uint8_t wind;    // 0..255 lean with the gust, growing up the plant
       uint8_t flutter; // 0..255 shake of foliage, growing out from the stem
+      Surface surface;
     };
-    static_assert (sizeof (Vertex) == 40, "streamed vertex is 40 bytes");
+    static_assert (sizeof (Vertex) == 44, "streamed vertex is 44 bytes");
 
     // Per-run fixed-function-ish state.  Kept tiny on purpose: it maps
     // to a handful of precompiled pipeline/depth-stencil objects.

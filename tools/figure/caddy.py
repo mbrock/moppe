@@ -1,6 +1,7 @@
 """Builds models/caddy.blend: a Volkswagen Caddy of the first series (Typ
 14, 1982-1992), the pickup Westmoreland and Sarajevo made of the Golf,
-here in jade metallic under the high fibreglass hardtop.
+here in jade metallic under the high fibreglass hardtop, on Swedish
+plates.
 
     Blender -b --factory-startup --python tools/figure/caddy.py
 
@@ -79,6 +80,7 @@ X_IN = 0.68         # the bed's inner walls, and the door cards
 X_HOUSE = 0.50      # the inner faces of the rear wheel housings
 RC = 0.10           # the cab's back corners, in plan
 SEAT = 0.36         # a front seat's distance from the centre line
+REGISTRATION = "GLF 179"
 
 FRONT_ARCH = (AXLE, 0.31, 0.35)     # centre, height of centre, radius
 REAR_ARCH = (-AXLE, 0.355, 0.37)
@@ -97,8 +99,10 @@ def P(x, h, z):
 # Materials: a display-referred colour and the rest of a Principled BSDF.
 # `unlit` marks surfaces the game draws at full brightness, like lamps.
 MATERIALS = {
-    "paint": dict(colour=(0.36, 0.62, 0.57), metallic=0.5,
-                  roughness=0.30, coat=1.0),
+    # Metallic paint: a pigmented base with a little metal flake in it
+    # under a clear coat.
+    "paint": dict(colour=(0.31, 0.57, 0.51), metallic=0.25,
+                  roughness=0.38, coat=1.0),
     "hardtop": dict(colour=(0.91, 0.91, 0.88), roughness=0.32, coat=0.6),
     "black": dict(colour=(0.075, 0.075, 0.08), roughness=0.55),
     "rubber": dict(colour=(0.045, 0.045, 0.05), roughness=0.85),
@@ -1041,9 +1045,10 @@ def bumpers_and_plates(shell):
 
 
 def plate(shell, centre, along, out):
-    """A German number plate of the eighties, 520 by 110 mm."""
+    """A Swedish number plate of 1973 to 2002: black on white, 480 by
+    110 mm, three letters and three digits."""
     up = out.cross(along)
-    w, h = 0.26, 0.055
+    w, h = 0.24, 0.055
     corners = [centre + along * u + up * v
                for u, v in ((-w, -h), (w, -h), (w, h), (-w, h))]
     start = shell.mark()
@@ -1063,9 +1068,9 @@ def plate(shell, centre, along, out):
                 [centre + along * u + up * v + out * 0.0008
                  for u, v in inner]], "ink", wrap=True)
     shell.orient(start, lambda c: out)
-    lettering(shell, "WOB-LV 96", 0.088, 0.0012,
+    lettering(shell, REGISTRATION, 0.092, 0.0012,
               centre + out * 0.0005 - up * 0.001, along, up, "ink",
-              condense=0.86)
+              condense=0.84)
 
 
 def fittings(shell, body):

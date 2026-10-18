@@ -9,6 +9,7 @@
 #include <shader_boulder_cull_compute.h>
 #include <shader_boulders_fragment.h>
 #include <shader_boulders_shadow_vertex.h>
+#include <shader_mesh_shadow_vertex.h>
 #include <shader_boulders_vertex.h>
 #include <shader_exposure_compute.h>
 #include <shader_forest_cull_compute.h>
@@ -101,6 +102,7 @@ namespace moppe::nhal {
       { dxil (shader_scene_copy_vertex), dxil (shader_scene_copy_fragment) },
       { dxil (shader_neighbourhood_vertex),
         dxil (shader_neighbourhood_fragment) },
+      { dxil (shader_mesh_shadow_vertex), {} },
     };
     return shaders;
   }

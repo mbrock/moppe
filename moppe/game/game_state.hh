@@ -8,6 +8,7 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/gfx/math.hh>
+#include <moppe/mov/caddy.hh>
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/helicopter.hh>
 #include <moppe/mov/jeep.hh>
@@ -20,8 +21,8 @@ namespace moppe::game {
   using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
 
   // M_JEEP drives this player's jeep; M_PASSENGER rides in the other
-  // player's (game/companion.hh); M_HELICOPTER flies the helicopter, and
-  // M_TRACTOR drives the tractor.
+  // player's (game/companion.hh); M_HELICOPTER flies the helicopter,
+  // M_TRACTOR drives the tractor, and M_CADDY the Caddy.
   enum Mode {
     M_BIKE,
     M_FOOT,
@@ -29,7 +30,8 @@ namespace moppe::game {
     M_JEEP,
     M_PASSENGER,
     M_HELICOPTER,
-    M_TRACTOR
+    M_TRACTOR,
+    M_CADDY
   };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
@@ -108,6 +110,7 @@ namespace moppe::game {
     mov::Jeep::State jeep;
     mov::Helicopter::State helicopter;
     mov::Tractor::State tractor;
+    mov::Caddy::State caddy;
   };
 }
 

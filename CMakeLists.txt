@@ -362,6 +362,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/jeep.cc
   moppe/mov/helicopter.cc
   moppe/mov/tractor.cc
+  moppe/mov/caddy.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
   moppe/game/stars.cc
@@ -398,6 +399,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/jeep_render.cc
   moppe/game/helicopter_render.cc
   moppe/game/tractor_render.cc
+  moppe/game/caddy_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
   moppe/game/map_sheet.cc
@@ -479,7 +481,8 @@ set(MOPPE_NHAL_WORLD_DRAWN
   bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
   rain water leaves waterfall scene_copy neighbourhood)
 set(MOPPE_NHAL_WORLD_CASTERS
-  terrain_shadow forest_shadow forest_far_shadow boulders_shadow)
+  terrain_shadow forest_shadow forest_far_shadow boulders_shadow
+  mesh_shadow)
 set(MOPPE_NHAL_WORLD_COMPUTED
   forest_cull exposure grass_tiles sward_patches boulder_cull)
 set(MOPPE_NHAL_WORLD_STAGES)
@@ -649,6 +652,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/mov/jeep_test.cc
     tests/mov/helicopter_test.cc
     tests/mov/tractor_test.cc
+    tests/mov/caddy_test.cc
     tests/mov/glider_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc

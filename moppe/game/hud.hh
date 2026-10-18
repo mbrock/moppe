@@ -48,8 +48,9 @@ namespace moppe {
       // seat free.
       bool can_drive = false;
       bool can_ride_along = false;
-      // On foot beside the tractor.
+      // On foot beside the tractor, or the Caddy.
       bool can_drive_tractor = false;
+      bool can_drive_caddy = false;
       // On foot beside the helicopter.
       bool can_fly = false;
       // Flying it: whether it is low and slow enough to step out.

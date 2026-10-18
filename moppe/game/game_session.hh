@@ -81,6 +81,13 @@ namespace moppe::game {
       return m_tractor;
     }
 
+    mov::Caddy& caddy () noexcept {
+      return m_caddy;
+    }
+    const mov::Caddy& caddy () const noexcept {
+      return m_caddy;
+    }
+
     mov::Glider& glider () noexcept {
       return m_glider;
     }
@@ -121,14 +128,19 @@ namespace moppe::game {
     float subject_speed_kmh () const;
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
-    // On foot within reach of the jeep, and nearer it than the bike.
+    // What the mount key would take, on foot: of the bike, the jeep, the
+    // helicopter, the tractor, and the Caddy, the nearest within its
+    // reach.
+    enum class Mount { none, bike, jeep, helicopter, tractor, caddy };
+    Mount mount_within_reach () const;
+    // On foot nearest the jeep, within its reach.
     bool can_drive () const;
-    // On foot within reach of the helicopter, and nearer it than the
-    // bike or the jeep.
+    // On foot nearest the helicopter, within its reach.
     bool can_fly () const;
-    // On foot within reach of the tractor, and nearer it than the bike,
-    // the jeep, or the helicopter.
+    // On foot nearest the tractor, within its reach.
     bool can_drive_tractor () const;
+    // On foot nearest the Caddy, within reach of its doors.
+    bool can_drive_caddy () const;
     // Flying low and slow enough to step out.
     bool can_step_out_of_helicopter () const;
     void clear_controls ();
@@ -157,6 +169,7 @@ namespace moppe::game {
     mov::Jeep m_jeep;
     mov::Helicopter m_helicopter;
     mov::Tractor m_tractor;
+    mov::Caddy m_caddy;
     Walker m_walker;
     ChaseCamera m_camera;
     Stars m_stars;

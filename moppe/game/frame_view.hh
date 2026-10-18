@@ -73,6 +73,9 @@ namespace moppe::game {
     float tail_radians = 0.0f;
   };
 
+  // The Caddy as drawn: the same readings as the jeep's.
+  using CaddyPose = JeepPose;
+
   // The tractor as drawn: its origin (midway between the axles, on the
   // ground it stands on) and frame, how far each wheel hangs below where
   // it stands (front left, front right, rear left, rear right; negative
@@ -116,6 +119,7 @@ namespace moppe::game {
     JeepPose jeep {};
     HelicopterPose helicopter {};
     TractorPose tractor {};
+    CaddyPose caddy {};
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
     Mode active_mode = M_BIKE;
@@ -152,6 +156,8 @@ namespace moppe::game {
     bool can_fly = false;
     // On foot beside the tractor, which the mount key would drive.
     bool can_drive_tractor = false;
+    // On foot beside the Caddy, which the mount key would drive.
+    bool can_drive_caddy = false;
     float vertical_speed_mps = 0.0f;
     float frame_time_s = 1.0f / 60.0f;
     float heading_radians = 0.0f;
@@ -301,6 +307,7 @@ namespace moppe::game {
   JeepPose jeep_pose (const mov::Jeep& jeep);
   HelicopterPose helicopter_pose (const mov::Helicopter& helicopter);
   TractorPose tractor_pose (const mov::Tractor& tractor);
+  CaddyPose caddy_pose (const mov::Caddy& caddy);
   GliderPose glider_pose (const mov::Glider& glider);
   WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);
   FrameView compose_frame_view (const FrameViewInput& input);

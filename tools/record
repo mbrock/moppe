@@ -19,6 +19,7 @@
 #   jeep      the autopilot driving the jeep           (MOPPE_DEMO=jeep)
 #   helicopter the autopilot flying the helicopter     (MOPPE_DEMO=helicopter)
 #   tractor   the autopilot driving the tractor        (MOPPE_DEMO=tractor)
+#   caddy     the autopilot driving the Caddy          (MOPPE_DEMO=caddy)
 #   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
 #   supper    picking three, frying them on a fire, and eating
@@ -141,6 +142,7 @@ case $scene in
   jeep) stage MOPPE_DEMO=jeep; : "${seconds:=20}" ;;
   helicopter) stage MOPPE_DEMO=helicopter; : "${seconds:=30}" ;;
   tractor) stage MOPPE_DEMO=tractor; : "${seconds:=20}" ;;
+  caddy) stage MOPPE_DEMO=caddy; : "${seconds:=20}" ;;
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
   supper) stage MOPPE_WALK=supper; : "${seconds:=50}" ;;
@@ -186,8 +188,14 @@ width=${size%x*}
 height=${size#*x}
 
 rm -f "$output"
-if [[ -z $window && $(uname) == Linux ]] &&
-   command -v gamescope >/dev/null && compgen -G '/dev/dri/renderD*' >/dev/null
+# A render node says there is a GPU; the glob is tested by hand, as the
+# development shell's bash is built without compgen.
+gpu=
+for node in /dev/dri/renderD*; do
+  [[ -e $node ]] && gpu=1
+done
+if [[ -z $window && $(uname) == Linux && -n $gpu ]] &&
+   command -v gamescope >/dev/null
 then
   # gamescope and the X server it starts say a good deal; the game's own
   # lines are the ones that matter.

@@ -293,19 +293,33 @@
     its material's whole Principled BSDF (`model_mesh::Paint`: metallic,
     roughness, clear coat, transmission, sheen, emission), which the
     renderer does not yet use.
-  - The Caddy (`models/caddy.blend` from `tools/figure/caddy.py`, exported
-    to `game/caddy_model.*`, not yet in the game) is a first-series VW
-    Caddy pickup under a fibreglass hardtop, life size from the factory's
-    figures, in the jeep's frame and with the jeep's points (axles, seats,
-    pedals, steering wheel) plus the tailgate's hinge, the tow ball, and a
-    place by each door. Its body is lofted from cross-sections; the glass,
-    hardtop, and tailgate are assemblies of their own.
+  - The Caddy (`moppe/mov/caddy.*`, `models/caddy.blend` from
+    `tools/figure/caddy.py`, drawn by `game/caddy_render.*`) is a
+    first-series VW Caddy pickup under a fibreglass hardtop on Swedish
+    plates, parked behind the jeep. On foot, `F` beside it drives it and
+    `F` steps out of the driver's door; `W`/`S`, `A`/`D`, and `Space` as
+    in the jeep. It is a Box3D assemblage like the jeep but a road car:
+    front-wheel drive, soft springs, some 140 km/h flat out (its wheels
+    may spin faster than Box3D's quarter turn a step). What the mount key
+    takes on foot is the nearest vehicle within its reach
+    (`GameSession::mount_within_reach`). `MOPPE_DEMO=caddy`
+    (`tools/record OUT.mp4 caddy`) has the autopilot drive it.
+  - Model materials reach the shaders: each streamed vertex carries a
+    `render::Surface` (metallic, roughness, clear coat, sheen), set from
+    the exported Principled BSDF by `model_mesh::record`, and the uber
+    program shades such vertices with GGX sun highlights, the sky
+    reflected (the water's `water-sky`) and blurred with roughness, and a
+    clear coat; see-through paints (glass) draw blended with Fresnel.
+    Draw lists without a material keep the old shading. Vehicles lend
+    their meshes to the sun's near shadow cascade
+    (`Renderer::begin_shadow_casters`, the `mesh-shadow` program), so they
+    shade the ground and their own insides.
     Ridden, the bike carries the hiker posed by `pose_holding` (hands on
     the grips, feet on the pegs), drawn 1.3x because the bike's physics is
     half again life size; the glider's pilot hangs prone at the basebar.
     `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
-    ahead of the bike, the glider, or the driven jeep.
+    ahead of the bike, the glider, or the driven jeep, tractor, or Caddy.
   - The jeep (`moppe/mov/jeep.*`, `models/jeep.blend` from
     `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits a few
     steps to the bike's left. On foot, `F` beside it drives it (nearer it

@@ -833,3 +833,53 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
     session.walker ().position () - session.tractor ().position ();
   MOPPE_CHECK (length (apart) < 3.0f);
 }
+
+MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
+  using namespace moppe;
+
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (256, 20, 256));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::GameSession session (world, surface);
+  const auto run = [&] (game::InputFrame input, float seconds_held) {
+    for (int i = 0; i < static_cast<int> (seconds_held * 60.0f); ++i) {
+      game::advance_game_session (world, surface, session, input, step);
+      input.toggle_mount = false;
+    }
+  };
+  const game::GameLogicState& logic = session.logic ();
+
+  session.start_on_foot ();
+  // Away from everything else, beside the driver's door.
+  session.caddy ().place (Vec3 (190, 0, 60), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (191.6f, 10.1f, 60.3f)),
+                           Vec3 (0, 0, 1));
+  MOPPE_CHECK (session.can_drive_caddy ());
+  MOPPE_CHECK (!session.can_drive ());
+  MOPPE_CHECK (!session.can_drive_tractor ());
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_CADDY);
+
+  // W drives it off, faster than the tractor goes.
+  run ({ .drive = 1.0f }, 5.0f);
+  MOPPE_CHECK (session.caddy ().position ()[2] > 90.0f);
+  MOPPE_CHECK (session.subject_speed_kmh () > 40.0f);
+
+  // Space brings it to a stand, and F steps out of the driver's door.
+  run ({ .boost = 1.0f }, 4.0f);
+  MOPPE_CHECK (length (session.caddy ().velocity ()) < 0.5f);
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  const Vec3 out = session.walker ().position () - session.caddy ().position ();
+  MOPPE_CHECK (length (out) < 3.0f);
+  MOPPE_CHECK (dot (out, session.caddy ().left ()) > 0.8f);
+}

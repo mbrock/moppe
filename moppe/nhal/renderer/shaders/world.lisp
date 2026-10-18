@@ -1110,8 +1110,10 @@
 
 ;;; -- draw lists and meshes ------------------------------------------------
 
-;;; A streamed vertex is ten words: position, normal, uv as floats, then
-;;; RGBA8 colour and four flag bytes (lit, fogged, wind, flutter).
+;;; A streamed vertex is eleven words: position, normal, uv as floats, then
+;;; RGBA8 colour, four flag bytes (lit, fogged, wind, flutter), and four
+;;; bytes of what the surface is made of (render::Surface: metallic,
+;;; roughness, clear coat, and sheen above a flag that it is a material).
 (define-shader-abstraction vertex-word (vertices first offset)
   `(buffer-element ,vertices (+ ,first (uint ,offset))))
 
@@ -1156,11 +1158,12 @@
                (tint :vec4 :location 3)
                (shading :vec4 :location 4)   ; lit, fogged, foliage, 0
                (here :vec4 :location 5)
-               (then :vec4 :location 6))
+               (then :vec4 :location 6)
+               (made :vec4 :location 7))     ; render::Surface
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (vertices :storage-buffer :binding 1 :element :uint)
                  (draw :uniform-block :binding 2 :members #.*draw*)))
-  (let* ((first (* vertex-index (uint 10.0)))
+  (let* ((first (* vertex-index (uint 11.0)))
          (local (vec4 (vertex-float vertices first 0.0)
                       (vertex-float vertices first 1.0)
                       (vertex-float vertices first 2.0)
@@ -1170,6 +1173,7 @@
                        (vertex-float vertices first 5.0)))
          (packed (vertex-word vertices first 8.0))
          (flags (vertex-word vertices first 9.0))
+         (stuff (vertex-word vertices first 10.0))
          (bend (byte-of flags (uint 16.0)))
          (flutter (byte-of flags (uint 24.0)))
          (time (swizzle camera-position :w))
@@ -1195,7 +1199,90 @@
                               (min (* 255.0 (byte-of flags (uint 8.0))) 1.0)
                               flutter 0.0))
     (set-output here current)
-    (set-output then (* previous-view-proj (vec4 before 1.0)))))
+    (set-output then (* previous-view-proj (vec4 before 1.0)))
+    (set-output made (vec4 (byte-of stuff (uint 0.0))
+                           (byte-of stuff (uint 8.0))
+                           (byte-of stuff (uint 16.0))
+                           (byte-of stuff (uint 24.0))))))
+
+;;; The sky seen in the water: the sky program's atmosphere, haze, overcast,
+;;; and valley mist, without the clouds' detail, which ripples would break.
+(define-shader-function water-sky (ray sun fog cloudiness mist)
+  (let* ((rise (swizzle ray :y))
+         (atmosphere (sky-atmosphere ray sun))
+         (fogged (mix atmosphere fog
+                      (expt (- 1.0 (clamp rise 0.0 1.0)) 6.0)))
+         (veiled (mix fogged (* fog 1.08)
+                      (* 0.35 cloudiness (smoothstep 0.05 0.3 rise))))
+         (overcast (smoothstep 0.70 1.0 cloudiness))
+         (grey (* fog (+ 0.92 (* 0.14 (clamp rise 0.0 1.0)))))
+         (closed (mix veiled grey (* overcast 0.9))))
+    (mix closed (* fog 1.06)
+         (* mist (- 1.0 (smoothstep -0.02 0.22 rise))))))
+
+;;; GGX's distribution of microfacet normals, for alpha = roughness
+;;; squared, and the height-correlated Smith visibility that goes with it.
+(define-shader-function ggx (n-dot-h a2)
+  (let* ((d (+ (* n-dot-h n-dot-h (- a2 1.0)) 1.0)))
+    (/ a2 (* 3.14159265 (* d d)))))
+
+(define-shader-function smith (n-dot-l n-dot-v a2)
+  (/ 0.5 (+ (* n-dot-l (sqrt (+ (* n-dot-v n-dot-v (- 1.0 a2)) a2)))
+            (* n-dot-v (sqrt (+ (* n-dot-l n-dot-l (- 1.0 a2)) a2)))
+            0.00001)))
+
+;;; A material's light, as a Principled BSDF has it: the diffuse body
+;;; (none where it is metal) in the same light as everything else, the
+;;; sun's highlight from GGX microfacets, the sky reflected in the mirror
+;;; direction and blurred toward the light all round as the surface
+;;; roughens, and over it all a clear coat, a second sharp and colourless
+;;; reflection, as on a car's paint. The sun is not a point, so no
+;;; highlight is ever sharper than its disc allows. Returns the light
+;;; reflected (rgb) and how much of it is the mirror's (a), so that glass
+;;; can let the rest through.
+(define-shader-function material-light (albedo made n eye sun diffuse-light
+                                        sun-light sky-light sky-dir fog cloud
+                                        mist)
+  (let* ((metallic (swizzle made :x))
+         (rough (max (swizzle made :y) 0.03))
+         (coat (swizzle made :z))
+         (sheen (clamp (* (- (swizzle made :w) 0.502) 2.008) 0.0 1.0))
+         (n-dot-v (max (dot n eye) 0.001))
+         (n-dot-l (clamp (dot n sun) 0.0 1.0))
+         (half-way (normalize (+ sun eye)))
+         (n-dot-h (max (dot n half-way) 0.0))
+         (v-dot-h (max (dot eye half-way) 0.0))
+         (f0 (mix (vec3 0.04 0.04 0.04) albedo metallic))
+         (schlick (expt (- 1.0 v-dot-h) 5.0))
+         (grazing (expt (- 1.0 n-dot-v) 5.0))
+         (r-sun (max rough 0.2))
+         (a2 (* r-sun r-sun r-sun r-sun))
+         (f-sun (+ f0 (* (- (vec3 1.0 1.0 1.0) f0) schlick)))
+         ;; Diffuse light here carries no 1/pi, so neither does this.
+         (glint (* f-sun (* 3.14159265 (ggx n-dot-h a2)
+                            (smith n-dot-l n-dot-v a2) n-dot-l)))
+         (reflected (normalize (- (* (* 2.0 n-dot-v) n) eye)))
+         (sky-seen (water-sky reflected sky-dir fog cloud mist))
+         (blurred (mix sky-seen (hemisphere-light sky-light reflected)
+                       (smoothstep 0.02 0.5 rough)))
+         (smooth (- 1.0 rough))
+         (f-env (+ f0 (* (- (max (vec3 smooth smooth smooth) f0) f0)
+                         grazing)))
+         (body (* (* albedo (- 1.0 metallic)) diffuse-light
+                  (- (vec3 1.0 1.0 1.0) f-env)))
+         (mirror (* f-env blurred))
+         (fc (* coat (+ 0.04 (* 0.96 grazing))))
+         (a2c 0.0011)
+         (coat-glint (* coat (* (+ 0.04 (* 0.96 schlick))
+                                (* 3.14159265 (ggx n-dot-h a2c)
+                                   (smith n-dot-l n-dot-v a2c) n-dot-l))))
+         (cloth (* sheen (* 0.35 (expt (- 1.0 n-dot-v) 3.0))
+                   (mix albedo (vec3 1.0 1.0 1.0) 0.4) diffuse-light))
+         (base-light (+ body (* glint sun-light)))
+         (reflection (+ (* mirror (- 1.0 fc)) (* fc sky-seen))))
+    (vec4 (+ (* base-light (- 1.0 fc)) (* coat-glint sun-light) cloth
+             reflection)
+          (clamp (+ (swizzle f-env :y) fc) 0.0 1.0))))
 
 (define-shader-function dither (point)
   (fract (* (sin (dot point (vec3 12.9898 78.233 37.719))) 43758.5453)))
@@ -1208,7 +1295,8 @@
               (tint :vec4 :location 3)
               (shading :vec4 :location 4)
               (here :vec4 :location 5)
-              (then :vec4 :location 6))
+              (then :vec4 :location 6)
+              (made :vec4 :location 7))
      :outputs ((color :vec4 :location 0)
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
@@ -1245,17 +1333,40 @@
          (bounce (* (swizzle sun-diffuse :xyz) (vec3 0.20 0.17 0.11)
                     (clamp (- 0.45 (* 0.55 (swizzle n :y))) 0.0 1.0)
                     (max (swizzle sun :y) 0.0)))
-         (lit (+ (* albedo (+ (* (hemisphere-light (swizzle ambient :xyz) n)
-                                 fill)
-                              (* sun-light lambert)
-                              bounce
-                              (lamp-light lamp lamp-color world n)))
-                 (* (mix albedo (vec3 1.0 1.0 1.0) 0.2)
-                    (* (swizzle sun-specular :xyz) direct
-                       (* 0.10 (* (expt (max (dot n half-way) 0.0) 48.0)
-                                  shine))))
-                 (* albedo (* (vec3 0.025 0.04 0.065)
-                              (* rim (- 1.0 (* 0.75 foliage)))))))
+         (diffuse-light (+ (* (hemisphere-light (swizzle ambient :xyz) n) fill)
+                           (* sun-light lambert)
+                           bounce
+                           (lamp-light lamp lamp-color world n)))
+         (sky-rim (* albedo (* (vec3 0.025 0.04 0.065)
+                               (* rim (- 1.0 (* 0.75 foliage))))))
+         (plain (+ (* albedo diffuse-light)
+                   (* (mix albedo (vec3 1.0 1.0 1.0) 0.2)
+                      (* (swizzle sun-specular :xyz) direct
+                         (* 0.10 (* (expt (max (dot n half-way) 0.0) 48.0)
+                                    shine))))
+                   sky-rim))
+         ;; A material (render::Surface) says so in its top bit.
+         (is-material (step 0.5 (swizzle made :w)))
+         (made-light (material-light albedo made n eye sun diffuse-light
+                                     (* (swizzle sun-specular :xyz) direct)
+                                     (swizzle ambient :xyz)
+                                     (swizzle sky-sun :xyz)
+                                     (swizzle fog-color :xyz)
+                                     (swizzle sun-direction :w)
+                                     (swizzle relief :w)))
+         ;; See-through, it lets through what its tint and its mirror do
+         ;; not stop: drawn blended, the more opaque the more it reflects.
+         (clear (* is-material (step (swizzle base :w) 0.99)))
+         (opacity (mix (swizzle base :w)
+                       (+ (swizzle base :w)
+                          (* (swizzle made-light :w)
+                             (- 1.0 (swizzle base :w))))
+                       clear))
+         ;; Blended as src-alpha over what lies behind, the reflection
+         ;; must come out undimmed by its own opacity.
+         (made-lit (+ (swizzle made-light :xyz) sky-rim))
+         (through (/ made-lit (max opacity 0.05)))
+         (lit (mix plain through is-material))
          (shaded (mix albedo lit (swizzle shading :x)))
          (fogged (mix shaded
                       (hazed shaded world camera fog-color
@@ -1264,7 +1375,9 @@
     (when (> stippled 0.5)
       (when (<= (swizzle base :w) threshold)
         (discard)))
-    (set-output color (vec4 fogged (max (swizzle base :w) stippled)))
+    (set-output color (vec4 fogged (max (mix (swizzle base :w) opacity
+                                              is-material)
+                                         stippled)))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
 (define-shader-program uber
@@ -1287,7 +1400,7 @@
                (tint :vec4 :location 1))
      :resources ((hud :uniform-block :binding 0 :members #.*hud*)
                  (vertices :storage-buffer :binding 1 :element :uint)))
-  (let* ((first (* vertex-index (uint 10.0)))
+  (let* ((first (* vertex-index (uint 11.0)))
          (packed (vertex-word vertices first 8.0))
          (position (* projection
                       (vec4 (vertex-float vertices first 0.0)
@@ -1864,6 +1977,26 @@
 
 (define-shader-program terrain-shadow
   :vertex terrain-shadow-vertex)
+
+;;; A baked mesh's opaque runs into the sun's map, from the same streamed
+;;; vertices the uber program draws.
+(define-shader mesh-shadow-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index))
+     :outputs ((clip-position :vec4 :built-in :position))
+     :resources ((caster :uniform-block :binding 0 :members #.*caster*)
+                 (vertices :storage-buffer :binding 1 :element :uint)
+                 (draw :uniform-block :binding 2 :members #.*draw*)))
+  (let* ((first (* vertex-index (uint 11.0)))
+         (local (vec4 (vertex-float vertices first 0.0)
+                      (vertex-float vertices first 1.0)
+                      (vertex-float vertices first 2.0)
+                      1.0)))
+    (set-output clip-position
+                (clip (* light-view (* model local)) (vec2 0.0 0.0)))))
+
+(define-shader-program mesh-shadow
+  :vertex mesh-shadow-vertex)
 
 (define-shader forest-shadow-vertex
     (:stage :vertex
@@ -3532,21 +3665,6 @@
 ;;; How hard it churns: its rapids, and the plunge below a fall.
 (define-shader-function churn (descent)
   (+ (* 0.85 (rapid descent)) (smoothstep 0.9 2.6 descent)))
-
-;;; The sky seen in the water: the sky program's atmosphere, haze, overcast,
-;;; and valley mist, without the clouds' detail, which ripples would break.
-(define-shader-function water-sky (ray sun fog cloudiness mist)
-  (let* ((rise (swizzle ray :y))
-         (atmosphere (sky-atmosphere ray sun))
-         (fogged (mix atmosphere fog
-                      (expt (- 1.0 (clamp rise 0.0 1.0)) 6.0)))
-         (veiled (mix fogged (* fog 1.08)
-                      (* 0.35 cloudiness (smoothstep 0.05 0.3 rise))))
-         (overcast (smoothstep 0.70 1.0 cloudiness))
-         (grey (* fog (+ 0.92 (* 0.14 (clamp rise 0.0 1.0)))))
-         (closed (mix veiled grey (* overcast 0.9))))
-    (mix closed (* fog 1.06)
-         (* mist (- 1.0 (smoothstep -0.02 0.22 rise))))))
 
 (define-shader water-fragment
     (:stage :fragment

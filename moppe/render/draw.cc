@@ -26,6 +26,7 @@ namespace moppe {
       m_fogged = true;
       m_wind = 0;
       m_flutter = 0;
+      m_surface = Surface ();
       m_texture = 0;
       m_state = DrawState ();
       m_in_begin = false;
@@ -126,6 +127,15 @@ namespace moppe {
     void DrawList::flutter (proportion_t w) {
       m_flutter = PackedRgba8::quantize (scalar_value (w));
     }
+    void DrawList::material (float metallic,
+                             float roughness,
+                             float coat,
+                             float sheen) {
+      m_surface = Surface::of (metallic, roughness, coat, sheen);
+    }
+    void DrawList::plain () {
+      m_surface = Surface ();
+    }
     void DrawList::set_texture (const Texture* t) {
       m_texture = t;
     }
@@ -167,6 +177,7 @@ namespace moppe {
       v.fogged = m_fogged ? 1 : 0;
       v.wind = m_wind;
       v.flutter = m_flutter;
+      v.surface = m_surface;
       return v;
     }
 

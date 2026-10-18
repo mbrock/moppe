@@ -63,6 +63,8 @@ namespace moppe::game {
         session.helicopter ().set_turn (value);
       else if (logic.m_mode == M_TRACTOR)
         session.tractor ().set_turn (value);
+      else if (logic.m_mode == M_CADDY)
+        session.caddy ().set_turn (value);
       else if (logic.m_mode == M_BIKE)
         session.bike ().set_yaw ((90 * value) * u::deg);
     }
@@ -80,6 +82,8 @@ namespace moppe::game {
         session.helicopter ().set_drive (value);
       else if (logic.m_mode == M_TRACTOR)
         session.tractor ().set_drive (value);
+      else if (logic.m_mode == M_CADDY)
+        session.caddy ().set_drive (value);
       else if (logic.m_mode == M_BIKE) {
         session.bike ().set_thrust (value);
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
@@ -100,6 +104,8 @@ namespace moppe::game {
         session.jeep ().set_brake (logic.m_boost_input > 0.1f);
       } else if (logic.m_mode == M_TRACTOR) {
         session.tractor ().set_brake (logic.m_boost_input > 0.1f);
+      } else if (logic.m_mode == M_CADDY) {
+        session.caddy ().set_brake (logic.m_boost_input > 0.1f);
       } else if (logic.m_mode == M_BIKE) {
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
       }
@@ -219,16 +225,17 @@ namespace moppe::game {
         return;
       }
 
-      if (session.can_drive_tractor ()) {
-        session.set_mode (M_TRACTOR);
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
-        set_boost (session, logic.m_boost_input);
-        return;
-      }
-
-      if (session.can_fly ()) {
-        session.set_mode (M_HELICOPTER);
+      if (logic.m_mode == M_CADDY) {
+        // Out of the driver's door, on the left.
+        mov::Caddy& caddy = session.caddy ();
+        caddy.set_drive (0);
+        caddy.set_turn (0);
+        caddy.set_brake (false);
+        session.walker ().spawn (
+          moppe::position (caddy.point (Vec3 (1.35f, 0.2f, 0.25f))),
+          caddy.forward (),
+          moppe::velocity (caddy.velocity ()));
+        session.set_mode (M_FOOT);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
@@ -250,11 +257,20 @@ namespace moppe::game {
         return;
       }
 
-      if (session.can_drive ()) {
-        session.set_mode (M_JEEP);
+      // On foot: take whatever stands nearest within reach.
+      const GameSession::Mount reach = session.mount_within_reach ();
+      const Mode into = reach == GameSession::Mount::jeep    ? M_JEEP
+                        : reach == GameSession::Mount::tractor ? M_TRACTOR
+                        : reach == GameSession::Mount::caddy   ? M_CADDY
+                        : reach == GameSession::Mount::helicopter
+                          ? M_HELICOPTER
+                          : M_FOOT;
+      if (into != M_FOOT) {
+        session.set_mode (into);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
-        set_boost (session, logic.m_boost_input);
+        if (into != M_HELICOPTER)
+          set_boost (session, logic.m_boost_input);
         return;
       }
 
@@ -277,8 +293,7 @@ namespace moppe::game {
       }
 
       // On foot: remount the bike when standing next to it.
-      if (length2 (session.walker ().position () -
-                   session.bike ().position ()) < 5.0f * 5.0f) {
+      if (reach == GameSession::Mount::bike) {
         session.bike ().set_thrust (0);
         session.bike ().set_yaw (0 * u::deg);
         session.set_mode (M_BIKE);
@@ -365,7 +380,8 @@ namespace moppe::game {
                 150 * u::kg,
                 physics),
         m_glider (surface), m_jeep (surface), m_helicopter (surface),
-        m_tractor (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
+        m_tractor (surface), m_caddy (surface),
+        m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
     if (m_logic.m_mode == M_FOOT)
@@ -378,6 +394,8 @@ namespace moppe::game {
       return m_helicopter.position ();
     if (m_logic.m_mode == M_TRACTOR)
       return m_tractor.position ();
+    if (m_logic.m_mode == M_CADDY)
+      return m_caddy.position ();
     if (m_logic.m_mode == M_PASSENGER)
       return m_logic.m_seat_position;
     return m_bike.position ();
@@ -394,6 +412,8 @@ namespace moppe::game {
       return m_helicopter.forward ();
     if (m_logic.m_mode == M_TRACTOR)
       return m_tractor.forward ();
+    if (m_logic.m_mode == M_CADDY)
+      return m_caddy.forward ();
     if (m_logic.m_mode == M_PASSENGER)
       return m_logic.m_seat_heading;
     return m_bike.orientation ();
@@ -410,44 +430,58 @@ namespace moppe::game {
       return length (m_helicopter.velocity ()) * 3.6f;
     if (m_logic.m_mode == M_TRACTOR)
       return length (m_tractor.velocity ()) * 3.6f;
+    if (m_logic.m_mode == M_CADDY)
+      return length (m_caddy.velocity ()) * 3.6f;
     if (m_logic.m_mode == M_PASSENGER)
       return length (m_logic.m_seat_velocity) * 3.6f;
     return length (m_bike.velocity ()) * 3.6f;
   }
 
-  bool GameSession::can_drive () const {
+  GameSession::Mount GameSession::mount_within_reach () const {
     if (m_logic.m_mode != M_FOOT)
-      return false;
-    const float to_jeep = length2 (m_walker.position () - m_jeep.position ());
-    return to_jeep < 4.5f * 4.5f &&
-           to_jeep <= length2 (m_walker.position () - m_bike.position ()) &&
-           !can_fly () && !can_drive_tractor ();
+      return Mount::none;
+    const Vec3 feet = m_walker.position ();
+    // Each measured from where one gets on or in, with how far off that
+    // may be: the bike's saddle, the jeep's middle, the helicopter's
+    // cabin a little ahead of its mast, the tractor between its axles,
+    // and the Caddy's cab.
+    const struct {
+      Mount mount;
+      Vec3 at;
+      float reach;
+    } mounts[] = {
+      { Mount::bike, m_bike.position (), 5.0f },
+      { Mount::jeep, m_jeep.position (), 4.5f },
+      { Mount::helicopter, m_helicopter.point (Vec3 (0, 0, 0.4f)), 4.0f },
+      { Mount::tractor, m_tractor.position (), 3.6f },
+      { Mount::caddy, m_caddy.point (Vec3 (0, 0, 0.25f)), 3.4f },
+    };
+    Mount nearest = Mount::none;
+    float best = 1e30f;
+    for (const auto& m : mounts) {
+      const float d = length2 (feet - m.at);
+      if (d < m.reach * m.reach && d < best) {
+        best = d;
+        nearest = m.mount;
+      }
+    }
+    return nearest;
+  }
+
+  bool GameSession::can_drive () const {
+    return mount_within_reach () == Mount::jeep;
   }
 
   bool GameSession::can_fly () const {
-    if (m_logic.m_mode != M_FOOT)
-      return false;
-    const Vec3 feet = m_walker.position ();
-    // Measured from the cabin's middle, a little ahead of the mast.
-    const float to_heli =
-      length2 (feet - m_helicopter.point (Vec3 (0, 0, 0.4f)));
-    return to_heli < 4.0f * 4.0f &&
-           to_heli <= length2 (feet - m_bike.position ()) &&
-           to_heli <= length2 (feet - m_jeep.position ()) &&
-           !can_drive_tractor ();
+    return mount_within_reach () == Mount::helicopter;
   }
 
   bool GameSession::can_drive_tractor () const {
-    if (m_logic.m_mode != M_FOOT)
-      return false;
-    const Vec3 feet = m_walker.position ();
-    // Measured from between the axles.
-    const float to_tractor = length2 (feet - m_tractor.position ());
-    return to_tractor < 3.6f * 3.6f &&
-           to_tractor <= length2 (feet - m_bike.position ()) &&
-           to_tractor <= length2 (feet - m_jeep.position ()) &&
-           to_tractor <=
-             length2 (feet - m_helicopter.point (Vec3 (0, 0, 0.4f)));
+    return mount_within_reach () == Mount::tractor;
+  }
+
+  bool GameSession::can_drive_caddy () const {
+    return mount_within_reach () == Mount::caddy;
   }
 
   bool GameSession::can_step_out_of_helicopter () const {
@@ -529,6 +563,15 @@ namespace moppe::game {
       rig.velocity = m_logic.m_seat_velocity;
       rig.distance = 8.0f * u::m;
       rig.nearest = 3.4f * u::m;
+      break;
+    case M_CADDY:
+      rig.eye = m_caddy.driver_seat () + m_caddy.up () * 0.70f +
+                m_caddy.forward () * 0.06f;
+      rig.ahead = m_caddy.forward ();
+      rig.pivot = m_caddy.position () + Vec3 (0, 1.0f, 0);
+      rig.velocity = m_caddy.velocity ();
+      rig.distance = 8.5f * u::m;
+      rig.nearest = 3.6f * u::m;
       break;
     case M_TRACTOR:
       rig.eye = m_tractor.driver_seat () + m_tractor.up () * 0.80f +
@@ -623,7 +666,7 @@ namespace moppe::game {
     return { m_logic,           m_bike.state (),   m_glider.state (),
              m_walker.state (), m_camera.state (), m_stars.state (),
              m_dust.state (),   m_jeep.state (),   m_helicopter.state (),
-             m_tractor.state () };
+             m_tractor.state (), m_caddy.state () };
   }
 
   void GameSession::restore (const State& state) {
@@ -637,6 +680,7 @@ namespace moppe::game {
     m_jeep.restore (state.jeep);
     m_helicopter.restore (state.helicopter);
     m_tractor.restore (state.tractor);
+    m_caddy.restore (state.caddy);
   }
 
   GameSessionAdvanceResult
@@ -747,6 +791,35 @@ namespace moppe::game {
           velocity (tractor.velocity () * 0.15f),
           static_cast<int> (
             std::round (std::min (3.0f, slide * 0.3f) * ground.dust)),
+          ground.dust_color);
+    }
+    // The Caddy as the jeep, with a breath of exhaust from under its
+    // tail while it is driven: more as it pulls.
+    mov::Caddy& caddy = session.caddy ();
+    caddy.set_trunks (trunks);
+    caddy.set_parked (logic.m_mode != M_CADDY);
+    caddy.update (elapsed,
+                  water_at (caddy.position ()).numerical_value_in (u::m));
+    if (logic.m_mode == M_CADDY) {
+      logic.m_odometer += length (caddy.velocity ()) * elapsed;
+      std::uniform_real_distribution<float> chance (0.0f, 1.0f);
+      const float throttle = caddy.throttle ();
+      if (chance (logic.m_fx_rng) < 0.05f + 0.25f * throttle) {
+        const float shade = 0.62f + 0.2f * chance (logic.m_fx_rng);
+        session.dust ().emit (
+          moppe::position (caddy.point (Vec3 (-0.45f, 0.05f, -2.33f))),
+          velocity (caddy.velocity () * 0.5f - caddy.forward () * 0.8f +
+                    Vec3 (0, 0.4f, 0)),
+          1,
+          DisplayColor (shade, shade, shade * 1.03f));
+      }
+      const float slide = std::fabs (dot (caddy.velocity (), caddy.left ()));
+      if (caddy.grounded () && slide > 3.0f)
+        session.dust ().emit (
+          moppe::position (caddy.point (Vec3 (0, -0.2f, -1.3f))),
+          velocity (caddy.velocity () * 0.15f),
+          static_cast<int> (
+            std::round (std::min (3.0f, slide * 0.25f) * ground.dust)),
           ground.dust_color);
     }
     if (logic.m_mode == M_JEEP) {

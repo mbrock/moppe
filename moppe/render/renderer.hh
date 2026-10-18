@@ -463,6 +463,13 @@ namespace moppe {
       virtual void draw_mesh (const Mesh& mesh,
                               const Mat4& model,
                               uint64_t motion_id = 0) = 0;
+      // Between these, draw_mesh draws nothing: it lends the mesh to the
+      // next render_local_shadow, whose near cascade takes the sun's
+      // shadow from its opaque runs (so that a car shades the ground
+      // under it and its own inside). Draw lists drawn meanwhile are
+      // dropped. Backends without a sun shadow map ignore both.
+      virtual void begin_shadow_casters () {}
+      virtual void end_shadow_casters () {}
       virtual void draw_list (const DrawList& list, uint64_t motion_id = 0) = 0;
       // Resolve the low-resolution 3D scene before screen-space effects. It
       // is idempotent so backend-specific callers can safely enforce the

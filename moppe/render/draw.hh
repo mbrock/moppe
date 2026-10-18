@@ -61,6 +61,11 @@ namespace moppe {
       // plant a vertex sits and the vertex shader needs no other clue.
       void flutter (proportion_t w);
       void set_texture (const Texture* t);
+      // What subsequent lit vertices are made of; plain () goes back to
+      // the draw list's own shading.
+      void material (float metallic, float roughness, float coat,
+                     float sheen = 0.0f);
+      void plain ();
       void normal (const Vec3& n);
       void uv (float u, float v);
       void state (const DrawState& s);
@@ -129,6 +134,7 @@ namespace moppe {
       bool m_fogged;
       uint8_t m_wind;
       uint8_t m_flutter;
+      Surface m_surface;
       const Texture* m_texture;
       DrawState m_state;
 

@@ -125,6 +125,20 @@ namespace moppe::game {
     };
   }
 
+  CaddyPose caddy_pose (const mov::Caddy& caddy) {
+    return {
+      .position = caddy.position (),
+      .forward = caddy.forward (),
+      .up = caddy.up (),
+      .wheel_drop = { caddy.wheel_drop (0),
+                      caddy.wheel_drop (1),
+                      caddy.wheel_drop (2),
+                      caddy.wheel_drop (3) },
+      .steer_radians = caddy.steer (),
+      .wheel_spin_radians = caddy.wheel_spin (),
+    };
+  }
+
   TractorPose tractor_pose (const mov::Tractor& tractor) {
     return {
       .position = tractor.position (),
@@ -291,6 +305,7 @@ namespace moppe::game {
     result.actors.jeep = jeep_pose (input.session.jeep ());
     result.actors.helicopter = helicopter_pose (input.session.helicopter ());
     result.actors.tractor = tractor_pose (input.session.tractor ());
+    result.actors.caddy = caddy_pose (input.session.caddy ());
     if (logic.m_mode == M_GLIDER)
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_mode == M_FOOT)
@@ -338,6 +353,7 @@ namespace moppe::game {
     hud.can_drive = input.session.can_drive ();
     hud.can_fly = input.session.can_fly ();
     hud.can_drive_tractor = input.session.can_drive_tractor ();
+    hud.can_drive_caddy = input.session.can_drive_caddy ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();

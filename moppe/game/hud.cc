@@ -769,6 +769,9 @@ namespace moppe {
       } else if (st.can_drive_tractor) {
         key = mount_key;
         action = *mount_key ? "Drive the tractor" : "Tractor within reach";
+      } else if (st.can_drive_caddy) {
+        key = mount_key;
+        action = *mount_key ? "Drive the Caddy" : "Caddy within reach";
       } else if (st.can_fly) {
         key = mount_key;
         action = *mount_key ? "Fly the helicopter" : "Helicopter within reach";
