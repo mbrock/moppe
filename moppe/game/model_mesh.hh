@@ -27,6 +27,19 @@ namespace moppe::game::model_mesh {
     DisplayColor colour;
     // Drawn without lighting, like a lamp's lens.
     bool unlit;
+    // The rest of the material's Principled BSDF, for the renderer to
+    // shade by as it learns to: how metallic and how rough, a clear coat
+    // over it (car paint) and its roughness, how much light passes
+    // through (glass, lenses) and its index of refraction, the sheen of
+    // cloth, and how strongly it glows in its own colour.
+    float metallic = 0.0f;
+    float roughness = 0.8f;
+    float coat = 0.0f;
+    float coat_roughness = 0.03f;
+    float transmission = 0.0f;
+    float ior = 1.5f;
+    float sheen = 0.0f;
+    float emission = 0.0f;
   };
 
   struct Mesh {

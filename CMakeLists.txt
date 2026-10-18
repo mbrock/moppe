@@ -391,6 +391,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/jeep_model.cc
   moppe/game/helicopter_model.cc
   moppe/game/tractor_model.cc
+  moppe/game/caddy_model.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/glider_render.cc

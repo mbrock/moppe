@@ -9,9 +9,12 @@ Every empty with a `moppe_mesh` property becomes a model_mesh::Mesh of
 that name: its children's evaluated meshes (subdivision and bevels
 applied) in the empty's own frame, converted to the game's (x right, y up,
 z forward), with per-corner normals so smooth and hard-edged parts both
-shade as modelled, and a palette entry per material (unlit when the
-material's `moppe_unlit` is set). Every empty with a `moppe_point`
-property becomes a Vec3 of its location in model space.
+shade as modelled, and a palette entry per material: its viewport colour,
+unlit when the material's `moppe_unlit` is set, and the rest of its
+Principled BSDF (metallic, roughness, clear coat, transmission, index of
+refraction, sheen, emission) for the renderer to shade by. Every empty
+with a `moppe_point` property becomes a Vec3 of its location in model
+space.
 """
 
 import os
@@ -41,6 +44,36 @@ def triple(v):
     return "{" + ", ".join(f(x) for x in v) + "}"
 
 
+# Principled BSDF inputs written beside each paint's colour, by the
+# model_mesh::Paint field each fills, with the value when the material has
+# no Principled BSDF.
+SURFACE = (("metallic", "Metallic", 0.0),
+           ("roughness", "Roughness", 0.8),
+           ("coat", "Coat Weight", 0.0),
+           ("coat_roughness", "Coat Roughness", 0.03),
+           ("transmission", "Transmission Weight", 0.0),
+           ("ior", "IOR", 1.5),
+           ("sheen", "Sheen Weight", 0.0),
+           ("emission", "Emission Strength", 0.0))
+
+
+def surface(mat):
+    tree = mat.node_tree
+    bsdf = next((n for n in tree.nodes if n.type == "BSDF_PRINCIPLED"),
+                None) if tree else None
+    values = []
+    for _, socket, default in SURFACE:
+        value = default
+        if bsdf is not None and socket in bsdf.inputs:
+            value = bsdf.inputs[socket].default_value
+        elif socket == "Metallic":
+            value = mat.metallic
+        elif socket == "Roughness":
+            value = mat.roughness
+        values.append(round(float(value), 4))
+    return tuple(values)
+
+
 def export_mesh(empty, graph, palette):
     to_local = empty.matrix_world.inverted()
     vertices, index, triangles = [], {}, []
@@ -58,7 +91,7 @@ def export_mesh(empty, graph, palette):
             key = (mat.name,
                    tuple(round(to_display(c), 4)
                          for c in mat.diffuse_color[:3]),
-                   bool(mat.get("moppe_unlit", False)))
+                   bool(mat.get("moppe_unlit", False)), surface(mat))
             if key not in palette:
                 palette.append(key)
             corners = []
@@ -128,9 +161,12 @@ def main():
         "",
         "    constexpr Paint paints[] = {",
     ]
-    for name, colour, unlit in palette:
-        cc.append(f"      {{{{{', '.join(f(x) for x in colour)}}}, "
-                  f"{'true' if unlit else 'false'}}}, // {name}")
+    for name, colour, unlit, props in palette:
+        fields = "".join(f", .{field} = {f(v)}"
+                         for (field, _, _), v in zip(SURFACE, props))
+        cc.append(f"      {{.colour = {{{', '.join(f(x) for x in colour)}}}, "
+                  f".unlit = {'true' if unlit else 'false'}{fields}}}, "
+                  f"// {name}")
     cc.append("    };")
     for name, vertices, triangles in meshes:
         cc += ["", f"    constexpr Vertex {name}_vertices[] = {{"]

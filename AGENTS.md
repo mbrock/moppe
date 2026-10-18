@@ -288,8 +288,18 @@
     points (axles, pivots, grips, pegs, saddle, harness) that the game
     places parts and the rider by. `tools/figure/export_model.py` writes
     the generated `moppe/game/{bike,glider}_model.{hh,cc}`; `make models`
-    re-exports both, the jeep, the helicopter, and the tractor (`MODELS_REBUILD=1`
-    regenerates the .blend files).
+    re-exports both, the jeep, the helicopter, the tractor, and the Caddy
+    (`MODELS_REBUILD=1` regenerates the .blend files). Each paint carries
+    its material's whole Principled BSDF (`model_mesh::Paint`: metallic,
+    roughness, clear coat, transmission, sheen, emission), which the
+    renderer does not yet use.
+  - The Caddy (`models/caddy.blend` from `tools/figure/caddy.py`, exported
+    to `game/caddy_model.*`, not yet in the game) is a first-series VW
+    Caddy pickup under a fibreglass hardtop, life size from the factory's
+    figures, in the jeep's frame and with the jeep's points (axles, seats,
+    pedals, steering wheel) plus the tailgate's hinge, the tow ball, and a
+    place by each door. Its body is lofted from cross-sections; the glass,
+    hardtop, and tailgate are assemblies of their own.
     Ridden, the bike carries the hiker posed by `pose_holding` (hands on
     the grips, feet on the pegs), drawn 1.3x because the bike's physics is
     half again life size; the glider's pilot hangs prone at the basebar.
