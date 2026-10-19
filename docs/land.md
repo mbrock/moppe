@@ -34,7 +34,8 @@ seconds.
 resolution, seed, and a hash of the recipe's adjustable settings (extent,
 datum, uplift years, transport parameters). It is an Arrow IPC stream of the
 four columns over the terrain domain, each in 16-bit binary fixed point:
-33.6 MB for 2048, 8.4 MB for the page's 1024 (6.1 MB compressed, where
+33.6 MB for 2048 (28 MB as the published `.tar.zst`, where float columns
+were 58), 8.4 MB for the page's 1024 (6.1 MB compressed, where
 float columns were 16.8 and 13.4).
 
 The land does not need a float's precision. Each column keeps 65,536 steps
