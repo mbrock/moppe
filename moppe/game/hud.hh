@@ -267,6 +267,8 @@ namespace moppe {
       std::unique_ptr<Shape> m_shape;
 
       bool m_diagnostics;
+      // MOPPE_HUD=none: nothing over the picture, for films.
+      bool m_hidden = false;
       float m_fps;
       // Smoothed visibility of each element; a prompt keeps its last words
       // while it fades out.

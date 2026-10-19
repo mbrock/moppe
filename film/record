@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Record the film's footage: one clip of the game for each shot.
+
+  film/record [NAME ...] [--fresh]
+
+Run it in the game's development shell (`nix develop`), which has the
+gamescope that records without a window; ffmpeg cuts the shots.
+
+The game records each clip itself (tools/record) as a vertical 1080x1920
+video at 30 frames a second, at the hour of the day the film shows it at,
+into film/footage/NAME.mp4. Only missing clips are recorded unless
+--fresh is given or a clip is named. Each shot is then cut out of its
+clip (SHOTS) into film/footage/shots/NAME.mp4, which the film plays
+(src/lib.rs); the hour the film shows at a shot's first frame is the
+clip's hour, plus its --start, plus where the shot is cut from, at the
+game's two minutes an hour.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+
+FILM = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(FILM)
+FOOTAGE = os.path.join(FILM, "footage")
+WIDTH, HEIGHT, FPS = 1080, 1920, 30
+
+# Held shots of the default world for the opening's player (the grammar
+# is in moppe/game/opening.hh), from tools/trailer's reels.
+WORLD = "world seed 123 resolution 2048 profile play\n"
+BIRCHES = ("shot birches eye 4667.97 156.42 3750.00 heading 45.8"
+           " pitch -2.1 fov 62 hold 8 push 4 rise 0.3 sway 0.6\n")
+COAST = ("shot coast eye 654.09 57.50 1243.59 heading -93.2 pitch -1.9"
+         " fov 68 hold 8 push 5 pan 3 sway 0.6\n")
+
+# name: (scene, hour, seconds, tools/record options, environment, reel)
+CLIPS = {
+    "morning": ("opening", 7.6, 8, [], {}, WORLD + BIRCHES),
+    "ride": ("ride", 9.5, 14, ["--start", "3"],
+             {"MOPPE_RIDE_CAMERA": "side"}, None),
+    "glide": ("glide", 11.0, 18, [], {}, None),
+    "helicopter": ("helicopter", 12.5, 26, [], {}, None),
+    "river": ("river", 12.5, 10, ["--start", "180"],
+              {"MOPPE_FLYOVER_SECONDS": "440"}, None),
+    "tractor": ("tractor", 15.5, 14, ["--start", "2"],
+                {"MOPPE_RIDE_CAMERA": "side"}, None),
+    "caddy": ("caddy", 17.0, 16, ["--start", "2"], {}, None),
+    "dusk": ("opening", 17.7, 8, [], {}, WORLD + COAST),
+    "night": ("opening", 22.0, 8, [], {}, WORLD + BIRCHES),
+}
+
+
+# name: where the shot starts in its clip, seconds; it runs on 7 s, or to
+# the clip's end.
+SHOTS = {
+    "morning": 0.2,
+    "ride": 8.0,
+    "glide": 10.5,
+    "helicopter": 15.5,
+    "river": 3.0,
+    "tractor": 8.8,
+    "caddy": 4.0,
+    "dusk": 0.2,
+    "night": 0.2,
+}
+SHOT_SECONDS = 7.0
+
+
+def cut(name):
+    os.makedirs(os.path.join(FOOTAGE, "shots"), exist_ok=True)
+    seconds = min(SHOT_SECONDS, CLIPS[name][2] - SHOTS[name])
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-ss", str(SHOTS[name]), "-t", str(seconds),
+                    "-i", os.path.join(FOOTAGE, f"{name}.mp4"), "-an",
+                    "-vf", f"fps={FPS}", "-c:v", "libx264", "-crf", "12",
+                    "-preset", "fast", "-pix_fmt", "yuv420p",
+                    os.path.join(FOOTAGE, "shots", f"{name}.mp4")],
+                   check=True)
+
+
+def record(name):
+    scene, hour, seconds, options, switches, reel = CLIPS[name]
+    output = os.path.join(FOOTAGE, f"{name}.mp4")
+    environment = dict(os.environ, MOPPE_HUD="none", **switches)
+    if reel:
+        path = os.path.join(FOOTAGE, f"{name}.txt")
+        with open(path, "w") as file:
+            file.write(reel)
+        environment["MOPPE_OPENING"] = path
+    with open(os.path.join(FOOTAGE, f"{name}.log"), "w") as log:
+        subprocess.run([os.path.join(ROOT, "tools", "record"), output, scene,
+                        "--seconds", str(seconds), "--fps", str(FPS),
+                        "--size", f"{WIDTH}x{HEIGHT}", "--clock", str(hour),
+                        *options],
+                       env=environment, stdout=log, stderr=subprocess.STDOUT,
+                       check=True)
+    print(f"film: recorded {name}", file=sys.stderr)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("names", nargs="*", choices=[[], *CLIPS],
+                        metavar="NAME")
+    parser.add_argument("--fresh", action="store_true")
+    options = parser.parse_args()
+    os.makedirs(FOOTAGE, exist_ok=True)
+    for name in options.names or CLIPS:
+        done = os.path.exists(os.path.join(FOOTAGE, f"{name}.mp4"))
+        if options.names or options.fresh or not done:
+            record(name)
+        cut(name)
+
+
+if __name__ == "__main__":
+    main()

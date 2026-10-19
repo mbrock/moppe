@@ -230,8 +230,10 @@ namespace moppe {
         : m_diagnostics (false), m_fps (0), m_gauge_alpha (0),
           m_reserve_alpha (0), m_reserve_hold (0), m_prompt_alpha (0),
           m_basket_alpha (0) {
-      if (const char* mode = moppe::environment ("MOPPE_HUD"))
+      if (const char* mode = moppe::environment ("MOPPE_HUD")) {
         m_diagnostics = std::string (mode) == "debug";
+        m_hidden = std::string (mode) == "none";
+      }
     }
 
     void Hud::load (render::Renderer& renderer) {
@@ -922,6 +924,8 @@ namespace moppe {
       const float instant_fps =
         std::min (240.0f, 1.0f / std::max (st.frame_time_s, 0.001f));
       m_fps = m_fps > 0.0f ? m_fps * 0.9f + instant_fps * 0.1f : instant_fps;
+      if (m_hidden)
+        return;
 
       draw_waymarks (text, st);
       draw_gauge (text, st, dt, width_pts, height_pts);

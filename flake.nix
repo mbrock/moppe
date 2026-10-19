@@ -47,6 +47,8 @@
             bakedWorld = xboxBakedWorld;
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
+          # The fframes film project in film/ (film/README.md).
+          film = import ./film/shell.nix { pkgs = nixpkgs.legacyPackages.${system}; };
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
           # A portable tarball using the host's Vulkan driver; no Nix at runtime.
@@ -59,6 +61,8 @@
             pkgs = nixpkgs.legacyPackages.${system};
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
+          # The fframes film project in film/ (film/README.md).
+          film = import ./film/shell.nix { pkgs = nixpkgs.legacyPackages.${system}; };
         }
       );
       apps = forEachSystem (
@@ -89,6 +93,8 @@
             pkgs = nixpkgs.legacyPackages.${system};
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
+          # The fframes film project in film/ (film/README.md).
+          film = import ./film/shell.nix { pkgs = nixpkgs.legacyPackages.${system}; };
         }
       );
     };

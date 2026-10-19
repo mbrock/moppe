@@ -111,7 +111,8 @@
     says what each stage costs (docs/orogeny-performance.md).
   - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
-    trail map); `MOPPE_HUD=debug` starts with it on.
+    trail map); `MOPPE_HUD=debug` starts with it on, and `MOPPE_HUD=none`
+    draws nothing over the picture (film/record's footage).
   - `P` captures the current frame to `screenshots/run-<timestamp>/shot-NNN.png`
     (gitignored, one directory per run; `MOPPE_SCREENSHOT_DIR` overrides the
     base). Start the game, walk around, press `P` at each view worth
@@ -159,6 +160,12 @@
     `build/trailer`, so a change to the cut (`FILM` in the script) takes a
     few minutes; `--fresh` records them again, `--url ""` drops the
     address from the end card, and `--draft` encodes quickly.
+  - The film (`film/`, film/README.md): "one day at the trailhead", a
+    vertical 40 s film made with fframes (Rust and SVG over the GPU).
+    `nix develop -c film/record` has the game record its shots at the
+    hours of the day they show; `film/` (in `nix develop .#film`) cuts
+    them together under an arc of the sky carrying the sun and the moon
+    by the hour: `cargo run --release -- render -o moppe-day.mp4`.
   - The opening is authored: `data/opening.txt` lists a few held shots of the
     default world (seed 123, 2048 samples, play), each drifting gently
     (`push`/`truck`/`rise` metres, `pan`/`tilt`/`zoom` degrees, a breathing
