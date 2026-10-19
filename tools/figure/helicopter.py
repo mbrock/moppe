@@ -60,6 +60,29 @@ PALETTE = {
     "beacon": (1.0, 0.25, 0.10),
 }
 
+# How each paint finishes, as the rest of its Principled BSDF: glossy
+# aviation paint under a clear coat, a glazed canopy that shows the cabin
+# through it, bright steel, composite blades, cloth seats, and glazed
+# dials; the lamps let light through.
+FINISH = {
+    "paint": dict(roughness=0.36, coat=0.45),
+    "paint_dark": dict(roughness=0.4, coat=0.4),
+    "white": dict(roughness=0.36, coat=0.45),
+    "glass": dict(roughness=0.02, transmission=1.0, ior=1.5,
+                  tint=(0.80, 0.90, 0.92)),
+    "steel": dict(metallic=0.85, roughness=0.3),
+    "black": dict(roughness=0.6),
+    "rotor": dict(roughness=0.45, coat=0.3),
+    "tip": dict(roughness=0.35, coat=0.6),
+    "seat": dict(roughness=0.9, sheen=0.4),
+    "panel": dict(roughness=0.6),
+    "dial": dict(roughness=0.08, coat=1.0),
+    "lens": dict(roughness=0.05, transmission=0.6, emission=0.6),
+    "port": dict(roughness=0.1, transmission=0.5, emission=0.6),
+    "starboard": dict(roughness=0.1, transmission=0.5, emission=0.6),
+    "beacon": dict(roughness=0.1, transmission=0.5, emission=0.6),
+}
+
 
 def prism(profile, x0, x1):
     """The polygon `profile`, given as (y, z) pairs, swept from x0 to x1."""
@@ -86,7 +109,8 @@ def build():
     coll = bpy.data.collections.new("helicopter")
     scene.collection.children.link(coll)
     m = {name: material(name, c,
-                        emit=name in ("lens", "port", "starboard", "beacon"))
+                        emit=name in ("lens", "port", "starboard", "beacon"),
+                        **FINISH[name])
          for name, c in PALETTE.items()}
 
     body(coll, m)

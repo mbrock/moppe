@@ -67,6 +67,26 @@ PALETTE = {
     "tail_light": (1.0, 0.20, 0.12),
 }
 
+# How each paint finishes, as the rest of its Principled BSDF: old
+# enamel on the sheet metal and the wheels, still with some shine, cast
+# iron under it, a painted pan seat, a bright grille, a glazed dial, and
+# ribbed rubber; the lamps' lenses let light through.
+FINISH = {
+    "paint": dict(roughness=0.42, coat=0.35),
+    "paint_dark": dict(roughness=0.48, coat=0.25),
+    "iron": dict(metallic=0.6, roughness=0.7),
+    "iron_dark": dict(metallic=0.5, roughness=0.75),
+    "cream": dict(roughness=0.42, coat=0.3),
+    "black": dict(roughness=0.6),
+    "tire": dict(roughness=0.92),
+    "steel": dict(metallic=0.85, roughness=0.32),
+    "seat": dict(metallic=0.2, roughness=0.45, coat=0.2),
+    "grille": dict(metallic=0.75, roughness=0.35),
+    "dial": dict(roughness=0.08, coat=1.0),
+    "lens": dict(roughness=0.05, transmission=0.6, emission=0.6),
+    "tail_light": dict(roughness=0.1, transmission=0.5, emission=0.6),
+}
+
 
 def prism(profile, x0, x1):
     """The polygon `profile`, given as (y, z) pairs, swept from x0 to x1."""
@@ -92,7 +112,8 @@ def build():
     scene = bpy.context.scene
     coll = bpy.data.collections.new("tractor")
     scene.collection.children.link(coll)
-    m = {name: material(name, c, emit=name in ("lens", "tail_light"))
+    m = {name: material(name, c, emit=name in ("lens", "tail_light"),
+                        **FINISH[name])
          for name, c in PALETTE.items()}
 
     wheels(coll, m)

@@ -291,10 +291,15 @@
     places parts and the rider by. `tools/figure/export_model.py` writes
     the generated `moppe/game/{bike,glider}_model.{hh,cc}`; `make models`
     re-exports both, the jeep, the helicopter, the tractor, and the Caddy
-    (`MODELS_REBUILD=1` regenerates the .blend files). Each paint carries
-    its material's whole Principled BSDF (`model_mesh::Paint`: metallic,
-    roughness, clear coat, transmission, sheen, emission), which the
-    renderer does not yet use.
+    (`MODELS_REBUILD=1` regenerates the .blend files; on Linux, `make
+    models BLENDER="nix shell nixpkgs#blender -c blender"`). Each paint
+    carries its material's whole Principled BSDF (`model_mesh::Paint`:
+    metallic, roughness, clear coat, transmission, sheen, emission), set
+    in each script's `FINISH` table (the Caddy's `MATERIALS`) through
+    `shapes.material`: glossy plastics and bright alloys on the bike,
+    flat army paint on the jeep, old enamel and cast iron on the
+    tractor, aviation paint and a see-through canopy on the helicopter,
+    sailcloth and aluminium on the glider.
   - The Caddy (`moppe/mov/caddy.*`, `models/caddy.blend` from
     `tools/figure/caddy.py`, drawn by `game/caddy_render.*`) is a
     first-series VW Caddy pickup under a fibreglass hardtop on Swedish

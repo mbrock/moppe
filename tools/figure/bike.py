@@ -61,13 +61,38 @@ PALETTE = {
     "tail_light": (1.0, 0.22, 0.12),
 }
 
+# How each paint finishes, as the rest of its Principled BSDF: glossy
+# moulded plastics, a vinyl seat, cast and polished alloys, chrome, and
+# knobbly rubber; the lamps' lenses let light through.
+FINISH = {
+    "blue": dict(roughness=0.32, coat=0.25),
+    "white": dict(roughness=0.32, coat=0.25),
+    "seat": dict(roughness=0.7, sheen=0.2),
+    "engine": dict(metallic=0.55, roughness=0.5),
+    "engine_light": dict(metallic=0.85, roughness=0.32),
+    "frame": dict(metallic=0.4, roughness=0.4, coat=0.4),
+    "silver": dict(metallic=0.9, roughness=0.28),
+    "chrome": dict(metallic=1.0, roughness=0.1),
+    "gold": dict(metallic=1.0, roughness=0.25),
+    "tire": dict(roughness=0.92),
+    "rim": dict(metallic=0.9, roughness=0.3),
+    "hub": dict(metallic=0.8, roughness=0.4),
+    "black": dict(roughness=0.6),
+    "spring": dict(roughness=0.35, coat=0.6),
+    "nozzle": dict(metallic=0.9, roughness=0.35),
+    "nozzle_inner": dict(metallic=0.4, roughness=0.7),
+    "lens": dict(roughness=0.05, transmission=0.6, emission=0.6),
+    "tail_light": dict(roughness=0.1, transmission=0.5, emission=0.6),
+}
+
 
 def build():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     coll = bpy.data.collections.new("bike")
     scene.collection.children.link(coll)
-    m = {name: material(name, c, emit=name in ("lens", "tail_light"))
+    m = {name: material(name, c, emit=name in ("lens", "tail_light"),
+                        **FINISH[name])
          for name, c in PALETTE.items()}
 
     wheel(coll, m)

@@ -11,21 +11,21 @@ namespace moppe::game::helicopter_model {
     using model_mesh::Vertex;
 
     constexpr Paint paints[] = {
-      {{1.0f, 0.25f, 0.1f}, true}, // beacon
-      {{0.8f, 0.12f, 0.09f}, false}, // paint
-      {{0.17f, 0.25f, 0.31f}, false}, // glass
-      {{0.06f, 0.06f, 0.07f}, false}, // black
-      {{0.55f, 0.57f, 0.6f}, false}, // steel
-      {{0.22f, 0.22f, 0.25f}, false}, // seat
-      {{0.75f, 0.8f, 0.78f}, false}, // dial
-      {{0.5f, 0.07f, 0.06f}, false}, // paint_dark
-      {{0.92f, 0.92f, 0.9f}, false}, // white
-      {{1.0f, 0.95f, 0.72f}, true}, // lens
-      {{0.2f, 1.0f, 0.35f}, true}, // starboard
-      {{1.0f, 0.15f, 0.1f}, true}, // port
-      {{0.09f, 0.09f, 0.1f}, false}, // panel
-      {{0.13f, 0.13f, 0.14f}, false}, // rotor
-      {{0.96f, 0.78f, 0.1f}, false}, // tip
+      {.colour = {1.0f, 0.25f, 0.1f}, .unlit = true, .metallic = 0.0f, .roughness = 0.1f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.5f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.6f}, // beacon
+      {.colour = {0.8f, 0.12f, 0.09f}, .unlit = false, .metallic = 0.0f, .roughness = 0.36f, .coat = 0.45f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // paint
+      {.colour = {0.17f, 0.25f, 0.31f}, .unlit = false, .metallic = 0.0f, .roughness = 0.02f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 1.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // glass
+      {.colour = {0.06f, 0.06f, 0.07f}, .unlit = false, .metallic = 0.0f, .roughness = 0.6f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // black
+      {.colour = {0.55f, 0.57f, 0.6f}, .unlit = false, .metallic = 0.85f, .roughness = 0.3f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // steel
+      {.colour = {0.22f, 0.22f, 0.25f}, .unlit = false, .metallic = 0.0f, .roughness = 0.9f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.4f, .emission = 0.0f}, // seat
+      {.colour = {0.75f, 0.8f, 0.78f}, .unlit = false, .metallic = 0.0f, .roughness = 0.08f, .coat = 1.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // dial
+      {.colour = {0.5f, 0.07f, 0.06f}, .unlit = false, .metallic = 0.0f, .roughness = 0.4f, .coat = 0.4f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // paint_dark
+      {.colour = {0.92f, 0.92f, 0.9f}, .unlit = false, .metallic = 0.0f, .roughness = 0.36f, .coat = 0.45f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // white
+      {.colour = {1.0f, 0.95f, 0.72f}, .unlit = true, .metallic = 0.0f, .roughness = 0.05f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.6f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.6f}, // lens
+      {.colour = {0.2f, 1.0f, 0.35f}, .unlit = true, .metallic = 0.0f, .roughness = 0.1f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.5f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.6f}, // starboard
+      {.colour = {1.0f, 0.15f, 0.1f}, .unlit = true, .metallic = 0.0f, .roughness = 0.1f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.5f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.6f}, // port
+      {.colour = {0.09f, 0.09f, 0.1f}, .unlit = false, .metallic = 0.0f, .roughness = 0.6f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // panel
+      {.colour = {0.13f, 0.13f, 0.14f}, .unlit = false, .metallic = 0.0f, .roughness = 0.45f, .coat = 0.3f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // rotor
+      {.colour = {0.96f, 0.78f, 0.1f}, .unlit = false, .metallic = 0.0f, .roughness = 0.35f, .coat = 0.6f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // tip
     };
 
     constexpr Vertex body_vertices[] = {

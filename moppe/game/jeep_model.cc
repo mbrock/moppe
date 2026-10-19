@@ -11,18 +11,18 @@ namespace moppe::game::jeep_model {
     using model_mesh::Vertex;
 
     constexpr Paint paints[] = {
-      {{0.33f, 0.39f, 0.22f}, false}, // olive
-      {{0.07f, 0.07f, 0.08f}, false}, // black
-      {{0.13f, 0.13f, 0.15f}, false}, // trim
-      {{0.5f, 0.52f, 0.55f}, false}, // steel
-      {{0.17f, 0.18f, 0.17f}, false}, // floor
-      {{0.24f, 0.29f, 0.17f}, false}, // olive_dark
-      {{1.0f, 0.55f, 0.1f}, true}, // amber
-      {{1.0f, 0.95f, 0.72f}, true}, // lens
-      {{0.36f, 0.38f, 0.41f}, false}, // hub
-      {{0.06f, 0.06f, 0.07f}, false}, // tire
-      {{1.0f, 0.2f, 0.12f}, true}, // tail_light
-      {{0.36f, 0.21f, 0.12f}, false}, // seat
+      {.colour = {0.33f, 0.39f, 0.22f}, .unlit = false, .metallic = 0.0f, .roughness = 0.62f, .coat = 0.1f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // olive
+      {.colour = {0.07f, 0.07f, 0.08f}, .unlit = false, .metallic = 0.0f, .roughness = 0.6f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // black
+      {.colour = {0.13f, 0.13f, 0.15f}, .unlit = false, .metallic = 0.3f, .roughness = 0.5f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // trim
+      {.colour = {0.5f, 0.52f, 0.55f}, .unlit = false, .metallic = 0.85f, .roughness = 0.32f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // steel
+      {.colour = {0.17f, 0.18f, 0.17f}, .unlit = false, .metallic = 0.3f, .roughness = 0.85f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // floor
+      {.colour = {0.24f, 0.29f, 0.17f}, .unlit = false, .metallic = 0.0f, .roughness = 0.66f, .coat = 0.1f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // olive_dark
+      {.colour = {1.0f, 0.55f, 0.1f}, .unlit = true, .metallic = 0.0f, .roughness = 0.1f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.5f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.6f}, // amber
+      {.colour = {1.0f, 0.95f, 0.72f}, .unlit = true, .metallic = 0.0f, .roughness = 0.05f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.6f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.6f}, // lens
+      {.colour = {0.36f, 0.38f, 0.41f}, .unlit = false, .metallic = 0.4f, .roughness = 0.55f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // hub
+      {.colour = {0.06f, 0.06f, 0.07f}, .unlit = false, .metallic = 0.0f, .roughness = 0.92f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // tire
+      {.colour = {1.0f, 0.2f, 0.12f}, .unlit = true, .metallic = 0.0f, .roughness = 0.1f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.5f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.6f}, // tail_light
+      {.colour = {0.36f, 0.21f, 0.12f}, .unlit = false, .metallic = 0.0f, .roughness = 0.55f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.25f, .emission = 0.0f}, // seat
     };
 
     constexpr Vertex body_vertices[] = {

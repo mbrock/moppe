@@ -60,6 +60,25 @@ PALETTE = {
     "strap": (0.22, 0.17, 0.12),
 }
 
+# How each paint finishes, as the rest of its Principled BSDF: the
+# sail's laminated cloth with a soft sheen, anodised and bare aluminium
+# tubes, steel rigging wires, and webbing straps.
+FINISH = {
+    "white": dict(roughness=0.45, sheen=0.3),
+    "blue": dict(roughness=0.45, sheen=0.3),
+    "mustard": dict(roughness=0.45, sheen=0.3),
+    "red": dict(roughness=0.45, sheen=0.3),
+    "white_under": dict(roughness=0.55, sheen=0.3),
+    "blue_under": dict(roughness=0.55, sheen=0.3),
+    "mustard_under": dict(roughness=0.55, sheen=0.3),
+    "red_under": dict(roughness=0.55, sheen=0.3),
+    "tube": dict(metallic=1.0, roughness=0.22),
+    "alloy": dict(metallic=0.9, roughness=0.35),
+    "black": dict(roughness=0.6),
+    "wire": dict(metallic=0.9, roughness=0.4),
+    "strap": dict(roughness=0.95, sheen=0.6),
+}
+
 
 def leading_edge(t, s):
     """A point along the leading edge, t from nose (0) to tip (1), bowed
@@ -90,7 +109,8 @@ def build():
     scene = bpy.context.scene
     coll = bpy.data.collections.new("glider")
     scene.collection.children.link(coll)
-    m = {name: material(name, c) for name, c in PALETTE.items()}
+    m = {name: material(name, c,
+                        **FINISH[name]) for name, c in PALETTE.items()}
 
     g = assembly("glider", coll, mesh="glider")
     sail(g, m)

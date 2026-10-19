@@ -22,21 +22,40 @@ def blender(g):
     return V((g[0], -g[2], g[1]))
 
 
-def material(name, colour, emit=False):
-    """A material of a display-referred colour, stored linear. An
-    emitting material marks surfaces the game draws unlit."""
+def material(name, colour, emit=False, metallic=0.0, roughness=0.8,
+             coat=0.0, coat_roughness=0.04, transmission=0.0, ior=1.5,
+             sheen=0.0, emission=None, tint=None):
+    """A material of a display-referred colour, stored linear, with the
+    rest of its Principled BSDF: how metallic and rough it is, a clear
+    coat over it, how much light passes through (glass, lenses), and the
+    sheen of cloth. An emitting material marks surfaces the game draws
+    unlit. `tint`, when given, is the BSDF's own colour, as for glass,
+    which the game shows dark but Blender renders clear."""
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     lin = tuple(to_linear(c) for c in colour) + (1.0,)
+    bsdf_colour = tuple(to_linear(c) for c in (tint or colour)) + (1.0,)
     mat.diffuse_color = lin
-    mat.roughness = 0.8
+    mat.metallic = metallic
+    mat.roughness = roughness
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = lin
-        bsdf.inputs["Roughness"].default_value = 0.8
-        if emit:
-            bsdf.inputs["Emission Color"].default_value = lin
-            bsdf.inputs["Emission Strength"].default_value = 3.0
+        inputs = bsdf.inputs
+        inputs["Base Color"].default_value = bsdf_colour
+        inputs["Metallic"].default_value = metallic
+        inputs["Roughness"].default_value = roughness
+        inputs["Coat Weight"].default_value = coat
+        inputs["Coat Roughness"].default_value = coat_roughness
+        inputs["Transmission Weight"].default_value = transmission
+        inputs["IOR"].default_value = ior
+        inputs["Sheen Weight"].default_value = sheen
+        glow = emission if emission is not None else (3.0 if emit else 0.0)
+        if glow > 0:
+            inputs["Emission Color"].default_value = lin
+            inputs["Emission Strength"].default_value = glow
+    if transmission >= 0.99:
+        mat.use_raytrace_refraction = True
+        mat.surface_render_method = "DITHERED"
     mat["moppe_unlit"] = emit
     return mat
 
