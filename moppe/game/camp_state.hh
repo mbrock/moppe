@@ -4,6 +4,7 @@
 // The camp as it stands (game/camp.hh): plain values, part of the
 // session's copyable state.
 
+#include <moppe/game/fishing_state.hh>
 #include <moppe/gfx/math.hh>
 
 #include <cstdint>
@@ -29,6 +30,9 @@ namespace moppe::game {
     double since = -100.0;
     int count = 0;
     std::uint32_t mushrooms[room] {};
+    // A fish from the creel takes the room of two of them.
+    bool has_fish = false;
+    Fish fish {};
     double next_steam = 0.0;
   };
 
@@ -60,6 +64,8 @@ namespace moppe::game {
     double ate_time = -100.0;
     float ate_cooked = 0.0f;
     int ate_count = 0;
+    bool ate_fish = false;
+    Fish ate {};
   };
 }
 

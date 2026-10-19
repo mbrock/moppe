@@ -1,5 +1,6 @@
 #include <moppe/game/camp.hh>
 
+#include <moppe/game/fishing.hh>
 #include <moppe/game/sprites.hh>
 #include <moppe/gfx/signal.hh>
 
@@ -574,7 +575,8 @@ namespace moppe::game {
                  const Vec3& place,
                  float yaw,
                  std::span<const MushroomSite> mushrooms,
-                 float cooked) {
+                 float cooked,
+                 const Fish* fish) {
     using namespace camp_parts;
     constexpr float radius = 0.17f;
     constexpr float wall = 0.045f;
@@ -616,7 +618,22 @@ namespace moppe::game {
           0.014f,
           6);
 
-    // The mushrooms lie on their sides around the middle.
+    // A fish lies across the pan, square to the handle, and the
+    // mushrooms in what room it leaves.
+    const Vec3 across (-out[2], 0.0f, out[0]);
+    if (fish) {
+      const float drawn = 1.5f * fish->length;
+      const float fit = std::min (1.0f, 2.0f * radius * 1.15f / drawn);
+      draw_fish (dl,
+                 *fish,
+                 place - across * (0.5f * drawn * fit) - out * 0.03f +
+                   world_up * 0.035f,
+                 across,
+                 out * -1.0f,
+                 fit,
+                 0.0f,
+                 cooked);
+    }
     for (std::size_t i = 0; i < mushrooms.size (); ++i) {
       MushroomSite lying = mushrooms[i];
       const float around =
@@ -625,6 +642,8 @@ namespace moppe::game {
                    Vec3 (std::cos (around), 0.0f, std::sin (around)) *
                      (mushrooms.size () > 1 ? 0.07f : 0.0f) +
                    world_up * 0.03f;
+      if (fish)
+        lying.base += out * 0.09f + across * (0.11f * (i % 2 ? 1.0f : -1.0f));
       lying.scale = 0.5f * mushrooms[i].scale;
       lying.lean = 1.3f;
       lying.lean_toward = around + 1.9f;

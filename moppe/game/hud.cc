@@ -522,7 +522,8 @@ namespace moppe {
         return;
       // The tally takes the gauge's corner while walking with a basket that
       // has something in it.
-      const bool showing = st.on_foot && st.basket_total > 0;
+      const bool showing =
+        st.on_foot && (st.basket_total > 0 || st.fish_total > 0);
       m_basket_alpha =
         approach (m_basket_alpha, showing ? 1.0f : 0.0f, 4.0f, dt);
       const float alpha = ease (m_basket_alpha);
@@ -562,6 +563,22 @@ namespace moppe {
                      word,
                      TextAlign::Center);
       }
+      // A fish landed, or lost, where a pick is celebrated.
+      const float caught = clamp01 (1.0f - (st.catch_age_s - 3.0f) / 1.0f) *
+                           clamp01 (st.catch_age_s / 0.2f);
+      if (caught > 0.002f && st.catch_note) {
+        TextStyle word;
+        word.size = 21.0f;
+        word.red = word.green = word.blue = ink;
+        word.alpha = 0.95f * ease (caught);
+        word.tracking = 0.02f;
+        draw_shaded (text,
+                     0.5f * width_pts,
+                     height_pts - 96.0f - 10.0f * (1.0f - ease (caught)),
+                     st.catch_note,
+                     word,
+                     TextAlign::Center);
+      }
       // News of the other player, small at the top of the frame.
       const float told = clamp01 (1.0f - (st.notice_age_s - 4.0f) / 1.2f) *
                          clamp01 (st.notice_age_s / 0.4f);
@@ -587,7 +604,8 @@ namespace moppe {
       draw_shaded (text,
                    cx,
                    cy + 0.5f * m_font->cap_height (numeral.size),
-                   std::to_string (st.basket_total),
+                   std::to_string (st.basket_total > 0 ? st.basket_total
+                                                       : st.fish_total),
                    numeral,
                    TextAlign::Center);
       TextStyle unit;
@@ -598,9 +616,17 @@ namespace moppe {
       draw_shaded (text,
                    cx,
                    cy + 0.80f * gauge_radius,
-                   "in the basket",
+                   st.basket_total > 0 ? "in the basket" : "fish caught",
                    unit,
                    TextAlign::Center);
+      if (st.basket_total > 0 && st.fish_total > 0)
+        draw_shaded (text,
+                     cx,
+                     cy + 0.80f * gauge_radius + 11.0f,
+                     "and " + std::to_string (st.fish_total) +
+                       " fish",
+                     unit,
+                     TextAlign::Center);
     }
 
     // Someone lying in the hammock watches the hours go by: the time of
@@ -711,6 +737,23 @@ namespace moppe {
       if (st.hauling) {
         key = mount_key;
         action = "Let go of " + std::string (st.hauling);
+      } else if (st.on_foot && st.angle != HudState::Angle::none &&
+                 st.angle != HudState::Angle::cast) {
+        key = deploy_key;
+        switch (st.angle) {
+        case HudState::Angle::wait:
+          action = *deploy_key ? "Reel in" : "Waiting for a bite";
+          break;
+        case HudState::Angle::strike:
+          action = *deploy_key ? "Strike!" : "A bite!";
+          break;
+        case HudState::Angle::playing:
+          key = "";
+          action = "Reeling it in";
+          break;
+        default:
+          break;
+        }
       } else if (st.on_foot && st.mushroom_in_reach) {
         const std::string name = capitalized (st.mushroom_in_reach);
         if (!st.mushroom_edible) {
@@ -725,11 +768,14 @@ namespace moppe {
         key = deploy_key;
         switch (st.cook) {
         case HudState::Cook::fry:
-          action = *deploy_key ? "Fry the mushrooms" : "Mushrooms to fry";
+          action = st.cook_fish
+                     ? (*deploy_key ? "Fry the fish" : "Fish to fry")
+                     : (*deploy_key ? "Fry the mushrooms" : "Mushrooms to fry");
           break;
         case HudState::Cook::frying:
           key = "";
-          action = "The mushrooms are frying";
+          action = st.cook_fish ? "The fish is frying"
+                                : "The mushrooms are frying";
           break;
         case HudState::Cook::eat:
           action = *deploy_key ? "Eat" : "Supper is ready";
@@ -762,6 +808,9 @@ namespace moppe {
         case HudState::Camp::none:
           break;
         }
+      } else if (st.on_foot && st.angle == HudState::Angle::cast) {
+        key = deploy_key;
+        action = *deploy_key ? "Cast a line" : "Water to fish";
       } else if (st.can_drop_bike) {
         key = deploy_key;
         action = "Release the motocross";

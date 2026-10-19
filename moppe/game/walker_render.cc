@@ -2,6 +2,7 @@
 
 #include <moppe/game/avatar.hh>
 #include <moppe/game/figure.hh>
+#include <moppe/game/fishing.hh>
 #include <moppe/gfx/signal.hh>
 
 #include <algorithm>
@@ -240,13 +241,18 @@ namespace moppe::game {
     if (walker.rope_end)
       draw_rope (
         draw, k.wrist[1] + (k.wrist[1] - k.elbow[1]) * 0.25f, *walker.rope_end);
+    if (walker.rod)
+      draw_rod (draw, k, *walker.rod, time);
   }
 
   void render_basket (render::DrawList& draw,
                       const WalkerPose& walker,
                       float time,
                       std::span<const MushroomSite> basket) {
-    draw_basket (draw, basket_frame (pose_avatar (walker, time)), basket);
+    const AvatarSkeleton k = pose_avatar (walker, time);
+    draw_basket (draw, basket_frame (k), basket);
+    if (walker.rod)
+      draw_rod (draw, k, *walker.rod, time);
   }
 
   void render_basket_set_down (render::DrawList& draw,

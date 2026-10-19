@@ -3,6 +3,7 @@
 
 #include <moppe/color.hh>
 #include <moppe/game/daylight.hh>
+#include <moppe/game/fishing_state.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/gfx/mat4.hh>
@@ -114,6 +115,8 @@ namespace moppe::game {
     float look_pitch = 0.0f;     // radians, up positive
     // Hauling: where the rope in the right hand is tied.
     std::optional<Vec3> rope_end;
+    // Fishing: the rod in the right hand and its line.
+    std::optional<RodPose> rod;
   };
 
   struct FrameActors {

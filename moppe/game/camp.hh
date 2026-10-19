@@ -103,12 +103,14 @@ namespace moppe::game {
   Pan pan_set_on (const Vec3& hearth, const Vec3& feet);
 
   // A small iron pan at `place`, its handle along `yaw`, and the
-  // mushrooms lying in it as done as `cooked`.
+  // mushrooms lying in it as done as `cooked`, beside `fish` if there is
+  // one.
   void draw_pan (render::DrawList& dl,
                  const Vec3& place,
                  float yaw,
                  std::span<const MushroomSite> mushrooms,
-                 float cooked);
+                 float cooked,
+                 const Fish* fish = nullptr);
 
   // The ring of stones, the logs, and the bed of ash and embers.
   void draw_hearth (render::DrawList& dl, const Vec3& hearth, float burn);

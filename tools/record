@@ -24,6 +24,8 @@
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
 #   supper    picking three, frying them on a fire, and eating
 #                                                      (MOPPE_WALK=supper)
+#   fish      fishing from the nearest bank, then frying the catch
+#                                                      (MOPPE_WALK=fish)
 #   haul      a stuck tractor hauled out on a rope     (MOPPE_WALK=haul)
 #   bump      the jeep driven into the tractor's side, twice
 #                                                      (MOPPE_WALK=bump)
@@ -149,6 +151,7 @@ case $scene in
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
   supper) stage MOPPE_WALK=supper; : "${seconds:=50}" ;;
+  fish) stage MOPPE_WALK=fish; : "${seconds:=60}" ;;
   haul) stage MOPPE_WALK=haul MOPPE_WALK_CAMERA=front; : "${seconds:=16}" ;;
   bump) stage MOPPE_WALK=bump; : "${seconds:=13}" ;;
   camp)

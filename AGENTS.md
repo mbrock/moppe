@@ -61,6 +61,18 @@
     leave the basket (`Basket::used`) but stay picked. `MOPPE_WALK=supper`
     (`tools/record OUT.mp4 supper`) forages three, lights a fire, fries,
     and eats.
+  - Fishing (`moppe/game/fishing.*`): on foot facing open water at least
+    a third of a metre deep within eleven metres, `E` (controller `A`)
+    casts a float (`Line`, in `GameLogicState::m_fishing`). It rides the
+    water, drifting with a river's current, until a fish nibbles and then
+    takes it under: `E` then strikes, and the fish is fought in, lifted
+    out, and goes in the creel; wait a moment too long and it gets away.
+    `E` while waiting winds the line in, as does walking off. What bites
+    follows the water: perch, roach, and pike in lakes, arctic char in
+    the high ones, brown trout and grayling in running water, herring and
+    cod in the sea. A fish fries in the pan before the mushrooms (two of
+    them beside it) and mends more. `MOPPE_WALK=fish` (`tools/record
+    OUT.mp4 fish`) starts on the nearest bank, lands two, and fries one.
   - The day turns (`moppe/game/daylight.hh`): the world lies at 60 degrees
     north on the autumn equinox with north along -Z, which makes the sun
     the game was always lit by a quarter-past-nine morning sun, so play

@@ -1,5 +1,6 @@
 #include <moppe/game/avatar.hh>
 
+#include <moppe/game/fishing.hh>
 #include <moppe/game/walker.hh>
 
 #include <algorithm>
@@ -248,6 +249,18 @@ namespace moppe::game {
                            chest_right * 0.5f - k.chest_up);
         k.wrist[1] = hand;
       }
+    }
+
+    // Fishing, the right hand holds the rod out before the body, or up
+    // by the shoulder as it swings back to cast.
+    if (walker.rod) {
+      Vec3 hand = rod_hand (k, walker.rod->raise);
+      k.elbow[1] = bend (k.shoulder[1],
+                         hand,
+                         size::upper_arm,
+                         size::forearm,
+                         chest_right * 0.6f - k.chest_up);
+      k.wrist[1] = hand;
     }
     return k;
   }

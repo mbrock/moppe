@@ -85,6 +85,16 @@ namespace moppe {
       // On foot by a fire: what there is to do about supper.
       enum class Cook { none, fry, frying, eat, eat_burnt };
       Cook cook = Cook::none;
+      // Whether what goes in the pan, or is in it, is a fish.
+      bool cook_fish = false;
+      // On foot at the water (game/fishing.hh): what there is to do
+      // about the line, how many fish are in the creel, and the last one
+      // landed or lost, said for a moment afterwards.
+      enum class Angle { none, cast, wait, strike, playing };
+      Angle angle = Angle::none;
+      int fish_total = 0;
+      const char* catch_note = nullptr;
+      float catch_age_s = 100.0f;
       // What a keyboard needs no prompt for, said for a host that offers
       // every action as a button (platform::offer_actions): what Space
       // does here, what F does from the saddle or the seat, and whether

@@ -15,6 +15,7 @@
 #include <moppe/game/boulders.hh>
 #include <moppe/game/cairn.hh>
 #include <moppe/game/camp.hh>
+#include <moppe/game/fishing.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/companion_link.hh>
@@ -1193,7 +1194,9 @@ namespace moppe {
                  : cooked > 1.4f ? HudState::Cook::eat_burnt
                                  : HudState::Cook::eat;
         }
-        if (!camp.pan.on && basket.used < basket.picked.size () &&
+        if (!camp.pan.on &&
+            (basket.used < basket.picked.size () ||
+             logic ().m_fishing.creel.kept () > 0) &&
             fire_at_hand ())
           return HudState::Cook::fry;
         return HudState::Cook::none;
@@ -1217,7 +1220,13 @@ namespace moppe {
               pan_set_on (*fire_at_hand (), session ().walker ().position ());
             pan.since = now;
             pan.next_steam = now + 1.0;
-            while (pan.count < Pan::room &&
+            // A fish first, if there is one, and mushrooms beside it.
+            Creel& creel = logic ().m_fishing.creel;
+            if (creel.kept () > 0) {
+              pan.has_fish = true;
+              pan.fish = creel.fish[creel.used++];
+            }
+            while (pan.count < Pan::room - (pan.has_fish ? 2 : 0) &&
                    basket.used < basket.picked.size ()) {
               const std::uint32_t index = basket.picked[basket.used++];
               pan.mushrooms[pan.count++] = index;
@@ -1233,12 +1242,15 @@ namespace moppe {
           case HudState::Cook::eat_burnt:
             camp.ate_cooked = pan_cooked (camp.pan, now);
             camp.ate_count = camp.pan.count;
+            camp.ate_fish = camp.pan.has_fish;
+            camp.ate = camp.pan.fish;
             camp.ate_time = now;
             camp.pan.on = false;
             logic ().m_health = std::min (
               100.0f,
               logic ().m_health +
-                (camp.ate_cooked > 1.4f ? 5.0f : 20.0f) * camp.ate_count);
+                (camp.ate_cooked > 1.4f ? 5.0f : 20.0f) *
+                  (camp.ate_count + (camp.ate_fish ? 2 : 0)));
             input.deploy_glider = false;
             break;
           case HudState::Cook::frying:
@@ -1269,6 +1281,225 @@ namespace moppe {
           1,
           DisplayColor (shade, shade, shade),
           steam);
+      }
+
+      // -- fishing -------------------------------------------------------
+
+      struct FishingWater {
+        Vec3 aim;
+        Waters waters = Waters::still;
+        bool upland = false;
+      };
+
+      // The open water a walker could cast into from where they stand:
+      // as far out ahead as a cast reaches where it is deep enough to
+      // float a bait.
+      std::optional<FishingWater> water_ahead () const {
+        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+          return std::nullopt;
+        const Walker& walker = session ().walker ();
+        Vec3 ahead = walker.heading ();
+        ahead[1] = 0.0f;
+        if (length2 (ahead) < 1e-6f)
+          return std::nullopt;
+        ahead = normalized (ahead);
+        const terrain::WaterSheets& sheets =
+          generated_world ().water_surface ();
+        const float sea = world ().water_level.numerical_value_in (u::m);
+        for (float reach = longest_cast; reach >= shortest_cast;
+             reach -= 0.5f) {
+          Vec3 at = walker.position () + ahead * reach;
+          const float ground = ground_height (at);
+          const float level =
+            water_surface_at (world (), surface (), &sheets, at)
+              .numerical_value_in (u::m);
+          if (level - ground < fishing_depth)
+            continue;
+          at[1] = level;
+          FishingWater found { .aim = at, .upland = level > sea + 150.0f };
+          const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
+          const float sheet = terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (sheets, where));
+          if (sheet > ground && sheet > sea + 0.05f) {
+            Vec3 current = spatial::sample<terrain::water_velocity> (sheets,
+                                                                     where)
+                             .numerical_value_in (u::m / u::s);
+            current[1] = 0.0f;
+            found.waters =
+              length (current) > 0.15f ? Waters::running : Waters::still;
+          } else {
+            found.waters = Waters::sea;
+          }
+          return found;
+        }
+        return std::nullopt;
+      }
+
+      // Whether the pick key has nothing nearer to do than cast.
+      bool nothing_else_at_hand () const {
+        const Walker& walker = session ().walker ();
+        return !m_mushrooms.within_reach (walker.position (), walker.heading ())
+                  .has_value () &&
+               supper_at_hand () == HudState::Cook::none &&
+               !beside_hammock ();
+      }
+
+      // A splash where the line meets the water.
+      void splash (const Vec3& at, int drops, float vigour) {
+        const float shade = 0.25f + 0.65f * m_sky.daylight;
+        Dust::Style spray;
+        spray.size = 0.07f * u::m;
+        spray.lifetime = 0.7f * u::s;
+        spray.downward_acceleration =
+          6.0f * isq::acceleration[u::m / pow<2> (u::s)];
+        spray.spread = (0.5f + 0.5f * vigour) * one;
+        spray.flake = true;
+        session ().dust ().emit (moppe::position (at + Vec3 (0, 0.03f, 0)),
+                                 velocity (Vec3 (0, 1.2f + 1.4f * vigour, 0)),
+                                 drops,
+                                 DisplayColor (shade, shade * 1.02f, shade),
+                                 spray);
+      }
+
+      // On foot by open water the pick key casts a line, and while it is
+      // out the key is the line's: it strikes when something takes the
+      // float under, and otherwise winds the line in. Walking off winds it
+      // in too; while a fish is fought in and held up, the walker stands.
+      void go_fishing (InputFrame& input, float dt) {
+        Fishing& fishing = logic ().m_fishing;
+        Line& line = fishing.line;
+        const double now = logic ().m_total_time;
+        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting) {
+          line.phase = Line::Phase::idle;
+          return;
+        }
+        const Vec3 feet = session ().walker ().position ();
+        if (!line_out (line)) {
+          if (!input.deploy_glider || !nothing_else_at_hand ())
+            return;
+          if (const std::optional<FishingWater> water = water_ahead ()) {
+            cast_line (
+              line, feet, water->aim, water->waters, water->upland, now);
+            input.deploy_glider = false;
+          }
+          return;
+        }
+
+        Vec3 moved = feet - line.stand;
+        moved[1] = 0.0f;
+        const bool fast = line.phase == Line::Phase::casting ||
+                          line.phase == Line::Phase::waiting ||
+                          line.phase == Line::Phase::biting ||
+                          line.phase == Line::Phase::playing;
+        if (fast && length2 (moved) > fishing_leash * fishing_leash) {
+          if (line.phase == Line::Phase::playing) {
+            fishing.creel.last = line.fish;
+            fishing.creel.last_lost = true;
+            fishing.creel.last_time = now;
+            line.bobber = fish_in_water (line, now);
+          }
+          line.phase = Line::Phase::empty;
+          line.since = now;
+        }
+
+        const Line::Phase before = line.phase;
+        if (tend_line (fishing, now, input.deploy_glider))
+          input.deploy_glider = false;
+        if (line.phase == Line::Phase::casting ||
+            line.phase == Line::Phase::playing ||
+            line.phase == Line::Phase::landed) {
+          input.drive = 0.0f * one;
+          input.turn = 0.0f * one;
+          input.boost = 0.0f * one;
+          input.run = false;
+        }
+
+        const terrain::WaterSheets& sheets =
+          generated_world ().water_surface ();
+        const auto level_at = [&] (const Vec3& at) {
+          return water_surface_at (world (), surface (), &sheets, at)
+            .numerical_value_in (u::m);
+        };
+        // A river carries the float downstream while there is water under
+        // it and line to give.
+        if (line.phase == Line::Phase::waiting) {
+          Vec3 current = spatial::sample<terrain::water_velocity> (
+                           sheets,
+                           moppe::position (
+                             Vec3 (line.bobber[0], 0.0f, line.bobber[2])))
+                           .numerical_value_in (u::m / u::s);
+          current[1] = 0.0f;
+          Vec3 next = line.bobber + current * (0.45f * dt);
+          Vec3 out = next - line.stand;
+          out[1] = 0.0f;
+          const float level = level_at (next);
+          if (level - ground_height (next) > 0.2f &&
+              length (out) < longest_cast + 2.5f) {
+            next[1] = level;
+            line.bobber = next;
+          }
+        }
+
+        // The water answers: where the float lands, where it is taken
+        // under, about a fish fought in, and where it leaves the water.
+        if (before == Line::Phase::casting &&
+            line.phase == Line::Phase::waiting)
+          splash (line.bobber, 4, 0.0f);
+        if (before == Line::Phase::waiting &&
+            line.phase == Line::Phase::biting)
+          splash (line.bobber, 3, 0.2f);
+        if (line.phase == Line::Phase::playing && now >= line.next_splash) {
+          line.next_splash = now + 0.18;
+          splash (fish_in_water (line, now), 2, 0.5f);
+        }
+        if (before == Line::Phase::playing &&
+            line.phase == Line::Phase::landed)
+          splash (line.bobber, 8, 1.0f);
+      }
+
+      // What there is to do about the line here, and the last fish.
+      void add_fishing_readings (HudState& state) const {
+        const Fishing& fishing = logic ().m_fishing;
+        const Creel& creel = fishing.creel;
+        state.fish_total = creel.kept ();
+        const float since =
+          static_cast<float> (logic ().m_total_time - creel.last_time);
+        if (since < 5.0f) {
+          const std::string name = fish_name (creel.last.kind);
+          if (creel.last_lost) {
+            m_catch_note = "It got away.";
+          } else {
+            const bool vowel =
+              std::string_view ("aeiou").find (name[0]) != std::string::npos;
+            m_catch_note = (vowel ? "An " : "A ") + name + ", " +
+                           std::to_string (static_cast<int> (
+                             std::lround (100.0f * creel.last.length))) +
+                           " cm!";
+          }
+          state.catch_note = m_catch_note.c_str ();
+          state.catch_age_s = since;
+        }
+        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+          return;
+        switch (fishing.line.phase) {
+        case Line::Phase::idle:
+          if (!state.mushroom_in_reach &&
+              state.cook == HudState::Cook::none &&
+              state.camp != HudState::Camp::lie_down && water_ahead ())
+            state.angle = HudState::Angle::cast;
+          break;
+        case Line::Phase::waiting:
+          state.angle = HudState::Angle::wait;
+          break;
+        case Line::Phase::biting:
+          state.angle = HudState::Angle::strike;
+          break;
+        case Line::Phase::playing:
+          state.angle = HudState::Angle::playing;
+          break;
+        default:
+          break;
+        }
       }
 
       // Lying in the hammock the hours run forty times as fast: one goes
@@ -1452,11 +1683,18 @@ namespace moppe {
         state.resting = camp.resting;
         state.clock_hours = m_sky.clock;
         if (static_cast<float> (logic ().m_total_time - camp.ate_time) < 6.0f) {
+          const std::string with =
+            camp.ate_count > 1   ? " and mushrooms"
+            : camp.ate_count > 0 ? " and a mushroom"
+                                 : "";
           m_meal_note =
             camp.ate_cooked > 1.4f ? "Burnt to a cinder. Still, it is supper."
-            : camp.ate_count > 1   ? "Fried mushrooms by the fire. Lovely."
-                                   : "A fried mushroom by the fire. Lovely.";
-          state.meal = m_meal_note;
+            : camp.ate_fish
+              ? "Fried " + std::string (fish_name (camp.ate.kind)) + with +
+                  " by the fire. Lovely."
+            : camp.ate_count > 1 ? "Fried mushrooms by the fire. Lovely."
+                                 : "A fried mushroom by the fire. Lovely.";
+          state.meal = m_meal_note.c_str ();
           state.meal_age_s =
             static_cast<float> (logic ().m_total_time - camp.ate_time);
         }
@@ -1506,6 +1744,9 @@ namespace moppe {
         if (logic ().m_mode != M_FOOT || state.mushroom_in_reach)
           return;
         state.cook = supper_at_hand ();
+        state.cook_fish =
+          camp.pan.on ? camp.pan.has_fish
+                      : logic ().m_fishing.creel.kept () > 0;
         if (camp.resting)
           state.camp = HudState::Camp::get_up;
         else if (beside_hammock ())
@@ -1535,7 +1776,8 @@ namespace moppe {
                     camp.pan.place,
                     camp.pan.yaw,
                     m_pan_contents,
-                    pan_cooked (camp.pan, now));
+                    pan_cooked (camp.pan, now),
+                    camp.pan.has_fish ? &camp.pan.fish : nullptr);
         }
       }
 
@@ -1566,6 +1808,51 @@ namespace moppe {
         floor[1] = ground_height (floor);
         render_basket_set_down (
           dl, floor, hammock_along (camp.hammock), m_basket_contents);
+      }
+
+      // MOPPE_WALK=fish: the walker starts on the bank of the open water
+      // nearest the spawn, facing out over it.
+      void stage_fish_script () {
+        const char* walk = moppe::environment ("MOPPE_WALK");
+        if (!walk || std::string_view (walk) != "fish" ||
+            logic ().m_mode != M_FOOT)
+          return;
+        const terrain::WaterSheets& sheets =
+          generated_world ().water_surface ();
+        const auto depth_at = [&] (const Vec3& at) {
+          return water_surface_at (world (), surface (), &sheets, at)
+                   .numerical_value_in (u::m) -
+                 ground_height (at);
+        };
+        constexpr float step = 4.0f;
+        for (int ring = 0; ring < 160; ++ring) {
+          const float radius = step * ring;
+          const int count =
+            std::max (1, static_cast<int> (2.0f * PI * radius / step));
+          for (int k = 0; k < count; ++k) {
+            const float a = 2.0f * PI * k / count;
+            Vec3 stand =
+              m_spawn_position + Vec3 (std::cos (a), 0.0f, std::sin (a)) *
+                                   radius;
+            if (depth_at (stand) > -0.3f)
+              continue;
+            for (int d = 0; d < 16; ++d) {
+              const float b = 2.0f * PI * d / 16;
+              const Vec3 out (std::cos (b), 0.0f, std::sin (b));
+              if (depth_at (stand + out * 4.5f) < 0.5f ||
+                  depth_at (stand + out * 8.0f) < 0.8f)
+                continue;
+              stand[1] = ground_height (stand) + 0.1f;
+              session ().walker ().spawn (moppe::position (stand), out);
+              logic ().m_fp_eye = session ().walker ().eye_position ();
+              std::cerr << "moppe: fish script: a bank "
+                        << length (stand - m_spawn_position)
+                        << " m from the spawn" << std::endl;
+              return;
+            }
+          }
+        }
+        std::cerr << "moppe: fish script: no open water near the spawn\n";
       }
 
       // MOPPE_WALK=camp: the walker starts a few steps from the fit pair of
@@ -2035,6 +2322,7 @@ namespace moppe {
           logic ().m_cam_mode = CAM_CHASE;
         }
         stage_camp_script ();
+        stage_fish_script ();
         place_spectator ();
         // The mouse looks around during play; M hands it back.
         if (!m_gazetteer && !m_benchmark)
@@ -2862,6 +3150,36 @@ namespace moppe {
         };
         if (script == "camp")
           return camp_script (dt);
+        if (script == "fish") {
+          // Cast, strike at the take, and cast again; with two fish in
+          // the creel, turn from the water, light a fire, fry one, and eat.
+          const Line& line = logic ().m_fishing.line;
+          if (m_supper_since < 0.0f && logic ().m_fishing.creel.kept () >= 2 &&
+              !line_out (line))
+            m_supper_since = t;
+          if (m_supper_since >= 0.0f) {
+            const float since = t - m_supper_since;
+            input.look_yaw = since < 1.2f ? PI / 1.2f * dt : 0.0f;
+            input.drive = since > 1.2f && since < 3.4f ? 1.0f : 0.0f;
+            input.look_pitch = std::clamp (
+              -0.55f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+            input.light_fire =
+              press (m_supper_since + 4.2f) > 0.0f && !logic ().m_camp.fire;
+            input.deploy_glider = press (7.5f + m_supper_since) > 0.0f ||
+                                  press (19.0f + m_supper_since) > 0.0f;
+            return input;
+          }
+          input.look_pitch = std::clamp (
+            -0.2f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          if (line_out (line))
+            m_fish_script_rest = t;
+          const float age =
+            static_cast<float> (logic ().m_total_time - line.since);
+          input.deploy_glider =
+            (!line_out (line) && t - m_fish_script_rest > 1.5f) ||
+            (line.phase == Line::Phase::biting && age > 0.4f);
+          return input;
+        }
         // The mount key is a toggle, taken once a press.
         const auto tap = [t, dt] (float at) { return t >= at && t < at + dt; };
         if (script == "haul") {
@@ -3190,6 +3508,7 @@ namespace moppe {
 
         pass_time (dt);
         ride_along (input);
+        go_fishing (input, dt);
         cook_supper (input);
         tend_camp (input, dt);
         reach_for_mushroom (input);
@@ -3683,6 +4002,7 @@ namespace moppe {
           HudState hud_state = hud_state_for (frame.hud);
           add_basket_readings (hud_state);
           add_camp_readings (hud_state);
+          add_fishing_readings (hud_state);
           add_company_readings (hud_state);
           add_waymarks (hud_state, frame, hud_width, hud_height);
           m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
@@ -4800,7 +5120,10 @@ namespace moppe {
       std::vector<MushroomSite> m_companion_basket;
       // Scratch for a pan's contents as drawn, and the last meal's note.
       std::vector<MushroomSite> m_pan_contents;
-      mutable const char* m_meal_note = nullptr;
+      mutable std::string m_meal_note;
+      mutable std::string m_catch_note;
+      // MOPPE_WALK=fish: when the line last came in.
+      float m_fish_script_rest = 1.0f;
       // Their hour of the day; negative with no one to keep time with.
       double m_companion_hours = -1.0;
       bool m_companion_met = false;

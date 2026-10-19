@@ -5,6 +5,7 @@
 #include <moppe/game/camp_state.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/dust.hh>
+#include <moppe/game/fishing_state.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
@@ -96,6 +97,7 @@ namespace moppe::game {
     std::mt19937 m_fx_rng { 7 };
     Basket m_basket;
     Camp m_camp;
+    Fishing m_fishing;
     // How each machine is getting on (game/rescue.hh), indexed by
     // Machine, and the rope the walker hauls one by.
     std::array<Trouble, machine_count> m_trouble {};

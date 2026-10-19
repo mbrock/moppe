@@ -1,6 +1,7 @@
 #include <moppe/game/frame_view.hh>
 
 #include <moppe/game/camp.hh>
+#include <moppe/game/fishing.hh>
 #include <moppe/game/weather.hh>
 
 #include <algorithm>
@@ -313,6 +314,10 @@ namespace moppe::game {
         walker_pose (input.session.walker (), logic.m_look_pitch);
     if (result.actors.walker && input.session.hauling ())
       result.actors.walker->rope_end = input.session.rope_end ();
+    if (result.actors.walker)
+      result.actors.walker->rod = rod_pose (logic.m_fishing.line,
+                                            logic.m_total_time,
+                                            result.lighting.time);
     result.actors.active_mode = logic.m_mode;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera =
