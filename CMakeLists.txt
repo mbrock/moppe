@@ -941,10 +941,14 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       set_target_properties(${target} PROPERTIES
         SUFFIX ".js"
         LINK_DEPENDS "${web}/pre.js;${web}/touch.js")
-      # Land in the page's package spares the visitor its generation.
+      # Land in the page's package spares the visitor its generation. The
+      # folder changes (make web refills it) only when its land does, and
+      # then the package is made again.
       if(MOPPE_LANDS_DIR)
         target_link_options(${target} PRIVATE
           --preload-file=${MOPPE_LANDS_DIR}@/worlds)
+        set_property(TARGET ${target} APPEND PROPERTY
+          LINK_DEPENDS ${MOPPE_LANDS_DIR})
       endif()
     elseif(APPLE)
       target_compile_options(${target} PRIVATE

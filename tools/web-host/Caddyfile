@@ -1,6 +1,8 @@
 # The browser game's site (docs/web.md), as a block of the web host's
 # Caddyfile. tools/publish-web fills the folder: the homepage redirects to
-# the latest release and is never cached; a release never changes.
+# the latest release and is never cached; a release never changes, and
+# comes compressed beside its files (.br, .zst, .gz), which are sent to a
+# browser that takes them; the rest is compressed as it goes.
 moppe.swa.sh {
 	encode zstd gzip
 	root * /var/www/moppe
@@ -16,5 +18,7 @@ moppe.swa.sh {
 	@private path /commit /attempted
 	respond @private 404
 
-	file_server
+	file_server {
+		precompressed br zstd gzip
+	}
 }

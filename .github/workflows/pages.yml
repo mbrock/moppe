@@ -48,7 +48,7 @@ jobs:
         id: land
         uses: actions/cache@v4
         with:
-          path: build-web/lands
+          path: build-web/land-cache
           key: >-
             land-1024-play-123-${{ hashFiles('moppe/terrain/**',
             'moppe/map/**', 'moppe/spatial/**', 'moppe/game/land.*',
@@ -58,9 +58,9 @@ jobs:
       - name: Bake the land
         if: steps.land.outputs.cache-hit != 'true'
         run: |
-          mkdir -p build-web/lands
+          mkdir -p build-web/land-cache
           nix develop --command env \
-            MOPPE_LAND_DIR="$PWD/build-web/lands" \
+            MOPPE_LAND_DIR="$PWD/build-web/land-cache" \
             tools/bake-land 1024 play 123
 
       - name: Build the page

@@ -43,8 +43,8 @@ if ! command -v emcc > /dev/null && [[ -f "$emsdk/emsdk_env.sh" ]]; then
   EMSDK_QUIET=1 source "$emsdk/emsdk_env.sh"
 fi
 
-mkdir -p build-web/lands
-bake=(env "MOPPE_LAND_DIR=$root/build-web/lands" tools/bake-land 1024 play 123)
+mkdir -p build-web/land-cache
+bake=(env "MOPPE_LAND_DIR=$root/build-web/land-cache" tools/bake-land 1024 play 123)
 if command -v nix > /dev/null; then
   nix develop --command "${bake[@]}"
 else
@@ -58,6 +58,19 @@ rm -rf "$upload"
 mkdir "$upload"
 cp build-web/moppe.html build-web/moppe.js build-web/moppe.wasm \
   build-web/moppe.data "$upload/"
+# A release never changes, so it is compressed once, as hard as each
+# encoding goes, beside the files (.br, .zst, .gz); the server sends
+# whichever the browser takes (tools/web-host/Caddyfile).
+compress=(bash -c 'for f in "$@"; do
+    brotli -q 11 -k -f "$f"
+    zstd -19 -q -k -f "$f"
+    gzip -9 -k -f "$f"
+  done' compress)
+if ! command -v brotli > /dev/null || ! command -v zstd > /dev/null; then
+  compress=(nix shell nixpkgs#brotli nixpkgs#zstd --command "${compress[@]}")
+fi
+"${compress[@]}" "$upload"/moppe.html "$upload"/moppe.js "$upload"/moppe.wasm \
+  "$upload"/moppe.data
 mv "$upload" "$site/releases/$release"
 sed "s|__MOPPE_RELEASE__|$release|g" tools/web-index.html \
   > "$site/.index-$release.html"

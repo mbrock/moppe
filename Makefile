@@ -157,9 +157,15 @@ xbox:
 
 # Build the game for the browser: build-web/moppe.html (docs/web.md). The
 # page carries its world's land, baked here, so a visit need not generate it.
+# Lands are baked into build-web/land-cache, kept between builds, and the
+# page packs build-web/lands, which holds only the land this build reads.
 web:
-	mkdir -p build-web/lands
-	MOPPE_LAND_DIR=$(CURDIR)/build-web/lands ./tools/bake-land 1024 play 123
+	mkdir -p build-web/land-cache
+	land=$$(MOPPE_LAND_DIR=$(CURDIR)/build-web/land-cache \
+		./tools/bake-land 1024 play 123) && \
+	if [ "$$(ls build-web/lands 2>/dev/null)" != "$$(basename "$$land")" ]; \
+	then rm -rf build-web/lands && mkdir -p build-web/lands && \
+		cp "$$land" build-web/lands/; fi
 	@[ -f build-web/build.ninja ] || \
 		emcmake cmake -B build-web -G Ninja \
 			-DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF \

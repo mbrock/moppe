@@ -22,10 +22,13 @@ make web-serve
 
 and open <http://localhost:8080>. `make web` only builds: it bakes the
 page's land with the native baker (`tools/bake-land 1024 play 123`, into
-`build-web/lands/`), configures `build-web/` with `emcmake cmake`, and
-builds the `moppe` target into `build-web/moppe.html` with its `.js`,
-`.wasm`, and `.data` (the textures, fonts, opening, and land, 35 MB). The
-four files are the whole page, and any server of static files serves them.
+`build-web/land-cache/`, which keeps every land baked), puts that one land
+alone in `build-web/lands/`, configures `build-web/` with `emcmake cmake`,
+and builds the `moppe` target into `build-web/moppe.html` with its `.js`,
+`.wasm`, and `.data` (the textures, fonts, opening, and land: 35 MB, 21
+compressed). The four files are the whole page, and any server of static
+files serves them; it should compress the `.data` too, which a server may
+not by itself, it being of no type it knows.
 
 The page's address carries the command line and the development switches:
 
@@ -176,9 +179,12 @@ flake's shell, builds with the host's Emscripten, copies the four files
 into a new folder under `/var/www/moppe/releases/`, and then replaces the
 small homepage (`tools/web-index.html`) that redirects to the latest
 release, so a visit finds the newest build while a loaded one never mixes
-two. It keeps five releases, and tries a commit that fails to build only
-once. `tools/web-host/Caddyfile` is the site's block of the host's
-Caddyfile: compressed, releases cached forever, the homepage never.
+two. Each release is compressed once, as hard as brotli, zstd, and gzip
+go, into files beside its own (`moppe.data.br` and so on). It keeps five
+releases, and tries a commit that fails to build only once.
+`tools/web-host/Caddyfile` is the site's block of the host's Caddyfile:
+a release's precompressed files sent to a browser that takes them, the
+rest compressed as it goes, releases cached forever, the homepage never.
 `journalctl -u moppe-web` says what it did, and `tools/publish-web --force`
 in the checkout builds and publishes at once.
 
