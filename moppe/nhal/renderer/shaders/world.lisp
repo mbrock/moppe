@@ -1601,7 +1601,7 @@
 
 (define-shader-struct tree-vertex
   (position :vec3) (normal :vec3) (bark :vec2) (crown-height :float)
-  (foliage :bool) (branch :bool) (mass :uint))
+  (foliage :bool) (branch :bool) (mass :uint) (corner :uint))
 
 ;;; One vertex of an individual, in the numbering its class's index buffer
 ;;; joins into triangles: the trunk's four rings, then each crown mass.
@@ -1761,31 +1761,61 @@
                        0.0)
      :foliage foliage
      :branch is-branch
-     :mass mass)))
+     :mass mass
+     :corner corner)))
+
+;;; A birch leaf's colour as it ripens, in display space: summer green,
+;;; tired olive, lime, lemon, gold, amber, and at the last russet.
+(define-shader-function autumn-leaf (ripe)
+  (let* ((olive (mix (vec3 0.42 0.60 0.22) (vec3 0.53 0.60 0.20)
+                     (clamp (/ ripe 0.22) 0.0 1.0)))
+         (lime (mix olive (vec3 0.72 0.73 0.22)
+                    (clamp (/ (- ripe 0.22) 0.20) 0.0 1.0)))
+         (lemon (mix lime (vec3 0.96 0.84 0.27)
+                     (clamp (/ (- ripe 0.42) 0.20) 0.0 1.0)))
+         (gold (mix lemon (vec3 0.96 0.67 0.16)
+                    (clamp (/ (- ripe 0.62) 0.20) 0.0 1.0)))
+         (amber (mix gold (vec3 0.89 0.45 0.12)
+                     (clamp (/ (- ripe 0.82) 0.20) 0.0 1.0))))
+    (mix amber (vec3 0.64 0.30 0.13) (clamp (/ (- ripe 1.02) 0.22) 0.0 1.0))))
 
 ;;; Bark, branch, needles, or leaves that turn clump by clump in autumn,
-;;; in display space.
+;;; in display space. A birch turns as its stand does (AUTUMN), earlier or
+;;; later by its own temper, from the top of the crown down and from the
+;;; outside in, clump by clump; and it goes as far as its temper takes it:
+;;; most to lemon and gold, some on to amber, a few to russet. Each corner
+;;; of a clump strays a little either way, so a faceted clump shades from
+;;; one hue into the next across its faces.
 (define-shader-function tree-palette (tree vertex moisture autumn)
   (let* ((seed (tree-shape-seed tree))
          (conifer (tree-shape-conifer tree))
          (mass (tree-vertex-mass vertex))
          (fmass (float mass))
+         (corner (tree-vertex-corner vertex))
          (hue (- (tree-hash seed (uint 50)) 0.5))
+         (wobble (- (tree-hash seed (+ (uint 400) (* mass (uint 16)) corner))
+                    0.5))
          (shade (+ 0.92 (/ (* 0.12 fmass)
                            (max (- (float (tree-shape-masses tree)) 1.0) 1.0))
                    (* -0.06 (tree-hash seed (uint 51)))
                    (if conifer 0.0
-                       (* 0.16 (- (tree-hash seed (+ (uint 200) mass)) 0.5)))))
+                       (+ (* 0.16 (- (tree-hash seed (+ (uint 200) mass)) 0.5))
+                          (* 0.10 wobble)))))
          (needle (vec3 (+ 0.20 (* 0.05 hue)) (+ 0.36 (* 0.06 moisture)) 0.22))
          (green (vec3 (+ 0.42 (* 0.08 hue)) (+ 0.60 (* 0.05 moisture)) 0.22))
-         (turned (clamp (/ (- (if conifer 0.0 autumn)
-                              (* 0.35 (tree-hash seed (+ (uint 70) mass))))
-                           0.65)
-                        0.0 1.0))
-         (amber (expt (tree-hash seed (uint 52)) 3.0))
-         (gold (mix (vec3 0.95 0.73 0.20) (vec3 0.92 0.48 0.13) amber)))
+         (temper (- (tree-hash seed (uint 53)) 0.5))
+         (reach (+ 0.58 (* 0.62 (expt (tree-hash seed (uint 52)) 1.8))
+                   (* 0.24 (- (tree-hash seed (+ (uint 210) mass)) 0.5))))
+         (turning (clamp (+ (* 1.15 autumn) (* 0.45 temper)
+                            (* 0.30 (- (tree-hash seed (+ (uint 70) mass)) 0.5))
+                            (* 0.30 (- (tree-vertex-crown-height vertex) 0.45))
+                            (* 0.14 wobble) -0.08)
+                         0.0 1.0))
+         (ripe (* turning reach))
+         ;; Summer's own variety of greens stays under the first turning.
+         (leaf (mix green (autumn-leaf ripe) (clamp (/ ripe 0.25) 0.0 1.0))))
     (if (tree-vertex-foliage vertex)
-        (* (if conifer needle (mix green gold turned)) shade)
+        (* (if conifer needle leaf) shade)
         (if (tree-vertex-branch vertex) (vec3 0.34 0.31 0.29)
             (if conifer (vec3 0.38 0.30 0.24) (vec3 0.80 0.78 0.72))))))
 

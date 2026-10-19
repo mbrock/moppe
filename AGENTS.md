@@ -276,7 +276,10 @@
   - The forest is the trunk forest (`moppe/nhal/renderer/shaders/world.lisp`):
     tiered spruce and birch with leaf clumps on branches, at mature-stand
     heights with long clear trunks in closed stands. Autumn reaches the
-    uplands first: birch there turns gold, drops a leaf carpet
+    uplands first: birch there turns, crown tops first and clump by
+    clump, along a ramp from green through lime and lemon to gold, amber,
+    and for a few russet (`autumn-leaf` and `tree-palette`), drops a leaf
+    carpet
     (the `leaves` program adds falling leaves), and the high heath turns.
     Trees are drawn by instanced vertex pulling: a compute pass culls every
     individual and counts each (species, detail tier) class's indirect
