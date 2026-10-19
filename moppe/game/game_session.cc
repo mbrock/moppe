@@ -254,6 +254,78 @@ namespace moppe::game {
       haul.active = false;
     }
 
+    Vec3 level_heading (Vec3 heading) {
+      heading[1] = 0.0f;
+      return length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
+    }
+
+    float ground_at (const map::SurfaceGeometry& surface, const Vec3& at) {
+      return terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (at[0], 0.0f, at[2]))));
+    }
+
+    // Unloads the bike and the jeep from the Caddy where it stands: the
+    // bike down the open tailgate, the jeep beside the passenger's door.
+    void unload_sling (GameSession& session,
+                       const map::SurfaceGeometry& surface) {
+      const mov::Caddy& caddy = session.caddy ();
+      const Vec3 heading = level_heading (caddy.forward ());
+      const Vec3 left = cross (Vec3 (0, 1, 0), heading);
+      Vec3 bike = caddy.position () - heading * 4.8f;
+      bike[1] = ground_at (surface, bike) + 1.2f;
+      session.bike ().reset (bike);
+      session.bike ().set_heading (heading);
+      session.jeep ().place (caddy.position () - left * 3.4f, heading);
+      session.logic ().m_sling.laden = false;
+    }
+
+    // Hangs the Caddy, the bike and the jeep in it, on the line under
+    // the helicopter; set down beside it first when it stands further
+    // off than the line reaches.
+    void rig_sling (GameSession& session) {
+      Sling& sling = session.logic ().m_sling;
+      if (sling.hooked)
+        return;
+      const mov::Helicopter& heli = session.helicopter ();
+      mov::Caddy& caddy = session.caddy ();
+      const Vec3 hook = heli.point (sling_hook ());
+      if (length (caddy.point (sling_ring ()) - hook) > sling_line + 3.0f)
+        caddy.place (heli.point (Vec3 (7.0f, 0.0f, -0.5f)),
+                     level_heading (heli.forward ()));
+      sling = { .hooked = true, .laden = true };
+    }
+
+    // The line's pull between the helicopter and the Caddy, each taking
+    // its share; and once the Caddy is let go of and stands still, it is
+    // unloaded.
+    void tend_sling (GameSession& session,
+                     const map::SurfaceGeometry& surface,
+                     float elapsed) {
+      GameLogicState& logic = session.logic ();
+      Sling& sling = logic.m_sling;
+      mov::Helicopter& heli = session.helicopter ();
+      mov::Caddy& caddy = session.caddy ();
+      if (sling.hooked && logic.m_mode != M_HELICOPTER)
+        sling.hooked = false;
+      if (!sling.hooked) {
+        heli.set_load (Vec3 (), 0.0f);
+        sling.stretch = 0.0f;
+        if (sling.laden && caddy.grounded () &&
+            length2 (caddy.velocity ()) < 0.5f * 0.5f)
+          unload_sling (session, surface);
+        return;
+      }
+      const Vec3 hook = heli.point (sling_hook ());
+      const Vec3 ring = caddy.point (sling_ring ());
+      const Vec3 pull = sling_pull (sling, hook, ring, elapsed);
+      if (length2 (pull) > 0.0f) {
+        caddy.push (ring, pull * elapsed);
+        heli.push (hook, -pull * elapsed);
+      }
+      heli.set_load (-pull, sling_hang);
+    }
+
     void toggle_mount (GameSession& session) {
       GameLogicState& logic = session.logic ();
       // A passenger's seat is the game's to give and take away.
@@ -261,6 +333,11 @@ namespace moppe::game {
         return;
 
       if (logic.m_mode == M_HELICOPTER) {
+        // With the Caddy on the line, the key lets it go first.
+        if (logic.m_sling.hooked) {
+          logic.m_sling.hooked = false;
+          return;
+        }
         // Out on the pilot's side, the right, once down near the ground.
         if (!session.can_step_out_of_helicopter ())
           return;
@@ -540,8 +617,12 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       std::vector<MachineBody> bodies;
       bodies.reserve (machine_count + strangers.size ());
-      for (int i = 0; i < machine_count; ++i)
-        bodies.push_back (session.machine_body (static_cast<Machine> (i)));
+      // The bike and the jeep stowed in the Caddy meet nothing.
+      for (int i = 0; i < machine_count; ++i) {
+        const Machine machine = static_cast<Machine> (i);
+        if (!session.stowed (machine))
+          bodies.push_back (session.machine_body (machine));
+      }
       bodies.insert (bodies.end (), strangers.begin (), strangers.end ());
       const std::optional<Machine> driven = driven_machine (logic.m_mode);
       for (const Bump& bump : find_bumps (bodies)) {
@@ -752,6 +833,9 @@ namespace moppe::game {
     Mount nearest = Mount::none;
     float best = 1e30f;
     for (const auto& m : mounts) {
+      if (m_logic.m_sling.laden &&
+          (m.mount == Mount::bike || m.mount == Mount::jeep))
+        continue;
       const float d = length2 (feet - m.at);
       if (d < m.reach * m.reach && d < best) {
         best = d;
@@ -777,6 +861,11 @@ namespace moppe::game {
     return mount_within_reach () == Mount::caddy;
   }
 
+  bool GameSession::stowed (Machine machine) const {
+    return m_logic.m_sling.laden &&
+           (machine == Machine::bike || machine == Machine::jeep);
+  }
+
   bool GameSession::can_step_out_of_helicopter () const {
     return m_logic.m_mode == M_HELICOPTER && m_helicopter.altitude () < 1.2f &&
            length (m_helicopter.velocity ()) < 4.0f;
@@ -798,6 +887,8 @@ namespace moppe::game {
   }
 
   void GameSession::set_mode (Mode mode) {
+    if (mode == M_HELICOPTER && m_logic.m_mode != M_HELICOPTER)
+      rig_sling (*this);
     const bool was_on_foot = m_logic.m_mode == M_FOOT;
     const bool on_foot = mode == M_FOOT;
     m_logic.m_mode = mode;
@@ -887,6 +978,13 @@ namespace moppe::game {
       rig.distance = 12.0f * u::m;
       rig.nearest = 5.0f * u::m;
       rig.elevation = 21.0f * u::deg;
+      // Further off and lower, to see the Caddy hanging under it too.
+      if (m_logic.m_sling.hooked) {
+        rig.pivot = rig.pivot * 0.65f + m_caddy.position () * 0.35f;
+        rig.distance = 24.0f * u::m;
+        rig.nearest = 8.0f * u::m;
+        rig.elevation = 14.0f * u::deg;
+      }
       break;
     }
     case M_BIKE:
@@ -997,6 +1095,7 @@ namespace moppe::game {
 
     apply_input_frame (session, surface, input);
     tend_haul (session, elapsed);
+    tend_sling (session, surface, elapsed);
     // What is on the rope rolls free after the walker.
     const auto hauled = [&] (Machine machine) {
       return session.hauling () == machine;
@@ -1098,7 +1197,9 @@ namespace moppe::game {
     // tail while it is driven: more as it pulls.
     mov::Caddy& caddy = session.caddy ();
     caddy.set_trunks (trunks);
-    caddy.set_parked (logic.m_mode != M_CADDY && !hauled (Machine::caddy));
+    caddy.set_parked (logic.m_mode != M_CADDY && !hauled (Machine::caddy) &&
+                      !logic.m_sling.hooked);
+    caddy.set_slung (logic.m_sling.hooked);
     caddy.update (elapsed,
                   water_at (caddy.position ()).numerical_value_in (u::m));
     if (logic.m_mode == M_CADDY) {

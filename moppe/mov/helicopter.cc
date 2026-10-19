@@ -303,18 +303,15 @@ namespace moppe::mov {
           float terrain = ground (at);
           for (const float seconds : { 1.0f, 2.0f, 3.5f })
             terrain = std::max (terrain, ground (at + across * seconds));
-          const float wanted = taxi_height + clearance_per_speed * speed;
+          const float wanted =
+            taxi_height + clearance_per_speed * speed +
+            kept.load_hang * std::clamp (speed / 6.0f, 0.0f, 1.0f);
           const float clear = at[1] - terrain;
           if (clear < wanted)
             climb = std::max (climb, (wanted - clear) * 1.5f);
         }
         const float rise =
           std::clamp (climb_gain * (climb - v[1]), -5.0f, 7.0f);
-        const float thrust = std::clamp (
-          heli_rig::mass * (heli_rig::gravity + rise) / std::max (up[1], 0.5f),
-          0.0f,
-          thrust_to_weight * weight * authority);
-        thrust_force = up * thrust;
 
         // Lean toward the speed asked for: a coordinated turn falls out
         // of the heading turning away from the way it is going.
@@ -324,8 +321,25 @@ namespace moppe::mov {
         const float most = heli_rig::gravity * std::tan (max_tilt);
         if (length (push) > most)
           push = normalized (push) * most;
+        // The rotor gives its own weight and the climb asked for, and
+        // leans for the speed asked for, against what hangs under it.
+        const Vec3 pull = kept.load_pull;
+        const float hold =
+          std::max (heli_rig::mass * heli_rig::gravity - pull[1], 0.0f);
+        Vec3 level = Vec3 (push[0] * heli_rig::mass - pull[0],
+                           0.0f,
+                           push[2] * heli_rig::mass - pull[2]);
+        const float reach = std::tan (max_tilt * 1.3f) * hold;
+        if (length (level) > reach)
+          level = normalized (level) * reach;
+        const float thrust = std::clamp (
+          (hold + heli_rig::mass * rise) / std::max (up[1], 0.5f),
+          0.0f,
+          (thrust_to_weight * weight + length (pull)) * authority);
+        thrust_force = up * thrust;
         const Vec3 wanted_up =
-          normalized (Vec3 (push[0], heli_rig::gravity, push[2]));
+          hold > 1.0f ? normalized (Vec3 (level[0], hold, level[2]))
+                      : Vec3 (0, 1, 0);
         const float omega = 2.0f * pi * attitude_hertz;
         const Vec3 spin_about_up = up * dot (w, up);
         const Vec3 tilt_rate = w - spin_about_up;
@@ -409,6 +423,11 @@ namespace moppe::mov {
 
   void Helicopter::set_lift (float lift) {
     m_impl->kept.lift = lift;
+  }
+
+  void Helicopter::set_load (const Vec3& pull, float hang) {
+    m_impl->kept.load_pull = pull;
+    m_impl->kept.load_hang = hang;
   }
 
   void Helicopter::set_parked (bool parked) {

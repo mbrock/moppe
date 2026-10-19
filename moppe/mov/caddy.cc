@@ -25,6 +25,11 @@ namespace moppe::mov {
       constexpr float wheel_mass = 16.0f;
       constexpr float wheel_inertia = 0.75f;
       constexpr float total_mass = chassis_mass + 4.0f * wheel_mass;
+      // Slung under the helicopter: how quickly the air damps its turning,
+      // a second, and how hard it turns its nose into the way it is
+      // carried, an angular acceleration a radian off.
+      constexpr float slung_damping = 1.6f;
+      constexpr float slung_vane = 2.0f;
 
       // The springs are linear from top-out, so the sag at rest sets
       // their rate; beyond the sag there is this much more before the
@@ -422,6 +427,36 @@ namespace moppe::mov {
              caddy_rig::total_mass);
       b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
 
+      // Hung from the helicopter's line and off the ground, the air on
+      // its flanks steadies its swinging and turns its nose the way it
+      // is carried.
+      const bool aloft = std::none_of (kept.touching.begin (),
+                                       kept.touching.end (),
+                                       [] (bool touching) { return touching; });
+      if (kept.slung && aloft) {
+        const Vec3 w = from_b3 (b3Body_GetAngularVelocity (chassis));
+        Vec3 wanted = w * -caddy_rig::slung_damping;
+        Vec3 level = v;
+        level[1] = 0.0f;
+        const float carried = length (level);
+        Vec3 nose = forward;
+        nose[1] = 0.0f;
+        if (carried > 2.0f && length2 (nose) > 1e-4f) {
+          level = level * (1.0f / carried);
+          nose = normalized (nose);
+          const float off = std::atan2 (cross (nose, level)[1],
+                                        dot (nose, level));
+          wanted[1] += off * caddy_rig::slung_vane *
+                       std::min (1.0f, carried / 10.0f);
+        }
+        const b3Quat q = b3Body_GetRotation (chassis);
+        const b3Vec3 local = b3InvRotateVector (q, to_b3 (wanted));
+        const b3Vec3 torque { local.x * caddy_rig::inertia[0],
+                              local.y * caddy_rig::inertia[1],
+                              local.z * caddy_rig::inertia[2] };
+        b3Body_ApplyTorque (chassis, b3RotateVector (q, torque), true);
+      }
+
       b3World_Step (world, dt, caddy_rig::substeps);
 
       for (int wheel = 0; wheel < wheel_count; ++wheel)
@@ -494,6 +529,13 @@ namespace moppe::mov {
 
   void Caddy::set_brake (bool brake) {
     m_impl->kept.brake = brake;
+  }
+
+  void Caddy::set_slung (bool slung) {
+    State& kept = m_impl->kept;
+    if (slung)
+      kept.asleep = false;
+    kept.slung = slung;
   }
 
   void Caddy::set_parked (bool parked) {

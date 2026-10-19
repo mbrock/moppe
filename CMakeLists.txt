@@ -366,6 +366,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
   moppe/game/rescue.cc
+  moppe/game/sling.cc
   moppe/game/stars.cc
   moppe/game/dust.cc
   moppe/game/walker.cc

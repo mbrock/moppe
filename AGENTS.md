@@ -377,7 +377,21 @@
     collective: let go and it holds its height and comes to a hover, low
     and fast it keeps clear of the ground ahead, and descending it slows
     for the touchdown. `MOPPE_DEMO=helicopter` (`tools/record OUT.mp4
-    helicopter`) has the autopilot take it up.
+    helicopter`) has the autopilot take it up. Taking its seat hooks the
+    Caddy on a line under it (`moppe/game/sling.*`,
+    `GameLogicState::m_sling`), set down beside it first if it stands
+    further off, with the motocross in its bed (hardtop off, tailgate
+    down) and the jeep, as a model a third its size, on its passenger
+    seat; the stowed bike and jeep are drawn there and met by nothing
+    where they stood. The line is a stiff spring between the two Box3D
+    bodies, pushed each step; the flight computer lifts and leans against
+    its pull (`Helicopter::set_load`), and the Caddy, slung, damps its
+    swinging and turns its nose the way it is carried
+    (`Caddy::set_slung`). `F` lets the load go before it steps out; once
+    the Caddy stands still on the ground, the bike and the jeep are
+    unloaded beside it. `MOPPE_RIDE_CAMERA=side|front` stands beside the
+    hanging Caddy. The other player sees the Caddy fly but not the line
+    or the cargo.
   - The tractor (`moppe/mov/tractor.*`, `models/tractor.blend` from
     `tools/figure/tractor.py`, drawn by `game/tractor_render.*`) is a
     little red farm tractor of the old kind, open, with a pan seat

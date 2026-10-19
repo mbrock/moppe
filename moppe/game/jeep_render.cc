@@ -47,7 +47,8 @@ namespace moppe::game {
       const Vec3 left = normalized (cross (jeep.up, forward));
       const Vec3 up = cross (forward, left);
       return Mat4::translation (jeep.position) *
-             Mat4::basis (left, up, forward);
+             Mat4::basis (left, up, forward) *
+             Mat4::scaling (Vec3 (1, 1, 1) * jeep.scale);
     }
 
     Mat4 steering_turn (const JeepPose& jeep) {

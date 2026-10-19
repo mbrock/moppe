@@ -7,6 +7,7 @@
 #include <moppe/game/dust.hh>
 #include <moppe/game/fishing_state.hh>
 #include <moppe/game/rescue.hh>
+#include <moppe/game/sling.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/gfx/math.hh>
@@ -102,6 +103,8 @@ namespace moppe::game {
     // Machine, and the rope the walker hauls one by.
     std::array<Trouble, machine_count> m_trouble {};
     Haul m_haul;
+    // The Caddy hung under the helicopter (game/sling.hh).
+    Sling m_sling;
   };
 
   // First replayable slice of a GameSession. Immutable world/resource

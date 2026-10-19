@@ -42,6 +42,8 @@ namespace moppe::mov {
       float drive = 0.0f;
       float turn = 0.0f;
       float lift = 0.0f;
+      Vec3 load_pull {};
+      float load_hang = 0.0f;
       bool parked = true;
       bool grounded = true;
       float still = 0.0f;
@@ -68,6 +70,12 @@ namespace moppe::mov {
     void set_lift (float lift);
     // No one at the controls: the rotor runs down.
     void set_parked (bool parked);
+    // What hangs under it: the pull, newtons, of a line on its hook (the
+    // caller applies it with push), which the flight computer lifts and
+    // leans against as well as its own weight, and how far below the
+    // skids the load hangs, which it keeps clear of the ground when under
+    // way. Zero for nothing.
+    void set_load (const Vec3& pull, float hang);
 
     void update (float dt, float water_level);
 

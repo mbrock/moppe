@@ -814,6 +814,9 @@ namespace moppe {
       } else if (st.can_drop_bike) {
         key = deploy_key;
         action = "Release the motocross";
+      } else if (st.can_release_caddy) {
+        key = mount_key;
+        action = *mount_key ? "Let the Caddy go" : "The Caddy is on the line";
       } else if (st.can_deploy_glider) {
         key = deploy_key;
         action = *deploy_key ? "Deploy glider" : "Glider ready";

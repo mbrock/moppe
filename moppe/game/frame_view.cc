@@ -126,6 +126,28 @@ namespace moppe::game {
     };
   }
 
+  // The motocross in the Caddy's bed at life size, two thirds of the
+  // physics' size: upright, its front tyre against the cab and its back
+  // one out over the lowered tailgate.
+  VehiclePose stowed_bike (const mov::Caddy& caddy) {
+    constexpr float scale = 1.0f / 1.5f;
+    return { .position = caddy.point (Vec3 (0.0f, 0.97f, -1.53f)),
+             .render_orientation = caddy.forward (),
+             .render_normal = caddy.up (),
+             .scale = scale };
+  }
+
+  // The jeep on the Caddy's passenger seat, as a model of itself a third
+  // its size and more, facing ahead, its roll cage up in the window.
+  JeepPose stowed_jeep (const mov::Caddy& caddy) {
+    constexpr float scale = 0.36f;
+    return { .position = caddy.point (Vec3 (-0.34f, 0.36f + 0.40f * scale,
+                                            0.22f)),
+             .forward = caddy.forward (),
+             .up = caddy.up (),
+             .scale = scale };
+  }
+
   CaddyPose caddy_pose (const mov::Caddy& caddy) {
     return {
       .position = caddy.position (),
@@ -307,6 +329,22 @@ namespace moppe::game {
     result.actors.helicopter = helicopter_pose (input.session.helicopter ());
     result.actors.tractor = tractor_pose (input.session.tractor ());
     result.actors.caddy = caddy_pose (input.session.caddy ());
+    if (logic.m_sling.laden) {
+      result.actors.caddy_laden = true;
+      result.actors.bike = stowed_bike (input.session.caddy ());
+      result.actors.jeep = stowed_jeep (input.session.caddy ());
+    }
+    if (logic.m_sling.hooked) {
+      const mov::Caddy& caddy = input.session.caddy ();
+      SlingPose sling;
+      sling.hook = input.session.helicopter ().point (sling_hook ());
+      sling.ring = caddy.point (sling_ring ());
+      const std::array<Vec3, 4> legs = sling_legs ();
+      for (std::size_t i = 0; i < legs.size (); ++i)
+        sling.legs[i] = caddy.point (legs[i]);
+      sling.taut = logic.m_sling.stretch > -0.05f;
+      result.actors.sling = sling;
+    }
     if (logic.m_mode == M_GLIDER)
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_mode == M_FOOT)
@@ -354,7 +392,7 @@ namespace moppe::game {
     hud.can_deploy_glider = input.session.can_deploy_glider (input.surface);
     hud.can_drop_bike = input.session.can_drop_bike ();
     // The remount reach of GameSession's toggle_mount, five metres.
-    hud.can_mount = logic.m_mode == M_FOOT &&
+    hud.can_mount = logic.m_mode == M_FOOT && !logic.m_sling.laden &&
                     length2 (input.session.walker ().position () -
                              input.session.bike ().position ()) < 5.0f * 5.0f;
     hud.can_drive = input.session.can_drive ();

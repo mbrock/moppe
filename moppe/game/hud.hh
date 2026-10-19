@@ -62,6 +62,9 @@ namespace moppe {
       // Flying it: whether it is low and slow enough to step out.
       bool flying = false;
       bool can_step_out = false;
+      // Flying it with the Caddy on its line, low enough to set it down:
+      // the mount key lets it go.
+      bool can_release_caddy = false;
       float vertical_speed_mps;
       // Real draw-callback interval: paces the fades and feeds the
       // diagnostic frame rate.

@@ -156,6 +156,9 @@ namespace moppe::game {
     Vec3 rope_end () const;
     // Driving a machine that is stuck.
     bool stuck () const;
+    // The bike or the jeep, riding in the Caddy under the helicopter
+    // (game/sling.hh): drawn there, and met by nothing where it stood.
+    bool stowed (Machine machine) const;
     // Flying low and slow enough to step out.
     bool can_step_out_of_helicopter () const;
     void clear_controls ();

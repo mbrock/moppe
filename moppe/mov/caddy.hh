@@ -50,6 +50,8 @@ namespace moppe::mov {
       float turn = 0.0f;
       bool brake = false;
       bool parked = true;
+      // Hung from the helicopter's line (game/sling.hh).
+      bool slung = false;
       // How long it has stood still, and lain on its side or back.
       float still = 0.0f;
       float overturned = 0.0f;
@@ -76,6 +78,9 @@ namespace moppe::mov {
     void set_turn (float turn);
     void set_brake (bool brake);
     void set_parked (bool parked);
+    // Hung from a line: off the ground, the air damps its swinging and
+    // turns its nose the way it is carried.
+    void set_slung (bool slung);
 
     void update (float dt, float water_level);
 

@@ -3,8 +3,10 @@
 #include <moppe/game/caddy_render.hh>
 #include <moppe/game/figure.hh>
 #include <moppe/game/model_mesh.hh>
+#include <moppe/game/sling.hh>
 #include <moppe/gfx/mat4.hh>
 
+#include <algorithm>
 #include <cmath>
 
 namespace moppe::game {
@@ -118,7 +120,8 @@ namespace moppe::game {
                      render::DrawList& dl,
                      const CaddyPose& caddy,
                      JeepRiders riders,
-                     uint64_t motion_base) {
+                     uint64_t motion_base,
+                     bool laden) {
     const CaddyMeshes& meshes = caddy_meshes (r);
     const Mat4 frame = caddy_frame (caddy);
     if (riders.driver)
@@ -134,9 +137,13 @@ namespace moppe::game {
       r.draw_mesh (mesh, transform, ++motion_part);
     };
     draw_part (*meshes.body, frame);
-    draw_part (*meshes.hardtop, frame);
+    if (!laden)
+      draw_part (*meshes.hardtop, frame);
+    // Lowered, the tailgate swings back about its hinge to lie level.
     draw_part (*meshes.tailgate,
-               frame * Mat4::translation (caddy_model::tailgate_hinge));
+               frame * Mat4::translation (caddy_model::tailgate_hinge) *
+                 Mat4::rotation ((laden ? -1.5707963f : 0.0f) * u::rad,
+                                 Vec3 (1, 0, 0)));
     draw_part (*meshes.seats, frame);
     draw_part (*meshes.column, frame);
     draw_part (*meshes.steering_wheel,
@@ -167,5 +174,66 @@ namespace moppe::game {
     }
     // The glass last, over what stands behind it.
     draw_part (*meshes.glass, frame);
+  }
+
+  namespace {
+    // A rope as a square tube in a few straight pieces, hanging `sag`
+    // metres at its middle.
+    void draw_line (render::DrawList& dl,
+                    const Vec3& from,
+                    const Vec3& to,
+                    float thick,
+                    float sag) {
+      constexpr int pieces = 10;
+      const Vec3 along = to - from;
+      const float span = length (along);
+      if (span < 1e-3f)
+        return;
+      const Vec3 axis = along * (1.0f / span);
+      Vec3 side = cross (axis, Vec3 (0, 1, 0));
+      side = length2 (side) > 1e-6f ? normalized (side) : Vec3 (1, 0, 0);
+      const Vec3 over = cross (side, axis);
+      const auto at = [&] (int piece) {
+        const float t = static_cast<float> (piece) / pieces;
+        return from + along * t - Vec3 (0, sag * 4.0f * t * (1.0f - t), 0);
+      };
+      const Vec3 faces[4] = { side, over, -side, -over };
+      for (int piece = 0; piece < pieces; ++piece) {
+        const Vec3 a = at (piece), b = at (piece + 1);
+        for (int f = 0; f < 4; ++f) {
+          const Vec3 u = faces[f] * thick, v = faces[(f + 1) % 4] * thick;
+          dl.normal (normalized (faces[f] + faces[(f + 1) % 4]));
+          dl.vertex (a + u);
+          dl.vertex (b + u);
+          dl.vertex (b + v);
+          dl.vertex (a + u);
+          dl.vertex (b + v);
+          dl.vertex (a + v);
+        }
+      }
+    }
+  }
+
+  void render_sling (render::DrawList& dl, const SlingPose& sling) {
+    render::DrawState solid;
+    solid.cull = false;
+    dl.state (solid);
+    dl.lit (true);
+    dl.fogged (true);
+    dl.begin (render::Prim::Triangles);
+    // An orange lifting line, and the bridle's darker legs.
+    dl.color (DisplayColor (0.86f, 0.42f, 0.10f));
+    const float span = length (sling.hook - sling.ring);
+    const float slack = std::max (0.0f, sling_line - span);
+    draw_line (dl,
+               sling.hook,
+               sling.ring,
+               0.035f,
+               sling.taut ? 0.0f : std::min (0.5f * slack + 0.2f, 3.0f));
+    dl.color (DisplayColor (0.30f, 0.30f, 0.28f));
+    for (const Vec3& leg : sling.legs)
+      draw_line (dl, sling.ring, leg, 0.025f, 0.0f);
+    dl.end ();
+    dl.state (render::DrawState ());
   }
 }

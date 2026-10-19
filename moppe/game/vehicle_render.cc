@@ -131,8 +131,8 @@ namespace moppe {
         // arc in flight; lean into the corner.
         return Mat4::translation (pos) * Mat4::basis (right, up, fwd) *
                Mat4::rotation (vehicle.lean_radians * u::rad, Vec3 (0, 0, 1)) *
-               Mat4::translation (Vec3 (0, 0.5f, 0)) *
-               Mat4::scaling (Vec3 (1.5f, 1.5f, 1.5f));
+               Mat4::translation (Vec3 (0, 0.5f * vehicle.scale, 0)) *
+               Mat4::scaling (Vec3 (1, 1, 1) * (1.5f * vehicle.scale));
       }
     }
 
