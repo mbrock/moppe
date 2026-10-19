@@ -27,8 +27,8 @@ namespace {
       recipe.resolution (), recipe.resolution (), recipe.extent ()));
   }
 
-  // The land as the game makes it: geology, erosion, the rivers' beds, then
-  // the trails.
+  // The land as the game makes it: geology, erosion, the rivers' beds, the
+  // trails, and settled on the grids it is kept on.
   map::SurfaceGeometry generate (const terrain::WorldRecipe& recipe) {
     map::SurfaceGeometry surface = make_surface (recipe);
     const auto uplift =
@@ -36,6 +36,7 @@ namespace {
     map::evolve_terrain (surface, uplift, recipe.evolution ());
     (void)map::form_river_channels (surface, recipe.water_datum ());
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
+    game::quantize_land (surface);
     return surface;
   }
 
@@ -74,8 +75,8 @@ MOPPE_TEST (land_file_names_carry_version_profile_resolution_and_seed) {
 MOPPE_TEST (land_version_pins_what_a_recipe_makes) {
   const std::uint64_t hash =
     land_hash (game::extract_land (generate (small_recipe ())));
-  MOPPE_CHECK (game::LAND_VERSION == 5);
-  MOPPE_CHECK (hash == 0x4df9713eae75eba6ull);
+  MOPPE_CHECK (game::LAND_VERSION == 6);
+  MOPPE_CHECK (hash == 0x88967b4ba5d488e1ull);
 }
 
 MOPPE_TEST (saved_land_reads_back_exactly) {

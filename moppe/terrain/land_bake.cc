@@ -66,6 +66,7 @@ int main (int argc, char** argv) {
     map::evolve_terrain (surface, uplift, recipe.evolution ());
     (void)map::form_river_channels (surface, recipe.water_datum ());
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
+    game::quantize_land (surface);
 
     std::filesystem::create_directories (output);
     const std::filesystem::path file = output / game::land_file_name (recipe);

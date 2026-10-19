@@ -19,7 +19,7 @@ namespace moppe::game {
   // The version counts changes to what land a recipe makes. Bump it with
   // the pinned hash in tests/game/land_test.cc whenever the geology,
   // erosion, or trail formation change their output.
-  inline constexpr int LAND_VERSION = 5;
+  inline constexpr int LAND_VERSION = 6;
 
   using Land = spatial::Bundle<terrain::TerrainDomain,
                                terrain::SurfaceElevation,
@@ -33,6 +33,14 @@ namespace moppe::game {
   std::string land_file_name (const terrain::WorldRecipe& recipe);
 
   Land extract_land (const map::SurfaceGeometry& surface);
+
+  // Settles a newly formed land onto the grids it is kept on: each column
+  // on the finest binary fixed-point grid of 65,536 steps that holds its
+  // range (spatial::Fixed16), millimetres for the ground's height and the
+  // depths of its materials, so the file takes two bytes a value and reads
+  // back exactly. Everything that forms land does this before using it, so
+  // a world formed here and one read from its file are the same.
+  void quantize_land (map::SurfaceGeometry& surface);
 
   // Fills the surface's land columns from a file over its own domain;
   // normals and snow support are left for map::rebuild_geometry. False,

@@ -30,11 +30,32 @@ seconds.
 
 ## The file
 
-`land-v2-play-2048-123-446e21d0.arrows` names its `LAND_VERSION`, profile,
+`land-v6-play-2048-123-446e21d0.arrows` names its `LAND_VERSION`, profile,
 resolution, seed, and a hash of the recipe's adjustable settings (extent,
 datum, uplift years, transport parameters). It is an Arrow IPC stream of the
-four columns over the terrain domain, 67 MB for 2048 (58 MB as the
-published `.tar.zst`; the fields are noisy enough that zstd gains little).
+four columns over the terrain domain, each in 16-bit binary fixed point:
+33.6 MB for 2048, 8.4 MB for the page's 1024 (6.1 MB compressed, where
+float columns were 16.8 and 13.4).
+
+The land does not need a float's precision. Each column keeps 65,536 steps
+of the finest power of two that holds its range (`spatial::Fixed16`):
+3.9 mm of height over the default world's 224 m, 2 mm of sediment, 16 mm
+of eroded and deposited material, which the ground's shading reads only as
+a share of its 98th percentile. A power of two makes every point on the
+grid a float and its origin a whole number of steps, so a column on its
+grid writes as codes and reads back to the same floats, bit for bit, and
+quantizing it again changes nothing. Whatever forms land settles it onto
+its grids (`game::quantize_land`) before deriving anything from it or
+saving it, so a world formed and one read from the file stay the same to
+the byte. On the default world the river census (`river-census`) finds the
+same rivers on the quantized land as on the float one, 33.4 km against
+33.3 with the same 20 m dry, the greatest river 5,296 m against 5,285.
+
+`spatial::write_bundle` writes a float column in fixed point when asked
+(`FloatStorage::fixed_point`) and only where every value lies on its grid,
+falling back to floats, so it never loses anything; `load_bundle` reads
+either. The field's metadata names the grid (`moppe.quantity.storage`
+`fixed16`, `moppe.fixed.exponent`, `moppe.fixed.origin`).
 
 `LAND_VERSION` counts changes to what land a recipe makes. When geology,
 erosion, channel or trail formation change their output on purpose,

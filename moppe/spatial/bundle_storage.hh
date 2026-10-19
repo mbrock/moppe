@@ -5,6 +5,11 @@
 
 #include <nanoarrow_ipc.hpp>
 
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <charconv>
+#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -12,8 +17,10 @@
 #include <format>
 #include <istream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <ostream>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -51,6 +58,89 @@ namespace moppe::spatial {
   concept StorableValue =
     BundleValue<Value> && std::is_trivially_copyable_v<Value> &&
     std::default_initializable<Value>;
+
+  // ---- Binary fixed point -------------------------------------------------
+  // Asked to (BundleStorage::fixed_point), a column of floats that all lie
+  // on one grid of 65,536 steps of a power of two is written as 16-bit
+  // codes, the grid in its field's metadata,
+  // and read back to the very same floats: the step being a power of two
+  // and the grid's origin a whole number of steps, every point on it is a
+  // float, exactly. A column that is not on such a grid is written as it
+  // is, so writing never loses anything; quantize_fixed16 puts a column on
+  // its grid first, for quantities that never needed a float's precision.
+  struct Fixed16 {
+    // The step is 2^exponent; the grid starts origin steps from zero.
+    int exponent = 0;
+    std::int64_t origin = 0;
+
+    double step () const {
+      return std::ldexp (1.0, exponent);
+    }
+
+    float decode (std::uint16_t code) const {
+      return static_cast<float> (
+        std::ldexp (static_cast<double> (origin + code), exponent));
+    }
+
+    // The code nearest `value`, clamped onto the grid.
+    std::uint16_t nearest (float value) const {
+      const double steps =
+        std::ldexp (static_cast<double> (value), -exponent) -
+        static_cast<double> (origin);
+      return static_cast<std::uint16_t> (
+        std::clamp (std::round (steps), 0.0, 65535.0));
+    }
+
+    // The code of a value on the grid, or nothing.
+    std::optional<std::uint16_t> encode (float value) const {
+      const std::uint16_t code = nearest (value);
+      if (std::bit_cast<std::uint32_t> (decode (code)) !=
+          std::bit_cast<std::uint32_t> (value))
+        return std::nullopt;
+      return code;
+    }
+
+    friend bool operator== (const Fixed16&, const Fixed16&) = default;
+  };
+
+  // How write_bundle stores float columns: as floats, or in fixed point
+  // wherever a column lies on a grid (Fixed16), which reads back the same.
+  enum class FloatStorage { plain, fixed_point };
+
+  // The finest grid that holds MIN to MAX in 65,536 steps, each point of
+  // which is a float; nothing for values beyond any such grid.
+  inline std::optional<Fixed16> fixed16_grid (float min, float max) {
+    if (!std::isfinite (min) || !std::isfinite (max) || max < min)
+      return std::nullopt;
+    for (int exponent = -40; exponent <= 40; ++exponent) {
+      const double low = std::floor (std::ldexp (double (min), -exponent));
+      const double high = std::ldexp (double (max), -exponent);
+      if (high - low <= 65535.0 &&
+          std::abs (low) + 65535.0 < 16777216.0)
+        return Fixed16 { exponent, static_cast<std::int64_t> (low) };
+    }
+    return std::nullopt;
+  }
+
+  // The grid a run of floats would be written on, if they all lie on one.
+  template <std::ranges::input_range Floats>
+  std::optional<Fixed16> fixed16_of (const Floats& values) {
+    float min = std::numeric_limits<float>::infinity ();
+    float max = -min;
+    for (const float value : values) {
+      min = std::min (min, value);
+      max = std::max (max, value);
+    }
+    if (min > max)
+      return std::nullopt;
+    const std::optional<Fixed16> grid = fixed16_grid (min, max);
+    if (!grid)
+      return std::nullopt;
+    for (const float value : values)
+      if (!grid->encode (value))
+        return std::nullopt;
+    return grid;
+  }
 
   namespace detail {
     inline constexpr std::string_view bundle_version = "1";
@@ -240,6 +330,37 @@ namespace moppe::spatial {
         return static_cast<Scalar> (ArrowArrayViewGetUIntUnsafe (&view, index));
     }
 
+    // ---- Fixed-point columns -----------------------------------------------
+
+    inline constexpr std::string_view fixed16_storage = "fixed16";
+    inline constexpr std::string_view fixed_exponent_key =
+      "moppe.fixed.exponent";
+    inline constexpr std::string_view fixed_origin_key = "moppe.fixed.origin";
+
+    // A column that may travel as fixed point: one float per value.
+    template <typename Value>
+    concept FixedColumn = std::same_as<value_rep<Value>, float>;
+
+    template <typename Value>
+    std::optional<Fixed16> column_fixed16 (const auto& column) {
+      if constexpr (FixedColumn<Value>)
+        return fixed16_of (column | std::views::transform ([] (const Value& v) {
+                             return representation (v);
+                           }));
+      else
+        return std::nullopt;
+    }
+
+    template <typename Integer>
+    std::optional<Integer> parse_integer (std::string_view text) {
+      Integer value {};
+      const auto [end, error] =
+        std::from_chars (text.data (), text.data () + text.size (), value);
+      if (error != std::errc () || end != text.data () + text.size ())
+        return std::nullopt;
+      return value;
+    }
+
     // ---- One column, one encoding -----------------------------------------
     // How a quantity's representation becomes an Arrow column: each encoding
     // names itself, describes its own field, and carries values in both
@@ -338,21 +459,60 @@ namespace moppe::spatial {
     };
 
     template <typename Value>
-    Metadata column_metadata () {
-      return { { std::string (kind_key), quantity_kind<Value> () },
-               { std::string (unit_key), std::format ("{:P}", Value::unit) },
-               { std::string (dimension_key),
-                 std::format ("{:P}", Value::dimension) },
-               { std::string (spec_key), quantity_spec_name<Value> () },
-               { std::string (storage_key), ColumnEncoding<Value>::name () } };
+    Metadata column_metadata (const std::optional<Fixed16>& fixed = {}) {
+      Metadata metadata {
+        { std::string (kind_key), quantity_kind<Value> () },
+        { std::string (unit_key), std::format ("{:P}", Value::unit) },
+        { std::string (dimension_key), std::format ("{:P}", Value::dimension) },
+        { std::string (spec_key), quantity_spec_name<Value> () },
+        { std::string (storage_key),
+          fixed ? std::string (fixed16_storage)
+                : ColumnEncoding<Value>::name () }
+      };
+      if (fixed) {
+        metadata.emplace_back (std::string (fixed_exponent_key),
+                               std::to_string (fixed->exponent));
+        metadata.emplace_back (std::string (fixed_origin_key),
+                               std::to_string (fixed->origin));
+      }
+      return metadata;
     }
 
     template <typename Value>
-    bool configure_column_schema (ArrowSchema& schema) {
+    bool configure_column_schema (ArrowSchema& schema,
+                                  const std::optional<Fixed16>& fixed = {}) {
       const std::string spec = quantity_spec_name<Value> ();
-      return ColumnEncoding<Value>::configure (schema) &&
-             ok (ArrowSchemaSetName (&schema, spec.c_str ())) &&
-             set_metadata (schema, column_metadata<Value> ());
+      const bool typed = fixed ? ok (ArrowSchemaSetType (&schema,
+                                                         NANOARROW_TYPE_UINT16))
+                               : ColumnEncoding<Value>::configure (schema);
+      return typed && ok (ArrowSchemaSetName (&schema, spec.c_str ())) &&
+             set_metadata (schema, column_metadata<Value> (fixed));
+    }
+
+    // The grid a stored fixed-point column of this quantity was written on;
+    // nothing when the column is not one.
+    template <typename Value>
+    std::optional<Fixed16> stored_fixed16 (const ArrowSchema& actual) {
+      if constexpr (!FixedColumn<Value>)
+        return std::nullopt;
+      else {
+        if (metadata_value (actual, storage_key) != fixed16_storage ||
+            !actual.format || std::string_view (actual.format) != "S" ||
+            !actual.name || actual.name != quantity_spec_name<Value> ())
+          return std::nullopt;
+        for (const auto& [key, value] : column_metadata<Value> ())
+          if (key != storage_key && metadata_value (actual, key) != value)
+            return std::nullopt;
+        const std::optional exponent = metadata_value (actual, fixed_exponent_key);
+        const std::optional origin = metadata_value (actual, fixed_origin_key);
+        if (!exponent || !origin)
+          return std::nullopt;
+        const std::optional e = parse_integer<int> (*exponent);
+        const std::optional o = parse_integer<std::int64_t> (*origin);
+        if (!e || !o)
+          return std::nullopt;
+        return Fixed16 { *e, *o };
+      }
     }
 
     inline bool schema_shape_matches (const ArrowSchema& actual,
@@ -385,10 +545,19 @@ namespace moppe::spatial {
     }
 
     template <typename Value>
-    bool
-    read_value (const ArrowArrayView& view, std::int64_t row, Value& value) {
-      return !ArrowArrayViewIsNull (&view, row) &&
-             ColumnEncoding<Value>::read (view, row, value);
+    bool read_value (const ArrowArrayView& view,
+                     std::int64_t row,
+                     Value& value,
+                     const std::optional<Fixed16>& fixed = {}) {
+      if (ArrowArrayViewIsNull (&view, row))
+        return false;
+      if constexpr (FixedColumn<Value>)
+        if (fixed) {
+          value = value_from_representation<Value> (fixed->decode (
+            static_cast<std::uint16_t> (ArrowArrayViewGetUIntUnsafe (&view, row))));
+          return true;
+        }
+      return ColumnEncoding<Value>::read (view, row, value);
     }
 
     // Fold a check over the columns of a bundle, handing each one its value
@@ -482,29 +651,42 @@ namespace moppe::spatial {
 
     // ---- One bundle, one record batch --------------------------------------
 
+    template <std::size_t Count>
+    using ColumnGrids = std::array<std::optional<Fixed16>, Count>;
+
     template <typename Domain, typename... Quantities>
-    bool configure_bundle_schema (ArrowSchema& schema,
-                                  const Bundle<Domain, Quantities...>& bundle) {
+    bool configure_bundle_schema (
+      ArrowSchema& schema,
+      const Bundle<Domain, Quantities...>& bundle,
+      const ColumnGrids<sizeof...(Quantities)>& grids) {
       ArrowSchemaInit (&schema);
       return ok (ArrowSchemaSetTypeStruct (
                &schema, static_cast<std::int64_t> (sizeof...(Quantities)))) &&
              every_column<Quantities...> (
                [&]<typename Value, std::size_t Column> () {
                  return configure_column_schema<Value> (
-                   *schema.children[Column]);
+                   *schema.children[Column], grids[Column]);
                }) &&
              set_metadata (schema, bundle_metadata (bundle.domain ()));
     }
 
     template <typename Domain, typename... Quantities>
-    bool build_bundle_array (ArrowArray& array,
-                             const Bundle<Domain, Quantities...>& bundle,
-                             ArrowError& error) {
+    bool
+    build_bundle_array (ArrowArray& array,
+                        const Bundle<Domain, Quantities...>& bundle,
+                        const ColumnGrids<sizeof...(Quantities)>& grids,
+                        ArrowError& error) {
       for (std::size_t row = 0; row < bundle.size (); ++row) {
         const bool appended = every_column<Quantities...> (
           [&]<typename Value, std::size_t Column> () {
+            const Value& value = get<Column> (bundle)[row];
+            if constexpr (FixedColumn<Value>)
+              if (grids[Column])
+                return ok (ArrowArrayAppendUInt (
+                  array.children[Column],
+                  *grids[Column]->encode (representation (value))));
             return ColumnEncoding<Value>::append (*array.children[Column],
-                                                  get<Column> (bundle)[row]);
+                                                  value);
           });
         if (!appended || !ok (ArrowArrayFinishElement (&array)))
           return false;
@@ -517,17 +699,27 @@ namespace moppe::spatial {
     // the caller and outlives this call.
     template <typename Domain, typename... Quantities>
     bool encode_bundle (UniqueBuffer& encoded,
-                        const Bundle<Domain, Quantities...>& bundle) {
+                        const Bundle<Domain, Quantities...>& bundle,
+                        FloatStorage floats) {
       ArrowError error;
       ArrowErrorInit (&error);
+
+      // Every float column that lies on a fixed-point grid travels on it.
+      ColumnGrids<sizeof...(Quantities)> grids;
+      if (floats == FloatStorage::fixed_point)
+        every_column<Quantities...> (
+          [&]<typename Value, std::size_t Column> () {
+            grids[Column] = column_fixed16<Value> (get<Column> (bundle));
+            return true;
+          });
 
       UniqueSchema schema;
       UniqueArray array;
       UniqueArrayView view;
-      if (!configure_bundle_schema (*schema.get (), bundle) ||
+      if (!configure_bundle_schema (*schema.get (), bundle, grids) ||
           !ok (
             ArrowArrayInitFromSchema (array.get (), schema.get (), &error)) ||
-          !build_bundle_array (*array.get (), bundle, error) ||
+          !build_bundle_array (*array.get (), bundle, grids, error) ||
           !ok (ArrowArrayViewInitFromSchema (
             view.get (), schema.get (), &error)) ||
           !ok (ArrowArrayViewSetArray (view.get (), array.get (), &error)))
@@ -592,9 +784,10 @@ namespace moppe::spatial {
   template <typename Domain, typename... Quantities>
     requires StorableDomain<Domain> && (StorableValue<Quantities> && ...)
   void write_bundle (std::ostream& out,
-                     const Bundle<Domain, Quantities...>& bundle) {
+                     const Bundle<Domain, Quantities...>& bundle,
+                     FloatStorage floats = FloatStorage::plain) {
     detail::UniqueBuffer encoded;
-    if (!detail::encode_bundle (encoded, bundle)) {
+    if (!detail::encode_bundle (encoded, bundle, floats)) {
       out.setstate (std::ios::failbit);
       return;
     }
@@ -636,29 +829,47 @@ namespace moppe::spatial {
         return std::nullopt;
 
       bundle_type bundle (std::move (*domain));
-      if (!fill_rows (bundle, *view.get ()))
+      if (!fill_rows (bundle, *view.get (), grids (*schema.get ())))
         return std::nullopt;
       return bundle;
     }
 
   private:
+    using Grids = detail::ColumnGrids<sizeof...(Quantities)>;
+
+    static Grids grids (const ArrowSchema& schema) {
+      Grids grids;
+      detail::every_column<Quantities...> (
+        [&]<typename Value, std::size_t Column> () {
+          grids[Column] =
+            detail::stored_fixed16<Value> (*schema.children[Column]);
+          return true;
+        });
+      return grids;
+    }
+
     static bool columns_match (const ArrowSchema& schema) {
       return schema.n_children ==
                static_cast<std::int64_t> (sizeof...(Quantities)) &&
              detail::every_column<Quantities...> (
                [&]<typename Value, std::size_t Column> () {
                  return detail::column_schema_matches<Value> (
-                   *schema.children[Column]);
+                          *schema.children[Column]) ||
+                        detail::stored_fixed16<Value> (
+                          *schema.children[Column]);
                });
     }
 
-    static bool fill_rows (bundle_type& bundle, const ArrowArrayView& view) {
+    static bool fill_rows (bundle_type& bundle,
+                           const ArrowArrayView& view,
+                           const Grids& grids) {
       for (std::size_t row = 0; row < bundle.size (); ++row) {
         const bool values_read = detail::every_column<Quantities...> (
           [&]<typename Value, std::size_t Column> () {
             return detail::read_value (*view.children[Column],
                                        static_cast<std::int64_t> (row),
-                                       get<Column> (bundle)[row]);
+                                       get<Column> (bundle)[row],
+                                       grids[Column]);
           });
         if (!values_read)
           return false;
@@ -684,6 +895,29 @@ namespace moppe::spatial {
       return false;
     bundle = std::move (*loaded);
     return true;
+  }
+
+  // Puts a column of float quantities on the finest fixed-point grid that
+  // holds its range (Fixed16), rounding each value to the nearest point, and
+  // returns the grid; a column on a grid already is left as it is. Written
+  // out, the column then takes two bytes a value and reads back the same.
+  template <std::ranges::forward_range Column>
+    requires detail::FixedColumn<std::ranges::range_value_t<Column>>
+  std::optional<Fixed16> quantize_fixed16 (Column& column) {
+    using Value = std::ranges::range_value_t<Column>;
+    float min = std::numeric_limits<float>::infinity ();
+    float max = -min;
+    for (const Value& value : column) {
+      min = std::min (min, detail::representation (value));
+      max = std::max (max, detail::representation (value));
+    }
+    const std::optional<Fixed16> grid = fixed16_grid (min, max);
+    if (!grid)
+      return std::nullopt;
+    for (Value& value : column)
+      value = detail::value_from_representation<Value> (
+        grid->decode (grid->nearest (detail::representation (value))));
+    return grid;
   }
 }
 

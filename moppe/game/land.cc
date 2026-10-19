@@ -82,6 +82,17 @@ namespace moppe::game {
     return name.str ();
   }
 
+  void quantize_land (map::SurfaceGeometry& surface) {
+    (void)spatial::quantize_fixed16 (
+      spatial::get<terrain::surface_elevation> (surface));
+    (void)spatial::quantize_fixed16 (
+      spatial::get<terrain::sediment_thickness> (surface));
+    (void)spatial::quantize_fixed16 (
+      spatial::get<map::eroded_surface_material> (surface));
+    (void)spatial::quantize_fixed16 (
+      spatial::get<map::deposited_surface_material> (surface));
+  }
+
   Land extract_land (const map::SurfaceGeometry& surface) {
     Land land (surface.domain ());
     copy_land (surface, land);
@@ -106,7 +117,8 @@ namespace moppe::game {
       std::ofstream file (partial, std::ios::binary);
       if (!file)
         throw std::runtime_error ("can't write land: " + partial);
-      spatial::write_bundle (file, extract_land (surface));
+      spatial::write_bundle (
+        file, extract_land (surface), spatial::FloatStorage::fixed_point);
       if (!file)
         throw std::runtime_error ("can't write land: " + partial);
     }

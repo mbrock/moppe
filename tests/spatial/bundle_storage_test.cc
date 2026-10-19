@@ -214,3 +214,62 @@ MOPPE_TEST (a_terrain_bundle_recovers_its_lattice_from_its_file) {
                     12.5f,
                     1e-6f);
 }
+
+// A column put on its fixed-point grid stays there, and travels as 16-bit
+// codes that read back to the very same floats.
+MOPPE_TEST (a_quantized_column_travels_in_fixed_point_and_reads_back_exactly) {
+  StoredRingBundle bundle (StoredRing { 3 });
+  auto& [displacement, density] = bundle;
+  displacement[0] = 30.6113f * stored_displacement[u::m];
+  displacement[1] = 151.0371f * stored_displacement[u::m];
+  displacement[2] = 303.0097f * stored_displacement[u::m];
+  density[1] = 0.1f * stored_density[one];
+
+  const std::optional grid = spatial::quantize_fixed16 (displacement);
+  MOPPE_CHECK (grid.has_value ());
+  // 272 metres in 65,536 steps: an eighth of a centimetre would not do.
+  MOPPE_CHECK (grid->exponent == -7);
+  MOPPE_CHECK_NEAR (displacement[1].numerical_value_in (u::m), 151.0371f,
+                    0.004f);
+  const StoredRingBundle once = bundle;
+  (void)spatial::quantize_fixed16 (displacement);
+  for (std::size_t i = 0; i < 3; ++i)
+    MOPPE_CHECK (spatial::get<stored_displacement> (once)[i] ==
+                 displacement[i]);
+
+  std::stringstream file (std::ios::in | std::ios::out | std::ios::binary);
+  spatial::write_bundle (file, bundle, spatial::FloatStorage::fixed_point);
+  file.seekg (0);
+  spatial::detail::UniqueArrayStream stream;
+  MOPPE_CHECK (spatial::detail::read_ipc_stream (file, stream));
+  ArrowError error;
+  ArrowErrorInit (&error);
+  spatial::detail::UniqueSchema schema;
+  MOPPE_CHECK (ArrowArrayStreamGetSchema (
+                 stream.get (), schema.get (), &error) == NANOARROW_OK);
+  // The quantized column is 16-bit; the density, 0.1 being no point on a
+  // binary grid, stays a float.
+  MOPPE_CHECK (std::string_view (schema->children[0]->format) == "S");
+  MOPPE_CHECK (std::string_view (schema->children[1]->format) == "f");
+
+  file.seekg (0);
+  const std::optional loaded = spatial::read_bundle<StoredRingBundle> (file);
+  MOPPE_CHECK (loaded.has_value ());
+  for (std::size_t i = 0; i < 3; ++i) {
+    MOPPE_CHECK (spatial::get<stored_displacement> (*loaded)[i] ==
+                 displacement[i]);
+    MOPPE_CHECK (spatial::get<stored_density> (*loaded)[i] == density[i]);
+  }
+}
+
+MOPPE_TEST (a_fixed_point_grid_holds_its_range_in_floats_exactly) {
+  const std::optional grid = spatial::fixed16_grid (-40.25f, 600.5f);
+  MOPPE_CHECK (grid.has_value ());
+  MOPPE_CHECK (grid->decode (0) <= -40.25f);
+  MOPPE_CHECK (grid->decode (65535) >= 600.5f);
+  MOPPE_CHECK (grid->encode (grid->decode (12345)) == 12345);
+  MOPPE_CHECK (!grid->encode (0.1f).has_value ());
+  // A constant column is a grid of one point.
+  MOPPE_CHECK (spatial::fixed16_grid (0.0f, 0.0f).has_value ());
+  MOPPE_CHECK (!spatial::fixed16_grid (1.0f, 0.0f).has_value ());
+}

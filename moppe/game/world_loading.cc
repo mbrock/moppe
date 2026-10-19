@@ -311,6 +311,7 @@ namespace moppe::game {
         state.report ("Drawing the continents",
                       "Materializing the geological field");
         evolve_terrain (state, recipe, surface);
+        quantize_land (surface);
         state.report ("Saving the land",
                       "Keeping this expensive result for the next launch");
         save_land (surface, saved_land);

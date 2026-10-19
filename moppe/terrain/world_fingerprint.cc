@@ -12,6 +12,7 @@
 
 #include <moppe/game/forest.hh>
 #include <moppe/game/generated_world.hh>
+#include <moppe/game/land.hh>
 #include <moppe/game/world_cache.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/world_recipe.hh>
@@ -207,6 +208,8 @@ int main (int argc, char** argv) {
           hash_of (map::form_terrain_trails (surface, recipe.trail_formation ())
                      .earthwork_delta_m));
     surface_lines ("trails", surface);
+    game::quantize_land (surface);
+    surface_lines ("land", surface);
     TrailNetwork trails =
       analyze_trail_network (surface, recipe.trail_formation ());
     map::rebuild_geometry (surface);

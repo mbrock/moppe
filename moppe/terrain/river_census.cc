@@ -82,6 +82,7 @@ int main (int argc, char** argv) {
       change =
         map::form_river_channels (surface, recipe.water_datum ()).change_m;
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
+    game::quantize_land (surface);
     map::rebuild_geometry (surface);
     const game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
     const auto& [flood, lakes, drainage, rivers] = hydrology;

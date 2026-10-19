@@ -1,3 +1,4 @@
+#include <moppe/game/land.hh>
 #include <moppe/game/forest.hh>
 #include <moppe/game/generated_world.hh>
 #include <moppe/game/world_cache.hh>
@@ -83,6 +84,7 @@ int main (int argc, char** argv) {
     // As the game does: form the trails, then find their network in the
     // formed surface, so a world from saved land is the same.
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
+    game::quantize_land (surface);
     TrailNetwork trails =
       analyze_trail_network (surface, recipe.trail_formation ());
     map::rebuild_geometry (surface);
