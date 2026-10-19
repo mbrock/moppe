@@ -867,5 +867,10 @@ namespace moppe {
     float RigidBike::body_hit () const {
       return m_impl->body_hit;
     }
+
+    void RigidBike::push (const Vec3& at, const Vec3& impulse) {
+      b3Body_ApplyLinearImpulse (
+        m_impl->chassis, to_b3 (impulse), to_b3 (at), true);
+    }
   }
 }

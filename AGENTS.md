@@ -73,13 +73,15 @@
     hour it starts at (`MOPPE_CLOCK=21.5` for night). The gazetteer,
     benchmarks, water captures, and a launch that sets `MOPPE_SUNHEIGHT`
     without either keep the fixed sun they were composed under.
-  - Scripted walks for captures: `MOPPE_WALK=walk|run|jump|tour|forage|camp`
+  - Scripted walks for captures:
+    `MOPPE_WALK=walk|run|jump|tour|forage|camp|haul|bump`
     starts on foot (even with `MOPPE_DEMO=forest`) and drives a deterministic
     script (`forage` starts beside the mushrooms nearest the spawn and picks
     its way from one to the next; `camp` starts by the nearest pair of
     hammock trees under open sky, hangs the hammock, lights a fire, lies
     down, and after a look from outside watches the sky through the
-    sleeper's eyes);
+    sleeper's eyes; `haul` hauls the tractor, marked stuck, away on a rope;
+    `bump` drives the jeep into the tractor's side twice);
     `MOPPE_WALK_CAMERA=chase|front|side|eyes` picks the view (`side` locks a
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
@@ -122,7 +124,7 @@
     to an H.264 MP4 -- `tools/record /tmp/camp.mp4 camp` is the camp at dusk
     through to morning. Scenes are `play` (the default: on foot at the
     trailhead, no opening), `ride`, `forest`, `glide`, `walk`, `forage`,
-    `camp`, `opening`, and `river` (a drone's flight down the greatest
+    `camp`, `haul`, `bump`, `opening`, and `river` (a drone's flight down the greatest
     watercourse, from the top of its catchment to the sea: seven minutes,
     or fitted into `--seconds`; with `MOPPE_FLYOVER_SECONDS=440` set,
     `--start` and `--seconds` cut a stretch out of the whole); `--seconds`, `--start`, `--speed N` (a
@@ -365,6 +367,19 @@
     wheel. The other player sees it and its driver (companion wire
     version 5); `MOPPE_DEMO=tractor` (`tools/record OUT.mp4 tractor`)
     has the autopilot drive it.
+  - Getting unstuck (`moppe/game/rescue.*`): each machine stands in a
+    Box3D world of its own, so they meet as a few spheres each instead,
+    and machines that meet -- the other player's too -- are knocked apart
+    like bumper cars by equal and opposite blows, each game pushing only
+    its own (`find_bumps`, `GameSession::push_machine`). A machine whose
+    driver holds the throttle three seconds without its getting three
+    metres on is stuck (`Trouble`, in `GameLogicState::m_trouble`);
+    driven and stuck, it heaves itself the way the driver wants every
+    second and a half, harder each time. Left stuck, `F` beside it takes
+    up a rope to its nearer end instead of getting in: walking away hauls
+    it out after the walker, slowly, walking at it pushes it, and `F` lets
+    go; moved three metres it is free and `F` gets in again. `tools/record
+    OUT.mp4 haul` and `bump` show both.
   - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few
     percent of the trees, more near the trailhead: chanterelles and funnel
     chanterelles under spruce, porcini under both, fly agaric under birch,

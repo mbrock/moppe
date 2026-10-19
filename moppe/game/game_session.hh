@@ -6,6 +6,9 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 
+#include <optional>
+#include <span>
+
 namespace moppe::game {
   // Observable application-side effects of an ordinary simulation step.
   // The application decides how to realize these, keeping platform services
@@ -141,6 +144,18 @@ namespace moppe::game {
     bool can_drive_tractor () const;
     // On foot nearest the Caddy, within reach of its doors.
     bool can_drive_caddy () const;
+    // Each machine as the bumpers see it, and a blow to it
+    // (game/rescue.hh).
+    MachineBody machine_body (Machine machine) const;
+    void push_machine (Machine machine, const Vec3& at, const Vec3& impulse);
+    // On foot beside a stuck machine, which the mount key would take up a
+    // rope to haul rather than get into.
+    std::optional<Machine> haul_within_reach () const;
+    // The machine on the rope, and where the rope is tied to it.
+    std::optional<Machine> hauling () const;
+    Vec3 rope_end () const;
+    // Driving a machine that is stuck.
+    bool stuck () const;
     // Flying low and slow enough to step out.
     bool can_step_out_of_helicopter () const;
     void clear_controls ();
@@ -186,6 +201,8 @@ namespace moppe::game {
     float leaves = 0.0f;
   };
 
+  // `strangers` are the other player's machines, which ours bump into
+  // and are pushed off by, though only the other game moves them.
   GameSessionAdvanceResult
   advance_game_session (const WorldParams& world,
                         const map::SurfaceGeometry& surface,
@@ -194,7 +211,8 @@ namespace moppe::game {
                         seconds_t dt,
                         const mov::TrunkField* trunks = nullptr,
                         const GroundCover& ground = {},
-                        const terrain::WaterSheets* water = nullptr);
+                        const terrain::WaterSheets* water = nullptr,
+                        std::span<const MachineBody> strangers = {});
 }
 
 #endif

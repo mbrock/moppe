@@ -706,7 +706,10 @@ namespace moppe {
                             int width_pts,
                             int height_pts) {
       std::string key, action;
-      if (st.on_foot && st.mushroom_in_reach) {
+      if (st.hauling) {
+        key = mount_key;
+        action = "Let go of " + std::string (st.hauling);
+      } else if (st.on_foot && st.mushroom_in_reach) {
         const std::string name = capitalized (st.mushroom_in_reach);
         if (!st.mushroom_edible) {
           action = name + " -- poisonous, leave it be";
@@ -763,6 +766,10 @@ namespace moppe {
       } else if (st.can_deploy_glider) {
         key = deploy_key;
         action = *deploy_key ? "Deploy glider" : "Glider ready";
+      } else if (st.haul) {
+        key = mount_key;
+        action = *mount_key ? "Haul " + std::string (st.haul) + " out"
+                            : capitalized (st.haul) + " is stuck";
       } else if (st.can_ride_along) {
         key = mount_key;
         action = *mount_key ? "Ride along" : "A seat is free";
@@ -781,6 +788,8 @@ namespace moppe {
       } else if (st.can_mount) {
         key = mount_key;
         action = *mount_key ? "Ride" : "Bike within reach";
+      } else if (st.stuck) {
+        action = "Stuck! Keep at it, or step out and haul";
       }
       // The prompt's action leads the offers, then what needs no prompt.
       offer (key, action);

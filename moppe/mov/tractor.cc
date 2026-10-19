@@ -566,6 +566,17 @@ namespace moppe::mov {
     return m_impl->kept.asleep;
   }
 
+  float Tractor::mass () const {
+    return tractor_rig::total_mass;
+  }
+
+  void Tractor::push (const Vec3& at, const Vec3& impulse) {
+    Impl& m = *m_impl;
+    m.kept.asleep = false;
+    m.kept.still = 0.0f;
+    b3Body_ApplyLinearImpulse (m.chassis, to_b3 (impulse), to_b3 (at), true);
+  }
+
   float Tractor::throttle () const {
     const State& kept = m_impl->kept;
     if (kept.parked)

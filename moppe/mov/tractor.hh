@@ -94,6 +94,11 @@ namespace moppe::mov {
     Vec3 velocity () const;
     bool grounded () const;
     bool asleep () const;
+    // Its whole weight, kilograms.
+    float mass () const;
+    // A blow at `at` in the world, newton-seconds: another machine
+    // bumping into it, or someone hauling on it. It wakes one asleep.
+    void push (const Vec3& at, const Vec3& impulse);
     // How hard the engine is asked to work, 0..1: the throttle, or a
     // little at idle while someone sits at the wheel.
     float throttle () const;

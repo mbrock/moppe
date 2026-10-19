@@ -311,6 +311,8 @@ namespace moppe::game {
     if (logic.m_mode == M_FOOT)
       result.actors.walker =
         walker_pose (input.session.walker (), logic.m_look_pitch);
+    if (result.actors.walker && input.session.hauling ())
+      result.actors.walker->rope_end = input.session.rope_end ();
     result.actors.active_mode = logic.m_mode;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera =
@@ -354,6 +356,11 @@ namespace moppe::game {
     hud.can_fly = input.session.can_fly ();
     hud.can_drive_tractor = input.session.can_drive_tractor ();
     hud.can_drive_caddy = input.session.can_drive_caddy ();
+    if (const auto stuck = input.session.haul_within_reach ())
+      hud.haul = machine_name (*stuck);
+    if (const auto held = input.session.hauling ())
+      hud.hauling = machine_name (*held);
+    hud.stuck = input.session.stuck ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();

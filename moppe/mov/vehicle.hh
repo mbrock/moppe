@@ -114,6 +114,14 @@ namespace moppe {
         return m_parked;
       }
 
+      // The whole weight of bike and rider, kilograms.
+      float mass () const {
+        return m_mass.numerical_value_in (u::kg);
+      }
+      // A blow at `at`, newton-seconds: another machine bumping into it,
+      // or someone hauling on it. The classic bike takes it whole.
+      void push (const Vec3& at, const Vec3& impulse);
+
       void set_water_level (meters_t level) {
         m_water_level = level;
       }

@@ -151,6 +151,8 @@ namespace moppe {
       // Approach speeds of the hardest collisions in the last step.
       float trunk_hit () const;
       float body_hit () const;
+      // A blow to the chassis at `at`, newton-seconds.
+      void push (const Vec3& at, const Vec3& impulse);
 
     private:
       struct Impl;

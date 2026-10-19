@@ -287,7 +287,7 @@ namespace moppe::mov {
       // Sitting on its skids with nothing asked of it, it stays sat.
       const bool sitting = kept.grounded && lift <= 0.05f &&
                            std::abs (drive) < 0.05f && std::abs (turn) < 0.05f;
-      const float weight = mass * heli_rig::gravity;
+      const float weight = heli_rig::mass * heli_rig::gravity;
       Vec3 thrust_force;
       Vec3 angular;
       if (sitting || kept.parked) {
@@ -310,10 +310,10 @@ namespace moppe::mov {
         }
         const float rise =
           std::clamp (climb_gain * (climb - v[1]), -5.0f, 7.0f);
-        const float thrust = std::clamp (mass * (heli_rig::gravity + rise) /
-                                           std::max (up[1], 0.5f),
-                                         0.0f,
-                                         thrust_to_weight * weight * authority);
+        const float thrust = std::clamp (
+          heli_rig::mass * (heli_rig::gravity + rise) / std::max (up[1], 0.5f),
+          0.0f,
+          thrust_to_weight * weight * authority);
         thrust_force = up * thrust;
 
         // Lean toward the speed asked for: a coordinated turn falls out
@@ -343,7 +343,7 @@ namespace moppe::mov {
       const float wet = std::clamp (
         (water_level - point (Vec3 (0, 0.6f, 0))[1]) / 0.8f, 0.0f, 1.0f);
       const Vec3 drag =
-        v * (-(air_drag * length (v) + water_drag * wet * mass));
+        v * (-(air_drag * length (v) + water_drag * wet * heli_rig::mass));
       b3Body_ApplyForceToCenter (body, to_b3 (thrust_force + drag), true);
       if (length2 (angular) > 0.0f)
         b3Body_ApplyTorque (body, torque_for (angular), true);
@@ -450,6 +450,17 @@ namespace moppe::mov {
 
   bool Helicopter::asleep () const {
     return m_impl->kept.asleep;
+  }
+
+  float Helicopter::mass () const {
+    return heli_rig::mass;
+  }
+
+  void Helicopter::push (const Vec3& at, const Vec3& impulse) {
+    Impl& m = *m_impl;
+    m.kept.asleep = false;
+    m.kept.still = 0.0f;
+    b3Body_ApplyLinearImpulse (m.body, to_b3 (impulse), to_b3 (at), true);
   }
 
   Vec3 Helicopter::point (const Vec3& local) const {

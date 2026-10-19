@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
 #include <type_traits>
 #include <vector>
 
@@ -612,7 +613,8 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
                                         seconds_t,
                                         const mov::TrunkField*,
                                         const game::GroundCover&,
-                                        const terrain::WaterSheets*);
+                                        const terrain::WaterSheets*,
+                                        std::span<const game::MachineBody>);
   static_assert (
     std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
 

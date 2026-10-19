@@ -77,6 +77,16 @@ namespace moppe {
       void set_run (bool run) {
         m_run = run;
       }
+      // Holding a rope tied at `anchor`: through the next update the
+      // walker cannot walk out further than `longest` from it, measured
+      // level, nor in nearer than `shortest`, and is drawn back if they
+      // are.
+      void tether (const Vec3& anchor, float shortest, float longest) {
+        m_tether = anchor;
+        m_tether_shortest = shortest;
+        m_tether_longest = longest;
+        m_tethered = true;
+      }
       // Mouse look turns the walker directly; positive is to the right.
       void turn_by (float radians);
       // A press, remembered briefly so a jump asked for just before the
@@ -126,6 +136,10 @@ namespace moppe {
       bool m_jump_request;
       float m_phase;
       speed_t m_stride_speed;
+      Vec3 m_tether;
+      float m_tether_shortest = 0.0f;
+      float m_tether_longest = 0.0f;
+      bool m_tethered = false;
     };
   }
 }

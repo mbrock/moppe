@@ -24,6 +24,9 @@
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
 #   supper    picking three, frying them on a fire, and eating
 #                                                      (MOPPE_WALK=supper)
+#   haul      a stuck tractor hauled out on a rope     (MOPPE_WALK=haul)
+#   bump      the jeep driven into the tractor's side, twice
+#                                                      (MOPPE_WALK=bump)
 #   camp      hang the hammock, light a fire, lie down at dusk and watch
 #             the night go by                          (MOPPE_WALK=camp)
 #   opening   the opening titles
@@ -146,6 +149,8 @@ case $scene in
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
   supper) stage MOPPE_WALK=supper; : "${seconds:=50}" ;;
+  haul) stage MOPPE_WALK=haul MOPPE_WALK_CAMERA=front; : "${seconds:=16}" ;;
+  bump) stage MOPPE_WALK=bump; : "${seconds:=13}" ;;
   camp)
     stage MOPPE_WALK=camp MOPPE_WALK_CAMERA=chase MOPPE_CLOCK=17.3
     : "${seconds:=75}" ;;
@@ -199,7 +204,7 @@ if [[ -z $window && $(uname) == Linux && -n $gpu ]] &&
 then
   # gamescope and the X server it starts say a good deal; the game's own
   # lines are the ones that matter.
-  said='^moppe: \(video\|camp\|the day\|multiplayer\)\|[Ee]rror\|what()'
+  said='^moppe: \(video\|camp\|walk\|the day\|multiplayer\)\|[Ee]rror\|what()'
   gamescope -W "$width" -H "$height" -w "$width" -h "$height" \
     --backend headless -- "$game" --fullscreen "$@" 2>&1 |
     grep --line-buffered "$said" >&2 || true

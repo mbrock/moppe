@@ -515,6 +515,17 @@ namespace moppe::mov {
     return m_impl->kept.asleep;
   }
 
+  float Jeep::mass () const {
+    return jeep_rig::total_mass;
+  }
+
+  void Jeep::push (const Vec3& at, const Vec3& impulse) {
+    Impl& m = *m_impl;
+    m.kept.asleep = false;
+    m.kept.still = 0.0f;
+    b3Body_ApplyLinearImpulse (m.chassis, to_b3 (impulse), to_b3 (at), true);
+  }
+
   Vec3 Jeep::point (const Vec3& local) const {
     return m_impl->point (local);
   }

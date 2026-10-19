@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <vector>
 
 namespace moppe::game {
   namespace {
@@ -72,9 +73,12 @@ namespace moppe::game {
     void set_go (GameSession& session, float value) {
       GameLogicState& logic = session.logic ();
       logic.m_go_input = value;
-      if (logic.m_mode == M_FOOT)
-        session.walker ().set_walk (value > 0 ? value : value * 0.6f);
-      else if (logic.m_mode == M_GLIDER)
+      if (logic.m_mode == M_FOOT) {
+        // Hauling on a rope is slow work.
+        const float burden = logic.m_haul.active ? 0.6f : 1.0f;
+        session.walker ().set_walk (burden *
+                                    (value > 0 ? value : value * 0.6f));
+      } else if (logic.m_mode == M_GLIDER)
         session.glider ().set_speed_control (value);
       else if (logic.m_mode == M_JEEP)
         session.jeep ().set_drive (value);
@@ -183,6 +187,73 @@ namespace moppe::game {
                                                    : 0.0f);
     }
 
+    // The machine a mode drives, if any.
+    std::optional<Machine> driven_machine (Mode mode) {
+      switch (mode) {
+      case M_BIKE:
+        return Machine::bike;
+      case M_JEEP:
+        return Machine::jeep;
+      case M_TRACTOR:
+        return Machine::tractor;
+      case M_CADDY:
+        return Machine::caddy;
+      case M_HELICOPTER:
+        return Machine::helicopter;
+      default:
+        return std::nullopt;
+      }
+    }
+
+    std::optional<Machine> mounted_machine (GameSession::Mount mount) {
+      switch (mount) {
+      case GameSession::Mount::bike:
+        return Machine::bike;
+      case GameSession::Mount::jeep:
+        return Machine::jeep;
+      case GameSession::Mount::tractor:
+        return Machine::tractor;
+      case GameSession::Mount::caddy:
+        return Machine::caddy;
+      case GameSession::Mount::helicopter:
+        return Machine::helicopter;
+      case GameSession::Mount::none:
+        break;
+      }
+      return std::nullopt;
+    }
+
+    Trouble& trouble_of (GameLogicState& logic, Machine machine) {
+      return logic.m_trouble[static_cast<std::size_t> (machine)];
+    }
+
+    // Takes up a rope tied to the nearer end of a stuck machine, as long
+    // as it reaches from there to the walker's feet.
+    void take_rope (GameSession& session, Machine machine) {
+      const MachineBody body = session.machine_body (machine);
+      const Vec3 feet = session.walker ().position ();
+      const bool front = dot (feet - body.position, body.forward) >= 0.0f;
+      Haul& haul = session.logic ().m_haul;
+      haul = { .active = true,
+               .machine = machine,
+               .tie = tie_point (machine, front) };
+      Vec3 out = feet - body.point (haul.tie);
+      out[1] = 0.0f;
+      haul.rope = std::clamp (length (out), 1.0f, 1.8f);
+    }
+
+    // Lets the rope go; a machine let go of on purpose is taken to be
+    // out of its trouble, so that the key gets into it again.
+    void let_go (GameSession& session, bool freed) {
+      GameLogicState& logic = session.logic ();
+      Haul& haul = logic.m_haul;
+      if (freed)
+        trouble_of (logic, haul.machine) = {
+          .anchor = session.machine_body (haul.machine).position
+        };
+      haul.active = false;
+    }
+
     void toggle_mount (GameSession& session) {
       GameLogicState& logic = session.logic ();
       // A passenger's seat is the game's to give and take away.
@@ -254,6 +325,17 @@ namespace moppe::game {
         session.set_mode (M_FOOT);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
+        return;
+      }
+
+      // On foot, holding a rope: let go of it. Beside a stuck machine:
+      // take up a rope to haul it out.
+      if (logic.m_mode == M_FOOT && logic.m_haul.active) {
+        let_go (session, true);
+        return;
+      }
+      if (const std::optional<Machine> stuck = session.haul_within_reach ()) {
+        take_rope (session, *stuck);
         return;
       }
 
@@ -340,7 +422,7 @@ namespace moppe::game {
         // The walker turns with the look, and a following camera turns
         // with them at once rather than catching up.
         session.walker ().turn_by (input.look_yaw);
-        session.walker ().set_run (input.run);
+        session.walker ().set_run (input.run && !logic.m_haul.active);
         if (logic.m_cam_mode != CAM_HELMET)
           session.camera ().turn (input.look_yaw, 0.0f);
         logic.m_look_yaw = 0.0f;
@@ -367,6 +449,217 @@ namespace moppe::game {
           logic.m_fp_eye = session.camera ().position ();
       }
     }
+  }
+
+  namespace {
+    // A puff of the ground thrown up where a machine heaves or two
+    // machines knock together.
+    void puff (GameSession& session,
+               const Vec3& at,
+               const Vec3& moving,
+               float strength,
+               const GroundCover& ground) {
+      Dust::Style burst;
+      burst.size = 0.35f * u::m;
+      burst.lifetime = 0.9f * u::s;
+      burst.downward_acceleration =
+        3.0f * isq::acceleration[u::m / pow<2> (u::s)];
+      burst.spread = 1.4f * one;
+      session.dust ().emit (
+        moppe::position (at),
+        velocity (moving * 0.2f + Vec3 (0, 1.5f, 0)),
+        std::max (2, static_cast<int> (std::round (strength * ground.dust))),
+        ground.dust_color,
+        burst);
+    }
+
+    // Pulls the machine on the rope after the walker, and holds the
+    // walker to the rope's length.
+    void tend_haul (GameSession& session, float elapsed) {
+      GameLogicState& logic = session.logic ();
+      const Haul& haul = logic.m_haul;
+      if (!haul.active)
+        return;
+      if (logic.m_mode != M_FOOT) {
+        let_go (session, false);
+        return;
+      }
+      const MachineBody body = session.machine_body (haul.machine);
+      const Vec3 tie = body.point (haul.tie);
+      Walker& walker = session.walker ();
+      Vec3 out = walker.position () - tie;
+      const float drop = std::abs (out[1]);
+      out[1] = 0.0f;
+      // Pulled out of the hand: the machine fell away, or the walker did.
+      if (length (out) > haul.rope + 4.0f || drop > 4.0f) {
+        let_go (session, false);
+        return;
+      }
+      const HaulForce force =
+        haul_force (haul, body, walker.position (), walker.velocity ());
+      session.push_machine (haul.machine, tie, force.pull * elapsed);
+      session.push_machine (haul.machine,
+                            body.point (machine_centre (haul.machine)),
+                            force.lift * elapsed);
+      walker.tether (
+        tie, std::max (0.6f, haul.rope - rope_give), haul.rope + rope_give);
+    }
+
+    // Notes how each machine is getting on, and heaves the one being
+    // driven if it is stuck.
+    void strain_machines (GameSession& session,
+                          float elapsed,
+                          const GroundCover& ground) {
+      GameLogicState& logic = session.logic ();
+      const std::optional<Machine> driven = driven_machine (logic.m_mode);
+      for (int i = 0; i < machine_count; ++i) {
+        const Machine machine = static_cast<Machine> (i);
+        const MachineBody body = session.machine_body (machine);
+        Trouble& trouble = trouble_of (logic, machine);
+        // The helicopter flies out of any hole.
+        const float throttle =
+          driven == machine && machine != Machine::helicopter ? logic.m_go_input
+                                                              : 0.0f;
+        if (!strain (trouble, body.position, throttle, elapsed))
+          continue;
+        const Vec3 kick = heave (trouble, body.forward, throttle);
+        ++trouble.heaves;
+        session.push_machine (
+          machine, body.point (machine_centre (machine)), kick * body.mass);
+        puff (session, body.position - body.up * 0.3f, kick, 10.0f, ground);
+        logic.m_shake = std::max (logic.m_shake, 0.05f);
+        logic.m_shake_time = 0.0f;
+      }
+    }
+
+    // Machines that meet knock each other apart, ours and the other
+    // player's alike.
+    void bump_machines (GameSession& session,
+                        std::span<const MachineBody> strangers,
+                        const GroundCover& ground) {
+      GameLogicState& logic = session.logic ();
+      std::vector<MachineBody> bodies;
+      bodies.reserve (machine_count + strangers.size ());
+      for (int i = 0; i < machine_count; ++i)
+        bodies.push_back (session.machine_body (static_cast<Machine> (i)));
+      bodies.insert (bodies.end (), strangers.begin (), strangers.end ());
+      const std::optional<Machine> driven = driven_machine (logic.m_mode);
+      for (const Bump& bump : find_bumps (bodies)) {
+        const MachineBody& a = bodies[bump.a];
+        const MachineBody& b = bodies[bump.b];
+        if (a.ours)
+          session.push_machine (a.machine, bump.at, bump.impulse);
+        if (b.ours)
+          session.push_machine (b.machine, bump.at, -bump.impulse);
+        if (bump.speed < 2.5f)
+          continue;
+        puff (session,
+              bump.at,
+              a.velocity * 0.5f + b.velocity * 0.5f,
+              std::min (8.0f, bump.speed),
+              ground);
+        const bool felt =
+          (a.ours && a.machine == driven) || (b.ours && b.machine == driven);
+        if (felt) {
+          logic.m_shake =
+            std::max (logic.m_shake, std::min (0.2f, 0.02f * bump.speed));
+          logic.m_shake_time = 0.0f;
+        }
+      }
+    }
+  }
+
+  MachineBody GameSession::machine_body (Machine machine) const {
+    MachineBody body;
+    body.machine = machine;
+    switch (machine) {
+    case Machine::bike:
+      body.position = m_bike.position ();
+      body.forward = m_bike.orientation ();
+      body.up = m_bike.render_normal ();
+      body.velocity = m_bike.velocity ();
+      body.mass = m_bike.mass ();
+      break;
+    case Machine::jeep:
+      body.position = m_jeep.position ();
+      body.forward = m_jeep.forward ();
+      body.up = m_jeep.up ();
+      body.velocity = m_jeep.velocity ();
+      body.mass = m_jeep.mass ();
+      break;
+    case Machine::tractor:
+      body.position = m_tractor.position ();
+      body.forward = m_tractor.forward ();
+      body.up = m_tractor.up ();
+      body.velocity = m_tractor.velocity ();
+      body.mass = m_tractor.mass ();
+      break;
+    case Machine::caddy:
+      body.position = m_caddy.position ();
+      body.forward = m_caddy.forward ();
+      body.up = m_caddy.up ();
+      body.velocity = m_caddy.velocity ();
+      body.mass = m_caddy.mass ();
+      break;
+    case Machine::helicopter:
+      body.position = m_helicopter.position ();
+      body.forward = m_helicopter.forward ();
+      body.up = m_helicopter.up ();
+      body.velocity = m_helicopter.velocity ();
+      body.mass = m_helicopter.mass ();
+      break;
+    }
+    return body;
+  }
+
+  void GameSession::push_machine (Machine machine,
+                                  const Vec3& at,
+                                  const Vec3& impulse) {
+    switch (machine) {
+    case Machine::bike:
+      m_bike.push (at, impulse);
+      break;
+    case Machine::jeep:
+      m_jeep.push (at, impulse);
+      break;
+    case Machine::tractor:
+      m_tractor.push (at, impulse);
+      break;
+    case Machine::caddy:
+      m_caddy.push (at, impulse);
+      break;
+    case Machine::helicopter:
+      m_helicopter.push (at, impulse);
+      break;
+    }
+  }
+
+  std::optional<Machine> GameSession::haul_within_reach () const {
+    if (m_logic.m_mode != M_FOOT || m_logic.m_haul.active)
+      return std::nullopt;
+    const std::optional<Machine> machine =
+      mounted_machine (mount_within_reach ());
+    if (!machine ||
+        !m_logic.m_trouble[static_cast<std::size_t> (*machine)].stuck)
+      return std::nullopt;
+    return machine;
+  }
+
+  std::optional<Machine> GameSession::hauling () const {
+    if (m_logic.m_mode != M_FOOT || !m_logic.m_haul.active)
+      return std::nullopt;
+    return m_logic.m_haul.machine;
+  }
+
+  Vec3 GameSession::rope_end () const {
+    const Haul& haul = m_logic.m_haul;
+    return machine_body (haul.machine).point (haul.tie);
+  }
+
+  bool GameSession::stuck () const {
+    const std::optional<Machine> driven = driven_machine (m_logic.m_mode);
+    return driven &&
+           m_logic.m_trouble[static_cast<std::size_t> (*driven)].stuck;
   }
 
   GameSession::GameSession (const WorldParams& world,
@@ -691,7 +984,8 @@ namespace moppe::game {
                         seconds_t dt,
                         const mov::TrunkField* trunks,
                         const GroundCover& ground,
-                        const terrain::WaterSheets* water) {
+                        const terrain::WaterSheets* water,
+                        std::span<const MachineBody> strangers) {
     const float elapsed = dt.numerical_value_in (u::s);
     GameLogicState& logic = session.logic ();
     // Rivers and lakes hold back what goes through them as the sea does.
@@ -702,10 +996,16 @@ namespace moppe::game {
     session.bike ().set_trunks (trunks);
 
     apply_input_frame (session, surface, input);
+    tend_haul (session, elapsed);
+    // What is on the rope rolls free after the walker.
+    const auto hauled = [&] (Machine machine) {
+      return session.hauling () == machine;
+    };
     // Only a ridden bike moves under its own physics; one left standing is
     // parked until someone mounts it again.
     session.bike ().set_parked (logic.m_mode != M_BIKE &&
-                                !session.can_drop_bike ());
+                                !session.can_drop_bike () &&
+                                !hauled (Machine::bike));
 
     if (flies_bike (session)) {
       if (fly_bike (session, dt)) {
@@ -728,7 +1028,7 @@ namespace moppe::game {
     // The jeep stands braked wherever its driver left it.
     mov::Jeep& jeep = session.jeep ();
     jeep.set_trunks (trunks);
-    jeep.set_parked (logic.m_mode != M_JEEP);
+    jeep.set_parked (logic.m_mode != M_JEEP && !hauled (Machine::jeep));
     jeep.update (elapsed,
                  water_at (jeep.position ()).numerical_value_in (u::m));
     // The helicopter's rotor runs down once its pilot has stepped out.
@@ -766,7 +1066,8 @@ namespace moppe::game {
     // a puff from the stack now and then at idle, a stream under load.
     mov::Tractor& tractor = session.tractor ();
     tractor.set_trunks (trunks);
-    tractor.set_parked (logic.m_mode != M_TRACTOR);
+    tractor.set_parked (logic.m_mode != M_TRACTOR &&
+                        !hauled (Machine::tractor));
     tractor.update (elapsed,
                     water_at (tractor.position ()).numerical_value_in (u::m));
     if (logic.m_mode == M_TRACTOR) {
@@ -797,7 +1098,7 @@ namespace moppe::game {
     // tail while it is driven: more as it pulls.
     mov::Caddy& caddy = session.caddy ();
     caddy.set_trunks (trunks);
-    caddy.set_parked (logic.m_mode != M_CADDY);
+    caddy.set_parked (logic.m_mode != M_CADDY && !hauled (Machine::caddy));
     caddy.update (elapsed,
                   water_at (caddy.position ()).numerical_value_in (u::m));
     if (logic.m_mode == M_CADDY) {
@@ -834,6 +1135,9 @@ namespace moppe::game {
             std::round (std::min (3.0f, slide * 0.25f) * ground.dust)),
           ground.dust_color);
     }
+
+    strain_machines (session, elapsed, ground);
+    bump_machines (session, strangers, ground);
 
     const Vec3 vehicle_position = session.subject_position ();
     mov::Vehicle& vehicle = session.bike ();

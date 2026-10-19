@@ -365,6 +365,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/caddy.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
+  moppe/game/rescue.cc
   moppe/game/stars.cc
   moppe/game/dust.cc
   moppe/game/walker.cc
@@ -668,6 +669,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/mushrooms_test.cc
     tests/game/camp_test.cc
     tests/game/companion_test.cc
+    tests/game/rescue_test.cc
     tests/game/daylight_test.cc
     tests/game/cinematic_flight_test.cc
     tests/game/opening_test.cc

@@ -709,6 +709,46 @@ namespace moppe {
         }
       }
 
+      // MOPPE_WALK=haul: the tractor is stuck where it stands and the
+      // walker stands before it, facing away, to haul it out on a rope.
+      // MOPPE_WALK=bump: the jeep stands back from the tractor's flank,
+      // aimed at it, with the walker at its door.
+      void stage_rescue () {
+        const char* walk = moppe::environment ("MOPPE_WALK");
+        if (!walk || logic ().m_mode != M_FOOT)
+          return;
+        const std::string_view script (walk);
+        const mov::Tractor& tractor = session ().tractor ();
+        if (script == "haul") {
+          logic ().m_trouble[static_cast<std::size_t> (Machine::tractor)] = {
+            .anchor = tractor.position (), .strain = 4.0f, .stuck = true
+          };
+          Vec3 ahead = tractor.forward ();
+          ahead[1] = 0.0f;
+          ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
+          Vec3 stand = tractor.position () + ahead * 3.0f;
+          stand[1] = ground_height (stand) + 0.1f;
+          session ().walker ().spawn (moppe::position (stand), ahead);
+        } else if (script == "bump") {
+          Vec3 across = tractor.left ();
+          across[1] = 0.0f;
+          across =
+            length2 (across) > 1e-6f ? normalized (across) : Vec3 (1, 0, 0);
+          session ().jeep ().place (tractor.position () + across * 18.0f,
+                                    -across);
+          Vec3 stand = session ().jeep ().point (Vec3 (1.75f, 0.0f, -0.1f));
+          stand[1] = ground_height (stand) + 0.1f;
+          session ().walker ().spawn (moppe::position (stand), -across);
+        } else {
+          return;
+        }
+        logic ().m_fp_eye = session ().walker ().eye_position ();
+        session ().settle_camera (surface ());
+        std::cerr << "moppe: walk: " << script << " beside the tractor at "
+                  << tractor.position ()[0] << ", " << tractor.position ()[2]
+                  << std::endl;
+      }
+
       // The jeep waits beside the bike, a few steps to its left, beyond
       // where the rider stands.
       void park_jeep () {
@@ -1025,7 +1065,8 @@ namespace moppe {
         // picks too, for the touch screen's single action button.
         const bool bike_near =
           length2 (feet - session ().bike ().position ()) < 5.0f * 5.0f ||
-          session ().can_drive ();
+          session ().mount_within_reach () != GameSession::Mount::none ||
+          session ().hauling ();
         if (!input.deploy_glider && !(input.toggle_mount && !bike_near))
           return;
         const std::optional<std::uint32_t> found =
@@ -1985,6 +2026,7 @@ namespace moppe {
         grow_mushrooms ();
         settle_obstacles ();
         park_helicopter ();
+        stage_rescue ();
         // MOPPE_DEMO=helicopter: the autopilot takes it up instead.
         if (const char* demo = moppe::environment ("MOPPE_DEMO");
             demo && std::string_view (demo) == "helicopter" && !m_benchmark &&
@@ -2347,6 +2389,63 @@ namespace moppe {
         state.m_seat_velocity = m_companion->jeep_velocity;
       }
 
+      // The other player's machines, for ours to bump into: where they
+      // stand, and how they move from frame to frame (the jeep's motion
+      // is told).
+      void meet_strangers (float elapsed) {
+        m_strangers.clear ();
+        if (!m_companion) {
+          m_strangers_were.reset ();
+          return;
+        }
+        const CompanionSnapshot& theirs = *m_companion;
+        const auto stranger = [&] (Machine machine,
+                                   const Vec3& position,
+                                   const Vec3& forward,
+                                   const Vec3& up) {
+          MachineBody body;
+          body.machine = machine;
+          body.position = position;
+          body.forward = forward;
+          body.up = up;
+          body.mass = session ().machine_body (machine).mass;
+          body.ours = false;
+          const std::size_t i = static_cast<std::size_t> (machine);
+          if (m_strangers_were && elapsed > 0.0f) {
+            const Vec3 moved = position - (*m_strangers_were)[i];
+            if (length2 (moved) < 25.0f)
+              body.velocity = moved * (1.0f / elapsed);
+          }
+          m_strangers.push_back (body);
+        };
+        stranger (Machine::bike,
+                  theirs.bike.position,
+                  theirs.bike.render_orientation,
+                  theirs.bike.render_normal);
+        stranger (Machine::jeep,
+                  theirs.jeep.position,
+                  theirs.jeep.forward,
+                  theirs.jeep.up);
+        stranger (Machine::tractor,
+                  theirs.tractor.position,
+                  theirs.tractor.forward,
+                  theirs.tractor.up);
+        stranger (Machine::caddy,
+                  theirs.caddy.position,
+                  theirs.caddy.forward,
+                  theirs.caddy.up);
+        stranger (Machine::helicopter,
+                  theirs.helicopter.position,
+                  theirs.helicopter.forward,
+                  theirs.helicopter.up);
+        std::array<Vec3, machine_count> were;
+        for (const MachineBody& body : m_strangers)
+          were[static_cast<std::size_t> (body.machine)] = body.position;
+        m_strangers_were = were;
+        m_strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
+          theirs.jeep_velocity;
+      }
+
       // Once a frame: hears what the other player has sent, works out how
       // they look just now, and tells them how this one does.
       void keep_company (float elapsed) {
@@ -2405,6 +2504,7 @@ namespace moppe {
           m_companion_met = false;
         }
         m_companion = m_track.advance (now, elapsed);
+        meet_strangers (elapsed);
 
         // A spectator has no one to show.
         if (m_spectator || !m_link->due ())
@@ -2762,6 +2862,26 @@ namespace moppe {
         };
         if (script == "camp")
           return camp_script (dt);
+        // The mount key is a toggle, taken once a press.
+        const auto tap = [t, dt] (float at) { return t >= at && t < at + dt; };
+        if (script == "haul") {
+          // Take up the rope, walk off with the tractor in tow, turning a
+          // little, let go, and climb up.
+          input.toggle_mount = tap (1.0f) || tap (12.5f) || tap (14.0f);
+          input.drive = t > 1.6f && t < 11.5f ? 1.0f : 0.0f;
+          input.look_yaw = t > 4.0f && t < 8.0f ? 0.12f * dt : 0.0f;
+          return input;
+        }
+        if (script == "bump") {
+          // Into the jeep, into the tractor's side, back off, and again.
+          input.toggle_mount = tap (0.5f);
+          input.drive = t > 1.0f && t < 4.2f    ? 1.0f
+                        : t > 5.5f && t < 7.5f  ? -1.0f
+                        : t > 8.0f && t < 11.0f ? 1.0f
+                                                : 0.0f;
+          input.boost = (t > 4.2f && t < 5.5f) || t > 11.0f ? 1.0f : 0.0f;
+          return input;
+        }
         if (script == "forage" || script == "supper") {
           // "supper" forages three mushrooms, walks a few steps on,
           // lights a fire, fries them, and eats.
@@ -3016,7 +3136,10 @@ namespace moppe {
           input = {};
         }
         static const char* walk_script = moppe::environment ("MOPPE_WALK");
-        if (walk_script && logic ().m_mode == M_FOOT && !orbit)
+        // The bump script drives the jeep too.
+        if (walk_script && !orbit &&
+            (logic ().m_mode == M_FOOT ||
+             std::string_view (walk_script) == "bump"))
           input = scripted_walk (walk_script, dt);
         else if (demo && !m_water_inspection && !orbit) {
           // The autopilot rides; the player may still look around.
@@ -3078,7 +3201,8 @@ namespace moppe {
                                 seconds (dt),
                                 &m_trunk_field,
                                 ground_cover (session ().subject_position ()),
-                                &generated_world ().water_surface ());
+                                &generated_world ().water_surface (),
+                                m_strangers);
         if (advance.say_ouchies)
           platform::say ("Ouchies. That hurts.");
 
@@ -3169,6 +3293,9 @@ namespace moppe {
         state.can_fly = reading.can_fly;
         state.can_drive_tractor = reading.can_drive_tractor;
         state.can_drive_caddy = reading.can_drive_caddy;
+        state.haul = reading.haul;
+        state.hauling = reading.hauling;
+        state.stuck = reading.stuck;
         state.vertical_speed_mps = reading.vertical_speed_mps;
         state.frame_time_s = reading.frame_time_s;
         state.heading_radians = reading.heading_radians;
@@ -4663,6 +4790,10 @@ namespace moppe {
       CompanionTrack m_track;
       std::vector<CompanionSnapshot> m_arrived;
       std::optional<CompanionSnapshot> m_companion;
+      // The other player's machines as ours bump into them, and where
+      // each stood a frame ago, to tell how they move.
+      std::vector<MachineBody> m_strangers;
+      std::optional<std::array<Vec3, machine_count>> m_strangers_were;
       // Their picks in the order they made them, as far as heard, and
       // the same as mushrooms for the basket they carry.
       std::vector<std::uint32_t> m_companion_picks;

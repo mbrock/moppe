@@ -232,6 +232,23 @@ namespace moppe::game {
       const Vec3 forearm = arm * std::cos (fold) + ahead * std::sin (fold);
       k.wrist[i] = k.elbow[i] + forearm * size::forearm;
     }
+
+    // Hauling, the right hand holds the rope out toward where it is tied.
+    if (walker.rope_end) {
+      const Vec3 toward = *walker.rope_end - k.shoulder[1];
+      const float distance = length (toward);
+      const float reach = 0.95f * (size::upper_arm + size::forearm);
+      if (distance > 1e-3f) {
+        Vec3 hand =
+          k.shoulder[1] + toward * (std::min (distance, reach) / distance);
+        k.elbow[1] = bend (k.shoulder[1],
+                           hand,
+                           size::upper_arm,
+                           size::forearm,
+                           chest_right * 0.5f - k.chest_up);
+        k.wrist[1] = hand;
+      }
+    }
     return k;
   }
 

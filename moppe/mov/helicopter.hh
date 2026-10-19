@@ -78,6 +78,11 @@ namespace moppe::mov {
     Vec3 velocity () const;
     bool grounded () const;
     bool asleep () const;
+    // Its whole weight, kilograms.
+    float mass () const;
+    // A blow at `at` in the world, newton-seconds: another machine
+    // bumping into it, or someone hauling on it. It wakes one asleep.
+    void push (const Vec3& at, const Vec3& impulse);
     Vec3 point (const Vec3& local) const;
     Vec3 pilot_seat () const {
       return point (Vec3 (seat[0], seat[1], seat[2]));

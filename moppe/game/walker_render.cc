@@ -170,6 +170,49 @@ namespace moppe::game {
       }
     }
 
+    // A hemp rope from the right hand to where it is tied, sagging a
+    // little: a thin tube of four sides.
+    void draw_rope (render::DrawList& dl, const Vec3& from, const Vec3& to) {
+      constexpr int pieces = 12;
+      constexpr float thick = 0.014f;
+      const Vec3 along = to - from;
+      const float span = length (along);
+      if (span < 1e-3f)
+        return;
+      const Vec3 axis = along * (1.0f / span);
+      Vec3 side = cross (axis, Vec3 (0, 1, 0));
+      side = length2 (side) > 1e-6f ? normalized (side) : Vec3 (1, 0, 0);
+      const Vec3 over = cross (side, axis);
+      const float sag = 0.04f * span;
+      const auto at = [&] (int piece) {
+        const float t = static_cast<float> (piece) / pieces;
+        return from + along * t - Vec3 (0, sag * 4.0f * t * (1.0f - t), 0);
+      };
+      render::DrawState solid;
+      solid.cull = false;
+      dl.state (solid);
+      dl.lit (true);
+      dl.fogged (true);
+      dl.begin (render::Prim::Triangles);
+      dl.color (DisplayColor (0.60f, 0.50f, 0.32f));
+      const Vec3 faces[4] = { side, over, -side, -over };
+      for (int piece = 0; piece < pieces; ++piece) {
+        const Vec3 a = at (piece), b = at (piece + 1);
+        for (int f = 0; f < 4; ++f) {
+          const Vec3 u = faces[f] * thick, v = faces[(f + 1) % 4] * thick;
+          dl.normal (normalized (faces[f] + faces[(f + 1) % 4]));
+          dl.vertex (a + u);
+          dl.vertex (b + u);
+          dl.vertex (b + v);
+          dl.vertex (a + u);
+          dl.vertex (b + v);
+          dl.vertex (a + v);
+        }
+      }
+      dl.end ();
+      dl.state (render::DrawState ());
+    }
+
     void draw_basket (render::DrawList& dl,
                       const BasketFrame& b,
                       std::span<const MushroomSite> basket) {
@@ -194,6 +237,9 @@ namespace moppe::game {
     const AvatarSkeleton k = pose_avatar (walker, time);
     figure::draw (draw, k, outfit);
     draw_basket (draw, basket_frame (k), basket);
+    if (walker.rope_end)
+      draw_rope (
+        draw, k.wrist[1] + (k.wrist[1] - k.elbow[1]) * 0.25f, *walker.rope_end);
   }
 
   void render_basket (render::DrawList& draw,

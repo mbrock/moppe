@@ -123,6 +123,29 @@ namespace moppe {
                 (0.6f * std::min (1.0f, depth - 0.15f));
       }
 
+      // On the rope, what would take the walker further out, or in
+      // nearer, only leans on it; beyond either, it sets them back.
+      if (m_tethered) {
+        Vec3 out = feet - m_tether;
+        out[1] = 0.0f;
+        const float distance = length (out);
+        if (distance > 1e-4f) {
+          out *= 1.0f / distance;
+          const float away = dot (wish, out);
+          if (distance > m_tether_longest) {
+            if (away > 0.0f)
+              wish -= out * away;
+            wish -= out * std::min (2.0f, 4.0f * (distance - m_tether_longest));
+          } else if (distance < m_tether_shortest) {
+            if (away < 0.0f)
+              wish -= out * away;
+            wish +=
+              out * std::min (2.0f, 4.0f * (m_tether_shortest - distance));
+          }
+        }
+        m_tethered = false;
+      }
+
       m_body.step (dt, { wish, m_jump_request }, surface, trunks);
       m_jump_request = false;
 

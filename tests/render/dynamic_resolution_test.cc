@@ -9,7 +9,7 @@ namespace {
   using render::DynamicResolution;
 
   // A frame whose GPU time is partly fixed and partly the scene's pixels.
-  struct Machine {
+  struct GpuLoad {
     float fixed_ms, scene_ms;
 
     seconds_t frame (const DynamicResolution& dynamic) const {
@@ -21,7 +21,7 @@ namespace {
   const seconds_t sixtieth = seconds (1.0f / 60.0f);
 
   // Runs `frames` frames and returns every share the last hundred drew at.
-  std::set<float> play (DynamicResolution& dynamic, const Machine& machine,
+  std::set<float> play (DynamicResolution& dynamic, const GpuLoad& machine,
                         int frames) {
     std::set<float> late;
     for (int frame = 0; frame < frames; ++frame) {
@@ -42,7 +42,7 @@ MOPPE_TEST (dynamic_resolution_leaves_a_frame_within_its_budget_alone) {
 MOPPE_TEST (dynamic_resolution_sheds_pixels_until_the_frame_fits) {
   DynamicResolution dynamic;
   // 20 ms at full size: the M2 Pro filling a 7680x2160 display.
-  const Machine machine { 7.0f, 13.0f };
+  const GpuLoad machine { 7.0f, 13.0f };
   const std::set<float> late = play (dynamic, machine, 600);
   // It settles on one step, inside the budget, without hunting.
   MOPPE_CHECK (late.size () == 1);

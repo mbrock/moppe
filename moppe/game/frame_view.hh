@@ -112,6 +112,8 @@ namespace moppe::game {
     float vertical_speed = 0.0f; // m/s, up positive
     float landing_dip = 0.0f;    // metres
     float look_pitch = 0.0f;     // radians, up positive
+    // Hauling: where the rope in the right hand is tied.
+    std::optional<Vec3> rope_end;
   };
 
   struct FrameActors {
@@ -158,6 +160,11 @@ namespace moppe::game {
     bool can_drive_tractor = false;
     // On foot beside the Caddy, which the mount key would drive.
     bool can_drive_caddy = false;
+    // On foot beside a stuck machine, which the mount key would haul
+    // out; hauling one; or driving one that is stuck (game/rescue.hh).
+    const char* haul = nullptr;
+    const char* hauling = nullptr;
+    bool stuck = false;
     float vertical_speed_mps = 0.0f;
     float frame_time_s = 1.0f / 60.0f;
     float heading_radians = 0.0f;
