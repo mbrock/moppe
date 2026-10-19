@@ -25,8 +25,11 @@ page's land with the native baker (`tools/bake-land 1024 play 123`, into
 `build-web/land-cache/`, which keeps every land baked), puts that one land
 alone in `build-web/lands/`, configures `build-web/` with `emcmake cmake`,
 and builds the `moppe` target into `build-web/moppe.html` with its `.js`,
-`.wasm`, and `.data` (the textures, fonts, opening, and land: 35 MB, 21
-compressed). The four files are the whole page, and any server of static
+`.wasm`, and `.data` (the textures, the face, the opening, and the land:
+13 MB, 7.5 compressed). The face is cut down for the page to what the
+game draws (`tools/subset-font`: Latin, its punctuation, a few arrows,
+29 KB where the whole is 1.5 MB), by `pyftsubset` from PATH or from Nix;
+without either the page carries the whole face. The four files are the whole page, and any server of static
 files serves them; it should compress the `.data` too, which a server may
 not by itself, it being of no type it knows.
 

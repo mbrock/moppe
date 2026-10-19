@@ -929,7 +929,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
         --pre-js=${web}/touch.js
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/textures@/textures
         --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/data@/data
-        --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/fonts@/fonts
+        --preload-file=${CMAKE_CURRENT_BINARY_DIR}/web-fonts@/fonts
         # The page keeps function names for its stack traces but no DWARF,
         # which would also hold back Binaryen's optimizer.
         -g0 --profiling-funcs
@@ -938,9 +938,20 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
         -sMAXIMUM_MEMORY=4294967296
         -sSTACK_SIZE=8388608
         "-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$ENV,$addRunDependency,$removeRunDependency")
+      # The page's face is cut down to what the game draws.
+      add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web-fonts/IosevkaAile-Regular.ttf
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/subset-font
+          ${CMAKE_CURRENT_BINARY_DIR}/web-fonts
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/fonts/IosevkaAile-Regular.ttf
+          ${CMAKE_CURRENT_SOURCE_DIR}/tools/subset-font
+        COMMENT "Cutting the page's face down to what the game draws")
+      add_custom_target(${target}-web-fonts DEPENDS
+        ${CMAKE_CURRENT_BINARY_DIR}/web-fonts/IosevkaAile-Regular.ttf)
+      add_dependencies(${target} ${target}-web-fonts)
       set_target_properties(${target} PROPERTIES
         SUFFIX ".js"
-        LINK_DEPENDS "${web}/pre.js;${web}/touch.js")
+        LINK_DEPENDS "${web}/pre.js;${web}/touch.js;${CMAKE_CURRENT_BINARY_DIR}/web-fonts/IosevkaAile-Regular.ttf")
       # Land in the page's package spares the visitor its generation. The
       # folder changes (make web refills it) only when its land does, and
       # then the package is made again.

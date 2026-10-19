@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Writes the browser page's fonts into OUTPUT: the bundled face cut down to
+# the characters the game draws -- Latin, its punctuation, a few arrows --
+# with only the tables render/truetype.* reads, which is 29 KB where the
+# whole face is 1.5 MB (docs/web.md). The other builds keep the whole face.
+#
+#   tools/subset-font OUTPUT
+#
+# It takes pyftsubset from PATH, or from Nix where there is no such thing,
+# and failing both copies the whole face, so the page still builds.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+output="$1"
+face="IosevkaAile-Regular.ttf"
+mkdir -p "$output"
+cp "$root/fonts/LICENSE-Iosevka.md" "$output/"
+
+if [[ "$output/$face" -nt "$root/fonts/$face" && "$output/$face" -nt "$0" ]]; then
+  exit 0
+fi
+
+# Basic Latin and Latin-1 (with its no-break space, degree, middle dot,
+# and multiplication sign), Latin Extended-A, the dashes, quotes,
+# ellipsis, bullet, primes, and guillemets, the four arrows, the minus
+# sign, and the replacement character for text that is not UTF-8.
+unicodes="U+0020-007E,U+00A0-017F,U+2010-2027,U+2030-203A,U+2190-2193"
+unicodes="$unicodes,U+2212,U+FFFD"
+subset=(pyftsubset "$root/fonts/$face" --output-file="$output/$face.partial"
+  --unicodes="$unicodes" --no-hinting --layout-features=
+  --drop-tables+=GPOS,GSUB,GDEF,gasp --name-IDs='*' --name-languages='*'
+  --notdef-outline --no-glyph-names)
+
+if command -v pyftsubset > /dev/null; then
+  "${subset[@]}"
+elif command -v nix > /dev/null; then
+  nix shell nixpkgs#python3Packages.fonttools --command "${subset[@]}"
+else
+  echo "subset-font: no pyftsubset; the page carries the whole face" >&2
+  cp "$root/fonts/$face" "$output/$face.partial"
+fi
+mv "$output/$face.partial" "$output/$face"
