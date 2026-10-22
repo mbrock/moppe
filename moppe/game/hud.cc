@@ -8,6 +8,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -71,6 +72,20 @@ namespace moppe {
       constexpr int reserve_dashes = 12;
 
       constexpr float ink = 0.96f; // the off-white every element is set in
+
+      // The chart: its radius as a share of the frame's shorter side,
+      // within bounds, its margin, and the bezel's outer radius in units
+      // of it.
+      constexpr float chart_share = 0.115f;
+      constexpr float chart_least = 54.0f;
+      constexpr float chart_most = 88.0f;
+      constexpr float chart_margin = 24.0f;
+      constexpr float chart_bezel = 1.20f;
+      // The ground it shows round the subject: a walk's worth, widening
+      // with speed, and wider still from the air.
+      constexpr float chart_reach_foot_m = 220.0f;
+      constexpr float chart_reach_fast_m = 600.0f;
+      constexpr float chart_reach_air_m = 800.0f;
 
       float clamp01 (float value) {
         return std::clamp (value, 0.0f, 1.0f);
@@ -172,6 +187,103 @@ namespace moppe {
         return pen.close ();
       }
 
+      // A circle wound counterclockwise, or clockwise for a hole.
+      OutlineContour circle (float radius, bool clockwise) {
+        Pen pen ({ radius, 0.0f });
+        pen.arc (0, 0, radius, 0.0f, clockwise ? -2.0f * PI : 2.0f * PI);
+        return pen.close ();
+      }
+
+      // A radial capsule from `inner` to `outer` along +x, `half` wide.
+      OutlineContour capsule (float inner, float outer, float half) {
+        Pen pen ({ inner, -half });
+        pen.line ({ outer, -half });
+        pen.arc (outer, 0, half, -0.5f * PI, PI);
+        pen.line ({ inner, half });
+        pen.arc (inner, 0, half, 0.5f * PI, PI);
+        return pen.close ();
+      }
+
+      // A corner of the chart's picture: where it falls on the screen and
+      // where on the sheet, in periods of it (so that the integers are its
+      // seams).
+      struct ChartCorner {
+        float x, y, u, v;
+      };
+
+      struct ChartPolygon {
+        std::array<ChartCorner, 12> corners;
+        int count = 0;
+      };
+
+      // Splits a convex polygon where u (or v) crosses `seam`.
+      void split_polygon (const ChartPolygon& whole,
+                          bool along_u,
+                          float seam,
+                          ChartPolygon& below,
+                          ChartPolygon& above) {
+        below.count = above.count = 0;
+        const auto key = [&] (const ChartCorner& c) {
+          return along_u ? c.u : c.v;
+        };
+        for (int i = 0; i < whole.count; ++i) {
+          const ChartCorner& a = whole.corners[i];
+          const ChartCorner& b = whole.corners[(i + 1) % whole.count];
+          const float ka = key (a) - seam, kb = key (b) - seam;
+          if (ka <= 0.0f)
+            below.corners[below.count++] = a;
+          if (ka >= 0.0f)
+            above.corners[above.count++] = a;
+          if ((ka < 0.0f && kb > 0.0f) || (ka > 0.0f && kb < 0.0f)) {
+            const float t = ka / (ka - kb);
+            const ChartCorner cut { a.x + (b.x - a.x) * t,
+                                    a.y + (b.y - a.y) * t,
+                                    a.u + (b.u - a.u) * t,
+                                    a.v + (b.v - a.v) * t };
+            below.corners[below.count++] = cut;
+            above.corners[above.count++] = cut;
+          }
+        }
+      }
+
+      // Lays a polygon of the picture down, cut at the sheet's seams so
+      // that each piece samples one copy of it: the world repeats, but
+      // the HUD's sampler clamps.
+      void chart_polygon (DrawList& dl, const ChartPolygon& polygon) {
+        if (polygon.count < 3)
+          return;
+        float low_u = polygon.corners[0].u, high_u = low_u;
+        float low_v = polygon.corners[0].v, high_v = low_v;
+        for (int i = 1; i < polygon.count; ++i) {
+          low_u = std::min (low_u, polygon.corners[i].u);
+          high_u = std::max (high_u, polygon.corners[i].u);
+          low_v = std::min (low_v, polygon.corners[i].v);
+          high_v = std::max (high_v, polygon.corners[i].v);
+        }
+        ChartPolygon below, above;
+        if (std::floor (low_u) + 1.0f < high_u) {
+          split_polygon (polygon, true, std::floor (low_u) + 1.0f, below, above);
+          chart_polygon (dl, below);
+          chart_polygon (dl, above);
+          return;
+        }
+        if (std::floor (low_v) + 1.0f < high_v) {
+          split_polygon (
+            polygon, false, std::floor (low_v) + 1.0f, below, above);
+          chart_polygon (dl, below);
+          chart_polygon (dl, above);
+          return;
+        }
+        const float tile_u = std::floor (0.5f * (low_u + high_u));
+        const float tile_v = std::floor (0.5f * (low_v + high_v));
+        for (int i = 1; i + 1 < polygon.count; ++i)
+          for (const int k : { 0, i, i + 1 }) {
+            const ChartCorner& c = polygon.corners[k];
+            dl.uv (c.u - tile_u, c.v - tile_v);
+            dl.vertex (c.x, c.y);
+          }
+      }
+
       // A rounded rectangle centred on the origin, wound counterclockwise
       // or, for a hole, clockwise.
       OutlineContour
@@ -224,6 +336,12 @@ namespace moppe {
       SlugGlyph shade;
       SlugGlyph key;
       SlugGlyph wide_key;
+      // The chart's, in units of its radius: the bezel round it, the
+      // hairline rim over the picture's edge, and the bezel's ticks.
+      SlugGlyph bezel;
+      SlugGlyph rim;
+      SlugGlyph tick;
+      SlugGlyph major_tick;
     };
 
     Hud::Hud ()
@@ -234,6 +352,8 @@ namespace moppe {
         m_diagnostics = std::string (mode) == "debug";
         m_hidden = std::string (mode) == "none";
       }
+      if (const char* chart = moppe::environment ("MOPPE_CHART"))
+        m_chart_hidden = std::string (chart) == "none";
     }
 
     void Hud::load (render::Renderer& renderer) {
@@ -283,6 +403,11 @@ namespace moppe {
                             rounded_rect (1.43f, 1.43f, 0.26f, true) });
       m_shape->wide_key = add ({ rounded_rect (3.4f, 1.55f, 0.32f, false),
                                  rounded_rect (3.28f, 1.43f, 0.26f, true) });
+      m_shape->bezel =
+        add ({ circle (chart_bezel, false), circle (0.995f, true) });
+      m_shape->rim = add ({ circle (1.013f, false), circle (0.990f, true) });
+      m_shape->tick = add ({ capsule (1.045f, 1.085f, 0.0085f) });
+      m_shape->major_tick = add ({ capsule (1.035f, 1.125f, 0.011f) });
       m_shapes = renderer.create_glyph_set (builder.data ());
     }
 
@@ -728,6 +853,340 @@ namespace moppe {
       }
     }
 
+    // The chart in the corner: the map sheet's picture turned so that the
+    // way the camera looks is up, under a hairline rim and a smoked bezel
+    // whose ticks and letters keep to the world's quarters. The heading
+    // stands over it, the subject is an arrow in its middle, and what is
+    // worth finding is a dot on it -- or on its rim, pointing the way,
+    // when it is further off than the chart reaches.
+    void Hud::draw_chart (DrawList& dl,
+                          render::TextList& text,
+                          const HudState& st,
+                          float dt,
+                          int width_pts,
+                          int height_pts) {
+      const HudState::Chart& chart = st.chart;
+      const float width = static_cast<float> (width_pts);
+      const float height = static_cast<float> (height_pts);
+      const bool wanted = chart.picture && !m_chart_hidden && !st.resting &&
+                          chart.period_x_m > 0.0f &&
+                          chart.period_z_m > 0.0f &&
+                          std::min (width, height) >= 240.0f;
+      m_chart_alpha =
+        approach (m_chart_alpha, wanted ? 1.0f : 0.0f, 3.0f, dt);
+      const float pace = clamp01 ((st.speed_kmh - 15.0f) / 70.0f);
+      const float reach =
+        st.gliding || st.flying ? chart_reach_air_m
+        : st.on_foot
+          ? chart_reach_foot_m
+          : chart_reach_foot_m +
+              (chart_reach_fast_m - chart_reach_foot_m) * ease (pace);
+      m_chart_reach_m = m_chart_reach_m > 0.0f
+                          ? approach (m_chart_reach_m, reach, 0.8f, dt)
+                          : reach;
+      const float alpha = ease (m_chart_alpha);
+      if (alpha <= 0.002f || !chart.picture || !m_font)
+        return;
+
+      const float r = std::clamp (
+        chart_share * std::min (width, height), chart_least, chart_most);
+      const float outer = chart_bezel * r;
+      // The lower left, balancing the gauge; or the upper right where the
+      // diagnostics' trail map, or a touch screen's thumb, has that corner.
+      const bool aside = m_diagnostics || m_host_offers;
+      const float cx = aside ? width - chart_margin - outer
+                             : chart_margin + outer;
+      const float cy = aside ? chart_margin + outer + 16.0f
+                             : height - chart_margin - outer;
+      const float scale = r / m_chart_reach_m; // points a metre
+
+      // The way ahead is up, and the screen's right is the ground's to
+      // the right of it.
+      float ax = chart.ahead_x, az = chart.ahead_z;
+      if (const float n = std::hypot (ax, az); n > 1e-4f) {
+        ax /= n;
+        az /= n;
+      } else {
+        ax = 0.0f;
+        az = -1.0f;
+      }
+      const float rx = -az, rz = ax;
+      // A stretch of ground from the subject to the screen, in points
+      // from the chart's middle (y down).
+      const auto on_screen = [&] (float dx, float dz, float& sx, float& sy) {
+        sx = (dx * rx + dz * rz) * scale;
+        sy = -(dx * ax + dz * az) * scale;
+      };
+      const auto wrapped = [] (float delta, float period) {
+        return delta - period * std::round (delta / period);
+      };
+
+      // The picture, as rings of cells cut at the sheet's seams.
+      hud_state (dl);
+      const float light = 0.62f + 0.38f * clamp01 (chart.daylight);
+      dl.set_texture (chart.picture);
+      dl.color (light * (0.90f + 0.10f * chart.daylight),
+                light * (0.94f + 0.06f * chart.daylight),
+                light,
+                alpha);
+      dl.begin (render::Prim::Triangles);
+      constexpr int rings = 6;
+      constexpr int sectors = 96;
+      const float edge = 1.004f * r;
+      const auto corner = [&] (float radius, float angle) {
+        const float sx = radius * std::cos (angle);
+        const float sy = radius * std::sin (angle);
+        const float dx = (rx * sx - ax * sy) / scale;
+        const float dz = (rz * sx - az * sy) / scale;
+        return ChartCorner { cx + sx,
+                             cy + sy,
+                             (chart.x_m + dx) / chart.period_x_m,
+                             (chart.z_m + dz) / chart.period_z_m };
+      };
+      for (int ring = 0; ring < rings; ++ring) {
+        const float inner = edge * ring / rings;
+        const float outer_ring = edge * (ring + 1) / rings;
+        for (int sector = 0; sector < sectors; ++sector) {
+          const float a0 = 2.0f * PI * sector / sectors;
+          const float a1 = 2.0f * PI * (sector + 1) / sectors;
+          ChartPolygon cell;
+          if (ring == 0) {
+            cell.corners[cell.count++] = corner (0.0f, 0.0f);
+          } else {
+            cell.corners[cell.count++] = corner (inner, a0);
+          }
+          cell.corners[cell.count++] = corner (outer_ring, a0);
+          cell.corners[cell.count++] = corner (outer_ring, a1);
+          if (ring > 0)
+            cell.corners[cell.count++] = corner (inner, a1);
+          chart_polygon (dl, cell);
+        }
+      }
+      dl.end ();
+      dl.set_texture (nullptr);
+
+      // A lens's falloff toward the rim, so the paper sits under glass.
+      dl.begin (render::Prim::Triangles);
+      for (int sector = 0; sector < sectors; ++sector) {
+        const float a0 = 2.0f * PI * sector / sectors;
+        const float a1 = 2.0f * PI * (sector + 1) / sectors;
+        const float inner = 0.70f * r;
+        const float c0 = std::cos (a0), s0 = std::sin (a0);
+        const float c1 = std::cos (a1), s1 = std::sin (a1);
+        const auto at = [&] (float radius, float c, float s, float shade) {
+          dl.color (0.06f, 0.05f, 0.04f, shade * alpha);
+          dl.vertex (cx + radius * c, cy + radius * s);
+        };
+        at (inner, c0, s0, 0.0f);
+        at (edge, c0, s0, 0.20f);
+        at (edge, c1, s1, 0.20f);
+        at (inner, c0, s0, 0.0f);
+        at (edge, c1, s1, 0.20f);
+        at (inner, c1, s1, 0.0f);
+      }
+      dl.end ();
+      dl.state (render::DrawState ());
+      dl.lit (true);
+      dl.fogged (true);
+      dl.color (1, 1, 1, 1);
+
+      // The instrument: a soft shade under it, the bezel, and the rim over
+      // the picture's edge.
+      place_shape (text,
+                   m_shape->shade,
+                   cx,
+                   cy + 2.0f,
+                   1.08f * outer,
+                   0.0f,
+                   0.0f,
+                   0.0f,
+                   0.0f,
+                   0.24f * alpha,
+                   40.0f);
+      place_shape (text,
+                   m_shape->bezel,
+                   cx,
+                   cy,
+                   r,
+                   0.0f,
+                   0.035f,
+                   0.040f,
+                   0.050f,
+                   0.58f * alpha);
+      place_shape (
+        text, m_shape->rim, cx, cy, r, 0.0f, ink, ink, ink, 0.88f * alpha);
+
+      // A bearing's direction on the screen, as place_shape turns: radians
+      // counterclockwise from the right.
+      const auto bearing_angle = [&] (float degrees) {
+        const float b = degrees * PI / 180.0f;
+        float sx, sy;
+        on_screen (std::sin (b), -std::cos (b), sx, sy);
+        return std::atan2 (-sy, sx);
+      };
+      for (int degrees = 10; degrees < 360; degrees += 10) {
+        if (degrees % 90 == 0)
+          continue;
+        const bool major = degrees % 30 == 0;
+        place_shape (text,
+                     major ? m_shape->major_tick : m_shape->tick,
+                     cx,
+                     cy,
+                     r,
+                     bearing_angle (static_cast<float> (degrees)),
+                     ink,
+                     ink,
+                     ink,
+                     (major ? 0.85f : 0.45f) * alpha);
+      }
+      TextStyle quarter;
+      quarter.size = std::clamp (0.135f * r, 9.0f, 12.5f);
+      quarter.tracking = 0.02f;
+      const char* const quarters[] = { "N", "E", "S", "W" };
+      for (int q = 0; q < 4; ++q) {
+        const float angle = bearing_angle (90.0f * q);
+        const float middle = 0.5f * (1.0f + chart_bezel) * r;
+        const bool north = q == 0;
+        quarter.red = north ? 1.00f : ink;
+        quarter.green = north ? 0.42f : ink;
+        quarter.blue = north ? 0.33f : ink;
+        quarter.alpha = (north ? 1.0f : 0.82f) * alpha;
+        m_font->draw (text,
+                      cx + middle * std::cos (angle),
+                      cy - middle * std::sin (angle) +
+                        0.5f * m_font->cap_height (quarter.size),
+                      quarters[q],
+                      quarter,
+                      TextAlign::Center);
+      }
+
+      // The heading, read off a fixed mark over the bezel.
+      const float heading_degrees =
+        std::fmod (std::atan2 (ax, -az) * 180.0f / PI + 360.0f, 360.0f);
+      place_shape (text,
+                   m_shape->arrow,
+                   cx,
+                   cy - outer - 3.0f,
+                   4.0f,
+                   -0.5f * PI,
+                   ink,
+                   ink,
+                   ink,
+                   0.92f * alpha);
+      char reading[8];
+      std::snprintf (reading,
+                     sizeof reading,
+                     "%03d",
+                     static_cast<int> (std::lround (heading_degrees)) % 360);
+      TextStyle figure;
+      figure.size = 11.5f;
+      figure.red = figure.green = figure.blue = ink;
+      figure.alpha = 0.9f * alpha;
+      figure.tracking = 0.06f;
+      figure.tabular_figures = true;
+      draw_shaded (
+        text, cx, cy - outer - 11.0f, reading, figure, TextAlign::Center);
+
+      // What there is to find on it, pinned to the rim when off it.
+      for (int i = 0; i < chart.pin_count; ++i) {
+        const HudState::Chart::Pin& pin = chart.pins[i];
+        float sx, sy;
+        on_screen (wrapped (pin.x_m - chart.x_m, chart.period_x_m),
+                   wrapped (pin.z_m - chart.z_m, chart.period_z_m),
+                   sx,
+                   sy);
+        const float far = 0.86f * r;
+        const float off = std::hypot (sx, sy);
+        const bool beyond = off > far;
+        if (beyond) {
+          sx *= far / off;
+          sy *= far / off;
+        }
+        using Kind = HudState::Chart::Pin::Kind;
+        float size = pin.kind == Kind::Companion   ? 4.4f
+                     : pin.kind == Kind::Trailhead ? 4.2f
+                                                   : 3.4f;
+        float a = alpha;
+        if (beyond) {
+          size *= 0.8f;
+          a *= 0.8f;
+        }
+        const float x = cx + sx, y = cy + sy;
+        place_shape (text,
+                     m_shape->shade,
+                     x,
+                     y + 0.6f,
+                     size + 2.4f,
+                     0.0f,
+                     0.0f,
+                     0.0f,
+                     0.0f,
+                     0.30f * a,
+                     3.0f);
+        place_shape (
+          text, m_shape->shade, x, y, size + 1.4f, 0.0f, 1.0f, 1.0f, 1.0f, a);
+        place_shape (text,
+                     m_shape->shade,
+                     x,
+                     y,
+                     size,
+                     0.0f,
+                     pin.red,
+                     pin.green,
+                     pin.blue,
+                     a);
+        if (pin.kind == Kind::Trailhead)
+          place_shape (text,
+                       m_shape->shade,
+                       x,
+                       y,
+                       0.45f * size,
+                       0.0f,
+                       1.0f,
+                       1.0f,
+                       1.0f,
+                       a);
+      }
+
+      // The subject, facing the way they face.
+      float fx, fy;
+      on_screen (chart.facing_x, chart.facing_z, fx, fy);
+      const float facing = std::hypot (fx, fy) > 1e-6f
+                             ? std::atan2 (-fy, fx)
+                             : 0.5f * PI;
+      place_shape (text,
+                   m_shape->arrow,
+                   cx,
+                   cy + 0.5f,
+                   9.5f,
+                   facing,
+                   0.0f,
+                   0.0f,
+                   0.0f,
+                   0.35f * alpha,
+                   4.0f);
+      place_shape (text,
+                   m_shape->arrow,
+                   cx,
+                   cy,
+                   8.6f,
+                   facing,
+                   1.0f,
+                   1.0f,
+                   1.0f,
+                   alpha);
+      place_shape (text,
+                   m_shape->arrow,
+                   cx,
+                   cy,
+                   6.4f,
+                   facing,
+                   0.80f,
+                   0.16f,
+                   0.10f,
+                   alpha);
+    }
+
     void Hud::draw_prompts (render::TextList& text,
                             const HudState& st,
                             float dt,
@@ -979,6 +1438,7 @@ namespace moppe {
       if (m_hidden)
         return;
 
+      draw_chart (dl, text, st, dt, width_pts, height_pts);
       draw_waymarks (text, st);
       draw_gauge (text, st, dt, width_pts, height_pts);
       draw_basket (text, st, dt, width_pts, height_pts);

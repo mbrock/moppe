@@ -2350,6 +2350,15 @@ namespace moppe {
         }
         r.clear_terrain_overlay ();
         upload_world_terrain (r);
+        // The chart in the HUD's corner wants the map from the first
+        // frame of play.
+        const auto said = [] (const char* name, std::string_view value) {
+          const char* set = moppe::environment (name);
+          return set && std::string_view (set) == value;
+        };
+        if (!m_gazetteer && !m_benchmark && !m_water_shot &&
+            !said ("MOPPE_CHART", "none") && !said ("MOPPE_HUD", "none"))
+          paint_map (r);
         if (m_graphics.terrain_shadows)
           cast_world_shadows (r);
         if (m_gazetteer)
@@ -4022,6 +4031,7 @@ namespace moppe {
           add_fishing_readings (hud_state);
           add_company_readings (hud_state);
           add_waymarks (hud_state, frame, hud_width, hud_height);
+          add_chart (hud_state, frame);
           m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
           if (m_hud.diagnostics ())
             draw_trail_map (m_hud_dl,
@@ -4050,32 +4060,29 @@ namespace moppe {
         r.draw_hud (m_hud_dl);
       }
 
-      // The map over the view (M): the sheet is painted the first time it
-      // is unfolded in a world, and what moves is marked on it each frame.
-      // It takes the place of the rest of the HUD while it is open.
-      void draw_map (render::Renderer& r, int width_pts, int height_pts) {
-        if (!m_map.painted ()) {
+      // Paints the map sheet of this world and uploads it: for the map
+      // over the view (M) and the chart in the HUD's corner.
+      void paint_map (render::Renderer& r) {
+        MOPPE_PROFILE_ZONE ("startup.paint_map");
 #ifdef __EMSCRIPTEN__
-          // A browser's page has less to spare for one picture.
-          const int limit = 2048;
+        // A browser's page has less to spare for one picture.
+        const int limit = 2048;
 #else
-          const int limit = 4096;
+        const int limit = 4096;
 #endif
-          const int size = std::min (limit, 2 * recipe ().resolution ());
-          m_map.set (r,
-                     paint_relief_map (surface (),
-                                       surface_readings (),
-                                       generated_world ().water_surface (),
-                                       rivers (),
-                                       trail_network (),
-                                       world ().water_level,
-                                       size));
-        }
-        m_hud_dl.clear ();
-        m_hud_text.clear ();
-        const platform::Insets safe_insets = platform::safe_insets ();
-        m_hud_dl.translate (safe_insets.left, safe_insets.top, 0);
+        const int size = std::min (limit, 2 * recipe ().resolution ());
+        m_map.set (r,
+                   paint_relief_map (surface (),
+                                     surface_readings (),
+                                     generated_world ().water_surface (),
+                                     rivers (),
+                                     trail_network (),
+                                     world ().water_level,
+                                     size));
+      }
 
+      // What there is to find on the map, the walker first.
+      std::vector<MapSheet::Mark> map_marks () const {
         using Mark = MapSheet::Mark;
         const DisplayColor dark (0.09f, 0.09f, 0.10f);
         std::vector<Mark> marks;
@@ -4132,6 +4139,11 @@ namespace moppe {
                              .position = session ().caddy ().position (),
                              .colour = DisplayColor (0.22f, 0.50f, 0.45f),
                              .name = "Caddy" });
+        if (mode != M_HELICOPTER)
+          marks.push_back ({ .kind = Mark::Kind::Jeep,
+                             .position = session ().helicopter ().position (),
+                             .colour = DisplayColor (0.20f, 0.30f, 0.20f),
+                             .name = "helicopter" });
         const Camp& camp = logic ().m_camp;
         if (camp.hung || camp.fire)
           marks.push_back (
@@ -4144,10 +4156,67 @@ namespace moppe {
                            .position = m_home_base_position,
                            .colour = DisplayColor (0.80f, 0.13f, 0.11f),
                            .name = "trailhead" });
+        return marks;
+      }
+
+      // The chart in the HUD's corner: the map sheet round the subject,
+      // turned to the way the camera looks, with the marks on it.
+      void add_chart (HudState& state, const FrameView& frame) const {
+        if (m_spectator || !m_map.picture ())
+          return;
+        HudState::Chart& chart = state.chart;
+        chart.picture = m_map.picture ();
+        chart.period_x_m = m_map.period_x_m ();
+        chart.period_z_m = m_map.period_z_m ();
+        const Vec3 at = frame.hud.subject_position;
+        chart.x_m = at[0];
+        chart.z_m = at[2];
+        // Ahead is where the camera looks; looking down or up, its top
+        // (or its foot) leans the way it faces.
+        const Vec3 forward = frame.camera.forward;
+        const Vec3 up = frame.camera.up;
+        const float lean = forward[1] < 0.0f ? 1.0f : -1.0f;
+        chart.ahead_x = forward[0] + lean * up[0];
+        chart.ahead_z = forward[2] + lean * up[2];
+        const Vec3 facing = frame.hud.subject_heading;
+        chart.facing_x = facing[0];
+        chart.facing_z = facing[2];
+        chart.daylight = frame.lighting.daylight;
+        using Kind = MapSheet::Mark::Kind;
+        using Pin = HudState::Chart::Pin;
+        for (const MapSheet::Mark& mark : map_marks ()) {
+          if (mark.kind == Kind::Walker ||
+              chart.pin_count >= static_cast<int> (chart.pins.size ()))
+            continue;
+          Pin& pin = chart.pins[chart.pin_count++];
+          pin.kind = mark.kind == Kind::Companion   ? Pin::Kind::Companion
+                     : mark.kind == Kind::Bike      ? Pin::Kind::Bike
+                     : mark.kind == Kind::Camp      ? Pin::Kind::Camp
+                     : mark.kind == Kind::Trailhead ? Pin::Kind::Trailhead
+                                                    : Pin::Kind::Machine;
+          pin.x_m = mark.position[0];
+          pin.z_m = mark.position[2];
+          pin.red = mark.colour.red;
+          pin.green = mark.colour.green;
+          pin.blue = mark.colour.blue;
+        }
+      }
+
+      // The map over the view (M): the sheet is painted with the world
+      // (or the first time it is unfolded), and what moves is marked on
+      // it each frame. It takes the place of the rest of the HUD while it
+      // is open.
+      void draw_map (render::Renderer& r, int width_pts, int height_pts) {
+        if (!m_map.painted ())
+          paint_map (r);
+        m_hud_dl.clear ();
+        m_hud_text.clear ();
+        const platform::Insets safe_insets = platform::safe_insets ();
+        m_hud_dl.translate (safe_insets.left, safe_insets.top, 0);
         m_map.draw (m_hud_dl,
                     m_hud_text,
                     m_hud.font (),
-                    marks,
+                    map_marks (),
                     "MOPPE  \u00b7  SEED " +
                       std::to_string (recipe ().seed ().value),
                     width_pts,

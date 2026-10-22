@@ -130,6 +130,34 @@ namespace moppe {
       };
       std::array<Waymark, 4> waymarks {};
       int waymark_count = 0;
+      // The chart in the corner: the map sheet's picture (map_sheet.hh)
+      // turned so that the way the camera looks is up, round the
+      // subject, in a compass bezel whose letters keep to the world's
+      // quarters. No picture, no chart.
+      struct Chart {
+        const render::Texture* picture = nullptr;
+        // The picture's period on the ground, and the world's +X and +Z
+        // run across and down it (north is -Z, at the top).
+        float period_x_m = 0.0f, period_z_m = 0.0f;
+        // Where the subject stands, and the way ahead on the ground (a
+        // unit vector in X and Z).
+        float x_m = 0.0f, z_m = 0.0f;
+        float ahead_x = 0.0f, ahead_z = -1.0f;
+        // The way the subject faces, which the mark at the middle points.
+        float facing_x = 0.0f, facing_z = -1.0f;
+        // 0 in the dark of night, 1 by day: the paper dims with the light.
+        float daylight = 1.0f;
+        // What else is on it.
+        struct Pin {
+          enum class Kind { Companion, Bike, Machine, Camp, Trailhead };
+          Kind kind = Kind::Machine;
+          float x_m = 0.0f, z_m = 0.0f;
+          float red = 0.1f, green = 0.1f, blue = 0.1f;
+        };
+        std::array<Pin, 10> pins {};
+        int pin_count = 0;
+      };
+      Chart chart {};
       // A word about the other player, when there is one, and how long
       // ago it was said.
       const char* notice = nullptr;
@@ -253,6 +281,12 @@ namespace moppe {
                        int width_pts,
                        int height_pts);
       void draw_waymarks (render::TextList& text, const HudState& state);
+      void draw_chart (render::DrawList& dl,
+                       render::TextList& text,
+                       const HudState& state,
+                       float dt,
+                       int width_pts,
+                       int height_pts);
       void draw_prompts (render::TextList& text,
                          const HudState& state,
                          float dt,
@@ -291,6 +325,11 @@ namespace moppe {
       float m_prompt_alpha;
       float m_basket_alpha;
       float m_clock_alpha = 0.0f;
+      // The chart's visibility and the radius of ground it shows, which
+      // widens with speed; MOPPE_CHART=none leaves it out.
+      float m_chart_alpha = 0.0f;
+      float m_chart_reach_m = 0.0f;
+      bool m_chart_hidden = false;
       std::string m_prompt_key;
       std::string m_prompt_action;
       // What this frame offers the player, and whether the host shows it.

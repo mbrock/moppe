@@ -57,6 +57,20 @@ namespace moppe::game {
       return static_cast<bool> (m_texture);
     }
 
+    // The uploaded picture and the ground it covers, for the chart in the
+    // HUD's corner (hud.hh).
+    const render::Texture* picture () const noexcept {
+      return m_texture.get ();
+    }
+
+    float period_x_m () const noexcept {
+      return m_sheet.period_x_m;
+    }
+
+    float period_z_m () const noexcept {
+      return m_sheet.period_z_m;
+    }
+
     // Takes a painted sheet and uploads its picture.
     void set (render::Renderer& renderer, ReliefMap sheet);
 

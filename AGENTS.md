@@ -102,6 +102,16 @@
     tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in
     view, at the frame's edge pointing the way when it is not
     (`HudState::Waymark`, placed by `add_waymarks` in game.cc).
+  - The chart and compass: a round chart in the lower left (upper right
+    with the diagnostics on, or on a touch screen) shows the map sheet
+    round the subject, turned so the way the camera looks is up, in a
+    smoked bezel whose ticks and N/E/S/W keep to the world's quarters,
+    with the heading over it and the bike, the machines, the camp, the
+    companion, and the trailhead as dots (pinned to the rim when off it).
+    It shows some 220 m round a walker, widening with speed and from the
+    air, and dims with the light (`Hud::draw_chart`, filled by
+    `add_chart` in game.cc). The sheet is now painted while the world
+    loads; `MOPPE_CHART=none` leaves the chart out.
   - The map: `M` unfolds a sheet of the whole world over the view, `M`
     again looks closer at the 1.8 km round the walker, and a third folds
     it away. It is painted once per world on the CPU
@@ -121,7 +131,8 @@
     nothing else heavy beside it), and the world then loads from its
     cache. `MOPPE_FINGERPRINT_COST=1 world-fingerprint 4096 play 123 10`
     says what each stage costs (docs/orogeny-performance.md).
-  - The HUD is deliberately one quiet speedometer plus fading prompts. `H`
+  - The HUD is deliberately one quiet speedometer, the chart, and fading
+    prompts. `H`
     toggles the diagnostic overlay (frame rate, stunt and score readings,
     trail map); `MOPPE_HUD=debug` starts with it on, and `MOPPE_HUD=none`
     draws nothing over the picture (film/record's footage).
