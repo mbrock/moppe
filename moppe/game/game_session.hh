@@ -63,6 +63,21 @@ namespace moppe::game {
       return m_bike;
     }
 
+    mov::Vehicle& mountain_bike () noexcept {
+      return m_mountain_bike;
+    }
+    const mov::Vehicle& mountain_bike () const noexcept {
+      return m_mountain_bike;
+    }
+    // The bike being ridden, the motocross or the mountainbike, or the
+    // motocross when neither is.
+    mov::Vehicle& ridden_bike () noexcept {
+      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike : m_bike;
+    }
+    const mov::Vehicle& ridden_bike () const noexcept {
+      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike : m_bike;
+    }
+
     mov::Jeep& jeep () noexcept {
       return m_jeep;
     }
@@ -132,9 +147,17 @@ namespace moppe::game {
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
     // What the mount key would take, on foot: of the bike, the jeep, the
-    // helicopter, the tractor, and the Caddy, the nearest within its
-    // reach.
-    enum class Mount { none, bike, jeep, helicopter, tractor, caddy };
+    // helicopter, the tractor, the Caddy, and the mountainbike, the
+    // nearest within its reach.
+    enum class Mount {
+      none,
+      bike,
+      jeep,
+      helicopter,
+      tractor,
+      caddy,
+      mountain_bike
+    };
     Mount mount_within_reach () const;
     // On foot nearest the jeep, within its reach.
     bool can_drive () const;
@@ -144,6 +167,8 @@ namespace moppe::game {
     bool can_drive_tractor () const;
     // On foot nearest the Caddy, within reach of its doors.
     bool can_drive_caddy () const;
+    // On foot nearest the mountainbike, within reach of its bars.
+    bool can_ride_mountain_bike () const;
     // Each machine as the bumpers see it, and a blow to it
     // (game/rescue.hh).
     MachineBody machine_body (Machine machine) const;
@@ -188,6 +213,7 @@ namespace moppe::game {
     mov::Helicopter m_helicopter;
     mov::Tractor m_tractor;
     mov::Caddy m_caddy;
+    mov::Vehicle m_mountain_bike;
     Walker m_walker;
     ChaseCamera m_camera;
     Stars m_stars;

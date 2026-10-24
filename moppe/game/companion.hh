@@ -49,6 +49,8 @@ namespace moppe::game {
     TractorPose tractor {};
     // Their Caddy, likewise.
     CaddyPose caddy {};
+    // Their mountainbike, and them on it when they ride it.
+    VehiclePose mountain_bike {};
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
 

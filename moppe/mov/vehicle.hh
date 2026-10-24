@@ -53,6 +53,8 @@ namespace moppe {
         // assemblage rigidly to match.
         RigidBikeState rigid {};
         bool parked {};
+        float skid {};
+        float crank {};
       };
 
       // max_thrust caps the wheel force (launch punch); power caps
@@ -64,7 +66,8 @@ namespace moppe {
                newtons_t max_thrust,
                watts_t power,
                kilograms_t mass,
-               BikePhysics physics = BikePhysics::classic);
+               BikePhysics physics = BikePhysics::classic,
+               const BikeRig& rig = motocross_rig);
       ~Vehicle ();
 
       BikePhysics physics () const {
@@ -103,6 +106,30 @@ namespace moppe {
       void set_boost (float boost, float drive);
       void replenish_boost (float amount) {
         m_boost_charge = std::min (1.0f, m_boost_charge + amount);
+      }
+
+      // The rear brake stamped on, 0..1: the rear wheel locks and slides,
+      // and the handlebar swings the tail round (RigidBikeControls::skid).
+      // Only the rigid bike skids.
+      void set_skid (float skid) {
+        m_skid = std::clamp (skid, 0.0f, 1.0f);
+      }
+      // How far the rear tyre is sliding under the locked brake, 0..1.
+      float skid () const {
+        return m_rigid ? m_rigid->skid () : 0.0f;
+      }
+      // Springs the bike up off the ground by `speed`, metres per second,
+      // over its next update: a bunny hop. Only a rigid bike on its wheels
+      // hops.
+      void hop (float speed) {
+        if (grounded ())
+          m_hop = speed;
+      }
+      // Where a pedalled bike's crank has turned to, radians in [0, 2pi):
+      // round at a steady cadence through the gears while the rider
+      // pedals, and still while they freewheel.
+      radians_t crank () const {
+        return m_crank * u::rad;
       }
 
       // A bike nobody rides stays where it was left: its wheels lock and,
@@ -334,6 +361,10 @@ namespace moppe {
       // members above are kept as its published readings.
       std::unique_ptr<RigidBike> m_rigid;
       bool m_parked = false;
+      float m_skid = 0.0f;
+      float m_crank = 0.0f;
+      // Set by hop() for the next update only, never restored.
+      float m_hop = 0.0f;
       // Set afresh by the session each step of a glide, never restored.
       bool m_hung = false;
       Hang m_hang {};

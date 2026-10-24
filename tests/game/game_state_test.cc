@@ -947,3 +947,70 @@ MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   MOPPE_CHECK (length (out) < 3.0f);
   MOPPE_CHECK (dot (out, session.caddy ().left ()) > 0.8f);
 }
+
+MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
+  using namespace moppe;
+
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (256, 20, 256));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::GameSession session (world, surface);
+  const auto run = [&] (game::InputFrame input, float seconds_held) {
+    for (int i = 0; i < static_cast<int> (seconds_held * 60.0f); ++i) {
+      game::advance_game_session (world, surface, session, input, step);
+      input.toggle_mount = false;
+    }
+  };
+  const game::GameLogicState& logic = session.logic ();
+
+  // It stands apart from the motocross, which keeps still beside it.
+  session.start_on_foot ();
+  const Vec3 motocross = session.bike ().position ();
+  MOPPE_CHECK (length (motocross - session.mountain_bike ().position ()) >
+               2.0f);
+
+  // Away from everything else, beside it.
+  mov::Vehicle& bike = session.mountain_bike ();
+  bike.set_heading (Vec3 (0, 0, 1));
+  bike.reset (Vec3 (60, 10.0f + mov::mountain_bike_rig.ride_height (), 40));
+  session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 40.0f)),
+                           Vec3 (0, 0, 1));
+  run ({}, 0.5f);
+  MOPPE_CHECK (session.can_ride_mountain_bike ());
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_MOUNTAIN_BIKE);
+
+  // Pedalled off, at a cyclist's pace.
+  run ({ .drive = 1.0f }, 8.0f);
+  MOPPE_CHECK (bike.position ()[2] > 80.0f);
+  MOPPE_CHECK (session.subject_speed_kmh () > 20.0f);
+  MOPPE_CHECK (session.subject_speed_kmh () < 45.0f);
+
+  // Shift with the bars over skids it round to face back the way it came.
+  const Vec3 before = bike.orientation ();
+  run ({ .turn = 1.0f, .run = true }, 1.2f);
+  MOPPE_CHECK (bike.skid () > 0.9f);
+  MOPPE_CHECK (dot (before, bike.orientation ()) < -0.3f);
+  run ({}, 3.0f);
+  MOPPE_CHECK (bike.grounded ());
+  MOPPE_CHECK (bike.skid () < 0.1f);
+
+  // F gets off beside it, and it stays where it was left.
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (length (session.walker ().position () - bike.position ()) <
+               2.0f);
+  const Vec3 left = bike.position ();
+  run ({}, 3.0f);
+  MOPPE_CHECK (length (bike.position () - left) < 0.3f);
+  MOPPE_CHECK (length (session.bike ().position () - motocross) < 0.05f);
+}

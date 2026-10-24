@@ -26,7 +26,8 @@ namespace moppe::game {
 
   // M_JEEP drives this player's jeep; M_PASSENGER rides in the other
   // player's (game/companion.hh); M_HELICOPTER flies the helicopter,
-  // M_TRACTOR drives the tractor, and M_CADDY the Caddy.
+  // M_TRACTOR drives the tractor, M_CADDY the Caddy, and
+  // M_MOUNTAIN_BIKE rides the mountainbike.
   enum Mode {
     M_BIKE,
     M_FOOT,
@@ -35,7 +36,8 @@ namespace moppe::game {
     M_PASSENGER,
     M_HELICOPTER,
     M_TRACTOR,
-    M_CADDY
+    M_CADDY,
+    M_MOUNTAIN_BIKE
   };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
@@ -122,6 +124,7 @@ namespace moppe::game {
     mov::Helicopter::State helicopter;
     mov::Tractor::State tractor;
     mov::Caddy::State caddy;
+    mov::Vehicle::State mountain_bike;
   };
 }
 

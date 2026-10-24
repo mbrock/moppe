@@ -375,6 +375,25 @@
     `MOPPE_DEMO=jeep` has the autopilot drive it (`tools/record OUT.mp4
     jeep`), and `MOPPE_RIDE_ALONG=1` takes the other player's passenger
     seat as soon as they appear, for captures.
+  - The mountainbike (`models/mountain_bike.blend` from
+    `tools/figure/mountain_bike.py`, drawn by `game/mountain_bike_render.*`)
+    is a classic early-nineties hardtail in deep green and cream at life
+    size, leaning a couple of steps past the motocross. On foot, `F`
+    beside it rides it and `F` gets off; `W` pedals (the crank turns at a
+    cadence through the gears, still while freewheeling), `S` brakes,
+    `A`/`D` steer, and `Space` bunny-hops. It is the rigid bike's
+    assemblage on another `mov::BikeRig` (`mountain_bike_rig` in
+    `mov/rigid_bike.hh`; the motocross is `motocross_rig`), and the session
+    holds it as a second `mov::Vehicle` (`GameSession::mountain_bike`,
+    `M_MOUNTAIN_BIKE`). `MOPPE_DEMO=mountain_bike` (`tools/record OUT.mp4
+    mountain_bike`) pedals it on the autopilot; the other player sees it
+    (companion wire version 7).
+  - Skids, on both bikes: riding, `Shift` (the controller's left trigger)
+    stamps on the rear brake. The rear wheel locks, its tyre's grip drops
+    to a sliding friction, and the bars swing the tail out about the
+    front wheel, so a held skid with the bars over brakes the bike round
+    into a new heading, throwing a fan of dirt; let go, the tyre grips
+    again gradually (`RigidBikeControls::skid`, `Vehicle::set_skid`).
   - The helicopter (`moppe/mov/helicopter.*`, `models/helicopter.blend`
     from `tools/figure/helicopter.py`, drawn by `game/helicopter_render.*`)
     stands on open, level ground some tens of metres from the bike, where

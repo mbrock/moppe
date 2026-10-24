@@ -51,6 +51,8 @@ namespace moppe::game {
     float boost_drive = 0.0f;
     // Drawn at this share of its size: stowed in the Caddy, life size.
     float scale = 1.0f;
+    // A pedalled bike's crank, radians round from the right arm down.
+    float crank_radians = 0.0f;
   };
 
   // The jeep as drawn: its origin (midway between the axles, at their
@@ -135,6 +137,7 @@ namespace moppe::game {
 
   struct FrameActors {
     VehiclePose bike {};
+    VehiclePose mountain_bike {};
     JeepPose jeep {};
     HelicopterPose helicopter {};
     TractorPose tractor {};
@@ -181,6 +184,8 @@ namespace moppe::game {
     bool can_drive_tractor = false;
     // On foot beside the Caddy, which the mount key would drive.
     bool can_drive_caddy = false;
+    // On foot beside the mountainbike, which the mount key would ride.
+    bool can_ride_mountain_bike = false;
     // On foot beside a stuck machine, which the mount key would haul
     // out; hauling one; or driving one that is stuck (game/rescue.hh).
     const char* haul = nullptr;

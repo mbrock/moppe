@@ -42,7 +42,8 @@ namespace moppe {
                       newtons_t max_thrust,
                       watts_t power,
                       kilograms_t mass,
-                      BikePhysics physics)
+                      BikePhysics physics,
+                      const BikeRig& rig)
         : m_position (position), m_velocity (moppe::velocity (Vec3 ())),
           m_heading (sin (orientation), 0, cos (orientation)),
           m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
@@ -61,11 +62,12 @@ namespace moppe {
         params.max_drive_force = m_max_thrust.numerical_value_in (u::N);
         params.power = m_power.numerical_value_in (u::W);
         params.mass = m_mass.numerical_value_in (u::kg);
+        params.rig = rig;
         const Vec3 ground = position_value (m_position);
         m_rigid = std::make_unique<RigidBike> (
           surface,
           params,
-          ground + Vec3 (0.0f, RigidBike::ride_height, 0.0f),
+          ground + Vec3 (0.0f, rig.ride_height (), 0.0f),
           m_heading);
         sync_rigid ();
       }
@@ -99,12 +101,14 @@ namespace moppe {
                     m_fall_top,
                     m_fall_drop };
       state.parked = m_parked;
+      state.skid = m_skid;
+      state.crank = m_crank;
       if (m_rigid) {
         // The coarse pose is derived from the snapshot itself, so restoring
         // an unedited state finds them equal bit for bit.
         state.rigid = m_rigid->state ();
         state.position =
-          moppe::position (RigidBike::reference_of (state.rigid));
+          moppe::position (m_rigid->reference_of (state.rigid));
         state.velocity = moppe::velocity (state.rigid.chassis.linear_velocity);
         state.heading = RigidBike::forward_of (state.rigid);
       }
@@ -137,14 +141,17 @@ namespace moppe {
       m_fall_top = state.fall_top;
       m_fall_drop = state.fall_drop;
       m_parked = state.parked;
+      m_skid = state.skid;
+      m_crank = state.crank;
       if (m_rigid) {
         RigidBikeState rigid = state.rigid;
         const Vec3& position = position_value (state.position);
         const Vec3& velocity = velocity_value (state.velocity);
-        if (!(position == RigidBike::reference_of (rigid) &&
+        if (!(position == m_rigid->reference_of (rigid) &&
               velocity == rigid.chassis.linear_velocity &&
               state.heading == RigidBike::forward_of (rigid)))
-          rigid = RigidBike::repose (rigid, position, state.heading, velocity);
+          rigid =
+            m_rigid->repose (rigid, position, state.heading, velocity);
         m_rigid->restore (rigid);
         sync_rigid ();
       }
@@ -662,9 +669,12 @@ namespace moppe {
         controls.steer = radians_value (m_yaw);
         controls.boost_acceleration = boost_direction * (boost * m_boost_level);
         controls.parked = m_parked;
+        controls.skid = m_skid;
+        controls.hop = i == 0 ? m_hop : 0.0f;
         if (m_hung) {
           controls.throttle = 0.0f;
           controls.steer = 0.0f;
+          controls.skid = 0.0f;
           controls.boost_acceleration = m_hang.acceleration;
           controls.hung = true;
           controls.hang_forward = m_hang.forward;
@@ -709,7 +719,21 @@ namespace moppe {
           m_wheel_spin + m_rigid->wheel_spin_rate () * h_s, 2.0f * 3.14159265f);
         if (m_wheel_spin < 0.0f)
           m_wheel_spin += 2.0f * 3.14159265f;
+
+        // Pedalling, the rider keeps to a cadence of some eight radians a
+        // second through the gears, from the lowest, which turns the wheel
+        // a little slower than the crank, to the highest, three times as
+        // fast; a wheel off the ground spins up to it.
+        if (m_thrust > 0.02f && !m_hung && !m_parked) {
+          const float wheel = std::abs (m_rigid->wheel_spin_rate ());
+          const float cadence =
+            m_rigid->rear_contact ()
+              ? wheel / std::clamp (wheel / 8.0f, 0.75f, 3.0f)
+              : 8.0f * scalar_value (m_thrust);
+          m_crank = std::fmod (m_crank + cadence * h_s, 2.0f * 3.14159265f);
+        }
       }
+      m_hop = 0.0f;
       sync_rigid ();
     }
 

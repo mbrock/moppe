@@ -109,6 +109,7 @@ namespace moppe::game {
       .thrust = vehicle.thrust ().numerical_value_in (one),
       .boost_level = vehicle.boost_level (),
       .boost_drive = vehicle.boost_drive (),
+      .crank_radians = radians_value (vehicle.crank ()),
     };
   }
 
@@ -325,6 +326,8 @@ namespace moppe::game {
     };
 
     result.actors.bike = vehicle_pose (input.session.bike ());
+    result.actors.mountain_bike =
+      vehicle_pose (input.session.mountain_bike ());
     result.actors.jeep = jeep_pose (input.session.jeep ());
     result.actors.helicopter = helicopter_pose (input.session.helicopter ());
     result.actors.tractor = tractor_pose (input.session.tractor ());
@@ -399,6 +402,7 @@ namespace moppe::game {
     hud.can_fly = input.session.can_fly ();
     hud.can_drive_tractor = input.session.can_drive_tractor ();
     hud.can_drive_caddy = input.session.can_drive_caddy ();
+    hud.can_ride_mountain_bike = input.session.can_ride_mountain_bike ();
     if (const auto stuck = input.session.haul_within_reach ())
       hud.haul = machine_name (*stuck);
     if (const auto held = input.session.hauling ())

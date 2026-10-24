@@ -20,6 +20,8 @@
 #   helicopter the autopilot flying the helicopter     (MOPPE_DEMO=helicopter)
 #   tractor   the autopilot driving the tractor        (MOPPE_DEMO=tractor)
 #   caddy     the autopilot driving the Caddy          (MOPPE_DEMO=caddy)
+#   mountain_bike
+#             the autopilot on the mountainbike   (MOPPE_DEMO=mountain_bike)
 #   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
 #   supper    picking three, frying them on a fire, and eating
@@ -148,6 +150,7 @@ case $scene in
   helicopter) stage MOPPE_DEMO=helicopter; : "${seconds:=30}" ;;
   tractor) stage MOPPE_DEMO=tractor; : "${seconds:=20}" ;;
   caddy) stage MOPPE_DEMO=caddy; : "${seconds:=20}" ;;
+  mountain_bike) stage MOPPE_DEMO=mountain_bike; : "${seconds:=20}" ;;
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
   supper) stage MOPPE_WALK=supper; : "${seconds:=50}" ;;

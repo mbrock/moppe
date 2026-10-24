@@ -133,6 +133,7 @@ namespace {
       r.left_y = -axis (SDL_GAMEPAD_AXIS_LEFTY);
       r.right_x = axis (SDL_GAMEPAD_AXIS_RIGHTX);
       r.right_y = -axis (SDL_GAMEPAD_AXIS_RIGHTY);
+      r.left_trigger = axis (SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
       r.right_trigger = axis (SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
       r.a = held (SDL_GAMEPAD_BUTTON_SOUTH);
       r.b = held (SDL_GAMEPAD_BUTTON_EAST);

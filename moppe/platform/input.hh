@@ -21,7 +21,7 @@ namespace moppe::platform {
   struct GamepadReading {
     float left_x = 0, left_y = 0;
     float right_x = 0, right_y = 0;
-    float right_trigger = 0;
+    float left_trigger = 0, right_trigger = 0;
     bool a = false, b = false, x = false, y = false;
     bool left_shoulder = false, right_shoulder = false;
     bool dpad_left = false, dpad_right = false;
@@ -39,10 +39,10 @@ namespace moppe::platform {
 
   // The gamepad as every host reads one: the left stick (or the D-pad)
   // drives and steers, the right stick looks around, the right trigger
-  // boosts; A deploys the glider or
-  // restarts, B mounts, X cycles the camera, Y boosts or flares, the left
-  // shoulder hangs the hammock and the right lights the fire, and the
-  // D-pad also presses the arrow keys for menus.
+  // boosts and the left one holds Shift (runs, or skids the bikes); A
+  // deploys the glider or restarts, B mounts, X cycles the camera, Y
+  // boosts or flares, the left shoulder hangs the hammock and the right
+  // lights the fire, and the D-pad also presses the arrow keys for menus.
   class GamepadMapper {
   public:
     explicit GamepadMapper (Game& game) : m_game (game) {}
@@ -57,7 +57,7 @@ namespace moppe::platform {
     void edge (int index, bool down, Key key);
 
     Game& m_game;
-    bool m_buttons[11] {};
+    bool m_buttons[12] {};
   };
 
   // A Key by the name a Mac keyboard gives it ("Space", "F", "1"), or

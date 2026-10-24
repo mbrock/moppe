@@ -51,6 +51,8 @@ namespace moppe {
       // On foot beside the tractor, or the Caddy.
       bool can_drive_tractor = false;
       bool can_drive_caddy = false;
+      // On foot beside the mountainbike.
+      bool can_ride_mountain_bike = false;
       // On foot beside a stuck machine ("the tractor"), which the mount
       // key would haul out; the machine being hauled; and whether the one
       // being driven is stuck.
@@ -62,6 +64,8 @@ namespace moppe {
       // Flying it: whether it is low and slow enough to step out.
       bool flying = false;
       bool can_step_out = false;
+      // Riding a bike, whose rear brake Shift stamps on.
+      bool skids = false;
       // Flying it with the Caddy on its line, low enough to set it down:
       // the mount key lets it go.
       bool can_release_caddy = false;

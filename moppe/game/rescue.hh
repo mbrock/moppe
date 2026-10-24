@@ -27,8 +27,15 @@ namespace moppe::game {
   // instead of getting in, and walking away hauls it out after the
   // walker (walking at it pushes it); the key again lets go. Once it has
   // been moved three metres, it is no longer stuck.
-  enum class Machine : std::uint8_t { bike, jeep, tractor, caddy, helicopter };
-  inline constexpr int machine_count = 5;
+  enum class Machine : std::uint8_t {
+    bike,
+    jeep,
+    tractor,
+    caddy,
+    helicopter,
+    mountain_bike
+  };
+  inline constexpr int machine_count = 6;
 
   // "the tractor", for the prompts.
   const char* machine_name (Machine machine);

@@ -1292,6 +1292,10 @@ namespace moppe {
       } else if (st.can_drive_caddy) {
         key = mount_key;
         action = *mount_key ? "Drive the Caddy" : "Caddy within reach";
+      } else if (st.can_ride_mountain_bike) {
+        key = mount_key;
+        action =
+          *mount_key ? "Ride the mountainbike" : "Mountainbike within reach";
       } else if (st.can_fly) {
         key = mount_key;
         action = *mount_key ? "Fly the helicopter" : "Helicopter within reach";
@@ -1310,6 +1314,8 @@ namespace moppe {
         offer ("Space", st.thumb);
       if (st.flying)
         offer ("Shift", "Descend");
+      if (st.skids)
+        offer ("Shift", "Skid");
       if (st.dismount)
         offer (mount_key, st.dismount);
       if (st.can_take_down)

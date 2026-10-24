@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 6;
+    constexpr std::uint8_t wire_version = 7;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -297,6 +297,16 @@ namespace moppe::game {
     out.put (tractor.front_spin_radians);
     out.put (tractor.rear_spin_radians);
 
+    const VehiclePose& mtb = snapshot.mountain_bike;
+    out.put (mtb.position);
+    out.put (mtb.render_orientation);
+    out.put (mtb.render_normal);
+    out.put (mtb.rear_wheel_drop);
+    out.put (mtb.front_wheel_drop);
+    out.put (mtb.wheel_spin_radians);
+    out.put (mtb.fork_radians);
+    out.put (mtb.crank_radians);
+
     const CaddyPose& caddy = snapshot.caddy;
     out.put (caddy.position);
     out.put (caddy.forward);
@@ -372,7 +382,7 @@ namespace moppe::game {
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
     const std::uint8_t mode = in.get<std::uint8_t> ();
-    if (mode > M_CADDY)
+    if (mode > M_MOUNTAIN_BIKE)
       return std::nullopt;
     snapshot.mode = static_cast<Mode> (mode);
     const std::uint8_t flags = in.get<std::uint8_t> ();
@@ -416,6 +426,16 @@ namespace moppe::game {
     tractor.steer_radians = in.number ();
     tractor.front_spin_radians = in.number ();
     tractor.rear_spin_radians = in.number ();
+
+    VehiclePose& mtb = snapshot.mountain_bike;
+    mtb.position = in.point ();
+    mtb.render_orientation = in.direction (Vec3 (0, 0, 1));
+    mtb.render_normal = in.direction (Vec3 (0, 1, 0));
+    mtb.rear_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
+    mtb.front_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
+    mtb.wheel_spin_radians = in.number ();
+    mtb.fork_radians = in.number ();
+    mtb.crank_radians = in.number ();
 
     CaddyPose& caddy = snapshot.caddy;
     caddy.position = in.point ();
@@ -547,6 +567,26 @@ namespace moppe::game {
       jeep.wheel_spin_radians =
         mix_angle (a.jeep.wheel_spin_radians, b.jeep.wheel_spin_radians, t);
       result.jeep_velocity = mix (a.jeep_velocity, b.jeep_velocity, within);
+    }
+    if (!leapt (a.mountain_bike.position, b.mountain_bike.position)) {
+      const VehiclePose& from = a.mountain_bike;
+      const VehiclePose& to = b.mountain_bike;
+      VehiclePose& mtb = result.mountain_bike;
+      mtb.position =
+        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
+          return &each.mountain_bike.position;
+        });
+      mtb.render_orientation =
+        mix_direction (from.render_orientation, to.render_orientation, t);
+      mtb.render_normal = mix_direction (from.render_normal, to.render_normal, t);
+      mtb.rear_wheel_drop =
+        mix (from.rear_wheel_drop, to.rear_wheel_drop, within);
+      mtb.front_wheel_drop =
+        mix (from.front_wheel_drop, to.front_wheel_drop, within);
+      mtb.wheel_spin_radians =
+        mix_angle (from.wheel_spin_radians, to.wheel_spin_radians, t);
+      mtb.fork_radians = mix (from.fork_radians, to.fork_radians, within);
+      mtb.crank_radians = mix_angle (from.crank_radians, to.crank_radians, t);
     }
     if (!leapt (a.caddy.position, b.caddy.position)) {
       CaddyPose& caddy = result.caddy;

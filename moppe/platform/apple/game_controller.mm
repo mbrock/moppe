@@ -48,6 +48,7 @@ namespace moppe::platform {
         r.left_y = pad.leftThumbstick.yAxis.value;
         r.right_x = pad.rightThumbstick.xAxis.value;
         r.right_y = pad.rightThumbstick.yAxis.value;
+        r.left_trigger = pad.leftTrigger.value;
         r.right_trigger = pad.rightTrigger.value;
         r.a = button_down (pad.buttonA);
         r.b = button_down (pad.buttonB);

@@ -15,7 +15,7 @@ namespace moppe::platform {
     constexpr Key gamepad_keys[] = { Key::E,   Key::Restart, Key::Mount,
                                      Key::Tab, Key::Left,    Key::Right,
                                      Key::Up,  Key::Down,    Key::Space,
-                                     Key::R,   Key::T };
+                                     Key::R,   Key::T,       Key::Shift };
   }
 
   float stick_axis (float value) {
@@ -62,11 +62,12 @@ namespace moppe::platform {
     edge (8, r.y, Key::Space);
     edge (9, r.left_shoulder, Key::R);
     edge (10, r.right_shoulder, Key::T);
+    edge (11, r.left_trigger > 0.4f, Key::Shift);
     return controls;
   }
 
   void GamepadMapper::release () {
-    for (int i = 0; i < 11; ++i)
+    for (int i = 0; i < 12; ++i)
       if (m_buttons[i]) {
         m_game.key (gamepad_keys[i], false);
         m_buttons[i] = false;

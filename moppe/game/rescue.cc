@@ -10,7 +10,8 @@ namespace moppe::game {
       // The bumpers, laid over each machine's Box3D hulls: the bike's frame
       // and rider (its physics half again life size), the jeep's tub, the
       // tractor's big rear wheels and its bonnet, the Caddy's long body,
-      // and the helicopter's cabin and tail boom. The rotor meets nothing.
+      // the helicopter's cabin and tail boom, and the mountainbike's
+      // wheels and rider. The rotor meets nothing.
       const Bumper bike_bumpers[] = {
         { Vec3 (0.0f, -0.35f, 0.9f), 0.5f },
         { Vec3 (0.0f, -0.35f, -0.9f), 0.5f },
@@ -29,6 +30,11 @@ namespace moppe::game {
         { Vec3 (0.0f, 0.45f, 1.3f), 0.82f },
         { Vec3 (0.0f, 0.45f, 0.0f), 0.85f },
         { Vec3 (0.0f, 0.5f, -1.4f), 0.82f },
+      };
+      const Bumper mountain_bike_bumpers[] = {
+        { Vec3 (0.0f, 0.05f, 0.4f), 0.36f },
+        { Vec3 (0.0f, 0.05f, -0.4f), 0.36f },
+        { Vec3 (0.0f, 0.85f, -0.1f), 0.32f },
       };
       const Bumper helicopter_bumpers[] = {
         { Vec3 (0.0f, 1.3f, 0.3f), 1.25f },
@@ -77,6 +83,8 @@ namespace moppe::game {
       return "the Caddy";
     case Machine::helicopter:
       return "the helicopter";
+    case Machine::mountain_bike:
+      return "the mountainbike";
     }
     return "it";
   }
@@ -93,6 +101,8 @@ namespace moppe::game {
       return caddy_bumpers;
     case Machine::helicopter:
       return helicopter_bumpers;
+    case Machine::mountain_bike:
+      return mountain_bike_bumpers;
     }
     return {};
   }
@@ -109,6 +119,8 @@ namespace moppe::game {
       return Vec3 (0.0f, 0.24f, 0.30f);
     case Machine::helicopter:
       return Vec3 (0.0f, 1.15f, 0.05f);
+    case Machine::mountain_bike:
+      return Vec3 (0.0f, 0.55f, 0.0f);
     }
     return Vec3 ();
   }
@@ -127,6 +139,9 @@ namespace moppe::game {
       return Vec3 (0.0f, 0.25f, front ? 2.06f : -2.22f);
     case Machine::helicopter:
       return Vec3 (0.0f, 0.3f, end * 1.6f);
+    case Machine::mountain_bike:
+      // The head tube, or the seat post.
+      return front ? Vec3 (0.0f, 0.45f, 0.35f) : Vec3 (0.0f, 0.5f, -0.25f);
     }
     return Vec3 ();
   }
