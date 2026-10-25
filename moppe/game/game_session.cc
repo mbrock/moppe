@@ -1226,25 +1226,32 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       mov::Boat& boat = session.boat ();
       const float sea = world.water_level.numerical_value_in (u::m);
+      const double time = logic.m_total_time;
+      // The waves lift it and carry it to and fro; a river's current
+      // carries it downstream.
       const mov::BoatWater floating {
         [&] (float x, float z) {
-          return water_surface_at (world, surface, water, Vec3 (x, 0.0f, z))
+          return water_surface_at (
+                   world, surface, water, Vec3 (x, 0.0f, z), time)
             .numerical_value_in (u::m);
         },
         [&] (float x, float z) {
           if (!water)
             return Vec3 ();
+          const terrain::SeaWaves waves =
+            water_waves_at (surface, water, Vec3 (x, 0.0f, z), time);
+          Vec3 moving (
+            waves.velocity[0], waves.velocity[1], waves.velocity[2]);
           const position_t where = moppe::position (Vec3 (x, 0.0f, z));
           const float sheet = terrain::surface_elevation_value (
             spatial::sample<terrain::surface_elevation> (*water, where));
           if (sheet <= ground_at (surface, Vec3 (x, 0.0f, z)) ||
               sheet <= sea + 0.05f)
-            return Vec3 ();
+            return moving;
           Vec3 current = spatial::sample<terrain::water_velocity> (*water,
                                                                    where)
                            .numerical_value_in (u::m / u::s);
-          current[1] = 0.0f;
-          return current;
+          return moving + Vec3 (current[0], 0.0f, current[2]);
         }
       };
       boat.set_parked (logic.m_mode != M_BOAT);
@@ -1375,7 +1382,7 @@ namespace moppe::game {
     GameLogicState& logic = session.logic ();
     // Rivers and lakes hold back what goes through them as the sea does.
     const auto water_at = [&] (const Vec3& at) {
-      return water_surface_at (world, surface, water, at);
+      return water_surface_at (world, surface, water, at, logic.m_total_time);
     };
     session.bike ().set_water_level (water_at (session.bike ().position ()));
     session.bike ().set_trunks (trunks);
@@ -1438,7 +1445,8 @@ namespace moppe::game {
                               !hauled (Machine::mountain_bike));
     mountain_bike.update (dt);
     if (logic.m_mode == M_FOOT)
-      session.walker ().update (dt, surface, world, trunks, water);
+      session.walker ().update (
+        dt, surface, world, trunks, water, logic.m_total_time);
     // The jeep stands braked wherever its driver left it.
     mov::Jeep& jeep = session.jeep ();
     jeep.set_trunks (trunks);

@@ -10,8 +10,9 @@
 
 namespace moppe::mov {
   // The water a boat floats on, as the game reads it: the surface's
-  // height at (x, z), below the ground where it is dry, and its current
-  // there, metres a second.
+  // height at (x, z), below the ground where it is dry, and how the water
+  // moves there, metres a second: a river's current and the waves' to and
+  // fro and up and down.
   struct BoatWater {
     std::function<float (float x, float z)> level;
     std::function<Vec3 (float x, float z)> current;

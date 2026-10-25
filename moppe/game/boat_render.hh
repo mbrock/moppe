@@ -8,6 +8,7 @@
 #include <moppe/render/renderer.hh>
 
 #include <deque>
+#include <functional>
 #include <optional>
 
 namespace moppe::game {
@@ -51,8 +52,12 @@ namespace moppe::game {
     }
     // The two arms of the wake spreading at the Kelvin angle and the
     // churned water between them behind the propeller, fading with age;
-    // `light` dims the foam with the day.
-    void draw (render::DrawList& dl, float time, float light) const;
+    // `light` dims the foam with the day. `level` is the water's surface
+    // at a place now, which the wake lies on as the waves pass under it.
+    void draw (render::DrawList& dl,
+               float time,
+               float light,
+               const std::function<float (const Vec3&)>& level) const;
 
   private:
     std::deque<WakeMark> m_marks;

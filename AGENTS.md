@@ -412,7 +412,16 @@
     relative to the current, so rivers carry it), which floats, heels,
     trims, and planes it; the propeller drives only while in the water,
     in the stern wave that rises round it at speed. The helmsman's 80 kg
-    comes aboard and steps off with them. It draws a Kelvin wake, a
+    comes aboard and steps off with them. The sea heaves under waves
+    (`moppe/terrain/sea_waves.hh`: six Gerstner trains before the wind,
+    a metre or so trough to crest) that move the water program's surface
+    itself and break white in the shallows; `water_surface_at` reads the
+    same waves on the CPU at the game's time, so the boat rides, the
+    walker wades, and the wake lies on what is drawn (`still_water_at` is
+    the level without them). They scale by the sheet's wave lane squared
+    and die over the last four metres of depth, so lakes stay all but
+    calm and rivers flat. `MOPPE_BOAT=sea` moors the boat on the sea
+    rather than the nearest lake. It draws a Kelvin wake, a
     rooster tail, and bow spray; `MOPPE_DEMO=boat` (`tools/record OUT.mp4
     boat`) has the autopilot take it out (companion wire version 8).
   - Skids, on both bikes: riding, `Shift` (the controller's left trigger)

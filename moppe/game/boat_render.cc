@@ -7,7 +7,9 @@
 #include <moppe/gfx/mat4.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <vector>
 
 namespace moppe::game {
   namespace {
@@ -185,7 +187,10 @@ namespace moppe::game {
                          foam });
   }
 
-  void BoatWake::draw (render::DrawList& dl, float time, float light) const {
+  void BoatWake::draw (render::DrawList& dl,
+                       float time,
+                       float light,
+                       const std::function<float (const Vec3&)>& level) const {
     if (m_marks.size () < 2)
       return;
     render::DrawState soft;
@@ -197,39 +202,58 @@ namespace moppe::game {
     dl.fogged (true);
     const float shade = 0.25f + 0.7f * std::clamp (light, 0.0f, 1.0f);
     dl.begin (render::Prim::Triangles);
+    // On the water as it stands now, which the waves lift and lower.
+    const auto on_water = [&] (Vec3 at) {
+      at[1] = level (at) + 0.03f;
+      return at;
+    };
     // Each strip as quads between consecutive marks: `offset` places its
     // middle across the wake and `width` its breadth, by the mark's age.
     const auto strip = [&] (auto offset, auto width, float strength) {
+      // Each mark's middle and edges, lifted once and shared by the quads
+      // either side of it.
+      const std::size_t n = m_marks.size ();
+      std::vector<float> faded (n);
+      for (std::size_t i = 0; i < n; ++i) {
+        const WakeMark& m = m_marks[i];
+        const float age = time - m.time;
+        const float under_way = std::clamp ((m.speed - 1.0f) / 4.0f,
+                                            0.0f, 1.0f);
+        const float fade = std::max (0.0f, 1.0f - age / lasts);
+        faded[i] = strength * m.foam * under_way * fade * fade * fade *
+                   std::min (1.0f, age * 4.0f + 0.3f);
+      }
+      std::vector<std::array<Vec3, 3>> lifted (n);
+      for (std::size_t i = 0; i < n; ++i) {
+        const bool seen = faded[i] > 0.01f ||
+                          (i > 0 && faded[i - 1] > 0.01f) ||
+                          (i + 1 < n && faded[i + 1] > 0.01f);
+        if (!seen)
+          continue;
+        const WakeMark& m = m_marks[i];
+        const float age = time - m.time;
+        const Vec3 c = m.stern + m.across * offset (m, age);
+        const Vec3 w = m.across * (0.5f * width (m, age));
+        lifted[i] = { on_water (c), on_water (c - w), on_water (c + w) };
+      }
       for (std::size_t i = 0; i + 1 < m_marks.size (); ++i) {
-        const WakeMark& a = m_marks[i];
-        const WakeMark& b = m_marks[i + 1];
-        const float age_a = time - a.time, age_b = time - b.time;
-        const auto alpha = [&] (const WakeMark& m, float age) {
-          const float under_way = std::clamp ((m.speed - 1.0f) / 4.0f,
-                                              0.0f, 1.0f);
-          const float fade = std::max (0.0f, 1.0f - age / lasts);
-          return strength * m.foam * under_way * fade * fade * fade *
-                 std::min (1.0f, age * 4.0f + 0.3f);
-        };
-        const float fa = alpha (a, age_a), fb = alpha (b, age_b);
+        const float fa = faded[i], fb = faded[i + 1];
         if (fa <= 0.01f && fb <= 0.01f)
           continue;
-        const Vec3 ca = a.stern + a.across * offset (a, age_a);
-        const Vec3 cb = b.stern + b.across * offset (b, age_b);
-        const Vec3 wa = a.across * (0.5f * width (a, age_a));
-        const Vec3 wb = b.across * (0.5f * width (b, age_b));
+        const Vec3& ca = lifted[i][0];
+        const Vec3& cb = lifted[i + 1][0];
         // Two halves, each from the strip's middle line, where the foam
         // is thickest, out to an edge that has none.
-        for (const float edge : { -1.0f, 1.0f }) {
+        for (const int edge : { 1, 2 }) {
           dl.color (shade, shade, shade * 1.02f, fa);
           dl.vertex (ca);
           dl.color (shade, shade, shade * 1.02f, 0.0f);
-          dl.vertex (ca + wa * edge);
-          dl.vertex (cb + wb * edge);
+          dl.vertex (lifted[i][edge]);
+          dl.vertex (lifted[i + 1][edge]);
           dl.color (shade, shade, shade * 1.02f, fa);
           dl.vertex (ca);
           dl.color (shade, shade, shade * 1.02f, 0.0f);
-          dl.vertex (cb + wb * edge);
+          dl.vertex (lifted[i + 1][edge]);
           dl.color (shade, shade, shade * 1.02f, fb);
           dl.vertex (cb);
         }

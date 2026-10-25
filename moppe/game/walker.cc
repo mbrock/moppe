@@ -5,10 +5,10 @@
 
 namespace moppe {
   namespace game {
-    meters_t water_surface_at (const WorldParams& world,
-                               const map::SurfaceGeometry& surface,
-                               const terrain::WaterSheets* water,
-                               const Vec3& at) {
+    meters_t still_water_at (const WorldParams& world,
+                             const map::SurfaceGeometry& surface,
+                             const terrain::WaterSheets* water,
+                             const Vec3& at) {
       if (!water)
         return world.water_level;
       const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
@@ -18,6 +18,33 @@ namespace moppe {
         spatial::sample<terrain::surface_elevation> (surface, where));
       return level > ground ? std::max (level * u::m, world.water_level)
                             : world.water_level;
+    }
+
+    terrain::SeaWaves water_waves_at (const map::SurfaceGeometry& surface,
+                                      const terrain::WaterSheets* water,
+                                      const Vec3& at,
+                                      double time) {
+      if (!water)
+        return {};
+      const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
+      const float level = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (*water, where));
+      const float ground = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (surface, where));
+      const float amplitude =
+        spatial::sample<terrain::wave_amplitude> (*water, where)
+          .numerical_value_in (mp_units::one);
+      return terrain::sea_waves_at (
+        at[0], at[2], time, terrain::sea_wave_scale (amplitude, level - ground));
+    }
+
+    meters_t water_surface_at (const WorldParams& world,
+                               const map::SurfaceGeometry& surface,
+                               const terrain::WaterSheets* water,
+                               const Vec3& at,
+                               double time) {
+      return still_water_at (world, surface, water, at) +
+             water_waves_at (surface, water, at, time).height * u::m;
     }
 
     float wading_speed (float depth) {
@@ -92,7 +119,8 @@ namespace moppe {
                          const map::SurfaceGeometry& surface,
                          const WorldParams& world,
                          const mov::TrunkField* trunks,
-                         const terrain::WaterSheets* water) {
+                         const terrain::WaterSheets* water,
+                         double time) {
       const float turn = scalar_value (m_turn);
       if (std::abs (turn) > 0.01f)
         m_heading = Quaternion::rotate (
@@ -101,7 +129,8 @@ namespace moppe {
       // A brisk walk, or a run with Shift held; wading slows either.
       const Vec3 feet = position ();
       const float depth =
-        (water_surface_at (world, surface, water, feet) - feet[1] * u::m)
+        (water_surface_at (world, surface, water, feet, time) -
+         feet[1] * u::m)
           .numerical_value_in (u::m);
       const float speed =
         std::min (m_run ? run_speed : walk_speed, wading_speed (depth));

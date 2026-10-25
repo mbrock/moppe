@@ -724,17 +724,25 @@ namespace moppe {
           generated_world ().water_surface ();
         const float sea = world ().water_level.numerical_value_in (u::m);
         const auto level_at = [&] (const Vec3& at) {
-          return water_surface_at (world (), surface (), &sheets, at)
+          return still_water_at (world (), surface (), &sheets, at)
             .numerical_value_in (u::m);
         };
         const auto depth_at = [&] (const Vec3& at) {
           return level_at (at) - ground_height (at);
         };
         // Still water: the sea, or a lake's sheet that does not run.
+        // `MOPPE_BOAT=sea` passes the lakes by, to take it out on the
+        // sea's waves.
+        static const bool sea_only = [] {
+          const char* water = moppe::environment ("MOPPE_BOAT");
+          return water && std::string_view (water) == "sea";
+        }();
         const auto still = [&] (const Vec3& at) {
           const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
           if (level_at (at) <= sea + 0.05f)
             return true;
+          if (sea_only)
+            return false;
           Vec3 current = spatial::sample<terrain::water_velocity> (sheets,
                                                                    where)
                            .numerical_value_in (u::m / u::s);
@@ -1470,7 +1478,7 @@ namespace moppe {
           Vec3 at = from->at + ahead * reach;
           const float ground = ground_height (at);
           const float level =
-            water_surface_at (world (), surface (), &sheets, at)
+            still_water_at (world (), surface (), &sheets, at)
               .numerical_value_in (u::m);
           if (level - ground < fishing_depth)
             continue;
@@ -1596,7 +1604,8 @@ namespace moppe {
         const terrain::WaterSheets& sheets =
           generated_world ().water_surface ();
         const auto level_at = [&] (const Vec3& at) {
-          return water_surface_at (world (), surface (), &sheets, at)
+          return water_surface_at (world (), surface (), &sheets, at,
+                                  logic ().m_total_time)
             .numerical_value_in (u::m);
         };
         // A river carries the float downstream while there is water under
@@ -2013,7 +2022,7 @@ namespace moppe {
         const terrain::WaterSheets& sheets =
           generated_world ().water_surface ();
         const auto depth_at = [&] (const Vec3& at) {
-          return water_surface_at (world (), surface (), &sheets, at)
+          return still_water_at (world (), surface (), &sheets, at)
                    .numerical_value_in (u::m) -
                  ground_height (at);
         };
@@ -4270,7 +4279,7 @@ namespace moppe {
           generated_world ().water_surface ();
         const float time = frame.lighting.time;
         const auto level = [&] (const Vec3& at) {
-          return water_surface_at (world (), surface (), &sheets, at)
+          return water_surface_at (world (), surface (), &sheets, at, time)
             .numerical_value_in (u::m);
         };
         const auto depth = [&] (const Vec3& at) {
@@ -4279,12 +4288,12 @@ namespace moppe {
         const Vec3& ours = frame.actors.boat.position;
         m_boat_wake.follow (frame.actors.boat, level (ours), depth (ours), time);
         m_wake_dl.clear ();
-        m_boat_wake.draw (m_wake_dl, time, m_sky.daylight);
+        m_boat_wake.draw (m_wake_dl, time, m_sky.daylight, level);
         if (m_companion) {
           const Vec3& theirs = m_companion->boat.position;
           m_their_wake.follow (
             m_companion->boat, level (theirs), depth (theirs), time);
-          m_their_wake.draw (m_wake_dl, time, m_sky.daylight);
+          m_their_wake.draw (m_wake_dl, time, m_sky.daylight, level);
         } else {
           m_their_wake.clear ();
         }

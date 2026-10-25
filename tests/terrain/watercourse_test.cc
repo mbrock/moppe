@@ -1,3 +1,4 @@
+#include <moppe/terrain/sea_waves.hh>
 #include <moppe/terrain/watercourse.hh>
 
 #include <tests/test.hh>
@@ -327,4 +328,32 @@ MOPPE_TEST (a_stream_stepping_diagonally_runs_on_across_each_corner) {
                    depth (step + 1, step) + depth (step, step + 1) >
                  0.0f);
   }
+}
+
+// The water program displaces the water resting at a place up and down and
+// to and fro; what floats reads the height at the place it stands. The two
+// must agree there, or the boat rides other waves than those drawn.
+MOPPE_TEST (sea_waves_read_back_the_surface_the_water_program_displaces) {
+  for (const double time : { 0.0, 13.7, 4321.25 })
+    for (const float rest_x : { 3.0f, 517.4f, 4980.0f })
+      for (const float rest_z : { -2.0f, 1051.9f }) {
+        // Forward, as the vertex shader does it.
+        float x = rest_x, z = rest_z, y = 0.0f;
+        for (const SeaWaveTrain& t : sea_wave_trains) {
+          const float heading = sea_wind_heading + t.heading;
+          const float dx = std::cos (heading), dz = std::sin (heading);
+          const float theta = sea_wave_number (t) * (dx * rest_x + dz * rest_z) +
+                              sea_wave_phase (t, time);
+          x += t.amplitude * sea_wave_lean * dx * std::cos (theta);
+          z += t.amplitude * sea_wave_lean * dz * std::cos (theta);
+          y += t.amplitude * std::sin (theta);
+        }
+        MOPPE_CHECK_NEAR (sea_waves_at (x, z, time, 1.0f).height, y, 0.01f);
+      }
+  MOPPE_CHECK (sea_waves_at (10.0f, 20.0f, 5.0, 0.0f).height == 0.0f);
+  // A river carries none, a lake hardly any, and the sea dies on its shore.
+  MOPPE_CHECK (sea_wave_scale (0.0f, 3.0f) == 0.0f);
+  MOPPE_CHECK (sea_wave_scale (0.10f, 30.0f) < 0.011f);
+  MOPPE_CHECK (sea_wave_scale (1.0f, 0.0f) == 0.0f);
+  MOPPE_CHECK (sea_wave_scale (1.0f, 10.0f) == 1.0f);
 }

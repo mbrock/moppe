@@ -3503,8 +3503,11 @@
 ;;; while the other is at its strongest, so the pattern streams without ever
 ;;; tearing apart.  How fast the water descends is the head it sheds, which
 ;;; is what breaks it: rapids roughen the water and churn up foam, which
-;;; drifts on below them.  Still water has the wind's ripples, the sea a
-;;; swell, and both lap at the shore.
+;;; drifts on below them.  Still water has the wind's ripples, and both lap
+;;; at the shore.  The open sea also heaves under waves that move the
+;;; surface itself (SEA-OFFSET, from terrain/sea_waves.hh, which the boat
+;;; and the wading walker read too), whose crests break white in the
+;;; shallows.
 ;;;
 ;;; Before the water is drawn the opaque scene's colour and depth are copied
 ;;; out (SCENE-COPY), so the water can look through itself and into its own
@@ -3540,6 +3543,80 @@
          (- (swizzle (sheet-at ,sheet (+ ,cell (vec2 0.0 1.0)) ,size) :x)
             (swizzle (sheet-at ,sheet (- ,cell (vec2 0.0 1.0)) ,size) :x))))
 
+;;; The sea's waves (terrain/sea_waves.hh, which owns them and hands this
+;;; block over each frame, and from which what floats reads the same
+;;; surface): a few long-crested Gerstner trains running before the wind.
+;;; Each train is its wavenumber along x and z, its amplitude, and its phase
+;;; now; and its pace in radians a second, how far it carries the water to
+;;; and fro, its wavelength, and its wavenumber.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *sea*
+    '((sea-train-0 :vec4) (sea-pace-0 :vec4)
+      (sea-train-1 :vec4) (sea-pace-1 :vec4)
+      (sea-train-2 :vec4) (sea-pace-2 :vec4)
+      (sea-train-3 :vec4) (sea-pace-3 :vec4)
+      (sea-train-4 :vec4) (sea-pace-4 :vec4)
+      (sea-train-5 :vec4) (sea-pace-5 :vec4)))
+  (defparameter *sea-lanes*
+    '((sea-train-0 sea-pace-0) (sea-train-1 sea-pace-1)
+      (sea-train-2 sea-pace-2) (sea-train-3 sea-pace-3)
+      (sea-train-4 sea-pace-4) (sea-train-5 sea-pace-5))))
+
+;;; How much of the full sea's waves a place carries: the sheet's wave lane
+;;; (the sea one, a lake a tenth, a river none) squared, dying away over
+;;; the last four metres of depth (sea_wave_scale).
+(define-shader-function sea-share (lane depth)
+  (* lane lane (smoothstep 0.0 4.0 depth)))
+
+;;; One train's displacement of the water resting at XZ, LATER seconds on,
+;;; faded out where the mesh's vertices, SPACING metres apart, would alias
+;;; it.
+(define-shader-function sea-train-offset (xz train pace later spacing)
+  (let* ((theta (+ (dot (swizzle train :xy) xz) (swizzle train :w)
+                   (* -1.0 (swizzle pace :x) later)))
+         (along (/ (swizzle train :xy) (swizzle pace :w)))
+         (resolved (smoothstep 4.5 9.0 (/ (swizzle pace :z) spacing)))
+         (to-and-fro (* (swizzle pace :y) resolved (cos theta))))
+    (vec3 (* to-and-fro (swizzle along :x))
+          (* (swizzle train :z) resolved (sin theta))
+          (* to-and-fro (swizzle along :y)))))
+
+(define-shader-abstraction sea-offset (xz later spacing)
+  `(+ ,@(loop for (train pace) in *sea-lanes*
+              collect `(sea-train-offset ,xz ,train ,pace ,later ,spacing))))
+
+;;; One train's part of the surface's shape at XZ, where it rests: its
+;;; slope along x and z, the crests' sharpening, and its height, faded to
+;;; nothing where a pixel of FOOTPRINT metres no longer resolves it.
+(define-shader-function sea-train-shape (xz train pace footprint)
+  (let* ((theta (+ (dot (swizzle train :xy) xz) (swizzle train :w)))
+         (resolved (- 1.0 (smoothstep 0.25 0.6 (/ footprint
+                                                   (swizzle pace :z)))))
+         (c (* (cos theta) resolved))
+         (s (* (sin theta) resolved)))
+    (vec4 (* (swizzle train :z) (swizzle train :x) c)
+          (* (swizzle train :z) (swizzle train :y) c)
+          (* (swizzle pace :w) (swizzle pace :y) s)
+          (* (swizzle train :z) s))))
+
+(define-shader-abstraction sea-shape (xz footprint)
+  `(+ ,@(loop for (train pace) in *sea-lanes*
+              collect `(sea-train-shape ,xz ,train ,pace ,footprint))))
+
+(define-shader-abstraction sea-height ()
+  `(+ ,@(loop for (train pace) in *sea-lanes*
+              collect `(swizzle ,train :z))))
+
+;;; How far apart the water's vertices stand DISTANCE metres from the
+;;; camera, on a grid of CELL metres: a quarter cell near it, a cell from
+;;; some sixty cells out, and from there the step doubling with the
+;;; distance as the terrain's levels of detail do (game/terrain.cc).
+(define-shader-function sea-spacing (distance cell)
+  (let* ((cells (/ distance cell)))
+    (* cell (max (+ 0.25 (* 0.75 (smoothstep 40.0 64.0 cells)))
+                 (/ cells 192.0)))))
+
 (define-shader water-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index))
@@ -3547,10 +3624,14 @@
                (world :vec3 :location 0)
                (depth :float :location 1)
                (swell :float :location 2)
-               (here :vec4 :location 3))
+               (here :vec4 :location 3)
+               (rest :vec2 :location 4)
+               (waves :float :location 5)
+               (lag :vec3 :location 6))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (terrain :uniform-block :binding 1 :members #.*terrain*)
                  (chunk :uniform-block :binding 2 :members #.*chunk*)
+                 (sea :uniform-block :binding 3 :members #.*sea*)
                  (heights :texture-2d :binding 0)
                  (water-levels :texture-2d :binding 11)))
   (let* ((row-length (uint (swizzle placement :w)))
@@ -3565,8 +3646,24 @@
          (water (swizzle sheet :x))
          (xz (+ (* grid (vec2 (swizzle scale :x) (swizzle scale :z)))
                 (swizzle offset :xz)))
-         (level (vec3 (swizzle xz :x) (* water (swizzle scale :y))
+         (still (vec3 (swizzle xz :x) (* water (swizzle scale :y))
                       (swizzle xz :y)))
+         (deep (* (- water ground) (swizzle scale :y)))
+         ;; The waves carry the water resting here up and down and to and
+         ;; fro, as far as the vertices can follow them; where the camera
+         ;; was a frame ago the same water stood displaced by the waves of
+         ;; then.
+         (share (sea-share (swizzle sheet :y) deep))
+         (from-camera (- xz (swizzle camera-position :xz)))
+         (spacing (sea-spacing (sqrt (dot from-camera from-camera))
+                               (swizzle scale :x)))
+         (interval (clamp (- (swizzle camera-position :w) (swizzle relief :z))
+                          0.0 0.1))
+         (moved (only-where (> share 0.0) (vec3 0.0 0.0 0.0)
+                  (* (sea-offset xz 0.0 spacing) share)))
+         (moved-then (only-where (> share 0.0) (vec3 0.0 0.0 0.0)
+                       (* (sea-offset xz (- 0.0 interval) spacing) share)))
+         (level (+ still moved))
          ;; Dry ground carries the sheet at its own height.  Sunk below it,
          ;; there the sheet fails the depth test before any shading, rather
          ;; than tying with the terrain and discarding after; the sinking
@@ -3579,9 +3676,12 @@
          (current (* view-proj (vec4 position 1.0))))
     (set-output clip-position (clip current (swizzle temporal :zw)))
     (set-output world level)
-    (set-output depth (* (- water ground) (swizzle scale :y)))
+    (set-output depth deep)
     (set-output swell (swizzle sheet :y))
-    (set-output here current)))
+    (set-output here current)
+    (set-output rest xz)
+    (set-output waves share)
+    (set-output lag (- moved-then moved))))
 
 ;;; Value noise and its gradient over an integer hash, which stays exact
 ;;; kilometres from the origin, where a sine hash grows coarse.
@@ -3702,11 +3802,15 @@
               (depth :float :location 1)
               (swell :float :location 2)
               (here :vec4 :location 3)
+              (rest :vec2 :location 4)
+              (waves :float :location 5)
+              (lag :vec3 :location 6)
               (fragment :vec4 :built-in :frag-coord))
      :outputs ((color :vec4 :location 0)
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (sea :uniform-block :binding 3 :members #.*sea*)
                  (shadow-map :depth-texture-2d :binding 8)
                  (water-levels :texture-2d :binding 11)
                  (flow :texture-2d :binding 12)
@@ -3786,8 +3890,7 @@
                     (* (+ (* weight-a (river-ripples at-a rapids footprint))
                           (* weight-b (river-ripples at-b rapids footprint)))
                        contrast)))
-         ;; Still water: the wind's ripples, two trains crossing, and on
-         ;; the sea a long swell.
+         ;; Still water: the wind's ripples, two trains crossing.
          (wind (vec2 0.43 0.21))
          ;; Gusts roughen the water in drifting patches, between slicks.
          (gusts (mix 0.12 1.6
@@ -3804,10 +3907,15 @@
                 (* 0.7 (ripple-octave (+ xz (* (vec2 0.17 -0.36) time))
                                       2.70 -0.40 0.92 (uint 42) footprint))
                 (* 0.4 (ripple-octave (- xz (* wind (* 1.6 time))) 6.0
-                                      0.20 0.98 (uint 43) footprint))
-                (* 3.0 swell
-                   (ripple-octave (- xz (* wind (* 3.0 time))) 0.07
-                                  0.96 0.28 (uint 44) footprint)))))
+                                      0.20 0.98 (uint 43) footprint)))))
+         ;; The sea's waves under them: their slope where the water at this
+         ;; fragment rests, steepened toward the sharpened crests, and how
+         ;; near a crest it lies, -1 in a trough to 1 on one.
+         (shape (only-where (> swell 0.0) (vec4 0.0 0.0 0.0 0.0)
+                  (sea-shape rest footprint)))
+         (crest (/ (swizzle shape :w) (sea-height)))
+         (heave (/ (* (swizzle shape :xy) waves)
+                   (max (- 1.0 (* (swizzle shape :z) waves)) 0.3)))
          ;; Down a cascade the sheet itself slopes: central differences at
          ;; the cell's corners, bilinear between them so the slope turns
          ;; smoothly from cell to cell.
@@ -3838,10 +3946,12 @@
          (slope (mix (* still (+ (* 0.03 gusts) (* 0.10 swell)))
                      (* flowing (+ (mix 0.05 0.15 lively) (* 0.30 rapids)))
                      running))
-         (n (normalize (vec3 (* -1.0 (+ (swizzle slope :x) (swizzle tilt :x)))
+         (n (normalize (vec3 (* -1.0 (+ (swizzle slope :x) (swizzle tilt :x)
+                                        (swizzle heave :x)))
                              1.0
                              (* -1.0 (+ (swizzle slope :y)
-                                        (swizzle tilt :y))))))
+                                        (swizzle tilt :y)
+                                        (swizzle heave :y))))))
          ;; The sun's shadow falls across water and foam alike.
          (lit (sun-lit-once shadow-map shadow-compare world 1.0))
          (visibility (mix 0.2 1.0 lit))
@@ -3980,16 +4090,26 @@
                            (* (- 1.0 fresnel) scattered)
                            glint))
          ;; Foam: the rapids' churn, and what it shed upstream drifting on;
-         ;; a fringe where a current runs over the shallows; and where still
-         ;; water laps a shore.
+         ;; a fringe where a current runs over the shallows; where still
+         ;; water laps a shore, on the sea as each crest comes in; the
+         ;; sea's crests breaking as they run into the shallows; and the odd
+         ;; whitecap out on the open sea.
          (trail (max (* 0.75 (churn upstream-near))
                      (* 0.45 (churn upstream-far))))
          (fringe (* (- 1.0 (smoothstep 0.01 0.07 depth))
                     (smoothstep 0.25 0.7 speed) 0.3))
-         (reach (+ 0.07 (* 0.06 (sin (+ (* time 1.1) (* 9.0 stagger))))))
+         (open-sea (* swell swell))
+         (reach (+ 0.07 (* 0.06 (mix (sin (+ (* time 1.1) (* 9.0 stagger)))
+                                     crest open-sea))
+                   (* 0.12 open-sea (max crest 0.0))))
          (lap (* (- 1.0 (smoothstep 0.01 reach depth)) (- 1.0 running)
                  (+ 0.3 (* 0.4 swell))))
-         (source (clamp (max (max (churn descent) trail) (max fringe lap))
+         (surf (* open-sea (- 1.0 running)
+                  (- 1.0 (smoothstep 0.4 3.0 depth))
+                  (smoothstep 0.1 0.7 crest) 0.75))
+         (whitecap (* open-sea (smoothstep 0.6 0.95 crest) 0.35))
+         (source (clamp (max (max (max (churn descent) trail) (max fringe lap))
+                             (max surf whitecap))
                         0.0 0.82))
          ;; Fast water draws its foam out into streaks along the current.
          (heading (heading-of downstream))
@@ -4067,9 +4187,10 @@
          (alpha (smoothstep 0.004 0.05 depth))
          ;; The pattern last frame lay upstream by the current's drift.
          (interval (clamp (- time (swizzle relief :z)) 0.0 0.1))
-         (before (- world (* (vec3 (swizzle current :x) 0.0
-                                   (swizzle current :y))
-                             interval)))
+         (before (+ (- world (* (vec3 (swizzle current :x) 0.0
+                                      (swizzle current :y))
+                                interval))
+                    lag))
          (then (* previous-view-proj (vec4 before 1.0))))
     (when (< depth 0.004)
       (discard))

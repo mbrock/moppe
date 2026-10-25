@@ -5,6 +5,7 @@
 #include <moppe/map/surface.hh>
 #include <moppe/mov/character.hh>
 #include <moppe/mov/trunk_field.hh>
+#include <moppe/terrain/sea_waves.hh>
 #include <moppe/terrain/watercourse.hh>
 
 namespace moppe {
@@ -17,13 +18,29 @@ namespace moppe {
       return 1.3f + 0.27f * speed;
     }
 
-    // The surface of the water standing or running at a place: a river's
-    // or a lake's where the painted sheet stands over the ground there,
-    // otherwise the sea's. Without a sheet, the sea's.
+    // The surface of the still water standing or running at a place: a
+    // river's or a lake's where the painted sheet stands over the ground
+    // there, otherwise the sea's. Without a sheet, the sea's. Where things
+    // are placed by the water rather than float on it.
+    meters_t still_water_at (const WorldParams& world,
+                             const map::SurfaceGeometry& surface,
+                             const terrain::WaterSheets* water,
+                             const Vec3& at);
+
+    // The waves at a place at `time` (the game's total time), as the water
+    // program draws them: the sea's, a lake's barely, a river's none.
+    terrain::SeaWaves water_waves_at (const map::SurfaceGeometry& surface,
+                                      const terrain::WaterSheets* water,
+                                      const Vec3& at,
+                                      double time);
+
+    // The water's surface at a place at `time`: the still water with its
+    // waves on it, which is what floats, wades, and splashes.
     meters_t water_surface_at (const WorldParams& world,
                                const map::SurfaceGeometry& surface,
                                const terrain::WaterSheets* water,
-                               const Vec3& at);
+                               const Vec3& at,
+                               double time);
 
     // How fast a body wades through water `depth` metres deep, at most:
     // unhindered at the ankles, a walk at the shins, two metres a second at
@@ -101,7 +118,8 @@ namespace moppe {
                    const map::SurfaceGeometry& surface,
                    const WorldParams& world,
                    const mov::TrunkField* trunks = nullptr,
-                   const terrain::WaterSheets* water = nullptr);
+                   const terrain::WaterSheets* water = nullptr,
+                   double time = 0.0);
 
       Vec3 position () const {
         return m_body.position ();

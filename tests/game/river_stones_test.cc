@@ -145,7 +145,7 @@ namespace {
       const Vec3 feet = walker.position ();
       wettest = std::max (
         wettest,
-        (game::water_surface_at (world, channel.surface, &channel.water, feet) -
+        (game::still_water_at (world, channel.surface, &channel.water, feet) -
          feet[1] * u::m)
           .numerical_value_in (u::m));
     }
