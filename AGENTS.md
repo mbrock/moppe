@@ -720,8 +720,9 @@
   on lavapipe.
 - Releases (`.github/workflows/release.yml`): pushing a `v*` tag builds
   the Linux tarball (`moppe-steamdeck`), the Windows zip and its lone
-  `moppe.exe`, and the macOS app (on a macos-26 runner, ad-hoc signed, not
-  notarized) and publishes them as a GitHub release; running the workflow
+  `moppe.exe`, and the macOS app (Developer ID signed, notarized, and carrying
+  Sparkle updates; docs/mac-releases.md) and publishes them as a GitHub release;
+  running the workflow
   by hand keeps them as artifacts. Each executable carries the assets and
   the default land (`-DMOPPE_EMBED_ASSETS=ON` with `MOPPE_LANDS_DIR`;
   `tools/pack-assets` compresses them, and the SDL host's `asset_path`

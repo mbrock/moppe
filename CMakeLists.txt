@@ -1096,6 +1096,23 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
     endif()
   endif()
   moppe_add_sdl_host(moppe)
+  option(MOPPE_AUTO_UPDATES "Include Sparkle in the Mac app" OFF)
+  if(APPLE AND MOPPE_AUTO_UPDATES)
+    set(MOPPE_SPARKLE_ROOT "" CACHE PATH "Pinned Sparkle distribution")
+    if(NOT EXISTS "${MOPPE_SPARKLE_ROOT}/Sparkle.framework")
+      message(FATAL_ERROR "Fetch Sparkle with scripts/sparkle-release.py first")
+    endif()
+    target_sources(moppe PRIVATE deploy/macos/game-updates.mm)
+    target_compile_definitions(moppe PRIVATE MOPPE_SPARKLE=1)
+    target_compile_options(moppe PRIVATE
+      $<$<COMPILE_LANGUAGE:OBJCXX>:-F${MOPPE_SPARKLE_ROOT}>)
+    target_link_options(moppe PRIVATE -F${MOPPE_SPARKLE_ROOT}
+      -Wl,-rpath,@executable_path/../Frameworks)
+    target_link_libraries(moppe PRIVATE "-framework Cocoa" "-framework Sparkle")
+    add_custom_command(TARGET moppe POST_BUILD
+      COMMAND /usr/bin/ditto "${MOPPE_SPARKLE_ROOT}/Sparkle.framework"
+        "$<TARGET_BUNDLE_CONTENT_DIR:moppe>/Frameworks/Sparkle.framework")
+  endif()
   set_source_files_properties(moppe/game/main.cc
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 

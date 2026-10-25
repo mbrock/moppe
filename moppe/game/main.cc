@@ -17,6 +17,10 @@
 #include <optional>
 #include <string>
 
+#ifdef MOPPE_SPARKLE
+extern "C" void game_updates_finish(void);
+#endif
+
 int main (int argc, char** argv) {
   using namespace moppe;
   if (moppe::environment ("MOPPE_TRACY_WAIT"))
@@ -94,6 +98,11 @@ int main (int argc, char** argv) {
     // A browser's run returns once the page has taken up the loop, and the
     // game plays on after main.
     (void)game.release ();
+#endif
+#ifdef MOPPE_SPARKLE
+    // Finish normal game persistence and teardown before Sparkle relaunches.
+    game.reset ();
+    game_updates_finish ();
 #endif
     return status;
   } catch (const std::exception& e) {

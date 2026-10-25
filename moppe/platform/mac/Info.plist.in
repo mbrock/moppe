@@ -23,5 +23,16 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>SUFeedURL</key>
+  <string>https://github.com/mbrock/moppe/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>b0brHesIXxPlEl07dNS+s2UCqYeIE33QwEx+ok92mhk=</string>
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUAutomaticallyUpdate</key><false/>
+  <key>SUAllowsAutomaticUpdates</key><false/>
+  <key>SUEnableSystemProfiling</key><false/>
+  <key>SUVerifyUpdateBeforeExtraction</key><true/>
+  <key>SURequireSignedFeed</key><true/>
 </dict>
 </plist>

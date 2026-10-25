@@ -10,7 +10,7 @@
 #   Windows  moppe-windows-x86_64.zip    cross-built on Linux with Zig
 #                                        (moppe/platform/sdl/windows.nix)
 #            moppe-windows-x86_64.exe    the same moppe.exe, alone
-#   macOS    moppe-macos-arm64.zip       the app bundle, ad-hoc signed;
+#   macOS    moppe-macos-arm64.zip       the app bundle, signed and notarized;
 #                                        macOS 26 on Apple silicon (Metal 4)
 name: Release
 
@@ -27,6 +27,11 @@ on:
       - lands.json
       - .github/workflows/release.yml
   workflow_dispatch:
+    inputs:
+      macos_only:
+        description: Qualify only the signed and notarized Mac app
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,6 +46,7 @@ permissions:
 # store, so the cache holds one build's store and nothing older.
 jobs:
   linux:
+    if: ${{ !inputs.macos_only }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +73,7 @@ jobs:
           path: dist/*
 
   windows:
+    if: ${{ !inputs.macos_only }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +101,7 @@ jobs:
 
   macos:
     runs-on: macos-26
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
@@ -136,13 +144,27 @@ jobs:
           # A new runner image, with perhaps another Xcode, starts afresh.
           key: macos-build-${{ steps.image.outputs.version }}-${{ github.sha }}
           restore-keys: macos-build-${{ steps.image.outputs.version }}-
+      - name: Prepare Developer ID keychain
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: bash scripts/macos-ci-keychain
+      - name: Test release packaging
+        run: python3 scripts/macos-sign-release-tests.py
+      - name: Fetch pinned Sparkle
+        run: python3 scripts/sparkle-release.py fetch "$RUNNER_TEMP/sparkle"
       - name: Build
         run: |
           version="${GITHUB_REF_NAME#v}"
           [[ "$GITHUB_REF_TYPE" == tag ]] || version=0.0.0
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF -DMOPPE_LANDS_DIR="$RUNNER_TEMP/lands" \
-            -DMOPPE_EMBED_ASSETS=ON \
+            -DMOPPE_EMBED_ASSETS=ON -DMOPPE_AUTO_UPDATES=ON \
+            -DMOPPE_SPARKLE_ROOT="$RUNNER_TEMP/sparkle" \
             -DMOPPE_VERSION="$version" -DMOPPE_BUILD_NUMBER="$GITHUB_RUN_NUMBER"
           cmake --build build --target moppe
       - name: Keep the build
@@ -151,12 +173,30 @@ jobs:
         with:
           path: build
           key: macos-build-${{ steps.image.outputs.version }}-${{ github.sha }}
-      # An ad-hoc signature over the whole bundle lets Apple silicon run it.
-      - name: Package
+      - name: Sign, notarize, and staple
+        run: python3 scripts/macos-sign-release.py build/moppe.app
+      - name: Verify the moved download
+        run: python3 scripts/test-macos-release.py build/moppe-macos-arm64.zip
+      - name: Generate signed Sparkle feed
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
-          codesign --force --deep --sign - build/moppe.app
-          mkdir dist
-          ditto -c -k --keepParent build/moppe.app dist/moppe-macos-arm64.zip
+          test -n "$SPARKLE_PRIVATE_KEY"
+          mkdir -p dist
+          cp build/moppe-macos-arm64.zip build/SHA256SUMS dist/
+          python3 scripts/sparkle-release.py appcast dist/moppe-macos-arm64.zip "$RUNNER_TEMP/sparkle" "$GITHUB_REF_NAME"
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/luv-release.keychain-db" || true
+          rm -f "$RUNNER_TEMP/luv-certificate.p12"
+      - name: Retain notarization diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-notarization
+          path: build/notarization-*.json
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -171,8 +211,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: linux
           path: dist
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: dist
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

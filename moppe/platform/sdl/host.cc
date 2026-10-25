@@ -27,6 +27,10 @@
 #include <emscripten.h>
 #endif
 
+#ifdef MOPPE_SPARKLE
+extern "C" void game_updates_start(void (*quit_game)(void));
+#endif
+
 namespace {
   using moppe::platform::ControlState;
   using moppe::platform::Game;
@@ -294,6 +298,9 @@ namespace moppe::platform {
         m_display_clock =
           !(frame_clock && std::string (frame_clock) == "host");
         m_start = m_last = m_report_start = std::chrono::steady_clock::now ();
+#ifdef MOPPE_SPARKLE
+        game_updates_start (&moppe::platform::request_quit);
+#endif
       }
 
       ~Host () {
