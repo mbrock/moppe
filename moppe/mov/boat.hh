@@ -50,13 +50,13 @@ namespace moppe::mov {
   class Boat {
   public:
     // models/boat.blend agrees.
-    static constexpr float hull_length = 4.8f;
-    static constexpr float half_beam = 0.775f;
-    static constexpr float transom = -1.2f;
+    static constexpr float hull_length = 3.93f;
+    static constexpr float half_beam = 0.47f;
+    static constexpr float transom = -0.98f;
     static constexpr float stem = transom + hull_length;
-    static constexpr float pivot[3] = { -0.52f, 0.619f, -1.1517f };
-    static constexpr float hub[3] = { -0.12f, -0.05f, -3.35f };
-    static constexpr float helm[3] = { -0.12f, 0.36f, -0.4717f };
+    static constexpr float pivot[3] = { 0.0f, 0.429f, -0.8982f };
+    static constexpr float hub[3] = { 0.0f, -0.05f, -2.6f };
+    static constexpr float helm[3] = { 0.0f, 0.2f, -0.3482f };
 
     struct State {
       RigidBodyState body;
@@ -65,6 +65,7 @@ namespace moppe::mov {
       // to the right (positive).
       float drive = 0.0f;
       float turn = 0.0f;
+      float boost = 0.0f;
       // The engine's speed as a share of full, how far the tail is swung
       // (positive puts the propeller to starboard and turns the bow to
       // the right) and tipped up, and how far round the propeller has
@@ -98,6 +99,10 @@ namespace moppe::mov {
     void set_trunks (const TrunkField* trunks);
 
     void set_drive (float drive);
+    // The governor tied back (0..1): the engine runs past its rated
+    // speed and gives some half again its power, as these engines are
+    // run on the long-tails, and smokes for it.
+    void set_boost (float boost);
     void set_turn (float turn);
     // No one at the helm: the engine stops, the tail is tipped up, and
     // the helmsman's weight is gone from it.

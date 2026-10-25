@@ -114,6 +114,10 @@ namespace moppe {
       // put out.
       const char* thumb = nullptr;
       const char* dismount = nullptr;
+      // Whether the keyboard's prompt should say what Space does when it
+      // has nothing else to say: riding the bike or the boat before its
+      // boost has been tried.
+      bool thumb_hint = false;
       bool can_take_down = false;
       bool can_light_fire = false;
       bool can_douse_fire = false;

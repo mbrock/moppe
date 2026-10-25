@@ -119,6 +119,8 @@ namespace moppe::game {
         session.caddy ().set_brake (logic.m_boost_input > 0.1f);
       } else if (logic.m_mode == M_BIKE) {
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
+      } else if (logic.m_mode == M_BOAT) {
+        session.boat ().set_boost (logic.m_boost_input);
       } else if (logic.m_mode == M_MOUNTAIN_BIKE) {
         // No jets on a mountainbike: the rider springs it up off the
         // ground instead.
@@ -397,6 +399,7 @@ namespace moppe::game {
         mov::Boat& boat = session.boat ();
         boat.set_drive (0);
         boat.set_turn (0);
+        boat.set_boost (0);
         session.walker ().spawn (moppe::position (session.boat_landing ()),
                                  level_heading (boat.forward ()),
                                  moppe::velocity (boat.velocity () * 0.5f));
@@ -1086,8 +1089,8 @@ namespace moppe::game {
       rig.ahead = m_boat.forward ();
       rig.pivot = m_boat.position () + Vec3 (0, 1.0f, 0);
       rig.velocity = m_boat.velocity ();
-      rig.distance = 7.5f * u::m;
-      rig.nearest = 3.2f * u::m;
+      rig.distance = 6.5f * u::m;
+      rig.nearest = 3.0f * u::m;
       rig.elevation = 16.0f * u::deg;
       break;
     case M_MOUNTAIN_BIKE: {
@@ -1244,10 +1247,11 @@ namespace moppe::game {
       const DisplayColor spray_color (0.86f, 0.92f, 0.97f);
       const Vec3 pivot (
         mov::Boat::pivot[0], mov::Boat::pivot[1], mov::Boat::pivot[2]);
-      // Blue-grey two-stroke-ish smoke off the muffler, more under load.
+      // Blue-grey smoke off the muffler, more under load and most with
+      // the governor tied back.
       const Vec3 exhaust = boat.point (mov::Boat::tail_point (
-        pivot + Vec3 (-0.25f, 0.30f, 0.05f), boat.swing (), boat.tilt ()));
-      if (chance (logic.m_fx_rng) < 0.10f + 0.35f * boat.rpm ()) {
+        pivot + Vec3 (-0.26f, 0.27f, 0.0f), boat.swing (), boat.tilt ()));
+      if (chance (logic.m_fx_rng) < 0.10f + 0.45f * boat.rpm ()) {
         const float shade = 0.55f + 0.2f * chance (logic.m_fx_rng);
         Dust::Style smoke;
         smoke.size = 0.28f * u::m;
@@ -1272,7 +1276,7 @@ namespace moppe::game {
         Vec3 back = aft;
         back[1] = 0.0f;
         back = length2 (back) > 1e-6f ? normalized (back) : -boat.forward ();
-        const float power = boat.thrust () / 720.0f;
+        const float power = boat.thrust () / 520.0f;
         Dust::Style plume;
         plume.size = 0.12f * u::m;
         plume.lifetime = 1.0f * u::s;
@@ -1375,8 +1379,8 @@ namespace moppe::game {
       const mov::Boat& boat = session.boat ();
       Vec3 best;
       float shallowest = 1e30f;
-      for (const Vec3& side : { Vec3 (1.4f, 0.3f, 0.4f),
-                                Vec3 (-1.4f, 0.3f, 0.4f),
+      for (const Vec3& side : { Vec3 (1.1f, 0.3f, 0.4f),
+                                Vec3 (-1.1f, 0.3f, 0.4f),
                                 Vec3 (0.0f, 0.3f, mov::Boat::stem + 0.7f) }) {
         Vec3 at = boat.point (side);
         const float ground = ground_at (surface, at);

@@ -1652,6 +1652,9 @@ namespace moppe {
         action = *mount_key ? "Ride" : "Bike within reach";
       } else if (st.stuck) {
         action = "Stuck! Keep at it, or step out and haul";
+      } else if (st.thumb_hint && st.thumb && *ride_key) {
+        key = ride_key;
+        action = st.thumb;
       }
       // The prompt's action leads the offers, then what needs no prompt.
       offer (key, action);

@@ -403,13 +403,21 @@
     (companion wire version 7).
   - The boat (`moppe/mov/boat.*`, `models/boat.blend` from
     `tools/figure/boat.py`, drawn by `game/boat_render.*`) is Krisjanis's
-    hard-chined plywood skiff: Latvijas Finieris film-faced birch under
-    scuffed glass and epoxy, its sheets joined by CNC-cut serpentine
-    joints, with a long-tail on a gimbal over the stern. It lies moored at
+    hard-chined plywood skiff, to his figures: 3.93 m long, 0.95 m wide,
+    0.4 m deep, of Latvijas Finieris film-faced birch under glass and
+    epoxy, lately painted white (the dark film shows where it is worn),
+    its sheets joined by CNC-cut serpentine joints, with a blunt narrow
+    bow, a carrying handle and a blue painter there, and two moulded seats
+    in tandem. Its long-tail (a Honda GX200-type single, 4.1 kW) hangs
+    on a gimbal centred on the transom, its tiller offset to starboard.
+    It lies moored at
     the shore of the sea or a big lake nearest the spawn (`park_boat` in
     game.cc). On foot, `F` beside it takes the helm and `F` steps ashore
     over whichever side has the shallowest water; `W`/`S` drive and
-    reverse, `A`/`D` swing the tail to steer. The water acts on the hull
+    reverse, `A`/`D` swing the tail to steer, and `Space` (the right
+    trigger) holds the governor tied back, for some 37 km/h instead of
+    31. The engine's thrust is the propeller's grip standing and its
+    power under way. The boat and engine weigh 70 kg. The water acts on the hull
     panel by panel (pressure at depth, ram and suction, skin friction, all
     relative to the current, so rivers carry it), which floats, heels,
     trims, and planes it; the propeller drives only while in the water,

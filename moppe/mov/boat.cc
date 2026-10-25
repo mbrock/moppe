@@ -17,21 +17,25 @@ namespace moppe::mov {
       constexpr float pi = 3.14159265f;
 
       // The hull's lines, as tools/figure/boat.py draws them.
-      constexpr float depth = 0.52f;     // the sheer over the keel aft
-      constexpr float spring = 0.04f;    // the sheer's rise to the bow
-      constexpr float rocker = 0.36f;    // the bottom's rise at the stem
-      constexpr float flare = 0.93f;     // the chine's breadth to the sheer's
-      constexpr float stem_half = 0.015f;
+      constexpr float depth = 0.33f;     // the sheer over the keel aft
+      constexpr float spring = 0.03f;    // the sheer's rise to the bow
+      constexpr float rocker = 0.24f;    // the bottom's rise at the stem
+      constexpr float flare = 0.82f;     // the chine's breadth to the sheer's
+      constexpr float stem_half = 0.12f; // half the blunt bow's width
       const float rake = std::tan (10.0f * pi / 180.0f) * depth;
 
-      // The skiff, its engine, and a tank of petrol; and the helmsman,
-      // sat on the after seat, who comes aboard and steps off.
-      constexpr float mass = 165.0f;
-      constexpr float mass_centre[3] = { -0.08f, 0.22f, -0.25f };
-      // Pitch, yaw, and roll about the centre of mass.
-      constexpr float inertia[3] = { 300.0f, 330.0f, 50.0f };
+      // The skiff, some 45 kg of 9 mm birch plywood, glass, epoxy, paint,
+      // and two plastic seats; its long-tail, some 23 kg of engine, frame,
+      // and shaft hung on the transom; and a couple of litres of petrol.
+      // And the helmsman, sat on the after seat, who comes aboard and
+      // steps off.
+      constexpr float mass = 70.0f;
+      constexpr float mass_centre[3] = { 0.0f, 0.20f, 0.15f };
+      // Pitch, yaw, and roll about the centre of mass: a 4 m plank with
+      // the engine's weight out at one end, and narrow.
+      constexpr float inertia[3] = { 110.0f, 120.0f, 9.0f };
       constexpr float crew = 80.0f;
-      constexpr float crew_centre[3] = { -0.12f, 0.72f, -0.42f };
+      constexpr float crew_centre[3] = { 0.0f, 0.52f, -0.33f };
 
       // The boat's mass, with or without the helmsman aboard.
       b3MassData mass_data (bool manned) {
@@ -74,13 +78,22 @@ namespace moppe::mov {
       constexpr float ram = 1.0f;
       constexpr float suction = 0.25f;
       constexpr float damping = 0.6f;
-      constexpr float friction = 0.006f;
+      constexpr float friction = 0.0032f;
 
-      // The long-tail: a 6.5 hp single turning a small propeller at the
-      // surface. Its thrust falls away toward the speed the propeller's
-      // pitch allows; astern it pushes a third as hard.
-      constexpr float static_thrust = 720.0f;
-      constexpr float pitch_speed = 16.0f;
+      // The long-tail: a Honda GX200-type single, 4.1 kW at its governed
+      // 3600 rpm, turning a small propeller at the surface. Standing, the
+      // propeller's grip on the water limits its push; under way, the
+      // engine's power does, as much of it as a surface propeller turns
+      // into thrust; and toward the speed its pitch allows, it pushes
+      // nothing. Astern it pushes a third as hard. With the governor
+      // tied back the engine runs half again as fast and gives half
+      // again its power.
+      constexpr float power = 4100.0f;
+      constexpr float efficiency = 0.6f;
+      constexpr float static_thrust = 520.0f;
+      constexpr float pitch_speed = 18.0f;
+      constexpr float boosted_power = 1.5f;
+      constexpr float boosted_pitch = 1.25f;
       constexpr float astern = 0.35f;
       constexpr float spin_up = 0.6f;
       constexpr float idle = 0.12f;
@@ -92,10 +105,10 @@ namespace moppe::mov {
       // helmsman lets it down or lifts it.
       constexpr float stowed_tilt = 0.45f;
       constexpr float tilt_rate = 0.5f;
-      constexpr float shaft_reach = 2.25f;
+      constexpr float shaft_reach = 1.77f;
       // The water the boat heaps up behind its transom, round the
       // propeller, once it is under way.
-      constexpr float stern_wave = 0.16f;
+      constexpr float stern_wave = 0.12f;
 
       constexpr int patch_samples = 97;
       constexpr float patch_recentre_distance = 24.0f;
@@ -322,7 +335,7 @@ namespace moppe::mov {
         b3DestroyHull (hull);
       } else {
         const b3BoxHull box =
-          b3MakeOffsetBoxHull (0.7f, 0.26f, 2.4f, { 0.0f, 0.26f, 1.2f });
+          b3MakeOffsetBoxHull (0.42f, 0.17f, 1.95f, { 0.0f, 0.17f, 1.0f });
         b3CreateHullShape (body, &shape, &box.base);
       }
       b3Body_SetMassData (body, mass_data (!kept.parked));
@@ -467,8 +480,13 @@ namespace moppe::mov {
         kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
       const float turn =
         kept.parked ? 0.0f : std::clamp (kept.turn, -1.0f, 1.0f);
-      const float wanted_rpm = kept.parked ? 0.0f
-                               : std::max (idle, std::abs (drive));
+      const float boost =
+        kept.parked || drive <= 0.0f ? 0.0f
+                                     : std::clamp (kept.boost, 0.0f, 1.0f);
+      const float wanted_rpm =
+        kept.parked ? 0.0f
+                    : std::max (idle, std::abs (drive)) *
+                        (1.0f + (boosted_pitch - 1.0f) * boost);
       kept.rpm += (wanted_rpm - kept.rpm) * std::min (1.0f, dt / spin_up);
       kept.propeller_angle = std::remainder (
         kept.propeller_angle + kept.rpm * 2.0f * pi * propeller_rate * dt,
@@ -504,17 +522,25 @@ namespace moppe::mov {
       const float rise = stern_wave * smoothstep (1.5f, 6.0f, speed);
       kept.propeller_depth = water.level (prop[0], prop[2]) + rise - prop[1];
       const float bite = smoothstep (-0.04f, 0.12f, kept.propeller_depth);
-      // The pivot stands to starboard, so the helmsman holds the tail
-      // with its push aimed through the boat's centre of mass; steering
-      // swings it from there, moving the propeller across and turning
-      // its push with it.
+      // The helmsman holds the tail with its push aimed through the
+      // boat's centre of mass; steering swings it from there, moving the
+      // propeller across and turning its push with it.
       const Vec3 centre = from_b3 (mass_data (true).center);
       const Vec3 shaft = normalized (axis (swing_tilt (
         normalized (centre - hub_at), kept.swing, kept.tilt)));
       const float ahead = dot (v - current, shaft);
-      const float slip = std::clamp (ahead / pitch_speed, 0.0f, 1.0f);
+      const float revs = std::min (kept.rpm, 1.0f + (boosted_pitch - 1.0f));
+      const float slip =
+        std::clamp (ahead / (pitch_speed * std::max (revs, 0.1f)), 0.0f,
+                    1.0f);
+      const float shaft_power =
+        power * revs *
+        (1.0f + (boosted_power / boosted_pitch - 1.0f) * boost);
       float thrust =
-        static_thrust * bite * kept.rpm * (1.0f - slip * slip);
+        bite *
+        std::min (static_thrust * revs * revs,
+                  efficiency * shaft_power / std::max (ahead, 0.5f)) *
+        (1.0f - slip * slip * slip);
       if (drive < 0.0f)
         thrust = -astern * static_thrust * bite * kept.rpm;
       else if (drive == 0.0f)
@@ -524,7 +550,7 @@ namespace moppe::mov {
         b3Body_ApplyForce (body, to_b3 (shaft * thrust), to_b3 (prop), true);
 
       // The air's drag on what stands out of the water.
-      const Vec3 air = v * (-0.9f * length (v));
+      const Vec3 air = v * (-0.35f * length (v));
       b3Body_ApplyForceToCenter (body, to_b3 (air), true);
 
       b3World_Step (world, dt, substeps);
@@ -583,6 +609,10 @@ namespace moppe::mov {
 
   void Boat::set_drive (float drive) {
     m_impl->kept.drive = drive;
+  }
+
+  void Boat::set_boost (float boost) {
+    m_impl->kept.boost = boost;
   }
 
   void Boat::set_turn (float turn) {

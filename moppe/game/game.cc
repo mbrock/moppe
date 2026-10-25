@@ -1970,6 +1970,18 @@ namespace moppe {
         }
         // What Space and F do here, and what can be done about the camp
         // without a prompt for it (HudState::thumb).
+        if (logic ().m_mode != m_thumb_mode) {
+          m_thumb_mode = logic ().m_mode;
+          m_thumb_from = logic ().m_total_time;
+        }
+        // The bike's jets and the boat's tied-back governor are prompted
+        // for a while after getting on, until they have been tried once.
+        const bool afloat = logic ().m_mode == M_BOAT;
+        const bool boosts = logic ().m_mode == M_BIKE || afloat;
+        if (boosts && logic ().m_boost_input > 0.1f)
+          m_boost_tried[afloat] = true;
+        state.thumb_hint = boosts && !m_boost_tried[afloat] &&
+                           logic ().m_total_time - m_thumb_from < 15.0;
         switch (logic ().m_mode) {
         case M_FOOT:
           if (!camp.resting) {
@@ -2010,6 +2022,7 @@ namespace moppe {
           state.dismount = "Step out";
           break;
         case M_BOAT:
+          state.thumb = "Flat out";
           state.dismount = "Step ashore";
           break;
         case M_HELICOPTER:
@@ -5692,6 +5705,11 @@ namespace moppe {
       Vec3 m_home_base_position;
       render::DrawList m_home_base_marker;
       bool m_skip_cinematic_requested = false;
+      // Whose Space was last prompted (HudState::thumb_hint), since when,
+      // and whether the bike's and the boat's boosts have been tried.
+      mutable int m_thumb_mode = -1;
+      mutable double m_thumb_from = 0.0;
+      mutable bool m_boost_tried[2] = { false, false };
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
       std::vector<OpeningShot> m_opening_shots;

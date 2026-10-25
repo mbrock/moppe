@@ -2,19 +2,20 @@
 
     Blender -b --factory-startup --python tools/figure/boat.py
 
-A friend's design, after the Vietnamese canal boats whose long-tail
+Krisjanis's skiff, after the Vietnamese canal boats whose long-tail
 propeller runs in the boat's own trailing wave: a hard-chined skiff of
-12 mm plywood some 4.8 m long and 1.55 m in the beam. Its bottom is flat
-across and sweeps up forward to a fine, pointed bow; its sides flare a
-little and stand straight up aft to a wide raked transom. It is decked
-all round -- a long foredeck pitched to a ridge down its middle, narrow
-side decks, and a short afterdeck carrying the motor's pivot block --
-about an open cockpit whose padded coaming runs round it, chamfered at
-the corners and drawn in to a short front. Inside, five frames with
-lightening holes in their knees stand on the bottom between a forward
-bulkhead and an after one with a locker opening, with a chine log down
-each side, a keelson and two floor stringers, and one thwart across the
-coaming. Rows of screws hold the deck down.
+CNC-cut 9 mm birch plywood, 4.0 m long, 0.95 m in the beam, and 0.4 m
+from the keel to the coaming. Its bottom is flat across and sweeps up
+forward to a narrow, blunt bow; its sides flare and stand up aft to a
+raked transom. It is decked all round -- a long foredeck pitched to a
+ridge down its middle with a carrying handle at its end, narrow side
+decks, and a short afterdeck carrying the long-tail's pivot on its
+middle -- about an open cockpit with a low coaming round it. Inside,
+frames stand on the bottom between a forward bulkhead and an after one
+with a locker opening, with a chine log down each side and floorboards
+over them, and two white moulded seats one behind the other. The long
+panels are joined by serpentine puzzle joints, and the whole is painted
+white.
 
 It is authored life size in the game's frame -- x to port, y up, z
 forward -- with its origin on the centre line at the keel, a quarter of
@@ -38,55 +39,71 @@ from shapes import (V, UP, FORWARD, Cage, assembly, blender, blob,  # noqa
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "models", "boat.blend")
 
-# Key dimensions, metres.
-LENGTH = 4.8        # along the chine, transom to stem
-Z0 = -1.2           # the transom's foot
+# Key dimensions, metres, as Krisjanis gives them: four metres long,
+# 0.95 m in the beam, and 0.4 m from the keel to the top of the coaming.
+LENGTH = 3.93       # along the chine, transom to stem
+Z0 = -0.98          # the transom's foot
 Z1 = Z0 + LENGTH    # the stem
-HALF_BEAM = 0.775   # at the sheer, amidships
-FLARE = 0.93        # the chine's breadth as a fraction of the sheer's
-DEPTH = 0.52        # the sheer above the keel aft
-SPRING = 0.04       # how much the sheer rises toward the bow
-ROCKER = 0.36       # how high the bottom sweeps up at the stem
+HALF_BEAM = 0.47    # at the sheer, amidships
+FLARE = 0.82        # the chine's breadth as a fraction of the sheer's
+DEPTH = 0.33        # the sheer above the keel aft
+SPRING = 0.03       # how much the sheer rises toward the bow
+ROCKER = 0.24       # how high the bottom sweeps up at the stem
 RAKE = math.radians(10)
-STEM = 0.015        # half the stem's width
-PLY = 0.012
+STEM = 0.12         # half the blunt bow's width
+PLY = 0.009
 DECK = 0.009
 LIP = 0.008         # how far the deck overhangs the sides
-COCKPIT_AFT = Z0 - DEPTH * math.tan(RAKE) + 0.62
-COCKPIT_FORE = Z1 - 1.42
-SIDE_DECK = 0.15
-FRONT_HALF = 0.30   # half the cockpit's short front edge
-CORNER = 0.22       # the cockpit's chamfered after corners
+COCKPIT_AFT = Z0 - DEPTH * math.tan(RAKE) + 0.42
+COCKPIT_FORE = Z1 - 1.30
+SIDE_DECK = 0.07
+FRONT_HALF = 0.22   # half the cockpit's short front edge
+CORNER = 0.10       # the cockpit's chamfered after corners
 RIDGE = 0.07        # the foredeck's pitch, rise over run
-COAMING_W = 0.07
-COAMING_H = 0.09
-FRAME_T = 0.018
-SHEET = 2.44        # a sheet of plywood's length; longer panels are joined
-KERF = 0.0025       # the jigsaw's cut, left open as the joint's dark line
-SOLE = 0.094        # the floorboards' top over the keel
-HELM = V((-0.12, 0.36, COCKPIT_AFT + 0.20))   # where the helmsman sits
+COAMING_W = 0.045
+COAMING_H = 0.04
+FRAME_T = 0.015
+SHEET = 2.5         # a Riga Ply sheet's length; longer panels are joined
+KERF = 0.0025       # the router's cut, left open as the joint's dark line
+SOLE = 0.06         # the floorboards' top over the keel
+# The interior's details were first drawn for a hull 0.775 m in the half
+# beam and 0.52 m deep; they scale with it.
+SH = HALF_BEAM / 0.775
+SV = DEPTH / 0.52
+# Where the helmsman sits: in the after of the two moulded seats, and
+# where the passenger seat stands ahead of it.
+HELM = V((0.0, 0.20, COCKPIT_AFT + 0.27))
+FORE_SEAT = HELM.z + 0.92
 
-# The long-tail: its gimbal's pivot on the block, and the propeller's hub
-# with the tail let down, two and a half metres aft and below the keel,
-# where the stern wave lifts the water round it. mov::Boat agrees.
-PIVOT = V((-0.52, DEPTH + DECK + 0.09, Z0 - DEPTH * math.tan(RAKE) + 0.14))
-HUB = V((-0.12, -0.05, Z0 - 2.15))
-TILLER = 0.86       # from the pivot to the throttle grip
+# The long-tail: its gimbal's pivot on the middle of the afterdeck, and
+# the propeller's hub with the tail let down, some 1.6 m aft and just
+# below the keel, where the stern wave lifts the water round it. Its
+# tiller is offset to starboard, under the helmsman's right hand.
+# mov::Boat agrees.
+PIVOT = V((0.0, DEPTH + DECK + 0.09, Z0 - DEPTH * math.tan(RAKE) + 0.14))
+HUB = V((0.0, -0.05, Z0 - 1.62))
+TILLER = 0.62       # from the pivot forward to the grip
+TILLER_OFF = -0.30  # and across, to starboard
 
-# Latvijas Finieris film-faced birch plywood: the dark phenolic film on
-# both faces, sheathed outside in glass cloth and epoxy, which is scuffed
-# where the boat is dragged, beached, and stood on; the birch's pale plies
-# show at every cut edge, and the CNC joints are filled with thickened
-# epoxy. The sole is the anti-slip-faced sheet.
+# Latvijas Finieris film-faced birch plywood, its dark phenolic film on
+# both faces, sheathed outside in glass cloth and epoxy, its CNC joints
+# filled with thickened epoxy, and the whole lately repainted white over
+# it, the joints showing through as hairlines. Where the boat is dragged,
+# beached, and stood on, the paint is worn through to the dark film
+# (the game's shader, `worn-film`). Its seats are white moulded plastic.
 PALETTE = {
-    "ply": (0.13, 0.105, 0.09),
-    "ply_dark": (0.115, 0.095, 0.08),
-    "ply_end": (0.80, 0.68, 0.50),
+    "ply": (0.88, 0.88, 0.85),
+    "ply_dark": (0.84, 0.84, 0.81),
+    "ply_end": (0.85, 0.85, 0.81),
     "film_worn": (0.27, 0.235, 0.20),
-    "film_mesh": (0.17, 0.14, 0.12),
-    "seam": (0.56, 0.43, 0.28),
-    "screw": (0.62, 0.63, 0.64),
+    "film_mesh": (0.80, 0.80, 0.77),
+    "seam": (0.70, 0.70, 0.67),
+    "screw": (0.78, 0.78, 0.75),
+    "seat": (0.93, 0.93, 0.91),
+    "handle": (0.55, 0.50, 0.45),
+    "rope": (0.22, 0.42, 0.78),
     "engine_red": (0.78, 0.10, 0.07),
+    "engine_cream": (0.88, 0.86, 0.78),
     "engine_black": (0.07, 0.07, 0.075),
     "alloy": (0.66, 0.67, 0.66),
     "steel": (0.55, 0.57, 0.58),
@@ -96,14 +113,18 @@ PALETTE = {
 }
 
 FINISH = {
-    "ply": dict(roughness=0.5, coat=0.5, coat_roughness=0.28),
-    "ply_dark": dict(roughness=0.6, coat=0.35, coat_roughness=0.45),
-    "ply_end": dict(roughness=0.5, coat=0.35, coat_roughness=0.3),
+    "ply": dict(roughness=0.45, coat=0.25, coat_roughness=0.35),
+    "ply_dark": dict(roughness=0.55, coat=0.15, coat_roughness=0.45),
+    "ply_end": dict(roughness=0.5, coat=0.15, coat_roughness=0.4),
     "film_worn": dict(roughness=0.85),
-    "film_mesh": dict(roughness=0.9, coat=0.15, coat_roughness=0.6),
-    "seam": dict(roughness=0.4, coat=0.5, coat_roughness=0.3),
-    "screw": dict(metallic=0.9, roughness=0.35),
+    "film_mesh": dict(roughness=0.9),
+    "seam": dict(roughness=0.5),
+    "screw": dict(roughness=0.5),
+    "seat": dict(roughness=0.4, coat=0.2, coat_roughness=0.3),
+    "handle": dict(roughness=0.7),
+    "rope": dict(roughness=0.9, sheen=0.4),
     "engine_red": dict(roughness=0.38, coat=0.4),
+    "engine_cream": dict(roughness=0.45, coat=0.3),
     "engine_black": dict(roughness=0.55),
     "alloy": dict(metallic=0.8, roughness=0.45),
     "steel": dict(metallic=0.9, roughness=0.3),
@@ -201,7 +222,7 @@ def build():
     assembly("seat_helm", coll, HELM, point="seat_helm")
     for sign, tag in ((1, "left"), (-1, "right")):
         assembly(f"foot_{tag}", coll,
-                 HELM + V((sign * 0.16, SOLE - HELM[1], 0.42)),
+                 HELM + V((sign * 0.13, SOLE - HELM[1], 0.45)),
                  point=f"foot_{tag}")
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -418,7 +439,8 @@ def shell(h, m):
         jigsaw(obj, [slit([V((x, y, z + off)) for y, off in line],
                           V((1, 0, 0)), depth=0.08)], m["seam"])
     hb = chine_hb(sc) + 0.03
-    line = serpent(-hb, hb, -0.45, 3, 0.30, 0.045)
+    pitch = (2 * chine_hb(sc) - 0.10) / 3
+    line = serpent(-hb, hb, -1.5 * pitch, 3, pitch, 0.04)
     jigsaw(bottom, [slit([V((x, chine_y(sc), z + off)) for x, off in line],
                          UP, depth=0.03)], m["seam"])
     foot = [V((-chine_hb(0), 0, Z0)), V((chine_hb(0), 0, Z0))]
@@ -529,10 +551,10 @@ def coaming(h, m):
     recalc(obj)
     bevelled(obj, 0.018, segments=3, angle=60)
     # A seam where the cap meets the face below it.
-    seam = sweep(loop, normals, [(-0.002, COAMING_H - 0.035),
-                                 (-0.002, COAMING_H - 0.031),
-                                 (0.003, COAMING_H - 0.031),
-                                 (0.003, COAMING_H - 0.035)])
+    seam = sweep(loop, normals, [(-0.002, COAMING_H - 0.022),
+                                 (-0.002, COAMING_H - 0.018),
+                                 (0.003, COAMING_H - 0.018),
+                                 (0.003, COAMING_H - 0.022)])
     recalc(part(h, "coaming_seam", seam, m["ply_end"], levels=0,
                 smooth=False))
 
@@ -565,18 +587,18 @@ def bezier(a, c, b, n=6):
 
 def frame_outline(z):
     hc, yc, hs, ys = section_at(z)
-    floor = yc + 0.07
+    floor = yc + 0.07 * SV
 
     def wall(y, inset):
         t = (y - yc) / (ys - yc)
-        return V((hc + (hs - hc) * t - inset, y, 0))
+        return V((hc + (hs - hc) * t - inset * SH, y, 0))
 
-    top = V((hs - 0.24, ys, 0))
-    k1 = wall(ys - 0.32, 0.07)
-    k2 = wall(yc + 0.17, 0.07)
-    foot = V((hc - 0.24, floor, 0))
+    top = V((hs - 0.24 * SH, ys, 0))
+    k1 = wall(ys - 0.32 * SV, 0.07)
+    k2 = wall(yc + 0.17 * SV, 0.07)
+    foot = V((hc - 0.24 * SH, floor, 0))
     port = [V((hc, yc, 0)), V((hs, ys, 0)), top]
-    port += bezier(top, wall(ys - 0.10, 0.16), k1, 8)
+    port += bezier(top, wall(ys - 0.10 * SV, 0.16), k1, 8)
     port += [k1, k2]
     port += bezier(k2, wall(floor, 0.06), foot)
     port += [foot]
@@ -596,12 +618,14 @@ def interior(h, m):
         for sign in (1, -1):
             for dy, inset, r in ((0.12, 0.08, 0.034),
                                  (0.22, 0.055, 0.027)):
-                y = ys - dy
+                y = ys - dy * SV
+                r *= SV
                 t = (y - yc) / (ys - yc)
-                x = hc + (hs - hc) * t - inset
+                x = hc + (hs - hc) * t - inset * SH
                 holes.append((V((sign * x, y, z)), r, 0.05, "z"))
             # A limber hole each side, so water runs aft along the floor.
-            holes.append((V((sign * (hc - 0.05), yc, z)), 0.025, 0.05, "z"))
+            holes.append((V((sign * (hc - 0.05 * SH), yc, z)), 0.02, 0.05,
+                          "z"))
         cut(obj, holes)
 
     # The bulkheads closing the cockpit, the after one with a locker
@@ -613,13 +637,16 @@ def interior(h, m):
                                    (-hc, yc)], z - 0.006, z + 0.006),
                    m["ply"], levels=0, smooth=False)
         if name == "bulkhead_aft":
-            cut(obj, [(V((0, (yc + ys) / 2 + 0.02, z)), (0.42, 0.13, 0.05))])
+            cut(obj, [(V((0, (yc + ys) / 2 + 0.02 * SV, z)),
+                       (0.42 * SH, 0.13 * SV, 0.05))])
             frame = []
             for x0, y0, x1, y1 in ((-0.46, -0.17, 0.46, -0.13),
                                    (-0.46, 0.13, 0.46, 0.17),
                                    (-0.46, -0.17, -0.42, 0.17),
                                    (0.42, -0.17, 0.46, 0.17)):
-                c = V(((x0 + x1) / 2, (yc + ys) / 2 + 0.02 + (y0 + y1) / 2,
+                x0, x1, y0, y1 = x0 * SH, x1 * SH, y0 * SV, y1 * SV
+                c = V(((x0 + x1) / 2,
+                       (yc + ys) / 2 + 0.02 * SV + (y0 + y1) / 2,
                        z + 0.015))
                 frame.append(slab(c, ((x1 - x0) / 2, (y1 - y0) / 2, 0.009)))
             part(h, "locker_frame", merge(*frame), m["ply_dark"], levels=0,
@@ -632,8 +659,8 @@ def interior(h, m):
         pts = []
         for z in zs:
             hc, yc, hs, ys = section_at(z)
-            pts.append((V((sign * (hc - 0.022), yc + 0.022, z)), 0.03,
-                        0.03))
+            pts.append((V((sign * (hc - 0.018), yc + 0.018, z)), 0.024,
+                        0.024))
         part(h, f"chine_log_{tag}", loft(pts, UP, sides=4,
                                          turn=math.pi / 4), m["ply_end"],
              levels=0, smooth=False)
@@ -658,35 +685,42 @@ def interior(h, m):
     jigsaw(sole, [slit([V((x, SOLE - 0.006, z + off)) for x, off in line],
                        UP, depth=0.02)], m["seam"])
     seams = []
-    for x in (-0.42, -0.14, 0.14, 0.42):
+    for x in (-0.42 * SH, -0.14 * SH, 0.14 * SH, 0.42 * SH):
         seams.append(slab(V((x, SOLE + 0.0008, (COCKPIT_AFT + COCKPIT_FORE)
                              / 2)), (0.004, 0.001,
                                      (COCKPIT_FORE - COCKPIT_AFT) / 2 - 0.02)))
     part(h, "sole_seams", merge(*seams), m["ply_end"], levels=0,
          smooth=False)
 
-    # The helmsman's seat, a plank across the after end of the cockpit on
-    # cleats against the hull.
-    hc, yc, hs, ys = section_at(HELM[2])
-    t = (HELM[1] - 0.02 - yc) / (ys - yc)
-    w = hc + (hs - hc) * t - 0.004
-    obj = part(h, "helm_seat", slab(V((0, HELM[1] - 0.016, HELM[2])),
-                                    (w, 0.016, 0.13)), m["ply"], levels=0,
-               smooth=False)
-    bevelled(obj, 0.005, segments=2)
-    for sign in (1, -1):
-        part(h, f"seat_cleat{sign}", slab(
-            V((sign * (w - 0.02), HELM[1] - 0.05, HELM[2])),
-            (0.02, 0.018, 0.12)), m["ply_end"], levels=0, smooth=False)
+    # Two moulded plastic seats one behind the other, the helmsman's aft
+    # and a passenger's ahead, each a shallow bucket with a low back on a
+    # hollow plinth standing on the sole.
+    for name, z in (("helm_seat", HELM.z), ("fore_seat", FORE_SEAT)):
+        seat(h, name, z, m["seat"])
 
-    # The thwart across the coaming, a quarter of the way aft.
-    z = COCKPIT_FORE - 0.27 * span
-    s = s_sheer(z)
-    w = opening(s) + COAMING_W * 0.8
-    obj = part(h, "thwart", slab(V((0, sheer_y(s) + DECK + COAMING_H - 0.012,
-                                    z)), (w, 0.016, 0.055)),
-               m["ply"], levels=0, smooth=False)
-    bevelled(obj, 0.006, segments=2)
+
+def seat(h, name, z, mat):
+    pan = HELM.y
+    w = min(section_at(z)[0] - 0.03, 0.22)
+    parts = [
+        # The plinth, down to the sole.
+        slab(V((0, (SOLE + pan) / 2 - 0.01, z + 0.02)),
+             (w - 0.03, (pan - SOLE) / 2, 0.15)),
+        # The pan, dished up at its sides and front.
+        slab(V((0, pan - 0.015, z)), (w, 0.018, 0.19)),
+        slab(V((w - 0.02, pan + 0.025, z)), (0.02, 0.03, 0.17)),
+        slab(V((-(w - 0.02), pan + 0.025, z)), (0.02, 0.03, 0.17)),
+        slab(V((0, pan + 0.01, z + 0.17)), (w - 0.02, 0.015, 0.02)),
+    ]
+    # The back, leaning aft.
+    lean = math.radians(14)
+    back_up = V((0, math.cos(lean), -math.sin(lean)))
+    back_fwd = V((0, math.sin(lean), math.cos(lean)))
+    parts.append(slab(V((0, pan + 0.17, z - 0.17)),
+                      (w - 0.01, 0.17, 0.018),
+                      axes=(V((1, 0, 0)), back_up, back_fwd)))
+    obj = part(h, name, merge(*parts), mat, levels=1, bevel=0.012)
+    return obj
 
 
 # The finish.
@@ -720,8 +754,8 @@ def birch_edges(obj, birch):
 def finish(h, m):
     parts = {o.name: o for o in h.children}
     for name, o in parts.items():
-        if name.startswith(("frame", "bulkhead", "locker_frame", "thwart",
-                            "helm_seat", "pivot_block", "stem")):
+        if name.startswith(("frame", "bulkhead", "locker_frame",
+                            "pivot_block", "stem")):
             birch_edges(o, m["ply_end"])
     parts["sole"].data.materials[0] = m["film_mesh"]
 
@@ -787,7 +821,9 @@ def wear_attribute(obj, outward, weight, flat):
             c = game_of(me.vertices[me.loops[li].vertex_index].co)
             w = -1.0
             if f.material_index == 0:
-                w = min(1.0, weight(c, n)) if outward(n) else 0.0
+                # Lately repainted: worn through only where it is
+                # knocked most.
+                w = min(1.0, 0.7 * weight(c, n)) if outward(n) else 0.0
             attr.data[li].value = w
             uv.data[li].uv = flat(c)
 
@@ -919,7 +955,7 @@ def longtail(coll, m):
                             (o - left * 0.085 + UP * 0.03, 0.014, 0.014)],
                            UP, sides=8), m["steel"], levels=0)
     part(lt, "plate", slab(at(0.24, 0.035), (0.17, 0.008, 0.25),
-                           axes=axes), m["steel"], levels=0, bevel=0.004)
+                           axes=axes), m["engine_red"], levels=0, bevel=0.004)
 
     # The engine: a GX200-type single, its crankshaft on the shaft's line
     # a little above the plate, the cylinder leaning to starboard.
@@ -955,7 +991,8 @@ def longtail(coll, m):
          bevel=0.006)
     # The tank on top, with its cap.
     part(lt, "tank", slab(at(0.25, 0.34, 0.01), (0.15, 0.065, 0.13),
-                          axes=axes), m["engine_red"], levels=1, bevel=0.035)
+                          axes=axes), m["engine_cream"], levels=1,
+         bevel=0.035)
     part(lt, "cap", loft([(at(0.30, 0.40, 0.06), 0.03, 0.03),
                           (at(0.30, 0.425, 0.06), 0.028, 0.028)], fwd,
                          sides=12), m["engine_black"], levels=0)
@@ -993,17 +1030,20 @@ def longtail(coll, m):
     part(lt, "skeg", slab(hub + fwd * 0.12 - up * 0.045,
                           (0.003, 0.025, 0.07), axes=axes),
          m["steel"], levels=0)
-    # The tiller, forward from the plate, with the twist grip on its end.
-    grip = at(TILLER, 0.12)
-    part(lt, "tiller", loft([(at(0.40, 0.05), 0.016, 0.016),
-                             (at(0.60, 0.08), 0.016, 0.016),
+    # The tiller, off the plate's starboard edge and forward beside the
+    # helmsman, so that the engine stands on the centre line and the
+    # hand rests by the hip; the twist grip on its end.
+    grip = at(TILLER, -0.05, TILLER_OFF)
+    elbow = at(0.30, -0.01, TILLER_OFF * 0.7)
+    part(lt, "tiller", loft([(at(0.12, 0.03, -0.12), 0.016, 0.016),
+                             (elbow, 0.016, 0.016),
                              (grip - fwd * 0.07, 0.016, 0.016)], up,
-                            sides=8), m["steel"], levels=0)
+                            sides=8), m["engine_red"], levels=0)
     part(lt, "grip", loft([(grip - fwd * 0.08, 0.019, 0.019),
                            (grip + fwd * 0.07, 0.019, 0.019)], up,
                           sides=10), m["rubber"], levels=1)
     part(lt, "throttle_cable", loft([(grip - fwd * 0.09, 0.004, 0.004),
-                                     (at(0.55, 0.16, 0.03), 0.004, 0.004),
+                                     (elbow + up * 0.10, 0.004, 0.004),
                                      (at(0.33, 0.24, 0.10), 0.004,
                                       0.004)], up, sides=4),
          m["engine_black"], levels=0)
@@ -1038,15 +1078,34 @@ def longtail(coll, m):
 # Fittings.
 
 def fittings(h, m):
-    # The long-tail's pivot block on the afterdeck, to starboard, with
+    # The long-tail's pivot block on the middle of the afterdeck, with
     # its pin hole.
-    z = z_sheer(0.0) + 0.14
-    y = deck_y(0.52, 0.0)
-    obj = part(h, "pivot_block", slab(V((-0.52, y + 0.045, z)),
-                                      (0.08, 0.045, 0.12)),
+    z = PIVOT.z
+    y = deck_y(0.0, 0.0)
+    obj = part(h, "pivot_block", slab(V((0.0, y + 0.045, z - 0.01)),
+                                      (0.08, 0.045, 0.11)),
                m["ply_dark"], levels=0, smooth=False)
-    cut(obj, [(V((-0.52, y + 0.09, z + 0.03)), 0.014, 0.05, "y")])
+    cut(obj, [(V((0.0, y + 0.09, z)), 0.014, 0.05, "y")])
     bevelled(obj, 0.008, segments=2)
+
+    # The carrying handle at the foredeck's end, a moulded grip on two
+    # feet, and the painter made fast to it and led aft to the cockpit.
+    z = Z1 - 0.30
+    y = deck_y(0.0, s_sheer(z))
+    grip = [slab(V((0, y + 0.035, z + dz)), (0.018, 0.035, 0.018))
+            for dz in (-0.085, 0.085)]
+    grip.append(slab(V((0, y + 0.075, z)), (0.022, 0.014, 0.115)))
+    part(h, "bow_handle", merge(*grip), m["handle"], levels=1, bevel=0.006)
+    knot = V((0.0, y + 0.03, z - 0.10))
+    front = COCKPIT_FORE - 0.02
+    sf = s_sheer(front)
+    end = V((0.09, deck_y(0.09, sf) + 0.012, front))
+    rope = [(knot.lerp(end, t) + UP * (0.012 * math.sin(math.pi * t)) +
+             V((0.03 * math.sin(2.5 * math.pi * t), 0, 0)), 0.007, 0.007)
+            for t in (i / 12 for i in range(13))]
+    part(h, "painter", loft(rope, UP, sides=6), m["rope"], levels=0)
+    part(h, "painter_knot", blob(knot, (0.022, 0.018, 0.026), 10, 6),
+         m["rope"], levels=0)
 
     # Screws along the deck's edge and round the coaming.
     heads = []

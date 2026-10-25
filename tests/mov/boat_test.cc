@@ -63,7 +63,7 @@ MOPPE_TEST (a_moored_boat_floats_level_at_its_draft_and_rests) {
   MOPPE_CHECK (boat.afloat ());
   MOPPE_CHECK (!boat.grounded ());
   MOPPE_CHECK (boat.asleep ());
-  // 240 kg on some five square metres of bottom draws a few centimetres.
+  // 70 kg on some two square metres of bottom draws a few centimetres.
   MOPPE_CHECK (boat.position ()[1] < -0.02f);
   MOPPE_CHECK (boat.position ()[1] > -0.10f);
   MOPPE_CHECK (boat.up ()[1] > 0.995f);
@@ -79,13 +79,14 @@ MOPPE_TEST (the_boat_settles_deeper_with_the_helmsman_aboard) {
   boat_test_run (boat, 10.0f);
   const float empty = boat.position ()[1];
   const float empty_mass = boat.mass ();
-  // Someone steps aboard: 80 kg more, and some two centimetres deeper.
+  // Someone steps aboard: 80 kg more, more than the boat and its engine
+  // together, on a narrow bottom: some four or five centimetres deeper.
   boat.set_parked (false);
   boat_test_run (boat, 10.0f);
   const float manned = boat.position ()[1];
   MOPPE_CHECK_NEAR (boat.mass () - empty_mass, 80.0f, 1e-3f);
-  MOPPE_CHECK (manned < empty - 0.01f);
-  MOPPE_CHECK (manned > empty - 0.05f);
+  MOPPE_CHECK (manned < empty - 0.025f);
+  MOPPE_CHECK (manned > empty - 0.08f);
   // And steps off again: it lifts back to where it floated.
   boat.set_parked (true);
   boat_test_run (boat, 10.0f);
@@ -105,12 +106,19 @@ MOPPE_TEST (the_long_tail_drives_the_boat_up_onto_the_plane_and_steers_it) {
   MOPPE_CHECK (boat.thrust () > 100.0f);
   boat_test_run (boat, 12.0f);
   const float speed = length (level (boat.velocity ()));
+  // Some thirty kilometres an hour on 4.1 kW.
   MOPPE_CHECK (speed > 7.0f);
-  MOPPE_CHECK (speed < 20.0f);
+  MOPPE_CHECK (speed < 11.0f);
   MOPPE_CHECK (boat.forward ()[2] > 0.98f);
   // Up on the plane it rides higher than it floats.
   MOPPE_CHECK (boat.position ()[1] > -0.05f);
   MOPPE_CHECK (boat.up ()[1] > 0.97f);
+
+  // With the governor tied back it goes faster still.
+  boat.set_boost (1.0f);
+  boat_test_run (boat, 6.0f);
+  MOPPE_CHECK (length (level (boat.velocity ())) > speed + 1.0f);
+  boat.set_boost (0.0f);
 
   // Swinging the tail turns it to the right, toward -x.
   boat.set_turn (1.0f);
