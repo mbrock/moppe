@@ -292,11 +292,6 @@ namespace moppe::nhal {
                         + string (adapter.architecture);
           wgpuAdapterInfoFreeMembers (adapter);
         }
-        if (!wgpuDeviceHasFeature (m_device,
-                                   WGPUFeatureName_Float32Filterable))
-          throw std::runtime_error (
-            "NHAL: this browser's WebGPU cannot filter 32-bit float "
-            "textures (float32-filterable), which the terrain needs");
         // MOPPE_NHAL_TIMINGS asks for each pass's GPU time; unasked, the
         // device spares the queries and their readback.
         const char* timings = moppe::environment ("MOPPE_NHAL_TIMINGS");

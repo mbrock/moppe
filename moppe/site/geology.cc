@@ -1,17 +1,12 @@
-// The website's geology (docs/site.md): the default world's land grown on a
-// small lattice, a shaded picture of it painted after every geological
-// step. In the browser it runs in a Web Worker and hands each picture to
-// the page (moppe/site/geology-worker.js); natively it times the steps and
-// writes the pictures as OUTPUT-STEP.ppm, to judge a lattice without a
-// browser:
-//
-//   moppe-site-geology [RESOLUTION [SEED [OUTPUT]]]
+// The website's geology (docs/site.md, geology.hh). In the browser it runs
+// in a Web Worker and hands each step to the page
+// (moppe/site/geology-worker.js).
 
 #include <moppe/map/surface.hh>
+#include <moppe/site/geology.hh>
 #include <moppe/terrain/world_recipe.hh>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <span>
@@ -19,10 +14,6 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
-#else
-#include <fstream>
-#include <iostream>
-#include <string>
 #endif
 
 namespace {
@@ -144,41 +135,25 @@ namespace {
       }
   }
 
-#ifdef __EMSCRIPTEN__
-  // Hands a picture to the page; the worker script (geology-worker.js)
-  // defines Module.frame.
-  EM_JS (
-    void,
-    post_frame,
-    (int step, int steps, double years, const std::uint8_t* rgba, int size),
-    {
-      Module.frame (
-        step, steps, years, HEAPU8.slice (rgba, rgba + size * size * 4), size);
-    });
-#endif
+}
 
-  // Grows the world and calls `frame (step, steps, years, rgba, size)`
-  // with its first picture and after every geological step.
-  template <typename Frame>
-  void grow (int resolution, std::uint32_t seed, int size, Frame frame) {
+namespace moppe::site {
+  void grow_land (int lattice, std::uint32_t seed, const GrowthStep& step) {
     using namespace moppe::terrain;
     // The game's default extent and datum (moppe/terrain/land_bake.cc).
-    const WorldRecipe recipe = make_world_recipe (
-      spatial_extent_in_metres (Vec3 (5000.0f, 320.0f, 5000.0f)),
-      resolution,
-      Seed { seed },
-      50.0f * u::m,
-      TerrainGenerationProfile::Play);
+    const WorldRecipe recipe =
+      make_world_recipe (spatial_extent_in_metres (
+                           moppe::Vec3 (land_period_m, 320.0f, land_period_m)),
+                         lattice,
+                         Seed { seed },
+                         land_sea_level_m * u::m,
+                         TerrainGenerationProfile::Play);
     map::SurfaceGeometry surface (
-      TerrainDomain (static_cast<std::size_t> (resolution),
-                     static_cast<std::size_t> (resolution),
+      TerrainDomain (static_cast<std::size_t> (lattice),
+                     static_cast<std::size_t> (lattice),
                      recipe.extent ()));
-    const float cell_m = 5000.0f / static_cast<float> (resolution);
-    const float sea_level_m = recipe.water_datum ().numerical_value_in (u::m);
     const double step_years = recipe.evolution ().time_step.numerical_value_in (
       mp_units::astronomy::Julian_year);
-    std::vector<std::uint8_t> rgba;
-
     const auto as_floats = [] (std::span<const SurfaceElevation> heights) {
       static_assert (sizeof (SurfaceElevation) == sizeof (float));
       return std::span<const float> (
@@ -187,75 +162,83 @@ namespace {
 
     const auto uplift =
       map::initialize_terrain (surface, recipe.seed (), recipe.water_datum ());
-    const auto& start = spatial::get<surface_elevation> (surface);
     const int steps = static_cast<int> (
       std::ceil (recipe.evolution ().duration.numerical_value_in (
                    mp_units::astronomy::Julian_year) /
                  step_years));
-    paint ({ as_floats (start), resolution }, cell_m, sea_level_m, size, rgba);
-    frame (0, steps, 0.0, rgba, size);
-
+    step (0, steps, 0.0, as_floats (spatial::get<surface_elevation> (surface)));
     map::evolve_terrain (
       surface,
       uplift,
       recipe.evolution (),
-      [&] (IterationCount step,
+      [&] (IterationCount done,
            IterationCount total,
            std::span<const SurfaceElevation> heights) {
-        const int done =
-          static_cast<int> (step.numerical_value_in (mp_units::one));
-        paint (
-          { as_floats (heights), resolution }, cell_m, sea_level_m, size, rgba);
-        frame (done,
-               static_cast<int> (total.numerical_value_in (mp_units::one)),
-               done * step_years,
-               rgba,
-               size);
+        const int count =
+          static_cast<int> (done.numerical_value_in (mp_units::one));
+        step (count,
+              static_cast<int> (total.numerical_value_in (mp_units::one)),
+              count * step_years,
+              as_floats (heights));
       });
+  }
+
+  void paint_relief (std::span<const float> heights,
+                     int lattice,
+                     int size,
+                     std::vector<std::uint8_t>& rgba) {
+    paint ({ heights, lattice },
+           land_period_m / static_cast<float> (lattice),
+           land_sea_level_m,
+           size,
+           rgba);
   }
 }
 
 #ifdef __EMSCRIPTEN__
-extern "C" EMSCRIPTEN_KEEPALIVE void
-moppe_geology_grow (int resolution, unsigned seed, int size) {
-  grow (resolution,
-        seed,
-        size,
-        [] (int step,
-            int steps,
-            double years,
-            const std::vector<std::uint8_t>& rgba,
-            int size) { post_frame (step, steps, years, rgba.data (), size); });
+namespace {
+  // Hands a step to the page; the worker script (geology-worker.js)
+  // defines Module.step. The picture is there only when asked for.
+  EM_JS (void,
+         post_step,
+         (int step,
+          int steps,
+          double years,
+          const float* heights,
+          int lattice,
+          const std::uint8_t* rgba,
+          int size),
+         {
+           const count = lattice * lattice;
+           Module.step (step,
+                        steps,
+                        years,
+                        HEAPF32.slice (heights >> 2, (heights >> 2) + count),
+                        lattice,
+                        rgba ? HEAPU8.slice (rgba, rgba + size * size * 4)
+                             : null,
+                        size);
+         });
 }
-#else
-int main (int argc, char** argv) {
-  const int resolution = argc > 1 ? std::stoi (argv[1]) : 256;
-  const auto seed =
-    static_cast<std::uint32_t> (argc > 2 ? std::stoul (argv[2]) : 123);
-  const std::string output = argc > 3 ? argv[3] : "";
-  auto last = std::chrono::steady_clock::now ();
-  grow (resolution,
-        seed,
-        512,
-        [&] (int step,
-             int steps,
-             double years,
-             const std::vector<std::uint8_t>& rgba,
-             int size) {
-          const auto now = std::chrono::steady_clock::now ();
-          std::cout
-            << "step " << step << "/" << steps << " at " << years << " years: "
-            << std::chrono::duration<double, std::milli> (now - last).count ()
-            << " ms\n";
-          last = now;
-          if (output.empty ())
-            return;
-          std::ofstream file (output + "-" + std::to_string (step) + ".ppm",
-                              std::ios::binary);
-          file << "P6\n" << size << ' ' << size << "\n255\n";
-          for (std::size_t i = 0; i < rgba.size (); i += 4)
-            file.write (reinterpret_cast<const char*> (&rgba[i]), 3);
-        });
-  return 0;
+
+// Grows world `seed` on a `lattice`; SIZE, when not zero, also paints each
+// step as a picture that size (for a page without WebGPU).
+extern "C" EMSCRIPTEN_KEEPALIVE void
+moppe_geology_grow (int lattice, unsigned seed, int size) {
+  std::vector<std::uint8_t> rgba;
+  moppe::site::grow_land (
+    lattice,
+    seed,
+    [&] (int step, int steps, double years, std::span<const float> heights) {
+      if (size > 0)
+        moppe::site::paint_relief (heights, lattice, size, rgba);
+      post_step (step,
+                 steps,
+                 years,
+                 heights.data (),
+                 lattice,
+                 size > 0 ? rgba.data () : nullptr,
+                 size);
+    });
 }
 #endif

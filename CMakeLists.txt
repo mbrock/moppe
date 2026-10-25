@@ -626,27 +626,6 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   moppe_configure_code_target(river-census)
 endif()
 
-# The website's geology (docs/site.md): the land grown on a small lattice,
-# a picture after every step. Under Emscripten a module for a Web Worker
-# (build-web/moppe-site-geology.js and .wasm), natively a timing tool.
-if(NOT MOPPE_MOBILE_APPLE)
-  add_executable(moppe-site-geology EXCLUDE_FROM_ALL
-    moppe/site/geology.cc
-    moppe/map/surface.cc
-    ${MOPPE_TERRAIN_SOURCES}
-  )
-  moppe_configure_code_target(moppe-site-geology)
-  if(EMSCRIPTEN)
-    target_link_options(moppe-site-geology PRIVATE
-      -sENVIRONMENT=worker
-      -sMODULARIZE=1
-      -sEXPORT_NAME=createGeology
-      -sEXPORTED_FUNCTIONS=_moppe_geology_grow
-      -sALLOW_MEMORY_GROWTH=1
-      -g0 --profiling-funcs)
-  endif()
-endif()
-
 # Tests are configured for IDEs and CTest, but excluded from the default build.
 # Asking for moppe-tests compiles the engine and suite together as one unity
 # translation unit per language.
@@ -1217,6 +1196,94 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_NHAL_SHADERS})
   target_compile_definitions(nhal-demo PRIVATE
     MOPPE_NHAL_DEMO_SHADERS="${MOPPE_NHAL_SHADERS}")
+endif()
+
+# The website (docs/site.md). Its geology grows the land on a small
+# lattice: under Emscripten a module for a Web Worker, natively a timing
+# tool. Its genesis view draws that land through NHAL from genesis.lisp:
+# under Emscripten a module for the page's thread, on WebGPU, and on Linux a
+# capture tool on Vulkan.
+if(NOT MOPPE_MOBILE_APPLE)
+  set(MOPPE_SITE_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/site-shaders)
+  set(MOPPE_SITE_SHADER_SOURCE
+    ${CMAKE_CURRENT_SOURCE_DIR}/moppe/site/shaders/genesis.lisp)
+  # Lowers genesis.lisp to LANGUAGE, whose stage files end in EXTENSION.
+  function(moppe_lower_site_shaders language extension)
+    set(written)
+    foreach(program IN ITEMS genesis_terrain genesis_sky)
+      list(APPEND written ${MOPPE_SITE_SHADERS}/${program}.hh
+        ${MOPPE_SITE_SHADERS}/${program}.vertex.${extension}
+        ${MOPPE_SITE_SHADERS}/${program}.fragment.${extension})
+    endforeach()
+    add_custom_command(
+      OUTPUT ${written}
+      COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_SITE_SHADERS}
+        --target ${language} ${MOPPE_SITE_SHADER_SOURCE}
+      DEPENDS ${MOPPE_SITE_SHADER_SOURCE} ${MOPPE_LUV_SHADERC}
+      COMMENT "Lowering the website's Lisp shaders to ${language}"
+      VERBATIM)
+    add_custom_target(moppe_site_shaders DEPENDS ${written})
+  endfunction()
+
+  add_executable(moppe-site-geology EXCLUDE_FROM_ALL
+    moppe/site/geology.cc
+    moppe/map/surface.cc
+    ${MOPPE_TERRAIN_SOURCES})
+  moppe_configure_code_target(moppe-site-geology)
+  if(EMSCRIPTEN)
+    # build-web/moppe-site-geology.js and .wasm.
+    target_link_options(moppe-site-geology PRIVATE
+      -sENVIRONMENT=worker
+      -sMODULARIZE=1
+      -sEXPORT_NAME=createGeology
+      -sEXPORTED_FUNCTIONS=_moppe_geology_grow
+      -sALLOW_MEMORY_GROWTH=1
+      -g0 --profiling-funcs)
+
+    moppe_lower_site_shaders(wgsl wgsl)
+    # build-web/moppe-site-genesis.js and .wasm.
+    add_executable(moppe-site-genesis EXCLUDE_FROM_ALL
+      moppe/site/genesis.cc
+      moppe/site/genesis_web.cc
+      moppe/nhal/webgpu/webgpu_device.cc)
+    add_dependencies(moppe-site-genesis moppe_site_shaders)
+    target_include_directories(moppe-site-genesis PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR} ${MOPPE_SITE_SHADERS})
+    target_compile_options(moppe-site-genesis PRIVATE
+      --use-port=emdawnwebgpu)
+    set_source_files_properties(moppe/site/genesis_web.cc
+      TARGET_DIRECTORY moppe-site-genesis PROPERTIES
+      COMPILE_OPTIONS "--embed-dir=${MOPPE_SITE_SHADERS}"
+      OBJECT_DEPENDS "${MOPPE_SITE_SHADERS}/genesis_terrain.vertex.wgsl")
+    target_link_options(moppe-site-genesis PRIVATE
+      --use-port=emdawnwebgpu
+      -sENVIRONMENT=web
+      -sMODULARIZE=1
+      -sEXPORT_NAME=createGenesis
+      -sEXPORTED_FUNCTIONS=_genesis_start,_genesis_resize,_genesis_heights,_genesis_frame,_malloc,_free
+      -sEXPORTED_RUNTIME_METHODS=HEAPF32
+      -sALLOW_MEMORY_GROWTH=1
+      -g0 --profiling-funcs)
+  else()
+    target_sources(moppe-site-geology PRIVATE moppe/site/geology_tool.cc)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      moppe_lower_site_shaders(spirv spv)
+      add_executable(moppe-site-genesis-capture EXCLUDE_FROM_ALL
+        moppe/site/genesis.cc
+        moppe/site/genesis_capture.cc
+        moppe/site/geology.cc
+        moppe/map/surface.cc
+        moppe/nhal/vulkan/vulkan_device.cc
+        ${MOPPE_TERRAIN_SOURCES})
+      add_dependencies(moppe-site-genesis-capture moppe_site_shaders)
+      moppe_configure_code_target(moppe-site-genesis-capture)
+      moppe_link_vulkan(moppe-site-genesis-capture)
+      target_include_directories(moppe-site-genesis-capture PRIVATE
+        ${MOPPE_SITE_SHADERS})
+      target_compile_definitions(moppe-site-genesis-capture PRIVATE
+        MOPPE_SITE_SHADERS="${MOPPE_SITE_SHADERS}")
+    endif()
+  endif()
 endif()
 
 if(APPLE AND NOT MOPPE_MOBILE_APPLE)

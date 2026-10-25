@@ -182,10 +182,11 @@ web-serve: web
 # tools/serve-web.ts` serves at http://localhost:8080/site/.
 site:
 	@[ -f build-web/build.ninja ] || $(WEB_CONFIGURE)
-	cmake --build build-web --target moppe-site-geology
+	cmake --build build-web --target moppe-site-geology moppe-site-genesis
 	mkdir -p build-web/site
 	cp moppe/site/index.html moppe/site/geology-worker.js \
 		build-web/moppe-site-geology.js build-web/moppe-site-geology.wasm \
+		build-web/moppe-site-genesis.js build-web/moppe-site-genesis.wasm \
 		build-web/site/
 	./tools/subset-font build-web/site/fonts
 
