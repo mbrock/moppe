@@ -475,7 +475,18 @@ namespace moppe::mov {
           water.current (c[0], c[2]);
         const float vn = dot (moving, n);
         const float through = length (moving);
-        float pressure = rho * g * std::max (mean, 0.0f);
+        // Over the gunwale the water floods in, and pushes on the panel
+        // from inside as hard as from out: the head that buoys it is at
+        // most the height of the sheer over it. Without this a swamped
+        // hull, as if sealed, is pushed up the harder the deeper it sinks.
+        const float station =
+          std::clamp ((p.centre[2] - Boat::transom) / Boat::hull_length,
+                      0.0f, 1.0f);
+        const float flood =
+          point (Vec3 (p.centre[0], sheer_y (station), p.centre[2]))[1] -
+          c[1];
+        float pressure =
+          rho * g * std::clamp (mean, 0.0f, std::max (flood, 0.0f));
         // The bobbing is damped up and down, not along the way.
         pressure += rho * damping * std::abs (p.normal[1]) * vn;
         if (vn > 0.0f)

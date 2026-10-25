@@ -197,3 +197,23 @@ MOPPE_TEST (two_up_the_boat_sticks_at_its_hump_until_the_governor_is_tied_back) 
   boat_test_run (boat, 10.0f);
   MOPPE_CHECK (length (level (boat.velocity ())) > 6.0f);
 }
+
+MOPPE_TEST (a_swamped_boat_comes_up_awash_rather_than_flying_out) {
+  // Pushed under, the cockpit floods over the gunwale: the boat buoys
+  // up only as far as the water left outside its sides, and comes up
+  // awash, not shot out of the water as a sealed box would be.
+  const map::SurfaceGeometry lake =
+    boat_test_ground ([] (float, float) { return -8.0f; });
+  mov::Boat boat (lake);
+  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f);
+  mov::Boat::State sunk = boat.state ();
+  sunk.body.position[1] = -4.0f;
+  boat.restore (sunk);
+  boat.set_parked (false);
+  float highest = -10.0f;
+  for (int i = 0; i < 600; ++i) {
+    boat.update (1.0f / 60, still_water ());
+    highest = std::max<float> (highest, boat.position ()[1]);
+  }
+  MOPPE_CHECK (highest < 0.3f);
+}
