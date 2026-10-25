@@ -53,6 +53,9 @@ namespace moppe::game {
     float scale = 1.0f;
     // A pedalled bike's crank, radians round from the right arm down.
     float crank_radians = 0.0f;
+    // How far back the rider leans for a wheelie, a share of the way
+    // (negative forward; mov::Vehicle::rider_lean).
+    float rider_lean = 0.0f;
   };
 
   // The jeep as drawn: its origin (midway between the axles, at their
@@ -190,6 +193,12 @@ namespace moppe::game {
     int landed_points = 0;
     bool landed_clean = false;
     float landed_age_s = 10.0f;
+    // GameLogicState's wheelie readings.
+    float wheelie_m = 0.0f;
+    float last_wheelie_m = 0.0f;
+    int last_wheelie_points = 0;
+    float best_wheelie_m = 0.0f;
+    float wheelie_age_s = 10.0f;
     bool on_foot = false;
     bool gliding = false;
     bool can_deploy_glider = false;

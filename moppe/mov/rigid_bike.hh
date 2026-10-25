@@ -42,6 +42,13 @@ namespace moppe {
       // How far the rear tyre has broken loose under the locked rear
       // brake, 0 rolling to 1 sliding.
       float skid = 0.0f;
+      // How far back the rider's weight is, metres along the chassis
+      // (negative forward), and the throttle they have rolled on while
+      // leaning back for a wheelie.
+      float rider_shift = 0.0f;
+      float twist = 0.0f;
+      // Seconds since either wheel last touched the ground.
+      float airborne = 0.0f;
     };
 
     // What the rider asks of the assemblage for one step.
@@ -75,6 +82,14 @@ namespace moppe {
       // A hop: the rider springs the whole bike up off the ground by this
       // much speed, metres per second. Only a bike on its wheels hops.
       float hop = 0.0f;
+      // The rider leans back and pulls on the bars, 0..1. Their weight
+      // goes back over the rear wheel, the traction control stops holding
+      // the front down, and the throttle rolls on progressively, so the
+      // drive lifts the front wheel and the bike pivots on the rear. Up
+      // there the rider balances it with their body, as far as it reaches;
+      // the throttle lifts it further (too much loops it over) and the
+      // rear brake, covered rather than stamped on, brings it down.
+      float wheelie = 0.0f;
     };
 
     // The shape and temperament of a bike: where its wheels are, how it is
@@ -126,6 +141,14 @@ namespace moppe {
       // the front brake; they start backing off 0.15 rad earlier.
       float wheelie_limit;
       float stoppie_limit;
+      // Leaning back for a wheelie: how far the rider's weight goes back,
+      // metres, and the pitch above the ground they try to hold the bike
+      // at, radians, a little short of where it balances on its own.
+      float wheelie_lean;
+      float wheelie_pitch;
+      // The most the drive may rear it up by about the rear tyre beyond
+      // what its weight holds it down with, newton-metres.
+      float wheelie_torque;
 
       float reverse_speed;
       float reverse_force_share;
@@ -157,7 +180,7 @@ namespace moppe {
       .reference_height = 0.15f,
       .axle_height = -0.175f,
       .inertia_box = { 0.5f, 1.2f, 2.0f },
-      .frame_a = { 0.0f, -0.2f, -1.35f },
+      .frame_a = { 0.0f, -0.1f, -1.1f },
       .frame_b = { 0.0f, -0.2f, 1.35f },
       .frame_radius = 0.35f,
       .rider_a = { 0.0f, 0.05f, -0.35f },
@@ -180,6 +203,9 @@ namespace moppe {
       .max_lean = 0.7f,
       .wheelie_limit = 0.35f,
       .stoppie_limit = 0.3f,
+      .wheelie_lean = 0.35f,
+      .wheelie_pitch = 0.8f,
+      .wheelie_torque = 600.0f,
       .reverse_speed = 10.0f,
       .reverse_force_share = 0.6f,
       .front_brake_force = 2000.0f,
@@ -228,6 +254,9 @@ namespace moppe {
       .max_lean = 0.7f,
       .wheelie_limit = 0.4f,
       .stoppie_limit = 0.3f,
+      .wheelie_lean = 0.18f,
+      .wheelie_pitch = 0.9f,
+      .wheelie_torque = 60.0f,
       // Walked back, slowly.
       .reverse_speed = 1.2f,
       .reverse_force_share = 0.5f,
@@ -330,6 +359,13 @@ namespace moppe {
       float wheel_spin_rate () const;
       // How far the rear tyre slides under the locked brake, 0..1.
       float skid () const;
+      // The rider's weight back from where they sit, as a share of
+      // wheelie_lean: 1 leaning right back, negative forward.
+      float rider_lean () const;
+      // The chassis' pitch above the ground under it, radians, nose up.
+      float pitch () const;
+      // On the back wheel alone, the front up off the ground.
+      bool wheeling () const;
       // Approach speeds of the hardest collisions in the last step.
       float trunk_hit () const;
       float body_hit () const;

@@ -85,6 +85,7 @@ namespace moppe::game {
         break;
       case Key::R:
         m_hang_hammock = m_hang_hammock || down;
+        m_lean_back = down;
         break;
       case Key::T:
         m_light_fire = m_light_fire || down;
@@ -150,6 +151,7 @@ namespace moppe::game {
       frame.leave_cinematic = m_leave_cinematic;
       frame.hang_hammock = m_hang_hammock;
       frame.light_fire = m_light_fire;
+      frame.lean_back = m_lean_back;
       frame.look_yaw = m_look_yaw;
       frame.look_pitch = m_look_pitch;
       frame.run = m_run;
@@ -179,6 +181,7 @@ namespace moppe::game {
       m_look_rate_x = 0.0f;
       m_look_rate_y = 0.0f;
       m_run = false;
+      m_lean_back = false;
       m_combo = 0;
     }
 
@@ -210,6 +213,7 @@ namespace moppe::game {
     float m_look_rate_x = 0.0f;
     float m_look_rate_y = 0.0f;
     bool m_run = false;
+    bool m_lean_back = false;
     int m_combo = 0;
   };
 }

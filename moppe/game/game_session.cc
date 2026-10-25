@@ -472,6 +472,7 @@ namespace moppe::game {
         vehicle.set_yaw (0 * u::deg);
         vehicle.set_boost (0, 0);
         vehicle.set_skid (0);
+        vehicle.set_wheelie (0);
         session.set_mode (M_FOOT);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
@@ -520,6 +521,7 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       // Riding, what runs on foot stamps on the rear brake.
       session.bike ().set_skid (logic.m_mode == M_BIKE && input.run ? 1 : 0);
+      session.bike ().set_wheelie (logic.m_mode == M_BIKE && input.lean_back);
       session.mountain_bike ().set_skid (
         logic.m_mode == M_MOUNTAIN_BIKE && input.run ? 1 : 0);
       logic.m_look_pitch =
@@ -1662,6 +1664,39 @@ namespace moppe::game {
       logic.m_jump_spin_radians = 0.0f;
       logic.m_jump_peak_spin_radians = 0.0f;
       logic.m_landed_age += elapsed;
+    }
+
+    // A wheelie scores the ground it covers on the back wheel, two points a
+    // metre once it has gone five, unless it ends in a loop. Once up it
+    // lasts until the front wheel comes down (for a moment more than a
+    // bump's), or the bike leaves the ground for a jump.
+    logic.m_wheelie_age += elapsed;
+    const bool riding_up =
+      logic.m_mode == M_BIKE &&
+      (vehicle.wheeling () ||
+       (logic.m_wheelie_m > 0.0f && !vehicle.front_down () &&
+        vehicle.airtime () < 0.5f));
+    if (riding_up) {
+      Vec3 ground_speed = vehicle.velocity ();
+      ground_speed[1] = 0.0f;
+      logic.m_wheelie_m += length (ground_speed) * elapsed;
+      logic.m_wheelie_gap = 0.0f;
+    } else if (logic.m_wheelie_m > 0.0f) {
+      logic.m_wheelie_gap += elapsed;
+      if (logic.m_wheelie_gap > 0.15f || logic.m_mode != M_BIKE) {
+        logic.m_last_wheelie_m = logic.m_wheelie_m;
+        // One looped over onto its back scores nothing.
+        const bool looped = vehicle.render_normal ()[1] < 0.3f;
+        logic.m_last_wheelie_points =
+          logic.m_wheelie_m >= 5.0f && !looped
+            ? (int)std::round (2.0f * logic.m_wheelie_m)
+            : 0;
+        logic.m_score += logic.m_last_wheelie_points;
+        logic.m_best_wheelie_m =
+          std::max (logic.m_best_wheelie_m, logic.m_wheelie_m);
+        logic.m_wheelie_m = 0.0f;
+        logic.m_wheelie_age = 0.0f;
+      }
     }
     const DisplayColor dust_color = ground.dust_color;
     const DisplayColor clod_color = ground.clod_color;

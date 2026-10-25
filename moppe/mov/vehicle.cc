@@ -102,6 +102,7 @@ namespace moppe {
                     m_fall_drop };
       state.parked = m_parked;
       state.skid = m_skid;
+      state.wheelie = m_wheelie;
       state.crank = m_crank;
       if (m_rigid) {
         // The coarse pose is derived from the snapshot itself, so restoring
@@ -142,6 +143,7 @@ namespace moppe {
       m_fall_drop = state.fall_drop;
       m_parked = state.parked;
       m_skid = state.skid;
+      m_wheelie = state.wheelie;
       m_crank = state.crank;
       if (m_rigid) {
         RigidBikeState rigid = state.rigid;
@@ -670,11 +672,13 @@ namespace moppe {
         controls.boost_acceleration = boost_direction * (boost * m_boost_level);
         controls.parked = m_parked;
         controls.skid = m_skid;
+        controls.wheelie = m_wheelie;
         controls.hop = i == 0 ? m_hop : 0.0f;
         if (m_hung) {
           controls.throttle = 0.0f;
           controls.steer = 0.0f;
           controls.skid = 0.0f;
+          controls.wheelie = 0.0f;
           controls.boost_acceleration = m_hang.acceleration;
           controls.hung = true;
           controls.hang_forward = m_hang.forward;

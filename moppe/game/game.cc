@@ -1982,6 +1982,13 @@ namespace moppe {
           m_boost_tried[afloat] = true;
         state.thumb_hint = boosts && !m_boost_tried[afloat] &&
                            logic ().m_total_time - m_thumb_from < 15.0;
+        // The wheelie is prompted once the jets' prompt is done with, for
+        // half a minute after getting on, until one has been ridden.
+        if (logic ().m_mode == M_BIKE && session ().bike ().wheeling ())
+          m_wheelie_tried = true;
+        state.wheelie_hint = logic ().m_mode == M_BIKE && !state.thumb_hint &&
+                             !m_wheelie_tried &&
+                             logic ().m_total_time - m_thumb_from < 45.0;
         switch (logic ().m_mode) {
         case M_FOOT:
           if (!camp.resting) {
@@ -1997,6 +2004,7 @@ namespace moppe {
           state.thumb = "Boost";
           state.dismount = "Get off";
           state.skids = true;
+          state.wheelies = true;
           break;
         case M_MOUNTAIN_BIKE:
           state.thumb = "Hop";
@@ -3970,6 +3978,10 @@ namespace moppe {
           const char* name = moppe::environment ("MOPPE_DEMO");
           return name && std::string_view (name) == "glide";
         }();
+        static const bool demo_wheelies = [] {
+          const char* name = moppe::environment ("MOPPE_DEMO");
+          return name && std::string_view (name) == "wheelie";
+        }();
         m_trunk_field.focus (session ().subject_position ());
         static const bool orbit = moppe::environment ("MOPPE_ORBIT") != 0 ||
                                   moppe::environment ("MOPPE_PAN") != 0;
@@ -4004,6 +4016,28 @@ namespace moppe {
                               session ().hook_within_reach ().has_value (),
               .look_yaw = look_yaw,
               .look_pitch = look_pitch,
+            };
+          } else if (demo_wheelies && logic ().m_mode == M_BIKE) {
+            // MOPPE_DEMO=wheelie: rolling for a few seconds of every
+            // twelve, then up on the back wheel and held there as a rider
+            // at the keyboard holds it, the throttle all or nothing --
+            // open while the nose is low or falling, shut as it rises, and
+            // a dab of the rear brake if it gets too high -- judged by
+            // where the pitch is heading a moment on.
+            const mov::Vehicle& bike = session ().bike ();
+            const float pitch = bike.pitch ();
+            const float rate =
+              dt > 0.0f ? (pitch - m_demo_pitch) / dt : 0.0f;
+            m_demo_pitch = pitch;
+            const float ahead = pitch + 0.4f * rate;
+            const bool up = std::fmod (total_time, 12.0f) > 3.0f;
+            input = {
+              .turn = 0.2f * std::sin (total_time * 0.25f),
+              .drive = !up ? 0.6f : ahead < 0.7f ? 1.0f : 0.0f,
+              .lean_back = up,
+              .look_yaw = look_yaw,
+              .look_pitch = look_pitch,
+              .run = up && ahead > 1.1f,
             };
           } else {
             input = {
@@ -4136,6 +4170,11 @@ namespace moppe {
         state.landed_points = reading.landed_points;
         state.landed_clean = reading.landed_clean;
         state.landed_age_s = reading.landed_age_s;
+        state.wheelie_m = reading.wheelie_m;
+        state.last_wheelie_m = reading.last_wheelie_m;
+        state.last_wheelie_points = reading.last_wheelie_points;
+        state.best_wheelie_m = reading.best_wheelie_m;
+        state.wheelie_age_s = reading.wheelie_age_s;
         state.on_foot = reading.on_foot;
         state.gliding = reading.gliding;
         state.can_deploy_glider = reading.can_deploy_glider;
@@ -5748,6 +5787,7 @@ namespace moppe {
         logic ().m_jump_spin_radians = 0.0f;
         logic ().m_jump_peak_spin_radians = 0.0f;
         logic ().m_landed_age = 10.0f;
+        logic ().m_wheelie_m = 0.0f;
         session ().set_mode (M_BIKE);
         // Back to the start, but ON the ground rather than 600 m
         // over it.
@@ -5792,6 +5832,9 @@ namespace moppe {
       mutable int m_thumb_mode = -1;
       mutable double m_thumb_from = 0.0;
       mutable bool m_boost_tried[2] = { false, false };
+      mutable bool m_wheelie_tried = false;
+      // MOPPE_DEMO=wheelie's last reading of the bike's pitch.
+      float m_demo_pitch = 0.0f;
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
       std::vector<OpeningShot> m_opening_shots;

@@ -14,6 +14,7 @@
 # Scenes set the stage; without one the game simply starts in play:
 #   play      on foot at the trailhead, no opening (the default)
 #   ride      the autopilot's ride                     (MOPPE_DEMO=1)
+#   wheelie   the autopilot riding wheelies       (MOPPE_DEMO=wheelie)
 #   forest    the same from the forest floor           (MOPPE_DEMO=forest)
 #   glide     the ride, opening the wing on a leap     (MOPPE_DEMO=glide)
 #   jeep      the autopilot driving the jeep           (MOPPE_DEMO=jeep)
@@ -149,6 +150,7 @@ stage () {
 case $scene in
   play) stage MOPPE_OPENING=none; : "${seconds:=20}" ;;
   ride) stage MOPPE_DEMO=1; : "${seconds:=20}" ;;
+  wheelie) stage MOPPE_DEMO=wheelie; : "${seconds:=20}" ;;
   forest) stage MOPPE_DEMO=forest; : "${seconds:=20}" ;;
   glide) stage MOPPE_DEMO=glide; : "${seconds:=30}" ;;
   jeep) stage MOPPE_DEMO=jeep; : "${seconds:=20}" ;;

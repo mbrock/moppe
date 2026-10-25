@@ -54,6 +54,7 @@ namespace moppe {
         RigidBikeState rigid {};
         bool parked {};
         float skid {};
+        float wheelie {};
         float crank {};
       };
 
@@ -117,6 +118,29 @@ namespace moppe {
       // How far the rear tyre is sliding under the locked brake, 0..1.
       float skid () const {
         return m_rigid ? m_rigid->skid () : 0.0f;
+      }
+      // The rider leans back for a wheelie, 0..1
+      // (RigidBikeControls::wheelie). The classic point mass has no pitch
+      // to lift, and ignores it.
+      void set_wheelie (float wheelie) {
+        m_wheelie = std::clamp (wheelie, 0.0f, 1.0f);
+      }
+      // On the back wheel alone, and how far back the rider's weight is,
+      // a share of how far it goes (negative forward).
+      bool wheeling () const {
+        return m_rigid && m_rigid->wheeling ();
+      }
+      // Whether the front wheel is on the ground; the classic bike's
+      // always is.
+      bool front_down () const {
+        return !m_rigid || m_rigid->front_contact ();
+      }
+      float rider_lean () const {
+        return m_rigid ? m_rigid->rider_lean () : 0.0f;
+      }
+      // The chassis' pitch above the ground under it, radians, nose up.
+      float pitch () const {
+        return m_rigid ? m_rigid->pitch () : 0.0f;
       }
       // Springs the bike up off the ground by `speed`, metres per second,
       // over its next update: a bunny hop. Only a rigid bike on its wheels
@@ -362,6 +386,7 @@ namespace moppe {
       std::unique_ptr<RigidBike> m_rigid;
       bool m_parked = false;
       float m_skid = 0.0f;
+      float m_wheelie = 0.0f;
       float m_crank = 0.0f;
       // Set by hop() for the next update only, never restored.
       float m_hop = 0.0f;

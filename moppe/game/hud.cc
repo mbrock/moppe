@@ -878,6 +878,32 @@ namespace moppe {
         vario.tabular_figures = true;
         draw_shaded (text, cx, cy - r - 12.0f, climb, vario, TextAlign::Center);
       }
+
+      // A wheelie counts its metres over the gauge as it goes, and the
+      // one just ridden lingers there a moment with what it scored.
+      const bool wheeling = st.wheelie_m >= 3.0f;
+      const float shown = wheeling ? st.wheelie_m : st.last_wheelie_m;
+      const float linger =
+        wheeling ? 1.0f
+                 : clamp01 (1.0f - (st.wheelie_age_s - 1.6f) / 0.6f) *
+                     (st.last_wheelie_m >= 3.0f ? 1.0f : 0.0f);
+      if (!st.gliding && linger > 0.002f) {
+        char line[40];
+        if (!wheeling && st.last_wheelie_points > 0)
+          std::snprintf (line,
+                         sizeof line,
+                         "wheelie %.0f m  +%d",
+                         shown,
+                         st.last_wheelie_points);
+        else
+          std::snprintf (line, sizeof line, "wheelie %.0f m", shown);
+        TextStyle tally = unit;
+        tally.size = 10.0f;
+        tally.alpha = 0.8f * alpha * ease (linger);
+        tally.tracking = 0.02f;
+        tally.tabular_figures = true;
+        draw_shaded (text, cx, cy - r - 12.0f, line, tally, TextAlign::Center);
+      }
     }
 
     void Hud::draw_basket (render::TextList& text,
@@ -1660,6 +1686,9 @@ namespace moppe {
       } else if (st.thumb_hint && st.thumb && *ride_key) {
         key = ride_key;
         action = st.thumb;
+      } else if (st.wheelie_hint && *hammock_key) {
+        key = hammock_key;
+        action = "Lean back for a wheelie";
       }
       // The prompt's action leads the offers, then what needs no prompt.
       offer (key, action);
@@ -1669,6 +1698,8 @@ namespace moppe {
         offer ("Shift", "Descend");
       if (st.skids)
         offer ("Shift", "Skid");
+      if (st.wheelies)
+        offer (hammock_key, "Wheelie");
       if (st.dismount)
         offer (mount_key, st.dismount);
       if (st.can_take_down)
@@ -1729,8 +1760,8 @@ namespace moppe {
       dl.begin (render::Prim::Quads);
       dl.vertex (8.0f, 8.0f);
       dl.vertex (268.0f, 8.0f);
-      dl.vertex (268.0f, 138.0f);
-      dl.vertex (8.0f, 138.0f);
+      dl.vertex (268.0f, 153.0f);
+      dl.vertex (8.0f, 153.0f);
       dl.end ();
       dl.state (render::DrawState ());
       dl.lit (true);
@@ -1744,7 +1775,7 @@ namespace moppe {
       const float frame_ms = std::max (st.frame_time_s, 1e-4f) * 1000.0f;
       const float heading =
         std::fmod (st.heading_radians * 180.0f / PI + 360.0f, 360.0f);
-      char lines[8][96];
+      char lines[9][96];
       std::snprintf (
         lines[0], sizeof lines[0], "%.0f fps   %.1f ms", m_fps, frame_ms);
       std::snprintf (lines[1],
@@ -1764,20 +1795,27 @@ namespace moppe {
                      st.landed_airtime_s,
                      st.landed_spin_degrees,
                      st.landed_points);
-      std::snprintf (lines[4], sizeof lines[4], "score %d", st.score);
-      std::snprintf (lines[5],
-                     sizeof lines[5],
+      std::snprintf (lines[4],
+                     sizeof lines[4],
+                     "wheelie %.0f m   last %.0f m +%d   best %.0f m",
+                     st.wheelie_m,
+                     st.last_wheelie_m,
+                     st.last_wheelie_points,
+                     st.best_wheelie_m);
+      std::snprintf (lines[5], sizeof lines[5], "score %d", st.score);
+      std::snprintf (lines[6],
+                     sizeof lines[6],
                      "health %.0f%%   lives %d   stars %d",
                      clamp01 (st.health01) * 100.0f,
                      st.lives,
                      st.stars);
-      std::snprintf (lines[6],
-                     sizeof lines[6],
+      std::snprintf (lines[7],
+                     sizeof lines[7],
                      "odometer %.2f km   boost %.0f%%",
                      st.odometer_m / 1000.0f,
                      clamp01 (st.boost_ready01) * 100.0f);
       std::snprintf (
-        lines[7], sizeof lines[7], "climb %+.1f m/s", st.vertical_speed_mps);
+        lines[8], sizeof lines[8], "climb %+.1f m/s", st.vertical_speed_mps);
       float y = 24.0f;
       for (const char* line : lines) {
         draw_shaded (text, 16.0f, y, line, style);

@@ -154,8 +154,11 @@ namespace moppe {
 
       // The hiker riding: seated on the saddle, feet on the pegs, hands on
       // the grips, the trunk leaning forward just far enough to reach the
-      // bars, eyes a little down the trail. Posed in the bike's frame
-      // shrunk by rider_scale, so the caller draws it scaled back up.
+      // bars, eyes a little down the trail. Leaning back for a wheelie the
+      // rider slides back off the saddle and hangs from the bars on straight
+      // arms, trunk upright against the bike's rise, eyes on the way ahead.
+      // Posed in the bike's frame shrunk by rider_scale, so the caller
+      // draws it scaled back up.
       AvatarSkeleton pose_rider (const VehiclePose& vehicle) {
         const Mat4 frame =
           Mat4::translation (vehicle.position) *
@@ -176,12 +179,31 @@ namespace moppe {
         const Vec3 peg[2] = { frame.transform_point (bike_model::peg_left),
                               frame.transform_point (bike_model::peg_right) };
 
+        // In a wheelie the trunk keeps nearer the world's upright than the
+        // bike's as the bike rears, the pelvis goes back off the saddle (or
+        // forward, balancing), and the eyes stay on the way ahead.
+        const float back = std::clamp (vehicle.rider_lean, -1.0f, 1.0f);
+        const float posture = std::clamp (4.0f * std::abs (back), 0.0f, 1.0f);
+        const float rear =
+          posture * 0.85f *
+          std::clamp (std::asin (std::clamp (facing[1], -1.0f, 1.0f)),
+                      0.0f,
+                      1.3f);
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis = frame.transform_point (bike_model::saddle) + up * 0.1f;
+        hold.facing = facing * std::cos (rear) + up * std::sin (rear);
+        hold.up = up * std::cos (rear) - facing * std::sin (rear);
+        hold.pelvis = frame.transform_point (bike_model::saddle) +
+                      up * (0.1f - 0.04f * std::max (back, 0.0f)) -
+                      facing * (0.2f * back);
         hold.gaze = facing * std::cos (0.2f) - up * std::sin (0.2f);
         hold.head_up = up;
+        Vec3 ahead (facing[0], 0.0f, facing[2]);
+        if (posture > 0.0f && length2 (ahead) > 1e-4f) {
+          ahead = normalized (ahead) * std::cos (0.15f) -
+                  Vec3 (0, std::sin (0.15f), 0);
+          hold.gaze = normalized (hold.gaze + (ahead - hold.gaze) * posture);
+          hold.head_up = normalized (up + (Vec3 (0, 1, 0) - up) * posture);
+        }
         hold.sole = facing;
         hold.instep = up;
 
@@ -189,8 +211,11 @@ namespace moppe {
         // that, the lean that comes closest.
         const float reach =
           0.88f * (avatar_size::upper_arm + avatar_size::forearm);
+        // Leaning back, the search starts from behind the upright, so the
+        // trunk hangs back as far as straight arms let it.
+        const float start = -0.5f * std::max (back, 0.0f);
         float best_lean = 0.0f, best_span = 1e9f;
-        for (float lean = 0.0f; lean <= 1.2f; lean += 0.04f) {
+        for (float lean = start; lean <= 1.2f; lean += 0.04f) {
           hold.lean = lean;
           const float span =
             std::max (length (held_shoulder (hold, 0) - grip[0]),

@@ -131,6 +131,9 @@ namespace moppe {
       float rear_load = 0.0f;
       float lean = 0.0f;
       float skid = 0.0f;
+      float rider_shift = 0.0f;
+      float twist = 0.0f;
+      float airborne = 0.0f;
       float trunk_hit = 0.0f, body_hit = 0.0f;
 
       Impl (const map::SurfaceGeometry& surface, Params params)
@@ -324,6 +327,9 @@ namespace moppe {
         rear_load = s.rear_load;
         lean = s.lean;
         skid = s.skid;
+        rider_shift = s.rider_shift;
+        twist = s.twist;
+        airborne = s.airborne;
         b3Shape_SetFriction (rear_tire, rear_friction ());
         rear_contact = s.rear_contact;
         trunk_hit = body_hit = 0.0f;
@@ -350,6 +356,9 @@ namespace moppe {
         s.rear_load = rear_load;
         s.lean = lean;
         s.skid = skid;
+        s.rider_shift = rider_shift;
+        s.twist = twist;
+        s.airborne = airborne;
         return s;
       }
 
@@ -370,6 +379,24 @@ namespace moppe {
         const Vec3 down = from_b3 (b3RotateVector (q, { 0.0f, -1.0f, 0.0f }));
         const Vec3 rest = c + from_b3 (b3RotateVector (q, to_b3 (axle)));
         return dot (w - rest, down);
+      }
+
+      // The chassis' pitch above the ground plane under it, nose up.
+      float pitch () const {
+        const b3Quat q = b3Body_GetRotation (chassis);
+        const Vec3 p = from_b3 (b3Body_GetPosition (chassis));
+        const Vec3 left = from_b3 (b3RotateVector (q, { 1.0f, 0.0f, 0.0f }));
+        const Vec3 forward = from_b3 (b3RotateVector (q, { 0.0f, 0.0f, 1.0f }));
+        const Vec3 n = normal_at (surface, p[0], p[2]);
+        const Vec3 tangent = forward - n * dot (forward, n);
+        // A positive turn about the left axis lowers the nose.
+        if (length2 (tangent) < 1e-6f)
+          return dot (forward, n) > 0.0f ? 1.5707963f : -1.5707963f;
+        return angle_about (left, forward, normalized (tangent));
+      }
+
+      bool wheeling () const {
+        return rear_contact && !front_contact && pitch () > 0.12f;
       }
 
       // Velocity-level attitude control: nudge one component of the chassis'
@@ -476,7 +503,12 @@ namespace moppe {
         // The locked rear brake breaks the tyre loose as it bites, and lets
         // it grip again as gradually, so a tyre sliding sideways does not
         // snatch the bike over the moment the brake comes off.
-        const float skid_goal = std::clamp (controls.skid, 0.0f, 1.0f);
+        // On the back wheel in a wheelie the rider covers the rear brake
+        // rather than stamping on it, and the tyre keeps rolling.
+        const float wheelie = std::clamp (controls.wheelie, 0.0f, 1.0f);
+        const bool on_rear = rear_contact && !front_contact && wheelie > 0.0f;
+        const float skid_goal =
+          on_rear ? 0.0f : std::clamp (controls.skid, 0.0f, 1.0f);
         skid += (skid_goal - skid) *
                 (1.0f - std::exp (-(skid_goal > skid ? 12.0f : 5.0f) * dt));
         b3Shape_SetFriction (rear_tire, rear_friction ());
@@ -560,13 +592,23 @@ namespace moppe {
           (goal - lean) * (1.0f - std::exp (-(grounded ? 8.0f : 3.0f) * dt));
         const Vec3 target_up =
           level * std::cos (lean) + right * std::sin (lean);
-        // On the ground the bike leans over its tire contacts.
+        // On the ground the bike leans over its tire contacts, or over the
+        // rear one alone in a wheelie.
         const Vec3 under =
-          p - ground_normal * (rig.ride_height () - rig.reference_height);
+          on_rear
+            ? from_b3 (b3Body_GetPosition (rear)) -
+                ground_normal * rig.wheel_radius
+            : p - ground_normal * (rig.ride_height () - rig.reference_height);
+        // A wheelie reared up near the vertical has no roll left to hold:
+        // about its forward axis it would only spin round.
+        const float rolls =
+          wheelie > 0.0f
+            ? std::clamp ((dot (up, level) - 0.1f) / 0.3f, 0.0f, 1.0f)
+            : 1.0f;
         steer_rate (forward,
                     angle_about (forward, up, target_up) * 9.0f,
                     roll_inertia,
-                    30.0f,
+                    30.0f * rolls,
                     dt,
                     grounded ? &under : nullptr);
 
@@ -583,7 +625,12 @@ namespace moppe {
           if (length2 (tangent) > 1e-6f)
             nose = angle_about (left, forward, normalized (tangent));
         }
-        if (hanging || (!grounded && speed > 2.0f)) {
+        // A bike in a wheelie that leaves the ground for a moment is left
+        // to its own pitch at first, and one that has reared past the
+        // vertical goes over: righting it would flip it round.
+        const bool reared =
+          wheelie > 0.0f && (airborne < 0.3f || dot (up, level) < 0.1f);
+        if (hanging || (!grounded && speed > 2.0f && !reared)) {
           Vec3 aim;
           if (hanging) {
             aim = controls.hang_forward;
@@ -604,16 +651,55 @@ namespace moppe {
                         dt);
         }
 
+        // Leaning back for a wheelie, the rider's weight goes back over the
+        // rear wheel; once the front is up they balance the bike with it,
+        // forward as it rises past the pitch they hold it at, back as it
+        // falls, as far as their body reaches. Their weight standing back
+        // of the chassis' centre is its own weight with a couple added,
+        // which only the ground under the tyres can answer: in the air it
+        // turns nothing.
+        {
+          const float rising = -dot (
+            from_b3 (b3Body_GetAngularVelocity (chassis)), left);
+          const float balance =
+            front_contact ? 1.0f
+                          : (rig.wheelie_pitch - nose) / 0.2f - 0.5f * rising;
+          const float goal =
+            wheelie * rig.wheelie_lean * std::clamp (balance, -0.6f, 1.0f);
+          rider_shift += (goal - rider_shift) * (1.0f - std::exp (-8.0f * dt));
+          if (grounded) {
+            const Vec3 weight =
+              world_up * (-chassis_mass * bike_rig::gravity);
+            b3Body_ApplyTorque (
+              chassis, to_b3 (cross (forward * -rider_shift, weight)), true);
+          }
+        }
+
+        // Leaning back, the rider rolls the throttle on over two thirds of
+        // a second and shuts it quickly, and the power comes in as the
+        // square of the twist, so a tap of it is a blip of power and a
+        // held throttle a surge.
+        const float throttle_goal = std::max (controls.throttle, 0.0f);
+        twist = wheelie <= 0.0f
+                  ? throttle_goal
+                  : std::clamp (throttle_goal, twist - 6.0f * dt,
+                                twist + 1.5f * dt);
+        const float throttle = controls.throttle <= 0.0f ? controls.throttle
+                               : wheelie > 0.0f          ? twist * twist
+                                                         : twist;
+
         // Engine and brakes through the wheel joints' spin motors.
         const float r = rig.wheel_radius;
         float rear_speed = 0.0f;
         float rear_torque = rig.engine_brake_torque;
         float front_torque = 0.0f;
-        const float wheelie_cut =
-          std::clamp ((rig.wheelie_limit - nose) / 0.15f, 0.0f, 1.0f);
+        // Leaning back for a wheelie, the rider lets the front come up.
+        const float wheelie_cut = std::max (
+          wheelie,
+          std::clamp ((rig.wheelie_limit - nose) / 0.15f, 0.0f, 1.0f));
         const float stoppie_cut =
           std::clamp ((rig.stoppie_limit + nose) / 0.15f, 0.0f, 1.0f);
-        if (controls.throttle > 0.02f) {
+        if (throttle > 0.02f) {
           // Power is limited against road speed, as on the classic bike.
           // Traction control keeps the drive inside what the tire can put
           // down on its present load, so the tire grips rather than slides,
@@ -627,19 +713,43 @@ namespace moppe {
           if (rear_contact) {
             const float grip =
               rig.traction_share * rig.tire_friction * rear_load;
-            const float wheelie = rig.wheelie_share * total_mass *
-                                  bike_rig::gravity * rig.half_wheelbase /
-                                  (rig.ride_height () - rig.reference_height);
+            const float lift = rig.wheelie_share * total_mass *
+                               bike_rig::gravity * rig.half_wheelbase /
+                               (rig.ride_height () - rig.reference_height);
+            // Leaning back, the rider lets the drive lift the front, but
+            // its pull about the rear tyre may rear the bike up by no more
+            // than wheelie_torque over what the weight holds it down with,
+            // so a throttle held open rears it steadily past the balance,
+            // to fall over backwards, rather than throwing it into the air.
+            float rearing = lift;
+            if (wheelie > 0.0f) {
+              Vec3 heading = forward - up;
+              heading[1] = 0.0f;
+              const Vec3 arm = p - forward * rider_shift -
+                               from_b3 (b3Body_GetPosition (rear)) +
+                               ground_normal * r;
+              const float height = std::max (dot (arm, ground_normal), 0.2f);
+              const float reach = length2 (heading) > 1e-6f
+                                    ? dot (arm, normalized (heading))
+                                    : 0.0f;
+              rearing = std::max (
+                0.0f,
+                (rig.wheelie_torque + total_mass * bike_rig::gravity * reach) /
+                  height);
+            }
             rear_speed = (std::max (vf, 0.0f) + 20.0f) / r;
             rear_torque =
               wheelie_cut *
-              std::min ({ controls.throttle * force, grip, wheelie }) * r;
+              std::min ({ throttle * force,
+                          grip,
+                          rearing }) *
+              r;
           } else {
             rear_speed = (std::max (vf, 0.0f) + 1.0f) / r;
             rear_torque = rig.free_rev_torque;
           }
-        } else if (controls.throttle < -0.02f) {
-          const float effort = -controls.throttle;
+        } else if (throttle < -0.02f) {
+          const float effort = -throttle;
           if (vf > 1.5f) {
             rear_torque = effort * rig.rear_brake_force * r;
             front_torque = stoppie_cut * effort * rig.front_brake_force * r;
@@ -649,7 +759,12 @@ namespace moppe {
               effort * rig.reverse_force_share * params.max_drive_force * r;
           }
         }
-        if (controls.skid > 0.02f) {
+        if (on_rear && controls.skid > 0.02f) {
+          // The covered rear brake slows the wheel, and the bike with it,
+          // which brings the nose down.
+          rear_speed = 0.0f;
+          rear_torque = controls.skid * 0.5f * rig.rear_brake_force * r;
+        } else if (controls.skid > 0.02f) {
           // The rear brake stamped on locks the wheel to the frame,
           // whatever the throttle asks.
           rear_speed = 0.0f;
@@ -693,6 +808,7 @@ namespace moppe {
         float front_load = 0.0f;
         front_contact = wheel_touches_ground (front, dt, front_load);
         rear_contact = wheel_touches_ground (rear, dt, rear_load);
+        airborne = front_contact || rear_contact ? 0.0f : airborne + dt;
         trunk_hit = body_hit = 0.0f;
         const b3ContactEvents events = b3World_GetContactEvents (world);
         for (int i = 0; i < events.hitCount; ++i) {
@@ -884,6 +1000,18 @@ namespace moppe {
 
     float RigidBike::skid () const {
       return m_impl->skid;
+    }
+
+    float RigidBike::rider_lean () const {
+      return m_impl->rider_shift / m_impl->rig.wheelie_lean;
+    }
+
+    float RigidBike::pitch () const {
+      return m_impl->pitch ();
+    }
+
+    bool RigidBike::wheeling () const {
+      return m_impl->wheeling ();
     }
 
     float RigidBike::trunk_hit () const {

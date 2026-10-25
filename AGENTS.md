@@ -462,6 +462,20 @@
     front wheel, so a held skid with the bars over brakes the bike round
     into a new heading, throwing a fan of dirt; let go, the tyre grips
     again gradually (`RigidBikeControls::skid`, `Vehicle::set_skid`).
+  - Wheelies, on the motocross: riding, hold `R` (the controller's left
+    shoulder) to lean back and open the throttle: the rider's weight goes
+    back, the traction control lets the front come up, and the throttle
+    rolls on progressively, so the drive lifts the front wheel and the
+    Box3D bike pivots on the rear (`RigidBikeControls::wheelie`). Up there
+    the rider balances it with their body as far as it reaches; more
+    throttle lifts it, `Shift` (covered, not stamped on) brings it down,
+    and a throttle held open rears it past the vertical to fall over
+    backwards. The rider hangs back off the saddle on straight arms
+    (`pose_rider` in vehicle_render.cc). The ground covered on the back
+    wheel counts over the speedometer and scores two points a metre past
+    five (`m_wheelie_m` in game_session.cc); `MOPPE_DEMO=wheelie`
+    (`tools/record OUT.mp4 wheelie`) rides them on the autopilot. The
+    classic point mass has none (companion wire version 11).
   - The helicopter (`moppe/mov/helicopter.*`, `models/helicopter.blend`
     from `tools/figure/helicopter.py`, drawn by `game/helicopter_render.*`)
     stands on a pad of its own a few hundred metres from the trailhead,

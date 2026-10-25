@@ -110,6 +110,7 @@ namespace moppe::game {
       .boost_level = vehicle.boost_level (),
       .boost_drive = vehicle.boost_drive (),
       .crank_radians = radians_value (vehicle.crank ()),
+      .rider_lean = vehicle.rider_lean (),
     };
   }
 
@@ -382,6 +383,11 @@ namespace moppe::game {
     hud.landed_points = logic.m_landed_points;
     hud.landed_clean = logic.m_landed_clean;
     hud.landed_age_s = logic.m_landed_age;
+    hud.wheelie_m = logic.m_wheelie_m;
+    hud.last_wheelie_m = logic.m_last_wheelie_m;
+    hud.last_wheelie_points = logic.m_last_wheelie_points;
+    hud.best_wheelie_m = logic.m_best_wheelie_m;
+    hud.wheelie_age_s = logic.m_wheelie_age;
     hud.on_foot = logic.m_mode == M_FOOT;
     hud.gliding = logic.m_mode == M_GLIDER;
     hud.can_deploy_glider = input.session.can_deploy_glider (input.surface);

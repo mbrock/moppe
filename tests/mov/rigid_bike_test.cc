@@ -358,3 +358,147 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
   MOPPE_CHECK (bike.grounded ());
   MOPPE_CHECK (bike.render_normal ()[1] > 0.98f);
 }
+
+namespace {
+  // The pitch of a bike on flat ground, nose up.
+  float pitch_of (const mov::Vehicle& bike) {
+    return std::asin (std::clamp ((float)bike.orientation ()[1], -1.0f, 1.0f));
+  }
+
+  // A rider holding a wheelie on the throttle and the rear brake as a
+  // person would at the keyboard, all or nothing: on the throttle while the
+  // nose is low or falling, off it once it rises, and a dab of the brake if
+  // it gets too high, judging by where the pitch is heading a moment on.
+  struct WheelieRider {
+    float last = 0.0f;
+    void operator() (mov::Vehicle& bike) {
+      const float pitch = pitch_of (bike);
+      const float ahead = pitch + 0.4f * (pitch - last) / seconds_value (tick);
+      last = pitch;
+      bike.set_wheelie (1.0f);
+      bike.set_thrust (ahead < 0.7f ? 1.0f : 0.0f);
+      bike.set_skid (ahead > 1.1f ? 1.0f : 0.0f);
+    }
+  };
+}
+
+MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
+  const map::SurfaceGeometry surface = rigid_test_surface (flat);
+  // Flat out without leaning back, the traction control keeps the front
+  // wheel down.
+  {
+    mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
+    bike.set_thrust (1.0f);
+    float highest = 0.0f;
+    for (int i = 0; i < 3 * 120; ++i) {
+      bike.update (tick);
+      highest = std::max (highest, pitch_of (bike));
+      MOPPE_CHECK (!bike.wheeling ());
+    }
+    MOPPE_CHECK (highest < 0.15f);
+  }
+
+  // Leaning back from a standstill, the throttle lifts the front and the
+  // bike rides on its rear wheel, pitched up, for as long as it is kept
+  // there, the rider's weight back over the wheel.
+  mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
+  for (int i = 0; i < 60; ++i)
+    bike.update (tick);
+  WheelieRider rider;
+  float low = 10.0f, high = 0.0f, upright = 1.0f, lean = 0.0f;
+  float metres = 0.0f;
+  Vec3 last = bike.position ();
+  for (int i = 0; i < 8 * 120; ++i) {
+    rider (bike);
+    bike.update (tick);
+    MOPPE_CHECK (bike.grounded ());
+    if (i < 2 * 120)
+      continue;
+    // Two seconds on, it has been up and settled.
+    MOPPE_CHECK (bike.wheeling ());
+    low = std::min (low, pitch_of (bike));
+    high = std::max (high, pitch_of (bike));
+    upright = std::min (upright, std::abs (dot (Vec3 (1, 0, 0),
+                                                bike.render_normal ())));
+    lean = std::max (lean, bike.rider_lean ());
+    metres += length (bike.position () - last);
+    last = bike.position ();
+    if (i == 2 * 120)
+      metres = 0.0f;
+  }
+  MOPPE_CHECK (low > 0.4f && high < 1.1f);
+  // Upright in roll, not leaning on its side.
+  MOPPE_CHECK (upright < 0.1f);
+  MOPPE_CHECK (lean > 0.3f);
+  MOPPE_CHECK (metres > 60.0f);
+  MOPPE_CHECK (bike.pop_impact () < 1.0f);
+
+  // Sitting forward and off the throttle, the front comes back down onto
+  // its wheel without a crash, and the bike rides on.
+  bike.set_wheelie (0.0f);
+  bike.set_thrust (0.0f);
+  bike.set_skid (0.0f);
+  for (int i = 0; i < 2 * 120; ++i)
+    bike.update (tick);
+  MOPPE_CHECK (!bike.wheeling ());
+  MOPPE_CHECK (bike.grounded ());
+  MOPPE_CHECK (std::abs (pitch_of (bike)) < 0.05f);
+  MOPPE_CHECK (bike.pop_impact () < 7.0f);
+  MOPPE_CHECK (dot (bike.velocity (), bike.orientation ()) > 5.0f);
+}
+
+MOPPE_TEST (the_rear_brake_sets_a_wheelie_down_and_full_throttle_loops_it) {
+  const map::SurfaceGeometry surface = rigid_test_surface (flat);
+  const auto pop_a_wheelie = [&] (mov::Vehicle& bike) {
+    WheelieRider rider;
+    for (int i = 0; i < 3 * 120; ++i) {
+      rider (bike);
+      bike.update (tick);
+    }
+    MOPPE_CHECK (bike.wheeling ());
+  };
+
+  // A held rear brake brings the nose down within a second, the tyre
+  // rolling rather than locking into a skid.
+  {
+    mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
+    pop_a_wheelie (bike);
+    bike.set_thrust (0.0f);
+    bike.set_skid (1.0f);
+    int frames = 0;
+    while (bike.wheeling () && frames < 120) {
+      bike.update (tick);
+      MOPPE_CHECK (bike.skid () < 0.05f);
+      ++frames;
+    }
+    MOPPE_CHECK (frames < 120);
+  }
+
+  // Off the throttle, without the brake, it takes longer to come down.
+  {
+    mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
+    pop_a_wheelie (bike);
+    bike.set_thrust (0.0f);
+    int frames = 0;
+    while (bike.wheeling () && frames < 240)
+      bike.update (tick), ++frames;
+    MOPPE_CHECK (frames > 30);
+  }
+
+  // Held wide open, it rises past the vertical and goes over.
+  {
+    mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
+    pop_a_wheelie (bike);
+    bike.set_thrust (1.0f);
+    bike.set_skid (0.0f);
+    float lowest_up = 1.0f;
+    for (int i = 0; i < 3 * 120; ++i) {
+      bike.update (tick);
+      lowest_up =
+        std::min (lowest_up, static_cast<float> (bike.render_normal ()[1]));
+    }
+    MOPPE_CHECK (lowest_up < -0.5f);
+    // It lies where it fell, not righted onto its wheels facing back.
+    MOPPE_CHECK (bike.render_normal ()[1] < 0.5f);
+  }
+}

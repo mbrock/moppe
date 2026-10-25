@@ -101,6 +101,15 @@ namespace moppe::game {
     int m_landed_points = 0;
     bool m_landed_clean = false;
     float m_landed_age = 10.0f;
+    // A wheelie: the ground covered on the back wheel so far (0 while both
+    // are down), how long it has been off it, and the last one's length,
+    // its points, and the longest; and seconds since the last one ended.
+    float m_wheelie_m = 0.0f;
+    float m_wheelie_gap = 0.0f;
+    float m_last_wheelie_m = 0.0f;
+    int m_last_wheelie_points = 0;
+    float m_best_wheelie_m = 0.0f;
+    float m_wheelie_age = 10.0f;
     std::mt19937 m_fx_rng { 7 };
     Basket m_basket;
     Camp m_camp;

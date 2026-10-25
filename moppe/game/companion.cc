@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 10;
+    constexpr std::uint8_t wire_version = 11;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -272,6 +272,7 @@ namespace moppe::game {
     out.put (bike.thrust);
     out.put (bike.boost_level);
     out.put (bike.boost_drive);
+    out.put (bike.rider_lean);
 
     const JeepPose& jeep = snapshot.jeep;
     out.put (jeep.position);
@@ -413,6 +414,7 @@ namespace moppe::game {
     bike.thrust = in.number ();
     bike.boost_level = in.number ();
     bike.boost_drive = in.number ();
+    bike.rider_lean = in.number ();
 
     JeepPose& jeep = snapshot.jeep;
     jeep.position = in.point ();
@@ -576,6 +578,7 @@ namespace moppe::game {
     bike.wheel_spin_radians =
       mix (a.bike.wheel_spin_radians, b.bike.wheel_spin_radians, t);
     bike.fork_radians = mix (a.bike.fork_radians, b.bike.fork_radians, within);
+    bike.rider_lean = mix (a.bike.rider_lean, b.bike.rider_lean, within);
 
     if (!leapt (a.jeep.position, b.jeep.position)) {
       JeepPose& jeep = result.jeep;

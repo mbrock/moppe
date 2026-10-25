@@ -36,6 +36,18 @@ namespace moppe {
       int landed_points;
       bool landed_clean;
       float landed_age_s;
+      // The wheelie under way, metres on the back wheel (0 when there is
+      // none), the last one's length and points, the longest, and the
+      // seconds since the last one ended.
+      float wheelie_m = 0.0f;
+      float last_wheelie_m = 0.0f;
+      int last_wheelie_points = 0;
+      float best_wheelie_m = 0.0f;
+      float wheelie_age_s = 10.0f;
+      // Riding the motocross, which wheelies; and whether to prompt for
+      // it, as the jets are prompted (thumb_hint).
+      bool wheelies = false;
+      bool wheelie_hint = false;
       bool on_foot;
       // Soaring turns the gauge into an airspeed instrument with a climb
       // readout; an airborne bike earns the deploy prompt.
