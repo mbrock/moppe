@@ -40,7 +40,7 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
   MOPPE_CHECK (!parsed ({ "--windowed" }).config.fullscreen);
   MOPPE_CHECK (!options.config.capture_frames);
   MOPPE_CHECK_NEAR (options.graphics.render_scale_override, 0.5f, 0.0f);
-  MOPPE_CHECK (!options.graphics.motion_blur);
+  MOPPE_CHECK (options.graphics.motion_blur);
   MOPPE_CHECK (options.screenshot_path.empty ());
   MOPPE_CHECK (!options.benchmark.has_value ());
   MOPPE_CHECK (options.world_cache.mode == game::WorldCacheMode::Reuse);

@@ -23,6 +23,7 @@
 #include <boulders.hh>
 #include <boulders_shadow.hh>
 #include <mesh_shadow.hh>
+#include <motion_blur.hh>
 #include <bloom_bright.hh>
 #include <exposure.hh>
 #include <forest.hh>
@@ -370,6 +371,7 @@ namespace moppe::nhal {
         m_grass_tiles_code.keep (shaders.grass_tiles);
         m_bloom_bright_code.keep (shaders.bloom_bright);
         m_bloom_blur_code.keep (shaders.bloom_blur);
+        m_motion_blur_code.keep (shaders.motion_blur);
         m_gtao_code.keep (shaders.gtao);
         m_gtao_blur_code.keep (shaders.gtao_blur);
         m_shafts_code.keep (shaders.shafts);
@@ -1540,7 +1542,40 @@ namespace moppe::nhal {
       }
 
       void apply_underwater (float) override {}
-      void apply_motion_blur (float) override {}
+      // The resolved image smeared along the scene's motion into a
+      // target of its own, which the present pass then shows: the history
+      // stays sharp. `strength` is the share of a frame's motion the
+      // streaks span.
+      void apply_motion_blur (float strength) override {
+        if (strength <= 0.0f || m_probe == "scene")
+          return;
+        reconstruct_scene ();
+        if (!m_blurred)
+          m_blurred = m_device->create_texture (
+            { m_width, m_height, Format::rgba16_float,
+              usage_render_target | usage_sampled, 1, "motion blurred" });
+        shaders::motion_blur::Smear smear {};
+        // At most some three and a half hundredths of the frame's height,
+        // in taps three output pixels apart.
+        constexpr float most_taps = 12.0f;
+        const float longest = 0.035f * float (m_height);
+        smear.streak = { std::min (strength, 1.0f), longest, most_taps,
+                         std::max (longest / most_taps, 1.0f) };
+        RenderPassDesc desc;
+        desc.label = "motion blur";
+        desc.color_count = 1;
+        desc.colors[0] = { m_blurred, Load::discard, Store::store };
+        m_device->begin_render_pass (desc);
+        m_device->set_pipeline (m_motion_blur);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, smear);
+        m_device->set_texture (0, m_image);
+        m_device->set_texture (1, m_scene_motion);
+        m_device->set_texture (2, m_scene_depth);
+        m_device->draw (3);
+        m_device->end_render_pass ();
+        m_image = m_blurred;
+      }
       void apply_scene_blur () override {}
 
       void draw_hud_text (const render::TextList& text) override {
@@ -1916,6 +1951,11 @@ namespace moppe::nhal {
         blur.vertex = m_bloom_blur_code.stage (0);
         blur.fragment = m_bloom_blur_code.stage (1);
         m_bloom_blur = m_device->create_render_pipeline (blur);
+        RenderPipelineDesc smear = bright;
+        smear.program = &shaders::motion_blur::program;
+        smear.vertex = m_motion_blur_code.stage (0);
+        smear.fragment = m_motion_blur_code.stage (1);
+        m_motion_blur = m_device->create_render_pipeline (smear);
 
         RenderPipelineDesc occlusion = present;
         occlusion.program = &shaders::gtao::program;
@@ -2359,11 +2399,11 @@ namespace moppe::nhal {
           seconds (std::max (1.0f / params.frame_rate_target, refresh)));
       }
 
-      // The targets at the drawable's size: the temporal history and the
-      // bloom's quarter of it. A new history starts from the scene alone.
+      // The targets at the drawable's size: the temporal history, its
+      // motion-blurred copy, and the bloom's quarter of it. A new history starts from the scene alone.
       void make_drawable_targets () {
-        for (Texture t :
-             { m_history[0], m_history[1], m_bloom[0], m_bloom[1] })
+        for (Texture t : { m_history[0], m_history[1], m_blurred, m_bloom[0],
+                           m_bloom[1] })
           if (t)
             m_device->destroy (t);
         m_width = m_device->surface_width ();
@@ -2372,6 +2412,8 @@ namespace moppe::nhal {
           t = m_device->create_texture (
             { m_width, m_height, Format::rgba16_float,
               usage_render_target | usage_sampled, 1, "temporal history" });
+        // Made when a frame first blurs.
+        m_blurred = {};
         m_bloom_width = std::max (1u, m_width / 4);
         m_bloom_height = std::max (1u, m_height / 4);
         for (Texture& t : m_bloom)
@@ -2656,6 +2698,10 @@ namespace moppe::nhal {
       std::uint32_t m_bloom_width = 1, m_bloom_height = 1;
       ProgramCode m_bloom_bright_code, m_bloom_blur_code;
       Pipeline m_bloom_bright, m_bloom_blur;
+      ProgramCode m_motion_blur_code;
+      Pipeline m_motion_blur;
+      // The resolved image, smeared (apply_motion_blur).
+      Texture m_blurred;
       Texture m_image;
 
       FrameParams m_params {};

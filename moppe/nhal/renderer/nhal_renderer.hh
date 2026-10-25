@@ -46,6 +46,7 @@ namespace moppe::nhal {
     StageCode scene_copy[2];
     StageCode neighbourhood[2];
     StageCode mesh_shadow[2];
+    StageCode motion_blur[2];
   };
 
   // The programs' MSL, embedded in the binary at build time.

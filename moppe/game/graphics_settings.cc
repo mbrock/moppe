@@ -36,7 +36,6 @@ namespace moppe::game {
   GraphicsSettings default_graphics_settings () {
     GraphicsSettings settings = high_graphics_settings ();
     settings.render_scale_override = 0.5f;
-    settings.motion_blur = false;
     return settings;
   }
 

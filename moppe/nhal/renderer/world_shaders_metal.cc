@@ -170,6 +170,12 @@ namespace moppe::nhal {
     const char neighbourhood_fragment[] = {
 #embed "neighbourhood.fragment.metal"
       , 0 };
+    const char motion_blur_vertex[] = {
+#embed "motion_blur.vertex.metal"
+      , 0 };
+    const char motion_blur_fragment[] = {
+#embed "motion_blur.fragment.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -206,6 +212,7 @@ namespace moppe::nhal {
       { { scene_copy_vertex, {} }, { scene_copy_fragment, {} } },
       { { neighbourhood_vertex, {} }, { neighbourhood_fragment, {} } },
       { { mesh_shadow_vertex, {} }, {} },
+      { { motion_blur_vertex, {} }, { motion_blur_fragment, {} } },
     };
     return shaders;
   }

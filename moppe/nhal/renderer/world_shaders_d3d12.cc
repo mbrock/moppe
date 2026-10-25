@@ -34,6 +34,8 @@
 #include <shader_scene_copy_vertex.h>
 #include <shader_neighbourhood_fragment.h>
 #include <shader_neighbourhood_vertex.h>
+#include <shader_motion_blur_fragment.h>
+#include <shader_motion_blur_vertex.h>
 #include <shader_leaves_fragment.h>
 #include <shader_leaves_vertex.h>
 #include <shader_water_fragment.h>
@@ -103,6 +105,8 @@ namespace moppe::nhal {
       { dxil (shader_neighbourhood_vertex),
         dxil (shader_neighbourhood_fragment) },
       { dxil (shader_mesh_shadow_vertex), {} },
+      { dxil (shader_motion_blur_vertex),
+        dxil (shader_motion_blur_fragment) },
     };
     return shaders;
   }

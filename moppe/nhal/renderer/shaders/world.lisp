@@ -4937,6 +4937,83 @@
   :vertex present-vertex
   :fragment shafts-fragment)
 
+;;; -- motion blur -------------------------------------------------------------
+;;;
+;;; The resolved image smeared along the scene's own motion, so the world
+;;; streaks past what the camera follows.  Each pixel averages taps spread
+;;; over the streak of the scene texel it falls in -- its motion scaled to a
+;;; share of the frame and capped -- taking as many as the streak is long,
+;;; none where it barely moves, which leaves the followed machine and its
+;;; rider sharp.  A tap on something nearer than the pixel counts only if
+;;; its own streak reaches back over the pixel, so a sharp foreground is not
+;;; dragged out over the background moving behind it, while the ground,
+;;; whose nearer parts move faster, still blurs evenly.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *smear*
+    '((streak :vec4))))            ; share of a frame's motion, longest
+                                   ; streak in output pixels, most taps,
+                                   ; output pixels a tap
+
+(define-shader motion-blur-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0)
+              (pixel :vec4 :built-in :frag-coord))
+     :outputs ((color :vec4 :location 0))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (smear :uniform-block :binding 1 :members #.*smear*)
+                 (image :texture-2d :binding 0)
+                 (scene-motion :texture-2d :binding 1)
+                 (scene-depth :depth-texture-2d :binding 2)
+                 (linear-clamp :sampler :binding 0)))
+  (let* ((scene-size (swizzle temporal :xy))
+         (output-size (swizzle temporal-blend :zw))
+         (share (swizzle streak :x))
+         (longest (swizzle streak :y))
+         (centre (scene-texel (floor (* uv scene-size)) 0.0 0.0 scene-size))
+         (depth (max (swizzle (texel-load scene-depth centre) :x) 1e-7))
+         (motion (* (swizzle (texel-load scene-motion centre) :xy)
+                    (* output-size share)))
+         (extent (sqrt (dot motion motion)))
+         (reach (min extent longest))
+         (span (* motion (/ reach (max extent 0.0001))))
+         (taps (uint (clamp (floor (/ reach (swizzle streak :w)))
+                            0.0 (swizzle streak :z))))
+         (offset (interleaved-noise (swizzle pixel :xy)))
+         (here (swizzle (sample-level image linear-clamp uv 0.0) :rgb))
+         (gathered
+           (counted-fold (i taps sum (vec4 here 1.0))
+             (let* ((along (- (/ (+ (float i) offset) (float taps)) 0.5))
+                    (at (+ uv (/ (* span along) output-size)))
+                    (texel (scene-texel (floor (* at scene-size)) 0.0 0.0
+                                        scene-size))
+                    (tap-motion (* (swizzle (texel-load scene-motion texel)
+                                            :xy)
+                                   (* output-size share)))
+                    (tap-reach (min (sqrt (dot tap-motion tap-motion))
+                                    longest))
+                    (nearer (smoothstep 1.02 1.1
+                                        (/ (swizzle (texel-load scene-depth
+                                                                texel)
+                                                    :x)
+                                           depth)))
+                    (covers (clamp (+ (- (* 0.5 tap-reach)
+                                         (* (abs along) reach))
+                                      1.0)
+                                   0.0 1.0))
+                    (weight (mix 1.0 covers nearer)))
+               (+ sum (vec4 (* (swizzle (sample-level image linear-clamp at
+                                                      0.0)
+                                        :rgb)
+                               weight)
+                            weight))))))
+    (set-output color (vec4 (/ (swizzle gathered :xyz) (swizzle gathered :w))
+                            1.0))))
+
+(define-shader-program motion-blur
+  :vertex present-vertex
+  :fragment motion-blur-fragment)
+
 (define-shader-function aces (x)
   (clamp (/ (* x (+ (* x 2.51) (vec3 0.03 0.03 0.03)))
             (+ (* x (+ (* x 2.43) (vec3 0.59 0.59 0.59))) (vec3 0.14 0.14 0.14)))

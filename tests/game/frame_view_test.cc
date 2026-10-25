@@ -420,3 +420,22 @@ MOPPE_TEST (
     0.74f,
     1e-6f);
 }
+
+MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
+  using game::motion_blur_for;
+  // The boat on the plane streaks; a jeep or the motocross as fast does not.
+  MOPPE_CHECK (motion_blur_for (game::M_BOAT, 26.0f) > 0.3f);
+  MOPPE_CHECK (motion_blur_for (game::M_BOAT, 10.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::M_JEEP, 26.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 26.0f) == 0.0f);
+  // The motocross cruises sharp and streaks on a boost.
+  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 100.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 150.0f) > 0.3f);
+  // Faster streaks longer.
+  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 140.0f) >
+               motion_blur_for (game::M_BIKE, 120.0f));
+  // None on foot or in the air, however fast.
+  MOPPE_CHECK (motion_blur_for (game::M_FOOT, 30.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::M_HELICOPTER, 200.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::M_GLIDER, 150.0f) == 0.0f);
+}

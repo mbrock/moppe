@@ -166,8 +166,19 @@ Falling leaves are leaf_fall.metal's: a window of world-anchored
 tumble are a function of the cell and the time, wherever the fallen-leaf
 raster says gold crowns stand (the `leaves` program, 64 x 64 instances).
 
-Dust and the old underwater, motion-blur, and scene-blur passes are not
-drawn yet.
+Motion blur (`motion-blur`) smears the resolved image along the scene's
+own motion vectors into a target of its own, which the present pass then
+shows, so the history stays sharp: up to twelve taps over a streak capped
+at 3.5% of the frame's height, none where the scene barely moves (the
+followed machine and rider stay sharp), and a nearer tap counts only where
+its own streak reaches back over the pixel. The game asks for it per way of
+getting about (`motion_blur_for` in game/frame_view.cc): the boat from 15
+km/h as it comes up onto the plane, the motocross only past 110 km/h on a
+boost, the cars and the mountainbike at their own fast speeds, and never on
+foot, in the glider, or in the helicopter; the cinematic sets its own. It
+costs some 0.12 ms at 1080p on an RX 6600 XT, and nothing while unasked.
+
+Dust and the old underwater and scene-blur passes are not drawn yet.
 
 ## The game on Xbox
 

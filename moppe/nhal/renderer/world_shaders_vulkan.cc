@@ -175,6 +175,12 @@ namespace moppe::nhal {
     alignas (4) const unsigned char neighbourhood_fragment[] = {
 #embed "neighbourhood.fragment.spv"
     };
+    alignas (4) const unsigned char motion_blur_vertex[] = {
+#embed "motion_blur.vertex.spv"
+    };
+    alignas (4) const unsigned char motion_blur_fragment[] = {
+#embed "motion_blur.fragment.spv"
+    };
 
     template <std::size_t N>
     StageCode spirv (const unsigned char (&code)[N]) {
@@ -218,6 +224,7 @@ namespace moppe::nhal {
       { spirv (scene_copy_vertex), spirv (scene_copy_fragment) },
       { spirv (neighbourhood_vertex), spirv (neighbourhood_fragment) },
       { spirv (mesh_shadow_vertex), {} },
+      { spirv (motion_blur_vertex), spirv (motion_blur_fragment) },
     };
     return shaders;
   }

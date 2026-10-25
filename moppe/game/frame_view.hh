@@ -367,6 +367,15 @@ namespace moppe::game {
   WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);
   FrameView compose_frame_view (const FrameViewInput& input);
 
+  // How long the motion blur draws the world's streaks, as a share of a
+  // frame's motion, for a player getting about in `mode` at `kmh`. Each
+  // way of getting about blurs from the speed that feels fast in it: the
+  // boat as it comes up onto the plane, the motocross (half again life
+  // size) only past what it cruises at unboosted. On foot and in the air
+  // there is none: the ground is far off from a wing or a cabin, so what
+  // streaks there is the camera's turning, not speed.
+  float motion_blur_for (Mode mode, float kmh);
+
   // The raw, unsmoothed sight line toward the sun.  The game updates its
   // small temporal accumulator in tick(); this remains a pure reading so
   // composing or rendering a FrameView cannot advance simulation state.

@@ -431,13 +431,10 @@ namespace moppe::game {
     hud.heading_radians =
       std::atan2 (hud.subject_heading[0], hud.subject_heading[2]);
 
-    if (cinematic)
-      result.motion_blur_amount = input.cinematic_motion_blur;
-    else {
-      const float kmh = input.session.subject_speed_kmh ();
-      result.motion_blur_amount =
-        std::clamp ((kmh - 90.0f) / 160.0f, 0.0f, 1.0f);
-    }
+    result.motion_blur_amount =
+      cinematic ? input.cinematic_motion_blur
+                : motion_blur_for (logic.m_mode,
+                                   input.session.subject_speed_kmh ());
 
     if (cinematic) {
       result.overlay.cinematic_prompt_alpha = std::clamp (
@@ -451,6 +448,40 @@ namespace moppe::game {
       fog > 0.0f ? 3.0f / fog : std::numeric_limits<float>::infinity ();
     result.visibility = visibility_for (input, result);
     return result;
+  }
+
+  float motion_blur_for (Mode mode, float kmh) {
+    // From the speed it begins at to the speed at which it is whole, and
+    // how long it is then.
+    struct Ramp {
+      float from, to, share;
+    };
+    Ramp ramp {};
+    switch (mode) {
+    case M_BOAT:
+      // It planes at some 26 km/h, flat out on still water.
+      ramp = { 15.0f, 26.0f, 1.0f };
+      break;
+    case M_BIKE:
+      // 60 to 105 km/h unboosted; a boost carries it to 150.
+      ramp = { 110.0f, 150.0f, 0.8f };
+      break;
+    case M_MOUNTAIN_BIKE:
+      ramp = { 40.0f, 70.0f, 0.6f };
+      break;
+    case M_JEEP:
+    case M_CADDY:
+    case M_PASSENGER:
+      ramp = { 80.0f, 140.0f, 0.6f };
+      break;
+    case M_FOOT:
+    case M_GLIDER:
+    case M_HELICOPTER:
+    case M_TRACTOR:
+      return 0.0f;
+    }
+    return ramp.share *
+           std::clamp ((kmh - ramp.from) / (ramp.to - ramp.from), 0.0f, 1.0f);
   }
 
   float sun_visibility_target (const FrameView& view,
