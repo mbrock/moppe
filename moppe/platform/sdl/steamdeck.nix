@@ -17,6 +17,14 @@ let
       chmod +x $out/bin/$language
     done
   '';
+  # Zig builds the versioned glibc stubs, libc++, and compiler-rt on first
+  # use, a minute's work that every build below would otherwise repeat.
+  zigCache = pkgs.runCommand "moppe-steamdeck-zig-cache" { } ''
+    export ZIG_GLOBAL_CACHE_DIR=$out ZIG_LOCAL_CACHE_DIR=$TMPDIR/local
+    echo 'int main () {}' > warm.cc
+    ${compiler}/bin/c++ warm.cc -o warm 2> /dev/null
+    rm -rf $out/tmp
+  '';
   common = {
     dontFixup = true;
     nativeBuildInputs = [
@@ -33,6 +41,8 @@ let
       # Do not consume NIX_LDFLAGS: its runtime paths belong to the build host.
       export CFLAGS="-ffile-prefix-map=/nix/store/=/dependencies/"
       export CXXFLAGS="$CFLAGS"
+      cp -r ${zigCache} $TMPDIR/zig-cache
+      chmod -R u+w $TMPDIR/zig-cache
       export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
       export ZIG_LOCAL_CACHE_DIR=$TMPDIR/zig-local-cache
     '';
@@ -92,6 +102,8 @@ let
         "-DSDL_RENDER_GPU=OFF"
         "-DSDL_GPU=OFF"
         "-DSDL_VULKAN=ON"
+        # Zig's Clang has AVX-512; probing it links a whole runtime anew.
+        "-DCOMPILER_SUPPORTS_AVX512F=ON"
       ];
     }
   );

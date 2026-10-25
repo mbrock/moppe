@@ -28,6 +28,19 @@ let
     done
     chmod +x $out/bin/*
   '';
+  # Zig builds libc++, the C library, and compiler-rt for the target on
+  # first use, with pages of warnings that would garble CMake's reading of
+  # the compiler's output, and again for each set of link flags that names
+  # them differently: a stripped link (-s, the game's) and SDL's AVX-512
+  # probe each cost a minute. Built once here, each build starts from a
+  # copy instead.
+  zigCache = pkgs.runCommand "moppe-windows-zig-cache" { } ''
+    export ZIG_GLOBAL_CACHE_DIR=$out ZIG_LOCAL_CACHE_DIR=$TMPDIR/local
+    echo 'int main () {}' > warm.cc
+    ${toolchain}/bin/c++ warm.cc -o warm.exe 2> /dev/null
+    ${toolchain}/bin/c++ -s warm.cc -o warm.exe 2> /dev/null
+    rm -rf $out/tmp
+  '';
   common = {
     dontFixup = true;
     nativeBuildInputs = [
@@ -35,14 +48,12 @@ let
       pkgs.ninja
     ];
     preConfigure = ''
+      cp -r ${zigCache} $TMPDIR/zig-cache
+      chmod -R u+w $TMPDIR/zig-cache
       export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
       export ZIG_LOCAL_CACHE_DIR=$TMPDIR/zig-local-cache
       export CFLAGS="-ffile-prefix-map=/nix/store/=/dependencies/"
       export CXXFLAGS="$CFLAGS"
-      # Zig builds libc++ for the target on first use, with pages of
-      # warnings that would garble CMake's reading of the compiler's output.
-      echo 'int main () {}' > $TMPDIR/warm.cc
-      ${toolchain}/bin/c++ $TMPDIR/warm.cc -o $TMPDIR/warm.exe 2> /dev/null
     '';
     cmakeFlags = [
       "-DCMAKE_SYSTEM_NAME=Windows"
@@ -88,6 +99,8 @@ let
         "-DFETCHCONTENT_SOURCE_DIR_MP-UNITS=${sources.mp-units}"
         # SDL3 is built into the game from nixpkgs' copy of its source.
         "-DFETCHCONTENT_SOURCE_DIR_SDL3=${pkgs.sdl3.src}"
+        # Zig's Clang has AVX-512; probing it links a whole runtime anew.
+        "-DCOMPILER_SUPPORTS_AVX512F=ON"
         "-DMOPPE_LANDS_DIR=${lands}"
         "-DMOPPE_EMBED_ASSETS=ON"
       ];
