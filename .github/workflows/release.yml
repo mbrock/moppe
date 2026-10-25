@@ -17,18 +17,42 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    # A tag's run may read master's caches but no other tag's, so a change
+    # to what the builds are made of builds them on master too, to save the
+    # Nix stores below for the next tag. Tags ignore the paths.
+    branches: [master]
+    paths:
+      - flake.lock
+      - "**/*.nix"
+      - lands.json
+      - .github/workflows/release.yml
   workflow_dispatch:
 
 permissions:
   contents: read
+  # To replace a job's cached Nix store with a newer one.
+  actions: write
 
-# Nix supplies luv-shaderc, which lowers the shaders, on every runner.
+# Nix supplies luv-shaderc, which lowers the shaders, on every runner. Each
+# job keeps its Nix store in the Actions cache, keyed by what the builds are
+# made of: the dependencies built from source (SDL, volk, Zig's runtimes,
+# luv-shaderc) and the 600 MB fetched from cache.nixos.org come back at
+# once, and only the game is built. A new key starts from an empty store,
+# so the cache holds one build's store and nothing older.
 jobs:
   linux:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ github.job }}-${{ hashFiles('flake.lock', '**/*.nix', 'lands.json') }}
+          save: ${{ github.ref_type != 'tag' }}
+          purge: true
+          purge-prefixes: nix-${{ github.job }}-
+          purge-created: 0
+          purge-primary-key: never
       - name: Build
         run: |
           nix build -L .#moppe-steamdeck
@@ -45,6 +69,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ github.job }}-${{ hashFiles('flake.lock', '**/*.nix', 'lands.json') }}
+          save: ${{ github.ref_type != 'tag' }}
+          purge: true
+          purge-prefixes: nix-${{ github.job }}-
+          purge-created: 0
+          purge-primary-key: never
       - name: Build
         run: |
           nix build -L .#moppe-windows
@@ -61,6 +93,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ github.job }}-${{ hashFiles('flake.lock') }}
+          save: ${{ github.ref_type != 'tag' }}
+          purge: true
+          purge-prefixes: nix-${{ github.job }}-
+          purge-created: 0
+          purge-primary-key: never
       - name: Install the build tools
         run: |
           brew install ninja zstd
