@@ -28,6 +28,40 @@
     note.textContent = message;
   };
 
+  // Covers the page, its touch controls too, to say plainly that this
+  // browser cannot draw the game and where it can be played instead.
+  const unsupported = (reason) => {
+    console.error(reason);
+    for (const id of ['touch', 'status']) {
+      const element = document.getElementById(id);
+      if (element)
+        element.style.display = 'none';
+    }
+    const card = document.createElement('div');
+    card.id = 'moppe-unsupported';
+    card.style.cssText =
+      'position:fixed;inset:0;z-index:1000;display:flex;' +
+      'align-items:center;justify-content:center;padding:1.5rem;' +
+      'background:#10170f;color:#dcebdd;' +
+      'font:16px/1.5 system-ui,sans-serif;text-align:left';
+    const releases = 'https://github.com/mbrock/moppe/releases/latest';
+    card.innerHTML =
+      '<div style="max-width:32rem">' +
+      '<h1 style="font-size:1.4rem;margin:0 0 .75rem">' +
+      'Moppe needs WebGPU</h1>' +
+      '<p style="margin:0 0 .75rem;color:#ffd9c2"></p>' +
+      '<p style="margin:0 0 .75rem">It draws with WebGPU, which this ' +
+      'browser or its graphics chip does not offer. It runs in Chrome or ' +
+      'Edge on a laptop or desktop, in Safari 26 on a recent iPhone, ' +
+      'iPad, or Mac, and in Chrome on Android 12 or newer with a recent ' +
+      'phone.</p>' +
+      '<p style="margin:0">Or download the game for Windows, macOS, or ' +
+      'Linux: <a style="color:#9fd8a0" href="' + releases + '">' +
+      releases.replace('https://', '') + '</a></p></div>';
+    card.querySelector('p').textContent = reason;
+    document.documentElement.appendChild(card);
+  };
+
   const acquireDevice = async () => {
     if (!navigator.gpu)
       throw new Error('This browser has no WebGPU.');
@@ -85,6 +119,6 @@
         Module['preinitializedWebGPUDevice'] = device;
         removeRunDependency('webgpu');
       },
-      (error) => Module['moppeFail'](error.message));
+      (error) => unsupported(error.message));
   });
 }
