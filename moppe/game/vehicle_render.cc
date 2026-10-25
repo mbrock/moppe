@@ -128,11 +128,11 @@ namespace moppe {
         const Vec3 up = cross (fwd, right);
 
         // Follow the smoothed surface frame on the ground and the velocity
-        // arc in flight; lean into the corner.
+        // arc in flight; lean into the corner. The Trail 90 is modelled at
+        // life size about the point midway between its axles.
         return Mat4::translation (pos) * Mat4::basis (right, up, fwd) *
                Mat4::rotation (vehicle.lean_radians * u::rad, Vec3 (0, 0, 1)) *
-               Mat4::translation (Vec3 (0, 0.5f * vehicle.scale, 0)) *
-               Mat4::scaling (Vec3 (1, 1, 1) * (1.5f * vehicle.scale));
+               Mat4::scaling (Vec3 (1, 1, 1) * vehicle.scale);
       }
     }
 
@@ -147,23 +147,14 @@ namespace moppe {
     }
 
     namespace {
-      // The bike is half again life size, as its physics is, and no
-      // life-size rider could sit on it; the rider is drawn larger too,
-      // scaled about the bike's origin.
-      constexpr float rider_scale = 1.3f;
-
-      // The hiker riding: seated on the saddle, feet on the pegs, hands on
-      // the grips, the trunk leaning forward just far enough to reach the
-      // bars, eyes a little down the trail. Leaning back for a wheelie the
-      // rider slides back off the saddle and hangs from the bars on straight
-      // arms, trunk upright against the bike's rise, eyes on the way ahead.
-      // Posed in the bike's frame shrunk by rider_scale, so the caller
-      // draws it scaled back up.
+      // The hiker riding the Trail 90: seated on the saddle, feet on the
+      // pegs, hands on the high bars, the trunk leaning just far enough to
+      // reach them, eyes a little down the trail. Leaning back for a
+      // wheelie the rider slides back on the saddle and hangs from the
+      // bars on straight arms, trunk upright against the bike's rise, eyes
+      // on the way ahead.
       AvatarSkeleton pose_rider (const VehiclePose& vehicle) {
-        const Mat4 frame =
-          Mat4::translation (vehicle.position) *
-          Mat4::scaling (Vec3 (1, 1, 1) * (1.0f / rider_scale)) *
-          Mat4::translation (-vehicle.position) * vehicle_frame (vehicle);
+        const Mat4 frame = vehicle_frame (vehicle);
         const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
         const Vec3 facing =
           normalized (frame.transform_vector (Vec3 (0, 0, 1)));
@@ -249,14 +240,8 @@ namespace moppe {
                          bool ridden,
                          uint64_t motion_base,
                          Outfit outfit) {
-      if (ridden) {
-        dl.push ();
-        dl.translate (vehicle.position);
-        dl.scale (rider_scale, rider_scale, rider_scale);
-        dl.translate (-vehicle.position);
+      if (ridden)
         figure::draw (dl, pose_rider (vehicle), outfit);
-        dl.pop ();
-      }
 
       const BikeMeshes& bm = bike_meshes (r);
       const Mat4 frame = vehicle_frame (vehicle);
@@ -272,9 +257,9 @@ namespace moppe {
 
       // Suspension: the pose places the frame and says how far each wheel
       // hangs from its rest position, so landings visibly compress the
-      // travel.  (Model space is 2/3 world scale.)
-      const float wheel_drop = -vehicle.rear_wheel_drop / 1.5f;
-      const float fork_drop = -vehicle.front_wheel_drop / 1.5f;
+      // travel.
+      const float wheel_drop = -vehicle.rear_wheel_drop;
+      const float fork_drop = -vehicle.front_wheel_drop;
 
       // The swingarm swings about its pivot until the rear axle sits
       // `wheel_drop` from rest, carrying the wheel and the shock's foot.
@@ -384,7 +369,7 @@ namespace moppe {
           const Mat4 jet =
             frame * Mat4::translation (nozzle) *
             Mat4::rotation (boost_nozzle_angle (vehicle), x_axis);
-          const Vec3 mouth = jet.transform_point (Vec3 (0, 0, 0.12f));
+          const Vec3 mouth = jet.transform_point (Vec3 (0, 0, 0.08f));
           const Vec3 axis = normalized (jet.transform_vector (Vec3 (0, 0, 1)));
           // Each jet flickers on its own phase.
           const float phase = nozzle[0] > 0 ? 0.0f : 2.1f;

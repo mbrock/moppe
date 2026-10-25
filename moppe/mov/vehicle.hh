@@ -68,7 +68,7 @@ namespace moppe {
                watts_t power,
                kilograms_t mass,
                BikePhysics physics = BikePhysics::classic,
-               const BikeRig& rig = motocross_rig);
+               const BikeRig& rig = trail90_rig);
       ~Vehicle ();
 
       BikePhysics physics () const {

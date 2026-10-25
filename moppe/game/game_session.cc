@@ -815,9 +815,9 @@ namespace moppe::game {
       : m_bike (world.spawn_position (),
                 45 * u::deg,
                 surface,
-                2600 * u::N,
-                30 * u::kW,
-                150 * u::kg,
+                1800 * u::N,
+                5.2f * u::kW,
+                175 * u::kg,
                 physics),
         m_glider (surface), m_jeep (surface), m_helicopter (surface),
         m_tractor (surface), m_caddy (surface),
@@ -1128,11 +1128,16 @@ namespace moppe::game {
       break;
     }
     case M_BIKE:
-      rig.eye =
-        m_bike.position () + Vec3 (0, 0.95f, 0) + m_bike.orientation () * 0.4f;
+      // The Trail 90 is life size, its reference point between the axles
+      // at their height; the seated rider's eyes are some 1.4 m over it.
+      rig.eye = m_bike.position () + m_bike.render_normal () * 1.4f +
+                m_bike.orientation () * 0.05f;
       rig.ahead = m_bike.orientation ();
-      rig.pivot = position_value (m_bike.physical_position ());
-      rig.velocity = velocity_value (m_bike.physical_velocity ());
+      rig.pivot = m_bike.position () + Vec3 (0, 0.8f, 0);
+      rig.velocity = m_bike.velocity ();
+      rig.distance = 5.0f * u::m;
+      rig.nearest = 1.8f * u::m;
+      rig.elevation = 15.0f * u::deg;
       break;
     }
     return rig;
@@ -1586,7 +1591,7 @@ namespace moppe::game {
 
     const bool in_water =
       vehicle_position[1] <
-      water_at (vehicle_position).numerical_value_in (moppe::u::m) + 1.0f;
+      water_at (vehicle_position).numerical_value_in (moppe::u::m) + 0.3f;
     const bool driving = logic.m_mode == M_BIKE || pedalled;
     const float impact = driving ? vehicle.pop_impact () : 0.0f;
 
@@ -1707,8 +1712,8 @@ namespace moppe::game {
     const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
     const Vec3 forward = session.subject_heading ();
     const Vec3 rear_wheel =
-      pedalled ? vehicle_position - forward * 0.55f + Vec3 (0, -0.25f, 0)
-               : vehicle_position - forward * 1.4f + Vec3 (0, -0.7f, 0);
+      vehicle_position - forward * (pedalled ? 0.55f : 0.61f) +
+      Vec3 (0, -0.25f, 0);
 
     if (clean_stunt_landing && landed_trick_quarters > 0) {
       Dust::Style trick_flash;
@@ -1719,7 +1724,7 @@ namespace moppe::game {
       trick_flash.spread = 1.2f * one;
       trick_flash.additive = true;
       session.dust ().emit (
-        moppe::position (vehicle_position + Vec3 (0, -0.4f, 0)),
+        moppe::position (vehicle_position + Vec3 (0, 0.1f, 0)),
         velocity (vehicle.velocity () * 0.15f + Vec3 (0, 3, 0)),
         std::min (24, 8 + landed_trick_quarters * 4),
         DisplayColor (0.25f, 0.78f, 1.0f),
@@ -1816,7 +1821,7 @@ namespace moppe::game {
       const Vec3 jet = normalized (Vec3 (0, -std::cos (swing), 0) -
                                    forward * std::sin (swing));
       const Vec3 nozzles =
-        vehicle_position - forward * 0.3f + Vec3 (0, -0.45f, 0);
+        vehicle_position - forward * 0.18f + Vec3 (0, -0.04f, 0);
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const auto happens = [&] (float per_second) {
         const probability_t odds (per_second / u::s * (elapsed * u::s));
@@ -1893,7 +1898,7 @@ namespace moppe::game {
     // Wading fast throws up a bow wave.
     if (driving && in_water && length (vehicle.velocity ()) > 15.0f)
       session.dust ().emit (
-        moppe::position (vehicle_position + Vec3 (0, -0.5f, 0)),
+        moppe::position (vehicle_position + Vec3 (0, -0.2f, 0)),
         velocity (vehicle.velocity () * 0.3f),
         3,
         spray_color);
@@ -1904,7 +1909,7 @@ namespace moppe::game {
       logic.m_shake = std::min (0.28f, 0.010f * impact);
       logic.m_shake_time = 0.0f;
       session.dust ().emit (
-        moppe::position (vehicle_position + Vec3 (0, -0.7f, 0)),
+        moppe::position (vehicle_position + Vec3 (0, -0.25f, 0)),
         velocity (vehicle.velocity () * 0.2f),
         in_water ? 12 : loose (12.0f),
         in_water ? spray_color : dust_color);
@@ -1917,7 +1922,7 @@ namespace moppe::game {
           10.0f * isq::acceleration[u::m / pow<2> (u::s)];
         burst.spread = 1.4f * one;
         session.dust ().emit (
-          moppe::position (vehicle_position + Vec3 (0, -0.6f, 0)),
+          moppe::position (vehicle_position + Vec3 (0, -0.2f, 0)),
           velocity (vehicle.velocity () * 0.15f +
                     Vec3 (0, 2.0f + 0.15f * impact, 0)),
           (int)std::min (10.0f, impact * 0.5f),

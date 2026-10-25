@@ -129,7 +129,7 @@ namespace moppe::mov {
     // How far above the ground the wing is when what hangs from it
     // touches down.
     static constexpr float pilot_clearance = 0.75f;
-    static constexpr float bike_hang = 2.4f;
+    static constexpr float bike_hang = 2.6f;
 
   private:
     rate_of_climb_t ridge_lift (float agl) const;

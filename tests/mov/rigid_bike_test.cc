@@ -46,9 +46,9 @@ namespace {
     return mov::Vehicle (position (where),
                          heading,
                          surface,
-                         2600 * u::N,
-                         30 * u::kW,
-                         150 * u::kg,
+                         1800 * u::N,
+                         5.2f * u::kW,
+                         175 * u::kg,
                          mov::BikePhysics::rigid);
   }
 
@@ -90,9 +90,10 @@ MOPPE_TEST (rigid_bike_throttle_drives_it_forward_upright) {
   bike.set_thrust (1.0f);
   for (int i = 0; i < 4 * 120; ++i)
     bike.update (tick);
+  // The Trail 90's 5.2 kW makes some 50 km/h in four seconds.
   const float forward = dot (bike.velocity (), bike.orientation ());
-  MOPPE_CHECK (forward > 20.0f);
-  MOPPE_CHECK (bike.position ()[2] > 80.0f);
+  MOPPE_CHECK (forward > 12.0f);
+  MOPPE_CHECK (bike.position ()[2] > 75.0f);
   MOPPE_CHECK (bike.render_normal ()[1] > 0.95f);
   MOPPE_CHECK (bike.grounded ());
 
@@ -144,8 +145,8 @@ MOPPE_TEST (rigid_bike_is_stopped_by_a_trunk) {
     impact = std::max (impact, bike.pop_impact ());
     furthest = std::max (furthest, static_cast<float> (bike.position ()[2]));
   }
-  // The frame capsule reaches 1.7 m ahead of the centre of mass.
-  MOPPE_CHECK (furthest < 90.0f - 0.5f - 1.0f);
+  // The frame capsule reaches 0.8 m ahead of the centre of mass.
+  MOPPE_CHECK (furthest < 90.0f - 0.5f - 0.6f);
   MOPPE_CHECK (impact > 1.0f);
 }
 
@@ -277,13 +278,13 @@ MOPPE_TEST (a_held_skid_brakes_the_bike_round_about_its_front_wheel) {
   const Result straight = turn (1.0f, 0.0f);
   // Rolling, full lock at speed turns it a quarter round in a second;
   // skidding, the tail comes round past three quarters of a turn and the
-  // bike is going the new way, having shed speed but kept some.
+  // bike is going most of the way back, having shed speed but kept some.
   MOPPE_CHECK (rolling.slid == 0.0f);
   MOPPE_CHECK (rolling.heading > 60.0f && rolling.heading < 120.0f);
   MOPPE_CHECK (skidding.slid > 0.95f);
   MOPPE_CHECK (std::abs (skidding.heading) > 140.0f);
-  MOPPE_CHECK (std::abs (skidding.track) > 140.0f);
-  MOPPE_CHECK (skidding.speed > 4.0f && skidding.speed < rolling.speed);
+  MOPPE_CHECK (std::abs (skidding.track) > 120.0f);
+  MOPPE_CHECK (skidding.speed > 2.5f && skidding.speed < rolling.speed);
   // A straight skid only brakes, and nothing ends up on its side.
   MOPPE_CHECK_NEAR (straight.heading, 0.0f, 2.0f);
   MOPPE_CHECK (straight.speed < 13.0f);
@@ -430,7 +431,8 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
   // Upright in roll, not leaning on its side.
   MOPPE_CHECK (upright < 0.1f);
   MOPPE_CHECK (lean > 0.3f);
-  MOPPE_CHECK (metres > 60.0f);
+  // Some 35 km/h for six seconds.
+  MOPPE_CHECK (metres > 45.0f);
   MOPPE_CHECK (bike.pop_impact () < 1.0f);
 
   // Sitting forward and off the throttle, the front comes back down onto
@@ -497,7 +499,8 @@ MOPPE_TEST (the_rear_brake_sets_a_wheelie_down_and_full_throttle_loops_it) {
       lowest_up =
         std::min (lowest_up, static_cast<float> (bike.render_normal ()[1]));
     }
-    MOPPE_CHECK (lowest_up < -0.5f);
+    // On its back, lying across the rack.
+    MOPPE_CHECK (lowest_up < -0.3f);
     // It lies where it fell, not righted onto its wheels facing back.
     MOPPE_CHECK (bike.render_normal ()[1] < 0.5f);
   }

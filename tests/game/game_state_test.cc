@@ -233,7 +233,8 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
     session.logic ().m_jump_peak_spin_radians, 1.5707963f, 0.01f);
 
   flight = session.bike ().state ();
-  flight.position = position (Vec3 (52, 11.05f, 50));
+  flight.position =
+    position (Vec3 (52, 10.0f + mov::RigidBike::ride_height + 0.085f, 50));
   flight.velocity = velocity (Vec3 (0, -1, 15));
   flight.airborne_time = seconds (1.7f);
   flight.fall_top = 18 * u::m;
@@ -429,7 +430,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   MOPPE_CHECK (session.can_drop_bike ());
   MOPPE_CHECK_NEAR (
     length (session.glider ().position () - session.bike ().position ()),
-    2.4f,
+    mov::Glider::bike_hang,
     1e-4f);
 
   game::advance_game_session (

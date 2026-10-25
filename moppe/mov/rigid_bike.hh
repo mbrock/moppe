@@ -162,6 +162,10 @@ namespace moppe {
       float traction_share;
       float wheelie_share;
       float free_rev_torque;
+      // Drag of the whole bike, as accelerations: linear in speed per
+      // second, and quadratic per metre.
+      float rolling_drag;
+      float air_drag;
 
       // Height of the reference point above flat ground at static sag.
       float ride_height () const {
@@ -169,53 +173,65 @@ namespace moppe {
       }
     };
 
-    // The motocross, modelled at one and a half times life size: wheels of
-    // 0.64 m radius 2.25 m apart, axles 0.325 m below the reference point
-    // the renderer draws from.
-    inline const BikeRig motocross_rig {
-      .wheel_radius = 0.64f,
-      .wheel_mass = 12.0f,
-      .wheel_inertia = 0.9f,
-      .half_wheelbase = 1.125f,
-      .reference_height = 0.15f,
-      .axle_height = -0.175f,
-      .inertia_box = { 0.5f, 1.2f, 2.0f },
-      .frame_a = { 0.0f, -0.1f, -1.1f },
-      .frame_b = { 0.0f, -0.2f, 1.35f },
-      .frame_radius = 0.35f,
-      .rider_a = { 0.0f, 0.05f, -0.35f },
-      .rider_b = { 0.0f, 0.95f, -0.05f },
-      .rider_radius = 0.3f,
-      // Dirt-bike travel with about a third of it used at rest.
-      .front_travel = 0.25f,
-      .rear_travel = 0.30f,
-      .front_sag = 0.08f,
-      .rear_sag = 0.10f,
-      .damping_ratio = 0.35f,
-      // Knobbies on loose ground, generous for an arcade bike.
-      .tire_friction = 1.6f,
-      .skid_friction = 0.75f,
-      .steering_rate = 1.6f,
-      .steering_fade_speed = 25.0f,
-      .air_steering_rate = 0.9f,
-      .skid_rate = 2.6f,
-      .max_fork_angle = 0.6f,
-      .max_lean = 0.7f,
+    // The Honda CT90 Trail 90 at life size, to Honda's figures: 2.75-17
+    // tyres 1.22 m apart, its reference point midway between the axles at
+    // their height, and the weight of the bike and its seated rider, some
+    // 175 kg, 0.42 m over that. It is soft and short of travel, stops on
+    // drums, and has no reverse: backing up is paddled with the feet.
+    inline const BikeRig trail90_rig {
+      .wheel_radius = 0.29f,
+      .wheel_mass = 7.0f,
+      .wheel_inertia = 0.35f,
+      .half_wheelbase = 0.61f,
+      .reference_height = -0.42f,
+      .axle_height = -0.42f,
+      .inertia_box = { 0.5f, 1.2f, 1.3f },
+      // The engine and the pressed body from axle to axle, its underside
+      // at the skid plate, reaching out over the front tyre; and the
+      // seated rider, hips to head.
+      .frame_a = { 0.0f, -0.32f, -0.62f },
+      .frame_b = { 0.0f, -0.37f, 0.62f },
+      .frame_radius = 0.17f,
+      .rider_a = { 0.0f, 0.18f, -0.22f },
+      .rider_b = { 0.0f, 0.63f, -0.1f },
+      .rider_radius = 0.22f,
+      // The telescopic fork's 11 cm and the twin shocks' 7.
+      .front_travel = 0.11f,
+      .rear_travel = 0.07f,
+      .front_sag = 0.035f,
+      .rear_sag = 0.025f,
+      .damping_ratio = 0.4f,
+      // Trail tyres: a block tread, neither road nor knobbly.
+      .tire_friction = 1.35f,
+      .skid_friction = 0.65f,
+      .steering_rate = 1.7f,
+      .steering_fade_speed = 10.0f,
+      .air_steering_rate = 1.0f,
+      .skid_rate = 2.8f,
+      .max_fork_angle = 0.7f,
+      .max_lean = 0.75f,
       .wheelie_limit = 0.35f,
       .stoppie_limit = 0.3f,
-      .wheelie_lean = 0.35f,
+      // Its weight stands some 0.42 m over the axles, so it balances on
+      // its back wheel near 50 degrees, the rider sat back.
+      .wheelie_lean = 0.2f,
       .wheelie_pitch = 0.8f,
-      .wheelie_torque = 600.0f,
-      .reverse_speed = 10.0f,
-      .reverse_force_share = 0.6f,
-      .front_brake_force = 2000.0f,
-      .rear_brake_force = 1400.0f,
-      .engine_brake_torque = 90.0f,
-      .parking_torque = 4000.0f,
-      .skid_torque = 4000.0f,
+      .wheelie_torque = 300.0f,
+      .reverse_speed = 1.5f,
+      .reverse_force_share = 0.25f,
+      .front_brake_force = 900.0f,
+      .rear_brake_force = 800.0f,
+      .engine_brake_torque = 20.0f,
+      .parking_torque = 1500.0f,
+      .skid_torque = 1200.0f,
       .traction_share = 0.9f,
       .wheelie_share = 0.8f,
-      .free_rev_torque = 60.0f,
+      .free_rev_torque = 10.0f,
+      // Its own air and rolling: a seated rider's 0.6 m2 or so, and tyres
+      // at a fiftieth of the weight, which give the 5.2 kW engine the
+      // CT90's 85 km/h flat out.
+      .rolling_drag = 0.015f,
+      .air_drag = 0.0018f,
     };
 
     // A classic mountainbike at life size: 26-inch wheels 1.06 m apart, a
@@ -269,6 +285,8 @@ namespace moppe {
       .traction_share = 0.9f,
       .wheelie_share = 0.8f,
       .free_rev_torque = 4.0f,
+      .rolling_drag = 0.05f,
+      .air_drag = 0.0035f,
     };
 
     // A bike as a Box3D assemblage: a chassis carrying the frame and
@@ -288,15 +306,15 @@ namespace moppe {
     class RigidBike {
     public:
       struct Params {
-        float max_drive_force = 2600.0f; // newtons at the rear contact
-        float power = 30000.0f;          // watts
-        float mass = 150.0f;             // whole bike and rider, kilograms
-        BikeRig rig = motocross_rig;
+        float max_drive_force = 1800.0f; // newtons at the rear contact
+        float power = 5200.0f;           // watts
+        float mass = 175.0f;             // whole bike and rider, kilograms
+        BikeRig rig = trail90_rig;
       };
 
-      // Height of the motocross' reference point above flat ground at
-      // static sag, motocross_rig.ride_height ().
-      static constexpr float ride_height = 0.965f;
+      // Height of the Trail 90's reference point above flat ground at
+      // static sag, trail90_rig.ride_height ().
+      static constexpr float ride_height = 0.29f;
 
       // Stands the bike at rest with its reference point at `reference`.
       RigidBike (const map::SurfaceGeometry& surface,

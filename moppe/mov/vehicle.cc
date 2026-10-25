@@ -5,7 +5,8 @@
 
 namespace moppe {
   namespace mov {
-    static const float radius = 1; // metres
+    // The Trail 90's ride height: where it stands over the ground.
+    static const float radius = RigidBike::ride_height; // metres
 
     // How deep the wheels of a bike with its centre at `height` run in
     // water standing at `level`: 0 dry, 1 from 0.6 m, a little over the

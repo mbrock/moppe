@@ -21,7 +21,7 @@ namespace moppe::game {
   Vec3 sling_ring (Machine machine) {
     switch (machine) {
     case Machine::bike:
-      return Vec3 (0.0f, 1.9f, 0.0f);
+      return Vec3 (0.0f, 2.1f, 0.0f);
     case Machine::jeep:
       return Vec3 (0.0f, 2.8f, 0.05f);
     case Machine::tractor:
@@ -41,9 +41,9 @@ namespace moppe::game {
   std::array<Vec3, 4> sling_legs (Machine machine) {
     switch (machine) {
     case Machine::bike:
-      // The fork's crown and the back of the frame.
-      return { Vec3 (0.0f, 0.35f, 0.85f), Vec3 (0.0f, 0.35f, 0.85f),
-               Vec3 (0.0f, 0.25f, -0.8f), Vec3 (0.0f, 0.25f, -0.8f) };
+      // The fork's top clamp and the rack's rear corners.
+      return { Vec3 (0.0f, 0.53f, 0.35f), Vec3 (0.0f, 0.53f, 0.35f),
+               Vec3 (0.13f, 0.36f, -0.97f), Vec3 (-0.13f, 0.36f, -0.97f) };
     case Machine::jeep:
       // The roll cage's corners.
       return { Vec3 (0.72f, 0.95f, 0.55f), Vec3 (-0.72f, 0.95f, 0.55f),

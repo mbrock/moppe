@@ -7,15 +7,15 @@ namespace moppe::game {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace rescue_rig {
-      // The bumpers, laid over each machine's Box3D hulls: the bike's frame
-      // and rider (its physics half again life size), the jeep's tub, the
+      // The bumpers, laid over each machine's Box3D hulls: the Trail 90's
+      // wheels and rider, the jeep's tub, the
       // tractor's big rear wheels and its bonnet, the Caddy's long body,
       // the helicopter's cabin and tail boom, and the mountainbike's
       // wheels and rider. The rotor meets nothing.
       const Bumper bike_bumpers[] = {
-        { Vec3 (0.0f, -0.35f, 0.9f), 0.5f },
-        { Vec3 (0.0f, -0.35f, -0.9f), 0.5f },
-        { Vec3 (0.0f, 0.25f, -0.2f), 0.45f },
+        { Vec3 (0.0f, 0.05f, 0.45f), 0.36f },
+        { Vec3 (0.0f, 0.1f, -0.5f), 0.38f },
+        { Vec3 (0.0f, 0.85f, -0.15f), 0.32f },
       };
       const Bumper jeep_bumpers[] = {
         { Vec3 (0.0f, 0.5f, 1.15f), 0.85f },
@@ -121,7 +121,7 @@ namespace moppe::game {
   Vec3 machine_centre (Machine machine) {
     switch (machine) {
     case Machine::bike:
-      return Vec3 (0.0f, -0.15f, 0.0f);
+      return Vec3 (0.0f, 0.42f, 0.0f);
     case Machine::jeep:
       return Vec3 (0.0f, 0.15f, 0.05f);
     case Machine::tractor:
@@ -142,7 +142,8 @@ namespace moppe::game {
     const float end = front ? 1.0f : -1.0f;
     switch (machine) {
     case Machine::bike:
-      return Vec3 (0.0f, -0.3f, end * 1.45f);
+      // The front fender's stays, or the rack's rear rail.
+      return front ? Vec3 (0.0f, 0.2f, 0.85f) : Vec3 (0.0f, 0.36f, -1.0f);
     case Machine::jeep:
       return Vec3 (0.0f, 0.35f, end * 1.95f);
     case Machine::tractor:

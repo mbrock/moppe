@@ -230,7 +230,7 @@
     `MOPPE_OPENING=none` begins in play. `Space` skips.
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
-    the motocross stays tethered beneath the wing. Press `E` again to drop it
+    the Trail 90 stays tethered beneath the wing. Press `E` again to drop it
     and reduce wing loading; otherwise touching down folds the wing and
     continues on the bike. On iOS, the mount/dismount corner deploys the wing
     while airborne and drops the attached bike while gliding.
@@ -379,8 +379,8 @@
     (`Renderer::begin_shadow_casters`, the `mesh-shadow` program), so they
     shade the ground and their own insides.
     Ridden, the bike carries the hiker posed by `pose_holding` (hands on
-    the grips, feet on the pegs), drawn 1.3x because the bike's physics is
-    half again life size; the glider's pilot hangs prone at the basebar.
+    the grips, feet on the pegs), at life size like the bike; the
+    glider's pilot hangs prone at the basebar.
     `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
     ahead of the bike, the glider, or the driven jeep, tractor, or Caddy.
@@ -403,12 +403,12 @@
   - The mountainbike (`models/mountain_bike.blend` from
     `tools/figure/mountain_bike.py`, drawn by `game/mountain_bike_render.*`)
     is a classic early-nineties hardtail in deep green and cream at life
-    size, standing a few steps off the motocross's other side. On foot, `F`
+    size, standing a few steps off the Trail 90's other side. On foot, `F`
     beside it rides it and `F` gets off; `W` pedals (the crank turns at a
     cadence through the gears, still while freewheeling), `S` brakes,
     `A`/`D` steer, and `Space` bunny-hops. It is the rigid bike's
     assemblage on another `mov::BikeRig` (`mountain_bike_rig` in
-    `mov/rigid_bike.hh`; the motocross is `motocross_rig`), and the session
+    `mov/rigid_bike.hh`; the Trail 90 is `trail90_rig`), and the session
     holds it as a second `mov::Vehicle` (`GameSession::mountain_bike`,
     `M_MOUNTAIN_BIKE`). `MOPPE_DEMO=mountain_bike` (`tools/record OUT.mp4
     mountain_bike`) pedals it on the autopilot; the other player sees it
@@ -462,7 +462,7 @@
     front wheel, so a held skid with the bars over brakes the bike round
     into a new heading, throwing a fan of dirt; let go, the tyre grips
     again gradually (`RigidBikeControls::skid`, `Vehicle::set_skid`).
-  - Wheelies, on the motocross: riding, hold `R` (the controller's left
+  - Wheelies, on the Trail 90: riding, hold `R` (the controller's left
     shoulder) to lean back and open the throttle: the rider's weight goes
     back, the traction control lets the front come up, and the throttle
     rolls on progressively, so the drive lifts the front wheel and the
@@ -476,6 +476,16 @@
     five (`m_wheelie_m` in game_session.cc); `MOPPE_DEMO=wheelie`
     (`tools/record OUT.mp4 wheelie`) rides them on the autopilot. The
     classic point mass has none (companion wire version 11).
+  - The bike (`models/bike.blend` from `tools/figure/bike.py`, drawn by
+    `game/vehicle_render.*`, ridden as `M_BIKE`) is a 1972 Honda CT90
+    Trail 90 at life size, which Krisjanis named as the classic to clone:
+    Candy Orange pressed body and swingarm, silver shroud over the spine,
+    the engine lying flat under it, the exhaust up the right side in a
+    corrugated shield to a perforated guard at seat height, a big chrome
+    rack, telescopic fork in gaiters, high braced bars with mirrors, 17-
+    inch spoked wheels 1.22 m apart (`trail90_rig`: 5.2 kW, 175 kg with
+    its rider, some 80 km/h flat out). Only the jump jets under it are
+    no Honda's.
   - The helicopter (`moppe/mov/helicopter.*`, `models/helicopter.blend`
     from `tools/figure/helicopter.py`, drawn by `game/helicopter_render.*`)
     stands on a pad of its own a few hundred metres from the trailhead,

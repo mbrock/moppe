@@ -22,9 +22,6 @@ namespace moppe {
         // friction.
         constexpr float ground_friction = 1.0f;
 
-        // Linear rolling drag plus quadratic air drag, as the classic bike.
-        constexpr float rolling_drag = 0.05f;
-        constexpr float air_drag = 0.0035f;
         constexpr float water_drag = 1.4f;
 
         // Ground patch: samples at half the terrain lattice spacing, so every
@@ -785,7 +782,7 @@ namespace moppe {
         // A bike under the wing has its drag counted in the wing's pull.
         Vec3 force = controls.boost_acceleration * total_mass;
         if (!hanging)
-          force -= v * ((bike_rig::rolling_drag + bike_rig::air_drag * speed) *
+          force -= v * ((rig.rolling_drag + rig.air_drag * speed) *
                         total_mass);
         force -= v * (bike_rig::water_drag * controls.wading * total_mass);
         b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);

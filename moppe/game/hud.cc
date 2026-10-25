@@ -1636,7 +1636,7 @@ namespace moppe {
         action = *deploy_key ? "Cast a line" : "Water to fish";
       } else if (st.can_drop_bike) {
         key = deploy_key;
-        action = "Release the motocross";
+        action = "Release the Trail 90";
       } else if (st.slung) {
         key = mount_key;
         action = *mount_key ? "Let " + std::string (st.slung) + " go"

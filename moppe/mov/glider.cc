@@ -32,10 +32,11 @@ namespace moppe::mov {
     // it there.
     constexpr float flare_climb = -0.02f;
     constexpr float flare_hold = 4.0f;
-    // A motocross hanging in the airstream is no fairing.
+    // A Trail 90 hanging in the airstream is no fairing.
     constexpr float bike_drag = 0.02f;
-    // Rider and wing are the unloaded reference mass. Carrying the 150 kg
-    // motocross raises total weight to roughly 2.5 times that baseline.
+    // Rider and wing are the unloaded reference mass. Carrying the 175 kg
+    // Trail 90 and its rider raises total weight to roughly 2.5 times
+    // that baseline.
     constexpr float loaded_weight_ratio = 2.5f;
     constexpr float full_bank = 0.8378f; // 48 degrees
     // How strongly the pilot holds the flight path against the phugoid,

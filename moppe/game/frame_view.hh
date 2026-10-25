@@ -380,8 +380,8 @@ namespace moppe::game {
   // How long the motion blur draws the world's streaks, as a share of a
   // frame's motion, for a player getting about in `mode` at `kmh`. Each
   // way of getting about blurs from the speed that feels fast in it: the
-  // boat as it comes up onto the plane, the motocross (half again life
-  // size) only past what it cruises at unboosted. On foot and in the air
+  // boat as it comes up onto the plane, the Trail 90 only past
+  // what it reaches unboosted. On foot and in the air
   // there is none: the ground is far off from a wing or a cabin, so what
   // streaks there is the camera's turning, not speed.
   float motion_blur_for (Mode mode, float kmh);
