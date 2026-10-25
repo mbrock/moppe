@@ -68,12 +68,13 @@ namespace moppe {
     Walker::Walker ()
         : m_heading (0, 0, 1), m_turn (0), m_walk (0), m_strafe (0),
           m_run (false), m_jump_request (false), m_phase (0),
-          m_stride_speed (0 * u::m / u::s) {}
+          m_stride_speed (0 * u::m / u::s), m_facing (0, 0, 1) {}
 
     Walker::State Walker::state () const {
-      return { m_body.state (), m_heading, m_turn,
-               m_walk,          m_strafe,  m_run,
-               m_jump_request,  m_phase,   m_stride_speed };
+      return { m_body.state (), m_heading,      m_turn,     m_walk,
+               m_strafe,        m_run,          m_jump_request,
+               m_phase,         m_stride_speed, m_facing,   m_turn_speed,
+               m_turning,       m_lag };
     }
 
     void Walker::restore (const State& state) {
@@ -86,6 +87,10 @@ namespace moppe {
       m_jump_request = state.jump_request;
       m_phase = state.stride_phase;
       m_stride_speed = state.stride_speed;
+      m_facing = state.facing;
+      m_turn_speed = state.turn_speed;
+      m_turning = state.turning;
+      m_lag = state.lag;
     }
 
     void Walker::turn_by (float radians) {
@@ -101,6 +106,10 @@ namespace moppe {
       if (length2 (m_heading) < 0.01f)
         m_heading = Vec3 (0, 0, 1);
       normalize (m_heading);
+      m_facing = m_heading;
+      m_turn_speed = 0.0f;
+      m_turning = false;
+      m_lag = 0.0f;
       m_turn = 0;
       m_walk = 0;
       m_strafe = 0;
@@ -184,9 +193,49 @@ namespace moppe {
       const float covered =
         std::sqrt (moved[0] * moved[0] + moved[2] * moved[2]);
       const float step_speed = covered / seconds_value (dt);
+
+      // The body comes round after the heading. Under way it turns
+      // toward it briskly but no faster than a body can, so a quick
+      // look round has it lean through the turn rather than snap; a
+      // runner's momentum turns slower than a walker. Standing, the head
+      // and chest look round first and the body stays, until the look
+      // goes further aside than they can twist: then the feet step round
+      // on the spot until it faces the look again.
+      const float step = seconds_value (dt);
+      // The look's way round from the body, counted on from the last
+      // step's so that a look swung round faster than the body can
+      // follow passes behind it and the body keeps turning the way the
+      // look went, rather than turning back to meet it the short way.
+      float aside = yaw_between (m_facing, m_heading);
+      aside += PI2 * std::round ((m_lag - aside) / PI2);
+      aside = std::clamp (aside, -1.1f * PI, 1.1f * PI);
+      const bool under_way =
+        !grounded () || step_speed > 0.5f || amount > 0.05f;
+      float turned = 0.0f;
+      if (under_way) {
+        m_turning = false;
+        const float most = (m_run ? 4.5f : 6.0f) * step;
+        turned = std::clamp (aside * std::min (1.0f, 9.0f * step), -most, most);
+      } else {
+        if (std::abs (aside) > 1.25f)
+          m_turning = true;
+        if (m_turning) {
+          const float pace =
+            std::clamp (4.0f * std::abs (aside), 1.4f, 3.4f) * step;
+          turned = std::copysign (std::min (std::abs (aside), pace), aside);
+          if (std::abs (aside - turned) < 0.03f)
+            m_turning = false;
+        }
+      }
+      m_facing = yawed (m_facing, turned);
+      m_facing[1] = 0.0f;
+      normalize (m_facing);
+      m_turn_speed = turned / step;
+      m_lag = aside - turned;
+
       if (grounded ()) {
         m_stride_speed = step_speed * u::m / u::s;
-        m_phase += covered / stride_cycle_length (step_speed);
+        m_phase += step * gait_rate (step_speed, m_turn_speed);
         m_phase -= std::floor (m_phase);
       }
     }

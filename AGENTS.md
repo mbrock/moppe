@@ -28,6 +28,16 @@
     it (and steps off again). Walking and riding each keep the view last
     chosen for them with `Tab`.
     `MOPPE_DEMO`, benchmarks, and the gazetteer still start riding.
+    The look and the way the walker goes turn with the mouse at once
+    (`Walker::heading`); the body comes round after it through the rig
+    (`Walker::facing`, `pose_avatar`): standing, the head and then the
+    chest twist toward the look, and beyond some seventy degrees the feet
+    step round on the spot after it (a fast spin keeps stepping the way
+    it went); under way the body turns at a bounded rate and banks into
+    the turn. The walk bobs, sways, and counter-rotates; the run is its
+    own cycle, with a flight phase, a longer stride, a high knee and heel
+    kick, a deeper lean, and bent arms pumping. The other player sees the
+    same (companion wire version 10).
   - The following camera (`game/chase_camera.*`, placed for each way of
     getting about by `GameSession::camera_rig`) is a boom swung about a
     point on the subject. Looking up lowers it below the subject and in
@@ -94,14 +104,16 @@
     benchmarks, water captures, and a launch that sets `MOPPE_SUNHEIGHT`
     without either keep the fixed sun they were composed under.
   - Scripted walks for captures:
-    `MOPPE_WALK=walk|run|jump|tour|forage|camp|haul|bump`
+    `MOPPE_WALK=walk|run|jump|tour|turn|forage|camp|haul|bump`
     starts on foot (even with `MOPPE_DEMO=forest`) and drives a deterministic
     script (`forage` starts beside the mushrooms nearest the spawn and picks
     its way from one to the next; `camp` starts by the nearest pair of
     hammock trees under open sky, hangs the hammock, lights a fire, lies
     down, and after a look from outside watches the sky through the
     sleeper's eyes; `haul` hauls the tractor, marked stuck, away on a rope;
-    `bump` drives the jeep into the tractor's side twice);
+    `bump` drives the jeep into the tractor's side twice; `turn`, also
+    `tools/record OUT.mp4 turn`, looks round standing, steps round, spins
+    twice round, and swings sharply walking and running);
     `MOPPE_WALK_CAMERA=chase|front|side|eyes` picks the view (`side` locks a
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.

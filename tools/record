@@ -24,6 +24,8 @@
 #   mountain_bike
 #             the autopilot on the mountainbike   (MOPPE_DEMO=mountain_bike)
 #   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
+#   turn      looking round standing, stepping round, a quick spin, and
+#             sharp turns walking and running          (MOPPE_WALK=turn)
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
 #   supper    picking three, frying them on a fire, and eating
 #                                                      (MOPPE_WALK=supper)
@@ -156,6 +158,7 @@ case $scene in
   caddy) stage MOPPE_DEMO=caddy; : "${seconds:=20}" ;;
   mountain_bike) stage MOPPE_DEMO=mountain_bike; : "${seconds:=20}" ;;
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
+  turn) stage MOPPE_WALK=turn MOPPE_WALK_CAMERA=chase; : "${seconds:=20}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
   supper) stage MOPPE_WALK=supper; : "${seconds:=50}" ;;
   fish) stage MOPPE_WALK=fish; : "${seconds:=60}" ;;

@@ -8,14 +8,47 @@
 #include <moppe/terrain/sea_waves.hh>
 #include <moppe/terrain/watercourse.hh>
 
+#include <algorithm>
+#include <cmath>
+
 namespace moppe {
   namespace game {
     // One gait cycle -- a step with each foot -- covers this much ground at
     // `speed` metres per second. The walker advances its stride phase by
     // the ground actually covered over this length, and the avatar plants
-    // each foot for the same distance, so the feet never skate.
+    // each foot for the same distance, so the feet never skate. A run
+    // lengthens its stride faster than a walk does, so that it is not a
+    // walk played quickly.
     inline float stride_cycle_length (float speed) {
-      return 1.3f + 0.27f * speed;
+      return 1.3f + 0.27f * speed + 0.14f * std::max (0.0f, speed - 3.6f);
+    }
+
+    // Turning on the spot, each gait cycle swings the body round this
+    // much, radians: two steps of some forty-five degrees.
+    inline constexpr float turn_cycle_angle = 1.6f;
+
+    // Gait cycles a second at ground speed `speed` (m/s) while the body
+    // turns at `turn` (rad/s). Under way the ground sets the pace; nearly
+    // still, the turn steps the feet round instead.
+    inline float gait_rate (float speed, float turn) {
+      const float still = 1.0f - std::clamp (speed / 0.9f, 0.0f, 1.0f);
+      return speed / stride_cycle_length (speed) +
+             std::abs (turn) / turn_cycle_angle * still;
+    }
+
+    // `v` turned about the vertical by `angle` radians, positive toward
+    // its right (cross (up, v)).
+    inline Vec3 yawed (const Vec3& v, float angle) {
+      const Vec3 side (v[2], 0.0f, -v[0]);
+      return Vec3 (v[0], 0.0f, v[2]) * std::cos (angle) +
+             side * std::sin (angle) + Vec3 (0.0f, v[1], 0.0f);
+    }
+
+    // The level angle from `from` round to `to`, positive to the right.
+    inline float yaw_between (const Vec3& from, const Vec3& to) {
+      const float across = from[2] * to[0] - from[0] * to[2];
+      const float along = from[0] * to[0] + from[2] * to[2];
+      return std::atan2 (across, along);
     }
 
     // The surface of the still water standing or running at a place: a
@@ -70,6 +103,15 @@ namespace moppe {
         float stride_phase {};
         // Ground speed over the last step, as the feet saw it.
         speed_t stride_speed {};
+        // The way the body faces, which comes round after `heading`, how
+        // fast it turned over the last step (rad/s, positive to the
+        // right), whether it is stepping round on the spot, and how far
+        // it has still to come round, radians, counted the way the look
+        // went.
+        Vec3 facing { 0, 0, 1 };
+        float turn_speed {};
+        bool turning {};
+        float lag {};
       };
 
       Walker ();
@@ -104,7 +146,9 @@ namespace moppe {
         m_tether_longest = longest;
         m_tethered = true;
       }
-      // Mouse look turns the walker directly; positive is to the right.
+      // Mouse look turns the walker's heading, where it looks and goes,
+      // directly; positive is to the right. The body follows at its own
+      // pace (`facing`).
       void turn_by (float radians);
       // A press, remembered briefly so a jump asked for just before the
       // feet land still happens.
@@ -130,8 +174,19 @@ namespace moppe {
       Vec3 velocity () const {
         return m_body.velocity ();
       }
+      // Where the walker looks and walks: the camera's way.
       Vec3 heading () const {
         return m_heading;
+      }
+      // Where the body faces. Under way it comes round after the heading
+      // at a pace a body can turn at; standing, the head and chest look
+      // round first, and only a look further aside than they can twist
+      // steps the feet round on the spot.
+      Vec3 facing () const {
+        return m_facing;
+      }
+      float turn_speed () const {
+        return m_turn_speed;
       }
       bool grounded () const {
         return m_body.grounded ();
@@ -154,6 +209,10 @@ namespace moppe {
       bool m_jump_request;
       float m_phase;
       speed_t m_stride_speed;
+      Vec3 m_facing;
+      float m_turn_speed = 0.0f;
+      bool m_turning = false;
+      float m_lag = 0.0f;
       Vec3 m_tether;
       float m_tether_shortest = 0.0f;
       float m_tether_longest = 0.0f;

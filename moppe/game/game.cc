@@ -3746,6 +3746,24 @@ namespace moppe {
           // A jump every 1.6 s, each a fresh press.
           const float beat = std::fmod (t, 1.6f);
           input.boost = beat >= 1.0f && beat < 1.1f ? 1.0f : 0.0f;
+        } else if (script == "turn") {
+          // Standing, a slow look aside that the head and chest follow,
+          // a look round further that steps the feet round, and a quick
+          // spin twice round that they step after; then a walk with a
+          // sharp look aside, and a run swung round in an arc.
+          const auto during = [t] (float from, float to) {
+            return t >= from && t < to;
+          };
+          input.drive = during (12.0f, 20.0f) ? 1.0f : 0.0f;
+          input.run = during (16.0f, 20.0f);
+          input.look_yaw = (during (1.0f, 3.0f)    ? 0.5f
+                            : during (4.5f, 5.5f)  ? 1.6f
+                            : during (7.5f, 8.5f)  ? -4.0f * PI
+                            : during (13.5f, 13.8f) ? -5.2f
+                            : during (17.0f, 19.5f) ? 1.3f
+                                                    : 0.0f) *
+                           dt;
+          return input;
         } else {
           input.drive = t > 1.5f && t < 12.5f ? 1.0f : 0.0f;
           input.run = t > 5.0f && t < 11.0f;

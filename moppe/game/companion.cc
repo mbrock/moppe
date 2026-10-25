@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 9;
+    constexpr std::uint8_t wire_version = 10;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -345,6 +345,8 @@ namespace moppe::game {
       out.put (walker.vertical_speed);
       out.put (walker.landing_dip);
       out.put (walker.look_pitch);
+      out.put (walker.look_aside);
+      out.put (walker.turn_speed);
     }
     if (snapshot.hung) {
       for (int end = 0; end < 2; ++end) {
@@ -488,6 +490,8 @@ namespace moppe::game {
       walker.vertical_speed = in.number ();
       walker.landing_dip = in.number ();
       walker.look_pitch = in.number ();
+      walker.look_aside = in.number ();
+      walker.turn_speed = in.number ();
       walker.grounded = (flags & walker_grounded) != 0;
       snapshot.walker = walker;
     }
@@ -700,6 +704,10 @@ namespace moppe::game {
         mix (a.walker->landing_dip, b.walker->landing_dip, within);
       walker.look_pitch =
         mix (a.walker->look_pitch, b.walker->look_pitch, within);
+      walker.look_aside =
+        mix (a.walker->look_aside, b.walker->look_aside, within);
+      walker.turn_speed =
+        mix (a.walker->turn_speed, b.walker->turn_speed, within);
     }
     if (a.hung && b.hung) {
       result.hammock_load = mix (a.hammock_load, b.hammock_load, within);

@@ -278,3 +278,64 @@ MOPPE_TEST (avatar_plants_its_stance_foot_while_walking) {
   MOPPE_CHECK_NEAR (
     length (after.ankle[1] - after.knee[1]), game::avatar_size::shin, 1e-3f);
 }
+
+MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
+  const map::SurfaceGeometry surface =
+    walker_test_ground ([] (float, float) { return 5.0f; });
+  const game::WorldParams world = walker_test_world ();
+  const auto yaw = [] (const Vec3& v) { return std::atan2 (v[0], v[2]); };
+
+  // Standing, a glance aside turns the head, not the body.
+  game::Walker walker;
+  walker.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
+  walker.turn_by (0.8f);
+  walk_for (walker, 1.0f, surface, world);
+  MOPPE_CHECK_NEAR (yaw (walker.facing ()), 0.0f, 1e-4f);
+
+  // A look further round than the chest can twist steps the feet round
+  // after it, on the spot, until the body faces it -- but not at once.
+  walker.turn_by (1.4f);
+  walk_for (walker, 0.1f, surface, world);
+  const float early =
+    std::abs (game::yaw_between (walker.facing (), walker.heading ()));
+  MOPPE_CHECK (early > 1.5f);
+  MOPPE_CHECK (std::abs (walker.turn_speed ()) > 0.5f);
+  walk_for (walker, 2.0f, surface, world);
+  MOPPE_CHECK_NEAR (
+    game::yaw_between (walker.facing (), walker.heading ()), 0.0f, 0.05f);
+  MOPPE_CHECK (length (walker.position () - Vec3 (40, 5, 64)) < 0.05f);
+
+  // A look spun twice round in a moment: the body keeps stepping round
+  // the way the look went rather than snapping or turning back.
+  game::Walker spun;
+  spun.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
+  for (int i = 0; i < 60; ++i) {
+    spun.turn_by (4.0f * PI / 60.0f);
+    spun.update (seconds (walker_test_step), surface, world);
+  }
+  const float way = spun.turn_speed () > 0.0f ? 1.0f : -1.0f;
+  MOPPE_CHECK (std::abs (spun.turn_speed ()) > 1.0f);
+  for (int i = 0; i < 120; ++i) {
+    MOPPE_CHECK (way * spun.turn_speed () > -1e-3f);
+    MOPPE_CHECK (std::abs (spun.turn_speed ()) < 3.5f);
+    spun.update (seconds (walker_test_step), surface, world);
+  }
+
+  // Walking, the body comes round briskly but not instantly, and the
+  // walker still goes where it looks.
+  game::Walker going;
+  going.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
+  going.set_walk (1.0f);
+  walk_for (going, 1.0f, surface, world);
+  going.turn_by (1.5f);
+  going.update (seconds (walker_test_step), surface, world);
+  MOPPE_CHECK (std::abs (going.turn_speed ()) <= 6.0f + 1e-3f);
+  MOPPE_CHECK (std::abs (game::yaw_between (going.facing (),
+                                            going.heading ())) > 1.3f);
+  walk_for (going, 1.0f, surface, world);
+  MOPPE_CHECK_NEAR (
+    game::yaw_between (going.facing (), going.heading ()), 0.0f, 0.02f);
+  const Vec3 v = going.velocity ();
+  MOPPE_CHECK (dot (Vec3 (v[0], 0, v[2]), going.heading ()) >
+               0.9f * length (Vec3 (v[0], 0, v[2])));
+}

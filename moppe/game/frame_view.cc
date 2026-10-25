@@ -194,7 +194,9 @@ namespace moppe::game {
     return {
       .position = position_value (body.position) +
                   Vec3 (0, body.step_offset.numerical_value_in (u::m), 0),
-      .heading = state.heading,
+      .heading = state.facing,
+      .look_aside = state.lag,
+      .turn_speed = state.turn_speed,
       .velocity = velocity,
       .ground_normal = body.ground_normal,
       .stride_phase = state.stride_phase,
