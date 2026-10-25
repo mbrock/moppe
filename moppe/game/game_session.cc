@@ -216,6 +216,8 @@ namespace moppe::game {
         return Machine::helicopter;
       case M_MOUNTAIN_BIKE:
         return Machine::mountain_bike;
+      case M_BOAT:
+        return Machine::boat;
       default:
         return std::nullopt;
       }
@@ -236,6 +238,7 @@ namespace moppe::game {
       case GameSession::Mount::mountain_bike:
         return Machine::mountain_bike;
       case GameSession::Mount::boat:
+        return Machine::boat;
       case GameSession::Mount::none:
         break;
       }
@@ -732,6 +735,13 @@ namespace moppe::game {
       body.velocity = m_mountain_bike.velocity ();
       body.mass = m_mountain_bike.mass ();
       break;
+    case Machine::boat:
+      body.position = m_boat.position ();
+      body.forward = m_boat.forward ();
+      body.up = m_boat.up ();
+      body.velocity = m_boat.velocity ();
+      body.mass = m_boat.mass ();
+      break;
     }
     return body;
   }
@@ -758,6 +768,9 @@ namespace moppe::game {
     case Machine::mountain_bike:
       m_mountain_bike.push (at, impulse);
       break;
+    case Machine::boat:
+      m_boat.push (at, impulse);
+      break;
     }
   }
 
@@ -766,8 +779,13 @@ namespace moppe::game {
       return std::nullopt;
     const std::optional<Machine> machine =
       mounted_machine (mount_within_reach ());
-    if (!machine ||
-        !m_logic.m_trouble[static_cast<std::size_t> (*machine)].stuck)
+    if (!machine)
+      return std::nullopt;
+    // The boat run up on the land is dragged back to the water by its
+    // bow handle; it goes nowhere under its own power there.
+    if (*machine == Machine::boat && m_boat.grounded () && !m_boat.afloat ())
+      return machine;
+    if (!m_logic.m_trouble[static_cast<std::size_t> (*machine)].stuck)
       return std::nullopt;
     return machine;
   }

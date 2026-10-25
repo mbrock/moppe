@@ -53,6 +53,10 @@ namespace moppe::game {
     VehiclePose mountain_bike {};
     // Their boat, and them at its helm when they take it out.
     BoatPose boat {};
+    Vec3 boat_velocity {};
+    // Riding along (M_PASSENGER): on the fore seat of the other player's
+    // boat rather than beside them in their jeep.
+    bool in_boat = false;
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
 

@@ -57,6 +57,8 @@ namespace moppe::mov {
     static constexpr float pivot[3] = { 0.0f, 0.429f, -0.8982f };
     static constexpr float hub[3] = { 0.0f, -0.05f, -2.6f };
     static constexpr float helm[3] = { 0.0f, 0.2f, -0.3482f };
+    // The fore seat, where someone riding along sits.
+    static constexpr float fore[3] = { 0.0f, 0.2f, 0.5718f };
 
     struct State {
       RigidBodyState body;
@@ -79,6 +81,7 @@ namespace moppe::mov {
       float propeller_depth = 0.0f;
       float thrust = 0.0f;
       bool parked = true;
+      bool passenger = false;
       bool afloat = false;
       bool grounded = false;
       float still = 0.0f;
@@ -107,6 +110,9 @@ namespace moppe::mov {
     // No one at the helm: the engine stops, the tail is tipped up, and
     // the helmsman's weight is gone from it.
     void set_parked (bool parked);
+    // Someone sits on the fore seat (another player riding along), and
+    // their 80 kg with them.
+    void set_passenger (bool aboard);
 
     void update (float dt, const BoatWater& water);
 

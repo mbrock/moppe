@@ -36,6 +36,13 @@ namespace moppe::game {
         { Vec3 (0.0f, 0.05f, -0.4f), 0.36f },
         { Vec3 (0.0f, 0.85f, -0.1f), 0.32f },
       };
+      // The boat's long narrow hull, keel to gunwale.
+      const Bumper boat_bumpers[] = {
+        { Vec3 (0.0f, 0.22f, -0.5f), 0.45f },
+        { Vec3 (0.0f, 0.22f, 0.4f), 0.45f },
+        { Vec3 (0.0f, 0.22f, 1.3f), 0.45f },
+        { Vec3 (0.0f, 0.25f, 2.2f), 0.4f },
+      };
       const Bumper helicopter_bumpers[] = {
         { Vec3 (0.0f, 1.3f, 0.3f), 1.25f },
         { Vec3 (0.0f, 1.7f, -2.4f), 0.5f },
@@ -85,6 +92,8 @@ namespace moppe::game {
       return "the helicopter";
     case Machine::mountain_bike:
       return "the mountainbike";
+    case Machine::boat:
+      return "the boat";
     }
     return "it";
   }
@@ -103,6 +112,8 @@ namespace moppe::game {
       return helicopter_bumpers;
     case Machine::mountain_bike:
       return mountain_bike_bumpers;
+    case Machine::boat:
+      return boat_bumpers;
     }
     return {};
   }
@@ -121,6 +132,8 @@ namespace moppe::game {
       return Vec3 (0.0f, 1.15f, 0.05f);
     case Machine::mountain_bike:
       return Vec3 (0.0f, 0.55f, 0.0f);
+    case Machine::boat:
+      return Vec3 (0.0f, 0.2f, 0.15f);
     }
     return Vec3 ();
   }
@@ -142,6 +155,9 @@ namespace moppe::game {
     case Machine::mountain_bike:
       // The head tube, or the seat post.
       return front ? Vec3 (0.0f, 0.45f, 0.35f) : Vec3 (0.0f, 0.5f, -0.25f);
+    case Machine::boat:
+      // The carrying handle on the bow, or the transom's top.
+      return front ? Vec3 (0.0f, 0.45f, 2.65f) : Vec3 (0.0f, 0.35f, -0.95f);
     }
     return Vec3 ();
   }

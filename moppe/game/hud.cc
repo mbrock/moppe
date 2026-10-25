@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -1623,7 +1624,11 @@ namespace moppe {
         action = *deploy_key ? "Deploy glider" : "Glider ready";
       } else if (st.haul) {
         key = mount_key;
-        action = *mount_key ? "Haul " + std::string (st.haul) + " out"
+        // The boat is dragged the other way, back into the water.
+        const bool boat = std::string_view (st.haul) == "the boat";
+        action = *mount_key ? boat ? "Drag the boat by its handle"
+                                   : "Haul " + std::string (st.haul) + " out"
+                 : boat     ? "The boat is aground"
                             : capitalized (st.haul) + " is stuck";
       } else if (st.can_ride_along) {
         key = mount_key;

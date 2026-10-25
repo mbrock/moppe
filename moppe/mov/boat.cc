@@ -36,14 +36,19 @@ namespace moppe::mov {
       constexpr float inertia[3] = { 110.0f, 120.0f, 9.0f };
       constexpr float crew = 80.0f;
       constexpr float crew_centre[3] = { 0.0f, 0.52f, -0.33f };
+      constexpr float fore_centre[3] = { 0.0f, 0.52f, 0.59f };
 
-      // The boat's mass, with or without the helmsman aboard.
-      b3MassData mass_data (bool manned) {
+      // The boat's mass, with or without the helmsman aboard and someone
+      // on the fore seat.
+      b3MassData mass_data (bool manned, bool passenger) {
         const Vec3 hull (mass_centre[0], mass_centre[1], mass_centre[2]);
         const Vec3 seat (crew_centre[0], crew_centre[1], crew_centre[2]);
-        const float total = mass + (manned ? crew : 0.0f);
-        const Vec3 centre =
-          manned ? (hull * mass + seat * crew) / total : hull;
+        const Vec3 fore (fore_centre[0], fore_centre[1], fore_centre[2]);
+        const float total =
+          mass + (manned ? crew : 0.0f) + (passenger ? crew : 0.0f);
+        const Vec3 centre = (hull * mass + seat * (manned ? crew : 0.0f) +
+                             fore * (passenger ? crew : 0.0f)) /
+                            total;
         // Each part's own inertia about its centre, carried to the
         // whole's by the parallel axis rule; the seated helmsman about
         // their own middle much as a 0.4 by 0.9 m column.
@@ -55,12 +60,14 @@ namespace moppe::mov {
           about[2] += m * (d[0] * d[0] + d[1] * d[1]);
         };
         carry (hull, mass);
-        if (manned) {
-          carry (seat, crew);
-          about[0] += crew * 0.07f;
-          about[1] += crew * 0.03f;
-          about[2] += crew * 0.07f;
-        }
+        for (const auto& [aboard, at] : { std::pair (manned, seat),
+                                          std::pair (passenger, fore) })
+          if (aboard) {
+            carry (at, crew);
+            about[0] += crew * 0.07f;
+            about[1] += crew * 0.03f;
+            about[2] += crew * 0.07f;
+          }
         b3MassData m {};
         m.mass = total;
         m.center = to_b3 (centre);
@@ -78,9 +85,15 @@ namespace moppe::mov {
       constexpr float ram = 1.0f;
       constexpr float suction = 0.25f;
       constexpr float damping = 0.6f;
-      constexpr float friction = 0.0032f;
+      constexpr float friction = 0.0055f;
+      // The hump of wave-making resistance, as a share of the weight, and
+      // the volume Froude number it stands at and how broad it is.
+      constexpr float hump = 0.17f;
+      constexpr float hump_froude = 1.95f;
+      constexpr float hump_width = 0.45f;
 
-      // The long-tail: a Honda GX200-type single, 4.1 kW at its governed
+      // The long-tail: a Honda GX200 wearing a GX160's sticker (for legal
+      // reasons, its builder says), 4.1 kW at its governed
       // 3600 rpm, turning a small propeller at the surface. Standing, the
       // propeller's grip on the water limits its push; under way, the
       // engine's power does, as much of it as a surface propeller turns
@@ -89,9 +102,9 @@ namespace moppe::mov {
       // tied back the engine runs half again as fast and gives half
       // again its power.
       constexpr float power = 4100.0f;
-      constexpr float efficiency = 0.6f;
+      constexpr float efficiency = 0.55f;
       constexpr float static_thrust = 520.0f;
-      constexpr float pitch_speed = 18.0f;
+      constexpr float pitch_speed = 15.0f;
       constexpr float boosted_power = 1.5f;
       constexpr float boosted_pitch = 1.25f;
       constexpr float astern = 0.35f;
@@ -106,6 +119,9 @@ namespace moppe::mov {
       constexpr float stowed_tilt = 0.45f;
       constexpr float tilt_rate = 0.5f;
       constexpr float shaft_reach = 1.77f;
+      // How far the sickle skeg under the propeller reaches below its hub,
+      // keeping it off the bottom.
+      constexpr float skeg = 0.14f;
       // The water the boat heaps up behind its transom, round the
       // propeller, once it is under way.
       constexpr float stern_wave = 0.12f;
@@ -338,7 +354,7 @@ namespace moppe::mov {
           b3MakeOffsetBoxHull (0.42f, 0.17f, 1.95f, { 0.0f, 0.17f, 1.0f });
         b3CreateHullShape (body, &shape, &box.base);
       }
-      b3Body_SetMassData (body, mass_data (!kept.parked));
+      b3Body_SetMassData (body, mass_data (!kept.parked, kept.passenger));
     }
 
     void build (const State& s) {
@@ -510,7 +526,7 @@ namespace moppe::mov {
       if (!kept.parked) {
         const Vec3 low = point (tail_point (hub_at, kept.swing, 0.0f));
         const float floor =
-          surface_elevation_at (surface, low[0], low[2]) + 0.06f;
+          surface_elevation_at (surface, low[0], low[2]) + 0.06f + skeg;
         tilt_to =
           std::clamp ((floor - low[1]) / shaft_reach, 0.0f, stowed_tilt);
       }
@@ -525,7 +541,7 @@ namespace moppe::mov {
       // The helmsman holds the tail with its push aimed through the
       // boat's centre of mass; steering swings it from there, moving the
       // propeller across and turning its push with it.
-      const Vec3 centre = from_b3 (mass_data (true).center);
+      const Vec3 centre = from_b3 (mass_data (true, kept.passenger).center);
       const Vec3 shaft = normalized (axis (swing_tilt (
         normalized (centre - hub_at), kept.swing, kept.tilt)));
       const float ahead = dot (v - current, shaft);
@@ -550,8 +566,27 @@ namespace moppe::mov {
         b3Body_ApplyForce (body, to_b3 (shaft * thrust), to_b3 (prop), true);
 
       // The air's drag on what stands out of the water.
-      const Vec3 air = v * (-0.35f * length (v));
+      const Vec3 air = v * (-0.8f * length (v));
       b3Body_ApplyForceToCenter (body, to_b3 (air), true);
+
+      // The waves it makes: the panels feel no wave-making resistance, so
+      // its hump is added whole. As the speed nears that of a wave as long
+      // as the hull, the boat climbs its own bow wave, a fifth of its
+      // weight dragging it back, until it gets over onto the plane. By
+      // the volume Froude number, v / sqrt (g * displacement^(1/3)), the
+      // hump stands at 1.75: some 15 km/h for the helmsman alone, who
+      // gets over it, and 16 two-up, who do not, without the governor
+      // tied back.
+      if (kept.afloat && speed > 0.3f) {
+        const float weight =
+          boat_rig::mass + (kept.parked ? 0.0f : crew) +
+          (kept.passenger ? crew : 0.0f);
+        const float froude =
+          speed / std::sqrt (g * std::cbrt (weight / rho));
+        const float k = (froude - hump_froude) / hump_width;
+        const float drag = hump * weight * g * std::exp (-k * k);
+        b3Body_ApplyForceToCenter (body, to_b3 (way * (-drag / speed)), true);
+      }
 
       b3World_Step (world, dt, substeps);
 
@@ -564,8 +599,11 @@ namespace moppe::mov {
       if (kept.overturned > 3.0f) {
         const Vec3 here = point (Vec3 ());
         const bool parked = kept.parked;
+        const bool passenger = kept.passenger;
         place (here, axis (Vec3 (0, 0, 1)), water.level (here[0], here[2]));
         kept.parked = parked;
+        kept.passenger = passenger;
+        b3Body_SetMassData (body, mass_data (!parked, passenger));
         return;
       }
 
@@ -628,7 +666,18 @@ namespace moppe::mov {
     kept.asleep = false;
     kept.still = 0.0f;
     kept.parked = parked;
-    b3Body_SetMassData (m.body, boat_rig::mass_data (!parked));
+    b3Body_SetMassData (m.body, boat_rig::mass_data (!parked, kept.passenger));
+  }
+
+  void Boat::set_passenger (bool aboard) {
+    Impl& m = *m_impl;
+    State& kept = m.kept;
+    if (kept.passenger == aboard)
+      return;
+    kept.asleep = false;
+    kept.still = 0.0f;
+    kept.passenger = aboard;
+    b3Body_SetMassData (m.body, boat_rig::mass_data (!kept.parked, aboard));
   }
 
   void Boat::update (float dt, const BoatWater& water) {
@@ -662,7 +711,8 @@ namespace moppe::mov {
   }
 
   float Boat::mass () const {
-    return boat_rig::mass + (m_impl->kept.parked ? 0.0f : boat_rig::crew);
+    return boat_rig::mass + (m_impl->kept.parked ? 0.0f : boat_rig::crew) +
+           (m_impl->kept.passenger ? boat_rig::crew : 0.0f);
   }
 
   void Boat::push (const Vec3& at, const Vec3& impulse) {

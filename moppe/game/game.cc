@@ -2866,6 +2866,9 @@ namespace moppe {
         mine.tractor = tractor_pose (session ().tractor ());
         mine.caddy = caddy_pose (session ().caddy ());
         mine.mountain_bike = vehicle_pose (session ().mountain_bike ());
+        mine.boat = boat_pose (session ().boat ());
+        mine.boat_velocity = session ().boat ().velocity ();
+        mine.in_boat = state.m_mode == M_PASSENGER && state.m_seat_boat;
         if (state.m_mode == M_GLIDER)
           mine.glider = glider_pose (session ().glider ());
         if (state.m_mode == M_FOOT)
@@ -2971,35 +2974,67 @@ namespace moppe {
                jeep.up * mov::Jeep::seat[1] + jeep.forward * mov::Jeep::seat[2];
       }
 
-      // On foot beside the other player's jeep, and nearer it than
-      // anything of one's own to ride.
-      bool can_ride_along () const {
-        if (!m_companion || m_spectator || logic ().m_mode != M_FOOT)
-          return false;
-        const Vec3 feet = session ().walker ().position ();
-        const float theirs = length2 (feet - m_companion->jeep.position);
-        return theirs < 4.5f * 4.5f &&
-               theirs < length2 (feet - session ().jeep ().position ()) &&
-               theirs < length2 (feet - session ().bike ().position ());
+      // The fore seat of the other player's boat, in the world.
+      static Vec3 companion_boat_seat (const CompanionSnapshot& theirs) {
+        const BoatPose& boat = theirs.boat;
+        const Vec3 left = normalized (cross (boat.up, boat.forward));
+        return boat.position + left * mov::Boat::fore[0] +
+               boat.up * mov::Boat::fore[1] +
+               boat.forward * mov::Boat::fore[2];
       }
 
-      // Taking the seat beside the other player, keeping it as their jeep
-      // moves, and leaving it: by the mount key, or when they have gone.
+      // On foot beside the other player's jeep, or their boat while they
+      // are at its helm, and nearer it than anything of one's own to
+      // ride: which of them, if either.
+      enum class Seat { none, jeep, boat };
+      Seat seat_within_reach () const {
+        if (!m_companion || m_spectator || logic ().m_mode != M_FOOT)
+          return Seat::none;
+        const Vec3 feet = session ().walker ().position ();
+        const float mine =
+          std::min ({ length2 (feet - session ().jeep ().position ()),
+                      length2 (feet - session ().bike ().position ()),
+                      length2 (feet - session ().boat ().position ()) });
+        const float jeep = length2 (feet - m_companion->jeep.position);
+        float boat = 1e30f;
+        if (m_companion->mode == M_BOAT)
+          boat = length2 (feet - companion_boat_seat (*m_companion));
+        if (boat < 4.0f * 4.0f && boat < mine && boat < jeep)
+          return Seat::boat;
+        if (jeep < 4.5f * 4.5f && jeep < mine)
+          return Seat::jeep;
+        return Seat::none;
+      }
+      bool can_ride_along () const {
+        return seat_within_reach () != Seat::none;
+      }
+
+      // Taking the seat beside the other player, or ahead of them in
+      // their boat, keeping it as it moves, and leaving it: by the mount
+      // key, or when they have gone. Their weight sits in our boat while
+      // they ride in it.
       void ride_along (InputFrame& input) {
         GameLogicState& state = logic ();
+        session ().boat ().set_passenger (m_companion &&
+                                          m_companion->mode == M_PASSENGER &&
+                                          m_companion->in_boat);
         if (state.m_mode == M_PASSENGER) {
           if (!m_companion || input.toggle_mount) {
-            // Out on the passenger's side, the right.
+            // Out on the passenger's side, the right; over the boat's
+            // gunwale, a step from it.
             const Vec3 left =
               normalized (cross (state.m_seat_up, state.m_seat_heading));
             session ().walker ().spawn (
-              moppe::position (state.m_seat_position - left * 1.4f),
+              moppe::position (state.m_seat_position -
+                               left * (state.m_seat_boat ? 1.1f : 1.4f)),
               state.m_seat_heading);
             session ().set_mode (M_FOOT);
+            state.m_seat_boat = false;
             input.toggle_mount = false;
             return;
           }
         } else if (input.toggle_mount && can_ride_along ()) {
+          state.m_seat_boat = seat_within_reach () == Seat::boat;
           session ().clear_controls ();
           session ().set_mode (M_PASSENGER);
           input.toggle_mount = false;
@@ -3008,11 +3043,19 @@ namespace moppe {
           // For captures: take the seat as soon as there is one, from
           // wherever this player stands.
           m_rode_along = true;
+          state.m_seat_boat = m_companion->mode == M_BOAT;
           session ().clear_controls ();
           session ().set_mode (M_PASSENGER);
         }
         if (state.m_mode != M_PASSENGER)
           return;
+        if (state.m_seat_boat) {
+          state.m_seat_position = companion_boat_seat (*m_companion);
+          state.m_seat_heading = m_companion->boat.forward;
+          state.m_seat_up = m_companion->boat.up;
+          state.m_seat_velocity = m_companion->boat_velocity;
+          return;
+        }
         state.m_seat_position = companion_seat (*m_companion);
         state.m_seat_heading = m_companion->jeep.forward;
         state.m_seat_up = m_companion->jeep.up;
@@ -3072,12 +3115,18 @@ namespace moppe {
                   theirs.mountain_bike.position,
                   theirs.mountain_bike.render_orientation,
                   theirs.mountain_bike.render_normal);
+        stranger (Machine::boat,
+                  theirs.boat.position,
+                  theirs.boat.forward,
+                  theirs.boat.up);
         std::array<Vec3, machine_count> were;
         for (const MachineBody& body : m_strangers)
           were[static_cast<std::size_t> (body.machine)] = body.position;
         m_strangers_were = were;
         m_strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
           theirs.jeep_velocity;
+        m_strangers[static_cast<std::size_t> (Machine::boat)].velocity =
+          theirs.boat_velocity;
       }
 
       // Once a frame: hears what the other player has sent, works out how
@@ -3173,6 +3222,7 @@ namespace moppe {
                      theirs.jeep,
                      { .driver = theirs.mode == M_JEEP,
                        .passenger = logic ().m_mode == M_PASSENGER &&
+                                    !logic ().m_seat_boat &&
                                     logic ().m_cam_mode != CAM_HELMET,
                        .driver_outfit = their_outfit (),
                        .passenger_outfit = m_outfit },
@@ -3200,7 +3250,14 @@ namespace moppe {
                      theirs.mode == M_BOAT
                        ? std::optional<Outfit> (their_outfit ())
                        : std::nullopt,
-                     0xF800);
+                     0xF800,
+                     std::nullopt,
+                     time,
+                     logic ().m_mode == M_PASSENGER &&
+                         logic ().m_seat_boat &&
+                         logic ().m_cam_mode != CAM_HELMET
+                       ? std::optional<Outfit> (m_outfit)
+                       : std::nullopt);
         m_blob.draw (dl, surface (), theirs.mountain_bike.position, 1.3f);
         render_mountain_bike (r,
                               dl,
@@ -4267,7 +4324,9 @@ namespace moppe {
             m_world_dl,
             actors.jeep,
             { .driver = actors.active_mode == M_JEEP && !helmet,
-              .passenger = m_companion && m_companion->mode == M_PASSENGER,
+              .passenger = m_companion &&
+                           m_companion->mode == M_PASSENGER &&
+                           !m_companion->in_boat,
               .driver_outfit = m_outfit,
               .passenger_outfit = their_outfit () },
             0x5000);
@@ -4299,7 +4358,11 @@ namespace moppe {
                          : std::nullopt,
                        0xF000,
                        actors.helm_rod,
-                       frame.lighting.time);
+                       frame.lighting.time,
+                       m_companion && m_companion->mode == M_PASSENGER &&
+                           m_companion->in_boat
+                         ? std::optional<Outfit> (their_outfit ())
+                         : std::nullopt);
           m_blob.draw (
             m_world_dl, surface (), actors.mountain_bike.position, 1.3f);
           // Through the rider's eyes, the bars and the fork below them.

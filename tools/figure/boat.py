@@ -82,7 +82,7 @@ FORE_SEAT = HELM.z + 0.92
 # mov::Boat agrees.
 PIVOT = V((0.0, DEPTH + DECK + 0.09, Z0 - DEPTH * math.tan(RAKE) + 0.14))
 HUB = V((0.0, -0.05, Z0 - 1.62))
-TILLER = 0.62       # from the pivot forward to the grip
+TILLER = 1.00       # from the pivot forward to the grip
 TILLER_OFF = -0.30  # and across, to starboard
 
 # Latvijas Finieris film-faced birch plywood, its dark phenolic film on
@@ -110,6 +110,12 @@ PALETTE = {
     "muffler": (0.24, 0.23, 0.22),
     "brass": (0.80, 0.64, 0.32),
     "rubber": (0.05, 0.05, 0.05),
+    "shaft_grey": (0.52, 0.56, 0.59),
+    "prop_red": (0.80, 0.08, 0.06),
+    "decal": (0.86, 0.22, 0.30),
+    "screen": (0.42, 0.47, 0.45),
+    "cable": (0.12, 0.38, 0.80),
+    "nut": (0.36, 0.22, 0.14),
 }
 
 FINISH = {
@@ -131,6 +137,12 @@ FINISH = {
     "muffler": dict(metallic=0.5, roughness=0.7),
     "brass": dict(metallic=1.0, roughness=0.25),
     "rubber": dict(roughness=0.9),
+    "shaft_grey": dict(roughness=0.55, coat=0.2),
+    "prop_red": dict(roughness=0.5, coat=0.2),
+    "decal": dict(roughness=0.4),
+    "screen": dict(roughness=0.15, coat=0.5),
+    "cable": dict(roughness=0.5),
+    "nut": dict(metallic=0.6, roughness=0.8),
 }
 
 
@@ -220,6 +232,8 @@ def build():
 
     longtail(coll, m)
     assembly("seat_helm", coll, HELM, point="seat_helm")
+    assembly("seat_fore", coll, V((0.0, HELM.y, FORE_SEAT)),
+             point="seat_fore")
     for sign, tag in ((1, "left"), (-1, "right")):
         assembly(f"foot_{tag}", coll,
                  HELM + V((sign * 0.13, SOLE - HELM[1], 0.45)),
@@ -957,7 +971,7 @@ def longtail(coll, m):
     part(lt, "plate", slab(at(0.24, 0.035), (0.17, 0.008, 0.25),
                            axes=axes), m["engine_red"], levels=0, bevel=0.004)
 
-    # The engine: a GX200-type single, its crankshaft on the shaft's line
+    # The engine: a Honda GX200 under a GX160's sticker, its crankshaft on the shaft's line
     # a little above the plate, the cylinder leaning to starboard.
     part(lt, "crankcase", slab(at(0.26, 0.15), (0.13, 0.11, 0.14),
                                axes=axes), m["alloy"], levels=1,
@@ -996,84 +1010,137 @@ def longtail(coll, m):
     part(lt, "cap", loft([(at(0.30, 0.40, 0.06), 0.03, 0.03),
                           (at(0.30, 0.425, 0.06), 0.028, 0.028)], fwd,
                          sides=12), m["engine_black"], levels=0)
-    # The air filter to port, the muffler and its guard to starboard over
-    # the cylinder, the exhaust's mouth aimed aft.
-    part(lt, "air_filter", slab(at(0.30, 0.20, 0.17), (0.05, 0.08, 0.09),
+    # Seen from the helmsman, the air filter with its wing nut stands on
+    # the right, in front of the cylinder leaning that way, and the
+    # muffler behind it under a black louvred guard, its mouth aimed aft;
+    # the tank carries a flammable-liquid diamond on its face.
+    part(lt, "air_filter", slab(at(0.34, 0.25, -0.15), (0.06, 0.075, 0.05),
                                 axes=axes), m["engine_black"], levels=1,
-         bevel=0.025)
-    part(lt, "muffler", loft([(at(0.14, 0.27, -0.21), 0.05, 0.05),
-                              (at(0.30, 0.27, -0.21), 0.05, 0.05)], up,
-                             sides=14), m["muffler"], levels=0)
-    part(lt, "muffler_guard", slab(at(0.22, 0.27, -0.27), (0.008, 0.06,
-                                                          0.11),
-                                   axes=axes), m["engine_black"], levels=0,
-         bevel=0.004)
-    part(lt, "tailpipe", loft([(at(0.12, 0.27, -0.21), 0.014, 0.014),
-                               (at(0.08, 0.26, -0.25), 0.014, 0.014)], up,
+         bevel=0.02)
+    part(lt, "wing_nut", merge(
+        loft([(at(0.34, 0.33, -0.15), 0.008, 0.008),
+              (at(0.34, 0.35, -0.15), 0.008, 0.008)], fwd, sides=6),
+        slab(at(0.34, 0.355, -0.15), (0.022, 0.012, 0.004), axes=axes)),
+        m["steel"], levels=0)
+    guard = [slab(at(0.15, 0.27, -0.19), (0.075, 0.07, 0.10), axes=axes)]
+    for k in range(5):
+        guard.append(slab(at(0.08 + 0.035 * k, 0.27, -0.268),
+                          (0.004, 0.05, 0.006), axes=axes))
+    part(lt, "muffler_guard", merge(*guard), m["engine_black"], levels=0,
+         bevel=0.006)
+    part(lt, "tailpipe", loft([(at(0.07, 0.25, -0.21), 0.013, 0.013),
+                               (at(0.035, 0.25, -0.23), 0.013, 0.013)], up,
                               sides=8), m["muffler"], levels=0)
-    assembly("exhaust", coll, PIVOT + at(0.07, 0.26, -0.26), point="exhaust")
-    # The shaft: a coupling off the crankshaft, the tube back to the
-    # propeller with a skeg under its end, and the bearing at the hub.
-    # The shaft runs on from the crankshaft, its tube held over the
-    # hinge by a bracket, back to the propeller.
+    assembly("exhaust", coll, PIVOT + at(0.03, 0.25, -0.23), point="exhaust")
+    diamond = (left * math.cos(math.pi / 4) + up * math.sin(math.pi / 4),
+               up * math.cos(math.pi / 4) - left * math.sin(math.pi / 4),
+               fwd)
+    part(lt, "tank_decal", slab(at(0.381, 0.34, 0.06), (0.03, 0.03, 0.002),
+                                axes=diamond), m["decal"], levels=0)
+
+    # The shaft: a coupling off the crankshaft, then a grey painted tube
+    # back to the propeller, a black sleeve over its last span and the
+    # bearing in it.
     crank = at(0.12, 0.15)
-    part(lt, "shaft", loft([(crank, 0.026, 0.026),
-                            (crank - fwd * 0.10, 0.024, 0.024),
-                            (hub + fwd * 0.07, 0.020, 0.020)], up,
-                           sides=12), m["steel"], levels=0)
+    part(lt, "coupling", loft([(crank + fwd * 0.02, 0.03, 0.03),
+                               (crank - fwd * 0.07, 0.03, 0.03)], up,
+                              sides=12), m["engine_black"], levels=0)
+    part(lt, "shaft", loft([(crank - fwd * 0.06, 0.026, 0.026),
+                            (hub + fwd * 0.17, 0.024, 0.024)], up,
+                           sides=12), m["shaft_grey"], levels=0)
     part(lt, "bracket", slab(at(-0.02, 0.09), (0.03, 0.06, 0.05),
                              axes=axes), m["steel"], levels=0, bevel=0.006)
-    part(lt, "bearing", loft([(hub + fwd * 0.16, 0.026, 0.026),
-                              (hub + fwd * 0.05, 0.03, 0.03),
-                              (hub + fwd * 0.03, 0.022, 0.022)], up,
-                             sides=12), m["steel"], levels=0)
-    part(lt, "skeg", slab(hub + fwd * 0.12 - up * 0.045,
-                          (0.003, 0.025, 0.07), axes=axes),
-         m["steel"], levels=0)
-    # The tiller, off the plate's starboard edge and forward beside the
-    # helmsman, so that the engine stands on the centre line and the
-    # hand rests by the hip; the twist grip on its end.
-    grip = at(TILLER, -0.05, TILLER_OFF)
-    elbow = at(0.30, -0.01, TILLER_OFF * 0.7)
-    part(lt, "tiller", loft([(at(0.12, 0.03, -0.12), 0.016, 0.016),
-                             (elbow, 0.016, 0.016),
-                             (grip - fwd * 0.07, 0.016, 0.016)], up,
-                            sides=8), m["engine_red"], levels=0)
-    part(lt, "grip", loft([(grip - fwd * 0.08, 0.019, 0.019),
-                           (grip + fwd * 0.07, 0.019, 0.019)], up,
+    part(lt, "sleeve", loft([(hub + fwd * 0.18, 0.027, 0.027),
+                             (hub + fwd * 0.035, 0.027, 0.027)], up,
+                            sides=12), m["engine_black"], levels=0)
+    # The sickle skeg: a red plate bolted by a clamp under the tube ahead
+    # of the propeller, sweeping down and back under it and on past it,
+    # so that the propeller meets the bottom only after it does.
+    part(lt, "skeg_clamp", slab(hub + fwd * 0.33 - up * 0.032,
+                                (0.012, 0.012, 0.055), axes=axes),
+         m["shaft_grey"], levels=0, bevel=0.003)
+    nuts = [slab(hub + fwd * (0.33 + d) - up * 0.032 + left * 0.015,
+                 (0.006, 0.009, 0.009), axes=axes) for d in (-0.03, 0.03)]
+    part(lt, "skeg_nuts", merge(*nuts), m["nut"], levels=0, bevel=0.002)
+    r = 1 / math.cos(math.pi / 4)
+    sickle = [(hub + fwd * f + up * u, 0.003 * r, d * r)
+              for f, u, d in ((0.38, -0.04, 0.022), (0.32, -0.058, 0.04),
+                              (0.24, -0.088, 0.05), (0.15, -0.118, 0.048),
+                              (0.06, -0.138, 0.04), (-0.03, -0.146, 0.032),
+                              (-0.10, -0.142, 0.024),
+                              (-0.135, -0.128, 0.02))]
+    part(lt, "skeg", loft(sickle, left, sides=4, turn=math.pi / 4),
+         m["prop_red"], levels=0)
+
+    # The handle: off the frame on the right, up in a gooseneck over the
+    # engine's side, and then a long black tube forward and down beside
+    # the helmsman, with a tachometer and hour meter on it, its blue
+    # leads back to the engine, the throttle's thumb lever, and the grip.
+    grip = at(TILLER, -0.20, TILLER_OFF)
+    bend = at(0.32, 0.26, -0.25)
+    run = (grip - bend).normalized()
+    goose = [(at(0.16, 0.02, -0.17), 0.015, 0.015),
+             (at(0.19, 0.16, -0.20), 0.015, 0.015),
+             (at(0.24, 0.245, -0.23), 0.015, 0.015),
+             (bend, 0.015, 0.015),
+             (grip - run * 0.16, 0.015, 0.015)]
+    part(lt, "tiller", loft(goose, left, sides=10), m["engine_black"],
+         levels=0)
+    part(lt, "grip", loft([(grip - run * 0.17, 0.018, 0.018),
+                           (grip + run * 0.08, 0.018, 0.018)], left,
                           sides=10), m["rubber"], levels=1)
-    part(lt, "throttle_cable", loft([(grip - fwd * 0.09, 0.004, 0.004),
-                                     (elbow + up * 0.10, 0.004, 0.004),
-                                     (at(0.33, 0.24, 0.10), 0.004,
-                                      0.004)], up, sides=4),
-         m["engine_black"], levels=0)
+    side = left.cross(run).normalized()
+    if side.dot(UP) < 0:
+        side = -side
+    across = run.cross(side).normalized()
+    meter = bend.lerp(grip, 0.48) + side * 0.03
+    part(lt, "tachometer", slab(meter, (0.025, 0.018, 0.04),
+                                axes=(across, side, run)),
+         m["engine_black"], levels=0, bevel=0.004)
+    part(lt, "tachometer_screen", slab(meter + side * 0.018 + run * 0.01,
+                                       (0.018, 0.002, 0.018),
+                                       axes=(across, side, run)),
+         m["screen"], levels=0)
+    lever = grip - run * 0.22
+    part(lt, "throttle", merge(
+        slab(lever, (0.02, 0.02, 0.012), axes=(across, side, run)),
+        slab(lever - side * 0.05 + run * 0.02, (0.004, 0.035, 0.008),
+             axes=(across, side, run))), m["steel"], levels=0, bevel=0.003)
+    part(lt, "leads", loft([(meter - run * 0.04, 0.003, 0.003),
+                            (meter.lerp(bend, 0.5) - side * 0.06, 0.003,
+                             0.003),
+                            (at(0.25, 0.14, -0.20), 0.003, 0.003),
+                            (at(0.30, 0.12, -0.12), 0.003, 0.003)], left,
+                           sides=4), m["cable"], levels=0)
     assembly("tiller_grip", coll, PIVOT + grip, point="tiller_grip")
 
-    # The propeller, three bronze blades round a hub about its own z,
-    # which the game turns down the shaft.
+    # The propeller, three broad red blades round a hub about its own z,
+    # which the game turns down the shaft, and the acorn nut holding it.
     p = assembly("propeller", coll, HUB, mesh="propeller", point="hub")
-    part(p, "boss", loft([(V((0, 0, 0.03)), 0.022, 0.022),
-                          (V((0, 0, -0.02)), 0.026, 0.026),
-                          (V((0, 0, -0.05)), 0.008, 0.008)], UP, sides=12),
-         m["brass"], levels=1)
+    part(p, "boss", loft([(V((0, 0, 0.03)), 0.024, 0.024),
+                          (V((0, 0, -0.025)), 0.026, 0.026)], UP, sides=12),
+         m["prop_red"], levels=1)
+    part(p, "nut", loft([(V((0, 0, -0.025)), 0.017, 0.017),
+                         (V((0, 0, -0.05)), 0.016, 0.016),
+                         (V((0, 0, -0.065)), 0.008, 0.008)], UP, sides=6),
+         m["steel"], levels=1)
     blades = []
     for k in range(3):
         a = 2 * math.pi * k / 3
         out = V((math.cos(a), math.sin(a), 0))
         side = FORWARD.cross(out)
-        pitch = math.radians(28)
+        pitch = math.radians(30)
         face = (side * math.cos(pitch) + FORWARD * math.sin(pitch))
         thick = out.cross(face)
-        blades.append(blob(out * 0.07, (0.045, 0.006, 0.035), 16, 6))
+        blades.append(blob(out * 0.055, (0.045, 0.005, 0.042), 16, 6))
         b = blades[-1]
         # Turn the blob from its own axes into the blade's.
         for i, v in enumerate(b.verts):
-            q = v - out * 0.07
-            b.verts[i] = out * 0.07 + out * q.x / 0.045 * 0.05 + \
+            q = v - out * 0.055
+            b.verts[i] = out * 0.055 + out * q.x / 0.045 * 0.045 + \
                 thick * q.y + face * q.z
-    recalc(part(p, "blades", merge(*blades), m["brass"], levels=0),
+    recalc(part(p, "blades", merge(*blades), m["prop_red"], levels=0),
            smooth=True)
-
 
 # Fittings.
 

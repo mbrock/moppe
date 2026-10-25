@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 8;
+    constexpr std::uint8_t wire_version = 9;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -19,6 +19,7 @@ namespace moppe::game {
     constexpr std::uint8_t glider_carries_bike = 1 << 4;
     constexpr std::uint8_t walker_grounded = 1 << 5;
     constexpr std::uint8_t has_pan = 1 << 6;
+    constexpr std::uint8_t riding_in_boat = 1 << 7;
 
     // Farther than this between two snapshots was not travelled: a
     // restart, or a new world's spawn.
@@ -255,6 +256,8 @@ namespace moppe::game {
       flags |= has_hearth;
     if (snapshot.pan_on)
       flags |= has_pan;
+    if (snapshot.in_boat)
+      flags |= riding_in_boat;
     out.put (flags);
 
     const VehiclePose& bike = snapshot.bike;
@@ -323,6 +326,7 @@ namespace moppe::game {
     out.put (boat.tilt_radians);
     out.put (boat.propeller_radians);
     out.put (boat.rpm);
+    out.put (snapshot.boat_velocity);
 
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
@@ -461,6 +465,8 @@ namespace moppe::game {
     boat.tilt_radians = in.number ();
     boat.propeller_radians = in.number ();
     boat.rpm = in.number ();
+    snapshot.boat_velocity = in.point ();
+    snapshot.in_boat = (flags & riding_in_boat) != 0;
 
     if (flags & has_glider) {
       GliderPose glider;
@@ -633,6 +639,7 @@ namespace moppe::game {
       boat.propeller_radians =
         mix_angle (a.boat.propeller_radians, b.boat.propeller_radians, t);
       boat.rpm = mix (a.boat.rpm, b.boat.rpm, within);
+      result.boat_velocity = mix (a.boat_velocity, b.boat_velocity, within);
     }
     if (!leapt (a.helicopter.position, b.helicopter.position)) {
       HelicopterPose& heli = result.helicopter;

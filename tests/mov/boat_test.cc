@@ -106,9 +106,9 @@ MOPPE_TEST (the_long_tail_drives_the_boat_up_onto_the_plane_and_steers_it) {
   MOPPE_CHECK (boat.thrust () > 100.0f);
   boat_test_run (boat, 12.0f);
   const float speed = length (level (boat.velocity ()));
-  // Some thirty kilometres an hour on 4.1 kW.
-  MOPPE_CHECK (speed > 7.0f);
-  MOPPE_CHECK (speed < 11.0f);
+  // Some 24 km/h on 4.1 kW, as its builder clocks it alone.
+  MOPPE_CHECK (speed > 6.0f);
+  MOPPE_CHECK (speed < 7.5f);
   MOPPE_CHECK (boat.forward ()[2] > 0.98f);
   // Up on the plane it rides higher than it floats.
   MOPPE_CHECK (boat.position ()[1] > -0.05f);
@@ -175,4 +175,25 @@ MOPPE_TEST (driven_against_a_current_the_boat_makes_less_way_over_the_ground) {
   // A 1.5 m/s current flowing down -z, against the bow.
   const float upstream = speed_in (still_water (Vec3 (0, 0, -1.5f)));
   MOPPE_CHECK_NEAR (still - upstream, 1.5f, 0.5f);
+}
+
+MOPPE_TEST (two_up_the_boat_sticks_at_its_hump_until_the_governor_is_tied_back) {
+  const map::SurfaceGeometry lake =
+    boat_test_ground ([] (float, float) { return -4.0f; });
+  mov::Boat boat (lake);
+  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f);
+  boat.set_parked (false);
+  boat.set_passenger (true);
+  MOPPE_CHECK_NEAR (boat.mass (), 230.0f, 1e-3f);
+  boat.set_drive (1.0f);
+  boat_test_run (boat, 15.0f);
+  // Some 16 km/h, as its builder and his father clock it: climbing its
+  // own bow wave, short of the plane it makes alone at 24.
+  const float stuck = length (level (boat.velocity ()));
+  MOPPE_CHECK (stuck > 3.5f);
+  MOPPE_CHECK (stuck < 5.0f);
+  // Tied back, the engine pushes it over onto the plane.
+  boat.set_boost (1.0f);
+  boat_test_run (boat, 10.0f);
+  MOPPE_CHECK (length (level (boat.velocity ())) > 6.0f);
 }

@@ -203,6 +203,36 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   MOPPE_CHECK (logic.m_mode == game::M_TRACTOR);
 }
 
+MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
+  using namespace moppe;
+
+  const Ground ground = rescue_ground ([] (float, float) { return 10.0f; });
+  game::GameSession session (ground.world, ground.surface);
+  Runner run { ground, session };
+  game::GameLogicState& logic = session.logic ();
+  session.start_on_foot ();
+  session.boat ().place (Vec3 (60, 10, 180), Vec3 (0, 0, 1), -100.0f);
+  run ({}, 2.0f);
+  MOPPE_CHECK (session.boat ().grounded () && !session.boat ().afloat ());
+  const Vec3 start = session.boat ().position ();
+
+  // Ahead of its bow: F takes up the rope to the handle rather than
+  // taking the helm of a boat that cannot go anywhere.
+  session.walker ().spawn (position (Vec3 (60, 10.1f, 184.0f)),
+                           Vec3 (0, 0, 1));
+  MOPPE_CHECK (session.haul_within_reach () == game::Machine::boat);
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (session.hauling () == game::Machine::boat);
+  MOPPE_CHECK (logic.m_haul.tie[2] > 2.0f);
+
+  // Walking off, the boat slides after on its bottom, upright.
+  run ({ .drive = 1.0f }, 8.0f);
+  const Vec3 moved = session.boat ().position () - start;
+  MOPPE_CHECK (moved[2] > 6.0f);
+  MOPPE_CHECK (session.boat ().up ()[1] > 0.9f);
+}
+
 MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
   using namespace moppe;
 

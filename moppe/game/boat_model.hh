@@ -18,6 +18,7 @@ namespace moppe::game::boat_model {
   extern const Vec3 foot_right;
   extern const Vec3 hub;
   extern const Vec3 pivot;
+  extern const Vec3 seat_fore;
   extern const Vec3 seat_helm;
   extern const Vec3 tiller_grip;
 }

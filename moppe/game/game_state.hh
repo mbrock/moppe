@@ -89,6 +89,8 @@ namespace moppe::game {
     Vec3 m_seat_heading { 0, 0, 1 };
     Vec3 m_seat_up { 0, 1, 0 };
     Vec3 m_seat_velocity;
+    // Whether that seat is the fore seat of their boat.
+    bool m_seat_boat = false;
     int m_score = 0;
     float m_jump_airtime = 0.0f;
     float m_jump_spin_radians = 0.0f;

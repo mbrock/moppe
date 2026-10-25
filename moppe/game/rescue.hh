@@ -26,16 +26,19 @@ namespace moppe::game {
   // the mount key beside it takes up a rope tied to its nearer end
   // instead of getting in, and walking away hauls it out after the
   // walker (walking at it pushes it); the key again lets go. Once it has
-  // been moved three metres, it is no longer stuck.
+  // been moved three metres, it is no longer stuck. The boat, run up on
+  // the land, is dragged back to the water the same way, by the handle
+  // on its bow.
   enum class Machine : std::uint8_t {
     bike,
     jeep,
     tractor,
     caddy,
     helicopter,
-    mountain_bike
+    mountain_bike,
+    boat
   };
-  inline constexpr int machine_count = 6;
+  inline constexpr int machine_count = 7;
 
   // "the tractor", for the prompts.
   const char* machine_name (Machine machine);

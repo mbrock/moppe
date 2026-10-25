@@ -107,6 +107,41 @@ namespace moppe::game {
         hold.elbow_pole[1] = left * 0.6f - up;
         return pose_holding (hold);
       }
+
+      // Someone riding along on the fore seat, hands on their knees and
+      // feet on the sole ahead of it, looking where the boat goes.
+      AvatarSkeleton pose_passenger (const Mat4& frame) {
+        const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
+        const Vec3 facing =
+          normalized (frame.transform_vector (Vec3 (0, 0, 1)));
+        const Vec3 left = normalized (cross (up, facing));
+        HoldPose hold;
+        hold.facing = facing;
+        hold.up = up;
+        hold.pelvis =
+          frame.transform_point (boat_model::seat_fore) + up * 0.09f;
+        hold.lean = 0.18f;
+        hold.gaze = normalized (facing + up * 0.03f);
+        hold.head_up = up;
+        hold.sole = facing;
+        hold.instep = up;
+        for (int i = 0; i < 2; ++i) {
+          const float side = i == 0 ? -1.0f : 1.0f;
+          const Vec3 knee =
+            hold.pelvis + facing * 0.40f + left * (side * 0.13f) + up * 0.07f;
+          const Vec3 shoulder = held_shoulder (hold, i);
+          hold.wrist[i] = knee - normalized (knee - shoulder) * 0.07f;
+          hold.elbow_pole[i] = left * side - up * 0.5f;
+          hold.ankle[i] = frame.transform_point (
+                            boat_model::seat_fore +
+                            Vec3 (side * -0.12f, 0.0f, 0.45f) -
+                            Vec3 (0.0f, boat_model::seat_fore[1] -
+                                          boat_model::foot_left[1], 0.0f)) +
+                          up * 0.085f;
+          hold.knee_pole[i] = up + facing * 0.6f + left * (side * 0.3f);
+        }
+        return pose_holding (hold);
+      }
     }
   }
   using namespace boat_drawing;
@@ -117,10 +152,13 @@ namespace moppe::game {
                     std::optional<Outfit> helmsman,
                     uint64_t motion_base,
                     const std::optional<RodPose>& rod,
-                    float time) {
+                    float time,
+                    std::optional<Outfit> passenger) {
     const BoatMeshes& meshes = boat_meshes (r);
     const Mat4 frame = boat_frame (boat);
     const Mat4 tail = tail_frame (boat, frame);
+    if (passenger)
+      figure::draw (dl, pose_passenger (frame), *passenger);
     if (helmsman || rod) {
       const AvatarSkeleton k = pose_helmsman (boat, frame, tail, rod);
       if (helmsman)

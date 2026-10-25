@@ -408,16 +408,26 @@
     epoxy, lately painted white (the dark film shows where it is worn),
     its sheets joined by CNC-cut serpentine joints, with a blunt narrow
     bow, a carrying handle and a blue painter there, and two moulded seats
-    in tandem. Its long-tail (a Honda GX200-type single, 4.1 kW) hangs
-    on a gimbal centred on the transom, its tiller offset to starboard.
+    in tandem. Its long-tail (a Honda GX200, 4.1 kW, under a GX160's
+    sticker as on his) hangs on a gimbal centred on the transom: a grey
+    shaft to a red three-blade propeller behind a red sickle skeg, and a
+    long black handle with an hour meter, offset to starboard.
     It lies moored at
     the shore of the sea or a big lake nearest the spawn (`park_boat` in
     game.cc). On foot, `F` beside it takes the helm and `F` steps ashore
     over whichever side has the shallowest water; `W`/`S` drive and
     reverse, `A`/`D` swing the tail to steer, and `Space` (the right
-    trigger) holds the governor tied back, for some 37 km/h instead of
-    31. The engine's thrust is the propeller's grip standing and its
-    power under way. The boat and engine weigh 70 kg. The water acts on the hull
+    trigger) holds the governor tied back. The engine's thrust is the
+    propeller's grip standing and its power under way, and the hull's
+    hump of wave-making drag is added whole, so it does his figures:
+    some 24 km/h alone (29 tied back) and 15 two-up, stuck at the hump
+    (26 tied back). The boat and engine weigh 70 kg. In multiplayer, `F`
+    beside the other player's boat while they are at its helm takes the
+    fore seat (`M_PASSENGER`, `m_seat_boat`), and the helm's game carries
+    the passenger's 80 kg (`Boat::set_passenger`). Run up on the land,
+    `F` takes up a rope to its bow handle and walking drags it back to
+    the water (`Machine::boat` in rescue.hh); the helicopter can hook it
+    too. The water acts on the hull
     panel by panel (pressure at depth, ram and suction, skin friction, all
     relative to the current, so rivers carry it), which floats, heels,
     trims, and planes it; the propeller drives only while in the water,
@@ -433,7 +443,7 @@
     calm and rivers flat. The boat is moored on the nearest open shore
     of the sea (`MOPPE_BOAT=lake` takes the nearest big lake instead). It draws a Kelvin wake, a
     rooster tail, and bow spray; `MOPPE_DEMO=boat` (`tools/record OUT.mp4
-    boat`) has the autopilot take it out (companion wire version 8).
+    boat`) has the autopilot take it out (companion wire version 9).
   - Skids, on both bikes: riding, `Shift` (the controller's left trigger)
     stamps on the rear brake. The rear wheel locks, its tyre's grip drops
     to a sliding friction, and the bars swing the tail out about the

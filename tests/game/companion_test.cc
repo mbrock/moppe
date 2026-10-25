@@ -51,6 +51,9 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.pick_count = 40;
   sent.picks_from = 38;
   sent.picks = { 1001, 1002 };
+  sent.boat.position = Vec3 (40, 0, 9);
+  sent.boat_velocity = Vec3 (0, 0, 6.5f);
+  sent.in_boat = true;
 
   const std::optional<CompanionSnapshot> got = decode (encode (sent));
   MOPPE_CHECK (got.has_value ());
@@ -75,6 +78,9 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (got->pan_place[0], 3.3f, 1e-6f);
   MOPPE_CHECK (got->pick_count == 40 && got->picks_from == 38);
   MOPPE_CHECK (got->picks == sent.picks);
+  MOPPE_CHECK_NEAR (got->boat.position[0], 40.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->boat_velocity[2], 6.5f, 1e-6f);
+  MOPPE_CHECK (got->in_boat);
 }
 
 MOPPE_TEST (a_damaged_companion_snapshot_is_refused) {
