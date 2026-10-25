@@ -626,6 +626,27 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   moppe_configure_code_target(river-census)
 endif()
 
+# The website's geology (docs/site.md): the land grown on a small lattice,
+# a picture after every step. Under Emscripten a module for a Web Worker
+# (build-web/moppe-site-geology.js and .wasm), natively a timing tool.
+if(NOT MOPPE_MOBILE_APPLE)
+  add_executable(moppe-site-geology EXCLUDE_FROM_ALL
+    moppe/site/geology.cc
+    moppe/map/surface.cc
+    ${MOPPE_TERRAIN_SOURCES}
+  )
+  moppe_configure_code_target(moppe-site-geology)
+  if(EMSCRIPTEN)
+    target_link_options(moppe-site-geology PRIVATE
+      -sENVIRONMENT=worker
+      -sMODULARIZE=1
+      -sEXPORT_NAME=createGeology
+      -sEXPORTED_FUNCTIONS=_moppe_geology_grow
+      -sALLOW_MEMORY_GROWTH=1
+      -g0 --profiling-funcs)
+  endif()
+endif()
+
 # Tests are configured for IDEs and CTest, but excluded from the default build.
 # Asking for moppe-tests compiles the engine and suite together as one unity
 # translation unit per language.

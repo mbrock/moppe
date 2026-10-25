@@ -6,7 +6,7 @@
 	test \
 	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
-	web web-serve xbox xcode
+	site web web-serve xbox xcode
 
 all: moppe
 
@@ -167,15 +167,27 @@ web:
 	if [ "$$(ls build-web/lands 2>/dev/null)" != "$$(basename "$$land")" ]; \
 	then rm -rf build-web/lands && mkdir -p build-web/lands && \
 		cp "$$land" build-web/lands/; fi
-	@[ -f build-web/build.ninja ] || \
-		emcmake cmake -B build-web -G Ninja \
-			-DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF \
-			-DMOPPE_LANDS_DIR=$(CURDIR)/build-web/lands
+	@[ -f build-web/build.ninja ] || $(WEB_CONFIGURE)
 	cmake --build build-web --target moppe
+
+WEB_CONFIGURE = emcmake cmake -B build-web -G Ninja \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF \
+	-DMOPPE_LANDS_DIR=$(CURDIR)/build-web/lands
 
 # Serve it at http://localhost:8080.
 web-serve: web
 	bun run tools/serve-web.ts
+
+# Build the website (docs/site.md) into build-web/site, which `bun run
+# tools/serve-web.ts` serves at http://localhost:8080/site/.
+site:
+	@[ -f build-web/build.ninja ] || $(WEB_CONFIGURE)
+	cmake --build build-web --target moppe-site-geology
+	mkdir -p build-web/site
+	cp moppe/site/index.html moppe/site/geology-worker.js \
+		build-web/moppe-site-geology.js build-web/moppe-site-geology.wasm \
+		build-web/site/
+	./tools/subset-font build-web/site/fonts
 
 # Build the canonical terrain with the Fast profile, capture the Lab, and exit.
 # Build a deterministic grove from surface habitat and capture it in-game.

@@ -12,6 +12,7 @@ const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json",
+  ".ttf": "font/ttf",
   ".wasm": "application/wasm",
 }
 
@@ -19,7 +20,12 @@ serve({
   port,
   async fetch(request) {
     const url = new URL(request.url)
-    const requested = url.pathname === "/" ? "/moppe.html" : url.pathname
+    const requested =
+      url.pathname === "/"
+        ? "/moppe.html"
+        : url.pathname.endsWith("/")
+          ? url.pathname + "index.html"
+          : url.pathname
     const relative = normalize(requested).replace(/^[/\\]+/, "")
     const path = normalize(join(root, relative))
     if (!path.startsWith(root + "/")) {

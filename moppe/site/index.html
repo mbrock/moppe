@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>moppe</title>
+    <meta
+      name="description"
+      content="A small open world to walk, ride, fly, fish, and camp in, grown from its geology."
+    />
+    <style>
+      @font-face {
+        font-family: "Iosevka Aile";
+        src: url("fonts/IosevkaAile-Regular.ttf") format("truetype");
+        font-display: swap;
+      }
+
+      :root {
+        --paper: #f3efe4;
+        --ink: #2b2a26;
+        --faint: #7a7262;
+        --contour: #8f5c33;
+        --forest: #29402f;
+        --rule: #d8cfbb;
+      }
+
+      html {
+        background: var(--paper);
+        color: var(--ink);
+        font: 17px/1.55 "Iosevka Aile", ui-sans-serif, system-ui, sans-serif;
+      }
+
+      body {
+        max-width: 68rem;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 5rem;
+      }
+
+      h1 {
+        font-size: 4.5rem;
+        font-weight: 400;
+        letter-spacing: -0.02em;
+        margin: 0;
+      }
+
+      h2 {
+        font-size: 1.6rem;
+        font-weight: 400;
+        margin: 0 0 0.75rem;
+      }
+
+      a {
+        color: var(--forest);
+      }
+
+      .lede {
+        font-size: 1.25rem;
+        margin: 0.25rem 0 1.5rem;
+        max-width: 34rem;
+      }
+
+      .actions a {
+        display: inline-block;
+        padding: 0.6rem 1.1rem;
+        margin: 0 0.5rem 0.5rem 0;
+        border: 1px solid var(--forest);
+        border-radius: 3px;
+        text-decoration: none;
+      }
+
+      .actions a.primary {
+        background: var(--forest);
+        color: var(--paper);
+      }
+
+      section {
+        border-top: 1px solid var(--rule);
+        margin-top: 3.5rem;
+        padding-top: 2.5rem;
+      }
+
+      .geology {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+        gap: 2.5rem;
+        align-items: start;
+      }
+
+      @media (max-width: 52rem) {
+        .geology {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      figure {
+        margin: 0;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1;
+        background: #efe8d6;
+        box-shadow: 0 1px 0 var(--rule), 0 8px 24px rgba(60, 45, 20, 0.12);
+      }
+
+      figcaption {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 0.75rem;
+        color: var(--faint);
+        font-size: 0.9rem;
+      }
+
+      figcaption output {
+        min-width: 11rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      input[type="range"] {
+        flex: 1;
+        accent-color: var(--contour);
+      }
+
+      button {
+        font: inherit;
+        font-size: 0.9rem;
+        color: var(--forest);
+        background: none;
+        border: 1px solid var(--rule);
+        border-radius: 3px;
+        padding: 0.3rem 0.7rem;
+        cursor: pointer;
+      }
+
+      footer {
+        margin-top: 4rem;
+        color: var(--faint);
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>moppe</h1>
+      <p class="lede">
+        A small open world to walk, ride, fly, fish, and camp in, grown from
+        its geology.
+      </p>
+      <p class="actions">
+        <a class="primary" href="https://moppe.swa.sh">Play in your browser</a>
+        <a href="https://github.com/mbrock/moppe/releases/latest">
+          Download for macOS, Windows, or Linux
+        </a>
+      </p>
+    </header>
+
+    <section class="geology">
+      <figure>
+        <canvas id="land" width="512" height="512"></canvas>
+        <figcaption>
+          <output id="age">Waiting for the land</output>
+          <input id="scrub" type="range" min="0" max="0" value="0" disabled />
+          <button id="again" type="button" disabled>Another world</button>
+        </figcaption>
+      </figure>
+      <div>
+        <h2>Two million years before the trailhead</h2>
+        <p>
+          The world begins as a low plain with a few shallow seas. The crust
+          lifts it, fastest where the mountains will be, for the first half
+          million years.
+        </p>
+        <p>
+          Rain falls on it all the while. Every step of fifty thousand years,
+          each stream cuts its bed by the water it gathers, carries what it
+          cut downhill, and lays it down where it slows. The valleys branch
+          and deepen, the ridges sharpen between them, and the slopes creep.
+        </p>
+        <p>
+          What you are watching is the simulation that made the game's world,
+          on a lattice an eighth as fine, running on your own computer.
+        </p>
+      </div>
+    </section>
+
+    <footer>
+      A game by Mikael Brockman ·
+      <a href="https://github.com/mbrock/moppe">Source on GitHub</a>
+    </footer>
+
+    <script>
+      const canvas = document.getElementById("land");
+      const context = canvas.getContext("2d");
+      const age = document.getElementById("age");
+      const scrub = document.getElementById("scrub");
+      const again = document.getElementById("again");
+
+      // Every picture the worker has posted, played back at a steady pace
+      // whatever speed it arrives at.
+      let frames = [];
+      let shown = -1;
+      let playing = true;
+      let worker = null;
+
+      const years = (value) =>
+        value === 0
+          ? "The first year"
+          : value < 1e6
+            ? `${Math.round(value / 1000)} thousand years`
+            : `${(value / 1e6).toFixed(2).replace(/\.?0+$/, "")} million years`;
+
+      function show(index) {
+        const frame = frames[index];
+        if (!frame) return;
+        shown = index;
+        context.putImageData(frame.image, 0, 0);
+        age.textContent = years(frame.years);
+        scrub.value = index;
+      }
+
+      function grow(seed) {
+        worker?.terminate();
+        frames = [];
+        shown = -1;
+        playing = true;
+        scrub.disabled = again.disabled = true;
+        age.textContent = "Raising the land";
+        worker = new Worker("geology-worker.js");
+        worker.onmessage = ({ data }) => {
+          if (data.done) {
+            scrub.disabled = again.disabled = false;
+            console.log(`moppe: geology grown in ${data.seconds.toFixed(1)} s`);
+            return;
+          }
+          const image = new ImageData(data.rgba, data.size, data.size);
+          frames.push({ image, years: data.years });
+          scrub.max = data.steps;
+        };
+        worker.postMessage({ resolution: 256, seed, size: 512 });
+      }
+
+      let last = 0;
+      function tick(now) {
+        if (playing && now - last > 220 && shown + 1 < frames.length) {
+          last = now;
+          show(shown + 1);
+          if (shown === Number(scrub.max) && !scrub.disabled) playing = false;
+        }
+        requestAnimationFrame(tick);
+      }
+
+      scrub.addEventListener("input", () => {
+        playing = false;
+        show(Number(scrub.value));
+      });
+      again.addEventListener("click", () =>
+        grow((Math.random() * 2 ** 32) >>> 0),
+      );
+
+      grow(123);
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>
