@@ -347,7 +347,8 @@
   - The Caddy (`moppe/mov/caddy.*`, `models/caddy.blend` from
     `tools/figure/caddy.py`, drawn by `game/caddy_render.*`) is a
     first-series VW Caddy pickup under a fibreglass hardtop on Swedish
-    plates, parked behind the jeep. On foot, `F` beside it drives it and
+    plates, parked by the sea on level ground above the shore the boat
+    lies at (`park_caddy` in game.cc). On foot, `F` beside it drives it and
     `F` steps out of the driver's door; `W`/`S`, `A`/`D`, and `Space` as
     in the jeep. It is a Box3D assemblage like the jeep but a road car:
     front-wheel drive, soft springs, some 140 km/h flat out (its wheels
@@ -372,8 +373,9 @@
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
     ahead of the bike, the glider, or the driven jeep, tractor, or Caddy.
   - The jeep (`moppe/mov/jeep.*`, `models/jeep.blend` from
-    `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits a few
-    steps to the bike's left. On foot, `F` beside it drives it (nearer it
+    `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits a
+    stone's throw off the bike's left, on open ground (the machines at the
+    trailhead each find a clear spot, `open_ground_near` in game.cc). On foot, `F` beside it drives it (nearer it
     than the bike; the prompt says which) and `F` again steps out; `W`/`S`
     drive and reverse, `A`/`D` steer, `Space` brakes, `Tab` cycles the
     view. It is life size and seats two: in multiplayer, `F` beside the
@@ -389,7 +391,7 @@
   - The mountainbike (`models/mountain_bike.blend` from
     `tools/figure/mountain_bike.py`, drawn by `game/mountain_bike_render.*`)
     is a classic early-nineties hardtail in deep green and cream at life
-    size, leaning a couple of steps past the motocross. On foot, `F`
+    size, standing a few steps off the motocross's other side. On foot, `F`
     beside it rides it and `F` gets off; `W` pedals (the crank turns at a
     cadence through the gears, still while freewheeling), `S` brakes,
     `A`/`D` steer, and `Space` bunny-hops. It is the rigid bike's
@@ -420,8 +422,8 @@
     walker wades, and the wake lies on what is drawn (`still_water_at` is
     the level without them). They scale by the sheet's wave lane squared
     and die over the last four metres of depth, so lakes stay all but
-    calm and rivers flat. `MOPPE_BOAT=sea` moors the boat on the sea
-    rather than the nearest lake. It draws a Kelvin wake, a
+    calm and rivers flat. The boat is moored on the nearest open shore
+    of the sea (`MOPPE_BOAT=lake` takes the nearest big lake instead). It draws a Kelvin wake, a
     rooster tail, and bow spray; `MOPPE_DEMO=boat` (`tools/record OUT.mp4
     boat`) has the autopilot take it out (companion wire version 8).
   - Skids, on both bikes: riding, `Shift` (the controller's left trigger)
@@ -432,8 +434,9 @@
     again gradually (`RigidBikeControls::skid`, `Vehicle::set_skid`).
   - The helicopter (`moppe/mov/helicopter.*`, `models/helicopter.blend`
     from `tools/figure/helicopter.py`, drawn by `game/helicopter_render.*`)
-    stands on open, level ground some tens of metres from the bike, where
-    no tree is within reach of its rotor (`park_helicopter` in game.cc).
+    stands on a pad of its own a few hundred metres from the trailhead,
+    the levellest open ground there, raised where it can be, with no
+    tree within reach of its rotor (`park_helicopter` in game.cc).
     On foot, `F` beside it takes the pilot's seat; the rotor spools up for
     a few seconds before it will lift. `W`/`S` fly ahead and back, `A`/`D`
     turn, `Space` (right trigger) climbs, and `Shift` (or holding `E`,
@@ -461,8 +464,8 @@
   - The tractor (`moppe/mov/tractor.*`, `models/tractor.blend` from
     `tools/figure/tractor.py`, drawn by `game/tractor_render.*`) is a
     little red farm tractor of the old kind, open, with a pan seat
-    between big ribbed rear wheels. It waits a few steps ahead on the
-    bike's other side from the jeep (`park_tractor` in game.cc). On foot,
+    between big ribbed rear wheels. It stands out on the open ground
+    ahead on the bike's other side from the jeep (`park_tractor` in game.cc). On foot,
     `F` beside it climbs up to drive and `F` again climbs down; `W`/`S`
     drive and reverse, `A`/`D` steer, `Space` brakes, and off the
     throttle it comes to a stand by itself. Its frame's origin is on the

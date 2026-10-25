@@ -697,10 +697,6 @@ namespace moppe {
               logic ().m_cam_mode = CAM_HELMET;
           }
         }
-        park_jeep ();
-        park_tractor ();
-        park_caddy ();
-        park_mountain_bike ();
         // MOPPE_DEMO=jeep, tractor, caddy, or mountain_bike: the autopilot
         // drives that instead.
         if (demo && !m_benchmark && !m_gazetteer && logic ().m_mode == M_BIKE) {
@@ -715,11 +711,24 @@ namespace moppe {
         }
       }
 
-      // The boat lies at the water's edge of the sea or a lake big enough
-      // to take it out on, the nearest such shore to the spawn: afloat a
-      // few metres out with its bow drawn up toward the land, as left by
+      // The boat lies at the water's edge of the sea, the nearest open
+      // shore of it to the spawn (or, with no sea in reach or with
+      // `MOPPE_BOAT=lake`, of a lake big enough to take it out on): afloat
+      // a few metres out with its bow drawn up toward the land, as left by
       // someone gone ashore. `outward` turns it to face the open water.
       void park_boat (bool outward = false) {
+        static const bool lakes_first = [] {
+          const char* water = moppe::environment ("MOPPE_BOAT");
+          return water && std::string_view (water) == "lake";
+        }();
+        m_mooring.reset ();
+        if (!lakes_first && moor_boat (true, outward))
+          return;
+        if (!moor_boat (false, outward))
+          std::cerr << "moppe: boat: no open water near the spawn\n";
+      }
+
+      bool moor_boat (bool sea_only, bool outward) {
         const terrain::WaterSheets& sheets =
           generated_world ().water_surface ();
         const float sea = world ().water_level.numerical_value_in (u::m);
@@ -730,13 +739,8 @@ namespace moppe {
         const auto depth_at = [&] (const Vec3& at) {
           return level_at (at) - ground_height (at);
         };
-        // Still water: the sea, or a lake's sheet that does not run.
-        // `MOPPE_BOAT=sea` passes the lakes by, to take it out on the
-        // sea's waves.
-        static const bool sea_only = [] {
-          const char* water = moppe::environment ("MOPPE_BOAT");
-          return water && std::string_view (water) == "sea";
-        }();
+        // Still water: the sea, or (unless `sea_only`) a lake's sheet
+        // that does not run.
         const auto still = [&] (const Vec3& at) {
           const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
           if (level_at (at) <= sea + 0.05f)
@@ -793,6 +797,7 @@ namespace moppe {
               mov::Boat& boat = session ().boat ();
               boat.set_trunks (&m_trunk_field);
               boat.place (moor, outward ? out : -out, level_at (moor));
+              m_mooring = shore;
               std::cerr << "moppe: boat moored "
                         << length (Vec3 (at[0] - m_spawn_position[0],
                                          0.0f,
@@ -800,11 +805,11 @@ namespace moppe {
                         << " m from the spawn, on "
                         << (level_at (at) <= sea + 0.05f ? "the sea" : "a lake")
                         << std::endl;
-              return;
+              return true;
             }
           }
         }
-        std::cerr << "moppe: boat: no open water near the spawn\n";
+        return false;
       }
 
       // MOPPE_WALK=haul: the tractor is stuck where it stands and the
@@ -847,61 +852,129 @@ namespace moppe {
                   << std::endl;
       }
 
-      // The jeep waits beside the bike, a few steps to its left, beyond
-      // where the rider stands.
+      // Whether a machine `room` metres round could stand at `at`: on dry
+      // ground well above any water, no steeper across that than `relief`
+      // metres, and with no trunk or boulder within reach.
+      bool open_ground (const Vec3& at, float room, float relief) const {
+        const terrain::WaterSheets& sheets =
+          generated_world ().water_surface ();
+        const float h = ground_height (at);
+        float low = h, high = h;
+        for (int i = 0; i < 12; ++i) {
+          const float b = 6.2831853f * i / 12.0f;
+          const Vec3 p = at + Vec3 (std::cos (b), 0.0f, std::sin (b)) * room;
+          const float g = ground_height (p);
+          if (still_water_at (world (), surface (), &sheets, p)
+                .numerical_value_in (u::m) > g - 0.6f)
+            return false;
+          low = std::min (low, g);
+          high = std::max (high, g);
+        }
+        if (high - low > relief)
+          return false;
+        for (const mov::Trunk& trunk : m_trunk_field.gather (at, room + 2.0f)) {
+          const float dx = trunk.root[0] - at[0];
+          const float dz = trunk.root[2] - at[2];
+          const float clear = room + trunk.radius;
+          if (dx * dx + dz * dz < clear * clear)
+            return false;
+        }
+        return true;
+      }
+
+      // The open ground nearest `want`, looked for out to `search` metres
+      // round it; `want` itself when there is none.
+      Vec3 open_ground_near (const Vec3& want,
+                             float room,
+                             float relief,
+                             float search = 30.0f) const {
+        for (float r = 0.0f; r <= search; r += 1.5f) {
+          const int around =
+            std::max (1, static_cast<int> (6.2831853f * r / 1.5f));
+          for (int k = 0; k < around; ++k) {
+            const float a = 6.2831853f * k / around;
+            const Vec3 at = want + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
+            if (open_ground (at, room, relief))
+              return at;
+          }
+        }
+        return want;
+      }
+
+      // The trailhead's frame: the bike's heading on the level, and its
+      // left.
+      std::pair<Vec3, Vec3> bike_frame () const {
+        Vec3 heading = session ().bike ().orientation ();
+        heading[1] = 0.0f;
+        heading =
+          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
+        return { heading, Vec3 (heading[2], 0, -heading[0]) };
+      }
+
+      // The jeep waits a stone's throw off the bike's left, back from the
+      // trail, turned a little away as if pulled off it.
       void park_jeep () {
-        const mov::Vehicle& bike = session ().bike ();
-        Vec3 heading = bike.orientation ();
-        heading[1] = 0.0f;
-        heading =
-          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
-        const Vec3 side (heading[2], 0, -heading[0]);
-        session ().jeep ().place (bike.position () + side * 4.5f, heading);
+        const auto [heading, side] = bike_frame ();
+        const Vec3 at = open_ground_near (
+          session ().bike ().position () + side * 11.0f - heading * 4.0f,
+          2.6f, 0.7f);
+        session ().jeep ().place (at, normalized (heading + side * 0.35f));
       }
 
-      // The tractor waits a few steps ahead on the bike's other side,
-      // turned to show its flank, as if left there at the end of a day's
-      // work.
+      // The tractor stands out on the open ground ahead on the bike's
+      // other side, turned to show its flank, as if left there at the end
+      // of a day's work.
       void park_tractor () {
-        const mov::Vehicle& bike = session ().bike ();
-        Vec3 heading = bike.orientation ();
-        heading[1] = 0.0f;
-        heading =
-          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
-        const Vec3 side (heading[2], 0, -heading[0]);
+        const auto [heading, side] = bike_frame ();
         session ().tractor ().set_trunks (&m_trunk_field);
-        session ().tractor ().place (bike.position () - side * 4.6f +
-                                       heading * 5.0f,
-                                     normalized (-side - heading * 0.6f));
+        const Vec3 at = open_ground_near (
+          session ().bike ().position () - side * 17.0f + heading * 15.0f,
+          2.4f, 0.8f, 40.0f);
+        session ().tractor ().place (at, normalized (-side - heading * 0.6f));
       }
 
-      // The Caddy stands behind the jeep, nose to the trail, as if its
-      // driver had walked on up it.
+      // The Caddy is parked by the sea, on the nearest level, open ground
+      // above the shore the boat was left at, nose to the water as if its
+      // driver had stood looking out; with no boat, behind the jeep.
       void park_caddy () {
-        const mov::Vehicle& bike = session ().bike ();
-        Vec3 heading = bike.orientation ();
-        heading[1] = 0.0f;
-        heading =
-          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
-        const Vec3 side (heading[2], 0, -heading[0]);
         // Off the helicopter's line, empty.
         logic ().m_sling = {};
         session ().caddy ().set_trunks (&m_trunk_field);
-        session ().caddy ().place (bike.position () + side * 4.9f -
-                                     heading * 6.4f,
-                                   normalized (heading - side * 0.12f));
+        const float water = world ().water_level.numerical_value_in (u::m);
+        if (m_mooring) {
+          const Vec3 shore = *m_mooring;
+          for (float r = 12.0f; r <= 90.0f; r += 2.0f) {
+            const int around = static_cast<int> (6.2831853f * r / 2.0f);
+            for (int k = 0; k < around; ++k) {
+              const float a = 6.2831853f * k / around;
+              const Vec3 at =
+                shore + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
+              if (ground_height (at) < water + 1.0f ||
+                  !open_ground (at, 3.2f, 0.45f))
+                continue;
+              const Vec3 to_sea = normalized (
+                Vec3 (shore[0] - at[0], 0.0f, shore[2] - at[2]));
+              session ().caddy ().place (at, to_sea);
+              std::cerr << "moppe: Caddy parked " << r
+                        << " m up from the boat's shore" << std::endl;
+              return;
+            }
+          }
+        }
+        const auto [heading, side] = bike_frame ();
+        const Vec3 at = open_ground_near (session ().jeep ().position () -
+                                            heading * 7.0f,
+                                          3.2f, 0.6f);
+        session ().caddy ().place (at, normalized (heading - side * 0.12f));
       }
 
-      // The mountainbike leans on nothing, standing on the far side of the
-      // motocross from where its rider gets off, a little behind it.
+      // The mountainbike stands on its own a few steps off the motocross's
+      // other side, a little behind it.
       void park_mountain_bike () {
-        const mov::Vehicle& bike = session ().bike ();
-        Vec3 heading = bike.orientation ();
-        heading[1] = 0.0f;
-        heading =
-          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
-        const Vec3 side (heading[2], 0, -heading[0]);
-        Vec3 at = bike.position () - side * 2.6f - heading * 1.2f;
+        const auto [heading, side] = bike_frame ();
+        Vec3 at = open_ground_near (
+          session ().bike ().position () - side * 5.5f - heading * 3.5f, 1.0f,
+          0.4f, 12.0f);
         at[1] = ground_height (at) + mov::mountain_bike_rig.ride_height () +
                 0.02f;
         mov::Vehicle& mtb = session ().mountain_bike ();
@@ -910,20 +983,19 @@ namespace moppe {
         mtb.reset (at);
       }
 
-      // The helicopter stands a little way off from the bike, where the
-      // ground is open and level enough to land on and no tree stands
-      // within reach of its rotor; clear of `avoid` (the other player's)
-      // when given one.
+      // The helicopter stands on a pad of its own a few hundred metres
+      // from the trailhead: the levellest open ground round there, raised
+      // above its surroundings where it can be, as a knoll or a shoulder
+      // makes a landing site, with no tree within reach of its rotor;
+      // clear of `avoid` (the other player's) when given one.
       void park_helicopter (std::optional<Vec3> avoid = std::nullopt) {
         const Vec3 centre = m_spawn_position;
         const float water = world ().water_level.numerical_value_in (u::m);
-        const std::vector<mov::Trunk> near =
-          m_trunk_field.gather (centre, 140.0f);
         const float reach = mov::Helicopter::rotor_radius + 2.5f;
         std::optional<Vec3> best;
         float best_score = 1e30f;
-        for (float r = 24.0f; r <= 110.0f; r += 3.0f) {
-          const int around = static_cast<int> (6.2831853f * r / 3.0f);
+        for (float r = 220.0f; r <= 600.0f; r += 6.0f) {
+          const int around = static_cast<int> (6.2831853f * r / 6.0f);
           for (int k = 0; k < around; ++k) {
             const float a = 6.2831853f * (k + 0.5f * (int (r) % 2)) / around;
             Vec3 at = centre + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
@@ -948,8 +1020,21 @@ namespace moppe {
             }
             if (high - low > 0.6f || wide > 1.6f)
               continue;
+            // How far it stands over the ground some way round.
+            float around_it = 0.0f;
+            for (int i = 0; i < 8; ++i) {
+              const float b = 6.2831853f * (i + 0.5f) / 8.0f;
+              around_it += ground_height (
+                at + Vec3 (std::cos (b), 0.0f, std::sin (b)) * 30.0f);
+            }
+            const float rise = at[1] - around_it / 8.0f;
+            const float score = (r - 220.0f) * 0.004f +
+                                (high - low) * 4.0f + wide -
+                                std::clamp (rise, -2.0f, 6.0f) * 0.25f;
+            if (score >= best_score)
+              continue;
             bool clear = true;
-            for (const mov::Trunk& trunk : near) {
+            for (const mov::Trunk& trunk : m_trunk_field.gather (at, reach + 1.0f)) {
               const float dx = trunk.root[0] - at[0];
               const float dz = trunk.root[2] - at[2];
               const float room = reach + trunk.radius;
@@ -960,14 +1045,12 @@ namespace moppe {
             }
             if (!clear)
               continue;
-            const float score = r * 0.04f + (high - low) * 4.0f + wide;
-            if (score < best_score) {
-              best_score = score;
-              best = at;
-            }
+            best_score = score;
+            best = at;
           }
-          // The nearest ring with a good site wins over far better ones.
-          if (best && r > 40.0f)
+          // Somewhere in the nearer half of the band wins over a far
+          // better one further off.
+          if (best && r > 380.0f)
             break;
         }
         Vec3 heading = trail_direction_from_home ();
@@ -2514,6 +2597,9 @@ namespace moppe {
         scatter_boulders ();
         grow_mushrooms ();
         settle_obstacles ();
+        park_jeep ();
+        park_tractor ();
+        park_mountain_bike ();
         park_helicopter ();
         // MOPPE_DEMO=boat: the autopilot takes the boat out instead, and
         // MOPPE_WALK=boat-fish takes it out to fish.
@@ -2524,6 +2610,10 @@ namespace moppe {
            (walk_name && std::string_view (walk_name) == "boat-fish")) &&
           !m_benchmark && !m_gazetteer;
         park_boat (boat_demo);
+        park_caddy ();
+        // A demo already at the wheel of a machine just parked follows it.
+        if (logic ().m_mode != M_FOOT && logic ().m_mode != M_BIKE)
+          session ().settle_camera (surface ());
         if (boat_demo) {
           session ().set_mode (M_BOAT);
           logic ().m_cam_mode = CAM_CHASE;
@@ -2831,11 +2921,11 @@ namespace moppe {
         m_spawn_position = place;
         park_jeep ();
         park_tractor ();
-        park_caddy ();
         park_mountain_bike ();
         park_helicopter (theirs.helicopter.position);
         if (logic ().m_mode != M_BOAT)
           park_boat ();
+        park_caddy ();
         if (!beside)
           return;
         session ().walker ().spawn (moppe::position (place + side * 1.8f),
@@ -5574,6 +5664,8 @@ namespace moppe {
       Day m_day;
       SkyReading m_sky;
       Vec3 m_spawn_position;
+      // The shore the boat was left at, when it was.
+      std::optional<Vec3> m_mooring;
       Vec3 m_home_base_position;
       render::DrawList m_home_base_marker;
       bool m_skip_cinematic_requested = false;
