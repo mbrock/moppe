@@ -1610,9 +1610,14 @@ namespace moppe {
       } else if (st.can_drop_bike) {
         key = deploy_key;
         action = "Release the motocross";
-      } else if (st.can_release_caddy) {
+      } else if (st.slung) {
         key = mount_key;
-        action = *mount_key ? "Let the Caddy go" : "The Caddy is on the line";
+        action = *mount_key ? "Let " + std::string (st.slung) + " go"
+                            : capitalized (st.slung) + " is on the line";
+      } else if (st.hook) {
+        key = mount_key;
+        action = *mount_key ? "Hook " + std::string (st.hook)
+                            : capitalized (st.hook) + " is under the hook";
       } else if (st.can_deploy_glider) {
         key = deploy_key;
         action = *deploy_key ? "Deploy glider" : "Glider ready";

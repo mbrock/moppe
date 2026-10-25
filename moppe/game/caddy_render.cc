@@ -120,8 +120,7 @@ namespace moppe::game {
                      render::DrawList& dl,
                      const CaddyPose& caddy,
                      JeepRiders riders,
-                     uint64_t motion_base,
-                     bool laden) {
+                     uint64_t motion_base) {
     const CaddyMeshes& meshes = caddy_meshes (r);
     const Mat4 frame = caddy_frame (caddy);
     if (riders.driver)
@@ -137,13 +136,9 @@ namespace moppe::game {
       r.draw_mesh (mesh, transform, ++motion_part);
     };
     draw_part (*meshes.body, frame);
-    if (!laden)
-      draw_part (*meshes.hardtop, frame);
-    // Lowered, the tailgate swings back about its hinge to lie level.
+    draw_part (*meshes.hardtop, frame);
     draw_part (*meshes.tailgate,
-               frame * Mat4::translation (caddy_model::tailgate_hinge) *
-                 Mat4::rotation ((laden ? -1.5707963f : 0.0f) * u::rad,
-                                 Vec3 (1, 0, 0)));
+               frame * Mat4::translation (caddy_model::tailgate_hinge));
     draw_part (*meshes.seats, frame);
     draw_part (*meshes.column, frame);
     draw_part (*meshes.steering_wheel,

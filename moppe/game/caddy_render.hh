@@ -13,17 +13,14 @@ namespace moppe::game {
   // steering, and the steering wheel turned about its column. Its riders
   // are the hiker seated, the driver's hands on the wheel, skinned into
   // the frame's draw list.
-  // Laden (game/sling.hh), its hardtop is off and its tailgate down
-  // for the motocross in its bed.
   void render_caddy (render::Renderer& r,
                      render::DrawList& dl,
                      const CaddyPose& caddy,
                      JeepRiders riders,
-                     uint64_t motion_base,
-                     bool laden = false);
+                     uint64_t motion_base);
 
-  // The helicopter's line from its hook to the ring over the Caddy, and
-  // the bridle's four legs from there down to it; slack, they sag.
+  // The helicopter's line from its hook to the ring over what hangs on
+  // it, and the bridle's legs from there down to it; slack, it sags.
   void render_sling (render::DrawList& dl, const SlingPose& sling);
 }
 

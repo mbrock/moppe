@@ -68,9 +68,11 @@ namespace moppe {
       bool can_step_out = false;
       // Riding a bike, whose rear brake Shift stamps on.
       bool skids = false;
-      // Flying it with the Caddy on its line, low enough to set it down:
-      // the mount key lets it go.
-      bool can_release_caddy = false;
+      // Flying it: the machine under it that the mount key would hook on
+      // its line ("the jeep"), or the one on the line, once it hangs low
+      // enough to set down, that the key would let go.
+      const char* hook = nullptr;
+      const char* slung = nullptr;
       float vertical_speed_mps;
       // Real draw-callback interval: paces the fades and feeds the
       // diagnostic frame rate.

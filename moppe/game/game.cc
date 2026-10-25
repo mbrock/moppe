@@ -937,7 +937,7 @@ namespace moppe {
       // above the shore the boat was left at, nose to the water as if its
       // driver had stood looking out; with no boat, behind the jeep.
       void park_caddy () {
-        // Off the helicopter's line, empty.
+        // Off the helicopter's line.
         logic ().m_sling = {};
         session ().caddy ().set_trunks (&m_trunk_field);
         const float water = world ().water_level.numerical_value_in (u::m);
@@ -2016,12 +2016,18 @@ namespace moppe {
           state.thumb = "Climb";
           state.flying = true;
           state.can_step_out = session ().can_step_out_of_helicopter ();
-          // The prompt only once the Caddy hangs near the ground.
-          state.can_release_caddy =
-            logic ().m_sling.hooked &&
-            session ().helicopter ().altitude () < sling_hang + 4.0f;
+          // Letting go is prompted only once the load hangs near the
+          // ground, though the key lets it fall from any height.
+          if (logic ().m_sling.hooked &&
+              session ().helicopter ().altitude () < sling_hang + 4.0f)
+            state.slung = machine_name (logic ().m_sling.load);
+          if (const std::optional<Machine> under =
+                session ().hook_within_reach ())
+            state.hook = machine_name (*under);
           if (logic ().m_sling.hooked)
-            state.dismount = "Let the Caddy go";
+            state.dismount = "Let go";
+          else if (state.hook)
+            state.dismount = "Hook on";
           else if (state.can_step_out)
             state.dismount = "Step out";
           break;
@@ -2620,10 +2626,14 @@ namespace moppe {
           session ().settle_camera (surface ());
         }
         stage_rescue ();
-        // MOPPE_DEMO=helicopter: the autopilot takes it up instead.
+        // MOPPE_DEMO=helicopter: the autopilot takes it up instead, hooks
+        // the jeep, parked beside it, on its line, and flies it off.
         if (const char* demo = moppe::environment ("MOPPE_DEMO");
             demo && std::string_view (demo) == "helicopter" && !m_benchmark &&
             !m_gazetteer) {
+          const mov::Helicopter& heli = session ().helicopter ();
+          session ().jeep ().place (heli.point (Vec3 (6.0f, 0.0f, 0.0f)),
+                                    heli.forward ());
           session ().set_mode (M_HELICOPTER);
           logic ().m_cam_mode = CAM_CHASE;
         }
@@ -3360,10 +3370,8 @@ namespace moppe {
                        24.0f,
                        jacket);
         }
-        // What rides in the Caddy is where the Caddy is.
-        const bool laden = logic ().m_sling.laden;
         using Mark = HudState::Waymark;
-        if (mode != M_BIKE && !session ().can_drop_bike () && !laden)
+        if (mode != M_BIKE && !session ().can_drop_bike ())
           add_waymark (state,
                        frame,
                        width,
@@ -3374,7 +3382,7 @@ namespace moppe {
                        30.0f,
                        50.0f,
                        pale);
-        if (mode != M_JEEP && !laden)
+        if (mode != M_JEEP)
           add_waymark (state,
                        frame,
                        width,
@@ -3695,22 +3703,37 @@ namespace moppe {
 
       // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
       // ridden bike or mountainbike, the glider, the driven jeep or boat,
-      // or the Caddy hanging under the helicopter, to judge the rider and
-      // the machine.
+      // or whatever hangs under the helicopter, to judge the rider and the
+      // machine.
       void ride_capture_camera () {
         static const std::string_view view = [] {
           const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
           return std::string_view (name ? name : "");
         }();
-        // Flying, it is the Caddy on the line it stands beside.
+        // Flying, it is the machine on the line it stands beside.
         const bool slung =
           logic ().m_mode == M_HELICOPTER && logic ().m_sling.hooked;
         if (view.empty () || logic ().m_mode == M_FOOT ||
             (logic ().m_mode == M_HELICOPTER && !slung))
           return;
+        if (slung) {
+          const MachineBody load =
+            session ().machine_body (logic ().m_sling.load);
+          Vec3 heading = load.forward;
+          heading[1] = 0.0f;
+          heading =
+            length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
+          const Vec3 right (heading[2], 0.0f, -heading[0]);
+          const Vec3 at = load.position + Vec3 (0, 0.5f, 0);
+          const Vec3 from = view == "front"
+                              ? heading * 7.5f + right * 2.0f
+                              : right * 7.5f + heading * 0.6f;
+          session ().camera ().place (at + from + Vec3 (0, 0.5f, 0), at);
+          return;
+        }
         const bool gliding = logic ().m_mode == M_GLIDER;
         const bool tractor = logic ().m_mode == M_TRACTOR;
-        const bool caddy = logic ().m_mode == M_CADDY || slung;
+        const bool caddy = logic ().m_mode == M_CADDY;
         const bool boat = logic ().m_mode == M_BOAT;
         const bool driving =
           logic ().m_mode == M_JEEP || tractor || caddy || boat;
@@ -3882,12 +3905,15 @@ namespace moppe {
           const float look_yaw = input.look_yaw;
           const float look_pitch = input.look_pitch;
           if (logic ().m_mode == M_HELICOPTER) {
-            // Spool up, climb out, and cruise in long easy curves.
+            // Spool up, climb out, hook what is under it, and cruise in
+            // long easy curves.
             const float t = total_time;
             input = {
               .turn = t > 9.0f ? 0.45f * std::sin ((t - 9.0f) * 0.22f) : 0.0f,
               .drive = t > 8.0f ? 1.0f : 0.0f,
               .boost = t > 4.0f && t < 9.0f ? 1.0f : 0.0f,
+              .toggle_mount = !logic ().m_sling.hooked &&
+                              session ().hook_within_reach ().has_value (),
               .look_yaw = look_yaw,
               .look_pitch = look_pitch,
             };
@@ -4073,7 +4099,7 @@ namespace moppe {
         render_mountain_bike (
           r, m_caster_dl, actors.mountain_bike, std::nullopt, 0);
         render_jeep (r, m_caster_dl, actors.jeep, {}, 0);
-        render_caddy (r, m_caster_dl, actors.caddy, {}, 0, actors.caddy_laden);
+        render_caddy (r, m_caster_dl, actors.caddy, {}, 0);
         render_tractor (r, m_caster_dl, actors.tractor, std::nullopt, 0);
         render_helicopter (r, actors.helicopter, 0);
         render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
@@ -4202,7 +4228,7 @@ namespace moppe {
 
         // Soft blob shadows under the movers.
         draw_home_base_marker (m_world_dl);
-        if (!m_spectator && !actors.caddy_laden)
+        if (!m_spectator)
           m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
         if (actors.walker)
           m_blob.draw (m_world_dl,
@@ -4222,8 +4248,7 @@ namespace moppe {
                           0x1000,
                           m_outfit);
         if (!m_spectator) {
-          if (!actors.caddy_laden)
-            m_blob.draw (m_world_dl, surface (), actors.jeep.position, 3.4f);
+          m_blob.draw (m_world_dl, surface (), actors.jeep.position, 3.4f);
           render_jeep (
             r,
             m_world_dl,
@@ -4250,8 +4275,7 @@ namespace moppe {
                         actors.caddy,
                         { .driver = actors.active_mode == M_CADDY && !helmet,
                           .driver_outfit = m_outfit },
-                        0xC000,
-                        actors.caddy_laden);
+                        0xC000);
           if (actors.sling)
             render_sling (m_world_dl, *actors.sling);
           render_boat (r,
@@ -4582,13 +4606,12 @@ namespace moppe {
                              .colour = jacket,
                              .name = "companion" });
         }
-        const bool laden = logic ().m_sling.laden;
-        if (mode != M_BIKE && !session ().can_drop_bike () && !laden)
+        if (mode != M_BIKE && !session ().can_drop_bike ())
           marks.push_back ({ .kind = Mark::Kind::Bike,
                              .position = session ().bike ().position (),
                              .colour = dark,
                              .name = "bike" });
-        if (mode != M_JEEP && !laden)
+        if (mode != M_JEEP)
           marks.push_back ({ .kind = Mark::Kind::Jeep,
                              .position = session ().jeep ().position (),
                              .colour = dark,

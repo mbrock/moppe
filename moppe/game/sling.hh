@@ -1,31 +1,28 @@
 #ifndef MOPPE_GAME_SLING_HH
 #define MOPPE_GAME_SLING_HH
 
+#include <moppe/game/rescue.hh>
 #include <moppe/gfx/math.hh>
 
 #include <array>
 
 namespace moppe::game {
-  // The helicopter's slung load: the Caddy, hung on a line from a hook
-  // under the helicopter's belly, with the motocross in its bed (the
-  // hardtop off and the tailgate down) and the jeep, as a model of
-  // itself, on its passenger seat.
+  // The helicopter's slung load: whichever machine the pilot hooked, hung
+  // on a line from a hook under the helicopter's belly.
   //
-  // Taking the helicopter's seat rigs it: the Caddy, wherever it is, is
-  // set down beside the helicopter if it is not there already, the bike
-  // and the jeep are stowed in it, and the line is hooked on. The line is
-  // a stiff spring that only pulls, from the hook to a ring above the
-  // Caddy, where the four legs of its bridle meet; the ring stands over
-  // the Caddy's centre of mass, so that it hangs level. The flight
-  // computer knows what hangs under it and lifts it too. The mount key
-  // in the air lets the load go; the Caddy falls, and once it stands
-  // still on the ground (or is let go of there) the bike and the jeep are
-  // unloaded beside it.
+  // Flying, with the hook over a machine and near enough above it that
+  // the line reaches (it need not be aimed: some metres to one side
+  // will do), the mount key hooks it on; the key again lets it go. The
+  // line is a stiff spring that only pulls, from the hook to a ring over
+  // the machine's centre of mass, where the legs of its bridle meet, so
+  // that it hangs level. The flight computer knows what hangs under it
+  // and lifts it too, but its weight is the helicopter's to carry: it
+  // pulls the helicopter down and leans it, and slows its climb.
   struct Sling {
     // The line is on the hook.
     bool hooked = false;
-    // The bike and the jeep ride in the Caddy.
-    bool laden = false;
+    // What hangs on it.
+    Machine load = Machine::caddy;
     // How far the line was stretched beyond its length last step, for
     // its damping.
     float stretch = 0.0f;
@@ -33,23 +30,20 @@ namespace moppe::game {
 
   // The line, from the hook to the ring, metres.
   inline constexpr float sling_line = 8.0f;
-  // The hook, in the helicopter's frame; the ring, and where the bridle's
-  // legs are made fast to the Caddy (the bonnet's front corners and the
-  // bed's back ones), in the Caddy's.
+  // How far to one side of the hook a machine may stand and still be
+  // hooked, metres, and how much further than the line the ring may be.
+  inline constexpr float sling_reach = 8.0f;
+  inline constexpr float sling_slack = 1.5f;
+  // The hook, in the helicopter's frame.
   inline Vec3 sling_hook () {
     return Vec3 (0.0f, 0.55f, 0.05f);
   }
-  inline Vec3 sling_ring () {
-    return Vec3 (0.0f, 3.0f, 0.30f);
-  }
-  inline std::array<Vec3, 4> sling_legs () {
-    return { Vec3 (0.72f, 0.62f, 1.70f),
-             Vec3 (-0.72f, 0.62f, 1.70f),
-             Vec3 (0.74f, 0.68f, -2.12f),
-             Vec3 (-0.74f, 0.68f, -2.12f) };
-  }
-  // How far below the helicopter's skids the Caddy's wheels hang when
-  // the line is taut.
+  // The ring over each machine, and where its bridle's legs are made fast
+  // to it (a bike's two, at its ends, twice over), in the machine's frame.
+  Vec3 sling_ring (Machine machine);
+  std::array<Vec3, 4> sling_legs (Machine machine);
+  // How far below the helicopter's skids what hangs under it reaches
+  // when the line is taut, about.
   inline constexpr float sling_hang = sling_line + 3.0f - 0.55f + 0.3f;
 
   // The line's pull on the ring, newtons, from the hook and the ring in

@@ -49,7 +49,7 @@ namespace moppe::game {
     float thrust = 0.0f;
     float boost_level = 0.0f;
     float boost_drive = 0.0f;
-    // Drawn at this share of its size: stowed in the Caddy, life size.
+    // Drawn at this share of its size.
     float scale = 1.0f;
     // A pedalled bike's crank, radians round from the right arm down.
     float crank_radians = 0.0f;
@@ -66,11 +66,11 @@ namespace moppe::game {
     std::array<float, 4> wheel_drop {};
     float steer_radians = 0.0f;
     float wheel_spin_radians = 0.0f;
-    // Drawn at this share of its size: stowed in the Caddy, a model.
+    // Drawn at this share of its size.
     float scale = 1.0f;
   };
 
-  // The helicopter's line and the Caddy's bridle as drawn
+  // The helicopter's line and its load's bridle as drawn
   // (game/sling.hh): the hook, the ring the legs meet at, where each leg
   // is made fast, and whether the line is taut.
   struct SlingPose {
@@ -160,7 +160,6 @@ namespace moppe::game {
     std::optional<RodPose> helm_rod;
     // The bike and the jeep ride in the Caddy, its hardtop off and its
     // tailgate down, and the Caddy may hang on the helicopter's line.
-    bool caddy_laden = false;
     std::optional<SlingPose> sling;
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
@@ -361,8 +360,6 @@ namespace moppe::game {
   BoatPose boat_pose (const mov::Boat& boat);
   CaddyPose caddy_pose (const mov::Caddy& caddy);
   // The bike and the jeep as they ride in the Caddy (game/sling.hh).
-  VehiclePose stowed_bike (const mov::Caddy& caddy);
-  JeepPose stowed_jeep (const mov::Caddy& caddy);
   GliderPose glider_pose (const mov::Glider& glider);
   WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);
   FrameView compose_frame_view (const FrameViewInput& input);

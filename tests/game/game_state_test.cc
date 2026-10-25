@@ -787,7 +787,7 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   MOPPE_CHECK (session.walker ().position ()[1] < 12.0f);
 }
 
-MOPPE_TEST (the_helicopter_lifts_the_laden_caddy_and_sets_it_down) {
+MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
   using namespace moppe;
 
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
@@ -813,40 +813,45 @@ MOPPE_TEST (the_helicopter_lifts_the_laden_caddy_and_sets_it_down) {
 
   session.start_on_foot ();
   session.caddy ().place (Vec3 (40, 0, 40), Vec3 (0, 0, 1));
-  session.helicopter ().place (Vec3 (180, 0, 180), Vec3 (0, 0, 1));
-  session.walker ().spawn (position (Vec3 (178, 10.1f, 180)), Vec3 (0, 0, 1));
+  session.helicopter ().place (Vec3 (128, 0, 128), Vec3 (0, 0, 1));
+  // The heaviest machine, standing well off to one side of the hook.
+  session.tractor ().place (Vec3 (122, 0, 129), Vec3 (1, 0, 0));
+  session.walker ().spawn (position (Vec3 (126, 10.1f, 128)), Vec3 (0, 0, 1));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
-  // The Caddy, from across the field, stands beside it on the line, with
-  // the bike and the jeep in it, which no one can get on meanwhile.
-  MOPPE_CHECK (logic.m_sling.hooked && logic.m_sling.laden);
-  MOPPE_CHECK (length (session.caddy ().position () -
-                       session.helicopter ().position ()) < 10.0f);
-  MOPPE_CHECK (session.stowed (game::Machine::bike));
+  // Nothing comes along by itself, nor is hooked from the ground.
+  MOPPE_CHECK (!logic.m_sling.hooked);
+  MOPPE_CHECK (!session.hook_within_reach ());
 
-  // Up it goes, the Caddy hanging under it.
+  // A few metres up, the tractor is in reach, though not under the hook.
   run ({}, 4.0f);
-  run ({ .boost = 1.0f }, 6.0f);
-  run ({}, 3.0f);
+  for (int i = 0; i < 600 && session.helicopter ().altitude () < 4.0f; ++i)
+    run ({ .boost = 1.0f }, 1.0f / 60.0f);
+  MOPPE_CHECK (session.hook_within_reach () == game::Machine::tractor);
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_sling.hooked);
+  MOPPE_CHECK (logic.m_sling.load == game::Machine::tractor);
+  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+
+  // Up it goes, the tractor hanging under it.
+  run ({ .boost = 1.0f }, 8.0f);
+  run ({}, 4.0f);
   const float under =
-    session.helicopter ().position ()[1] - session.caddy ().position ()[1];
-  MOPPE_CHECK (session.caddy ().position ()[1] > 16.0f);
-  MOPPE_CHECK (under > 8.0f && under < 14.0f);
+    session.helicopter ().position ()[1] - session.tractor ().position ()[1];
+  MOPPE_CHECK (session.tractor ().position ()[1] > 15.0f);
+  MOPPE_CHECK (under > 7.0f && under < 14.0f);
   // Flown on, it follows.
   run ({ .drive = 1.0f }, 4.0f);
-  MOPPE_CHECK (length (session.caddy ().position () -
+  MOPPE_CHECK (length (session.tractor ().position () -
                        session.helicopter ().position ()) < 14.0f);
 
-  // Let go of, the Caddy falls, comes to a stand, and is unloaded.
+  // Let go of, it falls back to the ground, and the helicopter flies on.
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (!logic.m_sling.hooked);
   MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
-  run ({}, 12.0f);
-  MOPPE_CHECK (!logic.m_sling.laden);
-  MOPPE_CHECK (length (session.bike ().position () -
-                       session.caddy ().position ()) < 8.0f);
-  MOPPE_CHECK (length (session.jeep ().position () -
-                       session.caddy ().position ()) < 8.0f);
+  run ({}, 8.0f);
+  MOPPE_CHECK (session.tractor ().position ()[1] < 12.0f);
+  MOPPE_CHECK (session.helicopter ().altitude () > 5.0f);
 }
 
 MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
