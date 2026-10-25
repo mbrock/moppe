@@ -132,7 +132,7 @@ namespace moppe::game {
         "",
         0,
         "",
-        "Present in a fullscreen Space.",
+        "Present in a fullscreen Space (the default).",
         [] (LaunchOptions& options, const char* const*, std::string&) {
           options.config.fullscreen = true;
           return true;
@@ -645,6 +645,10 @@ namespace moppe::game {
         !options.screenshot_path.empty () || options.gazetteer ||
         moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
         moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") || options.benchmark;
+      // A capture keeps its own window (capture_to), as do those asked
+      // for by the environment alone.
+      if (options.config.capture_frames)
+        options.config.fullscreen = false;
       // An automated run stays behind whatever the developer is looking at.
       options.config.activate = !options.config.capture_frames &&
                                 !options.benchmark && !options.stay_inactive;

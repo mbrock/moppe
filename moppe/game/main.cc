@@ -46,6 +46,9 @@ int main (int argc, char** argv) {
   options.world.resolution = 1024;
   options.seed = 123;
   options.world_cache.mode = game::WorldCacheMode::Disabled;
+  // The page's canvas fills the page; the page itself goes fullscreen
+  // (touch.js), not the game.
+  options.config.fullscreen = false;
 #endif
   // A package carrying a host-baked world starts in that world by default;
   // the command line can still ask for another, which is then generated.

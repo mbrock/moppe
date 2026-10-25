@@ -206,6 +206,13 @@ namespace moppe {
                            int width_pts,
                            int height_pts);
 
+      // Asks whether to quit (Esc in play): the frame veiled, the question
+      // in the middle, and the keys that answer it.
+      void draw_quit_question (render::DrawList& dl,
+                               render::TextList& text,
+                               int width_pts,
+                               int height_pts) const;
+
       // Notes that `key` (by its name; none offers nothing) does `action`
       // just now.
       void offer (const std::string& key, const std::string& action);
@@ -301,6 +308,19 @@ namespace moppe {
                              const HudState& state,
                              int width_pts,
                              int height_pts);
+      // A keycap with its action beside it, from x along the baseline, in
+      // `words` (a prompt's, by default), and how wide that runs.
+      render::TextStyle prompt_words (float alpha) const;
+      float keyed_width (const std::string& key,
+                         const std::string& action,
+                         const render::TextStyle& words) const;
+      void draw_keyed (render::TextList& text,
+                       float x,
+                       float baseline,
+                       const std::string& key,
+                       const std::string& action,
+                       const render::TextStyle& words,
+                       float alpha) const;
       void place_shape (render::TextList& text,
                         const render::SlugGlyph& shape,
                         float cx,

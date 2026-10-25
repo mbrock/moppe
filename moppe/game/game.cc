@@ -4126,6 +4126,9 @@ namespace moppe {
           }
           if (m_map.open ())
             draw_map (r, hud_width, hud_height);
+          if (m_quit_asked)
+            m_hud.draw_quit_question (
+              m_hud_dl, m_hud_text, hud_width, hud_height);
         }
         m_hud.publish_offers ();
         m_hud_text.translate (safe_insets.left, safe_insets.top);
@@ -4771,8 +4774,17 @@ namespace moppe {
             m_video.begin (next_clip_path (), 30);
           return;
         }
-        if (k == Key::Escape && down)
-          m_video.finish ();
+        // Esc in play asks whether to quit: Esc again quits, and any
+        // other key goes back to the game (its releases still count, so
+        // nothing stays held).
+        if (m_quit_asked && down) {
+          m_quit_asked = false;
+          if (k == Key::Escape) {
+            m_video.finish ();
+            platform::request_quit ();
+          }
+          return;
+        }
 
         if (m_spectator) {
           // L lets the mouse loose -- to start a screen recording, say --
@@ -4785,14 +4797,17 @@ namespace moppe {
             m_spectator->held.insert (k);
           else
             m_spectator->held.erase (k);
-          if (k == Key::Escape && down)
+          if (k == Key::Escape && down) {
+            m_video.finish ();
             platform::request_quit ();
+          }
           return;
         }
         if (opening_active ()) {
-          if (k == Key::Escape && down)
+          if (k == Key::Escape && down) {
+            m_video.finish ();
             platform::request_quit ();
-          else
+          } else
             m_live_input.cinematic_key (k, down);
           return;
         }
@@ -4803,9 +4818,17 @@ namespace moppe {
           return;
         }
 
-        // M unfolds the map, looks closer, and folds it away.
+        // M unfolds the map, looks closer, and folds it away; Esc folds
+        // it away too, and with it folded asks whether to quit.
         if (k == Key::M && down && m_ready) {
           m_map.turn ();
+          return;
+        }
+        if (k == Key::Escape && down) {
+          if (m_map.open ())
+            m_map.show (MapSheet::View::Closed);
+          else
+            m_quit_asked = true;
           return;
         }
 
@@ -4815,8 +4838,6 @@ namespace moppe {
         }
 
         m_live_input.key (k, down);
-        if (k == Key::Escape && down)
-          platform::request_quit ();
       }
 
     private:
@@ -5351,6 +5372,8 @@ namespace moppe {
       // Whether L has handed the mouse back to the desktop during play.
       bool m_pointer_free = false;
       MapSheet m_map;
+      // Esc in play has asked whether to quit (Hud::draw_quit_question).
+      bool m_quit_asked = false;
       bool m_map_asked = false;
       // A free camera with no rider, for looking at the world as it is.
       struct Spectator {

@@ -113,8 +113,10 @@
     `add_chart` in game.cc). The sheet is now painted while the world
     loads; `MOPPE_CHART=none` leaves the chart out.
   - The map: `M` unfolds a sheet of the whole world over the view, `M`
-    again looks closer at the 1.8 km round the walker, and a third folds
-    it away. It is painted once per world on the CPU
+    again looks closer at the 1.8 km round the walker, and a third (or
+    `Esc`) folds it away; a small `M Map` keycap beside the chart says
+    so. With the map folded, `Esc` asks whether to quit (`Esc` again
+    quits, any other key plays on; `Hud::draw_quit_question`). It is painted once per world on the CPU
     (`moppe/game/relief_map.*`: relief shaded from the north-west, forest
     green, brown contours every 10 m, water, rivers by their catchments,
     a kilometre grid, the trail in red dashes) and set on paper with a
@@ -218,7 +220,8 @@
     Under it the rigid bike stays a live Box3D assemblage that the wing's
     pull flies (`Vehicle::hang`), so it lands on its wheels with the glide's
     speed and meets trunks on the way; a pilot alone lands running.
-  - Modes: `--fullscreen`, `--windowed`,
+  - Modes: `--fullscreen` (the default, except for captures,
+    benchmarks, and the browser), `--windowed`,
     `--graphics-quality low|balanced|high`
     - Finished worlds automatically load from and save to a stable cache keyed
       by the complete world recipe. `--world-cache-key <name>` selects an
@@ -260,10 +263,10 @@
     is set -- asks a video-capable model to rate whether trees morph or
     restructure in motion. Still frames cannot verify this; only video (or
     a human) judges temporal behaviour.
-  - Tree laboratory: `tools/tree-lab [--fullscreen]` rides the real game on a
+  - Tree laboratory: `tools/tree-lab [--windowed]` rides the real game on a
     rolling plain with the forest replaced by a spruce, a birch, and a tall
     spruce ahead of the spawn (`MOPPE_TREE_LAB=1` with `--uplift-years 0`).
-  - Spectator: `tools/spectate [--fullscreen]` (`MOPPE_SPECTATOR=1`) starts
+  - Spectator: `tools/spectate [--windowed]` (`MOPPE_SPECTATOR=1`) starts
     a free camera with no rider in the world's densest conifer stand: WASD
     moves (by QWERTY position, so any layout works), Space/Tab
     rise and sink, and the captured mouse or the arrow keys look around; L

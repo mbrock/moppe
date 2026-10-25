@@ -41,6 +41,7 @@ namespace moppe {
       constexpr const char* ride_key = "Y";
       constexpr const char* hammock_key = "LB";
       constexpr const char* fire_key = "RB";
+      constexpr const char* map_key = "";
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
       constexpr const char* deploy_key = "";
       constexpr const char* mount_key = "";
@@ -48,6 +49,7 @@ namespace moppe {
       constexpr const char* ride_key = "";
       constexpr const char* hammock_key = "";
       constexpr const char* fire_key = "";
+      constexpr const char* map_key = "";
 #else
       constexpr const char* deploy_key = "E";
       constexpr const char* mount_key = "F";
@@ -55,6 +57,7 @@ namespace moppe {
       constexpr const char* ride_key = "Space";
       constexpr const char* hammock_key = "R";
       constexpr const char* fire_key = "T";
+      constexpr const char* map_key = "M";
 #endif
 
       // The gauge: a hairline arc of radius gauge_radius points, open at the
@@ -473,25 +476,55 @@ namespace moppe {
                            int height_pts) const {
       if (!m_font || alpha <= 0.002f)
         return;
+      const TextStyle words = prompt_words (alpha);
+      draw_keyed (text,
+                  0.5f * (width_pts - keyed_width (key, action, words)),
+                  height_pts - 54.0f,
+                  key,
+                  action,
+                  words,
+                  alpha);
+    }
+
+    TextStyle Hud::prompt_words (float alpha) const {
       TextStyle words;
       words.size = 15.0f;
       words.red = words.green = words.blue = ink;
       words.alpha = 0.92f * alpha;
       words.tracking = 0.02f;
+      return words;
+    }
 
+    float Hud::keyed_width (const std::string& key,
+                            const std::string& action,
+                            const TextStyle& words) const {
+      if (!m_font)
+        return 0.0f;
+      const float key_width =
+        key.empty () ? 0.0f : (key.size () > 1 ? 3.4f : 1.55f) * words.size;
+      const float gap = key.empty () ? 0.0f : 0.6f * words.size;
+      return key_width + gap + m_font->measure (action, words);
+    }
+
+    void Hud::draw_keyed (render::TextList& text,
+                          float x,
+                          float baseline,
+                          const std::string& key,
+                          const std::string& action,
+                          const TextStyle& words,
+                          float alpha) const {
+      if (!m_font || alpha <= 0.002f)
+        return;
       TextStyle cap = words;
-      cap.size = 11.5f;
+      cap.size = (11.5f / 15.0f) * words.size;
       cap.tracking = 0.04f;
       cap.alpha = 0.86f * alpha;
 
-      const float baseline = height_pts - 54.0f;
       const bool has_key = !key.empty ();
       const bool wide = key.size () > 1;
       const float key_em = words.size;
       const float key_width = has_key ? (wide ? 3.4f : 1.55f) * key_em : 0.0f;
       const float gap = has_key ? 0.6f * words.size : 0.0f;
-      const float width = key_width + gap + m_font->measure (action, words);
-      float x = 0.5f * (width_pts - width);
 
       if (has_key) {
         // The keycap sits on the text's optical centre line.
@@ -1185,6 +1218,24 @@ namespace moppe {
                    0.16f,
                    0.10f,
                    alpha);
+
+      // The key that unfolds the whole map, small against the bezel's
+      // lower outer side.
+      if (*map_key && !m_host_offers) {
+        TextStyle words = prompt_words (0.8f * alpha);
+        words.size = 10.5f;
+        const float run = keyed_width (map_key, "Map", words);
+        const float diagonal = 0.72f * outer;
+        const float x =
+          aside ? cx - diagonal - 4.0f - run : cx + diagonal + 4.0f;
+        draw_keyed (text,
+                    x,
+                    cy + diagonal + 0.5f * m_font->cap_height (words.size),
+                    map_key,
+                    "Map",
+                    words,
+                    0.8f * alpha);
+      }
     }
 
     void Hud::draw_prompts (render::TextList& text,
@@ -1496,6 +1547,47 @@ namespace moppe {
       if (!m_host_offers)
         draw_prompt (
           text, restart_key, "Ride again", 0.8f, width_pts, height_pts);
+    }
+
+    void Hud::draw_quit_question (render::DrawList& dl,
+                                  render::TextList& text,
+                                  int width_pts,
+                                  int height_pts) const {
+      const float w = (float)width_pts;
+      const float h = (float)height_pts;
+      hud_state (dl);
+      dl.color (0.02f, 0.02f, 0.025f, 0.55f);
+      dl.begin (render::Prim::Quads);
+      dl.vertex (0, 0);
+      dl.vertex (w, 0);
+      dl.vertex (w, h);
+      dl.vertex (0, h);
+      dl.end ();
+      dl.state (render::DrawState ());
+      dl.lit (true);
+      dl.fogged (true);
+      dl.color (1, 1, 1, 1);
+      if (!m_font)
+        return;
+
+      TextStyle title = prompt_words (1.0f);
+      title.size = 30.0f;
+      draw_shaded (text,
+                   0.5f * w,
+                   0.5f * h - 14.0f,
+                   "Quit Moppe?",
+                   title,
+                   TextAlign::Center);
+      // Esc again quits; any other key goes back to the game.
+      const TextStyle words = prompt_words (0.9f);
+      const float space = 2.0f * words.size;
+      const float quit = keyed_width ("Esc", "Quit", words);
+      const float stay = keyed_width ("Space", "Keep playing", words);
+      const float x = 0.5f * (w - quit - space - stay);
+      const float baseline = 0.5f * h + 30.0f;
+      draw_keyed (text, x, baseline, "Esc", "Quit", words, 0.9f);
+      draw_keyed (
+        text, x + quit + space, baseline, "Space", "Keep playing", words, 0.9f);
     }
 
     void Hud::draw_ride_prompt (render::TextList& text,

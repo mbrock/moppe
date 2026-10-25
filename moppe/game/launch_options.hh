@@ -40,7 +40,7 @@ namespace moppe::game {
   struct LaunchOptions {
     WorldParams world;
     GraphicsSettings graphics = default_graphics_settings ();
-    platform::Config config { .title = "Moppe" };
+    platform::Config config { .title = "Moppe", .fullscreen = true };
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;
     std::optional<int> terrain_resolution;

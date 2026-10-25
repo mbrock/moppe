@@ -36,6 +36,8 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
   MOPPE_CHECK (options.generation_profile ==
                terrain::TerrainGenerationProfile::Play);
   MOPPE_CHECK (options.config.activate);
+  MOPPE_CHECK (options.config.fullscreen);
+  MOPPE_CHECK (!parsed ({ "--windowed" }).config.fullscreen);
   MOPPE_CHECK (!options.config.capture_frames);
   MOPPE_CHECK_NEAR (options.graphics.render_scale_override, 0.5f, 0.0f);
   MOPPE_CHECK (!options.graphics.motion_blur);
