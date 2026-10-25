@@ -614,6 +614,19 @@
   docs/steam-deck.md installs it on a Deck (`nix profile install
   github:mbrock/moppe#moppe`, a Steam shortcut) and tests it Deck-like on
   chapel (an RDNA2 GPU) under headless gamescope at 1280x800.
+- Windows: `nix build .#moppe-windows` (x86_64-linux) cross-builds the
+  desktop game (`-DMOPPE_WINDOWS_DESKTOP=ON`: the SDL host on Vulkan,
+  through volk) with Zig's Clang for MinGW-w64 into
+  `result/moppe-windows-x86_64.zip`, a `moppe.exe` importing only
+  Windows' own DLLs with its assets and land beside it
+  (`moppe/platform/sdl/windows.nix`). In an orb it runs under Wine
+  (`wineWow64Packages.stable`, Xvfb, `WINEDLLOVERRIDES="mscoree,mshtml="`)
+  on lavapipe.
+- Releases (`.github/workflows/release.yml`): pushing a `v*` tag builds
+  the Linux tarball (`moppe-steamdeck`), the Windows zip, and the macOS
+  app (on a macos-26 runner, ad-hoc signed, not notarized) and publishes
+  them as a GitHub release; running the workflow by hand keeps them as
+  artifacts.
 - The game's core on Xbox, before NHAL renders it: `nix build
   .#moppe-core-xbox` and `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net
   nix run .#deploy-moppe-core-xbox -- --hold 600` (package

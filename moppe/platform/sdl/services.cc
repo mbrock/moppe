@@ -127,12 +127,16 @@ namespace moppe::platform {
   std::string cache_path (const std::string& relative) {
     static const std::string base = [] {
       std::filesystem::path root;
-      const char* home = moppe::environment ("HOME");
+      [[maybe_unused]] const char* home = moppe::environment ("HOME");
 #ifdef __APPLE__
       // Where the Mac has always kept them, so finished worlds carry over.
       root = home ? std::filesystem::path (home) / "Library" / "Caches"
                         / "Moppe"
                   : std::filesystem::temp_directory_path () / "Moppe";
+#elif defined(_WIN32)
+      const char* local = moppe::environment ("LOCALAPPDATA");
+      root = local ? std::filesystem::path (local) / "Moppe"
+                   : std::filesystem::temp_directory_path () / "Moppe";
 #else
       if (const char* xdg = moppe::environment ("XDG_CACHE_HOME"); xdg && *xdg)
         root = xdg;

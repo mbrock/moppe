@@ -1,0 +1,108 @@
+# Builds the game for Linux, Windows, and macOS. Pushing a tag v* publishes
+# the three as a GitHub release; running it by hand only keeps them as the
+# run's artifacts.
+#
+#   Linux    moppe-linux-x86_64.tar.gz   the portable Steam Deck build
+#                                        (docs/steam-deck.md): glibc 2.31,
+#                                        the host's Vulkan driver
+#   Windows  moppe-windows-x86_64.zip    cross-built on Linux with Zig
+#                                        (moppe/platform/sdl/windows.nix)
+#   macOS    moppe-macos-arm64.zip       the app bundle, ad-hoc signed;
+#                                        macOS 26 on Apple silicon (Metal 4)
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Nix supplies luv-shaderc, which lowers the shaders, on every runner.
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Build
+        run: |
+          nix build -L .#moppe-steamdeck
+          cat result/verification.txt
+          mkdir dist
+          cp result/moppe-steamdeck.tar.gz dist/moppe-linux-x86_64.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Build
+        run: |
+          nix build -L .#moppe-windows
+          cat result/imports.txt
+          mkdir dist
+          cp result/moppe-windows-x86_64.zip dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Install the build tools
+        run: |
+          brew install ninja zstd
+          nix build -L .#luv-shaderc --out-link "$RUNNER_TEMP/luv-shaderc"
+          echo "$RUNNER_TEMP/luv-shaderc/bin" >> "$GITHUB_PATH"
+      # The default world's published land, so the first launch need not
+      # generate it.
+      - name: Fetch the land
+        run: |
+          MOPPE_LAND_DIR="$RUNNER_TEMP/lands" tools/fetch-land
+      - name: Build
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_TYPE" == tag ]] || version=0.0.0
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF -DMOPPE_LANDS_DIR="$RUNNER_TEMP/lands" \
+            -DMOPPE_VERSION="$version" -DMOPPE_BUILD_NUMBER="$GITHUB_RUN_NUMBER"
+          cmake --build build --target moppe
+      # The assets copied in after linking break the linker's signature;
+      # an ad-hoc one over the whole bundle lets Apple silicon run it.
+      - name: Package
+        run: |
+          codesign --force --deep --sign - build/moppe.app
+          mkdir dist
+          ditto -c -k --keepParent build/moppe.app dist/moppe-macos-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --generate-notes

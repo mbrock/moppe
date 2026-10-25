@@ -73,6 +73,9 @@ set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
 option(MOPPE_XBOX_GAME
   "On Windows, build the game for Xbox rather than the headless core probe"
   OFF)
+option(MOPPE_WINDOWS_DESKTOP
+  "On Windows, build the desktop game (SDL3 and Vulkan) rather than for Xbox"
+  OFF)
 option(MOPPE_NHAL_RENDERER
   "Build the NHAL renderer into the macOS game (needs luv-shaderc or nix)" ON)
 option(MOPPE_BUILD_DEVELOPER_TOOLS
@@ -835,15 +838,17 @@ if(APPLE AND MOPPE_TVOS)
 endif()
 
 # ---------------------------------------------------------------
-# The desktop game: an SDL3 window on macOS and Linux, drawn by the NHAL
-# renderer through Metal 4 or Vulkan (moppe/platform/sdl/). On Linux,
-# `nix develop` provides SDL3, Vulkan, and luv-shaderc; elsewhere a missing
-# SDL3 is built from its release. The browser's game is the same host on
-# Emscripten, whose window is the page's canvas, drawn through WebGPU
-# (docs/web.md); SDL3 and Dawn's WebGPU bindings are Emscripten's ports.
+# The desktop game: an SDL3 window on macOS, Linux, and Windows, drawn by
+# the NHAL renderer through Metal 4 or Vulkan (moppe/platform/sdl/). On
+# Linux, `nix develop` provides SDL3, Vulkan, and luv-shaderc; elsewhere a
+# missing SDL3 is built from its release. Windows (MOPPE_WINDOWS_DESKTOP)
+# is cross-built from Linux (moppe/platform/sdl/windows.nix). The browser's
+# game is the same host on Emscripten, whose window is the page's canvas,
+# drawn through WebGPU (docs/web.md); SDL3 and Dawn's WebGPU bindings are
+# Emscripten's ports.
 
 if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
-    OR EMSCRIPTEN)
+    OR EMSCRIPTEN OR MOPPE_WINDOWS_DESKTOP)
   if(EMSCRIPTEN)
     add_library(SDL3::SDL3 INTERFACE IMPORTED)
     target_compile_options(SDL3::SDL3 INTERFACE --use-port=sdl3)
@@ -1135,7 +1140,7 @@ endif()
 # .#moppe-xbox`) over the core probe (moppe/platform/uwp/xbox.nix; `nix build
 # .#moppe-core-xbox`), which runs world generation and simulation headlessly
 # on the console and reports how they fare.
-if(WIN32)
+if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
   # The game is drawn by the NHAL renderer through Direct3D 12. luv-shaderc
   # lowers the renderer's Lisp shaders to HLSL and DXC compiles each stage
   # to a header of signed DXIL.

@@ -56,6 +56,11 @@
             pkgs = nixpkgs.legacyPackages.${system};
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
+          # The game for Windows, cross-built: a zip of moppe.exe and assets.
+          moppe-windows = import ./moppe/platform/sdl/windows.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+            luv-shaderc = self.packages.${system}.luv-shaderc;
+          };
           # The Nix-native package carries its own Vulkan driver.
           moppe = import ./moppe/platform/sdl/linux.nix {
             pkgs = nixpkgs.legacyPackages.${system};
