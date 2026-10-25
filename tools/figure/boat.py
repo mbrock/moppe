@@ -813,16 +813,138 @@ def finish(h, m):
         return 0.8 * math.exp(-c.y / 0.06) + \
             0.5 * math.exp(-(planform(0) - abs(c.x)) / 0.04)
 
-    worn = m["film_worn"]
-    wear(h, "side_port", parts["side_port"], worn, lambda n: n.x > 0.3,
-         side_weight, 1)
-    wear(h, "side_starboard", parts["side_starboard"], worn,
-         lambda n: n.x < -0.3, side_weight, 2)
-    wear(h, "bottom", parts["bottom"], worn, lambda n: n.y < -0.3,
-         bottom_weight, 3)
-    wear(h, "deck", parts["deck"], worn, lambda n: n.y > 0.3, deck_weight, 4)
-    wear(h, "transom", parts["transom"], worn, lambda n: n.z < -0.3,
-         transom_weight, 5)
+    panels = (("side_port", lambda n: n.x > 0.3, side_weight),
+              ("side_starboard", lambda n: n.x < -0.3, side_weight),
+              ("bottom", lambda n: n.y < -0.3, bottom_weight),
+              ("deck", lambda n: n.y > 0.3, deck_weight),
+              ("transom", lambda n: n.z < -0.3, transom_weight))
+    mode = os.environ.get("MOPPE_BOAT_WEAR", "geometry")
+    if mode == "geometry":
+        for seed, (name, outward, weight) in enumerate(panels, 1):
+            wear(h, name, parts[name], m["film_worn"], outward, weight, seed)
+        return
+    for name, outward, weight in panels:
+        wear_attribute(parts[name], outward, weight, mode == "vertex")
+    for name in ("ply", "ply_dark"):
+        weathered(m[name], m["film_worn"], mode)
+
+
+def wear_attribute(obj, outward, weight, blotched):
+    """The wear `weight` gives each corner of the faces that look
+    `outward`, as the corner attribute "wear" (none inside); `blotched`
+    breaks it up by the blotches, as vertex colours would carry it."""
+    applied(obj)
+    me = obj.data
+    attr = me.attributes.new("wear", "FLOAT", "CORNER")
+    for f in me.polygons:
+        n = game_of(f.normal)
+        for li in f.loop_indices:
+            c = game_of(me.vertices[me.loops[li].vertex_index].co)
+            w = 0.0
+            if outward(n) and f.material_index == 0:
+                w = min(1.0, weight(c, n))
+                if blotched:
+                    w = smoothstep(0.30, 0.50, w * blotches(c))
+            attr.data[li].value = w
+
+
+def weathered(mat, worn, mode):
+    """Gives the film's material its wear from the "wear" attribute: as it
+    stands (vertex), or broken by noise in the boat's own frame into
+    ragged scuffs through to the glass cloth and fine scratches drawn fore
+    and aft, with the film itself matte and glossy by turns (procedural).
+    """
+    tree = mat.node_tree
+    nodes, links = tree.nodes, tree.links
+    bsdf = nodes["Principled BSDF"]
+    film = tuple(bsdf.inputs["Base Color"].default_value)
+    worn_colour = worn.node_tree.nodes["Principled BSDF"].inputs[
+        "Base Color"].default_value
+    rough = bsdf.inputs["Roughness"].default_value
+    coat = bsdf.inputs["Coat Weight"].default_value
+
+    def node(kind, **props):
+        n = nodes.new(kind)
+        for k, v in props.items():
+            setattr(n, k, v)
+        return n
+
+    def math_node(op, a, b=None, clamp=False):
+        n = node("ShaderNodeMath", operation=op, use_clamp=clamp)
+        for i, x in enumerate((a, b)):
+            if x is None:
+                continue
+            if isinstance(x, (int, float)):
+                n.inputs[i].default_value = x
+            else:
+                links.new(x, n.inputs[i])
+        return n.outputs[0]
+
+    def ramp(x, lo, hi):
+        n = node("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP")
+        links.new(x, n.inputs["Value"])
+        n.inputs["From Min"].default_value = lo
+        n.inputs["From Max"].default_value = hi
+        return n.outputs["Result"]
+
+    def noise(coords, scale, detail, roughness=0.6):
+        n = node("ShaderNodeTexNoise")
+        links.new(coords, n.inputs["Vector"])
+        n.inputs["Scale"].default_value = scale
+        n.inputs["Detail"].default_value = detail
+        n.inputs["Roughness"].default_value = roughness
+        return n.outputs["Fac"]
+
+    attr = node("ShaderNodeAttribute", attribute_name="wear")
+    wear = attr.outputs["Fac"]
+    if mode == "vertex":
+        amount = wear
+        matte = None
+    else:
+        obj = node("ShaderNodeTexCoord").outputs["Object"]
+        # Ragged scuffs: the wear pushed over a threshold by a fine,
+        # rough noise, so its edges fray.
+        fray = noise(obj, 22.0, 12.0, 0.7)
+        scuff = ramp(math_node("ADD", math_node("MULTIPLY", wear, 0.85),
+                               math_node("SUBTRACT", fray, 0.5)),
+                     0.52, 0.56)
+        # Scratches: thin lines along a noise's contour, the noise drawn
+        # out along the boat (Blender's y) so they run fore and aft.
+        stretch = node("ShaderNodeMapping")
+        links.new(obj, stretch.inputs["Vector"])
+        stretch.inputs["Scale"].default_value = (70.0, 4.0, 70.0)
+        streak = noise(stretch.outputs["Vector"], 1.0, 3.0, 0.5)
+        line = ramp(math_node("ABSOLUTE", math_node("SUBTRACT", streak, 0.5)),
+                    0.010, 0.003)
+        scratch = math_node("MULTIPLY", line, ramp(wear, 0.15, 0.5))
+        amount = math_node("MAXIMUM", scuff,
+                           math_node("MULTIPLY", scratch, 0.8))
+        # The film's own sheen comes and goes: handled, rained on, dried.
+        matte = noise(obj, 3.0, 4.0, 0.5)
+
+    colour = node("ShaderNodeMix", data_type="RGBA")
+    colour.inputs["A"].default_value = film
+    colour.inputs["B"].default_value = worn_colour
+    links.new(amount, colour.inputs["Factor"])
+    links.new(colour.outputs["Result"], bsdf.inputs["Base Color"])
+    r = node("ShaderNodeMapRange")
+    links.new(amount, r.inputs["Value"])
+    r.inputs["To Min"].default_value = rough
+    r.inputs["To Max"].default_value = 0.85
+    if matte is not None:
+        film_rough = node("ShaderNodeMapRange")
+        links.new(matte, film_rough.inputs["Value"])
+        film_rough.inputs["From Min"].default_value = 0.35
+        film_rough.inputs["From Max"].default_value = 0.65
+        film_rough.inputs["To Min"].default_value = rough - 0.12
+        film_rough.inputs["To Max"].default_value = rough + 0.15
+        links.new(film_rough.outputs["Result"], r.inputs["To Min"])
+    links.new(r.outputs["Result"], bsdf.inputs["Roughness"])
+    c = node("ShaderNodeMapRange")
+    links.new(amount, c.inputs["Value"])
+    c.inputs["To Min"].default_value = coat
+    c.inputs["To Max"].default_value = 0.05
+    links.new(c.outputs["Result"], bsdf.inputs["Coat Weight"])
 
 
 # The long-tail.
