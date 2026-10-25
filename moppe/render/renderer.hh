@@ -475,11 +475,13 @@ namespace moppe {
       // is idempotent so backend-specific callers can safely enforce the
       // boundary again before HUD/present.
       virtual void reconstruct_scene () {}
-      // Post effects; call after reconstruction and before draw_hud.
-      // Backends without a stored scene depth may ignore light shafts
-      // and ambient occlusion.
+      // Screen-space lighting of the scene; call after the scene's last
+      // draw and before reconstruction, which accumulates it with the
+      // jittered samples it was computed from. Backends without a stored
+      // scene depth may ignore light shafts and ambient occlusion.
       virtual void apply_gtao (const GtaoParams&) {}
       virtual void apply_light_shafts (const LightShaftParams&) {}
+      // Post effects; call after reconstruction and before draw_hud.
       virtual void apply_underwater (float time) = 0;
       virtual void apply_motion_blur (float strength) = 0;
       // Soft-focus the completed 3D scene; HUD drawn afterwards stays crisp.

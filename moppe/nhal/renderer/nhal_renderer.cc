@@ -64,6 +64,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -897,7 +898,8 @@ namespace moppe::nhal {
           make_scene_targets (scene_width, scene_height);
         m_params = params;
         m_chunks.clear ();
-        m_scene_open = m_scene_begun = m_resolved = m_presented = false;
+        m_scene_open = m_scene_begun = m_scene_closed = m_resolved =
+          m_presented = false;
         // MOPPE_NHAL_PROBE switches a diagnostic for consoles where the
         // renderer cannot be debugged directly: "white" draws every draw
         // list untextured, "additive" draws alpha-blended runs additively,
@@ -912,7 +914,6 @@ namespace moppe::nhal {
         }
         if (m_probe == "nohistory")
           m_restart = true;
-        m_ao_ready = m_shafts_ready = false;
 
         const Mat4 view_proj = params.proj * params.view;
         if (m_restart)
@@ -983,7 +984,7 @@ namespace moppe::nhal {
 
       void render_local_shadow (const render::LocalShadowParams& params)
         override {
-        if (!m_have_terrain || m_scene_open || m_resolved) {
+        if (!m_have_terrain || m_scene_open || m_scene_closed) {
           m_casters.clear ();
           return;
         }
@@ -1316,7 +1317,7 @@ namespace moppe::nhal {
       // water sheet, over the opaque scene; the rivers' ripples and foam
       // stream along the current.
       void draw_ocean (const render::OceanParams& params) override {
-        if (!m_have_terrain || !m_water_levels || m_resolved)
+        if (!m_have_terrain || !m_water_levels || m_scene_closed)
           return;
         // A view of dry land needs neither the copy nor the pass's break.
         if (std::ranges::none_of (
@@ -1340,7 +1341,7 @@ namespace moppe::nhal {
       // world-anchored cells around the camera, one leaf each, those the
       // fallen-leaf raster says stand under gold crowns.
       void draw_falling_leaves () override {
-        if (!m_have_terrain || !m_litter || m_resolved)
+        if (!m_have_terrain || !m_litter || m_scene_closed)
           return;
         open_scene ();
         constexpr float cell_metres = 1.2f;
@@ -1368,19 +1369,33 @@ namespace moppe::nhal {
       void draw_waterfalls (const render::Mesh& mesh,
                             const Mat4& model) override {
         const auto& m = static_cast<const NhalMesh&> (mesh);
-        if (!m.vertices || m_resolved)
+        if (!m.vertices || m_scene_closed)
           return;
         open_scene ();
         draw_runs ({}, m.vertices, m.runs, model, model, m_waterfall);
       }
 
-      void draw_list (const DrawList& list, std::uint64_t) override {
+      // A list given a motion id moves as its vertices did: those of the
+      // list drawn under the id last frame, where it had as many. So the
+      // figure, skinned on the CPU into the world each frame, carries its
+      // own motion rather than the camera's alone.
+      void draw_list (const DrawList& list, std::uint64_t motion_id) override {
         if (list.empty () || m_casting)
           return;
         open_scene ();
-        const Transient vertices =
-          m_device->upload (std::span (list.vertices ()));
-        draw_runs (vertices, Buffer {}, list.runs (), Mat4 {}, Mat4 {});
+        const std::vector<render::Vertex>& now = list.vertices ();
+        const Transient vertices = m_device->upload (std::span (now));
+        std::optional<Transient> before;
+        if (motion_id) {
+          if (auto found = m_previous_vertices.find (motion_id);
+              found != m_previous_vertices.end ()
+              && found->second.size () == now.size ())
+            before = m_device->upload (
+              std::span<const render::Vertex> (found->second));
+          m_current_vertices[motion_id].assign (now.begin (), now.end ());
+        }
+        draw_runs (vertices, Buffer {}, list.runs (), Mat4 {}, Mat4 {}, {},
+                   before ? &*before : nullptr);
       }
 
       void draw_mesh (const render::Mesh& mesh, const Mat4& model,
@@ -1403,8 +1418,10 @@ namespace moppe::nhal {
         draw_runs ({}, m.vertices, m.runs, model, previous);
       }
 
-      void reconstruct_scene () override {
-        if (m_resolved)
+      // Ends the scene: the rain, last, and the pass closed, leaving its
+      // colour for the occlusion and the shafts to shade before the resolve.
+      void close_scene () {
+        if (m_scene_closed)
           return;
         open_scene ();
         if (m_params.rain > 0.0f) {
@@ -1421,6 +1438,13 @@ namespace moppe::nhal {
         }
         m_device->end_render_pass ();
         m_scene_open = false;
+        m_scene_closed = true;
+      }
+
+      void reconstruct_scene () override {
+        if (m_resolved)
+          return;
+        close_scene ();
         // What every output pixel in a scene texel shares, gathered once
         // for the texel: its neighbourhood's bounds and the motion to
         // follow.
@@ -1465,10 +1489,13 @@ namespace moppe::nhal {
         }
       }
 
-      // Occlusion over the stored scene depth, kept out of the temporal
-      // history: the present pass multiplies it in.
+      // Occlusion over the scene's depth, multiplied into its colour before
+      // the resolve, so that the history accumulates it with the rest of
+      // the jittered scene it was computed from.
       void apply_gtao (const render::GtaoParams& params) override {
-        reconstruct_scene ();
+        if (m_resolved || m_probe == "noao")
+          return;
+        close_scene ();
         shaders::gtao::Post post = post_block (params.camera_pos,
                                                params.forward,
                                                params.right_span,
@@ -1483,7 +1510,9 @@ namespace moppe::nhal {
           RenderPassDesc desc;
           desc.label = label;
           desc.color_count = 1;
-          desc.colors[0] = { target, Load::discard, Store::store };
+          desc.colors[0] = { target, target == m_scene_color ? Load::load
+                                                             : Load::discard,
+                             Store::store };
           m_device->begin_render_pass (desc);
         };
         pass (m_ao[0], "occlusion");
@@ -1496,26 +1525,28 @@ namespace moppe::nhal {
           { 1.0f / float (m_scene_width), 0.0f },
           { 0.0f, 1.0f / float (m_scene_height) },
         };
+        // Across into the other target, then down into the scene.
         for (int i = 0; i < 2; ++i) {
-          pass (m_ao[1 - i], "occlusion blur");
-          m_device->set_pipeline (m_gtao_blur);
+          pass (i ? m_scene_color : m_ao[1], "occlusion blur");
+          m_device->set_pipeline (i ? m_gtao_apply : m_gtao_blur);
           shaders::gtao::Post blurred = post;
-          blurred.blur = { steps[i][0], steps[i][1], 0, 0 };
+          blurred.blur = { steps[i][0], steps[i][1], float (i), 0 };
           m_device->set_uniforms (0, blurred);
           m_device->set_texture (0, m_ao[i]);
           m_device->set_texture (1, m_scene_depth);
           m_device->draw (3);
           m_device->end_render_pass ();
         }
-        m_ao_ready = true;
       }
 
-      // Sun shafts marched through the shadow map, added at present.
+      // Sun shafts marched through the shadow map, added to the scene
+      // before the resolve, as the occlusion is.
       void apply_light_shafts (const render::LightShaftParams& params)
         override {
-        if (m_frame_values.shadow[0] <= 0.0f)
+        if (m_frame_values.shadow[0] <= 0.0f || m_resolved
+            || m_probe == "noshafts")
           return;
-        reconstruct_scene ();
+        close_scene ();
         shaders::gtao::Post post = post_block (params.camera_pos,
                                                params.forward,
                                                params.right_span,
@@ -1531,7 +1562,7 @@ namespace moppe::nhal {
         RenderPassDesc desc;
         desc.label = "sun shafts";
         desc.color_count = 1;
-        desc.colors[0] = { m_shafts, Load::discard, Store::store };
+        desc.colors[0] = { m_scene_color, Load::load, Store::store };
         m_device->begin_render_pass (desc);
         m_device->set_pipeline (m_shafts_pipeline);
         m_device->set_buffer (0, m_frame_block);
@@ -1540,7 +1571,6 @@ namespace moppe::nhal {
         m_device->set_texture (8, m_shadow_map);
         m_device->draw (3);
         m_device->end_render_pass ();
-        m_shafts_ready = true;
       }
 
       void apply_underwater (float) override {}
@@ -1718,6 +1748,9 @@ namespace moppe::nhal {
         }
         m_previous_models.swap (m_current_models);
         m_current_models.clear ();
+        m_previous_vertices.swap (m_current_vertices);
+        for (auto& [id, vertices] : m_current_vertices)
+          vertices.clear ();
         report_timings ();
       }
 
@@ -1970,11 +2003,16 @@ namespace moppe::nhal {
         occlusion_blur.vertex = m_gtao_blur_code.stage (0);
         occlusion_blur.fragment = m_gtao_blur_code.stage (1);
         m_gtao_blur = m_device->create_render_pipeline (occlusion_blur);
+        RenderPipelineDesc occlusion_apply = occlusion_blur;
+        occlusion_apply.color_formats[0] = Format::rgba16_float;
+        occlusion_apply.blend[0] = Blend::premultiplied;
+        m_gtao_apply = m_device->create_render_pipeline (occlusion_apply);
         RenderPipelineDesc shafts = present;
         shafts.program = &shaders::shafts::program;
         shafts.vertex = m_shafts_code.stage (0);
         shafts.fragment = m_shafts_code.stage (1);
         shafts.color_formats[0] = Format::rgba16_float;
+        shafts.blend[0] = Blend::additive;
         m_shafts_pipeline = m_device->create_render_pipeline (shafts);
         RenderPipelineDesc copy = present;
         copy.program = &shaders::scene_copy::program;
@@ -2318,10 +2356,13 @@ namespace moppe::nhal {
 
       // Draws runs through their states' uber pipelines, or all of them
       // through `program` when one is given.
+      // `streamed_before`, where given, holds each streamed vertex as it
+      // was last frame, for the motion.
       void draw_runs (const Transient& streamed, Buffer baked,
                       const std::vector<DrawList::Run>& runs,
                       const Mat4& model, const Mat4& previous,
-                      Pipeline program = {}) {
+                      Pipeline program = {},
+                      const Transient* streamed_before = nullptr) {
         shaders::uber::Draw draw {};
         draw.model = matrix (model);
         draw.previous_model = matrix (previous);
@@ -2342,6 +2383,7 @@ namespace moppe::nhal {
         draw.normal_x = { cof (0, 0), cof (0, 1), cof (0, 2), 0 };
         draw.normal_y = { cof (1, 0), cof (1, 1), cof (1, 2), 0 };
         draw.normal_z = { cof (2, 0), cof (2, 1), cof (2, 2), 0 };
+        draw.normal_x[3] = streamed_before ? 1.0f : 0.0f;
         const Transient block = m_device->allocate (sizeof draw);
         std::memcpy (block.data, &draw, sizeof draw);
 
@@ -2362,10 +2404,15 @@ namespace moppe::nhal {
           const std::uint64_t offset =
             std::uint64_t (run.first - first) * sizeof (render::Vertex);
           m_device->set_buffer (0, m_frame_block);
-          if (baked)
+          if (baked) {
             m_device->set_buffer (1, baked, offset);
-          else
+            m_device->set_buffer (3, baked, offset);
+          } else {
             m_device->set_buffer (1, advanced (streamed, offset));
+            m_device->set_buffer (
+              3, advanced (streamed_before ? *streamed_before : streamed,
+                           offset));
+          }
           m_device->set_buffer (2, block);
           m_device->set_texture (0, texture_or_white (run.texture));
           m_device->set_texture (8, m_shadow_map);
@@ -2458,7 +2505,7 @@ namespace moppe::nhal {
                                std::uint32_t scene_height) {
         for (Texture t : { m_scene_color, m_scene_motion, m_scene_depth,
                            m_beneath, m_beneath_depth, m_bounds[0],
-                           m_bounds[1], m_ao[0], m_ao[1], m_shafts })
+                           m_bounds[1], m_ao[0], m_ao[1] })
           if (t)
             m_device->destroy (t);
         // The scene at its share of the drawable, upscaled temporally.
@@ -2489,15 +2536,12 @@ namespace moppe::nhal {
           t = m_device->create_texture (
             { m_scene_width, m_scene_height, Format::r16_float,
               usage_render_target | usage_sampled, 1, "occlusion" });
-        m_shafts = m_device->create_texture (
-          { m_scene_width, m_scene_height, Format::rgba16_float,
-            usage_render_target | usage_sampled, 1, "sun shafts" });
       }
 
       // Begins the frame's scene pass, or resumes it where an interlude
       // (the copy beneath the water) closed it.
       void open_scene () {
-        if (m_scene_open || m_resolved)
+        if (m_scene_open || m_scene_closed)
           return;
         RenderPassDesc pass;
         pass.label = m_scene_begun ? "scene, resumed" : "scene";
@@ -2604,10 +2648,6 @@ namespace moppe::nhal {
                             : 1.0f,
                           std::fmod (m_params.time, 1000.0f),
                           m_params.bloom ? 1.0f : 0.0f };
-        present.effects = { m_ao_ready && m_probe != "noao" ? 1.0f : 0.0f,
-                            m_shafts_ready && m_probe != "noshafts" ? 1.0f
-                                                                    : 0.0f,
-                            0, 0 };
         present.sun_glare = sun_glare ();
         if (m_params.bloom)
           bloom (present);
@@ -2622,8 +2662,6 @@ namespace moppe::nhal {
         m_device->set_buffer (1, m_exposure_value);
         m_device->set_texture (0, m_probe == "scene" ? m_scene_color : m_image);
         m_device->set_texture (1, m_bloom[0]);
-        m_device->set_texture (2, m_ao[0]);
-        m_device->set_texture (3, m_shafts);
         m_device->draw (3);
         m_presented = true;
       }
@@ -2681,7 +2719,7 @@ namespace moppe::nhal {
       // The opaque scene copied out before the water: its colour and depth.
       Texture m_beneath, m_beneath_depth;
       Texture m_bloom[2];
-      Texture m_ao[2], m_shafts;
+      Texture m_ao[2];
       ProgramCode m_rain_code, m_water_code, m_leaves_code, m_waterfall_code,
         m_scene_copy_code;
       Pipeline m_water, m_leaves, m_waterfall, m_scene_copy;
@@ -2708,9 +2746,8 @@ namespace moppe::nhal {
       float m_rock_period[2] {};
       Transient m_rock_block, m_rock_shadow_block;
       ProgramCode m_gtao_code, m_gtao_blur_code, m_shafts_code;
-      Pipeline m_gtao, m_gtao_blur, m_shafts_pipeline;
+      Pipeline m_gtao, m_gtao_blur, m_gtao_apply, m_shafts_pipeline;
       shaders::gtao::Post m_post_block {};
-      bool m_ao_ready = false, m_shafts_ready = false;
       ProgramCode m_grass_code;
       OwnedStage m_grass_tiles_code;
       Pipeline m_grass_pipeline, m_grass_tiles_pipeline;
@@ -2738,9 +2775,13 @@ namespace moppe::nhal {
       float m_previous_time = 0;
       std::uint32_t m_frame = 0;
       bool m_restart = true;
-      bool m_scene_open = false, m_scene_begun = false, m_resolved = false,
+      bool m_scene_open = false, m_scene_begun = false,
+           m_scene_closed = false, m_resolved = false,
            m_presented = false;
       std::map<std::uint64_t, Mat4> m_previous_models, m_current_models;
+      // The streamed lists' vertices by motion id, last frame's and this.
+      std::map<std::uint64_t, std::vector<render::Vertex>>
+        m_previous_vertices, m_current_vertices;
       std::string m_screenshot;
       std::function<void (const render::FramePixels&)> m_frame_sink;
       std::string m_probe;

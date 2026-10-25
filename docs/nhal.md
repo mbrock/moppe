@@ -29,6 +29,20 @@ pixels share each, so a pass at the scene's size gathers them first
 (`neighbourhood`: the 3x3 YCoCg bounds and the nearest surface's motion,
 in two RGBA16F targets) and the resolve reads one texel of each.
 
+A still view must stay still, so everything that reads or writes the
+jittered scene keeps to its jitter. The sky's rays are the jittered
+camera's, as the geometry's are; the occlusion and the sun shafts, worked
+out from the scene's depth, darken and light its colour before the resolve
+rather than the resolved picture after it; the water's reflections and
+the motion blur look the scene up where the jitter drew it. Streamed draw
+lists given a motion id (the figure, skinned on the CPU into the world each
+frame) carry last frame's vertices beside this frame's for their motion,
+where the list has as many, as meshes carry last frame's model matrix. A
+pixel that has moved less than a quarter of an output pixel takes half
+the new sample a moving one does (a twentieth), since at a still edge
+the share given to each frame's jittered sample is how far the picture
+steps.
+
 So far it draws the terrain (vertex-pulled chunk strips morphing onto their
 parent levels, surfaced as below), a provisional sky, the game's draw lists and meshes through one "uber" program
 with a pipeline per draw state, and the HUD: its draw lists, then its Slug
@@ -148,9 +162,11 @@ separable nine-tap Gaussian, added before the tonemap.
 
 Boulders are boulders.metal's cleaved icosahedra, culled on the GPU into
 coarse and fine classes. Ambient occlusion and sun shafts (post.metal's)
-render after the temporal resolve into their own targets, which the
-present pass multiplies and adds, so the history stays clean; the present
-also draws Metal's veil around the sun. The stand's rasters -- canopy
+are worked out from the scene's depth once the scene is drawn and blended
+into its colour (the occlusion's last blur premultiplied, the shafts
+added) before the temporal resolve, which accumulates them with the
+jittered samples they came from; the present draws Metal's veil around
+the sun. The stand's rasters -- canopy
 closure splatted from the crowns, and the game's fallen leaves -- shade
 the forest floor and thin and dry the grass beneath them. Trunks root into
 the soil with flared buttresses.

@@ -46,6 +46,13 @@
   (ndc-uv (vec2 (/ (swizzle clip :x) (swizzle clip :w))
                 (/ (swizzle clip :y) (swizzle clip :w)))))
 
+;;; Where an unjittered clip position was drawn on this frame's jittered
+;;; scene, for reading back what the scene drew there.
+(define-shader-function scene-uv (clip jitter)
+  (ndc-uv (+ (vec2 (/ (swizzle clip :x) (swizzle clip :w))
+                   (/ (swizzle clip :y) (swizzle clip :w)))
+             jitter)))
+
 ;;; A Metal-convention clip position, jittered for temporal upscaling, in
 ;;; the language's y-down convention.
 (define-shader-function clip (position jitter)
@@ -1042,9 +1049,14 @@
      :outputs ((color :vec4 :location 0)
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)))
-  (let* ((ray (normalize (+ (swizzle view-forward :xyz)
-                            (* (swizzle view-right :xyz) (swizzle ndc :x))
-                            (* (swizzle view-up :xyz) (swizzle ndc :y)))))
+  (let* (;; The direction this sample looks along is the jittered camera's,
+         ;; as the geometry's is: unjittered, the sky would stay on the
+         ;; raster's grid while everything before it moved, and slip by
+         ;; the jitter against it once resolved.
+         (looking (- ndc (swizzle temporal :zw)))
+         (ray (normalize (+ (swizzle view-forward :xyz)
+                            (* (swizzle view-right :xyz) (swizzle looking :x))
+                            (* (swizzle view-up :xyz) (swizzle looking :y)))))
          (sun (normalize (swizzle sky-sun :xyz)))
          (moon (normalize (swizzle sky-moon :xyz)))
          (time (swizzle camera-position :w))
@@ -1144,7 +1156,9 @@
   (defparameter *draw*
     '((model :mat4)
       (previous-model :mat4)
-      (normal-x :vec4)             ; the model's normal matrix, by columns
+      (normal-x :vec4)             ; the model's normal matrix, by columns;
+                                   ; w 1 where last frame's vertices are
+                                   ; bound beside these
       (normal-y :vec4)
       (normal-z :vec4))))
 
@@ -1162,12 +1176,21 @@
                (made :vec4 :location 7))     ; render::Surface
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (vertices :storage-buffer :binding 1 :element :uint)
-                 (draw :uniform-block :binding 2 :members #.*draw*)))
+                 (draw :uniform-block :binding 2 :members #.*draw*)
+                 (vertices-before :storage-buffer :binding 3 :element :uint)))
   (let* ((first (* vertex-index (uint 11.0)))
          (local (vec4 (vertex-float vertices first 0.0)
                       (vertex-float vertices first 1.0)
                       (vertex-float vertices first 2.0)
                       1.0))
+         ;; Streamed lists rebuilt each frame (the CPU-skinned figure)
+         ;; bring last frame's vertices for their motion.
+         (local-before (if (> (swizzle normal-x :w) 0.5)
+                           (vec4 (vertex-float vertices-before first 0.0)
+                                 (vertex-float vertices-before first 1.0)
+                                 (vertex-float vertices-before first 2.0)
+                                 1.0)
+                           local))
          (normal (vec3 (vertex-float vertices first 3.0)
                        (vertex-float vertices first 4.0)
                        (vertex-float vertices first 5.0)))
@@ -1179,8 +1202,8 @@
          (time (swizzle camera-position :w))
          (placed (swizzle (* model local) :xyz))
          (position (in-wind placed bend flutter time))
-         (before (in-wind (swizzle (* previous-model local) :xyz) bend flutter
-                          (swizzle relief :z)))
+         (before (in-wind (swizzle (* previous-model local-before) :xyz) bend
+                          flutter (swizzle relief :z)))
          (current (* view-proj (vec4 position 1.0))))
     (set-output clip-position (clip current (swizzle temporal :zw)))
     (set-output world position)
@@ -4061,7 +4084,7 @@
                               (expt 2.0 (+ (float i) dither))))
                     (c (* view-proj (vec4 (+ world (* mirrored reach)) 1.0)))
                     (w (max (swizzle c :w) 0.0001))
-                    (at (clip-uv c))
+                    (at (scene-uv c (swizzle temporal :zw)))
                     (off (or (<= (swizzle c :w) 0.0)
                              (> (max (abs (- (swizzle at :x) 0.5))
                                      (abs (- (swizzle at :y) 0.5)))
@@ -4085,7 +4108,7 @@
            (counted-fold (j (uint 5) span (swizzle march :xy))
              (let* ((middle (* 0.5 (+ (swizzle span :x) (swizzle span :y))))
                     (c (* view-proj (vec4 (+ world (* mirrored middle)) 1.0)))
-                    (at (clip-uv c))
+                    (at (scene-uv c (swizzle temporal :zw)))
                     (ray-z (/ (swizzle c :z) (max (swizzle c :w) 0.0001)))
                     (scene-z (swizzle (sample-level beneath-depth nearest-clamp
                                                     at 0.0)
@@ -4093,9 +4116,10 @@
                (if (> scene-z ray-z)
                    (vec2 (swizzle span :x) middle)
                    (vec2 middle (swizzle span :y))))))
-         (met (clip-uv (* view-proj
-                          (vec4 (+ world (* mirrored (swizzle bracket :y)))
-                                1.0))))
+         (met (scene-uv (* view-proj
+                           (vec4 (+ world (* mirrored (swizzle bracket :y)))
+                                 1.0))
+                        (swizzle temporal :zw)))
          (border (min (min (swizzle met :x) (- 1.0 (swizzle met :x)))
                       (min (swizzle met :y) (- 1.0 (swizzle met :y)))))
          (trust (* found worth (smoothstep 0.0 0.07 border)))
@@ -4777,7 +4801,19 @@
                                                 w0 w12 w3 at0 at12 at3))
                              low high)))
          (speed (clamp (* (sqrt (dot motion motion)) 48.0) 0.0 1.0))
-         (weight (max (- 1.0 (* (- 1.0 (swizzle temporal-blend :x))
+         ;; Where nothing moves, a frame's sample at an edge differs from
+         ;; the history by about half the edge's contrast, so the share it
+         ;; is given is how far the picture there steps each frame.  Half
+         ;; the share for a pixel still to within a quarter of one leaves
+         ;; still edges calm; anything moving takes the whole of it.
+         (moved (* motion output-size))
+         (fresh-share (if (> (swizzle temporal-blend :x) 0.5)
+                          1.0
+                          (* (swizzle temporal-blend :x)
+                             (mix 0.5 1.0
+                                  (smoothstep 0.05 0.25
+                                              (sqrt (dot moved moved)))))))
+         (weight (max (- 1.0 (* (- 1.0 fresh-share)
                                 (- 1.0 (* speed 0.35))))
                       (- 1.0 inside))))
     (set-output color (vec4 (mix remembered fresh weight) 1.0))))
@@ -4794,7 +4830,6 @@
   (defparameter *present*
     '((grade :vec4)                ; exposure bias, 1 when the drawable is
                                    ; 8-bit, seconds, bloom strength
-      (effects :vec4)              ; occlusion on, shafts on, 0, 0
       (sun-glare :vec4))))         ; the sun's uv, its visibility, aspect
 
 ;;; Auto-exposure, on the GPU alone: 256 wide taps of the resolved image,
@@ -4926,9 +4961,13 @@
 
 ;;; -- ambient occlusion and sun shafts --------------------------------------
 ;;;
-;;; As post.metal's, but kept out of the temporal history: both render into
-;;; their own scene-sized targets after the resolve, and the present pass
-;;; multiplies the occlusion in and adds the shafts.  The camera basis has
+;;; As post.metal's, over the jittered scene's depth, so both go into the
+;;; scene's own colour before the temporal resolve: the occlusion's last
+;;; blur multiplies it in and the shafts add to it.  Applied after the
+;;; resolve, as they once were, they sat half a scene texel off the picture
+;;; they shaded, a different half each frame, and their edges, computed
+;;; afresh from each frame's samples, were never accumulated: the hiker's
+;;; outline and the sward shimmered with them.  The camera basis has
 ;;; the frustum's half-extents folded into its right and up spans, so a
 ;;; pixel's view ray needs no matrix inverse.
 
@@ -4941,7 +4980,7 @@
       (occlusion :vec4)            ; radius m, strength, near m, far m
       (shafts :vec4)               ; reach m, extinction / m, steps, 0
       (shaft-color :vec4)          ; linear sun colour times strength
-      (blur :vec4))))              ; texel step x, y
+      (blur :vec4))))              ; texel step x, y; 1 on the last pass
 
 (define-shader-function view-ray (uv forward right up)
   (normalize (+ forward (* right (- (* 2.0 (swizzle uv :x)) 1.0))
@@ -5045,11 +5084,14 @@
                                           0.250301)))))
                   (+ acc (vec2 (* w (swizzle (sample occluded linear-clamp at)
                                              :x))
-                               w))))))
-    (set-output color
-                (vec4 (if (> (swizzle sum :y) 0.0)
-                          (/ (swizzle sum :x) (swizzle sum :y)) 1.0)
-                      0.0 0.0 1.0))))
+                               w)))))
+         (ao (if (> (swizzle sum :y) 0.0)
+                 (/ (swizzle sum :x) (swizzle sum :y)) 1.0)))
+    ;; The last pass darkens the scene itself, blending premultiplied:
+    ;; nothing added, the scene kept by the occlusion.
+    (set-output color (if (> (swizzle blur :z) 0.5)
+                          (vec4 0.0 0.0 0.0 (- 1.0 ao))
+                          (vec4 ao 0.0 0.0 1.0)))))
 
 (define-shader-program gtao-blur
   :vertex present-vertex
@@ -5150,7 +5192,10 @@
          (output-size (swizzle temporal-blend :zw))
          (share (swizzle streak :x))
          (longest (swizzle streak :y))
-         (centre (scene-texel (floor (* uv scene-size)) 0.0 0.0 scene-size))
+         ;; The jittered scene drew what lies at uv this far over.
+         (jittered (* (swizzle temporal :zw) (vec2 0.5 -0.5)))
+         (centre (scene-texel (floor (* (+ uv jittered) scene-size)) 0.0 0.0
+                              scene-size))
          (depth (max (swizzle (texel-load scene-depth centre) :x) 1e-7))
          (motion (* (swizzle (texel-load scene-motion centre) :xy)
                     (* output-size share)))
@@ -5165,8 +5210,8 @@
            (counted-fold (i taps sum (vec4 here 1.0))
              (let* ((along (- (/ (+ (float i) offset) (float taps)) 0.5))
                     (at (+ uv (/ (* span along) output-size)))
-                    (texel (scene-texel (floor (* at scene-size)) 0.0 0.0
-                                        scene-size))
+                    (texel (scene-texel (floor (* (+ at jittered) scene-size))
+                                        0.0 0.0 scene-size))
                     (tap-motion (* (swizzle (texel-load scene-motion texel)
                                             :xy)
                                    (* output-size share)))
@@ -5215,18 +5260,9 @@
                  (exposure :storage-buffer :binding 1 :element :float)
                  (image :texture-2d :binding 0)
                  (bloom :texture-2d :binding 1)
-                 (occluded :texture-2d :binding 2)
-                 (shafts-image :texture-2d :binding 3)
                  (linear-clamp :sampler :binding 0)))
   (let* ((adapted (* (buffer-element exposure (uint 0)) (swizzle grade :x)))
-         (scene (swizzle (sample image linear-clamp uv) :rgb))
-         (shaded (* scene (if (> (swizzle effects :x) 0.5)
-                              (swizzle (sample occluded linear-clamp uv) :x)
-                              1.0)))
-         (lit (if (> (swizzle effects :y) 0.5)
-                  (+ shaded (swizzle (sample shafts-image linear-clamp uv)
-                                     :rgb))
-                  shaded))
+         (lit (swizzle (sample image linear-clamp uv) :rgb))
          ;; A warm veil around the sun: the glare of looking toward it.
          (from-sun (* (- uv (swizzle sun-glare :xy))
                       (vec2 (swizzle sun-glare :w) 1.0)))

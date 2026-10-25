@@ -4534,17 +4534,14 @@ namespace moppe {
         if (visibility.dust)
           session ().dust ().render (r);
 
-        // Reconstruction consumes untouched color/depth/motion/reactivity;
-        // screen-space grades and feedback operate on its full-size result.
-        r.reconstruct_scene ();
-
         // Screen-space post lighting shares the shaken camera basis,
         // extracted straight from the final view matrix with the frustum
         // half-extents folded into the right/up spans. Occlusion first so
         // the added beams are not darkened; sun shafts march the
         // camera-local shadow map, so the beams carry the same tree and
         // terrain shapes as the ground shadows. Underwater frames get
-        // their own grade instead.
+        // their own grade instead. Both shade the jittered scene, so they
+        // come before its reconstruction.
         if (!visibility.underwater &&
             (m_graphics.gtao || m_graphics.light_shafts)) {
           const FrameCamera& camera = frame.camera;
@@ -4575,6 +4572,10 @@ namespace moppe {
               .strength = 0.55f * one,
             });
         }
+
+        // Reconstruction consumes the scene's colour, depth, and motion;
+        // screen-space grades and feedback operate on its full-size result.
+        r.reconstruct_scene ();
         if (visibility.underwater)
           r.apply_underwater (frame.lighting.time);
         if (visibility.motion_blur)
