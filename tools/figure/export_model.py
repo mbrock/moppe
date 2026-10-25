@@ -12,7 +12,10 @@ z forward), with per-corner normals so smooth and hard-edged parts both
 shade as modelled, and a palette entry per material: its viewport colour,
 unlit when the material's `moppe_unlit` is set, and the rest of its
 Principled BSDF (metallic, roughness, clear coat, transmission, index of
-refraction, sheen, emission) for the renderer to shade by. Every empty
+refraction, sheen, emission) for the renderer to shade by. A mesh with a
+"wear" corner attribute and a "film" UV map (a weathered film,
+tools/figure/boat.py) gives its vertices how worn they are and the film's
+coordinates. Every empty
 with a `moppe_point` property becomes a Vec3 of its location in model
 space.
 """
@@ -86,6 +89,8 @@ def export_mesh(empty, graph, palette):
         turn = matrix.to_3x3().inverted().transposed()
         mesh.calc_loop_triangles()
         normals = mesh.corner_normals
+        worn = mesh.attributes.get("wear")
+        flat = mesh.uv_layers.get("film")
         for t in mesh.loop_triangles:
             mat = mesh.materials[t.material_index]
             key = (mat.name,
@@ -99,10 +104,14 @@ def export_mesh(empty, graph, palette):
                 v = mesh.loops[loop].vertex_index
                 p = game(matrix @ mesh.vertices[v].co)
                 n = game((turn @ normals[loop].vector).normalized())
-                k = (obj.name, v, tuple(round(x, 3) for x in n))
+                film = None
+                if worn is not None and flat is not None:
+                    film = (round(worn.data[loop].value, 3),
+                            tuple(round(x, 4) for x in flat.data[loop].uv))
+                k = (obj.name, v, tuple(round(x, 3) for x in n), film)
                 if k not in index:
                     index[k] = len(vertices)
-                    vertices.append((p, n))
+                    vertices.append((p, n, film))
                 corners.append(index[k])
             triangles.append((*corners, palette.index(key)))
         evaluated.to_mesh_clear()
@@ -170,7 +179,11 @@ def main():
     cc.append("    };")
     for name, vertices, triangles in meshes:
         cc += ["", f"    constexpr Vertex {name}_vertices[] = {{"]
-        cc += [f"      {{{triple(p)}, {triple(n)}}}," for p, n in vertices]
+        cc += [f"      {{{triple(p)}, {triple(n)}"
+               + (f", {{{f(film[1][0])}, {f(film[1][1])}}}, {f(film[0])}"
+                  if film and film[0] >= 0 else "")
+               + "},"
+               for p, n, film in vertices]
         cc += ["    };", f"    constexpr Triangle {name}_triangles[] = {{"]
         cc += [f"      {{{{{a}, {b}, {c}}}, {k}}},"
                for a, b, c, k in triangles]

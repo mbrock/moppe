@@ -68,7 +68,9 @@ namespace moppe {
       float nx, ny, nz;
       float u, v;
       PackedRgba8 color;
-      uint8_t lit;     // Lambert + specular vs. emissive passthrough
+      // Lambert + specular (1) vs. emissive passthrough (0); 2..255 is lit
+      // and a weathered film worn (lit - 2) / 253, at the uv in metres.
+      uint8_t lit;
       uint8_t fogged;  // distance haze applied
       uint8_t wind;    // 0..255 lean with the gust, growing up the plant
       uint8_t flutter; // 0..255 shake of foliage, growing out from the stem

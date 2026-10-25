@@ -1194,10 +1194,18 @@
                                        (byte-of packed (uint 8.0))
                                        (byte-of packed (uint 16.0))))
                            (byte-of packed (uint 24.0))))
-    ;; Lit and fogged are switches, 0 or 1 in their bytes, not fractions.
+    ;; Lit and fogged are switches, 0 or 1 in their bytes, not fractions;
+    ;; lit above 1 is a weathered film, worn (lit - 2) / 253, which the
+    ;; fourth lane carries as one more than its wear.
     (set-output shading (vec4 (min (* 255.0 (byte-of flags (uint 0.0))) 1.0)
                               (min (* 255.0 (byte-of flags (uint 8.0))) 1.0)
-                              flutter 0.0))
+                              flutter
+                              (* (step 1.5 (* 255.0 (byte-of flags
+                                                             (uint 0.0))))
+                                 (+ 1.0 (/ (- (* 255.0 (byte-of flags
+                                                                (uint 0.0)))
+                                              2.0)
+                                           253.0)))))
     (set-output here current)
     (set-output then (* previous-view-proj (vec4 before 1.0)))
     (set-output made (vec4 (byte-of stuff (uint 0.0))
@@ -1284,6 +1292,45 @@
              reflection)
           (clamp (+ (swizzle f-env :y) fc) 0.0 1.0))))
 
+;;; The boat's plywood: its dark phenolic film under glass cloth and epoxy,
+;;; worn through where the boat is dragged, beached, and stood on. The wear
+;;; the model gives each vertex (tools/figure/boat.py), pushed over a
+;;; threshold by a fine, rough noise in the film's own coordinates (`flat`,
+;;; metres, along the boat first), frays into ragged scuffs; fine
+;;; scratches run fore and aft; and the film's sheen comes and goes. Each
+;;; octave fades to its mean before it is finer than a few pixels, so the
+;;; scuffs' edges do not shimmer. Returns how far the film is worn through
+;;; (x) and how much rougher the film itself is (y).
+(define-shader-function film-octave (flat frequency pixel offset)
+  (mix (value-noise (+ (* flat frequency) offset)) 0.5
+       (smoothstep 0.2 0.45 (* pixel frequency))))
+
+(define-shader-function worn-film (flat wear)
+  (let* ((dx (derivative-x flat))
+         (dy (derivative-y flat))
+         (pixel (max (+ (abs (swizzle dx :x)) (abs (swizzle dy :x)))
+                     (+ (abs (swizzle dx :y)) (abs (swizzle dy :y)))))
+         (fray (/ (+ (film-octave flat 22.0 pixel (vec2 0.0 0.0))
+                     (* 0.7 (film-octave flat 47.0 pixel (vec2 13.7 5.1)))
+                     (* 0.49 (film-octave flat 101.0 pixel (vec2 3.3 29.9)))
+                     (* 0.34 (film-octave flat 213.0 pixel (vec2 41.2 7.7)))
+                     (* 0.24 (film-octave flat 449.0 pixel
+                                          (vec2 17.9 53.4))))
+                  2.77))
+         ;; fBm of value noise gathers toward its mean; spread it out again,
+         ;; but never so far that film the model calls unworn scuffs.
+         (scuff (band (+ (* wear 0.75) (* (- fray 0.5) 1.8)) 0.55))
+         (streak (value-noise (+ (* flat (vec2 4.0 70.0)) (vec2 7.1 2.3))))
+         (blur (+ (abs (derivative-x streak)) (abs (derivative-y streak))))
+         (line (* (- 1.0 (smoothstep 0.004 (+ 0.012 blur)
+                                     (abs (- streak 0.5))))
+                  (/ 0.012 (+ 0.012 blur))))
+         (scratch (* line (smoothstep 0.15 0.5 wear)))
+         (matte (+ (* 0.6 (value-noise (* flat 3.0)))
+                   (* 0.4 (value-noise (+ (* flat 7.0) (vec2 9.4 1.6)))))))
+    (vec2 (max scuff (* 0.8 scratch))
+          (mix -0.12 0.15 (smoothstep 0.35 0.65 matte)))))
+
 (define-shader-function dither (point)
   (fract (* (sin (dot point (vec3 12.9898 78.233 37.719))) 43758.5453)))
 
@@ -1321,7 +1368,19 @@
          (shine (* (smoothstep 0.82 0.98 (swizzle base :w)) (- 1.0 foliage)))
          (rim (* (expt (- 1.0 (max (dot n eye) 0.0)) 3.0)
                  (+ 0.35 (* 0.65 (max (swizzle n :y) 0.0)))))
-         (albedo (swizzle base :xyz))
+         ;; A weathered film (the boat's plywood) shows the glass cloth
+         ;; where it is worn through, rougher and with no coat left.
+         (worn (if (> (swizzle shading :w) 0.5)
+                   (worn-film uv (- (swizzle shading :w) 1.0))
+                   (vec2 0.0 0.0)))
+         (albedo (mix (swizzle base :xyz) (vec3 0.27 0.235 0.20)
+                      (swizzle worn :x)))
+         (finish (vec4 (swizzle made :x)
+                       (mix (clamp (+ (swizzle made :y) (swizzle worn :y))
+                                   0.0 1.0)
+                            0.85 (swizzle worn :x))
+                       (mix (swizzle made :z) 0.05 (swizzle worn :x))
+                       (swizzle made :w)))
          ;; The rider, the bike, and the props stand in the same sun as the
          ;; ground: under a crown or a hill's shadow they lose the direct
          ;; light and keep the bluer sky, as the terrain does.
@@ -1347,7 +1406,7 @@
                    sky-rim))
          ;; A material (render::Surface) says so in its top bit.
          (is-material (step 0.5 (swizzle made :w)))
-         (made-light (material-light albedo made n eye sun diffuse-light
+         (made-light (material-light albedo finish n eye sun diffuse-light
                                      (* (swizzle sun-specular :xyz) direct)
                                      (swizzle ambient :xyz)
                                      (swizzle sky-sun :xyz)

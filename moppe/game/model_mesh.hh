@@ -16,6 +16,11 @@ namespace moppe::game::model_mesh {
   struct Vertex {
     std::array<float, 3> position;
     std::array<float, 3> normal;
+    // On a weathered film (the boat's plywood): the film's own flattened
+    // coordinates in metres, along the boat first, and how worn it is
+    // there, 0..1; negative where there is no such film.
+    std::array<float, 2> film = {};
+    float wear = -1.0f;
   };
 
   struct Triangle {

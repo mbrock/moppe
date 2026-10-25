@@ -28,6 +28,8 @@ namespace moppe::game::model_mesh {
       for (const std::uint16_t i : t.vertex) {
         const Vertex& v = mesh.vertices[i];
         dl.normal (Vec3 (v.normal[0], v.normal[1], v.normal[2]));
+        dl.uv (v.film[0], v.film[1]);
+        dl.worn (v.wear);
         dl.vertex (Vec3 (v.position[0], v.position[1], v.position[2]));
       }
     }
@@ -35,5 +37,7 @@ namespace moppe::game::model_mesh {
     dl.state (before);
     dl.lit (true);
     dl.plain ();
+    dl.uv (0.0f, 0.0f);
+    dl.worn (-1.0f);
   }
 }

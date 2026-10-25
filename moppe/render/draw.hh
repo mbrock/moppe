@@ -53,6 +53,10 @@ namespace moppe {
       void color (DisplayColor c, float a = 1.0f);
       void lit (bool on);
       void fogged (bool on);
+      // Subsequent lit vertices are a weathered film (the boat's
+      // plywood) worn this much, 0..1, its coordinates in metres in the
+      // uv; negative, the default, they are not.
+      void worn (float wear);
       // How much of the gust's lean subsequent vertices take (0 = anchored,
       // 1 = full amplitude). Grows with height up a plant.
       void wind (proportion_t w);
@@ -131,6 +135,7 @@ namespace moppe {
       bool m_world_normal_dirty;
       float m_u, m_v;
       bool m_lit;
+      uint8_t m_worn;
       bool m_fogged;
       uint8_t m_wind;
       uint8_t m_flutter;

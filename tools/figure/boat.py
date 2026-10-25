@@ -25,7 +25,6 @@ Rebuilding discards hand edits to the .blend.
 
 import math
 import os
-import random
 import sys
 
 import bmesh
@@ -703,64 +702,6 @@ def game_of(v):
     return V((v[0], v[2], -v[1]))
 
 
-def blotches(p):
-    """Smooth pseudo-noise in 0..1 over a few centimetres to a decimetre,
-    for scuffs."""
-    a = math.sin(p.dot(V((23.1, 7.3, 11.7))) + 1.3) * \
-        math.sin(p.dot(V((-9.2, 19.4, 13.1))) + 0.4)
-    b = math.sin(p.dot(V((41.0, -33.0, 27.0))) + 2.1) * \
-        math.sin(p.dot(V((17.0, 45.0, -38.0))) + 0.7)
-    return 0.5 + 0.35 * a + 0.15 * b
-
-
-def wear(h, name, obj, worn, outward, weight, seed):
-    """Scuffs the film through to the glass where `weight` (of a place
-    and its normal, in the game's frame) says the boat takes knocks: small
-    ragged patches laid just over the faces that look `outward`, drawn
-    out fore and aft the way a hull is scraped over stones and slipways."""
-    rng = random.Random(seed)
-    cages = []
-    for f in obj.data.polygons:
-        c, n = game_of(f.center), game_of(f.normal)
-        if not outward(n) or f.material_index != 0:
-            continue
-        w = weight(c, n) * blotches(c)
-        count = f.area / 0.00035 * max(0.0, w - 0.33) ** 2
-        while count > 0:
-            if rng.random() >= count:
-                break
-            count -= 1
-            # Somewhere on the face, by its own corners.
-            corners = [game_of(obj.data.vertices[i].co) for i in f.vertices]
-            k = [rng.random() for _ in corners]
-            p = sum((q * x for q, x in zip(corners, k)), V((0, 0, 0))) / \
-                sum(k)
-            along = FORWARD - n * n.dot(FORWARD)
-            if along.length < 0.2:
-                along = UP - n * n.dot(UP)
-            along = along.normalized()
-            across = n.cross(along)
-            size = 0.004 + 0.02 * rng.random() ** 2
-            stretch = 2.0 + 4.0 * rng.random()
-            # Each patch a hair off the surface at its own height, so that
-            # overlapping ones never share a plane.
-            lift = 0.0003 + 0.0009 * rng.random()
-            cage = Cage()
-            sides = 9
-            for j in range(sides):
-                t = 2 * math.pi * j / sides
-                r = size * (0.55 + 0.45 * rng.random())
-                cage.verts.append(p + n * lift +
-                                  along * (math.cos(t) * r * stretch) +
-                                  across * (math.sin(t) * r))
-            cage.faces = [list(range(sides))]
-            cage.orient(lambda q, p=p, n=n: p - n)
-            cages.append(cage)
-    if cages:
-        part(h, f"{name}_scuffs", merge(*cages), worn, levels=0,
-             smooth=False)
-
-
 def birch_edges(obj, birch):
     """A cut piece of plywood: the faces round its thin way are its
     edges, which show the birch."""
@@ -792,7 +733,7 @@ def finish(h, m):
         chine, sheer = chine_y(s), sheer_y(s_sheer(c.z))
         return (0.95 * math.exp(-(c.y - chine) / 0.05) +
                 0.5 * math.exp(-(sheer - c.y) / 0.035) +
-                0.7 * smoothstep(0.86, 1.0, s) +
+                0.45 * smoothstep(0.86, 1.0, s) +
                 0.6 * smoothstep(0.08, 0.0, s))
 
     def bottom_weight(c, n):
@@ -813,47 +754,50 @@ def finish(h, m):
         return 0.8 * math.exp(-c.y / 0.06) + \
             0.5 * math.exp(-(planform(0) - abs(c.x)) / 0.04)
 
-    panels = (("side_port", lambda n: n.x > 0.3, side_weight),
-              ("side_starboard", lambda n: n.x < -0.3, side_weight),
-              ("bottom", lambda n: n.y < -0.3, bottom_weight),
-              ("deck", lambda n: n.y > 0.3, deck_weight),
-              ("transom", lambda n: n.z < -0.3, transom_weight))
-    mode = os.environ.get("MOPPE_BOAT_WEAR", "geometry")
-    if mode == "geometry":
-        for seed, (name, outward, weight) in enumerate(panels, 1):
-            wear(h, name, parts[name], m["film_worn"], outward, weight, seed)
-        return
-    for name, outward, weight in panels:
-        wear_attribute(parts[name], outward, weight, mode == "vertex")
+    # Each panel's outward faces, its wear, and the film's own
+    # coordinates across it, along the boat first.
+    along_side = lambda c: (c.z, c.y)
+    along_flat = lambda c: (c.z, c.x)
+    panels = (("side_port", lambda n: n.x > 0.3, side_weight, along_side),
+              ("side_starboard", lambda n: n.x < -0.3, side_weight,
+               along_side),
+              ("bottom", lambda n: n.y < -0.3, bottom_weight, along_flat),
+              ("deck", lambda n: n.y > 0.3, deck_weight, along_flat),
+              ("transom", lambda n: n.z < -0.3, transom_weight,
+               lambda c: (c.x, c.y)))
+    for name, outward, weight, flat in panels:
+        wear_attribute(parts[name], outward, weight, flat)
     for name in ("ply", "ply_dark"):
-        weathered(m[name], m["film_worn"], mode)
+        weathered(m[name], m["film_worn"])
 
 
-def wear_attribute(obj, outward, weight, blotched):
-    """The wear `weight` gives each corner of the faces that look
-    `outward`, as the corner attribute "wear" (none inside); `blotched`
-    breaks it up by the blotches, as vertex colours would carry it."""
+def wear_attribute(obj, outward, weight, flat):
+    """The wear `weight` gives each corner of the film's faces that look
+    `outward` (none on those inside, and -1 where there is no film), as
+    the corner attribute "wear", and the film's flattened coordinates
+    `flat`, in metres, as the UV map "film". The game's shader
+    (`worn-film` in world.lisp) and the material below read both."""
     applied(obj)
     me = obj.data
     attr = me.attributes.new("wear", "FLOAT", "CORNER")
+    uv = me.uv_layers.new(name="film")
     for f in me.polygons:
         n = game_of(f.normal)
         for li in f.loop_indices:
             c = game_of(me.vertices[me.loops[li].vertex_index].co)
-            w = 0.0
-            if outward(n) and f.material_index == 0:
-                w = min(1.0, weight(c, n))
-                if blotched:
-                    w = smoothstep(0.30, 0.50, w * blotches(c))
+            w = -1.0
+            if f.material_index == 0:
+                w = min(1.0, weight(c, n)) if outward(n) else 0.0
             attr.data[li].value = w
+            uv.data[li].uv = flat(c)
 
 
-def weathered(mat, worn, mode):
-    """Gives the film's material its wear from the "wear" attribute: as it
-    stands (vertex), or broken by noise in the boat's own frame into
-    ragged scuffs through to the glass cloth and fine scratches drawn fore
-    and aft, with the film itself matte and glossy by turns (procedural).
-    """
+def weathered(mat, worn):
+    """Gives the film's material its wear as the game's shader does: the
+    "wear" attribute pushed over a threshold by a fine, rough noise in the
+    film's own coordinates, so that it frays into ragged scuffs through to
+    the glass cloth, fine scratches drawn fore and aft, and the film
+    itself matte and glossy by turns."""
     tree = mat.node_tree
     nodes, links = tree.nodes, tree.links
     bsdf = nodes["Principled BSDF"]
@@ -869,8 +813,8 @@ def weathered(mat, worn, mode):
             setattr(n, k, v)
         return n
 
-    def math_node(op, a, b=None, clamp=False):
-        n = node("ShaderNodeMath", operation=op, use_clamp=clamp)
+    def math_node(op, a, b=None):
+        n = node("ShaderNodeMath", operation=op)
         for i, x in enumerate((a, b)):
             if x is None:
                 continue
@@ -880,11 +824,13 @@ def weathered(mat, worn, mode):
                 links.new(x, n.inputs[i])
         return n.outputs[0]
 
-    def ramp(x, lo, hi):
+    def ramp(x, lo, hi, to=(0.0, 1.0)):
         n = node("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP")
         links.new(x, n.inputs["Value"])
         n.inputs["From Min"].default_value = lo
         n.inputs["From Max"].default_value = hi
+        n.inputs["To Min"].default_value = to[0]
+        n.inputs["To Max"].default_value = to[1]
         return n.outputs["Result"]
 
     def noise(coords, scale, detail, roughness=0.6):
@@ -895,32 +841,26 @@ def weathered(mat, worn, mode):
         n.inputs["Roughness"].default_value = roughness
         return n.outputs["Fac"]
 
-    attr = node("ShaderNodeAttribute", attribute_name="wear")
-    wear = attr.outputs["Fac"]
-    if mode == "vertex":
-        amount = wear
-        matte = None
-    else:
-        obj = node("ShaderNodeTexCoord").outputs["Object"]
-        # Ragged scuffs: the wear pushed over a threshold by a fine,
-        # rough noise, so its edges fray.
-        fray = noise(obj, 22.0, 12.0, 0.7)
-        scuff = ramp(math_node("ADD", math_node("MULTIPLY", wear, 0.85),
-                               math_node("SUBTRACT", fray, 0.5)),
-                     0.52, 0.56)
-        # Scratches: thin lines along a noise's contour, the noise drawn
-        # out along the boat (Blender's y) so they run fore and aft.
-        stretch = node("ShaderNodeMapping")
-        links.new(obj, stretch.inputs["Vector"])
-        stretch.inputs["Scale"].default_value = (70.0, 4.0, 70.0)
-        streak = noise(stretch.outputs["Vector"], 1.0, 3.0, 0.5)
-        line = ramp(math_node("ABSOLUTE", math_node("SUBTRACT", streak, 0.5)),
-                    0.010, 0.003)
-        scratch = math_node("MULTIPLY", line, ramp(wear, 0.15, 0.5))
-        amount = math_node("MAXIMUM", scuff,
-                           math_node("MULTIPLY", scratch, 0.8))
-        # The film's own sheen comes and goes: handled, rained on, dried.
-        matte = noise(obj, 3.0, 4.0, 0.5)
+    wear = math_node("MAXIMUM",
+                     node("ShaderNodeAttribute",
+                          attribute_name="wear").outputs["Fac"], 0.0)
+    flat = node("ShaderNodeUVMap", uv_map="film").outputs["UV"]
+    fray = noise(flat, 22.0, 6.0, 0.7)
+    scuff = ramp(math_node("ADD", math_node("MULTIPLY", wear, 0.7),
+                           math_node("MULTIPLY",
+                                     math_node("SUBTRACT", fray, 0.5),
+                                     1.4)),
+                 0.48, 0.52)
+    stretch = node("ShaderNodeMapping")
+    links.new(flat, stretch.inputs["Vector"])
+    stretch.inputs["Scale"].default_value = (4.0, 70.0, 1.0)
+    streak = noise(stretch.outputs["Vector"], 1.0, 2.0, 0.5)
+    line = ramp(math_node("ABSOLUTE", math_node("SUBTRACT", streak, 0.5)),
+                0.010, 0.003)
+    scratch = math_node("MULTIPLY", line, ramp(wear, 0.15, 0.5))
+    amount = math_node("MAXIMUM", scuff, math_node("MULTIPLY", scratch, 0.8))
+    film_rough = ramp(noise(flat, 3.0, 2.0, 0.5), 0.35, 0.65,
+                      (rough - 0.12, rough + 0.15))
 
     colour = node("ShaderNodeMix", data_type="RGBA")
     colour.inputs["A"].default_value = film
@@ -929,16 +869,8 @@ def weathered(mat, worn, mode):
     links.new(colour.outputs["Result"], bsdf.inputs["Base Color"])
     r = node("ShaderNodeMapRange")
     links.new(amount, r.inputs["Value"])
-    r.inputs["To Min"].default_value = rough
+    links.new(film_rough, r.inputs["To Min"])
     r.inputs["To Max"].default_value = 0.85
-    if matte is not None:
-        film_rough = node("ShaderNodeMapRange")
-        links.new(matte, film_rough.inputs["Value"])
-        film_rough.inputs["From Min"].default_value = 0.35
-        film_rough.inputs["From Max"].default_value = 0.65
-        film_rough.inputs["To Min"].default_value = rough - 0.12
-        film_rough.inputs["To Max"].default_value = rough + 0.15
-        links.new(film_rough.outputs["Result"], r.inputs["To Min"])
     links.new(r.outputs["Result"], bsdf.inputs["Roughness"])
     c = node("ShaderNodeMapRange")
     links.new(amount, c.inputs["Value"])

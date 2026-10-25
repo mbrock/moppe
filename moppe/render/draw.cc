@@ -10,7 +10,7 @@ namespace moppe {
     DrawList::DrawList ()
         : m_top (0), m_normal_dirty (true), m_normal (0, 0, 1),
           m_world_normal (0, 0, 1), m_world_normal_dirty (true), m_u (0),
-          m_v (0), m_lit (true), m_fogged (true), m_wind (0), m_flutter (0),
+          m_v (0), m_lit (true), m_worn (0), m_fogged (true), m_wind (0), m_flutter (0),
           m_texture (0), m_prim (Prim::Triangles), m_in_begin (false) {}
 
     void DrawList::clear () {
@@ -23,6 +23,7 @@ namespace moppe {
       m_world_normal_dirty = true;
       m_u = m_v = 0;
       m_lit = true;
+      m_worn = 0;
       m_fogged = true;
       m_wind = 0;
       m_flutter = 0;
@@ -118,6 +119,11 @@ namespace moppe {
     void DrawList::lit (bool on) {
       m_lit = on;
     }
+    void DrawList::worn (float wear) {
+      m_worn = wear < 0.0f ? 0
+                           : static_cast<uint8_t> (
+                               2 + std::lround (std::min (wear, 1.0f) * 253));
+    }
     void DrawList::fogged (bool on) {
       m_fogged = on;
     }
@@ -173,7 +179,7 @@ namespace moppe {
       v.u = m_u;
       v.v = m_v;
       v.color = m_color;
-      v.lit = m_lit ? 1 : 0;
+      v.lit = m_lit ? std::max<uint8_t> (m_worn, 1) : 0;
       v.fogged = m_fogged ? 1 : 0;
       v.wind = m_wind;
       v.flutter = m_flutter;

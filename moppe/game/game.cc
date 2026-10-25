@@ -3591,8 +3591,9 @@ namespace moppe {
       }
 
       // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
-      // ridden bike or mountainbike, the glider, the driven jeep, or the Caddy hanging
-      // under the helicopter, to judge the rider and the machine.
+      // ridden bike or mountainbike, the glider, the driven jeep or boat,
+      // or the Caddy hanging under the helicopter, to judge the rider and
+      // the machine.
       void ride_capture_camera () {
         static const std::string_view view = [] {
           const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
@@ -3607,15 +3608,19 @@ namespace moppe {
         const bool gliding = logic ().m_mode == M_GLIDER;
         const bool tractor = logic ().m_mode == M_TRACTOR;
         const bool caddy = logic ().m_mode == M_CADDY || slung;
-        const bool driving = logic ().m_mode == M_JEEP || tractor || caddy;
+        const bool boat = logic ().m_mode == M_BOAT;
+        const bool driving =
+          logic ().m_mode == M_JEEP || tractor || caddy || boat;
         const bool pedalled = logic ().m_mode == M_MOUNTAIN_BIKE;
         const auto& bike = session ().ridden_bike ();
         const Vec3 car = tractor ? session ().tractor ().position ()
                          : caddy ? session ().caddy ().position ()
+                         : boat  ? session ().boat ().position ()
                                  : session ().jeep ().position ();
         Vec3 heading = gliding   ? session ().glider ().heading ()
                        : tractor ? session ().tractor ().forward ()
                        : caddy   ? session ().caddy ().forward ()
+                       : boat    ? session ().boat ().forward ()
                        : driving ? session ().jeep ().forward ()
                                  : bike.render_orientation ();
         heading[1] = 0.0f;
@@ -3629,6 +3634,7 @@ namespace moppe {
                           : bike.render_position () + Vec3 (0, 0.4f, 0);
         const float away = gliding    ? 7.0f
                            : caddy    ? 7.5f
+                           : boat     ? 7.0f
                            : driving  ? 6.0f
                            : pedalled ? 3.4f
                                       : 4.5f;
