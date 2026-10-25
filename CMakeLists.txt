@@ -68,7 +68,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
   add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
 endif()
 
-set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
+set(MOPPE_VERSION "0.5.0" CACHE STRING "Moppe release version")
 set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
 option(MOPPE_XBOX_GAME
   "On Windows, build the game for Xbox rather than the headless core probe"
