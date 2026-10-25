@@ -5,7 +5,7 @@
 // tells the other, some thirty times a second, how that player looks: the
 // poses the renderer already draws from, the camp as it stands, the hour,
 // and which mushrooms have been picked. The other machine draws that as a
-// second hiker, bike, jeep, tractor, Caddy, helicopter, or glider -- the
+// second hiker, bike, jeep, tractor, Caddy, boat, helicopter, or glider -- the
 // companion -- a moment in the past, on a curve through the readings
 // around it. Nothing here touches a
 // socket (game/companion_link.hh does); these are the values and how they
@@ -51,6 +51,8 @@ namespace moppe::game {
     CaddyPose caddy {};
     // Their mountainbike, and them on it when they ride it.
     VehiclePose mountain_bike {};
+    // Their boat, and them at its helm when they take it out.
+    BoatPose boat {};
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
 

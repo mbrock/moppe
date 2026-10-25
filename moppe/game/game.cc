@@ -45,6 +45,7 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
+#include <moppe/game/boat_render.hh>
 #include <moppe/game/caddy_render.hh>
 #include <moppe/game/mountain_bike_render.hh>
 #include <moppe/game/tractor_render.hh>
@@ -712,6 +713,90 @@ namespace moppe {
           else if (std::string_view (demo) == "mountain_bike")
             session ().set_mode (M_MOUNTAIN_BIKE);
         }
+      }
+
+      // The boat lies at the water's edge of the sea or a lake big enough
+      // to take it out on, the nearest such shore to the spawn: afloat a
+      // few metres out with its bow drawn up toward the land, as left by
+      // someone gone ashore. `outward` turns it to face the open water.
+      void park_boat (bool outward = false) {
+        const terrain::WaterSheets& sheets =
+          generated_world ().water_surface ();
+        const float sea = world ().water_level.numerical_value_in (u::m);
+        const auto level_at = [&] (const Vec3& at) {
+          return water_surface_at (world (), surface (), &sheets, at)
+            .numerical_value_in (u::m);
+        };
+        const auto depth_at = [&] (const Vec3& at) {
+          return level_at (at) - ground_height (at);
+        };
+        // Still water: the sea, or a lake's sheet that does not run.
+        const auto still = [&] (const Vec3& at) {
+          const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
+          if (level_at (at) <= sea + 0.05f)
+            return true;
+          Vec3 current = spatial::sample<terrain::water_velocity> (sheets,
+                                                                   where)
+                           .numerical_value_in (u::m / u::s);
+          current[1] = 0.0f;
+          return length (current) < 0.1f;
+        };
+        // Open water ahead: deep enough to drive in over a good stretch.
+        const auto open = [&] (const Vec3& from, const Vec3& out) {
+          int wet = 0;
+          for (int k = 0; k < 9; ++k) {
+            const float b = 0.6f * (k - 4) / 4.0f;
+            const Vec3 dir (out[0] * std::cos (b) - out[2] * std::sin (b),
+                            0.0f,
+                            out[0] * std::sin (b) + out[2] * std::cos (b));
+            bool through = true;
+            for (const float reach : { 15.0f, 35.0f, 60.0f })
+              through = through && depth_at (from + dir * reach) > 0.8f;
+            wet += through;
+          }
+          return wet >= 7;
+        };
+        constexpr float step = 5.0f;
+        for (int ring = 0; ring < 800; ++ring) {
+          const float radius = step * ring;
+          const int count =
+            std::max (1, static_cast<int> (2.0f * PI * radius / step));
+          for (int k = 0; k < count; ++k) {
+            const float a = 2.0f * PI * k / count;
+            const Vec3 shore = m_spawn_position +
+                               Vec3 (std::cos (a), 0.0f, std::sin (a)) * radius;
+            // Dry ground just above the water, not a cliff.
+            const float d = depth_at (shore);
+            if (d > -0.05f || d < -0.6f)
+              continue;
+            for (int e = 0; e < 16; ++e) {
+              const float b = 2.0f * PI * e / 16;
+              const Vec3 out (std::cos (b), 0.0f, std::sin (b));
+              const Vec3 at = shore + out * 5.0f;
+              if (depth_at (at) < 0.45f || depth_at (shore + out * 2.0f) > 0.4f ||
+                  !still (at) || !open (at, out))
+                continue;
+              // Facing out, it lies further off, so that its long tail
+              // reaches water deep enough to drive it from the start.
+              const Vec3 moor =
+                outward && depth_at (shore + out * 9.0f) > 0.7f
+                  ? shore + out * 9.0f
+                  : at;
+              mov::Boat& boat = session ().boat ();
+              boat.set_trunks (&m_trunk_field);
+              boat.place (moor, outward ? out : -out, level_at (moor));
+              std::cerr << "moppe: boat moored "
+                        << length (Vec3 (at[0] - m_spawn_position[0],
+                                         0.0f,
+                                         at[2] - m_spawn_position[2]))
+                        << " m from the spawn, on "
+                        << (level_at (at) <= sea + 0.05f ? "the sea" : "a lake")
+                        << std::endl;
+              return;
+            }
+          }
+        }
+        std::cerr << "moppe: boat: no open water near the spawn\n";
       }
 
       // MOPPE_WALK=haul: the tractor is stuck where it stands and the
@@ -1763,6 +1848,9 @@ namespace moppe {
           state.thumb = "Brake";
           state.dismount = "Step out";
           break;
+        case M_BOAT:
+          state.dismount = "Step ashore";
+          break;
         case M_HELICOPTER:
           state.thumb = "Climb";
           state.flying = true;
@@ -2349,6 +2437,17 @@ namespace moppe {
         grow_mushrooms ();
         settle_obstacles ();
         park_helicopter ();
+        // MOPPE_DEMO=boat: the autopilot takes the boat out instead.
+        const char* demo_name = moppe::environment ("MOPPE_DEMO");
+        const bool boat_demo = demo_name &&
+                               std::string_view (demo_name) == "boat" &&
+                               !m_benchmark && !m_gazetteer;
+        park_boat (boat_demo);
+        if (boat_demo) {
+          session ().set_mode (M_BOAT);
+          logic ().m_cam_mode = CAM_CHASE;
+          session ().settle_camera (surface ());
+        }
         stage_rescue ();
         // MOPPE_DEMO=helicopter: the autopilot takes it up instead.
         if (const char* demo = moppe::environment ("MOPPE_DEMO");
@@ -2654,6 +2753,8 @@ namespace moppe {
         park_caddy ();
         park_mountain_bike ();
         park_helicopter (theirs.helicopter.position);
+        if (logic ().m_mode != M_BOAT)
+          park_boat ();
         if (!beside)
           return;
         session ().walker ().spawn (moppe::position (place + side * 1.8f),
@@ -2899,6 +3000,13 @@ namespace moppe {
                       { .driver = theirs.mode == M_CADDY,
                         .driver_outfit = their_outfit () },
                       0xB000);
+        render_boat (r,
+                     dl,
+                     theirs.boat,
+                     theirs.mode == M_BOAT
+                       ? std::optional<Outfit> (their_outfit ())
+                       : std::nullopt,
+                     0xF800);
         m_blob.draw (dl, surface (), theirs.mountain_bike.position, 1.3f);
         render_mountain_bike (r,
                               dl,
@@ -3059,6 +3167,8 @@ namespace moppe {
             at = theirs.caddy.position + Vec3 (0, 1.0f, 0);
           else if (theirs.mode == M_MOUNTAIN_BIKE)
             at = theirs.mountain_bike.position + Vec3 (0, 1.4f, 0);
+          else if (theirs.mode == M_BOAT)
+            at = theirs.boat.position + Vec3 (0, 1.2f, 0);
           // In the colour of the jacket they wear.
           DisplayColor jacket = pale;
           for (std::size_t c = 0; c < figure::colours.size (); ++c)
@@ -3125,6 +3235,16 @@ namespace moppe {
                        "mountainbike",
                        session ().mountain_bike ().position () +
                          Vec3 (0, 1.5f, 0),
+                       30.0f,
+                       50.0f,
+                       pale);
+        if (mode != M_BOAT)
+          add_waymark (state,
+                       frame,
+                       width,
+                       height,
+                       "boat",
+                       session ().boat ().position () + Vec3 (0, 1.4f, 0),
                        30.0f,
                        50.0f,
                        pale);
@@ -3560,6 +3680,7 @@ namespace moppe {
               .drive = 1.0f,
               .boost =
                 logic ().m_mode != M_TRACTOR && logic ().m_mode != M_CADDY &&
+                    logic ().m_mode != M_BOAT &&
                     std::fmod (total_time, 11.0f) < (demo_glides ? 3.5f : 1.35f)
                   ? 1.0f
                   : 0.0f,
@@ -3693,6 +3814,7 @@ namespace moppe {
         state.can_fly = reading.can_fly;
         state.can_drive_tractor = reading.can_drive_tractor;
         state.can_drive_caddy = reading.can_drive_caddy;
+        state.can_take_boat = reading.can_take_boat;
         state.haul = reading.haul;
         state.hauling = reading.hauling;
         state.stuck = reading.stuck;
@@ -3737,6 +3859,7 @@ namespace moppe {
         render_caddy (r, m_caster_dl, actors.caddy, {}, 0, actors.caddy_laden);
         render_tractor (r, m_caster_dl, actors.tractor, std::nullopt, 0);
         render_helicopter (r, actors.helicopter, 0);
+        render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
         if (m_companion) {
           const CompanionSnapshot& theirs = *m_companion;
           render_vehicle (r, m_caster_dl, theirs.bike, false, 0);
@@ -3746,6 +3869,7 @@ namespace moppe {
           render_caddy (r, m_caster_dl, theirs.caddy, {}, 0);
           render_tractor (r, m_caster_dl, theirs.tractor, std::nullopt, 0);
           render_helicopter (r, theirs.helicopter, 0);
+          render_boat (r, m_caster_dl, theirs.boat, std::nullopt, 0);
         }
         r.end_shadow_casters ();
       }
@@ -3824,6 +3948,7 @@ namespace moppe {
               break;
             case M_GLIDER:
             case M_PASSENGER:
+            case M_BOAT:
               break;
             }
           }
@@ -3912,6 +4037,13 @@ namespace moppe {
                         actors.caddy_laden);
           if (actors.sling)
             render_sling (m_world_dl, *actors.sling);
+          render_boat (r,
+                       m_world_dl,
+                       actors.boat,
+                       actors.active_mode == M_BOAT && !helmet
+                         ? std::optional<Outfit> (m_outfit)
+                         : std::nullopt,
+                       0xF000);
           m_blob.draw (
             m_world_dl, surface (), actors.mountain_bike.position, 1.3f);
           // Through the rider's eyes, the bars and the fork below them.
@@ -4026,6 +4158,36 @@ namespace moppe {
         // ordinary reaches never draw an overlapping ribbon here.
         if (visibility.waterfall_curtains)
           m_waterfall_surface.draw (r, camera);
+      }
+
+      // The boats' wakes lie on the water, so they are drawn over it.
+      void draw_boat_wakes (render::Renderer& r, const FrameView& frame) {
+        if (!frame.visibility.actors || !frame.visibility.ocean ||
+            m_spectator)
+          return;
+        const terrain::WaterSheets& sheets =
+          generated_world ().water_surface ();
+        const float time = frame.lighting.time;
+        const auto level = [&] (const Vec3& at) {
+          return water_surface_at (world (), surface (), &sheets, at)
+            .numerical_value_in (u::m);
+        };
+        const auto depth = [&] (const Vec3& at) {
+          return level (at) - ground_height (at);
+        };
+        const Vec3& ours = frame.actors.boat.position;
+        m_boat_wake.follow (frame.actors.boat, level (ours), depth (ours), time);
+        m_wake_dl.clear ();
+        m_boat_wake.draw (m_wake_dl, time, m_sky.daylight);
+        if (m_companion) {
+          const Vec3& theirs = m_companion->boat.position;
+          m_their_wake.follow (
+            m_companion->boat, level (theirs), depth (theirs), time);
+          m_their_wake.draw (m_wake_dl, time, m_sky.daylight);
+        } else {
+          m_their_wake.clear ();
+        }
+        r.draw_list (m_wake_dl, 0x0002);
       }
 
       void draw_effect_layers (render::Renderer& r, const FrameView& frame) {
@@ -4189,6 +4351,8 @@ namespace moppe {
             at = theirs.caddy.position;
           else if (theirs.mode == M_MOUNTAIN_BIKE)
             at = theirs.mountain_bike.position;
+          else if (theirs.mode == M_BOAT)
+            at = theirs.boat.position;
           DisplayColor jacket = dark;
           for (std::size_t c = 0; c < figure::colours.size (); ++c)
             if (std::string_view (figure::colour_names[c]) == "jacket")
@@ -4230,6 +4394,11 @@ namespace moppe {
                              .position = session ().helicopter ().position (),
                              .colour = DisplayColor (0.20f, 0.30f, 0.20f),
                              .name = "helicopter" });
+        if (mode != M_BOAT)
+          marks.push_back ({ .kind = Mark::Kind::Jeep,
+                             .position = session ().boat ().position (),
+                             .colour = DisplayColor (0.62f, 0.48f, 0.30f),
+                             .name = "boat" });
         const Camp& camp = logic ().m_camp;
         if (camp.hung || camp.fire)
           marks.push_back (
@@ -4477,6 +4646,7 @@ namespace moppe {
         draw_actor_layers (r, frame);
 
         draw_water_surfaces (r, frame);
+        draw_boat_wakes (r, frame);
         draw_effect_layers (r, frame);
 
         draw_overlays (r, frame);
@@ -5313,6 +5483,10 @@ namespace moppe {
       std::vector<MushroomSite> m_pan_contents;
       mutable std::string m_meal_note;
       mutable std::string m_catch_note;
+      // The boats' wakes, ours and the other player's, and their list.
+      BoatWake m_boat_wake;
+      BoatWake m_their_wake;
+      render::DrawList m_wake_dl;
       // MOPPE_WALK=fish: when the line last came in.
       float m_fish_script_rest = 1.0f;
       // Their hour of the day; negative with no one to keep time with.

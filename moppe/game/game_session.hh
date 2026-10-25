@@ -106,6 +106,13 @@ namespace moppe::game {
       return m_caddy;
     }
 
+    mov::Boat& boat () noexcept {
+      return m_boat;
+    }
+    const mov::Boat& boat () const noexcept {
+      return m_boat;
+    }
+
     mov::Glider& glider () noexcept {
       return m_glider;
     }
@@ -156,7 +163,8 @@ namespace moppe::game {
       helicopter,
       tractor,
       caddy,
-      mountain_bike
+      mountain_bike,
+      boat
     };
     Mount mount_within_reach () const;
     // On foot nearest the jeep, within its reach.
@@ -169,6 +177,13 @@ namespace moppe::game {
     bool can_drive_caddy () const;
     // On foot nearest the mountainbike, within reach of its bars.
     bool can_ride_mountain_bike () const;
+    // On foot nearest the boat, within reach of its helm.
+    bool can_take_boat () const;
+    // Where someone stepping out of the boat stands: over whichever side,
+    // or the bow, has the shallowest water there, as last reckoned.
+    Vec3 boat_landing () const {
+      return m_boat_landing;
+    }
     // Each machine as the bumpers see it, and a blow to it
     // (game/rescue.hh).
     MachineBody machine_body (Machine machine) const;
@@ -205,6 +220,10 @@ namespace moppe::game {
     State state () const;
     void restore (const State& state);
 
+    void set_boat_landing (const Vec3& at) {
+      m_boat_landing = at;
+    }
+
   private:
     GameLogicState m_logic;
     mov::Vehicle m_bike;
@@ -214,6 +233,8 @@ namespace moppe::game {
     mov::Tractor m_tractor;
     mov::Caddy m_caddy;
     mov::Vehicle m_mountain_bike;
+    mov::Boat m_boat;
+    Vec3 m_boat_landing {};
     Walker m_walker;
     ChaseCamera m_camera;
     Stars m_stars;

@@ -163,6 +163,18 @@ namespace moppe::game {
     };
   }
 
+  BoatPose boat_pose (const mov::Boat& boat) {
+    return {
+      .position = boat.position (),
+      .forward = boat.forward (),
+      .up = boat.up (),
+      .swing_radians = boat.swing (),
+      .tilt_radians = boat.tilt (),
+      .propeller_radians = boat.propeller_angle (),
+      .rpm = boat.rpm (),
+    };
+  }
+
   TractorPose tractor_pose (const mov::Tractor& tractor) {
     return {
       .position = tractor.position (),
@@ -331,6 +343,7 @@ namespace moppe::game {
     result.actors.jeep = jeep_pose (input.session.jeep ());
     result.actors.helicopter = helicopter_pose (input.session.helicopter ());
     result.actors.tractor = tractor_pose (input.session.tractor ());
+    result.actors.boat = boat_pose (input.session.boat ());
     result.actors.caddy = caddy_pose (input.session.caddy ());
     if (logic.m_sling.laden) {
       result.actors.caddy_laden = true;
@@ -403,6 +416,7 @@ namespace moppe::game {
     hud.can_drive_tractor = input.session.can_drive_tractor ();
     hud.can_drive_caddy = input.session.can_drive_caddy ();
     hud.can_ride_mountain_bike = input.session.can_ride_mountain_bike ();
+    hud.can_take_boat = input.session.can_take_boat ();
     if (const auto stuck = input.session.haul_within_reach ())
       hud.haul = machine_name (*stuck);
     if (const auto held = input.session.hauling ())

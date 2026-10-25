@@ -1343,6 +1343,9 @@ namespace moppe {
       } else if (st.can_drive_caddy) {
         key = mount_key;
         action = *mount_key ? "Drive the Caddy" : "Caddy within reach";
+      } else if (st.can_take_boat) {
+        key = mount_key;
+        action = *mount_key ? "Take the boat out" : "Boat within reach";
       } else if (st.can_ride_mountain_bike) {
         key = mount_key;
         action =

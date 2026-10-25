@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 7;
+    constexpr std::uint8_t wire_version = 8;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -315,6 +315,14 @@ namespace moppe::game {
       out.put (drop);
     out.put (caddy.steer_radians);
     out.put (caddy.wheel_spin_radians);
+    const BoatPose& boat = snapshot.boat;
+    out.put (boat.position);
+    out.put (boat.forward);
+    out.put (boat.up);
+    out.put (boat.swing_radians);
+    out.put (boat.tilt_radians);
+    out.put (boat.propeller_radians);
+    out.put (boat.rpm);
 
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
@@ -382,7 +390,7 @@ namespace moppe::game {
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
     const std::uint8_t mode = in.get<std::uint8_t> ();
-    if (mode > M_MOUNTAIN_BIKE)
+    if (mode > M_BOAT)
       return std::nullopt;
     snapshot.mode = static_cast<Mode> (mode);
     const std::uint8_t flags = in.get<std::uint8_t> ();
@@ -445,6 +453,14 @@ namespace moppe::game {
       drop = std::clamp (in.number (), -0.5f, 0.5f);
     caddy.steer_radians = in.number ();
     caddy.wheel_spin_radians = in.number ();
+    BoatPose& boat = snapshot.boat;
+    boat.position = in.point ();
+    boat.forward = in.direction (Vec3 (0, 0, 1));
+    boat.up = in.direction (Vec3 (0, 1, 0));
+    boat.swing_radians = in.number ();
+    boat.tilt_radians = in.number ();
+    boat.propeller_radians = in.number ();
+    boat.rpm = in.number ();
 
     if (flags & has_glider) {
       GliderPose glider;
@@ -603,6 +619,20 @@ namespace moppe::game {
         mix (a.caddy.steer_radians, b.caddy.steer_radians, within);
       caddy.wheel_spin_radians =
         mix_angle (a.caddy.wheel_spin_radians, b.caddy.wheel_spin_radians, t);
+    }
+    if (!leapt (a.boat.position, b.boat.position)) {
+      BoatPose& boat = result.boat;
+      boat.position =
+        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
+          return &each.boat.position;
+        });
+      boat.forward = mix_direction (a.boat.forward, b.boat.forward, t);
+      boat.up = mix_direction (a.boat.up, b.boat.up, t);
+      boat.swing_radians = mix (a.boat.swing_radians, b.boat.swing_radians, within);
+      boat.tilt_radians = mix (a.boat.tilt_radians, b.boat.tilt_radians, within);
+      boat.propeller_radians =
+        mix_angle (a.boat.propeller_radians, b.boat.propeller_radians, t);
+      boat.rpm = mix (a.boat.rpm, b.boat.rpm, within);
     }
     if (!leapt (a.helicopter.position, b.helicopter.position)) {
       HelicopterPose& heli = result.helicopter;

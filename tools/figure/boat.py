@@ -25,6 +25,7 @@ Rebuilding discards hand edits to the .blend.
 
 import math
 import os
+import random
 import sys
 
 import bmesh
@@ -32,8 +33,8 @@ import bpy
 from mathutils import Matrix
 
 sys.path.insert(0, os.path.dirname(__file__))
-from shapes import (V, UP, FORWARD, Cage, assembly, blender, loft,  # noqa
-                    material, merge, part, slab)
+from shapes import (V, UP, FORWARD, Cage, assembly, blender, blob,  # noqa
+                    loft, material, merge, mesh_object, part, slab)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "models", "boat.blend")
@@ -61,19 +62,55 @@ RIDGE = 0.07        # the foredeck's pitch, rise over run
 COAMING_W = 0.07
 COAMING_H = 0.09
 FRAME_T = 0.018
+SHEET = 2.44        # a sheet of plywood's length; longer panels are joined
+KERF = 0.0025       # the jigsaw's cut, left open as the joint's dark line
+SOLE = 0.094        # the floorboards' top over the keel
+HELM = V((-0.12, 0.36, COCKPIT_AFT + 0.20))   # where the helmsman sits
 
+# The long-tail: its gimbal's pivot on the block, and the propeller's hub
+# with the tail let down, two and a half metres aft and below the keel,
+# where the stern wave lifts the water round it. mov::Boat agrees.
+PIVOT = V((-0.52, DEPTH + DECK + 0.09, Z0 - DEPTH * math.tan(RAKE) + 0.14))
+HUB = V((-0.12, -0.05, Z0 - 2.15))
+TILLER = 0.86       # from the pivot to the throttle grip
+
+# Latvijas Finieris film-faced birch plywood: the dark phenolic film on
+# both faces, sheathed outside in glass cloth and epoxy, which is scuffed
+# where the boat is dragged, beached, and stood on; the birch's pale plies
+# show at every cut edge, and the CNC joints are filled with thickened
+# epoxy. The sole is the anti-slip-faced sheet.
 PALETTE = {
-    "ply": (0.80, 0.70, 0.58),
-    "ply_dark": (0.66, 0.55, 0.43),
-    "ply_end": (0.56, 0.44, 0.32),
-    "screw": (0.20, 0.20, 0.21),
+    "ply": (0.13, 0.105, 0.09),
+    "ply_dark": (0.115, 0.095, 0.08),
+    "ply_end": (0.80, 0.68, 0.50),
+    "film_worn": (0.27, 0.235, 0.20),
+    "film_mesh": (0.17, 0.14, 0.12),
+    "seam": (0.56, 0.43, 0.28),
+    "screw": (0.62, 0.63, 0.64),
+    "engine_red": (0.78, 0.10, 0.07),
+    "engine_black": (0.07, 0.07, 0.075),
+    "alloy": (0.66, 0.67, 0.66),
+    "steel": (0.55, 0.57, 0.58),
+    "muffler": (0.24, 0.23, 0.22),
+    "brass": (0.80, 0.64, 0.32),
+    "rubber": (0.05, 0.05, 0.05),
 }
 
 FINISH = {
-    "ply": dict(roughness=0.55, coat=0.15),
-    "ply_dark": dict(roughness=0.6, coat=0.1),
-    "ply_end": dict(roughness=0.7),
-    "screw": dict(metallic=0.8, roughness=0.4),
+    "ply": dict(roughness=0.5, coat=0.5, coat_roughness=0.28),
+    "ply_dark": dict(roughness=0.6, coat=0.35, coat_roughness=0.45),
+    "ply_end": dict(roughness=0.5, coat=0.35, coat_roughness=0.3),
+    "film_worn": dict(roughness=0.85),
+    "film_mesh": dict(roughness=0.9, coat=0.15, coat_roughness=0.6),
+    "seam": dict(roughness=0.4, coat=0.5, coat_roughness=0.3),
+    "screw": dict(metallic=0.9, roughness=0.35),
+    "engine_red": dict(roughness=0.38, coat=0.4),
+    "engine_black": dict(roughness=0.55),
+    "alloy": dict(metallic=0.8, roughness=0.45),
+    "steel": dict(metallic=0.9, roughness=0.3),
+    "muffler": dict(metallic=0.5, roughness=0.7),
+    "brass": dict(metallic=1.0, roughness=0.25),
+    "rubber": dict(roughness=0.9),
 }
 
 
@@ -159,10 +196,14 @@ def build():
     coaming(hull, m)
     interior(hull, m)
     fittings(hull, m)
+    finish(hull, m)
 
-    assembly("pivot", coll, V((-0.52, deck_y(0.52, 0.0) + 0.09,
-                               z_sheer(0.0) + 0.14)), point="pivot")
-    assembly("seat", coll, V((0, 0.33, COCKPIT_AFT + 0.25)), point="seat")
+    longtail(coll, m)
+    assembly("seat_helm", coll, HELM, point="seat_helm")
+    for sign, tag in ((1, "left"), (-1, "right")):
+        assembly(f"foot_{tag}", coll,
+                 HELM + V((sign * 0.16, SOLE - HELM[1], 0.42)),
+                 point=f"foot_{tag}")
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=OUT, compress=True)
@@ -191,10 +232,13 @@ def ply(asm, name, cage, mat, thickness=PLY):
     """A plywood panel: the sheet `cage`, thickened inward (against the
     way its faces look)."""
     obj = part(asm, name, cage, mat, levels=0, smooth=False)
+    obj.data.materials.append(bpy.data.materials["ply_end"])
     mod = obj.modifiers.new("ply", "SOLIDIFY")
     mod.thickness = thickness
     mod.offset = -1
     mod.use_even_offset = True
+    # The cut edge shows the birch's plies.
+    mod.material_offset_rim = 1
     return obj
 
 
@@ -247,15 +291,91 @@ def cut(obj, cutters):
                             vec=(half[0] * 2, half[2] * 2, half[1] * 2))
         bm.to_mesh(mesh)
         bm.free()
+        birch = bpy.data.materials["ply_end"]
+        mesh.materials.append(birch)
+        if birch.name not in obj.data.materials:
+            obj.data.materials.append(birch)
         tool = bpy.data.objects.new(f"cutter{k}", mesh)
         obj.users_collection[0].objects.link(tool)
         tool.location = blender(centre)
         mod = obj.modifiers.new(f"cut{k}", "BOOLEAN")
         mod.operation = "DIFFERENCE"
         mod.solver = "EXACT"
+        mod.material_mode = "TRANSFER"
         mod.object = tool
         with bpy.context.temp_override(object=obj, active_object=obj):
             bpy.ops.object.modifier_apply(modifier=mod.name)
+        bpy.data.objects.remove(tool)
+        bpy.data.meshes.remove(mesh)
+
+
+def serpent(a0, a1, start, periods, pitch, amp, n=40):
+    """The CNC-cut joint's line as (along, across) pairs from a0 to a1:
+    straight to `start`, then a chain of round lobes, `periods` pairs of
+    them, alternating to either side and each drawn in on a neck so that
+    the two sheets lock together, then straight on. Each lobe is the same
+    shape turned about, so the cut reads as a row of S's."""
+    q = 0.105 * pitch      # how far the flanks swing back, making necks
+    pts = [(a0, 0.0)]
+    for i in range(periods * n + 1):
+        t = i / n          # in periods
+        # The swing fades in and out over the first and last quarter, so
+        # that the line leaves and rejoins the straight going forward
+        # (doubling back there would fold the cutter over itself).
+        fade = min(1.0, t / 0.25, (periods - t) / 0.25)
+        along = start + pitch * t - fade * q * math.sin(4 * math.pi * t)
+        across = amp * math.sin(2 * math.pi * t)
+        pts.append((along, across))
+    pts.append((a1, 0.0))
+    return pts
+
+
+def slit(points, normal, width=KERF, depth=0.05):
+    """A thin blade along the polyline `points`, lying in the plane square
+    to `normal` and reaching `depth` through it either way: what the
+    jigsaw takes out."""
+    n_hat = normal.normalized()
+    left, right = [], []
+    for i, p in enumerate(points):
+        a = points[max(0, i - 1)]
+        b = points[min(len(points) - 1, i + 1)]
+        side = n_hat.cross((b - a).normalized()).normalized()
+        left.append(p + side * (width / 2))
+        right.append(p - side * (width / 2))
+    ring = left + list(reversed(right))
+    m = len(ring)
+    cage = Cage()
+    cage.verts = [p - n_hat * depth for p in ring] + \
+        [p + n_hat * depth for p in ring]
+    cage.faces = [list(range(m)), list(reversed(range(m, 2 * m)))]
+    cage.faces += [[i, (i + 1) % m, m + (i + 1) % m, m + i]
+                   for i in range(m)]
+    return cage
+
+
+def jigsaw(obj, blades, seam):
+    """Cuts `obj`, its plies made solid first, apart along each blade,
+    the cut's walls the epoxy `seam` that fills it."""
+    with bpy.context.temp_override(object=obj, active_object=obj):
+        for mod in list(obj.modifiers):
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+    coll = obj.users_collection[0]
+    for k, cage in enumerate(blades):
+        if seam.name not in obj.data.materials:
+            obj.data.materials.append(seam)
+        tool = mesh_object(f"{obj.name}_kerf{k}", cage, seam, coll,
+                           levels=0, smooth=False)
+        recalc(tool)
+        mod = obj.modifiers.new(f"joint{k}", "BOOLEAN")
+        mod.operation = "DIFFERENCE"
+        mod.solver = "EXACT"
+        mod.material_mode = "TRANSFER"
+        mod.object = tool
+        with bpy.context.temp_override(object=obj, active_object=obj):
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+        if len(obj.data.vertices) == 0:
+            raise RuntimeError(f"the joint cut {obj.name} away entirely")
+        mesh = tool.data
         bpy.data.objects.remove(tool)
         bpy.data.meshes.remove(mesh)
 
@@ -272,18 +392,42 @@ def shell(h, m):
     def side(sign):
         rows = []
         for s in ss:
-            rows.append([V((sign * chine_hb(s), chine_y(s), Z0 + s * LENGTH)),
-                         V((sign * planform(s), sheer_y(s), z_sheer(s)))])
+            a = V((sign * chine_hb(s), chine_y(s), Z0 + s * LENGTH))
+            b = V((sign * planform(s), sheer_y(s), z_sheer(s)))
+            rows.append([a.lerp(b, k / 8) for k in range(9)])
         return grid(rows, lambda p: V((0, p.y, p.z)))
 
-    ply(h, "side_port", side(1), m["ply"])
-    ply(h, "side_starboard", side(-1), m["ply"])
-    rows = [[V((-chine_hb(s), chine_y(s), Z0 + s * LENGTH)),
-             V((chine_hb(s), chine_y(s), Z0 + s * LENGTH))] for s in ss]
-    ply(h, "bottom", grid(rows, lambda p: p + UP * 0.3), m["ply_dark"])
-    tr = [[V((-chine_hb(0), 0, Z0)), V((chine_hb(0), 0, Z0))],
-          [V((-planform(0), sheer_y(0), Z0 - t)),
-           V((planform(0), sheer_y(0), Z0 - t))]]
+    sides = (ply(h, "side_port", side(1), m["ply"]),
+             ply(h, "side_starboard", side(-1), m["ply"]))
+    rows = [[V((chine_hb(s) * (k / 5 - 1), chine_y(s), Z0 + s * LENGTH))
+             for k in range(11)] for s in ss]
+    bottom = ply(h, "bottom", grid(rows, lambda p: p + UP * 0.3),
+                 m["ply_dark"])
+
+    # The sides and the bottom are each two sheets, the forward one a
+    # whole sheet long, joined by a CNC-cut serpentine joint: three S's
+    # up the whole depth of a side, as in the drawing, and three across
+    # the bottom.
+    z = Z1 - SHEET
+    sc, ssh = s_chine(z), s_sheer(z)
+    y0, y1 = chine_y(sc), sheer_y(ssh)
+    pitch = (y1 - y0 - 0.04) / 3
+    for obj, sign in zip(sides, (1, -1)):
+        x = sign * 0.5 * (chine_hb(sc) + planform(ssh))
+        line = serpent(y0 - 0.03, y1 + 0.03, y0 + 0.02, 3, pitch,
+                       sign * 0.034)
+        jigsaw(obj, [slit([V((x, y, z + off)) for y, off in line],
+                          V((1, 0, 0)), depth=0.08)], m["seam"])
+    hb = chine_hb(sc) + 0.03
+    line = serpent(-hb, hb, -0.45, 3, 0.30, 0.045)
+    jigsaw(bottom, [slit([V((x, chine_y(sc), z + off)) for x, off in line],
+                         UP, depth=0.03)], m["seam"])
+    foot = [V((-chine_hb(0), 0, Z0)), V((chine_hb(0), 0, Z0))]
+    head = [V((-planform(0), sheer_y(0), Z0 - t)),
+            V((planform(0), sheer_y(0), Z0 - t))]
+    tr = [[(foot[0].lerp(head[0], j / 6)).lerp(foot[1].lerp(head[1], j / 6),
+                                               k / 12)
+           for k in range(13)] for j in range(7)]
     ply(h, "transom", grid(tr, lambda p: p + FORWARD * 0.3), m["ply"],
         thickness=0.018)
     # The stem: a narrow upright post where the sides meet.
@@ -394,14 +538,14 @@ def coaming(h, m):
                 smooth=False))
 
 
-def recalc(obj):
+def recalc(obj, smooth=False):
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(obj.data)
     bm.free()
     for p in obj.data.polygons:
-        p.use_smooth = False
+        p.use_smooth = smooth
     obj.data.update()
 
 
@@ -482,8 +626,7 @@ def interior(h, m):
             part(h, "locker_frame", merge(*frame), m["ply_dark"], levels=0,
                  smooth=False)
 
-    # Chine logs along the inside of each chine, and a keelson and two
-    # stringers on the bottom, between the bulkheads.
+    # Chine logs along the inside of each chine, between the bulkheads.
     zs = [COCKPIT_AFT + (COCKPIT_FORE - COCKPIT_AFT) * i / 30
           for i in range(31)]
     for sign, tag in ((1, "port"), (-1, "starboard")):
@@ -495,25 +638,47 @@ def interior(h, m):
         part(h, f"chine_log_{tag}", loft(pts, UP, sides=4,
                                          turn=math.pi / 4), m["ply_end"],
              levels=0, smooth=False)
-    for x, tag in ((0.0, "keelson"), (0.36, "stringer_port"),
-                   (-0.36, "stringer_starboard")):
-        pts = []
-        for z in zs:
-            hc, yc, hs, ys = section_at(z)
-            pts.append((V((x, yc + 0.012, z)), 0.03, 0.024))
-        part(h, tag, loft(pts, UP, sides=4, turn=math.pi / 4),
-             m["ply_end"], levels=0, smooth=False)
 
-    # Floorboards between the stringers and the chine logs.
-    boards = []
-    for x0, x1 in ((-0.33, -0.03), (0.03, 0.33)):
-        rows = []
-        for z in zs[1:-1]:
-            hc, yc, hs, ys = section_at(z)
-            y = yc + 0.03
-            rows.append([V((x0, y, z)), V((x1, y, z))])
-        boards.append(grid(rows, lambda p: p - UP))
-    ply(h, "floorboards", merge(*boards), m["ply"], thickness=0.012)
+    # The sole: floorboards laid on the frames' floors from the transom to
+    # the forward bulkhead, above the waterline, so that the bilge under
+    # them stays out of sight (and the water's surface with it).
+    zs = [Z0 + 0.03 + (COCKPIT_FORE - Z0 - 0.03) * i / 40 for i in range(41)]
+    rows = []
+    for z in zs:
+        hc, yc, hs, ys = section_at(z)
+        w = hc - 0.03
+        rows.append([V((x, SOLE, z)) for x in (-w, w)])
+    sole = ply(h, "sole", grid(rows, lambda p: p - UP), m["ply"],
+               thickness=0.012)
+    # The sole too is longer than a sheet, and joined like the hull,
+    # between the second and third frames.
+    z = COCKPIT_AFT + (COCKPIT_FORE - COCKPIT_AFT) * 2.25 / 5.4
+    w = section_at(z)[0] - 0.03 + 0.02
+    # One S in the middle of an otherwise straight seam, as drawn.
+    line = serpent(-w, w, -0.09, 1, 0.18, 0.04)
+    jigsaw(sole, [slit([V((x, SOLE - 0.006, z + off)) for x, off in line],
+                       UP, depth=0.02)], m["seam"])
+    seams = []
+    for x in (-0.42, -0.14, 0.14, 0.42):
+        seams.append(slab(V((x, SOLE + 0.0008, (COCKPIT_AFT + COCKPIT_FORE)
+                             / 2)), (0.004, 0.001,
+                                     (COCKPIT_FORE - COCKPIT_AFT) / 2 - 0.02)))
+    part(h, "sole_seams", merge(*seams), m["ply_end"], levels=0,
+         smooth=False)
+
+    # The helmsman's seat, a plank across the after end of the cockpit on
+    # cleats against the hull.
+    hc, yc, hs, ys = section_at(HELM[2])
+    t = (HELM[1] - 0.02 - yc) / (ys - yc)
+    w = hc + (hs - hc) * t - 0.004
+    obj = part(h, "helm_seat", slab(V((0, HELM[1] - 0.016, HELM[2])),
+                                    (w, 0.016, 0.13)), m["ply"], levels=0,
+               smooth=False)
+    bevelled(obj, 0.005, segments=2)
+    for sign in (1, -1):
+        part(h, f"seat_cleat{sign}", slab(
+            V((sign * (w - 0.02), HELM[1] - 0.05, HELM[2])),
+            (0.02, 0.018, 0.12)), m["ply_end"], levels=0, smooth=False)
 
     # The thwart across the coaming, a quarter of the way aft.
     z = COCKPIT_FORE - 0.27 * span
@@ -523,6 +688,297 @@ def interior(h, m):
                                     z)), (w, 0.016, 0.055)),
                m["ply"], levels=0, smooth=False)
     bevelled(obj, 0.006, segments=2)
+
+
+# The finish.
+
+def applied(obj):
+    with bpy.context.temp_override(object=obj, active_object=obj):
+        for mod in list(obj.modifiers):
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+    return obj
+
+
+def game_of(v):
+    return V((v[0], v[2], -v[1]))
+
+
+def blotches(p):
+    """Smooth pseudo-noise in 0..1 over a few centimetres to a decimetre,
+    for scuffs."""
+    a = math.sin(p.dot(V((23.1, 7.3, 11.7))) + 1.3) * \
+        math.sin(p.dot(V((-9.2, 19.4, 13.1))) + 0.4)
+    b = math.sin(p.dot(V((41.0, -33.0, 27.0))) + 2.1) * \
+        math.sin(p.dot(V((17.0, 45.0, -38.0))) + 0.7)
+    return 0.5 + 0.35 * a + 0.15 * b
+
+
+def wear(h, name, obj, worn, outward, weight, seed):
+    """Scuffs the film through to the glass where `weight` (of a place
+    and its normal, in the game's frame) says the boat takes knocks: small
+    ragged patches laid just over the faces that look `outward`, drawn
+    out fore and aft the way a hull is scraped over stones and slipways."""
+    rng = random.Random(seed)
+    cages = []
+    for f in obj.data.polygons:
+        c, n = game_of(f.center), game_of(f.normal)
+        if not outward(n) or f.material_index != 0:
+            continue
+        w = weight(c, n) * blotches(c)
+        count = f.area / 0.00035 * max(0.0, w - 0.33) ** 2
+        while count > 0:
+            if rng.random() >= count:
+                break
+            count -= 1
+            # Somewhere on the face, by its own corners.
+            corners = [game_of(obj.data.vertices[i].co) for i in f.vertices]
+            k = [rng.random() for _ in corners]
+            p = sum((q * x for q, x in zip(corners, k)), V((0, 0, 0))) / \
+                sum(k)
+            along = FORWARD - n * n.dot(FORWARD)
+            if along.length < 0.2:
+                along = UP - n * n.dot(UP)
+            along = along.normalized()
+            across = n.cross(along)
+            size = 0.004 + 0.02 * rng.random() ** 2
+            stretch = 2.0 + 4.0 * rng.random()
+            # Each patch a hair off the surface at its own height, so that
+            # overlapping ones never share a plane.
+            lift = 0.0003 + 0.0009 * rng.random()
+            cage = Cage()
+            sides = 9
+            for j in range(sides):
+                t = 2 * math.pi * j / sides
+                r = size * (0.55 + 0.45 * rng.random())
+                cage.verts.append(p + n * lift +
+                                  along * (math.cos(t) * r * stretch) +
+                                  across * (math.sin(t) * r))
+            cage.faces = [list(range(sides))]
+            cage.orient(lambda q, p=p, n=n: p - n)
+            cages.append(cage)
+    if cages:
+        part(h, f"{name}_scuffs", merge(*cages), worn, levels=0,
+             smooth=False)
+
+
+def birch_edges(obj, birch):
+    """A cut piece of plywood: the faces round its thin way are its
+    edges, which show the birch."""
+    applied(obj)
+    if birch.name not in obj.data.materials:
+        obj.data.materials.append(birch)
+    k = list(obj.data.materials).index(birch)
+    lo = [min(v.co[i] for v in obj.data.vertices) for i in range(3)]
+    hi = [max(v.co[i] for v in obj.data.vertices) for i in range(3)]
+    thin = min(range(3), key=lambda i: hi[i] - lo[i])
+    for f in obj.data.polygons:
+        if abs(f.normal[thin]) < 0.5 and f.material_index == 0:
+            f.material_index = k
+
+
+def finish(h, m):
+    parts = {o.name: o for o in h.children}
+    for name, o in parts.items():
+        if name.startswith(("frame", "bulkhead", "locker_frame", "thwart",
+                            "helm_seat", "pivot_block", "stem")):
+            birch_edges(o, m["ply_end"])
+    parts["sole"].data.materials[0] = m["film_mesh"]
+
+    def s_of(c):
+        return max(0.0, min(1.0, s_chine(c.z)))
+
+    def side_weight(c, n):
+        s = s_of(c)
+        chine, sheer = chine_y(s), sheer_y(s_sheer(c.z))
+        return (0.95 * math.exp(-(c.y - chine) / 0.05) +
+                0.5 * math.exp(-(sheer - c.y) / 0.035) +
+                0.7 * smoothstep(0.86, 1.0, s) +
+                0.6 * smoothstep(0.08, 0.0, s))
+
+    def bottom_weight(c, n):
+        s = s_of(c)
+        return 0.35 + 0.55 * smoothstep(0.5, 0.95, s) + \
+            0.35 * smoothstep(0.75, 1.0, abs(c.x) / max(chine_hb(s), 0.05))
+
+    def deck_weight(c, n):
+        s = s_sheer(c.z)
+        edge = math.exp(-(planform(s) - abs(c.x)) / 0.03)
+        # Where feet go over the side decks, and round the pivot.
+        tread = 0.45 * smoothstep(0.35, 0.0, s) + \
+            0.25 * (1 - smoothstep(0.0, 0.2, abs(abs(c.x) - planform(s) +
+                                                   SIDE_DECK / 2)))
+        return 0.5 * edge + tread
+
+    def transom_weight(c, n):
+        return 0.8 * math.exp(-c.y / 0.06) + \
+            0.5 * math.exp(-(planform(0) - abs(c.x)) / 0.04)
+
+    worn = m["film_worn"]
+    wear(h, "side_port", parts["side_port"], worn, lambda n: n.x > 0.3,
+         side_weight, 1)
+    wear(h, "side_starboard", parts["side_starboard"], worn,
+         lambda n: n.x < -0.3, side_weight, 2)
+    wear(h, "bottom", parts["bottom"], worn, lambda n: n.y < -0.3,
+         bottom_weight, 3)
+    wear(h, "deck", parts["deck"], worn, lambda n: n.y > 0.3, deck_weight, 4)
+    wear(h, "transom", parts["transom"], worn, lambda n: n.z < -0.3,
+         transom_weight, 5)
+
+
+# The long-tail.
+
+def shaft_axes():
+    """Down the shaft from the pivot toward the propeller, and a left and
+    an up square to it."""
+    aft = (HUB - PIVOT).normalized()
+    left = UP.cross(-aft).normalized()
+    up = (-aft).cross(left)
+    return aft, left, up
+
+
+def longtail(coll, m):
+    """A small air-cooled petrol engine on a gimbal over the pivot block,
+    with the long shaft running straight back from its crankshaft to the
+    propeller and the tiller forward from it: the whole thing swings to
+    steer and tips to lift the propeller. Its assembly turns about the
+    pivot; the propeller spins on its own about the shaft."""
+    lt = assembly("longtail", coll, PIVOT, mesh="longtail", point="pivot")
+    aft, left, up = shaft_axes()
+    fwd = -aft
+    # Cages are in the assembly's frame, about the pivot.
+    o = V((0, 0, 0))
+    hub = HUB - PIVOT
+
+    def at(f, u, l=0.0):
+        return o + fwd * f + up * u + left * l
+
+    axes = (left, up, fwd)
+    # The gimbal: a fork on a vertical pin in the block, and the plate the
+    # engine is bolted to, hinged across it.
+    part(lt, "pin", loft([(o - UP * 0.10, 0.022, 0.022),
+                          (o + UP * 0.03, 0.022, 0.022)], FORWARD,
+                         sides=10), m["steel"], levels=0)
+    fork = [slab(o + left * (s * 0.075) + UP * 0.02, (0.008, 0.045, 0.035),
+                 axes=axes) for s in (1, -1)]
+    part(lt, "fork", merge(*fork), m["steel"], levels=0, bevel=0.004)
+    part(lt, "hinge", loft([(o + left * 0.085 + UP * 0.03, 0.014, 0.014),
+                            (o - left * 0.085 + UP * 0.03, 0.014, 0.014)],
+                           UP, sides=8), m["steel"], levels=0)
+    part(lt, "plate", slab(at(0.24, 0.035), (0.17, 0.008, 0.25),
+                           axes=axes), m["steel"], levels=0, bevel=0.004)
+
+    # The engine: a GX200-type single, its crankshaft on the shaft's line
+    # a little above the plate, the cylinder leaning to starboard.
+    part(lt, "crankcase", slab(at(0.26, 0.15), (0.13, 0.11, 0.14),
+                               axes=axes), m["alloy"], levels=1,
+         bevel=0.03)
+    lean = (up * math.cos(0.45) - left * math.sin(0.45)).normalized()
+    head = at(0.24, 0.22, -0.10) + lean * 0.10
+    fins = []
+    for k in range(7):
+        c = at(0.24, 0.20, -0.10) + lean * (0.03 + 0.022 * k)
+        fins.append(slab(c, (0.075, 0.006, 0.075),
+                         axes=(lean.cross(fwd), lean, fwd)))
+    part(lt, "cylinder", merge(*fins), m["alloy"], levels=0)
+    part(lt, "head", slab(head + lean * 0.06, (0.06, 0.03, 0.07),
+                          axes=(lean.cross(fwd), lean, fwd)),
+         m["alloy"], levels=0, bevel=0.012)
+    part(lt, "plug", loft([(head + lean * 0.09, 0.012, 0.012),
+                           (head + lean * 0.14, 0.009, 0.009)], fwd,
+                          sides=8), m["engine_black"], levels=0)
+    # The fan shroud over the flywheel at the front, the recoil starter on
+    # it facing the helmsman, and its pull handle.
+    part(lt, "shroud", slab(at(0.41, 0.17, -0.01), (0.17, 0.16, 0.035),
+                            axes=axes), m["engine_red"], levels=1,
+         bevel=0.03)
+    starter = at(0.45, 0.15)
+    part(lt, "starter", loft([(starter - fwd * 0.01, 0.10, 0.10),
+                              (starter + fwd * 0.02, 0.095, 0.095),
+                              (starter + fwd * 0.03, 0.06, 0.06)], up,
+                             sides=20), m["engine_black"], levels=0)
+    part(lt, "pull", slab(at(0.49, 0.24, 0.06), (0.045, 0.012, 0.012),
+                          axes=axes), m["engine_black"], levels=0,
+         bevel=0.006)
+    # The tank on top, with its cap.
+    part(lt, "tank", slab(at(0.25, 0.34, 0.01), (0.15, 0.065, 0.13),
+                          axes=axes), m["engine_red"], levels=1, bevel=0.035)
+    part(lt, "cap", loft([(at(0.30, 0.40, 0.06), 0.03, 0.03),
+                          (at(0.30, 0.425, 0.06), 0.028, 0.028)], fwd,
+                         sides=12), m["engine_black"], levels=0)
+    # The air filter to port, the muffler and its guard to starboard over
+    # the cylinder, the exhaust's mouth aimed aft.
+    part(lt, "air_filter", slab(at(0.30, 0.20, 0.17), (0.05, 0.08, 0.09),
+                                axes=axes), m["engine_black"], levels=1,
+         bevel=0.025)
+    part(lt, "muffler", loft([(at(0.14, 0.27, -0.21), 0.05, 0.05),
+                              (at(0.30, 0.27, -0.21), 0.05, 0.05)], up,
+                             sides=14), m["muffler"], levels=0)
+    part(lt, "muffler_guard", slab(at(0.22, 0.27, -0.27), (0.008, 0.06,
+                                                          0.11),
+                                   axes=axes), m["engine_black"], levels=0,
+         bevel=0.004)
+    part(lt, "tailpipe", loft([(at(0.12, 0.27, -0.21), 0.014, 0.014),
+                               (at(0.08, 0.26, -0.25), 0.014, 0.014)], up,
+                              sides=8), m["muffler"], levels=0)
+    assembly("exhaust", coll, PIVOT + at(0.07, 0.26, -0.26), point="exhaust")
+    # The shaft: a coupling off the crankshaft, the tube back to the
+    # propeller with a skeg under its end, and the bearing at the hub.
+    # The shaft runs on from the crankshaft, its tube held over the
+    # hinge by a bracket, back to the propeller.
+    crank = at(0.12, 0.15)
+    part(lt, "shaft", loft([(crank, 0.026, 0.026),
+                            (crank - fwd * 0.10, 0.024, 0.024),
+                            (hub + fwd * 0.07, 0.020, 0.020)], up,
+                           sides=12), m["steel"], levels=0)
+    part(lt, "bracket", slab(at(-0.02, 0.09), (0.03, 0.06, 0.05),
+                             axes=axes), m["steel"], levels=0, bevel=0.006)
+    part(lt, "bearing", loft([(hub + fwd * 0.16, 0.026, 0.026),
+                              (hub + fwd * 0.05, 0.03, 0.03),
+                              (hub + fwd * 0.03, 0.022, 0.022)], up,
+                             sides=12), m["steel"], levels=0)
+    part(lt, "skeg", slab(hub + fwd * 0.12 - up * 0.045,
+                          (0.003, 0.025, 0.07), axes=axes),
+         m["steel"], levels=0)
+    # The tiller, forward from the plate, with the twist grip on its end.
+    grip = at(TILLER, 0.12)
+    part(lt, "tiller", loft([(at(0.40, 0.05), 0.016, 0.016),
+                             (at(0.60, 0.08), 0.016, 0.016),
+                             (grip - fwd * 0.07, 0.016, 0.016)], up,
+                            sides=8), m["steel"], levels=0)
+    part(lt, "grip", loft([(grip - fwd * 0.08, 0.019, 0.019),
+                           (grip + fwd * 0.07, 0.019, 0.019)], up,
+                          sides=10), m["rubber"], levels=1)
+    part(lt, "throttle_cable", loft([(grip - fwd * 0.09, 0.004, 0.004),
+                                     (at(0.55, 0.16, 0.03), 0.004, 0.004),
+                                     (at(0.33, 0.24, 0.10), 0.004,
+                                      0.004)], up, sides=4),
+         m["engine_black"], levels=0)
+    assembly("tiller_grip", coll, PIVOT + grip, point="tiller_grip")
+
+    # The propeller, three bronze blades round a hub about its own z,
+    # which the game turns down the shaft.
+    p = assembly("propeller", coll, HUB, mesh="propeller", point="hub")
+    part(p, "boss", loft([(V((0, 0, 0.03)), 0.022, 0.022),
+                          (V((0, 0, -0.02)), 0.026, 0.026),
+                          (V((0, 0, -0.05)), 0.008, 0.008)], UP, sides=12),
+         m["brass"], levels=1)
+    blades = []
+    for k in range(3):
+        a = 2 * math.pi * k / 3
+        out = V((math.cos(a), math.sin(a), 0))
+        side = FORWARD.cross(out)
+        pitch = math.radians(28)
+        face = (side * math.cos(pitch) + FORWARD * math.sin(pitch))
+        thick = out.cross(face)
+        blades.append(blob(out * 0.07, (0.045, 0.006, 0.035), 16, 6))
+        b = blades[-1]
+        # Turn the blob from its own axes into the blade's.
+        for i, v in enumerate(b.verts):
+            q = v - out * 0.07
+            b.verts[i] = out * 0.07 + out * q.x / 0.045 * 0.05 + \
+                thick * q.y + face * q.z
+    recalc(part(p, "blades", merge(*blades), m["brass"], levels=0),
+           smooth=True)
 
 
 # Fittings.

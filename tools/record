@@ -18,6 +18,7 @@
 #   glide     the ride, opening the wing on a leap     (MOPPE_DEMO=glide)
 #   jeep      the autopilot driving the jeep           (MOPPE_DEMO=jeep)
 #   helicopter the autopilot flying the helicopter     (MOPPE_DEMO=helicopter)
+#   boat      the autopilot taking the boat out        (MOPPE_DEMO=boat)
 #   tractor   the autopilot driving the tractor        (MOPPE_DEMO=tractor)
 #   caddy     the autopilot driving the Caddy          (MOPPE_DEMO=caddy)
 #   mountain_bike
@@ -148,6 +149,7 @@ case $scene in
   glide) stage MOPPE_DEMO=glide; : "${seconds:=30}" ;;
   jeep) stage MOPPE_DEMO=jeep; : "${seconds:=20}" ;;
   helicopter) stage MOPPE_DEMO=helicopter; : "${seconds:=30}" ;;
+  boat) stage MOPPE_DEMO=boat; : "${seconds:=25}" ;;
   tractor) stage MOPPE_DEMO=tractor; : "${seconds:=20}" ;;
   caddy) stage MOPPE_DEMO=caddy; : "${seconds:=20}" ;;
   mountain_bike) stage MOPPE_DEMO=mountain_bike; : "${seconds:=20}" ;;

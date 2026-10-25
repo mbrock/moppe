@@ -108,6 +108,19 @@ namespace moppe::game {
     float rear_spin_radians = 0.0f;
   };
 
+  // The boat as drawn: its origin (on the keel a quarter of the way
+  // along) and frame, how far its long-tail is swung and tipped up, how
+  // far round the propeller has turned, and the engine's speed.
+  struct BoatPose {
+    Vec3 position {};
+    Vec3 forward { 0, 0, 1 };
+    Vec3 up { 0, 1, 0 };
+    float swing_radians = 0.0f;
+    float tilt_radians = 0.0f;
+    float propeller_radians = 0.0f;
+    float rpm = 0.0f;
+  };
+
   struct GliderPose {
     Vec3 position {};
     Vec3 heading { 0, 0, 1 };
@@ -142,6 +155,7 @@ namespace moppe::game {
     HelicopterPose helicopter {};
     TractorPose tractor {};
     CaddyPose caddy {};
+    BoatPose boat {};
     // The bike and the jeep ride in the Caddy, its hardtop off and its
     // tailgate down, and the Caddy may hang on the helicopter's line.
     bool caddy_laden = false;
@@ -186,6 +200,8 @@ namespace moppe::game {
     bool can_drive_caddy = false;
     // On foot beside the mountainbike, which the mount key would ride.
     bool can_ride_mountain_bike = false;
+    // On foot beside the boat, which the mount key would take out.
+    bool can_take_boat = false;
     // On foot beside a stuck machine, which the mount key would haul
     // out; hauling one; or driving one that is stuck (game/rescue.hh).
     const char* haul = nullptr;
@@ -340,6 +356,7 @@ namespace moppe::game {
   JeepPose jeep_pose (const mov::Jeep& jeep);
   HelicopterPose helicopter_pose (const mov::Helicopter& helicopter);
   TractorPose tractor_pose (const mov::Tractor& tractor);
+  BoatPose boat_pose (const mov::Boat& boat);
   CaddyPose caddy_pose (const mov::Caddy& caddy);
   // The bike and the jeep as they ride in the Caddy (game/sling.hh).
   VehiclePose stowed_bike (const mov::Caddy& caddy);

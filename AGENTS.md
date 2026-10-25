@@ -391,6 +391,22 @@
     `M_MOUNTAIN_BIKE`). `MOPPE_DEMO=mountain_bike` (`tools/record OUT.mp4
     mountain_bike`) pedals it on the autopilot; the other player sees it
     (companion wire version 7).
+  - The boat (`moppe/mov/boat.*`, `models/boat.blend` from
+    `tools/figure/boat.py`, drawn by `game/boat_render.*`) is Krisjanis's
+    hard-chined plywood skiff: Latvijas Finieris film-faced birch under
+    scuffed glass and epoxy, its sheets joined by CNC-cut serpentine
+    joints, with a long-tail on a gimbal over the stern. It lies moored at
+    the shore of the sea or a big lake nearest the spawn (`park_boat` in
+    game.cc). On foot, `F` beside it takes the helm and `F` steps ashore
+    over whichever side has the shallowest water; `W`/`S` drive and
+    reverse, `A`/`D` swing the tail to steer. The water acts on the hull
+    panel by panel (pressure at depth, ram and suction, skin friction, all
+    relative to the current, so rivers carry it), which floats, heels,
+    trims, and planes it; the propeller drives only while in the water,
+    in the stern wave that rises round it at speed. The helmsman's 80 kg
+    comes aboard and steps off with them. It draws a Kelvin wake, a
+    rooster tail, and bow spray; `MOPPE_DEMO=boat` (`tools/record OUT.mp4
+    boat`) has the autopilot take it out (companion wire version 8).
   - Skids, on both bikes: riding, `Shift` (the controller's left trigger)
     stamps on the rear brake. The rear wheel locks, its tyre's grip drops
     to a sliding friction, and the bars swing the tail out about the

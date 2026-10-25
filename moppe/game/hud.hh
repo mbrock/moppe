@@ -53,6 +53,8 @@ namespace moppe {
       bool can_drive_caddy = false;
       // On foot beside the mountainbike.
       bool can_ride_mountain_bike = false;
+      // On foot beside the boat.
+      bool can_take_boat = false;
       // On foot beside a stuck machine ("the tractor"), which the mount
       // key would haul out; the machine being hauled; and whether the one
       // being driven is stuck.
