@@ -156,6 +156,8 @@ namespace moppe::game {
     TractorPose tractor {};
     CaddyPose caddy {};
     BoatPose boat {};
+    // Fishing from the boat: the rod in the helmsman's right hand.
+    std::optional<RodPose> helm_rod;
     // The bike and the jeep ride in the Caddy, its hardtop off and its
     // tailgate down, and the Caddy may hang on the helicopter's line.
     bool caddy_laden = false;

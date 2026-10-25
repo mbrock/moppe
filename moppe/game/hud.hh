@@ -96,7 +96,8 @@ namespace moppe {
       Cook cook = Cook::none;
       // Whether what goes in the pan, or is in it, is a fish.
       bool cook_fish = false;
-      // On foot at the water (game/fishing.hh): what there is to do
+      // On foot at the water, or at the helm of a drifting boat
+      // (game/fishing.hh): what there is to do
       // about the line, how many fish are in the creel, and the last one
       // landed or lost, said for a moment afterwards.
       enum class Angle { none, cast, wait, strike, playing };

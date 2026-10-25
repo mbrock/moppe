@@ -73,6 +73,14 @@
     cod in the sea. A fish fries in the pan before the mushrooms (two of
     them beside it) and mends more. `MOPPE_WALK=fish` (`tools/record
     OUT.mp4 fish`) starts on the nearest bank, lands two, and fries one.
+    From the boat too: at the helm of one that only floats (no throttle,
+    hardly moving through the water), `E` casts the way the view looks,
+    over the bow or a side but not back over the long-tail; the seated
+    helmsman holds the rod, the float drifts with the boat on a river's
+    current, and opening the throttle or getting under way winds the
+    line in (`Line::from_boat`, `angler` and `boat_drifting` in game.cc).
+    `MOPPE_WALK=boat-fish` (`tools/record OUT.mp4 boat-fish`) takes the
+    boat out, drifts, lands two, and drives off.
   - The day turns (`moppe/game/daylight.hh`): the world lies at 60 degrees
     north on the autumn equinox with north along -Z, which makes the sun
     the game was always lit by a quarter-past-nine morning sun, so play

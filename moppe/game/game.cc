@@ -1400,24 +1400,74 @@ namespace moppe {
         bool upland = false;
       };
 
-      // The open water a walker could cast into from where they stand:
-      // as far out ahead as a cast reaches where it is deep enough to
-      // float a bait.
+      // Where the angler fishes from and the way they would cast: on foot,
+      // the walker's feet and heading; at the boat's helm, the seat and
+      // the way the view looks.
+      struct Angler {
+        Vec3 at;
+        Vec3 ahead;
+      };
+      std::optional<Angler> angler () const {
+        if (logic ().m_mode == M_FOOT && !logic ().m_camp.resting) {
+          const Walker& walker = session ().walker ();
+          return Angler { walker.position (), walker.heading () };
+        }
+        if (logic ().m_mode == M_BOAT) {
+          const mov::Boat& boat = session ().boat ();
+          return Angler { boat.helm_seat (),
+                          Quaternion::rotate (boat.forward (),
+                                              Vec3 (0, 1, 0),
+                                              -logic ().m_look_yaw * u::rad) };
+        }
+        return std::nullopt;
+      }
+
+      // The river's current at `at`, level.
+      Vec3 current_at (const Vec3& at) const {
+        Vec3 current =
+          spatial::sample<terrain::water_velocity> (
+            generated_world ().water_surface (),
+            moppe::position (Vec3 (at[0], 0.0f, at[2])))
+            .numerical_value_in (u::m / u::s);
+        current[1] = 0.0f;
+        return current;
+      }
+
+      // The boat only floats, its engine at rest and hardly moving
+      // through the water (a river may carry it): a line can go out.
+      bool boat_drifting () const {
+        const mov::Boat& boat = session ().boat ();
+        Vec3 way = boat.velocity () - current_at (boat.position ());
+        way[1] = 0.0f;
+        return boat.afloat () && std::abs (boat.state ().drive) < 0.1f &&
+               length2 (way) < 0.8f * 0.8f;
+      }
+
+      // The open water the angler could cast into from where they are: as
+      // far out ahead as a cast reaches where it is deep enough to float a
+      // bait. From the helm, only over the bow or the sides, not back over
+      // the long-tail.
       std::optional<FishingWater> water_ahead () const {
-        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+        const std::optional<Angler> from = angler ();
+        if (!from)
           return std::nullopt;
-        const Walker& walker = session ().walker ();
-        Vec3 ahead = walker.heading ();
+        Vec3 ahead = from->ahead;
         ahead[1] = 0.0f;
         if (length2 (ahead) < 1e-6f)
           return std::nullopt;
         ahead = normalized (ahead);
+        if (logic ().m_mode == M_BOAT) {
+          Vec3 bow = session ().boat ().forward ();
+          bow[1] = 0.0f;
+          if (length2 (bow) < 1e-6f || dot (ahead, normalized (bow)) < -0.17f)
+            return std::nullopt;
+        }
         const terrain::WaterSheets& sheets =
           generated_world ().water_surface ();
         const float sea = world ().water_level.numerical_value_in (u::m);
         for (float reach = longest_cast; reach >= shortest_cast;
              reach -= 0.5f) {
-          Vec3 at = walker.position () + ahead * reach;
+          Vec3 at = from->at + ahead * reach;
           const float ground = ground_height (at);
           const float level =
             water_surface_at (world (), surface (), &sheets, at)
@@ -1429,16 +1479,11 @@ namespace moppe {
           const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
           const float sheet = terrain::surface_elevation_value (
             spatial::sample<terrain::surface_elevation> (sheets, where));
-          if (sheet > ground && sheet > sea + 0.05f) {
-            Vec3 current = spatial::sample<terrain::water_velocity> (sheets,
-                                                                     where)
-                             .numerical_value_in (u::m / u::s);
-            current[1] = 0.0f;
-            found.waters =
-              length (current) > 0.15f ? Waters::running : Waters::still;
-          } else {
+          if (sheet > ground && sheet > sea + 0.05f)
+            found.waters = length (current_at (at)) > 0.15f ? Waters::running
+                                                             : Waters::still;
+          else
             found.waters = Waters::sea;
-          }
           return found;
         }
         return std::nullopt;
@@ -1470,37 +1515,62 @@ namespace moppe {
                                  spray);
       }
 
-      // On foot by open water the pick key casts a line, and while it is
-      // out the key is the line's: it strikes when something takes the
-      // float under, and otherwise winds the line in. Walking off winds it
-      // in too; while a fish is fought in and held up, the walker stands.
+      // On foot by open water, or at the helm of a boat that only floats,
+      // the pick key casts a line, and while it is out the key is the
+      // line's: it strikes when something takes the float under, and
+      // otherwise winds the line in. Walking off, or getting the boat
+      // under way, winds it in too; while a fish is fought in and held up,
+      // the walker stands and the boat's engine rests.
       void go_fishing (InputFrame& input, float dt) {
         Fishing& fishing = logic ().m_fishing;
         Line& line = fishing.line;
         const double now = logic ().m_total_time;
-        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting) {
+        const std::optional<Angler> from = angler ();
+        const bool afloat = logic ().m_mode == M_BOAT;
+        if (!from || (line_out (line) && line.from_boat != afloat)) {
           line.phase = Line::Phase::idle;
           return;
         }
-        const Vec3 feet = session ().walker ().position ();
         if (!line_out (line)) {
-          if (!input.deploy_glider || !nothing_else_at_hand ())
+          if (!input.deploy_glider ||
+              !(afloat ? boat_drifting () : nothing_else_at_hand ()))
             return;
           if (const std::optional<FishingWater> water = water_ahead ()) {
             cast_line (
-              line, feet, water->aim, water->waters, water->upland, now);
+              line, from->at, water->aim, water->waters, water->upland, now);
+            line.from_boat = afloat;
             input.deploy_glider = false;
           }
           return;
         }
 
-        Vec3 moved = feet - line.stand;
-        moved[1] = 0.0f;
         const bool fast = line.phase == Line::Phase::casting ||
                           line.phase == Line::Phase::waiting ||
                           line.phase == Line::Phase::biting ||
                           line.phase == Line::Phase::playing;
-        if (fast && length2 (moved) > fishing_leash * fishing_leash) {
+        bool gone;
+        if (afloat) {
+          // The line goes where the boat drifts; opening the throttle
+          // while the float rides, or making way through the water
+          // however it comes about, takes it in.
+          line.stand = from->at;
+          const mov::Boat& boat = session ().boat ();
+          Vec3 way = boat.velocity () - current_at (boat.position ());
+          way[1] = 0.0f;
+          Vec3 out = line.bobber - from->at;
+          out[1] = 0.0f;
+          gone = length2 (way) > 1.5f * 1.5f ||
+                 length2 (out) > (longest_cast + 4.0f) *
+                                   (longest_cast + 4.0f) ||
+                 (std::abs (input_value (input.drive)) > 0.1f &&
+                  (line.phase == Line::Phase::waiting ||
+                   line.phase == Line::Phase::biting));
+        } else {
+          Vec3 moved = from->at - line.stand;
+          moved[1] = 0.0f;
+          gone = length2 (moved) > fishing_leash * fishing_leash;
+        }
+        if (fast && gone) {
           if (line.phase == Line::Phase::playing) {
             fishing.creel.last = line.fish;
             fishing.creel.last_lost = true;
@@ -1530,15 +1600,11 @@ namespace moppe {
             .numerical_value_in (u::m);
         };
         // A river carries the float downstream while there is water under
-        // it and line to give.
+        // it and line to give: held back by a line to the bank, but along
+        // with the boat it is cast from, which the river carries too.
         if (line.phase == Line::Phase::waiting) {
-          Vec3 current = spatial::sample<terrain::water_velocity> (
-                           sheets,
-                           moppe::position (
-                             Vec3 (line.bobber[0], 0.0f, line.bobber[2])))
-                           .numerical_value_in (u::m / u::s);
-          current[1] = 0.0f;
-          Vec3 next = line.bobber + current * (0.45f * dt);
+          const float carried = line.from_boat ? 0.9f : 0.45f;
+          Vec3 next = line.bobber + current_at (line.bobber) * (carried * dt);
           Vec3 out = next - line.stand;
           out[1] = 0.0f;
           const float level = level_at (next);
@@ -1588,13 +1654,16 @@ namespace moppe {
           state.catch_note = m_catch_note.c_str ();
           state.catch_age_s = since;
         }
-        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+        if (!angler ())
           return;
+        const bool afloat = logic ().m_mode == M_BOAT;
         switch (fishing.line.phase) {
         case Line::Phase::idle:
-          if (!state.mushroom_in_reach &&
-              state.cook == HudState::Cook::none &&
-              state.camp != HudState::Camp::lie_down && water_ahead ())
+          if (afloat ? boat_drifting () && water_ahead ()
+                     : !state.mushroom_in_reach &&
+                         state.cook == HudState::Cook::none &&
+                         state.camp != HudState::Camp::lie_down &&
+                         water_ahead ())
             state.angle = HudState::Angle::cast;
           break;
         case Line::Phase::waiting:
@@ -2437,11 +2506,14 @@ namespace moppe {
         grow_mushrooms ();
         settle_obstacles ();
         park_helicopter ();
-        // MOPPE_DEMO=boat: the autopilot takes the boat out instead.
+        // MOPPE_DEMO=boat: the autopilot takes the boat out instead, and
+        // MOPPE_WALK=boat-fish takes it out to fish.
         const char* demo_name = moppe::environment ("MOPPE_DEMO");
-        const bool boat_demo = demo_name &&
-                               std::string_view (demo_name) == "boat" &&
-                               !m_benchmark && !m_gazetteer;
+        const char* walk_name = moppe::environment ("MOPPE_WALK");
+        const bool boat_demo =
+          ((demo_name && std::string_view (demo_name) == "boat") ||
+           (walk_name && std::string_view (walk_name) == "boat-fish")) &&
+          !m_benchmark && !m_gazetteer;
         park_boat (boat_demo);
         if (boat_demo) {
           session ().set_mode (M_BOAT);
@@ -3374,6 +3446,32 @@ namespace moppe {
             (line.phase == Line::Phase::biting && age > 0.4f);
           return input;
         }
+        if (script == "boat-fish") {
+          // Out from the shore, the engine stopped to drift, a look out
+          // over the side, and a cast; strike at the take and land two.
+          // Then cast again and open the throttle, which winds it in.
+          const Line& line = logic ().m_fishing.line;
+          const float age =
+            static_cast<float> (logic ().m_total_time - line.since);
+          if (t < 5.0f || m_boat_fish_off >= 0.0f) {
+            input.drive = 1.0f;
+            return input;
+          }
+          input.look_yaw =
+            std::clamp (1.25f - logic ().m_look_yaw, -1.0f * dt, 1.0f * dt);
+          input.look_pitch =
+            std::clamp (0.3f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          if (line_out (line))
+            m_fish_script_rest = t;
+          if (logic ().m_fishing.creel.kept () >= 2 &&
+              line.phase == Line::Phase::waiting && age > 3.0f)
+            m_boat_fish_off = t;
+          input.deploy_glider =
+            (!line_out (line) && t - m_fish_script_rest > 1.5f &&
+             boat_drifting ()) ||
+            (line.phase == Line::Phase::biting && age > 0.4f);
+          return input;
+        }
         // The mount key is a toggle, taken once a press.
         const auto tap = [t, dt] (float at) { return t >= at && t < at + dt; };
         if (script == "haul") {
@@ -3655,10 +3753,11 @@ namespace moppe {
           input = {};
         }
         static const char* walk_script = moppe::environment ("MOPPE_WALK");
-        // The bump script drives the jeep too.
+        // The bump script drives the jeep too, and boat-fish the boat.
         if (walk_script && !orbit &&
             (logic ().m_mode == M_FOOT ||
-             std::string_view (walk_script) == "bump"))
+             std::string_view (walk_script) == "bump" ||
+             std::string_view (walk_script) == "boat-fish"))
           input = scripted_walk (walk_script, dt);
         else if (demo && !m_water_inspection && !orbit) {
           // The autopilot rides; the player may still look around.
@@ -4043,7 +4142,9 @@ namespace moppe {
                        actors.active_mode == M_BOAT && !helmet
                          ? std::optional<Outfit> (m_outfit)
                          : std::nullopt,
-                       0xF000);
+                       0xF000,
+                       actors.helm_rod,
+                       frame.lighting.time);
           m_blob.draw (
             m_world_dl, surface (), actors.mountain_bike.position, 1.3f);
           // Through the rider's eyes, the bars and the fork below them.
@@ -5489,6 +5590,8 @@ namespace moppe {
       render::DrawList m_wake_dl;
       // MOPPE_WALK=fish: when the line last came in.
       float m_fish_script_rest = 1.0f;
+      // MOPPE_WALK=boat-fish: when it got under way again.
+      float m_boat_fish_off = -1.0f;
       // Their hour of the day; negative with no one to keep time with.
       double m_companion_hours = -1.0;
       bool m_companion_met = false;

@@ -59,8 +59,11 @@ namespace moppe::game {
     Phase phase = Phase::idle;
     // When the phase began.
     double since = -100.0;
-    // Where the walker stood to cast, and where the float lands and lies.
+    // Where the walker stood to cast (or where the helmsman sits, kept up
+    // with the boat as it drifts), and where the float lands and lies.
     Vec3 stand {};
+    // Cast from the boat's helm rather than the bank.
+    bool from_boat = false;
     Vec3 aim {};
     Vec3 bobber {};
     Waters waters = Waters::still;

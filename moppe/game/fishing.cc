@@ -463,9 +463,13 @@ namespace moppe::game {
                  const RodPose& rod,
                  float time) {
     using namespace fishing_parts;
-    const Vec3 ahead = unit_or (flat (k.forward), Vec3 (0, 0, 1));
-    const Vec3 right = unit_or (cross (world_up, ahead), Vec3 (1, 0, 0));
     const Vec3 hand = k.wrist[1];
+    // The rod points out over the water the line runs to, which need not
+    // be the way the angler faces: one at a boat's helm casts over the
+    // side.
+    const Vec3 ahead = unit_or (flat (rod.water - hand),
+                                unit_or (flat (k.forward), Vec3 (0, 0, 1)));
+    const Vec3 right = unit_or (cross (world_up, ahead), Vec3 (1, 0, 0));
     const Vec3 along =
       normalized (ahead * std::cos (rod.raise) +
                   world_up * std::sin (rod.raise) + right * 0.10f);

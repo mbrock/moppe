@@ -15,12 +15,16 @@ namespace moppe::game {
   // renderer: the hull, the long-tail swung and tipped about its pivot,
   // and the propeller turning on the end of its shaft. A helmsman, given
   // their outfit, sits on the after seat with a hand on the tiller,
-  // skinned into the frame's draw list.
+  // skinned into the frame's draw list. Given a `rod` (game/fishing.hh),
+  // the helmsman fishes with it, and it is drawn even without them, as
+  // seen through their eyes; `time` keeps its float bobbing.
   void render_boat (render::Renderer& r,
                     render::DrawList& dl,
                     const BoatPose& boat,
                     std::optional<Outfit> helmsman,
-                    uint64_t motion_base);
+                    uint64_t motion_base,
+                    const std::optional<RodPose>& rod = std::nullopt,
+                    float time = 0.0f);
 
   // Where the boat's stern passed and how fast, kept a few seconds so
   // that its wake can be drawn spreading behind it on the water.

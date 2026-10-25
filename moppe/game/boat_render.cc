@@ -2,6 +2,7 @@
 #include <moppe/game/boat_model.hh>
 #include <moppe/game/boat_render.hh>
 #include <moppe/game/figure.hh>
+#include <moppe/game/fishing.hh>
 #include <moppe/game/model_mesh.hh>
 #include <moppe/gfx/mat4.hh>
 
@@ -54,10 +55,12 @@ namespace moppe::game {
       }
 
       // The helmsman on the after seat, the right hand on the tiller's
-      // grip, the left on the knee, feet on the sole.
+      // grip, the left on the knee, feet on the sole; fishing, the hand
+      // from the knee holds the rod out and the head turns to the float.
       AvatarSkeleton pose_helmsman (const BoatPose& boat,
                                     const Mat4& frame,
-                                    const Mat4& tail) {
+                                    const Mat4& tail,
+                                    const std::optional<RodPose>& rod) {
         const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
         const Vec3 facing =
           normalized (frame.transform_vector (Vec3 (0, 0, 1)));
@@ -89,6 +92,17 @@ namespace moppe::game {
           hold.knee_pole[i] = up + facing * 0.6f + left * (side * 0.3f);
         }
         (void)boat;
+        if (!rod)
+          return pose_holding (hold);
+        Vec3 toward = rod->water - hold.pelvis;
+        toward = toward - up * dot (toward, up);
+        if (length2 (toward) > 1e-4f)
+          hold.gaze = normalized (normalized (toward) - up * 0.15f);
+        // Posed once to find the shoulders, and again with the hand where
+        // a rod raised so high is held from them.
+        const AvatarSkeleton seated = pose_holding (hold);
+        hold.wrist[1] = rod_hand (seated, rod->raise);
+        hold.elbow_pole[1] = left * 0.6f - up;
         return pose_holding (hold);
       }
     }
@@ -99,12 +113,19 @@ namespace moppe::game {
                     render::DrawList& dl,
                     const BoatPose& boat,
                     std::optional<Outfit> helmsman,
-                    uint64_t motion_base) {
+                    uint64_t motion_base,
+                    const std::optional<RodPose>& rod,
+                    float time) {
     const BoatMeshes& meshes = boat_meshes (r);
     const Mat4 frame = boat_frame (boat);
     const Mat4 tail = tail_frame (boat, frame);
-    if (helmsman)
-      figure::draw (dl, pose_helmsman (boat, frame, tail), *helmsman);
+    if (helmsman || rod) {
+      const AvatarSkeleton k = pose_helmsman (boat, frame, tail, rod);
+      if (helmsman)
+        figure::draw (dl, k, *helmsman);
+      if (rod)
+        draw_rod (dl, k, *rod, time);
+    }
 
     r.draw_mesh (*meshes.hull, frame, motion_base + 1);
     r.draw_mesh (*meshes.longtail, tail, motion_base + 2);

@@ -1247,7 +1247,7 @@ namespace moppe {
       if (st.hauling) {
         key = mount_key;
         action = "Let go of " + std::string (st.hauling);
-      } else if (st.on_foot && st.angle != HudState::Angle::none &&
+      } else if (st.angle != HudState::Angle::none &&
                  st.angle != HudState::Angle::cast) {
         key = deploy_key;
         switch (st.angle) {
@@ -1318,7 +1318,7 @@ namespace moppe {
         case HudState::Camp::none:
           break;
         }
-      } else if (st.on_foot && st.angle == HudState::Angle::cast) {
+      } else if (st.angle == HudState::Angle::cast) {
         key = deploy_key;
         action = *deploy_key ? "Cast a line" : "Water to fish";
       } else if (st.can_drop_bike) {

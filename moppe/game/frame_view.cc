@@ -372,6 +372,9 @@ namespace moppe::game {
       result.actors.walker->rod = rod_pose (logic.m_fishing.line,
                                             logic.m_total_time,
                                             result.lighting.time);
+    if (logic.m_mode == M_BOAT)
+      result.actors.helm_rod = rod_pose (
+        logic.m_fishing.line, logic.m_total_time, result.lighting.time);
     result.actors.active_mode = logic.m_mode;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera =
