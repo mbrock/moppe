@@ -9,6 +9,11 @@
 
 #include <SDL3/SDL.h>
 
+#ifdef MOPPE_EMBEDDED_ASSETS
+#include <zstd.h>
+#endif
+
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <deque>
@@ -19,6 +24,8 @@
 #include <iostream>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -68,6 +75,91 @@ namespace moppe::platform {
       return std::filesystem::read_symlink ("/proc/self/exe", error);
 #endif
     }
+
+#ifdef MOPPE_EMBEDDED_ASSETS
+    // A release carries its assets and the default world's land inside
+    // the executable (CMake's MOPPE_EMBED_ASSETS, tools/pack-assets), so
+    // that the executable alone is the game.
+    struct EmbeddedAsset {
+      const char* name;
+      const unsigned char* data;
+      std::size_t size;
+      std::size_t original_size;
+      // The bytes are 16-bit words as the differences of neighbours, low
+      // bytes then high bytes.
+      bool delta16;
+    };
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc23-extensions"
+#include MOPPE_EMBEDDED_ASSETS
+#pragma clang diagnostic pop
+
+    std::string unpack (const EmbeddedAsset& asset) {
+      std::string bytes (asset.original_size, '\0');
+      const std::size_t size =
+        ZSTD_decompress (bytes.data (), bytes.size (), asset.data, asset.size);
+      if (ZSTD_isError (size) || size != bytes.size ())
+        throw std::runtime_error (std::string ("can't unpack the built-in ") +
+                                  asset.name);
+      if (asset.delta16) {
+        const std::size_t words = bytes.size () / 2;
+        std::string coded = bytes;
+        std::uint16_t word = 0;
+        for (std::size_t i = 0; i < words; ++i) {
+          word += static_cast<std::uint16_t> (
+            static_cast<unsigned char> (coded[i]) |
+            static_cast<unsigned char> (coded[words + i]) << 8);
+          bytes[2 * i] = static_cast<char> (word & 0xff);
+          bytes[2 * i + 1] = static_cast<char> (word >> 8);
+        }
+      }
+      return bytes;
+    }
+
+    // Unpacks a built-in asset into a folder of the cache kept for these
+    // assets, once, and says where; the loaders read files. Other builds'
+    // folders go when this one is made.
+    std::string embedded_asset_path (const std::string& relative) {
+      namespace fs = std::filesystem;
+      const auto found = std::ranges::find_if (
+        embedded_assets, [&relative] (const EmbeddedAsset& asset) {
+          return relative == asset.name;
+        });
+      if (found == std::end (embedded_assets))
+        return {};
+      static std::mutex mutex;
+      const std::lock_guard lock (mutex);
+      const fs::path folder =
+        fs::path (cache_path ("assets")) / MOPPE_EMBEDDED_ASSETS_ID;
+      const fs::path path = folder / relative;
+      std::error_code error;
+      if (fs::file_size (path, error) == found->original_size)
+        return path.string ();
+      if (!fs::exists (folder, error))
+        for (const fs::directory_entry& old :
+             fs::directory_iterator (folder.parent_path (), error))
+          fs::remove_all (old.path (), error);
+      fs::create_directories (path.parent_path (), error);
+      // A name of this process's own, so two games starting at once each
+      // write whole files.
+      const fs::path partial = path.string () + ".partial-" +
+                               std::to_string (SDL_GetCurrentThreadID ()) +
+                               "-" + std::to_string (SDL_GetTicksNS ());
+      const std::string bytes = unpack (*found);
+      std::ofstream out (partial, std::ios::binary);
+      out.write (bytes.data (), static_cast<std::streamsize> (bytes.size ()));
+      out.close ();
+      if (out)
+        fs::rename (partial, path, error);
+      if (!out || error) {
+        fs::remove (partial, error);
+        return {};
+      }
+      std::cerr << "moppe: unpacked the built-in " << relative << " to "
+                << path.string () << std::endl;
+      return path.string ();
+    }
+#endif
   }
 
   std::string asset_path (const std::string& relative) {
@@ -91,6 +183,10 @@ namespace moppe::platform {
       if (fs::exists (root / relative, error))
         return (root / relative).string ();
     }
+#ifdef MOPPE_EMBEDDED_ASSETS
+    if (std::string path = embedded_asset_path (relative); !path.empty ())
+      return path;
+#endif
     return relative;
   }
 

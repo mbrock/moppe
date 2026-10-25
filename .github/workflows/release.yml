@@ -1,12 +1,15 @@
 # Builds the game for Linux, Windows, and macOS. Pushing a tag v* publishes
-# the three as a GitHub release; running it by hand only keeps them as the
-# run's artifacts.
+# them as a GitHub release; running it by hand only keeps them as the run's
+# artifacts. Each executable carries its assets and the default world's land
+# (MOPPE_EMBED_ASSETS), so the executable alone is the game; the archives
+# add the licences.
 #
 #   Linux    moppe-linux-x86_64.tar.gz   the portable Steam Deck build
 #                                        (docs/steam-deck.md): glibc 2.31,
 #                                        the host's Vulkan driver
 #   Windows  moppe-windows-x86_64.zip    cross-built on Linux with Zig
 #                                        (moppe/platform/sdl/windows.nix)
+#            moppe-windows-x86_64.exe    the same moppe.exe, alone
 #   macOS    moppe-macos-arm64.zip       the app bundle, ad-hoc signed;
 #                                        macOS 26 on Apple silicon (Metal 4)
 name: Release
@@ -47,7 +50,7 @@ jobs:
           nix build -L .#moppe-windows
           cat result/imports.txt
           mkdir dist
-          cp result/moppe-windows-x86_64.zip dist/
+          cp result/moppe-windows-x86_64.zip result/moppe-windows-x86_64.exe dist/
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -63,8 +66,8 @@ jobs:
           brew install ninja zstd
           nix build -L .#luv-shaderc --out-link "$RUNNER_TEMP/luv-shaderc"
           echo "$RUNNER_TEMP/luv-shaderc/bin" >> "$GITHUB_PATH"
-      # The default world's published land, so the first launch need not
-      # generate it.
+      # The default world's published land, built into the game so the
+      # first launch need not generate it.
       - name: Fetch the land
         run: |
           MOPPE_LAND_DIR="$RUNNER_TEMP/lands" tools/fetch-land
@@ -74,10 +77,10 @@ jobs:
           [[ "$GITHUB_REF_TYPE" == tag ]] || version=0.0.0
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF -DMOPPE_LANDS_DIR="$RUNNER_TEMP/lands" \
+            -DMOPPE_EMBED_ASSETS=ON \
             -DMOPPE_VERSION="$version" -DMOPPE_BUILD_NUMBER="$GITHUB_RUN_NUMBER"
           cmake --build build --target moppe
-      # The assets copied in after linking break the linker's signature;
-      # an ad-hoc one over the whole bundle lets Apple silicon run it.
+      # An ad-hoc signature over the whole bundle lets Apple silicon run it.
       - name: Package
         run: |
           codesign --force --deep --sign - build/moppe.app

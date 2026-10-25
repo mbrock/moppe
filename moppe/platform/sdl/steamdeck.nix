@@ -113,7 +113,11 @@ let
       pname = "moppe-steamdeck-game";
       version = "0.1.0";
       inherit (sources) src;
-      nativeBuildInputs = common.nativeBuildInputs ++ [ luv-shaderc ];
+      nativeBuildInputs = common.nativeBuildInputs ++ [
+        luv-shaderc
+        pkgs.python3
+        pkgs.zstd
+      ];
       buildInputs = [
         sdl
         volk
@@ -127,6 +131,8 @@ let
         "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
         "-DFETCHCONTENT_SOURCE_DIR_MP-UNITS=${sources.mp-units}"
         "-DMOPPE_LANDS_DIR=${lands}"
+        # The assets and the default land inside bin/moppe.
+        "-DMOPPE_EMBED_ASSETS=ON"
       ];
       postInstall = ''
         rm -rf $out/include $out/lib
@@ -144,7 +150,7 @@ pkgs.runCommand "moppe-steamdeck"
   }
   ''
     mkdir -p staging/moppe $out
-    cp -r ${game}/bin ${game}/share staging/moppe/
+    cp -r ${game}/bin staging/moppe/
     chmod -R u+w staging
     strip staging/moppe/bin/moppe
     install -m755 ${./steamdeck-launcher} staging/moppe/moppe

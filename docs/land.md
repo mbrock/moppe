@@ -14,7 +14,12 @@ Worlds generate bit for bit the same on every platform
 the first of these it finds for its recipe, then derives the rest:
 
 1. land packaged with the game, in its `worlds/` folder (`MOPPE_LANDS_DIR`
-   at configure time; the Nix packages fill it from `lands.json`);
+   at configure time; the Nix packages fill it from `lands.json`), or
+   built into its executable: a release (`MOPPE_EMBED_ASSETS`) carries the
+   assets and the land compressed inside it (`tools/pack-assets`: the
+   default land's 33.6 MB as 20.7, its columns delta coded before zstd),
+   and unpacks each into the cache's `assets/<build>/` the first time it
+   is asked for;
 2. land in its cache folder (`~/Library/Caches/Moppe` on the Mac,
    `~/.cache/moppe` on Linux), downloaded by `tools/fetch-land`, baked by
    `tools/bake-land`, or saved by an earlier launch;

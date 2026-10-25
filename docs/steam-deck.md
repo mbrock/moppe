@@ -27,8 +27,9 @@ tar -xzf ~/Downloads/moppe-steamdeck.tar.gz -C ~/Games
 ```
 
 Run once in Desktop Mode and let the world finish loading before adding
-it to Steam. The package includes fonts, textures, opening data, embedded
-SPIR-V shaders, and the published default land from `lands.json`. Derived
+it to Steam. The executable carries fonts, textures, opening data,
+SPIR-V shaders, and the published default land from `lands.json` inside
+it, unpacked into `~/.cache/moppe/assets/` on first use. Derived
 worlds are cached under `~/.cache/moppe/`; a world without published land
 is generated on first launch. Keep the entire unpacked directory together.
 No shader compiler or other build tools are needed on the Deck.

@@ -658,15 +658,18 @@
   desktop game (`-DMOPPE_WINDOWS_DESKTOP=ON`: the SDL host on Vulkan,
   through volk) with Zig's Clang for MinGW-w64 into
   `result/moppe-windows-x86_64.zip`, a `moppe.exe` importing only
-  Windows' own DLLs with its assets and land beside it
+  Windows' own DLLs with its assets and land built in
   (`moppe/platform/sdl/windows.nix`). In an orb it runs under Wine
   (`wineWow64Packages.stable`, Xvfb, `WINEDLLOVERRIDES="mscoree,mshtml="`)
   on lavapipe.
 - Releases (`.github/workflows/release.yml`): pushing a `v*` tag builds
-  the Linux tarball (`moppe-steamdeck`), the Windows zip, and the macOS
-  app (on a macos-26 runner, ad-hoc signed, not notarized) and publishes
-  them as a GitHub release; running the workflow by hand keeps them as
-  artifacts.
+  the Linux tarball (`moppe-steamdeck`), the Windows zip and its lone
+  `moppe.exe`, and the macOS app (on a macos-26 runner, ad-hoc signed, not
+  notarized) and publishes them as a GitHub release; running the workflow
+  by hand keeps them as artifacts. Each executable carries the assets and
+  the default land (`-DMOPPE_EMBED_ASSETS=ON` with `MOPPE_LANDS_DIR`;
+  `tools/pack-assets` compresses them, and the SDL host's `asset_path`
+  unpacks one into the cache's `assets/` folder when the disk has none).
 - The game's core on Xbox, before NHAL renders it: `nix build
   .#moppe-core-xbox` and `UWP_DEVICE_URL=https://xbox.whale-justice.ts.net
   nix run .#deploy-moppe-core-xbox -- --hold 600` (package

@@ -1,5 +1,7 @@
 # The game for 64-bit Windows 10 and later, cross-built on Linux: NHAL on
-# Vulkan in an SDL3 window, one moppe.exe with its assets beside it, zipped.
+# Vulkan in an SDL3 window: one moppe.exe with its assets and the default
+# world's land built in (MOPPE_EMBED_ASSETS), alone and zipped with the
+# licences.
 # Zig's Clang 21 targets MinGW-w64 on the Universal CRT and links libc++,
 # SDL3, and volk statically, so the executable imports only Windows' own
 # DLLs; volk opens the GPU driver's vulkan-1.dll at run time.
@@ -68,7 +70,11 @@ let
       pname = "moppe-windows-game";
       version = "0.1.0";
       inherit (sources) src;
-      nativeBuildInputs = common.nativeBuildInputs ++ [ luv-shaderc ];
+      nativeBuildInputs = common.nativeBuildInputs ++ [
+        luv-shaderc
+        pkgs.python3
+        pkgs.zstd
+      ];
       buildInputs = [
         volk
         pkgs.vulkan-headers
@@ -83,6 +89,7 @@ let
         # SDL3 is built into the game from nixpkgs' copy of its source.
         "-DFETCHCONTENT_SOURCE_DIR_SDL3=${pkgs.sdl3.src}"
         "-DMOPPE_LANDS_DIR=${lands}"
+        "-DMOPPE_EMBED_ASSETS=ON"
       ];
     }
   );
@@ -98,7 +105,6 @@ pkgs.runCommand "moppe-windows"
   ''
     mkdir -p staging/moppe/licenses $out
     cp ${game}/bin/moppe.exe staging/moppe/
-    cp -r ${game}/share/moppe/. staging/moppe/
     chmod -R u+w staging
     cp ${pkgs.sdl3.src}/LICENSE.txt staging/moppe/licenses/SDL.txt
     cp ${pkgs.vulkan-volk.src}/LICENSE.md staging/moppe/licenses/volk.txt
@@ -122,4 +128,5 @@ pkgs.runCommand "moppe-windows"
     cd staging
     find moppe -exec touch -d @1 {} +
     zip -qrX $out/moppe-windows-x86_64.zip moppe
+    cp moppe/moppe.exe $out/moppe-windows-x86_64.exe
   ''

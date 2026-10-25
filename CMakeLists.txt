@@ -91,6 +91,8 @@ set(MOPPE_XBOX_BAKED_WORLD "" CACHE PATH
   "Host-baked finished-world cache to ship in the Xbox game package")
 set(MOPPE_LANDS_DIR "" CACHE PATH
   "Land files (moppe/game/land.hh) to ship in the game's worlds/ folder")
+option(MOPPE_EMBED_ASSETS
+  "Build the assets and MOPPE_LANDS_DIR's land into the desktop game" OFF)
 
 # Moppe's implementation files are deliberately small, but compiling every one
 # separately makes heavily-templated headers (notably mp-units) dominate build
@@ -135,6 +137,15 @@ add_library(nanoarrow::nanoarrow ALIAS nanoarrow)
 target_include_directories(nanoarrow SYSTEM PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanoarrow)
 set_target_properties(nanoarrow PROPERTIES UNITY_BUILD OFF)
+
+# zstd's decoder, vendored as its single-file amalgamation
+# (third_party/zstd/VENDOR.md), unpacks the assets a release builds in.
+if(MOPPE_EMBED_ASSETS)
+  add_library(zstd-decoder STATIC third_party/zstd/zstddeclib.c)
+  target_include_directories(zstd-decoder SYSTEM PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd)
+  set_target_properties(zstd-decoder PROPERTIES UNITY_BUILD OFF)
+endif()
 
 # Box3D is vendored from upstream (see third_party/box3d/VENDOR.md). Only the
 # library is built; its own CMake files and samples are not vendored.
@@ -910,6 +921,44 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
     endif()
   endfunction()
 
+  # Builds the assets, and the land in MOPPE_LANDS_DIR as the worlds/
+  # folder's, into TARGET, so that its executable is the whole game; the
+  # services unpack one into the cache when it is first asked for.
+  function(moppe_embed_assets target)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    find_program(MOPPE_ZSTD zstd REQUIRED)
+    set(source ${CMAKE_CURRENT_SOURCE_DIR})
+    file(GLOB_RECURSE files CONFIGURE_DEPENDS
+      ${source}/fonts/* ${source}/textures/* ${source}/data/*)
+    set(assets)
+    foreach(file ${files})
+      file(RELATIVE_PATH name ${source} ${file})
+      list(APPEND assets "${file}=${name}")
+    endforeach()
+    if(MOPPE_LANDS_DIR)
+      file(GLOB lands CONFIGURE_DEPENDS ${MOPPE_LANDS_DIR}/land-*.arrows)
+      foreach(land ${lands})
+        cmake_path(GET land FILENAME name)
+        list(APPEND assets "${land}=worlds/${name}")
+      endforeach()
+      list(APPEND files ${lands})
+    endif()
+    set(packed ${CMAKE_CURRENT_BINARY_DIR}/embedded-assets)
+    add_custom_command(
+      OUTPUT ${packed}/embedded_assets.inc
+      COMMAND ${CMAKE_COMMAND} -E env MOPPE_ZSTD=${MOPPE_ZSTD}
+        ${Python3_EXECUTABLE} ${source}/tools/pack-assets ${packed} ${assets}
+      DEPENDS ${files} ${source}/tools/pack-assets
+      COMMENT "Packing the assets into the game"
+      VERBATIM)
+    add_custom_target(${target}-embedded-assets
+      DEPENDS ${packed}/embedded_assets.inc)
+    add_dependencies(${target} ${target}-embedded-assets)
+    target_compile_definitions(${target} PRIVATE
+      "MOPPE_EMBEDDED_ASSETS=\"${packed}/embedded_assets.inc\"")
+    target_link_libraries(${target} PRIVATE zstd-decoder)
+  endfunction()
+
   # A Game (platform.hh) hosted in an SDL window: TARGET's own sources plus
   # the host, its services, the device, and the NHAL renderer.
   function(moppe_add_sdl_host target)
@@ -1003,22 +1052,26 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${MOPPE_VERSION}"
       MACOSX_BUNDLE_BUNDLE_VERSION "${MOPPE_BUILD_NUMBER}"
       XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe")
-    add_custom_command(TARGET moppe POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/textures
-        $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/textures
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/data
-        $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/data
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/fonts
-        $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/fonts
-      COMMENT "Bundling assets into moppe.app")
-    if(MOPPE_LANDS_DIR)
+    if(MOPPE_EMBED_ASSETS)
+      moppe_embed_assets(moppe)
+    else()
       add_custom_command(TARGET moppe POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${MOPPE_LANDS_DIR}
-          $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/worlds
-        COMMENT "Bundling land into moppe.app")
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/textures
+          $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/textures
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/data
+          $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/data
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/fonts
+          $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/fonts
+        COMMENT "Bundling assets into moppe.app")
+      if(MOPPE_LANDS_DIR)
+        add_custom_command(TARGET moppe POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_directory ${MOPPE_LANDS_DIR}
+            $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/worlds
+          COMMENT "Bundling land into moppe.app")
+      endif()
     endif()
   elseif(EMSCRIPTEN)
     # build-web/moppe.html, with its .js, .wasm, and .data beside it.
@@ -1032,10 +1085,14 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       ${MOPPE_ENGINE_SOURCES}
       ${MOPPE_APPLICATION_SOURCES})
     install(TARGETS moppe RUNTIME DESTINATION bin)
-    install(DIRECTORY fonts textures data DESTINATION share/moppe)
-    if(MOPPE_LANDS_DIR)
-      install(DIRECTORY ${MOPPE_LANDS_DIR}/ DESTINATION share/moppe/worlds
-        FILES_MATCHING PATTERN "land-*.arrows")
+    if(MOPPE_EMBED_ASSETS)
+      moppe_embed_assets(moppe)
+    else()
+      install(DIRECTORY fonts textures data DESTINATION share/moppe)
+      if(MOPPE_LANDS_DIR)
+        install(DIRECTORY ${MOPPE_LANDS_DIR}/ DESTINATION share/moppe/worlds
+          FILES_MATCHING PATTERN "land-*.arrows")
+      endif()
     endif()
   endif()
   moppe_add_sdl_host(moppe)
