@@ -330,7 +330,9 @@
     Trees are drawn by instanced vertex pulling: a compute pass culls every
     individual and counts each (species, detail tier) class's indirect
     draw, and each class shares one index buffer.
-  - The on-foot hiker is a rigged model, `models/hiker.blend`: smooth
+  - The on-foot hiker is Krisjanis, dressed and proportioned after a
+    photogrammetry scan of him (pale blue button-down, denim shorts,
+    sandals, navy cap, short beard), a rigged model, `models/hiker.blend`: smooth
     subdivided parts, each a separate object with its modifiers and skin
     weights, exported to `moppe/game/figure_mesh.cc` (generated; do not
     edit) and skinned on the CPU from `pose_avatar`'s skeleton

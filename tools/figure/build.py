@@ -1,5 +1,8 @@
 """Builds models/hiker.blend: the walking figure, modelled and rigged.
 
+He is dressed and proportioned after a photogrammetry scan of Krisjanis
+(measured, not imported): his shirt, shorts, sandals, cap, and beard.
+
 Run headless (or `make figure-model`):
 
     Blender -b --factory-startup --python tools/figure/build.py
@@ -97,21 +100,23 @@ for s, tag in TAGS:
 SEGMENTS = {name: (head, tail) for name, _, head, tail, _ in BONES}
 
 # Palette, display-referred like the game's DisplayColor. Materials store
-# the linear equivalent; the exporter converts back.
+# the linear equivalent; the exporter converts back. He is dressed as the
+# scan of Krisjanis has him: a pale blue button-down shirt, its sleeves
+# long, denim shorts, sandals, and a navy cap over sandy hair and a short
+# beard. The names the green outfit repaints (game/figure.cc) stay.
 PALETTE = {
-    "jacket": (0.20, 0.35, 0.60),
-    "jacket_dark": (0.13, 0.23, 0.42),
-    "pants": (0.33, 0.28, 0.23),
-    "boot": (0.45, 0.27, 0.14),
-    "sole": (0.12, 0.10, 0.09),
-    "sock": (0.74, 0.70, 0.61),
-    "cap": (0.76, 0.22, 0.14),
-    "cap_dark": (0.60, 0.16, 0.10),
-    "scarf": (0.90, 0.66, 0.20),
-    "mitten": (0.86, 0.60, 0.18),
-    "skin": (0.86, 0.64, 0.50),
-    "nose": (0.86, 0.56, 0.46),
-    "hair": (0.48, 0.30, 0.17),
+    "jacket": (0.50, 0.62, 0.78),
+    "jacket_dark": (0.40, 0.51, 0.67),
+    "button": (0.90, 0.90, 0.86),
+    "denim": (0.22, 0.33, 0.52),
+    "denim_dark": (0.16, 0.25, 0.41),
+    "sandal": (0.16, 0.15, 0.14),
+    "sole": (0.62, 0.58, 0.50),
+    "cap": (0.17, 0.21, 0.32),
+    "cap_dark": (0.12, 0.15, 0.24),
+    "skin": (0.88, 0.68, 0.55),
+    "nose": (0.88, 0.62, 0.52),
+    "hair": (0.62, 0.47, 0.31),
     "eye": (0.06, 0.05, 0.05),
     "glint": (1.0, 1.0, 1.0),
     "pack": (0.40, 0.42, 0.25),
@@ -173,88 +178,116 @@ class Builder:
 def model(build):
     part = build.part
 
-    # Boots: a rounded leather foot that swells over the instep, a thick
-    # sole, a short shaft up the shin, and a rolled wool sock.
+    # Bare feet in sandals: a slim foot on a pale sole, a band over the
+    # toes, and a strap round the ankle and under the heel.
     for s, tag in TAGS:
         j = SIDES[s]
         a = j["ankle"]
         x = a.x
         foot, shin = f"foot.{tag}", f"shin.{tag}"
-        part(f"boot.{tag}", loft([
-            (V((x, 0.07, -0.09)), 0.05, 0.04),
-            (V((x, 0.08, -0.065)), 0.064, 0.065),
-            (V((x, 0.085, -0.01)), 0.07, 0.075),
-            (V((x, 0.07, 0.07)), 0.07, 0.058),
-            (V((x, 0.055, 0.15)), 0.066, 0.045),
-            (V((x, 0.05, 0.2)), 0.05, 0.035),
-            (V((x, 0.05, 0.215)), 0.03, 0.02),
-        ], RIGHT, sides=8, turn=math.pi / 8), "boot", [foot])
-        part(f"sole.{tag}", slab(V((x, 0.024, 0.062)), (0.064, 0.024, 0.148)),
-             "sole", [foot], bevel=0.016)
-        part(f"shaft.{tag}", loft([
-            (a + V((0, -0.02, -0.01)), 0.072, 0.078),
-            (a + V((0, 0.06, -0.005)), 0.07, 0.074),
-            (a + V((0, 0.13, -0.003)), 0.072, 0.074),
-        ], RIGHT, sides=8), "boot", [shin, foot], sharpness=10)
-        part(f"sock.{tag}", loft([
-            (a + V((0, 0.105, -0.003)), 0.08, 0.082),
-            (a + V((0, 0.13, -0.003)), 0.086, 0.088),
-            (a + V((0, 0.155, -0.003)), 0.08, 0.082),
-        ], RIGHT, sides=10), "sock", [shin], levels=1)
+        part(f"bare_foot.{tag}", loft([
+            (V((x, 0.05, -0.085)), 0.032, 0.028),
+            (V((x, 0.06, -0.055)), 0.042, 0.042),
+            (V((x, 0.06, 0.01)), 0.046, 0.038),
+            (V((x, 0.045, 0.1)), 0.05, 0.026),
+            (V((x, 0.038, 0.17)), 0.046, 0.019),
+            (V((x, 0.036, 0.2)), 0.03, 0.014),
+        ], RIGHT, sides=8, turn=math.pi / 8), "skin", [foot])
+        part(f"sandal_sole.{tag}",
+             slab(V((x, 0.012, 0.058)), (0.054, 0.012, 0.15)), "sole",
+             [foot], bevel=0.01)
+        part(f"toe_strap.{tag}", loft([
+            (V((x, 0.043, 0.105)), 0.056, 0.03),
+            (V((x, 0.043, 0.13)), 0.054, 0.028),
+        ], RIGHT, sides=8), "sandal", [foot], levels=1)
+        part(f"instep_strap.{tag}", loft([
+            (V((x, 0.057, 0.02)), 0.05, 0.043),
+            (V((x, 0.057, 0.042)), 0.05, 0.042),
+        ], RIGHT, sides=8), "sandal", [foot], levels=1)
+        part(f"ankle_strap.{tag}", loft([
+            (a + V((0, -0.03, -0.012)), 0.048, 0.054),
+            (a + V((0, -0.012, -0.012)), 0.047, 0.053),
+        ], RIGHT, sides=8), "sandal", [foot, shin], levels=1)
+        # The bare shin and calf, from the ankle up under the shorts.
+        knee = j["knee"]
+        part(f"calf.{tag}", loft([
+            (a + V((0, -0.035, -0.008)), 0.036, 0.04),
+            (a + V((0, 0.06, -0.005)), 0.038, 0.042),
+            (knee + (a - knee) * 0.55, 0.053, 0.063),
+            (knee + (a - knee) * 0.25, 0.054, 0.062),
+            (knee + V((0, 0.0, 0.005)), 0.05, 0.052),
+            (knee + V((0, 0.09, 0.0)), 0.058, 0.06),
+        ], RIGHT, sides=8), "skin",
+            [f"thigh.{tag}", shin, foot], sharpness=8)
 
-    # Trousers: one piece over the seat and down both legs, loose at the
-    # knee, gathered into the socks.
+    # Denim shorts: one piece over the seat and down both legs to just
+    # above the knee, with a turned-up hem.
     part("seat", loft([
-        (PELVIS + V((0, -0.11, 0.0)), 0.1, 0.07),
-        (PELVIS + V((0, -0.06, 0.0)), 0.17, 0.11),
-        (PELVIS + V((0, 0.02, -0.005)), 0.18, 0.12),
-        (PELVIS + V((0, 0.12, 0.0)), 0.16, 0.11),
-    ], RIGHT, sides=10), "pants",
+        (PELVIS + V((0, -0.11, 0.0)), 0.09, 0.07),
+        (PELVIS + V((0, -0.06, 0.0)), 0.155, 0.11),
+        (PELVIS + V((0, 0.02, -0.005)), 0.165, 0.118),
+        (PELVIS + V((0, 0.08, 0.0)), 0.16, 0.112),
+    ], RIGHT, sides=10), "denim",
         ["pelvis", "thigh.L", "thigh.R"], sharpness=4)
     for s, tag in TAGS:
         j = SIDES[s]
-        hip, knee, ankle = j["hip"], j["knee"], j["ankle"]
-        part(f"trouser.{tag}", loft([
-            (hip + V((0, 0.05, 0)), 0.1, 0.105),
-            (hip + (knee - hip) * 0.35, 0.098, 0.1),
-            (knee + V((0, 0.07, 0.005)), 0.08, 0.085),
-            (knee + V((0, -0.02, 0.01)), 0.078, 0.084),
-            (knee + (ankle - knee) * 0.5, 0.072, 0.076),
-            (ankle + V((0, 0.13, 0)), 0.068, 0.072),
-        ], RIGHT, sides=8), "pants",
-            ["pelvis", f"thigh.{tag}", f"shin.{tag}"], sharpness=8)
+        hip, knee = j["hip"], j["knee"]
+        part(f"short_leg.{tag}", loft([
+            (hip + V((0, 0.04, 0)), 0.088, 0.095),
+            (hip + (knee - hip) * 0.4, 0.08, 0.085),
+            (knee + V((0, 0.07, 0.005)), 0.07, 0.074),
+        ], RIGHT, sides=8), "denim",
+            ["pelvis", f"thigh.{tag}"], sharpness=8)
+        part(f"short_hem.{tag}", loft([
+            (knee + V((0, 0.055, 0.005)), 0.073, 0.077),
+            (knee + V((0, 0.075, 0.005)), 0.075, 0.079),
+            (knee + V((0, 0.095, 0.005)), 0.072, 0.076),
+        ], RIGHT, sides=8), "denim_dark", [f"thigh.{tag}"], levels=1)
 
-    # Jacket: a padded body from a flared hem to a high collar, and sleeves
-    # that start inside the shoulder and end in a dark cuff.
+    # The shirt: a button-down worn out over the shorts, slim, with a
+    # placket of white buttons, two flapped chest pockets, a collar, and
+    # long sleeves to cuffs at the wrist.
     part("jacket", loft([
-        (PELVIS + V((0, -0.135, 0.0)), 0.205, 0.15),
-        (PELVIS + V((0, -0.1, 0.0)), 0.225, 0.162),
-        (PELVIS + V((0, 0.02, 0.0)), 0.21, 0.152),
-        (WAIST + V((0, 0.08, 0.0)), 0.205, 0.148),
-        (CHEST + V((0, 0.0, 0.0)), 0.225, 0.155),
-        (CHEST + V((0, 0.1, -0.005)), 0.22, 0.145),
-        (NECK + V((0, -0.035, -0.01)), 0.17, 0.115),
-        (NECK + V((0, -0.005, -0.01)), 0.1, 0.085),
+        (PELVIS + V((0, -0.06, 0.0)), 0.18, 0.128),
+        (PELVIS + V((0, -0.03, 0.0)), 0.182, 0.13),
+        (PELVIS + V((0, 0.04, 0.0)), 0.175, 0.124),
+        (WAIST + V((0, 0.08, 0.0)), 0.168, 0.118),
+        (CHEST + V((0, 0.0, 0.0)), 0.182, 0.125),
+        (CHEST + V((0, 0.1, -0.005)), 0.19, 0.122),
+        (NECK + V((0, -0.04, -0.01)), 0.15, 0.1),
+        (NECK + V((0, -0.01, -0.01)), 0.07, 0.06),
     ], RIGHT, sides=12, turn=math.pi / 12), "jacket",
         ["pelvis", "spine", "chest"], sharpness=4)
     part("hem", loft([
-        (PELVIS + V((0, -0.15, 0.0)), 0.214, 0.158),
-        (PELVIS + V((0, -0.12, 0.0)), 0.24, 0.174),
-        (PELVIS + V((0, -0.085, 0.0)), 0.222, 0.162),
+        (PELVIS + V((0, -0.07, 0.0)), 0.181, 0.129),
+        (PELVIS + V((0, -0.055, 0.0)), 0.186, 0.133),
+        (PELVIS + V((0, -0.04, 0.0)), 0.183, 0.131),
     ], RIGHT, sides=12, turn=math.pi / 12), "jacket_dark",
         ["pelvis"], levels=1)
-    part("zip", slab(CHEST + V((0, -0.1, 0.152)), (0.01, 0.3, 0.008)),
+    part("collar", loft([
+        (NECK + V((0, -0.035, -0.008)), 0.08, 0.07),
+        (NECK + V((0, 0.0, -0.01)), 0.07, 0.064),
+        (NECK + V((0, 0.02, -0.012)), 0.075, 0.068),
+    ], RIGHT, sides=10), "jacket_dark", ["chest"], levels=1)
+    part("placket", slab(CHEST + V((0, -0.13, 0.124)), (0.013, 0.3, 0.005)),
          "jacket_dark", ["pelvis", "spine", "chest"], levels=1, sharpness=4)
-    part("scarf", loft([
-        (NECK + V((0, -0.07, 0.005)), 0.12, 0.11),
-        (NECK + V((0, -0.02, 0.01)), 0.135, 0.125),
-        (NECK + V((0, 0.035, 0.015)), 0.11, 0.1),
-    ], RIGHT, sides=10), "scarf", ["chest"])
-    part("scarf_tail", loft([
-        (NECK + V((0.07, -0.04, 0.1)), 0.04, 0.015),
-        (NECK + V((0.085, -0.13, 0.135)), 0.045, 0.014),
-        (NECK + V((0.09, -0.21, 0.145)), 0.045, 0.014),
-    ], RIGHT, sides=6), "scarf", ["chest"], levels=1)
+    buttons = []
+    for k in range(7):
+        y = PELVIS.y - 0.02 + k * (NECK.y - 0.06 - PELVIS.y + 0.02) / 6
+        depth = 0.128 if y > CHEST.y - 0.05 else 0.124
+        buttons.append((V((0, y, depth + 0.004)), y))
+    for k, (at, y) in enumerate(buttons):
+        bone = "chest" if y > CHEST.y else "spine" if y > WAIST.y \
+            else "pelvis"
+        part(f"button.{k}", blob(at, (0.006, 0.006, 0.003), 6, 4),
+             "button", [bone], levels=0)
+    for s, tag in TAGS:
+        pocket = CHEST + V((0.085 * s, 0.05, 0.123))
+        part(f"pocket.{tag}", slab(pocket, (0.045, 0.05, 0.006)),
+             "jacket", ["chest"], levels=0, bevel=0.006)
+        part(f"pocket_flap.{tag}",
+             slab(pocket + V((0, 0.045, 0.004)), (0.047, 0.014, 0.006)),
+             "jacket_dark", ["chest"], levels=0, bevel=0.004)
 
     for s, tag in TAGS:
         j = SIDES[s]
@@ -263,96 +296,100 @@ def model(build):
         upper, fore, hand = f"upper_arm.{tag}", f"forearm.{tag}", \
             f"hand.{tag}"
         part(f"sleeve.{tag}", loft([
-            (sh + V((-0.07 * s, 0.03, 0)), 0.07, 0.075),
-            (sh + V((0, 0.0, 0)), 0.088, 0.09),
-            (sh + (el - sh) * 0.5, 0.075, 0.078),
-            (el, 0.068, 0.07),
-            (el + (wr - el) * 0.55, 0.062, 0.064),
-            (wr - along * 0.03, 0.06, 0.062),
+            (sh + V((-0.07 * s, 0.03, 0)), 0.06, 0.065),
+            (sh + V((0, 0.0, 0)), 0.068, 0.07),
+            (sh + (el - sh) * 0.5, 0.058, 0.06),
+            (el, 0.052, 0.054),
+            (el + (wr - el) * 0.55, 0.047, 0.049),
+            (wr - along * 0.03, 0.044, 0.046),
         ], FORWARD, sides=8), "jacket", ["chest", upper, fore],
             sharpness=8)
         part(f"cuff.{tag}", loft([
-            (wr - along * 0.05, 0.064, 0.066),
-            (wr - along * 0.02, 0.07, 0.072),
-            (wr + along * 0.005, 0.064, 0.066),
+            (wr - along * 0.05, 0.046, 0.048),
+            (wr - along * 0.025, 0.048, 0.05),
+            (wr - along * 0.005, 0.045, 0.047),
         ], FORWARD, sides=8), "jacket_dark", [fore], levels=1)
-        # Mittens: a flat paddle, palm to the body, and a thumb forward.
-        part(f"mitten.{tag}", loft([
-            (wr - along * 0.01, 0.048, 0.042),
-            (wr + along * 0.045, 0.058, 0.04),
-            (wr + along * 0.1, 0.054, 0.036),
-            (wr + along * 0.135, 0.034, 0.022),
-        ], FORWARD, sides=8), "mitten", [hand])
-        thumb = wr + along * 0.04 + FORWARD * 0.045 - RIGHT * (0.012 * s)
+        # Bare hands: a palm and fingers together, and a thumb forward.
+        part(f"palm.{tag}", loft([
+            (wr - along * 0.01, 0.036, 0.024),
+            (wr + along * 0.045, 0.046, 0.022),
+            (wr + along * 0.1, 0.042, 0.018),
+            (wr + along * 0.13, 0.026, 0.012),
+        ], FORWARD, sides=8), "skin", [hand])
+        thumb = wr + along * 0.035 + FORWARD * 0.03 - RIGHT * (0.01 * s)
         part(f"thumb.{tag}", loft([
-            (thumb - FORWARD * 0.02, 0.02, 0.018),
-            (thumb + along * 0.03 + FORWARD * 0.01, 0.018, 0.017),
-            (thumb + along * 0.05 + FORWARD * 0.012, 0.01, 0.01),
-        ], FORWARD, sides=6), "mitten", [hand])
+            (thumb - FORWARD * 0.015, 0.014, 0.013),
+            (thumb + along * 0.03 + FORWARD * 0.008, 0.012, 0.012),
+            (thumb + along * 0.048 + FORWARD * 0.01, 0.007, 0.007),
+        ], FORWARD, sides=6), "skin", [hand])
 
-    # Head: a rounded skull narrowing to the jaw, button eyes with a
-    # glint, a round nose, ears, a full beard and moustache, and hair at
-    # the nape under a long knitted cap that flops back.
-    head = NECK + V((0, 0.17, 0.02))
+    # Head: his own proportions rather than a gnome's -- a longer face
+    # narrowing to the jaw, a straight nose, sandy hair at the sides and
+    # nape, a short beard and moustache, and a navy cap with a short bill.
+    head = NECK + V((0, 0.14, 0.015))
 
     def skull(unit, p):
         if unit.y < 0:
-            p.x *= 1.0 - 0.18 * -unit.y
-            p.z *= 1.0 - 0.06 * -unit.y
+            p.x *= 1.0 - 0.22 * -unit.y
+            p.z *= 1.0 - 0.05 * -unit.y
         return p
 
     part("neck", loft([
-        (NECK + V((0, -0.04, 0)), 0.058, 0.056),
-        (head + V((0, -0.06, -0.02)), 0.055, 0.052),
+        (NECK + V((0, -0.04, 0)), 0.052, 0.05),
+        (head + V((0, -0.05, -0.02)), 0.05, 0.048),
     ], RIGHT, sides=8), "skin", ["chest", "head"], levels=1)
-    part("skull", blob(head, (0.118, 0.135, 0.125), slices=14, stacks=9,
+    part("skull", blob(head, (0.083, 0.115, 0.1), slices=14, stacks=9,
                        shape=skull), "skin", ["head"])
     for s, tag in TAGS:
-        eye = head + V((0.045 * s, 0.012, 0.112))
-        part(f"eye.{tag}", blob(eye, (0.015, 0.022, 0.012), 8, 5), "eye",
+        eye = head + V((0.031 * s, 0.018, 0.088))
+        part(f"eye.{tag}", blob(eye, (0.01, 0.008, 0.006), 8, 5), "eye",
              ["head"], levels=1)
-        part(f"glint.{tag}", blob(eye + V((0.004 * s, 0.008, 0.01)),
-                                  (0.004, 0.005, 0.003), 6, 4), "glint",
+        part(f"glint.{tag}", blob(eye + V((0.003 * s, 0.003, 0.005)),
+                                  (0.002, 0.002, 0.0015), 6, 4), "glint",
              ["head"], levels=1)
-        part(f"ear.{tag}", blob(head + V((0.115 * s, -0.005, -0.005)),
-                                (0.018, 0.032, 0.026), 8, 5), "skin",
+        part(f"brow.{tag}", loft([
+            (eye + V((-0.012 * s, 0.017, 0.004)), 0.006, 0.004),
+            (eye + V((0.014 * s, 0.019, 0.0)), 0.006, 0.004),
+        ], UP, sides=6), "hair", ["head"], levels=1)
+        part(f"ear.{tag}", blob(head + V((0.083 * s, 0.0, -0.005)),
+                                (0.013, 0.028, 0.02), 8, 5), "skin",
              ["head"], levels=1)
         part(f"moustache.{tag}", loft([
-            (head + V((0.0, -0.045, 0.13)), 0.018, 0.016),
-            (head + V((0.035 * s, -0.05, 0.125)), 0.022, 0.018),
-            (head + V((0.065 * s, -0.068, 0.104)), 0.012, 0.012),
+            (head + V((0.0, -0.045, 0.098)), 0.012, 0.007),
+            (head + V((0.022 * s, -0.048, 0.093)), 0.013, 0.008),
+            (head + V((0.04 * s, -0.062, 0.078)), 0.007, 0.006),
         ], UP, sides=6), "hair", ["head"], levels=1)
-    part("nose", blob(head + V((0, -0.018, 0.135)), (0.026, 0.024, 0.026),
+    part("nose", blob(head + V((0, -0.008, 0.1)), (0.014, 0.026, 0.016),
                       8, 6), "nose", ["head"], levels=1)
 
     def beard_shape(unit, p):
-        if p.z < -0.02:
-            p.z = -0.02 + (p.z + 0.02) * 0.2
-        if unit.y < 0:
-            p.z += 0.03 * -unit.y
+        if p.z < -0.03:
+            p.z = -0.03 + (p.z + 0.03) * 0.2
         return p
 
-    part("beard", blob(head + V((0, -0.085, 0.055)), (0.105, 0.09, 0.08),
+    part("beard", blob(head + V((0, -0.068, 0.03)), (0.072, 0.052, 0.07),
                        slices=10, stacks=6, shape=beard_shape), "hair",
          ["head"])
-    part("hair", blob(head + V((0, -0.02, -0.06)), (0.11, 0.085, 0.07)),
+    part("hair", blob(head + V((0, 0.0, -0.035)), (0.088, 0.085, 0.075)),
          "hair", ["head"], levels=1)
 
-    part("brim", loft([
-        (head + V((0, 0.035, -0.005)), 0.128, 0.134),
-        (head + V((0, 0.06, -0.006)), 0.136, 0.142),
-        (head + V((0, 0.088, -0.008)), 0.128, 0.134),
-    ], RIGHT, sides=12), "cap_dark", ["head"])
     part("cap", loft([
-        (head + V((0, 0.06, -0.006)), 0.124, 0.13),
-        (head + V((0, 0.13, -0.02)), 0.11, 0.115),
-        (head + V((0, 0.2, -0.06)), 0.078, 0.08),
-        (head + V((0, 0.24, -0.12)), 0.048, 0.05),
-        (head + V((0, 0.245, -0.18)), 0.026, 0.026),
-        (head + V((0, 0.22, -0.22)), 0.012, 0.012),
+        (head + V((0, 0.035, -0.008)), 0.09, 0.106),
+        (head + V((0, 0.07, -0.01)), 0.088, 0.103),
+        (head + V((0, 0.1, -0.015)), 0.072, 0.085),
+        (head + V((0, 0.12, -0.02)), 0.04, 0.047),
+        (head + V((0, 0.125, -0.02)), 0.012, 0.012),
     ], RIGHT, sides=14), "cap", ["head"])
-    part("pompom", blob(head + V((0, 0.21, -0.235)), (0.035, 0.035, 0.035),
-                        8, 6), "scarf", ["head"], levels=1)
+    part("cap_band", loft([
+        (head + V((0, 0.03, -0.008)), 0.091, 0.107),
+        (head + V((0, 0.045, -0.008)), 0.092, 0.108),
+    ], RIGHT, sides=14), "cap_dark", ["head"], levels=1)
+    dip = math.radians(14)
+    bill_fwd = V((0, -math.sin(dip), math.cos(dip)))
+    bill_up = V((0, math.cos(dip), math.sin(dip)))
+    part("brim", slab(head + V((0, 0.036, 0.118)), (0.072, 0.005, 0.042),
+                      axes=(RIGHT, bill_up, bill_fwd)), "cap_dark",
+         ["head"], levels=1, bevel=0.004)
 
     # Rucksack: a rounded canvas body, a lid, a front pocket, side
     # pockets, a bedroll strapped underneath, and straps over the

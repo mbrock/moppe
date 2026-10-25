@@ -117,7 +117,7 @@ namespace moppe::game::figure {
 
   namespace {
     // The green outfit repaints the clothes and leaves the rest -- skin,
-    // boots, trousers, buckles -- as modelled.
+    // sandals, buttons, buckles -- as modelled.
     struct Repaint {
       std::string_view name;
       DisplayColor colour;
@@ -127,8 +127,8 @@ namespace moppe::game::figure {
       { "jacket_dark", { 0.20f, 0.32f, 0.17f } },
       { "cap", { 0.93f, 0.52f, 0.12f } },
       { "cap_dark", { 0.76f, 0.38f, 0.08f } },
-      { "scarf", { 0.80f, 0.26f, 0.18f } },
-      { "mitten", { 0.24f, 0.36f, 0.58f } },
+      { "denim", { 0.55f, 0.50f, 0.38f } },
+      { "denim_dark", { 0.44f, 0.40f, 0.30f } },
       { "pack", { 0.50f, 0.40f, 0.27f } },
       { "pack_dark", { 0.38f, 0.30f, 0.20f } },
       { "bedroll", { 0.24f, 0.38f, 0.56f } },
