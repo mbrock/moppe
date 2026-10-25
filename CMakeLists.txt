@@ -655,6 +655,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/walker_test.cc
     tests/game/figure_test.cc
     tests/game/frame_view_test.cc
+    tests/game/hud_test.cc
     tests/game/terrain_test.cc
     tests/game/graphics_benchmark_test.cc
     tests/game/graphics_settings_test.cc

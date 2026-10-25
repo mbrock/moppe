@@ -122,10 +122,22 @@ namespace moppe {
       bool resting = false;
       float clock_hours = 0.0f;
       // Something worth finding that is out of the way -- the other
-      // player, the bike, the jeep -- as a small arrow: over it when it
-      // is in view, and otherwise at the frame's edge pointing the way.
+      // player or parked vehicles -- over it when it is in view, and
+      // otherwise at the frame's edge pointing the way. Nearby vehicles
+      // share an arrow and distance, with a silhouette for each.
       struct Waymark {
+        enum Vehicle : unsigned {
+          Bike = 1 << 0,
+          Jeep = 1 << 1,
+          Tractor = 1 << 2,
+          Caddy = 1 << 3,
+          MountainBike = 1 << 4,
+          Helicopter = 1 << 5,
+          Boat = 1 << 6
+        };
+        unsigned vehicles = 0; // none for the companion's named marker
         const char* name = "";
+        Vec3 position;
         // Where the arrow goes, in points, and which way it points:
         // radians counterclockwise from screen right.
         float x = 0.0f, y = 0.0f;
@@ -135,7 +147,7 @@ namespace moppe {
         float alpha = 0.0f;
         float red = 1.0f, green = 1.0f, blue = 1.0f;
       };
-      std::array<Waymark, 4> waymarks {};
+      std::array<Waymark, 8> waymarks {};
       int waymark_count = 0;
       // The chart in the corner: the map sheet's picture (map_sheet.hh)
       // turned so that the way the camera looks is up, round the
@@ -179,6 +191,10 @@ namespace moppe {
             can_drop_bike (false), can_mount (false), vertical_speed_mps (0),
             frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
     };
+
+    // Bundle crowded vehicle finders, not the companion or vehicles that
+    // merely line up in the camera. Each bundle keeps the nearest range.
+    void bundle_waymarks (HudState& state);
 
     // The overlay keeps out of the way of the landscape.  In ordinary play
     // it is a single quiet speedometer -- a hairline arc with a riding
@@ -294,7 +310,10 @@ namespace moppe {
                        float dt,
                        int width_pts,
                        int height_pts);
-      void draw_waymarks (render::TextList& text, const HudState& state);
+      void draw_waymarks (render::TextList& text,
+                          const HudState& state,
+                          int width_pts,
+                          int height_pts);
       void draw_chart (render::DrawList& dl,
                        render::TextList& text,
                        const HudState& state,

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -89,6 +90,21 @@ namespace moppe {
       constexpr float chart_reach_foot_m = 220.0f;
       constexpr float chart_reach_fast_m = 600.0f;
       constexpr float chart_reach_air_m = 800.0f;
+
+      struct ChartPlacement {
+        float radius, outer, x, y;
+      };
+
+      ChartPlacement chart_placement (int width, int height, bool aside) {
+        const float r = std::clamp (
+          chart_share * std::min (width, height), chart_least, chart_most);
+        const float outer = chart_bezel * r;
+        return { r,
+                 outer,
+                 aside ? width - chart_margin - outer : chart_margin + outer,
+                 aside ? chart_margin + outer + 16.0f
+                       : height - chart_margin - outer };
+      }
 
       float clamp01 (float value) {
         return std::clamp (value, 0.0f, 1.0f);
@@ -197,6 +213,130 @@ namespace moppe {
         return pen.close ();
       }
 
+      // Side-on silhouettes, 24 by 18 points. The bicycle's open diamond,
+      // the motorbike's tank, the tractor's big rear wheel, and the
+      // helicopter's rotor must read without words or colour.
+      std::vector<OutlineContour> vehicle_outline (unsigned vehicle) {
+        std::vector<OutlineContour> outlines;
+        const auto polygon = [&] (std::initializer_list<OutlinePoint> points) {
+          Pen pen (*points.begin ());
+          for (auto point = points.begin () + 1; point != points.end ();
+               ++point)
+            pen.line (*point);
+          outlines.push_back (pen.close ());
+        };
+        const auto stroke = [&] (OutlinePoint a, OutlinePoint b, float width) {
+          const float n = std::hypot (b.x - a.x, b.y - a.y);
+          const float x = (b.y - a.y) * 0.5f * width / n;
+          const float y = (a.x - b.x) * 0.5f * width / n;
+          polygon ({ { a.x + x, a.y + y },
+                     { b.x + x, b.y + y },
+                     { b.x - x, b.y - y },
+                     { a.x - x, a.y - y } });
+        };
+        const auto wheel = [&] (float x, float y, float radius, float width) {
+          for (bool hole : { false, true }) {
+            OutlineContour contour = circle (radius - (hole ? width : 0), hole);
+            for (auto& curve : contour)
+              for (OutlinePoint* p : { &curve.p1, &curve.p2, &curve.p3 }) {
+                p->x += x;
+                p->y += y;
+              }
+            outlines.push_back (std::move (contour));
+          }
+        };
+        using Mark = HudState::Waymark;
+        switch (vehicle) {
+        case Mark::Bike:
+          wheel (-7, -4, 4, 1.5f);
+          wheel (7, -4, 4, 1.5f);
+          stroke ({ -7, -4 }, { -2, 0 }, 1.8f);
+          stroke ({ 7, -4 }, { 3, 5 }, 1.8f);
+          stroke ({ 3, 5 }, { 6, 5 }, 1.7f);
+          polygon ({ { -6, 0 }, { 1, -1 }, { 4, 2 }, { 1, 4 }, { -3, 3 } });
+          stroke ({ -8, 4 }, { -2, 4 }, 2.2f);
+          break;
+        case Mark::MountainBike:
+          wheel (-7, -4, 4, 1.3f);
+          wheel (7, -4, 4, 1.3f);
+          stroke ({ -7, -4 }, { -3, 3 }, 1.5f);
+          stroke ({ -3, 3 }, { 0, -4 }, 1.5f);
+          stroke ({ 0, -4 }, { -7, -4 }, 1.5f);
+          stroke ({ -3, 3 }, { 4, 3 }, 1.5f);
+          stroke ({ 4, 3 }, { 0, -4 }, 1.5f);
+          stroke ({ 7, -4 }, { 3, 6 }, 1.5f);
+          stroke ({ 3, 6 }, { 6, 6 }, 1.5f);
+          stroke ({ -5, 5 }, { -1, 5 }, 1.8f);
+          stroke ({ -3, 5 }, { -3, 3 }, 1.5f);
+          break;
+        case Mark::Jeep:
+          wheel (-7, -5, 3.2f, 1.8f);
+          wheel (7, -5, 3.2f, 1.8f);
+          polygon ({ { -11, -3 },
+                     { 11, -3 },
+                     { 11, 1 },
+                     { 5, 2 },
+                     { 3, 7 },
+                     { -9, 7 },
+                     { -9, 1 },
+                     { -11, 1 } });
+          // Windows wind against the body, leaving two clear openings.
+          polygon ({ { -7, 2 }, { -7, 5 }, { -3, 5 }, { -3, 2 } });
+          polygon ({ { -1, 2 }, { -1, 5 }, { 2, 5 }, { 3, 2 } });
+          break;
+        case Mark::Caddy:
+          wheel (-7, -5, 3, 1.6f);
+          wheel (7, -5, 3, 1.6f);
+          polygon ({ { -12, -3 },
+                     { 12, -3 },
+                     { 12, 0 },
+                     { 8, 1 },
+                     { 5, 6 },
+                     { -1, 6 },
+                     { -2, 0 },
+                     { -12, 0 } });
+          polygon ({ { 0, 1 }, { 1, 4 }, { 4, 4 }, { 6, 1 } });
+          break;
+        case Mark::Tractor:
+          wheel (-6, -3, 5.3f, 2.7f);
+          wheel (8, -5, 3.2f, 1.8f);
+          polygon ({ { -2, -3 },
+                     { 10, -3 },
+                     { 10, 2 },
+                     { 0, 2 },
+                     { -1, 0 },
+                     { -3, 0 } });
+          stroke ({ 6, 2 }, { 6, 7 }, 2);
+          stroke ({ -5, 3 }, { -1, 3 }, 2);
+          stroke ({ -1, 1 }, { 1, 5 }, 1.5f);
+          stroke ({ -1, 5 }, { 3, 5 }, 1.5f);
+          break;
+        case Mark::Helicopter:
+          polygon ({ { -4, -2 },
+                     { 7, -2 },
+                     { 10, 0 },
+                     { 8, 3 },
+                     { 4, 5 },
+                     { -2, 4 } });
+          polygon ({ { 3, 0 }, { 3, 3 }, { 5, 3 }, { 7, 0 } });
+          stroke ({ -3, 1 }, { -11, 3 }, 2);
+          stroke ({ -11, 1 }, { -11, 6 }, 1.7f);
+          stroke ({ 0, 4 }, { 0, 7 }, 1.5f);
+          stroke ({ -10, 7 }, { 11, 7 }, 1.5f);
+          stroke ({ -2, -2 }, { -3, -5 }, 1.5f);
+          stroke ({ 5, -2 }, { 6, -5 }, 1.5f);
+          stroke ({ -6, -5 }, { 10, -5 }, 1.7f);
+          break;
+        case Mark::Boat:
+          polygon ({ { -9, 0 }, { 12, 2 }, { 8, -5 }, { -6, -5 } });
+          stroke ({ -9, 2 }, { 12, 4 }, 1.4f);
+          polygon ({ { -7, 3 }, { -2, 3 }, { -2, 7 }, { -7, 7 } });
+          stroke ({ -5, 4 }, { -11, -7 }, 1.4f);
+          break;
+        }
+        return outlines;
+      }
+
       // A radial capsule from `inner` to `outer` along +x, `half` wide.
       OutlineContour capsule (float inner, float outer, float half) {
         Pen pen ({ inner, -half });
@@ -265,7 +405,8 @@ namespace moppe {
         }
         ChartPolygon below, above;
         if (std::floor (low_u) + 1.0f < high_u) {
-          split_polygon (polygon, true, std::floor (low_u) + 1.0f, below, above);
+          split_polygon (
+            polygon, true, std::floor (low_u) + 1.0f, below, above);
           chart_polygon (dl, below);
           chart_polygon (dl, above);
           return;
@@ -329,6 +470,70 @@ namespace moppe {
       }
     }
 
+    void bundle_waymarks (HudState& state) {
+      const auto marks = state.waymarks;
+      const int count = state.waymark_count;
+      std::array<int, 8> groups;
+      for (int i = 0; i < count; ++i)
+        groups[i] = i;
+      for (int i = 0; i < count; ++i) {
+        for (int j = i + 1; j < count; ++j) {
+          const auto& a = marks[i];
+          const auto& b = marks[j];
+          if (!a.vehicles || !b.vehicles || groups[i] == groups[j] ||
+              a.alpha <= 0.002f || b.alpha <= 0.002f ||
+              a.in_view != b.in_view || std::fabs (a.x - b.x) > 96.0f ||
+              std::fabs (a.y - b.y) > 48.0f)
+            continue;
+          // A chain of crowded anchors must not join distant vehicles.
+          bool nearby = true;
+          for (int u = 0; u < count; ++u)
+            for (int v = 0; v < count; ++v)
+              if (groups[u] == groups[i] && groups[v] == groups[j] &&
+                  length2 (marks[u].position - marks[v].position) >
+                    80.0f * 80.0f)
+                nearby = false;
+          if (!nearby)
+            continue;
+          const int from = std::max (groups[i], groups[j]);
+          const int to = std::min (groups[i], groups[j]);
+          for (int k = 0; k < count; ++k)
+            if (groups[k] == from)
+              groups[k] = to;
+        }
+      }
+      state.waymark_count = 0;
+      for (int i = 0; i < count; ++i) {
+        if (groups[i] != i)
+          continue;
+        auto mark = marks[i];
+        int members = 1;
+        float across = std::cos (mark.angle);
+        float upward = std::sin (mark.angle);
+        for (int j = i + 1; j < count; ++j) {
+          if (groups[j] != i)
+            continue;
+          const auto& other = marks[j];
+          mark.vehicles |= other.vehicles;
+          mark.x += other.x;
+          mark.y += other.y;
+          mark.position += other.position;
+          mark.metres = std::min (mark.metres, other.metres);
+          mark.alpha = std::max (mark.alpha, other.alpha);
+          across += std::cos (other.angle);
+          upward += std::sin (other.angle);
+          ++members;
+        }
+        if (members > 1) {
+          mark.x /= members;
+          mark.y /= members;
+          mark.position = mark.position / static_cast<float> (members);
+          mark.angle = std::atan2 (upward, across);
+        }
+        state.waymarks[state.waymark_count++] = mark;
+      }
+    }
+
     // The gauge and prompt outlines, in units of the gauge radius (gauge
     // shapes) or of the prompt's em (keycaps).
     struct Hud::Shape {
@@ -339,6 +544,7 @@ namespace moppe {
       SlugGlyph shade;
       SlugGlyph key;
       SlugGlyph wide_key;
+      std::array<SlugGlyph, 7> vehicles;
       // The chart's, in units of its radius: the bezel round it, the
       // hairline rim over the picture's edge, and the bezel's ticks.
       SlugGlyph bezel;
@@ -411,6 +617,8 @@ namespace moppe {
       m_shape->rim = add ({ circle (1.013f, false), circle (0.990f, true) });
       m_shape->tick = add ({ capsule (1.045f, 1.085f, 0.0085f) });
       m_shape->major_tick = add ({ capsule (1.035f, 1.125f, 0.011f) });
+      for (unsigned i = 0; i < m_shape->vehicles.size (); ++i)
+        m_shape->vehicles[i] = add (vehicle_outline (1u << i));
       m_shapes = renderer.create_glyph_set (builder.data ());
     }
 
@@ -818,20 +1026,76 @@ namespace moppe {
                    TextAlign::Center);
     }
 
-    void Hud::draw_waymarks (render::TextList& text, const HudState& st) {
+    void Hud::draw_waymarks (render::TextList& text,
+                             const HudState& st,
+                             int width_pts,
+                             int height_pts) {
       if (!m_font)
         return;
+      const bool aside = m_diagnostics || m_host_offers;
+      const auto chart = chart_placement (width_pts, height_pts, aside);
       for (int i = 0; i < st.waymark_count; ++i) {
-        const HudState::Waymark& mark = st.waymarks[i];
+        auto mark = st.waymarks[i];
         if (mark.alpha <= 0.002f)
           continue;
+        const int count = std::popcount (mark.vehicles);
+        const int rows = std::max (1, (count + 2) / 3);
+        const int columns = (count + rows - 1) / rows;
+        const float width = count ? 28.0f * columns : 140.0f;
+        const float rise = 22.0f * (rows - 1);
+        // The compass, its heading and map key own their corner. Slide
+        // an edge finder along the edge rather than drawing across them.
+        if (!mark.in_view && st.chart.picture && m_chart_alpha > 0.002f) {
+          const float across = std::cos (mark.angle);
+          const float left = mark.x - (across > 0.35f    ? width + 18.0f
+                                       : across < -0.35f ? 10.0f
+                                                         : 0.5f * width);
+          const float right = mark.x + (across < -0.35f  ? width + 18.0f
+                                        : across > 0.35f ? 10.0f
+                                                         : 0.5f * width);
+          const float top = chart.y - chart.outer - 36.0f;
+          const float bottom = chart.y + chart.outer + 12.0f;
+          if (left < chart.x + chart.outer + 65.0f &&
+              right > chart.x - chart.outer - 8.0f && mark.y + 50.0f > top &&
+              mark.y - 50.0f < bottom)
+            mark.y = aside ? bottom + 48.0f : top - (count ? 48.0f : 42.0f);
+        }
         // Quieter over the thing itself than out at the edge.
-        const float alpha = mark.alpha * (mark.in_view ? 0.7f : 0.82f);
+        const float alpha = mark.alpha * (mark.vehicles  ? 0.94f
+                                          : mark.in_view ? 0.7f
+                                                         : 0.82f);
         const float size = mark.in_view ? 5.5f : 7.0f;
+        // cy is the bottom icon row. Extra rows grow upward, leaving
+        // the distance and pointer together clear of the hiker's head.
+        float cx = mark.x, cy = mark.y - 78.0f;
+        if (count) {
+          const float across = std::cos (mark.angle);
+          const float upward = std::sin (mark.angle);
+          if (!mark.in_view) {
+            if (std::fabs (across) > 0.35f) {
+              cx -= std::copysign (0.5f * width + 18.0f, across);
+              cy = mark.y + 0.5f * rise;
+            } else if (upward > 0.0f) {
+              cy = mark.y + 26.0f + rise;
+            } else {
+              cy = mark.y - 44.0f;
+            }
+          }
+          cx = std::clamp (
+            cx,
+            12.0f + 0.5f * width,
+            std::max (12.0f + 0.5f * width, width_pts - 12.0f - 0.5f * width));
+          cy = std::clamp (
+            cy, 14.0f + rise, std::max (14.0f + rise, height_pts - 50.0f));
+        }
+        // Keep the in-view arrow attached to the icon-and-distance
+        // group, rather than leaving it stranded down over the target.
+        const float arrow_x = count && mark.in_view ? cx : mark.x;
+        const float arrow_y = count && mark.in_view ? cy + 41.0f : mark.y;
         place_shape (text,
                      m_shape->arrow,
-                     mark.x,
-                     mark.y,
+                     arrow_x,
+                     arrow_y,
                      size + 1.5f,
                      mark.angle,
                      0.0f,
@@ -841,8 +1105,8 @@ namespace moppe {
                      4.0f);
         place_shape (text,
                      m_shape->arrow,
-                     mark.x,
-                     mark.y,
+                     arrow_x,
+                     arrow_y,
                      size,
                      mark.angle,
                      mark.red,
@@ -860,11 +1124,43 @@ namespace moppe {
           reading << static_cast<int> (std::round (mark.metres / 5.0f) * 5.0f)
                   << " m";
         TextStyle label;
-        label.size = 11.0f;
+        label.size = mark.vehicles ? 12.0f : 11.0f;
         label.red = label.green = label.blue = ink;
         label.alpha = alpha;
         label.tracking = 0.04f;
         label.tabular_figures = true;
+        if (count) {
+          // At most three per row, balanced and individually centered:
+          // four makes 2 + 2, five 3 + 2, and six 3 + 3.
+          int icon = 0;
+          for (unsigned v = 0; v < m_shape->vehicles.size (); ++v) {
+            if (!(mark.vehicles & (1u << v)))
+              continue;
+            const int row = icon / columns;
+            const int in_row = std::min (columns, count - row * columns);
+            const float x = cx + (icon % columns - 0.5f * (in_row - 1)) * 28.0f;
+            const float y = cy - rise + row * 22.0f;
+            const auto& shape = m_shape->vehicles[v];
+            // A soft shade keeps the small silhouettes legible over
+            // sky, without a dark outline around every wheel and spoke.
+            place_shape (text,
+                         shape,
+                         x,
+                         y + 0.5f,
+                         0.9f,
+                         0.0f,
+                         0,
+                         0,
+                         0,
+                         0.5f * alpha,
+                         2.0f);
+            place_shape (text, shape, x, y, 0.9f, 0.0f, ink, ink, ink, alpha);
+            ++icon;
+          }
+          draw_shaded (
+            text, cx, cy + 28.0f, reading.str (), label, TextAlign::Center);
+          continue;
+        }
         // Behind the arrow: above the thing, or inward from the edge,
         // set to whichever side keeps the words clear of the arrowhead.
         const float across = std::cos (mark.angle);
@@ -921,16 +1217,12 @@ namespace moppe {
       if (alpha <= 0.002f || !chart.picture || !m_font)
         return;
 
-      const float r = std::clamp (
-        chart_share * std::min (width, height), chart_least, chart_most);
-      const float outer = chart_bezel * r;
       // The lower left, balancing the gauge; or the upper right where the
       // diagnostics' trail map, or a touch screen's thumb, has that corner.
       const bool aside = m_diagnostics || m_host_offers;
-      const float cx = aside ? width - chart_margin - outer
-                             : chart_margin + outer;
-      const float cy = aside ? chart_margin + outer + 16.0f
-                             : height - chart_margin - outer;
+      const auto placement = chart_placement (width_pts, height_pts, aside);
+      const float r = placement.radius, outer = placement.outer;
+      const float cx = placement.x, cy = placement.y;
       const float scale = r / m_chart_reach_m; // points a metre
 
       // The way ahead is up, and the screen's right is the ground's to
@@ -1141,34 +1433,28 @@ namespace moppe {
                                                    : 3.4f;
         float a = alpha;
         if (beyond) {
-          size *= 0.8f;
+          size *= 1.3f;
           a *= 0.8f;
         }
         const float x = cx + sx, y = cy + sy;
+        const auto& shape = beyond ? m_shape->arrow : m_shape->shade;
+        const float angle = beyond ? std::atan2 (-sy, sx) : 0.0f;
         place_shape (text,
-                     m_shape->shade,
+                     shape,
                      x,
                      y + 0.6f,
                      size + 2.4f,
-                     0.0f,
+                     angle,
                      0.0f,
                      0.0f,
                      0.0f,
                      0.30f * a,
                      3.0f);
         place_shape (
-          text, m_shape->shade, x, y, size + 1.4f, 0.0f, 1.0f, 1.0f, 1.0f, a);
-        place_shape (text,
-                     m_shape->shade,
-                     x,
-                     y,
-                     size,
-                     0.0f,
-                     pin.red,
-                     pin.green,
-                     pin.blue,
-                     a);
-        if (pin.kind == Kind::Trailhead)
+          text, shape, x, y, size + 1.4f, angle, 1.0f, 1.0f, 1.0f, a);
+        place_shape (
+          text, shape, x, y, size, angle, pin.red, pin.green, pin.blue, a);
+        if (pin.kind == Kind::Trailhead && !beyond)
           place_shape (text,
                        m_shape->shade,
                        x,
@@ -1499,7 +1785,7 @@ namespace moppe {
         return;
 
       draw_chart (dl, text, st, dt, width_pts, height_pts);
-      draw_waymarks (text, st);
+      draw_waymarks (text, st, width_pts, height_pts);
       draw_gauge (text, st, dt, width_pts, height_pts);
       draw_basket (text, st, dt, width_pts, height_pts);
       draw_clock (text, st, dt, width_pts, height_pts);
