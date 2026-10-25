@@ -33,12 +33,12 @@ permissions:
   # To replace a job's cached Nix store with a newer one.
   actions: write
 
-# Nix supplies luv-shaderc, which lowers the shaders, on every runner. Each
-# job keeps its Nix store in the Actions cache, keyed by what the builds are
-# made of: the dependencies built from source (SDL, volk, Zig's runtimes,
-# luv-shaderc) and the 600 MB fetched from cache.nixos.org come back at
-# once, and only the game is built. A new key starts from an empty store,
-# so the cache holds one build's store and nothing older.
+# Nix supplies luv-shaderc, which lowers the shaders, on every runner. The
+# Linux jobs keep their Nix stores in the Actions cache, keyed by what the
+# builds are made of: the dependencies built from source (SDL, volk, Zig's
+# runtimes, luv-shaderc) and the 600 MB fetched from cache.nixos.org come
+# back at once, and only the game is built. A new key starts from an empty
+# store, so the cache holds one build's store and nothing older.
 jobs:
   linux:
     runs-on: ubuntu-24.04
@@ -48,6 +48,8 @@ jobs:
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ github.job }}-${{ hashFiles('flake.lock', '**/*.nix', 'lands.json') }}
+          # The flake inputs, unpacked.
+          paths: ~/.cache/nix
           save: ${{ github.ref_type != 'tag' }}
           purge: true
           purge-prefixes: nix-${{ github.job }}-
@@ -72,6 +74,8 @@ jobs:
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ github.job }}-${{ hashFiles('flake.lock', '**/*.nix', 'lands.json') }}
+          # The flake inputs, unpacked.
+          paths: ~/.cache/nix
           save: ${{ github.ref_type != 'tag' }}
           purge: true
           purge-prefixes: nix-${{ github.job }}-
@@ -93,19 +97,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
-      - uses: nix-community/cache-nix-action@v7
+      # Restoring the whole store is slower on macOS than fetching it, so
+      # only luv-shaderc is kept, as a binary cache of its closure, and the
+      # flake is not evaluated when it is there.
+      - name: Find luv-shaderc
+        uses: actions/cache@v4
         with:
-          primary-key: nix-${{ github.job }}-${{ hashFiles('flake.lock') }}
-          save: ${{ github.ref_type != 'tag' }}
-          purge: true
-          purge-prefixes: nix-${{ github.job }}-
-          purge-created: 0
-          purge-primary-key: never
+          path: ${{ runner.temp }}/luv-shaderc-cache
+          key: luv-shaderc-macos-${{ hashFiles('flake.lock') }}
       - name: Install the build tools
         run: |
           brew install ninja zstd
-          nix build -L .#luv-shaderc --out-link "$RUNNER_TEMP/luv-shaderc"
-          echo "$RUNNER_TEMP/luv-shaderc/bin" >> "$GITHUB_PATH"
+          cache="$RUNNER_TEMP/luv-shaderc-cache"
+          if [[ -f "$cache/path" ]]; then
+            shaderc="$(cat "$cache/path")"
+            nix copy --no-check-sigs --from "file://$cache" "$shaderc"
+          else
+            shaderc="$(nix build -L --no-link --print-out-paths .#luv-shaderc)"
+            nix copy --to "file://$cache" "$shaderc"
+            echo "$shaderc" > "$cache/path"
+          fi
+          echo "$shaderc/bin" >> "$GITHUB_PATH"
       # The default world's published land, built into the game so the
       # first launch need not generate it.
       - name: Fetch the land

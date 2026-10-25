@@ -39,6 +39,8 @@ jobs:
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-pages-${{ hashFiles('flake.lock', '**/*.nix') }}
+          # The flake inputs, unpacked.
+          paths: ~/.cache/nix
           purge: true
           purge-prefixes: nix-pages-
           purge-created: 0
