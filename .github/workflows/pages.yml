@@ -11,6 +11,8 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # To replace the cached Nix store with a newer one.
+  actions: write
 
 # A newer push replaces a build still under way.
 concurrency:
@@ -32,10 +34,30 @@ jobs:
         with:
           extra_nix_config: accept-flake-config = true
 
+      # The Nix store, as in release.yml: luv-shaderc and the shell the
+      # land is baked in come back without being built or fetched.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-pages-${{ hashFiles('flake.lock', '**/*.nix') }}
+          purge: true
+          purge-prefixes: nix-pages-
+          purge-created: 0
+          purge-primary-key: never
+
       - name: Install Ninja
         run: sudo apt-get install --yes ninja-build
 
+      # Emscripten with what its first build makes and keeps in its cache:
+      # the SDL3 and Dawn ports and the system libraries.
+      - name: Find Emscripten
+        id: emsdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/emsdk
+          key: emsdk-${{ env.EMSCRIPTEN_VERSION }}
+
       - name: Install Emscripten
+        if: steps.emsdk.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 https://github.com/emscripten-core/emsdk.git \
             "$RUNNER_TEMP/emsdk"
