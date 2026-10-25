@@ -123,6 +123,19 @@ jobs:
       - name: Fetch the land
         run: |
           MOPPE_LAND_DIR="$RUNNER_TEMP/lands" tools/fetch-land
+      # The last build directory saved on master: CMake's probes and the
+      # SDL it fetched and compiled carry over, while everything from the
+      # checkout, newer than its objects, is compiled again.
+      - name: Name the runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Find the last build
+        uses: actions/cache/restore@v4
+        with:
+          path: build
+          # A new runner image, with perhaps another Xcode, starts afresh.
+          key: macos-build-${{ steps.image.outputs.version }}-${{ github.sha }}
+          restore-keys: macos-build-${{ steps.image.outputs.version }}-
       - name: Build
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -132,6 +145,12 @@ jobs:
             -DMOPPE_EMBED_ASSETS=ON \
             -DMOPPE_VERSION="$version" -DMOPPE_BUILD_NUMBER="$GITHUB_RUN_NUMBER"
           cmake --build build --target moppe
+      - name: Keep the build
+        if: github.ref_type != 'tag'
+        uses: actions/cache/save@v4
+        with:
+          path: build
+          key: macos-build-${{ steps.image.outputs.version }}-${{ github.sha }}
       # An ad-hoc signature over the whole bundle lets Apple silicon run it.
       - name: Package
         run: |
