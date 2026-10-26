@@ -218,8 +218,8 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   const terrain::TrailUseMap untravelled =
     test::uniform_use (domain, 0.0f, 0.0f);
 
-  const map::ForestCoverMap covered =
-    map::analyze_forest_cover (habitat, untravelled, 0x12345678U);
+  const map::ForestCoverMap covered = map::analyze_forest_cover (
+    habitat, untravelled, map::BiomeMap (domain), 0x12345678U);
   const auto& first = spatial::get<map::forest_cover> (covered);
   std::vector<float> values;
   values.reserve (first.size ());
@@ -228,15 +228,18 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   MOPPE_CHECK (*std::ranges::max_element (values) > 0.65f);
   MOPPE_CHECK (*std::ranges::min_element (values) < 0.05f);
 
-  const map::ForestCoverMap again =
-    map::analyze_forest_cover (habitat, untravelled, 0x12345678U);
+  const map::ForestCoverMap again = map::analyze_forest_cover (
+    habitat, untravelled, map::BiomeMap (domain), 0x12345678U);
   const auto& repeated = spatial::get<map::forest_cover> (again);
   for (std::size_t offset = 0; offset < values.size (); ++offset)
     MOPPE_CHECK_NEAR (
       values[offset], repeated[offset].numerical_value_in (one), 1e-7f);
 
-  const map::ForestCoverMap settled = map::analyze_forest_cover (
-    habitat, test::uniform_use (domain, 0.0f, 1.0f), 0x12345678U);
+  const map::ForestCoverMap settled =
+    map::analyze_forest_cover (habitat,
+                               test::uniform_use (domain, 0.0f, 1.0f),
+                               map::BiomeMap (domain),
+                               0x12345678U);
   const auto& cleared = spatial::get<map::forest_cover> (settled);
   MOPPE_CHECK (std::ranges::all_of (cleared, [] (map::ForestCover value) {
     return value == 0.0f * map::forest_cover[one];
@@ -503,4 +506,36 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
       values, render::PixelFormat::rg16f));
   MOPPE_CHECK_NEAR (geology[0][4], 0.5f, 1e-3f);
   MOPPE_CHECK_NEAR (geology[1][4], 0.5f, 1e-3f);
+}
+
+MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
+  using namespace moppe;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    64, 64, spatial_extent_in_metres (Vec3 (640, 0, 640))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (100.0f * mp_units::si::metre));
+  // Most of the ground lost ten metres; one band hardly any, another two
+  // hundred, far more than any limestone sheet drawn against that median.
+  const terrain::TerrainDomain& domain = surface.domain ();
+  const auto cut_at = [] (std::size_t column) {
+    return column < 16 ? 0.1f : column < 32 ? 200.0f : 10.0f;
+  };
+  for (const terrain::TerrainIndex site : spatial::sites (surface))
+    spatial::get<map::eroded_surface_material> (surface[site]) =
+      cut_at (site.column) * map::eroded_surface_material[u::m];
+  map::rebuild_geometry (surface);
+  const map::BiomeMap biomes =
+    map::analyze_biomes (surface,
+                         test::uniform_moisture (domain, 0.2f),
+                         50.0f * u::m,
+                         150.0f * u::m,
+                         0x5eedU);
+  const auto limestone = [&] (std::size_t column) {
+    return spatial::get<map::limestone_cover> (
+             biomes[terrain::TerrainIndex { column, 32 }])
+      .numerical_value_in (one);
+  };
+  MOPPE_CHECK (limestone (8) > 0.95f);
+  MOPPE_CHECK (limestone (24) < 0.05f);
 }

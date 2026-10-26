@@ -407,6 +407,10 @@ namespace moppe::nhal {
         m_black = m_device->create_texture ({ 1, 1, Format::rgba8_unorm,
                                               usage_sampled, 1, "black" });
         m_device->write_texture (m_black, std::as_bytes (std::span (black)));
+        const std::uint8_t clear[4] = { 0, 0, 0, 0 };
+        m_clear = m_device->create_texture ({ 1, 1, Format::rgba8_unorm,
+                                              usage_sampled, 1, "clear" });
+        m_device->write_texture (m_clear, std::as_bytes (std::span (clear)));
         const render::GroundDetail detail = render::make_ground_detail ();
         m_ground_detail = m_device->create_texture (
           { render::GroundDetail::size, render::GroundDetail::size,
@@ -854,6 +858,7 @@ namespace moppe::nhal {
 
       void set_terrain_materials (const render::TexturePixels& landscape,
                                   const render::TexturePixels& ground,
+                                  const render::TexturePixels& biomes,
                                   bool) override {
         auto sheet = [&] (Texture& texture,
                           const render::TexturePixels& pixels,
@@ -873,6 +878,7 @@ namespace moppe::nhal {
         };
         sheet (m_landscape, landscape, "landscape materials");
         sheet (m_ground, ground, "ground materials");
+        sheet (m_biomes, biomes, "biomes");
       }
 
       // -- a frame --------------------------------------------------------
@@ -1155,6 +1161,7 @@ namespace moppe::nhal {
         m_device->set_texture (3, m_ground_detail);
         m_device->set_texture (6, m_landscape ? m_landscape : m_white);
         m_device->set_texture (7, m_ground ? m_ground : m_white);
+        m_device->set_texture (5, m_biomes ? m_biomes : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         m_chunks.assign (chunks, chunks + count);
@@ -1248,6 +1255,7 @@ namespace moppe::nhal {
         m_device->set_texture (3, m_ground_detail);
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
+        m_device->set_texture (5, m_biomes ? m_biomes : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         m_device->draw_indexed_indirect (m_sward_indices, IndexType::uint16,
@@ -1269,6 +1277,7 @@ namespace moppe::nhal {
         m_device->set_texture (3, m_ground_detail);
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
+        m_device->set_texture (5, m_biomes ? m_biomes : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         const float tiles = grass.window[2] * grass.window[2];
@@ -2153,6 +2162,7 @@ namespace moppe::nhal {
         m_device->set_texture (1, m_normals);
         m_device->set_texture (6, m_landscape);
         m_device->set_texture (7, m_ground);
+        m_device->set_texture (5, m_biomes ? m_biomes : m_clear);
         bind_stand ();
         m_device->dispatch ((side * side + 63) / 64);
         m_device->end_compute_pass ();
@@ -2697,13 +2707,14 @@ namespace moppe::nhal {
       Transient m_forest_block;
       render::TextList m_hud_text;
       std::unordered_map<int, Pipeline> m_uber;
-      Texture m_white, m_black, m_ground_detail;
+      // m_clear is zero in every lane: no biome anywhere.
+      Texture m_white, m_black, m_clear, m_ground_detail;
       Texture m_closure, m_litter;
       std::array<float, 2> m_stand_inverse_period {};
 
       render::TerrainParams m_terrain_params {};
       bool m_have_terrain = false;
-      Texture m_heights, m_normals, m_landscape, m_ground;
+      Texture m_heights, m_normals, m_landscape, m_ground, m_biomes;
       render::TexturePtr m_grass;
       Buffer m_chunk_indices[lod_count], m_patch_indices[lod_count];
       std::uint32_t m_chunk_index_count[lod_count] {};

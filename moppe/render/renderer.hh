@@ -275,7 +275,9 @@ namespace moppe {
       float interaction_radius = 0.0f;
     };
 
-    enum class ForestSpecies : uint8_t { Broadleaf, Conifer };
+    // The renderer gives a pine the broadleaf's clump topology, shaped flat
+    // and high on a clear trunk; only Conifer draws as stacked cones.
+    enum class ForestSpecies : uint8_t { Broadleaf, Conifer, Pine };
     enum class ForestAge : uint8_t { Sapling, Young, Mature, Ancient };
 
     // One stable individual, still expressed in physical and bounded domain
@@ -405,14 +407,17 @@ namespace moppe {
       //   landscape RGBA = moisture, erosion, deposition, forest cover
       //   ground RGBA = signed shore distance (terrain_shore_lane), snow
       //                 support, trail, home base
+      //   biomes RGBA = limestone, pine heath, mire, alvar
       //
-      // Both sheets are RGBA8Unorm, filterable, and consumed synchronously
+      // The sheets are RGBA8Unorm, filterable, and consumed synchronously
       // because TexturePixels borrows its source.
       virtual void set_terrain_materials (const TexturePixels& landscape,
                                           const TexturePixels& ground,
+                                          const TexturePixels& biomes,
                                           bool include_forest) {
         (void)landscape;
         (void)ground;
+        (void)biomes;
         (void)include_forest;
       }
 

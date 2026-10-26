@@ -107,8 +107,10 @@ namespace moppe::test {
       recipe.use ? std::move (*recipe.use) : uniform_use (domain, 0.0f, 0.0f);
     map::TreeHabitatMap habitat = map::analyze_tree_habitat (
       surface, moisture, recipe.water_level, recipe.tree_line);
+    // No biome: the fixtures' forests are the ordinary closed forest.
+    map::BiomeMap biomes (domain);
     map::ForestCoverMap cover =
-      map::analyze_forest_cover (habitat, use, recipe.seed);
+      map::analyze_forest_cover (habitat, use, biomes, recipe.seed);
 
     return spatial::join (std::move (moisture),
                           recipe.waterline
@@ -117,7 +119,8 @@ namespace moppe::test {
                           map::analyze_geology_materials (surface),
                           std::move (habitat),
                           std::move (cover),
-                          std::move (use));
+                          std::move (use),
+                          std::move (biomes));
   }
 }
 

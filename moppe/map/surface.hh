@@ -54,6 +54,10 @@ namespace moppe::map {
   using ForestCover = quantity<forest_cover[one], float>;
   using terrain::HomeBaseInfluence;
   using terrain::TrailInfluence;
+  using LimestoneCover = quantity<limestone_cover[one], float>;
+  using PineHeathCover = quantity<pine_heath_cover[one], float>;
+  using MireCover = quantity<mire_cover[one], float>;
+  using AlvarCover = quantity<alvar_cover[one], float>;
 
   // Surface owns one mandatory geometry bundle and one derived-reading bundle
   // over the same TerrainDomain. The latter is absent until world analysis
@@ -74,7 +78,11 @@ namespace moppe::map {
                                           TreeHabitat,
                                           ForestCover,
                                           TrailInfluence,
-                                          HomeBaseInfluence>;
+                                          HomeBaseInfluence,
+                                          LimestoneCover,
+                                          PineHeathCover,
+                                          MireCover,
+                                          AlvarCover>;
 
   // ---- Geometry ----
 
@@ -124,18 +132,39 @@ namespace moppe::map {
     spatial::Bundle<terrain::TerrainDomain, ErosionExposure, DepositionCover>;
   using TreeHabitatMap = spatial::Bundle<terrain::TerrainDomain, TreeHabitat>;
   using ForestCoverMap = spatial::Bundle<terrain::TerrainDomain, ForestCover>;
+  using BiomeMap = spatial::Bundle<terrain::TerrainDomain,
+                                   LimestoneCover,
+                                   PineHeathCover,
+                                   MireCover,
+                                   AlvarCover>;
 
   // Scaled against the material this world's own history moved, so a calm
   // world reads as strongly as a violent one.
   GeologyMaterials analyze_geology_materials (const SurfaceGeometry& geometry);
+
+  // The bedrock and the biomes it and the soil carry. The world was
+  // a crystalline basement under a sheet of limestone of uneven thickness;
+  // where its erosion cut deeper than the sheet, the basement shows. On the
+  // limestone, ground too thin for a forest is alvar. On the basement, thin
+  // dry ground that fire keeps open is pine heath. Flat ground that water
+  // soaks and cannot leave is mire, on either. LAND_TOP is the highest
+  // ground; none of the three climbs into the fells.
+  BiomeMap analyze_biomes (const SurfaceGeometry& geometry,
+                           const terrain::MoistureMap& moisture,
+                           meters_t water_level,
+                           meters_t land_top,
+                           std::uint32_t seed);
 
   TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
                                        const terrain::MoistureMap& moisture,
                                        meters_t water_level,
                                        meters_t tree_line);
 
+  // The open biomes keep the closed forest out; their own sparse trees
+  // are planted by the forest plan.
   ForestCoverMap analyze_forest_cover (const TreeHabitatMap& habitat,
                                        const terrain::TrailUseMap& use,
+                                       const BiomeMap& biomes,
                                        std::uint32_t seed);
 
   // ---- Cache ----

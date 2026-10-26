@@ -2,7 +2,8 @@
 #define MOPPE_GAME_FOLIAGE_KIND_HH
 
 namespace moppe::game {
-  enum class FoliageKind { broadleaf, conifer };
+  // Birch, spruce, and the Scots pine of the heaths and bogs.
+  enum class FoliageKind { broadleaf, conifer, pine };
 }
 
 #endif

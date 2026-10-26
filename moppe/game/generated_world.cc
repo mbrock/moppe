@@ -89,8 +89,14 @@ namespace moppe::game {
                 water_level + 21.0f * u::m);
     map::TreeHabitatMap habitat =
       map::analyze_tree_habitat (geometry, moisture, water_level, tree_line);
+    map::BiomeMap biomes =
+      map::analyze_biomes (geometry,
+                           moisture,
+                           water_level,
+                           water_level + land_relief,
+                           recipe.seed ().value ^ 0x3b10e5a1U);
     map::ForestCoverMap cover = map::analyze_forest_cover (
-      habitat, use, recipe.seed ().value ^ 0x6f12ad37U);
+      habitat, use, biomes, recipe.seed ().value ^ 0x6f12ad37U);
 
     // The join names the readings in the order the bundle declares them; a
     // world is finished when every one of them is present.
@@ -100,7 +106,8 @@ namespace moppe::game {
                             map::analyze_geology_materials (geometry),
                             std::move (habitat),
                             std::move (cover),
-                            use) };
+                            use,
+                            std::move (biomes)) };
   }
 
   GeneratedWorld::GeneratedWorld (WorldParams params,

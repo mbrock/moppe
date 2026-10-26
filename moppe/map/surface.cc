@@ -357,6 +357,198 @@ namespace moppe::map {
     return values;
   }
 
+  namespace {
+    // A field smoothed over about RADIUS on the world torus: two passes of
+    // a box along each axis, which is close to a tent of twice the radius.
+    // A biome is a stand's reading, not a sample's, so the rules read their
+    // ground through this rather than cell by cell.
+    std::vector<float> smoothed (std::vector<float> field,
+                                 const terrain::TerrainDomain& domain,
+                                 meters_t radius) {
+      const int width = static_cast<int> (domain.width ());
+      const int height = static_cast<int> (domain.height ());
+      const auto cells = [] (meters_t reach, meters_t spacing) {
+        return std::max (1,
+                         static_cast<int> (std::lround (
+                           (reach / spacing).numerical_value_in (one))));
+      };
+      const int rx = cells (radius, domain.spacing_x ());
+      const int rz = cells (radius, domain.spacing_z ());
+      std::vector<float> line;
+      const auto pass =
+        [&] (int count, int stride, int lines, int step, int reach) {
+          line.resize (static_cast<std::size_t> (count));
+          const float scale = 1.0f / static_cast<float> (2 * reach + 1);
+          const auto wrap = [count] (int at) {
+            at %= count;
+            return at < 0 ? at + count : at;
+          };
+          for (int l = 0; l < lines; ++l) {
+            float* base =
+              field.data () + static_cast<std::ptrdiff_t> (l) * step;
+            const auto at = [&] (int i) -> float& {
+              return base[static_cast<std::ptrdiff_t> (wrap (i)) * stride];
+            };
+            float sum = 0.0f;
+            for (int k = -reach; k <= reach; ++k)
+              sum += at (k);
+            for (int i = 0; i < count; ++i) {
+              line[static_cast<std::size_t> (i)] = sum * scale;
+              sum += at (i + reach + 1) - at (i - reach);
+            }
+            for (int i = 0; i < count; ++i)
+              at (i) = line[static_cast<std::size_t> (i)];
+          }
+        };
+      for (int twice = 0; twice < 2; ++twice) {
+        pass (width, 1, height, width, rx);
+        pass (height, width, width, 1, rz);
+      }
+      return field;
+    }
+
+    // Value noise of four octaves from PATCHES a lap, 0 to 1.
+    float layered_noise (terrain::TerrainDomain::LapPosition where,
+                         std::uint32_t patches,
+                         std::uint32_t seed) {
+      float sum = 0.0f;
+      float amplitude = 1.0f;
+      float norm = 0.0f;
+      for (std::uint32_t octave = 0; octave < 4; ++octave) {
+        sum += amplitude *
+               periodic_noise (
+                 where.along_x, where.along_z, patches << octave, seed + octave)
+                 .numerical_value_in (one);
+        norm += amplitude;
+        amplitude *= 0.5f;
+      }
+      return sum / norm;
+    }
+  }
+
+  BiomeMap analyze_biomes (const SurfaceGeometry& geometry,
+                           const terrain::MoistureMap& moisture,
+                           meters_t water_level,
+                           meters_t land_top,
+                           std::uint32_t seed) {
+    MOPPE_PROFILE_ZONE ("map::analyze_biomes");
+    if (moisture.domain () != geometry.domain ())
+      throw std::invalid_argument (
+        "Moisture does not share the surface domain");
+    using spatial::get;
+    const terrain::TerrainDomain& domain = geometry.domain ();
+    const std::size_t count = domain.size ();
+
+    // How deep the world's history cut each place: what it took away less
+    // what it laid back. The limestone's thickness is counted against the
+    // median of that cut, so a calm world keeps as much of its cover as a
+    // violent one.
+    const auto& eroded = get<eroded_surface_material> (geometry);
+    const auto& deposited = get<deposited_surface_material> (geometry);
+    const auto& sediment = get<terrain::sediment_thickness> (geometry);
+    const auto& normals = get<terrain::terrain_normal> (geometry);
+    const auto& wetness = get<terrain::soil_wetness> (moisture);
+    std::vector<float> cut (count), thin (count), dry (count), soaked (count),
+      peat (count), up (count);
+    for (std::size_t i = 0; i < count; ++i) {
+      cut[i] = eroded[i].numerical_value_in (u::m) -
+               deposited[i].numerical_value_in (u::m);
+      const float soil = sediment[i].numerical_value_in (u::m);
+      const float wet = wetness[i].numerical_value_in (one);
+      // Under a span of soil a root reaches bedrock; over two and a half
+      // metres of it the ground is peat if it is also wet.
+      thin[i] = 1.0f - smoothstep (0.15f, 0.60f, soil);
+      peat[i] = smoothstep (0.80f, 2.50f, soil);
+      dry[i] = 1.0f - smoothstep (0.12f, 0.28f, wet);
+      soaked[i] = smoothstep (0.30f, 0.60f, wet);
+      up[i] = normals[i].numerical_value_in (one)[1];
+    }
+    std::vector<float> positive;
+    positive.reserve (count);
+    for (const float value : cut)
+      if (value > 0.0f)
+        positive.push_back (value);
+    float median_cut = 1.0f;
+    if (!positive.empty ()) {
+      const auto middle = positive.begin () + positive.size () / 2;
+      std::nth_element (positive.begin (), middle, positive.end ());
+      median_cut = std::max (*middle, 0.5f);
+    }
+    cut = smoothed (std::move (cut), domain, 10.0f * u::m);
+    thin = smoothed (std::move (thin), domain, 25.0f * u::m);
+    dry = smoothed (std::move (dry), domain, 25.0f * u::m);
+    soaked = smoothed (std::move (soaked), domain, 25.0f * u::m);
+    peat = smoothed (std::move (peat), domain, 25.0f * u::m);
+    up = smoothed (std::move (up), domain, 25.0f * u::m);
+
+    // Patches counted across this world: the limestone's thickness varies
+    // over kilometres, fire and the bogs' growth over hundreds of metres.
+    const auto laps = [&] (float patch_m) {
+      return std::max<std::uint32_t> (
+        1,
+        static_cast<std::uint32_t> (std::lround (
+          domain.period_x ().numerical_value_in (u::m) / patch_m)));
+    };
+    const std::uint32_t sheet_laps = laps (1700.0f);
+    const std::uint32_t fire_laps = laps (1000.0f);
+    const std::uint32_t bog_laps = laps (830.0f);
+    const std::uint32_t pavement_laps = laps (710.0f);
+    const float relief =
+      std::max ((land_top - water_level).numerical_value_in (u::m), 1.0f);
+    const float edge = std::max (0.06f * median_cut, 0.5f);
+
+    BiomeMap values (domain);
+    for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+      const std::size_t i = domain.offset (site);
+      const auto where = domain.lap_position (site);
+      const float thickness =
+        median_cut *
+        (0.25f + 1.0f * layered_noise (where, sheet_laps, seed ^ 0x11a7c0deU));
+      const float limestone = smoothstep (-edge, edge, thickness - cut[i]);
+      const float rise = (terrain::surface_elevation_value (
+                            get<terrain::surface_elevation> (geometry[site])) -
+                          water_level.numerical_value_in (u::m)) /
+                         relief;
+      const float below_fell = 1.0f - smoothstep (0.55f, 0.65f, rise);
+      const float walkable = smoothstep (0.82f, 0.92f, up[i]);
+
+      // Fire comes back to dry pine ground and keeps it open; where it has
+      // not lately, the spruce closes in.
+      const float burnt = smoothstep (
+        0.42f, 0.58f, layered_noise (where, fire_laps, seed ^ 0x0f12e5U));
+      const float lean = smoothstep (0.40f, 0.55f, 0.5f * (thin[i] + dry[i]));
+      const float heath = (1.0f - limestone) * lean * burnt * below_fell *
+                          smoothstep (0.80f, 0.90f, up[i]);
+
+      // A bog grows its peat where the ground is level enough to hold the
+      // water; limestone drains it away unless the peat is already deep.
+      const float level = smoothstep (0.96f, 0.99f, up[i]);
+      const float grown = smoothstep (
+        0.30f, 0.60f, layered_noise (where, bog_laps, seed ^ 0xb0991eU));
+      const float mire = grown * level *
+                         std::max (smoothstep (0.25f, 0.55f, soaked[i]),
+                                   smoothstep (0.25f, 0.60f, peat[i])) *
+                         std::max (1.0f - limestone, peat[i]);
+
+      // Alvar: the limestone bare but for a skin of turf.
+      const float alvar =
+        limestone * smoothstep (0.42f, 0.58f, thin[i]) *
+        (1.0f - smoothstep (0.15f, 0.45f, soaked[i])) * below_fell * walkable *
+        smoothstep (
+          0.45f, 0.62f, layered_noise (where, pavement_laps, seed ^ 0xa17a2U));
+
+      const auto reading = values[site];
+      get<limestone_cover> (reading) = limestone * limestone_cover[one];
+      get<pine_heath_cover> (reading) =
+        std::clamp (heath * (1.0f - mire), 0.0f, 1.0f) * pine_heath_cover[one];
+      get<mire_cover> (reading) =
+        std::clamp (mire, 0.0f, 1.0f) * mire_cover[one];
+      get<alvar_cover> (reading) =
+        std::clamp (alvar * (1.0f - mire), 0.0f, 1.0f) * alvar_cover[one];
+    }
+    return values;
+  }
+
   TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
                                        const terrain::MoistureMap& moisture,
                                        meters_t water_level,
@@ -433,10 +625,12 @@ namespace moppe::map {
   // the probability from it with a threshold of its own.
   ForestCoverMap analyze_forest_cover (const TreeHabitatMap& habitat,
                                        const terrain::TrailUseMap& use,
+                                       const BiomeMap& biomes,
                                        std::uint32_t seed) {
-    if (use.domain () != habitat.domain ())
+    if (use.domain () != habitat.domain () ||
+        biomes.domain () != habitat.domain ())
       throw std::invalid_argument (
-        "Trail use does not share the surface domain");
+        "Trail use or biomes do not share the surface domain");
 
     using spatial::get;
 
@@ -500,8 +694,15 @@ namespace moppe::map {
       // how thickly they grow, which is what placement reads for density,
       // height, and tint.
       const auto thickness = 0.45f + 0.55f * habitable;
-      const auto wanted =
-        thickness * seeded * route_clearance * settled_clearance;
+      // The heath, the bog, and the alvar stand open: what trees they carry
+      // the forest plan plants itself, sparse and of their own kind.
+      const auto biome = biomes[site];
+      const float open =
+        std::max ({ get<pine_heath_cover> (biome).numerical_value_in (one),
+                    get<mire_cover> (biome).numerical_value_in (one),
+                    get<alvar_cover> (biome).numerical_value_in (one) });
+      const auto wanted = thickness * seeded * route_clearance *
+                          settled_clearance * (1.0f - 0.92f * open);
 
       // The bands are in range by construction, but the trail and home-base
       // readings are stored data, and a clearance is one minus one of those.

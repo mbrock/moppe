@@ -578,6 +578,19 @@
     fills visibly; fly agaric is poisonous and stays. The picked indices
     live in `GameLogicState::m_basket` (`game/basket.hh`), and the ground
     follows them, meshed in 16 m tiles near the camera.
+  - Biomes (`map::analyze_biomes` in `moppe/map/surface.cc`, the
+    `biomes` sheet at texture slot 5): the world was a crystalline
+    basement under a sheet of limestone of uneven thickness, and where its
+    erosion cut deeper than the sheet (eroded less deposited material) the
+    basement shows. On the limestone, ground too thin for a forest is
+    alvar: pale pavement split by grikes, short parched turf, a lone pine.
+    On the basement, thin dry ground that fire keeps open is pine heath:
+    Scots pine (`ForestForm::pine`, orange bark, flat tufted crowns) over
+    reindeer lichen and crowberry. Flat ground that water soaks is mire:
+    sphagnum hummocks, black pools, sedge, and stunted pines. In the
+    default world limestone underlies some 39%, heath 6.5%, alvar 7.4%
+    (the trailhead stands on it), and mire 2%. The three keep the closed
+    forest out (`analyze_forest_cover`), so they are open country to ride.
   - Boulders (`moppe/game/boulders.cc`, the `boulders` program)
     are planned from the surface fields when a world activates -- talus,
     scree, shore cobbles, upland erratics -- drawn as faceted flat-shaded

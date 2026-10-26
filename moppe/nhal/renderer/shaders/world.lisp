@@ -528,6 +528,9 @@
 ;;;   fell        above the heath, frost-shattered stones
 ;;;   forest      needle litter and moss under closed canopy
 ;;;   leaves      fallen under turned birch groves
+;;;   lichen      reindeer lichen and crowberry on the pine heaths
+;;;   bog         sphagnum hummocks and black pools on the mires
+;;;   pavement    the alvar's limestone, split by grikes
 ;;;   soil        where erosion strips a slope
 ;;;   gravel      cobbles in the channels
 ;;;   shore       sand where the water laid fine sediment, cobbles
@@ -558,10 +561,11 @@
 
 ;;; LAND is moisture, erosion, deposition, forest cover; FLOOR is the
 ;;; signed shore lane, snow support, trail, home base; STAND the canopy's
-;;; closure and the fallen leaves.  ABOVE-SEA is in metres.
+;;; closure and the fallen leaves; BIOME limestone, pine heath, mire, and
+;;; alvar.  ABOVE-SEA is in metres.
 (define-shader-function ground-surface (world normal land floor rise
-                                        above-sea stand micro meso macro
-                                        region)
+                                        above-sea stand biome micro meso
+                                        macro region)
   (let* ((up (swizzle normal :y))
          (moisture (swizzle land :x))
          (grain (swizzle micro :x))
@@ -637,11 +641,45 @@
                       (mix (vec3 0.70 0.52 0.21) (vec3 0.58 0.34 0.15) grain)
                       (band (+ (swizzle stand :y) (* 0.60 edge)) 0.24)))
 
+         ;; The biomes the bedrock and the soil carry.  Pine heath: a pale
+         ;; carpet of reindeer lichen, broken by dark crowberry and the
+         ;; brown of needles and bare sand where it is worn.
+         (lichen (mix (vec3 0.55 0.57 0.47) (vec3 0.67 0.68 0.57)
+                      (smoothstep 0.3 0.7 fleck)))
+         (lichen-heath (mix (mix lichen (vec3 0.45 0.38 0.26) (* 0.8 sprig))
+                            (vec3 0.30 0.29 0.19)
+                            (band (+ patch (* 0.5 (- grain 0.5))) 0.82)))
+         ;; Mire: sphagnum hummocks, ochre and green and rust red, and black
+         ;; water standing in the hollows between them.
+         (sphagnum (mix (mix (vec3 0.58 0.57 0.24) (vec3 0.44 0.50 0.20)
+                             (smoothstep 0.3 0.7 grain))
+                        (vec3 0.56 0.25 0.16)
+                        (band (+ fleck (* 0.5 (- patch 0.5))) 0.64)))
+         (bog-pool (* (swizzle biome :z)
+                      (- 1.0 (smoothstep 0.24 0.34
+                                         (+ grain (* 0.6 (- fleck 0.5)))))))
+         (bog (mix sphagnum (vec3 0.09 0.08 0.06) (* 0.9 bog-pool)))
+         ;; Alvar: limestone pavement split by dark grikes, with a skin of
+         ;; short dry turf in its hollows.
+         (pavement (mix (vec3 0.30 0.29 0.27)
+                        (mix (vec3 0.66 0.65 0.60) (vec3 0.80 0.79 0.73)
+                             (stone-tone block))
+                        (stone-face block)))
+         (pavement-turf (* (vec3 0.56 0.55 0.30) (- 1.0 (* 0.2 sprig))))
+         (alvar (mix pavement pavement-turf
+                     (band (+ patch (* 0.6 (- fleck 0.5))) 0.58)))
+         (biomed (mix (mix (mix leaves lichen-heath
+                                (band (+ (swizzle biome :y) (* 0.5 edge)) 0.5))
+                           bog
+                           (band (+ (swizzle biome :z) (* 0.5 edge)) 0.5))
+                      alvar
+                      (band (+ (swizzle biome :w) (* 0.5 edge)) 0.5)))
+
          ;; Bare soil where erosion strips a slope, with the odd stone in
          ;; it; cobbles in the channels.
          (shedding (- 1.0 (smoothstep 0.80 0.92 up)))
          (dirt (mix (vec3 0.39 0.32 0.25) pale-pebble pebbled))
-         (soil (mix leaves dirt
+         (soil (mix biomed dirt
                     (band (+ (* (swizzle land :y) shedding) (* 0.7 edge))
                           0.45)))
          (channel (- 1.0 (smoothstep 2.0 6.0 (abs shore))))
@@ -679,7 +717,10 @@
          (rock (* (mix (vec3 0.34 0.34 0.35) (vec3 0.54 0.52 0.48)
                        (smoothstep -0.8 0.8 bedding))
                   (+ 0.86 (* 0.28 patch))))
-         (rocky (mix shoreline rock cliff))
+         ;; Limestone is paler and warmer than the basement's gneiss.
+         (cliff-rock (mix rock (* rock (vec3 1.42 1.38 1.28))
+                          (swizzle biome :x)))
+         (rocky (mix shoreline cliff-rock cliff))
 
          (trodden (mix rocky
                        ;; Warm enough to stay earth under the sky's blue
@@ -712,8 +753,10 @@
     (make-ground-surface
      :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
                 (mix mottle 1.0 (* 0.65 smooth)))
-     :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth))
-     :gloss (max (* 0.30 snow) (* 0.22 swash (- 1.0 sunk))))))
+     :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth)
+                (* 0.10 (swizzle biome :w)) (* -0.06 bog-pool))
+     :gloss (max (max (* 0.30 snow) (* 0.22 swash (- 1.0 sunk)))
+                 (* 0.45 bog-pool)))))
 
 (define-shader terrain-fragment
     (:stage :fragment
@@ -730,6 +773,7 @@
                  (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
+                 (biomes :texture-2d :binding 5)
                  (shadow-map :depth-texture-2d :binding 8)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
@@ -750,6 +794,7 @@
          (floor-fields (mix (vec4 1.0 (swizzle normal :y) 0.0 0.0)
                             (sample ground linear-repeat field-at)
                             have-fields))
+         (biome (* (sample biomes linear-repeat field-at) have-fields))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
          (above-sea (- (swizzle world :y) (swizzle relief :x)))
@@ -773,7 +818,8 @@
          (region (read-detail detail linear-repeat field-uv *detail-region*
                               metres footprint))
          (surface (ground-surface world normal land floor-fields rise
-                                  above-sea stand micro meso macro region))
+                                  above-sea stand biome micro meso macro
+                                  region))
          (albedo (srgb (ground-surface-albedo surface)))
          ;; The relief tilts the normal within the surface: only the part
          ;; of its slope that lies along the ground counts.
@@ -1640,15 +1686,18 @@
   (root :vec3) (up :vec3) (right :vec3) (forward :vec3)
   (height :float) (crown-base :float) (crown-radius :float)
   (trunk-radius :float) (seed-turn :float) (closure :float)
-  (seed :uint) (conifer :bool)
+  (seed :uint) (conifer :bool) (pine :bool)
   (sides :uint) (crown-sides :uint) (masses :uint) (branches :bool))
 
 (define-shader-function grow-tree (root-height up-radius ecology identity root
                                    tier crown-scale)
   (let* ((seed (bit-cast :uint (swizzle identity :x)))
          (conifer (= (bit-cast :uint (swizzle identity :y)) (uint 1)))
+         ;; A Scots pine draws with the birch's clumps, held flat and high
+         ;; on a long clear trunk that leans more than a spruce's.
+         (pine (= (bit-cast :uint (swizzle identity :y)) (uint 2)))
          (lean-turn (* 6.2831853 (tree-hash seed (uint 3))))
-         (lean (* 0.065 (tree-hash seed (uint 4))))
+         (lean (* (if pine 0.11 0.065) (tree-hash seed (uint 4))))
          (up (normalize (+ (vec3 0.0 1.0 0.0)
                            (* 0.08 (vec3 (swizzle up-radius :x) 0.0
                                          (swizzle up-radius :z)))
@@ -1657,7 +1706,8 @@
          (right (normalize (cross3 up (vec3 0.0 0.0 1.0))))
          (height (swizzle root-height :w))
          (closure (smoothstep 0.12 0.42 (swizzle ecology :z)))
-         (base-share (+ (mix (if conifer 0.04 0.40) (if conifer 0.20 0.60)
+         (base-share (+ (mix (if conifer 0.04 (if pine 0.50 0.40))
+                             (if conifer 0.20 (if pine 0.66 0.60))
                              closure)
                         (* 0.08 (- (tree-hash seed (uint 5)) 0.5))))
          (sides (if (>= tier 5.0) (uint 10) (if (>= tier 2.0) (uint 7)
@@ -1666,12 +1716,12 @@
      :root root :up up :right right :forward (cross3 right up)
      :height height
      :crown-base (* height base-share)
-     :crown-radius (* (swizzle up-radius :w) crown-scale)
+     :crown-radius (* (swizzle up-radius :w) crown-scale (if pine 1.25 1.0))
      :trunk-radius (* height (if conifer 0.0078 0.0085)
                       (+ 0.85 (* 0.3 (tree-hash seed (uint 6)))))
      :seed-turn (* 6.2831853 (tree-hash seed (uint 7)))
      :closure closure
-     :seed seed :conifer conifer
+     :seed seed :conifer conifer :pine pine
      :sides sides
      :crown-sides (if (= sides (uint 10)) (uint 9) sides)
      :masses (if conifer
@@ -1770,12 +1820,18 @@
                             (* 0.6 (- (tree-hash seed (+ (uint 80) mass)) 0.5)))
                          tiers)
                       0.0 1.0))
-         (envelope (expt (sin (* 3.1415927 (+ 0.12 (* 0.80 rise)))) 0.7))
+         (pine (tree-shape-pine tree))
+         ;; A pine's crown is an umbrella: its clumps reach as far out at
+         ;; the top as below it.
+         (envelope (if pine (- 1.0 (* 0.35 rise))
+                       (expt (sin (* 3.1415927 (+ 0.12 (* 0.80 rise)))) 0.7)))
          (clump-turn (+ seed-turn (* 2.39996 fmass)
                         (* 0.8 (- (tree-hash seed (+ (uint 90) mass)) 0.5))))
          (reach (* crown-radius envelope
-                   (+ 0.30 (* 0.45 (tree-hash seed (+ (uint 100) mass))))))
-         (clump-along (+ crown-base (* span (+ 0.06 (* 0.86 rise)))))
+                   (+ (if pine 0.45 0.30)
+                      (* 0.45 (tree-hash seed (+ (uint 100) mass))))))
+         (clump-along (+ crown-base (* span (if pine (+ 0.30 (* 0.62 rise))
+                                                (+ 0.06 (* 0.86 rise))))))
          (centre (+ root (* up clump-along)
                     (* (+ (* right (cos clump-turn))
                           (* forward (sin clump-turn)))
@@ -1799,13 +1855,16 @@
          (leaf-reach (* clump-radius
                         (+ 0.74 (* 0.42 (tree-hash seed
                                                    (+ (uint 180) leaf-lane))))))
-         (leaf-lift (+ (if (= (logand k (uint 1)) (uint 1)) 0.26 -0.34)
-                       (* 0.16 (- (tree-hash seed (+ (uint 240) leaf-lane))
-                                  0.5))))
+         (leaf-lift (* (if pine 0.60 1.0)
+                       (+ (if (= (logand k (uint 1)) (uint 1)) 0.26 -0.34)
+                          (* 0.16 (- (tree-hash seed (+ (uint 240) leaf-lane))
+                                     0.5)))))
+         (tip (if pine 0.60 1.0))
          (leaf-point
-           (if (= corner (uint 0)) (+ centre (* clump-up (* 0.66 clump-radius)))
+           (if (= corner (uint 0))
+               (+ centre (* clump-up (* 0.66 tip clump-radius)))
                (if (= corner (uint 1))
-                   (- centre (* clump-up (* 0.92 clump-radius)))
+                   (- centre (* clump-up (* 0.92 tip clump-radius)))
                    (+ centre (* clump-up (* leaf-lift clump-radius))
                       (* (+ (* across (cos leaf-turn)) (* depth (sin leaf-turn)))
                          leaf-reach)))))
@@ -1884,6 +1943,16 @@
                        (+ (* 0.16 (- (tree-hash seed (+ (uint 200) mass)) 0.5))
                           (* 0.10 wobble)))))
          (needle (vec3 (+ 0.20 (* 0.05 hue)) (+ 0.36 (* 0.06 moisture)) 0.22))
+         ;; Scots pine: greyer, bluer needles in tufts, which never turn.
+         (pine (tree-shape-pine tree))
+         (pine-needle (vec3 (+ 0.24 (* 0.04 hue)) (+ 0.36 (* 0.04 hue)) 0.27))
+         ;; Its bark is grey plates low down and thin fox-orange flakes
+         ;; from the middle of the trunk up.
+         (rise (clamp (/ (swizzle (tree-vertex-bark vertex) :y)
+                         (max (tree-shape-height tree) 0.01))
+                      0.0 1.0))
+         (pine-bark (mix (vec3 0.36 0.30 0.26) (vec3 0.80 0.46 0.26)
+                         (smoothstep 0.25 0.55 rise)))
          (green (vec3 (+ 0.42 (* 0.08 hue)) (+ 0.60 (* 0.05 moisture)) 0.22))
          (temper (- (tree-hash seed (uint 53)) 0.5))
          (reach (+ 0.58 (* 0.62 (expt (tree-hash seed (uint 52)) 1.8))
@@ -1897,9 +1966,11 @@
          ;; Summer's own variety of greens stays under the first turning.
          (leaf (mix green (autumn-leaf ripe) (clamp (/ ripe 0.25) 0.0 1.0))))
     (if (tree-vertex-foliage vertex)
-        (* (if conifer needle leaf) shade)
-        (if (tree-vertex-branch vertex) (vec3 0.34 0.31 0.29)
-            (if conifer (vec3 0.38 0.30 0.24) (vec3 0.80 0.78 0.72))))))
+        (* (if conifer needle (if pine pine-needle leaf)) shade)
+        (if (tree-vertex-branch vertex)
+            (if pine (vec3 0.62 0.38 0.24) (vec3 0.34 0.31 0.29))
+            (if conifer (vec3 0.38 0.30 0.24)
+                (if pine pine-bark (vec3 0.80 0.78 0.72)))))))
 
 ;;; Wind sways the crown about its base; the trunk only bends near the top.
 (define-shader-function wind-offset (world bend flutter time)
@@ -1968,7 +2039,8 @@
     (set-output bark (tree-vertex-bark vertex))
     (set-output crown-height (tree-vertex-crown-height vertex))
     (set-output kind (vec2 (if (tree-vertex-foliage vertex) 1.0 0.0)
-                           (if (tree-shape-conifer tree) 1.0 0.0)))
+                           (if (tree-shape-conifer tree) 1.0
+                               (if (tree-shape-pine tree) 2.0 0.0))))
     (set-output here here-clip)
     (set-output then (* previous-view-proj (vec4 previous 1.0)))))
 
@@ -2006,6 +2078,9 @@
                  (shadow-map :depth-texture-2d :binding 8)
                  (shadow-compare :sampler :binding 3)))
   (let* ((foliage (swizzle kind :x))
+         ;; Species: 0 birch, 1 spruce, 2 pine, whose bark is plated like
+         ;; a spruce's.
+         (furrowed (min (swizzle kind :y) 1.0))
          (eye (swizzle camera-position :xyz))
          (to-eye (- eye world-position))
          (view (/ to-eye (max (sqrt (dot to-eye to-eye)) 0.001)))
@@ -2021,10 +2096,10 @@
          ;; bark gives way to its dark, fissured base.
          (base (- 1.0 (smoothstep -0.1 1.4 (swizzle bark :y))))
          (rooted (mix (mix (srgb (vec3 0.24 0.22 0.20))
-                           (srgb (vec3 0.27 0.34 0.15)) (swizzle kind :y))
+                           (srgb (vec3 0.27 0.34 0.15)) furrowed)
                       albedo (- 1.0 (* 0.75 base))))
          (surface (if (> foliage 0.5) albedo
-                      (* rooted (bark-shade bark (swizzle kind :y))
+                      (* rooted (bark-shade bark furrowed)
                          (mix 1.0 0.55 (* base base)))))
          ;; Crowns keep metres of light-depth margin so a crown does not
          ;; shadow itself solid; trunks stay precise.
@@ -2257,7 +2332,7 @@
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
 (define-shader-function read-grass-medium (xz land floor up rise density
-                                           stand heath)
+                                           stand heath biome)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
          (canopy (clamp (swizzle stand :x) 0.0 1.0))
          ;; Fallen leaves smother some of the sward beneath a turned grove.
@@ -2285,7 +2360,12 @@
          ;; threshold so marginal ground breaks into ragged patches. How
          ;; lush the turf grows -- shade, water -- only thins it toward a
          ;; floor that still reads as a sward.
-         (holds (* standable cleared alpine (- 1.0 snow) ashore))
+         ;; Lichen holds the pine heath and stone the alvar's pavement;
+         ;; grass keeps to their hollows.
+         (holds (* standable cleared alpine (- 1.0 snow) ashore
+                   (- 1.0 (* 0.70 (swizzle biome :y)))
+                   (- 1.0 (* 0.55 (swizzle biome :z)))
+                   (- 1.0 (* 0.65 (swizzle biome :w)))))
          (edge (mix 0.25 0.60 clump))
          (turf (* (smoothstep (- edge 0.05) (+ edge 0.05) holds)
                   (step 0.001 density)
@@ -2300,11 +2380,16 @@
      :riparian 0.0
      :clump clump
      :canopy-height (* 0.42 (+ 0.72 (* 0.22 moisture)) (+ 0.88 (* 0.12 clump))
+                       (- 1.0 (* 0.55 (swizzle biome :w)))
                        (mix 0.36 1.0 (smoothstep 0.06 0.46
                                                  (clamp (* rooted density)
                                                         0.0 1.0))))
      ;; Under a turned grove the grass is drying toward straw too.
-     :blade-tint (mix (mix tint
+     ;; The bog's sedges are yellow-green, the alvar's turf parched.
+     :blade-tint (mix (mix (mix (mix tint (srgb (vec3 0.56 0.58 0.22))
+                                     (swizzle biome :z))
+                                (srgb (vec3 0.58 0.55 0.30))
+                                (swizzle biome :w))
                            (* (srgb (heath-colour (swizzle heath :x) moisture
                                                   0.04))
                               0.92)
@@ -2388,6 +2473,7 @@
                  (normals :texture-2d :binding 1)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
+                 (biomes :texture-2d :binding 5)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2428,7 +2514,8 @@
                                                          linear-repeat uv 0.0)
                                            :w))
                       ;; A tile's count asks nothing of its blades' tint.
-                      (vec2 0.5 0.5)))
+                      (vec2 0.5 0.5)
+                      (sample-level biomes linear-repeat uv 0.0)))
              (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
                         eye))
              (distance (sqrt (dot offset offset)))
@@ -2500,6 +2587,7 @@
                  (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
+                 (biomes :texture-2d :binding 5)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2540,7 +2628,8 @@
                               (swizzle (sample-level landscape linear-repeat
                                                      uv 0.0)
                                        :w))
-                  (read-heath detail linear-repeat uv)))
+                  (read-heath detail linear-repeat uv)
+                  (sample-level biomes linear-repeat uv 0.0)))
          (wet (grass-medium-moisture medium))
          (canopy (grass-medium-forest-cover medium))
          (root (vec3 (swizzle root-xz :x) height (swizzle root-xz :y)))
@@ -2897,6 +2986,7 @@
                  (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
+                 (biomes :texture-2d :binding 5)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2925,7 +3015,8 @@
                                   (swizzle (sample-level landscape
                                                          linear-repeat uv 0.0)
                                            :w))
-                      (read-heath detail linear-repeat uv)))
+                      (read-heath detail linear-repeat uv)
+                  (sample-level biomes linear-repeat uv 0.0)))
          (drift (read-flower-drift xz (grass-medium-moisture grass-here)
                                    (grass-medium-forest-cover grass-here)
                                    (grass-medium-leaf-area grass-here)))

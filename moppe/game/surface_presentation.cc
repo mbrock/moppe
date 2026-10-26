@@ -86,6 +86,28 @@ namespace moppe::game {
       }
     }
 
+    void write_biomes (const void* opaque,
+                       render::PixelFormat format,
+                       std::byte* destination) {
+      const auto& source = *static_cast<const TerrainMaterialSource*> (opaque);
+      const auto& limestone =
+        spatial::get<map::limestone_cover> (source.readings);
+      const auto& heath = spatial::get<map::pine_heath_cover> (source.readings);
+      const auto& mire = spatial::get<map::mire_cover> (source.readings);
+      const auto& alvar = spatial::get<map::alvar_cover> (source.readings);
+      const std::size_t stride = render::bytes_per_pixel (format);
+      for (std::size_t pixel = 0; pixel < limestone.size (); ++pixel) {
+        std::byte* at = destination + pixel * stride;
+        render::detail::write_channel (
+          at, format, render::detail::stored_scalar (limestone[pixel]));
+        render::detail::write_channel (
+          at + 1, format, render::detail::stored_scalar (heath[pixel]));
+        render::detail::write_channel (
+          at + 2, format, render::detail::stored_scalar (mire[pixel]));
+        render::detail::write_channel (
+          at + 3, format, render::detail::stored_scalar (alvar[pixel]));
+      }
+    }
   }
 
   void upload_surface_readings (render::Renderer& renderer,
@@ -113,6 +135,7 @@ namespace moppe::game {
     renderer.set_terrain_materials (
       pixels (render::PixelFormat::rgba8unorm, &write_landscape_materials),
       pixels (render::PixelFormat::rgba8unorm, &write_ground_materials),
+      pixels (render::PixelFormat::rgba8unorm, &write_biomes),
       include_forest);
   }
 }

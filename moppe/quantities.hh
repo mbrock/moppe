@@ -225,6 +225,23 @@ namespace moppe::map {
 
   // Actual canopy recruitment after habitat, routes, and settlement.
   QUANTITY_SPEC (forest_cover, proportion);
+
+  // ---- Bedrock and biomes ----
+
+  // How much of the ground stands on the limestone laid over the crystalline
+  // basement, rather than on the basement erosion has cut down to.
+  QUANTITY_SPEC (limestone_cover, proportion);
+
+  // Open Scots pine over reindeer lichen, on thin dry ground over the
+  // basement.
+  QUANTITY_SPEC (pine_heath_cover, proportion);
+
+  // Peat bog: sphagnum on flat ground that water soaks and cannot leave.
+  QUANTITY_SPEC (mire_cover, proportion);
+
+  // Alvar: limestone pavement and short dry turf where the cover's soil is
+  // too thin for a forest.
+  QUANTITY_SPEC (alvar_cover, proportion);
 }
 
 namespace moppe::game {

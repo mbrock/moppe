@@ -15,7 +15,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 13;
+    constexpr std::uint32_t forest_plan_version = 14;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The
@@ -58,6 +58,8 @@ namespace moppe::game {
       float moisture;
       float grove;
       bool pioneer; // admitted by birch's own open-ground population
+      bool pine;    // admitted by the heath's or the bog's pines
+      float mire;
       float priority;
       std::uint32_t identity;
     };
@@ -278,6 +280,23 @@ namespace moppe::game {
         pioneer = pioneer_population > population_value;
         population_value = std::max (population_value, pioneer_population);
       }
+      // The heath, the bog, and the alvar have their own trees: Scots pine
+      // standing open over the lichen, stunted pine scattered over the
+      // moss, and a lone one on the pavement. Their populations are low,
+      // so the stands stay open enough to ride through.
+      const auto biome = [&] (auto quantity) {
+        return spatial::sample<quantity> (readings, sample_position (x, z))
+          .numerical_value_in (one);
+      };
+      const float heath = biome (map::pine_heath_cover);
+      const float bog = biome (map::mire_cover);
+      const float pine_population =
+        0.30f * heath + 0.10f * bog + 0.03f * biome (map::alvar_cover);
+      const bool pine = pine_population > population_value;
+      if (pine) {
+        population_value = pine_population;
+        pioneer = false;
+      }
       const float proposal_scale = std::lerp (
         forest_proposal_scale_min, forest_proposal_scale_max, population_value);
       if ((cover < 0.06f * map::forest_cover[one] &&
@@ -291,6 +310,8 @@ namespace moppe::game {
                               .moisture = moisture,
                               .grove = grove,
                               .pioneer = pioneer,
+                              .pine = pine,
+                              .mire = bog,
                               .priority = hash_lane (identity, 3),
                               .identity = identity });
     }
@@ -373,15 +394,20 @@ namespace moppe::game {
       if (site.grove > 0.0f && site.moisture == 0.0f)
         site.moisture = moisture_at (readings, x, z).numerical_value_in (one);
       const ForestAge age = age_from_identity (candidate.identity);
-      plan.sites.push_back (
-        { .position = forest_position (x, elevation, z),
-          .normal = normal_at (surface, x, z),
-          .cover = cover,
-          .moisture = moisture_at (readings, x, z),
-          .size = size_for_age (age, candidate.identity),
-          .seed = candidate.identity,
-          .form = is_birch (site) ? ForestForm::broadleaf : ForestForm::conifer,
-          .age = age });
+      // A bog's pines are old and no taller than a person or two.
+      const TreeSizeFactor size =
+        size_for_age (age, candidate.identity) *
+        (candidate.pine ? std::lerp (1.0f, 0.28f, candidate.mire) : 1.0f);
+      plan.sites.push_back ({ .position = forest_position (x, elevation, z),
+                              .normal = normal_at (surface, x, z),
+                              .cover = cover,
+                              .moisture = moisture_at (readings, x, z),
+                              .size = size,
+                              .seed = candidate.identity,
+                              .form = candidate.pine    ? ForestForm::pine
+                                      : is_birch (site) ? ForestForm::broadleaf
+                                                        : ForestForm::conifer,
+                              .age = age });
     }
     return plan;
   }
@@ -444,7 +470,7 @@ namespace moppe::game {
       ForestSiteRecord record {};
       input.read (reinterpret_cast<char*> (&record), sizeof (record));
       if (!input ||
-          record.form > static_cast<std::uint32_t> (ForestForm::conifer) ||
+          record.form > static_cast<std::uint32_t> (ForestForm::pine) ||
           record.age > static_cast<std::uint32_t> (ForestAge::ancient))
         return std::nullopt;
       plan.sites.push_back (
