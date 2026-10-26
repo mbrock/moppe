@@ -24,12 +24,13 @@ figure-model:
 	$(BLENDER) -b --factory-startup --python tools/figure/build.py
 
 # Re-export the bike, glider, jeep, helicopter, tractor, Caddy,
-# mountainbike, and boat from their .blend files and render their turnarounds beside
+# mountainbike, boat, and Long John from their .blend files and render their
+# turnarounds beside
 # FIGURE_PREVIEW.
 # MODELS_REBUILD=1 first regenerates the .blend files from their scripts
 # (discarding hand edits).
 models:
-	for m in bike glider jeep helicopter tractor caddy mountain_bike boat; do \
+	for m in bike glider jeep helicopter tractor caddy mountain_bike boat long_john; do \
 	  if [ -n "$(MODELS_REBUILD)" ]; then \
 	    $(BLENDER) -b --factory-startup --python tools/figure/$$m.py; fi; \
 	  $(BLENDER) -b models/$$m.blend --python tools/figure/export_model.py \

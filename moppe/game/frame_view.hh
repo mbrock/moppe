@@ -158,6 +158,7 @@ namespace moppe::game {
   struct FrameActors {
     VehiclePose bike {};
     VehiclePose mountain_bike {};
+    VehiclePose long_john {};
     JeepPose jeep {};
     HelicopterPose helicopter {};
     TractorPose tractor {};
@@ -214,6 +215,8 @@ namespace moppe::game {
     bool can_drive_caddy = false;
     // On foot beside the mountainbike, which the mount key would ride.
     bool can_ride_mountain_bike = false;
+    // On foot beside the Long John, which the mount key would ride.
+    bool can_ride_long_john = false;
     // On foot beside the boat, which the mount key would take out.
     bool can_take_boat = false;
     // On foot beside a stuck machine, which the mount key would haul

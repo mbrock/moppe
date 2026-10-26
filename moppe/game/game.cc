@@ -47,6 +47,7 @@
 #include <moppe/game/terrain.hh>
 #include <moppe/game/boat_render.hh>
 #include <moppe/game/caddy_render.hh>
+#include <moppe/game/long_john_render.hh>
 #include <moppe/game/mountain_bike_render.hh>
 #include <moppe/game/tractor_render.hh>
 #include <moppe/game/vehicle_render.hh>
@@ -697,8 +698,8 @@ namespace moppe {
               logic ().m_cam_mode = CAM_HELMET;
           }
         }
-        // MOPPE_DEMO=jeep, tractor, caddy, or mountain_bike: the autopilot
-        // drives that instead.
+        // MOPPE_DEMO=jeep, tractor, caddy, mountain_bike, or long_john: the
+        // autopilot drives that instead.
         if (demo && !m_benchmark && !m_gazetteer && logic ().m_mode == M_BIKE) {
           if (std::string_view (demo) == "jeep")
             session ().set_mode (M_JEEP);
@@ -708,6 +709,8 @@ namespace moppe {
             session ().set_mode (M_CADDY);
           else if (std::string_view (demo) == "mountain_bike")
             session ().set_mode (M_MOUNTAIN_BIKE);
+          else if (std::string_view (demo) == "long_john")
+            session ().set_mode (M_LONG_JOHN);
         }
       }
 
@@ -981,6 +984,22 @@ namespace moppe {
         mtb.set_trunks (&m_trunk_field);
         mtb.set_heading (normalized (heading + side * 0.2f));
         mtb.reset (at);
+      }
+
+      // The Long John is left back down the trail behind the motocross,
+      // on open ground off to its side, pointing on along the trail as if
+      // its rider had walked on ahead.
+      void park_long_john () {
+        const auto [heading, side] = bike_frame ();
+        Vec3 at = open_ground_near (session ().bike ().position () -
+                                      heading * 24.0f + side * 4.0f,
+                                    1.8f, 0.3f, 20.0f);
+        at[1] =
+          ground_height (at) + mov::long_john_rig.ride_height () + 0.02f;
+        mov::Vehicle& lj = session ().long_john ();
+        lj.set_trunks (&m_trunk_field);
+        lj.set_heading (normalized (heading - side * 0.15f));
+        lj.reset (at);
       }
 
       // The helicopter stands on a pad of its own a few hundred metres
@@ -2011,6 +2030,10 @@ namespace moppe {
           state.dismount = "Get off";
           state.skids = true;
           break;
+        case M_LONG_JOHN:
+          state.dismount = "Get off";
+          state.skids = true;
+          break;
         case M_GLIDER:
           state.thumb = "Flare";
           break;
@@ -2627,6 +2650,7 @@ namespace moppe {
         park_jeep ();
         park_tractor ();
         park_mountain_bike ();
+        park_long_john ();
         park_helicopter ();
         // MOPPE_DEMO=boat: the autopilot takes the boat out instead, and
         // MOPPE_WALK=boat-fish takes it out to fish.
@@ -2874,6 +2898,7 @@ namespace moppe {
         mine.tractor = tractor_pose (session ().tractor ());
         mine.caddy = caddy_pose (session ().caddy ());
         mine.mountain_bike = vehicle_pose (session ().mountain_bike ());
+        mine.long_john = vehicle_pose (session ().long_john ());
         mine.boat = boat_pose (session ().boat ());
         mine.boat_velocity = session ().boat ().velocity ();
         mine.in_boat = state.m_mode == M_PASSENGER && state.m_seat_boat;
@@ -2956,6 +2981,7 @@ namespace moppe {
         park_jeep ();
         park_tractor ();
         park_mountain_bike ();
+        park_long_john ();
         park_helicopter (theirs.helicopter.position);
         if (logic ().m_mode != M_BOAT)
           park_boat ();
@@ -3123,6 +3149,10 @@ namespace moppe {
                   theirs.mountain_bike.position,
                   theirs.mountain_bike.render_orientation,
                   theirs.mountain_bike.render_normal);
+        stranger (Machine::long_john,
+                  theirs.long_john.position,
+                  theirs.long_john.render_orientation,
+                  theirs.long_john.render_normal);
         stranger (Machine::boat,
                   theirs.boat.position,
                   theirs.boat.forward,
@@ -3274,6 +3304,14 @@ namespace moppe {
                                 ? std::optional<Outfit> (their_outfit ())
                                 : std::nullopt,
                               0xE000);
+        m_blob.draw (dl, surface (), theirs.long_john.position, 2.0f);
+        render_long_john (r,
+                          dl,
+                          theirs.long_john,
+                          theirs.mode == M_LONG_JOHN
+                            ? std::optional<Outfit> (their_outfit ())
+                            : std::nullopt,
+                          0xE100);
         if (theirs.hung)
           draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
         if (theirs.hearth_laid)
@@ -3429,6 +3467,8 @@ namespace moppe {
             at = theirs.caddy.position + Vec3 (0, 1.0f, 0);
           else if (theirs.mode == M_MOUNTAIN_BIKE)
             at = theirs.mountain_bike.position + Vec3 (0, 1.4f, 0);
+          else if (theirs.mode == M_LONG_JOHN)
+            at = theirs.long_john.position + Vec3 (0, 1.4f, 0);
           else if (theirs.mode == M_BOAT)
             at = theirs.boat.position + Vec3 (0, 1.2f, 0);
           // In the colour of the jacket they wear.
@@ -3501,6 +3541,18 @@ namespace moppe {
                        "",
                        Mark::MountainBike,
                        session ().mountain_bike ().position () +
+                         Vec3 (0, 1.5f, 0),
+                       30.0f,
+                       50.0f,
+                       pale);
+        if (mode != M_LONG_JOHN)
+          add_waymark (state,
+                       frame,
+                       width,
+                       height,
+                       "",
+                       Mark::LongJohn,
+                       session ().long_john ().position () +
                          Vec3 (0, 1.5f, 0),
                        30.0f,
                        50.0f,
@@ -3833,7 +3885,7 @@ namespace moppe {
         const bool boat = logic ().m_mode == M_BOAT;
         const bool driving =
           logic ().m_mode == M_JEEP || tractor || caddy || boat;
-        const bool pedalled = logic ().m_mode == M_MOUNTAIN_BIKE;
+        const bool pedalled = game::pedalled (logic ().m_mode);
         const auto& bike = session ().ridden_bike ();
         const Vec3 car = tractor ? session ().tractor ().position ()
                          : caddy ? session ().caddy ().position ()
@@ -4225,6 +4277,7 @@ namespace moppe {
         render_vehicle (r, m_caster_dl, actors.bike, false, 0);
         render_mountain_bike (
           r, m_caster_dl, actors.mountain_bike, std::nullopt, 0);
+        render_long_john (r, m_caster_dl, actors.long_john, std::nullopt, 0);
         render_jeep (r, m_caster_dl, actors.jeep, {}, 0);
         render_caddy (r, m_caster_dl, actors.caddy, {}, 0);
         render_tractor (r, m_caster_dl, actors.tractor, std::nullopt, 0);
@@ -4235,6 +4288,8 @@ namespace moppe {
           render_vehicle (r, m_caster_dl, theirs.bike, false, 0);
           render_mountain_bike (
             r, m_caster_dl, theirs.mountain_bike, std::nullopt, 0);
+          render_long_john (
+            r, m_caster_dl, theirs.long_john, std::nullopt, 0);
           render_jeep (r, m_caster_dl, theirs.jeep, {}, 0);
           render_caddy (r, m_caster_dl, theirs.caddy, {}, 0);
           render_tractor (r, m_caster_dl, theirs.tractor, std::nullopt, 0);
@@ -4311,6 +4366,9 @@ namespace moppe {
               break;
             case M_MOUNTAIN_BIKE:
               interaction_radius = 0.6f;
+              break;
+            case M_LONG_JOHN:
+              interaction_radius = 0.8f;
               break;
             case M_HELICOPTER:
               // The downwash flattens the grass under it.
@@ -4430,6 +4488,14 @@ namespace moppe {
                                   ? std::optional<Outfit> (m_outfit)
                                   : std::nullopt,
                                 0xD000);
+          m_blob.draw (m_world_dl, surface (), actors.long_john.position, 2.0f);
+          render_long_john (r,
+                            m_world_dl,
+                            actors.long_john,
+                            actors.active_mode == M_LONG_JOHN && !helmet
+                              ? std::optional<Outfit> (m_outfit)
+                              : std::nullopt,
+                            0xD100);
         }
         const Basket& basket = logic ().m_basket;
         m_basket_contents.clear ();
@@ -4728,6 +4794,8 @@ namespace moppe {
             at = theirs.caddy.position;
           else if (theirs.mode == M_MOUNTAIN_BIKE)
             at = theirs.mountain_bike.position;
+          else if (theirs.mode == M_LONG_JOHN)
+            at = theirs.long_john.position;
           else if (theirs.mode == M_BOAT)
             at = theirs.boat.position;
           DisplayColor jacket = dark;
@@ -4765,6 +4833,11 @@ namespace moppe {
                              .position = session ().mountain_bike ().position (),
                              .colour = DisplayColor (0.06f, 0.30f, 0.22f),
                              .name = "mountainbike" });
+        if (mode != M_LONG_JOHN)
+          marks.push_back ({ .kind = Mark::Kind::Bike,
+                             .position = session ().long_john ().position (),
+                             .colour = DisplayColor (0.58f, 0.575f, 0.57f),
+                             .name = "Long John" });
         if (mode != M_HELICOPTER)
           marks.push_back ({ .kind = Mark::Kind::Jeep,
                              .position = session ().helicopter ().position (),

@@ -32,6 +32,8 @@ namespace moppe::game {
       break;
     case Machine::mountain_bike:
       return Vec3 (0.0f, 2.0f, 0.05f);
+    case Machine::long_john:
+      return Vec3 (0.0f, 2.2f, 0.1f);
     case Machine::boat:
       return Vec3 (0.0f, 2.2f, 0.6f);
     }
@@ -62,6 +64,10 @@ namespace moppe::game {
       // The head tube and the seat post.
       return { Vec3 (0.0f, 0.75f, 0.4f), Vec3 (0.0f, 0.75f, 0.4f),
                Vec3 (0.0f, 0.8f, -0.25f), Vec3 (0.0f, 0.8f, -0.25f) };
+    case Machine::long_john:
+      // The bulkhead's top corners and the hoop's.
+      return { Vec3 (0.19f, 0.39f, 0.81f), Vec3 (-0.19f, 0.39f, 0.81f),
+               Vec3 (0.25f, 0.63f, -0.15f), Vec3 (-0.25f, 0.63f, -0.15f) };
     case Machine::boat:
       // The bow handle and the transom's corners.
       return { Vec3 (0.0f, 0.45f, 2.65f), Vec3 (0.0f, 0.45f, 2.65f),

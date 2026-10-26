@@ -53,7 +53,9 @@ namespace moppe {
       }
 
       Vec3 front_axle (const BikeRig& rig) {
-        return Vec3 (0.0f, rig.axle_height, rig.half_wheelbase);
+        return Vec3 (0.0f,
+                     rig.axle_height - (rig.wheel_radius - rig.front_radius ()),
+                     rig.half_wheelbase);
       }
 
       Vec3 rear_axle (const BikeRig& rig) {
@@ -205,14 +207,16 @@ namespace moppe {
         return coefficient * coefficient / bike_rig::ground_friction;
       }
 
-      b3BodyId create_wheel (const RigidBodyState& s, b3ShapeId* tire) {
+      b3BodyId create_wheel (const RigidBodyState& s,
+                             float radius,
+                             b3ShapeId* tire) {
         const b3BodyId wheel = create_body (s);
         b3ShapeDef shape = b3DefaultShapeDef ();
         shape.updateBodyMass = false;
         shape.baseMaterial.friction = tire_material (rig.tire_friction);
         shape.filter.categoryBits = bike_rig::wheel_bit;
         shape.filter.maskBits = bike_rig::ground_bit;
-        const b3Sphere sphere { { 0.0f, 0.0f, 0.0f }, rig.wheel_radius };
+        const b3Sphere sphere { { 0.0f, 0.0f, 0.0f }, radius };
         const b3ShapeId id = b3CreateSphereShape (wheel, &shape, &sphere);
         if (tire)
           *tire = id;
@@ -304,8 +308,8 @@ namespace moppe {
         world = b3CreateWorld (&def);
         patch.build (world, trunks, s.ground_column, s.ground_row);
         create_chassis (s.chassis);
-        front = create_wheel (s.front_wheel, nullptr);
-        rear = create_wheel (s.rear_wheel, &rear_tire);
+        front = create_wheel (s.front_wheel, rig.front_radius (), nullptr);
+        rear = create_wheel (s.rear_wheel, rig.wheel_radius, &rear_tire);
         front_joint = create_suspension (front,
                                          front_axle (rig),
                                          rig.front_sag,
@@ -522,7 +526,7 @@ namespace moppe {
                                  (vf < -1.0f ? -1.0f : 1.0f);
           const Vec3 front_contact_point =
             p + from_b3 (b3RotateVector (q, to_b3 (front_axle (rig)))) -
-            ground_normal * rig.wheel_radius;
+            ground_normal * rig.front_radius ();
           const Vec3 pivot = p + (front_contact_point - p) * slide;
           steer_rate (ground_normal,
                       wanted_yaw + (skid_yaw - wanted_yaw) * slide,
@@ -853,7 +857,7 @@ namespace moppe {
       s.front_wheel = { centre + rotated (rotation, front_axle (m.rig)),
                         rotation,
                         velocity,
-                        roll };
+                        roll * (m.rig.wheel_radius / m.rig.front_radius ()) };
       s.rear_wheel = {
         centre + rotated (rotation, rear_axle (m.rig)), rotation, velocity, roll
       };

@@ -1020,3 +1020,64 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   MOPPE_CHECK (length (bike.position () - left) < 0.3f);
   MOPPE_CHECK (length (session.bike ().position () - motocross) < 0.05f);
 }
+
+MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
+  using namespace moppe;
+
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (256, 20, 256));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::GameSession session (world, surface);
+  const auto run = [&] (game::InputFrame input, float seconds_held) {
+    for (int i = 0; i < static_cast<int> (seconds_held * 60.0f); ++i) {
+      game::advance_game_session (world, surface, session, input, step);
+      input.toggle_mount = false;
+    }
+  };
+  const game::GameLogicState& logic = session.logic ();
+  session.start_on_foot ();
+
+  // Beside its box's far end it is out of reach; beside its saddle, over
+  // the back wheel, it is the one to ride.
+  mov::Vehicle& bike = session.long_john ();
+  bike.set_heading (Vec3 (0, 0, 1));
+  bike.reset (Vec3 (60, 10.0f + mov::long_john_rig.ride_height (), 40));
+  session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 42.2f)),
+                           Vec3 (0, 0, 1));
+  run ({}, 0.5f);
+  MOPPE_CHECK (!session.can_ride_long_john ());
+  session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 39.2f)),
+                           Vec3 (0, 0, 1));
+  run ({}, 0.5f);
+  MOPPE_CHECK (session.can_ride_long_john ());
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_LONG_JOHN);
+
+  // Pedalled off at a loaded cargo bike's pace.
+  run ({ .drive = 1.0f }, 10.0f);
+  MOPPE_CHECK (bike.position ()[2] > 80.0f);
+  MOPPE_CHECK (session.subject_speed_kmh () > 18.0f);
+  MOPPE_CHECK (session.subject_speed_kmh () < 32.0f);
+
+  // Braked to a stand, F gets off beside it, and it stays where it was
+  // left.
+  run ({ .drive = -1.0f }, 1.5f);
+  run ({}, 1.0f);
+  MOPPE_CHECK (session.subject_speed_kmh () < 1.0f);
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (length (session.walker ().position () - bike.position ()) <
+               2.0f);
+  const Vec3 left = bike.position ();
+  run ({}, 3.0f);
+  MOPPE_CHECK (length (bike.position () - left) < 0.3f);
+}

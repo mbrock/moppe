@@ -69,13 +69,23 @@ namespace moppe::game {
     const mov::Vehicle& mountain_bike () const noexcept {
       return m_mountain_bike;
     }
-    // The bike being ridden, the motocross or the mountainbike, or the
-    // motocross when neither is.
+    mov::Vehicle& long_john () noexcept {
+      return m_long_john;
+    }
+    const mov::Vehicle& long_john () const noexcept {
+      return m_long_john;
+    }
+    // The bike being ridden, the motocross, the mountainbike, or the Long
+    // John, or the motocross when none is.
     mov::Vehicle& ridden_bike () noexcept {
-      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike : m_bike;
+      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike
+             : m_logic.m_mode == M_LONG_JOHN   ? m_long_john
+                                               : m_bike;
     }
     const mov::Vehicle& ridden_bike () const noexcept {
-      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike : m_bike;
+      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike
+             : m_logic.m_mode == M_LONG_JOHN   ? m_long_john
+                                               : m_bike;
     }
 
     mov::Jeep& jeep () noexcept {
@@ -154,8 +164,8 @@ namespace moppe::game {
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
     // What the mount key would take, on foot: of the bike, the jeep, the
-    // helicopter, the tractor, the Caddy, and the mountainbike, the
-    // nearest within its reach.
+    // helicopter, the tractor, the Caddy, the mountainbike, the boat, and
+    // the Long John, the nearest within its reach.
     enum class Mount {
       none,
       bike,
@@ -164,7 +174,8 @@ namespace moppe::game {
       tractor,
       caddy,
       mountain_bike,
-      boat
+      boat,
+      long_john
     };
     Mount mount_within_reach () const;
     // On foot nearest the jeep, within its reach.
@@ -177,6 +188,8 @@ namespace moppe::game {
     bool can_drive_caddy () const;
     // On foot nearest the mountainbike, within reach of its bars.
     bool can_ride_mountain_bike () const;
+    // On foot nearest the Long John, within reach of its saddle.
+    bool can_ride_long_john () const;
     // On foot nearest the boat, within reach of its helm.
     bool can_take_boat () const;
     // Where someone stepping out of the boat stands: over whichever side,
@@ -234,6 +247,7 @@ namespace moppe::game {
     mov::Caddy m_caddy;
     mov::Vehicle m_mountain_bike;
     mov::Boat m_boat;
+    mov::Vehicle m_long_john;
     Vec3 m_boat_landing {};
     Walker m_walker;
     ChaseCamera m_camera;

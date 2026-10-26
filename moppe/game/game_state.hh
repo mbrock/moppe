@@ -28,7 +28,8 @@ namespace moppe::game {
   // M_JEEP drives this player's jeep; M_PASSENGER rides in the other
   // player's (game/companion.hh); M_HELICOPTER flies the helicopter,
   // M_TRACTOR drives the tractor, M_CADDY the Caddy, and
-  // M_MOUNTAIN_BIKE rides the mountainbike, and M_BOAT takes the boat out.
+  // M_MOUNTAIN_BIKE rides the mountainbike, M_BOAT takes the boat out,
+  // and M_LONG_JOHN rides Krisjanis's cargo bike.
   enum Mode {
     M_BIKE,
     M_FOOT,
@@ -39,8 +40,13 @@ namespace moppe::game {
     M_TRACTOR,
     M_CADDY,
     M_MOUNTAIN_BIKE,
-    M_BOAT
+    M_BOAT,
+    M_LONG_JOHN
   };
+  // The bikes ridden by pedalling, which have no jets.
+  inline bool pedalled (Mode mode) {
+    return mode == M_MOUNTAIN_BIKE || mode == M_LONG_JOHN;
+  }
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
   // The directly copyable logical state owned by GameSession. Generated world
@@ -139,6 +145,7 @@ namespace moppe::game {
     mov::Caddy::State caddy;
     mov::Vehicle::State mountain_bike;
     mov::Boat::State boat;
+    mov::Vehicle::State long_john;
   };
 }
 

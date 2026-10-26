@@ -65,6 +65,8 @@ namespace moppe {
       bool can_drive_caddy = false;
       // On foot beside the mountainbike.
       bool can_ride_mountain_bike = false;
+      // On foot beside the Long John.
+      bool can_ride_long_john = false;
       // On foot beside the boat.
       bool can_take_boat = false;
       // On foot beside a stuck machine ("the tractor"), which the mount
@@ -151,7 +153,8 @@ namespace moppe {
           Caddy = 1 << 3,
           MountainBike = 1 << 4,
           Helicopter = 1 << 5,
-          Boat = 1 << 6
+          Boat = 1 << 6,
+          LongJohn = 1 << 7
         };
         unsigned vehicles = 0; // none for the companion's named marker
         const char* name = "";

@@ -51,6 +51,8 @@ namespace moppe::game {
     CaddyPose caddy {};
     // Their mountainbike, and them on it when they ride it.
     VehiclePose mountain_bike {};
+    // Their Long John, likewise.
+    VehiclePose long_john {};
     // Their boat, and them at its helm when they take it out.
     BoatPose boat {};
     Vec3 boat_velocity {};

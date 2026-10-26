@@ -360,6 +360,46 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
   MOPPE_CHECK (bike.render_normal ()[1] > 0.98f);
 }
 
+MOPPE_TEST (the_long_john_stands_level_on_its_odd_wheels_and_is_pedalled) {
+  const map::SurfaceGeometry surface = rigid_test_surface (flat);
+  mov::Vehicle bike (position (Vec3 (150, 0, 20)),
+                     0 * u::deg,
+                     surface,
+                     420 * u::N,
+                     600 * u::W,
+                     115 * u::kg,
+                     mov::BikePhysics::rigid,
+                     mov::long_john_rig);
+  for (int i = 0; i < 240; ++i)
+    bike.update (tick);
+  // The 20-inch front wheel and the 26-inch rear both on the ground, the
+  // frame level rather than nosed down onto the smaller one.
+  MOPPE_CHECK (bike.grounded ());
+  MOPPE_CHECK_NEAR (bike.position ()[1],
+                    10.0f + mov::long_john_rig.ride_height (),
+                    0.02f);
+  MOPPE_CHECK_NEAR (bike.orientation ()[1], 0.0f, 0.005f);
+
+  // Pedalled flat out with the motor's help, a loaded cargo bike's pace,
+  // the crank going round once for each 38/18 of the wheel.
+  bike.set_thrust (1.0f);
+  for (int i = 0; i < 15 * 120; ++i)
+    bike.update (tick);
+  float turned = 0.0f, last = radians_value (bike.crank ());
+  float covered = 0.0f;
+  for (int i = 0; i < 120; ++i) {
+    bike.update (tick);
+    const float now = radians_value (bike.crank ());
+    turned += std::remainder (now - last, 6.2831853f);
+    last = now;
+    covered += length (bike.velocity ()) * seconds_value (tick);
+  }
+  const float kmh = dot (bike.velocity (), bike.orientation ()) * 3.6f;
+  MOPPE_CHECK (kmh > 20.0f && kmh < 30.0f);
+  MOPPE_CHECK_NEAR (turned, covered / (0.335f * 38.0f / 18.0f), 0.5f);
+  MOPPE_CHECK_NEAR (bike.orientation ()[1], 0.0f, 0.01f);
+}
+
 namespace {
   // The pitch of a bike on flat ground, nose up.
   float pitch_of (const mov::Vehicle& bike) {

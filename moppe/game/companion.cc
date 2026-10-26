@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 11;
+    constexpr std::uint8_t wire_version = 12;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -301,15 +301,18 @@ namespace moppe::game {
     out.put (tractor.front_spin_radians);
     out.put (tractor.rear_spin_radians);
 
-    const VehiclePose& mtb = snapshot.mountain_bike;
-    out.put (mtb.position);
-    out.put (mtb.render_orientation);
-    out.put (mtb.render_normal);
-    out.put (mtb.rear_wheel_drop);
-    out.put (mtb.front_wheel_drop);
-    out.put (mtb.wheel_spin_radians);
-    out.put (mtb.fork_radians);
-    out.put (mtb.crank_radians);
+    for (const VehiclePose* pedalled :
+         { &snapshot.mountain_bike, &snapshot.long_john }) {
+      const VehiclePose& mtb = *pedalled;
+      out.put (mtb.position);
+      out.put (mtb.render_orientation);
+      out.put (mtb.render_normal);
+      out.put (mtb.rear_wheel_drop);
+      out.put (mtb.front_wheel_drop);
+      out.put (mtb.wheel_spin_radians);
+      out.put (mtb.fork_radians);
+      out.put (mtb.crank_radians);
+    }
 
     const CaddyPose& caddy = snapshot.caddy;
     out.put (caddy.position);
@@ -397,7 +400,7 @@ namespace moppe::game {
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
     const std::uint8_t mode = in.get<std::uint8_t> ();
-    if (mode > M_BOAT)
+    if (mode > M_LONG_JOHN)
       return std::nullopt;
     snapshot.mode = static_cast<Mode> (mode);
     const std::uint8_t flags = in.get<std::uint8_t> ();
@@ -443,15 +446,18 @@ namespace moppe::game {
     tractor.front_spin_radians = in.number ();
     tractor.rear_spin_radians = in.number ();
 
-    VehiclePose& mtb = snapshot.mountain_bike;
-    mtb.position = in.point ();
-    mtb.render_orientation = in.direction (Vec3 (0, 0, 1));
-    mtb.render_normal = in.direction (Vec3 (0, 1, 0));
-    mtb.rear_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
-    mtb.front_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
-    mtb.wheel_spin_radians = in.number ();
-    mtb.fork_radians = in.number ();
-    mtb.crank_radians = in.number ();
+    for (VehiclePose* pedalled :
+         { &snapshot.mountain_bike, &snapshot.long_john }) {
+      VehiclePose& mtb = *pedalled;
+      mtb.position = in.point ();
+      mtb.render_orientation = in.direction (Vec3 (0, 0, 1));
+      mtb.render_normal = in.direction (Vec3 (0, 1, 0));
+      mtb.rear_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
+      mtb.front_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
+      mtb.wheel_spin_radians = in.number ();
+      mtb.fork_radians = in.number ();
+      mtb.crank_radians = in.number ();
+    }
 
     CaddyPose& caddy = snapshot.caddy;
     caddy.position = in.point ();
@@ -597,13 +603,17 @@ namespace moppe::game {
         mix_angle (a.jeep.wheel_spin_radians, b.jeep.wheel_spin_radians, t);
       result.jeep_velocity = mix (a.jeep_velocity, b.jeep_velocity, within);
     }
-    if (!leapt (a.mountain_bike.position, b.mountain_bike.position)) {
-      const VehiclePose& from = a.mountain_bike;
-      const VehiclePose& to = b.mountain_bike;
-      VehiclePose& mtb = result.mountain_bike;
-      mtb.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.mountain_bike.position;
+    for (VehiclePose CompanionSnapshot::*pedalled :
+         { &CompanionSnapshot::mountain_bike,
+           &CompanionSnapshot::long_john }) {
+      const VehiclePose& from = a.*pedalled;
+      const VehiclePose& to = b.*pedalled;
+      if (leapt (from.position, to.position))
+        continue;
+      VehiclePose& mtb = result.*pedalled;
+      mtb.position = travel (
+        before, a, b, after, t, [pedalled] (const CompanionSnapshot& each) {
+          return &(each.*pedalled).position;
         });
       mtb.render_orientation =
         mix_direction (from.render_orientation, to.render_orientation, t);

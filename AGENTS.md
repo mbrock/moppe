@@ -415,6 +415,19 @@
     `M_MOUNTAIN_BIKE`). `MOPPE_DEMO=mountain_bike` (`tools/record OUT.mp4
     mountain_bike`) pedals it on the autopilot; the other player sees it
     (companion wire version 7).
+  - The Long John (`models/long_john.blend` from `tools/figure/long_john.py`,
+    drawn by `game/long_john_render.*`) is Krisjanis's homemade cargo
+    bike: a donor 26-inch rear triangle in worn red welded to his raw-steel
+    box and hoop, a 20-inch front wheel 1.894 m ahead, cable steering,
+    38/18 single speed. Its geometry comes from
+    `tools/figure/long_john_source.py`, the procedural twin solved from
+    his photos, run without weld beads or chain links. It is left a little
+    back down the trail; `F` by its saddle rides it, `W` pedals (with its
+    hub motor's help, some 25 km/h), `S` brakes, `Shift` skids. It rides
+    on `mov::long_john_rig` (`BikeRig::front_wheel_radius` gives it its
+    small front wheel), as `M_LONG_JOHN`; `MOPPE_DEMO=long_john`
+    (`tools/record OUT.mp4 long_john`) pedals it, and the other player
+    sees it (companion wire version 12).
   - The boat (`moppe/mov/boat.*`, `models/boat.blend` from
     `tools/figure/boat.py`, drawn by `game/boat_render.*`) is Krisjanis's
     hard-chined plywood skiff, to his figures: 3.93 m long, 0.95 m wide,

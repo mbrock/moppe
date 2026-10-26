@@ -68,8 +68,8 @@ namespace moppe::game {
         session.caddy ().set_turn (value);
       else if (logic.m_mode == M_BIKE)
         session.bike ().set_yaw ((90 * value) * u::deg);
-      else if (logic.m_mode == M_MOUNTAIN_BIKE)
-        session.mountain_bike ().set_yaw ((90 * value) * u::deg);
+      else if (pedalled (logic.m_mode))
+        session.ridden_bike ().set_yaw ((90 * value) * u::deg);
       else if (logic.m_mode == M_BOAT)
         session.boat ().set_turn (value);
     }
@@ -95,8 +95,8 @@ namespace moppe::game {
       else if (logic.m_mode == M_BIKE) {
         session.bike ().set_thrust (value);
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
-      } else if (logic.m_mode == M_MOUNTAIN_BIKE)
-        session.mountain_bike ().set_thrust (value);
+      } else if (pedalled (logic.m_mode))
+        session.ridden_bike ().set_thrust (value);
       else if (logic.m_mode == M_BOAT)
         session.boat ().set_drive (value);
     }
@@ -126,6 +126,7 @@ namespace moppe::game {
         // ground instead.
         if (logic.m_boost_input > 0.1f && previous <= 0.1f)
           session.mountain_bike ().hop (3.0f);
+
       }
     }
 
@@ -216,6 +217,8 @@ namespace moppe::game {
         return Machine::helicopter;
       case M_MOUNTAIN_BIKE:
         return Machine::mountain_bike;
+      case M_LONG_JOHN:
+        return Machine::long_john;
       case M_BOAT:
         return Machine::boat;
       default:
@@ -237,6 +240,8 @@ namespace moppe::game {
         return Machine::helicopter;
       case GameSession::Mount::mountain_bike:
         return Machine::mountain_bike;
+      case GameSession::Mount::long_john:
+        return Machine::long_john;
       case GameSession::Mount::boat:
         return Machine::boat;
       case GameSession::Mount::none:
@@ -379,9 +384,9 @@ namespace moppe::game {
         return;
       }
 
-      if (logic.m_mode == M_MOUNTAIN_BIKE) {
+      if (pedalled (logic.m_mode)) {
         // Off on the left, as a cyclist gets off.
-        mov::Vehicle& bike = session.mountain_bike ();
+        mov::Vehicle& bike = session.ridden_bike ();
         const Vec3 heading = level_heading (bike.orientation ());
         session.walker ().spawn (
           moppe::position (bike.position () +
@@ -446,6 +451,8 @@ namespace moppe::game {
                         : reach == GameSession::Mount::caddy   ? M_CADDY
                         : reach == GameSession::Mount::mountain_bike
                           ? M_MOUNTAIN_BIKE
+                        : reach == GameSession::Mount::long_john
+                          ? M_LONG_JOHN
                         : reach == GameSession::Mount::helicopter
                           ? M_HELICOPTER
                         : reach == GameSession::Mount::boat ? M_BOAT
@@ -524,6 +531,8 @@ namespace moppe::game {
       session.bike ().set_wheelie (logic.m_mode == M_BIKE && input.lean_back);
       session.mountain_bike ().set_skid (
         logic.m_mode == M_MOUNTAIN_BIKE && input.run ? 1 : 0);
+      session.long_john ().set_skid (
+        logic.m_mode == M_LONG_JOHN && input.run ? 1 : 0);
       logic.m_look_pitch =
         std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
       if (input.look_yaw != 0.0f || input.look_pitch != 0.0f)
@@ -689,6 +698,14 @@ namespace moppe::game {
       return moppe::position (position_value (world.spawn_position ()) -
                               side * 2.6f - heading * 1.2f);
     }
+
+    // The Long John back down the trail behind the motocross; game.cc
+    // parks it on open ground there.
+    position_t long_john_stand (const WorldParams& world) {
+      const Vec3 heading (0.70710678f, 0.0f, 0.70710678f);
+      return moppe::position (position_value (world.spawn_position ()) -
+                              heading * 20.0f);
+    }
   }
 
   MachineBody GameSession::machine_body (Machine machine) const {
@@ -737,6 +754,13 @@ namespace moppe::game {
       body.velocity = m_mountain_bike.velocity ();
       body.mass = m_mountain_bike.mass ();
       break;
+    case Machine::long_john:
+      body.position = m_long_john.position ();
+      body.forward = m_long_john.orientation ();
+      body.up = m_long_john.render_normal ();
+      body.velocity = m_long_john.velocity ();
+      body.mass = m_long_john.mass ();
+      break;
     case Machine::boat:
       body.position = m_boat.position ();
       body.forward = m_boat.forward ();
@@ -769,6 +793,9 @@ namespace moppe::game {
       break;
     case Machine::mountain_bike:
       m_mountain_bike.push (at, impulse);
+      break;
+    case Machine::long_john:
+      m_long_john.push (at, impulse);
       break;
     case Machine::boat:
       m_boat.push (at, impulse);
@@ -832,6 +859,17 @@ namespace moppe::game {
                          mov::BikePhysics::rigid,
                          mov::mountain_bike_rig),
         m_boat (surface),
+        // A rider of 80 kg on 35 kg of bike with its hub motor, pedalling
+        // with the motor's help: some 600 W at most and 420 N at the
+        // tyre.
+        m_long_john (long_john_stand (world),
+                     45 * u::deg,
+                     surface,
+                     420 * u::N,
+                     600 * u::W,
+                     115 * u::kg,
+                     mov::BikePhysics::rigid,
+                     mov::long_john_rig),
         m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
@@ -851,6 +889,8 @@ namespace moppe::game {
       return m_logic.m_seat_position;
     if (m_logic.m_mode == M_MOUNTAIN_BIKE)
       return m_mountain_bike.position ();
+    if (m_logic.m_mode == M_LONG_JOHN)
+      return m_long_john.position ();
     if (m_logic.m_mode == M_BOAT)
       return m_boat.position ();
     return m_bike.position ();
@@ -873,6 +913,8 @@ namespace moppe::game {
       return m_logic.m_seat_heading;
     if (m_logic.m_mode == M_MOUNTAIN_BIKE)
       return m_mountain_bike.orientation ();
+    if (m_logic.m_mode == M_LONG_JOHN)
+      return m_long_john.orientation ();
     if (m_logic.m_mode == M_BOAT)
       return m_boat.forward ();
     return m_bike.orientation ();
@@ -895,6 +937,8 @@ namespace moppe::game {
       return length (m_logic.m_seat_velocity) * 3.6f;
     if (m_logic.m_mode == M_MOUNTAIN_BIKE)
       return length (m_mountain_bike.velocity ()) * 3.6f;
+    if (m_logic.m_mode == M_LONG_JOHN)
+      return length (m_long_john.velocity ()) * 3.6f;
     if (m_logic.m_mode == M_BOAT)
       return length (m_boat.velocity ()) * 3.6f;
     return length (m_bike.velocity ()) * 3.6f;
@@ -919,6 +963,9 @@ namespace moppe::game {
       { Mount::tractor, m_tractor.position (), 3.6f },
       { Mount::caddy, m_caddy.point (Vec3 (0, 0, 0.25f)), 3.4f },
       { Mount::mountain_bike, m_mountain_bike.position (), 2.4f },
+      // The Long John from its saddle, behind its middle.
+      { Mount::long_john, m_long_john.position () -
+                            m_long_john.orientation () * 0.7f, 2.4f },
       // The boat from its middle: it may lie a step out in the water.
       { Mount::boat, m_boat.point (Vec3 (0, 0, 0.6f)), 4.0f },
     };
@@ -952,6 +999,10 @@ namespace moppe::game {
 
   bool GameSession::can_ride_mountain_bike () const {
     return mount_within_reach () == Mount::mountain_bike;
+  }
+
+  bool GameSession::can_ride_long_john () const {
+    return mount_within_reach () == Mount::long_john;
   }
 
   bool GameSession::can_take_boat () const {
@@ -1127,6 +1178,21 @@ namespace moppe::game {
       rig.elevation = 15.0f * u::deg;
       break;
     }
+    case M_LONG_JOHN: {
+      // The rider sits over the back wheel, some 0.7 m behind the
+      // reference point midway between the axles, eyes 1.45 m over it;
+      // the camera stands back far enough to take in the box ahead.
+      const mov::Vehicle& bike = m_long_john;
+      rig.eye = bike.position () + bike.render_normal () * 1.45f -
+                bike.orientation () * 0.6f;
+      rig.ahead = bike.orientation ();
+      rig.pivot = bike.position () + Vec3 (0, 0.8f, 0);
+      rig.velocity = bike.velocity ();
+      rig.distance = 5.6f * u::m;
+      rig.nearest = 2.0f * u::m;
+      rig.elevation = 15.0f * u::deg;
+      break;
+    }
     case M_BIKE:
       // The Trail 90 is life size, its reference point between the axles
       // at their height; the seated rider's eyes are some 1.4 m over it.
@@ -1203,7 +1269,8 @@ namespace moppe::game {
              m_walker.state (), m_camera.state (), m_stars.state (),
              m_dust.state (),   m_jeep.state (),   m_helicopter.state (),
              m_tractor.state (), m_caddy.state (),
-             m_mountain_bike.state (), m_boat.state () };
+             m_mountain_bike.state (), m_boat.state (),
+             m_long_john.state () };
   }
 
   void GameSession::restore (const State& state) {
@@ -1220,6 +1287,7 @@ namespace moppe::game {
     m_caddy.restore (state.caddy);
     m_mountain_bike.restore (state.mountain_bike);
     m_boat.restore (state.boat);
+    m_long_john.restore (state.long_john);
   }
 
   namespace {
@@ -1398,6 +1466,9 @@ namespace moppe::game {
     mov::Vehicle& mountain_bike = session.mountain_bike ();
     mountain_bike.set_water_level (water_at (mountain_bike.position ()));
     mountain_bike.set_trunks (trunks);
+    mov::Vehicle& long_john = session.long_john ();
+    long_john.set_water_level (water_at (long_john.position ()));
+    long_john.set_trunks (trunks);
 
     // Where one would step out of the boat.
     if (logic.m_mode == M_BOAT) {
@@ -1455,6 +1526,9 @@ namespace moppe::game {
     mountain_bike.set_parked (logic.m_mode != M_MOUNTAIN_BIKE &&
                               !hauled (Machine::mountain_bike));
     mountain_bike.update (dt);
+    long_john.set_parked (logic.m_mode != M_LONG_JOHN &&
+                          !hauled (Machine::long_john));
+    long_john.update (dt);
     if (logic.m_mode == M_FOOT)
       session.walker ().update (
         dt, surface, world, trunks, water, logic.m_total_time);
@@ -1580,10 +1654,11 @@ namespace moppe::game {
     // What follows is the ridden bike's: the motocross, or the pedalled
     // mountainbike, which has no engine to roost, smoke, or burn.
     mov::Vehicle& vehicle = session.ridden_bike ();
-    const bool pedalled = logic.m_mode == M_MOUNTAIN_BIKE;
+    const bool pedalled = game::pedalled (logic.m_mode);
 
     // A parked bike's impacts shouldn't linger until remount.
-    for (mov::Vehicle* bike : { &session.bike (), &mountain_bike })
+    for (mov::Vehicle* bike :
+         { &session.bike (), &mountain_bike, &long_john })
       if (bike != &vehicle || !(logic.m_mode == M_BIKE || pedalled)) {
         bike->pop_impact ();
         bike->pop_fall_drop ();
@@ -1712,7 +1787,10 @@ namespace moppe::game {
     const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
     const Vec3 forward = session.subject_heading ();
     const Vec3 rear_wheel =
-      vehicle_position - forward * (pedalled ? 0.55f : 0.61f) +
+      vehicle_position -
+      forward * (logic.m_mode == M_LONG_JOHN ? 0.95f
+                 : pedalled                  ? 0.55f
+                                             : 0.61f) +
       Vec3 (0, -0.25f, 0);
 
     if (clean_stunt_landing && landed_trick_quarters > 0) {

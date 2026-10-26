@@ -24,6 +24,7 @@
 #   caddy     the autopilot driving the Caddy          (MOPPE_DEMO=caddy)
 #   mountain_bike
 #             the autopilot on the mountainbike   (MOPPE_DEMO=mountain_bike)
+#   long_john the autopilot on the Long John       (MOPPE_DEMO=long_john)
 #   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
 #   turn      looking round standing, stepping round, a quick spin, and
 #             sharp turns walking and running          (MOPPE_WALK=turn)
@@ -159,6 +160,7 @@ case $scene in
   tractor) stage MOPPE_DEMO=tractor; : "${seconds:=20}" ;;
   caddy) stage MOPPE_DEMO=caddy; : "${seconds:=20}" ;;
   mountain_bike) stage MOPPE_DEMO=mountain_bike; : "${seconds:=20}" ;;
+  long_john) stage MOPPE_DEMO=long_john; : "${seconds:=20}" ;;
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
   turn) stage MOPPE_WALK=turn MOPPE_WALK_CAMERA=chase; : "${seconds:=20}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;

@@ -98,7 +98,12 @@ namespace moppe {
     // the centre of mass of the frame and rider; the reference point the
     // game draws from is straight above or below it.
     struct BikeRig {
+      // The rear wheel's radius, and the front's where it is smaller (a
+      // cargo bike's); zero has both alike. The axles stand at
+      // axle_height over the rear one's centre, so on flat ground the
+      // smaller front axle stands as much lower as its wheel is.
       float wheel_radius;
+      float front_wheel_radius = 0.0f;
       float wheel_mass;
       // Isotropic, so a steered or leaned wheel carries no gyroscopic
       // self-torque of its own.
@@ -166,6 +171,13 @@ namespace moppe {
       // second, and quadratic per metre.
       float rolling_drag;
       float air_drag;
+      // A pedalled bike of one gear turns its crank this many times slower
+      // than its rear wheel; zero rides through the gears.
+      float gear_ratio = 0.0f;
+
+      float front_radius () const {
+        return front_wheel_radius > 0.0f ? front_wheel_radius : wheel_radius;
+      }
 
       // Height of the reference point above flat ground at static sag.
       float ride_height () const {
@@ -287,6 +299,66 @@ namespace moppe {
       .free_rev_torque = 4.0f,
       .rolling_drag = 0.05f,
       .air_drag = 0.0035f,
+    };
+
+    // Krisjanis's Long John at life size, to its photogrammetric twin
+    // (tools/figure/long_john_source.py): a 26 x 2.0 rear wheel and a
+    // 20 x 2.0 front 1.894 m apart under a welded box, rigid both ends,
+    // single speed at 38/18 with a hub motor in the rear wheel. Its
+    // reference point is midway between the axles at the rear one's
+    // height; the weight of bike and seated rider, some 115 kg, rides
+    // 0.45 m over it, nearer the back. Long and heavy, it turns wide and
+    // slowly, leans little, and will not rear up.
+    inline const BikeRig long_john_rig {
+      .wheel_radius = 0.335f,
+      .front_wheel_radius = 0.253f,
+      .wheel_mass = 4.0f,
+      .wheel_inertia = 0.16f,
+      .half_wheelbase = 0.947f,
+      .reference_height = -0.45f,
+      .axle_height = -0.45f,
+      .inertia_box = { 0.6f, 1.2f, 2.4f },
+      // The box and girder from the rear wheel to the bulkhead, low
+      // between the axles; the rider on the saddle over the back wheel.
+      .frame_a = { 0.0f, -0.2f, -0.75f },
+      .frame_b = { 0.0f, -0.2f, 0.85f },
+      .frame_radius = 0.2f,
+      .rider_a = { 0.0f, 0.15f, -0.65f },
+      .rider_b = { 0.0f, 0.75f, -0.45f },
+      .rider_radius = 0.24f,
+      // Only the tyres give.
+      .front_travel = 0.03f,
+      .rear_travel = 0.03f,
+      .front_sag = 0.012f,
+      .rear_sag = 0.014f,
+      .damping_ratio = 0.5f,
+      .tire_friction = 1.2f,
+      .skid_friction = 0.6f,
+      .steering_rate = 1.1f,
+      .steering_fade_speed = 4.0f,
+      .air_steering_rate = 0.6f,
+      .skid_rate = 1.8f,
+      .max_fork_angle = 0.6f,
+      .max_lean = 0.45f,
+      .wheelie_limit = 0.2f,
+      .stoppie_limit = 0.25f,
+      .wheelie_lean = 0.1f,
+      .wheelie_pitch = 0.3f,
+      .wheelie_torque = 0.0f,
+      .reverse_speed = 1.0f,
+      .reverse_force_share = 0.5f,
+      .front_brake_force = 450.0f,
+      .rear_brake_force = 350.0f,
+      .engine_brake_torque = 0.3f,
+      .parking_torque = 400.0f,
+      .skid_torque = 450.0f,
+      .traction_share = 0.9f,
+      .wheelie_share = 0.5f,
+      .free_rev_torque = 4.0f,
+      // Fat tyres and an upright rider behind an open box.
+      .rolling_drag = 0.06f,
+      .air_drag = 0.0045f,
+      .gear_ratio = 38.0f / 18.0f,
     };
 
     // A bike as a Box3D assemblage: a chassis carrying the frame and

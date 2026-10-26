@@ -328,6 +328,19 @@ namespace moppe {
           stroke ({ 5, -2 }, { 6, -5 }, 1.5f);
           stroke ({ -6, -5 }, { 10, -5 }, 1.7f);
           break;
+        case Mark::LongJohn:
+          // The big wheel behind, the box low between, the small wheel
+          // ahead, and the saddle and bars over the back.
+          wheel (-9, -3, 4, 1.3f);
+          wheel (10, -4, 3, 1.2f);
+          polygon ({ { -3, -6 }, { 7, -6 }, { 8, -1 }, { -3, -1 } });
+          stroke ({ -9, -3 }, { -3, -3 }, 1.5f);
+          stroke ({ -4, -3 }, { -7, 4 }, 1.5f);
+          stroke ({ -10, 5 }, { -5, 5 }, 1.8f);
+          stroke ({ -2, -1 }, { -2, 5 }, 1.5f);
+          stroke ({ -3, 6 }, { 1, 6 }, 1.5f);
+          stroke ({ 8, -1 }, { 10, -4 }, 1.4f);
+          break;
         case Mark::Boat:
           polygon ({ { -9, 0 }, { 12, 2 }, { 8, -5 }, { -6, -5 } });
           stroke ({ -9, 2 }, { 12, 4 }, 1.4f);
@@ -1668,6 +1681,10 @@ namespace moppe {
       } else if (st.can_take_boat) {
         key = mount_key;
         action = *mount_key ? "Take the boat out" : "Boat within reach";
+      } else if (st.can_ride_long_john) {
+        key = mount_key;
+        action =
+          *mount_key ? "Ride the Long John" : "Long John within reach";
       } else if (st.can_ride_mountain_bike) {
         key = mount_key;
         action =

@@ -412,6 +412,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/tractor_model.cc
   moppe/game/caddy_model.cc
   moppe/game/mountain_bike_model.cc
+  moppe/game/long_john_model.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/glider_render.cc
@@ -421,6 +422,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/tractor_render.cc
   moppe/game/caddy_render.cc
   moppe/game/mountain_bike_render.cc
+  moppe/game/long_john_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
   moppe/game/map_sheet.cc

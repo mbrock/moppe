@@ -728,11 +728,15 @@ namespace moppe {
         // Pedalling, the rider keeps to a cadence of some eight radians a
         // second through the gears, from the lowest, which turns the wheel
         // a little slower than the crank, to the highest, three times as
-        // fast; a wheel off the ground spins up to it.
+        // fast; a wheel off the ground spins up to it. A single speed's
+        // crank goes round with the wheel at its one gear.
         if (m_thrust > 0.02f && !m_hung && !m_parked) {
           const float wheel = std::abs (m_rigid->wheel_spin_rate ());
+          const float gear = m_rigid->rig ().gear_ratio;
           const float cadence =
-            m_rigid->rear_contact ()
+            gear > 0.0f && (m_rigid->rear_contact () || wheel > 1.0f)
+              ? wheel / gear
+            : m_rigid->rear_contact ()
               ? wheel / std::clamp (wheel / 8.0f, 0.75f, 3.0f)
               : 8.0f * scalar_value (m_thrust);
           m_crank = std::fmod (m_crank + cadence * h_s, 2.0f * 3.14159265f);

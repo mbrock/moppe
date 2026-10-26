@@ -36,7 +36,8 @@ namespace moppe::game {
     caddy,
     helicopter,
     mountain_bike,
-    boat
+    boat,
+    long_john
   };
   inline constexpr int machine_count = 7;
 
