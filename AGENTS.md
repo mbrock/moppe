@@ -470,7 +470,16 @@
     calm and rivers flat. The boat is moored on the nearest open shore
     of the sea (`MOPPE_BOAT=lake` takes the nearest big lake instead). It draws a Kelvin wake, a
     rooster tail, and bow spray; `MOPPE_DEMO=boat` (`tools/record OUT.mp4
-    boat`) has the autopilot take it out (companion wire version 9).
+    boat`) has the autopilot take it out (companion wire version 9),
+    weaving over open water clear of the shallows; `MOPPE_BOAT=river`
+    moors it on the greatest river some 1.2 km above its mouth
+    (`MOPPE_BOAT_RIVER_M`) and the autopilot follows the river down to
+    the sea. Besides `side|front`, `MOPPE_RIDE_CAMERA` films the boat as
+    `drone`, `aerial`, `orbit`, `top`, `fpv`, `hull`, `stern`, `helm`,
+    or `flyby` (each with its own lens; `MOPPE_RIDE_CAMERA_ANGLE` swings
+    the following ones round), and `tools/boat-promo OUT.mp4` records
+    and cuts a 50 s 1080p promo from them (clips kept in
+    `build/boat-promo`, so recutting `FILM` takes a minute).
   - Skids, on both bikes: riding, `Shift` (the controller's left trigger)
     stamps on the rear brake. The rear wheel locks, its tyre's grip drops
     to a sliding friction, and the bars swing the tail out about the

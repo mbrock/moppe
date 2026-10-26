@@ -90,6 +90,14 @@ namespace moppe::game {
                          const Vec3& arrival,
                          const terrain::TrailNetwork* trail = nullptr);
 
+  // The world's greatest river to reach the sea: its mouth's reach first,
+  // then upward the larger branch at every confluence and the larger
+  // inflow of every lake, to the reach where it first shows. Empty when
+  // no river reaches the sea.
+  std::vector<const terrain::RiverReach*>
+  greatest_river_course (const terrain::LakeCensus& census,
+                         const terrain::RiverNetwork& rivers);
+
   // A flight down the world's greatest watercourse: from the top of its
   // catchment down the dry valley to where the stream first shows, along
   // it through its lakes, and out over the sea. It flies low over open

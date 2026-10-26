@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""Record and cut a promo of the boat: a 16:9 film for Twitter/X.
+
+  tools/boat-promo OUTPUT.mp4 [--work DIR] [--fresh] [--draft]
+
+Every clip is the boat autopilot (MOPPE_DEMO=boat) seen through one of the
+boat's film cameras (MOPPE_RIDE_CAMERA=drone|aerial|orbit|top|fpv|hull|
+stern|helm|flyby), on the sea or down the greatest river (MOPPE_BOAT=river).
+Clips are kept in DIR (build/boat-promo) and only missing ones recorded, so
+a change to the cut (FILM) takes a minute; --fresh records them again.
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FONT = os.path.join(ROOT, "fonts", "IosevkaAile-Regular.ttf")
+WIDTH, HEIGHT, FPS = 1920, 1080, 30
+GOLDEN = "16.4"
+
+# name: (camera, seconds, start, environment, tools/record options)
+RIVER = {"MOPPE_BOAT": "river"}
+CLIPS = {
+  "depart-hull": ("hull", 9, 0, {}, []),
+  "depart-orbit": ("orbit", 14, 0, {"MOPPE_RIDE_CAMERA_ANGLE": "160"}, []),
+  "sea-fpv": ("fpv", 12, 8, {}, []),
+  "sea-stern": ("stern", 10, 10, {}, []),
+  "sea-top": ("top", 12, 6, {}, []),
+  "sea-orbit": ("orbit", 14, 12, {}, []),
+  "sea-aerial": ("aerial", 16, 10, {"MOPPE_RIDE_CAMERA_ANGLE": "60"}, []),
+  "sea-drone": ("drone", 14, 14, {}, []),
+  "golden-orbit": ("orbit", 16, 6, {"MOPPE_RIDE_CAMERA_ANGLE": "200"},
+                   ["--clock", GOLDEN]),
+  "golden-fpv": ("fpv", 12, 10, {"MOPPE_RIDE_CAMERA_ANGLE": "-25"},
+                 ["--clock", GOLDEN]),
+  "river-drone": ("drone", 40, 3, RIVER, []),
+  "river-fpv": ("fpv", 20, 10, RIVER, []),
+  "river-helm": ("helm", 16, 14, RIVER, []),
+  "river-top": ("top", 20, 10, RIVER, []),
+  "river-hull": ("hull", 14, 20, RIVER, []),
+  "river-aerial": ("aerial", 20, 22, dict(RIVER, MOPPE_RIDE_CAMERA_ANGLE="150"),
+                   []),
+}
+
+# A caption over a run of cuts, each (clip, start, seconds).
+FILM = [
+  ("title", [("depart-orbit", 0.3, 4.2)]),
+  ("cast off", [("depart-hull", 1.0, 2.6),
+                ("depart-orbit", 6.0, 2.6)]),
+  ("open water", [("sea-fpv", 2.0, 2.6),
+                  ("sea-top", 3.0, 2.2),
+                  ("sea-stern", 2.0, 2.2),
+                  ("sea-orbit", 4.0, 2.8)]),
+  ("find your way", [("sea-aerial", 4.0, 3.0),
+                     ("sea-drone", 2.0, 3.2),
+                     ("golden-orbit", 3.0, 3.4)]),
+  ("down the river", [("river-drone", 26.0, 3.2),
+                      ("river-helm", 3.0, 2.6),
+                      ("river-fpv", 4.0, 2.6),
+                      ("river-top", 8.0, 2.4),
+                      ("river-hull", 3.0, 2.4),
+                      ("river-aerial", 16.6, 3.2)]),
+  ("end", [("golden-fpv", 2.0, 4.6)]),
+]
+NAME = "moppe"
+TAGLINE = "take the boat out"
+URL = "moppe.swa.sh"
+
+
+def ffmpeg (*arguments):
+  subprocess.run (["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                   *arguments], check=True)
+
+
+def record (work, name):
+  camera, seconds, start, switches, options = CLIPS[name]
+  environment = dict (os.environ, MOPPE_HUD="none", MOPPE_DAY="0",
+                      MOPPE_RIDE_CAMERA=camera, **switches)
+  with open (os.path.join (work, f"{name}.log"), "w") as log:
+    subprocess.run ([os.path.join (ROOT, "tools", "record"),
+                     os.path.join (work, f"{name}.mp4"), "boat",
+                     "--seconds", str (seconds), "--start", str (start),
+                     "--fps", str (FPS), "--size", f"{WIDTH}x{HEIGHT}",
+                     *options], env=environment, stdout=log,
+                    stderr=subprocess.STDOUT, check=True)
+  print (f"boat-promo: recorded {name}", file=sys.stderr)
+
+
+def cut (work, index, clip):
+  name, start, seconds = clip
+  output = os.path.join (work, "cut", f"{index:02d}-{name}.mp4")
+  ffmpeg ("-ss", str (start), "-t", str (seconds), "-i",
+          os.path.join (work, f"{name}.mp4"), "-vf",
+          f"fps={FPS},setsar=1", "-an", "-c:v", "libx264", "-crf", "10",
+          "-preset", "veryfast", "-pix_fmt", "yuv420p", output)
+  return output, seconds
+
+
+def caption_image (work, index, lines):
+  """A transparent frame of `lines`, (text, size, height), in white over a
+  soft dark shade."""
+  path = os.path.join (work, "cut", f"caption-{index}.png")
+
+  def text (colour):
+    drawn = []
+    for row, (words, size, height) in enumerate (lines):
+      file = os.path.join (work, "cut", f"caption-{index}-{row}.txt")
+      with open (file, "w") as out:
+        out.write (words)
+      drawn.append (f"drawtext=fontfile={FONT}:textfile={file}:"
+                    f"fontcolor={colour}:fontsize={size}:"
+                    f"x=(w-text_w)/2:y=h*{height}-ascent")
+    return ",".join (drawn)
+
+  canvas = f"color=0x000000@0:s={WIDTH}x{HEIGHT},format=rgba"
+  ffmpeg ("-f", "lavfi", "-i", canvas, "-filter_complex",
+          f"[0]split=3[a][b][c];"
+          f"[a]{text ('0x000000')},gblur=sigma=14,"
+          f"colorchannelmixer=aa=0.6[wide];"
+          f"[b]{text ('0x000000')},gblur=sigma=3,"
+          f"colorchannelmixer=aa=0.4[near];"
+          f"[c]{text ('0xffffff')}[ink];[wide][near]overlay=format=auto[s];"
+          f"[s][ink]overlay=format=auto", "-frames:v", "1", path)
+  return path
+
+
+def assemble (work, output, draft):
+  os.makedirs (os.path.join (work, "cut"), exist_ok=True)
+  cuts, captions, now = [], [], 0.0
+  for caption, section in FILM:
+    begin = now
+    for clip in section:
+      path, length = cut (work, len (cuts), clip)
+      cuts.append (path)
+      now += length
+    # (lines, appears, goes, seconds of fade)
+    if caption == "title":
+      captions.append (([(NAME, 200, 0.27), (TAGLINE, 56, 0.37)],
+                        begin + 0.8, now - 0.3, 0.7))
+    elif caption == "end":
+      captions.append (([(NAME, 200, 0.27), (URL, 64, 0.37)],
+                        begin + 0.6, now, 0.7))
+    else:
+      captions.append (([(caption, 84, 0.9)], begin + 0.15,
+                        min (now - 0.3, begin + 2.8), 0.25))
+  total = now
+
+  listing = os.path.join (work, "cut", "list.txt")
+  with open (listing, "w") as file:
+    for path in cuts:
+      file.write (f"file '{path}'\n")
+  inputs = ["-f", "concat", "-safe", "0", "-i", listing]
+  graph = [f"[0:v]fade=in:st=0:d=0.8,"
+           f"fade=out:st={total - 0.8:.2f}:d=0.8[v0]"]
+  for n, (lines, appears, goes, fade) in enumerate (captions, 1):
+    image = caption_image (work, n, lines)
+    inputs += ["-loop", "1", "-framerate", str (FPS), "-t", f"{total:.2f}",
+               "-i", image]
+    leave = "" if goes >= total else \
+      f",fade=out:st={goes - fade:.2f}:d={fade}:alpha=1"
+    graph.append (f"[{n}:v]format=rgba,"
+                  f"fade=in:st={appears:.2f}:d={fade}:alpha=1{leave}[c{n}]")
+    graph.append (f"[v{n - 1}][c{n}]overlay=enable="
+                  f"'between(t,{appears:.2f},{goes:.2f})'[v{n}]")
+  inputs += ["-f", "lavfi", "-t", f"{total:.2f}", "-i",
+             "anullsrc=channel_layout=stereo:sample_rate=48000"]
+  ffmpeg (*inputs, "-filter_complex", ";".join (graph), "-map",
+          f"[v{len (captions)}]", "-map", f"{len (captions) + 1}:a",
+          "-c:v", "libx264", "-crf", "18", "-preset",
+          "veryfast" if draft else "slow", "-profile:v", "high",
+          "-pix_fmt", "yuv420p", "-r", str (FPS), "-c:a", "aac", "-b:a",
+          "96k", "-movflags", "+faststart", "-t", f"{total:.2f}", output)
+  print (f"{output}: {total:.1f} s")
+
+
+def main ():
+  parser = argparse.ArgumentParser (
+    description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+  parser.add_argument ("output")
+  parser.add_argument ("--work", default=os.path.join (ROOT, "build",
+                                                       "boat-promo"))
+  parser.add_argument ("--fresh", action="store_true")
+  parser.add_argument ("--draft", action="store_true")
+  options = parser.parse_args ()
+  if not shutil.which ("ffmpeg") and shutil.which ("nix") and \
+     not os.environ.get ("MOPPE_RECORD_SHELL"):
+    os.environ["MOPPE_RECORD_SHELL"] = "1"
+    os.execvp ("nix", ["nix", "develop", ROOT, "-c", *sys.argv])
+  work = os.path.abspath (options.work)
+  os.makedirs (work, exist_ok=True)
+  for name in CLIPS:
+    if options.fresh or not os.path.exists (os.path.join (work,
+                                                          f"{name}.mp4")):
+      record (work, name)
+  assemble (work, os.path.abspath (options.output), options.draft)
+
+
+if __name__ == "__main__":
+  main ()

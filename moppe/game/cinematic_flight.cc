@@ -581,17 +581,10 @@ namespace moppe::game {
     return plan;
   }
 
-  CinematicFlightPlan plan_river_flight (const map::SurfaceGeometry& surface,
-                                         std::span<const Vec3> trees,
-                                         const terrain::WaterSheets& water,
-                                         const terrain::LakeCensus& census,
-                                         const terrain::DrainageGraph& drainage,
-                                         const terrain::RiverNetwork& rivers,
-                                         float seconds) {
-    MOPPE_PROFILE_ZONE ("plan_river_flight");
+  std::vector<const terrain::RiverReach*>
+  greatest_river_course (const terrain::LakeCensus& census,
+                         const terrain::RiverNetwork& rivers) {
     using terrain::RiverReach;
-    CinematicFlightPlan plan;
-
     // The greatest river to reach the sea, and from its mouth upward the
     // larger branch at every confluence and the larger inflow of every
     // lake, to the reach where it first shows.
@@ -601,6 +594,7 @@ namespace moppe::game {
               census.water_body (reach.downstream_body).classification ==
                 terrain::WaterBodyClass::Sea);
     };
+    std::vector<const RiverReach*> course;
     const RiverReach* mouth = nullptr;
     for (const RiverReach& reach : rivers.reaches)
       if (reach.downstream_reach == RiverReach::no_id && reaches_sea (reach) &&
@@ -608,8 +602,8 @@ namespace moppe::game {
           (!mouth || reach.downstream_area > mouth->downstream_area))
         mouth = &reach;
     if (!mouth)
-      return plan;
-    std::vector<const RiverReach*> course { mouth };
+      return course;
+    course.push_back (mouth);
     std::vector<std::uint8_t> taken (rivers.reaches.size (), 0);
     taken[mouth->id] = 1;
     for (;;) {
@@ -632,6 +626,24 @@ namespace moppe::game {
       taken[above->id] = 1;
       course.push_back (above);
     }
+    return course;
+  }
+
+  CinematicFlightPlan plan_river_flight (const map::SurfaceGeometry& surface,
+                                         std::span<const Vec3> trees,
+                                         const terrain::WaterSheets& water,
+                                         const terrain::LakeCensus& census,
+                                         const terrain::DrainageGraph& drainage,
+                                         const terrain::RiverNetwork& rivers,
+                                         float seconds) {
+    MOPPE_PROFILE_ZONE ("plan_river_flight");
+    using terrain::RiverReach;
+    CinematicFlightPlan plan;
+
+    const std::vector<const RiverReach*> course =
+      greatest_river_course (census, rivers);
+    if (course.empty ())
+      return plan;
 
     // Above that, the dry valley: from cell to cell by whichever sends the
     // most water down, up to the divide.

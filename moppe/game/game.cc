@@ -724,11 +724,146 @@ namespace moppe {
           const char* water = moppe::environment ("MOPPE_BOAT");
           return water && std::string_view (water) == "lake";
         }();
+        static const bool river = [] {
+          const char* water = moppe::environment ("MOPPE_BOAT");
+          return water && std::string_view (water) == "river";
+        }();
         m_mooring.reset ();
+        m_boat_route.clear ();
+        m_boat_route_at = 0;
+        if (river && moor_on_river ())
+          return;
         if (!lakes_first && moor_boat (true, outward))
           return;
         if (!moor_boat (false, outward))
           std::cerr << "moppe: boat: no open water near the spawn\n";
+      }
+
+      // How deep the still water stands over the ground at `at`.
+      float boat_depth_at (const Vec3& at) const {
+        return still_water_at (world (), surface (),
+                               &generated_world ().water_surface (), at)
+                 .numerical_value_in (u::m) -
+               ground_height (at);
+      }
+
+      // MOPPE_BOAT=river: the boat lies on the greatest river, as far up
+      // from the sea as the water stays deep enough to drive it the whole
+      // way down, facing downstream, and the autopilot follows the
+      // river's course out to sea.
+      bool moor_on_river () {
+        // The course from its head down to the mouth, unwrapped about the
+        // periodic world.
+        const float period[2] = {
+          surface ().domain ().period_x ().numerical_value_in (u::m),
+          surface ().domain ().period_z ().numerical_value_in (u::m),
+        };
+        const auto course = greatest_river_course (lake_census (), rivers ());
+        std::vector<Vec3> line;
+        for (auto reach = course.rbegin (); reach != course.rend (); ++reach)
+          for (const terrain::RiverAlignmentPoint& point :
+               (*reach)->alignment.points) {
+            Vec3 at (point.x_m, 0.0f, point.z_m);
+            if (!line.empty ())
+              for (int axis : { 0, 2 }) {
+                const float p = period[axis / 2];
+                at[axis] -= p * std::round ((at[axis] - line.back ()[axis]) / p);
+              }
+            if (line.empty () || length (at - line.back ()) > 4.0f)
+              line.push_back (at);
+          }
+        if (line.size () < 3)
+          return false;
+        // So far up from the mouth, and on to where it runs deep.
+        static const float most = [] {
+          const char* reach = moppe::environment ("MOPPE_BOAT_RIVER_M");
+          return reach ? std::strtof (reach, nullptr) : 1200.0f;
+        }();
+        std::size_t start = line.size () - 1;
+        float up = 0.0f;
+        while (start > 0 && (up < most || boat_depth_at (line[start]) < 0.6f)) {
+          up += length (line[start] - line[start - 1]);
+          --start;
+        }
+        if (start + 2 >= line.size ())
+          return false;
+        const Vec3 at = line[start];
+        const Vec3 ahead = normalized (line[start + 1] - at);
+        mov::Boat& boat = session ().boat ();
+        boat.set_trunks (&m_trunk_field);
+        boat.place (at, ahead, boat_depth_at (at) + ground_height (at));
+        m_mooring = at;
+        m_boat_route.assign (line.begin () + start + 1, line.end ());
+        std::cerr << "moppe: boat moored on the river " << up
+                  << " m above its mouth, at " << at[0] << ' ' << at[2]
+                  << std::endl;
+        return true;
+      }
+
+      // The boat autopilot (MOPPE_DEMO=boat): down the river's course
+      // where it has one, and otherwise a lazy weave over open water;
+      // either way it steers clear of shallows it sees ahead.
+      InputFrame boat_autopilot (float t) {
+        const mov::Boat& boat = session ().boat ();
+        const Vec3 at = boat.position ();
+        Vec3 heading = boat.forward ();
+        heading[1] = 0.0f;
+        heading = normalized (heading);
+        const auto turned = [] (const Vec3& v, float a) {
+          return Vec3 (v[0] * std::cos (a) - v[2] * std::sin (a), 0.0f,
+                       v[0] * std::sin (a) + v[2] * std::cos (a));
+        };
+        // How far open water runs along `way`, up to 90 m.
+        const bool river = m_boat_route_at < m_boat_route.size ();
+        const float shallow = river ? 0.12f : 0.8f;
+        const auto open_reach = [&] (const Vec3& way) {
+          for (float reach = 6.0f; reach <= 90.0f; reach += 6.0f)
+            if (boat_depth_at (at + way * reach) < shallow)
+              return reach;
+          return 100.0f;
+        };
+        Vec3 want;
+        float drive = 1.0f;
+        while (m_boat_route_at < m_boat_route.size ()) {
+          const Vec3 next = m_boat_route[m_boat_route_at];
+          const Vec3 to (next[0] - at[0], 0.0f, next[2] - at[2]);
+          if (length (to) > 22.0f && dot (to, heading) > -5.0f)
+            break;
+          ++m_boat_route_at;
+        }
+        if (m_boat_route_at < m_boat_route.size ()) {
+          const Vec3 next = m_boat_route[m_boat_route_at];
+          want = normalized (Vec3 (next[0] - at[0], 0.0f, next[2] - at[2]));
+          drive = 0.85f;
+        } else {
+          // Over open water: the way that runs open furthest near a
+          // slowly wandering course.
+          const float wander = 0.5f * std::sin (t * 0.21f);
+          float best = -1e9f;
+          for (int k = -8; k <= 8; ++k) {
+            const float a = k * (PI / 16.0f);
+            const float score =
+              std::min (open_reach (turned (heading, a)), 60.0f) -
+              40.0f * std::abs (a - wander * 0.6f);
+            if (score > best) {
+              best = score;
+              want = turned (heading, a);
+            }
+          }
+        }
+        // Shallows close ahead win over the course.
+        if (open_reach (heading) < (river ? 13.0f : 20.0f)) {
+          const float left = open_reach (turned (heading, -0.6f));
+          const float right = open_reach (turned (heading, 0.6f));
+          want = turned (heading, right >= left ? 0.9f : -0.9f);
+        }
+        const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
+        const float bearing =
+          std::atan2 (dot (want, right), dot (want, heading));
+        return {
+          .turn = std::clamp (2.2f * bearing, -1.0f, 1.0f),
+          .drive = std::abs (bearing) > 1.2f ? 0.5f : drive,
+        };
       }
 
       bool moor_boat (bool sea_only, bool outward) {
@@ -3853,11 +3988,14 @@ namespace moppe {
       // ridden bike or mountainbike, the glider, the driven jeep or boat,
       // or whatever hangs under the helicopter, to judge the rider and the
       // machine.
-      void ride_capture_camera () {
+      void ride_capture_camera (float dt) {
         static const std::string_view view = [] {
           const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
           return std::string_view (name ? name : "");
         }();
+        m_film_fov.reset ();
+        if (logic ().m_mode == M_BOAT && boat_film_camera (view, dt))
+          return;
         // Flying, it is the machine on the line it stands beside.
         const bool slung =
           logic ().m_mode == M_HELICOPTER && logic ().m_sling.hooked;
@@ -3916,6 +4054,112 @@ namespace moppe {
                             ? heading * away + right * (away * 0.27f)
                             : right * away + heading * 0.6f;
         session ().camera ().place (at + from + Vec3 (0, 0.5f, 0), at);
+      }
+
+      // Cameras for filming the boat (MOPPE_RIDE_CAMERA): `drone` follows
+      // high behind, `aerial` far off with a long lens, `orbit` circles it,
+      // `top` looks straight down on it, `fpv` races close behind and low,
+      // `hull` is mounted low on its side looking back at the helmsman,
+      // `stern` over the long-tail looking ahead, `helm` is the
+      // helmsman's eyes, and `flyby` stands on the water ahead of it and
+      // watches it pass on a long lens. MOPPE_RIDE_CAMERA_ANGLE
+      // swings the following ones round, degrees to the right of behind.
+      bool boat_film_camera (std::string_view view, float dt) {
+        static const float angle = [] {
+          const char* value = moppe::environment ("MOPPE_RIDE_CAMERA_ANGLE");
+          return value ? std::strtof (value, nullptr) * PI / 180.0f : 0.0f;
+        }();
+        const mov::Boat& boat = session ().boat ();
+        const Vec3 at = boat.position () + Vec3 (0, 0.6f, 0);
+        Vec3 heading = boat.forward ();
+        heading[1] = 0.0f;
+        heading = normalized (heading);
+        // The subject eased, so the waves' heave and the hull's yawing
+        // do not shake a camera that is meant to be flown.
+        const bool fresh = m_film_time <= 0.0f;
+        const auto ease = [dt] (float rate) {
+          return 1.0f - std::exp (-rate * dt);
+        };
+        if (fresh) {
+          m_film_at = at;
+          m_film_heading = heading;
+        }
+        m_film_at += (at - m_film_at) * ease (5.0f);
+        m_film_heading = normalized (
+          m_film_heading + (heading - m_film_heading) * ease (0.9f));
+        m_film_time += dt;
+        const Vec3 h = m_film_heading;
+        const Vec3 r (h[2], 0.0f, -h[0]);
+        const auto around = [&] (float a) {
+          return -h * std::cos (a) - r * std::sin (a);
+        };
+        const Vec3 up (0, 1, 0);
+        Vec3 eye, look;
+        float fov = 55.0f;
+        bool clear = true;
+        if (view == "drone") {
+          eye = m_film_at + around (angle) * 26.0f + up * 13.0f;
+          look = m_film_at + h * 8.0f;
+          fov = 48.0f;
+        } else if (view == "aerial") {
+          eye = m_film_at + around (angle) * 75.0f + up * 48.0f;
+          look = m_film_at + h * 6.0f;
+          fov = 30.0f;
+        } else if (view == "orbit") {
+          eye = m_film_at + around (angle + 0.25f * m_film_time) * 15.0f +
+                up * 3.5f;
+          look = m_film_at;
+          fov = 50.0f;
+        } else if (view == "top") {
+          eye = m_film_at + up * 30.0f - h * 3.0f;
+          look = m_film_at + h * 2.0f;
+          fov = 40.0f;
+        } else if (view == "fpv") {
+          const float sway = 0.35f * std::sin (0.45f * m_film_time);
+          eye = m_film_at + around (angle + sway) * 5.0f + up * 1.0f;
+          look = m_film_at + h * 14.0f + up * 0.3f;
+          fov = 84.0f;
+        } else if (view == "hull") {
+          eye = boat.point (Vec3 (-1.35f, 0.45f, 1.3f));
+          look = boat.point (Vec3 (0.0f, 0.85f, -1.0f));
+          fov = 70.0f;
+          clear = false;
+        } else if (view == "stern") {
+          eye = boat.point (Vec3 (0.4f, 1.45f, -2.9f));
+          look = boat.point (Vec3 (0.0f, 0.5f, 9.0f));
+          fov = 72.0f;
+          clear = false;
+        } else if (view == "flyby") {
+          // A new stand whenever it has gone by and well off.
+          const Vec3 off = m_film_stand - at;
+          if (fresh || (length (off) > 65.0f && dot (off, h) < 0.0f)) {
+            const float side = std::sin (angle) >= 0.0f ? 1.0f : -1.0f;
+            m_film_stand = at + heading * 45.0f + r * (side * 8.0f);
+            m_film_stand[1] =
+              std::max (boat_depth_at (m_film_stand) +
+                          ground_height (m_film_stand),
+                        ground_height (m_film_stand)) +
+              1.1f;
+          }
+          // A long lens that keeps the boat the same size as it nears.
+          eye = m_film_stand;
+          look = at;
+          fov = std::clamp (2.0f * std::atan (5.0f / length (at - eye)) *
+                              180.0f / PI,
+                            8.0f, 60.0f);
+        } else if (view == "helm") {
+          // The helmsman's eyes, through play's own camera.
+          logic ().m_cam_mode = CAM_HELMET;
+          m_film_fov = 75.0f;
+          return true;
+        } else {
+          return false;
+        }
+        session ().camera ().place (eye, look);
+        if (clear)
+          session ().camera ().keep_above (surface ());
+        m_film_fov = fov;
+        return true;
       }
 
       void tick_simulation (float dt) {
@@ -4091,6 +4335,10 @@ namespace moppe {
               .look_pitch = look_pitch,
               .run = up && ahead > 1.1f,
             };
+          } else if (logic ().m_mode == M_BOAT) {
+            input = boat_autopilot (total_time);
+            input.look_yaw = look_yaw;
+            input.look_pitch = look_pitch;
           } else {
             input = {
               .turn = 0.35f * std::sin (total_time * 0.25f),
@@ -4153,7 +4401,7 @@ namespace moppe {
         spectator_camera (dt);
         rest_camera ();
         walk_side_camera ();
-        ride_capture_camera ();
+        ride_capture_camera (dt);
 
         if (m_benchmark)
           finish_benchmark_frame (m_benchmark_replay->finish_frame ());
@@ -5712,6 +5960,10 @@ namespace moppe {
                                : cinematic         ? m_cinematic.elapsed ()
                                                    : 0.0f,
           .reveal_player = m_opening.active () && !m_opening.shot ().settle,
+          .capture_field_of_view =
+            m_film_fov && !cinematic && !m_opening.active ()
+              ? std::optional<degrees_t> (*m_film_fov * u::deg)
+              : std::nullopt,
           .benchmark = benchmark,
           .sky = m_sky,
         };
@@ -5897,6 +6149,17 @@ namespace moppe {
       Vec3 m_spawn_position;
       // The shore the boat was left at, when it was.
       std::optional<Vec3> m_mooring;
+      // MOPPE_BOAT=river: the river's course down to the sea, which the
+      // boat autopilot follows, and the next point of it ahead.
+      std::vector<Vec3> m_boat_route;
+      std::size_t m_boat_route_at = 0;
+      // The boat's film camera: how long it has run, the subject and its
+      // heading as eased, the fly-by's stand, and its lens (degrees).
+      float m_film_time = 0.0f;
+      Vec3 m_film_at;
+      Vec3 m_film_heading;
+      Vec3 m_film_stand;
+      std::optional<float> m_film_fov;
       Vec3 m_home_base_position;
       render::DrawList m_home_base_marker;
       bool m_skip_cinematic_requested = false;

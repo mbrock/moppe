@@ -60,6 +60,8 @@ namespace moppe::game {
 
     degrees_t gameplay_field_of_view (const FrameViewInput& input) {
       const GameLogicState& logic = input.session.logic ();
+      if (input.capture_field_of_view)
+        return *input.capture_field_of_view;
       if (logic.m_cam_mode == CAM_HELMET)
         return input.selected_camera.field_of_view;
       return CHASE_FIELD_OF_VIEW + CHASE_SPEED_WIDENING * logic.m_fov_k;

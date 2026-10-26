@@ -355,6 +355,8 @@ namespace moppe::game {
     // A cinematic camera away from the player's eyes shows the figure that
     // the first-person view otherwise leaves undrawn.
     bool reveal_player = false;
+    // A capture camera's own lens, in place of play's.
+    std::optional<degrees_t> capture_field_of_view;
     FrameBenchmarkTag benchmark {};
     // The sky at this moment of the day; absent, the fixed sun at the
     // graphics settings' height.
