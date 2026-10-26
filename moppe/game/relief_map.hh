@@ -3,6 +3,7 @@
 
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/drainage.hh>
+#include <moppe/terrain/roads.hh>
 #include <moppe/terrain/trail.hh>
 #include <moppe/terrain/watercourse.hh>
 
@@ -14,8 +15,10 @@ namespace moppe::game {
   // drawn the way a mountain sheet is -- relief shaded from the north-west,
   // open ground pale and forest green, brown contours every ten metres
   // with every fifth one heavier, water blue with its shoreline, the
-  // rivers by their catchments, a kilometre grid, and the trail in red
-  // dashes. Heights count from the sea.
+  // rivers by their catchments, a kilometre grid, the trail in red
+  // dashes, and the planned roads (roads.hh): cased roads, dotted
+  // footpaths, and the peak sanctuaries with the sightlines between them.
+  // Heights count from the sea.
   struct ReliefMap {
     // A top that stands over everything around it, to be marked with its
     // height.
@@ -44,6 +47,7 @@ namespace moppe::game {
                     const terrain::WaterSheets& water,
                     const terrain::RiverNetwork& rivers,
                     const terrain::TrailNetwork& trails,
+                    const terrain::RoadNetwork& roads,
                     meters_t sea_level,
                     int size);
 }

@@ -43,6 +43,11 @@ namespace moppe::game {
     constexpr Rgb sounding_ink { 0.330f, 0.540f, 0.760f };
     constexpr Rgb grid_ink { 0.150f, 0.200f, 0.300f };
     constexpr Rgb trail_ink { 0.800f, 0.130f, 0.110f };
+    constexpr Rgb road_casing_ink { 0.300f, 0.200f, 0.120f };
+    constexpr Rgb road_ink { 0.985f, 0.800f, 0.380f };
+    constexpr Rgb footpath_ink { 0.330f, 0.220f, 0.140f };
+    constexpr Rgb sanctuary_ink { 0.560f, 0.120f, 0.160f };
+    constexpr Rgb sightline_ink { 0.850f, 0.420f, 0.150f };
     constexpr Rgb shadow_ink { 0.360f, 0.340f, 0.430f };
     constexpr Rgb light_ink { 1.000f, 0.985f, 0.940f };
 
@@ -252,6 +257,7 @@ namespace moppe::game {
                               const terrain::WaterSheets& water,
                               const terrain::RiverNetwork& rivers,
                               const terrain::TrailNetwork& trails,
+                              const terrain::RoadNetwork& roads,
                               meters_t sea_level,
                               int size) {
     const terrain::TerrainDomain& domain = surface.domain ();
@@ -342,6 +348,64 @@ namespace moppe::game {
                             5.0f * pen);
         along += std::hypot (bx - ax, bz - az);
       }
+    }
+
+    // The planned roads: each a pale band in a dark casing; footpaths in
+    // dots; the sanctuaries as triangles, with a faint dashed line to each
+    // other one whose fire they would see.
+    Ink casing_layer (size);
+    Ink road_layer (size);
+    Ink footpath_layer (size);
+    Ink sanctuary_layer (size);
+    Ink sightline_layer (size);
+    for (const terrain::Road& road : roads.roads) {
+      float along = 0.0f;
+      for (std::size_t i = 0; i + 1 < road.points.size (); ++i) {
+        const float ax = road.points[i].x_m / metres_x;
+        const float az = road.points[i].z_m / metres_z;
+        const float bx = road.points[i + 1].x_m / metres_x;
+        const float bz = road.points[i + 1].z_m / metres_z;
+        if (road.kind == terrain::Road::Kind::Road) {
+          casing_layer.stroke (ax, az, bx, bz, 4.2f * pen, 4.2f * pen);
+          road_layer.stroke (ax, az, bx, bz, 2.6f * pen, 2.6f * pen);
+        } else {
+          footpath_layer.stroke (ax,
+                                 az,
+                                 bx,
+                                 bz,
+                                 1.5f * pen,
+                                 1.5f * pen,
+                                 along,
+                                 3.5f * pen,
+                                 4.5f * pen);
+        }
+        along += std::hypot (bx - ax, bz - az);
+      }
+    }
+    for (const auto& [a, b] : roads.sightlines) {
+      const terrain::RoadPlace& one = roads.places[a];
+      const terrain::RoadPlace& two = roads.places[b];
+      const float ax = one.x_m / metres_x;
+      const float az = one.z_m / metres_z;
+      const float bx = ax + wrap_delta (two.x_m - one.x_m, period_x) / metres_x;
+      const float bz = az + wrap_delta (two.z_m - one.z_m, period_z) / metres_z;
+      sightline_layer.stroke (
+        ax, az, bx, bz, 1.0f * pen, 1.0f * pen, 0.0f, 10.0f * pen, 8.0f * pen);
+    }
+    for (const terrain::RoadPlace& place : roads.places) {
+      if (place.kind != terrain::RoadPlace::Kind::Sanctuary)
+        continue;
+      const float cx = place.x_m / metres_x;
+      const float cz = place.z_m / metres_z;
+      const float r = 12.0f * pen;
+      const float top_x = cx, top_z = cz - r;
+      const float left_x = cx - 0.87f * r, left_z = cz + 0.5f * r;
+      const float right_x = cx + 0.87f * r, right_z = cz + 0.5f * r;
+      const float w = 2.0f * pen;
+      sanctuary_layer.stroke (top_x, top_z, left_x, left_z, w, w);
+      sanctuary_layer.stroke (left_x, left_z, right_x, right_z, w, w);
+      sanctuary_layer.stroke (right_x, right_z, top_x, top_z, w, w);
+      sanctuary_layer.stroke (cx, cz, cx, cz, 2.6f * pen, 2.6f * pen);
     }
 
     // Light from the north-west, as map readers expect, a little steeper
@@ -473,8 +537,14 @@ namespace moppe::game {
               grid_ink,
               0.26f * std::max (grid (x_m, metres_x), grid (z_m, metres_z)));
 
-            color = mix (
-              color, trail_ink, trail_layer.at (px, static_cast<int> (py)));
+            const int row = static_cast<int> (py);
+            color =
+              mix (color, sightline_ink, 0.7f * sightline_layer.at (px, row));
+            color = mix (color, footpath_ink, footpath_layer.at (px, row));
+            color = mix (color, road_casing_ink, casing_layer.at (px, row));
+            color = mix (color, road_ink, road_layer.at (px, row));
+            color = mix (color, trail_ink, trail_layer.at (px, row));
+            color = mix (color, sanctuary_ink, sanctuary_layer.at (px, row));
 
             std::uint8_t* out =
               &sheet.rgba[(py * static_cast<std::size_t> (size) +

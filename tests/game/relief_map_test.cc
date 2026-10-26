@@ -36,6 +36,7 @@ namespace {
                                    water,
                                    std::get<terrain::RiverNetwork> (hydrology),
                                    trails,
+                                   terrain::RoadNetwork {},
                                    recipe.water_datum (),
                                    size);
   }

@@ -5003,12 +5003,29 @@ namespace moppe {
         const int limit = 4096;
 #endif
         const int size = std::min (limit, 2 * recipe ().resolution ());
+        const auto roads_start = std::chrono::steady_clock::now ();
+        m_roads = terrain::plan_roads (
+          surface ().domain (),
+          spatial::get<terrain::surface_elevation> (surface ()),
+          standing_water (),
+          drainage (),
+          rivers ().minimum_area,
+          trail_network ().plan.home_base,
+          world ().water_level.numerical_value_in (u::m));
+        std::cerr << "moppe: roads: " << m_roads.places.size ()
+                  << " places, " << m_roads.roads.size () << " ways, "
+                  << m_roads.sightlines.size () << " sightlines in "
+                  << std::chrono::duration<double> (
+                       std::chrono::steady_clock::now () - roads_start)
+                       .count ()
+                  << " s\n";
         m_map.set (r,
                    paint_relief_map (surface (),
                                      surface_readings (),
                                      generated_world ().water_surface (),
                                      rivers (),
                                      trail_network (),
+                                     m_roads,
                                      world ().water_level,
                                      size));
       }
@@ -6271,6 +6288,8 @@ namespace moppe {
       // Whether L has handed the mouse back to the desktop during play.
       bool m_pointer_free = false;
       MapSheet m_map;
+      // The roads the map shows (roads.hh), planned with the sheet.
+      terrain::RoadNetwork m_roads;
       // Esc in play has asked whether to quit (Hud::draw_quit_question).
       bool m_quit_asked = false;
       bool m_map_asked = false;

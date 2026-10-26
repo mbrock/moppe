@@ -348,6 +348,7 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/sediment_transport.cc
   moppe/terrain/stream_power_evolution.cc
   moppe/terrain/trail.cc
+  moppe/terrain/roads.cc
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
   moppe/terrain/geological.cc
@@ -660,6 +661,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/sediment_transport_test.cc
     tests/terrain/stream_power_evolution_test.cc
     tests/terrain/trail_test.cc
+    tests/terrain/roads_test.cc
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
