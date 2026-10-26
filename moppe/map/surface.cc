@@ -360,8 +360,8 @@ namespace moppe::map {
   namespace {
     // A field smoothed over about RADIUS on the world torus: two passes of
     // a box along each axis, which is close to a tent of twice the radius.
-    // A biome is a stand's reading, not a sample's, so the rules read their
-    // ground through this rather than cell by cell.
+    // A plant answers to a stand's ground, not a sample's, so vegetation
+    // reads the ground through this rather than cell by cell.
     std::vector<float> smoothed (std::vector<float> field,
                                  const terrain::TerrainDomain& domain,
                                  meters_t radius) {
@@ -407,14 +407,15 @@ namespace moppe::map {
       return field;
     }
 
-    // Value noise of four octaves from PATCHES a lap, 0 to 1.
+    // Value noise of OCTAVES octaves from PATCHES a lap, 0 to 1.
     float layered_noise (terrain::TerrainDomain::LapPosition where,
                          std::uint32_t patches,
-                         std::uint32_t seed) {
+                         std::uint32_t seed,
+                         std::uint32_t octaves = 4) {
       float sum = 0.0f;
       float amplitude = 1.0f;
       float norm = 0.0f;
-      for (std::uint32_t octave = 0; octave < 4; ++octave) {
+      for (std::uint32_t octave = 0; octave < octaves; ++octave) {
         sum += amplitude *
                periodic_noise (
                  where.along_x, where.along_z, patches << octave, seed + octave)
@@ -424,14 +425,177 @@ namespace moppe::map {
       }
       return sum / norm;
     }
+
+    float rises (float edge0, float edge1, float value) {
+      return smoothstep (edge0, edge1, value);
+    }
+
+    float falls (float edge0, float edge1, float value) {
+      return 1.0f - smoothstep (edge0, edge1, value);
+    }
+
+    // The hidden quantities at one place, each 0 to 1, as the plants read
+    // them: a stand's worth of ground, not a sample's.
+    struct Site {
+      float wet;       // soil water: the wetness index, smoothed
+      float dry;       // share of the stand that is dry
+      float soaked;    // share of the stand that is soaked
+      float thin;      // share of the stand with bedrock within a span
+      float peat;      // share of the stand under deep wet soil
+      float poor;      // thin and dry together: sand and rock
+      float level;     // flat enough to hold water
+      float limestone; // on the limestone sheet
+      float cold;      // height, north aspect, and frost hollows
+      float exposure;  // ridges and high ground, open to the wind
+    };
+
+    // A species' tolerance of a site, 0 to 1. Each curve is wide where the
+    // species will grow at all; where it wins is decided by competition.
+    struct Species {
+      float strength; // how hard it pushes the others out where both grow
+      float (*tolerance) (const Site&, float light);
+      std::uint32_t lane;
+    };
+
+    // Trees. Spruce shades out everything where the soil is deep and damp
+    // and the summer long enough; pine grows almost anywhere below the
+    // fjäll but wins only where the others cannot, on dry sand and rock
+    // and in the bog; birch grows wherever it is not too dry or cold and
+    // wins at the edges; the fell birch holds the treeline.
+    constexpr Species canopy[] = {
+      { 1.00f,
+        [] (const Site& at, float) {
+          return rises (0.20f, 0.65f, 1.0f - at.thin) *
+                 rises (0.08f, 0.18f, at.wet) * falls (0.45f, 0.75f, at.wet) *
+                 falls (0.30f, 0.55f, at.cold) * falls (0.30f, 0.80f, at.peat) *
+                 (1.0f - 0.85f * at.poor) *
+                 (1.0f - 0.6f * at.limestone * at.thin);
+        },
+        0x5b1ceU },
+      { 0.80f,
+        [] (const Site& at, float) {
+          const float poor = std::max (at.poor, rises (0.20f, 0.60f, at.peat));
+          return falls (0.55f, 0.80f, at.cold) * (0.40f + 0.60f * poor);
+        },
+        0x9a1e5U },
+      { 0.52f,
+        [] (const Site& at, float) {
+          return 0.9f * falls (0.45f, 0.75f, at.cold) *
+                 rises (0.05f, 0.14f, at.wet) * falls (0.50f, 0.90f, at.peat) *
+                 (1.0f - 0.6f * at.poor);
+        },
+        0xb12c4U },
+      { 0.95f,
+        [] (const Site& at, float) {
+          return rises (0.25f, 0.50f, at.cold) * falls (0.65f, 0.85f, at.cold) *
+                 (1.0f - 0.5f * at.exposure) * falls (0.6f, 0.95f, at.soaked);
+        },
+        0x3f3b1U },
+    };
+    // How much light each tree's canopy takes from the ground.
+    constexpr float canopy_shade[] = { 0.90f, 0.40f, 0.55f, 0.45f };
+
+    // The field layer, in the light the trees leave.
+    constexpr Species field[] = {
+      // Reindeer lichen: dry, thin, acid ground in good light.
+      { 0.75f,
+        [] (const Site& at, float light) {
+          return at.poor * (1.0f - 0.85f * at.limestone) *
+                 rises (0.30f, 0.65f, light);
+        },
+        0x11c4e5U },
+      // Heather and crowberry: open, poor, acid ground, and the wind.
+      { 0.85f,
+        [] (const Site& at, float light) {
+          return rises (0.45f, 0.75f, light) * falls (0.30f, 0.55f, at.wet) *
+                 (1.0f - 0.7f * at.limestone) *
+                 (0.35f + 0.65f * std::max ({ at.thin,
+                                              at.exposure,
+                                              rises (0.4f, 0.7f, at.cold) }));
+        },
+        0x4ea74U },
+      // Bilberry: the half-shade of the conifers, damp acid humus.
+      { 0.70f,
+        [] (const Site& at, float light) {
+          return rises (0.08f, 0.25f, light) * falls (0.55f, 0.85f, light) *
+                 rises (0.08f, 0.18f, at.wet) * falls (0.45f, 0.70f, at.wet) *
+                 (1.0f - 0.6f * at.limestone) * falls (0.82f, 1.0f, at.cold);
+        },
+        0xb1bb3U },
+      // Sphagnum: level ground the water cannot leave. It grows its own
+      // ground, so once it is there little else holds.
+      { 1.25f,
+        [] (const Site& at, float light) {
+          return at.level *
+                 std::max (rises (0.20f, 0.50f, at.soaked),
+                           rises (0.25f, 0.60f, at.peat)) *
+                 rises (0.20f, 0.50f, light) *
+                 std::max (1.0f - at.limestone, at.peat);
+        },
+        0x5a6c1U },
+      // Dwarf birch: cold, damp, open ground of the fjäll.
+      { 0.90f,
+        [] (const Site& at, float light) {
+          return rises (0.40f, 0.70f, at.cold) * rises (0.12f, 0.28f, at.wet) *
+                 rises (0.40f, 0.70f, light);
+        },
+        0xdb1c7U },
+      // Sedge: the wet margins in the open.
+      { 0.75f,
+        [] (const Site& at, float light) {
+          return rises (0.15f, 0.45f, at.soaked) * rises (0.40f, 0.70f, light);
+        },
+        0x5ed6eU },
+      // The alvar's short turf on bare limestone, which drains through its
+      // karst.
+      { 0.92f,
+        [] (const Site& at, float light) {
+          return at.limestone * rises (0.42f, 0.62f, at.thin) *
+                 rises (0.25f, 0.50f, at.dry) *
+                 falls (0.15f, 0.45f, at.soaked) * rises (0.40f, 0.70f, light) *
+                 falls (0.70f, 0.90f, at.cold);
+        },
+        0xa17a2U },
+      // Grass and herbs: deep, moist, fertile soil in the light. Not stored:
+      // the ground draws turf wherever nothing else holds it.
+      { 0.90f,
+        [] (const Site& at, float light) {
+          return rises (0.25f, 0.70f, 1.0f - at.thin) *
+                 rises (0.08f, 0.22f, at.wet) * falls (0.50f, 0.80f, at.wet) *
+                 rises (0.30f, 0.60f, light) * falls (0.60f, 0.85f, at.cold);
+        },
+        0x9a55eU },
+    };
+
+    // Competition: each species' claim is its tolerance times its strength,
+    // a little frayed by chance (where seed happened to land and take), and
+    // the claims share the ground in proportion to their cubes, so the
+    // strongest dominates without the others vanishing at its edge. What a
+    // species holds is its share times how well it grows there.
+    template <std::size_t N>
+    std::array<float, N> compete (const std::array<float, N>& tolerance,
+                                  const Species (&species)[N],
+                                  const std::array<float, N>& chance) {
+      std::array<float, N> claim {};
+      float total = 1e-6f;
+      for (std::size_t s = 0; s < N; ++s) {
+        const float c = tolerance[s] * species[s].strength * chance[s];
+        claim[s] = c * c * c;
+        total += claim[s];
+      }
+      std::array<float, N> held {};
+      for (std::size_t s = 0; s < N; ++s)
+        held[s] = claim[s] / total * tolerance[s];
+      return held;
+    }
   }
 
-  BiomeMap analyze_biomes (const SurfaceGeometry& geometry,
-                           const terrain::MoistureMap& moisture,
-                           meters_t water_level,
-                           meters_t land_top,
-                           std::uint32_t seed) {
-    MOPPE_PROFILE_ZONE ("map::analyze_biomes");
+  VegetationMap analyze_vegetation (const SurfaceGeometry& geometry,
+                                    const terrain::MoistureMap& moisture,
+                                    meters_t water_level,
+                                    meters_t land_top,
+                                    std::uint32_t seed) {
+    MOPPE_PROFILE_ZONE ("map::analyze_vegetation");
     if (moisture.domain () != geometry.domain ())
       throw std::invalid_argument (
         "Moisture does not share the surface domain");
@@ -447,21 +611,27 @@ namespace moppe::map {
     const auto& deposited = get<deposited_surface_material> (geometry);
     const auto& sediment = get<terrain::sediment_thickness> (geometry);
     const auto& normals = get<terrain::terrain_normal> (geometry);
+    const auto& elevation = get<terrain::surface_elevation> (geometry);
     const auto& wetness = get<terrain::soil_wetness> (moisture);
-    std::vector<float> cut (count), thin (count), dry (count), soaked (count),
-      peat (count), up (count);
+    std::vector<float> cut (count), wet (count), thin (count), dry (count),
+      soaked (count), peat (count), up (count), south (count), height (count);
     for (std::size_t i = 0; i < count; ++i) {
       cut[i] = eroded[i].numerical_value_in (u::m) -
                deposited[i].numerical_value_in (u::m);
       const float soil = sediment[i].numerical_value_in (u::m);
-      const float wet = wetness[i].numerical_value_in (one);
+      wet[i] = wetness[i].numerical_value_in (one);
       // Under a span of soil a root reaches bedrock; over two and a half
       // metres of it the ground is peat if it is also wet.
       thin[i] = 1.0f - smoothstep (0.15f, 0.60f, soil);
-      peat[i] = smoothstep (0.80f, 2.50f, soil);
-      dry[i] = 1.0f - smoothstep (0.12f, 0.28f, wet);
-      soaked[i] = smoothstep (0.30f, 0.60f, wet);
-      up[i] = normals[i].numerical_value_in (one)[1];
+      peat[i] =
+        smoothstep (0.80f, 2.50f, soil) * smoothstep (0.2f, 0.4f, wet[i]);
+      dry[i] = 1.0f - smoothstep (0.12f, 0.28f, wet[i]);
+      soaked[i] = smoothstep (0.30f, 0.60f, wet[i]);
+      const Vec3 normal = normals[i].numerical_value_in (one);
+      up[i] = normal[1];
+      // North is -z, so a slope facing the sun leans its normal toward +z.
+      south[i] = normal[2];
+      height[i] = terrain::surface_elevation_value (elevation[i]);
     }
     std::vector<float> positive;
     positive.reserve (count);
@@ -475,14 +645,17 @@ namespace moppe::map {
       median_cut = std::max (*middle, 0.5f);
     }
     cut = smoothed (std::move (cut), domain, 10.0f * u::m);
+    wet = smoothed (std::move (wet), domain, 12.0f * u::m);
     thin = smoothed (std::move (thin), domain, 25.0f * u::m);
     dry = smoothed (std::move (dry), domain, 25.0f * u::m);
     soaked = smoothed (std::move (soaked), domain, 25.0f * u::m);
     peat = smoothed (std::move (peat), domain, 25.0f * u::m);
     up = smoothed (std::move (up), domain, 25.0f * u::m);
+    south = smoothed (std::move (south), domain, 25.0f * u::m);
+    // The ground's height against its neighbourhood's: a ridge stands
+    // above it, a hollow below, where cold air settles on still nights.
+    const std::vector<float> around = smoothed (height, domain, 75.0f * u::m);
 
-    // Patches counted across this world: the limestone's thickness varies
-    // over kilometres, fire and the bogs' growth over hundreds of metres.
     const auto laps = [&] (float patch_m) {
       return std::max<std::uint32_t> (
         1,
@@ -490,61 +663,79 @@ namespace moppe::map {
           domain.period_x ().numerical_value_in (u::m) / patch_m)));
     };
     const std::uint32_t sheet_laps = laps (1700.0f);
-    const std::uint32_t fire_laps = laps (1000.0f);
-    const std::uint32_t bog_laps = laps (830.0f);
-    const std::uint32_t pavement_laps = laps (710.0f);
+    const std::uint32_t chance_laps = laps (160.0f);
+    const float sea = water_level.numerical_value_in (u::m);
     const float relief =
       std::max ((land_top - water_level).numerical_value_in (u::m), 1.0f);
     const float edge = std::max (0.06f * median_cut, 0.5f);
 
-    BiomeMap values (domain);
+    VegetationMap values (domain);
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const std::size_t i = domain.offset (site);
       const auto where = domain.lap_position (site);
       const float thickness =
         median_cut *
         (0.25f + 1.0f * layered_noise (where, sheet_laps, seed ^ 0x11a7c0deU));
-      const float limestone = smoothstep (-edge, edge, thickness - cut[i]);
-      const float rise = (terrain::surface_elevation_value (
-                            get<terrain::surface_elevation> (geometry[site])) -
-                          water_level.numerical_value_in (u::m)) /
-                         relief;
-      const float below_fell = 1.0f - smoothstep (0.55f, 0.65f, rise);
-      const float walkable = smoothstep (0.82f, 0.92f, up[i]);
+      const float rise = (height[i] - sea) / relief;
+      const float above = height[i] - around[i];
+      const Site at {
+        .wet = wet[i],
+        .dry = dry[i],
+        .soaked = soaked[i],
+        .thin = thin[i],
+        .peat = peat[i],
+        .poor = smoothstep (0.44f, 0.60f, 0.5f * (thin[i] + dry[i])),
+        .level = smoothstep (0.95f, 0.985f, up[i]),
+        .limestone = smoothstep (-edge, edge, thickness - cut[i]),
+        .cold = smoothstep (0.40f,
+                            0.90f,
+                            rise - 0.20f * south[i] +
+                              0.05f * smoothstep (0.0f, 8.0f, -above)),
+        .exposure = std::clamp (0.7f * smoothstep (0.0f, 8.0f, above) +
+                                  0.6f * smoothstep (0.45f, 0.9f, rise),
+                                0.0f,
+                                1.0f),
+      };
+      // Steep ground holds little of anything rooted.
+      const float footing = smoothstep (0.70f, 0.85f, up[i]);
+      const auto chances = [&] (const auto& species) {
+        std::array<float, std::size (species)> chance {};
+        for (std::size_t s = 0; s < chance.size (); ++s)
+          chance[s] =
+            0.75f + 0.5f * layered_noise (
+                             where, chance_laps, seed ^ species[s].lane, 2);
+        return chance;
+      };
 
-      // Fire comes back to dry pine ground and keeps it open; where it has
-      // not lately, the spruce closes in.
-      const float burnt = smoothstep (
-        0.42f, 0.58f, layered_noise (where, fire_laps, seed ^ 0x0f12e5U));
-      const float lean = smoothstep (0.40f, 0.55f, 0.5f * (thin[i] + dry[i]));
-      const float heath = (1.0f - limestone) * lean * burnt * below_fell *
-                          smoothstep (0.80f, 0.90f, up[i]);
+      std::array<float, std::size (canopy)> trees {};
+      for (std::size_t s = 0; s < trees.size (); ++s)
+        trees[s] = canopy[s].tolerance (at, 1.0f) * footing;
+      const auto held = compete (trees, canopy, chances (canopy));
+      float shade = 0.0f;
+      for (std::size_t s = 0; s < held.size (); ++s)
+        shade += canopy_shade[s] * held[s];
+      const float light = std::clamp (1.0f - shade, 0.0f, 1.0f);
 
-      // A bog grows its peat where the ground is level enough to hold the
-      // water; limestone drains it away unless the peat is already deep.
-      const float level = smoothstep (0.96f, 0.99f, up[i]);
-      const float grown = smoothstep (
-        0.30f, 0.60f, layered_noise (where, bog_laps, seed ^ 0xb0991eU));
-      const float mire = grown * level *
-                         std::max (smoothstep (0.25f, 0.55f, soaked[i]),
-                                   smoothstep (0.25f, 0.60f, peat[i])) *
-                         std::max (1.0f - limestone, peat[i]);
-
-      // Alvar: the limestone bare but for a skin of turf.
-      const float alvar =
-        limestone * smoothstep (0.42f, 0.58f, thin[i]) *
-        (1.0f - smoothstep (0.15f, 0.45f, soaked[i])) * below_fell * walkable *
-        smoothstep (
-          0.45f, 0.62f, layered_noise (where, pavement_laps, seed ^ 0xa17a2U));
+      std::array<float, std::size (field)> plants {};
+      for (std::size_t s = 0; s < plants.size (); ++s)
+        plants[s] = field[s].tolerance (at, light) * std::max (footing, 0.3f);
+      const auto ground = compete (plants, field, chances (field));
 
       const auto reading = values[site];
-      get<limestone_cover> (reading) = limestone * limestone_cover[one];
-      get<pine_heath_cover> (reading) =
-        std::clamp (heath * (1.0f - mire), 0.0f, 1.0f) * pine_heath_cover[one];
-      get<mire_cover> (reading) =
-        std::clamp (mire, 0.0f, 1.0f) * mire_cover[one];
-      get<alvar_cover> (reading) =
-        std::clamp (alvar * (1.0f - mire), 0.0f, 1.0f) * alvar_cover[one];
+      get<limestone_cover> (reading) = at.limestone * limestone_cover[one];
+      get<spruce_abundance> (reading) = held[0] * spruce_abundance[one];
+      get<pine_abundance> (reading) = held[1] * pine_abundance[one];
+      get<birch_abundance> (reading) = held[2] * birch_abundance[one];
+      get<mountain_birch_abundance> (reading) =
+        held[3] * mountain_birch_abundance[one];
+      get<lichen_abundance> (reading) = ground[0] * lichen_abundance[one];
+      get<heather_abundance> (reading) = ground[1] * heather_abundance[one];
+      get<bilberry_abundance> (reading) = ground[2] * bilberry_abundance[one];
+      get<sphagnum_abundance> (reading) = ground[3] * sphagnum_abundance[one];
+      get<dwarf_birch_abundance> (reading) =
+        ground[4] * dwarf_birch_abundance[one];
+      get<sedge_abundance> (reading) = ground[5] * sedge_abundance[one];
+      get<alvar_abundance> (reading) = ground[6] * alvar_abundance[one];
     }
     return values;
   }
@@ -625,12 +816,12 @@ namespace moppe::map {
   // the probability from it with a threshold of its own.
   ForestCoverMap analyze_forest_cover (const TreeHabitatMap& habitat,
                                        const terrain::TrailUseMap& use,
-                                       const BiomeMap& biomes,
+                                       const VegetationMap& vegetation,
                                        std::uint32_t seed) {
     if (use.domain () != habitat.domain () ||
-        biomes.domain () != habitat.domain ())
+        vegetation.domain () != habitat.domain ())
       throw std::invalid_argument (
-        "Trail use or biomes do not share the surface domain");
+        "Trail use or vegetation do not share the surface domain");
 
     using spatial::get;
 
@@ -694,15 +885,16 @@ namespace moppe::map {
       // how thickly they grow, which is what placement reads for density,
       // height, and tint.
       const auto thickness = 0.45f + 0.55f * habitable;
-      // The heath, the bog, and the alvar stand open: what trees they carry
-      // the forest plan plants itself, sparse and of their own kind.
-      const auto biome = biomes[site];
-      const float open =
-        std::max ({ get<pine_heath_cover> (biome).numerical_value_in (one),
-                    get<mire_cover> (biome).numerical_value_in (one),
-                    get<alvar_cover> (biome).numerical_value_in (one) });
+      // How closed a canopy the trees that hold this place make: spruce
+      // closes it, birch nearly, while pine and the fell birch stand open
+      // and the forest plan plants them itself.
+      const auto plants = vegetation[site];
+      const float closing =
+        get<spruce_abundance> (plants).numerical_value_in (one) +
+        0.8f * get<birch_abundance> (plants).numerical_value_in (one);
       const auto wanted = thickness * seeded * route_clearance *
-                          settled_clearance * (1.0f - 0.92f * open);
+                          settled_clearance *
+                          smoothstep (0.08f, 0.45f, closing);
 
       // The bands are in range by construction, but the trail and home-base
       // readings are stored data, and a clearance is one minus one of those.

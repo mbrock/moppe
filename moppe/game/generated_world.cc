@@ -6,6 +6,13 @@
 #include <moppe/terrain/river.hh>
 #include <moppe/terrain/waterline.hh>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <iostream>
+#include <span>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 
 namespace moppe::game {
@@ -55,6 +62,73 @@ namespace moppe::game {
                       std::move (rivers));
   }
 
+  namespace {
+    // How much of the dry ground each species holds the most of, as a
+    // reading of the world's handwriting.
+    void log_vegetation (const map::VegetationMap& vegetation,
+                         const terrain::WaterSheets& water,
+                         const map::SurfaceGeometry& geometry) {
+      const auto& ground = spatial::get<terrain::surface_elevation> (geometry);
+      const auto& level = spatial::get<terrain::surface_elevation> (water);
+      const auto column = [&] (auto quantity) {
+        return std::span (spatial::get<quantity> (vegetation));
+      };
+      const auto trees = std::tuple (column (map::spruce_abundance),
+                                     column (map::pine_abundance),
+                                     column (map::birch_abundance),
+                                     column (map::mountain_birch_abundance));
+      const auto field = std::tuple (column (map::lichen_abundance),
+                                     column (map::heather_abundance),
+                                     column (map::bilberry_abundance),
+                                     column (map::sphagnum_abundance),
+                                     column (map::dwarf_birch_abundance),
+                                     column (map::sedge_abundance),
+                                     column (map::alvar_abundance));
+      const auto tally = [&] (const auto& columns, const char* const* names) {
+        constexpr std::size_t n =
+          std::tuple_size_v<std::remove_cvref_t<decltype (columns)>>;
+        std::array<std::size_t, n + 1> leads {};
+        std::size_t dry = 0;
+        for (std::size_t i = 0; i < ground.size (); ++i) {
+          if (level[i] > ground[i])
+            continue;
+          ++dry;
+          std::size_t best = n;
+          float most = 0.15f;
+          std::size_t s = 0;
+          std::apply (
+            [&] (const auto&... each) {
+              ((each[i].numerical_value_in (mp_units::one) > most
+                  ? (most = each[i].numerical_value_in (mp_units::one),
+                     best = s)
+                  : 0,
+                ++s),
+               ...);
+            },
+            columns);
+          ++leads[best];
+        }
+        for (std::size_t s = 0; s <= n; ++s)
+          std::cerr << ' ' << names[s] << ' '
+                    << std::lround (100.0 * leads[s] /
+                                    std::max<std::size_t> (dry, 1))
+                    << '%';
+      };
+      static const char* const tree_names[] = {
+        "spruce", "pine", "birch", "fell-birch", "treeless"
+      };
+      static const char* const field_names[] = { "lichen",      "heather",
+                                                 "bilberry",    "sphagnum",
+                                                 "dwarf-birch", "sedge",
+                                                 "alvar",       "grass" };
+      std::cerr << "moppe: vegetation: trees";
+      tally (trees, tree_names);
+      std::cerr << "; field layer";
+      tally (field, field_names);
+      std::cerr << std::endl;
+    }
+  }
+
   std::tuple<terrain::WaterSheets, map::SurfaceReadings>
   analyze_surface (const map::SurfaceGeometry& geometry,
                    const terrain::WorldRecipe& recipe,
@@ -89,14 +163,15 @@ namespace moppe::game {
                 water_level + 21.0f * u::m);
     map::TreeHabitatMap habitat =
       map::analyze_tree_habitat (geometry, moisture, water_level, tree_line);
-    map::BiomeMap biomes =
-      map::analyze_biomes (geometry,
-                           moisture,
-                           water_level,
-                           water_level + land_relief,
-                           recipe.seed ().value ^ 0x3b10e5a1U);
+    map::VegetationMap vegetation =
+      map::analyze_vegetation (geometry,
+                               moisture,
+                               water_level,
+                               water_level + land_relief,
+                               recipe.seed ().value ^ 0x3b10e5a1U);
+    log_vegetation (vegetation, sheets, geometry);
     map::ForestCoverMap cover = map::analyze_forest_cover (
-      habitat, use, biomes, recipe.seed ().value ^ 0x6f12ad37U);
+      habitat, use, vegetation, recipe.seed ().value ^ 0x6f12ad37U);
 
     // The join names the readings in the order the bundle declares them; a
     // world is finished when every one of them is present.
@@ -107,7 +182,7 @@ namespace moppe::game {
                             std::move (habitat),
                             std::move (cover),
                             use,
-                            std::move (biomes)) };
+                            std::move (vegetation)) };
   }
 
   GeneratedWorld::GeneratedWorld (WorldParams params,

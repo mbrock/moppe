@@ -477,15 +477,9 @@
 
 ;;; -- the heath --------------------------------------------------------------
 ;;;
-;;; Above the meadows the ground and the sward's blades turn together, so
-;;; both ask the same questions of the same grain: how far up the land's
-;;; relief the heath has come, which plant holds a place, and what colour
-;;; it is in autumn.
-
-;;; How far the heath has taken ground at RISE of the land's relief; DRIFT,
-;;; the region's grain, moves its lower edge.
-(define-shader-function heath-reach (rise drift)
-  (smoothstep 0.48 0.64 (+ rise (* 0.16 (- drift 0.5)))))
+;;; Where heather holds the ground, the ground and the sward's blades turn
+;;; together, so both ask the same questions of the same grain: which
+;;; plant holds a place, and what colour it is in autumn.
 
 ;;; Which plant holds a place, 0 to 1, from the grain at every scale.
 (define-shader-function heath-plant (patch drift fleck grain)
@@ -524,13 +518,14 @@
 ;;; surface keeps to a few colours broken by the detail sheet:
 ;;;
 ;;;   turf        its hue follows soil water
-;;;   heath       above the meadows, patches of straw, russet, and wine
 ;;;   fell        above the heath, frost-shattered stones
 ;;;   forest      needle litter and moss under closed canopy
 ;;;   leaves      fallen under turned birch groves
-;;;   lichen      reindeer lichen and crowberry on the pine heaths
-;;;   bog         sphagnum hummocks and black pools on the mires
-;;;   pavement    the alvar's limestone, split by grikes
+;;;   field layer each plant where its share of the ground comes out of
+;;;               the competition (map::analyze_vegetation): reindeer
+;;;               lichen, heather and crowberry, bilberry and dwarf birch
+;;;               (crimson and gold in ruska), sphagnum and its black
+;;;               pools, sedge, and the alvar's pavement
 ;;;   soil        where erosion strips a slope
 ;;;   gravel      cobbles in the channels
 ;;;   shore       sand where the water laid fine sediment, cobbles
@@ -561,11 +556,12 @@
 
 ;;; LAND is moisture, erosion, deposition, forest cover; FLOOR is the
 ;;; signed shore lane, snow support, trail, home base; STAND the canopy's
-;;; closure and the fallen leaves; BIOME limestone, pine heath, mire, and
-;;; alvar.  ABOVE-SEA is in metres.
+;;; closure and the fallen leaves; PLANTS and MORE the field layer's shares
+;;; (lichen, heather, bilberry, sphagnum; dwarf birch, sedge, alvar turf)
+;;; and, in MORE's last lane, the limestone.  ABOVE-SEA is in metres.
 (define-shader-function ground-surface (world normal land floor rise
-                                        above-sea stand biome micro meso
-                                        macro region)
+                                        above-sea stand plants more micro
+                                        meso macro region)
   (let* ((up (swizzle normal :y))
          (moisture (swizzle land :x))
          (grain (swizzle micro :x))
@@ -604,21 +600,83 @@
          (flagstone (mix (vec3 0.43 0.43 0.44) (vec3 0.58 0.56 0.52)
                          (smoothstep 0.82 1.0 (stone-tone block))))
 
-         ;; Turf, and the heath above it.
+         ;; Turf, and the field layer over it: each plant where its share of
+         ;; the ground comes out of the competition, a frayed patch over
+         ;; whatever lies beneath, so the heath, the bog, the alvar, and the
+         ;; fjäll are only where those patches crowd together.
          (lush (clamp (+ (smoothstep 0.08 0.62 moisture)
                          (* 0.55 (- patch 0.5)) (* 0.35 (- drift 0.5)))
                       0.0 1.0))
          (turf (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush))
-         (fell (heath-reach rise drift))
+         (lichen-share (swizzle plants :x))
+         (heather-share (swizzle plants :y))
+         (bilberry-share (swizzle plants :z))
+         (sphagnum-share (swizzle plants :w))
+         (dwarf-share (swizzle more :x))
+         (sedge-share (swizzle more :y))
+         (alvar-share (swizzle more :z))
+         ;; Heather and crowberry: straw, russet, and the wine of crowberry
+         ;; where it is damp.
          (shrub (heath-plant patch drift fleck grain))
          (heather (heath-colour shrub moisture
                                 (max (+ (abs (derivative-x shrub))
                                         (abs (derivative-y shrub)))
                                      0.04)))
-         (heath (mix turf
-                     (mix (* heather (- 1.0 (* 0.26 sprig)))
-                          (vec3 0.64 0.58 0.37) (* 0.75 tuft))
-                     fell))
+         ;; Ruska: the fjäll's bilberry goes crimson and its dwarf birch
+         ;; gold, the higher the sooner.
+         (turned (smoothstep 0.45 0.80 (+ rise (* 0.2 (- drift 0.5)))))
+         ;; Crimson comes leaf by leaf, so it is broken by the grain.
+         (bilberry (mix (mix (vec3 0.28 0.37 0.15) (vec3 0.42 0.30 0.15)
+                             (* 0.6 turned))
+                        (mix (vec3 0.50 0.15 0.11) (vec3 0.36 0.10 0.10) grain)
+                        (* turned (smoothstep 0.35 0.65 fleck)
+                           (smoothstep 0.25 0.55 grain))))
+         (dwarf-birch (mix (mix (vec3 0.42 0.48 0.18) (vec3 0.78 0.56 0.18)
+                                turned)
+                           (vec3 0.66 0.30 0.12)
+                           (* turned (smoothstep 0.55 0.85 patch))))
+         ;; Reindeer lichen: a pale crunching carpet, broken by crowberry
+         ;; and the brown of needles where it is worn.
+         (lichen (mix (mix (vec3 0.62 0.64 0.53) (vec3 0.74 0.75 0.63)
+                           (smoothstep 0.3 0.7 fleck))
+                      (vec3 0.45 0.38 0.26) (* 0.7 sprig)))
+         (sedge (mix (vec3 0.62 0.60 0.30) (vec3 0.48 0.50 0.24) grain))
+         ;; Sphagnum: hummocks, ochre and green and rust red, and black water
+         ;; standing in the hollows between them.
+         (sphagnum (mix (mix (vec3 0.58 0.57 0.24) (vec3 0.44 0.50 0.20)
+                             (smoothstep 0.3 0.7 grain))
+                        (vec3 0.56 0.25 0.16)
+                        (band (+ fleck (* 0.5 (- patch 0.5))) 0.64)))
+         (bog-pool (* (smoothstep 0.35 0.75 sphagnum-share)
+                      (- 1.0 (smoothstep 0.24 0.34
+                                         (+ grain (* 0.6 (- fleck 0.5)))))))
+         (bog (mix sphagnum (vec3 0.09 0.08 0.06) (* 0.9 bog-pool)))
+         ;; Alvar: limestone pavement split by dark grikes, with a skin of
+         ;; short dry turf in its hollows.
+         (pavement (mix (vec3 0.30 0.29 0.27)
+                        (mix (vec3 0.66 0.65 0.60) (vec3 0.80 0.79 0.73)
+                             (stone-tone block))
+                        (stone-face block)))
+         (alvar (mix pavement (* (vec3 0.56 0.55 0.30) (- 1.0 (* 0.2 sprig)))
+                     (band (+ patch (* 0.6 (- fleck 0.5))) 0.58)))
+         (field-layer
+           (mix (mix (mix (mix (mix (mix (mix turf sedge
+                                              (band (+ sedge-share
+                                                       (* 0.5 edge)) 0.30))
+                                         heather
+                                         (band (+ heather-share (* 0.5 edge))
+                                               0.30))
+                                    dwarf-birch
+                                    (band (+ dwarf-share (* 0.5 edge)) 0.30))
+                               bilberry
+                               (band (+ bilberry-share (* 0.5 edge)) 0.30))
+                          lichen
+                          (band (+ lichen-share (* 0.5 edge)) 0.30))
+                     bog
+                     (band (+ sphagnum-share (* 0.5 edge)) 0.30))
+                alvar
+                (band (+ alvar-share (* 0.5 edge)) 0.30)))
+         (fell (clamp (+ heather-share dwarf-share) 0.0 1.0))
 
          ;; Higher still the plants give out on frost-shattered ground.
          (scree (mix (mix (vec3 0.45 0.42 0.37) pale-pebble pebbled)
@@ -626,7 +684,7 @@
          (barren (band (+ (smoothstep 0.62 0.92 rise) (* 0.9 edge)
                           (* 0.25 (swizzle land :y)))
                        0.55))
-         (upland (mix heath scree barren))
+         (upland (mix field-layer scree barren))
 
          ;; Under closed canopy: needle litter, and moss where it is damp.
          (litter (mix (* (mix (vec3 0.31 0.25 0.16) (vec3 0.23 0.29 0.13)
@@ -641,45 +699,16 @@
                       (mix (vec3 0.70 0.52 0.21) (vec3 0.58 0.34 0.15) grain)
                       (band (+ (swizzle stand :y) (* 0.60 edge)) 0.24)))
 
-         ;; The biomes the bedrock and the soil carry.  Pine heath: a pale
-         ;; carpet of reindeer lichen, broken by dark crowberry and the
-         ;; brown of needles and bare sand where it is worn.
-         (lichen (mix (vec3 0.55 0.57 0.47) (vec3 0.67 0.68 0.57)
-                      (smoothstep 0.3 0.7 fleck)))
-         (lichen-heath (mix (mix lichen (vec3 0.45 0.38 0.26) (* 0.8 sprig))
-                            (vec3 0.30 0.29 0.19)
-                            (band (+ patch (* 0.5 (- grain 0.5))) 0.82)))
-         ;; Mire: sphagnum hummocks, ochre and green and rust red, and black
-         ;; water standing in the hollows between them.
-         (sphagnum (mix (mix (vec3 0.58 0.57 0.24) (vec3 0.44 0.50 0.20)
-                             (smoothstep 0.3 0.7 grain))
-                        (vec3 0.56 0.25 0.16)
-                        (band (+ fleck (* 0.5 (- patch 0.5))) 0.64)))
-         (bog-pool (* (swizzle biome :z)
-                      (- 1.0 (smoothstep 0.24 0.34
-                                         (+ grain (* 0.6 (- fleck 0.5)))))))
-         (bog (mix sphagnum (vec3 0.09 0.08 0.06) (* 0.9 bog-pool)))
-         ;; Alvar: limestone pavement split by dark grikes, with a skin of
-         ;; short dry turf in its hollows.
-         (pavement (mix (vec3 0.30 0.29 0.27)
-                        (mix (vec3 0.66 0.65 0.60) (vec3 0.80 0.79 0.73)
-                             (stone-tone block))
-                        (stone-face block)))
-         (pavement-turf (* (vec3 0.56 0.55 0.30) (- 1.0 (* 0.2 sprig))))
-         (alvar (mix pavement pavement-turf
-                     (band (+ patch (* 0.6 (- fleck 0.5))) 0.58)))
-         (biomed (mix (mix (mix leaves lichen-heath
-                                (band (+ (swizzle biome :y) (* 0.5 edge)) 0.5))
-                           bog
-                           (band (+ (swizzle biome :z) (* 0.5 edge)) 0.5))
-                      alvar
-                      (band (+ (swizzle biome :w) (* 0.5 edge)) 0.5)))
+         ;; Bilberry holds the half-shade under the conifers too.
+         (understory (mix leaves bilberry
+                      (* 0.8 (band (+ bilberry-share (* 0.5 edge)) 0.30)
+                         (swizzle stand :x))))
 
          ;; Bare soil where erosion strips a slope, with the odd stone in
          ;; it; cobbles in the channels.
          (shedding (- 1.0 (smoothstep 0.80 0.92 up)))
          (dirt (mix (vec3 0.39 0.32 0.25) pale-pebble pebbled))
-         (soil (mix biomed dirt
+         (soil (mix understory dirt
                     (band (+ (* (swizzle land :y) shedding) (* 0.7 edge))
                           0.45)))
          (channel (- 1.0 (smoothstep 2.0 6.0 (abs shore))))
@@ -719,7 +748,7 @@
                   (+ 0.86 (* 0.28 patch))))
          ;; Limestone is paler and warmer than the basement's gneiss.
          (cliff-rock (mix rock (* rock (vec3 1.42 1.38 1.28))
-                          (swizzle biome :x)))
+                          (swizzle more :w)))
          (rocky (mix shoreline cliff-rock cliff))
 
          (trodden (mix rocky
@@ -754,7 +783,7 @@
      :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
                 (mix mottle 1.0 (* 0.65 smooth)))
      :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth)
-                (* 0.10 (swizzle biome :w)) (* -0.06 bog-pool))
+                (* 0.10 alvar-share) (* -0.06 bog-pool))
      :gloss (max (max (* 0.30 snow) (* 0.22 swash (- 1.0 sunk)))
                  (* 0.45 bog-pool)))))
 
@@ -773,7 +802,8 @@
                  (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
-                 (biomes :texture-2d :binding 5)
+                 (plants :texture-2d :binding 5)
+                 (more-plants :texture-2d :binding 4)
                  (shadow-map :depth-texture-2d :binding 8)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
@@ -794,7 +824,9 @@
          (floor-fields (mix (vec4 1.0 (swizzle normal :y) 0.0 0.0)
                             (sample ground linear-repeat field-at)
                             have-fields))
-         (biome (* (sample biomes linear-repeat field-at) have-fields))
+         (plants-here (* (sample plants linear-repeat field-at) have-fields))
+         (more-here (* (sample more-plants linear-repeat field-at)
+                       have-fields))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
          (above-sea (- (swizzle world :y) (swizzle relief :x)))
@@ -818,8 +850,8 @@
          (region (read-detail detail linear-repeat field-uv *detail-region*
                               metres footprint))
          (surface (ground-surface world normal land floor-fields rise
-                                  above-sea stand biome micro meso macro
-                                  region))
+                                  above-sea stand plants-here more-here
+                                  micro meso macro region))
          (albedo (srgb (ground-surface-albedo surface)))
          ;; The relief tilts the normal within the surface: only the part
          ;; of its slope that lies along the ground counts.
@@ -2332,7 +2364,7 @@
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
 (define-shader-function read-grass-medium (xz land floor up rise density
-                                           stand heath biome)
+                                           stand heath plants more)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
          (canopy (clamp (swizzle stand :x) 0.0 1.0))
          ;; Fallen leaves smother some of the sward beneath a turned grove.
@@ -2360,12 +2392,18 @@
          ;; threshold so marginal ground breaks into ragged patches. How
          ;; lush the turf grows -- shade, water -- only thins it toward a
          ;; floor that still reads as a sward.
-         ;; Lichen holds the pine heath and stone the alvar's pavement;
-         ;; grass keeps to their hollows.
+         ;; Lichen, sphagnum, and the alvar's pavement hold their ground
+         ;; against it; grass keeps to their hollows.
          (holds (* standable cleared alpine (- 1.0 snow) ashore
-                   (- 1.0 (* 0.70 (swizzle biome :y)))
-                   (- 1.0 (* 0.55 (swizzle biome :z)))
-                   (- 1.0 (* 0.65 (swizzle biome :w)))))
+                   (- 1.0 (* 0.85 (smoothstep 0.15 0.45 (swizzle plants :x))))
+                   (- 1.0 (* 0.60 (smoothstep 0.15 0.45 (swizzle plants :w))))
+                   (- 1.0 (* 0.70 (smoothstep 0.15 0.45 (swizzle more :z))))))
+         ;; Heather, crowberry, and dwarf birch stand among the blades and
+         ;; give them their colour.
+         (shrubs (smoothstep 0.15 0.45 (+ (swizzle plants :y)
+                                          (swizzle more :x))))
+         (turned (smoothstep 0.45 0.80 (+ rise (* 0.2 (- (swizzle heath :y)
+                                                         0.5)))))
          (edge (mix 0.25 0.60 clump))
          (turf (* (smoothstep (- edge 0.05) (+ edge 0.05) holds)
                   (step 0.001 density)
@@ -2380,20 +2418,25 @@
      :riparian 0.0
      :clump clump
      :canopy-height (* 0.42 (+ 0.72 (* 0.22 moisture)) (+ 0.88 (* 0.12 clump))
-                       (- 1.0 (* 0.55 (swizzle biome :w)))
+                       (- 1.0 (* 0.55 (swizzle more :z)))
+                       (- 1.0 (* 0.45 shrubs))
                        (mix 0.36 1.0 (smoothstep 0.06 0.46
                                                  (clamp (* rooted density)
                                                         0.0 1.0))))
      ;; Under a turned grove the grass is drying toward straw too.
-     ;; The bog's sedges are yellow-green, the alvar's turf parched.
-     :blade-tint (mix (mix (mix (mix tint (srgb (vec3 0.56 0.58 0.22))
-                                     (swizzle biome :z))
+     ;; Sedge is straw-green, the alvar's turf parched, and among the
+     ;; dwarf birch and heather the blades take their ruska.
+     :blade-tint (mix (mix (mix (mix tint (srgb (vec3 0.56 0.58 0.26))
+                                     (smoothstep 0.1 0.4 (swizzle more :y)))
                                 (srgb (vec3 0.58 0.55 0.30))
-                                (swizzle biome :w))
-                           (* (srgb (heath-colour (swizzle heath :x) moisture
-                                                  0.04))
-                              0.92)
-                           (heath-reach rise (swizzle heath :y)))
+                                (smoothstep 0.1 0.4 (swizzle more :z)))
+                           (mix (* (srgb (heath-colour (swizzle heath :x)
+                                                       moisture 0.04))
+                                   0.92)
+                                (srgb (vec3 0.80 0.52 0.15))
+                                (* turned
+                                   (smoothstep 0.1 0.4 (swizzle more :x))))
+                           shrubs)
                       (srgb (vec3 0.50 0.46 0.24))
                       (* 0.6 (clamp (swizzle stand :y) 0.0 1.0))))))
 
@@ -2473,7 +2516,8 @@
                  (normals :texture-2d :binding 1)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
-                 (biomes :texture-2d :binding 5)
+                 (plants :texture-2d :binding 5)
+                 (more-plants :texture-2d :binding 4)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2515,7 +2559,8 @@
                                            :w))
                       ;; A tile's count asks nothing of its blades' tint.
                       (vec2 0.5 0.5)
-                      (sample-level biomes linear-repeat uv 0.0)))
+                      (sample-level plants linear-repeat uv 0.0)
+                      (sample-level more-plants linear-repeat uv 0.0)))
              (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
                         eye))
              (distance (sqrt (dot offset offset)))
@@ -2587,7 +2632,8 @@
                  (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
-                 (biomes :texture-2d :binding 5)
+                 (plants :texture-2d :binding 5)
+                 (more-plants :texture-2d :binding 4)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2629,7 +2675,8 @@
                                                      uv 0.0)
                                        :w))
                   (read-heath detail linear-repeat uv)
-                  (sample-level biomes linear-repeat uv 0.0)))
+                  (sample-level plants linear-repeat uv 0.0)
+                  (sample-level more-plants linear-repeat uv 0.0)))
          (wet (grass-medium-moisture medium))
          (canopy (grass-medium-forest-cover medium))
          (root (vec3 (swizzle root-xz :x) height (swizzle root-xz :y)))
@@ -2986,7 +3033,8 @@
                  (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
                  (ground :texture-2d :binding 7)
-                 (biomes :texture-2d :binding 5)
+                 (plants :texture-2d :binding 5)
+                 (more-plants :texture-2d :binding 4)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -3016,7 +3064,8 @@
                                                          linear-repeat uv 0.0)
                                            :w))
                       (read-heath detail linear-repeat uv)
-                  (sample-level biomes linear-repeat uv 0.0)))
+                  (sample-level plants linear-repeat uv 0.0)
+                  (sample-level more-plants linear-repeat uv 0.0)))
          (drift (read-flower-drift xz (grass-medium-moisture grass-here)
                                    (grass-medium-forest-cover grass-here)
                                    (grass-medium-leaf-area grass-here)))

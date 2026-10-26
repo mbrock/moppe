@@ -55,9 +55,17 @@ namespace moppe::map {
   using terrain::HomeBaseInfluence;
   using terrain::TrailInfluence;
   using LimestoneCover = quantity<limestone_cover[one], float>;
-  using PineHeathCover = quantity<pine_heath_cover[one], float>;
-  using MireCover = quantity<mire_cover[one], float>;
-  using AlvarCover = quantity<alvar_cover[one], float>;
+  using SpruceAbundance = quantity<spruce_abundance[one], float>;
+  using PineAbundance = quantity<pine_abundance[one], float>;
+  using BirchAbundance = quantity<birch_abundance[one], float>;
+  using MountainBirchAbundance = quantity<mountain_birch_abundance[one], float>;
+  using LichenAbundance = quantity<lichen_abundance[one], float>;
+  using HeatherAbundance = quantity<heather_abundance[one], float>;
+  using BilberryAbundance = quantity<bilberry_abundance[one], float>;
+  using SphagnumAbundance = quantity<sphagnum_abundance[one], float>;
+  using DwarfBirchAbundance = quantity<dwarf_birch_abundance[one], float>;
+  using SedgeAbundance = quantity<sedge_abundance[one], float>;
+  using AlvarAbundance = quantity<alvar_abundance[one], float>;
 
   // Surface owns one mandatory geometry bundle and one derived-reading bundle
   // over the same TerrainDomain. The latter is absent until world analysis
@@ -80,9 +88,17 @@ namespace moppe::map {
                                           TrailInfluence,
                                           HomeBaseInfluence,
                                           LimestoneCover,
-                                          PineHeathCover,
-                                          MireCover,
-                                          AlvarCover>;
+                                          SpruceAbundance,
+                                          PineAbundance,
+                                          BirchAbundance,
+                                          MountainBirchAbundance,
+                                          LichenAbundance,
+                                          HeatherAbundance,
+                                          BilberryAbundance,
+                                          SphagnumAbundance,
+                                          DwarfBirchAbundance,
+                                          SedgeAbundance,
+                                          AlvarAbundance>;
 
   // ---- Geometry ----
 
@@ -132,39 +148,53 @@ namespace moppe::map {
     spatial::Bundle<terrain::TerrainDomain, ErosionExposure, DepositionCover>;
   using TreeHabitatMap = spatial::Bundle<terrain::TerrainDomain, TreeHabitat>;
   using ForestCoverMap = spatial::Bundle<terrain::TerrainDomain, ForestCover>;
-  using BiomeMap = spatial::Bundle<terrain::TerrainDomain,
-                                   LimestoneCover,
-                                   PineHeathCover,
-                                   MireCover,
-                                   AlvarCover>;
+  using VegetationMap = spatial::Bundle<terrain::TerrainDomain,
+                                        LimestoneCover,
+                                        SpruceAbundance,
+                                        PineAbundance,
+                                        BirchAbundance,
+                                        MountainBirchAbundance,
+                                        LichenAbundance,
+                                        HeatherAbundance,
+                                        BilberryAbundance,
+                                        SphagnumAbundance,
+                                        DwarfBirchAbundance,
+                                        SedgeAbundance,
+                                        AlvarAbundance>;
 
   // Scaled against the material this world's own history moved, so a calm
   // world reads as strongly as a violent one.
   GeologyMaterials analyze_geology_materials (const SurfaceGeometry& geometry);
 
-  // The bedrock and the biomes it and the soil carry. The world was
-  // a crystalline basement under a sheet of limestone of uneven thickness;
-  // where its erosion cut deeper than the sheet, the basement shows. On the
-  // limestone, ground too thin for a forest is alvar. On the basement, thin
-  // dry ground that fire keeps open is pine heath. Flat ground that water
-  // soaks and cannot leave is mire, on either. LAND_TOP is the highest
-  // ground; none of the three climbs into the fells.
-  BiomeMap analyze_biomes (const SurfaceGeometry& geometry,
-                           const terrain::MoistureMap& moisture,
-                           meters_t water_level,
-                           meters_t land_top,
-                           std::uint32_t seed);
+  // The bedrock and what grows on it. Biomes are not drawn here: the world
+  // was a crystalline basement under a sheet of limestone of uneven
+  // thickness, cut through where its erosion went deeper than the sheet;
+  // over it lie a few slow, hidden quantities -- how much water gathers,
+  // how cold it gets (height, the slope's aspect, cold air pooling in the
+  // hollows), how deep the soil runs, which way the ground faces the sun,
+  // how exposed it is to the wind. Each species has a tolerance curve over
+  // them and a strength against the others, and what holds each place is
+  // the outcome of their competition, the trees first and the field layer
+  // in the light they leave. The heath, the bog, the alvar, and the fjäll
+  // are where those overlap, with edges as frayed as the curves are wide.
+  // LAND_TOP is the highest ground.
+  VegetationMap analyze_vegetation (const SurfaceGeometry& geometry,
+                                    const terrain::MoistureMap& moisture,
+                                    meters_t water_level,
+                                    meters_t land_top,
+                                    std::uint32_t seed);
 
   TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
                                        const terrain::MoistureMap& moisture,
                                        meters_t water_level,
                                        meters_t tree_line);
 
-  // The open biomes keep the closed forest out; their own sparse trees
-  // are planted by the forest plan.
+  // A closed canopy stands where the trees that close one -- spruce, then
+  // birch -- hold the ground; pine and fell birch stand open, and the
+  // forest plan plants them sparse itself.
   ForestCoverMap analyze_forest_cover (const TreeHabitatMap& habitat,
                                        const terrain::TrailUseMap& use,
-                                       const BiomeMap& biomes,
+                                       const VegetationMap& vegetation,
                                        std::uint32_t seed);
 
   // ---- Cache ----

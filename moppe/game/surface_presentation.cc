@@ -86,26 +86,22 @@ namespace moppe::game {
       }
     }
 
-    void write_biomes (const void* opaque,
-                       render::PixelFormat format,
-                       std::byte* destination) {
+    template <auto... Lanes>
+    void write_lanes (const void* opaque,
+                      render::PixelFormat format,
+                      std::byte* destination) {
       const auto& source = *static_cast<const TerrainMaterialSource*> (opaque);
-      const auto& limestone =
-        spatial::get<map::limestone_cover> (source.readings);
-      const auto& heath = spatial::get<map::pine_heath_cover> (source.readings);
-      const auto& mire = spatial::get<map::mire_cover> (source.readings);
-      const auto& alvar = spatial::get<map::alvar_cover> (source.readings);
       const std::size_t stride = render::bytes_per_pixel (format);
-      for (std::size_t pixel = 0; pixel < limestone.size (); ++pixel) {
+      const std::size_t count = source.readings.domain ().size ();
+      for (std::size_t pixel = 0; pixel < count; ++pixel) {
         std::byte* at = destination + pixel * stride;
-        render::detail::write_channel (
-          at, format, render::detail::stored_scalar (limestone[pixel]));
-        render::detail::write_channel (
-          at + 1, format, render::detail::stored_scalar (heath[pixel]));
-        render::detail::write_channel (
-          at + 2, format, render::detail::stored_scalar (mire[pixel]));
-        render::detail::write_channel (
-          at + 3, format, render::detail::stored_scalar (alvar[pixel]));
+        std::size_t lane = 0;
+        (render::detail::write_channel (
+           at + lane++,
+           format,
+           render::detail::stored_scalar (
+             spatial::get<Lanes> (source.readings)[pixel])),
+         ...);
       }
     }
   }
@@ -135,7 +131,16 @@ namespace moppe::game {
     renderer.set_terrain_materials (
       pixels (render::PixelFormat::rgba8unorm, &write_landscape_materials),
       pixels (render::PixelFormat::rgba8unorm, &write_ground_materials),
-      pixels (render::PixelFormat::rgba8unorm, &write_biomes),
+      pixels (render::PixelFormat::rgba8unorm,
+              &write_lanes<map::lichen_abundance,
+                           map::heather_abundance,
+                           map::bilberry_abundance,
+                           map::sphagnum_abundance>),
+      pixels (render::PixelFormat::rgba8unorm,
+              &write_lanes<map::dwarf_birch_abundance,
+                           map::sedge_abundance,
+                           map::alvar_abundance,
+                           map::limestone_cover>),
       include_forest);
   }
 }

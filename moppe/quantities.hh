@@ -226,22 +226,30 @@ namespace moppe::map {
   // Actual canopy recruitment after habitat, routes, and settlement.
   QUANTITY_SPEC (forest_cover, proportion);
 
-  // ---- Bedrock and biomes ----
+  // ---- Bedrock and vegetation ----
 
   // How much of the ground stands on the limestone laid over the crystalline
   // basement, rather than on the basement erosion has cut down to.
   QUANTITY_SPEC (limestone_cover, proportion);
 
-  // Open Scots pine over reindeer lichen, on thin dry ground over the
-  // basement.
-  QUANTITY_SPEC (pine_heath_cover, proportion);
-
-  // Peat bog: sphagnum on flat ground that water soaks and cannot leave.
-  QUANTITY_SPEC (mire_cover, proportion);
-
-  // Alvar: limestone pavement and short dry turf where the cover's soil is
-  // too thin for a forest.
-  QUANTITY_SPEC (alvar_cover, proportion);
+  // How much of a place each species holds, after its tolerance of the site
+  // and its competition with the others there. The trees' shares of the
+  // canopy...
+  QUANTITY_SPEC (spruce_abundance, proportion);
+  QUANTITY_SPEC (pine_abundance, proportion);
+  QUANTITY_SPEC (birch_abundance, proportion);
+  // ...the fell birch of the treeline, low and many-stemmed...
+  QUANTITY_SPEC (mountain_birch_abundance, proportion);
+  // ...and the field layer beneath: reindeer lichen; heather and crowberry;
+  // bilberry; sphagnum; dwarf birch; sedge; and the alvar's short turf on
+  // bare limestone. Grass and herbs are what the ground carries elsewhere.
+  QUANTITY_SPEC (lichen_abundance, proportion);
+  QUANTITY_SPEC (heather_abundance, proportion);
+  QUANTITY_SPEC (bilberry_abundance, proportion);
+  QUANTITY_SPEC (sphagnum_abundance, proportion);
+  QUANTITY_SPEC (dwarf_birch_abundance, proportion);
+  QUANTITY_SPEC (sedge_abundance, proportion);
+  QUANTITY_SPEC (alvar_abundance, proportion);
 }
 
 namespace moppe::game {

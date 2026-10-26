@@ -5,6 +5,7 @@
 #include <moppe/terrain/watercourse.hh>
 #include <moppe/terrain/waterline.hh>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -87,6 +88,16 @@ namespace moppe::test {
     std::uint32_t seed = 0xdecafbadU;
   };
 
+  // Vegetation that is spruce everywhere: the fixtures' forests are the
+  // ordinary closed forest.
+  inline map::VegetationMap
+  closed_spruce (const terrain::TerrainDomain& domain) {
+    map::VegetationMap vegetation (domain);
+    std::ranges::fill (spatial::get<map::spruce_abundance> (vegetation),
+                       1.0f * map::spruce_abundance[mp_units::one]);
+    return vegetation;
+  }
+
   // A water sheet with no water: every level is the ground's own.
   inline terrain::WaterSheets dry_water (const map::SurfaceGeometry& surface) {
     terrain::WaterSheets water (surface.domain ());
@@ -107,10 +118,9 @@ namespace moppe::test {
       recipe.use ? std::move (*recipe.use) : uniform_use (domain, 0.0f, 0.0f);
     map::TreeHabitatMap habitat = map::analyze_tree_habitat (
       surface, moisture, recipe.water_level, recipe.tree_line);
-    // No biome: the fixtures' forests are the ordinary closed forest.
-    map::BiomeMap biomes (domain);
+    map::VegetationMap vegetation = closed_spruce (domain);
     map::ForestCoverMap cover =
-      map::analyze_forest_cover (habitat, use, biomes, recipe.seed);
+      map::analyze_forest_cover (habitat, use, vegetation, recipe.seed);
 
     return spatial::join (std::move (moisture),
                           recipe.waterline
@@ -120,7 +130,7 @@ namespace moppe::test {
                           std::move (habitat),
                           std::move (cover),
                           std::move (use),
-                          std::move (biomes));
+                          std::move (vegetation));
   }
 }
 

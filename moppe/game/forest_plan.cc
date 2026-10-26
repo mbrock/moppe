@@ -15,7 +15,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 14;
+    constexpr std::uint32_t forest_plan_version = 15;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The
@@ -58,8 +58,9 @@ namespace moppe::game {
       float moisture;
       float grove;
       bool pioneer; // admitted by birch's own open-ground population
-      bool pine;    // admitted by the heath's or the bog's pines
-      float mire;
+      bool open;    // admitted by the open trees' own population
+      // What the canopy's competition left each tree here, and the bog.
+      float spruce, pine, birch, fell, bog;
       float priority;
       std::uint32_t identity;
     };
@@ -280,21 +281,25 @@ namespace moppe::game {
         pioneer = pioneer_population > population_value;
         population_value = std::max (population_value, pioneer_population);
       }
-      // The heath, the bog, and the alvar have their own trees: Scots pine
-      // standing open over the lichen, stunted pine scattered over the
-      // moss, and a lone one on the pavement. Their populations are low,
-      // so the stands stay open enough to ride through.
-      const auto biome = [&] (auto quantity) {
+      // Pine and the fell birch stand open where they hold the ground --
+      // over the lichen, on the bog, along the treeline -- so they come
+      // up at a population of their own, low enough to ride between.
+      const auto held = [&] (auto quantity) {
         return spatial::sample<quantity> (readings, sample_position (x, z))
           .numerical_value_in (one);
       };
-      const float heath = biome (map::pine_heath_cover);
-      const float bog = biome (map::mire_cover);
-      const float pine_population =
-        0.30f * heath + 0.10f * bog + 0.03f * biome (map::alvar_cover);
-      const bool pine = pine_population > population_value;
-      if (pine) {
-        population_value = pine_population;
+      const float spruce = held (map::spruce_abundance);
+      const float pine = held (map::pine_abundance);
+      const float birch = held (map::birch_abundance);
+      const float fell = held (map::mountain_birch_abundance);
+      const float bog = held (map::sphagnum_abundance);
+      const float routes = (1.0f - held (map::trail_influence)) *
+                           (1.0f - held (map::home_base_influence));
+      const float open_population =
+        (0.34f * pine + 0.32f * fell) * std::clamp (routes, 0.0f, 1.0f);
+      const bool open = open_population > population_value;
+      if (open) {
+        population_value = open_population;
         pioneer = false;
       }
       const float proposal_scale = std::lerp (
@@ -310,8 +315,12 @@ namespace moppe::game {
                               .moisture = moisture,
                               .grove = grove,
                               .pioneer = pioneer,
+                              .open = open,
+                              .spruce = spruce,
                               .pine = pine,
-                              .mire = bog,
+                              .birch = birch,
+                              .fell = fell,
+                              .bog = bog,
                               .priority = hash_lane (identity, 3),
                               .identity = identity });
     }
@@ -394,19 +403,45 @@ namespace moppe::game {
       if (site.grove > 0.0f && site.moisture == 0.0f)
         site.moisture = moisture_at (readings, x, z).numerical_value_in (one);
       const ForestAge age = age_from_identity (candidate.identity);
-      // A bog's pines are old and no taller than a person or two.
+      // Which tree: drawn by the canopy's shares here, so a stand at an
+      // edge mixes its neighbours. Birch's pioneers, and its groves among
+      // the spruce, are birch whatever the draw.
+      const float shares[] = {
+        candidate.spruce, candidate.pine, candidate.birch, candidate.fell
+      };
+      const float total = shares[0] + shares[1] + shares[2] + shares[3];
+      float draw = hash_lane (candidate.identity, 9) * total;
+      std::size_t kind = 0;
+      while (kind < 3 && draw >= shares[kind])
+        draw -= shares[kind++];
+      if (total <= 0.0f)
+        kind = 0;
+      ForestForm form = kind == 1   ? ForestForm::pine
+                        : kind == 0 ? ForestForm::conifer
+                                    : ForestForm::broadleaf;
+      if (candidate.pioneer || (form == ForestForm::conifer && is_birch (site)))
+        form = ForestForm::broadleaf;
+      // Toward the treeline the trees shrink: the fell birch low and
+      // many-crowned, spruce stunted to krummholz among it. A bog's pines
+      // are old and no taller than a person or two.
+      const float fell_share = total > 0.0f ? candidate.fell / total : 0.0f;
+      float shrink = 1.0f;
+      if (kind == 3)
+        shrink = 0.42f;
+      else if (form == ForestForm::conifer)
+        shrink = 1.0f - 0.6f * fell_share;
+      else if (form == ForestForm::pine)
+        shrink =
+          std::lerp (1.0f, 0.28f, candidate.bog) * (1.0f - 0.4f * fell_share);
       const TreeSizeFactor size =
-        size_for_age (age, candidate.identity) *
-        (candidate.pine ? std::lerp (1.0f, 0.28f, candidate.mire) : 1.0f);
+        size_for_age (age, candidate.identity) * shrink;
       plan.sites.push_back ({ .position = forest_position (x, elevation, z),
                               .normal = normal_at (surface, x, z),
                               .cover = cover,
                               .moisture = moisture_at (readings, x, z),
                               .size = size,
                               .seed = candidate.identity,
-                              .form = candidate.pine    ? ForestForm::pine
-                                      : is_birch (site) ? ForestForm::broadleaf
-                                                        : ForestForm::conifer,
+                              .form = form,
                               .age = age });
     }
     return plan;

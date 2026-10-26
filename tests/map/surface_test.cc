@@ -219,7 +219,7 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
     test::uniform_use (domain, 0.0f, 0.0f);
 
   const map::ForestCoverMap covered = map::analyze_forest_cover (
-    habitat, untravelled, map::BiomeMap (domain), 0x12345678U);
+    habitat, untravelled, test::closed_spruce (domain), 0x12345678U);
   const auto& first = spatial::get<map::forest_cover> (covered);
   std::vector<float> values;
   values.reserve (first.size ());
@@ -229,7 +229,7 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   MOPPE_CHECK (*std::ranges::min_element (values) < 0.05f);
 
   const map::ForestCoverMap again = map::analyze_forest_cover (
-    habitat, untravelled, map::BiomeMap (domain), 0x12345678U);
+    habitat, untravelled, test::closed_spruce (domain), 0x12345678U);
   const auto& repeated = spatial::get<map::forest_cover> (again);
   for (std::size_t offset = 0; offset < values.size (); ++offset)
     MOPPE_CHECK_NEAR (
@@ -238,7 +238,7 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   const map::ForestCoverMap settled =
     map::analyze_forest_cover (habitat,
                                test::uniform_use (domain, 0.0f, 1.0f),
-                               map::BiomeMap (domain),
+                               test::closed_spruce (domain),
                                0x12345678U);
   const auto& cleared = spatial::get<map::forest_cover> (settled);
   MOPPE_CHECK (std::ranges::all_of (cleared, [] (map::ForestCover value) {
@@ -525,12 +525,12 @@ MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
     spatial::get<map::eroded_surface_material> (surface[site]) =
       cut_at (site.column) * map::eroded_surface_material[u::m];
   map::rebuild_geometry (surface);
-  const map::BiomeMap biomes =
-    map::analyze_biomes (surface,
-                         test::uniform_moisture (domain, 0.2f),
-                         50.0f * u::m,
-                         150.0f * u::m,
-                         0x5eedU);
+  const map::VegetationMap biomes =
+    map::analyze_vegetation (surface,
+                             test::uniform_moisture (domain, 0.2f),
+                             50.0f * u::m,
+                             150.0f * u::m,
+                             0x5eedU);
   const auto limestone = [&] (std::size_t column) {
     return spatial::get<map::limestone_cover> (
              biomes[terrain::TerrainIndex { column, 32 }])
@@ -538,4 +538,37 @@ MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
   };
   MOPPE_CHECK (limestone (8) > 0.95f);
   MOPPE_CHECK (limestone (24) < 0.05f);
+}
+
+MOPPE_TEST (
+  vegetation_gives_the_warm_deep_soil_to_spruce_and_the_cold_to_fell_birch) {
+  using namespace moppe;
+  const auto canopy_at = [] (float metres) {
+    map::SurfaceGeometry surface =
+      map::SurfaceGeometry (terrain::TerrainDomain (
+        32, 32, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+    std::ranges::fill (
+      spatial::get<terrain::surface_elevation> (surface),
+      moppe::terrain::surface_elevation_point (metres * mp_units::si::metre));
+    std::ranges::fill (spatial::get<terrain::sediment_thickness> (surface),
+                       1.5f * terrain::sediment_thickness[u::m]);
+    map::rebuild_geometry (surface);
+    const map::VegetationMap vegetation =
+      map::analyze_vegetation (surface,
+                               test::uniform_moisture (surface.domain (), 0.2f),
+                               50.0f * u::m,
+                               150.0f * u::m,
+                               0x5eedU);
+    const auto plants = vegetation[terrain::TerrainIndex { 16, 16 }];
+    return std::pair (
+      spatial::get<map::spruce_abundance> (plants).numerical_value_in (one),
+      spatial::get<map::mountain_birch_abundance> (plants).numerical_value_in (
+        one));
+  };
+  const auto [low_spruce, low_fell] = canopy_at (60.0f);
+  const auto [high_spruce, high_fell] = canopy_at (120.0f);
+  MOPPE_CHECK (low_spruce > 0.5f);
+  MOPPE_CHECK (low_fell < 0.05f);
+  MOPPE_CHECK (high_fell > 0.4f);
+  MOPPE_CHECK (high_spruce < 0.05f);
 }

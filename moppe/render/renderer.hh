@@ -407,17 +407,20 @@ namespace moppe {
       //   landscape RGBA = moisture, erosion, deposition, forest cover
       //   ground RGBA = signed shore distance (terrain_shore_lane), snow
       //                 support, trail, home base
-      //   biomes RGBA = limestone, pine heath, mire, alvar
+      //   plants RGBA = lichen, heather, bilberry, sphagnum
+      //   more_plants RGBA = dwarf birch, sedge, alvar turf, limestone
       //
       // The sheets are RGBA8Unorm, filterable, and consumed synchronously
       // because TexturePixels borrows its source.
       virtual void set_terrain_materials (const TexturePixels& landscape,
                                           const TexturePixels& ground,
-                                          const TexturePixels& biomes,
+                                          const TexturePixels& plants,
+                                          const TexturePixels& more_plants,
                                           bool include_forest) {
         (void)landscape;
         (void)ground;
-        (void)biomes;
+        (void)plants;
+        (void)more_plants;
         (void)include_forest;
       }
 

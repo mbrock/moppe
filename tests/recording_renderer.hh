@@ -86,6 +86,7 @@ namespace moppe::test {
     void set_terrain_materials (const render::TexturePixels& landscape,
                                 const render::TexturePixels& ground,
                                 const render::TexturePixels&,
+                                const render::TexturePixels&,
                                 bool) override {
       const auto landscape_lanes = render::decode_channels (landscape);
       const auto ground_lanes = render::decode_channels (ground);
