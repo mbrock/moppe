@@ -400,6 +400,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/surface_presentation.cc
   moppe/game/water_presentation.cc
   moppe/game/waterfall_surface.cc
+  moppe/game/bridge_render.cc
   moppe/game/cinematic_flight.cc
   moppe/game/opening.cc
   moppe/game/cairn.cc

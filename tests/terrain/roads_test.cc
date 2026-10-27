@@ -226,3 +226,77 @@ MOPPE_TEST (road_surface_is_the_crowned_tread_and_the_field_beyond) {
   MOPPE_CHECK (surface.nearest (200.5f, 530.0f).kind == Road::Kind::Footpath);
   MOPPE_CHECK (surface.ground (200.5f, 530.0f, field) == field);
 }
+
+namespace {
+  // A field 60 m above the sea, falling gently south, cut by a valley
+  // 4 m deep down its middle whose sides climb at one in five.
+  ElevationMap valley_country () {
+    std::vector<float> heights (side * side);
+    for (std::size_t z = 0; z < side; ++z)
+      for (std::size_t x = 0; x < side; ++x) {
+        const float from_floor =
+          std::fabs (static_cast<float> (x) * 5.0f - 250.0f);
+        heights[z * side + x] = 60.0f - 0.01f * static_cast<float> (z) * 5.0f -
+                                std::max (0.0f, 4.0f - 0.2f * from_floor);
+      }
+    return make_elevation_map (
+      TerrainDomain (
+        side, side, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre),
+      heights);
+  }
+}
+
+// A road across a river's valley bridges it: the deck stands clear of
+// the water on abutments at its banks, the ground beneath is left to the
+// river, and every body on the road drives over the deck.
+MOPPE_TEST (roads_bridge_the_rivers_they_cross) {
+  const ElevationMap terrain = valley_country ();
+  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const DrainageGraph drainage = analyze_drainage (terrain);
+  const std::size_t floor = 50 * side + 50;
+  const float river =
+    drainage.contributing_area_at (CellIndex { floor })
+      .numerical_value_in (mp_units::si::metre * mp_units::si::metre);
+  MOPPE_CHECK (river > 2000.0f);
+  RoadNetwork network;
+  Road over { .kind = Road::Kind::Road };
+  for (float x = 100.0f; x <= 400.0f; x += 4.0f)
+    over.points.push_back ({ x, 250.0f });
+  network.roads = { over };
+  RoadFormation parameters;
+  parameters.culvert_area_m2 = 1.0e12f;
+  parameters.bridge_area_m2 = 0.5f * river;
+  const RoadFormationResult built = form_roads (terrain.domain (),
+                                                elevations (terrain),
+                                                network,
+                                                flood,
+                                                drainage,
+                                                parameters);
+
+  const Road& formed = network.roads[0];
+  MOPPE_CHECK (built.bridges == 1);
+  MOPPE_CHECK (formed.bridges.size () == 1);
+  const RoadBridge& bridge = formed.bridges.front ();
+  const float from = formed.points[bridge.first].x_m;
+  const float to = formed.points[bridge.last].x_m;
+  // Over the river, not the whole valley's walk across.
+  MOPPE_CHECK (from < 250.0f && to > 250.0f);
+  MOPPE_CHECK (to - from < parameters.longest_bridge);
+  // Clear of the water over the valley floor, which is left as it was.
+  const float bed = surface_elevation_value (elevations (terrain)[floor]);
+  const std::size_t middle = (bridge.first + bridge.last) / 2;
+  MOPPE_CHECK (formed.heights[middle] > bed + parameters.clearance);
+  MOPPE_CHECK (surface_elevation_value (built.heights[floor]) == bed);
+  // Driven on, the deck: level across to its kerbs, the river below
+  // past them.
+  const RoadSurface surface (network, 500.0f, 500.0f, parameters);
+  const RoadSample at = surface.nearest (250.0f, 251.0f);
+  MOPPE_CHECK (at.found && at.bridge);
+  MOPPE_CHECK_NEAR (
+    surface.ground (250.0f, 251.0f, bed), formed.heights[middle], 0.2f);
+  MOPPE_CHECK (surface.ground (250.0f,
+                               250.0f + parameters.deck_half_width + 0.5f,
+                               bed) == bed);
+  // Off the bridge the road is the crowned tread again.
+  MOPPE_CHECK (!surface.nearest (130.0f, 250.0f).bridge);
+}

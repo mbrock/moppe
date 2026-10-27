@@ -51,6 +51,17 @@ namespace moppe::terrain {
     friend bool operator== (const RoadPoint&, const RoadPoint&) = default;
   };
 
+  // A bridge's span along a road: the points (indices into Road::points)
+  // its two abutments stand at. Between them the tread is the deck,
+  // straight from one abutment's height to the other's, and the ground
+  // beneath is left to the river.
+  struct RoadBridge {
+    std::uint32_t first = 0;
+    std::uint32_t last = 0;
+
+    friend bool operator== (const RoadBridge&, const RoadBridge&) = default;
+  };
+
   struct Road {
     enum class Kind {
       // A cart road: gentle grades, bridges where it must.
@@ -66,6 +77,9 @@ namespace moppe::terrain {
     // The height of the finished tread's centre at each point, metres;
     // empty until form_roads solves it.
     std::vector<float> heights;
+    // Where it crosses a river on a bridge, in order along it; set by
+    // form_roads.
+    std::vector<RoadBridge> bridges;
     // How many of the journeys between every pair of places go this way
     // along the network.
     std::uint32_t traffic = 0;
@@ -121,6 +135,16 @@ namespace moppe::terrain {
     // standing water, at the ground (a ford or a drift), so that no
     // embankment dams it.
     float culvert_area_m2 = 20000.0f;
+    // A road bridges any river draining more than this, where the rivers
+    // are drawn (river.hh: five metres wide), its deck `clearance` metres
+    // above the river's spate and its abutments on the banks, at most
+    // `bridge_reach` metres either side of the river's line.
+    float bridge_area_m2 = 175000.0f;
+    float clearance = 1.2f;
+    float bridge_reach = 30.0f;
+    float longest_bridge = 90.0f;
+    // The deck's half width, inside the tread's: the kerbs stand at it.
+    float deck_half_width = 2.4f;
     // A footpath's worn width; footpaths are not built, only trodden.
     float footpath_half_width = 0.8f;
   };
@@ -137,6 +161,7 @@ namespace moppe::terrain {
     // points.
     std::size_t steep_points = 0;
     std::size_t points = 0;
+    std::size_t bridges = 0;
   };
 
   // Solves each road's profile into network.roads[i].heights and builds
@@ -156,6 +181,8 @@ namespace moppe::terrain {
   struct RoadSample {
     bool found = false;
     Road::Kind kind = Road::Kind::Road;
+    // On a bridge's span: the deck, not the ground.
+    bool bridge = false;
     float across = 0.0f;
     float along = 0.0f;
     float centre_m = 0.0f;
@@ -169,8 +196,10 @@ namespace moppe::terrain {
   // authority the renderer's near ground and every body's footing read, so
   // that what is drawn is what is driven on. Over a built road's tread the
   // ground is the crowned carriageway; it blends back into the height
-  // field over `blend` metres past the shoulder. Footpaths are worn into
-  // the ground's colour, not built, and leave its height alone.
+  // field over `blend` metres past the shoulder. Over a bridge's span it
+  // is the deck, out to the kerbs, and beyond them the field below.
+  // Footpaths are worn into the ground's colour, not built, and leave its
+  // height alone.
   class RoadSurface {
   public:
     // Segments are found by a grid of square buckets, each listing every
@@ -199,9 +228,9 @@ namespace moppe::terrain {
     float ground (float x_m, float z_m, float field_m) const;
 
     // As the renderer takes them: two rows a segment, (ax, az, bx, bz)
-    // and (height at a, at b, distance along at a, 0 road or 1
-    // footpath); and per bucket, row by row, the offset into the entries
-    // (which follow the buckets) and their count, then the entries.
+    // and (height at a, at b, distance along at a, 0 road, 1 footpath,
+    // or 2 a bridge's deck); and per bucket, row by row, the offset into the
+    // entries (which follow the buckets) and their count, then the entries.
     std::span<const std::array<float, 4>> segment_rows () const noexcept {
       return m_rows;
     }

@@ -31,6 +31,12 @@ namespace moppe::terrain {
       static_cast<std::size_t> (m_buckets_x) * m_buckets_z);
     for (const Road& road : network.roads) {
       const bool heights = road.heights.size () == road.points.size ();
+      std::vector<bool> spans (road.points.size (), false);
+      for (const RoadBridge& bridge : road.bridges)
+        for (std::size_t k = bridge.first + 1;
+             k <= bridge.last && k < spans.size ();
+             ++k)
+          spans[k] = true;
       float along = 0.0f;
       for (std::size_t i = 1; i < road.points.size (); ++i) {
         const RoadPoint a = road.points[i - 1];
@@ -42,11 +48,12 @@ namespace moppe::terrain {
         const float bz = az + (b.z_m - a.z_m);
         const auto segment = static_cast<std::uint32_t> (m_rows.size () / 2);
         m_rows.push_back ({ ax, az, bx, bz });
-        m_rows.push_back (
-          { heights ? road.heights[i - 1] : 0.0f,
-            heights ? road.heights[i] : 0.0f,
-            along,
-            road.kind == Road::Kind::Road && heights ? 0.0f : 1.0f });
+        m_rows.push_back ({ heights ? road.heights[i - 1] : 0.0f,
+                            heights ? road.heights[i] : 0.0f,
+                            along,
+                            road.kind != Road::Kind::Road || !heights ? 1.0f
+                            : spans[i]                                ? 2.0f
+                                                                      : 0.0f });
         along += length;
         const int x0 = static_cast<int> (
           std::floor ((std::min (ax, bx) - reach_m) / bucket_m));
@@ -111,13 +118,14 @@ namespace moppe::terrain {
       const float ox = px - dx * t;
       const float oz = pz - dz * t;
       const float distance = std::hypot (ox, oz);
-      const bool road = kind == 0.0f;
+      const bool road = kind != 1.0f;
       if (distance > reach_m || !(rank (road, distance) < best_rank))
         continue;
       best_rank = rank (road, distance);
       const float length = std::sqrt (length2);
       best.found = true;
       best.kind = road ? Road::Kind::Road : Road::Kind::Footpath;
+      best.bridge = kind == 2.0f;
       best.direction_x = length > 0.0f ? dx / length : 1.0f;
       best.direction_z = length > 0.0f ? dz / length : 0.0f;
       best.across = best.direction_x * oz - best.direction_z * ox;
@@ -133,6 +141,12 @@ namespace moppe::terrain {
     if (!at.found || at.kind != Road::Kind::Road)
       return field_m;
     const float d = std::fabs (at.across);
+    // The deck is level across, out to its kerbs; beyond them, and under
+    // it, is the field. A bank that stands above the deck's end is its
+    // abutment.
+    if (at.bridge)
+      return d <= m_formation.deck_half_width ? std::max (at.centre_m, field_m)
+                                              : field_m;
     const float tread = m_formation.half_width + m_formation.shoulder;
     const float road =
       at.centre_m - m_formation.crown * std::min (d, m_formation.half_width);

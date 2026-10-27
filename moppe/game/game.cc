@@ -56,6 +56,7 @@
 #include <moppe/game/walker_render.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/water_presentation.hh>
+#include <moppe/game/bridge_render.hh>
 #include <moppe/game/waterfall_surface.hh>
 #include <moppe/game/weather.hh>
 #include <moppe/game/world.hh>
@@ -641,6 +642,10 @@ namespace moppe {
         // The render handoff builds only the few vertical nickpoint curtains,
         // never a dense mesh along every river reach.
         m_waterfall_surface.rebuild (r, surface (), rivers ());
+        m_bridges.rebuild (r,
+                           surface (),
+                           generated_world ().roads (),
+                           generated_world ().road_surface ().formation ());
       }
 
       void prepare_world_surface () {
@@ -4996,11 +5001,15 @@ namespace moppe {
       // drawn, so that they shade the ground under them and their own
       // insides; riders, skinned into a draw list, cast none.
       void cast_actor_shadows (render::Renderer& r, const FrameView& frame) {
-        if (m_spectator || frame.scene != FrameSceneMode::Gameplay)
-          return;
-        const FrameActors& actors = frame.actors;
         m_caster_dl.clear ();
         r.begin_shadow_casters ();
+        // The bridges shade the river and the banks under them.
+        m_bridges.draw (r, frame.camera.position);
+        if (m_spectator || frame.scene != FrameSceneMode::Gameplay) {
+          r.end_shadow_casters ();
+          return;
+        }
+        const FrameActors& actors = frame.actors;
         render_vehicle (r, m_caster_dl, actors.bike, false, 0);
         render_mountain_bike (
           r, m_caster_dl, actors.mountain_bike, std::nullopt, 0);
@@ -5063,6 +5072,7 @@ namespace moppe {
                           camera,
                           frame.camera.projection * frame.camera.view,
                           frame.terrain_distance);
+        m_bridges.draw (r, camera);
 
         // Sky AFTER the terrain: depth testing kills the expensive
         // cloud shader wherever terrain covers it.
@@ -6570,6 +6580,7 @@ namespace moppe {
         m_opening.stop ();
         m_opening_shots.clear ();
         m_waterfall_surface.clear ();
+        m_bridges.clear ();
         m_water_inspection.reset ();
         const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());
         terrain::WorldRecipe next_recipe = terrain::make_world_recipe (
@@ -6672,6 +6683,7 @@ namespace moppe {
       InputFrameAdapter m_live_input;
       SimulationClock m_simulation_clock;
       WaterfallSurface m_waterfall_surface;
+      BridgeSurface m_bridges;
       Terrain m_terrain;
       ForestLandscape m_forest;
       BoulderLandscape m_boulders;

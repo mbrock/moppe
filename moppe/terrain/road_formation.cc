@@ -2,6 +2,7 @@
 
 #include <moppe/parallel.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/river.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -188,6 +189,8 @@ namespace moppe::terrain {
       float distance = no_height;
       float height = 0.0f;
       bool built = false;
+      // Under a bridge's span, which leaves the ground as it is.
+      bool bridge = false;
     };
   }
 
@@ -237,6 +240,105 @@ namespace moppe::terrain {
         if (crosses_water (
               ground.nearest_cell (road.points[i].x_m, road.points[i].z_m)))
           pins[i] = natural[i];
+
+      // The rivers it bridges. A river's line is a cell wide and the
+      // points four metres apart, so each point reads the most any cell
+      // within two of it drains.
+      std::vector<float> drains (n, 0.0f);
+      for (std::size_t i = 0; i < n; ++i) {
+        const int cx = static_cast<int> (
+          std::lround (road.points[i].x_m / ground.spacing_x));
+        const int cz = static_cast<int> (
+          std::lround (road.points[i].z_m / ground.spacing_z));
+        for (int dz = -2; dz <= 2; ++dz)
+          for (int dx = -2; dx <= 2; ++dx)
+            drains[i] = std::max (
+              drains[i],
+              drainage.contributing_area_at (ground.cell (cx + dx, cz + dz))
+                .numerical_value_in (u::m * u::m));
+      }
+      road.bridges.clear ();
+      for (std::size_t i = 0; i < n;) {
+        if (drains[i] < parameters.bridge_area_m2) {
+          ++i;
+          continue;
+        }
+        std::size_t j = i;
+        while (j + 1 < n && drains[j + 1] >= parameters.bridge_area_m2)
+          ++j;
+        float widest = 0.0f;
+        float bed = no_height;
+        for (std::size_t k = i; k <= j; ++k) {
+          widest = std::max (widest, drains[k]);
+          bed = std::min (bed, natural[k]);
+        }
+        const square_meters_t area = widest * u::m * u::m;
+        // A road that keeps beside a river for longer than it takes to
+        // cross it runs along its bank, not over it.
+        if (along[j] - along[i] >
+            river_width (area).numerical_value_in (u::m) + 16.0f +
+              4.0f * std::max (ground.spacing_x, ground.spacing_z)) {
+          i = j + 1;
+          continue;
+        }
+        // Clear of the spate, its banks a little beyond its bed's width
+        // and wherever the ground still lies below the deck.
+        const float deck = bed + river_depth (area).numerical_value_in (u::m) +
+                           parameters.clearance;
+        const float bank =
+          0.5f * river_width (area).numerical_value_in (u::m) + 2.0f;
+        std::size_t a = i;
+        while (a > 0 && along[i] - along[a - 1] <= parameters.bridge_reach &&
+               (along[i] - along[a] < bank || natural[a] < deck - 0.3f))
+          --a;
+        std::size_t b = j;
+        while (b + 1 < n &&
+               along[b + 1] - along[j] <= parameters.bridge_reach &&
+               (along[b] - along[j] < bank || natural[b] < deck - 0.3f))
+          ++b;
+        if (a == 0 || b + 1 == n) {
+          // A river at the road's very end is the place it leads to, not
+          // a crossing.
+          i = b + 1;
+          continue;
+        }
+        if (!road.bridges.empty () && a <= road.bridges.back ().last)
+          road.bridges.back ().last = static_cast<std::uint32_t> (b);
+        else
+          road.bridges.push_back (
+            { static_cast<std::uint32_t> (a), static_cast<std::uint32_t> (b) });
+        i = b + 1;
+      }
+      // Short stretches beside a river joined into one span are the road
+      // keeping to its bank; no cart road bridges further than the widest
+      // river and its banks.
+      std::erase_if (road.bridges, [&] (const RoadBridge& bridge) {
+        return along[bridge.last] - along[bridge.first] >
+               parameters.longest_bridge;
+      });
+      // Each deck runs straight between its abutments, held clear of the
+      // spate but never below a bank that stands higher.
+      for (const RoadBridge& bridge : road.bridges) {
+        float lowest = no_height;
+        for (std::size_t k = bridge.first; k <= bridge.last; ++k)
+          lowest = std::min (lowest, natural[k]);
+        float widest = 0.0f;
+        for (std::size_t k = bridge.first; k <= bridge.last; ++k)
+          widest = std::max (widest, drains[k]);
+        const float deck =
+          lowest +
+          river_depth (widest * u::m * u::m).numerical_value_in (u::m) +
+          parameters.clearance;
+        const float from = std::max (deck, natural[bridge.first]);
+        const float to = std::max (deck, natural[bridge.last]);
+        const float span = along[bridge.last] - along[bridge.first];
+        for (std::size_t k = bridge.first; k <= bridge.last; ++k)
+          pins[k] = std::lerp (
+            from,
+            to,
+            span > 0.0f ? (along[k] - along[bridge.first]) / span : 0.0f);
+        ++result.bridges;
+      }
       for (const std::size_t end : { std::size_t { 0 }, n - 1 })
         for (std::size_t earlier = 0; earlier < r; ++earlier)
           if (network.roads[earlier].kind == Road::Kind::Road) {
@@ -274,6 +376,10 @@ namespace moppe::terrain {
     for (const Road& road : network.roads) {
       const bool built = road.kind == Road::Kind::Road;
       const float reach = built ? formation + batter_reach : path_reach;
+      std::vector<bool> spans (road.points.size (), false);
+      for (const RoadBridge& bridge : road.bridges)
+        for (std::size_t k = bridge.first + 1; k <= bridge.last; ++k)
+          spans[k] = true;
       for (std::size_t i = 1; i < road.points.size (); ++i) {
         const RoadPoint a = road.points[i - 1];
         const RoadPoint b = road.points[i];
@@ -305,7 +411,8 @@ namespace moppe::terrain {
                 (built == claim.built && distance < claim.distance))
               claim = { distance,
                         std::lerp (road.heights[i - 1], road.heights[i], t),
-                        built };
+                        built,
+                        spans[i] };
           }
       }
     }
@@ -321,7 +428,8 @@ namespace moppe::terrain {
     };
     for (std::size_t cell = 0; cell < count; ++cell) {
       const FormationClaim& claim = claims[cell];
-      if (!std::isfinite (claim.distance) || flood.water_depth_m (cell) > 1e-3f)
+      if (!std::isfinite (claim.distance) || claim.bridge ||
+          flood.water_depth_m (cell) > 1e-3f)
         continue;
       const float d = claim.distance;
       if (!claim.built) {

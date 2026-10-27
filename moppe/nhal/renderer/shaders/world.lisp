@@ -353,13 +353,17 @@
               (dir (- (swizzle ends :zw) (swizzle ends :xy)))
               (at-t (clamp (/ (dot pa dir) (max (dot dir dir) 1.0e-6)) 0.0 1.0))
               (off (- pa (* dir at-t)))
-              (rank (+ (sqrt (dot off off)) (* 40.0 (swizzle more :w)))))
+              ;; Kind 1 a footpath; 0 a road, 2 a bridge's deck.
+              (rank (+ (sqrt (dot off off))
+                       (* 40.0 (- 1.0 (min (abs (- (swizzle more :w) 1.0))
+                                           1.0))))))
          (if (< rank (swizzle best :x))
              (vec4 rank 0.0 0.0 (float s))
              best)))))
 
 (define-shader-struct road-point
-  (found :float)                   ; 1 on a road or footpath's reach, else 0
+  (found :float)                   ; 1 on a road or footpath's reach, else 0;
+                                   ; 0 too over a bridge, whose deck is a mesh
   (footpath :float)                ; 1 a footpath, 0 a built road
   (across :float)                  ; metres from the line, signed
   (along :float)                   ; metres along the road
@@ -395,8 +399,8 @@
                         (- 1.0 (step (swizzle road-shape :x)
                                      (abs rp-across))))))
      (make-road-point
-      :found (if rp-have 1.0 0.0)
-      :footpath (swizzle rp-more :w)
+      :found (if rp-have (- 1.0 (step 1.5 (swizzle rp-more :w))) 0.0)
+      :footpath (- 1.0 (min (abs (- (swizzle rp-more :w) 1.0)) 1.0))
       :across rp-across
       :along (+ (swizzle rp-more :z) (* rp-t rp-length))
       :centre (mix (swizzle rp-more :x) (swizzle rp-more :y) rp-t)

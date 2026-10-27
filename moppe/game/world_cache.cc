@@ -42,6 +42,7 @@ namespace moppe::game {
     // (docs/determinism.md); earlier caches hold their platform's own.
     // Version 13 reconstructs the full hillslope gradient before applying the
     // nonlinear transport law. Version 12 used one cardinal component.
+    // Version 28 bridges the rivers the roads cross (RoadBridge).
     // Version 27 lays each cart road again at full resolution along the
     // contours, winding round spurs and into gullies.
     // Version 26 counts every journey along a way, not only those crossing
@@ -51,7 +52,7 @@ namespace moppe::game {
     // Version 24 reads the ground's disturbance (game/disturbance.hh).
     // Version 23 builds the roads into the ground and keeps their profiles.
     // Version 22 keeps the planned roads (terrain/roads.hh).
-    constexpr std::uint32_t CACHE_VERSION = 27;
+    constexpr std::uint32_t CACHE_VERSION = 28;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
@@ -587,6 +588,7 @@ namespace moppe::game {
         output.scalar (road.abandoned_years_ago);
         output.vector<terrain::RoadPoint> (road.points);
         output.vector<float> (road.heights);
+        output.vector<terrain::RoadBridge> (road.bridges);
       }
       output.scalar (static_cast<std::uint64_t> (roads.sightlines.size ()));
       for (const auto& [a, b] : roads.sightlines) {
@@ -624,8 +626,13 @@ namespace moppe::game {
             !input.scalar (road.traffic) || !input.scalar (road.age_years) ||
             !input.scalar (road.abandoned_years_ago) ||
             !input.vector (road.points, cells) ||
-            !input.vector (road.heights, cells))
+            !input.vector (road.heights, cells) ||
+            !input.vector (road.bridges, cells))
           return false;
+        for (const terrain::RoadBridge& bridge : road.bridges)
+          if (bridge.first > bridge.last ||
+              bridge.last >= road.points.size ())
+            return false;
         road.kind = static_cast<terrain::Road::Kind> (kind);
       }
       if (!input.scalar (count) || count > cells)
