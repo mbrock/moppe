@@ -611,7 +611,10 @@
     the vegetation is read again over them: fireweed (`fireweed_abundance`)
     takes a fresh scar, birch comes first after it, pine later, spruce
     last, grazing leaves heath on poor ground and turf on good, and the
-    forest plan grows no older trees than the ground has had time for. The
+    forest plan grows no older trees than the ground has had time for,
+    while the stand a fire killed still stands over its burn as snags
+    (`ForestForm::snag`: grey, bare, broken-topped, charred at the foot,
+    and solid), fewer the longer ago it burnt. The
     ground and grass read them from a third sheet (texture slot 11):
     fireweed wine-red with white seed, char on a young burn, cropped
     pasture. The log line `moppe: disturbance:` counts the fires and

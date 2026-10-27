@@ -1949,7 +1949,7 @@
   (root :vec3) (up :vec3) (right :vec3) (forward :vec3)
   (height :float) (crown-base :float) (crown-radius :float)
   (trunk-radius :float) (seed-turn :float) (closure :float)
-  (seed :uint) (conifer :bool) (pine :bool) (fell :bool)
+  (seed :uint) (conifer :bool) (pine :bool) (fell :bool) (snag :bool)
   (sides :uint) (crown-sides :uint) (masses :uint) (branches :bool))
 
 (define-shader-function grow-tree (root-height up-radius ecology identity root
@@ -1962,8 +1962,12 @@
          ;; A fell birch: a few crooked stems from one low base, each with
          ;; its clump, as wide as it is tall.
          (fell (= (bit-cast :uint (swizzle identity :y)) (uint 3)))
+         ;; A snag: a tree a fire killed, drawn with the birch's numbering
+         ;; but no leaves, its boughs broken to stubs and its top snapped.
+         (snag (= (bit-cast :uint (swizzle identity :y)) (uint 4)))
          (lean-turn (* 6.2831853 (tree-hash seed (uint 3))))
-         (lean (* (if pine 0.11 (if fell 0.22 0.065)) (tree-hash seed (uint 4))))
+         (lean (* (if pine 0.11 (if fell 0.22 (if snag 0.12 0.065)))
+                  (tree-hash seed (uint 4))))
          (up (normalize (+ (vec3 0.0 1.0 0.0)
                            (* 0.08 (vec3 (swizzle up-radius :x) 0.0
                                          (swizzle up-radius :z)))
@@ -1972,8 +1976,12 @@
          (right (normalize (cross3 up (vec3 0.0 0.0 1.0))))
          (height (swizzle root-height :w))
          (closure (smoothstep 0.12 0.42 (swizzle ecology :z)))
-         (base-share (+ (mix (if conifer 0.04 (if pine 0.50 (if fell 0.10 0.40)))
-                             (if conifer 0.20 (if pine 0.66 (if fell 0.18 0.60)))
+         (base-share (+ (mix (if conifer 0.04
+                                 (if pine 0.50
+                                     (if fell 0.10 (if snag 0.25 0.40))))
+                             (if conifer 0.20
+                                 (if pine 0.66
+                                     (if fell 0.18 (if snag 0.40 0.60))))
                              closure)
                         (* 0.08 (- (tree-hash seed (uint 5)) 0.5))))
          (sides (if (>= tier 5.0) (uint 10) (if (>= tier 2.0) (uint 7)
@@ -1982,12 +1990,14 @@
      :root root :up up :right right :forward (cross3 right up)
      :height height
      :crown-base (* height base-share)
-     :crown-radius (* (swizzle up-radius :w) crown-scale (if pine 1.25 1.0))
-     :trunk-radius (* height (if conifer 0.0078 (if fell 0.014 0.0085))
+     :crown-radius (* (swizzle up-radius :w) crown-scale
+                      (if pine 1.25 (if snag 0.75 1.0)))
+     :trunk-radius (* height (if (or conifer snag) 0.0078
+                                 (if fell 0.014 0.0085))
                       (+ 0.85 (* 0.3 (tree-hash seed (uint 6)))))
      :seed-turn (* 6.2831853 (tree-hash seed (uint 7)))
      :closure closure
-     :seed seed :conifer conifer :pine pine :fell fell
+     :seed seed :conifer conifer :pine pine :fell fell :snag snag
      :sides sides
      :crown-sides (if (= sides (uint 10)) (uint 9) sides)
      :masses (if conifer
@@ -2034,19 +2044,26 @@
          ;; first ring sits below the ground and flares into uneven root
          ;; buttresses, narrowing to the bole within a metre.
          (fell (tree-shape-fell tree))
+         (snag (tree-shape-snag tree))
          ;; A fell birch's main stem is only one of its stems: short, and
-         ;; with its crown starting near the ground.
+         ;; with its crown starting near the ground.  A snag's runs its
+         ;; whole height to where it broke, a jagged stump of a top.
+         (jag (tree-hash seed (+ (uint 320) (mod index sides))))
          (trunk-along (if (= ring (uint 0)) -0.35
                           (if (= ring (uint 1)) (if fell (* 0.5 crown-base) 0.9)
                               (if (= ring (uint 2)) crown-base
-                                  (* height (if conifer 0.94
-                                                (if fell 0.55 0.86)))))))
+                                  (* height
+                                     (if conifer 0.94
+                                         (if fell 0.55
+                                             (if snag (- 1.0 (* 0.06 jag))
+                                                 0.86))))))))
          (trunk-width (if (= ring (uint 0))
                           (+ 1.75 (* 0.65 (tree-hash seed
                                                      (+ (uint 300)
                                                         (mod index sides)))))
                           (if (= ring (uint 1)) 1.05
-                              (if (= ring (uint 2)) 0.72 0.14))))
+                              (if (= ring (uint 2)) 0.72
+                                  (if snag (+ 0.30 (* 0.25 jag)) 0.14)))))
          (trunk-out (+ (* right (cos trunk-turn)) (* forward (sin trunk-turn))))
          (trunk-point (+ root (* up trunk-along)
                          (* trunk-out (* trunk-radius trunk-width))))
@@ -2221,7 +2238,8 @@
          (knee (if twig
                    (+ (mix twig-start twig-top 0.5) (* up (* 0.03 span)))
                    stem-knee))
-         (branch-end (mix (if fell knee attach) centre 0.85))
+         ;; A snag's boughs are broken off a metre or two out.
+         (branch-end (mix (if fell knee attach) centre (if snag 0.50 0.85)))
          (axis (normalize (if fell
                               (if (= band (uint 0)) (- knee attach)
                                   (if (= band (uint 1)) (- branch-end attach)
@@ -2239,15 +2257,18 @@
                   (if (= band (uint 0)) (if twig 0.38 0.95)
                       (if (= band (uint 1)) (if twig 0.26 0.76)
                           (if twig 0.12 0.40)))
-                  (if first-ring 0.34 0.10))))
+                  (if first-ring (if snag 0.30 0.34) (if snag 0.07 0.10)))))
          (branch-point (+ (if fell
                               (if (= band (uint 0)) attach
                                   (if (= band (uint 1)) knee branch-end))
                               (if first-ring attach branch-end))
                           (* around branch-radius)))
+         ;; A snag has no leaves: its clumps fold to a point and draw
+         ;; nothing.
          (point (if is-trunk trunk-point
                     (if is-branch branch-point
-                        (if conifer cone-point leaf-point))))
+                        (if conifer cone-point
+                            (if snag attach leaf-point)))))
          (foliage (and (not is-trunk) (not is-branch))))
     (make-tree-vertex
      :position point
@@ -2321,6 +2342,13 @@
          ;; birch's own (bark-shade, forest-fragment).
          (fell (tree-shape-fell tree))
          (fell-bark (vec3 (+ 0.80 (* 0.04 hue)) (+ 0.77 (* 0.03 hue)) 0.71))
+         ;; A snag: bark gone, the wood weathered silver-grey, charred
+         ;; black where the fire licked its foot.
+         (snag (tree-shape-snag tree))
+         (snag-wood (mix (vec3 0.11 0.10 0.09)
+                         (vec3 (+ 0.68 (* 0.05 hue)) (+ 0.66 (* 0.04 hue))
+                               (+ 0.62 (* 0.02 hue)))
+                         (smoothstep 0.04 0.30 (+ rise (* 0.08 wobble)))))
          (green (vec3 (+ 0.42 (* 0.08 hue)) (+ 0.60 (* 0.05 moisture)) 0.22))
          (temper (- (tree-hash seed (uint 53)) 0.5))
          (reach (+ 0.58 (* 0.62 (expt (tree-hash seed (uint 52)) 1.8))
@@ -2335,12 +2363,13 @@
          (leaf (mix green (autumn-leaf ripe) (clamp (/ ripe 0.25) 0.0 1.0))))
     (if (tree-vertex-foliage vertex)
         (* (if conifer needle (if pine pine-needle leaf)) shade)
-        (if (tree-vertex-branch vertex)
-            (if pine (vec3 0.62 0.38 0.24)
-                (if fell fell-bark (vec3 0.34 0.31 0.29)))
-            (if conifer (vec3 0.38 0.30 0.24)
-                (if pine pine-bark
-                    (if fell fell-bark (vec3 0.80 0.78 0.72))))))))
+        (if snag snag-wood
+            (if (tree-vertex-branch vertex)
+                (if pine (vec3 0.62 0.38 0.24)
+                    (if fell fell-bark (vec3 0.34 0.31 0.29)))
+                (if conifer (vec3 0.38 0.30 0.24)
+                    (if pine pine-bark
+                        (if fell fell-bark (vec3 0.80 0.78 0.72)))))))))
 
 ;;; Wind sways the crown about its base; the trunk only bends near the top.
 (define-shader-function wind-offset (world bend flutter time)
@@ -2409,7 +2438,9 @@
     (set-output bark (tree-vertex-bark vertex))
     (set-output crown-height (tree-vertex-crown-height vertex))
     (set-output kind (vec2 (if (tree-vertex-foliage vertex) 1.0 0.0)
-                           (if (tree-shape-conifer tree) 1.0
+                           (if (or (tree-shape-conifer tree)
+                                   (tree-shape-snag tree))
+                               1.0
                                (if (tree-shape-pine tree) 2.0 0.0))))
     (set-output here here-clip)
     (set-output then (* previous-view-proj (vec4 previous 1.0)))))

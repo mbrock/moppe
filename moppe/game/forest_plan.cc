@@ -1,5 +1,6 @@
 #include <moppe/game/forest_plan.hh>
 
+#include <moppe/correct_math.hh>
 #include <moppe/gfx/signal.hh>
 
 #include <algorithm>
@@ -15,7 +16,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 19;
+    constexpr std::uint32_t forest_plan_version = 20;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The
@@ -59,6 +60,7 @@ namespace moppe::game {
       float grove;
       bool pioneer; // admitted by birch's own open-ground population
       bool open;    // admitted by the open trees' own population
+      bool snag;    // the old stand a fire killed, still standing
       // What the canopy's competition left each tree here, and the bog.
       float spruce, pine, birch, fell, bog;
       // How far the ground has come back since it was last opened.
@@ -301,6 +303,15 @@ namespace moppe::game {
       const float fell = held (map::mountain_birch_abundance);
       const float bog = held (map::sphagnum_abundance);
       const float recovery = held (map::stand_recovery);
+      // On a burn the stand the fire killed still stands as snags, as
+      // thick as it grew, and falls over the decades after: most of it is
+      // down in thirty years and nearly all in a century.
+      const float burn = held (map::burn_recency);
+      const float since_fire = burn > 1e-6f
+                                 ? -12.0f * cr::log (burn)
+                                 : std::numeric_limits<float>::infinity ();
+      const float snag_population =
+        burn > 1e-6f ? 0.42f * cr::exp (-since_fire / 30.0f) : 0.0f;
       const float routes = (1.0f - held (map::trail_influence)) *
                            (1.0f - held (map::home_base_influence));
       const float open_population =
@@ -310,6 +321,10 @@ namespace moppe::game {
         population_value = open_population;
         pioneer = false;
       }
+      const bool snag =
+        hash_lane (identity, 11) * (population_value + snag_population) <
+        snag_population;
+      population_value = std::min (population_value + snag_population, 1.0f);
       const float proposal_scale = std::lerp (
         forest_proposal_scale_min, forest_proposal_scale_max, population_value);
       if ((cover < 0.06f * map::forest_cover[one] &&
@@ -324,6 +339,7 @@ namespace moppe::game {
                               .grove = grove,
                               .pioneer = pioneer,
                               .open = open,
+                              .snag = snag,
                               .spruce = spruce,
                               .pine = pine,
                               .birch = birch,
@@ -411,6 +427,24 @@ namespace moppe::game {
       ForestCandidate site = candidate;
       if (site.grove > 0.0f && site.moisture == 0.0f)
         site.moisture = moisture_at (readings, x, z).numerical_value_in (one);
+      // A snag was the old stand: grown before the fire, its top broken
+      // off since.
+      if (candidate.snag) {
+        const ForestAge age = hash_lane (candidate.identity, 12) < 0.25f
+                                ? ForestAge::ancient
+                                : ForestAge::mature;
+        plan.sites.push_back (
+          { .position = forest_position (x, elevation, z),
+            .normal = normal_at (surface, x, z),
+            .cover = cover,
+            .moisture = moisture_at (readings, x, z),
+            .size = size_for_age (age, candidate.identity) *
+                    (0.45f + 0.45f * hash_lane (candidate.identity, 13)),
+            .seed = candidate.identity,
+            .form = ForestForm::snag,
+            .age = age });
+        continue;
+      }
       const ForestAge age =
         age_from_identity (candidate.identity, candidate.recovery);
       // Which tree: drawn by the canopy's shares here, so a stand at an
@@ -522,7 +556,7 @@ namespace moppe::game {
       ForestSiteRecord record {};
       input.read (reinterpret_cast<char*> (&record), sizeof (record));
       if (!input ||
-          record.form > static_cast<std::uint32_t> (ForestForm::fell_birch) ||
+          record.form > static_cast<std::uint32_t> (ForestForm::snag) ||
           record.age > static_cast<std::uint32_t> (ForestAge::ancient))
         return std::nullopt;
       plan.sites.push_back (

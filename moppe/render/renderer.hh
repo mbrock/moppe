@@ -277,8 +277,15 @@ namespace moppe {
 
     // The renderer gives a pine the broadleaf's clump topology, shaped flat
     // and high on a clear trunk; Conifer draws as stacked cones, and
-    // FellBirch as clumps on stems springing from one low base.
-    enum class ForestSpecies : uint8_t { Broadleaf, Conifer, Pine, FellBirch };
+    // FellBirch as clumps on stems springing from one low base, and a Snag
+    // as the broadleaf's trunk and boughs with no leaves on them.
+    enum class ForestSpecies : uint8_t {
+      Broadleaf,
+      Conifer,
+      Pine,
+      FellBirch,
+      Snag
+    };
     enum class ForestAge : uint8_t { Sapling, Young, Mature, Ancient };
 
     // One stable individual, still expressed in physical and bounded domain
