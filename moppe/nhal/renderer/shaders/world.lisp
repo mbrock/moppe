@@ -83,9 +83,17 @@
                                    (/ (- altitude sea-level)
                                       (max land-relief 1.0))))))
 
-(define-shader-function hemisphere-light (ambient normal)
-  (* ambient (mix (srgb (vec3 0.92 0.74 0.58)) (srgb (vec3 0.74 0.92 1.12))
+(define-shader-function hemisphere-lobes (ambient normal overcast)
+  (* ambient (mix (mix (srgb (vec3 0.92 0.74 0.58)) (srgb (vec3 0.72 0.70 0.66))
+                       overcast)
+                  (mix (srgb (vec3 0.74 0.92 1.12)) (srgb (vec3 0.90 0.92 0.94))
+                       overcast)
                   (+ 0.5 (* 0.5 (swizzle (normalize normal) :y))))))
+
+;;; The sky's light from above and the ground's from below, under a clear
+;;; sky; HEMISPHERE-LOBES greys it as the cloud closes over.
+(define-shader-function hemisphere-light (ambient normal)
+  (hemisphere-lobes ambient normal 0.0))
 
 ;;; A fire's light on a surface: falling off with the square of the
 ;;; distance and gone at its reach, wrapped a little round the form so a
@@ -369,6 +377,7 @@
   (paved :float)                   ; 1 a paved road, 0 gravel or a path
   (across :float)                  ; metres from the line, signed
   (along :float)                   ; metres along the road
+  (dir :vec2)                      ; the way along, a unit vector over xz
   (centre :float)                  ; the line's height, metres
   (slope :vec2))                   ; the tread's rise per metre over xz
 
@@ -409,6 +418,7 @@
       :paved (step 2.5 (swizzle rp-more :w))
       :across rp-across
       :along (+ (swizzle rp-more :z) (* rp-t rp-length))
+      :dir rp-unit
       :centre (mix (swizzle rp-more :x) (swizzle rp-more :y) rp-t)
       :slope (+ (* rp-unit rp-grade) (* rp-left rp-camber)))))
 
@@ -1104,12 +1114,141 @@
   (let* ((drawn (max edge (* 1.5 width))))
     (* (road-cover d drawn width) (sqrt (/ edge drawn)))))
 
+;;; -- asphalt ----------------------------------------------------------------
+;;;
+;;; An old paved lane's surface, in the road's own frame: ALONG and ACROSS
+;;; metres.  Each feature's relief fades to its mean where a pixel
+;;; (FOOTPRINT metres) is too wide to resolve it, and what it shaded then is
+;;; left to the roughness: the potholes' and patches' walls, the edge where
+;;; the asphalt breaks off onto the sand.  Cracks are lines box filtered to
+;;; the pixel, so a crack far off thins to a faint tint, never a crawl.
+
+(define-shader-struct asphalt
+  (slope :vec2)                    ; rise per metre along and across
+  (look :vec4)                     ; asphalt's share of the pixel (the rest
+                                   ; is the sand edge), open crack, sealed
+                                   ; crack, pothole
+  (rough :float)                   ; roughness
+  (grit :float))                   ; how rough its aggregate stands, 0..2
+
+;;; How much of a feature FREQUENCY cycles a metre a pixel FOOTPRINT metres
+;;; wide still resolves.
+(define-shader-function resolved (frequency footprint)
+  (- 1.0 (smoothstep 0.25 0.6 (* frequency footprint))))
+
+;;; Noise for cracks: value noise at FREQ cycles a metre (along, across),
+;;; roughened by two finer octaves so its isolines wander and jag as
+;;; cracks do; (value, gradient per metre).  The finer octaves give way to
+;;; their mean where a pixel would not resolve them.
+(define-shader-function crack-noise (on freq offset footprint)
+  (let* ((a (value-noise-gradient (+ (* on freq) offset)))
+         (f2 (* freq 2.7))
+         (f3 (* freq 7.3))
+         (w2 (* 0.35 (resolved (swizzle f2 :y) footprint)))
+         (w3 (* 0.16 (resolved (swizzle f3 :y) footprint)))
+         (b (value-noise-gradient (+ (* on f2) (vec2 4.1 1.9) offset)))
+         (c (value-noise-gradient (+ (* on f3) (vec2 9.7 6.3) offset))))
+    (+ (vec3 (swizzle a :x) (* (swizzle a :yz) freq))
+       (* w2 (vec3 (- (swizzle b :x) 0.5) (* (swizzle b :yz) f2)))
+       (* w3 (vec3 (- (swizzle c :x) 0.5) (* (swizzle c :yz) f3))))))
+
+;;; A crack along the isoline 0.5 of noise N (value, gradient per metre),
+;;; HALF metres either side, filtered to FOOTPRINT.
+(define-shader-function crack-line (n half footprint)
+  (road-cover (/ (abs (- (swizzle n :x) 0.5))
+                 (max (sqrt (dot (swizzle n :yz) (swizzle n :yz))) 0.001))
+              half (* 0.5 footprint)))
+
+;;; The slope of SMOOTHSTEP (LOW, HIGH, N) for noise N (value, gradient).
+(define-shader-function step-slope (n low high)
+  (let* ((k (clamp (/ (- (swizzle n :x) low) (- high low)) 0.0 1.0)))
+    (* (/ (* 6.0 k (- 1.0 k)) (- high low)) (swizzle n :yz))))
+
+(define-shader-function asphalt (along across half-width footprint)
+  (let* ((on (vec2 along across))
+         (d (abs across))
+         (outward (- (* 2.0 (step 0.0 across)) 1.0))
+         ;; Where it is old, and the wheel paths.
+         (old (smoothstep 0.35 0.55 (value-noise (+ (* on 0.08)
+                                                    (vec2 3.7 9.1)))))
+         (lane (+ 1.2 (* 0.12 (sin (* along 0.11)))))
+         (wear (- 1.0 (smoothstep 0.30 0.60 (abs (- d lane)))))
+         ;; The edge, crumbling into the sand, and the ravelled strip
+         ;; inside it where the stones have come loose.
+         (crumble (+ half-width
+                     (* 0.25 (- (value-noise (vec2 (* along 0.8) 3.0)) 0.5))))
+         (cover (road-cover d crumble (max (* 0.5 footprint) 0.01)))
+         (lip (* -0.5 (road-cover (- d crumble) 0.04
+                                  (max (* 0.5 footprint) 0.005))))
+         (ravel (* (- 1.0 (smoothstep 0.1 0.6 (- crumble d)))
+                   (+ 0.4 (* 0.6 old))))
+         ;; Patches, cut in and laid newer, standing a little proud.
+         (pn (value-noise-gradient (+ (* on (vec2 0.07 0.3)) (vec2 5.1 2.3))))
+         (pn (vec3 (swizzle pn :x) (* (swizzle pn :yz) (vec2 0.07 0.3))))
+         (patch (smoothstep 0.68 0.74 (swizzle pn :x)))
+         (patch-slope (* 0.006 (step-slope pn 0.68 0.74)))
+         ;; Potholes in the wheel paths and by the edge, where it is old.
+         (hn (value-noise-gradient (+ (* on (vec2 0.35 0.7)) (vec2 1.3 7.7))))
+         (hn (vec3 (swizzle hn :x) (* (swizzle hn :yz) (vec2 0.35 0.7))))
+         (where (* (max wear (smoothstep (- half-width 1.0)
+                                         (- half-width 0.3) d))
+                   old (- 1.0 patch)))
+         ;; A hole's edge is broken sharp, as wide as a pixel allows.
+         (hole-edge (max (* 0.5 footprint (sqrt (dot (swizzle hn :yz)
+                                                     (swizzle hn :yz))))
+                         0.006))
+         (hole (* where (smoothstep (- 0.80 hole-edge) (+ 0.80 hole-edge)
+                                    (swizzle hn :x))))
+         (hole-slope (* -0.06 where (step-slope hn 0.78 0.82)
+                        (- 1.0 (smoothstep 0.05 0.2 footprint))))
+         ;; Cracks: blocks where it is old, alligator in the wheel paths,
+         ;; a wandering joint down the middle, and one along each edge.
+         ;; Along some stretches they have been sealed with bitumen.
+         (seal (smoothstep 0.68 0.74 (value-noise (vec2 (* along 0.02) 1.7))))
+         ;; Sealing is poured by hand, wider and narrower as it goes.
+         (half (mix 0.004 (mix 0.011 0.022 (value-noise (* on 1.3))) seal))
+         (blocks (* old (crack-line (crack-noise on (vec2 0.5 0.9)
+                                                 (vec2 8.2 0.4) footprint)
+                                    half footprint)
+                    (resolved 0.9 footprint)))
+         (alligator (* old wear
+                       (crack-line (crack-noise on (vec2 1.6 2.4)
+                                                (vec2 2.9 6.1) footprint)
+                                   half footprint)
+                       (resolved 2.4 footprint)))
+         (joint (* (smoothstep 0.55 0.65 (value-noise (vec2 (* along 0.05)
+                                                            4.4)))
+                   (road-cover (- across (* 0.2 (- (value-noise
+                                                    (vec2 (* along 0.15) 2.2))
+                                                   0.5)))
+                               half (* 0.5 footprint))))
+         (edge-crack (* old
+                        (road-cover (- d (- half-width 0.45)
+                                       (* 0.16 (- (value-noise
+                                                   (vec2 (* along 0.3) 5.5))
+                                                  0.5)))
+                                    half (* 0.5 footprint))))
+         (crack (* (- 1.0 hole) cover
+                   (max (max blocks alligator) (max joint edge-crack))))
+         (rough (mix (mix (mix (mix (mix 0.74 0.56 wear) 0.62 patch)
+                               0.88 ravel)
+                          0.32 (* crack seal))
+                     0.92 hole)))
+    (make-asphalt
+     :slope (+ (* (+ patch-slope hole-slope) cover)
+               (vec2 0.0 (* lip outward)))
+     :look (vec4 cover (* crack (- 1.0 seal)) (* crack seal) hole)
+     :rough (mix 0.9 rough cover)
+     :grit (* (+ 1.0 (* 1.5 ravel) (* -0.5 wear) (* -0.4 patch)
+                 (* 1.0 hole))
+              cover))))
+
 ;;; A gravel forest road seen from above: two wheel tracks worn smooth and
 ;;; dark, loose stone thrown up between them and along the edges, the
 ;;; shoulders going over to grass, and the edge a hand's breadth wide.
 ;;; GROUND is what lies there otherwise, in display space.
 (define-shader-function road-albedo (ground across along half-width shoulder
-                                     paved micro meso edge-width)
+                                     paved look micro meso edge-width)
   (let* ((d (abs across))
          (grain (swizzle micro :x))
          (fleck (swizzle meso :x))
@@ -1156,15 +1295,21 @@
                     (+ 0.25 (* 0.75 (smoothstep 0.8 2.4 d)))
                     (smoothstep 0.4 0.9 (value-noise (* on 0.5)))
                     (- 1.0 (smoothstep 0.03 0.12 edge-width))))
+         ;; Its cracks: open ones dark, sealed ones a band of black
+         ;; bitumen; a pothole's floor the gravel under it.
+         (tar (* tar (- 1.0 (* 0.45 (swizzle look :y)))))
+         (tar (mix tar (vec3 0.13 0.13 0.125) (swizzle look :z)))
+         (tar (mix tar (mix (* (vec3 0.33 0.30 0.26) (mix 0.8 1.15 grain))
+                            (vec3 0.55 0.53 0.49)
+                            (* 0.7 (stone-face pebble)
+                               (smoothstep 0.45 0.65 (stone-tone pebble))))
+                   (swizzle look :w)))
          (tar (mix tar (mix (vec3 0.50 0.26 0.10) (vec3 0.64 0.46 0.17)
                             (value-noise (* on 1.7)))
-                   fallen))
-         (crumble (+ half-width
-                     (* 0.25 (- (value-noise (vec2 (* along 0.8) 3.0)) 0.5))))
+                   (* fallen (- 1.0 (swizzle look :w)))))
          (sand (* (mix (vec3 0.58 0.51 0.39) (vec3 0.67 0.59 0.46) fleck)
                   (mix 0.90 1.05 grain)))
-         (lane-top (mix (mix tar sand (smoothstep (- crumble 0.05)
-                                                  (+ crumble 0.05) d))
+         (lane-top (mix (mix sand tar (swizzle look :x))
                         (* (vec3 0.64 0.63 0.60) (mix 0.96 1.03 fleck))
                         far))
          (carriage (mix gravel lane-top paved))
@@ -1703,10 +1848,11 @@
 ;;; reflection, as on a car's paint. The sun is not a point, so no
 ;;; highlight is ever sharper than its disc allows. Returns the light
 ;;; reflected (rgb) and how much of it is the mirror's (a), so that glass
-;;; can let the rest through.
+;;; can let the rest through.  SEEN is how much of the sky the mirror
+;;; sees, 0 to 1: the ground's own facets and whatever shades it hide some.
 (define-shader-function material-light (albedo made n eye sun diffuse-light
                                         sun-light sky-light sky-dir fog cloud
-                                        mist)
+                                        mist seen)
   (let* ((metallic (swizzle made :x))
          (rough (max (swizzle made :y) 0.03))
          (coat (swizzle made :z))
@@ -1727,7 +1873,8 @@
                             (smith n-dot-l n-dot-v a2) n-dot-l)))
          (reflected (normalize (- (* (* 2.0 n-dot-v) n) eye)))
          (sky-seen (water-sky reflected sky-dir fog cloud mist))
-         (blurred (mix sky-seen (hemisphere-light sky-light reflected)
+         (blurred (mix sky-seen (hemisphere-lobes sky-light reflected
+                                                 (smoothstep 0.6 0.95 cloud))
                        (smoothstep 0.02 0.5 rough)))
          (smooth (- 1.0 rough))
          (f-env (+ f0 (* (- (max (vec3 smooth smooth smooth) f0) f0)
@@ -1743,7 +1890,7 @@
          (cloth (* sheen (* 0.35 (expt (- 1.0 n-dot-v) 3.0))
                    (mix albedo (vec3 1.0 1.0 1.0) 0.4) diffuse-light))
          (base-light (+ body (* glint sun-light)))
-         (reflection (+ (* mirror (- 1.0 fc)) (* fc sky-seen))))
+         (reflection (* seen (+ (* mirror (- 1.0 fc)) (* fc sky-seen)))))
     (vec4 (+ (* base-light (- 1.0 fc)) (* coat-glint sun-light) cloth
              reflection)
           (clamp (+ (swizzle f-env :y) fc) 0.0 1.0))))
@@ -1851,6 +1998,15 @@
                                   region))
          ;; An edge as sharp as a pixel's width on the ground allows.
          (road-edge (max (* 0.75 footprint) 0.04))
+         ;; A paved lane's own surface, over its tread.
+         (asphalt-here (asphalt (road-point-along road) road-across
+                                (swizzle road-shape :x) footprint))
+         (paved-tread (* (road-point-paved road) road-built
+                         (road-hold road-built 0.0 road-across road-shape)))
+         (look (asphalt-look asphalt-here))
+         ;; Rain stands in the potholes.
+         (wet (swizzle road-batter :z))
+         (puddle (* wet paved-tread (smoothstep 0.3 0.7 (swizzle look :w))))
          ;; Beside a built road, its batters.
          (worked-ground
            (earthwork-albedo (ground-surface-albedo surface)
@@ -1863,23 +2019,36 @@
                 (road-albedo worked-ground road-across
                              (road-point-along road) (swizzle road-shape :x)
                              (swizzle road-shape :y) (road-point-paved road)
-                             micro meso road-edge)
+                             look micro meso road-edge)
                 road-built))
          (path-ground
            (mix road-ground
                 (footpath-albedo road-ground road-across micro meso
                                  road-edge)
                 (* (road-point-found road) (road-point-footpath road))))
-         ;; Rain darkens what soaks it up.
-         (wet (swizzle road-batter :z))
-         (albedo (* (srgb path-ground) (- 1.0 (* 0.3 wet))))
+         ;; Rain darkens what soaks it up, and still water more.
+         (tread-share (road-hold road-built 0.0 road-across road-shape))
+         (albedo (* (srgb path-ground)
+                    (- 1.0 (* wet (mix 0.15 0.4 tread-share)))
+                    (- 1.0 (* 0.45 puddle))))
          ;; The relief tilts the normal within the surface: only the part
          ;; of its slope that lies along the ground counts.  A road's
          ;; packed tread has less of it.
-         (slope (* (+ (* 0.65 (detail-slope meso *detail-meso*))
-                      (* 0.35 (detail-slope micro *detail-micro*)))
-                   (ground-surface-relief surface)
-                   (- 1.0 (* 0.6 road-flat))))
+         (grain-slope (+ (* 0.65 (detail-slope meso *detail-meso*))
+                         (* 0.35 (detail-slope micro *detail-micro*))))
+         (road-dir (road-point-dir road))
+         (road-left (vec2 (* -1.0 (swizzle road-dir :y)) (swizzle road-dir :x)))
+         (asphalt-slope (+ (* (swizzle (asphalt-slope asphalt-here) :x)
+                              road-dir)
+                           (* (swizzle (asphalt-slope asphalt-here) :y)
+                              road-left)
+                           (* 0.07 (asphalt-grit asphalt-here)
+                              (detail-slope micro *detail-micro*))))
+         ;; Still water lies flat.
+         (slope (* (mix (* grain-slope (ground-surface-relief surface)
+                           (- 1.0 (* 0.6 road-flat)))
+                        asphalt-slope paved-tread)
+                   (- 1.0 puddle)))
          (tilt (vec3 (swizzle slope :x) 0.0 (swizzle slope :y)))
          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
          (sun (swizzle sun-direction :xyz))
@@ -1908,15 +2077,23 @@
          ;; wheel paths), and smoother wet.  Where the normal changes
          ;; within a pixel the facets it stands for spread the highlight,
          ;; so the roughness widens to cover them and nothing sparkles.
-         (road-rough (mix 0.88 0.62 (road-point-paved road)))
-         (rough (mix (mix (ground-surface-rough surface) road-rough
-                          (road-hold road-built 0.0 road-across road-shape))
-                     0.0 (* 0.45 wet)))
+         (road-rough (mix 0.88 (asphalt-rough asphalt-here)
+                          (road-point-paved road)))
+         ;; Rain films what does not soak it up -- the tread, rock -- and
+         ;; leaves turf and litter as rough as ever.
+         (dry-rough (mix (ground-surface-rough surface) road-rough
+                         tread-share))
+         (rough (mix (* dry-rough
+                        (- 1.0 (* 0.35 wet (smoothstep 0.95 0.70 dry-rough))))
+                     0.03 puddle))
          (bend (+ (dot (derivative-x shaded) (derivative-x shaded))
                   (dot (derivative-y shaded) (derivative-y shaded))))
          (alpha (* rough rough))
          (rough-seen (sqrt (sqrt (+ (* alpha alpha) (min (* 0.5 bend) 0.18)))))
-         (diffuse-light (+ (* (hemisphere-light (swizzle ambient :xyz) shaded)
+         (diffuse-light (+ (* (hemisphere-lobes (swizzle ambient :xyz) shaded
+                                                (smoothstep 0.6 0.95
+                                                            (swizzle
+                                                             sun-direction :w)))
                               fill)
                            (* (swizzle sun-diffuse :xyz)
                               (* 0.9 lambert direct))
@@ -1928,7 +2105,13 @@
                                        (swizzle sky-sun :xyz)
                                        (swizzle fog-color :xyz)
                                        (swizzle sun-direction :w)
-                                       (swizzle relief :w))
+                                       (swizzle relief :w)
+                                       ;; Shade hides much of the sky, and
+                                       ;; rough ground's own facets hide
+                                       ;; the rest at a glancing look.
+                                       (* (mix 0.4 1.0 direct)
+                                          (- 1.0 (* 0.75 (smoothstep
+                                                          0.35 0.9 rough)))))
                        :xyz)))
     (set-output color (vec4 (hazed lit world eye fog-color
                                    (swizzle sky-sun :xyz) relief)
@@ -2059,7 +2242,7 @@
                                      (swizzle sky-sun :xyz)
                                      (swizzle fog-color :xyz)
                                      (swizzle sun-direction :w)
-                                     (swizzle relief :w)))
+                                     (swizzle relief :w) 1.0))
          ;; See-through, it lets through what its tint and its mirror do
          ;; not stop: drawn blended, the more opaque the more it reflects.
          (clear (* is-material (step (swizzle base :w) 0.99)))
