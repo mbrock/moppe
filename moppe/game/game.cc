@@ -36,10 +36,12 @@
 #include <moppe/game/landscape_gazetteer.hh>
 #include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
+#include <moppe/game/fingerposts.hh>
 #include <moppe/game/map_sheet.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/mushrooms.hh>
 #include <moppe/game/opening.hh>
+#include <moppe/game/place_names.hh>
 #include <moppe/game/seed_memory.hh>
 #include <moppe/game/simulation_clock.hh>
 #include <moppe/game/stars.hh>
@@ -478,6 +480,29 @@ namespace moppe {
         dl.append (m_home_base_marker);
       }
 
+      // The fingerposts at the network's junctions, planned with the
+      // world and made the first time they are drawn, when the renderer
+      // and the HUD's face are up.
+      void draw_fingerposts (render::Renderer& r) {
+        if (!m_fingerposts_made && m_hud.font ()) {
+          m_fingerposts_made = true;
+          FingerpostSigns signs = make_fingerposts (
+            r,
+            *m_hud.font (),
+            m_fingerposts,
+            m_place_names,
+            [this] (float x, float z) {
+              return generated_world ().road_surface ().ground (
+                x, z, ground_height (Vec3 (x, 0.0f, z)));
+            });
+          m_fingerpost_boards = std::move (signs.boards);
+          m_fingerpost_mesh =
+            signs.mesh.empty () ? nullptr : r.create_mesh (signs.mesh);
+        }
+        if (m_fingerpost_mesh)
+          r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
+      }
+
       void draw_trail_map (render::DrawList& dl,
                            int width_pts,
                            int height_pts,
@@ -633,6 +658,21 @@ namespace moppe {
         retired_session.reset ();
         retired_world.reset ();
         m_map.forget ();
+        m_place_names = name_places (
+          m_generated_world->roads (),
+          static_cast<std::uint32_t> (m_recipe.seed ().value));
+        {
+          const terrain::TerrainDomain& domain = surface ().domain ();
+          m_fingerposts = plan_fingerposts (
+            m_generated_world->roads (),
+            domain.period_x ().numerical_value_in (u::m),
+            domain.period_z ().numerical_value_in (u::m));
+          std::cerr << "moppe: fingerposts: " << m_fingerposts.size ()
+                    << '\n';
+        }
+        m_fingerposts_made = false;
+        m_fingerpost_mesh.reset ();
+        m_fingerpost_boards.reset ();
       }
 
       void prepare_world_water () {
@@ -691,6 +731,13 @@ namespace moppe {
         const char* demo = moppe::environment ("MOPPE_DEMO");
         if (demo && std::string_view (demo) == "forest")
           move_spawn_to_forest ();
+        if (const char* start = moppe::environment ("MOPPE_START");
+            start && std::string_view (start).starts_with ("fingerpost"))
+          move_spawn_to_fingerpost (
+            std::string_view (start).starts_with ("fingerpost:")
+              ? static_cast<std::size_t> (
+                  std::max (0, std::atoi (start + 11)))
+              : 0);
         // It is a walking game first: the rider stands beside the parked
         // bike. The demo autopilot and benchmarks still start riding,
         // unless a scripted walk (MOPPE_WALK) asks for the feet.
@@ -1569,6 +1616,34 @@ namespace moppe {
       }
 
       // MOPPE_DEMO=forest: park the bike at the world's forest-floor site.
+      // MOPPE_START=fingerpost[:N]: before the fingerpost nearest the
+      // trailhead (or the Nth further), facing its first arm's lettered
+      // side, to read it.
+      void move_spawn_to_fingerpost (std::size_t rank) {
+        std::vector<const Fingerpost*> posts;
+        for (const Fingerpost& post : m_fingerposts)
+          posts.push_back (&post);
+        const auto off = [this] (const Fingerpost* post) {
+          return std::hypot (post->x_m - m_home_base_position[0],
+                             post->z_m - m_home_base_position[2]);
+        };
+        std::ranges::sort (posts, {}, off);
+        if (rank >= posts.size () || posts[rank]->arms.empty ())
+          throw std::runtime_error ("this world has no such fingerpost");
+        const Fingerpost* nearest = posts[rank];
+        const Fingerpost::Arm& arm = nearest->arms.front ();
+        const Vec3 face (-arm.direction_z, 0.0f, arm.direction_x);
+        const Vec3 post (nearest->x_m, 0.0f, nearest->z_m);
+        m_spawn_position = post + face * 7.0f + Vec3 (arm.direction_x, 0.0f,
+                                                      arm.direction_z) * 0.6f;
+        m_spawn_position[1] = ground_height (m_spawn_position) + 1.2f;
+        session ().bike ().reset (m_spawn_position);
+        session ().bike ().set_heading (-face);
+        std::cerr << "moppe: starting by the fingerpost at ("
+                  << std::lround (nearest->x_m) << ", "
+                  << std::lround (nearest->z_m) << ")\n";
+      }
+
       void move_spawn_to_forest () {
         const LandscapeGazetteer views =
           plan_landscape_gazetteer (surface (),
@@ -4013,14 +4088,19 @@ namespace moppe {
                                const Vec3& at,
                                float near,
                                float far,
-                               const DisplayColor& tint) {
+                               const DisplayColor& tint,
+                               float vanish = 0.0f) {
         if (state.waymark_count >= static_cast<int> (state.waymarks.size ()))
           return;
         const FrameCamera& camera = frame.camera;
         const Vec3 to = at - camera.position;
         const float metres = length (to);
+        // Fading in past `near`, and out again toward `vanish`, if set.
         const float shown =
-          std::clamp ((metres - near) / (far - near), 0.0f, 1.0f);
+          std::clamp ((metres - near) / (far - near), 0.0f, 1.0f) *
+          (vanish > 0.0f
+             ? std::clamp ((vanish - metres) / (0.25f * vanish), 0.0f, 1.0f)
+             : 1.0f);
         if (shown <= 0.0f)
           return;
         const float across = dot (to, camera.right);
@@ -4058,8 +4138,11 @@ namespace moppe {
         state.waymarks[state.waymark_count++] = mark;
       }
 
+      // How near a named place must be for a waymark to point to it.
+      static constexpr float place_waymark_m = 1200.0f;
+
       // The way to the other player and to whatever of one's own is
-      // parked out of reach.
+      // parked out of reach, and to the nearest named place.
       void add_waymarks (HudState& state,
                          const FrameView& frame,
                          int width,
@@ -4106,6 +4189,44 @@ namespace moppe {
                        12.0f,
                        24.0f,
                        jacket);
+        }
+        // The nearest named place, while it is near but not yet reached.
+        {
+          const terrain::RoadNetwork& roads = generated_world ().roads ();
+          const Vec3 here = frame.hud.subject_position;
+          const auto across = [] (float delta, float period) {
+            return period > 0.0f ? delta - period * std::round (delta / period)
+                                 : delta;
+          };
+          const char* name = nullptr;
+          float nearest_m = place_waymark_m, x = 0.0f, z = 0.0f;
+          for (std::size_t p = 0;
+               p < roads.places.size () && p < m_place_names.size ();
+               ++p) {
+            const terrain::RoadPlace& place = roads.places[p];
+            if (place.kind == terrain::RoadPlace::Kind::Trailhead)
+              continue;
+            const float dx = across (place.x_m - here[0], m_map.period_x_m ());
+            const float dz = across (place.z_m - here[2], m_map.period_z_m ());
+            if (const float metres = std::hypot (dx, dz); metres < nearest_m) {
+              nearest_m = metres;
+              name = m_place_names[p].c_str ();
+              x = here[0] + dx;
+              z = here[2] + dz;
+            }
+          }
+          if (name)
+            add_waymark (state,
+                         frame,
+                         width,
+                         height,
+                         name,
+                         0,
+                         Vec3 (x, ground_height (Vec3 (x, 0, z)) + 4.0f, z),
+                         40.0f,
+                         70.0f,
+                         DisplayColor (1.0f, 0.86f, 0.55f),
+                         place_waymark_m);
         }
         using Mark = HudState::Waymark;
         if (mode != M_BIKE && !session ().can_drop_bike ())
@@ -5020,6 +5141,8 @@ namespace moppe {
         render_helicopter (r, actors.helicopter, 0);
         render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
         m_places_landscape.cast_shadows (r, frame.camera.position);
+        if (m_fingerpost_mesh)
+          r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
         if (m_companion) {
           const CompanionSnapshot& theirs = *m_companion;
           render_vehicle (r, m_caster_dl, theirs.bike, false, 0);
@@ -5151,6 +5274,7 @@ namespace moppe {
 
         // Soft blob shadows under the movers.
         draw_home_base_marker (m_world_dl);
+        draw_fingerposts (r);
         if (!m_spectator)
           m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
         if (actors.walker)
@@ -5605,6 +5729,29 @@ namespace moppe {
                            .position = m_home_base_position,
                            .colour = DisplayColor (0.80f, 0.13f, 0.11f),
                            .name = "trailhead" });
+        // The road network's places, by name; last, so drawn under the
+        // rest.
+        const terrain::RoadNetwork& roads = generated_world ().roads ();
+        for (std::size_t p = 0;
+             p < roads.places.size () && p < m_place_names.size ();
+             ++p) {
+          const terrain::RoadPlace& place = roads.places[p];
+          using Place = terrain::RoadPlace::Kind;
+          if (place.kind == Place::Trailhead)
+            continue;
+          const bool quiet = place.abandoned_years_ago > 0.0f;
+          marks.push_back (
+            { .kind = place.kind == Place::Landing      ? Mark::Kind::Landing
+                      : place.kind == Place::LakeOutlet ? Mark::Kind::Outlet
+                                                        : Mark::Kind::Sanctuary,
+              .position = Vec3 (place.x_m, place.height_m, place.z_m),
+              .colour = place.kind == Place::Sanctuary
+                          ? (quiet ? DisplayColor (0.36f, 0.24f, 0.26f)
+                                   : DisplayColor (0.56f, 0.12f, 0.16f))
+                          : DisplayColor (0.10f, 0.30f, 0.62f),
+              .name = m_place_names[p].c_str (),
+              .place = true });
+        }
         return marks;
       }
 
@@ -5642,6 +5789,9 @@ namespace moppe {
                      : mark.kind == Kind::Bike      ? Pin::Kind::Bike
                      : mark.kind == Kind::Camp      ? Pin::Kind::Camp
                      : mark.kind == Kind::Trailhead ? Pin::Kind::Trailhead
+                     : mark.kind == Kind::Landing   ? Pin::Kind::Landing
+                     : mark.kind == Kind::Outlet    ? Pin::Kind::Outlet
+                     : mark.kind == Kind::Sanctuary ? Pin::Kind::Sanctuary
                                                     : Pin::Kind::Machine;
           pin.x_m = mark.position[0];
           pin.z_m = mark.position[2];
@@ -6665,6 +6815,12 @@ namespace moppe {
       std::optional<float> m_film_fov;
       Vec3 m_home_base_position;
       render::DrawList m_home_base_marker;
+      // Each road place's name (place_names.hh), and the fingerposts.
+      std::vector<std::string> m_place_names;
+      std::vector<Fingerpost> m_fingerposts;
+      bool m_fingerposts_made = false;
+      render::MeshPtr m_fingerpost_mesh;
+      render::TexturePtr m_fingerpost_boards;
       bool m_skip_cinematic_requested = false;
       // Whose Space was last prompted (HudState::thumb_hint), since when,
       // and whether the bike's and the boat's boosts have been tried.

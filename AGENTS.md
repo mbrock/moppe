@@ -117,6 +117,22 @@
     `MOPPE_WALK_CAMERA=chase|front|side|eyes` picks the view (`side` locks a
     camera beside the figure to judge the gait). Pair with
     `MOPPE_RIDE_CAPTURE_DIR` for consecutive frames.
+  - Names and fingerposts (`moppe/game/place_names.*`,
+    `moppe/game/fingerposts.*`): each place of the road network
+    (`terrain::RoadNetwork`) has a Swedish name rolled from the seed and
+    its kind and index (the trailhead a -säter, the landing a -vik, an
+    outlet a -kvarn or -fors, a sanctuary a -berget or -varden), computed
+    game-side so the cache does not change. At each junction of the
+    network, and where a footpath leaves a road, a fingerpost planned at
+    activation from the network (`plan_fingerposts`) carries a board per
+    way for the nearest places it leads to, with their distances along
+    the network, lettered from the HUD's Slug face into a texture (white
+    for cart roads, brown for footpaths, grey for ways no longer used).
+    The map names the landing (an anchor), the outlets (a mill wheel), and
+    the sanctuaries, and draws abandoned ways dashed in grey-violet; the
+    chart pins them, and a waymark names the nearest place within 1.2 km.
+    `MOPPE_START=fingerpost[:N]` starts on foot before the Nth-nearest
+    fingerpost to the trailhead, for captures.
   - Waymarks: a small arrow with a name and a distance marks the other
     player (in their jacket's colour), and the bike, the jeep, the
     tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in

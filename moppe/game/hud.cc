@@ -487,7 +487,7 @@ namespace moppe {
     void bundle_waymarks (HudState& state) {
       const auto marks = state.waymarks;
       const int count = state.waymark_count;
-      std::array<int, 8> groups;
+      std::array<int, std::tuple_size_v<decltype (state.waymarks)>> groups;
       for (int i = 0; i < count; ++i)
         groups[i] = i;
       for (int i = 0; i < count; ++i) {
@@ -1463,11 +1463,60 @@ namespace moppe {
         const float far = 0.86f * r;
         const float off = std::hypot (sx, sy);
         const bool beyond = off > far;
+        using Kind = HudState::Chart::Pin::Kind;
+        const bool place = pin.kind == Kind::Landing ||
+                           pin.kind == Kind::Outlet ||
+                           pin.kind == Kind::Sanctuary;
+        if (place) {
+          // Named places stay on the chart only while they are on it:
+          // a peak as a triangle, the landing and an outlet as a ring.
+          if (off > 0.95f * r)
+            continue;
+          const float x = cx + sx, y = cy + sy;
+          const bool peak = pin.kind == Kind::Sanctuary;
+          const auto& shape = peak ? m_shape->arrow : m_shape->shade;
+          const float angle = peak ? 0.5f * PI : 0.0f;
+          const float size = pin.kind == Kind::Outlet ? 3.0f : 3.8f;
+          place_shape (text,
+                       shape,
+                       x,
+                       y + 0.6f,
+                       size + 2.4f,
+                       angle,
+                       0.0f,
+                       0.0f,
+                       0.0f,
+                       0.30f * alpha,
+                       3.0f);
+          place_shape (
+            text, shape, x, y, size + 1.3f, angle, 1.0f, 1.0f, 1.0f, alpha);
+          place_shape (text,
+                       shape,
+                       x,
+                       y,
+                       size,
+                       angle,
+                       pin.red,
+                       pin.green,
+                       pin.blue,
+                       alpha);
+          if (!peak)
+            place_shape (text,
+                         m_shape->shade,
+                         x,
+                         y,
+                         0.45f * size,
+                         0.0f,
+                         1.0f,
+                         1.0f,
+                         1.0f,
+                         alpha);
+          continue;
+        }
         if (beyond) {
           sx *= far / off;
           sy *= far / off;
         }
-        using Kind = HudState::Chart::Pin::Kind;
         float size = pin.kind == Kind::Companion   ? 4.4f
                      : pin.kind == Kind::Trailhead ? 4.2f
                                                    : 3.4f;

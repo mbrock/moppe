@@ -406,6 +406,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/cairn.cc
   moppe/game/farm_model.cc
   moppe/game/places.cc
+  moppe/game/fingerposts.cc
+  moppe/game/place_names.cc
   moppe/game/avatar.cc
   moppe/game/walker_render.cc
   moppe/game/figure.cc
@@ -673,6 +675,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/game_state_test.cc
     tests/game/land_test.cc
     tests/game/relief_map_test.cc
+    tests/game/fingerposts_test.cc
     tests/game/walker_test.cc
     tests/game/figure_test.cc
     tests/game/frame_view_test.cc

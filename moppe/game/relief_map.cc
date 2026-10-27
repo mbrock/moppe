@@ -46,6 +46,8 @@ namespace moppe::game {
     constexpr Rgb road_casing_ink { 0.300f, 0.200f, 0.120f };
     constexpr Rgb road_ink { 0.985f, 0.800f, 0.380f };
     constexpr Rgb footpath_ink { 0.330f, 0.220f, 0.140f };
+    // Ways no longer used: grey-violet, apart from the brown contours.
+    constexpr Rgb old_way_ink { 0.380f, 0.320f, 0.460f };
     constexpr Rgb sanctuary_ink { 0.560f, 0.120f, 0.160f };
     constexpr Rgb sightline_ink { 0.850f, 0.420f, 0.150f };
     constexpr Rgb shadow_ink { 0.360f, 0.340f, 0.430f };
@@ -356,6 +358,8 @@ namespace moppe::game {
     Ink casing_layer (size);
     Ink road_layer (size);
     Ink footpath_layer (size);
+    Ink old_road_layer (size);
+    Ink old_footpath_layer (size);
     Ink sanctuary_layer (size);
     Ink sightline_layer (size);
     for (const terrain::Road& road : roads.roads) {
@@ -365,9 +369,32 @@ namespace moppe::game {
         const float az = road.points[i].z_m / metres_z;
         const float bx = road.points[i + 1].x_m / metres_x;
         const float bz = road.points[i + 1].z_m / metres_z;
-        if (road.kind == terrain::Road::Kind::Road) {
+        // A way no longer used is drawn in broken line, as maps show
+        // an old road gone back to the country.
+        const bool abandoned = road.abandoned_years_ago > 0.0f;
+        if (road.kind == terrain::Road::Kind::Road && abandoned) {
+          old_road_layer.stroke (ax,
+                                 az,
+                                 bx,
+                                 bz,
+                                 1.6f * pen,
+                                 1.6f * pen,
+                                 along,
+                                 8.0f * pen,
+                                 5.0f * pen);
+        } else if (road.kind == terrain::Road::Kind::Road) {
           casing_layer.stroke (ax, az, bx, bz, 4.2f * pen, 4.2f * pen);
           road_layer.stroke (ax, az, bx, bz, 2.6f * pen, 2.6f * pen);
+        } else if (abandoned) {
+          old_footpath_layer.stroke (ax,
+                                     az,
+                                     bx,
+                                     bz,
+                                     1.3f * pen,
+                                     1.3f * pen,
+                                     along,
+                                     6.0f * pen,
+                                     5.0f * pen);
         } else {
           footpath_layer.stroke (ax,
                                  az,
@@ -541,6 +568,9 @@ namespace moppe::game {
             color =
               mix (color, sightline_ink, 0.7f * sightline_layer.at (px, row));
             color = mix (color, footpath_ink, footpath_layer.at (px, row));
+            color =
+              mix (color, old_way_ink, 0.85f * old_footpath_layer.at (px, row));
+            color = mix (color, old_way_ink, old_road_layer.at (px, row));
             color = mix (color, road_casing_ink, casing_layer.at (px, row));
             color = mix (color, road_ink, road_layer.at (px, row));
             color = mix (color, trail_ink, trail_layer.at (px, row));

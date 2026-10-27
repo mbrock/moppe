@@ -168,7 +168,7 @@ namespace moppe {
         float alpha = 0.0f;
         float red = 1.0f, green = 1.0f, blue = 1.0f;
       };
-      std::array<Waymark, 8> waymarks {};
+      std::array<Waymark, 12> waymarks {};
       int waymark_count = 0;
       // The chart in the corner: the map sheet's picture (map_sheet.hh)
       // turned so that the way the camera looks is up, round the
@@ -189,12 +189,23 @@ namespace moppe {
         float daylight = 1.0f;
         // What else is on it.
         struct Pin {
-          enum class Kind { Companion, Bike, Machine, Camp, Trailhead };
+          enum class Kind {
+            Companion,
+            Bike,
+            Machine,
+            Camp,
+            Trailhead,
+            // Named places, shown only while on the chart, not on its
+            // rim.
+            Landing,
+            Outlet,
+            Sanctuary,
+          };
           Kind kind = Kind::Machine;
           float x_m = 0.0f, z_m = 0.0f;
           float red = 0.1f, green = 0.1f, blue = 0.1f;
         };
-        std::array<Pin, 10> pins {};
+        std::array<Pin, 40> pins {};
         int pin_count = 0;
       };
       Chart chart {};

@@ -17,7 +17,8 @@ namespace moppe::game {
   // with every fifth one heavier, water blue with its shoreline, the
   // rivers by their catchments, a kilometre grid, the trail in red
   // dashes, and the planned roads (roads.hh): cased roads, dotted
-  // footpaths, and the peak sanctuaries with the sightlines between them.
+  // footpaths, both broken and faint where no longer used, and the peak
+  // sanctuaries with the sightlines between them.
   // Heights count from the sea.
   struct ReliefMap {
     // A top that stands over everything around it, to be marked with its

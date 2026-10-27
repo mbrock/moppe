@@ -26,13 +26,27 @@ namespace moppe::game {
     // Something to find on the sheet. The first is the walker, whom the
     // near view keeps in the middle.
     struct Mark {
-      enum class Kind { Walker, Companion, Bike, Jeep, Camp, Trailhead };
+      enum class Kind {
+        Walker,
+        Companion,
+        Bike,
+        Jeep,
+        Camp,
+        Trailhead,
+        // The road network's places (roads.hh), drawn with their names.
+        Landing,
+        Outlet,
+        Sanctuary,
+      };
       Kind kind = Kind::Walker;
       Vec3 position;
       // The way it faces, for those drawn as arrows.
       Vec3 heading { 0.0f, 0.0f, 1.0f };
       DisplayColor colour { 0.1f, 0.1f, 0.1f };
       const char* name = "";
+      // A place on the map rather than a thing, named in the sheet's
+      // own lettering.
+      bool place = false;
     };
 
     View view () const noexcept {

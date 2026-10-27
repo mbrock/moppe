@@ -85,6 +85,13 @@ namespace moppe::game {
                 const std::string& words,
                 const TextStyle& set,
                 TextAlign align = TextAlign::Left) {
+      TextStyle glow = set;
+      glow.red = map_paper.red;
+      glow.green = map_paper.green;
+      glow.blue = map_paper.blue;
+      glow.alpha = 0.85f;
+      glow.softness = 5.0f;
+      font.draw (text, x, y, words, glow, align);
       font.draw (text, x, y, words, set, align);
     }
 
@@ -336,10 +343,36 @@ namespace moppe::game {
         dl.color (1.0f, 1.0f, 1.0f, 1.0f);
         disc (dl, x, y, 3.2f);
         break;
+      case Mark::Kind::Landing:
+        // An anchor's ring and stock, as charts mark a landing place.
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 6.2f);
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 4.8f);
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        dl.line (x, y - 3.2f, x, y + 3.0f, 1.1f);
+        dl.line (x - 2.4f, y - 1.6f, x + 2.4f, y - 1.6f, 1.1f);
+        dl.line (x - 2.6f, y + 1.6f, x, y + 3.0f, 1.0f);
+        dl.line (x + 2.6f, y + 1.6f, x, y + 3.0f, 1.0f);
+        break;
+      case Mark::Kind::Outlet:
+        // A mill wheel: a ring with spokes.
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 5.6f);
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 4.3f);
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 1.3f);
+        dl.line (x - 3.4f, y, x + 3.4f, y, 0.9f);
+        dl.line (x, y - 3.4f, x, y + 3.4f, 0.9f);
+        break;
+      case Mark::Kind::Sanctuary:
+        // The sheet already carries its triangle; a dot of fire in it.
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 2.4f);
+        break;
       }
       if (font && mark.name[0]) {
-        // Near the sheet's right edge a name goes to the mark's left.
-        const bool leftward = x > map_x + side - 80.0f;
         // Things that stand together have their names one under another.
         float line = y + 3.8f;
         for (bool moved = true; moved;) {
@@ -352,13 +385,25 @@ namespace moppe::game {
             }
         }
         named.emplace_back (x, line);
+        // Places are named in the water's blue, sanctuaries in their
+        // own ink.
+        const TextStyle words =
+          mark.place ? style (11.0f,
+                              mark.kind == Mark::Kind::Sanctuary
+                                ? mark.colour
+                                : DisplayColor (0.04f, 0.18f, 0.42f),
+                              0.04f)
+                     : style (10.5f, map_ink, 0.02f);
+        // Near the right edge the name goes to the mark's left.
+        const bool left =
+          x + 10.0f + font->measure (mark.name, words) > map_x + side - 4.0f;
         label (text,
                *font,
-               leftward ? x - 10.0f : x + 10.0f,
+               left ? x - 10.0f : x + 10.0f,
                line,
                mark.name,
-               style (10.5f, map_ink, 0.02f),
-               leftward ? TextAlign::Right : TextAlign::Left);
+               words,
+               left ? TextAlign::Right : TextAlign::Left);
       }
     }
 
