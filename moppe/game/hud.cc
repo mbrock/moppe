@@ -2140,7 +2140,7 @@ namespace moppe {
                                 int width_pts,
                                 int height_pts) {
       offer (ride_key, "Begin");
-      if (*ride_key && !m_host_offers)
+      if (*ride_key && !m_host_offers && !m_hidden)
         draw_prompt (text, ride_key, "Begin", alpha, width_pts, height_pts);
     }
 

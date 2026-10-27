@@ -3417,8 +3417,14 @@ namespace moppe {
         std::cerr << "moppe: world ready " << m_loading.status ().elapsed
                   << " s after loading began" << std::endl;
 
+        // A screenshot plays a shot list it names (MOPPE_OPENING=file),
+        // so that a still can be taken from any pose the grammar writes.
+        const char* list = moppe::environment ("MOPPE_OPENING");
+        const bool posed =
+          list && std::filesystem::is_regular_file (list) &&
+          !m_screenshot_path.empty ();
         const bool automated =
-          !m_screenshot_path.empty () || m_benchmark.has_value () ||
+          (!m_screenshot_path.empty () && !posed) || m_benchmark.has_value () ||
           m_water_shot.has_value () || m_gazetteer.has_value () ||
           moppe::environment ("MOPPE_DEMO") ||
           moppe::environment ("MOPPE_WALK");

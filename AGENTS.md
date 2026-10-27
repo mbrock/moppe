@@ -255,6 +255,14 @@
     the sea (`plan_river_flight` in `game/cinematic_flight.*`, low over
     open water and clear of the crowns where trees stand by it), and
     `MOPPE_OPENING=none` begins in play. `Space` skips.
+  - Posed stills: `--screenshot` skips the opening unless `MOPPE_OPENING`
+    names a shot list, which it then plays, so a list of one long `shot`
+    (`hold 60 sway 0`) is a still from any exact pose without walking or
+    flying there: `MOPPE_OPENING=/tmp/close.txt MOPPE_HUD=none
+    MOPPE_SCREENSHOT_FRAMES=12 ./build/moppe --windowed --window-size
+    1280x720 --render-scale 1 --screenshot /tmp/close.png`. The log's
+    `moppe: ... at` lines (and `MOPPE_START=fingerpost:N`'s) say where
+    things stand to aim at.
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
     the Trail 90 stays tethered beneath the wing. Press `E` again to drop it
