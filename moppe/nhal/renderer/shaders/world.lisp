@@ -526,6 +526,25 @@
          (d (hash12 (+ i (vec2 1.0 1.0)))))
     (mix (mix a b (swizzle u :x)) (mix c d (swizzle u :x)) (swizzle u :y))))
 
+;;; Value noise with its gradient, quintic-smoothed.
+(define-shader-function value-noise-gradient (p)
+  (let* ((i (floor p))
+         (f (fract p))
+         (u (* f f f (+ (* f (- (* f 6.0) (vec2 15.0 15.0)))
+                        (vec2 10.0 10.0))))
+         (du (* f f (+ (* f (- f (vec2 2.0 2.0))) (vec2 1.0 1.0)) 30.0))
+         (a (hash12 i))
+         (b (hash12 (+ i (vec2 1.0 0.0))))
+         (c (hash12 (+ i (vec2 0.0 1.0))))
+         (d (hash12 (+ i (vec2 1.0 1.0))))
+         (k1 (- b a))
+         (k2 (- c a))
+         (k3 (+ (- a b c) d)))
+    (vec3 (+ a (* k1 (swizzle u :x)) (* k2 (swizzle u :y))
+             (* k3 (swizzle u :x) (swizzle u :y)))
+          (* (swizzle du :x) (+ k1 (* k3 (swizzle u :y))))
+          (* (swizzle du :y) (+ k2 (* k3 (swizzle u :x)))))))
+
 ;;; A material boundary cut from a coarse field: a narrow blend, never
 ;;; narrower than a pixel of the field's own rate of change.
 (define-shader-function band (value threshold)
@@ -638,6 +657,22 @@
                                              (* 0.4 (- grain 0.5))))))))
     (mix foliage flowers (* (mix 0.30 0.60 bloom)
                             (smoothstep 0.35 0.65 grain)))))
+
+;;; A heath is a mosaic of ages (Watt's heather cycle): a young stand, a
+;;; few years since fire or grazing opened it, is low and flowers latest,
+;;; still mauve at the equinox; a mature one stands in full domes; an old
+;;; one has opened out, its domes hollow round a grey woody heart.  The
+;;; age at XZ, 0 young to 1 old, in stands some fifteen metres across.
+(define-shader-function ling-age (xz)
+  (value-noise (+ (* xz 0.065) (vec2 31.7 5.3))))
+
+;;; How much of a ling cushion stands at XZ, from its crown's noise
+;;; NOISE (0 to 1) and the stand's AGE: domes, a gap between them, and
+;;; in an old stand the crown fallen open.
+(define-shader-function ling-cushion (noise age)
+  (* (smoothstep 0.30 0.75 noise)
+     (- 1.0 (* 0.85 (smoothstep 0.70 0.85 age)
+               (smoothstep 0.80 0.93 noise)))))
 
 ;;; How much of its flowering ling still has at RISE of the land's relief:
 ;;; the high heath is long over, the low still has some colour; DRIFT moves
@@ -779,8 +814,28 @@
                                   (max (+ (abs (derivative-x shrub))
                                           (abs (derivative-y shrub)))
                                        0.04)))
-         ;; Where it is the heather itself that holds the heath, ling.
-         (ling (ling-colour (ling-bloom rise drift) fleck grain))
+         ;; Where it is the heather itself that holds the heath, ling:
+         ;; its cushions, as the sprigs stand in them, and in the gaps
+         ;; between them crimson bilberry, cream lichen, black crowberry,
+         ;; and bare peat.
+         (ling-crown (swizzle (value-noise-gradient
+                               (* (swizzle world :xz) 1.35))
+                              :x))
+         (ling-old (ling-age (swizzle world :xz)))
+         (ling-young (- 1.0 (smoothstep 0.25 0.40 ling-old)))
+         (ling-cover (band (ling-cushion ling-crown ling-old) 0.30))
+         (ling-gap (mix (mix (mix (vec3 0.15 0.11 0.08) (vec3 0.12 0.16 0.08)
+                                  (smoothstep 0.45 0.55 grain))
+                             (vec3 0.44 0.14 0.10)
+                             (smoothstep 0.55 0.70 fleck))
+                        (vec3 0.74 0.73 0.60)
+                        (smoothstep 0.90 0.96 (+ fleck (* 0.3 grain)))))
+         (ling (mix ling-gap
+                    (ling-colour (clamp (+ (ling-bloom rise drift)
+                                           (* 0.5 ling-young))
+                                        0.0 1.0)
+                                 fleck grain)
+                    (mix 0.55 1.0 ling-cover)))
          (heather (mix heath-mix ling
                        (* 0.85 (smoothstep 0.20 0.50 heather-share))))
          ;; Ruska: the fjäll's bilberry goes crimson and its dwarf birch
@@ -3200,7 +3255,10 @@
          (ling (and (not flower)
                     (< (plant-hash identity (uint 7))
                        (grass-medium-heather medium))))
-         (cushion (smoothstep 0.30 0.75 (value-noise (* root-xz 1.35))))
+         (crown (value-noise-gradient (* root-xz 1.35)))
+         (ling-old (ling-age root-xz))
+         (ling-young (- 1.0 (smoothstep 0.25 0.40 ling-old)))
+         (cushion (ling-cushion (swizzle crown :x) ling-old))
          (bloom-rise (/ (- height (swizzle relief :x))
                         (max (swizzle relief :y) 1.0)))
          (head-pixels (feature-pixels (* 2.0 (flower-drift-head drift))
@@ -3233,14 +3291,25 @@
          (sideways (normalize (+ (cross3 up (vec3 0.0 0.0 1.0))
                                  (vec3 0.001 0.0 0.0))))
          (along (normalize (cross3 sideways up)))
-         (out (normalize (+ (* sideways (cos turn)) (* along (sin turn)))))
+         (any-way (normalize (+ (* sideways (cos turn)) (* along (sin turn)))))
+         ;; A ling shoot splays out from its cushion's crown, so the dome
+         ;; is a fan of shoots, steepest at the rim.
+         (downhill (vec3 (* -1.0 (swizzle crown :y)) 0.0
+                         (* -1.0 (swizzle crown :z))))
+         (fall (sqrt (dot downhill downhill)))
+         (out (if ling
+                  (normalize (+ any-way
+                                (* (/ downhill (max fall 0.001)) 0.7
+                                   (smoothstep 0.05 0.40 fall))))
+                  any-way))
          (spread (+ 0.80 (* 0.45 (plant-hash identity (uint 11)))))
          (blade-tint (grass-medium-blade-tint medium))
          ;; A flower stem stands relative to the sward; once the sward has
          ;; retired it crouches with it, and it never goes thinner than
          ;; the head it carries can be seen.
          (blade-reach (* scale (if flower 0.07
-                                   (if ling (* 0.06 spread)
+                                   (if ling (* 0.15 spread
+                                               (- 1.25 cushion))
                                        (* 0.16 spread)))))
          (climb (if flower
                     (* scale (flower-drift-stem drift)
@@ -3248,6 +3317,8 @@
                        (mix 0.30 1.0 resolved))
                     (if ling
                         (* scale 0.46 (+ 0.25 (* 0.75 cushion))
+                           ;; A young stand is low.
+                           (- 1.0 (* 0.40 ling-young))
                            ;; Clipped low by the wind on the fjäll.
                            (- 1.0 (* 0.45 (smoothstep 0.45 0.80 bloom-rise)))
                            (+ 0.85 (* 0.30 (plant-hash identity (uint 12)))))
@@ -3259,7 +3330,7 @@
                                                           focal distance)
                                           0.05))
                               1.0 3.5))
-                    (* scale (if ling 0.055 0.018))))
+                    (* scale (if ling 0.042 0.018))))
          (lift (if (or flower ling) 1.0 1.22))
          (arch (if flower 0.0 (if ling 0.06 0.20)))
          ;; The head keeps its species colour while it spans pixels a
@@ -3288,10 +3359,15 @@
          (tint (if flower own (mix ensemble own resolved)))
          ;; A sprig of ling: foliage below, its spike above, each sprig's
          ;; flowers faded, rusted, or gone over by its own lot.
-         (bloom (ling-bloom bloom-rise 0.5))
-         (ling-leaf (srgb (mix (vec3 0.23 0.26 0.14) (vec3 0.34 0.28 0.18)
-                               (plant-hash identity (uint 31)))))
-         (ling-spike (srgb (mix (mix (vec3 0.50 0.30 0.48)
+         (bloom (clamp (+ (ling-bloom bloom-rise 0.5) (* 0.5 ling-young))
+                       0.0 1.0))
+         ;; An old stand's wood shows grey through its thinning foliage.
+         (ling-leaf (srgb (mix (mix (vec3 0.28 0.31 0.17)
+                                    (vec3 0.40 0.33 0.21)
+                                    (plant-hash identity (uint 31)))
+                               (vec3 0.40 0.38 0.35)
+                               (* 0.6 (smoothstep 0.70 0.85 ling-old)))))
+         (ling-spike (srgb (mix (mix (vec3 0.58 0.40 0.54)
                                      (vec3 0.43 0.27 0.24)
                                      (smoothstep 0.65 0.95
                                                  (plant-hash identity
@@ -3338,8 +3414,10 @@
                     stalk))
          (half-width (if in-head (* head (if lower-edge 0.98 0.80))
                          (if (and (not flower) (not ling) (>= t0 0.999)) 0.0
-                             (* width (+ 0.72 (* 0.28 (sin (* 3.1415927
-                                                             t0))))))))
+                             ;; A ling shoot tapers to its spike.
+                             (* width (if ling (- 1.0 (* 0.45 t0 t0))
+                                          (+ 0.72 (* 0.28 (sin (* 3.1415927
+                                                                  t0)))))))))
          (side (normalize (cross3 out up)))
          (face (if in-head facing
                    (normalize (+ up (* out (* 0.55 rise))
@@ -3369,7 +3447,7 @@
                            (if ling
                                (mix blade-tint
                                     (mix ling-leaf ling-spike
-                                         (smoothstep 0.45 0.90 t0))
+                                         (smoothstep 0.55 1.0 t0))
                                     resolved)
                                tint)))
          (alive (and (< shoot shoots) (> presence 0.001)))
@@ -3382,7 +3460,9 @@
     (set-output albedo (srgb (* section-tint (+ 0.58 (* 0.66 light)))))
     (set-output exposure light)
     (set-output shade canopy)
-    (set-output petals petal)
+    ;; A ling spike glows against the sun in its own colour, as a petal
+    ;; does, not green as a blade does.
+    (set-output petals (if ling (* 0.8 (smoothstep 0.55 1.0 t0)) petal))
     (set-output blade (if flower 0.0 1.0))
     (set-output here here-clip)
     (set-output then (* previous-view-proj (vec4 previous 1.0)))))
@@ -3652,25 +3732,6 @@
     (set-output density-fraction weight)
     (set-output here here-clip)
     (set-output then (* previous-view-proj (vec4 previous 1.0)))))
-
-;;; Value noise with its gradient, quintic-smoothed.
-(define-shader-function value-noise-gradient (p)
-  (let* ((i (floor p))
-         (f (fract p))
-         (u (* f f f (+ (* f (- (* f 6.0) (vec2 15.0 15.0)))
-                        (vec2 10.0 10.0))))
-         (du (* f f (+ (* f (- f (vec2 2.0 2.0))) (vec2 1.0 1.0)) 30.0))
-         (a (hash12 i))
-         (b (hash12 (+ i (vec2 1.0 0.0))))
-         (c (hash12 (+ i (vec2 0.0 1.0))))
-         (d (hash12 (+ i (vec2 1.0 1.0))))
-         (k1 (- b a))
-         (k2 (- c a))
-         (k3 (+ (- a b c) d)))
-    (vec3 (+ a (* k1 (swizzle u :x)) (* k2 (swizzle u :y))
-             (* k3 (swizzle u :x) (swizzle u :y)))
-          (* (swizzle du :x) (+ k1 (* k3 (swizzle u :y))))
-          (* (swizzle du :y) (+ k2 (* k3 (swizzle u :x)))))))
 
 ;;; The mean projected leaf area along a ray through a clump, its grazing
 ;;; path capped by the clump's finite width.
