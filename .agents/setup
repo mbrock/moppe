@@ -109,15 +109,18 @@ fi
 # (an older version of this setup exported libc++ ones) would break it.
 echo "unset CFLAGS CXXFLAGS LDFLAGS"
 cat "\$cache/\$key.sh"
-if [[ ! -s \$cache/mesa ]]; then
+# Refresh the driver with the shell when its Nix recipe changes.
+if [[ ! -s \$cache/\$key.mesa ]]; then
   printf 'Realizing Mesa lavapipe...\n' >&2
   nix build --out-link "\$cache/mesa-root" --print-out-paths \\
-    --inputs-from "\$root" nixpkgs#mesa > "\$cache/mesa"
+    --inputs-from "\$root" nixpkgs#mesa > "\$cache/\$key.mesa.tmp"
+  find "\$cache" -name '*.mesa' -delete
+  mv "\$cache/\$key.mesa.tmp" "\$cache/\$key.mesa"
 fi
 cat <<EOS
 if ! compgen -G '/dev/dri/renderD*' >/dev/null &&
    [[ -z \\\${VK_DRIVER_FILES:-}\\\${VK_ICD_FILENAMES:-} ]]; then
-  export VK_DRIVER_FILES=\$(cat "\$cache/mesa")/share/vulkan/icd.d/lvp_icd.x86_64.json
+  export VK_DRIVER_FILES=\$(cat "\$cache/\$key.mesa")/share/vulkan/icd.d/lvp_icd.x86_64.json
 fi
 export SDL_VIDEO_DRIVER=\\\${SDL_VIDEO_DRIVER:-wayland,x11,offscreen}
 EOS
@@ -207,7 +210,10 @@ step "Configure the native build"
 done_step
 
 step "The default world's land"
-"$repo_root/tools/fetch-land" >/dev/null || true
+# Optional prefetch: a slow release host must not hold up the toolchains.
+if ! timeout 60 "$repo_root/tools/fetch-land" >/dev/null; then
+  echo "Default land unavailable; the game can generate it on first launch." >&2
+fi
 done_step
 
 step "Orb agent guidance"
