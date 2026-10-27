@@ -1175,14 +1175,101 @@ namespace moppe {
         return { heading, Vec3 (heading[2], 0, -heading[0]) };
       }
 
-      // The jeep waits a stone's throw off the bike's left, back from the
-      // trail, turned a little away as if pulled off it.
+      // Where a point unwrapped across the world's seam stands in the lap
+      // nearest the spawn.
+      Vec3 near_spawn (Vec3 at) const {
+        const float px =
+          surface ().domain ().period_x ().numerical_value_in (u::m);
+        const float pz =
+          surface ().domain ().period_z ().numerical_value_in (u::m);
+        at[0] -= px * std::round ((at[0] - m_spawn_position[0]) / px);
+        at[2] -= pz * std::round ((at[2] - m_spawn_position[2]) / pz);
+        at[1] = ground_height (at);
+        return at;
+      }
+
+      // Whether a machine `room` metres round at `at` keeps clear of the
+      // machines already parked there.
+      bool clear_of_machines (const Vec3& at, float room) const {
+        for (const Vec3& other : { session ().jeep ().position (),
+                                   session ().long_john ().position (),
+                                   session ().mountain_bike ().position () })
+          if (length2 (Vec3 (other[0] - at[0], 0.0f, other[2] - at[2])) <
+              (room + 3.0f) * (room + 3.0f))
+            return false;
+        return true;
+      }
+
+      float from_spawn (const Vec3& at) const {
+        return length (Vec3 (
+          at[0] - m_spawn_position[0], 0.0f, at[2] - m_spawn_position[2]));
+      }
+
+      void report_parked (const char* name, const Vec3& at, const char* where) {
+        std::cerr << "moppe: " << name << " parked "
+                  << std::lround (from_spawn (at)) << " m from the spawn, "
+                  << where << ", at " << std::lround (at[0]) << ", "
+                  << std::lround (ground_height (at)) << ", "
+                  << std::lround (at[2]) << std::endl;
+      }
+
+      // The jeep is pulled off onto the verge of the nearest cart road, a
+      // few hundred metres out from the trailhead, nose along the road as
+      // if left there for the walk in; beside the bike when no road comes
+      // near enough.
       void park_jeep () {
         const auto [heading, side] = bike_frame ();
+        std::optional<std::pair<Vec3, Vec3>> best;
+        float best_score = 1e30f;
+        for (const terrain::Road& road : generated_world ().roads ().roads) {
+          if (road.kind != terrain::Road::Kind::Road)
+            continue;
+          for (std::size_t p = 1; p + 1 < road.points.size (); p += 2) {
+            const Vec3 a = near_spawn (
+              Vec3 (road.points[p - 1].x_m, 0.0f, road.points[p - 1].z_m));
+            const Vec3 b = near_spawn (
+              Vec3 (road.points[p + 1].x_m, 0.0f, road.points[p + 1].z_m));
+            Vec3 along (b[0] - a[0], 0.0f, b[2] - a[2]);
+            if (length2 (along) < 1e-4f)
+              continue;
+            along = normalized (along);
+            const Vec3 mid =
+              near_spawn (Vec3 (road.points[p].x_m, 0.0f, road.points[p].z_m));
+            const float r = from_spawn (mid);
+            if (r < 150.0f || r > 1200.0f)
+              continue;
+            // Nearest the trailhead wins, a road still in use before one
+            // gone over.
+            const float score =
+              std::abs (r - 300.0f) +
+              (road.abandoned_years_ago > 0.0f ? 600.0f : 0.0f);
+            if (score >= best_score)
+              continue;
+            const Vec3 across (along[2], 0.0f, -along[0]);
+            for (const float offset : { 9.0f, -9.0f, 12.0f, -12.0f }) {
+              const Vec3 at = mid + across * offset;
+              if (!open_ground (at, 2.6f, 0.9f))
+                continue;
+              best_score = score;
+              best = {
+                at, normalized (along + across * (offset > 0 ? 0.25f : -0.25f))
+              };
+              break;
+            }
+          }
+        }
+        if (best) {
+          const Vec3 at =
+            open_ground_near (best->first + m_park_aside, 2.6f, 0.9f, 12.0f);
+          session ().jeep ().place (at, best->second);
+          report_parked ("jeep", at, "beside a road");
+          return;
+        }
         const Vec3 at = open_ground_near (
           session ().bike ().position () + side * 11.0f - heading * 4.0f,
           2.6f, 0.7f);
         session ().jeep ().place (at, normalized (heading + side * 0.35f));
+        report_parked ("jeep", at, "beside the bike (no road near)");
       }
 
       // The tractor stands out on the open ground ahead on the bike's
@@ -1199,67 +1286,188 @@ namespace moppe {
 
       // The Caddy is parked by the sea, on the nearest level, open ground
       // above the shore the boat was left at, nose to the water as if its
-      // driver had stood looking out; with no boat, behind the jeep.
+      // driver had stood looking out; with no boat, at the trailhead.
       void park_caddy () {
         // Off the helicopter's line.
         logic ().m_sling = {};
         session ().caddy ().set_trunks (&m_trunk_field);
         const float water = world ().water_level.numerical_value_in (u::m);
         if (m_mooring) {
-          const Vec3 shore = *m_mooring;
-          for (float r = 12.0f; r <= 90.0f; r += 2.0f) {
-            const int around = static_cast<int> (6.2831853f * r / 2.0f);
-            for (int k = 0; k < around; ++k) {
-              const float a = 6.2831853f * k / around;
-              const Vec3 at =
-                shore + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
-              if (ground_height (at) < water + 1.0f ||
-                  !open_ground (at, 3.2f, 0.45f))
-                continue;
-              const Vec3 to_sea = normalized (
-                Vec3 (shore[0] - at[0], 0.0f, shore[2] - at[2]));
-              session ().caddy ().place (at, to_sea);
-              std::cerr << "moppe: Caddy parked " << r
-                        << " m up from the boat's shore" << std::endl;
-              return;
+          // Level ground near the shore first; failing that, out to a few
+          // hundred metres along the coast, on ground a little less level.
+          const Vec3 shore = *m_mooring + m_park_aside;
+          for (const auto [reach, relief] :
+               { std::pair (90.0f, 0.45f), std::pair (320.0f, 0.8f) })
+            for (float r = 12.0f; r <= reach; r += 2.0f) {
+              const int around = static_cast<int> (6.2831853f * r / 2.0f);
+              for (int k = 0; k < around; ++k) {
+                const float a = 6.2831853f * k / around;
+                const Vec3 at =
+                  shore + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
+                if (ground_height (at) < water + 1.0f ||
+                    !open_ground (at, 3.2f, relief) ||
+                    !clear_of_machines (at, 3.2f))
+                  continue;
+                const Vec3 to_sea =
+                  normalized (Vec3 (shore[0] - at[0], 0.0f, shore[2] - at[2]));
+                session ().caddy ().place (at, to_sea);
+                report_parked ("Caddy", at, "up from the boat's shore");
+                return;
+              }
             }
-          }
         }
         const auto [heading, side] = bike_frame ();
-        const Vec3 at = open_ground_near (session ().jeep ().position () -
-                                            heading * 7.0f,
-                                          3.2f, 0.6f);
+        const Vec3 at = open_ground_near (session ().bike ().position () +
+                                            side * 11.0f - heading * 11.0f,
+                                          3.2f,
+                                          0.6f);
         session ().caddy ().place (at, normalized (heading - side * 0.12f));
+        report_parked ("Caddy", at, "at the trailhead (no shore found)");
       }
 
-      // The mountainbike stands on its own a few steps off the motocross's
-      // other side, a little behind it.
+      // The mountainbike is left at the top of the trail's nearest climb,
+      // the highest point of it within a kilometre or so, off the tread and
+      // facing back down the way it came up, ready for the descent; a few
+      // steps off the motocross when the trail does not climb.
       void park_mountain_bike () {
         const auto [heading, side] = bike_frame ();
+        const auto& points = trail_network ().alignment.points;
+        const float start = ground_height (m_spawn_position);
+        std::optional<std::pair<Vec3, Vec3>> top;
+        float best = start + 15.0f;
+        for (std::size_t p = 0; p + 1 < points.size (); ++p) {
+          const Vec3 at =
+            near_spawn (Vec3 (points[p].x_m, 0.0f, points[p].z_m));
+          const float r = from_spawn (at);
+          if (r < 120.0f || r > 1000.0f)
+            continue;
+          // Higher is better, but not at the price of a long walk.
+          const float score = at[1] - 0.03f * r;
+          if (score <= best)
+            continue;
+          const Vec3 next =
+            near_spawn (Vec3 (points[p + 1].x_m, 0.0f, points[p + 1].z_m));
+          Vec3 along (next[0] - at[0], 0.0f, next[2] - at[2]);
+          if (length2 (along) < 1e-4f)
+            continue;
+          along = normalized (along);
+          const Vec3 across (along[2], 0.0f, -along[0]);
+          // Down the way the trail falls from here.
+          const Vec3 down = next[1] < at[1] ? along : -along;
+          for (const float offset : { 3.0f, -3.0f, 4.5f, -4.5f }) {
+            const Vec3 stand = at + across * offset;
+            if (!open_ground (stand, 1.0f, 0.5f))
+              continue;
+            best = score;
+            top = { stand, normalized (down + across * 0.3f) };
+            break;
+          }
+        }
+        // Without a climb on the trail, a lookout: the highest open ground
+        // within a walk, facing back down toward the trailhead.
+        const char* where = "at the top of the trail's climb";
+        if (!top) {
+          float highest = start + 8.0f;
+          for (float r = 150.0f; r <= 700.0f; r += 25.0f)
+            for (int k = 0; k < 32; ++k) {
+              const float a = 6.2831853f * k / 32.0f;
+              Vec3 at =
+                m_spawn_position + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
+              at[1] = ground_height (at);
+              if (at[1] - 0.03f * r <= highest || !open_ground (at, 1.0f, 0.5f))
+                continue;
+              highest = at[1] - 0.03f * r;
+              const Vec3 home = normalized (Vec3 (m_spawn_position[0] - at[0],
+                                                  0.0f,
+                                                  m_spawn_position[2] - at[2]));
+              top = { at, home };
+              where = "at a lookout above the trailhead";
+            }
+        }
+        mov::Vehicle& mtb = session ().mountain_bike ();
+        mtb.set_trunks (&m_trunk_field);
+        if (top) {
+          Vec3 at =
+            open_ground_near (top->first + m_park_aside, 1.0f, 0.5f, 8.0f);
+          report_parked ("mountainbike", at, where);
+          at[1] =
+            ground_height (at) + mov::mountain_bike_rig.ride_height () + 0.02f;
+          mtb.set_heading (top->second);
+          mtb.reset (at);
+          return;
+        }
         Vec3 at = open_ground_near (
           session ().bike ().position () - side * 5.5f - heading * 3.5f, 1.0f,
           0.4f, 12.0f);
-        at[1] = ground_height (at) + mov::mountain_bike_rig.ride_height () +
-                0.02f;
-        mov::Vehicle& mtb = session ().mountain_bike ();
-        mtb.set_trunks (&m_trunk_field);
+        at[1] =
+          ground_height (at) + mov::mountain_bike_rig.ride_height () + 0.02f;
         mtb.set_heading (normalized (heading + side * 0.2f));
+        report_parked (
+          "mountainbike", at, "beside the bike (the trail does not climb)");
         mtb.reset (at);
       }
 
-      // The Long John is left back down the trail behind the motocross,
-      // on open ground off to its side, pointing on along the trail as if
-      // its rider had walked on ahead.
+      // The Long John, a cargo bike for errands, stands outside the nearest
+      // farmhouse still lived in, or else at the nearest hamlet the roads
+      // join -- a lake's outlet or the landing -- pointed home
+      // toward the trailhead; back down the trail behind the motocross when
+      // none is near.
       void park_long_john () {
         const auto [heading, side] = bike_frame ();
+        mov::Vehicle& lj = session ().long_john ();
+        lj.set_trunks (&m_trunk_field);
+        std::optional<Vec3> hamlet;
+        const char* where = "in the nearest hamlet";
+        // Best of all outside the door of a farmhouse still lived in.
+        for (const Farm& farm : m_places.farms) {
+          if (!farm.kept || farm.ruined)
+            continue;
+          for (const Building& building : farm.buildings) {
+            if (building.kind != Building::Kind::house)
+              continue;
+            const Vec3 door =
+              near_spawn (building.at + building.forward * 6.0f);
+            const float r = from_spawn (door);
+            if (r > 3000.0f || (hamlet && r >= from_spawn (*hamlet)))
+              continue;
+            hamlet = door;
+            where = "outside a farmhouse";
+          }
+        }
+        for (const terrain::RoadPlace& place :
+             generated_world ().roads ().places) {
+          if (hamlet && std::string_view (where) == "outside a farmhouse")
+            break;
+          using Kind = terrain::RoadPlace::Kind;
+          if (place.kind != Kind::LakeOutlet && place.kind != Kind::Landing)
+            continue;
+          const Vec3 at = near_spawn (Vec3 (place.x_m, 0.0f, place.z_m));
+          const float r = from_spawn (at);
+          if (r > 3000.0f || (hamlet && r >= from_spawn (*hamlet)))
+            continue;
+          hamlet = at;
+        }
+        if (hamlet) {
+          Vec3 at =
+            open_ground_near (*hamlet + m_park_aside, 1.8f, 0.4f, 60.0f);
+          if (open_ground (at, 1.8f, 0.4f)) {
+            report_parked ("Long John", at, where);
+            const Vec3 home = Vec3 (
+              m_spawn_position[0] - at[0], 0.0f, m_spawn_position[2] - at[2]);
+            at[1] =
+              ground_height (at) + mov::long_john_rig.ride_height () + 0.02f;
+            lj.set_heading (length2 (home) > 1e-4f ? normalized (home)
+                                                   : heading);
+            lj.reset (at);
+            return;
+          }
+        }
         Vec3 at = open_ground_near (session ().bike ().position () -
                                       heading * 24.0f + side * 4.0f,
                                     1.8f, 0.3f, 20.0f);
-        at[1] =
-          ground_height (at) + mov::long_john_rig.ride_height () + 0.02f;
-        mov::Vehicle& lj = session ().long_john ();
-        lj.set_trunks (&m_trunk_field);
+        at[1] = ground_height (at) + mov::long_john_rig.ride_height () + 0.02f;
         lj.set_heading (normalized (heading - side * 0.15f));
+        report_parked ("Long John", at, "down the trail (no hamlet near)");
         lj.reset (at);
       }
 
@@ -3359,6 +3567,8 @@ namespace moppe {
         place[1] = ground_height (place) + 1.2f;
         bike.reset (place);
         bike.set_heading (heading);
+        m_park_aside = place - m_spawn_position;
+        m_park_aside[1] = 0.0f;
         m_spawn_position = place;
         park_jeep ();
         park_tractor ();
@@ -6427,6 +6637,10 @@ namespace moppe {
       Vec3 m_spawn_position;
       // The shore the boat was left at, when it was.
       std::optional<Vec3> m_mooring;
+      // How far aside the later of two players parks the machines that
+      // stand at places in the world, so that theirs and ours do not
+      // stand in one another.
+      Vec3 m_park_aside {};
       // MOPPE_BOAT=river: the river's course down to the sea, which the
       // boat autopilot follows, and the next point of it ahead.
       std::vector<Vec3> m_boat_route;

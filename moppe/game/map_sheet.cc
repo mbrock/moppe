@@ -337,7 +337,9 @@ namespace moppe::game {
         disc (dl, x, y, 3.2f);
         break;
       }
-      if (font && mark.name[0] && x < map_x + side - 50.0f) {
+      if (font && mark.name[0]) {
+        // Near the sheet's right edge a name goes to the mark's left.
+        const bool leftward = x > map_x + side - 80.0f;
         // Things that stand together have their names one under another.
         float line = y + 3.8f;
         for (bool moved = true; moved;) {
@@ -352,10 +354,11 @@ namespace moppe::game {
         named.emplace_back (x, line);
         label (text,
                *font,
-               x + 10.0f,
+               leftward ? x - 10.0f : x + 10.0f,
                line,
                mark.name,
-               style (10.5f, map_ink, 0.02f));
+               style (10.5f, map_ink, 0.02f),
+               leftward ? TextAlign::Right : TextAlign::Left);
       }
     }
 

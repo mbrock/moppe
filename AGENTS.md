@@ -362,7 +362,8 @@
     `tools/figure/caddy.py`, drawn by `game/caddy_render.*`) is a
     first-series VW Caddy pickup under a fibreglass hardtop on Swedish
     plates, parked by the sea on level ground above the shore the boat
-    lies at (`park_caddy` in game.cc). On foot, `F` beside it drives it and
+    lies at, clear of the other machines (`park_caddy` in game.cc; the
+    log line `moppe: Caddy parked` says where). On foot, `F` beside it drives it and
     `F` steps out of the driver's door; `W`/`S`, `A`/`D`, and `Space` as
     in the jeep. It is a Box3D assemblage like the jeep but a road car:
     front-wheel drive, soft springs, some 140 km/h flat out (its wheels
@@ -387,9 +388,11 @@
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
     ahead of the bike, the glider, or the driven jeep, tractor, or Caddy.
   - The jeep (`moppe/mov/jeep.*`, `models/jeep.blend` from
-    `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits a
-    stone's throw off the bike's left, on open ground (the machines at the
-    trailhead each find a clear spot, `open_ground_near` in game.cc). On foot, `F` beside it drives it (nearer it
+    `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits on a
+    verge beside the nearest cart road some 300 m from the trailhead,
+    facing along it (`park_jeep`; beside the bike where no road is near).
+    Only the Trail 90 and the tractor stand at the trailhead; each other
+    machine has a place of its own, logged as `moppe: ... parked`. On foot, `F` beside it drives it (nearer it
     than the bike; the prompt says which) and `F` again steps out; `W`/`S`
     drive and reverse, `A`/`D` steer, `Space` brakes, `Tab` cycles the
     view. It is life size and seats two: in multiplayer, `F` beside the
@@ -405,7 +408,8 @@
   - The mountainbike (`models/mountain_bike.blend` from
     `tools/figure/mountain_bike.py`, drawn by `game/mountain_bike_render.*`)
     is a classic early-nineties hardtail in deep green and cream at life
-    size, standing a few steps off the Trail 90's other side. On foot, `F`
+    size, left at the top of the trail's climb facing down it, or at the
+    highest lookout near the trailhead (`park_mountain_bike`). On foot, `F`
     beside it rides it and `F` gets off; `W` pedals (the crank turns at a
     cadence through the gears, still while freewheeling), `S` brakes,
     `A`/`D` steer, and `Space` bunny-hops. It is the rigid bike's
@@ -421,8 +425,9 @@
     box and hoop, a 20-inch front wheel 1.894 m ahead, cable steering,
     38/18 single speed. Its geometry comes from
     `tools/figure/long_john_source.py`, the procedural twin solved from
-    his photos, run without weld beads or chain links. It is left a little
-    back down the trail; `F` by its saddle rides it, `W` pedals (with its
+    his photos, run without weld beads or chain links. It stands outside
+    the nearest farmhouse (`m_places`), or at a lake outlet or the
+    landing, within 3 km (`park_long_john`); `F` by its saddle rides it, `W` pedals (with its
     hub motor's help, some 25 km/h), `S` brakes, `Shift` skids. It rides
     on `mov::long_john_rig` (`BikeRig::front_wheel_radius` gives it its
     small front wheel), as `M_LONG_JOHN`; `MOPPE_DEMO=long_john`
