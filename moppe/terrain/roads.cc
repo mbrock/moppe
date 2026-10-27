@@ -10,7 +10,6 @@
 #include <limits>
 #include <numbers>
 #include <queue>
-#include <unordered_map>
 
 namespace moppe::terrain {
   namespace {
@@ -1141,15 +1140,20 @@ namespace moppe::terrain {
     // (footpaths counted twice as long, being slower).
     for (RoadPlace& place : planner.network.places)
       roll_history (place, node_at (lattice, place.x_m, place.z_m), seed);
-    std::unordered_map<std::uint64_t, std::size_t> marker;
-    for (std::size_t road = 0; road < planner.road_nodes.size (); ++road) {
-      const std::vector<std::size_t>& nodes = planner.road_nodes[road];
-      const std::size_t k = (nodes.size () - 1) / 2;
-      const std::uint64_t a = nodes[k];
-      const std::uint64_t b = nodes[k + 1];
-      marker[a * lattice.size () + b] = road;
-      marker[b * lattice.size () + a] = road;
-    }
+    // A journey goes along a way when it passes through a node only that
+    // way holds. The search may step across from node to node of the
+    // network by any of its steps, so no single edge of a way need lie on
+    // a journey along it, but the nodes it holds alone do.
+    constexpr std::uint32_t shared = std::numeric_limits<std::uint32_t>::max ();
+    constexpr std::uint32_t unheld = shared - 1;
+    std::vector<std::uint32_t> holder (lattice.size (), unheld);
+    for (std::size_t road = 0; road < planner.road_nodes.size (); ++road)
+      for (const std::size_t node : planner.road_nodes[road]) {
+        std::uint32_t& held = holder[node];
+        held = held == unheld || held == road
+                 ? static_cast<std::uint32_t> (road)
+                 : shared;
+      }
     std::vector<RoadPlace>& places = planner.network.places;
     std::vector<Road>& roads = planner.network.roads;
     std::vector<bool> lived_on (roads.size (), false);
@@ -1193,17 +1197,18 @@ namespace moppe::terrain {
         const float ended = std::max (places[i].abandoned_years_ago,
                                       places[j].abandoned_years_ago);
         const std::vector<std::size_t> path = trace (along, to);
-        for (std::size_t step = 1; step < path.size (); ++step) {
-          const auto found = marker.find (
-            static_cast<std::uint64_t> (path[step - 1]) * lattice.size () +
-            path[step]);
-          if (found == marker.end ())
+        std::vector<bool> taken (roads.size (), false);
+        for (const std::size_t node : path)
+          if (holder[node] < roads.size ())
+            taken[holder[node]] = true;
+        for (std::size_t r = 0; r < roads.size (); ++r) {
+          if (!taken[r])
             continue;
-          Road& road = roads[found->second];
+          Road& road = roads[r];
           ++road.traffic;
           road.age_years = std::max (road.age_years, since);
-          lived_on[found->second] = lived_on[found->second] || alive;
-          last_used[found->second] = std::min (last_used[found->second], ended);
+          lived_on[r] = lived_on[r] || alive;
+          last_used[r] = std::min (last_used[r], ended);
         }
       }
     }
