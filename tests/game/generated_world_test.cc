@@ -4,6 +4,7 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <sstream>
@@ -175,12 +176,17 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
                summary.largest_connected_below_10_deg_m2);
   MOPPE_CHECK (summary.river_graph_junctions <= summary.river_reaches);
   MOPPE_CHECK (summary.dry_confluence_cells <= summary.river_graph_junctions);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (summary.eroded_sediment_m3), 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (summary.deposited_sediment_m3), 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (summary.mobile_sediment_m3), 0.0f, 0.0f);
+  // The fast profile erodes nothing: what is cut and laid down is the
+  // roads' earthwork, and only where a road was built.
+  const bool built =
+    std::ranges::any_of (world->roads ().roads, [] (const terrain::Road& road) {
+      return road.kind == terrain::Road::Kind::Road;
+    });
+  MOPPE_CHECK ((summary.eroded_sediment_m3 > 0.0) == built);
+  // An embankment is the only loose cover there is: made ground.
+  MOPPE_CHECK_NEAR (static_cast<float> (summary.mobile_sediment_m3),
+                    static_cast<float> (summary.deposited_sediment_m3),
+                    1.0f);
 
   std::ostringstream output;
   game::write_landscape_summary_csv (output, summary);

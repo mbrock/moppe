@@ -42,6 +42,8 @@ namespace moppe::game {
     // (docs/determinism.md); earlier caches hold their platform's own.
     // Version 13 reconstructs the full hillslope gradient before applying the
     // nonlinear transport law. Version 12 used one cardinal component.
+    // Version 30 takes smaller lakes and millponds for outlets and favours
+    // sanctuaries in sight of one another.
     // Version 29 joins each branch to the road it leaves before laying it
     // along the contours.
     // Version 28 bridges the rivers the roads cross (RoadBridge).
@@ -54,7 +56,7 @@ namespace moppe::game {
     // Version 24 reads the ground's disturbance (game/disturbance.hh).
     // Version 23 builds the roads into the ground and keeps their profiles.
     // Version 22 keeps the planned roads (terrain/roads.hh).
-    constexpr std::uint32_t CACHE_VERSION = 29;
+    constexpr std::uint32_t CACHE_VERSION = 30;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.

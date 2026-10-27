@@ -649,29 +649,56 @@ namespace moppe::terrain {
       });
 
       // The best of them, spread out: about one to every twelve square
-      // kilometres.
+      // kilometres. A fire is lit to be answered, so a site in sight of
+      // one already kept counts for more than one that sees none of them
+      // (Peatfield's intervisible sanctuaries): each next site is the best
+      // by its regard, a site out of sight of every other taken at a
+      // third of it.
       const float area_km2 = lattice.width * lattice.spacing_x *
                              lattice.height * lattice.spacing_z / 1.0e6f;
       const std::size_t limit = static_cast<std::size_t> (
         std::max (2.0f, std::round (area_km2 / 12.0f)));
+      constexpr float alone = 0.35f;
       std::vector<Sanctuary> kept;
-      for (const Sanctuary& site : sites) {
-        if (kept.size () >= limit ||
-            (!kept.empty () && site.score < 0.3f * kept.front ().score))
+      std::vector<bool> taken (sites.size (), false);
+      while (kept.size () < limit) {
+        std::size_t best = sites.size ();
+        float best_worth = 0.0f;
+        for (std::size_t i = 0; i < sites.size (); ++i) {
+          const Sanctuary& site = sites[i];
+          if (taken[i] ||
+              (!kept.empty () && site.score < 0.1f * kept.front ().score))
+            continue;
+          bool crowded = false;
+          bool answered = kept.empty ();
+          for (const Sanctuary& other : kept) {
+            const float apart = lattice.distance (site.node, other.node);
+            crowded = crowded || apart < 1400.0f;
+            answered =
+              answered || (apart < 6000.0f &&
+                           sees (lattice, site.node, 4.0f, other.node, 4.0f));
+          }
+          const float worth = site.score * (answered ? 1.0f : alone);
+          if (!crowded && worth > best_worth) {
+            best = i;
+            best_worth = worth;
+          }
+        }
+        if (best == sites.size () ||
+            (!kept.empty () && best_worth < 0.3f * kept.front ().score))
           break;
-        const bool crowded = std::any_of (
-          kept.begin (), kept.end (), [&] (const Sanctuary& other) {
-            return lattice.distance (site.node, other.node) < 1800.0f;
-          });
-        if (!crowded)
-          kept.push_back (site);
+        taken[best] = true;
+        kept.push_back (sites[best]);
       }
       return kept;
     }
 
     // Lakes worth a road, largest first, each by the dry node where its
-    // water leaves: the neighbour draining the most country.
-    std::vector<std::size_t> lake_outlets (const Lattice& lattice) {
+    // water leaves: the neighbour draining the most country. A lake of a
+    // few hectares is worth one, and so is a pond where a river leaves
+    // it, which is a millpond made.
+    std::vector<std::size_t> lake_outlets (const Lattice& lattice,
+                                           float river_area_m2) {
       std::vector<std::int32_t> label (lattice.size (), -1);
       struct Lake {
         std::size_t cells = 0;
@@ -722,10 +749,12 @@ namespace moppe::terrain {
         std::max (2.0f, std::round (area_km2 / 10.0f)));
       std::vector<std::size_t> outlets;
       for (const Lake& lake : lakes) {
-        if (outlets.size () >= limit ||
-            static_cast<float> (lake.cells) * node_area < 2.5e5f)
+        if (outlets.size () >= limit)
           break;
-        if (lake.outlet_area >= 0.0f)
+        const float area = static_cast<float> (lake.cells) * node_area;
+        if (lake.outlet_area >= 0.0f &&
+            (area >= 4.0e4f ||
+             (area >= 8.0e3f && lake.outlet_area >= river_area_m2)))
           outlets.push_back (lake.outlet);
       }
       return outlets;
@@ -1280,7 +1309,8 @@ namespace moppe::terrain {
           planner.place (RoadPlace::Kind::Landing, best));
     }
 
-    for (const std::size_t outlet : lake_outlets (lattice)) {
+    for (const std::size_t outlet :
+         lake_outlets (lattice, river_area.numerical_value_in (u::m * u::m))) {
       const Search found =
         search (lattice, planner.ways, planner.built (), cart);
       if (planner.connect (outlet, found))
