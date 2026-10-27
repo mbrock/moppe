@@ -3125,7 +3125,9 @@ namespace moppe {
               static_cast<int> (recipe ().seed ().value),
               recipe ().resolution (),
               terrain::profile_id (recipe ().generation_profile ())) ||
-            recipe ().extent () != WorldParams ().map_size) {
+            extent_value (recipe ().extent ())[0] !=
+              (reel->km ? *reel->km * 1000.0f
+                        : extent_value (WorldParams ().map_size)[0])) {
           std::cerr << "moppe: opening: " << path
                     << " was composed for another world\n";
           return std::nullopt;

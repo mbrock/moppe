@@ -289,6 +289,8 @@ namespace moppe::game {
             reel.seed = static_cast<int> (value);
           else if (key == "resolution")
             reel.resolution = static_cast<int> (value);
+          else if (key == "km")
+            reel.km = value;
           else
             return fail ("unknown world setting: " + key);
         }

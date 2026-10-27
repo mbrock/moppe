@@ -19,7 +19,7 @@ namespace moppe::game {
   // prints the current camera as a `shot` line that can be pasted into it.
   // Lines, `#` starting a comment:
   //
-  //   world seed 123 resolution 2048 profile play
+  //   world seed 123 resolution 2048 profile play [km 10]
   //   shot NAME eye X Y Z heading DEG pitch DEG fov DEG [hold S]
   //        [push M] [truck M] [rise M] [pan DEG] [tilt DEG] [zoom DEG]
   //        [sway K] [clock S] [fade S] [sun H]
@@ -90,6 +90,8 @@ namespace moppe::game {
     std::optional<int> seed;
     std::optional<int> resolution;
     std::string profile;
+    // How many kilometres across; unset, the default world's five.
+    std::optional<float> km;
     std::vector<OpeningShot> shots;
     std::optional<OpeningArrival> arrival;
 

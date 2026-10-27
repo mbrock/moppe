@@ -20,7 +20,7 @@ MOPPE_TEST (opening_reel_parses_shots_captions_and_arrival) {
   std::string error;
   const std::optional<OpeningReel> reel =
     parse ("# a comment\n"
-           "world seed 123 resolution 2048 profile play\n"
+           "world seed 123 resolution 2048 profile play km 10\n"
            "shot lake eye 10 20 30 heading 90 pitch -2 fov 48 hold 8 "
            "push 3 pan -4 fade 2.5 clock 400  # trailing comment\n"
            "caption title \"moppe\" at 2 for 4\n"
@@ -32,6 +32,7 @@ MOPPE_TEST (opening_reel_parses_shots_captions_and_arrival) {
   MOPPE_CHECK (reel->matches (123, 2048, "play"));
   MOPPE_CHECK (!reel->matches (124, 2048, "play"));
   MOPPE_CHECK (!reel->matches (123, 1024, "play"));
+  MOPPE_CHECK (reel->km && *reel->km == 10.0f);
   MOPPE_CHECK (reel->shots.size () == 2);
   const OpeningShot& lake = reel->shots[0];
   MOPPE_CHECK (lake.name == "lake");
