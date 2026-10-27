@@ -15,11 +15,14 @@ devenv="$HOME/.local/bin/moppe-devenv"
 emscripten_version="$(sed -n 's/^ *EMSCRIPTEN_VERSION: *//p' \
   "$repo_root/.github/workflows/pages.yml")"
 
+SECONDS=0
+trap 'printf "\nSetup exited with status %s after %ss\n" "$?" "$SECONDS"' EXIT
+
 step() {
   printf '\n==> %s\n' "$*"
-  SECONDS=0
+  step_started=$SECONDS
 }
-done_step() { printf '    (%ss)\n' "$SECONDS"; }
+done_step() { printf '    (%ss)\n' "$((SECONDS - step_started))"; }
 
 apt_install() {
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
@@ -95,11 +98,10 @@ mkdir -p "\$cache"
 key="\$(cat "\$root/flake.nix" "\$root/flake.lock" \\
   "\$root/moppe/platform/sdl/shell.nix" | sha256sum | cut -c1-16)"
 if [[ ! -s \$cache/\$key.sh ]]; then
+  printf 'Realizing the Nix development shell...\n' >&2
   nix print-dev-env --profile "\$cache/profile" "\$root" \\
-    > "\$cache/\$key.sh.tmp" 2>"\$cache/last-error.log" || {
-    cat "\$cache/last-error.log" >&2
-    exit 1
-  }
+    > "\$cache/\$key.sh.tmp" \\
+    2> >(tee "\$cache/last-error.log" >&2)
   find "\$cache" -name '*.sh' -delete
   mv "\$cache/\$key.sh.tmp" "\$cache/\$key.sh"
 fi
@@ -108,6 +110,7 @@ fi
 echo "unset CFLAGS CXXFLAGS LDFLAGS"
 cat "\$cache/\$key.sh"
 if [[ ! -s \$cache/mesa ]]; then
+  printf 'Realizing Mesa lavapipe...\n' >&2
   nix build --out-link "\$cache/mesa-root" --print-out-paths \\
     --inputs-from "\$root" nixpkgs#mesa > "\$cache/mesa"
 fi
@@ -131,8 +134,8 @@ fi
 version_file="$emsdk_dir/upstream/emscripten/emscripten-version.txt"
 if [[ "$(tr -d '"' 2>/dev/null < "$version_file")" != "$emscripten_version" ]]
 then
-  "$emsdk_dir/emsdk" install "$emscripten_version" >/dev/null
-  "$emsdk_dir/emsdk" activate "$emscripten_version" >/dev/null
+  "$emsdk_dir/emsdk" install "$emscripten_version"
+  "$emsdk_dir/emsdk" activate "$emscripten_version"
 fi
 done_step
 
@@ -185,9 +188,11 @@ esac
 EOF
 done_step
 
-step "Configure and warm the native build"
-# The game, the NHAL demo, and the unit tests, as CLAUDE.md builds them. A
-# build/ configured by another compiler (an older snapshot's) starts over.
+step "Configure the native build"
+# Leave compilation to the task that needs it: building the game, demo,
+# and tests adds minutes to startup and a build failure prevents caching
+# otherwise usable dependencies. Keep any matching snapshot's outputs.
+# A build/ configured by another compiler starts over.
 (
   cd "$repo_root"
   eval "$("$devenv")"
@@ -198,13 +203,6 @@ step "Configure and warm the native build"
     rm -rf build
     cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo >/dev/null
   fi
-  log="$(mktemp)"
-  if ! cmake --build build --target moppe nhal-demo moppe-tests \
-    >"$log" 2>&1; then
-    grep -E 'error|FAILED' "$log" | head -40
-    exit 1
-  fi
-  rm -f "$log"
 )
 done_step
 
@@ -221,9 +219,10 @@ replace_block "$HOME/.config/amp/AGENTS.md" "<!-- BEGIN Moppe orb -->" \
   ffmpeg), point Vulkan at Mesa's lavapipe (CPU), and let SDL fall back to
   its offscreen driver, so the real game renders headless. Apple targets
   do not build here.
-- `build/` is configured RelWithDebInfo with the game, `nhal-demo`, and
-  the tests built: `cmake --build build --target moppe-tests && ctest
-  --test-dir build --output-on-failure`.
+- `build/` is configured RelWithDebInfo; setup does not compile targets.
+  Build what the task needs: `cmake --build build --target moppe`,
+  `cmake --build build --target nhal-demo`, or `cmake --build build
+  --target moppe-tests && ctest --test-dir build --output-on-failure`.
 - A frame of the game: `MOPPE_OPENING=none ./build/moppe --windowed
   --window-size 1280x720 --screenshot /tmp/shot.png` (about a minute on
   the CPU). Gazetteer, water captures, `MOPPE_WALK` scripts, and
