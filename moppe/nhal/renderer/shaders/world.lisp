@@ -1188,8 +1188,7 @@
          (patch (smoothstep 0.68 0.74 (swizzle pn :x)))
          (patch-slope (* 0.006 (step-slope pn 0.68 0.74)))
          ;; Potholes in the wheel paths and by the edge, where it is old.
-         (hn (value-noise-gradient (+ (* on (vec2 0.35 0.7)) (vec2 1.3 7.7))))
-         (hn (vec3 (swizzle hn :x) (* (swizzle hn :yz) (vec2 0.35 0.7))))
+         (hn (crack-noise on (vec2 0.9 0.9) (vec2 1.3 7.7) footprint))
          (where (* (max wear (smoothstep (- half-width 1.0)
                                          (- half-width 0.3) d))
                    old (- 1.0 patch)))
@@ -1197,17 +1196,17 @@
          (hole-edge (max (* 0.5 footprint (sqrt (dot (swizzle hn :yz)
                                                      (swizzle hn :yz))))
                          0.006))
-         (hole (* where (smoothstep (- 0.80 hole-edge) (+ 0.80 hole-edge)
+         (hole (* where (smoothstep (- 0.90 hole-edge) (+ 0.90 hole-edge)
                                     (swizzle hn :x))))
-         (hole-slope (* -0.06 where (step-slope hn 0.78 0.82)
+         (hole-slope (* -0.12 where (step-slope hn 0.88 0.92)
                         (- 1.0 (smoothstep 0.05 0.2 footprint))))
          ;; Cracks: blocks where it is old, alligator in the wheel paths,
          ;; a wandering joint down the middle, and one along each edge.
          ;; Along some stretches they have been sealed with bitumen.
          (seal (smoothstep 0.68 0.74 (value-noise (vec2 (* along 0.02) 1.7))))
          ;; Sealing is poured by hand, wider and narrower as it goes.
-         (half (mix 0.004 (mix 0.011 0.022 (value-noise (* on 1.3))) seal))
-         (blocks (* old (crack-line (crack-noise on (vec2 0.5 0.9)
+         (half (mix 0.0025 (mix 0.008 0.016 (value-noise (* on 1.3))) seal))
+         (blocks (* old old (crack-line (crack-noise on (vec2 0.5 0.9)
                                                  (vec2 8.2 0.4) footprint)
                                     half footprint)
                     (resolved 0.9 footprint)))
@@ -1216,7 +1215,7 @@
                                                 (vec2 2.9 6.1) footprint)
                                    half footprint)
                        (resolved 2.4 footprint)))
-         (joint (* (smoothstep 0.55 0.65 (value-noise (vec2 (* along 0.05)
+         (joint (* (smoothstep 0.70 0.78 (value-noise (vec2 (* along 0.05)
                                                             4.4)))
                    (road-cover (- across (* 0.2 (- (value-noise
                                                     (vec2 (* along 0.15) 2.2))
@@ -1282,30 +1281,34 @@
          (mended (* 0.8 (smoothstep 0.68 0.74
                                     (value-noise (+ (* on (vec2 0.07 0.3))
                                                     (vec2 5.1 2.3))))))
-         (tar (mix (* (mix (vec3 0.47 0.48 0.48) (vec3 0.56 0.57 0.56) tone)
+         (tar (mix (* (mix (vec3 0.40 0.39 0.36) (vec3 0.47 0.45 0.42) tone)
                       (mix 0.93 1.05 grain)
-                      (+ 1.0 (* 0.07 track)))
-                   (vec3 0.43 0.42 0.40) (* 0.7 mended)))
-         (tar (mix tar (vec3 0.66 0.64 0.60)
-                   (* 0.25 (stone-face pebble)
-                      (smoothstep 0.65 0.80 (stone-tone pebble)))))
+                      (+ 1.0 (* 0.08 track)))
+                   (vec3 0.35 0.345 0.33) (* 0.7 mended)))
+         (tar (mix tar (vec3 0.56 0.54 0.51)
+                   (* 0.12 (stone-face pebble)
+                      (smoothstep 0.75 0.90 (stone-tone pebble)))))
          ;; Leaves a hand or two across, fewer where the wheels sweep the lane,
          ;; given up where a pixel spans several.
-         (fallen (* (smoothstep 0.72 0.78 (value-noise (* on 7.0)))
-                    (+ 0.25 (* 0.75 (smoothstep 0.8 2.4 d)))
-                    (smoothstep 0.4 0.9 (value-noise (* on 0.5)))
-                    (- 1.0 (smoothstep 0.03 0.12 edge-width))))
+         (fallen (* (smoothstep 0.80 0.84 (value-noise (* on 19.0)))
+                    (+ 0.1 (* 0.9 (smoothstep 1.0 2.5 d)))
+                    (smoothstep 0.3 0.8 (value-noise (* on 0.5)))
+                    (- 1.0 (smoothstep 0.015 0.05 edge-width))))
          ;; Its cracks: open ones dark, sealed ones a band of black
          ;; bitumen; a pothole's floor the gravel under it.
-         (tar (* tar (- 1.0 (* 0.45 (swizzle look :y)))))
-         (tar (mix tar (vec3 0.13 0.13 0.125) (swizzle look :z)))
-         (tar (mix tar (mix (* (vec3 0.33 0.30 0.26) (mix 0.8 1.15 grain))
-                            (vec3 0.55 0.53 0.49)
-                            (* 0.7 (stone-face pebble)
-                               (smoothstep 0.45 0.65 (stone-tone pebble))))
+         (tar (* tar (- 1.0 (* 0.22 (swizzle look :y)))))
+         (tar (mix tar (vec3 0.24 0.235 0.225) (* 0.8 (swizzle look :z))))
+         ;; A pothole's floor is the dusty base course, dimmer under its
+         ;; broken rim, which shadows the edge inside it.
+         (tar (mix tar (* (mix (vec3 0.23 0.21 0.18) (vec3 0.29 0.27 0.23)
+                               fleck)
+                          (mix 0.85 1.12 grain)
+                          (- 1.0 (* 0.45 (- 1.0 (smoothstep 0.3 1.0
+                                                            (swizzle look
+                                                                     :w))))))
                    (swizzle look :w)))
-         (tar (mix tar (mix (vec3 0.50 0.26 0.10) (vec3 0.64 0.46 0.17)
-                            (value-noise (* on 1.7)))
+         (tar (mix tar (mix (vec3 0.34 0.21 0.12) (vec3 0.52 0.36 0.18)
+                            (value-noise (* on 5.3)))
                    (* fallen (- 1.0 (swizzle look :w)))))
          (sand (* (mix (vec3 0.58 0.51 0.39) (vec3 0.67 0.59 0.46) fleck)
                   (mix 0.90 1.05 grain)))
