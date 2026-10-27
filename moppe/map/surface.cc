@@ -490,6 +490,8 @@ namespace moppe::map {
       float grazed;    // cropped by the beasts of a place still lived in
       float recovery;  // come back since last opened, 0 to the old stand
       float burnt;     // how recently fire went over it
+      float spring;    // fed by a spring at the limestone's foot
+      float rock;      // the basement scoured bare
     };
 
     // How far each tree has come back on ground that was opened: birch
@@ -589,7 +591,8 @@ namespace moppe::map {
                  std::max (rises (0.20f, 0.50f, at.soaked),
                            rises (0.25f, 0.60f, at.peat)) *
                  rises (0.20f, 0.50f, light) *
-                 std::max (1.0f - at.limestone, at.peat);
+                 std::max (1.0f - at.limestone, at.peat) *
+                 (1.0f - 0.8f * at.spring);
         },
         0x5a6c1U },
       // Dwarf birch: cold, damp, open ground of the fjäll.
@@ -626,6 +629,15 @@ namespace moppe::map {
                  (1.0f - 0.85f * at.grazed) * (0.6f + 0.4f * at.burnt);
         },
         0xf13e7dU },
+      // The spring fen: hard water seeping out of the limestone's foot
+      // keeps the ground soaked and rich all year, which suits brown moss,
+      // sedge, and marsh marigold and starves the sphagnum.
+      { 1.30f,
+        [] (const Site& at, float light) {
+          return rises (0.12f, 0.45f, at.spring) * rises (0.20f, 0.50f, light) *
+                 falls (0.75f, 0.95f, at.cold);
+        },
+        0x5f1e9eU },
       // Grass and herbs: deep, moist, fertile soil in the light, and the
       // grazed turf of a pasture. Not stored: the ground draws turf
       // wherever nothing else holds it.
@@ -695,7 +707,8 @@ namespace moppe::map {
     const auto& normals = get<terrain::terrain_normal> (geometry);
     const auto& elevation = get<terrain::surface_elevation> (geometry);
     std::vector<float> cut (count), wet (count), thin (count), dry (count),
-      soaked (count), peat (count), up (count), south (count), height (count);
+      soaked (count), peat (count), up (count), south (count), height (count),
+      bare (count);
     for (std::size_t i = 0; i < count; ++i) {
       cut[i] = eroded[i].numerical_value_in (u::m) -
                deposited[i].numerical_value_in (u::m);
@@ -704,6 +717,7 @@ namespace moppe::map {
       // Under a span of soil a root reaches bedrock; over two and a half
       // metres of it the ground is peat if it is also wet.
       thin[i] = 1.0f - smoothstep (0.15f, 0.60f, soil);
+      bare[i] = 1.0f - smoothstep (0.08f, 0.45f, soil);
       peat[i] =
         smoothstep (0.80f, 2.50f, soil) * smoothstep (0.2f, 0.4f, wet[i]);
       dry[i] = 1.0f - smoothstep (0.12f, 0.28f, wet[i]);
@@ -736,6 +750,10 @@ namespace moppe::map {
     // The ground's height against its neighbourhood's: a ridge stands
     // above it, a hollow below, where cold air settles on still nights.
     const std::vector<float> around = smoothed (height, domain, 75.0f * u::m);
+    // A knoll's height over the ground a stone's throw round it: the ice
+    // ground its way over these and scoured them to the rock.
+    const std::vector<float> nearby = smoothed (height, domain, 18.0f * u::m);
+    bare = smoothed (std::move (bare), domain, 5.0f * u::m);
 
     const auto laps = [&] (float patch_m) {
       return std::max<std::uint32_t> (
@@ -750,24 +768,96 @@ namespace moppe::map {
       std::max ((land_top - water_level).numerical_value_in (u::m), 1.0f);
     const float edge = std::max (0.06f * median_cut, 0.5f);
 
+    // The limestone first, everywhere, since a spring answers to the sheet
+    // above it on the slope.
+    std::vector<float> limestone (count);
+    for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+      const std::size_t i = domain.offset (site);
+      const float thickness =
+        median_cut * (0.25f + 1.0f * layered_noise (domain.lap_position (site),
+                                                    sheet_laps,
+                                                    seed ^ 0x11a7c0deU));
+      limestone[i] = smoothstep (-edge, edge, thickness - cut[i]);
+    }
+    // The limestone is a sponge: the rain sinks through its joints and
+    // runs along its foot, over the basement it cannot get into, until
+    // the foot comes out on a hillside and the water with it. So a spring
+    // rises where the ground underfoot is basement and the slope above it,
+    // a few tens of metres up, is limestone; its water keeps the ground
+    // below soaked for a stone's throw down the slope, and the line of
+    // them breaks into separate seeps, each with its own tongue of fen.
+    std::vector<float> spring (count), rock (count);
+    {
+      const std::vector<float> slope_height =
+        smoothed (height, domain, 12.0f * u::m);
+      const float sx = domain.spacing_x ().numerical_value_in (u::m);
+      const float sz = domain.spacing_z ().numerical_value_in (u::m);
+      const std::uint32_t seep_laps = laps (45.0f);
+      constexpr float reach[] = { 6.0f, 15.0f, 26.0f, 40.0f };
+      constexpr float fade[] = { 1.0f, 0.90f, 0.70f, 0.45f };
+      for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+        const std::size_t i = domain.offset (site);
+        const auto at = [&] (int columns, int rows) {
+          return domain.offset (domain.shifted (site, columns, rows));
+        };
+        const float gx =
+          (slope_height[at (1, 0)] - slope_height[at (-1, 0)]) / (2.0f * sx);
+        const float gz =
+          (slope_height[at (0, 1)] - slope_height[at (0, -1)]) / (2.0f * sz);
+        const float grade = std::sqrt (gx * gx + gz * gz);
+        float above = 0.0f;
+        if (grade > 1e-4f)
+          for (std::size_t k = 0; k < std::size (reach); ++k) {
+            const int columns =
+              static_cast<int> (std::lround (gx / grade * reach[k] / sx));
+            const int rows =
+              static_cast<int> (std::lround (gz / grade * reach[k] / sz));
+            above = std::max (above, fade[k] * limestone[at (columns, rows)]);
+          }
+        const float seeps = layered_noise (
+          domain.lap_position (site), seep_laps, seed ^ 0x5ee95U);
+        spring[i] = (1.0f - limestone[i]) * above * above *
+                    smoothstep (0.03f, 0.10f, grade) *
+                    smoothstep (0.45f, 0.62f, seeps) *
+                    smoothstep (1.0f, 4.0f, height[i] - sea);
+        // Bare rock: basement under hardly any soil, on a knoll or ridge
+        // and dry enough that no peat grows over it.
+        const float knoll =
+          smoothstep (-0.5f, 2.5f, height[i] - nearby[i]) +
+          0.5f * smoothstep (2.0f, 10.0f, height[i] - around[i]);
+        rock[i] = (1.0f - limestone[i]) * bare[i] * std::min (knoll, 1.0f) *
+                  (1.0f - soaked[i]);
+      }
+      spring = smoothed (std::move (spring), domain, 6.0f * u::m);
+      // The ice left the rock in whalebacks, not in the lines of the
+      // spurs: what it scoured is read over a few tens of metres and broken
+      // up by a noise of about that size.
+      rock = smoothed (std::move (rock), domain, 9.0f * u::m);
+      for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+        const std::size_t i = domain.offset (site);
+        const float whaleback = layered_noise (
+          domain.lap_position (site), laps (60.0f), seed ^ 0x9a817eU, 3);
+        rock[i] =
+          smoothstep (0.22f, 0.48f, rock[i] + 0.7f * (whaleback - 0.5f));
+      }
+    }
+
     VegetationMap values (domain);
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const std::size_t i = domain.offset (site);
       const auto where = domain.lap_position (site);
-      const float thickness =
-        median_cut *
-        (0.25f + 1.0f * layered_noise (where, sheet_laps, seed ^ 0x11a7c0deU));
       const float rise = (height[i] - sea) / relief;
       const float above = height[i] - around[i];
+      const float fed = std::clamp (2.0f * spring[i], 0.0f, 1.0f);
       const Site at {
-        .wet = wet[i],
-        .dry = dry[i],
-        .soaked = soaked[i],
+        .wet = std::min (wet[i] + 0.35f * fed, 1.0f),
+        .dry = dry[i] * (1.0f - fed),
+        .soaked = std::max (soaked[i], 0.8f * fed),
         .thin = thin[i],
         .peat = peat[i],
         .poor = smoothstep (0.44f, 0.60f, 0.5f * (thin[i] + dry[i])),
         .level = smoothstep (0.95f, 0.985f, up[i]),
-        .limestone = smoothstep (-edge, edge, thickness - cut[i]),
+        .limestone = limestone[i],
         .cold = smoothstep (0.40f,
                             0.90f,
                             rise - 0.20f * south[i] +
@@ -781,6 +871,8 @@ namespace moppe::map {
         .recovery =
           get<stand_recovery> (disturbance[site]).numerical_value_in (one),
         .burnt = get<burn_recency> (disturbance[site]).numerical_value_in (one),
+        .spring = fed,
+        .rock = rock[i],
       };
       // Steep ground holds little of anything rooted.
       const float footing = smoothstep (0.70f, 0.85f, up[i]);
@@ -795,7 +887,9 @@ namespace moppe::map {
 
       std::array<float, std::size (canopy)> trees {};
       for (std::size_t s = 0; s < trees.size (); ++s)
-        trees[s] = canopy[s].tolerance (at, 1.0f) * footing;
+        // Only pine finds the cracks in bare rock.
+        trees[s] = canopy[s].tolerance (at, 1.0f) * footing *
+                   (1.0f - (s == 1 ? 0.6f : 0.92f) * at.rock);
       const auto held = compete (trees, canopy, chances (canopy));
       float shade = 0.0f;
       for (std::size_t s = 0; s < held.size (); ++s)
@@ -804,11 +898,14 @@ namespace moppe::map {
 
       std::array<float, std::size (field)> plants {};
       for (std::size_t s = 0; s < plants.size (); ++s)
-        plants[s] = field[s].tolerance (at, light) * std::max (footing, 0.3f);
+        // Lichen takes the thin skin of soil in the rock's hollows.
+        plants[s] = field[s].tolerance (at, light) * std::max (footing, 0.3f) *
+                    (1.0f - (s == 0 ? 0.25f : 0.85f) * at.rock);
       const auto ground = compete (plants, field, chances (field));
 
       const auto reading = values[site];
       get<limestone_cover> (reading) = at.limestone * limestone_cover[one];
+      get<bedrock_exposure> (reading) = at.rock * bedrock_exposure[one];
       get<spruce_abundance> (reading) = held[0] * spruce_abundance[one];
       get<pine_abundance> (reading) = held[1] * pine_abundance[one];
       get<birch_abundance> (reading) = held[2] * birch_abundance[one];
@@ -823,6 +920,8 @@ namespace moppe::map {
       get<sedge_abundance> (reading) = ground[5] * sedge_abundance[one];
       get<alvar_abundance> (reading) = ground[6] * alvar_abundance[one];
       get<fireweed_abundance> (reading) = ground[7] * fireweed_abundance[one];
+      get<spring_fen_abundance> (reading) =
+        ground[8] * spring_fen_abundance[one];
     }
     return values;
   }

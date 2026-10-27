@@ -686,10 +686,11 @@
 ;;; (lichen, heather, bilberry, sphagnum; dwarf birch, sedge, alvar turf)
 ;;; and, in MORE's last lane, the limestone; SCARS what has happened to
 ;;; the ground (fireweed, grazing, how recently it burnt, how far it has
-;;; recovered).  ABOVE-SEA is in metres.
+;;; recovered); BEDROCK the basement scoured bare and the spring fen.
+;;; ABOVE-SEA is in metres.
 (define-shader-function ground-surface (world normal land floor rise
                                         above-sea stand plants more scars
-                                        micro meso macro region)
+                                        bedrock micro meso macro region)
   (let* ((up (swizzle normal :y))
          (moisture (swizzle land :x))
          (grain (swizzle micro :x))
@@ -746,6 +747,8 @@
          (dwarf-share (swizzle more :x))
          (sedge-share (swizzle more :y))
          (alvar-share (swizzle more :z))
+         (rock-share (swizzle bedrock :x))
+         (fen-share (swizzle bedrock :y))
          ;; Heather and crowberry: straw, russet, and the wine of crowberry
          ;; where it is damp.
          (shrub (heath-plant patch drift fleck grain))
@@ -768,7 +771,7 @@
                            (* turned (smoothstep 0.55 0.85 patch))))
          ;; Reindeer lichen: a pale crunching carpet, broken by crowberry
          ;; and the brown of needles where it is worn.
-         (lichen (mix (mix (vec3 0.62 0.64 0.53) (vec3 0.74 0.75 0.63)
+         (lichen (mix (mix (vec3 0.70 0.70 0.58) (vec3 0.82 0.81 0.68)
                            (smoothstep 0.3 0.7 fleck))
                       (vec3 0.45 0.38 0.26) (* 0.7 sprig)))
          (sedge (mix (vec3 0.62 0.60 0.30) (vec3 0.48 0.50 0.24) grain))
@@ -790,7 +793,22 @@
                         (stone-face block)))
          (alvar (mix pavement (* (vec3 0.56 0.55 0.30) (- 1.0 (* 0.2 sprig)))
                      (band (+ patch (* 0.6 (- fleck 0.5))) 0.58)))
-         (field-layer
+         ;; The spring fen: brown moss gone vivid green in the hard water,
+         ;; sedge, the glossy leaves of marsh marigold, and the seep's
+         ;; runnels, stained ochre where the spring's iron settles out.
+         (runnel (* (smoothstep 0.45 0.75 fen-share)
+                    (smoothstep 0.50 0.65 patch)
+                    (- 1.0 (smoothstep 0.025 0.06
+                                       (abs (- (+ fleck (* 0.5 (- patch 0.5)))
+                                               0.5))))))
+         (fen (mix (mix (mix (vec3 0.27 0.46 0.10) (vec3 0.40 0.56 0.14)
+                             (smoothstep 0.3 0.7 grain))
+                        (vec3 0.50 0.54 0.22)
+                        (* 0.5 (smoothstep 0.55 0.85 patch)))
+                   (mix (vec3 0.16 0.15 0.10) (vec3 0.56 0.32 0.11)
+                        (smoothstep 0.55 0.85 patch))
+                   (* 0.6 runnel)))
+         (field-cover
            (mix (mix (mix (mix (mix (mix (mix turf sedge
                                               (band (+ sedge-share
                                                        (* 0.5 edge)) 0.30))
@@ -807,6 +825,8 @@
                      (band (+ sphagnum-share (* 0.5 edge)) 0.30))
                 alvar
                 (band (+ alvar-share (* 0.5 edge)) 0.30)))
+         (fen-cover (band (+ fen-share (* 0.5 edge)) 0.26))
+         (field-layer (mix field-cover fen fen-cover))
          ;; Fireweed on the ground something opened: its leaves gone
          ;; crimson for the autumn, and its seed blowing white from the
          ;; split pods.
@@ -858,8 +878,46 @@
          (soil (mix understory dirt
                     (band (+ (* (swizzle land :y) shedding) (* 0.7 edge))
                           0.45)))
+         ;; The basement scoured bare by the ice: pink-grey granite, its
+         ;; grain of feldspar and quartz and mica, polished smooth and
+         ;; scratched along the way the ice went, split by dark joints,
+         ;; and crusted with lichen -- grey rosettes, the yellow-green of
+         ;; map lichen, black rock tripe.
+         (striae (sin (+ (* 11.0 (dot (swizzle world :xz) (vec2 0.8 0.6)))
+                         (* 3.0 grain))))
+         (granite (* (mix (vec3 0.53 0.45 0.40) (vec3 0.70 0.61 0.54)
+                          (smoothstep 0.25 0.80 (+ patch (* 0.3 drift))))
+                     (mix 0.86 1.08 grain)
+                     (+ 0.97 (* 0.03 striae))))
+         ;; Two sets of joints, near square to each other, a few metres
+         ;; apart, wandering a little; the frost has opened some of them
+         ;; and left others hairlines.
+         (joint-a (abs (- (fract (+ (* 0.19 (dot (swizzle world :xz)
+                                                 (vec2 0.94 0.34)))
+                                    (* 0.35 patch)))
+                          0.5)))
+         (joint-b (abs (- (fract (+ (* 0.13 (dot (swizzle world :xz)
+                                                 (vec2 -0.30 0.95)))
+                                    (* 0.45 drift) (* 0.15 fleck)))
+                          0.5)))
+         (opened-joint (max (* (- 1.0 (smoothstep 0.006 0.018 joint-a))
+                               (smoothstep 0.35 0.60 fleck))
+                            (* (- 1.0 (smoothstep 0.005 0.015 joint-b))
+                               (smoothstep 0.45 0.70 patch))))
+         ;; Lichen crusts the rock: grey rosettes most, the yellow-green of
+         ;; map lichen in small spots, black rock tripe here and there.
+         (crusted (mix (mix granite (vec3 0.66 0.66 0.61)
+                            (* 0.7 (smoothstep 0.58 0.78 fleck)))
+                       (vec3 0.60 0.62 0.36)
+                       (* 0.7 (smoothstep 0.90 0.95 (+ fleck
+                                                       (* 0.3 grain))))))
+         (lichened (mix crusted (vec3 0.12 0.11 0.10)
+                        (* 0.6 (smoothstep 0.90 0.95 (stone-tone pebble)))))
+         (jointed (mix lichened (vec3 0.22 0.19 0.17) (* 0.85 opened-joint)))
+         (bare-rock (band (+ rock-share (* 0.45 edge)) 0.45))
+         (scoured (mix soil jointed bare-rock))
          (channel (- 1.0 (smoothstep 2.0 6.0 (abs shore))))
-         (gravel (mix soil cobbles
+         (gravel (mix scoured cobbles
                       (band (+ (* (swizzle land :z) channel) (* 0.7 edge))
                             0.50)))
 
@@ -930,9 +988,11 @@
      :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
                 (mix mottle 1.0 (* 0.65 smooth)))
      :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth)
-                (* 0.10 alvar-share) (* -0.06 bog-pool))
-     :gloss (max (max (* 0.30 snow) (* 0.22 swash (- 1.0 sunk)))
-                 (* 0.45 bog-pool)))))
+                (* 0.10 alvar-share) (* -0.06 bog-pool)
+                (* -0.06 bare-rock) (* -0.04 fen-cover))
+     :gloss (max (max (max (* 0.30 snow) (* 0.22 swash (- 1.0 sunk)))
+                      (* 0.45 bog-pool))
+                 (max (* 0.40 runnel fen-cover) (* 0.08 bare-rock))))))
 
 ;;; A gravel forest road seen from above: two wheel tracks worn smooth and
 ;;; dark, loose stone thrown up between them and along the edges, the
@@ -991,6 +1051,7 @@
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
+                 (bedrock :texture-2d :binding 12)
                  (shadow-map :depth-texture-2d :binding 8)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
@@ -1047,6 +1108,7 @@
          (more-here (* (sample more-plants linear-repeat field-at)
                        have-fields))
          (scars-here (* (sample scars linear-repeat field-at) have-fields))
+         (bedrock-here (* (sample bedrock linear-repeat field-at) have-fields))
          (above-sea (- (swizzle world :y) (swizzle relief :x)))
          (rise (/ above-sea (max (swizzle relief :y) 1.0)))
          (stand (read-stand closure litter linear-repeat (swizzle world :xz)
@@ -1069,7 +1131,8 @@
                               metres footprint))
          (surface (ground-surface world normal land floor-fields rise
                                   above-sea stand plants-here more-here
-                                  scars-here micro meso macro region))
+                                  scars-here bedrock-here micro meso macro
+                                  region))
          ;; An edge as sharp as a pixel's width on the ground allows.
          (road-edge (max (* 0.75 footprint) 0.04))
          (road-ground
@@ -2737,7 +2800,8 @@
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
 (define-shader-function read-grass-medium (xz land floor up rise density
-                                           stand heath plants more scars)
+                                           stand heath plants more scars
+                                           bedrock)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
          (canopy (clamp (swizzle stand :x) 0.0 1.0))
          ;; Fallen leaves smother some of the sward beneath a turned grove.
@@ -2772,7 +2836,11 @@
                    (- 1.0 (* 0.60 (smoothstep 0.15 0.45 (swizzle plants :w))))
                    (- 1.0 (* 0.70 (smoothstep 0.15 0.45 (swizzle more :z))))
                    ;; A fresh burn is bare until the fireweed comes.
-                   (- 1.0 (* 0.75 (smoothstep 0.35 0.75 (swizzle scars :z))))))
+                   (- 1.0 (* 0.75 (smoothstep 0.35 0.75 (swizzle scars :z))))
+                   ;; Nothing roots on the bare rock but in its cracks.
+                   (- 1.0 (* 0.92 (smoothstep 0.30 0.60 (swizzle bedrock :x))))))
+         ;; The spring fen's sedge stands lush and green.
+         (fen (smoothstep 0.12 0.45 (swizzle bedrock :y)))
          ;; Fireweed stands tall among the blades; grazing crops them.
          (fireweed (smoothstep 0.10 0.45 (swizzle scars :x)))
          ;; Heather, crowberry, and dwarf birch stand among the blades and
@@ -2798,6 +2866,7 @@
                        (- 1.0 (* 0.55 (swizzle more :z)))
                        (- 1.0 (* 0.45 shrubs))
                        (+ 1.0 (* 1.6 fireweed))
+                       (+ 1.0 (* 0.5 fen))
                        (- 1.0 (* 0.55 (swizzle scars :y)))
                        (mix 0.36 1.0 (smoothstep 0.06 0.46
                                                  (clamp (* rooted density)
@@ -2805,7 +2874,7 @@
      ;; Under a turned grove the grass is drying toward straw too.
      ;; Sedge is straw-green, the alvar's turf parched, and among the
      ;; dwarf birch and heather the blades take their ruska.
-     :blade-tint (mix
+     :blade-tint (mix (mix
                   (mix (mix (mix (mix tint (srgb (vec3 0.56 0.58 0.26))
                                      (smoothstep 0.1 0.4 (swizzle more :y)))
                                 (srgb (vec3 0.58 0.55 0.30))
@@ -2819,7 +2888,8 @@
                            shrubs)
                       (srgb (vec3 0.50 0.46 0.24))
                       (* 0.6 (clamp (swizzle stand :y) 0.0 1.0)))
-                  (srgb (vec3 0.46 0.14 0.13)) (* 0.80 fireweed)))))
+                  (srgb (vec3 0.46 0.14 0.13)) (* 0.80 fireweed))
+                  (srgb (vec3 0.30 0.52 0.12)) (* 0.85 fen)))))
 
 ;;; Meadow flowers arrive in single-species colonies, never as confetti:
 ;;; an 11-metre lattice, warped so no border runs straight, decides where a
@@ -2900,6 +2970,7 @@
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
+                 (bedrock :texture-2d :binding 12)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2943,7 +3014,8 @@
                       (vec2 0.5 0.5)
                       (sample-level plants linear-repeat uv 0.0)
                       (sample-level more-plants linear-repeat uv 0.0)
-                      (sample-level scars linear-repeat uv 0.0)))
+                      (sample-level scars linear-repeat uv 0.0)
+                      (sample-level bedrock linear-repeat uv 0.0)))
              (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
                         eye))
              (distance (sqrt (dot offset offset)))
@@ -3018,6 +3090,7 @@
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
+                 (bedrock :texture-2d :binding 12)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -3061,7 +3134,8 @@
                   (read-heath detail linear-repeat uv)
                   (sample-level plants linear-repeat uv 0.0)
                   (sample-level more-plants linear-repeat uv 0.0)
-                  (sample-level scars linear-repeat uv 0.0)))
+                  (sample-level scars linear-repeat uv 0.0)
+                  (sample-level bedrock linear-repeat uv 0.0)))
          (wet (grass-medium-moisture medium))
          (canopy (grass-medium-forest-cover medium))
          (root (vec3 (swizzle root-xz :x) height (swizzle root-xz :y)))
@@ -3421,6 +3495,7 @@
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
+                 (bedrock :texture-2d :binding 12)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -3452,7 +3527,8 @@
                       (read-heath detail linear-repeat uv)
                   (sample-level plants linear-repeat uv 0.0)
                   (sample-level more-plants linear-repeat uv 0.0)
-                  (sample-level scars linear-repeat uv 0.0)))
+                  (sample-level scars linear-repeat uv 0.0)
+                  (sample-level bedrock linear-repeat uv 0.0)))
          (drift (read-flower-drift xz (grass-medium-moisture grass-here)
                                    (grass-medium-forest-cover grass-here)
                                    (grass-medium-leaf-area grass-here)))

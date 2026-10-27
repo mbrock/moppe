@@ -424,6 +424,8 @@ namespace moppe {
       //                 support, trail, home base
       //   plants RGBA = lichen, heather, bilberry, sphagnum
       //   more_plants RGBA = dwarf birch, sedge, alvar turf, limestone
+      //   scars RGBA = fireweed, grazing, burn recency, stand recovery
+      //   bedrock RG = bare basement rock, spring fen
       //
       // The sheets are RGBA8Unorm, filterable, and consumed synchronously
       // because TexturePixels borrows its source.
@@ -432,12 +434,14 @@ namespace moppe {
                                           const TexturePixels& plants,
                                           const TexturePixels& more_plants,
                                           const TexturePixels& scars,
+                                          const TexturePixels& bedrock,
                                           bool include_forest) {
         (void)landscape;
         (void)ground;
         (void)plants;
         (void)more_plants;
         (void)scars;
+        (void)bedrock;
         (void)include_forest;
       }
 

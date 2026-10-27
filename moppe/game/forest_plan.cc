@@ -16,7 +16,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 20;
+    constexpr std::uint32_t forest_plan_version = 21;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The

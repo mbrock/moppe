@@ -541,6 +541,92 @@ MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
   MOPPE_CHECK (limestone (24) < 0.05f);
 }
 
+MOPPE_TEST (springs_rise_at_the_foot_of_the_limestone_and_feed_a_fen) {
+  using namespace moppe;
+  // A hillside falling along x, limestone on its upper part and basement
+  // below; a broad band of other rows, eroded about as deep as the world's
+  // median, only sets the sheet's thickness.
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    128, 96, spatial_extent_in_metres (Vec3 (640, 0, 480))));
+  for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+    const float x = 5.0f * static_cast<float> (site.column);
+    spatial::get<terrain::surface_elevation> (surface[site]) =
+      terrain::surface_elevation_point ((100.0f + 0.15f * (640.0f - x)) *
+                                        mp_units::si::metre);
+    spatial::get<terrain::sediment_thickness> (surface[site]) =
+      1.0f * terrain::sediment_thickness[u::m];
+    const float cut = site.row >= 32 ? 10.0f : site.column < 48 ? 0.1f : 200.0f;
+    spatial::get<map::eroded_surface_material> (surface[site]) =
+      cut * map::eroded_surface_material[u::m];
+  }
+  map::rebuild_geometry (surface);
+  const map::VegetationMap vegetation = map::analyze_vegetation (
+    surface,
+    spatial::get<terrain::soil_wetness> (
+      test::uniform_moisture (surface.domain (), 0.2f)),
+    50.0f * u::m,
+    250.0f * u::m,
+    0x5eedU,
+    map::undisturbed (surface.domain ()));
+  const auto most_fen = [&] (std::size_t from, std::size_t to) {
+    float most = 0.0f;
+    for (std::size_t row = 0; row < 32; ++row)
+      for (std::size_t column = from; column < to; ++column)
+        most = std::max (most,
+                         spatial::get<map::spring_fen_abundance> (
+                           vegetation[terrain::TerrainIndex { column, row }])
+                           .numerical_value_in (one));
+    return most;
+  };
+  MOPPE_CHECK (most_fen (42, 52) > 0.2f);   // just below the contact
+  MOPPE_CHECK (most_fen (20, 40) < 0.02f);  // on the limestone
+  MOPPE_CHECK (most_fen (90, 110) < 0.02f); // far down the basement
+}
+
+MOPPE_TEST (the_basement_shows_bare_where_a_knoll_kept_no_soil) {
+  using namespace moppe;
+  // A knoll of basement, cut far deeper than the limestone sheet the rest
+  // of the world's erosion sets, with its soil thin or deep.
+  const auto rock_on_knoll = [] (float soil) {
+    map::SurfaceGeometry surface =
+      map::SurfaceGeometry (terrain::TerrainDomain (
+        64, 64, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+    for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+      const float dx = 5.0f * static_cast<float> (site.column) - 160.0f;
+      const float dz = 5.0f * static_cast<float> (site.row) - 160.0f;
+      const float r2 = dx * dx + dz * dz;
+      spatial::get<terrain::surface_elevation> (surface[site]) =
+        terrain::surface_elevation_point (
+          (100.0f + 12.0f * std::exp (-r2 / (2.0f * 30.0f * 30.0f))) *
+          mp_units::si::metre);
+      spatial::get<terrain::sediment_thickness> (surface[site]) =
+        soil * terrain::sediment_thickness[u::m];
+      spatial::get<map::eroded_surface_material> (surface[site]) =
+        (r2 < 60.0f * 60.0f ? 1000.0f : 10.0f) *
+        map::eroded_surface_material[u::m];
+    }
+    map::rebuild_geometry (surface);
+    const map::VegetationMap vegetation = map::analyze_vegetation (
+      surface,
+      spatial::get<terrain::soil_wetness> (
+        test::uniform_moisture (surface.domain (), 0.15f)),
+      50.0f * u::m,
+      250.0f * u::m,
+      0x5eedU,
+      map::undisturbed (surface.domain ()));
+    float most = 0.0f;
+    for (std::size_t row = 28; row < 36; ++row)
+      for (std::size_t column = 28; column < 36; ++column)
+        most = std::max (most,
+                         spatial::get<map::bedrock_exposure> (
+                           vegetation[terrain::TerrainIndex { column, row }])
+                           .numerical_value_in (one));
+    return most;
+  };
+  MOPPE_CHECK (rock_on_knoll (0.05f) > 0.6f);
+  MOPPE_CHECK (rock_on_knoll (1.0f) < 0.05f);
+}
+
 namespace {
   // The vegetation at the middle of a level square of deep, moist soil
   // METRES up, a hundred above the sea, under DISTURBANCE everywhere.

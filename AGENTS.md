@@ -659,8 +659,17 @@
     forked twig and small clumps at the tips), and the field
     layer reaches the ground and grass as
     two sheets at texture slots 5 and 4. In ruska the fjäll's dwarf birch
-    goes gold and its bilberry crimson. The log line `moppe: vegetation:`
-    says how much dry ground each species leads.
+    goes gold and its bilberry crimson. Two readings come from the rock
+    itself (`bedrock_exposure`, `spring_fen_abundance`, a sheet at slot
+    12): granite whalebacks where the ice scoured the basement bare on
+    knolls and ridges with no soil left (pink-grey, polished, jointed,
+    lichen-crusted; only pine roots there), and the spring fen, bright
+    green with ochre runnels, below the limestone's foot on a hillside,
+    where the water that sank through the sheet comes out over the
+    basement in a line of seeps. The log line `moppe: vegetation:` says
+    how much dry ground each species leads, and how much is bare rock
+    (some 4% and 2% fen in the default world, near
+    (4023, 703) and (4096, 683) east of the trailhead).
   - Disturbance (`moppe/game/disturbance.*`, `game::disturb_surface`)
     is the vegetation's last hidden field: what has happened to the
     ground. After the roads are planned over the undisturbed vegetation

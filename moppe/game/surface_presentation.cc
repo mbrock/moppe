@@ -146,6 +146,8 @@ namespace moppe::game {
                            map::grazing_pressure,
                            map::burn_recency,
                            map::stand_recovery>),
+      pixels (render::PixelFormat::rgba8unorm,
+              &write_lanes<map::bedrock_exposure, map::spring_fen_abundance>),
       include_forest);
   }
 }

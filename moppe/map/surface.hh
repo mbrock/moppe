@@ -56,6 +56,7 @@ namespace moppe::map {
   using terrain::HomeBaseInfluence;
   using terrain::TrailInfluence;
   using LimestoneCover = quantity<limestone_cover[one], float>;
+  using BedrockExposure = quantity<bedrock_exposure[one], float>;
   using SpruceAbundance = quantity<spruce_abundance[one], float>;
   using PineAbundance = quantity<pine_abundance[one], float>;
   using BirchAbundance = quantity<birch_abundance[one], float>;
@@ -68,6 +69,7 @@ namespace moppe::map {
   using SedgeAbundance = quantity<sedge_abundance[one], float>;
   using AlvarAbundance = quantity<alvar_abundance[one], float>;
   using FireweedAbundance = quantity<fireweed_abundance[one], float>;
+  using SpringFenAbundance = quantity<spring_fen_abundance[one], float>;
   using GrazingPressure = quantity<grazing_pressure[one], float>;
   using StandRecovery = quantity<stand_recovery[one], float>;
   using BurnRecency = quantity<burn_recency[one], float>;
@@ -93,6 +95,7 @@ namespace moppe::map {
                                           TrailInfluence,
                                           HomeBaseInfluence,
                                           LimestoneCover,
+                                          BedrockExposure,
                                           SpruceAbundance,
                                           PineAbundance,
                                           BirchAbundance,
@@ -105,6 +108,7 @@ namespace moppe::map {
                                           SedgeAbundance,
                                           AlvarAbundance,
                                           FireweedAbundance,
+                                          SpringFenAbundance,
                                           GrazingPressure,
                                           StandRecovery,
                                           BurnRecency>;
@@ -169,6 +173,7 @@ namespace moppe::map {
   using ForestCoverMap = spatial::Bundle<terrain::TerrainDomain, ForestCover>;
   using VegetationMap = spatial::Bundle<terrain::TerrainDomain,
                                         LimestoneCover,
+                                        BedrockExposure,
                                         SpruceAbundance,
                                         PineAbundance,
                                         BirchAbundance,
@@ -180,7 +185,8 @@ namespace moppe::map {
                                         DwarfBirchAbundance,
                                         SedgeAbundance,
                                         AlvarAbundance,
-                                        FireweedAbundance>;
+                                        FireweedAbundance,
+                                        SpringFenAbundance>;
   using DisturbanceMap = spatial::
     Bundle<terrain::TerrainDomain, GrazingPressure, StandRecovery, BurnRecency>;
 
@@ -202,6 +208,11 @@ namespace moppe::map {
   // the outcome of their competition, the trees first and the field layer
   // in the light they leave. The heath, the bog, the alvar, and the fjäll
   // are where those overlap, with edges as frayed as the curves are wide.
+  // Two follow from the rock itself: where the ice scoured the basement
+  // bare on knolls and ridges and no soil came back, granite shows; and
+  // the rain that sank through the limestone runs out along the sheet's
+  // foot, where it rests on the basement, so a hillside below a limestone
+  // edge carries a line of springs and the spring fen they feed.
   // What has happened to the ground is one more such quantity: fireweed
   // takes a fresh scar, birch comes first after it and spruce last,
   // grazing keeps the trees off and leaves heath on poor ground and turf

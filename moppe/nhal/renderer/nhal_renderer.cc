@@ -940,6 +940,7 @@ namespace moppe::nhal {
                                   const render::TexturePixels& plants,
                                   const render::TexturePixels& more_plants,
                                   const render::TexturePixels& scars,
+                                  const render::TexturePixels& bedrock,
                                   bool) override {
         auto sheet = [&] (Texture& texture,
                           const render::TexturePixels& pixels,
@@ -962,6 +963,7 @@ namespace moppe::nhal {
         sheet (m_plants, plants, "plants");
         sheet (m_more_plants, more_plants, "more plants");
         sheet (m_scars, scars, "scars");
+        sheet (m_bedrock, bedrock, "bedrock");
       }
 
       // -- a frame --------------------------------------------------------
@@ -1248,6 +1250,7 @@ namespace moppe::nhal {
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
         m_device->set_texture (11, m_scars ? m_scars : m_clear);
+        m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         bind_roads ();
@@ -1345,6 +1348,7 @@ namespace moppe::nhal {
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
         m_device->set_texture (11, m_scars ? m_scars : m_clear);
+        m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         m_device->draw_indexed_indirect (m_sward_indices, IndexType::uint16,
@@ -1369,6 +1373,7 @@ namespace moppe::nhal {
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
         m_device->set_texture (11, m_scars ? m_scars : m_clear);
+        m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         const float tiles = grass.window[2] * grass.window[2];
@@ -2286,6 +2291,7 @@ namespace moppe::nhal {
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
         m_device->set_texture (11, m_scars ? m_scars : m_clear);
+        m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
         bind_stand ();
         m_device->dispatch ((side * side + 63) / 64);
         m_device->end_compute_pass ();
@@ -2845,7 +2851,7 @@ namespace moppe::nhal {
       RoadSetup m_road_setup {};
       Buffer m_road_rows, m_road_index, m_no_roads;
       Texture m_heights, m_normals, m_landscape, m_ground, m_plants,
-        m_more_plants, m_scars;
+        m_more_plants, m_scars, m_bedrock;
       render::TexturePtr m_grass;
       Buffer m_chunk_indices[lod_count], m_patch_indices[lod_count];
       std::uint32_t m_chunk_index_count[lod_count] {};

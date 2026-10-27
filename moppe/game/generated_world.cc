@@ -118,7 +118,8 @@ namespace moppe::game {
                                      column (map::dwarf_birch_abundance),
                                      column (map::sedge_abundance),
                                      column (map::alvar_abundance),
-                                     column (map::fireweed_abundance));
+                                     column (map::fireweed_abundance),
+                                     column (map::spring_fen_abundance));
       const auto tally = [&] (const auto& columns, const char* const* names) {
         constexpr std::size_t n =
           std::tuple_size_v<std::remove_cvref_t<decltype (columns)>>;
@@ -153,14 +154,23 @@ namespace moppe::game {
         "spruce", "pine", "birch", "fell-birch", "treeless"
       };
       static const char* const field_names[] = {
-        "lichen", "heather", "bilberry", "sphagnum", "dwarf-birch",
-        "sedge",  "alvar",   "fireweed", "grass"
+        "lichen", "heather", "bilberry", "sphagnum",   "dwarf-birch",
+        "sedge",  "alvar",   "fireweed", "spring-fen", "grass"
       };
       std::cerr << "moppe: vegetation: trees";
       tally (trees, tree_names);
       std::cerr << "; field layer";
       tally (field, field_names);
-      std::cerr << std::endl;
+      const auto rock = column (map::bedrock_exposure);
+      std::size_t dry = 0, bare = 0;
+      for (std::size_t i = 0; i < ground.size (); ++i)
+        if (level[i] <= ground[i]) {
+          ++dry;
+          bare += rock[i].numerical_value_in (mp_units::one) > 0.5f;
+        }
+      std::cerr << "; bare rock "
+                << std::lround (100.0 * bare / std::max<std::size_t> (dry, 1))
+                << '%' << std::endl;
     }
   }
 

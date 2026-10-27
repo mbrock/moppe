@@ -231,6 +231,9 @@ namespace moppe::map {
   // How much of the ground stands on the limestone laid over the crystalline
   // basement, rather than on the basement erosion has cut down to.
   QUANTITY_SPEC (limestone_cover, proportion);
+  // How much of the ground is the basement itself, scoured bare by the ice:
+  // granite whalebacks on knolls and ridges where the soil never stayed.
+  QUANTITY_SPEC (bedrock_exposure, proportion);
 
   // How much of a place each species holds, after its tolerance of the site
   // and its competition with the others there. The trees' shares of the
@@ -252,6 +255,9 @@ namespace moppe::map {
   QUANTITY_SPEC (alvar_abundance, proportion);
   // ...and fireweed, the first to take ground that something has opened.
   QUANTITY_SPEC (fireweed_abundance, proportion);
+  // ...and the spring fen: brown moss, sedge, and marsh marigold where the
+  // water that sank through the limestone comes out at its foot.
+  QUANTITY_SPEC (spring_fen_abundance, proportion);
 
   // ---- Disturbance ----
 
