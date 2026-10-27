@@ -659,7 +659,12 @@
     forked twig and small clumps at the tips), and the field
     layer reaches the ground and grass as
     two sheets at texture slots 5 and 4. In ruska the fjäll's dwarf birch
-    goes gold and its bilberry crimson. Two readings come from the rock
+    goes gold and its bilberry crimson. Where heather leads, ling stands
+    in the grass system as knee-high cushions with peaty gaps between
+    them (shoots stiff, olive below, faded mauve, rust, or silver at the
+    tip, as at the equinox: the higher, the more gone over), lower on the
+    fjäll, where the grass gives out, and without meadow flowers
+    (`ling-colour`, `ling-bloom` in world.lisp). Two readings come from the rock
     itself (`bedrock_exposure`, `spring_fen_abundance`, a sheet at slot
     12): granite whalebacks where the ice scoured the basement bare on
     knolls and ridges with no soil left (pink-grey, polished, jointed,

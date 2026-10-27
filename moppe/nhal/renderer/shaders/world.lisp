@@ -623,6 +623,29 @@
          (vec3 0.36 0.26 0.23)
          (smoothstep (- 0.65 width) (+ 0.65 width) damp))))
 
+;;; Ling, display space, at the autumn equinox: dark olive foliage going
+;;; bronze, under spikes whose flowers have faded from mauve to a dusky
+;;; pink, rusted, or gone over to silvery-grey bells.  BLOOM is how much of
+;;; the flowering is left (low and sheltered ground flowers latest); FLECK
+;;; and GRAIN break it sprig by sprig.
+(define-shader-function ling-colour (bloom fleck grain)
+  (let* ((foliage (mix (vec3 0.19 0.21 0.11) (vec3 0.29 0.22 0.14) grain))
+         (faded (mix (vec3 0.39 0.26 0.34) (vec3 0.38 0.25 0.22)
+                     (smoothstep 0.50 0.90 fleck)))
+         (flowers (mix faded (vec3 0.50 0.46 0.44)
+                       (* 0.7 (smoothstep 0.55 0.95
+                                          (+ (- 1.0 bloom)
+                                             (* 0.4 (- grain 0.5))))))))
+    (mix foliage flowers (* (mix 0.30 0.60 bloom)
+                            (smoothstep 0.35 0.65 grain)))))
+
+;;; How much of its flowering ling still has at RISE of the land's relief:
+;;; the high heath is long over, the low still has some colour; DRIFT moves
+;;; it about.
+(define-shader-function ling-bloom (rise drift)
+  (clamp (+ (- 1.0 (smoothstep 0.45 0.90 rise)) (* 0.5 (- drift 0.5)))
+         0.0 1.0))
+
 ;;; The plant at a place and the region's drift there, for a vertex that
 ;;; must match the ground without its finer scales: they rest at their
 ;;; mean.
@@ -752,10 +775,14 @@
          ;; Heather and crowberry: straw, russet, and the wine of crowberry
          ;; where it is damp.
          (shrub (heath-plant patch drift fleck grain))
-         (heather (heath-colour shrub moisture
-                                (max (+ (abs (derivative-x shrub))
-                                        (abs (derivative-y shrub)))
-                                     0.04)))
+         (heath-mix (heath-colour shrub moisture
+                                  (max (+ (abs (derivative-x shrub))
+                                          (abs (derivative-y shrub)))
+                                       0.04)))
+         ;; Where it is the heather itself that holds the heath, ling.
+         (ling (ling-colour (ling-bloom rise drift) fleck grain))
+         (heather (mix heath-mix ling
+                       (* 0.85 (smoothstep 0.20 0.50 heather-share))))
          ;; Ruska: the fjäll's bilberry goes crimson and its dwarf birch
          ;; gold, the higher the sooner.
          (turned (smoothstep 0.45 0.80 (+ rise (* 0.2 (- drift 0.5)))))
@@ -2794,7 +2821,7 @@
 (define-shader-struct grass-medium
   (leaf-area :float) (moisture :float) (forest-cover :float)
   (riparian :float) (clump :float) (canopy-height :float)
-  (blade-tint :vec3))
+  (blade-tint :vec3) (heather :float))
 
 ;;; How much sward one patch carries, as moppe_grass_medium: closed canopy
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
@@ -2849,6 +2876,10 @@
                                           (swizzle more :x))))
          (turned (smoothstep 0.45 0.80 (+ rise (* 0.2 (- (swizzle heath :y)
                                                          0.5)))))
+         ;; Ling: its foliage and faded spikes, seen together.
+         (ling (smoothstep 0.15 0.45 (swizzle plants :y)))
+         (ling-tint (srgb (ling-colour (ling-bloom rise (swizzle heath :y))
+                                       0.5 0.55)))
          (edge (mix 0.25 0.60 clump))
          (turf (* (smoothstep (- edge 0.05) (+ edge 0.05) holds)
                   (step 0.001 density)
@@ -2857,7 +2888,14 @@
                   (vec3 (- 1.12 (* 0.24 moisture)) (+ 0.84 (* 0.30 moisture))
                         (+ 0.82 (* 0.22 moisture))))))
     (make-grass-medium
-     :leaf-area turf
+     ;; Ling holds its ground as a closed carpet wherever it roots.
+     ;; Ling holds its ground as a closed carpet wherever it roots, the
+     ;; fjäll's wind-clipped heath too, above where the grass gives out.
+     :leaf-area (max turf (* 0.95 ling
+                             (smoothstep (- edge 0.05) (+ edge 0.05)
+                                         (* standable cleared (- 1.0 snow)
+                                            ashore))
+                             (step 0.001 density)))
      :moisture moisture
      :forest-cover canopy
      :riparian 0.0
@@ -2879,9 +2917,10 @@
                                      (smoothstep 0.1 0.4 (swizzle more :y)))
                                 (srgb (vec3 0.58 0.55 0.30))
                                 (smoothstep 0.1 0.4 (swizzle more :z)))
-                           (mix (* (srgb (heath-colour (swizzle heath :x)
-                                                       moisture 0.04))
-                                   0.92)
+                           (mix (mix (* (srgb (heath-colour (swizzle heath :x)
+                                                            moisture 0.04))
+                                        0.92)
+                                     ling-tint (* 0.85 ling))
                                 (srgb (vec3 0.80 0.52 0.15))
                                 (* turned
                                    (smoothstep 0.1 0.4 (swizzle more :x))))
@@ -2889,7 +2928,8 @@
                       (srgb (vec3 0.50 0.46 0.24))
                       (* 0.6 (clamp (swizzle stand :y) 0.0 1.0)))
                   (srgb (vec3 0.46 0.14 0.13)) (* 0.80 fireweed))
-                  (srgb (vec3 0.30 0.52 0.12)) (* 0.85 fen)))))
+                  (srgb (vec3 0.30 0.52 0.12)) (* 0.85 fen))
+     :heather ling)))
 
 ;;; Meadow flowers arrive in single-species colonies, never as confetti:
 ;;; an 11-metre lattice, warped so no border runs straight, decides where a
@@ -3027,7 +3067,8 @@
              ;; retire: each family prices itself by its own feature.
              (drift (read-flower-drift centre (grass-medium-moisture medium)
                                        (grass-medium-forest-cover medium)
-                                       leaf))
+                                       (* leaf (- 1.0 (grass-medium-heather
+                                                       medium)))))
              (heads (* leaf (flower-resolved
                              (feature-pixels (* 2.0 (flower-drift-head drift))
                                              (swizzle habitat :w) distance))
@@ -3147,10 +3188,21 @@
          (resolved (blade-resolved pixels))
          ;; Grass is the ordinary answer; a flower takes the shoot where a
          ;; drift claims the ground.
+         ;; No meadow flowers where the ling holds the ground.
          (drift (read-flower-drift root-xz wet canopy
-                                   (grass-medium-leaf-area medium)))
+                                   (* (grass-medium-leaf-area medium)
+                                      (- 1.0 (grass-medium-heather medium)))))
          (flower (< (plant-hash identity (uint 3))
                     (* 0.55 (flower-drift-presence drift))))
+         ;; Where heather holds the ground a shoot is a sprig of ling: stiff,
+         ;; upright, woody, and grown in rounded cushions with gaps
+         ;; between them.
+         (ling (and (not flower)
+                    (< (plant-hash identity (uint 7))
+                       (grass-medium-heather medium))))
+         (cushion (smoothstep 0.30 0.75 (value-noise (* root-xz 1.35))))
+         (bloom-rise (/ (- height (swizzle relief :x))
+                        (max (swizzle relief :y) 1.0)))
          (head-pixels (feature-pixels (* 2.0 (flower-drift-head drift))
                                       focal distance))
          (micro (smoothstep 1.5 4.0 pixels))
@@ -3163,6 +3215,9 @@
          (presence (lod-presence (* (grass-medium-leaf-area medium)
                                     (if flower (flower-resolved head-pixels)
                                         resolved)
+                                    ;; Bare peaty ground between cushions.
+                                    (if ling (smoothstep 0.10 0.35 cushion)
+                                        1.0)
                                     fade 32.0)
                                  shoot (cell-identity cell)))
          (vigour (plant-hash identity (uint 4)))
@@ -3172,7 +3227,7 @@
                    (if flower 1.0
                        (- 1.0 (* 0.32 (smoothstep 0.40 0.95 canopy))))))
          (up (normalize (mix ground-normal (vec3 0.0 1.0 0.0)
-                             (if flower 0.85 0.72))))
+                             (if flower 0.85 (if ling 0.82 0.72)))))
          (turn (+ (* 6.2831853 (plant-hash identity (uint 5)))
                   (* 0.55 (- (plant-hash identity (uint 6)) 0.5))))
          (sideways (normalize (+ (cross3 up (vec3 0.0 0.0 1.0))
@@ -3184,12 +3239,19 @@
          ;; A flower stem stands relative to the sward; once the sward has
          ;; retired it crouches with it, and it never goes thinner than
          ;; the head it carries can be seen.
-         (blade-reach (* scale (if flower 0.07 (* 0.16 spread))))
+         (blade-reach (* scale (if flower 0.07
+                                   (if ling (* 0.06 spread)
+                                       (* 0.16 spread)))))
          (climb (if flower
                     (* scale (flower-drift-stem drift)
                        (+ 0.80 (* 0.30 (plant-hash identity (uint 12))))
                        (mix 0.30 1.0 resolved))
-                    (* scale 0.65 spread)))
+                    (if ling
+                        (* scale 0.46 (+ 0.25 (* 0.75 cushion))
+                           ;; Clipped low by the wind on the fjäll.
+                           (- 1.0 (* 0.45 (smoothstep 0.45 0.80 bloom-rise)))
+                           (+ 0.85 (* 0.30 (plant-hash identity (uint 12)))))
+                        (* scale 0.65 spread))))
          (stem-width (* scale 0.010))
          (width (if flower
                     (* stem-width
@@ -3197,9 +3259,9 @@
                                                           focal distance)
                                           0.05))
                               1.0 3.5))
-                    (* scale 0.018)))
-         (lift (if flower 1.0 1.22))
-         (arch (if flower 0.0 0.20))
+                    (* scale (if ling 0.055 0.018))))
+         (lift (if (or flower ling) 1.0 1.22))
+         (arch (if flower 0.0 (if ling 0.06 0.20)))
          ;; The head keeps its species colour while it spans pixels a
          ;; jittered sample can revisit; past that it widens, dims, and
          ;; collapses toward its drift's wash.
@@ -3224,6 +3286,20 @@
                         (* (flower-wash (flower-drift-tint drift)) 0.60)
                         (min 0.32 (* 0.32 (flower-drift-presence drift)))))
          (tint (if flower own (mix ensemble own resolved)))
+         ;; A sprig of ling: foliage below, its spike above, each sprig's
+         ;; flowers faded, rusted, or gone over by its own lot.
+         (bloom (ling-bloom bloom-rise 0.5))
+         (ling-leaf (srgb (mix (vec3 0.23 0.26 0.14) (vec3 0.34 0.28 0.18)
+                               (plant-hash identity (uint 31)))))
+         (ling-spike (srgb (mix (mix (vec3 0.50 0.30 0.48)
+                                     (vec3 0.43 0.27 0.24)
+                                     (smoothstep 0.65 0.95
+                                                 (plant-hash identity
+                                                             (uint 33))))
+                                (vec3 0.52 0.48 0.46)
+                                (smoothstep (- bloom 0.15) (+ bloom 0.15)
+                                            (plant-hash identity
+                                                        (uint 37))))))
          ;; The mover parts the field: upper sections lean away and lie
          ;; down toward the centre of its footprint.
          (from-mover (- root-xz (swizzle interaction :xz)))
@@ -3261,7 +3337,7 @@
                        (* disc-u (* head (if lower-edge -0.62 0.66))))
                     stalk))
          (half-width (if in-head (* head (if lower-edge 0.98 0.80))
-                         (if (and (not flower) (>= t0 0.999)) 0.0
+                         (if (and (not flower) (not ling) (>= t0 0.999)) 0.0
                              (* width (+ 0.72 (* 0.28 (sin (* 3.1415927
                                                              t0))))))))
          (side (normalize (cross3 out up)))
@@ -3274,8 +3350,10 @@
                                                     (* 2.2 t0)))))))))
          (edge (if in-head disc-r (normalize (cross3 face out))))
          (petal (if in-head 1.0 0.0))
-         (bend (+ 0.18 (* 0.50 t0)))
-         (flutter (* (+ 0.06 (* 0.18 t0)) micro (- 1.0 petal)))
+         ;; Ling is wiry: it hardly bends to the wind.
+         (stiff (if ling 0.3 1.0))
+         (bend (* stiff (+ 0.18 (* 0.50 t0))))
+         (flutter (* stiff (+ 0.06 (* 0.18 t0)) micro (- 1.0 petal)))
          (rest (+ spine (* edge (* half-width right-edge))))
          (current (+ rest (blade-sway spine root bend flutter
                                       (swizzle camera-position :w))))
@@ -3288,7 +3366,12 @@
                     (mix 0.72 ramp (if flower 1.0
                                        (smoothstep 0.35 0.95 pixels)))))
          (section-tint (if in-head (* head-tint (if lower-edge 0.84 1.05))
-                           tint))
+                           (if ling
+                               (mix blade-tint
+                                    (mix ling-leaf ling-spike
+                                         (smoothstep 0.45 0.90 t0))
+                                    resolved)
+                               tint)))
          (alive (and (< shoot shoots) (> presence 0.001)))
          (here-clip (* view-proj (vec4 current 1.0))))
     (set-output clip-position
@@ -3531,7 +3614,9 @@
                   (sample-level bedrock linear-repeat uv 0.0)))
          (drift (read-flower-drift xz (grass-medium-moisture grass-here)
                                    (grass-medium-forest-cover grass-here)
-                                   (grass-medium-leaf-area grass-here)))
+                                   (* (grass-medium-leaf-area grass-here)
+                                      (- 1.0 (grass-medium-heather
+                                              grass-here)))))
          (eye (swizzle camera-position :xyz))
          (ground-point (vec3 (swizzle xz :x) height (swizzle xz :y)))
          (offset (- ground-point eye))
