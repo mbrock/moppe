@@ -37,6 +37,7 @@
 #include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/fingerposts.hh>
+#include <moppe/game/scan.hh>
 #include <moppe/game/map_sheet.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/mushrooms.hh>
@@ -510,6 +511,51 @@ namespace moppe {
           r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
         if (m_fingerpost_lettering)
           r.draw_world_text (*m_fingerpost_lettering);
+      }
+
+      // The scan (scan.hh): a ring out from the walker, and what it finds
+      // labelled where it stands. `ago` starts it that many seconds back.
+      void start_scan (double ago) {
+        const Vec3 feet = session ().walker ().position ();
+        std::vector<ScanFind> finds = scan_mushrooms (m_mushrooms, feet);
+        const std::vector<mov::Trunk> trunks =
+          m_trunk_field.gather (feet, scan_reach + 6.0f);
+        const std::vector<ScanFind> trees = scan_hammocks (
+          hammock_sites_near (trunks, feet, scan_reach, ground_reader ()));
+        finds.insert (finds.end (), trees.begin (), trees.end ());
+        std::cerr << "moppe: scan from " << feet[0] << " " << feet[1] << " "
+                  << feet[2] << " found " << finds.size () << "\n";
+        m_scan.start (feet, logic ().m_total_time - ago, std::move (finds));
+      }
+
+      void draw_scan (render::Renderer& r, const FrameView& frame) {
+        const double now = logic ().m_total_time;
+        if (!m_scan.showing (now) || !m_hud.font ())
+          return;
+        if (!m_scan_marks.set)
+          m_scan_marks = make_scan_marks (r);
+        m_scan_dl.clear ();
+        draw_scan_glow (m_scan_dl, m_scan, now, frame.camera.position,
+                        ground_reader ());
+        r.draw_list (m_scan_dl, 0);
+        m_scan_text.clear ();
+        const FrameCamera& camera = frame.camera;
+        // The drawn view's basis, from its matrix, as the post lighting
+        // takes it.
+        const Mat4& m = camera.view;
+        const ScanView view {
+          .eye = camera.position,
+          .right = Vec3 (m.at (0, 0), m.at (1, 0), m.at (2, 0)),
+          .up = Vec3 (m.at (0, 1), m.at (1, 1), m.at (2, 1)),
+          .forward = Vec3 (-m.at (0, 2), -m.at (1, 2), -m.at (2, 2)),
+          .tan_half_height =
+            std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad)),
+          .width_pts = static_cast<float> (r.width_pts ()),
+          .height_pts = static_cast<float> (r.height_pts ()),
+        };
+        draw_scan_labels (m_scan_text, *m_hud.font (), m_scan_marks, m_scan,
+                          now, session ().walker ().position (), view);
+        r.draw_world_labels (m_scan_text);
       }
 
       void draw_trail_map (render::DrawList& dl,
@@ -3419,6 +3465,11 @@ namespace moppe {
         std::cerr << "moppe: world ready " << m_loading.status ().elapsed
                   << " s after loading began" << std::endl;
 
+        // MOPPE_SCAN=<seconds>: a scan from where the walker stands, that
+        // long under way, for captures.
+        if (const char* scan = moppe::environment ("MOPPE_SCAN"))
+          start_scan (std::atof (scan));
+
         // A screenshot plays a shot list it names (MOPPE_OPENING=file),
         // so that a still can be taken from any pose the grammar writes.
         const char* list = moppe::environment ("MOPPE_OPENING");
@@ -3430,7 +3481,7 @@ namespace moppe {
           m_water_shot.has_value () || m_gazetteer.has_value () ||
           moppe::environment ("MOPPE_DEMO") ||
           moppe::environment ("MOPPE_WALK");
-        if (!automated && !m_skip_cinematic_requested) {
+        if (posed || (!automated && !m_skip_cinematic_requested)) {
           start_opening ();
           m_live_input.clear ();
         }
@@ -5494,6 +5545,7 @@ namespace moppe {
         }
         if (visibility.star_effects)
           session ().stars ().render (r, frame.environment);
+        draw_scan (r, frame);
       }
 
       void draw_water_surfaces (render::Renderer& r, const FrameView& frame) {
@@ -6314,6 +6366,12 @@ namespace moppe {
           return;
         }
 
+        if (k == Key::Q && down && logic ().m_mode == M_FOOT &&
+            !logic ().m_camp.resting) {
+          start_scan (0.0);
+          return;
+        }
+
         if (k == Key::H && down) {
           m_hud.set_diagnostics (!m_hud.diagnostics ());
           return;
@@ -6873,6 +6931,10 @@ namespace moppe {
       bool m_fingerposts_made = false;
       render::MeshPtr m_fingerpost_mesh;
       render::WorldTextPtr m_fingerpost_lettering;
+      Scan m_scan;
+      ScanMarks m_scan_marks;
+      render::DrawList m_scan_dl;
+      render::TextList m_scan_text;
       std::unique_ptr<render::Font> m_sign_font;
       bool m_skip_cinematic_requested = false;
       // Whose Space was last prompted (HudState::thumb_hint), since when,

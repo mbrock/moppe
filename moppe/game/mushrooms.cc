@@ -568,6 +568,27 @@ namespace moppe::game {
     return best;
   }
 
+  std::vector<std::uint32_t> MushroomPatch::within (const Vec3& at,
+                                                    float within) const {
+    const int tx = static_cast<int> (std::floor (at[0] / tile_metres));
+    const int tz = static_cast<int> (std::floor (at[2] / tile_metres));
+    const int span = static_cast<int> (std::ceil (within / tile_metres));
+    std::vector<std::uint32_t> found;
+    for (int dz = -span; dz <= span; ++dz)
+      for (int dx = -span; dx <= span; ++dx) {
+        const auto tile = m_tiles.find (tile_key (tx + dx, tz + dz));
+        if (tile == m_tiles.end ())
+          continue;
+        for (const std::uint32_t index : tile->second.sites) {
+          const Vec3& base = m_plan.sites[index].base;
+          if (!m_picked[index] &&
+              std::hypot (base[0] - at[0], base[2] - at[2]) <= within)
+            found.push_back (index);
+        }
+      }
+    return found;
+  }
+
   void MushroomPatch::take (std::uint32_t index) {
     if (index >= m_picked.size () || m_picked[index])
       return;

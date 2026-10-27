@@ -40,6 +40,27 @@ namespace moppe {
       }
     }
 
+    void TextList::stand (const Vec3& at,
+                          float height_pts,
+                          std::size_t first) {
+      // Screen heights, y up: the offset in the axes' spare w.
+      const float k = 1.0f / height_pts;
+      for (std::size_t i = first; i < m_quads.size (); ++i) {
+        GlyphQuad& q = m_quads[i];
+        q.axis_x[3] = q.origin[0] * k;
+        q.axis_y[3] = -q.origin[1] * k;
+        q.axis_x[0] *= k;
+        q.axis_x[1] *= -k;
+        q.axis_y[0] *= k;
+        q.axis_y[1] *= -k;
+        q.axis_x[2] = q.axis_y[2] = 0.0f;
+        q.origin[0] = at[0];
+        q.origin[1] = at[1];
+        q.origin[2] = at[2];
+        q.glyph[3] = 1;
+      }
+    }
+
     std::u32string decode_utf8 (std::string_view utf8) {
       std::u32string out;
       out.reserve (utf8.size ());

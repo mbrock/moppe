@@ -96,6 +96,7 @@ namespace moppe::platform {
       { "M", Key::M },
       { "N", Key::N },           { "R", Key::R },
       { "T", Key::T },           { "Y", Key::Y },
+      { "Q", Key::Q },
       { "1", Key::One },         { "2", Key::Two },
       { "3", Key::Three },       { "4", Key::Four },
       { "5", Key::Five },        { "6", Key::Six },

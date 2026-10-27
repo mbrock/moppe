@@ -380,6 +380,57 @@ namespace moppe::game {
     return best;
   }
 
+  std::vector<HammockSite>
+  hammock_sites_near (std::span<const mov::Trunk> trunks,
+                      const Vec3& near,
+                      float within,
+                      const GroundHeight& ground) {
+    using namespace camp_parts;
+    std::vector<mov::Trunk> sorted (trunks.begin (), trunks.end ());
+    std::ranges::sort (sorted, [] (const mov::Trunk& a, const mov::Trunk& b) {
+      return a.root[0] < b.root[0];
+    });
+    constexpr float window = hammock_most_span + 2.0f * most_girth;
+    struct Found {
+      float distance;
+      std::size_t a, b;
+      HammockSite site;
+    };
+    std::vector<Found> found;
+    std::size_t first = 0;
+    for (std::size_t i = 0; i < sorted.size (); ++i) {
+      const mov::Trunk& a = sorted[i];
+      if (!carries (a))
+        continue;
+      while (sorted[first].root[0] < a.root[0] - window)
+        ++first;
+      std::size_t last = i;
+      while (last + 1 < sorted.size () &&
+             sorted[last + 1].root[0] <= a.root[0] + window)
+        ++last;
+      const std::span<const mov::Trunk> around (sorted.data () + first,
+                                                last - first + 1);
+      for (std::size_t j = i + 1; j <= last; ++j) {
+        const Vec3 middle = (a.root + sorted[j].root) * 0.5f;
+        const float distance = length (flat (middle - near));
+        HammockSite site;
+        if (distance > within || !fits (a, sorted[j], around, ground, site))
+          continue;
+        found.push_back ({ distance, i, j, site });
+      }
+    }
+    std::ranges::sort (found, {}, &Found::distance);
+    std::vector<bool> used (sorted.size ());
+    std::vector<HammockSite> sites;
+    for (const Found& f : found) {
+      if (used[f.a] || used[f.b])
+        continue;
+      used[f.a] = used[f.b] = true;
+      sites.push_back (f.site);
+    }
+    return sites;
+  }
+
   void draw_hammock (render::DrawList& dl,
                      const HammockSite& site,
                      float load,

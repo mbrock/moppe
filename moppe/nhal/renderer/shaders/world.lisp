@@ -5535,6 +5535,12 @@
 ;;; geometry carries the frame's jitter and writes its motion, so the
 ;;; temporal resolve does not smear it.  The ink is paint, lit and hazed as
 ;;; the uber program lights a matte surface.
+;;;
+;;; A quad whose fourth glyph word is 1 is a label standing at a point
+;;; instead (TextList::stand): its origin is the point, its axes and
+;;; offset (the axes' w) measure the screen in heights of it, y up, so it
+;;; faces the camera and keeps its size at any distance; its ink is light,
+;;; neither lit nor hazed.
 
 ;;; The on-screen length in pixels between two projected points.
 (define-shader-function screen-pixels (from to size)
@@ -5549,6 +5555,10 @@
         (- (* (swizzle a :x) (swizzle b :y))
            (* (swizzle a :y) (swizzle b :x)))))
 
+;;; A clip position moved by NDC, as far on screen at any depth.
+(define-shader-function clip-offset (clip ndc)
+  (+ clip (vec4 (* ndc (swizzle clip :w)) 0.0 0.0)))
+
 (define-shader world-text-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index)
@@ -5559,7 +5569,7 @@
                (bounds :vec4 :location 2 :interpolation :flat)
                (ink :vec4 :location 3 :interpolation :flat)
                (glyph :vec4 :location 4 :interpolation :flat)
-               (facing :vec3 :location 5 :interpolation :flat)
+               (facing :vec4 :location 5 :interpolation :flat)
                (here :vec4 :location 6)
                (then :vec4 :location 7))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
@@ -5567,14 +5577,18 @@
   (let* ((row (* instance-index (uint 6.0)))
          (origin-row (buffer-element quads row))
          (origin (swizzle origin-row :xyz))
-         (axis-x (swizzle (buffer-element quads (+ row (uint 1.0))) :xyz))
-         (axis-y (swizzle (buffer-element quads (+ row (uint 2.0))) :xyz))
+         (axis-x-row (buffer-element quads (+ row (uint 1.0))))
+         (axis-y-row (buffer-element quads (+ row (uint 2.0))))
+         (axis-x (swizzle axis-x-row :xyz))
+         (axis-y (swizzle axis-y-row :xyz))
          (glyph-bounds (buffer-element quads (+ row (uint 3.0))))
          (color (buffer-element quads (+ row (uint 4.0))))
          (words (buffer-element quads (+ row (uint 5.0))))
+         (standing (step 0.5 (float (bit-cast :uint (swizzle words :w)))))
          (filter-pixels (max (swizzle origin-row :w) 1.0))
          (low (swizzle glyph-bounds :xy))
          (span (max (- (swizzle glyph-bounds :zw) low) (vec2 0.0001 0.0001)))
+         (size (swizzle temporal :xy))
          ;; Dynamic dilation: the outline's edges as they land on screen
          ;; say how many pixels an em is along each axis, and the quad grows
          ;; past the outline by a fixed number of pixels at whatever size it
@@ -5589,19 +5603,36 @@
          (y-clip (* view-proj (vec4 (+ corner-low
                                        (* axis-y (swizzle span :y)))
                                     1.0)))
-         (size (swizzle temporal :xy))
+         (lying-per-em
+           (/ (vec2 (screen-pixels low-clip x-clip size)
+                    (screen-pixels low-clip y-clip size))
+              span))
+         ;; A label's axes are in screen heights already.
+         (standing-per-em
+           (* (vec2 (sqrt (dot (swizzle axis-x :xy) (swizzle axis-x :xy)))
+                    (sqrt (dot (swizzle axis-y :xy) (swizzle axis-y :xy))))
+              (swizzle size :y)))
          (pixels-per-em
-           (max (/ (vec2 (screen-pixels low-clip x-clip size)
-                         (screen-pixels low-clip y-clip size))
-                   span)
+           (max (if (> standing 0.5) standing-per-em lying-per-em)
                 (vec2 0.001 0.001)))
          (reach (* luv.slug::slug-dilation-pixels filter-pixels))
          (dilation (min (/ (vec2 reach reach) pixels-per-em) (vec2 1.0 1.0)))
          (at (+ (- low dilation)
                 (* (+ span (* 2.0 dilation)) (quad-corner vertex-index))))
-         (position (+ origin (* axis-x (swizzle at :x))
-                      (* axis-y (swizzle at :y))))
-         (current (* view-proj (vec4 position 1.0))))
+         (lying (+ origin (* axis-x (swizzle at :x))
+                   (* axis-y (swizzle at :y))))
+         (position (if (> standing 0.5) origin lying))
+         ;; Where a label's corner falls on screen from its point, in NDC.
+         (screen (+ (vec2 (swizzle axis-x-row :w) (swizzle axis-y-row :w))
+                    (* (swizzle axis-x :xy) (swizzle at :x))
+                    (* (swizzle axis-y :xy) (swizzle at :y))))
+         (ndc (* screen (* 2.0 (vec2 (/ (swizzle size :y)
+                                        (max (swizzle size :x) 1.0))
+                                     1.0))))
+         (point-clip (* view-proj (vec4 position 1.0)))
+         (point-then (* previous-view-proj (vec4 position 1.0)))
+         (current (if (> standing 0.5) (clip-offset point-clip ndc) point-clip))
+         (before (if (> standing 0.5) (clip-offset point-then ndc) point-then)))
     (set-output clip-position (clip current (swizzle temporal :zw)))
     (set-output world position)
     (set-output em at)
@@ -5611,9 +5642,9 @@
                             (float (bit-cast :uint (swizzle words :y)))
                             (float (bit-cast :uint (swizzle words :z)))
                             filter-pixels))
-    (set-output facing (cross-product axis-x axis-y))
+    (set-output facing (vec4 (cross-product axis-x axis-y) standing))
     (set-output here current)
-    (set-output then (* previous-view-proj (vec4 position 1.0)))))
+    (set-output then before)))
 
 (define-shader world-text-fragment
     (:stage :fragment
@@ -5622,7 +5653,7 @@
               (bounds :vec4 :location 2 :interpolation :flat)
               (ink :vec4 :location 3 :interpolation :flat)
               (glyph :vec4 :location 4 :interpolation :flat)
-              (facing :vec3 :location 5 :interpolation :flat)
+              (facing :vec4 :location 5 :interpolation :flat)
               (here :vec4 :location 6)
               (then :vec4 :location 7))
      :outputs ((color :vec4 :location 0)
@@ -5638,7 +5669,7 @@
          (eye (normalize (- camera world)))
          ;; Lettering is seen from the side it lies on, whichever way its
          ;; axes wind.
-         (face (normalize (+ facing (vec3 0.0 0.00001 0.0))))
+         (face (normalize (+ (swizzle facing :xyz) (vec3 0.0 0.00001 0.0))))
          (n (* face (- (* 2.0 (step 0.0 (dot face eye))) 1.0)))
          (sun (swizzle sun-direction :xyz))
          (direct (sun-lit shadow-map shadow-compare world 0.15 0.5))
@@ -5651,8 +5682,15 @@
                       (clamp (dot n sun) 0.0 1.0))
                    bounce
                    (lamp-light lamp lamp-color world n)))
-         (shaded (hazed (* (srgb (swizzle ink :xyz)) light) world camera
-                        fog-color (swizzle sky-sun :xyz) relief)))
+         (paint (srgb (swizzle ink :xyz)))
+         (lit (hazed (* paint light) world camera
+                     fog-color (swizzle sky-sun :xyz) relief))
+         ;; A label is light, a little over the scene's white so the tone
+         ;; curve keeps its colour.
+         (shaded (mix lit (* paint 1.8) (swizzle facing :w))))
+    ;; Where a quad covers nothing it leaves the scene's motion alone.
+    (when (< alpha 0.002)
+      (discard))
     (set-output color (vec4 (* shaded alpha) alpha))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 

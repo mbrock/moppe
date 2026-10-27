@@ -82,6 +82,10 @@ namespace moppe::game {
              float within,
              std::span<const std::uint32_t> skip = {}) const;
 
+    // Every unpicked mushroom within `within` metres of `at`,
+    // horizontally.
+    std::vector<std::uint32_t> within (const Vec3& at, float within) const;
+
     // Brings the ground in line with the basket: anything it holds is no
     // longer standing. Cheap when nothing changed.
     void follow (const Basket& basket);

@@ -1522,6 +1522,36 @@ namespace moppe::nhal {
         }
       }
 
+      void draw_world_labels (const render::TextList& text) override {
+        if (text.empty () || m_casting || m_scene_closed)
+          return;
+        open_scene ();
+        // Behind the scene's surfaces faintly, then in front of them.
+        std::vector<render::GlyphQuad> faint = text.quads ();
+        for (render::GlyphQuad& quad : faint)
+          quad.color[3] *= 0.3f;
+        for (const bool behind : { true, false }) {
+          const std::vector<render::GlyphQuad>& quads =
+            behind ? faint : text.quads ();
+          m_device->set_pipeline (behind ? m_world_labels_behind
+                                         : m_world_text);
+          m_device->set_buffer (0, m_frame_block);
+          m_device->set_texture (8, m_shadow_map);
+          for (const render::TextList::Run& run : text.runs ()) {
+            const auto* glyphs =
+              static_cast<const NhalGlyphSet*> (run.glyphs.get ());
+            if (!glyphs || !run.count)
+              continue;
+            m_device->set_buffer (
+              1, m_device->upload (
+                   std::span (quads).subspan (run.first, run.count)));
+            m_device->set_buffer (2, glyphs->curves);
+            m_device->set_buffer (3, glyphs->bands);
+            m_device->draw (6, run.count);
+          }
+        }
+      }
+
       void draw_mesh (const render::Mesh& mesh, const Mat4& model,
                       std::uint64_t motion_id) override {
         const auto& m = static_cast<const NhalMesh&> (mesh);
@@ -2047,6 +2077,11 @@ namespace moppe::nhal {
         lettering.cull = Cull::none;
         lettering.label = "world text";
         m_world_text = m_device->create_render_pipeline (lettering);
+        // What the scene hides of a label: where its surfaces are nearer.
+        RenderPipelineDesc behind = lettering;
+        behind.depth_compare = CompareOp::less;
+        behind.label = "world labels behind";
+        m_world_labels_behind = m_device->create_render_pipeline (behind);
 
         RenderPipelineDesc waterfall = scene;
         waterfall.program = &shaders::waterfall::program;
@@ -2919,7 +2954,7 @@ namespace moppe::nhal {
       ProgramCode m_motion_blur_code;
       Pipeline m_motion_blur;
       ProgramCode m_world_text_code;
-      Pipeline m_world_text;
+      Pipeline m_world_text, m_world_labels_behind;
       // The resolved image, smeared (apply_motion_blur).
       Texture m_blurred;
       Texture m_image;

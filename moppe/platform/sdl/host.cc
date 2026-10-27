@@ -81,6 +81,7 @@ namespace {
     case SDLK_R: return Key::R;
     case SDLK_T: return Key::T;
     case SDLK_Y: return Key::Y;
+    case SDLK_Q: return Key::Q;
     case SDLK_1: return Key::One;
     case SDLK_2: return Key::Two;
     case SDLK_3: return Key::Three;

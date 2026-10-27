@@ -1,4 +1,5 @@
 #include <moppe/game/mushrooms.hh>
+#include <moppe/game/scan.hh>
 
 #include <tests/recording_renderer.hh>
 #include <tests/test.hh>
@@ -72,4 +73,48 @@ MOPPE_TEST (fly_agaric_is_left_growing) {
   MOPPE_CHECK (mushroom_edible (MushroomKind::chanterelle));
   MOPPE_CHECK (mushroom_edible (MushroomKind::funnel_chanterelle));
   MOPPE_CHECK (mushroom_edible (MushroomKind::porcini));
+}
+
+MOPPE_TEST (the_scan_groups_mushrooms_and_lights_them_as_the_ring_passes) {
+  // Three chanterelles together and a fly agaric among them, and one
+  // chanterelle 40 m off: a group of three, the poisonous one alone, and
+  // the far one alone.
+  MushroomPlan plan;
+  plan.sites = {
+    mushroom_at (110.0f, 100.0f, MushroomKind::chanterelle),
+    mushroom_at (111.0f, 100.5f, MushroomKind::chanterelle),
+    mushroom_at (110.5f, 101.5f, MushroomKind::chanterelle),
+    mushroom_at (110.5f, 100.8f, MushroomKind::fly_agaric),
+    mushroom_at (100.0f, 140.0f, MushroomKind::chanterelle),
+  };
+  MushroomPatch patch;
+  patch.rebuild (plan);
+  const Vec3 origin (100.0f, 10.0f, 100.0f);
+  const std::vector<ScanFind> finds = scan_mushrooms (patch, origin);
+  MOPPE_CHECK (finds.size () == 3);
+  int groups = 0, poisonous = 0, single = 0;
+  const ScanFind* far = nullptr;
+  for (const ScanFind& f : finds) {
+    if (f.kind == ScanFind::Kind::poisonous)
+      ++poisonous;
+    else if (f.count == 3)
+      ++groups;
+    else if (f.count == 1) {
+      ++single;
+      far = &f;
+    }
+  }
+  MOPPE_CHECK (groups == 1 && poisonous == 1 && single == 1);
+
+  // The ring goes 24 m a second: at one second it has not reached the
+  // chanterelle 40 m off, at two it has.
+  Scan scan;
+  scan.start (origin, 50.0, finds);
+  MOPPE_CHECK (far != nullptr);
+  const ScanFind& lone = scan.finds ()[far - finds.data ()];
+  MOPPE_CHECK (scan.shown (lone, 51.0) == 0.0f);
+  MOPPE_CHECK (scan.shown (lone, 52.0) > 0.5f);
+  // And it fades once its time is up.
+  MOPPE_CHECK (scan.shown (lone, 52.0 + scan_lit + scan_fade) == 0.0f);
+  MOPPE_CHECK (!scan.showing (50.0 + 60.0));
 }

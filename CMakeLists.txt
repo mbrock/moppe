@@ -440,6 +440,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/river_stones.cc
   moppe/game/mushrooms.cc
   moppe/game/camp.cc
+  moppe/game/scan.cc
   moppe/game/fishing.cc
   moppe/game/companion.cc
   moppe/game/companion_link.cc

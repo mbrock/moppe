@@ -649,6 +649,17 @@
     fills visibly; fly agaric is poisonous and stays. The picked indices
     live in `GameLogicState::m_basket` (`game/basket.hh`), and the ground
     follows them, meshed in 16 m tiles near the camera.
+  - The scan (`moppe/game/scan.*`): on foot, `Q` sends a ring sweeping
+    out 60 m over the ground, and what it passes lights up for twelve
+    seconds with a label standing over it, faint through whatever is in
+    front: mushrooms in groups of a kind (fly agaric in red, POISONOUS),
+    and pairs of trees that would take the hammock, with how far apart
+    they are. The labels are Slug text standing at points in the world
+    (`TextList::stand`, `Renderer::draw_world_labels`: facing the camera
+    at a fixed size), the nearest named and the rest a mark alone where
+    names would crowd. `MOPPE_SCAN=<seconds>` starts one that far under
+    way, for captures (with `MOPPE_WALK=camp` and a posed still, the
+    ring is `MOPPE_SCAN=0.6`, the labels `6`).
   - Vegetation (`map::analyze_vegetation` in `moppe/map/surface.cc`) is
     not drawn as zones. Hidden site fields -- soil water, soil depth, peat,
     cold (height, north aspect, frost hollows), wind exposure, and bedrock

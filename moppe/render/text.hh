@@ -52,6 +52,12 @@ namespace moppe {
                   const Vec3& up,
                   std::size_t first = 0);
 
+      // Stands the quads from `first` on, recorded in HUD points as
+      // Font::draw lays a line, at a point in the world as a label for
+      // Renderer::draw_world_labels: the line's (0, 0) at `at`, and its
+      // size on a screen `height_pts` tall kept at any distance.
+      void stand (const Vec3& at, float height_pts, std::size_t first = 0);
+
       const std::vector<GlyphQuad>& quads () const {
         return m_quads;
       }

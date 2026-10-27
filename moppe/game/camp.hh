@@ -24,6 +24,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace moppe::game {
   using GroundHeight = std::function<float (float x, float z)>;
@@ -52,6 +53,14 @@ namespace moppe::game {
                         const Vec3& near,
                         const GroundHeight& ground,
                         float shade = 0.0f);
+
+  // Every fit pair among `trunks` whose middle lies within `within` metres
+  // of `near`, nearest first, no tree in two of them.
+  [[nodiscard]] std::vector<HammockSite>
+  hammock_sites_near (std::span<const mov::Trunk> trunks,
+                      const Vec3& near,
+                      float within,
+                      const GroundHeight& ground);
 
   // The middle of the hammock's span, at strap height.
   Vec3 hammock_middle (const HammockSite& site);

@@ -159,7 +159,9 @@ namespace moppe {
       float
         bounds[4];    // the glyph's exact em bounds: min x, min y, max x, max y
       float color[4]; // straight-alpha display RGBA
-      uint32_t glyph[4]; // band offset, horizontal bands, vertical bands, 0
+      // band offset, horizontal bands, vertical bands, and 1 for a label
+      // standing at the origin (TextList::stand)
+      uint32_t glyph[4];
     };
     static_assert (sizeof (GlyphQuad) == 96, "glyph quad is 96 bytes");
   }
