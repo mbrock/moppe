@@ -112,8 +112,9 @@ MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
 }
 
 namespace {
-  // A field 60 m above the sea with a sharp ridge across it, 3 m high and
-  // 30 m through: a 20% climb each side.
+  // A field 60 m above the sea with a ridge across it, 24 m high and
+  // 240 m through: a 20% climb each side, more than a road may cut or fill
+  // its way over within its allowances.
   ElevationMap ridge_country () {
     std::vector<float> heights (side * side);
     for (std::size_t z = 0; z < side; ++z)
@@ -121,7 +122,7 @@ namespace {
         const float from_ridge =
           std::fabs (static_cast<float> (x) * 5.0f - 250.0f);
         heights[z * side + x] =
-          60.0f + std::max (0.0f, 3.0f - 0.2f * from_ridge);
+          60.0f + std::max (0.0f, 24.0f - 0.2f * from_ridge);
       }
     return make_elevation_map (
       TerrainDomain (
@@ -160,8 +161,10 @@ MOPPE_TEST (built_roads_hold_their_grade_and_meet_where_they_join) {
       steepest, std::fabs (formed.heights[i] - formed.heights[i - 1]) / 4.0f);
   MOPPE_CHECK (steepest <= parameters.maximum_grade + 1e-3f);
   MOPPE_CHECK (built.steep_points == 0);
-  // It cut through the crest rather than climbing it.
-  MOPPE_CHECK (formed.heights[formed.points.size () / 2] < 62.5f);
+  // It cut through the crest rather than climbing it, deeper than the cut
+  // allowed, rather than steepening.
+  MOPPE_CHECK (formed.heights[formed.points.size () / 2] <
+               84.0f - 0.4f - parameters.maximum_cut);
   MOPPE_CHECK (built.cut_m3 > 0.0);
 
   // The branch starts at the height of the road it leaves.

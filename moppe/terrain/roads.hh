@@ -112,8 +112,9 @@ namespace moppe::terrain {
     // of grade is eased (its vertical curves).
     float maximum_grade = 0.10f;
     float vertical_curve = 30.0f;
-    // The most the tread's centre may lie under or over the natural ground;
-    // where the land asks for more, the road takes a steeper grade instead.
+    // The most the tread's centre should lie under or over the natural
+    // ground; where a hump or a hollow asks for more, the road keeps its
+    // grade and cuts or fills deeper.
     float maximum_cut = 4.0f;
     float maximum_fill = 2.5f;
     // A road crosses any watercourse draining more than this, and any

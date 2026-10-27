@@ -37,6 +37,11 @@ namespace moppe::terrain {
       std::vector<float> catchment_m2;
       // The steepest fall to a dry neighbour.
       std::vector<float> grade;
+      // Per node and step (steps, below), how far the ground between the
+      // two nodes stands off the straight line joining them, on average:
+      // the cut and fill a road along that step would need, which the
+      // nodes alone do not see (a spur crossing between them).
+      std::vector<float> earthwork;
       // What stands on the ground and how wet it is (RoadGround).
       std::vector<float> forest;
       std::vector<float> mire;
@@ -77,6 +82,28 @@ namespace moppe::terrain {
         return water[node] == Dry && river[node] == 0.0f;
       }
     };
+
+    // The steps a search may take: the eight neighbours and the eight
+    // knight's moves, so that a route may hold a grade across a slope
+    // without a staircase of right angles.
+    constexpr std::array<std::array<int, 2>, 16> steps { {
+      { 1, 0 },
+      { -1, 0 },
+      { 0, 1 },
+      { 0, -1 },
+      { 1, 1 },
+      { 1, -1 },
+      { -1, 1 },
+      { -1, -1 },
+      { 2, 1 },
+      { 2, -1 },
+      { -2, 1 },
+      { -2, -1 },
+      { 1, 2 },
+      { 1, -2 },
+      { -1, 2 },
+      { -1, -2 },
+    } };
 
     Lattice read_lattice (const TerrainDomain& domain,
                           std::span<const SurfaceElevation> elevations,
@@ -191,30 +218,58 @@ namespace moppe::terrain {
           }
         lattice.grade[node] = steepest;
       }
+
+      // Bilinear over the source, wrapping, in metres.
+      const auto ground_at = [&] (float x_m, float z_m) {
+        const float gx = x_m / source_x;
+        const float gz = z_m / source_z;
+        const float fx = std::floor (gx);
+        const float fz = std::floor (gz);
+        const int x = static_cast<int> (fx);
+        const int z = static_cast<int> (fz);
+        const auto at = [&] (int cx, int cz) {
+          return heights
+            [static_cast<std::size_t> (wrap_index (cz, source_height)) *
+               source_width +
+             static_cast<std::size_t> (wrap_index (cx, source_width))];
+        };
+        const float tx = gx - fx;
+        const float tz = gz - fz;
+        return std::lerp (std::lerp (at (x, z), at (x + 1, z), tx),
+                          std::lerp (at (x, z + 1), at (x + 1, z + 1), tx),
+                          tz);
+      };
+      lattice.earthwork.assign (count * steps.size (), 0.0f);
+      for (std::size_t node = 0; node < count; ++node) {
+        const float ax =
+          static_cast<float> (static_cast<int> (
+            source_cell (lattice.x (node), lattice.y (node)) % source_width)) *
+          source_x;
+        const float az =
+          static_cast<float> (static_cast<int> (
+            source_cell (lattice.x (node), lattice.y (node)) / source_width)) *
+          source_z;
+        for (std::size_t k = 0; k < steps.size (); ++k) {
+          const std::size_t other = lattice.node (
+            lattice.x (node) + steps[k][0], lattice.y (node) + steps[k][1]);
+          const float dx = steps[k][0] * lattice.spacing_x;
+          const float dz = steps[k][1] * lattice.spacing_z;
+          const int samples =
+            std::max (2,
+                      static_cast<int> (std::ceil (
+                        std::hypot (dx, dz) / std::max (source_x, source_z))));
+          float off = 0.0f;
+          for (int i = 1; i < samples; ++i) {
+            const float t = static_cast<float> (i) / samples;
+            const float line =
+              std::lerp (lattice.elevation[node], lattice.elevation[other], t);
+            off += std::fabs (ground_at (ax + dx * t, az + dz * t) - line);
+          }
+          lattice.earthwork[node * steps.size () + k] = off / (samples - 1);
+        }
+      }
       return lattice;
     }
-
-    // The steps a search may take: the eight neighbours and the eight
-    // knight's moves, so that a route may hold a grade across a slope
-    // without a staircase of right angles.
-    constexpr std::array<std::array<int, 2>, 16> steps { {
-      { 1, 0 },
-      { -1, 0 },
-      { 0, 1 },
-      { 0, -1 },
-      { 1, 1 },
-      { 1, -1 },
-      { -1, 1 },
-      { -1, -1 },
-      { 2, 1 },
-      { 2, -1 },
-      { -2, 1 },
-      { -2, -1 },
-      { 1, 2 },
-      { 1, -2 },
-      { -1, 2 },
-      { -1, -2 },
-    } };
 
     enum Way : std::uint8_t { None, Path, Built };
 
@@ -228,7 +283,8 @@ namespace moppe::terrain {
                   const std::vector<std::uint8_t>& ways,
                   std::size_t a,
                   std::size_t b,
-                  float run) const {
+                  float run,
+                  float earthwork = 0.0f) const {
         const float grade =
           std::fabs (lattice.elevation[b] - lattice.elevation[a]) / run;
         float cost = 0.0f;
@@ -246,7 +302,7 @@ namespace moppe::terrain {
             cost *= 20.0f;
           cost += run * 4.0f * lattice.river[b];
           cost += run * (1.5f * lattice.forest[b] + 6.0f * lattice.mire[b] +
-                         1.0f * lattice.wetness[b]);
+                         1.0f * lattice.wetness[b] + 1.0f * earthwork);
           if (ways[b] == Built)
             cost *= reuse;
         } else {
@@ -288,11 +344,17 @@ namespace moppe::terrain {
           continue;
         const int x = lattice.x (node);
         const int y = lattice.y (node);
-        for (const auto& [dx, dy] : steps) {
+        for (std::size_t k = 0; k < steps.size (); ++k) {
+          const auto [dx, dy] = steps[k];
           const std::size_t next = lattice.node (x + dx, y + dy);
           const float run =
             std::hypot (dx * lattice.spacing_x, dy * lattice.spacing_z);
-          float step = mover.step (lattice, ways, node, next, run);
+          float step = mover.step (lattice,
+                                   ways,
+                                   node,
+                                   next,
+                                   run,
+                                   lattice.earthwork[node * steps.size () + k]);
           // A knight's move passes over two cells on its way: both must be
           // passable too, or it would cut the corner of a mire or a lake.
           if (step < infinite && (std::abs (dx) == 2 || std::abs (dy) == 2)) {

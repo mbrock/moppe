@@ -121,10 +121,21 @@ namespace moppe::terrain {
       for (std::size_t i = 0; i < n; ++i)
         profile[i] = 0.5f * (lower[i] + upper[i]);
       profile = ease_profile (along, profile, 0.5f * parameters.vertical_curve);
+      // The cut and fill allowed, as bounds that themselves keep the
+      // grade: clamping into them keeps it too. Where a hump or a hollow
+      // asks for more than they allow, the two cross, and the road cuts or
+      // fills between them, deeper than allowed but at its grade.
+      std::vector<float> deepest (n);
+      std::vector<float> highest (n);
+      for (std::size_t i = 0; i < n; ++i) {
+        deepest[i] = ground[i] - parameters.maximum_cut;
+        highest[i] = ground[i] + parameters.maximum_fill;
+      }
+      cones (along, deepest, highest, grade);
       for (std::size_t i = 0; i < n; ++i)
         profile[i] = std::clamp (profile[i],
-                                 ground[i] - parameters.maximum_cut,
-                                 ground[i] + parameters.maximum_fill);
+                                 std::min (deepest[i], highest[i]),
+                                 std::max (deepest[i], highest[i]));
 
       std::vector<float> pin_lower (n, -no_height);
       std::vector<float> pin_upper (n, no_height);
