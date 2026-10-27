@@ -15,7 +15,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 16;
+    constexpr std::uint32_t forest_plan_version = 19;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The
@@ -61,6 +61,8 @@ namespace moppe::game {
       bool open;    // admitted by the open trees' own population
       // What the canopy's competition left each tree here, and the bog.
       float spruce, pine, birch, fell, bog;
+      // How far the ground has come back since it was last opened.
+      float recovery;
       float priority;
       std::uint32_t identity;
     };
@@ -193,8 +195,13 @@ namespace moppe::game {
         throw std::runtime_error ("could not write forest plan");
     }
 
-    ForestAge age_from_identity (std::uint32_t identity) {
-      const float draw = hash_lane (identity, 6);
+    // A stand is no older than the ground under it has had to grow one:
+    // on a burn of a decade the trees are all saplings, and by a century
+    // every age is there again.
+    ForestAge age_from_identity (std::uint32_t identity, float recovery) {
+      const float draw =
+        hash_lane (identity, 6) *
+        std::lerp (0.2f, 1.0f, smoothstep (0.03f, 0.6f, recovery));
       if (draw < 0.18f)
         return ForestAge::sapling;
       if (draw < 0.46f)
@@ -293,6 +300,7 @@ namespace moppe::game {
       const float birch = held (map::birch_abundance);
       const float fell = held (map::mountain_birch_abundance);
       const float bog = held (map::sphagnum_abundance);
+      const float recovery = held (map::stand_recovery);
       const float routes = (1.0f - held (map::trail_influence)) *
                            (1.0f - held (map::home_base_influence));
       const float open_population =
@@ -321,6 +329,7 @@ namespace moppe::game {
                               .birch = birch,
                               .fell = fell,
                               .bog = bog,
+                              .recovery = recovery,
                               .priority = hash_lane (identity, 3),
                               .identity = identity });
     }
@@ -402,7 +411,8 @@ namespace moppe::game {
       ForestCandidate site = candidate;
       if (site.grove > 0.0f && site.moisture == 0.0f)
         site.moisture = moisture_at (readings, x, z).numerical_value_in (one);
-      const ForestAge age = age_from_identity (candidate.identity);
+      const ForestAge age =
+        age_from_identity (candidate.identity, candidate.recovery);
       // Which tree: drawn by the canopy's shares here, so a stand at an
       // edge mixes its neighbours. Birch's pioneers, and its groves among
       // the spruce, are birch whatever the draw.
@@ -414,8 +424,9 @@ namespace moppe::game {
       std::size_t kind = 0;
       while (kind < 3 && draw >= shares[kind])
         draw -= shares[kind++];
+      // Where no tree has come back yet, the first to is a birch.
       if (total <= 0.0f)
-        kind = 0;
+        kind = candidate.recovery < 0.5f ? 2 : 0;
       ForestForm form = kind == 1   ? ForestForm::pine
                         : kind == 0 ? ForestForm::conifer
                         : kind == 3 ? ForestForm::fell_birch
@@ -436,6 +447,9 @@ namespace moppe::game {
       else if (form == ForestForm::pine)
         shrink =
           std::lerp (1.0f, 0.28f, candidate.bog) * (1.0f - 0.4f * fell_share);
+      // And young ground grows young trees smaller still.
+      shrink *=
+        std::lerp (0.45f, 1.0f, smoothstep (0.0f, 0.3f, candidate.recovery));
       const TreeSizeFactor size =
         size_for_age (age, candidate.identity) * shrink;
       plan.sites.push_back ({ .position = forest_position (x, elevation, z),

@@ -359,6 +359,7 @@ set(MOPPE_TERRAIN_SOURCES
 set(MOPPE_WORLD_SOURCES
   moppe/map/surface.cc
   moppe/game/generated_world.cc
+  moppe/game/disturbance.cc
   moppe/game/world_cache.cc
   moppe/game/land.cc
   moppe/game/forest_plan.cc

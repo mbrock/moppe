@@ -130,7 +130,8 @@ namespace moppe::test {
                           std::move (habitat),
                           std::move (cover),
                           std::move (use),
-                          std::move (vegetation));
+                          std::move (vegetation),
+                          map::undisturbed (domain));
   }
 }
 

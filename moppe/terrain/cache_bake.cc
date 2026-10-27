@@ -93,6 +93,7 @@ int main (int argc, char** argv) {
       game::analyze_surface (surface, recipe, hydrology, trails.use);
     terrain::RoadNetwork roads = game::lay_world_roads (
       surface, recipe, hydrology, trails, water, readings);
+    game::disturb_surface (surface, recipe, water, roads, readings);
     const std::uint32_t forest_seed = seed ^ 0xa34c91e5U;
     game::ForestPlan forest =
       game::plan_global_forest (surface, readings, water, forest_seed);

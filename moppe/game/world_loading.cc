@@ -343,6 +343,10 @@ namespace moppe::game {
       terrain::RoadNetwork roads = lay_world_roads (
         surface, recipe, hydrology, trails, water, readings);
 
+      state.report ("Reading the ground's history",
+                    "Burning, grazing, and letting the forest back in");
+      disturb_surface (surface, recipe, water, roads, readings);
+
       state.report ("Planting the forests",
                     "Choosing the persistent trees across the landscape");
       ForestPlan forest = plan_global_forest (

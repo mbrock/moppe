@@ -869,6 +869,7 @@ namespace moppe::nhal {
                                   const render::TexturePixels& ground,
                                   const render::TexturePixels& plants,
                                   const render::TexturePixels& more_plants,
+                                  const render::TexturePixels& scars,
                                   bool) override {
         auto sheet = [&] (Texture& texture,
                           const render::TexturePixels& pixels,
@@ -890,6 +891,7 @@ namespace moppe::nhal {
         sheet (m_ground, ground, "ground materials");
         sheet (m_plants, plants, "plants");
         sheet (m_more_plants, more_plants, "more plants");
+        sheet (m_scars, scars, "scars");
       }
 
       // -- a frame --------------------------------------------------------
@@ -1175,6 +1177,7 @@ namespace moppe::nhal {
         m_device->set_texture (7, m_ground ? m_ground : m_white);
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
+        m_device->set_texture (11, m_scars ? m_scars : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         m_chunks.assign (chunks, chunks + count);
@@ -1270,6 +1273,7 @@ namespace moppe::nhal {
         m_device->set_texture (7, m_ground);
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
+        m_device->set_texture (11, m_scars ? m_scars : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         m_device->draw_indexed_indirect (m_sward_indices, IndexType::uint16,
@@ -1293,6 +1297,7 @@ namespace moppe::nhal {
         m_device->set_texture (7, m_ground);
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
+        m_device->set_texture (11, m_scars ? m_scars : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         const float tiles = grass.window[2] * grass.window[2];
@@ -2179,6 +2184,7 @@ namespace moppe::nhal {
         m_device->set_texture (7, m_ground);
         m_device->set_texture (5, m_plants ? m_plants : m_clear);
         m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
+        m_device->set_texture (11, m_scars ? m_scars : m_clear);
         bind_stand ();
         m_device->dispatch ((side * side + 63) / 64);
         m_device->end_compute_pass ();
@@ -2731,7 +2737,7 @@ namespace moppe::nhal {
       render::TerrainParams m_terrain_params {};
       bool m_have_terrain = false;
       Texture m_heights, m_normals, m_landscape, m_ground, m_plants,
-        m_more_plants;
+        m_more_plants, m_scars;
       render::TexturePtr m_grass;
       Buffer m_chunk_indices[lod_count], m_patch_indices[lod_count];
       std::uint32_t m_chunk_index_count[lod_count] {};

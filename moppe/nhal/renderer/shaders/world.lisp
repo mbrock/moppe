@@ -558,10 +558,12 @@
 ;;; signed shore lane, snow support, trail, home base; STAND the canopy's
 ;;; closure and the fallen leaves; PLANTS and MORE the field layer's shares
 ;;; (lichen, heather, bilberry, sphagnum; dwarf birch, sedge, alvar turf)
-;;; and, in MORE's last lane, the limestone.  ABOVE-SEA is in metres.
+;;; and, in MORE's last lane, the limestone; SCARS what has happened to
+;;; the ground (fireweed, grazing, how recently it burnt, how far it has
+;;; recovered).  ABOVE-SEA is in metres.
 (define-shader-function ground-surface (world normal land floor rise
-                                        above-sea stand plants more micro
-                                        meso macro region)
+                                        above-sea stand plants more scars
+                                        micro meso macro region)
   (let* ((up (swizzle normal :y))
          (moisture (swizzle land :x))
          (grain (swizzle micro :x))
@@ -607,7 +609,10 @@
          (lush (clamp (+ (smoothstep 0.08 0.62 moisture)
                          (* 0.55 (- patch 0.5)) (* 0.35 (- drift 0.5)))
                       0.0 1.0))
-         (turf (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush))
+         ;; A pasture's turf is cropped short and paler.
+         (grazed (swizzle scars :y))
+         (turf (mix (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush)
+                    (vec3 0.44 0.48 0.21) (* 0.5 grazed)))
          (lichen-share (swizzle plants :x))
          (heather-share (swizzle plants :y))
          (bilberry-share (swizzle plants :z))
@@ -676,6 +681,16 @@
                      (band (+ sphagnum-share (* 0.5 edge)) 0.30))
                 alvar
                 (band (+ alvar-share (* 0.5 edge)) 0.30)))
+         ;; Fireweed on the ground something opened: its leaves gone
+         ;; crimson for the autumn, and its seed blowing white from the
+         ;; split pods.
+         (fireweed (mix (mix (vec3 0.34 0.11 0.11) (vec3 0.50 0.18 0.13) grain)
+                        (vec3 0.80 0.78 0.74)
+                        (* 0.7 (smoothstep 0.76 0.92 fleck))))
+         (opened (mix field-layer fireweed
+                      (* (smoothstep 0.05 0.45 (+ (swizzle scars :x)
+                                                  (* 0.4 edge)))
+                         (mix 0.55 1.0 sprig))))
          (fell (clamp (+ heather-share dwarf-share) 0.0 1.0))
 
          ;; Higher still the plants give out on frost-shattered ground.
@@ -684,7 +699,7 @@
          (barren (band (+ (smoothstep 0.62 0.92 rise) (* 0.9 edge)
                           (* 0.25 (swizzle land :y)))
                        0.55))
-         (upland (mix field-layer scree barren))
+         (upland (mix opened scree barren))
 
          ;; Under closed canopy: needle litter, and moss where it is damp.
          (litter (mix (* (mix (vec3 0.31 0.25 0.16) (vec3 0.23 0.29 0.13)
@@ -699,8 +714,14 @@
                       (mix (vec3 0.70 0.52 0.21) (vec3 0.58 0.34 0.15) grain)
                       (band (+ (swizzle stand :y) (* 0.60 edge)) 0.24)))
 
+         ;; A burn lies black for its first years, the char grey with
+         ;; ash where it lies thin.
+         (charred (mix leaves
+                       (mix (vec3 0.07 0.065 0.06) (vec3 0.30 0.29 0.27)
+                            (smoothstep 0.62 0.82 fleck))
+                       (band (+ (swizzle scars :z) (* 0.6 edge)) 0.55)))
          ;; Bilberry holds the half-shade under the conifers too.
-         (understory (mix leaves bilberry
+         (understory (mix charred bilberry
                       (* 0.8 (band (+ bilberry-share (* 0.5 edge)) 0.30)
                          (swizzle stand :x))))
 
@@ -804,6 +825,7 @@
                  (ground :texture-2d :binding 7)
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
+                 (scars :texture-2d :binding 11)
                  (shadow-map :depth-texture-2d :binding 8)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
@@ -827,6 +849,7 @@
          (plants-here (* (sample plants linear-repeat field-at) have-fields))
          (more-here (* (sample more-plants linear-repeat field-at)
                        have-fields))
+         (scars-here (* (sample scars linear-repeat field-at) have-fields))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
          (above-sea (- (swizzle world :y) (swizzle relief :x)))
@@ -851,7 +874,7 @@
                               metres footprint))
          (surface (ground-surface world normal land floor-fields rise
                                   above-sea stand plants-here more-here
-                                  micro meso macro region))
+                                  scars-here micro meso macro region))
          (albedo (srgb (ground-surface-albedo surface)))
          ;; The relief tilts the normal within the surface: only the part
          ;; of its slope that lies along the ground counts.
@@ -2472,7 +2495,7 @@
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
 (define-shader-function read-grass-medium (xz land floor up rise density
-                                           stand heath plants more)
+                                           stand heath plants more scars)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
          (canopy (clamp (swizzle stand :x) 0.0 1.0))
          ;; Fallen leaves smother some of the sward beneath a turned grove.
@@ -2505,7 +2528,11 @@
          (holds (* standable cleared alpine (- 1.0 snow) ashore
                    (- 1.0 (* 0.85 (smoothstep 0.15 0.45 (swizzle plants :x))))
                    (- 1.0 (* 0.60 (smoothstep 0.15 0.45 (swizzle plants :w))))
-                   (- 1.0 (* 0.70 (smoothstep 0.15 0.45 (swizzle more :z))))))
+                   (- 1.0 (* 0.70 (smoothstep 0.15 0.45 (swizzle more :z))))
+                   ;; A fresh burn is bare until the fireweed comes.
+                   (- 1.0 (* 0.75 (smoothstep 0.35 0.75 (swizzle scars :z))))))
+         ;; Fireweed stands tall among the blades; grazing crops them.
+         (fireweed (smoothstep 0.10 0.45 (swizzle scars :x)))
          ;; Heather, crowberry, and dwarf birch stand among the blades and
          ;; give them their colour.
          (shrubs (smoothstep 0.15 0.45 (+ (swizzle plants :y)
@@ -2528,13 +2555,16 @@
      :canopy-height (* 0.42 (+ 0.72 (* 0.22 moisture)) (+ 0.88 (* 0.12 clump))
                        (- 1.0 (* 0.55 (swizzle more :z)))
                        (- 1.0 (* 0.45 shrubs))
+                       (+ 1.0 (* 1.6 fireweed))
+                       (- 1.0 (* 0.55 (swizzle scars :y)))
                        (mix 0.36 1.0 (smoothstep 0.06 0.46
                                                  (clamp (* rooted density)
                                                         0.0 1.0))))
      ;; Under a turned grove the grass is drying toward straw too.
      ;; Sedge is straw-green, the alvar's turf parched, and among the
      ;; dwarf birch and heather the blades take their ruska.
-     :blade-tint (mix (mix (mix (mix tint (srgb (vec3 0.56 0.58 0.26))
+     :blade-tint (mix
+                  (mix (mix (mix (mix tint (srgb (vec3 0.56 0.58 0.26))
                                      (smoothstep 0.1 0.4 (swizzle more :y)))
                                 (srgb (vec3 0.58 0.55 0.30))
                                 (smoothstep 0.1 0.4 (swizzle more :z)))
@@ -2546,7 +2576,8 @@
                                    (smoothstep 0.1 0.4 (swizzle more :x))))
                            shrubs)
                       (srgb (vec3 0.50 0.46 0.24))
-                      (* 0.6 (clamp (swizzle stand :y) 0.0 1.0))))))
+                      (* 0.6 (clamp (swizzle stand :y) 0.0 1.0)))
+                  (srgb (vec3 0.46 0.14 0.13)) (* 0.80 fireweed)))))
 
 ;;; Meadow flowers arrive in single-species colonies, never as confetti:
 ;;; an 11-metre lattice, warped so no border runs straight, decides where a
@@ -2626,6 +2657,7 @@
                  (ground :texture-2d :binding 7)
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
+                 (scars :texture-2d :binding 11)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2668,7 +2700,8 @@
                       ;; A tile's count asks nothing of its blades' tint.
                       (vec2 0.5 0.5)
                       (sample-level plants linear-repeat uv 0.0)
-                      (sample-level more-plants linear-repeat uv 0.0)))
+                      (sample-level more-plants linear-repeat uv 0.0)
+                      (sample-level scars linear-repeat uv 0.0)))
              (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
                         eye))
              (distance (sqrt (dot offset offset)))
@@ -2742,6 +2775,7 @@
                  (ground :texture-2d :binding 7)
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
+                 (scars :texture-2d :binding 11)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -2784,7 +2818,8 @@
                                        :w))
                   (read-heath detail linear-repeat uv)
                   (sample-level plants linear-repeat uv 0.0)
-                  (sample-level more-plants linear-repeat uv 0.0)))
+                  (sample-level more-plants linear-repeat uv 0.0)
+                  (sample-level scars linear-repeat uv 0.0)))
          (wet (grass-medium-moisture medium))
          (canopy (grass-medium-forest-cover medium))
          (root (vec3 (swizzle root-xz :x) height (swizzle root-xz :y)))
@@ -3143,6 +3178,7 @@
                  (ground :texture-2d :binding 7)
                  (plants :texture-2d :binding 5)
                  (more-plants :texture-2d :binding 4)
+                 (scars :texture-2d :binding 11)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
                  (linear-repeat :sampler :binding 1)))
@@ -3173,7 +3209,8 @@
                                            :w))
                       (read-heath detail linear-repeat uv)
                   (sample-level plants linear-repeat uv 0.0)
-                  (sample-level more-plants linear-repeat uv 0.0)))
+                  (sample-level more-plants linear-repeat uv 0.0)
+                  (sample-level scars linear-repeat uv 0.0)))
          (drift (read-flower-drift xz (grass-medium-moisture grass-here)
                                    (grass-medium-forest-cover grass-here)
                                    (grass-medium-leaf-area grass-here)))

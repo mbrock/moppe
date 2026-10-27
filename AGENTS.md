@@ -598,6 +598,26 @@
     two sheets at texture slots 5 and 4. In ruska the fjäll's dwarf birch
     goes gold and its bilberry crimson. The log line `moppe: vegetation:`
     says how much dry ground each species leads.
+  - Disturbance (`moppe/game/disturbance.*`, `game::disturb_surface`)
+    is the vegetation's last hidden field: what has happened to the
+    ground. After the roads are planned over the undisturbed vegetation
+    and built into the ground,
+    lightning fires run through the dry pine country (downwind and uphill,
+    stopped by water, bog, and bare rock, up to some 260 years old), each
+    place the roads join grazes its pastures while it is lived in (the
+    sanctuaries their upland slopes) and is walked back into once it goes
+    quiet, and roads in use keep their verges cut. That gives three
+    readings, `grazing_pressure`, `stand_recovery`, and `burn_recency`, and
+    the vegetation is read again over them: fireweed (`fireweed_abundance`)
+    takes a fresh scar, birch comes first after it, pine later, spruce
+    last, grazing leaves heath on poor ground and turf on good, and the
+    forest plan grows no older trees than the ground has had time for. The
+    ground and grass read them from a third sheet (texture slot 11):
+    fireweed wine-red with white seed, char on a young burn, cropped
+    pasture. The log line `moppe: disturbance:` counts the fires and
+    pastures; in the default world the youngest fire, ten years old, is
+    at about (2760, 1925), and a living sanctuary's pasture lies some 1.3 km
+    north of the trailhead.
   - Boulders (`moppe/game/boulders.cc`, the `boulders` program)
     are planned from the surface fields when a world activates -- talus,
     scree, shore cobbles, upland erratics -- drawn as faceted flat-shaded

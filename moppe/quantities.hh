@@ -250,6 +250,20 @@ namespace moppe::map {
   QUANTITY_SPEC (dwarf_birch_abundance, proportion);
   QUANTITY_SPEC (sedge_abundance, proportion);
   QUANTITY_SPEC (alvar_abundance, proportion);
+  // ...and fireweed, the first to take ground that something has opened.
+  QUANTITY_SPEC (fireweed_abundance, proportion);
+
+  // ---- Disturbance ----
+
+  // What has happened to the ground, as the vegetation reads it. Grazing
+  // is how hard the beasts of a place still lived in crop it; recovery how
+  // far the ground has come back since it was last opened -- burnt,
+  // cleared, kept as pasture, or cut for a road -- from nothing to the old
+  // stand it would be had nothing happened; burn how recently fire went
+  // over it, which fades from black in a decade.
+  QUANTITY_SPEC (grazing_pressure, proportion);
+  QUANTITY_SPEC (stand_recovery, proportion);
+  QUANTITY_SPEC (burn_recency, proportion);
 }
 
 namespace moppe::game {

@@ -222,6 +222,8 @@ int main (int argc, char** argv) {
     terrain::RoadNetwork roads = game::lay_world_roads (
       surface, recipe, hydrology, trails, water, readings);
     cost ("roads");
+    game::disturb_surface (surface, recipe, water, roads, readings);
+    cost ("disturbance");
     game::ForestPlan forest =
       game::plan_global_forest (surface, readings, water, seed ^ 0xa34c91e5U);
     cost ("forest plan");

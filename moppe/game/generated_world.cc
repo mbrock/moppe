@@ -1,5 +1,6 @@
 #include <moppe/game/generated_world.hh>
 
+#include <moppe/game/disturbance.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/moisture.hh>
 #include <moppe/terrain/readings.hh>
@@ -63,6 +64,39 @@ namespace moppe::game {
   }
 
   namespace {
+    using spatial::get;
+
+    std::uint32_t vegetation_seed (const terrain::WorldRecipe& recipe) {
+      return recipe.seed ().value ^ 0x3b10e5a1U;
+    }
+
+    std::uint32_t cover_seed (const terrain::WorldRecipe& recipe) {
+      return recipe.seed ().value ^ 0x6f12ad37U;
+    }
+
+    // A narrow bundle's columns copied out of a wide one, and back.
+    template <typename Narrow, typename Wide>
+    Narrow project (const Wide& wide) {
+      Narrow narrow (wide.domain ());
+      [&]<typename Domain, typename... Quantities> (
+        std::type_identity<spatial::Bundle<Domain, Quantities...>>) {
+        ((get<Quantities::quantity_spec> (narrow) =
+            get<Quantities::quantity_spec> (wide)),
+         ...);
+      }(std::type_identity<Narrow> {});
+      return narrow;
+    }
+
+    template <typename Wide, typename Narrow>
+    void overwrite (Wide& wide, const Narrow& narrow) {
+      [&]<typename Domain, typename... Quantities> (
+        std::type_identity<spatial::Bundle<Domain, Quantities...>>) {
+        ((get<Quantities::quantity_spec> (wide) =
+            get<Quantities::quantity_spec> (narrow)),
+         ...);
+      }(std::type_identity<Narrow> {});
+    }
+
     // How much of the dry ground each species holds the most of, as a
     // reading of the world's handwriting.
     void log_vegetation (const map::VegetationMap& vegetation,
@@ -83,7 +117,8 @@ namespace moppe::game {
                                      column (map::sphagnum_abundance),
                                      column (map::dwarf_birch_abundance),
                                      column (map::sedge_abundance),
-                                     column (map::alvar_abundance));
+                                     column (map::alvar_abundance),
+                                     column (map::fireweed_abundance));
       const auto tally = [&] (const auto& columns, const char* const* names) {
         constexpr std::size_t n =
           std::tuple_size_v<std::remove_cvref_t<decltype (columns)>>;
@@ -117,10 +152,10 @@ namespace moppe::game {
       static const char* const tree_names[] = {
         "spruce", "pine", "birch", "fell-birch", "treeless"
       };
-      static const char* const field_names[] = { "lichen",      "heather",
-                                                 "bilberry",    "sphagnum",
-                                                 "dwarf-birch", "sedge",
-                                                 "alvar",       "grass" };
+      static const char* const field_names[] = {
+        "lichen", "heather", "bilberry", "sphagnum", "dwarf-birch",
+        "sedge",  "alvar",   "fireweed", "grass"
+      };
       std::cerr << "moppe: vegetation: trees";
       tally (trees, tree_names);
       std::cerr << "; field layer";
@@ -163,15 +198,16 @@ namespace moppe::game {
                 water_level + 21.0f * u::m);
     map::TreeHabitatMap habitat =
       map::analyze_tree_habitat (geometry, moisture, water_level, tree_line);
+    map::DisturbanceMap disturbance = map::undisturbed (geometry.domain ());
     map::VegetationMap vegetation =
       map::analyze_vegetation (geometry,
-                               moisture,
+                               get<terrain::soil_wetness> (moisture),
                                water_level,
                                water_level + land_relief,
-                               recipe.seed ().value ^ 0x3b10e5a1U);
-    log_vegetation (vegetation, sheets, geometry);
-    map::ForestCoverMap cover = map::analyze_forest_cover (
-      habitat, use, vegetation, recipe.seed ().value ^ 0x6f12ad37U);
+                               vegetation_seed (recipe),
+                               disturbance);
+    map::ForestCoverMap cover =
+      map::analyze_forest_cover (habitat, use, vegetation, cover_seed (recipe));
 
     // The join names the readings in the order the bundle declares them; a
     // world is finished when every one of them is present.
@@ -182,7 +218,8 @@ namespace moppe::game {
                             std::move (habitat),
                             std::move (cover),
                             use,
-                            std::move (vegetation)) };
+                            std::move (vegetation),
+                            std::move (disturbance)) };
   }
 
   terrain::RoadNetwork plan_world_roads (const map::SurfaceGeometry& geometry,
@@ -240,6 +277,34 @@ namespace moppe::game {
     std::tie (water, readings) =
       analyze_surface (geometry, recipe, hydrology, use);
     return roads;
+  }
+
+  void disturb_surface (const map::SurfaceGeometry& geometry,
+                        const terrain::WorldRecipe& recipe,
+                        const terrain::WaterSheets& water,
+                        const terrain::RoadNetwork& roads,
+                        map::SurfaceReadings& readings) {
+    MOPPE_PROFILE_ZONE ("game::disturb_surface");
+    map::DisturbanceMap disturbance = plan_disturbance (
+      geometry, readings, water, roads, recipe.seed ().value ^ 0x7d15ba7eU);
+    const meters_t land_top =
+      terrain::measure_height_range (geometry).maximum * u::m;
+    map::VegetationMap vegetation =
+      map::analyze_vegetation (geometry,
+                               get<terrain::soil_wetness> (readings),
+                               recipe.water_datum (),
+                               land_top,
+                               vegetation_seed (recipe),
+                               disturbance);
+    log_vegetation (vegetation, water, geometry);
+    map::ForestCoverMap cover =
+      map::analyze_forest_cover (project<map::TreeHabitatMap> (readings),
+                                 project<terrain::TrailUseMap> (readings),
+                                 vegetation,
+                                 cover_seed (recipe));
+    overwrite (readings, vegetation);
+    overwrite (readings, cover);
+    overwrite (readings, disturbance);
   }
 
   GeneratedWorld::GeneratedWorld (WorldParams params,

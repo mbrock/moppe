@@ -487,7 +487,19 @@ namespace moppe::map {
       float limestone; // on the limestone sheet
       float cold;      // height, north aspect, and frost hollows
       float exposure;  // ridges and high ground, open to the wind
+      float grazed;    // cropped by the beasts of a place still lived in
+      float recovery;  // come back since last opened, 0 to the old stand
+      float burnt;     // how recently fire went over it
     };
+
+    // How far each tree has come back on ground that was opened: birch
+    // first, from seed blown in the next spring; the fell birch, which
+    // sprouts again from its stump; pine, whose seed wants the bare
+    // mineral soil a fire leaves; spruce last, in the shade of the others.
+    // Grazing keeps all of them off.
+    float returned (const Site& at, float early, float late) {
+      return rises (early, late, at.recovery) * falls (0.15f, 0.75f, at.grazed);
+    }
 
     // A species' tolerance of a site, 0 to 1. Each curve is wide where the
     // species will grow at all; where it wins is decided by competition.
@@ -509,26 +521,29 @@ namespace moppe::map {
                  rises (0.08f, 0.18f, at.wet) * falls (0.45f, 0.75f, at.wet) *
                  falls (0.30f, 0.55f, at.cold) * falls (0.30f, 0.80f, at.peat) *
                  (1.0f - 0.85f * at.poor) *
-                 (1.0f - 0.6f * at.limestone * at.thin);
+                 (1.0f - 0.6f * at.limestone * at.thin) *
+                 returned (at, 0.30f, 0.75f);
         },
         0x5b1ceU },
       { 0.80f,
         [] (const Site& at, float) {
           const float poor = std::max (at.poor, rises (0.20f, 0.60f, at.peat));
-          return falls (0.55f, 0.80f, at.cold) * (0.40f + 0.60f * poor);
+          return falls (0.55f, 0.80f, at.cold) * (0.40f + 0.60f * poor) *
+                 returned (at, 0.06f, 0.30f) * (1.0f + 0.5f * at.burnt);
         },
         0x9a1e5U },
       { 0.52f,
         [] (const Site& at, float) {
           return 0.9f * falls (0.45f, 0.75f, at.cold) *
                  rises (0.05f, 0.14f, at.wet) * falls (0.50f, 0.90f, at.peat) *
-                 (1.0f - 0.6f * at.poor);
+                 (1.0f - 0.6f * at.poor) * returned (at, 0.01f, 0.08f);
         },
         0xb12c4U },
       { 0.95f,
         [] (const Site& at, float) {
           return rises (0.25f, 0.50f, at.cold) * falls (0.65f, 0.85f, at.cold) *
-                 (1.0f - 0.5f * at.exposure) * falls (0.6f, 0.95f, at.soaked);
+                 (1.0f - 0.5f * at.exposure) * falls (0.6f, 0.95f, at.soaked) *
+                 returned (at, 0.02f, 0.12f);
         },
         0x3f3b1U },
     };
@@ -541,7 +556,8 @@ namespace moppe::map {
       { 0.75f,
         [] (const Site& at, float light) {
           return at.poor * (1.0f - 0.85f * at.limestone) *
-                 rises (0.30f, 0.65f, light);
+                 rises (0.30f, 0.65f, light) *
+                 rises (0.15f, 0.50f, at.recovery);
         },
         0x11c4e5U },
       // Heather and crowberry: open, poor, acid ground, and the wind.
@@ -551,7 +567,9 @@ namespace moppe::map {
                  (1.0f - 0.7f * at.limestone) *
                  (0.35f + 0.65f * std::max ({ at.thin,
                                               at.exposure,
-                                              rises (0.4f, 0.7f, at.cold) }));
+                                              rises (0.4f, 0.7f, at.cold),
+                                              at.grazed * (1.0f - at.wet) })) *
+                 rises (0.04f, 0.15f, at.recovery);
         },
         0x4ea74U },
       // Bilberry: the half-shade of the conifers, damp acid humus.
@@ -559,7 +577,8 @@ namespace moppe::map {
         [] (const Site& at, float light) {
           return rises (0.08f, 0.25f, light) * falls (0.55f, 0.85f, light) *
                  rises (0.08f, 0.18f, at.wet) * falls (0.45f, 0.70f, at.wet) *
-                 (1.0f - 0.6f * at.limestone) * falls (0.82f, 1.0f, at.cold);
+                 (1.0f - 0.6f * at.limestone) * falls (0.82f, 1.0f, at.cold) *
+                 rises (0.08f, 0.35f, at.recovery);
         },
         0xb1bb3U },
       // Sphagnum: level ground the water cannot leave. It grows its own
@@ -596,13 +615,26 @@ namespace moppe::map {
                  falls (0.70f, 0.90f, at.cold);
         },
         0xa17a2U },
-      // Grass and herbs: deep, moist, fertile soil in the light. Not stored:
-      // the ground draws turf wherever nothing else holds it.
+      // Fireweed: the ground something has just opened -- a burn, a felled
+      // verge, a pasture let go -- in the light, until the birch closes over
+      // it; the beasts eat it where they still graze.
+      { 1.10f,
+        [] (const Site& at, float light) {
+          return falls (0.12f, 0.35f, at.recovery) *
+                 rises (0.35f, 0.65f, light) * rises (0.06f, 0.16f, at.wet) *
+                 falls (0.55f, 0.85f, at.wet) * falls (0.60f, 0.85f, at.cold) *
+                 (1.0f - 0.85f * at.grazed) * (0.6f + 0.4f * at.burnt);
+        },
+        0xf13e7dU },
+      // Grass and herbs: deep, moist, fertile soil in the light, and the
+      // grazed turf of a pasture. Not stored: the ground draws turf
+      // wherever nothing else holds it.
       { 0.90f,
         [] (const Site& at, float light) {
           return rises (0.25f, 0.70f, 1.0f - at.thin) *
                  rises (0.08f, 0.22f, at.wet) * falls (0.50f, 0.80f, at.wet) *
-                 rises (0.30f, 0.60f, light) * falls (0.60f, 0.85f, at.cold);
+                 rises (0.30f, 0.60f, light) * falls (0.60f, 0.85f, at.cold) *
+                 (1.0f + 0.4f * at.grazed);
         },
         0x9a55eU },
     };
@@ -630,15 +662,25 @@ namespace moppe::map {
     }
   }
 
-  VegetationMap analyze_vegetation (const SurfaceGeometry& geometry,
-                                    const terrain::MoistureMap& moisture,
-                                    meters_t water_level,
-                                    meters_t land_top,
-                                    std::uint32_t seed) {
+  DisturbanceMap undisturbed (const terrain::TerrainDomain& domain) {
+    DisturbanceMap values (domain);
+    std::ranges::fill (spatial::get<stand_recovery> (values),
+                       1.0f * stand_recovery[one]);
+    return values;
+  }
+
+  VegetationMap
+  analyze_vegetation (const SurfaceGeometry& geometry,
+                      std::span<const terrain::SoilWetness> wetness,
+                      meters_t water_level,
+                      meters_t land_top,
+                      std::uint32_t seed,
+                      const DisturbanceMap& disturbance) {
     MOPPE_PROFILE_ZONE ("map::analyze_vegetation");
-    if (moisture.domain () != geometry.domain ())
+    if (wetness.size () != geometry.domain ().size () ||
+        disturbance.domain () != geometry.domain ())
       throw std::invalid_argument (
-        "Moisture does not share the surface domain");
+        "Wetness or disturbance does not share the surface domain");
     using spatial::get;
     const terrain::TerrainDomain& domain = geometry.domain ();
     const std::size_t count = domain.size ();
@@ -652,7 +694,6 @@ namespace moppe::map {
     const auto& sediment = get<terrain::sediment_thickness> (geometry);
     const auto& normals = get<terrain::terrain_normal> (geometry);
     const auto& elevation = get<terrain::surface_elevation> (geometry);
-    const auto& wetness = get<terrain::soil_wetness> (moisture);
     std::vector<float> cut (count), wet (count), thin (count), dry (count),
       soaked (count), peat (count), up (count), south (count), height (count);
     for (std::size_t i = 0; i < count; ++i) {
@@ -735,6 +776,11 @@ namespace moppe::map {
                                   0.6f * smoothstep (0.45f, 0.9f, rise),
                                 0.0f,
                                 1.0f),
+        .grazed =
+          get<grazing_pressure> (disturbance[site]).numerical_value_in (one),
+        .recovery =
+          get<stand_recovery> (disturbance[site]).numerical_value_in (one),
+        .burnt = get<burn_recency> (disturbance[site]).numerical_value_in (one),
       };
       // Steep ground holds little of anything rooted.
       const float footing = smoothstep (0.70f, 0.85f, up[i]);
@@ -776,6 +822,7 @@ namespace moppe::map {
         ground[4] * dwarf_birch_abundance[one];
       get<sedge_abundance> (reading) = ground[5] * sedge_abundance[one];
       get<alvar_abundance> (reading) = ground[6] * alvar_abundance[one];
+      get<fireweed_abundance> (reading) = ground[7] * fireweed_abundance[one];
     }
     return values;
   }

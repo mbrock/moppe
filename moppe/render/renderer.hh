@@ -417,11 +417,13 @@ namespace moppe {
                                           const TexturePixels& ground,
                                           const TexturePixels& plants,
                                           const TexturePixels& more_plants,
+                                          const TexturePixels& scars,
                                           bool include_forest) {
         (void)landscape;
         (void)ground;
         (void)plants;
         (void)more_plants;
+        (void)scars;
         (void)include_forest;
       }
 

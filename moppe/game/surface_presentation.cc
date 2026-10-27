@@ -141,6 +141,11 @@ namespace moppe::game {
                            map::sedge_abundance,
                            map::alvar_abundance,
                            map::limestone_cover>),
+      pixels (render::PixelFormat::rgba8unorm,
+              &write_lanes<map::fireweed_abundance,
+                           map::grazing_pressure,
+                           map::burn_recency,
+                           map::stand_recovery>),
       include_forest);
   }
 }

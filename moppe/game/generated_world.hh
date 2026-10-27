@@ -69,6 +69,16 @@ namespace moppe::game {
                                         terrain::WaterSheets& water,
                                         map::SurfaceReadings& readings);
 
+  // What has happened to the ground since (game/disturbance.hh): the fires,
+  // the pastures of the places the roads join, and the roads' verges,
+  // written into READINGS -- which analyze_surface leaves undisturbed --
+  // with the vegetation and the forest cover read again over them.
+  void disturb_surface (const map::SurfaceGeometry& geometry,
+                        const terrain::WorldRecipe& recipe,
+                        const terrain::WaterSheets& water,
+                        const terrain::RoadNetwork& roads,
+                        map::SurfaceReadings& readings);
+
   // A generated world's durable, renderer-free artifacts. It is assembled
   // from finished parts, so holding one means the world is complete; the
   // build itself lives in world_loading.

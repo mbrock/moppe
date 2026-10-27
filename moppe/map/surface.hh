@@ -67,6 +67,10 @@ namespace moppe::map {
   using DwarfBirchAbundance = quantity<dwarf_birch_abundance[one], float>;
   using SedgeAbundance = quantity<sedge_abundance[one], float>;
   using AlvarAbundance = quantity<alvar_abundance[one], float>;
+  using FireweedAbundance = quantity<fireweed_abundance[one], float>;
+  using GrazingPressure = quantity<grazing_pressure[one], float>;
+  using StandRecovery = quantity<stand_recovery[one], float>;
+  using BurnRecency = quantity<burn_recency[one], float>;
 
   // Surface owns one mandatory geometry bundle and one derived-reading bundle
   // over the same TerrainDomain. The latter is absent until world analysis
@@ -99,7 +103,11 @@ namespace moppe::map {
                                           SphagnumAbundance,
                                           DwarfBirchAbundance,
                                           SedgeAbundance,
-                                          AlvarAbundance>;
+                                          AlvarAbundance,
+                                          FireweedAbundance,
+                                          GrazingPressure,
+                                          StandRecovery,
+                                          BurnRecency>;
 
   // ---- Geometry ----
 
@@ -171,7 +179,13 @@ namespace moppe::map {
                                         SphagnumAbundance,
                                         DwarfBirchAbundance,
                                         SedgeAbundance,
-                                        AlvarAbundance>;
+                                        AlvarAbundance,
+                                        FireweedAbundance>;
+  using DisturbanceMap = spatial::
+    Bundle<terrain::TerrainDomain, GrazingPressure, StandRecovery, BurnRecency>;
+
+  // Ground nothing has happened to: ungrazed, unburnt, fully recovered.
+  DisturbanceMap undisturbed (const terrain::TerrainDomain& domain);
 
   // Scaled against the material this world's own history moved, so a calm
   // world reads as strongly as a violent one.
@@ -188,12 +202,16 @@ namespace moppe::map {
   // the outcome of their competition, the trees first and the field layer
   // in the light they leave. The heath, the bog, the alvar, and the fjäll
   // are where those overlap, with edges as frayed as the curves are wide.
-  // LAND_TOP is the highest ground.
+  // What has happened to the ground is one more such quantity: fireweed
+  // takes a fresh scar, birch comes first after it and spruce last,
+  // grazing keeps the trees off and leaves heath on poor ground and turf
+  // on good, and fire spares the bog. LAND_TOP is the highest ground.
   VegetationMap analyze_vegetation (const SurfaceGeometry& geometry,
-                                    const terrain::MoistureMap& moisture,
+                                    std::span<const terrain::SoilWetness> wet,
                                     meters_t water_level,
                                     meters_t land_top,
-                                    std::uint32_t seed);
+                                    std::uint32_t seed,
+                                    const DisturbanceMap& disturbance);
 
   TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
                                        const terrain::MoistureMap& moisture,

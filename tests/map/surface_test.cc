@@ -525,12 +525,13 @@ MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
     spatial::get<map::eroded_surface_material> (surface[site]) =
       cut_at (site.column) * map::eroded_surface_material[u::m];
   map::rebuild_geometry (surface);
-  const map::VegetationMap biomes =
-    map::analyze_vegetation (surface,
-                             test::uniform_moisture (domain, 0.2f),
-                             50.0f * u::m,
-                             150.0f * u::m,
-                             0x5eedU);
+  const map::VegetationMap biomes = map::analyze_vegetation (
+    surface,
+    spatial::get<terrain::soil_wetness> (test::uniform_moisture (domain, 0.2f)),
+    50.0f * u::m,
+    150.0f * u::m,
+    0x5eedU,
+    map::undisturbed (domain));
   const auto limestone = [&] (std::size_t column) {
     return spatial::get<map::limestone_cover> (
              biomes[terrain::TerrainIndex { column, 32 }])
@@ -538,6 +539,73 @@ MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
   };
   MOPPE_CHECK (limestone (8) > 0.95f);
   MOPPE_CHECK (limestone (24) < 0.05f);
+}
+
+namespace {
+  // The vegetation at the middle of a level square of deep, moist soil
+  // METRES up, a hundred above the sea, under DISTURBANCE everywhere.
+  moppe::map::VegetationMap vegetation_on_level_ground (float metres,
+                                                        float grazing = 0.0f,
+                                                        float recovery = 1.0f,
+                                                        float burn = 0.0f) {
+    using namespace moppe;
+    map::SurfaceGeometry surface =
+      map::SurfaceGeometry (terrain::TerrainDomain (
+        32, 32, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+    std::ranges::fill (
+      spatial::get<terrain::surface_elevation> (surface),
+      moppe::terrain::surface_elevation_point (metres * mp_units::si::metre));
+    std::ranges::fill (spatial::get<terrain::sediment_thickness> (surface),
+                       1.5f * terrain::sediment_thickness[u::m]);
+    map::rebuild_geometry (surface);
+    map::DisturbanceMap disturbance (surface.domain ());
+    std::ranges::fill (spatial::get<map::grazing_pressure> (disturbance),
+                       grazing * map::grazing_pressure[mp_units::one]);
+    std::ranges::fill (spatial::get<map::stand_recovery> (disturbance),
+                       recovery * map::stand_recovery[mp_units::one]);
+    std::ranges::fill (spatial::get<map::burn_recency> (disturbance),
+                       burn * map::burn_recency[mp_units::one]);
+    return map::analyze_vegetation (
+      surface,
+      spatial::get<terrain::soil_wetness> (
+        test::uniform_moisture (surface.domain (), 0.2f)),
+      50.0f * u::m,
+      150.0f * u::m,
+      0x5eedU,
+      disturbance);
+  }
+
+  template <auto Quantity>
+  float held_at_centre (const moppe::map::VegetationMap& vegetation) {
+    return moppe::spatial::get<Quantity> (
+             vegetation[moppe::terrain::TerrainIndex { 16, 16 }])
+      .numerical_value_in (mp_units::one);
+  }
+}
+
+MOPPE_TEST (disturbance_hands_a_fresh_scar_to_fireweed_and_then_birch) {
+  using namespace moppe;
+  // The spruce's own ground, burnt last year, some fifteen years ago, and
+  // left alone for centuries; and grazed while its place is lived in.
+  const auto burnt = vegetation_on_level_ground (60.0f, 0.0f, 0.0f, 0.9f);
+  const auto regrown = vegetation_on_level_ground (60.0f, 0.0f, 0.15f, 0.3f);
+  const auto old = vegetation_on_level_ground (60.0f);
+  const auto grazed = vegetation_on_level_ground (60.0f, 0.85f, 0.36f);
+  const auto trees = [] (const map::VegetationMap& v) {
+    return held_at_centre<map::spruce_abundance> (v) +
+           held_at_centre<map::pine_abundance> (v) +
+           held_at_centre<map::birch_abundance> (v) +
+           held_at_centre<map::mountain_birch_abundance> (v);
+  };
+  MOPPE_CHECK (trees (burnt) < 0.05f);
+  MOPPE_CHECK (held_at_centre<map::fireweed_abundance> (burnt) > 0.3f);
+  MOPPE_CHECK (held_at_centre<map::birch_abundance> (regrown) >
+               2.0f * held_at_centre<map::spruce_abundance> (regrown));
+  MOPPE_CHECK (held_at_centre<map::fireweed_abundance> (old) < 0.01f);
+  MOPPE_CHECK (held_at_centre<map::spruce_abundance> (old) >
+               held_at_centre<map::birch_abundance> (old));
+  MOPPE_CHECK (trees (grazed) < 0.1f);
+  MOPPE_CHECK (held_at_centre<map::fireweed_abundance> (grazed) < 0.05f);
 }
 
 MOPPE_TEST (
@@ -553,12 +621,14 @@ MOPPE_TEST (
     std::ranges::fill (spatial::get<terrain::sediment_thickness> (surface),
                        1.5f * terrain::sediment_thickness[u::m]);
     map::rebuild_geometry (surface);
-    const map::VegetationMap vegetation =
-      map::analyze_vegetation (surface,
-                               test::uniform_moisture (surface.domain (), 0.2f),
-                               50.0f * u::m,
-                               150.0f * u::m,
-                               0x5eedU);
+    const map::VegetationMap vegetation = map::analyze_vegetation (
+      surface,
+      spatial::get<terrain::soil_wetness> (
+        test::uniform_moisture (surface.domain (), 0.2f)),
+      50.0f * u::m,
+      150.0f * u::m,
+      0x5eedU,
+      map::undisturbed (surface.domain ()));
     const auto plants = vegetation[terrain::TerrainIndex { 16, 16 }];
     return std::pair (
       spatial::get<map::spruce_abundance> (plants).numerical_value_in (one),
