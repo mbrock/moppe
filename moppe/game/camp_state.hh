@@ -36,6 +36,16 @@ namespace moppe::game {
     double next_steam = 0.0;
   };
 
+  // A sanctuary's beacon (game/places.hh): when it was last lit, and
+  // when last put out.
+  struct Beacon {
+    double lit = -100.0;
+    double out = -100.0;
+    bool burning () const {
+      return lit > out;
+    }
+  };
+
   // The camp as it stands; part of the session's copyable state.
   struct Camp {
     bool hung = false;

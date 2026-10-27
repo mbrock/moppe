@@ -833,4 +833,110 @@ namespace moppe::game {
     dl.state (render::DrawState ());
     renderer.draw_list (dl, 0x3000);
   }
+
+  void draw_beacon (render::Renderer& renderer,
+                    const Vec3& hearth,
+                    const Vec3& camera,
+                    float burn,
+                    float daylight,
+                    float time) {
+    using namespace camp_parts;
+    if (burn <= 0.01f)
+      return;
+    const float far = length (camera - hearth);
+    // Near, the stack burns as several fires together.
+    if (far < 220.0f) {
+      draw_fire (renderer, hearth, camera, burn, time);
+      for (int i = 0; i < 3; ++i) {
+        const float around = tau * i / 3.0f + 0.5f;
+        draw_fire (renderer,
+                   hearth + Vec3 (std::cos (around), 0.0f, std::sin (around)) *
+                              0.32f,
+                   camera,
+                   0.85f * burn,
+                   time + 1.7f * i);
+      }
+    }
+    static const render::TexturePtr disc = make_soft_disc_texture (renderer);
+    static render::DrawList dl;
+    dl.clear ();
+    dl.lit (false);
+    // Far off it would be lost in the haze; it is what is looked for.
+    dl.fogged (false);
+    dl.set_texture (disc.get ());
+
+    // The smoke: puffs rising up a column that widens and leans off with
+    // the wind, each climbing it and fading as it goes.
+    render::DrawState smoke;
+    smoke.blend = true;
+    smoke.depth_write = false;
+    smoke.cull = false;
+    dl.state (smoke);
+    dl.begin (render::Prim::Quads);
+    const Vec3 wind = normalized (Vec3 (0.35f, 0.0f, 0.12f));
+    const float shade = 0.08f + 0.5f * daylight;
+    constexpr int puffs = 22;
+    for (int i = 0; i < puffs; ++i) {
+      const float t =
+        std::fmod (static_cast<float> (time) * 0.012f + (i + 0.5f) / puffs,
+                   1.0f);
+      const float rise = 2.0f + 170.0f * t;
+      const Vec3 centre = hearth + world_up * rise +
+                          wind * (rise * (0.25f + 0.9f * t)) +
+                          Vec3 (std::sin (i * 2.3f + time * 0.1f), 0.0f,
+                                std::cos (i * 1.7f)) *
+                            (2.0f * t * rise * 0.05f);
+      const float size = 1.0f + 22.0f * std::sqrt (t);
+      const float alpha = burn * (0.1f + 0.4f * daylight) *
+                          smoothstep (0.0f, 0.06f, t) * (1.0f - t) *
+                          (1.0f - t);
+      flame_sprite (dl,
+                    camera,
+                    centre,
+                    world_up,
+                    size,
+                    size,
+                    DisplayColor (shade * 1.05f, shade, shade * 0.94f),
+                    alpha);
+    }
+    dl.end ();
+
+    // The glow: warm light over the flames, grown with distance so that
+    // it stays some pixels across from the next summit, and brightest in
+    // the dark.
+    if (far > 40.0f) {
+      render::DrawState glow;
+      glow.blend = true;
+      glow.additive = true;
+      glow.depth_write = false;
+      glow.cull = false;
+      dl.state (glow);
+      dl.begin (render::Prim::Quads);
+      const float flicker = 0.85f + 0.15f * std::sin (time * 7.3f) *
+                                      std::sin (time * 3.1f + 0.7f);
+      const float dark = 1.0f - 0.8f * daylight;
+      const float grow = smoothstep (40.0f, 400.0f, far);
+      const float size = 1.5f + 0.0045f * far;
+      flame_sprite (dl,
+                    camera,
+                    hearth + world_up * (1.2f + 0.002f * far),
+                    world_up,
+                    size * 1.5f,
+                    size,
+                    DisplayColor (1.0f, 0.55f, 0.18f),
+                    burn * flicker * dark * grow * 0.9f);
+      flame_sprite (dl,
+                    camera,
+                    hearth + world_up * (1.5f + 0.002f * far),
+                    world_up,
+                    size * 4.0f,
+                    size * 4.0f,
+                    DisplayColor (1.0f, 0.38f, 0.10f),
+                    burn * flicker * dark * grow * 0.18f);
+      dl.end ();
+    }
+    dl.set_texture (nullptr);
+    dl.state (render::DrawState ());
+    renderer.draw_list (dl, 0x3100);
+  }
 }

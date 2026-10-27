@@ -50,6 +50,7 @@
 #include <moppe/game/long_john_render.hh>
 #include <moppe/game/mountain_bike_render.hh>
 #include <moppe/game/tractor_render.hh>
+#include <moppe/game/places.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/video.hh>
 #include <moppe/game/walker_render.hh>
@@ -718,6 +719,111 @@ namespace moppe {
         }
       }
 
+      // -- places ----------------------------------------------------
+
+      PlaceGround place_ground () const {
+        const terrain::WaterSheets& sheets =
+          generated_world ().water_surface ();
+        const float sea = world ().water_level.numerical_value_in (u::m);
+        const auto level = [this, &sheets] (float x, float z) {
+          return still_water_at (world (), surface (), &sheets,
+                                 Vec3 (x, 0.0f, z))
+            .numerical_value_in (u::m);
+        };
+        return {
+          .ground = [this] (float x, float z) {
+            return ground_height (Vec3 (x, 0.0f, z));
+          },
+          .water = level,
+          .sea = [level, sea] (float x, float z) {
+            return level (x, z) <= sea + 0.05f;
+          },
+          .current = [&sheets] (float x, float z) {
+            return spatial::sample<terrain::water_velocity> (
+                     sheets, moppe::position (Vec3 (x, 0.0f, z)))
+              .numerical_value_in (u::m / u::s);
+          },
+          .roads = &generated_world ().road_surface (),
+          .sea_level = sea,
+          .period_x =
+            surface ().domain ().period_x ().numerical_value_in (u::m),
+          .period_z =
+            surface ().domain ().period_z ().numerical_value_in (u::m),
+        };
+      }
+
+      // Where the places' things stand is planned before the trees and
+      // rocks, which keep out of their clearings.
+      void plan_world_places () {
+        MOPPE_PROFILE_ZONE ("startup.plan_places");
+        m_places = {};
+        if (m_water_inspection || moppe::environment ("MOPPE_TREE_LAB"))
+          return;
+        m_places =
+          plan_places (generated_world ().roads (), place_ground (),
+                       static_cast<std::uint32_t> (recipe ().seed ().value) ^
+                         0x91ace5u);
+        logic ().m_beacons.assign (m_places.sanctuaries.size (), Beacon {});
+        // MOPPE_BEACONS=lit: every beacon already burning, for captures.
+        if (const char* lit = moppe::environment ("MOPPE_BEACONS");
+            lit && std::string_view (lit) == "lit")
+          for (Beacon& beacon : logic ().m_beacons)
+            beacon.lit = logic ().m_total_time - 30.0;
+        tend_beacons ();
+      }
+
+      // Once the trees stand: the camps among them, and the built things
+      // with their colliders.
+      void build_world_places () {
+        MOPPE_PROFILE_ZONE ("startup.build_places");
+        const PlaceGround ground = place_ground ();
+        place_camps (
+          m_places, generated_world ().roads (), ground,
+          [this] (const Vec3& near) -> std::optional<Vec3> {
+            const std::vector<mov::Trunk> trunks =
+              m_trunk_field.gather (near, 90.0f);
+            const std::optional<HammockSite> site = nearest_hammock_site (
+              trunks, near, ground_reader (), 0.6f);
+            if (!site)
+              return std::nullopt;
+            const Vec3 middle = hammock_middle (*site);
+            if (std::hypot (middle[0] - near[0], middle[2] - near[2]) > 80.0f)
+              return std::nullopt;
+            return middle;
+          });
+        if (!m_renderer)
+          return;
+        m_places_landscape.rebuild (*m_renderer, m_places, ground);
+        if (!m_places_landscape.colliders ().empty ()) {
+          std::vector<mov::Trunk> obstacles = m_forest.trunks ();
+          obstacles.insert (obstacles.end (),
+                            m_boulders.colliders ().begin (),
+                            m_boulders.colliders ().end ());
+          obstacles.insert (obstacles.end (),
+                            m_places_landscape.colliders ().begin (),
+                            m_places_landscape.colliders ().end ());
+          const Vec3 period =
+            extent_value (generated_world ().forest ().period);
+          m_trunk_field.set_trunks (std::move (obstacles), period[0],
+                                    period[2]);
+        }
+      }
+
+      // The beacon a walker stands at, if any.
+      std::optional<std::size_t> beacon_at_hand () const {
+        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+          return std::nullopt;
+        return sanctuary_at_hand (m_places, session ().walker ().position ());
+      }
+
+      void tend_beacons () {
+        const double now = logic ().m_total_time;
+        std::vector<Beacon>& beacons = logic ().m_beacons;
+        m_beacon_burn.resize (beacons.size ());
+        for (std::size_t i = 0; i < beacons.size (); ++i)
+          m_beacon_burn[i] = beacon_burn (beacons[i].lit, beacons[i].out, now);
+      }
+
       // The boat lies at the water's edge of the sea, the nearest open
       // shore of it to the spawn (or, with no sea in reach or with
       // `MOPPE_BOAT=lake`, of a lake big enough to take it out on): afloat
@@ -737,6 +843,22 @@ namespace moppe {
         m_boat_route_at = 0;
         if (river && moor_on_river ())
           return;
+        if (!lakes_first && m_places.landing) {
+          // At the end of the road, alongside the landing's jetty.
+          const Landing& landing = *m_places.landing;
+          mov::Boat& boat = session ().boat ();
+          boat.set_trunks (&m_trunk_field);
+          boat.place (landing.berth,
+                      outward ? -landing.berth_forward : landing.berth_forward,
+                      landing.berth[1]);
+          m_mooring = landing.jetty.root;
+          std::cerr << "moppe: boat moored at the landing's jetty, "
+                    << std::hypot (landing.berth[0] - m_spawn_position[0],
+                                   landing.berth[2] - m_spawn_position[2])
+                    << " m from the spawn, at " << landing.berth[0] << ' '
+                    << landing.berth[2] << std::endl;
+          return;
+        }
         if (!lakes_first && moor_boat (true, outward))
           return;
         if (!moor_boat (false, outward))
@@ -1318,9 +1440,18 @@ namespace moppe {
         if (m_water_inspection)
           return;
         static const bool tree_lab = moppe::environment ("MOPPE_TREE_LAB") != 0;
-        m_forest.rebuild (*m_renderer,
-                          tree_lab ? tree_lab_plan ()
-                                   : generated_world ().forest ());
+        if (tree_lab || m_places.clearings.empty ()) {
+          m_forest.rebuild (*m_renderer,
+                            tree_lab ? tree_lab_plan ()
+                                     : generated_world ().forest ());
+        } else {
+          // Nothing grows where the places stand.
+          ForestPlan plan = generated_world ().forest ();
+          std::erase_if (plan.sites, [this] (const ForestSite& site) {
+            return cleared (m_places, position_value (site.position));
+          });
+          m_forest.rebuild (*m_renderer, plan);
+        }
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)
@@ -1342,7 +1473,7 @@ namespace moppe {
         const float highest =
           terrain::measure_height_range (surface ()).maximum;
         const auto start = std::chrono::steady_clock::now ();
-        const BoulderPlan plan =
+        BoulderPlan plan =
           plan_boulders (surface (),
                          surface_readings (),
                          generated_world ().water_surface (),
@@ -1355,6 +1486,12 @@ namespace moppe {
                        std::chrono::steady_clock::now () - start)
                        .count ()
                   << " ms" << std::endl;
+        // Loose rock is cleared from where the places stand; the stones
+        // laid across running water stay.
+        std::erase_if (plan.sites, [this] (const BoulderSite& site) {
+          return !site.solid &&
+                 cleared (m_places, position_value (site.centre));
+        });
         m_boulders.rebuild (*m_renderer, plan);
         // Where to cross a river dry-shod, for whoever wants to find one.
         const auto nearest = std::ranges::min_element (
@@ -1530,6 +1667,9 @@ namespace moppe {
         consider (camp.hearth, fire_burn (camp, logic ().m_total_time));
         if (m_companion && m_companion->hearth_laid)
           consider (m_companion->hearth, m_companion->fire_burn);
+        for (std::size_t i = 0;
+             i < m_places.sanctuaries.size () && i < m_beacon_burn.size (); ++i)
+          consider (m_places.sanctuaries[i].hearth, m_beacon_burn[i]);
         return found;
       }
 
@@ -1985,12 +2125,32 @@ namespace moppe {
               camp.swing_rate = 0.5f;
             }
           }
-          if (input.light_fire) {
+          if (const std::optional<std::size_t> beacon = beacon_at_hand ();
+              input.light_fire && beacon) {
+            // A sanctuary's fire is lit on its platform, and shows from
+            // the summits that see it.
+            Beacon& b = logic ().m_beacons[*beacon];
+            (b.burning () ? b.out : b.lit) = now;
+            std::cerr << "moppe: places: the beacon on sanctuary " << *beacon
+                      << (b.burning () ? " lit, seen from " : " put out")
+                      << (b.burning ()
+                            ? std::to_string (
+                                m_places.sanctuaries[*beacon].seen_from.size ())
+                            : std::string ())
+                      << (b.burning () ? " others" : "") << std::endl;
+          } else if (input.light_fire) {
             Vec3 to_fire = feet - camp.hearth;
             to_fire[1] = 0.0f;
             if (camp.fire && length2 (to_fire) < 3.0f * 3.0f) {
               camp.fire = false;
               camp.fire_time = now;
+            } else if (const std::optional<Vec3> ring =
+                         hearth_at_hand (m_places, feet)) {
+              // An old fire ring takes the fire.
+              camp.fire = true;
+              camp.hearth = *ring;
+              camp.fire_time = now;
+              camp.next_spark = camp.next_smoke = now;
             } else if (const std::optional<Vec3> hearth = hearth_ahead ()) {
               camp.fire = true;
               camp.hearth = *hearth;
@@ -2019,6 +2179,7 @@ namespace moppe {
         logic ().m_day_haste +=
           (haste - logic ().m_day_haste) * std::min (1.0f, 1.5f * dt);
         feed_fire ();
+        tend_beacons ();
       }
 
       // Sparks fly up from a burning fire and its smoke drifts off; a
@@ -2155,7 +2316,15 @@ namespace moppe {
             Vec3 to_fire = session ().walker ().position () - camp.hearth;
             to_fire[1] = 0.0f;
             state.can_douse_fire = camp.fire && length2 (to_fire) < 3.0f * 3.0f;
-            state.can_light_fire = !camp.fire && hearth_ahead ().has_value ();
+            state.can_light_fire =
+              !camp.fire &&
+              (hearth_ahead ().has_value () ||
+               hearth_at_hand (m_places, session ().walker ().position ()));
+            if (const std::optional<std::size_t> beacon = beacon_at_hand ()) {
+              const bool lit = logic ().m_beacons[*beacon].burning ();
+              state.can_douse_fire = lit;
+              state.can_light_fire = !lit;
+            }
           }
           break;
         case M_BIKE:
@@ -2221,7 +2390,11 @@ namespace moppe {
         state.cook_fish =
           camp.pan.on ? camp.pan.has_fish
                       : logic ().m_fishing.creel.kept () > 0;
-        if (camp.resting)
+        if (const std::optional<std::size_t> beacon = beacon_at_hand ();
+            beacon && !logic ().m_beacons[*beacon].burning () &&
+            !camp.resting)
+          state.camp = HudState::Camp::light_beacon;
+        else if (camp.resting)
           state.camp = HudState::Camp::get_up;
         else if (beside_hammock ())
           state.camp = HudState::Camp::lie_down;
@@ -2231,6 +2404,23 @@ namespace moppe {
                  hammock_distance (camp.hammock,
                                    session ().walker ().position ()) < 12.0f)
           state.camp = HudState::Camp::light_fire;
+      }
+
+      // The places' stones, timber, and buildings; each beacon's laid
+      // wood; and the old fire rings, cold until a camp's fire is lit in
+      // one.
+      void draw_places (render::Renderer& r, const FrameView& frame) {
+        const Vec3& camera = frame.camera.position;
+        m_places_landscape.draw (r, camera, frame.lighting.time, 0x10000);
+        m_places_landscape.draw_beacons (m_world_dl, camera, m_beacon_burn);
+        const Camp& camp = logic ().m_camp;
+        for (const Vec3& ring : m_places.hearths) {
+          if (length2 (ring - camera) > 200.0f * 200.0f)
+            continue;
+          if (camp.fire_time > -50.0 && length2 (camp.hearth - ring) < 0.04f)
+            continue;
+          draw_hearth (m_world_dl, ring, 0.0f);
+        }
       }
 
       void draw_camp (render::DrawList& dl) {
@@ -2332,6 +2522,46 @@ namespace moppe {
       // MOPPE_WALK=camp: the walker starts a few steps from the fit pair of
       // trees nearest the spawn, on whichever side is clearer to walk in
       // from.
+      // MOPPE_WALK=landing|sanctuary|farm: on foot at the landing's
+      // jetty, a sanctuary's gate, or a farm, facing it.
+      void stage_place_script () {
+        const char* walk = moppe::environment ("MOPPE_WALK");
+        if (!walk || logic ().m_mode != M_FOOT)
+          return;
+        const std::string_view script (walk);
+        std::optional<std::pair<Vec3, Vec3>> stand;
+        if (script == "landing" && m_places.landing) {
+          // On the strand, looking past the jetty to the skiff beside it.
+          const Landing& landing = *m_places.landing;
+          const Vec3 back = landing.jetty.root - landing.berth;
+          const Vec3 aside = landing.berth - (landing.jetty.root +
+                                              landing.jetty.out *
+                                                landing.jetty.length);
+          stand = { landing.berth + back * 0.55f + aside * 6.0f,
+                    landing.berth };
+        } else if (script == "sanctuary" && !m_places.sanctuaries.empty ()) {
+          const Sanctuary& s = m_places.sanctuaries.front ();
+          stand = { s.centre + s.gate * (s.wall_radius + 4.0f), s.centre };
+        } else if (script == "farm" && !m_places.farms.empty () &&
+                   !m_places.farms.front ().buildings.empty ()) {
+          const Building& b = m_places.farms.front ().buildings.front ();
+          stand = { b.at + b.forward * 16.0f +
+                      Vec3 (b.forward[2], 0.0f, -b.forward[0]) * 9.0f,
+                    b.at };
+        }
+        if (!stand)
+          return;
+        Vec3 at = stand->first;
+        at[1] = ground_height (at) + 0.1f;
+        Vec3 facing = stand->second - at;
+        facing[1] = 0.0f;
+        session ().walker ().spawn (moppe::position (at), normalized (facing));
+        logic ().m_fp_eye = session ().walker ().eye_position ();
+        session ().settle_camera (surface ());
+        std::cerr << "moppe: walk: " << script << " at " << at[0] << ' '
+                  << at[2] << std::endl;
+      }
+
       void stage_camp_script () {
         const char* walk = moppe::environment ("MOPPE_WALK");
         if (!walk || std::string_view (walk) != "camp" ||
@@ -2782,10 +3012,12 @@ namespace moppe {
         prepare_world_water ();
         prepare_world_surface ();
         place_stars_and_player ();
+        plan_world_places ();
         grow_global_forest ();
         scatter_boulders ();
         grow_mushrooms ();
         settle_obstacles ();
+        build_world_places ();
         park_jeep ();
         park_tractor ();
         park_mountain_bike ();
@@ -2823,6 +3055,7 @@ namespace moppe {
         }
         stage_camp_script ();
         stage_fish_script ();
+        stage_place_script ();
         place_spectator ();
         // The mouse looks around during play; M hands it back.
         if (!m_gazetteer && !m_benchmark)
@@ -3508,6 +3741,28 @@ namespace moppe {
         if (theirs.glider) {
           m_blob.draw (dl, surface (), theirs.glider->position, 3.4f);
           render_glider (r, dl, *theirs.glider, time, 0x4000, their_outfit ());
+        }
+      }
+
+      // A burning beacon near the eye lights what stands round it.
+      void light_beacons (FrameView& frame) const {
+        for (std::size_t i = 0;
+             i < m_places.sanctuaries.size () && i < m_beacon_burn.size ();
+             ++i) {
+          if (m_beacon_burn[i] <= 0.01f)
+            continue;
+          const Vec3 lamp =
+            m_places.sanctuaries[i].hearth + Vec3 (0.0f, 0.7f, 0.0f);
+          FrameLighting& lighting = frame.lighting;
+          if (lighting.lamp_reach > 0.0f &&
+              length2 (lighting.lamp_position - frame.camera.position) <=
+                length2 (lamp - frame.camera.position))
+            continue;
+          lighting.lamp_position = lamp;
+          lighting.lamp_reach = 1.8f * fire_light_reach;
+          lighting.lamp_color = scale_display (
+            fire_light_color (m_beacon_burn[i], lighting.time),
+            1.4f * (1.0f - 0.25f * lighting.daylight));
         }
       }
 
@@ -4545,6 +4800,7 @@ namespace moppe {
         render_tractor (r, m_caster_dl, actors.tractor, std::nullopt, 0);
         render_helicopter (r, actors.helicopter, 0);
         render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
+        m_places_landscape.cast_shadows (r, frame.camera.position);
         if (m_companion) {
           const CompanionSnapshot& theirs = *m_companion;
           render_vehicle (r, m_caster_dl, theirs.bike, false, 0);
@@ -4764,6 +5020,7 @@ namespace moppe {
         for (std::size_t i = basket.used; i < basket.picked.size (); ++i)
           m_basket_contents.push_back (m_mushrooms.site (basket.picked[i]));
         draw_camp (m_world_dl);
+        draw_places (r, frame);
         if (actors.walker && lying_down ())
           draw_sleeper (m_world_dl, helmet, frame.lighting.time);
         else if (actors.walker && !helmet)
@@ -4814,6 +5071,11 @@ namespace moppe {
             !(helmet && actors.active_mode == M_BIKE))
           render_vehicle_flames (
             r, actors.bike, frame.camera.position, frame.lighting.time, 0x1000);
+        m_places_landscape.draw_beacon_fires (r,
+                                              frame.camera.position,
+                                              m_beacon_burn,
+                                              frame.lighting.daylight,
+                                              frame.lighting.time);
         if (logic ().m_camp.fire_time > -50.0)
           draw_fire (r,
                      logic ().m_camp.hearth,
@@ -5239,6 +5501,7 @@ namespace moppe {
           (float)r.width_pts () / std::max (1, r.height_pts ());
         FrameView frame = compose_frame_view (frame_view_input (aspect));
         light_companion_fire (frame);
+        light_beacons (frame);
         const bool cinematic = frame.visibility.cinematic;
         const GazetteerShot* gazetteer_shot = current_gazetteer_shot ();
         // A cut is a new view: the temporal history of the last one would
@@ -6198,6 +6461,11 @@ namespace moppe {
       Terrain m_terrain;
       ForestLandscape m_forest;
       BoulderLandscape m_boulders;
+      // What stands at the ends of the roads (game/places.hh), and how
+      // each sanctuary's beacon burns this frame.
+      PlacesPlan m_places;
+      PlacesLandscape m_places_landscape;
+      std::vector<float> m_beacon_burn;
       MushroomPatch m_mushrooms;
       // The poisonous mushrooms the foraging script has left be.
       std::vector<std::uint32_t> m_forage_refused;

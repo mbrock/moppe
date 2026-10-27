@@ -1641,6 +1641,10 @@ namespace moppe {
           key = fire_key;
           action = "Light a fire";
           break;
+        case HudState::Camp::light_beacon:
+          key = fire_key;
+          action = *fire_key ? "Light the beacon" : "The beacon's fire is laid";
+          break;
         case HudState::Camp::none:
           break;
         }

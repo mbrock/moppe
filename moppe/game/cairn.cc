@@ -179,4 +179,18 @@ namespace moppe::game {
     list.end ();
     list.state (render::DrawState ());
   }
+
+  void build_fieldstone (render::DrawList& list,
+                         std::uint32_t seed,
+                         const Vec3& centre,
+                         float radius,
+                         float thickness,
+                         float yaw,
+                         const Vec3& tilt) {
+    CairnRandom random (seed * 2246822519u + 0x165667b1u);
+    list.begin (render::Prim::Triangles);
+    cairn_stone_colour (list, random);
+    cairn_stone (list, random, centre, radius, thickness, yaw, tilt);
+    list.end ();
+  }
 }

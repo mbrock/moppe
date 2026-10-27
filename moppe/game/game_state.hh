@@ -21,6 +21,7 @@
 
 #include <array>
 #include <random>
+#include <vector>
 
 namespace moppe::game {
   using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
@@ -119,6 +120,8 @@ namespace moppe::game {
     std::mt19937 m_fx_rng { 7 };
     Basket m_basket;
     Camp m_camp;
+    // One for each of the world's sanctuaries.
+    std::vector<Beacon> m_beacons;
     Fishing m_fishing;
     // How each machine is getting on (game/rescue.hh), indexed by
     // Machine, and the rope the walker hauls one by.

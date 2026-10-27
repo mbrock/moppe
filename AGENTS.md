@@ -569,6 +569,28 @@
     it out after the walker, slowly, walking at it pushes it, and `F` lets
     go; moved three metres it is free and `F` gets in again. `tools/record
     OUT.mp4 haul` and `bump` show both.
+  - Places at the ends of the roads (`moppe/game/places.*`, planned
+    from `GeneratedWorld::roads()` when a world activates, before the
+    trees and rocks, which keep out of their clearings): the landing has
+    a plank jetty out to water deep enough to moor, and the skiff lies
+    alongside it (`park_boat` moors it there before trying the nearest
+    open shore); each peak sanctuary has a stone fire platform inside a
+    low enclosure wall, with paving out through its gap down the
+    footpath, tumbled the longer it has been left (`RoadPlace::
+    abandoned_years_ago`). On foot at the platform, `T` lights its
+    beacon and `T` puts it out (`GameLogicState::m_beacons`); it burns
+    as a blaze, can be cooked on, and from afar shows as a glow by night
+    and a column of smoke by day (`draw_beacon` in camp.cc), from the
+    sanctuaries on its sightlines and anywhere else that sees the
+    summit. Each lake outlet has a farm, `models/farm.blend` from
+    `tools/figure/farm.py` (`make models`): a timber watermill with its
+    undershot wheel turning in the outlet stream, a Falu-red house, and
+    a barn, left as stone plinths once long abandoned; with a landing
+    stage on the lake to fish from. By each place where two trees take a
+    hammock, an old fire ring takes the camp's fire. `MOPPE_WALK=
+    landing|sanctuary|farm` starts on foot there, and `MOPPE_BEACONS=lit`
+    starts every beacon burning, for captures; `moppe: places:` lines
+    say where everything stands.
   - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few
     percent of the trees, more near the trailhead: chanterelles and funnel
     chanterelles under spruce, porcini under both, fly agaric under birch,

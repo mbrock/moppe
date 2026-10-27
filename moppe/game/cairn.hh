@@ -19,6 +19,17 @@ namespace moppe::game {
                     const Vec3& along,
                     std::uint32_t seed,
                     const std::function<float (float x, float z)>& ground);
+
+  // One flat, faceted fieldstone of weathered granite, as the cairn is
+  // built of: `centre` the middle of its bottom face, `tilt` leaning its
+  // up away from the vertical. `seed` shapes and colours it.
+  void build_fieldstone (render::DrawList& list,
+                         std::uint32_t seed,
+                         const Vec3& centre,
+                         float radius,
+                         float thickness,
+                         float yaw,
+                         const Vec3& tilt);
 }
 
 #endif

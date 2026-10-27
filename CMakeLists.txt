@@ -403,6 +403,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/cinematic_flight.cc
   moppe/game/opening.cc
   moppe/game/cairn.cc
+  moppe/game/farm_model.cc
+  moppe/game/places.cc
   moppe/game/avatar.cc
   moppe/game/walker_render.cc
   moppe/game/figure.cc
@@ -698,6 +700,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/river_stones_test.cc
     tests/game/mushrooms_test.cc
     tests/game/camp_test.cc
+    tests/game/places_test.cc
     tests/game/fishing_test.cc
     tests/game/companion_test.cc
     tests/game/rescue_test.cc

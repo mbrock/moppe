@@ -121,6 +121,17 @@ namespace moppe::game {
                   const Vec3& camera,
                   float burn,
                   float time);
+
+  // A beacon: a fire on a sanctuary's platform (game/places.hh). Near,
+  // a blaze of several camp fires' flames; from far off, a glow over it
+  // that shows by night and a column of smoke leaning off on the wind
+  // that shows by day, sized to be seen from the next summit.
+  void draw_beacon (render::Renderer& renderer,
+                    const Vec3& hearth,
+                    const Vec3& camera,
+                    float burn,
+                    float daylight,
+                    float time);
 }
 
 #endif
