@@ -134,16 +134,24 @@ namespace moppe {
       virtual ~GlyphSet () {}
     };
 
+    // Slug glyphs placed in the world and uploaded once by
+    // Renderer::create_world_text.
+    class WorldText {
+    public:
+      virtual ~WorldText () {}
+    };
+
     typedef std::shared_ptr<Texture> TexturePtr;
     typedef std::shared_ptr<Mesh> MeshPtr;
     typedef std::shared_ptr<GlyphSet> GlyphSetPtr;
+    typedef std::shared_ptr<WorldText> WorldTextPtr;
 
     // One placed Slug glyph, the instance a backend expands into a quad;
     // mirrored by MoppeGlyphQuad in the Metal shader types.  The glyph's
     // em-space point (u, v) lands at origin + u * axis_x + v * axis_y in the
     // draw's target space, so a quad may be scaled, rotated, or sheared.
-    // The axes carry three components so the same record can later place
-    // text on a plane in the world; the HUD reads only x and y.
+    // The HUD reads only x and y; text in the world places all three, in
+    // metres (TextList::place).
     struct alignas (16) GlyphQuad {
       float origin[4]; // w: coverage filter width in pixels (1 is crisp)
       float axis_x[4];

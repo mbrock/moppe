@@ -176,6 +176,12 @@ namespace moppe::nhal {
     const char motion_blur_fragment[] = {
 #embed "motion_blur.fragment.wgsl"
       , 0 };
+    const char world_text_vertex[] = {
+#embed "world_text.vertex.wgsl"
+      , 0 };
+    const char world_text_fragment[] = {
+#embed "world_text.fragment.wgsl"
+      , 0 };
 
     StageCode wgsl (const char* code) {
       return { {}, {}, {}, code };
@@ -217,6 +223,7 @@ namespace moppe::nhal {
       { wgsl (neighbourhood_vertex), wgsl (neighbourhood_fragment) },
       { wgsl (mesh_shadow_vertex), {} },
       { wgsl (motion_blur_vertex), wgsl (motion_blur_fragment) },
+      { wgsl (world_text_vertex), wgsl (world_text_fragment) },
     };
     return shaders;
   }

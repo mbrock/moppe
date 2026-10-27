@@ -58,6 +58,8 @@
 #include <shader_terrain_vertex.h>
 #include <shader_uber_fragment.h>
 #include <shader_uber_vertex.h>
+#include <shader_world_text_fragment.h>
+#include <shader_world_text_vertex.h>
 
 #include <cstddef>
 
@@ -107,6 +109,7 @@ namespace moppe::nhal {
       { dxil (shader_mesh_shadow_vertex), {} },
       { dxil (shader_motion_blur_vertex),
         dxil (shader_motion_blur_fragment) },
+      { dxil (shader_world_text_vertex), dxil (shader_world_text_fragment) },
     };
     return shaders;
   }

@@ -17,8 +17,9 @@ namespace moppe {
     // Placed Slug glyphs awaiting a draw, grouped into runs that share one
     // uploaded glyph set.  It is the text counterpart of DrawList: the
     // caller records GlyphQuads in whatever target space the draw call
-    // expects (HUD points for Renderer::draw_hud_text) and the backend
-    // expands each into a dilated quad.
+    // expects (HUD points for Renderer::draw_hud_text, world metres for
+    // Renderer::create_world_text) and the backend expands each into a
+    // dilated quad.
     class TextList {
     public:
       struct Run {
@@ -41,6 +42,15 @@ namespace moppe {
       // Moves every recorded quad, as DrawList::translate moves what
       // follows it; the HUD uses it to step inside the safe area.
       void translate (float dx, float dy);
+
+      // Lays the quads from `first` on, recorded in a plane's own units
+      // with y down as Font::draw lays a line, onto a plane in the world:
+      // the point (x, y) lands at origin + x * right - y * up, so `right`
+      // and `up` are the world's length of one unit.
+      void place (const Vec3& origin,
+                  const Vec3& right,
+                  const Vec3& up,
+                  std::size_t first = 0);
 
       const std::vector<GlyphQuad>& quads () const {
         return m_quads;

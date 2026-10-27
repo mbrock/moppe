@@ -512,7 +512,8 @@ set(MOPPE_NHAL_WORLD_SOURCE
 set(MOPPE_NHAL_WORLD_DRAWN
   terrain sky uber hud resolve present slug_text forest
   bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
-  rain water leaves waterfall scene_copy neighbourhood motion_blur)
+  rain water leaves waterfall scene_copy neighbourhood motion_blur
+  world_text)
 set(MOPPE_NHAL_WORLD_CASTERS
   terrain_shadow forest_shadow forest_far_shadow boulders_shadow
   mesh_shadow)

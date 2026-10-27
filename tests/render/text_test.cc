@@ -134,6 +134,33 @@ MOPPE_TEST (text_list_groups_runs_by_glyph_set) {
   MOPPE_CHECK_NEAR (list.quads ()[3].origin[1], -2.0f, 0.0f);
 }
 
+MOPPE_TEST (text_list_places_a_line_upright_on_a_world_plane) {
+  // A line laid out as Font::draw lays one, y down, then placed on a
+  // plane facing +x: the glyph's em up must come out the world's up.
+  render::TextList list;
+  const render::GlyphSetPtr set = std::make_shared<render::GlyphSet> ();
+  render::GlyphQuad quad {};
+  quad.origin[0] = 10.0f;
+  quad.origin[1] = 20.0f;
+  quad.axis_x[0] = 3.0f;
+  quad.axis_y[1] = -3.0f;
+  list.add (set, quad);
+  list.add (set, quad);
+  list.place (
+    Vec3 (1, 2, 3), Vec3 (0, 0, 0.5f), Vec3 (0, 0.25f, 0), /* first */ 1);
+  const render::GlyphQuad& kept = list.quads ()[0];
+  MOPPE_CHECK_NEAR (kept.origin[0], 10.0f, 0.0f);
+  MOPPE_CHECK_NEAR (kept.origin[1], 20.0f, 0.0f);
+  const render::GlyphQuad& placed = list.quads ()[1];
+  MOPPE_CHECK_NEAR (placed.origin[0], 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (placed.origin[1], -3.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (placed.origin[2], 8.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (placed.axis_x[2], 1.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (placed.axis_x[1], 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (placed.axis_y[1], 0.75f, 1e-6f);
+  MOPPE_CHECK_NEAR (placed.axis_y[2], 0.0f, 1e-6f);
+}
+
 MOPPE_TEST (utf8_decoding_handles_multibyte_and_malformed_input) {
   MOPPE_CHECK (render::decode_utf8 ("a\xC3\xA5\xE2\x80\x94") ==
                std::u32string (U"aå—"));

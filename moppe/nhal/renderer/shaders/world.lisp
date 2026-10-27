@@ -5120,6 +5120,57 @@
          (band (if (> span 0.0) (floor (* (/ (- value low) span) count)) 0.0)))
     (uint (clamp band 0.0 (- count 1.0)))))
 
+;;; A glyph's coverage at EM: pick the sample's horizontal and vertical
+;;; band, walk each band's sorted curves until one lies wholly behind it,
+;;; and combine the two rays.  GLYPH is the band offset, the two band
+;;; counts, and the filter's width in pixels.
+(define-shader-abstraction slug-coverage (em bounds glyph curves bands)
+  `(let* ((one (uint 1.0))
+          (two (uint 2.0))
+          (base (uint (swizzle ,glyph :x)))
+          ;; An empty glyph (a space) has no bands to walk.
+          (drawn (and (>= (swizzle ,glyph :y) 1.0)
+                      (>= (swizzle ,glyph :z) 1.0)))
+          (rows (max (swizzle ,glyph :y) 1.0))
+          (columns (max (swizzle ,glyph :z) 1.0))
+          (pixels-per-em (/ (luv.slug::slug-pixels-per-em ,em)
+                            (swizzle ,glyph :w)))
+          (row (slug-band-of (swizzle ,em :y) (swizzle ,bounds :y)
+                             (swizzle ,bounds :w) rows))
+          (column (+ (uint rows)
+                     (slug-band-of (swizzle ,em :x) (swizzle ,bounds :x)
+                                   (swizzle ,bounds :z) columns)))
+          (row-count (if drawn
+                         (min (buffer-element ,bands (+ base (* two row)))
+                              (uint 1024))
+                         (uint 0)))
+          (row-list (buffer-element ,bands (+ base (* two row) one)))
+          (column-count (if drawn
+                            (min (buffer-element ,bands
+                                                 (+ base (* two column)))
+                                 (uint 1024))
+                            (uint 0)))
+          (column-list (buffer-element ,bands (+ base (* two column) one)))
+          (horizontal
+            (counted-fold
+                (index row-count state (vec3 0.0 0.0 0.0)
+                 :until (luv.slug::slug-band-done-p state))
+              (let* ((texel (buffer-element ,bands (+ row-list index))))
+                (luv.slug::slug-horizontal-band-step
+                 state (buffer-element ,curves texel)
+                 (buffer-element ,curves (+ texel one)) ,em pixels-per-em))))
+          (vertical
+            (counted-fold
+                (index column-count state (vec3 0.0 0.0 0.0)
+                 :until (luv.slug::slug-band-done-p state))
+              (let* ((texel (buffer-element ,bands (+ column-list index))))
+                (luv.slug::slug-vertical-band-step
+                 state (buffer-element ,curves texel)
+                 (buffer-element ,curves (+ texel one)) ,em pixels-per-em)))))
+     (luv.slug::slug-combine-band-coverage
+      (swizzle horizontal :x) (swizzle horizontal :y)
+      (swizzle vertical :x) (swizzle vertical :y))))
+
 (define-shader slug-text-fragment
     (:stage :fragment
      :inputs ((em :vec2 :location 0)
@@ -5130,48 +5181,7 @@
      :resources ((hud :uniform-block :binding 0 :members #.*hud*)
                  (curves :storage-buffer :binding 2 :element :vec4)
                  (bands :storage-buffer :binding 3 :element :uint)))
-  (let* ((one (uint 1.0))
-         (two (uint 2.0))
-         (base (uint (swizzle glyph :x)))
-         ;; An empty glyph (a space) has no bands to walk.
-         (drawn (and (>= (swizzle glyph :y) 1.0) (>= (swizzle glyph :z) 1.0)))
-         (rows (max (swizzle glyph :y) 1.0))
-         (columns (max (swizzle glyph :z) 1.0))
-         (pixels-per-em (/ (luv.slug::slug-pixels-per-em em)
-                           (swizzle glyph :w)))
-         (row (slug-band-of (swizzle em :y) (swizzle bounds :y)
-                            (swizzle bounds :w) rows))
-         (column (+ (uint rows)
-                    (slug-band-of (swizzle em :x) (swizzle bounds :x)
-                                  (swizzle bounds :z) columns)))
-         (row-count (if drawn (min (buffer-element bands (+ base (* two row)))
-                                   (uint 1024))
-                        (uint 0)))
-         (row-list (buffer-element bands (+ base (* two row) one)))
-         (column-count (if drawn
-                           (min (buffer-element bands (+ base (* two column)))
-                                (uint 1024))
-                           (uint 0)))
-         (column-list (buffer-element bands (+ base (* two column) one)))
-         (horizontal
-           (counted-fold
-               (index row-count state (vec3 0.0 0.0 0.0)
-                :until (luv.slug::slug-band-done-p state))
-             (let* ((texel (buffer-element bands (+ row-list index))))
-               (luv.slug::slug-horizontal-band-step
-                state (buffer-element curves texel)
-                (buffer-element curves (+ texel one)) em pixels-per-em))))
-         (vertical
-           (counted-fold
-               (index column-count state (vec3 0.0 0.0 0.0)
-                :until (luv.slug::slug-band-done-p state))
-             (let* ((texel (buffer-element bands (+ column-list index))))
-               (luv.slug::slug-vertical-band-step
-                state (buffer-element curves texel)
-                (buffer-element curves (+ texel one)) em pixels-per-em))))
-         (coverage (luv.slug::slug-combine-band-coverage
-                    (swizzle horizontal :x) (swizzle horizontal :y)
-                    (swizzle vertical :x) (swizzle vertical :y)))
+  (let* ((coverage (slug-coverage em bounds glyph curves bands))
          (rgb (swizzle ink :xyz)))
     (set-output color (vec4 (mix rgb (srgb rgb) (swizzle output :x))
                             (* (swizzle ink :w) coverage)))))
@@ -5179,6 +5189,142 @@
 (define-shader-program slug-text
   :vertex slug-text-vertex
   :fragment slug-text-fragment)
+
+;;; -- text in the world ----------------------------------------------------
+;;;
+;;; Lettering on surfaces in the world (the fingerposts' boards), as Luv's
+;;; world glyphs (luft/render/world-text-shaders.lisp): each glyph quad
+;;; (render::GlyphQuad, its origin and axes in world metres) is one quad
+;;; whose fragments resolve Slug's bands exactly, so the letters stay sharp
+;;; at any distance and angle.  It is drawn into the scene after the
+;;; surface it lies on, depth-tested but not written, and like static
+;;; geometry carries the frame's jitter and writes its motion, so the
+;;; temporal resolve does not smear it.  The ink is paint, lit and hazed as
+;;; the uber program lights a matte surface.
+
+;;; The on-screen length in pixels between two projected points.
+(define-shader-function screen-pixels (from to size)
+  (let* ((d (* (- (/ (swizzle to :xy) (swizzle to :w))
+                  (/ (swizzle from :xy) (swizzle from :w)))
+               (* 0.5 size))))
+    (sqrt (dot d d))))
+
+(define-shader-function cross-product (a b)
+  (vec3 (- (* (swizzle a :y) (swizzle b :z)) (* (swizzle a :z) (swizzle b :y)))
+        (- (* (swizzle a :z) (swizzle b :x)) (* (swizzle a :x) (swizzle b :z)))
+        (- (* (swizzle a :x) (swizzle b :y))
+           (* (swizzle a :y) (swizzle b :x)))))
+
+(define-shader world-text-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (world :vec3 :location 0)
+               (em :vec2 :location 1)
+               (bounds :vec4 :location 2 :interpolation :flat)
+               (ink :vec4 :location 3 :interpolation :flat)
+               (glyph :vec4 :location 4 :interpolation :flat)
+               (facing :vec3 :location 5 :interpolation :flat)
+               (here :vec4 :location 6)
+               (then :vec4 :location 7))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (quads :storage-buffer :binding 1 :element :vec4)))
+  (let* ((row (* instance-index (uint 6.0)))
+         (origin-row (buffer-element quads row))
+         (origin (swizzle origin-row :xyz))
+         (axis-x (swizzle (buffer-element quads (+ row (uint 1.0))) :xyz))
+         (axis-y (swizzle (buffer-element quads (+ row (uint 2.0))) :xyz))
+         (glyph-bounds (buffer-element quads (+ row (uint 3.0))))
+         (color (buffer-element quads (+ row (uint 4.0))))
+         (words (buffer-element quads (+ row (uint 5.0))))
+         (filter-pixels (max (swizzle origin-row :w) 1.0))
+         (low (swizzle glyph-bounds :xy))
+         (span (max (- (swizzle glyph-bounds :zw) low) (vec2 0.0001 0.0001)))
+         ;; Dynamic dilation: the outline's edges as they land on screen
+         ;; say how many pixels an em is along each axis, and the quad grows
+         ;; past the outline by a fixed number of pixels at whatever size it
+         ;; is drawn.  Never by more than an em, should an edge fall behind
+         ;; the eye.
+         (corner-low (+ origin (* axis-x (swizzle low :x))
+                        (* axis-y (swizzle low :y))))
+         (low-clip (* view-proj (vec4 corner-low 1.0)))
+         (x-clip (* view-proj (vec4 (+ corner-low
+                                       (* axis-x (swizzle span :x)))
+                                    1.0)))
+         (y-clip (* view-proj (vec4 (+ corner-low
+                                       (* axis-y (swizzle span :y)))
+                                    1.0)))
+         (size (swizzle temporal :xy))
+         (pixels-per-em
+           (max (/ (vec2 (screen-pixels low-clip x-clip size)
+                         (screen-pixels low-clip y-clip size))
+                   span)
+                (vec2 0.001 0.001)))
+         (reach (* luv.slug::slug-dilation-pixels filter-pixels))
+         (dilation (min (/ (vec2 reach reach) pixels-per-em) (vec2 1.0 1.0)))
+         (at (+ (- low dilation)
+                (* (+ span (* 2.0 dilation)) (quad-corner vertex-index))))
+         (position (+ origin (* axis-x (swizzle at :x))
+                      (* axis-y (swizzle at :y))))
+         (current (* view-proj (vec4 position 1.0))))
+    (set-output clip-position (clip current (swizzle temporal :zw)))
+    (set-output world position)
+    (set-output em at)
+    (set-output bounds glyph-bounds)
+    (set-output ink color)
+    (set-output glyph (vec4 (float (bit-cast :uint (swizzle words :x)))
+                            (float (bit-cast :uint (swizzle words :y)))
+                            (float (bit-cast :uint (swizzle words :z)))
+                            filter-pixels))
+    (set-output facing (cross-product axis-x axis-y))
+    (set-output here current)
+    (set-output then (* previous-view-proj (vec4 position 1.0)))))
+
+(define-shader world-text-fragment
+    (:stage :fragment
+     :inputs ((world :vec3 :location 0)
+              (em :vec2 :location 1)
+              (bounds :vec4 :location 2 :interpolation :flat)
+              (ink :vec4 :location 3 :interpolation :flat)
+              (glyph :vec4 :location 4 :interpolation :flat)
+              (facing :vec3 :location 5 :interpolation :flat)
+              (here :vec4 :location 6)
+              (then :vec4 :location 7))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (curves :storage-buffer :binding 2 :element :vec4)
+                 (bands :storage-buffer :binding 3 :element :uint)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((coverage (slug-coverage em bounds glyph curves bands))
+         (alpha (* (swizzle ink :w) coverage))
+         (camera (swizzle camera-position :xyz))
+         (eye (normalize (- camera world)))
+         ;; Lettering is seen from the side it lies on, whichever way its
+         ;; axes wind.
+         (face (normalize (+ facing (vec3 0.0 0.00001 0.0))))
+         (n (* face (- (* 2.0 (step 0.0 (dot face eye))) 1.0)))
+         (sun (swizzle sun-direction :xyz))
+         (direct (sun-lit shadow-map shadow-compare world 0.15 0.5))
+         (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) direct))
+         (bounce (* (swizzle sun-diffuse :xyz) (vec3 0.20 0.17 0.11)
+                    (clamp (- 0.45 (* 0.55 (swizzle n :y))) 0.0 1.0)
+                    (max (swizzle sun :y) 0.0)))
+         (light (+ (* (hemisphere-light (swizzle ambient :xyz) n) fill)
+                   (* (swizzle sun-diffuse :xyz) direct
+                      (clamp (dot n sun) 0.0 1.0))
+                   bounce
+                   (lamp-light lamp lamp-color world n)))
+         (shaded (hazed (* (srgb (swizzle ink :xyz)) light) world camera
+                        fog-color (swizzle sky-sun :xyz) relief)))
+    (set-output color (vec4 (* shaded alpha) alpha))
+    (set-output motion (- (clip-uv then) (clip-uv here)))))
+
+(define-shader-program world-text
+  :vertex world-text-vertex
+  :fragment world-text-fragment)
 
 ;;; -- temporal resolve and presentation ------------------------------------
 

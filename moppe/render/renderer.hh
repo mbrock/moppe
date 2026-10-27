@@ -374,6 +374,13 @@ namespace moppe {
         (void)data;
         return nullptr;
       }
+      // Uploads glyphs placed in the world (their quads in metres, as
+      // TextList::place leaves them) for draw_world_text. Backends without
+      // world text return null.
+      virtual WorldTextPtr create_world_text (const TextList& text) {
+        (void)text;
+        return nullptr;
+      }
 
       // -- world setup -------------------------------------------------
       virtual void
@@ -508,6 +515,12 @@ namespace moppe {
       virtual void begin_shadow_casters () {}
       virtual void end_shadow_casters () {}
       virtual void draw_list (const DrawList& list, uint64_t motion_id = 0) = 0;
+      // Slug lettering lying on the world's surfaces, drawn after them:
+      // tested against their depth but not writing it, lit, shadowed, and
+      // hazed as a matte paint, and exact at any distance and angle.
+      virtual void draw_world_text (const WorldText& text) {
+        (void)text;
+      }
       // Resolve the low-resolution 3D scene before screen-space effects. It
       // is idempotent so backend-specific callers can safely enforce the
       // boundary again before HUD/present.

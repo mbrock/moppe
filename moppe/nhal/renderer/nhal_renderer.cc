@@ -52,6 +52,7 @@
 #include <terrain_shadow.hh>
 #include <uber.hh>
 #include <water.hh>
+#include <world_text.hh>
 
 #include <algorithm>
 #include <array>
@@ -335,6 +336,23 @@ namespace moppe::nhal {
       }
     };
 
+    // Glyphs placed in the world, a buffer of quads for each glyph set:
+    // Direct3D's instance index does not count from a draw's first
+    // instance, so runs cannot share one.
+    struct NhalWorldText final : render::WorldText {
+      struct Run {
+        render::GlyphSetPtr glyphs;
+        Buffer quads;
+        std::uint32_t count = 0;
+      };
+      Device* device = nullptr;
+      std::vector<Run> runs;
+      ~NhalWorldText () override {
+        for (const Run& run : runs)
+          device->destroy (run.quads);
+      }
+    };
+
     // An owned copy of one stage's code in every backend's form, which
     // pipelines made on demand need after construction.
     struct OwnedStage {
@@ -383,6 +401,7 @@ namespace moppe::nhal {
         m_bloom_bright_code.keep (shaders.bloom_bright);
         m_bloom_blur_code.keep (shaders.bloom_blur);
         m_motion_blur_code.keep (shaders.motion_blur);
+        m_world_text_code.keep (shaders.world_text);
         m_gtao_code.keep (shaders.gtao);
         m_gtao_blur_code.keep (shaders.gtao_blur);
         m_shafts_code.keep (shaders.shafts);
@@ -493,6 +512,26 @@ namespace moppe::nhal {
             .label = "slug bands" },
           std::as_bytes (std::span (data.bands)));
         return set;
+      }
+
+      render::WorldTextPtr
+      create_world_text (const render::TextList& text) override {
+        auto placed = std::make_shared<NhalWorldText> ();
+        placed->device = m_device.get ();
+        const auto& quads = text.quads ();
+        for (const render::TextList::Run& run : text.runs ()) {
+          if (!run.glyphs || !run.count)
+            continue;
+          placed->runs.push_back (
+            { run.glyphs,
+              m_device->create_buffer (
+                { .size = run.count * sizeof (render::GlyphQuad),
+                  .label = "world glyphs" },
+                std::as_bytes (
+                  std::span (quads).subspan (run.first, run.count))),
+              run.count });
+        }
+        return placed;
       }
 
       // -- world setup ----------------------------------------------------
@@ -1459,6 +1498,24 @@ namespace moppe::nhal {
                    before ? &*before : nullptr);
       }
 
+      void draw_world_text (const render::WorldText& text) override {
+        const auto& placed = static_cast<const NhalWorldText&> (text);
+        if (placed.runs.empty () || m_casting || m_scene_closed)
+          return;
+        open_scene ();
+        m_device->set_pipeline (m_world_text);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_texture (8, m_shadow_map);
+        for (const NhalWorldText::Run& run : placed.runs) {
+          const auto& glyphs =
+            static_cast<const NhalGlyphSet&> (*run.glyphs);
+          m_device->set_buffer (1, run.quads);
+          m_device->set_buffer (2, glyphs.curves);
+          m_device->set_buffer (3, glyphs.bands);
+          m_device->draw (6, run.count);
+        }
+      }
+
       void draw_mesh (const render::Mesh& mesh, const Mat4& model,
                       std::uint64_t motion_id) override {
         const auto& m = static_cast<const NhalMesh&> (mesh);
@@ -1972,6 +2029,18 @@ namespace moppe::nhal {
         leaves.cull = Cull::none;
         leaves.label = "falling leaves";
         m_leaves = m_device->create_render_pipeline (leaves);
+
+        // Lettering over the surface it lies on: premultiplied by its
+        // coverage, tested against the surface's depth but not writing it.
+        RenderPipelineDesc lettering = scene;
+        lettering.program = &shaders::world_text::program;
+        lettering.vertex = m_world_text_code.stage (0);
+        lettering.fragment = m_world_text_code.stage (1);
+        lettering.blend[0] = Blend::premultiplied;
+        lettering.depth_write = false;
+        lettering.cull = Cull::none;
+        lettering.label = "world text";
+        m_world_text = m_device->create_render_pipeline (lettering);
 
         RenderPipelineDesc waterfall = scene;
         waterfall.program = &shaders::waterfall::program;
@@ -2838,6 +2907,8 @@ namespace moppe::nhal {
       Pipeline m_bloom_bright, m_bloom_blur;
       ProgramCode m_motion_blur_code;
       Pipeline m_motion_blur;
+      ProgramCode m_world_text_code;
+      Pipeline m_world_text;
       // The resolved image, smeared (apply_motion_blur).
       Texture m_blurred;
       Texture m_image;

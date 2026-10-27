@@ -176,6 +176,12 @@ namespace moppe::nhal {
     const char motion_blur_fragment[] = {
 #embed "motion_blur.fragment.metal"
       , 0 };
+    const char world_text_vertex[] = {
+#embed "world_text.vertex.metal"
+      , 0 };
+    const char world_text_fragment[] = {
+#embed "world_text.fragment.metal"
+      , 0 };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -213,6 +219,7 @@ namespace moppe::nhal {
       { { neighbourhood_vertex, {} }, { neighbourhood_fragment, {} } },
       { { mesh_shadow_vertex, {} }, {} },
       { { motion_blur_vertex, {} }, { motion_blur_fragment, {} } },
+      { { world_text_vertex, {} }, { world_text_fragment, {} } },
     };
     return shaders;
   }

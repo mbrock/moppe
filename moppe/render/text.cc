@@ -22,6 +22,24 @@ namespace moppe {
       }
     }
 
+    void TextList::place (const Vec3& origin,
+                          const Vec3& right,
+                          const Vec3& up,
+                          std::size_t first) {
+      // A point of the plane from `base`; an axis from zero.
+      const auto onto = [&] (float out[4], const Vec3& base) {
+        const Vec3 at = base + right * out[0] - up * out[1];
+        out[0] = at[0];
+        out[1] = at[1];
+        out[2] = at[2];
+      };
+      for (std::size_t i = first; i < m_quads.size (); ++i) {
+        onto (m_quads[i].origin, origin);
+        onto (m_quads[i].axis_x, Vec3 (0, 0, 0));
+        onto (m_quads[i].axis_y, Vec3 (0, 0, 0));
+      }
+    }
+
     std::u32string decode_utf8 (std::string_view utf8) {
       std::u32string out;
       out.reserve (utf8.size ());
