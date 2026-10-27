@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -1074,6 +1075,37 @@ namespace moppe {
         return;
       const bool aside = m_diagnostics || m_host_offers;
       const auto chart = chart_placement (width_pts, height_pts, aside);
+      // What has been set so far, as boxes in points: left, top, right,
+      // bottom. Marks that line up on the screen keep their words from
+      // running into one another by stepping down past what is already
+      // there, or up where the screen ends.
+      std::vector<std::array<float, 4>> taken;
+      const auto settle =
+        [&] (float left, float top, float right, float bottom) {
+          // How far to move the box, downward (+1) or upward (-1), to
+          // clear everything set so far.
+          const auto clearing = [&] (float sign) {
+            float shift = 0.0f;
+            for (int pass = 0; pass < 8; ++pass) {
+              bool moved = false;
+              for (const auto& box : taken)
+                if (left < box[2] && right > box[0] && top + shift < box[3] &&
+                    bottom + shift > box[1]) {
+                  shift =
+                    sign > 0.0f ? box[3] + 3.0f - top : box[1] - 3.0f - bottom;
+                  moved = true;
+                }
+              if (!moved)
+                break;
+            }
+            return shift;
+          };
+          float shift = clearing (1.0f);
+          if (bottom + shift > height_pts - 8.0f)
+            shift = clearing (-1.0f);
+          taken.push_back ({ left, top + shift, right, bottom + shift });
+          return shift;
+        };
       for (int i = 0; i < st.waymark_count; ++i) {
         auto mark = st.waymarks[i];
         if (mark.alpha <= 0.002f)
@@ -1128,6 +1160,29 @@ namespace moppe {
           cy = std::clamp (
             cy, 14.0f + rise, std::max (14.0f + rise, height_pts - 50.0f));
         }
+        std::ostringstream reading;
+        if (*mark.name)
+          reading << mark.name << "  ";
+        if (mark.metres >= 1000.0f)
+          reading << std::fixed << std::setprecision (1)
+                  << mark.metres / 1000.0f << " km";
+        else
+          reading << static_cast<int> (std::round (mark.metres / 5.0f) * 5.0f)
+                  << " m";
+        TextStyle label;
+        label.size = mark.vehicles ? 12.0f : 11.0f;
+        label.red = label.green = label.blue = ink;
+        label.alpha = alpha;
+        label.tracking = 0.04f;
+        label.tabular_figures = true;
+        const float words = m_font->measure (reading.str (), label);
+        if (count) {
+          const float half = 0.5f * std::max (width, words) + 4.0f;
+          cy += settle (cx - half,
+                        cy - rise - 12.0f,
+                        cx + half,
+                        cy + (mark.in_view ? 48.0f : 32.0f));
+        }
         // Keep the in-view arrow attached to the icon-and-distance
         // group, rather than leaving it stranded down over the target.
         const float arrow_x = count && mark.in_view ? cx : mark.x;
@@ -1154,21 +1209,6 @@ namespace moppe {
                      mark.blue,
                      alpha);
 
-        std::ostringstream reading;
-        if (*mark.name)
-          reading << mark.name << "  ";
-        if (mark.metres >= 1000.0f)
-          reading << std::fixed << std::setprecision (1)
-                  << mark.metres / 1000.0f << " km";
-        else
-          reading << static_cast<int> (std::round (mark.metres / 5.0f) * 5.0f)
-                  << " m";
-        TextStyle label;
-        label.size = mark.vehicles ? 12.0f : 11.0f;
-        label.red = label.green = label.blue = ink;
-        label.alpha = alpha;
-        label.tracking = 0.04f;
-        label.tabular_figures = true;
         if (count) {
           // At most three per row, balanced and individually centered:
           // four makes 2 + 2, five 3 + 2, and six 3 + 3.
@@ -1218,6 +1258,10 @@ namespace moppe {
         } else {
           y += upward > 0.0f ? 18.0f : -18.0f;
         }
+        const float left = align == TextAlign::Left    ? x
+                           : align == TextAlign::Right ? x - words
+                                                       : x - 0.5f * words;
+        y += settle (left - 3.0f, y - 12.0f, left + words + 3.0f, y + 4.0f);
         draw_shaded (text, x, y, reading.str (), label, align);
       }
     }

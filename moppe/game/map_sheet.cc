@@ -3,6 +3,7 @@
 #include <moppe/render/renderer.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <utility>
@@ -299,8 +300,15 @@ namespace moppe::game {
                style (10.5f, height_ink));
     }
 
-    // What moves, the walker last so that nothing covers them.
-    std::vector<std::pair<float, float>> named;
+    // What moves, the walker last so that nothing covers them; each
+    // mark's symbol is kept as a box in points, and its name for later.
+    struct Named {
+      float x, y;
+      const Mark* mark;
+      std::size_t symbol;
+    };
+    std::vector<std::array<float, 4>> symbols;
+    std::vector<Named> names;
     for (std::size_t i = marks.size (); i-- > 0;) {
       const Mark& mark = marks[i];
       float x, y;
@@ -372,39 +380,71 @@ namespace moppe::game {
         disc (dl, x, y, 2.4f);
         break;
       }
-      if (font && mark.name[0]) {
-        // Things that stand together have their names one under another.
-        float line = y + 3.8f;
-        for (bool moved = true; moved;) {
-          moved = false;
-          for (const auto& [taken_x, taken_y] : named)
-            if (std::fabs (taken_x - x) < 60.0f &&
-                std::fabs (taken_y - line) < 11.5f) {
-              line = taken_y + 12.0f;
-              moved = true;
-            }
+      symbols.push_back ({ x - 7.0f, y - 7.0f, x + 7.0f, y + 7.0f });
+      if (font && mark.name[0])
+        names.push_back ({ x, y, &mark, symbols.size () - 1 });
+    }
+
+    // The names, each at the first place round its mark that keeps
+    // clear of the other names and marks: to the right, the left, above,
+    // or below; failing those, under the names already to its right.
+    std::vector<std::array<float, 4>> set;
+    const auto clear = [&] (const std::array<float, 4>& box, std::size_t own) {
+      const auto apart = [&] (const std::array<float, 4>& other) {
+        return box[2] <= other[0] || box[0] >= other[2] || box[3] <= other[1] ||
+               box[1] >= other[3];
+      };
+      if (box[0] < map_x + 2.0f || box[2] > map_x + side - 2.0f ||
+          box[1] < map_y + 2.0f || box[3] > map_y + side - 2.0f)
+        return false;
+      for (std::size_t k = 0; k < symbols.size (); ++k)
+        if (k != own && !apart (symbols[k]))
+          return false;
+      return std::ranges::all_of (set, apart);
+    };
+    for (const Named& named : names) {
+      const Mark& mark = *named.mark;
+      const float x = named.x, y = named.y;
+      // Places are named in the water's blue, sanctuaries in their own
+      // ink.
+      const TextStyle words = mark.place
+                                ? style (11.0f,
+                                         mark.kind == Mark::Kind::Sanctuary
+                                           ? mark.colour
+                                           : DisplayColor (0.04f, 0.18f, 0.42f),
+                                         0.04f)
+                                : style (10.5f, map_ink, 0.02f);
+      const float w = font->measure (mark.name, words);
+      // Where the baseline's left end may go.
+      const std::array<std::pair<float, float>, 4> tries { {
+        { x + 9.0f, y + 3.8f },
+        { x - 9.0f - w, y + 3.8f },
+        { x - 0.5f * w, y - 9.0f },
+        { x - 0.5f * w, y + 17.0f },
+      } };
+      const auto box = [&] (float left, float baseline) {
+        return std::array<float, 4> {
+          left - 1.0f, baseline - 9.5f, left + w + 1.0f, baseline + 2.5f
+        };
+      };
+      float left = tries[0].first, line = tries[0].second;
+      bool found = false;
+      for (const auto& [at_x, at_y] : tries)
+        if (clear (box (at_x, at_y), named.symbol)) {
+          left = at_x;
+          line = at_y;
+          found = true;
+          break;
         }
-        named.emplace_back (x, line);
-        // Places are named in the water's blue, sanctuaries in their
-        // own ink.
-        const TextStyle words =
-          mark.place ? style (11.0f,
-                              mark.kind == Mark::Kind::Sanctuary
-                                ? mark.colour
-                                : DisplayColor (0.04f, 0.18f, 0.42f),
-                              0.04f)
-                     : style (10.5f, map_ink, 0.02f);
-        // Near the right edge the name goes to the mark's left.
-        const bool left =
-          x + 10.0f + font->measure (mark.name, words) > map_x + side - 4.0f;
-        label (text,
-               *font,
-               left ? x - 10.0f : x + 10.0f,
-               line,
-               mark.name,
-               words,
-               left ? TextAlign::Right : TextAlign::Left);
+      if (!found) {
+        if (left + w > map_x + side - 2.0f)
+          left = x - 9.0f - w;
+        for (int step = 0; step < 12 && !clear (box (left, line), named.symbol);
+             ++step)
+          line += 12.0f;
       }
+      set.push_back (box (left, line));
+      label (text, *font, left, line, mark.name, words);
     }
 
     if (!font)
