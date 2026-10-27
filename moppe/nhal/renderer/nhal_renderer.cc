@@ -2409,7 +2409,8 @@ namespace moppe::nhal {
         terrain.road_shape = { m_road_setup.half_width, m_road_setup.shoulder,
                                m_road_setup.crown, m_road_setup.blend };
         terrain.road_batter = { m_road_setup.cut_slope,
-                                m_road_setup.fill_slope, 0, 0 };
+                                m_road_setup.fill_slope,
+                                std::clamp (m_params.rain, 0.0f, 1.0f), 0 };
         return terrain;
       }
 
