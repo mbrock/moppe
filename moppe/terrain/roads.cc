@@ -886,10 +886,11 @@ namespace moppe::terrain {
     // Moves a line's end onto `target`, carrying the first stretch of the
     // line with it and less the further from the end.
     void shift_end (std::vector<RoadPoint>& line, bool back, RoadPoint target) {
-      constexpr float reach = 40.0f;
       const RoadPoint end = back ? line.back () : line.front ();
       const float sx = target.x_m - end.x_m;
       const float sz = target.z_m - end.z_m;
+      // A long way to move is eased over a longer stretch.
+      const float reach = std::max (40.0f, 2.0f * std::hypot (sx, sz));
       float along = 0.0f;
       const std::size_t n = line.size ();
       for (std::size_t k = 0; k < n; ++k) {
@@ -1125,10 +1126,11 @@ namespace moppe::terrain {
     }
 
     // The planned lines as built: eased into curves at four metres between
-    // points, each cart road's laid over the ground at full resolution, and
-    // each end that leaves an earlier way moved onto it.
+    // points, each end that leaves an earlier way moved onto it, and each
+    // cart road's laid over the ground at full resolution.
     void finish_lines (const Lattice& lattice,
                        const FineGround& ground,
+                       const std::vector<RoadPlace>& places,
                        std::vector<Road>& roads) {
       const float period_x = lattice.width * lattice.spacing_x;
       const float period_z = lattice.height * lattice.spacing_z;
@@ -1141,6 +1143,31 @@ namespace moppe::terrain {
                            lattice.mire[node] <= 0.5f
                        : lattice.water[node] == Lattice::Dry;
         });
+        // Each end that leaves an earlier way is moved onto it before the
+        // line is laid along the contours, which keeps its ends.
+        for (const bool back : { false, true }) {
+          const RoadPoint end = back ? line.back () : line.front ();
+          // An end at a place stays there.
+          if (std::ranges::any_of (places, [&] (const RoadPlace& place) {
+                return std::hypot (wrapped (place.x_m - end.x_m, period_x),
+                                   wrapped (place.z_m - end.z_m, period_z)) <
+                       15.0f;
+              }))
+            continue;
+          RoadPoint best = end;
+          // An earlier road may since have been laid up to its corridor's
+          // width from the line this one was planned off.
+          float best_distance = 70.0f;
+          for (std::size_t earlier = 0; earlier < r; ++earlier) {
+            const auto [point, distance] =
+              nearest_on (roads[earlier], end, period_x, period_z);
+            if (distance < best_distance) {
+              best_distance = distance;
+              best = point;
+            }
+          }
+          shift_end (line, back, best);
+        }
         if (built) {
           // Laid again three times, each toward the profile the last line
           // could hold at a cart road's grade.
@@ -1183,20 +1210,6 @@ namespace moppe::terrain {
           // is eased by them in turn, which keeps its grade only where they
           // stand evenly.
           line = resample (line, 4.0f);
-        }
-        for (const bool back : { false, true }) {
-          const RoadPoint end = back ? line.back () : line.front ();
-          RoadPoint best = end;
-          float best_distance = 30.0f;
-          for (std::size_t earlier = 0; earlier < r; ++earlier) {
-            const auto [point, distance] =
-              nearest_on (roads[earlier], end, period_x, period_z);
-            if (distance < best_distance) {
-              best_distance = distance;
-              best = point;
-            }
-          }
-          shift_end (line, back, best);
         }
         roads[r].points = std::move (line);
       }
@@ -1484,7 +1497,7 @@ namespace moppe::terrain {
                             static_cast<int> (domain.height ()),
                             domain.spacing_x ().numerical_value_in (u::m),
                             domain.spacing_z ().numerical_value_in (u::m) };
-    finish_lines (lattice, fine, planner.network.roads);
+    finish_lines (lattice, fine, planner.network.places, planner.network.roads);
     return std::move (planner.network);
   }
 }
