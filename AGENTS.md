@@ -591,8 +591,9 @@
     the forest plan draws each tree's species from the canopy's shares
     (shrinking spruce to krummholz among the fell birch, bog pines to a
     person's height; the fell birch is its own form,
-    `ForestForm::fell_birch`, a low tree of several grey-barked stems
-    fanning from one base, each holding its own clumps), and the field
+    `ForestForm::fell_birch`, a low tree of three to six white stems
+    that sweep out low from one base and bend up at a knee, each with a
+    forked twig and small clumps at the tips), and the field
     layer reaches the ground and grass as
     two sheets at texture slots 5 and 4. In ruska the fjäll's dwarf birch
     goes gold and its bilberry crimson. The log line `moppe: vegetation:`

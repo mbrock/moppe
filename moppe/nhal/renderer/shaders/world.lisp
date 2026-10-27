@@ -1763,9 +1763,10 @@
      :masses (if conifer
                  (if (>= tier 4.0) (uint 5) (if (>= tier 1.0) (uint 4)
                                                 (uint 3)))
+                 ;; A fell birch's clumps go in pairs, one pair to a stem.
                  (if fell
-                     (if (>= tier 4.0) (uint 7) (if (>= tier 1.0) (uint 5)
-                                                    (uint 4)))
+                     (if (>= tier 4.0) (uint 12) (if (>= tier 1.0) (uint 10)
+                                                     (uint 6)))
                      (if (>= tier 4.0) (uint 10) (if (>= tier 1.0) (uint 7)
                                                      (uint 4)))))
      :branches (or fell (and (not conifer) (>= tier 3.0))))))
@@ -1822,7 +1823,9 @@
          ;; The crown masses.
          (local (if is-trunk (uint 0) (- index trunk-vertices)))
          (per-mass (if conifer (+ crown-sides (uint 2))
-                       (if (tree-shape-branches tree) (uint 14) (uint 8))))
+                       (if fell (uint 17)
+                           (if (tree-shape-branches tree) (uint 14)
+                               (uint 8)))))
          (mass (/ local per-mass))
          (corner (mod local per-mass))
          (fmass (float mass))
@@ -1864,43 +1867,95 @@
                          tiers)
                       0.0 1.0))
          (pine (tree-shape-pine tree))
-         (fell-lift (tree-hash seed (+ (uint 85) mass)))
          ;; A pine's crown is an umbrella: its clumps reach as far out at
          ;; the top as below it.
          (envelope (if pine (- 1.0 (* 0.35 rise))
                        (expt (sin (* 3.1415927 (+ 0.12 (* 0.80 rise)))) 0.7)))
          (clump-turn (+ seed-turn (* 2.39996 fmass)
                         (* 0.8 (- (tree-hash seed (+ (uint 90) mass)) 0.5))))
-         ;; A fell birch's clumps stand out round it at uneven heights, each
-         ;; at the end of its own stem.
-         (reach (* crown-radius (if fell 1.0 envelope)
-                   (+ (if pine 0.45 (if fell 0.40 0.30))
-                      (* (if fell 0.55 0.45)
-                         (tree-hash seed (+ (uint 100) mass))))))
+         (reach (* crown-radius envelope
+                   (+ (if pine 0.45 0.30)
+                      (* 0.45 (tree-hash seed (+ (uint 100) mass))))))
          (clump-along (+ crown-base
                          (* span (if pine (+ 0.30 (* 0.62 rise))
-                                     (if fell (+ 0.30 (* 0.60 fell-lift))
-                                         (+ 0.06 (* 0.86 rise)))))))
-         (centre (+ root (* up clump-along)
-                    (* (+ (* right (cos clump-turn))
-                          (* forward (sin clump-turn)))
-                       reach)))
-         ;; Where its branch leaves the stem; a fell birch's stems all
-         ;; spring from the base, a little apart, at a knee or two.
-         (attach (if fell
-                     (+ root
-                        (* up (* height
-                                 (+ 0.02 (* 0.10 (tree-hash seed
-                                                            (+ (uint 150)
-                                                               mass))))))
+                                     (+ 0.06 (* 0.86 rise))))))
+         ;; A fell birch's clumps go in pairs on stems of their own. Each
+         ;; stem springs from the shared base and sweeps out low, pressed
+         ;; down by the snow, then bends up at a knee; the pair's second
+         ;; clump hangs off a twig forking from the stem's upper part.
+         (stem (/ mass (uint 2)))
+         (twig (= (logand mass (uint 1)) (uint 1)))
+         (stems (float (max (/ masses (uint 2)) (uint 1))))
+         (stem-turn (+ seed-turn
+                       (/ (* pi2 (+ (float stem)
+                                    (* 0.6 (- (tree-hash seed
+                                                         (+ (uint 1000) stem))
+                                              0.5))))
+                          stems)))
+         (stem-out (+ (* right (cos stem-turn)) (* forward (sin stem-turn))))
+         (stem-reach (* crown-radius
+                        (+ 0.60 (* 0.50 (tree-hash seed
+                                                   (+ (uint 1020) stem))))))
+         (stem-root (+ root
+                       (* up (* height
+                                (+ 0.02 (* 0.08 (tree-hash seed
+                                                           (+ (uint 1040)
+                                                              stem))))))
+                       (* stem-out (* 1.4 trunk-radius))))
+         (stem-knee (+ stem-root
+                       (* stem-out
+                          (* stem-reach
+                             (+ 0.45 (* 0.30 (tree-hash seed
+                                                        (+ (uint 1060)
+                                                           stem))))))
+                       (* up (* height
+                                (+ 0.06 (* 0.14 (tree-hash seed
+                                                           (+ (uint 1080)
+                                                              stem))))))))
+         (stem-top (+ root (* stem-out stem-reach)
+                      (* up (+ crown-base
+                               (* span
+                                  (+ 0.45 (* 0.50 (tree-hash
+                                                   seed
+                                                   (+ (uint 1100) stem)))))))))
+         (twig-turn (+ stem-turn
+                       (* (if (> (tree-hash seed (+ (uint 1120) stem)) 0.5)
+                              1.0 -1.0)
+                          (+ 0.45 (* 0.40 (tree-hash seed
+                                                     (+ (uint 1140) stem)))))))
+         (twig-start (mix stem-knee stem-top
+                          (+ 0.40 (* 0.25 (tree-hash seed
+                                                     (+ (uint 1160) stem))))))
+         (twig-top (+ twig-start
+                      (* (+ (* right (cos twig-turn))
+                            (* forward (sin twig-turn)))
+                         (* crown-radius
+                            (+ 0.30 (* 0.25 (tree-hash seed
+                                                       (+ (uint 1180)
+                                                          stem))))))
+                      (* up (* span
+                               (+ 0.04 (* 0.16 (tree-hash seed
+                                                          (+ (uint 1200)
+                                                             stem))))))))
+         (centre (if fell (if twig twig-top stem-top)
+                     (+ root (* up clump-along)
                         (* (+ (* right (cos clump-turn))
                               (* forward (sin clump-turn)))
-                           (* 1.6 trunk-radius)))
+                           reach))))
+         ;; Where its branch leaves the stem.
+         (attach (if fell (if twig twig-start stem-root)
                      (+ root (* up (max (- clump-along (* 0.9 reach))
                                         (* 0.92 crown-base))))))
-         (clump-radius (* crown-radius
-                          (+ 0.50 (* 0.34 (tree-hash seed (+ (uint 110) mass))))
-                          (- 1.0 (* 0.35 rise)) (sqrt (/ 10.0 tiers))))
+         ;; A fell birch's clumps are small and many, as its leaves gather
+         ;; at the tips of its twigs.
+         (clump-radius (if fell
+                           (* crown-radius (if twig 0.85 1.0)
+                              (+ 0.19 (* 0.12 (tree-hash seed
+                                                         (+ (uint 110) mass)))))
+                           (* crown-radius
+                              (+ 0.50 (* 0.34 (tree-hash seed
+                                                         (+ (uint 110) mass))))
+                              (- 1.0 (* 0.35 rise)) (sqrt (/ 10.0 tiers)))))
          (clump-up (normalize
                     (+ up (* right (* 0.5 (- (tree-hash seed (+ (uint 130) mass))
                                              0.5)))
@@ -1928,20 +1983,37 @@
                    (+ centre (* clump-up (* leaf-lift clump-radius))
                       (* (+ (* across (cos leaf-turn)) (* depth (sin leaf-turn)))
                          leaf-reach)))))
-         ;; A clump's branch: a thin prism from the stem into the clump.
+         ;; A clump's branch: a thin prism from the stem into the clump; a
+         ;; fell birch's bends at a knee through a third ring.
          (is-branch (and (not is-trunk) (not conifer) (>= corner (uint 8))))
          (bk (- corner (uint 8)))
-         (branch-end (mix attach centre 0.85))
-         (axis (normalize (- branch-end attach)))
+         (band (/ bk (uint 3)))
+         (knee (if twig
+                   (+ (mix twig-start twig-top 0.5) (* up (* 0.03 span)))
+                   stem-knee))
+         (branch-end (mix (if fell knee attach) centre 0.85))
+         (axis (normalize (if fell
+                              (if (= band (uint 0)) (- knee attach)
+                                  (if (= band (uint 1)) (- branch-end attach)
+                                      (- branch-end knee)))
+                              (- branch-end attach))))
          (branch-side (normalize (cross3 axis (+ forward (* 0.3 right)))))
          (branch-other (cross3 axis branch-side))
          (branch-turn (* 2.0943951 (float (mod bk (uint 3)))))
          (around (+ (* branch-side (cos branch-turn))
                     (* branch-other (sin branch-turn))))
          (first-ring (< bk (uint 3)))
-         (branch-radius (* trunk-radius (if first-ring (if fell 0.62 0.34)
-                                            (if fell 0.30 0.10))))
-         (branch-point (+ (if first-ring attach branch-end)
+         (branch-radius
+           (* trunk-radius
+              (if fell
+                  (if (= band (uint 0)) (if twig 0.38 0.95)
+                      (if (= band (uint 1)) (if twig 0.26 0.76)
+                          (if twig 0.12 0.40)))
+                  (if first-ring 0.34 0.10))))
+         (branch-point (+ (if fell
+                              (if (= band (uint 0)) attach
+                                  (if (= band (uint 1)) knee branch-end))
+                              (if first-ring attach branch-end))
                           (* around branch-radius)))
          (point (if is-trunk trunk-point
                     (if is-branch branch-point
@@ -2014,10 +2086,11 @@
                       0.0 1.0))
          (pine-bark (mix (vec3 0.36 0.30 0.26) (vec3 0.80 0.46 0.26)
                          (smoothstep 0.25 0.55 rise)))
-         ;; A fell birch's stems: a birch's bark, greyed and browned by
-         ;; the wind, every stem the same.
+         ;; A fell birch's stems: chalk-white birch bark, a little warmer
+         ;; on some trees than others; its lenticels and dark base are the
+         ;; birch's own (bark-shade, forest-fragment).
          (fell (tree-shape-fell tree))
-         (fell-bark (vec3 (+ 0.64 (* 0.06 hue)) (+ 0.60 (* 0.05 hue)) 0.54))
+         (fell-bark (vec3 (+ 0.80 (* 0.04 hue)) (+ 0.77 (* 0.03 hue)) 0.71))
          (green (vec3 (+ 0.42 (* 0.08 hue)) (+ 0.60 (* 0.05 moisture)) 0.22))
          (temper (- (tree-hash seed (uint 53)) 0.5))
          (reach (+ 0.58 (* 0.62 (expt (tree-hash seed (uint 52)) 1.8))

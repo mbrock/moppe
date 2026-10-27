@@ -114,24 +114,26 @@ namespace moppe::nhal {
 
     struct TreeTopology {
       std::uint32_t sides, crown_sides, masses;
-      bool conifer, branches;
+      bool conifer, branches, fell;
 
       // SPECIES as the cull numbers classes: 0 birch, 1 spruce, 2 fell
-      // birch, whose every clump stands on a stem of its own at any tier.
+      // birch, whose clumps go in pairs on stems of their own at any tier,
+      // each branch bent at a knee through a third ring.
       TreeTopology (std::uint32_t species, std::uint32_t tier)
         : sides (tier >= 5 ? 10u : tier >= 2 ? 7u : 5u),
           crown_sides (sides == 10 ? 9u : sides),
           masses (species == 1   ? (tier >= 4 ? 5u : tier >= 1 ? 4u : 3u)
-                  : species == 2 ? (tier >= 4 ? 7u : tier >= 1 ? 5u : 4u)
+                  : species == 2 ? (tier >= 4 ? 12u : tier >= 1 ? 10u : 6u)
                                  : (tier >= 4 ? 10u : tier >= 1 ? 7u : 4u)),
           conifer (species == 1),
-          branches (species == 2 || (species == 0 && tier >= 3)) {}
+          branches (species == 2 || (species == 0 && tier >= 3)),
+          fell (species == 2) {}
 
       std::uint32_t mass_vertices () const {
-        return conifer ? crown_sides + 2 : 8 + (branches ? 6 : 0);
+        return conifer ? crown_sides + 2 : 8 + (fell ? 9 : branches ? 6 : 0);
       }
       std::uint32_t mass_primitives () const {
-        return conifer ? 2 * crown_sides : 12 + (branches ? 6 : 0);
+        return conifer ? 2 * crown_sides : 12 + (fell ? 12 : branches ? 6 : 0);
       }
 
       void triangles (std::vector<std::uint16_t>& out) const {
@@ -165,10 +167,10 @@ namespace moppe::nhal {
               add (p < 6 ? first : first + 1, p < 6 ? e0 : e1,
                    p < 6 ? e1 : e0);
             } else {
-              // Its branch, a three-sided prism.
-              const std::uint32_t q = p - 12, k = q / 2;
-              const std::uint32_t a = first + 8 + k;
-              const std::uint32_t b = first + 8 + (k + 1) % 3;
+              // Its branch, a three-sided prism in one or two bands.
+              const std::uint32_t q = p - 12, band = q / 6, k = q % 6 / 2;
+              const std::uint32_t a = first + 8 + band * 3 + k;
+              const std::uint32_t b = first + 8 + band * 3 + (k + 1) % 3;
               add ((q & 1) ? b : a, (q & 1) ? b + 3 : b, a + 3);
             }
           }
