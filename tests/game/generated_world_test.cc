@@ -53,6 +53,8 @@ namespace {
     trails.earthwork_delta_m.resize (surface.domain ().size (), 0.0f);
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
+    terrain::RoadNetwork roads =
+      game::plan_world_roads (surface, recipe, hydrology, trails, readings);
     game::ForestPlan forest = game::plan_global_forest (
       surface, readings, water, recipe.seed ().value ^ 0xa34c91e5U);
     return std::make_unique<game::GeneratedWorld> (params,
@@ -62,6 +64,7 @@ namespace {
                                                    std::move (water),
                                                    std::move (trails),
                                                    std::move (readings),
+                                                   std::move (roads),
                                                    std::move (forest));
   }
 }
@@ -216,6 +219,7 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
   MOPPE_CHECK (restored->readings ().size () == written->readings ().size ());
   MOPPE_CHECK (restored->water_surface ().size () ==
                written->water_surface ().size ());
+  MOPPE_CHECK (restored->roads () == written->roads ());
   MOPPE_CHECK (restored->forest ().period == written->forest ().period);
   MOPPE_CHECK (restored->forest ().sites.size () ==
                written->forest ().sites.size ());

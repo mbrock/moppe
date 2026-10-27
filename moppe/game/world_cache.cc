@@ -42,7 +42,8 @@ namespace moppe::game {
     // (docs/determinism.md); earlier caches hold their platform's own.
     // Version 13 reconstructs the full hillslope gradient before applying the
     // nonlinear transport law. Version 12 used one cardinal component.
-    constexpr std::uint32_t CACHE_VERSION = 21;
+    // Version 22 keeps the planned roads (terrain/roads.hh).
+    constexpr std::uint32_t CACHE_VERSION = 22;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
@@ -559,6 +560,78 @@ namespace moppe::game {
       output.vector<float> (trails.earthwork_delta_m);
     }
 
+    void write_roads (BinaryWriter& output,
+                      const terrain::RoadNetwork& roads) {
+      output.scalar (static_cast<std::uint64_t> (roads.places.size ()));
+      for (const terrain::RoadPlace& place : roads.places) {
+        output.scalar (static_cast<std::uint32_t> (place.kind));
+        output.scalar (place.x_m);
+        output.scalar (place.z_m);
+        output.scalar (place.height_m);
+        output.scalar (place.founded_years_ago);
+        output.scalar (place.abandoned_years_ago);
+      }
+      output.scalar (static_cast<std::uint64_t> (roads.roads.size ()));
+      for (const terrain::Road& road : roads.roads) {
+        output.scalar (static_cast<std::uint32_t> (road.kind));
+        output.scalar (road.traffic);
+        output.scalar (road.age_years);
+        output.scalar (road.abandoned_years_ago);
+        output.vector<terrain::RoadPoint> (road.points);
+      }
+      output.scalar (static_cast<std::uint64_t> (roads.sightlines.size ()));
+      for (const auto& [a, b] : roads.sightlines) {
+        output.scalar (static_cast<std::uint64_t> (a));
+        output.scalar (static_cast<std::uint64_t> (b));
+      }
+    }
+
+    bool read_roads (BinaryReader& input,
+                     terrain::RoadNetwork& roads,
+                     std::size_t cells) {
+      std::uint64_t count = 0;
+      if (!input.scalar (count) || count > cells)
+        return false;
+      roads.places.resize (static_cast<std::size_t> (count));
+      for (terrain::RoadPlace& place : roads.places) {
+        std::uint32_t kind = 0;
+        if (!input.scalar (kind) ||
+            kind > static_cast<std::uint32_t> (
+                     terrain::RoadPlace::Kind::Sanctuary) ||
+            !input.scalar (place.x_m) || !input.scalar (place.z_m) ||
+            !input.scalar (place.height_m) ||
+            !input.scalar (place.founded_years_ago) ||
+            !input.scalar (place.abandoned_years_ago))
+          return false;
+        place.kind = static_cast<terrain::RoadPlace::Kind> (kind);
+      }
+      if (!input.scalar (count) || count > cells)
+        return false;
+      roads.roads.resize (static_cast<std::size_t> (count));
+      for (terrain::Road& road : roads.roads) {
+        std::uint32_t kind = 0;
+        if (!input.scalar (kind) ||
+            kind > static_cast<std::uint32_t> (terrain::Road::Kind::Footpath) ||
+            !input.scalar (road.traffic) || !input.scalar (road.age_years) ||
+            !input.scalar (road.abandoned_years_ago) ||
+            !input.vector (road.points, cells))
+          return false;
+        road.kind = static_cast<terrain::Road::Kind> (kind);
+      }
+      if (!input.scalar (count) || count > cells)
+        return false;
+      roads.sightlines.resize (static_cast<std::size_t> (count));
+      for (auto& [a, b] : roads.sightlines) {
+        std::uint64_t first = 0, second = 0;
+        if (!input.scalar (first) || !input.scalar (second) ||
+            first >= roads.places.size () || second >= roads.places.size ())
+          return false;
+        a = static_cast<std::size_t> (first);
+        b = static_cast<std::size_t> (second);
+      }
+      return true;
+    }
+
     bool read_trails (BinaryReader& input,
                       terrain::TrailNetwork& trails,
                       std::size_t cells) {
@@ -649,6 +722,9 @@ namespace moppe::game {
         !read_rivers (topology, rivers, cells, lakes.domain ().size ()) ||
         !read_trails (topology, trails, cells))
       return rejected ("topology.bin");
+    terrain::RoadNetwork roads;
+    if (!read_roads (topology, roads, cells))
+      return rejected ("topology.bin roads");
 
     const std::uint32_t forest_seed = recipe.seed ().value ^ 0xa34c91e5U;
     const std::string forest_path =
@@ -679,6 +755,7 @@ namespace moppe::game {
                                              std::move (water),
                                              std::move (trails),
                                              std::move (readings),
+                                             std::move (roads),
                                              std::move (*forest));
   }
 
@@ -703,6 +780,7 @@ namespace moppe::game {
     topology.ids (drainage.receiver);
     write_rivers (topology, rivers);
     write_trails (topology, world.trails ());
+    write_roads (topology, world.roads ());
     topology.finish ();
   }
 

@@ -185,6 +185,32 @@ namespace moppe::game {
                             std::move (vegetation)) };
   }
 
+  terrain::RoadNetwork plan_world_roads (const map::SurfaceGeometry& geometry,
+                                         const terrain::WorldRecipe& recipe,
+                                         const Hydrology& hydrology,
+                                         const terrain::TrailNetwork& trails,
+                                         const map::SurfaceReadings& readings) {
+    const auto& [standing_water, lakes, drainage, rivers] = hydrology;
+    const auto numbers = [] (const auto& column) {
+      using Quantity = std::ranges::range_value_t<decltype (column)>;
+      static_assert (sizeof (Quantity) == sizeof (float));
+      return std::span<const float> (
+        reinterpret_cast<const float*> (column.data ()), column.size ());
+    };
+    return terrain::plan_roads (
+      geometry.domain (),
+      spatial::get<terrain::surface_elevation> (geometry),
+      standing_water,
+      drainage,
+      { .forest_cover = numbers (spatial::get<map::forest_cover> (readings)),
+        .mire = numbers (spatial::get<map::sphagnum_abundance> (readings)),
+        .wetness = numbers (spatial::get<terrain::soil_wetness> (readings)) },
+      rivers.minimum_area,
+      trails.plan.home_base,
+      recipe.water_datum ().numerical_value_in (u::m),
+      recipe.seed ().value ^ 0x5d1c0a7bU);
+  }
+
   GeneratedWorld::GeneratedWorld (WorldParams params,
                                   terrain::WorldRecipe recipe,
                                   map::SurfaceGeometry surface,
@@ -192,10 +218,12 @@ namespace moppe::game {
                                   terrain::WaterSheets water,
                                   terrain::TrailNetwork trails,
                                   map::SurfaceReadings readings,
+                                  terrain::RoadNetwork roads,
                                   ForestPlan forest)
       : m_params (bind_world_params (params, recipe)),
         m_recipe (std::move (recipe)), m_surface (std::move (surface)),
         m_hydrology (std::move (hydrology)),
         m_water_surface (std::move (water)), m_trails (std::move (trails)),
-        m_readings (std::move (readings)), m_forest (std::move (forest)) {}
+        m_readings (std::move (readings)), m_roads (std::move (roads)),
+        m_forest (std::move (forest)) {}
 }

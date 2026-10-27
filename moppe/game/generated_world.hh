@@ -5,6 +5,7 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/roads.hh>
 #include <moppe/terrain/trail.hh>
 #include <moppe/terrain/watercourse.hh>
 #include <moppe/terrain/world_recipe.hh>
@@ -47,6 +48,15 @@ namespace moppe::game {
                    const Hydrology& hydrology,
                    const terrain::TrailUseMap& use);
 
+  // The roads, footpaths, and places of a world (terrain/roads.hh), planned
+  // over its finished ground: they go round the forest and the mires the
+  // readings find, and begin at the trail's home base.
+  terrain::RoadNetwork plan_world_roads (const map::SurfaceGeometry& geometry,
+                                         const terrain::WorldRecipe& recipe,
+                                         const Hydrology& hydrology,
+                                         const terrain::TrailNetwork& trails,
+                                         const map::SurfaceReadings& readings);
+
   // A generated world's durable, renderer-free artifacts. It is assembled
   // from finished parts, so holding one means the world is complete; the
   // build itself lives in world_loading.
@@ -59,6 +69,7 @@ namespace moppe::game {
                     terrain::WaterSheets water,
                     terrain::TrailNetwork trails,
                     map::SurfaceReadings readings,
+                    terrain::RoadNetwork roads,
                     ForestPlan forest);
     GeneratedWorld (const GeneratedWorld&) = delete;
     GeneratedWorld& operator= (const GeneratedWorld&) = delete;
@@ -93,6 +104,10 @@ namespace moppe::game {
       return m_trails;
     }
 
+    const terrain::RoadNetwork& roads () const noexcept {
+      return m_roads;
+    }
+
     const ForestPlan& forest () const noexcept {
       return m_forest;
     }
@@ -105,6 +120,7 @@ namespace moppe::game {
     terrain::WaterSheets m_water_surface;
     terrain::TrailNetwork m_trails;
     map::SurfaceReadings m_readings;
+    terrain::RoadNetwork m_roads;
     ForestPlan m_forest;
   };
 }

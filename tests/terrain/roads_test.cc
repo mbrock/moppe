@@ -48,18 +48,27 @@ namespace {
   }
 }
 
-MOPPE_TEST (roads_reach_the_sea_round_a_lake_rather_than_through_it) {
+MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
   const ElevationMap terrain = lake_country ();
   const FloodField flood = analyze_standing_water (terrain, sea_level);
   const DrainageGraph drainage = analyze_drainage (terrain);
+  // Two patches of mire straddle the trailhead's way north and south,
+  // leaving narrow dry ground either side.
+  std::vector<float> mire (side * side, 0.0f);
+  for (std::size_t z = 0; z < side; ++z)
+    for (std::size_t x = 15; x <= 25; ++x)
+      if ((z >= 30 && z <= 45) || (z >= 55 && z <= 70))
+        mire[z * side + x] = 1.0f;
   const RoadNetwork network =
     plan_roads (terrain.domain (),
                 elevations (terrain),
                 flood,
                 drainage,
+                { .mire = mire },
                 1.0e9f * mp_units::si::metre * mp_units::si::metre,
                 CellIndex { static_cast<std::uint32_t> (50 * side + 20) },
-                sea_level);
+                sea_level,
+                7);
 
   MOPPE_CHECK (!network.places.empty ());
   MOPPE_CHECK (network.places.front ().kind == RoadPlace::Kind::Trailhead);
@@ -72,16 +81,32 @@ MOPPE_TEST (roads_reach_the_sea_round_a_lake_rather_than_through_it) {
   // more than their shelving edges.
   const float period = side * spacing;
   float deepest = 0.0f;
-  for (const Road& road : network.roads)
+  float boggiest = 0.0f;
+  for (const Road& road : network.roads) {
+    if (road.kind != Road::Kind::Road)
+      continue;
     for (const RoadPoint& point : road.points) {
       const auto cell = [&] (float m) {
         return static_cast<std::size_t> (
                  std::lround (wrap_coordinate (m, period) / spacing)) %
                side;
       };
-      deepest = std::max (
-        deepest,
-        flood.water_depth_m (cell (point.z_m) * side + cell (point.x_m)));
+      const std::size_t at = cell (point.z_m) * side + cell (point.x_m);
+      deepest = std::max (deepest, flood.water_depth_m (at));
+      boggiest = std::max (boggiest, mire[at]);
     }
+  }
   MOPPE_CHECK (deepest < 3.0f);
+  MOPPE_CHECK (boggiest < 0.5f);
+
+  // Every way carries some journey and is no older than the places it
+  // joins; the trailhead is still in use.
+  float oldest = 0.0f;
+  for (const RoadPlace& place : network.places)
+    oldest = std::max (oldest, place.founded_years_ago);
+  MOPPE_CHECK (network.places.front ().abandoned_years_ago == 0.0f);
+  for (const Road& road : network.roads) {
+    MOPPE_CHECK (road.traffic > 0);
+    MOPPE_CHECK (road.age_years > 0.0f && road.age_years <= oldest);
+  }
 }

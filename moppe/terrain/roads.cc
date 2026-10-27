@@ -10,6 +10,7 @@
 #include <limits>
 #include <numbers>
 #include <queue>
+#include <unordered_map>
 
 namespace moppe::terrain {
   namespace {
@@ -36,6 +37,10 @@ namespace moppe::terrain {
       std::vector<float> catchment_m2;
       // The steepest fall to a dry neighbour.
       std::vector<float> grade;
+      // What stands on the ground and how wet it is (RoadGround).
+      std::vector<float> forest;
+      std::vector<float> mire;
+      std::vector<float> wetness;
 
       std::size_t node (int x, int y) const {
         return static_cast<std::size_t> (wrap_index (y, height)) * width +
@@ -77,6 +82,7 @@ namespace moppe::terrain {
                           std::span<const SurfaceElevation> elevations,
                           const FloodField& flood,
                           const DrainageGraph& drainage,
+                          const RoadGround& ground,
                           float river_area_m2,
                           float sea_level) {
       const std::span<const float> heights =
@@ -104,6 +110,9 @@ namespace moppe::terrain {
       lattice.river.assign (count, 0.0f);
       lattice.catchment_m2.resize (count);
       lattice.grade.resize (count);
+      lattice.forest.assign (count, 0.0f);
+      lattice.mire.assign (count, 0.0f);
+      lattice.wetness.assign (count, 0.0f);
 
       const auto source_cell = [&] (int x, int y) {
         return static_cast<std::size_t> (y * source_height / lattice.height) *
@@ -125,6 +134,13 @@ namespace moppe::terrain {
           lattice.catchment_m2[node] =
             drainage.contributing_area_at (cell).numerical_value_in (u::m *
                                                                      u::m);
+          const auto read = [cell] (std::span<const float> field) {
+            return cell < field.size () ? std::clamp (field[cell], 0.0f, 1.0f)
+                                        : 0.0f;
+          };
+          lattice.forest[node] = read (ground.forest_cover);
+          lattice.mire[node] = read (ground.mire);
+          lattice.wetness[node] = read (ground.wetness);
         }
 
       // Every river cell marks the node it falls in, and the band is
@@ -220,10 +236,17 @@ namespace moppe::terrain {
           if (lattice.water[a] >= Lattice::Deep ||
               lattice.water[b] >= Lattice::Deep || grade > 0.16f)
             return infinite;
+          // A mire swallows a road: past half cover it is not built on,
+          // and below that it is dear (Galin et al. 2010's terms, with
+          // forest for their tree density).
+          if (lattice.mire[b] > 0.5f)
+            return infinite;
           cost = run * (1.0f + square (grade / 0.06f));
           if (lattice.water[b] == Lattice::Shallow)
             cost *= 20.0f;
           cost += run * 4.0f * lattice.river[b];
+          cost += run * (1.5f * lattice.forest[b] + 6.0f * lattice.mire[b] +
+                         1.0f * lattice.wetness[b]);
           if (ways[b] == Built)
             cost *= reuse;
         } else {
@@ -231,6 +254,8 @@ namespace moppe::terrain {
             return infinite;
           cost = run * (1.0f + square (grade / 0.2f));
           cost += run * 1.5f * lattice.river[b];
+          cost += run * (0.4f * lattice.forest[b] + 2.0f * lattice.mire[b] +
+                         0.3f * lattice.wetness[b]);
           if (ways[b] != None)
             cost *= reuse;
         }
@@ -267,7 +292,19 @@ namespace moppe::terrain {
           const std::size_t next = lattice.node (x + dx, y + dy);
           const float run =
             std::hypot (dx * lattice.spacing_x, dy * lattice.spacing_z);
-          const float step = mover.step (lattice, ways, node, next, run);
+          float step = mover.step (lattice, ways, node, next, run);
+          // A knight's move passes over two cells on its way: both must be
+          // passable too, or it would cut the corner of a mire or a lake.
+          if (step < infinite && (std::abs (dx) == 2 || std::abs (dy) == 2)) {
+            const int mx = std::abs (dx) == 2 ? dx / 2 : 0;
+            const int my = std::abs (dy) == 2 ? dy / 2 : 0;
+            for (const std::size_t over :
+                 { lattice.node (x + mx, y + my),
+                   lattice.node (x + (mx ? mx : dx), y + (my ? my : dy)) })
+              if (!(mover.step (lattice, ways, node, over, 0.5f * run) <
+                    infinite))
+                step = infinite;
+          }
           if (!(step < infinite))
             continue;
           const float reached = cost + step;
@@ -334,6 +371,8 @@ namespace moppe::terrain {
       const Lattice& lattice;
       std::vector<std::uint8_t> ways;
       RoadNetwork network;
+      // Each way's lattice nodes, beside network.roads.
+      std::vector<std::vector<std::size_t>> road_nodes;
 
       std::vector<std::size_t> built () const {
         std::vector<std::size_t> nodes;
@@ -349,8 +388,10 @@ namespace moppe::terrain {
         const std::uint8_t mark = kind == Road::Kind::Road ? Built : Path;
         std::vector<std::size_t> piece;
         const auto emit = [&] {
-          if (piece.size () >= 2)
+          if (piece.size () >= 2) {
             network.roads.push_back ({ kind, unwrap (lattice, piece) });
+            road_nodes.push_back (piece);
+          }
           piece.clear ();
         };
         for (std::size_t i = 0; i < path.size (); ++i) {
@@ -628,26 +669,82 @@ namespace moppe::terrain {
       }
       return outlets;
     }
+
+    // A well-mixed hash of a few numbers (lowbias32), read as [0, 1).
+    float roll (std::uint32_t seed, std::size_t node, std::uint32_t salt) {
+      std::uint32_t x = seed ^
+                        (static_cast<std::uint32_t> (node) * 0x9e3779b9U) ^
+                        (salt * 0x85ebca6bU);
+      for (int round = 0; round < 2; ++round) {
+        x ^= x >> 16;
+        x *= 0x7feb352dU;
+        x ^= x >> 15;
+        x *= 0x846ca68bU;
+        x ^= x >> 16;
+      }
+      return static_cast<float> (x >> 8) / static_cast<float> (1u << 24);
+    }
+
+    // When a place of each kind was founded and how likely, and how long
+    // ago, it went quiet, in years. The sanctuaries are older than any
+    // farm and outlive the people who lit their fires (Peatfield 1983);
+    // the trailhead is this century's.
+    void roll_history (RoadPlace& place, std::size_t node, std::uint32_t seed) {
+      struct History {
+        float founded_low, founded_high;
+        float abandon_chance;
+        float abandoned_low, abandoned_high;
+      };
+      History history {};
+      switch (place.kind) {
+      case RoadPlace::Kind::Trailhead:
+        history = { 25.0f, 60.0f, 0.0f, 0.0f, 0.0f };
+        break;
+      case RoadPlace::Kind::Landing:
+        history = { 250.0f, 600.0f, 0.25f, 15.0f, 150.0f };
+        break;
+      case RoadPlace::Kind::LakeOutlet:
+        history = { 150.0f, 500.0f, 0.4f, 10.0f, 120.0f };
+        break;
+      case RoadPlace::Kind::Sanctuary:
+        history = { 1500.0f, 3500.0f, 0.6f, 150.0f, 1500.0f };
+        break;
+      }
+      const auto between = [&] (float low, float high, std::uint32_t salt) {
+        return std::round (low + (high - low) * roll (seed, node, salt));
+      };
+      place.founded_years_ago =
+        between (history.founded_low, history.founded_high, 1);
+      place.abandoned_years_ago =
+        roll (seed, node, 2) < history.abandon_chance
+          ? std::min (
+              between (history.abandoned_low, history.abandoned_high, 3),
+              std::round (0.9f * place.founded_years_ago))
+          : 0.0f;
+    }
   }
 
   RoadNetwork plan_roads (const TerrainDomain& domain,
                           std::span<const SurfaceElevation> elevations,
                           const FloodField& flood,
                           const DrainageGraph& drainage,
+                          const RoadGround& ground,
                           square_meters_t river_area,
                           CellIndex home_base,
-                          float sea_level) {
+                          float sea_level,
+                          std::uint32_t seed) {
     MOPPE_PROFILE_ZONE ("plan_roads");
     const Lattice lattice =
       read_lattice (domain,
                     elevations,
                     flood,
                     drainage,
+                    ground,
                     river_area.numerical_value_in (u::m * u::m),
                     sea_level);
-    Planner planner { lattice,
-                      std::vector<std::uint8_t> (lattice.size (), None),
-                      {} };
+    Planner planner {
+      lattice, std::vector<std::uint8_t> (lattice.size (), None), {}, {}
+    };
     const Mover cart { Mover::Kind::Cart, 0.3f };
     const Mover walker { Mover::Kind::Walker, 0.5f };
 
@@ -820,6 +917,82 @@ namespace moppe::terrain {
           planner.network.sightlines.push_back (
             { sanctuaries[a], sanctuaries[b] });
       }
+
+    // Each place's history, and each way's from the journeys along it:
+    // every pair of places, by the network's shortest way between them
+    // (footpaths counted twice as long, being slower).
+    for (RoadPlace& place : planner.network.places)
+      roll_history (place, node_at (lattice, place.x_m, place.z_m), seed);
+    std::unordered_map<std::uint64_t, std::size_t> marker;
+    for (std::size_t road = 0; road < planner.road_nodes.size (); ++road) {
+      const std::vector<std::size_t>& nodes = planner.road_nodes[road];
+      const std::size_t k = (nodes.size () - 1) / 2;
+      const std::uint64_t a = nodes[k];
+      const std::uint64_t b = nodes[k + 1];
+      marker[a * lattice.size () + b] = road;
+      marker[b * lattice.size () + a] = road;
+    }
+    std::vector<RoadPlace>& places = planner.network.places;
+    std::vector<Road>& roads = planner.network.roads;
+    std::vector<bool> lived_on (roads.size (), false);
+    std::vector<float> last_used (roads.size (), infinite);
+    for (std::size_t i = 0; i < places.size (); ++i) {
+      const std::size_t from = node_at (lattice, places[i].x_m, places[i].z_m);
+      Search along { std::vector<float> (lattice.size (), infinite),
+                     std::vector<std::uint32_t> (lattice.size ()) };
+      using Entry = std::pair<float, std::uint32_t>;
+      std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
+      along.cost[from] = 0.0f;
+      along.from[from] = static_cast<std::uint32_t> (from);
+      open.push ({ 0.0f, static_cast<std::uint32_t> (from) });
+      while (!open.empty ()) {
+        const auto [cost, node] = open.top ();
+        open.pop ();
+        if (cost > along.cost[node])
+          continue;
+        for (const auto& [dx, dy] : steps) {
+          const std::size_t next =
+            lattice.node (lattice.x (node) + dx, lattice.y (node) + dy);
+          if (planner.ways[next] == None)
+            continue;
+          const float slow = planner.ways[next] == Path ? 2.0f : 1.0f;
+          const float reached = cost + slow * lattice.distance (node, next);
+          if (reached < along.cost[next]) {
+            along.cost[next] = reached;
+            along.from[next] = node;
+            open.push ({ reached, static_cast<std::uint32_t> (next) });
+          }
+        }
+      }
+      for (std::size_t j = i + 1; j < places.size (); ++j) {
+        const std::size_t to = node_at (lattice, places[j].x_m, places[j].z_m);
+        if (!(along.cost[to] < infinite))
+          continue;
+        const float since =
+          std::min (places[i].founded_years_ago, places[j].founded_years_ago);
+        const bool alive = places[i].abandoned_years_ago == 0.0f &&
+                           places[j].abandoned_years_ago == 0.0f;
+        const float ended = std::max (places[i].abandoned_years_ago,
+                                      places[j].abandoned_years_ago);
+        const std::vector<std::size_t> path = trace (along, to);
+        for (std::size_t step = 1; step < path.size (); ++step) {
+          const auto found = marker.find (
+            static_cast<std::uint64_t> (path[step - 1]) * lattice.size () +
+            path[step]);
+          if (found == marker.end ())
+            continue;
+          Road& road = roads[found->second];
+          ++road.traffic;
+          road.age_years = std::max (road.age_years, since);
+          lived_on[found->second] = lived_on[found->second] || alive;
+          last_used[found->second] = std::min (last_used[found->second], ended);
+        }
+      }
+    }
+    for (std::size_t road = 0; road < roads.size (); ++road)
+      roads[road].abandoned_years_ago =
+        lived_on[road] || !(last_used[road] < infinite) ? 0.0f
+                                                        : last_used[road];
     return std::move (planner.network);
   }
 }

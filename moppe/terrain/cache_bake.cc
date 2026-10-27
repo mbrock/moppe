@@ -91,6 +91,8 @@ int main (int argc, char** argv) {
     game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
+    terrain::RoadNetwork roads =
+      game::plan_world_roads (surface, recipe, hydrology, trails, readings);
     const std::uint32_t forest_seed = seed ^ 0xa34c91e5U;
     game::ForestPlan forest =
       game::plan_global_forest (surface, readings, water, forest_seed);
@@ -101,6 +103,7 @@ int main (int argc, char** argv) {
                                                          std::move (water),
                                                          std::move (trails),
                                                          std::move (readings),
+                                                         std::move (roads),
                                                          std::move (forest));
     game::save_world_cache (*world, output.string ());
     world.reset ();

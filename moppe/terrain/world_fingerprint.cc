@@ -219,6 +219,9 @@ int main (int argc, char** argv) {
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
     cost ("water and readings");
+    terrain::RoadNetwork roads =
+      game::plan_world_roads (surface, recipe, hydrology, trails, readings);
+    cost ("roads");
     game::ForestPlan forest =
       game::plan_global_forest (surface, readings, water, seed ^ 0xa34c91e5U);
     cost ("forest plan");
@@ -229,6 +232,7 @@ int main (int argc, char** argv) {
                                                          std::move (water),
                                                          std::move (trails),
                                                          std::move (readings),
+                                                         std::move (roads),
                                                          std::move (forest));
 
     // The finished world, by the files of its cache.

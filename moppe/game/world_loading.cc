@@ -337,6 +337,15 @@ namespace moppe::game {
       auto [water, readings] =
         analyze_surface (surface, recipe, hydrology, trails.use);
 
+      state.report ("Laying out the roads",
+                    "Joining the trailhead, the shore, the lakes, and the "
+                    "sanctuaries");
+      terrain::RoadNetwork roads =
+        plan_world_roads (surface, recipe, hydrology, trails, readings);
+      std::cerr << "moppe: roads: " << roads.places.size () << " places, "
+                << roads.roads.size () << " ways, " << roads.sightlines.size ()
+                << " sightlines" << std::endl;
+
       state.report ("Planting the forests",
                     "Choosing the persistent trees across the landscape");
       ForestPlan forest = plan_global_forest (
@@ -350,6 +359,7 @@ namespace moppe::game {
                                           std::move (water),
                                           std::move (trails),
                                           std::move (readings),
+                                          std::move (roads),
                                           std::move (forest));
       if (!world_cache.empty ()) {
         state.report ("Saving the finished world",
