@@ -908,9 +908,228 @@ namespace moppe::terrain {
       }
     }
 
+    // The ground at full resolution, as the roads are built on it.
+    struct FineGround {
+      std::span<const float> heights;
+      const FloodField& flood;
+      int width;
+      int height;
+      float spacing_x;
+      float spacing_z;
+
+      std::size_t cell (int x, int z) const {
+        return static_cast<std::size_t> (wrap_index (z, height)) * width +
+               static_cast<std::size_t> (wrap_index (x, width));
+      }
+
+      float at (float x_m, float z_m) const {
+        const float gx = x_m / spacing_x;
+        const float gz = z_m / spacing_z;
+        const float fx = std::floor (gx);
+        const float fz = std::floor (gz);
+        const int x = static_cast<int> (fx);
+        const int z = static_cast<int> (fz);
+        const float tx = gx - fx;
+        const float tz = gz - fz;
+        return std::lerp (
+          std::lerp (heights[cell (x, z)], heights[cell (x + 1, z)], tx),
+          std::lerp (
+            heights[cell (x, z + 1)], heights[cell (x + 1, z + 1)], tx),
+          tz);
+      }
+
+      float depth (float x_m, float z_m) const {
+        return flood.water_depth_m (
+          cell (static_cast<int> (std::lround (x_m / spacing_x)),
+                static_cast<int> (std::lround (z_m / spacing_z))));
+      }
+    };
+
+    // How far apart follow_contours takes its stations along the line.
+    constexpr float contour_station_m = 8.0f;
+
+    // Lays a cart road's line again over the ground at full resolution,
+    // within a corridor either side of the line the lattice found: the
+    // way along it that climbs least, so that it winds into a gully to
+    // cross it where it is shallow and round a spur rather than through
+    // it, as a road holding its grade along a hillside does. The line is
+    // taken in stations along the old one, each with offsets across it; a
+    // step goes from one station to the next, turning by at most one
+    // offset's slope at a time, and the ends stay where they were.
+    // `target`, if given, is the height the road can hold at each station,
+    // and the line is drawn toward ground at that height.
+    std::vector<RoadPoint> follow_contours (const Lattice& lattice,
+                                            const FineGround& ground,
+                                            const std::vector<RoadPoint>& spine,
+                                            std::span<const float> target) {
+      constexpr float station = contour_station_m;
+      constexpr float across = 1.5f;
+      constexpr int half = 40;
+      constexpr int lean = 5;
+      // The tightest bend a cart takes.
+      constexpr float radius = 15.0f;
+      constexpr int states = 2 * lean + 1;
+      constexpr int offsets = 2 * half + 1;
+      const int n = static_cast<int> (spine.size ());
+      if (n < 4)
+        return spine;
+
+      // The way across at each station, from the line's direction over
+      // some forty metres, and how sharply it turns, so that no offset
+      // lies beyond the centre of the bend where the stations' offsets
+      // would fold over one another.
+      std::vector<float> normal_x (n);
+      std::vector<float> normal_z (n);
+      for (int i = 0; i < n; ++i) {
+        const RoadPoint& a = spine[std::max (0, i - 5)];
+        const RoadPoint& b = spine[std::min (n - 1, i + 5)];
+        const float length =
+          std::max (std::hypot (b.x_m - a.x_m, b.z_m - a.z_m), 1e-3f);
+        normal_x[i] = -(b.z_m - a.z_m) / length;
+        normal_z[i] = (b.x_m - a.x_m) / length;
+      }
+      std::vector<int> lowest (n, -half);
+      std::vector<int> highest (n, half);
+      for (int i = 1; i + 1 < n; ++i) {
+        const float turn = std::atan2 (normal_x[i - 1] * normal_z[i + 1] -
+                                         normal_z[i - 1] * normal_x[i + 1],
+                                       normal_x[i - 1] * normal_x[i + 1] +
+                                         normal_z[i - 1] * normal_z[i + 1]);
+        const float curvature = turn / (2.0f * station);
+        if (std::fabs (curvature) > 1e-4f) {
+          const int limit =
+            static_cast<int> (0.5f / (std::fabs (curvature) * across));
+          // The bend's centre lies to the side the normal turns away from.
+          if (curvature > 0.0f)
+            highest[i] = std::min (half, limit);
+          else
+            lowest[i] = std::max (-half, -limit);
+        }
+      }
+      const auto position = [&] (int i, int j) {
+        return RoadPoint { spine[i].x_m + normal_x[i] * across * j,
+                           spine[i].z_m + normal_z[i] * across * j };
+      };
+      // What standing at an offset costs per metre, or infinite.
+      std::vector<float> place (static_cast<std::size_t> (n) * offsets);
+      std::vector<float> elevation (place.size ());
+      for (int i = 0; i < n; ++i)
+        for (int j = -half; j <= half; ++j) {
+          const RoadPoint p = position (i, j);
+          const std::size_t k = static_cast<std::size_t> (i) * offsets +
+                                static_cast<std::size_t> (j + half);
+          elevation[k] = ground.at (p.x_m, p.z_m);
+          const std::size_t node = node_at (lattice, p.x_m, p.z_m);
+          const float depth = ground.depth (p.x_m, p.z_m);
+          // Ground standing off the height the road can hold there asks
+          // for a cutting or a bank.
+          const float off = target.empty ()
+                              ? 0.0f
+                              : std::fabs (elevation[k] - target[i]) / 2.0f;
+          place[k] =
+            j < lowest[i] || j > highest[i] || depth > 1.5f ||
+                lattice.mire[node] > 0.5f
+              ? infinite
+              : (depth > 1e-3f ? 19.0f : 0.0f) + off * off +
+                  4.0f * lattice.river[node] + 1.5f * lattice.forest[node] +
+                  6.0f * lattice.mire[node] + 1.0f * lattice.wetness[node];
+        }
+
+      // Over the stations: the cheapest way to each offset arriving with
+      // each lean, the offsets it moved across in its last step.
+      const std::size_t width = static_cast<std::size_t> (offsets) * states;
+      std::vector<float> cost (static_cast<std::size_t> (n) * width, infinite);
+      std::vector<std::int8_t> came (cost.size (), 0);
+      cost[static_cast<std::size_t> (half) * states + lean] = 0.0f;
+      for (int i = 0; i + 1 < n; ++i)
+        for (int j = -half; j <= half; ++j)
+          for (int d = -lean; d <= lean; ++d) {
+            const float here =
+              cost[static_cast<std::size_t> (i) * width +
+                   static_cast<std::size_t> (j + half) * states + (d + lean)];
+            if (!(here < infinite))
+              continue;
+            const RoadPoint a = position (i, j);
+            const float ha = elevation[static_cast<std::size_t> (i) * offsets +
+                                       static_cast<std::size_t> (j + half)];
+            // Where the last step came from, so the turn is the line's own.
+            const RoadPoint before = i > 0 ? position (i - 1, j - d) : a;
+            for (int e = std::max (-lean, d - 2); e <= std::min (lean, d + 2);
+                 ++e) {
+              const int to = j + e;
+              if (to < -half || to > half)
+                continue;
+              const std::size_t k = static_cast<std::size_t> (i + 1) * offsets +
+                                    static_cast<std::size_t> (to + half);
+              if (!(place[k] < infinite))
+                continue;
+              const RoadPoint b = position (i + 1, to);
+              const float run =
+                std::max (std::hypot (b.x_m - a.x_m, b.z_m - a.z_m), 0.5f);
+              float turn = 0.0f;
+              if (i > 0) {
+                const float ux = a.x_m - before.x_m;
+                const float uz = a.z_m - before.z_m;
+                const float vx = b.x_m - a.x_m;
+                const float vz = b.z_m - a.z_m;
+                turn =
+                  std::fabs (std::atan2 (ux * vz - uz * vx, ux * vx + uz * vz));
+                if (turn > run / radius)
+                  continue;
+              }
+              const float grade = std::fabs (elevation[k] - ha) / run;
+              // A turn costs as a little more road, and the ground's
+              // grade as the planner's carts find it.
+              const float step =
+                run * (1.0f + square (grade / 0.06f) + place[k]) +
+                10.0f * turn * turn;
+              float& there =
+                cost[static_cast<std::size_t> (i + 1) * width +
+                     static_cast<std::size_t> (to + half) * states +
+                     (e + lean)];
+              if (here + step < there) {
+                there = here + step;
+                came[static_cast<std::size_t> (i + 1) * width +
+                     static_cast<std::size_t> (to + half) * states +
+                     (e + lean)] = static_cast<std::int8_t> (d);
+              }
+            }
+          }
+      // Back from the last station's centre, by the cheapest lean.
+      int d = 0;
+      float best = infinite;
+      for (int e = -lean; e <= lean; ++e) {
+        const float c =
+          cost[static_cast<std::size_t> (n - 1) * width +
+               static_cast<std::size_t> (half) * states + (e + lean)];
+        if (c < best) {
+          best = c;
+          d = e;
+        }
+      }
+      if (!(best < infinite))
+        return spine;
+      std::vector<RoadPoint> result (n);
+      int j = 0;
+      for (int i = n - 1; i >= 0; --i) {
+        result[i] = position (i, j);
+        if (i == 0)
+          break;
+        const int previous =
+          came[static_cast<std::size_t> (i) * width +
+               static_cast<std::size_t> (j + half) * states + (d + lean)];
+        j -= d;
+        d = previous;
+      }
+      return result;
+    }
+
     // The planned lines as built: eased into curves at four metres between
-    // points, and each end that leaves an earlier way moved onto it.
-    void finish_lines (const Lattice& lattice, std::vector<Road>& roads) {
+    // points, each cart road's laid over the ground at full resolution, and
+    // each end that leaves an earlier way moved onto it.
+    void finish_lines (const Lattice& lattice,
+                       const FineGround& ground,
+                       std::vector<Road>& roads) {
       const float period_x = lattice.width * lattice.spacing_x;
       const float period_z = lattice.height * lattice.spacing_z;
       for (std::size_t r = 0; r < roads.size (); ++r) {
@@ -922,6 +1141,49 @@ namespace moppe::terrain {
                            lattice.mire[node] <= 0.5f
                        : lattice.water[node] == Lattice::Dry;
         });
+        if (built) {
+          // Laid again three times, each toward the profile the last line
+          // could hold at a cart road's grade.
+          const std::vector<RoadPoint> spine =
+            resample (line, contour_station_m);
+          std::vector<float> target;
+          std::vector<RoadPoint> laid;
+          for (int round = 0; round < 3; ++round) {
+            laid = follow_contours (lattice, ground, spine, target);
+            const std::size_t n = laid.size ();
+            std::vector<float> lower (n);
+            for (std::size_t i = 0; i < n; ++i)
+              lower[i] = ground.at (laid[i].x_m, laid[i].z_m);
+            std::vector<float> upper = lower;
+            for (std::size_t i = 1; i < n; ++i) {
+              const float rise =
+                0.1f * std::hypot (laid[i].x_m - laid[i - 1].x_m,
+                                   laid[i].z_m - laid[i - 1].z_m);
+              lower[i] = std::max (lower[i], lower[i - 1] - rise);
+              upper[i] = std::min (upper[i], upper[i - 1] + rise);
+            }
+            for (std::size_t i = n - 1; i-- > 0;) {
+              const float rise =
+                0.1f * std::hypot (laid[i + 1].x_m - laid[i].x_m,
+                                   laid[i + 1].z_m - laid[i].z_m);
+              lower[i] = std::max (lower[i], lower[i + 1] - rise);
+              upper[i] = std::min (upper[i], upper[i + 1] + rise);
+            }
+            target.resize (n);
+            for (std::size_t i = 0; i < n; ++i)
+              target[i] = 0.5f * (lower[i] + upper[i]);
+          }
+          line = resample (laid, 4.0f);
+          ease (line, 3, 2, [&] (RoadPoint point) {
+            const std::size_t node = node_at (lattice, point.x_m, point.z_m);
+            return ground.depth (point.x_m, point.z_m) <= 1.5f &&
+                   lattice.mire[node] <= 0.5f;
+          });
+          // Easing draws the points together round the bends; the profile
+          // is eased by them in turn, which keeps its grade only where they
+          // stand evenly.
+          line = resample (line, 4.0f);
+        }
         for (const bool back : { false, true }) {
           const RoadPoint end = back ? line.back () : line.front ();
           RoadPoint best = end;
@@ -1216,7 +1478,13 @@ namespace moppe::terrain {
       roads[road].abandoned_years_ago =
         lived_on[road] || !(last_used[road] < infinite) ? 0.0f
                                                         : last_used[road];
-    finish_lines (lattice, planner.network.roads);
+    const FineGround fine { surface_elevation_values (elevations),
+                            flood,
+                            static_cast<int> (domain.width ()),
+                            static_cast<int> (domain.height ()),
+                            domain.spacing_x ().numerical_value_in (u::m),
+                            domain.spacing_z ().numerical_value_in (u::m) };
+    finish_lines (lattice, fine, planner.network.roads);
     return std::move (planner.network);
   }
 }
