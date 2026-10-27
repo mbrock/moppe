@@ -850,8 +850,8 @@ namespace moppe::game {
       for (int i = 0; i < 3; ++i) {
         const float around = tau * i / 3.0f + 0.5f;
         draw_fire (renderer,
-                   hearth + Vec3 (std::cos (around), 0.0f, std::sin (around)) *
-                              0.32f,
+                   hearth +
+                     Vec3 (std::cos (around), 0.0f, std::sin (around)) * 0.32f,
                    camera,
                    0.85f * burn,
                    time + 1.7f * i);
@@ -877,19 +877,16 @@ namespace moppe::game {
     const float shade = 0.08f + 0.5f * daylight;
     constexpr int puffs = 22;
     for (int i = 0; i < puffs; ++i) {
-      const float t =
-        std::fmod (static_cast<float> (time) * 0.012f + (i + 0.5f) / puffs,
-                   1.0f);
+      const float t = std::fmod (
+        static_cast<float> (time) * 0.012f + (i + 0.5f) / puffs, 1.0f);
       const float rise = 2.0f + 170.0f * t;
-      const Vec3 centre = hearth + world_up * rise +
-                          wind * (rise * (0.25f + 0.9f * t)) +
-                          Vec3 (std::sin (i * 2.3f + time * 0.1f), 0.0f,
-                                std::cos (i * 1.7f)) *
-                            (2.0f * t * rise * 0.05f);
+      const Vec3 centre =
+        hearth + world_up * rise + wind * (rise * (0.25f + 0.9f * t)) +
+        Vec3 (std::sin (i * 2.3f + time * 0.1f), 0.0f, std::cos (i * 1.7f)) *
+          (2.0f * t * rise * 0.05f);
       const float size = 1.0f + 22.0f * std::sqrt (t);
       const float alpha = burn * (0.1f + 0.4f * daylight) *
-                          smoothstep (0.0f, 0.06f, t) * (1.0f - t) *
-                          (1.0f - t);
+                          smoothstep (0.0f, 0.06f, t) * (1.0f - t) * (1.0f - t);
       flame_sprite (dl,
                     camera,
                     centre,
@@ -912,8 +909,8 @@ namespace moppe::game {
       glow.cull = false;
       dl.state (glow);
       dl.begin (render::Prim::Quads);
-      const float flicker = 0.85f + 0.15f * std::sin (time * 7.3f) *
-                                      std::sin (time * 3.1f + 0.7f);
+      const float flicker =
+        0.85f + 0.15f * std::sin (time * 7.3f) * std::sin (time * 3.1f + 0.7f);
       const float dark = 1.0f - 0.8f * daylight;
       const float grow = smoothstep (40.0f, 400.0f, far);
       const float size = 1.5f + 0.0045f * far;

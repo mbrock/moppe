@@ -39,7 +39,7 @@ namespace moppe::game {
     boat,
     long_john
   };
-  inline constexpr int machine_count = 7;
+  inline constexpr int machine_count = 8;
 
   // "the tractor", for the prompts.
   const char* machine_name (Machine machine);

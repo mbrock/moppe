@@ -42,6 +42,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.hearth_laid = true;
   sent.hearth = Vec3 (3, 2, 5);
   sent.fire_burn = 0.5f;
+  sent.beacons = 0b101;
   sent.pan_on = true;
   sent.pan_place = Vec3 (3.3f, 2.2f, 5);
   sent.pan_cooked = 0.8f;
@@ -72,6 +73,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (got->hammock.girth[1], 0.2f, 1e-6f);
   MOPPE_CHECK (got->hearth_laid);
   MOPPE_CHECK_NEAR (got->fire_burn, 0.5f, 1e-6f);
+  MOPPE_CHECK (got->beacons == 0b101);
   MOPPE_CHECK (got->pan_on && got->pan_count == 2);
   MOPPE_CHECK (got->pan_mushrooms[1] == 77 && got->pick_used == 4);
   MOPPE_CHECK_NEAR (got->pan_cooked, 0.8f, 1e-6f);

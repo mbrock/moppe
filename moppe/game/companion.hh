@@ -73,6 +73,9 @@ namespace moppe::game {
     bool hearth_laid = false;
     Vec3 hearth {};
     float fire_burn = 0.0f;
+    // Which of the world's sanctuaries' beacons they keep burning, one
+    // bit each, the first in the lowest (game/places.hh).
+    std::uint32_t beacons = 0;
 
     // Their frying pan, if it is on a fire: where, its handle's way,
     // how done (camp.hh's pan_cooked), and the mushrooms in it.

@@ -787,23 +787,24 @@ namespace moppe {
           generated_world ().water_surface ();
         const float sea = world ().water_level.numerical_value_in (u::m);
         const auto level = [this, &sheets] (float x, float z) {
-          return still_water_at (world (), surface (), &sheets,
-                                 Vec3 (x, 0.0f, z))
+          return still_water_at (
+                   world (), surface (), &sheets, Vec3 (x, 0.0f, z))
             .numerical_value_in (u::m);
         };
         return {
-          .ground = [this] (float x, float z) {
-            return ground_height (Vec3 (x, 0.0f, z));
-          },
+          .ground =
+            [this] (float x, float z) {
+              return ground_height (Vec3 (x, 0.0f, z));
+            },
           .water = level,
-          .sea = [level, sea] (float x, float z) {
-            return level (x, z) <= sea + 0.05f;
-          },
-          .current = [&sheets] (float x, float z) {
-            return spatial::sample<terrain::water_velocity> (
-                     sheets, moppe::position (Vec3 (x, 0.0f, z)))
-              .numerical_value_in (u::m / u::s);
-          },
+          .sea = [level, sea] (float x,
+                               float z) { return level (x, z) <= sea + 0.05f; },
+          .current =
+            [&sheets] (float x, float z) {
+              return spatial::sample<terrain::water_velocity> (
+                       sheets, moppe::position (Vec3 (x, 0.0f, z)))
+                .numerical_value_in (u::m / u::s);
+            },
           .roads = &generated_world ().road_surface (),
           .sea_level = sea,
           .period_x =
@@ -820,10 +821,10 @@ namespace moppe {
         m_places = {};
         if (m_water_inspection || moppe::environment ("MOPPE_TREE_LAB"))
           return;
-        m_places =
-          plan_places (generated_world ().roads (), place_ground (),
-                       static_cast<std::uint32_t> (recipe ().seed ().value) ^
-                         0x91ace5u);
+        m_places = plan_places (
+          generated_world ().roads (),
+          place_ground (),
+          static_cast<std::uint32_t> (recipe ().seed ().value) ^ 0x91ace5u);
         logic ().m_beacons.assign (m_places.sanctuaries.size (), Beacon {});
         // MOPPE_BEACONS=lit: every beacon already burning, for captures.
         if (const char* lit = moppe::environment ("MOPPE_BEACONS");
@@ -839,12 +840,14 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.build_places");
         const PlaceGround ground = place_ground ();
         place_camps (
-          m_places, generated_world ().roads (), ground,
+          m_places,
+          generated_world ().roads (),
+          ground,
           [this] (const Vec3& near) -> std::optional<Vec3> {
             const std::vector<mov::Trunk> trunks =
               m_trunk_field.gather (near, 90.0f);
-            const std::optional<HammockSite> site = nearest_hammock_site (
-              trunks, near, ground_reader (), 0.6f);
+            const std::optional<HammockSite> site =
+              nearest_hammock_site (trunks, near, ground_reader (), 0.6f);
             if (!site)
               return std::nullopt;
             const Vec3 middle = hammock_middle (*site);
@@ -865,8 +868,8 @@ namespace moppe {
                             m_places_landscape.colliders ().end ());
           const Vec3 period =
             extent_value (generated_world ().forest ().period);
-          m_trunk_field.set_trunks (std::move (obstacles), period[0],
-                                    period[2]);
+          m_trunk_field.set_trunks (
+            std::move (obstacles), period[0], period[2]);
         }
       }
 
@@ -877,12 +880,32 @@ namespace moppe {
         return sanctuary_at_hand (m_places, session ().walker ().position ());
       }
 
+      // Each beacon burns as fiercely as the fire either player keeps on
+      // it; the other's catch and die down here as they are heard of.
       void tend_beacons () {
         const double now = logic ().m_total_time;
         std::vector<Beacon>& beacons = logic ().m_beacons;
+        m_their_beacons.resize (beacons.size ());
         m_beacon_burn.resize (beacons.size ());
-        for (std::size_t i = 0; i < beacons.size (); ++i)
-          m_beacon_burn[i] = beacon_burn (beacons[i].lit, beacons[i].out, now);
+        for (std::size_t i = 0; i < beacons.size (); ++i) {
+          Beacon& theirs = m_their_beacons[i];
+          const bool lit =
+            m_companion && i < 32 && (m_companion->beacons >> i & 1u);
+          if (lit != theirs.burning ()) {
+            (lit ? theirs.lit : theirs.out) = now;
+            std::cerr << "moppe: places: the other player "
+                      << (lit ? "lit" : "put out")
+                      << " the beacon on sanctuary " << i << std::endl;
+          }
+          m_beacon_burn[i] =
+            std::max (beacon_burn (beacons[i].lit, beacons[i].out, now),
+                      beacon_burn (theirs.lit, theirs.out, now));
+        }
+      }
+
+      // Whether the other player keeps beacon `i` burning.
+      bool their_beacon (std::size_t i) const {
+        return i < m_their_beacons.size () && m_their_beacons[i].burning ();
       }
 
       // The boat lies at the water's edge of the sea, the nearest open
@@ -1967,7 +1990,8 @@ namespace moppe {
         if (m_companion && m_companion->hearth_laid)
           consider (m_companion->hearth, m_companion->fire_burn);
         for (std::size_t i = 0;
-             i < m_places.sanctuaries.size () && i < m_beacon_burn.size (); ++i)
+             i < m_places.sanctuaries.size () && i < m_beacon_burn.size ();
+             ++i)
           consider (m_places.sanctuaries[i].hearth, m_beacon_burn[i]);
         return found;
       }
@@ -2429,7 +2453,8 @@ namespace moppe {
             // A sanctuary's fire is lit on its platform, and shows from
             // the summits that see it.
             Beacon& b = logic ().m_beacons[*beacon];
-            (b.burning () ? b.out : b.lit) = now;
+            if (b.burning () || !their_beacon (*beacon))
+              (b.burning () ? b.out : b.lit) = now;
             std::cerr << "moppe: places: the beacon on sanctuary " << *beacon
                       << (b.burning () ? " lit, seen from " : " put out")
                       << (b.burning ()
@@ -2622,7 +2647,7 @@ namespace moppe {
             if (const std::optional<std::size_t> beacon = beacon_at_hand ()) {
               const bool lit = logic ().m_beacons[*beacon].burning ();
               state.can_douse_fire = lit;
-              state.can_light_fire = !lit;
+              state.can_light_fire = !lit && !their_beacon (*beacon);
             }
           }
           break;
@@ -2691,7 +2716,7 @@ namespace moppe {
                       : logic ().m_fishing.creel.kept () > 0;
         if (const std::optional<std::size_t> beacon = beacon_at_hand ();
             beacon && !logic ().m_beacons[*beacon].burning () &&
-            !camp.resting)
+            !their_beacon (*beacon) && !camp.resting)
           state.camp = HudState::Camp::light_beacon;
         else if (camp.resting)
           state.camp = HudState::Camp::get_up;
@@ -2794,9 +2819,8 @@ namespace moppe {
             std::max (1, static_cast<int> (2.0f * PI * radius / step));
           for (int k = 0; k < count; ++k) {
             const float a = 2.0f * PI * k / count;
-            Vec3 stand =
-              m_spawn_position + Vec3 (std::cos (a), 0.0f, std::sin (a)) *
-                                   radius;
+            Vec3 stand = m_spawn_position +
+                         Vec3 (std::cos (a), 0.0f, std::sin (a)) * radius;
             if (depth_at (stand) > -0.3f)
               continue;
             for (int d = 0; d < 16; ++d) {
@@ -2833,14 +2857,15 @@ namespace moppe {
           // On the strand, looking past the jetty to the skiff beside it.
           const Landing& landing = *m_places.landing;
           const Vec3 back = landing.jetty.root - landing.berth;
-          const Vec3 aside = landing.berth - (landing.jetty.root +
-                                              landing.jetty.out *
-                                                landing.jetty.length);
+          const Vec3 aside =
+            landing.berth -
+            (landing.jetty.root + landing.jetty.out * landing.jetty.length);
           stand = { landing.berth + back * 0.55f + aside * 6.0f,
                     landing.berth };
         } else if (script == "sanctuary" && !m_places.sanctuaries.empty ()) {
           const Sanctuary& s = m_places.sanctuaries.front ();
-          stand = { s.centre + s.gate * (s.wall_radius + 4.0f), s.centre };
+          // Inside the wall by its gap, on the level top, facing the fire.
+          stand = { s.centre + s.gate * (s.wall_radius - 1.8f), s.centre };
         } else if (script == "farm" && !m_places.farms.empty () &&
                    !m_places.farms.front ().buildings.empty ()) {
           const Building& b = m_places.farms.front ().buildings.front ();
@@ -3597,6 +3622,10 @@ namespace moppe {
         mine.hearth_laid = camp.fire_time > -50.0;
         mine.hearth = camp.hearth;
         mine.fire_burn = fire_burn (camp, state.m_total_time);
+        mine.beacons = 0;
+        for (std::size_t i = 0; i < state.m_beacons.size () && i < 32; ++i)
+          if (state.m_beacons[i].burning ())
+            mine.beacons |= 1u << i;
         mine.pan_on = camp.pan.on;
         mine.pan_place = camp.pan.place;
         mine.pan_yaw = camp.pan.yaw;
@@ -4061,9 +4090,9 @@ namespace moppe {
             continue;
           lighting.lamp_position = lamp;
           lighting.lamp_reach = 1.8f * fire_light_reach;
-          lighting.lamp_color = scale_display (
-            fire_light_color (m_beacon_burn[i], lighting.time),
-            1.4f * (1.0f - 0.25f * lighting.daylight));
+          lighting.lamp_color =
+            scale_display (fire_light_color (m_beacon_burn[i], lighting.time),
+                           1.4f * (1.0f - 0.25f * lighting.daylight));
         }
       }
 
@@ -4415,6 +4444,9 @@ namespace moppe {
         const auto press = [t, dt] (float at) {
           return t >= at && t < at + 0.1f + dt ? 1.0f : 0.0f;
         };
+        // At a place (stage_place_script), the walker stands and looks.
+        if (script == "landing" || script == "sanctuary" || script == "farm")
+          return input;
         if (script == "camp")
           return camp_script (dt);
         if (script == "fish") {
@@ -6860,6 +6892,8 @@ namespace moppe {
       PlacesPlan m_places;
       PlacesLandscape m_places_landscape;
       std::vector<float> m_beacon_burn;
+      // The other player's beacons as last heard (presentation only).
+      std::vector<Beacon> m_their_beacons;
       MushroomPatch m_mushrooms;
       // The poisonous mushrooms the foraging script has left be.
       std::vector<std::uint32_t> m_forage_refused;

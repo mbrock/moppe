@@ -864,8 +864,9 @@ namespace moppe::game {
                               gate,
                               Vec3 ());
           }
-        // The wall stops a body; a walker steps through the gap.
-        const float tall = course_h * courses + 0.05f;
+        // A kept wall stops a body, which must go round by the gap or
+        // jump it; a tumbled one is rubble to step over.
+        const float tall = courses >= 3 ? 1.35f : course_h * courses + 0.05f;
         const int posts = static_cast<int> (tau * r / 0.9f);
         for (int i = 0; i < posts; ++i) {
           const float a = tau * (i + 0.5f) / posts;
@@ -971,17 +972,22 @@ namespace moppe::game {
                      up * (top + 0.035f));
         }
         dl.end ();
-        // It stands up out of the summit: one wide short capsule, a step
-        // to climb onto.
-        mov::Trunk drum;
-        drum.root =
-          Vec3 (middle[0],
-                std::min (top - 0.6f, g.ground (middle[0], middle[2])),
-                middle[2]);
-        drum.axis = up;
-        drum.radius = R - 0.1f;
-        drum.height = std::max (0.01f, top - drum.root[1] - drum.radius);
-        colliders.push_back (drum);
+        // It stands up out of the summit, too high to step onto but solid
+        // to jump up on: upright capsules packed under its top.
+        constexpr float post = 0.35f;
+        for (float x = -R + post; x <= R - post + 0.01f; x += 0.6f)
+          for (float z = -R + post; z <= R - post + 0.01f; z += 0.6f) {
+            if (x * x + z * z > (R - post) * (R - post))
+              continue;
+            mov::Trunk drum;
+            drum.root = Vec3 (middle[0] + x,
+                              g.ground (middle[0] + x, middle[2] + z) - 0.2f,
+                              middle[2] + z);
+            drum.axis = up;
+            drum.radius = post;
+            drum.height = std::max (0.01f, top - post - drum.root[1]);
+            colliders.push_back (drum);
+          }
 
         // Flat stones laid along the way in from the platform out through
         // the gate and on down the last of the path.

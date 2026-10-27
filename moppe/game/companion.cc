@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 12;
+    constexpr std::uint8_t wire_version = 13;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -366,6 +366,7 @@ namespace moppe::game {
       out.put (snapshot.hearth);
       out.put (snapshot.fire_burn);
     }
+    out.put (snapshot.beacons);
 
     if (snapshot.pan_on) {
       out.put (snapshot.pan_place);
@@ -523,6 +524,7 @@ namespace moppe::game {
       snapshot.hearth = in.point ();
       snapshot.fire_burn = std::clamp (in.number (), 0.0f, 1.0f);
     }
+    snapshot.beacons = in.get<std::uint32_t> ();
 
     if (flags & has_pan) {
       snapshot.pan_on = true;

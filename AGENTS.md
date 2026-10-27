@@ -604,7 +604,8 @@
     footpath, tumbled the longer it has been left (`RoadPlace::
     abandoned_years_ago`). On foot at the platform, `T` lights its
     beacon and `T` puts it out (`GameLogicState::m_beacons`); it burns
-    as a blaze, can be cooked on, and from afar shows as a glow by night
+    as a blaze, can be cooked on, burns for the other player too
+    (companion wire version 13), and from afar shows as a glow by night
     and a column of smoke by day (`draw_beacon` in camp.cc), from the
     sanctuaries on its sightlines and anywhere else that sees the
     summit. Each lake outlet has a farm, `models/farm.blend` from
