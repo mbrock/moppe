@@ -15,7 +15,8 @@ using terrain::RoadPlace;
 namespace {
   // A cart road west to east with the trailhead 300 m west of a junction
   // and the landing 400 m east of it, and a footpath, long abandoned,
-  // leaving the junction north for a sanctuary 350 m off.
+  // leaving the junction north for a sanctuary, its smoothed line ending
+  // 15 m short of the road it was planned from.
   terrain::RoadNetwork tee () {
     terrain::RoadNetwork network;
     network.places = {
@@ -29,8 +30,8 @@ namespace {
     Road path;
     path.kind = Road::Kind::Footpath;
     path.abandoned_years_ago = 120.0f;
-    for (float z = 500.0f; z >= 150.0f; z -= 50.0f)
-      path.points.push_back ({ 500.0f, z });
+    for (int i = 0; i <= 10; ++i)
+      path.points.push_back ({ 500.0f, 485.0f - 33.5f * i });
     network.roads = { road, path };
     return network;
   }
@@ -58,7 +59,7 @@ MOPPE_TEST (fingerposts_point_each_way_to_the_places_it_leads_to) {
       MOPPE_CHECK_NEAR (board.metres, 400.0f, 1.0f);
     } else {
       MOPPE_CHECK (arm.direction_z < -0.99f);
-      MOPPE_CHECK_NEAR (board.metres, 350.0f, 1.0f);
+      MOPPE_CHECK_NEAR (board.metres, 335.0f, 1.0f);
       MOPPE_CHECK (arm.abandoned && arm.kind == Road::Kind::Footpath);
     }
     found |= 1 << board.place;

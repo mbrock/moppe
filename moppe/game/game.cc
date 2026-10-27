@@ -1640,8 +1640,10 @@ namespace moppe {
         session ().bike ().reset (m_spawn_position);
         session ().bike ().set_heading (-face);
         std::cerr << "moppe: starting by the fingerpost at ("
-                  << std::lround (nearest->x_m) << ", "
-                  << std::lround (nearest->z_m) << ")\n";
+                  << nearest->x_m << ", "
+                  << ground_height (Vec3 (nearest->x_m, 0.0f, nearest->z_m))
+                  << ", " << nearest->z_m << "), first arm along ("
+                  << arm.direction_x << ", " << arm.direction_z << ")\n";
       }
 
       void move_spawn_to_forest () {

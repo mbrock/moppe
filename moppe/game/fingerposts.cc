@@ -1,6 +1,7 @@
 #include <moppe/game/fingerposts.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -13,9 +14,11 @@
 namespace moppe::game {
   namespace {
     constexpr float k_infinite = std::numeric_limits<float>::infinity ();
-    // How near a way's end must come to another way to join it, and how
-    // near cuts must be to be one node.
-    constexpr float k_join_m = 8.0f;
+    // How near a way's end must come to another way to join it (the
+    // smoothed lines stray some way from the lattice node the planner
+    // joined them at, past the 30 m roads.cc snaps them back by), and how
+    // near other cuts must be to be one node.
+    constexpr float k_join_m = 40.0f;
     constexpr float k_node_m = 10.0f;
     // How near a place must lie to a way to stand on it.
     constexpr float k_place_m = 25.0f;
@@ -127,12 +130,16 @@ namespace moppe::game {
       cuts.push_back (c);
       return cuts.size () - 1;
     };
+    std::vector<std::array<std::size_t, 2>> ends (lines.size ());
     for (std::size_t r = 0; r < lines.size (); ++r) {
       if (lines[r].x.size () < 2)
         continue;
-      cut (r, 0.0f);
-      cut (r, static_cast<float> (lines[r].x.size () - 1));
+      ends[r][0] = cut (r, 0.0f);
+      ends[r][1] = cut (r, static_cast<float> (lines[r].x.size () - 1));
     }
+    // Each join with the end that made it, which are one node however
+    // far apart.
+    std::vector<std::pair<std::size_t, std::size_t>> joins;
     for (std::size_t r = 0; r < lines.size (); ++r) {
       if (lines[r].x.size () < 2)
         continue;
@@ -144,7 +151,7 @@ namespace moppe::game {
             continue;
           const auto [at, off] = nearest (lines[s], ex, ez);
           if (off < k_join_m)
-            cut (s, at);
+            joins.emplace_back (cut (s, at), ends[r][back ? 1 : 0]);
         }
       }
     }
@@ -178,6 +185,8 @@ namespace moppe::game {
       for (std::size_t j = i + 1; j < cuts.size (); ++j)
         if (distance (cuts[i].x, cuts[i].z, cuts[j].x, cuts[j].z) < k_node_m)
           parent[root (j)] = root (i);
+    for (const auto& [join, end] : joins)
+      parent[root (end)] = root (join);
     std::vector<std::size_t> node_of (cuts.size ());
     std::vector<std::size_t> node_cut;
     {
@@ -187,9 +196,15 @@ namespace moppe::game {
         const std::size_t r = root (i);
         if (numbered[r] == static_cast<std::size_t> (-1)) {
           numbered[r] = node_cut.size ();
-          node_cut.push_back (r);
+          node_cut.push_back (i);
         }
         node_of[i] = numbered[r];
+        // The node stands on the way that runs through it, if one does,
+        // rather than at the end of one that meets it.
+        const PostCut& c = cuts[i];
+        if (c.at > 0.0f &&
+            c.at < static_cast<float> (lines[c.road].x.size () - 1))
+          node_cut[numbered[r]] = i;
       }
     }
     const std::size_t nodes = node_cut.size ();
