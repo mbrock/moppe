@@ -3448,7 +3448,9 @@ namespace moppe {
                        .half_width = roads.formation ().half_width,
                        .shoulder = roads.formation ().shoulder,
                        .crown = roads.formation ().crown,
-                       .blend = terrain::RoadSurface::blend_m });
+                       .blend = terrain::RoadSurface::blend_m,
+                       .cut_slope = roads.formation ().cut_slope,
+                       .fill_slope = roads.formation ().fill_slope });
         // The typed water and ground presentations can upload only after
         // set_terrain has established the texture dimensions.
         upload_water (r,

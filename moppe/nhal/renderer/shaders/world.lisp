@@ -259,7 +259,8 @@
       (fields :vec4)               ; have materials, have stand, 1 / period
       (size :vec4)                 ; samples per side x, z
       (roads :vec4)                ; bucket metres, buckets x, z, have roads
-      (road-shape :vec4))))        ; half width, shoulder, crown, blend
+      (road-shape :vec4)           ; half width, shoulder, crown, blend
+      (road-batter :vec4))))       ; cut slope, fill slope, 0, 0
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *chunk*
@@ -1133,6 +1134,72 @@
          (edge (+ half-width shoulder (* 0.25 (- fleck 0.5)))))
     (mix ground verge (line-cover d edge edge-width))))
 
+;;; The batters a road is built into the ground with (terrain/roads.hh's
+;;; RoadFormation).  Past the formation, OUT metres from its edge, the
+;;; ground RISE metres above the edge's height lies on the cut's slope
+;;; above or the fill's below until it meets the natural ground; where
+;;; it keeps to either line it is a face.  How bare each face lies, (cut,
+;;; fill), 0 to 1: a cutting is bared, the turf left hanging ragged over
+;;; its top; an embankment is made ground, which the sward is already
+;;; taking back in patches.  The ground and the grass ask the same.
+(define-shader-function earthwork-faces (xz rise out batter)
+  (let* ((run (max out 0.0))
+         (patch (value-noise (* xz 0.23)))
+         (ragged (* 0.2 (- (value-noise (* xz 0.9)) 0.5)))
+         (on-cut (* (smoothstep 0.08 0.3 rise)
+                    (smoothstep (+ 0.5 ragged) (+ 0.75 ragged)
+                                (/ rise (+ (* run (swizzle batter :x))
+                                           0.3)))))
+         (on-fill (* (smoothstep 0.08 0.3 (* -1.0 rise))
+                     (smoothstep (+ 0.5 ragged) (+ 0.75 ragged)
+                                 (/ (* -1.0 rise)
+                                    (+ (* run (swizzle batter :y)) 0.3))))))
+    (vec2 (* on-cut (- 1.0 (* 0.35 (smoothstep 0.62 0.80 patch))))
+          (* on-fill (- 1.0 (* 0.8 (smoothstep 0.36 0.64 patch)))))))
+
+;;; The faces' ground: the subsoil a cutting bares, yellow-grey till with
+;;; its stones, scored by the rain into rills down the face, and the
+;;; looser, stonier made ground of an embankment.  FACES is ROAD-FACES':
+;;; (cut, fill, metres along the road, metres across it).
+(define-shader-function earthwork-albedo (ground faces micro meso)
+  (let* ((grain (swizzle micro :x))
+         (tone (swizzle meso :x))
+         (pebble (swizzle micro :w))
+         (stones (* (stone-face pebble)
+                    (smoothstep 0.40 0.60 (stone-tone pebble))))
+         (rill (smoothstep 0.55 0.85
+                           (value-noise (vec2 (* (swizzle faces :z) 1.3)
+                                              (* (swizzle faces :w) 0.12)))))
+         (till (mix (* (mix (vec3 0.60 0.50 0.37) (vec3 0.70 0.61 0.46)
+                            tone)
+                       (mix 0.88 1.06 grain)
+                       (- 1.0 (* 0.22 rill)))
+                    (vec3 0.60 0.59 0.55) (* 0.8 stones)))
+         (made (mix (* (vec3 0.50 0.42 0.32) (mix 0.88 1.06 grain))
+                    (vec3 0.56 0.54 0.50) (* 0.7 stones))))
+    (mix (mix ground till (swizzle faces :x)) made (swizzle faces :y))))
+
+;;; How bare a built road's batters leave XZ, as EARTHWORK-FACES, from the
+;;; ground's HEIGHT there and the road ROAD-NEAREST found (or none), with
+;;; the metres along the road and out from its line.
+(define-shader-abstraction road-faces (segments index xz height found)
+  `(let* ((rf-road (road-point ,segments ,index ,xz ,found))
+          (rf-across (abs (road-point-across rf-road)))
+          ;; The formation is the tread, or a lattice cell where that is
+          ;; wider (road_formation.cc).
+          (rf-formation (max (+ (swizzle road-shape :x)
+                                (swizzle road-shape :y))
+                             (* 1.01 (swizzle scale :x)))))
+     (vec4 (* (road-point-found rf-road) (- 1.0 (road-point-footpath rf-road))
+              (step rf-formation rf-across)
+              (earthwork-faces ,xz
+                               (- ,height
+                                  (- (road-point-centre rf-road)
+                                     (* (swizzle road-shape :z)
+                                        (swizzle road-shape :x))))
+                               (- rf-across rf-formation) road-batter))
+           (road-point-along rf-road) rf-across)))
+
 ;;; A footpath: earth worn through whatever grows, frayed at its sides.
 (define-shader-function footpath-albedo (ground across micro meso edge-width)
   (let* ((d (+ (abs across) (* 0.25 (- (swizzle meso :x) 0.5))))
@@ -1244,9 +1311,16 @@
                                   region))
          ;; An edge as sharp as a pixel's width on the ground allows.
          (road-edge (max (* 0.75 footprint) 0.04))
+         ;; Beside a built road, its batters.
+         (worked-ground
+           (earthwork-albedo (ground-surface-albedo surface)
+                             (road-faces road-segments road-index
+                                         (swizzle world :xz) (swizzle world :y)
+                                         road-found)
+                             micro meso))
          (road-ground
-           (mix (ground-surface-albedo surface)
-                (road-albedo (ground-surface-albedo surface) road-across
+           (mix worked-ground
+                (road-albedo worked-ground road-across
                              (road-point-along road) (swizzle road-shape :x)
                              (swizzle road-shape :y) micro meso road-edge)
                 road-built))
@@ -3088,6 +3162,9 @@
                         :access :read-write)
                  (arguments :storage-buffer :binding 3 :element :uint
                             :access :read-write)
+                 (terrain :uniform-block :binding 4 :members #.*terrain*)
+                 (road-segments :storage-buffer :binding 5 :element :vec4)
+                 (road-index :storage-buffer :binding 6 :element :uint)
                  (heights :texture-2d :binding 0)
                  (normals :texture-2d :binding 1)
                  (landscape :texture-2d :binding 6)
@@ -3158,8 +3235,13 @@
                              (feature-pixels (* 2.0 (flower-drift-head drift))
                                              (swizzle habitat :w) distance))
                        (smoothstep 0.02 0.10 (flower-drift-presence drift))))
+             ;; Nothing roots on a road's bared batters.
+             (faces (road-faces road-segments road-index centre height
+                                (road-nearest road-segments road-index centre
+                                              (< horizontal 300.0))))
              (wanted (* (max (* leaf (blade-resolved pixels)) heads)
-                        fade 32.0))
+                        fade 32.0
+                        (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))))
              (identity (cell-identity cell))
              (shoots (lod-shoots wanted identity)))
         (when (and inside (> shoots (uint 0)))

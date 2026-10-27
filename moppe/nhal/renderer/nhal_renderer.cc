@@ -735,15 +735,16 @@ namespace moppe::nhal {
 
       // The roads' buffers, or a stand-in where there are none: every
       // binding the terrain declares must hold something.
-      void bind_roads () {
+      void bind_roads (int first = 3) {
         if (!m_no_roads) {
           const std::array<float, 8> none {};
           m_no_roads = m_device->create_buffer (
             { .size = sizeof (none), .label = "no roads" },
             std::as_bytes (std::span (none)));
         }
-        m_device->set_buffer (3, m_road_rows ? m_road_rows : m_no_roads);
-        m_device->set_buffer (4, m_road_index ? m_road_index : m_no_roads);
+        m_device->set_buffer (first, m_road_rows ? m_road_rows : m_no_roads);
+        m_device->set_buffer (first + 1,
+                              m_road_index ? m_road_index : m_no_roads);
       }
 
       void set_boulders (const render::BoulderSetup& setup,
@@ -2284,6 +2285,8 @@ namespace moppe::nhal {
         m_device->set_uniforms (1, grass);
         m_device->set_buffer (2, m_grass_tiles);
         m_device->set_buffer (3, m_grass_arguments);
+        m_device->set_uniforms (4, terrain_block ());
+        bind_roads (5);
         m_device->set_texture (0, m_heights);
         m_device->set_texture (1, m_normals);
         m_device->set_texture (6, m_landscape);
@@ -2370,6 +2373,8 @@ namespace moppe::nhal {
                           m_road_rows ? 1.0f : 0.0f };
         terrain.road_shape = { m_road_setup.half_width, m_road_setup.shoulder,
                                m_road_setup.crown, m_road_setup.blend };
+        terrain.road_batter = { m_road_setup.cut_slope,
+                                m_road_setup.fill_slope, 0, 0 };
         return terrain;
       }
 

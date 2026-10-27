@@ -459,6 +459,10 @@ namespace moppe {
         float shoulder = 0.75f;
         float crown = 0.025f;
         float blend = 1.5f;
+        // The batters' slopes, rise over run: cut back above the
+        // tread, filled out below it.
+        float cut_slope = 1.0f;
+        float fill_slope = 0.6f;
       };
       virtual void set_roads (const RoadSetup& setup) {
         (void)setup;
