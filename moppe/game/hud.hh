@@ -6,7 +6,9 @@
 #include <moppe/render/text.hh>
 
 #include <array>
+#include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -149,11 +151,14 @@ namespace moppe {
       bool resting = false;
       float clock_hours = 0.0f;
       // Something worth finding that is out of the way -- the other
-      // player or parked vehicles -- over it when it is in view, and
-      // otherwise at the frame's edge pointing the way. Nearby vehicles
-      // share an arrow and distance, with a silhouette for each.
+      // player, the nearest named place, or a parked machine -- over it
+      // when it is in view, and otherwise at the frame's edge pointing
+      // the way. Marks whose words would meet on the screen are drawn as
+      // one (group_waymarks).
       struct Waymark {
-        enum Vehicle : unsigned {
+        // Who it is: one bit each, so that a group is a set of them that
+        // stays the same from frame to frame.
+        enum Who : unsigned {
           Bike = 1 << 0,
           Jeep = 1 << 1,
           Tractor = 1 << 2,
@@ -161,9 +166,16 @@ namespace moppe {
           MountainBike = 1 << 4,
           Helicopter = 1 << 5,
           Boat = 1 << 6,
-          LongJohn = 1 << 7
+          LongJohn = 1 << 7,
+          Vehicles = (1 << 8) - 1,
+          Companion = 1 << 8,
+          Place = 1 << 9,
         };
-        unsigned vehicles = 0; // none for the companion's named marker
+        unsigned who = 0;
+        // The machine's silhouette, if it is one.
+        unsigned vehicles () const noexcept {
+          return who & Vehicles;
+        }
         const char* name = "";
         Vec3 position;
         // Where the arrow goes, in points, and which way it points:
@@ -231,9 +243,22 @@ namespace moppe {
             frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
     };
 
-    // Bundle crowded vehicle finders, not the companion or vehicles that
-    // merely line up in the camera. Each bundle keeps the nearest range.
-    void bundle_waymarks (HudState& state);
+    // A box on the screen, in points: left, top, right, bottom.
+    using HudBox = std::array<float, 4>;
+
+    // Which waymarks share one marker. Marks start alone and any two
+    // groups of the same kind (in view, or at the edge) whose boxes --
+    // what `box` says a group's marker covers -- come within a few points
+    // of each other become one, until no two meet; so the markers drawn
+    // never overlap, and a group opens out again once its members draw
+    // apart on the screen. Groups that were together (`before`, as sets
+    // of `who`) keep together until a wider gap opens, so that a group
+    // does not flicker at the threshold. Faded-out marks join nothing.
+    // Each group is a set of indices into `marks`, as bits.
+    std::vector<unsigned>
+    group_waymarks (std::span<const HudState::Waymark> marks,
+                    const std::function<HudBox (unsigned)>& box,
+                    std::span<const unsigned> before);
 
     // The overlay keeps out of the way of the landscape.  In ordinary play
     // it is a single quiet speedometer -- a hairline arc with a riding
@@ -351,6 +376,7 @@ namespace moppe {
                        int height_pts);
       void draw_waymarks (render::TextList& text,
                           const HudState& state,
+                          float dt,
                           int width_pts,
                           int height_pts);
       void draw_chart (render::DrawList& dl,
@@ -415,6 +441,16 @@ namespace moppe {
       float m_chart_alpha = 0.0f;
       float m_chart_reach_m = 0.0f;
       bool m_chart_hidden = false;
+      // The waymarks' markers, each a set of HudState::Waymark::who and
+      // how far it has faded in: those of this frame come up and those
+      // no longer drawn fade away, so that a group opens out or closes
+      // up by crossing over rather than in a jump.
+      struct Marker {
+        unsigned who;
+        float alpha;
+        bool live; // grouped so in the last frame
+      };
+      std::vector<Marker> m_markers;
       std::string m_prompt_key;
       std::string m_prompt_action;
       // What this frame offers the player, and whether the host shows it.

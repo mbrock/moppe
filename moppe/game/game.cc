@@ -4124,7 +4124,7 @@ namespace moppe {
                                int width,
                                int height,
                                const char* name,
-                               unsigned vehicles,
+                               unsigned who,
                                const Vec3& at,
                                float near,
                                float far,
@@ -4150,7 +4150,7 @@ namespace moppe {
           std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad));
         HudState::Waymark mark;
         mark.name = name;
-        mark.vehicles = vehicles;
+        mark.who = who;
         mark.position = at;
         mark.metres = metres;
         mark.alpha = shown;
@@ -4224,7 +4224,7 @@ namespace moppe {
                        width,
                        height,
                        "companion",
-                       0,
+                       HudState::Waymark::Companion,
                        at + Vec3 (0, 2.0f, 0),
                        12.0f,
                        24.0f,
@@ -4261,7 +4261,7 @@ namespace moppe {
                          width,
                          height,
                          name,
-                         0,
+                         HudState::Waymark::Place,
                          Vec3 (x, ground_height (Vec3 (x, 0, z)) + 4.0f, z),
                          40.0f,
                          70.0f,
@@ -4359,7 +4359,6 @@ namespace moppe {
                        30.0f,
                        50.0f,
                        pale);
-        bundle_waymarks (state);
       }
 
       void add_company_readings (HudState& state) const {

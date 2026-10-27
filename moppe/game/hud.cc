@@ -485,68 +485,50 @@ namespace moppe {
       }
     }
 
-    void bundle_waymarks (HudState& state) {
-      const auto marks = state.waymarks;
-      const int count = state.waymark_count;
-      std::array<int, std::tuple_size_v<decltype (state.waymarks)>> groups;
-      for (int i = 0; i < count; ++i)
-        groups[i] = i;
-      for (int i = 0; i < count; ++i) {
-        for (int j = i + 1; j < count; ++j) {
-          const auto& a = marks[i];
-          const auto& b = marks[j];
-          if (!a.vehicles || !b.vehicles || groups[i] == groups[j] ||
-              a.alpha <= 0.002f || b.alpha <= 0.002f ||
-              a.in_view != b.in_view || std::fabs (a.x - b.x) > 96.0f ||
-              std::fabs (a.y - b.y) > 48.0f)
-            continue;
-          // A chain of crowded anchors must not join distant vehicles.
-          bool nearby = true;
-          for (int u = 0; u < count; ++u)
-            for (int v = 0; v < count; ++v)
-              if (groups[u] == groups[i] && groups[v] == groups[j] &&
-                  length2 (marks[u].position - marks[v].position) >
-                    80.0f * 80.0f)
-                nearby = false;
-          if (!nearby)
-            continue;
-          const int from = std::max (groups[i], groups[j]);
-          const int to = std::min (groups[i], groups[j]);
-          for (int k = 0; k < count; ++k)
-            if (groups[k] == from)
-              groups[k] = to;
-        }
+    std::vector<unsigned>
+    group_waymarks (std::span<const HudState::Waymark> marks,
+                    const std::function<HudBox (unsigned)>& box,
+                    std::span<const unsigned> before) {
+      std::vector<unsigned> groups;
+      for (unsigned i = 0; i < marks.size () && i < 32; ++i)
+        if (marks[i].alpha > 0.002f)
+          groups.push_back (1u << i);
+      const auto who = [&] (unsigned group) {
+        unsigned members = 0;
+        for (unsigned i = 0; i < marks.size (); ++i)
+          if (group & (1u << i))
+            members |= marks[i].who;
+        return members;
+      };
+      // A gap that closes to a few points joins two markers; once
+      // joined, they part only when a wider one opens.
+      const auto gap = [&] (unsigned a, unsigned b) {
+        const unsigned p = who (a), q = who (b);
+        return std::ranges::any_of (before,
+                                    [&] (unsigned g) {
+                                      return (g & p) && (g & q);
+                                    })
+                 ? 30.0f
+                 : 6.0f;
+      };
+      for (bool joined = true; joined;) {
+        joined = false;
+        for (std::size_t a = 0; a < groups.size () && !joined; ++a)
+          for (std::size_t b = a + 1; b < groups.size () && !joined; ++b) {
+            if (marks[std::countr_zero (groups[a])].in_view !=
+                marks[std::countr_zero (groups[b])].in_view)
+              continue;
+            const HudBox p = box (groups[a]), q = box (groups[b]);
+            const float g = gap (groups[a], groups[b]);
+            if (p[0] < q[2] + g && q[0] < p[2] + g && p[1] < q[3] + g &&
+                q[1] < p[3] + g) {
+              groups[a] |= groups[b];
+              groups.erase (groups.begin () + static_cast<long> (b));
+              joined = true;
+            }
+          }
       }
-      state.waymark_count = 0;
-      for (int i = 0; i < count; ++i) {
-        if (groups[i] != i)
-          continue;
-        auto mark = marks[i];
-        int members = 1;
-        float across = std::cos (mark.angle);
-        float upward = std::sin (mark.angle);
-        for (int j = i + 1; j < count; ++j) {
-          if (groups[j] != i)
-            continue;
-          const auto& other = marks[j];
-          mark.vehicles |= other.vehicles;
-          mark.x += other.x;
-          mark.y += other.y;
-          mark.position += other.position;
-          mark.metres = std::min (mark.metres, other.metres);
-          mark.alpha = std::max (mark.alpha, other.alpha);
-          across += std::cos (other.angle);
-          upward += std::sin (other.angle);
-          ++members;
-        }
-        if (members > 1) {
-          mark.x /= members;
-          mark.y /= members;
-          mark.position = mark.position / static_cast<float> (members);
-          mark.angle = std::atan2 (upward, across);
-        }
-        state.waymarks[state.waymark_count++] = mark;
-      }
+      return groups;
     }
 
     // The gauge and prompt outlines, in units of the gauge radius (gauge
@@ -559,7 +541,7 @@ namespace moppe {
       SlugGlyph shade;
       SlugGlyph key;
       SlugGlyph wide_key;
-      std::array<SlugGlyph, 7> vehicles;
+      std::array<SlugGlyph, 8> vehicles;
       // The chart's, in units of its radius: the bezel round it, the
       // hairline rim over the picture's edge, and the bezel's ticks.
       SlugGlyph bezel;
@@ -1069,130 +1051,232 @@ namespace moppe {
 
     void Hud::draw_waymarks (render::TextList& text,
                              const HudState& st,
+                             float dt,
                              int width_pts,
                              int height_pts) {
       if (!m_font)
         return;
-      const bool aside = m_diagnostics || m_host_offers;
-      const auto chart = chart_placement (width_pts, height_pts, aside);
-      // What has been set so far, as boxes in points: left, top, right,
-      // bottom. Marks that line up on the screen keep their words from
-      // running into one another by stepping down past what is already
-      // there, or up where the screen ends.
-      std::vector<std::array<float, 4>> taken;
-      const auto settle =
-        [&] (float left, float top, float right, float bottom) {
-          // How far to move the box, downward (+1) or upward (-1), to
-          // clear everything set so far.
-          const auto clearing = [&] (float sign) {
-            float shift = 0.0f;
-            for (int pass = 0; pass < 8; ++pass) {
-              bool moved = false;
-              for (const auto& box : taken)
-                if (left < box[2] && right > box[0] && top + shift < box[3] &&
-                    bottom + shift > box[1]) {
-                  shift =
-                    sign > 0.0f ? box[3] + 3.0f - top : box[1] - 3.0f - bottom;
-                  moved = true;
-                }
-              if (!moved)
-                break;
-            }
-            return shift;
-          };
-          float shift = clearing (1.0f);
-          if (bottom + shift > height_pts - 8.0f)
-            shift = clearing (-1.0f);
-          taken.push_back ({ left, top + shift, right, bottom + shift });
-          return shift;
-        };
-      for (int i = 0; i < st.waymark_count; ++i) {
-        auto mark = st.waymarks[i];
-        if (mark.alpha <= 0.002f)
-          continue;
-        const int count = std::popcount (mark.vehicles);
-        const int rows = std::max (1, (count + 2) / 3);
-        const int columns = (count + rows - 1) / rows;
-        const float width = count ? 28.0f * columns : 140.0f;
-        const float rise = 22.0f * (rows - 1);
-        // The compass, its heading and map key own their corner. Slide
-        // an edge finder along the edge rather than drawing across them.
-        if (!mark.in_view && st.chart.picture && m_chart_alpha > 0.002f) {
-          const float across = std::cos (mark.angle);
-          const float left = mark.x - (across > 0.35f    ? width + 18.0f
-                                       : across < -0.35f ? 10.0f
-                                                         : 0.5f * width);
-          const float right = mark.x + (across < -0.35f  ? width + 18.0f
-                                        : across > 0.35f ? 10.0f
-                                                         : 0.5f * width);
-          const float top = chart.y - chart.outer - 36.0f;
-          const float bottom = chart.y + chart.outer + 12.0f;
-          if (left < chart.x + chart.outer + 65.0f &&
-              right > chart.x - chart.outer - 8.0f && mark.y + 50.0f > top &&
-              mark.y - 50.0f < bottom)
-            mark.y = aside ? bottom + 48.0f : top - (count ? 48.0f : 42.0f);
-        }
-        // Quieter over the thing itself than out at the edge.
-        const float alpha = mark.alpha * (mark.vehicles  ? 0.94f
-                                          : mark.in_view ? 0.7f
-                                                         : 0.82f);
-        const float size = mark.in_view ? 5.5f : 7.0f;
-        // cy is the bottom icon row. Extra rows grow upward, leaving
-        // the distance and pointer together clear of the hiker's head.
-        float cx = mark.x, cy = mark.y - 78.0f;
-        if (count) {
-          const float across = std::cos (mark.angle);
-          const float upward = std::sin (mark.angle);
-          if (!mark.in_view) {
-            if (std::fabs (across) > 0.35f) {
-              cx -= std::copysign (0.5f * width + 18.0f, across);
-              cy = mark.y + 0.5f * rise;
-            } else if (upward > 0.0f) {
-              cy = mark.y + 26.0f + rise;
-            } else {
-              cy = mark.y - 44.0f;
-            }
-          }
-          cx = std::clamp (
-            cx,
-            12.0f + 0.5f * width,
-            std::max (12.0f + 0.5f * width, width_pts - 12.0f - 0.5f * width));
-          cy = std::clamp (
-            cy, 14.0f + rise, std::max (14.0f + rise, height_pts - 50.0f));
-        }
-        std::ostringstream reading;
-        if (*mark.name)
-          reading << mark.name << "  ";
-        if (mark.metres >= 1000.0f)
-          reading << std::fixed << std::setprecision (1)
-                  << mark.metres / 1000.0f << " km";
+      using Mark = HudState::Waymark;
+      const float width = static_cast<float> (width_pts);
+      const float height = static_cast<float> (height_pts);
+      std::vector<Mark> marks (st.waymarks.begin (),
+                               st.waymarks.begin () + st.waymark_count);
+
+      // A distance as the eye wants it: to five metres, or a tenth of a
+      // kilometre; and a group's machines as their nearest, or as the
+      // span from nearest to furthest where that is wide.
+      const auto distance = [] (float metres, bool unit) {
+        char words[32];
+        if (metres >= 1000.0f)
+          std::snprintf (words,
+                         sizeof words,
+                         unit ? "%.1f km" : "%.1f",
+                         metres / 1000.0f);
         else
-          reading << static_cast<int> (std::round (mark.metres / 5.0f) * 5.0f)
-                  << " m";
-        TextStyle label;
-        label.size = mark.vehicles ? 12.0f : 11.0f;
-        label.red = label.green = label.blue = ink;
-        label.alpha = alpha;
-        label.tracking = 0.04f;
-        label.tabular_figures = true;
-        const float words = m_font->measure (reading.str (), label);
-        if (count) {
-          const float half = 0.5f * std::max (width, words) + 4.0f;
-          cy += settle (cx - half,
-                        cy - rise - 12.0f,
-                        cx + half,
-                        cy + (mark.in_view ? 48.0f : 32.0f));
+          std::snprintf (words,
+                         sizeof words,
+                         unit ? "%d m" : "%d",
+                         static_cast<int> (std::round (metres / 5.0f) * 5.0f));
+        return std::string (words);
+      };
+      const auto span = [&] (float near, float far) {
+        const std::string first = distance (near, true);
+        const std::string last = distance (far, true);
+        if (far <= 1.12f * near + 10.0f || first == last)
+          return first;
+        if ((near >= 1000.0f) == (far >= 1000.0f))
+          return distance (near, false) + "\u2013" + last;
+        return first + " \u2013 " + last;
+      };
+
+      TextStyle named;
+      named.size = 11.0f;
+      named.tracking = 0.04f;
+      named.tabular_figures = true;
+      TextStyle reading = named;
+      reading.size = 12.0f;
+      reading.red = reading.green = reading.blue = ink;
+      constexpr float line = 15.0f;  // a line of words
+      constexpr float pitch = 28.0f; // between silhouettes
+      constexpr float tier = 22.0f;  // a row of them
+
+      // The chart, its heading and map key own their corner.
+      const bool aside = m_diagnostics || m_host_offers;
+      const bool charted = st.chart.picture && m_chart_alpha > 0.002f;
+      const auto chart = chart_placement (width_pts, height_pts, aside);
+      const HudBox corner { chart.x - chart.outer - 8.0f,
+                            chart.y - chart.outer - 36.0f,
+                            chart.x + chart.outer + 65.0f,
+                            chart.y + chart.outer + 12.0f };
+
+      // One marker for a group of marks: a pointer, and beside it a
+      // block of the members' names and silhouettes. In view, the
+      // pointer comes down onto the group and the block stands over it;
+      // at the frame's edge the pointer points out and the block lies
+      // inward of it.
+      struct Arrangement {
+        float x = 0.0f, y = 0.0f, angle = 0.0f, size = 0.0f;
+        float red = ink, green = ink, blue = ink, alpha = 0.0f;
+        bool in_view = false;
+        TextAlign align = TextAlign::Center;
+        std::vector<const Mark*> names;
+        unsigned vehicles = 0;
+        int count = 0, rows = 0, columns = 0;
+        std::string machines;
+        HudBox block {}, box {};
+      };
+      const auto arrange = [&] (unsigned group) {
+        Arrangement a;
+        float across = 0.0f, upward = 0.0f, near = 1e9f, far = 0.0f;
+        int members = 0;
+        const Mark* first = nullptr;
+        for (unsigned i = 0; i < marks.size (); ++i) {
+          if (!(group & (1u << i)))
+            continue;
+          const Mark& mark = marks[i];
+          a.x += mark.x;
+          a.y += mark.y;
+          across += std::cos (mark.angle);
+          upward += std::sin (mark.angle);
+          a.alpha = std::max (a.alpha, mark.alpha);
+          a.in_view = mark.in_view;
+          ++members;
+          if (mark.vehicles ()) {
+            a.vehicles |= mark.vehicles ();
+            near = std::min (near, mark.metres);
+            far = std::max (far, mark.metres);
+          } else {
+            a.names.push_back (&mark);
+          }
+          // The pointer takes the colour of the one that matters most:
+          // the other player, then the place, then the machines.
+          const auto rank = [] (const Mark& m) {
+            return m.who & Mark::Companion ? 0 : m.who & Mark::Place ? 1 : 2;
+          };
+          if (!first || rank (mark) < rank (*first))
+            first = &mark;
         }
-        // Keep the in-view arrow attached to the icon-and-distance
-        // group, rather than leaving it stranded down over the target.
-        const float arrow_x = count && mark.in_view ? cx : mark.x;
-        const float arrow_y = count && mark.in_view ? cy + 41.0f : mark.y;
+        if (!members)
+          return a;
+        std::ranges::stable_sort (a.names, {}, [] (const Mark* m) {
+          return m->who & Mark::Companion ? 0 : 1;
+        });
+        a.x /= static_cast<float> (members);
+        a.y /= static_cast<float> (members);
+        a.angle = a.in_view ? -0.5f * PI : std::atan2 (upward, across);
+        a.size = a.in_view ? 5.5f : 7.0f;
+        a.red = first->red;
+        a.green = first->green;
+        a.blue = first->blue;
+        // Quieter over the thing itself than out at the edge.
+        a.alpha *= a.vehicles      ? 0.94f
+                   : a.in_view     ? 0.75f
+                                   : 0.85f;
+        a.count = std::popcount (a.vehicles);
+        a.rows = a.count ? (a.count + 3) / 4 : 0;
+        a.columns = a.count ? (a.count + a.rows - 1) / a.rows : 0;
+        if (a.count)
+          a.machines = span (near, far);
+
+        float w = a.columns * pitch, h = a.rows * tier;
+        if (a.count)
+          h += line;
+        for (const Mark* m : a.names) {
+          w = std::max (w,
+                        m_font->measure (std::string (m->name) + "  " +
+                                           distance (m->metres, true),
+                                         named));
+          h += line;
+        }
+        if (a.count)
+          w = std::max (w, m_font->measure (a.machines, reading));
+
+        const float c = std::cos (a.angle), s = std::sin (a.angle);
+        float left, top;
+        if (a.in_view) {
+          left = a.x - 0.5f * w;
+          top = a.y - 9.0f - h;
+        } else if (std::fabs (c) > 0.35f) {
+          a.align = c > 0.0f ? TextAlign::Right : TextAlign::Left;
+          left = c > 0.0f ? a.x - 13.0f - w : a.x + 13.0f;
+          top = a.y - 0.5f * h;
+        } else {
+          left = a.x - 0.5f * w;
+          top = s > 0.0f ? a.y + 12.0f : a.y - 12.0f - h;
+        }
+        left = std::clamp (left, 12.0f, std::max (12.0f, width - 12.0f - w));
+        top = std::clamp (top, 12.0f, std::max (12.0f, height - 12.0f - h));
+        // A marker at the edge that would cover the chart's corner slides
+        // along the edge past it.
+        if (charted && !a.in_view) {
+          const float low = std::min (top, a.y - a.size);
+          const float high = std::max (top + h, a.y + a.size);
+          if (std::min (left, a.x - a.size) < corner[2] &&
+              std::max (left + w, a.x + a.size) > corner[0] &&
+              low < corner[3] && high > corner[1]) {
+            const float shift =
+              aside ? corner[3] + 6.0f - low : corner[1] - 6.0f - high;
+            a.y += shift;
+            top += shift;
+          }
+        }
+        a.block = { left, top, left + w, top + h };
+        a.box = { std::min (left, a.x - a.size),
+                  std::min (top, a.y - a.size),
+                  std::max (left + w, a.x + a.size),
+                  std::max (top + h, a.y + a.size) };
+        return a;
+      };
+
+      // Group them, and fade each group's marker in and the markers of
+      // groups that have come apart (or together) out.
+      std::vector<unsigned> before;
+      for (const Marker& marker : m_markers)
+        if (marker.live)
+          before.push_back (marker.who);
+      const auto who = [&] (unsigned group) {
+        unsigned members = 0;
+        for (unsigned i = 0; i < marks.size (); ++i)
+          if (group & (1u << i))
+            members |= marks[i].who;
+        return members;
+      };
+      std::vector<unsigned> live;
+      for (unsigned group : group_waymarks (
+             marks, [&] (unsigned g) { return arrange (g).box; }, before))
+        live.push_back (who (group));
+      for (unsigned members : live)
+        if (std::ranges::none_of (m_markers, [&] (const Marker& m) {
+              return m.who == members;
+            }))
+          m_markers.push_back (
+            { members, m_markers.empty () ? 1.0f : 0.0f, true });
+      for (Marker& marker : m_markers) {
+        marker.live = std::ranges::count (live, marker.who) > 0;
+        marker.alpha =
+          approach (marker.alpha, marker.live ? 1.0f : 0.0f, 9.0f, dt);
+      }
+      std::erase_if (m_markers, [] (const Marker& m) {
+        return m.alpha < 0.01f && !m.live;
+      });
+
+      for (const Marker& marker : m_markers) {
+        unsigned group = 0;
+        for (unsigned i = 0; i < marks.size (); ++i)
+          if ((marks[i].who & marker.who) && marks[i].alpha > 0.002f)
+            group |= 1u << i;
+        if (!group)
+          continue;
+        const Arrangement a = arrange (group);
+        const float alpha = a.alpha * ease (marker.alpha);
+        if (alpha <= 0.002f)
+          continue;
         place_shape (text,
                      m_shape->arrow,
-                     arrow_x,
-                     arrow_y,
-                     size + 1.5f,
-                     mark.angle,
+                     a.x,
+                     a.y,
+                     a.size + 1.5f,
+                     a.angle,
                      0.0f,
                      0.0f,
                      0.0f,
@@ -1200,69 +1284,76 @@ namespace moppe {
                      4.0f);
         place_shape (text,
                      m_shape->arrow,
-                     arrow_x,
-                     arrow_y,
-                     size,
-                     mark.angle,
-                     mark.red,
-                     mark.green,
-                     mark.blue,
+                     a.x,
+                     a.y,
+                     a.size,
+                     a.angle,
+                     a.red,
+                     a.green,
+                     a.blue,
                      alpha);
 
-        if (count) {
-          // At most three per row, balanced and individually centered:
-          // four makes 2 + 2, five 3 + 2, and six 3 + 3.
-          int icon = 0;
-          for (unsigned v = 0; v < m_shape->vehicles.size (); ++v) {
-            if (!(mark.vehicles & (1u << v)))
-              continue;
-            const int row = icon / columns;
-            const int in_row = std::min (columns, count - row * columns);
-            const float x = cx + (icon % columns - 0.5f * (in_row - 1)) * 28.0f;
-            const float y = cy - rise + row * 22.0f;
-            const auto& shape = m_shape->vehicles[v];
-            // A soft shade keeps the small silhouettes legible over
-            // sky, without a dark outline around every wheel and spoke.
-            place_shape (text,
-                         shape,
-                         x,
-                         y + 0.5f,
-                         0.9f,
-                         0.0f,
-                         0,
-                         0,
-                         0,
-                         0.5f * alpha,
-                         2.0f);
-            place_shape (text, shape, x, y, 0.9f, 0.0f, ink, ink, ink, alpha);
-            ++icon;
-          }
-          draw_shaded (
-            text, cx, cy + 28.0f, reading.str (), label, TextAlign::Center);
+        // The block's lines, set flush toward the pointer.
+        const float x = a.align == TextAlign::Left    ? a.block[0]
+                        : a.align == TextAlign::Right ? a.block[2]
+                                                      : 0.5f * (a.block[0] +
+                                                                a.block[2]);
+        float y = a.block[1];
+        for (const Mark* m : a.names) {
+          TextStyle words = named;
+          words.red = m->red;
+          words.green = m->green;
+          words.blue = m->blue;
+          words.alpha = alpha;
+          draw_shaded (text,
+                       x,
+                       y + 11.0f,
+                       std::string (m->name) + "  " +
+                         distance (m->metres, true),
+                       words,
+                       a.align);
+          y += line;
+        }
+        if (!a.count)
           continue;
+        // At most four silhouettes a row, balanced: five makes 3 + 2,
+        // six 3 + 3, and seven 4 + 3.
+        const float row_width = a.columns * pitch;
+        int icon = 0;
+        for (unsigned v = 0; v < m_shape->vehicles.size (); ++v) {
+          if (!(a.vehicles & (1u << v)))
+            continue;
+          const int row = icon / a.columns;
+          const int in_row = std::min (a.columns, a.count - row * a.columns);
+          const float middle = a.align == TextAlign::Left
+                                 ? x + 0.5f * row_width
+                               : a.align == TextAlign::Right
+                                 ? x - 0.5f * row_width
+                                 : x;
+          const float ix =
+            middle + (icon % a.columns - 0.5f * (in_row - 1)) * pitch;
+          const float iy = y + 0.5f * tier + row * tier;
+          const auto& shape = m_shape->vehicles[v];
+          // A soft shade keeps the small silhouettes legible over sky,
+          // without a dark outline round every wheel and spoke.
+          place_shape (text,
+                       shape,
+                       ix,
+                       iy + 0.5f,
+                       0.9f,
+                       0.0f,
+                       0,
+                       0,
+                       0,
+                       0.5f * alpha,
+                       2.0f);
+          place_shape (text, shape, ix, iy, 0.9f, 0.0f, ink, ink, ink, alpha);
+          ++icon;
         }
-        // Behind the arrow: above the thing, or inward from the edge,
-        // set to whichever side keeps the words clear of the arrowhead.
-        const float across = std::cos (mark.angle);
-        const float upward = std::sin (mark.angle);
-        float x = mark.x, y = mark.y + 3.5f;
-        TextAlign align = TextAlign::Center;
-        if (mark.in_view) {
-          y -= 15.0f;
-        } else if (across > 0.35f) {
-          x -= 13.0f;
-          align = TextAlign::Right;
-        } else if (across < -0.35f) {
-          x += 13.0f;
-          align = TextAlign::Left;
-        } else {
-          y += upward > 0.0f ? 18.0f : -18.0f;
-        }
-        const float left = align == TextAlign::Left    ? x
-                           : align == TextAlign::Right ? x - words
-                                                       : x - 0.5f * words;
-        y += settle (left - 3.0f, y - 12.0f, left + words + 3.0f, y + 4.0f);
-        draw_shaded (text, x, y, reading.str (), label, align);
+        y += a.rows * tier;
+        TextStyle words = reading;
+        words.alpha = alpha;
+        draw_shaded (text, x, y + 11.5f, a.machines, words, a.align);
       }
     }
 
@@ -1950,7 +2041,7 @@ namespace moppe {
         return;
 
       draw_chart (dl, text, st, dt, width_pts, height_pts);
-      draw_waymarks (text, st, width_pts, height_pts);
+      draw_waymarks (text, st, dt, width_pts, height_pts);
       draw_gauge (text, st, dt, width_pts, height_pts);
       draw_basket (text, st, dt, width_pts, height_pts);
       draw_clock (text, st, dt, width_pts, height_pts);

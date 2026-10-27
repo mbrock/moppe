@@ -141,7 +141,14 @@
     player (in their jacket's colour), and the bike, the jeep, the
     tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in
     view, at the frame's edge pointing the way when it is not
-    (`HudState::Waymark`, placed by `add_waymarks` in game.cc).
+    (`HudState::Waymark`, placed by `add_waymarks` in game.cc). Marks
+    whose markers would meet on the screen share one, which lists the
+    names and the machines' silhouettes with their nearest-to-furthest
+    distance, and opens out as they draw apart, crossfading
+    (`group_waymarks` in hud.cc, with hysteresis so it does not
+    flicker). On the map, marks that huddle share one label listing
+    each with its symbol, set where it covers least, on a leader line
+    when it must stand off; spot heights give way to names.
   - The chart and compass: a round chart in the lower left (upper right
     with the diagnostics on, or on a touch screen) shows the map sheet
     round the subject, turned so the way the camera looks is up, in a

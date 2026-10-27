@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <functional>
 #include <numbers>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -94,6 +97,112 @@ namespace moppe::game {
       glow.softness = 5.0f;
       font.draw (text, x, y, words, glow, align);
       font.draw (text, x, y, words, set, align);
+    }
+
+    using Box = std::array<float, 4>; // left, top, right, bottom
+    using Mark = MapSheet::Mark;
+
+    // Which marks matter most: their symbols are drawn over the others',
+    // and their names set first.
+    int rank (Mark::Kind kind) {
+      switch (kind) {
+      case Mark::Kind::Walker:
+        return 0;
+      case Mark::Kind::Companion:
+        return 1;
+      case Mark::Kind::Landing:
+      case Mark::Kind::Outlet:
+      case Mark::Kind::Sanctuary:
+        return 2;
+      case Mark::Kind::Trailhead:
+        return 3;
+      case Mark::Kind::Camp:
+        return 4;
+      default:
+        return 5;
+      }
+    }
+
+    // A mark's symbol at (x, y), `s` times its size on the sheet.
+    void symbol (
+      render::DrawList& dl, const Mark& mark, float x, float y, float s) {
+      Vec3 way (mark.heading[0], 0.0f, mark.heading[2]);
+      way = length2 (way) > 1e-6f ? normalized (way) : Vec3 (0, 0, -1);
+      const float dx = way[0], dy = way[2];
+      switch (mark.kind) {
+      case Mark::Kind::Walker:
+      case Mark::Kind::Companion: {
+        const float size = (mark.kind == Mark::Kind::Walker ? 11.0f : 9.0f) * s;
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        arrow (dl,
+               x - dx * 0.8f * s,
+               y - dy * 0.8f * s,
+               dx,
+               dy,
+               size + 4.0f * s);
+        dl.color (mark.colour, 1.0f);
+        arrow (dl, x, y, dx, dy, size);
+        break;
+      }
+      case Mark::Kind::Bike:
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 5.2f * s);
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 3.6f * s);
+        break;
+      case Mark::Kind::Jeep:
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        box (dl, x - 5.2f * s, y - 5.2f * s, x + 5.2f * s, y + 5.2f * s);
+        dl.color (mark.colour, 1.0f);
+        box (dl, x - 3.6f * s, y - 3.6f * s, x + 3.6f * s, y + 3.6f * s);
+        break;
+      case Mark::Kind::Camp:
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        arrow (dl, x, y + 1.0f * s, 0.0f, -1.0f, 9.5f * s);
+        dl.color (mark.colour, 1.0f);
+        arrow (dl, x, y + 0.4f * s, 0.0f, -1.0f, 6.5f * s);
+        break;
+      case Mark::Kind::Trailhead:
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 5.0f * s);
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 3.2f * s);
+        break;
+      case Mark::Kind::Landing:
+        // An anchor's ring and stock, as charts mark a landing place.
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 6.2f * s);
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 4.8f * s);
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        dl.line (x, y - 3.2f * s, x, y + 3.0f * s, 1.1f * s);
+        dl.line (
+          x - 2.4f * s, y - 1.6f * s, x + 2.4f * s, y - 1.6f * s, 1.1f * s);
+        dl.line (x - 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
+        dl.line (x + 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
+        break;
+      case Mark::Kind::Outlet:
+        // A mill wheel: a ring with spokes.
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 5.6f * s);
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 4.3f * s);
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        disc (dl, x, y, 1.3f * s);
+        dl.line (x - 3.4f * s, y, x + 3.4f * s, y, 0.9f * s);
+        dl.line (x, y - 3.4f * s, x, y + 3.4f * s, 0.9f * s);
+        break;
+      case Mark::Kind::Sanctuary:
+        // The sheet already carries its triangle; a dot of fire in it.
+        // In a list, where there is no triangle, the triangle too.
+        if (s < 1.0f) {
+          dl.color (mark.colour, 1.0f);
+          arrow (dl, x, y + 2.0f, 0.0f, -1.0f, 8.0f * s);
+        }
+        dl.color (mark.colour, 1.0f);
+        disc (dl, x, y, 2.4f * s);
+        break;
+      }
     }
 
     std::string distance_words (float metres) {
@@ -282,7 +391,12 @@ namespace moppe::game {
                     TextAlign::Right);
     }
 
-    // Tops and their heights.
+    // Tops: a dot now, their heights later, where the names leave room.
+    struct Top {
+      float x, y;
+      std::string words;
+    };
+    std::vector<Top> tops;
     for (const ReliefMap::Summit& top : m_sheet.summits) {
       float x, y;
       if (!place (Vec3 (top.x_m, 0.0f, top.z_m), x, y) ||
@@ -291,164 +405,213 @@ namespace moppe::game {
         continue;
       dl.color (height_ink, 1.0f);
       disc (dl, x, y, 1.6f);
-      if (font)
-        label (text,
-               *font,
-               x + 4.5f,
-               y + 3.4f,
-               std::to_string (static_cast<int> (std::lround (top.height_m))),
-               style (10.5f, height_ink));
+      const int metres = static_cast<int> (std::lround (top.height_m));
+      tops.push_back ({ x, y, std::to_string (metres) });
     }
 
-    // What moves, the walker last so that nothing covers them; each
-    // mark's symbol is kept as a box in points, and its name for later.
-    struct Named {
+    // What is on the sheet, the most important drawn last so that
+    // nothing covers it; each symbol is kept as a box in points.
+    struct Placed {
       float x, y;
       const Mark* mark;
-      std::size_t symbol;
     };
-    std::vector<std::array<float, 4>> symbols;
-    std::vector<Named> names;
-    for (std::size_t i = marks.size (); i-- > 0;) {
-      const Mark& mark = marks[i];
+    std::vector<Placed> placed;
+    for (const Mark& mark : marks) {
       float x, y;
-      if (!place (mark.position, x, y))
-        continue;
-      Vec3 way (mark.heading[0], 0.0f, mark.heading[2]);
-      way = length2 (way) > 1e-6f ? normalized (way) : Vec3 (0, 0, -1);
-      const float dx = way[0], dy = way[2];
-      switch (mark.kind) {
-      case Mark::Kind::Walker:
-      case Mark::Kind::Companion: {
-        const float size = mark.kind == Mark::Kind::Walker ? 11.0f : 9.0f;
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        arrow (dl, x - dx * 0.8f, y - dy * 0.8f, dx, dy, size + 4.0f);
-        dl.color (mark.colour, 1.0f);
-        arrow (dl, x, y, dx, dy, size);
-        break;
-      }
-      case Mark::Kind::Bike:
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 5.2f);
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 3.6f);
-        break;
-      case Mark::Kind::Jeep:
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        box (dl, x - 5.2f, y - 5.2f, x + 5.2f, y + 5.2f);
-        dl.color (mark.colour, 1.0f);
-        box (dl, x - 3.6f, y - 3.6f, x + 3.6f, y + 3.6f);
-        break;
-      case Mark::Kind::Camp:
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        arrow (dl, x, y + 1.0f, 0.0f, -1.0f, 9.5f);
-        dl.color (mark.colour, 1.0f);
-        arrow (dl, x, y + 0.4f, 0.0f, -1.0f, 6.5f);
-        break;
-      case Mark::Kind::Trailhead:
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 5.0f);
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 3.2f);
-        break;
-      case Mark::Kind::Landing:
-        // An anchor's ring and stock, as charts mark a landing place.
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 6.2f);
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 4.8f);
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        dl.line (x, y - 3.2f, x, y + 3.0f, 1.1f);
-        dl.line (x - 2.4f, y - 1.6f, x + 2.4f, y - 1.6f, 1.1f);
-        dl.line (x - 2.6f, y + 1.6f, x, y + 3.0f, 1.0f);
-        dl.line (x + 2.6f, y + 1.6f, x, y + 3.0f, 1.0f);
-        break;
-      case Mark::Kind::Outlet:
-        // A mill wheel: a ring with spokes.
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 5.6f);
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 4.3f);
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 1.3f);
-        dl.line (x - 3.4f, y, x + 3.4f, y, 0.9f);
-        dl.line (x, y - 3.4f, x, y + 3.4f, 0.9f);
-        break;
-      case Mark::Kind::Sanctuary:
-        // The sheet already carries its triangle; a dot of fire in it.
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 2.4f);
-        break;
-      }
-      symbols.push_back ({ x - 7.0f, y - 7.0f, x + 7.0f, y + 7.0f });
-      if (font && mark.name[0])
-        names.push_back ({ x, y, &mark, symbols.size () - 1 });
+      if (place (mark.position, x, y))
+        placed.push_back ({ x, y, &mark });
     }
-
-    // The names, each at the first place round its mark that keeps
-    // clear of the other names and marks: to the right, the left, above,
-    // or below; failing those, under the names already to its right.
-    std::vector<std::array<float, 4>> set;
-    const auto clear = [&] (const std::array<float, 4>& box, std::size_t own) {
-      const auto apart = [&] (const std::array<float, 4>& other) {
-        return box[2] <= other[0] || box[0] >= other[2] || box[3] <= other[1] ||
-               box[1] >= other[3];
-      };
-      if (box[0] < map_x + 2.0f || box[2] > map_x + side - 2.0f ||
-          box[1] < map_y + 2.0f || box[3] > map_y + side - 2.0f)
-        return false;
-      for (std::size_t k = 0; k < symbols.size (); ++k)
-        if (k != own && !apart (symbols[k]))
-          return false;
-      return std::ranges::all_of (set, apart);
-    };
-    for (const Named& named : names) {
-      const Mark& mark = *named.mark;
-      const float x = named.x, y = named.y;
-      // Places are named in the water's blue, sanctuaries in their own
-      // ink.
-      const TextStyle words = mark.place
-                                ? style (11.0f,
-                                         mark.kind == Mark::Kind::Sanctuary
-                                           ? mark.colour
-                                           : DisplayColor (0.04f, 0.18f, 0.42f),
-                                         0.04f)
-                                : style (10.5f, map_ink, 0.02f);
-      const float w = font->measure (mark.name, words);
-      // Where the baseline's left end may go.
-      const std::array<std::pair<float, float>, 4> tries { {
-        { x + 9.0f, y + 3.8f },
-        { x - 9.0f - w, y + 3.8f },
-        { x - 0.5f * w, y - 9.0f },
-        { x - 0.5f * w, y + 17.0f },
-      } };
-      const auto box = [&] (float left, float baseline) {
-        return std::array<float, 4> {
-          left - 1.0f, baseline - 9.5f, left + w + 1.0f, baseline + 2.5f
-        };
-      };
-      float left = tries[0].first, line = tries[0].second;
-      bool found = false;
-      for (const auto& [at_x, at_y] : tries)
-        if (clear (box (at_x, at_y), named.symbol)) {
-          left = at_x;
-          line = at_y;
-          found = true;
-          break;
-        }
-      if (!found) {
-        if (left + w > map_x + side - 2.0f)
-          left = x - 9.0f - w;
-        for (int step = 0; step < 12 && !clear (box (left, line), named.symbol);
-             ++step)
-          line += 12.0f;
-      }
-      set.push_back (box (left, line));
-      label (text, *font, left, line, mark.name, words);
+    std::ranges::stable_sort (
+      placed, std::greater<> {}, [] (const Placed& p) {
+        return rank (p.mark->kind);
+      });
+    std::vector<Box> symbols;
+    for (const Placed& p : placed) {
+      symbol (dl, *p.mark, p.x, p.y, 1.0f);
+      symbols.push_back ({ p.x - 7.0f, p.y - 7.0f, p.x + 7.0f, p.y + 7.0f });
     }
-
     if (!font)
       return;
+
+    // Names. Marks whose symbols run together at this scale -- the
+    // machines at the trailhead, the boat and the Caddy at the landing --
+    // share one label listing them, each line led by its symbol, so the
+    // reader can tell which of the huddle is which.
+    std::vector<std::vector<std::size_t>> groups;
+    {
+      std::vector<std::size_t> of (placed.size ());
+      for (std::size_t i = 0; i < placed.size (); ++i)
+        of[i] = i;
+      const auto root = [&] (std::size_t i) {
+        while (of[i] != i)
+          i = of[i] = of[of[i]];
+        return i;
+      };
+      for (std::size_t i = 0; i < placed.size (); ++i)
+        for (std::size_t j = i + 1; j < placed.size (); ++j)
+          if (placed[i].mark->name[0] && placed[j].mark->name[0] &&
+              std::hypot (placed[i].x - placed[j].x,
+                          placed[i].y - placed[j].y) < 10.0f)
+            of[root (j)] = root (i);
+      std::vector<std::size_t> slot (placed.size (), SIZE_MAX);
+      // Most important first: each group, and the groups in turn, from
+      // the end of `placed`.
+      for (std::size_t i = placed.size (); i-- > 0;) {
+        if (!placed[i].mark->name[0])
+          continue;
+        std::size_t& g = slot[root (i)];
+        if (g == SIZE_MAX) {
+          g = groups.size ();
+          groups.emplace_back ();
+        }
+        groups[g].push_back (i);
+      }
+    }
+
+    // Each label goes where it covers least, tried round its marks in
+    // the order a cartographer would -- beside them to the right, to the
+    // left, at the corners, above, below -- and then further out on a
+    // leader line. A machine's name that can only go over another name
+    // is left out: its symbol still shows.
+    const auto words_of = [&] (const Mark& mark) {
+      // Places are named in the water's blue, sanctuaries in their own
+      // ink.
+      return mark.place ? style (11.0f,
+                                 mark.kind == Mark::Kind::Sanctuary
+                                   ? mark.colour
+                                   : DisplayColor (0.04f, 0.18f, 0.42f),
+                                 0.04f)
+                        : style (10.5f, map_ink, 0.02f);
+    };
+    const auto meets = [] (const Box& a, const Box& b) {
+      return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    };
+    const Box sheet { map_x + 2.0f, map_y + 2.0f, map_x + side - 2.0f,
+                      map_y + side - 2.0f };
+    std::vector<Box> set;
+    for (const auto& group : groups) {
+      const bool list = group.size () > 1;
+      const float line = 12.5f;
+      const float indent = list ? 12.0f : 0.0f;
+      float w = 0.0f;
+      for (std::size_t i : group)
+        w = std::max (w, font->measure (placed[i].mark->name,
+                                        words_of (*placed[i].mark)));
+      w += indent;
+      const float h = line * static_cast<float> (group.size ()) - 1.0f;
+      Box around { 1e9f, 1e9f, -1e9f, -1e9f };
+      for (std::size_t i : group)
+        around = { std::min (around[0], placed[i].x - 5.0f),
+                   std::min (around[1], placed[i].y - 5.0f),
+                   std::max (around[2], placed[i].x + 5.0f),
+                   std::max (around[3], placed[i].y + 5.0f) };
+      const float cx = 0.5f * (around[0] + around[2]);
+      const float cy = 0.5f * (around[1] + around[3]);
+
+      float cost = 1e9f;
+      Box best {};
+      int ring_used = 0;
+      for (int ring = 0; ring < 3; ++ring) {
+        const float d = 3.0f + 16.0f * ring;
+        const float c = 0.7f * d + 1.0f;
+        const std::array<std::pair<float, float>, 8> corners { {
+          { around[2] + d, cy - 0.5f * h },
+          { around[0] - d - w, cy - 0.5f * h },
+          { around[2] + c, around[1] - c - h },
+          { around[2] + c, around[3] + c },
+          { around[0] - c - w, around[1] - c - h },
+          { around[0] - c - w, around[3] + c },
+          { cx - 0.5f * w, around[1] - d - h },
+          { cx - 0.5f * w, around[3] + d },
+        } };
+        for (std::size_t k = 0; k < corners.size (); ++k) {
+          const auto [left, top] = corners[k];
+          const Box box { left - 1.0f, top - 1.0f, left + w + 1.0f,
+                          top + h + 1.0f };
+          if (box[0] < sheet[0] || box[2] > sheet[2] || box[1] < sheet[1] ||
+              box[3] > sheet[3])
+            continue;
+          float here = 24.0f * ring + 2.0f * k;
+          for (std::size_t s = 0; s < symbols.size (); ++s)
+            if (std::ranges::find (group, s) == group.end () &&
+                meets (box, symbols[s]))
+              here += 400.0f;
+          for (const Box& other : set)
+            if (meets (box, other))
+              here += 1000.0f;
+          for (const Top& top : tops)
+            if (meets (box, { top.x - 2.0f, top.y - 2.0f, top.x + 24.0f,
+                              top.y + 5.0f }))
+              here += 30.0f;
+          if (here < cost) {
+            cost = here;
+            best = box;
+            ring_used = ring;
+          }
+        }
+      }
+      if (cost >= 1e9f ||
+          (cost >= 1000.0f && rank (placed[group.front ()].mark->kind) >= 4))
+        continue;
+      set.push_back (best);
+
+      if (ring_used > 0) {
+        // The leader: from the edge of the marks to the nearest point of
+        // the label.
+        const float lx = std::clamp (cx, best[0], best[2]);
+        const float ly = std::clamp (cy, best[1], best[3]);
+        const float dx = lx - cx, dy = ly - cy;
+        const float n = std::max (1e-3f, std::hypot (dx, dy));
+        const float r = 0.5f * std::max (around[2] - around[0],
+                                         around[3] - around[1]) +
+                        1.5f;
+        dl.color (map_paper, 0.8f);
+        dl.line (cx + dx / n * r, cy + dy / n * r, lx, ly, 2.4f);
+        dl.color (map_ink, 0.75f);
+        dl.line (cx + dx / n * r, cy + dy / n * r, lx, ly, 0.8f);
+      }
+      // Set toward the marks: flush right when the label is to their
+      // left.
+      const bool right = best[2] <= around[0] + 0.5f;
+      float baseline = best[1] + 1.0f + 9.0f;
+      for (std::size_t i : group) {
+        const Mark& mark = *placed[i].mark;
+        const TextStyle words = words_of (mark);
+        if (list)
+          symbol (dl,
+                  mark,
+                  right ? best[2] - 5.5f : best[0] + 5.5f,
+                  baseline - 3.6f,
+                  0.62f);
+        if (right)
+          label (text,
+                 *font,
+                 best[2] - 1.0f - indent,
+                 baseline,
+                 mark.name,
+                 words,
+                 TextAlign::Right);
+        else
+          label (text, *font, best[0] + 1.0f + indent, baseline, mark.name,
+                 words);
+        baseline += line;
+      }
+    }
+
+    // The heights of tops, where they are clear of the names and marks.
+    for (const Top& top : tops) {
+      const Box box { top.x + 3.5f, top.y - 6.5f, top.x + 24.0f,
+                      top.y + 5.0f };
+      if (std::ranges::any_of (set, [&] (const Box& b) {
+            return meets (box, b);
+          }) ||
+          std::ranges::any_of (symbols, [&] (const Box& b) {
+            return meets (box, b);
+          }))
+        continue;
+      label (text, *font, top.x + 4.5f, top.y + 3.4f, top.words,
+             style (10.5f, height_ink));
+    }
 
     // Under the map: what sheet this is, a scale, and north.
     const float line_one = map_y + side + 24.0f;
