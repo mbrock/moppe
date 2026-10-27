@@ -45,11 +45,20 @@ namespace moppe::mov {
     return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
   }
 
+  // The built roads (terrain/roads.hh) stand over the height field's
+  // samples, and every body's footing reads them: the session attaches its
+  // world's roads to that world's surface. Ground read off any other
+  // surface (a test's, say) is the bare height field. Null detaches.
+  void attach_roads (const map::SurfaceGeometry& surface,
+                     const terrain::RoadSurface* roads);
+
+  // The ground's height under a point: the height field, and over a road's
+  // tread the road itself.
+  float ground_height (const map::SurfaceGeometry& surface, float x, float z);
+
   inline float
   surface_elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
-    return terrain::surface_elevation_value (
-      spatial::sample<terrain::surface_elevation> (
-        surface, moppe::position (Vec3 (x, 0.0f, z))));
+    return ground_height (surface, x, z);
   }
 
   // Whether a wheel touched the ground in the last step, and the mean

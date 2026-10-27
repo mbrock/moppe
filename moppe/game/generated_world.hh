@@ -130,6 +130,11 @@ namespace moppe::game {
       return m_roads;
     }
 
+    // The built roads exactly, for the renderer and for footing.
+    const terrain::RoadSurface& road_surface () const noexcept {
+      return m_road_surface;
+    }
+
     const ForestPlan& forest () const noexcept {
       return m_forest;
     }
@@ -143,6 +148,7 @@ namespace moppe::game {
     terrain::TrailNetwork m_trails;
     map::SurfaceReadings m_readings;
     terrain::RoadNetwork m_roads;
+    terrain::RoadSurface m_road_surface;
     ForestPlan m_forest;
   };
 }

@@ -31,9 +31,7 @@ namespace moppe::mov {
 
     float
     terrain_height (const map::SurfaceGeometry& surface, float x, float z) {
-      return terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (
-          surface, moppe::position (Vec3 (x, 0.0f, z))));
+      return ground_height (surface, x, z);
     }
 
     // The heightfield's own slope, by central differences over a span a

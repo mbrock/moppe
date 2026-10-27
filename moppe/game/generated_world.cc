@@ -321,5 +321,9 @@ namespace moppe::game {
         m_hydrology (std::move (hydrology)),
         m_water_surface (std::move (water)), m_trails (std::move (trails)),
         m_readings (std::move (readings)), m_roads (std::move (roads)),
+        m_road_surface (
+          m_roads,
+          m_surface.domain ().period_x ().numerical_value_in (u::m),
+          m_surface.domain ().period_z ().numerical_value_in (u::m)),
         m_forest (std::move (forest)) {}
 }

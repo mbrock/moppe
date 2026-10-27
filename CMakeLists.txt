@@ -350,6 +350,7 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/trail.cc
   moppe/terrain/roads.cc
   moppe/terrain/road_formation.cc
+  moppe/terrain/road_surface.cc
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
   moppe/terrain/geological.cc

@@ -60,6 +60,7 @@
 #include <moppe/game/world.hh>
 #include <moppe/game/world_loading.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/flood.hh>
@@ -622,6 +623,9 @@ namespace moppe {
         m_generated_world = std::move (completed);
         m_params = m_generated_world->params ();
         m_recipe = m_generated_world->recipe ();
+        // Before the session places anything: its bodies stand on the
+        // roads.
+        mov::attach_roads (surface (), &m_generated_world->road_surface ());
         m_session =
           std::make_unique<GameSession> (world (), surface (), m_bike_physics);
         retired_session.reset ();
@@ -2870,6 +2874,16 @@ namespace moppe {
       void upload_world_terrain (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.upload_world_terrain");
         m_terrain.setup (r, surface (), world (), m_graphics);
+        const terrain::RoadSurface& roads = generated_world ().road_surface ();
+        r.set_roads ({ .segment_rows = roads.segment_rows (),
+                       .index = roads.index (),
+                       .bucket_m = terrain::RoadSurface::bucket_m,
+                       .buckets_x = roads.buckets_x (),
+                       .buckets_z = roads.buckets_z (),
+                       .half_width = roads.formation ().half_width,
+                       .shoulder = roads.formation ().shoulder,
+                       .crown = roads.formation ().crown,
+                       .blend = terrain::RoadSurface::blend_m });
         // The typed water and ground presentations can upload only after
         // set_terrain has established the texture dimensions.
         upload_water (r,

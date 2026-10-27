@@ -257,7 +257,9 @@
   (defparameter *terrain*
     '((scale :vec4)                ; grid step x, height scale, step z, tex
       (fields :vec4)               ; have materials, have stand, 1 / period
-      (size :vec4))))              ; samples per side x, z
+      (size :vec4)                 ; samples per side x, z
+      (roads :vec4)                ; bucket metres, buckets x, z, have roads
+      (road-shape :vec4))))        ; half width, shoulder, crown, blend
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *chunk*
@@ -307,6 +309,110 @@
       (+ v11 (* (- 1.0 (swizzle f :y)) (- v10 v11))
          (* (- 1.0 (swizzle f :x)) (- v01 v11)))))
 
+;;; -- the roads ------------------------------------------------------------
+;;;
+;;; The built roads exactly (terrain/roads.hh's RoadSurface), finer than the
+;;; height field: two rows a segment, (ax az bx bz) and (height at a, at b,
+;;; distance along at a, 0 road or 1 footpath), found through a grid of
+;;; buckets that each list the segments passing near them.  The ground's
+;;; footing in physics reads the same segments, so what is drawn near the
+;;; camera is what the wheels meet.
+
+(define-shader-function road-seam (delta period)
+  (- delta (* period (floor (+ (/ delta period) 0.5)))))
+
+;;; The nearest segment to XZ within the bucket's reach, a built road before
+;;; any footpath: (rank, 0, 0, index), the index negative where there is
+;;; none, or where WANT says not to look.
+(define-shader-abstraction road-nearest (segments index xz want)
+  `(let* ((road-period (* (swizzle size :xy)
+                          (vec2 (swizzle scale :x) (swizzle scale :z))))
+          (road-p (- ,xz (* road-period (floor (/ ,xz road-period)))))
+          (road-bx (min (floor (/ (swizzle road-p :x) (swizzle roads :x)))
+                        (- (swizzle roads :y) 1.0)))
+          (road-bz (min (floor (/ (swizzle road-p :y) (swizzle roads :x)))
+                        (- (swizzle roads :z) 1.0)))
+          (road-slot (* (uint 2) (uint (+ (* road-bz (swizzle roads :y))
+                                          road-bx))))
+          (road-looking (and ,want (> (swizzle roads :w) 0.5)))
+          (road-offset (if road-looking
+                           (buffer-element ,index road-slot)
+                           (uint 0)))
+          (road-count (if road-looking
+                          (min (buffer-element ,index (+ road-slot (uint 1)))
+                               (uint 32))
+                          (uint 0))))
+     (counted-fold (k road-count best (vec4 1.0e6 0.0 0.0 -1.0))
+       (let* ((s (buffer-element ,index (+ road-offset k)))
+              (ends (buffer-element ,segments (* s (uint 2))))
+              (more (buffer-element ,segments (+ (* s (uint 2)) (uint 1))))
+              (pa (vec2 (road-seam (- (swizzle road-p :x) (swizzle ends :x))
+                                   (swizzle road-period :x))
+                        (road-seam (- (swizzle road-p :y) (swizzle ends :y))
+                                   (swizzle road-period :y))))
+              (dir (- (swizzle ends :zw) (swizzle ends :xy)))
+              (at-t (clamp (/ (dot pa dir) (max (dot dir dir) 1.0e-6)) 0.0 1.0))
+              (off (- pa (* dir at-t)))
+              (rank (+ (sqrt (dot off off)) (* 40.0 (swizzle more :w)))))
+         (if (< rank (swizzle best :x))
+             (vec4 rank 0.0 0.0 (float s))
+             best)))))
+
+(define-shader-struct road-point
+  (found :float)                   ; 1 on a road or footpath's reach, else 0
+  (footpath :float)                ; 1 a footpath, 0 a built road
+  (across :float)                  ; metres from the line, signed
+  (along :float)                   ; metres along the road
+  (centre :float)                  ; the line's height, metres
+  (slope :vec2))                   ; the tread's rise per metre over xz
+
+;;; The road at XZ, from the segment ROAD-NEAREST found.
+(define-shader-abstraction road-point (segments index xz found)
+  `(let* ((rp-period (* (swizzle size :xy)
+                        (vec2 (swizzle scale :x) (swizzle scale :z))))
+          (rp-p (- ,xz (* rp-period (floor (/ ,xz rp-period)))))
+          (rp-have (>= (swizzle ,found :w) 0.0))
+          (rp-s (uint (max (swizzle ,found :w) 0.0)))
+          (rp-ends (buffer-element ,segments (* rp-s (uint 2))))
+          (rp-more (buffer-element ,segments (+ (* rp-s (uint 2)) (uint 1))))
+          (rp-pa (vec2 (road-seam (- (swizzle rp-p :x) (swizzle rp-ends :x))
+                                  (swizzle rp-period :x))
+                       (road-seam (- (swizzle rp-p :y) (swizzle rp-ends :y))
+                                  (swizzle rp-period :y))))
+          (rp-dir (- (swizzle rp-ends :zw) (swizzle rp-ends :xy)))
+          (rp-length (sqrt (max (dot rp-dir rp-dir) 1.0e-6)))
+          (rp-unit (/ rp-dir rp-length))
+          (rp-t (clamp (/ (dot rp-pa rp-unit) rp-length) 0.0 1.0))
+          (rp-off (- rp-pa (* rp-dir rp-t)))
+          (rp-across (- (* (swizzle rp-unit :x) (swizzle rp-off :y))
+                        (* (swizzle rp-unit :y) (swizzle rp-off :x))))
+          (rp-grade (/ (- (swizzle rp-more :y) (swizzle rp-more :x))
+                       rp-length))
+          ;; Left of the way along, the side +across measures.
+          (rp-left (vec2 (* -1.0 (swizzle rp-unit :y)) (swizzle rp-unit :x)))
+          (rp-camber (* (swizzle road-shape :z)
+                        (- 1.0 (* 2.0 (step 0.0 rp-across)))
+                        (- 1.0 (step (swizzle road-shape :x)
+                                     (abs rp-across))))))
+     (make-road-point
+      :found (if rp-have 1.0 0.0)
+      :footpath (swizzle rp-more :w)
+      :across rp-across
+      :along (+ (swizzle rp-more :z) (* rp-t rp-length))
+      :centre (mix (swizzle rp-more :x) (swizzle rp-more :y) rp-t)
+      :slope (+ (* rp-unit rp-grade) (* rp-left rp-camber)))))
+
+;;; The crowned tread's height at a road point.
+(define-shader-function road-tread-height (centre across shape)
+  (- centre (* (swizzle shape :z) (min (abs across) (swizzle shape :x)))))
+
+;;; How much of the ground's height a built road takes over: all of it to
+;;; the shoulder's edge, blending back to the height field beyond.
+(define-shader-function road-hold (found footpath across shape)
+  (let* ((tread (+ (swizzle shape :x) (swizzle shape :y))))
+    (* found (- 1.0 footpath)
+       (- 1.0 (smoothstep tread (+ tread (swizzle shape :w)) (abs across))))))
+
 (define-shader terrain-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index))
@@ -319,6 +425,8 @@
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (terrain :uniform-block :binding 1 :members #.*terrain*)
                  (chunk :uniform-block :binding 2 :members #.*chunk*)
+                 (road-segments :storage-buffer :binding 3 :element :vec4)
+                 (road-index :storage-buffer :binding 4 :element :uint)
                  (heights :texture-2d :binding 0)
                  (normals :texture-2d :binding 1)
                  (linear-repeat :sampler :binding 1)))
@@ -329,7 +437,7 @@
                            (float (/ vertex-index row-length)))
                      stride)))
          (extent (swizzle size :xy))
-         (own-height (if (< stride 1.0)
+         (field-height (if (< stride 1.0)
                          (height-between heights grid extent)
                          (height-at heights grid extent)))
          (own-normal (normal-at normals linear-repeat grid extent))
@@ -350,6 +458,20 @@
                          extent))
          (ground-xz (+ (* grid (vec2 (swizzle scale :x) (swizzle scale :z)))
                        (swizzle offset :xz)))
+         ;; In the near field, finer than the height field's samples, the
+         ;; built roads stand at their own exact heights.
+         (road-found (road-nearest road-segments road-index ground-xz
+                                   (< stride 1.0)))
+         (road (road-point road-segments road-index ground-xz road-found))
+         (road-weight (road-hold (road-point-found road)
+                                 (road-point-footpath road)
+                                 (road-point-across road) road-shape))
+         (own-height (mix field-height
+                          (/ (road-tread-height (road-point-centre road)
+                                                (road-point-across road)
+                                                road-shape)
+                             (swizzle scale :y))
+                          road-weight))
          (from-camera (- ground-xz (swizzle camera-position :xz)))
          (morphing (* (step stride (- parent 0.001))
                       (step (swizzle morph :x) (- (swizzle morph :y) 0.001))))
@@ -808,6 +930,45 @@
      :gloss (max (max (* 0.30 snow) (* 0.22 swash (- 1.0 sunk)))
                  (* 0.45 bog-pool)))))
 
+;;; A gravel forest road seen from above: two wheel tracks worn smooth and
+;;; dark, loose stone thrown up between them and along the edges, the
+;;; shoulders going over to grass, and the edge a hand's breadth wide.
+;;; GROUND is what lies there otherwise, in display space.
+(define-shader-function road-albedo (ground across along half-width shoulder
+                                     micro meso edge-width)
+  (let* ((d (abs across))
+         (grain (swizzle micro :x))
+         (fleck (swizzle meso :x))
+         (pebble (swizzle micro :w))
+         (stone (mix (vec3 0.50 0.46 0.40) (vec3 0.64 0.60 0.53)
+                     (stone-tone pebble)))
+         ;; Gravel, not paving: a stone in three shows, and those dimly.
+         (loose (mix (* (vec3 0.45 0.41 0.35) (mix 0.94 1.04 grain)) stone
+                     (* 0.55 (stone-face pebble)
+                        (smoothstep 0.55 0.70 (stone-tone pebble)))))
+         (packed (* (mix (vec3 0.40 0.36 0.30) (vec3 0.47 0.42 0.35) fleck)
+                    (mix 0.92 1.04 grain)))
+         ;; The tracks wander a little along the road, as wheels do.
+         (lane (+ 1.2 (* 0.12 (sin (* along 0.11)))))
+         (track (* (- 1.0 (smoothstep 0.42 0.62 (abs (- d lane))))
+                   (smoothstep 0.25 0.60 (abs across))))
+         (carriage (mix loose packed (* 0.85 track)))
+         (verge (mix carriage ground
+                     (clamp (+ (* 1.6 (smoothstep half-width
+                                                  (+ half-width shoulder) d))
+                               (* 0.5 (- grain 0.5)))
+                            0.0 1.0)))
+         (edge (+ half-width shoulder (* 0.25 (- fleck 0.5)))))
+    (mix verge ground (smoothstep (- edge edge-width) (+ edge edge-width) d))))
+
+;;; A footpath: earth worn through whatever grows, frayed at its sides.
+(define-shader-function footpath-albedo (ground across micro meso edge-width)
+  (let* ((d (+ (abs across) (* 0.25 (- (swizzle meso :x) 0.5))))
+         (earth (* (mix (vec3 0.42 0.34 0.25) (vec3 0.50 0.41 0.30)
+                        (swizzle micro :x))
+                   1.0)))
+    (mix earth ground (smoothstep (- 0.7 edge-width) (+ 0.7 edge-width) d))))
+
 (define-shader terrain-fragment
     (:stage :fragment
      :inputs ((world :vec3 :location 0)
@@ -829,29 +990,59 @@
                  (shadow-map :depth-texture-2d :binding 8)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
+                 (road-segments :storage-buffer :binding 3 :element :vec4)
+                 (road-index :storage-buffer :binding 4 :element :uint)
                  (linear-repeat :sampler :binding 1)
                  (shadow-compare :sampler :binding 3)))
   (let* ((extent (swizzle size :xy))
+         (eye (swizzle camera-position :xyz))
+         (distance (sqrt (dot (- world eye) (- world eye))))
+         ;; The roads exactly, out to where a pixel spans their edge; past
+         ;; that the material sheets' trail lane carries them.
+         (road-reach (- 1.0 (smoothstep 450.0 650.0 distance)))
+         (road-found (road-nearest road-segments road-index
+                                   (swizzle world :xz) (> road-reach 0.0)))
+         (road (road-point road-segments road-index (swizzle world :xz)
+                           road-found))
+         (road-across (road-point-across road))
+         (road-built (* (road-point-found road)
+                        (- 1.0 (road-point-footpath road))))
+         (road-tread (+ (swizzle road-shape :x) (swizzle road-shape :y)))
+         ;; Where a road is drawn exactly, the coarse lane's soft fringe
+         ;; beside it gives way to what grows there.
+         (road-owns (* road-reach (road-point-found road)
+                       (- 1.0 (smoothstep (+ road-tread 3.0)
+                                          (+ road-tread 6.0)
+                                          (abs road-across)))))
+         (road-slope (road-point-slope road))
+         (road-normal (normalize (vec3 (* -1.0 (swizzle road-slope :x)) 1.0
+                                       (* -1.0 (swizzle road-slope :y)))))
          ;; Lit and classified from the full-resolution normal, never the
-         ;; lattice's, which changes with the level of detail.
-         (normal (normalize
-                  (unpack-normal
-                   (swizzle (sample normals linear-repeat
-                                    (+ field-uv (/ (vec2 0.5 0.5) extent)))
-                            :xy))))
+         ;; lattice's, which changes with the level of detail; over a
+         ;; road's tread, the road's own.
+         (field-normal (normalize
+                        (unpack-normal
+                         (swizzle (sample normals linear-repeat
+                                          (+ field-uv
+                                             (/ (vec2 0.5 0.5) extent)))
+                                  :xy))))
+         (road-flat (* road-reach
+                       (road-hold road-built 0.0 road-across road-shape)))
+         (normal (normalize (mix field-normal road-normal road-flat)))
          (have-fields (swizzle fields :x))
          (field-at (+ field-uv (/ (vec2 0.5 0.5) extent)))
          (land (mix (vec4 0.5 0.0 0.0 0.0)
                     (sample landscape linear-repeat field-at) have-fields))
-         (floor-fields (mix (vec4 1.0 (swizzle normal :y) 0.0 0.0)
-                            (sample ground linear-repeat field-at)
-                            have-fields))
+         (floor-sheet (mix (vec4 1.0 (swizzle normal :y) 0.0 0.0)
+                           (sample ground linear-repeat field-at)
+                           have-fields))
+         (floor-fields (vec4 (swizzle floor-sheet :xy)
+                             (* (swizzle floor-sheet :z) (- 1.0 road-owns))
+                             (swizzle floor-sheet :w)))
          (plants-here (* (sample plants linear-repeat field-at) have-fields))
          (more-here (* (sample more-plants linear-repeat field-at)
                        have-fields))
          (scars-here (* (sample scars linear-repeat field-at) have-fields))
-         (eye (swizzle camera-position :xyz))
-         (distance (sqrt (dot (- world eye) (- world eye))))
          (above-sea (- (swizzle world :y) (swizzle relief :x)))
          (rise (/ above-sea (max (swizzle relief :y) 1.0)))
          (stand (read-stand closure litter linear-repeat (swizzle world :xz)
@@ -875,12 +1066,28 @@
          (surface (ground-surface world normal land floor-fields rise
                                   above-sea stand plants-here more-here
                                   scars-here micro meso macro region))
-         (albedo (srgb (ground-surface-albedo surface)))
+         ;; An edge as sharp as a pixel's width on the ground allows.
+         (road-edge (max (* 0.75 footprint) 0.04))
+         (road-ground
+           (mix (ground-surface-albedo surface)
+                (road-albedo (ground-surface-albedo surface) road-across
+                             (road-point-along road) (swizzle road-shape :x)
+                             (swizzle road-shape :y) micro meso road-edge)
+                road-built))
+         (path-ground
+           (mix road-ground
+                (footpath-albedo road-ground road-across micro meso
+                                 road-edge)
+                (* (road-point-found road) (road-point-footpath road))))
+         (albedo (srgb (mix (ground-surface-albedo surface) path-ground
+                            road-reach)))
          ;; The relief tilts the normal within the surface: only the part
-         ;; of its slope that lies along the ground counts.
+         ;; of its slope that lies along the ground counts.  A road's
+         ;; packed tread has less of it.
          (slope (* (+ (* 0.65 (detail-slope meso *detail-meso*))
                       (* 0.35 (detail-slope micro *detail-micro*)))
-                   (ground-surface-relief surface)))
+                   (ground-surface-relief surface)
+                   (- 1.0 (* 0.6 road-flat))))
          (tilt (vec3 (swizzle slope :x) 0.0 (swizzle slope :y)))
          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
          (sun (swizzle sun-direction :xyz))

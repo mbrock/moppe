@@ -180,3 +180,46 @@ MOPPE_TEST (built_roads_hold_their_grade_and_meet_where_they_join) {
   MOPPE_CHECK (built.influence[50 * side + 70] > 0.99f);
   MOPPE_CHECK (built.influence[80 * side + 70] == 0.0f);
 }
+
+// The exact road surface is the crowned tread over a built road, the
+// field past its blend, and it is the same road across the torus's seam.
+MOPPE_TEST (road_surface_is_the_crowned_tread_and_the_field_beyond) {
+  RoadNetwork network;
+  // A road climbing east at 5% across the seam at x = 1000, and a footpath.
+  Road road { .kind = Road::Kind::Road };
+  for (float x = 960.0f; x <= 1040.0f; x += 4.0f) {
+    road.points.push_back ({ x, 300.0f });
+    road.heights.push_back (100.0f + 0.05f * (x - 960.0f));
+  }
+  Road path { .kind = Road::Kind::Footpath };
+  for (float z = 500.0f; z <= 560.0f; z += 4.0f) {
+    path.points.push_back ({ 200.0f, z });
+    path.heights.push_back (80.0f);
+  }
+  network.roads = { road, path };
+  const RoadFormation formation;
+  const RoadSurface surface (network, 1000.0f, 1000.0f, formation);
+  constexpr float field = 70.0f;
+
+  // On the line, past the seam: x = 1010 is x = 10.
+  MOPPE_CHECK_NEAR (surface.ground (10.0f, 300.0f, field), 102.5f, 1e-3f);
+  MOPPE_CHECK_NEAR (surface.ground (1010.0f, 300.0f, field), 102.5f, 1e-3f);
+  // Crowned: two metres off the line it lies a crown's slope lower, the
+  // same on either side.
+  const float off = 102.5f - 2.0f * formation.crown;
+  MOPPE_CHECK_NEAR (surface.ground (10.0f, 302.0f, field), off, 1e-3f);
+  MOPPE_CHECK_NEAR (surface.ground (10.0f, 298.0f, field), off, 1e-3f);
+  // Past the shoulder and the blend it is the field again.
+  const float beyond =
+    formation.half_width + formation.shoulder + RoadSurface::blend_m + 0.1f;
+  MOPPE_CHECK (surface.ground (10.0f, 300.0f + beyond, field) == field);
+  // The sample says where along and which way.
+  const RoadSample at = surface.nearest (990.0f, 301.0f);
+  MOPPE_CHECK (at.found && at.kind == Road::Kind::Road);
+  MOPPE_CHECK_NEAR (at.along, 30.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (std::fabs (at.across), 1.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (at.grade, 0.05f, 1e-4f);
+  // A footpath is found but leaves the ground alone.
+  MOPPE_CHECK (surface.nearest (200.5f, 530.0f).kind == Road::Kind::Footpath);
+  MOPPE_CHECK (surface.ground (200.5f, 530.0f, field) == field);
+}

@@ -427,6 +427,25 @@ namespace moppe {
         (void)include_forest;
       }
 
+      // The built roads exactly (terrain::RoadSurface), for the near ground:
+      // its segment rows and bucket index as RoadSurface lays them out, the
+      // bucket grid's size, and the tread's half width, shoulder, crown,
+      // and blend in metres. Empty spans clear them.
+      struct RoadSetup {
+        std::span<const std::array<float, 4>> segment_rows;
+        std::span<const std::uint32_t> index;
+        float bucket_m = 16.0f;
+        int buckets_x = 0;
+        int buckets_z = 0;
+        float half_width = 2.5f;
+        float shoulder = 0.75f;
+        float crown = 0.025f;
+        float blend = 1.5f;
+      };
+      virtual void set_roads (const RoadSetup& setup) {
+        (void)setup;
+      }
+
       // Stable tree individuals cross once when a finished world is activated.
       // The Metal backend retains compact records and expands reusable organs
       // through object/mesh stages; other backends may choose their own

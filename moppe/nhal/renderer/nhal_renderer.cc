@@ -676,6 +676,37 @@ namespace moppe::nhal {
         }
       }
 
+      void set_roads (const RoadSetup& setup) override {
+        for (Buffer* b : { &m_road_rows, &m_road_index })
+          if (*b)
+            m_device->destroy (*b), *b = {};
+        m_road_setup = setup;
+        m_road_setup.segment_rows = {};
+        m_road_setup.index = {};
+        if (setup.segment_rows.empty () || setup.index.empty () ||
+            setup.buckets_x <= 0 || setup.buckets_z <= 0)
+          return;
+        m_road_rows = m_device->create_buffer (
+          { .size = setup.segment_rows.size_bytes (), .label = "road segments" },
+          std::as_bytes (setup.segment_rows));
+        m_road_index = m_device->create_buffer (
+          { .size = setup.index.size_bytes (), .label = "road buckets" },
+          std::as_bytes (setup.index));
+      }
+
+      // The roads' buffers, or a stand-in where there are none: every
+      // binding the terrain declares must hold something.
+      void bind_roads () {
+        if (!m_no_roads) {
+          const std::array<float, 8> none {};
+          m_no_roads = m_device->create_buffer (
+            { .size = sizeof (none), .label = "no roads" },
+            std::as_bytes (std::span (none)));
+        }
+        m_device->set_buffer (3, m_road_rows ? m_road_rows : m_no_roads);
+        m_device->set_buffer (4, m_road_index ? m_road_index : m_no_roads);
+      }
+
       void set_boulders (const render::BoulderSetup& setup,
                          std::span<const render::BoulderInstance> instances)
         override {
@@ -1180,6 +1211,7 @@ namespace moppe::nhal {
         m_device->set_texture (11, m_scars ? m_scars : m_clear);
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
+        bind_roads ();
         m_chunks.assign (chunks, chunks + count);
         draw_chunks ();
       }
@@ -2258,6 +2290,11 @@ namespace moppe::nhal {
                            m_closure ? 1.0f : 0.0f, m_stand_inverse_period[0],
                            m_stand_inverse_period[1] };
         terrain.size = { float (p.width), float (p.height), 0, 0 };
+        terrain.roads = { m_road_setup.bucket_m, float (m_road_setup.buckets_x),
+                          float (m_road_setup.buckets_z),
+                          m_road_rows ? 1.0f : 0.0f };
+        terrain.road_shape = { m_road_setup.half_width, m_road_setup.shoulder,
+                               m_road_setup.crown, m_road_setup.blend };
         return terrain;
       }
 
@@ -2736,6 +2773,8 @@ namespace moppe::nhal {
 
       render::TerrainParams m_terrain_params {};
       bool m_have_terrain = false;
+      RoadSetup m_road_setup {};
+      Buffer m_road_rows, m_road_index, m_no_roads;
       Texture m_heights, m_normals, m_landscape, m_ground, m_plants,
         m_more_plants, m_scars;
       render::TexturePtr m_grass;

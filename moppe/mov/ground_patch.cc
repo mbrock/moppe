@@ -6,6 +6,25 @@
 #include <vector>
 
 namespace moppe::mov {
+  namespace {
+    const map::SurfaceGeometry* roads_surface = nullptr;
+    const terrain::RoadSurface* attached_roads = nullptr;
+  }
+
+  void attach_roads (const map::SurfaceGeometry& surface,
+                     const terrain::RoadSurface* roads) {
+    roads_surface = roads ? &surface : nullptr;
+    attached_roads = roads;
+  }
+
+  float ground_height (const map::SurfaceGeometry& surface, float x, float z) {
+    const float field = terrain::surface_elevation_value (
+      spatial::sample<terrain::surface_elevation> (
+        surface, moppe::position (Vec3 (x, 0.0f, z))));
+    return &surface == roads_surface ? attached_roads->ground (x, z, field)
+                                     : field;
+  }
+
   GroundPatch::GroundPatch (const map::SurfaceGeometry& surface, Params params)
       : m_surface (surface), m_params (params),
         m_dx (0.5f * surface.domain ().spacing_x ().numerical_value_in (u::m)),

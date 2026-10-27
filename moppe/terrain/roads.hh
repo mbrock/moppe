@@ -5,6 +5,7 @@
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -147,6 +148,85 @@ namespace moppe::terrain {
               const FloodField& flood,
               const DrainageGraph& drainage,
               const RoadFormation& parameters = {});
+
+  // What the nearest road makes of a point: how far it lies from the line
+  // (signed, positive to the left going along), how far along the road,
+  // the height of the line there, and the line's rise per metre along.
+  struct RoadSample {
+    bool found = false;
+    Road::Kind kind = Road::Kind::Road;
+    float across = 0.0f;
+    float along = 0.0f;
+    float centre_m = 0.0f;
+    float grade = 0.0f;
+    // The line's direction across the ground, a unit vector.
+    float direction_x = 1.0f;
+    float direction_z = 0.0f;
+  };
+
+  // The built roads exactly, finer than the height field's samples: the
+  // authority the renderer's near ground and every body's footing read, so
+  // that what is drawn is what is driven on. Over a built road's tread the
+  // ground is the crowned carriageway; it blends back into the height
+  // field over `blend` metres past the shoulder. Footpaths are worn into
+  // the ground's colour, not built, and leave its height alone.
+  class RoadSurface {
+  public:
+    // Segments are found by a grid of square buckets, each listing every
+    // segment that passes within `reach` metres of it.
+    static constexpr float bucket_m = 16.0f;
+    static constexpr float reach_m = 10.0f;
+    static constexpr float blend_m = 1.5f;
+
+    RoadSurface () = default;
+    RoadSurface (const RoadNetwork& network,
+                 float period_x,
+                 float period_z,
+                 const RoadFormation& formation = {});
+
+    bool empty () const noexcept {
+      return m_segment_count == 0;
+    }
+
+    const RoadFormation& formation () const noexcept {
+      return m_formation;
+    }
+
+    RoadSample nearest (float x_m, float z_m) const;
+
+    // The ground's height at a point, given the height field's there.
+    float ground (float x_m, float z_m, float field_m) const;
+
+    // As the renderer takes them: two rows a segment, (ax, az, bx, bz)
+    // and (height at a, at b, distance along at a, 0 road or 1
+    // footpath); and per bucket, row by row, the offset into the entries
+    // (which follow the buckets) and their count, then the entries.
+    std::span<const std::array<float, 4>> segment_rows () const noexcept {
+      return m_rows;
+    }
+
+    std::span<const std::uint32_t> index () const noexcept {
+      return m_index;
+    }
+
+    int buckets_x () const noexcept {
+      return m_buckets_x;
+    }
+
+    int buckets_z () const noexcept {
+      return m_buckets_z;
+    }
+
+  private:
+    RoadFormation m_formation;
+    float m_period_x = 0.0f;
+    float m_period_z = 0.0f;
+    int m_buckets_x = 0;
+    int m_buckets_z = 0;
+    std::size_t m_segment_count = 0;
+    std::vector<std::array<float, 4>> m_rows;
+    std::vector<std::uint32_t> m_index;
+  };
 
   // Plans the network over one period of the world. `home_base` is the
   // trail's (the trailhead); `river_area` the least catchment drawn as a
