@@ -42,8 +42,9 @@ namespace moppe::game {
     // (docs/determinism.md); earlier caches hold their platform's own.
     // Version 13 reconstructs the full hillslope gradient before applying the
     // nonlinear transport law. Version 12 used one cardinal component.
+    // Version 23 builds the roads into the ground and keeps their profiles.
     // Version 22 keeps the planned roads (terrain/roads.hh).
-    constexpr std::uint32_t CACHE_VERSION = 22;
+    constexpr std::uint32_t CACHE_VERSION = 23;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
@@ -578,6 +579,7 @@ namespace moppe::game {
         output.scalar (road.age_years);
         output.scalar (road.abandoned_years_ago);
         output.vector<terrain::RoadPoint> (road.points);
+        output.vector<float> (road.heights);
       }
       output.scalar (static_cast<std::uint64_t> (roads.sightlines.size ()));
       for (const auto& [a, b] : roads.sightlines) {
@@ -614,7 +616,8 @@ namespace moppe::game {
             kind > static_cast<std::uint32_t> (terrain::Road::Kind::Footpath) ||
             !input.scalar (road.traffic) || !input.scalar (road.age_years) ||
             !input.scalar (road.abandoned_years_ago) ||
-            !input.vector (road.points, cells))
+            !input.vector (road.points, cells) ||
+            !input.vector (road.heights, cells))
           return false;
         road.kind = static_cast<terrain::Road::Kind> (kind);
       }

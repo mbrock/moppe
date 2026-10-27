@@ -722,6 +722,162 @@ namespace moppe::terrain {
               std::round (0.9f * place.founded_years_ago))
           : 0.0f;
     }
+
+    float wrapped (float delta, float period) {
+      return delta - period * std::round (delta / period);
+    }
+
+    // The polyline again at about `step` metres between points, its ends
+    // kept.
+    std::vector<RoadPoint> resample (const std::vector<RoadPoint>& line,
+                                     float step) {
+      float length = 0.0f;
+      for (std::size_t i = 1; i < line.size (); ++i)
+        length += std::hypot (line[i].x_m - line[i - 1].x_m,
+                              line[i].z_m - line[i - 1].z_m);
+      const int count =
+        std::max (1, static_cast<int> (std::ceil (length / step)));
+      const float spacing = length / static_cast<float> (count);
+      std::vector<RoadPoint> result { line.front () };
+      std::size_t segment = 1;
+      float segment_start = 0.0f;
+      for (int k = 1; k < count; ++k) {
+        const float at = spacing * static_cast<float> (k);
+        float segment_length = 0.0f;
+        while (segment < line.size ()) {
+          segment_length =
+            std::hypot (line[segment].x_m - line[segment - 1].x_m,
+                        line[segment].z_m - line[segment - 1].z_m);
+          if (segment_start + segment_length >= at)
+            break;
+          segment_start += segment_length;
+          ++segment;
+        }
+        if (segment >= line.size ())
+          break;
+        const float t =
+          segment_length > 0.0f ? (at - segment_start) / segment_length : 0.0f;
+        const RoadPoint a = line[segment - 1];
+        const RoadPoint b = line[segment];
+        result.push_back (
+          { a.x_m + (b.x_m - a.x_m) * t, a.z_m + (b.z_m - a.z_m) * t });
+      }
+      result.push_back (line.back ());
+      return result;
+    }
+
+    // Eases the lattice's turns into curves: each point moves to the mean
+    // of its neighbours within `radius`, the window narrowing toward the
+    // ends, which stay put.
+    template <typename Passable>
+    void ease (std::vector<RoadPoint>& line,
+               int radius,
+               int passes,
+               const Passable& passable) {
+      const int n = static_cast<int> (line.size ());
+      for (int pass = 0; pass < passes; ++pass) {
+        std::vector<RoadPoint> eased = line;
+        for (int i = 1; i + 1 < n; ++i) {
+          const int r = std::min ({ radius, i, n - 1 - i });
+          float x = 0.0f, z = 0.0f;
+          for (int j = i - r; j <= i + r; ++j) {
+            x += line[static_cast<std::size_t> (j)].x_m;
+            z += line[static_cast<std::size_t> (j)].z_m;
+          }
+          const RoadPoint point { x / (2 * r + 1), z / (2 * r + 1) };
+          // A curve may not cut a corner into water or mire.
+          if (passable (point))
+            eased[static_cast<std::size_t> (i)] = point;
+        }
+        line = std::move (eased);
+      }
+    }
+
+    // The nearest point to `at` on an earlier road, across the seam, and
+    // how far it lies.
+    std::pair<RoadPoint, float> nearest_on (const Road& road,
+                                            RoadPoint at,
+                                            float period_x,
+                                            float period_z) {
+      RoadPoint best = at;
+      float best_distance = infinite;
+      for (std::size_t i = 1; i < road.points.size (); ++i) {
+        const float ax = wrapped (road.points[i - 1].x_m - at.x_m, period_x);
+        const float az = wrapped (road.points[i - 1].z_m - at.z_m, period_z);
+        const float dx = road.points[i].x_m - road.points[i - 1].x_m;
+        const float dz = road.points[i].z_m - road.points[i - 1].z_m;
+        const float length2 = dx * dx + dz * dz;
+        const float t =
+          length2 > 0.0f
+            ? std::clamp (-(ax * dx + az * dz) / length2, 0.0f, 1.0f)
+            : 0.0f;
+        const float px = ax + dx * t;
+        const float pz = az + dz * t;
+        const float distance = std::hypot (px, pz);
+        if (distance < best_distance) {
+          best_distance = distance;
+          best = { at.x_m + px, at.z_m + pz };
+        }
+      }
+      return { best, best_distance };
+    }
+
+    // Moves a line's end onto `target`, carrying the first stretch of the
+    // line with it and less the further from the end.
+    void shift_end (std::vector<RoadPoint>& line, bool back, RoadPoint target) {
+      constexpr float reach = 40.0f;
+      const RoadPoint end = back ? line.back () : line.front ();
+      const float sx = target.x_m - end.x_m;
+      const float sz = target.z_m - end.z_m;
+      float along = 0.0f;
+      const std::size_t n = line.size ();
+      for (std::size_t k = 0; k < n; ++k) {
+        RoadPoint& point = line[back ? n - 1 - k : k];
+        if (k > 0) {
+          const RoadPoint& previous = line[back ? n - k : k - 1];
+          along +=
+            std::hypot (point.x_m - previous.x_m, point.z_m - previous.z_m);
+        }
+        if (along >= reach)
+          break;
+        const float t = 1.0f - along / reach;
+        const float weight = t * t * (3.0f - 2.0f * t);
+        point.x_m += sx * weight;
+        point.z_m += sz * weight;
+      }
+    }
+
+    // The planned lines as built: eased into curves at four metres between
+    // points, and each end that leaves an earlier way moved onto it.
+    void finish_lines (const Lattice& lattice, std::vector<Road>& roads) {
+      const float period_x = lattice.width * lattice.spacing_x;
+      const float period_z = lattice.height * lattice.spacing_z;
+      for (std::size_t r = 0; r < roads.size (); ++r) {
+        const bool built = roads[r].kind == Road::Kind::Road;
+        std::vector<RoadPoint> line = resample (roads[r].points, 4.0f);
+        ease (line, 5, 3, [&] (RoadPoint point) {
+          const std::size_t node = node_at (lattice, point.x_m, point.z_m);
+          return built ? lattice.water[node] < Lattice::Deep &&
+                           lattice.mire[node] <= 0.5f
+                       : lattice.water[node] == Lattice::Dry;
+        });
+        for (const bool back : { false, true }) {
+          const RoadPoint end = back ? line.back () : line.front ();
+          RoadPoint best = end;
+          float best_distance = 30.0f;
+          for (std::size_t earlier = 0; earlier < r; ++earlier) {
+            const auto [point, distance] =
+              nearest_on (roads[earlier], end, period_x, period_z);
+            if (distance < best_distance) {
+              best_distance = distance;
+              best = point;
+            }
+          }
+          shift_end (line, back, best);
+        }
+        roads[r].points = std::move (line);
+      }
+    }
   }
 
   RoadNetwork plan_roads (const TerrainDomain& domain,
@@ -993,6 +1149,7 @@ namespace moppe::terrain {
       roads[road].abandoned_years_ago =
         lived_on[road] || !(last_used[road] < infinite) ? 0.0f
                                                         : last_used[road];
+    finish_lines (lattice, planner.network.roads);
     return std::move (planner.network);
   }
 }

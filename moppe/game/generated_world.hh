@@ -57,6 +57,18 @@ namespace moppe::game {
                                          const terrain::TrailNetwork& trails,
                                          const map::SurfaceReadings& readings);
 
+  // Plans the roads and builds them into the ground, then reads the water
+  // and the surface again over the built ground, the roads' treads joining
+  // the trail's in the readings (so the forest stands back from them and
+  // the ground is packed dirt on them). Everything a world is assembled
+  // from passes through it.
+  terrain::RoadNetwork lay_world_roads (map::SurfaceGeometry& geometry,
+                                        const terrain::WorldRecipe& recipe,
+                                        Hydrology& hydrology,
+                                        const terrain::TrailNetwork& trails,
+                                        terrain::WaterSheets& water,
+                                        map::SurfaceReadings& readings);
+
   // A generated world's durable, renderer-free artifacts. It is assembled
   // from finished parts, so holding one means the world is complete; the
   // build itself lives in world_loading.

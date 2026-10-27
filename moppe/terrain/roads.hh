@@ -62,6 +62,9 @@ namespace moppe::terrain {
     // Unwrapped: each point follows the last across the torus's seam, so
     // the line may run beyond the period and is to be read modulo it.
     std::vector<RoadPoint> points;
+    // The height of the finished tread's centre at each point, metres;
+    // empty until form_roads solves it.
+    std::vector<float> heights;
     // How many of the journeys between every pair of places go this way
     // along the network.
     std::uint32_t traffic = 0;
@@ -93,6 +96,57 @@ namespace moppe::terrain {
     std::span<const float> mire;
     std::span<const float> wetness;
   };
+
+  // How a road is built into the ground. The tread is a crowned
+  // carriageway with shoulders; beyond it the ground is cut back or filled
+  // out at the batters' slopes until they meet it. Lengths are metres and
+  // slopes rise over run.
+  struct RoadFormation {
+    float half_width = 2.5f;
+    float shoulder = 0.75f;
+    float crown = 0.025f;
+    float cut_slope = 1.0f;
+    float fill_slope = 0.6f;
+    // The steepest a cart road climbs, and the length over which a change
+    // of grade is eased (its vertical curves).
+    float maximum_grade = 0.10f;
+    float vertical_curve = 30.0f;
+    // The most the tread's centre may lie under or over the natural ground;
+    // where the land asks for more, the road takes a steeper grade instead.
+    float maximum_cut = 4.0f;
+    float maximum_fill = 2.5f;
+    // A road crosses any watercourse draining more than this, and any
+    // standing water, at the ground (a ford or a drift), so that no
+    // embankment dams it.
+    float culvert_area_m2 = 20000.0f;
+    // A footpath's worn width; footpaths are not built, only trodden.
+    float footpath_half_width = 0.8f;
+  };
+
+  struct RoadFormationResult {
+    std::vector<SurfaceElevation> heights;
+    // Metres of ground laid down (positive) or cut away (negative).
+    std::vector<float> change_m;
+    // How much of each cell the tread covers, 0 to 1.
+    std::vector<float> influence;
+    double cut_m3 = 0.0;
+    double fill_m3 = 0.0;
+    // Points where a cart road's grade exceeds maximum_grade, of all its
+    // points.
+    std::size_t steep_points = 0;
+    std::size_t points = 0;
+  };
+
+  // Solves each road's profile into network.roads[i].heights and builds
+  // the roads into the ground. Roads are taken in order, so each branch
+  // meets the road it leaves at that road's own height.
+  [[nodiscard]] RoadFormationResult
+  form_roads (const TerrainDomain& domain,
+              std::span<const SurfaceElevation> elevations,
+              RoadNetwork& network,
+              const FloodField& flood,
+              const DrainageGraph& drainage,
+              const RoadFormation& parameters = {});
 
   // Plans the network over one period of the world. `home_base` is the
   // trail's (the trailhead); `river_area` the least catchment drawn as a

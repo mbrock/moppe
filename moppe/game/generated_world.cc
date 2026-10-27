@@ -211,6 +211,37 @@ namespace moppe::game {
       recipe.seed ().value ^ 0x5d1c0a7bU);
   }
 
+  terrain::RoadNetwork lay_world_roads (map::SurfaceGeometry& geometry,
+                                        const terrain::WorldRecipe& recipe,
+                                        Hydrology& hydrology,
+                                        const terrain::TrailNetwork& trails,
+                                        terrain::WaterSheets& water,
+                                        map::SurfaceReadings& readings) {
+    MOPPE_PROFILE_ZONE ("game::lay_world_roads");
+    terrain::RoadNetwork roads =
+      plan_world_roads (geometry, recipe, hydrology, trails, readings);
+    const terrain::RoadFormationResult built =
+      map::form_terrain_roads (geometry,
+                               roads,
+                               std::get<terrain::FloodField> (hydrology),
+                               std::get<terrain::DrainageGraph> (hydrology));
+    std::cerr << "moppe: roads: " << roads.places.size () << " places, "
+              << roads.roads.size () << " ways, " << built.cut_m3 << " m3 cut, "
+              << built.fill_m3 << " m3 filled, " << built.steep_points << " of "
+              << built.points << " points steeper than the road's grade"
+              << std::endl;
+    map::rebuild_geometry (geometry);
+    hydrology = analyze_hydrology (geometry, recipe);
+    terrain::TrailUseMap use = trails.use;
+    auto& tread = spatial::get<map::trail_influence> (use);
+    for (std::size_t cell = 0; cell < tread.size (); ++cell)
+      tread[cell] = std::max (
+        tread[cell], built.influence[cell] * map::trail_influence[one]);
+    std::tie (water, readings) =
+      analyze_surface (geometry, recipe, hydrology, use);
+    return roads;
+  }
+
   GeneratedWorld::GeneratedWorld (WorldParams params,
                                   terrain::WorldRecipe recipe,
                                   map::SurfaceGeometry surface,

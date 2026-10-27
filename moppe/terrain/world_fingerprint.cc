@@ -219,8 +219,8 @@ int main (int argc, char** argv) {
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
     cost ("water and readings");
-    terrain::RoadNetwork roads =
-      game::plan_world_roads (surface, recipe, hydrology, trails, readings);
+    terrain::RoadNetwork roads = game::lay_world_roads (
+      surface, recipe, hydrology, trails, water, readings);
     cost ("roads");
     game::ForestPlan forest =
       game::plan_global_forest (surface, readings, water, seed ^ 0xa34c91e5U);

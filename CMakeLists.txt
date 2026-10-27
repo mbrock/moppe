@@ -349,6 +349,7 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/stream_power_evolution.cc
   moppe/terrain/trail.cc
   moppe/terrain/roads.cc
+  moppe/terrain/road_formation.cc
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
   moppe/terrain/geological.cc

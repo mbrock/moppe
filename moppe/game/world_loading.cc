@@ -340,11 +340,8 @@ namespace moppe::game {
       state.report ("Laying out the roads",
                     "Joining the trailhead, the shore, the lakes, and the "
                     "sanctuaries");
-      terrain::RoadNetwork roads =
-        plan_world_roads (surface, recipe, hydrology, trails, readings);
-      std::cerr << "moppe: roads: " << roads.places.size () << " places, "
-                << roads.roads.size () << " ways, " << roads.sightlines.size ()
-                << " sightlines" << std::endl;
+      terrain::RoadNetwork roads = lay_world_roads (
+        surface, recipe, hydrology, trails, water, readings);
 
       state.report ("Planting the forests",
                     "Choosing the persistent trees across the landscape");

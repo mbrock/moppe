@@ -7,6 +7,7 @@
 #include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/moisture.hh>
+#include <moppe/terrain/roads.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 #include <moppe/terrain/trail.hh>
 
@@ -131,6 +132,16 @@ namespace moppe::map {
   form_river_channels (SurfaceGeometry& surface,
                        meters_t water_datum,
                        const terrain::ChannelFormation& parameters = {});
+
+  // Build the planned roads into the surface in place (terrain/roads.hh),
+  // solving their profiles into `roads`. What the roads cut and fill joins
+  // the surface's eroded and deposited material.
+  terrain::RoadFormationResult
+  form_terrain_roads (SurfaceGeometry& surface,
+                      terrain::RoadNetwork& roads,
+                      const terrain::FloodField& flood,
+                      const terrain::DrainageGraph& drainage,
+                      const terrain::RoadFormation& parameters = {});
 
   // Form the canonical built circuit in place and return its useful network.
   terrain::TrailNetwork

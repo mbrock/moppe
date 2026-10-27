@@ -53,8 +53,8 @@ namespace {
     trails.earthwork_delta_m.resize (surface.domain ().size (), 0.0f);
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
-    terrain::RoadNetwork roads =
-      game::plan_world_roads (surface, recipe, hydrology, trails, readings);
+    terrain::RoadNetwork roads = game::lay_world_roads (
+      surface, recipe, hydrology, trails, water, readings);
     game::ForestPlan forest = game::plan_global_forest (
       surface, readings, water, recipe.seed ().value ^ 0xa34c91e5U);
     return std::make_unique<game::GeneratedWorld> (params,

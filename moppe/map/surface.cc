@@ -291,6 +291,46 @@ namespace moppe::map {
     return result;
   }
 
+  terrain::RoadFormationResult
+  form_terrain_roads (SurfaceGeometry& surface,
+                      terrain::RoadNetwork& roads,
+                      const terrain::FloodField& flood,
+                      const terrain::DrainageGraph& drainage,
+                      const terrain::RoadFormation& parameters) {
+    MOPPE_PROFILE_ZONE ("terrain.form_roads");
+    terrain::RoadFormationResult result = terrain::form_roads (
+      surface.domain (),
+      spatial::get<terrain::surface_elevation> (surface),
+      roads,
+      flood,
+      drainage,
+      parameters);
+    const terrain::TerrainDomain& domain = surface.domain ();
+    for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+      const std::size_t offset = domain.offset (site);
+      const float change = result.change_m[offset];
+      if (change == 0.0f)
+        continue;
+      const auto row = surface[site];
+      spatial::get<terrain::surface_elevation> (row) = result.heights[offset];
+      // A cutting bares what lay under the cover; an embankment is made
+      // ground.
+      auto& sediment = spatial::get<terrain::sediment_thickness> (row);
+      if (change > 0.0f) {
+        sediment += change * terrain::sediment_thickness[u::m];
+        spatial::get<deposited_surface_material> (row) +=
+          change * deposited_surface_material[u::m];
+      } else {
+        sediment =
+          std::max (sediment + change * terrain::sediment_thickness[u::m],
+                    0.0f * terrain::sediment_thickness[u::m]);
+        spatial::get<eroded_surface_material> (row) +=
+          -change * eroded_surface_material[u::m];
+      }
+    }
+    return result;
+  }
+
   terrain::TrailNetwork
   form_terrain_trails (SurfaceGeometry& surface,
                        const terrain::TrailFormation& parameters) {
