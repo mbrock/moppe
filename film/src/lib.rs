@@ -17,7 +17,7 @@ include_media_dir!(pub struct MoppeFilmMedia, "media");
 pub const WIDTH: usize = 1080;
 pub const HEIGHT: usize = 1920;
 
-const FONT: &str = "Iosevka Aile";
+const FONT: &str = "Geomini";
 const WEIGHT: u16 = 400;
 const INK: &str = "#fbf7ee";
 const SUN: &str = "#ffe2b0";

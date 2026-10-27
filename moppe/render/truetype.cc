@@ -1,6 +1,7 @@
 #include <moppe/render/truetype.hh>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -182,9 +183,11 @@ namespace moppe {
       if (!best_rank)
         throw std::runtime_error ("TrueType font has no Unicode cmap");
 
+      read_gpos_kerning ();
       // The legacy kern table: horizontal format-0 subtables only.
       const Table kern = table ("kern");
-      if (kern.length >= 4 && u16 (kern.offset) == 0) {
+      if (m_pair_subtables.empty () && kern.length >= 4 &&
+          u16 (kern.offset) == 0) {
         std::size_t at = kern.offset + 4;
         const int count = u16 (kern.offset + 2);
         for (int i = 0; i < count; ++i) {
@@ -261,7 +264,144 @@ namespace moppe {
                   2 * (glyph - m_horizontal_metrics));
     }
 
+    // The kern feature's lookups (any script's: the game sets Latin), their
+    // pair-adjustment subtables, through extension lookups too.
+    void TrueTypeFont::read_gpos_kerning () {
+      const Table gpos = table ("GPOS");
+      if (gpos.length < 10 || u16 (gpos.offset) != 1)
+        return;
+      const std::size_t features = gpos.offset + u16 (gpos.offset + 6);
+      const std::size_t lookups = gpos.offset + u16 (gpos.offset + 8);
+      std::vector<int> wanted;
+      for (int f = 0, n = u16 (features); f < n; ++f) {
+        const std::size_t record = features + 2 + 6 * std::size_t (f);
+        if (u32 (record) != tag_value ("kern"))
+          continue;
+        const std::size_t feature = features + u16 (record + 4);
+        for (int i = 0, m = u16 (feature + 2); i < m; ++i)
+          wanted.push_back (u16 (feature + 4 + 2 * std::size_t (i)));
+      }
+      std::ranges::sort (wanted);
+      const auto [last, end] = std::ranges::unique (wanted);
+      wanted.erase (last, end);
+      for (const int index : wanted) {
+        if (index >= u16 (lookups))
+          continue;
+        const std::size_t lookup =
+          lookups + u16 (lookups + 2 + 2 * std::size_t (index));
+        const int type = u16 (lookup);
+        for (int i = 0, n = u16 (lookup + 4); i < n; ++i) {
+          std::size_t subtable =
+            lookup + u16 (lookup + 6 + 2 * std::size_t (i));
+          if (type == 9) {
+            if (u16 (subtable + 2) != 2)
+              continue;
+            subtable += u32 (subtable + 4);
+          } else if (type != 2) {
+            continue;
+          }
+          m_pair_subtables.push_back (std::uint32_t (subtable));
+        }
+      }
+    }
+
+    int TrueTypeFont::coverage_index (std::size_t coverage,
+                                      std::uint16_t glyph) const {
+      const int format = u16 (coverage);
+      const int count = u16 (coverage + 2);
+      for (int i = 0; i < count; ++i) {
+        if (format == 1) {
+          if (u16 (coverage + 4 + 2 * std::size_t (i)) == glyph)
+            return i;
+        } else if (format == 2) {
+          const std::size_t range = coverage + 4 + 6 * std::size_t (i);
+          if (glyph >= u16 (range) && glyph <= u16 (range + 2))
+            return u16 (range + 4) + glyph - u16 (range);
+        }
+      }
+      return -1;
+    }
+
+    int TrueTypeFont::glyph_class (std::size_t class_def,
+                                   std::uint16_t glyph) const {
+      const int format = u16 (class_def);
+      if (format == 1) {
+        const int first = u16 (class_def + 2);
+        const int count = u16 (class_def + 4);
+        return glyph >= first && glyph < first + count
+                 ? u16 (class_def + 6 + 2 * std::size_t (glyph - first))
+                 : 0;
+      }
+      if (format == 2)
+        for (int i = 0, n = u16 (class_def + 2); i < n; ++i) {
+          const std::size_t range = class_def + 4 + 6 * std::size_t (i);
+          if (glyph >= u16 (range) && glyph <= u16 (range + 2))
+            return u16 (range + 4);
+        }
+      return 0;
+    }
+
+    // One pair-adjustment subtable's advance for the first glyph, and
+    // whether it covers the pair at all.
+    int TrueTypeFont::pair_adjustment (std::size_t subtable,
+                                       std::uint16_t left,
+                                       std::uint16_t right,
+                                       bool& found) const {
+      found = false;
+      const int format = u16 (subtable);
+      const int covered = coverage_index (subtable + u16 (subtable + 2), left);
+      if (covered < 0)
+        return 0;
+      const int first_format = u16 (subtable + 4);
+      const int second_format = u16 (subtable + 6);
+      const auto record_size = [] (int value_format) {
+        return 2 * std::popcount (unsigned (value_format & 0xFF));
+      };
+      // The x advance's place in the first value record, if it has one.
+      const bool advances = first_format & 0x0004;
+      const int advance_at = record_size (first_format & 0x0003);
+      const std::size_t pair_size =
+        record_size (first_format) + record_size (second_format);
+      if (format == 1) {
+        if (covered >= u16 (subtable + 8))
+          return 0;
+        const std::size_t set =
+          subtable + u16 (subtable + 10 + 2 * std::size_t (covered));
+        for (int i = 0, n = u16 (set); i < n; ++i) {
+          const std::size_t record =
+            set + 2 + (2 + pair_size) * std::size_t (i);
+          if (u16 (record) == right) {
+            found = true;
+            return advances ? i16 (record + 2 + advance_at) : 0;
+          }
+        }
+        return 0;
+      }
+      if (format == 2) {
+        const int first_class =
+          glyph_class (subtable + u16 (subtable + 8), left);
+        const int second_class =
+          glyph_class (subtable + u16 (subtable + 10), right);
+        const int first_count = u16 (subtable + 12);
+        const int second_count = u16 (subtable + 14);
+        if (first_class >= first_count || second_class >= second_count)
+          return 0;
+        found = true;
+        const std::size_t record =
+          subtable + 16 +
+          pair_size * (std::size_t (first_class) * second_count + second_class);
+        return advances ? i16 (record + advance_at) : 0;
+      }
+      return 0;
+    }
+
     int TrueTypeFont::kerning (std::uint16_t left, std::uint16_t right) const {
+      for (const std::uint32_t subtable : m_pair_subtables) {
+        bool found = false;
+        const int adjustment = pair_adjustment (subtable, left, right, found);
+        if (found)
+          return adjustment;
+      }
       const auto found =
         m_kerning.find ((std::uint32_t (left) << 16) | std::uint32_t (right));
       return found == m_kerning.end () ? 0 : found->second;

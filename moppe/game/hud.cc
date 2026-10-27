@@ -582,7 +582,7 @@ namespace moppe {
 
     void Hud::load (render::Renderer& renderer) {
       try {
-        m_font = render::Font::load (renderer, "fonts/IosevkaAile-Regular.ttf");
+        m_font = render::Font::load (renderer, "fonts/Geomini-Regular.ttf");
       } catch (const std::exception& error) {
         std::cerr << "moppe: HUD font unavailable: " << error.what () << '\n';
         m_font.reset ();

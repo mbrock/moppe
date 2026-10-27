@@ -28,7 +28,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FONT = os.path.join(ROOT, "fonts", "IosevkaAile-Regular.ttf")
+FONT = os.path.join(ROOT, "fonts", "Geomini-Regular.ttf")
 WIDTH, HEIGHT, FPS = 1080, 1920, 60
 
 WORLD = "world seed 123 resolution 2048 profile play\n"

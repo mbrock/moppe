@@ -32,4 +32,4 @@ recorded at.
 
 The film is `src/lib.rs`: the shots (`SHOTS`, with the hour each begins
 at, which must agree with `record`), the day's arc, the title, and the
-end card. The face is the game's Iosevka Aile (`media/`, SIL OFL).
+end card. The face is the game's Geomini (`media/`, SIL OFL).

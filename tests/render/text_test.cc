@@ -10,14 +10,14 @@ using render::Font;
 using render::TrueTypeFont;
 
 namespace {
-  const TrueTypeFont& iosevka () {
+  const TrueTypeFont& geomini () {
     static const TrueTypeFont face = TrueTypeFont::load (
-      std::string (MOPPE_TEST_SOURCE_DIR) + "/fonts/IosevkaAile-Regular.ttf");
+      std::string (MOPPE_TEST_SOURCE_DIR) + "/fonts/Geomini-Regular.ttf");
     return face;
   }
 
-  const Font& iosevka_font () {
-    static const Font font (iosevka ());
+  const Font& geomini_font () {
+    static const Font font (geomini ());
     return font;
   }
 
@@ -34,21 +34,34 @@ namespace {
 }
 
 MOPPE_TEST (truetype_reads_the_bundled_face_metrics) {
-  const TrueTypeFont& face = iosevka ();
+  const TrueTypeFont& face = geomini ();
   MOPPE_CHECK (face.units_per_em () == 1000);
-  MOPPE_CHECK (face.cap_height () == 735);
-  MOPPE_CHECK (face.x_height () == 520);
-  MOPPE_CHECK (face.ascender () == 965);
-  MOPPE_CHECK (face.descender () == -215);
-  MOPPE_CHECK (face.glyph_count () > 1000);
+  MOPPE_CHECK (face.cap_height () == 730);
+  MOPPE_CHECK (face.x_height () == 582);
+  MOPPE_CHECK (face.ascender () == 1048);
+  MOPPE_CHECK (face.descender () == -152);
+  MOPPE_CHECK (face.glyph_count () == 323);
   MOPPE_CHECK (face.glyph_index (U'A') != 0);
   MOPPE_CHECK (face.glyph_index (U'A') != face.glyph_index (U'B'));
   MOPPE_CHECK (face.glyph_index (U'\U0010FFFD') == 0);
   MOPPE_CHECK (face.advance_width (face.glyph_index (U'm')) > 0);
 }
 
+MOPPE_TEST (truetype_kerns_pairs_from_gpos_classes_and_lists) {
+  // The face kerns only in GPOS. The values are HarfBuzz's, shaping each
+  // pair with and without the kern feature.
+  const TrueTypeFont& face = geomini ();
+  const auto kern = [&] (char32_t a, char32_t b) {
+    return face.kerning (face.glyph_index (a), face.glyph_index (b));
+  };
+  MOPPE_CHECK (kern (U'A', U'V') == -78);
+  MOPPE_CHECK (kern (U'T', U'o') == -32);
+  MOPPE_CHECK (kern (U'F', U'a') == -63);
+  MOPPE_CHECK (kern (U'V', U'a') == 0);
+}
+
 MOPPE_TEST (truetype_outlines_are_closed_quadratic_contours) {
-  const TrueTypeFont& face = iosevka ();
+  const TrueTypeFont& face = geomini ();
   for (char32_t c : U"AOgå&@3%") {
     if (!c)
       continue;
@@ -66,7 +79,7 @@ MOPPE_TEST (truetype_outlines_are_closed_quadratic_contours) {
 }
 
 MOPPE_TEST (font_glyph_coverage_matches_the_letterform) {
-  const Font& font = iosevka_font ();
+  const Font& font = geomini_font ();
   const render::SlugGlyph* o = font.glyph (U'O');
   MOPPE_CHECK (o != nullptr);
   MOPPE_CHECK (!o->empty ());
@@ -88,7 +101,7 @@ MOPPE_TEST (font_glyph_coverage_matches_the_letterform) {
 }
 
 MOPPE_TEST (font_layout_advances_and_aligns) {
-  const Font& font = iosevka_font ();
+  const Font& font = geomini_font ();
   render::TextStyle style;
   style.size = 20.0f;
   const float i = font.measure ("i", style);
@@ -103,13 +116,18 @@ MOPPE_TEST (font_layout_advances_and_aligns) {
   tabular.tabular_figures = true;
   MOPPE_CHECK_NEAR (
     font.measure ("111", tabular), font.measure ("888", tabular), 1e-4f);
-  MOPPE_CHECK_NEAR (font.cap_height (20.0f), 14.7f, 1e-4f);
+  MOPPE_CHECK_NEAR (font.cap_height (20.0f), 14.6f, 1e-4f);
+  // Kerning draws a kerned pair closer than its letters' advances.
+  MOPPE_CHECK_NEAR (font.measure ("AV", style),
+                    font.measure ("A", style) + font.measure ("V", style) -
+                      78.0f * 20.0f / 1000.0f,
+                    1e-3f);
   // Unknown characters fall back to .notdef rather than vanishing.
   MOPPE_CHECK (font.measure ("\xE2\x98\x83", style) > 0.0f);
 }
 
 MOPPE_TEST (font_draws_nothing_without_an_uploaded_glyph_set) {
-  const Font& font = iosevka_font ();
+  const Font& font = geomini_font ();
   render::TextList list;
   render::TextStyle style;
   const float end = font.draw (list, 10.0f, 20.0f, "Ride", style);

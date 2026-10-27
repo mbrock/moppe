@@ -12,13 +12,15 @@ namespace moppe {
   namespace render {
     // A small reader for TrueType ('glyf') fonts: just what Slug text
     // needs.  It maps codepoints through cmap formats 4 and 12, reads
-    // horizontal metrics, the legacy 'kern' pair table, and the OS/2
+    // horizontal metrics, pair kerning (GPOS's kern feature, or else the
+    // legacy 'kern' table), and the OS/2
     // cap and x heights, and turns simple and composite glyph outlines into
     // closed quadratic contours.  TrueType outlines are already quadratic,
     // so nothing is approximated; implied on-curve midpoints between
-    // consecutive off-curve points are made explicit.  Hinting, GSUB and
-    // GPOS are ignored: Slug renders the true outline at any size, and the
-    // HUD's short strings need no shaping beyond advances and pair kerning.
+    // consecutive off-curve points are made explicit.  Hinting, GSUB, and
+    // the rest of GPOS are ignored: Slug renders the true outline at any
+    // size, and the game's short strings need no shaping beyond advances
+    // and pair kerning.
     //
     // All values are in font units with y up.  Throws std::runtime_error
     // for data that is not a TrueType font or is truncated.
@@ -63,7 +65,8 @@ namespace moppe {
       int advance_width (std::uint16_t glyph) const;
       int left_side_bearing (std::uint16_t glyph) const;
 
-      // Pair adjustment from a format-0 'kern' table; zero otherwise.
+      // The horizontal pair adjustment GPOS's kern feature gives, or
+      // failing that a format-0 'kern' table's; zero otherwise.
       int kerning (std::uint16_t left, std::uint16_t right) const;
 
       // Closed quadratic contours; empty for a blank glyph.
@@ -83,6 +86,13 @@ namespace moppe {
       bool glyph_range (std::uint16_t glyph,
                         std::uint32_t& begin,
                         std::uint32_t& end) const;
+      int coverage_index (std::size_t coverage, std::uint16_t glyph) const;
+      int glyph_class (std::size_t class_def, std::uint16_t glyph) const;
+      int pair_adjustment (std::size_t subtable,
+                           std::uint16_t left,
+                           std::uint16_t right,
+                           bool& found) const;
+      void read_gpos_kerning ();
       void append_outline (std::uint16_t glyph,
                            const float transform[6],
                            int depth,
@@ -102,6 +112,9 @@ namespace moppe {
       std::uint32_t m_cmap = 0; // absolute offset of the chosen subtable
       std::uint16_t m_cmap_format = 0;
       std::unordered_map<std::uint32_t, std::int16_t> m_kerning;
+      // GPOS pair-adjustment subtables of the kern feature, absolute
+      // offsets in lookup order, read when kerning is asked for.
+      std::vector<std::uint32_t> m_pair_subtables;
     };
   }
 }

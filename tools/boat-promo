@@ -17,7 +17,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FONT = os.path.join(ROOT, "fonts", "IosevkaAile-Regular.ttf")
+FONT = os.path.join(ROOT, "fonts", "Geomini-Regular.ttf")
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
 GOLDEN = "16.4"
 
