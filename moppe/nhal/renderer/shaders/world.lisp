@@ -314,10 +314,10 @@
 ;;;
 ;;; The built roads exactly (terrain/roads.hh's RoadSurface), finer than the
 ;;; height field: two rows a segment, (ax az bx bz) and (height at a, at b,
-;;; distance along at a, 0 road or 1 footpath), found through a grid of
-;;; buckets that each list the segments passing near them.  The ground's
-;;; footing in physics reads the same segments, so what is drawn near the
-;;; camera is what the wheels meet.
+;;; distance along at a, 0 road, 1 footpath, 2 a bridge's deck, 3 paved),
+;;; found through a grid of buckets that each list the segments passing
+;;; near them.  The ground's footing in physics reads the same segments, so
+;;; what is drawn near the camera is what the wheels meet.
 
 (define-shader-function road-seam (delta period)
   (- delta (* period (floor (+ (/ delta period) 0.5)))))
@@ -366,6 +366,7 @@
   (found :float)                   ; 1 on a road or footpath's reach, else 0;
                                    ; 0 too over a bridge, whose deck is a mesh
   (footpath :float)                ; 1 a footpath, 0 a built road
+  (paved :float)                   ; 1 a paved road, 0 gravel or a path
   (across :float)                  ; metres from the line, signed
   (along :float)                   ; metres along the road
   (centre :float)                  ; the line's height, metres
@@ -400,8 +401,12 @@
                         (- 1.0 (step (swizzle road-shape :x)
                                      (abs rp-across))))))
      (make-road-point
-      :found (if rp-have (- 1.0 (step 1.5 (swizzle rp-more :w))) 0.0)
+      :found (if rp-have
+                 (- 1.0 (* (step 1.5 (swizzle rp-more :w))
+                           (- 1.0 (step 2.5 (swizzle rp-more :w)))))
+                 0.0)
       :footpath (- 1.0 (min (abs (- (swizzle rp-more :w) 1.0)) 1.0))
+      :paved (step 2.5 (swizzle rp-more :w))
       :across rp-across
       :along (+ (swizzle rp-more :z) (* rp-t rp-length))
       :centre (mix (swizzle rp-more :x) (swizzle rp-more :y) rp-t)
@@ -1099,7 +1104,7 @@
 ;;; shoulders going over to grass, and the edge a hand's breadth wide.
 ;;; GROUND is what lies there otherwise, in display space.
 (define-shader-function road-albedo (ground across along half-width shoulder
-                                     micro meso edge-width)
+                                     paved micro meso edge-width)
   (let* ((d (abs across))
          (grain (swizzle micro :x))
          (fleck (swizzle meso :x))
@@ -1121,14 +1126,50 @@
          ;; From afar, where a pixel spans the tracks, the dust the wheels
          ;; raise pales the whole tread, and the shoulder is lost in it.
          (far (smoothstep 0.3 1.5 edge-width))
-         (carriage (mix (mix loose packed (* 0.85 track))
-                        (* (vec3 0.70 0.66 0.58) (mix 0.94 1.04 fleck))
+         (gravel (mix (mix loose packed (* 0.85 track))
+                      (* (vec3 0.70 0.66 0.58) (mix 0.94 1.04 fleck))
+                      far))
+         ;; A paved lane: old asphalt bleached pale by the sun, its stones
+         ;; showing through, darker where it has been patched or lies damp,
+         ;; worn lighter in the wheel paths, with fallen leaves drifted
+         ;; toward its edges; the edge crumbles into a strip of sand.
+         (on (vec2 along across))
+         (tone (value-noise (* on 0.35)))
+         (mended (* 0.8 (smoothstep 0.68 0.74
+                                    (value-noise (+ (* on (vec2 0.07 0.3))
+                                                    (vec2 5.1 2.3))))))
+         (tar (mix (* (mix (vec3 0.47 0.48 0.48) (vec3 0.56 0.57 0.56) tone)
+                      (mix 0.93 1.05 grain)
+                      (+ 1.0 (* 0.07 track)))
+                   (vec3 0.43 0.42 0.40) (* 0.7 mended)))
+         (tar (mix tar (vec3 0.66 0.64 0.60)
+                   (* 0.25 (stone-face pebble)
+                      (smoothstep 0.65 0.80 (stone-tone pebble)))))
+         ;; Leaves a hand or two across, fewer where the wheels sweep the lane,
+         ;; given up where a pixel spans several.
+         (fallen (* (smoothstep 0.72 0.78 (value-noise (* on 7.0)))
+                    (+ 0.25 (* 0.75 (smoothstep 0.8 2.4 d)))
+                    (smoothstep 0.4 0.9 (value-noise (* on 0.5)))
+                    (- 1.0 (smoothstep 0.03 0.12 edge-width))))
+         (tar (mix tar (mix (vec3 0.50 0.26 0.10) (vec3 0.64 0.46 0.17)
+                            (value-noise (* on 1.7)))
+                   fallen))
+         (crumble (+ half-width
+                     (* 0.25 (- (value-noise (vec2 (* along 0.8) 3.0)) 0.5))))
+         (sand (* (mix (vec3 0.58 0.51 0.39) (vec3 0.67 0.59 0.46) fleck)
+                  (mix 0.90 1.05 grain)))
+         (lane-top (mix (mix tar sand (smoothstep (- crumble 0.05)
+                                                  (+ crumble 0.05) d))
+                        (* (vec3 0.64 0.63 0.60) (mix 0.96 1.03 fleck))
                         far))
+         (carriage (mix gravel lane-top paved))
          (verge (mix carriage ground
                      (* (clamp (+ (* 1.6 (smoothstep half-width
                                                      (+ half-width shoulder)
                                                      d))
-                                  (* 0.5 (- grain 0.5)))
+                                  ;; Grass shows among gravel, not through
+                                  ;; asphalt.
+                                  (* 0.5 (- grain 0.5) (- 1.0 paved)))
                                0.0 1.0)
                         (- 1.0 far))))
          (edge (+ half-width shoulder (* 0.25 (- fleck 0.5)))))
@@ -1322,7 +1363,8 @@
            (mix worked-ground
                 (road-albedo worked-ground road-across
                              (road-point-along road) (swizzle road-shape :x)
-                             (swizzle road-shape :y) micro meso road-edge)
+                             (swizzle road-shape :y) (road-point-paved road)
+                             micro meso road-edge)
                 road-built))
          (path-ground
            (mix road-ground

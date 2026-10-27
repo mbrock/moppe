@@ -16,6 +16,20 @@ namespace moppe::terrain {
     }
   }
 
+  std::vector<bool> paved_roads (const RoadNetwork& network) {
+    std::uint32_t busiest = 0;
+    for (const Road& road : network.roads)
+      if (road.kind == Road::Kind::Road)
+        busiest = std::max (busiest, road.traffic);
+    std::vector<bool> paved;
+    paved.reserve (network.roads.size ());
+    for (const Road& road : network.roads)
+      paved.push_back (road.kind == Road::Kind::Road &&
+                       road.abandoned_years_ago == 0.0f && busiest > 0 &&
+                       2 * road.traffic >= busiest);
+    return paved;
+  }
+
   RoadSurface::RoadSurface (const RoadNetwork& network,
                             float period_x,
                             float period_z,
@@ -29,7 +43,9 @@ namespace moppe::terrain {
     // across the seam.
     std::vector<std::vector<std::uint32_t>> buckets (
       static_cast<std::size_t> (m_buckets_x) * m_buckets_z);
-    for (const Road& road : network.roads) {
+    const std::vector<bool> paved = paved_roads (network);
+    for (std::size_t r = 0; r < network.roads.size (); ++r) {
+      const Road& road = network.roads[r];
       const bool heights = road.heights.size () == road.points.size ();
       std::vector<bool> spans (road.points.size (), false);
       for (const RoadBridge& bridge : road.bridges)
@@ -53,6 +69,7 @@ namespace moppe::terrain {
                             along,
                             road.kind != Road::Kind::Road || !heights ? 1.0f
                             : spans[i]                                ? 2.0f
+                            : paved[r]                                ? 3.0f
                                                                       : 0.0f });
         along += length;
         const int x0 = static_cast<int> (

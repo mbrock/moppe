@@ -229,7 +229,7 @@ namespace moppe::terrain {
 
     // As the renderer takes them: two rows a segment, (ax, az, bx, bz)
     // and (height at a, at b, distance along at a, 0 road, 1 footpath,
-    // or 2 a bridge's deck); and per bucket, row by row, the offset into the
+    // 2 a bridge's deck, or 3 a paved road); and per bucket, row by row, the offset into the
     // entries (which follow the buckets) and their count, then the entries.
     std::span<const std::array<float, 4>> segment_rows () const noexcept {
       return m_rows;
@@ -257,6 +257,11 @@ namespace moppe::terrain {
     std::vector<std::array<float, 4>> m_rows;
     std::vector<std::uint32_t> m_index;
   };
+
+  // Which of the network's ways are paved, one flag a road: the cart roads
+  // still in use that carry at least half the busiest one's traffic, the
+  // lanes the country keeps up. The rest stay gravel.
+  [[nodiscard]] std::vector<bool> paved_roads (const RoadNetwork& network);
 
   // Plans the network over one period of the world. `home_base` is the
   // trail's (the trailhead); `river_area` the least catchment drawn as a

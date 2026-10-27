@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace moppe::game {
   namespace {
@@ -82,8 +83,9 @@ namespace moppe::game {
   void BridgeSurface::rebuild (render::Renderer& renderer,
                                const map::SurfaceGeometry& surface,
                                const terrain::RoadNetwork& roads,
-                               const terrain::RoadFormation& formation) {
+                               const terrain::RoadSurface& road_surface) {
     m_bridges.clear ();
+    const terrain::RoadFormation& formation = road_surface.formation ();
     m_period_x = surface.domain ().period_x ().numerical_value_in (u::m);
     m_period_z = surface.domain ().period_z ().numerical_value_in (u::m);
     const auto ground = [&] (float x, float z) {
@@ -272,6 +274,139 @@ namespace moppe::game {
         dl.end ();
         m_bridges.push_back ({ renderer.create_mesh (dl), centre });
       }
+    add_posts (renderer, surface, roads, road_surface);
+  }
+
+  void BridgeSurface::add_posts (render::Renderer& renderer,
+                                 const map::SurfaceGeometry& surface,
+                                 const terrain::RoadNetwork& roads,
+                                 const terrain::RoadSurface& road_surface) {
+    // Weathered pine, a hand and a half square, knee high.
+    constexpr float post[3] = { 0.50f, 0.45f, 0.38f };
+    constexpr float spacing = 3.5f;
+    constexpr float run_m = 120.0f;
+    const terrain::RoadFormation& formation = road_surface.formation ();
+    const float tread = formation.half_width + formation.shoulder;
+    const float out = tread + 0.7f;
+    const auto wrap = [] (float v, float period) {
+      return v - period * std::floor (v / period);
+    };
+    const auto seam = [] (float d, float period) {
+      return d - period * std::round (d / period);
+    };
+    // The ground as drawn: the formed field, blended into the tread.
+    const auto ground = [&] (float x, float z) {
+      x = wrap (x, m_period_x);
+      z = wrap (z, m_period_z);
+      const float field = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, position (Vec3 (x, 0.0f, z))));
+      return road_surface.ground (x, z, field);
+    };
+    const auto lived_near = [&] (float x, float z) {
+      for (const terrain::RoadPlace& place : roads.places)
+        if (place.abandoned_years_ago == 0.0f &&
+            std::hypot (seam (place.x_m - x, m_period_x),
+                        seam (place.z_m - z, m_period_z)) < 200.0f)
+          return true;
+      return false;
+    };
+    const std::vector<bool> paved = terrain::paved_roads (roads);
+    std::uint32_t seed = 0x706f7374U;
+    for (std::size_t r = 0; r < roads.roads.size (); ++r) {
+      const terrain::Road& road = roads.roads[r];
+      if (!paved[r] || road.heights.size () != road.points.size () ||
+          road.points.size () < 2)
+        continue;
+      std::vector<bool> spans (road.points.size (), false);
+      for (const terrain::RoadBridge& bridge : road.bridges)
+        for (std::size_t k = bridge.first;
+             k <= bridge.last && k < spans.size ();
+             ++k)
+          spans[k] = true;
+      render::DrawList dl;
+      Vec3 origin;
+      std::size_t posts = 0;
+      float run = 0.0f;
+      const auto flush = [&] {
+        if (posts > 0) {
+          dl.end ();
+          m_bridges.push_back ({ renderer.create_mesh (dl),
+                                 Vec3 (wrap (origin[0], m_period_x),
+                                       0.0f,
+                                       wrap (origin[2], m_period_z)),
+                                 700.0f });
+        }
+        dl = render::DrawList ();
+        posts = 0;
+        run = 0.0f;
+      };
+      float next = 0.0f, along = 0.0f;
+      for (std::size_t k = 1; k < road.points.size (); ++k) {
+        const terrain::RoadPoint a = road.points[k - 1];
+        const terrain::RoadPoint b = road.points[k];
+        const float length = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
+        if (length < 1e-3f)
+          continue;
+        const Vec3 u ((b.x_m - a.x_m) / length, 0.0f, (b.z_m - a.z_m) / length);
+        const Vec3 left (-u[2], 0.0f, u[0]);
+        for (; next <= along + length; next += spacing) {
+          if (spans[k - 1] || spans[k])
+            continue;
+          const float t = (next - along) / length;
+          const float x = a.x_m + (b.x_m - a.x_m) * t;
+          const float z = a.z_m + (b.z_m - a.z_m) * t;
+          const float edge =
+            std::lerp (road.heights[k - 1], road.heights[k], t) -
+            formation.crown * formation.half_width;
+          const bool near = lived_near (x, z);
+          for (const float s : { -1.0f, 1.0f }) {
+            const float fx = x + left[0] * s * (tread + 3.0f);
+            const float fz = z + left[2] * s * (tread + 3.0f);
+            if (!near && edge - ground (fx, fz) < 0.7f)
+              continue;
+            const float px = x + left[0] * s * out;
+            const float pz = z + left[2] * s * out;
+            // Not on a tread: inside a tight bend, or across a junction.
+            const terrain::RoadSample there = road_surface.nearest (px, pz);
+            if (there.found && there.kind == terrain::Road::Kind::Road &&
+                std::fabs (there.across) < tread + 0.3f)
+              continue;
+            const float foot = ground (px, pz);
+            // Nothing stands in water or far down a bank.
+            if (edge - foot > 2.0f || foot - edge > 1.0f)
+              continue;
+            if (posts == 0) {
+              origin = Vec3 (px, 0.0f, pz);
+              dl.lit (true);
+              dl.fogged (true);
+              dl.material (0.0f, 0.85f, 0.0f);
+              dl.begin (render::Prim::Triangles);
+            }
+            const float lean = 0.03f * (jitter (++seed) - 0.5f);
+            const float height = 0.62f + 0.12f * jitter (++seed);
+            const Vec3 base (px - origin[0], foot - 0.4f, pz - origin[2]);
+            const Vec3 up = normalized (Vec3 (lean, 1.0f, 0.0f));
+            box (dl,
+                 base + up * (0.5f * (height + 0.4f)),
+                 u,
+                 left,
+                 up,
+                 0.065f,
+                 0.065f,
+                 0.5f * (height + 0.4f),
+                 post,
+                 0.78f + 0.3f * jitter (++seed));
+            ++posts;
+          }
+        }
+        along += length;
+        run += length;
+        if (run > run_m)
+          flush ();
+      }
+      flush ();
+    }
   }
 
   void BridgeSurface::clear () {
@@ -288,7 +423,7 @@ namespace moppe::game {
       const float z =
         bridge.centre[2] +
         m_period_z * std::round ((camera[2] - bridge.centre[2]) / m_period_z);
-      if (std::hypot (x - camera[0], z - camera[2]) > 2500.0f)
+      if (std::hypot (x - camera[0], z - camera[2]) > bridge.reach)
         continue;
       renderer.draw_mesh (
         *bridge.mesh, Mat4::translation (Vec3 (x, 0.0f, z)), ++motion);

@@ -740,7 +740,7 @@ namespace moppe {
         m_bridges.rebuild (r,
                            surface (),
                            generated_world ().roads (),
-                           generated_world ().road_surface ().formation ());
+                           generated_world ().road_surface ());
       }
 
       void prepare_world_surface () {
