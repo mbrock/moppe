@@ -220,29 +220,36 @@ namespace moppe::game {
         const Vec3 centre = on_ground (g, place.x_m, place.z_m);
         std::optional<Landing> best;
         float best_score = 1e30f;
-        for (float r = 0.0f; r <= 60.0f; r += 4.0f)
-          for (int k = 0; k < (r > 0.0f ? 12 : 1); ++k) {
-            const Vec3 shore = centre + bearing (tau * k / 12.0f) * r;
-            // Dry, just above the water.
-            const float above = g.ground (shore[0], shore[2]) - sea;
-            if (above < 0.0f || above > 2.5f)
-              continue;
-            const std::optional<Vec3> out = seaward (g, shore, sea, true);
-            if (!out)
-              continue;
-            const std::optional<Jetty> jetty =
-              lay_jetty (g, shore, *out, sea, 1.0f, 2.3f, 12.0f, 34.0f);
-            if (!jetty)
-              continue;
-            const float score = jetty->length + 0.4f * r;
-            if (score >= best_score)
-              continue;
-            best_score = score;
-            Landing landing;
-            landing.place = index;
-            landing.jetty = *jetty;
-            best = landing;
-          }
+        // Out to water deep enough for any boat, or on a shallow shore to
+        // what the skiff needs.
+        for (const auto [wanted, most] :
+             { std::pair (2.3f, 34.0f), std::pair (1.2f, 45.0f) }) {
+          if (best)
+            break;
+          for (float r = 0.0f; r <= 60.0f; r += 4.0f)
+            for (int k = 0; k < (r > 0.0f ? 12 : 1); ++k) {
+              const Vec3 shore = centre + bearing (tau * k / 12.0f) * r;
+              // Dry, just above the water.
+              const float above = g.ground (shore[0], shore[2]) - sea;
+              if (above < 0.0f || above > 2.5f)
+                continue;
+              const std::optional<Vec3> out = seaward (g, shore, sea, true);
+              if (!out)
+                continue;
+              const std::optional<Jetty> jetty =
+                lay_jetty (g, shore, *out, sea, 1.0f, wanted, 12.0f, most);
+              if (!jetty)
+                continue;
+              const float score = jetty->length + 0.4f * r;
+              if (score >= best_score)
+                continue;
+              best_score = score;
+              Landing landing;
+              landing.place = index;
+              landing.jetty = *jetty;
+              best = landing;
+            }
+        }
         if (!best)
           return std::nullopt;
         Jetty& jetty = best->jetty;
