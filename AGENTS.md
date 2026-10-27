@@ -590,7 +590,10 @@
     the fjäll are where those overlap. Each species' share is a reading;
     the forest plan draws each tree's species from the canopy's shares
     (shrinking spruce to krummholz among the fell birch, bog pines to a
-    person's height), and the field layer reaches the ground and grass as
+    person's height; the fell birch is its own form,
+    `ForestForm::fell_birch`, a low tree of several grey-barked stems
+    fanning from one base, each holding its own clumps), and the field
+    layer reaches the ground and grass as
     two sheets at texture slots 5 and 4. In ruska the fjäll's dwarf birch
     goes gold and its bilberry crimson. The log line `moppe: vegetation:`
     says how much dry ground each species leads.

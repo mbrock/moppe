@@ -1600,8 +1600,9 @@
 ;;; record against its (species, detail tier) class's shared index buffer.
 ;;; Here the GPU chooses the candidates: FOREST-CULL tests every individual
 ;;; against a view and appends it to its class's list, counting the class's
-;;; indexed indirect draw.  The camera's view sorts trees into twelve
-;;; classes; the sun's shadow view into two, a species each at the coarsest
+;;; indexed indirect draw.  The camera's view sorts trees into eighteen
+;;; classes, six tiers each of birch (pine shares its topology), spruce, and
+;;; fell birch; the sun's shadow view into three, one each at the coarsest
 ;;; tier.
 ;;;
 ;;; A record is four vec4 rows: root xyz and height; ground normal and
@@ -1665,11 +1666,9 @@
       (let* ((row (* index (uint 4)))
              (root-height (buffer-element trees row))
              (crown (swizzle (buffer-element trees (+ row (uint 1))) :w))
-             (conifer (= (bit-cast :uint
-                                   (swizzle (buffer-element trees
-                                                            (+ row (uint 3)))
-                                            :y))
-                         (uint 1)))
+             (kind (bit-cast :uint
+                             (swizzle (buffer-element trees (+ row (uint 3)))
+                                      :y)))
              (shadow (> (swizzle mode :x) 0.5))
              (height (swizzle root-height :w))
              (centre-of (swizzle eye :xyz))
@@ -1695,7 +1694,9 @@
                                        (> crown 1.2)))
                        (>= crown-pixels 4.0)))
           (let* ((pixels (* 0.5 height scale))
-                 (species (if conifer (uint 1) (uint 0)))
+                 ;; Classes by topology: birch and pine, spruce, fell birch.
+                 (species (if (= kind (uint 1)) (uint 1)
+                              (if (= kind (uint 3)) (uint 2) (uint 0))))
                  (class (if shadow species
                             (+ (uint (tree-tier pixels))
                                (* species (uint 6)))))
@@ -1718,7 +1719,7 @@
   (root :vec3) (up :vec3) (right :vec3) (forward :vec3)
   (height :float) (crown-base :float) (crown-radius :float)
   (trunk-radius :float) (seed-turn :float) (closure :float)
-  (seed :uint) (conifer :bool) (pine :bool)
+  (seed :uint) (conifer :bool) (pine :bool) (fell :bool)
   (sides :uint) (crown-sides :uint) (masses :uint) (branches :bool))
 
 (define-shader-function grow-tree (root-height up-radius ecology identity root
@@ -1728,8 +1729,11 @@
          ;; A Scots pine draws with the birch's clumps, held flat and high
          ;; on a long clear trunk that leans more than a spruce's.
          (pine (= (bit-cast :uint (swizzle identity :y)) (uint 2)))
+         ;; A fell birch: a few crooked stems from one low base, each with
+         ;; its clump, as wide as it is tall.
+         (fell (= (bit-cast :uint (swizzle identity :y)) (uint 3)))
          (lean-turn (* 6.2831853 (tree-hash seed (uint 3))))
-         (lean (* (if pine 0.11 0.065) (tree-hash seed (uint 4))))
+         (lean (* (if pine 0.11 (if fell 0.22 0.065)) (tree-hash seed (uint 4))))
          (up (normalize (+ (vec3 0.0 1.0 0.0)
                            (* 0.08 (vec3 (swizzle up-radius :x) 0.0
                                          (swizzle up-radius :z)))
@@ -1738,8 +1742,8 @@
          (right (normalize (cross3 up (vec3 0.0 0.0 1.0))))
          (height (swizzle root-height :w))
          (closure (smoothstep 0.12 0.42 (swizzle ecology :z)))
-         (base-share (+ (mix (if conifer 0.04 (if pine 0.50 0.40))
-                             (if conifer 0.20 (if pine 0.66 0.60))
+         (base-share (+ (mix (if conifer 0.04 (if pine 0.50 (if fell 0.10 0.40)))
+                             (if conifer 0.20 (if pine 0.66 (if fell 0.18 0.60)))
                              closure)
                         (* 0.08 (- (tree-hash seed (uint 5)) 0.5))))
          (sides (if (>= tier 5.0) (uint 10) (if (>= tier 2.0) (uint 7)
@@ -1749,19 +1753,22 @@
      :height height
      :crown-base (* height base-share)
      :crown-radius (* (swizzle up-radius :w) crown-scale (if pine 1.25 1.0))
-     :trunk-radius (* height (if conifer 0.0078 0.0085)
+     :trunk-radius (* height (if conifer 0.0078 (if fell 0.014 0.0085))
                       (+ 0.85 (* 0.3 (tree-hash seed (uint 6)))))
      :seed-turn (* 6.2831853 (tree-hash seed (uint 7)))
      :closure closure
-     :seed seed :conifer conifer :pine pine
+     :seed seed :conifer conifer :pine pine :fell fell
      :sides sides
      :crown-sides (if (= sides (uint 10)) (uint 9) sides)
      :masses (if conifer
                  (if (>= tier 4.0) (uint 5) (if (>= tier 1.0) (uint 4)
                                                 (uint 3)))
-                 (if (>= tier 4.0) (uint 10) (if (>= tier 1.0) (uint 7)
-                                                 (uint 4))))
-     :branches (and (not conifer) (>= tier 3.0)))))
+                 (if fell
+                     (if (>= tier 4.0) (uint 7) (if (>= tier 1.0) (uint 5)
+                                                    (uint 4)))
+                     (if (>= tier 4.0) (uint 10) (if (>= tier 1.0) (uint 7)
+                                                     (uint 4)))))
+     :branches (or fell (and (not conifer) (>= tier 3.0))))))
 
 (define-shader-struct tree-vertex
   (position :vec3) (normal :vec3) (bark :vec2) (crown-height :float)
@@ -1795,10 +1802,14 @@
          ;; The trunk grows out of the soil rather than standing on it: its
          ;; first ring sits below the ground and flares into uneven root
          ;; buttresses, narrowing to the bole within a metre.
+         (fell (tree-shape-fell tree))
+         ;; A fell birch's main stem is only one of its stems: short, and
+         ;; with its crown starting near the ground.
          (trunk-along (if (= ring (uint 0)) -0.35
-                          (if (= ring (uint 1)) 0.9
+                          (if (= ring (uint 1)) (if fell (* 0.5 crown-base) 0.9)
                               (if (= ring (uint 2)) crown-base
-                                  (* height (if conifer 0.94 0.86))))))
+                                  (* height (if conifer 0.94
+                                                (if fell 0.55 0.86)))))))
          (trunk-width (if (= ring (uint 0))
                           (+ 1.75 (* 0.65 (tree-hash seed
                                                      (+ (uint 300)
@@ -1853,23 +1864,40 @@
                          tiers)
                       0.0 1.0))
          (pine (tree-shape-pine tree))
+         (fell-lift (tree-hash seed (+ (uint 85) mass)))
          ;; A pine's crown is an umbrella: its clumps reach as far out at
          ;; the top as below it.
          (envelope (if pine (- 1.0 (* 0.35 rise))
                        (expt (sin (* 3.1415927 (+ 0.12 (* 0.80 rise)))) 0.7)))
          (clump-turn (+ seed-turn (* 2.39996 fmass)
                         (* 0.8 (- (tree-hash seed (+ (uint 90) mass)) 0.5))))
-         (reach (* crown-radius envelope
-                   (+ (if pine 0.45 0.30)
-                      (* 0.45 (tree-hash seed (+ (uint 100) mass))))))
-         (clump-along (+ crown-base (* span (if pine (+ 0.30 (* 0.62 rise))
-                                                (+ 0.06 (* 0.86 rise))))))
+         ;; A fell birch's clumps stand out round it at uneven heights, each
+         ;; at the end of its own stem.
+         (reach (* crown-radius (if fell 1.0 envelope)
+                   (+ (if pine 0.45 (if fell 0.40 0.30))
+                      (* (if fell 0.55 0.45)
+                         (tree-hash seed (+ (uint 100) mass))))))
+         (clump-along (+ crown-base
+                         (* span (if pine (+ 0.30 (* 0.62 rise))
+                                     (if fell (+ 0.30 (* 0.60 fell-lift))
+                                         (+ 0.06 (* 0.86 rise)))))))
          (centre (+ root (* up clump-along)
                     (* (+ (* right (cos clump-turn))
                           (* forward (sin clump-turn)))
                        reach)))
-         (attach (+ root (* up (max (- clump-along (* 0.9 reach))
-                                    (* 0.92 crown-base)))))
+         ;; Where its branch leaves the stem; a fell birch's stems all
+         ;; spring from the base, a little apart, at a knee or two.
+         (attach (if fell
+                     (+ root
+                        (* up (* height
+                                 (+ 0.02 (* 0.10 (tree-hash seed
+                                                            (+ (uint 150)
+                                                               mass))))))
+                        (* (+ (* right (cos clump-turn))
+                              (* forward (sin clump-turn)))
+                           (* 1.6 trunk-radius)))
+                     (+ root (* up (max (- clump-along (* 0.9 reach))
+                                        (* 0.92 crown-base))))))
          (clump-radius (* crown-radius
                           (+ 0.50 (* 0.34 (tree-hash seed (+ (uint 110) mass))))
                           (- 1.0 (* 0.35 rise)) (sqrt (/ 10.0 tiers))))
@@ -1911,7 +1939,8 @@
          (around (+ (* branch-side (cos branch-turn))
                     (* branch-other (sin branch-turn))))
          (first-ring (< bk (uint 3)))
-         (branch-radius (* trunk-radius (if first-ring 0.34 0.10)))
+         (branch-radius (* trunk-radius (if first-ring (if fell 0.62 0.34)
+                                            (if fell 0.30 0.10))))
          (branch-point (+ (if first-ring attach branch-end)
                           (* around branch-radius)))
          (point (if is-trunk trunk-point
@@ -1985,6 +2014,10 @@
                       0.0 1.0))
          (pine-bark (mix (vec3 0.36 0.30 0.26) (vec3 0.80 0.46 0.26)
                          (smoothstep 0.25 0.55 rise)))
+         ;; A fell birch's stems: a birch's bark, greyed and browned by
+         ;; the wind, every stem the same.
+         (fell (tree-shape-fell tree))
+         (fell-bark (vec3 (+ 0.64 (* 0.06 hue)) (+ 0.60 (* 0.05 hue)) 0.54))
          (green (vec3 (+ 0.42 (* 0.08 hue)) (+ 0.60 (* 0.05 moisture)) 0.22))
          (temper (- (tree-hash seed (uint 53)) 0.5))
          (reach (+ 0.58 (* 0.62 (expt (tree-hash seed (uint 52)) 1.8))
@@ -2000,9 +2033,11 @@
     (if (tree-vertex-foliage vertex)
         (* (if conifer needle (if pine pine-needle leaf)) shade)
         (if (tree-vertex-branch vertex)
-            (if pine (vec3 0.62 0.38 0.24) (vec3 0.34 0.31 0.29))
+            (if pine (vec3 0.62 0.38 0.24)
+                (if fell fell-bark (vec3 0.34 0.31 0.29)))
             (if conifer (vec3 0.38 0.30 0.24)
-                (if pine pine-bark (vec3 0.80 0.78 0.72)))))))
+                (if pine pine-bark
+                    (if fell fell-bark (vec3 0.80 0.78 0.72))))))))
 
 ;;; Wind sways the crown about its base; the trunk only bends near the top.
 (define-shader-function wind-offset (world bend flutter time)

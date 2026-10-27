@@ -15,7 +15,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 15;
+    constexpr std::uint32_t forest_plan_version = 16;
 
     // Marginal woodland stays close to the old proposal density while the
     // most suitable habitat can form a genuinely closed spruce stand. The
@@ -418,16 +418,19 @@ namespace moppe::game {
         kind = 0;
       ForestForm form = kind == 1   ? ForestForm::pine
                         : kind == 0 ? ForestForm::conifer
+                        : kind == 3 ? ForestForm::fell_birch
                                     : ForestForm::broadleaf;
-      if (candidate.pioneer || (form == ForestForm::conifer && is_birch (site)))
+      if (form != ForestForm::fell_birch &&
+          (candidate.pioneer ||
+           (form == ForestForm::conifer && is_birch (site))))
         form = ForestForm::broadleaf;
       // Toward the treeline the trees shrink: the fell birch low and
       // many-crowned, spruce stunted to krummholz among it. A bog's pines
       // are old and no taller than a person or two.
       const float fell_share = total > 0.0f ? candidate.fell / total : 0.0f;
       float shrink = 1.0f;
-      if (kind == 3)
-        shrink = 0.42f;
+      if (form == ForestForm::fell_birch)
+        shrink = 0.30f;
       else if (form == ForestForm::conifer)
         shrink = 1.0f - 0.6f * fell_share;
       else if (form == ForestForm::pine)
@@ -505,7 +508,7 @@ namespace moppe::game {
       ForestSiteRecord record {};
       input.read (reinterpret_cast<char*> (&record), sizeof (record));
       if (!input ||
-          record.form > static_cast<std::uint32_t> (ForestForm::pine) ||
+          record.form > static_cast<std::uint32_t> (ForestForm::fell_birch) ||
           record.age > static_cast<std::uint32_t> (ForestAge::ancient))
         return std::nullopt;
       plan.sites.push_back (

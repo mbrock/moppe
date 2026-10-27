@@ -92,7 +92,8 @@ namespace moppe::nhal {
                                            chunk_cells / 8 + 1 };
 
     // The trunk forest's (species, tier) classes, as forest_trunks.metal
-    // numbers them: six detail tiers of birch, then six of spruce. A class's
+    // numbers them: six detail tiers of birch (and pine, which shares its
+    // topology), then six of spruce, then six of fell birch. A class's
     // topology -- facets, masses, and which vertices each triangle joins --
     // is a function of the two alone; world.lisp's forest-vertex places the
     // vertices in the same numbering.
@@ -107,18 +108,24 @@ namespace moppe::nhal {
     constexpr std::uint32_t grass_classes = 6;
     // The canopy's 16-metre patches over twice its farthest reach.
     constexpr std::uint32_t sward_window_side = 160;
-    constexpr std::uint32_t forest_classes = 2 * forest_tiers;
+    // Birch, spruce, and fell birch: each a topology of its own.
+    constexpr std::uint32_t forest_species = 3;
+    constexpr std::uint32_t forest_classes = forest_species * forest_tiers;
 
     struct TreeTopology {
       std::uint32_t sides, crown_sides, masses;
       bool conifer, branches;
 
-      TreeTopology (bool conifer_, std::uint32_t tier)
+      // SPECIES as the cull numbers classes: 0 birch, 1 spruce, 2 fell
+      // birch, whose every clump stands on a stem of its own at any tier.
+      TreeTopology (std::uint32_t species, std::uint32_t tier)
         : sides (tier >= 5 ? 10u : tier >= 2 ? 7u : 5u),
           crown_sides (sides == 10 ? 9u : sides),
-          masses (conifer_ ? (tier >= 4 ? 5u : tier >= 1 ? 4u : 3u)
-                           : (tier >= 4 ? 10u : tier >= 1 ? 7u : 4u)),
-          conifer (conifer_), branches (!conifer_ && tier >= 3) {}
+          masses (species == 1   ? (tier >= 4 ? 5u : tier >= 1 ? 4u : 3u)
+                  : species == 2 ? (tier >= 4 ? 7u : tier >= 1 ? 5u : 4u)
+                                 : (tier >= 4 ? 10u : tier >= 1 ? 7u : 4u)),
+          conifer (species == 1),
+          branches (species == 2 || (species == 0 && tier >= 3)) {}
 
       std::uint32_t mass_vertices () const {
         return conifer ? crown_sides + 2 : 8 + (branches ? 6 : 0);
@@ -640,11 +647,11 @@ namespace moppe::nhal {
             .label = "forest draws" });
         for (std::size_t cascade = 0; cascade < 2; ++cascade) {
           m_shadow_candidates[cascade] = m_device->create_buffer (
-            { .size = 2ull * m_tree_count * 8,
+            { .size = std::uint64_t (forest_species) * m_tree_count * 8,
               .usage = buffer_storage_write,
               .label = "shadow tree candidates" });
           m_shadow_arguments[cascade] = m_device->create_buffer (
-            { .size = 2 * sizeof (DrawIndexedIndirectArgs),
+            { .size = forest_species * sizeof (DrawIndexedIndirectArgs),
               .usage = buffer_storage_write | buffer_indirect,
               .label = "shadow tree draws" });
         }
@@ -656,7 +663,7 @@ namespace moppe::nhal {
           std::vector<std::uint16_t> indices;
           for (std::uint32_t c = 0; c < forest_classes; ++c) {
             m_tree_class_first[c] = std::uint32_t (indices.size ());
-            TreeTopology (c >= forest_tiers, c % forest_tiers)
+            TreeTopology (c / forest_tiers, c % forest_tiers)
               .triangles (indices);
             m_tree_class_count[c] =
               std::uint32_t (indices.size ()) - m_tree_class_first[c];
@@ -1101,7 +1108,8 @@ namespace moppe::nhal {
           m_device->set_buffer (1, m_shadow_forest_block[index]);
           m_device->set_buffer (3, m_trees);
           m_device->set_buffer (4, m_shadow_candidates[index]);
-          for (std::uint32_t species = 0; species < 2; ++species) {
+          for (std::uint32_t species = 0; species < forest_species;
+               ++species) {
             shaders::forest_shadow::Draw draw {};
             draw.class_ = { float (species * m_tree_count), 0, 0, 0 };
             m_device->set_uniforms (2, draw);
@@ -2286,8 +2294,8 @@ namespace moppe::nhal {
       }
 
       // Every tree tested against a view, appended to its class's list and
-      // counted into the class's indirect draw: twelve classes for the
-      // camera, two (a species each, coarsest tier) for the sun's shadow.
+      // counted into the class's indirect draw: eighteen classes for the
+      // camera, three (a species each, coarsest tier) for the sun's shadow.
       // Runs outside render passes, which compute passes may not overlap.
       void cull_trees (const Mat4& view, const Vec3& eye, float height,
                        bool shadow, std::size_t cascade = 0) {
@@ -2312,7 +2320,7 @@ namespace moppe::nhal {
 
         std::array<DrawIndexedIndirectArgs, forest_classes> reset {};
         for (std::uint32_t c = 0; c < forest_classes; ++c) {
-          // The shadow's two classes are each species' tier 0.
+          // The shadow's classes are each species' tier 0.
           const std::uint32_t topology = shadow ? c * forest_tiers : c;
           if (shadow && cascade == render::LocalShadowParams::far)
             reset[c] = { far_tree_indices, 0, 0, 0, 0 };
@@ -2325,7 +2333,7 @@ namespace moppe::nhal {
         m_device->copy_to_buffer (
           arguments, 0,
           m_device->upload (std::span<const DrawIndexedIndirectArgs> (
-            reset.data (), shadow ? 2 : forest_classes)));
+            reset.data (), shadow ? forest_species : forest_classes)));
         m_device->begin_compute_pass (shadow ? "shadow tree culling"
                                              : "forest culling");
         m_device->set_pipeline (m_forest_cull);

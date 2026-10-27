@@ -286,7 +286,7 @@ namespace moppe::game {
 
     // Which kind a tree's group is, by the tree.
     MushroomKind kind_for (ForestForm form, float draw) {
-      if (form != ForestForm::broadleaf) {
+      if (form == ForestForm::conifer || form == ForestForm::pine) {
         if (draw < 0.40f)
           return MushroomKind::chanterelle;
         if (draw < 0.70f)

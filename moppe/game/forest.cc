@@ -51,14 +51,22 @@ namespace moppe::game {
       const float lean = 0.035f * forest_hash (tree.seed, 4u);
       const bool conifer = tree.species == render::ForestSpecies::Conifer;
       const bool pine = tree.species == render::ForestSpecies::Pine;
+      const bool fell = tree.species == render::ForestSpecies::FellBirch;
       const float height = tree.height.numerical_value_in (u::m);
       return {
         .root = position_value (tree.root),
         .axis = normalized (Vec3 (0.0f, 1.0f, 0.0f) +
                             Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
                             Vec3 (cr::cos (turn), 0.0f, cr::sin (turn)) * lean),
-        .height = height * (conifer ? 0.9f : 0.7f),
-        .radius = height * (conifer ? 0.0078f : 0.0085f) *
+        // A fell birch's main stem: short and stout for its height. Its
+        // other stems spring from the same base and are not obstacles.
+        .height = height * (conifer ? 0.9f
+                            : fell  ? 0.55f
+                                    : 0.7f),
+        .radius = height *
+                  (conifer ? 0.0078f
+                   : fell  ? 0.014f
+                           : 0.0085f) *
                   (0.85f + 0.3f * forest_hash (tree.seed, 6u)),
         // The crown's base, as the forest program's grow-tree places it:
         // low on an open-grown tree, higher in a closed stand, and far
@@ -66,9 +74,11 @@ namespace moppe::game {
         .clear = height *
                  (std::lerp (conifer ? 0.04f
                              : pine  ? 0.50f
+                             : fell  ? 0.10f
                                      : 0.40f,
                              conifer ? 0.20f
                              : pine  ? 0.66f
+                             : fell  ? 0.18f
                                      : 0.60f,
                              smoothstep (0.12f,
                                          0.42f,
@@ -101,7 +111,9 @@ namespace moppe::game {
       // 20 to 35 metres -- with stout spruce cones and broad broadleaf crowns
       // lifted on clear trunks.
       const meters_t height = tree_height (site);
-      const float crown_share = 0.19f;
+      // A fell birch spreads as wide as it stands tall.
+      const float crown_share =
+        site.form == ForestForm::fell_birch ? 0.34f : 0.19f;
       return {
         .root = site.position,
         .ground_normal = site.normal,
@@ -111,8 +123,9 @@ namespace moppe::game {
         .moisture = moisture * mp_units::one,
         .seed = site.seed,
         .species = conifer ? render::ForestSpecies::Conifer
-                   : site.form == ForestForm::pine
-                     ? render::ForestSpecies::Pine
+                   : site.form == ForestForm::pine ? render::ForestSpecies::Pine
+                   : site.form == ForestForm::fell_birch
+                     ? render::ForestSpecies::FellBirch
                      : render::ForestSpecies::Broadleaf,
         .age = presented_age (site.age),
       };
@@ -156,7 +169,8 @@ namespace moppe::game {
           1, static_cast<std::uint32_t> (std::round (metres / 300.0f)));
       };
       for (render::ForestInstance& tree : instances) {
-        if (tree.species != render::ForestSpecies::Broadleaf)
+        if (tree.species != render::ForestSpecies::Broadleaf &&
+            tree.species != render::ForestSpecies::FellBirch)
           continue;
         const Vec3 root = position_value (tree.root);
         const float grove =
@@ -202,7 +216,9 @@ namespace moppe::game {
       bool any = false;
       for (const render::ForestInstance& tree : instances) {
         const float autumn = tree.autumn.numerical_value_in (mp_units::one);
-        if (tree.species != render::ForestSpecies::Broadleaf || autumn <= 0.0f)
+        if ((tree.species != render::ForestSpecies::Broadleaf &&
+             tree.species != render::ForestSpecies::FellBirch) ||
+            autumn <= 0.0f)
           continue;
         any = true;
         const Vec3 root = position_value (tree.root);
@@ -302,8 +318,13 @@ namespace moppe::game {
       std::ranges::count_if (plan.sites, [] (const ForestSite& site) {
         return site.form == ForestForm::pine;
       });
+    const auto fell_birches =
+      std::ranges::count_if (plan.sites, [] (const ForestSite& site) {
+        return site.form == ForestForm::fell_birch;
+      });
     std::cerr << "moppe: forest plan: " << plan.sites.size () << " sites, "
-              << birches << " birch, " << pines << " pine" << std::endl;
+              << birches << " birch, " << pines << " pine, " << fell_birches
+              << " fell birch" << std::endl;
     m_resident_bytes = instances.size () * sizeof (render::ForestInstance);
   }
 
