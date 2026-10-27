@@ -1076,6 +1076,23 @@
                       (* 0.45 bog-pool))
                  (max (* 0.40 runnel fen-cover) (* 0.08 bare-rock))))))
 
+;;; How much of a pixel WIDTH metres across (half of it either side of D)
+;;; a band EDGE metres either side of a line covers, D metres from it: a
+;;; box filter, so a road far off narrower than a pixel still tints the
+;;; pixels it crosses by the share of them it covers, and never shimmers.
+(define-shader-function road-cover (d edge width)
+  (clamp (/ (- (min (+ d width) edge) (max (- d width) (* -1.0 edge)))
+            (* 2.0 width))
+         0.0 1.0))
+
+;;; The same, but a line that would be thinner than some two pixels is
+;;; drawn that wide, fainter by the root of its true share, so that roads
+;;; read from the air as maps draw them, and narrow ones still more
+;;; quietly than broad ones.
+(define-shader-function line-cover (d edge width)
+  (let* ((drawn (max edge (* 1.5 width))))
+    (* (road-cover d drawn width) (sqrt (/ edge drawn)))))
+
 ;;; A gravel forest road seen from above: two wheel tracks worn smooth and
 ;;; dark, loose stone thrown up between them and along the edges, the
 ;;; shoulders going over to grass, and the edge a hand's breadth wide.
@@ -1094,18 +1111,27 @@
                         (smoothstep 0.55 0.70 (stone-tone pebble)))))
          (packed (* (mix (vec3 0.40 0.36 0.30) (vec3 0.47 0.42 0.35) fleck)
                     (mix 0.92 1.04 grain)))
-         ;; The tracks wander a little along the road, as wheels do.
+         ;; The tracks wander a little along the road, as wheels do, and
+         ;; fade where a pixel spans them.
          (lane (+ 1.2 (* 0.12 (sin (* along 0.11)))))
          (track (* (- 1.0 (smoothstep 0.42 0.62 (abs (- d lane))))
-                   (smoothstep 0.25 0.60 (abs across))))
-         (carriage (mix loose packed (* 0.85 track)))
+                   (smoothstep 0.25 0.60 (abs across))
+                   (- 1.0 (smoothstep 0.15 0.5 edge-width))))
+         ;; From afar, where a pixel spans the tracks, the dust the wheels
+         ;; raise pales the whole tread, and the shoulder is lost in it.
+         (far (smoothstep 0.3 1.5 edge-width))
+         (carriage (mix (mix loose packed (* 0.85 track))
+                        (* (vec3 0.70 0.66 0.58) (mix 0.94 1.04 fleck))
+                        far))
          (verge (mix carriage ground
-                     (clamp (+ (* 1.6 (smoothstep half-width
-                                                  (+ half-width shoulder) d))
-                               (* 0.5 (- grain 0.5)))
-                            0.0 1.0)))
+                     (* (clamp (+ (* 1.6 (smoothstep half-width
+                                                     (+ half-width shoulder)
+                                                     d))
+                                  (* 0.5 (- grain 0.5)))
+                               0.0 1.0)
+                        (- 1.0 far))))
          (edge (+ half-width shoulder (* 0.25 (- fleck 0.5)))))
-    (mix verge ground (smoothstep (- edge edge-width) (+ edge edge-width) d))))
+    (mix ground verge (line-cover d edge edge-width))))
 
 ;;; A footpath: earth worn through whatever grows, frayed at its sides.
 (define-shader-function footpath-albedo (ground across micro meso edge-width)
@@ -1113,7 +1139,7 @@
          (earth (* (mix (vec3 0.42 0.34 0.25) (vec3 0.50 0.41 0.30)
                         (swizzle micro :x))
                    1.0)))
-    (mix earth ground (smoothstep (- 0.7 edge-width) (+ 0.7 edge-width) d))))
+    (mix ground earth (line-cover d 0.7 edge-width))))
 
 (define-shader terrain-fragment
     (:stage :fragment
@@ -1144,11 +1170,12 @@
   (let* ((extent (swizzle size :xy))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
-         ;; The roads exactly, out to where a pixel spans their edge; past
-         ;; that the material sheets' trail lane carries them.
+         ;; The roads exactly at every distance, their edges filtered to a
+         ;; pixel's width; only near is the ground shaped by the tread
+         ;; itself, where the vertices take its height.
          (road-reach (- 1.0 (smoothstep 450.0 650.0 distance)))
          (road-found (road-nearest road-segments road-index
-                                   (swizzle world :xz) (> road-reach 0.0)))
+                                   (swizzle world :xz) (>= distance 0.0)))
          (road (road-point road-segments road-index (swizzle world :xz)
                            road-found))
          (road-across (road-point-across road))
@@ -1157,7 +1184,7 @@
          (road-tread (+ (swizzle road-shape :x) (swizzle road-shape :y)))
          ;; Where a road is drawn exactly, the coarse lane's soft fringe
          ;; beside it gives way to what grows there.
-         (road-owns (* road-reach (road-point-found road)
+         (road-owns (* (road-point-found road)
                        (- 1.0 (smoothstep (+ road-tread 3.0)
                                           (+ road-tread 6.0)
                                           (abs road-across)))))
@@ -1228,8 +1255,7 @@
                 (footpath-albedo road-ground road-across micro meso
                                  road-edge)
                 (* (road-point-found road) (road-point-footpath road))))
-         (albedo (srgb (mix (ground-surface-albedo surface) path-ground
-                            road-reach)))
+         (albedo (srgb path-ground))
          ;; The relief tilts the normal within the surface: only the part
          ;; of its slope that lies along the ground counts.  A road's
          ;; packed tread has less of it.
