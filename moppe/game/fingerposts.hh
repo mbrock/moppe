@@ -52,20 +52,25 @@ namespace moppe::game {
   [[nodiscard]] std::vector<Fingerpost> plan_fingerposts (
     const terrain::RoadNetwork& network, float period_x, float period_z);
 
-  // A board's distance as a Swedish signpost gives it: "2,4 km".
+  // A board's distance as a Swedish signpost gives it: metres to the
+  // nearest ten under a kilometre ("320 m"), and beyond, kilometres as a
+  // bare figure with a decimal comma ("2,4").
   [[nodiscard]] std::string fingerpost_distance (float metres);
 
   // The posts made: weathered square timber with a board for each place
-  // an arm leads to, stacked down the post and pointed at the tip. Cart
-  // roads' boards are white with black letters, footpaths' brown with
-  // cream, and those along ways no longer used grey and faded. The
-  // lettering is set in the HUD's face and rasterized from its Slug
-  // outlines into one texture of boards (`boards`), so it is lit,
-  // shadowed, and hidden like the rest of the world; `mesh` is recorded
-  // in world space, to be appended to the world's draw list.
+  // an arm leads to, stacked down the post and pointed at the tip, as
+  // long as its lettering, after Sweden's vägvisare. Cart roads' boards
+  // are an enskild väg's yellow with black letters, footpaths' a hiking
+  // trail's brown with white, and those along ways no longer used grey
+  // and faded. `font` is the signs' face (Geomini SemiBold). `mesh`,
+  // recorded in world space to be drawn as a mesh, is the timber and the
+  // boards; `lettering` is what is painted on each face of a board -- the
+  // name and distance set in the HUD's face, and a border following the
+  // board's edge -- as Slug glyphs placed in world metres, for
+  // Renderer::create_world_text.
   struct FingerpostSigns {
-    render::TexturePtr boards;
     render::DrawList mesh;
+    render::TextList lettering;
   };
 
   [[nodiscard]] FingerpostSigns

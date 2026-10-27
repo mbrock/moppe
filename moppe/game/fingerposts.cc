@@ -6,9 +6,11 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <map>
 #include <numbers>
 #include <numeric>
 #include <queue>
+#include <ranges>
 #include <utility>
 
 namespace moppe::game {
@@ -375,122 +377,163 @@ namespace moppe::game {
   }
 
   namespace {
-    // Each board's face in the texture, and on the post, in metres.
-    constexpr int k_cell_w = 512, k_cell_h = 80, k_cells_across = 2;
-    constexpr float k_board_length = 1.2f;
-    constexpr float k_board_height = 0.19f;
-    constexpr float k_board_tip = 0.15f;
+    // The boards, in metres, after Sweden's vägvisare (Transportstyrelsen's
+    // F5): an arrow, its tip a right-angled chevron, with a border inset
+    // along its edge and letters whose capitals stand some 45% of its
+    // height. Each is as long as its lettering wants.
+    constexpr float k_board_height = 0.25f;
+    constexpr float k_board_tip = 0.125f;
     constexpr float k_board_thickness = 0.026f;
-    constexpr float k_board_step = 0.23f;
+    constexpr float k_board_step = 0.29f;
     constexpr float k_post_half = 0.06f;
-    constexpr float k_post_top = 2.45f;
+    constexpr float k_post_top = 2.5f;
     constexpr int k_most_boards = 6;
+    // The lettering's em, the room it keeps from either end (the back of
+    // the board reads the other way along it, so both ends are a tip's
+    // and a margin's), and between the name and the distance.
+    constexpr float k_letter_em = 0.155f;
+    constexpr float k_margin = 0.055f;
+    constexpr float k_gap = 0.09f;
+    constexpr float k_shortest_board = 0.8f;
+    constexpr float k_longest_board = 2.0f;
+    // The paint stands this far proud of the face, so that it is never
+    // behind it.
+    constexpr float k_paint_m = 0.002f;
+    // The painted border's band, in from the board's edge.
+    constexpr float k_border_outer_m = 0.011f;
+    constexpr float k_border_inner_m = 0.024f;
 
     struct BoardPaint {
       DisplayColor board, letters, edge;
     };
 
+    // Rural Sweden's colours: an enskild väg's signs are yellow with black
+    // letters, a hiking trail's brown with white, and a board along a way
+    // no longer kept has weathered to the grey of old wood.
     BoardPaint board_paint (const Fingerpost::Arm& arm) {
       if (arm.abandoned)
         return { { 0.55f, 0.54f, 0.50f },
-                 { 0.33f, 0.32f, 0.30f },
+                 { 0.30f, 0.29f, 0.27f },
                  { 0.42f, 0.40f, 0.37f } };
       if (arm.kind == terrain::Road::Kind::Footpath)
-        return { { 0.36f, 0.22f, 0.12f },
-                 { 0.95f, 0.90f, 0.78f },
-                 { 0.28f, 0.17f, 0.09f } };
-      return { { 0.93f, 0.93f, 0.90f },
-               { 0.06f, 0.06f, 0.06f },
+        return { { 0.36f, 0.20f, 0.10f },
+                 { 0.97f, 0.95f, 0.90f },
+                 { 0.26f, 0.15f, 0.08f } };
+      return { { 0.98f, 0.78f, 0.06f },
+               { 0.04f, 0.04f, 0.04f },
                { 0.12f, 0.12f, 0.12f } };
     }
 
-    // One board's lettering, rasterized from the face's Slug outlines.
-    void letter_board (std::vector<std::uint8_t>& rgba,
-                       int atlas_w,
-                       int cell,
+    render::TextStyle letter_style (const DisplayColor& ink) {
+      render::TextStyle style;
+      style.size = k_letter_em;
+      style.red = ink.red;
+      style.green = ink.green;
+      style.blue = ink.blue;
+      return style;
+    }
+
+    // How long a board must be to carry its name and distance, to a
+    // twentieth of a metre, so that boards share their borders' shapes.
+    float board_length (const render::Font& font,
+                        const std::string& name,
+                        const std::string& distance) {
+      const render::TextStyle style = letter_style ({});
+      const float wanted = 2.0f * (k_board_tip + k_margin) +
+                           font.measure (name, style) + k_gap +
+                           font.measure (distance, style);
+      return std::clamp (
+        std::ceil (wanted * 20.0f) / 20.0f, k_shortest_board, k_longest_board);
+    }
+
+    // One face's lettering in its own plane, in millimetres along the
+    // board from the end its reader starts at and down from its top (in
+    // millimetres because Font::draw sets a line's start on a whole
+    // pixel, here a fraction of one): the name, and the distance flush
+    // right, shrunk only should a board at its longest still be short of
+    // room.
+    void letter_board (render::TextList& text,
                        const render::Font& font,
                        const std::string& name,
                        const std::string& distance,
-                       const BoardPaint& colours) {
-      const int x0 = (cell % k_cells_across) * k_cell_w;
-      const int y0 = (cell / k_cells_across) * k_cell_h;
-      std::vector<float> ink (static_cast<std::size_t> (k_cell_w) * k_cell_h);
-      // The text keeps clear of the tip at either end, since the back of
-      // the board reads the other way along it.
-      const float pad = 70.0f;
-      render::TextStyle style;
-      style.size = 50.0f;
-      const float room = k_cell_w - 2.0f * pad;
-      const float wanted =
-        font.measure (name, style) + 24.0f + font.measure (distance, style);
+                       const DisplayColor& ink,
+                       float length) {
+      render::TextStyle style = letter_style (ink);
+      style.size *= 1000.0f;
+      const float pad = 1000.0f * (k_board_tip + k_margin);
+      const float room = 1000.0f * length - 2.0f * pad;
+      const float wanted = font.measure (name, style) + 1000.0f * k_gap +
+                           font.measure (distance, style);
       if (wanted > room)
         style.size *= room / wanted;
+      length *= 1000.0f;
       const float baseline =
-        0.5f * (k_cell_h + font.cap_height (style.size)) + 0.5f;
-      render::TextList text;
+        0.5f * (1000.0f * k_board_height + font.cap_height (style.size));
       font.draw (text, pad, baseline, name, style);
       font.draw (text,
-                 k_cell_w - pad,
+                 length - pad,
                  baseline,
                  distance,
                  style,
                  render::TextAlign::Right);
-      for (const render::GlyphQuad& post_quad : text.quads ()) {
-        render::SlugGlyph glyph;
-        glyph.min_x = post_quad.bounds[0];
-        glyph.min_y = post_quad.bounds[1];
-        glyph.max_x = post_quad.bounds[2];
-        glyph.max_y = post_quad.bounds[3];
-        glyph.band_offset = post_quad.glyph[0];
-        glyph.horizontal_bands =
-          static_cast<std::uint16_t> (post_quad.glyph[1]);
-        glyph.vertical_bands = static_cast<std::uint16_t> (post_quad.glyph[2]);
-        const float size = post_quad.axis_x[0];
-        const float ox = post_quad.origin[0], oy = post_quad.origin[1];
-        const int px0 = std::max (
-          0, static_cast<int> (std::floor (ox + glyph.min_x * size)) - 1);
-        const int px1 = std::min (
-          k_cell_w, static_cast<int> (std::ceil (ox + glyph.max_x * size)) + 1);
-        const int py0 = std::max (
-          0, static_cast<int> (std::floor (oy - glyph.max_y * size)) - 1);
-        const int py1 = std::min (
-          k_cell_h, static_cast<int> (std::ceil (oy - glyph.min_y * size)) + 1);
-        for (int py = py0; py < py1; ++py)
-          for (int px = px0; px < px1; ++px) {
-            const render::OutlinePoint at {
-              (static_cast<float> (px) + 0.5f - ox) / size,
-              (oy - static_cast<float> (py) - 0.5f) / size
-            };
-            float& cover = ink[static_cast<std::size_t> (py) * k_cell_w + px];
-            cover =
-              std::min (1.0f,
-                        cover + render::slug_coverage (
-                                  font.data (), glyph, at, { size, size }));
-          }
+    }
+
+    // A board's edge, counterclockwise from the bottom corner at the
+    // post, in metres out along the arm and up from its middle line.
+    std::array<render::OutlinePoint, 5> board_edge (float length) {
+      const float h = 0.5f * k_board_height;
+      const float shoulder = length - k_board_tip;
+      return { {
+        { 0.0f, -h },
+        { shoulder, -h },
+        { length, 0.0f },
+        { shoulder, h },
+        { 0.0f, h },
+      } };
+    }
+
+    // The board's outline moved in by `inset`.
+    render::OutlineContour board_outline (float length, float inset) {
+      const std::array<render::OutlinePoint, 5> edge = board_edge (length);
+      // Each side moved inward, to its left, and its ends where it meets
+      // its neighbours.
+      const auto side =
+        [&] (int k, float& px, float& py, float& dx, float& dy) {
+          const render::OutlinePoint a = edge[k], b = edge[(k + 1) % 5];
+          const float span = std::hypot (b.x - a.x, b.y - a.y);
+          dx = (b.x - a.x) / span;
+          dy = (b.y - a.y) / span;
+          px = a.x - dy * inset;
+          py = a.y + dx * inset;
+        };
+      std::array<render::OutlinePoint, 5> corner;
+      for (int k = 0; k < 5; ++k) {
+        float ax, ay, adx, ady, bx, by, bdx, bdy;
+        side ((k + 4) % 5, ax, ay, adx, ady);
+        side (k, bx, by, bdx, bdy);
+        const float t =
+          ((bx - ax) * bdy - (by - ay) * bdx) / (adx * bdy - ady * bdx);
+        corner[k] = { ax + adx * t, ay + ady * t };
       }
-      for (int py = 0; py < k_cell_h; ++py)
-        for (int px = 0; px < k_cell_w; ++px) {
-          // A painted border a little in from the edge.
-          const int edge =
-            std::min ({ px, k_cell_w - 1 - px, py, k_cell_h - 1 - py });
-          float cover = ink[static_cast<std::size_t> (py) * k_cell_w + px];
-          if (edge >= 4 && edge < 7)
-            cover = std::max (cover, 0.8f);
-          const DisplayColor c {
-            colours.board.red +
-              (colours.letters.red - colours.board.red) * cover,
-            colours.board.green +
-              (colours.letters.green - colours.board.green) * cover,
-            colours.board.blue +
-              (colours.letters.blue - colours.board.blue) * cover
-          };
-          std::uint8_t* out =
-            &rgba[(static_cast<std::size_t> (y0 + py) * atlas_w + x0 + px) * 4];
-          out[0] = static_cast<std::uint8_t> (std::lround (c.red * 255.0f));
-          out[1] = static_cast<std::uint8_t> (std::lround (c.green * 255.0f));
-          out[2] = static_cast<std::uint8_t> (std::lround (c.blue * 255.0f));
-          out[3] = 255;
-        }
+      render::OutlineContour contour;
+      for (int k = 0; k < 5; ++k)
+        contour.push_back (
+          render::outline_line (corner[k], corner[(k + 1) % 5]));
+      return contour;
+    }
+
+    // The painted border, a band round the board's edge, as one Slug
+    // shape: the outline in, with a hole a little further in.
+    render::SlugGlyph board_border (render::SlugAtlasBuilder& builder,
+                                    float length) {
+      render::OutlineContour hole;
+      for (const render::OutlineCurve& c :
+           board_outline (length, k_border_inner_m) | std::views::reverse)
+        hole.push_back (render::outline_line (c.p3, c.p1));
+      const render::OutlineContour contours[] = {
+        board_outline (length, k_border_outer_m), hole
+      };
+      return builder.add (contours);
     }
 
     void post_facet (render::DrawList& dl,
@@ -531,138 +574,135 @@ namespace moppe::game {
       const Fingerpost::Arm* arm;
       const Fingerpost::Board* board;
       int row;
+      std::string name, distance;
+      float length = 0.0f;
+      Vec3 middle, along, face;
     };
     std::vector<Placed> placed;
+    const Vec3 up (0, 1, 0);
     for (const Fingerpost& post : posts) {
       int row = 0;
+      const Vec3 foot (post.x_m, ground (post.x_m, post.z_m), post.z_m);
       // Every arm's nearest place first, then the second where there is
       // room on the post.
       for (std::size_t rank = 0; rank < 2; ++rank)
-        for (const Fingerpost::Arm& arm : post.arms)
-          if (rank < arm.boards.size () && row < k_most_boards &&
-              arm.boards[rank].place < names.size ())
-            placed.push_back ({ &post, &arm, &arm.boards[rank], row++ });
+        for (const Fingerpost::Arm& arm : post.arms) {
+          if (rank >= arm.boards.size () || row >= k_most_boards ||
+              arm.boards[rank].place >= names.size ())
+            continue;
+          Placed p { &post, &arm, &arm.boards[rank], row++ };
+          p.name = names[p.board->place];
+          p.distance = fingerpost_distance (p.board->metres);
+          p.length = board_length (font, p.name, p.distance);
+          p.along = Vec3 (arm.direction_x, 0.0f, arm.direction_z);
+          // To the left of the way the arm points: the face whose reader
+          // sees the tip on the right.
+          p.face = Vec3 (-p.along[2], 0.0f, p.along[0]);
+          p.middle = foot + up * (k_post_top - 0.2f -
+                                  k_board_step * static_cast<float> (p.row));
+          placed.push_back (std::move (p));
+        }
     }
     if (placed.empty ())
       return signs;
-
-    const int rows =
-      static_cast<int> ((placed.size () + k_cells_across - 1) / k_cells_across);
-    int atlas_h = k_cell_h;
-    while (atlas_h < rows * k_cell_h)
-      atlas_h *= 2;
-    const int atlas_w = k_cell_w * k_cells_across;
-    std::vector<std::uint8_t> rgba (
-      static_cast<std::size_t> (atlas_w) * atlas_h * 4, 255);
-    for (std::size_t i = 0; i < placed.size (); ++i)
-      letter_board (rgba,
-                    atlas_w,
-                    static_cast<int> (i),
-                    font,
-                    names[placed[i].board->place],
-                    fingerpost_distance (placed[i].board->metres),
-                    board_paint (*placed[i].arm));
-    render::TextureDesc desc;
-    desc.width = atlas_w;
-    desc.height = atlas_h;
-    desc.format = render::TextureFormat::RGBA8;
-    desc.filter = render::TextureFilter::Mipmap;
-    desc.wrap = render::TextureWrap::Clamp;
-    desc.max_anisotropy = 8.0f;
-    signs.boards = renderer.create_texture (desc, rgba.data ());
 
     render::DrawList& dl = signs.mesh;
     dl.state (render::DrawState ());
     dl.lit (true);
     dl.fogged (true);
-    const Vec3 up (0, 1, 0);
 
-    // The faces, lettered.
-    dl.set_texture (signs.boards.get ());
-    dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+    // The faces, in their boards' paint, and the edges round them.
     dl.begin (render::Prim::Triangles);
-    for (std::size_t i = 0; i < placed.size (); ++i) {
-      const Placed& p = placed[i];
-      const Vec3 foot (
-        p.post->x_m, ground (p.post->x_m, p.post->z_m), p.post->z_m);
-      const Vec3 along (p.arm->direction_x, 0.0f, p.arm->direction_z);
-      // To the left of the way the arm points: the face whose reader
-      // sees the tip on the right.
-      const Vec3 face (-along[2], 0.0f, along[0]);
-      const Vec3 middle =
-        foot +
-        up * (k_post_top - 0.25f - k_board_step * static_cast<float> (p.row));
-      const float u0 = static_cast<float> ((i % k_cells_across) * k_cell_w) /
-                       static_cast<float> (atlas_w);
-      const float u1 = u0 + static_cast<float> (k_cell_w) / atlas_w;
-      const float v0 = static_cast<float> ((i / k_cells_across) * k_cell_h) /
-                       static_cast<float> (atlas_h);
-      const float v1 = v0 + static_cast<float> (k_cell_h) / atlas_h;
+    for (const Placed& p : placed) {
+      const BoardPaint paint = board_paint (*p.arm);
+      const std::array<render::OutlinePoint, 5> edge = board_edge (p.length);
+      // A point of the board, a metres out from the post and b up from
+      // its middle line, on the side `side` of its middle plane.
+      const auto at = [&] (const render::OutlinePoint& e, float side) {
+        return p.middle + p.along * (k_post_half + e.x) + up * e.y +
+               p.face * (side * 0.5f * k_board_thickness);
+      };
+      dl.color (paint.board, 1.0f);
       for (const float side : { 1.0f, -1.0f }) {
-        const Vec3 n = face * side;
-        const Vec3 base = middle + n * (0.5f * k_board_thickness);
-        // A point of the face, a metres out from the post and b up from
-        // the board's middle line, with its place in the texture.
-        const auto at = [&] (float a, float b) {
-          const float t = a / k_board_length;
-          const float s = side > 0.0f ? t : 1.0f - t;
-          dl.uv (u0 + (u1 - u0) * s,
-                 v0 + (v1 - v0) * (0.5f - b / k_board_height));
-          return base + along * (k_post_half + a) + up * b;
-        };
-        const float h = 0.5f * k_board_height;
-        const float shoulder = k_board_length - k_board_tip;
-        dl.normal (n);
-        // Wound to face out on either side.
-        const auto triangle =
-          [&] (float a0, float b0, float a1, float b1, float a2, float b2) {
-            if (side > 0.0f) {
-              dl.vertex (at (a0, b0));
-              dl.vertex (at (a1, b1));
-              dl.vertex (at (a2, b2));
-            } else {
-              dl.vertex (at (a0, b0));
-              dl.vertex (at (a2, b2));
-              dl.vertex (at (a1, b1));
-            }
-          };
-        triangle (0, -h, shoulder, -h, shoulder, h);
-        triangle (0, -h, shoulder, h, 0, h);
-        triangle (shoulder, -h, k_board_length, 0, shoulder, h);
+        dl.normal (p.face * side);
+        // A fan from the corner at the post, wound to face out.
+        for (int k = 1; k + 1 < 5; ++k) {
+          dl.vertex (at (edge[0], side));
+          dl.vertex (at (edge[side > 0.0f ? k : k + 1], side));
+          dl.vertex (at (edge[side > 0.0f ? k + 1 : k], side));
+        }
+      }
+      dl.color (paint.edge, 1.0f);
+      for (int k = 0; k < 5; ++k) {
+        const render::OutlinePoint& a = edge[k];
+        const render::OutlinePoint& b = edge[(k + 1) % 5];
+        post_quad (
+          dl, at (a, -1.0f), at (b, -1.0f), at (b, 1.0f), at (a, 1.0f));
       }
     }
     dl.end ();
-    dl.set_texture (nullptr);
 
-    // The boards' edges, painted as their faces.
-    dl.begin (render::Prim::Triangles);
+    // The lettering on each face, laid out in metres from the top corner
+    // its reader starts at, and then the borders, so that each glyph set
+    // is one run.
     for (const Placed& p : placed) {
-      const Vec3 foot (
-        p.post->x_m, ground (p.post->x_m, p.post->z_m), p.post->z_m);
-      const Vec3 along (p.arm->direction_x, 0.0f, p.arm->direction_z);
-      const Vec3 face (-along[2], 0.0f, along[0]);
-      const Vec3 middle =
-        foot +
-        up * (k_post_top - 0.25f - k_board_step * static_cast<float> (p.row));
-      const float h = 0.5f * k_board_height;
-      const float shoulder = k_board_length - k_board_tip;
-      const Vec3 outline[5] = {
-        middle + along * k_post_half - up * h,
-        middle + along * (k_post_half + shoulder) - up * h,
-        middle + along * (k_post_half + k_board_length),
-        middle + along * (k_post_half + shoulder) + up * h,
-        middle + along * k_post_half + up * h,
-      };
-      dl.color (board_paint (*p.arm).edge, 1.0f);
-      const Vec3 half = face * (0.5f * k_board_thickness);
-      for (int k = 0; k < 5; ++k) {
-        const Vec3& a = outline[k];
-        const Vec3& b = outline[(k + 1) % 5];
-        post_quad (dl, a - half, b - half, b + half, a + half);
+      const DisplayColor ink = board_paint (*p.arm).letters;
+      for (const float side : { 1.0f, -1.0f }) {
+        const Vec3 right = p.along * side;
+        const Vec3 surface =
+          p.middle + p.face * (side * (0.5f * k_board_thickness + k_paint_m));
+        const Vec3 corner =
+          surface +
+          p.along * (side > 0.0f ? k_post_half : k_post_half + p.length) +
+          up * (0.5f * k_board_height);
+        const std::size_t first = signs.lettering.quads ().size ();
+        letter_board (signs.lettering, font, p.name, p.distance, ink, p.length);
+        signs.lettering.place (corner, right * 0.001f, up * 0.001f, first);
+      }
+    }
+    render::SlugAtlasBuilder shapes;
+    std::map<int, render::SlugGlyph> borders;
+    for (const Placed& p : placed) {
+      const int key = static_cast<int> (std::lround (p.length * 20.0f));
+      if (!borders.contains (key))
+        borders[key] = board_border (shapes, p.length);
+    }
+    const render::GlyphSetPtr border_set =
+      renderer.create_glyph_set (shapes.data ());
+    for (const Placed& p : placed) {
+      const DisplayColor ink = board_paint (*p.arm).letters;
+      const render::SlugGlyph& border =
+        borders.at (static_cast<int> (std::lround (p.length * 20.0f)));
+      for (const float side : { 1.0f, -1.0f }) {
+        // The outline's own frame on either face: out along the arm and
+        // up, from the post.
+        const Vec3 origin =
+          p.middle + p.along * k_post_half +
+          p.face * (side * (0.5f * k_board_thickness + k_paint_m));
+        render::GlyphQuad quad {};
+        for (int i = 0; i < 3; ++i) {
+          quad.origin[i] = origin[i];
+          quad.axis_x[i] = p.along[i];
+          quad.axis_y[i] = up[i];
+        }
+        quad.origin[3] = 1.0f;
+        quad.bounds[0] = border.min_x;
+        quad.bounds[1] = border.min_y;
+        quad.bounds[2] = border.max_x;
+        quad.bounds[3] = border.max_y;
+        quad.color[0] = ink.red;
+        quad.color[1] = ink.green;
+        quad.color[2] = ink.blue;
+        quad.color[3] = 1.0f;
+        quad.glyph[0] = border.band_offset;
+        quad.glyph[1] = border.horizontal_bands;
+        quad.glyph[2] = border.vertical_bands;
+        signs.lettering.add (border_set, quad);
       }
     }
 
     // The posts, weathered square timber with a little roof over them.
+    dl.begin (render::Prim::Triangles);
     dl.color (0.43f, 0.37f, 0.29f, 1.0f);
     for (const Fingerpost& post : posts) {
       const Vec3 foot (post.x_m, ground (post.x_m, post.z_m) - 0.3f, post.z_m);
@@ -704,7 +744,6 @@ namespace moppe::game {
                static_cast<int> (std::lround (metres / 10.0f) * 10)) +
              " m";
     const long tenths = std::lround (metres / 100.0f);
-    return std::to_string (tenths / 10) + "," + std::to_string (tenths % 10) +
-           " km";
+    return std::to_string (tenths / 10) + "," + std::to_string (tenths % 10);
   }
 }

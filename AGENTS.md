@@ -126,8 +126,12 @@
     network, and where a footpath leaves a road, a fingerpost planned at
     activation from the network (`plan_fingerposts`) carries a board per
     way for the nearest places it leads to, with their distances along
-    the network, lettered from the HUD's Slug face into a texture (white
-    for cart roads, brown for footpaths, grey for ways no longer used).
+    the network, after Sweden's vägvisare: an arrow board as long as its
+    lettering, yellow with black letters for cart roads (an enskild
+    väg's), brown with white for footpaths, weathered grey for ways no
+    longer used, with a border inset along its edge. The lettering, in
+    Geomini SemiBold, is Slug text in the world (`Renderer::
+    draw_world_text`), exact at any distance.
     The map names the landing (an anchor), the outlets (a mill wheel), and
     the sanctuaries, and draws abandoned ways dashed in grey-violet; the
     chart pins them, and a waymark names the nearest place within 1.2 km.
@@ -941,8 +945,13 @@
   the band/curve buffers (and a CPU coverage mirror for tests),
   `render/text.*` lays out a `Font` into a `TextList`, and the NHAL
   renderer's `slug-text` program draws it via `Renderer::draw_hud_text`. The
-  bundled face is `fonts/IosevkaAile-Regular.ttf` (SIL OFL, licence beside
-  it). `GlyphQuad` carries 3D axes so world-space text can reuse it.
+  bundled face is Geomini (`fonts/Geomini-Regular.ttf`, and SemiBold for
+  the signs; SIL OFL, licence beside them), a geometric sans after
+  Swedish road signs, kerned from its GPOS. Lettering in the world
+  (the fingerposts) is the same `GlyphQuad`s placed in metres
+  (`TextList::place`), uploaded once by `Renderer::create_world_text` and
+  drawn by the `world-text` program into the scene, depth-tested, lit,
+  and fogged (`Renderer::draw_world_text`).
 - `moppe/render/` — the game-shaped renderer API (DrawList immediate mode,
   MeshBuilder-baked meshes, the Renderer interface); no GPU API types.
   `moppe/nhal/renderer/` implements it over NHAL (`moppe/nhal/`), the one

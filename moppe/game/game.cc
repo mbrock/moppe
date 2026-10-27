@@ -486,21 +486,30 @@ namespace moppe {
       void draw_fingerposts (render::Renderer& r) {
         if (!m_fingerposts_made && m_hud.font ()) {
           m_fingerposts_made = true;
+          // The signs letter in the face's heavier cut, which carries
+          // further.
+          if (!m_sign_font)
+            m_sign_font =
+              render::Font::load (r, "fonts/Geomini-SemiBold.ttf");
           FingerpostSigns signs = make_fingerposts (
             r,
-            *m_hud.font (),
+            m_sign_font->ok () ? *m_sign_font : *m_hud.font (),
             m_fingerposts,
             m_place_names,
             [this] (float x, float z) {
               return generated_world ().road_surface ().ground (
                 x, z, ground_height (Vec3 (x, 0.0f, z)));
             });
-          m_fingerpost_boards = std::move (signs.boards);
           m_fingerpost_mesh =
             signs.mesh.empty () ? nullptr : r.create_mesh (signs.mesh);
+          m_fingerpost_lettering = signs.lettering.empty ()
+                                     ? nullptr
+                                     : r.create_world_text (signs.lettering);
         }
         if (m_fingerpost_mesh)
           r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
+        if (m_fingerpost_lettering)
+          r.draw_world_text (*m_fingerpost_lettering);
       }
 
       void draw_trail_map (render::DrawList& dl,
@@ -672,7 +681,7 @@ namespace moppe {
         }
         m_fingerposts_made = false;
         m_fingerpost_mesh.reset ();
-        m_fingerpost_boards.reset ();
+        m_fingerpost_lettering.reset ();
       }
 
       void prepare_world_water () {
@@ -6822,7 +6831,8 @@ namespace moppe {
       std::vector<Fingerpost> m_fingerposts;
       bool m_fingerposts_made = false;
       render::MeshPtr m_fingerpost_mesh;
-      render::TexturePtr m_fingerpost_boards;
+      render::WorldTextPtr m_fingerpost_lettering;
+      std::unique_ptr<render::Font> m_sign_font;
       bool m_skip_cinematic_requested = false;
       // Whose Space was last prompted (HudState::thumb_hint), since when,
       // and whether the bike's and the boat's boosts have been tried.
