@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+"""Record and cut a calm vertical film of the land: a walk through its kinds
+of country, from the coast up to the high fells and into the night.
+
+  tools/vista OUTPUT.mp4 [--work DIR] [--fresh] [--draft] [--only CLIP..]
+
+Like tools/trailer, the game records every clip itself (tools/record), so
+the film is the same on any machine.  Most of it is held drone views of the
+default world (seed 123, 2048 samples, play), composed as shot lists like
+data/opening.txt and recorded in one reel per hour of the day with the sun
+held still (MOPPE_DAY=0); the rest are the autopilots and scripted walks.
+Over them runs a quiet HUD drawn as SVG (rsvg-convert, in the bundled
+Geomini): a card for each chapter, and for each view its name, what it is,
+and where it lies, as latitude and longitude at 60 degrees north (north is
+-Z) and metres above the sea.
+
+The clips are kept in DIR (build/vista) and only missing ones are recorded,
+so a change to the cut (FILM) or the HUD takes a few minutes; --fresh
+records them all again, --only some of them.  --draft encodes quickly.
+"""
+
+import argparse
+import concurrent.futures
+import html
+import os
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FONTS = os.path.join(ROOT, "fonts")
+WIDTH, HEIGHT, FPS = 1080, 1920, 60
+SEA = 50.0
+
+WORLD = "world seed 123 resolution 2048 profile play\n"
+
+
+def shot (name, eye, heading, pitch, fov, hold, moves=""):
+  x, y, z = eye
+  return (f"shot {name} eye {x} {y} {z} heading {heading} pitch {pitch}"
+          f" fov {fov} hold {hold} {moves}\n")
+
+
+# The held views, one reel for each hour of the day they are seen at.
+# name: (hour, shots)
+REELS = {
+  "dawn": (7.3, [
+    shot ("aerial", (4208.7, 465, 693), -76, -12, 62, 9,
+          "push 70 sway 0.3"),
+  ]),
+  "day": (9.6, [
+    shot ("gaddvik", (1320, 80, 2280), -61.4, -25, 60, 6,
+          "truck -8 sway 0.4"),
+    shot ("ocean", (642.09, 57.81, 1215.59), -12, -1, 62, 6,
+          "push 3 sway 0.5"),
+    shot ("mouth", (1446.62, 70.7, 2589.05), -100.6, -23, 66, 5,
+          "truck 4 sway 0.4"),
+    shot ("confluence", (102.51, 66.9, 770.78), 36.3, -23, 66, 5,
+          "rise 3 sway 0.4"),
+    shot ("waterfall", (3092.44, 125.91, 2583.59), -98.1, -25, 58, 5,
+          "rise 2 tilt -3 sway 0.5"),
+    shot ("sunward", (427.83, 125.5, 4374.04), 47, 4, 70, 5,
+          "push 3 sway 0.5"),
+    shot ("shadowplay", (3302.83, 116.68, 2358.3), -41.2, 1, 68, 5,
+          "push 2 sway 0.5"),
+    shot ("birches", (4667.97, 156.42, 3750.0), 45.8, -2.1, 62, 5,
+          "push 4 rise 0.3 sway 0.6"),
+    shot ("granite", (3995, 198, 712), 100, -16, 60, 5,
+          "truck 3 sway 0.4"),
+    shot ("fen", (4096, 212, 640), 0, -40, 60, 5, "rise 6 sway 0.3"),
+    shot ("vista", (4323.9, 212.45, 819.6), 48.3, -30, 64, 6,
+          "push 5 sway 0.4"),
+    shot ("lookout", (3969, 221, 973), -135, -18, 50, 5, "sway 0.4"),
+  ]),
+  "golden": (16.4, [
+    shot ("heath", (2985, 179, 500), 250, -20, 55, 6, "push 2 sway 0.5"),
+    shot ("ling", (2960, 176.5, 525), 110, -10, 50, 5, "truck 2 sway 0.5"),
+    shot ("vardberget", (4660, 250, 300), 147.5, -14, 60, 6,
+          "truck -6 sway 0.4"),
+    shot ("helga", (3830, 268, 3960), -40.7, -14, 60, 6, "truck 5 sway 0.4"),
+  ]),
+  "dusk": (17.7, [
+    shot ("dusk", (654.09, 57.5, 1243.59), -93.2, -1.9, 68, 7,
+          "push 5 pan 3 sway 0.6"),
+  ]),
+  "night": (22.2, [
+    shot ("night", (4667.97, 156.42, 3750.0), 45.8, 4, 62, 9,
+          "push 3 sway 0.6"),
+  ]),
+}
+
+# name: (scene, seconds, tools/record options, environment); a reel's
+# clip is named after it.
+CLIPS = {
+  "boat": ("boat", 12, ["--start", "14", "--clock", "10"],
+           {"MOPPE_RIDE_CAMERA": "drone", "MOPPE_DAY": "0"}),
+  "river": ("river", 16, ["--start", "150", "--clock", "9.8"],
+            {"MOPPE_FLYOVER_SECONDS": "440", "MOPPE_DAY": "0"}),
+  "ride": ("ride", 20, ["--start", "3", "--clock", "9.6"],
+           {"MOPPE_DAY": "0"}),
+  "heli": ("helicopter", 30, ["--clock", "11"], {"MOPPE_DAY": "0"}),
+  "glide": ("glide", 14, ["--clock", "11.5"],
+            {"MOPPE_RIDE_CAMERA": "side", "MOPPE_DAY": "0"}),
+  "jeep": ("jeep", 16, ["--start", "4", "--clock", "16.6"],
+           {"MOPPE_RIDE_CAMERA": "front", "MOPPE_DAY": "0"}),
+  "camp": ("camp", 32, [], {}),
+}
+for reel, (hour, shots) in REELS.items ():
+  seconds = sum (float (line.split (" hold ")[1].split ()[0])
+                 for line in shots)
+  CLIPS[reel] = ("opening", seconds + 1, ["--clock", str (hour)],
+                 {"MOPPE_DAY": "0"})
+
+
+def reel_time (reel, name, into=0.0):
+  """Seconds into a reel's recording where shot NAME is INTO seconds old."""
+  now = 0.0
+  for line in REELS[reel][1]:
+    hold = float (line.split (" hold ")[1].split ()[0])
+    if line.split ()[1] == name:
+      return now + into
+    now += hold
+  raise KeyError (name)
+
+
+def view (name, seconds, into=0.6):
+  """A cut of SECONDS from the held view NAME, INTO seconds into it."""
+  for reel, (_, shots) in REELS.items ():
+    if any (line.split ()[1] == name for line in shots):
+      return (reel, reel_time (reel, name, into), seconds)
+  raise KeyError (name)
+
+
+# Where a view lies, for its tag: (x, z, metres of ground) or None.
+def tag (name, note, where=None, hour=None):
+  return dict (name=name, note=note, where=where, hour=hour)
+
+
+# The film: chapters of cuts.  Each cut is (clip, start, seconds) and an
+# optional tag; a cut's HUD tag stays while it is on screen.
+FILM = [
+  ("title", None, [
+    (view ("aerial", 7.5, 0.5), None),
+  ]),
+  ("chapter", "the coast", [
+    (view ("gaddvik", 5.2), tag ("Gaddvik", "the bay below the landing",
+                                 (1270, 2311, 52), 9.6)),
+    (("boat", 0.5, 5.8), tag ("The skiff", "birch ply, glass, and epoxy")),
+  ]),
+  ("chapter", "rivers", [
+    (("river", 3.0, 5.5), tag ("The great river",
+                               "from the divide to the sea")),
+    (view ("mouth", 4.2), tag ("The mouth", "fresh water meets salt",
+                               (1401, 2581, 51), 9.6)),
+    (view ("confluence", 4.0), tag ("Confluence", "two streams, one bed",
+                                    (125, 801, 51), 9.6)),
+    (view ("waterfall", 4.4), tag ("Falls", "a step in the bedrock",
+                                   (3063, 2579, 111), 9.6)),
+  ]),
+  ("chapter", "forest", [
+    (view ("sunward", 4.4), tag ("Björkskog", "birch, first to come back",
+                                 (447, 4392, 127), 9.6)),
+    (view ("shadowplay", 4.2), tag ("Mixed wood", "pine, spruce, birch",
+                                    (3277, 2388, 117), 9.6)),
+    (view ("birches", 4.4), tag ("Meadow", "turned birches in the light",
+                                 (4711, 3792, 154), 9.6)),
+    (("ride", 6.0, 5.0), tag ("Trail 90", "Honda CT90, 1972")),
+  ]),
+  ("chapter", "heath and rock", [
+    (view ("heath", 5.4), tag ("Ljunghed", "heather, gone over at the equinox",
+                               (2950, 490, 172), 16.4)),
+    (view ("ling", 4.2), tag ("Ling", "cushions of every age",
+                              (2930, 535, 174), 16.4)),
+    (view ("granite", 4.4), tag ("Hällmark", "granite the ice scoured bare",
+                                 (4023, 703, 187), 9.6)),
+  ]),
+  ("chapter", "high country", [
+    (("heli", 14.0, 5.5), tag ("Helicopter", "taking the jeep somewhere")),
+    (("glide", 0.2, 3.4), tag ("Hang glider", "and the bike beneath it")),
+    (view ("helga", 4.8), tag ("Helgahöjden", "a sanctuary, left 317 years",
+                               (3781, 4016, 249), 16.4)),
+  ]),
+  ("chapter", "evening", [
+    (("jeep", 8.0, 4.5), tag ("The jeep", "two seats, one of them free")),
+    (view ("dusk", 5.8), tag ("The coast", "the sun gone down in the west",
+                              (600, 1240, 52), 17.7)),
+    (("camp", 15.5, 3.6), tag ("Camp", "a hammock between two birches")),
+    (("camp", 22.5, 2.3, 4), None),
+  ]),
+  ("end", None, [
+    (view ("night", 7.5, 0.8), None),
+  ]),
+]
+TITLE, TAGLINE = "moppe", "a walk through the land"
+URL = "moppe.swa.sh"
+
+
+def ffmpeg (*arguments):
+  subprocess.run (["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                   *arguments], check=True)
+
+
+def game_path ():
+  build = os.environ.get ("MOPPE_BUILD_DIR", os.path.join (ROOT, "build"))
+  if sys.platform == "darwin":
+    return os.path.join (build, "moppe.app", "Contents", "MacOS", "moppe")
+  return os.path.join (build, "moppe")
+
+
+def record (work, name):
+  scene, seconds, options, switches = CLIPS[name]
+  output = os.path.join (work, f"{name}.mp4")
+  environment = dict (os.environ, MOPPE_HUD="none", **switches)
+  if name in REELS:
+    reel = os.path.join (work, f"{name}.txt")
+    with open (reel, "w") as file:
+      file.write (WORLD + "".join (REELS[name][1]) + "arrival hold 1\n")
+    environment["MOPPE_OPENING"] = reel
+  # A window cannot be larger than the screen; on a 2x display a window of
+  # half the size in points gives the whole picture.
+  size = f"{WIDTH}x{HEIGHT}"
+  if sys.platform == "darwin":
+    size = f"{WIDTH // 2}x{HEIGHT // 2}"
+    environment["MOPPE_VIDEO_HEIGHT"] = str (HEIGHT)
+  with open (os.path.join (work, f"{name}.log"), "w") as log:
+    subprocess.run ([os.path.join (ROOT, "tools", "record"), output,
+                     scene, "--seconds", str (seconds), "--fps", str (FPS),
+                     "--size", size, *options],
+                    env=environment, stdout=log, stderr=subprocess.STDOUT,
+                    check=True)
+  print (f"vista: recorded {name}", file=sys.stderr)
+
+
+# -- the HUD -----------------------------------------------------------------
+
+def dms (degrees, positive, negative):
+  sign = positive if degrees >= 0 else negative
+  degrees = abs (degrees)
+  d = int (degrees)
+  m = int ((degrees - d) * 60)
+  s = int (round (((degrees - d) * 60 - m) * 60))
+  return f"{d}°{m:02d}′{s:02d}″{sign}"
+
+
+def place (x, z):
+  """Latitude and longitude of world metres: 60°N at the middle, north
+  along -Z."""
+  latitude = 60.0 + (2500.0 - z) / 111320.0
+  longitude = 14.0 + x / 55660.0
+  return f"{dms (latitude, 'N', 'S')}  {dms (longitude, 'E', 'W')}"
+
+
+def hour_text (hour):
+  minutes = int (round (hour * 60)) % (24 * 60)
+  return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+SHADE = """<defs><filter id="shade" x="-20%" y="-50%" width="140%" height="200%">
+<feGaussianBlur in="SourceAlpha" stdDeviation="7" result="wide"/>
+<feComponentTransfer in="wide" result="soft">
+<feFuncA type="linear" slope="0.7"/></feComponentTransfer>
+<feMerge><feMergeNode in="soft"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter></defs>"""
+
+
+def svg (body):
+  return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" '
+          f'height="{HEIGHT}" font-family="Geomini">{SHADE}'
+          f'<g filter="url(#shade)" fill="#fbf6ec" stroke="#fbf6ec">'
+          f'{body}</g></svg>')
+
+
+def text (x, y, words, size, spacing=0, opacity=1.0, anchor="start",
+          weight="normal"):
+  return (f'<text x="{x}" y="{y}" font-size="{size}" stroke="none" '
+          f'letter-spacing="{spacing}" opacity="{opacity}" '
+          f'text-anchor="{anchor}" font-weight="{weight}">'
+          f'{html.escape (words)}</text>')
+
+
+def tag_svg (index, chapter, info):
+  """A view's tag, low on the left: a rule, the chapter, the name, what it
+  is, and where."""
+  x, top = 92, 1330
+  lines = [
+    f'<line x1="{x}" y1="{top}" x2="{x}" y2="{top + 188}" '
+    f'stroke-width="2" opacity="0.85"/>',
+    f'<rect x="{x - 5}" y="{top - 5}" width="10" height="10" '
+    f'stroke="none" transform="rotate(45 {x} {top})"/>',
+    text (x + 28, top + 12, f"{index:02d}  ·  {chapter.upper ()}", 23, 7,
+          0.75),
+    text (x + 26, top + 84, info["name"].upper (), 66, 9),
+    text (x + 28, top + 128, info["note"], 30, 1, 0.9),
+  ]
+  if info["where"]:
+    px, pz, ground = info["where"]
+    lines.append (text (x + 28, top + 176,
+                        f"{place (px, pz)}   ▲ {max (ground - SEA, 0):.0f} m"
+                        f"   {hour_text (info['hour'])}",
+                        22, 2, 0.7))
+  return svg ("".join (lines))
+
+
+def chapter_svg (index, name):
+  """A chapter's card, high in the middle: its number over a rule, and its
+  name spaced out beneath."""
+  cx, top = WIDTH // 2, 300
+  return svg ("".join ([
+    text (cx, top, f"{index:02d}", 30, 10, 0.8, "middle"),
+    f'<line x1="{cx - 70}" y1="{top + 26}" x2="{cx + 70}" y2="{top + 26}" '
+    f'stroke-width="1.5" opacity="0.8"/>',
+    text (cx, top + 98, name.upper (), 58, 18, 1.0, "middle"),
+  ]))
+
+
+def title_svg (end):
+  cx = WIDTH // 2
+  lines = [text (cx, 820, TITLE, 210, 4, 1.0, "middle"),
+           f'<line x1="{cx - 90}" y1="{872}" x2="{cx + 90}" y2="{872}" '
+           f'stroke-width="1.5" opacity="0.8"/>']
+  if end:
+    lines.append (text (cx, 936, URL, 44, 6, 0.9, "middle"))
+  else:
+    lines.append (text (cx, 936, TAGLINE.upper (), 30, 12, 0.85, "middle"))
+  return svg ("".join (lines))
+
+
+def render_svg (work, name, source):
+  folder = os.path.join (work, "hud")
+  os.makedirs (folder, exist_ok=True)
+  vector, image = (os.path.join (folder, f"{name}.svg"),
+                   os.path.join (folder, f"{name}.png"))
+  with open (vector, "w") as file:
+    file.write (source)
+  config = os.path.join (folder, "fonts.conf")
+  if not os.path.exists (config):
+    with open (config, "w") as file:
+      file.write ('<?xml version="1.0"?><fontconfig>'
+                  '<include ignore_missing="yes">/opt/homebrew/etc/fonts/'
+                  'fonts.conf</include><include ignore_missing="yes">'
+                  '/etc/fonts/fonts.conf</include>'
+                  f'<dir>{FONTS}</dir></fontconfig>')
+  subprocess.run (["rsvg-convert", "-o", image, vector], check=True,
+                  env=dict (os.environ, FONTCONFIG_FILE=config,
+                                 PANGOCAIRO_BACKEND="fc"))
+  return image
+
+
+# -- the cut -----------------------------------------------------------------
+
+def cut (work, index, clip):
+  name, start, seconds = clip[:3]
+  speed = clip[3] if len (clip) > 3 else 1
+  output = os.path.join (work, "cut", f"{index:02d}-{name}.mp4")
+  filters = []
+  if speed != 1:
+    filters.append (f"setpts=PTS/{speed}")
+  filters.append (f"scale={WIDTH}:{HEIGHT}:flags=lanczos,fps={FPS},setsar=1")
+  ffmpeg ("-ss", str (start), "-t", str (seconds * speed), "-i",
+          os.path.join (work, f"{name}.mp4"), "-vf", ",".join (filters),
+          "-an", "-c:v", "libx264", "-crf", "10", "-preset", "veryfast",
+          "-pix_fmt", "yuv420p", output)
+  return output, seconds
+
+
+# Cross-dissolves between cuts, in seconds.
+DISSOLVE = 0.6
+
+
+def assemble (work, output, draft):
+  os.makedirs (os.path.join (work, "cut"), exist_ok=True)
+  cuts, overlays, now = [], [], 0.0
+  chapter_number, chapter_name = 0, ""
+  for kind, name, section in FILM:
+    if kind == "chapter":
+      chapter_number += 1
+      chapter_name = name
+      image = render_svg (work, f"chapter-{chapter_number}",
+                          chapter_svg (chapter_number, name))
+      overlays.append ((image, now + 0.3, now + 3.0, 0.6, 0))
+    for clip, info in section:
+      path, length = cut (work, len (cuts), clip)
+      begin = now
+      cuts.append ((path, length))
+      now += length - DISSOLVE
+      if info:
+        image = render_svg (work, f"tag-{len (cuts)}",
+                            tag_svg (chapter_number, chapter_name, info))
+        overlays.append ((image, begin + 0.7, begin + length - 0.6, 0.5,
+                          -26))
+    if kind == "title":
+      overlays.append ((render_svg (work, "title", title_svg (False)),
+                        1.2, now - 0.3, 1.0, 0))
+    elif kind == "end":
+      overlays.append ((render_svg (work, "end", title_svg (True)),
+                        now - length + DISSOLVE + 1.2, now + DISSOLVE, 1.0,
+                        0))
+  total = now + DISSOLVE
+
+  inputs, graph = [], []
+  for path, _ in cuts:
+    inputs += ["-i", path]
+  # Each cut dissolves into the next.
+  offset, last = 0.0, "[0:v]"
+  for n in range (1, len (cuts)):
+    offset += cuts[n - 1][1] - DISSOLVE
+    graph.append (f"{last}[{n}:v]xfade=transition=fade:"
+                  f"duration={DISSOLVE}:offset={offset:.3f}[x{n}]")
+    last = f"[x{n}]"
+  # The film rises from black and falls to it.
+  graph.append (f"{last}fade=in:st=0:d=1.2,"
+                f"fade=out:st={total - 1.2:.2f}:d=1.2[v0]")
+  first = len (cuts)
+  for n, (image, appears, goes, fade, slide) in enumerate (overlays, 1):
+    # Each overlay is decoded only while it shows.
+    goes = min (goes, total)
+    length = goes - appears
+    inputs += ["-loop", "1", "-framerate", str (FPS), "-t",
+               f"{length:.2f}", "-i", image]
+    graph.append (f"[{first + n - 1}:v]format=rgba,"
+                  f"fade=in:st=0:d={fade}:alpha=1,"
+                  f"fade=out:st={length - fade:.2f}:d={fade}:alpha=1,"
+                  f"setpts=PTS+{appears:.3f}/TB[o{n}]")
+    # A tag drifts in from the left as it fades up.
+    x = "0" if not slide else \
+      f"'{slide}*max(0,1-(t-{appears:.2f})/0.9)'"
+    graph.append (f"[v{n - 1}][o{n}]overlay=x={x}:y=0:eof_action=pass:"
+                  f"enable="
+                  f"'between(t,{appears:.2f},{goes:.2f})'[v{n}]")
+  # A silent track: some players and uploaders want one.
+  inputs += ["-f", "lavfi", "-t", f"{total:.2f}", "-i",
+             "anullsrc=channel_layout=stereo:sample_rate=48000"]
+  script = os.path.join (work, "cut", "graph.txt")
+  with open (script, "w") as file:
+    file.write (";\n".join (graph))
+  ffmpeg (*inputs, "-filter_complex_script", script, "-map",
+          f"[v{len (overlays)}]", "-map", f"{first + len (overlays)}:a",
+          "-c:v", "libx264", "-crf", "18", "-preset",
+          "veryfast" if draft else "slow", "-pix_fmt", "yuv420p", "-r",
+          str (FPS), "-c:a", "aac", "-b:a", "96k", "-movflags",
+          "+faststart", "-t", f"{total:.2f}", output)
+  print (f"{output}: {total:.1f} s")
+
+
+def main ():
+  parser = argparse.ArgumentParser (
+    description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+  parser.add_argument ("output")
+  parser.add_argument ("--work", default=os.path.join (ROOT, "build",
+                                                       "vista"))
+  parser.add_argument ("--fresh", action="store_true")
+  parser.add_argument ("--draft", action="store_true")
+  parser.add_argument ("--only", nargs="+", default=[])
+  options = parser.parse_args ()
+
+  if not shutil.which ("ffmpeg") and shutil.which ("nix") and \
+     not os.environ.get ("MOPPE_RECORD_SHELL"):
+    os.environ["MOPPE_RECORD_SHELL"] = "1"
+    os.execvp ("nix", ["nix", "develop", ROOT, "-c", *sys.argv])
+  if not shutil.which ("rsvg-convert"):
+    sys.exit ("vista: the HUD needs rsvg-convert (librsvg)")
+  if not os.access (game_path (), os.X_OK):
+    sys.exit ("vista: moppe is not built; run cmake --build build first")
+
+  work = os.path.abspath (options.work)
+  os.makedirs (work, exist_ok=True)
+  missing = [name for name in CLIPS if name in options.only or
+             options.fresh or
+             not os.path.exists (os.path.join (work, f"{name}.mp4"))]
+  with concurrent.futures.ThreadPoolExecutor (max_workers=2) as pool:
+    list (pool.map (lambda name: record (work, name), missing))
+  assemble (work, os.path.abspath (options.output), options.draft)
+
+
+if __name__ == "__main__":
+  main ()

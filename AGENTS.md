@@ -232,6 +232,14 @@
     `build/trailer`, so a change to the cut (`FILM` in the script) takes a
     few minutes; `--fresh` records them again, `--url ""` drops the
     address from the end card, and `--draft` encodes quickly.
+  - The vista: `tools/vista OUTPUT.mp4` records and cuts a calm vertical
+    1080x1920 film of about a minute and a half through the land's kinds
+    of country (coast, rivers, forest, heath and rock, high country,
+    evening), held drone views of the default world in one reel per hour
+    with the sun still, and a few autopilots, under a quiet HUD drawn as
+    SVG in Geomini (chapter cards, and each view's name, note, latitude,
+    longitude, height, and hour). Needs `rsvg-convert`; clips are kept in
+    `build/vista`, so recutting `FILM` takes a couple of minutes.
   - The film (`film/`, film/README.md): "one day at the trailhead", a
     vertical 40 s film made with fframes (Rust and SVG over the GPU).
     `nix develop -c film/record` has the game record its shots at the

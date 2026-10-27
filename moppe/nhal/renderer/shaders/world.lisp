@@ -2970,12 +2970,16 @@
                         (+ 0.82 (* 0.22 moisture))))))
     (make-grass-medium
      ;; Ling holds its ground as a closed carpet wherever it roots.
-     ;; Ling holds its ground as a closed carpet wherever it roots, the
-     ;; fjäll's wind-clipped heath too, above where the grass gives out.
+     ;; Ling holds its ground as a closed carpet wherever it roots, a
+     ;; little above where the grass gives out; the high fjäll's heath is
+     ;; too wind-clipped to stand up, and none stands near the snow.
      :leaf-area (max turf (* 0.95 ling
                              (smoothstep (- edge 0.05) (+ edge 0.05)
-                                         (* standable cleared (- 1.0 snow)
-                                            ashore))
+                                         (* standable cleared ashore
+                                            (- 1.0 (smoothstep 0.58 0.72
+                                                               rise))
+                                            (- 1.0 (smoothstep 0.0 0.15
+                                                               snow))))
                              (step 0.001 density)))
      :moisture moisture
      :forest-cover canopy
