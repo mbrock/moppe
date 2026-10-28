@@ -139,10 +139,9 @@ namespace {
         // Late word comes all at once.
         const bool silent = theirs >= silent_from && theirs < until;
         while (!silent && told / 30.0 <= theirs) {
-          track.push (
-            companion_test_walker (
-              static_cast<float> (told / 3.0), told / 30.0),
-            now);
+          track.push (companion_test_walker (static_cast<float> (told / 3.0),
+                                             told / 30.0),
+                      now);
           ++told;
         }
         const std::optional<CompanionSnapshot> seen =
@@ -161,9 +160,8 @@ MOPPE_TEST (a_companion_is_drawn_evenly_a_moment_behind) {
   // A steady link is followed closely.
   const double delay = playback.track.delay ();
   MOPPE_CHECK (delay >= 0.05 && delay < 0.09);
-  MOPPE_CHECK_NEAR (playback.drawn.back (),
-                    static_cast<float> ((4.0 - delay) * 10.0),
-                    0.25f);
+  MOPPE_CHECK_NEAR (
+    playback.drawn.back (), static_cast<float> ((4.0 - delay) * 10.0), 0.25f);
   // Once settled every frame moves them as far as the last, though
   // snapshots come only with every other one.
   const float pace = 10.0f / 60.0f;

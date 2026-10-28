@@ -340,8 +340,8 @@ namespace moppe::game {
       state.report ("Laying out the roads",
                     "Joining the trailhead, the shore, the lakes, and the "
                     "sanctuaries");
-      terrain::RoadNetwork roads = lay_world_roads (
-        surface, recipe, hydrology, trails, water, readings);
+      terrain::RoadNetwork roads =
+        lay_world_roads (surface, recipe, hydrology, trails, water, readings);
 
       state.report ("Reading the ground's history",
                     "Burning, grazing, and letting the forest back in");

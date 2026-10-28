@@ -48,16 +48,14 @@ namespace moppe {
     struct Surface {
       uint8_t metallic = 0, roughness = 0, coat = 0, a = 0;
 
-      static Surface of (float metallic,
-                         float roughness,
-                         float coat,
-                         float sheen) {
+      static Surface
+      of (float metallic, float roughness, float coat, float sheen) {
         Surface s;
         s.metallic = PackedRgba8::quantize (metallic);
         s.roughness = PackedRgba8::quantize (roughness);
         s.coat = PackedRgba8::quantize (coat);
-        s.a = static_cast<uint8_t> (
-          128 + PackedRgba8::quantize (sheen) * 127 / 255);
+        s.a = static_cast<uint8_t> (128 +
+                                    PackedRgba8::quantize (sheen) * 127 / 255);
         return s;
       }
     };

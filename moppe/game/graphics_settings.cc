@@ -71,7 +71,8 @@ namespace moppe::game {
     // A15 has to feed a 4K television as well as reconstruct the scene. Keep
     // the water and moment-to-moment effects, but avoid the passes whose cost
     // scales across the whole image or explodes into dense procedural
-    // geometry. The temporal resolve restores the output footprint from this 540p scene.
+    // geometry. The temporal resolve restores the output footprint from this
+    // 540p scene.
     settings.scene_scale = 0.5f;
     settings.terrain_shadows = false;
     settings.motion_blur = false;

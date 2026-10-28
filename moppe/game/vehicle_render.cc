@@ -177,9 +177,8 @@ namespace moppe {
         const float posture = std::clamp (4.0f * std::abs (back), 0.0f, 1.0f);
         const float rear =
           posture * 0.85f *
-          std::clamp (std::asin (std::clamp (facing[1], -1.0f, 1.0f)),
-                      0.0f,
-                      1.3f);
+          std::clamp (
+            std::asin (std::clamp (facing[1], -1.0f, 1.0f)), 0.0f, 1.3f);
         HoldPose hold;
         hold.facing = facing * std::cos (rear) + up * std::sin (rear);
         hold.up = up * std::cos (rear) - facing * std::sin (rear);

@@ -1,6 +1,6 @@
 #include <moppe/mov/box3d_vec.hh>
-#include <moppe/mov/ground_patch.hh>
 #include <moppe/mov/caddy.hh>
+#include <moppe/mov/ground_patch.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -372,7 +372,7 @@ namespace moppe::mov {
       // angle turns to the right.
       const float lock =
         caddy_rig::full_lock / (1.0f + (speed / caddy_rig::lock_fade_speed) *
-                                        (speed / caddy_rig::lock_fade_speed));
+                                         (speed / caddy_rig::lock_fade_speed));
       const float steer = std::clamp (kept.turn, -1.0f, 1.0f) * lock;
       b3WheelJoint_SetTargetSteeringAngle (joints[0], steer);
       b3WheelJoint_SetTargetSteeringAngle (joints[1], steer);
@@ -390,10 +390,9 @@ namespace moppe::mov {
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
         const bool front = wheel < 2;
         float spin = 0.0f;
-        float torque =
-          front ? caddy_rig::engine_brake_torque : 0.0f;
-        const float grip = caddy_rig::traction_share * caddy_rig::tyre_friction *
-                           kept.load[wheel] * r;
+        float torque = front ? caddy_rig::engine_brake_torque : 0.0f;
+        const float grip = caddy_rig::traction_share *
+                           caddy_rig::tyre_friction * kept.load[wheel] * r;
         const float brake_share = front ? caddy_rig::front_brake_share
                                         : 1.0f - caddy_rig::front_brake_share;
         if (kept.parked) {
@@ -444,10 +443,10 @@ namespace moppe::mov {
         if (carried > 2.0f && length2 (nose) > 1e-4f) {
           level = level * (1.0f / carried);
           nose = normalized (nose);
-          const float off = std::atan2 (cross (nose, level)[1],
-                                        dot (nose, level));
-          wanted[1] += off * caddy_rig::slung_vane *
-                       std::min (1.0f, carried / 10.0f);
+          const float off =
+            std::atan2 (cross (nose, level)[1], dot (nose, level));
+          wanted[1] +=
+            off * caddy_rig::slung_vane * std::min (1.0f, carried / 10.0f);
         }
         const b3Quat q = b3Body_GetRotation (chassis);
         const b3Vec3 local = b3InvRotateVector (q, to_b3 (wanted));

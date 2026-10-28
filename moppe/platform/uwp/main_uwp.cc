@@ -73,8 +73,8 @@ int main (int, char**) {
   if (!moppe::environment ("MOPPE_CONTROL_FILE"))
     moppe::set_environment ("MOPPE_CONTROL_FILE",
                             (local + "control.txt").c_str ());
-  std::cerr << "moppe-xbox: " << packaged << " packaged and "
-            << local_variables << " local environment variables" << std::endl;
+  std::cerr << "moppe-xbox: " << packaged << " packaged and " << local_variables
+            << " local environment variables" << std::endl;
   watch_frames ();
 
   std::vector<std::string> words { "moppe" };

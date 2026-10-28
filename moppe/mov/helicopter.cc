@@ -332,14 +332,14 @@ namespace moppe::mov {
         const float reach = std::tan (max_tilt * 1.3f) * hold;
         if (length (level) > reach)
           level = normalized (level) * reach;
-        const float thrust = std::clamp (
-          (hold + heli_rig::mass * rise) / std::max (up[1], 0.5f),
-          0.0f,
-          (thrust_to_weight * weight + length (pull)) * authority);
+        const float thrust =
+          std::clamp ((hold + heli_rig::mass * rise) / std::max (up[1], 0.5f),
+                      0.0f,
+                      (thrust_to_weight * weight + length (pull)) * authority);
         thrust_force = up * thrust;
-        const Vec3 wanted_up =
-          hold > 1.0f ? normalized (Vec3 (level[0], hold, level[2]))
-                      : Vec3 (0, 1, 0);
+        const Vec3 wanted_up = hold > 1.0f
+                                 ? normalized (Vec3 (level[0], hold, level[2]))
+                                 : Vec3 (0, 1, 0);
         const float omega = 2.0f * pi * attitude_hertz;
         const Vec3 spin_about_up = up * dot (w, up);
         const Vec3 tilt_rate = w - spin_about_up;

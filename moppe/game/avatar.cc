@@ -163,8 +163,8 @@ namespace moppe::game {
         const float u = t / duty;
         along = stance * (0.5f - u) - back;
         yaw = stance_turn * (0.5f - u);
-        toe_up = gait * mix (0.30f, 0.05f, running) *
-                 (1.0f - ease (0.0f, 0.2f, u));
+        toe_up =
+          gait * mix (0.30f, 0.05f, running) * (1.0f - ease (0.0f, 0.2f, u));
         heel_up = gait * mix (0.45f, 0.8f, running) * ease (0.55f, 1.0f, u);
       } else {
         const float u = (t - duty) / (1.0f - duty);
@@ -172,8 +172,8 @@ namespace moppe::game {
         hang[i] = running * moving * ease (0.0f, 0.2f, u) *
                   (1.0f - ease (0.75f, 1.0f, u));
         yaw = stance_turn * (swung - 0.5f);
-        const Key stride = run_swing (
-          u, -0.5f * stance - back, 0.5f * stance - back);
+        const Key stride =
+          run_swing (u, -0.5f * stance - back, 0.5f * stance - back);
         along = mix (stance * (swung - 0.5f) - back, stride.along, running);
         raise = mix (lift * std::sin (PI * u), stride.raise * moving, running);
         toe_up = gait * 0.30f * ease (0.65f, 1.0f, u);
@@ -202,8 +202,8 @@ namespace moppe::game {
       (walker.grounded ? 1.0f : 0.5f);
     const Vec3 hip_ahead = yawed (f, hip_turn);
     const Vec3 hip_side = yawed (r, hip_turn);
-    k.up = normalized (up + hip_ahead * hip_tilt +
-                       hip_side * (bank - hip_drop));
+    k.up =
+      normalized (up + hip_ahead * hip_tilt + hip_side * (bank - hip_drop));
     k.right = normalized (cross (k.up, hip_ahead));
     k.forward = cross (k.right, k.up);
 
@@ -212,8 +212,8 @@ namespace moppe::game {
     // the standing foot, and sinks into a landing.
     float height = ground (feet) + 0.94f - 0.05f * running;
     height += (1.0f - running) * gait * 0.024f * -std::cos (2.0f * PI2 * phase);
-    height += running * moving * 0.06f *
-              -std::cos (2.0f * PI2 * (phase - duty * 0.5f));
+    height +=
+      running * moving * 0.06f * -std::cos (2.0f * PI2 * (phase - duty * 0.5f));
     height += 0.004f * breath * (1.0f - moving) - walker.landing_dip;
     const float shift = -moving * (1.0f - running) * 0.03f *
                           std::cos (PI2 * (phase - duty * 0.5f)) +
@@ -228,14 +228,12 @@ namespace moppe::game {
     const float leg = (size::thigh + size::shin) * 0.985f;
     if (walker.grounded)
       for (int i = 0; i < 2; ++i) {
-        const Vec3 out =
-          k.right * ((i == 0 ? -1.0f : 1.0f) * size::hip_width);
+        const Vec3 out = k.right * ((i == 0 ? -1.0f : 1.0f) * size::hip_width);
         const Vec3 gap = flat (k.ankle[i] - pelvis - out);
         const float spread = length2 (gap);
         if (spread < leg * leg)
-          height = std::min (height,
-                             k.ankle[i][1] - out[1] +
-                               std::sqrt (leg * leg - spread));
+          height = std::min (
+            height, k.ankle[i][1] - out[1] + std::sqrt (leg * leg - spread));
       }
     pelvis[1] = height;
     k.pelvis = pelvis;
@@ -265,9 +263,8 @@ namespace moppe::game {
         // Square to the shin, toes pointed a little.
         const Vec3 shin = normalized (k.ankle[i] - k.knee[i]);
         const Vec3 square = normalized (cross (shin, k.right));
-        sole = normalized (
-          mix (sole, square * std::cos (0.45f) + shin * std::sin (0.45f),
-               hang[i]));
+        sole = normalized (mix (
+          sole, square * std::cos (0.45f) + shin * std::sin (0.45f), hang[i]));
         instep = normalized (cross (sole, k.right));
       }
       k.heel[i] = k.ankle[i] - sole * 0.07f - instep * 0.07f;

@@ -84,9 +84,8 @@ namespace moppe::spatial {
 
     // The code nearest `value`, clamped onto the grid.
     std::uint16_t nearest (float value) const {
-      const double steps =
-        std::ldexp (static_cast<double> (value), -exponent) -
-        static_cast<double> (origin);
+      const double steps = std::ldexp (static_cast<double> (value), -exponent) -
+                           static_cast<double> (origin);
       return static_cast<std::uint16_t> (
         std::clamp (std::round (steps), 0.0, 65535.0));
     }
@@ -115,8 +114,7 @@ namespace moppe::spatial {
     for (int exponent = -40; exponent <= 40; ++exponent) {
       const double low = std::floor (std::ldexp (double (min), -exponent));
       const double high = std::ldexp (double (max), -exponent);
-      if (high - low <= 65535.0 &&
-          std::abs (low) + 65535.0 < 16777216.0)
+      if (high - low <= 65535.0 && std::abs (low) + 65535.0 < 16777216.0)
         return Fixed16 { exponent, static_cast<std::int64_t> (low) };
     }
     return std::nullopt;
@@ -482,9 +480,9 @@ namespace moppe::spatial {
     bool configure_column_schema (ArrowSchema& schema,
                                   const std::optional<Fixed16>& fixed = {}) {
       const std::string spec = quantity_spec_name<Value> ();
-      const bool typed = fixed ? ok (ArrowSchemaSetType (&schema,
-                                                         NANOARROW_TYPE_UINT16))
-                               : ColumnEncoding<Value>::configure (schema);
+      const bool typed =
+        fixed ? ok (ArrowSchemaSetType (&schema, NANOARROW_TYPE_UINT16))
+              : ColumnEncoding<Value>::configure (schema);
       return typed && ok (ArrowSchemaSetName (&schema, spec.c_str ())) &&
              set_metadata (schema, column_metadata<Value> (fixed));
     }
@@ -503,7 +501,8 @@ namespace moppe::spatial {
         for (const auto& [key, value] : column_metadata<Value> ())
           if (key != storage_key && metadata_value (actual, key) != value)
             return std::nullopt;
-        const std::optional exponent = metadata_value (actual, fixed_exponent_key);
+        const std::optional exponent =
+          metadata_value (actual, fixed_exponent_key);
         const std::optional origin = metadata_value (actual, fixed_origin_key);
         if (!exponent || !origin)
           return std::nullopt;
@@ -553,8 +552,9 @@ namespace moppe::spatial {
         return false;
       if constexpr (FixedColumn<Value>)
         if (fixed) {
-          value = value_from_representation<Value> (fixed->decode (
-            static_cast<std::uint16_t> (ArrowArrayViewGetUIntUnsafe (&view, row))));
+          value = value_from_representation<Value> (
+            fixed->decode (static_cast<std::uint16_t> (
+              ArrowArrayViewGetUIntUnsafe (&view, row))));
           return true;
         }
       return ColumnEncoding<Value>::read (view, row, value);
@@ -655,10 +655,10 @@ namespace moppe::spatial {
     using ColumnGrids = std::array<std::optional<Fixed16>, Count>;
 
     template <typename Domain, typename... Quantities>
-    bool configure_bundle_schema (
-      ArrowSchema& schema,
-      const Bundle<Domain, Quantities...>& bundle,
-      const ColumnGrids<sizeof...(Quantities)>& grids) {
+    bool
+    configure_bundle_schema (ArrowSchema& schema,
+                             const Bundle<Domain, Quantities...>& bundle,
+                             const ColumnGrids<sizeof...(Quantities)>& grids) {
       ArrowSchemaInit (&schema);
       return ok (ArrowSchemaSetTypeStruct (
                &schema, static_cast<std::int64_t> (sizeof...(Quantities)))) &&
@@ -671,11 +671,10 @@ namespace moppe::spatial {
     }
 
     template <typename Domain, typename... Quantities>
-    bool
-    build_bundle_array (ArrowArray& array,
-                        const Bundle<Domain, Quantities...>& bundle,
-                        const ColumnGrids<sizeof...(Quantities)>& grids,
-                        ArrowError& error) {
+    bool build_bundle_array (ArrowArray& array,
+                             const Bundle<Domain, Quantities...>& bundle,
+                             const ColumnGrids<sizeof...(Quantities)>& grids,
+                             ArrowError& error) {
       for (std::size_t row = 0; row < bundle.size (); ++row) {
         const bool appended = every_column<Quantities...> (
           [&]<typename Value, std::size_t Column> () {

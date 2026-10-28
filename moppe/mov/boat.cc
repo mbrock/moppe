@@ -60,8 +60,8 @@ namespace moppe::mov {
           about[2] += m * (d[0] * d[0] + d[1] * d[1]);
         };
         carry (hull, mass);
-        for (const auto& [aboard, at] : { std::pair (manned, seat),
-                                          std::pair (passenger, fore) })
+        for (const auto& [aboard, at] :
+             { std::pair (manned, seat), std::pair (passenger, fore) })
           if (aboard) {
             carry (at, crew);
             about[0] += crew * 0.07f;
@@ -222,7 +222,8 @@ namespace moppe::mov {
         for (int k = 0; k < stations; ++k) {
           const float s0 = float (k) / stations, s1 = float (k + 1) / stations;
           const float sm = 0.5f * (s0 + s1);
-          const Vec3 middle (0, 0.5f * (chine_y (sm) + sheer_y (sm)),
+          const Vec3 middle (0,
+                             0.5f * (chine_y (sm) + sheer_y (sm)),
                              Boat::transom + sm * Boat::hull_length);
           add_quad (panels,
                     chine (s0, 1),
@@ -399,9 +400,8 @@ namespace moppe::mov {
       const b3Quat q = boat_rig::level_rotation (heading);
       Vec3 centre = at;
       // Its draft at rest, a hand's breadth.
-      centre[1] = std::max (level - 0.06f,
-                            surface_elevation_at (surface, at[0], at[2]) +
-                              0.02f);
+      centre[1] = std::max (
+        level - 0.06f, surface_elevation_at (surface, at[0], at[2]) + 0.02f);
       State s = kept;
       s.body = { centre, array_of (q), Vec3 (), Vec3 () };
       patch.origin_for (centre, s.ground_column, s.ground_row);
@@ -462,7 +462,8 @@ namespace moppe::mov {
           wet = 1.0f;
           mean = centre_depth;
         } else {
-          wet = std::clamp ((centre_depth + reach) / (2.0f * reach), 0.0f, 1.0f);
+          wet =
+            std::clamp ((centre_depth + reach) / (2.0f * reach), 0.0f, 1.0f);
           mean = 0.5f * (centre_depth + reach);
         }
         if (wet <= 0.0f)
@@ -479,12 +480,10 @@ namespace moppe::mov {
         // from inside as hard as from out: the head that buoys it is at
         // most the height of the sheer over it. Without this a swamped
         // hull, as if sealed, is pushed up the harder the deeper it sinks.
-        const float station =
-          std::clamp ((p.centre[2] - Boat::transom) / Boat::hull_length,
-                      0.0f, 1.0f);
+        const float station = std::clamp (
+          (p.centre[2] - Boat::transom) / Boat::hull_length, 0.0f, 1.0f);
         const float flood =
-          point (Vec3 (p.centre[0], sheer_y (station), p.centre[2]))[1] -
-          c[1];
+          point (Vec3 (p.centre[0], sheer_y (station), p.centre[2]))[1] - c[1];
         float pressure =
           rho * g * std::clamp (mean, 0.0f, std::max (flood, 0.0f));
         // The bobbing is damped up and down, not along the way.
@@ -507,25 +506,25 @@ namespace moppe::mov {
         kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
       const float turn =
         kept.parked ? 0.0f : std::clamp (kept.turn, -1.0f, 1.0f);
-      const float boost =
-        kept.parked || drive <= 0.0f ? 0.0f
-                                     : std::clamp (kept.boost, 0.0f, 1.0f);
-      const float wanted_rpm =
-        kept.parked ? 0.0f
-                    : std::max (idle, std::abs (drive)) *
-                        (1.0f + (boosted_pitch - 1.0f) * boost);
+      const float boost = kept.parked || drive <= 0.0f
+                            ? 0.0f
+                            : std::clamp (kept.boost, 0.0f, 1.0f);
+      const float wanted_rpm = kept.parked
+                                 ? 0.0f
+                                 : std::max (idle, std::abs (drive)) *
+                                     (1.0f + (boosted_pitch - 1.0f) * boost);
       kept.rpm += (wanted_rpm - kept.rpm) * std::min (1.0f, dt / spin_up);
       kept.propeller_angle = std::remainder (
         kept.propeller_angle + kept.rpm * 2.0f * pi * propeller_rate * dt,
         2.0f * pi);
       // Left alone the helmsman's hand holds the course, against the
       // pull of the boat heeling under their weight and the engine's.
-      const float yaw = dot (from_b3 (b3Body_GetAngularVelocity (body)),
-                             axis (Vec3 (0, 1, 0)));
-      const float hold =
-        kept.parked ? 0.0f
-                    : (1.0f - std::min (1.0f, std::abs (turn) * 8.0f)) *
-                        std::clamp (2.5f * yaw, -0.15f, 0.15f);
+      const float yaw =
+        dot (from_b3 (b3Body_GetAngularVelocity (body)), axis (Vec3 (0, 1, 0)));
+      const float hold = kept.parked
+                           ? 0.0f
+                           : (1.0f - std::min (1.0f, std::abs (turn) * 8.0f)) *
+                               std::clamp (2.5f * yaw, -0.15f, 0.15f);
       const float swing_to = turn * most_swing + hold;
       const float swing_step = swing_rate * dt;
       kept.swing += std::clamp (swing_to - kept.swing, -swing_step, swing_step);
@@ -553,16 +552,14 @@ namespace moppe::mov {
       // boat's centre of mass; steering swings it from there, moving the
       // propeller across and turning its push with it.
       const Vec3 centre = from_b3 (mass_data (true, kept.passenger).center);
-      const Vec3 shaft = normalized (axis (swing_tilt (
-        normalized (centre - hub_at), kept.swing, kept.tilt)));
+      const Vec3 shaft = normalized (axis (
+        swing_tilt (normalized (centre - hub_at), kept.swing, kept.tilt)));
       const float ahead = dot (v - current, shaft);
       const float revs = std::min (kept.rpm, 1.0f + (boosted_pitch - 1.0f));
       const float slip =
-        std::clamp (ahead / (pitch_speed * std::max (revs, 0.1f)), 0.0f,
-                    1.0f);
+        std::clamp (ahead / (pitch_speed * std::max (revs, 0.1f)), 0.0f, 1.0f);
       const float shaft_power =
-        power * revs *
-        (1.0f + (boosted_power / boosted_pitch - 1.0f) * boost);
+        power * revs * (1.0f + (boosted_power / boosted_pitch - 1.0f) * boost);
       float thrust =
         bite *
         std::min (static_thrust * revs * revs,
@@ -589,11 +586,9 @@ namespace moppe::mov {
       // gets over it, and 16 two-up, who do not, without the governor
       // tied back.
       if (kept.afloat && speed > 0.3f) {
-        const float weight =
-          boat_rig::mass + (kept.parked ? 0.0f : crew) +
-          (kept.passenger ? crew : 0.0f);
-        const float froude =
-          speed / std::sqrt (g * std::cbrt (weight / rho));
+        const float weight = boat_rig::mass + (kept.parked ? 0.0f : crew) +
+                             (kept.passenger ? crew : 0.0f);
+        const float froude = speed / std::sqrt (g * std::cbrt (weight / rho));
         const float k = (froude - hump_froude) / hump_width;
         const float drag = hump * weight * g * std::exp (-k * k);
         b3Body_ApplyForceToCenter (body, to_b3 (way * (-drag / speed)), true);
@@ -605,8 +600,9 @@ namespace moppe::mov {
       const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
       const float upright = axis (Vec3 (0, 1, 0))[1];
-      kept.overturned =
-        upright < 0.25f && length2 (moving) < 4.0f ? kept.overturned + dt : 0.0f;
+      kept.overturned = upright < 0.25f && length2 (moving) < 4.0f
+                          ? kept.overturned + dt
+                          : 0.0f;
       if (kept.overturned > 3.0f) {
         const Vec3 here = point (Vec3 ());
         const bool parked = kept.parked;

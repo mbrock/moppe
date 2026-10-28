@@ -40,9 +40,7 @@ namespace moppe {
       }
     }
 
-    void TextList::stand (const Vec3& at,
-                          float height_pts,
-                          std::size_t first) {
+    void TextList::stand (const Vec3& at, float height_pts, std::size_t first) {
       // Screen heights, y up: the offset in the axes' spare w.
       const float k = 1.0f / height_pts;
       for (std::size_t i = first; i < m_quads.size (); ++i) {

@@ -58,17 +58,16 @@ namespace moppe::game {
     }
 
     Mat4 caddy_steering_turn (const CaddyPose& caddy) {
-      const Vec3 column = normalized (caddy_model::steering_column -
-                                      caddy_model::steering_hub);
+      const Vec3 column =
+        normalized (caddy_model::steering_column - caddy_model::steering_hub);
       return Mat4::rotation (
         caddy_steering_ratio * caddy.steer_radians * u::rad, column);
     }
 
     // The hiker in a front seat: the driver holding the wheel with feet
     // at the pedals, the passenger with hands on their knees.
-    AvatarSkeleton caddy_seated (const CaddyPose& caddy,
-                                 const Mat4& frame,
-                                 bool driving) {
+    AvatarSkeleton
+    caddy_seated (const CaddyPose& caddy, const Mat4& frame, bool driving) {
       const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
       const Vec3 facing = normalized (frame.transform_vector (Vec3 (0, 0, 1)));
       const Vec3 left = normalized (cross (up, facing));
@@ -92,13 +91,13 @@ namespace moppe::game {
       hold.sole = normalized (facing + up * 0.45f);
       hold.instep = normalized (up - facing * 0.45f);
 
-      const Mat4 wheel = frame *
-                         Mat4::translation (caddy_model::steering_hub) *
+      const Mat4 wheel = frame * Mat4::translation (caddy_model::steering_hub) *
                          caddy_steering_turn (caddy);
       const Vec3 grip[2] = { wheel.transform_point (caddy_model::grip_right -
                                                     caddy_model::steering_hub),
-                             wheel.transform_point (caddy_model::grip_left -
-                                                    caddy_model::steering_hub) };
+                             wheel.transform_point (
+                               caddy_model::grip_left -
+                               caddy_model::steering_hub) };
       for (int i = 0; i < 2; ++i) {
         const float side = i == 0 ? -1.0f : 1.0f;
         if (driving) {

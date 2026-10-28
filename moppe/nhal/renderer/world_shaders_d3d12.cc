@@ -9,7 +9,6 @@
 #include <shader_boulder_cull_compute.h>
 #include <shader_boulders_fragment.h>
 #include <shader_boulders_shadow_vertex.h>
-#include <shader_mesh_shadow_vertex.h>
 #include <shader_boulders_vertex.h>
 #include <shader_exposure_compute.h>
 #include <shader_forest_cull_compute.h>
@@ -26,40 +25,41 @@
 #include <shader_gtao_vertex.h>
 #include <shader_hud_fragment.h>
 #include <shader_hud_vertex.h>
+#include <shader_leaves_fragment.h>
+#include <shader_leaves_vertex.h>
+#include <shader_mesh_shadow_vertex.h>
+#include <shader_motion_blur_fragment.h>
+#include <shader_motion_blur_vertex.h>
+#include <shader_neighbourhood_fragment.h>
+#include <shader_neighbourhood_vertex.h>
 #include <shader_present_fragment.h>
 #include <shader_present_vertex.h>
 #include <shader_rain_fragment.h>
 #include <shader_rain_vertex.h>
-#include <shader_scene_copy_fragment.h>
-#include <shader_scene_copy_vertex.h>
-#include <shader_neighbourhood_fragment.h>
-#include <shader_neighbourhood_vertex.h>
-#include <shader_motion_blur_fragment.h>
-#include <shader_motion_blur_vertex.h>
-#include <shader_leaves_fragment.h>
-#include <shader_leaves_vertex.h>
-#include <shader_water_fragment.h>
-#include <shader_water_vertex.h>
-#include <shader_waterfall_fragment.h>
-#include <shader_waterfall_vertex.h>
 #include <shader_resolve_fragment.h>
 #include <shader_resolve_vertex.h>
-#include <shader_shafts_fragment.h>
-#include <shader_shafts_vertex.h>
 #include <shader_road_ribbon_fragment.h>
 #include <shader_road_ribbon_vertex.h>
+#include <shader_scene_copy_fragment.h>
+#include <shader_scene_copy_vertex.h>
+#include <shader_shafts_fragment.h>
+#include <shader_shafts_vertex.h>
 #include <shader_sky_fragment.h>
 #include <shader_sky_vertex.h>
 #include <shader_slug_text_fragment.h>
+#include <shader_slug_text_vertex.h>
 #include <shader_sward_fragment.h>
 #include <shader_sward_patches_compute.h>
 #include <shader_sward_vertex.h>
-#include <shader_slug_text_vertex.h>
 #include <shader_terrain_fragment.h>
 #include <shader_terrain_shadow_vertex.h>
 #include <shader_terrain_vertex.h>
 #include <shader_uber_fragment.h>
 #include <shader_uber_vertex.h>
+#include <shader_water_fragment.h>
+#include <shader_water_vertex.h>
+#include <shader_waterfall_fragment.h>
+#include <shader_waterfall_vertex.h>
 #include <shader_world_text_fragment.h>
 #include <shader_world_text_vertex.h>
 
@@ -110,8 +110,7 @@ namespace moppe::nhal {
       { dxil (shader_neighbourhood_vertex),
         dxil (shader_neighbourhood_fragment) },
       { dxil (shader_mesh_shadow_vertex), {} },
-      { dxil (shader_motion_blur_vertex),
-        dxil (shader_motion_blur_fragment) },
+      { dxil (shader_motion_blur_vertex), dxil (shader_motion_blur_fragment) },
       { dxil (shader_world_text_vertex), dxil (shader_world_text_fragment) },
     };
     return shaders;

@@ -67,7 +67,9 @@ namespace moppe {
       void set_texture (const Texture* t);
       // What subsequent lit vertices are made of; plain () goes back to
       // the draw list's own shading.
-      void material (float metallic, float roughness, float coat,
+      void material (float metallic,
+                     float roughness,
+                     float coat,
                      float sheen = 0.0f);
       void plain ();
       void normal (const Vec3& n);

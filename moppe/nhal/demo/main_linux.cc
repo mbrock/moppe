@@ -92,9 +92,11 @@ int main (int argc, char** argv) {
       std::cerr << "NHAL demo: " << SDL_GetError () << std::endl;
       return -1;
     }
-    window = SDL_CreateWindow ("NHAL demo (Vulkan)", 1280, 720,
-                               SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
-                                 | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    window = SDL_CreateWindow ("NHAL demo (Vulkan)",
+                               1280,
+                               720,
+                               SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
+                                 SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) {
       std::cerr << "NHAL demo: " << SDL_GetError () << std::endl;
       return -1;
@@ -109,21 +111,21 @@ int main (int argc, char** argv) {
     surface.create = [window] (VkInstance instance) {
       VkSurfaceKHR made = VK_NULL_HANDLE;
       if (!SDL_Vulkan_CreateSurface (window, instance, nullptr, &made))
-        throw std::runtime_error (std::string ("SDL_Vulkan_CreateSurface: ")
-                                  + SDL_GetError ());
+        throw std::runtime_error (std::string ("SDL_Vulkan_CreateSurface: ") +
+                                  SDL_GetError ());
       return made;
     };
   }
 
   int status = 0;
   try {
-    auto device = create_vulkan_device (surface, width, height,
-                                        Format::bgra8_unorm);
+    auto device =
+      create_vulkan_device (surface, width, height, Format::bgra8_unorm);
     // One SPIR-V module per program stage, as luv-shaderc writes them.
-    const char* files[] = { "terrain.vertex", "terrain.fragment",
-                            "trees.vertex", "trees.fragment",
-                            "sky.vertex", "sky.fragment",
-                            "tonemap.vertex", "tonemap.fragment",
+    const char* files[] = { "terrain.vertex",      "terrain.fragment",
+                            "trees.vertex",        "trees.fragment",
+                            "sky.vertex",          "sky.fragment",
+                            "tonemap.vertex",      "tonemap.fragment",
                             "forest_wind.compute", "terrain_shadow.vertex",
                             "trees_shadow.vertex", "resolve.vertex",
                             "resolve.fragment" };
@@ -131,11 +133,20 @@ int main (int argc, char** argv) {
     for (int i = 0; i < 13; ++i)
       spirv[i] = read_spirv (shader_path + "/" + files[i] + ".spv");
     auto code = [&] (int i) { return StageCode { {}, {}, spirv[i] }; };
-    auto scene = std::make_unique<demo::Scene> (
-      *device, demo::Shaders { code (0), code (1), code (2), code (3),
-                               code (4), code (5), code (6), code (7),
-                               code (8), code (9), code (10), code (11),
-                               code (12) });
+    auto scene = std::make_unique<demo::Scene> (*device,
+                                                demo::Shaders { code (0),
+                                                                code (1),
+                                                                code (2),
+                                                                code (3),
+                                                                code (4),
+                                                                code (5),
+                                                                code (6),
+                                                                code (7),
+                                                                code (8),
+                                                                code (9),
+                                                                code (10),
+                                                                code (11),
+                                                                code (12) });
     scene->set_temporal (!native);
     std::cerr << "NHAL demo: " << device->info ().backend << " on "
               << device->info ().adapter << ", " << scene->tree_count ()
@@ -155,15 +166,15 @@ int main (int argc, char** argv) {
             device->resize_surface (std::uint32_t (event.window.data1),
                                     std::uint32_t (event.window.data2));
           // U switches between temporal upscaling and native 4x MSAA.
-          else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat
-                   && event.key.scancode == SDL_SCANCODE_U) {
+          else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                   event.key.scancode == SDL_SCANCODE_U) {
             scene->set_temporal (!scene->temporal ());
             std::cerr << "NHAL demo: "
                       << (scene->temporal () ? "temporal upscaling"
                                              : "native 4x MSAA")
                       << std::endl;
-          } else if (event.type == SDL_EVENT_KEY_DOWN
-                     && event.key.scancode == SDL_SCANCODE_ESCAPE)
+          } else if (event.type == SDL_EVENT_KEY_DOWN &&
+                     event.key.scancode == SDL_SCANCODE_ESCAPE)
             running = false;
         }
       }
@@ -206,8 +217,8 @@ int main (int argc, char** argv) {
       if (rendered % 120 == 0 || final) {
         std::cerr << "NHAL demo: GPU";
         for (const PassTiming& pass : device->pass_timings ())
-          std::fprintf (stderr, " %s %.2f ms", pass.label.c_str (),
-                        pass.milliseconds);
+          std::fprintf (
+            stderr, " %s %.2f ms", pass.label.c_str (), pass.milliseconds);
         std::cerr << std::endl;
       }
       if (final) {

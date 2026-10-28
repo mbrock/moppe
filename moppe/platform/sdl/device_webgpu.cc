@@ -11,9 +11,8 @@ namespace moppe::platform::sdl {
     return SDL_WINDOW_FILL_DOCUMENT;
   }
 
-  std::unique_ptr<nhal::Device> create_device (SDL_Window*,
-                                               std::uint32_t width,
-                                               std::uint32_t height) {
+  std::unique_ptr<nhal::Device>
+  create_device (SDL_Window*, std::uint32_t width, std::uint32_t height) {
     // SDL's Emscripten window is the page's canvas of this id.
     return nhal::create_webgpu_device ("#canvas", width, height);
   }

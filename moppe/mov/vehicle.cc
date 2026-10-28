@@ -109,8 +109,7 @@ namespace moppe {
         // The coarse pose is derived from the snapshot itself, so restoring
         // an unedited state finds them equal bit for bit.
         state.rigid = m_rigid->state ();
-        state.position =
-          moppe::position (m_rigid->reference_of (state.rigid));
+        state.position = moppe::position (m_rigid->reference_of (state.rigid));
         state.velocity = moppe::velocity (state.rigid.chassis.linear_velocity);
         state.heading = RigidBike::forward_of (state.rigid);
       }
@@ -153,8 +152,7 @@ namespace moppe {
         if (!(position == m_rigid->reference_of (rigid) &&
               velocity == rigid.chassis.linear_velocity &&
               state.heading == RigidBike::forward_of (rigid)))
-          rigid =
-            m_rigid->repose (rigid, position, state.heading, velocity);
+          rigid = m_rigid->repose (rigid, position, state.heading, velocity);
         m_rigid->restore (rigid);
         sync_rigid ();
       }

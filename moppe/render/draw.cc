@@ -10,8 +10,9 @@ namespace moppe {
     DrawList::DrawList ()
         : m_top (0), m_normal_dirty (true), m_normal (0, 0, 1),
           m_world_normal (0, 0, 1), m_world_normal_dirty (true), m_u (0),
-          m_v (0), m_lit (true), m_worn (0), m_fogged (true), m_wind (0), m_flutter (0),
-          m_texture (0), m_prim (Prim::Triangles), m_in_begin (false) {}
+          m_v (0), m_lit (true), m_worn (0), m_fogged (true), m_wind (0),
+          m_flutter (0), m_texture (0), m_prim (Prim::Triangles),
+          m_in_begin (false) {}
 
     void DrawList::clear () {
       m_top = 0;

@@ -330,8 +330,8 @@ MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
   going.turn_by (1.5f);
   going.update (seconds (walker_test_step), surface, world);
   MOPPE_CHECK (std::abs (going.turn_speed ()) <= 6.0f + 1e-3f);
-  MOPPE_CHECK (std::abs (game::yaw_between (going.facing (),
-                                            going.heading ())) > 1.3f);
+  MOPPE_CHECK (
+    std::abs (game::yaw_between (going.facing (), going.heading ())) > 1.3f);
   walk_for (going, 1.0f, surface, world);
   MOPPE_CHECK_NEAR (
     game::yaw_between (going.facing (), going.heading ()), 0.0f, 0.02f);

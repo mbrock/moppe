@@ -35,8 +35,8 @@ MOPPE_TEST (a_walker_reaches_for_the_mushroom_in_front) {
   const Vec3 feet (100.0f, 10.0f, 100.0f);
   MOPPE_CHECK (patch.within_reach (feet, Vec3 (0, 0, 1)) == 0u);
   MOPPE_CHECK (patch.within_reach (feet, Vec3 (0, 0, -1)) == 1u);
-  MOPPE_CHECK (!patch.within_reach (Vec3 (120.0f, 10.0f, 100.0f),
-                                    Vec3 (0, 0, 1)));
+  MOPPE_CHECK (
+    !patch.within_reach (Vec3 (120.0f, 10.0f, 100.0f), Vec3 (0, 0, 1)));
   MOPPE_CHECK (patch.nearest (Vec3 (130.0f, 10.0f, 100.0f), 20.0f) == 2u);
 }
 

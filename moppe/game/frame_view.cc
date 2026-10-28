@@ -321,8 +321,7 @@ namespace moppe::game {
     };
 
     result.actors.bike = vehicle_pose (input.session.bike ());
-    result.actors.mountain_bike =
-      vehicle_pose (input.session.mountain_bike ());
+    result.actors.mountain_bike = vehicle_pose (input.session.mountain_bike ());
     result.actors.long_john = vehicle_pose (input.session.long_john ());
     result.actors.jeep = jeep_pose (input.session.jeep ());
     result.actors.helicopter = helicopter_pose (input.session.helicopter ());
@@ -349,9 +348,8 @@ namespace moppe::game {
     if (result.actors.walker && input.session.hauling ())
       result.actors.walker->rope_end = input.session.rope_end ();
     if (result.actors.walker)
-      result.actors.walker->rod = rod_pose (logic.m_fishing.line,
-                                            logic.m_total_time,
-                                            result.lighting.time);
+      result.actors.walker->rod = rod_pose (
+        logic.m_fishing.line, logic.m_total_time, result.lighting.time);
     if (logic.m_mode == M_BOAT)
       result.actors.helm_rod = rod_pose (
         logic.m_fishing.line, logic.m_total_time, result.lighting.time);
@@ -418,9 +416,9 @@ namespace moppe::game {
       std::atan2 (hud.subject_heading[0], hud.subject_heading[2]);
 
     result.motion_blur_amount =
-      cinematic ? input.cinematic_motion_blur
-                : motion_blur_for (logic.m_mode,
-                                   input.session.subject_speed_kmh ());
+      cinematic
+        ? input.cinematic_motion_blur
+        : motion_blur_for (logic.m_mode, input.session.subject_speed_kmh ());
 
     if (cinematic) {
       result.overlay.cinematic_prompt_alpha = std::clamp (

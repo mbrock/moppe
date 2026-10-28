@@ -82,8 +82,8 @@ namespace moppe::game {
 
         const Vec3 grip =
           tail.transform_point (boat_model::tiller_grip - boat_model::pivot);
-        const Vec3 knee = hold.pelvis + facing * 0.42f + left * 0.16f +
-                          up * 0.08f;
+        const Vec3 knee =
+          hold.pelvis + facing * 0.42f + left * 0.16f + up * 0.08f;
         const Vec3 hand[2] = { grip, knee };
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
@@ -132,12 +132,13 @@ namespace moppe::game {
           const Vec3 shoulder = held_shoulder (hold, i);
           hold.wrist[i] = knee - normalized (knee - shoulder) * 0.07f;
           hold.elbow_pole[i] = left * side - up * 0.5f;
-          hold.ankle[i] = frame.transform_point (
-                            boat_model::seat_fore +
-                            Vec3 (side * -0.12f, 0.0f, 0.45f) -
-                            Vec3 (0.0f, boat_model::seat_fore[1] -
-                                          boat_model::foot_left[1], 0.0f)) +
-                          up * 0.085f;
+          hold.ankle[i] =
+            frame.transform_point (
+              boat_model::seat_fore + Vec3 (side * -0.12f, 0.0f, 0.45f) -
+              Vec3 (0.0f,
+                    boat_model::seat_fore[1] - boat_model::foot_left[1],
+                    0.0f)) +
+            up * 0.085f;
           hold.knee_pole[i] = up + facing * 0.6f + left * (side * 0.3f);
         }
         return pose_holding (hold);
@@ -174,12 +175,12 @@ namespace moppe::game {
     const Vec3 shaft = normalized (boat_model::pivot - boat_model::hub);
     const Vec3 side = normalized (cross (Vec3 (0, 1, 0), shaft));
     const Vec3 over = cross (shaft, side);
-    r.draw_mesh (*meshes.propeller,
-                 tail * Mat4::translation (boat_model::hub - boat_model::pivot) *
-                   Mat4::basis (side, over, shaft) *
-                   Mat4::rotation (boat.propeller_radians * u::rad,
-                                   Vec3 (0, 0, 1)),
-                 motion_base + 3);
+    r.draw_mesh (
+      *meshes.propeller,
+      tail * Mat4::translation (boat_model::hub - boat_model::pivot) *
+        Mat4::basis (side, over, shaft) *
+        Mat4::rotation (boat.propeller_radians * u::rad, Vec3 (0, 0, 1)),
+      motion_base + 3);
   }
 
   void BoatWake::follow (const BoatPose& boat,
@@ -199,10 +200,8 @@ namespace moppe::game {
     // Only where the stern is down in water that floats it.
     if (stern[1] > water_level + 0.15f || depth < 0.15f) {
       if (!m_marks.empty () && m_marks.back ().speed > 0.0f)
-        m_marks.push_back ({ m_marks.back ().stern,
-                             m_marks.back ().across,
-                             0.0f,
-                             time });
+        m_marks.push_back (
+          { m_marks.back ().stern, m_marks.back ().across, 0.0f, time });
       return;
     }
     stern[1] = water_level + 0.03f;
@@ -210,13 +209,13 @@ namespace moppe::game {
         length2 (stern - m_marks.back ().stern) < 0.6f * 0.6f &&
         time - m_marks.back ().time < 0.5f)
       return;
-    const float speed = !m_marks.empty () && time > m_marks.back ().time
-                          ? length (stern - m_marks.back ().stern) /
-                              (time - m_marks.back ().time)
-                          : 0.0f;
+    const float speed =
+      !m_marks.empty () && time > m_marks.back ().time
+        ? length (stern - m_marks.back ().stern) / (time - m_marks.back ().time)
+        : 0.0f;
     // A hash of where it is for the foam, so that it does not shimmer.
-    const float hash = std::sin (stern[0] * 12.9898f + stern[2] * 78.233f) *
-                       43758.5453f;
+    const float hash =
+      std::sin (stern[0] * 12.9898f + stern[2] * 78.233f) * 43758.5453f;
     const float foam = 0.25f + 0.75f * (hash - std::floor (hash));
     m_marks.push_back ({ stern,
                          Vec3 (ahead[2], 0.0f, -ahead[0]),
@@ -255,16 +254,15 @@ namespace moppe::game {
       for (std::size_t i = 0; i < n; ++i) {
         const WakeMark& m = m_marks[i];
         const float age = time - m.time;
-        const float under_way = std::clamp ((m.speed - 1.0f) / 4.0f,
-                                            0.0f, 1.0f);
+        const float under_way =
+          std::clamp ((m.speed - 1.0f) / 4.0f, 0.0f, 1.0f);
         const float fade = std::max (0.0f, 1.0f - age / lasts);
         faded[i] = strength * m.foam * under_way * fade * fade * fade *
                    std::min (1.0f, age * 4.0f + 0.3f);
       }
       std::vector<std::array<Vec3, 3>> lifted (n);
       for (std::size_t i = 0; i < n; ++i) {
-        const bool seen = faded[i] > 0.01f ||
-                          (i > 0 && faded[i - 1] > 0.01f) ||
+        const bool seen = faded[i] > 0.01f || (i > 0 && faded[i - 1] > 0.01f) ||
                           (i + 1 < n && faded[i + 1] > 0.01f);
         if (!seen)
           continue;

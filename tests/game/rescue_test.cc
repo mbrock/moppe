@@ -218,8 +218,7 @@ MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
 
   // Ahead of its bow: F takes up the rope to the handle rather than
   // taking the helm of a boat that cannot go anywhere.
-  session.walker ().spawn (position (Vec3 (60, 10.1f, 184.0f)),
-                           Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (60, 10.1f, 184.0f)), Vec3 (0, 0, 1));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::boat);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_mode == game::M_FOOT);

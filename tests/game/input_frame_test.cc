@@ -104,11 +104,10 @@ MOPPE_TEST (input_frame_adapter_turns_the_head_at_the_stick_rate) {
   game::InputFrameAdapter input;
   input.controls ({ .look_x = 1.0f, .look_y = -0.5f });
   game::InputFrame frame = input.take_frame (0.5f);
-  MOPPE_CHECK_NEAR (frame.look_yaw,
-                    0.5f * game::InputFrameAdapter::look_yaw_rate, 1e-6f);
-  MOPPE_CHECK_NEAR (frame.look_pitch,
-                    -0.25f * game::InputFrameAdapter::look_pitch_rate,
-                    1e-6f);
+  MOPPE_CHECK_NEAR (
+    frame.look_yaw, 0.5f * game::InputFrameAdapter::look_yaw_rate, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    frame.look_pitch, -0.25f * game::InputFrameAdapter::look_pitch_rate, 1e-6f);
   // The mouse adds to it within the same frame.
   input.look (10.0f, 0.0f);
   frame = input.take_frame (0.0f);

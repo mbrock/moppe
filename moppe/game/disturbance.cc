@@ -178,10 +178,11 @@ namespace moppe::game {
       // A busier road is kept clear wider, but even a trunk road's verge
       // is a strip beside it, not a clearing.
       const float half =
-        cart ? std::min (4.0f + 1.5f * cr::log2 (
-                                  1.0f + static_cast<float> (road.traffic)),
-                         12.0f)
-             : 2.5f;
+        cart
+          ? std::min (
+              4.0f + 1.5f * cr::log2 (1.0f + static_cast<float> (road.traffic)),
+              12.0f)
+          : 2.5f;
       const float edge = 1.7f * half;
       const bool living = road.abandoned_years_ago <= 0.0f;
       const float then =

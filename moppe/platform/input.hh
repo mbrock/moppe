@@ -102,7 +102,7 @@ namespace moppe::platform {
   class RemoteControl {
   public:
     RemoteControl (Game& game, std::string path)
-      : m_game (game), m_path (std::move (path)) {}
+        : m_game (game), m_path (std::move (path)) {}
 
     // The analog controls the remote holds, if it holds them.
     const ControlState* controls () const {
@@ -114,8 +114,10 @@ namespace moppe::platform {
 
   private:
     void read (double now);
-    void schedule (const std::string& verb, std::istringstream& words,
-                   const std::string& line, double& at);
+    void schedule (const std::string& verb,
+                   std::istringstream& words,
+                   const std::string& line,
+                   double& at);
 
     Game& m_game;
     std::string m_path;

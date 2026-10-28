@@ -64,9 +64,10 @@ namespace moppe::render {
         return;
       const float least = float (fewest * fewest) / float (steps * steps);
       m_pixels = std::clamp (m_pixels, least, 1.0f);
-      const int step = std::clamp (
-        int (std::lround (std::sqrt (m_pixels) * float (steps))), fewest,
-        steps);
+      const int step =
+        std::clamp (int (std::lround (std::sqrt (m_pixels) * float (steps))),
+                    fewest,
+                    steps);
       if (step != m_step) {
         m_step = step;
         m_passing = in_flight;

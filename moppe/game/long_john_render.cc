@@ -157,55 +157,54 @@ namespace moppe::game {
                  const VehiclePose& bike,
                  std::optional<Outfit> rider,
                  uint64_t motion_base) {
-    const Meshes& m = meshes (r);
-    const Mat4 frame = bike_frame (bike);
-    if (rider)
-      figure::draw (dl, pose_rider (bike, frame), *rider);
+        const Meshes& m = meshes (r);
+        const Mat4 frame = bike_frame (bike);
+        if (rider)
+          figure::draw (dl, pose_rider (bike, frame), *rider);
 
-    uint64_t motion_part = motion_base;
-    const auto draw_part = [&] (const render::Mesh& mesh,
-                                const Mat4& transform) {
-      r.draw_mesh (mesh, transform, ++motion_part);
-    };
-    const Vec3 x_axis (1, 0, 0);
-    // The small front wheel turns the faster for covering the same
-    // ground as the rear.
-    const float front_spin =
-      bike.wheel_spin_radians * (mov::long_john_rig.wheel_radius /
-                                 mov::long_john_rig.front_wheel_radius);
+        uint64_t motion_part = motion_base;
+        const auto draw_part = [&] (const render::Mesh& mesh,
+                                    const Mat4& transform) {
+          r.draw_mesh (mesh, transform, ++motion_part);
+        };
+        const Vec3 x_axis (1, 0, 0);
+        // The small front wheel turns the faster for covering the same
+        // ground as the rear.
+        const float front_spin =
+          bike.wheel_spin_radians * (mov::long_john_rig.wheel_radius /
+                                     mov::long_john_rig.front_wheel_radius);
 
-    draw_part (*m.frame, frame);
+        draw_part (*m.frame, frame);
 
-    // The rear wheel hangs on the frame, giving only as its tyre does.
-    draw_part (*m.rear_wheel,
-               frame *
-                 Mat4::translation (model::rear_axle -
-                                    Vec3 (0, bike.rear_wheel_drop, 0)) *
-                 Mat4::rotation (bike.wheel_spin_radians * u::rad, x_axis));
+        // The rear wheel hangs on the frame, giving only as its tyre does.
+        draw_part (*m.rear_wheel,
+                   frame *
+                     Mat4::translation (model::rear_axle -
+                                        Vec3 (0, bike.rear_wheel_drop, 0)) *
+                     Mat4::rotation (bike.wheel_spin_radians * u::rad, x_axis));
 
-    // The fork about the front head tube, carrying the front wheel, and
-    // the bars about the rider's, turned alike by the cables.
-    const Mat4 fork = steering_turn (bike,
-                                     frame,
-                                     model::front_steering_head,
-                                     model::front_steering_top);
-    draw_part (*m.fork, fork);
-    const Vec3 axis =
-      normalized (model::front_steering_top - model::front_steering_head);
-    const Vec3 axle = model::front_axle - model::front_steering_head -
-                      axis * (bike.front_wheel_drop / axis[1]);
-    draw_part (*m.front_wheel,
-               fork * Mat4::translation (axle) *
-                 Mat4::rotation (front_spin * u::rad, x_axis));
-    draw_part (*m.bars, bars_turn (bike, frame));
+        // The fork about the front head tube, carrying the front wheel, and
+        // the bars about the rider's, turned alike by the cables.
+        const Mat4 fork = steering_turn (
+          bike, frame, model::front_steering_head, model::front_steering_top);
+        draw_part (*m.fork, fork);
+        const Vec3 axis =
+          normalized (model::front_steering_top - model::front_steering_head);
+        const Vec3 axle = model::front_axle - model::front_steering_head -
+                          axis * (bike.front_wheel_drop / axis[1]);
+        draw_part (*m.front_wheel,
+                   fork * Mat4::translation (axle) *
+                     Mat4::rotation (front_spin * u::rad, x_axis));
+        draw_part (*m.bars, bars_turn (bike, frame));
 
-    // The crank turns about the bottom bracket; each pedal stays level
-    // on the end of its arm.
-    draw_part (*m.crank,
-               frame * Mat4::translation (model::bottom_bracket) *
-                 Mat4::rotation (bike.crank_radians * u::rad, x_axis));
-    for (int side : { -1, 1 })
-      draw_part (*m.pedal, frame * Mat4::translation (pedal_at (bike, side)));
+        // The crank turns about the bottom bracket; each pedal stays level
+        // on the end of its arm.
+        draw_part (*m.crank,
+                   frame * Mat4::translation (model::bottom_bracket) *
+                     Mat4::rotation (bike.crank_radians * u::rad, x_axis));
+        for (int side : { -1, 1 })
+          draw_part (*m.pedal,
+                     frame * Mat4::translation (pedal_at (bike, side)));
       }
     }
   }

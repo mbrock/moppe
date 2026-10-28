@@ -48,8 +48,8 @@ namespace moppe::platform {
     ControlState controls;
     controls.steer = stick_x != 0 ? stick_x : dpad_x;
     controls.drive = stick_y != 0 ? stick_y : dpad_y;
-    controls.boost = std::max (std::clamp (r.right_trigger, 0.0f, 1.0f),
-                               r.y ? 1.0f : 0.0f);
+    controls.boost =
+      std::max (std::clamp (r.right_trigger, 0.0f, 1.0f), r.y ? 1.0f : 0.0f);
     look_axes (r.right_x, r.right_y, controls.look_x, controls.look_y);
     edge (0, r.a, Key::E);
     edge (1, r.a, Key::Restart);
@@ -93,10 +93,9 @@ namespace moppe::platform {
       { "F", Key::Mount },       { "Restart", Key::Restart },
       { "E", Key::E },           { "G", Key::G },
       { "H", Key::H },           { "L", Key::L },
-      { "M", Key::M },
-      { "N", Key::N },           { "R", Key::R },
-      { "T", Key::T },           { "Y", Key::Y },
-      { "Q", Key::Q },
+      { "M", Key::M },           { "N", Key::N },
+      { "R", Key::R },           { "T", Key::T },
+      { "Y", Key::Y },           { "Q", Key::Q },
       { "1", Key::One },         { "2", Key::Two },
       { "3", Key::Three },       { "4", Key::Four },
       { "5", Key::Five },        { "6", Key::Six },
@@ -109,23 +108,35 @@ namespace moppe::platform {
 
   Key touch_key (int character) {
     switch (character) {
-    case ' ': return Key::Space;
-    case '\t': return Key::Tab;
-    case '^': return Key::Shift;
-    default: return key_named (std::string (1, char (character)));
+    case ' ':
+      return Key::Space;
+    case '\t':
+      return Key::Tab;
+    case '^':
+      return Key::Shift;
+    default:
+      return key_named (std::string (1, char (character)));
     }
   }
 
   int touch_character (Key key) {
     switch (key) {
-    case Key::Space: return ' ';
-    case Key::Tab: return '\t';
-    case Key::Shift: return '^';
-    case Key::Mount: return 'F';
-    case Key::E: return 'E';
-    case Key::R: return 'R';
-    case Key::T: return 'T';
-    default: return 0;
+    case Key::Space:
+      return ' ';
+    case Key::Tab:
+      return '\t';
+    case Key::Shift:
+      return '^';
+    case Key::Mount:
+      return 'F';
+    case Key::E:
+      return 'E';
+    case Key::R:
+      return 'R';
+    case Key::T:
+      return 'T';
+    default:
+      return 0;
     }
   }
 
@@ -140,7 +151,7 @@ namespace moppe::platform {
         lines += std::to_string (character) + ' ' + offer.action + '\n';
     if (lines != told) {
       told = lines;
-      EM_ASM ({ Module['moppeOffers'] (UTF8ToString ($0)); }, lines.c_str ());
+      EM_ASM ({ Module['moppeOffers'](UTF8ToString ($0)); }, lines.c_str ());
     }
     return EM_ASM_INT ({ return Module['moppeTouching'] ? 1 : 0; }) != 0;
 #else
@@ -170,8 +181,8 @@ namespace moppe::platform {
     std::ifstream input (m_path);
     std::string word;
     long long sequence = -1;
-    if (!(input >> word) || word != "seq" || !(input >> sequence)
-        || sequence == m_sequence)
+    if (!(input >> word) || word != "seq" || !(input >> sequence) ||
+        sequence == m_sequence)
       return;
     m_sequence = sequence;
     std::cerr << "moppe: control " << sequence << std::endl;
@@ -189,7 +200,8 @@ namespace moppe::platform {
 
   void RemoteControl::schedule (const std::string& verb,
                                 std::istringstream& words,
-                                const std::string& line, double& at) {
+                                const std::string& line,
+                                double& at) {
     auto later = [&] (double when, std::function<void ()> action) {
       m_timeline.emplace (when, [line, action] {
         std::cerr << "moppe: remote " << line << std::endl;
@@ -200,9 +212,9 @@ namespace moppe::platform {
     double seconds = 0;
     if (verb == "wait" && words >> seconds) {
       at += seconds;
-    } else if ((verb == "tap" || verb == "down" || verb == "up"
-                || verb == "hold")
-               && words >> name && key_named (name) != Key::Unknown) {
+    } else if ((verb == "tap" || verb == "down" || verb == "up" ||
+                verb == "hold") &&
+               words >> name && key_named (name) != Key::Unknown) {
       const Key key = key_named (name);
       if (verb == "hold" && !(words >> seconds))
         seconds = 0.5;

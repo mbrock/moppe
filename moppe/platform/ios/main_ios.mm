@@ -13,9 +13,9 @@
 #import <MetalKit/MetalKit.h>
 #import <UIKit/UIKit.h>
 
-#include <moppe/platform/platform.hh>
 #include <moppe/nhal/metal/metal_device.hh>
 #include <moppe/nhal/renderer/nhal_renderer.hh>
+#include <moppe/platform/platform.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <algorithm>
@@ -342,7 +342,8 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
     moppe::nhal::create_renderer (
       moppe::nhal::create_metal_device ((CAMetalLayer*)view.layer,
                                         moppe::nhal::Format::bgra8_unorm),
-      moppe::nhal::world_shaders_metal (), pixels_per_point)
+      moppe::nhal::world_shaders_metal (),
+      pixels_per_point)
       .release ();
   vc.renderer = renderer;
   view.delegate = vc;

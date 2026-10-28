@@ -13,16 +13,16 @@ namespace moppe::platform::sdl {
     return 0;
   }
 
-  std::unique_ptr<nhal::Device> create_device (SDL_Window* window,
-                                               std::uint32_t,
-                                               std::uint32_t) {
-    auto* core_window = static_cast<IUnknown*> (SDL_GetPointerProperty (
-      SDL_GetWindowProperties (window), SDL_PROP_WINDOW_WINRT_WINDOW_POINTER,
-      nullptr));
+  std::unique_ptr<nhal::Device>
+  create_device (SDL_Window* window, std::uint32_t, std::uint32_t) {
+    auto* core_window = static_cast<IUnknown*> (
+      SDL_GetPointerProperty (SDL_GetWindowProperties (window),
+                              SDL_PROP_WINDOW_WINRT_WINDOW_POINTER,
+                              nullptr));
     if (!core_window)
       throw std::runtime_error ("NHAL: the SDL window has no CoreWindow");
-    return nhal::create_d3d12_device (core_window, 3840, 2160,
-                                      nhal::Format::bgra8_unorm);
+    return nhal::create_d3d12_device (
+      core_window, 3840, 2160, nhal::Format::bgra8_unorm);
   }
 
   const nhal::WorldShaders& world_shaders () {

@@ -342,8 +342,9 @@ MOPPE_TEST (sea_waves_read_back_the_surface_the_water_program_displaces) {
         for (const SeaWaveTrain& t : sea_wave_trains) {
           const float heading = sea_wind_heading + t.heading;
           const float dx = std::cos (heading), dz = std::sin (heading);
-          const float theta = sea_wave_number (t) * (dx * rest_x + dz * rest_z) +
-                              sea_wave_phase (t, time);
+          const float theta =
+            sea_wave_number (t) * (dx * rest_x + dz * rest_z) +
+            sea_wave_phase (t, time);
           x += t.amplitude * sea_wave_lean * dx * std::cos (theta);
           z += t.amplitude * sea_wave_lean * dz * std::cos (theta);
           y += t.amplitude * std::sin (theta);

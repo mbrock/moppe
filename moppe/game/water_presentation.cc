@@ -32,8 +32,7 @@ namespace moppe::game {
           const std::size_t px = x / patch, pz = z / patch;
           const std::size_t before_x =
             x % patch ? px : (px + across - 1) % across;
-          const std::size_t before_z =
-            z % patch ? pz : (pz + down - 1) % down;
+          const std::size_t before_z = z % patch ? pz : (pz + down - 1) % down;
           for (std::size_t row : { pz, before_z })
             for (std::size_t column : { px, before_x })
               wet[row * across + column] = 1;
@@ -62,11 +61,11 @@ namespace moppe::game {
                      const spatial_extent_t& world_extent) {
     MOPPE_PROFILE_ZONE ("water.upload");
     using render::PixelFormat;
-    renderer.set_ocean (ocean_setup (water_datum, world_extent,
-                                     wet_patches (water, ground)),
-                        render::texture_pixels<terrain::surface_elevation,
-                                               terrain::wave_amplitude> (
-                          water, PixelFormat::rg32f));
+    renderer.set_ocean (
+      ocean_setup (water_datum, world_extent, wet_patches (water, ground)),
+      render::texture_pixels<terrain::surface_elevation,
+                             terrain::wave_amplitude> (water,
+                                                       PixelFormat::rg32f));
     renderer.set_water_flow (
       render::spatial_texture_pixels<terrain::water_velocity> (
         water, PixelFormat::rgba16f));

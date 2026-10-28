@@ -412,7 +412,8 @@ namespace moppe::terrain {
           drains_most = std::max (drains_most, area);
         }
         const float diameter = std::clamp (
-          1.2f * river_depth (drains_most * u::m * u::m).numerical_value_in (u::m),
+          1.2f *
+            river_depth (drains_most * u::m * u::m).numerical_value_in (u::m),
           0.6f,
           1.8f);
         const float pipe_top = natural[lowest] + diameter + 0.3f;
@@ -500,8 +501,7 @@ namespace moppe::terrain {
             FormationClaim& claim = claims[ground.cell (x, z)];
             // A built road's claim outranks a footpath's however near.
             if ((built && !claim.built) ||
-                (built == claim.built && distance < claim.distance))
-            {
+                (built == claim.built && distance < claim.distance)) {
               const float here = std::lerp (along[i - 1], along[i], t);
               float culvert = no_height;
               for (const RoadCulvert& c : road.culverts)

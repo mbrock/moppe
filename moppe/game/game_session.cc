@@ -126,7 +126,6 @@ namespace moppe::game {
         // ground instead.
         if (logic.m_boost_input > 0.1f && previous <= 0.1f)
           session.mountain_bike ().hop (3.0f);
-
       }
     }
 
@@ -446,17 +445,15 @@ namespace moppe::game {
 
       // On foot: take whatever stands nearest within reach.
       const GameSession::Mount reach = session.mount_within_reach ();
-      const Mode into = reach == GameSession::Mount::jeep    ? M_JEEP
+      const Mode into = reach == GameSession::Mount::jeep      ? M_JEEP
                         : reach == GameSession::Mount::tractor ? M_TRACTOR
                         : reach == GameSession::Mount::caddy   ? M_CADDY
                         : reach == GameSession::Mount::mountain_bike
                           ? M_MOUNTAIN_BIKE
-                        : reach == GameSession::Mount::long_john
-                          ? M_LONG_JOHN
-                        : reach == GameSession::Mount::helicopter
-                          ? M_HELICOPTER
-                        : reach == GameSession::Mount::boat ? M_BOAT
-                                                            : M_FOOT;
+                        : reach == GameSession::Mount::long_john  ? M_LONG_JOHN
+                        : reach == GameSession::Mount::helicopter ? M_HELICOPTER
+                        : reach == GameSession::Mount::boat       ? M_BOAT
+                                                                  : M_FOOT;
       if (into != M_FOOT) {
         session.set_mode (into);
         set_turn (session, logic.m_turn_input);
@@ -964,8 +961,9 @@ namespace moppe::game {
       { Mount::caddy, m_caddy.point (Vec3 (0, 0, 0.25f)), 3.4f },
       { Mount::mountain_bike, m_mountain_bike.position (), 2.4f },
       // The Long John from its saddle, behind its middle.
-      { Mount::long_john, m_long_john.position () -
-                            m_long_john.orientation () * 0.7f, 2.4f },
+      { Mount::long_john,
+        m_long_john.position () - m_long_john.orientation () * 0.7f,
+        2.4f },
       // The boat from its middle: it may lie a step out in the water.
       { Mount::boat, m_boat.point (Vec3 (0, 0, 0.6f)), 4.0f },
     };
@@ -1155,8 +1153,8 @@ namespace moppe::game {
       break;
     }
     case M_BOAT:
-      rig.eye = m_boat.helm_seat () + m_boat.up () * 0.85f +
-                m_boat.forward () * 0.1f;
+      rig.eye =
+        m_boat.helm_seat () + m_boat.up () * 0.85f + m_boat.forward () * 0.1f;
       rig.ahead = m_boat.forward ();
       rig.pivot = m_boat.position () + Vec3 (0, 1.0f, 0);
       rig.velocity = m_boat.velocity ();
@@ -1265,11 +1263,19 @@ namespace moppe::game {
   }
 
   GameSession::State GameSession::state () const {
-    return { m_logic,           m_bike.state (),   m_glider.state (),
-             m_walker.state (), m_camera.state (), m_stars.state (),
-             m_dust.state (),   m_jeep.state (),   m_helicopter.state (),
-             m_tractor.state (), m_caddy.state (),
-             m_mountain_bike.state (), m_boat.state (),
+    return { m_logic,
+             m_bike.state (),
+             m_glider.state (),
+             m_walker.state (),
+             m_camera.state (),
+             m_stars.state (),
+             m_dust.state (),
+             m_jeep.state (),
+             m_helicopter.state (),
+             m_tractor.state (),
+             m_caddy.state (),
+             m_mountain_bike.state (),
+             m_boat.state (),
              m_long_john.state () };
   }
 
@@ -1316,17 +1322,16 @@ namespace moppe::game {
             return Vec3 ();
           const terrain::SeaWaves waves =
             water_waves_at (surface, water, Vec3 (x, 0.0f, z), time);
-          Vec3 moving (
-            waves.velocity[0], waves.velocity[1], waves.velocity[2]);
+          Vec3 moving (waves.velocity[0], waves.velocity[1], waves.velocity[2]);
           const position_t where = moppe::position (Vec3 (x, 0.0f, z));
           const float sheet = terrain::surface_elevation_value (
             spatial::sample<terrain::surface_elevation> (*water, where));
           if (sheet <= ground_at (surface, Vec3 (x, 0.0f, z)) ||
               sheet <= sea + 0.05f)
             return moving;
-          Vec3 current = spatial::sample<terrain::water_velocity> (*water,
-                                                                   where)
-                           .numerical_value_in (u::m / u::s);
+          Vec3 current =
+            spatial::sample<terrain::water_velocity> (*water, where)
+              .numerical_value_in (u::m / u::s);
           return moving + Vec3 (current[0], 0.0f, current[2]);
         }
       };
@@ -1378,14 +1383,13 @@ namespace moppe::game {
         plume.spread = 0.35f * one;
         plume.flake = true;
         const int drops = static_cast<int> (std::round (4.0f * power + 0.5f));
-        session.dust ().emit (
-          moppe::position (prop + Vec3 (0, 0.05f, 0)),
-          velocity (boat.velocity () * 0.6f +
-                    back * (3.0f + 4.0f * power) +
-                    Vec3 (0, 2.5f + 3.5f * power, 0)),
-          drops,
-          spray_color,
-          plume);
+        session.dust ().emit (moppe::position (prop + Vec3 (0, 0.05f, 0)),
+                              velocity (boat.velocity () * 0.6f +
+                                        back * (3.0f + 4.0f * power) +
+                                        Vec3 (0, 2.5f + 3.5f * power, 0)),
+                              drops,
+                              spray_color,
+                              plume);
         if (chance (logic.m_fx_rng) < 0.5f * power) {
           Dust::Style mist;
           mist.size = 0.6f * u::m;
@@ -1419,9 +1423,8 @@ namespace moppe::game {
         const int drops =
           static_cast<int> (std::round (std::min (3.0f, speed * 0.25f)));
         for (const float side : { 1.0f, -1.0f }) {
-          const Vec3 at = boat.point (
-            Vec3 (side * (0.45f + 0.25f * planing), 0.10f,
-                  2.4f - 1.6f * planing));
+          const Vec3 at = boat.point (Vec3 (
+            side * (0.45f + 0.25f * planing), 0.10f, 2.4f - 1.6f * planing));
           session.dust ().emit (
             moppe::position (at),
             velocity (boat.velocity () * 0.75f +
@@ -1433,8 +1436,7 @@ namespace moppe::game {
         }
       }
       // Run up on the shore, the hull grinds over what is there.
-      if (boat.grounded () && speed > 1.0f &&
-          chance (logic.m_fx_rng) < 0.3f) {
+      if (boat.grounded () && speed > 1.0f && chance (logic.m_fx_rng) < 0.3f) {
         Vec3 under = boat.point (Vec3 (0, 0, 1.5f));
         under[1] = ground_at (surface, under) + 0.1f;
         session.dust ().emit (moppe::position (under),
@@ -1480,8 +1482,7 @@ namespace moppe::game {
                                 Vec3 (0.0f, 0.3f, mov::Boat::stem + 0.7f) }) {
         Vec3 at = boat.point (side);
         const float ground = ground_at (surface, at);
-        const float depth =
-          water_at (at).numerical_value_in (u::m) - ground;
+        const float depth = water_at (at).numerical_value_in (u::m) - ground;
         if (depth < shallowest) {
           shallowest = depth;
           at[1] = ground + 0.1f;
@@ -1657,8 +1658,7 @@ namespace moppe::game {
     const bool pedalled = game::pedalled (logic.m_mode);
 
     // A parked bike's impacts shouldn't linger until remount.
-    for (mov::Vehicle* bike :
-         { &session.bike (), &mountain_bike, &long_john })
+    for (mov::Vehicle* bike : { &session.bike (), &mountain_bike, &long_john })
       if (bike != &vehicle || !(logic.m_mode == M_BIKE || pedalled)) {
         bike->pop_impact ();
         bike->pop_fall_drop ();
@@ -1751,11 +1751,10 @@ namespace moppe::game {
     // lasts until the front wheel comes down (for a moment more than a
     // bump's), or the bike leaves the ground for a jump.
     logic.m_wheelie_age += elapsed;
-    const bool riding_up =
-      logic.m_mode == M_BIKE &&
-      (vehicle.wheeling () ||
-       (logic.m_wheelie_m > 0.0f && !vehicle.front_down () &&
-        vehicle.airtime () < 0.5f));
+    const bool riding_up = logic.m_mode == M_BIKE &&
+                           (vehicle.wheeling () || (logic.m_wheelie_m > 0.0f &&
+                                                    !vehicle.front_down () &&
+                                                    vehicle.airtime () < 0.5f));
     if (riding_up) {
       Vec3 ground_speed = vehicle.velocity ();
       ground_speed[1] = 0.0f;
@@ -1786,12 +1785,11 @@ namespace moppe::game {
     };
     const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
     const Vec3 forward = session.subject_heading ();
-    const Vec3 rear_wheel =
-      vehicle_position -
-      forward * (logic.m_mode == M_LONG_JOHN ? 0.95f
-                 : pedalled                  ? 0.55f
-                                             : 0.61f) +
-      Vec3 (0, -0.25f, 0);
+    const Vec3 rear_wheel = vehicle_position -
+                            forward * (logic.m_mode == M_LONG_JOHN ? 0.95f
+                                       : pedalled                  ? 0.55f
+                                                                   : 0.61f) +
+                            Vec3 (0, -0.25f, 0);
 
     if (clean_stunt_landing && landed_trick_quarters > 0) {
       Dust::Style trick_flash;

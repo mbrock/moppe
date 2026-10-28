@@ -177,7 +177,8 @@ MOPPE_TEST (driven_against_a_current_the_boat_makes_less_way_over_the_ground) {
   MOPPE_CHECK_NEAR (still - upstream, 1.5f, 0.5f);
 }
 
-MOPPE_TEST (two_up_the_boat_sticks_at_its_hump_until_the_governor_is_tied_back) {
+MOPPE_TEST (
+  two_up_the_boat_sticks_at_its_hump_until_the_governor_is_tied_back) {
   const map::SurfaceGeometry lake =
     boat_test_ground ([] (float, float) { return -4.0f; });
   mov::Boat boat (lake);

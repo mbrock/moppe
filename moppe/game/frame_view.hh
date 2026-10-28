@@ -134,7 +134,7 @@ namespace moppe::game {
   // Everything the avatar's procedural animation reads: where the feet
   // are and how the body is moving over the ground, not its controls.
   struct WalkerPose {
-    Vec3 position {}; // the feet, eased over steps
+    Vec3 position {};         // the feet, eased over steps
     Vec3 heading { 0, 0, 1 }; // the way the body faces
     // How far round to the right the look is from the body, radians,
     // and how fast the body turns after it, rad/s.

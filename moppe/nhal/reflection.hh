@@ -51,20 +51,20 @@ namespace moppe::nhal {
   };
 
   constexpr bool is_buffer (ResourceKind kind) {
-    return kind == ResourceKind::uniform_block
-      || kind == ResourceKind::storage_buffer
-      || kind == ResourceKind::read_write_storage_buffer;
+    return kind == ResourceKind::uniform_block ||
+           kind == ResourceKind::storage_buffer ||
+           kind == ResourceKind::read_write_storage_buffer;
   }
 
   // Sampled and read-only textures share the texture binding family.
   constexpr bool is_texture (ResourceKind kind) {
-    return kind == ResourceKind::texture_2d
-      || kind == ResourceKind::depth_texture_2d
-      || kind == ResourceKind::uint_texture_2d
-      || kind == ResourceKind::texture_2d_array
-      || kind == ResourceKind::depth_texture_2d_array
-      || kind == ResourceKind::texture_cube
-      || kind == ResourceKind::texture_3d;
+    return kind == ResourceKind::texture_2d ||
+           kind == ResourceKind::depth_texture_2d ||
+           kind == ResourceKind::uint_texture_2d ||
+           kind == ResourceKind::texture_2d_array ||
+           kind == ResourceKind::depth_texture_2d_array ||
+           kind == ResourceKind::texture_cube ||
+           kind == ResourceKind::texture_3d;
   }
 
   // Storage textures are their own binding family: Metal texture(16 + i)
@@ -75,8 +75,8 @@ namespace moppe::nhal {
   }
 
   constexpr bool is_sampler (ResourceKind kind) {
-    return kind == ResourceKind::sampler
-      || kind == ResourceKind::comparison_sampler;
+    return kind == ResourceKind::sampler ||
+           kind == ResourceKind::comparison_sampler;
   }
 }
 

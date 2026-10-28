@@ -272,9 +272,9 @@ namespace moppe::game {
     // A little under the interval, so that a game drawing sixty frames
     // a second speaks on every other one and not now on the second, now
     // on the third.
-    return m_socket->now () - m_socket->sent >=
-           (m_socket->speaking () ? speaking_interval - 0.004
-                                  : calling_interval);
+    return m_socket->now () - m_socket->sent >= (m_socket->speaking ()
+                                                   ? speaking_interval - 0.004
+                                                   : calling_interval);
   }
 
   std::uint16_t CompanionLink::port () const {

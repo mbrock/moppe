@@ -32,22 +32,35 @@ namespace moppe::nhal::demo {
 
     struct Vec3 {
       float x = 0, y = 0, z = 0;
-      Vec3 operator+ (Vec3 o) const { return { x + o.x, y + o.y, z + o.z }; }
-      Vec3 operator- (Vec3 o) const { return { x - o.x, y - o.y, z - o.z }; }
-      Vec3 operator* (float s) const { return { x * s, y * s, z * s }; }
+      Vec3 operator+ (Vec3 o) const {
+        return { x + o.x, y + o.y, z + o.z };
+      }
+      Vec3 operator- (Vec3 o) const {
+        return { x - o.x, y - o.y, z - o.z };
+      }
+      Vec3 operator* (float s) const {
+        return { x * s, y * s, z * s };
+      }
     };
 
-    float dot (Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+    float dot (Vec3 a, Vec3 b) {
+      return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
     Vec3 cross (Vec3 a, Vec3 b) {
-      return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
+      return { a.y * b.z - a.z * b.y,
+               a.z * b.x - a.x * b.z,
                a.x * b.y - a.y * b.x };
     }
-    Vec3 normalize (Vec3 v) { return v * (1.0f / std::sqrt (dot (v, v))); }
-    std::array<float, 4> lanes (Vec3 v, float w) { return { v.x, v.y, v.z, w }; }
+    Vec3 normalize (Vec3 v) {
+      return v * (1.0f / std::sqrt (dot (v, v)));
+    }
+    std::array<float, 4> lanes (Vec3 v, float w) {
+      return { v.x, v.y, v.z, w };
+    }
 
     float hash (int x, int z) {
-      std::uint32_t h = std::uint32_t (x) * 374761393u
-                        + std::uint32_t (z) * 668265263u;
+      std::uint32_t h =
+        std::uint32_t (x) * 374761393u + std::uint32_t (z) * 668265263u;
       h = (h ^ (h >> 13)) * 1274126177u;
       return float ((h ^ (h >> 16)) & 0xffffff) / float (0x1000000);
     }
@@ -59,7 +72,8 @@ namespace moppe::nhal::demo {
       fz = fz * fz * (3 - 2 * fz);
       const float a = hash (ix, iz), b = hash (ix + 1, iz);
       const float c = hash (ix, iz + 1), d = hash (ix + 1, iz + 1);
-      return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
+      return (a + (b - a) * fx) +
+             ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
     }
 
     float fbm (float x, float z) {
@@ -78,8 +92,8 @@ namespace moppe::nhal::demo {
       const float span = (grid - 1) * cell;
       const float dx = x / span - 0.5f, dz = z / span - 0.5f;
       const float rim = dx * dx + dz * dz;
-      return 170.0f * std::pow (fbm (x / 330.0f, z / 330.0f), 1.4f)
-             + 260.0f * rim;
+      return 170.0f * std::pow (fbm (x / 330.0f, z / 330.0f), 1.4f) +
+             260.0f * rim;
     }
 
     struct Rng {
@@ -111,8 +125,8 @@ namespace moppe::nhal::demo {
   }
 
   Scene::Scene (Device& device, const Shaders& shaders, float render_scale)
-    : m_device (device), m_grid (grid), m_cell (cell),
-      m_render_scale (render_scale) {
+      : m_device (device), m_grid (grid), m_cell (cell),
+        m_render_scale (render_scale) {
     // Terrain samples: height and normal per grid point.
     std::vector<float> heights (grid * grid);
     for (std::uint32_t z = 0; z < grid; ++z)
@@ -126,7 +140,8 @@ namespace moppe::nhal::demo {
     std::vector<std::array<float, 4>> terrain (grid * grid);
     for (int z = 0; z < int (grid); ++z)
       for (int x = 0; x < int (grid); ++x) {
-        const Vec3 n = normalize ({ h (x - 1, z) - h (x + 1, z), 2 * cell,
+        const Vec3 n = normalize ({ h (x - 1, z) - h (x + 1, z),
+                                    2 * cell,
                                     h (x, z - 1) - h (x, z + 1) });
         terrain[z * grid + x] = { h (x, z), n.x, n.y, n.z };
       }
@@ -163,27 +178,30 @@ namespace moppe::nhal::demo {
         continue;
       const float tall = 14.0f + 13.0f * rng.next ();
       trees.push_back ({ x, y, z, tall });
-      trees.push_back ({ tall * 0.017f, tall * (0.19f + 0.05f * rng.next ()),
-                         0.22f + 0.1f * rng.next (), rng.next () });
+      trees.push_back ({ tall * 0.017f,
+                         tall * (0.19f + 0.05f * rng.next ()),
+                         0.22f + 0.1f * rng.next (),
+                         rng.next () });
     }
     m_tree_count = std::uint32_t (trees.size () / 2);
     m_tree_instances = device.create_buffer (
-      { .size = trees.size () * 16, .label = "tree instances" },
-      bytes (trees));
-    m_tree_animated = device.create_buffer (
-      { .size = std::uint64_t (m_tree_count) * 3 * 16,
-        .usage = buffer_storage_write, .label = "swaying trees" });
-    m_tree_draw = device.create_buffer (
-      { .size = sizeof (DrawIndexedIndirectArgs),
-        .usage = buffer_storage_write | buffer_indirect,
-        .label = "visible tree draw" });
-    m_tree_shadow_draw = device.create_buffer (
-      { .size = sizeof (DrawIndexedIndirectArgs),
-        .usage = buffer_storage_write | buffer_indirect,
-        .label = "shadow tree draw" });
-    m_tree_visible = device.create_buffer (
-      { .size = std::uint64_t (m_tree_count) * 4,
-        .usage = buffer_storage_write, .label = "visible trees" });
+      { .size = trees.size () * 16, .label = "tree instances" }, bytes (trees));
+    m_tree_animated =
+      device.create_buffer ({ .size = std::uint64_t (m_tree_count) * 3 * 16,
+                              .usage = buffer_storage_write,
+                              .label = "swaying trees" });
+    m_tree_draw =
+      device.create_buffer ({ .size = sizeof (DrawIndexedIndirectArgs),
+                              .usage = buffer_storage_write | buffer_indirect,
+                              .label = "visible tree draw" });
+    m_tree_shadow_draw =
+      device.create_buffer ({ .size = sizeof (DrawIndexedIndirectArgs),
+                              .usage = buffer_storage_write | buffer_indirect,
+                              .label = "shadow tree draw" });
+    m_tree_visible =
+      device.create_buffer ({ .size = std::uint64_t (m_tree_count) * 4,
+                              .usage = buffer_storage_write,
+                              .label = "visible trees" });
 
     // One spruce: an 8-facet trunk and three crown tiers, 48 vertices made
     // by the vertex shader from its index.
@@ -195,8 +213,9 @@ namespace moppe::nhal::demo {
     for (std::uint16_t tier = 0; tier < 3; ++tier) {
       const std::uint16_t base = 18 + tier * 10, apex = base + 9;
       for (std::uint16_t f = 0; f < 8; ++f)
-        tree.insert (tree.end (), { std::uint16_t (base + f),
-                                    std::uint16_t (base + f + 1), apex });
+        tree.insert (
+          tree.end (),
+          { std::uint16_t (base + f), std::uint16_t (base + f + 1), apex });
     }
     m_tree_index_count = std::uint32_t (tree.size ());
     m_tree_indices = device.create_buffer (
@@ -259,30 +278,52 @@ namespace moppe::nhal::demo {
     caster.program = &shaders::trees_shadow::program;
     caster.vertex = shaders.trees_shadow_vertex;
     m_trees_shadow = device.create_render_pipeline (caster);
-    m_shadow_map = device.create_texture ({ shadow_size, shadow_size,
+    m_shadow_map = device.create_texture ({ shadow_size,
+                                            shadow_size,
                                             Format::d32_float,
-                                            usage_depth | usage_sampled, 1,
+                                            usage_depth | usage_sampled,
+                                            1,
                                             "sun shadow" });
 
-    m_wind = device.create_compute_pipeline (
-      { &shaders::forest_wind::program, shaders.forest_wind_compute,
-        "forest wind" });
+    m_wind = device.create_compute_pipeline ({ &shaders::forest_wind::program,
+                                               shaders.forest_wind_compute,
+                                               "forest wind" });
   }
 
   Scene::~Scene () {
     m_device.wait_idle ();
-    for (Texture t : { m_color, m_motion, m_depth, m_scene, m_low_color,
-                       m_low_motion, m_low_depth, m_history[0], m_history[1],
+    for (Texture t : { m_color,
+                       m_motion,
+                       m_depth,
+                       m_scene,
+                       m_low_color,
+                       m_low_motion,
+                       m_low_depth,
+                       m_history[0],
+                       m_history[1],
                        m_shadow_map })
       if (t)
         m_device.destroy (t);
-    for (Buffer b : { m_terrain_samples, m_terrain_indices, m_tree_instances,
-                      m_tree_indices, m_tree_animated, m_tree_draw,
-                      m_tree_shadow_draw, m_tree_visible })
+    for (Buffer b : { m_terrain_samples,
+                      m_terrain_indices,
+                      m_tree_instances,
+                      m_tree_indices,
+                      m_tree_animated,
+                      m_tree_draw,
+                      m_tree_shadow_draw,
+                      m_tree_visible })
       m_device.destroy (b);
-    for (Pipeline p : { m_terrain[0], m_terrain[1], m_trees[0], m_trees[1],
-                        m_sky[0], m_sky[1], m_tonemap, m_wind, m_resolve,
-                        m_terrain_shadow, m_trees_shadow })
+    for (Pipeline p : { m_terrain[0],
+                        m_terrain[1],
+                        m_trees[0],
+                        m_trees[1],
+                        m_sky[0],
+                        m_sky[1],
+                        m_tonemap,
+                        m_wind,
+                        m_resolve,
+                        m_terrain_shadow,
+                        m_trees_shadow })
       m_device.destroy (p);
   }
 
@@ -293,53 +334,79 @@ namespace moppe::nhal::demo {
   }
 
   void Scene::make_targets () {
-    for (Texture t : { m_color, m_motion, m_depth, m_scene, m_low_color,
-                       m_low_motion, m_low_depth, m_history[0], m_history[1] })
+    for (Texture t : { m_color,
+                       m_motion,
+                       m_depth,
+                       m_scene,
+                       m_low_color,
+                       m_low_motion,
+                       m_low_depth,
+                       m_history[0],
+                       m_history[1] })
       if (t)
         m_device.destroy (t);
     m_width = m_device.surface_width ();
     m_height = m_device.surface_height ();
     m_low_width = std::max (1u, std::uint32_t (m_width * m_render_scale));
     m_low_height = std::max (1u, std::uint32_t (m_height * m_render_scale));
-    m_low_color = m_device.create_texture ({ m_low_width, m_low_height,
-                                             Format::rgba16_float,
-                                             usage_render_target
-                                               | usage_sampled,
-                                             1, "jittered scene" });
-    m_low_motion = m_device.create_texture ({ m_low_width, m_low_height,
-                                              Format::rg16_float,
-                                              usage_render_target
-                                                | usage_sampled,
-                                              1, "jittered motion" });
-    m_low_depth = m_device.create_texture ({ m_low_width, m_low_height,
+    m_low_color =
+      m_device.create_texture ({ m_low_width,
+                                 m_low_height,
+                                 Format::rgba16_float,
+                                 usage_render_target | usage_sampled,
+                                 1,
+                                 "jittered scene" });
+    m_low_motion =
+      m_device.create_texture ({ m_low_width,
+                                 m_low_height,
+                                 Format::rg16_float,
+                                 usage_render_target | usage_sampled,
+                                 1,
+                                 "jittered motion" });
+    m_low_depth = m_device.create_texture ({ m_low_width,
+                                             m_low_height,
                                              Format::d32_float,
-                                             usage_depth | usage_sampled, 1,
+                                             usage_depth | usage_sampled,
+                                             1,
                                              "jittered depth" });
     for (int i = 0; i < 2; ++i)
-      m_history[i] = m_device.create_texture (
-        { m_width, m_height, Format::rgba16_float,
-          usage_render_target | usage_sampled, 1, "temporal history" });
+      m_history[i] =
+        m_device.create_texture ({ m_width,
+                                   m_height,
+                                   Format::rgba16_float,
+                                   usage_render_target | usage_sampled,
+                                   1,
+                                   "temporal history" });
     m_restart = true;
-    m_color = m_device.create_texture ({ m_width, m_height,
+    m_color = m_device.create_texture ({ m_width,
+                                         m_height,
                                          Format::rgba16_float,
-                                         usage_render_target, samples,
+                                         usage_render_target,
+                                         samples,
                                          "scene samples" });
-    m_motion = m_device.create_texture ({ m_width, m_height,
+    m_motion = m_device.create_texture ({ m_width,
+                                          m_height,
                                           Format::rg16_float,
-                                          usage_render_target, samples,
+                                          usage_render_target,
+                                          samples,
                                           "scene motion" });
-    m_depth = m_device.create_texture ({ m_width, m_height, Format::d32_float,
-                                         usage_depth, samples,
+    m_depth = m_device.create_texture ({ m_width,
+                                         m_height,
+                                         Format::d32_float,
+                                         usage_depth,
+                                         samples,
                                          "scene depth" });
-    m_scene = m_device.create_texture ({ m_width, m_height,
+    m_scene = m_device.create_texture ({ m_width,
+                                         m_height,
                                          Format::rgba16_float,
                                          usage_render_target | usage_sampled,
-                                         1, "scene" });
+                                         1,
+                                         "scene" });
   }
 
   void Scene::fly (const Flight& input, double seconds) {
-    const bool moved = input.forward || input.strafe || input.rise
-                       || input.turn || input.pitch;
+    const bool moved =
+      input.forward || input.strafe || input.rise || input.turn || input.pitch;
     if (!m_flying && !moved)
       return;
     m_flying = true;
@@ -349,10 +416,9 @@ namespace moppe::nhal::demo {
     const Vec3 ahead { std::cos (m_yaw), 0, std::sin (m_yaw) };
     const Vec3 side { -ahead.z, 0, ahead.x };
     const float speed = (input.boost ? 120.0f : 30.0f) * dt;
-    Vec3 eye = Vec3 { m_eye[0], m_eye[1], m_eye[2] }
-               + ahead * (input.forward * speed)
-               + side * (input.strafe * speed)
-               + Vec3 { 0, input.rise * speed, 0 };
+    Vec3 eye = Vec3 { m_eye[0], m_eye[1], m_eye[2] } +
+               ahead * (input.forward * speed) + side * (input.strafe * speed) +
+               Vec3 { 0, input.rise * speed, 0 };
     const float span = (m_grid - 1) * m_cell;
     eye.x = std::clamp (eye.x, 0.0f, span);
     eye.z = std::clamp (eye.z, 0.0f, span);
@@ -363,8 +429,8 @@ namespace moppe::nhal::demo {
   bool Scene::render (double seconds) {
     if (!m_device.begin_frame ())
       return false;
-    if (m_width != m_device.surface_width ()
-        || m_height != m_device.surface_height ())
+    if (m_width != m_device.surface_width () ||
+        m_height != m_device.surface_height ())
       make_targets ();
 
     // A slow orbit around the valley, looking across it, until flown.
@@ -372,16 +438,17 @@ namespace moppe::nhal::demo {
     Vec3 eye, forward;
     if (m_flying) {
       eye = { m_eye[0], m_eye[1], m_eye[2] };
-      forward = { std::cos (m_pitch) * std::cos (m_yaw), std::sin (m_pitch),
+      forward = { std::cos (m_pitch) * std::cos (m_yaw),
+                  std::sin (m_pitch),
                   std::cos (m_pitch) * std::sin (m_yaw) };
     } else {
       const Vec3 centre { span * 0.5f, 0, span * 0.5f };
       const float angle = float (seconds) * 0.04f;
       eye = centre + Vec3 { std::cos (angle), 0, std::sin (angle) } * 300;
       eye.y = height_at (eye.x, eye.z) + 42;
-      Vec3 target = centre
-                    + Vec3 { std::cos (angle + 2.2f), 0,
-                             std::sin (angle + 2.2f) } * 180;
+      Vec3 target =
+        centre +
+        Vec3 { std::cos (angle + 2.2f), 0, std::sin (angle + 2.2f) } * 180;
       target.y = height_at (target.x, target.z) + 20;
       forward = normalize (target - eye);
       m_eye[0] = eye.x, m_eye[1] = eye.y, m_eye[2] = eye.z;
@@ -403,8 +470,9 @@ namespace moppe::nhal::demo {
     frame.sky_zenith = { 0.22f, 0.36f, 0.66f, 0 };
     frame.sky_horizon = { 0.66f, 0.70f, 0.74f, 0.0011f };
     frame.terrain = { m_cell, float (m_grid), 0, 0 };
-    frame.forest = { float (m_tree_index_count), float (m_tree_count), 1.0f,
-                     0 };
+    frame.forest = {
+      float (m_tree_index_count), float (m_tree_count), 1.0f, 0
+    };
 
     // The frustum's planes as (normal, offset), normals pointing inward:
     // each side leans from the view direction by the half-angle's tangent.
@@ -439,9 +507,10 @@ namespace moppe::nhal::demo {
     }
     // Temporal upscaling: a Halton jitter of up to half a scene pixel, and
     // last frame's camera for reprojection.
-    const std::array<std::array<float, 4>, 4> camera {
-      frame.camera_position, frame.camera_right, frame.camera_up,
-      frame.camera_forward };
+    const std::array<std::array<float, 4>, 4> camera { frame.camera_position,
+                                                       frame.camera_right,
+                                                       frame.camera_up,
+                                                       frame.camera_forward };
     if (m_restart)
       m_previous = camera;
     frame.previous_position = m_previous[0];
@@ -449,16 +518,16 @@ namespace moppe::nhal::demo {
     frame.previous_up = m_previous[2];
     frame.previous_forward = m_previous[3];
     const std::uint32_t phase = m_frame++ % 16 + 1;
-    const float jitter_x = m_temporal ? (halton (phase, 2) - 0.5f) * 2
-                                          / float (m_low_width)
-                                      : 0.0f;
-    const float jitter_y = m_temporal ? (halton (phase, 3) - 0.5f) * 2
-                                          / float (m_low_height)
-                                      : 0.0f;
-    frame.temporal = { float (m_low_width), float (m_low_height), jitter_x,
-                       jitter_y };
-    frame.temporal_blend = { m_restart ? 1.0f : 0.1f, 0, float (m_width),
-                             float (m_height) };
+    const float jitter_x =
+      m_temporal ? (halton (phase, 2) - 0.5f) * 2 / float (m_low_width) : 0.0f;
+    const float jitter_y =
+      m_temporal ? (halton (phase, 3) - 0.5f) * 2 / float (m_low_height) : 0.0f;
+    frame.temporal = {
+      float (m_low_width), float (m_low_height), jitter_x, jitter_y
+    };
+    frame.temporal_blend = {
+      m_restart ? 1.0f : 0.1f, 0, float (m_width), float (m_height)
+    };
     m_previous = camera;
     m_restart = false;
 
@@ -467,9 +536,9 @@ namespace moppe::nhal::demo {
 
     // The wind counts the visible trees into the draw's instance count.
     const std::uint32_t none = 0;
-    m_device.copy_to_buffer (
-      m_tree_draw, offsetof (DrawIndexedIndirectArgs, instance_count),
-      m_device.upload (std::span (&none, 1)));
+    m_device.copy_to_buffer (m_tree_draw,
+                             offsetof (DrawIndexedIndirectArgs, instance_count),
+                             m_device.upload (std::span (&none, 1)));
     m_device.begin_compute_pass ("wind and culling");
     m_device.set_pipeline (m_wind);
     m_device.set_buffer (0, uniforms);
@@ -488,12 +557,12 @@ namespace moppe::nhal::demo {
     m_device.set_buffer (0, uniforms);
     m_device.set_pipeline (m_terrain_shadow);
     m_device.set_buffer (1, m_terrain_samples);
-    m_device.draw_indexed (m_terrain_indices, IndexType::uint32,
-                           m_terrain_index_count);
+    m_device.draw_indexed (
+      m_terrain_indices, IndexType::uint32, m_terrain_index_count);
     m_device.set_pipeline (m_trees_shadow);
     m_device.set_buffer (1, m_tree_animated);
-    m_device.draw_indexed_indirect (m_tree_indices, IndexType::uint16,
-                                    m_tree_shadow_draw);
+    m_device.draw_indexed_indirect (
+      m_tree_indices, IndexType::uint16, m_tree_shadow_draw);
     m_device.end_render_pass ();
 
     const int mode = m_temporal ? 1 : 0;
@@ -501,16 +570,20 @@ namespace moppe::nhal::demo {
     pass.label = m_temporal ? "jittered scene" : "scene, 4x MSAA";
     pass.color_count = 2;
     if (m_temporal) {
-      pass.colors[0] = { m_low_color, Load::clear, Store::store,
-                         { 0, 0, 0, 1 } };
-      pass.colors[1] = { m_low_motion, Load::clear, Store::store,
-                         { 0, 0, 0, 0 } };
+      pass.colors[0] = {
+        m_low_color, Load::clear, Store::store, { 0, 0, 0, 1 }
+      };
+      pass.colors[1] = {
+        m_low_motion, Load::clear, Store::store, { 0, 0, 0, 0 }
+      };
       pass.depth = { m_low_depth, Load::clear, Store::store, 0.0f };
     } else {
-      pass.colors[0] = { m_color, Load::clear, Store::discard,
-                         { 0, 0, 0, 1 }, m_scene };
-      pass.colors[1] = { m_motion, Load::clear, Store::discard,
-                         { 0, 0, 0, 0 } };
+      pass.colors[0] = {
+        m_color, Load::clear, Store::discard, { 0, 0, 0, 1 }, m_scene
+      };
+      pass.colors[1] = {
+        m_motion, Load::clear, Store::discard, { 0, 0, 0, 0 }
+      };
       pass.depth = { m_depth, Load::clear, Store::discard, 0.0f };
     }
     m_device.begin_render_pass (pass);
@@ -519,14 +592,14 @@ namespace moppe::nhal::demo {
 
     m_device.set_pipeline (m_terrain[mode]);
     m_device.set_buffer (1, m_terrain_samples);
-    m_device.draw_indexed (m_terrain_indices, IndexType::uint32,
-                           m_terrain_index_count);
+    m_device.draw_indexed (
+      m_terrain_indices, IndexType::uint32, m_terrain_index_count);
 
     m_device.set_pipeline (m_trees[mode]);
     m_device.set_buffer (1, m_tree_animated);
     m_device.set_buffer (2, m_tree_visible);
-    m_device.draw_indexed_indirect (m_tree_indices, IndexType::uint16,
-                                    m_tree_draw);
+    m_device.draw_indexed_indirect (
+      m_tree_indices, IndexType::uint16, m_tree_draw);
 
     m_device.set_pipeline (m_sky[mode]);
     m_device.draw (3);
@@ -557,8 +630,7 @@ namespace moppe::nhal::demo {
     RenderPassDesc present;
     present.label = "tonemap";
     present.color_count = 1;
-    present.colors[0] = { m_device.backbuffer (), Load::discard,
-                          Store::store };
+    present.colors[0] = { m_device.backbuffer (), Load::discard, Store::store };
     m_device.begin_render_pass (present);
     m_device.set_pipeline (m_tonemap);
     m_device.set_buffer (0, uniforms);

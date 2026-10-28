@@ -207,9 +207,8 @@ namespace moppe {
         return coefficient * coefficient / bike_rig::ground_friction;
       }
 
-      b3BodyId create_wheel (const RigidBodyState& s,
-                             float radius,
-                             b3ShapeId* tire) {
+      b3BodyId
+      create_wheel (const RigidBodyState& s, float radius, b3ShapeId* tire) {
         const b3BodyId wheel = create_body (s);
         b3ShapeDef shape = b3DefaultShapeDef ();
         shape.updateBodyMass = false;
@@ -660,8 +659,8 @@ namespace moppe {
         // which only the ground under the tyres can answer: in the air it
         // turns nothing.
         {
-          const float rising = -dot (
-            from_b3 (b3Body_GetAngularVelocity (chassis)), left);
+          const float rising =
+            -dot (from_b3 (b3Body_GetAngularVelocity (chassis)), left);
           const float balance =
             front_contact ? 1.0f
                           : (rig.wheelie_pitch - nose) / 0.2f - 0.5f * rising;
@@ -669,8 +668,7 @@ namespace moppe {
             wheelie * rig.wheelie_lean * std::clamp (balance, -0.6f, 1.0f);
           rider_shift += (goal - rider_shift) * (1.0f - std::exp (-8.0f * dt));
           if (grounded) {
-            const Vec3 weight =
-              world_up * (-chassis_mass * bike_rig::gravity);
+            const Vec3 weight = world_up * (-chassis_mass * bike_rig::gravity);
             b3Body_ApplyTorque (
               chassis, to_b3 (cross (forward * -rider_shift, weight)), true);
           }
@@ -681,10 +679,10 @@ namespace moppe {
         // square of the twist, so a tap of it is a blip of power and a
         // held throttle a surge.
         const float throttle_goal = std::max (controls.throttle, 0.0f);
-        twist = wheelie <= 0.0f
-                  ? throttle_goal
-                  : std::clamp (throttle_goal, twist - 6.0f * dt,
-                                twist + 1.5f * dt);
+        twist =
+          wheelie <= 0.0f
+            ? throttle_goal
+            : std::clamp (throttle_goal, twist - 6.0f * dt, twist + 1.5f * dt);
         const float throttle = controls.throttle <= 0.0f ? controls.throttle
                                : wheelie > 0.0f          ? twist * twist
                                                          : twist;
@@ -696,8 +694,7 @@ namespace moppe {
         float front_torque = 0.0f;
         // Leaning back for a wheelie, the rider lets the front come up.
         const float wheelie_cut = std::max (
-          wheelie,
-          std::clamp ((rig.wheelie_limit - nose) / 0.15f, 0.0f, 1.0f));
+          wheelie, std::clamp ((rig.wheelie_limit - nose) / 0.15f, 0.0f, 1.0f));
         const float stoppie_cut =
           std::clamp ((rig.stoppie_limit + nose) / 0.15f, 0.0f, 1.0f);
         if (throttle > 0.02f) {
@@ -740,11 +737,7 @@ namespace moppe {
             }
             rear_speed = (std::max (vf, 0.0f) + 20.0f) / r;
             rear_torque =
-              wheelie_cut *
-              std::min ({ throttle * force,
-                          grip,
-                          rearing }) *
-              r;
+              wheelie_cut * std::min ({ throttle * force, grip, rearing }) * r;
           } else {
             rear_speed = (std::max (vf, 0.0f) + 1.0f) / r;
             rear_torque = rig.free_rev_torque;
@@ -786,8 +779,7 @@ namespace moppe {
         // A bike under the wing has its drag counted in the wing's pull.
         Vec3 force = controls.boost_acceleration * total_mass;
         if (!hanging)
-          force -= v * ((rig.rolling_drag + rig.air_drag * speed) *
-                        total_mass);
+          force -= v * ((rig.rolling_drag + rig.air_drag * speed) * total_mass);
         force -= v * (bike_rig::water_drag * controls.wading * total_mass);
         b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
 

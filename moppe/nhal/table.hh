@@ -36,9 +36,8 @@ namespace moppe::nhal {
     }
 
     Value& operator[] (Handle handle) {
-      if (handle.index >= m_rows.size ()
-          || !m_rows[handle.index].live
-          || m_rows[handle.index].generation != handle.generation)
+      if (handle.index >= m_rows.size () || !m_rows[handle.index].live ||
+          m_rows[handle.index].generation != handle.generation)
         throw std::invalid_argument ("NHAL: stale or invalid handle");
       return m_rows[handle.index].value;
     }

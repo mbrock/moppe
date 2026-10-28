@@ -226,9 +226,9 @@ namespace moppe::platform {
       [[maybe_unused]] const char* home = moppe::environment ("HOME");
 #ifdef __APPLE__
       // Where the Mac has always kept them, so finished worlds carry over.
-      root = home ? std::filesystem::path (home) / "Library" / "Caches"
-                        / "Moppe"
-                  : std::filesystem::temp_directory_path () / "Moppe";
+      root = home
+               ? std::filesystem::path (home) / "Library" / "Caches" / "Moppe"
+               : std::filesystem::temp_directory_path () / "Moppe";
 #elif defined(_WIN32)
       const char* local = moppe::environment ("LOCALAPPDATA");
       root = local ? std::filesystem::path (local) / "Moppe"
@@ -275,8 +275,12 @@ namespace moppe::platform {
     // The Mac speaks it, as it always has, without waiting for the voice.
     const char* argv[] = { "say", phrase.c_str (), nullptr };
     pid_t child = 0;
-    if (posix_spawnp (&child, "say", nullptr, nullptr,
-                      const_cast<char* const*> (argv), environ) == 0)
+    if (posix_spawnp (&child,
+                      "say",
+                      nullptr,
+                      nullptr,
+                      const_cast<char* const*> (argv),
+                      environ) == 0)
       std::thread ([child] { waitpid (child, nullptr, 0); }).detach ();
 #endif
   }
@@ -287,11 +291,10 @@ namespace moppe::platform {
 #if MOPPE_THREADLESS
     // The page's own thread does the work, a few turns from now, so that
     // the frame saying what the page waits for is on screen meanwhile.
-    waiting_work.push_back (
-      { 4, [work, done, context = std::move (context)] {
-         work (context.get ());
-         done (context.get ());
-       } });
+    waiting_work.push_back ({ 4, [work, done, context = std::move (context)] {
+                               work (context.get ());
+                               done (context.get ());
+                             } });
 #else
     std::thread ([work, done, context = std::move (context)] () mutable {
       work (context.get ());
@@ -301,7 +304,6 @@ namespace moppe::platform {
     }).detach ();
 #endif
   }
-
 
   namespace sdl {
     void frame_rendered () {}

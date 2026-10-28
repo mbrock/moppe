@@ -44,34 +44,48 @@ namespace moppe::game {
     switch (machine) {
     case Machine::bike:
       // The fork's top clamp and the rack's rear corners.
-      return { Vec3 (0.0f, 0.53f, 0.35f), Vec3 (0.0f, 0.53f, 0.35f),
-               Vec3 (0.13f, 0.36f, -0.97f), Vec3 (-0.13f, 0.36f, -0.97f) };
+      return { Vec3 (0.0f, 0.53f, 0.35f),
+               Vec3 (0.0f, 0.53f, 0.35f),
+               Vec3 (0.13f, 0.36f, -0.97f),
+               Vec3 (-0.13f, 0.36f, -0.97f) };
     case Machine::jeep:
       // The roll cage's corners.
-      return { Vec3 (0.72f, 0.95f, 0.55f), Vec3 (-0.72f, 0.95f, 0.55f),
-               Vec3 (0.72f, 0.95f, -1.2f), Vec3 (-0.72f, 0.95f, -1.2f) };
+      return { Vec3 (0.72f, 0.95f, 0.55f),
+               Vec3 (-0.72f, 0.95f, 0.55f),
+               Vec3 (0.72f, 0.95f, -1.2f),
+               Vec3 (-0.72f, 0.95f, -1.2f) };
     case Machine::tractor:
       // The front axle's ends and the rear mudguards.
-      return { Vec3 (0.45f, 0.75f, 1.35f), Vec3 (-0.45f, 0.75f, 1.35f),
-               Vec3 (0.75f, 1.25f, -0.75f), Vec3 (-0.75f, 1.25f, -0.75f) };
+      return { Vec3 (0.45f, 0.75f, 1.35f),
+               Vec3 (-0.45f, 0.75f, 1.35f),
+               Vec3 (0.75f, 1.25f, -0.75f),
+               Vec3 (-0.75f, 1.25f, -0.75f) };
     case Machine::caddy:
       // The bonnet's front corners and the bed's back ones.
-      return { Vec3 (0.72f, 0.62f, 1.70f), Vec3 (-0.72f, 0.62f, 1.70f),
-               Vec3 (0.74f, 0.68f, -2.12f), Vec3 (-0.74f, 0.68f, -2.12f) };
+      return { Vec3 (0.72f, 0.62f, 1.70f),
+               Vec3 (-0.72f, 0.62f, 1.70f),
+               Vec3 (0.74f, 0.68f, -2.12f),
+               Vec3 (-0.74f, 0.68f, -2.12f) };
     case Machine::helicopter:
       break;
     case Machine::mountain_bike:
       // The head tube and the seat post.
-      return { Vec3 (0.0f, 0.75f, 0.4f), Vec3 (0.0f, 0.75f, 0.4f),
-               Vec3 (0.0f, 0.8f, -0.25f), Vec3 (0.0f, 0.8f, -0.25f) };
+      return { Vec3 (0.0f, 0.75f, 0.4f),
+               Vec3 (0.0f, 0.75f, 0.4f),
+               Vec3 (0.0f, 0.8f, -0.25f),
+               Vec3 (0.0f, 0.8f, -0.25f) };
     case Machine::long_john:
       // The bulkhead's top corners and the hoop's.
-      return { Vec3 (0.19f, 0.39f, 0.81f), Vec3 (-0.19f, 0.39f, 0.81f),
-               Vec3 (0.25f, 0.63f, -0.15f), Vec3 (-0.25f, 0.63f, -0.15f) };
+      return { Vec3 (0.19f, 0.39f, 0.81f),
+               Vec3 (-0.19f, 0.39f, 0.81f),
+               Vec3 (0.25f, 0.63f, -0.15f),
+               Vec3 (-0.25f, 0.63f, -0.15f) };
     case Machine::boat:
       // The bow handle and the transom's corners.
-      return { Vec3 (0.0f, 0.45f, 2.65f), Vec3 (0.0f, 0.45f, 2.65f),
-               Vec3 (0.4f, 0.36f, -0.9f), Vec3 (-0.4f, 0.36f, -0.9f) };
+      return { Vec3 (0.0f, 0.45f, 2.65f),
+               Vec3 (0.0f, 0.45f, 2.65f),
+               Vec3 (0.4f, 0.36f, -0.9f),
+               Vec3 (-0.4f, 0.36f, -0.9f) };
     }
     return {};
   }

@@ -18,7 +18,7 @@
 #include <string>
 
 #ifdef MOPPE_SPARKLE
-extern "C" void game_updates_finish(void);
+extern "C" void game_updates_finish (void);
 #endif
 
 int main (int argc, char** argv) {

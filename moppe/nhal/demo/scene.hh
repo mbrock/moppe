@@ -47,12 +47,16 @@ namespace moppe::nhal::demo {
     // valley until the first input, and then flies from where it was.
     void fly (const Flight& input, double seconds);
 
-    std::uint32_t tree_count () const { return m_tree_count; }
+    std::uint32_t tree_count () const {
+      return m_tree_count;
+    }
 
     // Temporal upscaling (jittered, smaller scene; the default) or the
     // native scene with 4x MSAA at the drawable's size.
     void set_temporal (bool temporal);
-    bool temporal () const { return m_temporal; }
+    bool temporal () const {
+      return m_temporal;
+    }
 
   private:
     void make_targets ();

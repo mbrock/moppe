@@ -14,10 +14,10 @@
 #include <array>
 #include <functional>
 #include <memory>
-#include <vector>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace moppe::nhal {
   namespace {
@@ -36,45 +36,72 @@ namespace moppe::nhal {
 
     MTLPixelFormat pixel_format (Format format) {
       switch (format) {
-      case Format::undefined: return MTLPixelFormatInvalid;
-      case Format::rgba8_unorm: return MTLPixelFormatRGBA8Unorm;
-      case Format::rgba8_unorm_srgb: return MTLPixelFormatRGBA8Unorm_sRGB;
-      case Format::bgra8_unorm: return MTLPixelFormatBGRA8Unorm;
-      case Format::bgra8_unorm_srgb: return MTLPixelFormatBGRA8Unorm_sRGB;
-      case Format::rgb10a2_unorm: return MTLPixelFormatRGB10A2Unorm;
-      case Format::rgba16_float: return MTLPixelFormatRGBA16Float;
-      case Format::rg16_float: return MTLPixelFormatRG16Float;
-      case Format::rg16_snorm: return MTLPixelFormatRG16Snorm;
-      case Format::r16_float: return MTLPixelFormatR16Float;
-      case Format::r8_unorm: return MTLPixelFormatR8Unorm;
-      case Format::r32_float: return MTLPixelFormatR32Float;
-      case Format::rg32_float: return MTLPixelFormatRG32Float;
-      case Format::rgba32_float: return MTLPixelFormatRGBA32Float;
-      case Format::r32_uint: return MTLPixelFormatR32Uint;
-      case Format::d32_float: return MTLPixelFormatDepth32Float;
+      case Format::undefined:
+        return MTLPixelFormatInvalid;
+      case Format::rgba8_unorm:
+        return MTLPixelFormatRGBA8Unorm;
+      case Format::rgba8_unorm_srgb:
+        return MTLPixelFormatRGBA8Unorm_sRGB;
+      case Format::bgra8_unorm:
+        return MTLPixelFormatBGRA8Unorm;
+      case Format::bgra8_unorm_srgb:
+        return MTLPixelFormatBGRA8Unorm_sRGB;
+      case Format::rgb10a2_unorm:
+        return MTLPixelFormatRGB10A2Unorm;
+      case Format::rgba16_float:
+        return MTLPixelFormatRGBA16Float;
+      case Format::rg16_float:
+        return MTLPixelFormatRG16Float;
+      case Format::rg16_snorm:
+        return MTLPixelFormatRG16Snorm;
+      case Format::r16_float:
+        return MTLPixelFormatR16Float;
+      case Format::r8_unorm:
+        return MTLPixelFormatR8Unorm;
+      case Format::r32_float:
+        return MTLPixelFormatR32Float;
+      case Format::rg32_float:
+        return MTLPixelFormatRG32Float;
+      case Format::rgba32_float:
+        return MTLPixelFormatRGBA32Float;
+      case Format::r32_uint:
+        return MTLPixelFormatR32Uint;
+      case Format::d32_float:
+        return MTLPixelFormatDepth32Float;
       }
       return MTLPixelFormatInvalid;
     }
 
     MTLCompareFunction compare_function (CompareOp op) {
       switch (op) {
-      case CompareOp::never: return MTLCompareFunctionNever;
-      case CompareOp::less: return MTLCompareFunctionLess;
-      case CompareOp::equal: return MTLCompareFunctionEqual;
-      case CompareOp::less_equal: return MTLCompareFunctionLessEqual;
-      case CompareOp::greater: return MTLCompareFunctionGreater;
-      case CompareOp::not_equal: return MTLCompareFunctionNotEqual;
-      case CompareOp::greater_equal: return MTLCompareFunctionGreaterEqual;
-      case CompareOp::always: return MTLCompareFunctionAlways;
+      case CompareOp::never:
+        return MTLCompareFunctionNever;
+      case CompareOp::less:
+        return MTLCompareFunctionLess;
+      case CompareOp::equal:
+        return MTLCompareFunctionEqual;
+      case CompareOp::less_equal:
+        return MTLCompareFunctionLessEqual;
+      case CompareOp::greater:
+        return MTLCompareFunctionGreater;
+      case CompareOp::not_equal:
+        return MTLCompareFunctionNotEqual;
+      case CompareOp::greater_equal:
+        return MTLCompareFunctionGreaterEqual;
+      case CompareOp::always:
+        return MTLCompareFunctionAlways;
       }
       return MTLCompareFunctionAlways;
     }
 
     MTLLoadAction load_action (Load load) {
       switch (load) {
-      case Load::load: return MTLLoadActionLoad;
-      case Load::clear: return MTLLoadActionClear;
-      case Load::discard: return MTLLoadActionDontCare;
+      case Load::load:
+        return MTLLoadActionLoad;
+      case Load::clear:
+        return MTLLoadActionClear;
+      case Load::discard:
+        return MTLLoadActionDontCare;
       }
       return MTLLoadActionDontCare;
     }
@@ -102,9 +129,9 @@ namespace moppe::nhal {
     class MetalDevice final : public Device {
     public:
       MetalDevice (CAMetalLayer* layer, Format surface_format)
-        : m_layer (layer), m_surface_format (surface_format) {
-        m_device = layer.device ? layer.device
-                                : MTLCreateSystemDefaultDevice ();
+          : m_layer (layer), m_surface_format (surface_format) {
+        m_device =
+          layer.device ? layer.device : MTLCreateSystemDefaultDevice ();
         if (!m_device)
           throw std::runtime_error ("NHAL: no Metal device");
         m_queue = [m_device newMTL4CommandQueue];
@@ -121,8 +148,7 @@ namespace moppe::nhal {
         m_residency = [m_device newResidencySetWithDescriptor:residency
                                                         error:&error];
         if (!m_residency)
-          throw std::runtime_error ("NHAL: residency set: "
-                                    + describe (error));
+          throw std::runtime_error ("NHAL: residency set: " + describe (error));
         [m_queue addResidencySet:m_residency];
 
         layer.device = m_device;
@@ -167,8 +193,8 @@ namespace moppe::nhal {
         m_compute_table = [m_device newArgumentTableWithDescriptor:table
                                                              error:&error];
         if (!m_vertex_table || !m_fragment_table || !m_compute_table)
-          throw std::runtime_error ("NHAL: argument table: "
-                                    + describe (error));
+          throw std::runtime_error ("NHAL: argument table: " +
+                                    describe (error));
         make_samplers ();
 
         m_ticks_per_ms = [m_device queryTimestampFrequency] / 1000.0;
@@ -201,7 +227,8 @@ namespace moppe::nhal {
         if (desc.label)
           buffer.label = @(desc.label);
         if (!initial.empty ())
-          std::memcpy (buffer.contents, initial.data (),
+          std::memcpy (buffer.contents,
+                       initial.data (),
                        std::min<std::size_t> (initial.size (), desc.size));
         make_resident (buffer);
         return m_buffers.insert<Buffer> (MetalBuffer { buffer });
@@ -213,8 +240,8 @@ namespace moppe::nhal {
 
       Texture create_texture (const TextureDesc& desc) override {
         MTLTextureDescriptor* td = [[MTLTextureDescriptor alloc] init];
-        td.textureType = desc.samples > 1 ? MTLTextureType2DMultisample
-                                          : MTLTextureType2D;
+        td.textureType =
+          desc.samples > 1 ? MTLTextureType2DMultisample : MTLTextureType2D;
         td.pixelFormat = pixel_format (desc.format);
         td.width = desc.width;
         td.height = desc.height;
@@ -227,9 +254,8 @@ namespace moppe::nhal {
         if (desc.usage & usage_storage)
           td.usage |= MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
         // Sampled-only textures are written in place by the CPU.
-        td.storageMode = desc.usage == usage_sampled
-                           ? MTLStorageModeShared
-                           : MTLStorageModePrivate;
+        td.storageMode = desc.usage == usage_sampled ? MTLStorageModeShared
+                                                     : MTLStorageModePrivate;
         id<MTLTexture> texture = [m_device newTextureWithDescriptor:td];
         if (!texture)
           throw std::runtime_error ("NHAL: could not create a texture");
@@ -241,7 +267,8 @@ namespace moppe::nhal {
 
       // Sampled-only textures are shared memory: the write lands at once,
       // so a texture must not be rewritten while a frame still reads it.
-      void write_texture (Texture handle, std::span<const std::byte> pixels,
+      void write_texture (Texture handle,
+                          std::span<const std::byte> pixels,
                           std::uint32_t row_bytes) override {
         MetalTexture& t = m_textures[handle];
         if (t.texture.storageMode != MTLStorageModeShared)
@@ -249,15 +276,15 @@ namespace moppe::nhal {
             "NHAL: only sampled-only textures can be written");
         if (!row_bytes)
           row_bytes = t.desc.width * bytes_per_pixel (t.desc.format);
-        [t.texture replaceRegion:MTLRegionMake2D (0, 0, t.desc.width,
-                                                  t.desc.height)
-                     mipmapLevel:0
-                       withBytes:pixels.data ()
-                     bytesPerRow:row_bytes];
+        [t.texture
+          replaceRegion:MTLRegionMake2D (0, 0, t.desc.width, t.desc.height)
+            mipmapLevel:0
+              withBytes:pixels.data ()
+            bytesPerRow:row_bytes];
       }
 
-      Pipeline create_render_pipeline (const RenderPipelineDesc& desc)
-        override {
+      Pipeline
+      create_render_pipeline (const RenderPipelineDesc& desc) override {
         const Program& program = *desc.program;
         MTLRenderPipelineDescriptor* d =
           [[MTLRenderPipelineDescriptor alloc] init];
@@ -292,8 +319,8 @@ namespace moppe::nhal {
         pipeline.state = [m_device newRenderPipelineStateWithDescriptor:d
                                                                   error:&error];
         if (!pipeline.state)
-          throw std::runtime_error (std::string ("NHAL: pipeline ")
-                                    + program.name + ": " + describe (error));
+          throw std::runtime_error (std::string ("NHAL: pipeline ") +
+                                    program.name + ": " + describe (error));
 
         MTLDepthStencilDescriptor* depth =
           [[MTLDepthStencilDescriptor alloc] init];
@@ -312,15 +339,16 @@ namespace moppe::nhal {
         pipeline.winding = desc.front_counter_clockwise
                              ? MTLWindingCounterClockwise
                              : MTLWindingClockwise;
-        pipeline.primitive =
-          desc.topology == Topology::triangle_strip ? MTLPrimitiveTypeTriangleStrip
-          : desc.topology == Topology::line_list    ? MTLPrimitiveTypeLine
-                                                    : MTLPrimitiveTypeTriangle;
+        pipeline.primitive = desc.topology == Topology::triangle_strip
+                               ? MTLPrimitiveTypeTriangleStrip
+                             : desc.topology == Topology::line_list
+                               ? MTLPrimitiveTypeLine
+                               : MTLPrimitiveTypeTriangle;
         return m_pipelines.insert<Pipeline> (pipeline);
       }
 
-      Pipeline create_compute_pipeline (const ComputePipelineDesc& desc)
-        override {
+      Pipeline
+      create_compute_pipeline (const ComputePipelineDesc& desc) override {
         const Program& program = *desc.program;
         NSError* error = nil;
         MetalPipeline pipeline;
@@ -329,12 +357,12 @@ namespace moppe::nhal {
                                                         program.compute_entry)
                                         error:&error];
         if (!pipeline.compute)
-          throw std::runtime_error (std::string ("NHAL: compute pipeline ")
-                                    + program.name + ": " + describe (error));
-        pipeline.threads = MTLSizeMake (
-          std::max (1u, program.workgroup_size[0]),
-          std::max (1u, program.workgroup_size[1]),
-          std::max (1u, program.workgroup_size[2]));
+          throw std::runtime_error (std::string ("NHAL: compute pipeline ") +
+                                    program.name + ": " + describe (error));
+        pipeline.threads =
+          MTLSizeMake (std::max (1u, program.workgroup_size[0]),
+                       std::max (1u, program.workgroup_size[1]),
+                       std::max (1u, program.workgroup_size[2]));
         return m_pipelines.insert<Pipeline> (pipeline);
       }
 
@@ -357,23 +385,24 @@ namespace moppe::nhal {
           m_retired_objects.retire (m_serial, p.compute);
       }
 
-      Format surface_format () const override { return m_surface_format; }
+      Format surface_format () const override {
+        return m_surface_format;
+      }
       std::uint32_t surface_width () const override {
         return static_cast<std::uint32_t> (m_layer.drawableSize.width);
       }
       std::uint32_t surface_height () const override {
         return static_cast<std::uint32_t> (m_layer.drawableSize.height);
       }
-      void resize_surface (std::uint32_t width, std::uint32_t height)
-        override {
+      void resize_surface (std::uint32_t width, std::uint32_t height) override {
         m_layer.drawableSize = CGSizeMake (width, height);
       }
 
       bool begin_frame () override {
         const std::uint64_t next = m_serial + 1;
-        if (next > frames_in_flight
-            && ![m_event waitUntilSignaledValue:next - frames_in_flight
-                                      timeoutMS:2000])
+        if (next > frames_in_flight &&
+            ![m_event waitUntilSignaledValue:next - frames_in_flight
+                                   timeoutMS:2000])
           throw std::runtime_error ("NHAL: timed out waiting for a frame");
         collect ();
 
@@ -385,13 +414,19 @@ namespace moppe::nhal {
         m_textures[m_backbuffer].desc = {
           static_cast<std::uint32_t> (m_drawable.texture.width),
           static_cast<std::uint32_t> (m_drawable.texture.height),
-          m_surface_format, usage_render_target, 1, "backbuffer" };
+          m_surface_format,
+          usage_render_target,
+          1,
+          "backbuffer"
+        };
 
         m_serial = next;
         const std::uint32_t slot = (m_serial - 1) % frames_in_flight;
         m_slot = slot;
         m_arena = { static_cast<std::byte*> (m_arena_buffers[slot].contents),
-                    m_arena_buffers[slot].gpuAddress, arena_capacity, 0 };
+                    m_arena_buffers[slot].gpuAddress,
+                    arena_capacity,
+                    0 };
         [m_allocators[slot] reset];
         m_commands = [m_device newCommandBuffer];
         [m_commands beginCommandBufferWithAllocator:m_allocators[slot]];
@@ -404,14 +439,16 @@ namespace moppe::nhal {
         return true;
       }
 
-      Texture backbuffer () override { return m_backbuffer; }
+      Texture backbuffer () override {
+        return m_backbuffer;
+      }
 
       void offer_drawable (void* drawable) override {
         m_offered = (__bridge id<CAMetalDrawable>)drawable;
       }
 
-      Transient allocate (std::uint64_t size, std::uint64_t alignment)
-        override {
+      Transient allocate (std::uint64_t size,
+                          std::uint64_t alignment) override {
         if (!m_arena.fits (size, alignment))
           throw std::runtime_error ("NHAL: frame arena exhausted");
         return m_arena.allocate (size, alignment);
@@ -459,8 +496,8 @@ namespace moppe::nhal {
         if (desc.label)
           m_encoder.label = @(desc.label);
         // Coarse ordering: whatever earlier passes wrote is visible here.
-        [m_encoder barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
-                                           | MTLStageBlit | MTLStageDispatch
+        [m_encoder barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
+                                           MTLStageBlit | MTLStageDispatch
                               beforeStages:MTLStageVertex | MTLStageFragment
                          visibilityOptions:MTL4VisibilityOptionDevice];
         set_viewport (0, 0, float (width), float (height));
@@ -471,8 +508,8 @@ namespace moppe::nhal {
         m_compute = [m_commands computeCommandEncoder];
         if (label)
           m_compute.label = @(label);
-        [m_compute barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
-                                           | MTLStageBlit | MTLStageDispatch
+        [m_compute barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
+                                           MTLStageBlit | MTLStageDispatch
                               beforeStages:MTLStageDispatch | MTLStageBlit
                          visibilityOptions:MTL4VisibilityOptionDevice];
         m_dispatched = false;
@@ -484,11 +521,12 @@ namespace moppe::nhal {
         timestamp ();
       }
 
-      void copy_to_buffer (Buffer target, std::uint64_t offset,
+      void copy_to_buffer (Buffer target,
+                           std::uint64_t offset,
                            const Transient& source) override {
         id<MTL4ComputeCommandEncoder> copy = [m_commands computeCommandEncoder];
-        [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
-                                      | MTLStageBlit | MTLStageDispatch
+        [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
+                                      MTLStageBlit | MTLStageDispatch
                          beforeStages:MTLStageBlit
                     visibilityOptions:MTL4VisibilityOptionDevice];
         id<MTLBuffer> arena = m_arena_buffers[m_slot];
@@ -500,44 +538,42 @@ namespace moppe::nhal {
         [copy endEncoding];
       }
 
-      void dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z)
-        override {
+      void
+      dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z) override {
         before_dispatch ();
         [m_compute dispatchThreadgroups:MTLSizeMake (x, y, z)
                   threadsPerThreadgroup:m_pipeline.threads];
       }
 
-      void dispatch_indirect (Buffer arguments, std::uint64_t offset)
-        override {
+      void dispatch_indirect (Buffer arguments, std::uint64_t offset) override {
         before_dispatch ();
-        [m_compute
-          dispatchThreadgroupsWithIndirectBuffer:m_buffers[arguments]
-                                                   .buffer.gpuAddress
-                                                 + offset
-                           threadsPerThreadgroup:m_pipeline.threads];
+        [m_compute dispatchThreadgroupsWithIndirectBuffer:m_buffers[arguments]
+                                                            .buffer.gpuAddress +
+                                                          offset
+                                    threadsPerThreadgroup:m_pipeline.threads];
       }
 
       void draw_indirect (Buffer arguments, std::uint64_t offset) override {
         use_arguments ();
-        [m_encoder drawPrimitives:m_pipeline.primitive
-                   indirectBuffer:m_buffers[arguments].buffer.gpuAddress
-                                  + offset];
+        [m_encoder
+          drawPrimitives:m_pipeline.primitive
+          indirectBuffer:m_buffers[arguments].buffer.gpuAddress + offset];
       }
 
-      void draw_indexed_indirect (Buffer indices, IndexType type,
-                                  Buffer arguments, std::uint64_t offset)
-        override {
+      void draw_indexed_indirect (Buffer indices,
+                                  IndexType type,
+                                  Buffer arguments,
+                                  std::uint64_t offset) override {
         use_arguments ();
         id<MTLBuffer> index_buffer = m_buffers[indices].buffer;
         [m_encoder
           drawIndexedPrimitives:m_pipeline.primitive
-                      indexType:type == IndexType::uint16
-                                  ? MTLIndexTypeUInt16
-                                  : MTLIndexTypeUInt32
+                      indexType:type == IndexType::uint16 ? MTLIndexTypeUInt16
+                                                          : MTLIndexTypeUInt32
                     indexBuffer:index_buffer.gpuAddress
               indexBufferLength:index_buffer.length
-                 indirectBuffer:m_buffers[arguments].buffer.gpuAddress
-                                + offset];
+                 indirectBuffer:m_buffers[arguments].buffer.gpuAddress +
+                                offset];
       }
 
       void end_render_pass () override {
@@ -561,13 +597,13 @@ namespace moppe::nhal {
                           clamp:0];
       }
 
-      void set_buffer (std::uint32_t binding, Buffer buffer,
+      void set_buffer (std::uint32_t binding,
+                       Buffer buffer,
                        std::uint64_t offset) override {
         bind_address (binding, m_buffers[buffer].buffer.gpuAddress + offset);
       }
 
-      void set_buffer (std::uint32_t binding, const Transient& slice)
-        override {
+      void set_buffer (std::uint32_t binding, const Transient& slice) override {
         bind_address (binding, slice.gpu_address);
       }
 
@@ -575,20 +611,20 @@ namespace moppe::nhal {
         bind_texture (binding, m_textures[texture].texture.gpuResourceID);
       }
 
-      void set_storage_texture (std::uint32_t binding, Texture texture)
-        override {
+      void set_storage_texture (std::uint32_t binding,
+                                Texture texture) override {
         bind_texture (storage_texture_base + binding,
                       m_textures[texture].texture.gpuResourceID);
       }
 
-      void set_viewport (float x, float y, float width, float height)
-        override {
+      void set_viewport (float x, float y, float width, float height) override {
         [m_encoder setViewport:MTLViewport { x, y, width, height, 0, 1 }];
       }
 
-      void draw (std::uint32_t vertex_count, std::uint32_t instance_count,
-                 std::uint32_t first_vertex, std::uint32_t first_instance)
-        override {
+      void draw (std::uint32_t vertex_count,
+                 std::uint32_t instance_count,
+                 std::uint32_t first_vertex,
+                 std::uint32_t first_instance) override {
         use_arguments ();
         [m_encoder drawPrimitives:m_pipeline.primitive
                       vertexStart:first_vertex
@@ -597,29 +633,29 @@ namespace moppe::nhal {
                      baseInstance:first_instance];
       }
 
-      void draw_indexed (Buffer indices, IndexType type,
+      void draw_indexed (Buffer indices,
+                         IndexType type,
                          std::uint32_t index_count,
                          std::uint32_t instance_count,
-                         std::uint32_t first_index, std::int32_t base_vertex,
+                         std::uint32_t first_index,
+                         std::int32_t base_vertex,
                          std::uint32_t first_instance) override {
         use_arguments ();
         const std::uint32_t size = type == IndexType::uint16 ? 2 : 4;
         [m_encoder
           drawIndexedPrimitives:m_pipeline.primitive
                      indexCount:index_count
-                      indexType:type == IndexType::uint16
-                                  ? MTLIndexTypeUInt16
-                                  : MTLIndexTypeUInt32
-                    indexBuffer:m_buffers[indices].buffer.gpuAddress
-                                + std::uint64_t (first_index) * size
+                      indexType:type == IndexType::uint16 ? MTLIndexTypeUInt16
+                                                          : MTLIndexTypeUInt32
+                    indexBuffer:m_buffers[indices].buffer.gpuAddress +
+                                std::uint64_t (first_index) * size
               indexBufferLength:std::uint64_t (index_count) * size
                   instanceCount:instance_count
                      baseVertex:base_vertex
                    baseInstance:first_instance];
       }
 
-      void capture_frame (std::function<void (const Capture&)> done)
-        override {
+      void capture_frame (std::function<void (const Capture&)> done) override {
         m_capture_request = std::move (done);
       }
 
@@ -695,8 +731,8 @@ namespace moppe::nhal {
 
       void timestamp () {
         FrameTiming& timing = m_timing[m_slot];
-        if (!timing.heap || timing.count >= max_timestamps
-            || timing.count >= 2 * timing.labels.size ())
+        if (!timing.heap || timing.count >= max_timestamps ||
+            timing.count >= 2 * timing.labels.size ())
           return;
         [m_commands writeTimestampIntoHeap:timing.heap atIndex:timing.count];
         ++timing.count;
@@ -705,8 +741,7 @@ namespace moppe::nhal {
 
       void resolve_timings (std::uint64_t completed) {
         for (FrameTiming& timing : m_timing) {
-          if (timing.resolved || timing.serial > completed
-              || timing.count < 2)
+          if (timing.resolved || timing.serial > completed || timing.count < 2)
             continue;
           timing.resolved = true;
           NSData* data =
@@ -719,8 +754,8 @@ namespace moppe::nhal {
           for (std::size_t i = 0; i + 1 < timing.count; i += 2)
             m_pass_timings.push_back (
               { timing.labels[i / 2],
-                double (ticks[i + 1].timestamp - ticks[i].timestamp)
-                  / m_ticks_per_ms });
+                double (ticks[i + 1].timestamp - ticks[i].timestamp) /
+                  m_ticks_per_ms });
         }
       }
 
@@ -751,19 +786,19 @@ namespace moppe::nhal {
                          beforeStages:MTLStageBlit
                     visibilityOptions:MTL4VisibilityOptionDevice];
         [copy copyFromTexture:texture
-                        sourceSlice:0
-                        sourceLevel:0
-                       sourceOrigin:MTLOriginMake (0, 0, 0)
-                         sourceSize:MTLSizeMake (texture.width,
-                                                 texture.height, 1)
-                           toBuffer:pending.buffer
-                  destinationOffset:0
-             destinationBytesPerRow:pending.capture.row_bytes
-           destinationBytesPerImage:size];
+                       sourceSlice:0
+                       sourceLevel:0
+                      sourceOrigin:MTLOriginMake (0, 0, 0)
+                        sourceSize:MTLSizeMake (
+                                     texture.width, texture.height, 1)
+                          toBuffer:pending.buffer
+                 destinationOffset:0
+            destinationBytesPerRow:pending.capture.row_bytes
+          destinationBytesPerImage:size];
         [copy endEncoding];
-        pending.capture.pixels = { static_cast<const std::byte*> (
-                                     pending.buffer.contents),
-                                   size };
+        pending.capture.pixels = {
+          static_cast<const std::byte*> (pending.buffer.contents), size
+        };
         pending.done = std::move (m_capture_request);
         m_capture_request = nullptr;
         m_captures.push_back (std::move (pending));
@@ -776,20 +811,20 @@ namespace moppe::nhal {
           MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
           options.languageVersion = MTLLanguageVersion4_0;
           NSError* error = nil;
-          library = [m_device
-            newLibraryWithSource:[[NSString alloc]
-                                   initWithBytes:key.data ()
-                                          length:key.size ()
-                                        encoding:NSUTF8StringEncoding]
-                         options:options
-                           error:&error];
+          library =
+            [m_device newLibraryWithSource:[[NSString alloc]
+                                             initWithBytes:key.data ()
+                                                    length:key.size ()
+                                                  encoding:NSUTF8StringEncoding]
+                                   options:options
+                                     error:&error];
           if (!library)
             throw std::runtime_error ("NHAL: MSL: " + describe (error));
         }
         id<MTLFunction> f = [library newFunctionWithName:@(entry)];
         if (!f)
-          throw std::runtime_error (std::string ("NHAL: no MSL function ")
-                                    + entry);
+          throw std::runtime_error (std::string ("NHAL: no MSL function ") +
+                                    entry);
         return f;
       }
 
@@ -801,8 +836,8 @@ namespace moppe::nhal {
           d.minFilter = nearest ? MTLSamplerMinMagFilterNearest
                                 : MTLSamplerMinMagFilterLinear;
           d.magFilter = d.minFilter;
-          d.mipFilter = nearest ? MTLSamplerMipFilterNearest
-                                : MTLSamplerMipFilterLinear;
+          d.mipFilter =
+            nearest ? MTLSamplerMipFilterNearest : MTLSamplerMipFilterLinear;
           const MTLSamplerAddressMode mode =
             i == 1 ? MTLSamplerAddressModeRepeat
                    : MTLSamplerAddressModeClampToEdge;
@@ -826,11 +861,11 @@ namespace moppe::nhal {
 
       void collect () {
         const std::uint64_t completed = m_event.signaledValue;
-        m_retired_allocations.collect (completed,
-                                       [&] (id<MTLAllocation> allocation) {
-          [m_residency removeAllocation:allocation];
-          m_residency_dirty = true;
-        });
+        m_retired_allocations.collect (
+          completed, [&] (id<MTLAllocation> allocation) {
+            [m_residency removeAllocation:allocation];
+            m_residency_dirty = true;
+          });
         m_retired_objects.collect (completed, [] (id) {});
         resolve_timings (completed);
         for (auto it = m_captures.begin (); it != m_captures.end ();) {

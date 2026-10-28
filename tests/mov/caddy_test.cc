@@ -222,9 +222,9 @@ MOPPE_TEST (the_caddy_runs_on_toward_its_top_speed) {
   // A long straight, four metres a sample.
   map::SurfaceGeometry road (terrain::TerrainDomain (
     512, 64, spatial_extent_in_metres (Vec3 (2048, 0, 256))));
-  std::ranges::fill (spatial::get<terrain::surface_elevation> (road),
-                     terrain::surface_elevation_point (10.0f *
-                                                       mp_units::si::metre));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (road),
+    terrain::surface_elevation_point (10.0f * mp_units::si::metre));
   map::rebuild_geometry (road);
   mov::Caddy caddy (road);
   caddy.place (Vec3 (30, 0, 128), Vec3 (1, 0, 0));

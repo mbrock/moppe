@@ -21,8 +21,8 @@ namespace moppe::platform::sdl {
                                                std::uint32_t height) {
     SDL_MetalView view = SDL_Metal_CreateView (window);
     if (!view)
-      throw std::runtime_error (std::string ("SDL_Metal_CreateView: ")
-                                + SDL_GetError ());
+      throw std::runtime_error (std::string ("SDL_Metal_CreateView: ") +
+                                SDL_GetError ());
     CAMetalLayer* layer = (__bridge CAMetalLayer*)SDL_Metal_GetLayer (view);
     layer.drawableSize = CGSizeMake (width, height);
     return nhal::create_metal_device (layer, nhal::Format::rgba16_float);

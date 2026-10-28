@@ -62,10 +62,8 @@ namespace moppe::nhal {
 
   // A renderer drawing into the device's surface. `scale` is the
   // surface's pixels per point, which the HUD and the game's layout use.
-  std::unique_ptr<render::Renderer>
-  create_renderer (std::unique_ptr<Device> device,
-                   const WorldShaders& shaders,
-                   float scale);
+  std::unique_ptr<render::Renderer> create_renderer (
+    std::unique_ptr<Device> device, const WorldShaders& shaders, float scale);
 }
 
 #endif

@@ -197,7 +197,8 @@ namespace moppe::nhal {
     template <std::size_t N>
     StageCode spirv (const unsigned char (&code)[N]) {
       static_assert (N % 4 == 0);
-      return { {}, {},
+      return { {},
+               {},
                { reinterpret_cast<const std::uint32_t*> (code), N / 4 } };
     }
   }

@@ -144,7 +144,6 @@ namespace moppe::platform {
     }).detach ();
   }
 
-
   namespace uwp {
     std::atomic<long> frames { 0 };
 

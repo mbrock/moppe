@@ -56,11 +56,11 @@ namespace moppe::nhal {
     // The time of the animation frame being built, in milliseconds.
     EM_JS (double, frame_milliseconds, (), {
       const time = document.timeline.currentTime;
-      return time === null ? performance.now () : time;
+      return time == = null ? performance.now () : time;
     });
 
     EM_JS (int, canvas_prefers_bgra, (), {
-      return navigator.gpu.getPreferredCanvasFormat () === 'bgra8unorm';
+      return navigator.gpu.getPreferredCanvasFormat () == = 'bgra8unorm';
     });
 
     WGPUStringView view (const char* text) {
@@ -74,45 +74,68 @@ namespace moppe::nhal {
     std::string string (WGPUStringView text) {
       if (!text.data)
         return {};
-      return text.length == WGPU_STRLEN
-               ? std::string (text.data)
-               : std::string (text.data, text.length);
+      return text.length == WGPU_STRLEN ? std::string (text.data)
+                                        : std::string (text.data, text.length);
     }
 
     WGPUTextureFormat wgpu_format (Format format) {
       switch (format) {
-      case Format::undefined: return WGPUTextureFormat_Undefined;
-      case Format::rgba8_unorm: return WGPUTextureFormat_RGBA8Unorm;
-      case Format::rgba8_unorm_srgb: return WGPUTextureFormat_RGBA8UnormSrgb;
-      case Format::bgra8_unorm: return WGPUTextureFormat_BGRA8Unorm;
-      case Format::bgra8_unorm_srgb: return WGPUTextureFormat_BGRA8UnormSrgb;
-      case Format::rgb10a2_unorm: return WGPUTextureFormat_RGB10A2Unorm;
-      case Format::rgba16_float: return WGPUTextureFormat_RGBA16Float;
-      case Format::rg16_float: return WGPUTextureFormat_RG16Float;
+      case Format::undefined:
+        return WGPUTextureFormat_Undefined;
+      case Format::rgba8_unorm:
+        return WGPUTextureFormat_RGBA8Unorm;
+      case Format::rgba8_unorm_srgb:
+        return WGPUTextureFormat_RGBA8UnormSrgb;
+      case Format::bgra8_unorm:
+        return WGPUTextureFormat_BGRA8Unorm;
+      case Format::bgra8_unorm_srgb:
+        return WGPUTextureFormat_BGRA8UnormSrgb;
+      case Format::rgb10a2_unorm:
+        return WGPUTextureFormat_RGB10A2Unorm;
+      case Format::rgba16_float:
+        return WGPUTextureFormat_RGBA16Float;
+      case Format::rg16_float:
+        return WGPUTextureFormat_RG16Float;
       // WebGPU's 16-bit normalized formats are optional and, in Dawn, not
       // filtered; such textures are kept as half floats (write_texture).
-      case Format::rg16_snorm: return WGPUTextureFormat_RG16Float;
-      case Format::r16_float: return WGPUTextureFormat_R16Float;
-      case Format::r8_unorm: return WGPUTextureFormat_R8Unorm;
-      case Format::r32_float: return WGPUTextureFormat_R32Float;
-      case Format::rg32_float: return WGPUTextureFormat_RG32Float;
-      case Format::rgba32_float: return WGPUTextureFormat_RGBA32Float;
-      case Format::r32_uint: return WGPUTextureFormat_R32Uint;
-      case Format::d32_float: return WGPUTextureFormat_Depth32Float;
+      case Format::rg16_snorm:
+        return WGPUTextureFormat_RG16Float;
+      case Format::r16_float:
+        return WGPUTextureFormat_R16Float;
+      case Format::r8_unorm:
+        return WGPUTextureFormat_R8Unorm;
+      case Format::r32_float:
+        return WGPUTextureFormat_R32Float;
+      case Format::rg32_float:
+        return WGPUTextureFormat_RG32Float;
+      case Format::rgba32_float:
+        return WGPUTextureFormat_RGBA32Float;
+      case Format::r32_uint:
+        return WGPUTextureFormat_R32Uint;
+      case Format::d32_float:
+        return WGPUTextureFormat_Depth32Float;
       }
       return WGPUTextureFormat_Undefined;
     }
 
     WGPUCompareFunction wgpu_compare (CompareOp op) {
       switch (op) {
-      case CompareOp::never: return WGPUCompareFunction_Never;
-      case CompareOp::less: return WGPUCompareFunction_Less;
-      case CompareOp::equal: return WGPUCompareFunction_Equal;
-      case CompareOp::less_equal: return WGPUCompareFunction_LessEqual;
-      case CompareOp::greater: return WGPUCompareFunction_Greater;
-      case CompareOp::not_equal: return WGPUCompareFunction_NotEqual;
-      case CompareOp::greater_equal: return WGPUCompareFunction_GreaterEqual;
-      case CompareOp::always: return WGPUCompareFunction_Always;
+      case CompareOp::never:
+        return WGPUCompareFunction_Never;
+      case CompareOp::less:
+        return WGPUCompareFunction_Less;
+      case CompareOp::equal:
+        return WGPUCompareFunction_Equal;
+      case CompareOp::less_equal:
+        return WGPUCompareFunction_LessEqual;
+      case CompareOp::greater:
+        return WGPUCompareFunction_Greater;
+      case CompareOp::not_equal:
+        return WGPUCompareFunction_NotEqual;
+      case CompareOp::greater_equal:
+        return WGPUCompareFunction_GreaterEqual;
+      case CompareOp::always:
+        return WGPUCompareFunction_Always;
       }
       return WGPUCompareFunction_Always;
     }
@@ -148,8 +171,8 @@ namespace moppe::nhal {
         const std::uint32_t whole = mantissa | 0x800000u;
         return std::uint16_t (sign | (whole >> (14 - exponent)));
       }
-      return std::uint16_t (sign | (std::uint32_t (exponent) << 10)
-                            | (mantissa >> 13));
+      return std::uint16_t (sign | (std::uint32_t (exponent) << 10) |
+                            (mantissa >> 13));
     }
 
     struct BufferRow {
@@ -233,13 +256,15 @@ namespace moppe::nhal {
       std::uint32_t count = 0;
       std::array<std::uint64_t, 3 * max_bindings> words {};
 
-      void add (std::uint64_t word) { words[count++] = word; }
+      void add (std::uint64_t word) {
+        words[count++] = word;
+      }
 
       bool operator== (const GroupKey& other) const {
-        return layout == other.layout && group == other.group
-               && count == other.count
-               && std::equal (words.begin (), words.begin () + count,
-                              other.words.begin ());
+        return layout == other.layout && group == other.group &&
+               count == other.count &&
+               std::equal (
+                 words.begin (), words.begin () + count, other.words.begin ());
       }
     };
 
@@ -273,9 +298,10 @@ namespace moppe::nhal {
 
     class WebGpuDevice final : public Device {
     public:
-      WebGpuDevice (const char* selector, std::uint32_t width,
+      WebGpuDevice (const char* selector,
+                    std::uint32_t width,
                     std::uint32_t height)
-        : m_arena_memory (arena_capacity) {
+          : m_arena_memory (arena_capacity) {
         m_device = emscripten_webgpu_get_device ();
         if (!m_device)
           throw std::runtime_error ("NHAL: the page has no WebGPU device");
@@ -284,20 +310,20 @@ namespace moppe::nhal {
         wgpuDeviceGetLimits (m_device, &limits);
         m_limits = limits;
         WGPUAdapterInfo adapter = WGPU_ADAPTER_INFO_INIT;
-        if (wgpuDeviceGetAdapterInfo (m_device, &adapter)
-            == WGPUStatus_Success) {
+        if (wgpuDeviceGetAdapterInfo (m_device, &adapter) ==
+            WGPUStatus_Success) {
           m_adapter = string (adapter.description);
           if (m_adapter.empty ())
-            m_adapter = string (adapter.vendor) + " "
-                        + string (adapter.architecture);
+            m_adapter =
+              string (adapter.vendor) + " " + string (adapter.architecture);
           wgpuAdapterInfoFreeMembers (adapter);
         }
         // MOPPE_NHAL_TIMINGS asks for each pass's GPU time; unasked, the
         // device spares the queries and their readback.
         const char* timings = moppe::environment ("MOPPE_NHAL_TIMINGS");
         m_timestamps =
-          timings && *timings && *timings != '0'
-          && wgpuDeviceHasFeature (m_device, WGPUFeatureName_TimestampQuery);
+          timings && *timings && *timings != '0' &&
+          wgpuDeviceHasFeature (m_device, WGPUFeatureName_TimestampQuery);
 
         m_instance = wgpuCreateInstance (nullptr);
         WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas =
@@ -307,10 +333,10 @@ namespace moppe::nhal {
         surface.nextInChain = &canvas.chain;
         m_surface = wgpuInstanceCreateSurface (m_instance, &surface);
         if (!m_surface)
-          throw std::runtime_error (std::string ("NHAL: no canvas at ")
-                                    + selector);
-        m_surface_format = canvas_prefers_bgra () ? Format::bgra8_unorm
-                                                  : Format::rgba8_unorm;
+          throw std::runtime_error (std::string ("NHAL: no canvas at ") +
+                                    selector);
+        m_surface_format =
+          canvas_prefers_bgra () ? Format::bgra8_unorm : Format::rgba8_unorm;
         m_width = width;
         m_height = height;
         configure_surface ();
@@ -321,8 +347,8 @@ namespace moppe::nhal {
         if (m_timestamps)
           create_timing ();
         TextureRow back;
-        back.desc = { width, height, m_surface_format, usage_render_target,
-                      1, "drawable" };
+        back.desc = { width, height,    m_surface_format, usage_render_target,
+                      1,     "drawable" };
         m_backbuffer = m_textures.insert<Texture> (back);
       }
 
@@ -379,23 +405,24 @@ namespace moppe::nhal {
         // Buffer sizes and the ranges bound from them are whole words.
         row.size = (std::max<std::uint64_t> (desc.size, 16) + 3) & ~3ull;
         if (row.size > m_limits.maxBufferSize)
-          throw std::runtime_error (
-            std::string ("NHAL: buffer ") + (desc.label ? desc.label : "")
-            + " of " + std::to_string (row.size)
-            + " bytes exceeds WebGPU's limit");
+          throw std::runtime_error (std::string ("NHAL: buffer ") +
+                                    (desc.label ? desc.label : "") + " of " +
+                                    std::to_string (row.size) +
+                                    " bytes exceeds WebGPU's limit");
         row.id = ++m_next_id;
         WGPUBufferDescriptor info = WGPU_BUFFER_DESCRIPTOR_INIT;
         info.label = view (desc.label);
         info.size = row.size;
-        info.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_Uniform
-                     | WGPUBufferUsage_Index | WGPUBufferUsage_Indirect
-                     | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
+        info.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_Uniform |
+                     WGPUBufferUsage_Index | WGPUBufferUsage_Indirect |
+                     WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
         row.buffer = wgpuDeviceCreateBuffer (m_device, &info);
         if (desc.memory == Memory::upload) {
           row.contents = std::make_unique<std::byte[]> (row.size);
           std::memset (row.contents.get (), 0, row.size);
           if (!initial.empty ())
-            std::memcpy (row.contents.get (), initial.data (),
+            std::memcpy (row.contents.get (),
+                         initial.data (),
                          std::min<std::uint64_t> (initial.size (), row.size));
           ++m_upload_buffers;
         } else if (!initial.empty ()) {
@@ -431,7 +458,8 @@ namespace moppe::nhal {
         return m_textures.insert<Texture> (row);
       }
 
-      void write_texture (Texture handle, std::span<const std::byte> pixels,
+      void write_texture (Texture handle,
+                          std::span<const std::byte> pixels,
                           std::uint32_t row_bytes) override {
         const TextureRow& t = m_textures[handle];
         const std::uint32_t texel = bytes_per_pixel (t.desc.format);
@@ -442,10 +470,10 @@ namespace moppe::nhal {
           // Each row's signed pairs as half floats, tightly packed.
           halves.resize (std::size_t (t.desc.width) * t.desc.height * 2);
           for (std::uint32_t y = 0; y < t.desc.height; ++y) {
-            const std::byte* from = pixels.data ()
-                                    + std::size_t (y) * row_bytes;
-            std::uint16_t* to = halves.data ()
-                                + std::size_t (y) * t.desc.width * 2;
+            const std::byte* from =
+              pixels.data () + std::size_t (y) * row_bytes;
+            std::uint16_t* to =
+              halves.data () + std::size_t (y) * t.desc.width * 2;
             for (std::uint32_t i = 0; i < t.desc.width * 2; ++i) {
               std::int16_t value;
               std::memcpy (&value, from + i * 2, sizeof value);
@@ -457,26 +485,28 @@ namespace moppe::nhal {
         }
         WGPUTexelCopyTextureInfo target = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
         target.texture = t.texture;
-        const WGPUTexelCopyBufferLayout layout { 0, row_bytes,
-                                                 t.desc.height };
+        const WGPUTexelCopyBufferLayout layout { 0, row_bytes, t.desc.height };
         const WGPUExtent3D extent { t.desc.width, t.desc.height, 1 };
         wgpuQueueWriteTexture (
-          m_queue, &target, pixels.data (),
+          m_queue,
+          &target,
+          pixels.data (),
           std::min<std::size_t> (pixels.size (),
                                  std::size_t (row_bytes) * t.desc.height),
-          &layout, &extent);
+          &layout,
+          &extent);
       }
 
-      Pipeline create_render_pipeline (const RenderPipelineDesc& desc)
-        override {
+      Pipeline
+      create_render_pipeline (const RenderPipelineDesc& desc) override {
         PipelineRow row;
         row.layout = &program_layout (*desc.program);
         row.name = desc.program->name;
         row.strip = desc.topology == Topology::triangle_strip;
         row.vertex = shader_module (desc.vertex, desc.program, "vertex");
         if (!desc.fragment.wgsl.empty ())
-          row.fragment = shader_module (desc.fragment, desc.program,
-                                        "fragment");
+          row.fragment =
+            shader_module (desc.fragment, desc.program, "fragment");
         row.desc = desc;
         row.desc.vertex = {};
         row.desc.fragment = {};
@@ -491,14 +521,14 @@ namespace moppe::nhal {
         return m_pipelines.insert<Pipeline> (row);
       }
 
-      Pipeline create_compute_pipeline (const ComputePipelineDesc& desc)
-        override {
+      Pipeline
+      create_compute_pipeline (const ComputePipelineDesc& desc) override {
         PipelineRow row;
         row.layout = &program_layout (*desc.program);
         row.name = desc.program->name;
         row.is_compute = true;
-        WGPUShaderModule module = shader_module (desc.compute, desc.program,
-                                                 "compute");
+        WGPUShaderModule module =
+          shader_module (desc.compute, desc.program, "compute");
         WGPUComputePipelineDescriptor info =
           WGPU_COMPUTE_PIPELINE_DESCRIPTOR_INIT;
         info.label = view (desc.label ? desc.label : desc.program->name);
@@ -534,12 +564,17 @@ namespace moppe::nhal {
 
       // -- the drawable -----------------------------------------------
 
-      Format surface_format () const override { return m_surface_format; }
-      std::uint32_t surface_width () const override { return m_width; }
-      std::uint32_t surface_height () const override { return m_height; }
+      Format surface_format () const override {
+        return m_surface_format;
+      }
+      std::uint32_t surface_width () const override {
+        return m_width;
+      }
+      std::uint32_t surface_height () const override {
+        return m_height;
+      }
 
-      void resize_surface (std::uint32_t width, std::uint32_t height)
-        override {
+      void resize_surface (std::uint32_t width, std::uint32_t height) override {
         if (width == m_width && height == m_height)
           return;
         m_width = width;
@@ -556,10 +591,10 @@ namespace moppe::nhal {
           return false;
         WGPUSurfaceTexture drawable = WGPU_SURFACE_TEXTURE_INIT;
         wgpuSurfaceGetCurrentTexture (m_surface, &drawable);
-        if (drawable.status
-              != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal
-            && drawable.status
-                 != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
+        if (drawable.status !=
+              WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
+            drawable.status !=
+              WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
           if (drawable.texture)
             wgpuTextureRelease (drawable.texture);
           return false;
@@ -580,10 +615,12 @@ namespace moppe::nhal {
         return true;
       }
 
-      Texture backbuffer () override { return m_backbuffer; }
+      Texture backbuffer () override {
+        return m_backbuffer;
+      }
 
-      Transient allocate (std::uint64_t size, std::uint64_t alignment)
-        override {
+      Transient allocate (std::uint64_t size,
+                          std::uint64_t alignment) override {
         alignment = std::max (alignment, offset_alignment);
         if (!m_arena.fits (size, alignment))
           throw std::runtime_error ("NHAL: frame arena exhausted");
@@ -598,10 +635,9 @@ namespace moppe::nhal {
           a = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
           a.view = m_textures[c.texture].view;
           // WebGPU has no "don't care": a clear costs the least.
-          a.loadOp = c.load == Load::load ? WGPULoadOp_Load
-                                          : WGPULoadOp_Clear;
-          a.storeOp = c.store == Store::store ? WGPUStoreOp_Store
-                                              : WGPUStoreOp_Discard;
+          a.loadOp = c.load == Load::load ? WGPULoadOp_Load : WGPULoadOp_Clear;
+          a.storeOp =
+            c.store == Store::store ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
           a.clearValue = { c.clear[0], c.clear[1], c.clear[2], c.clear[3] };
           if (c.resolve)
             a.resolveTarget = m_textures[c.resolve].view;
@@ -610,9 +646,8 @@ namespace moppe::nhal {
           WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
         if (desc.depth.texture) {
           depth.view = m_textures[desc.depth.texture].view;
-          depth.depthLoadOp = desc.depth.load == Load::load
-                                ? WGPULoadOp_Load
-                                : WGPULoadOp_Clear;
+          depth.depthLoadOp =
+            desc.depth.load == Load::load ? WGPULoadOp_Load : WGPULoadOp_Clear;
           depth.depthStoreOp = desc.depth.store == Store::store
                                  ? WGPUStoreOp_Store
                                  : WGPUStoreOp_Discard;
@@ -630,8 +665,8 @@ namespace moppe::nhal {
         m_render = wgpuCommandEncoderBeginRenderPass (m_encoder, &info);
         m_pass = desc;
         m_pass_width = m_pass_height = 0;
-        const Texture sized = desc.color_count ? desc.colors[0].texture
-                                               : desc.depth.texture;
+        const Texture sized =
+          desc.color_count ? desc.colors[0].texture : desc.depth.texture;
         if (sized) {
           m_pass_width = m_textures[sized].desc.width;
           m_pass_height = m_textures[sized].desc.height;
@@ -664,36 +699,44 @@ namespace moppe::nhal {
         reset_bindings ();
       }
 
-      void copy_to_buffer (Buffer target, std::uint64_t offset,
+      void copy_to_buffer (Buffer target,
+                           std::uint64_t offset,
                            const Transient& source) override {
         // The arena's bytes reach its buffer before the frame's commands
         // run, so this copies what the slice holds by then.
-        wgpuCommandEncoderCopyBufferToBuffer (
-          m_encoder, m_arena_buffer, source.gpu_address - arena_tag,
-          m_buffers[target].buffer, offset, (source.size + 3) & ~3ull);
+        wgpuCommandEncoderCopyBufferToBuffer (m_encoder,
+                                              m_arena_buffer,
+                                              source.gpu_address - arena_tag,
+                                              m_buffers[target].buffer,
+                                              offset,
+                                              (source.size + 3) & ~3ull);
       }
 
-      void set_pipeline (Pipeline handle) override { m_pipeline = handle; }
+      void set_pipeline (Pipeline handle) override {
+        m_pipeline = handle;
+      }
 
-      void set_buffer (std::uint32_t binding, Buffer buffer,
+      void set_buffer (std::uint32_t binding,
+                       Buffer buffer,
                        std::uint64_t offset) override {
         const BufferRow& row = m_buffers[buffer];
-        m_bound_buffers.at (binding) = { row.buffer, row.id, offset,
-                                         row.size - offset };
+        m_bound_buffers.at (
+          binding) = { row.buffer, row.id, offset, row.size - offset };
         m_buffers_dirty = true;
       }
 
-      void set_buffer (std::uint32_t binding, const Transient& slice)
-        override {
+      void set_buffer (std::uint32_t binding, const Transient& slice) override {
         // A slice binds a power of two of the arena from its start, so
         // slices of like size share a bind group.
         const std::uint64_t offset = slice.gpu_address - arena_tag;
         std::uint64_t reach = offset_alignment;
         while (reach < slice.size)
           reach <<= 1;
-        m_bound_buffers.at (binding) = {
-          m_arena_buffer, m_arena_id, offset,
-          std::min (reach, arena_capacity - offset) };
+        m_bound_buffers.at (
+          binding) = { m_arena_buffer,
+                       m_arena_id,
+                       offset,
+                       std::min (reach, arena_capacity - offset) };
         m_buffers_dirty = true;
       }
 
@@ -702,22 +745,21 @@ namespace moppe::nhal {
         m_textures_dirty = true;
       }
 
-      void set_storage_texture (std::uint32_t binding, Texture texture)
-        override {
+      void set_storage_texture (std::uint32_t binding,
+                                Texture texture) override {
         m_bound_storage.at (binding) = texture;
         m_textures_dirty = true;
       }
 
-      void set_viewport (float x, float y, float width, float height)
-        override {
+      void set_viewport (float x, float y, float width, float height) override {
         if (!m_render)
           return;
-        wgpuRenderPassEncoderSetViewport (m_render, x, y, width, height, 0,
-                                          1);
+        wgpuRenderPassEncoderSetViewport (m_render, x, y, width, height, 0, 1);
         const auto left = std::uint32_t (std::max (x, 0.0f));
         const auto top = std::uint32_t (std::max (y, 0.0f));
         wgpuRenderPassEncoderSetScissorRect (
-          m_render, std::min (left, m_pass_width),
+          m_render,
+          std::min (left, m_pass_width),
           std::min (top, m_pass_height),
           std::min (std::uint32_t (width),
                     m_pass_width - std::min (left, m_pass_width)),
@@ -725,24 +767,30 @@ namespace moppe::nhal {
                     m_pass_height - std::min (top, m_pass_height)));
       }
 
-      void draw (std::uint32_t vertex_count, std::uint32_t instance_count,
-                 std::uint32_t first_vertex, std::uint32_t first_instance)
-        override {
+      void draw (std::uint32_t vertex_count,
+                 std::uint32_t instance_count,
+                 std::uint32_t first_vertex,
+                 std::uint32_t first_instance) override {
         bind_arguments (nullptr);
-        wgpuRenderPassEncoderDraw (m_render, vertex_count, instance_count,
-                                   first_vertex, first_instance);
+        wgpuRenderPassEncoderDraw (
+          m_render, vertex_count, instance_count, first_vertex, first_instance);
       }
 
-      void draw_indexed (Buffer indices, IndexType type,
+      void draw_indexed (Buffer indices,
+                         IndexType type,
                          std::uint32_t index_count,
                          std::uint32_t instance_count,
-                         std::uint32_t first_index, std::int32_t base_vertex,
+                         std::uint32_t first_index,
+                         std::int32_t base_vertex,
                          std::uint32_t first_instance) override {
         bind_arguments (&type);
         set_index_buffer (indices, type);
-        wgpuRenderPassEncoderDrawIndexed (m_render, index_count,
-                                          instance_count, first_index,
-                                          base_vertex, first_instance);
+        wgpuRenderPassEncoderDrawIndexed (m_render,
+                                          index_count,
+                                          instance_count,
+                                          first_index,
+                                          base_vertex,
+                                          first_instance);
       }
 
       void draw_indirect (Buffer arguments, std::uint64_t offset) override {
@@ -751,30 +799,29 @@ namespace moppe::nhal {
           m_render, m_buffers[arguments].buffer, offset);
       }
 
-      void draw_indexed_indirect (Buffer indices, IndexType type,
-                                  Buffer arguments, std::uint64_t offset)
-        override {
+      void draw_indexed_indirect (Buffer indices,
+                                  IndexType type,
+                                  Buffer arguments,
+                                  std::uint64_t offset) override {
         bind_arguments (&type);
         set_index_buffer (indices, type);
         wgpuRenderPassEncoderDrawIndexedIndirect (
           m_render, m_buffers[arguments].buffer, offset);
       }
 
-      void dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z)
-        override {
+      void
+      dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z) override {
         bind_arguments (nullptr);
         wgpuComputePassEncoderDispatchWorkgroups (m_compute, x, y, z);
       }
 
-      void dispatch_indirect (Buffer arguments, std::uint64_t offset)
-        override {
+      void dispatch_indirect (Buffer arguments, std::uint64_t offset) override {
         bind_arguments (nullptr);
         wgpuComputePassEncoderDispatchWorkgroupsIndirect (
           m_compute, m_buffers[arguments].buffer, offset);
       }
 
-      void capture_frame (std::function<void (const Capture&)> done)
-        override {
+      void capture_frame (std::function<void (const Capture&)> done) override {
         m_capture_request = std::move (done);
       }
 
@@ -794,20 +841,22 @@ namespace moppe::nhal {
         const bool timed = m_timing_frame && !m_frame_labels.empty ();
         if (timed)
           encode_timings ();
-        WGPUCommandBuffer commands = wgpuCommandEncoderFinish (m_encoder,
-                                                               nullptr);
+        WGPUCommandBuffer commands =
+          wgpuCommandEncoderFinish (m_encoder, nullptr);
         wgpuCommandEncoderRelease (m_encoder);
         m_encoder = nullptr;
         // Queue writes precede the commands submitted after them.
         if (m_arena.used)
-          wgpuQueueWriteBuffer (m_queue, m_arena_buffer, 0,
+          wgpuQueueWriteBuffer (m_queue,
+                                m_arena_buffer,
+                                0,
                                 m_arena_memory.data (),
                                 (m_arena.used + 3) & ~3ull);
         if (m_upload_buffers)
           m_buffers.each ([&] (BufferRow& b) {
             if (b.contents)
-              wgpuQueueWriteBuffer (m_queue, b.buffer, 0, b.contents.get (),
-                                    b.size);
+              wgpuQueueWriteBuffer (
+                m_queue, b.buffer, 0, b.contents.get (), b.size);
           });
         wgpuQueueSubmit (m_queue, 1, &commands);
         wgpuCommandBufferRelease (commands);
@@ -820,7 +869,9 @@ namespace moppe::nhal {
             mapped.mode = WGPUCallbackMode_AllowSpontaneous;
             mapped.callback = &WebGpuDevice::capture_mapped;
             mapped.userdata1 = capture.get ();
-            wgpuBufferMapAsync (capture->readback, WGPUMapMode_Read, 0,
+            wgpuBufferMapAsync (capture->readback,
+                                WGPUMapMode_Read,
+                                0,
                                 wgpuBufferGetSize (capture->readback),
                                 mapped);
           }
@@ -828,13 +879,15 @@ namespace moppe::nhal {
           m_timing_pending = true;
           m_timing_ready = false;
           m_pending_labels = m_frame_labels;
-          WGPUBufferMapCallbackInfo mapped =
-            WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
+          WGPUBufferMapCallbackInfo mapped = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
           mapped.mode = WGPUCallbackMode_AllowSpontaneous;
           mapped.callback = &WebGpuDevice::timings_mapped;
           mapped.userdata1 = this;
-          wgpuBufferMapAsync (m_query_readback, WGPUMapMode_Read, 0,
-                              m_pending_labels.size () * 16, mapped);
+          wgpuBufferMapAsync (m_query_readback,
+                              WGPUMapMode_Read,
+                              0,
+                              m_pending_labels.size () * 16,
+                              mapped);
         }
 
         // The browser presents the drawable when this callback returns.
@@ -860,8 +913,8 @@ namespace moppe::nhal {
         info.device = m_device;
         info.format = wgpu_format (m_surface_format);
         // Captures copy the drawable out.
-        info.usage = WGPUTextureUsage_RenderAttachment
-                     | WGPUTextureUsage_CopySrc;
+        info.usage =
+          WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
         info.width = m_width;
         info.height = m_height;
         info.alphaMode = WGPUCompositeAlphaMode_Opaque;
@@ -873,8 +926,8 @@ namespace moppe::nhal {
         for (std::uint32_t i = 0; i < standard_samplers; ++i) {
           WGPUSamplerDescriptor s = WGPU_SAMPLER_DESCRIPTOR_INIT;
           const bool nearest = i == 2;
-          s.magFilter = s.minFilter = nearest ? WGPUFilterMode_Nearest
-                                              : WGPUFilterMode_Linear;
+          s.magFilter = s.minFilter =
+            nearest ? WGPUFilterMode_Nearest : WGPUFilterMode_Linear;
           s.mipmapFilter = nearest ? WGPUMipmapFilterMode_Nearest
                                    : WGPUMipmapFilterMode_Linear;
           s.addressModeU = s.addressModeV = s.addressModeW =
@@ -889,8 +942,8 @@ namespace moppe::nhal {
         WGPUBufferDescriptor info = WGPU_BUFFER_DESCRIPTOR_INIT;
         info.label = view ("frame arena");
         info.size = arena_capacity;
-        info.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_Uniform
-                     | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
+        info.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_Uniform |
+                     WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
         m_arena_buffer = wgpuDeviceCreateBuffer (m_device, &info);
         m_arena_id = ++m_next_id;
       }
@@ -924,17 +977,16 @@ namespace moppe::nhal {
         m_query_readback = wgpuDeviceCreateBuffer (m_device, &info);
       }
 
-      void write_buffer (WGPUBuffer buffer,
-                         std::span<const std::byte> bytes) {
+      void write_buffer (WGPUBuffer buffer, std::span<const std::byte> bytes) {
         if (bytes.size () % 4 == 0) {
-          wgpuQueueWriteBuffer (m_queue, buffer, 0, bytes.data (),
-                                bytes.size ());
+          wgpuQueueWriteBuffer (
+            m_queue, buffer, 0, bytes.data (), bytes.size ());
           return;
         }
         std::vector<std::byte> padded ((bytes.size () + 3) & ~std::size_t (3));
         std::memcpy (padded.data (), bytes.data (), bytes.size ());
-        wgpuQueueWriteBuffer (m_queue, buffer, 0, padded.data (),
-                              padded.size ());
+        wgpuQueueWriteBuffer (
+          m_queue, buffer, 0, padded.data (), padded.size ());
       }
 
       // -- programs and pipelines -------------------------------------
@@ -967,15 +1019,14 @@ namespace moppe::nhal {
             bound.binding = r.binding;
             bound.sampler = m_samplers.at (r.binding);
             sampler_entries.push_back (bound);
-          } else if (r.kind == ResourceKind::texture_2d
-                     || r.kind == ResourceKind::depth_texture_2d
-                     || r.kind == ResourceKind::uint_texture_2d) {
-            e.texture.sampleType =
-              r.kind == ResourceKind::depth_texture_2d
-                ? WGPUTextureSampleType_Depth
-              : r.kind == ResourceKind::uint_texture_2d
-                ? WGPUTextureSampleType_Uint
-                : WGPUTextureSampleType_Float;
+          } else if (r.kind == ResourceKind::texture_2d ||
+                     r.kind == ResourceKind::depth_texture_2d ||
+                     r.kind == ResourceKind::uint_texture_2d) {
+            e.texture.sampleType = r.kind == ResourceKind::depth_texture_2d
+                                     ? WGPUTextureSampleType_Depth
+                                   : r.kind == ResourceKind::uint_texture_2d
+                                     ? WGPUTextureSampleType_Uint
+                                     : WGPUTextureSampleType_Float;
             e.texture.viewDimension = WGPUTextureViewDimension_2D;
             layout->textures.push_back ({ r.binding, r.kind });
             textures.push_back (e);
@@ -983,18 +1034,18 @@ namespace moppe::nhal {
             // The reflection does not yet say a storage texture's format,
             // and no program binds an array, a cube, or a volume.
             throw std::runtime_error (
-              std::string ("NHAL: ") + program.name + " binds " + r.name
-              + ", a kind of texture the WebGPU device does not bind yet");
+              std::string ("NHAL: ") + program.name + " binds " + r.name +
+              ", a kind of texture the WebGPU device does not bind yet");
           }
         }
         auto by_binding = [] (const auto& a, const auto& b) {
           return a.binding < b.binding;
         };
-        std::sort (layout->buffers.begin (), layout->buffers.end (),
-                   by_binding);
+        std::sort (
+          layout->buffers.begin (), layout->buffers.end (), by_binding);
         std::sort (buffers.begin (), buffers.end (), by_binding);
-        std::sort (layout->textures.begin (), layout->textures.end (),
-                   by_binding);
+        std::sort (
+          layout->textures.begin (), layout->textures.end (), by_binding);
 
         // Dynamic offsets go to uniform blocks, then to read-only storage
         // buffers, which the arena's slices bind; what shaders write is a
@@ -1022,7 +1073,9 @@ namespace moppe::nhal {
               --storages;
             }
             break;
-          default: b.type = WGPUBufferBindingType_Storage; break;
+          default:
+            b.type = WGPUBufferBindingType_Storage;
+            break;
           }
           b.hasDynamicOffset = slot.dynamic;
         }
@@ -1035,15 +1088,15 @@ namespace moppe::nhal {
           info.entries = all.data ();
           return wgpuDeviceCreateBindGroupLayout (m_device, &info);
         };
-        layout->groups = { group (buffers), group (textures),
+        layout->groups = { group (buffers),
+                           group (textures),
                            group (samplers) };
         WGPUPipelineLayoutDescriptor pipeline =
           WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
         pipeline.label = view (program.name);
         pipeline.bindGroupLayoutCount = layout->groups.size ();
         pipeline.bindGroupLayouts = layout->groups.data ();
-        layout->pipeline = wgpuDeviceCreatePipelineLayout (m_device,
-                                                           &pipeline);
+        layout->pipeline = wgpuDeviceCreatePipelineLayout (m_device, &pipeline);
         WGPUBindGroupDescriptor bound = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
         bound.label = view (program.name);
         bound.layout = layout->groups[2];
@@ -1058,8 +1111,8 @@ namespace moppe::nhal {
                                       const Program* program,
                                       const char* stage) {
         if (code.wgsl.empty ())
-          throw std::runtime_error (std::string ("NHAL: ") + program->name
-                                    + " has no WGSL " + stage + " stage");
+          throw std::runtime_error (std::string ("NHAL: ") + program->name +
+                                    " has no WGSL " + stage + " stage");
         WGPUShaderSourceWGSL source = WGPU_SHADER_SOURCE_WGSL_INIT;
         source.code = view (code.wgsl);
         const std::string label = std::string (program->name) + " " + stage;
@@ -1078,26 +1131,23 @@ namespace moppe::nhal {
         info.layout = row.layout->pipeline;
         info.vertex.module = row.vertex;
         info.vertex.entryPoint = view (desc.program->vertex_entry);
-        info.primitive.topology =
-          desc.topology == Topology::triangle_strip
-            ? WGPUPrimitiveTopology_TriangleStrip
-          : desc.topology == Topology::line_list
-            ? WGPUPrimitiveTopology_LineList
-            : WGPUPrimitiveTopology_TriangleList;
+        info.primitive.topology = desc.topology == Topology::triangle_strip
+                                    ? WGPUPrimitiveTopology_TriangleStrip
+                                  : desc.topology == Topology::line_list
+                                    ? WGPUPrimitiveTopology_LineList
+                                    : WGPUPrimitiveTopology_TriangleList;
         info.primitive.stripIndexFormat = strip_index;
-        info.primitive.frontFace = desc.front_counter_clockwise
-                                     ? WGPUFrontFace_CCW
-                                     : WGPUFrontFace_CW;
-        info.primitive.cullMode = desc.cull == Cull::back
-                                    ? WGPUCullMode_Back
+        info.primitive.frontFace =
+          desc.front_counter_clockwise ? WGPUFrontFace_CCW : WGPUFrontFace_CW;
+        info.primitive.cullMode = desc.cull == Cull::back ? WGPUCullMode_Back
                                   : desc.cull == Cull::front
                                     ? WGPUCullMode_Front
                                     : WGPUCullMode_None;
         WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
         if (desc.depth_format != Format::undefined) {
           depth.format = wgpu_format (desc.depth_format);
-          depth.depthWriteEnabled = desc.depth_write ? WGPUOptionalBool_True
-                                                     : WGPUOptionalBool_False;
+          depth.depthWriteEnabled =
+            desc.depth_write ? WGPUOptionalBool_True : WGPUOptionalBool_False;
           depth.depthCompare = wgpu_compare (desc.depth_compare);
           if (desc.topology != Topology::line_list) {
             depth.depthBias = std::int32_t (desc.depth_bias);
@@ -1122,8 +1172,7 @@ namespace moppe::nhal {
                                 ? WGPUBlendFactor_One
                                 : WGPUBlendFactor_SrcAlpha;
           b.color.dstFactor = b.alpha.dstFactor =
-            additive ? WGPUBlendFactor_One
-                     : WGPUBlendFactor_OneMinusSrcAlpha;
+            additive ? WGPUBlendFactor_One : WGPUBlendFactor_OneMinusSrcAlpha;
           b.alpha.srcFactor = WGPUBlendFactor_One;
           target.blend = &b;
         }
@@ -1144,8 +1193,9 @@ namespace moppe::nhal {
         if (!row.strip)
           return row.render[0];
         // A draw without indices takes whichever pipeline the strip has.
-        const std::size_t which = type ? std::size_t (*type)
-                                  : row.render[0] ? 0 : 1;
+        const std::size_t which = type            ? std::size_t (*type)
+                                  : row.render[0] ? 0
+                                                  : 1;
         if (!row.render[which])
           row.render[which] =
             render_pipeline (row, wgpu_index (IndexType (which)));
@@ -1195,25 +1245,27 @@ namespace moppe::nhal {
 
       bool attached (Texture handle) const {
         for (std::uint32_t i = 0; i < m_pass.color_count; ++i)
-          if (m_pass.colors[i].texture == handle
-              || m_pass.colors[i].resolve == handle)
+          if (m_pass.colors[i].texture == handle ||
+              m_pass.colors[i].resolve == handle)
             return true;
         return m_pass.depth.texture == handle;
       }
 
-      void set_group (std::uint32_t index, WGPUBindGroup group,
+      void set_group (std::uint32_t index,
+                      WGPUBindGroup group,
                       std::size_t count = 0,
                       const std::uint32_t* offsets = nullptr) {
         if (m_render)
-          wgpuRenderPassEncoderSetBindGroup (m_render, index, group, count,
-                                             offsets);
+          wgpuRenderPassEncoderSetBindGroup (
+            m_render, index, group, count, offsets);
         else
-          wgpuComputePassEncoderSetBindGroup (m_compute, index, group, count,
-                                              offsets);
+          wgpuComputePassEncoderSetBindGroup (
+            m_compute, index, group, count, offsets);
       }
 
       // The group binding `entries`, made when none like it is kept.
-      WGPUBindGroup group_for (const GroupKey& key, const Layout& layout,
+      WGPUBindGroup group_for (const GroupKey& key,
+                               const Layout& layout,
                                std::span<const WGPUBindGroupEntry> entries) {
         CachedGroup& cached = m_groups[key];
         if (!cached.group) {
@@ -1244,8 +1296,8 @@ namespace moppe::nhal {
           throw std::runtime_error ("NHAL: draw without a pipeline");
         PipelineRow& row = m_pipelines[m_pipeline];
         if (row.is_compute != (m_compute != nullptr))
-          throw std::runtime_error (std::string ("NHAL: ") + row.name
-                                    + " is used in the wrong kind of pass");
+          throw std::runtime_error (std::string ("NHAL: ") + row.name +
+                                    " is used in the wrong kind of pass");
         if (row.is_compute) {
           if (m_set_compute != row.compute) {
             wgpuComputePassEncoderSetPipeline (m_compute, row.compute);
@@ -1284,22 +1336,22 @@ namespace moppe::nhal {
           if (!bound.buffer) {
             if (slot.kind == ResourceKind::read_write_storage_buffer)
               throw std::runtime_error (
-                std::string ("NHAL: ") + row.name
-                + " writes a buffer that is not bound, at binding "
-                + std::to_string (slot.binding));
+                std::string ("NHAL: ") + row.name +
+                " writes a buffer that is not bound, at binding " +
+                std::to_string (slot.binding));
             bound = { m_null_buffer, m_null_buffer_id, 0, 64 << 10 };
           }
           if (bound.offset % offset_alignment)
             throw std::runtime_error (
-              std::string ("NHAL: ") + row.name + " binds a buffer from "
-              + std::to_string (bound.offset)
-              + " bytes; WebGPU binds from multiples of 256");
+              std::string ("NHAL: ") + row.name + " binds a buffer from " +
+              std::to_string (bound.offset) +
+              " bytes; WebGPU binds from multiples of 256");
           WGPUBindGroupEntry& e = entries[count++];
           e = WGPU_BIND_GROUP_ENTRY_INIT;
           e.binding = slot.binding;
           e.buffer = bound.buffer;
-          e.size = slot.kind == ResourceKind::uniform_block ? slot.size
-                                                            : bound.size;
+          e.size =
+            slot.kind == ResourceKind::uniform_block ? slot.size : bound.size;
           key.add (bound.id);
           key.add (e.size);
           if (slot.dynamic) {
@@ -1309,8 +1361,10 @@ namespace moppe::nhal {
             key.add (bound.offset);
           }
         }
-        set_group (0, group_for (key, layout, { entries.data (), count }),
-                   dynamic, offsets.data ());
+        set_group (0,
+                   group_for (key, layout, { entries.data (), count }),
+                   dynamic,
+                   offsets.data ());
       }
 
       void bind_textures (const PipelineRow& row, const Layout& layout) {
@@ -1332,8 +1386,7 @@ namespace moppe::nhal {
             handle = {};
           }
           if (!handle)
-            handle = slot.kind == ResourceKind::depth_texture_2d
-                       ? m_null_depth
+            handle = slot.kind == ResourceKind::depth_texture_2d ? m_null_depth
                      : slot.kind == ResourceKind::uint_texture_2d
                        ? m_null_uint
                        : m_null_float;
@@ -1353,8 +1406,8 @@ namespace moppe::nhal {
           return;
         m_set_indices = row.buffer;
         m_set_index_type = type;
-        wgpuRenderPassEncoderSetIndexBuffer (m_render, row.buffer,
-                                             wgpu_index (type), 0, row.size);
+        wgpuRenderPassEncoderSetIndexBuffer (
+          m_render, row.buffer, wgpu_index (type), 0, row.size);
       }
 
       // -- timings and captures ---------------------------------------
@@ -1386,15 +1439,16 @@ namespace moppe::nhal {
       void encode_timings () {
         const std::uint32_t queries =
           std::uint32_t (2 * m_frame_labels.size ());
-        wgpuCommandEncoderResolveQuerySet (m_encoder, m_query_set, 0,
-                                           queries, m_query_resolve, 0);
-        wgpuCommandEncoderCopyBufferToBuffer (m_encoder, m_query_resolve, 0,
-                                              m_query_readback, 0,
-                                              queries * 8ull);
+        wgpuCommandEncoderResolveQuerySet (
+          m_encoder, m_query_set, 0, queries, m_query_resolve, 0);
+        wgpuCommandEncoderCopyBufferToBuffer (
+          m_encoder, m_query_resolve, 0, m_query_readback, 0, queries * 8ull);
       }
 
-      static void timings_mapped (WGPUMapAsyncStatus status, WGPUStringView,
-                                  void* device, void*) {
+      static void timings_mapped (WGPUMapAsyncStatus status,
+                                  WGPUStringView,
+                                  void* device,
+                                  void*) {
         auto& self = *static_cast<WebGpuDevice*> (device);
         if (status == WGPUMapAsyncStatus_Success)
           self.m_timing_ready = true;
@@ -1439,17 +1493,20 @@ namespace moppe::nhal {
         target.buffer = pending->readback;
         target.layout = { 0, pending->stride, back.desc.height };
         const WGPUExtent3D extent { back.desc.width, back.desc.height, 1 };
-        wgpuCommandEncoderCopyTextureToBuffer (m_encoder, &source, &target,
-                                               &extent);
-        pending->capture = { back.desc.width, back.desc.height,
-                             m_surface_format, row_bytes, {} };
+        wgpuCommandEncoderCopyTextureToBuffer (
+          m_encoder, &source, &target, &extent);
+        pending->capture = {
+          back.desc.width, back.desc.height, m_surface_format, row_bytes, {}
+        };
         pending->done = std::move (m_capture_request);
         m_capture_request = nullptr;
         m_captures.push_back (std::move (pending));
       }
 
-      static void capture_mapped (WGPUMapAsyncStatus status, WGPUStringView,
-                                  void* capture, void*) {
+      static void capture_mapped (WGPUMapAsyncStatus status,
+                                  WGPUStringView,
+                                  void* capture,
+                                  void*) {
         auto& pending = *static_cast<PendingCapture*> (capture);
         pending.failed = status != WGPUMapAsyncStatus_Success;
         pending.ready = true;
@@ -1464,16 +1521,16 @@ namespace moppe::nhal {
             continue;
           }
           const Capture& c = pending.capture;
-          const auto* mapped = pending.failed
-                                 ? nullptr
-                                 : static_cast<const std::byte*> (
-                                     wgpuBufferGetConstMappedRange (
-                                       pending.readback, 0,
-                                       std::size_t (pending.stride)
-                                         * c.height));
+          const auto* mapped =
+            pending.failed
+              ? nullptr
+              : static_cast<const std::byte*> (wgpuBufferGetConstMappedRange (
+                  pending.readback,
+                  0,
+                  std::size_t (pending.stride) * c.height));
           if (mapped) {
-            std::vector<std::byte> pixels (std::size_t (c.row_bytes)
-                                           * c.height);
+            std::vector<std::byte> pixels (std::size_t (c.row_bytes) *
+                                           c.height);
             for (std::uint32_t y = 0; y < c.height; ++y)
               std::memcpy (pixels.data () + std::size_t (y) * c.row_bytes,
                            mapped + std::size_t (y) * pending.stride,

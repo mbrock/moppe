@@ -35,7 +35,10 @@ namespace moppe {
         spatial::sample<terrain::wave_amplitude> (*water, where)
           .numerical_value_in (mp_units::one);
       return terrain::sea_waves_at (
-        at[0], at[2], time, terrain::sea_wave_scale (amplitude, level - ground));
+        at[0],
+        at[2],
+        time,
+        terrain::sea_wave_scale (amplitude, level - ground));
     }
 
     meters_t water_surface_at (const WorldParams& world,
@@ -71,10 +74,11 @@ namespace moppe {
           m_stride_speed (0 * u::m / u::s), m_facing (0, 0, 1) {}
 
     Walker::State Walker::state () const {
-      return { m_body.state (), m_heading,      m_turn,     m_walk,
-               m_strafe,        m_run,          m_jump_request,
-               m_phase,         m_stride_speed, m_facing,   m_turn_speed,
-               m_turning,       m_lag };
+      return {
+        m_body.state (), m_heading,      m_turn,  m_walk,         m_strafe,
+        m_run,           m_jump_request, m_phase, m_stride_speed, m_facing,
+        m_turn_speed,    m_turning,      m_lag
+      };
     }
 
     void Walker::restore (const State& state) {
@@ -138,8 +142,7 @@ namespace moppe {
       // A brisk walk, or a run with Shift held; wading slows either.
       const Vec3 feet = position ();
       const float depth =
-        (water_surface_at (world, surface, water, feet, time) -
-         feet[1] * u::m)
+        (water_surface_at (world, surface, water, feet, time) - feet[1] * u::m)
           .numerical_value_in (u::m);
       const float speed =
         std::min (m_run ? run_speed : walk_speed, wading_speed (depth));

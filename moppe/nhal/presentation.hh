@@ -57,9 +57,9 @@ namespace moppe::nhal {
       const Seen& last = m_seen[(m_next + size - 1) % size];
       double period = observed_period ();
       if (m_refresh > 0)
-        period = period > 0 ? std::max (1.0, std::round (period / m_refresh))
-                                * m_refresh
-                            : m_refresh;
+        period = period > 0
+                   ? std::max (1.0, std::round (period / m_refresh)) * m_refresh
+                   : m_refresh;
       if (!(period > 0) || serial <= last.serial)
         return {};
       double at = last.seconds + double (serial - last.serial) * period;
@@ -89,8 +89,8 @@ namespace moppe::nhal {
       }
       if (n < 4)
         return 0;
-      std::nth_element (intervals.begin (), intervals.begin () + n / 2,
-                        intervals.begin () + n);
+      std::nth_element (
+        intervals.begin (), intervals.begin () + n / 2, intervals.begin () + n);
       return intervals[n / 2];
     }
 

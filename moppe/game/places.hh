@@ -198,9 +198,8 @@ namespace moppe::game {
       Vec3 axis {};
     };
     Vec3 near_copy (const Vec3& at, const Vec3& camera) const;
-    const render::Mesh& tier (const Piece& piece,
-                              float distance,
-                              float focal) const;
+    const render::Mesh&
+    tier (const Piece& piece, float distance, float focal) const;
 
     std::vector<Piece> m_pieces;
     std::vector<mov::Trunk> m_colliders;

@@ -520,7 +520,9 @@ namespace moppe {
       // so that a caller can leave out detail finer than a pixel: a thing
       // S metres across at D metres spans S / D times this many. Zero when
       // the backend cannot say.
-      virtual float scene_focal_pixels () const { return 0.0f; }
+      virtual float scene_focal_pixels () const {
+        return 0.0f;
+      }
       // Between these, draw_mesh draws nothing: it lends the mesh to the
       // next render_local_shadow, whose near cascade takes the sun's
       // shadow from its opaque runs (so that a car shades the ground

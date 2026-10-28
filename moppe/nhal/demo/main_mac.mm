@@ -36,13 +36,22 @@ namespace {
     CGDataProviderRef data = CGDataProviderCreateWithData (
       nullptr, capture.pixels.data (), capture.pixels.size (), nullptr);
     CGImageRef image = CGImageCreate (
-      capture.width, capture.height, 8, 32, capture.row_bytes, space,
+      capture.width,
+      capture.height,
+      8,
+      32,
+      capture.row_bytes,
+      space,
       CGBitmapInfo (kCGImageAlphaNoneSkipFirst) | kCGBitmapByteOrder32Little,
-      data, nullptr,
-      false, kCGRenderingIntentDefault);
+      data,
+      nullptr,
+      false,
+      kCGRenderingIntentDefault);
     NSURL* url = [NSURL fileURLWithPath:@(path.c_str ())];
     CGImageDestinationRef destination = CGImageDestinationCreateWithURL (
-      (__bridge CFURLRef)url, (__bridge CFStringRef)UTTypePNG.identifier, 1,
+      (__bridge CFURLRef)url,
+      (__bridge CFStringRef)UTTypePNG.identifier,
+      1,
       nullptr);
     CGImageDestinationAddImage (destination, image, nullptr);
     CGImageDestinationFinalize (destination);
@@ -88,9 +97,9 @@ namespace {
   const NSRect frame = NSMakeRect (0, 0, 1280, 720);
   _window = [[NSWindow alloc]
     initWithContentRect:frame
-              styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
-                        | NSWindowStyleMaskResizable
-                        | NSWindowStyleMaskMiniaturizable
+              styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                        NSWindowStyleMaskResizable |
+                        NSWindowStyleMaskMiniaturizable
                 backing:NSBackingStoreBuffered
                   defer:NO];
   _window.title = @"NHAL demo (Metal 4)";
@@ -109,26 +118,35 @@ namespace {
   CAMetalLayer* layer = (CAMetalLayer*)_view.layer;
   const CGFloat scale = _window.backingScaleFactor;
   layer.contentsScale = scale;
-  layer.drawableSize = CGSizeMake (frame.size.width * scale,
-                                   frame.size.height * scale);
+  layer.drawableSize =
+    CGSizeMake (frame.size.width * scale, frame.size.height * scale);
   try {
     _device = create_metal_device (layer, Format::bgra8_unorm);
     // One MSL document per program stage, as luv-shaderc writes them.
-    const char* files[] = { "terrain.vertex", "terrain.fragment",
-                            "trees.vertex", "trees.fragment",
-                            "sky.vertex", "sky.fragment",
-                            "tonemap.vertex", "tonemap.fragment",
+    const char* files[] = { "terrain.vertex",      "terrain.fragment",
+                            "trees.vertex",        "trees.fragment",
+                            "sky.vertex",          "sky.fragment",
+                            "tonemap.vertex",      "tonemap.fragment",
                             "forest_wind.compute", "terrain_shadow.vertex",
                             "trees_shadow.vertex", "resolve.vertex",
                             "resolve.fragment" };
     for (int i = 0; i < 13; ++i)
       _msl[i] = read_file (self.shaderPath + "/" + files[i] + ".metal");
     auto code = [&] (int i) { return StageCode { _msl[i], {} }; };
-    _scene = std::make_unique<demo::Scene> (
-      *_device, demo::Shaders { code (0), code (1), code (2), code (3),
-                                code (4), code (5), code (6), code (7),
-                                code (8), code (9), code (10), code (11),
-                                code (12) });
+    _scene = std::make_unique<demo::Scene> (*_device,
+                                            demo::Shaders { code (0),
+                                                            code (1),
+                                                            code (2),
+                                                            code (3),
+                                                            code (4),
+                                                            code (5),
+                                                            code (6),
+                                                            code (7),
+                                                            code (8),
+                                                            code (9),
+                                                            code (10),
+                                                            code (11),
+                                                            code (12) });
     _scene->set_temporal (!self.native);
     std::cerr << "NHAL demo: " << _device->info ().backend << " on "
               << _device->info ().adapter << ", " << _scene->tree_count ()
@@ -139,24 +157,28 @@ namespace {
   }
   _start = _last = std::chrono::steady_clock::now ();
   // WASD moves, the arrows look, Q and E sink and rise, Shift hurries.
-  [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
-                                                | NSEventMaskKeyUp
-                                        handler:^NSEvent* (NSEvent* event) {
-    // U switches between temporal upscaling and native 4x MSAA.
-    if (event.type == NSEventTypeKeyDown && event.keyCode == 32
-        && !event.isARepeat && self->_scene) {
-      self->_scene->set_temporal (!self->_scene->temporal ());
-      std::cerr << "NHAL demo: "
-                << (self->_scene->temporal () ? "temporal upscaling"
-                                              : "native 4x MSAA")
-                << std::endl;
-    }
-    if (event.type == NSEventTypeKeyDown)
-      self->_keys.insert (event.keyCode);
-    else
-      self->_keys.erase (event.keyCode);
-    return nil;
-  }];
+  [NSEvent
+    addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp
+                                 handler:^NSEvent*(NSEvent* event) {
+                                   // U switches between temporal upscaling and
+                                   // native 4x MSAA.
+                                   if (event.type == NSEventTypeKeyDown &&
+                                       event.keyCode == 32 &&
+                                       !event.isARepeat && self->_scene) {
+                                     self->_scene->set_temporal (
+                                       !self->_scene->temporal ());
+                                     std::cerr << "NHAL demo: "
+                                               << (self->_scene->temporal ()
+                                                     ? "temporal upscaling"
+                                                     : "native 4x MSAA")
+                                               << std::endl;
+                                   }
+                                   if (event.type == NSEventTypeKeyDown)
+                                     self->_keys.insert (event.keyCode);
+                                   else
+                                     self->_keys.erase (event.keyCode);
+                                   return nil;
+                                 }];
   [NSTimer scheduledTimerWithTimeInterval:1.0 / 120
                                    target:self
                                  selector:@selector (tick:)
@@ -165,17 +187,18 @@ namespace {
 }
 
 - (void)tick:(NSTimer*)timer {
-  const double seconds =
-    self.capturePath.empty ()
-      ? std::chrono::duration<double> (std::chrono::steady_clock::now ()
-                                       - _start)
-          .count ()
-      : 12.0 + _rendered / 60.0;
+  const double seconds = self.capturePath.empty ()
+                           ? std::chrono::duration<double> (
+                               std::chrono::steady_clock::now () - _start)
+                               .count ()
+                           : 12.0 + _rendered / 60.0;
   const auto now = std::chrono::steady_clock::now ();
   const double step =
     std::min (0.1, std::chrono::duration<double> (now - _last).count ());
   _last = now;
-  auto held = [&] (unsigned short key) { return _keys.count (key) ? 1.0f : 0.0f; };
+  auto held = [&] (unsigned short key) {
+    return _keys.count (key) ? 1.0f : 0.0f;
+  };
   demo::Flight flight;
   flight.forward = held (13) - held (1);  // W, S
   flight.strafe = held (2) - held (0);    // D, A
@@ -193,16 +216,16 @@ namespace {
       const std::string path = self.capturePath;
       _device->capture_frame ([path] (const Capture& capture) {
         write_png (capture, path);
-        std::cerr << "NHAL demo: wrote " << path << " (" << capture.width
-                  << "x" << capture.height << ")" << std::endl;
+        std::cerr << "NHAL demo: wrote " << path << " (" << capture.width << "x"
+                  << capture.height << ")" << std::endl;
       });
     }
     _device->end_frame ();
     if (_rendered % 120 == 0 || last) {
       std::cerr << "NHAL demo: GPU";
       for (const PassTiming& pass : _device->pass_timings ())
-        std::fprintf (stderr, " %s %.2f ms", pass.label.c_str (),
-                      pass.milliseconds);
+        std::fprintf (
+          stderr, " %s %.2f ms", pass.label.c_str (), pass.milliseconds);
       std::cerr << std::endl;
     }
     if (last) {

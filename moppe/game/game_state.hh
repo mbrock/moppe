@@ -11,11 +11,11 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/gfx/math.hh>
+#include <moppe/mov/boat.hh>
 #include <moppe/mov/caddy.hh>
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/helicopter.hh>
 #include <moppe/mov/jeep.hh>
-#include <moppe/mov/boat.hh>
 #include <moppe/mov/tractor.hh>
 #include <moppe/mov/vehicle.hh>
 

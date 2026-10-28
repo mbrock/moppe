@@ -55,30 +55,46 @@ namespace moppe::nhal {
     void check (VkResult result, const char* what) {
       if (result != VK_SUCCESS) {
         char message[128];
-        std::snprintf (message, sizeof message, "NHAL: %s failed: %d", what,
-                       int (result));
+        std::snprintf (
+          message, sizeof message, "NHAL: %s failed: %d", what, int (result));
         throw std::runtime_error (message);
       }
     }
 
     VkFormat vk_format (Format format) {
       switch (format) {
-      case Format::undefined: return VK_FORMAT_UNDEFINED;
-      case Format::rgba8_unorm: return VK_FORMAT_R8G8B8A8_UNORM;
-      case Format::rgba8_unorm_srgb: return VK_FORMAT_R8G8B8A8_SRGB;
-      case Format::bgra8_unorm: return VK_FORMAT_B8G8R8A8_UNORM;
-      case Format::bgra8_unorm_srgb: return VK_FORMAT_B8G8R8A8_SRGB;
-      case Format::rgb10a2_unorm: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
-      case Format::rgba16_float: return VK_FORMAT_R16G16B16A16_SFLOAT;
-      case Format::rg16_float: return VK_FORMAT_R16G16_SFLOAT;
-      case Format::rg16_snorm: return VK_FORMAT_R16G16_SNORM;
-      case Format::r16_float: return VK_FORMAT_R16_SFLOAT;
-      case Format::r8_unorm: return VK_FORMAT_R8_UNORM;
-      case Format::r32_float: return VK_FORMAT_R32_SFLOAT;
-      case Format::rg32_float: return VK_FORMAT_R32G32_SFLOAT;
-      case Format::rgba32_float: return VK_FORMAT_R32G32B32A32_SFLOAT;
-      case Format::r32_uint: return VK_FORMAT_R32_UINT;
-      case Format::d32_float: return VK_FORMAT_D32_SFLOAT;
+      case Format::undefined:
+        return VK_FORMAT_UNDEFINED;
+      case Format::rgba8_unorm:
+        return VK_FORMAT_R8G8B8A8_UNORM;
+      case Format::rgba8_unorm_srgb:
+        return VK_FORMAT_R8G8B8A8_SRGB;
+      case Format::bgra8_unorm:
+        return VK_FORMAT_B8G8R8A8_UNORM;
+      case Format::bgra8_unorm_srgb:
+        return VK_FORMAT_B8G8R8A8_SRGB;
+      case Format::rgb10a2_unorm:
+        return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+      case Format::rgba16_float:
+        return VK_FORMAT_R16G16B16A16_SFLOAT;
+      case Format::rg16_float:
+        return VK_FORMAT_R16G16_SFLOAT;
+      case Format::rg16_snorm:
+        return VK_FORMAT_R16G16_SNORM;
+      case Format::r16_float:
+        return VK_FORMAT_R16_SFLOAT;
+      case Format::r8_unorm:
+        return VK_FORMAT_R8_UNORM;
+      case Format::r32_float:
+        return VK_FORMAT_R32_SFLOAT;
+      case Format::rg32_float:
+        return VK_FORMAT_R32G32_SFLOAT;
+      case Format::rgba32_float:
+        return VK_FORMAT_R32G32B32A32_SFLOAT;
+      case Format::r32_uint:
+        return VK_FORMAT_R32_UINT;
+      case Format::d32_float:
+        return VK_FORMAT_D32_SFLOAT;
       }
       return VK_FORMAT_UNDEFINED;
     }
@@ -103,7 +119,8 @@ namespace moppe::nhal {
       case ResourceKind::sampler:
       case ResourceKind::comparison_sampler:
         return VK_DESCRIPTOR_TYPE_SAMPLER;
-      default: return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      default:
+        return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
       }
     }
 
@@ -174,10 +191,12 @@ namespace moppe::nhal {
 
     class VulkanDevice final : public Device {
     public:
-      VulkanDevice (const VulkanSurface& surface, std::uint32_t width,
-                    std::uint32_t height, Format surface_format)
-        : m_surface_format (surface_format), m_width (width),
-          m_height (height) {
+      VulkanDevice (const VulkanSurface& surface,
+                    std::uint32_t width,
+                    std::uint32_t height,
+                    Format surface_format)
+          : m_surface_format (surface_format), m_width (width),
+            m_height (height) {
         create_instance (surface);
         if (surface.create)
           m_surface = surface.create (m_instance);
@@ -252,12 +271,11 @@ namespace moppe::nhal {
         const bool upload = desc.memory == Memory::upload;
         VkBufferRow row = make_buffer (
           std::max<std::uint64_t> (desc.size, 16),
-          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-            | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-            | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-            | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
-            | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-            | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+            VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
           upload ? Placement::upload : Placement::device);
         if (!initial.empty ()) {
           if (upload) {
@@ -291,8 +309,8 @@ namespace moppe::nhal {
         info.arrayLayers = 1;
         info.samples = vk_samples (desc.samples);
         info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-                     | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        info.usage =
+          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         if (desc.usage & usage_sampled)
           info.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
         if (desc.usage & usage_render_target)
@@ -313,64 +331,71 @@ namespace moppe::nhal {
         return m_textures.insert<Texture> (t);
       }
 
-      void write_texture (Texture handle, std::span<const std::byte> pixels,
+      void write_texture (Texture handle,
+                          std::span<const std::byte> pixels,
                           std::uint32_t row_bytes) override {
         VkTextureRow& t = m_textures[handle];
         const std::uint32_t texel = bytes_per_pixel (t.desc.format);
         if (!row_bytes)
           row_bytes = t.desc.width * texel;
-        VkBufferRow staging = staging_buffer (
-          pixels.first (std::min<std::size_t> (
+        VkBufferRow staging =
+          staging_buffer (pixels.first (std::min<std::size_t> (
             pixels.size (), std::size_t (row_bytes) * t.desc.height)));
         VkCommandBuffer cb = begin_setup ();
-        barrier (cb, { { &t, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                             true } });
+        barrier (cb, { { &t, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, true } });
         VkBufferImageCopy region {};
         region.bufferRowLength = row_bytes / texel;
         region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
         region.imageExtent = { t.desc.width, t.desc.height, 1 };
-        vkCmdCopyBufferToImage (cb, staging.buffer, t.image,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+        vkCmdCopyBufferToImage (cb,
+                                staging.buffer,
+                                t.image,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                1,
                                 &region);
         barrier (cb, { { &t, resting_layout (t), false } });
         finish_setup ();
         release (staging);
       }
 
-      Pipeline create_render_pipeline (const RenderPipelineDesc& desc)
-        override {
+      Pipeline
+      create_render_pipeline (const RenderPipelineDesc& desc) override {
         const Layout& layout = program_layout (*desc.program);
         std::vector<VkPipelineShaderStageCreateInfo> stages;
-        VkShaderModule vertex = shader_module (desc.vertex, desc.program,
-                                               "vertex");
-        stages.push_back (stage_info (VK_SHADER_STAGE_VERTEX_BIT, vertex,
-                                      desc.program->vertex_entry));
+        VkShaderModule vertex =
+          shader_module (desc.vertex, desc.program, "vertex");
+        stages.push_back (stage_info (
+          VK_SHADER_STAGE_VERTEX_BIT, vertex, desc.program->vertex_entry));
         VkShaderModule fragment = VK_NULL_HANDLE;
         if (!desc.fragment.spirv.empty ()) {
           fragment = shader_module (desc.fragment, desc.program, "fragment");
-          stages.push_back (stage_info (VK_SHADER_STAGE_FRAGMENT_BIT, fragment,
+          stages.push_back (stage_info (VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        fragment,
                                         desc.program->fragment_entry));
         }
 
         VkPipelineVertexInputStateCreateInfo input {
-          VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+        };
         VkPipelineInputAssemblyStateCreateInfo assembly {
-          VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
-        assembly.topology =
-          desc.topology == Topology::triangle_strip
-            ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
-          : desc.topology == Topology::line_list
-            ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST
-            : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+          VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
+        };
+        assembly.topology = desc.topology == Topology::triangle_strip
+                              ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+                            : desc.topology == Topology::line_list
+                              ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST
+                              : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         // Strips restart at the all-ones index, as Metal's always do.
         assembly.primitiveRestartEnable =
           desc.topology == Topology::triangle_strip;
         VkPipelineViewportStateCreateInfo viewport {
-          VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO
+        };
         viewport.viewportCount = 1;
         viewport.scissorCount = 1;
         VkPipelineRasterizationStateCreateInfo raster {
-          VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
+        };
         raster.polygonMode = VK_POLYGON_MODE_FILL;
         raster.cullMode = desc.cull == Cull::back    ? VK_CULL_MODE_BACK_BIT
                           : desc.cull == Cull::front ? VK_CULL_MODE_FRONT_BIT
@@ -378,16 +403,18 @@ namespace moppe::nhal {
         raster.frontFace = desc.front_counter_clockwise
                              ? VK_FRONT_FACE_COUNTER_CLOCKWISE
                              : VK_FRONT_FACE_CLOCKWISE;
-        raster.depthBiasEnable = desc.depth_bias != 0
-                                 || desc.slope_scaled_depth_bias != 0;
+        raster.depthBiasEnable =
+          desc.depth_bias != 0 || desc.slope_scaled_depth_bias != 0;
         raster.depthBiasConstantFactor = desc.depth_bias;
         raster.depthBiasSlopeFactor = desc.slope_scaled_depth_bias;
         raster.lineWidth = 1.0f;
         VkPipelineMultisampleStateCreateInfo multisample {
-          VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
+        };
         multisample.rasterizationSamples = vk_samples (desc.samples);
         VkPipelineDepthStencilStateCreateInfo depth {
-          VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
+        };
         if (desc.depth_format != Format::undefined) {
           depth.depthTestEnable = VK_TRUE;
           depth.depthWriteEnable = desc.depth_write;
@@ -398,9 +425,9 @@ namespace moppe::nhal {
         for (std::uint32_t i = 0; i < desc.color_count; ++i) {
           formats[i] = vk_format (desc.color_formats[i]);
           auto& b = blends[i];
-          b.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-                             | VK_COLOR_COMPONENT_B_BIT
-                             | VK_COLOR_COMPONENT_A_BIT;
+          b.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
           if (desc.blend[i] == Blend::none)
             continue;
           const bool additive = desc.blend[i] == Blend::additive;
@@ -419,23 +446,27 @@ namespace moppe::nhal {
           b.alphaBlendOp = VK_BLEND_OP_ADD;
         }
         VkPipelineColorBlendStateCreateInfo blend {
-          VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO
+        };
         blend.attachmentCount = desc.color_count;
         blend.pAttachments = blends.data ();
         const VkDynamicState dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT,
                                                   VK_DYNAMIC_STATE_SCISSOR };
         VkPipelineDynamicStateCreateInfo dynamic {
-          VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO
+        };
         dynamic.dynamicStateCount = 2;
         dynamic.pDynamicStates = dynamic_states;
         VkPipelineRenderingCreateInfo rendering {
-          VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO
+        };
         rendering.colorAttachmentCount = desc.color_count;
         rendering.pColorAttachmentFormats = formats.data ();
         rendering.depthAttachmentFormat = vk_format (desc.depth_format);
 
         VkGraphicsPipelineCreateInfo info {
-          VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO
+        };
         info.pNext = &rendering;
         info.stageCount = std::uint32_t (stages.size ());
         info.pStages = stages.data ();
@@ -457,23 +488,25 @@ namespace moppe::nhal {
         if (fragment)
           vkDestroyShaderModule (m_device, fragment, nullptr);
         if (result != VK_SUCCESS)
-          throw std::runtime_error (std::string ("NHAL: pipeline ")
-                                    + desc.program->name + " failed: "
-                                    + std::to_string (int (result)));
-        name (VK_OBJECT_TYPE_PIPELINE, std::uint64_t (row.pipeline),
+          throw std::runtime_error (
+            std::string ("NHAL: pipeline ") + desc.program->name +
+            " failed: " + std::to_string (int (result)));
+        name (VK_OBJECT_TYPE_PIPELINE,
+              std::uint64_t (row.pipeline),
               desc.label ? desc.label : desc.program->name);
         return m_pipelines.insert<Pipeline> (row);
       }
 
-      Pipeline create_compute_pipeline (const ComputePipelineDesc& desc)
-        override {
+      Pipeline
+      create_compute_pipeline (const ComputePipelineDesc& desc) override {
         const Layout& layout = program_layout (*desc.program);
-        VkShaderModule module = shader_module (desc.compute, desc.program,
-                                               "compute");
+        VkShaderModule module =
+          shader_module (desc.compute, desc.program, "compute");
         VkComputePipelineCreateInfo info {
-          VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
-        info.stage = stage_info (VK_SHADER_STAGE_COMPUTE_BIT, module,
-                                 desc.program->compute_entry);
+          VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO
+        };
+        info.stage = stage_info (
+          VK_SHADER_STAGE_COMPUTE_BIT, module, desc.program->compute_entry);
         info.layout = layout.pipeline;
         VkPipelineRow row;
         row.layout = &layout;
@@ -483,10 +516,11 @@ namespace moppe::nhal {
           m_device, VK_NULL_HANDLE, 1, &info, nullptr, &row.pipeline);
         vkDestroyShaderModule (m_device, module, nullptr);
         if (result != VK_SUCCESS)
-          throw std::runtime_error (std::string ("NHAL: compute pipeline ")
-                                    + desc.program->name + " failed: "
-                                    + std::to_string (int (result)));
-        name (VK_OBJECT_TYPE_PIPELINE, std::uint64_t (row.pipeline),
+          throw std::runtime_error (
+            std::string ("NHAL: compute pipeline ") + desc.program->name +
+            " failed: " + std::to_string (int (result)));
+        name (VK_OBJECT_TYPE_PIPELINE,
+              std::uint64_t (row.pipeline),
               desc.label ? desc.label : desc.program->name);
         return m_pipelines.insert<Pipeline> (row);
       }
@@ -516,12 +550,17 @@ namespace moppe::nhal {
 
       // -- the drawable -----------------------------------------------
 
-      Format surface_format () const override { return m_surface_format; }
-      std::uint32_t surface_width () const override { return m_width; }
-      std::uint32_t surface_height () const override { return m_height; }
+      Format surface_format () const override {
+        return m_surface_format;
+      }
+      std::uint32_t surface_width () const override {
+        return m_width;
+      }
+      std::uint32_t surface_height () const override {
+        return m_height;
+      }
 
-      void resize_surface (std::uint32_t width, std::uint32_t height)
-        override {
+      void resize_surface (std::uint32_t width, std::uint32_t height) override {
         if (width == m_width && height == m_height && !m_stale)
           return;
         m_width = width;
@@ -544,17 +583,24 @@ namespace moppe::nhal {
             rebuild_backbuffers ();
           if (!m_swapchain)
             return false;
-          VkResult result = vkAcquireNextImageKHR (
-            m_device, m_swapchain, std::numeric_limits<std::uint64_t>::max (),
-            frame.acquired, VK_NULL_HANDLE, &m_image_index);
+          VkResult result =
+            vkAcquireNextImageKHR (m_device,
+                                   m_swapchain,
+                                   std::numeric_limits<std::uint64_t>::max (),
+                                   frame.acquired,
+                                   VK_NULL_HANDLE,
+                                   &m_image_index);
           if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             rebuild_backbuffers ();
             if (!m_swapchain)
               return false;
-            result = vkAcquireNextImageKHR (
-              m_device, m_swapchain,
-              std::numeric_limits<std::uint64_t>::max (), frame.acquired,
-              VK_NULL_HANDLE, &m_image_index);
+            result =
+              vkAcquireNextImageKHR (m_device,
+                                     m_swapchain,
+                                     std::numeric_limits<std::uint64_t>::max (),
+                                     frame.acquired,
+                                     VK_NULL_HANDLE,
+                                     &m_image_index);
           }
           if (result == VK_SUBOPTIMAL_KHR)
             m_stale = true;
@@ -570,12 +616,15 @@ namespace moppe::nhal {
         frame.secondaries_used = 0;
         m_cb = frame.primary;
         VkCommandBufferBeginInfo begin {
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+        };
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         check (vkBeginCommandBuffer (m_cb, &begin), "begin command buffer");
         vkCmdResetQueryPool (m_cb, frame.queries, 0, max_timestamps);
         m_arena = { static_cast<std::byte*> (frame.arena.mapped),
-                    arena_tag, arena_capacity, 0 };
+                    arena_tag,
+                    arena_capacity,
+                    0 };
         m_current_backbuffer = m_backbuffers[m_image_index];
         frame.labels.clear ();
         frame.timestamps = 0;
@@ -584,10 +633,12 @@ namespace moppe::nhal {
         return true;
       }
 
-      Texture backbuffer () override { return m_current_backbuffer; }
+      Texture backbuffer () override {
+        return m_current_backbuffer;
+      }
 
-      Transient allocate (std::uint64_t size, std::uint64_t alignment)
-        override {
+      Transient allocate (std::uint64_t size,
+                          std::uint64_t alignment) override {
         alignment = std::max<std::uint64_t> (alignment, 256);
         if (!m_arena.fits (size, alignment))
           throw std::runtime_error ("NHAL: frame arena exhausted");
@@ -598,7 +649,8 @@ namespace moppe::nhal {
         Frame& frame = m_frames[m_slot];
         if (frame.secondaries_used == frame.secondaries.size ()) {
           VkCommandBufferAllocateInfo info {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
+          };
           info.commandPool = frame.pool;
           info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
           info.commandBufferCount = 1;
@@ -632,18 +684,21 @@ namespace moppe::nhal {
         m_pass_extent = { width, height };
 
         VkCommandBufferInheritanceRenderingInfo rendering {
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO };
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO
+        };
         rendering.colorAttachmentCount = desc.color_count;
         rendering.pColorAttachmentFormats = formats.data ();
         rendering.depthAttachmentFormat = depth_format;
         rendering.rasterizationSamples = vk_samples (samples);
         VkCommandBufferInheritanceInfo inheritance {
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO };
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO
+        };
         inheritance.pNext = &rendering;
         VkCommandBufferBeginInfo begin {
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-                      | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+        };
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                      VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
         begin.pInheritanceInfo = &inheritance;
         m_cb = frame.secondaries[frame.secondaries_used++];
         check (vkBeginCommandBuffer (m_cb, &begin), "begin secondary");
@@ -662,12 +717,12 @@ namespace moppe::nhal {
         std::vector<Transition> transitions;
         for (Texture handle : m_pass_reads) {
           VkTextureRow& t = m_textures[handle];
-          transitions.push_back ({ &t, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                   false });
+          transitions.push_back (
+            { &t, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false });
         }
         for (Texture handle : m_pass_storage)
-          transitions.push_back ({ &m_textures[handle],
-                                   VK_IMAGE_LAYOUT_GENERAL, false });
+          transitions.push_back (
+            { &m_textures[handle], VK_IMAGE_LAYOUT_GENERAL, false });
         std::array<VkRenderingAttachmentInfo, 8> colors {};
         for (std::uint32_t i = 0; i < m_pass.color_count; ++i) {
           const ColorAttachment& c = m_pass.colors[i];
@@ -682,22 +737,23 @@ namespace moppe::nhal {
           a.loadOp = c.load == Load::clear  ? VK_ATTACHMENT_LOAD_OP_CLEAR
                      : c.load == Load::load ? VK_ATTACHMENT_LOAD_OP_LOAD
                                             : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-          a.storeOp = c.store == Store::store ? VK_ATTACHMENT_STORE_OP_STORE
-                                              : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-          std::memcpy (a.clearValue.color.float32, c.clear.data (),
-                       sizeof (float) * 4);
+          a.storeOp = c.store == Store::store
+                        ? VK_ATTACHMENT_STORE_OP_STORE
+                        : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+          std::memcpy (
+            a.clearValue.color.float32, c.clear.data (), sizeof (float) * 4);
           if (c.resolve) {
             VkTextureRow& r = m_textures[c.resolve];
-            transitions.push_back ({ &r,
-                                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                     true });
+            transitions.push_back (
+              { &r, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true });
             a.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
             a.resolveImageView = r.view;
             a.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
           }
         }
         VkRenderingAttachmentInfo depth {
-          VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+          VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO
+        };
         if (m_pass.depth.texture) {
           const DepthAttachment& d = m_pass.depth;
           VkTextureRow& t = m_textures[d.texture];
@@ -706,9 +762,10 @@ namespace moppe::nhal {
                                    d.load != Load::load });
           depth.imageView = t.view;
           depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-          depth.loadOp = d.load == Load::clear  ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                         : d.load == Load::load ? VK_ATTACHMENT_LOAD_OP_LOAD
-                                                : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+          depth.loadOp = d.load == Load::clear ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                         : d.load == Load::load
+                           ? VK_ATTACHMENT_LOAD_OP_LOAD
+                           : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
           depth.storeOp = d.store == Store::store
                             ? VK_ATTACHMENT_STORE_OP_STORE
                             : VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -738,15 +795,22 @@ namespace moppe::nhal {
         reset_bindings ();
       }
 
-      void end_compute_pass () override { timestamp_end (); }
+      void end_compute_pass () override {
+        timestamp_end ();
+      }
 
-      void copy_to_buffer (Buffer target, std::uint64_t offset,
+      void copy_to_buffer (Buffer target,
+                           std::uint64_t offset,
                            const Transient& source) override {
         barrier (m_cb);
-        const VkBufferCopy region { source.gpu_address - arena_tag, offset,
+        const VkBufferCopy region { source.gpu_address - arena_tag,
+                                    offset,
                                     source.size };
-        vkCmdCopyBuffer (m_cb, m_frames[m_slot].arena.buffer,
-                         m_buffers[target].buffer, 1, &region);
+        vkCmdCopyBuffer (m_cb,
+                         m_frames[m_slot].arena.buffer,
+                         m_buffers[target].buffer,
+                         1,
+                         &region);
       }
 
       void set_pipeline (Pipeline handle) override {
@@ -758,20 +822,20 @@ namespace moppe::nhal {
         m_bindings_dirty = true;
       }
 
-      void set_buffer (std::uint32_t binding, Buffer buffer,
+      void set_buffer (std::uint32_t binding,
+                       Buffer buffer,
                        std::uint64_t offset) override {
         const VkBufferRow& row = m_buffers[buffer];
-        m_bound_buffers.at (binding) = { row.buffer, offset,
-                                         row.size - offset };
+        m_bound_buffers.at (
+          binding) = { row.buffer, offset, row.size - offset };
         m_bindings_dirty = true;
       }
 
-      void set_buffer (std::uint32_t binding, const Transient& slice)
-        override {
-        m_bound_buffers.at (binding) = { m_frames[m_slot].arena.buffer,
-                                         slice.gpu_address - arena_tag,
-                                         std::max<std::uint64_t> (slice.size,
-                                                                  4) };
+      void set_buffer (std::uint32_t binding, const Transient& slice) override {
+        m_bound_buffers.at (
+          binding) = { m_frames[m_slot].arena.buffer,
+                       slice.gpu_address - arena_tag,
+                       std::max<std::uint64_t> (slice.size, 4) };
         m_bindings_dirty = true;
       }
 
@@ -780,70 +844,81 @@ namespace moppe::nhal {
         m_bindings_dirty = true;
       }
 
-      void set_storage_texture (std::uint32_t binding, Texture texture)
-        override {
+      void set_storage_texture (std::uint32_t binding,
+                                Texture texture) override {
         m_bound_storage.at (binding) = texture;
         m_bindings_dirty = true;
       }
 
-      void set_viewport (float x, float y, float width, float height)
-        override {
+      void set_viewport (float x, float y, float width, float height) override {
         const VkViewport viewport { x, y, width, height, 0, 1 };
-        const VkRect2D scissor {
-          { std::int32_t (x), std::int32_t (y) },
-          { std::uint32_t (width), std::uint32_t (height) } };
+        const VkRect2D scissor { { std::int32_t (x), std::int32_t (y) },
+                                 { std::uint32_t (width),
+                                   std::uint32_t (height) } };
         vkCmdSetViewport (m_cb, 0, 1, &viewport);
         vkCmdSetScissor (m_cb, 0, 1, &scissor);
       }
 
-      void draw (std::uint32_t vertex_count, std::uint32_t instance_count,
-                 std::uint32_t first_vertex, std::uint32_t first_instance)
-        override {
+      void draw (std::uint32_t vertex_count,
+                 std::uint32_t instance_count,
+                 std::uint32_t first_vertex,
+                 std::uint32_t first_instance) override {
         bind_arguments ();
-        vkCmdDraw (m_cb, vertex_count, instance_count, first_vertex,
-                   first_instance);
+        vkCmdDraw (
+          m_cb, vertex_count, instance_count, first_vertex, first_instance);
       }
 
-      void draw_indexed (Buffer indices, IndexType type,
+      void draw_indexed (Buffer indices,
+                         IndexType type,
                          std::uint32_t index_count,
                          std::uint32_t instance_count,
-                         std::uint32_t first_index, std::int32_t base_vertex,
+                         std::uint32_t first_index,
+                         std::int32_t base_vertex,
                          std::uint32_t first_instance) override {
         bind_arguments ();
         set_index_buffer (indices, type);
-        vkCmdDrawIndexed (m_cb, index_count, instance_count, first_index,
-                          base_vertex, first_instance);
+        vkCmdDrawIndexed (m_cb,
+                          index_count,
+                          instance_count,
+                          first_index,
+                          base_vertex,
+                          first_instance);
       }
 
       void draw_indirect (Buffer arguments, std::uint64_t offset) override {
         bind_arguments ();
-        vkCmdDrawIndirect (m_cb, m_buffers[arguments].buffer, offset, 1,
+        vkCmdDrawIndirect (m_cb,
+                           m_buffers[arguments].buffer,
+                           offset,
+                           1,
                            sizeof (DrawIndirectArgs));
       }
 
-      void draw_indexed_indirect (Buffer indices, IndexType type,
-                                  Buffer arguments, std::uint64_t offset)
-        override {
+      void draw_indexed_indirect (Buffer indices,
+                                  IndexType type,
+                                  Buffer arguments,
+                                  std::uint64_t offset) override {
         bind_arguments ();
         set_index_buffer (indices, type);
-        vkCmdDrawIndexedIndirect (m_cb, m_buffers[arguments].buffer, offset,
-                                  1, sizeof (DrawIndexedIndirectArgs));
+        vkCmdDrawIndexedIndirect (m_cb,
+                                  m_buffers[arguments].buffer,
+                                  offset,
+                                  1,
+                                  sizeof (DrawIndexedIndirectArgs));
       }
 
-      void dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z)
-        override {
+      void
+      dispatch (std::uint32_t x, std::uint32_t y, std::uint32_t z) override {
         prepare_dispatch ();
         vkCmdDispatch (m_cb, x, y, z);
       }
 
-      void dispatch_indirect (Buffer arguments, std::uint64_t offset)
-        override {
+      void dispatch_indirect (Buffer arguments, std::uint64_t offset) override {
         prepare_dispatch ();
         vkCmdDispatchIndirect (m_cb, m_buffers[arguments].buffer, offset);
       }
 
-      void capture_frame (std::function<void (const Capture&)> done)
-        override {
+      void capture_frame (std::function<void (const Capture&)> done) override {
         m_capture_request = std::move (done);
       }
 
@@ -857,12 +932,12 @@ namespace moppe::nhal {
         if (m_capture_request)
           encode_capture (back);
         if (m_surface)
-          barrier (m_cb, { { &back, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                 false } });
+          barrier (m_cb, { { &back, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, false } });
         check (vkEndCommandBuffer (m_cb), "end command buffer");
 
         VkCommandBufferSubmitInfo command {
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO
+        };
         command.commandBuffer = m_cb;
         VkSemaphoreSubmitInfo wait { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
         wait.semaphore = frame.acquired;
@@ -893,10 +968,12 @@ namespace moppe::nhal {
           // The frame's serial names the present, and asks when it appears.
           const std::uint64_t present_id = m_serial;
           VkPresentTimingInfoEXT timing {
-            VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT };
+            VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT
+          };
           timing.presentStageQueries = m_monotonic ? m_present_stage : 0;
           VkPresentTimingsInfoEXT timings {
-            VK_STRUCTURE_TYPE_PRESENT_TIMINGS_INFO_EXT };
+            VK_STRUCTURE_TYPE_PRESENT_TIMINGS_INFO_EXT
+          };
           timings.swapchainCount = 1;
           timings.pTimingInfos = &timing;
           VkPresentId2KHR ids { VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR };
@@ -911,8 +988,7 @@ namespace moppe::nhal {
           present.pSwapchains = &m_swapchain;
           present.pImageIndices = &m_image_index;
           const VkResult result = vkQueuePresentKHR (m_queue, &present);
-          if (result == VK_ERROR_OUT_OF_DATE_KHR
-              || result == VK_SUBOPTIMAL_KHR)
+          if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
             m_stale = true;
           else if (result == VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT) {
             // Reports are drained every frame, so a full queue means the
@@ -921,8 +997,7 @@ namespace moppe::nhal {
                          "host's time"
                       << std::endl;
             m_monotonic = false;
-          }
-          else
+          } else
             check (result, "vkQueuePresentKHR");
         }
         m_cb = VK_NULL_HANDLE;
@@ -982,20 +1057,19 @@ namespace moppe::nhal {
         std::uint32_t count = 0;
         vkEnumerateInstanceExtensionProperties (nullptr, &count, nullptr);
         std::vector<VkExtensionProperties> available (count);
-        vkEnumerateInstanceExtensionProperties (nullptr, &count,
-                                                available.data ());
+        vkEnumerateInstanceExtensionProperties (
+          nullptr, &count, available.data ());
         for (const auto& e : available)
-          if (!std::strcmp (e.extensionName,
-                            VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+          if (!std::strcmp (e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
             m_debug_utils = true;
         if (m_debug_utils)
           extensions.push_back (VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         // Present timing asks the surface through its second capabilities
         // query.
         for (const auto& e : available)
-          if (surface.create
-              && !std::strcmp (e.extensionName,
-                               VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)) {
+          if (surface.create &&
+              !std::strcmp (e.extensionName,
+                            VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)) {
             m_surface_capabilities_2 = true;
             extensions.push_back (
               VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
@@ -1021,14 +1095,15 @@ namespace moppe::nhal {
 
         if (m_debug_utils && m_validation) {
           VkDebugUtilsMessengerCreateInfoEXT messenger {
-            VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
+            VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT
+          };
           messenger.messageSeverity =
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
-            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
           messenger.messageType =
-            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-            | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
-            | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
           messenger.pfnUserCallback = &VulkanDevice::report;
           auto create = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT> (
             vkGetInstanceProcAddr (m_instance,
@@ -1041,7 +1116,8 @@ namespace moppe::nhal {
       static VKAPI_ATTR VkBool32 VKAPI_CALL
       report (VkDebugUtilsMessageSeverityFlagBitsEXT,
               VkDebugUtilsMessageTypeFlagsEXT,
-              const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
+              const VkDebugUtilsMessengerCallbackDataEXT* data,
+              void*) {
         std::cerr << "NHAL Vulkan: " << data->pMessage << std::endl;
         return VK_FALSE;
       }
@@ -1073,71 +1149,79 @@ namespace moppe::nhal {
         vkGetPhysicalDeviceMemoryProperties (m_physical, &m_memory);
 
         std::uint32_t families = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties (m_physical, &families,
-                                                  nullptr);
+        vkGetPhysicalDeviceQueueFamilyProperties (
+          m_physical, &families, nullptr);
         std::vector<VkQueueFamilyProperties> family (families);
-        vkGetPhysicalDeviceQueueFamilyProperties (m_physical, &families,
-                                                  family.data ());
+        vkGetPhysicalDeviceQueueFamilyProperties (
+          m_physical, &families, family.data ());
         for (std::uint32_t i = 0; i < families; ++i) {
-          const VkQueueFlags needed = VK_QUEUE_GRAPHICS_BIT
-                                      | VK_QUEUE_COMPUTE_BIT;
+          const VkQueueFlags needed =
+            VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
           if ((family[i].queueFlags & needed) != needed)
             continue;
           VkBool32 presents = VK_TRUE;
           if (m_surface)
-            vkGetPhysicalDeviceSurfaceSupportKHR (m_physical, i, m_surface,
-                                                  &presents);
+            vkGetPhysicalDeviceSurfaceSupportKHR (
+              m_physical, i, m_surface, &presents);
           if (presents) {
             m_family = i;
             m_timestamp_bits = family[i].timestampValidBits;
             return;
           }
         }
-        throw std::runtime_error ("NHAL: " + m_adapter
-                                  + " has no queue that draws and presents");
+        throw std::runtime_error ("NHAL: " + m_adapter +
+                                  " has no queue that draws and presents");
       }
 
       void create_device () {
         VkPhysicalDeviceRobustness2FeaturesEXT robustness {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT
+        };
         VkPhysicalDeviceVulkan13Features v13 {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
+        };
         v13.pNext = &robustness;
         VkPhysicalDeviceVulkan12Features v12 {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
+        };
         v12.pNext = &v13;
         VkPhysicalDeviceFeatures2 supported {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+        };
         supported.pNext = &v12;
         vkGetPhysicalDeviceFeatures2 (m_physical, &supported);
-        if (!v13.dynamicRendering || !v13.synchronization2
-            || !v12.timelineSemaphore || !robustness.nullDescriptor)
+        if (!v13.dynamicRendering || !v13.synchronization2 ||
+            !v12.timelineSemaphore || !robustness.nullDescriptor)
           throw std::runtime_error (
-            "NHAL: " + m_adapter
-            + " lacks dynamic rendering, synchronization2, timeline "
-              "semaphores, or null descriptors");
+            "NHAL: " + m_adapter +
+            " lacks dynamic rendering, synchronization2, timeline "
+            "semaphores, or null descriptors");
 
         VkPhysicalDeviceRobustness2FeaturesEXT want_robustness {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT
+        };
         want_robustness.nullDescriptor = VK_TRUE;
         VkPhysicalDeviceVulkan13Features want13 {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
+        };
         want13.pNext = &want_robustness;
         want13.dynamicRendering = VK_TRUE;
         want13.synchronization2 = VK_TRUE;
         VkPhysicalDeviceVulkan12Features want12 {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
+        };
         want12.pNext = &want13;
         want12.timelineSemaphore = VK_TRUE;
         VkPhysicalDeviceFeatures2 want {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+        };
         want.pNext = &want12;
         const VkPhysicalDeviceFeatures& has = supported.features;
         // Attachments blend independently, as Direct3D's do with
         // IndependentBlendEnable.
         if (!has.independentBlend)
-          throw std::runtime_error ("NHAL: " + m_adapter
-                                    + " lacks independent blending");
+          throw std::runtime_error ("NHAL: " + m_adapter +
+                                    " lacks independent blending");
         want.features.independentBlend = VK_TRUE;
         want.features.fragmentStoresAndAtomics = has.fragmentStoresAndAtomics;
         want.features.vertexPipelineStoresAndAtomics =
@@ -1148,13 +1232,16 @@ namespace moppe::nhal {
 
         std::vector<const char*> extensions {
           VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-          VK_EXT_ROBUSTNESS_2_EXTENSION_NAME };
+          VK_EXT_ROBUSTNESS_2_EXTENSION_NAME
+        };
         if (m_surface)
           extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         VkPhysicalDevicePresentId2FeaturesKHR want_id2 {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR
+        };
         VkPhysicalDevicePresentTimingFeaturesEXT want_timing {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT
+        };
         if (choose_present_timing ()) {
           extensions.push_back (VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
           extensions.push_back (VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
@@ -1167,7 +1254,8 @@ namespace moppe::nhal {
         }
         const float priority = 1.0f;
         VkDeviceQueueCreateInfo queue {
-          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO
+        };
         queue.queueFamilyIndex = m_family;
         queue.queueCount = 1;
         queue.pQueuePriorities = &priority;
@@ -1180,9 +1268,8 @@ namespace moppe::nhal {
         check (vkCreateDevice (m_physical, &info, nullptr, &m_device),
                "vkCreateDevice");
         vkGetDeviceQueue (m_device, m_family, 0, &m_queue);
-        m_push_descriptors =
-          reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR> (
-            vkGetDeviceProcAddr (m_device, "vkCmdPushDescriptorSetKHR"));
+        m_push_descriptors = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR> (
+          vkGetDeviceProcAddr (m_device, "vkCmdPushDescriptorSetKHR"));
         if (!m_push_descriptors)
           throw std::runtime_error ("NHAL: no vkCmdPushDescriptorSetKHR");
         if (m_debug_utils)
@@ -1205,8 +1292,8 @@ namespace moppe::nhal {
             load ("vkGetPastPresentationTimingEXT"));
           m_calibrate = reinterpret_cast<PFN_vkGetCalibratedTimestampsKHR> (
             load ("vkGetCalibratedTimestampsKHR"));
-          if (!m_timing_queue_size || !m_timing_properties || !m_time_domains
-              || !m_past_timing || !m_calibrate)
+          if (!m_timing_queue_size || !m_timing_properties || !m_time_domains ||
+              !m_past_timing || !m_calibrate)
             m_present_stage = 0;
         }
       }
@@ -1218,28 +1305,32 @@ namespace moppe::nhal {
         if (!m_surface || !m_surface_capabilities_2)
           return false;
         std::uint32_t count = 0;
-        vkEnumerateDeviceExtensionProperties (m_physical, nullptr, &count,
-                                              nullptr);
+        vkEnumerateDeviceExtensionProperties (
+          m_physical, nullptr, &count, nullptr);
         std::vector<VkExtensionProperties> available (count);
-        vkEnumerateDeviceExtensionProperties (m_physical, nullptr, &count,
-                                              available.data ());
+        vkEnumerateDeviceExtensionProperties (
+          m_physical, nullptr, &count, available.data ());
         auto has = [&] (const char* name) {
-          return std::any_of (available.begin (), available.end (),
+          return std::any_of (available.begin (),
+                              available.end (),
                               [&] (const VkExtensionProperties& e) {
                                 return !std::strcmp (e.extensionName, name);
                               });
         };
-        if (!has (VK_EXT_PRESENT_TIMING_EXTENSION_NAME)
-            || !has (VK_KHR_PRESENT_ID_2_EXTENSION_NAME)
-            || !has (VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME))
+        if (!has (VK_EXT_PRESENT_TIMING_EXTENSION_NAME) ||
+            !has (VK_KHR_PRESENT_ID_2_EXTENSION_NAME) ||
+            !has (VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME))
           return false;
         VkPhysicalDevicePresentId2FeaturesKHR id2 {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR
+        };
         VkPhysicalDevicePresentTimingFeaturesEXT timing {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT
+        };
         timing.pNext = &id2;
         VkPhysicalDeviceFeatures2 features {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+        };
         features.pNext = &timing;
         vkGetPhysicalDeviceFeatures2 (m_physical, &features);
         if (!timing.presentTiming || !id2.presentId2)
@@ -1247,25 +1338,29 @@ namespace moppe::nhal {
 
         auto surface_capabilities =
           reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR> (
-            vkGetInstanceProcAddr (m_instance,
-                                   "vkGetPhysicalDeviceSurfaceCapabilities2KHR"));
+            vkGetInstanceProcAddr (
+              m_instance, "vkGetPhysicalDeviceSurfaceCapabilities2KHR"));
         if (!surface_capabilities)
           return false;
         VkSurfaceCapabilitiesPresentId2KHR surface_id2 {
-          VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR };
+          VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR
+        };
         VkPresentTimingSurfaceCapabilitiesEXT surface_timing {
-          VK_STRUCTURE_TYPE_PRESENT_TIMING_SURFACE_CAPABILITIES_EXT };
+          VK_STRUCTURE_TYPE_PRESENT_TIMING_SURFACE_CAPABILITIES_EXT
+        };
         surface_timing.pNext = &surface_id2;
         VkSurfaceCapabilities2KHR capabilities {
-          VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR };
+          VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR
+        };
         capabilities.pNext = &surface_timing;
         VkPhysicalDeviceSurfaceInfo2KHR info {
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR };
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR
+        };
         info.surface = m_surface;
-        if (surface_capabilities (m_physical, &info, &capabilities)
-              != VK_SUCCESS
-            || !surface_timing.presentTimingSupported
-            || !surface_id2.presentId2Supported)
+        if (surface_capabilities (m_physical, &info, &capabilities) !=
+              VK_SUCCESS ||
+            !surface_timing.presentTimingSupported ||
+            !surface_id2.presentId2Supported)
           return false;
         for (VkPresentStageFlagsEXT stage :
              { VkPresentStageFlagsEXT (
@@ -1287,24 +1382,26 @@ namespace moppe::nhal {
           return;
         if (!m_time_domain_ready) {
           VkSwapchainTimeDomainPropertiesEXT domains {
-            VK_STRUCTURE_TYPE_SWAPCHAIN_TIME_DOMAIN_PROPERTIES_EXT };
+            VK_STRUCTURE_TYPE_SWAPCHAIN_TIME_DOMAIN_PROPERTIES_EXT
+          };
           std::uint64_t counter = 0;
-          if (m_time_domains (m_device, m_swapchain, &domains, &counter)
-              == VK_NOT_READY)
+          if (m_time_domains (m_device, m_swapchain, &domains, &counter) ==
+              VK_NOT_READY)
             return;
           std::vector<VkTimeDomainKHR> kinds (domains.timeDomainCount);
           std::vector<std::uint64_t> ids (domains.timeDomainCount);
           domains.pTimeDomains = kinds.data ();
           domains.pTimeDomainIds = ids.data ();
-          if (m_time_domains (m_device, m_swapchain, &domains, &counter)
-              == VK_NOT_READY)
+          if (m_time_domains (m_device, m_swapchain, &domains, &counter) ==
+              VK_NOT_READY)
             return;
           m_time_domain_ready = true;
           for (VkTimeDomainKHR wanted :
                { VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR,
                  VK_TIME_DOMAIN_SWAPCHAIN_LOCAL_EXT,
                  VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT })
-            for (std::uint32_t i = 0; !m_monotonic && i < domains.timeDomainCount;
+            for (std::uint32_t i = 0;
+                 !m_monotonic && i < domains.timeDomainCount;
                  ++i)
               if (kinds[i] == wanted) {
                 m_time_domain = kinds[i];
@@ -1318,15 +1415,15 @@ namespace moppe::nhal {
         }
         if (m_monotonic && !m_refresh_known) {
           VkSwapchainTimingPropertiesEXT properties {
-            VK_STRUCTURE_TYPE_SWAPCHAIN_TIMING_PROPERTIES_EXT };
+            VK_STRUCTURE_TYPE_SWAPCHAIN_TIMING_PROPERTIES_EXT
+          };
           std::uint64_t counter = 0;
-          if (m_timing_properties (m_device, m_swapchain, &properties,
-                                   &counter)
-                == VK_SUCCESS
-              && properties.refreshDuration) {
+          if (m_timing_properties (
+                m_device, m_swapchain, &properties, &counter) == VK_SUCCESS &&
+              properties.refreshDuration) {
             m_refresh_known = true;
-            m_presentation.set_refresh (
-              double (properties.refreshDuration) * 1e-9);
+            m_presentation.set_refresh (double (properties.refreshDuration) *
+                                        1e-9);
           }
         }
       }
@@ -1336,12 +1433,14 @@ namespace moppe::nhal {
         if (!m_monotonic)
           return;
         VkPastPresentationTimingInfoEXT info {
-          VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_INFO_EXT };
+          VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_INFO_EXT
+        };
         info.swapchain = m_swapchain;
         VkPastPresentationTimingPropertiesEXT properties {
-          VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_PROPERTIES_EXT };
-        if (m_past_timing (m_device, &info, &properties) != VK_SUCCESS
-            || !properties.presentationTimingCount)
+          VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_PROPERTIES_EXT
+        };
+        if (m_past_timing (m_device, &info, &properties) != VK_SUCCESS ||
+            !properties.presentationTimingCount)
           return;
         const std::uint32_t count = properties.presentationTimingCount;
         std::vector<VkPastPresentationTimingEXT> timings (count);
@@ -1361,7 +1460,8 @@ namespace moppe::nhal {
         std::int64_t to_monotonic = 0;
         if (m_time_domain != VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR) {
           VkSwapchainCalibratedTimestampInfoEXT local {
-            VK_STRUCTURE_TYPE_SWAPCHAIN_CALIBRATED_TIMESTAMP_INFO_EXT };
+            VK_STRUCTURE_TYPE_SWAPCHAIN_CALIBRATED_TIMESTAMP_INFO_EXT
+          };
           local.swapchain = m_swapchain;
           local.presentStage =
             m_time_domain == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT
@@ -1376,23 +1476,22 @@ namespace moppe::nhal {
           clocks[1].timeDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR;
           std::array<std::uint64_t, 2> stamps {};
           std::uint64_t deviation = 0;
-          if (m_calibrate (m_device, 2, clocks.data (), stamps.data (),
-                           &deviation)
-              != VK_SUCCESS)
+          if (m_calibrate (
+                m_device, 2, clocks.data (), stamps.data (), &deviation) !=
+              VK_SUCCESS)
             return;
           to_monotonic = std::int64_t (stamps[1]) - std::int64_t (stamps[0]);
         }
         timespec monotonic {};
         clock_gettime (CLOCK_MONOTONIC, &monotonic);
-        const double offset = steady_seconds ()
-                              - (double (monotonic.tv_sec)
-                                 + double (monotonic.tv_nsec) * 1e-9);
-        for (std::uint32_t i = 0; i < properties.presentationTimingCount;
-             ++i) {
+        const double offset =
+          steady_seconds () -
+          (double (monotonic.tv_sec) + double (monotonic.tv_nsec) * 1e-9);
+        for (std::uint32_t i = 0; i < properties.presentationTimingCount; ++i) {
           const VkPastPresentationTimingEXT& t = timings[i];
-          if (!t.reportComplete || !t.presentStageCount
-              || t.timeDomain != m_time_domain
-              || t.timeDomainId != m_time_domain_id || !stages[i].time)
+          if (!t.reportComplete || !t.presentStageCount ||
+              t.timeDomain != m_time_domain ||
+              t.timeDomainId != m_time_domain_id || !stages[i].time)
             continue;
           const std::int64_t nanoseconds =
             std::int64_t (stages[i].time) + to_monotonic;
@@ -1403,52 +1502,58 @@ namespace moppe::nhal {
 
       void create_frames () {
         VkSemaphoreTypeCreateInfo timeline {
-          VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO
+        };
         timeline.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
         VkSemaphoreCreateInfo semaphore {
-          VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+        };
         semaphore.pNext = &timeline;
         check (vkCreateSemaphore (m_device, &semaphore, nullptr, &m_timeline),
                "timeline semaphore");
         VkCommandPoolCreateInfo pool {
-          VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+          VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO
+        };
         pool.queueFamilyIndex = m_family;
         for (Frame& frame : m_frames) {
           check (vkCreateCommandPool (m_device, &pool, nullptr, &frame.pool),
                  "command pool");
           VkCommandBufferAllocateInfo info {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
+          };
           info.commandPool = frame.pool;
           info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
           info.commandBufferCount = 1;
           check (vkAllocateCommandBuffers (m_device, &info, &frame.primary),
                  "command buffer");
           const VkSemaphoreCreateInfo binary {
-            VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-          check (vkCreateSemaphore (m_device, &binary, nullptr,
-                                    &frame.acquired),
-                 "semaphore");
-          frame.arena = make_buffer (
-            arena_capacity,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-              | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-              | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-              | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            Placement::upload);
+            VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+          };
+          check (
+            vkCreateSemaphore (m_device, &binary, nullptr, &frame.acquired),
+            "semaphore");
+          frame.arena = make_buffer (arena_capacity,
+                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     Placement::upload);
           VkQueryPoolCreateInfo queries {
-            VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+            VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO
+          };
           queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
           queries.queryCount = max_timestamps;
-          check (vkCreateQueryPool (m_device, &queries, nullptr,
-                                    &frame.queries),
-                 "query pool");
+          check (
+            vkCreateQueryPool (m_device, &queries, nullptr, &frame.queries),
+            "query pool");
         }
-        pool.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
-                     | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        pool.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
+                     VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         check (vkCreateCommandPool (m_device, &pool, nullptr, &m_setup_pool),
                "setup pool");
         VkCommandBufferAllocateInfo info {
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
+        };
         info.commandPool = m_setup_pool;
         info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         info.commandBufferCount = 1;
@@ -1464,8 +1569,8 @@ namespace moppe::nhal {
         for (std::uint32_t i = 0; i < standard_samplers; ++i) {
           VkSamplerCreateInfo s { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
           const bool nearest = i == 2;
-          s.magFilter = s.minFilter = nearest ? VK_FILTER_NEAREST
-                                              : VK_FILTER_LINEAR;
+          s.magFilter = s.minFilter =
+            nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
           s.mipmapMode = nearest ? VK_SAMPLER_MIPMAP_MODE_NEAREST
                                  : VK_SAMPLER_MIPMAP_MODE_LINEAR;
           s.addressModeU = s.addressModeV = s.addressModeW =
@@ -1481,15 +1586,16 @@ namespace moppe::nhal {
 
       void create_swapchain () {
         VkSurfaceCapabilitiesKHR caps;
-        check (vkGetPhysicalDeviceSurfaceCapabilitiesKHR (m_physical,
-                                                          m_surface, &caps),
+        check (vkGetPhysicalDeviceSurfaceCapabilitiesKHR (
+                 m_physical, m_surface, &caps),
                "surface capabilities");
         VkExtent2D extent { m_width, m_height };
         if (caps.currentExtent.width != 0xFFFFFFFFu)
           extent = caps.currentExtent;
-        extent.width = std::clamp (extent.width, caps.minImageExtent.width,
-                                   caps.maxImageExtent.width);
-        extent.height = std::clamp (extent.height, caps.minImageExtent.height,
+        extent.width = std::clamp (
+          extent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
+        extent.height = std::clamp (extent.height,
+                                    caps.minImageExtent.height,
                                     caps.maxImageExtent.height);
         m_stale = false;
         if (extent.width == 0 || extent.height == 0)
@@ -1498,11 +1604,11 @@ namespace moppe::nhal {
         m_height = extent.height;
 
         std::uint32_t count = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR (m_physical, m_surface, &count,
-                                              nullptr);
+        vkGetPhysicalDeviceSurfaceFormatsKHR (
+          m_physical, m_surface, &count, nullptr);
         std::vector<VkSurfaceFormatKHR> formats (count);
-        vkGetPhysicalDeviceSurfaceFormatsKHR (m_physical, m_surface, &count,
-                                              formats.data ());
+        vkGetPhysicalDeviceSurfaceFormatsKHR (
+          m_physical, m_surface, &count, formats.data ());
         // The surface format asked for, else an ordinary 8-bit one, in
         // the sRGB colour space the renderer's tonemap writes for.
         VkSurfaceFormatKHR format {};
@@ -1510,8 +1616,8 @@ namespace moppe::nhal {
         for (Format candidate :
              { m_surface_format, Format::bgra8_unorm, Format::rgba8_unorm })
           for (const auto& f : formats)
-            if (!found && f.format == vk_format (candidate)
-                && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            if (!found && f.format == vk_format (candidate) &&
+                f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
               format = f;
               m_surface_format = candidate;
               found = true;
@@ -1527,43 +1633,43 @@ namespace moppe::nhal {
           else if (wanted == "immediate")
             mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
           std::uint32_t modes = 0;
-          vkGetPhysicalDeviceSurfacePresentModesKHR (m_physical, m_surface,
-                                                     &modes, nullptr);
+          vkGetPhysicalDeviceSurfacePresentModesKHR (
+            m_physical, m_surface, &modes, nullptr);
           std::vector<VkPresentModeKHR> available (modes);
           vkGetPhysicalDeviceSurfacePresentModesKHR (
             m_physical, m_surface, &modes, available.data ());
-          if (std::find (available.begin (), available.end (), mode)
-              == available.end ())
+          if (std::find (available.begin (), available.end (), mode) ==
+              available.end ())
             mode = VK_PRESENT_MODE_FIFO_KHR;
         }
 
         VkSwapchainCreateInfoKHR info {
-          VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
+          VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR
+        };
         info.surface = m_surface;
         info.minImageCount = std::max (caps.minImageCount, frames_in_flight);
         if (caps.maxImageCount)
-          info.minImageCount = std::min (info.minImageCount,
-                                         caps.maxImageCount);
+          info.minImageCount =
+            std::min (info.minImageCount, caps.maxImageCount);
         info.imageFormat = format.format;
         info.imageColorSpace = format.colorSpace;
         info.imageExtent = extent;
         info.imageArrayLayers = 1;
-        info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                          | (caps.supportedUsageFlags
-                             & VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+        info.imageUsage =
+          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+          (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.preTransform = caps.currentTransform;
         info.compositeAlpha =
           (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
             ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-            : VkCompositeAlphaFlagBitsKHR (
-                caps.supportedCompositeAlpha
-                & -caps.supportedCompositeAlpha);
+            : VkCompositeAlphaFlagBitsKHR (caps.supportedCompositeAlpha &
+                                           -caps.supportedCompositeAlpha);
         info.presentMode = mode;
         info.clipped = VK_TRUE;
         if (m_present_stage)
-          info.flags |= VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR
-                        | VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT;
+          info.flags |= VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR |
+                        VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT;
         check (vkCreateSwapchainKHR (m_device, &info, nullptr, &m_swapchain),
                "vkCreateSwapchainKHR");
         if (m_present_stage) {
@@ -1575,18 +1681,20 @@ namespace moppe::nhal {
 
         vkGetSwapchainImagesKHR (m_device, m_swapchain, &count, nullptr);
         std::vector<VkImage> images (count);
-        vkGetSwapchainImagesKHR (m_device, m_swapchain, &count,
-                                 images.data ());
+        vkGetSwapchainImagesKHR (m_device, m_swapchain, &count, images.data ());
         for (VkImage image : images) {
           VkTextureRow t;
           t.image = image;
           t.view = make_view (image, format.format, false);
-          t.desc = { m_width, m_height, m_surface_format,
-                     usage_render_target, 1, "backbuffer" };
+          t.desc = {
+            m_width, m_height,    m_surface_format, usage_render_target,
+            1,       "backbuffer"
+          };
           t.swapchain = true;
           m_backbuffers.push_back (m_textures.insert<Texture> (t));
           const VkSemaphoreCreateInfo binary {
-            VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+            VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+          };
           VkSemaphore done;
           check (vkCreateSemaphore (m_device, &binary, nullptr, &done),
                  "semaphore");
@@ -1597,9 +1705,12 @@ namespace moppe::nhal {
       // Headless: the backbuffers are the device's own images.
       void create_offscreen_backbuffers () {
         for (std::uint32_t i = 0; i < frames_in_flight; ++i)
-          m_backbuffers.push_back (create_texture (
-            { m_width, m_height, m_surface_format, usage_render_target, 1,
-              "backbuffer" }));
+          m_backbuffers.push_back (create_texture ({ m_width,
+                                                     m_height,
+                                                     m_surface_format,
+                                                     usage_render_target,
+                                                     1,
+                                                     "backbuffer" }));
       }
 
       void destroy_backbuffers () {
@@ -1638,8 +1749,8 @@ namespace moppe::nhal {
         const VkMemoryPropertyFlags required =
           placement == Placement::device
             ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-            : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         // Upload memory the GPU reads in place prefers its own heap where
         // the CPU can reach it; readbacks prefer cached memory.
         const VkMemoryPropertyFlags preferred =
@@ -1652,8 +1763,8 @@ namespace moppe::nhal {
         for (VkMemoryPropertyFlags flags : { preferred, required }) {
           for (std::uint32_t i = 0; type < 0 && i < m_memory.memoryTypeCount;
                ++i)
-            if ((needs.memoryTypeBits & (1u << i))
-                && (m_memory.memoryTypes[i].propertyFlags & flags) == flags)
+            if ((needs.memoryTypeBits & (1u << i)) &&
+                (m_memory.memoryTypes[i].propertyFlags & flags) == flags)
               type = int (i);
           if (type >= 0)
             break;
@@ -1669,7 +1780,8 @@ namespace moppe::nhal {
         return memory;
       }
 
-      VkBufferRow make_buffer (VkDeviceSize size, VkBufferUsageFlags usage,
+      VkBufferRow make_buffer (VkDeviceSize size,
+                               VkBufferUsageFlags usage,
                                Placement placement) {
         VkBufferRow row;
         row.size = size;
@@ -1685,8 +1797,8 @@ namespace moppe::nhal {
         check (vkBindBufferMemory (m_device, row.buffer, row.memory, 0),
                "bind buffer memory");
         if (placement != Placement::device)
-          check (vkMapMemory (m_device, row.memory, 0, VK_WHOLE_SIZE, 0,
-                              &row.mapped),
+          check (vkMapMemory (
+                   m_device, row.memory, 0, VK_WHOLE_SIZE, 0, &row.mapped),
                  "map buffer");
         return row;
       }
@@ -1714,7 +1826,10 @@ namespace moppe::nhal {
         info.format = format;
         info.subresourceRange = { depth ? VK_IMAGE_ASPECT_DEPTH_BIT
                                         : VK_IMAGE_ASPECT_COLOR_BIT,
-                                  0, 1, 0, 1 };
+                                  0,
+                                  1,
+                                  0,
+                                  1 };
         VkImageView view;
         check (vkCreateImageView (m_device, &info, nullptr, &view),
                "image view");
@@ -1731,7 +1846,8 @@ namespace moppe::nhal {
       VkCommandBuffer begin_setup () {
         check (vkResetCommandBuffer (m_setup, 0), "reset setup");
         VkCommandBufferBeginInfo begin {
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+        };
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         check (vkBeginCommandBuffer (m_setup, &begin), "begin setup");
         return m_setup;
@@ -1746,7 +1862,10 @@ namespace moppe::nhal {
         submit.pCommandBuffers = &m_setup;
         check (vkQueueSubmit (m_queue, 1, &submit, m_setup_fence),
                "setup submit");
-        check (vkWaitForFences (m_device, 1, &m_setup_fence, VK_TRUE,
+        check (vkWaitForFences (m_device,
+                                1,
+                                &m_setup_fence,
+                                VK_TRUE,
                                 std::numeric_limits<std::uint64_t>::max ()),
                "setup wait");
         vkResetFences (m_device, 1, &m_setup_fence);
@@ -1773,20 +1892,22 @@ namespace moppe::nhal {
           bindings.push_back (b);
         }
         VkDescriptorSetLayoutCreateInfo set {
-          VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+          VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+        };
         set.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
         set.bindingCount = std::uint32_t (bindings.size ());
         set.pBindings = bindings.data ();
-        check (vkCreateDescriptorSetLayout (m_device, &set, nullptr,
-                                            &layout->set),
-               "descriptor set layout");
+        check (
+          vkCreateDescriptorSetLayout (m_device, &set, nullptr, &layout->set),
+          "descriptor set layout");
         VkPipelineLayoutCreateInfo info {
-          VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
+        };
         info.setLayoutCount = 1;
         info.pSetLayouts = &layout->set;
-        check (vkCreatePipelineLayout (m_device, &info, nullptr,
-                                       &layout->pipeline),
-               "pipeline layout");
+        check (
+          vkCreatePipelineLayout (m_device, &info, nullptr, &layout->pipeline),
+          "pipeline layout");
         cached = std::move (layout);
         return *cached;
       }
@@ -1795,10 +1916,11 @@ namespace moppe::nhal {
                                     const Program* program,
                                     const char* stage) {
         if (code.spirv.empty ())
-          throw std::runtime_error (std::string ("NHAL: ") + program->name
-                                    + " has no SPIR-V " + stage + " stage");
+          throw std::runtime_error (std::string ("NHAL: ") + program->name +
+                                    " has no SPIR-V " + stage + " stage");
         VkShaderModuleCreateInfo info {
-          VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
+        };
         info.codeSize = code.spirv.size_bytes ();
         info.pCode = code.spirv.data ();
         VkShaderModule module;
@@ -1807,11 +1929,11 @@ namespace moppe::nhal {
         return module;
       }
 
-      static VkPipelineShaderStageCreateInfo
-      stage_info (VkShaderStageFlagBits stage, VkShaderModule module,
-                  const char* entry) {
+      static VkPipelineShaderStageCreateInfo stage_info (
+        VkShaderStageFlagBits stage, VkShaderModule module, const char* entry) {
         VkPipelineShaderStageCreateInfo info {
-          VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+          VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO
+        };
         info.stage = stage;
         info.module = module;
         info.pName = entry;
@@ -1825,8 +1947,8 @@ namespace moppe::nhal {
 
       bool attached (Texture handle) const {
         for (std::uint32_t i = 0; i < m_pass.color_count; ++i)
-          if (m_pass.colors[i].texture == handle
-              || m_pass.colors[i].resolve == handle)
+          if (m_pass.colors[i].texture == handle ||
+              m_pass.colors[i].resolve == handle)
             return true;
         return m_pass.depth.texture == handle;
       }
@@ -1881,8 +2003,8 @@ namespace moppe::nhal {
           }
         }
         if (count)
-          m_push_descriptors (m_cb, point, layout.pipeline, 0, count,
-                              writes.data ());
+          m_push_descriptors (
+            m_cb, point, layout.pipeline, 0, count, writes.data ());
       }
 
       // The view a binding reads through, after noting its layout. In a
@@ -1894,8 +2016,7 @@ namespace moppe::nhal {
           if (attached (handle)) {
             if (!t.warned) {
               t.warned = true;
-              std::cerr << "NHAL: " << m_pipeline->name
-                        << " binds attachment "
+              std::cerr << "NHAL: " << m_pipeline->name << " binds attachment "
                         << (t.desc.label ? t.desc.label : "(unnamed)")
                         << std::endl;
             }
@@ -1920,10 +2041,11 @@ namespace moppe::nhal {
       }
 
       void set_index_buffer (Buffer indices, IndexType type) {
-        vkCmdBindIndexBuffer (m_cb, m_buffers[indices].buffer, 0,
-                              type == IndexType::uint16
-                                ? VK_INDEX_TYPE_UINT16
-                                : VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer (m_cb,
+                              m_buffers[indices].buffer,
+                              0,
+                              type == IndexType::uint16 ? VK_INDEX_TYPE_UINT16
+                                                        : VK_INDEX_TYPE_UINT32);
       }
 
       // A full memory barrier on `cb`, with the image layout changes
@@ -1939,8 +2061,8 @@ namespace moppe::nhal {
           b.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
           b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
           b.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-          b.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT
-                            | VK_ACCESS_2_MEMORY_WRITE_BIT;
+          b.dstAccessMask =
+            VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
           b.oldLayout = t.discard ? VK_IMAGE_LAYOUT_UNDEFINED : row.layout;
           b.newLayout = t.layout;
           b.srcQueueFamilyIndex = b.dstQueueFamilyIndex =
@@ -1949,7 +2071,10 @@ namespace moppe::nhal {
           b.subresourceRange = { is_depth (row.desc.format)
                                    ? VK_IMAGE_ASPECT_DEPTH_BIT
                                    : VK_IMAGE_ASPECT_COLOR_BIT,
-                                 0, 1, 0, 1 };
+                                 0,
+                                 1,
+                                 0,
+                                 1 };
           images.push_back (b);
           row.layout = t.layout;
         }
@@ -1957,8 +2082,8 @@ namespace moppe::nhal {
         memory.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         memory.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
         memory.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        memory.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT
-                               | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        memory.dstAccessMask =
+          VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
         VkDependencyInfo info { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
         info.memoryBarrierCount = 1;
         info.pMemoryBarriers = &memory;
@@ -1969,8 +2094,9 @@ namespace moppe::nhal {
 
       void barrier (VkCommandBuffer cb,
                     std::initializer_list<Transition> transitions) {
-        barrier (cb, std::span<const Transition> (transitions.begin (),
-                                                  transitions.size ()));
+        barrier (cb,
+                 std::span<const Transition> (transitions.begin (),
+                                              transitions.size ()));
       }
 
       // -- timings, captures, and retirement ---------------------------
@@ -1980,31 +2106,38 @@ namespace moppe::nhal {
         if (frame.timestamps + 2 > max_timestamps)
           return;
         frame.labels.emplace_back (label);
-        vkCmdWriteTimestamp2 (m_cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                              frame.queries, frame.timestamps++);
+        vkCmdWriteTimestamp2 (m_cb,
+                              VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                              frame.queries,
+                              frame.timestamps++);
       }
 
       void timestamp_end () {
         Frame& frame = m_frames[m_slot];
-        if (frame.timestamps >= max_timestamps
-            || frame.timestamps >= 2 * frame.labels.size ())
+        if (frame.timestamps >= max_timestamps ||
+            frame.timestamps >= 2 * frame.labels.size ())
           return;
-        vkCmdWriteTimestamp2 (m_cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                              frame.queries, frame.timestamps++);
+        vkCmdWriteTimestamp2 (m_cb,
+                              VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                              frame.queries,
+                              frame.timestamps++);
       }
 
       void resolve_timings (std::uint64_t completed) {
         for (Frame& frame : m_frames) {
-          if (frame.resolved || frame.serial > completed
-              || frame.timestamps < 2)
+          if (frame.resolved || frame.serial > completed ||
+              frame.timestamps < 2)
             continue;
           frame.resolved = true;
           std::array<std::uint64_t, max_timestamps> ticks {};
-          if (vkGetQueryPoolResults (m_device, frame.queries, 0,
-                                     frame.timestamps, sizeof ticks,
-                                     ticks.data (), sizeof (std::uint64_t),
-                                     VK_QUERY_RESULT_64_BIT)
-              != VK_SUCCESS)
+          if (vkGetQueryPoolResults (m_device,
+                                     frame.queries,
+                                     0,
+                                     frame.timestamps,
+                                     sizeof ticks,
+                                     ticks.data (),
+                                     sizeof (std::uint64_t),
+                                     VK_QUERY_RESULT_64_BIT) != VK_SUCCESS)
             continue;
           const std::uint64_t mask =
             m_timestamp_bits >= 64 ? ~0ull : (1ull << m_timestamp_bits) - 1;
@@ -2020,20 +2153,25 @@ namespace moppe::nhal {
         PendingCapture pending;
         const std::uint32_t row_bytes =
           back.desc.width * bytes_per_pixel (back.desc.format);
-        pending.readback = make_buffer (
-          VkDeviceSize (row_bytes) * back.desc.height,
-          VK_BUFFER_USAGE_TRANSFER_DST_BIT, Placement::readback);
-        barrier (m_cb, { { &back, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                               false } });
+        pending.readback =
+          make_buffer (VkDeviceSize (row_bytes) * back.desc.height,
+                       VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                       Placement::readback);
+        barrier (m_cb,
+                 { { &back, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, false } });
         VkBufferImageCopy region {};
         region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
         region.imageExtent = { back.desc.width, back.desc.height, 1 };
-        vkCmdCopyImageToBuffer (m_cb, back.image,
+        vkCmdCopyImageToBuffer (m_cb,
+                                back.image,
                                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                pending.readback.buffer, 1, &region);
+                                pending.readback.buffer,
+                                1,
+                                &region);
         pending.serial = m_serial;
-        pending.capture = { back.desc.width, back.desc.height,
-                            back.desc.format, row_bytes, {} };
+        pending.capture = {
+          back.desc.width, back.desc.height, back.desc.format, row_bytes, {}
+        };
         pending.done = std::move (m_capture_request);
         m_capture_request = nullptr;
         m_captures.push_back (std::move (pending));
@@ -2057,10 +2195,10 @@ namespace moppe::nhal {
           vkWaitSemaphores (m_device, &info, 5'000'000'000ull);
         if (result == VK_SUCCESS)
           return;
-        throw std::runtime_error (
-          "NHAL: frame " + std::to_string (value)
-          + " did not complete (GPU completed " + std::to_string (completed ())
-          + ", result " + std::to_string (int (result)) + ")");
+        throw std::runtime_error ("NHAL: frame " + std::to_string (value) +
+                                  " did not complete (GPU completed " +
+                                  std::to_string (completed ()) + ", result " +
+                                  std::to_string (int (result)) + ")");
       }
 
       void collect () {
@@ -2074,7 +2212,8 @@ namespace moppe::nhal {
           }
           it->capture.pixels = {
             static_cast<const std::byte*> (it->readback.mapped),
-            std::size_t (it->capture.row_bytes) * it->capture.height };
+            std::size_t (it->capture.row_bytes) * it->capture.height
+          };
           it->done (it->capture);
           release (it->readback);
           it = m_captures.erase (it);
@@ -2106,7 +2245,8 @@ namespace moppe::nhal {
         if (!m_set_name || !label)
           return;
         VkDebugUtilsObjectNameInfoEXT info {
-          VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT };
+          VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT
+        };
         info.objectType = type;
         info.objectHandle = handle;
         info.pObjectName = label;
@@ -2191,7 +2331,7 @@ namespace moppe::nhal {
 #ifdef MOPPE_VULKAN_DYNAMIC
     check (volkInitialize (), "load host Vulkan loader");
 #endif
-    return std::make_unique<VulkanDevice> (surface, width, height,
-                                           surface_format);
+    return std::make_unique<VulkanDevice> (
+      surface, width, height, surface_format);
   }
 }

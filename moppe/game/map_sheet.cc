@@ -124,8 +124,8 @@ namespace moppe::game {
     }
 
     // A mark's symbol at (x, y), `s` times its size on the sheet.
-    void symbol (
-      render::DrawList& dl, const Mark& mark, float x, float y, float s) {
+    void
+    symbol (render::DrawList& dl, const Mark& mark, float x, float y, float s) {
       Vec3 way (mark.heading[0], 0.0f, mark.heading[2]);
       way = length2 (way) > 1e-6f ? normalized (way) : Vec3 (0, 0, -1);
       const float dx = way[0], dy = way[2];
@@ -134,12 +134,8 @@ namespace moppe::game {
       case Mark::Kind::Companion: {
         const float size = (mark.kind == Mark::Kind::Walker ? 11.0f : 9.0f) * s;
         dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        arrow (dl,
-               x - dx * 0.8f * s,
-               y - dy * 0.8f * s,
-               dx,
-               dy,
-               size + 4.0f * s);
+        arrow (
+          dl, x - dx * 0.8f * s, y - dy * 0.8f * s, dx, dy, size + 4.0f * s);
         dl.color (mark.colour, 1.0f);
         arrow (dl, x, y, dx, dy, size);
         break;
@@ -421,10 +417,9 @@ namespace moppe::game {
       if (place (mark.position, x, y))
         placed.push_back ({ x, y, &mark });
     }
-    std::ranges::stable_sort (
-      placed, std::greater<> {}, [] (const Placed& p) {
-        return rank (p.mark->kind);
-      });
+    std::ranges::stable_sort (placed, std::greater<> {}, [] (const Placed& p) {
+      return rank (p.mark->kind);
+    });
     std::vector<Box> symbols;
     for (const Placed& p : placed) {
       symbol (dl, *p.mark, p.x, p.y, 1.0f);
@@ -486,8 +481,9 @@ namespace moppe::game {
     const auto meets = [] (const Box& a, const Box& b) {
       return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
     };
-    const Box sheet { map_x + 2.0f, map_y + 2.0f, map_x + side - 2.0f,
-                      map_y + side - 2.0f };
+    const Box sheet {
+      map_x + 2.0f, map_y + 2.0f, map_x + side - 2.0f, map_y + side - 2.0f
+    };
     std::vector<Box> set;
     for (const auto& group : groups) {
       const bool list = group.size () > 1;
@@ -495,8 +491,8 @@ namespace moppe::game {
       const float indent = list ? 12.0f : 0.0f;
       float w = 0.0f;
       for (std::size_t i : group)
-        w = std::max (w, font->measure (placed[i].mark->name,
-                                        words_of (*placed[i].mark)));
+        w = std::max (
+          w, font->measure (placed[i].mark->name, words_of (*placed[i].mark)));
       w += indent;
       const float h = line * static_cast<float> (group.size ()) - 1.0f;
       Box around { 1e9f, 1e9f, -1e9f, -1e9f };
@@ -526,8 +522,9 @@ namespace moppe::game {
         } };
         for (std::size_t k = 0; k < corners.size (); ++k) {
           const auto [left, top] = corners[k];
-          const Box box { left - 1.0f, top - 1.0f, left + w + 1.0f,
-                          top + h + 1.0f };
+          const Box box {
+            left - 1.0f, top - 1.0f, left + w + 1.0f, top + h + 1.0f
+          };
           if (box[0] < sheet[0] || box[2] > sheet[2] || box[1] < sheet[1] ||
               box[3] > sheet[3])
             continue;
@@ -540,8 +537,9 @@ namespace moppe::game {
             if (meets (box, other))
               here += 1000.0f;
           for (const Top& top : tops)
-            if (meets (box, { top.x - 2.0f, top.y - 2.0f, top.x + 24.0f,
-                              top.y + 5.0f }))
+            if (meets (
+                  box,
+                  { top.x - 2.0f, top.y - 2.0f, top.x + 24.0f, top.y + 5.0f }))
               here += 30.0f;
           if (here < cost) {
             cost = here;
@@ -562,9 +560,8 @@ namespace moppe::game {
         const float ly = std::clamp (cy, best[1], best[3]);
         const float dx = lx - cx, dy = ly - cy;
         const float n = std::max (1e-3f, std::hypot (dx, dy));
-        const float r = 0.5f * std::max (around[2] - around[0],
-                                         around[3] - around[1]) +
-                        1.5f;
+        const float r =
+          0.5f * std::max (around[2] - around[0], around[3] - around[1]) + 1.5f;
         dl.color (map_paper, 0.8f);
         dl.line (cx + dx / n * r, cy + dy / n * r, lx, ly, 2.4f);
         dl.color (map_ink, 0.75f);
@@ -592,24 +589,25 @@ namespace moppe::game {
                  words,
                  TextAlign::Right);
         else
-          label (text, *font, best[0] + 1.0f + indent, baseline, mark.name,
-                 words);
+          label (
+            text, *font, best[0] + 1.0f + indent, baseline, mark.name, words);
         baseline += line;
       }
     }
 
     // The heights of tops, where they are clear of the names and marks.
     for (const Top& top : tops) {
-      const Box box { top.x + 3.5f, top.y - 6.5f, top.x + 24.0f,
-                      top.y + 5.0f };
-      if (std::ranges::any_of (set, [&] (const Box& b) {
-            return meets (box, b);
-          }) ||
-          std::ranges::any_of (symbols, [&] (const Box& b) {
-            return meets (box, b);
-          }))
+      const Box box { top.x + 3.5f, top.y - 6.5f, top.x + 24.0f, top.y + 5.0f };
+      if (std::ranges::any_of (set,
+                               [&] (const Box& b) { return meets (box, b); }) ||
+          std::ranges::any_of (symbols,
+                               [&] (const Box& b) { return meets (box, b); }))
         continue;
-      label (text, *font, top.x + 4.5f, top.y + 3.4f, top.words,
+      label (text,
+             *font,
+             top.x + 4.5f,
+             top.y + 3.4f,
+             top.words,
              style (10.5f, height_ink));
     }
 

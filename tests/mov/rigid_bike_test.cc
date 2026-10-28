@@ -306,9 +306,8 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
     bike.update (tick);
   // Standing on its own wheels, life size.
   MOPPE_CHECK (bike.grounded ());
-  MOPPE_CHECK_NEAR (bike.position ()[1],
-                    10.0f + mov::mountain_bike_rig.ride_height (),
-                    0.02f);
+  MOPPE_CHECK_NEAR (
+    bike.position ()[1], 10.0f + mov::mountain_bike_rig.ride_height (), 0.02f);
 
   // Pedalled flat out, a cyclist's pace on the flat, the crank going
   // round; freewheeling, the crank stands still.
@@ -375,9 +374,8 @@ MOPPE_TEST (the_long_john_stands_level_on_its_odd_wheels_and_is_pedalled) {
   // The 20-inch front wheel and the 26-inch rear both on the ground, the
   // frame level rather than nosed down onto the smaller one.
   MOPPE_CHECK (bike.grounded ());
-  MOPPE_CHECK_NEAR (bike.position ()[1],
-                    10.0f + mov::long_john_rig.ride_height (),
-                    0.02f);
+  MOPPE_CHECK_NEAR (
+    bike.position ()[1], 10.0f + mov::long_john_rig.ride_height (), 0.02f);
   MOPPE_CHECK_NEAR (bike.orientation ()[1], 0.0f, 0.005f);
 
   // Pedalled flat out with the motor's help, a loaded cargo bike's pace,
@@ -459,8 +457,8 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
     MOPPE_CHECK (bike.wheeling ());
     low = std::min (low, pitch_of (bike));
     high = std::max (high, pitch_of (bike));
-    upright = std::min (upright, std::abs (dot (Vec3 (1, 0, 0),
-                                                bike.render_normal ())));
+    upright = std::min (upright,
+                        std::abs (dot (Vec3 (1, 0, 0), bike.render_normal ())));
     lean = std::max (lean, bike.rider_lean ());
     metres += length (bike.position () - last);
     last = bike.position ();

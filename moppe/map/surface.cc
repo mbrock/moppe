@@ -298,13 +298,13 @@ namespace moppe::map {
                       const terrain::DrainageGraph& drainage,
                       const terrain::RoadFormation& parameters) {
     MOPPE_PROFILE_ZONE ("terrain.form_roads");
-    terrain::RoadFormationResult result = terrain::form_roads (
-      surface.domain (),
-      spatial::get<terrain::surface_elevation> (surface),
-      roads,
-      flood,
-      drainage,
-      parameters);
+    terrain::RoadFormationResult result =
+      terrain::form_roads (surface.domain (),
+                           spatial::get<terrain::surface_elevation> (surface),
+                           roads,
+                           flood,
+                           drainage,
+                           parameters);
     const terrain::TerrainDomain& domain = surface.domain ();
     for (const terrain::TerrainIndex site : spatial::sites (surface)) {
       const std::size_t offset = domain.offset (site);

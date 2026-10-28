@@ -54,7 +54,8 @@ namespace moppe::nhal {
 
   constexpr std::uint32_t bytes_per_pixel (Format format) {
     switch (format) {
-    case Format::undefined: return 0;
+    case Format::undefined:
+      return 0;
     case Format::rgba8_unorm:
     case Format::rgba8_unorm_srgb:
     case Format::bgra8_unorm:
@@ -64,12 +65,17 @@ namespace moppe::nhal {
     case Format::rg16_snorm:
     case Format::r32_float:
     case Format::r32_uint:
-    case Format::d32_float: return 4;
-    case Format::r16_float: return 2;
-    case Format::r8_unorm: return 1;
+    case Format::d32_float:
+      return 4;
+    case Format::r16_float:
+      return 2;
+    case Format::r8_unorm:
+      return 1;
     case Format::rgba16_float:
-    case Format::rg32_float: return 8;
-    case Format::rgba32_float: return 16;
+    case Format::rg32_float:
+      return 8;
+    case Format::rgba32_float:
+      return 16;
     }
     return 0;
   }
@@ -125,7 +131,9 @@ namespace moppe::nhal {
   struct Handle {
     std::uint32_t index = 0;
     std::uint32_t generation = 0;
-    explicit operator bool () const { return generation != 0; }
+    explicit operator bool () const {
+      return generation != 0;
+    }
     bool operator== (const Handle&) const = default;
   };
   struct Buffer : Handle {};
@@ -144,7 +152,14 @@ namespace moppe::nhal {
   };
 
   enum class CompareOp : std::uint8_t {
-    never, less, equal, less_equal, greater, not_equal, greater_equal, always
+    never,
+    less,
+    equal,
+    less_equal,
+    greater,
+    not_equal,
+    greater_equal,
+    always
   };
   // Alpha: source alpha over one minus it. Additive: source alpha onto
   // what is there, a glow that sums toward white. Premultiplied: the source
@@ -152,8 +167,11 @@ namespace moppe::nhal {
   // reflects while covering only what it fails to transmit.
   enum class Blend : std::uint8_t { none, alpha, additive, premultiplied };
   enum class Cull : std::uint8_t { none, back, front };
-  enum class Topology : std::uint8_t { triangle_list, triangle_strip,
-                                       line_list };
+  enum class Topology : std::uint8_t {
+    triangle_list,
+    triangle_strip,
+    line_list
+  };
 
   struct RenderPipelineDesc {
     const Program* program = nullptr;
@@ -191,7 +209,7 @@ namespace moppe::nhal {
     Texture texture;
     Load load = Load::clear;
     Store store = Store::store;
-    std::array<float, 4> clear {0, 0, 0, 1};
+    std::array<float, 4> clear { 0, 0, 0, 1 };
     // Resolves a multisampled attachment into this single-sampled one.
     Texture resolve;
   };
@@ -264,8 +282,7 @@ namespace moppe::nhal {
 
     // -- resources ----------------------------------------------------
     virtual Buffer create_buffer (const BufferDesc& desc,
-                                  std::span<const std::byte> initial = {})
-      = 0;
+                                  std::span<const std::byte> initial = {}) = 0;
     // Upload buffers only: the CPU address, valid for the buffer's life.
     virtual void* contents (Buffer buffer) = 0;
     virtual Texture create_texture (const TextureDesc& desc) = 0;
@@ -273,12 +290,11 @@ namespace moppe::nhal {
     // row_bytes says otherwise. Completes before the next frame's work.
     virtual void write_texture (Texture texture,
                                 std::span<const std::byte> pixels,
-                                std::uint32_t row_bytes = 0)
-      = 0;
-    virtual Pipeline create_render_pipeline (const RenderPipelineDesc& desc)
-      = 0;
-    virtual Pipeline create_compute_pipeline (const ComputePipelineDesc& desc)
-      = 0;
+                                std::uint32_t row_bytes = 0) = 0;
+    virtual Pipeline
+    create_render_pipeline (const RenderPipelineDesc& desc) = 0;
+    virtual Pipeline
+    create_compute_pipeline (const ComputePipelineDesc& desc) = 0;
     virtual void destroy (Buffer buffer) = 0;
     virtual void destroy (Texture texture) = 0;
     virtual void destroy (Pipeline pipeline) = 0;
@@ -287,13 +303,14 @@ namespace moppe::nhal {
     virtual Format surface_format () const = 0;
     virtual std::uint32_t surface_width () const = 0;
     virtual std::uint32_t surface_height () const = 0;
-    virtual void resize_surface (std::uint32_t width, std::uint32_t height)
-      = 0;
+    virtual void resize_surface (std::uint32_t width, std::uint32_t height) = 0;
 
     // A host pacing frames by a display link offers the next frame's
     // drawable (a CAMetalDrawable on Metal); devices that acquire their own
     // ignore it.
-    virtual void offer_drawable (void* drawable) { (void)drawable; }
+    virtual void offer_drawable (void* drawable) {
+      (void)drawable;
+    }
 
     // -- a frame ------------------------------------------------------
     // Waits for the frame slot and the next drawable. False means there
@@ -302,8 +319,7 @@ namespace moppe::nhal {
     // This frame's drawable, valid until end_frame.
     virtual Texture backbuffer () = 0;
     virtual Transient allocate (std::uint64_t size,
-                                std::uint64_t alignment = 256)
-      = 0;
+                                std::uint64_t alignment = 256) = 0;
 
     virtual void begin_render_pass (const RenderPassDesc& desc) = 0;
     virtual void end_render_pass () = 0;
@@ -312,52 +328,46 @@ namespace moppe::nhal {
     virtual void end_compute_pass () = 0;
     // Outside any pass: copies bytes from the frame arena into a buffer,
     // ordered before the work that follows.
-    virtual void copy_to_buffer (Buffer target, std::uint64_t offset,
-                                 const Transient& source)
-      = 0;
+    virtual void copy_to_buffer (Buffer target,
+                                 std::uint64_t offset,
+                                 const Transient& source) = 0;
     virtual void set_pipeline (Pipeline pipeline) = 0;
     // WebGPU binds buffers only from multiples of 256 bytes.
-    virtual void set_buffer (std::uint32_t binding, Buffer buffer,
-                             std::uint64_t offset = 0)
-      = 0;
-    virtual void set_buffer (std::uint32_t binding, const Transient& slice)
-      = 0;
+    virtual void set_buffer (std::uint32_t binding,
+                             Buffer buffer,
+                             std::uint64_t offset = 0) = 0;
+    virtual void set_buffer (std::uint32_t binding, const Transient& slice) = 0;
     virtual void set_texture (std::uint32_t binding, Texture texture) = 0;
-    virtual void set_storage_texture (std::uint32_t binding, Texture texture)
-      = 0;
-    virtual void set_viewport (float x, float y, float width, float height)
-      = 0;
+    virtual void set_storage_texture (std::uint32_t binding,
+                                      Texture texture) = 0;
+    virtual void set_viewport (float x, float y, float width, float height) = 0;
     virtual void draw (std::uint32_t vertex_count,
                        std::uint32_t instance_count = 1,
                        std::uint32_t first_vertex = 0,
-                       std::uint32_t first_instance = 0)
-      = 0;
-    virtual void draw_indexed (Buffer indices, IndexType type,
+                       std::uint32_t first_instance = 0) = 0;
+    virtual void draw_indexed (Buffer indices,
+                               IndexType type,
                                std::uint32_t index_count,
                                std::uint32_t instance_count = 1,
                                std::uint32_t first_index = 0,
                                std::int32_t base_vertex = 0,
-                               std::uint32_t first_instance = 0)
-      = 0;
+                               std::uint32_t first_instance = 0) = 0;
     // Arguments come from a buffer made with buffer_indirect, often
     // written by an earlier compute pass.
-    virtual void draw_indirect (Buffer arguments, std::uint64_t offset = 0)
-      = 0;
-    virtual void draw_indexed_indirect (Buffer indices, IndexType type,
+    virtual void draw_indirect (Buffer arguments, std::uint64_t offset = 0) = 0;
+    virtual void draw_indexed_indirect (Buffer indices,
+                                        IndexType type,
                                         Buffer arguments,
-                                        std::uint64_t offset = 0)
-      = 0;
-    virtual void dispatch (std::uint32_t groups_x, std::uint32_t groups_y = 1,
-                           std::uint32_t groups_z = 1)
-      = 0;
+                                        std::uint64_t offset = 0) = 0;
+    virtual void dispatch (std::uint32_t groups_x,
+                           std::uint32_t groups_y = 1,
+                           std::uint32_t groups_z = 1) = 0;
     virtual void dispatch_indirect (Buffer arguments,
-                                    std::uint64_t offset = 0)
-      = 0;
+                                    std::uint64_t offset = 0) = 0;
 
     // Reads this frame's drawable back once the frame completes. `done`
     // runs on the rendering thread, in a later begin_frame or wait_idle.
-    virtual void capture_frame (std::function<void (const Capture&)> done)
-      = 0;
+    virtual void capture_frame (std::function<void (const Capture&)> done) = 0;
 
     // The passes of the most recently completed frame, in encoding order,
     // by their labels; the GPU's timestamps around each pass.
@@ -367,7 +377,9 @@ namespace moppe::nhal {
     // the presentations the device has observed (presentation.hh). A host
     // steps its simulation by the difference between consecutive
     // predictions.
-    virtual FrameTiming next_frame_timing () const { return {}; }
+    virtual FrameTiming next_frame_timing () const {
+      return {};
+    }
 
     // Submits the frame and presents its drawable.
     virtual void end_frame () = 0;

@@ -24,12 +24,12 @@ namespace moppe::platform::sdl {
     surface.create = [window] (VkInstance instance) {
       VkSurfaceKHR made = VK_NULL_HANDLE;
       if (!SDL_Vulkan_CreateSurface (window, instance, nullptr, &made))
-        throw std::runtime_error (std::string ("SDL_Vulkan_CreateSurface: ")
-                                  + SDL_GetError ());
+        throw std::runtime_error (std::string ("SDL_Vulkan_CreateSurface: ") +
+                                  SDL_GetError ());
       return made;
     };
-    return nhal::create_vulkan_device (surface, width, height,
-                                       nhal::Format::bgra8_unorm);
+    return nhal::create_vulkan_device (
+      surface, width, height, nhal::Format::bgra8_unorm);
   }
 
   const nhal::WorldShaders& world_shaders () {

@@ -10,184 +10,244 @@ namespace moppe::nhal {
     // #embed cannot sit in a macro; each stage is spelled out.
     const char road_ribbon_vertex[] = {
 #embed "road_ribbon.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char road_ribbon_fragment[] = {
 #embed "road_ribbon.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char terrain_vertex[] = {
 #embed "terrain.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char terrain_fragment[] = {
 #embed "terrain.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char sky_vertex[] = {
 #embed "sky.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char sky_fragment[] = {
 #embed "sky.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char uber_vertex[] = {
 #embed "uber.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char uber_fragment[] = {
 #embed "uber.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char hud_vertex[] = {
 #embed "hud.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char hud_fragment[] = {
 #embed "hud.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char resolve_vertex[] = {
 #embed "resolve.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char resolve_fragment[] = {
 #embed "resolve.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char present_vertex[] = {
 #embed "present.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char present_fragment[] = {
 #embed "present.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char slug_text_vertex[] = {
 #embed "slug_text.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char slug_text_fragment[] = {
 #embed "slug_text.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char forest_vertex[] = {
 #embed "forest.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char forest_fragment[] = {
 #embed "forest.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char forest_cull_compute[] = {
 #embed "forest_cull.compute.metal"
-      , 0 };
+      , 0
+    };
     const char exposure_compute[] = {
 #embed "exposure.compute.metal"
-      , 0 };
+      , 0
+    };
     const char terrain_shadow_vertex[] = {
 #embed "terrain_shadow.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char forest_shadow_vertex[] = {
 #embed "forest_shadow.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char forest_far_shadow_vertex[] = {
 #embed "forest_far_shadow.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char bloom_bright_vertex[] = {
 #embed "bloom_bright.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char bloom_bright_fragment[] = {
 #embed "bloom_bright.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char bloom_blur_vertex[] = {
 #embed "bloom_blur.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char bloom_blur_fragment[] = {
 #embed "bloom_blur.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char grass_vertex[] = {
 #embed "grass.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char grass_fragment[] = {
 #embed "grass.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char grass_tiles_compute[] = {
 #embed "grass_tiles.compute.metal"
-      , 0 };
+      , 0
+    };
     const char sward_vertex[] = {
 #embed "sward.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char sward_fragment[] = {
 #embed "sward.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char sward_patches_compute[] = {
 #embed "sward_patches.compute.metal"
-      , 0 };
+      , 0
+    };
     const char gtao_vertex[] = {
 #embed "gtao.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char gtao_fragment[] = {
 #embed "gtao.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char gtao_blur_vertex[] = {
 #embed "gtao_blur.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char gtao_blur_fragment[] = {
 #embed "gtao_blur.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char shafts_vertex[] = {
 #embed "shafts.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char shafts_fragment[] = {
 #embed "shafts.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char boulders_vertex[] = {
 #embed "boulders.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char boulders_fragment[] = {
 #embed "boulders.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char boulders_shadow_vertex[] = {
 #embed "boulders_shadow.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char mesh_shadow_vertex[] = {
 #embed "mesh_shadow.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char boulder_cull_compute[] = {
 #embed "boulder_cull.compute.metal"
-      , 0 };
+      , 0
+    };
     const char rain_vertex[] = {
 #embed "rain.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char rain_fragment[] = {
 #embed "rain.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char water_vertex[] = {
 #embed "water.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char water_fragment[] = {
 #embed "water.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char leaves_vertex[] = {
 #embed "leaves.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char leaves_fragment[] = {
 #embed "leaves.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char waterfall_vertex[] = {
 #embed "waterfall.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char waterfall_fragment[] = {
 #embed "waterfall.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char scene_copy_vertex[] = {
 #embed "scene_copy.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char scene_copy_fragment[] = {
 #embed "scene_copy.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char neighbourhood_vertex[] = {
 #embed "neighbourhood.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char neighbourhood_fragment[] = {
 #embed "neighbourhood.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char motion_blur_vertex[] = {
 #embed "motion_blur.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char motion_blur_fragment[] = {
 #embed "motion_blur.fragment.metal"
-      , 0 };
+      , 0
+    };
     const char world_text_vertex[] = {
 #embed "world_text.vertex.metal"
-      , 0 };
+      , 0
+    };
     const char world_text_fragment[] = {
 #embed "world_text.fragment.metal"
-      , 0 };
+      , 0
+    };
   }
 
   const WorldShaders& world_shaders_metal () {

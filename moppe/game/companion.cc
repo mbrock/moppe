@@ -605,9 +605,8 @@ namespace moppe::game {
         mix_angle (a.jeep.wheel_spin_radians, b.jeep.wheel_spin_radians, t);
       result.jeep_velocity = mix (a.jeep_velocity, b.jeep_velocity, within);
     }
-    for (VehiclePose CompanionSnapshot::*pedalled :
-         { &CompanionSnapshot::mountain_bike,
-           &CompanionSnapshot::long_john }) {
+    for (VehiclePose CompanionSnapshot::* pedalled :
+         { &CompanionSnapshot::mountain_bike, &CompanionSnapshot::long_john }) {
       const VehiclePose& from = a.*pedalled;
       const VehiclePose& to = b.*pedalled;
       if (leapt (from.position, to.position))
@@ -619,7 +618,8 @@ namespace moppe::game {
         });
       mtb.render_orientation =
         mix_direction (from.render_orientation, to.render_orientation, t);
-      mtb.render_normal = mix_direction (from.render_normal, to.render_normal, t);
+      mtb.render_normal =
+        mix_direction (from.render_normal, to.render_normal, t);
       mtb.rear_wheel_drop =
         mix (from.rear_wheel_drop, to.rear_wheel_drop, within);
       mtb.front_wheel_drop =
@@ -653,8 +653,10 @@ namespace moppe::game {
         });
       boat.forward = mix_direction (a.boat.forward, b.boat.forward, t);
       boat.up = mix_direction (a.boat.up, b.boat.up, t);
-      boat.swing_radians = mix (a.boat.swing_radians, b.boat.swing_radians, within);
-      boat.tilt_radians = mix (a.boat.tilt_radians, b.boat.tilt_radians, within);
+      boat.swing_radians =
+        mix (a.boat.swing_radians, b.boat.swing_radians, within);
+      boat.tilt_radians =
+        mix (a.boat.tilt_radians, b.boat.tilt_radians, within);
       boat.propeller_radians =
         mix_angle (a.boat.propeller_radians, b.boat.propeller_radians, t);
       boat.rpm = mix (a.boat.rpm, b.boat.rpm, within);

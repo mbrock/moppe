@@ -745,9 +745,9 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
 
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
-  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
-                     moppe::terrain::surface_elevation_point (
-                       10.0f * mp_units::si::metre));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
   map::rebuild_geometry (surface);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (256, 20, 256));
@@ -793,9 +793,9 @@ MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
 
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
-  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
-                     moppe::terrain::surface_elevation_point (
-                       10.0f * mp_units::si::metre));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
   map::rebuild_geometry (surface);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (256, 20, 256));

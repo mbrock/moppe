@@ -578,8 +578,7 @@ namespace moppe::game {
       output.vector<float> (trails.earthwork_delta_m);
     }
 
-    void write_roads (BinaryWriter& output,
-                      const terrain::RoadNetwork& roads) {
+    void write_roads (BinaryWriter& output, const terrain::RoadNetwork& roads) {
       output.scalar (static_cast<std::uint64_t> (roads.places.size ()));
       for (const terrain::RoadPlace& place : roads.places) {
         output.scalar (static_cast<std::uint32_t> (place.kind));
@@ -644,8 +643,7 @@ namespace moppe::game {
           if (culvert.at >= road.points.size ())
             return false;
         for (const terrain::RoadBridge& bridge : road.bridges)
-          if (bridge.first > bridge.last ||
-              bridge.last >= road.points.size ())
+          if (bridge.first > bridge.last || bridge.last >= road.points.size ())
             return false;
         road.kind = static_cast<terrain::Road::Kind> (kind);
       }

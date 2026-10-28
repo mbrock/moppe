@@ -9,17 +9,17 @@
 
 #include <algorithm>
 #include <array>
-#include <vector>
 #include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <string_view>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace moppe {
   namespace game {
@@ -504,10 +504,8 @@ namespace moppe {
       // joined, they part only when a wider one opens.
       const auto gap = [&] (unsigned a, unsigned b) {
         const unsigned p = who (a), q = who (b);
-        return std::ranges::any_of (before,
-                                    [&] (unsigned g) {
-                                      return (g & p) && (g & q);
-                                    })
+        return std::ranges::any_of (
+                 before, [&] (unsigned g) { return (g & p) && (g & q); })
                  ? 30.0f
                  : 6.0f;
       };
@@ -990,13 +988,13 @@ namespace moppe {
       numeral.red = numeral.green = numeral.blue = ink;
       numeral.alpha = 0.94f * alpha;
       numeral.tabular_figures = true;
-      draw_shaded (text,
-                   cx,
-                   cy + 0.5f * m_font->cap_height (numeral.size),
-                   std::to_string (st.basket_total > 0 ? st.basket_total
-                                                       : st.fish_total),
-                   numeral,
-                   TextAlign::Center);
+      draw_shaded (
+        text,
+        cx,
+        cy + 0.5f * m_font->cap_height (numeral.size),
+        std::to_string (st.basket_total > 0 ? st.basket_total : st.fish_total),
+        numeral,
+        TextAlign::Center);
       TextStyle unit;
       unit.size = 8.5f;
       unit.red = unit.green = unit.blue = ink;
@@ -1012,8 +1010,7 @@ namespace moppe {
         draw_shaded (text,
                      cx,
                      cy + 0.80f * gauge_radius + 11.0f,
-                     "and " + std::to_string (st.fish_total) +
-                       " fish",
+                     "and " + std::to_string (st.fish_total) + " fish",
                      unit,
                      TextAlign::Center);
     }
@@ -1068,10 +1065,8 @@ namespace moppe {
       const auto distance = [] (float metres, bool unit) {
         char words[32];
         if (metres >= 1000.0f)
-          std::snprintf (words,
-                         sizeof words,
-                         unit ? "%.1f km" : "%.1f",
-                         metres / 1000.0f);
+          std::snprintf (
+            words, sizeof words, unit ? "%.1f km" : "%.1f", metres / 1000.0f);
         else
           std::snprintf (words,
                          sizeof words,
@@ -1169,9 +1164,7 @@ namespace moppe {
         a.green = first->green;
         a.blue = first->blue;
         // Quieter over the thing itself than out at the edge.
-        a.alpha *= a.vehicles      ? 0.94f
-                   : a.in_view     ? 0.75f
-                                   : 0.85f;
+        a.alpha *= a.vehicles ? 0.94f : a.in_view ? 0.75f : 0.85f;
         a.count = std::popcount (a.vehicles);
         a.rows = a.count ? (a.count + 3) / 4 : 0;
         a.columns = a.count ? (a.count + a.rows - 1) / a.rows : 0;
@@ -1246,9 +1239,8 @@ namespace moppe {
              marks, [&] (unsigned g) { return arrange (g).box; }, before))
         live.push_back (who (group));
       for (unsigned members : live)
-        if (std::ranges::none_of (m_markers, [&] (const Marker& m) {
-              return m.who == members;
-            }))
+        if (std::ranges::none_of (
+              m_markers, [&] (const Marker& m) { return m.who == members; }))
           m_markers.push_back (
             { members, m_markers.empty () ? 1.0f : 0.0f, true });
       for (Marker& marker : m_markers) {
@@ -1256,9 +1248,8 @@ namespace moppe {
         marker.alpha =
           approach (marker.alpha, marker.live ? 1.0f : 0.0f, 9.0f, dt);
       }
-      std::erase_if (m_markers, [] (const Marker& m) {
-        return m.alpha < 0.01f && !m.live;
-      });
+      std::erase_if (
+        m_markers, [] (const Marker& m) { return m.alpha < 0.01f && !m.live; });
 
       for (const Marker& marker : m_markers) {
         unsigned group = 0;
@@ -1294,10 +1285,10 @@ namespace moppe {
                      alpha);
 
         // The block's lines, set flush toward the pointer.
-        const float x = a.align == TextAlign::Left    ? a.block[0]
-                        : a.align == TextAlign::Right ? a.block[2]
-                                                      : 0.5f * (a.block[0] +
-                                                                a.block[2]);
+        const float x = a.align == TextAlign::Left ? a.block[0]
+                        : a.align == TextAlign::Right
+                          ? a.block[2]
+                          : 0.5f * (a.block[0] + a.block[2]);
         float y = a.block[1];
         for (const Mark* m : a.names) {
           TextStyle words = named;
@@ -1325,8 +1316,7 @@ namespace moppe {
             continue;
           const int row = icon / a.columns;
           const int in_row = std::min (a.columns, a.count - row * a.columns);
-          const float middle = a.align == TextAlign::Left
-                                 ? x + 0.5f * row_width
+          const float middle = a.align == TextAlign::Left ? x + 0.5f * row_width
                                : a.align == TextAlign::Right
                                  ? x - 0.5f * row_width
                                  : x;
@@ -1373,11 +1363,9 @@ namespace moppe {
       const float width = static_cast<float> (width_pts);
       const float height = static_cast<float> (height_pts);
       const bool wanted = chart.picture && !m_chart_hidden && !st.resting &&
-                          chart.period_x_m > 0.0f &&
-                          chart.period_z_m > 0.0f &&
+                          chart.period_x_m > 0.0f && chart.period_z_m > 0.0f &&
                           std::min (width, height) >= 240.0f;
-      m_chart_alpha =
-        approach (m_chart_alpha, wanted ? 1.0f : 0.0f, 3.0f, dt);
+      m_chart_alpha = approach (m_chart_alpha, wanted ? 1.0f : 0.0f, 3.0f, dt);
       const float pace = clamp01 ((st.speed_kmh - 15.0f) / 70.0f);
       const float reach =
         st.gliding || st.flying ? chart_reach_air_m
@@ -1694,9 +1682,8 @@ namespace moppe {
       // The subject, facing the way they face.
       float fx, fy;
       on_screen (chart.facing_x, chart.facing_z, fx, fy);
-      const float facing = std::hypot (fx, fy) > 1e-6f
-                             ? std::atan2 (-fy, fx)
-                             : 0.5f * PI;
+      const float facing =
+        std::hypot (fx, fy) > 1e-6f ? std::atan2 (-fy, fx) : 0.5f * PI;
       place_shape (text,
                    m_shape->arrow,
                    cx,
@@ -1708,26 +1695,10 @@ namespace moppe {
                    0.0f,
                    0.35f * alpha,
                    4.0f);
-      place_shape (text,
-                   m_shape->arrow,
-                   cx,
-                   cy,
-                   8.6f,
-                   facing,
-                   1.0f,
-                   1.0f,
-                   1.0f,
-                   alpha);
-      place_shape (text,
-                   m_shape->arrow,
-                   cx,
-                   cy,
-                   6.4f,
-                   facing,
-                   0.80f,
-                   0.16f,
-                   0.10f,
-                   alpha);
+      place_shape (
+        text, m_shape->arrow, cx, cy, 8.6f, facing, 1.0f, 1.0f, 1.0f, alpha);
+      place_shape (
+        text, m_shape->arrow, cx, cy, 6.4f, facing, 0.80f, 0.16f, 0.10f, alpha);
 
       // The key that unfolds the whole map, small against the bezel's
       // lower outer side.
@@ -1794,8 +1765,8 @@ namespace moppe {
           break;
         case HudState::Cook::frying:
           key = "";
-          action = st.cook_fish ? "The fish is frying"
-                                : "The mushrooms are frying";
+          action =
+            st.cook_fish ? "The fish is frying" : "The mushrooms are frying";
           break;
         case HudState::Cook::eat:
           action = *deploy_key ? "Eat" : "Supper is ready";
@@ -1871,8 +1842,7 @@ namespace moppe {
         action = *mount_key ? "Take the boat out" : "Boat within reach";
       } else if (st.can_ride_long_john) {
         key = mount_key;
-        action =
-          *mount_key ? "Ride the Long John" : "Long John within reach";
+        action = *mount_key ? "Ride the Long John" : "Long John within reach";
       } else if (st.can_ride_mountain_bike) {
         key = mount_key;
         action =

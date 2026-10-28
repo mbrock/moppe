@@ -343,8 +343,8 @@ MOPPE_TEST (roads_cross_small_streams_on_embankments_over_culverts) {
   // stands under the tread.
   MOPPE_CHECK (surface_elevation_value (built.heights[floor]) == bed);
   const std::size_t beside =
-    50 * side + static_cast<std::size_t> (std::lround (
-                  (formed.points[culvert.at].x_m + 7.0f) / 5.0f));
+    50 * side + static_cast<std::size_t> (
+                  std::lround ((formed.points[culvert.at].x_m + 7.0f) / 5.0f));
   MOPPE_CHECK (surface_elevation_value (built.heights[beside]) >
                surface_elevation_value (elevations (terrain)[beside]) + 0.3f);
 }

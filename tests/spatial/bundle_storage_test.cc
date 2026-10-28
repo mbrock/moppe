@@ -229,8 +229,8 @@ MOPPE_TEST (a_quantized_column_travels_in_fixed_point_and_reads_back_exactly) {
   MOPPE_CHECK (grid.has_value ());
   // 272 metres in 65,536 steps: an eighth of a centimetre would not do.
   MOPPE_CHECK (grid->exponent == -7);
-  MOPPE_CHECK_NEAR (displacement[1].numerical_value_in (u::m), 151.0371f,
-                    0.004f);
+  MOPPE_CHECK_NEAR (
+    displacement[1].numerical_value_in (u::m), 151.0371f, 0.004f);
   const StoredRingBundle once = bundle;
   (void)spatial::quantize_fixed16 (displacement);
   for (std::size_t i = 0; i < 3; ++i)

@@ -32,8 +32,8 @@ namespace moppe::game {
   // Where the boat's stern passed and how fast, kept a few seconds so
   // that its wake can be drawn spreading behind it on the water.
   struct WakeMark {
-    Vec3 stern;     // on the water, under the transom
-    Vec3 across;    // level, to port
+    Vec3 stern;  // on the water, under the transom
+    Vec3 across; // level, to port
     float speed = 0.0f;
     float time = 0.0f;
     // How much foam there is here, 0..1, so that it lies in patches.
@@ -45,10 +45,8 @@ namespace moppe::game {
     static constexpr float lasts = 7.0f;
     // Marks the stern at `time` if it has moved on and is under way in
     // water `depth` deep.
-    void follow (const BoatPose& boat,
-                 float water_level,
-                 float depth,
-                 float time);
+    void
+    follow (const BoatPose& boat, float water_level, float depth, float time);
     void clear () {
       m_marks.clear ();
     }

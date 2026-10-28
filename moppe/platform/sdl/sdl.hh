@@ -23,9 +23,8 @@ namespace moppe::platform::sdl {
   std::uint64_t window_flags ();
 
   // A device drawing into `window`, whose drawable is the given pixels.
-  std::unique_ptr<nhal::Device> create_device (SDL_Window* window,
-                                               std::uint32_t width,
-                                               std::uint32_t height);
+  std::unique_ptr<nhal::Device>
+  create_device (SDL_Window* window, std::uint32_t width, std::uint32_t height);
 
   // The world programs in the device's form.
   const nhal::WorldShaders& world_shaders ();

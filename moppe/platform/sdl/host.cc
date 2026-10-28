@@ -28,7 +28,7 @@
 #endif
 
 #ifdef MOPPE_SPARKLE
-extern "C" void game_updates_start(void (*quit_game)(void));
+extern "C" void game_updates_start (void (*quit_game) (void));
 #endif
 
 namespace {
@@ -52,44 +52,77 @@ namespace {
   // the layout.
   Key map_key (const SDL_KeyboardEvent& key) {
     switch (key.scancode) {
-    case SDL_SCANCODE_W: return Key::W;
-    case SDL_SCANCODE_A: return Key::A;
-    case SDL_SCANCODE_S: return Key::S;
-    case SDL_SCANCODE_D: return Key::D;
-    case SDL_SCANCODE_E: return Key::E;
-    case SDL_SCANCODE_F: return Key::Mount;
-    case SDL_SCANCODE_LEFT: return Key::Left;
-    case SDL_SCANCODE_RIGHT: return Key::Right;
-    case SDL_SCANCODE_UP: return Key::Up;
-    case SDL_SCANCODE_DOWN: return Key::Down;
-    case SDL_SCANCODE_TAB: return Key::Tab;
-    case SDL_SCANCODE_SPACE: return Key::Space;
-    case SDL_SCANCODE_ESCAPE: return Key::Escape;
+    case SDL_SCANCODE_W:
+      return Key::W;
+    case SDL_SCANCODE_A:
+      return Key::A;
+    case SDL_SCANCODE_S:
+      return Key::S;
+    case SDL_SCANCODE_D:
+      return Key::D;
+    case SDL_SCANCODE_E:
+      return Key::E;
+    case SDL_SCANCODE_F:
+      return Key::Mount;
+    case SDL_SCANCODE_LEFT:
+      return Key::Left;
+    case SDL_SCANCODE_RIGHT:
+      return Key::Right;
+    case SDL_SCANCODE_UP:
+      return Key::Up;
+    case SDL_SCANCODE_DOWN:
+      return Key::Down;
+    case SDL_SCANCODE_TAB:
+      return Key::Tab;
+    case SDL_SCANCODE_SPACE:
+      return Key::Space;
+    case SDL_SCANCODE_ESCAPE:
+      return Key::Escape;
     case SDL_SCANCODE_LSHIFT:
-    case SDL_SCANCODE_RSHIFT: return Key::Shift;
-    default: break;
+    case SDL_SCANCODE_RSHIFT:
+      return Key::Shift;
+    default:
+      break;
     }
     switch (key.key) {
-    case SDLK_P: return Key::Screenshot;
+    case SDLK_P:
+      return Key::Screenshot;
     case SDLK_V:
       return Key::Record;
-    case SDLK_G: return Key::G;
-    case SDLK_H: return Key::H;
-    case SDLK_L: return Key::L;
-    case SDLK_M: return Key::M;
-    case SDLK_N: return Key::N;
-    case SDLK_R: return Key::R;
-    case SDLK_T: return Key::T;
-    case SDLK_Y: return Key::Y;
-    case SDLK_Q: return Key::Q;
-    case SDLK_1: return Key::One;
-    case SDLK_2: return Key::Two;
-    case SDLK_3: return Key::Three;
-    case SDLK_4: return Key::Four;
-    case SDLK_5: return Key::Five;
-    case SDLK_6: return Key::Six;
-    case SDLK_7: return Key::Seven;
-    default: return Key::Unknown;
+    case SDLK_G:
+      return Key::G;
+    case SDLK_H:
+      return Key::H;
+    case SDLK_L:
+      return Key::L;
+    case SDLK_M:
+      return Key::M;
+    case SDLK_N:
+      return Key::N;
+    case SDLK_R:
+      return Key::R;
+    case SDLK_T:
+      return Key::T;
+    case SDLK_Y:
+      return Key::Y;
+    case SDLK_Q:
+      return Key::Q;
+    case SDLK_1:
+      return Key::One;
+    case SDLK_2:
+      return Key::Two;
+    case SDLK_3:
+      return Key::Three;
+    case SDLK_4:
+      return Key::Four;
+    case SDLK_5:
+      return Key::Five;
+    case SDLK_6:
+      return Key::Six;
+    case SDLK_7:
+      return Key::Seven;
+    default:
+      return Key::Unknown;
     }
   }
 
@@ -119,7 +152,9 @@ namespace {
       m_pad = nullptr;
     }
 
-    bool connected () const { return m_pad != nullptr; }
+    bool connected () const {
+      return m_pad != nullptr;
+    }
 
     // The controls the sticks and triggers ask for, after pressing and
     // releasing the buttons' keys.
@@ -184,30 +219,30 @@ namespace {
 // these are what it calls. Its buttons are what the game offers to do
 // (platform::offer_actions), and a key goes by its character there.
 extern "C" {
-  EMSCRIPTEN_KEEPALIVE void moppe_touch_key (int character, int down) {
-    const Key key = moppe::platform::touch_key (character);
-    if (touched_game && key != Key::Unknown)
-      touched_game->key (key, down != 0);
-  }
+EMSCRIPTEN_KEEPALIVE void moppe_touch_key (int character, int down) {
+  const Key key = moppe::platform::touch_key (character);
+  if (touched_game && key != Key::Unknown)
+    touched_game->key (key, down != 0);
+}
 
-  // The stick, -1..1 rightward and forward; `held` while a thumb is on it.
-  EMSCRIPTEN_KEEPALIVE void
-  moppe_touch_stick (float steer, float drive, int held) {
-    touch_stick_held = held != 0;
-    if (!touched_game)
-      return;
-    ControlState state;
-    state.steer = steer;
-    state.drive = drive;
-    touched_game->controls (state);
-  }
+// The stick, -1..1 rightward and forward; `held` while a thumb is on it.
+EMSCRIPTEN_KEEPALIVE void
+moppe_touch_stick (float steer, float drive, int held) {
+  touch_stick_held = held != 0;
+  if (!touched_game)
+    return;
+  ControlState state;
+  state.steer = steer;
+  state.drive = drive;
+  touched_game->controls (state);
+}
 
-  // A finger dragged across the view turns it, as the mouse does.
-  EMSCRIPTEN_KEEPALIVE void
-  moppe_touch_look (float x, float y, float dx, float dy) {
-    if (touched_game)
-      touched_game->pointer_move (x, y, dx, dy);
-  }
+// A finger dragged across the view turns it, as the mouse does.
+EMSCRIPTEN_KEEPALIVE void
+moppe_touch_look (float x, float y, float dx, float dy) {
+  if (touched_game)
+    touched_game->pointer_move (x, y, dx, dy);
+}
 }
 #endif
 
@@ -219,22 +254,24 @@ namespace moppe::platform {
     public:
       Host (Game& game, const Config& config) : m_game (game), m_pad (game) {
         if (!SDL_Init (SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
-          throw std::runtime_error (std::string ("SDL_Init: ")
-                                    + SDL_GetError ());
+          throw std::runtime_error (std::string ("SDL_Init: ") +
+                                    SDL_GetError ());
         // Automated runs leave the active app in front.
         if (!config.activate)
           SDL_SetHint (SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
-        SDL_WindowFlags flags = SDL_WindowFlags (sdl::window_flags ())
-                                | SDL_WINDOW_RESIZABLE
-                                | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        SDL_WindowFlags flags = SDL_WindowFlags (sdl::window_flags ()) |
+                                SDL_WINDOW_RESIZABLE |
+                                SDL_WINDOW_HIGH_PIXEL_DENSITY;
         if (config.fullscreen)
           flags |= SDL_WINDOW_FULLSCREEN;
         m_window = SDL_CreateWindow (
           config.title.empty () ? "Moppe" : config.title.c_str (),
-          config.width, config.height, flags);
+          config.width,
+          config.height,
+          flags);
         if (!m_window)
-          throw std::runtime_error (std::string ("SDL_CreateWindow: ")
-                                    + SDL_GetError ());
+          throw std::runtime_error (std::string ("SDL_CreateWindow: ") +
+                                    SDL_GetError ());
         active_window = m_window;
 
         int width = 0, height = 0, pixels_wide = 0, pixels_high = 0;
@@ -255,35 +292,34 @@ namespace moppe::platform {
               cap > 0 && density > cap)
             drawn = cap / density;
         auto device = sdl::create_device (
-          m_window, std::uint32_t (std::lround (pixels_wide * drawn)),
+          m_window,
+          std::uint32_t (std::lround (pixels_wide * drawn)),
           std::uint32_t (std::lround (pixels_high * drawn)));
         // The device may choose its own drawable (the Xbox's is 4K behind a
         // 1080p window); the HUD's points follow the window, and resizes
         // keep the device's ratio to the window's pixels. A browser's
         // canvas has no size until the page lays it out (nor ever, in a
         // tab not yet shown), only the display's density.
-        const float scale =
-          width > 0 && device->surface_width () > 0
-            ? float (device->surface_width ()) / float (width)
-          : density > 0 ? density * drawn
-                        : 1.0f;
-        m_oversample = pixels_wide > 0 ? float (device->surface_width ())
-                                           / float (pixels_wide)
+        const float scale = width > 0 && device->surface_width () > 0
+                              ? float (device->surface_width ()) / float (width)
+                            : density > 0 ? density * drawn
+                                          : 1.0f;
+        m_oversample = pixels_wide > 0 ? float (device->surface_width ()) /
+                                           float (pixels_wide)
                                        : drawn;
         std::cerr << "moppe: NHAL on " << device->info ().backend << ", "
-                  << device->info ().adapter << ", "
-                  << device->surface_width () << "x"
-                  << device->surface_height () << " pixels at " << scale
+                  << device->info ().adapter << ", " << device->surface_width ()
+                  << "x" << device->surface_height () << " pixels at " << scale
                   << " per point" << std::endl;
         m_device = device.get ();
         // The game keeps the renderer's textures and meshes until main
         // returns, so the renderer outlives the host, even when an error
         // ends it; the process's end releases it.
-        m_renderer = nhal::create_renderer (std::move (device),
-                                            sdl::world_shaders (), scale)
+        m_renderer = nhal::create_renderer (
+                       std::move (device), sdl::world_shaders (), scale)
                        .release ();
-        m_game.setup (*m_renderer, m_renderer->width_pts (),
-                      m_renderer->height_pts ());
+        m_game.setup (
+          *m_renderer, m_renderer->width_pts (), m_renderer->height_pts ());
         touched_game = &m_game;
 
         // MOPPE_CONTROL_FILE names a remote-control file (input.hh).
@@ -296,8 +332,7 @@ namespace moppe::platform {
         // say (nhal::Device::next_frame_timing); MOPPE_FRAME_CLOCK=host
         // keeps the loop's own time.
         const char* frame_clock = moppe::environment ("MOPPE_FRAME_CLOCK");
-        m_display_clock =
-          !(frame_clock && std::string (frame_clock) == "host");
+        m_display_clock = !(frame_clock && std::string (frame_clock) == "host");
         m_start = m_last = m_report_start = std::chrono::steady_clock::now ();
 #ifdef MOPPE_SPARKLE
         game_updates_start (&moppe::platform::request_quit);
@@ -340,8 +375,7 @@ namespace moppe::platform {
         if (m_display_clock) {
           const nhal::FrameTiming timing = m_device->next_frame_timing ();
           if (timing.predicted) {
-            if (m_last_display > 0
-                && timing.display_seconds > m_last_display) {
+            if (m_last_display > 0 && timing.display_seconds > m_last_display) {
               dt = timing.display_seconds - m_last_display;
               ++m_report_displayed;
               if (!m_announced_display) {
@@ -368,7 +402,9 @@ namespace moppe::platform {
     private:
       void handle (const SDL_Event& event) {
         switch (event.type) {
-        case SDL_EVENT_QUIT: quitting = true; break;
+        case SDL_EVENT_QUIT:
+          quitting = true;
+          break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
           m_device->resize_surface (
             std::uint32_t (std::lround (event.window.data1 * m_oversample)),
@@ -396,8 +432,8 @@ namespace moppe::platform {
         case SDL_EVENT_MOUSE_MOTION:
           m_pointer_x = event.motion.x;
           m_pointer_y = event.motion.y;
-          m_game.pointer_move (m_pointer_x, m_pointer_y, event.motion.xrel,
-                               event.motion.yrel);
+          m_game.pointer_move (
+            m_pointer_x, m_pointer_y, event.motion.xrel, event.motion.yrel);
           break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP: {
@@ -419,11 +455,14 @@ namespace moppe::platform {
         case SDL_EVENT_MOUSE_WHEEL:
           m_game.pointer_scroll (m_pointer_x, m_pointer_y, event.wheel.y);
           break;
-        case SDL_EVENT_GAMEPAD_ADDED: m_pad.added (event.gdevice.which); break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+          m_pad.added (event.gdevice.which);
+          break;
         case SDL_EVENT_GAMEPAD_REMOVED:
           m_pad.removed (event.gdevice.which);
           break;
-        default: break;
+        default:
+          break;
         }
       }
 
@@ -435,9 +474,9 @@ namespace moppe::platform {
           std::cerr << "moppe: " << m_report_frames / span
                     << " fps, slowest frame " << m_slowest * 1000
                     << " ms, steps " << m_shortest_step * 1000 << "-"
-                    << m_longest_step * 1000 << " ms, "
-                    << m_report_displayed << " of " << m_report_frames
-                    << " by display time" << std::endl;
+                    << m_longest_step * 1000 << " ms, " << m_report_displayed
+                    << " of " << m_report_frames << " by display time"
+                    << std::endl;
           m_report_start = now;
           m_report_frames = m_report_displayed = 0;
           m_slowest = m_longest_step = 0;
@@ -469,7 +508,7 @@ namespace moppe::platform {
     // Says what stopped the game where the player sees it (pre.js).
     void fail (const std::exception& error) {
       std::cerr << "moppe: " << error.what () << std::endl;
-      EM_ASM ({ Module['moppeFail'] (UTF8ToString ($0)); }, error.what ());
+      EM_ASM ({ Module['moppeFail'](UTF8ToString ($0)); }, error.what ());
     }
   }
 
@@ -491,7 +530,9 @@ namespace moppe::platform {
             emscripten_cancel_main_loop ();
           }
         },
-        host, 0, false);
+        host,
+        0,
+        false);
     } catch (const std::exception& e) {
       fail (e);
       return -1;
