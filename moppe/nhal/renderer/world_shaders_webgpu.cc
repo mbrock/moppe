@@ -8,6 +8,12 @@
 namespace moppe::nhal {
   namespace {
     // #embed cannot sit in a macro; each stage is spelled out.
+    const char road_ribbon_vertex[] = {
+#embed "road_ribbon.vertex.wgsl"
+      , 0 };
+    const char road_ribbon_fragment[] = {
+#embed "road_ribbon.fragment.wgsl"
+      , 0 };
     const char terrain_vertex[] = {
 #embed "terrain.vertex.wgsl"
       , 0 };
@@ -191,6 +197,7 @@ namespace moppe::nhal {
   const WorldShaders& world_shaders_webgpu () {
     static const WorldShaders shaders {
       { wgsl (terrain_vertex), wgsl (terrain_fragment) },
+      { wgsl (road_ribbon_vertex), wgsl (road_ribbon_fragment) },
       { wgsl (sky_vertex), wgsl (sky_fragment) },
       { wgsl (uber_vertex), wgsl (uber_fragment) },
       { wgsl (hud_vertex), wgsl (hud_fragment) },

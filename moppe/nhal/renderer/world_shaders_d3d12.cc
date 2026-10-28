@@ -46,6 +46,8 @@
 #include <shader_resolve_vertex.h>
 #include <shader_shafts_fragment.h>
 #include <shader_shafts_vertex.h>
+#include <shader_road_ribbon_fragment.h>
+#include <shader_road_ribbon_vertex.h>
 #include <shader_sky_fragment.h>
 #include <shader_sky_vertex.h>
 #include <shader_slug_text_fragment.h>
@@ -74,6 +76,7 @@ namespace moppe::nhal {
   const WorldShaders& world_shaders_d3d12 () {
     static const WorldShaders shaders {
       { dxil (shader_terrain_vertex), dxil (shader_terrain_fragment) },
+      { dxil (shader_road_ribbon_vertex), dxil (shader_road_ribbon_fragment) },
       { dxil (shader_sky_vertex), dxil (shader_sky_fragment) },
       { dxil (shader_uber_vertex), dxil (shader_uber_fragment) },
       { dxil (shader_hud_vertex), dxil (shader_hud_fragment) },

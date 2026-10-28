@@ -48,6 +48,7 @@
 #include <shafts.hh>
 #include <sky.hh>
 #include <slug_text.hh>
+#include <road_ribbon.hh>
 #include <terrain.hh>
 #include <terrain_shadow.hh>
 #include <uber.hh>
@@ -389,6 +390,7 @@ namespace moppe::nhal {
           m_first_vertex_counts (
             m_device->info ().indices_count_from_first) {
         m_terrain_code.keep (shaders.terrain);
+        m_road_ribbon_code.keep (shaders.road_ribbon);
         m_sky_code.keep (shaders.sky);
         m_uber_code.keep (shaders.uber);
         m_hud_code.keep (shaders.hud);
@@ -722,6 +724,8 @@ namespace moppe::nhal {
         m_road_setup = setup;
         m_road_setup.segment_rows = {};
         m_road_setup.index = {};
+        m_road_segments.assign (setup.segment_rows.begin (),
+                                setup.segment_rows.end ());
         if (setup.segment_rows.empty () || setup.index.empty () ||
             setup.buckets_x <= 0 || setup.buckets_z <= 0)
           return;
@@ -1241,6 +1245,14 @@ namespace moppe::nhal {
           return;
         open_scene ();
         m_device->set_pipeline (m_terrain);
+        bind_ground ();
+        m_chunks.assign (chunks, chunks + count);
+        draw_chunks ();
+        draw_road_ribbons ();
+      }
+
+      // What the terrain's programs, and the road ribbon's, read.
+      void bind_ground () {
         m_device->set_buffer (0, m_frame_block);
         m_device->set_uniforms (1, terrain_block ());
         m_device->set_texture (0, m_heights);
@@ -1255,8 +1267,65 @@ namespace moppe::nhal {
         m_device->set_texture (8, m_shadow_map);
         bind_stand ();
         bind_roads ();
-        m_chunks.assign (chunks, chunks + count);
-        draw_chunks ();
+      }
+
+      // The built roads' segments near the camera laid again as fine
+      // strips over the terrain (road-ribbon in world.lisp), inside the
+      // terrain's finest level, which stands at the roads' own heights.
+      void draw_road_ribbons () {
+        if (!m_road_rows || m_road_segments.empty ())
+          return;
+        constexpr int rows = 33;
+        constexpr int columns = 53;
+        if (!m_ribbon_indices) {
+          std::vector<std::uint32_t> indices;
+          for (int row = 0; row + 1 < rows; ++row) {
+            for (int x = 0; x < columns; ++x) {
+              indices.push_back (std::uint32_t (row * columns + x));
+              indices.push_back (std::uint32_t ((row + 1) * columns + x));
+            }
+            indices.push_back (0xffffffffu);
+          }
+          m_ribbon_indices = m_device->create_buffer (
+            { .size = indices.size () * 4, .label = "road ribbon strips" },
+            std::as_bytes (std::span (indices)));
+          m_ribbon_index_count = std::uint32_t (indices.size ());
+        }
+        const auto& t = m_terrain_params;
+        const float period_x = t.width * t.scale[0];
+        const float period_z = t.height * t.scale[2];
+        // Well inside where the finest level begins to morph away.
+        const float reach = std::min (110.0f, 50.0f * t.scale[0]);
+        const Vec3 camera = m_params.camera_pos;
+        const float segments = float (m_road_segments.size () / 2);
+        bool bound = false;
+        for (std::size_t s = 0; 2 * s + 1 < m_road_segments.size (); ++s) {
+          const auto& [ax, az, bx, bz] = m_road_segments[2 * s];
+          const float kind = m_road_segments[2 * s + 1][3];
+          // Footpaths are worn, not built; a bridge's deck is a mesh.
+          if (kind == 1.0f || kind == 2.0f)
+            continue;
+          const float mx = 0.5f * (ax + bx), mz = 0.5f * (az + bz);
+          const float ox = period_x * std::round ((camera[0] - mx) / period_x);
+          const float oz = period_z * std::round ((camera[2] - mz) / period_z);
+          const float half = 0.5f * std::hypot (bx - ax, bz - az);
+          if (std::hypot (mx + ox - camera[0], mz + oz - camera[2]) >
+              reach + half)
+            continue;
+          if (!bound) {
+            m_device->set_pipeline (m_road_ribbon);
+            bind_ground ();
+            bound = true;
+          }
+          shaders::road_ribbon::Ribbon ribbon {};
+          ribbon.segment = { float (s), ox, oz, segments };
+          ribbon.grid = { float (rows), float (columns),
+                          m_road_setup.half_width + m_road_setup.shoulder,
+                          0 };
+          m_device->set_uniforms (2, ribbon);
+          m_device->draw_indexed (m_ribbon_indices, IndexType::uint32,
+                                  m_ribbon_index_count);
+        }
       }
 
       // Whether a chunk holds any water; every chunk may until the game has
@@ -1958,6 +2027,13 @@ namespace moppe::nhal {
         terrain.fragment = m_terrain_code.stage (1);
         terrain.topology = Topology::triangle_strip;
         m_terrain = m_device->create_render_pipeline (terrain);
+
+        RenderPipelineDesc ribbon = terrain;
+        ribbon.program = &shaders::road_ribbon::program;
+        ribbon.vertex = m_road_ribbon_code.stage (0);
+        ribbon.fragment = m_road_ribbon_code.stage (1);
+        ribbon.label = "road ribbon";
+        m_road_ribbon = m_device->create_render_pipeline (ribbon);
 
         RenderPipelineDesc sky = scene;
         sky.program = &shaders::sky::program;
@@ -2855,6 +2931,7 @@ namespace moppe::nhal {
       float m_scale;
       // DeviceInfo::indices_count_from_first.
       bool m_first_vertex_counts;
+      ProgramCode m_road_ribbon_code;
       ProgramCode m_terrain_code, m_sky_code, m_uber_code, m_hud_code,
         m_resolve_code, m_neighbourhood_code, m_present_code,
         m_slug_text_code;
@@ -2891,6 +2968,12 @@ namespace moppe::nhal {
       bool m_have_terrain = false;
       RoadSetup m_road_setup {};
       Buffer m_road_rows, m_road_index, m_no_roads;
+      // The segments' rows on the CPU too, to choose those near the camera
+      // that the road ribbon lays again; and the ribbon's strips.
+      std::vector<std::array<float, 4>> m_road_segments;
+      Pipeline m_road_ribbon;
+      Buffer m_ribbon_indices;
+      std::uint32_t m_ribbon_index_count = 0;
       Texture m_heights, m_normals, m_landscape, m_ground, m_plants,
         m_more_plants, m_scars, m_bedrock;
       render::TexturePtr m_grass;

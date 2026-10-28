@@ -8,6 +8,12 @@
 namespace moppe::nhal {
   namespace {
     // #embed cannot sit in a macro; each stage is spelled out.
+    const char road_ribbon_vertex[] = {
+#embed "road_ribbon.vertex.metal"
+      , 0 };
+    const char road_ribbon_fragment[] = {
+#embed "road_ribbon.fragment.metal"
+      , 0 };
     const char terrain_vertex[] = {
 #embed "terrain.vertex.metal"
       , 0 };
@@ -187,6 +193,7 @@ namespace moppe::nhal {
   const WorldShaders& world_shaders_metal () {
     static const WorldShaders shaders {
       { { terrain_vertex, {} }, { terrain_fragment, {} } },
+      { { road_ribbon_vertex, {} }, { road_ribbon_fragment, {} } },
       { { sky_vertex, {} }, { sky_fragment, {} } },
       { { uber_vertex, {} }, { uber_fragment, {} } },
       { { hud_vertex, {} }, { hud_fragment, {} } },

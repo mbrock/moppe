@@ -511,7 +511,7 @@ set(MOPPE_NHAL_WORLD_SOURCE
   ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp)
 # The world programs by their stages.
 set(MOPPE_NHAL_WORLD_DRAWN
-  terrain sky uber hud resolve present slug_text forest
+  terrain road_ribbon sky uber hud resolve present slug_text forest
   bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
   rain water leaves waterfall scene_copy neighbourhood motion_blur
   world_text)

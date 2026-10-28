@@ -12,6 +12,12 @@ namespace moppe::nhal {
   namespace {
     // #embed cannot sit in a macro; each stage is spelled out. The modules
     // are words, so their bytes are word-aligned.
+    alignas (4) const unsigned char road_ribbon_vertex[] = {
+#embed "road_ribbon.vertex.spv"
+    };
+    alignas (4) const unsigned char road_ribbon_fragment[] = {
+#embed "road_ribbon.fragment.spv"
+    };
     alignas (4) const unsigned char terrain_vertex[] = {
 #embed "terrain.vertex.spv"
     };
@@ -199,6 +205,7 @@ namespace moppe::nhal {
   const WorldShaders& world_shaders_vulkan () {
     static const WorldShaders shaders {
       { spirv (terrain_vertex), spirv (terrain_fragment) },
+      { spirv (road_ribbon_vertex), spirv (road_ribbon_fragment) },
       { spirv (sky_vertex), spirv (sky_fragment) },
       { spirv (uber_vertex), spirv (uber_fragment) },
       { spirv (hud_vertex), spirv (hud_fragment) },

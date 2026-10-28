@@ -14,6 +14,7 @@ namespace moppe::nhal {
   // moppe/nhal/renderer/shaders/world.lisp. The renderer copies the code.
   struct WorldShaders {
     StageCode terrain[2];
+    StageCode road_ribbon[2];
     StageCode sky[2];
     StageCode uber[2];
     StageCode hud[2];

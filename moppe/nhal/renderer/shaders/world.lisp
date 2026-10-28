@@ -1196,9 +1196,9 @@
          (hole-edge (max (* 0.5 footprint (sqrt (dot (swizzle hn :yz)
                                                      (swizzle hn :yz))))
                          0.006))
-         (hole (* where (smoothstep (- 0.90 hole-edge) (+ 0.90 hole-edge)
+         (hole (* where (smoothstep (- 0.93 hole-edge) (+ 0.93 hole-edge)
                                     (swizzle hn :x))))
-         (hole-slope (* -0.12 where (step-slope hn 0.88 0.92)
+         (hole-slope (* -0.12 where (step-slope hn 0.91 0.95)
                         (- 1.0 (smoothstep 0.05 0.2 footprint))))
          ;; Cracks: blocks where it is old, alligator in the wheel paths,
          ;; a wandering joint down the middle, and one along each edge.
@@ -1300,7 +1300,7 @@
          (tar (mix tar (vec3 0.24 0.235 0.225) (* 0.8 (swizzle look :z))))
          ;; A pothole's floor is the dusty base course, dimmer under its
          ;; broken rim, which shadows the edge inside it.
-         (tar (mix tar (* (mix (vec3 0.23 0.21 0.18) (vec3 0.29 0.27 0.23)
+         (tar (mix tar (* (mix (vec3 0.29 0.27 0.23) (vec3 0.35 0.33 0.29)
                                fleck)
                           (mix 0.85 1.12 grain)
                           (- 1.0 (* 0.45 (- 1.0 (smoothstep 0.3 1.0
@@ -1393,6 +1393,21 @@
                                         (swizzle road-shape :x))))
                                (- rf-across rf-formation) road-batter))
            (road-point-along rf-road) rf-across)))
+
+;;; A built road's tread (x: 1 on it) and its verge (y), kept mown and
+;;; trodden for a couple of metres past the shoulder, frayed at its outer
+;;; edge, at XZ for the road ROAD-NEAREST found there (or none).
+(define-shader-abstraction road-verge (segments index xz found)
+  `(let* ((rv-road (road-point ,segments ,index ,xz ,found))
+          (rv-d (abs (road-point-across rv-road)))
+          (rv-built (* (road-point-found rv-road)
+                       (- 1.0 (road-point-footpath rv-road))))
+          (rv-tread (+ (swizzle road-shape :x) (swizzle road-shape :y)))
+          (rv-fray (* 0.9 (- (value-noise (* ,xz 0.7)) 0.5))))
+     (* rv-built
+        (vec2 (- 1.0 (step (- rv-tread 0.05) rv-d))
+              (- 1.0 (smoothstep (+ rv-tread 1.6) (+ rv-tread 3.0)
+                                 (+ rv-d rv-fray)))))))
 
 ;;; A footpath: earth worn through whatever grows, frayed at its sides.
 (define-shader-function footpath-albedo (ground across micro meso edge-width)
@@ -1898,33 +1913,10 @@
              reflection)
           (clamp (+ (swizzle f-env :y) fc) 0.0 1.0))))
 
-(define-shader terrain-fragment
-    (:stage :fragment
-     :inputs ((world :vec3 :location 0)
-              (surface-normal :vec3 :location 1)
-              (field-uv :vec2 :location 2)
-              (here :vec4 :location 3)
-              (then :vec4 :location 4))
-     :outputs ((color :vec4 :location 0)
-               (motion :vec2 :location 1))
-     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
-                 (terrain :uniform-block :binding 1 :members #.*terrain*)
-                 (normals :texture-2d :binding 1)
-                 (detail :texture-2d :binding 3)
-                 (landscape :texture-2d :binding 6)
-                 (ground :texture-2d :binding 7)
-                 (plants :texture-2d :binding 5)
-                 (more-plants :texture-2d :binding 4)
-                 (scars :texture-2d :binding 11)
-                 (bedrock :texture-2d :binding 12)
-                 (shadow-map :depth-texture-2d :binding 8)
-                 (closure :texture-2d :binding 9)
-                 (litter :texture-2d :binding 10)
-                 (road-segments :storage-buffer :binding 3 :element :vec4)
-                 (road-index :storage-buffer :binding 4 :element :uint)
-                 (linear-repeat :sampler :binding 1)
-                 (shadow-compare :sampler :binding 3)))
-  (let* ((extent (swizzle size :xy))
+;;; The ground's colour and light at a fragment: the terrain's own, and the
+;;; road ribbon's, which lies on it and must match it.
+(define-shader-abstraction shade-ground ()
+  `(let* ((extent (swizzle size :xy))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
          ;; The roads exactly at every distance, their edges filtered to a
@@ -1975,6 +1967,17 @@
                        have-fields))
          (scars-here (* (sample scars linear-repeat field-at) have-fields))
          (bedrock-here (* (sample bedrock linear-repeat field-at) have-fields))
+         ;; Beside a road, its mown verge: the field layer and fireweed give
+         ;; way to cropped turf.
+         (mown (swizzle (road-verge road-segments road-index
+                                    (swizzle world :xz) road-found)
+                        :y))
+         (plants-here (* plants-here (- 1.0 mown)))
+         (more-here (vec4 (* (swizzle more-here :xyz) (- 1.0 mown))
+                          (swizzle more-here :w)))
+         (scars-here (vec4 (* (swizzle scars-here :x) (- 1.0 mown))
+                           (max (swizzle scars-here :y) (* 0.8 mown))
+                           (swizzle scars-here :zw)))
          (above-sea (- (swizzle world :y) (swizzle relief :x)))
          (rise (/ above-sea (max (swizzle relief :y) 1.0)))
          (stand (read-stand closure litter linear-repeat (swizzle world :xz)
@@ -2121,9 +2124,194 @@
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
+(define-shader terrain-fragment
+    (:stage :fragment
+     :inputs ((world :vec3 :location 0)
+              (surface-normal :vec3 :location 1)
+              (field-uv :vec2 :location 2)
+              (here :vec4 :location 3)
+              (then :vec4 :location 4))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (normals :texture-2d :binding 1)
+                 (detail :texture-2d :binding 3)
+                 (landscape :texture-2d :binding 6)
+                 (ground :texture-2d :binding 7)
+                 (plants :texture-2d :binding 5)
+                 (more-plants :texture-2d :binding 4)
+                 (scars :texture-2d :binding 11)
+                 (bedrock :texture-2d :binding 12)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (closure :texture-2d :binding 9)
+                 (litter :texture-2d :binding 10)
+                 (road-segments :storage-buffer :binding 3 :element :vec4)
+                 (road-index :storage-buffer :binding 4 :element :uint)
+                 (linear-repeat :sampler :binding 1)
+                 (shadow-compare :sampler :binding 3)))
+  (shade-ground))
+
 (define-shader-program terrain
   :vertex terrain-vertex
   :fragment terrain-fragment)
+
+;;; -- the road ribbon --------------------------------------------------------
+;;;
+;;; Near the camera each built road's tread is laid again as geometry an
+;;; eighth of a metre fine, one strip a segment, on the same ground the
+;;; terrain's near field gives it: a paved lane's asphalt as the layer it
+;;; is, some four and a half centimetres thick, with its lip where it breaks
+;;; off onto the sand and its potholes sunk into it; a gravel road's crown
+;;; with the wheels' ruts in it.  It only ever stands above the terrain
+;;; under it, so it needs no hole cut there, and where it would lie on it
+;;; it is not drawn.  The strips meet mitred at the bends.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *ribbon*
+    '((segment :vec4)              ; its index, image offset x, z, segments
+      (grid :vec4))))              ; rows, columns, half its span, 0
+
+;;; The way to the left of a direction over xz.
+(define-shader-function ribbon-left (dir)
+  (normalize (vec2 (* -1.0 (swizzle dir :y)) (swizzle dir :x))))
+
+;;; How far apart two points are across the world's seam.
+(define-shader-function ribbon-gap (delta period)
+  (let* ((d (vec2 (road-seam (swizzle delta :x) (swizzle period :x))
+                  (road-seam (swizzle delta :y) (swizzle period :y)))))
+    (sqrt (dot d d))))
+
+;;; How far a road's surface stands above its formed tread, metres: the
+;;; asphalt layer where it is paved, a gravel crown where it is not.
+(define-shader-function road-relief (along across half-width paved)
+  (let* ((d (abs across))
+         (on (vec2 along across))
+         (look (asphalt-look (asphalt along across half-width 0.06)))
+         ;; Frost has heaved it a little, here and there.
+         (heave (* 0.006 (- (value-noise (* on (vec2 0.21 0.5))) 0.5)))
+         (lane (+ 1.2 (* 0.12 (sin (* along 0.11)))))
+         (rut (- 1.0 (smoothstep 0.15 0.45 (abs (- d lane)))))
+         (layer (* (swizzle look :x)
+                   (+ 0.045 heave (* -0.034 (swizzle look :w)))))
+         (gravel (* (- 1.0 (smoothstep (- half-width 0.3) (+ half-width 0.6)
+                                       d))
+                    (+ 0.03 heave (* -0.014 rut)
+                       (* 0.006 (- (value-noise (* on 5.0)) 0.5))))))
+    (mix gravel layer paved)))
+
+(define-shader road-ribbon-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (world :vec3 :location 0)
+               (surface-normal :vec3 :location 1)
+               (field-uv :vec2 :location 2)
+               (here :vec4 :location 3)
+               (then :vec4 :location 4)
+               (lift :float :location 5))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (ribbon :uniform-block :binding 2 :members #.*ribbon*)
+                 (road-segments :storage-buffer :binding 3 :element :vec4)
+                 (road-index :storage-buffer :binding 4 :element :uint)))
+  (let* ((columns (uint (swizzle grid :y)))
+         (row (float (/ vertex-index columns)))
+         (column (float (mod vertex-index columns)))
+         (along-t (/ row (- (swizzle grid :x) 1.0)))
+         ;; Columns run from left to right, as the terrain's run along x.
+         (across (* (swizzle grid :z)
+                    (- 1.0 (* 2.0 (/ column (- (swizzle grid :y) 1.0))))))
+         (period (* (swizzle size :xy) (vec2 (swizzle scale :x)
+                                             (swizzle scale :z))))
+         (seg (swizzle segment :x))
+         (final (- (swizzle segment :w) 1.0))
+         (ends (buffer-element road-segments (* (uint seg) (uint 2))))
+         (start (swizzle ends :xy))
+         (finish (swizzle ends :zw))
+         (dir (- finish start))
+         (left (ribbon-left dir))
+         (before (buffer-element road-segments
+                                 (* (uint (max (- seg 1.0) 0.0)) (uint 2))))
+         (after (buffer-element road-segments
+                                (* (uint (min (+ seg 1.0) final)) (uint 2))))
+         ;; The neighbours along the same road, where they meet this one.
+         (joins-before (* (step 0.5 seg)
+                          (- 1.0 (step 0.05 (ribbon-gap
+                                             (- (swizzle before :zw) start)
+                                             period)))))
+         (joins-after (* (step (+ seg 0.5) final)
+                         (- 1.0 (step 0.05 (ribbon-gap
+                                            (- (swizzle after :xy) finish)
+                                            period)))))
+         (left-a (normalize (+ left (* joins-before
+                                       (ribbon-left
+                                        (- (swizzle before :zw)
+                                           (swizzle before :xy)))))))
+         (left-b (normalize (+ left (* joins-after
+                                       (ribbon-left
+                                        (- (swizzle after :zw)
+                                           (swizzle after :xy)))))))
+         (mitre (normalize (mix left-a left-b along-t)))
+         (xz (+ start (* dir along-t)
+                (* mitre (/ across (max (dot mitre left) 0.5)))
+                (swizzle segment :yz)))
+         (found (road-nearest road-segments road-index xz (>= seg 0.0)))
+         (road (road-point road-segments road-index xz found))
+         (road-across (road-point-across road))
+         (built (* (road-point-found road) (- 1.0 (road-point-footpath road))))
+         (relief (road-relief (road-point-along road) road-across
+                              (swizzle road-shape :x) (road-point-paved road)))
+         (position (vec3 (swizzle xz :x)
+                         (+ (road-tread-height (road-point-centre road)
+                                               road-across road-shape)
+                            relief)
+                         (swizzle xz :y)))
+         (point (vec4 position 1.0))
+         (current (* view-proj point)))
+    (set-output clip-position (clip current (swizzle temporal :zw)))
+    (set-output world position)
+    (set-output surface-normal (vec3 0.0 1.0 0.0))
+    (set-output field-uv (/ xz period))
+    (set-output here current)
+    (set-output then (* previous-view-proj point))
+    (set-output lift (mix -1.0 relief built))))
+
+(define-shader road-ribbon-fragment
+    (:stage :fragment
+     :inputs ((world :vec3 :location 0)
+              (surface-normal :vec3 :location 1)
+              (field-uv :vec2 :location 2)
+              (here :vec4 :location 3)
+              (then :vec4 :location 4)
+              (lift :float :location 5))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (normals :texture-2d :binding 1)
+                 (detail :texture-2d :binding 3)
+                 (landscape :texture-2d :binding 6)
+                 (ground :texture-2d :binding 7)
+                 (plants :texture-2d :binding 5)
+                 (more-plants :texture-2d :binding 4)
+                 (scars :texture-2d :binding 11)
+                 (bedrock :texture-2d :binding 12)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (closure :texture-2d :binding 9)
+                 (litter :texture-2d :binding 10)
+                 (road-segments :storage-buffer :binding 3 :element :vec4)
+                 (road-index :storage-buffer :binding 4 :element :uint)
+                 (linear-repeat :sampler :binding 1)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((above lift))
+    (when (< above 0.004)
+      (discard))
+    (shade-ground)))
+
+(define-shader-program road-ribbon
+  :vertex road-ribbon-vertex
+  :fragment road-ribbon-fragment)
 
 ;;; The boat's plywood: its dark phenolic film under glass cloth and epoxy,
 ;;; worn through where the boat is dragged, beached, and stood on. The wear
@@ -3452,9 +3640,14 @@
              (normal (unpack-normal
                       (swizzle (sample-level normals linear-repeat uv 0.0)
                                :xy)))
+             (near-road (road-nearest road-segments road-index centre
+                                      (< horizontal 300.0)))
+             (verge (road-verge road-segments road-index centre near-road))
              (medium (read-grass-medium
                       centre (sample-level landscape linear-repeat uv 0.0)
-                      (sample-level ground linear-repeat uv 0.0)
+                      ;; The coarse trail lane does not clear a verge.
+                      (* (sample-level ground linear-repeat uv 0.0)
+                         (vec4 1.0 1.0 (- 1.0 (swizzle verge :y)) 1.0))
                       (swizzle normal :y)
                       (/ (- height (swizzle relief :x))
                          (max (swizzle relief :y) 1.0))
@@ -3467,9 +3660,14 @@
                                            :w))
                       ;; A tile's count asks nothing of its blades' tint.
                       (vec2 0.5 0.5)
-                      (sample-level plants linear-repeat uv 0.0)
-                      (sample-level more-plants linear-repeat uv 0.0)
-                      (sample-level scars linear-repeat uv 0.0)
+                      (* (sample-level plants linear-repeat uv 0.0)
+                         (- 1.0 (swizzle verge :y)))
+                      (* (sample-level more-plants linear-repeat uv 0.0)
+                         (vec4 (- 1.0 (swizzle verge :y))
+                               (- 1.0 (swizzle verge :y))
+                               (- 1.0 (swizzle verge :y)) 1.0))
+                      (* (sample-level scars linear-repeat uv 0.0)
+                         (vec4 (- 1.0 (swizzle verge :y)) 1.0 1.0 1.0))
                       (sample-level bedrock linear-repeat uv 0.0)))
              (offset (- (vec3 (swizzle centre :x) height (swizzle centre :y))
                         eye))
@@ -3488,13 +3686,13 @@
                              (feature-pixels (* 2.0 (flower-drift-head drift))
                                              (swizzle habitat :w) distance))
                        (smoothstep 0.02 0.10 (flower-drift-presence drift))))
-             ;; Nothing roots on a road's bared batters.
+             ;; Nothing roots on a road's bared batters, or its tread.
              (faces (road-faces road-segments road-index centre height
-                                (road-nearest road-segments road-index centre
-                                              (< horizontal 300.0))))
+                                near-road))
              (wanted (* (max (* leaf (blade-resolved pixels)) heads)
                         fade 32.0
-                        (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))))
+                        (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
+                        (- 1.0 (swizzle verge :x))))
              (identity (cell-identity cell))
              (shoots (lod-shoots wanted identity)))
         (when (and inside (> shoots (uint 0)))

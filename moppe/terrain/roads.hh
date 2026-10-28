@@ -183,6 +183,8 @@ namespace moppe::terrain {
     Road::Kind kind = Road::Kind::Road;
     // On a bridge's span: the deck, not the ground.
     bool bridge = false;
+    // A paved lane (paved_roads), whose asphalt lies on the tread.
+    bool paved = false;
     float across = 0.0f;
     float along = 0.0f;
     float centre_m = 0.0f;
@@ -195,8 +197,10 @@ namespace moppe::terrain {
   // The built roads exactly, finer than the height field's samples: the
   // authority the renderer's near ground and every body's footing read, so
   // that what is drawn is what is driven on. Over a built road's tread the
-  // ground is the crowned carriageway; it blends back into the height
-  // field over `blend` metres past the shoulder. Over a bridge's span it
+  // ground is the crowned carriageway, under a paved lane's asphalt or a
+  // gravel road's crown (asphalt_m, gravel_m, as the renderer's road
+  // ribbon lays them); it blends back into the height field over `blend`
+  // metres past the shoulder. Over a bridge's span it
   // is the deck, out to the kerbs, and beyond them the field below.
   // Footpaths are worn into the ground's colour, not built, and leave its
   // height alone.
@@ -207,6 +211,8 @@ namespace moppe::terrain {
     static constexpr float bucket_m = 16.0f;
     static constexpr float reach_m = 10.0f;
     static constexpr float blend_m = 1.5f;
+    static constexpr float asphalt_m = 0.045f;
+    static constexpr float gravel_m = 0.03f;
 
     RoadSurface () = default;
     RoadSurface (const RoadNetwork& network,

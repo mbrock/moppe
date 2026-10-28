@@ -204,12 +204,14 @@ MOPPE_TEST (road_surface_is_the_crowned_tread_and_the_field_beyond) {
   const RoadSurface surface (network, 1000.0f, 1000.0f, formation);
   constexpr float field = 70.0f;
 
-  // On the line, past the seam: x = 1010 is x = 10.
-  MOPPE_CHECK_NEAR (surface.ground (10.0f, 300.0f, field), 102.5f, 1e-3f);
-  MOPPE_CHECK_NEAR (surface.ground (1010.0f, 300.0f, field), 102.5f, 1e-3f);
+  // On the line, past the seam: x = 1010 is x = 10. A gravel road's crown
+  // of loose stone lies on the formed tread.
+  const float top = 102.5f + RoadSurface::gravel_m;
+  MOPPE_CHECK_NEAR (surface.ground (10.0f, 300.0f, field), top, 1e-3f);
+  MOPPE_CHECK_NEAR (surface.ground (1010.0f, 300.0f, field), top, 1e-3f);
   // Crowned: two metres off the line it lies a crown's slope lower, the
   // same on either side.
-  const float off = 102.5f - 2.0f * formation.crown;
+  const float off = top - 2.0f * formation.crown;
   MOPPE_CHECK_NEAR (surface.ground (10.0f, 302.0f, field), off, 1e-3f);
   MOPPE_CHECK_NEAR (surface.ground (10.0f, 298.0f, field), off, 1e-3f);
   // Past the shoulder and the blend it is the field again.

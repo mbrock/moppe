@@ -143,6 +143,7 @@ namespace moppe::terrain {
       best.found = true;
       best.kind = road ? Road::Kind::Road : Road::Kind::Footpath;
       best.bridge = kind == 2.0f;
+      best.paved = kind == 3.0f;
       best.direction_x = length > 0.0f ? dx / length : 1.0f;
       best.direction_z = length > 0.0f ? dz / length : 0.0f;
       best.across = best.direction_x * oz - best.direction_z * ox;
@@ -165,8 +166,12 @@ namespace moppe::terrain {
       return d <= m_formation.deck_half_width ? std::max (at.centre_m, field_m)
                                               : field_m;
     const float tread = m_formation.half_width + m_formation.shoulder;
+    const float half = m_formation.half_width;
+    const float surfacing =
+      at.paved ? asphalt_m * (1.0f - smoothstep (half - 0.1f, half + 0.1f, d))
+               : gravel_m * (1.0f - smoothstep (half - 0.3f, half + 0.6f, d));
     const float road =
-      at.centre_m - m_formation.crown * std::min (d, m_formation.half_width);
+      at.centre_m - m_formation.crown * std::min (d, half) + surfacing;
     const float weight = 1.0f - smoothstep (tread, tread + blend_m, d);
     return field_m + (road - field_m) * weight;
   }
