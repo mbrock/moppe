@@ -1409,6 +1409,8 @@ namespace moppe::nhal {
         m_device->set_buffer (0, m_frame_block);
         m_device->set_uniforms (1, m_sward_block);
         m_device->set_buffer (2, m_sward_patches);
+        m_device->set_uniforms (4, terrain_block ());
+        bind_roads (5);
         m_device->set_texture (0, m_heights);
         m_device->set_texture (1, m_normals);
         m_device->set_texture (2, texture_or_white (m_grass));
