@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 // Building the planned roads into the ground. Each road's tread follows a
@@ -287,23 +289,47 @@ namespace moppe::terrain {
                            parameters.clearance;
         const float bank =
           0.5f * river_width (area).numerical_value_in (u::m) + 2.0f;
-        std::size_t a = i;
-        while (a > 0 && along[i] - along[a - 1] <= parameters.bridge_reach &&
-               (along[i] - along[a] < bank || natural[a] < deck - 0.3f))
-          --a;
-        std::size_t b = j;
-        while (b + 1 < n &&
-               along[b + 1] - along[j] <= parameters.bridge_reach &&
-               (along[b] - along[j] < bank || natural[b] < deck - 0.3f))
-          ++b;
+        // Over a floodplain lower than the deck, too wide for one span,
+        // the bridge keeps to the river and its banks, and the road comes
+        // to it on embankments.
+        const auto abutments = [&] (bool low_ground) {
+          const auto reaches = [&] (std::size_t k, std::size_t from) {
+            return std::fabs (along[k] - along[from]) < bank ||
+                   (low_ground && natural[k] < deck - 0.3f);
+          };
+          std::size_t a = i;
+          while (a > 0 && along[i] - along[a - 1] <= parameters.bridge_reach &&
+                 reaches (a, i))
+            --a;
+          std::size_t b = j;
+          while (b + 1 < n &&
+                 along[b + 1] - along[j] <= parameters.bridge_reach &&
+                 reaches (b, j))
+            ++b;
+          return std::pair (a, b);
+        };
+        auto [a, b] = abutments (true);
+        const bool chained =
+          !road.bridges.empty () && a <= road.bridges.back ().last;
+        if (along[b] - along[a] > parameters.longest_bridge ||
+            (chained && along[b] - along[road.bridges.back ().first] >
+                          parameters.longest_bridge))
+          std::tie (a, b) = abutments (false);
         if (a == 0 || b + 1 == n) {
           // A river at the road's very end is the place it leads to, not
           // a crossing.
           i = b + 1;
           continue;
         }
-        if (!road.bridges.empty () && a <= road.bridges.back ().last)
+        // Two crossings close together (a meander's) share one span, if
+        // one span can reach over both.
+        if (!road.bridges.empty () && a <= road.bridges.back ().last &&
+            along[b] - along[road.bridges.back ().first] <=
+              parameters.longest_bridge)
           road.bridges.back ().last = static_cast<std::uint32_t> (b);
+        else if (!road.bridges.empty () && a <= road.bridges.back ().last)
+          road.bridges.push_back (
+            { road.bridges.back ().last, static_cast<std::uint32_t> (b) });
         else
           road.bridges.push_back (
             { static_cast<std::uint32_t> (a), static_cast<std::uint32_t> (b) });
