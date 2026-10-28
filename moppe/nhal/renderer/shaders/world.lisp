@@ -115,7 +115,7 @@
   (let* ((daylight (smoothstep -0.08 0.18 (swizzle sun :y)))
          (golden (* daylight (- 1.0 (smoothstep 0.15 0.65 (swizzle sun :y)))))
          (toward (max (dot view sun) 0.0))
-         (horizon (expt (- 1.0 (abs (swizzle view :y))) 3.0))
+         (horizon (expt (max (- 1.0 (abs (swizzle view :y))) 0.0) 3.0))
          (sun-color (mix (srgb (vec3 1.0 0.96 0.84)) (srgb (vec3 1.0 0.58 0.28))
                          golden))
          (away (max (* -1.0 (dot view sun)) 0.0))
@@ -1881,8 +1881,12 @@
          (n-dot-h (max (dot n half-way) 0.0))
          (v-dot-h (max (dot eye half-way) 0.0))
          (f0 (mix (vec3 0.04 0.04 0.04) albedo metallic))
-         (schlick (expt (- 1.0 v-dot-h) 5.0))
-         (grazing (expt (- 1.0 n-dot-v) 5.0))
+         ;; Two unit vectors' dot can round past 1, and a power of the
+         ;; tiny negative left is NaN under Metal's fast math: looking
+         ;; straight away from the sun, one pixel's NaN would spread
+         ;; through the bloom and the temporal history into a black stain.
+         (schlick (expt (max (- 1.0 v-dot-h) 0.0) 5.0))
+         (grazing (expt (max (- 1.0 n-dot-v) 0.0) 5.0))
          (r-sun (max rough 0.2))
          (a2 (* r-sun r-sun r-sun r-sun))
          (f-sun (+ f0 (* (- (vec3 1.0 1.0 1.0) f0) schlick)))
@@ -1905,7 +1909,7 @@
          (coat-glint (* coat (* (+ 0.04 (* 0.96 schlick))
                                 (* 3.14159265 (ggx n-dot-h a2c)
                                    (smith n-dot-l n-dot-v a2c) n-dot-l))))
-         (cloth (* sheen (* 0.35 (expt (- 1.0 n-dot-v) 3.0))
+         (cloth (* sheen (* 0.35 (expt (max (- 1.0 n-dot-v) 0.0) 3.0))
                    (mix albedo (vec3 1.0 1.0 1.0) 0.4) diffuse-light))
          (base-light (+ body (* glint sun-light)))
          (reflection (* seen (+ (* mirror (- 1.0 fc)) (* fc sky-seen)))))
@@ -2408,7 +2412,7 @@
          (lambert (clamp (dot n sun) 0.0 1.0))
          (half-way (normalize (+ sun eye)))
          (shine (* (smoothstep 0.82 0.98 (swizzle base :w)) (- 1.0 foliage)))
-         (rim (* (expt (- 1.0 (max (dot n eye) 0.0)) 3.0)
+         (rim (* (expt (max (- 1.0 (max (dot n eye) 0.0)) 0.0) 3.0)
                  (+ 0.35 (* 0.65 (max (swizzle n :y) 0.0)))))
          ;; A weathered film (the boat's plywood) shows the glass cloth
          ;; where it is worn through, rougher and with no coat left.
@@ -5385,7 +5389,7 @@
          (surface-z (/ (swizzle here :z) (swizzle here :w)))
          (facing (mix (max (dot n view) 0.0)
                       (max (dot n view) 0.28) unresolved))
-         (fresnel (+ 0.02 (* 0.98 (expt (- 1.0 facing) 5.0))))
+         (fresnel (+ 0.02 (* 0.98 (expt (max (- 1.0 facing) 0.0) 5.0))))
          (reflected (- (* 2.0 facing n) view))
          (mirrored (normalize (vec3 (swizzle reflected :x)
                                     (max (swizzle reflected :y) 0.002)
@@ -5495,8 +5499,10 @@
          (half-way (normalize (+ light view)))
          (shine (mix (mix 700.0 160.0 (max rapids (* 0.5 swell))) 60.0
                      unresolved))
-         (glint-fresnel (+ 0.02 (* 0.98 (expt (- 1.0 (max (dot half-way view)
+         (glint-fresnel (+ 0.02 (* 0.98 (expt (max (- 1.0 (max (dot half-way
+                                                               view)
                                                           0.0))
+                                                   0.0)
                                               5.0))))
          (glint (* sun-light glint-fresnel
                    (* (/ (+ shine 8.0) 25.0)
