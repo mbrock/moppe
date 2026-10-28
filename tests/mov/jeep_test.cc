@@ -1,8 +1,11 @@
 #include <moppe/game/jeep_model.hh>
+#include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/jeep.hh>
+#include <moppe/terrain/roads.hh>
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 
@@ -196,4 +199,54 @@ MOPPE_TEST (a_restored_jeep_stands_as_it_did) {
     MOPPE_CHECK_NEAR (back.rotation[i], kept.chassis.rotation[i], 1e-4f);
   MOPPE_CHECK_NEAR (
     length (jeep.velocity ()), length (kept.chassis.linear_velocity), 0.02f);
+}
+
+// A bridge's deck carries a jeep over the river and its railings keep it
+// there: steered hard into the side half way over, the jeep meets the
+// railing rather than dropping off the edge into the river below.
+MOPPE_TEST (the_bridge_railing_keeps_a_jeep_on_the_deck) {
+  map::SurfaceGeometry valley (terrain::TerrainDomain (
+    128, 128, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+  for (std::size_t z = 0; z < 128; ++z)
+    for (std::size_t x = 0; x < 128; ++x) {
+      const float m = 2.5f * static_cast<float> (z);
+      spatial::get<terrain::surface_elevation> (
+        valley[terrain::TerrainIndex { x, z }]) =
+        terrain::surface_elevation_point (
+          (m > 150.0f && m < 210.0f ? 4.0f : 10.0f) * mp_units::si::metre);
+    }
+  map::rebuild_geometry (valley);
+  terrain::RoadNetwork network;
+  terrain::Road road { .kind = terrain::Road::Kind::Road };
+  for (float z = 40.0f; z <= 300.0f; z += 4.0f) {
+    road.points.push_back ({ 160.0f, z });
+    road.heights.push_back (10.0f);
+    if (z <= 140.0f)
+      road.bridges = { { static_cast<std::uint32_t> (road.points.size () - 1),
+                         0 } };
+    if (z <= 220.0f)
+      road.bridges.front ().last =
+        static_cast<std::uint32_t> (road.points.size () - 1);
+  }
+  network.roads = { road };
+  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  mov::attach_roads (valley, &roads);
+  mov::Jeep jeep (valley);
+  jeep.place (Vec3 (160, 0, 120), Vec3 (0, 0, 1));
+  jeep.set_parked (false);
+  jeep.set_drive (0.6f);
+  float lowest = 100.0f, widest = 0.0f;
+  for (int i = 0; i < 120 * 10; ++i) {
+    if (jeep.position ()[2] > 165.0f)
+      jeep.set_turn (1.0f);
+    jeep.update (1.0f / 120.0f, -100.0f);
+    if (jeep.position ()[2] > 150.0f && jeep.position ()[2] < 210.0f) {
+      lowest = std::min (lowest, static_cast<float> (jeep.position ()[1]));
+      widest = std::max (widest, std::abs (jeep.position ()[0] - 160.0f));
+    }
+  }
+  mov::attach_roads (valley, nullptr);
+  MOPPE_CHECK (jeep.position ()[2] > 170.0f);
+  MOPPE_CHECK (lowest > 10.0f + mov::Jeep::wheel_radius - 0.25f);
+  MOPPE_CHECK (widest < roads.formation ().deck_half_width + 0.5f);
 }

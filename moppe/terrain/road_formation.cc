@@ -341,8 +341,11 @@ namespace moppe::terrain {
                parameters.longest_bridge;
       });
       // Each deck runs straight between its abutments, held clear of the
-      // spate but never below a bank that stands higher.
-      for (const RoadBridge& bridge : road.bridges) {
+      // spate but never below a bank that stands higher; and where the
+      // ground at an end already stands at the deck, the bank is reached
+      // there and the road is cut on through it, so no hill stands up
+      // through the planks.
+      for (RoadBridge& bridge : road.bridges) {
         float lowest = no_height;
         for (std::size_t k = bridge.first; k <= bridge.last; ++k)
           lowest = std::min (lowest, natural[k]);
@@ -353,6 +356,12 @@ namespace moppe::terrain {
           lowest +
           river_depth (widest * u::m * u::m).numerical_value_in (u::m) +
           parameters.clearance;
+        while (bridge.last > bridge.first + 1 &&
+               natural[bridge.last - 1] >= deck - 0.3f)
+          --bridge.last;
+        while (bridge.first + 1 < bridge.last &&
+               natural[bridge.first + 1] >= deck - 0.3f)
+          ++bridge.first;
         const float from = std::max (deck, natural[bridge.first]);
         const float to = std::max (deck, natural[bridge.last]);
         const float span = along[bridge.last] - along[bridge.first];

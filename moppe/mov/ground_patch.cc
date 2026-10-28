@@ -100,6 +100,7 @@ namespace moppe::mov {
     shape.filter.categoryBits = m_params.ground_bit;
     shape.filter.maskBits = m_params.ground_mask;
     b3CreateHeightFieldShape (m_ground, &shape, m_height_field);
+    add_bridges (shape);
 
     if (!trunks)
       return;
@@ -121,6 +122,63 @@ namespace moppe::mov {
       capsule.center2 = to_b3 (trunk.root + trunk.axis * trunk.height);
       capsule.radius = trunk.radius;
       b3CreateCapsuleShape (m_obstacles, &obstacle, &capsule);
+    }
+  }
+
+  // A bridge's deck is a solid slab and its railings are walls: the height
+  // field, a sample every metre or so, would round a deck a few samples
+  // wide off into slopes down to the river, and has no railings at all.
+  void GroundPatch::add_bridges (const b3ShapeDef& ground) {
+    if (&m_surface != roads_surface || attached_roads->empty ())
+      return;
+    const float period_x =
+      m_surface.domain ().period_x ().numerical_value_in (u::m);
+    const float period_z =
+      m_surface.domain ().period_z ().numerical_value_in (u::m);
+    const Vec3 origin (m_column * m_dx, 0.0f, m_row * m_dz);
+    const Vec3 middle = centre ();
+    const float reach = 0.5f * (m_params.samples - 1) * std::max (m_dx, m_dz);
+    const float half = attached_roads->formation ().deck_half_width;
+    b3ShapeDef rail = ground;
+    rail.filter.categoryBits = m_params.obstacle_bit;
+    rail.filter.maskBits = m_params.obstacle_mask;
+    rail.baseMaterial.friction = m_params.obstacle_friction;
+    rail.baseMaterial.restitution = 0.1f;
+    const auto rows = attached_roads->segment_rows ();
+    for (std::size_t s = 0; 2 * s + 1 < rows.size (); ++s) {
+      const auto& [ax, az, bx, bz] = rows[2 * s];
+      const auto& [ha, hb, along, kind] = rows[2 * s + 1];
+      if (kind != 2.0f)
+        continue;
+      // The segment's image nearest the patch.
+      const float mx = 0.5f * (ax + bx), mz = 0.5f * (az + bz);
+      const float ox = period_x * std::round ((middle[0] - mx) / period_x);
+      const float oz = period_z * std::round ((middle[2] - mz) / period_z);
+      const Vec3 a (ax + ox, ha, az + oz), b (bx + ox, hb, bz + oz);
+      const float length = moppe::length (b - a);
+      if (length < 1e-3f ||
+          std::max (std::abs (mx + ox - middle[0]),
+                    std::abs (mz + oz - middle[2])) > reach + length)
+        continue;
+      const Vec3 x = (b - a) / length;
+      const Vec3 z = normalized (cross (x, Vec3 (0.0f, 1.0f, 0.0f)));
+      const Vec3 y = cross (z, x);
+      const b3Matrix3 frame { to_b3 (x), to_b3 (y), to_b3 (z) };
+      const b3Quat turn = b3MakeQuatFromMatrix (&frame);
+      const Vec3 mid = (a + b) * 0.5f - origin;
+      // Overlapping its neighbours a little, so no seam opens at a bend.
+      const float hl = 0.5f * length + 0.35f;
+      const b3BoxHull deck = b3MakeTransformedBoxHull (
+        hl, 0.25f, half + 0.12f, { to_b3 (mid - y * 0.25f), turn });
+      b3CreateHullShape (m_ground, &ground, &deck.base);
+      for (const float side : { -1.0f, 1.0f }) {
+        const b3BoxHull wall = b3MakeTransformedBoxHull (
+          hl,
+          0.55f,
+          0.08f,
+          { to_b3 (mid + y * 0.55f + z * (side * (half + 0.3f))), turn });
+        b3CreateHullShape (m_ground, &rail, &wall.base);
+      }
     }
   }
 

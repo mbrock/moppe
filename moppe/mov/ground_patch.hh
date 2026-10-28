@@ -69,6 +69,7 @@ namespace moppe::mov {
   private:
     Vec3 centre () const;
     void destroy ();
+    void add_bridges (const b3ShapeDef& ground);
 
     const map::SurfaceGeometry& m_surface;
     Params m_params;
