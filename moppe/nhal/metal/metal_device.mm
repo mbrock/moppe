@@ -705,6 +705,10 @@ namespace moppe::nhal {
         return m_presentation->predict (m_serial + 1, steady_seconds ());
       }
 
+      void set_display_refresh (double seconds) override {
+        m_presentation->set_refresh (seconds);
+      }
+
       void wait_idle () override {
         if (m_serial)
           [m_event waitUntilSignaledValue:m_serial timeoutMS:5000];

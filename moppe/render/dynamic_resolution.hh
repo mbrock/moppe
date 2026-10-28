@@ -9,8 +9,8 @@
 namespace moppe::render {
   // Holds a frame rate by shedding the 3D scene's resolution: told each
   // frame's GPU time and how often frames are due, it yields the share of
-  // its ordinary width and height the scene should be drawn at, from a half
-  // to the whole in thirty-seconds.
+  // its ordinary width and height the scene should be drawn at, from three
+  // eighths to the whole in thirty-seconds.
   //
   // A frame's cost follows the scene's pixels only in part: the passes at
   // the drawable's size, the shadows, and the vertex work stay. So nothing
@@ -25,7 +25,7 @@ namespace moppe::render {
   class DynamicResolution {
   public:
     // Thirty-seconds of the scene's ordinary size, and the fewest drawn.
-    static constexpr int steps = 32, fewest = 16;
+    static constexpr int steps = 32, fewest = 12;
     // Frames whose GPU time is averaged before the share may change, and
     // frames already in flight at the old share when it does.
     static constexpr int window = 8, in_flight = 4;

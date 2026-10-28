@@ -63,9 +63,78 @@ MOPPE_TEST (mushroom_tiles_mesh_near_the_camera_only) {
   test::RecordingRenderer renderer;
   patch.draw (renderer, Vec3 (100.0f, 12.0f, 100.0f));
   MOPPE_CHECK (renderer.meshes_drawn >= 2);
+  const std::size_t baked = renderer.baked_vertex_counts.size ();
+
+  // Just out of drawing reach, the meshes are kept for the walk back.
+  renderer.meshes_drawn = 0;
+  patch.draw (renderer, Vec3 (120.0f, 12.0f, 230.0f));
+  MOPPE_CHECK (renderer.meshes_drawn == 0);
+  patch.draw (renderer, Vec3 (100.0f, 12.0f, 100.0f));
+  MOPPE_CHECK (renderer.meshes_drawn >= 2);
+  MOPPE_CHECK (renderer.baked_vertex_counts.size () == baked);
+
+  // A longer trip retires them; returning rebuilds the same geometry.
   renderer.meshes_drawn = 0;
   patch.draw (renderer, Vec3 (900.0f, 12.0f, 900.0f));
   MOPPE_CHECK (renderer.meshes_drawn == 0);
+  MOPPE_CHECK (renderer.baked_vertex_counts.size () == baked);
+  patch.draw (renderer, Vec3 (100.0f, 12.0f, 100.0f));
+  MOPPE_CHECK (renderer.meshes_drawn >= 2);
+  MOPPE_CHECK (renderer.baked_vertex_counts.size () == 2 * baked);
+}
+
+MOPPE_TEST (mushroom_meshes_follow_picking_restore_and_rebuild) {
+  MushroomPlan plan;
+  plan.sites = {
+    mushroom_at (100.0f, 100.0f, MushroomKind::chanterelle),
+    mushroom_at (101.0f, 100.0f, MushroomKind::chanterelle),
+  };
+  MushroomPatch patch;
+  patch.rebuild (plan);
+  test::RecordingRenderer renderer;
+  const Vec3 near (100.0f, 12.0f, 100.0f);
+  const Vec3 far (900.0f, 12.0f, 900.0f);
+  const auto draw_near = [&] {
+    renderer.meshes_drawn = 0;
+    patch.draw (renderer, near);
+    return renderer.meshes_drawn;
+  };
+
+  MOPPE_CHECK (draw_near () == 1);
+  const std::size_t full = renderer.baked_vertex_counts.back ();
+  Basket basket;
+  basket.picked = { 0 };
+  patch.follow (basket);
+  MOPPE_CHECK (draw_near () == 1);
+  const std::size_t single = renderer.baked_vertex_counts.back ();
+  MOPPE_CHECK (single > 0 && single < full);
+
+  // The other player takes the last one. Restoring the basket regrows
+  // both, even though their tile had become empty.
+  patch.take (1);
+  MOPPE_CHECK (draw_near () == 0);
+  patch.follow (Basket {});
+  MOPPE_CHECK (draw_near () == 1);
+  MOPPE_CHECK (renderer.baked_vertex_counts.back () == full);
+
+  // Picks and restores must also reach mushrooms whose meshes retired.
+  patch.draw (renderer, far);
+  patch.take (0);
+  basket.picked = { 1 };
+  patch.follow (basket);
+  MOPPE_CHECK (draw_near () == 0);
+  patch.draw (renderer, far);
+  patch.follow (Basket {});
+  MOPPE_CHECK (draw_near () == 1);
+  MOPPE_CHECK (renderer.baked_vertex_counts.back () == full);
+
+  // A replacement plan at the same coordinates must not draw old meshes.
+  plan.sites.resize (1);
+  patch.rebuild (plan);
+  MOPPE_CHECK (draw_near () == 1);
+  MOPPE_CHECK (renderer.baked_vertex_counts.back () == single);
+  patch.rebuild ({});
+  MOPPE_CHECK (draw_near () == 0);
 }
 
 MOPPE_TEST (fly_agaric_is_left_growing) {

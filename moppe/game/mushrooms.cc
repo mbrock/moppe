@@ -481,23 +481,24 @@ namespace moppe::game {
            static_cast<std::uint32_t> (z);
   }
 
-  MushroomPatch::Tile* MushroomPatch::tile_at (const Vec3& at) {
-    const auto found = m_tiles.find (
+  MushroomPatch::TileMesh* MushroomPatch::mesh_at (const Vec3& at) {
+    const auto found = m_meshes.find (
       tile_key (static_cast<int> (std::floor (at[0] / tile_metres)),
                 static_cast<int> (std::floor (at[2] / tile_metres))));
-    return found == m_tiles.end () ? nullptr : &found->second;
+    return found == m_meshes.end () ? nullptr : &found->second;
   }
 
   void MushroomPatch::rebuild (MushroomPlan plan) {
     m_plan = std::move (plan);
     m_picked.assign (m_plan.sites.size (), false);
     m_followed = 0;
+    m_meshes.clear ();
     m_tiles.clear ();
     for (std::uint32_t i = 0; i < m_plan.sites.size (); ++i) {
       const Vec3& at = m_plan.sites[i].base;
       m_tiles[tile_key (static_cast<int> (std::floor (at[0] / tile_metres)),
                         static_cast<int> (std::floor (at[2] / tile_metres)))]
-        .sites.push_back (i);
+        .push_back (i);
     }
   }
 
@@ -515,7 +516,7 @@ namespace moppe::game {
         const auto found = m_tiles.find (tile_key (tx + dx, tz + dz));
         if (found == m_tiles.end ())
           continue;
-        for (const std::uint32_t index : found->second.sites) {
+        for (const std::uint32_t index : found->second) {
           if (m_picked[index])
             continue;
           const Vec3 offset = m_plan.sites[index].base - feet;
@@ -553,7 +554,7 @@ namespace moppe::game {
         const auto found = m_tiles.find (tile_key (tx + dx, tz + dz));
         if (found == m_tiles.end ())
           continue;
-        for (const std::uint32_t index : found->second.sites) {
+        for (const std::uint32_t index : found->second) {
           if (m_picked[index] ||
               std::find (skip.begin (), skip.end (), index) != skip.end ())
             continue;
@@ -579,7 +580,7 @@ namespace moppe::game {
         const auto tile = m_tiles.find (tile_key (tx + dx, tz + dz));
         if (tile == m_tiles.end ())
           continue;
-        for (const std::uint32_t index : tile->second.sites) {
+        for (const std::uint32_t index : tile->second) {
           const Vec3& base = m_plan.sites[index].base;
           if (!m_picked[index] &&
               std::hypot (base[0] - at[0], base[2] - at[2]) <= within)
@@ -593,7 +594,7 @@ namespace moppe::game {
     if (index >= m_picked.size () || m_picked[index])
       return;
     m_picked[index] = true;
-    if (Tile* tile = tile_at (m_plan.sites[index].base))
+    if (TileMesh* tile = mesh_at (m_plan.sites[index].base))
       tile->dirty = true;
   }
 
@@ -605,7 +606,7 @@ namespace moppe::game {
       for (std::uint32_t i = 0; i < m_picked.size (); ++i)
         if (m_picked[i]) {
           m_picked[i] = false;
-          if (Tile* tile = tile_at (m_plan.sites[i].base))
+          if (TileMesh* tile = mesh_at (m_plan.sites[i].base))
             tile->dirty = true;
         }
       m_followed = 0;
@@ -615,7 +616,7 @@ namespace moppe::game {
       if (index >= m_picked.size ())
         continue;
       m_picked[index] = true;
-      if (Tile* tile = tile_at (m_plan.sites[index].base))
+      if (TileMesh* tile = mesh_at (m_plan.sites[index].base))
         tile->dirty = true;
     }
   }
@@ -633,17 +634,13 @@ namespace moppe::game {
              0.7072f * tile_metres;
     };
 
-    // Let go of meshes long out of sight.
-    for (auto& [key, tile] : m_tiles) {
-      if (!tile.mesh)
-        continue;
+    // Let go of meshes long out of sight, visiting only cached tiles.
+    std::erase_if (m_meshes, [&] (const auto& entry) {
+      const std::uint64_t key = entry.first;
       const int x = static_cast<int> (static_cast<std::uint32_t> (key >> 32));
       const int z = static_cast<int> (static_cast<std::uint32_t> (key));
-      if (tile_distance (x, z) > keep_reach) {
-        tile.mesh.reset ();
-        tile.dirty = true;
-      }
-    }
+      return tile_distance (x, z) > keep_reach;
+    });
 
     render::DrawList list;
     for (int dz = -span; dz <= span; ++dz)
@@ -653,7 +650,7 @@ namespace moppe::game {
         const auto found = m_tiles.find (tile_key (tx + dx, tz + dz));
         if (found == m_tiles.end ())
           continue;
-        Tile& tile = found->second;
+        TileMesh& tile = m_meshes[found->first];
         if (tile.dirty) {
           list.clear ();
           render::DrawState solid;
@@ -662,7 +659,7 @@ namespace moppe::game {
           list.lit (true);
           list.fogged (true);
           list.begin (render::Prim::Triangles);
-          for (const std::uint32_t index : tile.sites)
+          for (const std::uint32_t index : found->second)
             if (!m_picked[index])
               draw_mushroom (list, m_plan.sites[index]);
           list.end ();

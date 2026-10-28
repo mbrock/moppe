@@ -1973,9 +1973,11 @@
          (bedrock-here (* (sample bedrock linear-repeat field-at) have-fields))
          ;; Beside a road, its mown verge: the field layer and fireweed give
          ;; way to cropped turf.
-         (mown (swizzle (road-verge road-segments road-index
-                                    (swizzle world :xz) road-found)
-                        :y))
+         (mown
+           (only-where (> road-built 0.0) 0.0
+             (swizzle (road-verge road-segments road-index
+                                   (swizzle world :xz) road-found)
+                       :y)))
          (plants-here (* plants-here (- 1.0 mown)))
          (more-here (vec4 (* (swizzle more-here :xyz) (- 1.0 mown))
                           (swizzle more-here :w)))
@@ -2009,8 +2011,13 @@
          ;; An edge as sharp as a pixel's width on the ground allows.
          (road-edge (max (* 0.75 footprint) 0.04))
          ;; A paved lane's own surface, over its tread.
-         (asphalt-here (asphalt (road-point-along road) road-across
-                                (swizzle road-shape :x) footprint))
+         (asphalt-here
+           (only-where (> (* (road-point-paved road) road-built) 0.0)
+             (make-asphalt :slope (vec2 0.0 0.0)
+                           :look (vec4 0.0 0.0 0.0 0.0)
+                           :rough 0.9 :grit 0.0)
+             (asphalt (road-point-along road) road-across
+                       (swizzle road-shape :x) footprint)))
          (paved-tread (* (road-point-paved road) road-built
                          (road-hold road-built 0.0 road-across road-shape)))
          (look (asphalt-look asphalt-here))
@@ -2019,18 +2026,18 @@
          (puddle (* wet paved-tread (smoothstep 0.3 0.7 (swizzle look :w))))
          ;; Beside a built road, its batters.
          (worked-ground
-           (earthwork-albedo (ground-surface-albedo surface)
-                             (road-faces road-segments road-index
-                                         (swizzle world :xz) (swizzle world :y)
-                                         road-found)
-                             micro meso))
+           (only-where (> road-built 0.0) (ground-surface-albedo surface)
+             (earthwork-albedo (ground-surface-albedo surface)
+                               (road-faces road-segments road-index
+                                           (swizzle world :xz)
+                                           (swizzle world :y) road-found)
+                               micro meso)))
          (road-ground
-           (mix worked-ground
-                (road-albedo worked-ground road-across
-                             (road-point-along road) (swizzle road-shape :x)
-                             (swizzle road-shape :y) (road-point-paved road)
-                             look micro meso road-edge)
-                road-built))
+           (only-where (> road-built 0.0) worked-ground
+             (road-albedo worked-ground road-across
+                           (road-point-along road) (swizzle road-shape :x)
+                           (swizzle road-shape :y) (road-point-paved road)
+                           look micro meso road-edge)))
          (path-ground
            (mix road-ground
                 (footpath-albedo road-ground road-across micro meso

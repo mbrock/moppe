@@ -302,9 +302,9 @@
       cap; zero disables it. An explicit quality preset replaces the
       ordinary graphics baseline.
     - Dynamic resolution (`moppe/render/dynamic_resolution.hh`): play
-      holds 60 frames a second by drawing the scene smaller, down to half
-      its ordinary width and height, while the GPU cannot keep up, and
-      gives the size back when it can. `--target-fps <0..240>`
+      holds 60 frames a second by drawing the scene smaller, down to three
+      eighths of its ordinary width and height, while the GPU cannot keep
+      up, and gives the size back when it can. `--target-fps <0..240>`
       (`MOPPE_TARGET_FPS`) names another rate, and `0` never sheds any;
       nor does an explicit render scale, nor a capture, recording, or
       benchmark, whose pictures must not follow the machine's speed.

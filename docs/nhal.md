@@ -271,11 +271,16 @@ So the scene's size follows the frame rate (`render::DynamicResolution`,
 `moppe/render/dynamic_resolution.hh`). Each frame the renderer sums the
 device's pass timings for the last finished frame and tells the controller,
 with how often frames are due: the game's target (`--target-fps`, 60) or the
-display's refresh, whichever is slower. Every eight frames the controller
-compares the mean with nine tenths of that period; over it, or under a quiet
-band below it, it scales the scene's pixel count by the ratio, sharply down
-and gently up, and yields the scene's share of its ordinary width and height
-in thirty-seconds, from a half to the whole. Only the targets at the scene's
+display's refresh, whichever is slower. An unknown refresh leaves the
+target alone: the cadence of rendered frames is not the display's refresh,
+and missed frames must not loosen the next frame's budget.
+Every eight frames the controller compares the mean with nine tenths of
+that period; over it, or under a quiet band below it, it scales the scene's
+pixel count by the ratio, sharply down and gently up, and yields the scene's
+share of its ordinary width and height in thirty-seconds, from three
+eighths to the whole. The ordinary scale is bounded before that share is
+applied: a quarter-drawable floor after it would prevent the controller
+from meeting its budget on a large display. Only the targets at the scene's
 size are rebuilt when the share changes: nothing in them outlives a frame
 and the history is the drawable's, so the picture carries on. That M2 Pro
 then holds 60 fps on the ride with the scene near 2640x743, a GPU time of 13
@@ -308,13 +313,19 @@ console's.
 The host steps the simulation by when frames appear, not by when its loop
 comes round: before each frame it asks the device for
 `next_frame_timing ()`, the predicted display time of the frame about to be
-built on the steady clock, and ticks by the difference from the last one
-(`MOPPE_FRAME_CLOCK=host` keeps the loop's own time). Each device records
+built on the steady clock, and ticks by its advance past the time already
+spent (`MOPPE_FRAME_CLOCK=host` keeps the loop's own time). Each device records
 when its presents actually appeared and `PresentationClock`
 (`moppe/nhal/presentation.hh`) predicts from them: one frame period after
 the latest observed, the period being the frames' own cadence in whole
 refreshes, and no sooner than a period from now when the loop falls behind.
 Luv's Vulkan canvas measures presentation the same way.
+
+The consumed display time never moves backward. A corrected prediction that
+repeats or retreats supplies zero elapsed time until it catches up, rather
+than spending wall time and later counting the same interval again. Wall
+time bridges startup and unavailable predictions. The existing 50 ms cap
+still discards excess time after a long stall instead of queuing catch-up.
 
 - Vulkan: `VK_EXT_present_timing` with `VK_KHR_present_id2`; each present
   carries its frame's serial and asks when its first pixel became visible
@@ -323,7 +334,9 @@ Luv's Vulkan canvas measures presentation the same way.
   states its refresh period.
 - Metal: each drawable's presented handler reports its `presentedTime` on
   Core Animation's media clock. Drawables that are never shown (a locked
-  screen) report zero, and the host keeps its own time.
+  screen) report zero, and the host keeps its own time. The SDL host supplies
+  the display mode's refresh period, updating it when the window moves to
+  another display or its mode changes.
 - Direct3D 12: DXGI's frame statistics name the latest present shown and
   its vsync's QPC time; consecutive vsyncs give the refresh period.
 
@@ -332,6 +345,14 @@ display. On Linux (RADV, Wayland, 60 Hz) the loop's own time varied from 10
 to 41 ms a frame at 59.5 fps; stepped by display time every frame takes one
 refresh, 16.68 ms, or two, 33.36 ms, where one was missed. On the Xbox every
 step is 16.68 ms.
+
+`MOPPE_FRAME_TRACE=/path/to/frames.csv` records every SDL host frame: elapsed
+wall time, loop interval, step sent to the game, predicted display time and
+refresh period, whether there was a prediction, CPU tick and render times,
+and the last completed frame's GPU pass total. The render time includes
+waiting for a drawable. Use real play, not the fixed clock of a recording,
+and leave loading, warm-up, screenshots, and profiler attachment out of
+pacing measurements.
 
 ## The game on Linux
 

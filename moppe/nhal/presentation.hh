@@ -53,7 +53,7 @@ namespace moppe::nhal {
     FrameTiming predict (std::uint64_t serial, double now) const {
       const std::lock_guard lock (m_mutex);
       if (!m_count)
-        return {};
+        return { 0, m_refresh, false };
       const Seen& last = m_seen[(m_next + size - 1) % size];
       double period = observed_period ();
       if (m_refresh > 0)
@@ -61,12 +61,12 @@ namespace moppe::nhal {
                    ? std::max (1.0, std::round (period / m_refresh)) * m_refresh
                    : m_refresh;
       if (!(period > 0) || serial <= last.serial)
-        return {};
+        return { 0, m_refresh, false };
       double at = last.seconds + double (serial - last.serial) * period;
       const double soonest = now + period;
       if (at < soonest)
         at += std::ceil ((soonest - at) / period) * period;
-      return { at, m_refresh > 0 ? m_refresh : period, true };
+      return { at, m_refresh, true };
     }
 
   private:

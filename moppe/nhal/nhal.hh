@@ -261,7 +261,8 @@ namespace moppe::nhal {
   // When a frame is expected on screen and how often the display refreshes,
   // in seconds on the host's steady clock (std::chrono::steady_clock).
   // `predicted` is false where the device cannot observe its presentations;
-  // the host then keeps its own time.
+  // the host then keeps its own time. An unknown refresh is zero, not the
+  // observed frame interval: missed refreshes must not loosen a GPU budget.
   struct FrameTiming {
     double display_seconds = 0;
     double refresh_seconds = 0;
@@ -380,6 +381,10 @@ namespace moppe::nhal {
     virtual FrameTiming next_frame_timing () const {
       return {};
     }
+
+    // The host's display mode, in seconds per refresh (zero if unknown).
+    // Devices whose presentation API states the refresh need no hint.
+    virtual void set_display_refresh (double) {}
 
     // Submits the frame and presents its drawable.
     virtual void end_frame () = 0;

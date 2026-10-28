@@ -1059,7 +1059,8 @@ namespace moppe::nhal {
         // resolves ignoring motion, "scene" presents the unresolved scene,
         // "noao" and "noshafts" leave out the occlusion and the sun shafts, and
         // "nosky", "nosward", and "noblades" the sky and the grass's
-        // canopy and blades, to time each apart.
+        // canopy and blades, to time each apart; "noterrain" and
+        // "noribbons" separate the ground from its fine road geometry.
         {
           const char* probe = moppe::environment ("MOPPE_NHAL_PROBE");
           m_probe = probe ? probe : "";
@@ -1318,8 +1319,10 @@ namespace moppe::nhal {
         m_device->set_pipeline (m_terrain);
         bind_ground ();
         m_chunks.assign (chunks, chunks + count);
-        draw_chunks ();
-        draw_road_ribbons ();
+        if (m_probe != "noterrain")
+          draw_chunks ();
+        if (m_probe != "noribbons")
+          draw_road_ribbons ();
       }
 
       // What the terrain's programs, and the road ribbon's, read.
@@ -2852,7 +2855,9 @@ namespace moppe::nhal {
           params.scene_scale * std::min (point_relative, affordable);
         if (params.render_scale_override > 0.0f)
           scale = params.render_scale_override;
-        return std::clamp (scale * m_dynamic.share (), 0.25f, 1.0f);
+        // Bound the ordinary size, not the controller's result: a quarter
+        // drawable floor otherwise defeats adaptation on large displays.
+        return std::clamp (scale, 0.25f, 1.0f) * m_dynamic.share ();
       }
 
       // Tells the dynamic resolution what the last finished frame cost the

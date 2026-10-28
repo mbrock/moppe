@@ -97,19 +97,20 @@ namespace moppe::game {
     void draw (render::Renderer& renderer, const Vec3& camera);
 
   private:
-    struct Tile {
-      std::vector<std::uint32_t> sites;
+    struct TileMesh {
       render::MeshPtr mesh;
       bool dirty = true;
     };
 
     static std::uint64_t tile_key (int x, int z);
-    Tile* tile_at (const Vec3& at);
+    TileMesh* mesh_at (const Vec3& at);
 
     MushroomPlan m_plan;
     std::vector<bool> m_picked;
     std::size_t m_followed = 0;
-    std::unordered_map<std::uint64_t, Tile> m_tiles;
+    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> m_tiles;
+    // Only recently visible tiles; empty meshes stay cached too.
+    std::unordered_map<std::uint64_t, TileMesh> m_meshes;
   };
 }
 
