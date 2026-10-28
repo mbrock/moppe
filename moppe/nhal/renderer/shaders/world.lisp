@@ -3714,18 +3714,22 @@
              ;; Nothing roots on a road's bared batters, or its tread.
              (faces (road-faces road-segments road-index centre height
                                 near-road))
+             (clear (* (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
+                       (- 1.0 (swizzle verge :x))))
              (wanted (* (max (* leaf (blade-resolved pixels)) heads)
-                        fade 32.0
-                        (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
-                        (- 1.0 (swizzle verge :x))))
+                        fade 32.0 clear))
              (identity (cell-identity cell))
              (shoots (lod-shoots wanted identity)))
-        (when (and inside (> shoots (uint 0)))
+        (when (and inside (> wanted 0.0) (> shoots (uint 0)))
           (let* ((class (grass-class shoots))
                  (slot (atomic-add arguments (+ (* class (uint 5)) (uint 1))
                                    (uint 1))))
             (set-buffer-element tiles (+ (* class side side) slot)
-                                (+ index (* shoots (uint 262144))))))))))
+                                ;; The tile's index, its shoots, and how
+                                ;; clear of the road it is, for the blades.
+                                (+ index (* shoots (uint 262144))
+                                   (* (uint (+ (* clear 255.0) 0.5))
+                                      (uint 16777216))))))))))
 
 (define-shader-program grass-tiles
   :compute grass-tiles-compute)
@@ -3781,7 +3785,10 @@
   (let* ((record (buffer-element tiles (+ (uint (swizzle class :x))
                                           instance-index)))
          (cell (window-cell window (logand record (uint 262143))))
-         (shoots (shift-right record (uint 18)))
+         (shoots (logand (shift-right record (uint 18)) (uint 63)))
+         ;; The road the cull kept the tile's grass off: its blades grow on
+         ;; it no more than the cull let the tile ask for.
+         (clear (/ (float (shift-right record (uint 24))) 255.0))
          (shoot (/ vertex-index (uint 8)))
          (corner (mod vertex-index (uint 8)))
          (section (float (/ corner (uint 2))))
@@ -3864,7 +3871,7 @@
                                     ;; Bare peaty ground between cushions.
                                     (if ling (smoothstep 0.10 0.35 cushion)
                                         1.0)
-                                    fade 32.0)
+                                    fade clear 32.0)
                                  shoot (cell-identity cell)))
          (vigour (plant-hash identity (uint 4)))
          (scale (* (sqrt presence)
