@@ -2035,7 +2035,13 @@
          ;; Rain darkens what soaks it up, and still water more.
          (tread-share (road-hold road-built 0.0 road-across road-shape))
          (albedo (* (srgb path-ground)
-                    (- 1.0 (* wet (mix 0.15 0.4 tread-share)))
+                    ;; Wet ground darkens, rock and bare earth most: the
+                    ;; water fills their pores and leaves no air to scatter.
+                    (- 1.0 (* wet (mix (mix 0.25 0.55
+                                            (smoothstep 0.92 0.6
+                                                        (ground-surface-rough
+                                                         surface)))
+                                       0.4 tread-share)))
                     (- 1.0 (* 0.45 puddle))))
          ;; The relief tilts the normal within the surface: only the part
          ;; of its slope that lies along the ground counts.  A road's
@@ -2076,7 +2082,12 @@
                            (swizzle relief :y)))
          (direct (mix 1.0 (expt taps 1.3)
                       (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)))
-         (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) direct))
+         ;; Shade is lit by the sky alone: bluer than the sun's light
+         ;; under a clear sky, but only grey under cloud.
+         (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
+         (fill (mix (mix (vec3 0.88 0.95 1.07) (vec3 0.97 0.98 0.99)
+                         overcast)
+                    (vec3 1.0 1.0 1.0) direct))
          (to-eye (/ (- eye world) (max distance 0.0001)))
          ;; The ground's roughness: its own, a road's tread where it holds
          ;; the ground (asphalt smoother than gravel, and polished in the
@@ -2096,10 +2107,12 @@
                   (dot (derivative-y shaded) (derivative-y shaded))))
          (alpha (* rough rough))
          (rough-seen (sqrt (sqrt (+ (* alpha alpha) (min (* 0.5 bend) 0.18)))))
+         ;; How far above the horizon the mirror direction rises.
+         (mirror-rise (- (* 2.0 (max (dot shaded to-eye) 0.0)
+                            (swizzle shaded :y))
+                         (swizzle to-eye :y)))
          (diffuse-light (+ (* (hemisphere-lobes (swizzle ambient :xyz) shaded
-                                                (smoothstep 0.6 0.95
-                                                            (swizzle
-                                                             sun-direction :w)))
+                                                overcast)
                               fill)
                            (* (swizzle sun-diffuse :xyz)
                               (* 0.9 lambert direct))
@@ -2114,10 +2127,18 @@
                                        (swizzle relief :w)
                                        ;; Shade hides much of the sky, and
                                        ;; rough ground's own facets hide
-                                       ;; the rest at a glancing look.
+                                       ;; the rest at a glancing look; and
+                                       ;; what it mirrors near the horizon
+                                       ;; is the hills and trees, not the
+                                       ;; sky, unless it is smooth enough
+                                       ;; to be water.
                                        (* (mix 0.4 1.0 direct)
                                           (- 1.0 (* 0.75 (smoothstep
-                                                          0.35 0.9 rough)))))
+                                                          0.35 0.9 rough)))
+                                          (mix 1.0 (smoothstep 0.0 0.3
+                                                               mirror-rise)
+                                               (smoothstep 0.15 0.5
+                                                           rough))))
                        :xyz)))
     (set-output color (vec4 (hazed lit world eye fog-color
                                    (swizzle sky-sun :xyz) relief)
