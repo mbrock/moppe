@@ -515,6 +515,12 @@ namespace moppe {
       virtual void draw_mesh (const Mesh& mesh,
                               const Mat4& model,
                               uint64_t motion_id = 0) = 0;
+      // How many of the scene's pixels a metre spans a metre ahead of the
+      // camera of the frame begun last (its focal length in those pixels),
+      // so that a caller can leave out detail finer than a pixel: a thing
+      // S metres across at D metres spans S / D times this many. Zero when
+      // the backend cannot say.
+      virtual float scene_focal_pixels () const { return 0.0f; }
       // Between these, draw_mesh draws nothing: it lends the mesh to the
       // next render_local_shadow, whose near cascade takes the sun's
       // shadow from its opaque runs (so that a car shades the ground

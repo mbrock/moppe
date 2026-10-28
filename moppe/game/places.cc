@@ -1052,17 +1052,37 @@ namespace moppe::game {
             post (x, z);
       }
 
-      const model_mesh::Mesh& building_mesh (Building::Kind kind, bool base) {
+      // A building's stone base or its timber, at tier 0 (near), 1, or 2
+      // (far); a base has no middle tier of its own.
+      const model_mesh::Mesh&
+      building_mesh (Building::Kind kind, bool base, int tier) {
+        using namespace farm_model;
         switch (kind) {
         case Building::Kind::mill:
-          return base ? farm_model::mill_base : farm_model::mill;
+          if (base)
+            return tier == 0 ? mill_base : mill_base_far;
+          return tier == 0 ? mill : tier == 1 ? mill_mid : mill_far;
         case Building::Kind::house:
-          return base ? farm_model::house_base : farm_model::house;
+          if (base)
+            return tier == 0 ? house_base : house_base_far;
+          return tier == 0 ? house : tier == 1 ? house_mid : house_far;
         case Building::Kind::barn:
           break;
         }
-        return base ? farm_model::barn_base : farm_model::barn;
+        if (base)
+          return tier == 0 ? barn_base : barn_base_far;
+        return tier == 0 ? barn : tier == 1 ? barn_mid : barn_far;
       }
+
+      const model_mesh::Mesh& wheel_mesh (int tier) {
+        return tier == 0   ? farm_model::mill_wheel
+               : tier == 1 ? farm_model::mill_wheel_mid
+                           : farm_model::mill_wheel_far;
+      }
+
+      // The finest parts of a building's near tier (battens, glazing
+      // bars, coursed stones), metres; its middle tier's are twice that.
+      constexpr float building_detail = 0.05f;
     }
   }
 
@@ -1129,26 +1149,51 @@ namespace moppe::game {
         build_platform (dl, s, ground, seed++, m_colliders);
       });
     }
+    const auto record_lit = [] (render::DrawList& dl) {
+      render::DrawState solid;
+      solid.cull = false;
+      dl.state (solid);
+      dl.lit (true);
+      dl.fogged (true);
+    };
     for (const Farm& farm : plan.farms)
       for (const Building& b : farm.buildings) {
         const bool roofless = farm.ruined;
-        bake (b.at, 3000.0f, [&] (render::DrawList& dl) {
+        const Mat4 frame = building_frame (b);
+        std::array<render::MeshPtr, 3> tiers;
+        for (int t = 0; t < 3; ++t) {
+          render::DrawList dl;
+          record_lit (dl);
           dl.push ();
-          dl.mult (building_frame (b));
-          model_mesh::record (dl, building_mesh (b.kind, true));
+          dl.mult (frame);
+          model_mesh::record (dl, building_mesh (b.kind, true, t));
           if (!roofless)
-            model_mesh::record (dl, building_mesh (b.kind, false));
+            model_mesh::record (dl, building_mesh (b.kind, false, t));
           dl.pop ();
-        });
+          dl.state (render::DrawState ());
+          tiers[t] = renderer.create_mesh (dl);
+        }
+        Piece piece;
+        piece.mesh = std::move (tiers[0]);
+        piece.coarser = { std::move (tiers[1]), std::move (tiers[2]) };
+        piece.detail = building_detail;
+        piece.origin = b.at;
+        piece.reach = 3000.0f;
+        m_pieces.push_back (std::move (piece));
         building_colliders (b, roofless, m_colliders);
         if (b.kind == Building::Kind::mill && !roofless) {
-          render::DrawList dl;
-          dl.lit (true);
-          dl.fogged (true);
-          model_mesh::record (dl, farm_model::mill_wheel);
-          const Mat4 frame = building_frame (b);
+          std::array<render::MeshPtr, 3> wheels;
+          for (int t = 0; t < 3; ++t) {
+            render::DrawList dl;
+            dl.lit (true);
+            dl.fogged (true);
+            model_mesh::record (dl, wheel_mesh (t));
+            wheels[t] = renderer.create_mesh (dl);
+          }
           Piece wheel;
-          wheel.mesh = renderer.create_mesh (dl);
+          wheel.mesh = std::move (wheels[0]);
+          wheel.coarser = { std::move (wheels[1]), std::move (wheels[2]) };
+          wheel.detail = building_detail;
           wheel.origin = frame.transform_point (farm_model::mill_axle);
           wheel.reach = 1500.0f;
           wheel.wheel = farm.kept;
@@ -1160,17 +1205,33 @@ namespace moppe::game {
       }
   }
 
+  const render::Mesh& PlacesLandscape::tier (const Piece& piece,
+                                             float distance,
+                                             float focal) const {
+    // A part `detail` metres across spans detail * focal / distance
+    // pixels; the near tier stands while its finest span a pixel, the
+    // middle while its own (twice as coarse) do.
+    if (piece.detail <= 0.0f || !piece.coarser[0] || focal <= 0.0f)
+      return *piece.mesh;
+    const float pixels = piece.detail * focal / std::max (distance, 0.5f);
+    if (pixels >= 1.0f)
+      return *piece.mesh;
+    return 2.0f * pixels >= 1.0f ? *piece.coarser[0] : *piece.coarser[1];
+  }
+
   void PlacesLandscape::draw (render::Renderer& renderer,
                               const Vec3& camera,
                               float time,
                               std::uint64_t motion_base) const {
     std::uint64_t id = motion_base;
+    const float focal = renderer.scene_focal_pixels ();
     for (const Piece& piece : m_pieces) {
       ++id;
       const Vec3 at = near_copy (piece.origin, camera);
       if (length2 (at - camera) > piece.reach * piece.reach)
         continue;
       const Vec3 shift = at - piece.origin;
+      const render::Mesh& mesh = tier (piece, length (at - camera), focal);
       if (piece.frame) {
         // The wheel, in its own frame about the axle, turning.
         const float angle = piece.turning ? -0.9f * time : 0.4f;
@@ -1178,10 +1239,10 @@ namespace moppe::game {
         const Mat4 model = Mat4::translation (shift) * frame *
                            Mat4::translation (farm_model::mill_axle) *
                            Mat4::rotation (angle * u::rad, Vec3 (1, 0, 0));
-        renderer.draw_mesh (*piece.mesh, model, id);
+        renderer.draw_mesh (mesh, model, id);
         continue;
       }
-      renderer.draw_mesh (*piece.mesh, Mat4::translation (shift), id);
+      renderer.draw_mesh (mesh, Mat4::translation (shift), id);
     }
   }
 
@@ -1191,7 +1252,10 @@ namespace moppe::game {
       const Vec3 at = near_copy (piece.origin, camera);
       if (piece.frame || length2 (at - camera) > 160.0f * 160.0f)
         continue;
-      renderer.draw_mesh (*piece.mesh, Mat4::translation (at - piece.origin));
+      // The sun's near texels are some eight centimetres: a building
+      // shades the ground by its massing alone.
+      renderer.draw_mesh (piece.coarser[1] ? *piece.coarser[1] : *piece.mesh,
+                          Mat4::translation (at - piece.origin));
     }
   }
 

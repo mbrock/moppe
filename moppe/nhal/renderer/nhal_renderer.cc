@@ -1623,6 +1623,10 @@ namespace moppe::nhal {
         }
       }
 
+      float scene_focal_pixels () const override {
+        return 0.5f * float (m_scene_height) * std::abs (m_params.proj.at (1, 1));
+      }
+
       void draw_mesh (const render::Mesh& mesh, const Mat4& model,
                       std::uint64_t motion_id) override {
         const auto& m = static_cast<const NhalMesh&> (mesh);

@@ -10,11 +10,22 @@ namespace moppe::game::farm_model {
   // Assemblies, each in its own frame.
   extern const model_mesh::Mesh barn;
   extern const model_mesh::Mesh barn_base;
+  extern const model_mesh::Mesh barn_base_far;
+  extern const model_mesh::Mesh barn_far;
+  extern const model_mesh::Mesh barn_mid;
   extern const model_mesh::Mesh house;
   extern const model_mesh::Mesh house_base;
+  extern const model_mesh::Mesh house_base_far;
+  extern const model_mesh::Mesh house_far;
+  extern const model_mesh::Mesh house_mid;
   extern const model_mesh::Mesh mill;
   extern const model_mesh::Mesh mill_base;
+  extern const model_mesh::Mesh mill_base_far;
+  extern const model_mesh::Mesh mill_far;
+  extern const model_mesh::Mesh mill_mid;
   extern const model_mesh::Mesh mill_wheel;
+  extern const model_mesh::Mesh mill_wheel_far;
+  extern const model_mesh::Mesh mill_wheel_mid;
 
   // Points in model space.
   extern const Vec3 mill_axle;

@@ -17,6 +17,7 @@
 #include <moppe/render/renderer.hh>
 #include <moppe/terrain/roads.hh>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -181,7 +182,12 @@ namespace moppe::game {
 
   private:
     struct Piece {
+      // The mesh near to, and (for a building or the wheel) two coarser
+      // tiers, which take over once the finer one's finest parts --
+      // `detail` metres and twice that -- would span under a pixel.
       render::MeshPtr mesh;
+      std::array<render::MeshPtr, 2> coarser;
+      float detail = 0.0f;
       Vec3 origin {};
       float reach = 0.0f;
       // The mill's wheel, drawn in the mill's frame about its axle,
@@ -192,6 +198,9 @@ namespace moppe::game {
       Vec3 axis {};
     };
     Vec3 near_copy (const Vec3& at, const Vec3& camera) const;
+    const render::Mesh& tier (const Piece& piece,
+                              float distance,
+                              float focal) const;
 
     std::vector<Piece> m_pieces;
     std::vector<mov::Trunk> m_colliders;

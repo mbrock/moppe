@@ -16,6 +16,20 @@ its front -- with its origin on the ground at its middle:
 Each building's stone base (`*_base`) exports apart from the rest, so a
 farm long left can be drawn as the plinths and chimney stack that stand
 after the timber has gone. Rebuilding discards hand edits to the .blend.
+
+Each assembly exports at three levels of detail, so that nothing is drawn
+finer than the screen can hold (places.cc picks one by how many pixels a
+tier's finest part spans): the whole (`house`), whose finest parts are
+some 5 cm -- battens, glazing bars, the coursed stones, the gap between
+the barn's doors; `*_mid`, without those, whose finest are some 10 cm --
+corner boards, fascia, the door's surround, the braces, the wheel's rims;
+and `*_far`, the massing alone, where a window or a door with its
+surround is one block in their mean colour. (A base's mid tier is its
+far one.)
+
+No two faces lie in one plane where either shows: a part that stands on,
+in, or before another stands clear of it by at least 2 cm, or is sunk
+into it, and nothing abuts edge to edge where a crack could open.
 """
 
 import math
@@ -26,7 +40,8 @@ import bpy
 
 sys.path.insert(0, os.path.dirname(__file__))
 from shapes import (V, RIGHT, UP, FORWARD, Cage, assembly, blob,  # noqa
-                    loft, material, merge, part, slab, torus, tube)
+                    loft, material, merge, part, slab, to_linear, torus,
+                    tube)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "models", "farm.blend")
@@ -92,6 +107,61 @@ def turned(cage):
     return out
 
 
+NEAR, MID, FAR = 0, 1, 2
+TIERS = (("", NEAR), ("_mid", MID), ("_far", FAR))
+
+
+def placed(cage, centre, side, up, normal):
+    """`cage`, given in a face's own frame (x along `side`, y up, z out
+    along `normal`), set at `centre`."""
+    out = Cage()
+    out.verts = [centre + side * v.x + up * v.y + normal * v.z
+                 for v in cage.verts]
+    out.faces = [list(f) for f in cage.faces]
+    return out
+
+
+def frame_ring(outer, inner, z0, z1):
+    """A rectangular frame in its own plane, one closed solid: the outer
+    and inner half extents, from z0 to z1 out of it."""
+    cage = Cage()
+    for z in (z0, z1):
+        for hx, hy in (outer, inner):
+            cage.verts += [V((-hx, -hy, z)), V((hx, -hy, z)),
+                           V((hx, hy, z)), V((-hx, hy, z))]
+    o0, i0, o1, i1 = 0, 4, 8, 12
+    for i in range(4):
+        j = (i + 1) % 4
+        cage.faces.append([o1 + i, o1 + j, i1 + j, i1 + i])
+        cage.faces.append([i0 + i, i0 + j, o0 + j, o0 + i])
+        cage.faces.append([o0 + i, o0 + j, o1 + j, o1 + i])
+        cage.faces.append([i1 + i, i1 + j, i0 + j, i0 + i])
+    return cage
+
+
+def glazing(half, bar, z0, z1):
+    """The bars dividing a window of half extents `half` into four panes,
+    one cross-shaped solid `bar` wide."""
+    w, h, b = half[0], half[1], bar / 2
+    return prism([(-b, -h), (b, -h), (b, -b), (w, -b), (w, b), (b, b),
+                  (b, h), (-b, h), (-b, b), (-w, b), (-w, -b), (-b, -b)],
+                 z0, z1)
+
+
+def blend(name, weights):
+    """A material of the area-weighted mean of PALETTE colours, `weights`
+    pairs of (name, area), averaged in linear light: what a pixel too
+    coarse to tell them apart sees."""
+    total = sum(a for _, a in weights)
+    lin = [sum(to_linear(PALETTE[k][c]) * a for k, a in weights) / total
+           for c in range(3)]
+    shown = tuple(12.92 * c if c <= 0.0031308
+                  else 1.055 * c ** (1 / 2.4) - 0.055 for c in lin)
+    rough = sum(FINISH[k].get("roughness", 0.8) * a
+                for k, a in weights) / total
+    return material(name, shown, roughness=rough)
+
+
 def roof(asm, name, half_span, half_length, eave, ridge, thick, mat,
          along_x=False):
     """A pitched roof of two planes meeting at the ridge, which runs along
@@ -123,23 +193,40 @@ def gable(asm, name, half_width, half_length, eave, ridge, mat,
          smooth=False)
 
 
-def window(asm, name, centre, normal, size, m):
-    """A white-framed window of four panes, set in a wall facing
-    `normal`."""
+def window(asm, name, centre, normal, size, m, tier):
+    """A white-framed window of four panes, set in a wall facing `normal`:
+    the glass stands 5 cm out of the wall, its glazing bars 2 cm before
+    it, and the frame round them 2 cm further, its inside overlapping the
+    glass so no edge of the glass shows. Far off, where the frame is
+    finer than a pixel, the window is one block in their mean colour."""
     side = UP.cross(normal).normalized()
     w, h = size
-    part(asm, name + "_frame",
-         slab(centre + normal * 0.03, (w / 2 + 0.07, h / 2 + 0.07, 0.04),
-              axes=(side, UP, normal)), m["white"], levels=0, bevel=0.01,
+    border, bar = 0.07, 0.06
+    if tier >= MID:
+        ring = (w + 2 * border) * (h + 2 * border) - w * h
+        bars = bar * (w + h) - bar * bar
+        key = f"window_{w:g}x{h:g}"
+        if key not in m:
+            m[key] = blend(key, (("white", ring + bars),
+                                 ("glass", w * h - bars)))
+        part(asm, name, placed(slab(V((0, 0, 0.025)),
+                                    (w / 2 + border, h / 2 + border,
+                                     0.035)),
+                               centre, side, UP, normal),
+             m[key], levels=0, smooth=False)
+        return
+    part(asm, name + "_glass",
+         placed(slab(V((0, 0, 0.02)), (w / 2 + 0.02, h / 2 + 0.02, 0.03)),
+                centre, side, UP, normal), m["glass"], levels=0,
          smooth=False)
-    panes = []
-    for i in (-1, 1):
-        for j in (-1, 1):
-            panes.append(slab(centre + normal * 0.075 + side * (i * w / 4) +
-                              UP * (j * h / 4),
-                              (w / 4 - 0.03, h / 4 - 0.03, 0.01),
-                              axes=(side, UP, normal)))
-    part(asm, name + "_glass", merge(*panes), m["glass"], levels=0,
+    part(asm, name + "_bars",
+         placed(glazing((w / 2 + 0.01, h / 2 + 0.01), bar, 0.0, 0.07),
+                centre, side, UP, normal), m["white"], levels=0,
+         smooth=False)
+    part(asm, name + "_frame",
+         placed(frame_ring((w / 2 + border, h / 2 + border), (w / 2, h / 2),
+                           -0.01, 0.09),
+                centre, side, UP, normal), m["white"], levels=0,
          smooth=False)
 
 
@@ -182,56 +269,76 @@ def stones(centre, half, rows, seed):
     return merge(*out)
 
 
-def mill(coll, m):
-    base = assembly("mill_base", coll, V((0, 0, 0)), mesh="mill_base")
-    part(base, "plinth", stones(V((0, 0.2, 0)), (2.2, 0.8, 2.5), 3, 7),
-         m["stone"], levels=0, smooth=False)
-    b = assembly("mill", coll, V((0, 0, 0)), mesh="mill")
+def plinth(asm, name, centre, half, rows, seed, mat, tier):
+    """A plinth of coursed fieldstones near to; the plain box they are
+    laid on from further off, where a stone's 4 cm and the joints between
+    them are finer than a pixel."""
+    cage = stones(centre, half, rows, seed) if tier == NEAR else \
+        slab(centre, half)
+    part(asm, name, cage, mat, levels=0, smooth=False)
+
+
+def mill(coll, m, suffix, tier):
+    if tier != MID:
+        base = assembly("mill_base" + suffix, coll, V((0, 0, 0)),
+                        mesh="mill_base" + suffix)
+        plinth(base, "plinth", V((0, 0.2, 0)), (2.2, 0.8, 2.5), 3, 7,
+               m["stone"], tier)
+    b = assembly("mill" + suffix, coll, V((0, 0, 0)), mesh="mill" + suffix)
     part(b, "walls", slab(V((0, 2.3, 0)), (2.0, 1.3, 2.3)), m["grey_timber"],
          levels=0, smooth=False)
-    for face, half, count in ((FORWARD, (2.0, 1.3), 12),
-                              (-FORWARD, (2.0, 1.3), 12),
-                              (RIGHT, (2.3, 1.3), 14),
-                              (-RIGHT, (2.3, 1.3), 14)):
-        reach = 2.3 if abs(face.z) > 0.5 else 2.0
-        boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
-               V((0, 2.3, 0)) + face * reach, face, half, m["dark_timber"],
-               count)
+    if tier == NEAR:
+        for face, half, count in ((FORWARD, (2.0, 1.3), 12),
+                                  (-FORWARD, (2.0, 1.3), 12),
+                                  (RIGHT, (2.3, 1.3), 14),
+                                  (-RIGHT, (2.3, 1.3), 14)):
+            reach = 2.3 if abs(face.z) > 0.5 else 2.0
+            boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
+                   V((0, 2.3, 0)) + face * reach, face, half,
+                   m["dark_timber"], count)
     gable(b, "gable", 2.0, 2.3, 3.6, 5.3, m["grey_timber"])
     roof(b, "roof", 2.5, 2.75, 3.4, 5.45, 0.09, m["shingle"])
-    part(b, "ridge", slab(V((0, 5.5, 0)), (0.12, 0.08, 2.8)),
+    # The ridge board stands 6 cm over the roof's apex, its foot sunk in
+    # the shingles.
+    part(b, "ridge", slab(V((0, 5.53, 0)), (0.12, 0.10, 2.8)),
          m["dark_timber"], levels=0, smooth=False)
     # The door on the front, up two stone steps, and a hatch over it.
     part(b, "door", slab(V((0.6, 2.0, 2.33)), (0.5, 0.95, 0.04)),
          m["dark_timber"], levels=0, bevel=0.01, smooth=False)
-    part(b, "steps", merge(slab(V((0.6, 0.75, 2.75)), (0.7, 0.25, 0.25)),
+    # Each step a riser below the one above, the first into the plinth.
+    part(b, "steps", merge(slab(V((0.6, 0.66, 2.725)), (0.7, 0.16, 0.275)),
                            slab(V((0.6, 0.3, 3.15)), (0.75, 0.3, 0.25))),
          m["stone_dark"], levels=0, bevel=0.03, smooth=False)
     part(b, "hatch", slab(V((0, 4.3, 2.33)), (0.45, 0.4, 0.04)),
          m["dark_timber"], levels=0, smooth=False)
-    window(b, "window", V((2.0, 2.6, -0.8)), RIGHT, (0.6, 0.5), m)
+    window(b, "window", V((2.0, 2.6, -0.8)), RIGHT, (0.6, 0.5), m, tier)
     # The axle's bearing through the wall on the wheel's side.
     part(b, "bearing", slab(V((-2.25, 1.2, 0)), (0.3, 0.2, 0.2)),
          m["dark_timber"], levels=0, smooth=False)
-    part(b, "axle_in", tube([V((-2.0, 1.2, 0)), V((-2.6, 1.2, 0))], 0.1,
-                            sides=10), m["dark_timber"], levels=0)
+    if tier <= MID:
+        part(b, "axle_in", tube([V((-2.0, 1.2, 0)), V((-2.6, 1.2, 0))], 0.1,
+                                sides=10), m["dark_timber"], levels=0)
 
-    w = assembly("mill_wheel", coll, V((-2.95, 1.2, 0)), mesh="mill_wheel",
-                 point="mill_axle")
+    w = assembly("mill_wheel" + suffix, coll, V((-2.95, 1.2, 0)),
+                 mesh="mill_wheel" + suffix,
+                 point="mill_axle" if tier == NEAR else None)
     radius, half = 1.75, 0.3
-    rims = [torus(RIGHT * s * half, RIGHT, UP, radius, (0.07, 0.05), 32, 4)
-            for s in (-1, 1)]
-    part(w, "rims", merge(*rims), m["dark_timber"], levels=0, smooth=False)
-    spokes = []
-    for i in range(8):
-        a = 2 * math.pi * i / 8
-        out = UP * math.cos(a) + FORWARD * math.sin(a)
-        for s in (-1, 1):
-            spokes.append(slab(RIGHT * s * half + out * (radius / 2),
-                               (0.04, radius / 2, 0.05),
-                               axes=(RIGHT, out, RIGHT.cross(out))))
-    part(w, "spokes", merge(*spokes), m["grey_timber"], levels=0,
-         smooth=False)
+    if tier <= MID:
+        rims = [torus(RIGHT * s * half, RIGHT, UP, radius, (0.07, 0.05), 32,
+                      4) for s in (-1, 1)]
+        part(w, "rims", merge(*rims), m["dark_timber"], levels=0,
+             smooth=False)
+    if tier == NEAR:
+        spokes = []
+        for i in range(8):
+            a = 2 * math.pi * i / 8
+            out = UP * math.cos(a) + FORWARD * math.sin(a)
+            for s in (-1, 1):
+                spokes.append(slab(RIGHT * s * half + out * (radius / 2),
+                                   (0.04, radius / 2, 0.05),
+                                   axes=(RIGHT, out, RIGHT.cross(out))))
+        part(w, "spokes", merge(*spokes), m["grey_timber"], levels=0,
+             smooth=False)
     paddles = []
     for i in range(16):
         a = 2 * math.pi * (i + 0.5) / 16
@@ -246,91 +353,127 @@ def mill(coll, m):
                           0.09, sides=8), m["iron"], levels=0)
 
 
-def house(coll, m):
-    base = assembly("house_base", coll, V((0, 0, 0)), mesh="house_base")
-    part(base, "plinth", stones(V((0, 0.05, 0)), (3.7, 0.55, 2.7), 2, 11),
-         m["stone"], levels=0, smooth=False)
-    part(base, "chimney", slab(V((0.6, 3.1, -0.3)), (0.38, 2.9, 0.38)),
-         m["stone_dark"], levels=0, bevel=0.02, smooth=False)
-    part(base, "chimney_cap", slab(V((0.6, 6.05, -0.3)), (0.46, 0.06, 0.46)),
-         m["slate"], levels=0, smooth=False)
+def house(coll, m, suffix, tier):
+    if tier != MID:
+        base = assembly("house_base" + suffix, coll, V((0, 0, 0)),
+                        mesh="house_base" + suffix)
+        plinth(base, "plinth", V((0, 0.05, 0)), (3.7, 0.55, 2.7), 2, 11,
+               m["stone"], tier)
+        part(base, "chimney", slab(V((0.6, 3.1, -0.3)), (0.38, 2.9, 0.38)),
+             m["stone_dark"], levels=0, bevel=0.02, smooth=False)
+        part(base, "chimney_cap",
+             slab(V((0.6, 6.05, -0.3)), (0.46, 0.06, 0.46)), m["slate"],
+             levels=0, smooth=False)
 
-    b = assembly("house", coll, V((0, 0, 0)), mesh="house")
+    b = assembly("house" + suffix, coll, V((0, 0, 0)), mesh="house" + suffix)
     part(b, "walls", slab(V((0, 1.85, 0)), (3.5, 1.25, 2.5)), m["falu"],
          levels=0, smooth=False)
     gable(b, "gable", 2.5, 3.5, 3.1, 4.75, m["falu"], along_x=True)
-    for face, half, count, reach in ((FORWARD, (3.5, 1.25), 22, 2.5),
-                                     (-FORWARD, (3.5, 1.25), 22, 2.5),
-                                     (RIGHT, (2.5, 1.25), 16, 3.5),
-                                     (-RIGHT, (2.5, 1.25), 16, 3.5)):
-        boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
-               V((0, 1.85, 0)) + face * reach, face, half, m["falu"], count)
-    corners = []
-    for sx in (-1, 1):
-        for sz in (-1, 1):
-            corners.append(slab(V((sx * 3.5, 1.85, sz * 2.5)),
-                                (0.08, 1.27, 0.08)))
-    corners.append(slab(V((0, 3.12, 2.52)), (3.55, 0.06, 0.05)))
-    corners.append(slab(V((0, 3.12, -2.52)), (3.55, 0.06, 0.05)))
-    part(b, "corners", merge(*corners), m["white"], levels=0, smooth=False)
+    if tier == NEAR:
+        for face, half, count, reach in ((FORWARD, (3.5, 1.25), 22, 2.5),
+                                         (-FORWARD, (3.5, 1.25), 22, 2.5),
+                                         (RIGHT, (2.5, 1.25), 16, 3.5),
+                                         (-RIGHT, (2.5, 1.25), 16, 3.5)):
+            boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
+                   V((0, 1.85, 0)) + face * reach, face, half, m["falu"],
+                   count)
+    if tier <= MID:
+        # White corner boards 8 cm out of each wall, and the fascia under
+        # the eaves 3 cm before the battens.
+        corners = []
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                corners.append(slab(V((sx * 3.5, 1.85, sz * 2.5)),
+                                    (0.08, 1.27, 0.08)))
+        corners.append(slab(V((0, 3.12, 2.52)), (3.55, 0.06, 0.05)))
+        corners.append(slab(V((0, 3.12, -2.52)), (3.55, 0.06, 0.05)))
+        part(b, "corners", merge(*corners), m["white"], levels=0,
+             smooth=False)
     roof(b, "roof", 3.0, 3.85, 2.95, 4.9, 0.1, m["slate"], along_x=True)
-    part(b, "ridge", slab(V((0, 4.95, 0)), (3.9, 0.07, 0.1)), m["slate"],
+    part(b, "ridge", slab(V((0, 4.99, 0)), (3.9, 0.09, 0.1)), m["slate"],
          levels=0, smooth=False)
     # The front: a door between two windows, under a little porch roof.
-    part(b, "door", slab(V((-0.9, 1.6, 2.52)), (0.45, 1.0, 0.04)),
-         m["dark_timber"], levels=0, bevel=0.01, smooth=False)
-    part(b, "door_frame", slab(V((-0.9, 1.65, 2.5)), (0.55, 1.08, 0.03)),
-         m["white"], levels=0, smooth=False)
+    # The door stands 10 cm out of the wall and its white surround 7 cm,
+    # both clear of the battens' 4 cm; far off they are one block.
+    if tier <= MID:
+        part(b, "door", slab(V((-0.9, 1.6, 2.54)), (0.45, 1.0, 0.06)),
+             m["dark_timber"], levels=0, bevel=0.01, smooth=False)
+        part(b, "door_frame", slab(V((-0.9, 1.65, 2.53)), (0.55, 1.08, 0.04)),
+             m["white"], levels=0, smooth=False)
+    else:
+        if "door_block" not in m:
+            m["door_block"] = blend("door_block",
+                                    (("dark_timber", 0.9 * 2.0),
+                                     ("white", 1.1 * 2.16 - 0.9 * 2.0)))
+        part(b, "door", slab(V((-0.9, 1.65, 2.54)), (0.55, 1.08, 0.06)),
+             m["door_block"], levels=0, smooth=False)
     part(b, "porch", slab(V((-0.9, 2.85, 2.9)), (0.8, 0.04, 0.45),
                           axes=(RIGHT, (UP + FORWARD * 0.3).normalized(),
                                 (FORWARD - UP * 0.3).normalized())),
          m["slate"], levels=0, smooth=False)
-    part(b, "step", slab(V((-0.9, 0.45, 2.95)), (0.6, 0.15, 0.35)),
+    # The step a riser below the threshold, from the ground and into the
+    # plinth.
+    part(b, "step", slab(V((-0.9, 0.11, 2.95)), (0.6, 0.31, 0.3)),
          m["stone_dark"], levels=0, bevel=0.03, smooth=False)
     for i, x in enumerate((-2.5, 0.6, 2.3)):
-        window(b, f"front{i}", V((x, 2.0, 2.5)), FORWARD, (0.8, 0.95), m)
-        window(b, f"back{i}", V((x, 2.0, -2.5)), -FORWARD, (0.8, 0.95), m)
+        window(b, f"front{i}", V((x, 2.0, 2.5)), FORWARD, (0.8, 0.95), m,
+               tier)
+        window(b, f"back{i}", V((x, 2.0, -2.5)), -FORWARD, (0.8, 0.95), m,
+               tier)
     for s in (-1, 1):
-        window(b, f"end{s}", V((s * 3.5, 2.0, 0)), RIGHT * s, (0.8, 0.95), m)
-        window(b, f"loft{s}", V((s * 3.5, 3.8, 0)), RIGHT * s, (0.5, 0.5), m)
+        window(b, f"end{s}", V((s * 3.5, 2.0, 0)), RIGHT * s, (0.8, 0.95), m,
+               tier)
+        window(b, f"loft{s}", V((s * 3.5, 3.8, 0)), RIGHT * s, (0.5, 0.5), m,
+               tier)
 
 
-def barn(coll, m):
-    base = assembly("barn_base", coll, V((0, 0, 0)), mesh="barn_base")
-    part(base, "footing", stones(V((0, -0.05, 0)), (4.6, 0.45, 3.1), 2, 23),
-         m["stone"], levels=0, smooth=False)
+def barn(coll, m, suffix, tier):
+    if tier != MID:
+        base = assembly("barn_base" + suffix, coll, V((0, 0, 0)),
+                        mesh="barn_base" + suffix)
+        plinth(base, "footing", V((0, -0.05, 0)), (4.6, 0.45, 3.1), 2, 23,
+               m["stone"], tier)
 
-    b = assembly("barn", coll, V((0, 0, 0)), mesh="barn")
+    b = assembly("barn" + suffix, coll, V((0, 0, 0)), mesh="barn" + suffix)
     part(b, "walls", slab(V((0, 2.2, 0)), (4.4, 1.8, 2.9)), m["falu_old"],
          levels=0, smooth=False)
     gable(b, "gable", 2.9, 4.4, 4.0, 6.1, m["falu_old"], along_x=True)
-    for face, half, count, reach in ((FORWARD, (4.4, 1.8), 30, 2.9),
-                                     (-FORWARD, (4.4, 1.8), 30, 2.9),
-                                     (RIGHT, (2.9, 1.8), 20, 4.4),
-                                     (-RIGHT, (2.9, 1.8), 20, 4.4)):
-        boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
-               V((0, 2.2, 0)) + face * reach, face, half, m["falu_old"],
-               count)
+    if tier == NEAR:
+        for face, half, count, reach in ((FORWARD, (4.4, 1.8), 30, 2.9),
+                                         (-FORWARD, (4.4, 1.8), 30, 2.9),
+                                         (RIGHT, (2.9, 1.8), 20, 4.4),
+                                         (-RIGHT, (2.9, 1.8), 20, 4.4)):
+            boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
+                   V((0, 2.2, 0)) + face * reach, face, half, m["falu_old"],
+                   count)
     roof(b, "roof", 3.4, 4.75, 3.85, 6.25, 0.1, m["boards"], along_x=True)
-    part(b, "ridge", slab(V((0, 6.3, 0)), (4.8, 0.08, 0.12)),
+    part(b, "ridge", slab(V((0, 6.36, 0)), (4.8, 0.10, 0.12)),
          m["dark_timber"], levels=0, smooth=False)
     # The broad double doors in the middle of the front, braced, and a
-    # loft hatch in the gable.
-    doors = []
-    for s in (-1, 1):
-        doors.append(slab(V((s * 0.8, 1.75, 2.93)), (0.78, 1.35, 0.05)))
+    # loft hatch in the gable. The 4 cm between the leaves shows only near
+    # to; further off they are one.
+    if tier == NEAR:
+        doors = [slab(V((s * 0.8, 1.75, 2.93)), (0.78, 1.35, 0.05))
+                 for s in (-1, 1)]
+    else:
+        doors = [slab(V((0, 1.75, 2.93)), (1.58, 1.35, 0.05))]
     part(b, "doors", merge(*doors), m["dark_timber"], levels=0, bevel=0.01,
          smooth=False)
-    braces = []
-    for s in (-1, 1):
-        d = (UP * 2.5 + RIGHT * s * 1.4).normalized()
-        braces.append(slab(V((s * 0.8, 1.75, 2.99)), (0.06, 1.4, 0.02),
-                           axes=(d.cross(FORWARD), d, FORWARD)))
-        braces.append(slab(V((s * 0.8, 2.95, 2.99)), (0.74, 0.06, 0.02)))
-        braces.append(slab(V((s * 0.8, 0.55, 2.99)), (0.74, 0.06, 0.02)))
-    part(b, "braces", merge(*braces), m["white"], levels=0, smooth=False)
-    part(b, "ramp", slab(V((0, 0.2, 3.5)), (1.7, 0.2, 0.6)), m["stone_dark"],
-         levels=0, bevel=0.04, smooth=False)
+    if tier <= MID:
+        # The rails 3 cm before the doors, and the diagonal 2 cm before the
+        # rails it crosses.
+        braces = []
+        for s in (-1, 1):
+            d = (UP * 2.5 + RIGHT * s * 1.4).normalized()
+            braces.append(slab(V((s * 0.8, 1.75, 3.0)), (0.06, 1.4, 0.03),
+                               axes=(d.cross(FORWARD), d, FORWARD)))
+            braces.append(slab(V((s * 0.8, 2.95, 2.99)), (0.74, 0.06, 0.02)))
+            braces.append(slab(V((s * 0.8, 0.55, 2.99)), (0.74, 0.06, 0.02)))
+        part(b, "braces", merge(*braces), m["white"], levels=0, smooth=False)
+    # The ramp up to the doors, its top 6 cm under the footing's and its
+    # back sunk in it.
+    part(b, "ramp", slab(V((0, 0.17, 3.55)), (1.7, 0.17, 0.55)),
+         m["stone_dark"], levels=0, bevel=0.04, smooth=False)
     for s in (-1, 1):
         part(b, f"hatch{s}", slab(V((s * 4.43, 4.6, 0)), (0.04, 0.55, 0.6)),
              m["dark_timber"], levels=0, smooth=False)
@@ -343,13 +486,19 @@ def build():
     scene.collection.children.link(coll)
     m = {name: material(name, c, **FINISH[name])
          for name, c in PALETTE.items()}
-    mill(coll, m)
-    house(coll, m)
-    barn(coll, m)
-    # Laid out side by side for the preview; the game places each.
-    for name, x in (("house", 10.0), ("barn", 22.0)):
-        for suffix in ("", "_base"):
-            bpy.data.objects[name + suffix].location.x = x
+    for suffix, tier in TIERS:
+        mill(coll, m, suffix, tier)
+        house(coll, m, suffix, tier)
+        barn(coll, m, suffix, tier)
+    # Laid out side by side for the preview, each tier behind the last;
+    # the game places each.
+    for name, x in (("mill", 0.0), ("house", 10.0), ("barn", 22.0)):
+        for k, (suffix, _) in enumerate(TIERS):
+            for part_name in (name, name + "_base", name + "_wheel"):
+                obj = bpy.data.objects.get(part_name + suffix)
+                if obj is not None:
+                    obj.location.x += x
+                    obj.location.y += 14.0 * k
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=OUT, compress=True)
     print(f"wrote {OUT}: {len(coll.objects)} objects")

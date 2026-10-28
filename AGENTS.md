@@ -634,7 +634,12 @@
     summit. Each lake outlet has a farm, `models/farm.blend` from
     `tools/figure/farm.py` (`make models`): a timber watermill with its
     undershot wheel turning in the outlet stream, a Falu-red house, and
-    a barn, left as stone plinths once long abandoned; with a landing
+    a barn, left as stone plinths once long abandoned (each building
+    exports at three levels of detail, `house`, `house_mid`, and
+    `house_far`, and places.cc draws the finest whose smallest parts --
+    5 cm, 10 cm, the massing -- still span a pixel, through
+    `Renderer::scene_focal_pixels`; no two of its faces share a plane);
+    with a landing
     stage on the lake to fish from. By each place where two trees take a
     hammock, an old fire ring takes the camp's fire. `MOPPE_WALK=
     landing|sanctuary|farm` starts on foot there, and `MOPPE_BEACONS=lit`
@@ -710,7 +715,11 @@
     forest plan grows no older trees than the ground has had time for,
     while the stand a fire killed still stands over its burn as snags
     (`ForestForm::snag`: grey, bare, broken-topped, charred at the foot,
-    and solid), fewer the longer ago it burnt. The
+    and solid), fewer the longer ago it burnt. No trunk or bough is
+    drawn thinner than a pixel (`stem-floor` in world.lisp): one that
+    would be is widened to a pixel and, by a hash of its own, left out in
+    proportion, so a far stand of snags or birch keeps its bark's share of
+    the picture in steady lines rather than flickering slivers. The
     ground and grass read them from a third sheet (texture slot 11):
     fireweed wine-red with white seed, char on a young burn, cropped
     pasture. The log line `moppe: disturbance:` counts the fires and
