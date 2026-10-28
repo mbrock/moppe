@@ -235,8 +235,9 @@ namespace moppe::terrain {
 
     // As the renderer takes them: two rows a segment, (ax, az, bx, bz)
     // and (height at a, at b, distance along at a, 0 road, 1 footpath,
-    // 2 a bridge's deck, or 3 a paved road); and per bucket, row by row, the offset into the
-    // entries (which follow the buckets) and their count, then the entries.
+    // 2 a bridge's deck, or 3 a paved road); and per bucket, row by row, the
+    // offset into the entries (which follow the buckets) and their count, then
+    // the entries.
     std::span<const std::array<float, 4>> segment_rows () const noexcept {
       return m_rows;
     }
