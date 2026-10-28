@@ -58,7 +58,9 @@ namespace moppe::game {
     // Version 22 keeps the planned roads (terrain/roads.hh).
     // Version 32 bridges a river over a wide floodplain on its own span,
     // reached by embankments, rather than leaving the road in it.
-    constexpr std::uint32_t CACHE_VERSION = 32;
+    // Version 33 crosses ponds and small streams on embankments over
+    // culverts (RoadCulvert).
+    constexpr std::uint32_t CACHE_VERSION = 33;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
@@ -595,6 +597,7 @@ namespace moppe::game {
         output.vector<terrain::RoadPoint> (road.points);
         output.vector<float> (road.heights);
         output.vector<terrain::RoadBridge> (road.bridges);
+        output.vector<terrain::RoadCulvert> (road.culverts);
       }
       output.scalar (static_cast<std::uint64_t> (roads.sightlines.size ()));
       for (const auto& [a, b] : roads.sightlines) {
@@ -633,8 +636,12 @@ namespace moppe::game {
             !input.scalar (road.abandoned_years_ago) ||
             !input.vector (road.points, cells) ||
             !input.vector (road.heights, cells) ||
-            !input.vector (road.bridges, cells))
+            !input.vector (road.bridges, cells) ||
+            !input.vector (road.culverts, cells))
           return false;
+        for (const terrain::RoadCulvert& culvert : road.culverts)
+          if (culvert.at >= road.points.size ())
+            return false;
         for (const terrain::RoadBridge& bridge : road.bridges)
           if (bridge.first > bridge.last ||
               bridge.last >= road.points.size ())

@@ -193,6 +193,8 @@ namespace moppe::terrain {
       bool built = false;
       // Under a bridge's span, which leaves the ground as it is.
       bool bridge = false;
+      // How far along the road from its nearest culvert's line.
+      float culvert = no_height;
     };
   }
 
@@ -238,10 +240,6 @@ namespace moppe::terrain {
         continue;
       }
       std::vector<float> pins (n, no_height);
-      for (std::size_t i = 0; i < n; ++i)
-        if (crosses_water (
-              ground.nearest_cell (road.points[i].x_m, road.points[i].z_m)))
-          pins[i] = natural[i];
 
       // The rivers it bridges. A river's line is a cell wide and the
       // points four metres apart, so each point reads the most any cell
@@ -365,6 +363,60 @@ namespace moppe::terrain {
             span > 0.0f ? (along[k] - along[bridge.first]) / span : 0.0f);
         ++result.bridges;
       }
+      // Each stretch over smaller water, a stream or a pond, is an
+      // embankment over a culvert: the tread held a freeboard over the
+      // water in spate, and over the pipe laid on the lowest of its bed.
+      // A short crossing is level over its water; a long one follows it.
+      road.culverts.clear ();
+      std::vector<bool> spanned (n, false);
+      for (const RoadBridge& bridge : road.bridges)
+        for (std::size_t k = bridge.first; k <= bridge.last; ++k)
+          spanned[k] = true;
+      const auto water_at = [&] (std::size_t k) {
+        const std::size_t cell =
+          ground.nearest_cell (road.points[k].x_m, road.points[k].z_m);
+        const float still = flood.water_depth_m (cell);
+        const square_meters_t area = drainage.contributing_area_at (cell);
+        return std::pair (
+          still > 1e-3f ? still : river_depth (area).numerical_value_in (u::m),
+          area.numerical_value_in (u::m * u::m));
+      };
+      for (std::size_t i = 0; i < n;) {
+        if (spanned[i] || !crosses_water (ground.nearest_cell (
+                            road.points[i].x_m, road.points[i].z_m))) {
+          ++i;
+          continue;
+        }
+        std::size_t j = i;
+        while (j + 1 < n && !spanned[j + 1] &&
+               crosses_water (ground.nearest_cell (road.points[j + 1].x_m,
+                                                   road.points[j + 1].z_m)))
+          ++j;
+        std::size_t lowest = i;
+        float surface = -no_height;
+        float drains_most = 0.0f;
+        for (std::size_t k = i; k <= j; ++k) {
+          const auto [depth, area] = water_at (k);
+          if (natural[k] < natural[lowest])
+            lowest = k;
+          surface = std::max (surface, natural[k] + depth);
+          drains_most = std::max (drains_most, area);
+        }
+        const float diameter = std::clamp (
+          1.2f * river_depth (drains_most * u::m * u::m).numerical_value_in (u::m),
+          0.6f,
+          1.8f);
+        const float pipe_top = natural[lowest] + diameter + 0.3f;
+        const bool level = along[j] - along[i] <= 40.0f;
+        for (std::size_t k = i; k <= j; ++k)
+          pins[k] = level ? std::max (surface + parameters.freeboard, pipe_top)
+                          : std::max (natural[k] + water_at (k).first +
+                                        parameters.freeboard,
+                                      natural[k] + 0.9f);
+        road.culverts.push_back (
+          { static_cast<std::uint32_t> (lowest), natural[lowest], diameter });
+        i = j + 1;
+      }
       for (const std::size_t end : { std::size_t { 0 }, n - 1 })
         for (std::size_t earlier = 0; earlier < r; ++earlier)
           if (network.roads[earlier].kind == Road::Kind::Road) {
@@ -406,6 +458,11 @@ namespace moppe::terrain {
       for (const RoadBridge& bridge : road.bridges)
         for (std::size_t k = bridge.first + 1; k <= bridge.last; ++k)
           spans[k] = true;
+      std::vector<float> along (road.points.size (), 0.0f);
+      for (std::size_t i = 1; i < road.points.size (); ++i)
+        along[i] = along[i - 1] +
+                   std::hypot (road.points[i].x_m - road.points[i - 1].x_m,
+                               road.points[i].z_m - road.points[i - 1].z_m);
       for (std::size_t i = 1; i < road.points.size (); ++i) {
         const RoadPoint a = road.points[i - 1];
         const RoadPoint b = road.points[i];
@@ -435,10 +492,17 @@ namespace moppe::terrain {
             // A built road's claim outranks a footpath's however near.
             if ((built && !claim.built) ||
                 (built == claim.built && distance < claim.distance))
+            {
+              const float here = std::lerp (along[i - 1], along[i], t);
+              float culvert = no_height;
+              for (const RoadCulvert& c : road.culverts)
+                culvert = std::min (culvert, std::fabs (here - along[c.at]));
               claim = { distance,
                         std::lerp (road.heights[i - 1], road.heights[i], t),
                         built,
-                        spans[i] };
+                        spans[i],
+                        culvert };
+            }
           }
       }
     }
@@ -454,10 +518,11 @@ namespace moppe::terrain {
     };
     for (std::size_t cell = 0; cell < count; ++cell) {
       const FormationClaim& claim = claims[cell];
-      if (!std::isfinite (claim.distance) || claim.bridge ||
-          flood.water_depth_m (cell) > 1e-3f)
+      if (!std::isfinite (claim.distance) || claim.bridge)
         continue;
       const float d = claim.distance;
+      if (!claim.built && flood.water_depth_m (cell) > 1e-3f)
+        continue;
       if (!claim.built) {
         const float half =
           std::max (parameters.footpath_half_width, 0.75f * spacing);
@@ -466,8 +531,14 @@ namespace moppe::terrain {
       }
       result.influence[cell] =
         1.0f - smooth ((d - std::max (tread, 0.75f * spacing)) / 1.5f);
-      // The running water's own line is left as it is: the road fords it.
-      if (drainage.contributing_area_at (cell).numerical_value_in (
+      // The embankment is built through standing water and over a
+      // stream, but along a culvert's line the ground is left as it was,
+      // for the water to pass under the tread; and a stream beside the
+      // tread keeps its channel through the batters.
+      if (claim.culvert < 0.75f * spacing)
+        continue;
+      if (d > formation &&
+          drainage.contributing_area_at (cell).numerical_value_in (
             u::m * u::m) >= parameters.culvert_area_m2)
         continue;
       const float g = original[cell];

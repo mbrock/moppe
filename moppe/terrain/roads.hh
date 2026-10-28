@@ -62,6 +62,17 @@ namespace moppe::terrain {
     friend bool operator== (const RoadBridge&, const RoadBridge&) = default;
   };
 
+  // Where a cart road crosses a stream or a pond on an embankment, the pipe
+  // that lets the water through under it: at point `at` of the road, its
+  // floor (invert) `invert_m` metres high and `diameter_m` across.
+  struct RoadCulvert {
+    std::uint32_t at = 0;
+    float invert_m = 0.0f;
+    float diameter_m = 0.0f;
+
+    friend bool operator== (const RoadCulvert&, const RoadCulvert&) = default;
+  };
+
   struct Road {
     enum class Kind {
       // A cart road: gentle grades, bridges where it must.
@@ -80,6 +91,8 @@ namespace moppe::terrain {
     // Where it crosses a river on a bridge, in order along it; set by
     // form_roads.
     std::vector<RoadBridge> bridges;
+    // Where it crosses smaller water on an embankment; set by form_roads.
+    std::vector<RoadCulvert> culverts;
     // How many of the journeys between every pair of places go this way
     // along the network.
     std::uint32_t traffic = 0;
@@ -132,9 +145,10 @@ namespace moppe::terrain {
     float maximum_cut = 4.0f;
     float maximum_fill = 2.5f;
     // A road crosses any watercourse draining more than this, and any
-    // standing water, at the ground (a ford or a drift), so that no
-    // embankment dams it.
+    // standing water, on an embankment over a culvert: its tread at least
+    // `freeboard` over the water, and over the pipe's crown.
     float culvert_area_m2 = 20000.0f;
+    float freeboard = 0.5f;
     // A road bridges any river draining more than this, where the rivers
     // are drawn (river.hh: five metres wide), its deck `clearance` metres
     // above the river's spate and its abutments on the banks, at most

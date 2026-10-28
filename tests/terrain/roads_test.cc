@@ -302,3 +302,49 @@ MOPPE_TEST (roads_bridge_the_rivers_they_cross) {
   // Off the bridge the road is the crowned tread again.
   MOPPE_CHECK (!surface.nearest (130.0f, 250.0f).bridge);
 }
+
+// A road across a small stream crosses it on an embankment over a
+// culvert: the tread stands clear of the water, and along the pipe's line
+// the ground is left for the water to pass under.
+MOPPE_TEST (roads_cross_small_streams_on_embankments_over_culverts) {
+  const ElevationMap terrain = valley_country ();
+  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const DrainageGraph drainage = analyze_drainage (terrain);
+  const std::size_t floor = 50 * side + 50;
+  const float stream =
+    drainage.contributing_area_at (CellIndex { floor })
+      .numerical_value_in (mp_units::si::metre * mp_units::si::metre);
+  RoadNetwork network;
+  Road over { .kind = Road::Kind::Road };
+  for (float x = 100.0f; x <= 400.0f; x += 4.0f)
+    over.points.push_back ({ x, 250.0f });
+  network.roads = { over };
+  RoadFormation parameters;
+  parameters.culvert_area_m2 = 0.5f * stream;
+  parameters.bridge_area_m2 = 1.0e12f;
+  const RoadFormationResult built = form_roads (terrain.domain (),
+                                                elevations (terrain),
+                                                network,
+                                                flood,
+                                                drainage,
+                                                parameters);
+
+  const Road& formed = network.roads[0];
+  MOPPE_CHECK (formed.bridges.empty ());
+  MOPPE_CHECK (formed.culverts.size () == 1);
+  const RoadCulvert& culvert = formed.culverts.front ();
+  MOPPE_CHECK_NEAR (formed.points[culvert.at].x_m, 250.0f, 6.0f);
+  const float bed = surface_elevation_value (elevations (terrain)[floor]);
+  // Over the pipe and a freeboard, not down at the bed.
+  MOPPE_CHECK (formed.heights[culvert.at] >=
+               bed + culvert.diameter_m + parameters.freeboard - 0.05f);
+  MOPPE_CHECK (built.steep_points == 0);
+  // The pipe's line is left to the water; beside it the embankment
+  // stands under the tread.
+  MOPPE_CHECK (surface_elevation_value (built.heights[floor]) == bed);
+  const std::size_t beside =
+    50 * side + static_cast<std::size_t> (std::lround (
+                  (formed.points[culvert.at].x_m + 7.0f) / 5.0f));
+  MOPPE_CHECK (surface_elevation_value (built.heights[beside]) >
+               surface_elevation_value (elevations (terrain)[beside]) + 0.3f);
+}
