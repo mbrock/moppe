@@ -100,6 +100,35 @@ lake ripples, foam noise, cascade slope) only where they show: the
 language's `if` selects between computed values, while a loop run once or
 never truly branches.
 
+Filtered ripples keep their unresolved slope variance, which broadens the
+sun's normalized highlight rather than making distant water optically
+flat. Foam has separate coverage and optical thickness: thin, tinted lace
+lets the water through; dense foam has a small lit billow and shaded
+creases. The two flow copies erode with their phase and reset at zero
+weight, not through a persistent foam simulation.
+
+The coast has a separate presentation field (`game/shore_surf.*`), inspired
+by [Ultra-Water](https://github.com/Humpalumps/Ultra-Water). At activation,
+a periodic fast-marching solve times travel to every coast at
+`sqrt(9.81 * max(depth, 0.25))` metres a second. The bounded 512-by-512
+RGBA16F texture holds signed travel seconds, coast distance, and shoreward
+direction times a coherence mask. Surface ripples and foam follow those
+fronts, and the low shore darkens and dries just after them. The original
+water sheet and ground height gate the coarse field so it cannot put surf
+on a lake or wet a cliff. This is material wetting, not geometric run-up:
+the shared CPU/GPU Gerstner waves, buoyancy, and world cache are unchanged.
+
+Underwater is a scene-resolution HDR pass before temporal resolve. The
+final camera samples its local water sheet and the shared waves; a dry
+cell never falls back to the world's sea level. Near the interface, each
+pixel tests the water at the near plane, then attenuates red, green, and
+blue over its submerged path and adds light scattered in the water. The
+upward exit uses an approximate local-sheet intersection. The water's
+underside shows a refracted sky window and total internal reflection,
+using the copied opaque scene where screen-space rays find it, not a
+second scene render. Terrain culling bounds include local wet sheets and
+their wave envelope, so looking up does not cull the surface with its bed.
+
 The trunk forest keeps `forest_trunks.metal`'s trees -- tapered trunks,
 stacked spruce cones, birch clumps on branches, the same twelve (species,
 tier) topologies -- but the GPU chooses them: `forest-cull` tests every
@@ -194,7 +223,7 @@ boost, the cars and the mountainbike at their own fast speeds, and never on
 foot, in the glider, or in the helicopter; the cinematic sets its own. It
 costs some 0.12 ms at 1080p on an RX 6600 XT, and nothing while unasked.
 
-Dust and the old underwater and scene-blur passes are not drawn yet.
+Dust and the old scene-blur pass are not drawn yet.
 
 ## The game on Xbox
 

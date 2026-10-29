@@ -2,6 +2,7 @@
 #include <moppe/gfx/tga.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/readings.hh>
+#include <moppe/terrain/sea_waves.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,13 @@ namespace moppe {
       };
       const float LOD_END[LOD_COUNT - 1] = { 96.0f, 384.0f, 768.0f, 1536.0f };
 
+      constexpr float MAX_WAVE_HEIGHT = [] {
+        float height = 0.0f;
+        for (const auto& train : terrain::sea_wave_trains)
+          height += train.amplitude;
+        return height;
+      }();
+
       // The four side planes of a view frustum, from the rows of its
       // view-projection matrix.  Near and far are left to the distance cull.
       struct SidePlanes {
@@ -40,7 +48,7 @@ namespace moppe {
         }
 
         // Whether any part of the box can be on screen.  `margin` widens
-        // each plane by that many metres to cover subpixel jitter.
+        // each plane by that many metres for jitter and horizontal waves.
         bool admits (const Vec3& lo, const Vec3& hi, float margin) const {
           for (const auto& p : plane) {
             const float x = p[0] >= 0 ? hi[0] : lo[0];
@@ -78,7 +86,8 @@ namespace moppe {
     void Terrain::setup (render::Renderer& r,
                          const map::SurfaceGeometry& surface,
                          const WorldParams& world,
-                         const GraphicsSettings& graphics) {
+                         const GraphicsSettings& graphics,
+                         const terrain::WaterSheets* water) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
       m_scale = Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
                       1.0f,
@@ -116,7 +125,8 @@ namespace moppe {
         r.set_sward_texture (m_grass);
       }
 
-      // Chunk bounds from the actual height range, per patch.
+      // Water reuses these draws, so bound both the ground and its wet
+      // sheet, per patch. Dry cells never introduce a sea plane.
       MOPPE_PROFILE_NAMED_ZONE (build_chunks, "terrain.build_chunk_bounds");
       const int chunks_per_side =
         static_cast<int> (surface.domain ().width ()) / CHUNK;
@@ -127,18 +137,29 @@ namespace moppe {
           Chunk c;
           std::fill_n (c.patch_ymin, PATCHES * PATCHES, 1e9f);
           std::fill_n (c.patch_ymax, PATCHES * PATCHES, -1e9f);
-          float ymin = 1e9f, ymax = -1e9f;
+          std::array<bool, PATCHES * PATCHES> wet {};
+          std::array<float, PATCHES * PATCHES> waves {};
           for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
             for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
+              const terrain::TerrainIndex at {
+                static_cast<std::size_t> (terrain::wrap_index (
+                  x, static_cast<int> (surface.domain ().width ()))),
+                static_cast<std::size_t> (terrain::wrap_index (
+                  z, static_cast<int> (surface.domain ().height ())))
+              };
               const float h = terrain::surface_elevation_value (
-                spatial::get<terrain::surface_elevation> (
-                  surface[terrain::TerrainIndex {
-                    static_cast<std::size_t> (terrain::wrap_index (
-                      x, static_cast<int> (surface.domain ().width ()))),
-                    static_cast<std::size_t> (terrain::wrap_index (
-                      z, static_cast<int> (surface.domain ().height ()))) }]));
-              ymin = std::min (ymin, h);
-              ymax = std::max (ymax, h);
+                spatial::get<terrain::surface_elevation> (surface[at]));
+              float top = h, wave = 0.0f;
+              if (water) {
+                const auto site = (*water)[at];
+                const float level = terrain::surface_elevation_value (
+                  spatial::get<terrain::surface_elevation> (site));
+                top = std::max (h, level);
+                const float amplitude =
+                  spatial::get<terrain::wave_amplitude> (site)
+                    .numerical_value_in (mp_units::one);
+                wave = MAX_WAVE_HEIGHT * amplitude * amplitude;
+              }
               // Samples on a patch border belong to both patches.
               const int px = x - cx * CHUNK, pz = z - cz * CHUNK;
               for (int j = std::max (0, (pz - 1) / PATCH);
@@ -147,12 +168,29 @@ namespace moppe {
                 for (int i = std::max (0, (px - 1) / PATCH);
                      i <= std::min (PATCHES - 1, px / PATCH);
                      ++i) {
-                  float& lo = c.patch_ymin[j * PATCHES + i];
-                  float& hi = c.patch_ymax[j * PATCHES + i];
+                  const int k = j * PATCHES + i;
+                  float& lo = c.patch_ymin[k];
+                  float& hi = c.patch_ymax[k];
                   lo = std::min (lo, h);
-                  hi = std::max (hi, h);
+                  hi = std::max (hi, top);
+                  wet[k] = wet[k] || top > h;
+                  waves[k] = std::max (waves[k], wave);
                 }
             }
+
+          // Amplitude and depth interpolate separately. Omitting the
+          // shallow-water damping bounds their product between samples
+          // too, where it can exceed either sample's displaced height.
+          float ymin = 1e9f, ymax = -1e9f;
+          for (int k = 0; k < PATCHES * PATCHES; ++k) {
+            const float wave = wet[k] ? waves[k] : 0.0f;
+            c.patch_ymin[k] -= wave;
+            c.patch_ymax[k] += wave;
+            ymin = std::min (ymin, c.patch_ymin[k]);
+            ymax = std::max (ymax, c.patch_ymax[k]);
+            c.wave_reach =
+              std::max (c.wave_reach, wave * terrain::sea_wave_lean);
+          }
 
           c.x0 = cx * CHUNK;
           c.z0 = cz * CHUNK;
@@ -163,7 +201,7 @@ namespace moppe {
           c.center = Vec3 ((x0 + x1) / 2, (ymin + ymax) / 2, (z0 + z1) / 2);
           const float hx = (x1 - x0) / 2, hy = (ymax - ymin) / 2,
                       hz = (z1 - z0) / 2;
-          c.radius = std::sqrt (hx * hx + hy * hy + hz * hz);
+          c.radius = std::sqrt (hx * hx + hy * hy + hz * hz) + c.wave_reach;
           c.ymin = ymin;
           c.ymax = ymax;
           m_chunks.push_back (c);
@@ -367,7 +405,7 @@ namespace moppe {
             const float z0 = c.z0 * m_scale[2] + offset[2];
             if (!frustum.admits (Vec3 (x0, c.ymin, z0),
                                  Vec3 (x0 + chunk_x, c.ymax, z0 + chunk_z),
-                                 frustum_margin))
+                                 frustum_margin + c.wave_reach))
               continue;
 
             // Choose from the distance to the nearest point of the chunk,
@@ -394,7 +432,7 @@ namespace moppe {
                 if (!frustum.admits (
                       Vec3 (px0, c.patch_ymin[k], pz0),
                       Vec3 (px0 + patch_x, c.patch_ymax[k], pz0 + patch_z),
-                      frustum_margin))
+                      frustum_margin + c.wave_reach))
                   continue;
                 emit (
                   c.x0 + px * PATCH,

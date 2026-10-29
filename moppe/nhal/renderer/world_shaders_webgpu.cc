@@ -248,6 +248,14 @@ namespace moppe::nhal {
 #embed "world_text.fragment.wgsl"
       , 0
     };
+    const char underwater_vertex[] = {
+#embed "underwater.vertex.wgsl"
+      , 0
+    };
+    const char underwater_fragment[] = {
+#embed "underwater.fragment.wgsl"
+      , 0
+    };
 
     StageCode wgsl (const char* code) {
       return { {}, {}, {}, code };
@@ -291,6 +299,7 @@ namespace moppe::nhal {
       { wgsl (mesh_shadow_vertex), {} },
       { wgsl (motion_blur_vertex), wgsl (motion_blur_fragment) },
       { wgsl (world_text_vertex), wgsl (world_text_fragment) },
+      { wgsl (underwater_vertex), wgsl (underwater_fragment) },
     };
     return shaders;
   }

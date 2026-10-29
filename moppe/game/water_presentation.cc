@@ -1,5 +1,6 @@
 #include <moppe/game/water_presentation.hh>
 
+#include <moppe/game/shore_surf.hh>
 #include <moppe/profile.hh>
 #include <moppe/render/texture_pixels.hh>
 
@@ -10,6 +11,18 @@
 namespace moppe::game {
   namespace {
     constexpr meters_t ocean_half_extent = 5500.0f * u::m;
+
+    void write_shore_surf (const void* opaque,
+                           render::PixelFormat format,
+                           std::byte* destination) {
+      const auto& surf = *static_cast<const ShoreSurf*> (opaque);
+      const std::size_t stride = render::bytes_per_pixel (format);
+      const std::size_t lane = render::channel_bytes (format);
+      for (std::size_t i = 0; i < surf.samples.size (); ++i)
+        for (std::size_t c = 0; c < 4; ++c)
+          render::detail::write_channel (
+            destination + i * stride + c * lane, format, surf.samples[i][c]);
+    }
 
     // The terrain patches where the sheet stands above the ground. The
     // world is periodic, and a sample on a patch's edge belongs to the
@@ -69,5 +82,13 @@ namespace moppe::game {
     renderer.set_water_flow (
       render::spatial_texture_pixels<terrain::water_velocity> (
         water, PixelFormat::rgba16f));
+    // Computed from the finished water, at activation, not persisted in
+    // the land/world cache and never used by buoyancy.
+    const ShoreSurf surf = make_shore_surf (water, ground);
+    renderer.set_shore_surf ({ surf.width,
+                               surf.height,
+                               PixelFormat::rgba16f,
+                               &surf,
+                               &write_shore_surf });
   }
 }

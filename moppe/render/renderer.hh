@@ -154,6 +154,14 @@ namespace moppe {
       meters_t far_plane = 9000.0f * u::m;
     };
 
+    // The local, wave-displaced water at the camera, not the world's sea
+    // datum. The grade reads the scene's depth before temporal resolve.
+    struct UnderwaterParams {
+      meters_t water_level = 0.0f * u::m;
+      meters_t near_plane = 0.5f * u::m;
+      meters_t far_plane = 9000.0f * u::m;
+    };
+
     // World-change-time terrain setup.  Heights/normals are the same
     // arrays the CPU-side physics samples, so sim and render cannot
     // diverge.
@@ -415,6 +423,12 @@ namespace moppe {
       virtual void set_water_flow (const TexturePixels& flow) {
         (void)flow;
       }
+      // Sea-only travel time and direction for surface surf and wetting.
+      // The raster covers the terrain's period, at its own resolution;
+      // it never changes the physical water height. Empty clears it.
+      virtual void set_shore_surf (const TexturePixels& surf) {
+        (void)surf;
+      }
       // Renderer-facing material sheets following the terrain grid. The
       // simulation retains separate typed columns; SurfacePresentation packs
       // them only at this final boundary:
@@ -553,8 +567,10 @@ namespace moppe {
       // scene depth may ignore light shafts and ambient occlusion.
       virtual void apply_gtao (const GtaoParams&) {}
       virtual void apply_light_shafts (const LightShaftParams&) {}
+      // Absorption and in-scatter, also before reconstruction, so the
+      // waterline and the scene share the same jittered depth samples.
+      virtual void apply_underwater (const UnderwaterParams&) = 0;
       // Post effects; call after reconstruction and before draw_hud.
-      virtual void apply_underwater (float time) = 0;
       virtual void apply_motion_blur (float strength) = 0;
       // Soft-focus the completed 3D scene; HUD drawn afterwards stays crisp.
       virtual void apply_scene_blur () = 0;

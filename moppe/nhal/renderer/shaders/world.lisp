@@ -265,7 +265,7 @@
   (defparameter *terrain*
     '((scale :vec4)                ; grid step x, height scale, step z, tex
       (fields :vec4)               ; have materials, have stand, 1 / period
-      (size :vec4)                 ; samples per side x, z
+      (size :vec4)                 ; terrain samples x,z; surf samples x,z
       (roads :vec4)                ; bucket metres, buckets x, z, have roads
       (road-shape :vec4)           ; half width, shoulder, crown, blend
       (road-batter :vec4))))       ; cut slope, fill slope, rain 0..1, 0
@@ -1917,6 +1917,28 @@
              reflection)
           (clamp (+ (swizzle f-env :y) fc) 0.0 1.0))))
 
+;;; A sea-only, periodic travel-time field (game/shore_surf.cc), sampled at
+;;; the same lattice sites as the ground but at its own bounded resolution.
+;;; The direction's length carries the coastal/coherence mask, not a unit
+;;; vector across a headland's conflicting arrivals. This shapes materials
+;;; only: the shared CPU/GPU Gerstner surface remains the physical water.
+(define-shader-abstraction shore-field (xz)
+  `(only-where (> (swizzle size :z) 0.0) (vec4 0.0 0.0 0.0 0.0)
+     (sample-level shore-surf linear-repeat
+                    (+ (/ ,xz (* (swizzle size :xy)
+                                  (vec2 (swizzle scale :x)
+                                        (swizzle scale :z))))
+                       (/ (vec2 0.5 0.5) (max (swizzle size :zw)
+                                              (vec2 1.0 1.0))))
+                    0.0)))
+
+;;; Positive travel time offshore, negative on land: time + travel sends
+;;; the fronts toward the shore, slowing with sqrt(g * depth). The second
+;;; lane is the film left just after a crest, drying during the trough.
+(define-shader-function shore-cycle (travel time)
+  (let* ((phase (* 1.208305 (+ time travel))))
+    (vec2 (cos phase) (smoothstep -0.65 0.35 (cos (- phase 0.65))))))
+
 ;;; The ground's colour and light at a fragment: the terrain's own, and the
 ;;; road ribbon's, which lies on it and must match it.
 (define-shader-abstraction shade-ground ()
@@ -2024,6 +2046,35 @@
          ;; Rain stands in the potholes.
          (wet (swizzle road-batter :z))
          (puddle (* wet paved-tread (smoothstep 0.3 0.7 (swizzle look :w))))
+         ;; The sea leaves a dark film on its low shore. Its footprint is
+         ;; coarse, so actual elevation confines it to the last half metre
+         ;; above water, and the original sheet excludes nearby freshwater.
+         ;; This is not flooding: neither the bed nor the water is moved.
+         ;; Outside its maximum reach the wetting is exactly zero. Do not
+         ;; make all the inland ground pay for the coastal texture queries.
+         (swash
+           (only-where (and (> above-sea -0.12) (< above-sea 0.62)) 0.0
+             (let* ((coast (shore-field (swizzle world :xz)))
+                    (coast-mask (sqrt (dot (swizzle coast :zw)
+                                           (swizzle coast :zw))))
+                    (wash (swizzle (shore-cycle
+                                     (swizzle coast :x)
+                                     (swizzle camera-position :w)) :y))
+                    (water-here (swizzle (sample-level water-levels
+                                                        linear-repeat
+                                                        field-at 0.0) :xy))
+                    (freshwater
+                      (and (> (* (swizzle water-here :x) (swizzle scale :y))
+                              (+ (swizzle world :y) 0.005))
+                           (< (swizzle water-here :y) 0.9)))
+                    (wash-height (+ 0.12 (* 0.42 wash))))
+               (* coast-mask
+                  (if freshwater 0.0 1.0)
+                  (- 1.0 (smoothstep 4.0 10.0 (- 0.0 (swizzle coast :y))))
+                  (- 1.0 (smoothstep (- wash-height 0.12)
+                                     (+ wash-height 0.08) above-sea))
+                  (smoothstep -0.12 0.0 above-sea)))))
+         (wet (max wet (* 0.9 swash)))
          ;; Beside a built road, its batters.
          (worked-ground
            (only-where (> road-built 0.0) (ground-surface-albedo surface)
@@ -2175,6 +2226,8 @@
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
                  (bedrock :texture-2d :binding 12)
+                 (water-levels :texture-2d :binding 14)
+                 (shore-surf :texture-2d :binding 15)
                  (shadow-map :depth-texture-2d :binding 8)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
@@ -2329,6 +2382,8 @@
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
                  (bedrock :texture-2d :binding 12)
+                 (water-levels :texture-2d :binding 14)
+                 (shore-surf :texture-2d :binding 15)
                  (shadow-map :depth-texture-2d :binding 8)
                  (closure :texture-2d :binding 9)
                  (litter :texture-2d :binding 10)
@@ -5235,45 +5290,67 @@
 ;;; One octave of ripples: the slope of noise at FREQUENCY cycles a metre,
 ;;; its lattice turned by the angle whose cosine and sine are C and S so
 ;;; the octaves never line up.  Its height falls as its frequency rises, so
-;;; every octave is equally steep; past a pixel it fades to flat.
+;;; every octave is equally steep.  XY is the resolved slope; Z keeps the
+;;; slope variance retired by filtering, rather than making distant water
+;;; optically flat.  Quintic value noise over independent uniform corners
+;;; has E[|gradient|^2] = 1810/4851; scaling a slope by R keeps R^2 of it.
 (define-shader-function ripple-octave (xz frequency c s lane footprint)
   (let* ((turned (vec2 (- (* c (swizzle xz :x)) (* s (swizzle xz :y)))
                        (+ (* s (swizzle xz :x)) (* c (swizzle xz :y)))))
          (g (swizzle (wave-noise (* turned frequency) lane) :yz))
          (resolved (- 1.0 (smoothstep 0.25 0.6 (* frequency footprint)))))
-    (* (vec2 (+ (* c (swizzle g :x)) (* s (swizzle g :y)))
-             (- (* c (swizzle g :y)) (* s (swizzle g :x))))
-       resolved)))
+    (vec3 (* (+ (* c (swizzle g :x)) (* s (swizzle g :y))) resolved)
+          (* (- (* c (swizzle g :y)) (* s (swizzle g :x))) resolved)
+          (* 0.373119 (+ (* c c) (* s s))
+             (- 1.0 (* resolved resolved))))))
+
+;;; Independent slopes add; their variances take the square of the weight.
+;;; The flow phases' contrast correction therefore keeps the same variance
+;;; budget as one phase, even halfway through their crossfade.
+(define-shader-function ripple-weight (ripple weight)
+  (* ripple (vec3 weight weight (* weight weight))))
 
 ;;; A running surface: slow boils a few metres across under a finer chop
 ;;; that CHOP, the rapids, sharpens.
 (define-shader-function river-ripples (xz chop footprint)
-  (+ (* 0.55 (ripple-octave xz 0.32 0.80 0.60 (uint 11) footprint))
-     (* (+ 0.40 (* 0.25 chop))
-        (ripple-octave xz 0.85 0.28 0.96 (uint 12) footprint))
-     (* (+ 0.28 (* 0.45 chop))
-        (ripple-octave xz 2.10 -0.70 0.71 (uint 13) footprint))
-     (* (+ 0.16 (* 0.50 chop))
-        (ripple-octave xz 4.90 0.96 -0.28 (uint 14) footprint))))
+  (+ (ripple-weight
+       (ripple-octave xz 0.32 0.80 0.60 (uint 11) footprint) 0.55)
+     (ripple-weight
+       (ripple-octave xz 0.85 0.28 0.96 (uint 12) footprint)
+       (+ 0.40 (* 0.25 chop)))
+     (ripple-weight
+       (ripple-octave xz 2.10 -0.70 0.71 (uint 13) footprint)
+       (+ 0.28 (* 0.45 chop)))
+     (ripple-weight
+       (ripple-octave xz 4.90 0.96 -0.28 (uint 14) footprint)
+       (+ 0.16 (* 0.50 chop)))))
 
 ;;; The broken white of the foam: noise, 0 to 1, whose middle contours are
-;;; the lace that foam first gathers along.
-(define-shader-function foam-pattern (xz)
-  (+ (* 0.6 (swizzle (wave-noise (* xz 1.3) (uint 21)) :x))
-     (* 0.4 (swizzle (wave-noise (* xz 3.4) (uint 22)) :x))))
+;;; the lace that foam first gathers along (X).  The broad noise also makes
+;;; a low billow: Y its height, ZW its analytic gradient, filtered to flat
+;;; before it becomes subpixel.  Coverage has its own mean-coverage fade.
+(define-shader-function foam-pattern (xz footprint)
+  (let* ((broad (wave-noise (* xz 1.3) (uint 21)))
+         (fine (wave-noise (* xz 3.4) (uint 22)))
+         (resolved (- 1.0 (smoothstep 0.25 0.6 (* 1.3 footprint)))))
+    (vec4 (+ (* 0.6 (swizzle broad :x)) (* 0.4 (swizzle fine :x)))
+          (+ 0.5 (* resolved (- (swizzle broad :x) 0.5)))
+          (* (swizzle broad :yz) (* 1.3 resolved)))))
 
 ;;; How much of a place foam covers, from how much the water there sheds
 ;;; (SOURCE) and the foam's noise: thin lace along its middle contours
 ;;; first, then blotches over its higher half that join into white water
-;;; still holed and streaked with dark.
-(define-shader-function foam-cover (source pattern)
-  (let* ((lace (- 1.0 (abs (- (* 2.0 pattern) 1.0))))
-         (laced (smoothstep (- 1.0 (* 0.4 source)) (- 1.08 (* 0.4 source))
+;;; still holed and streaked with dark.  AGE is this flow copy's phase, not
+;;; stored history: its holes open as it ages, and it resets at zero weight.
+(define-shader-function foam-cover (source pattern age)
+  (let* ((amount (* source (- 1.0 (* 0.3 age))))
+         (lace (- 1.0 (abs (- (* 2.0 pattern) 1.0))))
+         (laced (smoothstep (- 1.0 (* 0.4 amount)) (- 1.08 (* 0.4 amount))
                             lace))
-         (threshold (- 0.8 (* 0.4 source)))
+         (threshold (- 0.8 (* 0.4 amount)))
          (blotched (* (smoothstep threshold (+ threshold 0.14) pattern)
-                      (smoothstep 0.35 0.6 source))))
-    (* (max laced blotched) (mix 0.55 0.95 source))))
+                      (smoothstep 0.35 0.6 amount))))
+    (* (max laced blotched) (mix 0.55 0.95 amount))))
 
 ;;; White water drawn out along the current, at a heading of ANGLE radians.
 ;;; Turning the world's coordinates by an angle that varies from place to
@@ -5325,6 +5402,11 @@
 (define-shader-function churn (descent)
   (+ (* 0.85 (rapid descent)) (smoothstep 0.9 2.6 descent)))
 
+;;; The same attenuation looking into the water or out from within it:
+;;; red goes first, leaving peaty green; silt and aeration shorten the view.
+(define-shader-function water-extinction (running rapids)
+  (* (vec3 0.42 0.17 0.24) (+ (mix 1.0 1.7 running) (* 3.0 rapids))))
+
 (define-shader water-fragment
     (:stage :fragment
      :inputs ((world :vec3 :location 0)
@@ -5334,6 +5416,7 @@
               (rest :vec2 :location 4)
               (waves :float :location 5)
               (lag :vec3 :location 6)
+              (front :bool :built-in :front-facing)
               (fragment :vec4 :built-in :frag-coord))
      :outputs ((color :vec4 :location 0)
                (motion :vec2 :location 1))
@@ -5345,6 +5428,7 @@
                  (flow :texture-2d :binding 12)
                  (beneath :texture-2d :binding 13)
                  (beneath-depth :texture-2d :binding 14)
+                 (shore-surf :texture-2d :binding 15)
                  (linear-clamp :sampler :binding 0)
                  (linear-repeat :sampler :binding 1)
                  (nearest-clamp :sampler :binding 2)
@@ -5415,10 +5499,13 @@
                   (* (vec2 7.31 3.17) (floor age))))
          (at-b (+ (- xz (* drift (- phase-b 0.5)))
                   (* (vec2 4.13 8.29) (floor (+ age 0.5)))))
-         (flowing (only-where (> running 0.0) (vec2 0.0 0.0)
-                    (* (+ (* weight-a (river-ripples at-a rapids footprint))
-                          (* weight-b (river-ripples at-b rapids footprint)))
-                       contrast)))
+         (flowing (only-where (> running 0.0) (vec3 0.0 0.0 0.0)
+                    (ripple-weight
+                      (+ (ripple-weight (river-ripples at-a rapids footprint)
+                                         weight-a)
+                         (ripple-weight (river-ripples at-b rapids footprint)
+                                         weight-b))
+                      contrast)))
          ;; Still water: the wind's ripples, two trains crossing.
          (wind (vec2 0.43 0.21))
          ;; Gusts roughen the water in drifting patches, between slicks.
@@ -5430,13 +5517,15 @@
                                                       (uint 45))
                                           :x))))
          (still
-           (only-where (< running 1.0) (vec2 0.0 0.0)
+           (only-where (< running 1.0) (vec3 0.0 0.0 0.0)
              (+ (ripple-octave (- xz (* wind time)) 1.10 0.80 0.60
                                (uint 41) footprint)
-                (* 0.7 (ripple-octave (+ xz (* (vec2 0.17 -0.36) time))
-                                      2.70 -0.40 0.92 (uint 42) footprint))
-                (* 0.4 (ripple-octave (- xz (* wind (* 1.6 time))) 6.0
-                                      0.20 0.98 (uint 43) footprint)))))
+                (ripple-weight
+                  (ripple-octave (+ xz (* (vec2 0.17 -0.36) time))
+                                 2.70 -0.40 0.92 (uint 42) footprint) 0.7)
+                (ripple-weight
+                  (ripple-octave (- xz (* wind (* 1.6 time))) 6.0
+                                 0.20 0.98 (uint 43) footprint) 0.4))))
          ;; The sea's waves under them: their slope where the water at this
          ;; fragment rests, steepened toward the sharpened crests, and how
          ;; near a crest it lies, -1 in a trough to 1 on one.
@@ -5472,15 +5561,41 @@
                               (max steepness 0.0001))))))
          ;; A slow reach is nearly glass; a quick one is lively before it
          ;; ever breaks.
-         (slope (mix (* still (+ (* 0.03 gusts) (* 0.10 swell)))
-                     (* flowing (+ (mix 0.05 0.15 lively) (* 0.30 rapids)))
-                     running))
+         (wind-strength (+ (* 0.03 gusts) (* 0.10 swell)))
+         (flow-strength (+ (mix 0.05 0.15 lively) (* 0.30 rapids)))
+         (ripples (+ (ripple-weight still (* wind-strength (- 1.0 running)))
+                     (ripple-weight flowing (* flow-strength running))))
+         ;; Long fronts follow the depth-timed coast, not one wind bearing
+         ;; through every bay. This is a small normal ripple and a foam
+         ;; source, never a second displacement/buoyancy model.
+         (coast (shore-field xz))
+         (coast-mask (sqrt (dot (swizzle coast :zw) (swizzle coast :zw))))
+         (coast-gate (* coast-mask (smoothstep 0.8 0.97 swell)
+                        (- 1.0 running)))
+         (coast-wave (shore-cycle (swizzle coast :x) time))
+         (coast-slope (* (swizzle coast :zw)
+                         (* 0.065 (smoothstep 0.8 0.97 swell)
+                            (- 1.0 running)
+                            (- 1.0 (smoothstep 1.5 8.0 depth))
+                            (sin (* 1.208305 (+ time (swizzle coast :x)))))))
+         (slope (+ (swizzle ripples :xy) coast-slope))
          (n (normalize (vec3 (* -1.0 (+ (swizzle slope :x) (swizzle tilt :x)
                                         (swizzle heave :x)))
                              1.0
                              (* -1.0 (+ (swizzle slope :y)
                                         (swizzle tilt :y)
                                         (swizzle heave :y))))))
+         ;; A locally linear normal has this variance over a square pixel.
+         ;; Take derivatives here, after the conditional ripple/tilt work
+         ;; has rejoined, never inside a divergent flow or reflection loop.
+         (normal-dx (derivative-x n))
+         (normal-dy (derivative-y n))
+         (normal-variance (* 0.0833333 (+ (dot normal-dx normal-dx)
+                                         (dot normal-dy normal-dy))))
+         ;; Convert isotropic XZ slope variance to angular normal variance;
+         ;; a tilted cascade turns less for the same added ripple slope.
+         (up2 (* (swizzle n :y) (swizzle n :y)))
+         (ripple-variance (* (swizzle ripples :z) 0.5 up2 (+ 1.0 up2)))
          ;; The sun's shadow falls across water and foam alike.
          (lit (sun-lit-once shadow-map shadow-compare world 1.0))
          (visibility (mix 0.2 1.0 lit))
@@ -5489,8 +5604,7 @@
          ;; Ripples too fine to resolve still roughen the water: at a
          ;; grazing angle their facets turn toward the eye, so gusts darken
          ;; a distant lake between its bright slicks.
-         (roughness (mix (+ (* 0.03 gusts) (* 0.10 swell))
-                         (+ (mix 0.05 0.15 lively) (* 0.30 rapids)) running))
+         (roughness (mix wind-strength flow-strength running))
          (unresolved (* (smoothstep 0.1 0.9 footprint)
                         (clamp (* roughness 7.0) 0.0 1.0)))
          ;; This fragment's place on the copied scene, and its depth there
@@ -5500,10 +5614,16 @@
          (facing (mix (max (dot n view) 0.0)
                       (max (dot n view) 0.28) unresolved))
          (fresnel (+ 0.02 (* 0.98 (expt (max (- 1.0 facing) 0.0) 5.0))))
-         (reflected (- (* 2.0 facing n) view))
-         (mirrored (normalize (vec3 (swizzle reflected :x)
-                                    (max (swizzle reflected :y) 0.002)
-                                    (swizzle reflected :z))))
+         (reflected (- (* 2.0 (if front facing (dot n view)) n) view))
+         ;; Under the sheet the reflected ray goes back into the water.
+         ;; Reuse the guarded scene march for nearby submerged banks; the
+         ;; skyward clamp belongs only to the surface seen from above.
+         (mirrored (normalize
+                     (if front
+                         (vec3 (swizzle reflected :x)
+                               (max (swizzle reflected :y) 0.002)
+                               (swizzle reflected :z))
+                         reflected)))
          ;; Off screen, the sky, and low in a channel the banks above it.
          (sky (water-sky mirrored (swizzle sky-sun :xyz)
                          (swizzle fog-color :xyz)
@@ -5597,18 +5717,23 @@
          ;; white water take more.
          (sunk (* below (abs (swizzle view :y))))
          (path (+ below (/ sunk (max (swizzle light :y) 0.3))))
-         (murk (+ (mix 1.0 1.7 running) (* 3.0 rapids)))
-         (through (exp (* (vec3 -0.42 -0.17 -0.24) (* below murk))))
-         (lit-through (exp (* (vec3 -0.42 -0.17 -0.24) (* path murk))))
+         (extinction (water-extinction running rapids))
+         (through (exp (* extinction (- 0.0 below))))
+         (lit-through (exp (* extinction (- 0.0 path))))
          (tint (mix (srgb (vec3 0.05 0.10 0.075)) (srgb (vec3 0.09 0.12 0.08))
                     running))
          (body (* (mix tint (srgb (vec3 0.30 0.36 0.34)) (* 0.6 rapids))
                   (+ sky-light (* sun-light (max (swizzle light :y) 0.0)))))
          (scattered (* body (- (vec3 1.0 1.0 1.0) through)))
-         ;; The sun's glint, broader where the water is rough.
+         ;; For the power lobe cos(theta)^P, small-angle total variance is
+         ;; 2/P.  Add both the resolved pixel's normal spread and the slopes
+         ;; retired by filtering, not the old distance-only width.  Keep
+         ;; the same normalized power lobe below, with its new exponent in
+         ;; the peak too; broadening must spread light, not add it.
          (half-way (normalize (+ light view)))
-         (shine (mix (mix 700.0 160.0 (max rapids (* 0.5 swell))) 60.0
-                     unresolved))
+         (base-shine (mix 700.0 160.0 (max rapids (* 0.5 swell))))
+         (shine (/ 2.0 (+ (/ 2.0 base-shine)
+                          (min (+ normal-variance ripple-variance) 0.18))))
          (glint-fresnel (+ 0.02 (* 0.98 (expt (max (- 1.0 (max (dot half-way
                                                                view)
                                                           0.0))
@@ -5631,14 +5756,15 @@
          (fringe (* (- 1.0 (smoothstep 0.01 0.07 depth))
                     (smoothstep 0.25 0.7 speed) 0.3))
          (open-sea (* swell swell))
+         (shore-crest (mix crest (swizzle coast-wave :x) coast-gate))
          (reach (+ 0.07 (* 0.06 (mix (sin (+ (* time 1.1) (* 9.0 stagger)))
-                                     crest open-sea))
-                   (* 0.12 open-sea (max crest 0.0))))
+                                     shore-crest open-sea))
+                   (* 0.12 open-sea (max shore-crest 0.0))))
          (lap (* (- 1.0 (smoothstep 0.01 reach depth)) (- 1.0 running)
                  (+ 0.3 (* 0.4 swell))))
          (surf (* open-sea (- 1.0 running)
                   (- 1.0 (smoothstep 0.4 3.0 depth))
-                  (smoothstep 0.1 0.7 crest) 0.75))
+                  (smoothstep 0.1 0.7 shore-crest) 0.75))
          (whitecap (* open-sea (smoothstep 0.6 0.95 crest) 0.35))
          (source (clamp (max (max (max (churn descent) trail) (max fringe lap))
                              (max surf whitecap))
@@ -5646,16 +5772,28 @@
          ;; Fast water draws its foam out into streaks along the current.
          (heading (heading-of downstream))
          (drawn (smoothstep 0.8 2.4 speed))
-         (pattern
-           (only-where (> source 0.002) 0.5
-             (let* ((pattern-a (mix (foam-pattern at-a) (streaks at-a heading)
-                                    drawn))
-                    (pattern-b (mix (foam-pattern at-b) (streaks at-b heading)
-                                    drawn)))
-               (+ 0.5 (* contrast
-                         (+ (* weight-a (- pattern-a 0.5))
-                            (* weight-b (- pattern-b 0.5))))))))
          (crisp (- 1.0 (smoothstep 0.3 1.2 footprint)))
+         ;; Erode each flow copy before blending coverage, so its lace
+         ;; opens rather than merely dimming.  Keep the billow belonging to
+         ;; the covered part; an uncovered copy must not shade its creases.
+         (foam-detail
+           (only-where (and (> source 0.002) (> crisp 0.0))
+               (vec4 0.0 0.5 0.0 0.0)
+             (let* ((a (foam-pattern at-a footprint))
+                    (b (foam-pattern at-b footprint))
+                    (pattern-a (mix (swizzle a :x) (streaks at-a heading)
+                                    drawn))
+                    (pattern-b (mix (swizzle b :x) (streaks at-b heading)
+                                    drawn))
+                    (cover-a (* weight-a
+                                (foam-cover source pattern-a phase-a)))
+                    (cover-b (* weight-b
+                                (foam-cover source pattern-b phase-b)))
+                    (covered (+ cover-a cover-b))
+                    (form (/ (+ (* cover-a (swizzle a :yzw))
+                                (* cover-b (swizzle b :yzw)))
+                             (max covered 0.0001))))
+               (vec4 covered form))))
          ;; Any current carries specks of foam and bubbles, gathered into
          ;; drifting rafts, which show which way it runs.  Specks keep a
          ;; longer cycle than the ripples, so each drifts metres before it
@@ -5696,12 +5834,36 @@
                (* (+ (* speck-weight-a speck-a)
                      (* (- 1.0 speck-weight-a) speck-b))
                   0.45 running crisp))))
-         (foam (max (mix (* 0.6 source) (foam-cover source pattern) crisp)
-                    specks))
-         (foam-color (* (srgb (vec3 0.86 0.89 0.88)) (+ 0.85 (* 1.2 (- pattern 0.5)))
+         ;; Coverage says where the bubbles are; optical thickness says
+         ;; how much water still shows through them.  The two phase ages
+         ;; average to 1/2 under their weights, leaving 0.85 of the source.
+         ;; Unresolved lace becomes its mean, never a solid white contour.
+         (foam-coverage (max (mix (* 0.51 source)
+                                  (swizzle foam-detail :x) crisp) specks))
+         (foam-amount (max (* 0.85 source) (* 0.5 specks)))
+         (foam-dense (smoothstep 0.18 0.60 foam-amount))
+         (billow (mix 0.5 (swizzle foam-detail :y) crisp))
+         (foam-thickness (* (+ 0.35 (* 7.0 foam-amount foam-amount))
+                             (mix 0.85 1.15 billow)))
+         (foam (* foam-coverage (- 1.0 (exp (- 0.0 foam-thickness)))))
+         ;; A few centimetres of relief, only on thick foam, and a little
+         ;; shade in the hollows.  Its analytic gradient remains legal
+         ;; inside the flow branch and dies away with the footprint.
+         (foam-slope (* (swizzle foam-detail :zw) 0.06 foam-dense crisp))
+         (foam-normal (normalize (- n (vec3 (swizzle foam-slope :x) 0.0
+                                            (swizzle foam-slope :y)))))
+         (foam-crease (- 1.0 (* 0.14 foam-dense crisp
+                                (- 1.0 (smoothstep 0.2 0.65 billow)))))
+         ;; Thin lace takes the water's green/peat tint and transmits the
+         ;; shaded water beneath; dense whitewater is diffuse, not emissive.
+         (foam-albedo (* (srgb (vec3 0.86 0.89 0.88))
+                         (mix (mix (vec3 0.62 0.82 0.75)
+                                    (vec3 0.72 0.80 0.60) running)
+                              (vec3 1.0 1.0 1.0) foam-dense)))
+         (foam-color (* foam-albedo foam-crease
                         (+ (* sky-light 1.1)
                            (* sun-light (max (+ (* 0.6 (swizzle light :y))
-                                                (* 0.4 (dot n light)))
+                                                (* 0.4 (dot foam-normal light)))
                                              0.0)))))
          (whole (+ (* foam foam-color) (* (- 1.0 foam) surface-light)))
          ;; Haze over the surface as over any other; the bed seen through it
@@ -5714,6 +5876,42 @@
          (hazy (+ haze (* whole clear)
                   (* bed lit-through clear
                      (* (- 1.0 foam) (- 1.0 fresnel)))))
+         ;; From below, Snell's window admits the sky. Beyond its critical
+         ;; angle the surface reflects the dark water, not the sky's
+         ;; upside-down horizon. Nearby opaque objects retain the guarded
+         ;; screen-space refraction; this is not a second scene render.
+         ;; Use the drawn face, not altitude: looking uphill at a sloping
+         ;; river can see its top even though that fragment is above the eye.
+         (underside
+           (only-where (not front) (vec3 0.0 0.0 0.0)
+             (let* ((incidence (clamp (- 0.0 (dot n view)) 0.0 1.0))
+                    (sine2 (* 1.777778 (- 1.0 (* incidence incidence))))
+                    (window (- 1.0 (smoothstep 0.97 1.03 sine2)))
+                    (outward (normalize
+                               (+ (* 1.333333 (- (* -1.0 view)
+                                                  (* n incidence)))
+                                  (* n (sqrt (max (- 1.0 sine2) 0.0))))))
+                    (sky (water-sky outward (swizzle sky-sun :xyz)
+                                     (swizzle fog-color :xyz)
+                                     (swizzle sun-direction :w)
+                                     (swizzle relief :w)))
+                    (above (mix sky ground (step 0.000001 bed-z)))
+                    (transmitted (* above
+                                    (- 1.0 (* 0.7 (expt (- 1.0 incidence)
+                                                        5.0)))))
+                    (water-body (* (mix (vec3 0.025 0.07 0.05)
+                                        (vec3 0.04 0.065 0.035) running)
+                                    (+ sky-light (* sun-light 0.4))))
+                    (return-through
+                      (exp (* extinction
+                              (- 0.0 (min (swizzle bracket :y) 80.0)))))
+                    (returned (+ (* seen return-through)
+                                 (* water-body (- (vec3 1.0 1.0 1.0)
+                                                  return-through))))
+                    (inside (mix water-body returned trust)))
+               (* (mix inside transmitted window)
+                  (- 1.0 (* 0.65 foam))))))
+         (hazy (if front hazy underside))
          ;; The waterline: the surface thins to nothing over the last few
          ;; centimetres.
          (alpha (smoothstep 0.004 0.05 depth))
@@ -6626,6 +6824,128 @@
 (define-shader-function depth-position (uv z eye forward right up near far)
   (let* ((ray (view-ray uv forward right up)))
     (+ eye (* ray (/ (view-depth z near far) (dot ray forward))))))
+
+;;; -- inside local water ----------------------------------------------------
+;;;
+;;; The surface is transparent and does not write scene depth. Grade the
+;;; opaque ray only as far as it travels under water, rather than fogging
+;;; the sky behind the interface as if it lay kilometres below the sea.
+;;; All of this precedes temporal resolve, including the near-plane split.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *submersion*
+    '((surface :vec4))))           ; local camera level, near, far, 0
+
+;;; Level and depth at a world point. Invert the same six Gerstner trains
+;;; as the CPU query; fresh water uses its own sheet, not the sea datum.
+;;; The near-plane query is only needed while the lens crosses the surface.
+(define-shader-abstraction local-water (xz)
+  `(let* ((at ,xz)
+          (grid (/ at (vec2 (swizzle scale :x) (swizzle scale :z))))
+          (extent (swizzle size :xy))
+          (sheet (sheet-between water-levels grid extent))
+          (level (* (swizzle sheet :x) (swizzle scale :y)))
+          (depth (- level (* (height-between bottom-heights grid extent)
+                             (swizzle scale :y))))
+          (share (sea-share (swizzle sheet :y) depth))
+          (rest (counted-fold (i (if (> share 0.0) (uint 6) (uint 0))
+                                rest at)
+                  (- at (* (swizzle (sea-offset rest 0.0 0.01) :xz)
+                            share))))
+          (height (only-where (> share 0.0) 0.0
+                    (* (swizzle (sea-offset rest 0.0 0.01) :y) share))))
+     (vec2 (+ level height) (+ depth height))))
+
+(define-shader underwater-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0))
+     :outputs ((color :vec4 :location 0))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (submersion :uniform-block :binding 2
+                             :members #.*submersion*)
+                 (sea :uniform-block :binding 3 :members #.*sea*)
+                 (image :texture-2d :binding 0)
+                 (scene-depth :depth-texture-2d :binding 1)
+                 (bottom-heights :texture-2d :binding 2)
+                 (water-levels :texture-2d :binding 11)
+                 (flow :texture-2d :binding 12)
+                 (linear-clamp :sampler :binding 0)
+                 (linear-repeat :sampler :binding 1)
+                 (nearest-clamp :sampler :binding 2)))
+  (let* ((eye (swizzle camera-position :xyz))
+         (forward (swizzle view-forward :xyz))
+         ;; Undo the scene's NDC jitter, as the sky's view ray does.
+         (looking (- (vec2 (- (* 2.0 (swizzle uv :x)) 1.0)
+                            (- 1.0 (* 2.0 (swizzle uv :y))))
+                      (swizzle temporal :zw)))
+         (ray (normalize (+ forward
+                             (* (swizzle view-right :xyz)
+                                (swizzle looking :x))
+                             (* (swizzle view-up :xyz)
+                                (swizzle looking :y)))))
+         (along (max (dot ray forward) 0.01))
+         (near (swizzle surface :y))
+         (far (swizzle surface :z))
+         (camera-depth (- (swizzle surface :x) (swizzle eye :y)))
+         (lens (+ eye (* ray (/ near along))))
+         (lens-water
+           (only-where (< (abs camera-depth) 1.5)
+               (vec2 (swizzle surface :x) 1.0)
+             (local-water (swizzle lens :xz))))
+         (lens-depth (- (swizzle lens-water :x) (swizzle lens :y)))
+         (wet (* (smoothstep -0.025 0.025 lens-depth)
+                  (smoothstep 0.0 0.025 (swizzle lens-water :y))))
+         (z (swizzle (sample-level scene-depth nearest-clamp uv 0.0) :x))
+         (distance (min 80.0 (/ (view-depth z near far) along)))
+         ;; One refinement of the upward exit against the local, wavy
+         ;; sheet. A downward ray ends at opaque geometry (or extinction),
+         ;; not at the far-plane depth of an absent surface fragment.
+         (exit-distance
+           (only-where (> (swizzle ray :y) 0.02) 80.0
+             (let* ((first (clamp (/ camera-depth (swizzle ray :y))
+                                  0.0 80.0))
+                    (at (+ eye (* ray first)))
+                    (water (local-water (swizzle at :xz))))
+               (clamp (/ (- (swizzle water :x) (swizzle eye :y))
+                          (swizzle ray :y))
+                       0.0 80.0))))
+         (entry (max 0.0 (/ (- 0.0 camera-depth)
+                            (max (- 0.0 (swizzle ray :y)) 0.001))))
+         (path (max 0.0 (- (min distance exit-distance) entry)))
+         (field-uv (/ (+ (/ (swizzle lens :xz)
+                            (vec2 (swizzle scale :x) (swizzle scale :z)))
+                         (vec2 0.5 0.5))
+                      (swizzle size :xy)))
+         (moving (swizzle (sample-level flow linear-repeat field-uv 0.0)
+                           :xyz))
+         (speed (sqrt (dot (swizzle moving :xy) (swizzle moving :xy))))
+         (running (smoothstep 0.02 0.12 speed))
+         (rapids (rapid (max (- 0.0 (swizzle moving :z)) 0.0)))
+         (through (exp (* (water-extinction running rapids) (- 0.0 path))))
+         (light (swizzle sun-direction :xyz))
+         (down-light (exp (/ (* -0.12 (max camera-depth 0.0))
+                             (max (swizzle light :y) 0.3))))
+         ;; A restrained forward-scattering lobe (HG, g = 0.35) gives the
+         ;; murk a direction toward the light rather than a flat green
+         ;; screen. Ambient remains isotropic; this also follows the moon.
+         (phase (+ 0.5 (* 0.5 (/ 0.8775
+                                  (expt (max 0.4225
+                                             (- 1.1225 (* 0.7 (dot ray light))))
+                                         1.5)))))
+         (scatter (* (mix (vec3 0.015 0.055 0.035)
+                            (vec3 0.025 0.06 0.026) running)
+                      (+ (* (swizzle ambient :xyz) 1.4)
+                         (* (swizzle sun-diffuse :xyz) down-light phase
+                            (max (swizzle light :y) 0.0)))))
+         (seen (swizzle (sample-level image linear-clamp uv 0.0) :xyz))
+         (submerged (+ (* seen through)
+                        (* scatter (- (vec3 1.0 1.0 1.0) through)))))
+    (set-output color (vec4 (mix seen submerged wet) 1.0))))
+
+(define-shader-program underwater
+  :vertex present-vertex
+  :fragment underwater-fragment)
 
 (define-shader-function interleaved-noise (pixel)
   (fract (* 52.9829189 (fract (+ (* 0.06711056 (swizzle pixel :x))

@@ -1,9 +1,11 @@
 #include <moppe/game/frame_view.hh>
+#include <moppe/game/walker.hh>
 #include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <type_traits>
@@ -124,8 +126,14 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
 
   FrameFixture fixture;
   fixture.graphics.scene_scale = 0.75f;
+  terrain::WaterSheets water (fixture.surface.domain ());
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
+                     terrain::surface_elevation_point (24.0f * u::m));
+  std::ranges::fill (spatial::get<terrain::wave_amplitude> (water),
+                     0.1f * terrain::wave_amplitude[one]);
   const game::GameState before = fixture.running ().state ();
-  const game::FrameViewInput input = gameplay_input (fixture);
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.water = &water;
 
   const game::FrameView first = game::compose_frame_view (input);
   const game::FrameView second = game::compose_frame_view (input);
@@ -145,6 +153,9 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
 
   MOPPE_CHECK (first.scene == game::FrameSceneMode::Gameplay);
   MOPPE_CHECK_NEAR (first.graphics.scene_scale, 0.75f, 0.0f);
+  MOPPE_CHECK (first.camera_water_level.has_value ());
+  MOPPE_CHECK (first.camera_water_level == second.camera_water_level);
+  MOPPE_CHECK (first.visibility.underwater == second.visibility.underwater);
   MOPPE_CHECK (frame_view_same_matrix (first.camera.view, second.camera.view));
   MOPPE_CHECK (
     frame_view_same_matrix (first.camera.projection, second.camera.projection));
@@ -367,6 +378,182 @@ MOPPE_TEST (frame_view_applies_the_forest_graphics_feature) {
   MOPPE_CHECK (view.visibility.undergrowth);
 }
 
+MOPPE_TEST (frame_view_classifies_the_selected_camera_in_an_elevated_lake) {
+  FrameFixture fixture;
+  terrain::WaterSheets water (fixture.surface.domain ());
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
+                     terrain::surface_elevation_point (25.0f * u::m));
+  fixture.running ().logic ().m_shake = 0.2f;
+  fixture.running ().logic ().m_shake_time = 0.031f;
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.water = &water;
+  input.selected_camera.position = Vec3 (21, 24.5f, 73);
+  input.selected_camera.view = Mat4::look_at (input.selected_camera.position,
+                                              input.selected_camera.position +
+                                                input.selected_camera.forward,
+                                              Vec3 (0, 1, 0));
+
+  const game::FrameView submerged = game::compose_frame_view (input);
+  MOPPE_CHECK (submerged.camera_water_level.has_value ());
+  MOPPE_CHECK_NEAR (*submerged.camera_water_level, 25.0f, 1e-6f);
+  MOPPE_CHECK (submerged.visibility.underwater);
+  frame_view_check_vector (submerged.camera.position,
+                           input.selected_camera.position);
+  MOPPE_CHECK (!frame_view_same_matrix (submerged.camera.view,
+                                        input.selected_camera.view));
+  MOPPE_CHECK_NEAR (
+    game::sun_visibility_target (submerged, fixture.world, fixture.surface),
+    0.0f,
+    1e-6f);
+
+  // At the surface, and half a metre above, retain its height for the
+  // renderer's per-pixel transition without classifying the eye as wet.
+  for (const float height : { 25.0f, 25.5f }) {
+    input.selected_camera.position[1] = height;
+    const game::FrameView above = game::compose_frame_view (input);
+    MOPPE_CHECK (above.camera_water_level.has_value ());
+    MOPPE_CHECK_NEAR (*above.camera_water_level, 25.0f, 1e-6f);
+    MOPPE_CHECK (!above.visibility.underwater);
+    MOPPE_CHECK (game::sun_visibility_target (
+                   above, fixture.world, fixture.surface) > 0.0f);
+  }
+
+  input.selected_camera.position[1] = 24.5f;
+  fixture.graphics.ocean = false;
+  const game::FrameView hidden = game::compose_frame_view (input);
+  MOPPE_CHECK (hidden.camera_water_level.has_value ());
+  MOPPE_CHECK_NEAR (*hidden.camera_water_level, 25.0f, 1e-6f);
+  MOPPE_CHECK (!hidden.visibility.ocean);
+  MOPPE_CHECK (!hidden.visibility.underwater);
+  MOPPE_CHECK (game::sun_visibility_target (
+                 hidden, fixture.world, fixture.surface) > 0.0f);
+}
+
+MOPPE_TEST (frame_view_dry_sheets_do_not_fall_back_to_sea_level) {
+  FrameFixture fixture;
+  terrain::WaterSheets water (fixture.surface.domain ());
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.water = &water;
+  // Below the sea datum, but inside dry ground: neither an unpainted
+  // field nor a sheet exactly on the ground constitutes water.
+  input.selected_camera.position[1] = 2.0f;
+  for (const float level : { 0.0f, 10.0f }) {
+    std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
+                       terrain::surface_elevation_point (level * u::m));
+    const game::FrameView dry = game::compose_frame_view (input);
+    MOPPE_CHECK (!dry.camera_water_level.has_value ());
+    MOPPE_CHECK (!dry.visibility.underwater);
+  }
+
+  // An explicitly dry basin below the sea datum remains dry, and the
+  // sea cannot hide its sun. The sheet, not the global datum, is final.
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (fixture.surface),
+                     terrain::surface_elevation_point (-6.0f * u::m));
+  map::rebuild_geometry (fixture.surface);
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
+                     terrain::surface_elevation_point (-6.0f * u::m));
+  input.selected_camera.position[1] = -2.0f;
+  const game::FrameView basin = game::compose_frame_view (input);
+  MOPPE_CHECK (!basin.camera_water_level.has_value ());
+  MOPPE_CHECK (!basin.visibility.underwater);
+  MOPPE_CHECK (
+    game::sun_visibility_target (basin, fixture.world, fixture.surface) > 0.0f);
+}
+
+MOPPE_TEST (frame_view_without_a_sheet_requires_sea_above_local_ground) {
+  FrameFixture fixture;
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.selected_camera.position[1] = 2.0f;
+  for (const float sea : { 4.0f, 10.0f }) {
+    fixture.world.water_level = sea * u::m;
+    const game::FrameView dry = game::compose_frame_view (input);
+    MOPPE_CHECK (!dry.camera_water_level.has_value ());
+    MOPPE_CHECK (!dry.visibility.underwater);
+  }
+
+  fixture.world.water_level = 18.0f * u::m;
+  input.selected_camera.position[1] = 17.0f;
+  const game::FrameView submerged = game::compose_frame_view (input);
+  MOPPE_CHECK (submerged.camera_water_level.has_value ());
+  MOPPE_CHECK_NEAR (*submerged.camera_water_level, 18.0f, 1e-6f);
+  MOPPE_CHECK (submerged.visibility.underwater);
+
+  input.selected_camera.position[1] = 18.5f;
+  const game::FrameView above = game::compose_frame_view (input);
+  MOPPE_CHECK (above.camera_water_level.has_value ());
+  MOPPE_CHECK_NEAR (*above.camera_water_level, 18.0f, 1e-6f);
+  MOPPE_CHECK (!above.visibility.underwater);
+}
+
+MOPPE_TEST (frame_view_interpolates_sloping_water_and_its_banks) {
+  FrameFixture fixture;
+  terrain::WaterSheets water (fixture.surface.domain ());
+  const std::array<terrain::TerrainIndex, 4> corners {
+    terrain::TerrainIndex { 2, 3 }, { 3, 3 }, { 2, 4 }, { 3, 4 }
+  };
+  const std::array beds { 16.0f, 34.0f, 28.0f, 42.0f };
+  const std::array levels { 24.0f, 26.0f, 30.0f, 32.0f };
+  for (std::size_t i = 0; i < corners.size (); ++i) {
+    spatial::get<terrain::surface_elevation> (fixture.surface[corners[i]]) =
+      terrain::surface_elevation_point (beds[i] * u::m);
+    spatial::get<terrain::surface_elevation> (water[corners[i]]) =
+      terrain::surface_elevation_point (levels[i] * u::m);
+  }
+  map::rebuild_geometry (fixture.surface);
+  const float dx =
+    fixture.surface.domain ().spacing_x ().numerical_value_in (u::m);
+  const float dz =
+    fixture.surface.domain ().spacing_z ().numerical_value_in (u::m);
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.water = &water;
+  input.selected_camera.position = Vec3 (2.25f * dx, 28.875f, 3.75f * dz);
+  const game::FrameView river = game::compose_frame_view (input);
+  // Here the bed interpolates to 28.75 m and the sheet to 29 m.
+  MOPPE_CHECK (river.camera_water_level.has_value ());
+  MOPPE_CHECK_NEAR (*river.camera_water_level, 29.0f, 1e-5f);
+  MOPPE_CHECK (river.visibility.underwater);
+
+  input.selected_camera.position = Vec3 (2.75f * dx, 28.875f, 3.25f * dz);
+  const game::FrameView bank = game::compose_frame_view (input);
+  // In the same cell, 31.75 m of ground stands above the 27 m sheet.
+  MOPPE_CHECK (!bank.camera_water_level.has_value ());
+  MOPPE_CHECK (!bank.visibility.underwater);
+}
+
+MOPPE_TEST (frame_view_follows_the_rendered_sea_wave_phase) {
+  FrameFixture fixture;
+  fixture.world.water_level = 18.0f * u::m;
+  terrain::WaterSheets water (fixture.surface.domain ());
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
+                     terrain::surface_elevation_point (18.0f * u::m));
+  std::ranges::fill (spatial::get<terrain::wave_amplitude> (water),
+                     1.0f * terrain::wave_amplitude[one]);
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.water = &water;
+  input.selected_camera.position = Vec3 (21.25f, 18.0f, 73.5f);
+  bool crested = false, troughed = false;
+  for (const double time : { 0.0, 2.5, 7.75, 13.125, 100000.1234 }) {
+    fixture.running ().logic ().m_total_time = time;
+    const game::FrameView view = game::compose_frame_view (input);
+    const float level = game::water_surface_at (fixture.world,
+                                                fixture.surface,
+                                                &water,
+                                                view.camera.position,
+                                                view.lighting.time)
+                          .numerical_value_in (u::m);
+    MOPPE_CHECK (view.camera_water_level.has_value ());
+    MOPPE_CHECK_NEAR (*view.camera_water_level, level, 1e-6f);
+    MOPPE_CHECK (view.visibility.underwater == (level > 18.0f));
+    MOPPE_CHECK (
+      (game::sun_visibility_target (view, fixture.world, fixture.surface) >
+       0.0f) == !view.visibility.underwater);
+    crested = crested || level > 18.1f;
+    troughed = troughed || level < 17.9f;
+  }
+  MOPPE_CHECK (crested);
+  MOPPE_CHECK (troughed);
+}
+
 MOPPE_TEST (frame_view_carries_sun_height) {
   FrameFixture fixture;
   fixture.graphics.sun_height = 0.75f;
@@ -392,8 +579,9 @@ MOPPE_TEST (
 
   FrameFixture underwater;
   game::FrameView submerged = clear_sun_view ();
-  submerged.camera.position[1] =
-    (underwater.world.water_level).numerical_value_in (moppe::u::m) - 0.1f;
+  submerged.camera_water_level = 24.0f;
+  submerged.camera.position[1] = 23.0f;
+  submerged.visibility.underwater = true;
   MOPPE_CHECK_NEAR (game::sun_visibility_target (
                       submerged, underwater.world, underwater.surface),
                     0.0f,

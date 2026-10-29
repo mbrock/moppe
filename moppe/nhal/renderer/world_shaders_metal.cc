@@ -248,6 +248,14 @@ namespace moppe::nhal {
 #embed "world_text.fragment.metal"
       , 0
     };
+    const char underwater_vertex[] = {
+#embed "underwater.vertex.metal"
+      , 0
+    };
+    const char underwater_fragment[] = {
+#embed "underwater.fragment.metal"
+      , 0
+    };
   }
 
   const WorldShaders& world_shaders_metal () {
@@ -287,6 +295,7 @@ namespace moppe::nhal {
       { { mesh_shadow_vertex, {} }, {} },
       { { motion_blur_vertex, {} }, { motion_blur_fragment, {} } },
       { { world_text_vertex, {} }, { world_text_fragment, {} } },
+      { { underwater_vertex, {} }, { underwater_fragment, {} } },
     };
     return shaders;
   }

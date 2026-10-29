@@ -45,8 +45,8 @@ namespace moppe::game {
       visibility.waterfall_curtains = input.graphics.waterfall_curtains;
       visibility.dust = !gazetteer && input.graphics.particles;
       visibility.underwater =
-        view.camera.position[1] <
-        (input.world.water_level).numerical_value_in (moppe::u::m);
+        visibility.ocean && view.camera_water_level &&
+        view.camera.position[1] < *view.camera_water_level;
       visibility.motion_blur =
         input.graphics.motion_blur && view.motion_blur_amount > 0.01f;
       visibility.vehicle_effects =
@@ -310,6 +310,24 @@ namespace moppe::game {
     result.environment.cam_forward = result.camera.frame_forward;
     result.environment.time = seconds (result.lighting.time);
 
+    // Dry sheet cells sit at or below the ground; they must not fall back
+    // to the sea. Waves use the same time as the frame being drawn.
+    const Vec3& camera = result.camera.position;
+    const position_t where = position (Vec3 (camera[0], 0.0f, camera[2]));
+    const float ground = terrain::surface_elevation_value (
+      spatial::sample<terrain::surface_elevation> (input.surface, where));
+    const float still_water =
+      input.water
+        ? terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (*input.water, where))
+        : input.world.water_level.numerical_value_in (u::m);
+    const float local_water =
+      still_water +
+      water_waves_at (input.surface, input.water, camera, result.lighting.time)
+        .height;
+    if (local_water > ground)
+      result.camera_water_level = local_water;
+
     result.graphics = {
       .scene_scale = input.graphics.scene_scale,
       .render_scale_override = input.graphics.render_scale_override,
@@ -470,11 +488,11 @@ namespace moppe::game {
   }
 
   float sun_visibility_target (const FrameView& view,
-                               const WorldParams& world,
+                               const WorldParams&,
                                const map::SurfaceGeometry& surface) {
     const Vec3& camera = view.camera.position;
     float visibility = 1.0f;
-    if (camera[1] < (world.water_level).numerical_value_in (moppe::u::m))
+    if (view.visibility.underwater)
       visibility = 0.0f;
     else {
       for (int i = 1; i <= 40; ++i) {

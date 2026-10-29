@@ -33,6 +33,7 @@ namespace moppe::test {
     std::vector<render::BoulderInstance> boulder_instances;
     std::size_t boulder_draws = 0;
     std::optional<render::LocalShadowParams> local_shadow;
+    std::vector<render::ChunkDraw> terrain_chunks;
 
     render::TexturePtr create_texture (const render::TextureDesc&,
                                        const void*) override {
@@ -126,7 +127,9 @@ namespace moppe::test {
     render_local_shadow (const render::LocalShadowParams& params) override {
       local_shadow = params;
     }
-    void draw_terrain (const render::ChunkDraw*, int) override {}
+    void draw_terrain (const render::ChunkDraw* chunks, int count) override {
+      terrain_chunks.assign (chunks, chunks + count);
+    }
     void draw_sky (const render::SkyParams&) override {}
     void draw_ocean (const render::OceanParams&) override {}
     void draw_forest () override {
@@ -140,7 +143,7 @@ namespace moppe::test {
       ++meshes_drawn;
     }
     void draw_list (const render::DrawList&, uint64_t) override {}
-    void apply_underwater (float) override {}
+    void apply_underwater (const render::UnderwaterParams&) override {}
     void apply_motion_blur (float) override {}
     void apply_scene_blur () override {}
     void draw_hud (const render::DrawList&) override {}

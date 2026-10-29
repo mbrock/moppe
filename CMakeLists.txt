@@ -399,6 +399,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/gfx/tga.cc
   moppe/game/surface_presentation.cc
   moppe/game/water_presentation.cc
+  moppe/game/shore_surf.cc
   moppe/game/waterfall_surface.cc
   moppe/game/bridge_render.cc
   moppe/game/cinematic_flight.cc
@@ -514,7 +515,7 @@ set(MOPPE_NHAL_WORLD_DRAWN
   terrain road_ribbon sky uber hud resolve present slug_text forest
   bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
   rain water leaves waterfall scene_copy neighbourhood motion_blur
-  world_text)
+  world_text underwater)
 set(MOPPE_NHAL_WORLD_CASTERS
   terrain_shadow forest_shadow forest_far_shadow boulders_shadow
   mesh_shadow)
@@ -701,6 +702,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/generated_world_test.cc
     tests/game/waterfall_surface_test.cc
     tests/game/water_capture_test.cc
+    tests/game/shore_surf_test.cc
     tests/game/forest_test.cc
     tests/game/boulders_test.cc
     tests/game/river_stones_test.cc

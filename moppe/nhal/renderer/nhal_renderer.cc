@@ -51,6 +51,7 @@
 #include <terrain.hh>
 #include <terrain_shadow.hh>
 #include <uber.hh>
+#include <underwater.hh>
 #include <water.hh>
 #include <waterfall.hh>
 #include <world_text.hh>
@@ -423,6 +424,7 @@ namespace moppe::nhal {
         m_bloom_blur_code.keep (shaders.bloom_blur);
         m_motion_blur_code.keep (shaders.motion_blur);
         m_world_text_code.keep (shaders.world_text);
+        m_underwater_code.keep (shaders.underwater);
         m_gtao_code.keep (shaders.gtao);
         m_gtao_blur_code.keep (shaders.gtao_blur);
         m_shafts_code.keep (shaders.shafts);
@@ -669,6 +671,26 @@ namespace moppe::nhal {
         std::vector<std::byte> bytes (flow.byte_size ());
         flow.write_into (bytes.data ());
         m_device->write_texture (m_water_flow, bytes);
+      }
+
+      void set_shore_surf (const render::TexturePixels& surf) override {
+        if (m_shore_surf)
+          m_device->destroy (m_shore_surf);
+        m_shore_surf = {};
+        m_shore_size = {};
+        if (surf.empty () || surf.format () != render::PixelFormat::rgba16f)
+          return;
+        m_shore_size = { float (surf.width ()), float (surf.height ()) };
+        m_shore_surf =
+          m_device->create_texture ({ std::uint32_t (surf.width ()),
+                                      std::uint32_t (surf.height ()),
+                                      Format::rgba16_float,
+                                      usage_sampled,
+                                      1,
+                                      "coastal surf" });
+        std::vector<std::byte> bytes (surf.byte_size ());
+        surf.write_into (bytes.data ());
+        m_device->write_texture (m_shore_surf, bytes);
       }
 
       void
@@ -1339,6 +1361,8 @@ namespace moppe::nhal {
         m_device->set_texture (11, m_scars ? m_scars : m_clear);
         m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
         m_device->set_texture (8, m_shadow_map);
+        m_device->set_texture (14, m_water_levels ? m_water_levels : m_black);
+        m_device->set_texture (15, m_shore_surf ? m_shore_surf : m_still_water);
         bind_stand ();
         bind_roads ();
       }
@@ -1595,6 +1619,7 @@ namespace moppe::nhal {
         m_device->set_texture (12, m_water_flow ? m_water_flow : m_still_water);
         m_device->set_texture (13, m_beneath);
         m_device->set_texture (14, m_beneath_depth);
+        m_device->set_texture (15, m_shore_surf ? m_shore_surf : m_still_water);
         draw_chunks (true);
       }
 
@@ -1892,7 +1917,43 @@ namespace moppe::nhal {
         m_device->end_render_pass ();
       }
 
-      void apply_underwater (float) override {}
+      void apply_underwater (const render::UnderwaterParams& params) override {
+        if (m_resolved || !m_water_levels || !m_have_terrain)
+          return;
+        close_scene ();
+        if (!m_submerged)
+          m_submerged =
+            m_device->create_texture ({ m_scene_width,
+                                        m_scene_height,
+                                        Format::rgba16_float,
+                                        usage_render_target | usage_sampled,
+                                        1,
+                                        "submerged scene" });
+        shaders::underwater::Submersion below {};
+        below.surface = { params.water_level.numerical_value_in (u::m),
+                          params.near_plane.numerical_value_in (u::m),
+                          params.far_plane.numerical_value_in (u::m),
+                          0 };
+        RenderPassDesc pass;
+        pass.label = "underwater";
+        pass.color_count = 1;
+        pass.colors[0] = { m_submerged, Load::discard, Store::store };
+        m_device->begin_render_pass (pass);
+        m_device->set_pipeline (m_underwater);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_uniforms (1, terrain_block ());
+        m_device->set_uniforms (2, below);
+        m_device->set_uniforms (3, sea_block (m_params.time));
+        m_device->set_texture (0, m_scene_color);
+        m_device->set_texture (1, m_scene_depth);
+        m_device->set_texture (2, m_heights);
+        m_device->set_texture (11, m_water_levels);
+        m_device->set_texture (12, m_water_flow ? m_water_flow : m_still_water);
+        m_device->draw (3);
+        m_device->end_render_pass ();
+        std::swap (m_scene_color, m_submerged);
+      }
+
       // The resolved image smeared along the scene's motion into a
       // target of its own, which the present pass then shows: the history
       // stays sharp. `strength` is the share of a frame's motion the
@@ -2354,6 +2415,13 @@ namespace moppe::nhal {
         smear.fragment = m_motion_blur_code.stage (1);
         m_motion_blur = m_device->create_render_pipeline (smear);
 
+        RenderPipelineDesc underwater = bright;
+        underwater.program = &shaders::underwater::program;
+        underwater.vertex = m_underwater_code.stage (0);
+        underwater.fragment = m_underwater_code.stage (1);
+        underwater.label = "underwater";
+        m_underwater = m_device->create_render_pipeline (underwater);
+
         RenderPipelineDesc occlusion = present;
         occlusion.program = &shaders::gtao::program;
         occlusion.vertex = m_gtao_code.stage (0);
@@ -2601,7 +2669,9 @@ namespace moppe::nhal {
                            m_closure ? 1.0f : 0.0f,
                            m_stand_inverse_period[0],
                            m_stand_inverse_period[1] };
-        terrain.size = { float (p.width), float (p.height), 0, 0 };
+        terrain.size = {
+          float (p.width), float (p.height), m_shore_size[0], m_shore_size[1]
+        };
         terrain.roads = { m_road_setup.bucket_m,
                           float (m_road_setup.buckets_x),
                           float (m_road_setup.buckets_z),
@@ -2923,9 +2993,11 @@ namespace moppe::nhal {
                            m_bounds[0],
                            m_bounds[1],
                            m_ao[0],
-                           m_ao[1] })
+                           m_ao[1],
+                           m_submerged })
           if (t)
             m_device->destroy (t);
+        m_submerged = {};
         // The scene at its share of the drawable, upscaled temporally.
         m_scene_width = scene_width;
         m_scene_height = scene_height;
@@ -3178,7 +3250,11 @@ namespace moppe::nhal {
       ProgramCode m_rain_code, m_water_code, m_leaves_code, m_waterfall_code,
         m_scene_copy_code;
       Pipeline m_water, m_leaves, m_waterfall, m_scene_copy;
-      Texture m_water_levels, m_water_flow, m_still_water;
+      Texture m_water_levels, m_water_flow, m_still_water, m_shore_surf;
+      std::array<float, 2> m_shore_size {};
+      ProgramCode m_underwater_code;
+      Pipeline m_underwater;
+      Texture m_submerged;
       std::vector<std::uint8_t> m_wet_patches;
       std::vector<ChunkDraw> m_chunks;
       Pipeline m_rain;

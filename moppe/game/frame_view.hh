@@ -7,6 +7,7 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/gfx/mat4.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <array>
 #include <cstdint>
@@ -340,6 +341,10 @@ namespace moppe::game {
     float terrain_distance = 0.0f;
     float motion_blur_amount = 0.0f;
     FrameBenchmarkTag benchmark {};
+    // Water at the final camera's x,z, in world metres including waves.
+    // Present above the surface too, and when water is hidden; absent
+    // over dry ground. The camera's height gives the depth below it.
+    std::optional<float> camera_water_level;
   };
 
   struct FrameViewInput {
@@ -361,6 +366,8 @@ namespace moppe::game {
     // The sky at this moment of the day; absent, the fixed sun at the
     // graphics settings' height.
     std::optional<SkyReading> sky;
+    // The local water field; absent, only sea above local ground is wet.
+    const terrain::WaterSheets* water = nullptr;
   };
 
   // Shared pure art-direction readings.  The application can update its

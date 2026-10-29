@@ -56,6 +56,8 @@
 #include <shader_terrain_vertex.h>
 #include <shader_uber_fragment.h>
 #include <shader_uber_vertex.h>
+#include <shader_underwater_fragment.h>
+#include <shader_underwater_vertex.h>
 #include <shader_water_fragment.h>
 #include <shader_water_vertex.h>
 #include <shader_waterfall_fragment.h>
@@ -112,6 +114,7 @@ namespace moppe::nhal {
       { dxil (shader_mesh_shadow_vertex), {} },
       { dxil (shader_motion_blur_vertex), dxil (shader_motion_blur_fragment) },
       { dxil (shader_world_text_vertex), dxil (shader_world_text_fragment) },
+      { dxil (shader_underwater_vertex), dxil (shader_underwater_fragment) },
     };
     return shaders;
   }

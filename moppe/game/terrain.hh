@@ -5,6 +5,7 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/render/renderer.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <array>
 #include <optional>
@@ -20,11 +21,13 @@ namespace moppe {
     public:
       // Uploads heights/normals and the splat textures; call again
       // after the surface changes.  The surface owns the typed
-      // elevation and normal columns uploaded here.
+      // elevation and normal columns uploaded here. The optional water
+      // sheet shares its lattice and extends the bounds, not the ground.
       void setup (render::Renderer& r,
                   const map::SurfaceGeometry& surface,
                   const WorldParams& world,
-                  const GraphicsSettings& graphics);
+                  const GraphicsSettings& graphics,
+                  const terrain::WaterSheets* water = nullptr);
 
       // Renders the one-time shadow map.  sun_dir points toward the
       // sun, world space.
@@ -68,6 +71,8 @@ namespace moppe {
         int x0, z0; // grid origin
         Vec3 center;
         float radius;
+        // Horizontal Gerstner excursion; zero without waves on water.
+        float wave_reach = 0.0f;
         float ymin, ymax;
         // Height range of each patch, row-major.
         float patch_ymin[PATCHES * PATCHES];

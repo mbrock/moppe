@@ -3491,7 +3491,11 @@ namespace moppe {
 
       void upload_world_terrain (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.upload_world_terrain");
-        m_terrain.setup (r, surface (), world (), m_graphics);
+        m_terrain.setup (r,
+                         surface (),
+                         world (),
+                         m_graphics,
+                         &generated_world ().water_surface ());
         const terrain::RoadSurface& roads = generated_world ().road_surface ();
         r.set_roads ({ .segment_rows = roads.segment_rows (),
                        .index = roads.index (),
@@ -5646,11 +5650,18 @@ namespace moppe {
             });
         }
 
+        // Grade near the waterline as well as below it: the shader decides
+        // per pixel whether the near plane is wet, before reconstruction
+        // accumulates the boundary with the rest of the jittered scene.
+        if (visibility.ocean && frame.camera_water_level &&
+            frame.camera.position[1] < *frame.camera_water_level + 1.0f)
+          r.apply_underwater ({
+            .water_level = *frame.camera_water_level * u::m,
+          });
+
         // Reconstruction consumes the scene's colour, depth, and motion;
-        // screen-space grades and feedback operate on its full-size result.
+        // motion blur operates on its full-size result.
         r.reconstruct_scene ();
-        if (visibility.underwater)
-          r.apply_underwater (frame.lighting.time);
         if (visibility.motion_blur)
           r.apply_motion_blur (frame.motion_blur_amount);
       }
@@ -6721,6 +6732,7 @@ namespace moppe {
               : std::nullopt,
           .benchmark = benchmark,
           .sky = m_sky,
+          .water = &generated_world ().water_surface (),
         };
       }
 
