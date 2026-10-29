@@ -53,15 +53,18 @@ namespace moppe::nhal {
     // Bind groups unused for this many frames are released.
     constexpr std::uint64_t group_lifetime = 240;
 
+    // The macro bodies are JavaScript; C++ formatting splits ===.
+    // clang-format off
     // The time of the animation frame being built, in milliseconds.
     EM_JS (double, frame_milliseconds, (), {
       const time = document.timeline.currentTime;
-      return time == = null ? performance.now () : time;
+      return time === null ? performance.now () : time;
     });
 
     EM_JS (int, canvas_prefers_bgra, (), {
-      return navigator.gpu.getPreferredCanvasFormat () == = 'bgra8unorm';
+      return navigator.gpu.getPreferredCanvasFormat () === 'bgra8unorm';
     });
+    // clang-format on
 
     WGPUStringView view (const char* text) {
       return { text, WGPU_STRLEN };
