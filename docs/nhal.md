@@ -325,7 +325,19 @@ captured mouse, and the first gamepad driving the game (`host.cc`), and the
 platform services (`services.cc`). The device is the only per-platform part
 (`sdl.hh`): `device_metal.mm` makes a Metal 4 device on the layer of an SDL
 Metal view, in extended linear sRGB for EDR, and `device_vulkan.cc` a Vulkan
-device on the window's surface. Assets come from `MOPPE_ASSETS`, then the
+device on the window's surface.
+
+Desktop fullscreen limits the play area to 16:9, centred with black side
+bars on a wider display. The scene, temporal history, and postprocessing
+targets follow that area's dimensions, so the unused sides cost no scene
+pixels and the frame budget can buy a sharper centre. Projection, HUD,
+and pointer coordinates use the same area; only presentation adds its
+offset in the full drawable. Resizing and entering or leaving fullscreen
+recompute it. Narrower displays, windowed play, and the browser keep the
+whole surface. An explicit render scale is a share of the play area, not
+of the black bars; screenshots still capture the full drawable.
+
+Assets come from `MOPPE_ASSETS`, then the
 app bundle's resources or the executable's folder, then `share/moppe` beside
 it, then the source tree; caches live in `~/Library/Caches/Moppe` on the Mac
 and `$XDG_CACHE_HOME/moppe` on Linux. Where SDL3 is not installed, CMake

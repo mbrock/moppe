@@ -7,6 +7,7 @@
 #include <moppe/render/draw.hh>
 #include <moppe/render/texture_pixels.hh>
 #include <moppe/render/types.hh>
+#include <moppe/render/viewport.hh>
 #include <moppe/terrain/domain.hh>
 
 #include <algorithm>
@@ -608,10 +609,21 @@ namespace moppe {
         (void)drawable;
       }
 
-      // -- geometry of the drawable -------------------------------------
+      // -- geometry of the play area ------------------------------------
+      // A host may limit its aspect on a wide display. Scene targets and
+      // HUD coordinates follow this area, not the black bars outside it.
+      virtual void set_aspect_limit (float maximum) {
+        (void)maximum;
+      }
       virtual int width_pts () const = 0;
       virtual int height_pts () const = 0;
       virtual float scale_factor () const = 0;
+      virtual Viewport viewport_pixels () const {
+        return { 0,
+                 0,
+                 std::uint32_t (width_pts () * scale_factor ()),
+                 std::uint32_t (height_pts () * scale_factor ()) };
+      }
     };
   }
 }

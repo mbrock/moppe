@@ -1059,14 +1059,13 @@ namespace moppe::nhal {
         if (!m_device->begin_frame ())
           return false;
         hold_frame_rate (params);
+        const render::Viewport view = viewport_pixels ();
         const float scale = scene_scale (params);
-        const std::uint32_t scene_width = std::max (
-          1u, std::uint32_t (std::lround (m_device->surface_width () * scale)));
-        const std::uint32_t scene_height = std::max (
-          1u,
-          std::uint32_t (std::lround (m_device->surface_height () * scale)));
-        if (m_width != m_device->surface_width () ||
-            m_height != m_device->surface_height ())
+        const std::uint32_t scene_width =
+          std::max (1u, std::uint32_t (std::lround (view.width * scale)));
+        const std::uint32_t scene_height =
+          std::max (1u, std::uint32_t (std::lround (view.height * scale)));
+        if (m_width != view.width || m_height != view.height)
           make_drawable_targets ();
         if (m_scene_width != scene_width || m_scene_height != scene_height)
           make_scene_targets (scene_width, scene_height);
@@ -2172,11 +2171,21 @@ namespace moppe::nhal {
         m_restart = true;
       }
 
+      void set_aspect_limit (float maximum) override {
+        m_aspect_limit = maximum;
+      }
+
+      render::Viewport viewport_pixels () const override {
+        return render::fit_viewport (m_device->surface_width (),
+                                     m_device->surface_height (),
+                                     m_aspect_limit);
+      }
+
       int width_pts () const override {
-        return int (float (m_device->surface_width ()) / m_scale);
+        return int (float (viewport_pixels ().width) / m_scale);
       }
       int height_pts () const override {
-        return int (float (m_device->surface_height ()) / m_scale);
+        return int (float (viewport_pixels ().height) / m_scale);
       }
       float scale_factor () const override {
         return m_scale;
@@ -2911,12 +2920,12 @@ namespace moppe::nhal {
         return texture_or_white (texture.get ());
       }
 
-      // The 3D scene's share of the drawable, by the Metal renderer's rule:
+      // The 3D scene's share of the play area, by the Metal renderer's rule:
       // point resolution, capped by the megapixel budget, unless overridden.
       float scene_scale (const FrameParams& params) const {
         const float point_relative = 1.0f / std::max (1.0f, m_scale);
-        const double pixels =
-          double (m_device->surface_width ()) * m_device->surface_height ();
+        const render::Viewport view = viewport_pixels ();
+        const double pixels = double (view.width) * view.height;
         const float affordable =
           params.scene_megapixel_budget > 0.0f && pixels > 0
             ? float (std::sqrt (params.scene_megapixel_budget * 1.0e6 / pixels))
@@ -2949,7 +2958,7 @@ namespace moppe::nhal {
           seconds (std::max (1.0f / params.frame_rate_target, refresh)));
       }
 
-      // The targets at the drawable's size: the temporal history, its
+      // The targets at the play area's size: the temporal history, its
       // motion-blurred copy, and the bloom's quarter of it. A new history
       // starts from the scene alone.
       void make_drawable_targets () {
@@ -2957,8 +2966,9 @@ namespace moppe::nhal {
              { m_history[0], m_history[1], m_blurred, m_bloom[0], m_bloom[1] })
           if (t)
             m_device->destroy (t);
-        m_width = m_device->surface_width ();
-        m_height = m_device->surface_height ();
+        const render::Viewport view = viewport_pixels ();
+        m_width = view.width;
+        m_height = view.height;
         for (Texture& t : m_history)
           t = m_device->create_texture ({ m_width,
                                           m_height,
@@ -3170,10 +3180,15 @@ namespace moppe::nhal {
         RenderPassDesc pass;
         pass.label = "present";
         pass.color_count = 1;
-        pass.colors[0] = { m_device->backbuffer (),
-                           Load::discard,
-                           Store::store };
+        pass.colors[0] = {
+          m_device->backbuffer (), Load::clear, Store::store, { 0, 0, 0, 1 }
+        };
         m_device->begin_render_pass (pass);
+        const render::Viewport view = viewport_pixels ();
+        m_device->set_viewport (float (view.x),
+                                float (view.y),
+                                float (view.width),
+                                float (view.height));
         m_device->set_pipeline (m_present);
         m_device->set_uniforms (0, present);
         m_device->set_buffer (1, m_exposure_value);
@@ -3185,6 +3200,7 @@ namespace moppe::nhal {
 
       std::unique_ptr<Device> m_device;
       float m_scale;
+      float m_aspect_limit = 0;
       // DeviceInfo::indices_count_from_first.
       bool m_first_vertex_counts;
       ProgramCode m_road_ribbon_code;

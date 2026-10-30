@@ -619,6 +619,10 @@ namespace moppe::nhal {
 
       void set_viewport (float x, float y, float width, float height) override {
         [m_encoder setViewport:MTLViewport { x, y, width, height, 0, 1 }];
+        [m_encoder setScissorRect:MTLScissorRect { NSUInteger (x),
+                                                   NSUInteger (y),
+                                                   NSUInteger (width),
+                                                   NSUInteger (height) }];
       }
 
       void draw (std::uint32_t vertex_count,

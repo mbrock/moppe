@@ -321,6 +321,7 @@ namespace moppe::platform {
         m_renderer = nhal::create_renderer (
                        std::move (device), sdl::world_shaders (), scale)
                        .release ();
+        size_view ();
         m_game.setup (
           *m_renderer, m_renderer->width_pts (), m_renderer->height_pts ());
         touched_game = &m_game;
@@ -424,6 +425,26 @@ namespace moppe::platform {
       }
 
     private:
+      void size_view () {
+#ifndef __EMSCRIPTEN__
+        // Spend an ultrawide display's pixels on a sharper central view,
+        // not peripheral scenery. Windowed play and the browser stay whole.
+        const bool fullscreen =
+          (SDL_GetWindowFlags (m_window) & SDL_WINDOW_FULLSCREEN) != 0;
+        m_renderer->set_aspect_limit (fullscreen ? 16.0f / 9.0f : 0.0f);
+#endif
+        float x = 0, y = 0;
+        SDL_GetMouseState (&x, &y);
+        remember_pointer (x, y);
+      }
+
+      void remember_pointer (float x, float y) {
+        const render::Viewport view = m_renderer->viewport_pixels ();
+        const float scale = m_renderer->scale_factor ();
+        m_pointer_x = x - float (view.x) / scale;
+        m_pointer_y = y - float (view.y) / scale;
+      }
+
       void display_changed () {
         const SDL_DisplayMode* mode =
           SDL_GetCurrentDisplayMode (SDL_GetDisplayForWindow (m_window));
@@ -452,6 +473,12 @@ namespace moppe::platform {
           m_device->resize_surface (
             std::uint32_t (std::lround (event.window.data1 * m_oversample)),
             std::uint32_t (std::lround (event.window.data2 * m_oversample)));
+          size_view ();
+          m_game.resize (m_renderer->width_pts (), m_renderer->height_pts ());
+          break;
+        case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+        case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+          size_view ();
           m_game.resize (m_renderer->width_pts (), m_renderer->height_pts ());
           break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:
@@ -473,8 +500,7 @@ namespace moppe::platform {
           break;
         }
         case SDL_EVENT_MOUSE_MOTION:
-          m_pointer_x = event.motion.x;
-          m_pointer_y = event.motion.y;
+          remember_pointer (event.motion.x, event.motion.y);
           m_game.pointer_move (
             m_pointer_x, m_pointer_y, event.motion.xrel, event.motion.yrel);
           break;
@@ -486,8 +512,7 @@ namespace moppe::platform {
             pressed == SDL_BUTTON_RIGHT    ? PointerButton::Secondary
             : pressed == SDL_BUTTON_MIDDLE ? PointerButton::Middle
                                            : PointerButton::Primary;
-          m_pointer_x = event.button.x;
-          m_pointer_y = event.button.y;
+          remember_pointer (event.button.x, event.button.y);
           if (down)
             m_held.buttons.insert (button);
           else

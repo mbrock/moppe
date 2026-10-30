@@ -722,6 +722,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/render/ground_detail_test.cc
     tests/render/slug_test.cc
     tests/render/text_test.cc
+    tests/render/viewport_test.cc
   )
   moppe_configure_code_target(moppe-tests)
   target_compile_definitions(moppe-tests PRIVATE
