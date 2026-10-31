@@ -525,11 +525,31 @@ namespace moppe::terrain {
       t = std::clamp (t, 0.0f, 1.0f);
       return t * t * (3.0f - 2.0f * t);
     };
+    const auto shape = [&] (std::size_t cell, float shaped) {
+      const float change = shaped - original[cell];
+      if (std::fabs (change) < 1e-4f)
+        return;
+      result.heights[cell] = surface_elevation_point (shaped * u::m);
+      result.change_m[cell] = change;
+      (change < 0.0f ? result.cut_m3 : result.fill_m3) +=
+        std::fabs (change) * cell_area;
+    };
     for (std::size_t cell = 0; cell < count; ++cell) {
       const FormationClaim& claim = claims[cell];
-      if (!std::isfinite (claim.distance) || claim.bridge)
+      if (!std::isfinite (claim.distance))
         continue;
       const float d = claim.distance;
+      // Under a bridge's span the ground is left as it is, but for a knoll
+      // of the floodplain that would stand up through the planks: out to
+      // a lattice step past the tread it is cut down clear of the deck's
+      // underside, so the deck rides level over it.
+      if (claim.bridge) {
+        if (claim.built && d <= tread + spacing)
+          shape (
+            cell,
+            std::min (original[cell], claim.height - parameters.deck_depth));
+        continue;
+      }
       if (!claim.built && flood.water_depth_m (cell) > 1e-3f)
         continue;
       if (!claim.built) {
@@ -567,13 +587,7 @@ namespace moppe::terrain {
         shaped = std::lerp (
           shaped, g, smooth ((out - (batter_reach - blend)) / blend));
       }
-      const float change = shaped - g;
-      if (std::fabs (change) < 1e-4f)
-        continue;
-      result.heights[cell] = surface_elevation_point (shaped * u::m);
-      result.change_m[cell] = change;
-      (change < 0.0f ? result.cut_m3 : result.fill_m3) +=
-        std::fabs (change) * cell_area;
+      shape (cell, shaped);
     }
     return result;
   }

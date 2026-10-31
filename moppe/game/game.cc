@@ -1814,20 +1814,34 @@ namespace moppe {
         return plan;
       }
 
+      // Whether something `reach` metres round stands on a cart road's
+      // tread (or, with `decks`, under a bridge's deck). The forest and
+      // the rocks know the roads only through the coarse trail field,
+      // which a burn's snags and a floodplain's trees under a bridge slip
+      // through: they stood in the road, and stopped whatever rode it.
+      bool on_road (const Vec3& at, float reach, bool decks) const {
+        const terrain::RoadSurface& roads = generated_world ().road_surface ();
+        const terrain::RoadSample road = roads.nearest (at[0], at[2]);
+        const terrain::RoadFormation& formation = roads.formation ();
+        return road.found && road.kind == terrain::Road::Kind::Road &&
+               (decks || !road.bridge) &&
+               std::abs (road.across) <
+                 formation.half_width + formation.shoulder + reach;
+      }
+
       void grow_global_forest () {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_water_inspection)
           return;
         static const bool tree_lab = moppe::environment ("MOPPE_TREE_LAB") != 0;
-        if (tree_lab || m_places.clearings.empty ()) {
-          m_forest.rebuild (*m_renderer,
-                            tree_lab ? tree_lab_plan ()
-                                     : generated_world ().forest ());
+        if (tree_lab) {
+          m_forest.rebuild (*m_renderer, tree_lab_plan ());
         } else {
-          // Nothing grows where the places stand.
+          // Nothing grows where the places stand, nor on a road.
           ForestPlan plan = generated_world ().forest ();
           std::erase_if (plan.sites, [this] (const ForestSite& site) {
-            return cleared (m_places, position_value (site.position));
+            const Vec3 at = position_value (site.position);
+            return cleared (m_places, at) || on_road (at, 0.6f, true);
           });
           m_forest.rebuild (*m_renderer, plan);
         }
@@ -1865,11 +1879,14 @@ namespace moppe {
                        std::chrono::steady_clock::now () - start)
                        .count ()
                   << " ms" << std::endl;
-        // Loose rock is cleared from where the places stand; the stones
-        // laid across running water stay.
+        // Loose rock is cleared from where the places stand and off the
+        // roads; the stones laid across running water stay, under the
+        // bridges too.
         std::erase_if (plan.sites, [this] (const BoulderSite& site) {
+          const Vec3 at = position_value (site.centre);
           return !site.solid &&
-                 cleared (m_places, position_value (site.centre));
+                 (cleared (m_places, at) ||
+                  on_road (at, site.radius.numerical_value_in (u::m), false));
         });
         m_boulders.rebuild (*m_renderer, plan);
         // Where to cross a river dry-shod, for whoever wants to find one.

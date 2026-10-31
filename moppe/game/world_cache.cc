@@ -61,7 +61,8 @@ namespace moppe::game {
     // Version 33 crosses ponds and small streams on embankments over
     // culverts (RoadCulvert).
     // Version 34 ends a bridge where the bank already stands at its deck.
-    constexpr std::uint32_t CACHE_VERSION = 34;
+    // Version 35 cuts the ground under a span clear of the deck.
+    constexpr std::uint32_t CACHE_VERSION = 35;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.

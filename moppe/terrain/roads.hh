@@ -159,6 +159,9 @@ namespace moppe::terrain {
     float longest_bridge = 90.0f;
     // The deck's half width, inside the tread's: the kerbs stand at it.
     float deck_half_width = 2.4f;
+    // How deep the deck and its stringers stand under the tread: the
+    // ground under a span is kept at least this far below it.
+    float deck_depth = 0.6f;
     // A footpath's worn width; footpaths are not built, only trodden.
     float footpath_half_width = 0.8f;
   };
