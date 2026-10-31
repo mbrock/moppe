@@ -2,6 +2,8 @@
 #include <moppe/game/game_state.hh>
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/mov/box3d_vec.hh>
+#include <moppe/terrain/roads.hh>
 
 #include <tests/test.hh>
 
@@ -1080,4 +1082,49 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   const Vec3 left = bike.position ();
   run ({}, 3.0f);
   MOPPE_CHECK (length (bike.position () - left) < 0.3f);
+}
+
+// A cart road helps the rider along it: set off along a straight road a
+// few degrees askew and left alone on the bars, the bike comes round to
+// the road's way and stays on its tread, where on open ground it would
+// have run off the side.
+MOPPE_TEST (a_road_steers_a_rider_who_lets_the_bars_be_along_it) {
+  using namespace moppe;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    129, 129, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  terrain::RoadNetwork network;
+  terrain::Road road { .kind = terrain::Road::Kind::Road };
+  for (float z = 10.0f; z <= 310.0f; z += 4.0f) {
+    road.points.push_back ({ 160.0f, z });
+    road.heights.push_back (10.0f);
+  }
+  network.roads = { road };
+  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  mov::attach_roads (surface, &roads);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (320, 20, 320));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+  game::GameSession session (world, surface);
+  session.bike ().reset (Vec3 (160.0f, 11.0f, 30.0f));
+  session.bike ().set_heading (
+    normalized (Vec3 (std::sin (0.14f), 0.0f, std::cos (0.14f))));
+  float widest = 0.0f;
+  for (int i = 0; i < 60 * 14 && session.subject_position ()[2] < 290.0f; ++i) {
+    game::advance_game_session (world,
+                                surface,
+                                session,
+                                game::InputFrame { .drive = 1.0f },
+                                seconds (1.0f / 60.0f));
+    widest =
+      std::max (widest, std::abs (session.subject_position ()[0] - 160.0f));
+  }
+  mov::attach_roads (surface, nullptr);
+  MOPPE_CHECK (session.subject_position ()[2] > 200.0f);
+  MOPPE_CHECK (widest <
+               roads.formation ().half_width + roads.formation ().shoulder);
 }

@@ -8,21 +8,25 @@
 namespace moppe::mov {
   namespace {
     const map::SurfaceGeometry* roads_surface = nullptr;
-    const terrain::RoadSurface* attached_roads = nullptr;
+    const terrain::RoadSurface* the_roads = nullptr;
   }
 
   void attach_roads (const map::SurfaceGeometry& surface,
                      const terrain::RoadSurface* roads) {
     roads_surface = roads ? &surface : nullptr;
-    attached_roads = roads;
+    the_roads = roads;
+  }
+
+  const terrain::RoadSurface*
+  attached_roads (const map::SurfaceGeometry& surface) {
+    return &surface == roads_surface ? the_roads : nullptr;
   }
 
   float ground_height (const map::SurfaceGeometry& surface, float x, float z) {
     const float field = terrain::surface_elevation_value (
       spatial::sample<terrain::surface_elevation> (
         surface, moppe::position (Vec3 (x, 0.0f, z))));
-    return &surface == roads_surface ? attached_roads->ground (x, z, field)
-                                     : field;
+    return &surface == roads_surface ? the_roads->ground (x, z, field) : field;
   }
 
   GroundPatch::GroundPatch (const map::SurfaceGeometry& surface, Params params)
@@ -129,7 +133,7 @@ namespace moppe::mov {
   // field, a sample every metre or so, would round a deck a few samples
   // wide off into slopes down to the river, and has no railings at all.
   void GroundPatch::add_bridges (const b3ShapeDef& ground) {
-    if (&m_surface != roads_surface || attached_roads->empty ())
+    if (&m_surface != roads_surface || the_roads->empty ())
       return;
     const float period_x =
       m_surface.domain ().period_x ().numerical_value_in (u::m);
@@ -138,13 +142,13 @@ namespace moppe::mov {
     const Vec3 origin (m_column * m_dx, 0.0f, m_row * m_dz);
     const Vec3 middle = centre ();
     const float reach = 0.5f * (m_params.samples - 1) * std::max (m_dx, m_dz);
-    const float half = attached_roads->formation ().deck_half_width;
+    const float half = the_roads->formation ().deck_half_width;
     b3ShapeDef rail = ground;
     rail.filter.categoryBits = m_params.obstacle_bit;
     rail.filter.maskBits = m_params.obstacle_mask;
     rail.baseMaterial.friction = m_params.obstacle_friction;
     rail.baseMaterial.restitution = 0.1f;
-    const auto rows = attached_roads->segment_rows ();
+    const auto rows = the_roads->segment_rows ();
     for (std::size_t s = 0; 2 * s + 1 < rows.size (); ++s) {
       const auto& [ax, az, bx, bz] = rows[2 * s];
       const auto& [ha, hb, along, kind] = rows[2 * s + 1];

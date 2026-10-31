@@ -52,6 +52,10 @@ namespace moppe::mov {
   void attach_roads (const map::SurfaceGeometry& surface,
                      const terrain::RoadSurface* roads);
 
+  // The roads attached to `surface`, or null.
+  const terrain::RoadSurface*
+  attached_roads (const map::SurfaceGeometry& surface);
+
   // The ground's height under a point: the height field, and over a road's
   // tread the road itself.
   float ground_height (const map::SurfaceGeometry& surface, float x, float z);

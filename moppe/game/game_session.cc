@@ -1,5 +1,7 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/gfx/signal.hh>
+#include <moppe/mov/box3d_vec.hh>
+#include <moppe/terrain/roads.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -515,10 +517,69 @@ namespace moppe::game {
       logic.m_look_pitch -= logic.m_look_pitch * settle;
     }
 
+    // A cart road helps whoever drives along it: on its tread the steering
+    // is eased toward the middle of the road a little way ahead, so it
+    // follows the bends, by as much as the player leaves the bars alone.
+    // Steering hard, crossing the road, crawling, or in the air, it lets
+    // be; off the tread it lets go.
+    float road_assist (const GameSession& session,
+                       const map::SurfaceGeometry& terrain,
+                       float turn) {
+      const Mode mode = session.logic ().m_mode;
+      const bool bike = mode == M_BIKE || pedalled (mode);
+      const terrain::RoadSurface* roads = mov::attached_roads (terrain);
+      if (!roads ||
+          !(bike || mode == M_JEEP || mode == M_TRACTOR || mode == M_CADDY))
+        return 0.0f;
+      if (bike && !session.ridden_bike ().grounded ())
+        return 0.0f;
+      const Vec3 at = session.subject_position ();
+      const terrain::RoadSample road = roads->nearest (at[0], at[2]);
+      if (!road.found || road.kind != terrain::Road::Kind::Road)
+        return 0.0f;
+      Vec3 ahead = session.subject_heading ();
+      ahead[1] = 0.0f;
+      if (length2 (ahead) < 1e-6f)
+        return 0.0f;
+      ahead = normalized (ahead);
+      const Vec3 right = normalized (cross (ahead, Vec3 (0.0f, 1.0f, 0.0f)));
+      Vec3 way (road.direction_x, 0.0f, road.direction_z);
+      if (dot (way, ahead) < 0.0f)
+        way = -way;
+      const float askew = std::atan2 (dot (way, right), dot (way, ahead));
+      // The middle of the road some way on: `across` runs along the
+      // line's normal, so stepping back by it finds the line.
+      const float speed = session.subject_speed_kmh () / 3.6f;
+      const Vec3 probe = at + way * std::max (6.0f, 0.7f * speed);
+      const terrain::RoadSample there = roads->nearest (probe[0], probe[2]);
+      Vec3 aim = probe;
+      if (there.found && there.kind == terrain::Road::Kind::Road)
+        aim -=
+          Vec3 (-there.direction_z, 0.0f, there.direction_x) * there.across;
+      Vec3 to = aim - at;
+      to[1] = 0.0f;
+      const float error = std::atan2 (dot (to, right), dot (to, ahead));
+      const terrain::RoadFormation& formation = roads->formation ();
+      const float tread = formation.half_width + formation.shoulder;
+      const float reach =
+        1.0f - smoothstep (tread, tread + 1.5f, std::abs (road.across));
+      const float along = 1.0f - smoothstep (0.35f, 0.6f, std::abs (askew));
+      const float moving =
+        smoothstep (8.0f, 18.0f, session.subject_speed_kmh ());
+      const float hands_off = 1.0f - std::min (1.0f, std::abs (turn) / 0.3f);
+      return std::clamp (2.0f * error, -0.3f, 0.3f) * reach * along * moving *
+             hands_off;
+    }
+
     void apply_input_frame (GameSession& session,
                             const map::SurfaceGeometry& terrain,
                             const InputFrame& input) {
-      set_turn (session, input_value (input.turn));
+      // Not backing up: the road's help steers going forward.
+      const float turn = input_value (input.turn);
+      set_turn (session,
+                turn + (input_value (input.drive) >= 0.0f
+                          ? road_assist (session, terrain, turn)
+                          : 0.0f));
       set_go (session, input_value (input.drive));
       set_boost (session, input_value (input.boost));
       set_lift (session, input);
