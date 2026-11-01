@@ -423,6 +423,13 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/caddy_model.cc
   moppe/game/mountain_bike_model.cc
   moppe/game/long_john_model.cc
+  moppe/game/horse_model.cc
+  moppe/game/cow_model.cc
+  moppe/game/sheep_model.cc
+  moppe/game/reindeer_model.cc
+  moppe/game/moose_model.cc
+  moppe/game/roe_deer_model.cc
+  moppe/game/animal_render.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/glider_render.cc
@@ -440,6 +447,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/boulders.cc
   moppe/game/river_stones.cc
   moppe/game/mushrooms.cc
+  moppe/game/animals.cc
   moppe/game/camp.cc
   moppe/game/scan.cc
   moppe/game/fishing.cc
@@ -707,6 +715,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/boulders_test.cc
     tests/game/river_stones_test.cc
     tests/game/mushrooms_test.cc
+    tests/game/animals_test.cc
     tests/game/camp_test.cc
     tests/game/places_test.cc
     tests/game/fishing_test.cc

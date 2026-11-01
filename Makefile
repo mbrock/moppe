@@ -2,7 +2,7 @@
 .PHONY: all lavoir moppe archive atelier etalon etalon-test etalon-watch \
 	callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity figure figure-model format models gazetteer grass-lab hooks plan plan-graph phone profile \
+	animals complexity figure figure-model format models gazetteer grass-lab hooks plan plan-graph phone profile \
 	test \
 	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
@@ -36,6 +36,19 @@ models:
 	  $(BLENDER) -b models/$$m.blend --python tools/figure/export_model.py \
 	    -- $${m}_model && \
 	  $(BLENDER) -b models/$$m.blend --python tools/figure/preview_model.py \
+	    -- $(basename $(FIGURE_PREVIEW))-$$m.png || exit 1; \
+	done
+
+# Re-export the animals (tools/figure/animals.py) and render their
+# turnarounds beside FIGURE_PREVIEW; MODELS_REBUILD=1 first regenerates
+# the .blend files from the script.
+animals:
+	if [ -n "$(MODELS_REBUILD)" ]; then \
+	  $(BLENDER) -b --factory-startup --python tools/figure/animals.py; fi
+	for m in horse cow sheep reindeer moose roe_deer; do \
+	  $(BLENDER) -b models/$$m.blend --python tools/figure/export_model.py \
+	    -- $${m}_model && \
+	  $(BLENDER) -b models/$$m.blend --python tools/figure/preview_animal.py \
 	    -- $(basename $(FIGURE_PREVIEW))-$$m.png || exit 1; \
 	done
 
