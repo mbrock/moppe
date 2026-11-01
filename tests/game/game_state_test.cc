@@ -1128,3 +1128,58 @@ MOPPE_TEST (a_road_steers_a_rider_who_lets_the_bars_be_along_it) {
   MOPPE_CHECK (widest <
                roads.formation ().half_width + roads.formation ().shoulder);
 }
+
+// The road holds a car through its bends too: the Caddy, flat out with the
+// wheel let be along a winding road, is steered round them and slowed for
+// the tight ones, and stays on the tread from end to end.
+MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
+  using namespace moppe;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    129, 129, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  // Bends some thirty metres round, one way and then the other.
+  const auto line = [] (float z) {
+    return 160.0f + 22.0f * std::sin (z / 30.0f);
+  };
+  terrain::RoadNetwork network;
+  terrain::Road road { .kind = terrain::Road::Kind::Road };
+  for (float z = 10.0f; z <= 310.0f; z += 2.0f) {
+    road.points.push_back ({ line (z), z });
+    road.heights.push_back (10.0f);
+  }
+  network.roads = { road };
+  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  mov::attach_roads (surface, &roads);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (320, 20, 320));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+  game::GameSession session (world, surface);
+  const seconds_t step = seconds (1.0f / 60.0f);
+  session.start_on_foot ();
+  const Vec3 way = normalized (Vec3 (line (31.0f) - line (29.0f), 0, 2));
+  session.caddy ().place (Vec3 (line (30.0f), 0, 30.0f), way);
+  session.walker ().spawn (
+    position (
+      Vec3 (line (30.0f) - 2.2f * way[2], 10.1f, 30.0f + 2.2f * way[0])),
+    way);
+  game::advance_game_session (
+    world, surface, session, game::InputFrame { .toggle_mount = true }, step);
+  MOPPE_CHECK (session.logic ().m_mode == game::M_CADDY);
+  float widest = 0.0f, fastest = 0.0f;
+  for (int i = 0; i < 60 * 30 && session.subject_position ()[2] < 290.0f; ++i) {
+    game::advance_game_session (
+      world, surface, session, game::InputFrame { .drive = 1.0f }, step);
+    const Vec3 at = session.subject_position ();
+    widest = std::max (widest, std::abs (roads.nearest (at[0], at[2]).across));
+    fastest = std::max (fastest, session.subject_speed_kmh ());
+  }
+  mov::attach_roads (surface, nullptr);
+  MOPPE_CHECK (session.subject_position ()[2] > 290.0f);
+  MOPPE_CHECK (fastest > 30.0f);
+  MOPPE_CHECK (widest <
+               roads.formation ().half_width + roads.formation ().shoulder);
+}

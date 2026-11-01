@@ -517,70 +517,137 @@ namespace moppe::game {
       logic.m_look_pitch -= logic.m_look_pitch * settle;
     }
 
-    // A cart road helps whoever drives along it: on its tread the steering
+    // A cart road helps whoever drives along it. On its tread the steering
     // is eased toward the middle of the road a little way ahead, so it
-    // follows the bends, by as much as the player leaves the bars alone.
-    // Steering hard, crossing the road, crawling, or in the air, it lets
-    // be; off the tread it lets go.
-    float road_assist (const GameSession& session,
-                       const map::SurfaceGeometry& terrain,
-                       float turn) {
+    // follows the bends: all the way while the player leaves the bars
+    // alone, topping up a turn the player makes the same way, and giving
+    // way to one made against it. Wandering off the tread, it steers back
+    // a little way past the shoulder before it lets go. And it eases off
+    // the throttle before a bend tighter than the machine can take at its
+    // speed. Crossing the road, crawling, in the air, or backing up, it
+    // lets be.
+    struct RoadHelp {
+      float turn = 0.0f;
+      float drive = 0.0f;
+    };
+
+    RoadHelp road_help (const GameSession& session,
+                        const map::SurfaceGeometry& terrain,
+                        float turn,
+                        float drive) {
+      const RoadHelp none { turn, drive };
       const Mode mode = session.logic ().m_mode;
       const bool bike = mode == M_BIKE || pedalled (mode);
       const terrain::RoadSurface* roads = mov::attached_roads (terrain);
-      if (!roads ||
+      if (!roads || drive < 0.0f ||
           !(bike || mode == M_JEEP || mode == M_TRACTOR || mode == M_CADDY))
-        return 0.0f;
+        return none;
       if (bike && !session.ridden_bike ().grounded ())
-        return 0.0f;
+        return none;
       const Vec3 at = session.subject_position ();
       const terrain::RoadSample road = roads->nearest (at[0], at[2]);
       if (!road.found || road.kind != terrain::Road::Kind::Road)
-        return 0.0f;
+        return none;
       Vec3 ahead = session.subject_heading ();
       ahead[1] = 0.0f;
       if (length2 (ahead) < 1e-6f)
-        return 0.0f;
+        return none;
       ahead = normalized (ahead);
       const Vec3 right = normalized (cross (ahead, Vec3 (0.0f, 1.0f, 0.0f)));
       Vec3 way (road.direction_x, 0.0f, road.direction_z);
       if (dot (way, ahead) < 0.0f)
         way = -way;
       const float askew = std::atan2 (dot (way, right), dot (way, ahead));
-      // The middle of the road some way on: `across` runs along the
-      // line's normal, so stepping back by it finds the line.
-      const float speed = session.subject_speed_kmh () / 3.6f;
-      const Vec3 probe = at + way * std::max (6.0f, 0.7f * speed);
-      const terrain::RoadSample there = roads->nearest (probe[0], probe[2]);
-      Vec3 aim = probe;
-      if (there.found && there.kind == terrain::Road::Kind::Road)
-        aim -=
-          Vec3 (-there.direction_z, 0.0f, there.direction_x) * there.across;
-      Vec3 to = aim - at;
-      to[1] = 0.0f;
-      const float error = std::atan2 (dot (to, right), dot (to, ahead));
       const terrain::RoadFormation& formation = roads->formation ();
       const float tread = formation.half_width + formation.shoulder;
       const float reach =
-        1.0f - smoothstep (tread, tread + 1.5f, std::abs (road.across));
-      const float along = 1.0f - smoothstep (0.35f, 0.6f, std::abs (askew));
-      const float moving =
-        smoothstep (8.0f, 18.0f, session.subject_speed_kmh ());
-      const float hands_off = 1.0f - std::min (1.0f, std::abs (turn) / 0.3f);
-      return std::clamp (2.0f * error, -0.3f, 0.3f) * reach * along * moving *
-             hands_off;
+        1.0f - smoothstep (tread + 1.0f, tread + 3.0f, std::abs (road.across));
+      const float along = 1.0f - smoothstep (0.4f, 0.7f, std::abs (askew));
+      const float kmh = session.subject_speed_kmh ();
+      const float moving = smoothstep (8.0f, 18.0f, kmh);
+      const float help = reach * along * moving;
+      if (help <= 0.0f)
+        return none;
+      const float speed = kmh / 3.6f;
+
+      // Walks the road's middle on from here, a few metres a step, and
+      // calls `visit` with the distance and the way at each step.
+      const auto walk = [&] (float far, float step, auto&& visit) {
+        Vec3 p =
+          at - Vec3 (-road.direction_z, 0.0f, road.direction_x) * road.across;
+        Vec3 w = way;
+        for (float d = step; d <= far; d += step) {
+          const Vec3 q = p + w * step;
+          const terrain::RoadSample s = roads->nearest (q[0], q[2]);
+          if (!s.found || s.kind != terrain::Road::Kind::Road)
+            return;
+          Vec3 next (s.direction_x, 0.0f, s.direction_z);
+          if (dot (next, w) < 0.0f)
+            next = -next;
+          p = q - Vec3 (-s.direction_z, 0.0f, s.direction_x) * s.across;
+          w = next;
+          visit (d, p, w);
+        }
+      };
+
+      // The middle of the road some way on, steered for.
+      const float lookahead = std::max (6.0f, 0.7f * speed);
+      Vec3 aim = at + way * lookahead;
+      walk (lookahead,
+            lookahead / 3.0f,
+            [&] (float, const Vec3& p, const Vec3&) { aim = p; });
+      Vec3 to = aim - at;
+      to[1] = 0.0f;
+      const float error = std::atan2 (dot (to, right), dot (to, ahead));
+      const float want = std::clamp (2.5f * error, -0.5f, 0.5f) * help;
+      float steer = turn;
+      if (want * turn >= 0.0f)
+        // The same way, or the bars let be: at least as far as it wants.
+        steer = std::abs (want) > std::abs (turn) ? want : turn;
+      else
+        steer = turn + want * (1.0f - std::min (1.0f, std::abs (turn) / 0.4f));
+
+      // How fast the bends ahead may be taken: a machine corners at about
+      // `grip` across (m/s²), and slows by about `slowing` with the
+      // throttle eased, so each bend asks for a speed some way before it.
+      // Over that the throttle eases off, and well over it the brakes go
+      // on gently.
+      constexpr float grip = 2.8f, slowing = 3.0f, step = 3.0f;
+      float allowed = 1e9f;
+      Vec3 last_way = way;
+      float last_d = 0.0f;
+      walk (std::max (24.0f, speed * speed / (2.0f * slowing) + 12.0f),
+            step,
+            [&] (float d, const Vec3&, const Vec3& w) {
+              if (d - last_d >= 9.0f - 1e-3f) {
+                const float bend =
+                  std::acos (std::clamp (dot (w, last_way), -1.0f, 1.0f));
+                const float curvature = bend / (d - last_d);
+                if (curvature > 1e-4f) {
+                  const float corner = std::sqrt (grip / curvature);
+                  const float before = std::max (0.0f, d - 9.0f);
+                  allowed = std::min (
+                    allowed,
+                    std::sqrt (corner * corner + 2.0f * slowing * before));
+                }
+                last_way = w;
+                last_d = d;
+              }
+            });
+      const float over = speed - allowed;
+      const float eased =
+        drive * (1.0f - smoothstep (0.0f, 3.0f, over) * help) -
+        0.4f * smoothstep (3.0f, 8.0f, over) * help;
+      return { steer, std::min (drive, eased) };
     }
 
     void apply_input_frame (GameSession& session,
                             const map::SurfaceGeometry& terrain,
                             const InputFrame& input) {
-      // Not backing up: the road's help steers going forward.
-      const float turn = input_value (input.turn);
-      set_turn (session,
-                turn + (input_value (input.drive) >= 0.0f
-                          ? road_assist (session, terrain, turn)
-                          : 0.0f));
-      set_go (session, input_value (input.drive));
+      const RoadHelp help = road_help (
+        session, terrain, input_value (input.turn), input_value (input.drive));
+      set_turn (session, help.turn);
+      set_go (session, help.drive);
       set_boost (session, input_value (input.boost));
       set_lift (session, input);
       GameLogicState& logic = session.logic ();
