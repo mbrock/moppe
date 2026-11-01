@@ -78,9 +78,9 @@ namespace moppe::game {
   };
 
   // A place whose stock grazes round it: a farm still lived in, the
-  // landing, a sanctuary still kept.
+  // landing, a sanctuary still kept, and the trailhead's paddock.
   struct Fold {
-    enum class Kind { farm, landing, sanctuary };
+    enum class Kind { farm, landing, sanctuary, trailhead };
     Kind kind = Kind::farm;
     Vec3 at {};
   };

@@ -11,6 +11,8 @@
 #include <moppe/render/renderer.hh>
 #include <moppe/render/text.hh>
 
+#include <moppe/game/animal_render.hh>
+#include <moppe/game/animals.hh>
 #include <moppe/game/blob_shadow.hh>
 #include <moppe/game/boat_render.hh>
 #include <moppe/game/boulders.hh>
@@ -45,8 +47,6 @@
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/mountain_bike_render.hh>
 #include <moppe/game/mushrooms.hh>
-#include <moppe/game/animal_render.hh>
-#include <moppe/game/animals.hh>
 #include <moppe/game/opening.hh>
 #include <moppe/game/place_names.hh>
 #include <moppe/game/places.hh>
@@ -956,8 +956,7 @@ namespace moppe {
             [this, sheets] (float x, float z) {
               const Vec3 at (x, 0.0f, z);
               return still_water_at (world (), surface (), sheets, at)
-                       .numerical_value_in (u::m) <
-                     ground_height (at) + 0.05f;
+                       .numerical_value_in (u::m) < ground_height (at) + 0.05f;
             },
           .pasture =
             [this] (float x, float z) {
@@ -977,18 +976,17 @@ namespace moppe {
                   1.5f * read (map::dwarf_birch_abundance) +
                     read (map::mountain_birch_abundance) +
                     read (map::lichen_abundance) *
-                      smoothstep (0.05f,
-                                  0.2f,
-                                  read (map::dwarf_birch_abundance))),
+                      smoothstep (
+                        0.05f, 0.2f, read (map::dwarf_birch_abundance))),
                 .bog = read (map::sphagnum_abundance),
               };
             },
           .clear =
             [this] (const Vec3& at, float radius) {
-              const mov::TrunkContact contact = m_trunk_field.collide (
-                at + Vec3 (0, radius + 0.2f, 0),
-                at + Vec3 (0, radius + 0.8f, 0),
-                radius);
+              const mov::TrunkContact contact =
+                m_trunk_field.collide (at + Vec3 (0, radius + 0.2f, 0),
+                                       at + Vec3 (0, radius + 0.8f, 0),
+                                       radius);
               Vec3 out = at;
               if (contact.hit) {
                 out[0] += contact.push[0];
@@ -1033,6 +1031,8 @@ namespace moppe {
         for (const Sanctuary& s : m_places.sanctuaries)
           if (s.kept)
             folds.push_back ({ .kind = Fold::Kind::sanctuary, .at = s.centre });
+        folds.push_back (
+          { .kind = Fold::Kind::trailhead, .at = m_home_base_position });
         const AnimalGround ground = animal_ground ();
         m_animals.rebuild (plan_animals (
           ground,
@@ -1076,10 +1076,9 @@ namespace moppe {
         if (length2 (moving) > 60.0f * 60.0f)
           moving = Vec3 ();
         if (!m_spectator)
-          presences.push_back (
-            { .position = subject,
-              .velocity = moving,
-              .machine = logic ().m_mode != M_FOOT });
+          presences.push_back ({ .position = subject,
+                                 .velocity = moving,
+                                 .machine = logic ().m_mode != M_FOOT });
         if (m_companion && m_companion->walker)
           presences.push_back ({ .position = m_companion->walker->position,
                                  .velocity = m_companion->walker->velocity });
@@ -3158,13 +3157,12 @@ namespace moppe {
             for (int k = 0; k < 12 && !stand; ++k) {
               const float angle = 0.5236f * k;
               const Vec3 at =
-                middle +
-                Vec3 (std::cos (angle), 0.0f, std::sin (angle)) * away;
+                middle + Vec3 (std::cos (angle), 0.0f, std::sin (angle)) * away;
               if (g.dry (at[0], at[2]))
                 stand = { at, middle };
             }
-            m_watched = static_cast<std::size_t> (
-              best - m_animals.animals ().data ());
+            m_watched =
+              static_cast<std::size_t> (best - m_animals.animals ().data ());
             if (stand) {
               const Vec3 in = normalized (Vec3 (middle[0] - stand->first[0],
                                                 0.0f,
@@ -5552,16 +5550,17 @@ namespace moppe {
         render_helicopter (r, actors.helicopter, 0);
         render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
         m_places_landscape.cast_shadows (r, frame.camera.position);
-        render_animals (r,
-                        m_animals.animals (),
-                        [this] (float x, float z) {
-                          return ground_height (Vec3 (x, 0.0f, z));
-                        },
-                        frame.camera.position,
-                        frame.camera.frame_forward,
-                        frame.lighting.time,
-                        70.0f,
-                        0);
+        render_animals (
+          r,
+          m_animals.animals (),
+          [this] (float x, float z) {
+            return ground_height (Vec3 (x, 0.0f, z));
+          },
+          frame.camera.position,
+          frame.camera.frame_forward,
+          frame.lighting.time,
+          70.0f,
+          0);
         if (m_fingerpost_mesh)
           r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
         if (m_companion) {
@@ -5811,16 +5810,17 @@ namespace moppe {
           m_basket_contents.push_back (m_mushrooms.site (basket.picked[i]));
         draw_camp (m_world_dl);
         draw_places (r, frame);
-        render_animals (r,
-                        m_animals.animals (),
-                        [this] (float x, float z) {
-                          return ground_height (Vec3 (x, 0.0f, z));
-                        },
-                        frame.camera.position,
-                        frame.camera.frame_forward,
-                        frame.lighting.time,
-                        450.0f,
-                        0x200000);
+        render_animals (
+          r,
+          m_animals.animals (),
+          [this] (float x, float z) {
+            return ground_height (Vec3 (x, 0.0f, z));
+          },
+          frame.camera.position,
+          frame.camera.frame_forward,
+          frame.lighting.time,
+          450.0f,
+          0x200000);
         if (actors.walker && lying_down ())
           draw_sleeper (m_world_dl, helmet, frame.lighting.time);
         else if (actors.walker && !helmet)

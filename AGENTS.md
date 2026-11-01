@@ -621,7 +621,8 @@
     models `models/<species>.blend` from `tools/figure/animals.py`,
     `make animals`): North Swedish horses, fjällkor, and Gotland sheep
     graze the ground the farms, the landing, and the kept sanctuaries
-    still graze (`grazing_pressure`), and wild herds keep to their own
+    still graze (`grazing_pressure`), with a paddock of each a stone's
+    throw from the trailhead (`Fold::Kind::trailhead`), and wild herds keep to their own
     country -- moose browsing young forest by the mires, roe deer at the
     forest's edges, reindeer on the highest of the fell. Each wanders,
     stands, puts its head down to crop (`Animal::head`; the muzzle

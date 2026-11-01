@@ -254,6 +254,13 @@ namespace moppe::game {
                   { Species::horse, 1 },
                   { Species::sheep, 7 } };
         break;
+      case Fold::Kind::trailhead:
+        // A few beasts in sight of where the walk begins.
+        stock = { { Species::horse, 2 },
+                  { Species::cow, 3 },
+                  { Species::sheep, 6 } };
+        reach = 160.0f;
+        break;
       case Fold::Kind::sanctuary:
         // The upland summer grazing.
         stock = { { Species::sheep, 11 } };
