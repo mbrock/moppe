@@ -175,4 +175,96 @@ namespace moppe::terrain {
     const float weight = 1.0f - smoothstep (tread, tread + blend_m, d);
     return field_m + (road - field_m) * weight;
   }
+
+  void RoadSurface::place_guardrails (
+    const RoadNetwork& network,
+    const std::function<float (float, float)>& field) {
+    m_guardrails.clear ();
+    const float tread = m_formation.half_width + m_formation.shoulder;
+    const auto drawn = [&] (float x, float z) {
+      return ground (x, z, field (x, z));
+    };
+    const std::vector<bool> paved = paved_roads (network);
+    for (std::size_t r = 0; r < network.roads.size (); ++r) {
+      const Road& road = network.roads[r];
+      if (!paved[r] || road.heights.size () != road.points.size () ||
+          road.points.size () < 2)
+        continue;
+      std::vector<bool> spans (road.points.size (), false);
+      for (const RoadBridge& bridge : road.bridges)
+        for (std::size_t k = bridge.first;
+             k <= bridge.last && k < spans.size ();
+             ++k)
+          spans[k] = true;
+      // A post's place every few metres along the road, on either side.
+      struct Station {
+        float x, z, left_x, left_z, edge;
+        bool bridge;
+      };
+      std::vector<Station> stations;
+      float next = 0.0f, along = 0.0f;
+      for (std::size_t k = 1; k < road.points.size (); ++k) {
+        const RoadPoint a = road.points[k - 1];
+        const RoadPoint b = road.points[k];
+        const float length = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
+        if (length < 1e-3f)
+          continue;
+        const float ux = (b.x_m - a.x_m) / length;
+        const float uz = (b.z_m - a.z_m) / length;
+        for (; next <= along + length; next += guardrail_spacing_m) {
+          const float t = (next - along) / length;
+          stations.push_back (
+            { a.x_m + (b.x_m - a.x_m) * t,
+              a.z_m + (b.z_m - a.z_m) * t,
+              -uz,
+              ux,
+              std::lerp (road.heights[k - 1], road.heights[k], t) -
+                m_formation.crown * m_formation.half_width,
+              spans[k - 1] || spans[k] });
+        }
+        along += length;
+      }
+      for (const float side : { -1.0f, 1.0f }) {
+        const std::size_t n = stations.size ();
+        std::vector<bool> valid (n), wanted (n);
+        for (std::size_t i = 0; i < n; ++i) {
+          const Station& s = stations[i];
+          const float px = s.x + s.left_x * side * guardrail_offset_m;
+          const float pz = s.z + s.left_z * side * guardrail_offset_m;
+          // Not on a tread: inside a tight bend, or across a junction.
+          const RoadSample there = nearest (px, pz);
+          valid[i] =
+            !s.bridge && !(there.found && there.kind == Road::Kind::Road &&
+                           std::fabs (there.across) < tread + 0.2f);
+          // Where the ground a few metres out lies well below the road.
+          const float fx = s.x + s.left_x * side * (tread + 3.0f);
+          const float fz = s.z + s.left_z * side * (tread + 3.0f);
+          wanted[i] = valid[i] && s.edge - drawn (fx, fz) >= 0.7f;
+        }
+        // One post more at either end of a run, which also closes a gap
+        // of one; runs shorter than a car stay unbuilt.
+        Guardrail run;
+        const auto flush = [&] {
+          if (run.posts.size () >= 4)
+            m_guardrails.push_back (std::move (run));
+          run.posts.clear ();
+        };
+        for (std::size_t i = 0; i < n; ++i) {
+          const bool on = valid[i] && (wanted[i] || (i > 0 && wanted[i - 1]) ||
+                                       (i + 1 < n && wanted[i + 1]));
+          if (!on) {
+            flush ();
+            continue;
+          }
+          const Station& s = stations[i];
+          const float ox = s.left_x * side, oz = s.left_z * side;
+          const float px = s.x + ox * guardrail_offset_m;
+          const float pz = s.z + oz * guardrail_offset_m;
+          run.posts.push_back (
+            { px, pz, s.edge + guardrail_height_m, drawn (px, pz), ox, oz });
+        }
+        flush ();
+      }
+    }
+  }
 }

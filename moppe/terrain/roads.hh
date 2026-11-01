@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -211,6 +212,24 @@ namespace moppe::terrain {
     float direction_z = 0.0f;
   };
 
+  // A guardrail along a paved lane where the ground falls away beside it:
+  // a galvanized W-beam on steel posts, one run of posts in order along
+  // the road. Unwrapped like the road it follows, so read modulo the
+  // period.
+  struct Guardrail {
+    struct Post {
+      float x_m = 0.0f;
+      float z_m = 0.0f;
+      // The beam's middle, and the ground at the post's foot.
+      float rail_m = 0.0f;
+      float foot_m = 0.0f;
+      // Away from the road, a horizontal unit vector.
+      float out_x = 0.0f;
+      float out_z = 0.0f;
+    };
+    std::vector<Post> posts;
+  };
+
   // The built roads exactly, finer than the height field's samples: the
   // authority the renderer's near ground and every body's footing read, so
   // that what is drawn is what is driven on. Over a built road's tread the
@@ -250,6 +269,24 @@ namespace moppe::terrain {
     // The ground's height at a point, given the height field's there.
     float ground (float x_m, float z_m, float field_m) const;
 
+    // Guardrails: the beam's line stands `guardrail_offset_m` from the
+    // road's centre and its middle `guardrail_height_m` over the tread's
+    // edge, on posts every `guardrail_spacing_m`.
+    static constexpr float guardrail_offset_m = 3.6f;
+    static constexpr float guardrail_height_m = 0.6f;
+    static constexpr float guardrail_spacing_m = 2.0f;
+
+    // Lays the guardrails along the paved lanes of `network` (the one
+    // this surface was built from) wherever the ground, as `field` gives
+    // the height field, falls away from the road's edge. Bridges keep
+    // their own railings, and junctions are left open.
+    void place_guardrails (const RoadNetwork& network,
+                           const std::function<float (float, float)>& field);
+
+    std::span<const Guardrail> guardrails () const noexcept {
+      return m_guardrails;
+    }
+
     // As the renderer takes them: two rows a segment, (ax, az, bx, bz)
     // and (height at a, at b, distance along at a, 0 road, 1 footpath,
     // 2 a bridge's deck, or 3 a paved road); and per bucket, row by row, the
@@ -280,6 +317,7 @@ namespace moppe::terrain {
     std::size_t m_segment_count = 0;
     std::vector<std::array<float, 4>> m_rows;
     std::vector<std::uint32_t> m_index;
+    std::vector<Guardrail> m_guardrails;
   };
 
   // Which of the network's ways are paved, one flag a road: the cart roads

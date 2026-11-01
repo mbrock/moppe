@@ -184,6 +184,43 @@ namespace moppe::mov {
         b3CreateHullShape (m_ground, &rail, &wall.base);
       }
     }
+    // A guardrail is a wall from below the road's edge to the beam's top,
+    // its face at the beam's, slippery so that a car glances along it.
+    b3ShapeDef guard = rail;
+    guard.baseMaterial.friction = 0.15f;
+    guard.baseMaterial.restitution = 0.05f;
+    constexpr float depth = 0.083f, thick = 0.1f;
+    const float top = 0.16f;
+    const float bottom = -terrain::RoadSurface::guardrail_height_m - 0.4f;
+    for (const terrain::Guardrail& run : the_roads->guardrails ())
+      for (std::size_t i = 1; i < run.posts.size (); ++i) {
+        const terrain::Guardrail::Post& p = run.posts[i - 1];
+        const terrain::Guardrail::Post& q = run.posts[i];
+        const float mx = 0.5f * (p.x_m + q.x_m), mz = 0.5f * (p.z_m + q.z_m);
+        const float ox = period_x * std::round ((middle[0] - mx) / period_x);
+        const float oz = period_z * std::round ((middle[2] - mz) / period_z);
+        const Vec3 a (p.x_m + ox, p.rail_m, p.z_m + oz);
+        const Vec3 b (q.x_m + ox, q.rail_m, q.z_m + oz);
+        const float length = moppe::length (b - a);
+        if (length < 1e-3f ||
+            std::max (std::abs (mx + ox - middle[0]),
+                      std::abs (mz + oz - middle[2])) > reach + length)
+          continue;
+        const Vec3 x = (b - a) / length;
+        Vec3 z = normalized (cross (x, Vec3 (0.0f, 1.0f, 0.0f)));
+        if (z[0] * (p.out_x + q.out_x) + z[2] * (p.out_z + q.out_z) < 0.0f)
+          z = -z;
+        const Vec3 y = cross (z, x);
+        const b3Matrix3 frame { to_b3 (x), to_b3 (y), to_b3 (z) };
+        const Vec3 mid = (a + b) * 0.5f - origin + y * (0.5f * (top + bottom)) +
+                         z * (thick - depth);
+        const b3BoxHull wall = b3MakeTransformedBoxHull (
+          0.5f * length + 0.05f,
+          0.5f * (top - bottom),
+          thick,
+          { to_b3 (mid), b3MakeQuatFromMatrix (&frame) });
+        b3CreateHullShape (m_ground, &guard, &wall.base);
+      }
   }
 
   void GroundPatch::recentre (b3WorldId world,

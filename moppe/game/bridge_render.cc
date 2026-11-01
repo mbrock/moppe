@@ -274,138 +274,158 @@ namespace moppe::game {
         dl.end ();
         m_bridges.push_back ({ renderer.create_mesh (dl), centre });
       }
-    add_posts (renderer, surface, roads, road_surface);
+    add_guardrails (renderer, road_surface);
   }
 
-  void BridgeSurface::add_posts (render::Renderer& renderer,
-                                 const map::SurfaceGeometry& surface,
-                                 const terrain::RoadNetwork& roads,
-                                 const terrain::RoadSurface& road_surface) {
-    // Weathered pine, a hand and a half square, knee high.
-    constexpr float post[3] = { 0.50f, 0.45f, 0.38f };
-    constexpr float spacing = 3.5f;
-    constexpr float run_m = 120.0f;
-    const terrain::RoadFormation& formation = road_surface.formation ();
-    const float tread = formation.half_width + formation.shoulder;
-    const float out = tread + 0.7f;
+  void BridgeSurface::add_guardrails (render::Renderer& renderer,
+                                      const terrain::RoadSurface& roads) {
+    // Galvanized steel weathered dull, the posts a little darker.
+    constexpr float steel[3] = { 0.60f, 0.62f, 0.63f };
+    constexpr float post_steel[3] = { 0.48f, 0.50f, 0.51f };
+    // The W-beam's section, bottom to top: (height over its middle, how
+    // far it stands out toward the road from the posts' line), metres.
+    constexpr float section[][2] = {
+      { -0.155f, 0.0f }, { -0.105f, 0.083f }, { -0.045f, 0.083f },
+      { 0.0f, 0.035f },  { 0.045f, 0.083f },  { 0.105f, 0.083f },
+      { 0.155f, 0.0f },
+    };
+    constexpr std::size_t spans_a_mesh = 40;
+    const Vec3 up (0.0f, 1.0f, 0.0f);
     const auto wrap = [] (float v, float period) {
       return v - period * std::floor (v / period);
     };
-    const auto seam = [] (float d, float period) {
-      return d - period * std::round (d / period);
-    };
-    // The ground as drawn: the formed field, blended into the tread.
-    const auto ground = [&] (float x, float z) {
-      x = wrap (x, m_period_x);
-      z = wrap (z, m_period_z);
-      const float field = terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (
-          surface, position (Vec3 (x, 0.0f, z))));
-      return road_surface.ground (x, z, field);
-    };
-    const auto lived_near = [&] (float x, float z) {
-      for (const terrain::RoadPlace& place : roads.places)
-        if (place.abandoned_years_ago == 0.0f &&
-            std::hypot (seam (place.x_m - x, m_period_x),
-                        seam (place.z_m - z, m_period_z)) < 200.0f)
-          return true;
-      return false;
-    };
-    const std::vector<bool> paved = terrain::paved_roads (roads);
-    std::uint32_t seed = 0x706f7374U;
-    for (std::size_t r = 0; r < roads.roads.size (); ++r) {
-      const terrain::Road& road = roads.roads[r];
-      if (!paved[r] || road.heights.size () != road.points.size () ||
-          road.points.size () < 2)
-        continue;
-      std::vector<bool> spans (road.points.size (), false);
-      for (const terrain::RoadBridge& bridge : road.bridges)
-        for (std::size_t k = bridge.first;
-             k <= bridge.last && k < spans.size ();
-             ++k)
-          spans[k] = true;
-      render::DrawList dl;
-      Vec3 origin;
-      std::size_t posts = 0;
-      float run = 0.0f;
-      const auto flush = [&] {
-        if (posts > 0) {
-          dl.end ();
-          m_bridges.push_back ({ renderer.create_mesh (dl),
-                                 Vec3 (wrap (origin[0], m_period_x),
-                                       0.0f,
-                                       wrap (origin[2], m_period_z)),
-                                 700.0f });
-        }
-        dl = render::DrawList ();
-        posts = 0;
-        run = 0.0f;
-      };
-      float next = 0.0f, along = 0.0f;
-      for (std::size_t k = 1; k < road.points.size (); ++k) {
-        const terrain::RoadPoint a = road.points[k - 1];
-        const terrain::RoadPoint b = road.points[k];
-        const float length = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
-        if (length < 1e-3f)
-          continue;
-        const Vec3 u ((b.x_m - a.x_m) / length, 0.0f, (b.z_m - a.z_m) / length);
-        const Vec3 left (-u[2], 0.0f, u[0]);
-        for (; next <= along + length; next += spacing) {
-          if (spans[k - 1] || spans[k])
-            continue;
-          const float t = (next - along) / length;
-          const float x = a.x_m + (b.x_m - a.x_m) * t;
-          const float z = a.z_m + (b.z_m - a.z_m) * t;
-          const float edge =
-            std::lerp (road.heights[k - 1], road.heights[k], t) -
-            formation.crown * formation.half_width;
-          const bool near = lived_near (x, z);
-          for (const float s : { -1.0f, 1.0f }) {
-            const float fx = x + left[0] * s * (tread + 3.0f);
-            const float fz = z + left[2] * s * (tread + 3.0f);
-            if (!near && edge - ground (fx, fz) < 0.7f)
-              continue;
-            const float px = x + left[0] * s * out;
-            const float pz = z + left[2] * s * out;
-            // Not on a tread: inside a tight bend, or across a junction.
-            const terrain::RoadSample there = road_surface.nearest (px, pz);
-            if (there.found && there.kind == terrain::Road::Kind::Road &&
-                std::fabs (there.across) < tread + 0.3f)
-              continue;
-            const float foot = ground (px, pz);
-            // Nothing stands in water or far down a bank.
-            if (edge - foot > 2.0f || foot - edge > 1.0f)
-              continue;
-            if (posts == 0) {
-              origin = Vec3 (px, 0.0f, pz);
-              dl.lit (true);
-              dl.fogged (true);
-              dl.material (0.0f, 0.85f, 0.0f);
-              dl.begin (render::Prim::Triangles);
-            }
-            const float lean = 0.03f * (jitter (++seed) - 0.5f);
-            const float height = 0.62f + 0.12f * jitter (++seed);
-            const Vec3 base (px - origin[0], foot - 0.4f, pz - origin[2]);
-            const Vec3 up = normalized (Vec3 (lean, 1.0f, 0.0f));
-            box (dl,
-                 base + up * (0.5f * (height + 0.4f)),
-                 u,
-                 left,
-                 up,
-                 0.065f,
-                 0.065f,
-                 0.5f * (height + 0.4f),
-                 post,
-                 0.78f + 0.3f * jitter (++seed));
-            ++posts;
-          }
-        }
-        along += length;
-        run += length;
-        if (run > run_m)
-          flush ();
+    // A quad facing `facing`, whichever way its corners go round.
+    const auto quad = [] (render::DrawList& dl,
+                          Vec3 p0,
+                          Vec3 p1,
+                          Vec3 p2,
+                          Vec3 p3,
+                          const Vec3& facing) {
+      Vec3 n = cross (p1 - p0, p3 - p0);
+      if (dot (n, facing) < 0.0f) {
+        std::swap (p1, p3);
+        n = -n;
       }
-      flush ();
+      if (length2 (n) < 1e-12f)
+        return;
+      dl.normal (normalized (n));
+      dl.vertex (p0);
+      dl.vertex (p1);
+      dl.vertex (p2);
+      dl.vertex (p0);
+      dl.vertex (p2);
+      dl.vertex (p3);
+    };
+    // The beam from one line point to the next, both faces: the road's
+    // side bulging toward it, the back a sheet's thickness behind.
+    const auto beam_span = [&] (render::DrawList& dl,
+                                const Vec3& a,
+                                const Vec3& oa,
+                                const Vec3& b,
+                                const Vec3& ob,
+                                float shade) {
+      dl.color (steel[0] * shade, steel[1] * shade, steel[2] * shade);
+      const Vec3 toward = -(oa + ob);
+      for (std::size_t j = 0; j + 1 < std::size (section); ++j) {
+        const auto [h0, d0] = section[j];
+        const auto [h1, d1] = section[j + 1];
+        // The facet's own normal in the section, toward the road.
+        const Vec3 facing =
+          normalized (toward * (h1 - h0) - up * (d1 - d0) * 2.0f);
+        quad (dl,
+              a - oa * d0 + up * h0,
+              b - ob * d0 + up * h0,
+              b - ob * d1 + up * h1,
+              a - oa * d1 + up * h1,
+              facing);
+        quad (dl,
+              a - oa * (d0 - 0.004f) + up * h0,
+              b - ob * (d0 - 0.004f) + up * h0,
+              b - ob * (d1 - 0.004f) + up * h1,
+              a - oa * (d1 - 0.004f) + up * h1,
+              -facing);
+      }
+    };
+    std::uint32_t seed = 0x67726c73U;
+    for (const terrain::Guardrail& run : roads.guardrails ()) {
+      const std::size_t n = run.posts.size ();
+      const auto line = [&] (std::size_t i, const Vec3& origin) {
+        const terrain::Guardrail::Post& p = run.posts[i];
+        return Vec3 (p.x_m - origin[0], p.rail_m, p.z_m - origin[2]);
+      };
+      const auto out = [&] (std::size_t i) {
+        return Vec3 (run.posts[i].out_x, 0.0f, run.posts[i].out_z);
+      };
+      for (std::size_t first = 0; first + 1 < n; first += spans_a_mesh) {
+        const std::size_t last = std::min (n - 1, first + spans_a_mesh);
+        const Vec3 origin (run.posts[first].x_m, 0.0f, run.posts[first].z_m);
+        render::DrawList dl;
+        dl.lit (true);
+        dl.fogged (true);
+        dl.material (0.75f, 0.45f, 0.0f);
+        dl.begin (render::Prim::Triangles);
+        for (std::size_t i = first + 1; i <= last; ++i)
+          beam_span (dl,
+                     line (i - 1, origin),
+                     out (i - 1),
+                     line (i, origin),
+                     out (i),
+                     0.9f + 0.12f * jitter (++seed));
+        // The ends turn down into the ground and away from the road, so
+        // that nothing meets a beam's end square on.
+        for (const std::size_t end : { std::size_t (0), n - 1 }) {
+          if (end < first || end > last)
+            continue;
+          const std::size_t inner = end == 0 ? 1 : n - 2;
+          const Vec3 p = line (end, origin);
+          const Vec3 o = out (end);
+          Vec3 away = p - line (inner, origin);
+          away[1] = 0.0f;
+          away = normalized (away);
+          const float buried = run.posts[end].foot_m - 0.12f;
+          const Vec3 mid =
+            p + away * 2.0f + o * 0.15f + up * (0.6f * (buried - p[1]));
+          Vec3 tip = p + away * 4.0f + o * 0.45f;
+          tip[1] = buried;
+          beam_span (dl, p, o, mid, o, 0.92f);
+          beam_span (dl, mid, o, tip, o, 0.92f);
+        }
+        // The posts behind the beam on spacers, down into the ground.
+        for (std::size_t i = first; i <= last; ++i) {
+          const Vec3 p = line (i, origin);
+          const Vec3 o = out (i);
+          const Vec3 t = cross (up, o);
+          const float foot = run.posts[i].foot_m - 0.4f;
+          const float top = p[1] + 0.12f;
+          const Vec3 at = p + o * 0.17f;
+          box (dl,
+               Vec3 (at[0], 0.5f * (foot + top), at[2]),
+               o,
+               t,
+               up,
+               0.05f,
+               0.06f,
+               0.5f * (top - foot),
+               post_steel,
+               0.9f + 0.15f * jitter (++seed));
+          box (dl,
+               p + o * 0.065f,
+               o,
+               t,
+               up,
+               0.055f,
+               0.04f,
+               0.1f,
+               post_steel,
+               0.8f);
+        }
+        dl.end ();
+        m_bridges.push_back ({ renderer.create_mesh (dl),
+                               Vec3 (wrap (origin[0], m_period_x),
+                                     0.0f,
+                                     wrap (origin[2], m_period_z)),
+                               900.0f });
+      }
     }
   }
 

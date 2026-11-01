@@ -335,5 +335,36 @@ namespace moppe::game {
           m_roads,
           m_surface.domain ().period_x ().numerical_value_in (u::m),
           m_surface.domain ().period_z ().numerical_value_in (u::m)),
-        m_forest (std::move (forest)) {}
+        m_forest (std::move (forest)) {
+    const float period_x =
+      m_surface.domain ().period_x ().numerical_value_in (u::m);
+    const float period_z =
+      m_surface.domain ().period_z ().numerical_value_in (u::m);
+    const auto wrap = [] (float v, float period) {
+      return v - period * std::floor (v / period);
+    };
+    m_road_surface.place_guardrails (m_roads, [&] (float x, float z) {
+      return terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          m_surface,
+          position (Vec3 (wrap (x, period_x), 0.0f, wrap (z, period_z)))));
+    });
+    // Where the longest stands, to aim a camera at.
+    std::size_t posts = 0;
+    const terrain::Guardrail* longest = nullptr;
+    for (const terrain::Guardrail& run : m_road_surface.guardrails ()) {
+      posts += run.posts.size ();
+      if (!longest || run.posts.size () > longest->posts.size ())
+        longest = &run;
+    }
+    std::cerr << "moppe: guardrails: " << m_road_surface.guardrails ().size ()
+              << " runs, " << posts << " posts";
+    if (longest) {
+      const terrain::Guardrail::Post& end = longest->posts.front ();
+      std::cerr << "; the longest begins at " << wrap (end.x_m, period_x) << ' '
+                << end.rail_m << ' ' << wrap (end.z_m, period_z)
+                << " facing out " << end.out_x << ' ' << end.out_z;
+    }
+    std::cerr << '\n';
+  }
 }

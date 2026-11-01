@@ -12,10 +12,10 @@ namespace moppe::game {
   // The roads' timber. Their bridges (terrain::RoadBridge) as trestles: a
   // plank deck between kerbs and railings on two stringers, trestles
   // standing in the river every dozen metres or so, and a stone abutment
-  // at each end. Along the paved lanes (terrain::paved_roads), low posts
-  // on the verge where the ground drops away beside the road, and on both
-  // sides near a place still lived in, keeping wheels off the grass. Each
-  // bridge, and each run of posts, is one mesh, drawn at its image
+  // at each end. Along the paved lanes, the guardrails the road surface
+  // lays where the ground drops away (terrain::Guardrail): a galvanized
+  // W-beam on posts, its ends turned down into the ground. Each bridge,
+  // and each stretch of guardrail, is one mesh, drawn at its image
   // nearest the camera.
   class BridgeSurface {
   public:
@@ -34,10 +34,8 @@ namespace moppe::game {
       // How far off it is still drawn, metres.
       float reach = 2500.0f;
     };
-    void add_posts (render::Renderer& renderer,
-                    const map::SurfaceGeometry& surface,
-                    const terrain::RoadNetwork& roads,
-                    const terrain::RoadSurface& road_surface);
+    void add_guardrails (render::Renderer& renderer,
+                         const terrain::RoadSurface& roads);
     std::vector<Bridge> m_bridges;
     float m_period_x = 0.0f;
     float m_period_z = 0.0f;

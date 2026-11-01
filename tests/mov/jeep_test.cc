@@ -250,3 +250,50 @@ MOPPE_TEST (the_bridge_railing_keeps_a_jeep_on_the_deck) {
   MOPPE_CHECK (lowest > 10.0f + mov::Jeep::wheel_radius - 0.25f);
   MOPPE_CHECK (widest < roads.formation ().deck_half_width + 0.5f);
 }
+
+// A paved lane along an embankment two metres over the fields has
+// guardrails along both edges, and they keep a jeep on it: steered hard
+// for the edge, it meets the rail and stays on the road, where without
+// them it would leave the road down the bank.
+MOPPE_TEST (a_guardrail_keeps_a_jeep_on_the_embankment) {
+  map::SurfaceGeometry fields (terrain::TerrainDomain (
+    128, 128, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+  for (std::size_t z = 0; z < 128; ++z)
+    for (std::size_t x = 0; x < 128; ++x)
+      spatial::get<terrain::surface_elevation> (
+        fields[terrain::TerrainIndex { x, z }]) =
+        terrain::surface_elevation_point (10.0f * mp_units::si::metre);
+  map::rebuild_geometry (fields);
+  terrain::RoadNetwork network;
+  terrain::Road road { .kind = terrain::Road::Kind::Road, .traffic = 1 };
+  for (float z = 20.0f; z <= 300.0f; z += 4.0f) {
+    road.points.push_back ({ 160.0f, z });
+    road.heights.push_back (12.0f);
+  }
+  network.roads = { road };
+  const auto drive = [&] (bool guarded) {
+    terrain::RoadSurface roads (network, 320.0f, 320.0f);
+    if (guarded)
+      roads.place_guardrails (network, [] (float, float) { return 10.0f; });
+    mov::attach_roads (fields, &roads);
+    mov::Jeep jeep (fields);
+    jeep.place (Vec3 (160, 0, 60), Vec3 (0, 0, 1));
+    jeep.set_parked (false);
+    jeep.set_drive (0.8f);
+    float widest = 0.0f;
+    for (int i = 0; i < 120 * 10; ++i) {
+      if (jeep.position ()[2] > 90.0f)
+        jeep.set_turn (1.0f);
+      jeep.update (1.0f / 120.0f, -100.0f);
+      widest = std::max (widest, std::abs (jeep.position ()[0] - 160.0f));
+    }
+    mov::attach_roads (fields, nullptr);
+    return std::pair (widest, roads.guardrails ().size ());
+  };
+  const auto [loose, none] = drive (false);
+  const auto [kept, rails] = drive (true);
+  MOPPE_CHECK (none == 0);
+  MOPPE_CHECK (rails == 2);
+  MOPPE_CHECK (loose > 6.0f);
+  MOPPE_CHECK (kept < terrain::RoadSurface::guardrail_offset_m);
+}
