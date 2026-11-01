@@ -617,6 +617,27 @@
     it out after the walker, slowly, walking at it pushes it, and `F` lets
     go; moved three metres it is free and `F` gets in again. `tools/record
     OUT.mp4 haul` and `bump` show both.
+  - Animals (`moppe/game/animals.*`, drawn by `game/animal_render.*`;
+    models `models/<species>.blend` from `tools/figure/animals.py`,
+    `make animals`): North Swedish horses, fjällkor, and Gotland sheep
+    graze the ground the farms, the landing, and the kept sanctuaries
+    still graze (`grazing_pressure`), and wild herds keep to their own
+    country -- moose browsing young forest by the mires, roe deer at the
+    forest's edges, reindeer on the highest of the fell. Each wanders,
+    stands, puts its head down to crop (`Animal::head`; the muzzle
+    reaches the grass), and walks on to fresh grass near its herd; someone
+    coming near makes it look up and then move off with its herd, the wild
+    ones from much further (`SpeciesTraits::wary`), a machine from
+    further still. Nothing can hurt them and there are no guns: whatever
+    reaches one shoves it aside and it runs. They are rigid parts swung
+    about pivots (neck, head, two parts a leg drawn on both sides, tail),
+    stepped within 700 m of the camera, not in `GameState` and not shared
+    with the other player. `MOPPE_WALK=animals[:SPECIES]` starts beside
+    the nearest herd (of stock, or of `cow`, `roe_deer`...), waits, and
+    walks at it; `MOPPE_ANIMAL_CAMERA=<m>` follows that animal from the
+    side; `tools/record OUT.mp4 animals` records it; `MOPPE_ANIMALS=none`
+    leaves them out. The log's `moppe: animals:` lines say how many and
+    where the nearest of each stand.
   - Places at the ends of the roads (`moppe/game/places.*`, planned
     from `GeneratedWorld::roads()` when a world activates, before the
     trees and rocks, which keep out of their clearings): the landing has

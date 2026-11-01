@@ -45,6 +45,8 @@
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/mountain_bike_render.hh>
 #include <moppe/game/mushrooms.hh>
+#include <moppe/game/animal_render.hh>
+#include <moppe/game/animals.hh>
 #include <moppe/game/opening.hh>
 #include <moppe/game/place_names.hh>
 #include <moppe/game/places.hh>
@@ -919,6 +921,156 @@ namespace moppe {
           m_trunk_field.set_trunks (
             std::move (obstacles), period[0], period[2]);
         }
+      }
+
+      // -- animals -------------------------------------------------
+
+      // What the animals read of the world: the ground and its water,
+      // the grazing and the plants, and the trunks and walls about.
+      AnimalGround animal_ground () const {
+        const terrain::WaterSheets* sheets =
+          &generated_world ().water_surface ();
+        return {
+          .ground =
+            [this] (float x, float z) {
+              return ground_height (Vec3 (x, 0.0f, z));
+            },
+          .dry =
+            [this, sheets] (float x, float z) {
+              const Vec3 at (x, 0.0f, z);
+              return still_water_at (world (), surface (), sheets, at)
+                       .numerical_value_in (u::m) <
+                     ground_height (at) + 0.05f;
+            },
+          .pasture =
+            [this] (float x, float z) {
+              const auto read = [&] (auto quantity) {
+                return spatial::sample<quantity> (
+                         surface_readings (),
+                         moppe::position (Vec3 (x, 0.0f, z)))
+                  .numerical_value_in (one);
+              };
+              return Pasture {
+                .grazed = read (map::grazing_pressure),
+                .forest = read (map::forest_cover),
+                // The fjäll's dwarf birch and fell birch, and its lichen
+                // heath, but not the lichen of the dry pine forest below.
+                .fell = std::min (
+                  1.0f,
+                  1.5f * read (map::dwarf_birch_abundance) +
+                    read (map::mountain_birch_abundance) +
+                    read (map::lichen_abundance) *
+                      smoothstep (0.05f,
+                                  0.2f,
+                                  read (map::dwarf_birch_abundance))),
+                .bog = read (map::sphagnum_abundance),
+              };
+            },
+          .clear =
+            [this] (const Vec3& at, float radius) {
+              const mov::TrunkContact contact = m_trunk_field.collide (
+                at + Vec3 (0, radius + 0.2f, 0),
+                at + Vec3 (0, radius + 0.8f, 0),
+                radius);
+              Vec3 out = at;
+              if (contact.hit) {
+                out[0] += contact.push[0];
+                out[2] += contact.push[2];
+              }
+              return out;
+            },
+          .period_x =
+            surface ().domain ().period_x ().numerical_value_in (u::m),
+          .period_z =
+            surface ().domain ().period_z ().numerical_value_in (u::m),
+        };
+      }
+
+      // The stock goes out round the places still lived in, and the wild
+      // ones are where their country is.
+      void let_out_animals () {
+        MOPPE_PROFILE_ZONE ("startup.let_out_animals");
+        m_last_subject.reset ();
+        if (m_water_inspection || moppe::environment ("MOPPE_TREE_LAB") ||
+            moppe::environment ("MOPPE_GRASS_LAB") ||
+            (moppe::environment ("MOPPE_ANIMALS") &&
+             std::string_view (moppe::environment ("MOPPE_ANIMALS")) ==
+               "none")) {
+          m_animals.rebuild ({});
+          return;
+        }
+        const terrain::RoadNetwork& roads = generated_world ().roads ();
+        const auto lived_in = [&roads] (std::size_t place) {
+          return place < roads.places.size () &&
+                 roads.places[place].abandoned_years_ago <= 0.0f;
+        };
+        std::vector<Fold> folds;
+        for (const Farm& farm : m_places.farms)
+          if (farm.kept)
+            for (const Building& b : farm.buildings)
+              if (b.kind == Building::Kind::house)
+                folds.push_back ({ .kind = Fold::Kind::farm, .at = b.at });
+        if (m_places.landing && lived_in (m_places.landing->place))
+          folds.push_back ({ .kind = Fold::Kind::landing,
+                             .at = m_places.landing->jetty.root });
+        for (const Sanctuary& s : m_places.sanctuaries)
+          if (s.kept)
+            folds.push_back ({ .kind = Fold::Kind::sanctuary, .at = s.centre });
+        const AnimalGround ground = animal_ground ();
+        m_animals.rebuild (plan_animals (
+          ground,
+          folds,
+          m_home_base_position,
+          ground.period_x,
+          ground.period_z,
+          static_cast<std::uint32_t> (recipe ().seed ().value) ^ 0xa417a15u));
+        // Say where the nearest herd of each kind is.
+        for (int s = 0; s < species_count; ++s) {
+          const Animal* nearest = nullptr;
+          float best = 1e9f;
+          for (const Animal& a : m_animals.animals ()) {
+            const float d = std::hypot (a.position[0] - m_spawn_position[0],
+                                        a.position[2] - m_spawn_position[2]);
+            if (static_cast<int> (a.species) == s && d < best) {
+              best = d;
+              nearest = &a;
+            }
+          }
+          if (nearest)
+            std::cerr << "moppe: animals: the nearest "
+                      << traits (nearest->species).plural << ' '
+                      << std::lround (best) << " m from the spawn, at "
+                      << std::lround (nearest->position[0]) << ' '
+                      << std::lround (nearest->position[2]) << std::endl;
+        }
+      }
+
+      // Everyone about, as the animals mind them: the walker, whatever
+      // the player rides or drives, and the other player.
+      void tend_animals (float dt) {
+        if (m_animals.animals ().empty () || dt <= 0.0f)
+          return;
+        std::vector<Presence> presences;
+        const Vec3 subject = session ().subject_position ();
+        Vec3 moving {};
+        if (m_last_subject)
+          moving = (subject - *m_last_subject) * (1.0f / dt);
+        m_last_subject = subject;
+        if (length2 (moving) > 60.0f * 60.0f)
+          moving = Vec3 ();
+        if (!m_spectator)
+          presences.push_back (
+            { .position = subject,
+              .velocity = moving,
+              .machine = logic ().m_mode != M_FOOT });
+        if (m_companion && m_companion->walker)
+          presences.push_back ({ .position = m_companion->walker->position,
+                                 .velocity = m_companion->walker->velocity });
+        m_animals.step (animal_ground (),
+                        presences,
+                        session ().camera ().position (),
+                        700.0f,
+                        dt);
       }
 
       // The beacon a walker stands at, if any.
@@ -2932,6 +3084,64 @@ namespace moppe {
           const Sanctuary& s = m_places.sanctuaries.front ();
           // Inside the wall by its gap, on the level top, facing the fire.
           stand = { s.centre + s.gate * (s.wall_radius - 1.8f), s.centre };
+        } else if (script.starts_with ("animals") &&
+                   !m_animals.animals ().empty ()) {
+          // MOPPE_WALK=animals[:SPECIES]: a little outside the wariness of
+          // the nearest herd of that kind (or of stock, or of anything),
+          // looking at it.
+          const std::string_view kind =
+            script.size () > 8 ? script.substr (8) : std::string_view ();
+          const auto wanted = [kind] (const Animal& a, bool stock) {
+            if (kind.empty ())
+              return traits (a.species).stock == stock;
+            std::string name = traits (a.species).name;
+            std::ranges::replace (name, ' ', '_');
+            return name == kind;
+          };
+          const Animal* best = nullptr;
+          float best_d = 1e9f;
+          for (const bool stock : { true, false }) {
+            for (const Animal& a : m_animals.animals ()) {
+              const float d = std::hypot (a.position[0] - m_spawn_position[0],
+                                          a.position[2] - m_spawn_position[2]);
+              if (wanted (a, stock) && d < best_d) {
+                best_d = d;
+                best = &a;
+              }
+            }
+            if (best)
+              break;
+          }
+          if (best) {
+            Vec3 middle {};
+            int n = 0;
+            for (const Animal& a : m_animals.animals ())
+              if (a.herd == best->herd) {
+                middle = middle + a.position;
+                ++n;
+              }
+            middle = middle * (1.0f / n);
+            // Of a few ways in, the first on dry ground.
+            const AnimalGround g = animal_ground ();
+            const SpeciesTraits& t = traits (best->species);
+            const float away = t.stock ? 9.0f : 2.0f * t.wary;
+            for (int k = 0; k < 12 && !stand; ++k) {
+              const float angle = 0.5236f * k;
+              const Vec3 at =
+                middle +
+                Vec3 (std::cos (angle), 0.0f, std::sin (angle)) * away;
+              if (g.dry (at[0], at[2]))
+                stand = { at, middle };
+            }
+            m_watched = static_cast<std::size_t> (
+              best - m_animals.animals ().data ());
+            if (stand) {
+              const Vec3 in = normalized (Vec3 (middle[0] - stand->first[0],
+                                                0.0f,
+                                                middle[2] - stand->first[2]));
+              m_watch_side = Vec3 (in[2], 0.0f, -in[0]);
+            }
+          }
         } else if (script == "farm" && !m_places.farms.empty () &&
                    !m_places.farms.front ().buildings.empty ()) {
           const Building& b = m_places.farms.front ().buildings.front ();
@@ -3410,6 +3620,7 @@ namespace moppe {
         grow_mushrooms ();
         settle_obstacles ();
         build_world_places ();
+        let_out_animals ();
         park_jeep ();
         park_tractor ();
         park_mountain_bike ();
@@ -4527,6 +4738,11 @@ namespace moppe {
         // At a place (stage_place_script), the walker stands and looks.
         if (script == "landing" || script == "sanctuary" || script == "farm")
           return input;
+        if (script.starts_with ("animals")) {
+          // Watch them graze a while, then walk up to them.
+          input.drive = t > 14.0f && t < 30.0f ? 1.0f : 0.0f;
+          return input;
+        }
         if (script == "camp")
           return camp_script (dt);
         if (script == "fish") {
@@ -4710,6 +4926,31 @@ namespace moppe {
         const Vec3 right (heading[2], 0.0f, -heading[0]);
         const Vec3 at = walker.position () + Vec3 (0, 0.9f, 0);
         session ().camera ().place (at + right * 4.0f + Vec3 (0, 0.25f, 0), at);
+      }
+
+      // MOPPE_ANIMAL_CAMERA=<metres>, with MOPPE_WALK=animals[:SPECIES]:
+      // a camera that far from the animal the walk began by, square to the
+      // walker's way in so both show, following it as it goes.
+      void animal_camera (float dt) {
+        static const float distance = [] {
+          const char* value = moppe::environment ("MOPPE_ANIMAL_CAMERA");
+          return value ? static_cast<float> (::atof (value)) : 0.0f;
+        }();
+        if (distance <= 0.0f || !m_watched ||
+            *m_watched >= m_animals.animals ().size ())
+          return;
+        const Animal& a = m_animals.animals ()[*m_watched];
+        const float height = 0.7f * traits (a.species).length;
+        const Vec3 target = a.position + Vec3 (0.0f, height, 0.0f);
+        // Eased, so that the view glides after it.
+        const float ease = 1.0f - std::exp (-1.5f * dt);
+        m_watch_target = m_watch_target
+                           ? *m_watch_target + (target - *m_watch_target) * ease
+                           : target;
+        Vec3 eye = *m_watch_target + m_watch_side * distance +
+                   Vec3 (0.0f, 0.25f * distance, 0.0f);
+        eye[1] = std::max<float> (eye[1], ground_height (eye) + 1.2f);
+        session ().camera ().place (eye, *m_watch_target);
       }
 
       // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
@@ -5118,6 +5359,7 @@ namespace moppe {
                                 m_strangers);
         if (advance.say_ouchies)
           platform::say ("Ouchies. That hurts.");
+        tend_animals (dt);
 
         if (m_water_inspection) {
           session ().camera ().place (m_water_inspection->eye,
@@ -5129,6 +5371,7 @@ namespace moppe {
         rest_camera ();
         walk_side_camera ();
         ride_capture_camera (dt);
+        animal_camera (dt);
 
         if (m_benchmark)
           finish_benchmark_frame (m_benchmark_replay->finish_frame ());
@@ -5263,6 +5506,16 @@ namespace moppe {
         render_helicopter (r, actors.helicopter, 0);
         render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
         m_places_landscape.cast_shadows (r, frame.camera.position);
+        render_animals (r,
+                        m_animals.animals (),
+                        [this] (float x, float z) {
+                          return ground_height (Vec3 (x, 0.0f, z));
+                        },
+                        frame.camera.position,
+                        frame.camera.frame_forward,
+                        frame.lighting.time,
+                        70.0f,
+                        0);
         if (m_fingerpost_mesh)
           r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
         if (m_companion) {
@@ -5485,6 +5738,16 @@ namespace moppe {
           m_basket_contents.push_back (m_mushrooms.site (basket.picked[i]));
         draw_camp (m_world_dl);
         draw_places (r, frame);
+        render_animals (r,
+                        m_animals.animals (),
+                        [this] (float x, float z) {
+                          return ground_height (Vec3 (x, 0.0f, z));
+                        },
+                        frame.camera.position,
+                        frame.camera.frame_forward,
+                        frame.lighting.time,
+                        450.0f,
+                        0x200000);
         if (actors.walker && lying_down ())
           draw_sleeper (m_world_dl, helmet, frame.lighting.time);
         else if (actors.walker && !helmet)
@@ -6987,6 +7250,14 @@ namespace moppe {
       // What stands at the ends of the roads (game/places.hh), and how
       // each sanctuary's beacon burns this frame.
       PlacesPlan m_places;
+      Animals m_animals;
+      // MOPPE_WALK=animals: the animal the walk began by, and the capture
+      // camera's side of it and its eased aim.
+      std::optional<std::size_t> m_watched;
+      Vec3 m_watch_side { 1, 0, 0 };
+      std::optional<Vec3> m_watch_target;
+      // Where the subject stood a step ago, for how fast it goes.
+      std::optional<Vec3> m_last_subject;
       PlacesLandscape m_places_landscape;
       std::vector<float> m_beacon_burn;
       // The other player's beacons as last heard (presentation only).
