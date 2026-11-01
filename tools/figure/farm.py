@@ -230,13 +230,15 @@ def window(asm, name, centre, normal, size, m, tier):
          smooth=False)
 
 
-def boards(asm, name, centre, normal, half, mat, count):
+def boards(asm, name, centre, normal, half, mat, count, gap=None):
     """Vertical battens over a wall face, for the board-and-batten
-    look."""
+    look; none across `gap`, a (low, high) span along the face's side."""
     side = UP.cross(normal).normalized()
     battens = []
     for i in range(count):
         t = -1 + 2 * (i + 0.5) / count
+        if gap and gap[0] - 0.05 < t * half[0] < gap[1] + 0.05:
+            continue
         battens.append(slab(centre + normal * 0.02 + side * (t * half[0]),
                             (0.03, half[1], 0.02),
                             axes=(side, UP, normal)))
@@ -366,8 +368,61 @@ def house(coll, m, suffix, tier):
              levels=0, smooth=False)
 
     b = assembly("house" + suffix, coll, V((0, 0, 0)), mesh="house" + suffix)
-    part(b, "walls", slab(V((0, 1.85, 0)), (3.5, 1.25, 2.5)), m["falu"],
-         levels=0, smooth=False)
+    # The walls are 12 cm of boards round one room that can be walked
+    # into, through the doorway at the front (x -1.35 to -0.45, 2 m high);
+    # the end walls run into the long ones rather than meeting them edge to
+    # edge.
+    t = 0.12
+    walls = [slab(V((0, 1.85, -2.5 + t / 2)), (3.5, 1.25, t / 2)),
+             slab(V((-3.5 + t / 2, 1.85, 0)), (t / 2, 1.25, 2.5 - t / 2)),
+             slab(V((3.5 - t / 2, 1.85, 0)), (t / 2, 1.25, 2.5 - t / 2)),
+             slab(V(((-3.5 - 1.35) / 2, 1.85, 2.5 - t / 2)),
+                  ((3.5 - 1.35) / 2, 1.25, t / 2)),
+             slab(V(((3.5 - 0.45) / 2, 1.85, 2.5 - t / 2)),
+                  ((3.5 + 0.45) / 2, 1.25, t / 2)),
+             slab(V((-0.9, 2.85, 2.5 - t / 2)), (0.45, 0.25, t / 2))]
+    part(b, "walls", merge(*walls), m["falu"], levels=0, smooth=False)
+    # Lined inside with planed boards, 3 cm proud of the walls' inner
+    # faces and sunk into them, the doorway left open; the chimney stack
+    # stands in the room, the hearth of it.
+    i = 2.5 - t + 0.005
+    j = 3.5 - t + 0.005
+    lining = [slab(V((0, 1.85, -i)), (j, 1.25, 0.015)),
+              slab(V((-j, 1.85, 0)), (0.015, 1.25, i)),
+              slab(V((j, 1.85, 0)), (0.015, 1.25, i)),
+              slab(V(((-j - 1.35) / 2, 1.85, i)),
+                   ((j - 1.35) / 2, 1.25, 0.015)),
+              slab(V(((j - 0.45) / 2, 1.85, i)),
+                   ((j + 0.45) / 2, 1.25, 0.015)),
+              slab(V((-0.9, 2.85, i)), (0.45, 0.25, 0.015))]
+    part(b, "lining", merge(*lining), m["grey_timber"], levels=0,
+         smooth=False)
+    # Inside: a board floor 4 cm over the plinth, a ceiling under the
+    # loft, and a table, a bench, and a bed.
+    part(b, "floor", slab(V((0, 0.62, 0)), (3.5 - t - 0.01, 0.02,
+                                           2.5 - t - 0.01)),
+         m["boards"], levels=0, smooth=False)
+    part(b, "ceiling", slab(V((0, 3.0, 0)), (3.5 - t - 0.01, 0.04,
+                                            2.5 - t - 0.01)),
+         m["grey_timber"], levels=0, smooth=False)
+    if tier <= MID:
+        furniture = [slab(V((1.6, 1.38, 0.4)), (0.7, 0.03, 0.45)),
+                     slab(V((1.6, 1.36, -1.7)), (0.6, 0.02, 0.18))]
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                furniture.append(slab(V((1.6 + sx * 0.6, 1.0, 0.4 + sz * 0.37)),
+                                      (0.04, 0.35, 0.04)))
+        furniture.append(slab(V((1.6, 1.1, 1.25)), (0.65, 0.025, 0.16)))
+        for sx in (-1, 1):
+            furniture.append(slab(V((1.6 + sx * 0.55, 0.85, 1.25)),
+                                  (0.03, 0.22, 0.13)))
+        part(b, "furniture", merge(*furniture), m["grey_timber"], levels=0,
+             smooth=False)
+        part(b, "bed", merge(slab(V((-2.4, 0.95, -1.5)), (0.95, 0.3, 0.5)),
+                             slab(V((-3.27, 1.35, -1.5)), (0.08, 0.7, 0.5))),
+             m["dark_timber"], levels=0, smooth=False)
+        part(b, "bedding", slab(V((-2.35, 1.29, -1.5)), (0.85, 0.05, 0.44)),
+             m["white"], levels=0, smooth=False)
     gable(b, "gable", 2.5, 3.5, 3.1, 4.75, m["falu"], along_x=True)
     if tier == NEAR:
         for face, half, count, reach in ((FORWARD, (3.5, 1.25), 22, 2.5),
@@ -376,7 +431,7 @@ def house(coll, m, suffix, tier):
                                          (-RIGHT, (2.5, 1.25), 16, 3.5)):
             boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
                    V((0, 1.85, 0)) + face * reach, face, half, m["falu"],
-                   count)
+                   count, gap=(-1.35, -0.45) if face == FORWARD else None)
     if tier <= MID:
         # White corner boards 8 cm out of each wall, and the fascia under
         # the eaves 3 cm before the battens.
@@ -396,9 +451,14 @@ def house(coll, m, suffix, tier):
     # The door stands 10 cm out of the wall and its white surround 7 cm,
     # both clear of the battens' 4 cm; far off they are one block.
     if tier <= MID:
-        part(b, "door", slab(V((-0.9, 1.6, 2.54)), (0.45, 1.0, 0.06)),
+        # The door stands open, swung in against the wall to the right of
+        # the doorway, under a white frame round the opening.
+        part(b, "door", slab(V((0.0, 1.6, 2.5 - t - 0.04)),
+                             (0.45, 1.0, 0.03)),
              m["dark_timber"], levels=0, bevel=0.01, smooth=False)
-        part(b, "door_frame", slab(V((-0.9, 1.65, 2.53)), (0.55, 1.08, 0.04)),
+        part(b, "door_frame",
+             placed(frame_ring((0.55, 1.08), (0.45, 1.0), -0.01, 0.07),
+                    V((-0.9, 1.6, 2.5)), RIGHT, UP, FORWARD),
              m["white"], levels=0, smooth=False)
     else:
         if "door_block" not in m:
@@ -413,7 +473,8 @@ def house(coll, m, suffix, tier):
          m["slate"], levels=0, smooth=False)
     # The step a riser below the threshold, from the ground and into the
     # plinth.
-    part(b, "step", slab(V((-0.9, 0.11, 2.95)), (0.6, 0.31, 0.3)),
+    part(b, "step", merge(slab(V((-0.9, 0.11, 2.95)), (0.6, 0.31, 0.3)),
+                          slab(V((-0.9, -0.05, 3.4)), (0.65, 0.25, 0.2))),
          m["stone_dark"], levels=0, bevel=0.03, smooth=False)
     for i, x in enumerate((-2.5, 0.6, 2.3)):
         window(b, f"front{i}", V((x, 2.0, 2.5)), FORWARD, (0.8, 0.95), m,

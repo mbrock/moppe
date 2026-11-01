@@ -233,11 +233,24 @@ namespace moppe::game {
     State state () const;
     void restore (const State& state);
 
+    // Rooms the following camera keeps inside of while the subject is in
+    // one (the farmhouses'), in a world of the given period.
+    void set_rooms (std::vector<ChaseCamera::Room> rooms,
+                    float period_x,
+                    float period_z) {
+      m_rooms = std::move (rooms);
+      m_room_period_x = period_x;
+      m_room_period_z = period_z;
+    }
+
     void set_boat_landing (const Vec3& at) {
       m_boat_landing = at;
     }
 
   private:
+    std::vector<ChaseCamera::Room> m_rooms;
+    float m_room_period_x = 0.0f;
+    float m_room_period_z = 0.0f;
     GameLogicState m_logic;
     mov::Vehicle m_bike;
     mov::Glider m_glider;

@@ -3543,7 +3543,9 @@
       (lattice :vec4)              ; 1/step x, 1/step z, height scale, samples
       (habitat :vec4)              ; window reach, density, 0, focal pixels
       (interaction :vec4)          ; the mover's position, footprint radius
-      (stand-field :vec4)))        ; have stand, 1 / period x, z, 0
+      (stand-field :vec4)          ; have stand, 1 / period x, z, 0
+      (bare :vec4)                 ; a floor's middle x, z, its length's x, z
+      (bare-size :vec4)))          ; its half length, half width, 0, 0
   (defparameter *grass-class*
     '((class :vec4))))             ; first record, 0, 0, 0
 
@@ -3859,8 +3861,17 @@
              ;; Nothing roots on a road's bared batters, or its tread.
              (faces (road-faces road-segments road-index centre height
                                 near-road))
+             ;; Nor under a house's floor.
+             (bare-d (- centre (swizzle bare :xy)))
+             (bare-u (+ (* (swizzle bare-d :x) (swizzle bare :z))
+                        (* (swizzle bare-d :y) (swizzle bare :w))))
+             (bare-v (- (* (swizzle bare-d :y) (swizzle bare :z))
+                        (* (swizzle bare-d :x) (swizzle bare :w))))
+             (indoors (and (< (abs bare-u) (swizzle bare-size :x))
+                           (< (abs bare-v) (swizzle bare-size :y))))
              (clear (* (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
-                       (- 1.0 (swizzle verge :x))))
+                       (- 1.0 (swizzle verge :x))
+                       (if indoors 0.0 1.0)))
              (wanted (* (max (* leaf (blade-resolved pixels)) heads)
                         fade 32.0 clear))
              (identity (cell-identity cell))

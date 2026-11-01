@@ -2549,6 +2549,13 @@ namespace moppe::nhal {
           0.5f * float (m_scene_height) * std::abs (params.proj.at (1, 1));
         grass.habitat = { reach, m_grass_params.density, t.tex_scale, focal };
         grass.stand_field = stand_field ();
+        grass.bare = { m_grass_params.bare_centre[0],
+                       m_grass_params.bare_centre[2],
+                       m_grass_params.bare_along[0],
+                       m_grass_params.bare_along[2] };
+        grass.bare_size = {
+          m_grass_params.bare_half_x, m_grass_params.bare_half_z, 0.0f, 0.0f
+        };
         m_grass_block = grass;
 
         // The canopy's reach follows the projected height of the whole

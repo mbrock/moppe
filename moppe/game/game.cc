@@ -874,6 +874,23 @@ namespace moppe {
           place_ground (),
           static_cast<std::uint32_t> (recipe ().seed ().value) ^ 0x91ace5u);
         logic ().m_beacons.assign (m_places.sanctuaries.size (), Beacon {});
+        // The farmhouses can be walked into; the camera keeps inside.
+        std::vector<ChaseCamera::Room> rooms;
+        for (const Farm& farm : m_places.farms)
+          for (const Building& b : farm.buildings)
+            if (!farm.ruined && b.kind == Building::Kind::house) {
+              Vec3 f = b.forward;
+              f[1] = 0.0f;
+              f = normalized (f);
+              rooms.push_back ({ .centre = b.at,
+                                 .x = Vec3 (f[2], 0.0f, -f[0]),
+                                 .half_x = 3.38f,
+                                 .half_z = 2.38f,
+                                 .floor = 0.6f,
+                                 .ceiling = 2.96f });
+            }
+        session ().set_rooms (
+          std::move (rooms), m_places.period_x, m_places.period_z);
         // MOPPE_BEACONS=lit: every beacon already burning, for captures.
         if (const char* lit = moppe::environment ("MOPPE_BEACONS");
             lit && std::string_view (lit) == "lit")
@@ -2932,6 +2949,19 @@ namespace moppe {
           const Sanctuary& s = m_places.sanctuaries.front ();
           // Inside the wall by its gap, on the level top, facing the fire.
           stand = { s.centre + s.gate * (s.wall_radius - 1.8f), s.centre };
+        } else if (script == "house" || script == "indoors") {
+          // Before the farmhouse's open door, or inside by the back wall
+          // looking out through it.
+          for (const Farm& farm : m_places.farms)
+            for (const Building& b : farm.buildings)
+              if (!stand && !farm.ruined && b.kind == Building::Kind::house) {
+                const Vec3 left (b.forward[2], 0.0f, -b.forward[0]);
+                const Vec3 door = b.at + b.forward * 2.5f - left * 0.9f;
+                stand =
+                  script == "house"
+                    ? std::pair (door + b.forward * 6.0f, door)
+                    : std::pair (b.at - b.forward * 1.6f + left * 0.6f, door);
+              }
         } else if (script == "farm" && !m_places.farms.empty () &&
                    !m_places.farms.front ().buildings.empty ()) {
           const Building& b = m_places.farms.front ().buildings.front ();
@@ -2943,6 +2973,12 @@ namespace moppe {
           return;
         Vec3 at = stand->first;
         at[1] = ground_height (at) + 0.1f;
+        if (script == "indoors")
+          for (const Farm& farm : m_places.farms)
+            for (const Building& b : farm.buildings)
+              if (b.kind == Building::Kind::house &&
+                  length (b.at - stand->first) < 4.0f)
+                at[1] = b.at[1] + 0.7f;
         Vec3 facing = stand->second - at;
         facing[1] = 0.0f;
         session ().walker ().spawn (moppe::position (at), normalized (facing));
@@ -4525,8 +4561,18 @@ namespace moppe {
           return t >= at && t < at + 0.1f + dt ? 1.0f : 0.0f;
         };
         // At a place (stage_place_script), the walker stands and looks.
-        if (script == "landing" || script == "sanctuary" || script == "farm")
+        if (script == "landing" || script == "sanctuary" || script == "farm" ||
+            script == "indoors")
           return input;
+        // Before the farmhouse's door: in through it, a few steps into the
+        // room, and a look round.
+        if (script == "house") {
+          if (t > 1.0f && t < 5.6f)
+            input.drive = 0.6f;
+          if (t > 6.5f && t < 9.5f)
+            input.look_yaw = 1.2f * dt;
+          return input;
+        }
         if (script == "camp")
           return camp_script (dt);
         if (script == "fish") {
@@ -5362,13 +5408,40 @@ namespace moppe {
               break;
             }
           }
-          r.draw_undergrowth (
-            { .time = frame.lighting.time,
-              .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
-              .reach = 64.0f,
-              .density = m_graphics.grass_cover_boost,
-              .interaction_position = frame.hud.subject_position,
-              .interaction_radius = interaction_radius });
+          render::UndergrowthParams undergrowth {
+            .time = frame.lighting.time,
+            .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
+            .reach = 64.0f,
+            .density = m_graphics.grass_cover_boost,
+            .interaction_position = frame.hud.subject_position,
+            .interaction_radius = interaction_radius
+          };
+          // No grass under the floor of the farmhouse nearest the camera,
+          // which can be walked into: out to its plinth's edge.
+          const Vec3 eye = frame.camera.position;
+          float nearest = 150.0f;
+          for (const Farm& farm : m_places.farms)
+            for (const Building& b : farm.buildings) {
+              if (farm.ruined || b.kind != Building::Kind::house)
+                continue;
+              Vec3 at = b.at;
+              at[0] += m_places.period_x *
+                       std::round ((eye[0] - at[0]) / m_places.period_x);
+              at[2] += m_places.period_z *
+                       std::round ((eye[2] - at[2]) / m_places.period_z);
+              const float d = std::hypot (at[0] - eye[0], at[2] - eye[2]);
+              if (d >= nearest)
+                continue;
+              nearest = d;
+              Vec3 f = b.forward;
+              f[1] = 0.0f;
+              f = normalized (f);
+              undergrowth.bare_centre = at;
+              undergrowth.bare_along = Vec3 (f[2], 0.0f, -f[0]);
+              undergrowth.bare_half_x = 3.75f;
+              undergrowth.bare_half_z = 2.75f;
+            }
+          r.draw_undergrowth (undergrowth);
         }
 
         // Opaque individuals depth-test normally. The distant stand quotient

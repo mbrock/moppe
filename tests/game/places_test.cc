@@ -1,8 +1,12 @@
 #include <moppe/game/farm_model.hh>
+#include <moppe/game/game_session.hh>
 #include <moppe/game/places.hh>
+#include <moppe/map/surface.hh>
 
+#include <tests/recording_renderer.hh>
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace moppe;
@@ -157,4 +161,58 @@ MOPPE_TEST (a_beacon_catches_burns_and_dies_down) {
   MOPPE_CHECK_NEAR (beacon_burn (0.0, -100.0, 20.0), 1.0f, 1e-5f);
   MOPPE_CHECK (beacon_burn (0.0, 20.0, 20.5) > 0.5f);
   MOPPE_CHECK (beacon_burn (0.0, 20.0, 30.0) == 0.0f);
+}
+
+// A farmhouse can be walked into: straight at its open door the hiker
+// climbs the step onto the floor and into the room, while straight at
+// the wall beside it they stay outside.
+MOPPE_TEST (the_farmhouse_is_walked_into_through_its_door) {
+  map::SurfaceGeometry surface (terrain::TerrainDomain (
+    129, 129, spatial_extent_in_metres (Vec3 (128, 0, 128))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (128, 20, 128));
+  world.resolution = 129;
+  world.water_level = 0 * u::m;
+  // Its front faces +x, so the model's x (its left) runs along -z.
+  const Vec3 at (64, 10, 64), forward (1, 0, 0), left (0, 0, -1);
+  PlacesPlan plan;
+  plan.farms.push_back (
+    { .buildings = {
+        { .kind = Building::Kind::house, .at = at, .forward = forward } } });
+  const PlaceGround ground {
+    .ground = [] (float, float) { return 10.0f; },
+    .water = [] (float, float) { return 0.0f; },
+    .sea = [] (float, float) { return false; },
+    .current = [] (float, float) { return Vec3 (); },
+  };
+  test::RecordingRenderer renderer;
+  PlacesLandscape landscape;
+  landscape.rebuild (renderer, plan, ground);
+  mov::TrunkField trunks;
+  trunks.set_trunks (landscape.colliders (), 0.0f, 0.0f);
+  trunks.focus (at);
+  const auto walk_at = [&] (float aside) {
+    GameSession session (world, surface);
+    session.start_on_foot ();
+    const Vec3 from = at + forward * 9.0f + left * aside;
+    session.walker ().spawn (position (from), -forward);
+    for (int i = 0; i < 60 * 6; ++i)
+      advance_game_session (world,
+                            surface,
+                            session,
+                            InputFrame { .drive = 0.5f },
+                            seconds (1.0f / 60.0f),
+                            &trunks);
+    return session.walker ().position ();
+  };
+  // The doorway is at x -0.9 of the model, its left.
+  const Vec3 in = walk_at (-0.9f);
+  MOPPE_CHECK (dot (in - at, forward) < 1.0f);
+  MOPPE_CHECK_NEAR (in[1], at[1] + 0.64f, 0.1f);
+  const Vec3 out = walk_at (1.6f);
+  MOPPE_CHECK (dot (out - at, forward) > 2.5f);
 }

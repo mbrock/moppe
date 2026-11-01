@@ -305,6 +305,42 @@ namespace moppe {
       m_view = moppe::position (view);
     }
 
+    void ChaseCamera::confine (const Room& room) {
+      const Vec3 z = cross (room.x, Vec3 (0, 1, 0));
+      const auto local = [&] (const Vec3& p) {
+        const Vec3 d = p - room.centre;
+        return Vec3 (dot (d, room.x), d[1], dot (d, z));
+      };
+      const Vec3 pivot = local (position_value (m_pivot));
+      if (std::abs (pivot[0]) > room.half_x ||
+          std::abs (pivot[2]) > room.half_z || pivot[1] < room.floor - 0.5f ||
+          pivot[1] > room.ceiling)
+        return;
+      // Along the boom from the subject to the first wall, a hand's
+      // breadth short of it.
+      const Vec3 view = local (position_value (m_view));
+      const Vec3 boom = view - pivot;
+      constexpr float margin = 0.15f;
+      float t = 1.0f;
+      const auto stop = [&] (float from, float along, float bound) {
+        if (along > 1e-5f && from + along > bound)
+          t = std::min (t, std::max (0.0f, (bound - from) / along));
+        if (along < -1e-5f && from + along < -bound)
+          t = std::min (t, std::max (0.0f, (-bound - from) / along));
+      };
+      stop (pivot[0], boom[0], room.half_x - margin);
+      stop (pivot[2], boom[2], room.half_z - margin);
+      if (boom[1] > 1e-5f && view[1] > room.ceiling - margin)
+        t = std::min (
+          t, std::max (0.0f, (room.ceiling - margin - pivot[1]) / boom[1]));
+      if (t >= 1.0f)
+        return;
+      const Vec3 in = pivot + boom * t;
+      m_view = moppe::position (room.centre + room.x * in[0] +
+                                Vec3 (0, in[1], 0) + z * in[2]);
+      m_boom = length (boom) * t * u::m;
+    }
+
     void ChaseCamera::keep_above (const map::SurfaceGeometry& surface) {
       Vec3& target = position_value (m_target);
       floor_target (surface, target, velocity_value (m_target_velocity));

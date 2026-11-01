@@ -131,6 +131,23 @@ namespace moppe {
         m_snap = true;
       }
 
+      // A room the camera stays inside while the subject is in it: an
+      // upright box about `centre` (on its floor), `half_x` along `x` (a
+      // horizontal unit vector) and `half_z` across, from `floor` to
+      // `ceiling` metres over the centre.
+      struct Room {
+        Vec3 centre {};
+        Vec3 x { 1, 0, 0 };
+        float half_x = 0.0f;
+        float half_z = 0.0f;
+        float floor = 0.0f;
+        float ceiling = 0.0f;
+      };
+
+      // Brings the camera in from beyond the room's walls when what it
+      // swings about is inside, so a wall never stands between them.
+      void confine (const Room& room);
+
       Mat4 view_matrix () const {
         return Mat4::look_at (
           position_value (m_view), position_value (m_target), Vec3 (0, 1, 0));

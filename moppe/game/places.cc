@@ -1035,6 +1035,50 @@ namespace moppe::game {
         if (ruined)
           tall = 0.4f;
         const Mat4 frame = building_frame (b);
+        if (b.kind == Building::Kind::house && !ruined) {
+          // The house can be walked into (tools/figure/farm.py): its walls
+          // are rails lying along their lines, the doorway open between
+          // x -1.35 and -0.45 at the front, and its floor, the step before
+          // the door, and the threshold are capsules lying under the
+          // boards, their tops where the feet go.
+          const auto lying = [&] (Vec3 a, Vec3 b, float radius) {
+            a = frame.transform_point (a);
+            b = frame.transform_point (b);
+            mov::Trunk t;
+            t.root = a;
+            t.height = length (b - a);
+            t.axis = (b - a) / std::max (t.height, 1e-3f);
+            t.radius = radius;
+            colliders.push_back (t);
+          };
+          constexpr float wall = 0.1f;
+          for (float y = 0.85f; y < 3.0f; y += 0.35f) {
+            lying (Vec3 (-3.44f, y, -2.44f), Vec3 (3.44f, y, -2.44f), wall);
+            for (const float x : { -3.44f, 3.44f })
+              lying (Vec3 (x, y, -2.44f), Vec3 (x, y, 2.44f), wall);
+            lying (
+              Vec3 (-3.44f, y, 2.44f), Vec3 (-1.35f - wall, y, 2.44f), wall);
+            lying (
+              Vec3 (-0.45f + wall, y, 2.44f), Vec3 (3.44f, y, 2.44f), wall);
+          }
+          constexpr float deck = 0.3f;
+          for (float z = -2.1f; z <= 2.15f; z += 0.4f)
+            lying (Vec3 (-3.1f, 0.64f - deck, z),
+                   Vec3 (3.1f, 0.64f - deck, z),
+                   deck);
+          lying (Vec3 (-1.3f, 0.64f - deck, 2.6f),
+                 Vec3 (-0.5f, 0.64f - deck, 2.6f),
+                 deck);
+          lying (Vec3 (-1.4f, 0.42f - deck, 3.0f),
+                 Vec3 (-0.4f, 0.42f - deck, 3.0f),
+                 deck);
+          lying (Vec3 (-1.45f, 0.2f - deck, 3.45f),
+                 Vec3 (-0.35f, 0.2f - deck, 3.45f),
+                 deck);
+          // The chimney stack standing in the room.
+          lying (Vec3 (0.6f, 0.6f, -0.3f), Vec3 (0.6f, 3.0f, -0.3f), 0.45f);
+          return;
+        }
         constexpr float radius = 0.55f;
         const auto post = [&] (float x, float z) {
           mov::Trunk wall;

@@ -282,6 +282,13 @@ namespace moppe {
       float density = 1.0f; // art-directed scale over the field's own answer
       Vec3 interaction_position {};
       float interaction_radius = 0.0f;
+      // A floor the grass keeps out from under (a house that can be walked
+      // into): its middle, the horizontal unit vector along its length,
+      // and its half length and half width; none while both are zero.
+      Vec3 bare_centre {};
+      Vec3 bare_along { 1, 0, 0 };
+      float bare_half_x = 0.0f;
+      float bare_half_z = 0.0f;
     };
 
     // The renderer gives a pine the broadleaf's clump topology, shaped flat

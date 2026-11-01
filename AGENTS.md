@@ -640,9 +640,16 @@
     5 cm, 10 cm, the massing -- still span a pixel, through
     `Renderer::scene_focal_pixels`; no two of its faces share a plane);
     with a landing
-    stage on the lake to fish from. By each place where two trees take a
+    stage on the lake to fish from. The farmhouse can be walked into:
+    its door stands open over a step, and inside, under a ceiling, are a
+    board floor, a table and bench, a bed, and the chimney stack; the
+    following camera keeps inside its walls (`ChaseCamera::confine`), and
+    no grass grows under the floor of the house nearest the camera
+    (`UndergrowthParams::bare_*`). `MOPPE_WALK=house` walks in through
+    the door, `MOPPE_WALK=indoors` stands inside. By each place where
+    two trees take a
     hammock, an old fire ring takes the camp's fire. `MOPPE_WALK=
-    landing|sanctuary|farm` starts on foot there, and `MOPPE_BEACONS=lit`
+    landing|sanctuary|farm|house|indoors` starts on foot there, and `MOPPE_BEACONS=lit`
     starts every beacon burning, for captures; `moppe: places:` lines
     say where everything stands.
   - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few
