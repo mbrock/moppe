@@ -99,8 +99,13 @@ namespace moppe {
       // in the basket.
       const char* mushroom_in_reach = nullptr;
       bool mushroom_edible = true;
-      // How many mushrooms the basket holds.
+      // How many mushrooms the basket holds, and eggs among them.
       int basket_total = 0;
+      int basket_eggs = 0;
+      // On foot by a nest box with an egg in it, and whether the basket
+      // has room for it.
+      bool egg_in_reach = false;
+      bool basket_takes_egg = true;
       // The last mushroom reached for and how long ago; a refused one was
       // poisonous and stayed where it grew.
       const char* reached_name = nullptr;
@@ -119,8 +124,9 @@ namespace moppe {
       // On foot by a fire: what there is to do about supper.
       enum class Cook { none, fry, frying, eat, eat_burnt };
       Cook cook = Cook::none;
-      // Whether what goes in the pan, or is in it, is a fish.
+      // Whether what goes in the pan, or is in it, is a fish, or eggs.
       bool cook_fish = false;
+      bool cook_eggs = false;
       // On foot at the water, or at the helm of a drifting boat
       // (game/fishing.hh): what there is to do
       // about the line, how many fish are in the creel, and the last one

@@ -9,6 +9,9 @@
 // down and graze, and walk on to fresh grass; someone coming close makes
 // them look up and move off, the wild ones further and sooner. Nothing
 // here can hurt them: what comes upon one pushes it aside, and it goes.
+// The farmsteads' barns keep stock indoors too: horses and cows tied in
+// their stalls with their heads to the manger, and Linderöd pigs loose in
+// their pen; they eat, look round at whoever comes in, and stay put.
 
 #include <moppe/gfx/math.hh>
 
@@ -24,9 +27,10 @@ namespace moppe::game {
     sheep,
     reindeer,
     moose,
-    roe_deer
+    roe_deer,
+    pig
   };
-  constexpr int species_count = 6;
+  constexpr int species_count = 7;
 
   // What a species is like to meet.
   struct SpeciesTraits {
@@ -110,6 +114,27 @@ namespace moppe::game {
     float look_goal = 0.0f;
     // How much it has run lately, 0..1, which keeps it alert.
     float fright = 0.0f;
+    // Kept in a barn (see Stall): where, and whether it is tied there or
+    // goes about its pen.
+    bool indoors = false;
+    bool tied = false;
+    Vec3 pen {};
+    float pen_heading = 0.0f;
+    float pen_along = 0.0f;
+    float pen_across = 0.0f;
+  };
+
+  // Stock kept in a barn: `count` beasts tied at `at` facing `heading`
+  // (radians about the vertical from +z toward +x) -- their muzzles at
+  // the manger -- or, with half extents along and across that heading, as
+  // many loose in a pen whose middle is `at`. On the barn's floor.
+  struct Stall {
+    Species species = Species::cow;
+    Vec3 at {};
+    float heading = 0.0f;
+    float half_along = 0.0f;
+    float half_across = 0.0f;
+    int count = 1;
   };
 
   struct Herd {
@@ -140,7 +165,8 @@ namespace moppe::game {
                                          const Vec3& trailhead,
                                          float world_x,
                                          float world_z,
-                                         std::uint32_t seed);
+                                         std::uint32_t seed,
+                                         std::span<const Stall> stalls = {});
 
   // The animals going about their day.
   class Animals {
@@ -168,6 +194,11 @@ namespace moppe::game {
                  const AnimalGround& ground,
                  const Vec3& mates);
     void startle (Animal& animal, const Vec3& from, const AnimalGround& ground);
+    void keep_indoors (Animal& animal,
+                       const AnimalGround& ground,
+                       const Presence* nearest,
+                       float nearest_distance,
+                       float dt);
     float rand (std::uint32_t& state) const;
 
     AnimalPlan m_plan;

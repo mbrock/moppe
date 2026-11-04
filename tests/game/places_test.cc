@@ -216,3 +216,72 @@ MOPPE_TEST (the_farmhouse_is_walked_into_through_its_door) {
   const Vec3 out = walk_at (1.6f);
   MOPPE_CHECK (dot (out - at, forward) > 2.5f);
 }
+
+// The barn is walked into up the ramp to its open doors and onto its
+// floor, where the animals stand too (floor_at); its walls keep the
+// hiker out beside the doors.
+MOPPE_TEST (the_barn_is_walked_into_up_its_ramp) {
+  map::SurfaceGeometry surface (terrain::TerrainDomain (
+    129, 129, spatial_extent_in_metres (Vec3 (128, 0, 128))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (128, 20, 128));
+  world.resolution = 129;
+  world.water_level = 0 * u::m;
+  const Vec3 at (64, 10, 64), forward (1, 0, 0), left (0, 0, -1);
+  PlacesPlan plan;
+  plan.farms.push_back (
+    { .buildings = {
+        { .kind = Building::Kind::barn, .at = at, .forward = forward } } });
+  const PlaceGround ground {
+    .ground = [] (float, float) { return 10.0f; },
+    .water = [] (float, float) { return 0.0f; },
+    .sea = [] (float, float) { return false; },
+    .current = [] (float, float) { return Vec3 (); },
+  };
+  // The floor inside, and the ramp falling from the sill to the ground.
+  const float floor = at[1] + farm_model::barn_floor[1];
+  const Vec3 middle = at + forward * -1.0f;
+  MOPPE_CHECK_NEAR (*floor_at (plan, middle[0], middle[2]), floor, 1e-4f);
+  float last = floor + 0.01f;
+  for (float d = barn_front + 0.05f; d < barn_front + barn_ramp_length;
+       d += 0.3f) {
+    const Vec3 p = at + forward * d;
+    const std::optional<float> h = floor_at (plan, p[0], p[2]);
+    MOPPE_CHECK (h && *h < last);
+    last = h.value_or (last);
+  }
+  // Its foot is set into the ground.
+  MOPPE_CHECK (last < at[1] + 0.05f);
+  const Vec3 yard = at + forward * (barn_front + barn_ramp_length + 1.0f);
+  MOPPE_CHECK (!floor_at (plan, yard[0], yard[2]));
+
+  test::RecordingRenderer renderer;
+  PlacesLandscape landscape;
+  landscape.rebuild (renderer, plan, ground);
+  mov::TrunkField trunks;
+  trunks.set_trunks (landscape.colliders (), 0.0f, 0.0f);
+  trunks.focus (at);
+  const auto walk_at = [&] (float aside) {
+    GameSession session (world, surface);
+    session.start_on_foot ();
+    const Vec3 from = at + forward * 12.0f + left * aside;
+    session.walker ().spawn (position (from), -forward);
+    for (int i = 0; i < 60 * 8; ++i)
+      advance_game_session (world,
+                            surface,
+                            session,
+                            InputFrame { .drive = 0.5f },
+                            seconds (1.0f / 60.0f),
+                            &trunks);
+    return session.walker ().position ();
+  };
+  const Vec3 in = walk_at (0.3f);
+  MOPPE_CHECK (dot (in - at, forward) < barn_front - 0.5f);
+  MOPPE_CHECK_NEAR (in[1], floor, 0.1f);
+  const Vec3 out = walk_at (barn_door_half + 2.0f);
+  MOPPE_CHECK (dot (out - at, forward) > barn_front);
+}

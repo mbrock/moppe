@@ -127,6 +127,9 @@ namespace moppe::game {
     // One for each of the world's sanctuaries.
     std::vector<Beacon> m_beacons;
     Fishing m_fishing;
+    // The eggs in each barn's nest boxes, four boxes a barn in the order
+    // of the places' farms.
+    std::vector<NestState> m_nests;
     // How each machine is getting on (game/rescue.hh), indexed by
     // Machine, and the rope the walker hauls one by.
     std::array<Trouble, machine_count> m_trouble {};

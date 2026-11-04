@@ -39,13 +39,15 @@ models:
 	    -- $(basename $(FIGURE_PREVIEW))-$$m.png || exit 1; \
 	done
 
-# Re-export the animals (tools/figure/animals.py) and render their
+# Re-export the animals (tools/figure/animals.py, and the poultry from
+# tools/figure/hens.py) and render their
 # turnarounds beside FIGURE_PREVIEW; MODELS_REBUILD=1 first regenerates
 # the .blend files from the script.
 animals:
 	if [ -n "$(MODELS_REBUILD)" ]; then \
-	  $(BLENDER) -b --factory-startup --python tools/figure/animals.py; fi
-	for m in horse cow sheep reindeer moose roe_deer; do \
+	  $(BLENDER) -b --factory-startup --python tools/figure/animals.py && \
+	  $(BLENDER) -b --factory-startup --python tools/figure/hens.py; fi
+	for m in horse cow sheep reindeer moose roe_deer pig hen rooster chick; do \
 	  $(BLENDER) -b models/$$m.blend --python tools/figure/export_model.py \
 	    -- $${m}_model && \
 	  $(BLENDER) -b models/$$m.blend --python tools/figure/preview_animal.py \

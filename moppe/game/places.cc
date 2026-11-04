@@ -371,6 +371,28 @@ namespace moppe::game {
         return best;
       }
 
+      // Raises a house or a barn until its floor stands clear of the
+      // highest ground under its footprint, its plinth or footing reaching
+      // down to the rest.
+      Vec3 raised (const PlaceGround& g,
+                   Vec3 at,
+                   const Vec3& forward,
+                   Building::Kind kind) {
+        const bool barn = kind == Building::Kind::barn;
+        const float hx = barn ? 6.1f : 3.7f, hz = barn ? 4.1f : 2.7f;
+        // How far under the floor the highest ground may come.
+        const float under = barn ? 0.27f : 0.5f;
+        const Vec3 f = level (forward), l = left_of (f);
+        float high = static_cast<float> (at[1]);
+        for (int i = -2; i <= 2; ++i)
+          for (int j = -2; j <= 2; ++j) {
+            const Vec3 p = at + l * (hx * i / 2.0f) + f * (hz * j / 2.0f);
+            high = std::max (high, g.ground (p[0], p[2]));
+          }
+        at[1] = std::max (static_cast<float> (at[1]), high - under);
+        return at;
+      }
+
       // The mill stands on the bank of the stream leaving the lake, its
       // wheel over the water a little below the outlet; the house and
       // the barn on level ground near by, facing the road.
@@ -452,14 +474,20 @@ namespace moppe::game {
         };
         if (const std::optional<Vec3> house =
               building_site (g, outlet, 20.0f, 70.0f, 5.0f, 0.9f, taken)) {
+          const Vec3 facing = facing_road (*house);
           farm.buildings.push_back (
-            { Building::Kind::house, *house, facing_road (*house) });
+            { Building::Kind::house,
+              raised (g, *house, facing, Building::Kind::house),
+              facing });
           taken.push_back (*house);
           if (const std::optional<Vec3> barn =
-                building_site (g, *house, 13.0f, 30.0f, 5.0f, 1.0f, taken)) {
-            // The barn's end to the house.
+                building_site (g, *house, 16.0f, 32.0f, 7.0f, 0.9f, taken)) {
+            // The barn's doors to the house across the yard.
+            const Vec3 to_house = level (*house - *barn);
             farm.buildings.push_back (
-              { Building::Kind::barn, *barn, level (*house - *barn) });
+              { Building::Kind::barn,
+                raised (g, *barn, to_house, Building::Kind::barn),
+                to_house });
           }
         }
         if (farm.buildings.empty ())
@@ -511,6 +539,144 @@ namespace moppe::game {
         return farm;
       }
 
+      // Farmsteads along the roads still in use: of stations every 80 m
+      // along them, the levellest, driest, most open ground a little off
+      // the road on either side, taken best first while it keeps well
+      // apart from every other place -- and one, first of all, a short
+      // walk from the trailhead.
+      void plan_homesteads (PlacesPlan& plan,
+                            const terrain::RoadNetwork& network,
+                            const PlaceGround& g) {
+        std::vector<Vec3> others;
+        std::optional<Vec3> trailhead;
+        for (const terrain::RoadPlace& place : network.places) {
+          others.push_back (on_ground (g, place.x_m, place.z_m));
+          if (place.kind == terrain::RoadPlace::Kind::Trailhead)
+            trailhead = others.back ();
+        }
+        for (const Farm& farm : plan.farms)
+          for (const Building& b : farm.buildings)
+            others.push_back (b.at);
+        const auto wrap = [&] (float v, float period) {
+          return period > 0.0f ? v - period * std::floor (v / period) : v;
+        };
+        const auto apart = [&] (const Vec3& a, const Vec3& b) {
+          float dx = a[0] - b[0], dz = a[2] - b[2];
+          if (g.period_x > 0.0f)
+            dx -= g.period_x * std::round (dx / g.period_x);
+          if (g.period_z > 0.0f)
+            dz -= g.period_z * std::round (dz / g.period_z);
+          return std::hypot (dx, dz);
+        };
+        struct Candidate {
+          Vec3 at;
+          float score;
+        };
+        std::vector<Candidate> candidates;
+        // Not up on the fells: below most of the way from the sea to the
+        // highest sanctuary.
+        float ceiling = 1e30f;
+        float summit = -1e30f;
+        for (const terrain::RoadPlace& place : network.places)
+          if (place.kind == terrain::RoadPlace::Kind::Sanctuary)
+            summit = std::max (summit, place.height_m);
+        if (summit > g.sea_level)
+          ceiling = g.sea_level + 0.72f * (summit - g.sea_level);
+        const auto consider = [&] (float x, float z, float penalty) {
+          const Vec3 at =
+            on_ground (g, wrap (x, g.period_x), wrap (z, g.period_z));
+          if (at[1] > ceiling || depth_at (g, at[0], at[2]) > -1.0f)
+            return;
+          const float rough = relief (g, at, 9.0f);
+          if (rough > 1.8f)
+            return;
+          const float trees = g.forest ? g.forest (at[0], at[2]) : 0.0f;
+          candidates.push_back ({ at, rough + 1.5f * trees + penalty });
+        };
+        // Beside the cart roads, old and new, and the footpaths in use.
+        for (const terrain::Road& road : network.roads) {
+          if ((road.kind != terrain::Road::Kind::Road &&
+               road.abandoned_years_ago > 0.0f) ||
+              road.points.size () < 2)
+            continue;
+          const float penalty =
+            (road.kind == terrain::Road::Kind::Road ? 0.0f : 0.4f) +
+            (road.abandoned_years_ago > 0.0f ? 0.5f : 0.0f);
+          float run = 30.0f;
+          for (std::size_t i = 1; i < road.points.size (); ++i) {
+            const Vec3 a (road.points[i - 1].x_m, 0.0f, road.points[i - 1].z_m);
+            const Vec3 b (road.points[i].x_m, 0.0f, road.points[i].z_m);
+            const float step = flat_distance (a, b);
+            run += step;
+            if (run < 60.0f || step < 1e-3f)
+              continue;
+            run = 0.0f;
+            const Vec3 across = left_of (level (b - a));
+            for (const float off : { -50.0f, -28.0f, 28.0f, 50.0f })
+              consider (
+                b[0] + across[0] * off, b[2] + across[2] * off, penalty);
+          }
+        }
+        // And anywhere else open and level enough to farm.
+        if (g.period_x > 0.0f && g.period_z > 0.0f)
+          for (float z = 80.0f; z < g.period_z; z += 160.0f)
+            for (float x = 80.0f; x < g.period_x; x += 160.0f)
+              consider (x, z, 1.0f);
+        std::ranges::sort (candidates, {}, &Candidate::score);
+        // The one by the trailhead goes first.
+        if (trailhead)
+          std::ranges::stable_partition (candidates, [&] (const Candidate& c) {
+            const float d = apart (c.at, *trailhead);
+            return d > 160.0f && d < 480.0f;
+          });
+        const float area =
+          std::max (g.period_x, 1000.0f) * std::max (g.period_z, 1000.0f);
+        const std::size_t most = std::clamp<std::size_t> (
+          static_cast<std::size_t> (area / 1.8e6f), 2, 24);
+        std::size_t made = 0;
+        for (const Candidate& c : candidates) {
+          if (made >= most)
+            break;
+          bool clear = true;
+          for (const Vec3& other : others)
+            clear = clear && apart (other, c.at) > 380.0f;
+          if (trailhead)
+            clear = clear && apart (c.at, *trailhead) > 160.0f;
+          if (!clear)
+            continue;
+          const std::vector<Vec3> none;
+          const std::optional<Vec3> house =
+            building_site (g, c.at, 0.0f, 14.0f, 5.0f, 0.8f, none);
+          if (!house)
+            continue;
+          const std::optional<Vec3> barn =
+            building_site (g, *house, 17.0f, 30.0f, 7.0f, 0.8f, { *house });
+          if (!barn)
+            continue;
+          Farm farm;
+          farm.homestead = true;
+          farm.place = network.places.size ();
+          const terrain::RoadSample road = road_near (g, *house);
+          Vec3 facing = level (c.at - *house);
+          if (road.found)
+            facing =
+              level (left_of (Vec3 (road.direction_x, 0.0f, road.direction_z)) *
+                     (road.across > 0.0f ? -1.0f : 1.0f));
+          farm.buildings.push_back (
+            { Building::Kind::house,
+              raised (g, *house, facing, Building::Kind::house),
+              facing });
+          const Vec3 to_house = level (*house - *barn);
+          farm.buildings.push_back (
+            { Building::Kind::barn,
+              raised (g, *barn, to_house, Building::Kind::barn),
+              to_house });
+          plan.farms.push_back (std::move (farm));
+          others.push_back (*house);
+          ++made;
+        }
+      }
+
       // Kept clear of trees and loose rock: round each building, the
       // sanctuary's enclosure, and the jetty's root.
       void clear_round (PlacesPlan& plan) {
@@ -520,8 +686,11 @@ namespace moppe::game {
           plan.clearings.push_back ({ s.centre, s.wall_radius + 2.5f });
         for (const Farm& farm : plan.farms)
           for (const Building& b : farm.buildings)
-            plan.clearings.push_back (
-              { b.at, b.kind == Building::Kind::mill ? 7.5f : 9.5f });
+            plan.clearings.push_back ({ b.at,
+                                        b.kind == Building::Kind::mill ? 7.5f
+                                        : b.kind == Building::Kind::house
+                                          ? 9.5f
+                                          : 11.5f });
         for (const Jetty& stage : plan.stages)
           plan.clearings.push_back ({ stage.root, 4.0f });
       }
@@ -597,6 +766,14 @@ namespace moppe::game {
                       : b.kind == Building::Kind::house ? "house"
                                                         : "barn")
                   << " at " << b.at[0] << ' ' << b.at[1] << ' ' << b.at[2]
+                  << '\n';
+    plan_homesteads (plan, network, ground);
+    for (const Farm& farm : plan.farms)
+      if (farm.homestead)
+        std::cerr << "moppe: places: a farmstead at " << farm.buildings[0].at[0]
+                  << ' ' << farm.buildings[0].at[1] << ' '
+                  << farm.buildings[0].at[2] << ", its barn at "
+                  << farm.buildings[1].at[0] << ' ' << farm.buildings[1].at[2]
                   << '\n';
     clear_round (plan);
     std::cerr << "moppe: places: " << (plan.landing ? "a jetty, " : "")
@@ -699,6 +876,48 @@ namespace moppe::game {
 }
 
 namespace moppe::game {
+  Mat4 building_frame (const Building& b) {
+    using namespace places_parts;
+    const Vec3 forward = level (b.forward);
+    return Mat4::translation (b.at) *
+           Mat4::basis (left_of (forward), up, forward);
+  }
+
+  std::optional<float> floor_at (const PlacesPlan& plan, float x, float z) {
+    using namespace places_parts;
+    for (const Farm& farm : plan.farms) {
+      if (farm.ruined)
+        continue;
+      for (const Building& b : farm.buildings) {
+        if (b.kind == Building::Kind::mill)
+          continue;
+        float dx = x - b.at[0], dz = z - b.at[2];
+        if (plan.period_x > 0.0f)
+          dx -= plan.period_x * std::round (dx / plan.period_x);
+        if (plan.period_z > 0.0f)
+          dz -= plan.period_z * std::round (dz / plan.period_z);
+        if (dx * dx + dz * dz > 64.0f)
+          continue;
+        const Vec3 f = level (b.forward), l = left_of (f);
+        const float lx = dx * l[0] + dz * l[2];
+        const float lz = dx * f[0] + dz * f[2];
+        if (b.kind == Building::Kind::house) {
+          if (std::abs (lx) < 3.38f && std::abs (lz) < 2.38f)
+            return b.at[1] + 0.64f;
+          continue;
+        }
+        const float floor = farm_model::barn_floor[1];
+        if (std::abs (lx) < barn_inside_half_x && std::abs (lz) < barn_front)
+          return b.at[1] + floor;
+        if (std::abs (lx) < barn_door_half + 0.25f && lz >= barn_front &&
+            lz < barn_front + barn_ramp_length)
+          return b.at[1] + floor - 0.04f -
+                 (floor + 0.08f) * (lz - barn_front) / barn_ramp_length;
+      }
+    }
+    return std::nullopt;
+  }
+
   namespace {
     namespace places_parts {
       // One unit box, centred at `centre`, its axes `x`, `y`, `z` scaled
@@ -1016,16 +1235,107 @@ namespace moppe::game {
         }
       }
 
-      Mat4 building_frame (const Building& b) {
-        const Vec3 forward = level (b.forward);
-        return Mat4::translation (b.at) *
-               Mat4::basis (left_of (forward), up, forward);
+      // The barn (tools/figure/farm.py) is walked into up its ramp and
+      // through its doorway: its walls, the open doors' leaves, the
+      // stalls' partitions and the pen's walls, the posts, the nest
+      // shelf, and the churns and tub are rails and posts; its floor and
+      // its ramp are capsules lying under the boards and the stone, their
+      // tops where the feet go. A barn lived in has a beast in each stall,
+      // which stands in the way like one.
+      void barn_colliders (const Mat4& frame,
+                           bool kept,
+                           std::vector<mov::Trunk>& colliders) {
+        const auto lying = [&] (Vec3 a, Vec3 b, float radius) {
+          a = frame.transform_point (a);
+          b = frame.transform_point (b);
+          mov::Trunk t;
+          t.root = a;
+          t.height = length (b - a);
+          t.axis = (b - a) / std::max (t.height, 1e-3f);
+          t.radius = radius;
+          colliders.push_back (t);
+        };
+        const auto upright = [&] (float x, float z, float top, float radius) {
+          lying (Vec3 (x, 0.0f, z), Vec3 (x, top, z), radius);
+        };
+        const float fl = farm_model::barn_floor[1];
+        const float ix = barn_inside_half_x, iz = barn_inside_half_z;
+        const float door = barn_door_half;
+        constexpr float wall = 0.1f;
+        const float wx = ix + 0.07f, wz = iz + 0.07f;
+        for (float y = fl + 0.3f; y < 3.3f; y += 0.35f) {
+          lying (Vec3 (-wx, y, -wz), Vec3 (wx, y, -wz), wall);
+          for (const float x : { -wx, wx })
+            lying (Vec3 (x, y, -wz), Vec3 (x, y, wz), wall);
+          lying (Vec3 (-wx, y, wz), Vec3 (-door - wall, y, wz), wall);
+          lying (Vec3 (door + wall, y, wz), Vec3 (wx, y, wz), wall);
+          // The open leaves, square to the wall either side.
+          for (const float s : { -1.0f, 1.0f })
+            lying (Vec3 (s * (door + 0.17f), y, barn_front + 0.1f),
+                   Vec3 (s * (door + 0.17f), y, barn_front + 1.75f),
+                   0.06f);
+        }
+        constexpr float deck = 0.3f;
+        for (float z = -iz + 0.25f; z <= barn_front + 0.01f; z += 0.4f) {
+          const float half = z > iz ? door : ix - 0.25f;
+          lying (Vec3 (-half, fl - deck, z), Vec3 (half, fl - deck, z), deck);
+        }
+        // The ramp: a stair of capsules whose tops follow its slope.
+        for (float z = barn_front + 0.2f; z < barn_front + barn_ramp_length;
+             z += 0.3f) {
+          const float top =
+            fl - 0.04f - (fl + 0.08f) * (z - barn_front) / barn_ramp_length;
+          lying (Vec3 (-door - 0.2f, top - deck, z),
+                 Vec3 (door + 0.2f, top - deck, z),
+                 deck);
+        }
+        // The stalls' partitions and the pen's walls (farm.py's
+        // BARN_STALLS and BARN_PEN), and the posts at their fronts.
+        constexpr std::array<std::array<float, 3>, 4> partitions { {
+          { 4.06f, -0.8f, 1.4f },
+          { 2.26f, -1.4f, 1.4f },
+          { 0.91f, -1.4f, 1.2f },
+          { -0.44f, -1.4f, 1.2f },
+        } };
+        for (const auto& [x, front, tall] : partitions) {
+          for (float y = fl + 0.35f; y < fl + tall; y += 0.35f)
+            lying (Vec3 (x, y, -iz), Vec3 (x, y, front), 0.05f);
+          upright (x, front, 3.4f, 0.09f);
+        }
+        for (float y = fl + 0.3f; y < fl + 0.95f; y += 0.3f) {
+          lying (Vec3 (-0.44f, y, -1.2f), Vec3 (-3.4f, y, -1.2f), 0.05f);
+          lying (Vec3 (-3.4f, y, -iz), Vec3 (-3.4f, y, -1.2f), 0.05f);
+        }
+        // The nest shelf, the churns, and the tub.
+        lying (Vec3 (-ix + 0.45f, fl + 0.3f, -3.85f),
+               Vec3 (-ix + 0.45f, fl + 0.3f, -1.6f),
+               0.08f);
+        lying (Vec3 (-ix + 0.45f, fl + 0.75f, -3.85f),
+               Vec3 (-ix + 0.45f, fl + 0.75f, -1.6f),
+               0.08f);
+        upright (-5.1f, 3.38f, fl + 0.6f, 0.3f);
+        upright (-5.2f, 2.4f, fl + 0.4f, 0.36f);
+        // The beasts at their mangers: a body lying down each stall.
+        if (kept)
+          for (const auto& [x0, x1, front, horse] :
+               std::array<std::array<float, 4>, 4> { {
+                 { 5.86f, 4.06f, -0.8f, 1.0f },
+                 { 4.06f, 2.26f, -0.8f, 1.0f },
+                 { 2.26f, 0.91f, -1.4f, 0.0f },
+                 { 0.91f, -0.44f, -1.4f, 0.0f },
+               } }) {
+            const float x = 0.5f * (x0 + x1);
+            lying (Vec3 (x, fl + 1.0f, -3.0f),
+                   Vec3 (x, fl + 1.0f, front - 0.35f),
+                   horse > 0.5f ? 0.4f : 0.36f);
+          }
       }
 
       // A building's walls stop bodies: capsules round inside its
       // footprint.
       void building_colliders (const Building& b,
                                bool ruined,
+                               bool kept,
                                std::vector<mov::Trunk>& colliders) {
         float hx = 2.2f, hz = 2.5f, tall = 3.4f;
         if (b.kind == Building::Kind::house)
@@ -1077,6 +1387,10 @@ namespace moppe::game {
                  deck);
           // The chimney stack standing in the room.
           lying (Vec3 (0.6f, 0.6f, -0.3f), Vec3 (0.6f, 3.0f, -0.3f), 0.45f);
+          return;
+        }
+        if (b.kind == Building::Kind::barn && !ruined) {
+          barn_colliders (frame, kept, colliders);
           return;
         }
         constexpr float radius = 0.55f;
@@ -1224,7 +1538,7 @@ namespace moppe::game {
         piece.origin = b.at;
         piece.reach = 3000.0f;
         m_pieces.push_back (std::move (piece));
-        building_colliders (b, roofless, m_colliders);
+        building_colliders (b, roofless, farm.kept, m_colliders);
         if (b.kind == Building::Kind::mill && !roofless) {
           std::array<render::MeshPtr, 3> wheels;
           for (int t = 0; t < 3; ++t) {

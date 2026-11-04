@@ -13,7 +13,8 @@ builds one species (or, with no species named, every one of them):
   - moose: a bull, near black with pale stockings, a bell under his
     throat and broad palmate antlers;
   - roe_deer: a buck in his autumn coat, grey-brown with the white rump
-    patch, and short antlers.
+    patch, and short antlers;
+  - pig: a Linderöd sow, pink with black patches, kept in the barn.
 
 Each is authored life size in the game's frame -- x to the animal's left,
 y up, z forward -- with its origin on the ground under the middle of its
@@ -1058,8 +1059,109 @@ def roe_deer():
     b.save()
 
 
+# -- the Linderöd pig -------------------------------------------------------
+
+def pig():
+    """A Linderöd sow, Sweden's landrace pig: long and deep, pale pink
+    under sparse bristles with black patches, pricked ears that tip
+    forward, a long snout, and a curl of a tail."""
+    palette = {
+        "skin": (0.80, 0.63, 0.58),
+        "patch": (0.13, 0.11, 0.11),
+        "snout": (0.74, 0.50, 0.48),
+        "hoof": (0.22, 0.19, 0.17),
+        "eye": (0.04, 0.03, 0.03),
+    }
+    finish = {
+        "skin": dict(roughness=0.7, sheen=0.5),
+        "patch": dict(roughness=0.7, sheen=0.4),
+        "snout": dict(roughness=0.45),
+        "hoof": dict(roughness=0.5),
+        "eye": dict(roughness=0.1, coat=1.0),
+    }
+    poll = V((0, 0.62, 0.56))
+    tip = V((0, 0.40, 0.88))
+    s = dict(withers=V((0, 0.48, 0.38)), poll=poll,
+             shoulder=V((0.13, 0.45, 0.32)), carpus=V((0.13, 0.17, 0.33)),
+             fore_hoof=V((0.13, 0, 0.35)),
+             hip=V((0.14, 0.48, -0.40)), hock=V((0.14, 0.19, -0.47)),
+             hind_hoof=V((0.14, 0, -0.445)),
+             tail_root=V((0, 0.62, -0.62)), muzzle=tip + V((0, -0.01, 0.01)))
+    b = Beast("pig", palette, finish)
+    frame(b, s)
+
+    def coat(c):
+        return "patch" if noise(c, 1.6, 23) > 0.66 else "skin"
+
+    b.part("body", "trunk", barrel([
+        (-0.64, 0.50, 0.06, 0.06, 0.06),
+        (-0.60, 0.51, 0.18, 0.14, 0.20),
+        (-0.50, 0.51, 0.25, 0.18, 0.27),
+        (-0.30, 0.50, 0.28, 0.19, 0.31),
+        (-0.04, 0.49, 0.28, 0.19, 0.31),
+        (0.20, 0.49, 0.27, 0.18, 0.30),
+        (0.38, 0.50, 0.25, 0.17, 0.28),
+        (0.48, 0.52, 0.20, 0.14, 0.22),
+        (0.56, 0.53, 0.11, 0.08, 0.12),
+    ], sides=20), coat, levels=2)
+    teats = [blob(V((sx * 0.07, 0.19, z)), (0.014, 0.014, 0.014), 6, 4)
+             for sx in (-1, 1) for z in (-0.25, -0.1, 0.05, 0.2)]
+    b.part("body", "teats", merge(*teats), "snout", levels=0)
+
+    b.part("neck", "neck", path([(V((0, 0.50, 0.36)), 0.22, 0.27),
+                                 (V((0, 0.55, 0.47)), 0.19, 0.23),
+                                 (V((0, 0.60, 0.55)), 0.15, 0.18)],
+                                sides=12), coat, levels=2)
+    head = [(poll + V((0, 0.0, -0.05)), 0.14, 0.15),
+            (poll, 0.15, 0.16),
+            (along(poll, tip, 0.30), 0.125, 0.13),
+            (along(poll, tip, 0.60), 0.085, 0.085),
+            (along(poll, tip, 0.90), 0.065, 0.065),
+            (tip, 0.06, 0.06)]
+    b.part("head", "skull", path(head, sides=12),
+           lambda c: "patch" if (c - poll).length < 0.13 and c.x > 0.02
+           else "skin", levels=2)
+    d = (tip - poll).normalized()
+    b.part("head", "snout_disc", blob(tip + d * 0.012, (0.062, 0.056, 0.02),
+                                      10, 4), "snout", levels=1)
+    b.part("head", "nostrils", both(blob(tip + d * 0.03 + V((0.018, 0, 0)),
+                                         (0.008, 0.012, 0.006), 6, 4)),
+           "patch", levels=0)
+    b.part("head", "ears", both(ear(poll + V((0.08, 0.10, -0.02)),
+                                    V((0.5, 0.6, 0.75)), 0.18, 0.08,
+                                    thick=0.012)), "skin")
+    eyes(b, along(poll, tip, 0.28) + V((0, 0.05, 0)), 0.085, r=0.012)
+
+    x = s["shoulder"].x
+    leg(b, "fore_upper", [(0.43, 0.33, 0.075, 0.09), (0.32, 0.34, 0.065, 0.075),
+                          (0.22, 0.34, 0.045, 0.05), (0.16, 0.34, 0.04, 0.045)],
+        "skin", x, sides=8)
+    leg(b, "fore_lower", [(0.18, 0.34, 0.04, 0.045), (0.10, 0.345, 0.034, 0.037),
+                          (0.05, 0.35, 0.034, 0.037)], "skin", x, sides=8)
+    hoof(b, "fore_lower", V((x, 0.045, 0.352)), V((x, 0.0, 0.365)),
+         (0.032, 0.034), (0.04, 0.045), "hoof", cloven=True)
+    x = s["hip"].x
+    leg(b, "hind_upper", [(0.47, -0.40, 0.10, 0.14), (0.34, -0.40, 0.08, 0.11),
+                          (0.25, -0.45, 0.05, 0.06), (0.18, -0.47, 0.04, 0.047)],
+        coat, x, sides=8)
+    leg(b, "hind_lower", [(0.20, -0.47, 0.04, 0.047), (0.11, -0.45, 0.034, 0.037),
+                          (0.05, -0.445, 0.034, 0.037)], "skin", x, sides=8)
+    hoof(b, "hind_lower", V((x, 0.045, -0.445)), V((x, 0.0, -0.435)),
+         (0.032, 0.034), (0.04, 0.045), "hoof", cloven=True)
+
+    # The tail: a curl, a turn and a half about its own axis.
+    r = s["tail_root"]
+    curl = []
+    for k in range(13):
+        a = k / 12 * 3 * math.pi
+        curl.append((r + V((0.035 * math.sin(a), -0.035 * (1 - math.cos(a))
+                            - 0.012 * k, -0.02 - 0.004 * k)), 0.013, 0.013))
+    b.part("tail", "tail", path(curl, RIGHT, sides=6), "skin", levels=1)
+    b.save()
+
+
 SPECIES = {"horse": horse, "cow": cow, "sheep": sheep, "reindeer": reindeer,
-           "moose": moose, "roe_deer": roe_deer}
+           "moose": moose, "roe_deer": roe_deer, "pig": pig}
 
 if __name__ == "__main__":
     names = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []

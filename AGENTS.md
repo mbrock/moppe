@@ -70,7 +70,9 @@
     eats them, which mends the walker (less so burnt). The fried ones
     leave the basket (`Basket::used`) but stay picked. `MOPPE_WALK=supper`
     (`tools/record OUT.mp4 supper`) forages three, lights a fire, fries,
-    and eats.
+    and eats. Eggs from a barn's nest boxes (`Basket::eggs`) fry too,
+    after a fish and before the mushrooms (`Pan::eggs`), and mend as much
+    as a mushroom each.
   - Fishing (`moppe/game/fishing.*`): on foot facing open water at least
     a third of a metre deep within eleven metres, `E` (controller `A`)
     casts a float (`Line`, in `GameLogicState::m_fishing`). It rides the
@@ -197,7 +199,7 @@
     to an H.264 MP4 -- `tools/record /tmp/camp.mp4 camp` is the camp at dusk
     through to morning. Scenes are `play` (the default: on foot at the
     trailhead, no opening), `ride`, `forest`, `glide`, `walk`, `forage`,
-    `camp`, `haul`, `bump`, `opening`, and `river` (a drone's flight down the greatest
+    `camp`, `haul`, `bump`, `eggs`, `barn`, `opening`, and `river` (a drone's flight down the greatest
     watercourse, from the top of its catchment to the sea: seven minutes,
     or fitted into `--seconds`; with `MOPPE_FLYOVER_SECONDS=440` set,
     `--start` and `--seconds` cut a stretch out of the whole); `--seconds`, `--start`, `--speed N` (a
@@ -618,8 +620,9 @@
     go; moved three metres it is free and `F` gets in again. `tools/record
     OUT.mp4 haul` and `bump` show both.
   - Animals (`moppe/game/animals.*`, drawn by `game/animal_render.*`;
-    models `models/<species>.blend` from `tools/figure/animals.py`,
-    `make animals`): North Swedish horses, fjällkor, and Gotland sheep
+    models `models/<species>.blend` from `tools/figure/animals.py`, the
+    poultry from `tools/figure/hens.py`, `make animals`): North Swedish
+    horses, fjällkor, and Gotland sheep
     graze the ground the farms, the landing, and the kept sanctuaries
     still graze (`grazing_pressure`), with a paddock of each a stone's
     throw from the trailhead (`Fold::Kind::trailhead`), and wild herds keep to their own
@@ -638,7 +641,21 @@
     walks at it; `MOPPE_ANIMAL_CAMERA=<m>` follows that animal from the
     side; `tools/record OUT.mp4 animals` records it; `MOPPE_ANIMALS=none`
     leaves them out. The log's `moppe: animals:` lines say how many and
-    where the nearest of each stand.
+    where the nearest of each stand. Each barn lived in keeps two horses
+    and two cows tied in their stalls with their heads to the manger and
+    two or three Linderöd pigs loose in a pen (`Stall`, `Animal::indoors`,
+    `keep_indoors`), standing on the floor (`floor_at`). Its poultry
+    (`moppe/game/hens.*`: Skånsk blommehöns, a rooster, five hens, and a
+    mother with her chicks at her heels) peck about the byre and the
+    yard, in and out by the ramp, scurry from whoever steps among them,
+    and at dusk go up to roost on the perches; they lay in the four nest
+    boxes on the end wall (`GameLogicState::m_nests`, `lay_eggs`: up to
+    three a box, one every few hours of the clock). On foot facing a box
+    with an egg in it, `E` takes one into the basket, six at most. In the
+    dark the barn's lantern is the lamp. `MOPPE_WALK=barn|byre|hens|eggs`
+    starts before its doors, in the byre, facing the hens' corner, or by
+    the boxes; `eggs` (`tools/record OUT.mp4 eggs`) takes three, walks out
+    into the yard, and fries and eats them.
   - Places at the ends of the roads (`moppe/game/places.*`, planned
     from `GeneratedWorld::roads()` when a world activates, before the
     trees and rocks, which keep out of their clearings): the landing has
@@ -662,7 +679,14 @@
     5 cm, 10 cm, the massing -- still span a pixel, through
     `Renderer::scene_focal_pixels`; no two of its faces share a plane);
     with a landing
-    stage on the lake to fish from. The farmhouse can be walked into:
+    stage on the lake to fish from. Farmsteads -- a house and a barn,
+    without the mill -- also stand beside the roads and across the open
+    country below the high fells, some 380 m apart at least, the first a
+    few hundred metres from the trailhead (`plan_homesteads`, `Farm::
+    homestead`; 13 in the default world). The barn (12 by 8 m, Falu red)
+    opens by a pair of doors up a stone ramp onto a board floor under a
+    hay loft, and can be walked into, the camera keeping inside; round
+    it the yard's grass is trodden short (`UndergrowthParams::yard_*`). The farmhouse can be walked into:
     its door stands open over a step, and inside, under a ceiling, are a
     board floor, a table and bench, a bed, and the chimney stack; the
     following camera keeps inside its walls (`ChaseCamera::confine`), and
@@ -671,7 +695,7 @@
     the door, `MOPPE_WALK=indoors` stands inside. By each place where
     two trees take a
     hammock, an old fire ring takes the camp's fire. `MOPPE_WALK=
-    landing|sanctuary|farm|house|indoors` starts on foot there, and `MOPPE_BEACONS=lit`
+    landing|sanctuary|farm|house|indoors|barn` starts on foot there, and `MOPPE_BEACONS=lit`
     starts every beacon burning, for captures; `moppe: places:` lines
     say where everything stands.
   - Mushrooms (`moppe/game/mushrooms.cc`) grow in arcs around a few

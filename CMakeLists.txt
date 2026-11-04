@@ -430,7 +430,12 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/reindeer_model.cc
   moppe/game/moose_model.cc
   moppe/game/roe_deer_model.cc
+  moppe/game/pig_model.cc
+  moppe/game/hen_model.cc
+  moppe/game/rooster_model.cc
+  moppe/game/chick_model.cc
   moppe/game/animal_render.cc
+  moppe/game/hens.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/glider_render.cc
@@ -717,6 +722,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/river_stones_test.cc
     tests/game/mushrooms_test.cc
     tests/game/animals_test.cc
+    tests/game/hens_test.cc
     tests/game/camp_test.cc
     tests/game/places_test.cc
     tests/game/fishing_test.cc

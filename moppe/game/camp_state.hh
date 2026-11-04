@@ -33,6 +33,8 @@ namespace moppe::game {
     // A fish from the creel takes the room of two of them.
     bool has_fish = false;
     Fish fish {};
+    // Eggs from the basket, each taking a mushroom's room.
+    int eggs = 0;
     double next_steam = 0.0;
   };
 
@@ -74,6 +76,7 @@ namespace moppe::game {
     double ate_time = -100.0;
     float ate_cooked = 0.0f;
     int ate_count = 0;
+    int ate_eggs = 0;
     bool ate_fish = false;
     Fish ate {};
   };

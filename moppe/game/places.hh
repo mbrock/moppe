@@ -7,6 +7,10 @@
 // wall, after Peatfield (1983), whose fire, once lit, shows from the
 // sanctuaries on its sightlines; each lake outlet a little watermill and
 // a farm. A place's history decides what is kept and what has fallen.
+// Along the roads still in use, wherever the ground is level and dry,
+// stand farmsteads still lived in: a house facing the road and a barn
+// facing the house across the yard, its doors open on the byre where
+// the horses, cows, pigs, and hens are kept (game/hens.hh).
 // Near each, where the trees allow, an old fire ring marks a good camp,
 // and a landing stage on the lake by the mill a place to fish from.
 
@@ -36,6 +40,8 @@ namespace moppe::game {
     std::function<bool (float x, float z)> sea;
     // How fast the water over a point runs, m/s, and which way.
     std::function<Vec3 (float x, float z)> current;
+    // How much of a point the trees cover, 0..1; may be empty.
+    std::function<float (float x, float z)> forest;
     const terrain::RoadSurface* roads = nullptr;
     float sea_level = 0.0f;
     float period_x = 0.0f;
@@ -100,7 +106,22 @@ namespace moppe::game {
     // Lived in and the wheel turning, or long left and roofless.
     bool kept = true;
     bool ruined = false;
+    // A farmstead by a road rather than at one of the network's places
+    // (`place` then means nothing).
+    bool homestead = false;
   };
+
+  // A standing building's frame: x to the left of its front, y up, z out
+  // of its front, the origin on the ground at its middle.
+  [[nodiscard]] Mat4 building_frame (const Building& b);
+
+  // The barn's inside, in its frame (tools/figure/farm.py): the floor's
+  // half extents within the walls, and its ramp out of the doorway.
+  inline constexpr float barn_inside_half_x = 5.86f;
+  inline constexpr float barn_inside_half_z = 3.86f;
+  inline constexpr float barn_front = 4.0f;
+  inline constexpr float barn_door_half = 1.7f;
+  inline constexpr float barn_ramp_length = 1.9f;
 
   struct PlacesPlan {
     std::optional<Landing> landing;
@@ -125,6 +146,13 @@ namespace moppe::game {
   [[nodiscard]] PlacesPlan plan_places (const terrain::RoadNetwork& network,
                                         const PlaceGround& ground,
                                         std::uint32_t seed);
+
+  // The floor underfoot at a point inside a standing house or barn, or on
+  // a barn's ramp: its height, for what walks there (the animals, the
+  // hens) to stand on rather than the ground beneath it. The ramp's foot
+  // is set into the ground, so take the higher of this and the ground.
+  [[nodiscard]] std::optional<float>
+  floor_at (const PlacesPlan& plan, float x, float z);
 
   // Whether a point lies in one of the plan's clearings.
   [[nodiscard]] bool cleared (const PlacesPlan& plan, const Vec3& at);

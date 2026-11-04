@@ -290,6 +290,13 @@ namespace moppe {
       Vec3 bare_along { 1, 0, 0 };
       float bare_half_x = 0.0f;
       float bare_half_z = 0.0f;
+      // A barn's floor, as above, and how far round it its yard is
+      // trodden, the grass short and sparse.
+      Vec3 yard_centre {};
+      Vec3 yard_along { 1, 0, 0 };
+      float yard_half_x = 0.0f;
+      float yard_half_z = 0.0f;
+      float yard_margin = 0.0f;
     };
 
     // The renderer gives a pine the broadleaf's clump topology, shaped flat

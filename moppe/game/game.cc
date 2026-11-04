@@ -25,6 +25,7 @@
 #include <moppe/game/companion_link.hh>
 #include <moppe/game/daylight.hh>
 #include <moppe/game/dust.hh>
+#include <moppe/game/farm_model.hh>
 #include <moppe/game/figure.hh>
 #include <moppe/game/fingerposts.hh>
 #include <moppe/game/fishing.hh>
@@ -36,6 +37,7 @@
 #include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/helicopter_render.hh>
+#include <moppe/game/hens.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/jeep_render.hh>
@@ -862,6 +864,12 @@ namespace moppe {
                        sheets, moppe::position (Vec3 (x, 0.0f, z)))
                 .numerical_value_in (u::m / u::s);
             },
+          .forest =
+            [this] (float x, float z) {
+              return spatial::sample<map::forest_cover> (
+                       surface_readings (), moppe::position (Vec3 (x, 0.0f, z)))
+                .numerical_value_in (one);
+            },
           .roads = &generated_world ().road_surface (),
           .sea_level = sea,
           .period_x =
@@ -883,21 +891,41 @@ namespace moppe {
           place_ground (),
           static_cast<std::uint32_t> (recipe ().seed ().value) ^ 0x91ace5u);
         logic ().m_beacons.assign (m_places.sanctuaries.size (), Beacon {});
-        // The farmhouses can be walked into; the camera keeps inside.
+        // Each barn lived in has its row of nest boxes, with the eggs laid
+        // in them before the walker came.
+        m_nest_sites.clear ();
+        for (const Building* barn : kept_barns ()) {
+          const Mat4 frame = building_frame (*barn);
+          const Vec3 out = frame.transform_vector (Vec3 (1, 0, 0));
+          for (const Vec3& nest : { farm_model::barn_nest_0,
+                                    farm_model::barn_nest_1,
+                                    farm_model::barn_nest_2,
+                                    farm_model::barn_nest_3 })
+            m_nest_sites.push_back (
+              { .at = frame.transform_point (nest + Vec3 (0, 0.03f, 0)),
+                .out = out });
+        }
+        logic ().m_nests =
+          first_eggs (m_nest_sites.size (), logic ().m_day_hours, egg_seed ());
+        // The farmhouses and the barns can be walked into; the camera
+        // keeps inside.
         std::vector<ChaseCamera::Room> rooms;
         for (const Farm& farm : m_places.farms)
-          for (const Building& b : farm.buildings)
-            if (!farm.ruined && b.kind == Building::Kind::house) {
-              Vec3 f = b.forward;
-              f[1] = 0.0f;
-              f = normalized (f);
-              rooms.push_back ({ .centre = b.at,
-                                 .x = Vec3 (f[2], 0.0f, -f[0]),
-                                 .half_x = 3.38f,
-                                 .half_z = 2.38f,
-                                 .floor = 0.6f,
-                                 .ceiling = 2.96f });
-            }
+          for (const Building& b : farm.buildings) {
+            if (farm.ruined || b.kind == Building::Kind::mill)
+              continue;
+            Vec3 f = b.forward;
+            f[1] = 0.0f;
+            f = normalized (f);
+            const bool barn = b.kind == Building::Kind::barn;
+            rooms.push_back (
+              { .centre = b.at,
+                .x = Vec3 (f[2], 0.0f, -f[0]),
+                .half_x = barn ? barn_inside_half_x - 0.1f : 3.38f,
+                .half_z = barn ? barn_inside_half_z - 0.1f : 2.38f,
+                .floor = barn ? 0.3f : 0.6f,
+                .ceiling = barn ? 3.4f : 2.96f });
+          }
         session ().set_rooms (
           std::move (rooms), m_places.period_x, m_places.period_z);
         // MOPPE_BEACONS=lit: every beacon already burning, for captures.
@@ -949,6 +977,57 @@ namespace moppe {
 
       // -- animals -------------------------------------------------
 
+      // The barns of the farms still lived in, in the plan's order.
+      std::vector<const Building*> kept_barns () const {
+        std::vector<const Building*> out;
+        for (const Farm& farm : m_places.farms)
+          if (farm.kept && !farm.ruined)
+            for (const Building& b : farm.buildings)
+              if (b.kind == Building::Kind::barn)
+                out.push_back (&b);
+        return out;
+      }
+
+      std::uint32_t egg_seed () const {
+        return static_cast<std::uint32_t> (recipe ().seed ().value) ^ 0xe665u;
+      }
+
+      // Each barn's stock: two horses and two cows tied in their stalls
+      // with their heads to the manger, and the pigs loose in their pen.
+      std::vector<Stall> barn_stalls () const {
+        std::vector<Stall> stalls;
+        std::uint32_t n = 0;
+        for (const Building* barn : kept_barns ()) {
+          const Mat4 frame = building_frame (*barn);
+          const Vec3 back = frame.transform_vector (Vec3 (0, 0, -1));
+          const Vec3 side = frame.transform_vector (Vec3 (1, 0, 0));
+          const float to_manger = std::atan2 (back[0], back[2]);
+          const float along_x = std::atan2 (side[0], side[2]);
+          const auto at = [&] (const Vec3& point, float z) {
+            return frame.transform_point (Vec3 (point[0], point[1], z));
+          };
+          const Vec3 stall_points[4] = { farm_model::barn_stall_0,
+                                         farm_model::barn_stall_1,
+                                         farm_model::barn_stall_2,
+                                         farm_model::barn_stall_3 };
+          for (int k = 0; k < 4; ++k)
+            stalls.push_back (
+              { .species = k < 2 ? Species::horse : Species::cow,
+                .at = at (stall_points[k], k < 2 ? -1.95f : -2.1f),
+                .heading = to_manger });
+          const Vec3 lo = farm_model::barn_pen_low;
+          const Vec3 hi = farm_model::barn_pen_high;
+          const Vec3 middle = (lo + hi) * 0.5f;
+          stalls.push_back ({ .species = Species::pig,
+                              .at = at (middle, middle[2]),
+                              .heading = along_x,
+                              .half_along = 0.5f * std::abs (hi[0] - lo[0]),
+                              .half_across = 0.5f * std::abs (hi[2] - lo[2]),
+                              .count = 2 + static_cast<int> (++n % 2) });
+        }
+        return stalls;
+      }
+
       // What the animals read of the world: the ground and its water,
       // the grazing and the plants, and the trunks and walls about.
       AnimalGround animal_ground () const {
@@ -957,7 +1036,10 @@ namespace moppe {
         return {
           .ground =
             [this] (float x, float z) {
-              return ground_height (Vec3 (x, 0.0f, z));
+              const float ground = ground_height (Vec3 (x, 0.0f, z));
+              if (const std::optional<float> floor = floor_at (m_places, x, z))
+                return std::max (*floor, ground);
+              return ground;
             },
           .dry =
             [this, sheets] (float x, float z) {
@@ -1019,6 +1101,7 @@ namespace moppe {
              std::string_view (moppe::environment ("MOPPE_ANIMALS")) ==
                "none")) {
           m_animals.rebuild ({});
+          m_hens.rebuild ({}, {});
           return;
         }
         const terrain::RoadNetwork& roads = generated_world ().roads ();
@@ -1047,7 +1130,34 @@ namespace moppe {
           m_home_base_position,
           ground.period_x,
           ground.period_z,
-          static_cast<std::uint32_t> (recipe ().seed ().value) ^ 0xa417a15u));
+          static_cast<std::uint32_t> (recipe ().seed ().value) ^ 0xa417a15u,
+          barn_stalls ()));
+        std::vector<Coop> coops;
+        for (const Building* barn : kept_barns ())
+          coops.push_back ({ .frame = building_frame (*barn) });
+        std::vector<Bird> birds = plan_birds (coops, egg_seed ());
+        for (Bird& b : birds)
+          b.position[1] = ground.ground (b.position[0], b.position[2]);
+        std::cerr << "moppe: animals: " << birds.size () << " hens, roosters,"
+                  << " and chicks in " << coops.size () << " barns, "
+                  << m_nest_sites.size () << " nest boxes" << std::endl;
+        m_hens.rebuild (std::move (coops), std::move (birds));
+        // And where the barn nearest the spawn keeps them, to aim at.
+        const Building* barn = nullptr;
+        for (const Building* b : kept_barns ())
+          if (!barn || length2 (b->at - m_spawn_position) <
+                         length2 (barn->at - m_spawn_position))
+            barn = b;
+        if (barn) {
+          const Mat4 frame = building_frame (*barn);
+          const Vec3 nest = frame.transform_point (farm_model::barn_nest_1);
+          const Vec3 door = frame.transform_point (farm_model::barn_doorway);
+          std::cerr << "moppe: animals: the nearest barn's nest boxes at "
+                    << nest[0] << ' ' << nest[1] << ' ' << nest[2]
+                    << ", its doors at " << door[0] << ' ' << door[1] << ' '
+                    << door[2] << " facing " << barn->forward[0] << ' '
+                    << barn->forward[2] << std::endl;
+        }
         // Say where the nearest herd of each kind is.
         for (int s = 0; s < species_count; ++s) {
           const Animal* nearest = nullptr;
@@ -1089,11 +1199,17 @@ namespace moppe {
         if (m_companion && m_companion->walker)
           presences.push_back ({ .position = m_companion->walker->position,
                                  .velocity = m_companion->walker->velocity });
-        m_animals.step (animal_ground (),
-                        presences,
-                        session ().camera ().position (),
-                        700.0f,
-                        dt);
+        const AnimalGround ground = animal_ground ();
+        m_animals.step (
+          ground, presences, session ().camera ().position (), 700.0f, dt);
+        m_hens.step (
+          ground,
+          presences,
+          session ().camera ().position (),
+          160.0f,
+          static_cast<float> (std::fmod (logic ().m_day_hours, 24.0)),
+          dt);
+        lay_eggs (logic ().m_nests, logic ().m_day_hours, egg_seed ());
       }
 
       // The beacon a walker stands at, if any.
@@ -2138,12 +2254,24 @@ namespace moppe {
           return;
         const std::optional<std::uint32_t> found =
           m_mushrooms.within_reach (feet, session ().walker ().heading ());
-        if (!found)
+        if (!found) {
+          // Into a nest box for an egg, as many as the basket takes.
+          const std::optional<std::size_t> nest = egg_at_hand ();
+          Basket& basket = logic ().m_basket;
+          if (!nest || basket.eggs >= basket_holds_eggs)
+            return;
+          --logic ().m_nests[*nest].eggs;
+          ++basket.eggs;
+          basket.last_reach_time = logic ().m_total_time;
+          basket.last_egg = true;
+          basket.last_refused = false;
           return;
+        }
         const MushroomSite& site = m_mushrooms.site (*found);
         m_mushrooms.follow (logic ().m_basket);
         Basket& basket = logic ().m_basket;
         basket.last_reach_time = logic ().m_total_time;
+        basket.last_egg = false;
         basket.last_kind = site.kind;
         basket.last_refused = !mushroom_edible (site.kind);
         if (basket.last_refused)
@@ -2151,6 +2279,16 @@ namespace moppe {
         basket.picked.push_back (*found);
         ++basket.count[static_cast<int> (site.kind)];
         m_mushrooms.follow (basket);
+      }
+
+      // The nest box with an egg in it the walker can reach into.
+      std::optional<std::size_t> egg_at_hand () const {
+        if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
+          return std::nullopt;
+        return nest_within_reach (m_nest_sites,
+                                  logic ().m_nests,
+                                  session ().walker ().position (),
+                                  session ().walker ().heading ());
       }
 
       // Trunks and the larger boulders stop the rider alike, so both feed
@@ -2265,7 +2403,7 @@ namespace moppe {
                                  : HudState::Cook::eat;
         }
         if (!camp.pan.on &&
-            (basket.used < basket.picked.size () ||
+            (basket.used < basket.picked.size () || basket.eggs > 0 ||
              logic ().m_fishing.creel.kept () > 0) &&
             fire_at_hand ())
           return HudState::Cook::fry;
@@ -2296,7 +2434,11 @@ namespace moppe {
               pan.has_fish = true;
               pan.fish = creel.fish[creel.used++];
             }
-            while (pan.count < Pan::room - (pan.has_fish ? 2 : 0) &&
+            // Then eggs, and mushrooms in the room they leave.
+            const int room = Pan::room - (pan.has_fish ? 2 : 0);
+            pan.eggs = std::min (basket.eggs, room);
+            basket.eggs -= pan.eggs;
+            while (pan.count + pan.eggs < room &&
                    basket.used < basket.picked.size ()) {
               const std::uint32_t index = basket.picked[basket.used++];
               pan.mushrooms[pan.count++] = index;
@@ -2312,14 +2454,16 @@ namespace moppe {
           case HudState::Cook::eat_burnt:
             camp.ate_cooked = pan_cooked (camp.pan, now);
             camp.ate_count = camp.pan.count;
+            camp.ate_eggs = camp.pan.eggs;
             camp.ate_fish = camp.pan.has_fish;
             camp.ate = camp.pan.fish;
             camp.ate_time = now;
             camp.pan.on = false;
             logic ().m_health = std::min (
               100.0f,
-              logic ().m_health + (camp.ate_cooked > 1.4f ? 5.0f : 20.0f) *
-                                    (camp.ate_count + (camp.ate_fish ? 2 : 0)));
+              logic ().m_health +
+                (camp.ate_cooked > 1.4f ? 5.0f : 20.0f) *
+                  (camp.ate_count + camp.ate_eggs + (camp.ate_fish ? 2 : 0)));
             input.deploy_glider = false;
             break;
           case HudState::Cook::frying:
@@ -2452,7 +2596,8 @@ namespace moppe {
         const Walker& walker = session ().walker ();
         return !m_mushrooms.within_reach (walker.position (), walker.heading ())
                   .has_value () &&
-               supper_at_hand () == HudState::Cook::none && !beside_hammock ();
+               !egg_at_hand () && supper_at_hand () == HudState::Cook::none &&
+               !beside_hammock ();
       }
 
       // A splash where the line meets the water.
@@ -2839,16 +2984,31 @@ namespace moppe {
         state.resting = camp.resting;
         state.clock_hours = m_sky.clock;
         if (static_cast<float> (logic ().m_total_time - camp.ate_time) < 6.0f) {
-          const std::string with = camp.ate_count > 1   ? " and mushrooms"
-                                   : camp.ate_count > 0 ? " and a mushroom"
-                                                        : "";
+          // What there was, the fish first, then the eggs, then the
+          // mushrooms.
+          std::vector<std::string> dishes;
+          if (camp.ate_fish)
+            dishes.push_back (fish_name (camp.ate.kind));
+          if (camp.ate_eggs > 0)
+            dishes.push_back (camp.ate_eggs > 1 ? "eggs" : "an egg");
+          if (camp.ate_count > 0)
+            dishes.push_back (camp.ate_count > 1 ? "mushrooms" : "a mushroom");
+          std::string meal;
+          for (std::size_t i = 0; i < dishes.size (); ++i)
+            meal += (i == 0                    ? ""
+                     : i + 1 == dishes.size () ? " and "
+                                               : ", ") +
+                    dishes[i];
+          if (meal.starts_with ("a "))
+            meal = meal.substr (2);
+          else if (meal.starts_with ("an "))
+            meal = meal.substr (3);
+          const bool one =
+            !camp.ate_fish && camp.ate_count + camp.ate_eggs == 1;
           m_meal_note =
-            camp.ate_cooked > 1.4f ? "Burnt to a cinder. Still, it is supper."
-            : camp.ate_fish
-              ? "Fried " + std::string (fish_name (camp.ate.kind)) + with +
-                  " by the fire. Lovely."
-            : camp.ate_count > 1 ? "Fried mushrooms by the fire. Lovely."
-                                 : "A fried mushroom by the fire. Lovely.";
+            camp.ate_cooked > 1.4f
+              ? "Burnt to a cinder. Still, it is supper."
+              : (one ? "A fried " : "Fried ") + meal + " by the fire. Lovely.";
           state.meal = m_meal_note.c_str ();
           state.meal_age_s =
             static_cast<float> (logic ().m_total_time - camp.ate_time);
@@ -2955,6 +3115,8 @@ namespace moppe {
         state.cook = supper_at_hand ();
         state.cook_fish = camp.pan.on ? camp.pan.has_fish
                                       : logic ().m_fishing.creel.kept () > 0;
+        state.cook_eggs =
+          camp.pan.on ? camp.pan.eggs > 0 : logic ().m_basket.eggs > 0;
         if (const std::optional<std::size_t> beacon = beacon_at_hand ();
             beacon && !logic ().m_beacons[*beacon].burning () &&
             !their_beacon (*beacon) && !camp.resting)
@@ -3006,7 +3168,8 @@ namespace moppe {
                     camp.pan.yaw,
                     m_pan_contents,
                     pan_cooked (camp.pan, now),
-                    camp.pan.has_fish ? &camp.pan.fish : nullptr);
+                    camp.pan.has_fish ? &camp.pan.fish : nullptr,
+                    camp.pan.eggs);
         }
       }
 
@@ -3177,6 +3340,39 @@ namespace moppe {
               m_watch_side = Vec3 (in[2], 0.0f, -in[0]);
             }
           }
+        } else if (script == "barn" || script == "byre" || script == "eggs" ||
+                   script == "hens") {
+          // MOPPE_WALK=barn: before the doors of the barn lived in nearest
+          // the spawn, looking in; byre: inside it, looking at the stalls;
+          // eggs: by its nest boxes, facing them; hens: looking at the
+          // hens' corner, its perches and nest boxes.
+          const Building* nearest = nullptr;
+          float best = 1e9f;
+          for (const Farm& farm : m_places.farms)
+            for (const Building& b : farm.buildings)
+              if (farm.kept && !farm.ruined && b.kind == Building::Kind::barn) {
+                const float d = std::hypot (b.at[0] - m_spawn_position[0],
+                                            b.at[2] - m_spawn_position[2]);
+                if (d < best) {
+                  best = d;
+                  nearest = &b;
+                }
+              }
+          if (nearest) {
+            const Mat4 frame = building_frame (*nearest);
+            m_script_barn = frame;
+            const auto at = [&] (float x, float z) {
+              return frame.transform_point (Vec3 (x, 0.0f, z));
+            };
+            if (script == "barn")
+              stand = { at (0.8f, barn_front + 7.0f), at (0.0f, 0.0f) };
+            else if (script == "byre")
+              stand = { at (-2.0f, 2.6f), at (3.0f, -3.2f) };
+            else if (script == "hens")
+              stand = { at (-1.6f, 0.6f), at (-5.0f, -3.3f) };
+            else
+              stand = { at (-4.3f, -2.6f), at (-6.0f, -2.6f) };
+          }
         } else if (script == "farm" && !m_places.farms.empty () &&
                    !m_places.farms.front ().buildings.empty ()) {
           const Building& b = m_places.farms.front ().buildings.front ();
@@ -3188,12 +3384,9 @@ namespace moppe {
           return;
         Vec3 at = stand->first;
         at[1] = ground_height (at) + 0.1f;
-        if (script == "indoors")
-          for (const Farm& farm : m_places.farms)
-            for (const Building& b : farm.buildings)
-              if (b.kind == Building::Kind::house &&
-                  length (b.at - stand->first) < 4.0f)
-                at[1] = b.at[1] + 0.7f;
+        if (const std::optional<float> floor =
+              floor_at (m_places, at[0], at[2]))
+          at[1] = std::max (static_cast<float> (at[1]), *floor + 0.1f);
         Vec3 facing = stand->second - at;
         facing[1] = 0.0f;
         session ().walker ().spawn (moppe::position (at), normalized (facing));
@@ -4452,6 +4645,34 @@ namespace moppe {
         }
       }
 
+      // A barn lived in keeps its lantern lit in the dark hours; near the
+      // eye, it is the lamp, unless a fire is nearer.
+      void light_barn (FrameView& frame) const {
+        FrameLighting& lighting = frame.lighting;
+        const float dark = 1.0f - smoothstep (0.15f, 0.55f, lighting.daylight);
+        if (dark <= 0.01f)
+          return;
+        const Vec3 eye = frame.camera.position;
+        std::optional<Vec3> lantern;
+        for (const Building* barn : kept_barns ()) {
+          const Vec3 at = building_frame (*barn).transform_point (
+            farm_model::barn_lantern - Vec3 (0.0f, 0.2f, 0.0f));
+          if (length2 (at - eye) < 30.0f * 30.0f &&
+              (!lantern || length2 (at - eye) < length2 (*lantern - eye)))
+            lantern = at;
+        }
+        if (!lantern || (lighting.lamp_reach > 0.0f &&
+                         length2 (lighting.lamp_position - eye) <=
+                           length2 (*lantern - eye)))
+          return;
+        const float flicker = 1.0f + 0.03f * std::sin (lighting.time * 7.3f) +
+                              0.02f * std::sin (lighting.time * 12.9f + 1.7f);
+        lighting.lamp_position = *lantern;
+        lighting.lamp_reach = 11.0f;
+        lighting.lamp_color =
+          scale_display (DisplayColor (1.30f, 0.95f, 0.55f), dark * flicker);
+      }
+
       // The renderer has one lamp. With two fires burning it is the one
       // nearer the eye.
       void light_companion_fire (FrameView& frame) const {
@@ -4800,7 +5021,7 @@ namespace moppe {
         };
         // At a place (stage_place_script), the walker stands and looks.
         if (script == "landing" || script == "sanctuary" || script == "farm" ||
-            script == "indoors")
+            script == "indoors" || script == "hens" || script == "byre")
           return input;
         // Before the farmhouse's door: in through it, a few steps into the
         // room, and a look round.
@@ -4892,6 +5113,76 @@ namespace moppe {
                         : t > 8.0f && t < 11.0f ? 1.0f
                                                 : 0.0f;
           input.boost = (t > 4.2f && t < 5.5f) || t > 11.0f ? 1.0f : 0.0f;
+          return input;
+        }
+        if (script == "eggs" && m_script_barn) {
+          // Take three eggs from the nest boxes, walk out through the
+          // doors and down the ramp into the yard, light a fire there,
+          // fry them, and eat.
+          const Walker& walker = session ().walker ();
+          const Vec3 feet = walker.position ();
+          const auto steer = [&] (const Vec3& goal, float pace) {
+            Vec3 toward = goal - feet;
+            toward[1] = 0.0f;
+            const float distance = length (toward);
+            const Vec3 heading = walker.heading ();
+            const Vec3 left (heading[2], 0.0f, -heading[0]);
+            const float leftward =
+              dot (toward, left) / std::max (distance, 1e-3f);
+            const float ahead =
+              dot (toward, heading) / std::max (distance, 1e-3f);
+            const float turn = ahead < 0.0f ? (leftward >= 0.0f ? -1.0f : 1.0f)
+                                            : -std::asin (leftward);
+            input.look_yaw = std::clamp (turn, -2.5f * dt, 2.5f * dt);
+            input.drive = ahead > 0.7f ? pace : 0.0f;
+            return distance;
+          };
+          if (m_supper_since >= 0.0f) {
+            input.look_pitch = std::clamp (
+              -0.55f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+            input.light_fire =
+              press (m_supper_since + 0.8f) > 0.0f && !logic ().m_camp.fire;
+            input.deploy_glider = press (4.0f + m_supper_since) > 0.0f ||
+                                  press (15.5f + m_supper_since) > 0.0f;
+            return input;
+          }
+          if (logic ().m_basket.eggs < 3 && m_egg_script_leg == 0) {
+            input.look_pitch =
+              std::clamp (-0.5f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+            // To the nearest box with an egg in it, and into it.
+            std::optional<std::size_t> best;
+            for (std::size_t k = 0;
+                 k < m_nest_sites.size () && k < logic ().m_nests.size ();
+                 ++k)
+              if (logic ().m_nests[k].eggs > 0 &&
+                  (!best || length2 (m_nest_sites[k].at - feet) <
+                              length2 (m_nest_sites[*best].at - feet)))
+                best = k;
+            if (!best)
+              return input;
+            const Vec3 front =
+              m_nest_sites[*best].at + m_nest_sites[*best].out * 0.75f;
+            if (egg_at_hand ()) {
+              steer (m_nest_sites[*best].at, 0.0f);
+              if (std::fmod (t, 0.9f) < dt + 1e-4f)
+                input.deploy_glider = true;
+            } else {
+              steer (front, 0.4f);
+            }
+            return input;
+          }
+          // Out through the doors, down the ramp, and into the yard.
+          const Mat4& barn = *m_script_barn;
+          const Vec3 legs[3] = { barn.transform_point (Vec3 (-1.0f, 0, 2.6f)),
+                                 barn.transform_point (Vec3 (0.0f, 0, 7.0f)),
+                                 barn.transform_point (Vec3 (2.5f, 0, 9.5f)) };
+          if (m_egg_script_leg == 0)
+            m_egg_script_leg = 1;
+          input.look_pitch =
+            std::clamp (-0.2f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          if (steer (legs[m_egg_script_leg - 1], 0.6f) < 0.6f &&
+              ++m_egg_script_leg > 3)
+            m_supper_since = t;
           return input;
         }
         if (script == "forage" || script == "supper") {
@@ -5540,8 +5831,10 @@ namespace moppe {
       // The mushroom at hand and the basket, for the prompts and the tally.
       void add_basket_readings (HudState& state) const {
         const Basket& basket = logic ().m_basket;
-        state.basket_total = basket.total ();
-        state.reached_name = mushroom_name (basket.last_kind);
+        state.basket_total = basket.total () + basket.eggs;
+        state.basket_eggs = basket.eggs;
+        state.reached_name =
+          basket.last_egg ? "egg" : mushroom_name (basket.last_kind);
         state.reached_age_s =
           static_cast<float> (logic ().m_total_time - basket.last_reach_time);
         state.reached_refused = basket.last_refused;
@@ -5553,6 +5846,9 @@ namespace moppe {
           const MushroomKind kind = m_mushrooms.site (*found).kind;
           state.mushroom_in_reach = mushroom_name (kind);
           state.mushroom_edible = mushroom_edible (kind);
+        } else if (egg_at_hand ()) {
+          state.egg_in_reach = true;
+          state.basket_takes_egg = basket.eggs < basket_holds_eggs;
         }
       }
 
@@ -5583,7 +5879,10 @@ namespace moppe {
           r,
           m_animals.animals (),
           [this] (float x, float z) {
-            return ground_height (Vec3 (x, 0.0f, z));
+            const float ground = ground_height (Vec3 (x, 0.0f, z));
+            if (const std::optional<float> floor = floor_at (m_places, x, z))
+              return std::max (*floor, ground);
+            return ground;
           },
           frame.camera.position,
           frame.camera.frame_forward,
@@ -5697,13 +5996,15 @@ namespace moppe {
             .interaction_position = frame.hud.subject_position,
             .interaction_radius = interaction_radius
           };
-          // No grass under the floor of the farmhouse nearest the camera,
-          // which can be walked into: out to its plinth's edge.
+          // No grass under the floor of the farmhouse and the barn
+          // nearest the camera, which can be walked into: out to the
+          // plinth's edge, and over the barn's ramp; and round the barn
+          // its yard is trodden short.
           const Vec3 eye = frame.camera.position;
-          float nearest = 150.0f;
+          float nearest[2] = { 150.0f, 150.0f };
           for (const Farm& farm : m_places.farms)
             for (const Building& b : farm.buildings) {
-              if (farm.ruined || b.kind != Building::Kind::house)
+              if (farm.ruined || b.kind == Building::Kind::mill)
                 continue;
               Vec3 at = b.at;
               at[0] += m_places.period_x *
@@ -5711,16 +6012,25 @@ namespace moppe {
               at[2] += m_places.period_z *
                        std::round ((eye[2] - at[2]) / m_places.period_z);
               const float d = std::hypot (at[0] - eye[0], at[2] - eye[2]);
-              if (d >= nearest)
+              const bool barn = b.kind == Building::Kind::barn;
+              if (d >= nearest[barn])
                 continue;
-              nearest = d;
+              nearest[barn] = d;
               Vec3 f = b.forward;
               f[1] = 0.0f;
               f = normalized (f);
-              undergrowth.bare_centre = at;
-              undergrowth.bare_along = Vec3 (f[2], 0.0f, -f[0]);
-              undergrowth.bare_half_x = 3.75f;
-              undergrowth.bare_half_z = 2.75f;
+              if (barn) {
+                undergrowth.yard_centre = at + f * 0.95f;
+                undergrowth.yard_along = Vec3 (f[2], 0.0f, -f[0]);
+                undergrowth.yard_half_x = 6.15f;
+                undergrowth.yard_half_z = 5.1f;
+                undergrowth.yard_margin = farm.kept ? 9.0f : 0.0f;
+              } else {
+                undergrowth.bare_centre = at;
+                undergrowth.bare_along = Vec3 (f[2], 0.0f, -f[0]);
+                undergrowth.bare_half_x = 3.75f;
+                undergrowth.bare_half_z = 2.75f;
+              }
             }
           r.draw_undergrowth (undergrowth);
         }
@@ -5843,13 +6153,25 @@ namespace moppe {
           r,
           m_animals.animals (),
           [this] (float x, float z) {
-            return ground_height (Vec3 (x, 0.0f, z));
+            const float ground = ground_height (Vec3 (x, 0.0f, z));
+            if (const std::optional<float> floor = floor_at (m_places, x, z))
+              return std::max (*floor, ground);
+            return ground;
           },
           frame.camera.position,
           frame.camera.frame_forward,
           frame.lighting.time,
           450.0f,
           0x200000);
+        render_birds (r,
+                      m_hens.birds (),
+                      frame.camera.position,
+                      frame.camera.frame_forward,
+                      frame.lighting.time,
+                      90.0f,
+                      0x300000);
+        draw_nest_eggs (
+          m_world_dl, m_nest_sites, logic ().m_nests, frame.camera.position);
         if (actors.walker && lying_down ())
           draw_sleeper (m_world_dl, helmet, frame.lighting.time);
         else if (actors.walker && !helmet)
@@ -6366,6 +6688,7 @@ namespace moppe {
         FrameView frame = compose_frame_view (frame_view_input (aspect));
         light_companion_fire (frame);
         light_beacons (frame);
+        light_barn (frame);
         const bool cinematic = frame.visibility.cinematic;
         const GazetteerShot* gazetteer_shot = current_gazetteer_shot ();
         // A cut is a new view: the temporal history of the last one would
@@ -7356,6 +7679,10 @@ namespace moppe {
       // each sanctuary's beacon burns this frame.
       PlacesPlan m_places;
       Animals m_animals;
+      // The barns' poultry, and their nest boxes (the eggs in them are
+      // the logic's m_nests).
+      Hens m_hens;
+      std::vector<Nest> m_nest_sites;
       // MOPPE_WALK=animals: the animal the walk began by, and the capture
       // camera's side of it and its eased aim.
       std::optional<std::size_t> m_watched;
@@ -7425,6 +7752,10 @@ namespace moppe {
       float m_walk_script_time = 0.0f;
       // MOPPE_WALK=supper: when the foraging was done.
       float m_supper_since = -1.0f;
+      // MOPPE_WALK=barn|byre|eggs: the barn's frame, and how far through
+      // the way out of it the egg gatherer has come.
+      std::optional<Mat4> m_script_barn;
+      int m_egg_script_leg = 0;
       // MOPPE_WALK=camp: the trees it camps between, the side it walks in
       // from, and how far through its steps it is.
       struct CampScript {

@@ -28,6 +28,19 @@ namespace moppe::game::farm_model {
   extern const model_mesh::Mesh mill_wheel_mid;
 
   // Points in model space.
+  extern const Vec3 barn_doorway;
+  extern const Vec3 barn_floor;
+  extern const Vec3 barn_lantern;
+  extern const Vec3 barn_nest_0;
+  extern const Vec3 barn_nest_1;
+  extern const Vec3 barn_nest_2;
+  extern const Vec3 barn_nest_3;
+  extern const Vec3 barn_pen_high;
+  extern const Vec3 barn_pen_low;
+  extern const Vec3 barn_stall_0;
+  extern const Vec3 barn_stall_1;
+  extern const Vec3 barn_stall_2;
+  extern const Vec3 barn_stall_3;
   extern const Vec3 mill_axle;
 }
 

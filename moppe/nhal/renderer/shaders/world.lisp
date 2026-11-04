@@ -3545,7 +3545,9 @@
       (interaction :vec4)          ; the mover's position, footprint radius
       (stand-field :vec4)          ; have stand, 1 / period x, z, 0
       (bare :vec4)                 ; a floor's middle x, z, its length's x, z
-      (bare-size :vec4)))          ; its half length, half width, 0, 0
+      (bare-size :vec4)            ; its half length, half width, 0, 0
+      (yard :vec4)                 ; a barn's floor, as BARE
+      (yard-size :vec4)))          ; as BARE-SIZE, and its trodden margin
   (defparameter *grass-class*
     '((class :vec4))))             ; first record, 0, 0, 0
 
@@ -3869,9 +3871,27 @@
                         (* (swizzle bare-d :x) (swizzle bare :w))))
              (indoors (and (< (abs bare-u) (swizzle bare-size :x))
                            (< (abs bare-v) (swizzle bare-size :y))))
+             ;; Nor in the barn, and round it the yard is trodden and
+             ;; cropped short, thinning out to the meadow.
+             (yard-d (- centre (swizzle yard :xy)))
+             (yard-u (+ (* (swizzle yard-d :x) (swizzle yard :z))
+                        (* (swizzle yard-d :y) (swizzle yard :w))))
+             (yard-v (- (* (swizzle yard-d :y) (swizzle yard :z))
+                        (* (swizzle yard-d :x) (swizzle yard :w))))
+             (in-barn (and (< (abs yard-u) (swizzle yard-size :x))
+                           (< (abs yard-v) (swizzle yard-size :y))))
+             (yard-out (vec2 (max 0.0 (- (abs yard-u) (swizzle yard-size :x)))
+                             (max 0.0 (- (abs yard-v)
+                                         (swizzle yard-size :y)))))
+             (trodden (if (> (swizzle yard-size :z) 0.0)
+                          (mix 0.12 1.0
+                               (smoothstep 0.0 (swizzle yard-size :z)
+                                           (sqrt (dot yard-out yard-out))))
+                          1.0))
              (clear (* (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
                        (- 1.0 (swizzle verge :x))
-                       (if indoors 0.0 1.0)))
+                       (if indoors 0.0 1.0)
+                       (if in-barn 0.0 trodden)))
              (wanted (* (max (* leaf (blade-resolved pixels)) heads)
                         fade 32.0 clear))
              (identity (cell-identity cell))

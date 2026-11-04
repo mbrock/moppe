@@ -149,3 +149,65 @@ MOPPE_TEST (a_grazing_animal_reaches_the_grass_with_its_muzzle) {
     MOPPE_CHECK (up[1] - ground (up[0], up[2]) > 0.35f);
   }
 }
+
+// In a barn the stock is kept: a cow tied in its stall stands there with
+// its head to the manger however long it is watched, and the pigs root
+// about their pen without leaving it.
+MOPPE_TEST (the_barns_stock_stays_in_its_stalls_and_pen) {
+  const AnimalGround country = animals_test_country ();
+  const Vec3 stall (1000.0f, 130.0f, 1500.0f), pen (1004.0f, 130.0f, 1500.0f);
+  const Stall stalls[] = {
+    { .species = Species::cow, .at = stall, .heading = 1.2f },
+    { .species = Species::pig,
+      .at = pen,
+      .heading = 0.3f,
+      .half_along = 1.4f,
+      .half_across = 1.0f,
+      .count = 3 },
+  };
+  Animals animals;
+  animals.rebuild (plan_animals (country,
+                                 {},
+                                 Vec3 (1800.0f, 0.0f, 1800.0f),
+                                 animals_test_size,
+                                 animals_test_size,
+                                 7,
+                                 stalls));
+  int cows = 0, pigs = 0;
+  for (const Animal& a : animals.animals ())
+    if (a.indoors)
+      (a.species == Species::cow ? cows : pigs) += 1;
+  MOPPE_CHECK (cows == 1 && pigs == 3);
+  const float dt = 1.0f / 30.0f;
+  bool moved = false;
+  std::vector<Vec3> start;
+  for (const Animal& a : animals.animals ())
+    start.push_back (a.position);
+  for (int step = 0; step < 180 * 30; ++step) {
+    // Someone walks back and forth before them.
+    const float x = 1002.0f + 4.0f * std::sin (step * dt * 0.3f);
+    const Presence walker { .position = Vec3 (x, 130.0f, 1497.0f) };
+    const Presence presences[] = { walker };
+    animals.step (country, presences, stall, 500.0f, dt);
+    for (std::size_t i = 0; i < animals.animals ().size (); ++i) {
+      const Animal& a = animals.animals ()[i];
+      if (!a.indoors)
+        continue;
+      if (a.species == Species::cow) {
+        MOPPE_CHECK (std::hypot (a.position[0] - stall[0],
+                                 a.position[2] - stall[2]) < 1e-3f);
+        MOPPE_CHECK_NEAR (a.heading, 1.2f, 1e-4f);
+        continue;
+      }
+      // Within the pen, in its own frame.
+      const Vec3 along (std::sin (0.3f), 0.0f, std::cos (0.3f));
+      const Vec3 across (along[2], 0.0f, -along[0]);
+      const Vec3 d = a.position - pen;
+      MOPPE_CHECK (std::abs (dot (d, along)) <= 1.4f + 1e-3f);
+      MOPPE_CHECK (std::abs (dot (d, across)) <= 1.0f + 1e-3f);
+      if (length (a.position - start[i]) > 0.3f)
+        moved = true;
+    }
+  }
+  MOPPE_CHECK (moved);
+}

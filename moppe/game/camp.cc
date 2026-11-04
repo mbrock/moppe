@@ -1,6 +1,7 @@
 #include <moppe/game/camp.hh>
 
 #include <moppe/game/fishing.hh>
+#include <moppe/game/hens.hh>
 #include <moppe/game/sprites.hh>
 #include <moppe/gfx/signal.hh>
 
@@ -627,7 +628,8 @@ namespace moppe::game {
                  float yaw,
                  std::span<const MushroomSite> mushrooms,
                  float cooked,
-                 const Fish* fish) {
+                 const Fish* fish,
+                 int eggs) {
     using namespace camp_parts;
     constexpr float radius = 0.17f;
     constexpr float wall = 0.045f;
@@ -685,16 +687,33 @@ namespace moppe::game {
                  0.0f,
                  cooked);
     }
+    // Eggs broken into the middle, the mushrooms round them.
+    for (int i = 0; i < eggs; ++i) {
+      const float around = tau * (i + 0.25f) / eggs + yaw;
+      Vec3 at = place + world_up * 0.004f;
+      if (fish)
+        at += out * 0.09f + across * (0.1f * (i % 2 ? 1.0f : -1.0f));
+      else if (eggs > 1)
+        at += Vec3 (std::cos (around), 0.0f, std::sin (around)) * 0.065f;
+      draw_fried_egg (dl,
+                      at,
+                      around + 2.0f,
+                      cooked,
+                      static_cast<std::uint32_t> (i * 7919 + 13));
+    }
     for (std::size_t i = 0; i < mushrooms.size (); ++i) {
       MushroomSite lying = mushrooms[i];
       const float around =
         tau * (i + 0.5f) / mushrooms.size () + hash_lane (lying.seed, 31);
       lying.base = place +
                    Vec3 (std::cos (around), 0.0f, std::sin (around)) *
-                     (mushrooms.size () > 1 ? 0.07f : 0.0f) +
+                     (eggs > 0                ? 0.125f
+                      : mushrooms.size () > 1 ? 0.07f
+                                              : 0.0f) +
                    world_up * 0.03f;
       if (fish)
-        lying.base += out * 0.09f + across * (0.11f * (i % 2 ? 1.0f : -1.0f));
+        lying.base +=
+          out * 0.09f + across * (0.11f * ((i + eggs) % 2 ? 1.0f : -1.0f));
       lying.scale = 0.5f * mushrooms[i].scale;
       lying.lean = 1.3f;
       lying.lean_toward = around + 1.9f;

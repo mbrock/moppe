@@ -34,6 +34,11 @@ namespace moppe::game {
     double last_reach_time = -100.0;
     MushroomKind last_kind = MushroomKind::chanterelle;
     bool last_refused = false;
+    // The last reach was into a nest box.
+    bool last_egg = false;
+
+    // Eggs from the barns' nest boxes (game/hens.hh), lying among them.
+    int eggs = 0;
 
     int total () const {
       int sum = 0;
@@ -42,6 +47,17 @@ namespace moppe::game {
       return sum;
     }
   };
+
+  // What lies in a barn's nest box, and the clock's hour (counted from
+  // the first midnight) its next egg will be laid.
+  struct NestState {
+    std::uint8_t eggs = 0;
+    double next_lay = 0.0;
+  };
+
+  inline constexpr int nest_holds = 3;
+  // The most eggs the basket takes, among the mushrooms.
+  inline constexpr int basket_holds_eggs = 6;
 }
 
 #endif

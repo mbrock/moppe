@@ -926,7 +926,7 @@ namespace moppe {
         const std::string name (st.reached_name);
         const std::string line =
           st.reached_refused ? "Not that one -- the " + name + " is poisonous!"
-                             : "A " + name + "!";
+                             : (name == "egg" ? "An " : "A ") + name + "!";
         draw_shaded (text,
                      0.5f * width_pts,
                      height_pts - 96.0f - 10.0f * (1.0f - ease (fresh)),
@@ -1006,10 +1006,21 @@ namespace moppe {
                    st.basket_total > 0 ? "in the basket" : "fish caught",
                    unit,
                    TextAlign::Center);
+      float below = 11.0f;
+      if (st.basket_eggs > 0 && st.basket_eggs < st.basket_total) {
+        draw_shaded (text,
+                     cx,
+                     cy + 0.80f * gauge_radius + below,
+                     std::to_string (st.basket_eggs) +
+                       (st.basket_eggs > 1 ? " of them eggs" : " an egg"),
+                     unit,
+                     TextAlign::Center);
+        below += 11.0f;
+      }
       if (st.basket_total > 0 && st.fish_total > 0)
         draw_shaded (text,
                      cx,
-                     cy + 0.80f * gauge_radius + 11.0f,
+                     cy + 0.80f * gauge_radius + below,
                      "and " + std::to_string (st.fish_total) + " fish",
                      unit,
                      TextAlign::Center);
@@ -1755,18 +1766,27 @@ namespace moppe {
                      ? "Pick the " + std::string (st.mushroom_in_reach)
                      : name + " within reach";
         }
+      } else if (st.on_foot && st.egg_in_reach) {
+        if (!st.basket_takes_egg) {
+          action = "The basket holds no more eggs";
+        } else {
+          key = deploy_key;
+          action = *deploy_key ? "Take the egg" : "An egg in the nest";
+        }
       } else if (st.on_foot && st.cook != HudState::Cook::none) {
         key = deploy_key;
         switch (st.cook) {
         case HudState::Cook::fry:
-          action = st.cook_fish
-                     ? (*deploy_key ? "Fry the fish" : "Fish to fry")
+          action = st.cook_fish ? (*deploy_key ? "Fry the fish" : "Fish to fry")
+                   : st.cook_eggs
+                     ? (*deploy_key ? "Fry the eggs" : "Eggs to fry")
                      : (*deploy_key ? "Fry the mushrooms" : "Mushrooms to fry");
           break;
         case HudState::Cook::frying:
           key = "";
-          action =
-            st.cook_fish ? "The fish is frying" : "The mushrooms are frying";
+          action = st.cook_fish   ? "The fish is frying"
+                   : st.cook_eggs ? "The eggs are frying"
+                                  : "The mushrooms are frying";
           break;
         case HudState::Cook::eat:
           action = *deploy_key ? "Eat" : "Supper is ready";

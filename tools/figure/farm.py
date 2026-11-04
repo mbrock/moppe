@@ -59,6 +59,16 @@ PALETTE = {
     "slate": (0.20, 0.21, 0.23),
     "boards": (0.34, 0.30, 0.26),
     "iron": (0.20, 0.20, 0.21),
+    "hay": (0.72, 0.62, 0.36),
+    "straw": (0.70, 0.62, 0.42),
+    "swill": (0.32, 0.26, 0.18),
+    "shadow": (0.06, 0.05, 0.045),
+    "old_boards": (0.42, 0.36, 0.29),
+    "daylight": (0.80, 0.84, 0.88),
+    "lamplight": (1.0, 0.78, 0.42),
+    "tin": (0.66, 0.67, 0.68),
+    "water": (0.12, 0.15, 0.16),
+    "sacking": (0.62, 0.55, 0.42),
 }
 
 FINISH = {
@@ -74,6 +84,16 @@ FINISH = {
     "slate": dict(roughness=0.7),
     "boards": dict(roughness=0.92),
     "iron": dict(metallic=0.7, roughness=0.6),
+    "hay": dict(roughness=0.95, sheen=0.3),
+    "straw": dict(roughness=0.95, sheen=0.3),
+    "swill": dict(roughness=0.3),
+    "shadow": dict(roughness=1.0),
+    "old_boards": dict(roughness=0.95),
+    "daylight": dict(roughness=1.0),
+    "lamplight": dict(roughness=0.2, emission=4.0),
+    "tin": dict(metallic=0.8, roughness=0.4),
+    "water": dict(roughness=0.05, coat=0.6),
+    "sacking": dict(roughness=1.0, sheen=0.4),
 }
 
 
@@ -488,56 +508,424 @@ def house(coll, m, suffix, tier):
                tier)
 
 
+# The barn's measures, which places.cc reads through its exported points.
+BARN_HX, BARN_HZ = 6.0, 4.0     # half its length and depth outside
+BARN_T = 0.14                   # its walls' boards
+BARN_FLOOR = 0.34               # the floor's top over the ground
+BARN_EAVE, BARN_RIDGE = 4.3, 7.3
+BARN_CEILING = 3.5              # the loft's boards' underside
+BARN_DOOR = 1.7                 # half the doorway's width
+BARN_DOOR_TOP = 3.25
+# Stalls along the back wall, each (x from, x to, front's z, kind): two
+# horses and two cows with their heads to the manger, then the pigs' pen.
+BARN_STALLS = ((5.86, 4.06, -0.8, "horse"), (4.06, 2.26, -0.8, "horse"),
+               (2.26, 0.91, -1.4, "cow"), (0.91, -0.44, -1.4, "cow"))
+BARN_PEN = (-0.44, -3.4, -1.2)  # x from, x to, the pen's front
+BARN_MANGER = -3.3              # the manger's front board
+BARN_NESTS = (-3.55, -3.0, -2.45, -1.9)   # nest boxes' z on the end wall
+BARN_NEST_Y = 0.84              # the nest shelf's top
+
+
+def barn_inside(b, m, tier):
+    """What stands in the byre: the stalls with their manger of hay, the
+    pigs' pen and trough, the hens' nest boxes and perches, a lantern from
+    the middle beam, a ladder to the loft, loose hay, and a few things of
+    the work."""
+    ix, iz, fl = BARN_HX - BARN_T, BARN_HZ - BARN_T, BARN_FLOOR
+    # The manger runs the length of the stalls: a low board before a bed
+    # of hay against the back wall.
+    x0, x1 = BARN_PEN[0], ix
+    part(b, "manger", slab(V(((x0 + x1) / 2, fl + 0.11, BARN_MANGER)),
+                           ((x1 - x0) / 2 - 0.005, 0.12, 0.03)),
+         m["dark_timber"], levels=0, smooth=False)
+    if tier == NEAR:
+        hay = []
+        rnd = 5
+        x = x0 + 0.25
+        while x < x1 - 0.2:
+            rnd = (rnd * 1103515245 + 12345) & 0x7fffffff
+            j = (rnd % 1000) / 1000.0
+            hay.append(blob(V((x, fl + 0.12, (BARN_MANGER - iz) / 2)),
+                            (0.32 + 0.1 * j, 0.16 + 0.06 * j, 0.26), 8, 5))
+            x += 0.42
+        part(b, "manger_hay", merge(*hay), m["hay"], levels=1)
+    else:
+        part(b, "manger_hay", slab(V(((x0 + x1) / 2, fl + 0.1,
+                                      (BARN_MANGER - iz) / 2)),
+                                   ((x1 - x0) / 2 - 0.02, 0.12,
+                                    (BARN_MANGER - (-iz)) / 2 - 0.04)),
+             m["hay"], levels=0, smooth=False)
+    # The stalls' plank partitions, each with a post at its front up to
+    # the loft, and a bar over it.
+    walls, posts = [], []
+    xs = [s[1] for s in BARN_STALLS]
+    fronts = [min(BARN_STALLS[k][2], BARN_STALLS[k + 1][2])
+              if k + 1 < len(BARN_STALLS) else BARN_STALLS[k][2]
+              for k in range(len(BARN_STALLS))]
+    for x, front, (_, _, _, kind) in zip(xs, fronts, BARN_STALLS):
+        h = 1.4 if kind == "horse" else 1.2
+        walls.append(slab(V((x, fl + h / 2 - 0.01, (front - iz) / 2)),
+                          (0.03, h / 2, (front + iz) / 2 - 0.005)))
+        posts.append(slab(V((x, (fl + BARN_CEILING) / 2, front)),
+                          (0.07, (BARN_CEILING - fl) / 2 + 0.01, 0.07)))
+    # The pigs' pen: a lower wall along its front and its far side.
+    px0, px1, pz = BARN_PEN
+    walls.append(slab(V(((px0 + px1) / 2, fl + 0.47, pz)),
+                      ((px0 - px1) / 2 - 0.03, 0.48, 0.03)))
+    walls.append(slab(V((px1, fl + 0.47, (pz - iz) / 2)),
+                      (0.03, 0.48, (pz + iz) / 2 - 0.005)))
+    posts.append(slab(V((px1, fl + 0.55, pz)), (0.06, 0.56, 0.06)))
+    part(b, "stalls", merge(*walls), m["grey_timber"], levels=0,
+         smooth=False)
+    part(b, "posts", merge(*posts), m["dark_timber"], levels=0, smooth=False)
+    if tier == NEAR:
+        # Each partition's top rail, 3 cm proud of its boards.
+        rails = []
+        for x, front, (_, _, _, kind) in zip(xs, fronts, BARN_STALLS):
+            h = 1.4 if kind == "horse" else 1.2
+            rails.append(slab(V((x, fl + h + 0.02, (front - iz) / 2)),
+                              (0.05, 0.04, (front + iz) / 2 - 0.08)))
+        rails.append(slab(V(((px0 + px1) / 2, fl + 0.97, pz)),
+                          ((px0 - px1) / 2 - 0.08, 0.04, 0.05)))
+        rails.append(slab(V((px1, fl + 0.97, (pz - iz) / 2)),
+                          (0.05, 0.04, (pz + iz) / 2 - 0.08)))
+        part(b, "stall_rails", merge(*rails), m["dark_timber"], levels=0,
+             smooth=False)
+    # Straw on the pen's floor and the stalls', and the pigs' trough.
+    straw = [slab(V(((px0 + px1) / 2, fl + 0.015, (pz - iz) / 2)),
+                  ((px0 - px1) / 2 - 0.04, 0.02, (pz + iz) / 2 - 0.04))]
+    for x_a, x_b, front, _ in BARN_STALLS:
+        straw.append(slab(V(((x_a + x_b) / 2, fl + 0.01,
+                             (front + BARN_MANGER) / 2)),
+                          (abs(x_a - x_b) / 2 - 0.05, 0.015,
+                           (front - BARN_MANGER) / 2 - 0.05)))
+    part(b, "straw", merge(*straw), m["straw"], levels=0, smooth=False)
+    tx = (px0 + px1) / 2
+    trough = [slab(V((tx, fl + 0.02, -iz + 0.25)), (0.62, 0.03, 0.17)),
+              slab(V((tx, fl + 0.12, -iz + 0.09)), (0.62, 0.12, 0.025)),
+              slab(V((tx, fl + 0.12, -iz + 0.41)), (0.62, 0.12, 0.025)),
+              slab(V((tx - 0.6, fl + 0.12, -iz + 0.25)), (0.025, 0.12, 0.15)),
+              slab(V((tx + 0.6, fl + 0.12, -iz + 0.25)), (0.025, 0.12, 0.15))]
+    part(b, "trough", merge(*trough), m["dark_timber"], levels=0,
+         smooth=False)
+    part(b, "swill", slab(V((tx, fl + 0.1, -iz + 0.25)), (0.56, 0.02, 0.13)),
+         m["swill"], levels=0, smooth=False)
+
+    # The hens' corner: a row of nest boxes on a shelf along the end wall,
+    # a ladder of perches beside them, and a plank up to the boxes.
+    nx = -ix
+    shelf_y = BARN_NEST_Y
+    z0, z1 = BARN_NESTS[0] - 0.29, BARN_NESTS[-1] + 0.29
+    boxes = [slab(V((nx + 0.26, shelf_y - 0.02, (z0 + z1) / 2)),
+                  (0.26, 0.03, (z1 - z0) / 2)),
+             slab(V((nx + 0.26, shelf_y + 0.44, (z0 + z1) / 2)),
+                  (0.27, 0.02, (z1 - z0) / 2 + 0.01)),
+             slab(V((nx + 0.5, shelf_y + 0.04, (z0 + z1) / 2)),
+                  (0.02, 0.07, (z1 - z0) / 2))]
+    for k in range(len(BARN_NESTS) + 1):
+        z = z0 + (z1 - z0) * k / len(BARN_NESTS)
+        boxes.append(slab(V((nx + 0.26, shelf_y + 0.21, z)),
+                          (0.25, 0.22, 0.015)))
+    # The shelf's legs.
+    for z in (z0 + 0.04, z1 - 0.04):
+        boxes.append(slab(V((nx + 0.46, (fl + shelf_y) / 2, z)),
+                          (0.03, (shelf_y - fl) / 2, 0.03)))
+    part(b, "nest_boxes", merge(*boxes), m["grey_timber"], levels=0,
+         smooth=False)
+    if tier == NEAR:
+        nests = [blob(V((nx + 0.27, shelf_y + 0.05, z)), (0.2, 0.06, 0.2), 8, 4)
+                 for z in BARN_NESTS]
+        part(b, "nest_straw", merge(*nests), m["straw"], levels=1)
+        # The perches: poles across the corner, one above and behind the
+        # other, over a board for what falls.
+        poles = []
+        for k, (y, dz) in enumerate(((1.05, -3.25), (1.35, -3.6))):
+            poles.append(tube([V((nx - 0.02, y, dz)), V((-3.48, y, dz))], 0.025,
+                              sides=6))
+        part(b, "perches", merge(*poles), m["dark_timber"], levels=0)
+        part(b, "perch_board", slab(V(((nx + -3.48) / 2, 0.62, -3.42)),
+                                    ((-3.48 - nx) / 2, 0.015, 0.3)),
+             m["boards"], levels=0, smooth=False)
+        # The hens' plank up to the boxes, with slats across it.
+        foot = V((nx + 1.15, fl + 0.02, -1.15))
+        top = V((nx + 0.52, shelf_y, -1.62))
+        d = (top - foot).normalized()
+        side = UP.cross(d).normalized()
+        n = d.cross(side)
+        plank = [slab((foot + top) / 2, ((top - foot).length / 2, 0.012, 0.11),
+                      axes=(d, n, side))]
+        for k in range(1, 5):
+            c = foot + (top - foot) * (k / 5) + n * 0.025
+            plank.append(slab(c, (0.012, 0.012, 0.1), axes=(d, n, side)))
+        part(b, "hen_ladder", merge(*plank), m["grey_timber"], levels=0,
+             smooth=False)
+
+    # The beams across under the loft, its boards, and the hatch the
+    # ladder goes up to.
+    beams = [slab(V((x, BARN_CEILING - 0.1, 0)), (0.09, 0.11, iz - 0.003))
+             for x in (-4.6, -2.3, 0.0, 2.3, 4.6)]
+    part(b, "beams", merge(*beams), m["dark_timber"], levels=0, smooth=False)
+    part(b, "loft", slab(V((0, BARN_CEILING + 0.03, 0)),
+                         (ix - 0.005, 0.03, iz - 0.005)), m["boards"],
+         levels=0, smooth=False)
+    hatch = V((-1.15, BARN_CEILING - 0.02, 1.2))
+    part(b, "hatch", slab(hatch, (0.4, 0.01, 0.45)), m["shadow"], levels=0,
+         smooth=False)
+    if tier == NEAR:
+        foot = V((-1.15, fl, 2.35))
+        top = hatch + V((0, 0.35, 0.3))
+        rails = []
+        for s in (-1, 1):
+            o = V((s * 0.24, 0, 0))
+            rails.append(tube([foot + o, top + o], 0.03, sides=6))
+        rungs = []
+        for k in range(1, 11):
+            c = foot + (top - foot) * (k / 11.5)
+            rungs.append(tube([c + V((-0.24, 0, 0)), c + V((0.24, 0, 0))],
+                              0.018, sides=5))
+        part(b, "ladder", merge(*rails), m["grey_timber"], levels=0)
+        part(b, "ladder_rungs", merge(*rungs), m["grey_timber"], levels=0)
+        # The lantern from the middle beam, a little toward the door.
+        lamp = V((0.0, 2.72, 0.7))
+        part(b, "lantern_chain", tube([V((0.0, BARN_CEILING - 0.2, 0.7)),
+                                       lamp + V((0, 0.17, 0))], 0.008,
+                                      sides=4), m["iron"], levels=0)
+        part(b, "lantern_frame",
+             merge(slab(lamp + V((0, 0.13, 0)), (0.09, 0.025, 0.09)),
+                   slab(lamp + V((0, -0.13, 0)), (0.1, 0.02, 0.1)),
+                   tube([lamp + V((0, 0.15, 0)), lamp + V((0, 0.2, 0))],
+                        0.04, sides=6)),
+             m["iron"], levels=0, smooth=False)
+        part(b, "lantern_glass", slab(lamp, (0.075, 0.12, 0.075)),
+             m["lamplight"], levels=0, smooth=False)
+        # Loose hay heaped in the front corner, a fork stood in it, a
+        # pair of milk churns, a tub, and sacks by the other corner.
+        heap = merge(blob(V((4.7, fl + 0.35, 2.85)), (1.05, 0.5, 0.85), 10, 6),
+                     blob(V((5.2, fl + 0.6, 3.25)), (0.6, 0.55, 0.5), 8, 5),
+                     blob(V((3.9, fl + 0.2, 3.3)), (0.55, 0.28, 0.45), 8, 5))
+        part(b, "hay_heap", heap, m["hay"], levels=1)
+        fork = V((3.75, fl, 2.3))
+        tip = V((4.15, fl + 1.65, 2.9))
+        part(b, "fork_shaft", tube([fork, tip], 0.018, sides=5),
+             m["grey_timber"], levels=0)
+        prongs = []
+        d = (tip - fork).normalized()
+        for s in (-1, 0, 1):
+            o = V((0.05 * s, 0, -0.03 * s))
+            prongs.append(tube([fork + o + d * 0.05, fork + o - d * 0.2], 0.007,
+                               sides=4))
+        part(b, "fork_prongs", merge(*prongs), m["iron"], levels=0)
+        churns = []
+        for x, z in ((-5.35, 3.3), (-4.9, 3.45)):
+            churns.append(tube([V((x, fl - 0.01, z)), V((x, fl + 0.5, z))],
+                               0.17, sides=12))
+            churns.append(tube([V((x, fl + 0.5, z)), V((x, fl + 0.62, z))],
+                               0.09, sides=10))
+            churns.append(tube([V((x, fl + 0.62, z)), V((x, fl + 0.66, z))],
+                               0.11, sides=10))
+        part(b, "churns", merge(*churns), m["tin"], levels=0)
+        part(b, "tub", tube([V((-5.2, fl - 0.01, 2.4)), V((-5.2, fl + 0.4, 2.4))],
+                            0.34, sides=14), m["dark_timber"], levels=0)
+        part(b, "tub_water", slab(V((-5.2, fl + 0.35, 2.4)), (0.24, 0.01, 0.24)),
+             m["water"], levels=0, smooth=False)
+        sacks = merge(blob(V((-5.3, fl + 0.3, 1.4)), (0.28, 0.32, 0.22), 8, 5),
+                      blob(V((-4.85, fl + 0.26, 1.2)), (0.27, 0.28, 0.21), 8, 5))
+        part(b, "sacks", sacks, m["sacking"], levels=1)
+
+
 def barn(coll, m, suffix, tier):
+    hx, hz, t, fl = BARN_HX, BARN_HZ, BARN_T, BARN_FLOOR
+    eave, ridge = BARN_EAVE, BARN_RIDGE
+    door, door_top = BARN_DOOR, BARN_DOOR_TOP
     if tier != MID:
         base = assembly("barn_base" + suffix, coll, V((0, 0, 0)),
                         mesh="barn_base" + suffix)
-        plinth(base, "footing", V((0, -0.05, 0)), (4.6, 0.45, 3.1), 2, 23,
-               m["stone"], tier)
+        # A footing of fieldstones from well below the ground to the
+        # floor, and an earthen ramp up to the doors, faced with stone.
+        plinth(base, "footing", V((0, -0.35, 0)), (hx + 0.1, 0.65, hz + 0.1),
+               3, 23, m["stone"], tier)
+        ramp = turned(prism([(-hz, fl - 0.04), (-hz - 1.9, -0.12),
+                             (-hz - 1.9, -0.7), (-hz, -0.7)],
+                            -door - 0.25, door + 0.25))
+        part(base, "ramp", ramp, m["stone_dark"], levels=0, smooth=False)
 
     b = assembly("barn" + suffix, coll, V((0, 0, 0)), mesh="barn" + suffix)
-    part(b, "walls", slab(V((0, 2.2, 0)), (4.4, 1.8, 2.9)), m["falu_old"],
-         levels=0, smooth=False)
-    gable(b, "gable", 2.9, 4.4, 4.0, 6.1, m["falu_old"], along_x=True)
-    if tier == NEAR:
-        for face, half, count, reach in ((FORWARD, (4.4, 1.8), 30, 2.9),
-                                         (-FORWARD, (4.4, 1.8), 30, 2.9),
-                                         (RIGHT, (2.9, 1.8), 20, 4.4),
-                                         (-RIGHT, (2.9, 1.8), 20, 4.4)):
-            boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
-                   V((0, 2.2, 0)) + face * reach, face, half, m["falu_old"],
-                   count)
-    roof(b, "roof", 3.4, 4.75, 3.85, 6.25, 0.1, m["boards"], along_x=True)
-    part(b, "ridge", slab(V((0, 6.36, 0)), (4.8, 0.10, 0.12)),
+    wy = (fl - 0.04 + eave) / 2
+    wh = (eave - (fl - 0.04)) / 2
+    walls = [slab(V((0, wy, -hz + t / 2)), (hx, wh, t / 2)),
+             slab(V((-hx + t / 2, wy, 0)), (t / 2, wh, hz - t)),
+             slab(V((hx - t / 2, wy, 0)), (t / 2, wh, hz - t)),
+             slab(V(((hx + door) / 2, wy, hz - t / 2)),
+                  ((hx - door) / 2, wh, t / 2)),
+             slab(V((-(hx + door) / 2, wy, hz - t / 2)),
+                  ((hx - door) / 2, wh, t / 2)),
+             slab(V((0, (door_top + eave) / 2, hz - t / 2)),
+                  (door, (eave - door_top) / 2, t / 2))]
+    part(b, "walls", merge(*walls), m["falu"], levels=0, smooth=False)
+    gable(b, "gable", hz, hx, eave, ridge, m["falu"], along_x=True)
+    # Over the gable by 2 cm, its eaves out past the long walls.
+    slope = (ridge - eave) / hz
+    over = 0.5
+    roof(b, "roof", hz + over, hx + 0.4, eave + 0.02 - slope * over,
+         ridge + 0.02, 0.1, m["shingle"], along_x=True)
+    part(b, "ridge", slab(V((0, ridge + 0.17, 0)), (hx + 0.45, 0.09, 0.13)),
          m["dark_timber"], levels=0, smooth=False)
-    # The broad double doors in the middle of the front, braced, and a
-    # loft hatch in the gable. The 4 cm between the leaves shows only near
-    # to; further off they are one.
+    # The floor of boards, and the threshold over the doorway.
+    ix, iz = hx - t, hz - t
+    part(b, "floor", slab(V((0, fl - 0.02, 0)), (ix - 0.005, 0.02, iz - 0.005)),
+         m["boards"], levels=0, smooth=False)
+    part(b, "threshold", slab(V((0, fl + 0.005, hz - t / 2)),
+                              (door - 0.005, 0.025, t / 2 + 0.04)),
+         m["dark_timber"], levels=0, smooth=False)
+
     if tier == NEAR:
-        doors = [slab(V((s * 0.8, 1.75, 2.93)), (0.78, 1.35, 0.05))
-                 for s in (-1, 1)]
-    else:
-        doors = [slab(V((0, 1.75, 2.93)), (1.58, 1.35, 0.05))]
-    part(b, "doors", merge(*doors), m["dark_timber"], levels=0, bevel=0.01,
-         smooth=False)
+        for face, half, count, reach, gap in (
+                (FORWARD, (hx, wh), 40, hz, (-door, door)),
+                (-FORWARD, (hx, wh), 40, hz, None),
+                (RIGHT, (hz, wh), 26, hx, None),
+                (-RIGHT, (hz, wh), 26, hx, None)):
+            boards(b, f"battens{face.x:+.0f}{face.z:+.0f}",
+                   V((0, wy, 0)) + face * reach, face, half, m["falu"],
+                   count, gap=gap)
     if tier <= MID:
-        # The rails 3 cm before the doors, and the diagonal 2 cm before the
-        # rails it crosses.
-        braces = []
-        for s in (-1, 1):
-            d = (UP * 2.5 + RIGHT * s * 1.4).normalized()
-            braces.append(slab(V((s * 0.8, 1.75, 3.0)), (0.06, 1.4, 0.03),
-                               axes=(d.cross(FORWARD), d, FORWARD)))
-            braces.append(slab(V((s * 0.8, 2.95, 2.99)), (0.74, 0.06, 0.02)))
-            braces.append(slab(V((s * 0.8, 0.55, 2.99)), (0.74, 0.06, 0.02)))
-        part(b, "braces", merge(*braces), m["white"], levels=0, smooth=False)
-    # The ramp up to the doors, its top 6 cm under the footing's and its
-    # back sunk in it.
-    part(b, "ramp", slab(V((0, 0.17, 3.55)), (1.7, 0.17, 0.55)),
-         m["stone_dark"], levels=0, bevel=0.04, smooth=False)
-    for s in (-1, 1):
-        part(b, f"hatch{s}", slab(V((s * 4.43, 4.6, 0)), (0.04, 0.55, 0.6)),
+        # White corner boards, the fascia under the eaves, barge boards up
+        # the gables, and a white frame round the doorway.
+        trim = []
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                trim.append(slab(V((sx * hx, wy, sz * hz)), (0.08, wh + 0.02,
+                                                            0.08)))
+        for sz in (-1, 1):
+            trim.append(slab(V((0, eave - 0.08, sz * (hz + 0.05))),
+                             (hx + 0.05, 0.08, 0.03)))
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                a = V((sx * (hx + 0.43), eave + 0.02 - slope * over - 0.06,
+                       sz * (hz + over)))
+                c = V((sx * (hx + 0.43), ridge + 0.02 - 0.06, 0))
+                d = (c - a).normalized()
+                trim.append(slab((a + c) / 2, (0.025, 0.11, (c - a).length / 2),
+                                 axes=(RIGHT, RIGHT.cross(d).normalized(), d)))
+        for sx in (-1, 1):
+            trim.append(slab(V((sx * (door + 0.07), (fl + door_top) / 2 + 0.05,
+                                hz + 0.03)),
+                             (0.07, (door_top - fl) / 2 + 0.05, 0.045)))
+        trim.append(slab(V((0, door_top + 0.07, hz + 0.03)),
+                         (door + 0.14, 0.07, 0.045)))
+        part(b, "trim", merge(*trim), m["white"], levels=0, smooth=False)
+        # The hay door high in the left gable, white framed.
+        part(b, "hay_door", slab(V((hx + 0.05, 5.0, 0)), (0.04, 0.6, 0.55)),
              m["dark_timber"], levels=0, smooth=False)
+        part(b, "hay_door_frame",
+             placed(frame_ring((0.67, 0.72), (0.55, 0.6), -0.01, 0.09),
+                    V((hx, 5.0, 0)), -FORWARD, UP, RIGHT),
+             m["white"], levels=0, smooth=False)
+
+    # The big doors stand open, swung out square to the wall either side
+    # of the doorway: boards in a white frame, braced corner to corner.
+    leaf_h = door_top - fl - 0.06
+    leaf_w = door - 0.04
+    for s in (-1, 1):
+        x = s * (door + 0.17)
+        centre = V((x, fl + 0.02 + leaf_h / 2, hz + 0.1 + leaf_w / 2))
+        part(b, f"door{s:+d}", slab(centre, (0.04, leaf_h / 2, leaf_w / 2)),
+             m["falu"], levels=0, bevel=0.01 if tier == NEAR else 0.0,
+             smooth=False)
+        if tier <= MID:
+            braces = []
+            for o in (-1, 1):
+                face = V((x + o * 0.06, 0, 0))
+                fx = face.x
+                braces.append(slab(V((fx, centre.y + leaf_h / 2 - 0.07,
+                                      centre.z)), (0.02, 0.07, leaf_w / 2)))
+                braces.append(slab(V((fx, centre.y - leaf_h / 2 + 0.07,
+                                      centre.z)), (0.02, 0.07, leaf_w / 2)))
+                braces.append(slab(V((fx, centre.y, centre.z - leaf_w / 2
+                                      + 0.07)), (0.02, leaf_h / 2, 0.07)))
+                braces.append(slab(V((fx, centre.y, centre.z + leaf_w / 2
+                                      - 0.07)), (0.02, leaf_h / 2, 0.07)))
+                for k in (-1, 1):
+                    d = (UP * (leaf_h - 0.2) + FORWARD * k *
+                         (leaf_w - 0.2)).normalized()
+                    braces.append(slab(V((fx + 0.004 * k, centre.y,
+                                          centre.z)),
+                                       (0.02, ((leaf_h - 0.2) ** 2 +
+                                               (leaf_w - 0.2) ** 2) ** 0.5
+                                        / 2, 0.06),
+                                       axes=(RIGHT, d, RIGHT.cross(d))))
+            part(b, f"door_braces{s:+d}", merge(*braces), m["white"],
+                 levels=0, smooth=False)
+    if tier == NEAR:
+        # The doors' iron strap hinges and the hasp.
+        hinges = []
+        for s in (-1, 1):
+            for y in (fl + 0.5, door_top - 0.5):
+                hinges.append(slab(V((s * (door + 0.17) + s * 0.07, y,
+                                      hz + 0.45)), (0.012, 0.03, 0.33)))
+        part(b, "hinges", merge(*hinges), m["iron"], levels=0, smooth=False)
+
+    # Windows: small ones over the stalls in the back wall and in the
+    # ends, each with a pale pane inside where the daylight comes in.
+    lights = ((V((4.96, 2.3, -hz)), -FORWARD), (V((3.16, 2.3, -hz)), -FORWARD),
+              (V((0.9, 2.3, -hz)), -FORWARD), (V((-2.0, 2.3, -hz)), -FORWARD),
+              (V((-hx, 2.3, 1.4)), -RIGHT), (V((hx, 2.3, 0.6)), RIGHT))
+    for k, (at, normal) in enumerate(lights):
+        window(b, f"window{k}", at, normal, (0.7, 0.5), m, tier)
+
+    if tier <= MID:
+        # Lined inside with old boards, sunk 1 cm in the walls' faces and
+        # standing 2 cm off them; the panes of the windows show through.
+        li, lj = iz - 0.005, ix - 0.005
+        lh = (BARN_CEILING - fl) / 2
+        ly = (BARN_CEILING + fl) / 2 - 0.01
+        lining = [slab(V((0, ly, -li)), (lj, lh, 0.015)),
+                  slab(V((-lj, ly, 0)), (0.015, lh, li)),
+                  slab(V((lj, ly, 0)), (0.015, lh, li)),
+                  slab(V(((lj + door) / 2, ly, li)), ((lj - door) / 2, lh,
+                                                      0.015)),
+                  slab(V((-(lj + door) / 2, ly, li)), ((lj - door) / 2, lh,
+                                                       0.015)),
+                  slab(V((0, (door_top + BARN_CEILING) / 2, li)),
+                       (door, (BARN_CEILING - door_top) / 2, 0.015))]
+        part(b, "lining", merge(*lining), m["old_boards"], levels=0,
+             smooth=False)
+        panes = []
+        for at, normal in lights:
+            inner = at - normal * (hz - li + 0.025 if abs(normal.z) > 0.5
+                                   else hx - lj + 0.025)
+            side = UP.cross(normal).normalized()
+            panes.append(placed(slab(V((0, 0, 0)), (0.35, 0.25, 0.008)),
+                                inner, side, UP, -normal))
+        part(b, "panes_inside", merge(*panes), m["daylight"], levels=0,
+             smooth=False)
+        barn_inside(b, m, tier)
+    else:
+        # From far off the doorway is the dark of the barn within.
+        part(b, "doorway", slab(V((0, (fl + door_top) / 2, hz - t / 2)),
+                                (door + 0.01, (door_top - fl) / 2, 0.02)),
+             m["shadow"], levels=0, smooth=False)
+
+    if tier == NEAR:
+        # Points the game places by: the floor, each stall's manger (where
+        # its beast's muzzle goes), the pen's corners, the nests, the
+        # lantern, and the doorway on the floor.
+        assembly("barn_floor", coll, V((0, fl, 0)), point="barn_floor")
+        for k, (xa, xb, front, kind) in enumerate(BARN_STALLS):
+            assembly(f"barn_stall_{k}", coll,
+                     V(((xa + xb) / 2, fl, (BARN_MANGER + -iz) / 2)),
+                     point=f"barn_stall_{k}")
+        px0, px1, pz = BARN_PEN
+        assembly("barn_pen_low", coll, V((px1 + 0.1, fl, -iz + 0.5)),
+                 point="barn_pen_low")
+        assembly("barn_pen_high", coll, V((px0 - 0.1, fl, pz - 0.15)),
+                 point="barn_pen_high")
+        for k, z in enumerate(BARN_NESTS):
+            assembly(f"barn_nest_{k}", coll, V((-ix + 0.27, BARN_NEST_Y + 0.08,
+                                                z)),
+                     point=f"barn_nest_{k}")
+        assembly("barn_lantern", coll, V((0.0, 2.72, 0.7)),
+                 point="barn_lantern")
+        assembly("barn_doorway", coll, V((0, fl, hz)), point="barn_doorway")
 
 
 def build():
@@ -553,7 +941,7 @@ def build():
         barn(coll, m, suffix, tier)
     # Laid out side by side for the preview, each tier behind the last;
     # the game places each.
-    for name, x in (("mill", 0.0), ("house", 10.0), ("barn", 22.0)):
+    for name, x in (("mill", 0.0), ("house", 10.0), ("barn", 25.0)):
         for k, (suffix, _) in enumerate(TIERS):
             for part_name in (name, name + "_base", name + "_wheel"):
                 obj = bpy.data.objects.get(part_name + suffix)

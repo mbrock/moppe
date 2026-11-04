@@ -2558,6 +2558,14 @@ namespace moppe::nhal {
         grass.bare_size = {
           m_grass_params.bare_half_x, m_grass_params.bare_half_z, 0.0f, 0.0f
         };
+        grass.yard = { m_grass_params.yard_centre[0],
+                       m_grass_params.yard_centre[2],
+                       m_grass_params.yard_along[0],
+                       m_grass_params.yard_along[2] };
+        grass.yard_size = { m_grass_params.yard_half_x,
+                            m_grass_params.yard_half_z,
+                            m_grass_params.yard_margin,
+                            0.0f };
         m_grass_block = grass;
 
         // The canopy's reach follows the projected height of the whole

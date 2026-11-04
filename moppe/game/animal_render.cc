@@ -3,6 +3,7 @@
 #include <moppe/game/horse_model.hh>
 #include <moppe/game/model_mesh.hh>
 #include <moppe/game/moose_model.hh>
+#include <moppe/game/pig_model.hh>
 #include <moppe/game/reindeer_model.hh>
 #include <moppe/game/roe_deer_model.hh>
 #include <moppe/game/sheep_model.hh>
@@ -43,6 +44,7 @@ namespace moppe::game {
           MOPPE_ANIMAL_BUILD (horse_model), MOPPE_ANIMAL_BUILD (cow_model),
           MOPPE_ANIMAL_BUILD (sheep_model), MOPPE_ANIMAL_BUILD (reindeer_model),
           MOPPE_ANIMAL_BUILD (moose_model), MOPPE_ANIMAL_BUILD (roe_deer_model),
+          MOPPE_ANIMAL_BUILD (pig_model),
         };
         return builds[static_cast<std::size_t> (species)];
       }

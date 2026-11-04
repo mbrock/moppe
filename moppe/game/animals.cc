@@ -63,6 +63,15 @@ namespace moppe::game {
         .length = 0.9f,
         .stride = 0.9f,
         .bounds = true },
+      { .name = "pig",
+        .plural = "pigs",
+        .walk = 0.7f,
+        .run = 2.4f,
+        .wary = 3.0f,
+        .flight = 6.0f,
+        .length = 1.1f,
+        .stride = 0.6f,
+        .stock = true },
     } };
 
     std::uint32_t animals_hash (std::uint32_t a, std::uint32_t b) {
@@ -133,6 +142,7 @@ namespace moppe::game {
       case Species::horse:
       case Species::cow:
       case Species::sheep:
+      case Species::pig:
         return p.grazed * (1.0f - 0.8f * p.forest) * (1.0f - 0.7f * p.bog);
       case Species::moose:
         // Browse in young and open forest, by the mires.
@@ -211,8 +221,50 @@ namespace moppe::game {
                            const Vec3& trailhead,
                            float world_x,
                            float world_z,
-                           std::uint32_t seed) {
+                           std::uint32_t seed,
+                           std::span<const Stall> stalls) {
     AnimalPlan plan;
+    // The barns' stock first, each stall or pen a herd of its own.
+    for (std::size_t k = 0; k < stalls.size (); ++k) {
+      const Stall& stall = stalls[k];
+      const std::uint32_t herd =
+        static_cast<std::uint32_t> (plan.herds.size ());
+      plan.herds.push_back ({ .species = stall.species,
+                              .home = stall.at,
+                              .range = 1.0f + stall.half_along });
+      const Vec3 along = forward_of (stall.heading);
+      const Vec3 across (along[2], 0.0f, -along[0]);
+      for (int n = 0; n < stall.count; ++n) {
+        const std::uint32_t h = animals_hash (
+          seed ^ 0xba5eu, static_cast<std::uint32_t> (k * 16 + n));
+        Animal a;
+        a.species = stall.species;
+        a.seed = h;
+        a.herd = herd;
+        a.indoors = true;
+        a.tied = stall.half_along <= 0.0f;
+        a.pen = stall.at;
+        a.pen_heading = stall.heading;
+        a.pen_along = stall.half_along;
+        a.pen_across = stall.half_across;
+        a.position = stall.at;
+        a.heading = stall.heading;
+        if (!a.tied) {
+          // Spread through the pen, each its own way.
+          const float u = (n + 0.5f) / stall.count;
+          a.position = stall.at +
+                       along * ((2.0f * animals_unit (h, 1) - 1.0f) * 0.6f *
+                                stall.half_along) +
+                       across * ((2.0f * u - 1.0f) * 0.7f * stall.half_across);
+          a.heading = animals_tau * animals_unit (h, 2);
+        }
+        a.doing = Animal::Doing::grazing;
+        a.left = 3.0f + 12.0f * animals_unit (h, 3);
+        a.head = 1.0f;
+        a.goal = a.position;
+        plan.animals.push_back (a);
+      }
+    }
     const auto add_herd = [&] (Species species,
                                const Vec3& home,
                                float range,
@@ -476,6 +528,114 @@ namespace moppe::game {
     a.left = 3.0f;
   }
 
+  // A beast in a barn eats at the manger (or roots about its pen), stands
+  // and looks about, and looks round at whoever comes near -- but it
+  // stays where it is kept.
+  void Animals::keep_indoors (Animal& a,
+                              const AnimalGround& g,
+                              const Presence* nearest,
+                              float nearest_distance,
+                              float dt) {
+    const SpeciesTraits& t = traits (a.species);
+    std::uint32_t& r = m_random[&a - m_plan.animals.data ()];
+    using Doing = Animal::Doing;
+    const Vec3 along = forward_of (a.pen_heading);
+    const Vec3 across (along[2], 0.0f, -along[0]);
+    // Someone coming close is looked at, and for a while after.
+    const bool watched = nearest && nearest_distance < 6.0f;
+    if (watched && a.doing != Doing::alert && rand (r) < dt * 0.8f) {
+      a.doing = Doing::alert;
+      a.left = 2.0f + 4.0f * rand (r);
+    }
+    if (a.left < 0.0f) {
+      const float u = rand (r);
+      if (!a.tied && u < 0.35f) {
+        // A few steps to another corner of the pen.
+        a.goal = a.pen +
+                 along * ((2.0f * rand (r) - 1.0f) * 0.8f * a.pen_along) +
+                 across * ((2.0f * rand (r) - 1.0f) * 0.8f * a.pen_across);
+        a.doing = Doing::walking;
+        a.left = 12.0f;
+      } else if (u < 0.75f) {
+        a.doing = Doing::grazing;
+        a.left = 6.0f + 18.0f * rand (r);
+      } else {
+        a.doing = Doing::standing;
+        a.left = 3.0f + 6.0f * rand (r);
+      }
+    }
+    float head = 0.0f, speed = 0.0f, face = a.heading;
+    a.look_goal = 0.0f;
+    switch (a.doing) {
+    case Doing::grazing:
+      head = 1.0f;
+      break;
+    case Doing::standing:
+      head = 0.05f;
+      a.look_goal = 0.6f * std::sin (a.left * 0.8f + (a.seed & 63));
+      break;
+    case Doing::alert:
+    case Doing::fleeing:
+      head = -0.2f;
+      if (nearest) {
+        const Vec3 to = wrapped (a.position, nearest->position, g);
+        const float off = angle_between (a.heading, heading_of (to));
+        a.look_goal = std::clamp (off, -1.1f, 1.1f);
+        // Loose, it turns to face them.
+        if (!a.tied && std::abs (off) > 1.0f)
+          face = heading_of (to);
+      }
+      if (!watched && a.left < 0.0f)
+        a.left = 0.0f;
+      break;
+    case Doing::walking: {
+      const Vec3 to = wrapped (a.position, a.goal, g);
+      if (std::hypot (to[0], to[2]) < 0.3f) {
+        a.doing = Doing::grazing;
+        a.left = 5.0f + 12.0f * rand (r);
+      } else {
+        face = heading_of (to);
+        speed = t.walk;
+      }
+      head = 0.3f;
+      break;
+    }
+    }
+    if (a.tied) {
+      a.heading = a.pen_heading;
+      a.speed = 0.0f;
+    } else {
+      const float off = angle_between (a.heading, face);
+      a.heading += std::clamp (off, -1.0f * dt, 1.0f * dt);
+      speed *= std::clamp (1.4f - std::abs (off), 0.1f, 1.0f);
+      a.speed += std::clamp (speed - a.speed, -2.0f * dt, 1.0f * dt);
+      Vec3 next = a.position + forward_of (a.heading) * (a.speed * dt);
+      // Within the pen's walls, its body's half length in from them.
+      Vec3 rel = next - a.pen;
+      const float x = std::clamp (dot (rel, along),
+                                  -std::max (a.pen_along - 0.4f, 0.0f),
+                                  std::max (a.pen_along - 0.4f, 0.0f));
+      const float z = std::clamp (dot (rel, across),
+                                  -std::max (a.pen_across - 0.35f, 0.0f),
+                                  std::max (a.pen_across - 0.35f, 0.0f));
+      next = a.pen + along * x + across * z;
+      // Penmates keep their room.
+      for (const Animal& other : m_plan.animals)
+        if (&other != &a && other.herd == a.herd) {
+          const Vec3 d = wrapped (other.position, next, g);
+          const float l = std::hypot (d[0], d[2]);
+          if (l < 0.75f && l > 1e-3f)
+            next = next + d * ((0.75f - l) / l * 0.3f);
+        }
+      a.gait += length (next - a.position) / t.stride;
+      a.position = next;
+    }
+    a.head += std::clamp (head - a.head, -1.4f * dt, 1.0f * dt);
+    a.look += std::clamp (a.look_goal - a.look, -1.2f * dt, 1.2f * dt);
+    a.position[1] = g.ground (a.position[0], a.position[2]);
+    a.gait = std::fmod (a.gait, 1024.0f);
+  }
+
   void Animals::step (const AnimalGround& g,
                       std::span<const Presence> presences,
                       const Vec3& focus,
@@ -505,6 +665,19 @@ namespace moppe::game {
       std::uint32_t& r = m_random[i];
       a.left -= dt;
       a.fright = std::max (0.0f, a.fright - dt / 25.0f);
+      if (a.indoors) {
+        const Presence* nearest = nullptr;
+        float nearest_distance = 1e9f;
+        for (const Presence& p : presences) {
+          const float d = flat_distance (a.position, p.position, g);
+          if (d < nearest_distance) {
+            nearest_distance = d;
+            nearest = &p;
+          }
+        }
+        keep_indoors (a, g, nearest, nearest_distance, dt);
+        continue;
+      }
 
       // Whoever comes near. Someone moving fast, or a machine, is minded
       // from further off; so is anyone, once it has been frightened.
