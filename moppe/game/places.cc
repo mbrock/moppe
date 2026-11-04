@@ -1315,6 +1315,15 @@ namespace moppe::game {
                0.08f);
         upright (-5.1f, 3.38f, fl + 0.6f, 0.3f);
         upright (-5.2f, 2.4f, fl + 0.4f, 0.36f);
+        // The wheelbarrow, the feed bin, and the milking stool
+        // (farm.py's barn_things).
+        lying (Vec3 (3.15f, fl + 0.35f, 2.75f),
+               Vec3 (1.9f, fl + 0.35f, 2.75f),
+               0.3f);
+        lying (Vec3 (-5.53f, fl + 0.35f, 0.0f),
+               Vec3 (-5.53f, fl + 0.35f, 0.7f),
+               0.32f);
+        upright (1.25f, -0.7f, fl + 0.4f, 0.17f);
         // The beasts at their mangers: a body lying down each stall.
         if (kept)
           for (const auto& [x0, x1, front, horse] :

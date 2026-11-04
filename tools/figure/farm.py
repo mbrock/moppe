@@ -69,6 +69,17 @@ PALETTE = {
     "tin": (0.66, 0.67, 0.68),
     "water": (0.12, 0.15, 0.16),
     "sacking": (0.62, 0.55, 0.42),
+    "whitewash": (0.86, 0.84, 0.78),
+    "tar": (0.13, 0.11, 0.10),
+    "floor_a": (0.56, 0.48, 0.37),
+    "floor_b": (0.49, 0.42, 0.32),
+    "gutter": (0.24, 0.19, 0.12),
+    "leather": (0.30, 0.17, 0.09),
+    "brass": (0.74, 0.58, 0.28),
+    "rope": (0.68, 0.60, 0.44),
+    "ash_wood": (0.64, 0.54, 0.40),
+    "cat": (0.42, 0.37, 0.32),
+    "cat_white": (0.86, 0.84, 0.80),
 }
 
 FINISH = {
@@ -94,6 +105,17 @@ FINISH = {
     "tin": dict(metallic=0.8, roughness=0.4),
     "water": dict(roughness=0.05, coat=0.6),
     "sacking": dict(roughness=1.0, sheen=0.4),
+    "whitewash": dict(roughness=1.0),
+    "tar": dict(roughness=0.5),
+    "floor_a": dict(roughness=1.0),
+    "floor_b": dict(roughness=1.0),
+    "gutter": dict(roughness=0.4),
+    "leather": dict(roughness=0.55),
+    "brass": dict(metallic=0.9, roughness=0.35),
+    "rope": dict(roughness=1.0, sheen=0.3),
+    "ash_wood": dict(roughness=0.7),
+    "cat": dict(roughness=1.0, sheen=0.6),
+    "cat_white": dict(roughness=1.0, sheen=0.6),
 }
 
 
@@ -666,7 +688,7 @@ def barn_inside(b, m, tier):
              for x in (-4.6, -2.3, 0.0, 2.3, 4.6)]
     part(b, "beams", merge(*beams), m["dark_timber"], levels=0, smooth=False)
     part(b, "loft", slab(V((0, BARN_CEILING + 0.03, 0)),
-                         (ix - 0.005, 0.03, iz - 0.005)), m["boards"],
+                         (ix - 0.005, 0.03, iz - 0.005)), m["old_boards"],
          levels=0, smooth=False)
     hatch = V((-1.15, BARN_CEILING - 0.02, 1.2))
     part(b, "hatch", slab(hatch, (0.4, 0.01, 0.45)), m["shadow"], levels=0,
@@ -731,6 +753,226 @@ def barn_inside(b, m, tier):
         sacks = merge(blob(V((-5.3, fl + 0.3, 1.4)), (0.28, 0.32, 0.22), 8, 5),
                       blob(V((-4.85, fl + 0.26, 1.2)), (0.27, 0.28, 0.21), 8, 5))
         part(b, "sacks", sacks, m["sacking"], levels=1)
+        barn_things(b, m)
+
+
+def ring(centre, axis, ref, radius, section, **kw):
+    """A torus whose tube is round, `section` across."""
+    return torus(centre, axis, ref, radius, (section, section), **kw)
+
+
+def barn_things(b, m):
+    """The byre's small things, about its walls and floor: a gutter behind
+    the stalls, hay racks over the horses' manger, their tack on pegs on
+    the end wall, tools leant by the door, a wheelbarrow, a feed bin, a
+    milking stool and buckets, a horseshoe over the door for luck, and
+    the cat asleep on the sacks."""
+    ix, iz, fl = BARN_HX - BARN_T, BARN_HZ - BARN_T, BARN_FLOOR
+    wall_x, wall_z = ix - 0.02, iz - 0.02     # the lining's inner faces
+    # The dung gutter along behind the beasts.
+    gutter = []
+    for xa, xb, front, _ in BARN_STALLS:
+        gutter.append(slab(V(((xa + xb) / 2, fl + 0.003, front + 0.2)),
+                           (abs(xa - xb) / 2, 0.006, 0.15)))
+    part(b, "gutter", merge(*gutter), m["gutter"], levels=0, smooth=False)
+
+    # Hay racks leaning out over the horses' manger, hay in them.
+    slats, rails, hay = [], [], []
+    for xa, xb, _, kind in BARN_STALLS:
+        if kind != "horse":
+            continue
+        lo, hi = min(xa, xb) + 0.15, max(xa, xb) - 0.15
+        bottom_y, bottom_z = fl + 1.3, -wall_z + 0.05
+        top_y, top_z = fl + 1.95, -wall_z + 0.32
+        rails.append(tube([V((lo, bottom_y, bottom_z)),
+                           V((hi, bottom_y, bottom_z))], 0.03, sides=6))
+        rails.append(tube([V((lo, top_y, top_z)), V((hi, top_y, top_z))],
+                          0.03, sides=6))
+        count = int((hi - lo) / 0.11)
+        for k in range(count + 1):
+            x = lo + (hi - lo) * k / count
+            slats.append(tube([V((x, bottom_y - 0.04, bottom_z)),
+                               V((x, top_y + 0.04, top_z))], 0.014,
+                              sides=5))
+        hay.append(blob(V(((lo + hi) / 2, fl + 1.62, -wall_z + 0.14)),
+                        ((hi - lo) / 2 - 0.05, 0.3, 0.1), 10, 5))
+    part(b, "hay_rack", merge(*rails, *slats), m["dark_timber"], levels=0)
+    part(b, "hay_rack_hay", merge(*hay), m["hay"], levels=1)
+
+    # Tack on pegs in the end wall beside the horses: a collar with its
+    # brass-topped hames, a bridle, and a coil of rope.
+    x = wall_x
+    pegs = [tube([V((x + 0.02, fl + 1.66, z)), V((x - 0.14, fl + 1.68, z))],
+                 0.018, sides=6) for z in (-0.4, 1.3, 1.75)]
+    part(b, "pegs", merge(*pegs), m["dark_timber"], levels=0)
+    part(b, "collar", ring(V((x - 0.08, fl + 1.38, -0.4)), RIGHT, UP, 0.25,
+                            0.055, segments=20, sides=8),
+         m["leather"], levels=0)
+    part(b, "collar_pad", ring(V((x - 0.08, fl + 1.38, -0.4)), RIGHT, UP,
+                                0.2, 0.03, segments=20, sides=6),
+         m["sacking"], levels=0)
+    hames = []
+    for s in (-1, 1):
+        hames.append(tube([V((x - 0.14, fl + 1.12, -0.4 + s * 0.2)),
+                           V((x - 0.14, fl + 1.58, -0.4 + s * 0.13))],
+                          0.016, sides=5))
+        hames.append(blob(V((x - 0.14, fl + 1.62, -0.4 + s * 0.12)),
+                          (0.03, 0.03, 0.03), 6, 4))
+    part(b, "hames", merge(*hames), m["brass"], levels=0)
+    bridle = merge(ring(V((x - 0.06, fl + 1.5, 1.3)), RIGHT, UP, 0.14,
+                         0.013, segments=16, sides=5),
+                   tube([V((x - 0.06, fl + 1.36, 1.25)),
+                         V((x - 0.07, fl + 0.95, 1.22))], 0.012, sides=4),
+                   tube([V((x - 0.06, fl + 1.36, 1.35)),
+                         V((x - 0.07, fl + 0.98, 1.4))], 0.012, sides=4))
+    part(b, "bridle", bridle, m["leather"], levels=0)
+    part(b, "bit", tube([V((x - 0.07, fl + 0.96, 1.2)),
+                          V((x - 0.07, fl + 0.96, 1.42))], 0.01, sides=4),
+         m["iron"], levels=0)
+    coil = merge(*[ring(V((x - 0.07 - 0.012 * k, fl + 1.47 - 0.015 * k,
+                            1.75)), RIGHT, UP, 0.17 - 0.01 * k, 0.022,
+                         segments=18, sides=5) for k in range(3)])
+    part(b, "rope", coil, m["rope"], levels=0)
+
+    # Tools leant against the front wall by the door, heads up but the
+    # shovel's: a rake, a scythe, a shovel, and a hay fork.
+    shafts, iron = [], []
+    z_foot, z_top = wall_z - 0.3, wall_z - 0.05
+
+    def lean(x, top):
+        foot, head = V((x, fl, z_foot)), V((x - 0.05, fl + top, z_top))
+        shafts.append(tube([foot, head], 0.016, sides=6))
+        return foot, head
+
+    _, head = lean(-2.2, 1.5)
+    shafts.append(slab(head + V((0, 0.02, -0.01)), (0.24, 0.02, 0.02)))
+    for k in range(9):
+        c = head + V((-0.21 + 0.0525 * k, 0.0, -0.05))
+        shafts.append(tube([c + V((0, 0.02, 0.03)), c + V((0, -0.01, -0.04))],
+                           0.006, sides=4))
+    _, head = lean(-2.85, 1.48)
+    for t in (0.35, 0.7):
+        c = V((-2.85 - 0.05 * t, fl + 1.48 * t, z_foot + (z_top - z_foot) * t))
+        shafts.append(tube([c, c + V((0, 0.0, -0.13))], 0.013, sides=5))
+    blade = []
+    for k in range(5):
+        a0, a1 = k / 5, (k + 1) / 5
+        p0 = head + V((0.12 + 0.5 * a0, -0.03 - 0.08 * a0 * a0, -0.015))
+        p1 = head + V((0.12 + 0.5 * a1, -0.03 - 0.08 * a1 * a1, -0.015))
+        d = (p1 - p0).normalized()
+        blade.append(slab((p0 + p1) / 2, ((p1 - p0).length / 2 + 0.004,
+                                          0.045 * (1 - 0.6 * a0), 0.004),
+                          axes=(d, FORWARD.cross(d), FORWARD)))
+    iron.append(merge(*blade))
+    foot, _ = lean(-3.45, 1.15)
+    d = (V((-0.05, 1.15, z_top - z_foot))).normalized()
+    side = RIGHT
+    iron.append(slab(foot + d * 0.17 + V((0, 0, -0.012)), (0.13, 0.17, 0.008),
+                     axes=(side, d, side.cross(d))))
+    shafts.append(tube([foot + d * 0.95 + V((-0.07, 0, 0)),
+                        foot + d * 0.95 + V((0.07, 0, 0))], 0.015, sides=5))
+    _, head = lean(-4.05, 1.5)
+    for s in (-1, 0, 1):
+        iron.append(tube([head + V((0.05 * s, -0.02, 0)),
+                          head + V((0.06 * s, 0.32, -0.02))], 0.007,
+                         sides=4))
+    part(b, "tool_shafts", merge(*shafts), m["ash_wood"], levels=0)
+    part(b, "tool_iron", merge(*iron), m["iron"], levels=0, smooth=False)
+
+    # A horseshoe over the doorway, its ends up to keep the luck in.
+    arc = [V((0.075 * math.cos(math.pi * (1 + k / 10)), BARN_DOOR_TOP + 0.14
+              + 0.075 * math.sin(math.pi * (1 + k / 10)), wall_z - 0.03))
+           for k in range(11)]
+    part(b, "horseshoe", tube(arc, 0.011, sides=5, close=(True, True)),
+         m["iron"], levels=0)
+
+    # The wheelbarrow, by the hay.
+    wx, wz = 2.6, 2.75
+    tray = [slab(V((wx, fl + 0.4, wz)), (0.36, 0.015, 0.26)),
+            slab(V((wx, fl + 0.5, wz - 0.27)), (0.38, 0.11, 0.012)),
+            slab(V((wx, fl + 0.5, wz + 0.27)), (0.38, 0.11, 0.012)),
+            slab(V((wx + 0.37, fl + 0.5, wz)), (0.012, 0.11, 0.26)),
+            slab(V((wx - 0.37, fl + 0.5, wz)), (0.012, 0.11, 0.26))]
+    part(b, "barrow", merge(*tray), m["grey_timber"], levels=0,
+         smooth=False)
+    arms = []
+    for s in (-1, 1):
+        arms.append(tube([V((wx + 0.55, fl + 0.18, wz + s * 0.06)),
+                          V((wx - 0.95, fl + 0.6, wz + s * 0.25))], 0.02,
+                         sides=6))
+        arms.append(tube([V((wx - 0.3, fl + 0.38, wz + s * 0.2)),
+                          V((wx - 0.32, fl, wz + s * 0.2))], 0.018, sides=5))
+    part(b, "barrow_arms", merge(*arms), m["ash_wood"], levels=0)
+    part(b, "barrow_wheel", merge(
+        ring(V((wx + 0.55, fl + 0.17, wz)), FORWARD, UP, 0.14, 0.03,
+              segments=16, sides=6),
+        tube([V((wx + 0.55, fl + 0.17, wz - 0.07)),
+              V((wx + 0.55, fl + 0.17, wz + 0.07))], 0.03, sides=6)),
+        m["iron"], levels=0)
+    part(b, "barrow_load", blob(V((wx + 0.05, fl + 0.5, wz)),
+                                (0.3, 0.12, 0.22), 8, 5),
+         m["hay"], levels=1)
+
+    # A feed bin under the window at the hens' end, iron bound.
+    bx, bz = -wall_x + 0.33, 0.35
+    part(b, "bin", slab(V((bx, fl + 0.33, bz)), (0.3, 0.33, 0.45)),
+         m["old_boards"], levels=0, smooth=False)
+    part(b, "bin_lid", slab(V((bx + 0.01, fl + 0.69, bz)), (0.32, 0.03, 0.47)),
+         m["dark_timber"], levels=0, smooth=False)
+    straps = [slab(V((bx, fl + 0.33, bz + s * 0.3)), (0.315, 0.335, 0.018))
+              for s in (-1, 1)]
+    part(b, "bin_straps", merge(*straps), m["iron"], levels=0, smooth=False)
+    part(b, "scoop", merge(
+        tube([V((bx - 0.05, fl + 0.76, bz - 0.15)),
+              V((bx - 0.05, fl + 0.76, bz + 0.05))], 0.06, sides=8),
+        tube([V((bx - 0.05, fl + 0.76, bz + 0.05)),
+              V((bx - 0.05, fl + 0.77, bz + 0.2))], 0.012, sides=4)),
+        m["tin"], levels=0)
+
+    # By the cows: a three-legged milking stool and a wooden pail; by the
+    # pen, a tin bucket.
+    sx, sz = 1.25, -0.7
+    stool = [tube([V((sx, fl + 0.34, sz)), V((sx, fl + 0.39, sz))], 0.15,
+                  sides=12)]
+    for k in range(3):
+        a = 2 * math.pi * k / 3
+        o = V((math.cos(a), 0, math.sin(a)))
+        stool.append(tube([V((sx, fl + 0.35, sz)) + o * 0.09,
+                           V((sx, fl, sz)) + o * 0.15], 0.018, sides=5))
+    part(b, "stool", merge(*stool), m["grey_timber"], levels=0)
+    px, pz = 1.7, -0.55
+    part(b, "pail", tube([V((px, fl - 0.005, pz)), V((px, fl + 0.3, pz))],
+                         0.13, sides=12), m["dark_timber"], levels=0)
+    part(b, "pail_hoops", merge(*[
+        ring(V((px, fl + y, pz)), UP, RIGHT, 0.132, 0.008, segments=14,
+              sides=4) for y in (0.06, 0.24)]), m["iron"], levels=0)
+    part(b, "pail_milk", slab(V((px, fl + 0.26, pz)), (0.085, 0.01, 0.085)),
+         m["white"], levels=0, smooth=False)
+    tx, tz = -1.0, -0.92
+    part(b, "bucket", tube([V((tx, fl - 0.005, tz)), V((tx, fl + 0.28, tz))],
+                           0.12, sides=12), m["tin"], levels=0)
+    part(b, "bucket_handle", tube(
+        [V((tx + 0.12 * math.cos(math.pi * k / 8), fl + 0.28
+            + 0.12 * math.sin(math.pi * k / 8), tz)) for k in range(9)],
+        0.006, sides=4), m["iron"], levels=0)
+
+    # The cat, curled asleep on the sacks, its tail round its nose.
+    cx, cy, cz = -5.25, fl + 0.6, 1.36
+    cat = [blob(V((cx, cy + 0.09, cz)), (0.17, 0.1, 0.12), 10, 6),
+           blob(V((cx + 0.14, cy + 0.11, cz + 0.07)), (0.075, 0.065, 0.075),
+                8, 5)]
+    ears = []
+    for s in (-1, 1):
+        ears.append(blob(V((cx + 0.15, cy + 0.175, cz + 0.07 + s * 0.04)),
+                         (0.014, 0.022, 0.012), 5, 3))
+    tail = tube([V((cx - 0.16, cy + 0.04, cz - 0.02)),
+                 V((cx - 0.12, cy + 0.03, cz + 0.11)),
+                 V((cx + 0.02, cy + 0.03, cz + 0.15)),
+                 V((cx + 0.12, cy + 0.04, cz + 0.13))], 0.022, sides=5)
+    part(b, "cat", merge(*cat, *ears, tail), m["cat"], levels=1)
+    part(b, "cat_chest", blob(V((cx + 0.12, cy + 0.06, cz + 0.12)),
+                              (0.05, 0.035, 0.03), 6, 4),
+         m["cat_white"], levels=1)
 
 
 def barn(coll, m, suffix, tier):
@@ -772,8 +1014,36 @@ def barn(coll, m, suffix, tier):
          m["dark_timber"], levels=0, smooth=False)
     # The floor of boards, and the threshold over the doorway.
     ix, iz = hx - t, hz - t
-    part(b, "floor", slab(V((0, fl - 0.02, 0)), (ix - 0.005, 0.02, iz - 0.005)),
-         m["boards"], levels=0, smooth=False)
+    if tier == NEAR:
+        # Planks along its length, 19 cm wide, every other a shade darker
+        # and 3 mm lower, each lapping its neighbours; their butt joints
+        # staggered.
+        part(b, "floor", slab(V((0, fl - 0.026, 0)),
+                              (ix - 0.005, 0.02, iz - 0.005)),
+             m["boards"], levels=0, smooth=False)
+        planks = ([], [])
+        span = 2 * (iz - 0.005)
+        n = math.ceil(span / 0.19)
+        pitch = span / n
+        for k in range(n):
+            lo = max(-iz + 0.005, -iz + 0.005 + k * pitch - 0.005)
+            hi = min(iz - 0.005, -iz + 0.005 + (k + 1) * pitch + 0.005)
+            top = fl - (0.003 if k % 2 else 0.0)
+            joint = -ix + 1.3 + 2.2 * ((k * 7) % 5)
+            for x0, x1 in ((-ix + 0.005, joint - 0.004),
+                           (joint + 0.004, ix - 0.005)):
+                planks[k % 2].append(slab(V(((x0 + x1) / 2, top - 0.01,
+                                             (lo + hi) / 2)),
+                                          ((x1 - x0) / 2, 0.01,
+                                           (hi - lo) / 2)))
+        part(b, "planks", merge(*planks[0]), m["floor_a"], levels=0,
+             smooth=False)
+        part(b, "planks_dark", merge(*planks[1]), m["floor_b"], levels=0,
+             smooth=False)
+    else:
+        part(b, "floor", slab(V((0, fl - 0.02, 0)),
+                              (ix - 0.005, 0.02, iz - 0.005)),
+             m["floor_a"], levels=0, smooth=False)
     part(b, "threshold", slab(V((0, fl + 0.005, hz - t / 2)),
                               (door - 0.005, 0.025, t / 2 + 0.04)),
          m["dark_timber"], levels=0, smooth=False)
@@ -868,7 +1138,8 @@ def barn(coll, m, suffix, tier):
     # ends, each with a pale pane inside where the daylight comes in.
     lights = ((V((4.96, 2.3, -hz)), -FORWARD), (V((3.16, 2.3, -hz)), -FORWARD),
               (V((0.9, 2.3, -hz)), -FORWARD), (V((-2.0, 2.3, -hz)), -FORWARD),
-              (V((-hx, 2.3, 1.4)), -RIGHT), (V((hx, 2.3, 0.6)), RIGHT))
+              (V((-hx, 2.3, 1.4)), -RIGHT), (V((hx, 2.3, 0.6)), RIGHT),
+              (V((3.8, 2.3, hz)), FORWARD), (V((-3.8, 2.3, hz)), FORWARD))
     for k, (at, normal) in enumerate(lights):
         window(b, f"window{k}", at, normal, (0.7, 0.5), m, tier)
 
@@ -887,8 +1158,22 @@ def barn(coll, m, suffix, tier):
                                                        0.015)),
                   slab(V((0, (door_top + BARN_CEILING) / 2, li)),
                        (door, (BARN_CEILING - door_top) / 2, 0.015))]
-        part(b, "lining", merge(*lining), m["old_boards"], levels=0,
+        # Limewashed, as a byre's walls were, against flies and for the
+        # light; a tarred skirting along the foot.
+        part(b, "lining", merge(*lining), m["whitewash"], levels=0,
              smooth=False)
+        if tier == NEAR:
+            face, sk = 0.015, 0.012
+            sy, sh = fl + 0.15, 0.15
+            skirting = [slab(V((0, sy, -li + face)), (lj, sh, sk)),
+                        slab(V((-lj + face, sy, 0)), (sk, sh, li)),
+                        slab(V((lj - face, sy, 0)), (sk, sh, li)),
+                        slab(V(((lj + door) / 2, sy, li - face)),
+                             ((lj - door) / 2, sh, sk)),
+                        slab(V((-(lj + door) / 2, sy, li - face)),
+                             ((lj - door) / 2, sh, sk))]
+            part(b, "skirting", merge(*skirting), m["tar"], levels=0,
+                 smooth=False)
         panes = []
         for at, normal in lights:
             inner = at - normal * (hz - li + 0.025 if abs(normal.z) > 0.5

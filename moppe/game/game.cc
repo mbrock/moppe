@@ -4645,32 +4645,43 @@ namespace moppe {
         }
       }
 
-      // A barn lived in keeps its lantern lit in the dark hours; near the
-      // eye, it is the lamp, unless a fire is nearer.
+      // A barn lived in keeps its lantern lit in the dark hours; by day
+      // the light from its open doors fills it. Near the eye, it is the
+      // lamp, unless a fire is nearer.
       void light_barn (FrameView& frame) const {
         FrameLighting& lighting = frame.lighting;
         const float dark = 1.0f - smoothstep (0.15f, 0.55f, lighting.daylight);
-        if (dark <= 0.01f)
-          return;
         const Vec3 eye = frame.camera.position;
-        std::optional<Vec3> lantern;
-        for (const Building* barn : kept_barns ()) {
-          const Vec3 at = building_frame (*barn).transform_point (
-            farm_model::barn_lantern - Vec3 (0.0f, 0.2f, 0.0f));
-          if (length2 (at - eye) < 30.0f * 30.0f &&
-              (!lantern || length2 (at - eye) < length2 (*lantern - eye)))
-            lantern = at;
-        }
-        if (!lantern || (lighting.lamp_reach > 0.0f &&
-                         length2 (lighting.lamp_position - eye) <=
-                           length2 (*lantern - eye)))
+        const Building* nearest = nullptr;
+        for (const Building* barn : kept_barns ())
+          if (length2 (barn->at - eye) < 30.0f * 30.0f &&
+              (!nearest ||
+               length2 (barn->at - eye) < length2 (nearest->at - eye)))
+            nearest = barn;
+        if (!nearest)
           return;
-        const float flicker = 1.0f + 0.03f * std::sin (lighting.time * 7.3f) +
-                              0.02f * std::sin (lighting.time * 12.9f + 1.7f);
-        lighting.lamp_position = *lantern;
-        lighting.lamp_reach = 11.0f;
-        lighting.lamp_color =
-          scale_display (DisplayColor (1.30f, 0.95f, 0.55f), dark * flicker);
+        const Mat4 barn = building_frame (*nearest);
+        const bool lantern = dark > 0.5f;
+        const Vec3 at = barn.transform_point (
+          lantern ? farm_model::barn_lantern - Vec3 (0.0f, 0.2f, 0.0f)
+                  : Vec3 (0.0f, 2.4f, barn_front - 0.9f));
+        if (lighting.lamp_reach > 0.0f &&
+            length2 (lighting.lamp_position - eye) <= length2 (at - eye))
+          return;
+        lighting.lamp_position = at;
+        if (lantern) {
+          const float flicker = 1.0f + 0.03f * std::sin (lighting.time * 7.3f) +
+                                0.02f * std::sin (lighting.time * 12.9f + 1.7f);
+          lighting.lamp_reach = 11.0f;
+          lighting.lamp_color =
+            scale_display (DisplayColor (1.30f, 0.95f, 0.55f), dark * flicker);
+        } else {
+          // The day's light, warmed by the boards it comes in over.
+          lighting.lamp_reach = 13.0f;
+          lighting.lamp_color =
+            scale_display (DisplayColor (1.0f, 0.93f, 0.80f),
+                           0.9f * (1.0f - dark) * lighting.daylight);
+        }
       }
 
       // The renderer has one lamp. With two fires burning it is the one

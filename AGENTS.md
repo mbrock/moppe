@@ -685,7 +685,12 @@
     few hundred metres from the trailhead (`plan_homesteads`, `Farm::
     homestead`; 13 in the default world). The barn (12 by 8 m, Falu red)
     opens by a pair of doors up a stone ramp onto a board floor under a
-    hay loft, and can be walked into, the camera keeping inside; round
+    hay loft, its walls limewashed over a tarred skirting, its floor laid
+    in planks, lit by day from its doors (`light_barn` in game.cc) and
+    furnished (`barn_things` in farm.py: hay racks, the horses' tack,
+    tools by the door, a wheelbarrow, a feed bin, a milking stool and
+    pails, a horseshoe over the door, a cat asleep on the sacks); it
+    can be walked into, the camera keeping inside; round
     it the yard's grass is trodden short (`UndergrowthParams::yard_*`). The farmhouse can be walked into:
     its door stands open over a step, and inside, under a ceiling, are a
     board floor, a table and bench, a bed, and the chimney stack; the
