@@ -396,6 +396,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/launch_options.cc
   moppe/game/frame_view.cc
   moppe/game/daylight.cc
+  moppe/game/weather.cc
   moppe/gfx/tga.cc
   moppe/game/surface_presentation.cc
   moppe/game/water_presentation.cc
@@ -722,6 +723,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/companion_test.cc
     tests/game/rescue_test.cc
     tests/game/daylight_test.cc
+    tests/game/weather_test.cc
     tests/game/cinematic_flight_test.cc
     tests/game/opening_test.cc
     tests/map/surface_test.cc

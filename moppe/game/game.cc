@@ -132,6 +132,13 @@ namespace moppe {
             m_bike_physics (options.bike_physics) {
         m_day = plan_day ();
         m_sky = m_almanac.held (m_graphics.sun_height);
+        if (const char* name = moppe::environment ("MOPPE_WEATHER");
+            name && std::string_view (name) != "changing") {
+          m_held_sky = sky_kind_named (name);
+          if (!m_held_sky)
+            std::cerr << "moppe: weather: no kind named " << name
+                      << "; the weather changes" << std::endl;
+        }
         if (m_benchmark)
           m_benchmark_replay.emplace (GraphicsBenchmarkReplay::Config {
             m_benchmark->prelude_frames,
@@ -3796,10 +3803,11 @@ namespace moppe {
            0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
            std::sin (total_time * 0.02f) * 0.05f) *
           cloud_cover[one];
-        const Weather& weather = current_weather ();
+        const Weather weather = read_weather ();
+        logic ().m_weather = weather;
         cloudiness = std::clamp (cloudiness,
                                  weather.cloud_floor * cloud_cover[one],
-                                 1.0f * cloud_cover[one]);
+                                 weather.cloud_ceiling * cloud_cover[one]);
         logic ().m_cloudiness = cloudiness;
 
         // Fog stays mostly sky-blue. Directional warmth is added in the
@@ -3814,6 +3822,24 @@ namespace moppe {
                        0.18f),
           scale_display (weather.fog_tint, lit),
           weather.fog_tint_amount);
+      }
+
+      // The weather follows the clock from spell to spell, unless
+      // MOPPE_WEATHER holds one kind. Composed views, whose day does not
+      // turn, keep the drifting sky they were made under.
+      Weather read_weather () {
+        if (m_held_sky)
+          return weather_of (*m_held_sky);
+        if (!m_day.turning || !m_session || !m_weather_timeline)
+          return {};
+        const double hours = logic ().m_day_hours;
+        const SkyKind kind = m_weather_timeline->kind_at (hours);
+        if (kind != m_logged_sky) {
+          m_logged_sky = kind;
+          std::cerr << "moppe: weather: " << sky_kind_name (kind) << " from "
+                    << std::fmod (hours, 24.0) << " h" << std::endl;
+        }
+        return m_weather_timeline->at (hours);
       }
 
       // The day: MOPPE_DAY is how many minutes of play one takes (48
@@ -3846,6 +3872,9 @@ namespace moppe {
       }
 
       void begin_day () {
+        m_weather_timeline.emplace (
+          static_cast<std::uint32_t> (recipe ().seed ().value));
+        m_logged_sky.reset ();
         logic ().m_day_hours =
           m_day.first_hour
             ? *m_day.first_hour
@@ -7266,6 +7295,9 @@ namespace moppe {
       GraphicsSettings m_graphics;
       Almanac m_almanac;
       Day m_day;
+      std::optional<SkyKind> m_held_sky;
+      std::optional<WeatherTimeline> m_weather_timeline;
+      std::optional<SkyKind> m_logged_sky;
       SkyReading m_sky;
       Vec3 m_spawn_position;
       // The shore the boat was left at, when it was.

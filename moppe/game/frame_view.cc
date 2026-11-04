@@ -267,9 +267,13 @@ namespace moppe::game {
     result.camera.projection = Mat4::perspective_reversed (
       result.camera.field_of_view, result.camera.aspect, 0.5f, 9000.0f);
 
-    result.lighting.fog_color = logic.m_fog;
-    result.lighting.clear_color = logic.m_fog;
-    const Weather& weather = current_weather ();
+    const Weather& weather = logic.m_weather;
+    // Lightning lights the cloud and the haze, and everything under it.
+    const float flash = lightning_flash (weather.lightning, logic.m_total_time);
+    const DisplayColor flashed_fog = mix_display (
+      logic.m_fog, DisplayColor (0.62f, 0.64f, 0.76f), 0.75f * flash);
+    result.lighting.fog_color = flashed_fog;
+    result.lighting.clear_color = flashed_fog;
     result.lighting.fog_scale = input.world.fog_scale * weather.fog_density;
     result.lighting.mist = weather.mist;
     result.lighting.rain = weather.rain;
@@ -280,7 +284,10 @@ namespace moppe::game {
       scale_display (sky.light_specular, 0.5f * weather.sunlight);
     result.lighting.sun_diffuse =
       scale_display (sky.light_diffuse, weather.sunlight);
-    result.lighting.ambient = scale_display (sky.ambient, weather.skylight);
+    result.lighting.ambient =
+      mix_display (scale_display (sky.ambient, weather.skylight),
+                   DisplayColor (0.85f, 0.88f, 1.05f),
+                   0.7f * flash);
     result.lighting.sky_sun = sky.sun;
     result.lighting.sky_moon = sky.moon;
     result.lighting.sky_pole = sky.pole;

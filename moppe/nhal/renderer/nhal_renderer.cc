@@ -1771,9 +1771,11 @@ namespace moppe::nhal {
           return;
         open_scene ();
         if (m_params.rain > 0.0f) {
-          // The drizzle, last in the scene so it falls in front of
-          // everything it does not pass behind.
-          constexpr std::uint32_t drops = 7000;
+          // The rain, last in the scene so it falls in front of
+          // everything it does not pass behind: 1 is a drizzle, and
+          // heavier rain is more drops of it, up to a downpour at 2.5.
+          const std::uint32_t drops =
+            std::uint32_t (7000.0f * std::clamp (m_params.rain, 0.0f, 2.5f));
           m_device->set_pipeline (m_rain);
           m_device->set_buffer (0, m_frame_block);
           shaders::rain::Weather weather {};

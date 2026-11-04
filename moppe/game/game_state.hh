@@ -10,6 +10,7 @@
 #include <moppe/game/sling.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
+#include <moppe/game/weather.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/boat.hh>
 #include <moppe/mov/caddy.hh>
@@ -62,6 +63,9 @@ namespace moppe::game {
     float m_day_haste = 1.0f;
     float m_frame_time = 1.0f / 60.0f;
     cloud_cover_t m_cloudiness = 0.5f * cloud_cover[mp_units::one];
+    // The weather this moment (game/weather.hh), passing from spell to
+    // spell with the hours.
+    Weather m_weather;
     float m_flare = 0.0f;
     DisplayColor m_fog;
     float m_shake = 0.0f;

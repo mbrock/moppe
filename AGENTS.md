@@ -844,9 +844,20 @@
     games on one machine find each other too (the second takes a free
     port); `MOPPE_MULTIPLAYER_PORT` picks the port. A firewall must let
     UDP 27960 in, or each side must `--join` the other.
-  - Weather is authored, not simulated: `MOPPE_WEATHER=clear|mist|drizzle`
-    (`moppe/game/weather.hh`) sets the sky, fog, and light, and the NHAL
-    renderer draws valley mist and a fine rain for it.
+  - The weather changes (`moppe/game/weather.*`): spells of clear, fair,
+    overcast, valley mist, drizzle, rain, and thunderstorm follow one
+    another from the seed and the hour (`WeatherTimeline`, a few hours
+    each, two-hour changes), so two players sharing a clock share it.
+    Rain comes only out of an overcast (wet some 8% of the time), mist
+    mostly at dawn, thunder mostly by night, lightning flashing the haze
+    and the ground (`lightning_flash`). The first morning is fair, for
+    the opening; the default world clears the first night and rains into
+    a storm the second evening. The state is `GameLogicState::m_weather`
+    and the log says `moppe: weather: rain from 15.1 h`.
+    `MOPPE_WEATHER=clear|fair|overcast|mist|drizzle|rain|storm` holds one
+    kind; composed views (gazetteer, benchmarks, a held sun) keep the
+    drifting sky. The NHAL renderer draws the mist and the rain (1 a
+    drizzle, more drops up to a downpour at 2.5).
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots; use `MOPPE_DEMO=forest` to start the same
     rider at the world's selected forest-floor site),

@@ -62,8 +62,9 @@ namespace moppe {
       float exposure_bias = 1.0f;
       float time = 0.0f;
       float cloud_cover = 0.0f;
-      // Authored weather (game/weather.hh): mist lying in the valleys and a
-      // fine rain, each 0..1. Backends without them draw neither.
+      // The weather (game/weather.hh): mist lying in the valleys, 0..1,
+      // and rain, 1 a drizzle and up to 2.5 a downpour. Backends without
+      // them draw neither.
       float mist = 0.0f;
       float rain = 0.0f;
       // How much of the sun the camera can actually see (0..1); the
