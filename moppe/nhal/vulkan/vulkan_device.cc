@@ -151,7 +151,7 @@ namespace moppe::nhal {
       bool warned = false;
     };
 
-    // A program's push-descriptor layout, made once from its reflection.
+    // A program's descriptor layout, made once from its reflection.
     struct Layout {
       VkDescriptorSetLayout set = VK_NULL_HANDLE;
       VkPipelineLayout pipeline = VK_NULL_HANDLE;
@@ -233,6 +233,8 @@ namespace moppe::nhal {
         for (VkSemaphore s : m_render_done)
           vkDestroySemaphore (m_device, s, nullptr);
         for (auto& frame : m_frames) {
+          for (VkDescriptorPool pool : frame.descriptor_pools)
+            vkDestroyDescriptorPool (m_device, pool, nullptr);
           vkDestroyCommandPool (m_device, frame.pool, nullptr);
           vkDestroySemaphore (m_device, frame.acquired, nullptr);
           vkDestroyQueryPool (m_device, frame.queries, nullptr);
@@ -613,6 +615,11 @@ namespace moppe::nhal {
         m_slot = slot;
         check (vkResetCommandPool (m_device, frame.pool, 0),
                "reset command pool");
+        for (VkDescriptorPool pool : frame.descriptor_pools)
+          check (vkResetDescriptorPool (m_device, pool, 0),
+                 "reset descriptor pool");
+        frame.descriptor_pool_index = 0;
+        frame.descriptor_sets_used = 0;
         frame.secondaries_used = 0;
         m_cb = frame.primary;
         VkCommandBufferBeginInfo begin {
@@ -1019,6 +1026,9 @@ namespace moppe::nhal {
       enum class Placement { device, upload, readback };
 
       struct Frame {
+        std::vector<VkDescriptorPool> descriptor_pools;
+        std::size_t descriptor_pool_index = 0;
+        std::uint32_t descriptor_sets_used = 0;
         VkCommandPool pool = VK_NULL_HANDLE;
         VkCommandBuffer primary = VK_NULL_HANDLE;
         std::vector<VkCommandBuffer> secondaries;
@@ -1174,6 +1184,23 @@ namespace moppe::nhal {
       }
 
       void create_device () {
+        std::uint32_t extension_count = 0;
+        check (vkEnumerateDeviceExtensionProperties (
+                 m_physical, nullptr, &extension_count, nullptr),
+               "count device extensions");
+        std::vector<VkExtensionProperties> available (extension_count);
+        check (vkEnumerateDeviceExtensionProperties (
+                 m_physical, nullptr, &extension_count, available.data ()),
+               "device extensions");
+        const bool push_descriptors =
+          !moppe::environment ("MOPPE_VULKAN_DESCRIPTOR_SETS") &&
+          std::any_of (available.begin (),
+                       available.end (),
+                       [] (const VkExtensionProperties& extension) {
+                         return !std::strcmp (
+                           extension.extensionName,
+                           VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+                       });
         VkPhysicalDeviceRobustness2FeaturesEXT robustness {
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT
         };
@@ -1231,9 +1258,10 @@ namespace moppe::nhal {
         want.features.depthClamp = has.depthClamp;
 
         std::vector<const char*> extensions {
-          VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
           VK_EXT_ROBUSTNESS_2_EXTENSION_NAME
         };
+        if (push_descriptors)
+          extensions.push_back (VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
         if (m_surface)
           extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         VkPhysicalDevicePresentId2FeaturesKHR want_id2 {
@@ -1268,10 +1296,14 @@ namespace moppe::nhal {
         check (vkCreateDevice (m_physical, &info, nullptr, &m_device),
                "vkCreateDevice");
         vkGetDeviceQueue (m_device, m_family, 0, &m_queue);
-        m_push_descriptors = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR> (
-          vkGetDeviceProcAddr (m_device, "vkCmdPushDescriptorSetKHR"));
-        if (!m_push_descriptors)
-          throw std::runtime_error ("NHAL: no vkCmdPushDescriptorSetKHR");
+        if (push_descriptors) {
+          m_push_descriptors = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR> (
+            vkGetDeviceProcAddr (m_device, "vkCmdPushDescriptorSetKHR"));
+          if (!m_push_descriptors)
+            throw std::runtime_error ("NHAL: no vkCmdPushDescriptorSetKHR");
+        } else {
+          std::cerr << "NHAL: using frame-local descriptor sets\n";
+        }
         if (m_debug_utils)
           m_set_name = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT> (
             vkGetDeviceProcAddr (m_device, "vkSetDebugUtilsObjectNameEXT"));
@@ -1894,7 +1926,8 @@ namespace moppe::nhal {
         VkDescriptorSetLayoutCreateInfo set {
           VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
         };
-        set.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+        if (m_push_descriptors)
+          set.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
         set.bindingCount = std::uint32_t (bindings.size ());
         set.pBindings = bindings.data ();
         check (
@@ -1953,7 +1986,62 @@ namespace moppe::nhal {
         return m_pass.depth.texture == handle;
       }
 
-      // Binds the pipeline and pushes the bindings for the next draw or
+      // A set lives until its frame completes. Pools grow on demand and
+      // are reset only after that frame's timeline wait in begin_frame.
+      VkDescriptorSet allocate_descriptor_set (VkDescriptorSetLayout layout) {
+        Frame& frame = m_frames[m_slot];
+        constexpr std::uint32_t sets_per_pool = 512;
+        if (frame.descriptor_sets_used == sets_per_pool) {
+          ++frame.descriptor_pool_index;
+          frame.descriptor_sets_used = 0;
+        }
+        for (;;) {
+          if (frame.descriptor_pool_index == frame.descriptor_pools.size ()) {
+            const VkDescriptorPoolSize sizes[] {
+              { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                sets_per_pool * max_bindings },
+              { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                sets_per_pool * max_bindings },
+              { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                sets_per_pool * max_bindings },
+              { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                sets_per_pool * max_bindings },
+              { VK_DESCRIPTOR_TYPE_SAMPLER, sets_per_pool * standard_samplers }
+            };
+            VkDescriptorPoolCreateInfo info {
+              VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+            };
+            info.maxSets = sets_per_pool;
+            info.poolSizeCount = std::size (sizes);
+            info.pPoolSizes = sizes;
+            VkDescriptorPool pool;
+            check (vkCreateDescriptorPool (m_device, &info, nullptr, &pool),
+                   "create descriptor pool");
+            frame.descriptor_pools.push_back (pool);
+          }
+          VkDescriptorSetAllocateInfo info {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+          };
+          info.descriptorPool =
+            frame.descriptor_pools[frame.descriptor_pool_index];
+          info.descriptorSetCount = 1;
+          info.pSetLayouts = &layout;
+          VkDescriptorSet set;
+          const VkResult result =
+            vkAllocateDescriptorSets (m_device, &info, &set);
+          if (result == VK_ERROR_OUT_OF_POOL_MEMORY ||
+              result == VK_ERROR_FRAGMENTED_POOL) {
+            ++frame.descriptor_pool_index;
+            frame.descriptor_sets_used = 0;
+            continue;
+          }
+          check (result, "allocate descriptor set");
+          ++frame.descriptor_sets_used;
+          return set;
+        }
+      }
+
+      // Binds the pipeline and supplies the bindings for the next draw or
       // dispatch, noting the layouts its textures need.
       void bind_arguments () {
         if (!m_pipeline)
@@ -2002,9 +2090,18 @@ namespace moppe::nhal {
             w.pImageInfo = &info;
           }
         }
-        if (count)
-          m_push_descriptors (
-            m_cb, point, layout.pipeline, 0, count, writes.data ());
+        if (m_push_descriptors) {
+          if (count)
+            m_push_descriptors (
+              m_cb, point, layout.pipeline, 0, count, writes.data ());
+        } else {
+          const VkDescriptorSet set = allocate_descriptor_set (layout.set);
+          for (std::uint32_t i = 0; i < count; ++i)
+            writes[i].dstSet = set;
+          vkUpdateDescriptorSets (m_device, count, writes.data (), 0, nullptr);
+          vkCmdBindDescriptorSets (
+            m_cb, point, layout.pipeline, 0, 1, &set, 0, nullptr);
+        }
       }
 
       // The view a binding reads through, after noting its layout. In a

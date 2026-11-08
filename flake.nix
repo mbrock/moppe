@@ -13,7 +13,9 @@
       nixpkgs,
     }:
     let
-      forEachSystem = f: builtins.mapAttrs f nixbox.lib;
+      # ARM64 Linux runs the SDL host, even though nixbox has no toolchain
+      # for building Xbox packages on that host.
+      forEachSystem = f: builtins.mapAttrs f ({ aarch64-linux = null; } // nixbox.lib);
       # A finished world baked on the host, shipped in the Xbox package so
       # the console need not generate one: tools/deploy-xbox bakes it and
       # names it here, which needs --impure. Pure evaluation ships none.
@@ -35,6 +37,10 @@
         {
           # Lowers moppe/nhal's Lisp shaders to MSL, HLSL, and reflection.
           luv-shaderc = luv.packages.${system}.luv-shaderc;
+          # The fframes film project in film/ (film/README.md).
+          film = import ./film/shell.nix { pkgs = nixpkgs.legacyPackages.${system}; };
+        }
+        // nixpkgs.lib.optionalAttrs (xbox != null) {
           nhal-xbox = import ./moppe/nhal/xbox.nix {
             inherit xbox;
             luv-shaderc = self.packages.${system}.luv-shaderc;
@@ -47,8 +53,6 @@
             bakedWorld = xboxBakedWorld;
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
-          # The fframes film project in film/ (film/README.md).
-          film = import ./film/shell.nix { pkgs = nixpkgs.legacyPackages.${system}; };
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
           # A portable tarball using the host's Vulkan driver; no Nix at runtime.
@@ -61,13 +65,13 @@
             pkgs = nixpkgs.legacyPackages.${system};
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
+        }
+        // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           # The Nix-native package carries its own Vulkan driver.
           moppe = import ./moppe/platform/sdl/linux.nix {
             pkgs = nixpkgs.legacyPackages.${system};
             luv-shaderc = self.packages.${system}.luv-shaderc;
           };
-          # The fframes film project in film/ (film/README.md).
-          film = import ./film/shell.nix { pkgs = nixpkgs.legacyPackages.${system}; };
         }
       );
       apps = forEachSystem (
@@ -76,6 +80,7 @@
             type = "app";
             program = "${self.packages.${system}.luv-shaderc}/bin/luv-shaderc";
           };
+        } // nixpkgs.lib.optionalAttrs (xbox != null) {
           # nix run .#deploy-nhal-xbox: sign, install, launch, and screenshot.
           deploy-nhal-xbox = xbox.mkDeploy self.packages.${system}.nhal-xbox;
           # Generates a world on the console and writes LocalState/report.txt.
@@ -85,8 +90,8 @@
         }
       );
       devShells = forEachSystem (
-        system: _:
-        {
+        system: xbox:
+        nixpkgs.lib.optionalAttrs (xbox != null) {
           nhal-xbox = self.packages.${system}.nhal-xbox.devShell;
           moppe-core-xbox = self.packages.${system}.moppe-core-xbox.devShell;
           moppe-xbox = self.packages.${system}.moppe-xbox.devShell;

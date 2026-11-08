@@ -944,11 +944,13 @@
   `std::pow`, `std::hypot` and the like, and `Vec3`'s reductions are spelled
   out. `world-fingerprint` (a developer tool) hashes every stage so two
   machines can be diffed line by line.
-- Linux package and Steam Deck: `nix build .#moppe` (x86_64-linux) builds
-  the game with its own Mesa Vulkan driver for hosts without NixOS's;
+- Linux package and Steam Deck: `nix build .#moppe` (x86_64-linux or
+  aarch64-linux) builds the game with its own Mesa Vulkan driver for hosts
+  without NixOS's (AMD/Intel on x86, Broadcom on ARM64);
   docs/steam-deck.md installs it on a Deck (`nix profile install
   github:mbrock/moppe#moppe`, a Steam shortcut) and tests it Deck-like on
   chapel (an RDNA2 GPU) under headless gamescope at 1280x800.
+  docs/raspberry-pi.md covers the ARM64 build and Pi 5's V3DV driver.
 - Windows: `nix build .#moppe-windows` (x86_64-linux) cross-builds the
   desktop game (`-DMOPPE_WINDOWS_DESKTOP=ON`: the SDL host on Vulkan,
   through volk) with Zig's Clang for MinGW-w64 into

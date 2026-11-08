@@ -1939,6 +1939,23 @@
   (let* ((phase (* 1.208305 (+ time travel))))
     (vec2 (cos phase) (smoothstep -0.65 0.35 (cos (- phase 0.65))))))
 
+(define-shader-abstraction sheet-at (sheet cell size)
+  `(swizzle (texel-load ,sheet (uvec2 (wrap ,cell ,size))) :xy))
+
+;;; Both lanes of the water sheet, bilinear inside a source cell.
+(define-shader-abstraction sheet-between (sheet grid size)
+  `(let* ((between-size ,size)
+          (between-grid ,grid)
+          (between-cell (floor between-grid))
+          (between-f (fract between-grid)))
+     (mix (mix (sheet-at ,sheet between-cell between-size)
+               (sheet-at ,sheet (+ between-cell (vec2 1.0 0.0)) between-size)
+               (swizzle between-f :x))
+          (mix (sheet-at ,sheet (+ between-cell (vec2 0.0 1.0)) between-size)
+               (sheet-at ,sheet (+ between-cell (vec2 1.0 1.0)) between-size)
+               (swizzle between-f :x))
+          (swizzle between-f :y))))
+
 ;;; The ground's colour and light at a fragment: the terrain's own, and the
 ;;; road ribbon's, which lies on it and must match it.
 (define-shader-abstraction shade-ground ()
@@ -2060,9 +2077,9 @@
                     (wash (swizzle (shore-cycle
                                      (swizzle coast :x)
                                      (swizzle camera-position :w)) :y))
-                    (water-here (swizzle (sample-level water-levels
-                                                        linear-repeat
-                                                        field-at 0.0) :xy))
+                    ;; RG32F need not support hardware filtering (V3DV).
+                    (water-here (sheet-between water-levels
+                                               (* field-uv extent) extent))
                     (freshwater
                       (and (> (* (swizzle water-here :x) (swizzle scale :y))
                               (+ (swizzle world :y) 0.005))
@@ -5133,23 +5150,6 @@
 ;;; on screen, and falls back on the sky.  Foam is lit like the ground.  The
 ;;; water's motion is the current's, so the temporal resolve follows the
 ;;; streaming pattern.
-
-(define-shader-abstraction sheet-at (sheet cell size)
-  `(swizzle (texel-load ,sheet (uvec2 (wrap ,cell ,size))) :xy))
-
-;;; Both lanes of the water sheet, bilinear inside a source cell.
-(define-shader-abstraction sheet-between (sheet grid size)
-  `(let* ((between-size ,size)
-          (between-grid ,grid)
-          (between-cell (floor between-grid))
-          (between-f (fract between-grid)))
-     (mix (mix (sheet-at ,sheet between-cell between-size)
-               (sheet-at ,sheet (+ between-cell (vec2 1.0 0.0)) between-size)
-               (swizzle between-f :x))
-          (mix (sheet-at ,sheet (+ between-cell (vec2 0.0 1.0)) between-size)
-               (sheet-at ,sheet (+ between-cell (vec2 1.0 1.0)) between-size)
-               (swizzle between-f :x))
-          (swizzle between-f :y))))
 
 ;;; The water level's rise across a sample, x and z, in the heights' units.
 (define-shader-abstraction sheet-rise (sheet cell size)

@@ -1,9 +1,9 @@
-# The game on x86_64 Linux as a package: NHAL on Vulkan in an SDL3 window,
+# The game on Linux as a package: NHAL on Vulkan in an SDL3 window,
 # installed as bin/moppe with its assets in share/moppe.
 #
 # Everything it loads comes from Nix, the Vulkan driver too: on a system
 # without NixOS's /run/opengl-driver (SteamOS, say) the wrapper points the
-# loader at this nixpkgs' Mesa (RADV for AMD, ANV for Intel), so the game
+# loader at this nixpkgs' Mesa (AMD/Intel, or Broadcom on ARM64), so the game
 # needs nothing from the host but its kernel's GPU driver and a display.
 # docs/steam-deck.md runs it on a Steam Deck.
 { pkgs, luv-shaderc }:
@@ -13,12 +13,10 @@ let
   # Published land for the default world, so the first launch skips the
   # minutes of geology (moppe/game/land.hh).
   lands = import ../../game/lands.nix { inherit pkgs; };
-  drivers =
-    lib.concatMapStringsSep ":" (name: "${pkgs.mesa}/share/vulkan/icd.d/${name}_icd.x86_64.json")
-      [
-        "radeon"
-        "intel"
-      ];
+  cpu = pkgs.stdenv.hostPlatform.parsed.cpu.name;
+  driverNames = if pkgs.stdenv.hostPlatform.isAarch64 then [ "broadcom" ] else [ "radeon" "intel" ];
+  drivers = lib.concatMapStringsSep ":"
+    (name: "${pkgs.mesa}/share/vulkan/icd.d/${name}_icd.${cpu}.json") driverNames;
 in
 pkgs.llvmPackages_21.stdenv.mkDerivation {
   pname = "moppe";
@@ -41,11 +39,12 @@ pkgs.llvmPackages_21.stdenv.mkDerivation {
     "-DBUILD_TESTING=OFF"
     "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
     "-DFETCHCONTENT_SOURCE_DIR_MP-UNITS=${sources.mp-units}"
+    "-DMOPPE_LANDS_DIR=${lands}"
+  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     # Hardware FMA for CORE-MATH's exact arithmetic (Haswell and later,
-    # every Steam Deck); results are the same bits either way.
+    # every Steam Deck); ARM64 already provides FMA in its baseline ISA.
     "-DCMAKE_C_FLAGS=-march=x86-64-v3"
     "-DCMAKE_CXX_FLAGS=-march=x86-64-v3"
-    "-DMOPPE_LANDS_DIR=${lands}"
   ];
   # mp-units installs its headers whatever MP_UNITS_BUILD_INSTALL says.
   postInstall = ''
@@ -64,6 +63,6 @@ pkgs.llvmPackages_21.stdenv.mkDerivation {
   meta = {
     description = "Ride a motocross bike through a generated mountain valley";
     mainProgram = "moppe";
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }
