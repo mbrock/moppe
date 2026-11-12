@@ -18,9 +18,9 @@ physical units, typed structure-of-arrays field bundles, a single Lisp shader
 codebase targeting four GPU APIs, and the still-open problem of continuous
 level of detail for procedural forests and ground flora.
 
-You can **[play it in your browser](https://moppe.swa.sh)** (WebAssembly +
-WebGPU; mirror at [mbrock.github.io/moppe](https://mbrock.github.io/moppe/)),
-or download a native build for macOS, Linux / Steam Deck, or Windows from
+You can **[play it in your browser](https://mbrock.github.io/moppe/)**
+(WebAssembly + WebGPU), or download a native build for macOS, Linux / Steam
+Deck, or Windows from
 **[GitHub Releases](https://github.com/mbrock/moppe/releases/latest)**.
 
 ---
