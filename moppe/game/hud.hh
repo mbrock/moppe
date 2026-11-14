@@ -71,6 +71,8 @@ namespace moppe {
       bool can_ride_long_john = false;
       // On foot beside the boat.
       bool can_take_boat = false;
+      // On foot beside the jet ski.
+      bool can_ride_jet_ski = false;
       // On foot beside a stuck machine ("the tractor"), which the mount
       // key would haul out; the machine being hauled; and whether the one
       // being driven is stuck.
@@ -173,9 +175,10 @@ namespace moppe {
           Helicopter = 1 << 5,
           Boat = 1 << 6,
           LongJohn = 1 << 7,
-          Vehicles = (1 << 8) - 1,
-          Companion = 1 << 8,
-          Place = 1 << 9,
+          JetSki = 1 << 8,
+          Vehicles = (1 << 9) - 1,
+          Companion = 1 << 9,
+          Place = 1 << 10,
         };
         unsigned who = 0;
         // The machine's silhouette, if it is one.

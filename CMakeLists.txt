@@ -379,7 +379,9 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/ground_patch.cc
   moppe/mov/jeep.cc
   moppe/mov/helicopter.cc
+  moppe/mov/hull_water.cc
   moppe/mov/boat.cc
+  moppe/mov/jet_ski.cc
   moppe/mov/tractor.cc
   moppe/mov/caddy.cc
   moppe/game/chase_camera.cc
@@ -420,6 +422,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/jeep_model.cc
   moppe/game/helicopter_model.cc
   moppe/game/boat_model.cc
+  moppe/game/jet_ski_model.cc
   moppe/game/tractor_model.cc
   moppe/game/caddy_model.cc
   moppe/game/mountain_bike_model.cc
@@ -442,6 +445,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/jeep_render.cc
   moppe/game/helicopter_render.cc
   moppe/game/boat_render.cc
+  moppe/game/jet_ski_render.cc
   moppe/game/tractor_render.cc
   moppe/game/caddy_render.cc
   moppe/game/mountain_bike_render.cc
@@ -705,6 +709,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/mov/jeep_test.cc
     tests/mov/helicopter_test.cc
     tests/mov/boat_test.cc
+    tests/mov/jet_ski_test.cc
     tests/mov/tractor_test.cc
     tests/mov/caddy_test.cc
     tests/mov/glider_test.cc

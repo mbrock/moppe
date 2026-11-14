@@ -616,6 +616,9 @@ MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
   MOPPE_CHECK (motion_blur_for (game::M_BOAT, 10.0f) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::M_JEEP, 26.0f) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::M_BIKE, 26.0f) == 0.0f);
+  // The jet ski idles along sharp and streaks flat out.
+  MOPPE_CHECK (motion_blur_for (game::M_JET_SKI, 26.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::M_JET_SKI, 60.0f) > 0.8f);
   // The motocross cruises sharp and streaks on a boost.
   MOPPE_CHECK (motion_blur_for (game::M_BIKE, 100.0f) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::M_BIKE, 150.0f) > 0.3f);

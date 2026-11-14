@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 13;
+    constexpr std::uint8_t wire_version = 14;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -331,6 +331,14 @@ namespace moppe::game {
     out.put (boat.propeller_radians);
     out.put (boat.rpm);
     out.put (snapshot.boat_velocity);
+    const JetSkiPose& ski = snapshot.jet_ski;
+    out.put (ski.position);
+    out.put (ski.forward);
+    out.put (ski.up);
+    out.put (ski.steer_radians);
+    out.put (ski.lean_radians);
+    out.put (ski.rpm);
+    out.put (snapshot.jet_ski_velocity);
 
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
@@ -401,7 +409,7 @@ namespace moppe::game {
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
     const std::uint8_t mode = in.get<std::uint8_t> ();
-    if (mode > M_LONG_JOHN)
+    if (mode > M_JET_SKI)
       return std::nullopt;
     snapshot.mode = static_cast<Mode> (mode);
     const std::uint8_t flags = in.get<std::uint8_t> ();
@@ -477,6 +485,14 @@ namespace moppe::game {
     boat.propeller_radians = in.number ();
     boat.rpm = in.number ();
     snapshot.boat_velocity = in.point ();
+    JetSkiPose& ski = snapshot.jet_ski;
+    ski.position = in.point ();
+    ski.forward = in.direction (Vec3 (0, 0, 1));
+    ski.up = in.direction (Vec3 (0, 1, 0));
+    ski.steer_radians = in.number ();
+    ski.lean_radians = in.number ();
+    ski.rpm = in.number ();
+    snapshot.jet_ski_velocity = in.point ();
     snapshot.in_boat = (flags & riding_in_boat) != 0;
 
     if (flags & has_glider) {
@@ -661,6 +677,22 @@ namespace moppe::game {
         mix_angle (a.boat.propeller_radians, b.boat.propeller_radians, t);
       boat.rpm = mix (a.boat.rpm, b.boat.rpm, within);
       result.boat_velocity = mix (a.boat_velocity, b.boat_velocity, within);
+    }
+    if (!leapt (a.jet_ski.position, b.jet_ski.position)) {
+      JetSkiPose& ski = result.jet_ski;
+      ski.position =
+        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
+          return &each.jet_ski.position;
+        });
+      ski.forward = mix_direction (a.jet_ski.forward, b.jet_ski.forward, t);
+      ski.up = mix_direction (a.jet_ski.up, b.jet_ski.up, t);
+      ski.steer_radians =
+        mix (a.jet_ski.steer_radians, b.jet_ski.steer_radians, within);
+      ski.lean_radians =
+        mix (a.jet_ski.lean_radians, b.jet_ski.lean_radians, within);
+      ski.rpm = mix (a.jet_ski.rpm, b.jet_ski.rpm, within);
+      result.jet_ski_velocity =
+        mix (a.jet_ski_velocity, b.jet_ski_velocity, within);
     }
     if (!leapt (a.helicopter.position, b.helicopter.position)) {
       HelicopterPose& heli = result.helicopter;

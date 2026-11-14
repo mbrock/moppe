@@ -55,6 +55,10 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.boat.position = Vec3 (40, 0, 9);
   sent.boat_velocity = Vec3 (0, 0, 6.5f);
   sent.in_boat = true;
+  sent.jet_ski.position = Vec3 (60, 0.1f, -14);
+  sent.jet_ski.steer_radians = -0.3f;
+  sent.jet_ski.lean_radians = 0.25f;
+  sent.jet_ski_velocity = Vec3 (-15, 0, 2);
 
   const std::optional<CompanionSnapshot> got = decode (encode (sent));
   MOPPE_CHECK (got.has_value ());
@@ -83,6 +87,10 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (got->boat.position[0], 40.0f, 1e-6f);
   MOPPE_CHECK_NEAR (got->boat_velocity[2], 6.5f, 1e-6f);
   MOPPE_CHECK (got->in_boat);
+  MOPPE_CHECK_NEAR (got->jet_ski.position[2], -14.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->jet_ski.steer_radians, -0.3f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->jet_ski.lean_radians, 0.25f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->jet_ski_velocity[0], -15.0f, 1e-6f);
 }
 
 MOPPE_TEST (a_damaged_companion_snapshot_is_refused) {

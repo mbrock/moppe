@@ -20,6 +20,7 @@
 #   jeep      the autopilot driving the jeep           (MOPPE_DEMO=jeep)
 #   helicopter the autopilot flying the helicopter     (MOPPE_DEMO=helicopter)
 #   boat      the autopilot taking the boat out        (MOPPE_DEMO=boat)
+#   jet_ski   the autopilot riding the jet ski         (MOPPE_DEMO=jet_ski)
 #   tractor   the autopilot driving the tractor        (MOPPE_DEMO=tractor)
 #   caddy     the autopilot driving the Caddy          (MOPPE_DEMO=caddy)
 #   mountain_bike
@@ -165,6 +166,7 @@ case $scene in
   jeep) stage MOPPE_DEMO=jeep; : "${seconds:=20}" ;;
   helicopter) stage MOPPE_DEMO=helicopter; : "${seconds:=30}" ;;
   boat) stage MOPPE_DEMO=boat; : "${seconds:=25}" ;;
+  jet_ski) stage MOPPE_DEMO=jet_ski; : "${seconds:=25}" ;;
   tractor) stage MOPPE_DEMO=tractor; : "${seconds:=20}" ;;
   caddy) stage MOPPE_DEMO=caddy; : "${seconds:=20}" ;;
   mountain_bike) stage MOPPE_DEMO=mountain_bike; : "${seconds:=20}" ;;
@@ -233,7 +235,7 @@ if [[ -z $window && $(uname) == Linux && -n $gpu ]] &&
 then
   # gamescope and the X server it starts say a good deal; the game's own
   # lines are the ones that matter.
-  said='^moppe: \(video\|camp\|walk\|the day\|multiplayer\|boat\|fish\)\|[Ee]rror\|what()'
+  said='^moppe: \(video\|camp\|walk\|the day\|multiplayer\|boat\|jet ski\|fish\)\|[Ee]rror\|what()'
   gamescope -W "$width" -H "$height" -w "$width" -h "$height" \
     --backend headless -- "$game" --fullscreen "$@" 2>&1 |
     grep --line-buffered "$said" >&2 || true

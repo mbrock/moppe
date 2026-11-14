@@ -348,6 +348,15 @@ namespace moppe {
           polygon ({ { -7, 3 }, { -2, 3 }, { -2, 7 }, { -7, 7 } });
           stroke ({ -5, 4 }, { -11, -7 }, 1.4f);
           break;
+        case Mark::JetSki:
+          // A short deep hull with a raked bow, the cowl rising to the
+          // bars, and the saddle behind it.
+          polygon ({ { -10, 0 }, { 11, 1 }, { 6, -5 }, { -8, -5 } });
+          polygon ({ { -1, 1 }, { 8, 1 }, { 2, 6 }, { 0, 6 } });
+          stroke ({ -9, 2.5f }, { -1, 2.5f }, 2.6f);
+          stroke ({ 1, 6 }, { -1, 9 }, 1.5f);
+          stroke ({ -3, 9 }, { 1, 9 }, 1.5f);
+          break;
         }
         return outlines;
       }
@@ -539,7 +548,7 @@ namespace moppe {
       SlugGlyph shade;
       SlugGlyph key;
       SlugGlyph wide_key;
-      std::array<SlugGlyph, 8> vehicles;
+      std::array<SlugGlyph, 9> vehicles;
       // The chart's, in units of its radius: the bezel round it, the
       // hairline rim over the picture's edge, and the bezel's ticks.
       SlugGlyph bezel;
@@ -1842,12 +1851,15 @@ namespace moppe {
         action = *deploy_key ? "Deploy glider" : "Glider ready";
       } else if (st.haul) {
         key = mount_key;
-        // The boat is dragged the other way, back into the water.
+        // The boat and the jet ski are dragged the other way, back into
+        // the water.
         const bool boat = std::string_view (st.haul) == "the boat";
-        action = *mount_key ? boat ? "Drag the boat by its handle"
-                                   : "Haul " + std::string (st.haul) + " out"
-                 : boat     ? "The boat is aground"
-                            : capitalized (st.haul) + " is stuck";
+        const bool ski = std::string_view (st.haul) == "the jet ski";
+        action = *mount_key    ? boat  ? "Drag the boat by its handle"
+                                 : ski ? "Drag the jet ski by its bow"
+                                       : "Haul " + std::string (st.haul) + " out"
+                 : boat || ski ? capitalized (st.haul) + " is aground"
+                               : capitalized (st.haul) + " is stuck";
       } else if (st.can_ride_along) {
         key = mount_key;
         action = *mount_key ? "Ride along" : "A seat is free";
@@ -1860,6 +1872,9 @@ namespace moppe {
       } else if (st.can_take_boat) {
         key = mount_key;
         action = *mount_key ? "Take the boat out" : "Boat within reach";
+      } else if (st.can_ride_jet_ski) {
+        key = mount_key;
+        action = *mount_key ? "Ride the jet ski" : "Jet ski within reach";
       } else if (st.can_ride_long_john) {
         key = mount_key;
         action = *mount_key ? "Ride the Long John" : "Long John within reach";

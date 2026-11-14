@@ -36,6 +36,8 @@ namespace moppe::game {
       return Vec3 (0.0f, 2.2f, 0.1f);
     case Machine::boat:
       return Vec3 (0.0f, 2.2f, 0.6f);
+    case Machine::jet_ski:
+      return Vec3 (0.0f, 2.3f, -0.1f);
     }
     return Vec3 ();
   }
@@ -86,6 +88,12 @@ namespace moppe::game {
                Vec3 (0.0f, 0.45f, 2.65f),
                Vec3 (0.4f, 0.36f, -0.9f),
                Vec3 (-0.4f, 0.36f, -0.9f) };
+    case Machine::jet_ski:
+      // The eye in the stem and the grab handle's feet.
+      return { Vec3 (0.0f, 0.36f, 1.86f),
+               Vec3 (0.0f, 0.36f, 1.86f),
+               Vec3 (0.13f, 0.41f, -0.885f),
+               Vec3 (-0.13f, 0.41f, -0.885f) };
     }
     return {};
   }

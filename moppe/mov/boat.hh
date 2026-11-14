@@ -2,22 +2,13 @@
 #define MOPPE_MOV_BOAT_HH
 
 #include <moppe/map/surface.hh>
+#include <moppe/mov/hull_water.hh>
 #include <moppe/mov/rigid_bike.hh>
 #include <moppe/mov/trunk_field.hh>
 
-#include <functional>
 #include <memory>
 
 namespace moppe::mov {
-  // The water a boat floats on, as the game reads it: the surface's
-  // height at (x, z), below the ground where it is dry, and how the water
-  // moves there, metres a second: a river's current and the waves' to and
-  // fro and up and down.
-  struct BoatWater {
-    std::function<float (float x, float z)> level;
-    std::function<Vec3 (float x, float z)> current;
-  };
-
   // A flat-bottomed plywood skiff driven by a long-tail
   // (models/boat.blend): one Box3D body in a private world holding a
   // streamed patch of the height field and the trunks near it, like the

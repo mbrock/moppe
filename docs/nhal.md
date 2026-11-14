@@ -218,9 +218,10 @@ at 3.5% of the frame's height, none where the scene barely moves (the
 followed machine and rider stay sharp), and a nearer tap counts only where
 its own streak reaches back over the pixel. The game asks for it per way of
 getting about (`motion_blur_for` in game/frame_view.cc): the boat from 15
-km/h as it comes up onto the plane, the Trail 90 only past 110 km/h on a
-boost, the cars and the mountainbike at their own fast speeds, and never on
-foot, in the glider, or in the helicopter; the cinematic sets its own. It
+km/h as it comes up onto the plane, the jet ski from 35 km/h, the Trail 90
+only past 110 km/h on a boost, the cars and the mountainbike at their own
+fast speeds, and never on foot, in the glider, or in the helicopter; the
+cinematic sets its own. It
 costs some 0.12 ms at 1080p on an RX 6600 XT, and nothing while unasked.
 
 Dust and the old scene-blur pass are not drawn yet.

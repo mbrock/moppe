@@ -17,6 +17,7 @@
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/helicopter.hh>
 #include <moppe/mov/jeep.hh>
+#include <moppe/mov/jet_ski.hh>
 #include <moppe/mov/tractor.hh>
 #include <moppe/mov/vehicle.hh>
 
@@ -31,7 +32,8 @@ namespace moppe::game {
   // player's (game/companion.hh); M_HELICOPTER flies the helicopter,
   // M_TRACTOR drives the tractor, M_CADDY the Caddy, and
   // M_MOUNTAIN_BIKE rides the mountainbike, M_BOAT takes the boat out,
-  // and M_LONG_JOHN rides Krisjanis's cargo bike.
+  // M_LONG_JOHN rides Krisjanis's cargo bike, and M_JET_SKI rides the
+  // jet ski.
   enum Mode {
     M_BIKE,
     M_FOOT,
@@ -43,7 +45,8 @@ namespace moppe::game {
     M_CADDY,
     M_MOUNTAIN_BIKE,
     M_BOAT,
-    M_LONG_JOHN
+    M_LONG_JOHN,
+    M_JET_SKI
   };
   // The bikes ridden by pedalling, which have no jets.
   inline bool pedalled (Mode mode) {
@@ -156,6 +159,7 @@ namespace moppe::game {
     mov::Vehicle::State mountain_bike;
     mov::Boat::State boat;
     mov::Vehicle::State long_john;
+    mov::JetSki::State jet_ski;
   };
 }
 

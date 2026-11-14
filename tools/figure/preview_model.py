@@ -5,7 +5,8 @@
 
 Four views around the whole model -- three-quarter front, side, front,
 and three-quarter rear from above -- each rendered with a sun and sky and
-stitched side by side. The .blend is not saved.
+stitched side by side. The .blend is not saved. MOPPE_PREVIEW_ENGINE=CYCLES
+renders on the CPU, where there is no GPU for EEVEE.
 """
 
 import math
@@ -52,11 +53,18 @@ scene.render.resolution_x = 900
 scene.render.resolution_y = 900
 scene.render.film_transparent = False
 scene.view_settings.view_transform = "Standard"
-try:
-    scene.render.engine = "BLENDER_EEVEE"
-    scene.eevee.taa_render_samples = 32
-except TypeError:
-    scene.render.engine = "BLENDER_WORKBENCH"
+if os.environ.get("MOPPE_PREVIEW_ENGINE") == "CYCLES":
+    # Where there is no GPU (an Amp orb), which EEVEE cannot do without.
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 24
+    scene.cycles.use_denoising = False
+else:
+    try:
+        scene.render.engine = "BLENDER_EEVEE"
+        scene.eevee.taa_render_samples = 32
+    except TypeError:
+        scene.render.engine = "BLENDER_WORKBENCH"
 
 # Azimuths are measured from the model's front (Blender -y), elevation up.
 VIEWS = [(-40, 15), (-90, 5), (0, 8), (150, 35)]

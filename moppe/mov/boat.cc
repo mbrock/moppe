@@ -1,6 +1,7 @@
 #include <moppe/mov/boat.hh>
 #include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/ground_patch.hh>
+#include <moppe/mov/hull_water.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -77,15 +78,11 @@ namespace moppe::mov {
         return m;
       }
 
-      constexpr float rho = 1000.0f;
-      // The pressure where a panel pushes into the water, as a share of
-      // the stagnation pressure, and the lesser suction where it draws
-      // away; a linear part of it, metres a second, that damps the boat's
-      // bobbing; and the skin friction along it.
-      constexpr float ram = 1.0f;
-      constexpr float suction = 0.25f;
-      constexpr float damping = 0.6f;
-      constexpr float friction = 0.0055f;
+      constexpr float rho = water_density;
+      // How the water presses on its panels (mov/hull_water.hh).
+      constexpr HullWaterTraits water_traits {
+        .ram = 1.0f, .suction = 0.25f, .damping = 0.6f, .friction = 0.0055f
+      };
       // The hump of wave-making resistance, as a share of the weight, and
       // the volume Froude number it stands at and how broad it is.
       constexpr float hump = 0.17f;
@@ -167,57 +164,8 @@ namespace moppe::mov {
                      Boat::transom - rake + s * (Boat::hull_length + rake));
       }
 
-      // A small piece of the hull's skin: its middle, its outward normal
-      // and area, and half its two edges, by which its depth across it
-      // is reckoned.
-      struct Panel {
-        Vec3 centre, normal;
-        float area;
-        Vec3 half_u, half_v;
-        // The transom ventilates: the water draws away from it without
-        // sucking at it.
-        bool transom = false;
-      };
-
-      // Splits the quad a, b, c, d (in order round it) into n by m panels
-      // whose normals face away from `inside`.
-      void add_quad (std::vector<Panel>& out,
-                     const Vec3& a,
-                     const Vec3& b,
-                     const Vec3& c,
-                     const Vec3& d,
-                     int n,
-                     int m,
-                     const Vec3& inside,
-                     bool transom = false) {
-        const auto at = [&] (float u, float v) {
-          return (a * (1 - u) + b * u) * (1 - v) + (d * (1 - u) + c * u) * v;
-        };
-        for (int i = 0; i < n; ++i)
-          for (int j = 0; j < m; ++j) {
-            const float u0 = float (i) / n, u1 = float (i + 1) / n;
-            const float v0 = float (j) / m, v1 = float (j + 1) / m;
-            const Vec3 p00 = at (u0, v0), p10 = at (u1, v0);
-            const Vec3 p11 = at (u1, v1), p01 = at (u0, v1);
-            Vec3 area = cross (p11 - p00, p01 - p10) * 0.5f;
-            const float size = length (area);
-            if (size < 1e-6f)
-              continue;
-            Panel p;
-            p.centre = (p00 + p10 + p11 + p01) * 0.25f;
-            p.normal = area / size;
-            if (dot (p.normal, p.centre - inside) < 0.0f)
-              p.normal = -p.normal;
-            p.area = size;
-            p.half_u = ((p10 + p11) - (p00 + p01)) * 0.25f;
-            p.half_v = ((p01 + p11) - (p00 + p10)) * 0.25f;
-            p.transom = transom;
-            out.push_back (p);
-          }
-      }
-
-      std::vector<Panel> hull_panels () {
-        std::vector<Panel> panels;
+      std::vector<HullPanel> hull_panels () {
+        std::vector<HullPanel> panels;
         constexpr int stations = 24;
         for (int k = 0; k < stations; ++k) {
           const float s0 = float (k) / stations, s1 = float (k + 1) / stations;
@@ -225,38 +173,45 @@ namespace moppe::mov {
           const Vec3 middle (0,
                              0.5f * (chine_y (sm) + sheer_y (sm)),
                              Boat::transom + sm * Boat::hull_length);
-          add_quad (panels,
-                    chine (s0, 1),
-                    chine (s1, 1),
-                    chine (s1, -1),
-                    chine (s0, -1),
-                    1,
-                    4,
-                    middle + Vec3 (0, 0.3f, 0));
+          add_hull_quad (panels,
+                         chine (s0, 1),
+                         chine (s1, 1),
+                         chine (s1, -1),
+                         chine (s0, -1),
+                         1,
+                         4,
+                         middle + Vec3 (0, 0.3f, 0));
           for (const float side : { 1.0f, -1.0f })
-            add_quad (panels,
-                      chine (s0, side),
-                      chine (s1, side),
-                      sheer (s1, side),
-                      sheer (s0, side),
-                      1,
-                      5,
-                      middle);
+            add_hull_quad (panels,
+                           chine (s0, side),
+                           chine (s1, side),
+                           sheer (s1, side),
+                           sheer (s0, side),
+                           1,
+                           5,
+                           middle);
         }
-        add_quad (panels,
-                  chine (0, 1),
-                  chine (0, -1),
-                  sheer (0, -1),
-                  sheer (0, 1),
-                  4,
-                  4,
-                  Vec3 (0, 0.25f, 0),
-                  true);
+        add_hull_quad (panels,
+                       chine (0, 1),
+                       chine (0, -1),
+                       sheer (0, -1),
+                       sheer (0, 1),
+                       4,
+                       4,
+                       Vec3 (0, 0.25f, 0),
+                       true);
+        // The cockpit is open: each panel floods to the sheer over it.
+        for (HullPanel& p : panels) {
+          const float station = std::clamp (
+            (p.centre[2] - Boat::transom) / Boat::hull_length, 0.0f, 1.0f);
+          p.open = true;
+          p.rim = Vec3 (p.centre[0], sheer_y (station), p.centre[2]);
+        }
         return panels;
       }
 
-      const std::vector<Panel>& panels () {
-        static const std::vector<Panel> all = hull_panels ();
+      const std::vector<HullPanel>& panels () {
+        static const std::vector<HullPanel> all = hull_panels ();
         return all;
       }
 
@@ -434,9 +389,6 @@ namespace moppe::mov {
       using namespace boat_rig;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
 
-      const b3Quat q = b3Body_GetRotation (body);
-      const Vec3 up_local =
-        from_b3 (b3InvRotateVector (q, { 0.0f, 1.0f, 0.0f }));
       const Vec3 v = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 at = point (Vec3 ());
       const Vec3 current = water.current (at[0], at[2]);
@@ -445,59 +397,7 @@ namespace moppe::mov {
       const float speed = length (way);
 
       // The water on each panel.
-      float wetted = 0.0f;
-      for (const Panel& p : panels ()) {
-        const Vec3 c = point (p.centre);
-        const float level = water.level (c[0], c[2]);
-        const float centre_depth = level - c[1];
-        // How far the panel reaches up and down about its middle, and so
-        // how much of it is under and how deep that part is on average.
-        const float reach = std::abs (dot (p.half_u, up_local)) +
-                            std::abs (dot (p.half_v, up_local));
-        float wet, mean;
-        if (reach < 1e-3f) {
-          wet = centre_depth > 0.0f ? 1.0f : 0.0f;
-          mean = centre_depth;
-        } else if (centre_depth >= reach) {
-          wet = 1.0f;
-          mean = centre_depth;
-        } else {
-          wet =
-            std::clamp ((centre_depth + reach) / (2.0f * reach), 0.0f, 1.0f);
-          mean = 0.5f * (centre_depth + reach);
-        }
-        if (wet <= 0.0f)
-          continue;
-        const float area = p.area * wet;
-        wetted += area;
-        const Vec3 n = axis (p.normal);
-        const Vec3 moving =
-          from_b3 (b3Body_GetLocalPointVelocity (body, to_b3 (p.centre))) -
-          water.current (c[0], c[2]);
-        const float vn = dot (moving, n);
-        const float through = length (moving);
-        // Over the gunwale the water floods in, and pushes on the panel
-        // from inside as hard as from out: the head that buoys it is at
-        // most the height of the sheer over it. Without this a swamped
-        // hull, as if sealed, is pushed up the harder the deeper it sinks.
-        const float station = std::clamp (
-          (p.centre[2] - Boat::transom) / Boat::hull_length, 0.0f, 1.0f);
-        const float flood =
-          point (Vec3 (p.centre[0], sheer_y (station), p.centre[2]))[1] - c[1];
-        float pressure =
-          rho * g * std::clamp (mean, 0.0f, std::max (flood, 0.0f));
-        // The bobbing is damped up and down, not along the way.
-        pressure += rho * damping * std::abs (p.normal[1]) * vn;
-        if (vn > 0.0f)
-          pressure += 0.5f * rho * ram * through * vn;
-        else if (!p.transom)
-          pressure += 0.5f * rho * suction * through * vn;
-        pressure = std::max (pressure, -0.5f * rho * g);
-        Vec3 force = n * (-pressure * area);
-        const Vec3 along = moving - n * vn;
-        force = force - along * (0.5f * rho * friction * length (along) * area);
-        b3Body_ApplyForce (body, to_b3 (force), to_b3 (c), true);
-      }
+      const float wetted = press_hull (body, panels (), water, water_traits);
       kept.afloat = wetted > 0.5f;
       kept.grounded = touching_ground ();
 

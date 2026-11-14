@@ -123,6 +123,13 @@ namespace moppe::game {
       return m_boat;
     }
 
+    mov::JetSki& jet_ski () noexcept {
+      return m_jet_ski;
+    }
+    const mov::JetSki& jet_ski () const noexcept {
+      return m_jet_ski;
+    }
+
     mov::Glider& glider () noexcept {
       return m_glider;
     }
@@ -164,8 +171,8 @@ namespace moppe::game {
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
     // What the mount key would take, on foot: of the bike, the jeep, the
-    // helicopter, the tractor, the Caddy, the mountainbike, the boat, and
-    // the Long John, the nearest within its reach.
+    // helicopter, the tractor, the Caddy, the mountainbike, the boat, the
+    // Long John, and the jet ski, the nearest within its reach.
     enum class Mount {
       none,
       bike,
@@ -175,7 +182,8 @@ namespace moppe::game {
       caddy,
       mountain_bike,
       boat,
-      long_john
+      long_john,
+      jet_ski
     };
     Mount mount_within_reach () const;
     // On foot nearest the jeep, within its reach.
@@ -192,8 +200,11 @@ namespace moppe::game {
     bool can_ride_long_john () const;
     // On foot nearest the boat, within reach of its helm.
     bool can_take_boat () const;
-    // Where someone stepping out of the boat stands: over whichever side,
-    // or the bow, has the shallowest water there, as last reckoned.
+    // On foot nearest the jet ski, within reach of its saddle.
+    bool can_ride_jet_ski () const;
+    // Where someone stepping out of the boat, or off the jet ski, stands:
+    // over whichever side, or the bow, has the shallowest water there, as
+    // last reckoned.
     Vec3 boat_landing () const {
       return m_boat_landing;
     }
@@ -261,6 +272,7 @@ namespace moppe::game {
     mov::Vehicle m_mountain_bike;
     mov::Boat m_boat;
     mov::Vehicle m_long_john;
+    mov::JetSki m_jet_ski;
     Vec3 m_boat_landing {};
     Walker m_walker;
     ChaseCamera m_camera;

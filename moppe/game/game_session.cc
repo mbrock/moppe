@@ -74,6 +74,8 @@ namespace moppe::game {
         session.ridden_bike ().set_yaw ((90 * value) * u::deg);
       else if (logic.m_mode == M_BOAT)
         session.boat ().set_turn (value);
+      else if (logic.m_mode == M_JET_SKI)
+        session.jet_ski ().set_turn (value);
     }
 
     void set_go (GameSession& session, float value) {
@@ -101,6 +103,8 @@ namespace moppe::game {
         session.ridden_bike ().set_thrust (value);
       else if (logic.m_mode == M_BOAT)
         session.boat ().set_drive (value);
+      else if (logic.m_mode == M_JET_SKI)
+        session.jet_ski ().set_drive (value);
     }
 
     void set_boost (GameSession& session, float value) {
@@ -222,6 +226,8 @@ namespace moppe::game {
         return Machine::long_john;
       case M_BOAT:
         return Machine::boat;
+      case M_JET_SKI:
+        return Machine::jet_ski;
       default:
         return std::nullopt;
       }
@@ -245,6 +251,8 @@ namespace moppe::game {
         return Machine::long_john;
       case GameSession::Mount::boat:
         return Machine::boat;
+      case GameSession::Mount::jet_ski:
+        return Machine::jet_ski;
       case GameSession::Mount::none:
         break;
       }
@@ -418,6 +426,20 @@ namespace moppe::game {
         return;
       }
 
+      if (logic.m_mode == M_JET_SKI) {
+        // Off over whichever side, or the bow, has the shallowest water.
+        mov::JetSki& ski = session.jet_ski ();
+        ski.set_drive (0);
+        ski.set_turn (0);
+        session.walker ().spawn (moppe::position (session.boat_landing ()),
+                                 level_heading (ski.forward ()),
+                                 moppe::velocity (ski.velocity () * 0.5f));
+        session.set_mode (M_FOOT);
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        return;
+      }
+
       if (logic.m_mode == M_JEEP) {
         // Step out on the driver's side.
         mov::Jeep& jeep = session.jeep ();
@@ -455,12 +477,13 @@ namespace moppe::game {
                         : reach == GameSession::Mount::long_john  ? M_LONG_JOHN
                         : reach == GameSession::Mount::helicopter ? M_HELICOPTER
                         : reach == GameSession::Mount::boat       ? M_BOAT
+                        : reach == GameSession::Mount::jet_ski    ? M_JET_SKI
                                                                   : M_FOOT;
       if (into != M_FOOT) {
         session.set_mode (into);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
-        if (into != M_HELICOPTER && into != M_BOAT)
+        if (into != M_HELICOPTER && into != M_BOAT && into != M_JET_SKI)
           set_boost (session, logic.m_boost_input);
         return;
       }
@@ -893,6 +916,13 @@ namespace moppe::game {
       body.velocity = m_boat.velocity ();
       body.mass = m_boat.mass ();
       break;
+    case Machine::jet_ski:
+      body.position = m_jet_ski.position ();
+      body.forward = m_jet_ski.forward ();
+      body.up = m_jet_ski.up ();
+      body.velocity = m_jet_ski.velocity ();
+      body.mass = m_jet_ski.mass ();
+      break;
     }
     return body;
   }
@@ -925,6 +955,9 @@ namespace moppe::game {
     case Machine::boat:
       m_boat.push (at, impulse);
       break;
+    case Machine::jet_ski:
+      m_jet_ski.push (at, impulse);
+      break;
     }
   }
 
@@ -938,6 +971,11 @@ namespace moppe::game {
     // The boat run up on the land is dragged back to the water by its
     // bow handle; it goes nowhere under its own power there.
     if (*machine == Machine::boat && m_boat.grounded () && !m_boat.afloat ())
+      return machine;
+    // And the jet ski, whose pump has nothing to work on there, by the
+    // eye in its stem.
+    if (*machine == Machine::jet_ski && m_jet_ski.grounded () &&
+        !m_jet_ski.afloat ())
       return machine;
     if (!m_logic.m_trouble[static_cast<std::size_t> (*machine)].stuck)
       return std::nullopt;
@@ -995,7 +1033,7 @@ namespace moppe::game {
                      115 * u::kg,
                      mov::BikePhysics::rigid,
                      mov::long_john_rig),
-        m_camera (18 * u::deg, 6.5f * u::m) {}
+        m_jet_ski (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
     if (m_logic.m_mode == M_FOOT)
@@ -1018,6 +1056,8 @@ namespace moppe::game {
       return m_long_john.position ();
     if (m_logic.m_mode == M_BOAT)
       return m_boat.position ();
+    if (m_logic.m_mode == M_JET_SKI)
+      return m_jet_ski.position ();
     return m_bike.position ();
   }
 
@@ -1042,6 +1082,8 @@ namespace moppe::game {
       return m_long_john.orientation ();
     if (m_logic.m_mode == M_BOAT)
       return m_boat.forward ();
+    if (m_logic.m_mode == M_JET_SKI)
+      return m_jet_ski.forward ();
     return m_bike.orientation ();
   }
 
@@ -1066,6 +1108,8 @@ namespace moppe::game {
       return length (m_long_john.velocity ()) * 3.6f;
     if (m_logic.m_mode == M_BOAT)
       return length (m_boat.velocity ()) * 3.6f;
+    if (m_logic.m_mode == M_JET_SKI)
+      return length (m_jet_ski.velocity ()) * 3.6f;
     return length (m_bike.velocity ()) * 3.6f;
   }
 
@@ -1094,6 +1138,8 @@ namespace moppe::game {
         2.4f },
       // The boat from its middle: it may lie a step out in the water.
       { Mount::boat, m_boat.point (Vec3 (0, 0, 0.6f)), 4.0f },
+      // The jet ski from its saddle; it too may lie a step out.
+      { Mount::jet_ski, m_jet_ski.point (Vec3 (0, 0, 0.1f)), 3.6f },
     };
     Mount nearest = Mount::none;
     float best = 1e30f;
@@ -1133,6 +1179,10 @@ namespace moppe::game {
 
   bool GameSession::can_take_boat () const {
     return mount_within_reach () == Mount::boat;
+  }
+
+  bool GameSession::can_ride_jet_ski () const {
+    return mount_within_reach () == Mount::jet_ski;
   }
 
   std::optional<Machine> GameSession::hook_within_reach () const {
@@ -1290,6 +1340,17 @@ namespace moppe::game {
       rig.nearest = 3.0f * u::m;
       rig.elevation = 16.0f * u::deg;
       break;
+    case M_JET_SKI:
+      // Close and low behind it, as the thing is quick and small.
+      rig.eye = m_jet_ski.seat () + m_jet_ski.up () * 0.72f +
+                m_jet_ski.forward () * 0.12f;
+      rig.ahead = m_jet_ski.forward ();
+      rig.pivot = m_jet_ski.position () + Vec3 (0, 1.0f, 0);
+      rig.velocity = m_jet_ski.velocity ();
+      rig.distance = 6.0f * u::m;
+      rig.nearest = 2.8f * u::m;
+      rig.elevation = 15.0f * u::deg;
+      break;
     case M_MOUNTAIN_BIKE: {
       // The bike is life size, its reference point between the axles at
       // their height; the rider's eyes are some 1.3 m over that.
@@ -1416,7 +1477,8 @@ namespace moppe::game {
              m_caddy.state (),
              m_mountain_bike.state (),
              m_boat.state (),
-             m_long_john.state () };
+             m_long_john.state (),
+             m_jet_ski.state () };
   }
 
   void GameSession::restore (const State& state) {
@@ -1434,9 +1496,43 @@ namespace moppe::game {
     m_mountain_bike.restore (state.mountain_bike);
     m_boat.restore (state.boat);
     m_long_john.restore (state.long_john);
+    m_jet_ski.restore (state.jet_ski);
   }
 
   namespace {
+    // The water as what floats on it feels it at `time`: the waves lift
+    // a hull and carry it to and fro, and a river's current carries it
+    // downstream. What it borrows must outlive it.
+    mov::BoatWater floating_water (const WorldParams& world,
+                                   const map::SurfaceGeometry& surface,
+                                   const terrain::WaterSheets* water,
+                                   double time) {
+      const float sea = world.water_level.numerical_value_in (u::m);
+      return { [&world, &surface, water, time] (float x, float z) {
+                return water_surface_at (
+                         world, surface, water, Vec3 (x, 0.0f, z), time)
+                  .numerical_value_in (u::m);
+              },
+               [&surface, water, time, sea] (float x, float z) {
+                 if (!water)
+                   return Vec3 ();
+                 const terrain::SeaWaves waves =
+                   water_waves_at (surface, water, Vec3 (x, 0.0f, z), time);
+                 Vec3 moving (
+                   waves.velocity[0], waves.velocity[1], waves.velocity[2]);
+                 const position_t where = moppe::position (Vec3 (x, 0.0f, z));
+                 const float sheet = terrain::surface_elevation_value (
+                   spatial::sample<terrain::surface_elevation> (*water, where));
+                 if (sheet <= ground_at (surface, Vec3 (x, 0.0f, z)) ||
+                     sheet <= sea + 0.05f)
+                   return moving;
+                 Vec3 current =
+                   spatial::sample<terrain::water_velocity> (*water, where)
+                     .numerical_value_in (u::m / u::s);
+                 return moving + Vec3 (current[0], 0.0f, current[2]);
+               } };
+    }
+
     // The boat floats on whatever water lies under it and is carried by
     // its current; driven, its long-tail smokes, throws its rooster tail
     // of spray up behind, and the bow throws water aside at speed.
@@ -1447,34 +1543,8 @@ namespace moppe::game {
                        float elapsed) {
       GameLogicState& logic = session.logic ();
       mov::Boat& boat = session.boat ();
-      const float sea = world.water_level.numerical_value_in (u::m);
-      const double time = logic.m_total_time;
-      // The waves lift it and carry it to and fro; a river's current
-      // carries it downstream.
-      const mov::BoatWater floating {
-        [&] (float x, float z) {
-          return water_surface_at (
-                   world, surface, water, Vec3 (x, 0.0f, z), time)
-            .numerical_value_in (u::m);
-        },
-        [&] (float x, float z) {
-          if (!water)
-            return Vec3 ();
-          const terrain::SeaWaves waves =
-            water_waves_at (surface, water, Vec3 (x, 0.0f, z), time);
-          Vec3 moving (waves.velocity[0], waves.velocity[1], waves.velocity[2]);
-          const position_t where = moppe::position (Vec3 (x, 0.0f, z));
-          const float sheet = terrain::surface_elevation_value (
-            spatial::sample<terrain::surface_elevation> (*water, where));
-          if (sheet <= ground_at (surface, Vec3 (x, 0.0f, z)) ||
-              sheet <= sea + 0.05f)
-            return moving;
-          Vec3 current =
-            spatial::sample<terrain::water_velocity> (*water, where)
-              .numerical_value_in (u::m / u::s);
-          return moving + Vec3 (current[0], 0.0f, current[2]);
-        }
-      };
+      const mov::BoatWater floating =
+        floating_water (world, surface, water, logic.m_total_time);
       boat.set_parked (logic.m_mode != M_BOAT);
       boat.update (elapsed, floating);
       if (logic.m_mode != M_BOAT)
@@ -1585,6 +1655,98 @@ namespace moppe::game {
                               DisplayColor (0.60f, 0.52f, 0.40f));
       }
     }
+
+    // The jet ski floats as the boat does. Ridden, its jet throws a
+    // plume of water up and back from the transom, and its bow sheets
+    // of spray aside, further aft the higher it planes.
+    void advance_jet_ski (const WorldParams& world,
+                          const map::SurfaceGeometry& surface,
+                          GameSession& session,
+                          const terrain::WaterSheets* water,
+                          float elapsed) {
+      GameLogicState& logic = session.logic ();
+      mov::JetSki& ski = session.jet_ski ();
+      ski.set_parked (logic.m_mode != M_JET_SKI);
+      ski.update (elapsed,
+                  floating_water (world, surface, water, logic.m_total_time));
+      if (logic.m_mode != M_JET_SKI)
+        return;
+      logic.m_odometer += length (ski.velocity ()) * elapsed;
+
+      std::uniform_real_distribution<float> chance (0.0f, 1.0f);
+      const DisplayColor spray_color (0.86f, 0.92f, 0.97f);
+      const float power = ski.thrust () / mov::JetSki::static_thrust ();
+      if (power > 0.08f) {
+        Vec3 back = ski.jet_direction ();
+        back[1] = 0.0f;
+        back = length2 (back) > 1e-6f ? normalized (back) : -ski.forward ();
+        Dust::Style plume;
+        plume.size = 0.11f * u::m;
+        plume.lifetime = 0.9f * u::s;
+        plume.downward_acceleration =
+          9.0f * isq::acceleration[u::m / pow<2> (u::s)];
+        plume.spread = 0.3f * one;
+        plume.flake = true;
+        session.dust ().emit (
+          moppe::position (ski.jet () + Vec3 (0, 0.1f, 0)),
+          velocity (ski.velocity () * 0.6f + back * (2.5f + 5.0f * power) +
+                    Vec3 (0, 2.0f + 4.5f * power, 0)),
+          static_cast<int> (std::round (5.0f * power + 0.5f)),
+          spray_color,
+          plume);
+        if (chance (logic.m_fx_rng) < 0.6f * power) {
+          Dust::Style mist;
+          mist.size = 0.55f * u::m;
+          mist.lifetime = 1.0f * u::s;
+          mist.downward_acceleration =
+            1.0f * isq::acceleration[u::m / pow<2> (u::s)];
+          mist.spread = 0.9f * one;
+          session.dust ().emit (
+            moppe::position (ski.jet () + back * 0.9f + Vec3 (0, 0.5f, 0)),
+            velocity (ski.velocity () * 0.5f + Vec3 (0, 0.8f, 0)),
+            1,
+            spray_color,
+            mist);
+        }
+      }
+
+      Vec3 way = ski.velocity ();
+      way[1] = 0.0f;
+      const float speed = length (way);
+      if (ski.afloat () && speed > 3.0f) {
+        const float planing = std::clamp ((speed - 5.0f) / 7.0f, 0.0f, 1.0f);
+        Dust::Style sheet;
+        sheet.size = 0.10f * u::m;
+        sheet.lifetime = 0.6f * u::s;
+        sheet.downward_acceleration =
+          9.0f * isq::acceleration[u::m / pow<2> (u::s)];
+        sheet.spread = 0.3f * one;
+        sheet.flake = true;
+        const int drops =
+          static_cast<int> (std::round (std::min (3.0f, speed * 0.2f)));
+        for (const float side : { 1.0f, -1.0f }) {
+          const Vec3 at = ski.point (Vec3 (
+            side * (0.3f + 0.2f * planing), 0.12f, 1.2f - 1.3f * planing));
+          session.dust ().emit (
+            moppe::position (at),
+            velocity (ski.velocity () * 0.7f +
+                      ski.left () * (side * (1.2f + 0.2f * speed)) +
+                      Vec3 (0, 1.0f + 0.12f * speed, 0)),
+            drops,
+            spray_color,
+            sheet);
+        }
+      }
+      // Run up on the shore, the hull grinds over what is there.
+      if (ski.grounded () && speed > 1.0f && chance (logic.m_fx_rng) < 0.3f) {
+        Vec3 under = ski.point (Vec3 (0, 0, 0.6f));
+        under[1] = ground_at (surface, under) + 0.1f;
+        session.dust ().emit (moppe::position (under),
+                              velocity (ski.velocity () * 0.2f),
+                              1,
+                              DisplayColor (0.60f, 0.52f, 0.40f));
+      }
+    }
   }
 
   GameSessionAdvanceResult
@@ -1612,15 +1774,20 @@ namespace moppe::game {
     long_john.set_water_level (water_at (long_john.position ()));
     long_john.set_trunks (trunks);
 
-    // Where one would step out of the boat.
-    if (logic.m_mode == M_BOAT) {
-      const mov::Boat& boat = session.boat ();
+    // Where one would step out of the boat, or off the jet ski: over
+    // whichever side, or the bow, has the shallowest water.
+    if (logic.m_mode == M_BOAT || logic.m_mode == M_JET_SKI) {
+      const bool skiff = logic.m_mode == M_BOAT;
+      const float beside = skiff ? 1.1f : 1.0f;
+      const float amidships = skiff ? 0.4f : 0.0f;
+      const float bow = (skiff ? mov::Boat::stem : mov::JetSki::stem) + 0.7f;
       Vec3 best;
       float shallowest = 1e30f;
-      for (const Vec3& side : { Vec3 (1.1f, 0.3f, 0.4f),
-                                Vec3 (-1.1f, 0.3f, 0.4f),
-                                Vec3 (0.0f, 0.3f, mov::Boat::stem + 0.7f) }) {
-        Vec3 at = boat.point (side);
+      for (const Vec3& side : { Vec3 (beside, 0.3f, amidships),
+                                Vec3 (-beside, 0.3f, amidships),
+                                Vec3 (0.0f, 0.3f, bow) }) {
+        Vec3 at = skiff ? session.boat ().point (side)
+                        : session.jet_ski ().point (side);
         const float ground = ground_at (surface, at);
         const float depth = water_at (at).numerical_value_in (u::m) - ground;
         if (depth < shallowest) {
@@ -1775,6 +1942,8 @@ namespace moppe::game {
     }
     session.boat ().set_trunks (trunks);
     advance_boat (world, surface, session, water, elapsed);
+    session.jet_ski ().set_trunks (trunks);
+    advance_jet_ski (world, surface, session, water, elapsed);
     if (logic.m_mode == M_JEEP) {
       logic.m_odometer += length (jeep.velocity ()) * elapsed;
       // Sliding wheels throw up what they slide on.

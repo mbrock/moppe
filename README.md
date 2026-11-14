@@ -73,9 +73,10 @@ If you boost the Trail 90 into the air off a hill, you can deploy a hang
 glider (`E`) with the motorcycle still tethered beneath the wing, diving for
 speed and flaring with `Space` to land back on two wheels. There is also a
 mountain bike up at the lookout, a vintage red tractor, a VW Caddy pickup by
-the sea, an army jeep with a spare seat if a second player joins on the local
-network (`--multiplayer`), and a helicopter that can hook any vehicle on a
-sling line (`F`) and carry it across the valley.
+the sea, a white-and-teal jet ski bobbing at the jetty's other side, an army
+jeep with a spare seat if a second player joins on the local network
+(`--multiplayer`), and a helicopter that can hook any vehicle on a sling line
+(`F`) and carry it across the valley.
 
 <p align="center">
   <img src="screenshots/barn-interior.png" width="49%"

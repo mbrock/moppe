@@ -530,6 +530,33 @@
     the following ones round), and `tools/boat-promo OUT.mp4` records
     and cuts a 50 s 1080p promo from them (clips kept in
     `build/boat-promo`, so recutting `FILM` takes a minute).
+  - The jet ski (`moppe/mov/jet_ski.*`, `models/jet_ski.blend` from
+    `tools/figure/jet_ski.py`, drawn by `game/jet_ski_render.*`) is a
+    sit-down runabout of the early nineties: white glass fibre 2.9 m
+    long and a metre in the beam, teal and magenta flashes down its
+    flanks, a long saddle between two footwells, a cowl rising to the
+    bars, and a 650 cc two-stroke twin (37 kW) turning a jet pump. It
+    lies afloat beside the boat: at the landing, alongside the jetty's
+    other side (`park_jet_ski` in game.cc; the log line `moppe: jet ski
+    afloat` says where). On foot, `F` beside it gets on and `F` gets off
+    over whichever side has the shallowest water; `W` opens the
+    throttle, `S` drops the reverse bucket, and `A`/`D` swing the
+    nozzle. It is the boat's kind of body (one Box3D hull over its own
+    ground patch) under the same water, panel by panel
+    (`mov/hull_water.*`: `press_hull`, shared with `mov::Boat`), but
+    decked, so it floats however it lies, with a vee bottom that planes
+    within a few lengths, some 60 km/h flat out, and 285 kg with its
+    rider. The pump pushes only while its intake grate is in the water
+    (the engine races off a wave), and only the jet steers: with the
+    throttle shut the bars do next to nothing. The rider balances it
+    and leans it into a turn (`JetSki::lean`). Run up on the land, `F`
+    takes up a rope to the eye in its stem and walking drags it back
+    (`Machine::jet_ski`); the helicopter can hook it. It throws a plume
+    from the nozzle and spray from the bow, and leaves the boat's kind
+    of wake. `MOPPE_DEMO=jet_ski` (`tools/record OUT.mp4 jet_ski`) has
+    the autopilot ride it out over open water, and
+    `MOPPE_RIDE_CAMERA=side|front` stands beside it; the other player
+    sees it (companion wire version 14).
   - Skids, on both bikes: riding, `Shift` (the controller's left trigger)
     stamps on the rear brake. The rear wheel locks, its tyre's grip drops
     to a sliding friction, and the bars swing the tail out about the
@@ -576,10 +603,10 @@
     for the touchdown. `MOPPE_DEMO=helicopter` (`tools/record OUT.mp4
     helicopter`) has the autopilot take it up, hook the jeep parked
     beside it, and fly it off. Flying over a machine (the bike, the
-    mountainbike, the jeep, the tractor, or the Caddy) with the line in
-    reach of it -- some metres up and up to eight to one side, no aiming
-    needed -- `F` hooks it on a line under the helicopter
-    (`moppe/game/sling.*`, `GameLogicState::m_sling`,
+    mountainbike, the jeep, the tractor, the Caddy, the boat, or the jet
+    ski) with the line in reach of it -- some metres up and up to eight
+    to one side, no aiming needed -- `F` hooks it on a line under the
+    helicopter (`moppe/game/sling.*`, `GameLogicState::m_sling`,
     `GameSession::hook_within_reach`), and `F` again lets it go, from any
     height, before `F` steps out. The line is a stiff spring from the
     hook to a ring over the load's centre of mass, pushed each step on

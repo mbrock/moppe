@@ -51,6 +51,12 @@ namespace moppe::game {
         { Vec3 (0.0f, 0.22f, 1.3f), 0.45f },
         { Vec3 (0.0f, 0.25f, 2.2f), 0.4f },
       };
+      // The jet ski's hull, and its cowl and saddle over it.
+      const Bumper jet_ski_bumpers[] = {
+        { Vec3 (0.0f, 0.3f, -0.6f), 0.5f },
+        { Vec3 (0.0f, 0.35f, 0.3f), 0.5f },
+        { Vec3 (0.0f, 0.4f, 1.15f), 0.4f },
+      };
       const Bumper helicopter_bumpers[] = {
         { Vec3 (0.0f, 1.3f, 0.3f), 1.25f },
         { Vec3 (0.0f, 1.7f, -2.4f), 0.5f },
@@ -104,6 +110,8 @@ namespace moppe::game {
       return "the Long John";
     case Machine::boat:
       return "the boat";
+    case Machine::jet_ski:
+      return "the jet ski";
     }
     return "it";
   }
@@ -126,6 +134,8 @@ namespace moppe::game {
       return long_john_bumpers;
     case Machine::boat:
       return boat_bumpers;
+    case Machine::jet_ski:
+      return jet_ski_bumpers;
     }
     return {};
   }
@@ -148,6 +158,8 @@ namespace moppe::game {
       return Vec3 (0.0f, 0.2f, -0.2f);
     case Machine::boat:
       return Vec3 (0.0f, 0.2f, 0.15f);
+    case Machine::jet_ski:
+      return Vec3 (0.0f, 0.24f, -0.12f);
     }
     return Vec3 ();
   }
@@ -176,6 +188,9 @@ namespace moppe::game {
     case Machine::boat:
       // The carrying handle on the bow, or the transom's top.
       return front ? Vec3 (0.0f, 0.45f, 2.65f) : Vec3 (0.0f, 0.35f, -0.95f);
+    case Machine::jet_ski:
+      // The eye in the stem, or the grab handle behind the saddle.
+      return front ? Vec3 (0.0f, 0.36f, 1.86f) : Vec3 (0.0f, 0.52f, -0.94f);
     }
     return Vec3 ();
   }

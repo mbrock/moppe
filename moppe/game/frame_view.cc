@@ -156,6 +156,17 @@ namespace moppe::game {
     };
   }
 
+  JetSkiPose jet_ski_pose (const mov::JetSki& ski) {
+    return {
+      .position = ski.position (),
+      .forward = ski.forward (),
+      .up = ski.up (),
+      .steer_radians = ski.steer (),
+      .lean_radians = ski.lean (),
+      .rpm = ski.rpm (),
+    };
+  }
+
   TractorPose tractor_pose (const mov::Tractor& tractor) {
     return {
       .position = tractor.position (),
@@ -352,6 +363,7 @@ namespace moppe::game {
     result.actors.helicopter = helicopter_pose (input.session.helicopter ());
     result.actors.tractor = tractor_pose (input.session.tractor ());
     result.actors.boat = boat_pose (input.session.boat ());
+    result.actors.jet_ski = jet_ski_pose (input.session.jet_ski ());
     result.actors.caddy = caddy_pose (input.session.caddy ());
     if (logic.m_sling.hooked) {
       const Machine load = logic.m_sling.load;
@@ -429,6 +441,7 @@ namespace moppe::game {
     hud.can_ride_mountain_bike = input.session.can_ride_mountain_bike ();
     hud.can_ride_long_john = input.session.can_ride_long_john ();
     hud.can_take_boat = input.session.can_take_boat ();
+    hud.can_ride_jet_ski = input.session.can_ride_jet_ski ();
     if (const auto stuck = input.session.haul_within_reach ())
       hud.haul = machine_name (*stuck);
     if (const auto held = input.session.hauling ())
@@ -470,6 +483,10 @@ namespace moppe::game {
     case M_BOAT:
       // It planes at some 26 km/h, flat out on still water.
       ramp = { 15.0f, 26.0f, 1.0f };
+      break;
+    case M_JET_SKI:
+      // Some 60 km/h flat out on still water, low over it.
+      ramp = { 35.0f, 60.0f, 0.9f };
       break;
     case M_BIKE:
       // 60 to 105 km/h unboosted; a boost carries it to 150.

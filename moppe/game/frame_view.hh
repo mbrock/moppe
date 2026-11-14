@@ -125,6 +125,19 @@ namespace moppe::game {
     float rpm = 0.0f;
   };
 
+  // The jet ski as drawn: its origin (on the keel under the front of
+  // the saddle) and frame, how far its nozzle is swung (positive turns
+  // the bow to the right), how far its rider leans (positive to the
+  // right), and the engine's speed.
+  struct JetSkiPose {
+    Vec3 position {};
+    Vec3 forward { 0, 0, 1 };
+    Vec3 up { 0, 1, 0 };
+    float steer_radians = 0.0f;
+    float lean_radians = 0.0f;
+    float rpm = 0.0f;
+  };
+
   struct GliderPose {
     Vec3 position {};
     Vec3 heading { 0, 0, 1 };
@@ -165,6 +178,7 @@ namespace moppe::game {
     TractorPose tractor {};
     CaddyPose caddy {};
     BoatPose boat {};
+    JetSkiPose jet_ski {};
     // Fishing from the boat: the rod in the helmsman's right hand.
     std::optional<RodPose> helm_rod;
     // The bike and the jeep ride in the Caddy, its hardtop off and its
@@ -220,6 +234,8 @@ namespace moppe::game {
     bool can_ride_long_john = false;
     // On foot beside the boat, which the mount key would take out.
     bool can_take_boat = false;
+    // On foot beside the jet ski, which the mount key would ride.
+    bool can_ride_jet_ski = false;
     // On foot beside a stuck machine, which the mount key would haul
     // out; hauling one; or driving one that is stuck (game/rescue.hh).
     const char* haul = nullptr;
@@ -383,6 +399,7 @@ namespace moppe::game {
   HelicopterPose helicopter_pose (const mov::Helicopter& helicopter);
   TractorPose tractor_pose (const mov::Tractor& tractor);
   BoatPose boat_pose (const mov::Boat& boat);
+  JetSkiPose jet_ski_pose (const mov::JetSki& ski);
   CaddyPose caddy_pose (const mov::Caddy& caddy);
   // The bike and the jeep as they ride in the Caddy (game/sling.hh).
   GliderPose glider_pose (const mov::Glider& glider);
@@ -392,10 +409,10 @@ namespace moppe::game {
   // How long the motion blur draws the world's streaks, as a share of a
   // frame's motion, for a player getting about in `mode` at `kmh`. Each
   // way of getting about blurs from the speed that feels fast in it: the
-  // boat as it comes up onto the plane, the Trail 90 only past
-  // what it reaches unboosted. On foot and in the air
-  // there is none: the ground is far off from a wing or a cabin, so what
-  // streaks there is the camera's turning, not speed.
+  // boat as it comes up onto the plane, the jet ski past the speed it
+  // cruises at, the Trail 90 only past what it reaches unboosted. On foot and
+  // in the air there is none: the ground is far off from a wing or a cabin, so
+  // what streaks there is the camera's turning, not speed.
   float motion_blur_for (Mode mode, float kmh);
 
   // The raw, unsmoothed sight line toward the sun.  The game updates its

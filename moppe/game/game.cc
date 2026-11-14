@@ -41,6 +41,7 @@
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/jeep_render.hh>
+#include <moppe/game/jet_ski_render.hh>
 #include <moppe/game/landscape_gazetteer.hh>
 #include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
@@ -1262,6 +1263,7 @@ namespace moppe {
           return water && std::string_view (water) == "river";
         }();
         m_mooring.reset ();
+        m_mooring_out.reset ();
         m_boat_route.clear ();
         m_boat_route_at = 0;
         if (river && moor_on_river ())
@@ -1275,6 +1277,7 @@ namespace moppe {
                       outward ? -landing.berth_forward : landing.berth_forward,
                       landing.berth[1]);
           m_mooring = landing.jetty.root;
+          m_mooring_out = landing.jetty.out;
           std::cerr << "moppe: boat moored at the landing's jetty, "
                     << std::hypot (landing.berth[0] - m_spawn_position[0],
                                    landing.berth[2] - m_spawn_position[2])
@@ -1286,6 +1289,59 @@ namespace moppe {
           return;
         if (!moor_boat (false, outward))
           std::cerr << "moppe: boat: no open water near the spawn\n";
+      }
+
+      // The jet ski lies afloat by the boat: at the landing, alongside the
+      // jetty's other side; on an open shore or a river, a few metres
+      // along from the boat, wherever the water there will float it. Its
+      // bow is to the land as the boat's is, or with `outward` to the
+      // open water.
+      void park_jet_ski (bool outward = false) {
+        mov::JetSki& ski = session ().jet_ski ();
+        ski.set_trunks (&m_trunk_field);
+        // Where the boat was left, not where someone has since taken it.
+        const mov::Boat& boat = session ().boat ();
+        if (logic ().m_mode != M_BOAT || !m_boat_berth)
+          m_boat_berth = { boat.position (), boat.forward () };
+        const Vec3 berth = m_boat_berth->first;
+        Vec3 bow = m_boat_berth->second;
+        bow[1] = 0.0f;
+        bow = length2 (bow) > 1e-6f ? normalized (bow) : Vec3 (0, 0, 1);
+        const Vec3 beam (bow[2], 0.0f, -bow[0]);
+        std::vector<Vec3> berths;
+        if (m_places.landing && m_mooring &&
+            length2 (*m_mooring - m_places.landing->jetty.root) < 1.0f) {
+          // Across the jetty from the boat, a little nearer its head.
+          const Jetty& jetty = m_places.landing->jetty;
+          const Vec3 side (jetty.out[2], 0.0f, -jetty.out[0]);
+          const float across = dot (berth - jetty.root, side);
+          berths.push_back (
+            berth -
+            side * (across + std::copysign (jetty.half_width + 0.8f, across)) +
+            jetty.out * 0.9f);
+        }
+        for (const float aside : { 3.2f, -3.2f, 5.5f, -5.5f })
+          berths.push_back (berth + beam * aside);
+        for (const float along : { -5.0f, 5.5f })
+          berths.push_back (berth + bow * along);
+        const Vec3 facing = outward && m_mooring_out ? *m_mooring_out : bow;
+        for (const Vec3& at : berths)
+          if (boat_depth_at (at) > 0.5f) {
+            ski.place (at, facing, boat_depth_at (at) + ground_height (at));
+            std::cerr << "moppe: jet ski afloat "
+                      << std::lround (from_spawn (at))
+                      << " m from the spawn, at " << at[0] << ' ' << at[2]
+                      << std::endl;
+            return;
+          }
+        if (!m_mooring) {
+          std::cerr << "moppe: jet ski: no water near the spawn\n";
+          return;
+        }
+        // No water round the boat deep enough: drawn up on its shore.
+        ski.place (*m_mooring, facing, -1e6f);
+        std::cerr << "moppe: jet ski drawn up on the boat's shore, at "
+                  << (*m_mooring)[0] << ' ' << (*m_mooring)[2] << std::endl;
       }
 
       // How deep the still water stands over the ground at `at`.
@@ -1343,6 +1399,7 @@ namespace moppe {
         boat.set_trunks (&m_trunk_field);
         boat.place (at, ahead, boat_depth_at (at) + ground_height (at));
         m_mooring = at;
+        m_mooring_out = ahead;
         m_boat_route.assign (line.begin () + start + 1, line.end ());
         std::cerr << "moppe: boat moored on the river " << up
                   << " m above its mouth, at " << at[0] << ' ' << at[2]
@@ -1355,8 +1412,44 @@ namespace moppe {
       // either way it steers clear of shallows it sees ahead.
       InputFrame boat_autopilot (float t) {
         const mov::Boat& boat = session ().boat ();
-        const Vec3 at = boat.position ();
-        Vec3 heading = boat.forward ();
+        return water_autopilot (
+          t, boat.position (), boat.forward (), { .follow_route = true });
+      }
+
+      // The jet ski's (MOPPE_DEMO=jet_ski): the same weave, but it makes
+      // for the widest water it can see, looks as far ahead as it covers
+      // in a few seconds, and shuts the throttle to come round when the
+      // shallows are near.
+      InputFrame jet_ski_autopilot (float t) {
+        const mov::JetSki& ski = session ().jet_ski ();
+        return water_autopilot (t,
+                                ski.position (),
+                                ski.forward (),
+                                { .speed = length (ski.velocity ()),
+                                  .sight = 240.0f,
+                                  .room = 200.0f });
+      }
+
+      // What the water autopilot steers: how fast it is going, m/s, for
+      // how far ahead it must mind the shallows; whether it follows the
+      // river's course where there is one; how far it looks for open
+      // water, metres; and how much of that it cares to have ahead of
+      // it before the weave matters more.
+      struct WaterPilot {
+        float speed = 0.0f;
+        bool follow_route = false;
+        float sight = 90.0f;
+        float room = 60.0f;
+      };
+
+      // Steers something afloat at `at`, heading `heading`, along the
+      // river's course if there is one to follow, and otherwise over
+      // open water.
+      InputFrame water_autopilot (float t,
+                                  const Vec3& at,
+                                  Vec3 heading,
+                                  const WaterPilot& craft) {
+        const float speed = craft.speed;
         heading[1] = 0.0f;
         heading = normalized (heading);
         const auto turned = [] (const Vec3& v, float a) {
@@ -1364,25 +1457,26 @@ namespace moppe {
                        0.0f,
                        v[0] * std::sin (a) + v[2] * std::cos (a));
         };
-        // How far open water runs along `way`, up to 90 m.
-        const bool river = m_boat_route_at < m_boat_route.size ();
+        // How far open water runs along `way`, as far as it looks.
+        const bool river =
+          craft.follow_route && m_boat_route_at < m_boat_route.size ();
         const float shallow = river ? 0.12f : 0.8f;
         const auto open_reach = [&] (const Vec3& way) {
-          for (float reach = 6.0f; reach <= 90.0f; reach += 6.0f)
+          for (float reach = 6.0f; reach <= craft.sight; reach += 6.0f)
             if (boat_depth_at (at + way * reach) < shallow)
               return reach;
-          return 100.0f;
+          return craft.sight + 10.0f;
         };
         Vec3 want;
         float drive = 1.0f;
-        while (m_boat_route_at < m_boat_route.size ()) {
+        while (river && m_boat_route_at < m_boat_route.size ()) {
           const Vec3 next = m_boat_route[m_boat_route_at];
           const Vec3 to (next[0] - at[0], 0.0f, next[2] - at[2]);
           if (length (to) > 22.0f && dot (to, heading) > -5.0f)
             break;
           ++m_boat_route_at;
         }
-        if (m_boat_route_at < m_boat_route.size ()) {
+        if (river && m_boat_route_at < m_boat_route.size ()) {
           const Vec3 next = m_boat_route[m_boat_route_at];
           want = normalized (Vec3 (next[0] - at[0], 0.0f, next[2] - at[2]));
           drive = 0.85f;
@@ -1394,7 +1488,7 @@ namespace moppe {
           for (int k = -8; k <= 8; ++k) {
             const float a = k * (PI / 16.0f);
             const float score =
-              std::min (open_reach (turned (heading, a)), 60.0f) -
+              std::min (open_reach (turned (heading, a)), craft.room) -
               40.0f * std::abs (a - wander * 0.6f);
             if (score > best) {
               best = score;
@@ -1402,11 +1496,17 @@ namespace moppe {
             }
           }
         }
-        // Shallows close ahead win over the course.
-        if (open_reach (heading) < (river ? 13.0f : 20.0f)) {
+        // Shallows close ahead win over the course; what goes fast sees
+        // them from further off and slows to come round.
+        const float near =
+          std::max (river ? 13.0f : 20.0f, std::min (2.6f * speed, 60.0f));
+        const float ahead = open_reach (heading);
+        if (ahead < near) {
           const float left = open_reach (turned (heading, -0.6f));
           const float right = open_reach (turned (heading, 0.6f));
           want = turned (heading, right >= left ? 0.9f : -0.9f);
+          if (speed > 8.0f)
+            drive = ahead < 0.5f * near ? 0.3f : 0.6f;
         }
         const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
         const float bearing =
@@ -1487,6 +1587,7 @@ namespace moppe {
               boat.set_trunks (&m_trunk_field);
               boat.place (moor, outward ? out : -out, level_at (moor));
               m_mooring = shore;
+              m_mooring_out = out;
               std::cerr << "moppe: boat moored "
                         << length (Vec3 (at[0] - m_spawn_position[0],
                                          0.0f,
@@ -3090,6 +3191,9 @@ namespace moppe {
           state.thumb = "Flat out";
           state.dismount = "Step ashore";
           break;
+        case M_JET_SKI:
+          state.dismount = "Get off";
+          break;
         case M_HELICOPTER:
           state.thumb = "Climb";
           state.flying = true;
@@ -3869,12 +3973,17 @@ namespace moppe {
            (walk_name && std::string_view (walk_name) == "boat-fish")) &&
           !m_benchmark && !m_gazetteer;
         park_boat (boat_demo);
+        // MOPPE_DEMO=jet_ski: the autopilot rides the jet ski out instead.
+        const bool jet_ski_demo = demo_name &&
+                                  std::string_view (demo_name) == "jet_ski" &&
+                                  !m_benchmark && !m_gazetteer;
+        park_jet_ski (jet_ski_demo);
         park_caddy ();
         // A demo already at the wheel of a machine just parked follows it.
         if (logic ().m_mode != M_FOOT && logic ().m_mode != M_BIKE)
           session ().settle_camera (surface ());
-        if (boat_demo) {
-          session ().set_mode (M_BOAT);
+        if (boat_demo || jet_ski_demo) {
+          session ().set_mode (boat_demo ? M_BOAT : M_JET_SKI);
           logic ().m_cam_mode = CAM_CHASE;
           session ().settle_camera (surface ());
         }
@@ -4159,6 +4268,8 @@ namespace moppe {
         mine.boat = boat_pose (session ().boat ());
         mine.boat_velocity = session ().boat ().velocity ();
         mine.in_boat = state.m_mode == M_PASSENGER && state.m_seat_boat;
+        mine.jet_ski = jet_ski_pose (session ().jet_ski ());
+        mine.jet_ski_velocity = session ().jet_ski ().velocity ();
         if (state.m_mode == M_GLIDER)
           mine.glider = glider_pose (session ().glider ());
         if (state.m_mode == M_FOOT)
@@ -4248,6 +4359,8 @@ namespace moppe {
         park_helicopter (theirs.helicopter.position);
         if (logic ().m_mode != M_BOAT)
           park_boat ();
+        if (logic ().m_mode != M_JET_SKI)
+          park_jet_ski ();
         park_caddy ();
         if (!beside)
           return;
@@ -4411,14 +4524,18 @@ namespace moppe {
                   theirs.mountain_bike.position,
                   theirs.mountain_bike.render_orientation,
                   theirs.mountain_bike.render_normal);
-        stranger (Machine::long_john,
-                  theirs.long_john.position,
-                  theirs.long_john.render_orientation,
-                  theirs.long_john.render_normal);
         stranger (Machine::boat,
                   theirs.boat.position,
                   theirs.boat.forward,
                   theirs.boat.up);
+        stranger (Machine::long_john,
+                  theirs.long_john.position,
+                  theirs.long_john.render_orientation,
+                  theirs.long_john.render_normal);
+        stranger (Machine::jet_ski,
+                  theirs.jet_ski.position,
+                  theirs.jet_ski.forward,
+                  theirs.jet_ski.up);
         std::array<Vec3, machine_count> were;
         for (const MachineBody& body : m_strangers)
           were[static_cast<std::size_t> (body.machine)] = body.position;
@@ -4427,6 +4544,8 @@ namespace moppe {
           theirs.jeep_velocity;
         m_strangers[static_cast<std::size_t> (Machine::boat)].velocity =
           theirs.boat_velocity;
+        m_strangers[static_cast<std::size_t> (Machine::jet_ski)].velocity =
+          theirs.jet_ski_velocity;
       }
 
       // Once a frame: hears what the other player has sent, works out how
@@ -4573,6 +4692,13 @@ namespace moppe {
                             ? std::optional<Outfit> (their_outfit ())
                             : std::nullopt,
                           0xE100);
+        render_jet_ski (r,
+                        dl,
+                        theirs.jet_ski,
+                        theirs.mode == M_JET_SKI
+                          ? std::optional<Outfit> (their_outfit ())
+                          : std::nullopt,
+                        0xE200);
         if (theirs.hung)
           draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
         if (theirs.hearth_laid)
@@ -4801,6 +4927,8 @@ namespace moppe {
             at = theirs.long_john.position + Vec3 (0, 1.4f, 0);
           else if (theirs.mode == M_BOAT)
             at = theirs.boat.position + Vec3 (0, 1.2f, 0);
+          else if (theirs.mode == M_JET_SKI)
+            at = theirs.jet_ski.position + Vec3 (0, 1.3f, 0);
           // In the colour of the jacket they wear.
           DisplayColor jacket = pale;
           for (std::size_t c = 0; c < figure::colours.size (); ++c)
@@ -4932,6 +5060,17 @@ namespace moppe {
                        "",
                        Mark::Boat,
                        session ().boat ().position () + Vec3 (0, 1.4f, 0),
+                       30.0f,
+                       50.0f,
+                       pale);
+        if (mode != M_JET_SKI)
+          add_waymark (state,
+                       frame,
+                       width,
+                       height,
+                       "",
+                       Mark::JetSki,
+                       session ().jet_ski ().position () + Vec3 (0, 1.6f, 0),
                        30.0f,
                        50.0f,
                        pale);
@@ -5364,18 +5503,21 @@ namespace moppe {
         const bool tractor = logic ().m_mode == M_TRACTOR;
         const bool caddy = logic ().m_mode == M_CADDY;
         const bool boat = logic ().m_mode == M_BOAT;
+        const bool ski = logic ().m_mode == M_JET_SKI;
         const bool driving =
-          logic ().m_mode == M_JEEP || tractor || caddy || boat;
+          logic ().m_mode == M_JEEP || tractor || caddy || boat || ski;
         const bool pedalled = game::pedalled (logic ().m_mode);
         const auto& bike = session ().ridden_bike ();
         const Vec3 car = tractor ? session ().tractor ().position ()
                          : caddy ? session ().caddy ().position ()
                          : boat  ? session ().boat ().position ()
+                         : ski   ? session ().jet_ski ().position ()
                                  : session ().jeep ().position ();
         Vec3 heading = gliding   ? session ().glider ().heading ()
                        : tractor ? session ().tractor ().forward ()
                        : caddy   ? session ().caddy ().forward ()
                        : boat    ? session ().boat ().forward ()
+                       : ski     ? session ().jet_ski ().forward ()
                        : driving ? session ().jeep ().forward ()
                                  : bike.render_orientation ();
         heading[1] = 0.0f;
@@ -5389,6 +5531,7 @@ namespace moppe {
         const float away = gliding    ? 7.0f
                            : caddy    ? 7.5f
                            : boat     ? 7.0f
+                           : ski      ? 5.5f
                            : driving  ? 6.0f
                            : pedalled ? 3.4f
                                       : 4.5f;
@@ -5678,8 +5821,10 @@ namespace moppe {
               .look_pitch = look_pitch,
               .run = up && ahead > 1.1f,
             };
-          } else if (logic ().m_mode == M_BOAT) {
-            input = boat_autopilot (total_time);
+          } else if (logic ().m_mode == M_BOAT ||
+                     logic ().m_mode == M_JET_SKI) {
+            input = logic ().m_mode == M_BOAT ? boat_autopilot (total_time)
+                                              : jet_ski_autopilot (total_time);
             input.look_yaw = look_yaw;
             input.look_pitch = look_pitch;
           } else {
@@ -5830,6 +5975,9 @@ namespace moppe {
         state.can_drive_tractor = reading.can_drive_tractor;
         state.can_drive_caddy = reading.can_drive_caddy;
         state.can_take_boat = reading.can_take_boat;
+        state.can_ride_jet_ski = reading.can_ride_jet_ski;
+        state.can_ride_mountain_bike = reading.can_ride_mountain_bike;
+        state.can_ride_long_john = reading.can_ride_long_john;
         state.haul = reading.haul;
         state.hauling = reading.hauling;
         state.stuck = reading.stuck;
@@ -5885,6 +6033,7 @@ namespace moppe {
         render_tractor (r, m_caster_dl, actors.tractor, std::nullopt, 0);
         render_helicopter (r, actors.helicopter, 0);
         render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
+        render_jet_ski (r, m_caster_dl, actors.jet_ski, std::nullopt, 0);
         m_places_landscape.cast_shadows (r, frame.camera.position);
         render_animals (
           r,
@@ -5913,6 +6062,7 @@ namespace moppe {
           render_tractor (r, m_caster_dl, theirs.tractor, std::nullopt, 0);
           render_helicopter (r, theirs.helicopter, 0);
           render_boat (r, m_caster_dl, theirs.boat, std::nullopt, 0);
+          render_jet_ski (r, m_caster_dl, theirs.jet_ski, std::nullopt, 0);
         }
         r.end_shadow_casters ();
       }
@@ -5996,6 +6146,7 @@ namespace moppe {
             case M_GLIDER:
             case M_PASSENGER:
             case M_BOAT:
+            case M_JET_SKI:
               break;
             }
           }
@@ -6153,6 +6304,13 @@ namespace moppe {
                               ? std::optional<Outfit> (m_outfit)
                               : std::nullopt,
                             0xD100);
+          render_jet_ski (r,
+                          m_world_dl,
+                          actors.jet_ski,
+                          actors.active_mode == M_JET_SKI && !helmet
+                            ? std::optional<Outfit> (m_outfit)
+                            : std::nullopt,
+                          0xD200);
         }
         const Basket& basket = logic ().m_basket;
         m_basket_contents.clear ();
@@ -6303,18 +6461,26 @@ namespace moppe {
         const auto depth = [&] (const Vec3& at) {
           return level (at) - ground_height (at);
         };
-        const Vec3& ours = frame.actors.boat.position;
-        m_boat_wake.follow (
-          frame.actors.boat, level (ours), depth (ours), time);
+        // The jet ski leaves a wake as a boat of its place and heading.
+        const auto as_boat = [] (const JetSkiPose& ski) {
+          return BoatPose { .position = ski.position,
+                            .forward = ski.forward,
+                            .up = ski.up };
+        };
+        const auto trail = [&] (BoatWake& wake, const BoatPose& boat) {
+          const Vec3& at = boat.position;
+          wake.follow (boat, level (at), depth (at), time);
+          wake.draw (m_wake_dl, time, m_sky.daylight, level);
+        };
         m_wake_dl.clear ();
-        m_boat_wake.draw (m_wake_dl, time, m_sky.daylight, level);
+        trail (m_boat_wake, frame.actors.boat);
+        trail (m_jet_ski_wake, as_boat (frame.actors.jet_ski));
         if (m_companion) {
-          const Vec3& theirs = m_companion->boat.position;
-          m_their_wake.follow (
-            m_companion->boat, level (theirs), depth (theirs), time);
-          m_their_wake.draw (m_wake_dl, time, m_sky.daylight, level);
+          trail (m_their_wake, m_companion->boat);
+          trail (m_their_jet_ski_wake, as_boat (m_companion->jet_ski));
         } else {
           m_their_wake.clear ();
+          m_their_jet_ski_wake.clear ();
         }
         r.draw_list (m_wake_dl, 0x0002);
       }
@@ -6493,6 +6659,8 @@ namespace moppe {
             at = theirs.long_john.position;
           else if (theirs.mode == M_BOAT)
             at = theirs.boat.position;
+          else if (theirs.mode == M_JET_SKI)
+            at = theirs.jet_ski.position;
           DisplayColor jacket = dark;
           for (std::size_t c = 0; c < figure::colours.size (); ++c)
             if (std::string_view (figure::colour_names[c]) == "jacket")
@@ -6544,6 +6712,11 @@ namespace moppe {
                              .position = session ().boat ().position (),
                              .colour = DisplayColor (0.62f, 0.48f, 0.30f),
                              .name = "boat" });
+        if (mode != M_JET_SKI)
+          marks.push_back ({ .kind = Mark::Kind::Jeep,
+                             .position = session ().jet_ski ().position (),
+                             .colour = DisplayColor (0.04f, 0.56f, 0.58f),
+                             .name = "jet ski" });
         const Camp& camp = logic ().m_camp;
         if (camp.hung || camp.fire)
           marks.push_back ({ .kind = Mark::Kind::Camp,
@@ -7636,6 +7809,10 @@ namespace moppe {
       Vec3 m_spawn_position;
       // The shore the boat was left at, when it was.
       std::optional<Vec3> m_mooring;
+      // The way out to open water from there, and where the boat lay
+      // and how it faced.
+      std::optional<Vec3> m_mooring_out;
+      std::optional<std::pair<Vec3, Vec3>> m_boat_berth;
       // How far aside the later of two players parks the machines that
       // stand at places in the world, so that theirs and ours do not
       // stand in one another.
@@ -7731,6 +7908,8 @@ namespace moppe {
       // The boats' wakes, ours and the other player's, and their list.
       BoatWake m_boat_wake;
       BoatWake m_their_wake;
+      BoatWake m_jet_ski_wake;
+      BoatWake m_their_jet_ski_wake;
       render::DrawList m_wake_dl;
       // MOPPE_WALK=fish: when the line last came in.
       float m_fish_script_rest = 1.0f;
