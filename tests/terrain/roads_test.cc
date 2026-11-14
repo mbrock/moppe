@@ -393,3 +393,147 @@ MOPPE_TEST (roads_cross_small_streams_on_embankments_over_culverts) {
   MOPPE_CHECK (surface_elevation_value (built.heights[beside]) >
                surface_elevation_value (elevations (terrain)[beside]) + 0.3f);
 }
+
+// Round a bend on a grade the tread is one surface: both segments give a
+// point on the mitre between them the same height, where measuring along
+// each segment square to it would leave a step on the inside of the bend.
+MOPPE_TEST (road_surface_keeps_its_height_round_a_bend) {
+  RoadNetwork network;
+  Road road { .kind = Road::Kind::Road };
+  // East at 10% up to (500, 500), then on at thirty degrees to it.
+  float height = 100.0f;
+  for (float x = 440.0f; x <= 500.0f; x += 4.0f) {
+    road.points.push_back ({ x, 500.0f });
+    road.heights.push_back (height);
+    height += 0.4f;
+  }
+  for (int k = 1; k <= 15; ++k) {
+    road.points.push_back (
+      { 500.0f + 4.0f * k * 0.8660254f, 500.0f + 4.0f * k * 0.5f });
+    road.heights.push_back (height);
+    height += 0.4f;
+  }
+  network.roads = { road };
+  const RoadSurface surface (network, 1000.0f, 1000.0f);
+  // Round the bend's corner two metres out, a degree at a time: on the
+  // inside across the mitre, on the outside round the corner.
+  float steepest = 0.0f;
+  float last = surface.ground (502.0f, 500.0f, 0.0f);
+  for (int degree = 1; degree <= 360; ++degree) {
+    const float angle = static_cast<float> (degree) * 0.01745329f;
+    const float here = surface.ground (
+      500.0f + 2.0f * std::cos (angle), 500.0f + 2.0f * std::sin (angle), 0.0f);
+    steepest = std::max (steepest, std::fabs (here - last));
+    last = here;
+  }
+  // A degree is 3.5 cm of the way round: the grade and the crown make
+  // half a centimetre of that at most.
+  MOPPE_CHECK (steepest < 0.01f);
+}
+
+// A cart road that joins no other ends in a turning place lying back
+// along it, level with its end, and is no road past it.
+MOPPE_TEST (roads_end_in_turning_places_and_no_further_on) {
+  const ElevationMap terrain = ridge_country ();
+  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const DrainageGraph drainage = analyze_drainage (terrain);
+  RoadNetwork network;
+  Road over { .kind = Road::Kind::Road };
+  for (float x = 100.0f; x <= 400.0f; x += 4.0f)
+    over.points.push_back ({ x, 250.0f });
+  Road branch { .kind = Road::Kind::Road };
+  for (float z = 249.0f; z >= 100.0f; z -= 4.0f)
+    branch.points.push_back ({ 236.0f, z });
+  network.roads = { over, branch };
+  RoadFormation parameters;
+  parameters.culvert_area_m2 = 1.0e12f;
+  const RoadFormationResult built = form_roads (terrain.domain (),
+                                                elevations (terrain),
+                                                network,
+                                                flood,
+                                                drainage,
+                                                parameters);
+
+  // Both ends of the road over the ridge, and the branch's far end; not
+  // where the branch leaves the road.
+  const std::vector<RoadTurning> turnings =
+    road_turnings (network, 500.0f, 500.0f);
+  MOPPE_CHECK (turnings.size () == 3);
+  MOPPE_CHECK (turnings[0].road == 0 && !turnings[0].back);
+  MOPPE_CHECK (turnings[1].road == 0 && turnings[1].back);
+  MOPPE_CHECK (turnings[2].road == 1 && turnings[2].back);
+  // The pad's length of road before each is level, and so is the pad.
+  const Road& formed = network.roads[0];
+  MOPPE_CHECK (formed.heights[0] == formed.heights[1] &&
+               formed.heights[1] == formed.heights[2]);
+  for (const float pad : turnings[0].heights)
+    MOPPE_CHECK_NEAR (pad, formed.heights[0], 1e-4f);
+  // The ring passes through the end and nowhere beyond it.
+  MOPPE_CHECK_NEAR (turnings[0].points.front ().x_m, 100.0f, 1e-3f);
+  for (const RoadPoint& point : turnings[0].points)
+    MOPPE_CHECK (point.x_m >= 100.0f - 1e-3f);
+  // The ground is formed for the pad: trodden five metres to the side of
+  // the end, where the road alone leaves the ground all but untouched.
+  MOPPE_CHECK (built.influence[51 * side + 20] > 0.9f);
+
+  const RoadSurface surface (network, 500.0f, 500.0f, parameters);
+  constexpr float field = 10.0f;
+  // On the pad, four metres to the side of its middle, the tread.
+  MOPPE_CHECK_NEAR (
+    surface.ground (102.0f, 254.0f, field), formed.heights[0], 0.1f);
+  // Six metres past the end, on the road's own line, the field: the
+  // tread ends rounded at the end and does not run on.
+  MOPPE_CHECK (surface.ground (94.0f, 250.0f, field) == field);
+  MOPPE_CHECK (!surface.nearest (89.0f, 250.0f).found ||
+               std::fabs (surface.nearest (89.0f, 250.0f).across) > 9.0f);
+}
+
+namespace {
+  // Level country with one pond in it, a pit twenty metres wide, and the
+  // sea far off for it to stand above.
+  ElevationMap pond_country () {
+    constexpr std::size_t side = 100;
+    std::vector<float> heights (side * side, 60.0f);
+    for (std::size_t z = 44; z <= 56; ++z)
+      for (std::size_t x = 40; x <= 44; ++x)
+        heights[z * side + x] = 55.0f;
+    for (std::size_t z = 0; z < side; ++z)
+      for (std::size_t x = 80; x <= 90; ++x)
+        heights[z * side + x] = 30.0f;
+    return make_elevation_map (
+      TerrainDomain (
+        side, side, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre),
+      heights);
+  }
+}
+
+// A road planned out into water stops on the bank, and stands a
+// freeboard over the water beside it.
+MOPPE_TEST (a_road_into_water_ends_on_the_bank_above_it) {
+  const ElevationMap terrain = pond_country ();
+  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  MOPPE_CHECK (flood.water_depth_m (50 * 100 + 42) > 4.0f);
+  const DrainageGraph drainage = analyze_drainage (terrain);
+  RoadNetwork network;
+  Road road { .kind = Road::Kind::Road };
+  for (float x = 100.0f; x <= 212.0f; x += 4.0f)
+    road.points.push_back ({ x, 250.0f });
+  network.roads = { road };
+  RoadFormation parameters;
+  parameters.culvert_area_m2 = 1.0e12f;
+  parameters.bridge_area_m2 = 1.0e12f;
+  const RoadFormationResult built = form_roads (terrain.domain (),
+                                                elevations (terrain),
+                                                network,
+                                                flood,
+                                                drainage,
+                                                parameters);
+  const Road& formed = network.roads[0];
+  // The pond's first cell is at x = 200; the last dry point is at 196.
+  MOPPE_CHECK_NEAR (formed.points.back ().x_m, 196.0f, 1e-3f);
+  MOPPE_CHECK (formed.heights.size () == formed.points.size ());
+  MOPPE_CHECK (formed.heights.back () >= 60.0f + parameters.freeboard - 1e-3f);
+  // Away from the water it runs on the ground.
+  MOPPE_CHECK_NEAR (formed.heights[5], 60.0f, 0.05f);
+  MOPPE_CHECK (built.steep_points == 0);
+}

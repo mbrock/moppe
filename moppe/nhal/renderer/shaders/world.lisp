@@ -266,7 +266,7 @@
     '((scale :vec4)                ; grid step x, height scale, step z, tex
       (fields :vec4)               ; have materials, have stand, 1 / period
       (size :vec4)                 ; terrain samples x,z; surf samples x,z
-      (roads :vec4)                ; bucket metres, buckets x, z, have roads
+      (roads :vec4)                ; 0, buckets x, z, have roads
       (road-shape :vec4)           ; half width, shoulder, crown, blend
       (road-batter :vec4))))       ; cut slope, fill slope, rain 0..1, 0
 
@@ -321,14 +321,27 @@
 ;;; -- the roads ------------------------------------------------------------
 ;;;
 ;;; The built roads exactly (terrain/roads.hh's RoadSurface), finer than the
-;;; height field: two rows a segment, (ax az bx bz) and (height at a, at b,
+;;; height field: three rows a segment, (ax az bx bz), (height at a, at b,
 ;;; distance along at a, 0 road, 1 footpath, 2 a bridge's deck, 3 paved),
-;;; found through a grid of buckets that each list the segments passing
-;;; near them.  The ground's footing in physics reads the same segments, so
-;;; what is drawn near the camera is what the wheels meet.
+;;; and (the tangents of half the bends at a and at b, 0, 0), found through
+;;; a grid of buckets that each list the segments passing near them.  The
+;;; ground's footing in physics reads the same segments, so what is drawn
+;;; near the camera is what the wheels meet.
 
 (define-shader-function road-seam (delta period)
   (- delta (* period (floor (+ (/ delta period) 0.5)))))
+
+;;; How far along a segment a point lies, 0 to 1, between the mitres at its
+;;; ends (RoadSurface's mitred): ON metres along it and ASIDE to its left,
+;;; LENGTH long, bending by BENDS' half-tangents at its start and end.  Both
+;;; segments at a bend give a point on their mitre the same height; on the
+;;; outside of the bend each ends square and the wedge between is level.
+(define-shader-function road-mitred (on aside length bends)
+  (let* ((a (clamp aside -5.0 5.0))
+         (cut-a (max (* a (swizzle bends :x)) 0.0))
+         (cut-b (max (* a (swizzle bends :y)) 0.0))
+         (span (max (- length cut-a cut-b) (* 0.1 length))))
+    (clamp (/ (- on cut-a) (max span 1.0e-6)) 0.0 1.0)))
 
 ;;; The nearest segment to XZ within the bucket's reach, a built road before
 ;;; any footpath: (rank, 0, 0, index), the index negative where there is
@@ -337,9 +350,11 @@
   `(let* ((road-period (* (swizzle size :xy)
                           (vec2 (swizzle scale :x) (swizzle scale :z))))
           (road-p (- ,xz (* road-period (floor (/ ,xz road-period)))))
-          (road-bx (min (floor (/ (swizzle road-p :x) (swizzle roads :x)))
+          ;; The buckets divide the period evenly.
+          (road-cell (/ road-period (max (swizzle roads :yz) (vec2 1.0 1.0))))
+          (road-bx (min (floor (/ (swizzle road-p :x) (swizzle road-cell :x)))
                         (- (swizzle roads :y) 1.0)))
-          (road-bz (min (floor (/ (swizzle road-p :y) (swizzle roads :x)))
+          (road-bz (min (floor (/ (swizzle road-p :y) (swizzle road-cell :y)))
                         (- (swizzle roads :z) 1.0)))
           (road-slot (* (uint 2) (uint (+ (* road-bz (swizzle roads :y))
                                           road-bx))))
@@ -349,12 +364,12 @@
                            (uint 0)))
           (road-count (if road-looking
                           (min (buffer-element ,index (+ road-slot (uint 1)))
-                               (uint 32))
+                               (uint 64))
                           (uint 0))))
      (counted-fold (k road-count best (vec4 1.0e6 0.0 0.0 -1.0))
        (let* ((s (buffer-element ,index (+ road-offset k)))
-              (ends (buffer-element ,segments (* s (uint 2))))
-              (more (buffer-element ,segments (+ (* s (uint 2)) (uint 1))))
+              (ends (buffer-element ,segments (* s (uint 3))))
+              (more (buffer-element ,segments (+ (* s (uint 3)) (uint 1))))
               (pa (vec2 (road-seam (- (swizzle road-p :x) (swizzle ends :x))
                                    (swizzle road-period :x))
                         (road-seam (- (swizzle road-p :y) (swizzle ends :y))
@@ -374,6 +389,7 @@
   (found :float)                   ; 1 on a road or footpath's reach, else 0;
                                    ; 0 too over a bridge, whose deck is a mesh
   (footpath :float)                ; 1 a footpath, 0 a built road
+  (deck :float)                    ; 1 over a bridge's span
   (paved :float)                   ; 1 a paved road, 0 gravel or a path
   (across :float)                  ; metres from the line, signed
   (along :float)                   ; metres along the road
@@ -388,8 +404,9 @@
           (rp-p (- ,xz (* rp-period (floor (/ ,xz rp-period)))))
           (rp-have (>= (swizzle ,found :w) 0.0))
           (rp-s (uint (max (swizzle ,found :w) 0.0)))
-          (rp-ends (buffer-element ,segments (* rp-s (uint 2))))
-          (rp-more (buffer-element ,segments (+ (* rp-s (uint 2)) (uint 1))))
+          (rp-ends (buffer-element ,segments (* rp-s (uint 3))))
+          (rp-more (buffer-element ,segments (+ (* rp-s (uint 3)) (uint 1))))
+          (rp-bends (buffer-element ,segments (+ (* rp-s (uint 3)) (uint 2))))
           (rp-pa (vec2 (road-seam (- (swizzle rp-p :x) (swizzle rp-ends :x))
                                   (swizzle rp-period :x))
                        (road-seam (- (swizzle rp-p :y) (swizzle rp-ends :y))
@@ -399,8 +416,19 @@
           (rp-unit (/ rp-dir rp-length))
           (rp-t (clamp (/ (dot rp-pa rp-unit) rp-length) 0.0 1.0))
           (rp-off (- rp-pa (* rp-dir rp-t)))
-          (rp-across (- (* (swizzle rp-unit :x) (swizzle rp-off :y))
-                        (* (swizzle rp-unit :y) (swizzle rp-off :x))))
+          ;; How far from the segment, to the left of it or the right:
+          ;; past its end that is the distance from the end, so a road
+          ;; ends rounded where it ends and no further on.
+          (rp-side (- (* (swizzle rp-unit :x) (swizzle rp-off :y))
+                      (* (swizzle rp-unit :y) (swizzle rp-off :x))))
+          (rp-across (* (- (* 2.0 (step 0.0 rp-side)) 1.0)
+                        (sqrt (dot rp-off rp-off))))
+          ;; Along the segment between its mitres, for the height.
+          (rp-share (road-mitred
+                     (dot rp-pa rp-unit)
+                     (- (* (swizzle rp-unit :x) (swizzle rp-pa :y))
+                        (* (swizzle rp-unit :y) (swizzle rp-pa :x)))
+                     rp-length (swizzle rp-bends :xy)))
           (rp-grade (/ (- (swizzle rp-more :y) (swizzle rp-more :x))
                        rp-length))
           ;; Left of the way along, the side +across measures.
@@ -415,11 +443,15 @@
                            (- 1.0 (step 2.5 (swizzle rp-more :w)))))
                  0.0)
       :footpath (- 1.0 (min (abs (- (swizzle rp-more :w) 1.0)) 1.0))
+      :deck (if rp-have
+                (* (step 1.5 (swizzle rp-more :w))
+                   (- 1.0 (step 2.5 (swizzle rp-more :w))))
+                0.0)
       :paved (step 2.5 (swizzle rp-more :w))
       :across rp-across
-      :along (+ (swizzle rp-more :z) (* rp-t rp-length))
+      :along (+ (swizzle rp-more :z) (* rp-share rp-length))
       :dir rp-unit
-      :centre (mix (swizzle rp-more :x) (swizzle rp-more :y) rp-t)
+      :centre (mix (swizzle rp-more :x) (swizzle rp-more :y) rp-share)
       :slope (+ (* rp-unit rp-grade) (* rp-left rp-camber)))))
 
 ;;; The crowned tread's height at a road point.
@@ -486,13 +518,26 @@
          (road-weight (road-hold (road-point-found road)
                                  (road-point-footpath road)
                                  (road-point-across road) road-shape))
+         (from-camera (- ground-xz (swizzle camera-position :xz)))
+         ;; Where the road ribbon is laid over the tread the ground lies
+         ;; five centimetres under it, so that the ribbon, which is the
+         ;; surface there, never meets the ground's coarser facets: the
+         ;; middle of the tread, where the ribbon is never broken off, as
+         ;; far out as the ribbons are drawn.
+         (road-sink (* 0.05 road-weight
+                       (- 1.0 (smoothstep (- (swizzle road-shape :x) 1.0)
+                                          (- (swizzle road-shape :x) 0.4)
+                                          (abs (road-point-across road))))
+                       (- 1.0 (smoothstep 70.0 95.0
+                                          (sqrt (dot from-camera
+                                                     from-camera))))))
          (own-height (mix field-height
-                          (/ (road-tread-height (road-point-centre road)
-                                                (road-point-across road)
-                                                road-shape)
+                          (/ (- (road-tread-height (road-point-centre road)
+                                                   (road-point-across road)
+                                                   road-shape)
+                                road-sink)
                              (swizzle scale :y))
                           road-weight))
-         (from-camera (- ground-xz (swizzle camera-position :xz)))
          (morphing (* (step stride (- parent 0.001))
                       (step (swizzle morph :x) (- (swizzle morph :y) 0.001))))
          (blend (* morphing
@@ -1394,7 +1439,8 @@
                                (- rf-across rf-formation) road-batter))
            (road-point-along rf-road) rf-across)))
 
-;;; A built road's tread (x: 1 on it) and its verge (y), kept mown and
+;;; A built road's tread (x: 1 on it, and under a bridge's deck, where
+;;; nothing grows up through the planks) and its verge (y), kept mown and
 ;;; trodden for a couple of metres past the shoulder, frayed at its outer
 ;;; edge, at XZ for the road ROAD-NEAREST found there (or none).
 (define-shader-abstraction road-verge (segments index xz found)
@@ -1404,8 +1450,9 @@
                        (- 1.0 (road-point-footpath rv-road))))
           (rv-tread (+ (swizzle road-shape :x) (swizzle road-shape :y)))
           (rv-fray (* 0.9 (- (value-noise (* ,xz 0.7)) 0.5))))
-     (* rv-built
-        (vec2 (- 1.0 (step (- rv-tread 0.05) rv-d))
+     (vec2 (* (max rv-built (road-point-deck rv-road))
+              (- 1.0 (step (- rv-tread 0.05) rv-d)))
+           (* rv-built
               (- 1.0 (smoothstep (+ rv-tread 1.6) (+ rv-tread 3.0)
                                  (+ rv-d rv-fray)))))))
 
@@ -2311,15 +2358,15 @@
                                              (swizzle scale :z))))
          (seg (swizzle segment :x))
          (final (- (swizzle segment :w) 1.0))
-         (ends (buffer-element road-segments (* (uint seg) (uint 2))))
+         (ends (buffer-element road-segments (* (uint seg) (uint 3))))
          (start (swizzle ends :xy))
          (finish (swizzle ends :zw))
          (dir (- finish start))
          (left (ribbon-left dir))
          (before (buffer-element road-segments
-                                 (* (uint (max (- seg 1.0) 0.0)) (uint 2))))
+                                 (* (uint (max (- seg 1.0) 0.0)) (uint 3))))
          (after (buffer-element road-segments
-                                (* (uint (min (+ seg 1.0) final)) (uint 2))))
+                                (* (uint (min (+ seg 1.0) final)) (uint 3))))
          ;; The neighbours along the same road, where they meet this one.
          (joins-before (* (step 0.5 seg)
                           (- 1.0 (step 0.05 (ribbon-gap

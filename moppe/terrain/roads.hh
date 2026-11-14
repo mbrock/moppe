@@ -184,7 +184,11 @@ namespace moppe::terrain {
 
   // Solves each road's profile into network.roads[i].heights and builds
   // the roads into the ground. Roads are taken in order, so each branch
-  // meets the road it leaves at that road's own height.
+  // meets the road it leaves at that road's own height. A cart road whose
+  // end lies in water (a lake's outlet is planned on its stream) is cut
+  // back to the bank; its tread keeps a freeboard over any standing water
+  // beside it; and each end that joins no other road is built out into a
+  // level turning place (RoadTurning).
   [[nodiscard]] RoadFormationResult
   form_roads (const TerrainDomain& domain,
               std::span<const SurfaceElevation> elevations,
@@ -192,6 +196,32 @@ namespace moppe::terrain {
               const FloodField& flood,
               const DrainageGraph& drainage,
               const RoadFormation& parameters = {});
+
+  // Where a cart road ends without joining another it ends in a turning
+  // place, so that it reads as a road's end and a cart can come about: a
+  // round pad some ten metres across, the tread carried once round a
+  // ring that passes through the road's end and lies back along its last
+  // few metres, so that nothing is built past the end. `points` go round
+  // from the end and back to it, unwrapped like the road's; `heights`
+  // (empty until the road's are solved) lie in the plane the road's last
+  // stretch climbs in, which form_roads makes level, so the pad meets
+  // the road it ends without a step.
+  struct RoadTurning {
+    static constexpr float radius_m = 2.0f;
+    static constexpr std::size_t segments = 12;
+
+    // Into RoadNetwork::roads, and which end: its last point or its first.
+    std::size_t road = 0;
+    bool back = false;
+    std::vector<RoadPoint> points;
+    std::vector<float> heights;
+  };
+
+  // The turning places of a network's cart roads, in the roads' order: one
+  // at each end that no other cart road comes within a tread's width of
+  // (a footpath may go on from it). The periods are the world's.
+  [[nodiscard]] std::vector<RoadTurning>
+  road_turnings (const RoadNetwork& network, float period_x, float period_z);
 
   // What the nearest road makes of a point: how far it lies from the line
   // (signed, positive to the left going along), how far along the road,
@@ -239,11 +269,20 @@ namespace moppe::terrain {
   // metres past the shoulder. Over a bridge's span it
   // is the deck, out to the kerbs, and beyond them the field below.
   // Footpaths are worn into the ground's colour, not built, and leave its
-  // height alone.
+  // height alone. The turning places at the roads' ends are part of it.
+  //
+  // The tread's height is continuous round a bend: how far along a segment
+  // a point lies is measured between the mitres it shares with its
+  // neighbours, the lines bisecting the bends at its ends, so that both
+  // segments give a point on their mitre the same height; outside the
+  // bend the wedge between them is level at their shared point. (Measured
+  // square to each segment instead, the inside of every bend on a grade
+  // would be a stair of steps a few centimetres high.)
   class RoadSurface {
   public:
-    // Segments are found by a grid of square buckets, each listing every
-    // segment that passes within `reach` metres of it.
+    // Segments are found by a grid of buckets, each no more than
+    // `bucket_m` square and listing every segment that passes within
+    // `reach` metres of it.
     static constexpr float bucket_m = 16.0f;
     static constexpr float reach_m = 10.0f;
     static constexpr float blend_m = 1.5f;
@@ -287,11 +326,14 @@ namespace moppe::terrain {
       return m_guardrails;
     }
 
-    // As the renderer takes them: two rows a segment, (ax, az, bx, bz)
-    // and (height at a, at b, distance along at a, 0 road, 1 footpath,
-    // 2 a bridge's deck, or 3 a paved road); and per bucket, row by row, the
-    // offset into the entries (which follow the buckets) and their count, then
-    // the entries.
+    // As the renderer takes them: three rows a segment, (ax, az, bx, bz),
+    // (height at a, at b, distance along at a, 0 road, 1 footpath,
+    // 2 a bridge's deck, or 3 a paved road), and (the tangents of half the
+    // bends at a and at b, positive turning left, 0, 0); and per bucket,
+    // row by row, the offset into the entries (which follow the buckets)
+    // and their count, then the entries.
+    static constexpr std::size_t rows_per_segment = 3;
+
     std::span<const std::array<float, 4>> segment_rows () const noexcept {
       return m_rows;
     }
@@ -306,6 +348,15 @@ namespace moppe::terrain {
 
     int buckets_z () const noexcept {
       return m_buckets_z;
+    }
+
+    // A bucket's sides, metres: the periods divided evenly.
+    float bucket_x () const noexcept {
+      return m_period_x / static_cast<float> (m_buckets_x);
+    }
+
+    float bucket_z () const noexcept {
+      return m_period_z / static_cast<float> (m_buckets_z);
     }
 
   private:

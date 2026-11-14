@@ -1394,11 +1394,12 @@ namespace moppe::nhal {
         // Well inside where the finest level begins to morph away.
         const float reach = std::min (110.0f, 50.0f * t.scale[0]);
         const Vec3 camera = m_params.camera_pos;
-        const float segments = float (m_road_segments.size () / 2);
+        constexpr std::size_t stride = RoadSetup::rows_per_segment;
+        const float segments = float (m_road_segments.size () / stride);
         bool bound = false;
-        for (std::size_t s = 0; 2 * s + 1 < m_road_segments.size (); ++s) {
-          const auto& [ax, az, bx, bz] = m_road_segments[2 * s];
-          const float kind = m_road_segments[2 * s + 1][3];
+        for (std::size_t s = 0; stride * s + 1 < m_road_segments.size (); ++s) {
+          const auto& [ax, az, bx, bz] = m_road_segments[stride * s];
+          const float kind = m_road_segments[stride * s + 1][3];
           // Footpaths are worn, not built; a bridge's deck is a mesh.
           if (kind == 1.0f || kind == 2.0f)
             continue;
@@ -2698,7 +2699,7 @@ namespace moppe::nhal {
         terrain.size = {
           float (p.width), float (p.height), m_shore_size[0], m_shore_size[1]
         };
-        terrain.roads = { m_road_setup.bucket_m,
+        terrain.roads = { 0.0f,
                           float (m_road_setup.buckets_x),
                           float (m_road_setup.buckets_z),
                           m_road_rows ? 1.0f : 0.0f };

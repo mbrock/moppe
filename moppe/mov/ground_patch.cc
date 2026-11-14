@@ -149,9 +149,10 @@ namespace moppe::mov {
     rail.baseMaterial.friction = m_params.obstacle_friction;
     rail.baseMaterial.restitution = 0.1f;
     const auto rows = the_roads->segment_rows ();
-    for (std::size_t s = 0; 2 * s + 1 < rows.size (); ++s) {
-      const auto& [ax, az, bx, bz] = rows[2 * s];
-      const auto& [ha, hb, along, kind] = rows[2 * s + 1];
+    constexpr std::size_t stride = terrain::RoadSurface::rows_per_segment;
+    for (std::size_t s = 0; stride * s + 1 < rows.size (); ++s) {
+      const auto& [ax, az, bx, bz] = rows[stride * s];
+      const auto& [ha, hb, along, kind] = rows[stride * s + 1];
       if (kind != 2.0f)
         continue;
       // The segment's image nearest the patch.

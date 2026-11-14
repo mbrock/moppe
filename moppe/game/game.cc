@@ -4074,7 +4074,6 @@ namespace moppe {
         const terrain::RoadSurface& roads = generated_world ().road_surface ();
         r.set_roads ({ .segment_rows = roads.segment_rows (),
                        .index = roads.index (),
-                       .bucket_m = terrain::RoadSurface::bucket_m,
                        .buckets_x = roads.buckets_x (),
                        .buckets_z = roads.buckets_z (),
                        .half_width = roads.formation ().half_width,

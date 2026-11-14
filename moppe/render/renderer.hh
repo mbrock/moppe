@@ -477,12 +477,14 @@ namespace moppe {
 
       // The built roads exactly (terrain::RoadSurface), for the near ground:
       // its segment rows and bucket index as RoadSurface lays them out, the
-      // bucket grid's size, and the tread's half width, shoulder, crown,
-      // and blend in metres. Empty spans clear them.
+      // bucket grid's size (it divides the world's period evenly), and the
+      // tread's half width, shoulder, crown, and blend in metres. Empty
+      // spans clear them.
       struct RoadSetup {
+        // Rows a segment: its ends, its heights and kind, its mitres.
+        static constexpr std::size_t rows_per_segment = 3;
         std::span<const std::array<float, 4>> segment_rows;
         std::span<const std::uint32_t> index;
-        float bucket_m = 16.0f;
         int buckets_x = 0;
         int buckets_z = 0;
         float half_width = 2.5f;

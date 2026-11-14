@@ -139,6 +139,17 @@
     chart pins them, and a waymark names the nearest place within 1.2 km.
     `MOPPE_START=fingerpost[:N]` starts on foot before the Nth-nearest
     fingerpost to the trailhead, for captures.
+  - The cart roads (`moppe/terrain/roads.hh`): `form_roads` builds each
+    into the ground on a profile held to a 10% grade, bridging rivers and
+    crossing lesser water on embankments over culverts; a road planned
+    out into water is cut back to its bank, the tread keeps half a metre
+    over standing water beside it, and each end that joins no other road
+    is a level turning place (`RoadTurning`, a ring of tread lying back
+    from the end). `RoadSurface` is the exact tread the near ground, the
+    road ribbon, and every wheel read: its height is continuous round a
+    bend (measured between the mitres of each segment) and it ends
+    rounded at a road's end. Near the camera the ground lies five
+    centimetres under the ribbon, so the two never meet.
   - Waymarks: a small arrow with a name and a distance marks the other
     player (in their jacket's colour), and the bike, the jeep, the
     tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in
