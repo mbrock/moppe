@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace moppe::game {
@@ -36,7 +37,12 @@ namespace moppe::game {
               const float (&colour)[3],
               float shade = 1.0f) {
       dl.color (colour[0] * shade, colour[1] * shade, colour[2] * shade);
-      const auto face = [&] (const Vec3& n, const Vec3& a, const Vec3& b) {
+      // Each face is wound to face outward whichever hand the axes are:
+      // the way across a deck is given to the left of the way along, a
+      // beam's to its right.
+      const auto face = [&] (const Vec3& n, Vec3 a, Vec3 b) {
+        if (dot (cross (a, b), n) < 0.0f)
+          std::swap (a, b);
         const Vec3 c = centre + n;
         dl.normal (normalized (n));
         dl.vertex (c - a - b);
