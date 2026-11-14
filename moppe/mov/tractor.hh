@@ -20,8 +20,16 @@ namespace moppe::mov {
   // its wheels again, and a parked one locks its wheels and, once still,
   // is not stepped at all.
   //
-  // Its frame is the world's: x to the driver's left, y up, z forward.
-  // Lengths are metres, times seconds, and angles radians.
+  // It tows a painted plank trailer (models/trailer.blend) everywhere it
+  // goes: a box hull on one axle's two sprung wheels, its drawbar's eye
+  // on a ball joint at the tractor's drawbar pin, free to swing some
+  // sixty-five degrees either way and to roll well over against it. Its
+  // wheels roll free, take the brakes when the tractor brakes, and lock
+  // with the tractor's when it is parked.
+  //
+  // Its frame is the world's: x to the driver's left, y up, z forward;
+  // the trailer's likewise, from the ground under its axle. Lengths are
+  // metres, times seconds, and angles radians.
   class Tractor {
   public:
     // Front left, front right, rear left, rear right.
@@ -41,6 +49,15 @@ namespace moppe::mov {
     // The mouth of the exhaust stack, on the right.
     static constexpr float exhaust_mouth[3] = { -0.17f, 2.06f, 0.92f };
 
+    // The trailer's wheels, either side of its axle; the pin its eye
+    // drops over, in the tractor's frame; and the eye, in the trailer's.
+    // models/trailer.blend agrees.
+    static constexpr int trailer_wheel_count = 2;
+    static constexpr float trailer_radius = 0.36f;
+    static constexpr float trailer_track = 0.62f;
+    static constexpr float hitch_pin[3] = { 0.0f, 0.47f, -1.42f };
+    static constexpr float trailer_eye[3] = { 0.0f, 0.47f, 2.30f };
+
     static float wheel_radius (int wheel) {
       return wheel < 2 ? front_radius : rear_radius;
     }
@@ -54,6 +71,10 @@ namespace moppe::mov {
       // How far each pair of wheels has rolled round, for drawing them.
       float front_spin = 0.0f;
       float rear_spin = 0.0f;
+      // The trailer, left wheel then right.
+      RigidBodyState trailer;
+      std::array<RigidBodyState, trailer_wheel_count> trailer_wheels;
+      float trailer_spin = 0.0f;
       float drive = 0.0f;
       float turn = 0.0f;
       bool brake = false;
@@ -94,10 +115,14 @@ namespace moppe::mov {
     Vec3 velocity () const;
     bool grounded () const;
     bool asleep () const;
-    // Its whole weight, kilograms.
+    // Its whole weight with the trailer's, and the trailer's alone,
+    // kilograms.
     float mass () const;
+    float trailer_mass () const;
     // A blow at `at` in the world, newton-seconds: another machine
-    // bumping into it, or someone hauling on it. It wakes one asleep.
+    // bumping into it, or someone hauling on it. It lands on the trailer
+    // when `at` is nearer the trailer's middle than the tractor's. It
+    // wakes one asleep.
     void push (const Vec3& at, const Vec3& impulse);
     // How hard the engine is asked to work, 0..1: the throttle, or a
     // little at idle while someone sits at the wheel.
@@ -119,6 +144,16 @@ namespace moppe::mov {
     float steer () const;
     float front_spin () const;
     float rear_spin () const;
+
+    // The trailer: its origin (on the ground under its axle) and frame,
+    // a point given in its frame, how far each wheel (left, right) hangs
+    // below where it stands, and how far round they have rolled.
+    Vec3 trailer_position () const;
+    Vec3 trailer_forward () const;
+    Vec3 trailer_up () const;
+    Vec3 trailer_point (const Vec3& local) const;
+    float trailer_wheel_drop (int wheel) const;
+    float trailer_spin () const;
 
   private:
     struct Impl;

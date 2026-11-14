@@ -880,6 +880,11 @@ namespace moppe::game {
       body.up = m_tractor.up ();
       body.velocity = m_tractor.velocity ();
       body.mass = m_tractor.mass ();
+      body.towing = true;
+      body.towed_position = m_tractor.trailer_position ();
+      body.towed_forward = m_tractor.trailer_forward ();
+      body.towed_up = m_tractor.trailer_up ();
+      body.towed_mass = m_tractor.trailer_mass ();
       break;
     case Machine::caddy:
       body.position = m_caddy.position ();
@@ -1305,7 +1310,8 @@ namespace moppe::game {
       rig.ahead = m_tractor.forward ();
       rig.pivot = m_tractor.position () + Vec3 (0, 1.5f, 0);
       rig.velocity = m_tractor.velocity ();
-      rig.distance = 6.0f * u::m;
+      // Back over the trailer.
+      rig.distance = 8.5f * u::m;
       rig.nearest = 3.0f * u::m;
       break;
     case M_HELICOPTER: {

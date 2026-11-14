@@ -331,16 +331,62 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
   MOPPE_CHECK (logic.m_mode == game::M_JEEP);
 
   // Into its side at speed: the tractor is shoved on, neither flies, and
-  // the jeep does not pass through it.
+  // the jeep does not pass through it. The trailer pinned behind holds
+  // its rear, so it rocks up on its wheels and comes down again, a
+  // little way on.
   float fastest = 0.0f;
   for (int i = 0; i < 4 * 60; ++i) {
     run ({ .drive = 1.0f }, 1.0f / 60.0f);
     fastest = std::max (fastest, length (session.tractor ().velocity ()));
   }
-  const Vec3 shoved = session.tractor ().position () - tractor_was;
-  MOPPE_CHECK (shoved[2] > 1.0f);
   MOPPE_CHECK (fastest < 15.0f);
   MOPPE_CHECK (session.tractor ().position ()[1] < tractor_was[1] + 2.0f);
   MOPPE_CHECK (session.jeep ().position ()[2] <
                session.tractor ().position ()[2]);
+  run ({}, 2.0f);
+  const Vec3 shoved = session.tractor ().position () - tractor_was;
+  MOPPE_CHECK (shoved[2] > 0.3f);
+  MOPPE_CHECK (session.tractor ().up ()[1] > 0.99f);
+  MOPPE_CHECK (session.tractor ().trailer_up ()[1] > 0.99f);
+}
+
+MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
+  using namespace moppe;
+
+  const Ground ground = rescue_ground ([] (float, float) { return 10.0f; });
+  game::GameSession session (ground.world, ground.surface);
+  Runner run { ground, session };
+  game::GameLogicState& logic = session.logic ();
+  session.start_on_foot ();
+  // The tractor faces +x, so its trailer stands some 3.7 m toward -x.
+  session.tractor ().place (Vec3 (100, 0, 170), Vec3 (1, 0, 0));
+  const Vec3 bed = session.tractor ().trailer_position ();
+  session.jeep ().place (Vec3 (bed[0], 0, 150), Vec3 (0, 0, 1));
+  run ({}, 1.0f);
+  const Vec3 tractor_was = session.tractor ().position ();
+  const Vec3 trailer_was = session.tractor ().trailer_position ();
+  session.walker ().spawn (position (Vec3 (bed[0] + 2, 10.1f, 150)),
+                           Vec3 (0, 0, 1));
+  run ({ .toggle_mount = true }, 0.1f);
+  MOPPE_CHECK (logic.m_mode == game::M_JEEP);
+
+  // Into the bed's flank: the jeep meets it rather than passing
+  // through, and the trailer swings aside on its hitch, further than
+  // the tractor goes.
+  float nearest = 1e9f;
+  for (int i = 0; i < 4 * 60; ++i) {
+    run ({ .drive = 1.0f }, 1.0f / 60.0f);
+    Vec3 apart =
+      session.jeep ().position () - session.tractor ().trailer_position ();
+    apart[1] = 0.0f;
+    nearest = std::min (nearest, length (apart));
+  }
+  run ({}, 2.0f);
+  const Vec3 trailer_shoved =
+    session.tractor ().trailer_position () - trailer_was;
+  const Vec3 tractor_shoved = session.tractor ().position () - tractor_was;
+  MOPPE_CHECK (nearest > 1.2f);
+  MOPPE_CHECK (trailer_shoved[2] > 0.3f);
+  MOPPE_CHECK (trailer_shoved[2] > tractor_shoved[2]);
+  MOPPE_CHECK (session.tractor ().trailer_up ()[1] > 0.99f);
 }

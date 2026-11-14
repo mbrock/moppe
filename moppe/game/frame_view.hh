@@ -101,7 +101,8 @@ namespace moppe::game {
   // ground it stands on) and frame, how far each wheel hangs below where
   // it stands (front left, front right, rear left, rear right; negative
   // is pressed), the front wheels' turn to the right, and how far round
-  // each pair has rolled.
+  // each pair has rolled; and its trailer's origin (on the ground under
+  // its axle), frame, wheels' drop (left, right), and roll.
   struct TractorPose {
     Vec3 position {};
     Vec3 forward { 0, 0, 1 };
@@ -110,6 +111,11 @@ namespace moppe::game {
     float steer_radians = 0.0f;
     float front_spin_radians = 0.0f;
     float rear_spin_radians = 0.0f;
+    Vec3 trailer_position { 0, 0, -3.72f };
+    Vec3 trailer_forward { 0, 0, 1 };
+    Vec3 trailer_up { 0, 1, 0 };
+    std::array<float, 2> trailer_wheel_drop {};
+    float trailer_spin_radians = 0.0f;
   };
 
   // The boat as drawn: its origin (on the keel a quarter of the way

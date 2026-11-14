@@ -59,6 +59,10 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.jet_ski.steer_radians = -0.3f;
   sent.jet_ski.lean_radians = 0.25f;
   sent.jet_ski_velocity = Vec3 (-15, 0, 2);
+  sent.tractor.trailer_position = Vec3 (-20, 3, 8);
+  sent.tractor.trailer_forward = Vec3 (0.6f, 0, 0.8f);
+  sent.tractor.trailer_wheel_drop = { 0.02f, -0.04f };
+  sent.tractor.trailer_spin_radians = 1.5f;
 
   const std::optional<CompanionSnapshot> got = decode (encode (sent));
   MOPPE_CHECK (got.has_value ());
@@ -91,6 +95,10 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (got->jet_ski.steer_radians, -0.3f, 1e-6f);
   MOPPE_CHECK_NEAR (got->jet_ski.lean_radians, 0.25f, 1e-6f);
   MOPPE_CHECK_NEAR (got->jet_ski_velocity[0], -15.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->tractor.trailer_position[0], -20.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->tractor.trailer_forward[0], 0.6f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->tractor.trailer_wheel_drop[1], -0.04f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->tractor.trailer_spin_radians, 1.5f, 1e-6f);
 }
 
 MOPPE_TEST (a_damaged_companion_snapshot_is_refused) {

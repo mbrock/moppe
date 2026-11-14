@@ -1801,16 +1801,20 @@ namespace moppe {
 
       // The tractor stands out on the open ground ahead on the bike's
       // other side, turned to show its flank, as if left there at the end
-      // of a day's work.
+      // of a day's work; the ground found is room for it and the trailer
+      // behind it, some six and a half metres from nose to tailgate.
       void park_tractor () {
         const auto [heading, side] = bike_frame ();
         session ().tractor ().set_trunks (&m_trunk_field);
-        const Vec3 at = open_ground_near (session ().bike ().position () -
-                                            side * 17.0f + heading * 15.0f,
-                                          2.4f,
-                                          0.8f,
-                                          40.0f);
-        session ().tractor ().place (at, normalized (-side - heading * 0.6f));
+        const Vec3 facing = normalized (-side - heading * 0.6f);
+        const Vec3 room = open_ground_near (session ().bike ().position () -
+                                              side * 17.0f + heading * 15.0f,
+                                            3.4f,
+                                            0.8f,
+                                            40.0f);
+        const Vec3 at = room + facing * 1.7f;
+        session ().tractor ().place (at, facing);
+        report_parked ("tractor", at, "at the trailhead with its trailer");
       }
 
       // The Caddy is parked by the sea, on the nearest level, open ground
@@ -4492,6 +4496,13 @@ namespace moppe {
           body.up = up;
           body.mass = session ().machine_body (machine).mass;
           body.ours = false;
+          if (machine == Machine::tractor) {
+            body.towing = true;
+            body.towed_position = theirs.tractor.trailer_position;
+            body.towed_forward = theirs.tractor.trailer_forward;
+            body.towed_up = theirs.tractor.trailer_up;
+            body.towed_mass = session ().tractor ().trailer_mass ();
+          }
           const std::size_t i = static_cast<std::size_t> (machine);
           if (m_strangers_were && elapsed > 0.0f) {
             const Vec3 moved = position - (*m_strangers_were)[i];
@@ -4649,6 +4660,7 @@ namespace moppe {
         m_blob.draw (dl, surface (), theirs.helicopter.position, 4.5f);
         render_helicopter (r, theirs.helicopter, 0x7000);
         m_blob.draw (dl, surface (), theirs.tractor.position, 2.8f);
+        m_blob.draw (dl, surface (), theirs.tractor.trailer_position, 2.4f);
         render_tractor (r,
                         dl,
                         theirs.tractor,
@@ -5508,7 +5520,10 @@ namespace moppe {
           logic ().m_mode == M_JEEP || tractor || caddy || boat || ski;
         const bool pedalled = game::pedalled (logic ().m_mode);
         const auto& bike = session ().ridden_bike ();
-        const Vec3 car = tractor ? session ().tractor ().position ()
+        // The tractor with its trailer, from their middle.
+        const Vec3 car = tractor ? (session ().tractor ().position () +
+                                    session ().tractor ().trailer_position ()) *
+                                     0.5f
                          : caddy ? session ().caddy ().position ()
                          : boat  ? session ().boat ().position ()
                          : ski   ? session ().jet_ski ().position ()
@@ -5532,6 +5547,7 @@ namespace moppe {
                            : caddy    ? 7.5f
                            : boat     ? 7.0f
                            : ski      ? 5.5f
+                           : tractor  ? 9.0f
                            : driving  ? 6.0f
                            : pedalled ? 3.4f
                                       : 4.5f;
@@ -6257,6 +6273,8 @@ namespace moppe {
             m_world_dl, surface (), actors.helicopter.position, 4.5f);
           render_helicopter (r, actors.helicopter, 0x8000);
           m_blob.draw (m_world_dl, surface (), actors.tractor.position, 2.8f);
+          m_blob.draw (
+            m_world_dl, surface (), actors.tractor.trailer_position, 2.4f);
           render_tractor (r,
                           m_world_dl,
                           actors.tractor,

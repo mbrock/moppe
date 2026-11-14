@@ -26,6 +26,12 @@ namespace moppe::game {
         { Vec3 (0.0f, 0.8f, -0.8f), 1.0f },
         { Vec3 (0.0f, 0.75f, 0.85f), 0.75f },
       };
+      // Its trailer's bed, from the tailgate to the headboard.
+      const Bumper trailer_bumpers[] = {
+        { Vec3 (0.0f, 0.85f, -0.6f), 0.8f },
+        { Vec3 (0.0f, 0.85f, 0.15f), 0.8f },
+        { Vec3 (0.0f, 0.85f, 0.9f), 0.8f },
+      };
       const Bumper caddy_bumpers[] = {
         { Vec3 (0.0f, 0.45f, 1.3f), 0.82f },
         { Vec3 (0.0f, 0.45f, 0.0f), 0.85f },
@@ -140,6 +146,12 @@ namespace moppe::game {
     return {};
   }
 
+  std::span<const Bumper> towed_bumpers (Machine machine) {
+    if (machine == Machine::tractor)
+      return trailer_bumpers;
+    return {};
+  }
+
   Vec3 machine_centre (Machine machine) {
     switch (machine) {
     case Machine::bike:
@@ -200,6 +212,35 @@ namespace moppe::game {
     return position + left * local[0] + up * local[1] + forward * local[2];
   }
 
+  namespace {
+    namespace rescue_rig {
+      // A bumper in the world, and the weight behind it.
+      struct Placed {
+        Vec3 centre;
+        float radius = 0.0f;
+        float mass = 1.0f;
+      };
+
+      // A machine's bumpers, and those of what it tows.
+      std::vector<Placed> placed_bumpers (const MachineBody& body) {
+        std::vector<Placed> placed;
+        for (const Bumper& p : bumpers (body.machine))
+          placed.push_back ({ body.point (p.centre), p.radius, body.mass });
+        if (!body.towing)
+          return placed;
+        const Vec3 forward = body.towed_forward;
+        const Vec3 up = body.towed_up;
+        const Vec3 left = normalized (cross (up, forward));
+        for (const Bumper& p : towed_bumpers (body.machine))
+          placed.push_back ({ body.towed_position + left * p.centre[0] +
+                                up * p.centre[1] + forward * p.centre[2],
+                              p.radius,
+                              body.towed_mass });
+        return placed;
+      }
+    }
+  }
+
   std::vector<Bump> find_bumps (std::span<const MachineBody> bodies) {
     std::vector<Bump> found;
     const int count = static_cast<int> (bodies.size ());
@@ -213,17 +254,22 @@ namespace moppe::game {
           continue;
         // The deepest overlap of any two of their spheres.
         float deepest = 0.0f;
+        float mass_a = a.mass, mass_b = b.mass;
         Vec3 normal, at;
-        for (const Bumper& p : bumpers (a.machine))
-          for (const Bumper& q : bumpers (b.machine)) {
-            const Vec3 pa = a.point (p.centre);
-            const Vec3 qb = b.point (q.centre);
+        const std::vector<Placed> as = placed_bumpers (a);
+        const std::vector<Placed> bs = placed_bumpers (b);
+        for (const Placed& p : as)
+          for (const Placed& q : bs) {
+            const Vec3 pa = p.centre;
+            const Vec3 qb = q.centre;
             const Vec3 apart = pa - qb;
             const float distance = length (apart);
             const float overlap = p.radius + q.radius - distance;
             if (overlap <= deepest)
               continue;
             deepest = overlap;
+            mass_a = p.mass;
+            mass_b = q.mass;
             normal = distance > 1e-4f ? apart * (1.0f / distance)
                                       : Vec3 (0.0f, 1.0f, 0.0f);
             at = qb + normal * (q.radius - 0.5f * overlap);
@@ -242,7 +288,7 @@ namespace moppe::game {
                               std::max (-closing * restitution, least_rebound));
         if (closing >= parting)
           continue;
-        const float reduced = a.mass * b.mass / (a.mass + b.mass);
+        const float reduced = mass_a * mass_b / (mass_a + mass_b);
         found.push_back ({ .a = i,
                            .b = j,
                            .at = at,

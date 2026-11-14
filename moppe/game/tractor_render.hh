@@ -9,7 +9,8 @@
 #include <optional>
 
 namespace moppe::game {
-  // The tractor (models/tractor.blend) as baked meshes drawn through the
+  // The tractor (models/tractor.blend) and the trailer it tows
+  // (models/trailer.blend) as baked meshes drawn through the
   // renderer: the body and hitch, each wheel on its spring and the front
   // pair turned with the steering, and the steering wheel turned about
   // its column. A driver, given their outfit, is the hiker seated with

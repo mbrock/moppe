@@ -3,6 +3,7 @@
 #include <moppe/game/model_mesh.hh>
 #include <moppe/game/tractor_model.hh>
 #include <moppe/game/tractor_render.hh>
+#include <moppe/game/trailer_model.hh>
 #include <moppe/gfx/mat4.hh>
 
 #include <cmath>
@@ -22,6 +23,8 @@ namespace moppe::game {
         render::MeshPtr steering_wheel;
         render::MeshPtr front_wheel;
         render::MeshPtr rear_wheel;
+        render::MeshPtr trailer;
+        render::MeshPtr trailer_wheel;
       };
 
       render::MeshPtr bake_tractor_part (render::Renderer& r,
@@ -41,17 +44,25 @@ namespace moppe::game {
             bake_tractor_part (r, tractor_model::steering_wheel);
           m.front_wheel = bake_tractor_part (r, tractor_model::front_wheel);
           m.rear_wheel = bake_tractor_part (r, tractor_model::rear_wheel);
+          m.trailer = bake_tractor_part (r, trailer_model::body);
+          m.trailer_wheel = bake_tractor_part (r, trailer_model::wheel);
           return m;
         }();
         return meshes;
       }
 
-      Mat4 tractor_frame (const TractorPose& tractor) {
-        const Vec3 forward = normalized (tractor.forward);
-        const Vec3 left = normalized (cross (tractor.up, forward));
+      Mat4 tractor_body_frame (const Vec3& position,
+                               const Vec3& ahead,
+                               const Vec3& above) {
+        const Vec3 forward = normalized (ahead);
+        const Vec3 left = normalized (cross (above, forward));
         const Vec3 up = cross (forward, left);
-        return Mat4::translation (tractor.position) *
-               Mat4::basis (left, up, forward);
+        return Mat4::translation (position) * Mat4::basis (left, up, forward);
+      }
+
+      Mat4 tractor_frame (const TractorPose& tractor) {
+        return tractor_body_frame (
+          tractor.position, tractor.forward, tractor.up);
       }
 
       Mat4 steering_turn (const TractorPose& tractor) {
@@ -153,6 +164,27 @@ namespace moppe::game {
                    Mat4::translation (axles[wheel] -
                                       Vec3 (0, tractor.wheel_drop[wheel], 0)) *
                    turn * Mat4::rotation (roll * u::rad, x_axis));
+    }
+
+    // The trailer behind, its wheels on their springs, the left-hand one
+    // turned about as the tractor's are.
+    const Mat4 towed = tractor_body_frame (
+      tractor.trailer_position, tractor.trailer_forward, tractor.trailer_up);
+    draw_part (*meshes.trailer, towed);
+    const Vec3 trailer_axles[2] = { trailer_model::wheel_l,
+                                    trailer_model::wheel_r };
+    for (int wheel = 0; wheel < 2; ++wheel) {
+      const bool left_side = wheel == 0;
+      const float spin = tractor.trailer_spin_radians;
+      const Mat4 turn = left_side
+                          ? Mat4::rotation (3.14159265f * u::rad, y_axis)
+                          : Mat4::identity ();
+      draw_part (
+        *meshes.trailer_wheel,
+        towed *
+          Mat4::translation (trailer_axles[wheel] -
+                             Vec3 (0, tractor.trailer_wheel_drop[wheel], 0)) *
+          turn * Mat4::rotation ((left_side ? -spin : spin) * u::rad, x_axis));
     }
   }
 }

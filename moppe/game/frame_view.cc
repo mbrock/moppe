@@ -179,6 +179,12 @@ namespace moppe::game {
       .steer_radians = tractor.steer (),
       .front_spin_radians = tractor.front_spin (),
       .rear_spin_radians = tractor.rear_spin (),
+      .trailer_position = tractor.trailer_position (),
+      .trailer_forward = tractor.trailer_forward (),
+      .trailer_up = tractor.trailer_up (),
+      .trailer_wheel_drop = { tractor.trailer_wheel_drop (0),
+                              tractor.trailer_wheel_drop (1) },
+      .trailer_spin_radians = tractor.trailer_spin (),
     };
   }
 

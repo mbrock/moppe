@@ -424,6 +424,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/boat_model.cc
   moppe/game/jet_ski_model.cc
   moppe/game/tractor_model.cc
+  moppe/game/trailer_model.cc
   moppe/game/caddy_model.cc
   moppe/game/mountain_bike_model.cc
   moppe/game/long_john_model.cc

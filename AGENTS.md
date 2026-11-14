@@ -393,9 +393,10 @@
     points (axles, pivots, grips, pegs, saddle, harness) that the game
     places parts and the rider by. `tools/figure/export_model.py` writes
     the generated `moppe/game/{bike,glider}_model.{hh,cc}`; `make models`
-    re-exports both, the jeep, the helicopter, the tractor, and the Caddy
-    (`MODELS_REBUILD=1` regenerates the .blend files; on Linux, `make
-    models BLENDER="nix shell nixpkgs#blender -c blender"`). Each paint
+    re-exports both, the jeep, the helicopter, the tractor and its
+    trailer, and the Caddy (`MODELS_REBUILD=1` regenerates the .blend
+    files; on Linux, `make models BLENDER="nix shell nixpkgs#blender -c
+    blender"`). Each paint
     carries its material's whole Principled BSDF (`model_mesh::Paint`:
     metallic, roughness, clear coat, transmission, sheen, emission), set
     in each script's `FINISH` table (the Caddy's `MATERIALS`) through
@@ -630,9 +631,22 @@
     the big rear pair drive it: hard and slowly, the engine governed to
     some thirty kilometres an hour, easing off if its nose lifts so that
     it does not rear over. The stack smokes while someone sits at the
-    wheel. The other player sees it and its driver (companion wire
-    version 5); `MOPPE_DEMO=tractor` (`tools/record OUT.mp4 tractor`)
-    has the autopilot drive it.
+    wheel. It tows a trailer everywhere (`models/trailer.blend` from
+    `tools/figure/trailer.py`, drawn with it by `render_tractor`): a
+    one-axle plank trailer whose sides, headboard, and tailgate are
+    boarded in the rainbow's six colours, violet at the foot to red at
+    the top, between navy stakes under a cream rail, with a ladder rack,
+    a pine deck, pink wheels, and a yellow A-frame drawbar. It is part
+    of the tractor's assemblage (`Tractor::trailer_*`): a box hull on two
+    sprung sphere wheels, its drawbar's eye on a ball joint at the
+    tractor's drawbar pin that lets it swing some 65 degrees either way,
+    so it cuts corners, follows round, and jackknifes backing up. Its
+    wheels roll free, brake with the tractor's, and lock when it is
+    parked. Machines that meet it knock it aside by bumpers of its own
+    (`towed_bumpers` in rescue.cc); the rope and the sling tie to the
+    tractor. The other player sees it, its driver, and the trailer
+    (companion wire version 15); `MOPPE_DEMO=tractor` (`tools/record
+    OUT.mp4 tractor`) has the autopilot drive it.
   - Getting unstuck (`moppe/game/rescue.*`): each machine stands in a
     Box3D world of its own, so they meet as a few spheres each instead,
     and machines that meet -- the other player's too -- are knocked apart

@@ -52,6 +52,9 @@ namespace moppe::game {
     float radius = 0.0f;
   };
   std::span<const Bumper> bumpers (Machine machine);
+  // Those of what it tows (the tractor's trailer), in the towed body's
+  // frame; none for the rest.
+  std::span<const Bumper> towed_bumpers (Machine machine);
 
   // Where its weight is centred, in the same frame.
   Vec3 machine_centre (Machine machine);
@@ -69,6 +72,13 @@ namespace moppe::game {
     float mass = 1.0f;
     // This game's to push; the other player's machines are theirs.
     bool ours = true;
+    // Whether it tows something, the frame of what it tows, for its
+    // towed bumpers, and its weight.
+    bool towing = false;
+    Vec3 towed_position;
+    Vec3 towed_forward { 0, 0, 1 };
+    Vec3 towed_up { 0, 1, 0 };
+    float towed_mass = 1.0f;
 
     Vec3 point (const Vec3& local) const;
   };

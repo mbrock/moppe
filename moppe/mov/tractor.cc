@@ -30,6 +30,31 @@ namespace moppe::mov {
       constexpr float total_mass =
         chassis_mass + 2.0f * (front_wheel_mass + rear_wheel_mass);
 
+      // The trailer: a plank bed on one axle, its weight a little ahead
+      // of the axle so that the drawbar carries some of it. Its leaf
+      // springs sag a little further than the tyres.
+      constexpr float trailer_mass = 380.0f;
+      constexpr float trailer_inertia[3] = { 230.0f, 290.0f, 90.0f };
+      constexpr float trailer_centre[3] = { 0.0f, 0.85f, 0.15f };
+      constexpr float trailer_wheel_mass = 25.0f;
+      constexpr float trailer_wheel_inertia = 1.2f;
+      constexpr float trailer_total_mass =
+        trailer_mass + 2.0f * trailer_wheel_mass;
+      constexpr float trailer_sag = 0.06f;
+      constexpr float trailer_bump = 0.08f;
+      constexpr float trailer_friction = 1.0f;
+      // Its overrun brakes, which hold it back as the tractor's engine
+      // does when the throttle is let off and bite with the tractor's
+      // brakes, and the hand brake that holds it parked.
+      constexpr float trailer_overrun_torque = 60.0f;
+      constexpr float trailer_brake_force = 3000.0f;
+      constexpr float trailer_parking_torque = 1500.0f;
+      // How far it swings or tips about the pin before the drawbar meets
+      // the tractor, and how far the ball lets the two roll against each
+      // other, so that the tractor tipped up does not drag it over.
+      constexpr float hitch_swing = 1.15f;
+      constexpr float hitch_roll = 1.2f;
+
       // There are no springs but the tyres', which give a little and
       // bounce: a short sag and a short way beyond it to the stops.
       constexpr float sag = 0.05f;
@@ -43,10 +68,10 @@ namespace moppe::mov {
       constexpr float rear_friction = 1.35f;
       constexpr float ground_friction = 1.0f;
 
-      // The rear wheels pull hard and the engine is governed: the
-      // throttle asks for a road speed, which the wheels are driven to
-      // and held at.
-      constexpr float engine_force = 9000.0f;
+      // The rear wheels pull hard, enough to take the trailer up a slope
+      // of one in three, and the engine is governed: the throttle asks
+      // for a road speed, which the wheels are driven to and held at.
+      constexpr float engine_force = 10500.0f;
       constexpr float engine_power = 38000.0f;
       constexpr float top_speed = 8.5f;
       constexpr float reverse_speed = 3.2f;
@@ -103,6 +128,28 @@ namespace moppe::mov {
       float wheel_mass (int wheel) {
         return front (wheel) ? front_wheel_mass : rear_wheel_mass;
       }
+
+      // The trailer's left wheel, then its right, in its frame.
+      Vec3 trailer_axle_of (int wheel) {
+        return Vec3 (wheel == 0 ? Tractor::trailer_track
+                                : -Tractor::trailer_track,
+                     Tractor::trailer_radius,
+                     0.0f);
+      }
+
+      Vec3 hitch_pin () {
+        return Vec3 (
+          Tractor::hitch_pin[0], Tractor::hitch_pin[1], Tractor::hitch_pin[2]);
+      }
+
+      Vec3 trailer_eye () {
+        return Vec3 (Tractor::trailer_eye[0],
+                     Tractor::trailer_eye[1],
+                     Tractor::trailer_eye[2]);
+      }
+
+      // A joint frame whose z looks back along the body.
+      constexpr b3Quat facing_back { { 0.0f, 1.0f, 0.0f }, 0.0f };
     }
   }
 
@@ -110,12 +157,17 @@ namespace moppe::mov {
     const map::SurfaceGeometry& surface;
     GroundPatch patch;
     std::array<float, wheel_count> hertz {}, damping {};
+    float trailer_hertz = 0.0f, trailer_damping = 0.0f;
 
     const TrunkField* trunks = nullptr;
     b3WorldId world = b3_nullWorldId;
     b3BodyId chassis = b3_nullBodyId;
     std::array<b3BodyId, wheel_count> wheels {};
     std::array<b3JointId, wheel_count> joints {};
+    b3BodyId trailer = b3_nullBodyId;
+    std::array<b3BodyId, trailer_wheel_count> trailer_wheels {};
+    std::array<b3JointId, trailer_wheel_count> trailer_joints {};
+    b3JointId hitch = b3_nullJointId;
 
     // What is not in the bodies: the controls and the last step's
     // readings.
@@ -137,6 +189,8 @@ namespace moppe::mov {
               .trunk_reach = tractor_rig::trunk_reach }) {
       wheels.fill (b3_nullBodyId);
       joints.fill (b3_nullJointId);
+      trailer_wheels.fill (b3_nullBodyId);
+      trailer_joints.fill (b3_nullJointId);
       // Each wheel carries its share of the chassis as it stands, most
       // of it on the rear pair; the joint springs are soft constraints
       // tuned in hertz against the joint's effective mass, so convert
@@ -162,6 +216,26 @@ namespace moppe::mov {
         hertz[wheel] = std::sqrt (stiffness / effective) / (2.0f * 3.14159265f);
         damping[wheel] = c / (2.0f * std::sqrt (stiffness * effective));
       }
+      // The trailer's two share what the drawbar does not carry.
+      {
+        const float along = -tractor_rig::trailer_centre[2];
+        const float across = Tractor::trailer_track;
+        const float effective =
+          1.0f / (1.0f / tractor_rig::trailer_wheel_mass +
+                  1.0f / tractor_rig::trailer_mass +
+                  along * along / tractor_rig::trailer_inertia[0] +
+                  across * across / tractor_rig::trailer_inertia[2]);
+        const float sprung =
+          0.5f * tractor_rig::trailer_mass *
+          (1.0f - tractor_rig::trailer_centre[2] / Tractor::trailer_eye[2]);
+        const float stiffness =
+          sprung * tractor_rig::gravity / tractor_rig::trailer_sag;
+        const float c = 2.0f * tractor_rig::sprung_damping_ratio *
+                        std::sqrt (stiffness * sprung);
+        trailer_hertz =
+          std::sqrt (stiffness / effective) / (2.0f * 3.14159265f);
+        trailer_damping = c / (2.0f * std::sqrt (stiffness * effective));
+      }
     }
 
     ~Impl () {
@@ -175,6 +249,10 @@ namespace moppe::mov {
       chassis = b3_nullBodyId;
       wheels.fill (b3_nullBodyId);
       joints.fill (b3_nullJointId);
+      trailer = b3_nullBodyId;
+      trailer_wheels.fill (b3_nullBodyId);
+      trailer_joints.fill (b3_nullJointId);
+      hitch = b3_nullJointId;
       patch.forget ();
     }
 
@@ -189,29 +267,40 @@ namespace moppe::mov {
       return b3CreateBody (world, &def);
     }
 
-    b3BodyId create_wheel (int wheel_index, const RigidBodyState& s) {
-      const bool front = tractor_rig::front (wheel_index);
+    // A sphere of `radius` that meets only the ground, gripping it
+    // `grip` times as well as unit friction would.
+    b3BodyId create_round (const RigidBodyState& s,
+                           float radius,
+                           float weight,
+                           float inertia,
+                           float grip) {
       const b3BodyId wheel = create_body (s);
       b3ShapeDef shape = b3DefaultShapeDef ();
       shape.updateBodyMass = false;
-      const float grip =
-        front ? tractor_rig::front_friction : tractor_rig::rear_friction;
       shape.baseMaterial.friction = grip * grip / tractor_rig::ground_friction;
       shape.baseMaterial.rollingResistance = tractor_rig::rolling_resistance;
       shape.filter.categoryBits = tractor_rig::wheel_bit;
       shape.filter.maskBits = tractor_rig::ground_bit;
-      const b3Sphere sphere { { 0.0f, 0.0f, 0.0f },
-                              wheel_radius (wheel_index) };
+      const b3Sphere sphere { { 0.0f, 0.0f, 0.0f }, radius };
       b3CreateSphereShape (wheel, &shape, &sphere);
-      const float inertia = front ? tractor_rig::front_wheel_inertia
-                                  : tractor_rig::rear_wheel_inertia;
       b3MassData mass {};
-      mass.mass = tractor_rig::wheel_mass (wheel_index);
+      mass.mass = weight;
       mass.inertia.cx = { inertia, 0.0f, 0.0f };
       mass.inertia.cy = { 0.0f, inertia, 0.0f };
       mass.inertia.cz = { 0.0f, 0.0f, inertia };
       b3Body_SetMassData (wheel, mass);
       return wheel;
+    }
+
+    b3BodyId create_wheel (int wheel_index, const RigidBodyState& s) {
+      const bool front = tractor_rig::front (wheel_index);
+      return create_round (s,
+                           wheel_radius (wheel_index),
+                           tractor_rig::wheel_mass (wheel_index),
+                           front ? tractor_rig::front_wheel_inertia
+                                 : tractor_rig::rear_wheel_inertia,
+                           front ? tractor_rig::front_friction
+                                 : tractor_rig::rear_friction);
     }
 
     void create_chassis (const RigidBodyState& s) {
@@ -243,6 +332,72 @@ namespace moppe::mov {
       mass.inertia.cy = { 0.0f, tractor_rig::inertia[1], 0.0f };
       mass.inertia.cz = { 0.0f, 0.0f, tractor_rig::inertia[2] };
       b3Body_SetMassData (chassis, mass);
+    }
+
+    void create_trailer (const RigidBodyState& s) {
+      trailer = create_body (s);
+      // The bed, boards and all, meets trunks and the ground; the
+      // drawbar slips under what the bed would meet first.
+      b3ShapeDef shape = b3DefaultShapeDef ();
+      shape.updateBodyMass = false;
+      shape.baseMaterial.friction = 0.45f;
+      shape.filter.categoryBits = tractor_rig::chassis_bit;
+      shape.filter.maskBits = tractor_rig::ground_bit | tractor_rig::trunk_bit;
+      const b3BoxHull bed =
+        b3MakeOffsetBoxHull (0.80f, 0.30f, 1.30f, { 0.0f, 1.12f, 0.15f });
+      b3CreateHullShape (trailer, &shape, &bed.base);
+      b3MassData mass {};
+      mass.mass = tractor_rig::trailer_mass;
+      mass.center = { tractor_rig::trailer_centre[0],
+                      tractor_rig::trailer_centre[1],
+                      tractor_rig::trailer_centre[2] };
+      mass.inertia.cx = { tractor_rig::trailer_inertia[0], 0.0f, 0.0f };
+      mass.inertia.cy = { 0.0f, tractor_rig::trailer_inertia[1], 0.0f };
+      mass.inertia.cz = { 0.0f, 0.0f, tractor_rig::trailer_inertia[2] };
+      b3Body_SetMassData (trailer, mass);
+    }
+
+    b3JointId create_trailer_suspension (int wheel) {
+      const b3Quat frame = suspension_rotation ();
+      b3WheelJointDef def = b3DefaultWheelJointDef ();
+      def.base.bodyIdA = trailer;
+      def.base.bodyIdB = trailer_wheels[wheel];
+      def.base.localFrameA = { to_b3 (
+                                 tractor_rig::trailer_axle_of (wheel) -
+                                 Vec3 (0.0f, tractor_rig::trailer_sag, 0.0f)),
+                               frame };
+      def.base.localFrameB = { { 0.0f, 0.0f, 0.0f }, frame };
+      def.base.collideConnected = false;
+      def.enableSuspensionSpring = true;
+      def.suspensionHertz = trailer_hertz;
+      def.suspensionDampingRatio = trailer_damping;
+      def.enableSuspensionLimit = true;
+      def.lowerSuspensionLimit =
+        -(tractor_rig::trailer_sag + tractor_rig::trailer_bump);
+      def.upperSuspensionLimit = 0.0f;
+      def.enableSpinMotor = true;
+      def.maxSpinTorque = 0.0f;
+      def.spinSpeed = 0.0f;
+      return b3CreateWheelJoint (world, &def);
+    }
+
+    // The drawbar's eye over the pin: a ball joint, its swing and roll
+    // limited where the drawbar would meet the tractor.
+    b3JointId create_hitch () {
+      b3SphericalJointDef def = b3DefaultSphericalJointDef ();
+      def.base.bodyIdA = chassis;
+      def.base.bodyIdB = trailer;
+      def.base.localFrameA = { to_b3 (tractor_rig::hitch_pin ()),
+                               tractor_rig::facing_back };
+      def.base.localFrameB = { to_b3 (tractor_rig::trailer_eye ()),
+                               tractor_rig::facing_back };
+      def.base.collideConnected = false;
+      def.enableConeLimit = true;
+      def.coneAngle = tractor_rig::hitch_swing;
+      def.enableTwistLimit = true;
+      def.lowerTwistAngle = -tractor_rig::hitch_roll;
+      def.upperTwistAngle = tractor_rig::hitch_roll;
+      return b3CreateSphericalJoint (world, &def);
     }
 
     b3JointId create_suspension (int wheel) {
@@ -290,6 +445,17 @@ namespace moppe::mov {
         wheels[wheel] = create_wheel (wheel, s.wheels[wheel]);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         joints[wheel] = create_suspension (wheel);
+      create_trailer (s.trailer);
+      for (int wheel = 0; wheel < trailer_wheel_count; ++wheel)
+        trailer_wheels[wheel] =
+          create_round (s.trailer_wheels[wheel],
+                        trailer_radius,
+                        tractor_rig::trailer_wheel_mass,
+                        tractor_rig::trailer_wheel_inertia,
+                        tractor_rig::trailer_friction);
+      for (int wheel = 0; wheel < trailer_wheel_count; ++wheel)
+        trailer_joints[wheel] = create_trailer_suspension (wheel);
+      hitch = create_hitch ();
       kept = s;
     }
 
@@ -307,6 +473,9 @@ namespace moppe::mov {
       s.chassis = read (chassis);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         s.wheels[wheel] = read (wheels[wheel]);
+      s.trailer = read (trailer);
+      for (int wheel = 0; wheel < trailer_wheel_count; ++wheel)
+        s.trailer_wheels[wheel] = read (trailer_wheels[wheel]);
       s.ground_column = patch.column ();
       s.ground_row = patch.row ();
       return s;
@@ -323,6 +492,15 @@ namespace moppe::mov {
 
     Vec3 point (const Vec3& local) const {
       return from_b3 (b3Body_GetPosition (chassis)) + axis (local);
+    }
+
+    Vec3 trailer_axis (const Vec3& local) const {
+      return from_b3 (
+        b3RotateVector (b3Body_GetRotation (trailer), to_b3 (local)));
+    }
+
+    Vec3 trailer_point (const Vec3& local) const {
+      return from_b3 (b3Body_GetPosition (trailer)) + trailer_axis (local);
     }
 
     // The standing pose at `at`, its origin level with the highest
@@ -348,6 +526,38 @@ namespace moppe::mov {
                             rotation,
                             Vec3 (),
                             Vec3 () };
+      // The trailer straight behind, its eye on the pin and its axle
+      // over the ground there, pitched to reach both.
+      const Vec3 pin = centre + rotated (rotation, tractor_rig::hitch_pin ());
+      const Vec3 ahead = rotated (rotation, Vec3 (0, 0, 1));
+      const Vec3 left = rotated (rotation, Vec3 (1, 0, 0));
+      const Vec3 eye = tractor_rig::trailer_eye ();
+      const Vec3 axle = pin - ahead * eye[2];
+      float ground = -1e30f;
+      for (int wheel = 0; wheel < trailer_wheel_count; ++wheel) {
+        const Vec3 under =
+          axle + left * tractor_rig::trailer_axle_of (wheel)[0];
+        ground =
+          std::max (ground, surface_elevation_at (surface, under[0], under[2]));
+      }
+      const float pitch =
+        std::atan2 (pin[1] - eye[1] - (ground + 0.03f), eye[2]);
+      const Vec3 along =
+        ahead * std::cos (pitch) + Vec3 (0, 1, 0) * std::sin (pitch);
+      const b3Matrix3 frame { to_b3 (left),
+                              to_b3 (cross (along, left)),
+                              to_b3 (along) };
+      const std::array<float, 4> tilt =
+        array_of (b3NormalizeQuat (b3MakeQuatFromMatrix (&frame)));
+      const Vec3 origin = pin - rotated (tilt, eye);
+      s.trailer = { origin, tilt, Vec3 (), Vec3 () };
+      for (int wheel = 0; wheel < trailer_wheel_count; ++wheel)
+        s.trailer_wheels[wheel] = {
+          origin + rotated (tilt, tractor_rig::trailer_axle_of (wheel)),
+          tilt,
+          Vec3 (),
+          Vec3 ()
+        };
       patch.origin_for (centre, s.ground_column, s.ground_row);
       s.touching.fill (false);
       s.load.fill (0.0f);
@@ -372,6 +582,9 @@ namespace moppe::mov {
       move (chassis, s.chassis);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         move (wheels[wheel], s.wheels[wheel]);
+      move (trailer, s.trailer);
+      for (int wheel = 0; wheel < trailer_wheel_count; ++wheel)
+        move (trailer_wheels[wheel], s.trailer_wheels[wheel]);
       kept = s;
       recentre_ground ();
     }
@@ -436,6 +649,19 @@ namespace moppe::mov {
         b3WheelJoint_SetSpinMotorSpeed (joints[wheel], spin);
         b3WheelJoint_SetMaxSpinTorque (joints[wheel], torque);
       }
+      // The trailer's roll free while the tractor pulls, but for its
+      // brakes.
+      const float trailer_torque =
+        kept.parked ? tractor_rig::trailer_parking_torque
+        : braking   ? (kept.brake ? 1.0f : std::abs (drive)) *
+                      tractor_rig::trailer_brake_force * trailer_radius /
+                      trailer_wheel_count
+        : std::abs (drive) <= 0.02f ? tractor_rig::trailer_overrun_torque
+                                    : 0.0f;
+      for (const b3JointId joint : trailer_joints) {
+        b3WheelJoint_SetSpinMotorSpeed (joint, 0.0f);
+        b3WheelJoint_SetMaxSpinTorque (joint, trailer_torque);
+      }
 
       // The air's drag, and water's up to the axles, on the whole
       // tractor's mass.
@@ -445,6 +671,18 @@ namespace moppe::mov {
         v * (-(tractor_rig::air_drag * speed + tractor_rig::water_drag * wet) *
              tractor_rig::total_mass);
       b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
+      {
+        const Vec3 tv = from_b3 (b3Body_GetLinearVelocity (trailer));
+        const float trailer_wet = std::clamp (
+          (water_level - trailer_point (Vec3 (0, 0.2f, 0))[1]) / 0.8f,
+          0.0f,
+          1.0f);
+        const Vec3 trailer_force =
+          tv * (-(tractor_rig::air_drag * length (tv) +
+                  tractor_rig::water_drag * trailer_wet) *
+                tractor_rig::trailer_total_mass);
+        b3Body_ApplyForceToCenter (trailer, to_b3 (trailer_force), true);
+      }
 
       b3World_Step (world, dt, tractor_rig::substeps);
 
@@ -456,6 +694,9 @@ namespace moppe::mov {
         6.2831853f);
       kept.rear_spin = std::remainder (
         kept.rear_spin + b3WheelJoint_GetSpinSpeed (joints[2]) * dt,
+        6.2831853f);
+      kept.trailer_spin = std::remainder (
+        kept.trailer_spin + b3WheelJoint_GetSpinSpeed (trailer_joints[0]) * dt,
         6.2831853f);
 
       // Left on its side or back, it is set on its wheels again.
@@ -470,9 +711,13 @@ namespace moppe::mov {
         return;
       }
 
-      // Parked and still, it stays where it is.
+      // Parked and still, trailer and all, it stays where it is.
+      const Vec3 towed = from_b3 (b3Body_GetLinearVelocity (trailer));
+      const Vec3 towed_turning = from_b3 (b3Body_GetAngularVelocity (trailer));
       const bool quiet = length2 (moving) < 0.08f * 0.08f &&
                          length2 (turning) < 0.08f * 0.08f &&
+                         length2 (towed) < 0.08f * 0.08f &&
+                         length2 (towed_turning) < 0.08f * 0.08f &&
                          std::any_of (
                            kept.touching.begin (),
                            kept.touching.end (),
@@ -567,14 +812,22 @@ namespace moppe::mov {
   }
 
   float Tractor::mass () const {
-    return tractor_rig::total_mass;
+    return tractor_rig::total_mass + tractor_rig::trailer_total_mass;
+  }
+
+  float Tractor::trailer_mass () const {
+    return tractor_rig::trailer_total_mass;
   }
 
   void Tractor::push (const Vec3& at, const Vec3& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
     m.kept.still = 0.0f;
-    b3Body_ApplyLinearImpulse (m.chassis, to_b3 (impulse), to_b3 (at), true);
+    const bool towed =
+      length2 (at - m.trailer_point (Vec3 (0.0f, 0.85f, 0.15f))) <
+      length2 (at - m.point (Vec3 (0.0f, 0.78f, 0.0f)));
+    b3Body_ApplyLinearImpulse (
+      towed ? m.trailer : m.chassis, to_b3 (impulse), to_b3 (at), true);
   }
 
   float Tractor::throttle () const {
@@ -605,5 +858,32 @@ namespace moppe::mov {
 
   float Tractor::rear_spin () const {
     return m_impl->kept.rear_spin;
+  }
+
+  Vec3 Tractor::trailer_position () const {
+    return m_impl->trailer_point (Vec3 ());
+  }
+
+  Vec3 Tractor::trailer_forward () const {
+    return m_impl->trailer_axis (Vec3 (0, 0, 1));
+  }
+
+  Vec3 Tractor::trailer_up () const {
+    return m_impl->trailer_axis (Vec3 (0, 1, 0));
+  }
+
+  Vec3 Tractor::trailer_point (const Vec3& local) const {
+    return m_impl->trailer_point (local);
+  }
+
+  float Tractor::trailer_wheel_drop (int wheel) const {
+    const Impl& m = *m_impl;
+    const Vec3 at = from_b3 (b3Body_GetPosition (m.trailer_wheels[wheel]));
+    return dot (at - m.trailer_point (tractor_rig::trailer_axle_of (wheel)),
+                m.trailer_axis (Vec3 (0, -1, 0)));
+  }
+
+  float Tractor::trailer_spin () const {
+    return m_impl->kept.trailer_spin;
   }
 }

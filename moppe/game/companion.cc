@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 14;
+    constexpr std::uint8_t wire_version = 15;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -300,6 +300,12 @@ namespace moppe::game {
     out.put (tractor.steer_radians);
     out.put (tractor.front_spin_radians);
     out.put (tractor.rear_spin_radians);
+    out.put (tractor.trailer_position);
+    out.put (tractor.trailer_forward);
+    out.put (tractor.trailer_up);
+    for (const float drop : tractor.trailer_wheel_drop)
+      out.put (drop);
+    out.put (tractor.trailer_spin_radians);
 
     for (const VehiclePose* pedalled :
          { &snapshot.mountain_bike, &snapshot.long_john }) {
@@ -454,6 +460,12 @@ namespace moppe::game {
     tractor.steer_radians = in.number ();
     tractor.front_spin_radians = in.number ();
     tractor.rear_spin_radians = in.number ();
+    tractor.trailer_position = in.point ();
+    tractor.trailer_forward = in.direction (Vec3 (0, 0, 1));
+    tractor.trailer_up = in.direction (Vec3 (0, 1, 0));
+    for (float& drop : tractor.trailer_wheel_drop)
+      drop = std::clamp (in.number (), -0.5f, 0.5f);
+    tractor.trailer_spin_radians = in.number ();
 
     for (VehiclePose* pedalled :
          { &snapshot.mountain_bike, &snapshot.long_john }) {
@@ -725,6 +737,20 @@ namespace moppe::game {
         a.tractor.front_spin_radians, b.tractor.front_spin_radians, t);
       tractor.rear_spin_radians =
         mix_angle (a.tractor.rear_spin_radians, b.tractor.rear_spin_radians, t);
+      tractor.trailer_position =
+        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
+          return &each.tractor.trailer_position;
+        });
+      tractor.trailer_forward =
+        mix_direction (a.tractor.trailer_forward, b.tractor.trailer_forward, t);
+      tractor.trailer_up =
+        mix_direction (a.tractor.trailer_up, b.tractor.trailer_up, t);
+      for (std::size_t i = 0; i < tractor.trailer_wheel_drop.size (); ++i)
+        tractor.trailer_wheel_drop[i] = mix (a.tractor.trailer_wheel_drop[i],
+                                             b.tractor.trailer_wheel_drop[i],
+                                             within);
+      tractor.trailer_spin_radians = mix_angle (
+        a.tractor.trailer_spin_radians, b.tractor.trailer_spin_radians, t);
     }
     if (a.glider && b.glider &&
         !leapt (a.glider->position, b.glider->position)) {
