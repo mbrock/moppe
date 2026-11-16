@@ -308,7 +308,7 @@ namespace moppe::game {
     result.lighting.sky_sun = sky.sun;
     result.lighting.sky_moon = sky.moon;
     result.lighting.sky_pole = sky.pole;
-    result.lighting.sky_turn = sky.turn;
+    result.lighting.sky_turn = radians_value (sky.turn);
     result.lighting.moonlight = sky.moonlight;
     result.lighting.daylight = sky.daylight;
     result.lighting.time = static_cast<float> (logic.m_total_time);

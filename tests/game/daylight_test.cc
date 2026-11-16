@@ -11,7 +11,8 @@ MOPPE_TEST (the_day_passes_through_the_authored_sun) {
   // The sun the game was always lit by is this latitude's equinox sun at
   // a quarter past nine.
   const Almanac almanac;
-  const float clock = almanac.clock_for_sun_height (0.62f);
+  const float clock =
+    almanac.clock_for_sun_height (0.62f).numerical_value_in (si::hour);
   MOPPE_CHECK_NEAR (clock, 9.2f, 0.1f);
   const SkyReading sky = almanac.at (clock);
   const Vec3 authored = authored_sun_direction (0.62f);
@@ -37,17 +38,18 @@ MOPPE_TEST (the_sun_rises_in_the_east_and_sets_in_the_west) {
   const SkyReading noon = almanac.at (12.0);
   MOPPE_CHECK_NEAR (noon.sun[0], 0.0f, 1e-4f);
   MOPPE_CHECK (noon.sun[2] > 0.8f);
-  MOPPE_CHECK_NEAR (noon.sun[1], std::cos (almanac.latitude_radians ()), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    noon.sun[1], std::cos (radians_value (almanac.latitude ())), 1e-4f);
   const SkyReading dusk = almanac.at (18.0);
   MOPPE_CHECK_NEAR (dusk.sun[0], -1.0f, 1e-4f);
   // The pole stands in the north at the latitude's height, and the days
   // repeat.
   MOPPE_CHECK (noon.pole[2] < 0.0f);
   MOPPE_CHECK_NEAR (
-    noon.pole[1], std::sin (almanac.latitude_radians ()), 1e-5f);
+    noon.pole[1], std::sin (radians_value (almanac.latitude ())), 1e-5f);
   const SkyReading tomorrow = almanac.at (36.0);
   MOPPE_CHECK (tomorrow.day == 1);
-  MOPPE_CHECK_NEAR (tomorrow.clock, 12.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (tomorrow.clock.numerical_value_in (si::hour), 12.0f, 1e-4f);
   MOPPE_CHECK_NEAR (tomorrow.sun[2], noon.sun[2], 1e-5f);
 }
 

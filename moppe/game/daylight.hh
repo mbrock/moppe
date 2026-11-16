@@ -17,7 +17,7 @@ namespace moppe::game {
   // The sky at one moment.
   struct SkyReading {
     // Hours since midnight, 0..24, and whole days since the first.
-    float clock = 9.0f;
+    hours_t clock = 9.0f * si::hour;
     int day = 0;
     // Toward the sun and the moon; either may be below the horizon.
     Vec3 sun { 0, 1, 0 };
@@ -25,7 +25,7 @@ namespace moppe::game {
     // The celestial pole, and how far the stars have turned about it,
     // radians.
     Vec3 pole { 0, 1, 0 };
-    float turn = 0.0f;
+    radians_t turn {};
     // How much of the moon's face is lit, 0 new to 1 full, and how brightly
     // it shines in this sky, 0 by day or when it is down.
     float moon_phase = 1.0f;
@@ -61,7 +61,7 @@ namespace moppe::game {
     // The clock, in hours, at which the morning sun stands at the old
     // `sun_height`; a height the equinox sun never reaches gives noon or
     // midnight.
-    float clock_for_sun_height (float sun_height) const;
+    hours_t clock_for_sun_height (float sun_height) const;
 
     // The sky `hours` after the first midnight.
     SkyReading at (double hours) const;
@@ -70,15 +70,15 @@ namespace moppe::game {
     // azimuth, for views composed under one.
     SkyReading held (float sun_height) const;
 
-    float latitude_radians () const {
+    radians_t latitude () const {
       return m_latitude;
     }
 
   private:
-    Vec3 body (float hour_angle, float declination) const;
+    Vec3 body (radians_t hour_angle, radians_t declination) const;
     void light (SkyReading& sky) const;
 
-    float m_latitude;
+    radians_t m_latitude;
   };
 }
 

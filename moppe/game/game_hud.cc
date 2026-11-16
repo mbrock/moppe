@@ -182,7 +182,7 @@ namespace moppe {
     void MoppeGame::add_camp_readings (HudState& state) const {
       const Camp& camp = logic ().m_camp;
       state.resting = camp.resting;
-      state.clock_hours = m_sky.clock;
+      state.clock_hours = m_sky.clock.numerical_value_in (si::hour);
       if (static_cast<float> (logic ().m_total_time - camp.ate_time) < 6.0f) {
         // What there was, the fish first, then the eggs, then the
         // mushrooms.

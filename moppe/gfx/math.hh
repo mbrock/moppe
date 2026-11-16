@@ -52,6 +52,8 @@ namespace moppe {
   using kilogram_square_metres_t =
     quantity<si::kilogram * pow<2> (si::metre), float>;
   using radians_per_second_t = quantity<si::radian / si::second, float>;
+  // The hour of the day on a clock, as the sky reads it.
+  using hours_t = quantity<si::hour, float>;
   // Rates and per-length coefficients that are not decays: a heading
   // swung per second per radian of input, a drag per metre of speed.
   using per_second_t = quantity<one / si::second, float>;

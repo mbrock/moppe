@@ -9,7 +9,7 @@ namespace moppe::game {
   namespace {
     // The authored sun's azimuth, from +Z (south) toward +X (east), and
     // the pi its elevation was always computed with.
-    constexpr float authored_azimuth = 0.8f;
+    constexpr radians_t authored_azimuth = 0.8f * u::rad;
     constexpr float art_pi = 3.14159f;
     constexpr float authored_height = 0.62f;
     constexpr float day_tau = 6.2831853f;
@@ -17,9 +17,11 @@ namespace moppe::game {
     // The moon rides a little north of the equinox sun, and starts the
     // first day waxing gibbous: up through the evening and down by half
     // past two, so a night has both a moonlit half and a dark one.
-    constexpr float moon_declination = 0.07f;
-    constexpr float first_elongation = 2.09f;
-    constexpr float elongation_per_day = 0.2128f; // a 29.5-day month
+    constexpr radians_t moon_declination = 0.07f * u::rad;
+    constexpr radians_t first_elongation = 2.09f * u::rad;
+    constexpr radians_t elongation_per_day = 0.2128f * u::rad; // 29.5-day month
+    constexpr hours_t noon = 12.0f * si::hour;
+    constexpr hours_t whole_day = 24.0f * si::hour;
 
     float elevation_for (float sun_height) {
       return (sun_height - 0.5f) * art_pi;
@@ -37,23 +39,27 @@ namespace moppe::game {
 
   Vec3 authored_sun_direction (float sun_height) {
     const float elevation = elevation_for (sun_height);
-    return Vec3 (std::cos (elevation) * std::sin (authored_azimuth),
+    const float azimuth = radians_value (authored_azimuth);
+    return Vec3 (std::cos (elevation) * std::sin (azimuth),
                  std::sin (elevation),
-                 std::cos (elevation) * std::cos (authored_azimuth));
+                 std::cos (elevation) * std::cos (azimuth));
   }
 
   // With the pole due north, the equinox sun passes through the authored
   // direction where the pole is square to it:
   // cos(lat) cos(e) cos(pi - a) + sin(lat) sin(e) = 0.
   Almanac::Almanac ()
-      : m_latitude (std::atan (std::cos (authored_azimuth) /
-                               std::tan (elevation_for (authored_height)))) {}
+      : m_latitude (std::atan (std::cos (radians_value (authored_azimuth)) /
+                               std::tan (elevation_for (authored_height))) *
+                    u::rad) {}
 
   // A body at an hour angle (zero on the meridian, negative in the
   // morning) and declination: south is +Z, east +X.
-  Vec3 Almanac::body (float hour_angle, float declination) const {
-    const float sin_lat = std::sin (m_latitude);
-    const float cos_lat = std::cos (m_latitude);
+  Vec3 Almanac::body (radians_t hour_angle_q, radians_t declination_q) const {
+    const float hour_angle = radians_value (hour_angle_q);
+    const float declination = radians_value (declination_q);
+    const float sin_lat = std::sin (radians_value (m_latitude));
+    const float cos_lat = std::cos (radians_value (m_latitude));
     const Vec3 pole (0.0f, sin_lat, -cos_lat);
     const Vec3 meridian (0.0f, cos_lat, sin_lat);
     const Vec3 east (1.0f, 0.0f, 0.0f);
@@ -63,12 +69,12 @@ namespace moppe::game {
         std::cos (declination));
   }
 
-  float Almanac::clock_for_sun_height (float sun_height) const {
-    const float cosine =
-      std::clamp (std::sin (elevation_for (sun_height)) / std::cos (m_latitude),
-                  -1.0f,
-                  1.0f);
-    return 12.0f - std::acos (cosine) * 24.0f / day_tau;
+  hours_t Almanac::clock_for_sun_height (float sun_height) const {
+    const float cosine = std::clamp (std::sin (elevation_for (sun_height)) /
+                                       std::cos (radians_value (m_latitude)),
+                                     -1.0f,
+                                     1.0f);
+    return noon - std::acos (cosine) * whole_day / day_tau;
   }
 
   void Almanac::light (SkyReading& sky) const {
@@ -127,22 +133,27 @@ namespace moppe::game {
   SkyReading Almanac::at (double hours) const {
     const double days = std::floor (hours / 24.0);
     SkyReading sky;
-    sky.clock = static_cast<float> (hours - 24.0 * days);
+    sky.clock = static_cast<float> (hours - 24.0 * days) * si::hour;
     sky.day = static_cast<int> (days);
-    const float hour_angle = (sky.clock - 12.0f) / 24.0f * day_tau;
-    sky.sun = body (hour_angle, 0.0f);
-    const float elongation =
+    const radians_t hour_angle =
+      ((sky.clock - noon) / whole_day).numerical_value_in (one) * day_tau *
+      u::rad;
+    sky.sun = body (hour_angle, radians_t {});
+    const radians_t elongation =
       first_elongation + elongation_per_day * static_cast<float> (hours / 24.0);
     sky.moon = body (hour_angle - elongation, moon_declination);
-    sky.moon_phase = 0.5f * (1.0f - std::cos (elongation));
-    sky.pole = Vec3 (0.0f, std::sin (m_latitude), -std::cos (m_latitude));
+    sky.moon_phase = 0.5f * (1.0f - std::cos (radians_value (elongation)));
+    sky.pole = Vec3 (0.0f,
+                     std::sin (radians_value (m_latitude)),
+                     -std::cos (radians_value (m_latitude)));
     sky.turn = hour_angle;
     light (sky);
     return sky;
   }
 
   SkyReading Almanac::held (float sun_height) const {
-    SkyReading sky = at (clock_for_sun_height (sun_height));
+    SkyReading sky =
+      at (clock_for_sun_height (sun_height).numerical_value_in (si::hour));
     sky.sun = authored_sun_direction (sun_height);
     light (sky);
     return sky;

@@ -685,10 +685,12 @@ namespace moppe {
       logic ().m_day_hours =
         m_day.first_hour
           ? *m_day.first_hour
-          : m_almanac.clock_for_sun_height (m_graphics.sun_height);
+          : m_almanac.clock_for_sun_height (m_graphics.sun_height)
+              .numerical_value_in (si::hour);
       read_sky ();
       if (m_day.turning)
-        std::cerr << "moppe: the day begins at " << m_sky.clock
+        std::cerr << "moppe: the day begins at "
+                  << m_sky.clock.numerical_value_in (si::hour)
                   << " h and takes "
                   << (m_day.pace > 0.0 ? 24.0 / (60.0 * m_day.pace) : 0.0)
                   << " minutes" << std::endl;
