@@ -314,8 +314,13 @@ namespace moppe::game {
         quantize_land (surface);
         state.report ("Saving the land",
                       "Keeping this expensive result for the next launch");
-        save_land (surface, saved_land);
-        std::cerr << "moppe: land saved: " << saved_land << std::endl;
+        try {
+          save_land (surface, saved_land);
+          std::cerr << "moppe: land saved: " << saved_land << std::endl;
+        } catch (const std::exception& error) {
+          std::cerr << "moppe: warning: land cache save failed: "
+                    << error.what () << std::endl;
+        }
       }
 
       state.report ("Calculating slopes",
@@ -368,8 +373,13 @@ namespace moppe::game {
                         ? "Keeping every generated artifact across builds"
                         : "Updating named cache '" + state.cache_config.key +
                             "'");
-        save_world_cache (*world, world_cache);
-        std::cerr << "moppe: world cache saved: " << world_cache << std::endl;
+        try {
+          save_world_cache (*world, world_cache);
+          std::cerr << "moppe: world cache saved: " << world_cache << std::endl;
+        } catch (const std::exception& error) {
+          std::cerr << "moppe: warning: world cache save failed: "
+                    << error.what () << std::endl;
+        }
       }
       state.publish_completed (std::move (world));
     }

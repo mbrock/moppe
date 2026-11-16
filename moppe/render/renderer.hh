@@ -614,7 +614,7 @@ namespace moppe {
       }
       virtual void end_frame () = 0;
       virtual bool benchmark_complete () const {
-        return false;
+        return true;
       }
       virtual void reset_temporal_state () {}
       virtual void write_benchmark_results () {}

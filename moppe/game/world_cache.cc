@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <random>
 #include <span>
 #include <sstream>
 #include <stdexcept>
@@ -136,12 +137,46 @@ namespace moppe::game {
       return std::filesystem::path (directory) / name;
     }
 
+    class TemporaryCache {
+    public:
+      explicit TemporaryCache (const std::filesystem::path& destination) {
+        const auto parent = destination.parent_path ();
+        if (!parent.empty ())
+          create_missing_directories (parent);
+        std::random_device random;
+        for (;;) {
+          m_path = destination.string () + ".partial-" +
+                   std::to_string (random ()) + '-' +
+                   std::to_string (random ());
+          std::error_code error;
+          if (std::filesystem::create_directory (m_path, error))
+            break;
+          if (error)
+            throw std::filesystem::filesystem_error (
+              "create temporary world cache", m_path, error);
+        }
+      }
+
+      ~TemporaryCache () {
+        std::error_code ignored;
+        std::filesystem::remove_all (m_path, ignored);
+      }
+
+      const std::filesystem::path& path () const {
+        return m_path;
+      }
+
+    private:
+      std::filesystem::path m_path;
+    };
+
     template <typename Bundle>
     void save_bundle (const Bundle& bundle, const std::filesystem::path& path) {
       std::ofstream output (path, std::ios::binary);
       if (!output)
         throw std::runtime_error ("can't write world cache: " + path.string ());
       spatial::write_bundle (output, bundle);
+      output.close ();
       if (!output)
         throw std::runtime_error ("can't write world cache: " + path.string ());
     }
@@ -186,6 +221,7 @@ namespace moppe::game {
       }
 
       void finish () {
+        m_output.close ();
         if (!m_output)
           throw std::runtime_error ("failed while writing world cache");
       }
@@ -698,8 +734,8 @@ namespace moppe::game {
       return {};
     const std::string cache_namespace =
       config.key.empty () ? "default" : "key-" + config.key;
-    return "world-" + cache_namespace + '-' + recipe_cache_identity (recipe) +
-           ".world";
+    return "world-" + cache_namespace + "-v" + std::to_string (STORED_VERSION) +
+           '-' + recipe_cache_identity (recipe) + ".world";
   }
 
   std::unique_ptr<GeneratedWorld>
@@ -794,27 +830,39 @@ namespace moppe::game {
 
   void save_world_cache (const GeneratedWorld& world,
                          const std::string& directory) {
-    create_missing_directories (directory);
-    save_bundle (world.surface (), file_in (directory, "surface.arrows"));
+    TemporaryCache temporary (directory);
+    const auto partial = [&temporary] (const char* name) {
+      return temporary.path () / name;
+    };
+    save_bundle (world.surface (), partial ("surface.arrows"));
     const auto& [flood, lakes, drainage, rivers] = world.hydrology ();
-    save_bundle (flood.surface, file_in (directory, "flood.arrows"));
-    save_bundle (drainage.readings, file_in (directory, "drainage.arrows"));
-    save_bundle (world.water_surface (), file_in (directory, "water.arrows"));
-    save_bundle (world.readings (), file_in (directory, "readings.arrows"));
-    save_bundle (world.trails ().use, file_in (directory, "trail-use.arrows"));
+    save_bundle (flood.surface, partial ("flood.arrows"));
+    save_bundle (drainage.readings, partial ("drainage.arrows"));
+    save_bundle (world.water_surface (), partial ("water.arrows"));
+    save_bundle (world.readings (), partial ("readings.arrows"));
+    save_bundle (world.trails ().use, partial ("trail-use.arrows"));
     save_forest_plan (world.forest (),
                       world.recipe ().seed ().value ^ 0xa34c91e5U,
-                      file_in (directory, "forest-plan.bin").string ());
+                      partial ("forest-plan.bin").string ());
 
-    BinaryWriter topology (file_in (directory, "topology.bin"));
-    write_recipe (topology, world.recipe ());
-    write_flood (topology, flood);
-    write_lakes (topology, lakes);
-    topology.ids (drainage.receiver);
-    write_rivers (topology, rivers);
-    write_trails (topology, world.trails ());
-    write_roads (topology, world.roads ());
-    topology.finish ();
+    {
+      BinaryWriter topology (partial ("topology.bin"));
+      write_recipe (topology, world.recipe ());
+      write_flood (topology, flood);
+      write_lakes (topology, lakes);
+      topology.ids (drainage.receiver);
+      write_rivers (topology, rivers);
+      write_trails (topology, world.trails ());
+      write_roads (topology, world.roads ());
+      topology.finish ();
+    }
+    // A concurrent writer may already have published the same recipe.
+    std::error_code error;
+    std::filesystem::rename (temporary.path (), directory, error);
+    if (error &&
+        !try_load_world_cache (world.params (), world.recipe (), directory))
+      throw std::filesystem::filesystem_error (
+        "publish world cache", temporary.path (), directory, error);
   }
 
   std::optional<WorldCacheIdentity>

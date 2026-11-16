@@ -529,6 +529,9 @@ namespace moppe::game {
       };
       write_record (output, record);
     }
+    output.close ();
+    if (!output)
+      throw std::runtime_error ("could not write forest plan: " + path);
   }
 
   std::optional<ForestPlan>

@@ -565,12 +565,18 @@ namespace moppe::nhal {
           return;
         m_width = width;
         m_height = height;
+        if (m_surface && (width == 0 || height == 0)) {
+          m_stale = true;
+          return;
+        }
         rebuild_backbuffers ();
       }
 
       // -- a frame ----------------------------------------------------
 
       bool begin_frame () override {
+        if (m_surface && (m_width == 0 || m_height == 0))
+          return false;
         const std::uint64_t next = m_serial + 1;
         const std::uint32_t slot = next % frames_in_flight;
         Frame& frame = m_frames[slot];
@@ -579,7 +585,7 @@ namespace moppe::nhal {
         warm_present_timing ();
         drain_present_timing ();
         if (m_surface) {
-          if (m_stale)
+          if (m_stale || !m_swapchain)
             rebuild_backbuffers ();
           if (!m_swapchain)
             return false;
@@ -1592,6 +1598,10 @@ namespace moppe::nhal {
         VkExtent2D extent { m_width, m_height };
         if (caps.currentExtent.width != 0xFFFFFFFFu)
           extent = caps.currentExtent;
+        if (extent.width == 0 || extent.height == 0) {
+          m_stale = true;
+          return;
+        }
         extent.width = std::clamp (
           extent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
         extent.height = std::clamp (extent.height,

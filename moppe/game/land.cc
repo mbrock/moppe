@@ -119,6 +119,7 @@ namespace moppe::game {
         throw std::runtime_error ("can't write land: " + partial);
       spatial::write_bundle (
         file, extract_land (surface), spatial::FloatStorage::fixed_point);
+      file.close ();
       if (!file)
         throw std::runtime_error ("can't write land: " + partial);
     }

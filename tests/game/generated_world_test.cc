@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <memory>
 #include <sstream>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -216,7 +217,19 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
   const WorldRecipe recipe = test_world_recipe (extent, 17, Seed { 91 });
   const std::unique_ptr<game::GeneratedWorld> written =
     build_test_world (recipe, game::WorldParams {});
-  game::save_world_cache (*written, cache.string ());
+  std::exception_ptr failure[2];
+  auto save = [&] (int index) {
+    try {
+      game::save_world_cache (*written, cache.string ());
+    } catch (...) {
+      failure[index] = std::current_exception ();
+    }
+  };
+  std::thread first (save, 0);
+  std::thread second (save, 1);
+  first.join ();
+  second.join ();
+  MOPPE_CHECK (!failure[0] && !failure[1]);
 
   const std::unique_ptr<game::GeneratedWorld> restored =
     game::try_load_world_cache (game::WorldParams {}, recipe, cache.string ());
