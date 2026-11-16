@@ -37,7 +37,8 @@ MOPPE_TEST (hens_roost_on_the_perches_at_night_and_come_down_by_day) {
   MOPPE_CHECK (adults >= 5 && chicks >= 3);
   const float dt = 1.0f / 30.0f;
   for (int step = 0; step < 150 * 30; ++step)
-    hens.step (barnyard, {}, Vec3 (), 500.0f, 21.0f, dt);
+    hens.step (
+      barnyard, {}, Vec3 (), 500.0f * u::m, 21.0f * si::hour, seconds (dt));
   for (const Bird& b : hens.birds ()) {
     if (b.kind == Bird::Kind::chick)
       continue;
@@ -55,7 +56,8 @@ MOPPE_TEST (hens_roost_on_the_perches_at_night_and_come_down_by_day) {
   }
   // Morning.
   for (int step = 0; step < 60 * 30; ++step)
-    hens.step (barnyard, {}, Vec3 (), 500.0f, 8.0f, dt);
+    hens.step (
+      barnyard, {}, Vec3 (), 500.0f * u::m, 8.0f * si::hour, seconds (dt));
   for (const Bird& b : hens.birds ()) {
     MOPPE_CHECK (b.doing != Bird::Doing::roosting);
     MOPPE_CHECK (b.position[1] < 10.5f);

@@ -90,9 +90,9 @@ namespace moppe::game {
     void step (const AnimalGround& ground,
                std::span<const Presence> presences,
                const Vec3& focus,
-               float reach,
-               float hour,
-               float dt);
+               meters_t reach,
+               hours_t hour,
+               seconds_t interval);
 
     std::span<const Bird> birds () const noexcept {
       return m_birds;

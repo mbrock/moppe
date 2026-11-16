@@ -41,7 +41,8 @@ namespace moppe {
                 << " (" << conifers[densest] << " spruce in 40 m)\n";
     }
 
-    void MoppeGame::spectator_camera (float dt) {
+    void MoppeGame::spectator_camera (seconds_t interval) {
+      const float dt = seconds_value (interval);
       if (!m_spectator)
         return;
       Spectator& view = *m_spectator;
@@ -443,7 +444,8 @@ namespace moppe {
       session ().camera ().place (at + right * 4.0f + Vec3 (0, 0.25f, 0), at);
     }
 
-    void MoppeGame::animal_camera (float dt) {
+    void MoppeGame::animal_camera (seconds_t interval) {
+      const float dt = seconds_value (interval);
       static const float distance = [] {
         const char* value = moppe::environment ("MOPPE_ANIMAL_CAMERA");
         return value ? static_cast<float> (::atof (value)) : 0.0f;
@@ -465,13 +467,14 @@ namespace moppe {
       session ().camera ().place (eye, *m_watch_target);
     }
 
-    void MoppeGame::ride_capture_camera (float dt) {
+    void MoppeGame::ride_capture_camera (seconds_t interval) {
+      const float dt = seconds_value (interval);
       static const std::string_view view = [] {
         const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
         return std::string_view (name ? name : "");
       }();
       m_film_fov.reset ();
-      if (logic ().m_mode == M_BOAT && boat_film_camera (view, dt))
+      if (logic ().m_mode == M_BOAT && boat_film_camera (view, interval))
         return;
       // Flying, it is the machine on the line it stands beside.
       const bool slung =
@@ -539,7 +542,9 @@ namespace moppe {
       session ().camera ().place (at + from + Vec3 (0, 0.5f, 0), at);
     }
 
-    bool MoppeGame::boat_film_camera (std::string_view view, float dt) {
+    bool MoppeGame::boat_film_camera (std::string_view view,
+                                      seconds_t interval) {
+      const float dt = seconds_value (interval);
       static const float angle = [] {
         const char* value = moppe::environment ("MOPPE_RIDE_CAMERA_ANGLE");
         return value ? std::strtof (value, nullptr) * PI / 180.0f : 0.0f;

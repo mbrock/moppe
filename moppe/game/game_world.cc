@@ -702,7 +702,8 @@ namespace moppe {
                 : m_almanac.held (m_graphics.sun_height);
     }
 
-    void MoppeGame::pass_time (float dt) {
+    void MoppeGame::pass_time (seconds_t interval) {
+      const float dt = seconds_value (interval);
       double& hours = logic ().m_day_hours;
       hours += m_day.pace * dt * logic ().m_day_haste;
       // Two players share one sky: whoever's clock is ahead leads, as

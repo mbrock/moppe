@@ -2374,8 +2374,8 @@ namespace moppe::game {
 
     // Star pickups sparkle gold and top up the boost reserve.
     {
-      const int picked =
-        session.stars ().update (vehicle_position, logic.m_total_time, elapsed);
+      const int picked = session.stars ().update (
+        vehicle_position, logic.m_total_time, seconds (elapsed));
       if (picked > 0) {
         Dust::Style sparkle;
         sparkle.size = 0.38f * u::m;

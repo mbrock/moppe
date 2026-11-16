@@ -477,8 +477,8 @@ MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   stars.generate (surface, world, 8);
   const game::Stars::State initial = stars.state ();
 
-  MOPPE_CHECK (stars.update (initial.stars[0].position, 0.0f, 1.0f / 60.0f) ==
-               1);
+  MOPPE_CHECK (
+    stars.update (initial.stars[0].position, 0.0f, (1.0f / 60.0f) * u::s) == 1);
   MOPPE_CHECK (stars.collected () == 1);
   stars.restore (initial);
   const game::Stars::State restored = stars.state ();
@@ -573,7 +573,8 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.glider ().set_turn (-1.0f);
   session.walker ().spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
   session.camera ().place (Vec3 (100, 100, 100), Vec3 ());
-  session.stars ().update (saved.stars.stars[0].position, 0.0f, 1.0f / 60.0f);
+  session.stars ().update (
+    saved.stars.stars[0].position, 0.0f, (1.0f / 60.0f) * u::s);
   session.dust ().update (1.0f * u::s);
   session.restore (saved);
   const game::GameSession::State restored = session.state ();

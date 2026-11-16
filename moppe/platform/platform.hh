@@ -91,7 +91,7 @@ namespace moppe {
         (void)w_pts;
         (void)h_pts;
       }
-      virtual void tick (float dt) = 0;
+      virtual void tick (seconds_t interval) = 0;
       virtual void render (render::Renderer& r) = 0;
       virtual void key (Key k, bool down) {
         (void)k;

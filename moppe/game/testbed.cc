@@ -23,8 +23,8 @@ namespace {
 
     void setup (render::Renderer&, int, int) override {}
 
-    void tick (float dt) override {
-      m_time += dt;
+    void tick (seconds_t interval) override {
+      m_time += seconds_value (interval);
     }
 
     void key (platform::Key k, bool down) override {

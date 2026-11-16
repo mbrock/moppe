@@ -139,7 +139,7 @@ namespace moppe::game {
   public:
     void start (std::vector<OpeningShot> shots);
     void stop () noexcept;
-    void tick (float dt);
+    void tick (seconds_t interval);
 
     bool active () const noexcept {
       return m_active;

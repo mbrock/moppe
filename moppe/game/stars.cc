@@ -74,7 +74,8 @@ namespace moppe {
       }
     }
 
-    int Stars::update (const Vec3& vehicle_pos, float, float dt) {
+    int Stars::update (const Vec3& vehicle_pos, float, seconds_t interval) {
+      const float dt = seconds_value (interval);
       int picked = 0;
       for (size_t i = 0; i < m_stars.size (); ++i) {
         Star& s = m_stars[i];

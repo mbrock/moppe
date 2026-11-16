@@ -400,7 +400,7 @@ namespace moppe::platform {
         }
         m_shortest_step = std::min (m_shortest_step, dt);
         m_longest_step = std::max (m_longest_step, dt);
-        m_game.tick (float (std::clamp (dt, 0.0, 0.05)));
+        m_game.tick (seconds (float (std::clamp (dt, 0.0, 0.05))));
         const auto ticked = std::chrono::steady_clock::now ();
         m_game.render (*m_renderer);
         sdl::frame_rendered ();

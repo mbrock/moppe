@@ -311,7 +311,8 @@ namespace moppe {
                                spray);
     }
 
-    void MoppeGame::go_fishing (InputFrame& input, float dt) {
+    void MoppeGame::go_fishing (InputFrame& input, seconds_t interval) {
+      const float dt = seconds_value (interval);
       Fishing& fishing = logic ().m_fishing;
       Line& line = fishing.line;
       const double now = logic ().m_total_time;
@@ -420,7 +421,8 @@ namespace moppe {
         splash (line.bobber, 8, 1.0f);
     }
 
-    void MoppeGame::tend_camp (InputFrame& input, float dt) {
+    void MoppeGame::tend_camp (InputFrame& input, seconds_t interval) {
+      const float dt = seconds_value (interval);
       Camp& camp = logic ().m_camp;
       const double now = logic ().m_total_time;
       float haste = 1.0f;

@@ -319,7 +319,8 @@ namespace moppe {
       }
     }
 
-    void MoppeGame::tend_animals (float dt) {
+    void MoppeGame::tend_animals (seconds_t interval) {
+      const float dt = seconds_value (interval);
       if (m_animals.animals ().empty () || dt <= 0.0f)
         return;
       std::vector<Presence> presences;
@@ -342,13 +343,14 @@ namespace moppe {
                       presences,
                       session ().camera ().position (),
                       700.0f * u::m,
-                      seconds (dt));
+                      interval);
       m_hens.step (ground,
                    presences,
                    session ().camera ().position (),
-                   160.0f,
-                   static_cast<float> (std::fmod (logic ().m_day_hours, 24.0)),
-                   dt);
+                   160.0f * u::m,
+                   static_cast<float> (std::fmod (logic ().m_day_hours, 24.0)) *
+                     si::hour,
+                   interval);
       lay_eggs (logic ().m_nests, logic ().m_day_hours, egg_seed ());
     }
 

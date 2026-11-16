@@ -166,7 +166,7 @@ namespace moppe {
       // WASD walks the eye through the air, Space and Tab rise and sink, and
       // the mouse (captured, no button needed) or the arrow keys turn the
       // head.
-      void spectator_camera (float dt);
+      void spectator_camera (seconds_t interval);
 
       void pointer_move (float, float, float dx, float dy) override;
 
@@ -281,7 +281,7 @@ namespace moppe {
 
       // Everyone about, as the animals mind them: the walker, whatever
       // the player rides or drives, and the other player.
-      void tend_animals (float dt);
+      void tend_animals (seconds_t interval);
 
       // The beacon a walker stands at, if any.
       std::optional<std::size_t> beacon_at_hand () const;
@@ -534,7 +534,7 @@ namespace moppe {
       // otherwise winds the line in. Walking off, or getting the boat
       // under way, winds it in too; while a fish is fought in and held up,
       // the walker stands and the boat's engine rests.
-      void go_fishing (InputFrame& input, float dt);
+      void go_fishing (InputFrame& input, seconds_t interval);
 
       // What there is to do about the line here, and the last fish.
       void add_fishing_readings (HudState& state) const;
@@ -546,7 +546,7 @@ namespace moppe {
       // Hanging and taking down the hammock, lighting and dousing the fire,
       // lying down and getting up; and, while lying there, rocking it and
       // looking about, which is all that a sleeper's controls do.
-      void tend_camp (InputFrame& input, float dt);
+      void tend_camp (InputFrame& input, seconds_t interval);
 
       // Sparks fly up from a burning fire and its smoke drifts off; a
       // doused one smoulders a while.
@@ -590,7 +590,7 @@ namespace moppe {
       // The script itself: walk in between the trees and hang the hammock,
       // step out and light a fire, come back and lie down, and after a
       // while see the sky through the sleeper's eyes.
-      InputFrame camp_script (float dt);
+      InputFrame camp_script (seconds_t interval);
 
       // The opening is the authored shot list (data/opening.txt) when it
       // was composed in this world, and otherwise one generated still of
@@ -671,7 +671,7 @@ namespace moppe {
 
       // The clock runs with play, and faster for someone lying down to
       // watch it.
-      void pass_time (float dt);
+      void pass_time (seconds_t interval);
 
       // -- company -----------------------------------------------------
 
@@ -721,11 +721,11 @@ namespace moppe {
       // The other player's machines, for ours to bump into: where they
       // stand, and how they move from frame to frame (the jeep's motion
       // is told).
-      void meet_strangers (float elapsed);
+      void meet_strangers (seconds_t interval);
 
       // Once a frame: hears what the other player has sent, works out how
       // they look just now, and tells them how this one does.
-      void keep_company (float elapsed);
+      void keep_company (seconds_t interval);
 
       // The other player as the world's second figure: their bike where
       // they left or ride it, themselves on foot, in the hammock, or
@@ -773,7 +773,7 @@ namespace moppe {
 
       // -- simulation --------------------------------------------------
 
-      void tick (float elapsed) override;
+      void tick (seconds_t interval) override;
 
       // A deterministic on-foot script for automated captures (MOPPE_WALK):
       // "walk", "run", and "jump" hold one gait, "tour" stands, walks,
@@ -781,7 +781,7 @@ namespace moppe {
       // throughout so a following camera sees the figure from changing
       // sides, and "forage" starts beside the mushrooms nearest the spawn
       // and picks its way from one to the next.
-      InputFrame scripted_walk (std::string_view script, float dt);
+      InputFrame scripted_walk (std::string_view script, seconds_t interval);
 
       // MOPPE_WALK_CAMERA=side: a camera locked beside the walking figure,
       // so the gait can be judged against the ground passing beneath it.
@@ -790,13 +790,13 @@ namespace moppe {
       // MOPPE_ANIMAL_CAMERA=<metres>, with MOPPE_WALK=animals[:SPECIES]:
       // a camera that far from the animal the walk began by, square to the
       // walker's way in so both show, following it as it goes.
-      void animal_camera (float dt);
+      void animal_camera (seconds_t interval);
 
       // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
       // ridden bike or mountainbike, the glider, the driven jeep or boat,
       // or whatever hangs under the helicopter, to judge the rider and the
       // machine.
-      void ride_capture_camera (float dt);
+      void ride_capture_camera (seconds_t interval);
 
       // Cameras for filming the boat (MOPPE_RIDE_CAMERA): `drone` follows
       // high behind, `aerial` far off with a long lens, `orbit` circles it,
@@ -806,9 +806,9 @@ namespace moppe {
       // helmsman's eyes, and `flyby` stands on the water ahead of it and
       // watches it pass on a long lens. MOPPE_RIDE_CAMERA_ANGLE
       // swings the following ones round, degrees to the right of behind.
-      bool boat_film_camera (std::string_view view, float dt);
+      bool boat_film_camera (std::string_view view, seconds_t interval);
 
-      void tick_simulation (float dt);
+      void tick_simulation (seconds_t interval);
 
       // -- rendering ---------------------------------------------------
 

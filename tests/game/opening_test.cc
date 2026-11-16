@@ -99,24 +99,24 @@ MOPPE_TEST (opening_player_cuts_fades_and_lands_in_the_arrival) {
   MOPPE_CHECK_NEAR (player.veil (), 1.0f, 1e-5f); // rising out of black
   MOPPE_CHECK (player.captions ().empty ());
 
-  player.tick (2.0f);
+  player.tick (seconds (2.0f));
   MOPPE_CHECK_NEAR (player.veil (), 0.0f, 1e-5f);
   MOPPE_CHECK_NEAR (player.position ()[2], 1.0f, 1e-4f); // halfway pushed
   MOPPE_CHECK (player.captions ().size () == 1);
   MOPPE_CHECK_NEAR (player.captions ()[0].alpha, 1.0f, 0.05f);
 
-  player.tick (1.8f); // just before the dip's middle
+  player.tick (seconds (1.8f)); // just before the dip's middle
   MOPPE_CHECK (player.veil () > 0.5f);
   MOPPE_CHECK (player.shot_index () == 0);
 
-  player.tick (0.3f);
+  player.tick (seconds (0.3f));
   MOPPE_CHECK (player.shot_index () == 1);
   MOPPE_CHECK (player.veil () > 0.5f);
 
-  player.tick (2.84f);
+  player.tick (seconds (2.84f));
   MOPPE_CHECK (player.active ());
   MOPPE_CHECK (length (player.position () - eye) < 0.01f);
-  player.tick (0.1f);
+  player.tick (seconds (0.1f));
   MOPPE_CHECK (!player.active ());
   MOPPE_CHECK (length (player.position () - eye) < 1e-4f);
   MOPPE_CHECK (length (player.forward () - Vec3 (1, 0, 0)) < 1e-4f);

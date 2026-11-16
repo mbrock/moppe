@@ -63,7 +63,7 @@ static UIWindow* g_window = nil;
   if (dt > 0.05f)
     dt = 0.05f;
   if (dt > 0)
-    g_game->tick (dt);
+    g_game->tick (moppe::seconds (dt));
   self.renderer->offer_platform_drawable ((__bridge void*)view.currentDrawable);
   g_game->render (*self.renderer);
 }

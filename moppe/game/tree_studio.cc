@@ -84,7 +84,8 @@ namespace {
       r.set_forest ({ .period = {} }, trees);
     }
 
-    void tick (float dt) override {
+    void tick (seconds_t interval) override {
+      const float dt = seconds_value (interval);
       m_time += dt;
       // Interactive dolly and orbit: walking toward the specimen is W, and
       // the orbit stops the moment the visitor steers it.

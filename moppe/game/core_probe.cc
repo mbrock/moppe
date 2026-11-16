@@ -374,7 +374,7 @@ namespace moppe::game {
       while (frames.micros.size () < frame_count) {
         pump (host);
         const clock::time_point before = clock::now ();
-        game->tick (dt);
+        game->tick (seconds (dt));
         game->render (renderer);
         const double micros =
           std::chrono::duration<double, std::micro> (clock::now () - before)

@@ -233,7 +233,8 @@ namespace moppe {
                 << std::endl;
     }
 
-    InputFrame MoppeGame::camp_script (float dt) {
+    InputFrame MoppeGame::camp_script (seconds_t interval) {
+      const float dt = seconds_value (interval);
       InputFrame input;
       CampScript& script = m_camp_script;
       if (!script.site)
@@ -331,7 +332,9 @@ namespace moppe {
       return input;
     }
 
-    InputFrame MoppeGame::scripted_walk (std::string_view script, float dt) {
+    InputFrame MoppeGame::scripted_walk (std::string_view script,
+                                         seconds_t interval) {
+      const float dt = seconds_value (interval);
       const float t = m_walk_script_time;
       m_walk_script_time += dt;
       InputFrame input;
@@ -357,7 +360,7 @@ namespace moppe {
         return input;
       }
       if (script == "camp")
-        return camp_script (dt);
+        return camp_script (interval);
       if (script == "fish") {
         // Cast, strike at the take, and cast again; with two fish in
         // the creel, turn from the water, light a fire, fry one, and eat.

@@ -231,10 +231,14 @@ namespace moppe::game {
   void Hens::step (const AnimalGround& g,
                    std::span<const Presence> presences,
                    const Vec3& focus,
-                   float reach,
-                   float hour,
-                   float dt) {
+                   meters_t reach_q,
+                   hours_t hour_q,
+                   seconds_t interval) {
     using namespace hen_parts;
+    // Unit-blind from here: the birds' rates are tuned in plain numbers.
+    const float reach = meters_value (reach_q);
+    const float hour = hour_q.numerical_value_in (si::hour);
+    const float dt = seconds_value (interval);
     if (dt <= 0.0f)
       return;
     const bool night = hour >= 19.3f || hour < 6.2f;

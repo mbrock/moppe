@@ -404,7 +404,8 @@ namespace moppe::game {
     m_veil = 0.0f;
   }
 
-  void OpeningPlayer::tick (float dt) {
+  void OpeningPlayer::tick (seconds_t interval) {
+    const float dt = seconds_value (interval);
     if (!m_active)
       return;
     m_cut = false;

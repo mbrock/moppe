@@ -249,7 +249,8 @@ namespace moppe {
       state.m_seat_velocity = m_companion->jeep_velocity;
     }
 
-    void MoppeGame::meet_strangers (float elapsed) {
+    void MoppeGame::meet_strangers (seconds_t interval) {
+      const float elapsed = seconds_value (interval);
       m_strangers.clear ();
       if (!m_companion) {
         m_strangers_were.reset ();
@@ -330,7 +331,8 @@ namespace moppe {
         theirs.jet_ski_velocity;
     }
 
-    void MoppeGame::keep_company (float elapsed) {
+    void MoppeGame::keep_company (seconds_t interval) {
+      const float elapsed = seconds_value (interval);
       if (!m_link)
         return;
       m_arrived.clear ();
@@ -386,7 +388,7 @@ namespace moppe {
         m_companion_met = false;
       }
       m_companion = m_track.advance (now, elapsed);
-      meet_strangers (elapsed);
+      meet_strangers (interval);
 
       // A spectator has no one to show.
       if (m_spectator || !m_link->due ())

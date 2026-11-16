@@ -38,7 +38,7 @@ namespace moppe {
                      int count);
 
       // Checks pickups; returns how many were grabbed this tick
-      int update (const Vec3& vehicle_pos, float time, float dt);
+      int update (const Vec3& vehicle_pos, float time, seconds_t interval);
 
       void render (render::Renderer& r, const FrameEnv& env);
 

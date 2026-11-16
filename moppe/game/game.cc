@@ -79,12 +79,13 @@ namespace moppe {
         std::clamp (m_spectator->pitch - 0.004f * dy, -1.45f, 1.45f);
     }
 
-    void MoppeGame::tick (float elapsed) {
+    void MoppeGame::tick (seconds_t interval) {
+      const float elapsed = seconds_value (interval);
       if (!m_ready) {
         m_simulation_clock.reset ();
         return;
       }
-      keep_company (elapsed);
+      keep_company (interval);
 
       // Offline replay and cinematic capture deliberately bind one logical
       // step to one rendered frame. Ordinary play instead consumes the
@@ -95,7 +96,7 @@ namespace moppe {
          moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR"));
       if (frame_locked) {
         m_simulation_clock.reset ();
-        tick_simulation (elapsed);
+        tick_simulation (interval);
         return;
       }
       // Orbit inspections and ride captures advance exactly one 60 Hz frame
@@ -122,7 +123,7 @@ namespace moppe {
           steps = std::clamp (first - 120 - m_video_render_frame, 1, 20);
         }
         for (int step = 0; step < steps; ++step)
-          tick_simulation (1.0f / 60.0f);
+          tick_simulation (seconds (1.0f / 60.0f));
         m_video_render_frame += steps - 1;
         return;
       }
@@ -130,7 +131,8 @@ namespace moppe {
       const int steps = m_simulation_clock.consume (elapsed);
       MOPPE_PROFILE_PLOT ("simulation.steps", steps);
       for (int step = 0; step < steps; ++step)
-        tick_simulation (static_cast<float> (FIXED_SIMULATION_STEP_SECONDS));
+        tick_simulation (
+          seconds (static_cast<float> (FIXED_SIMULATION_STEP_SECONDS)));
 
       // The HUD reports rendered-frame cadence, not the internal 120 Hz
       // integration frequency. Gazetteer views intentionally report zero.
@@ -138,7 +140,8 @@ namespace moppe {
         logic ().m_frame_time = elapsed;
     }
 
-    void MoppeGame::tick_simulation (float dt) {
+    void MoppeGame::tick_simulation (seconds_t interval) {
+      float dt = seconds_value (interval);
       MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
       m_stepped += dt;
       std::optional<InputFrame> scripted_input;
@@ -229,7 +232,7 @@ namespace moppe {
           leave_cinematic ();
           input = {};
         } else {
-          m_opening.tick (dt);
+          m_opening.tick (seconds (dt));
           follow_opening_clock ();
           if (!m_opening.active ()) {
             leave_cinematic ();
@@ -270,7 +273,7 @@ namespace moppe {
           (logic ().m_mode == M_FOOT ||
            std::string_view (walk_script) == "bump" ||
            std::string_view (walk_script) == "boat-fish"))
-        input = scripted_walk (walk_script, dt);
+        input = scripted_walk (walk_script, seconds (dt));
       else if (demo && !m_water_inspection && !orbit) {
         // The autopilot rides; the player may still look around.
         const float look_yaw = input.look_yaw;
@@ -350,11 +353,11 @@ namespace moppe {
         }
       }
 
-      pass_time (dt);
+      pass_time (seconds (dt));
       ride_along (input);
-      go_fishing (input, dt);
+      go_fishing (input, seconds (dt));
       cook_supper (input);
-      tend_camp (input, dt);
+      tend_camp (input, seconds (dt));
       reach_for_mushroom (input);
       const GameSessionAdvanceResult advance =
         advance_game_session (world (),
@@ -368,7 +371,7 @@ namespace moppe {
                               m_strangers);
       if (advance.say_ouchies)
         platform::say ("Ouchies. That hurts.");
-      tend_animals (dt);
+      tend_animals (seconds (dt));
 
       if (m_water_inspection) {
         session ().camera ().place (m_water_inspection->eye,
@@ -376,11 +379,11 @@ namespace moppe {
         session ().camera ().keep_above (surface ());
       }
       orbit_camera ();
-      spectator_camera (dt);
+      spectator_camera (seconds (dt));
       rest_camera ();
       walk_side_camera ();
-      ride_capture_camera (dt);
-      animal_camera (dt);
+      ride_capture_camera (seconds (dt));
+      animal_camera (seconds (dt));
 
       if (m_benchmark)
         finish_benchmark_frame (m_benchmark_replay->finish_frame ());
