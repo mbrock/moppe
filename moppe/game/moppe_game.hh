@@ -9,8 +9,9 @@
 
 namespace moppe::game {
   // The application shell: it owns the generated world, the session on it, and
-  // the frame.  A factory rather than a class, so the shell itself stays
-  // private to its translation unit and every host reaches it the same way.
+  // the frame.  A factory rather than a class, so the shell itself (game.hh)
+  // stays private to the game's own files and every host reaches it the same
+  // way.
   std::unique_ptr<platform::Game> make_moppe_game (const LaunchOptions& options,
                                                    terrain::WorldRecipe recipe);
 }

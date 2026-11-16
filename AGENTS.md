@@ -90,7 +90,8 @@
     over the bow or a side but not back over the long-tail; the seated
     helmsman holds the rod, the float drifts with the boat on a river's
     current, and opening the throttle or getting under way winds the
-    line in (`Line::from_boat`, `angler` and `boat_drifting` in game.cc).
+    line in (`Line::from_boat`, `angler` and `boat_drifting` in
+    game_camp.cc).
     `MOPPE_WALK=boat-fish` (`tools/record OUT.mp4 boat-fish`) takes the
     boat out, drifts, lands two, and drives off.
   - The day turns (`moppe/game/daylight.hh`): the world lies at 60 degrees
@@ -154,7 +155,8 @@
     player (in their jacket's colour), and the bike, the jeep, the
     tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in
     view, at the frame's edge pointing the way when it is not
-    (`HudState::Waymark`, placed by `add_waymarks` in game.cc). Marks
+    (`HudState::Waymark`, placed by `add_waymarks` in game_hud.cc).
+    Marks
     whose markers would meet on the screen share one, which lists the
     names and the machines' silhouettes with their nearest-to-furthest
     distance, and opens out as they draw apart, crossfading
@@ -170,7 +172,7 @@
     companion, and the trailhead as dots (pinned to the rim when off it).
     It shows some 220 m round a walker, widening with speed and from the
     air, and dims with the light (`Hud::draw_chart`, filled by
-    `add_chart` in game.cc). The sheet is now painted while the world
+    `add_chart` in game_hud.cc). The sheet is now painted while the world
     loads; `MOPPE_CHART=none` leaves the chart out.
   - The map: `M` unfolds a sheet of the whole world over the view, `M`
     again looks closer at the 1.8 km round the walker, and a third (or
@@ -419,7 +421,8 @@
     `tools/figure/caddy.py`, drawn by `game/caddy_render.*`) is a
     first-series VW Caddy pickup under a fibreglass hardtop on Swedish
     plates, parked by the sea on level ground above the shore the boat
-    lies at, clear of the other machines (`park_caddy` in game.cc; the
+    lies at, clear of the other machines (`park_caddy` in game_machines.cc;
+    the
     log line `moppe: Caddy parked` says where). On foot, `F` beside it drives it and
     `F` steps out of the driver's door; `W`/`S`, `A`/`D`, and `Space` as
     in the jeep. It is a Box3D assemblage like the jeep but a road car:
@@ -503,7 +506,7 @@
     long black handle with an hour meter, offset to starboard.
     It lies moored at
     the shore of the sea or a big lake nearest the spawn (`park_boat` in
-    game.cc). On foot, `F` beside it takes the helm and `F` steps ashore
+    game_machines.cc). On foot, `F` beside it takes the helm and `F` steps ashore
     over whichever side has the shallowest water; `W`/`S` drive and
     reverse, `A`/`D` swing the tail to steer, and `Space` (the right
     trigger) holds the governor tied back. The engine's thrust is the
@@ -549,7 +552,7 @@
     flanks, a long saddle between two footwells, a cowl rising to the
     bars, and a 650 cc two-stroke twin (37 kW) turning a jet pump. It
     lies afloat beside the boat: at the landing, alongside the jetty's
-    other side (`park_jet_ski` in game.cc; the log line `moppe: jet ski
+    other side (`park_jet_ski` in game_machines.cc; the log line `moppe: jet ski
     afloat` says where). On foot, `F` beside it gets on and `F` gets off
     over whichever side has the shallowest water; `W` opens the
     throttle, `S` drops the reverse bucket, and `A`/`D` swing the
@@ -603,7 +606,8 @@
     from `tools/figure/helicopter.py`, drawn by `game/helicopter_render.*`)
     stands on a pad of its own a few hundred metres from the trailhead,
     the levellest open ground there, raised where it can be, with no
-    tree within reach of its rotor (`park_helicopter` in game.cc).
+    tree within reach of its rotor (`park_helicopter` in
+    game_machines.cc).
     On foot, `F` beside it takes the pilot's seat; the rotor spools up for
     a few seconds before it will lift. `W`/`S` fly ahead and back, `A`/`D`
     turn, `Space` (right trigger) climbs, and `Shift` (or holding `E`,
@@ -633,7 +637,7 @@
     little red farm tractor of the old kind, open, with a pan seat
     between big ribbed rear wheels. It stands out on the open ground
     ahead on the bike's other side from the jeep (`park_tractor` in
-    game.cc). On foot,
+    game_machines.cc). On foot,
     `F` beside it climbs up to drive and `F` again climbs down; `W`/`S`
     drive and reverse, `A`/`D` steer, `Space` brakes, and off the
     throttle it comes to a stand by itself. Its frame's origin is on the
@@ -738,7 +742,7 @@
     homestead`; 13 in the default world). The barn (12 by 8 m, Falu red)
     opens by a pair of doors up a stone ramp onto a board floor under a
     hay loft, its walls limewashed over a tarred skirting, its floor laid
-    in planks, lit by day from its doors (`light_barn` in game.cc) and
+    in planks, lit by day from its doors (`light_barn` in game_places.cc) and
     furnished (`barn_things` in farm.py: hay racks, the horses' tack,
     tools by the door, a wheelbarrow, a feed bin, a milking stool and
     pails, a horseshoe over the door, a cat asleep on the sacks); it
@@ -1144,7 +1148,9 @@
   device, `uwp/` the Xbox's, `apple/` services the Apple hosts share, and
   `web/` the browser's page.
 - `moppe/game/` — the game systems, one file each (terrain, forest, water,
-  dust, HUD, vehicle rendering; glue in game.cc).
+  dust, HUD, vehicle rendering; glue in game.cc and the game_*.cc files
+  beside it, which split the application shell, `MoppeGame` in game.hh,
+  by topic).
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see
   `docs/game-state.md` for the checkpoint boundary and remaining systems.
 - The on-foot body is `mov::Character` (`moppe/mov/character.*`): a

@@ -299,7 +299,8 @@ After generation, the game uses the trail system in several places:
   waterfall or lake, saddle, peak, and arrival beats.
 
 The relevant runtime code is in
-[`game.cc`](../moppe/game/game.cc), while the flyover planner lives in
+[`game_world.cc`](../moppe/game/game_world.cc) and
+[`game_hud.cc`](../moppe/game/game_hud.cc), while the flyover planner lives in
 [`cinematic_flight.cc`](../moppe/game/cinematic_flight.cc). The trail material
 is in [`terrain.metal`](../moppe/shaders/metal/terrain.metal).
 
