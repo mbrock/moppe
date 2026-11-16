@@ -218,7 +218,7 @@ namespace moppe::game {
     // An orange lifting line, and the bridle's darker legs.
     dl.color (DisplayColor (0.86f, 0.42f, 0.10f));
     const float span = length (sling.hook - sling.ring);
-    const float slack = std::max (0.0f, sling_line - span);
+    const float slack = std::max (0.0f, meters_value (sling_line) - span);
     draw_line (dl,
                sling.hook,
                sling.ring,

@@ -49,7 +49,7 @@ namespace moppe::game {
   // forward, from the point its position() names.
   struct Bumper {
     Vec3 centre;
-    float radius = 0.0f;
+    meters_t radius {};
   };
   std::span<const Bumper> bumpers (Machine machine);
   // Those of what it tows (the tractor's trailer), in the towed body's
@@ -89,7 +89,7 @@ namespace moppe::game {
     int a = 0, b = 0;
     Vec3 at;
     impulse_t impulse = moppe::impulse (Vec3 ());
-    float speed = 0.0f;
+    speed_t speed {};
   };
 
   // The blows between every two of `bodies` that touch, at least one of
@@ -101,20 +101,21 @@ namespace moppe::game {
   // the help it has had.
   struct Trouble {
     Vec3 anchor;
-    float strain = 0.0f;
+    seconds_t strain {};
     bool stuck = false;
-    float heave_wait = 0.0f;
+    seconds_t heave_wait {};
     int heaves = 0;
   };
 
   // Moves a machine's trouble on by `dt`, `throttle` being its driver's
   // (zero when no one drives it). True when it should heave just now.
   bool
-  strain (Trouble& trouble, const Vec3& position, float throttle, float dt);
+  strain (Trouble& trouble, const Vec3& position, float throttle, seconds_t dt);
 
   // The change of velocity a heave gives: along the level way it faces,
   // signed by the throttle, and up.
-  Vec3 heave (const Trouble& trouble, const Vec3& forward, float throttle);
+  velocity_t
+  heave (const Trouble& trouble, const Vec3& forward, float throttle);
 
   // A rope from the walker's hand to a machine.
   struct Haul {
@@ -123,13 +124,13 @@ namespace moppe::game {
     // Where it is tied, in the machine's frame, and how long it is,
     // measured level from there to the walker's feet.
     Vec3 tie;
-    float rope = 1.4f;
+    meters_t rope = 1.4f * u::m;
   };
 
   // How much further the walker can lean out on the rope, or press in.
-  inline constexpr float rope_give = 0.35f;
+  inline constexpr meters_t rope_give = 0.35f * u::m;
 
-  // What the rope does to the machine over a step, forces in newtons:
+  // What the rope does to the machine over a step:
   // `pull` at the tie, after the walker when they are further off than
   // its length and away from them, holding it off, when they are nearer;
   // and while it pulls, `lift` at the machine's centre, taking some of

@@ -71,7 +71,7 @@ MOPPE_TEST (machines_that_meet_are_knocked_apart_by_their_masses) {
   const std::vector<game::Bump> bumps = game::find_bumps (bodies);
   MOPPE_CHECK (bumps.size () == 1);
   const game::Bump& bump = bumps[0];
-  MOPPE_CHECK_NEAR (bump.speed, 4.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (speed_value (bump.speed), 4.0f, 1e-4f);
   // The first is sent back, and more than enough to stop it: they part.
   MOPPE_CHECK (impulse_value (bump.impulse)[2] < -2.0f * 1120.0f);
   MOPPE_CHECK (std::abs (impulse_value (bump.impulse)[0]) < 1e-3f);
@@ -111,7 +111,7 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   using namespace moppe;
 
   game::Trouble trouble;
-  const float dt = 1.0f / 60.0f;
+  const seconds_t dt = seconds (1.0f / 60.0f);
   // Moving freely, never.
   for (int i = 0; i < 600; ++i)
     MOPPE_CHECK (!game::strain (trouble, Vec3 (0, 0, i * 0.05f), 1.0f, dt));
@@ -138,7 +138,8 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   MOPPE_CHECK (!trouble.stuck);
 
   // A heave goes the way the driver wants, and up.
-  const Vec3 back = game::heave (trouble, Vec3 (0, 0.3f, 1), -1.0f);
+  const Vec3 back =
+    velocity_value (game::heave (trouble, Vec3 (0, 0.3f, 1), -1.0f));
   MOPPE_CHECK (back[2] < -1.0f && back[1] > 1.0f);
 }
 
@@ -177,7 +178,7 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   const Vec3 start = session.tractor ().position ();
   game::Trouble& trouble =
     logic.m_trouble[static_cast<std::size_t> (game::Machine::tractor)];
-  trouble = { .anchor = start, .strain = 4.0f, .stuck = true };
+  trouble = { .anchor = start, .strain = 4.0f * u::s, .stuck = true };
 
   // Behind it, facing away: F takes up the rope rather than climbing up.
   session.walker ().spawn (position (Vec3 (60, 10.1f, 177.5f)),
@@ -195,7 +196,8 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   MOPPE_CHECK (session.tractor ().up ()[1] > 0.9f);
   Vec3 rope = session.walker ().position () - session.rope_end ();
   rope[1] = 0.0f;
-  MOPPE_CHECK (length (rope) < logic.m_haul.rope + game::rope_give + 0.3f);
+  MOPPE_CHECK (length (rope) <
+               meters_value (logic.m_haul.rope + game::rope_give) + 0.3f);
 
   // F lets go, and it is no longer stuck: F again climbs up.
   run ({ .toggle_mount = true }, 0.1f);

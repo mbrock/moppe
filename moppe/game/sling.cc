@@ -6,15 +6,16 @@ namespace moppe::game {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace sling_rig {
-      // Newtons a metre, and a metre a second: some sixteen centimetres
+      // Per metre, and per metre a second: some sixteen centimetres
       // of stretch under the Caddy's weight, a third of a metre under the
       // tractor's, and nearly critically damped between them and the
       // helicopter.
-      constexpr float stiffness = 60000.0f;
-      constexpr float damping = 5000.0f;
+      constexpr quantity<u::N / u::m, float> stiffness = 60000.0f * u::N / u::m;
+      constexpr quantity<u::N * u::s / u::m, float> damping =
+        5000.0f * u::N * u::s / u::m;
       // The most the line takes before it would part: nearly three times
       // the tractor's weight, so a hard jerk is still held.
-      constexpr float strongest = 55000.0f;
+      constexpr newtons_t strongest = 55000.0f * u::N;
     }
   }
 
@@ -98,18 +99,20 @@ namespace moppe::game {
     return {};
   }
 
-  Vec3 sling_pull (Sling& sling, const Vec3& hook, const Vec3& ring, float dt) {
+  force_t
+  sling_pull (Sling& sling, const Vec3& hook, const Vec3& ring, seconds_t dt) {
     using namespace sling_rig;
     const Vec3 along = hook - ring;
     const float span = length (along);
-    const float stretch = span - sling_line;
-    const float rate =
-      dt > 0.0f ? (stretch - std::max (sling.stretch, 0.0f)) / dt : 0.0f;
+    const meters_t stretch = span * u::m - sling_line;
+    const speed_t rate =
+      dt > 0.0f * u::s ? (stretch - std::max (sling.stretch, 0.0f * u::m)) / dt
+                       : 0.0f * u::m / u::s;
     sling.stretch = stretch;
-    if (stretch <= 0.0f || span < 1e-4f)
-      return Vec3 ();
-    const float tension =
-      std::clamp (stiffness * stretch + damping * rate, 0.0f, strongest);
-    return along * (tension / span);
+    if (stretch <= 0.0f * u::m || span < 1e-4f)
+      return force (Vec3 ());
+    const newtons_t tension = std::clamp<newtons_t> (
+      stiffness * stretch + damping * rate, 0.0f * u::N, strongest);
+    return force (along * (newtons_value (tension) / span));
   }
 }

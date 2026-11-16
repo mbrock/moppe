@@ -25,15 +25,15 @@ namespace moppe::game {
     Machine load = Machine::caddy;
     // How far the line was stretched beyond its length last step, for
     // its damping.
-    float stretch = 0.0f;
+    meters_t stretch {};
   };
 
-  // The line, from the hook to the ring, metres.
-  inline constexpr float sling_line = 8.0f;
+  // The line, from the hook to the ring.
+  inline constexpr meters_t sling_line = 8.0f * u::m;
   // How far to one side of the hook a machine may stand and still be
-  // hooked, metres, and how much further than the line the ring may be.
-  inline constexpr float sling_reach = 8.0f;
-  inline constexpr float sling_slack = 1.5f;
+  // hooked, and how much further than the line the ring may be.
+  inline constexpr meters_t sling_reach = 8.0f * u::m;
+  inline constexpr meters_t sling_slack = 1.5f * u::m;
   // The hook, in the helicopter's frame.
   inline Vec3 sling_hook () {
     return Vec3 (0.0f, 0.55f, 0.05f);
@@ -44,12 +44,14 @@ namespace moppe::game {
   std::array<Vec3, 4> sling_legs (Machine machine);
   // How far below the helicopter's skids what hangs under it reaches
   // when the line is taut, about.
-  inline constexpr float sling_hang = sling_line + 3.0f - 0.55f + 0.3f;
+  inline constexpr meters_t sling_hang =
+    sling_line + 3.0f * u::m - 0.55f * u::m + 0.3f * u::m;
 
-  // The line's pull on the ring, newtons, from the hook and the ring in
+  // The line's pull on the ring, from the hook and the ring in
   // the world, over a step of `dt`; the helicopter takes the opposite at
   // the hook. Updates the sling's stretch.
-  Vec3 sling_pull (Sling& sling, const Vec3& hook, const Vec3& ring, float dt);
+  force_t
+  sling_pull (Sling& sling, const Vec3& hook, const Vec3& ring, seconds_t dt);
 }
 
 #endif

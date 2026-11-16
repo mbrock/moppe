@@ -278,7 +278,7 @@ namespace moppe::game {
                .tie = tie_point (machine, front) };
       Vec3 out = feet - body.point (haul.tie);
       out[1] = 0.0f;
-      haul.rope = std::clamp (length (out), 1.0f, 1.8f);
+      haul.rope = std::clamp (length (out), 1.0f, 1.8f) * u::m;
     }
 
     // Lets the rope go; a machine let go of on purpose is taken to be
@@ -306,7 +306,7 @@ namespace moppe::game {
 
     // The line's pull between the helicopter and what hangs on it, each
     // taking its share.
-    void tend_sling (GameSession& session, float elapsed) {
+    void tend_sling (GameSession& session, seconds_t dt) {
       GameLogicState& logic = session.logic ();
       Sling& sling = logic.m_sling;
       mov::Helicopter& heli = session.helicopter ();
@@ -314,18 +314,19 @@ namespace moppe::game {
         sling.hooked = false;
       if (!sling.hooked) {
         heli.set_load (force (Vec3 ()), meters_t {});
-        sling.stretch = 0.0f;
+        sling.stretch = {};
         return;
       }
       const Vec3 hook = heli.point (sling_hook ());
       const Vec3 ring =
         session.machine_body (sling.load).point (sling_ring (sling.load));
-      const Vec3 pull = sling_pull (sling, hook, ring, elapsed);
-      if (length2 (pull) > 0.0f) {
-        session.push_machine (sling.load, ring, impulse (pull * elapsed));
-        heli.push (hook, impulse (-pull * elapsed));
+      const force_t pull = sling_pull (sling, hook, ring, dt);
+      if (length2 (force_value (pull)) > 0.0f) {
+        session.push_machine (
+          sling.load, ring, quantity_cast<isq::impulse> (pull * dt));
+        heli.push (hook, quantity_cast<isq::impulse> (-pull * dt));
       }
-      heli.set_load (force (-pull), sling_hang * u::m);
+      heli.set_load (-pull, sling_hang);
     }
 
     void toggle_mount (GameSession& session) {
@@ -745,7 +746,7 @@ namespace moppe::game {
 
     // Pulls the machine on the rope after the walker, and holds the
     // walker to the rope's length.
-    void tend_haul (GameSession& session, float elapsed) {
+    void tend_haul (GameSession& session, seconds_t step) {
       GameLogicState& logic = session.logic ();
       const Haul& haul = logic.m_haul;
       if (!haul.active)
@@ -761,26 +762,27 @@ namespace moppe::game {
       const float drop = std::abs (out[1]);
       out[1] = 0.0f;
       // Pulled out of the hand: the machine fell away, or the walker did.
-      if (length (out) > haul.rope + 4.0f || drop > 4.0f) {
+      if (length (out) > meters_value (haul.rope + 4.0f * u::m) ||
+          drop > 4.0f) {
         let_go (session, false);
         return;
       }
       const HaulForce force =
         haul_force (haul, body, walker.position (), walker.velocity ());
-      const seconds_t step = elapsed * u::s;
       session.push_machine (
         haul.machine, tie, quantity_cast<isq::impulse> (force.pull * step));
       session.push_machine (haul.machine,
                             body.point (machine_centre (haul.machine)),
                             quantity_cast<isq::impulse> (force.lift * step));
-      walker.tether (
-        tie, std::max (0.6f, haul.rope - rope_give), haul.rope + rope_give);
+      walker.tether (tie,
+                     std::max (0.6f, meters_value (haul.rope - rope_give)),
+                     meters_value (haul.rope + rope_give));
     }
 
     // Notes how each machine is getting on, and heaves the one being
     // driven if it is stuck.
     void strain_machines (GameSession& session,
-                          float elapsed,
+                          seconds_t dt,
                           const GroundCover& ground) {
       GameLogicState& logic = session.logic ();
       const std::optional<Machine> driven = driven_machine (logic.m_mode);
@@ -792,15 +794,18 @@ namespace moppe::game {
         const float throttle =
           driven == machine && machine != Machine::helicopter ? logic.m_go_input
                                                               : 0.0f;
-        if (!strain (trouble, body.position, throttle, elapsed))
+        if (!strain (trouble, body.position, throttle, dt))
           continue;
-        const Vec3 kick = heave (trouble, body.forward, throttle);
+        const velocity_t kick = heave (trouble, body.forward, throttle);
         ++trouble.heaves;
-        session.push_machine (
-          machine,
-          body.point (machine_centre (machine)),
-          quantity_cast<isq::impulse> (velocity (kick) * body.mass));
-        puff (session, body.position - body.up * 0.3f, kick, 10.0f, ground);
+        session.push_machine (machine,
+                              body.point (machine_centre (machine)),
+                              quantity_cast<isq::impulse> (kick * body.mass));
+        puff (session,
+              body.position - body.up * 0.3f,
+              velocity_value (kick),
+              10.0f,
+              ground);
         logic.m_shake = std::max (logic.m_shake, 0.05f);
         logic.m_shake_time = 0.0f;
       }
@@ -825,18 +830,19 @@ namespace moppe::game {
           session.push_machine (a.machine, bump.at, bump.impulse);
         if (b.ours)
           session.push_machine (b.machine, bump.at, -bump.impulse);
-        if (bump.speed < 2.5f)
+        const float speed = speed_value (bump.speed);
+        if (speed < 2.5f)
           continue;
         puff (session,
               bump.at,
               a.velocity * 0.5f + b.velocity * 0.5f,
-              std::min (8.0f, bump.speed),
+              std::min (8.0f, speed),
               ground);
         const bool felt =
           (a.ours && a.machine == driven) || (b.ours && b.machine == driven);
         if (felt) {
           logic.m_shake =
-            std::max (logic.m_shake, std::min (0.2f, 0.02f * bump.speed));
+            std::max (logic.m_shake, std::min (0.2f, 0.02f * speed));
           logic.m_shake_time = 0.0f;
         }
       }
@@ -1211,8 +1217,8 @@ namespace moppe::game {
       const Vec3 ring = machine_body (machine).point (sling_ring (machine));
       const Vec3 off = hook - ring;
       const float aside = std::hypot (off[0], off[2]);
-      if (off[1] < 1.0f || aside > sling_reach ||
-          length (off) > sling_line + sling_slack)
+      if (off[1] < 1.0f || aside > meters_value (sling_reach) ||
+          length (off) > meters_value (sling_line + sling_slack))
         continue;
       if (aside < best) {
         best = aside;
@@ -1816,8 +1822,8 @@ namespace moppe::game {
     }
 
     apply_input_frame (session, surface, input);
-    tend_haul (session, elapsed);
-    tend_sling (session, elapsed);
+    tend_haul (session, dt);
+    tend_sling (session, dt);
     // What is on the rope rolls free after the walker, and what hangs on
     // the helicopter's line after it.
     const auto hauled = [&] (Machine machine) {
@@ -1969,7 +1975,7 @@ namespace moppe::game {
           ground.dust_color);
     }
 
-    strain_machines (session, elapsed, ground);
+    strain_machines (session, dt, ground);
     bump_machines (session, strangers, ground);
 
     const Vec3 vehicle_position = session.subject_position ();

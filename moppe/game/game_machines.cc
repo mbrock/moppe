@@ -324,7 +324,7 @@ namespace moppe {
       const mov::Tractor& tractor = session ().tractor ();
       if (script == "haul") {
         logic ().m_trouble[static_cast<std::size_t> (Machine::tractor)] = {
-          .anchor = tractor.position (), .strain = 4.0f, .stuck = true
+          .anchor = tractor.position (), .strain = 4.0f * u::s, .stuck = true
         };
         Vec3 ahead = tractor.forward ();
         ahead[1] = 0.0f;

@@ -299,7 +299,7 @@ namespace moppe {
         // Letting go is prompted only once the load hangs near the
         // ground, though the key lets it fall from any height.
         if (logic ().m_sling.hooked &&
-            session ().helicopter ().altitude () < (sling_hang + 4.0f) * u::m)
+            session ().helicopter ().altitude () < sling_hang + 4.0f * u::m)
           state.slung = machine_name (logic ().m_sling.load);
         if (const std::optional<Machine> under =
               session ().hook_within_reach ())

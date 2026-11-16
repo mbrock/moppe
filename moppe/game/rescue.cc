@@ -13,86 +13,91 @@ namespace moppe::game {
       // the helicopter's cabin and tail boom, and the mountainbike's
       // wheels and rider. The rotor meets nothing.
       const Bumper bike_bumpers[] = {
-        { Vec3 (0.0f, 0.05f, 0.45f), 0.36f },
-        { Vec3 (0.0f, 0.1f, -0.5f), 0.38f },
-        { Vec3 (0.0f, 0.85f, -0.15f), 0.32f },
+        { Vec3 (0.0f, 0.05f, 0.45f), 0.36f * u::m },
+        { Vec3 (0.0f, 0.1f, -0.5f), 0.38f * u::m },
+        { Vec3 (0.0f, 0.85f, -0.15f), 0.32f * u::m },
       };
       const Bumper jeep_bumpers[] = {
-        { Vec3 (0.0f, 0.5f, 1.15f), 0.85f },
-        { Vec3 (0.0f, 0.5f, 0.0f), 0.9f },
-        { Vec3 (0.0f, 0.5f, -1.15f), 0.85f },
+        { Vec3 (0.0f, 0.5f, 1.15f), 0.85f * u::m },
+        { Vec3 (0.0f, 0.5f, 0.0f), 0.9f * u::m },
+        { Vec3 (0.0f, 0.5f, -1.15f), 0.85f * u::m },
       };
       const Bumper tractor_bumpers[] = {
-        { Vec3 (0.0f, 0.8f, -0.8f), 1.0f },
-        { Vec3 (0.0f, 0.75f, 0.85f), 0.75f },
+        { Vec3 (0.0f, 0.8f, -0.8f), 1.0f * u::m },
+        { Vec3 (0.0f, 0.75f, 0.85f), 0.75f * u::m },
       };
       // Its trailer's bed, from the tailgate to the headboard.
       const Bumper trailer_bumpers[] = {
-        { Vec3 (0.0f, 0.85f, -0.6f), 0.8f },
-        { Vec3 (0.0f, 0.85f, 0.15f), 0.8f },
-        { Vec3 (0.0f, 0.85f, 0.9f), 0.8f },
+        { Vec3 (0.0f, 0.85f, -0.6f), 0.8f * u::m },
+        { Vec3 (0.0f, 0.85f, 0.15f), 0.8f * u::m },
+        { Vec3 (0.0f, 0.85f, 0.9f), 0.8f * u::m },
       };
       const Bumper caddy_bumpers[] = {
-        { Vec3 (0.0f, 0.45f, 1.3f), 0.82f },
-        { Vec3 (0.0f, 0.45f, 0.0f), 0.85f },
-        { Vec3 (0.0f, 0.5f, -1.4f), 0.82f },
+        { Vec3 (0.0f, 0.45f, 1.3f), 0.82f * u::m },
+        { Vec3 (0.0f, 0.45f, 0.0f), 0.85f * u::m },
+        { Vec3 (0.0f, 0.5f, -1.4f), 0.82f * u::m },
       };
       const Bumper mountain_bike_bumpers[] = {
-        { Vec3 (0.0f, 0.05f, 0.4f), 0.36f },
-        { Vec3 (0.0f, 0.05f, -0.4f), 0.36f },
-        { Vec3 (0.0f, 0.85f, -0.1f), 0.32f },
+        { Vec3 (0.0f, 0.05f, 0.4f), 0.36f * u::m },
+        { Vec3 (0.0f, 0.05f, -0.4f), 0.36f * u::m },
+        { Vec3 (0.0f, 0.85f, -0.1f), 0.32f * u::m },
       };
       // The Long John's back wheel, its box, its front wheel, and the
       // rider over the back.
       const Bumper long_john_bumpers[] = {
-        { Vec3 (0.0f, 0.0f, -0.95f), 0.36f },
-        { Vec3 (0.0f, -0.05f, 0.3f), 0.4f },
-        { Vec3 (0.0f, -0.05f, 0.9f), 0.3f },
-        { Vec3 (0.0f, 0.8f, -0.6f), 0.3f },
+        { Vec3 (0.0f, 0.0f, -0.95f), 0.36f * u::m },
+        { Vec3 (0.0f, -0.05f, 0.3f), 0.4f * u::m },
+        { Vec3 (0.0f, -0.05f, 0.9f), 0.3f * u::m },
+        { Vec3 (0.0f, 0.8f, -0.6f), 0.3f * u::m },
       };
       // The boat's long narrow hull, keel to gunwale.
       const Bumper boat_bumpers[] = {
-        { Vec3 (0.0f, 0.22f, -0.5f), 0.45f },
-        { Vec3 (0.0f, 0.22f, 0.4f), 0.45f },
-        { Vec3 (0.0f, 0.22f, 1.3f), 0.45f },
-        { Vec3 (0.0f, 0.25f, 2.2f), 0.4f },
+        { Vec3 (0.0f, 0.22f, -0.5f), 0.45f * u::m },
+        { Vec3 (0.0f, 0.22f, 0.4f), 0.45f * u::m },
+        { Vec3 (0.0f, 0.22f, 1.3f), 0.45f * u::m },
+        { Vec3 (0.0f, 0.25f, 2.2f), 0.4f * u::m },
       };
       // The jet ski's hull, and its cowl and saddle over it.
       const Bumper jet_ski_bumpers[] = {
-        { Vec3 (0.0f, 0.3f, -0.6f), 0.5f },
-        { Vec3 (0.0f, 0.35f, 0.3f), 0.5f },
-        { Vec3 (0.0f, 0.4f, 1.15f), 0.4f },
+        { Vec3 (0.0f, 0.3f, -0.6f), 0.5f * u::m },
+        { Vec3 (0.0f, 0.35f, 0.3f), 0.5f * u::m },
+        { Vec3 (0.0f, 0.4f, 1.15f), 0.4f * u::m },
       };
       const Bumper helicopter_bumpers[] = {
-        { Vec3 (0.0f, 1.3f, 0.3f), 1.25f },
-        { Vec3 (0.0f, 1.7f, -2.4f), 0.5f },
-        { Vec3 (0.0f, 1.75f, -4.2f), 0.5f },
+        { Vec3 (0.0f, 1.3f, 0.3f), 1.25f * u::m },
+        { Vec3 (0.0f, 1.7f, -2.4f), 0.5f * u::m },
+        { Vec3 (0.0f, 1.75f, -4.2f), 0.5f * u::m },
       };
 
       // How lively a meeting is: the share of the closing speed they part
       // with, and the least parting speed of any real knock.
       constexpr float restitution = 0.55f;
-      constexpr float least_rebound = 0.8f;
+      constexpr speed_t least_rebound = 0.8f * u::m / u::s;
       // How fast overlap is undone, per second, and at most.
-      constexpr float overlap_rate = 4.0f;
-      constexpr float overlap_speed = 2.5f;
+      constexpr per_second_t overlap_rate = 4.0f / u::s;
+      constexpr speed_t overlap_speed = 2.5f * u::m / u::s;
       // Machines push each other about more than they lift each other.
       constexpr float level_bias = 0.3f;
 
       // A machine stuck: how long the throttle may be open without getting
       // three metres on before it is stuck, and how often it heaves.
-      constexpr float free_distance = 3.0f;
-      constexpr float stuck_after = 3.0f;
-      constexpr float heave_every = 1.5f;
+      constexpr meters_t free_distance = 3.0f * u::m;
+      constexpr seconds_t stuck_after = 3.0f * u::s;
+      constexpr seconds_t heave_every = 1.5f * u::s;
 
       // The rope: how hard it pulls (or holds off) for how far it is from
       // its length, how it is damped, and the most it gives, and how much
       // of the machine's weight it lifts while it pulls, as accelerations
       // of the machine. A generous helper, much stronger than any walker.
-      constexpr float rope_rate = 22.0f;
-      constexpr float rope_damping = 2.5f;
-      constexpr float rope_most = 7.0f;
-      constexpr float rope_lift = 0.3f * 9.81f;
+      constexpr quantity<one / pow<2> (u::s), float> rope_rate =
+        22.0f / pow<2> (u::s);
+      constexpr per_second_t rope_damping = 2.5f / u::s;
+      constexpr metres_per_second_squared_t rope_most =
+        7.0f * u::m / pow<2> (u::s);
+      constexpr metres_per_second_squared_t rope_lift =
+        0.3f * 9.81f * u::m / pow<2> (u::s);
+      // The stretch over which the rope comes taut.
+      constexpr meters_t rope_taking_up = 0.15f * u::m;
     }
   }
 
@@ -217,7 +222,7 @@ namespace moppe::game {
       // A bumper in the world, and the weight behind it.
       struct Placed {
         Vec3 centre;
-        float radius = 0.0f;
+        meters_t radius {};
         kilograms_t mass = 1.0f * u::kg;
       };
 
@@ -253,7 +258,7 @@ namespace moppe::game {
         if (length2 (a.position - b.position) > 10.0f * 10.0f)
           continue;
         // The deepest overlap of any two of their spheres.
-        float deepest = 0.0f;
+        meters_t deepest {};
         kilograms_t mass_a = a.mass, mass_b = b.mass;
         Vec3 normal, at;
         const std::vector<Placed> as = placed_bumpers (a);
@@ -264,7 +269,7 @@ namespace moppe::game {
             const Vec3 qb = q.centre;
             const Vec3 apart = pa - qb;
             const float distance = length (apart);
-            const float overlap = p.radius + q.radius - distance;
+            const meters_t overlap = p.radius + q.radius - distance * u::m;
             if (overlap <= deepest)
               continue;
             deepest = overlap;
@@ -272,45 +277,50 @@ namespace moppe::game {
             mass_b = q.mass;
             normal = distance > 1e-4f ? apart * (1.0f / distance)
                                       : Vec3 (0.0f, 1.0f, 0.0f);
-            at = qb + normal * (q.radius - 0.5f * overlap);
+            at = qb + normal * meters_value (q.radius - 0.5f * overlap);
           }
-        if (deepest <= 0.0f)
+        if (deepest <= 0.0f * u::m)
           continue;
         normal[1] *= level_bias;
         if (length2 (normal) < 1e-6f)
           normal = Vec3 (0.0f, 0.0f, 1.0f);
         normalize (normal);
 
-        const float closing = dot (a.velocity - b.velocity, normal);
-        float parting = std::min (deepest * overlap_rate, overlap_speed);
-        if (closing < 0.0f)
+        const speed_t closing =
+          dot (a.velocity - b.velocity, normal) * u::m / u::s;
+        speed_t parting =
+          std::min<speed_t> (deepest * overlap_rate, overlap_speed);
+        if (closing < 0.0f * u::m / u::s)
           parting = std::max (parting,
                               std::max (-closing * restitution, least_rebound));
         if (closing >= parting)
           continue;
         const kilograms_t reduced = mass_a * mass_b / (mass_a + mass_b);
         // The momentum each takes, newton-seconds along the normal.
-        const float blow = (reduced * ((parting - closing) * u::m / u::s))
-                             .numerical_value_in (u::N * u::s);
+        const float blow =
+          (reduced * (parting - closing)).numerical_value_in (u::N * u::s);
         found.push_back ({ .a = i,
                            .b = j,
                            .at = at,
                            .impulse = impulse (normal * blow),
-                           .speed = std::max (0.0f, -closing) });
+                           .speed = std::max (0.0f * u::m / u::s, -closing) });
       }
     return found;
   }
 
-  bool
-  strain (Trouble& trouble, const Vec3& position, float throttle, float dt) {
-    if (length2 (position - trouble.anchor) > free_distance * free_distance) {
+  bool strain (Trouble& trouble,
+               const Vec3& position,
+               float throttle,
+               seconds_t dt) {
+    if (length2 (position - trouble.anchor) >
+        meters_value (free_distance) * meters_value (free_distance)) {
       trouble = { .anchor = position };
       return false;
     }
     const bool trying = std::abs (throttle) > 0.4f;
     if (!trying) {
       // Let off, the next try heaves at once if it is still stuck.
-      trouble.heave_wait = 0.0f;
+      trouble.heave_wait = {};
       return false;
     }
     trouble.strain += dt;
@@ -318,19 +328,21 @@ namespace moppe::game {
       return false;
     trouble.stuck = true;
     trouble.heave_wait -= dt;
-    if (trouble.heave_wait > 0.0f)
+    if (trouble.heave_wait > 0.0f * u::s)
       return false;
     trouble.heave_wait = heave_every;
     return true;
   }
 
-  Vec3 heave (const Trouble& trouble, const Vec3& forward, float throttle) {
+  velocity_t
+  heave (const Trouble& trouble, const Vec3& forward, float throttle) {
     Vec3 ahead (forward[0], 0.0f, forward[2]);
     ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
     const float n = static_cast<float> (trouble.heaves);
     const float along = std::min (2.0f + 0.6f * n, 5.5f);
     const float lift = std::min (1.8f + 0.4f * n, 4.0f);
-    return ahead * (throttle < 0.0f ? -along : along) + Vec3 (0.0f, lift, 0.0f);
+    return velocity (ahead * (throttle < 0.0f ? -along : along) +
+                     Vec3 (0.0f, lift, 0.0f));
   }
 
   HaulForce haul_force (const Haul& haul,
@@ -347,15 +359,18 @@ namespace moppe::game {
     // Held short, the rope keeps the machine at its length: it pulls it
     // after a walker going away, and holds it off one coming nearer or
     // standing in its way, so that it never rolls over them.
-    const float stretch = distance - haul.rope;
-    const float closing = dot (body.velocity - walker_velocity, out);
-    const float pull = std::clamp (
-      rope_rate * stretch - rope_damping * closing, -rope_most, rope_most);
-    const float taut = std::clamp (stretch / 0.15f, 0.0f, 1.0f);
+    const meters_t stretch = distance * u::m - haul.rope;
+    const speed_t closing =
+      dot (body.velocity - walker_velocity, out) * u::m / u::s;
+    const metres_per_second_squared_t pull =
+      std::clamp<metres_per_second_squared_t> (
+        rope_rate * stretch - rope_damping * closing, -rope_most, rope_most);
+    const float taut = std::clamp (
+      (stretch / rope_taking_up).numerical_value_in (one), 0.0f, 1.0f);
     // The rope's rates are accelerations; the machine's weight makes them
     // forces.
-    const float kg = body.mass.numerical_value_in (u::kg);
-    return { .pull = force (out * (pull * kg)),
-             .lift = force (Vec3 (0.0f, rope_lift * taut * kg, 0.0f)) };
+    return { .pull = force (out * newtons_value (pull * body.mass)),
+             .lift = force (Vec3 (
+               0.0f, newtons_value (rope_lift * taut * body.mass), 0.0f)) };
   }
 }

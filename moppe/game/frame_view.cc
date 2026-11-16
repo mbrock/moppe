@@ -380,7 +380,7 @@ namespace moppe::game {
       const std::array<Vec3, 4> legs = sling_legs (load);
       for (std::size_t i = 0; i < legs.size (); ++i)
         sling.legs[i] = body.point (legs[i]);
-      sling.taut = logic.m_sling.stretch > -0.05f;
+      sling.taut = logic.m_sling.stretch > -0.05f * u::m;
       result.actors.sling = sling;
     }
     if (logic.m_mode == M_GLIDER)
