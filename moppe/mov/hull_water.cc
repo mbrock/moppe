@@ -32,7 +32,7 @@ namespace moppe::mov {
         p.normal = area / size;
         if (dot (p.normal, p.centre - inside) < 0.0f)
           p.normal = -p.normal;
-        p.area = size;
+        p.area = size * u::m * u::m;
         p.half_u = ((p10 + p11) - (p00 + p01)) * 0.25f;
         p.half_v = ((p01 + p11) - (p00 + p10)) * 0.25f;
         p.transom = transom;
@@ -40,12 +40,13 @@ namespace moppe::mov {
       }
   }
 
-  float press_hull (b3BodyId body,
-                    std::span<const HullPanel> panels,
-                    const BoatWater& water,
-                    const HullWaterTraits& traits) {
-    constexpr float rho = water_density;
-    constexpr float g = water_gravity;
+  square_meters_t press_hull (b3BodyId body,
+                              std::span<const HullPanel> panels,
+                              const BoatWater& water,
+                              const HullWaterTraits& traits) {
+    constexpr auto rho = water_density;
+    constexpr auto g = water_gravity;
+    constexpr meters_t dry = 0.0f * u::m;
     const b3Quat q = b3Body_GetRotation (body);
     const Vec3 origin = from_b3 (b3Body_GetPosition (body));
     const auto axis = [&] (const Vec3& local) {
@@ -56,59 +57,67 @@ namespace moppe::mov {
     };
     const Vec3 up_local = from_b3 (b3InvRotateVector (q, { 0.0f, 1.0f, 0.0f }));
 
-    float wetted = 0.0f;
+    square_meters_t wetted = 0.0f * u::m * u::m;
     for (const HullPanel& p : panels) {
       const Vec3 c = point (p.centre);
-      const float level = water.level (c[0], c[2]);
-      const float centre_depth = level - c[1];
+      const meters_t level = water.level (c[0], c[2]) * u::m;
+      const meters_t centre_depth = level - c[1] * u::m;
       // How far the panel reaches up and down about its middle, and so
       // how much of it is under and how deep that part is on average.
-      const float reach = std::abs (dot (p.half_u, up_local)) +
-                          std::abs (dot (p.half_v, up_local));
-      float wet, mean;
-      if (reach < 1e-3f) {
-        wet = centre_depth > 0.0f ? 1.0f : 0.0f;
+      const meters_t reach = (std::abs (dot (p.half_u, up_local)) +
+                              std::abs (dot (p.half_v, up_local))) *
+                             u::m;
+      float wet;
+      meters_t mean;
+      if (reach < 1e-3f * u::m) {
+        wet = centre_depth > dry ? 1.0f : 0.0f;
         mean = centre_depth;
       } else if (centre_depth >= reach) {
         wet = 1.0f;
         mean = centre_depth;
       } else {
-        wet = std::clamp ((centre_depth + reach) / (2.0f * reach), 0.0f, 1.0f);
+        wet = std::clamp (
+          ((centre_depth + reach) / (2.0f * reach)).numerical_value_in (one),
+          0.0f,
+          1.0f);
         mean = 0.5f * (centre_depth + reach);
       }
       if (wet <= 0.0f)
         continue;
-      const float area = p.area * wet;
+      const square_meters_t area = p.area * wet;
       wetted += area;
       const Vec3 n = axis (p.normal);
       const Vec3 moving =
         from_b3 (b3Body_GetLocalPointVelocity (body, to_b3 (p.centre))) -
         water.current (c[0], c[2]);
-      const float vn = dot (moving, n);
-      const float through = length (moving);
+      const speed_t vn = dot (moving, n) * u::m / u::s;
+      const speed_t through = length (moving) * u::m / u::s;
       // Over the gunwale the water floods in, and pushes on the panel
       // from inside as hard as from out: the head that buoys it is at
       // most the height of the sheer over it. Without this a swamped
       // open hull, as if sealed, is pushed up the harder the deeper it
       // sinks.
-      float head = std::max (mean, 0.0f);
+      meters_t head = std::max (mean, dry);
       if (p.open) {
-        const float flood = point (p.rim)[1] - c[1];
-        head = std::clamp (mean, 0.0f, std::max (flood, 0.0f));
+        const meters_t flood = (point (p.rim)[1] - c[1]) * u::m;
+        head = std::clamp (mean, dry, std::max (flood, dry));
       }
-      float pressure = rho * g * head;
+      pascals_t pressure = rho * g * head;
       // The bobbing is damped up and down, not along the way.
       pressure += rho * traits.damping * std::abs (p.normal[1]) * vn;
-      if (vn > 0.0f)
+      if (vn > 0.0f * u::m / u::s)
         pressure += 0.5f * rho * traits.ram * through * vn;
       else if (!p.transom)
         pressure += 0.5f * rho * traits.suction * through * vn;
-      pressure = std::max (pressure, -0.5f * rho * g);
-      Vec3 force = n * (-pressure * area);
-      const Vec3 along = moving - n * vn;
-      force =
-        force - along * (0.5f * rho * traits.friction * length (along) * area);
-      b3Body_ApplyForce (body, to_b3 (force), to_b3 (c), true);
+      // The water lets go of a panel drawing away from it before it
+      // pulls harder than half a metre's head.
+      pressure = std::max (pressure, pascals_t (-0.5f * rho * g * one_meter));
+      Vec3 force = n * (-pressure * area).numerical_value_in (u::N);
+      const Vec3 along = moving - n * dot (moving, n);
+      force = force - along * (0.5f * rho * traits.friction *
+                               (length (along) * u::m / u::s) * area)
+                                .numerical_value_in (u::kg / u::s);
+      apply_force (body, force * isq::force[u::N], c);
     }
     return wetted;
   }

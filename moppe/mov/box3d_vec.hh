@@ -36,6 +36,76 @@ namespace moppe::mov {
     return from_b3 (b3RotateVector (quat_of (q), to_b3 (v)));
   }
 
+  // Box3D is unit-blind: kilograms, metres, seconds, and so newtons. These
+  // are where the vehicles' typed quantities cross into it and back.
+  inline velocity_t linear_velocity (b3BodyId body) {
+    return velocity (from_b3 (b3Body_GetLinearVelocity (body)));
+  }
+
+  inline void
+  apply_force (b3BodyId body, const force_t& force, const Vec3& at) {
+    b3Body_ApplyForce (body,
+                       to_b3 (force.numerical_value_ref_in (si::newton)),
+                       to_b3 (at),
+                       true);
+  }
+
+  // A push of `magnitude` along the unit `direction`, at `at`.
+  inline void apply_force (b3BodyId body,
+                           const Vec3& direction,
+                           newtons_t magnitude,
+                           const Vec3& at) {
+    b3Body_ApplyForce (
+      body,
+      to_b3 (direction * magnitude.numerical_value_in (si::newton)),
+      to_b3 (at),
+      true);
+  }
+
+  // The drag of a body moving at `v` (metres a second) against a
+  // resistance of `resistance` (kilograms a second): a force against it.
+  inline void
+  apply_drag (b3BodyId body,
+              const Vec3& v,
+              quantity<si::kilogram / si::second, float> resistance) {
+    b3Body_ApplyForceToCenter (
+      body,
+      to_b3 (v * (-resistance).numerical_value_in (si::kilogram / si::second)),
+      true);
+  }
+
+  inline void apply_force_to_centre (b3BodyId body, const force_t& force) {
+    b3Body_ApplyForceToCenter (
+      body, to_b3 (force.numerical_value_ref_in (si::newton)), true);
+  }
+
+  // A torque of `torque` about the unit `axis`.
+  inline void
+  apply_torque (b3BodyId body, const Vec3& axis, newton_metres_t torque) {
+    b3Body_ApplyTorque (
+      body,
+      to_b3 (axis * torque.numerical_value_in (si::newton * si::metre)),
+      true);
+  }
+
+  // A body's mass, its centre in the body's frame, and its moments of
+  // inertia about the three axes through that centre.
+  inline b3MassData
+  body_mass (kilograms_t mass,
+             const Vec3& centre,
+             const std::array<kilogram_square_metres_t, 3>& inertia) {
+    const auto moment = [] (kilogram_square_metres_t i) {
+      return i.numerical_value_in (si::kilogram * pow<2> (si::metre));
+    };
+    b3MassData m {};
+    m.mass = mass.numerical_value_in (si::kilogram);
+    m.center = to_b3 (centre);
+    m.inertia.cx = { moment (inertia[0]), 0.0f, 0.0f };
+    m.inertia.cy = { 0.0f, moment (inertia[1]), 0.0f };
+    m.inertia.cz = { 0.0f, 0.0f, moment (inertia[2]) };
+    return m;
+  }
+
   // A wheel joint slides along its frame's x axis and spins about z: in
   // this frame x points down the chassis and z along the axle to the left.
   inline b3Quat suspension_rotation () {

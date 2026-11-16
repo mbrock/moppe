@@ -24,7 +24,8 @@ namespace moppe::mov {
       constexpr float mass_centre[3] = { 0.0f, 0.24f, 0.30f };
       constexpr float wheel_mass = 16.0f;
       constexpr float wheel_inertia = 0.75f;
-      constexpr float total_mass = chassis_mass + 4.0f * wheel_mass;
+      constexpr kilograms_t total_mass =
+        (chassis_mass + 4.0f * wheel_mass) * u::kg;
       // Slung under the helicopter: how quickly the air damps its turning,
       // a second, and how hard it turns its nose into the way it is
       // carried, an angular acceleration a radian off.
@@ -45,12 +46,12 @@ namespace moppe::mov {
       constexpr float ground_friction = 1.0f;
 
       // The 1.6 litre's seventy horsepower, through the front wheels.
-      constexpr float engine_force = 5600.0f;
-      constexpr float engine_power = 52000.0f;
-      constexpr float brake_force = 9500.0f;
+      constexpr newtons_t engine_force = 5600.0f * u::N;
+      constexpr watts_t engine_power = 52000.0f * u::W;
+      constexpr newtons_t brake_force = 9500.0f * u::N;
       // The brakes' share at the front, where the weight goes.
       constexpr float front_brake_share = 0.62f;
-      constexpr float reverse_speed = 6.0f;
+      constexpr speed_t reverse_speed = 6.0f * u::m / u::s;
       constexpr float reverse_share = 0.55f;
       constexpr float engine_brake_torque = 28.0f;
       constexpr float parking_torque = 2600.0f;
@@ -65,8 +66,10 @@ namespace moppe::mov {
       constexpr float rolling_resistance = 0.015f;
       // Drag per speed per mass: set so that the engine's power is spent
       // against it a little short of 140 km/h.
-      constexpr float air_drag = 0.00105f;
-      constexpr float water_drag = 1.6f;
+      // Drag as a deceleration per unit of speed: the air's per metre
+      // and the water's per second.
+      constexpr auto air_drag = 0.00105f / u::m;
+      constexpr damping_t water_drag = 1.6f / u::s;
 
       // The ground patch, as the bike's: samples at half the terrain
       // lattice spacing, recentred long before a wheel nears its edge.
@@ -385,7 +388,10 @@ namespace moppe::mov {
         kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
       const float pull =
         std::min (caddy_rig::engine_force,
-                  caddy_rig::engine_power / std::max (std::abs (vf), 2.0f));
+                  newtons_t (
+                    caddy_rig::engine_power /
+                    std::max (std::abs (vf) * u::m / u::s, 2.0f * u::m / u::s)))
+          .numerical_value_in (u::N);
       kept_throttle = kept.parked ? 0.0f : std::abs (drive);
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
         const bool front = wheel < 2;
@@ -400,13 +406,17 @@ namespace moppe::mov {
         } else if (kept.brake || (drive * vf < 0.0f && std::abs (vf) > 1.5f)) {
           // Asking for the other way while still rolling is braking.
           const float effort = kept.brake ? 1.0f : std::abs (drive);
-          torque = effort * caddy_rig::brake_force * brake_share * r / 2.0f;
+          torque = effort * caddy_rig::brake_force.numerical_value_in (u::N) *
+                   brake_share * r / 2.0f;
         } else if (std::abs (drive) > 0.02f && front) {
           const float share = drive > 0.0f ? 1.0f : caddy_rig::reverse_share;
           const float wanted = std::abs (drive) * share * pull * r / 2.0f;
           if (kept.touching[wheel]) {
-            spin = drive > 0.0f ? (std::max (vf, 0.0f) + 20.0f) / r
-                                : -caddy_rig::reverse_speed / r;
+            spin =
+              drive > 0.0f
+                ? (std::max (vf, 0.0f) + 20.0f) / r
+                : -caddy_rig::reverse_speed.numerical_value_in (u::m / u::s) /
+                    r;
             torque = std::min (wanted, grip);
           } else {
             // In the air a wheel only revs up to road speed.
@@ -421,10 +431,11 @@ namespace moppe::mov {
       // The air's drag, and water's up to the sills, on the whole mass.
       const float wet = std::clamp (
         (water_level - (point (Vec3 (0, -0.3f, 0))[1])) / 0.8f, 0.0f, 1.0f);
-      const Vec3 force =
-        v * (-(caddy_rig::air_drag * speed + caddy_rig::water_drag * wet) *
-             caddy_rig::total_mass);
-      b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
+      apply_drag (chassis,
+                  v,
+                  (caddy_rig::air_drag * (speed * u::m / u::s) +
+                   caddy_rig::water_drag * wet) *
+                    caddy_rig::total_mass);
 
       // Hung from the helicopter's line and off the ground, the air on
       // its flanks steadies its swinging and turns its nose the way it
@@ -581,7 +592,7 @@ namespace moppe::mov {
   }
 
   float Caddy::mass () const {
-    return caddy_rig::total_mass;
+    return caddy_rig::total_mass.numerical_value_in (u::kg);
   }
 
   void Caddy::push (const Vec3& at, const Vec3& impulse) {

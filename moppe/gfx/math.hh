@@ -43,6 +43,15 @@ namespace moppe {
   using newtons_t = quantity<si::newton, float>;
   using watts_t = quantity<si::watt, float>;
   using kilograms_t = quantity<si::kilogram, float>;
+  using metres_per_second_squared_t =
+    quantity<si::metre / pow<2> (si::second), float>;
+  using pascals_t = quantity<si::pascal, float>;
+  using newton_metres_t = quantity<si::newton * si::metre, float>;
+  using kilograms_per_cubic_metre_t =
+    quantity<si::kilogram / pow<3> (si::metre), float>;
+  using kilogram_square_metres_t =
+    quantity<si::kilogram * pow<2> (si::metre), float>;
+  using radians_per_second_t = quantity<si::radian / si::second, float>;
 
   // Dimension-one kinds from moppe/quantities.hh.
   using proportion_t = quantity<proportion[one], float>;

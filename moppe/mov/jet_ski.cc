@@ -13,8 +13,8 @@ namespace moppe::mov {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace jet_ski_rig {
-      constexpr float g = water_gravity;
-      constexpr float rho = water_density;
+      constexpr metres_per_second_squared_t g = water_gravity;
+      constexpr kilograms_per_cubic_metre_t rho = water_density;
       constexpr int substeps = 4;
       constexpr float pi = 3.14159265f;
 
@@ -33,55 +33,61 @@ namespace moppe::mov {
 
       // The hull, its engine and pump, and a tank of two-stroke mix; and
       // the rider on the saddle, who comes aboard and steps off.
-      constexpr float mass = 205.0f;
+      constexpr kilograms_t mass = 205.0f * u::kg;
       constexpr float mass_centre[3] = { 0.0f, 0.24f, -0.12f };
       // Pitch, yaw, and roll about the centre of mass.
-      constexpr float inertia[3] = { 100.0f, 110.0f, 18.0f };
-      constexpr float crew = 80.0f;
+      constexpr kilogram_square_metres_t inertia[3] = { 100.0f * u::kg * u::m2,
+                                                        110.0f * u::kg* u::m2,
+                                                        18.0f * u::kg* u::m2 };
+      // The seated rider about their own middle, per kilogram of them.
+      constexpr square_meters_t seated[3] = { 0.07f * u::m2,
+                                              0.03f * u::m2,
+                                              0.07f * u::m2 };
+      constexpr kilograms_t crew = 80.0f * u::kg;
       constexpr float crew_centre[3] = { 0.0f, 0.92f, -0.25f };
 
       b3MassData mass_data (bool manned) {
         const Vec3 hull (mass_centre[0], mass_centre[1], mass_centre[2]);
         const Vec3 seat (crew_centre[0], crew_centre[1], crew_centre[2]);
-        const float aboard = manned ? crew : 0.0f;
-        const float total = mass + aboard;
-        const Vec3 centre = (hull * mass + seat * aboard) / total;
-        float about[3] = { inertia[0], inertia[1], inertia[2] };
-        const auto carry = [&] (const Vec3& at, float m) {
+        const kilograms_t aboard = manned ? crew : 0.0f * u::kg;
+        const kilograms_t total = mass + aboard;
+        const auto kg = [] (kilograms_t m) {
+          return m.numerical_value_in (u::kg);
+        };
+        const Vec3 centre =
+          (hull * kg (mass) + seat * kg (aboard)) / kg (total);
+        std::array<kilogram_square_metres_t, 3> about = { inertia[0],
+                                                          inertia[1],
+                                                          inertia[2] };
+        const auto carry = [&] (const Vec3& at, kilograms_t m) {
           const Vec3 d = at - centre;
-          about[0] += m * (d[1] * d[1] + d[2] * d[2]);
-          about[1] += m * (d[0] * d[0] + d[2] * d[2]);
-          about[2] += m * (d[0] * d[0] + d[1] * d[1]);
+          about[0] += m * ((d[1] * d[1] + d[2] * d[2]) * u::m2);
+          about[1] += m * ((d[0] * d[0] + d[2] * d[2]) * u::m2);
+          about[2] += m * ((d[0] * d[0] + d[1] * d[1]) * u::m2);
         };
         carry (hull, mass);
         if (manned) {
           carry (seat, crew);
-          about[0] += crew * 0.07f;
-          about[1] += crew * 0.03f;
-          about[2] += crew * 0.07f;
+          for (int i = 0; i < 3; ++i)
+            about[i] += crew * seated[i];
         }
-        b3MassData m {};
-        m.mass = total;
-        m.center = to_b3 (centre);
-        m.inertia.cx = { about[0], 0.0f, 0.0f };
-        m.inertia.cy = { 0.0f, about[1], 0.0f };
-        m.inertia.cz = { 0.0f, 0.0f, about[2] };
-        return m;
+        return body_mass (total, centre, about);
       }
 
       // How the water presses on its panels (mov/hull_water.hh): a
       // glass-fibre bottom slicker than the skiff's film.
-      constexpr HullWaterTraits water_traits {
-        .ram = 1.0f, .suction = 0.25f, .damping = 0.8f, .friction = 0.0040f
-      };
+      constexpr HullWaterTraits water_traits { .ram = 1.0f * one,
+                                               .suction = 0.25f * one,
+                                               .damping = 0.8f * u::m / u::s,
+                                               .friction = 0.0040f * one };
 
       // The pump: at full speed it throws a jet 75 mm across out of the
       // nozzle at 24 m/s, some 30 kW of the engine's 37 in the water.
       // Its push is the water's change of speed through it, so it falls
       // off as the hull nears the jet's own speed. Astern, the bucket
       // turns a part of the jet forward.
-      constexpr float nozzle_area = 0.0044f;
-      constexpr float jet_speed = 24.0f;
+      constexpr square_meters_t nozzle_area = 0.0044f * u::m2;
+      constexpr speed_t jet_speed = 24.0f * u::m / u::s;
       constexpr float astern = 0.3f;
       constexpr float astern_revs = 0.6f;
       constexpr float spin_up = 0.35f;
@@ -95,9 +101,11 @@ namespace moppe::mov {
       // how hard they right it for how far off it is, and the most
       // their weight, shifted a foot or so across, can do, newton metres.
       constexpr float most_lean = 0.42f;
-      constexpr float balance = 900.0f;
-      constexpr float balance_damping = 160.0f;
-      constexpr float most_balance = 260.0f;
+      constexpr auto balance = 900.0f * u::N * u::m / u::rad;
+      constexpr auto balance_damping = 160.0f * u::N * u::m * u::s / u::rad;
+      constexpr newton_metres_t most_balance = 260.0f * u::N * u::m;
+      // The air's drag on what stands out of the water.
+      constexpr auto air_drag = 0.4f * u::kg / u::m;
 
       // Its draft at rest with no one on it.
       constexpr float draft = 0.15f;
@@ -223,7 +231,8 @@ namespace moppe::mov {
 
   float JetSki::static_thrust () {
     using namespace jet_ski_rig;
-    return rho * nozzle_area * jet_speed * jet_speed;
+    return newtons_t (rho * nozzle_area * jet_speed * jet_speed)
+      .numerical_value_in (u::N);
   }
 
   struct JetSki::Impl {
@@ -308,7 +317,9 @@ namespace moppe::mov {
     void build (const State& s) {
       destroy ();
       b3WorldDef def = b3DefaultWorldDef ();
-      def.gravity = { 0.0f, -jet_ski_rig::g, 0.0f };
+      def.gravity = { 0.0f,
+                      -jet_ski_rig::g.numerical_value_in (u::m / pow<2> (u::s)),
+                      0.0f };
       def.enableSleep = false;
       def.workerCount = 1;
       world = b3CreateWorld (&def);
@@ -394,8 +405,9 @@ namespace moppe::mov {
       const float speed = length (way);
 
       // The water on each panel.
-      const float wetted = press_hull (body, panels (), water, water_traits);
-      kept.afloat = wetted > 0.4f;
+      const square_meters_t wetted =
+        press_hull (body, panels (), water, water_traits);
+      kept.afloat = wetted > 0.4f * u::m2;
       kept.grounded = touching_ground ();
 
       // The engine and the bars.
@@ -423,21 +435,20 @@ namespace moppe::mov {
 
       // The jet: the water's change of speed through the pump.
       const Vec3 push = axis (push_local ());
-      const float ahead = std::max (0.0f, dot (v - current, push));
-      const float jet = jet_speed * std::min (kept.rpm, 1.0f);
-      float thrust =
-        bite * rho * nozzle_area * jet * std::max (jet - ahead, 0.0f);
+      const speed_t still = 0.0f * u::m / u::s;
+      const speed_t ahead =
+        std::max (still, dot (v - current, push) * u::m / u::s);
+      const speed_t jet = jet_speed * std::min (kept.rpm, 1.0f);
+      newtons_t thrust =
+        bite * rho * nozzle_area * jet * std::max (jet - ahead, still);
       if (drive < 0.0f)
         thrust = -astern * bite * rho * nozzle_area * jet * jet;
       else if (drive == 0.0f)
-        thrust = 0.0f;
-      kept.thrust = thrust;
-      if (thrust != 0.0f)
-        b3Body_ApplyForce (
-          body,
-          to_b3 (push * thrust),
-          to_b3 (point (Vec3 (nozzle[0], nozzle[1], nozzle[2]))),
-          true);
+        thrust = 0.0f * u::N;
+      kept.thrust = thrust.numerical_value_in (u::N);
+      if (thrust != 0.0f * u::N)
+        apply_force (
+          body, push, thrust, point (Vec3 (nozzle[0], nozzle[1], nozzle[2])));
 
       // The rider holds it upright with their body, and leans it into a
       // turn as it gathers way.
@@ -445,23 +456,24 @@ namespace moppe::mov {
         const float tilt = axis (Vec3 (1, 0, 0))[1];
         const float roll = std::asin (std::clamp (tilt, -1.0f, 1.0f));
         const Vec3 forward = axis (Vec3 (0, 0, 1));
-        const float rolling =
-          dot (from_b3 (b3Body_GetAngularVelocity (body)), forward);
+        const radians_per_second_t rolling =
+          dot (from_b3 (b3Body_GetAngularVelocity (body)), forward) * u::rad /
+          u::s;
         const float lean_to = most_lean * turn * smoothstep (1.5f, 7.0f, speed);
         const float lean_step = 1.6f * dt;
         kept.lean += std::clamp (lean_to - kept.lean, -lean_step, lean_step);
-        const float torque =
-          std::clamp (balance * (kept.lean - roll) - balance_damping * rolling,
+        const newton_metres_t torque =
+          std::clamp (newton_metres_t (balance * ((kept.lean - roll) * u::rad) -
+                                       balance_damping * rolling),
                       -most_balance,
                       most_balance);
-        b3Body_ApplyTorque (body, to_b3 (forward * torque), true);
+        apply_torque (body, forward, torque);
       } else {
         kept.lean = 0.0f;
       }
 
       // The air's drag on what stands out of the water.
-      const Vec3 air = v * (-0.4f * length (v));
-      b3Body_ApplyForceToCenter (body, to_b3 (air), true);
+      apply_drag (body, v, air_drag * (length (v) * u::m / u::s));
 
       b3World_Step (world, dt, substeps);
 
@@ -575,7 +587,9 @@ namespace moppe::mov {
   }
 
   float JetSki::mass () const {
-    return jet_ski_rig::mass + (m_impl->kept.parked ? 0.0f : jet_ski_rig::crew);
+    return (jet_ski_rig::mass +
+            (m_impl->kept.parked ? 0.0f * u::kg : jet_ski_rig::crew))
+      .numerical_value_in (u::kg);
   }
 
   void JetSki::push (const Vec3& at, const Vec3& impulse) {

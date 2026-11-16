@@ -27,8 +27,8 @@ namespace moppe::mov {
       constexpr float front_wheel_inertia = 2.0f;
       constexpr float rear_wheel_mass = 130.0f;
       constexpr float rear_wheel_inertia = 28.0f;
-      constexpr float total_mass =
-        chassis_mass + 2.0f * (front_wheel_mass + rear_wheel_mass);
+      constexpr kilograms_t total_mass =
+        (chassis_mass + 2.0f * (front_wheel_mass + rear_wheel_mass)) * u::kg;
 
       // The trailer: a plank bed on one axle, its weight a little ahead
       // of the axle so that the drawbar carries some of it. Its leaf
@@ -38,8 +38,8 @@ namespace moppe::mov {
       constexpr float trailer_centre[3] = { 0.0f, 0.85f, 0.15f };
       constexpr float trailer_wheel_mass = 25.0f;
       constexpr float trailer_wheel_inertia = 1.2f;
-      constexpr float trailer_total_mass =
-        trailer_mass + 2.0f * trailer_wheel_mass;
+      constexpr kilograms_t trailer_total_mass =
+        (trailer_mass + 2.0f * trailer_wheel_mass) * u::kg;
       constexpr float trailer_sag = 0.06f;
       constexpr float trailer_bump = 0.08f;
       constexpr float trailer_friction = 1.0f;
@@ -71,11 +71,11 @@ namespace moppe::mov {
       // The rear wheels pull hard, enough to take the trailer up a slope
       // of one in three, and the engine is governed: the throttle asks
       // for a road speed, which the wheels are driven to and held at.
-      constexpr float engine_force = 10500.0f;
-      constexpr float engine_power = 38000.0f;
+      constexpr newtons_t engine_force = 10500.0f * u::N;
+      constexpr watts_t engine_power = 38000.0f * u::W;
       constexpr float top_speed = 8.5f;
-      constexpr float reverse_speed = 3.2f;
-      constexpr float brake_force = 18000.0f;
+      constexpr speed_t reverse_speed = 3.2f * u::m / u::s;
+      constexpr newtons_t brake_force = 18000.0f * u::N;
       // Off the throttle the gearbox holds it back.
       constexpr float engine_brake_torque = 350.0f;
       constexpr float parking_torque = 9000.0f;
@@ -89,8 +89,10 @@ namespace moppe::mov {
       constexpr float lock_fade_speed = 9.0f;
 
       constexpr float rolling_resistance = 0.04f;
-      constexpr float air_drag = 0.004f;
-      constexpr float water_drag = 1.2f;
+      // Drag as a deceleration per unit of speed: the air's per metre
+      // and the water's per second.
+      constexpr auto air_drag = 0.004f / u::m;
+      constexpr damping_t water_drag = 1.2f / u::s;
 
       // The ground patch, as the jeep's.
       constexpr int patch_samples = 97;
@@ -612,7 +614,10 @@ namespace moppe::mov {
         kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
       const float pull =
         std::min (tractor_rig::engine_force,
-                  tractor_rig::engine_power / std::max (std::abs (vf), 1.0f));
+                  newtons_t (
+                    tractor_rig::engine_power /
+                    std::max (std::abs (vf) * u::m / u::s, 1.0f * u::m / u::s)))
+          .numerical_value_in (u::N);
       const bool braking =
         kept.brake || (drive * vf < 0.0f && std::abs (vf) > 1.0f);
       const bool rearing = !kept.touching[0] && !kept.touching[1] &&
@@ -629,7 +634,8 @@ namespace moppe::mov {
         } else if (braking) {
           // Asking for the other way while still rolling is braking.
           const float effort = kept.brake ? 1.0f : std::abs (drive);
-          torque = effort * tractor_rig::brake_force * r / wheel_count;
+          torque = effort * tractor_rig::brake_force.numerical_value_in (u::N) *
+                   r / wheel_count;
         } else if (!driven) {
           // The front wheels roll free.
           torque = 0.0f;
@@ -637,8 +643,12 @@ namespace moppe::mov {
           const float wanted =
             pull * r / 2.0f * (rearing ? tractor_rig::rearing_share : 1.0f);
           if (kept.touching[wheel]) {
-            spin = drive > 0.0f ? drive * tractor_rig::top_speed / r
-                                : drive * tractor_rig::reverse_speed / r;
+            spin = drive > 0.0f
+                     ? drive * tractor_rig::top_speed / r
+                     : drive *
+                         tractor_rig::reverse_speed.numerical_value_in (u::m /
+                                                                        u::s) /
+                         r;
             torque = std::min (wanted, grip);
           } else {
             // In the air a wheel only revs up to road speed.
@@ -667,21 +677,22 @@ namespace moppe::mov {
       // tractor's mass.
       const float wet = std::clamp (
         (water_level - point (Vec3 (0, 0.2f, 0))[1]) / 0.8f, 0.0f, 1.0f);
-      const Vec3 force =
-        v * (-(tractor_rig::air_drag * speed + tractor_rig::water_drag * wet) *
-             tractor_rig::total_mass);
-      b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
+      apply_drag (chassis,
+                  v,
+                  (tractor_rig::air_drag * (speed * u::m / u::s) +
+                   tractor_rig::water_drag * wet) *
+                    tractor_rig::total_mass);
       {
         const Vec3 tv = from_b3 (b3Body_GetLinearVelocity (trailer));
         const float trailer_wet = std::clamp (
           (water_level - trailer_point (Vec3 (0, 0.2f, 0))[1]) / 0.8f,
           0.0f,
           1.0f);
-        const Vec3 trailer_force =
-          tv * (-(tractor_rig::air_drag * length (tv) +
-                  tractor_rig::water_drag * trailer_wet) *
-                tractor_rig::trailer_total_mass);
-        b3Body_ApplyForceToCenter (trailer, to_b3 (trailer_force), true);
+        apply_drag (trailer,
+                    tv,
+                    (tractor_rig::air_drag * (length (tv) * u::m / u::s) +
+                     tractor_rig::water_drag * trailer_wet) *
+                      tractor_rig::trailer_total_mass);
       }
 
       b3World_Step (world, dt, tractor_rig::substeps);
@@ -812,11 +823,12 @@ namespace moppe::mov {
   }
 
   float Tractor::mass () const {
-    return tractor_rig::total_mass + tractor_rig::trailer_total_mass;
+    return (tractor_rig::total_mass + tractor_rig::trailer_total_mass)
+      .numerical_value_in (u::kg);
   }
 
   float Tractor::trailer_mass () const {
-    return tractor_rig::trailer_total_mass;
+    return tractor_rig::trailer_total_mass.numerical_value_in (u::kg);
   }
 
   void Tractor::push (const Vec3& at, const Vec3& impulse) {

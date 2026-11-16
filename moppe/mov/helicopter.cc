@@ -11,33 +11,39 @@ namespace moppe::mov {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace heli_rig {
-      constexpr float gravity = 9.81f;
+      constexpr metres_per_second_squared_t gravity =
+        9.81f * u::m / pow<2> (u::s);
       constexpr int substeps = 4;
 
-      constexpr float mass = 1100.0f;
+      constexpr kilograms_t mass = 1100.0f * u::kg;
       // Pitch, yaw, and roll about the centre of mass, under the mast.
-      constexpr float inertia[3] = { 2400.0f, 2600.0f, 700.0f };
+      constexpr kilogram_square_metres_t inertia[3] = { 2400.0f * u::kg * u::m2,
+                                                        2600.0f * u::kg* u::m2,
+                                                        700.0f * u::kg* u::m2 };
       constexpr float mass_centre[3] = { 0.0f, 1.15f, 0.05f };
 
       // The rotor at flying speed lifts twice the helicopter's weight;
       // it takes a few seconds to get there and longer to run down.
       constexpr float thrust_to_weight = 2.0f;
-      constexpr float spool_up = 3.5f;
-      constexpr float spool_down = 10.0f;
+      constexpr seconds_t spool_up = 3.5f * u::s;
+      constexpr seconds_t spool_down = 10.0f * u::s;
       // Revolutions a second at flying speed, main and tail, as drawn:
       // slower than a real rotor's six or seven, which a frame at a time
       // would only smear into nothing.
-      constexpr float rotor_rate = 2.2f;
-      constexpr float tail_rate = 5.0f;
+      constexpr frequency_t rotor_rate = 2.2f * u::Hz;
+      constexpr frequency_t tail_rate = 5.0f * u::Hz;
 
       // What the flight computer asks of it.
-      constexpr float top_speed = 45.0f;
-      constexpr float back_speed = 9.0f;
-      constexpr float climb_rate = 7.5f;
-      constexpr float descent_rate = 6.0f;
-      constexpr float max_tilt = 0.52f; // 30 degrees
-      constexpr float speed_gain = 0.7f;
-      constexpr float climb_gain = 2.2f;
+      constexpr speed_t top_speed = 45.0f * u::m / u::s;
+      constexpr speed_t back_speed = 9.0f * u::m / u::s;
+      constexpr speed_t climb_rate = 7.5f * u::m / u::s;
+      constexpr speed_t descent_rate = 6.0f * u::m / u::s;
+      constexpr radians_t max_tilt = 0.52f * u::rad; // 30 degrees
+      // The speed and climb loops, the acceleration asked for a speed
+      // short of the one wanted.
+      constexpr damping_t speed_gain = 0.7f / u::s;
+      constexpr damping_t climb_gain = 2.2f / u::s;
+      // The heading loop turns at most this many radians a second.
       constexpr float yaw_rate = 1.6f;
       // The attitude loop, as a natural frequency and damping.
       constexpr float attitude_hertz = 0.85f;
@@ -45,12 +51,14 @@ namespace moppe::mov {
       constexpr float yaw_gain = 4.0f;
       // Kept above the ground, metres: the hover taxi's height, and more
       // the faster it goes.
-      constexpr float taxi_height = 1.6f;
-      constexpr float clearance_per_speed = 0.12f;
+      constexpr meters_t taxi_height = 1.6f * u::m;
+      constexpr seconds_t clearance_per_speed = 0.12f * u::s;
 
-      // Half the air's density times the fuselage's drag area.
-      constexpr float air_drag = 0.85f;
-      constexpr float water_drag = 1.6f;
+      // Half the air's density times the fuselage's drag area, and the
+      // water's hold on it, per kilogram of it, once it is in up to the
+      // cabin's floor.
+      constexpr auto air_drag = 0.85f * u::kg / u::m;
+      constexpr damping_t water_drag = 1.6f / u::s;
 
       constexpr int patch_samples = 97;
       constexpr float patch_recentre_distance = 24.0f;
@@ -144,21 +152,22 @@ namespace moppe::mov {
                                  0.05f };
         b3CreateCapsuleShape (body, &shape, &runner);
       }
-      b3MassData m {};
-      m.mass = heli_rig::mass;
-      m.center = { heli_rig::mass_centre[0],
-                   heli_rig::mass_centre[1],
-                   heli_rig::mass_centre[2] };
-      m.inertia.cx = { heli_rig::inertia[0], 0.0f, 0.0f };
-      m.inertia.cy = { 0.0f, heli_rig::inertia[1], 0.0f };
-      m.inertia.cz = { 0.0f, 0.0f, heli_rig::inertia[2] };
-      b3Body_SetMassData (body, m);
+      b3Body_SetMassData (body,
+                          body_mass (heli_rig::mass,
+                                     Vec3 (heli_rig::mass_centre[0],
+                                           heli_rig::mass_centre[1],
+                                           heli_rig::mass_centre[2]),
+                                     { heli_rig::inertia[0],
+                                       heli_rig::inertia[1],
+                                       heli_rig::inertia[2] }));
     }
 
     void build (const State& s) {
       destroy ();
       b3WorldDef def = b3DefaultWorldDef ();
-      def.gravity = { 0.0f, -heli_rig::gravity, 0.0f };
+      def.gravity = {
+        0.0f, -heli_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)), 0.0f
+      };
       def.enableSleep = false;
       def.workerCount = 1;
       world = b3CreateWorld (&def);
@@ -245,9 +254,12 @@ namespace moppe::mov {
     b3Vec3 torque_for (const Vec3& acceleration) const {
       const b3Quat q = b3Body_GetRotation (body);
       const b3Vec3 local = b3InvRotateVector (q, to_b3 (acceleration));
-      const b3Vec3 scaled { local.x * heli_rig::inertia[0],
-                            local.y * heli_rig::inertia[1],
-                            local.z * heli_rig::inertia[2] };
+      const auto moment = [] (kilogram_square_metres_t i) {
+        return i.numerical_value_in (u::kg * u::m2);
+      };
+      const b3Vec3 scaled { local.x * moment (heli_rig::inertia[0]),
+                            local.y * moment (heli_rig::inertia[1]),
+                            local.z * moment (heli_rig::inertia[2]) };
       return b3RotateVector (q, scaled);
     }
 
@@ -255,12 +267,17 @@ namespace moppe::mov {
       using namespace heli_rig;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
 
-      kept.rotor = kept.parked ? std::max (0.0f, kept.rotor - dt / spool_down)
-                               : std::min (1.0f, kept.rotor + dt / spool_up);
+      const seconds_t step = dt * u::s;
+      const auto share = [] (auto q) { return q.numerical_value_in (one); };
+      kept.rotor = kept.parked
+                     ? std::max (0.0f, kept.rotor - share (step / spool_down))
+                     : std::min (1.0f, kept.rotor + share (step / spool_up));
       kept.rotor_angle = std::remainder (
-        kept.rotor_angle + kept.rotor * 2.0f * pi * rotor_rate * dt, 2.0f * pi);
+        kept.rotor_angle + share (kept.rotor * 2.0f * pi * rotor_rate * step),
+        2.0f * pi);
       kept.tail_angle = std::remainder (
-        kept.tail_angle + kept.rotor * 2.0f * pi * tail_rate * dt, 2.0f * pi);
+        kept.tail_angle + share (kept.rotor * 2.0f * pi * tail_rate * step),
+        2.0f * pi);
 
       const Vec3 up = axis (Vec3 (0, 1, 0));
       const Vec3 v = from_b3 (b3Body_GetLinearVelocity (body));
@@ -283,59 +300,72 @@ namespace moppe::mov {
       Vec3 across = v;
       across[1] = 0.0f;
       const float speed = length (across);
+      const speed_t ground_speed = speed * u::m / u::s;
 
       // Sitting on its skids with nothing asked of it, it stays sat.
       const bool sitting = kept.grounded && lift <= 0.05f &&
                            std::abs (drive) < 0.05f && std::abs (turn) < 0.05f;
-      const float weight = heli_rig::mass * heli_rig::gravity;
+      const newtons_t weight = heli_rig::mass * heli_rig::gravity;
+      const auto newtons = [] (newtons_t f) {
+        return f.numerical_value_in (u::N);
+      };
       Vec3 thrust_force;
       Vec3 angular;
       if (sitting || kept.parked) {
-        thrust_force = up * (0.25f * weight * authority);
+        thrust_force = up * newtons (0.25f * weight * authority);
       } else {
         // Climb or descend as asked, or hold the height; slow for the
         // touchdown; keep clear of the ground ahead when not descending.
-        float climb = lift > 0.0f ? lift * climb_rate : lift * descent_rate;
+        speed_t climb = lift > 0.0f ? lift * climb_rate : lift * descent_rate;
         if (lift < 0.0f)
-          climb = std::max (climb, -(0.6f + 0.5f * height));
+          climb = std::max (
+            climb,
+            speed_t (-(0.6f * u::m / u::s + 0.5f / u::s * (height * u::m))));
         if (lift >= 0.0f) {
           const Vec3 at = from_b3 (b3Body_GetPosition (body));
           float terrain = ground (at);
           for (const float seconds : { 1.0f, 2.0f, 3.5f })
             terrain = std::max (terrain, ground (at + across * seconds));
-          const float wanted =
-            taxi_height + clearance_per_speed * speed +
-            kept.load_hang * std::clamp (speed / 6.0f, 0.0f, 1.0f);
-          const float clear = at[1] - terrain;
+          const meters_t wanted =
+            taxi_height + clearance_per_speed * ground_speed +
+            kept.load_hang * u::m * std::clamp (speed / 6.0f, 0.0f, 1.0f);
+          const meters_t clear = (at[1] - terrain) * u::m;
           if (clear < wanted)
-            climb = std::max (climb, (wanted - clear) * 1.5f);
+            climb = std::max (climb, speed_t ((wanted - clear) * 1.5f / u::s));
         }
-        const float rise =
-          std::clamp (climb_gain * (climb - v[1]), -5.0f, 7.0f);
+        const metres_per_second_squared_t rise =
+          std::clamp (metres_per_second_squared_t (
+                        climb_gain * (climb - v[1] * u::m / u::s)),
+                      -5.0f * u::m / pow<2> (u::s),
+                      7.0f * u::m / pow<2> (u::s));
 
         // Lean toward the speed asked for: a coordinated turn falls out
         // of the heading turning away from the way it is going.
-        const float target =
+        const speed_t target =
           drive > 0.0f ? drive * top_speed : drive * back_speed;
-        Vec3 push = (ahead * target - across) * speed_gain;
-        const float most = heli_rig::gravity * std::tan (max_tilt);
+        // The level acceleration asked for, metres a second squared.
+        Vec3 push = (ahead * target.numerical_value_in (u::m / u::s) - across) *
+                    speed_gain.numerical_value_in (one / u::s);
+        const float most =
+          heli_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)) *
+          std::tan (radians_value (max_tilt));
         if (length (push) > most)
           push = normalized (push) * most;
         // The rotor gives its own weight and the climb asked for, and
         // leans for the speed asked for, against what hangs under it.
         const Vec3 pull = kept.load_pull;
-        const float hold =
-          std::max (heli_rig::mass * heli_rig::gravity - pull[1], 0.0f);
-        Vec3 level = Vec3 (push[0] * heli_rig::mass - pull[0],
-                           0.0f,
-                           push[2] * heli_rig::mass - pull[2]);
-        const float reach = std::tan (max_tilt * 1.3f) * hold;
+        const float m = heli_rig::mass.numerical_value_in (u::kg);
+        const float hold = std::max (newtons (weight) - pull[1], 0.0f);
+        Vec3 level = Vec3 (push[0] * m - pull[0], 0.0f, push[2] * m - pull[2]);
+        const float reach = std::tan (radians_value (max_tilt) * 1.3f) * hold;
         if (length (level) > reach)
           level = normalized (level) * reach;
-        const float thrust =
-          std::clamp ((hold + heli_rig::mass * rise) / std::max (up[1], 0.5f),
-                      0.0f,
-                      (thrust_to_weight * weight + length (pull)) * authority);
+        const float thrust = std::clamp (
+          newtons (hold * u::N + heli_rig::mass * rise) /
+            std::max (up[1], 0.5f),
+          0.0f,
+          newtons (thrust_to_weight * weight + length (pull) * u::N) *
+            authority);
         thrust_force = up * thrust;
         const Vec3 wanted_up = hold > 1.0f
                                  ? normalized (Vec3 (level[0], hold, level[2]))
@@ -356,8 +386,9 @@ namespace moppe::mov {
       // The air's drag, and the water's up to the cabin's floor.
       const float wet = std::clamp (
         (water_level - point (Vec3 (0, 0.6f, 0))[1]) / 0.8f, 0.0f, 1.0f);
-      const Vec3 drag =
-        v * (-(air_drag * length (v) + water_drag * wet * heli_rig::mass));
+      const auto resistance = air_drag * (length (v) * u::m / u::s) +
+                              water_drag * wet * heli_rig::mass;
+      const Vec3 drag = v * (-resistance).numerical_value_in (u::kg / u::s);
       b3Body_ApplyForceToCenter (body, to_b3 (thrust_force + drag), true);
       if (length2 (angular) > 0.0f)
         b3Body_ApplyTorque (body, torque_for (angular), true);
@@ -472,7 +503,7 @@ namespace moppe::mov {
   }
 
   float Helicopter::mass () const {
-    return heli_rig::mass;
+    return heli_rig::mass.numerical_value_in (u::kg);
   }
 
   void Helicopter::push (const Vec3& at, const Vec3& impulse) {

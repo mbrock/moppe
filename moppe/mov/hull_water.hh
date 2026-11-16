@@ -24,7 +24,7 @@ namespace moppe::mov {
   // across it is reckoned.
   struct HullPanel {
     Vec3 centre, normal;
-    float area = 0.0f;
+    square_meters_t area {};
     Vec3 half_u, half_v;
     // The transom ventilates: the water draws away from it without
     // sucking at it.
@@ -55,14 +55,16 @@ namespace moppe::mov {
   // second, that damps the hull's bobbing; and the skin friction along
   // it.
   struct HullWaterTraits {
-    float ram = 1.0f;
-    float suction = 0.25f;
-    float damping = 0.6f;
-    float friction = 0.0055f;
+    magnitude_t ram = 1.0f * one;
+    magnitude_t suction = 0.25f * one;
+    speed_t damping = 0.6f * u::m / u::s;
+    magnitude_t friction = 0.0055f * one;
   };
 
-  inline constexpr float water_density = 1000.0f;
-  inline constexpr float water_gravity = 9.81f;
+  inline constexpr kilograms_per_cubic_metre_t water_density =
+    1000.0f * u::kg / pow<3> (u::m);
+  inline constexpr metres_per_second_squared_t water_gravity =
+    9.81f * u::m / pow<2> (u::s);
 
   // The water on each of `body`'s panels, applied to it as forces: the
   // pressure at each submerged panel's depth, which floats, heels, and
@@ -70,11 +72,11 @@ namespace moppe::mov {
   // water and the suction where it draws away, which hold it to its
   // course and lift it onto the plane; and the water's friction along
   // it, all relative to the water's own motion. Returns the wetted
-  // area, square metres.
-  float press_hull (b3BodyId body,
-                    std::span<const HullPanel> panels,
-                    const BoatWater& water,
-                    const HullWaterTraits& traits);
+  // area.
+  square_meters_t press_hull (b3BodyId body,
+                              std::span<const HullPanel> panels,
+                              const BoatWater& water,
+                              const HullWaterTraits& traits);
 }
 
 #endif
