@@ -37,18 +37,18 @@ namespace moppe {
       bool rear_contact = false;
       // Ground force on the rear tire in the last step.
       newtons_t rear_load {};
-      // The lean the rider is holding the bike to, radians, positive right.
-      float lean = 0.0f;
+      // The lean the rider is holding the bike to, positive right.
+      radians_t lean {};
       // How far the rear tyre has broken loose under the locked rear
       // brake, 0 rolling to 1 sliding.
       float skid = 0.0f;
-      // How far back the rider's weight is, metres along the chassis
-      // (negative forward), and the throttle they have rolled on while
-      // leaning back for a wheelie.
-      float rider_shift = 0.0f;
+      // How far back the rider's weight is along the chassis (negative
+      // forward), and the throttle they have rolled on while leaning back
+      // for a wheelie.
+      meters_t rider_shift {};
       float twist = 0.0f;
-      // Seconds since either wheel last touched the ground.
-      float airborne = 0.0f;
+      // How long since either wheel last touched the ground.
+      seconds_t airborne {};
     };
 
     // What the rider asks of the assemblage for one step.
@@ -56,11 +56,12 @@ namespace moppe {
       // Normalized throttle: positive drives the rear wheel; negative brakes
       // both wheels and, once nearly stopped, reverses.
       float throttle = 0.0f;
-      // Handlebar command in radians of the old yaw input; positive turns
-      // right.
-      float steer = 0.0f;
+      // Handlebar command as an angle of the old yaw input; positive
+      // turns right.
+      radians_t steer {};
       // Jump-jet acceleration of the whole bike, world frame.
-      Vec3 boost_acceleration {};
+      acceleration_t boost_acceleration =
+        Vec3 () * isq::acceleration[si::metre / pow<2> (si::second)];
       // How deep the wheels run in water, from 0 dry to 1 a little over
       // the axles, where the water holds the whole bike back.
       float wading = 0.0f;
@@ -80,8 +81,8 @@ namespace moppe {
       // round into a new heading.
       float skid = 0.0f;
       // A hop: the rider springs the whole bike up off the ground by this
-      // much speed, metres per second. Only a bike on its wheels hops.
-      float hop = 0.0f;
+      // much speed. Only a bike on its wheels hops.
+      speed_t hop {};
       // The rider leans back and pulls on the bars, 0..1. Their weight
       // goes back over the rear wheel, the traction control stops holding
       // the front down, and the throttle rolls on progressively, so the
@@ -446,24 +447,24 @@ namespace moppe {
       }
       // Wheel travel from static sag along the chassis' down axis: positive
       // hangs the wheel lower, negative compresses the spring.
-      float front_extension () const;
-      float rear_extension () const;
+      meters_t front_extension () const;
+      meters_t rear_extension () const;
       // The fork's current angle about the steering axis; positive is right.
-      float steer_angle () const;
-      // Rear wheel spin relative to the chassis, radians per second.
-      float wheel_spin_rate () const;
+      radians_t steer_angle () const;
+      // Rear wheel spin relative to the chassis.
+      radians_per_second_t wheel_spin_rate () const;
       // How far the rear tyre slides under the locked brake, 0..1.
       float skid () const;
       // The rider's weight back from where they sit, as a share of
       // wheelie_lean: 1 leaning right back, negative forward.
       float rider_lean () const;
-      // The chassis' pitch above the ground under it, radians, nose up.
-      float pitch () const;
+      // The chassis' pitch above the ground under it, nose up.
+      radians_t pitch () const;
       // On the back wheel alone, the front up off the ground.
       bool wheeling () const;
       // Approach speeds of the hardest collisions in the last step.
-      float trunk_hit () const;
-      float body_hit () const;
+      speed_t trunk_hit () const;
+      speed_t body_hit () const;
       // A blow to the chassis at `at`, newton-seconds.
       void push (const Vec3& at, const impulse_t& impulse);
 

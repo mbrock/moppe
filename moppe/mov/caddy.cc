@@ -13,19 +13,21 @@ namespace moppe::mov {
     // Everything of the Caddy's is kept in one namespace: the engine is a
     // unity build, and the jeep's rig next door has helpers of its own.
     namespace caddy_rig {
-      constexpr float gravity = 9.81f;
+      constexpr metres_per_second_squared_t gravity =
+        9.81f * u::m / pow<2> (u::s);
       constexpr int substeps = 4;
 
       // Some 900 kg at the kerb with the hardtop on, nose-heavy over the
       // engine set across the front.
-      constexpr float chassis_mass = 860.0f;
+      constexpr kilograms_t chassis_mass = 860.0f * u::kg;
       // Pitch, yaw, and roll about the centre of mass.
-      constexpr float inertia[3] = { 1300.0f, 1450.0f, 380.0f };
+      constexpr kilogram_square_metres_t inertia[3] = { 1300.0f * u::kg * u::m2,
+                                                        1450.0f * u::kg* u::m2,
+                                                        380.0f * u::kg* u::m2 };
       constexpr float mass_centre[3] = { 0.0f, 0.24f, 0.30f };
-      constexpr float wheel_mass = 16.0f;
-      constexpr float wheel_inertia = 0.75f;
-      constexpr kilograms_t total_mass =
-        (chassis_mass + 4.0f * wheel_mass) * u::kg;
+      constexpr kilograms_t wheel_mass = 16.0f * u::kg;
+      constexpr kilogram_square_metres_t wheel_inertia = 0.75f * u::kg * u::m2;
+      constexpr kilograms_t total_mass = chassis_mass + 4.0f * wheel_mass;
       // Slung under the helicopter: how quickly the air damps its turning,
       // a second, and how hard it turns its nose into the way it is
       // carried, an angular acceleration a radian off.
@@ -53,9 +55,9 @@ namespace moppe::mov {
       constexpr float front_brake_share = 0.62f;
       constexpr speed_t reverse_speed = 6.0f * u::m / u::s;
       constexpr float reverse_share = 0.55f;
-      constexpr float engine_brake_torque = 28.0f;
-      constexpr float parking_torque = 2600.0f;
-      constexpr float free_rev_torque = 18.0f;
+      constexpr newton_metres_t engine_brake_torque = 28.0f * u::N * u::m;
+      constexpr newton_metres_t parking_torque = 2600.0f * u::N * u::m;
+      constexpr newton_metres_t free_rev_torque = 18.0f * u::N * u::m;
       constexpr float traction_share = 0.9f;
 
       constexpr float full_lock = 0.58f;
@@ -137,16 +139,17 @@ namespace moppe::mov {
       // the joint's effective mass, which the light wheel dominates.
       // Convert the rate and damping wanted for the sprung chassis into
       // those terms.
-      const float effective =
+      const kilograms_t effective =
         1.0f / (1.0f / caddy_rig::wheel_mass + 1.0f / caddy_rig::chassis_mass +
-                axle * axle / caddy_rig::inertia[0] +
-                front_track * front_track / caddy_rig::inertia[2]);
-      const float sprung = 0.25f * caddy_rig::chassis_mass;
-      const float stiffness = sprung * caddy_rig::gravity / caddy_rig::sag;
-      const float c =
-        2.0f * caddy_rig::sprung_damping_ratio * std::sqrt (stiffness * sprung);
-      hertz = std::sqrt (stiffness / effective) / (2.0f * 3.14159265f);
-      damping = c / (2.0f * std::sqrt (stiffness * effective));
+                axle * axle * u::m2 / caddy_rig::inertia[0] +
+                front_track * front_track * u::m2 / caddy_rig::inertia[2]);
+      const kilograms_t sprung = 0.25f * caddy_rig::chassis_mass;
+      spring_tuning (sprung * caddy_rig::gravity / (caddy_rig::sag * u::m),
+                     sprung,
+                     effective,
+                     caddy_rig::sprung_damping_ratio,
+                     hertz,
+                     damping);
     }
 
     ~Impl () {
@@ -189,12 +192,12 @@ namespace moppe::mov {
       shape.filter.maskBits = caddy_rig::ground_bit;
       const b3Sphere sphere { { 0.0f, 0.0f, 0.0f }, wheel_radius };
       b3CreateSphereShape (wheel, &shape, &sphere);
-      b3MassData mass {};
-      mass.mass = caddy_rig::wheel_mass;
-      mass.inertia.cx = { caddy_rig::wheel_inertia, 0.0f, 0.0f };
-      mass.inertia.cy = { 0.0f, caddy_rig::wheel_inertia, 0.0f };
-      mass.inertia.cz = { 0.0f, 0.0f, caddy_rig::wheel_inertia };
-      b3Body_SetMassData (wheel, mass);
+      b3Body_SetMassData (wheel,
+                          body_mass (caddy_rig::wheel_mass,
+                                     Vec3 (),
+                                     { caddy_rig::wheel_inertia,
+                                       caddy_rig::wheel_inertia,
+                                       caddy_rig::wheel_inertia }));
       return wheel;
     }
 
@@ -222,15 +225,14 @@ namespace moppe::mov {
       const b3BoxHull visor =
         b3MakeOffsetBoxHull (0.785f, 0.22f, 0.36f, { 0.0f, 1.40f, 0.0f });
       b3CreateHullShape (chassis, &shape, &visor.base);
-      b3MassData mass {};
-      mass.mass = caddy_rig::chassis_mass;
-      mass.center = { caddy_rig::mass_centre[0],
-                      caddy_rig::mass_centre[1],
-                      caddy_rig::mass_centre[2] };
-      mass.inertia.cx = { caddy_rig::inertia[0], 0.0f, 0.0f };
-      mass.inertia.cy = { 0.0f, caddy_rig::inertia[1], 0.0f };
-      mass.inertia.cz = { 0.0f, 0.0f, caddy_rig::inertia[2] };
-      b3Body_SetMassData (chassis, mass);
+      b3Body_SetMassData (chassis,
+                          body_mass (caddy_rig::chassis_mass,
+                                     Vec3 (caddy_rig::mass_centre[0],
+                                           caddy_rig::mass_centre[1],
+                                           caddy_rig::mass_centre[2]),
+                                     { caddy_rig::inertia[0],
+                                       caddy_rig::inertia[1],
+                                       caddy_rig::inertia[2] }));
     }
 
     b3JointId create_suspension (int wheel) {
@@ -268,7 +270,10 @@ namespace moppe::mov {
     void build (const State& s) {
       destroy ();
       b3WorldDef def = b3DefaultWorldDef ();
-      def.gravity = { 0.0f, -caddy_rig::gravity, 0.0f };
+      def.gravity = { 0.0f,
+                      -caddy_rig::gravity.numerical_value_in (u::m /
+                                                              pow<2> (u::s)),
+                      0.0f };
       def.enableSleep = false;
       def.workerCount = 1;
       world = b3CreateWorld (&def);
@@ -369,6 +374,7 @@ namespace moppe::mov {
       const float vf = dot (v, forward);
       const float speed = length (v);
       const float r = wheel_radius;
+      const meters_t radius = r * u::m;
 
       // The wheel is turned less far the faster it goes. The
       // joint steers about its axis down the chassis, so a positive
@@ -386,20 +392,19 @@ namespace moppe::mov {
       // holds the rear.
       const float drive =
         kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
-      const float pull =
-        std::min (caddy_rig::engine_force,
-                  newtons_t (
-                    caddy_rig::engine_power /
-                    std::max (std::abs (vf) * u::m / u::s, 2.0f * u::m / u::s)))
-          .numerical_value_in (u::N);
+      const newtons_t pull = std::min (
+        caddy_rig::engine_force,
+        newtons_t (caddy_rig::engine_power /
+                   std::max (std::abs (vf) * u::m / u::s, 2.0f * u::m / u::s)));
       kept_throttle = kept.parked ? 0.0f : std::abs (drive);
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
         const bool front = wheel < 2;
         float spin = 0.0f;
-        float torque = front ? caddy_rig::engine_brake_torque : 0.0f;
-        const float grip = caddy_rig::traction_share *
-                           caddy_rig::tyre_friction *
-                           kept.load[wheel].numerical_value_in (u::N) * r;
+        newton_metres_t torque =
+          front ? caddy_rig::engine_brake_torque : newton_metres_t {};
+        const newton_metres_t grip = caddy_rig::traction_share *
+                                     caddy_rig::tyre_friction *
+                                     kept.load[wheel] * radius;
         const float brake_share = front ? caddy_rig::front_brake_share
                                         : 1.0f - caddy_rig::front_brake_share;
         if (kept.parked) {
@@ -407,11 +412,12 @@ namespace moppe::mov {
         } else if (kept.brake || (drive * vf < 0.0f && std::abs (vf) > 1.5f)) {
           // Asking for the other way while still rolling is braking.
           const float effort = kept.brake ? 1.0f : std::abs (drive);
-          torque = effort * caddy_rig::brake_force.numerical_value_in (u::N) *
-                   brake_share * r / 2.0f;
+          torque =
+            effort * caddy_rig::brake_force * brake_share * radius / 2.0f;
         } else if (std::abs (drive) > 0.02f && front) {
           const float share = drive > 0.0f ? 1.0f : caddy_rig::reverse_share;
-          const float wanted = std::abs (drive) * share * pull * r / 2.0f;
+          const newton_metres_t wanted =
+            std::abs (drive) * share * pull * radius / 2.0f;
           if (kept.touching[wheel]) {
             spin =
               drive > 0.0f
@@ -426,7 +432,8 @@ namespace moppe::mov {
           }
         }
         b3WheelJoint_SetSpinMotorSpeed (joints[wheel], spin);
-        b3WheelJoint_SetMaxSpinTorque (joints[wheel], torque);
+        b3WheelJoint_SetMaxSpinTorque (joints[wheel],
+                                       newton_metres_value (torque));
       }
 
       // The air's drag, and water's up to the sills, on the whole mass.
@@ -460,12 +467,10 @@ namespace moppe::mov {
           wanted[1] +=
             off * caddy_rig::slung_vane * std::min (1.0f, carried / 10.0f);
         }
-        const b3Quat q = b3Body_GetRotation (chassis);
-        const b3Vec3 local = b3InvRotateVector (q, to_b3 (wanted));
-        const b3Vec3 torque { local.x * caddy_rig::inertia[0],
-                              local.y * caddy_rig::inertia[1],
-                              local.z * caddy_rig::inertia[2] };
-        b3Body_ApplyTorque (chassis, b3RotateVector (q, torque), true);
+        b3Body_ApplyTorque (
+          chassis,
+          torque_for (b3Body_GetRotation (chassis), wanted, caddy_rig::inertia),
+          true);
       }
 
       b3World_Step (world, dt, caddy_rig::substeps);

@@ -106,6 +106,39 @@ namespace moppe::mov {
     return m;
   }
 
+  // The torque that turns a body, rotated by `q` and with moments of
+  // inertia `inertia` about its own axes, at `acceleration` (radians a
+  // second squared, in the world).
+  inline b3Vec3 torque_for (b3Quat q,
+                            const Vec3& acceleration,
+                            const kilogram_square_metres_t (&inertia)[3]) {
+    const b3Vec3 local = b3InvRotateVector (q, to_b3 (acceleration));
+    const auto moment = [] (kilogram_square_metres_t i) {
+      return i.numerical_value_in (si::kilogram * pow<2> (si::metre));
+    };
+    const b3Vec3 scaled { local.x * moment (inertia[0]),
+                          local.y * moment (inertia[1]),
+                          local.z * moment (inertia[2]) };
+    return b3RotateVector (q, scaled);
+  }
+
+  // Box3D's wheel-joint springs are soft constraints tuned by a frequency
+  // and a damping ratio against the joint's effective mass, which a light
+  // wheel dominates. Turns the spring's stiffness and the damping ratio
+  // wanted for the `sprung` mass it carries into those terms.
+  inline void spring_tuning (quantity<si::newton / si::metre, float> stiffness,
+                             kilograms_t sprung,
+                             kilograms_t effective,
+                             float damping_ratio,
+                             float& hertz,
+                             float& damping) {
+    const auto c = 2.0f * damping_ratio * sqrt (stiffness * sprung);
+    hertz = (sqrt (stiffness / effective) / (2.0f * 3.14159265f))
+              .numerical_value_in (one / si::second);
+    damping =
+      (c / (2.0f * sqrt (stiffness * effective))).numerical_value_in (one);
+  }
+
   // A wheel joint slides along its frame's x axis and spins about z: in
   // this frame x points down the chassis and z along the axle to the left.
   inline b3Quat suspension_rotation () {

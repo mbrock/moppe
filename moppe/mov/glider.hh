@@ -58,7 +58,7 @@ namespace moppe::mov {
     // (`position` is the wing's), works the bar and the bank for a step,
     // and returns the acceleration the air gives the whole weight, gravity
     // not included.
-    Vec3 fly (seconds_t dt, position_t position, velocity_t velocity);
+    acceleration_t fly (seconds_t dt, position_t position, velocity_t velocity);
     // Where that load went.
     void follow (position_t position, velocity_t velocity);
     void land () {

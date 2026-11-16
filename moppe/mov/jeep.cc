@@ -13,18 +13,20 @@ namespace moppe::mov {
     // Everything of the jeep's is kept in one namespace: the engine is a
     // unity build, and the bike's rig next door has helpers of its own.
     namespace jeep_rig {
-      constexpr float gravity = 9.81f;
+      constexpr metres_per_second_squared_t gravity =
+        9.81f * u::m / pow<2> (u::s);
       constexpr int substeps = 4;
 
-      constexpr float chassis_mass = 1000.0f;
+      constexpr kilograms_t chassis_mass = 1000.0f * u::kg;
       // Pitch, yaw, and roll about the centre of mass, which lies low
       // between the axles.
-      constexpr float inertia[3] = { 1400.0f, 1500.0f, 560.0f };
+      constexpr kilogram_square_metres_t inertia[3] = { 1400.0f * u::kg * u::m2,
+                                                        1500.0f * u::kg* u::m2,
+                                                        560.0f * u::kg* u::m2 };
       constexpr float mass_centre[3] = { 0.0f, 0.15f, 0.05f };
-      constexpr float wheel_mass = 30.0f;
-      constexpr float wheel_inertia = 2.4f;
-      constexpr kilograms_t total_mass =
-        (chassis_mass + 4.0f * wheel_mass) * u::kg;
+      constexpr kilograms_t wheel_mass = 30.0f * u::kg;
+      constexpr kilogram_square_metres_t wheel_inertia = 2.4f * u::kg * u::m2;
+      constexpr kilograms_t total_mass = chassis_mass + 4.0f * wheel_mass;
 
       // The springs are linear from top-out, so the sag at rest sets
       // their rate; beyond the sag there is this much more before the
@@ -44,9 +46,9 @@ namespace moppe::mov {
       constexpr newtons_t brake_force = 13000.0f * u::N;
       constexpr speed_t reverse_speed = 7.0f * u::m / u::s;
       constexpr float reverse_share = 0.6f;
-      constexpr float engine_brake_torque = 45.0f;
-      constexpr float parking_torque = 5000.0f;
-      constexpr float free_rev_torque = 40.0f;
+      constexpr newton_metres_t engine_brake_torque = 45.0f * u::N * u::m;
+      constexpr newton_metres_t parking_torque = 5000.0f * u::N * u::m;
+      constexpr newton_metres_t free_rev_torque = 40.0f * u::N * u::m;
       constexpr float traction_share = 0.9f;
 
       constexpr float full_lock = 0.55f;
@@ -124,16 +126,17 @@ namespace moppe::mov {
       // the joint's effective mass, which the light wheel dominates.
       // Convert the rate and damping wanted for the sprung chassis into
       // those terms.
-      const float effective =
+      const kilograms_t effective =
         1.0f / (1.0f / jeep_rig::wheel_mass + 1.0f / jeep_rig::chassis_mass +
-                axle * axle / jeep_rig::inertia[0] +
-                track * track / jeep_rig::inertia[2]);
-      const float sprung = 0.25f * jeep_rig::chassis_mass;
-      const float stiffness = sprung * jeep_rig::gravity / jeep_rig::sag;
-      const float c =
-        2.0f * jeep_rig::sprung_damping_ratio * std::sqrt (stiffness * sprung);
-      hertz = std::sqrt (stiffness / effective) / (2.0f * 3.14159265f);
-      damping = c / (2.0f * std::sqrt (stiffness * effective));
+                axle * axle * u::m2 / jeep_rig::inertia[0] +
+                track * track * u::m2 / jeep_rig::inertia[2]);
+      const kilograms_t sprung = 0.25f * jeep_rig::chassis_mass;
+      spring_tuning (sprung * jeep_rig::gravity / (jeep_rig::sag * u::m),
+                     sprung,
+                     effective,
+                     jeep_rig::sprung_damping_ratio,
+                     hertz,
+                     damping);
     }
 
     ~Impl () {
@@ -173,12 +176,12 @@ namespace moppe::mov {
       shape.filter.maskBits = jeep_rig::ground_bit;
       const b3Sphere sphere { { 0.0f, 0.0f, 0.0f }, wheel_radius };
       b3CreateSphereShape (wheel, &shape, &sphere);
-      b3MassData mass {};
-      mass.mass = jeep_rig::wheel_mass;
-      mass.inertia.cx = { jeep_rig::wheel_inertia, 0.0f, 0.0f };
-      mass.inertia.cy = { 0.0f, jeep_rig::wheel_inertia, 0.0f };
-      mass.inertia.cz = { 0.0f, 0.0f, jeep_rig::wheel_inertia };
-      b3Body_SetMassData (wheel, mass);
+      b3Body_SetMassData (wheel,
+                          body_mass (jeep_rig::wheel_mass,
+                                     Vec3 (),
+                                     { jeep_rig::wheel_inertia,
+                                       jeep_rig::wheel_inertia,
+                                       jeep_rig::wheel_inertia }));
       return wheel;
     }
 
@@ -198,15 +201,14 @@ namespace moppe::mov {
       const b3BoxHull cage =
         b3MakeOffsetBoxHull (0.6f, 0.33f, 0.98f, { 0.0f, 1.1f, -0.55f });
       b3CreateHullShape (chassis, &shape, &cage.base);
-      b3MassData mass {};
-      mass.mass = jeep_rig::chassis_mass;
-      mass.center = { jeep_rig::mass_centre[0],
-                      jeep_rig::mass_centre[1],
-                      jeep_rig::mass_centre[2] };
-      mass.inertia.cx = { jeep_rig::inertia[0], 0.0f, 0.0f };
-      mass.inertia.cy = { 0.0f, jeep_rig::inertia[1], 0.0f };
-      mass.inertia.cz = { 0.0f, 0.0f, jeep_rig::inertia[2] };
-      b3Body_SetMassData (chassis, mass);
+      b3Body_SetMassData (chassis,
+                          body_mass (jeep_rig::chassis_mass,
+                                     Vec3 (jeep_rig::mass_centre[0],
+                                           jeep_rig::mass_centre[1],
+                                           jeep_rig::mass_centre[2]),
+                                     { jeep_rig::inertia[0],
+                                       jeep_rig::inertia[1],
+                                       jeep_rig::inertia[2] }));
     }
 
     b3JointId create_suspension (int wheel) {
@@ -244,7 +246,9 @@ namespace moppe::mov {
     void build (const State& s) {
       destroy ();
       b3WorldDef def = b3DefaultWorldDef ();
-      def.gravity = { 0.0f, -jeep_rig::gravity, 0.0f };
+      def.gravity = {
+        0.0f, -jeep_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)), 0.0f
+      };
       def.enableSleep = false;
       def.workerCount = 1;
       world = b3CreateWorld (&def);
@@ -345,6 +349,7 @@ namespace moppe::mov {
       const float vf = dot (v, forward);
       const float speed = length (v);
       const float r = wheel_radius;
+      const meters_t radius = r * u::m;
 
       // The wheel is turned less far the faster the jeep goes. The
       // joint steers about its axis down the chassis, so a positive
@@ -360,28 +365,26 @@ namespace moppe::mov {
       // four wheels drive, each within what its load lets it put down.
       const float drive =
         kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
-      const float pull =
-        std::min (jeep_rig::engine_force,
-                  newtons_t (
-                    jeep_rig::engine_power /
-                    std::max (std::abs (vf) * u::m / u::s, 2.0f * u::m / u::s)))
-          .numerical_value_in (u::N);
+      const newtons_t pull = std::min (
+        jeep_rig::engine_force,
+        newtons_t (jeep_rig::engine_power /
+                   std::max (std::abs (vf) * u::m / u::s, 2.0f * u::m / u::s)));
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
         float spin = 0.0f;
-        float torque = jeep_rig::engine_brake_torque;
-        const float grip = jeep_rig::traction_share * jeep_rig::tyre_friction *
-                           kept.load[wheel].numerical_value_in (u::N) * r;
+        newton_metres_t torque = jeep_rig::engine_brake_torque;
+        const newton_metres_t grip = jeep_rig::traction_share *
+                                     jeep_rig::tyre_friction *
+                                     kept.load[wheel] * radius;
         if (kept.parked) {
           torque = jeep_rig::parking_torque;
         } else if (kept.brake || (drive * vf < 0.0f && std::abs (vf) > 1.5f)) {
           // Asking for the other way while still rolling is braking.
           const float effort = kept.brake ? 1.0f : std::abs (drive);
-          torque = effort * jeep_rig::brake_force.numerical_value_in (u::N) *
-                   r / wheel_count;
+          torque = effort * jeep_rig::brake_force * radius / wheel_count;
         } else if (std::abs (drive) > 0.02f) {
           const float share = drive > 0.0f ? 1.0f : jeep_rig::reverse_share;
-          const float wanted =
-            std::abs (drive) * share * pull * r / wheel_count;
+          const newton_metres_t wanted =
+            std::abs (drive) * share * pull * radius / wheel_count;
           if (kept.touching[wheel]) {
             spin =
               drive > 0.0f
@@ -395,7 +398,8 @@ namespace moppe::mov {
           }
         }
         b3WheelJoint_SetSpinMotorSpeed (joints[wheel], spin);
-        b3WheelJoint_SetMaxSpinTorque (joints[wheel], torque);
+        b3WheelJoint_SetMaxSpinTorque (joints[wheel],
+                                       newton_metres_value (torque));
       }
 
       // The air's drag, and water's up to the sills, on the whole jeep's

@@ -140,7 +140,7 @@ namespace moppe {
       }
       // The chassis' pitch above the ground under it, radians, nose up.
       float pitch () const {
-        return m_rigid ? m_rigid->pitch () : 0.0f;
+        return m_rigid ? radians_value (m_rigid->pitch ()) : 0.0f;
       }
       // Springs the bike up off the ground by `speed`, metres per second,
       // over its next update: a bunny hop. Only a rigid bike on its wheels
@@ -188,7 +188,8 @@ namespace moppe {
       // way the harness holds the chassis. Only the rigid bike flies this
       // way; the classic one is carried.
       struct Hang {
-        Vec3 acceleration;
+        acceleration_t acceleration =
+          Vec3 () * isq::acceleration[si::metre / pow<2> (si::second)];
         Vec3 forward { 0, 0, 1 };
         Vec3 up { 0, 1, 0 };
       };

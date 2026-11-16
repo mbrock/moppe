@@ -249,20 +249,6 @@ namespace moppe::mov {
       patch.recentre (world, trunks, s.body.position);
     }
 
-    // A torque in the body's frame, each axis by its own inertia, given
-    // as the angular acceleration wanted in the world.
-    b3Vec3 torque_for (const Vec3& acceleration) const {
-      const b3Quat q = b3Body_GetRotation (body);
-      const b3Vec3 local = b3InvRotateVector (q, to_b3 (acceleration));
-      const auto moment = [] (kilogram_square_metres_t i) {
-        return i.numerical_value_in (u::kg * u::m2);
-      };
-      const b3Vec3 scaled { local.x * moment (heli_rig::inertia[0]),
-                            local.y * moment (heli_rig::inertia[1]),
-                            local.z * moment (heli_rig::inertia[2]) };
-      return b3RotateVector (q, scaled);
-    }
-
     void step (float dt, float water_level) {
       using namespace heli_rig;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
@@ -391,7 +377,10 @@ namespace moppe::mov {
       const Vec3 drag = v * (-resistance).numerical_value_in (u::kg / u::s);
       b3Body_ApplyForceToCenter (body, to_b3 (thrust_force + drag), true);
       if (length2 (angular) > 0.0f)
-        b3Body_ApplyTorque (body, torque_for (angular), true);
+        b3Body_ApplyTorque (
+          body,
+          torque_for (b3Body_GetRotation (body), angular, heli_rig::inertia),
+          true);
 
       b3World_Step (world, dt, substeps);
 

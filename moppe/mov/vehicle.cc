@@ -667,15 +667,17 @@ namespace moppe {
 
         RigidBikeControls controls;
         controls.throttle = scalar_value (m_thrust);
-        controls.steer = radians_value (m_yaw);
-        controls.boost_acceleration = boost_direction * (boost * m_boost_level);
+        controls.steer = m_yaw;
+        controls.boost_acceleration = boost_direction *
+                                      (boost * m_boost_level) *
+                                      isq::acceleration[u::m / pow<2> (u::s)];
         controls.parked = m_parked;
         controls.skid = m_skid;
         controls.wheelie = m_wheelie;
-        controls.hop = i == 0 ? m_hop : 0.0f;
+        controls.hop = (i == 0 ? m_hop : 0.0f) * u::m / u::s;
         if (m_hung) {
           controls.throttle = 0.0f;
-          controls.steer = 0.0f;
+          controls.steer = radians_t {};
           controls.skid = 0.0f;
           controls.wheelie = 0.0f;
           controls.boost_acceleration = m_hang.acceleration;
@@ -714,12 +716,14 @@ namespace moppe {
           // A glide is no fall, however far down it ends.
           m_fall_top = m_hung ? height : std::max (m_fall_top, height);
         }
-        m_impact =
-          std::max (m_impact, 0.4f * m_rigid->trunk_hit () * u::m / u::s);
-        m_impact = std::max (m_impact, m_rigid->body_hit () * u::m / u::s);
+        m_impact = std::max (m_impact, speed_t (0.4f * m_rigid->trunk_hit ()));
+        m_impact = std::max (m_impact, m_rigid->body_hit ());
 
         m_wheel_spin = std::fmod (
-          m_wheel_spin + m_rigid->wheel_spin_rate () * h_s, 2.0f * 3.14159265f);
+          m_wheel_spin +
+            m_rigid->wheel_spin_rate ().numerical_value_in (u::rad / u::s) *
+              h_s,
+          2.0f * 3.14159265f);
         if (m_wheel_spin < 0.0f)
           m_wheel_spin += 2.0f * 3.14159265f;
 
@@ -729,7 +733,8 @@ namespace moppe {
         // fast; a wheel off the ground spins up to it. A single speed's
         // crank goes round with the wheel at its one gear.
         if (m_thrust > 0.02f && !m_hung && !m_parked) {
-          const float wheel = std::abs (m_rigid->wheel_spin_rate ());
+          const float wheel = std::abs (
+            m_rigid->wheel_spin_rate ().numerical_value_in (u::rad / u::s));
           const float gear = m_rigid->rig ().gear_ratio;
           const float cadence =
             gear > 0.0f && (m_rigid->rear_contact () || wheel > 1.0f)
@@ -755,11 +760,11 @@ namespace moppe {
       m_render_heading = m_heading;
       m_render_normal = m_rigid->up ();
       m_lean = 0.0f;
-      m_front_drop = m_rigid->front_extension ();
-      m_rear_drop = m_rigid->rear_extension ();
+      m_front_drop = meters_value (m_rigid->front_extension ());
+      m_rear_drop = meters_value (m_rigid->rear_extension ());
       m_susp = 0.5f * (m_front_drop + m_rear_drop);
       m_susp_v = 0.0f;
-      m_fork = m_rigid->steer_angle ();
+      m_fork = radians_value (m_rigid->steer_angle ());
     }
 
     void Vehicle::push (const Vec3& at, const impulse_t& impulse) {

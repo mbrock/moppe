@@ -15,14 +15,16 @@ namespace moppe {
       // BikeRig.
       namespace bike_rig {
         constexpr int substeps = 4;
-        constexpr float gravity = 9.82f;
+        constexpr metres_per_second_squared_t gravity =
+          9.82f * u::m / pow<2> (u::s);
 
         // Box3D mixes two shapes' friction as a geometric mean, so a tire
         // carries the square of the wanted coefficient against unit ground
         // friction.
         constexpr float ground_friction = 1.0f;
 
-        constexpr float water_drag = 1.4f;
+        // The water's hold on a wading bike, per kilogram of it.
+        constexpr damping_t water_drag = 1.4f / u::s;
 
         // Ground patch: samples at half the terrain lattice spacing, so every
         // other sample is a lattice node and the facets follow the bilinear
@@ -97,7 +99,9 @@ namespace moppe {
         constexpr float horizon = 3.0f;
         for (float t = step; t <= horizon; t += step) {
           Vec3 sample = position + velocity * t;
-          sample[1] -= 0.5f * bike_rig::gravity * t * t;
+          sample[1] -=
+            0.5f * bike_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)) *
+            t * t;
           if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
             return false;
           const float ground =
@@ -116,8 +120,9 @@ namespace moppe {
       const map::SurfaceGeometry& surface;
       Params params;
       const BikeRig& rig;
-      float chassis_mass;
-      Vec3 chassis_inertia; // pitch, yaw, roll about the centre of mass
+      kilograms_t chassis_mass;
+      // Pitch, yaw, and roll about the centre of mass.
+      std::array<kilogram_square_metres_t, 3> chassis_inertia {};
       float front_hertz = 0.0f, front_damping = 0.0f;
       float rear_hertz = 0.0f, rear_damping = 0.0f;
       GroundPatch patch;
@@ -132,17 +137,17 @@ namespace moppe {
       b3ShapeId rear_tire = b3_nullShapeId;
       bool front_contact = false, rear_contact = false;
       newtons_t rear_load {};
-      float lean = 0.0f;
+      radians_t lean {};
       float skid = 0.0f;
-      float rider_shift = 0.0f;
+      meters_t rider_shift {};
       float twist = 0.0f;
-      float airborne = 0.0f;
-      float trunk_hit = 0.0f, body_hit = 0.0f;
+      seconds_t airborne {};
+      speed_t trunk_hit {}, body_hit {};
 
       Impl (const map::SurfaceGeometry& surface, Params params)
           : surface (surface), params (params), rig (this->params.rig),
-            chassis_mass (kilograms_value (std::max (
-              0.3f * params.mass, params.mass - 2.0f * rig.wheel_mass))),
+            chassis_mass (std::max (0.3f * params.mass,
+                                    params.mass - 2.0f * rig.wheel_mass)),
             patch (surface,
                    { .ground_friction = bike_rig::ground_friction,
                      .obstacle_friction = 0.3f,
@@ -155,30 +160,31 @@ namespace moppe {
                      .recentre_distance = bike_rig::patch_recentre_distance,
                      .trunk_reach = bike_rig::trunk_reach }) {
         // A box of frame and rider.
-        const float k = chassis_mass / 12.0f;
+        const kilograms_t k = chassis_mass / 12.0f;
         const Vec3 box = rig.inertia_box;
-        const float w = box[0] * box[0], h = box[1] * box[1],
-                    l = box[2] * box[2];
-        chassis_inertia = Vec3 (k * (h + l), k * (w + l), k * (w + h));
+        const square_meters_t w = box[0] * box[0] * u::m2,
+                              h = box[1] * box[1] * u::m2,
+                              l = box[2] * box[2] * u::m2;
+        chassis_inertia = { k * (h + l), k * (w + l), k * (w + h) };
 
         // The joint springs are soft constraints tuned in hertz against the
         // joint's effective mass, which the light wheel dominates. Convert
         // the rate and damping wanted for the sprung chassis into those terms.
-        const float lever = meters_value (rig.half_wheelbase);
-        const float effective =
-          1.0f / (1.0f / kilograms_value (rig.wheel_mass) +
-                  1.0f / chassis_mass + lever * lever / chassis_inertia[0]);
-        const float load = 0.5f * chassis_mass * bike_rig::gravity;
-        const auto tune = [&] (float sag, float& hertz, float& damping) {
-          const float stiffness = load / sag;
-          const float sprung = 0.5f * chassis_mass;
-          const float c =
-            2.0f * rig.damping_ratio * std::sqrt (stiffness * sprung);
-          hertz = std::sqrt (stiffness / effective) / (2.0f * 3.14159265f);
-          damping = c / (2.0f * std::sqrt (stiffness * effective));
+        const meters_t lever = rig.half_wheelbase;
+        const kilograms_t effective =
+          1.0f / (1.0f / rig.wheel_mass + 1.0f / chassis_mass +
+                  lever * lever / chassis_inertia[0]);
+        const newtons_t load = 0.5f * chassis_mass * bike_rig::gravity;
+        const auto tune = [&] (meters_t sag, float& hertz, float& damping) {
+          spring_tuning (load / sag,
+                         0.5f * chassis_mass,
+                         effective,
+                         rig.damping_ratio,
+                         hertz,
+                         damping);
         };
-        tune (meters_value (rig.front_sag), front_hertz, front_damping);
-        tune (meters_value (rig.rear_sag), rear_hertz, rear_damping);
+        tune (rig.front_sag, front_hertz, front_damping);
+        tune (rig.rear_sag, rear_hertz, rear_damping);
       }
 
       ~Impl () {
@@ -223,12 +229,12 @@ namespace moppe {
         const b3ShapeId id = b3CreateSphereShape (wheel, &shape, &sphere);
         if (tire)
           *tire = id;
-        b3MassData mass {};
-        mass.mass = kilograms_value (rig.wheel_mass);
-        mass.inertia.cx = { moment_value (rig.wheel_inertia), 0.0f, 0.0f };
-        mass.inertia.cy = { 0.0f, moment_value (rig.wheel_inertia), 0.0f };
-        mass.inertia.cz = { 0.0f, 0.0f, moment_value (rig.wheel_inertia) };
-        b3Body_SetMassData (wheel, mass);
+        b3Body_SetMassData (
+          wheel,
+          body_mass (
+            rig.wheel_mass,
+            Vec3 (),
+            { rig.wheel_inertia, rig.wheel_inertia, rig.wheel_inertia }));
         return wheel;
       }
 
@@ -252,12 +258,8 @@ namespace moppe {
                                 to_b3 (rig.rider_b),
                                 meters_value (rig.rider_radius) };
         b3CreateCapsuleShape (chassis, &shape, &rider);
-        b3MassData mass {};
-        mass.mass = chassis_mass;
-        mass.inertia.cx = { chassis_inertia[0], 0.0f, 0.0f };
-        mass.inertia.cy = { 0.0f, chassis_inertia[1], 0.0f };
-        mass.inertia.cz = { 0.0f, 0.0f, chassis_inertia[2] };
-        b3Body_SetMassData (chassis, mass);
+        b3Body_SetMassData (chassis,
+                            body_mass (chassis_mass, Vec3 (), chassis_inertia));
       }
 
       b3JointId create_suspension (b3BodyId wheel,
@@ -305,7 +307,10 @@ namespace moppe {
       void build (const RigidBikeState& s) {
         destroy ();
         b3WorldDef def = b3DefaultWorldDef ();
-        def.gravity = { 0.0f, -bike_rig::gravity, 0.0f };
+        def.gravity = { 0.0f,
+                        -bike_rig::gravity.numerical_value_in (u::m /
+                                                               pow<2> (u::s)),
+                        0.0f };
         def.enableSleep = false;
         def.workerCount = 1;
         def.hitEventThreshold = 1.5f;
@@ -339,7 +344,7 @@ namespace moppe {
         airborne = s.airborne;
         b3Shape_SetFriction (rear_tire, rear_friction ());
         rear_contact = s.rear_contact;
-        trunk_hit = body_hit = 0.0f;
+        trunk_hit = body_hit = speed_t {};
       }
 
       RigidBodyState read (b3BodyId body) const {
@@ -417,26 +422,35 @@ namespace moppe {
       // also moves the centre of mass as that rotation would, so the contact
       // itself does not move and the tires feel nothing to resist.
       void steer_rate (const Vec3& axis,
-                       float target,
-                       float inertia,
-                       float rate,
+                       radians_per_second_t target,
+                       kilogram_square_metres_t inertia,
+                       damping_t rate,
                        float dt,
                        const Vec3* pivot = nullptr) {
         const Vec3 w = from_b3 (b3Body_GetAngularVelocity (chassis));
-        const float gain = 1.0f - std::exp (-rate * dt);
-        const float change = (target - dot (w, axis)) * gain;
+        const float gain =
+          1.0f - std::exp (-rate.numerical_value_in (one / u::s) * dt);
+        // Radians a second, as Box3D turns its bodies.
+        const float change =
+          (target.numerical_value_in (u::rad / u::s) - dot (w, axis)) * gain;
+        // A radian is a ratio: the change of angular velocity over the
+        // step, times the inertia, is a torque.
+        const seconds_t step = dt * u::s;
         // The correction is asked for every step, so it goes in as the
         // torque (and force) that delivers it over the step: Box3D spreads
         // those evenly across its substeps, where an impulse would land
         // whole in the first and leave the tires to answer it at once.
-        b3Body_ApplyTorque (
-          chassis, to_b3 (axis * (inertia * change / dt)), true);
+        apply_torque (
+          chassis, axis, newton_metres_t (inertia * (change / u::s) / step));
         if (!pivot)
           return;
         const Vec3 centre = from_b3 (b3Body_GetPosition (chassis));
         const Vec3 swing = cross (axis * change, centre - *pivot);
         b3Body_ApplyForceToCenter (
-          chassis, to_b3 (swing * (chassis_mass / dt)), true);
+          chassis,
+          to_b3 (swing *
+                 (chassis_mass / step).numerical_value_in (u::kg / u::s)),
+          true);
       }
 
       // A parked bike that has settled on its wheels stops simulating, so
@@ -455,7 +469,7 @@ namespace moppe {
           b3Body_SetLinearVelocity (body, { 0.0f, 0.0f, 0.0f });
           b3Body_SetAngularVelocity (body, { 0.0f, 0.0f, 0.0f });
         }
-        trunk_hit = body_hit = 0.0f;
+        trunk_hit = body_hit = speed_t {};
         return true;
       }
 
@@ -475,40 +489,39 @@ namespace moppe {
         const bool grounded = front_contact || rear_contact;
         const float vf = dot (v, forward);
         const float speed = length (v);
-        const float total_mass =
-          chassis_mass + 2.0f * kilograms_value (rig.wheel_mass);
-        const float wheel_lever = 2.0f * kilograms_value (rig.wheel_mass);
-        const float pitch_inertia =
+        const kilograms_t total_mass = chassis_mass + 2.0f * rig.wheel_mass;
+        const kilograms_t wheel_lever = 2.0f * rig.wheel_mass;
+        const kilogram_square_metres_t pitch_inertia =
           chassis_inertia[0] +
-          wheel_lever *
-            (meters_value (rig.half_wheelbase) *
-               meters_value (rig.half_wheelbase) +
-             meters_value (rig.axle_height) * meters_value (rig.axle_height));
-        const float yaw_inertia =
-          chassis_inertia[1] + wheel_lever * meters_value (rig.half_wheelbase) *
-                                 meters_value (rig.half_wheelbase);
-        const float roll_inertia =
-          chassis_inertia[2] + wheel_lever * meters_value (rig.axle_height) *
-                                 meters_value (rig.axle_height);
+          wheel_lever * (rig.half_wheelbase * rig.half_wheelbase +
+                         rig.axle_height * rig.axle_height);
+        const kilogram_square_metres_t yaw_inertia =
+          chassis_inertia[1] +
+          wheel_lever * rig.half_wheelbase * rig.half_wheelbase;
+        const kilogram_square_metres_t roll_inertia =
+          chassis_inertia[2] + wheel_lever * rig.axle_height * rig.axle_height;
+        const auto per_second = [] (float rate) { return rate / u::s; };
+        const auto turning = [] (float rate) { return rate * u::rad / u::s; };
 
         // Steering. The handlebar asks for a yaw rate; the fork takes the
         // angle a rolling bicycle needs for it, and an assist on the chassis
         // makes up what the tires do not deliver, so a hard turn at speed
         // breaks the rear loose into a drift instead of refusing to turn.
-        const float wanted_rate =
-          controls.steer * per_second_value (rig.steering_rate) /
+        const radians_per_second_t wanted_rate =
+          controls.steer * rig.steering_rate /
           (1.0f + std::abs (vf) / speed_value (rig.steering_fade_speed));
         const float fork = std::copysign (
           std::min (radians_value (rig.max_fork_angle),
-                    std::atan (std::abs (wanted_rate) * 2.0f *
-                               meters_value (rig.half_wheelbase) /
+                    std::atan (std::abs (wanted_rate.numerical_value_in (
+                                 u::rad / u::s)) *
+                               2.0f * meters_value (rig.half_wheelbase) /
                                std::max (std::abs (vf), 3.0f))),
-          controls.steer);
+          radians_value (controls.steer));
         b3WheelJoint_SetTargetSteeringAngle (front_joint, fork);
 
         // Yaw follows the handlebar in the direction of travel. A rider
         // nearly at rest can still paddle the bike round.
-        const float wanted_yaw =
+        const radians_per_second_t wanted_yaw =
           -wanted_rate * std::clamp (std::abs (vf) / 4.0f, 0.35f, 1.0f) *
           (vf < -1.0f ? -1.0f : 1.0f);
         // The locked rear brake breaks the tyre loose as it bites, and lets
@@ -532,9 +545,9 @@ namespace moppe {
         if (grounded) {
           // Sliding, the handlebar swings the tail out about the front
           // tyre's contact, at a rate that does not fade with speed.
-          const float skid_yaw = -controls.steer / 1.5707963f *
-                                 per_second_value (rig.skid_rate) *
-                                 (vf < -1.0f ? -1.0f : 1.0f);
+          const radians_per_second_t skid_yaw = -controls.steer / 1.5707963f *
+                                                rig.skid_rate *
+                                                (vf < -1.0f ? -1.0f : 1.0f);
           const Vec3 front_contact_point =
             p + from_b3 (b3RotateVector (q, to_b3 (front_axle (rig)))) -
             ground_normal * meters_value (rig.front_radius ());
@@ -542,24 +555,24 @@ namespace moppe {
           steer_rate (ground_normal,
                       wanted_yaw + (skid_yaw - wanted_yaw) * slide,
                       yaw_inertia,
-                      12.0f,
+                      per_second (12.0f),
                       dt,
                       &pivot);
         } else if (controls.hung) {
           // Under the wing the bike swings round to face the way it flies.
-          steer_rate (world_up,
-                      angle_about (world_up, forward, controls.hang_forward) *
-                        4.0f,
-                      yaw_inertia,
-                      6.0f,
-                      dt);
+          steer_rate (
+            world_up,
+            turning (angle_about (world_up, forward, controls.hang_forward) *
+                     4.0f),
+            yaw_inertia,
+            per_second (6.0f),
+            dt);
         } else {
           // Mid-air the handlebar whips the bike about the vertical.
           steer_rate (world_up,
-                      -controls.steer *
-                        per_second_value (rig.air_steering_rate),
+                      -controls.steer * rig.air_steering_rate,
                       yaw_inertia,
-                      6.0f,
+                      per_second (6.0f),
                       dt);
         }
 
@@ -590,8 +603,12 @@ namespace moppe {
           // feeds back through the wheels' gyroscopic coupling into a weave.
           // Sliding round, the tyres carry less of the turn, and the rider
           // leans less into it.
-          const Vec3 centripetal = cross (Vec3 (0.0f, wanted_yaw, 0.0f), v);
-          goal = std::atan2 (dot (centripetal, right), bike_rig::gravity) *
+          const Vec3 centripetal = cross (
+            Vec3 (0.0f, wanted_yaw.numerical_value_in (u::rad / u::s), 0.0f),
+            v);
+          goal = std::atan2 (dot (centripetal, right),
+                             bike_rig::gravity.numerical_value_in (
+                               u::m / pow<2> (u::s))) *
                  (1.0f - 0.6f * slide);
         } else if (hanging) {
           // The harness banks the bike with the wing.
@@ -601,12 +618,12 @@ namespace moppe {
           goal = std::atan2 (dot (landing_normal, right),
                              dot (landing_normal, level));
         }
-        goal = std::clamp (
-          goal, -radians_value (rig.max_lean), radians_value (rig.max_lean));
+        const radians_t held =
+          std::clamp (goal * u::rad, -rig.max_lean, rig.max_lean);
         lean +=
-          (goal - lean) * (1.0f - std::exp (-(grounded ? 8.0f : 3.0f) * dt));
-        const Vec3 target_up =
-          level * std::cos (lean) + right * std::sin (lean);
+          (held - lean) * (1.0f - std::exp (-(grounded ? 8.0f : 3.0f) * dt));
+        const Vec3 target_up = level * std::cos (radians_value (lean)) +
+                               right * std::sin (radians_value (lean));
         // On the ground the bike leans over its tire contacts, or over the
         // rear one alone in a wheelie.
         const Vec3 under =
@@ -621,9 +638,9 @@ namespace moppe {
             ? std::clamp ((dot (up, level) - 0.1f) / 0.3f, 0.0f, 1.0f)
             : 1.0f;
         steer_rate (forward,
-                    angle_about (forward, up, target_up) * 9.0f,
+                    turning (angle_about (forward, up, target_up) * 9.0f),
                     roll_inertia,
-                    30.0f * rolls,
+                    per_second (30.0f * rolls),
                     dt,
                     grounded ? &under : nullptr);
 
@@ -644,7 +661,7 @@ namespace moppe {
         // to its own pitch at first, and one that has reared past the
         // vertical goes over: righting it would flip it round.
         const bool reared =
-          wheelie > 0.0f && (airborne < 0.3f || dot (up, level) < 0.1f);
+          wheelie > 0.0f && (airborne < 0.3f * u::s || dot (up, level) < 0.1f);
         if (hanging || (!grounded && speed > 2.0f && !reared)) {
           Vec3 aim;
           if (hanging) {
@@ -659,11 +676,12 @@ namespace moppe {
                   world_up * v[1];
           }
           if (length2 (aim) > 1e-6f)
-            steer_rate (left,
-                        angle_about (left, forward, normalized (aim)) * 4.0f,
-                        pitch_inertia,
-                        8.0f,
-                        dt);
+            steer_rate (
+              left,
+              turning (angle_about (left, forward, normalized (aim)) * 4.0f),
+              pitch_inertia,
+              per_second (8.0f),
+              dt);
         }
 
         // Leaning back for a wheelie, the rider's weight goes back over the
@@ -680,13 +698,16 @@ namespace moppe {
             front_contact ? 1.0f
                           : (radians_value (rig.wheelie_pitch) - nose) / 0.2f -
                               0.5f * rising;
-          const float goal = wheelie * meters_value (rig.wheelie_lean) *
-                             std::clamp (balance, -0.6f, 1.0f);
+          const meters_t goal =
+            wheelie * rig.wheelie_lean * std::clamp (balance, -0.6f, 1.0f);
           rider_shift += (goal - rider_shift) * (1.0f - std::exp (-8.0f * dt));
           if (grounded) {
-            const Vec3 weight = world_up * (-chassis_mass * bike_rig::gravity);
+            const newtons_t weight = -chassis_mass * bike_rig::gravity;
             b3Body_ApplyTorque (
-              chassis, to_b3 (cross (forward * -rider_shift, weight)), true);
+              chassis,
+              to_b3 (cross (forward * -meters_value (rider_shift),
+                            world_up * newtons_value (weight))),
+              true);
           }
         }
 
@@ -704,10 +725,12 @@ namespace moppe {
                                                          : twist;
 
         // Engine and brakes through the wheel joints' spin motors.
-        const float r = meters_value (rig.wheel_radius);
+        // The motors' speeds are radians a second, as Box3D spins them.
+        const meters_t r = rig.wheel_radius;
+        const float r_m = meters_value (r);
         float rear_speed = 0.0f;
-        float rear_torque = newton_metres_value (rig.engine_brake_torque);
-        float front_torque = 0.0f;
+        newton_metres_t rear_torque = rig.engine_brake_torque;
+        newton_metres_t front_torque {};
         // Leaning back for a wheelie, the rider lets the front come up.
         const float wheelie_cut = std::max (
           wheelie,
@@ -723,102 +746,105 @@ namespace moppe {
           // the bike out of a wheelie with the throttle, since anything that
           // levered the nose back down would also shove the bike along. In
           // the air the rider can only rev the wheel up to road speed.
-          const float force = std::min (newtons_value (params.max_drive_force),
-                                        params.power.numerical_value_in (u::W) /
-                                          std::max (std::abs (vf), 0.5f));
+          const newtons_t force = std::min (
+            params.max_drive_force,
+            newtons_t (params.power /
+                       (std::max (std::abs (vf), 0.5f) * u::m / u::s)));
           if (rear_contact) {
-            const float grip = rig.traction_share * rig.tire_friction *
-                               rear_load.numerical_value_in (u::N);
-            const float lift = rig.wheelie_share * total_mass *
-                               bike_rig::gravity *
-                               meters_value (rig.half_wheelbase) /
-                               (meters_value (rig.ride_height ()) -
-                                meters_value (rig.reference_height));
+            const newtons_t grip =
+              rig.traction_share * rig.tire_friction * rear_load;
+            const newtons_t lift = rig.wheelie_share * total_mass *
+                                   bike_rig::gravity * rig.half_wheelbase /
+                                   (rig.ride_height () - rig.reference_height);
             // Leaning back, the rider lets the drive lift the front, but
             // its pull about the rear tyre may rear the bike up by no more
             // than wheelie_torque over what the weight holds it down with,
             // so a throttle held open rears it steadily past the balance,
             // to fall over backwards, rather than throwing it into the air.
-            float rearing = lift;
+            newtons_t rearing = lift;
             if (wheelie > 0.0f) {
               Vec3 heading = forward - up;
               heading[1] = 0.0f;
-              const Vec3 arm = p - forward * rider_shift -
+              const Vec3 arm = p - forward * meters_value (rider_shift) -
                                from_b3 (b3Body_GetPosition (rear)) +
-                               ground_normal * r;
+                               ground_normal * r_m;
               const float height = std::max (dot (arm, ground_normal), 0.2f);
               const float reach = length2 (heading) > 1e-6f
                                     ? dot (arm, normalized (heading))
                                     : 0.0f;
-              rearing = std::max (0.0f,
-                                  (newton_metres_value (rig.wheelie_torque) +
-                                   total_mass * bike_rig::gravity * reach) /
-                                    height);
+              rearing = std::max (
+                newtons_t {},
+                newtons_t ((rig.wheelie_torque +
+                            total_mass * bike_rig::gravity * (reach * u::m)) /
+                           (height * u::m)));
             }
-            rear_speed = (std::max (vf, 0.0f) + 20.0f) / r;
+            rear_speed = (std::max (vf, 0.0f) + 20.0f) / r_m;
             rear_torque =
               wheelie_cut * std::min ({ throttle * force, grip, rearing }) * r;
           } else {
-            rear_speed = (std::max (vf, 0.0f) + 1.0f) / r;
-            rear_torque = newton_metres_value (rig.free_rev_torque);
+            rear_speed = (std::max (vf, 0.0f) + 1.0f) / r_m;
+            rear_torque = rig.free_rev_torque;
           }
         } else if (throttle < -0.02f) {
           const float effort = -throttle;
           if (vf > 1.5f) {
-            rear_torque = effort * newtons_value (rig.rear_brake_force) * r;
-            front_torque =
-              stoppie_cut * effort * newtons_value (rig.front_brake_force) * r;
+            rear_torque = effort * rig.rear_brake_force * r;
+            front_torque = stoppie_cut * effort * rig.front_brake_force * r;
           } else {
-            rear_speed = -speed_value (rig.reverse_speed) / r;
-            rear_torque = effort * rig.reverse_force_share *
-                          newtons_value (params.max_drive_force) * r;
+            rear_speed = -speed_value (rig.reverse_speed) / r_m;
+            rear_torque =
+              effort * rig.reverse_force_share * params.max_drive_force * r;
           }
         }
         if (on_rear && controls.skid > 0.02f) {
           // The covered rear brake slows the wheel, and the bike with it,
           // which brings the nose down.
           rear_speed = 0.0f;
-          rear_torque =
-            controls.skid * 0.5f * newtons_value (rig.rear_brake_force) * r;
+          rear_torque = controls.skid * 0.5f * rig.rear_brake_force * r;
         } else if (controls.skid > 0.02f) {
           // The rear brake stamped on locks the wheel to the frame,
           // whatever the throttle asks.
           rear_speed = 0.0f;
-          rear_torque =
-            std::max (rear_torque * (1.0f - controls.skid),
-                      controls.skid * newton_metres_value (rig.skid_torque));
+          rear_torque = std::max (rear_torque * (1.0f - controls.skid),
+                                  controls.skid * rig.skid_torque);
         }
         if (controls.parked) {
           // The parking lock: both wheels held still against the chassis.
           rear_speed = 0.0f;
-          rear_torque = front_torque = newton_metres_value (rig.parking_torque);
+          rear_torque = front_torque = rig.parking_torque;
         }
         b3WheelJoint_SetSpinMotorSpeed (rear_joint, rear_speed);
-        b3WheelJoint_SetMaxSpinTorque (rear_joint, rear_torque);
+        b3WheelJoint_SetMaxSpinTorque (rear_joint,
+                                       newton_metres_value (rear_torque));
         b3WheelJoint_SetSpinMotorSpeed (front_joint, 0.0f);
-        b3WheelJoint_SetMaxSpinTorque (front_joint, front_torque);
+        b3WheelJoint_SetMaxSpinTorque (front_joint,
+                                       newton_metres_value (front_torque));
 
         // Drag, wading, and the jump jets act on the whole bike's mass.
         // A bike under the wing has its drag counted in the wing's pull.
-        Vec3 force = controls.boost_acceleration * total_mass;
+        const velocity_t moving = moppe::velocity (v);
+        force_t force =
+          quantity_cast<isq::force> (controls.boost_acceleration * total_mass);
         if (!hanging)
-          force -= v * ((per_second_value (rig.rolling_drag) +
-                         per_metre_value (rig.air_drag) * speed) *
-                        total_mass);
-        force -= v * (bike_rig::water_drag * controls.wading * total_mass);
-        b3Body_ApplyForceToCenter (chassis, to_b3 (force), true);
+          force -= quantity_cast<isq::force> (
+            moving *
+            ((rig.rolling_drag + rig.air_drag * (speed * u::m / u::s)) *
+             total_mass));
+        force -= quantity_cast<isq::force> (
+          moving * (bike_rig::water_drag * controls.wading * total_mass));
+        apply_force_to_centre (chassis, force);
 
         // A hop springs the whole bike up off its wheels, the nose lifting
         // first.
-        if (controls.hop > 0.0f && grounded) {
-          const b3Vec3 kick = to_b3 (world_up * controls.hop);
+        if (controls.hop > speed_t {} && grounded) {
+          const float hop = speed_value (controls.hop);
+          const b3Vec3 kick = to_b3 (world_up * hop);
           for (const b3BodyId body : { chassis, front, rear })
             b3Body_SetLinearVelocity (
               body, b3Add (b3Body_GetLinearVelocity (body), kick));
-          b3Body_SetAngularVelocity (
-            chassis,
-            b3Add (b3Body_GetAngularVelocity (chassis),
-                   to_b3 (left * (-0.6f * controls.hop))));
+          b3Body_SetAngularVelocity (chassis,
+                                     b3Add (b3Body_GetAngularVelocity (chassis),
+                                            to_b3 (left * (-0.6f * hop))));
         }
 
         b3World_Step (world, dt, bike_rig::substeps);
@@ -826,8 +852,9 @@ namespace moppe {
         newtons_t front_load {};
         front_contact = wheel_touches_ground (front, dt, front_load);
         rear_contact = wheel_touches_ground (rear, dt, rear_load);
-        airborne = front_contact || rear_contact ? 0.0f : airborne + dt;
-        trunk_hit = body_hit = 0.0f;
+        airborne =
+          front_contact || rear_contact ? seconds_t {} : airborne + dt * u::s;
+        trunk_hit = body_hit = speed_t {};
         const b3ContactEvents events = b3World_GetContactEvents (world);
         for (int i = 0; i < events.hitCount; ++i) {
           const b3ContactHitEvent& hit = events.hitEvents[i];
@@ -838,9 +865,9 @@ namespace moppe {
                    (B3_ID_EQUALS (a, body) || B3_ID_EQUALS (b, body));
           };
           if (is (patch.obstacles ()))
-            trunk_hit = std::max (trunk_hit, hit.approachSpeed);
+            trunk_hit = std::max (trunk_hit, hit.approachSpeed * u::m / u::s);
           else if (is (patch.ground ()))
-            body_hit = std::max (body_hit, hit.approachSpeed);
+            body_hit = std::max (body_hit, hit.approachSpeed * u::m / u::s);
         }
       }
     };
@@ -1005,20 +1032,20 @@ namespace moppe {
       return m_impl->rear_contact;
     }
 
-    float RigidBike::front_extension () const {
-      return m_impl->extension (m_impl->front, front_axle (m_impl->rig));
+    meters_t RigidBike::front_extension () const {
+      return m_impl->extension (m_impl->front, front_axle (m_impl->rig)) * u::m;
     }
 
-    float RigidBike::rear_extension () const {
-      return m_impl->extension (m_impl->rear, rear_axle (m_impl->rig));
+    meters_t RigidBike::rear_extension () const {
+      return m_impl->extension (m_impl->rear, rear_axle (m_impl->rig)) * u::m;
     }
 
-    float RigidBike::steer_angle () const {
-      return b3WheelJoint_GetSteeringAngle (m_impl->front_joint);
+    radians_t RigidBike::steer_angle () const {
+      return b3WheelJoint_GetSteeringAngle (m_impl->front_joint) * u::rad;
     }
 
-    float RigidBike::wheel_spin_rate () const {
-      return b3WheelJoint_GetSpinSpeed (m_impl->rear_joint);
+    radians_per_second_t RigidBike::wheel_spin_rate () const {
+      return b3WheelJoint_GetSpinSpeed (m_impl->rear_joint) * u::rad / u::s;
     }
 
     float RigidBike::skid () const {
@@ -1026,22 +1053,23 @@ namespace moppe {
     }
 
     float RigidBike::rider_lean () const {
-      return m_impl->rider_shift / meters_value (m_impl->rig.wheelie_lean);
+      return (m_impl->rider_shift / m_impl->rig.wheelie_lean)
+        .numerical_value_in (one);
     }
 
-    float RigidBike::pitch () const {
-      return m_impl->pitch ();
+    radians_t RigidBike::pitch () const {
+      return m_impl->pitch () * u::rad;
     }
 
     bool RigidBike::wheeling () const {
       return m_impl->wheeling ();
     }
 
-    float RigidBike::trunk_hit () const {
+    speed_t RigidBike::trunk_hit () const {
       return m_impl->trunk_hit;
     }
 
-    float RigidBike::body_hit () const {
+    speed_t RigidBike::body_hit () const {
       return m_impl->body_hit;
     }
 

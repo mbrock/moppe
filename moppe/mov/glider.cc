@@ -171,7 +171,8 @@ namespace moppe::mov {
     return normalized (path + Vec3 (0, 1, 0) * attack);
   }
 
-  Vec3 Glider::fly (seconds_t dt, position_t position, velocity_t velocity) {
+  acceleration_t
+  Glider::fly (seconds_t dt, position_t position, velocity_t velocity) {
     m_position = position;
     m_velocity = velocity;
 
@@ -234,7 +235,8 @@ namespace moppe::mov {
       gravity * (speed / reference_speed) * (speed / reference_speed) / load ();
     const float drag =
       drag_of (m_loading, m_bike_attached) + (m_flare ? flare_drag : 0.0f);
-    return lift * (pressure * m_loading) - path * (pressure * drag);
+    return (lift * (pressure * m_loading) - path * (pressure * drag)) *
+           isq::acceleration[u::m / pow<2> (u::s)];
   }
 
   void Glider::follow (position_t position, velocity_t velocity) {
@@ -250,7 +252,10 @@ namespace moppe::mov {
 
     const float dt_s = seconds_value (dt);
     Vec3 v = velocity_value (m_velocity);
-    v += (fly (dt, m_position, m_velocity) - Vec3 (0, gravity, 0)) * dt_s;
+    const acceleration_t air = fly (dt, m_position, m_velocity);
+    v += (air.numerical_value_ref_in (u::m / pow<2> (u::s)) -
+          Vec3 (0, gravity, 0)) *
+         dt_s;
     m_velocity = moppe::velocity (v);
     m_position += quantity_cast<isq::position_vector> (m_velocity * dt);
 

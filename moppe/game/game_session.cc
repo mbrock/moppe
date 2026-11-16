@@ -37,7 +37,7 @@ namespace moppe::game {
     bool fly_bike (GameSession& session, seconds_t dt) {
       mov::Vehicle& bike = session.bike ();
       mov::Glider& glider = session.glider ();
-      const Vec3 pull =
+      const acceleration_t pull =
         glider.fly (dt, wing_over_bike (bike), bike.physical_velocity ());
       // The wing crabs into the wind; the wheels should meet the ground
       // the way they are going over it.
