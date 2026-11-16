@@ -42,3 +42,42 @@ jobs:
             diff -u tests/terrain/world-fingerprint-257.txt /tmp/world-one
             diff -u /tmp/world-one /tmp/world-four
           '
+
+  fingerprint-macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Build and compare fingerprint
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DMOPPE_BUILD_DEVELOPER_TOOLS=ON -DBUILD_TESTING=OFF
+          cmake --build build --target world-fingerprint
+          MOPPE_THREADS=1 ./build/world-fingerprint 257 play 123 > "$RUNNER_TEMP/world"
+          diff -u tests/terrain/world-fingerprint-257.txt "$RUNNER_TEMP/world"
+
+  fingerprint-windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-cmake
+            mingw-w64-clang-x86_64-ninja
+      - name: Build and compare fingerprint
+        shell: msys2 {0}
+        run: |
+          set -eu
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DMOPPE_BUILD_DEVELOPER_TOOLS=ON -DBUILD_TESTING=OFF
+          cmake --build build --target world-fingerprint
+          MOPPE_THREADS=1 ./build/world-fingerprint.exe 257 play 123 > build/world
+          tr -d '\r' < build/world > build/world-lf
+          tr -d '\r' < tests/terrain/world-fingerprint-257.txt > build/pin-lf
+          diff -u build/pin-lf build/world-lf

@@ -14,6 +14,7 @@
 #include <fstream>
 #include <ranges>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -877,7 +878,9 @@ namespace moppe::map {
       // Steep ground holds little of anything rooted.
       const float footing = smoothstep (0.70f, 0.85f, up[i]);
       const auto chances = [&] (const auto& species) {
-        std::array<float, std::size (species)> chance {};
+        std::array<float,
+                   std::extent_v<std::remove_reference_t<decltype (species)>>>
+          chance {};
         for (std::size_t s = 0; s < chance.size (); ++s)
           chance[s] =
             0.75f + 0.5f * layered_noise (

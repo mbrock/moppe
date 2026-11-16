@@ -35,17 +35,28 @@
 #include <string>
 #include <vector>
 
-#include <sys/resource.h>
-#ifdef __APPLE__
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <psapi.h>
+#include <windows.h>
+#elif defined(__APPLE__)
 #include <mach/mach.h>
+#include <sys/resource.h>
 #else
+#include <sys/resource.h>
 #include <unistd.h>
 #endif
 
 namespace {
   // Megabytes resident now.
   double resident_mb () {
-#ifdef __APPLE__
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS info {};
+    if (!GetProcessMemoryInfo (GetCurrentProcess (), &info, sizeof (info)))
+      return 0.0;
+    return static_cast<double> (info.WorkingSetSize) / 1048576.0;
+#elif defined(__APPLE__)
     mach_task_basic_info_data_t info;
     mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
     if (task_info (mach_task_self (),
@@ -68,12 +79,19 @@ namespace {
 
   // Megabytes at the most there has been.
   double peak_mb () {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS info {};
+    if (!GetProcessMemoryInfo (GetCurrentProcess (), &info, sizeof (info)))
+      return 0.0;
+    return static_cast<double> (info.PeakWorkingSetSize) / 1048576.0;
+#else
     rusage usage {};
     getrusage (RUSAGE_SELF, &usage);
 #ifdef __APPLE__
     return static_cast<double> (usage.ru_maxrss) / 1048576.0;
 #else
     return static_cast<double> (usage.ru_maxrss) / 1024.0;
+#endif
 #endif
   }
 

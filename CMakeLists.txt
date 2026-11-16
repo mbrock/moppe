@@ -665,6 +665,9 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_WORLD_SOURCES}
   )
   moppe_configure_code_target(world-fingerprint)
+  if(WIN32)
+    target_link_libraries(world-fingerprint PRIVATE psapi)
+  endif()
 
   # Where each river's water stands and where it runs dry.
   add_executable(river-census EXCLUDE_FROM_ALL
