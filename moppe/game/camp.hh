@@ -30,8 +30,8 @@ namespace moppe::game {
   using GroundHeight = std::function<float (float x, float z)>;
 
   // How far apart the bark of two trees may be for the hammock, metres.
-  inline constexpr float hammock_least_span = 2.6f;
-  inline constexpr float hammock_most_span = 5.2f;
+  inline constexpr meters_t hammock_least_span = 2.6f * u::m;
+  inline constexpr meters_t hammock_most_span = 5.2f * u::m;
 
   // The pair of trees among `trunks` that someone standing at `feet` is
   // between, if they would take a hammock: the right distance apart, tall
@@ -47,7 +47,7 @@ namespace moppe::game {
   // crown standing over it -- a tree within `open_sky` metres weighs its
   // crown's depth over its distance -- so that a pair under open sky is
   // preferred to a nearer one deep in a stand.
-  inline constexpr float open_sky = 16.0f;
+  inline constexpr meters_t open_sky = 16.0f * u::m;
   [[nodiscard]] std::optional<HammockSite>
   nearest_hammock_site (std::span<const mov::Trunk> trunks,
                         const Vec3& near,
@@ -68,7 +68,7 @@ namespace moppe::game {
   Vec3 hammock_along (const HammockSite& site);
   Vec3 hammock_across (const HammockSite& site);
   // How near `feet` is to the line beneath the hammock, metres.
-  float hammock_distance (const HammockSite& site, const Vec3& feet);
+  meters_t hammock_distance (const HammockSite& site, const Vec3& feet);
 
   // How much of a sleeper's weight is in the hammock, 0..1, easing in as
   // they lie down and out as they get up.
@@ -99,13 +99,13 @@ namespace moppe::game {
   // strength, flickering.
   Vec3 fire_light_position (const Camp& camp);
   DisplayColor fire_light_color (float burn, float time);
-  inline constexpr float fire_light_reach = 17.0f;
+  inline constexpr meters_t fire_light_reach = 17.0f * u::m;
 
   // How done what is in the pan is: rising to one, fried golden, over
   // the first nine seconds; held there for half a minute; then on to
   // two, burnt black, for anyone who forgets it.
   float pan_cooked (const Pan& pan, double now);
-  inline constexpr float pan_reach = 2.6f;
+  inline constexpr meters_t pan_reach = 2.6f * u::m;
 
   // Where a cook standing at `feet` sets a pan on the hearth's stones:
   // on their side of the fire, its handle toward them.

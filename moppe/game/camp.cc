@@ -132,7 +132,8 @@ namespace moppe::game {
       const Vec3 between = flat (b.root - a.root);
       const float apart = length (between);
       const float span = apart - a.radius - b.radius;
-      if (span < hammock_least_span || span > hammock_most_span)
+      if (span < meters_value (hammock_least_span) ||
+          span > meters_value (hammock_most_span))
         return false;
       if (std::fabs (a.root[1] - b.root[1]) > most_step)
         return false;
@@ -264,19 +265,21 @@ namespace moppe::game {
     return cross (hammock_along (site), world_up);
   }
 
-  float hammock_distance (const HammockSite& site, const Vec3& feet) {
+  meters_t hammock_distance (const HammockSite& site, const Vec3& feet) {
     using namespace camp_parts;
     const Vec3 between = flat (site.strap[1] - site.strap[0]);
     const float apart2 = std::max (length2 (between), 1e-6f);
     const Vec3 to = flat (feet - site.strap[0]);
     const float t = std::clamp (dot (to, between) / apart2, 0.0f, 1.0f);
-    return length (to - between * t);
+    return length (to - between * t) * u::m;
   }
 
   float hammock_load (const Camp& camp, double now) {
     using namespace camp_parts;
+    // Getting in or out takes this long.
+    constexpr seconds_t settling = 0.8f * u::s;
     const float since = static_cast<float> (now - camp.rest_time);
-    const float eased = smoothstep (0.0f, 0.8f, since);
+    const float eased = smoothstep (0.0f, seconds_value (settling), since);
     return camp.resting ? eased : 1.0f - eased;
   }
 
@@ -328,21 +331,26 @@ namespace moppe::game {
     std::ranges::sort (sorted, [] (const mov::Trunk& a, const mov::Trunk& b) {
       return a.root[0] < b.root[0];
     });
-    constexpr float window = hammock_most_span + 2.0f * most_girth;
+    constexpr float window =
+      hammock_most_span.numerical_value_in (u::m) + 2.0f * most_girth;
     // The crown standing over a place: each tree round it by the depth of
     // its crown over its distance, found by a walk through the order from
     // where the place's x falls.
     const auto overhead = [&] (const Vec3& middle) {
       float crown = 0.0f;
-      const auto from = std::ranges::lower_bound (
-        sorted, middle[0] - open_sky, {}, [] (const mov::Trunk& trunk) {
-          return static_cast<float> (trunk.root[0]);
-        });
+      const auto from =
+        std::ranges::lower_bound (sorted,
+                                  middle[0] - meters_value (open_sky),
+                                  {},
+                                  [] (const mov::Trunk& trunk) {
+                                    return static_cast<float> (trunk.root[0]);
+                                  });
       for (auto trunk = from;
-           trunk != sorted.end () && trunk->root[0] <= middle[0] + open_sky;
+           trunk != sorted.end () &&
+           trunk->root[0] <= middle[0] + meters_value (open_sky);
            ++trunk)
         if (const float away = length (flat (trunk->root - middle));
-            trunk->height > 3.0f && away < open_sky)
+            trunk->height > 3.0f && away < meters_value (open_sky))
           crown += (trunk->height - trunk->clear) / (away + 2.0f);
       return crown;
     };
@@ -391,7 +399,8 @@ namespace moppe::game {
     std::ranges::sort (sorted, [] (const mov::Trunk& a, const mov::Trunk& b) {
       return a.root[0] < b.root[0];
     });
-    constexpr float window = hammock_most_span + 2.0f * most_girth;
+    constexpr float window =
+      hammock_most_span.numerical_value_in (u::m) + 2.0f * most_girth;
     struct Found {
       float distance;
       std::size_t a, b;
@@ -579,10 +588,14 @@ namespace moppe::game {
 
   float fire_burn (const Camp& camp, double now) {
     using namespace camp_parts;
+    // How long a fire takes to catch, and to die once put out.
+    constexpr seconds_t catching = 3.5f * u::s;
+    constexpr seconds_t dying = 1.5f * u::s;
     const float since = static_cast<float> (now - camp.fire_time);
     if (camp.fire)
-      return 0.12f + 0.88f * smoothstep (0.0f, 3.5f, since);
-    return since < 1.5f ? 1.0f - smoothstep (0.0f, 1.5f, since) : 0.0f;
+      return 0.12f + 0.88f * smoothstep (0.0f, seconds_value (catching), since);
+    const float out = seconds_value (dying);
+    return since < out ? 1.0f - smoothstep (0.0f, out, since) : 0.0f;
   }
 
   Vec3 fire_light_position (const Camp& camp) {
@@ -601,14 +614,19 @@ namespace moppe::game {
   }
 
   float pan_cooked (const Pan& pan, double now) {
-    const float age = static_cast<float> (now - pan.since);
-    if (!pan.on || age <= 0.0f)
+    // Fried in nine seconds, kept until forty, burnt fourteen after.
+    constexpr seconds_t frying = 9.0f * u::s;
+    constexpr seconds_t keeping = 40.0f * u::s;
+    constexpr seconds_t burning = 14.0f * u::s;
+    const seconds_t age = static_cast<float> (now - pan.since) * u::s;
+    if (!pan.on || age <= seconds_t {})
       return 0.0f;
-    if (age < 9.0f)
-      return age / 9.0f;
-    if (age < 40.0f)
+    if (age < frying)
+      return (age / frying).numerical_value_in (one);
+    if (age < keeping)
       return 1.0f;
-    return std::min (2.0f, 1.0f + (age - 40.0f) / 14.0f);
+    return std::min (
+      2.0f, 1.0f + ((age - keeping) / burning).numerical_value_in (one));
   }
 
   Pan pan_set_on (const Vec3& hearth, const Vec3& feet) {

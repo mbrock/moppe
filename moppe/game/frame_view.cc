@@ -316,7 +316,7 @@ namespace moppe::game {
     if (const float burn = fire_burn (logic.m_camp, logic.m_total_time);
         burn > 0.01f) {
       result.lighting.lamp_position = fire_light_position (logic.m_camp);
-      result.lighting.lamp_reach = fire_light_reach;
+      result.lighting.lamp_reach = meters_value (fire_light_reach);
       result.lighting.lamp_color =
         scale_display (fire_light_color (burn, result.lighting.time),
                        1.0f - 0.25f * sky.daylight);

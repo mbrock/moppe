@@ -330,8 +330,8 @@ namespace moppe {
       else if (m_hammock_at_hand)
         state.camp = HudState::Camp::hang;
       else if (camp.hung && camp.fire_time < -50.0 &&
-               hammock_distance (camp.hammock,
-                                 session ().walker ().position ()) < 12.0f)
+               hammock_distance (
+                 camp.hammock, session ().walker ().position ()) < 12.0f * u::m)
         state.camp = HudState::Camp::light_fire;
     }
 

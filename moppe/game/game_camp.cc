@@ -61,7 +61,7 @@ namespace moppe {
       const Camp& camp = logic ().m_camp;
       return camp.hung &&
              hammock_distance (camp.hammock, session ().walker ().position ()) <
-               1.5f;
+               1.5f * u::m;
     }
 
     std::optional<Vec3> MoppeGame::hearth_ahead () const {
@@ -114,7 +114,7 @@ namespace moppe {
         return false;
       Vec3 to = session ().walker ().position () - pan.place;
       to[1] = 0.0f;
-      return length2 (to) < pan_reach * pan_reach;
+      return length2 (to) < meters_value (pan_reach) * meters_value (pan_reach);
     }
 
     HudState::Cook MoppeGame::supper_at_hand () const {

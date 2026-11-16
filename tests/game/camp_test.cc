@@ -44,7 +44,8 @@ MOPPE_TEST (a_hammock_hangs_between_two_fit_trees) {
   MOPPE_CHECK (site->strap[0][1] > 10.9f && site->strap[0][1] < 12.5f);
   MOPPE_CHECK_NEAR (
     std::fabs (site->strap[1][0] - site->strap[0][0]), 4.0f, 1e-4f);
-  MOPPE_CHECK_NEAR (hammock_distance (*site, between), 0.3f, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    meters_value (hammock_distance (*site, between)), 0.3f, 1e-4f);
   MOPPE_CHECK_NEAR (length (hammock_along (*site)), 1.0f, 1e-5f);
 
   // Not from outside the pair, nor from far off to one side.

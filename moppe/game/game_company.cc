@@ -540,7 +540,7 @@ namespace moppe {
             length2 (lamp - frame.camera.position))
         return;
       lighting.lamp_position = lamp;
-      lighting.lamp_reach = fire_light_reach;
+      lighting.lamp_reach = meters_value (fire_light_reach);
       lighting.lamp_color =
         scale_display (fire_light_color (m_companion->fire_burn, lighting.time),
                        1.0f - 0.25f * lighting.daylight);
