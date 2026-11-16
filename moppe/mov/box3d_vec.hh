@@ -170,7 +170,8 @@ namespace moppe::mov {
 
   // Whether a wheel touched the ground in the last step, and the mean
   // normal force the ground pressed it with.
-  inline bool wheel_touches_ground (b3BodyId wheel, float dt, newtons_t& load) {
+  inline bool
+  wheel_touches_ground (b3BodyId wheel, seconds_t dt, newtons_t& load) {
     b3ContactData contacts[8];
     const int count = b3Body_GetContactData (wheel, contacts, 8);
     bool touching = false;
@@ -185,7 +186,7 @@ namespace moppe::mov {
                      point.separation < 0.02f;
         }
       }
-    load = impulse / dt * u::N;
+    load = impulse * u::N * u::s / dt;
     return touching;
   }
 }

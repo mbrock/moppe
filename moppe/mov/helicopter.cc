@@ -249,11 +249,11 @@ namespace moppe::mov {
       patch.recentre (world, trunks, s.body.position);
     }
 
-    void step (float dt, float water_level) {
+    void step (seconds_t dt, meters_t water_level) {
       using namespace heli_rig;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
 
-      const seconds_t step = dt * u::s;
+      const seconds_t step = dt;
       const auto share = [] (auto q) { return q.numerical_value_in (one); };
       kept.rotor = kept.parked
                      ? std::max (0.0f, kept.rotor - share (step / spool_down))
@@ -371,7 +371,9 @@ namespace moppe::mov {
 
       // The air's drag, and the water's up to the cabin's floor.
       const float wet = std::clamp (
-        (water_level - point (Vec3 (0, 0.6f, 0))[1]) / 0.8f, 0.0f, 1.0f);
+        (meters_value (water_level) - point (Vec3 (0, 0.6f, 0))[1]) / 0.8f,
+        0.0f,
+        1.0f);
       const auto resistance = air_drag * (length (v) * u::m / u::s) +
                               water_drag * wet * heli_rig::mass;
       const Vec3 drag = v * (-resistance).numerical_value_in (u::kg / u::s);
@@ -382,14 +384,14 @@ namespace moppe::mov {
           torque_for (b3Body_GetRotation (body), angular, heli_rig::inertia),
           true);
 
-      b3World_Step (world, dt, substeps);
+      b3World_Step (world, seconds_value (dt), substeps);
 
       // Left on its side or back, it is set on its skids again.
       const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned = upright < 0.3f && length2 (moving) < 4.0f
-                          ? kept.overturned + dt * u::s
+                          ? kept.overturned + dt
                           : seconds_t {};
       if (kept.overturned > 2.5f * u::s) {
         place (point (Vec3 ()), axis (Vec3 (0, 0, 1)));
@@ -399,9 +401,8 @@ namespace moppe::mov {
       // Parked, its rotor stopped, and still: it stays where it is.
       const bool quiet = length2 (moving) < 0.08f * 0.08f &&
                          length2 (turning) < 0.08f * 0.08f && kept.grounded;
-      kept.still = kept.parked && kept.rotor <= 0.0f && quiet
-                     ? kept.still + dt * u::s
-                     : seconds_t {};
+      kept.still = kept.parked && kept.rotor <= 0.0f && quiet ? kept.still + dt
+                                                              : seconds_t {};
       if (kept.still > 1.0f * u::s)
         kept.asleep = true;
     }
@@ -463,8 +464,7 @@ namespace moppe::mov {
     if (m_impl->kept.asleep || dt <= seconds_t {})
       return;
     // Box3D steps in plain seconds and metres.
-    m_impl->step (dt.numerical_value_in (u::s),
-                  water_level.numerical_value_in (u::m));
+    m_impl->step (dt, water_level);
   }
 
   Vec3 Helicopter::position () const {

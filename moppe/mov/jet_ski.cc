@@ -90,12 +90,12 @@ namespace moppe::mov {
       constexpr speed_t jet_speed = 24.0f * u::m / u::s;
       constexpr float astern = 0.3f;
       constexpr float astern_revs = 0.6f;
-      constexpr float spin_up = 0.35f;
+      constexpr seconds_t spin_up = 0.35f * u::s;
       constexpr float idle = 0.14f;
       // Revolutions a second as drawn, at full speed.
-      constexpr float impeller_rate = 9.0f;
+      constexpr per_second_t impeller_rate = 9.0f / u::s;
       constexpr float most_steer = 0.42f;
-      constexpr float steer_rate = 3.0f;
+      constexpr radians_per_second_t steer_rate = 3.0f * u::rad / u::s;
 
       // The rider's balance: how far they lean it into a turn at speed,
       // how hard they right it for how far off it is, and the most
@@ -393,7 +393,7 @@ namespace moppe::mov {
       return false;
     }
 
-    void step (float dt, const BoatWater& water) {
+    void step (seconds_t dt, const BoatWater& water) {
       using namespace jet_ski_rig;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
 
@@ -427,11 +427,13 @@ namespace moppe::mov {
       const float wanted_rpm =
         kept.parked ? 0.0f
                     : std::max (idle, load) * (1.0f + 0.15f * (1.0f - bite));
-      kept.rpm += (wanted_rpm - kept.rpm) * std::min (1.0f, dt / spin_up);
+      kept.rpm += (wanted_rpm - kept.rpm) *
+                  std::min (1.0f, (dt / spin_up).numerical_value_in (one));
       kept.impeller_angle = std::remainder (
-        kept.impeller_angle + kept.rpm * 2.0f * pi * impeller_rate * dt,
+        kept.impeller_angle +
+          (kept.rpm * 2.0f * pi * impeller_rate * dt).numerical_value_in (one),
         2.0f * pi);
-      const float steer_step = steer_rate * dt;
+      const float steer_step = radians_value (steer_rate * dt);
       kept.steer +=
         std::clamp (turn * most_steer - kept.steer, -steer_step, steer_step);
 
@@ -462,7 +464,7 @@ namespace moppe::mov {
           dot (from_b3 (b3Body_GetAngularVelocity (body)), forward) * u::rad /
           u::s;
         const float lean_to = most_lean * turn * smoothstep (1.5f, 7.0f, speed);
-        const float lean_step = 1.6f * dt;
+        const float lean_step = radians_value (1.6f * u::rad / u::s * dt);
         kept.lean += std::clamp (lean_to - kept.lean, -lean_step, lean_step);
         const newton_metres_t torque =
           std::clamp (newton_metres_t (balance * ((kept.lean - roll) * u::rad) -
@@ -477,14 +479,14 @@ namespace moppe::mov {
       // The air's drag on what stands out of the water.
       apply_drag (body, v, air_drag * (length (v) * u::m / u::s));
 
-      b3World_Step (world, dt, substeps);
+      b3World_Step (world, seconds_value (dt), substeps);
 
       // Capsized and drifting: righted where it floats.
       const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned = upright < 0.25f && length2 (moving) < 9.0f
-                          ? kept.overturned + dt * u::s
+                          ? kept.overturned + dt
                           : seconds_t {};
       if (kept.overturned > 2.0f * u::s) {
         const Vec3 here = point (Vec3 ());
@@ -499,7 +501,7 @@ namespace moppe::mov {
       const bool quiet = length2 (moving) < 0.04f * 0.04f &&
                          length2 (turning) < 0.04f * 0.04f &&
                          length2 (current) < 0.05f * 0.05f;
-      kept.still = kept.parked && quiet ? kept.still + dt * u::s : seconds_t {};
+      kept.still = kept.parked && quiet ? kept.still + dt : seconds_t {};
       if (kept.still > 2.0f * u::s)
         kept.asleep = true;
     }
@@ -556,13 +558,14 @@ namespace moppe::mov {
   void JetSki::update (seconds_t step, const BoatWater& water) {
     if (m_impl->kept.asleep || step <= seconds_t {})
       return;
-    const float dt = step.numerical_value_in (u::s);
     // At speed the water is stiff under the hull: it is pressed anew
     // every hundred-and-twentieth of a second at most.
     const int steps =
-      std::max (1, static_cast<int> (std::ceil (dt * 120.0f - 1e-3f)));
+      std::max (1,
+                static_cast<int> (std::ceil (
+                  (step * (120.0f / u::s)).numerical_value_in (one) - 1e-3f)));
     for (int i = 0; i < steps && !m_impl->kept.asleep; ++i)
-      m_impl->step (dt / steps, water);
+      m_impl->step (step / steps, water);
   }
 
   Vec3 JetSki::position () const {

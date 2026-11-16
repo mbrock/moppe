@@ -367,7 +367,7 @@ namespace moppe::mov {
       recentre_ground ();
     }
 
-    void step (float dt, float water_level) {
+    void step (seconds_t dt, meters_t water_level) {
       recentre_ground ();
       const Vec3 forward = axis (Vec3 (0, 0, 1));
       const Vec3 v = from_b3 (b3Body_GetLinearVelocity (chassis));
@@ -438,7 +438,9 @@ namespace moppe::mov {
 
       // The air's drag, and water's up to the sills, on the whole mass.
       const float wet = std::clamp (
-        (water_level - (point (Vec3 (0, -0.3f, 0))[1])) / 0.8f, 0.0f, 1.0f);
+        (meters_value (water_level) - (point (Vec3 (0, -0.3f, 0))[1])) / 0.8f,
+        0.0f,
+        1.0f);
       apply_drag (chassis,
                   v,
                   (caddy_rig::air_drag * (speed * u::m / u::s) +
@@ -473,13 +475,14 @@ namespace moppe::mov {
           true);
       }
 
-      b3World_Step (world, dt, caddy_rig::substeps);
+      b3World_Step (world, seconds_value (dt), caddy_rig::substeps);
 
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         kept.touching[wheel] =
           wheel_touches_ground (wheels[wheel], dt, kept.load[wheel]);
       kept.wheel_spin = std::remainder (
-        kept.wheel_spin + b3WheelJoint_GetSpinSpeed (joints[2]) * dt,
+        kept.wheel_spin +
+          b3WheelJoint_GetSpinSpeed (joints[2]) * seconds_value (dt),
         6.2831853f);
 
       // Left on its side or back, it is set on its wheels again.
@@ -488,7 +491,7 @@ namespace moppe::mov {
       const bool resting = length2 (moving) < 2.0f * 2.0f;
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned =
-        upright < 0.25f && resting ? kept.overturned + dt * u::s : seconds_t {};
+        upright < 0.25f && resting ? kept.overturned + dt : seconds_t {};
       if (kept.overturned > 2.5f * u::s) {
         place (point (Vec3 ()), axis (Vec3 (0, 0, 1)));
         return;
@@ -501,7 +504,7 @@ namespace moppe::mov {
                            kept.touching.begin (),
                            kept.touching.end (),
                            [] (bool touching) { return touching; });
-      kept.still = kept.parked && quiet ? kept.still + dt * u::s : seconds_t {};
+      kept.still = kept.parked && quiet ? kept.still + dt : seconds_t {};
       if (kept.still > 1.0f * u::s)
         kept.asleep = true;
     }
@@ -565,8 +568,7 @@ namespace moppe::mov {
     if (m_impl->kept.asleep || dt <= seconds_t {})
       return;
     // Box3D steps in plain seconds and metres.
-    m_impl->step (dt.numerical_value_in (u::s),
-                  water_level.numerical_value_in (u::m));
+    m_impl->step (dt, water_level);
   }
 
   Vec3 Caddy::position () const {

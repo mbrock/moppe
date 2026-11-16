@@ -112,16 +112,16 @@ namespace moppe::mov {
       constexpr float boosted_power = 1.5f;
       constexpr float boosted_pitch = 1.25f;
       constexpr float astern = 0.35f;
-      constexpr float spin_up = 0.6f;
+      constexpr seconds_t spin_up = 0.6f * u::s;
       constexpr float idle = 0.12f;
       // Revolutions a second as drawn, at full speed.
-      constexpr float propeller_rate = 9.0f;
+      constexpr per_second_t propeller_rate = 9.0f / u::s;
       constexpr float most_swing = 0.5f;
-      constexpr float swing_rate = 2.2f;
+      constexpr radians_per_second_t swing_rate = 2.2f * u::rad / u::s;
       // Tipped up, out of the water, as it is left; and how fast the
       // helmsman lets it down or lifts it.
       constexpr float stowed_tilt = 0.45f;
-      constexpr float tilt_rate = 0.5f;
+      constexpr radians_per_second_t tilt_rate = 0.5f * u::rad / u::s;
       constexpr float shaft_reach = 1.77f;
       // How far the sickle skeg under the propeller reaches below its hub,
       // keeping it off the bottom.
@@ -398,7 +398,7 @@ namespace moppe::mov {
       return false;
     }
 
-    void step (float dt, const BoatWater& water) {
+    void step (seconds_t dt, const BoatWater& water) {
       using namespace boat_rig;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
 
@@ -427,9 +427,11 @@ namespace moppe::mov {
                                  ? 0.0f
                                  : std::max (idle, std::abs (drive)) *
                                      (1.0f + (boosted_pitch - 1.0f) * boost);
-      kept.rpm += (wanted_rpm - kept.rpm) * std::min (1.0f, dt / spin_up);
+      kept.rpm += (wanted_rpm - kept.rpm) *
+                  std::min (1.0f, (dt / spin_up).numerical_value_in (one));
       kept.propeller_angle = std::remainder (
-        kept.propeller_angle + kept.rpm * 2.0f * pi * propeller_rate * dt,
+        kept.propeller_angle +
+          (kept.rpm * 2.0f * pi * propeller_rate * dt).numerical_value_in (one),
         2.0f * pi);
       // Left alone the helmsman's hand holds the course, against the
       // pull of the boat heeling under their weight and the engine's.
@@ -440,7 +442,7 @@ namespace moppe::mov {
                            : (1.0f - std::min (1.0f, std::abs (turn) * 8.0f)) *
                                std::clamp (2.5f * yaw, -0.15f, 0.15f);
       const float swing_to = turn * most_swing + hold;
-      const float swing_step = swing_rate * dt;
+      const float swing_step = radians_value (swing_rate * dt);
       kept.swing += std::clamp (swing_to - kept.swing, -swing_step, swing_step);
 
       // Down into the water while someone holds it, but lifted over the
@@ -454,7 +456,7 @@ namespace moppe::mov {
         tilt_to =
           std::clamp ((floor - low[1]) / shaft_reach, 0.0f, stowed_tilt);
       }
-      const float tilt_step = tilt_rate * dt;
+      const float tilt_step = radians_value (tilt_rate * dt);
       kept.tilt += std::clamp (tilt_to - kept.tilt, -tilt_step, tilt_step);
 
       const Vec3 hub_local = tail_point (hub_at, kept.swing, kept.tilt);
@@ -520,14 +522,14 @@ namespace moppe::mov {
         apply_drag (body, way, drag / (speed * u::m / u::s));
       }
 
-      b3World_Step (world, dt, substeps);
+      b3World_Step (world, seconds_value (dt), substeps);
 
       // Capsized and drifting: righted where it floats.
       const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned = upright < 0.25f && length2 (moving) < 4.0f
-                          ? kept.overturned + dt * u::s
+                          ? kept.overturned + dt
                           : seconds_t {};
       if (kept.overturned > 3.0f * u::s) {
         const Vec3 here = point (Vec3 ());
@@ -544,7 +546,7 @@ namespace moppe::mov {
       const bool quiet = length2 (moving) < 0.04f * 0.04f &&
                          length2 (turning) < 0.04f * 0.04f &&
                          length2 (current) < 0.05f * 0.05f;
-      kept.still = kept.parked && quiet ? kept.still + dt * u::s : seconds_t {};
+      kept.still = kept.parked && quiet ? kept.still + dt : seconds_t {};
       if (kept.still > 2.0f * u::s)
         kept.asleep = true;
     }
@@ -616,7 +618,7 @@ namespace moppe::mov {
   void Boat::update (seconds_t dt, const BoatWater& water) {
     if (m_impl->kept.asleep || dt <= seconds_t {})
       return;
-    m_impl->step (dt.numerical_value_in (u::s), water);
+    m_impl->step (dt, water);
   }
 
   Vec3 Boat::position () const {

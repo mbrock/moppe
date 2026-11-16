@@ -11,6 +11,12 @@
 namespace moppe {
   namespace mov {
     namespace {
+      // How far a quantity settling at `rate` goes toward its goal over
+      // `step`: 1 - e^(-rate step), in std::exp as the bike always has.
+      float settle (damping_t rate, seconds_t step) {
+        return 1.0f - std::exp (-scalar_value (rate * step));
+      }
+
       // What every bike's world shares; the bike's own shape is its
       // BikeRig.
       namespace bike_rig {
@@ -426,17 +432,15 @@ namespace moppe {
                        radians_per_second_t target,
                        kilogram_square_metres_t inertia,
                        damping_t rate,
-                       float dt,
+                       seconds_t step,
                        const Vec3* pivot = nullptr) {
         const Vec3 w = from_b3 (b3Body_GetAngularVelocity (chassis));
-        const float gain =
-          1.0f - std::exp (-rate.numerical_value_in (one / u::s) * dt);
+        const float gain = settle (rate, step);
         // Radians a second, as Box3D turns its bodies.
         const float change =
           (target.numerical_value_in (u::rad / u::s) - dot (w, axis)) * gain;
         // A radian is a ratio: the change of angular velocity over the
         // step, times the inertia, is a torque.
-        const seconds_t step = dt * u::s;
         // The correction is asked for every step, so it goes in as the
         // torque (and force) that delivers it over the step: Box3D spreads
         // those evenly across its substeps, where an impulse would land
@@ -474,7 +478,7 @@ namespace moppe {
         return true;
       }
 
-      void step (const RigidBikeControls& controls, float dt) {
+      void step (const RigidBikeControls& controls, seconds_t dt) {
         if (hold_parked (controls))
           return;
         recentre_ground ();
@@ -535,7 +539,7 @@ namespace moppe {
         const float skid_goal =
           on_rear ? 0.0f : std::clamp (controls.skid, 0.0f, 1.0f);
         skid += (skid_goal - skid) *
-                (1.0f - std::exp (-(skid_goal > skid ? 12.0f : 5.0f) * dt));
+                settle (skid_goal > skid ? 12.0f / u::s : 5.0f / u::s, dt);
         b3Shape_SetFriction (rear_tire, rear_friction ());
         // How far the bike slides round rather than rolls: all the way
         // under the locked brake, dying away as it stops, there being
@@ -622,7 +626,7 @@ namespace moppe {
         const radians_t held =
           std::clamp (goal * u::rad, -rig.max_lean, rig.max_lean);
         lean +=
-          (held - lean) * (1.0f - std::exp (-(grounded ? 8.0f : 3.0f) * dt));
+          (held - lean) * settle (grounded ? 8.0f / u::s : 3.0f / u::s, dt);
         const Vec3 target_up = level * std::cos (radians_value (lean)) +
                                right * std::sin (radians_value (lean));
         // On the ground the bike leans over its tire contacts, or over the
@@ -701,7 +705,7 @@ namespace moppe {
                               0.5f * rising;
           const meters_t goal =
             wheelie * rig.wheelie_lean * std::clamp (balance, -0.6f, 1.0f);
-          rider_shift += (goal - rider_shift) * (1.0f - std::exp (-8.0f * dt));
+          rider_shift += (goal - rider_shift) * settle (8.0f / u::s, dt);
           if (grounded) {
             const newtons_t weight = -chassis_mass * bike_rig::gravity;
             b3Body_ApplyTorque (
@@ -717,10 +721,11 @@ namespace moppe {
         // square of the twist, so a tap of it is a blip of power and a
         // held throttle a surge.
         const float throttle_goal = std::max (controls.throttle, 0.0f);
-        twist =
-          wheelie <= 0.0f
-            ? throttle_goal
-            : std::clamp (throttle_goal, twist - 6.0f * dt, twist + 1.5f * dt);
+        twist = wheelie <= 0.0f
+                  ? throttle_goal
+                  : std::clamp (throttle_goal,
+                                twist - scalar_value (6.0f / u::s * dt),
+                                twist + scalar_value (1.5f / u::s * dt));
         const float throttle = controls.throttle <= 0.0f ? controls.throttle
                                : wheelie > 0.0f          ? twist * twist
                                                          : twist;
@@ -848,13 +853,12 @@ namespace moppe {
                                             to_b3 (left * (-0.6f * hop))));
         }
 
-        b3World_Step (world, dt, bike_rig::substeps);
+        b3World_Step (world, seconds_value (dt), bike_rig::substeps);
 
         newtons_t front_load {};
         front_contact = wheel_touches_ground (front, dt, front_load);
         rear_contact = wheel_touches_ground (rear, dt, rear_load);
-        airborne =
-          front_contact || rear_contact ? seconds_t {} : airborne + dt * u::s;
+        airborne = front_contact || rear_contact ? seconds_t {} : airborne + dt;
         trunk_hit = body_hit = speed_t {};
         const b3ContactEvents events = b3World_GetContactEvents (world);
         for (int i = 0; i < events.hitCount; ++i) {
@@ -939,7 +943,7 @@ namespace moppe {
     }
 
     void RigidBike::step (const RigidBikeControls& controls, seconds_t dt) {
-      m_impl->step (controls, dt.numerical_value_in (u::s));
+      m_impl->step (controls, dt);
     }
 
     RigidBikeState RigidBike::state () const {
