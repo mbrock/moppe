@@ -187,10 +187,13 @@ flowchart LR
   app --> browser["moppe-web + WebGPU"]
 ```
 
-Each terminal executable compiles the source groups it needs directly as one
-unity translation unit per source language. This preserves conceptual
-ownership without repeatedly parsing the mp-units-heavy header graph at
-artificial library boundaries. Tests are excluded from the default CMake
+The engine's source groups are one static library, `moppe-engine`, built once
+and linked by every terminal executable; the generated models are another,
+`moppe-models`. Sources are compiled in unity batches of four
+(`MOPPE_UNITY_BATCH_SIZE`, or `MOPPE_UNITY_BUILD=OFF`) and share one
+precompiled header, so mp-units is not parsed again for each file. The
+library boundaries are build products, not ownership: that stays in
+directories and namespaces. Tests are excluded from the default CMake
 build and must be requested through `make test` or the `moppe-tests` target.
 
 The ordinary product target is Moppe. Atelier, Lavoir, and Étalon remain

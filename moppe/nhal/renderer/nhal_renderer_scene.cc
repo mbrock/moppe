@@ -733,8 +733,8 @@ namespace moppe::nhal {
         return pipeline;
       RenderPipelineDesc desc;
       desc.program = &shaders::uber::program;
-      desc.vertex = m_uber_code.stage (0);
-      desc.fragment = m_uber_code.stage (1);
+      desc.vertex = m_shaders.uber[0];
+      desc.fragment = m_shaders.uber[1];
       desc.color_formats[0] = Format::rgba16_float;
       desc.color_formats[1] = Format::rg16_float;
       desc.color_count = 2;

@@ -557,6 +557,8 @@ namespace moppe {
       SlugGlyph major_tick;
     };
 
+    Hud::~Hud () = default;
+
     Hud::Hud ()
         : m_diagnostics (false), m_fps (0), m_gauge_alpha (0),
           m_reserve_alpha (0), m_reserve_hold (0), m_prompt_alpha (0),

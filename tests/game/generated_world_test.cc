@@ -12,6 +12,8 @@
 #include <type_traits>
 #include <vector>
 
+using namespace moppe;
+
 namespace {
   moppe::terrain::WorldRecipe test_world_recipe (moppe::spatial_extent_t extent,
                                                  int resolution,

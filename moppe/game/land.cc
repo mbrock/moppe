@@ -1,6 +1,7 @@
 #include <moppe/game/land.hh>
 
 #include <moppe/spatial/bundle_storage.hh>
+#include <moppe/terrain/domain_storage.hh>
 
 #include <algorithm>
 #include <bit>

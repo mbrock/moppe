@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <vector>
 
+using namespace moppe;
+
 namespace {
   bool maps_match (const moppe::map::SurfaceGeometry& left,
                    const moppe::map::SurfaceGeometry& right) {

@@ -1769,11 +1769,30 @@
 ;;; RGBA8 colour, four flag bytes (lit, fogged, wind, flutter), and four
 ;;; bytes of what the surface is made of (render::Surface: metallic,
 ;;; roughness, clear coat, and sheen above a flag that it is a material).
-(define-shader-abstraction vertex-word (vertices first offset)
-  `(buffer-element ,vertices (+ ,first (uint ,offset))))
+;;; The rows below are the layout's one statement: CMake reads them into
+;;; the header whose static_asserts hold render::Vertex to them
+;;; (nhal_renderer.cc), so a field moved on one side stops the build.
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *streamed-vertex*
+    '((:stride 11)
+      (:px 0) (:py 1) (:pz 2)
+      (:nx 3) (:ny 4) (:nz 5)
+      (:u 6) (:v 7)
+      (:color 8)
+      (:lit 9)                          ; with fogged, wind, flutter
+      (:surface 10)))                   ; render::Surface
 
-(define-shader-abstraction vertex-float (vertices first offset)
-  `(bit-cast :float (vertex-word ,vertices ,first ,offset)))
+  (defun vertex-offset (field)
+    (float (second (assoc field *streamed-vertex*)))))
+
+(define-shader-abstraction vertex-first (index)
+  `(* ,index (uint ,(vertex-offset :stride))))
+
+(define-shader-abstraction vertex-word (vertices first field)
+  `(buffer-element ,vertices (+ ,first (uint ,(vertex-offset field)))))
+
+(define-shader-abstraction vertex-float (vertices first field)
+  `(bit-cast :float (vertex-word ,vertices ,first ,field)))
 
 (define-shader-function byte-of (word shift)
   (/ (float (logand (shift-right word shift) (uint 255.0))) 255.0))
@@ -1821,25 +1840,25 @@
                  (vertices :storage-buffer :binding 1 :element :uint)
                  (draw :uniform-block :binding 2 :members #.*draw*)
                  (vertices-before :storage-buffer :binding 3 :element :uint)))
-  (let* ((first (* vertex-index (uint 11.0)))
-         (local (vec4 (vertex-float vertices first 0.0)
-                      (vertex-float vertices first 1.0)
-                      (vertex-float vertices first 2.0)
+  (let* ((first (vertex-first vertex-index))
+         (local (vec4 (vertex-float vertices first :px)
+                      (vertex-float vertices first :py)
+                      (vertex-float vertices first :pz)
                       1.0))
          ;; Streamed lists rebuilt each frame (the CPU-skinned figure)
          ;; bring last frame's vertices for their motion.
          (local-before (if (> (swizzle normal-x :w) 0.5)
-                           (vec4 (vertex-float vertices-before first 0.0)
-                                 (vertex-float vertices-before first 1.0)
-                                 (vertex-float vertices-before first 2.0)
+                           (vec4 (vertex-float vertices-before first :px)
+                                 (vertex-float vertices-before first :py)
+                                 (vertex-float vertices-before first :pz)
                                  1.0)
                            local))
-         (normal (vec3 (vertex-float vertices first 3.0)
-                       (vertex-float vertices first 4.0)
-                       (vertex-float vertices first 5.0)))
-         (packed (vertex-word vertices first 8.0))
-         (flags (vertex-word vertices first 9.0))
-         (stuff (vertex-word vertices first 10.0))
+         (normal (vec3 (vertex-float vertices first :nx)
+                       (vertex-float vertices first :ny)
+                       (vertex-float vertices first :nz)))
+         (packed (vertex-word vertices first :color))
+         (flags (vertex-word vertices first :lit))
+         (stuff (vertex-word vertices first :surface))
          (bend (byte-of flags (uint 16.0)))
          (flutter (byte-of flags (uint 24.0)))
          (time (swizzle camera-position :w))
@@ -1854,8 +1873,8 @@
                 (+ (* (swizzle normal-x :xyz) (swizzle normal :x))
                    (* (swizzle normal-y :xyz) (swizzle normal :y))
                    (* (swizzle normal-z :xyz) (swizzle normal :z))))
-    (set-output uv (vec2 (vertex-float vertices first 6.0)
-                         (vertex-float vertices first 7.0)))
+    (set-output uv (vec2 (vertex-float vertices first :u)
+                         (vertex-float vertices first :v)))
     (set-output tint (vec4 (srgb (vec3 (byte-of packed (uint 0.0))
                                        (byte-of packed (uint 8.0))
                                        (byte-of packed (uint 16.0))))
@@ -2614,16 +2633,16 @@
                (tint :vec4 :location 1))
      :resources ((hud :uniform-block :binding 0 :members #.*hud*)
                  (vertices :storage-buffer :binding 1 :element :uint)))
-  (let* ((first (* vertex-index (uint 11.0)))
-         (packed (vertex-word vertices first 8.0))
+  (let* ((first (vertex-first vertex-index))
+         (packed (vertex-word vertices first :color))
          (position (* projection
-                      (vec4 (vertex-float vertices first 0.0)
-                            (vertex-float vertices first 1.0)
-                            (vertex-float vertices first 2.0)
+                      (vec4 (vertex-float vertices first :px)
+                            (vertex-float vertices first :py)
+                            (vertex-float vertices first :pz)
                             1.0))))
     (set-output clip-position (clip position (vec2 0.0 0.0)))
-    (set-output uv (vec2 (vertex-float vertices first 6.0)
-                         (vertex-float vertices first 7.0)))
+    (set-output uv (vec2 (vertex-float vertices first :u)
+                         (vertex-float vertices first :v)))
     (set-output tint (vec4 (byte-of packed (uint 0.0))
                            (byte-of packed (uint 8.0))
                            (byte-of packed (uint 16.0))
@@ -2687,6 +2706,39 @@
   (/ (float (logand (tree-mix (logxor seed (* lane (uint #x9e3779b9))))
                     (uint #x00ffffff)))
      16777216.0))
+
+;;; The tree classes' shape, which the renderer's TreeTopology (the index
+;;; buffer each class shares) must agree with, as one table that both read:
+;;; CMake turns the rows into tree_steps.hh. TIERS is how many detail tiers
+;;; there are; a step row is a value at the coarsest tier and then, for each
+;;; tier at which it changes, that tier and the value from it on.
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *tree-steps*
+    '((:tree-tiers 6)
+      (:tree-sides 5 2 7 5 10)
+      (:tree-masses-birch 4 1 7 4 10)
+      (:tree-masses-spruce 3 1 4 4 5)
+      (:tree-masses-fell 6 1 10 4 12)   ; clumps go in pairs, one to a stem
+      (:tree-branches 3)))              ; the tier birch grows branches from
+
+  (defun tree-step (row)
+    (rest (assoc row *tree-steps*))))
+
+(define-shader-abstraction branch-tier ()
+  (float (first (tree-step :tree-branches))))
+
+(define-shader-abstraction tree-tiers ()
+  `(uint ,(first (tree-step :tree-tiers))))
+
+;;; A row's value at TIER, as nested comparisons against the tiers' floats.
+(define-shader-abstraction tier-step (tier row)
+  (let* ((row (tree-step row))
+         (form `(uint ,(first row))))
+    (loop for (from value) on (rest row) by #'cddr
+          do (setf form `(if (>= ,tier ,(float from))
+                             (uint ,value)
+                             ,form)))
+    form))
 
 ;;; The detail tier of an individual this many pixels tall, 0 to 5.
 (define-shader-function tree-tier (pixels)
@@ -2753,7 +2805,7 @@
                               (if (= kind (uint 3)) (uint 2) (uint 0))))
                  (class (if shadow species
                             (+ (uint (tree-tier pixels))
-                               (* species (uint 6)))))
+                               (* species (tree-tiers)))))
                  (slot (atomic-add arguments (+ (* class (uint 5)) (uint 1))
                                    (uint 1)))
                  (at (* (+ (* class (uint (swizzle world :w))) slot)
@@ -2835,8 +2887,7 @@
                                      (if fell 0.18 (if snag 0.40 0.60))))
                              closure)
                         (* 0.08 (- (tree-hash seed (uint 5)) 0.5))))
-         (sides (if (>= tier 5.0) (uint 10) (if (>= tier 2.0) (uint 7)
-                                                 (uint 5)))))
+         (sides (tier-step tier :tree-sides)))
     (make-tree-shape
      :root root :up up :right right :forward (cross3 right up)
      :height height
@@ -2852,15 +2903,11 @@
      :sides sides
      :crown-sides (if (= sides (uint 10)) (uint 9) sides)
      :masses (if conifer
-                 (if (>= tier 4.0) (uint 5) (if (>= tier 1.0) (uint 4)
-                                                (uint 3)))
-                 ;; A fell birch's clumps go in pairs, one pair to a stem.
+                 (tier-step tier :tree-masses-spruce)
                  (if fell
-                     (if (>= tier 4.0) (uint 12) (if (>= tier 1.0) (uint 10)
-                                                     (uint 6)))
-                     (if (>= tier 4.0) (uint 10) (if (>= tier 1.0) (uint 7)
-                                                     (uint 4)))))
-     :branches (or fell (and (not conifer) (>= tier 3.0)))
+                     (tier-step tier :tree-masses-fell)
+                     (tier-step tier :tree-masses-birch)))
+     :branches (or fell (and (not conifer) (>= tier (branch-tier))))
      :eye eye :pixel pixel)))
 
 (define-shader-struct tree-vertex
@@ -3482,10 +3529,10 @@
      :resources ((caster :uniform-block :binding 0 :members #.*caster*)
                  (vertices :storage-buffer :binding 1 :element :uint)
                  (draw :uniform-block :binding 2 :members #.*draw*)))
-  (let* ((first (* vertex-index (uint 11.0)))
-         (local (vec4 (vertex-float vertices first 0.0)
-                      (vertex-float vertices first 1.0)
-                      (vertex-float vertices first 2.0)
+  (let* ((first (vertex-first vertex-index))
+         (local (vec4 (vertex-float vertices first :px)
+                      (vertex-float vertices first :py)
+                      (vertex-float vertices first :pz)
                       1.0)))
     (set-output clip-position
                 (clip (* light-view (* model local)) (vec2 0.0 0.0)))))

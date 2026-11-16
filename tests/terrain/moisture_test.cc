@@ -4,6 +4,7 @@
 
 #include <vector>
 
+using namespace moppe;
 using namespace moppe::terrain;
 
 MOPPE_TEST (moisture_decays_away_from_standing_water) {

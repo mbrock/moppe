@@ -1,69 +1,10 @@
 // The world programs' DXIL, as DXC compiled luv-shaderc's HLSL lowering of
-// world.lisp into byte-array headers in the build directory.
+// world.lisp into byte-array headers in the build directory. CMake generates
+// the includes (world_stages_hlsl.inc) and the program list
+// (world_programs.def) from world.lisp.
 #include <moppe/nhal/renderer/nhal_renderer.hh>
 
-#include <shader_bloom_blur_fragment.h>
-#include <shader_bloom_blur_vertex.h>
-#include <shader_bloom_bright_fragment.h>
-#include <shader_bloom_bright_vertex.h>
-#include <shader_boulder_cull_compute.h>
-#include <shader_boulders_fragment.h>
-#include <shader_boulders_shadow_vertex.h>
-#include <shader_boulders_vertex.h>
-#include <shader_exposure_compute.h>
-#include <shader_forest_cull_compute.h>
-#include <shader_forest_far_shadow_vertex.h>
-#include <shader_forest_fragment.h>
-#include <shader_forest_shadow_vertex.h>
-#include <shader_forest_vertex.h>
-#include <shader_grass_fragment.h>
-#include <shader_grass_tiles_compute.h>
-#include <shader_grass_vertex.h>
-#include <shader_gtao_blur_fragment.h>
-#include <shader_gtao_blur_vertex.h>
-#include <shader_gtao_fragment.h>
-#include <shader_gtao_vertex.h>
-#include <shader_hud_fragment.h>
-#include <shader_hud_vertex.h>
-#include <shader_leaves_fragment.h>
-#include <shader_leaves_vertex.h>
-#include <shader_mesh_shadow_vertex.h>
-#include <shader_motion_blur_fragment.h>
-#include <shader_motion_blur_vertex.h>
-#include <shader_neighbourhood_fragment.h>
-#include <shader_neighbourhood_vertex.h>
-#include <shader_present_fragment.h>
-#include <shader_present_vertex.h>
-#include <shader_rain_fragment.h>
-#include <shader_rain_vertex.h>
-#include <shader_resolve_fragment.h>
-#include <shader_resolve_vertex.h>
-#include <shader_road_ribbon_fragment.h>
-#include <shader_road_ribbon_vertex.h>
-#include <shader_scene_copy_fragment.h>
-#include <shader_scene_copy_vertex.h>
-#include <shader_shafts_fragment.h>
-#include <shader_shafts_vertex.h>
-#include <shader_sky_fragment.h>
-#include <shader_sky_vertex.h>
-#include <shader_slug_text_fragment.h>
-#include <shader_slug_text_vertex.h>
-#include <shader_sward_fragment.h>
-#include <shader_sward_patches_compute.h>
-#include <shader_sward_vertex.h>
-#include <shader_terrain_fragment.h>
-#include <shader_terrain_shadow_vertex.h>
-#include <shader_terrain_vertex.h>
-#include <shader_uber_fragment.h>
-#include <shader_uber_vertex.h>
-#include <shader_underwater_fragment.h>
-#include <shader_underwater_vertex.h>
-#include <shader_water_fragment.h>
-#include <shader_water_vertex.h>
-#include <shader_waterfall_fragment.h>
-#include <shader_waterfall_vertex.h>
-#include <shader_world_text_fragment.h>
-#include <shader_world_text_vertex.h>
+#include <world_stages_hlsl.inc>
 
 #include <cstddef>
 
@@ -77,44 +18,14 @@ namespace moppe::nhal {
 
   const WorldShaders& world_shaders_d3d12 () {
     static const WorldShaders shaders {
-      { dxil (shader_terrain_vertex), dxil (shader_terrain_fragment) },
-      { dxil (shader_road_ribbon_vertex), dxil (shader_road_ribbon_fragment) },
-      { dxil (shader_sky_vertex), dxil (shader_sky_fragment) },
-      { dxil (shader_uber_vertex), dxil (shader_uber_fragment) },
-      { dxil (shader_hud_vertex), dxil (shader_hud_fragment) },
-      { dxil (shader_resolve_vertex), dxil (shader_resolve_fragment) },
-      { dxil (shader_present_vertex), dxil (shader_present_fragment) },
-      { dxil (shader_slug_text_vertex), dxil (shader_slug_text_fragment) },
-      { dxil (shader_forest_vertex), dxil (shader_forest_fragment) },
-      dxil (shader_forest_cull_compute),
-      dxil (shader_exposure_compute),
-      { dxil (shader_terrain_shadow_vertex), {} },
-      { dxil (shader_forest_shadow_vertex), {} },
-      { dxil (shader_forest_far_shadow_vertex), {} },
-      { dxil (shader_bloom_bright_vertex),
-        dxil (shader_bloom_bright_fragment) },
-      { dxil (shader_bloom_blur_vertex), dxil (shader_bloom_blur_fragment) },
-      { dxil (shader_grass_vertex), dxil (shader_grass_fragment) },
-      dxil (shader_grass_tiles_compute),
-      { dxil (shader_sward_vertex), dxil (shader_sward_fragment) },
-      dxil (shader_sward_patches_compute),
-      { dxil (shader_gtao_vertex), dxil (shader_gtao_fragment) },
-      { dxil (shader_gtao_blur_vertex), dxil (shader_gtao_blur_fragment) },
-      { dxil (shader_shafts_vertex), dxil (shader_shafts_fragment) },
-      { dxil (shader_boulders_vertex), dxil (shader_boulders_fragment) },
-      { dxil (shader_boulders_shadow_vertex), {} },
-      dxil (shader_boulder_cull_compute),
-      { dxil (shader_rain_vertex), dxil (shader_rain_fragment) },
-      { dxil (shader_water_vertex), dxil (shader_water_fragment) },
-      { dxil (shader_leaves_vertex), dxil (shader_leaves_fragment) },
-      { dxil (shader_waterfall_vertex), dxil (shader_waterfall_fragment) },
-      { dxil (shader_scene_copy_vertex), dxil (shader_scene_copy_fragment) },
-      { dxil (shader_neighbourhood_vertex),
-        dxil (shader_neighbourhood_fragment) },
-      { dxil (shader_mesh_shadow_vertex), {} },
-      { dxil (shader_motion_blur_vertex), dxil (shader_motion_blur_fragment) },
-      { dxil (shader_world_text_vertex), dxil (shader_world_text_fragment) },
-      { dxil (shader_underwater_vertex), dxil (shader_underwater_fragment) },
+#define MOPPE_WORLD_DRAWN(name)                                                \
+  { dxil (shader_##name##_vertex), dxil (shader_##name##_fragment) },
+#define MOPPE_WORLD_CASTER(name) { dxil (shader_##name##_vertex), {} },
+#define MOPPE_WORLD_COMPUTE(name) dxil (shader_##name##_compute),
+#include <world_programs.def>
+#undef MOPPE_WORLD_DRAWN
+#undef MOPPE_WORLD_CASTER
+#undef MOPPE_WORLD_COMPUTE
     };
     return shaders;
   }

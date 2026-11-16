@@ -20,7 +20,17 @@ on every platform. Its programs live in one Lisp file, `shaders/world.lisp`,
 which CMake lowers into `build/nhal-world/` (`moppe_lower_world_shaders`)
 and embeds in each backend's form (`world_shaders_metal.cc`,
 `world_shaders_vulkan.cc`, `world_shaders_webgpu.cc`, by `#embed`;
-`world_shaders_d3d12.cc`, from DXC's headers). A frame draws the scene into a
+`world_shaders_d3d12.cc`, from DXC's headers). The Lisp is also the one list of
+the programs: CMake reads its `define-shader-program` forms and generates the
+stages to lower, the stage code each backend embeds, `WorldShaders`
+(`world_programs.def`), and the reflection headers
+(`world_reflection.hh`), so a new program is written in `world.lisp` and its
+pipeline in `nhal_renderer_pipelines.cc`, and nothing else names it. The
+layouts the C++ side must match are Lisp tables too: the streamed vertex's
+words (`*streamed-vertex*`, held to `render::Vertex` by `static_assert`s in
+`nhal_renderer.cc`) and the forest classes' detail steps (`*tree-steps*`,
+which `TreeTopology` reads), each emitted as a header into `build/nhal-world/`.
+A frame draws the scene into a
 half-size RGBA16F colour, RG16F motion, and reversed-Z depth, jittered;
 resolves it temporally into a drawable-size history; then tonemaps into the
 drawable and draws the HUD over it. The resolve's clamp and its motion

@@ -10,6 +10,7 @@
 #include <vector>
 
 using namespace moppe::terrain;
+namespace u = moppe::u;
 
 namespace {
   CellIndex receiver_root (const DrainageGraph& graph, CellIndex origin) {

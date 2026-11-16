@@ -10,46 +10,21 @@
 #include <memory>
 
 namespace moppe::nhal {
-  // Each program's two stages, vertex then fragment, as luv-shaderc lowers
-  // moppe/nhal/renderer/shaders/world.lisp. The renderer copies the code.
+  // Each world program's code, as luv-shaderc lowers
+  // moppe/nhal/renderer/shaders/world.lisp: a drawn program's vertex and
+  // fragment stages, a shadow caster's vertex stage and an empty fragment
+  // stage, or a compute program's one stage. The members are the programs
+  // of world.lisp, in the order of the world_programs.def that CMake
+  // generates from it. The renderer reads the code in place, so it must
+  // outlive the renderer; the functions below return static ones.
   struct WorldShaders {
-    StageCode terrain[2];
-    StageCode road_ribbon[2];
-    StageCode sky[2];
-    StageCode uber[2];
-    StageCode hud[2];
-    StageCode resolve[2];
-    StageCode present[2];
-    StageCode slug_text[2];
-    StageCode forest[2];
-    StageCode forest_cull;
-    StageCode exposure;
-    // Vertex stages only; their fragment code is empty.
-    StageCode terrain_shadow[2];
-    StageCode forest_shadow[2];
-    StageCode forest_far_shadow[2];
-    StageCode bloom_bright[2];
-    StageCode bloom_blur[2];
-    StageCode grass[2];
-    StageCode grass_tiles;
-    StageCode sward[2];
-    StageCode sward_patches;
-    StageCode gtao[2];
-    StageCode gtao_blur[2];
-    StageCode shafts[2];
-    StageCode boulders[2];
-    StageCode boulders_shadow[2];
-    StageCode boulder_cull;
-    StageCode rain[2];
-    StageCode water[2];
-    StageCode leaves[2];
-    StageCode waterfall[2];
-    StageCode scene_copy[2];
-    StageCode neighbourhood[2];
-    StageCode mesh_shadow[2];
-    StageCode motion_blur[2];
-    StageCode world_text[2];
-    StageCode underwater[2];
+#define MOPPE_WORLD_DRAWN(name) StageCode name[2];
+#define MOPPE_WORLD_CASTER(name) StageCode name[2];
+#define MOPPE_WORLD_COMPUTE(name) StageCode name;
+#include <world_programs.def>
+#undef MOPPE_WORLD_DRAWN
+#undef MOPPE_WORLD_CASTER
+#undef MOPPE_WORLD_COMPUTE
   };
 
   // The programs' MSL, embedded in the binary at build time.

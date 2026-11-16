@@ -1,5 +1,7 @@
 #include <moppe/game/fingerposts.hh>
 
+#include <moppe/render/renderer.hh>
+
 #include <algorithm>
 #include <array>
 #include <cmath>

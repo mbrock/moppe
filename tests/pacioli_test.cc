@@ -1,5 +1,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/pacioli.hh>
+#include <moppe/spatial/bundle_operations.hh>
+#include <moppe/terrain/domain.hh>
 
 #include <tests/test.hh>
 

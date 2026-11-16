@@ -5,6 +5,7 @@
 
 #include <cmath>
 
+using namespace moppe;
 using namespace moppe::terrain;
 
 MOPPE_TEST (visible_river_threshold_is_a_physical_five_metre_channel) {

@@ -3,6 +3,7 @@
 #include <moppe/correct_math.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
+#include <moppe/spatial/bundle_operations.hh>
 
 #include <algorithm>
 #include <cstddef>

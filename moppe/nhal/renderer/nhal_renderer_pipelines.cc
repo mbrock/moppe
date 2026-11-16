@@ -15,38 +15,38 @@ namespace moppe::nhal {
 
       RenderPipelineDesc terrain = scene;
       terrain.program = &shaders::terrain::program;
-      terrain.vertex = m_terrain_code.stage (0);
-      terrain.fragment = m_terrain_code.stage (1);
+      terrain.vertex = m_shaders.terrain[0];
+      terrain.fragment = m_shaders.terrain[1];
       terrain.topology = Topology::triangle_strip;
       m_terrain = m_device->create_render_pipeline (terrain);
 
       RenderPipelineDesc ribbon = terrain;
       ribbon.program = &shaders::road_ribbon::program;
-      ribbon.vertex = m_road_ribbon_code.stage (0);
-      ribbon.fragment = m_road_ribbon_code.stage (1);
+      ribbon.vertex = m_shaders.road_ribbon[0];
+      ribbon.fragment = m_shaders.road_ribbon[1];
       ribbon.label = "road ribbon";
       m_road_ribbon = m_device->create_render_pipeline (ribbon);
 
       RenderPipelineDesc sky = scene;
       sky.program = &shaders::sky::program;
-      sky.vertex = m_sky_code.stage (0);
-      sky.fragment = m_sky_code.stage (1);
+      sky.vertex = m_shaders.sky[0];
+      sky.fragment = m_shaders.sky[1];
       sky.cull = Cull::none;
       sky.depth_write = false;
       m_sky = m_device->create_render_pipeline (sky);
 
       RenderPipelineDesc forest = scene;
       forest.program = &shaders::forest::program;
-      forest.vertex = m_forest_code.stage (0);
-      forest.fragment = m_forest_code.stage (1);
+      forest.vertex = m_shaders.forest[0];
+      forest.fragment = m_shaders.forest[1];
       forest.cull = Cull::none;
       forest.label = "forest";
       m_forest = m_device->create_render_pipeline (forest);
       m_exposure = m_device->create_compute_pipeline (
-        { &shaders::exposure::program, m_exposure_code.code (), "exposure" });
+        { &shaders::exposure::program, m_shaders.exposure, "exposure" });
       m_forest_cull =
         m_device->create_compute_pipeline ({ &shaders::forest_cull::program,
-                                             m_forest_cull_code.code (),
+                                             m_shaders.forest_cull,
                                              "forest culling" });
 
       RenderPipelineDesc caster;
@@ -57,18 +57,18 @@ namespace moppe::nhal {
       caster.slope_scaled_depth_bias = 2.0f;
       RenderPipelineDesc terrain_caster = caster;
       terrain_caster.program = &shaders::terrain_shadow::program;
-      terrain_caster.vertex = m_terrain_shadow_code.stage (0);
+      terrain_caster.vertex = m_shaders.terrain_shadow[0];
       terrain_caster.topology = Topology::triangle_strip;
       terrain_caster.label = "terrain shadow";
       m_terrain_shadow = m_device->create_render_pipeline (terrain_caster);
       RenderPipelineDesc tree_caster = caster;
       tree_caster.program = &shaders::forest_shadow::program;
-      tree_caster.vertex = m_forest_shadow_code.stage (0);
+      tree_caster.vertex = m_shaders.forest_shadow[0];
       tree_caster.label = "forest shadow";
       m_forest_shadow = m_device->create_render_pipeline (tree_caster);
       RenderPipelineDesc far_tree_caster = caster;
       far_tree_caster.program = &shaders::forest_far_shadow::program;
-      far_tree_caster.vertex = m_forest_far_shadow_code.stage (0);
+      far_tree_caster.vertex = m_shaders.forest_far_shadow[0];
       far_tree_caster.cull = Cull::none;
       far_tree_caster.label = "far forest shadow";
       m_forest_far_shadow = m_device->create_render_pipeline (far_tree_caster);
@@ -87,13 +87,13 @@ namespace moppe::nhal {
       }
       RenderPipelineDesc rock_caster = caster;
       rock_caster.program = &shaders::boulders_shadow::program;
-      rock_caster.vertex = m_boulders_shadow_code.stage (0);
+      rock_caster.vertex = m_shaders.boulders_shadow[0];
       rock_caster.label = "boulder shadow";
       m_boulders_shadow = m_device->create_render_pipeline (rock_caster);
       // Baked meshes are not all closed, so both their faces cast.
       RenderPipelineDesc mesh_caster = caster;
       mesh_caster.program = &shaders::mesh_shadow::program;
-      mesh_caster.vertex = m_mesh_shadow_code.stage (0);
+      mesh_caster.vertex = m_shaders.mesh_shadow[0];
       mesh_caster.cull = Cull::none;
       mesh_caster.label = "mesh shadow";
       m_mesh_shadow = m_device->create_render_pipeline (mesh_caster);
@@ -108,20 +108,20 @@ namespace moppe::nhal {
 
       RenderPipelineDesc rock = scene;
       rock.program = &shaders::boulders::program;
-      rock.vertex = m_boulders_code.stage (0);
-      rock.fragment = m_boulders_code.stage (1);
+      rock.vertex = m_shaders.boulders[0];
+      rock.fragment = m_shaders.boulders[1];
       rock.cull = Cull::none;
       rock.label = "boulders";
       m_boulders = m_device->create_render_pipeline (rock);
       m_boulder_cull =
         m_device->create_compute_pipeline ({ &shaders::boulder_cull::program,
-                                             m_boulder_cull_code.code (),
+                                             m_shaders.boulder_cull,
                                              "boulder culling" });
 
       RenderPipelineDesc water = scene;
       water.program = &shaders::water::program;
-      water.vertex = m_water_code.stage (0);
-      water.fragment = m_water_code.stage (1);
+      water.vertex = m_shaders.water[0];
+      water.fragment = m_shaders.water[1];
       water.topology = Topology::triangle_strip;
       water.blend[0] = Blend::premultiplied;
       water.depth_write = false;
@@ -131,8 +131,8 @@ namespace moppe::nhal {
 
       RenderPipelineDesc leaves = scene;
       leaves.program = &shaders::leaves::program;
-      leaves.vertex = m_leaves_code.stage (0);
-      leaves.fragment = m_leaves_code.stage (1);
+      leaves.vertex = m_shaders.leaves[0];
+      leaves.fragment = m_shaders.leaves[1];
       leaves.cull = Cull::none;
       leaves.label = "falling leaves";
       m_leaves = m_device->create_render_pipeline (leaves);
@@ -141,8 +141,8 @@ namespace moppe::nhal {
       // coverage, tested against the surface's depth but not writing it.
       RenderPipelineDesc lettering = scene;
       lettering.program = &shaders::world_text::program;
-      lettering.vertex = m_world_text_code.stage (0);
-      lettering.fragment = m_world_text_code.stage (1);
+      lettering.vertex = m_shaders.world_text[0];
+      lettering.fragment = m_shaders.world_text[1];
       lettering.blend[0] = Blend::premultiplied;
       lettering.depth_write = false;
       lettering.cull = Cull::none;
@@ -156,8 +156,8 @@ namespace moppe::nhal {
 
       RenderPipelineDesc waterfall = scene;
       waterfall.program = &shaders::waterfall::program;
-      waterfall.vertex = m_waterfall_code.stage (0);
-      waterfall.fragment = m_waterfall_code.stage (1);
+      waterfall.vertex = m_shaders.waterfall[0];
+      waterfall.fragment = m_shaders.waterfall[1];
       waterfall.blend[0] = Blend::alpha;
       waterfall.depth_write = false;
       waterfall.cull = Cull::none;
@@ -166,8 +166,8 @@ namespace moppe::nhal {
 
       RenderPipelineDesc rain = scene;
       rain.program = &shaders::rain::program;
-      rain.vertex = m_rain_code.stage (0);
-      rain.fragment = m_rain_code.stage (1);
+      rain.vertex = m_shaders.rain[0];
+      rain.fragment = m_shaders.rain[1];
       rain.blend[0] = Blend::alpha;
       rain.depth_write = false;
       rain.cull = Cull::none;
@@ -176,83 +176,83 @@ namespace moppe::nhal {
 
       RenderPipelineDesc grass = scene;
       grass.program = &shaders::grass::program;
-      grass.vertex = m_grass_code.stage (0);
-      grass.fragment = m_grass_code.stage (1);
+      grass.vertex = m_shaders.grass[0];
+      grass.fragment = m_shaders.grass[1];
       grass.cull = Cull::none;
       grass.label = "grass";
       m_grass_pipeline = m_device->create_render_pipeline (grass);
       RenderPipelineDesc sward = grass;
       sward.program = &shaders::sward::program;
-      sward.vertex = m_sward_code.stage (0);
-      sward.fragment = m_sward_code.stage (1);
+      sward.vertex = m_shaders.sward[0];
+      sward.fragment = m_shaders.sward[1];
       sward.blend[0] = Blend::alpha;
       sward.depth_write = false;
       sward.label = "sward canopy";
       m_sward_pipeline = m_device->create_render_pipeline (sward);
       m_sward_patches_pipeline =
         m_device->create_compute_pipeline ({ &shaders::sward_patches::program,
-                                             m_sward_patches_code.code (),
+                                             m_shaders.sward_patches,
                                              "sward patches" });
       m_grass_tiles_pipeline =
         m_device->create_compute_pipeline ({ &shaders::grass_tiles::program,
-                                             m_grass_tiles_code.code (),
+                                             m_shaders.grass_tiles,
                                              "grass tiles" });
 
       RenderPipelineDesc resolve;
       resolve.program = &shaders::resolve::program;
-      resolve.vertex = m_resolve_code.stage (0);
-      resolve.fragment = m_resolve_code.stage (1);
+      resolve.vertex = m_shaders.resolve[0];
+      resolve.fragment = m_shaders.resolve[1];
       resolve.color_formats[0] = Format::rgba16_float;
       m_resolve = m_device->create_render_pipeline (resolve);
       RenderPipelineDesc neighbourhood = resolve;
       neighbourhood.program = &shaders::neighbourhood::program;
-      neighbourhood.vertex = m_neighbourhood_code.stage (0);
-      neighbourhood.fragment = m_neighbourhood_code.stage (1);
+      neighbourhood.vertex = m_shaders.neighbourhood[0];
+      neighbourhood.fragment = m_shaders.neighbourhood[1];
       neighbourhood.color_count = 2;
       neighbourhood.color_formats[1] = Format::rgba16_float;
       m_neighbourhood = m_device->create_render_pipeline (neighbourhood);
 
       RenderPipelineDesc present;
       present.program = &shaders::present::program;
-      present.vertex = m_present_code.stage (0);
-      present.fragment = m_present_code.stage (1);
+      present.vertex = m_shaders.present[0];
+      present.fragment = m_shaders.present[1];
       present.color_formats[0] = m_device->surface_format ();
       m_present = m_device->create_render_pipeline (present);
 
       RenderPipelineDesc bright = present;
       bright.program = &shaders::bloom_bright::program;
-      bright.vertex = m_bloom_bright_code.stage (0);
-      bright.fragment = m_bloom_bright_code.stage (1);
+      bright.vertex = m_shaders.bloom_bright[0];
+      bright.fragment = m_shaders.bloom_bright[1];
       bright.color_formats[0] = Format::rgba16_float;
       m_bloom_bright = m_device->create_render_pipeline (bright);
       RenderPipelineDesc blur = bright;
       blur.program = &shaders::bloom_blur::program;
-      blur.vertex = m_bloom_blur_code.stage (0);
-      blur.fragment = m_bloom_blur_code.stage (1);
+      blur.vertex = m_shaders.bloom_blur[0];
+      blur.fragment = m_shaders.bloom_blur[1];
       m_bloom_blur = m_device->create_render_pipeline (blur);
       RenderPipelineDesc smear = bright;
       smear.program = &shaders::motion_blur::program;
-      smear.vertex = m_motion_blur_code.stage (0);
-      smear.fragment = m_motion_blur_code.stage (1);
+      smear.vertex = m_shaders.motion_blur[0];
+      smear.fragment = m_shaders.motion_blur[1];
       m_motion_blur = m_device->create_render_pipeline (smear);
 
       RenderPipelineDesc underwater = bright;
       underwater.program = &shaders::underwater::program;
-      underwater.vertex = m_underwater_code.stage (0);
-      underwater.fragment = m_underwater_code.stage (1);
+      underwater.vertex = m_shaders.underwater[0];
+      underwater.fragment = m_shaders.underwater[1];
       underwater.label = "underwater";
       m_underwater = m_device->create_render_pipeline (underwater);
 
       RenderPipelineDesc occlusion = present;
       occlusion.program = &shaders::gtao::program;
-      occlusion.vertex = m_gtao_code.stage (0);
-      occlusion.fragment = m_gtao_code.stage (1);
+      occlusion.vertex = m_shaders.gtao[0];
+      occlusion.fragment = m_shaders.gtao[1];
       occlusion.color_formats[0] = Format::r16_float;
       m_gtao = m_device->create_render_pipeline (occlusion);
       RenderPipelineDesc occlusion_blur = occlusion;
       occlusion_blur.program = &shaders::gtao_blur::program;
-      occlusion_blur.vertex = m_gtao_blur_code.stage (0);
-      occlusion_blur.fragment = m_gtao_blur_code.stage (1);
+      occlusion_blur.vertex = m_shaders.gtao_blur[0];
+      occlusion_blur.fragment = m_shaders.gtao_blur[1];
       m_gtao_blur = m_device->create_render_pipeline (occlusion_blur);
       RenderPipelineDesc occlusion_apply = occlusion_blur;
       occlusion_apply.color_formats[0] = Format::rgba16_float;
@@ -260,15 +260,15 @@ namespace moppe::nhal {
       m_gtao_apply = m_device->create_render_pipeline (occlusion_apply);
       RenderPipelineDesc shafts = present;
       shafts.program = &shaders::shafts::program;
-      shafts.vertex = m_shafts_code.stage (0);
-      shafts.fragment = m_shafts_code.stage (1);
+      shafts.vertex = m_shaders.shafts[0];
+      shafts.fragment = m_shaders.shafts[1];
       shafts.color_formats[0] = Format::rgba16_float;
       shafts.blend[0] = Blend::additive;
       m_shafts_pipeline = m_device->create_render_pipeline (shafts);
       RenderPipelineDesc copy = present;
       copy.program = &shaders::scene_copy::program;
-      copy.vertex = m_scene_copy_code.stage (0);
-      copy.fragment = m_scene_copy_code.stage (1);
+      copy.vertex = m_shaders.scene_copy[0];
+      copy.fragment = m_shaders.scene_copy[1];
       copy.color_count = 2;
       copy.color_formats[0] = Format::rgba16_float;
       copy.color_formats[1] = Format::r32_float;
@@ -276,15 +276,15 @@ namespace moppe::nhal {
 
       RenderPipelineDesc hud = present;
       hud.program = &shaders::hud::program;
-      hud.vertex = m_hud_code.stage (0);
-      hud.fragment = m_hud_code.stage (1);
+      hud.vertex = m_shaders.hud[0];
+      hud.fragment = m_shaders.hud[1];
       hud.blend[0] = Blend::alpha;
       m_hud = m_device->create_render_pipeline (hud);
 
       RenderPipelineDesc text = hud;
       text.program = &shaders::slug_text::program;
-      text.vertex = m_slug_text_code.stage (0);
-      text.fragment = m_slug_text_code.stage (1);
+      text.vertex = m_shaders.slug_text[0];
+      text.fragment = m_shaders.slug_text[1];
       m_slug_text = m_device->create_render_pipeline (text);
     }
   }

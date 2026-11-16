@@ -1,5 +1,8 @@
 // The world programs' SPIR-V, as luv-shaderc lowered world.lisp into the
-// build directory, embedded so the game carries no loose shader files.
+// build directory, embedded so the game carries no loose shader files. CMake
+// generates the arrays (world_stages_spirv.inc) and the program list
+// (world_programs.def) from world.lisp. The modules are words, so their
+// bytes are word-aligned.
 #include <moppe/nhal/renderer/nhal_renderer.hh>
 
 #include <cstddef>
@@ -10,195 +13,7 @@
 
 namespace moppe::nhal {
   namespace {
-    // #embed cannot sit in a macro; each stage is spelled out. The modules
-    // are words, so their bytes are word-aligned.
-    alignas (4) const unsigned char road_ribbon_vertex[] = {
-#embed "road_ribbon.vertex.spv"
-    };
-    alignas (4) const unsigned char road_ribbon_fragment[] = {
-#embed "road_ribbon.fragment.spv"
-    };
-    alignas (4) const unsigned char terrain_vertex[] = {
-#embed "terrain.vertex.spv"
-    };
-    alignas (4) const unsigned char terrain_fragment[] = {
-#embed "terrain.fragment.spv"
-    };
-    alignas (4) const unsigned char sky_vertex[] = {
-#embed "sky.vertex.spv"
-    };
-    alignas (4) const unsigned char sky_fragment[] = {
-#embed "sky.fragment.spv"
-    };
-    alignas (4) const unsigned char uber_vertex[] = {
-#embed "uber.vertex.spv"
-    };
-    alignas (4) const unsigned char uber_fragment[] = {
-#embed "uber.fragment.spv"
-    };
-    alignas (4) const unsigned char hud_vertex[] = {
-#embed "hud.vertex.spv"
-    };
-    alignas (4) const unsigned char hud_fragment[] = {
-#embed "hud.fragment.spv"
-    };
-    alignas (4) const unsigned char resolve_vertex[] = {
-#embed "resolve.vertex.spv"
-    };
-    alignas (4) const unsigned char resolve_fragment[] = {
-#embed "resolve.fragment.spv"
-    };
-    alignas (4) const unsigned char present_vertex[] = {
-#embed "present.vertex.spv"
-    };
-    alignas (4) const unsigned char present_fragment[] = {
-#embed "present.fragment.spv"
-    };
-    alignas (4) const unsigned char slug_text_vertex[] = {
-#embed "slug_text.vertex.spv"
-    };
-    alignas (4) const unsigned char slug_text_fragment[] = {
-#embed "slug_text.fragment.spv"
-    };
-    alignas (4) const unsigned char forest_vertex[] = {
-#embed "forest.vertex.spv"
-    };
-    alignas (4) const unsigned char forest_fragment[] = {
-#embed "forest.fragment.spv"
-    };
-    alignas (4) const unsigned char forest_cull_compute[] = {
-#embed "forest_cull.compute.spv"
-    };
-    alignas (4) const unsigned char exposure_compute[] = {
-#embed "exposure.compute.spv"
-    };
-    alignas (4) const unsigned char terrain_shadow_vertex[] = {
-#embed "terrain_shadow.vertex.spv"
-    };
-    alignas (4) const unsigned char forest_shadow_vertex[] = {
-#embed "forest_shadow.vertex.spv"
-    };
-    alignas (4) const unsigned char forest_far_shadow_vertex[] = {
-#embed "forest_far_shadow.vertex.spv"
-    };
-    alignas (4) const unsigned char bloom_bright_vertex[] = {
-#embed "bloom_bright.vertex.spv"
-    };
-    alignas (4) const unsigned char bloom_bright_fragment[] = {
-#embed "bloom_bright.fragment.spv"
-    };
-    alignas (4) const unsigned char bloom_blur_vertex[] = {
-#embed "bloom_blur.vertex.spv"
-    };
-    alignas (4) const unsigned char bloom_blur_fragment[] = {
-#embed "bloom_blur.fragment.spv"
-    };
-    alignas (4) const unsigned char grass_vertex[] = {
-#embed "grass.vertex.spv"
-    };
-    alignas (4) const unsigned char grass_fragment[] = {
-#embed "grass.fragment.spv"
-    };
-    alignas (4) const unsigned char grass_tiles_compute[] = {
-#embed "grass_tiles.compute.spv"
-    };
-    alignas (4) const unsigned char sward_vertex[] = {
-#embed "sward.vertex.spv"
-    };
-    alignas (4) const unsigned char sward_fragment[] = {
-#embed "sward.fragment.spv"
-    };
-    alignas (4) const unsigned char sward_patches_compute[] = {
-#embed "sward_patches.compute.spv"
-    };
-    alignas (4) const unsigned char gtao_vertex[] = {
-#embed "gtao.vertex.spv"
-    };
-    alignas (4) const unsigned char gtao_fragment[] = {
-#embed "gtao.fragment.spv"
-    };
-    alignas (4) const unsigned char gtao_blur_vertex[] = {
-#embed "gtao_blur.vertex.spv"
-    };
-    alignas (4) const unsigned char gtao_blur_fragment[] = {
-#embed "gtao_blur.fragment.spv"
-    };
-    alignas (4) const unsigned char shafts_vertex[] = {
-#embed "shafts.vertex.spv"
-    };
-    alignas (4) const unsigned char shafts_fragment[] = {
-#embed "shafts.fragment.spv"
-    };
-    alignas (4) const unsigned char boulders_vertex[] = {
-#embed "boulders.vertex.spv"
-    };
-    alignas (4) const unsigned char boulders_fragment[] = {
-#embed "boulders.fragment.spv"
-    };
-    alignas (4) const unsigned char boulders_shadow_vertex[] = {
-#embed "boulders_shadow.vertex.spv"
-    };
-    alignas (4) const unsigned char mesh_shadow_vertex[] = {
-#embed "mesh_shadow.vertex.spv"
-    };
-    alignas (4) const unsigned char boulder_cull_compute[] = {
-#embed "boulder_cull.compute.spv"
-    };
-    alignas (4) const unsigned char rain_vertex[] = {
-#embed "rain.vertex.spv"
-    };
-    alignas (4) const unsigned char rain_fragment[] = {
-#embed "rain.fragment.spv"
-    };
-
-    alignas (4) const unsigned char water_vertex[] = {
-#embed "water.vertex.spv"
-    };
-    alignas (4) const unsigned char water_fragment[] = {
-#embed "water.fragment.spv"
-    };
-    alignas (4) const unsigned char leaves_vertex[] = {
-#embed "leaves.vertex.spv"
-    };
-    alignas (4) const unsigned char leaves_fragment[] = {
-#embed "leaves.fragment.spv"
-    };
-    alignas (4) const unsigned char waterfall_vertex[] = {
-#embed "waterfall.vertex.spv"
-    };
-    alignas (4) const unsigned char waterfall_fragment[] = {
-#embed "waterfall.fragment.spv"
-    };
-    alignas (4) const unsigned char scene_copy_vertex[] = {
-#embed "scene_copy.vertex.spv"
-    };
-    alignas (4) const unsigned char scene_copy_fragment[] = {
-#embed "scene_copy.fragment.spv"
-    };
-    alignas (4) const unsigned char neighbourhood_vertex[] = {
-#embed "neighbourhood.vertex.spv"
-    };
-    alignas (4) const unsigned char neighbourhood_fragment[] = {
-#embed "neighbourhood.fragment.spv"
-    };
-    alignas (4) const unsigned char motion_blur_vertex[] = {
-#embed "motion_blur.vertex.spv"
-    };
-    alignas (4) const unsigned char motion_blur_fragment[] = {
-#embed "motion_blur.fragment.spv"
-    };
-    alignas (4) const unsigned char world_text_vertex[] = {
-#embed "world_text.vertex.spv"
-    };
-    alignas (4) const unsigned char world_text_fragment[] = {
-#embed "world_text.fragment.spv"
-    };
-    alignas (4) const unsigned char underwater_vertex[] = {
-#embed "underwater.vertex.spv"
-    };
-    alignas (4) const unsigned char underwater_fragment[] = {
-#embed "underwater.fragment.spv"
-    };
+#include <world_stages_spirv.inc>
 
     template <std::size_t N>
     StageCode spirv (const unsigned char (&code)[N]) {
@@ -211,42 +26,14 @@ namespace moppe::nhal {
 
   const WorldShaders& world_shaders_vulkan () {
     static const WorldShaders shaders {
-      { spirv (terrain_vertex), spirv (terrain_fragment) },
-      { spirv (road_ribbon_vertex), spirv (road_ribbon_fragment) },
-      { spirv (sky_vertex), spirv (sky_fragment) },
-      { spirv (uber_vertex), spirv (uber_fragment) },
-      { spirv (hud_vertex), spirv (hud_fragment) },
-      { spirv (resolve_vertex), spirv (resolve_fragment) },
-      { spirv (present_vertex), spirv (present_fragment) },
-      { spirv (slug_text_vertex), spirv (slug_text_fragment) },
-      { spirv (forest_vertex), spirv (forest_fragment) },
-      spirv (forest_cull_compute),
-      spirv (exposure_compute),
-      { spirv (terrain_shadow_vertex), {} },
-      { spirv (forest_shadow_vertex), {} },
-      { spirv (forest_far_shadow_vertex), {} },
-      { spirv (bloom_bright_vertex), spirv (bloom_bright_fragment) },
-      { spirv (bloom_blur_vertex), spirv (bloom_blur_fragment) },
-      { spirv (grass_vertex), spirv (grass_fragment) },
-      spirv (grass_tiles_compute),
-      { spirv (sward_vertex), spirv (sward_fragment) },
-      spirv (sward_patches_compute),
-      { spirv (gtao_vertex), spirv (gtao_fragment) },
-      { spirv (gtao_blur_vertex), spirv (gtao_blur_fragment) },
-      { spirv (shafts_vertex), spirv (shafts_fragment) },
-      { spirv (boulders_vertex), spirv (boulders_fragment) },
-      { spirv (boulders_shadow_vertex), {} },
-      spirv (boulder_cull_compute),
-      { spirv (rain_vertex), spirv (rain_fragment) },
-      { spirv (water_vertex), spirv (water_fragment) },
-      { spirv (leaves_vertex), spirv (leaves_fragment) },
-      { spirv (waterfall_vertex), spirv (waterfall_fragment) },
-      { spirv (scene_copy_vertex), spirv (scene_copy_fragment) },
-      { spirv (neighbourhood_vertex), spirv (neighbourhood_fragment) },
-      { spirv (mesh_shadow_vertex), {} },
-      { spirv (motion_blur_vertex), spirv (motion_blur_fragment) },
-      { spirv (world_text_vertex), spirv (world_text_fragment) },
-      { spirv (underwater_vertex), spirv (underwater_fragment) },
+#define MOPPE_WORLD_DRAWN(name)                                                \
+  { spirv (name##_vertex), spirv (name##_fragment) },
+#define MOPPE_WORLD_CASTER(name) { spirv (name##_vertex), {} },
+#define MOPPE_WORLD_COMPUTE(name) spirv (name##_compute),
+#include <world_programs.def>
+#undef MOPPE_WORLD_DRAWN
+#undef MOPPE_WORLD_CASTER
+#undef MOPPE_WORLD_COMPUTE
     };
     return shaders;
   }

@@ -4,6 +4,7 @@
 
 #include <array>
 
+using namespace moppe;
 using namespace moppe::terrain;
 
 MOPPE_TEST (height_range_is_a_materialized_terrain_reading) {

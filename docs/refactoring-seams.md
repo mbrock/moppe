@@ -91,8 +91,9 @@ HUD and overlay snapshots, and flare-sightline readings.
 
 The established ownership direction is expressed by source directories,
 namespaces, and includes rather than a matching graph of static libraries.
-CMake composes those source groups directly into each terminal executable and
-uses one unity translation unit per language:
+CMake composes those source groups into one `moppe-engine` library (the
+generated models, which are data, in `moppe-models`) that each terminal
+executable links, compiled in unity batches of a few sources:
 
 ```mermaid
 flowchart LR
@@ -123,6 +124,10 @@ but do not own an OS event loop or Metal backend. Application sources hold the
 host-service callers `Terrain` and `WorldLoading`; terminal apps add
 `main.cc` and exactly one selected platform implementation. Terrain-only
 command-line tools compile only the terrain and world source groups.
+
+An edit recompiles one batch (about nine seconds for a game source on sixteen
+cores; five without unity batches) and relinks, and the models never
+recompile unless they are re-exported.
 
 ## Metal frame encoding
 

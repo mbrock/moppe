@@ -4,7 +4,11 @@
 - Configure: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo`
   (without a build type the project defaults to Debug, whose world
   generation is many times slower)
-- Build everything: `cmake --build build`
+- Build everything: `cmake --build build`. The engine is a library built
+  once (`moppe-engine`, with the generated models apart in `moppe-models`),
+  so editing a source rebuilds its unity batch and relinks (about 9 s on 16
+  cores; `-DMOPPE_UNITY_BUILD=OFF` makes it 5 s and a full build twice the
+  CPU). A header every source reads precompiles once per target.
 - Unit tests: `cmake --build build --target moppe-tests && ctest --test-dir
   build --output-on-failure` (the test binary is excluded from the default
   build, so plain `ctest` otherwise runs a stale one)

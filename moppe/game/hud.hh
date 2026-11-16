@@ -285,6 +285,8 @@ namespace moppe {
     class Hud {
     public:
       Hud ();
+      // Out of line, where Shape is complete.
+      ~Hud ();
 
       // Loads the face and the gauge shapes; call once after the renderer
       // is up.  A missing font leaves the overlay blank rather than

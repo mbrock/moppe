@@ -81,7 +81,9 @@ option(MOPPE_NHAL_RENDERER
 option(MOPPE_BUILD_DEVELOPER_TOOLS
   "Build demos, experiments, testbeds, and command-line tools" OFF)
 option(MOPPE_UNITY_BUILD
-  "Compile each target as a single unity translation unit" ON)
+  "Compile each target as unity translation units of several sources" ON)
+set(MOPPE_UNITY_BATCH_SIZE "4" CACHE STRING
+  "Sources per unity translation unit")
 option(MOPPE_VULKAN_DYNAMIC
   "Load the host Vulkan loader with volk instead of linking libvulkan" OFF)
 option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
@@ -94,20 +96,17 @@ set(MOPPE_LANDS_DIR "" CACHE PATH
 option(MOPPE_EMBED_ASSETS
   "Build the assets and MOPPE_LANDS_DIR's land into the desktop game" OFF)
 
-# Moppe's implementation files are deliberately small, but compiling every one
-# separately makes heavily-templated headers (notably mp-units) dominate build
-# time and memory.  A very large batch size gives each target one translation
-# unit per source language.  CMake still splits C++ from Objective-C++, which is
-# required by AppleClang, but a normal game build no longer launches dozens of
-# redundant C++ compiler processes.
+# Moppe's implementation files are deliberately small, but compiling each
+# separately parses the heavily-templated headers (notably mp-units) once per
+# file. Unity batches of MOPPE_UNITY_BATCH_SIZE sources parse them once per
+# batch: on 16 cores a full build takes 45 s and 6 minutes of CPU, against 63 s
+# and 13 minutes without, and editing one source recompiles its batch (9 s,
+# against 5 s) rather than the whole program. The engine is a library built
+# once (below), and the programs link it. Set MOPPE_UNITY_BUILD=OFF for the
+# quickest edits, or a larger batch for a slow machine.
 if(MOPPE_UNITY_BUILD)
   set(CMAKE_UNITY_BUILD ON)
-  set(CMAKE_UNITY_BUILD_BATCH_SIZE 1000)
-  # A plain `cmake --build build` should remain usable while a large unity
-  # source is instantiating templates.  Ninja otherwise starts one compiler
-  # for every ready target and can consume the whole machine.
-  set_property(GLOBAL PROPERTY JOB_POOLS moppe_compile_pool=2)
-  set(CMAKE_JOB_POOL_COMPILE moppe_compile_pool)
+  set(CMAKE_UNITY_BUILD_BATCH_SIZE ${MOPPE_UNITY_BATCH_SIZE})
 endif()
 
 # Keep the units vocabulary available to every target without forcing a
@@ -323,9 +322,10 @@ endif()
 # Source composition.
 #
 # Directories and namespaces describe ownership. They are deliberately not
-# mirrored by static libraries: every terminal program compiles the source it
-# needs as one unity translation unit per language. This avoids repeatedly
-# parsing the mp-units-heavy header graph at artificial library boundaries.
+# mirrored by static libraries: the engine's sources are one library, built
+# once and linked by every program, and the generated models (tens of
+# megabytes of C++) are another, so that no edit recompiles them. The terrain
+# tools compile just the terrain sources they need.
 
 set(MOPPE_RENDER_SOURCES
   moppe/render/draw.cc
@@ -403,36 +403,13 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/cinematic_flight.cc
   moppe/game/opening.cc
   moppe/game/cairn.cc
-  moppe/game/farm_model.cc
   moppe/game/places.cc
   moppe/game/fingerposts.cc
   moppe/game/place_names.cc
   moppe/game/avatar.cc
   moppe/game/walker_render.cc
   moppe/game/figure.cc
-  moppe/game/figure_mesh.cc
   moppe/game/model_mesh.cc
-  moppe/game/bike_model.cc
-  moppe/game/glider_model.cc
-  moppe/game/jeep_model.cc
-  moppe/game/helicopter_model.cc
-  moppe/game/boat_model.cc
-  moppe/game/jet_ski_model.cc
-  moppe/game/tractor_model.cc
-  moppe/game/trailer_model.cc
-  moppe/game/caddy_model.cc
-  moppe/game/mountain_bike_model.cc
-  moppe/game/long_john_model.cc
-  moppe/game/horse_model.cc
-  moppe/game/cow_model.cc
-  moppe/game/sheep_model.cc
-  moppe/game/reindeer_model.cc
-  moppe/game/moose_model.cc
-  moppe/game/roe_deer_model.cc
-  moppe/game/pig_model.cc
-  moppe/game/hen_model.cc
-  moppe/game/rooster_model.cc
-  moppe/game/chick_model.cc
   moppe/game/animal_render.cc
   moppe/game/hens.cc
   moppe/game/blob_shadow.cc
@@ -460,6 +437,32 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/companion.cc
   moppe/game/companion_link.cc
   moppe/game/video.cc
+)
+
+set(MOPPE_MODEL_SOURCES
+  moppe/game/bike_model.cc
+  moppe/game/boat_model.cc
+  moppe/game/caddy_model.cc
+  moppe/game/chick_model.cc
+  moppe/game/cow_model.cc
+  moppe/game/farm_model.cc
+  moppe/game/figure_mesh.cc
+  moppe/game/glider_model.cc
+  moppe/game/helicopter_model.cc
+  moppe/game/hen_model.cc
+  moppe/game/horse_model.cc
+  moppe/game/jeep_model.cc
+  moppe/game/jet_ski_model.cc
+  moppe/game/long_john_model.cc
+  moppe/game/moose_model.cc
+  moppe/game/mountain_bike_model.cc
+  moppe/game/pig_model.cc
+  moppe/game/reindeer_model.cc
+  moppe/game/roe_deer_model.cc
+  moppe/game/rooster_model.cc
+  moppe/game/sheep_model.cc
+  moppe/game/tractor_model.cc
+  moppe/game/trailer_model.cc
 )
 
 set(MOPPE_ENGINE_SOURCES
@@ -496,6 +499,9 @@ set(MOPPE_APPLE_COMMON_SOURCES
 
 function(moppe_configure_code_target target)
   target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  # The header nearly every source reads first, mp-units and all, is parsed
+  # once per target instead of once per source.
+  target_precompile_headers(${target} PRIVATE moppe/gfx/math.hh)
   target_link_libraries(${target} PRIVATE
     mp-units::mp-units
     nanoarrow::nanoarrow
@@ -505,6 +511,22 @@ function(moppe_configure_code_target target)
     target_link_libraries(${target} PRIVATE Tracy::TracyClient)
   endif()
 endfunction()
+
+# The engine, built once: every program links it instead of compiling its
+# sources again. The generated models are a library of their own, compiled
+# one source apiece outside the unity batches, so editing the engine never
+# recompiles them (and they, being data, are never edited by hand).
+add_library(moppe-models STATIC ${MOPPE_MODEL_SOURCES})
+set_target_properties(moppe-models PROPERTIES UNITY_BUILD OFF)
+add_library(moppe-engine STATIC ${MOPPE_ENGINE_SOURCES})
+target_link_libraries(moppe-engine PUBLIC moppe-models)
+foreach(library moppe-models moppe-engine)
+  moppe_configure_code_target(${library})
+  if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
+    target_compile_definitions(${library} PRIVATE
+      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+  endif()
+endforeach()
 
 function(moppe_configure_apple_target target)
   target_compile_options(${target} PRIVATE
@@ -534,17 +556,106 @@ endif()
 set(MOPPE_NHAL_WORLD ${CMAKE_CURRENT_BINARY_DIR}/nhal-world)
 set(MOPPE_NHAL_WORLD_SOURCE
   ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/world.lisp)
-# The world programs by their stages.
-set(MOPPE_NHAL_WORLD_DRAWN
-  terrain road_ribbon sky uber hud resolve present slug_text forest
-  bloom_bright bloom_blur grass sward gtao gtao_blur shafts boulders
-  rain water leaves waterfall scene_copy neighbourhood motion_blur
-  world_text underwater)
-set(MOPPE_NHAL_WORLD_CASTERS
-  terrain_shadow forest_shadow forest_far_shadow boulders_shadow
-  mesh_shadow)
-set(MOPPE_NHAL_WORLD_COMPUTED
-  forest_cull exposure grass_tiles sward_patches boulder_cull)
+# The world programs are the define-shader-program forms of world.lisp,
+# which is the one list of them: a form with a :compute stage is a compute
+# program, one with a :fragment stage is drawn, and one with only a :vertex
+# stage is a shadow caster. Everything that must name every program (the
+# stages luv-shaderc lowers, the embedded code, and the renderer's
+# WorldShaders) is generated from it, so adding a program means writing it
+# there and the pipeline that uses it in nhal_renderer_pipelines.cc.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${MOPPE_NHAL_WORLD_SOURCE})
+file(READ ${MOPPE_NHAL_WORLD_SOURCE} MOPPE_NHAL_WORLD_LISP)
+string(REGEX MATCHALL "\n\\(define-shader-program [^)]*\\)" MOPPE_NHAL_WORLD_FORMS
+  "${MOPPE_NHAL_WORLD_LISP}")
+string(REGEX MATCHALL "\\(define-shader-program " MOPPE_NHAL_WORLD_STARTS
+  "${MOPPE_NHAL_WORLD_LISP}")
+list(LENGTH MOPPE_NHAL_WORLD_STARTS MOPPE_NHAL_WORLD_STARTS_COUNT)
+list(LENGTH MOPPE_NHAL_WORLD_FORMS MOPPE_NHAL_WORLD_FORMS_COUNT)
+if(MOPPE_NHAL_WORLD_FORMS_COUNT EQUAL 0
+    OR NOT MOPPE_NHAL_WORLD_FORMS_COUNT EQUAL MOPPE_NHAL_WORLD_STARTS_COUNT)
+  message(FATAL_ERROR
+    "world.lisp: ${MOPPE_NHAL_WORLD_STARTS_COUNT} define-shader-program "
+    "forms but ${MOPPE_NHAL_WORLD_FORMS_COUNT} read; each must start a line "
+    "and keep its stages up to the closing parenthesis")
+endif()
+set(MOPPE_NHAL_WORLD_DRAWN)
+set(MOPPE_NHAL_WORLD_CASTERS)
+set(MOPPE_NHAL_WORLD_COMPUTED)
+set(MOPPE_NHAL_WORLD_PROGRAMS_DEF
+  "// Generated by CMake from world.lisp's define-shader-program forms.\n")
+foreach(form IN LISTS MOPPE_NHAL_WORLD_FORMS)
+  string(REGEX REPLACE "^\n\\(define-shader-program +([^ \n]+).*" "\\1" program
+    "${form}")
+  string(REPLACE "-" "_" program ${program})
+  if(form MATCHES ":compute")
+    list(APPEND MOPPE_NHAL_WORLD_COMPUTED ${program})
+    string(APPEND MOPPE_NHAL_WORLD_PROGRAMS_DEF
+      "MOPPE_WORLD_COMPUTE(${program})\n")
+  elseif(form MATCHES ":fragment")
+    list(APPEND MOPPE_NHAL_WORLD_DRAWN ${program})
+    string(APPEND MOPPE_NHAL_WORLD_PROGRAMS_DEF
+      "MOPPE_WORLD_DRAWN(${program})\n")
+  else()
+    list(APPEND MOPPE_NHAL_WORLD_CASTERS ${program})
+    string(APPEND MOPPE_NHAL_WORLD_PROGRAMS_DEF
+      "MOPPE_WORLD_CASTER(${program})\n")
+  endif()
+endforeach()
+set(MOPPE_NHAL_WORLD_REFLECTION "// Generated by CMake from world.lisp.
+#pragma once
+")
+foreach(program IN LISTS MOPPE_NHAL_WORLD_DRAWN MOPPE_NHAL_WORLD_CASTERS
+    MOPPE_NHAL_WORLD_COMPUTED)
+  string(APPEND MOPPE_NHAL_WORLD_REFLECTION "#include <${program}.hh>\n")
+endforeach()
+file(CONFIGURE OUTPUT ${MOPPE_NHAL_WORLD}/world_reflection.hh
+  CONTENT "${MOPPE_NHAL_WORLD_REFLECTION}" @ONLY)
+file(CONFIGURE OUTPUT ${MOPPE_NHAL_WORLD}/world_programs.def
+  CONTENT "${MOPPE_NHAL_WORLD_PROGRAMS_DEF}" @ONLY)
+# The streamed vertex's layout, which world.lisp states as (:field word) rows
+# and nhal_renderer.cc holds render::Vertex to.
+string(REGEX MATCHALL "\\(:[a-z]+ [0-9]+\\)" MOPPE_NHAL_VERTEX_ROWS
+  "${MOPPE_NHAL_WORLD_LISP}")
+set(MOPPE_NHAL_VERTEX_HEADER "// Generated by CMake from world.lisp's *streamed-vertex*.
+#pragma once
+namespace moppe::nhal::streamed_vertex {
+")
+foreach(row IN LISTS MOPPE_NHAL_VERTEX_ROWS)
+  string(REGEX REPLACE "^\\(:([a-z]+) ([0-9]+)\\)$" "  inline constexpr unsigned \\1 = \\2;\n"
+    row "${row}")
+  string(APPEND MOPPE_NHAL_VERTEX_HEADER "${row}")
+endforeach()
+string(APPEND MOPPE_NHAL_VERTEX_HEADER "}\n")
+file(CONFIGURE OUTPUT ${MOPPE_NHAL_WORLD}/streamed_vertex.hh
+  CONTENT "${MOPPE_NHAL_VERTEX_HEADER}" @ONLY)
+# The tree classes' tiers, which world.lisp states as (:tree-name numbers)
+# rows (*tree-steps*) and TreeTopology reads: one number is a constant, more
+# are a step function's, as nhal_renderer_impl.hh's tree_step says.
+string(REGEX MATCHALL "\\(:tree-[a-z-]+( [0-9]+)+\\)" MOPPE_NHAL_TREE_ROWS
+  "${MOPPE_NHAL_WORLD_LISP}")
+set(MOPPE_NHAL_TREE_HEADER "// Generated by CMake from world.lisp's *tree-steps*.
+#pragma once
+namespace moppe::nhal::tree_steps {
+")
+foreach(row IN LISTS MOPPE_NHAL_TREE_ROWS)
+  string(REGEX REPLACE "^\\(:tree-([a-z-]+) ([0-9 ]+)\\)$" "\\1;\\2" row "${row}")
+  list(POP_FRONT row name)
+  string(REPLACE "-" "_" name ${name})
+  string(REPLACE " " ";" row "${row}")
+  list(LENGTH row count)
+  string(REPLACE ";" ", " numbers "${row}")
+  if(count EQUAL 1)
+    string(APPEND MOPPE_NHAL_TREE_HEADER
+      "  inline constexpr unsigned ${name} = ${numbers};\n")
+  else()
+    string(APPEND MOPPE_NHAL_TREE_HEADER
+      "  inline constexpr unsigned ${name}[] = {${numbers}};\n")
+  endif()
+endforeach()
+string(APPEND MOPPE_NHAL_TREE_HEADER "}\n")
+file(CONFIGURE OUTPUT ${MOPPE_NHAL_WORLD}/tree_steps.hh
+  CONTENT "${MOPPE_NHAL_TREE_HEADER}" @ONLY)
 set(MOPPE_NHAL_WORLD_STAGES)
 foreach(program IN LISTS MOPPE_NHAL_WORLD_DRAWN)
   list(APPEND MOPPE_NHAL_WORLD_STAGES ${program}.vertex ${program}.fragment)
@@ -570,6 +681,25 @@ function(moppe_lower_world_shaders language extension outputs)
       ${MOPPE_NHAL_WORLD}/${stage}.${extension})
   endforeach()
   list(REMOVE_DUPLICATES written)
+  # The stages' code as the backend's world_shaders_<backend>.cc includes
+  # it: #embed cannot sit in a macro, so the declarations are written here
+  # instead of by hand, one array per stage named <program>_<stage>.
+  set(stages_inc "// Generated by CMake: the world programs' ${language} code.\n")
+  foreach(stage IN LISTS MOPPE_NHAL_WORLD_STAGES)
+    string(REPLACE "." "_" name ${stage})
+    if(language STREQUAL "spirv")
+      string(APPEND stages_inc
+        "alignas (4) const unsigned char ${name}[] = {\n"
+        "#embed \"${stage}.${extension}\"\n};\n")
+    elseif(language STREQUAL "hlsl")
+      string(APPEND stages_inc "#include <shader_${name}.h>\n")
+    else()
+      string(APPEND stages_inc
+        "const char ${name}[] = {\n#embed \"${stage}.${extension}\"\n, 0\n};\n")
+    endif()
+  endforeach()
+  file(CONFIGURE OUTPUT ${MOPPE_NHAL_WORLD}/world_stages_${language}.inc
+    CONTENT "${stages_inc}" @ONLY)
   if(NOT TARGET moppe_nhal_world_${language})
     add_custom_command(
       OUTPUT ${written}
@@ -679,7 +809,6 @@ endif()
 # translation unit per language.
 if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
   add_executable(moppe-tests EXCLUDE_FROM_ALL
-    ${MOPPE_ENGINE_SOURCES}
     moppe/game/terrain.cc
     moppe/platform/input.cc
     tests/test_main.cc
@@ -758,6 +887,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/render/viewport_test.cc
   )
   moppe_configure_code_target(moppe-tests)
+  target_link_libraries(moppe-tests PRIVATE moppe-engine)
   target_compile_definitions(moppe-tests PRIVATE
     MOPPE_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   if(APPLE)
@@ -786,7 +916,6 @@ if(APPLE AND MOPPE_IOS)
 
   add_executable(moppe-ios MACOSX_BUNDLE
     moppe/game/main.cc
-    ${MOPPE_ENGINE_SOURCES}
     ${MOPPE_APPLICATION_SOURCES}
     ${MOPPE_APPLE_COMMON_SOURCES}
     moppe/nhal/metal/metal_device.mm
@@ -794,6 +923,7 @@ if(APPLE AND MOPPE_IOS)
     ${MOPPE_IOS_ASSETS}
   )
   moppe_configure_code_target(moppe-ios)
+  target_link_libraries(moppe-ios PRIVATE moppe-engine)
   moppe_configure_apple_target(moppe-ios)
   moppe_add_nhal_renderer(moppe-ios msl metal
     moppe/nhal/renderer/world_shaders_metal.cc)
@@ -837,13 +967,13 @@ endif()
 if(APPLE AND MOPPE_TVOS)
   add_executable(moppe-tvos MACOSX_BUNDLE
     moppe/game/main.cc
-    ${MOPPE_ENGINE_SOURCES}
     ${MOPPE_APPLICATION_SOURCES}
     ${MOPPE_APPLE_COMMON_SOURCES}
     moppe/nhal/metal/metal_device.mm
     moppe/platform/tvos/main_tvos.mm
   )
   moppe_configure_code_target(moppe-tvos)
+  target_link_libraries(moppe-tvos PRIVATE moppe-engine)
   moppe_configure_apple_target(moppe-tvos)
   moppe_add_nhal_renderer(moppe-tvos msl metal
     moppe/nhal/renderer/world_shaders_metal.cc)
@@ -1097,7 +1227,6 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
   if(APPLE)
     add_executable(moppe MACOSX_BUNDLE
       moppe/game/main.cc
-      ${MOPPE_ENGINE_SOURCES}
       ${MOPPE_APPLICATION_SOURCES})
     set_target_properties(moppe PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST
@@ -1132,12 +1261,10 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
     # build-web/moppe.html, with its .js, .wasm, and .data beside it.
     add_executable(moppe
       moppe/game/main.cc
-      ${MOPPE_ENGINE_SOURCES}
       ${MOPPE_APPLICATION_SOURCES})
   else()
     add_executable(moppe
       moppe/game/main.cc
-      ${MOPPE_ENGINE_SOURCES}
       ${MOPPE_APPLICATION_SOURCES})
     install(TARGETS moppe RUNTIME DESTINATION bin)
     if(MOPPE_EMBED_ASSETS)
@@ -1151,6 +1278,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
     endif()
   endif()
   moppe_add_sdl_host(moppe)
+  target_link_libraries(moppe PRIVATE moppe-engine)
   option(MOPPE_AUTO_UPDATES "Include Sparkle in the Mac app" OFF)
   if(APPLE AND MOPPE_AUTO_UPDATES)
     set(MOPPE_SPARKLE_ROOT "" CACHE PATH "Pinned Sparkle distribution")
@@ -1338,12 +1466,12 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   # headless world generation and simulation measurement moppe-core-xbox
   # makes on the console, for comparison.
   add_executable(moppe-core-probe EXCLUDE_FROM_ALL
-    ${MOPPE_ENGINE_SOURCES}
     ${MOPPE_APPLICATION_SOURCES}
     moppe/game/core_probe.cc
     moppe/platform/apple/apple_common.mm
     moppe/platform/mac/core_probe_mac.cc)
   moppe_configure_code_target(moppe-core-probe)
+  target_link_libraries(moppe-core-probe PRIVATE moppe-engine)
   moppe_configure_apple_target(moppe-core-probe)
 endif()
 
@@ -1393,7 +1521,6 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
     find_package(SDL3 CONFIG REQUIRED)
     add_executable(moppe-xbox WIN32
       moppe/game/main.cc
-      ${MOPPE_ENGINE_SOURCES}
       ${MOPPE_APPLICATION_SOURCES}
       moppe/nhal/d3d12/d3d12_device.cc
       ${MOPPE_NHAL_RENDERER_SOURCES}
@@ -1405,6 +1532,7 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
       ${MOPPE_XBOX_LOWERED}
       ${MOPPE_XBOX_DXIL})
     moppe_configure_code_target(moppe-xbox)
+    target_link_libraries(moppe-xbox PRIVATE moppe-engine)
     target_include_directories(moppe-xbox PRIVATE ${MOPPE_XBOX_SHADERS})
     # main.cc's main is the game's entry, which main_uwp.cc's main, under
     # SDL's UWP entry point, calls after the console's prelude.
@@ -1447,12 +1575,12 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
     endif()
   else()
     add_executable(moppe-core-xbox WIN32
-      ${MOPPE_ENGINE_SOURCES}
       ${MOPPE_APPLICATION_SOURCES}
       moppe/game/core_probe.cc
       moppe/platform/uwp/platform_uwp.cc
       moppe/platform/uwp/core_main.cc)
     moppe_configure_code_target(moppe-core-xbox)
+    target_link_libraries(moppe-core-xbox PRIVATE moppe-engine)
     # windows.h and C++/WinRT stay out of the game's unity translation unit.
     set_source_files_properties(
       moppe/platform/uwp/platform_uwp.cc

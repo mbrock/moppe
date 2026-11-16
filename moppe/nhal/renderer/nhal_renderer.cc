@@ -8,47 +8,30 @@
 
 namespace moppe::nhal {
   namespace detail {
+    // The shaders read streamed vertices by word (world.lisp's
+    // *streamed-vertex*); a field moved in render::Vertex or there stops
+    // the build here.
+    namespace streamed = streamed_vertex;
+    constexpr std::size_t word = 4;
+    using V = render::Vertex;
+    static_assert (sizeof (V) == word * streamed::stride);
+    static_assert (offsetof (V, px) == word * streamed::px);
+    static_assert (offsetof (V, py) == word * streamed::py);
+    static_assert (offsetof (V, pz) == word * streamed::pz);
+    static_assert (offsetof (V, nx) == word * streamed::nx);
+    static_assert (offsetof (V, ny) == word * streamed::ny);
+    static_assert (offsetof (V, nz) == word * streamed::nz);
+    static_assert (offsetof (V, u) == word * streamed::u);
+    static_assert (offsetof (V, v) == word * streamed::v);
+    static_assert (offsetof (V, color) == word * streamed::color);
+    static_assert (offsetof (V, lit) == word * streamed::lit);
+    static_assert (offsetof (V, surface) == word * streamed::surface);
+
     NhalRenderer::NhalRenderer (std::unique_ptr<Device> device,
                                 const WorldShaders& shaders,
                                 float scale)
-        : m_device (std::move (device)), m_scale (scale),
+        : m_device (std::move (device)), m_shaders (shaders), m_scale (scale),
           m_first_vertex_counts (m_device->info ().indices_count_from_first) {
-      m_terrain_code.keep (shaders.terrain);
-      m_road_ribbon_code.keep (shaders.road_ribbon);
-      m_sky_code.keep (shaders.sky);
-      m_uber_code.keep (shaders.uber);
-      m_hud_code.keep (shaders.hud);
-      m_resolve_code.keep (shaders.resolve);
-      m_present_code.keep (shaders.present);
-      m_grass_code.keep (shaders.grass);
-      m_sward_code.keep (shaders.sward);
-      m_sward_patches_code.keep (shaders.sward_patches);
-      m_grass_tiles_code.keep (shaders.grass_tiles);
-      m_bloom_bright_code.keep (shaders.bloom_bright);
-      m_bloom_blur_code.keep (shaders.bloom_blur);
-      m_motion_blur_code.keep (shaders.motion_blur);
-      m_world_text_code.keep (shaders.world_text);
-      m_underwater_code.keep (shaders.underwater);
-      m_gtao_code.keep (shaders.gtao);
-      m_gtao_blur_code.keep (shaders.gtao_blur);
-      m_shafts_code.keep (shaders.shafts);
-      m_forest_code.keep (shaders.forest);
-      m_rain_code.keep (shaders.rain);
-      m_water_code.keep (shaders.water);
-      m_leaves_code.keep (shaders.leaves);
-      m_waterfall_code.keep (shaders.waterfall);
-      m_scene_copy_code.keep (shaders.scene_copy);
-      m_neighbourhood_code.keep (shaders.neighbourhood);
-      m_boulders_code.keep (shaders.boulders);
-      m_boulders_shadow_code.keep (shaders.boulders_shadow);
-      m_mesh_shadow_code.keep (shaders.mesh_shadow);
-      m_boulder_cull_code.keep (shaders.boulder_cull);
-      m_terrain_shadow_code.keep (shaders.terrain_shadow);
-      m_forest_shadow_code.keep (shaders.forest_shadow);
-      m_forest_far_shadow_code.keep (shaders.forest_far_shadow);
-      m_forest_cull_code.keep (shaders.forest_cull);
-      m_exposure_code.keep (shaders.exposure);
-      m_slug_text_code.keep (shaders.slug_text);
       make_pipelines ();
       const float neutral = 1.0f;
       m_exposure_value = m_device->create_buffer (

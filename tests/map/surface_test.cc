@@ -2,6 +2,7 @@
 
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/render/texture_pixels.hh>
+#include <moppe/spatial/bundle_operations.hh>
 
 #include <tests/recording_renderer.hh>
 #include <tests/surface_fixture.hh>
