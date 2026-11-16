@@ -75,6 +75,7 @@ jobs:
           set -eu
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_FLAGS=-march=x86-64-v3 -DCMAKE_CXX_FLAGS=-march=x86-64-v3 \
             -DMOPPE_BUILD_DEVELOPER_TOOLS=ON -DBUILD_TESTING=OFF
           cmake --build build --target world-fingerprint
           MOPPE_THREADS=1 ./build/world-fingerprint.exe 257 play 123 > build/world
