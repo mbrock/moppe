@@ -38,7 +38,7 @@ namespace moppe {
         at[0],
         at[2],
         time,
-        terrain::sea_wave_scale (amplitude, level - ground));
+        terrain::sea_wave_scale (amplitude, (level - ground) * u::m));
     }
 
     meters_t water_surface_at (const WorldParams& world,
@@ -47,7 +47,7 @@ namespace moppe {
                                const Vec3& at,
                                double time) {
       return still_water_at (world, surface, water, at) +
-             water_waves_at (surface, water, at, time).height * u::m;
+             water_waves_at (surface, water, at, time).height;
     }
 
     speed_t wading_speed (meters_t depth) {

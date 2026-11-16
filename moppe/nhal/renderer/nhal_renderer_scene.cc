@@ -590,15 +590,17 @@ namespace moppe::nhal {
       static_assert (std::size (lanes) == sea_wave_trains.size ());
       for (std::size_t i = 0; i < sea_wave_trains.size (); ++i) {
         const SeaWaveTrain& t = sea_wave_trains[i];
-        const float heading = sea_wind_heading + t.heading;
-        const float k = sea_wave_number (t);
+        const float heading = radians_value (sea_wind_heading + t.heading);
+        const float k = per_metre_value (sea_wave_number (t));
+        const float amplitude = meters_value (t.amplitude);
         *lanes[i][0] = { k * std::cos (heading),
                          k * std::sin (heading),
-                         t.amplitude,
-                         sea_wave_phase (t, time) };
-        *lanes[i][1] = {
-          sea_wave_frequency (t), t.amplitude * sea_wave_lean, t.wavelength, k
-        };
+                         amplitude,
+                         radians_value (sea_wave_phase (t, time)) };
+        *lanes[i][1] = { per_second_value (sea_wave_frequency (t)),
+                         amplitude * sea_wave_lean,
+                         meters_value (t.wavelength),
+                         k };
       }
       return sea;
     }

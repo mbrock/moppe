@@ -347,8 +347,9 @@ namespace moppe::game {
         : input.world.water_level.numerical_value_in (u::m);
     const float local_water =
       still_water +
-      water_waves_at (input.surface, input.water, camera, result.lighting.time)
-        .height;
+      meters_value (water_waves_at (
+                      input.surface, input.water, camera, result.lighting.time)
+                      .height);
     if (local_water > ground)
       result.camera_water_level = local_water;
 

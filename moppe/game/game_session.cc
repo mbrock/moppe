@@ -1538,8 +1538,7 @@ namespace moppe::game {
                    return Vec3 ();
                  const terrain::SeaWaves waves =
                    water_waves_at (surface, water, Vec3 (x, 0.0f, z), time);
-                 Vec3 moving (
-                   waves.velocity[0], waves.velocity[1], waves.velocity[2]);
+                 const Vec3 moving = velocity_value (waves.velocity);
                  const position_t where = moppe::position (Vec3 (x, 0.0f, z));
                  const float sheet = terrain::surface_elevation_value (
                    spatial::sample<terrain::surface_elevation> (*water, where));

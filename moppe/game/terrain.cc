@@ -29,7 +29,7 @@ namespace moppe {
       constexpr float MAX_WAVE_HEIGHT = [] {
         float height = 0.0f;
         for (const auto& train : terrain::sea_wave_trains)
-          height += train.amplitude;
+          height += train.amplitude.numerical_value_in (u::m);
         return height;
       }();
 
