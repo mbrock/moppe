@@ -312,8 +312,8 @@ namespace moppe::mov {
                             Vec3 () };
       patch.origin_for (centre, s.ground_column, s.ground_row);
       s.touching.fill (false);
-      s.load.fill (0.0f);
-      s.still = s.overturned = 0.0f;
+      s.load.fill (newtons_t {});
+      s.still = s.overturned = seconds_t {};
       s.asleep = false;
       return s;
     }
@@ -370,7 +370,7 @@ namespace moppe::mov {
         float spin = 0.0f;
         float torque = jeep_rig::engine_brake_torque;
         const float grip = jeep_rig::traction_share * jeep_rig::tyre_friction *
-                           kept.load[wheel] * r;
+                           kept.load[wheel].numerical_value_in (u::N) * r;
         if (kept.parked) {
           torque = jeep_rig::parking_torque;
         } else if (kept.brake || (drive * vf < 0.0f && std::abs (vf) > 1.5f)) {
@@ -423,8 +423,8 @@ namespace moppe::mov {
       const bool resting = length2 (moving) < 2.0f * 2.0f;
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned =
-        upright < 0.25f && resting ? kept.overturned + dt : 0.0f;
-      if (kept.overturned > 2.5f) {
+        upright < 0.25f && resting ? kept.overturned + dt * u::s : seconds_t {};
+      if (kept.overturned > 2.5f * u::s) {
         place (point (Vec3 ()), axis (Vec3 (0, 0, 1)));
         return;
       }
@@ -436,8 +436,8 @@ namespace moppe::mov {
                            kept.touching.begin (),
                            kept.touching.end (),
                            [] (bool touching) { return touching; });
-      kept.still = kept.parked && quiet ? kept.still + dt : 0.0f;
-      if (kept.still > 1.0f)
+      kept.still = kept.parked && quiet ? kept.still + dt * u::s : seconds_t {};
+      if (kept.still > 1.0f * u::s)
         kept.asleep = true;
     }
   };
@@ -489,10 +489,12 @@ namespace moppe::mov {
     kept.parked = parked;
   }
 
-  void Jeep::update (float dt, float water_level) {
-    if (m_impl->kept.asleep || dt <= 0.0f)
+  void Jeep::update (seconds_t dt, meters_t water_level) {
+    if (m_impl->kept.asleep || dt <= seconds_t {})
       return;
-    m_impl->step (dt, water_level);
+    // Box3D steps in plain seconds and metres.
+    m_impl->step (dt.numerical_value_in (u::s),
+                  water_level.numerical_value_in (u::m));
   }
 
   Vec3 Jeep::position () const {
@@ -525,15 +527,16 @@ namespace moppe::mov {
     return m_impl->kept.asleep;
   }
 
-  float Jeep::mass () const {
-    return jeep_rig::total_mass.numerical_value_in (u::kg);
+  kilograms_t Jeep::mass () const {
+    return jeep_rig::total_mass;
   }
 
-  void Jeep::push (const Vec3& at, const Vec3& impulse) {
+  void Jeep::push (const Vec3& at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
-    m.kept.still = 0.0f;
-    b3Body_ApplyLinearImpulse (m.chassis, to_b3 (impulse), to_b3 (at), true);
+    m.kept.still = seconds_t {};
+    b3Body_ApplyLinearImpulse (
+      m.chassis, to_b3 (impulse_value (impulse)), to_b3 (at), true);
   }
 
   Vec3 Jeep::point (const Vec3& local) const {

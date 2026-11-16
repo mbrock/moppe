@@ -35,8 +35,8 @@ namespace moppe {
       int ground_row = 0;
       bool front_contact = false;
       bool rear_contact = false;
-      // Ground force on the rear tire in the last step, newtons.
-      float rear_load = 0.0f;
+      // Ground force on the rear tire in the last step.
+      newtons_t rear_load {};
       // The lean the rider is holding the bike to, radians, positive right.
       float lean = 0.0f;
       // How far the rear tyre has broken loose under the locked rear
@@ -460,7 +460,7 @@ namespace moppe {
       float trunk_hit () const;
       float body_hit () const;
       // A blow to the chassis at `at`, newton-seconds.
-      void push (const Vec3& at, const Vec3& impulse);
+      void push (const Vec3& at, const impulse_t& impulse);
 
     private:
       struct Impl;

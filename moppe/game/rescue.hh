@@ -69,7 +69,7 @@ namespace moppe::game {
     Vec3 forward { 0, 0, 1 };
     Vec3 up { 0, 1, 0 };
     Vec3 velocity;
-    float mass = 1.0f;
+    kilograms_t mass = 1.0f * u::kg;
     // This game's to push; the other player's machines are theirs.
     bool ours = true;
     // Whether it tows something, the frame of what it tows, for its
@@ -78,7 +78,7 @@ namespace moppe::game {
     Vec3 towed_position;
     Vec3 towed_forward { 0, 0, 1 };
     Vec3 towed_up { 0, 1, 0 };
-    float towed_mass = 1.0f;
+    kilograms_t towed_mass = 1.0f * u::kg;
 
     Vec3 point (const Vec3& local) const;
   };
@@ -88,7 +88,7 @@ namespace moppe::game {
   struct Bump {
     int a = 0, b = 0;
     Vec3 at;
-    Vec3 impulse;
+    impulse_t impulse = moppe::impulse (Vec3 ());
     float speed = 0.0f;
   };
 
@@ -135,8 +135,8 @@ namespace moppe::game {
   // and while it pulls, `lift` at the machine's centre, taking some of
   // its weight off the ground without tipping it.
   struct HaulForce {
-    Vec3 pull;
-    Vec3 lift;
+    force_t pull = force (Vec3 ());
+    force_t lift = force (Vec3 ());
   };
   HaulForce haul_force (const Haul& haul,
                         const MachineBody& body,

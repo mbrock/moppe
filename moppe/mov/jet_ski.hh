@@ -67,13 +67,13 @@ namespace moppe::mov {
       float impeller_angle = 0.0f;
       // How deep the intake ran in the last step, and how hard the jet
       // pushed, newtons.
-      float intake_depth = 0.0f;
-      float thrust = 0.0f;
+      meters_t intake_depth {};
+      newtons_t thrust {};
       bool parked = true;
       bool afloat = false;
       bool grounded = false;
-      float still = 0.0f;
-      float overturned = 0.0f;
+      seconds_t still {};
+      seconds_t overturned {};
       bool asleep = false;
     };
 
@@ -95,7 +95,7 @@ namespace moppe::mov {
     // from it.
     void set_parked (bool parked);
 
-    void update (float dt, const BoatWater& water);
+    void update (seconds_t dt, const BoatWater& water);
 
     Vec3 position () const;
     Vec3 forward () const;
@@ -105,9 +105,9 @@ namespace moppe::mov {
     Vec3 point (const Vec3& local) const;
     // Its whole weight, kilograms: the rider's too while someone is on
     // it (not parked).
-    float mass () const;
+    kilograms_t mass () const;
     // A blow at `at` in the world, newton-seconds. It wakes one asleep.
-    void push (const Vec3& at, const Vec3& impulse);
+    void push (const Vec3& at, const impulse_t& impulse);
     bool asleep () const;
     bool afloat () const;
     bool grounded () const;
@@ -119,16 +119,16 @@ namespace moppe::mov {
     float steer () const;
     float lean () const;
     float impeller_angle () const;
-    float thrust () const;
+    newtons_t thrust () const;
     // Where the jet leaves the nozzle, and the way it is thrown, in the
     // world; and how deep under the water the intake last ran (negative
     // is out of it).
     Vec3 jet () const;
     Vec3 jet_direction () const;
-    float intake_depth () const;
+    meters_t intake_depth () const;
 
     // The most the jet pushes, newtons, standing.
-    static float static_thrust ();
+    static newtons_t static_thrust ();
 
   private:
     struct Impl;

@@ -127,7 +127,7 @@ namespace moppe {
       b3JointId rear_joint = b3_nullJointId;
       b3ShapeId rear_tire = b3_nullShapeId;
       bool front_contact = false, rear_contact = false;
-      float rear_load = 0.0f;
+      newtons_t rear_load {};
       float lean = 0.0f;
       float skid = 0.0f;
       float rider_shift = 0.0f;
@@ -709,8 +709,8 @@ namespace moppe {
             std::min (params.max_drive_force,
                       params.power / std::max (std::abs (vf), 0.5f));
           if (rear_contact) {
-            const float grip =
-              rig.traction_share * rig.tire_friction * rear_load;
+            const float grip = rig.traction_share * rig.tire_friction *
+                               rear_load.numerical_value_in (u::N);
             const float lift = rig.wheelie_share * total_mass *
                                bike_rig::gravity * rig.half_wheelbase /
                                (rig.ride_height () - rig.reference_height);
@@ -798,7 +798,7 @@ namespace moppe {
 
         b3World_Step (world, dt, bike_rig::substeps);
 
-        float front_load = 0.0f;
+        newtons_t front_load {};
         front_contact = wheel_touches_ground (front, dt, front_load);
         rear_contact = wheel_touches_ground (rear, dt, rear_load);
         airborne = front_contact || rear_contact ? 0.0f : airborne + dt;
@@ -1015,9 +1015,9 @@ namespace moppe {
       return m_impl->body_hit;
     }
 
-    void RigidBike::push (const Vec3& at, const Vec3& impulse) {
+    void RigidBike::push (const Vec3& at, const impulse_t& impulse) {
       b3Body_ApplyLinearImpulse (
-        m_impl->chassis, to_b3 (impulse), to_b3 (at), true);
+        m_impl->chassis, to_b3 (impulse_value (impulse)), to_b3 (at), true);
     }
   }
 }

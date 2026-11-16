@@ -372,10 +372,11 @@ namespace moppe::mov {
       State s = kept;
       s.body = { centre, array_of (q), Vec3 (), Vec3 () };
       patch.origin_for (centre, s.ground_column, s.ground_row);
-      s.still = s.overturned = 0.0f;
+      s.still = s.overturned = seconds_t {};
       s.asleep = false;
       s.tilt = boat_rig::stowed_tilt;
-      s.swing = s.rpm = s.thrust = 0.0f;
+      s.swing = s.rpm = 0.0f;
+      s.thrust = newtons_t {};
       if (B3_IS_NULL (world)) {
         build (s);
         return;
@@ -459,8 +460,10 @@ namespace moppe::mov {
       const Vec3 hub_local = tail_point (hub_at, kept.swing, kept.tilt);
       const Vec3 prop = point (hub_local);
       const float rise = stern_wave * smoothstep (1.5f, 6.0f, speed);
-      kept.propeller_depth = water.level (prop[0], prop[2]) + rise - prop[1];
-      const float bite = smoothstep (-0.04f, 0.12f, kept.propeller_depth);
+      const float propeller_depth =
+        water.level (prop[0], prop[2]) + rise - prop[1];
+      kept.propeller_depth = propeller_depth * u::m;
+      const float bite = smoothstep (-0.04f, 0.12f, propeller_depth);
       // The helmsman holds the tail with its push aimed through the
       // boat's centre of mass; steering swings it from there, moving the
       // propeller across and turning its push with it.
@@ -486,7 +489,7 @@ namespace moppe::mov {
         thrust = -astern * static_thrust * bite * kept.rpm;
       else if (drive == 0.0f)
         thrust = 0.0f * u::N;
-      kept.thrust = thrust.numerical_value_in (u::N);
+      kept.thrust = thrust;
       if (thrust != 0.0f * u::N)
         apply_force (body, shaft, thrust, prop);
 
@@ -524,9 +527,9 @@ namespace moppe::mov {
       const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned = upright < 0.25f && length2 (moving) < 4.0f
-                          ? kept.overturned + dt
-                          : 0.0f;
-      if (kept.overturned > 3.0f) {
+                          ? kept.overturned + dt * u::s
+                          : seconds_t {};
+      if (kept.overturned > 3.0f * u::s) {
         const Vec3 here = point (Vec3 ());
         const bool parked = kept.parked;
         const bool passenger = kept.passenger;
@@ -541,8 +544,8 @@ namespace moppe::mov {
       const bool quiet = length2 (moving) < 0.04f * 0.04f &&
                          length2 (turning) < 0.04f * 0.04f &&
                          length2 (current) < 0.05f * 0.05f;
-      kept.still = kept.parked && quiet ? kept.still + dt : 0.0f;
-      if (kept.still > 2.0f)
+      kept.still = kept.parked && quiet ? kept.still + dt * u::s : seconds_t {};
+      if (kept.still > 2.0f * u::s)
         kept.asleep = true;
     }
   };
@@ -594,7 +597,7 @@ namespace moppe::mov {
       return;
     // Someone stepping in or out: the boat settles deeper or lifts.
     kept.asleep = false;
-    kept.still = 0.0f;
+    kept.still = seconds_t {};
     kept.parked = parked;
     b3Body_SetMassData (m.body, boat_rig::mass_data (!parked, kept.passenger));
   }
@@ -605,15 +608,15 @@ namespace moppe::mov {
     if (kept.passenger == aboard)
       return;
     kept.asleep = false;
-    kept.still = 0.0f;
+    kept.still = seconds_t {};
     kept.passenger = aboard;
     b3Body_SetMassData (m.body, boat_rig::mass_data (!kept.parked, aboard));
   }
 
-  void Boat::update (float dt, const BoatWater& water) {
-    if (m_impl->kept.asleep || dt <= 0.0f)
+  void Boat::update (seconds_t dt, const BoatWater& water) {
+    if (m_impl->kept.asleep || dt <= seconds_t {})
       return;
-    m_impl->step (dt, water);
+    m_impl->step (dt.numerical_value_in (u::s), water);
   }
 
   Vec3 Boat::position () const {
@@ -640,18 +643,18 @@ namespace moppe::mov {
     return m_impl->point (local);
   }
 
-  float Boat::mass () const {
+  kilograms_t Boat::mass () const {
     const kilograms_t nobody = 0.0f * u::kg;
     return (boat_rig::mass + (m_impl->kept.parked ? nobody : boat_rig::crew) +
-            (m_impl->kept.passenger ? boat_rig::crew : nobody))
-      .numerical_value_in (u::kg);
+            (m_impl->kept.passenger ? boat_rig::crew : nobody));
   }
 
-  void Boat::push (const Vec3& at, const Vec3& impulse) {
+  void Boat::push (const Vec3& at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
-    m.kept.still = 0.0f;
-    b3Body_ApplyLinearImpulse (m.body, to_b3 (impulse), to_b3 (at), true);
+    m.kept.still = seconds_t {};
+    b3Body_ApplyLinearImpulse (
+      m.body, to_b3 (impulse_value (impulse)), to_b3 (at), true);
   }
 
   bool Boat::asleep () const {
@@ -682,7 +685,7 @@ namespace moppe::mov {
     return m_impl->kept.propeller_angle;
   }
 
-  float Boat::thrust () const {
+  newtons_t Boat::thrust () const {
     return m_impl->kept.thrust;
   }
 
@@ -692,7 +695,7 @@ namespace moppe::mov {
       tail_point (Vec3 (hub[0], hub[1], hub[2]), k.swing, k.tilt));
   }
 
-  float Boat::propeller_depth () const {
+  meters_t Boat::propeller_depth () const {
     return m_impl->kept.propeller_depth;
   }
 }

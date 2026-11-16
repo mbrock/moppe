@@ -27,7 +27,7 @@ namespace {
 
   void caddy_test_run (mov::Caddy& caddy, float seconds) {
     for (int i = 0; i < static_cast<int> (seconds * 120.0f); ++i)
-      caddy.update (1.0f / 120.0f, -100.0f);
+      caddy.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
   }
 }
 
@@ -125,7 +125,7 @@ MOPPE_TEST (the_caddy_crosses_rough_ground_upright) {
   caddy.set_drive (0.7f);
   float lowest_up = 1.0f;
   for (int i = 0; i < 120 * 8; ++i) {
-    caddy.update (1.0f / 120.0f, -100.0f);
+    caddy.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
     lowest_up = std::min (lowest_up, static_cast<float> (caddy.up ()[1]));
     MOPPE_CHECK (std::isfinite (static_cast<float> (caddy.position ()[1])));
   }

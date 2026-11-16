@@ -28,7 +28,7 @@ namespace {
 
   void tractor_test_run (mov::Tractor& tractor, float seconds) {
     for (int i = 0; i < static_cast<int> (seconds * 120.0f); ++i)
-      tractor.update (1.0f / 120.0f, -100.0f);
+      tractor.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
   }
 }
 
@@ -175,7 +175,7 @@ MOPPE_TEST (the_trailer_follows_round_and_will_not_fold_back) {
   tractor.set_drive (-1.0f);
   float widest = 0.0f;
   for (int i = 0; i < 120 * 8; ++i) {
-    tractor.update (1.0f / 120.0f, -100.0f);
+    tractor.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
     const float c = dot (tractor.trailer_forward (), tractor.forward ());
     widest = std::max (widest, std::acos (std::clamp (c, -1.0f, 1.0f)));
   }
@@ -213,7 +213,7 @@ MOPPE_TEST (the_tractor_crosses_rough_ground_upright) {
   tractor.set_drive (0.8f);
   float lowest_up = 1.0f;
   for (int i = 0; i < 120 * 8; ++i) {
-    tractor.update (1.0f / 120.0f, -100.0f);
+    tractor.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
     lowest_up = std::min (lowest_up, static_cast<float> (tractor.up ()[1]));
     MOPPE_CHECK (std::isfinite (static_cast<float> (tractor.position ()[1])));
   }

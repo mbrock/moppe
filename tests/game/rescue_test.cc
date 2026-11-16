@@ -17,7 +17,7 @@ namespace {
     body.machine = game::Machine::jeep;
     body.position = position;
     body.velocity = velocity;
-    body.mass = 1120.0f;
+    body.mass = 1120.0f * u::kg;
     return body;
   }
 
@@ -73,8 +73,8 @@ MOPPE_TEST (machines_that_meet_are_knocked_apart_by_their_masses) {
   const game::Bump& bump = bumps[0];
   MOPPE_CHECK_NEAR (bump.speed, 4.0f, 1e-4f);
   // The first is sent back, and more than enough to stop it: they part.
-  MOPPE_CHECK (bump.impulse[2] < -2.0f * 1120.0f);
-  MOPPE_CHECK (std::abs (bump.impulse[0]) < 1e-3f);
+  MOPPE_CHECK (impulse_value (bump.impulse)[2] < -2.0f * 1120.0f);
+  MOPPE_CHECK (std::abs (impulse_value (bump.impulse)[0]) < 1e-3f);
 
   // Apart, or neither of them ours, nothing.
   const std::vector<game::MachineBody> apart {
@@ -91,16 +91,18 @@ MOPPE_TEST (machines_that_meet_are_knocked_apart_by_their_masses) {
   game::MachineBody bike = jeep_at (Vec3 (0, 0, 0), Vec3 (3, 0, 0));
   bike.machine = game::Machine::bike;
   bike.position[1] = 0.6f;
-  bike.mass = 150.0f;
+  bike.mass = 150.0f * u::kg;
   game::MachineBody tractor = jeep_at (Vec3 (1.3f, 0, 0), Vec3 ());
   tractor.machine = game::Machine::tractor;
   tractor.position[1] = -0.2f;
-  tractor.mass = 1840.0f;
+  tractor.mass = 1840.0f * u::kg;
   const std::vector<game::MachineBody> pair { bike, tractor };
   const std::vector<game::Bump> knock = game::find_bumps (pair);
   MOPPE_CHECK (knock.size () == 1);
-  const float bike_change = knock[0].impulse[0] / bike.mass;
-  const float tractor_change = -knock[0].impulse[0] / tractor.mass;
+  const float bike_change =
+    impulse_value (knock[0].impulse)[0] / bike.mass.numerical_value_in (u::kg);
+  const float tractor_change = -impulse_value (knock[0].impulse)[0] /
+                               tractor.mass.numerical_value_in (u::kg);
   MOPPE_CHECK (bike_change < -3.0f);
   MOPPE_CHECK (tractor_change > 0.0f && tractor_change < 0.5f);
 }
@@ -249,7 +251,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   run ({}, 2.0f);
   MOPPE_CHECK (ski.afloat ());
   MOPPE_CHECK (!session.can_ride_jet_ski ());
-  MOPPE_CHECK_NEAR (ski.mass (), 205.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (ski.mass ().numerical_value_in (u::kg), 205.0f, 1e-3f);
 
   // Waded out beside it, F gets on, and the rider's weight with them.
   session.walker ().spawn (position (Vec3 (121.2f, -0.2f, 125.4f)),
@@ -259,8 +261,9 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   MOPPE_CHECK (!session.haul_within_reach ());
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_mode == game::M_JET_SKI);
-  MOPPE_CHECK_NEAR (ski.mass (), 285.0f, 1e-3f);
-  MOPPE_CHECK (session.machine_body (game::Machine::jet_ski).mass > 280.0f);
+  MOPPE_CHECK_NEAR (ski.mass ().numerical_value_in (u::kg), 285.0f, 1e-3f);
+  MOPPE_CHECK (session.machine_body (game::Machine::jet_ski).mass >
+               280.0f * u::kg);
 
   // The throttle open, it is away over deep water at a jet ski's pace,
   // and the odometer counts it.
@@ -282,7 +285,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   MOPPE_CHECK (length (off) < 3.5f);
   run ({ .drive = 1.0f }, 1.0f);
   MOPPE_CHECK_NEAR (ski.rpm (), 0.0f, 0.05f);
-  MOPPE_CHECK_NEAR (ski.mass (), 205.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (ski.mass ().numerical_value_in (u::kg), 205.0f, 1e-3f);
 }
 
 MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {

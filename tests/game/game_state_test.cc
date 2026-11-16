@@ -53,7 +53,7 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   vehicle.set_thrust (0.8f);
   vehicle.set_yaw (25 * u::deg);
   vehicle.set_boost (0.7f, 0.5f);
-  vehicle.update (seconds (1.0f / 60.0f));
+  vehicle.update (moppe::seconds (1.0f / 60.0f));
   const mov::Vehicle::State saved = vehicle.state ();
 
   vehicle.set_thrust (-1.0f);
@@ -134,7 +134,7 @@ MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
   flight.fall_top = 30 * u::m;
   vehicle.restore (flight);
 
-  vehicle.update (seconds (1.0f / 60.0f));
+  vehicle.update (moppe::seconds (1.0f / 60.0f));
 
   // The flight velocity points down, but the expected uphill landing tangent
   // points up. The surface normal also banks toward the downhill side.
@@ -170,7 +170,7 @@ MOPPE_TEST (air_steering_visibly_whips_the_motocross) {
   vehicle.set_yaw (90 * u::deg);
 
   for (int i = 0; i < 30; ++i)
-    vehicle.update (seconds (1.0f / 60.0f));
+    vehicle.update (moppe::seconds (1.0f / 60.0f));
 
   MOPPE_CHECK (std::abs (vehicle.orientation ()[0]) > 0.35f);
   MOPPE_CHECK (std::abs (vehicle.render_orientation ()[0]) > 0.25f);
@@ -306,10 +306,10 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   const float start_z = glider.position ()[2];
   // The wing heads into the air it flies through, a little upwind of its
   // track over the ground, and turns from there.
-  glider.update (seconds (1.0f / 60.0f));
+  glider.update (moppe::seconds (1.0f / 60.0f));
   const float start_heading = glider.heading ()[0];
   for (int i = 0; i < 60; ++i)
-    glider.update (seconds (1.0f / 60.0f));
+    glider.update (moppe::seconds (1.0f / 60.0f));
 
   MOPPE_CHECK (glider.position ()[2] > start_z + 10.0f);
   MOPPE_CHECK (glider.position ()[1] < start_y + 2.0f);
@@ -321,7 +321,7 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   landing.launch (
     position (Vec3 (100, 14, 100)), velocity (Vec3 (0, 0, 14)), Vec3 (0, 0, 1));
   for (int i = 0; i < 1800 && !landing.landed (); ++i)
-    landing.update (seconds (1.0f / 60.0f));
+    landing.update (moppe::seconds (1.0f / 60.0f));
   MOPPE_CHECK (landing.landed ());
   MOPPE_CHECK_NEAR (landing.position ()[1], 10.75f, 1e-4f);
 }
@@ -348,7 +348,7 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
 
   glider.set_turn (1.0f);
   glider.set_flare (false);
-  glider.update (seconds (1.0f));
+  glider.update (moppe::seconds (1.0f));
   glider.restore (saved);
   const mov::Glider::State restored = glider.state ();
 
@@ -384,8 +384,8 @@ MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
   MOPPE_CHECK (light.drop_bike ());
 
   for (int i = 0; i < 480; ++i) {
-    loaded.update (seconds (1.0f / 60.0f));
-    light.update (seconds (1.0f / 60.0f));
+    loaded.update (moppe::seconds (1.0f / 60.0f));
+    light.update (moppe::seconds (1.0f / 60.0f));
   }
 
   MOPPE_CHECK (loaded.bike_attached ());
@@ -778,7 +778,8 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   // Spooled up, Space climbs it away; up there, F does nothing.
   run ({}, 4.0f);
   run ({ .boost = 1.0f }, 3.0f);
-  MOPPE_CHECK (session.helicopter ().altitude () > 10.0f);
+  MOPPE_CHECK (session.helicopter ().altitude ().numerical_value_in (u::m) >
+               10.0f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
 
@@ -828,7 +829,10 @@ MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
 
   // A few metres up, the tractor is in reach, though not under the hook.
   run ({}, 4.0f);
-  for (int i = 0; i < 600 && session.helicopter ().altitude () < 4.0f; ++i)
+  for (int i = 0;
+       i < 600 &&
+       session.helicopter ().altitude ().numerical_value_in (u::m) < 4.0f;
+       ++i)
     run ({ .boost = 1.0f }, 1.0f / 60.0f);
   MOPPE_CHECK (session.hook_within_reach () == game::Machine::tractor);
   run ({ .toggle_mount = true }, 0.1f);
@@ -854,7 +858,8 @@ MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
   MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
   run ({}, 8.0f);
   MOPPE_CHECK (session.tractor ().position ()[1] < 12.0f);
-  MOPPE_CHECK (session.helicopter ().altitude () > 5.0f);
+  MOPPE_CHECK (session.helicopter ().altitude ().numerical_value_in (u::m) >
+               5.0f);
 }
 
 MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {

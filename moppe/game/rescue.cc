@@ -218,7 +218,7 @@ namespace moppe::game {
       struct Placed {
         Vec3 centre;
         float radius = 0.0f;
-        float mass = 1.0f;
+        kilograms_t mass = 1.0f * u::kg;
       };
 
       // A machine's bumpers, and those of what it tows.
@@ -254,7 +254,7 @@ namespace moppe::game {
           continue;
         // The deepest overlap of any two of their spheres.
         float deepest = 0.0f;
-        float mass_a = a.mass, mass_b = b.mass;
+        kilograms_t mass_a = a.mass, mass_b = b.mass;
         Vec3 normal, at;
         const std::vector<Placed> as = placed_bumpers (a);
         const std::vector<Placed> bs = placed_bumpers (b);
@@ -288,11 +288,14 @@ namespace moppe::game {
                               std::max (-closing * restitution, least_rebound));
         if (closing >= parting)
           continue;
-        const float reduced = mass_a * mass_b / (mass_a + mass_b);
+        const kilograms_t reduced = mass_a * mass_b / (mass_a + mass_b);
+        // The momentum each takes, newton-seconds along the normal.
+        const float blow = (reduced * ((parting - closing) * u::m / u::s))
+                             .numerical_value_in (u::N * u::s);
         found.push_back ({ .a = i,
                            .b = j,
                            .at = at,
-                           .impulse = normal * (reduced * (parting - closing)),
+                           .impulse = impulse (normal * blow),
                            .speed = std::max (0.0f, -closing) });
       }
     return found;
@@ -349,7 +352,10 @@ namespace moppe::game {
     const float pull = std::clamp (
       rope_rate * stretch - rope_damping * closing, -rope_most, rope_most);
     const float taut = std::clamp (stretch / 0.15f, 0.0f, 1.0f);
-    return { .pull = out * (pull * body.mass),
-             .lift = Vec3 (0.0f, rope_lift * taut * body.mass, 0.0f) };
+    // The rope's rates are accelerations; the machine's weight makes them
+    // forces.
+    const float kg = body.mass.numerical_value_in (u::kg);
+    return { .pull = force (out * (pull * kg)),
+             .lift = force (Vec3 (0.0f, rope_lift * taut * kg, 0.0f)) };
   }
 }

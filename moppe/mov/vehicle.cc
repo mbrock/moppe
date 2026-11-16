@@ -762,12 +762,12 @@ namespace moppe {
       m_fork = m_rigid->steer_angle ();
     }
 
-    void Vehicle::push (const Vec3& at, const Vec3& impulse) {
+    void Vehicle::push (const Vec3& at, const impulse_t& impulse) {
       if (m_rigid) {
         m_rigid->push (at, impulse);
         return;
       }
-      m_velocity += moppe::velocity (impulse / mass ());
+      m_velocity += quantity_cast<isq::velocity> (impulse / m_mass);
     }
 
     void Vehicle::set_boost (float boost, float drive) {

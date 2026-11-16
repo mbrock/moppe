@@ -229,10 +229,9 @@ namespace moppe::mov {
     }
   }
 
-  float JetSki::static_thrust () {
+  newtons_t JetSki::static_thrust () {
     using namespace jet_ski_rig;
-    return newtons_t (rho * nozzle_area * jet_speed * jet_speed)
-      .numerical_value_in (u::N);
+    return rho * nozzle_area * jet_speed * jet_speed;
   }
 
   struct JetSki::Impl {
@@ -369,9 +368,10 @@ namespace moppe::mov {
       State s = kept;
       s.body = { centre, array_of (q), Vec3 (), Vec3 () };
       patch.origin_for (centre, s.ground_column, s.ground_row);
-      s.still = s.overturned = 0.0f;
+      s.still = s.overturned = seconds_t {};
       s.asleep = false;
-      s.steer = s.lean = s.rpm = s.thrust = 0.0f;
+      s.steer = s.lean = s.rpm = 0.0f;
+      s.thrust = newtons_t {};
       if (B3_IS_NULL (world)) {
         build (s);
         return;
@@ -417,8 +417,10 @@ namespace moppe::mov {
         kept.parked ? 0.0f : std::clamp (kept.turn, -1.0f, 1.0f);
       const Vec3 grate (intake[0], intake[1], intake[2]);
       const Vec3 grate_at = point (grate);
-      kept.intake_depth = water.level (grate_at[0], grate_at[2]) - grate_at[1];
-      const float bite = smoothstep (-0.03f, 0.06f, kept.intake_depth);
+      const float intake_depth =
+        water.level (grate_at[0], grate_at[2]) - grate_at[1];
+      kept.intake_depth = intake_depth * u::m;
+      const float bite = smoothstep (-0.03f, 0.06f, intake_depth);
       // Out of the water the pump has nothing to work on and the engine
       // races.
       const float load = drive < 0.0f ? astern_revs * -drive : drive;
@@ -445,7 +447,7 @@ namespace moppe::mov {
         thrust = -astern * bite * rho * nozzle_area * jet * jet;
       else if (drive == 0.0f)
         thrust = 0.0f * u::N;
-      kept.thrust = thrust.numerical_value_in (u::N);
+      kept.thrust = thrust;
       if (thrust != 0.0f * u::N)
         apply_force (
           body, push, thrust, point (Vec3 (nozzle[0], nozzle[1], nozzle[2])));
@@ -482,9 +484,9 @@ namespace moppe::mov {
       const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned = upright < 0.25f && length2 (moving) < 9.0f
-                          ? kept.overturned + dt
-                          : 0.0f;
-      if (kept.overturned > 2.0f) {
+                          ? kept.overturned + dt * u::s
+                          : seconds_t {};
+      if (kept.overturned > 2.0f * u::s) {
         const Vec3 here = point (Vec3 ());
         const bool parked = kept.parked;
         place (here, axis (Vec3 (0, 0, 1)), water.level (here[0], here[2]));
@@ -497,8 +499,8 @@ namespace moppe::mov {
       const bool quiet = length2 (moving) < 0.04f * 0.04f &&
                          length2 (turning) < 0.04f * 0.04f &&
                          length2 (current) < 0.05f * 0.05f;
-      kept.still = kept.parked && quiet ? kept.still + dt : 0.0f;
-      if (kept.still > 2.0f)
+      kept.still = kept.parked && quiet ? kept.still + dt * u::s : seconds_t {};
+      if (kept.still > 2.0f * u::s)
         kept.asleep = true;
     }
   };
@@ -546,14 +548,15 @@ namespace moppe::mov {
       return;
     // Someone getting on or off: it settles deeper or lifts.
     kept.asleep = false;
-    kept.still = 0.0f;
+    kept.still = seconds_t {};
     kept.parked = parked;
     b3Body_SetMassData (m.body, jet_ski_rig::mass_data (!parked));
   }
 
-  void JetSki::update (float dt, const BoatWater& water) {
-    if (m_impl->kept.asleep || dt <= 0.0f)
+  void JetSki::update (seconds_t step, const BoatWater& water) {
+    if (m_impl->kept.asleep || step <= seconds_t {})
       return;
+    const float dt = step.numerical_value_in (u::s);
     // At speed the water is stiff under the hull: it is pressed anew
     // every hundred-and-twentieth of a second at most.
     const int steps =
@@ -586,17 +589,17 @@ namespace moppe::mov {
     return m_impl->point (local);
   }
 
-  float JetSki::mass () const {
+  kilograms_t JetSki::mass () const {
     return (jet_ski_rig::mass +
-            (m_impl->kept.parked ? 0.0f * u::kg : jet_ski_rig::crew))
-      .numerical_value_in (u::kg);
+            (m_impl->kept.parked ? 0.0f * u::kg : jet_ski_rig::crew));
   }
 
-  void JetSki::push (const Vec3& at, const Vec3& impulse) {
+  void JetSki::push (const Vec3& at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
-    m.kept.still = 0.0f;
-    b3Body_ApplyLinearImpulse (m.body, to_b3 (impulse), to_b3 (at), true);
+    m.kept.still = seconds_t {};
+    b3Body_ApplyLinearImpulse (
+      m.body, to_b3 (impulse_value (impulse)), to_b3 (at), true);
   }
 
   bool JetSki::asleep () const {
@@ -627,7 +630,7 @@ namespace moppe::mov {
     return m_impl->kept.impeller_angle;
   }
 
-  float JetSki::thrust () const {
+  newtons_t JetSki::thrust () const {
     return m_impl->kept.thrust;
   }
 
@@ -639,7 +642,7 @@ namespace moppe::mov {
     return -m_impl->axis (m_impl->push_local ());
   }
 
-  float JetSki::intake_depth () const {
+  meters_t JetSki::intake_depth () const {
     return m_impl->kept.intake_depth;
   }
 }

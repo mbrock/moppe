@@ -35,7 +35,7 @@ namespace {
                          float seconds,
                          const mov::BoatWater& water = jet_ski_still_water ()) {
     for (int i = 0; i < static_cast<int> (seconds * 60.0f); ++i)
-      ski.update (1.0f / 60.0f, water);
+      ski.update (moppe::seconds (1.0f / 60.0f), water);
   }
 
   Vec3 jet_ski_level (Vec3 v) {
@@ -72,7 +72,7 @@ MOPPE_TEST (a_jet_ski_left_on_the_water_floats_level_and_rests) {
   MOPPE_CHECK (ski.position ()[1] < -0.08f);
   MOPPE_CHECK (ski.position ()[1] > -0.24f);
   MOPPE_CHECK (ski.up ()[1] > 0.995f);
-  MOPPE_CHECK_NEAR (ski.thrust (), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (ski.thrust ().numerical_value_in (u::N), 0.0f, 1e-6f);
 }
 
 MOPPE_TEST (the_jet_ski_settles_deeper_under_its_rider_and_stays_upright) {
@@ -82,10 +82,11 @@ MOPPE_TEST (the_jet_ski_settles_deeper_under_its_rider_and_stays_upright) {
   ski.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f);
   jet_ski_test_run (ski, 10.0f);
   const float empty = ski.position ()[1];
-  const float empty_mass = ski.mass ();
+  const float empty_mass = ski.mass ().numerical_value_in (u::kg);
   ski.set_parked (false);
   jet_ski_test_run (ski, 10.0f);
-  MOPPE_CHECK_NEAR (ski.mass () - empty_mass, 80.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (
+    ski.mass ().numerical_value_in (u::kg) - empty_mass, 80.0f, 1e-3f);
   MOPPE_CHECK (ski.position ()[1] < empty - 0.015f);
   MOPPE_CHECK (ski.position ()[1] > empty - 0.09f);
   // The rider's weight is high, but the hull is broad under them.
@@ -119,7 +120,7 @@ MOPPE_TEST (the_jet_planes_the_jet_ski_and_its_nozzle_steers_it) {
   MOPPE_CHECK (ski.forward ()[2] > 0.98f);
   MOPPE_CHECK (ski.position ()[1] > floating + 0.05f);
   MOPPE_CHECK (least_up > 0.95f);
-  MOPPE_CHECK (ski.intake_depth () > 0.0f);
+  MOPPE_CHECK (ski.intake_depth ().numerical_value_in (u::m) > 0.0f);
 
   // The bars over, it turns to the right, toward -x, banked into it.
   ski.set_turn (1.0f);
@@ -148,7 +149,7 @@ MOPPE_TEST (with_the_throttle_shut_the_jet_ski_has_nothing_to_steer_with) {
   ski.set_drive (0.0f);
   ski.set_turn (1.0f);
   jet_ski_test_run (ski, 2.0f);
-  MOPPE_CHECK_NEAR (ski.thrust (), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (ski.thrust ().numerical_value_in (u::N), 0.0f, 1e-6f);
   // It leans as its rider does and comes round a little, no more.
   MOPPE_CHECK (ski.forward ()[2] > 0.8f);
 }
@@ -175,21 +176,21 @@ MOPPE_TEST (a_jet_ski_thrown_off_a_wave_loses_its_push_until_it_lands) {
   ski.set_parked (false);
   ski.set_drive (1.0f);
   jet_ski_test_run (ski, 4.0f);
-  MOPPE_CHECK (ski.thrust () > 200.0f);
+  MOPPE_CHECK (ski.thrust ().numerical_value_in (u::N) > 200.0f);
   // Lifted clear of the water, its grate sucks air.
   mov::JetSki::State lifted = ski.state ();
   lifted.body.position[1] = 1.2f;
   lifted.body.linear_velocity[1] = 0.0f;
   ski.restore (lifted);
-  ski.update (1.0f / 60.0f, jet_ski_still_water ());
-  MOPPE_CHECK (ski.intake_depth () < 0.0f);
-  MOPPE_CHECK_NEAR (ski.thrust (), 0.0f, 1e-3f);
+  ski.update (moppe::seconds (1.0f / 60.0f), jet_ski_still_water ());
+  MOPPE_CHECK (ski.intake_depth ().numerical_value_in (u::m) < 0.0f);
+  MOPPE_CHECK_NEAR (ski.thrust ().numerical_value_in (u::N), 0.0f, 1e-3f);
   MOPPE_CHECK (!ski.afloat ());
   // It comes down, stays upright, and drives on.
   jet_ski_test_run (ski, 3.0f);
   MOPPE_CHECK (ski.afloat ());
   MOPPE_CHECK (ski.up ()[1] > 0.9f);
-  MOPPE_CHECK (ski.thrust () > 200.0f);
+  MOPPE_CHECK (ski.thrust ().numerical_value_in (u::N) > 200.0f);
 }
 
 MOPPE_TEST (a_jet_ski_rides_over_a_swell_without_burying_its_bow) {
@@ -215,7 +216,7 @@ MOPPE_TEST (a_jet_ski_rides_over_a_swell_without_burying_its_bow) {
   float least_up = 1.0f, lowest = 1e9f;
   for (int i = 0; i < 15 * 60; ++i) {
     time += 1.0f / 60.0f;
-    ski.update (1.0f / 60.0f, swell);
+    ski.update (moppe::seconds (1.0f / 60.0f), swell);
     least_up = std::min<float> (least_up, ski.up ()[1]);
     const Vec3 at = ski.position ();
     lowest = std::min<float> (lowest, at[1] - swell.level (at[0], at[2]));
@@ -237,7 +238,7 @@ MOPPE_TEST (driven_at_a_shelving_shore_the_jet_ski_runs_aground) {
   MOPPE_CHECK (ski.grounded ());
   MOPPE_CHECK (!ski.afloat ());
   // Beached, its grate is dry and the jet pushes nothing.
-  MOPPE_CHECK (ski.thrust () < 50.0f);
+  MOPPE_CHECK (ski.thrust ().numerical_value_in (u::N) < 50.0f);
   MOPPE_CHECK (ski.position ()[2] > 155.0f);
   MOPPE_CHECK (ski.position ()[2] < 200.0f);
   MOPPE_CHECK (ski.up ()[1] > 0.8f);

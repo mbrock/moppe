@@ -310,7 +310,7 @@ namespace moppe::game {
       if (sling.hooked && logic.m_mode != M_HELICOPTER)
         sling.hooked = false;
       if (!sling.hooked) {
-        heli.set_load (Vec3 (), 0.0f);
+        heli.set_load (force (Vec3 ()), meters_t {});
         sling.stretch = 0.0f;
         return;
       }
@@ -319,10 +319,10 @@ namespace moppe::game {
         session.machine_body (sling.load).point (sling_ring (sling.load));
       const Vec3 pull = sling_pull (sling, hook, ring, elapsed);
       if (length2 (pull) > 0.0f) {
-        session.push_machine (sling.load, ring, pull * elapsed);
-        heli.push (hook, -pull * elapsed);
+        session.push_machine (sling.load, ring, impulse (pull * elapsed));
+        heli.push (hook, impulse (-pull * elapsed));
       }
-      heli.set_load (-pull, sling_hang);
+      heli.set_load (force (-pull), sling_hang * u::m);
     }
 
     void toggle_mount (GameSession& session) {
@@ -764,10 +764,12 @@ namespace moppe::game {
       }
       const HaulForce force =
         haul_force (haul, body, walker.position (), walker.velocity ());
-      session.push_machine (haul.machine, tie, force.pull * elapsed);
+      const seconds_t step = elapsed * u::s;
+      session.push_machine (
+        haul.machine, tie, quantity_cast<isq::impulse> (force.pull * step));
       session.push_machine (haul.machine,
                             body.point (machine_centre (haul.machine)),
-                            force.lift * elapsed);
+                            quantity_cast<isq::impulse> (force.lift * step));
       walker.tether (
         tie, std::max (0.6f, haul.rope - rope_give), haul.rope + rope_give);
     }
@@ -792,7 +794,9 @@ namespace moppe::game {
         const Vec3 kick = heave (trouble, body.forward, throttle);
         ++trouble.heaves;
         session.push_machine (
-          machine, body.point (machine_centre (machine)), kick * body.mass);
+          machine,
+          body.point (machine_centre (machine)),
+          quantity_cast<isq::impulse> (velocity (kick) * body.mass));
         puff (session, body.position - body.up * 0.3f, kick, 10.0f, ground);
         logic.m_shake = std::max (logic.m_shake, 0.05f);
         logic.m_shake_time = 0.0f;
@@ -934,7 +938,7 @@ namespace moppe::game {
 
   void GameSession::push_machine (Machine machine,
                                   const Vec3& at,
-                                  const Vec3& impulse) {
+                                  const impulse_t& impulse) {
     switch (machine) {
     case Machine::bike:
       m_bike.push (at, impulse);
@@ -1192,7 +1196,7 @@ namespace moppe::game {
 
   std::optional<Machine> GameSession::hook_within_reach () const {
     if (m_logic.m_mode != M_HELICOPTER || m_logic.m_sling.hooked ||
-        m_helicopter.altitude () < 2.0f)
+        m_helicopter.altitude () < 2.0f * u::m)
       return std::nullopt;
     const Vec3 hook = m_helicopter.point (sling_hook ());
     std::optional<Machine> nearest;
@@ -1216,7 +1220,8 @@ namespace moppe::game {
   }
 
   bool GameSession::can_step_out_of_helicopter () const {
-    return m_logic.m_mode == M_HELICOPTER && m_helicopter.altitude () < 1.2f &&
+    return m_logic.m_mode == M_HELICOPTER &&
+           m_helicopter.altitude () < 1.2f * u::m &&
            length (m_helicopter.velocity ()) < 4.0f;
   }
 
@@ -1552,7 +1557,7 @@ namespace moppe::game {
       const mov::BoatWater floating =
         floating_water (world, surface, water, logic.m_total_time);
       boat.set_parked (logic.m_mode != M_BOAT);
-      boat.update (elapsed, floating);
+      boat.update (elapsed * u::s, floating);
       if (logic.m_mode != M_BOAT)
         return;
       logic.m_odometer += length (boat.velocity ()) * elapsed;
@@ -1584,13 +1589,14 @@ namespace moppe::game {
       // The rooster tail: the propeller, running at the surface, throws a
       // plume of water up and back along the shaft.
       const Vec3 prop = boat.propeller ();
-      const float bite = boat.propeller_depth ();
-      if (boat.thrust () > 30.0f && bite > -0.05f && bite < 0.35f) {
+      const float bite = boat.propeller_depth ().numerical_value_in (u::m);
+      if (boat.thrust () > 30.0f * u::N && bite > -0.05f && bite < 0.35f) {
         const Vec3 aft = normalized (prop - boat.point (pivot));
         Vec3 back = aft;
         back[1] = 0.0f;
         back = length2 (back) > 1e-6f ? normalized (back) : -boat.forward ();
-        const float power = boat.thrust () / 520.0f;
+        const float power =
+          (boat.thrust () / (520.0f * u::N)).numerical_value_in (one);
         Dust::Style plume;
         plume.size = 0.12f * u::m;
         plume.lifetime = 1.0f * u::s;
@@ -1673,7 +1679,7 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       mov::JetSki& ski = session.jet_ski ();
       ski.set_parked (logic.m_mode != M_JET_SKI);
-      ski.update (elapsed,
+      ski.update (elapsed * u::s,
                   floating_water (world, surface, water, logic.m_total_time));
       if (logic.m_mode != M_JET_SKI)
         return;
@@ -1681,7 +1687,8 @@ namespace moppe::game {
 
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const DisplayColor spray_color (0.86f, 0.92f, 0.97f);
-      const float power = ski.thrust () / mov::JetSki::static_thrust ();
+      const float power = (ski.thrust () / mov::JetSki::static_thrust ())
+                            .numerical_value_in (one);
       if (power > 0.08f) {
         Vec3 back = ski.jet_direction ();
         back[1] = 0.0f;
@@ -1850,18 +1857,16 @@ namespace moppe::game {
     mov::Jeep& jeep = session.jeep ();
     jeep.set_trunks (trunks);
     jeep.set_parked (logic.m_mode != M_JEEP && !hauled (Machine::jeep));
-    jeep.update (elapsed,
-                 water_at (jeep.position ()).numerical_value_in (u::m));
+    jeep.update (dt, water_at (jeep.position ()));
     // The helicopter's rotor runs down once its pilot has stepped out.
     mov::Helicopter& heli = session.helicopter ();
     heli.set_trunks (trunks);
     heli.set_parked (logic.m_mode != M_HELICOPTER);
-    heli.update (elapsed,
-                 water_at (heli.position ()).numerical_value_in (u::m));
+    heli.update (dt, water_at (heli.position ()));
     if (logic.m_mode == M_HELICOPTER) {
       logic.m_odometer += length (heli.velocity ()) * elapsed;
       // Low over the ground, the downwash blows up what lies there.
-      const float height = heli.altitude ();
+      const float height = heli.altitude ().numerical_value_in (u::m);
       if (heli.rotor () > 0.6f && height < 9.0f) {
         std::uniform_real_distribution<float> chance (0.0f, 1.0f);
         const float strength = heli.rotor () * (1.0f - height / 9.0f);
@@ -1889,8 +1894,7 @@ namespace moppe::game {
     tractor.set_trunks (trunks);
     tractor.set_parked (logic.m_mode != M_TRACTOR &&
                         !hauled (Machine::tractor));
-    tractor.update (elapsed,
-                    water_at (tractor.position ()).numerical_value_in (u::m));
+    tractor.update (dt, water_at (tractor.position ()));
     if (logic.m_mode == M_TRACTOR) {
       logic.m_odometer += length (tractor.velocity ()) * elapsed;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
@@ -1922,8 +1926,7 @@ namespace moppe::game {
     caddy.set_parked (logic.m_mode != M_CADDY && !hauled (Machine::caddy));
     caddy.set_slung (logic.m_sling.hooked &&
                      logic.m_sling.load == Machine::caddy);
-    caddy.update (elapsed,
-                  water_at (caddy.position ()).numerical_value_in (u::m));
+    caddy.update (dt, water_at (caddy.position ()));
     if (logic.m_mode == M_CADDY) {
       logic.m_odometer += length (caddy.velocity ()) * elapsed;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);

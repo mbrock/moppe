@@ -43,7 +43,7 @@ namespace moppe::mov {
       std::array<RigidBodyState, wheel_count> wheels;
       int ground_column = 0, ground_row = 0;
       std::array<bool, wheel_count> touching {};
-      std::array<float, wheel_count> load {};
+      std::array<newtons_t, wheel_count> load {};
       // How far the wheels have rolled round, for drawing them.
       float wheel_spin = 0.0f;
       float drive = 0.0f;
@@ -53,8 +53,8 @@ namespace moppe::mov {
       // Hung from the helicopter's line (game/sling.hh).
       bool slung = false;
       // How long it has stood still, and lain on its side or back.
-      float still = 0.0f;
-      float overturned = 0.0f;
+      seconds_t still {};
+      seconds_t overturned {};
       bool asleep = false;
     };
 
@@ -82,7 +82,7 @@ namespace moppe::mov {
     // turns its nose the way it is carried.
     void set_slung (bool slung);
 
-    void update (float dt, float water_level);
+    void update (seconds_t dt, meters_t water_level);
 
     Vec3 position () const;
     Vec3 forward () const;
@@ -92,10 +92,10 @@ namespace moppe::mov {
     bool grounded () const;
     bool asleep () const;
     // Its whole weight, kilograms.
-    float mass () const;
+    kilograms_t mass () const;
     // A blow at `at` in the world, newton-seconds: another machine
     // bumping into it, or someone hauling on it. It wakes one asleep.
-    void push (const Vec3& at, const Vec3& impulse);
+    void push (const Vec3& at, const impulse_t& impulse);
     // A point given in the Caddy's frame, in the world.
     Vec3 point (const Vec3& local) const;
     Vec3 driver_seat () const {

@@ -30,7 +30,7 @@ namespace {
 
   void jeep_test_run (mov::Jeep& jeep, float seconds) {
     for (int i = 0; i < static_cast<int> (seconds * 120.0f); ++i)
-      jeep.update (1.0f / 120.0f, -100.0f);
+      jeep.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
   }
 }
 
@@ -125,7 +125,7 @@ MOPPE_TEST (the_jeep_crosses_rough_ground_upright) {
   jeep.set_drive (0.7f);
   float lowest_up = 1.0f;
   for (int i = 0; i < 120 * 8; ++i) {
-    jeep.update (1.0f / 120.0f, -100.0f);
+    jeep.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
     lowest_up = std::min (lowest_up, static_cast<float> (jeep.up ()[1]));
     MOPPE_CHECK (std::isfinite (static_cast<float> (jeep.position ()[1])));
   }
@@ -239,7 +239,7 @@ MOPPE_TEST (the_bridge_railing_keeps_a_jeep_on_the_deck) {
   for (int i = 0; i < 120 * 10; ++i) {
     if (jeep.position ()[2] > 165.0f)
       jeep.set_turn (1.0f);
-    jeep.update (1.0f / 120.0f, -100.0f);
+    jeep.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
     if (jeep.position ()[2] > 150.0f && jeep.position ()[2] < 210.0f) {
       lowest = std::min (lowest, static_cast<float> (jeep.position ()[1]));
       widest = std::max (widest, std::abs (jeep.position ()[0] - 160.0f));
@@ -284,7 +284,7 @@ MOPPE_TEST (a_guardrail_keeps_a_jeep_on_the_embankment) {
     for (int i = 0; i < 120 * 10; ++i) {
       if (jeep.position ()[2] > 90.0f)
         jeep.set_turn (1.0f);
-      jeep.update (1.0f / 120.0f, -100.0f);
+      jeep.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
       widest = std::max (widest, std::abs (jeep.position ()[0] - 160.0f));
     }
     mov::attach_roads (fields, nullptr);

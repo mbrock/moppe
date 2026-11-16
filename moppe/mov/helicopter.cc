@@ -230,7 +230,7 @@ namespace moppe::mov {
       s.body = { centre, rotation, Vec3 (), Vec3 () };
       patch.origin_for (centre, s.ground_column, s.ground_row);
       s.grounded = true;
-      s.still = s.overturned = 0.0f;
+      s.still = s.overturned = seconds_t {};
       s.asleep = false;
       return s;
     }
@@ -328,7 +328,7 @@ namespace moppe::mov {
             terrain = std::max (terrain, ground (at + across * seconds));
           const meters_t wanted =
             taxi_height + clearance_per_speed * ground_speed +
-            kept.load_hang * u::m * std::clamp (speed / 6.0f, 0.0f, 1.0f);
+            kept.load_hang * std::clamp (speed / 6.0f, 0.0f, 1.0f);
           const meters_t clear = (at[1] - terrain) * u::m;
           if (clear < wanted)
             climb = std::max (climb, speed_t ((wanted - clear) * 1.5f / u::s));
@@ -353,7 +353,7 @@ namespace moppe::mov {
           push = normalized (push) * most;
         // The rotor gives its own weight and the climb asked for, and
         // leans for the speed asked for, against what hangs under it.
-        const Vec3 pull = kept.load_pull;
+        const Vec3 pull = force_value (kept.load_pull);
         const float m = heli_rig::mass.numerical_value_in (u::kg);
         const float hold = std::max (newtons (weight) - pull[1], 0.0f);
         Vec3 level = Vec3 (push[0] * m - pull[0], 0.0f, push[2] * m - pull[2]);
@@ -399,9 +399,10 @@ namespace moppe::mov {
       const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
       const float upright = axis (Vec3 (0, 1, 0))[1];
-      kept.overturned =
-        upright < 0.3f && length2 (moving) < 4.0f ? kept.overturned + dt : 0.0f;
-      if (kept.overturned > 2.5f) {
+      kept.overturned = upright < 0.3f && length2 (moving) < 4.0f
+                          ? kept.overturned + dt * u::s
+                          : seconds_t {};
+      if (kept.overturned > 2.5f * u::s) {
         place (point (Vec3 ()), axis (Vec3 (0, 0, 1)));
         return;
       }
@@ -409,9 +410,10 @@ namespace moppe::mov {
       // Parked, its rotor stopped, and still: it stays where it is.
       const bool quiet = length2 (moving) < 0.08f * 0.08f &&
                          length2 (turning) < 0.08f * 0.08f && kept.grounded;
-      kept.still =
-        kept.parked && kept.rotor <= 0.0f && quiet ? kept.still + dt : 0.0f;
-      if (kept.still > 1.0f)
+      kept.still = kept.parked && kept.rotor <= 0.0f && quiet
+                     ? kept.still + dt * u::s
+                     : seconds_t {};
+      if (kept.still > 1.0f * u::s)
         kept.asleep = true;
     }
   };
@@ -456,7 +458,7 @@ namespace moppe::mov {
     m_impl->kept.lift = lift;
   }
 
-  void Helicopter::set_load (const Vec3& pull, float hang) {
+  void Helicopter::set_load (const force_t& pull, meters_t hang) {
     m_impl->kept.load_pull = pull;
     m_impl->kept.load_hang = hang;
   }
@@ -468,10 +470,12 @@ namespace moppe::mov {
     kept.parked = parked;
   }
 
-  void Helicopter::update (float dt, float water_level) {
-    if (m_impl->kept.asleep || dt <= 0.0f)
+  void Helicopter::update (seconds_t dt, meters_t water_level) {
+    if (m_impl->kept.asleep || dt <= seconds_t {})
       return;
-    m_impl->step (dt, water_level);
+    // Box3D steps in plain seconds and metres.
+    m_impl->step (dt.numerical_value_in (u::s),
+                  water_level.numerical_value_in (u::m));
   }
 
   Vec3 Helicopter::position () const {
@@ -502,23 +506,24 @@ namespace moppe::mov {
     return m_impl->kept.asleep;
   }
 
-  float Helicopter::mass () const {
-    return heli_rig::mass.numerical_value_in (u::kg);
+  kilograms_t Helicopter::mass () const {
+    return heli_rig::mass;
   }
 
-  void Helicopter::push (const Vec3& at, const Vec3& impulse) {
+  void Helicopter::push (const Vec3& at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
-    m.kept.still = 0.0f;
-    b3Body_ApplyLinearImpulse (m.body, to_b3 (impulse), to_b3 (at), true);
+    m.kept.still = seconds_t {};
+    b3Body_ApplyLinearImpulse (
+      m.body, to_b3 (impulse_value (impulse)), to_b3 (at), true);
   }
 
   Vec3 Helicopter::point (const Vec3& local) const {
     return m_impl->point (local);
   }
 
-  float Helicopter::altitude () const {
-    return m_impl->altitude ();
+  meters_t Helicopter::altitude () const {
+    return m_impl->altitude () * u::m;
   }
 
   float Helicopter::rotor () const {

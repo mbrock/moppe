@@ -562,8 +562,8 @@ namespace moppe::mov {
         };
       patch.origin_for (centre, s.ground_column, s.ground_row);
       s.touching.fill (false);
-      s.load.fill (0.0f);
-      s.still = s.overturned = 0.0f;
+      s.load.fill (newtons_t {});
+      s.still = s.overturned = seconds_t {};
       s.asleep = false;
       return s;
     }
@@ -628,7 +628,8 @@ namespace moppe::mov {
         float spin = 0.0f;
         float torque = driven ? tractor_rig::engine_brake_torque : 0.0f;
         const float grip = tractor_rig::traction_share *
-                           tractor_rig::rear_friction * kept.load[wheel] * r;
+                           tractor_rig::rear_friction *
+                           kept.load[wheel].numerical_value_in (u::N) * r;
         if (kept.parked) {
           torque = tractor_rig::parking_torque;
         } else if (braking) {
@@ -716,8 +717,8 @@ namespace moppe::mov {
       const bool resting = length2 (moving) < 2.0f * 2.0f;
       const float upright = axis (Vec3 (0, 1, 0))[1];
       kept.overturned =
-        upright < 0.25f && resting ? kept.overturned + dt : 0.0f;
-      if (kept.overturned > 2.5f) {
+        upright < 0.25f && resting ? kept.overturned + dt * u::s : seconds_t {};
+      if (kept.overturned > 2.5f * u::s) {
         place (point (Vec3 ()), axis (Vec3 (0, 0, 1)));
         return;
       }
@@ -733,8 +734,8 @@ namespace moppe::mov {
                            kept.touching.begin (),
                            kept.touching.end (),
                            [] (bool touching) { return touching; });
-      kept.still = kept.parked && quiet ? kept.still + dt : 0.0f;
-      if (kept.still > 1.0f)
+      kept.still = kept.parked && quiet ? kept.still + dt * u::s : seconds_t {};
+      if (kept.still > 1.0f * u::s)
         kept.asleep = true;
     }
   };
@@ -786,10 +787,12 @@ namespace moppe::mov {
     kept.parked = parked;
   }
 
-  void Tractor::update (float dt, float water_level) {
-    if (m_impl->kept.asleep || dt <= 0.0f)
+  void Tractor::update (seconds_t dt, meters_t water_level) {
+    if (m_impl->kept.asleep || dt <= seconds_t {})
       return;
-    m_impl->step (dt, water_level);
+    // Box3D steps in plain seconds and metres.
+    m_impl->step (dt.numerical_value_in (u::s),
+                  water_level.numerical_value_in (u::m));
   }
 
   Vec3 Tractor::position () const {
@@ -822,24 +825,25 @@ namespace moppe::mov {
     return m_impl->kept.asleep;
   }
 
-  float Tractor::mass () const {
-    return (tractor_rig::total_mass + tractor_rig::trailer_total_mass)
-      .numerical_value_in (u::kg);
+  kilograms_t Tractor::mass () const {
+    return (tractor_rig::total_mass + tractor_rig::trailer_total_mass);
   }
 
-  float Tractor::trailer_mass () const {
-    return tractor_rig::trailer_total_mass.numerical_value_in (u::kg);
+  kilograms_t Tractor::trailer_mass () const {
+    return tractor_rig::trailer_total_mass;
   }
 
-  void Tractor::push (const Vec3& at, const Vec3& impulse) {
+  void Tractor::push (const Vec3& at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
-    m.kept.still = 0.0f;
+    m.kept.still = seconds_t {};
     const bool towed =
       length2 (at - m.trailer_point (Vec3 (0.0f, 0.85f, 0.15f))) <
       length2 (at - m.point (Vec3 (0.0f, 0.78f, 0.0f)));
-    b3Body_ApplyLinearImpulse (
-      towed ? m.trailer : m.chassis, to_b3 (impulse), to_b3 (at), true);
+    b3Body_ApplyLinearImpulse (towed ? m.trailer : m.chassis,
+                               to_b3 (impulse_value (impulse)),
+                               to_b3 (at),
+                               true);
   }
 
   float Tractor::throttle () const {

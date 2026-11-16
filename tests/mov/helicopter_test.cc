@@ -28,7 +28,7 @@ namespace {
 
   void helicopter_test_run (mov::Helicopter& heli, float seconds) {
     for (int i = 0; i < static_cast<int> (seconds * 60.0f); ++i)
-      heli.update (1.0f / 60.0f, -100.0f);
+      heli.update (moppe::seconds (1.0f / 60.0f), -100.0f * u::m);
   }
 }
 
@@ -67,7 +67,7 @@ MOPPE_TEST (the_helicopter_takes_off_flies_turns_and_lands) {
   // Climb, then hold the height.
   heli.set_lift (1.0f);
   helicopter_test_run (heli, 4.0f);
-  MOPPE_CHECK (heli.altitude () > 15.0f);
+  MOPPE_CHECK (heli.altitude ().numerical_value_in (u::m) > 15.0f);
   heli.set_lift (0.0f);
   helicopter_test_run (heli, 3.0f);
   const float held = heli.position ()[1];
@@ -122,8 +122,8 @@ MOPPE_TEST (the_helicopter_keeps_clear_of_a_rising_hillside) {
   heli.set_lift (0.0f);
   heli.set_drive (1.0f);
   for (int i = 0; i < 60 * 10; ++i) {
-    heli.update (1.0f / 60.0f, -100.0f);
-    MOPPE_CHECK (heli.altitude () > 0.5f);
+    heli.update (moppe::seconds (1.0f / 60.0f), -100.0f * u::m);
+    MOPPE_CHECK (heli.altitude ().numerical_value_in (u::m) > 0.5f);
   }
   MOPPE_CHECK (heli.position ()[2] > 200.0f);
 }

@@ -538,6 +538,7 @@ namespace moppe {
   using acceleration_t =
     quantity<isq::acceleration[si::metre / pow<2> (si::second)], Vec3>;
   using force_t = quantity<isq::force[si::newton], Vec3>;
+  using impulse_t = quantity<isq::impulse[si::newton * si::second], Vec3>;
 
   inline position_t position (const Vec3& value) {
     return value * isq::position_vector[si::metre];
@@ -549,6 +550,22 @@ namespace moppe {
 
   inline const Vec3& displacement_value (const displacement_t& value) {
     return value.numerical_value_ref_in (si::metre);
+  }
+
+  inline force_t force (const Vec3& value) {
+    return value * isq::force[si::newton];
+  }
+
+  inline const Vec3& force_value (const force_t& value) {
+    return value.numerical_value_ref_in (si::newton);
+  }
+
+  inline impulse_t impulse (const Vec3& value) {
+    return value * isq::impulse[si::newton * si::second];
+  }
+
+  inline const Vec3& impulse_value (const impulse_t& value) {
+    return value.numerical_value_ref_in (si::newton * si::second);
   }
 
   inline velocity_t velocity (const Vec3& value) {

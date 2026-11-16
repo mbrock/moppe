@@ -42,12 +42,12 @@ namespace moppe::mov {
       float drive = 0.0f;
       float turn = 0.0f;
       float lift = 0.0f;
-      Vec3 load_pull {};
-      float load_hang = 0.0f;
+      force_t load_pull = force (Vec3 ());
+      meters_t load_hang {};
       bool parked = true;
       bool grounded = true;
-      float still = 0.0f;
-      float overturned = 0.0f;
+      seconds_t still {};
+      seconds_t overturned {};
       bool asleep = false;
     };
 
@@ -75,9 +75,9 @@ namespace moppe::mov {
     // leans against as well as its own weight, and how far below the
     // skids the load hangs, which it keeps clear of the ground when under
     // way. Zero for nothing.
-    void set_load (const Vec3& pull, float hang);
+    void set_load (const force_t& pull, meters_t hang);
 
-    void update (float dt, float water_level);
+    void update (seconds_t dt, meters_t water_level);
 
     Vec3 position () const;
     Vec3 forward () const;
@@ -87,16 +87,16 @@ namespace moppe::mov {
     bool grounded () const;
     bool asleep () const;
     // Its whole weight, kilograms.
-    float mass () const;
+    kilograms_t mass () const;
     // A blow at `at` in the world, newton-seconds: another machine
     // bumping into it, or someone hauling on it. It wakes one asleep.
-    void push (const Vec3& at, const Vec3& impulse);
+    void push (const Vec3& at, const impulse_t& impulse);
     Vec3 point (const Vec3& local) const;
     Vec3 pilot_seat () const {
       return point (Vec3 (seat[0], seat[1], seat[2]));
     }
     // Height of the skids over the ground beneath them.
-    float altitude () const;
+    meters_t altitude () const;
     float rotor () const;
     float rotor_angle () const;
     float tail_angle () const;

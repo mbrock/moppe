@@ -166,12 +166,12 @@ namespace moppe {
       }
 
       // The whole weight of bike and rider, kilograms.
-      float mass () const {
-        return m_mass.numerical_value_in (u::kg);
+      kilograms_t mass () const {
+        return m_mass;
       }
       // A blow at `at`, newton-seconds: another machine bumping into it,
       // or someone hauling on it. The classic bike takes it whole.
-      void push (const Vec3& at, const Vec3& impulse);
+      void push (const Vec3& at, const impulse_t& impulse);
 
       void set_water_level (meters_t level) {
         m_water_level = level;

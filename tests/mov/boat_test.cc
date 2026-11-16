@@ -35,7 +35,7 @@ namespace {
                       float seconds,
                       const mov::BoatWater& water = still_water ()) {
     for (int i = 0; i < static_cast<int> (seconds * 60.0f); ++i)
-      boat.update (1.0f / 60.0f, water);
+      boat.update (moppe::seconds (1.0f / 60.0f), water);
   }
 
   Vec3 level (Vec3 v) {
@@ -68,7 +68,7 @@ MOPPE_TEST (a_moored_boat_floats_level_at_its_draft_and_rests) {
   MOPPE_CHECK (boat.position ()[1] > -0.10f);
   MOPPE_CHECK (boat.up ()[1] > 0.995f);
   // Left alone, its propeller is out of the water.
-  MOPPE_CHECK (boat.propeller_depth () < 0.0f);
+  MOPPE_CHECK (boat.propeller_depth ().numerical_value_in (u::m) < 0.0f);
 }
 
 MOPPE_TEST (the_boat_settles_deeper_with_the_helmsman_aboard) {
@@ -78,13 +78,14 @@ MOPPE_TEST (the_boat_settles_deeper_with_the_helmsman_aboard) {
   boat.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f);
   boat_test_run (boat, 10.0f);
   const float empty = boat.position ()[1];
-  const float empty_mass = boat.mass ();
+  const float empty_mass = boat.mass ().numerical_value_in (u::kg);
   // Someone steps aboard: 80 kg more, more than the boat and its engine
   // together, on a narrow bottom: some four or five centimetres deeper.
   boat.set_parked (false);
   boat_test_run (boat, 10.0f);
   const float manned = boat.position ()[1];
-  MOPPE_CHECK_NEAR (boat.mass () - empty_mass, 80.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (
+    boat.mass ().numerical_value_in (u::kg) - empty_mass, 80.0f, 1e-3f);
   MOPPE_CHECK (manned < empty - 0.025f);
   MOPPE_CHECK (manned > empty - 0.08f);
   // And steps off again: it lifts back to where it floated.
@@ -102,8 +103,8 @@ MOPPE_TEST (the_long_tail_drives_the_boat_up_onto_the_plane_and_steers_it) {
   boat.set_drive (1.0f);
   boat_test_run (boat, 3.0f);
   // The tail is down and the propeller bites.
-  MOPPE_CHECK (boat.propeller_depth () > 0.0f);
-  MOPPE_CHECK (boat.thrust () > 100.0f);
+  MOPPE_CHECK (boat.propeller_depth ().numerical_value_in (u::m) > 0.0f);
+  MOPPE_CHECK (boat.thrust ().numerical_value_in (u::N) > 100.0f);
   boat_test_run (boat, 12.0f);
   const float speed = length (level (boat.velocity ()));
   // Some 24 km/h on 4.1 kW, as its builder clocks it alone.
@@ -185,7 +186,7 @@ MOPPE_TEST (
   boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f);
   boat.set_parked (false);
   boat.set_passenger (true);
-  MOPPE_CHECK_NEAR (boat.mass (), 230.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (boat.mass ().numerical_value_in (u::kg), 230.0f, 1e-3f);
   boat.set_drive (1.0f);
   boat_test_run (boat, 15.0f);
   // Some 16 km/h, as its builder and his father clock it: climbing its
@@ -213,7 +214,7 @@ MOPPE_TEST (a_swamped_boat_comes_up_awash_rather_than_flying_out) {
   boat.set_parked (false);
   float highest = -10.0f;
   for (int i = 0; i < 600; ++i) {
-    boat.update (1.0f / 60, still_water ());
+    boat.update (moppe::seconds (1.0f / 60), still_water ());
     highest = std::max<float> (highest, boat.position ()[1]);
   }
   MOPPE_CHECK (highest < 0.3f);

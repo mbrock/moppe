@@ -69,14 +69,14 @@ namespace moppe::mov {
       float propeller_angle = 0.0f;
       // How deep the propeller ran in the last step, and how hard it
       // pushed, newtons.
-      float propeller_depth = 0.0f;
-      float thrust = 0.0f;
+      meters_t propeller_depth {};
+      newtons_t thrust {};
       bool parked = true;
       bool passenger = false;
       bool afloat = false;
       bool grounded = false;
-      float still = 0.0f;
-      float overturned = 0.0f;
+      seconds_t still {};
+      seconds_t overturned {};
       bool asleep = false;
     };
 
@@ -105,7 +105,7 @@ namespace moppe::mov {
     // their 80 kg with them.
     void set_passenger (bool aboard);
 
-    void update (float dt, const BoatWater& water);
+    void update (seconds_t dt, const BoatWater& water);
 
     Vec3 position () const;
     Vec3 forward () const;
@@ -115,9 +115,9 @@ namespace moppe::mov {
     Vec3 point (const Vec3& local) const;
     // Its whole weight, kilograms: the helmsman's too while someone is
     // aboard (not parked), so that it sits deeper with them in it.
-    float mass () const;
+    kilograms_t mass () const;
     // A blow at `at` in the world, newton-seconds. It wakes one asleep.
-    void push (const Vec3& at, const Vec3& impulse);
+    void push (const Vec3& at, const impulse_t& impulse);
     bool asleep () const;
     bool afloat () const;
     bool grounded () const;
@@ -129,11 +129,11 @@ namespace moppe::mov {
     float swing () const;
     float tilt () const;
     float propeller_angle () const;
-    float thrust () const;
+    newtons_t thrust () const;
     // Where the propeller's hub is in the world, and how deep under the
     // water it last ran (negative is out of it).
     Vec3 propeller () const;
-    float propeller_depth () const;
+    meters_t propeller_depth () const;
 
     // The tail's frame about the pivot, in the boat's: swung by `swing`
     // and tipped up by `tilt`, as a rotation of the boat's own axes.

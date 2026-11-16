@@ -211,7 +211,8 @@ namespace moppe::game {
     // Each machine as the bumpers see it, and a blow to it
     // (game/rescue.hh).
     MachineBody machine_body (Machine machine) const;
-    void push_machine (Machine machine, const Vec3& at, const Vec3& impulse);
+    void
+    push_machine (Machine machine, const Vec3& at, const impulse_t& impulse);
     // On foot beside a stuck machine, which the mount key would take up a
     // rope to haul rather than get into.
     std::optional<Machine> haul_within_reach () const;

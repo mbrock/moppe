@@ -67,7 +67,7 @@ namespace moppe::mov {
       std::array<RigidBodyState, wheel_count> wheels;
       int ground_column = 0, ground_row = 0;
       std::array<bool, wheel_count> touching {};
-      std::array<float, wheel_count> load {};
+      std::array<newtons_t, wheel_count> load {};
       // How far each pair of wheels has rolled round, for drawing them.
       float front_spin = 0.0f;
       float rear_spin = 0.0f;
@@ -80,8 +80,8 @@ namespace moppe::mov {
       bool brake = false;
       bool parked = true;
       // How long it has stood still, and lain on its side or back.
-      float still = 0.0f;
-      float overturned = 0.0f;
+      seconds_t still {};
+      seconds_t overturned {};
       bool asleep = false;
     };
 
@@ -106,7 +106,7 @@ namespace moppe::mov {
     void set_brake (bool brake);
     void set_parked (bool parked);
 
-    void update (float dt, float water_level);
+    void update (seconds_t dt, meters_t water_level);
 
     Vec3 position () const;
     Vec3 forward () const;
@@ -117,13 +117,13 @@ namespace moppe::mov {
     bool asleep () const;
     // Its whole weight with the trailer's, and the trailer's alone,
     // kilograms.
-    float mass () const;
-    float trailer_mass () const;
+    kilograms_t mass () const;
+    kilograms_t trailer_mass () const;
     // A blow at `at` in the world, newton-seconds: another machine
     // bumping into it, or someone hauling on it. It lands on the trailer
     // when `at` is nearer the trailer's middle than the tractor's. It
     // wakes one asleep.
-    void push (const Vec3& at, const Vec3& impulse);
+    void push (const Vec3& at, const impulse_t& impulse);
     // How hard the engine is asked to work, 0..1: the throttle, or a
     // little at idle while someone sits at the wheel.
     float throttle () const;
