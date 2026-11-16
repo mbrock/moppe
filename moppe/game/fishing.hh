@@ -25,23 +25,23 @@ namespace moppe::game {
   [[nodiscard]] Fish fish_for (Waters waters, bool upland, std::uint32_t seed);
 
   // Seconds from the float's settling to the take, by `seed`.
-  float bite_wait (std::uint32_t seed);
+  seconds_t bite_wait (std::uint32_t seed);
 
   // How long the parts of the business last: the cast's flight, the
   // moment there is to strike, fighting a fish in (longer for a bigger
   // one), holding it up, and winding in an empty line.
-  inline constexpr float cast_seconds = 0.9f;
-  inline constexpr float strike_seconds = 1.4f;
-  float play_seconds (const Fish& fish);
-  inline constexpr float landed_seconds = 2.6f;
-  inline constexpr float wind_seconds = 0.9f;
+  inline constexpr seconds_t cast_seconds = 0.9f * u::s;
+  inline constexpr seconds_t strike_seconds = 1.4f * u::s;
+  seconds_t play_seconds (const Fish& fish);
+  inline constexpr seconds_t landed_seconds = 2.6f * u::s;
+  inline constexpr seconds_t wind_seconds = 0.9f * u::s;
   // How far a walker may cast, and how near, and how deep the water must
   // be where the float lands; how far they may wander from where they
   // stood before the line comes in.
-  inline constexpr float longest_cast = 11.0f;
-  inline constexpr float shortest_cast = 3.5f;
-  inline constexpr float fishing_depth = 0.35f;
-  inline constexpr float fishing_leash = 1.2f;
+  inline constexpr meters_t longest_cast = 11.0f * u::m;
+  inline constexpr meters_t shortest_cast = 3.5f * u::m;
+  inline constexpr meters_t fishing_depth = 0.35f * u::m;
+  inline constexpr meters_t fishing_leash = 1.2f * u::m;
 
   // Moves the line on to `now`: the cast lands, a fish takes the bait,
   // one not struck in time gets away and another may come, one fought in

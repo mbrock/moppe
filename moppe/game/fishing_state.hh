@@ -33,7 +33,7 @@ namespace moppe::game {
   struct Fish {
     FishKind kind = FishKind::perch;
     // Nose to tail fork.
-    float length = 0.2f; // metres
+    meters_t length = 0.2f * u::m;
     std::uint32_t seed = 0;
   };
 

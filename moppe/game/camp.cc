@@ -675,7 +675,7 @@ namespace moppe::game {
     // mushrooms in what room it leaves.
     const Vec3 across (-out[2], 0.0f, out[0]);
     if (fish) {
-      const float drawn = 1.5f * fish->length;
+      const float drawn = 1.5f * meters_value (fish->length);
       const float fit = std::min (1.0f, 2.0f * radius * 1.15f / drawn);
       draw_fish (dl,
                  *fish,

@@ -261,16 +261,18 @@ namespace moppe::game {
     // Most are small; now and then a big one.
     const float size = std::pow (hash_lane (seed, 2), 1.8f);
     return { .kind = odds[i].kind,
-             .length = fishing_parts::mix (odds[i].least, odds[i].most, size),
+             .length =
+               fishing_parts::mix (odds[i].least, odds[i].most, size) * u::m,
              .seed = seed };
   }
 
-  float bite_wait (std::uint32_t seed) {
-    return 4.0f + 12.0f * hash_lane (seed, 3);
+  seconds_t bite_wait (std::uint32_t seed) {
+    return (4.0f + 12.0f * hash_lane (seed, 3)) * u::s;
   }
 
-  float play_seconds (const Fish& fish) {
-    return 2.2f + 4.0f * fish.length;
+  seconds_t play_seconds (const Fish& fish) {
+    // A bigger fish fights longer: four seconds more a metre.
+    return 2.2f * u::s + 4.0f * u::s / u::m * fish.length;
   }
 
   void cast_line (Line& line,
@@ -289,15 +291,16 @@ namespace moppe::game {
     line.waters = waters;
     line.upland = upland;
     line.fish = fish_for (waters, upland, chance (line));
-    line.bite_at = now + cast_seconds + bite_wait (chance (line));
-    line.next_splash = now + cast_seconds;
+    line.bite_at = now + seconds_value (cast_seconds) +
+                   seconds_value (bite_wait (chance (line)));
+    line.next_splash = now + seconds_value (cast_seconds);
   }
 
   bool tend_line (Fishing& fishing, double now, bool strike) {
     using namespace fishing_parts;
     Line& line = fishing.line;
     Creel& creel = fishing.creel;
-    const float age = static_cast<float> (now - line.since);
+    const seconds_t age = static_cast<float> (now - line.since) * u::s;
     const auto begin = [&] (Line::Phase phase) {
       line.phase = phase;
       line.since = now;
@@ -329,7 +332,7 @@ namespace moppe::game {
         creel.last_time = now;
         ++line.casts;
         line.fish = fish_for (line.waters, line.upland, chance (line));
-        line.bite_at = now + bite_wait (chance (line));
+        line.bite_at = now + seconds_value (bite_wait (chance (line)));
         begin (Line::Phase::waiting);
       }
       return false;
@@ -359,8 +362,9 @@ namespace moppe::game {
     using namespace fishing_parts;
     if (line.phase != Line::Phase::playing)
       return line.bobber;
-    const float done = fishing_parts::within_unit (
-      static_cast<float> (now - line.since) / play_seconds (line.fish));
+    const float done =
+      fishing_parts::within_unit (static_cast<float> (now - line.since) /
+                                  seconds_value (play_seconds (line.fish)));
     // It runs from side to side as it is wound in to a few metres out.
     const Vec3 in = flat (line.stand - line.bobber);
     const Vec3 side = unit_or (cross (in, world_up), Vec3 (1, 0, 0));
@@ -385,8 +389,8 @@ namespace moppe::game {
                   : age < 0.55f
                     ? mix (1.95f, 0.25f, (age - 0.4f) / 0.15f)
                     : mix (0.25f, 0.55f, smoothstep (0.55f, 0.9f, age));
-      const float flown =
-        fishing_parts::within_unit ((age - 0.45f) / (cast_seconds - 0.45f));
+      const float flown = fishing_parts::within_unit (
+        (age - 0.45f) / (seconds_value (cast_seconds) - 0.45f));
       rod.water = line.aim;
       rod.out = flown;
       rod.arc = 2.6f * flown * (1.0f - flown);
@@ -437,7 +441,7 @@ namespace moppe::game {
       break;
     }
     case Line::Phase::empty: {
-      const float wound = smoothstep (0.0f, wind_seconds, age);
+      const float wound = smoothstep (0.0f, seconds_value (wind_seconds), age);
       rod.raise = mix (0.55f, 1.1f, wound);
       rod.out = 1.0f - wound;
       rod.arc = 0.6f * std::sin (pi * wound);
@@ -570,8 +574,9 @@ namespace moppe::game {
     Vec3 back = back_in - along * dot (back_in, along);
     back = unit_or (back, world_up);
     const Vec3 side = normalized (cross (along, back));
-    const float body = fish.length * fish_drawn * scale * 0.84f;
-    const float depth = fish.length * fish_drawn * scale * look.depth;
+    const float body = meters_value (fish.length) * fish_drawn * scale * 0.84f;
+    const float depth =
+      meters_value (fish.length) * fish_drawn * scale * look.depth;
     const float width = depth * 0.42f;
 
     // The spine, wriggling more toward the tail.

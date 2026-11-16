@@ -147,8 +147,8 @@ namespace moppe {
           const bool vowel =
             std::string_view ("aeiou").find (name[0]) != std::string::npos;
           m_catch_note = (vowel ? "An " : "A ") + name + ", " +
-                         std::to_string (static_cast<int> (
-                           std::lround (100.0f * creel.last.length))) +
+                         std::to_string (static_cast<int> (std::lround (
+                           100.0f * meters_value (creel.last.length)))) +
                          " cm!";
         }
         state.catch_note = m_catch_note.c_str ();

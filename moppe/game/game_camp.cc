@@ -264,12 +264,13 @@ namespace moppe {
       }
       const terrain::WaterSheets& sheets = generated_world ().water_surface ();
       const float sea = world ().water_level.numerical_value_in (u::m);
-      for (float reach = longest_cast; reach >= shortest_cast; reach -= 0.5f) {
-        Vec3 at = from->at + ahead * reach;
+      for (meters_t reach = longest_cast; reach >= shortest_cast;
+           reach -= 0.5f * u::m) {
+        Vec3 at = from->at + ahead * meters_value (reach);
         const float ground = ground_height (at);
         const float level = still_water_at (world (), surface (), &sheets, at)
                               .numerical_value_in (u::m);
-        if (level - ground < fishing_depth)
+        if (level - ground < meters_value (fishing_depth))
           continue;
         at[1] = level;
         FishingWater found { .aim = at, .upland = level > sea + 150.0f };
@@ -349,14 +350,16 @@ namespace moppe {
         Vec3 out = line.bobber - from->at;
         out[1] = 0.0f;
         gone = length2 (way) > 1.5f * 1.5f ||
-               length2 (out) > (longest_cast + 4.0f) * (longest_cast + 4.0f) ||
+               length2 (out) > meters_value (longest_cast + 4.0f * u::m) *
+                                 meters_value (longest_cast + 4.0f * u::m) ||
                (std::abs (input_value (input.drive)) > 0.1f &&
                 (line.phase == Line::Phase::waiting ||
                  line.phase == Line::Phase::biting));
       } else {
         Vec3 moved = from->at - line.stand;
         moved[1] = 0.0f;
-        gone = length2 (moved) > fishing_leash * fishing_leash;
+        gone = length2 (moved) >
+               meters_value (fishing_leash) * meters_value (fishing_leash);
       }
       if (fast && gone) {
         if (line.phase == Line::Phase::playing) {
@@ -397,7 +400,7 @@ namespace moppe {
         out[1] = 0.0f;
         const float level = level_at (next);
         if (level - ground_height (next) > 0.2f &&
-            length (out) < longest_cast + 2.5f) {
+            length (out) < meters_value (longest_cast + 2.5f * u::m)) {
           next[1] = level;
           line.bobber = next;
         }
