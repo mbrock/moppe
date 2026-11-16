@@ -1,5 +1,7 @@
 #include <moppe/terrain/roads.hh>
 
+#include <moppe/correct_math.hh>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -82,7 +84,7 @@ namespace moppe::terrain {
         const RoadPoint end = road.points[e];
         const float ux = end.x_m - road.points[before].x_m;
         const float uz = end.z_m - road.points[before].z_m;
-        const float length = std::hypot (ux, uz);
+        const float length = cr::hypot (ux, uz);
         if (length < 1e-3f)
           continue;
         bool junction = false;
@@ -100,7 +102,7 @@ namespace moppe::terrain {
               length2 > 0.0f
                 ? std::clamp (-(ax * dx + az * dz) / length2, 0.0f, 1.0f)
                 : 0.0f;
-            junction = std::hypot (ax + dx * t, az + dz * t) < junction_m;
+            junction = cr::hypot (ax + dx * t, az + dz * t) < junction_m;
           }
         }
         if (junction)
@@ -166,7 +168,7 @@ namespace moppe::terrain {
           const float vz = points[after].z_m - points[at].z_m;
           const float cross = ux * vz - uz * vx;
           const float dot = ux * vx + uz * vz;
-          const float lengths = std::hypot (ux, uz) * std::hypot (vx, vz);
+          const float lengths = cr::hypot (ux, uz) * cr::hypot (vx, vz);
           // tan (t / 2) = sin t / (1 + cos t); a hairpin's is held to that
           // of a right angle.
           return lengths > 0.0f
@@ -180,7 +182,7 @@ namespace moppe::terrain {
       for (std::size_t i = 1; i < n; ++i) {
         const RoadPoint a = points[i - 1];
         const RoadPoint b = points[i];
-        const float length = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
+        const float length = cr::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
         const float ax = a.x_m - period_x * std::floor (a.x_m / period_x);
         const float az = a.z_m - period_z * std::floor (a.z_m / period_z);
         const float bx = ax + (b.x_m - a.x_m);
@@ -295,7 +297,7 @@ namespace moppe::terrain {
                         : 0.0f;
       const float ox = px - dx * t;
       const float oz = pz - dz * t;
-      const float distance = std::hypot (ox, oz);
+      const float distance = cr::hypot (ox, oz);
       const bool road = kind != 1.0f;
       if (distance > reach_m || !(rank (road, distance) < best_rank))
         continue;
@@ -375,7 +377,7 @@ namespace moppe::terrain {
       for (std::size_t k = 1; k < road.points.size (); ++k) {
         const RoadPoint a = road.points[k - 1];
         const RoadPoint b = road.points[k];
-        const float length = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
+        const float length = cr::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
         if (length < 1e-3f)
           continue;
         const float ux = (b.x_m - a.x_m) / length;

@@ -1,5 +1,6 @@
 #include <moppe/terrain/roads.hh>
 
+#include <moppe/correct_math.hh>
 #include <moppe/parallel.hh>
 #include <moppe/profile.hh>
 
@@ -73,8 +74,8 @@ namespace moppe::terrain {
       }
 
       float distance (std::size_t a, std::size_t b) const {
-        return std::hypot (delta (x (a), x (b), width) * spacing_x,
-                           delta (y (a), y (b), height) * spacing_z);
+        return cr::hypot (delta (x (a), x (b), width) * spacing_x,
+                          delta (y (a), y (b), height) * spacing_z);
       }
 
       bool dry (std::size_t node) const {
@@ -186,7 +187,7 @@ namespace moppe::terrain {
             lattice.node (cx * lattice.width / source_width,
                           cy * lattice.height / source_height);
           marked[node] = std::max (
-            marked[node], 1.0f + 0.5f * std::log2 (area / river_area_m2));
+            marked[node], 1.0f + 0.5f * cr::log2 (area / river_area_m2));
         }
       for (int y = 0; y < lattice.height; ++y)
         for (int x = 0; x < lattice.width; ++x) {
@@ -256,7 +257,7 @@ namespace moppe::terrain {
           const int samples =
             std::max (2,
                       static_cast<int> (std::ceil (
-                        std::hypot (dx, dz) / std::max (source_x, source_z))));
+                        cr::hypot (dx, dz) / std::max (source_x, source_z))));
           float off = 0.0f;
           for (int i = 1; i < samples; ++i) {
             const float t = static_cast<float> (i) / samples;
@@ -347,7 +348,7 @@ namespace moppe::terrain {
           const auto [dx, dy] = steps[k];
           const std::size_t next = lattice.node (x + dx, y + dy);
           const float run =
-            std::hypot (dx * lattice.spacing_x, dy * lattice.spacing_z);
+            cr::hypot (dx * lattice.spacing_x, dy * lattice.spacing_z);
           float step = mover.step (lattice,
                                    ways,
                                    node,
@@ -494,7 +495,7 @@ namespace moppe::terrain {
       float dz = std::fmod (std::fabs (a.z_m - b.z_m), period_z);
       dx = std::min (dx, period_x - dx);
       dz = std::min (dz, period_z - dz);
-      return std::hypot (dx, dz);
+      return cr::hypot (dx, dz);
     }
 
     // The node nearest a point in metres.
@@ -543,8 +544,8 @@ namespace moppe::terrain {
       for (int ray = 0; ray < rays; ++ray) {
         const float angle =
           2.0f * std::numbers::pi_v<float> * static_cast<float> (ray) / rays;
-        const float ux = std::cos (angle) / lattice.spacing_x;
-        const float uy = std::sin (angle) / lattice.spacing_z;
+        const float ux = cr::cos (angle) / lattice.spacing_x;
+        const float uy = cr::sin (angle) / lattice.spacing_z;
         float horizon = -infinite;
         for (float d = 60.0f; d < reach_m; d += step_m) {
           const std::size_t node = lattice.node (
@@ -823,8 +824,8 @@ namespace moppe::terrain {
                                      float step) {
       float length = 0.0f;
       for (std::size_t i = 1; i < line.size (); ++i)
-        length += std::hypot (line[i].x_m - line[i - 1].x_m,
-                              line[i].z_m - line[i - 1].z_m);
+        length += cr::hypot (line[i].x_m - line[i - 1].x_m,
+                             line[i].z_m - line[i - 1].z_m);
       const int count =
         std::max (1, static_cast<int> (std::ceil (length / step)));
       const float spacing = length / static_cast<float> (count);
@@ -836,8 +837,8 @@ namespace moppe::terrain {
         float segment_length = 0.0f;
         while (segment < line.size ()) {
           segment_length =
-            std::hypot (line[segment].x_m - line[segment - 1].x_m,
-                        line[segment].z_m - line[segment - 1].z_m);
+            cr::hypot (line[segment].x_m - line[segment - 1].x_m,
+                       line[segment].z_m - line[segment - 1].z_m);
           if (segment_start + segment_length >= at)
             break;
           segment_start += segment_length;
@@ -903,7 +904,7 @@ namespace moppe::terrain {
             : 0.0f;
         const float px = ax + dx * t;
         const float pz = az + dz * t;
-        const float distance = std::hypot (px, pz);
+        const float distance = cr::hypot (px, pz);
         if (distance < best_distance) {
           best_distance = distance;
           best = { at.x_m + px, at.z_m + pz };
@@ -919,7 +920,7 @@ namespace moppe::terrain {
       const float sx = target.x_m - end.x_m;
       const float sz = target.z_m - end.z_m;
       // A long way to move is eased over a longer stretch.
-      const float reach = std::max (40.0f, 2.0f * std::hypot (sx, sz));
+      const float reach = std::max (40.0f, 2.0f * cr::hypot (sx, sz));
       float along = 0.0f;
       const std::size_t n = line.size ();
       for (std::size_t k = 0; k < n; ++k) {
@@ -927,7 +928,7 @@ namespace moppe::terrain {
         if (k > 0) {
           const RoadPoint& previous = line[back ? n - k : k - 1];
           along +=
-            std::hypot (point.x_m - previous.x_m, point.z_m - previous.z_m);
+            cr::hypot (point.x_m - previous.x_m, point.z_m - previous.z_m);
         }
         if (along >= reach)
           break;
@@ -1014,17 +1015,17 @@ namespace moppe::terrain {
         const RoadPoint& a = spine[std::max (0, i - 5)];
         const RoadPoint& b = spine[std::min (n - 1, i + 5)];
         const float length =
-          std::max (std::hypot (b.x_m - a.x_m, b.z_m - a.z_m), 1e-3f);
+          std::max (cr::hypot (b.x_m - a.x_m, b.z_m - a.z_m), 1e-3f);
         normal_x[i] = -(b.z_m - a.z_m) / length;
         normal_z[i] = (b.x_m - a.x_m) / length;
       }
       std::vector<int> lowest (n, -half);
       std::vector<int> highest (n, half);
       for (int i = 1; i + 1 < n; ++i) {
-        const float turn = std::atan2 (normal_x[i - 1] * normal_z[i + 1] -
-                                         normal_z[i - 1] * normal_x[i + 1],
-                                       normal_x[i - 1] * normal_x[i + 1] +
-                                         normal_z[i - 1] * normal_z[i + 1]);
+        const float turn = cr::atan2 (normal_x[i - 1] * normal_z[i + 1] -
+                                        normal_z[i - 1] * normal_x[i + 1],
+                                      normal_x[i - 1] * normal_x[i + 1] +
+                                        normal_z[i - 1] * normal_z[i + 1]);
         const float curvature = turn / (2.0f * station);
         if (std::fabs (curvature) > 1e-4f) {
           const int limit =
@@ -1095,7 +1096,7 @@ namespace moppe::terrain {
                 continue;
               const RoadPoint b = position (i + 1, to);
               const float run =
-                std::max (std::hypot (b.x_m - a.x_m, b.z_m - a.z_m), 0.5f);
+                std::max (cr::hypot (b.x_m - a.x_m, b.z_m - a.z_m), 0.5f);
               float turn = 0.0f;
               if (i > 0) {
                 const float ux = a.x_m - before.x_m;
@@ -1103,7 +1104,7 @@ namespace moppe::terrain {
                 const float vx = b.x_m - a.x_m;
                 const float vz = b.z_m - a.z_m;
                 turn =
-                  std::fabs (std::atan2 (ux * vz - uz * vx, ux * vx + uz * vz));
+                  std::fabs (cr::atan2 (ux * vz - uz * vx, ux * vx + uz * vz));
                 if (turn > run / radius)
                   continue;
               }
@@ -1178,8 +1179,8 @@ namespace moppe::terrain {
           const RoadPoint end = back ? line.back () : line.front ();
           // An end at a place stays there.
           if (std::ranges::any_of (places, [&] (const RoadPlace& place) {
-                return std::hypot (wrapped (place.x_m - end.x_m, period_x),
-                                   wrapped (place.z_m - end.z_m, period_z)) <
+                return cr::hypot (wrapped (place.x_m - end.x_m, period_x),
+                                  wrapped (place.z_m - end.z_m, period_z)) <
                        15.0f;
               }))
             continue;
@@ -1213,15 +1214,15 @@ namespace moppe::terrain {
             std::vector<float> upper = lower;
             for (std::size_t i = 1; i < n; ++i) {
               const float rise =
-                0.1f * std::hypot (laid[i].x_m - laid[i - 1].x_m,
-                                   laid[i].z_m - laid[i - 1].z_m);
+                0.1f * cr::hypot (laid[i].x_m - laid[i - 1].x_m,
+                                  laid[i].z_m - laid[i - 1].z_m);
               lower[i] = std::max (lower[i], lower[i - 1] - rise);
               upper[i] = std::min (upper[i], upper[i - 1] + rise);
             }
             for (std::size_t i = n - 1; i-- > 0;) {
               const float rise =
-                0.1f * std::hypot (laid[i + 1].x_m - laid[i].x_m,
-                                   laid[i + 1].z_m - laid[i].z_m);
+                0.1f * cr::hypot (laid[i + 1].x_m - laid[i].x_m,
+                                  laid[i + 1].z_m - laid[i].z_m);
               lower[i] = std::max (lower[i], lower[i + 1] - rise);
               upper[i] = std::min (upper[i], upper[i + 1] + rise);
             }

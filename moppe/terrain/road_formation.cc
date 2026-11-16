@@ -1,5 +1,6 @@
 #include <moppe/terrain/roads.hh>
 
+#include <moppe/correct_math.hh>
 #include <moppe/parallel.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/river.hh>
@@ -189,7 +190,7 @@ namespace moppe::terrain {
           length2 > 0.0f
             ? std::clamp (-(ax * dx + az * dz) / length2, 0.0f, 1.0f)
             : 0.0f;
-        const float distance = std::hypot (ax + dx * t, az + dz * t);
+        const float distance = cr::hypot (ax + dx * t, az + dz * t);
         if (distance < best) {
           best = distance;
           height = std::lerp (road.heights[i - 1], road.heights[i], t);
@@ -214,7 +215,7 @@ namespace moppe::terrain {
           length2 > 0.0f
             ? std::clamp (-(ax * dx + az * dz) / length2, 0.0f, 1.0f)
             : 0.0f;
-        best = std::min (best, std::hypot (ax + dx * t, az + dz * t));
+        best = std::min (best, cr::hypot (ax + dx * t, az + dz * t));
       }
       return best;
     }
@@ -304,8 +305,8 @@ namespace moppe::terrain {
       for (std::size_t i = 0; i < n; ++i) {
         if (i > 0)
           along[i] = along[i - 1] +
-                     std::hypot (road.points[i].x_m - road.points[i - 1].x_m,
-                                 road.points[i].z_m - road.points[i - 1].z_m);
+                     cr::hypot (road.points[i].x_m - road.points[i - 1].x_m,
+                                road.points[i].z_m - road.points[i - 1].z_m);
         natural[i] = ground.at (road.points[i].x_m, road.points[i].z_m);
       }
       if (road.kind == Road::Kind::Footpath || n < 2) {
@@ -530,7 +531,7 @@ namespace moppe::terrain {
             std::lround (road.points[i].z_m / ground.spacing_z));
           for (int dz = -rz; dz <= rz; ++dz)
             for (int dx = -rx; dx <= rx; ++dx) {
-              if (std::hypot (dx * ground.spacing_x, dz * ground.spacing_z) >
+              if (cr::hypot (dx * ground.spacing_x, dz * ground.spacing_z) >
                   reach)
                 continue;
               const std::size_t cell = ground.cell (cx + dx, cz + dz);
@@ -596,9 +597,8 @@ namespace moppe::terrain {
       const float reach = built ? formation + batter_reach : path_reach;
       std::vector<float> along (points.size (), 0.0f);
       for (std::size_t i = 1; i < points.size (); ++i)
-        along[i] =
-          along[i - 1] + std::hypot (points[i].x_m - points[i - 1].x_m,
-                                     points[i].z_m - points[i - 1].z_m);
+        along[i] = along[i - 1] + cr::hypot (points[i].x_m - points[i - 1].x_m,
+                                             points[i].z_m - points[i - 1].z_m);
       for (std::size_t i = 1; i < points.size (); ++i) {
         const RoadPoint a = points[i - 1];
         const RoadPoint b = points[i];
@@ -621,7 +621,7 @@ namespace moppe::terrain {
               length2 > 0.0f
                 ? std::clamp ((px * dx + pz * dz) / length2, 0.0f, 1.0f)
                 : 0.0f;
-            const float distance = std::hypot (px - dx * t, pz - dz * t);
+            const float distance = cr::hypot (px - dx * t, pz - dz * t);
             if (distance > reach)
               continue;
             FormationClaim& claim = claims[ground.cell (x, z)];
@@ -649,8 +649,8 @@ namespace moppe::terrain {
       std::vector<float> along (road.points.size (), 0.0f);
       for (std::size_t i = 1; i < road.points.size (); ++i)
         along[i] = along[i - 1] +
-                   std::hypot (road.points[i].x_m - road.points[i - 1].x_m,
-                               road.points[i].z_m - road.points[i - 1].z_m);
+                   cr::hypot (road.points[i].x_m - road.points[i - 1].x_m,
+                              road.points[i].z_m - road.points[i - 1].z_m);
       std::vector<float> culverts;
       for (const RoadCulvert& c : road.culverts)
         culverts.push_back (along[c.at]);

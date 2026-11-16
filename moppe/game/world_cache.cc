@@ -65,7 +65,7 @@ namespace moppe::game {
     // Version 36 ends each cart road on dry ground in a level turning
     // place, keeps the treads clear of standing water beside them, and
     // leaves the ground under a bridge's deck bare.
-    constexpr std::uint32_t CACHE_VERSION = 36;
+    constexpr std::uint32_t CACHE_VERSION = 37;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.

@@ -605,8 +605,10 @@ namespace moppe::terrain {
       }
       if (candidates.empty ())
         throw std::runtime_error ("no dry home-base site near water");
-      std::ranges::sort (candidates, {}, &HomeBaseSite::score);
-      std::ranges::reverse (candidates);
+      std::ranges::sort (
+        candidates, [] (const HomeBaseSite& a, const HomeBaseSite& b) {
+          return a.score != b.score ? a.score > b.score : a.node < b.node;
+        });
       std::vector<HomeBaseSite> sites;
       const float separation = std::max (
         120.0f,
@@ -691,7 +693,9 @@ namespace moppe::terrain {
       // routing around the best focus can fail on a single blocked pass
       // that a focus in another quarter of the annulus never meets.
       std::ranges::sort (
-        candidates, std::ranges::greater {}, &ScenicCandidate::score);
+        candidates, [] (const ScenicCandidate& a, const ScenicCandidate& b) {
+          return a.score != b.score ? a.score > b.score : a.node < b.node;
+        });
       const float separation = 0.4f * desired;
       std::vector<std::size_t> focuses;
       for (const ScenicCandidate candidate : candidates) {
@@ -827,7 +831,8 @@ namespace moppe::terrain {
         float estimate;
         std::size_t state;
         bool operator> (const Candidate& other) const {
-          return estimate > other.estimate;
+          return estimate != other.estimate ? estimate > other.estimate
+                                            : state > other.state;
         }
       };
       const std::size_t node_count =

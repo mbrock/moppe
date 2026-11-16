@@ -1,0 +1,44 @@
+name: Tests and world determinism
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: accept-flake-config = true
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-ci-${{ hashFiles('flake.lock', '**/*.nix') }}
+          paths: ~/.cache/nix
+      - name: Check generation math
+        run: |
+          if grep -REn --include='*.cc' --include='*.hh' \
+            --exclude=river_census.cc \
+            'std::(sin|cos|tan|atan2?|exp|log2?|pow|hypot)[[:space:]]*\(' \
+            moppe/terrain moppe/map; then
+            echo 'Use correctly rounded generation math' >&2
+            exit 1
+          fi
+      - name: Build and test
+        run: |
+          nix develop --command bash -euc '
+            cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DMOPPE_BUILD_DEVELOPER_TOOLS=ON
+            cmake --build build --target moppe-tests world-fingerprint
+            ctest --test-dir build --output-on-failure
+            tools/format --check
+            MOPPE_THREADS=1 ./build/world-fingerprint 257 play 123 > /tmp/world-one
+            MOPPE_THREADS=4 ./build/world-fingerprint 257 play 123 > /tmp/world-four
+            diff -u tests/terrain/world-fingerprint-257.txt /tmp/world-one
+            diff -u /tmp/world-one /tmp/world-four
+          '

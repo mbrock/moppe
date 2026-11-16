@@ -615,7 +615,11 @@ namespace moppe::terrain {
       candidates.clear ();
       for (const std::size_t cell : footprint)
         candidates.push_back ({ cell, working_height_m[cell] });
-      std::ranges::sort (candidates, {}, &Candidate::height_m);
+      std::ranges::sort (
+        candidates, [] (const Candidate& a, const Candidate& b) {
+          return a.height_m != b.height_m ? a.height_m < b.height_m
+                                          : a.cell < b.cell;
+        });
 
       double remaining_m3 = source_volume_m3;
       std::size_t active = 1;

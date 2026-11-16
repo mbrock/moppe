@@ -389,8 +389,8 @@ namespace moppe::terrain {
               continue;
             // The angle turned, toward the right positive, over the
             // distance it turns in: the curvature.
-            const float turned = std::atan2 (in_x * out_z - in_z * out_x,
-                                             in_x * out_x + in_z * out_z);
+            const float turned = cr::atan2 (in_x * out_z - in_z * out_x,
+                                            in_x * out_x + in_z * out_z);
             turning[bed] = turned / (0.5f * run);
           }
           for (int pass = 0; pass < 4; ++pass)
