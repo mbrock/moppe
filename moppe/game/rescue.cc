@@ -7,11 +7,10 @@ namespace moppe::game {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace rescue_rig {
-      // The bumpers, laid over each machine's Box3D hulls: the Trail 90's
-      // wheels and rider, the jeep's tub, the
+      // The bumpers: the Trail 90's wheels and rider, the jeep's tub, the
       // tractor's big rear wheels and its bonnet, the Caddy's long body,
       // the helicopter's cabin and tail boom, and the mountainbike's
-      // wheels and rider. The rotor meets nothing.
+      // wheels and rider.
       const Bumper bike_bumpers[] = {
         { Vec3 (0.0f, 0.05f, 0.45f), 0.36f * u::m },
         { Vec3 (0.0f, 0.1f, -0.5f), 0.38f * u::m },
@@ -103,113 +102,121 @@ namespace moppe::game {
 
   using namespace rescue_rig;
 
-  const char* machine_name (Machine machine) {
-    switch (machine) {
-    case Machine::bike:
-      return "the bike";
-    case Machine::jeep:
-      return "the jeep";
-    case Machine::tractor:
-      return "the tractor";
-    case Machine::caddy:
-      return "the Caddy";
-    case Machine::helicopter:
-      return "the helicopter";
-    case Machine::mountain_bike:
-      return "the mountainbike";
-    case Machine::long_john:
-      return "the Long John";
-    case Machine::boat:
-      return "the boat";
-    case Machine::jet_ski:
-      return "the jet ski";
-    }
-    return "it";
-  }
-
-  std::span<const Bumper> bumpers (Machine machine) {
-    switch (machine) {
-    case Machine::bike:
-      return bike_bumpers;
-    case Machine::jeep:
-      return jeep_bumpers;
-    case Machine::tractor:
-      return tractor_bumpers;
-    case Machine::caddy:
-      return caddy_bumpers;
-    case Machine::helicopter:
-      return helicopter_bumpers;
-    case Machine::mountain_bike:
-      return mountain_bike_bumpers;
-    case Machine::long_john:
-      return long_john_bumpers;
-    case Machine::boat:
-      return boat_bumpers;
-    case Machine::jet_ski:
-      return jet_ski_bumpers;
-    }
-    return {};
-  }
-
-  std::span<const Bumper> towed_bumpers (Machine machine) {
-    if (machine == Machine::tractor)
-      return trailer_bumpers;
-    return {};
-  }
-
-  Vec3 machine_centre (Machine machine) {
-    switch (machine) {
-    case Machine::bike:
-      return Vec3 (0.0f, 0.42f, 0.0f);
-    case Machine::jeep:
-      return Vec3 (0.0f, 0.15f, 0.05f);
-    case Machine::tractor:
-      return Vec3 (0.0f, 0.78f, -0.15f);
-    case Machine::caddy:
-      return Vec3 (0.0f, 0.24f, 0.30f);
-    case Machine::helicopter:
-      return Vec3 (0.0f, 1.15f, 0.05f);
-    case Machine::mountain_bike:
-      return Vec3 (0.0f, 0.55f, 0.0f);
-    case Machine::long_john:
-      return Vec3 (0.0f, 0.2f, -0.2f);
-    case Machine::boat:
-      return Vec3 (0.0f, 0.2f, 0.15f);
-    case Machine::jet_ski:
-      return Vec3 (0.0f, 0.24f, -0.12f);
-    }
-    return Vec3 ();
-  }
-
-  Vec3 tie_point (Machine machine, bool front) {
-    const float end = front ? 1.0f : -1.0f;
-    switch (machine) {
-    case Machine::bike:
-      // The front fender's stays, or the rack's rear rail.
-      return front ? Vec3 (0.0f, 0.2f, 0.85f) : Vec3 (0.0f, 0.36f, -1.0f);
-    case Machine::jeep:
-      return Vec3 (0.0f, 0.35f, end * 1.95f);
-    case Machine::tractor:
-      // The front axle's beam, or the drawbar under the seat.
-      return front ? Vec3 (0.0f, 0.45f, 1.55f) : Vec3 (0.0f, 0.55f, -1.45f);
-    case Machine::caddy:
-      return Vec3 (0.0f, 0.25f, front ? 2.06f : -2.22f);
-    case Machine::helicopter:
-      return Vec3 (0.0f, 0.3f, end * 1.6f);
-    case Machine::mountain_bike:
-      // The head tube, or the seat post.
-      return front ? Vec3 (0.0f, 0.45f, 0.35f) : Vec3 (0.0f, 0.5f, -0.25f);
-    case Machine::long_john:
-      // The front bulkhead, or the seat post.
-      return front ? Vec3 (0.0f, 0.3f, 0.82f) : Vec3 (0.0f, 0.4f, -0.72f);
-    case Machine::boat:
-      // The carrying handle on the bow, or the transom's top.
-      return front ? Vec3 (0.0f, 0.45f, 2.65f) : Vec3 (0.0f, 0.35f, -0.95f);
-    case Machine::jet_ski:
-      // The eye in the stem, or the grab handle behind the saddle.
-      return front ? Vec3 (0.0f, 0.36f, 1.86f) : Vec3 (0.0f, 0.52f, -0.94f);
-    }
-    return Vec3 ();
+  const MachineShape& machine_shape (Machine machine) {
+    // By Machine. The bumpers are laid over each machine's Box3D hulls;
+    // the helicopter's rotor meets nothing, and nothing hangs from its
+    // hook beneath it.
+    static const MachineShape shapes[machine_count] = {
+      { .name = "the bike",
+        .mark_height = 1.6f * u::m,
+        .bumpers = bike_bumpers,
+        .centre = Vec3 (0.0f, 0.42f, 0.0f),
+        // The front fender's stays, or the rack's rear rail.
+        .front_tie = Vec3 (0.0f, 0.2f, 0.85f),
+        .back_tie = Vec3 (0.0f, 0.36f, -1.0f),
+        .ring = Vec3 (0.0f, 2.1f, 0.0f),
+        // The fork's top clamp and the rack's rear corners.
+        .legs = { Vec3 (0.0f, 0.53f, 0.35f),
+                  Vec3 (0.0f, 0.53f, 0.35f),
+                  Vec3 (0.13f, 0.36f, -0.97f),
+                  Vec3 (-0.13f, 0.36f, -0.97f) } },
+      { .name = "the jeep",
+        .mark_height = 1.9f * u::m,
+        .bumpers = jeep_bumpers,
+        .centre = Vec3 (0.0f, 0.15f, 0.05f),
+        .front_tie = Vec3 (0.0f, 0.35f, 1.95f),
+        .back_tie = Vec3 (0.0f, 0.35f, -1.95f),
+        .ring = Vec3 (0.0f, 2.8f, 0.05f),
+        // The roll cage's corners.
+        .legs = { Vec3 (0.72f, 0.95f, 0.55f),
+                  Vec3 (-0.72f, 0.95f, 0.55f),
+                  Vec3 (0.72f, 0.95f, -1.2f),
+                  Vec3 (-0.72f, 0.95f, -1.2f) } },
+      { .name = "the tractor",
+        .mark_height = 2.4f * u::m,
+        .bumpers = tractor_bumpers,
+        .centre = Vec3 (0.0f, 0.78f, -0.15f),
+        // The front axle's beam, or the drawbar under the seat.
+        .front_tie = Vec3 (0.0f, 0.45f, 1.55f),
+        .back_tie = Vec3 (0.0f, 0.55f, -1.45f),
+        .ring = Vec3 (0.0f, 3.4f, -0.15f),
+        // The front axle's ends and the rear mudguards.
+        .legs = { Vec3 (0.45f, 0.75f, 1.35f),
+                  Vec3 (-0.45f, 0.75f, 1.35f),
+                  Vec3 (0.75f, 1.25f, -0.75f),
+                  Vec3 (-0.75f, 1.25f, -0.75f) },
+        .towed_bumpers = trailer_bumpers },
+      { .name = "the Caddy",
+        .mark_height = 2.0f * u::m,
+        .bumpers = caddy_bumpers,
+        .centre = Vec3 (0.0f, 0.24f, 0.30f),
+        .front_tie = Vec3 (0.0f, 0.25f, 2.06f),
+        .back_tie = Vec3 (0.0f, 0.25f, -2.22f),
+        .ring = Vec3 (0.0f, 3.0f, 0.30f),
+        // The bonnet's front corners and the bed's back ones.
+        .legs = { Vec3 (0.72f, 0.62f, 1.70f),
+                  Vec3 (-0.72f, 0.62f, 1.70f),
+                  Vec3 (0.74f, 0.68f, -2.12f),
+                  Vec3 (-0.74f, 0.68f, -2.12f) } },
+      { .name = "the helicopter",
+        .mark_height = 3.4f * u::m,
+        .bumpers = helicopter_bumpers,
+        .centre = Vec3 (0.0f, 1.15f, 0.05f),
+        .front_tie = Vec3 (0.0f, 0.3f, 1.6f),
+        .back_tie = Vec3 (0.0f, 0.3f, -1.6f) },
+      { .name = "the mountainbike",
+        .mark_height = 1.5f * u::m,
+        .bumpers = mountain_bike_bumpers,
+        .centre = Vec3 (0.0f, 0.55f, 0.0f),
+        // The head tube, or the seat post.
+        .front_tie = Vec3 (0.0f, 0.45f, 0.35f),
+        .back_tie = Vec3 (0.0f, 0.5f, -0.25f),
+        .ring = Vec3 (0.0f, 2.0f, 0.05f),
+        .legs = { Vec3 (0.0f, 0.75f, 0.4f),
+                  Vec3 (0.0f, 0.75f, 0.4f),
+                  Vec3 (0.0f, 0.8f, -0.25f),
+                  Vec3 (0.0f, 0.8f, -0.25f) } },
+      { .name = "the boat",
+        .mark_height = 1.4f * u::m,
+        .bumpers = boat_bumpers,
+        .centre = Vec3 (0.0f, 0.2f, 0.15f),
+        // The carrying handle on the bow, or the transom's top.
+        .front_tie = Vec3 (0.0f, 0.45f, 2.65f),
+        .back_tie = Vec3 (0.0f, 0.35f, -0.95f),
+        .ring = Vec3 (0.0f, 2.2f, 0.6f),
+        // The bow handle and the transom's corners.
+        .legs = { Vec3 (0.0f, 0.45f, 2.65f),
+                  Vec3 (0.0f, 0.45f, 2.65f),
+                  Vec3 (0.4f, 0.36f, -0.9f),
+                  Vec3 (-0.4f, 0.36f, -0.9f) } },
+      { .name = "the Long John",
+        .mark_height = 1.5f * u::m,
+        .bumpers = long_john_bumpers,
+        .centre = Vec3 (0.0f, 0.2f, -0.2f),
+        // The front bulkhead, or the seat post.
+        .front_tie = Vec3 (0.0f, 0.3f, 0.82f),
+        .back_tie = Vec3 (0.0f, 0.4f, -0.72f),
+        .ring = Vec3 (0.0f, 2.2f, 0.1f),
+        // The bulkhead's top corners and the hoop's.
+        .legs = { Vec3 (0.19f, 0.39f, 0.81f),
+                  Vec3 (-0.19f, 0.39f, 0.81f),
+                  Vec3 (0.25f, 0.63f, -0.15f),
+                  Vec3 (-0.25f, 0.63f, -0.15f) } },
+      { .name = "the jet ski",
+        .mark_height = 1.6f * u::m,
+        .bumpers = jet_ski_bumpers,
+        .centre = Vec3 (0.0f, 0.24f, -0.12f),
+        // The eye in the stem, or the grab handle behind the saddle.
+        .front_tie = Vec3 (0.0f, 0.36f, 1.86f),
+        .back_tie = Vec3 (0.0f, 0.52f, -0.94f),
+        .ring = Vec3 (0.0f, 2.3f, -0.1f),
+        // The eye in the stem and the grab handle's feet.
+        .legs = { Vec3 (0.0f, 0.36f, 1.86f),
+                  Vec3 (0.0f, 0.36f, 1.86f),
+                  Vec3 (0.13f, 0.41f, -0.885f),
+                  Vec3 (-0.13f, 0.41f, -0.885f) } },
+    };
+    return shapes[static_cast<int> (machine)];
   }
 
   Vec3 MachineBody::point (const Vec3& local) const {
@@ -229,14 +236,15 @@ namespace moppe::game {
       // A machine's bumpers, and those of what it tows.
       std::vector<Placed> placed_bumpers (const MachineBody& body) {
         std::vector<Placed> placed;
-        for (const Bumper& p : bumpers (body.machine))
+        const MachineShape& shape = machine_shape (body.machine);
+        for (const Bumper& p : shape.bumpers)
           placed.push_back ({ body.point (p.centre), p.radius, body.mass });
         if (!body.towing)
           return placed;
         const Vec3 forward = body.towed_forward;
         const Vec3 up = body.towed_up;
         const Vec3 left = normalized (cross (up, forward));
-        for (const Bumper& p : towed_bumpers (body.machine))
+        for (const Bumper& p : shape.towed_bumpers)
           placed.push_back ({ body.towed_position + left * p.centre[0] +
                                 up * p.centre[1] + forward * p.centre[2],
                               p.radius,
@@ -319,8 +327,12 @@ namespace moppe::game {
     }
     const bool trying = std::abs (throttle) > 0.4f;
     if (!trying) {
-      // Let off, the next try heaves at once if it is still stuck.
+      // Let off, the next try heaves at once if it is still stuck; one
+      // not yet stuck starts its count again, so the throttle's bursts
+      // of a turn on the spot do not add up to being stuck.
       trouble.heave_wait = {};
+      if (!trouble.stuck)
+        trouble.strain = {};
       return false;
     }
     trouble.strain += dt;

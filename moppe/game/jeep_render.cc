@@ -42,7 +42,7 @@ namespace moppe::game {
       return meshes;
     }
 
-    Mat4 jeep_frame (const JeepPose& jeep) {
+    Mat4 jeep_frame (const CarPose& jeep) {
       const Vec3 forward = normalized (jeep.forward);
       const Vec3 left = normalized (cross (jeep.up, forward));
       const Vec3 up = cross (forward, left);
@@ -51,7 +51,7 @@ namespace moppe::game {
              Mat4::scaling (Vec3 (1, 1, 1) * jeep.scale);
     }
 
-    Mat4 steering_turn (const JeepPose& jeep) {
+    Mat4 steering_turn (const CarPose& jeep) {
       const Vec3 column =
         normalized (jeep_model::steering_column - jeep_model::steering_hub);
       return Mat4::rotation (steering_ratio * jeep.steer_radians * u::rad,
@@ -61,7 +61,7 @@ namespace moppe::game {
     // The hiker in a seat: the driver holding the wheel with feet at the
     // pedals, the passenger with hands on their knees.
     AvatarSkeleton
-    pose_seated (const JeepPose& jeep, const Mat4& frame, bool driving) {
+    pose_seated (const CarPose& jeep, const Mat4& frame, bool driving) {
       const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
       const Vec3 facing = normalized (frame.transform_vector (Vec3 (0, 0, 1)));
       const Vec3 left = normalized (cross (up, facing));
@@ -110,7 +110,7 @@ namespace moppe::game {
 
   void render_jeep (render::Renderer& r,
                     render::DrawList& dl,
-                    const JeepPose& jeep,
+                    const CarPose& jeep,
                     JeepRiders riders,
                     uint64_t motion_base) {
     const JeepMeshes& meshes = jeep_meshes (r);

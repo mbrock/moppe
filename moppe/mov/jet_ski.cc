@@ -217,15 +217,6 @@ namespace moppe::mov {
         return all;
       }
 
-      b3Quat level_rotation (const Vec3& heading) {
-        Vec3 f = heading;
-        f[1] = 0.0f;
-        f = length2 (f) > 1e-8f ? normalized (f) : Vec3 (0, 0, 1);
-        const Vec3 up (0, 1, 0);
-        const Vec3 left = cross (up, f);
-        const b3Matrix3 m { to_b3 (left), to_b3 (up), to_b3 (f) };
-        return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
-      }
     }
   }
 
@@ -327,18 +318,9 @@ namespace moppe::mov {
       create_body (s.body);
     }
 
-    RigidBodyState read () const {
-      RigidBodyState s;
-      s.position = from_b3 (b3Body_GetPosition (body));
-      s.rotation = array_of (b3Body_GetRotation (body));
-      s.linear_velocity = from_b3 (b3Body_GetLinearVelocity (body));
-      s.angular_velocity = from_b3 (b3Body_GetAngularVelocity (body));
-      return s;
-    }
-
     State snapshot () const {
       State s = kept;
-      s.body = read ();
+      s.body = read_body (body);
       s.ground_column = patch.column ();
       s.ground_row = patch.row ();
       return s;
@@ -360,7 +342,7 @@ namespace moppe::mov {
     }
 
     void place (const Vec3& at, const Vec3& heading, float level) {
-      const b3Quat q = jet_ski_rig::level_rotation (heading);
+      const b3Quat q = level_rotation (heading);
       Vec3 centre = at;
       centre[1] =
         std::max (level - jet_ski_rig::draft,
@@ -555,17 +537,13 @@ namespace moppe::mov {
     b3Body_SetMassData (m.body, jet_ski_rig::mass_data (!parked));
   }
 
-  void JetSki::update (seconds_t step, const BoatWater& water) {
-    if (m_impl->kept.asleep || step <= seconds_t {})
-      return;
+  void JetSki::update (seconds_t dt, const BoatWater& water) {
     // At speed the water is stiff under the hull: it is pressed anew
-    // every hundred-and-twentieth of a second at most.
-    const int steps =
-      std::max (1,
-                static_cast<int> (std::ceil (
-                  (step * (120.0f / u::s)).numerical_value_in (one) - 1e-3f)));
-    for (int i = 0; i < steps && !m_impl->kept.asleep; ++i)
-      m_impl->step (step / steps, water);
+    // every substep.
+    in_substeps (dt, [&] (seconds_t h) {
+      if (!m_impl->kept.asleep)
+        m_impl->step (h, water);
+    });
   }
 
   Vec3 JetSki::position () const {

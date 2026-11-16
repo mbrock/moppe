@@ -3,8 +3,11 @@
 
 #include <moppe/gfx/math.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/mov/rigid_bike.hh>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 #include <box3d/box3d.h>
 #include <box3d/math_functions.h>
@@ -34,6 +37,14 @@ namespace moppe::mov {
 
   inline Vec3 rotated (const std::array<float, 4>& q, const Vec3& v) {
     return from_b3 (b3RotateVector (quat_of (q), to_b3 (v)));
+  }
+
+  // A body's motion, as a checkpoint keeps it.
+  inline RigidBodyState read_body (b3BodyId body) {
+    return { from_b3 (b3Body_GetPosition (body)),
+             array_of (b3Body_GetRotation (body)),
+             from_b3 (b3Body_GetLinearVelocity (body)),
+             from_b3 (b3Body_GetAngularVelocity (body)) };
   }
 
   // Box3D is unit-blind: kilograms, metres, seconds, and so newtons. These
@@ -139,6 +150,38 @@ namespace moppe::mov {
       (c / (2.0f * sqrt (stiffness * effective))).numerical_value_in (one);
   }
 
+  // A machine's frame for a level heading: x to its left, y up, z along
+  // the heading.
+  inline b3Quat level_rotation (const Vec3& heading) {
+    Vec3 f = heading;
+    f[1] = 0.0f;
+    f = length2 (f) > 1e-8f ? normalized (f) : Vec3 (0, 0, 1);
+    const Vec3 up (0, 1, 0);
+    const Vec3 left = cross (up, f);
+    const b3Matrix3 m { to_b3 (left), to_b3 (up), to_b3 (f) };
+    return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
+  }
+
+  // Every machine integrates at the game's own rate, whatever step it is
+  // given: a longer one is split into equal substeps of at most this, so
+  // a capture's or a video's steps of a sixtieth run the physics play
+  // runs.
+  inline constexpr seconds_t machine_step = (1.0f / 120.0f) * si::second;
+
+  // Calls `step` with each of the equal substeps `dt` is split into.
+  template <class Step>
+  void in_substeps (seconds_t dt, Step&& step) {
+    if (dt <= seconds_t {})
+      return;
+    const int count =
+      std::max (1,
+                static_cast<int> (std::ceil (
+                  (dt / machine_step).numerical_value_in (one) - 0.001f)));
+    const seconds_t h = dt / static_cast<float> (count);
+    for (int i = 0; i < count; ++i)
+      step (h);
+  }
+
   // A wheel joint slides along its frame's x axis and spins about z: in
   // this frame x points down the chassis and z along the axle to the left.
   inline b3Quat suspension_rotation () {
@@ -167,6 +210,10 @@ namespace moppe::mov {
   surface_elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
     return ground_height (surface, x, z);
   }
+
+  // The unit normal of that ground: the height field's, and over a road's
+  // tread (a bridge's deck, an embankment) the road's own.
+  Vec3 ground_normal (const map::SurfaceGeometry& surface, float x, float z);
 
   // Whether a wheel touched the ground in the last step, and the mean
   // normal force the ground pressed it with.

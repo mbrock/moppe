@@ -300,10 +300,10 @@ namespace moppe {
         // ground, though the key lets it fall from any height.
         if (logic ().m_sling.hooked &&
             session ().helicopter ().altitude () < sling_hang + 4.0f * u::m)
-          state.slung = machine_name (logic ().m_sling.load);
+          state.slung = machine_shape (logic ().m_sling.load).name;
         if (const std::optional<Machine> under =
               session ().hook_within_reach ())
-          state.hook = machine_name (*under);
+          state.hook = machine_shape (*under).name;
         if (logic ().m_sling.hooked)
           state.dismount = "Let go";
         else if (state.hook)
@@ -481,107 +481,26 @@ namespace moppe {
                        DisplayColor (1.0f, 0.86f, 0.55f),
                        place_waymark_m);
       }
-      using Mark = HudState::Waymark;
-      if (mode != M_BIKE && !session ().can_drop_bike ())
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::Bike,
-                     session ().bike ().position () + Vec3 (0, 1.6f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_JEEP)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::Jeep,
-                     session ().jeep ().position () + Vec3 (0, 1.9f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_TRACTOR)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::Tractor,
-                     session ().tractor ().position () + Vec3 (0, 2.4f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_CADDY)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::Caddy,
-                     session ().caddy ().position () + Vec3 (0, 2.0f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_MOUNTAIN_BIKE)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::MountainBike,
-                     session ().mountain_bike ().position () +
-                       Vec3 (0, 1.5f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_LONG_JOHN)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::LongJohn,
-                     session ().long_john ().position () + Vec3 (0, 1.5f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_BOAT)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::Boat,
-                     session ().boat ().position () + Vec3 (0, 1.4f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_JET_SKI)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::JetSki,
-                     session ().jet_ski ().position () + Vec3 (0, 1.6f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
-      if (mode != M_HELICOPTER)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     "",
-                     Mark::Helicopter,
-                     session ().helicopter ().position () + Vec3 (0, 3.4f, 0),
-                     30.0f,
-                     50.0f,
-                     pale);
+      // Every machine but the one being driven, and the bike while it
+      // hangs under the wing.
+      for (int i = 0; i < machine_count; ++i) {
+        const Machine machine = static_cast<Machine> (i);
+        if (driven_machine (mode) == machine ||
+            (machine == Machine::bike && session ().can_drop_bike ()))
+          continue;
+        add_waymark (
+          state,
+          frame,
+          width,
+          height,
+          "",
+          HudState::Waymark::of (machine),
+          session ().machine_body (machine).position +
+            Vec3 (0, meters_value (machine_shape (machine).mark_height), 0),
+          30.0f,
+          50.0f,
+          pale);
+      }
     }
 
     HudState MoppeGame::hud_state_for (const FrameHud& reading) {

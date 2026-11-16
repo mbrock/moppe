@@ -242,8 +242,7 @@ namespace moppe::game {
 
       // On foot, as the game starts: walk, run, and jump, turning gently.
       {
-        GameSession session (
-          world.params (), world.surface (), mov::BikePhysics::rigid);
+        GameSession session (world.params (), world.surface ());
         session.bike ().set_water_level (sea);
         session.bike ().reset (spawn);
         session.bike ().set_heading (heading);
@@ -291,8 +290,7 @@ namespace moppe::game {
       // Riding the rigid bike with the demo autopilot, which weaves away
       // from the trunks ahead and boosts into periodic leaps.
       {
-        GameSession session (
-          world.params (), world.surface (), mov::BikePhysics::rigid);
+        GameSession session (world.params (), world.surface ());
         session.bike ().set_water_level (sea);
         session.bike ().reset (spawn);
         session.bike ().set_heading (heading);

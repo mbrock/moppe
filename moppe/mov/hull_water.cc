@@ -104,7 +104,7 @@ namespace moppe::mov {
       }
       pascals_t pressure = rho * g * head;
       // The bobbing is damped up and down, not along the way.
-      pressure += rho * traits.damping * std::abs (p.normal[1]) * vn;
+      pressure += rho * traits.damping * std::abs (n[1]) * vn;
       if (vn > 0.0f * u::m / u::s)
         pressure += 0.5f * rho * traits.ram * through * vn;
       else if (!p.transom)

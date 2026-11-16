@@ -1,3 +1,4 @@
+#include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/vehicle.hh>
 
 #include <algorithm>
@@ -5,45 +6,40 @@
 
 namespace moppe {
   namespace mov {
-    // The Trail 90's ride height: where it stands over the ground.
-    static const meters_t radius = RigidBike::ride_height;
+    namespace {
+      namespace vehicle_rig {
+        // How deep the wheels of a bike whose reference point stands
+        // `ride_height` over the ground at `height` run in water standing
+        // at `level`: 0 dry, 1 from 0.6 m, a little over the axles.
+        float
+        wading_depth (meters_t height, meters_t level, meters_t ride_height) {
+          return std::clamp (((level - height + ride_height) / (0.6f * u::m))
+                               .numerical_value_in (one),
+                             0.0f,
+                             1.0f);
+        }
 
-    // How deep the wheels of a bike with its centre at `height` run in
-    // water standing at `level`: 0 dry, 1 from 0.6 m, a little over the
-    // axles.
-    static float wading_depth (meters_t height, meters_t level) {
-      return std::clamp (
-        ((level - height + radius) / (0.6f * u::m)).numerical_value_in (one),
-        0.0f,
-        1.0f);
+        constexpr acceleration_component_t boost_acceleration =
+          26.0f * isq::acceleration[u::m / pow<2> (u::s)];
+        constexpr radians_t boost_max_tilt = 60.0f * u::deg;
+        constexpr seconds_t boost_full_burn_time = 3.0f * u::s;
+        constexpr seconds_t boost_recharge_time = 5.0f * u::s;
+        constexpr seconds_t boost_recharge_pause = 0.65f * u::s;
+        constexpr float boost_reserve_charge = 0.06f;
+        constexpr float boost_emergency_level = 0.18f;
+
+        constexpr per_second_t steering_smoothing = 9.0f / u::s;
+        constexpr float full_turn = 2.0f * 3.14159265f;
+
+        // Keeps an angle in [0, 2pi).
+        radians_t wrapped (float radians) {
+          float a = std::fmod (radians, full_turn);
+          if (a < 0.0f)
+            a += full_turn;
+          return a * u::rad;
+        }
+      }
     }
-
-    // How fast full steering input swings the bike itself, in radians
-    // per second per radian of yaw input.  Grip then drags the
-    // velocity around after the heading.
-    static const per_second_t steering_rate = 1.6f / u::s;
-    static const per_second_t air_steering_rate = 0.9f / u::s;
-
-    static const acceleration_component_t boost_acceleration =
-      26.0f * isq::acceleration[u::m / pow<2> (u::s)];
-    static const radians_t boost_max_tilt = 60.0f * u::deg;
-    static const seconds_t boost_full_burn_time = seconds (3.0f);
-    static const seconds_t boost_recharge_time = seconds (5.0f);
-    static const seconds_t boost_recharge_pause = seconds (0.65f);
-    static const float boost_reserve_charge = 0.06f;
-    static const float boost_emergency_level = 0.18f;
-
-    // The rigid bike integrates at the game's own fixed rate; longer steps
-    // are split into equal substeps of at most this length.
-    static const seconds_t rigid_step = seconds (1.0f / 120.0f);
-
-    // The classic bike's visual suspension spring, per unit of its mass.
-    constexpr quantity<one / pow<2> (u::s), float> susp_stiffness =
-      70.0f / pow<2> (u::s);
-    constexpr per_second_t susp_damping = 9.0f / u::s;
-    // Its drawn wheel's radius, and a turn.
-    constexpr meters_t drawn_wheel_radius = 0.68f * u::m;
-    constexpr float full_turn = 2.0f * 3.14159265f;
 
     Vehicle::Vehicle (position_t position,
                       degrees_t orientation,
@@ -51,91 +47,56 @@ namespace moppe {
                       newtons_t max_thrust,
                       watts_t power,
                       kilograms_t mass,
-                      BikePhysics physics,
                       const BikeRig& rig)
-        : m_position (position), m_velocity (moppe::velocity (Vec3 ())),
-          m_heading (sin (orientation), 0, cos (orientation)),
-          m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
-          m_lean (), m_render_heading (m_heading), m_render_normal (0, 1, 0),
-          m_susp (), m_susp_v (), m_wheel_spin (), m_boost_flight (false),
-          m_map (surface), m_max_thrust (max_thrust), m_power (power),
-          m_thrust (0), m_mass (mass), m_boost_input (0), m_boost_drive (0),
-          m_boost_level (0), m_boost_charge (1),
-          m_boost_recharge_delay (seconds (0)), m_water_level (-1000 * u::m),
-          m_airborne_time (seconds (0)), m_impact (0 * u::m / u::s),
-          m_fall_top (0 * u::m), m_fall_drop (0 * u::m) {
-      calculate_orientation ();
-      fall_to_ground ();
-      if (physics == BikePhysics::rigid) {
-        RigidBike::Params params;
-        params.max_drive_force = m_max_thrust;
-        params.power = m_power;
-        params.mass = m_mass;
-        params.rig = rig;
-        const Vec3 ground = position_value (m_position);
-        m_rigid = std::make_unique<RigidBike> (
-          surface,
-          params,
-          ground + Vec3 (0.0f, meters_value (rig.ride_height ()), 0.0f),
-          m_heading);
-        sync_rigid ();
-      }
+        : m_map (surface), m_mass (mass) {
+      RigidBike::Params params;
+      params.max_drive_force = max_thrust;
+      params.power = power;
+      params.mass = mass;
+      params.rig = rig;
+      Vec3 at = position_value (position);
+      at[1] = ground_height (surface, at[0], at[2]) +
+              meters_value (rig.ride_height ());
+      m_rigid = std::make_unique<RigidBike> (
+        surface, params, at, Vec3 (sin (orientation), 0.0f, cos (orientation)));
+      m_fall_top = static_cast<float> (at[1]) * u::m;
     }
 
     Vehicle::~Vehicle () = default;
 
     Vehicle::State Vehicle::state () const {
-      State state { m_position,
-                    m_velocity,
-                    m_heading,
-                    m_thrust_orientation,
-                    m_yaw,
-                    m_yaw_target,
-                    m_lean,
-                    m_render_heading,
-                    m_render_normal,
-                    m_susp,
-                    m_susp_v,
-                    m_wheel_spin,
-                    m_boost_flight,
-                    m_thrust,
-                    m_boost_input,
-                    m_boost_drive,
-                    m_boost_level,
-                    m_boost_charge,
-                    m_boost_recharge_delay,
-                    m_water_level,
-                    m_airborne_time,
-                    m_impact,
-                    m_fall_top,
-                    m_fall_drop };
+      State state;
+      state.rigid = m_rigid->state ();
+      // The coarse pose is derived from the snapshot itself, so restoring
+      // an unedited state finds them equal bit for bit.
+      state.position = moppe::position (m_rigid->reference_of (state.rigid));
+      state.velocity = moppe::velocity (state.rigid.chassis.linear_velocity);
+      state.heading = RigidBike::forward_of (state.rigid);
+      state.yaw = m_yaw;
+      state.yaw_target = m_yaw_target;
+      state.wheel_spin = m_wheel_spin;
+      state.boost_flight = m_boost_flight;
+      state.thrust = m_thrust;
+      state.boost_input = m_boost_input;
+      state.boost_drive = m_boost_drive;
+      state.boost_level = m_boost_level;
+      state.boost_charge = m_boost_charge;
+      state.boost_recharge_delay = m_boost_recharge_delay;
+      state.water_level = m_water_level;
+      state.airborne_time = m_airborne_time;
+      state.impact = m_impact;
+      state.fall_top = m_fall_top;
+      state.fall_drop = m_fall_drop;
       state.parked = m_parked;
       state.skid = m_skid;
       state.wheelie = m_wheelie;
       state.crank = m_crank;
-      if (m_rigid) {
-        // The coarse pose is derived from the snapshot itself, so restoring
-        // an unedited state finds them equal bit for bit.
-        state.rigid = m_rigid->state ();
-        state.position = moppe::position (m_rigid->reference_of (state.rigid));
-        state.velocity = moppe::velocity (state.rigid.chassis.linear_velocity);
-        state.heading = RigidBike::forward_of (state.rigid);
-      }
       return state;
     }
 
     void Vehicle::restore (const State& state) {
-      m_position = state.position;
-      m_velocity = state.velocity;
-      m_heading = state.heading;
-      m_thrust_orientation = state.thrust_orientation;
       m_yaw = state.yaw;
       m_yaw_target = state.yaw_target;
-      m_lean = state.lean;
-      m_render_heading = state.render_heading;
-      m_render_normal = state.render_normal;
-      m_susp = state.susp;
-      m_susp_v = state.susp_v;
       m_wheel_spin = state.wheel_spin;
       m_boost_flight = state.boost_flight;
       m_thrust = state.thrust;
@@ -153,655 +114,184 @@ namespace moppe {
       m_skid = state.skid;
       m_wheelie = state.wheelie;
       m_crank = state.crank;
-      if (m_rigid) {
-        RigidBikeState rigid = state.rigid;
-        const Vec3& position = position_value (state.position);
-        const Vec3& velocity = velocity_value (state.velocity);
-        if (!(position == m_rigid->reference_of (rigid) &&
-              velocity == rigid.chassis.linear_velocity &&
-              state.heading == RigidBike::forward_of (rigid)))
-          rigid = m_rigid->repose (rigid, position, state.heading, velocity);
-        m_rigid->restore (rigid);
-        sync_rigid ();
-      }
+      RigidBikeState rigid = state.rigid;
+      const Vec3& position = position_value (state.position);
+      const Vec3& velocity = velocity_value (state.velocity);
+      if (!(position == m_rigid->reference_of (rigid) &&
+            velocity == rigid.chassis.linear_velocity &&
+            state.heading == RigidBike::forward_of (rigid)))
+        rigid = m_rigid->repose (rigid, position, state.heading, velocity);
+      m_rigid->restore (rigid);
     }
 
     void Vehicle::reset (const Vec3& position) {
-      m_position = moppe::position (position);
-      m_velocity = moppe::velocity (Vec3 ());
       m_boost_input = 0;
       m_boost_drive = 0;
       m_boost_level = 0;
       m_boost_charge = 1;
-      m_boost_recharge_delay = seconds (0);
+      m_boost_recharge_delay = {};
       m_boost_flight = false;
-      m_impact = 0 * u::m / u::s;
-      m_render_heading = m_heading;
-      m_render_normal = Vec3 (0, 1, 0);
-      if (m_rigid) {
-        m_rigid->place (position, m_heading, Vec3 (0, 1, 0), Vec3 ());
-        sync_rigid ();
-      }
+      m_impact = {};
+      m_rigid->place (position, orientation (), Vec3 (0, 1, 0), Vec3 ());
     }
 
     void Vehicle::set_heading (const Vec3& h) {
       Vec3 v (h[0], 0, h[2]);
       if (length2 (v) <= 0.0001f)
         return;
-      normalize (v);
-      m_heading = v;
-      m_thrust_orientation = v;
-      if (m_rigid) {
-        m_rigid->place (m_rigid->reference_position (),
-                        v,
-                        Vec3 (0, 1, 0),
-                        m_rigid->velocity ());
-        sync_rigid ();
-      }
-    }
-
-    void Vehicle::carry (position_t position,
-                         velocity_t velocity,
-                         const Vec3& heading,
-                         const Vec3& up) {
-      m_position = position;
-      m_velocity = velocity;
-      m_heading = Vec3 (heading[0], 0, heading[2]);
-      if (length2 (m_heading) > 0.0001f)
-        normalize (m_heading);
-      else
-        m_heading = Vec3 (0, 0, 1);
-      m_thrust_orientation = m_heading;
-      m_render_heading = m_heading;
-      m_render_normal = normalized (up);
-      m_lean = {};
-      m_yaw = 0 * u::rad;
-      m_yaw_target = 0 * u::rad;
-      m_airborne_time = seconds (0.2f);
-      m_fall_top = std::max (
-        m_fall_top, static_cast<float> (position_value (m_position)[1]) * u::m);
-      if (m_rigid) {
-        m_rigid->place (position_value (position),
-                        m_heading,
-                        m_render_normal,
-                        velocity_value (velocity));
-        sync_rigid ();
-      }
-    }
-
-    void Vehicle::calculate_orientation () {
-      if (is_grounded ()) {
-        const Vec3& p = position_value (m_position);
-        Vec3 n = spatial::sample<terrain::terrain_normal> (
-                   m_map, moppe::position (Vec3 (p[0], 0.0f, p[2])))
-                   .numerical_value_in (mp_units::one);
-
-        // Keep the heading tangent to the ground; the heading itself
-        // is steered explicitly, and grip drags the velocity along,
-        // so a heading/velocity mismatch is a drift, not an error.
-        Vec3 heading = m_heading - n * (dot (m_heading, n));
-
-        if (length2 (heading) > 0.0001f) {
-          normalize (heading);
-          m_heading = heading;
-        }
-
-        m_thrust_orientation = m_heading;
-      }
-    }
-
-    void Vehicle::fall_to_ground () {
-      position_value (m_position)[1] = meters_value (ground_height ());
-    }
-
-    void Vehicle::check_ground_collision () {
-      Vec3& p = position_value (m_position);
-      p[1] = max (meters_value (ground_height () + radius),
-                  static_cast<float> (p[1]));
-    }
-
-    bool Vehicle::is_grounded () const {
-      return std::abs (meters_value (ground_height ()) -
-                       position_value (m_position)[1]) <
-             meters_value (radius + 0.1f * u::m);
-    }
-
-    acceleration_t Vehicle::drag () const {
-      // Linear rolling drag plus quadratic air drag: terminal speed
-      // lands near the speedometer's 300 km/h, and fall speeds stay
-      // survivable
-      const speed_t speed = magnitude (m_velocity);
-      const damping_t drag_rate = 0.05f / u::s + 0.0035f / u::m * speed;
-      return quantity_cast<isq::acceleration> (-m_velocity * drag_rate);
-    }
-
-    // Grounded, or close enough that a micro-hop over a bump should
-    // not cut the throttle -- keeps rough ground feeling planted
-    // while real jumps still feel like jumps
-    bool Vehicle::driving_contact () const {
-      if (is_grounded ())
-        return true;
-      return m_airborne_time < seconds (0.12f) &&
-             position_value (m_position)[1] - meters_value (ground_height ()) <
-               meters_value (radius + 0.6f * u::m);
-    }
-
-    bool Vehicle::expected_landing_pose (Vec3& forward,
-                                         Vec3& up,
-                                         seconds_t& time_to_landing) const {
-      const Vec3& position = position_value (m_position);
-      const Vec3& velocity = velocity_value (m_velocity);
-      constexpr float gravity = 9.82f;
-      constexpr float step = 0.08f;
-      constexpr float horizon = 3.0f;
-
-      for (float t = step; t <= horizon; t += step) {
-        Vec3 sample = position + velocity * t;
-        sample[1] -= 0.5f * gravity * t * t;
-        if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
-          return false;
-        const float surface =
-          terrain::surface_elevation_value (
-            spatial::sample<terrain::surface_elevation> (
-              m_map, moppe::position (Vec3 (sample[0], 0.0f, sample[2])))) +
-          meters_value (radius);
-        if (sample[1] > surface)
-          continue;
-
-        up = spatial::sample<terrain::terrain_normal> (
-               m_map, moppe::position (Vec3 (sample[0], 0.0f, sample[2])))
-               .numerical_value_in (mp_units::one);
-        if (length2 (up) < 0.000001f)
-          return false;
-        normalize (up);
-
-        // Preserve the rider's chosen yaw, but pitch the chassis tangent to
-        // the landing surface. The sampled normal supplies the corresponding
-        // roll, so sidehill touchdowns meet both tires instead of one edge.
-        forward = m_heading - up * dot (m_heading, up);
-        if (length2 (forward) < 0.0001f) {
-          const Vec3 impact_velocity = velocity + Vec3 (0, -gravity * t, 0);
-          forward = impact_velocity - up * dot (impact_velocity, up);
-        }
-        if (length2 (forward) < 0.0001f)
-          return false;
-        normalize (forward);
-        time_to_landing = t * u::s;
-        return true;
-      }
-      return false;
-    }
-
-    // Trunks meet a slimmer body than the collision sphere: a capsule from
-    // just above the ground to the rider's shoulders, so a bike can thread
-    // between trees its full collision sphere would not fit through. A trunk
-    // does not give: the push resolves the overlap and the velocity into it
-    // rebounds weakly, registering as an impact like a wall.
-    void Vehicle::collide_with_trunks () {
-      if (!m_trunks)
-        return;
-      Vec3& p = position_value (m_position);
-      Vec3& v = velocity_value (m_velocity);
-      constexpr float trunk_radius = 0.45f;
-      const TrunkContact contact = m_trunks->collide (
-        p - Vec3 (0.0f, meters_value (radius) - trunk_radius - 0.1f, 0.0f),
-        p + Vec3 (0.0f, 0.6f, 0.0f),
-        trunk_radius);
-      if (!contact.hit)
-        return;
-      p += contact.push;
-      const float into = dot (v, contact.normal);
-      if (into < 0.0f) {
-        m_impact = std::max (m_impact, 0.4f * -into * u::m / u::s);
-        v -= contact.normal * (1.35f * into);
-      }
-    }
-
-    void Vehicle::steer (seconds_t dt) {
-      if (abs (m_yaw) < 0.001f * u::rad)
-        return;
-
-      if (driving_contact ()) {
-        // Full lock turns slower at speed: stable at 250 km/h,
-        // nimble at walking pace
-        const float vf =
-          std::abs (dot (velocity_value (m_velocity), m_heading));
-        const per_second_t rate = steering_rate / (1.0f + vf / 70.0f);
-        m_heading = Quaternion::rotate (
-          m_heading, ground_normal (), radians_t (-m_yaw * rate * dt));
-      } else
-        // Mid-air attitude control: swing the bike around, keep the
-        // momentum -- landing sideways starts a drift
-        m_heading =
-          Quaternion::rotate (m_heading,
-                              Vec3 (0, 1, 0),
-                              radians_t (-m_yaw * air_steering_rate * dt));
-    }
-
-    // Tire grip pulls the velocity into line with where the bike
-    // points.  Grip fades continuously with steering input and
-    // speed, braking breaks traction outright, and an ongoing slide
-    // keeps breathing instead of snapping straight.
-    void Vehicle::apply_grip (seconds_t dt, const Vec3& n) {
-      Vec3& velocity = velocity_value (m_velocity);
-      Vec3 fwd = m_heading - n * dot (m_heading, n);
-      if (length2 (fwd) < 0.000001f)
-        return;
-      normalize (fwd);
-
-      // Split velocity into forward, surface-normal, and in-plane
-      // lateral parts; only the lateral part is gripped, so a launch
-      // (normal component) survives the coyote-contact window
-      const float vf = dot (velocity, fwd);
-      const Vec3 vn = n * dot (velocity, n);
-      const Vec3 lat = velocity - fwd * vf - vn;
-
-      const float steer_amt =
-        std::min (1.0f, scalar_value (abs (m_yaw) / (0.8f * u::rad)));
-      const float speed_amt =
-        std::min (1.0f, std::max (0.0f, (std::abs (vf) - 15.0f) / 10.0f));
-
-      // Knobby-tire baseline: the bike tracks where it points unless
-      // you deliberately break traction with hard steering at speed
-      // or a brake-slide (the old 3.0 base read as riding on a dream)
-      damping_t grip = (4.5f - 3.0f * steer_amt * speed_amt) / u::s;
-
-      if (m_thrust < -0.1f && vf > 3.0f)
-        grip = std::min (grip, 0.8f / u::s); // brake-slide
-      if (length2 (lat) > 16.0f)
-        grip = std::min (grip, 2.0f / u::s); // mid-drift hysteresis
-
-      velocity = fwd * vf + vn + lat * decay (grip, dt);
+      m_rigid->place (m_rigid->reference_position (),
+                      normalized (v),
+                      Vec3 (0, 1, 0),
+                      m_rigid->velocity ());
     }
 
     // The trigger meters a finite reserve.  Recharging pauses after a
     // burn and is deliberately slower in the air, so feathering the
     // jets cannot produce permanent flight.
     void Vehicle::update_jets (seconds_t dt, bool grounded) {
-      const float dt_s = seconds_value (dt);
+      const float burn =
+        (dt / vehicle_rig::boost_full_burn_time).numerical_value_in (one);
       if (m_boost_input > 0.001f) {
-        if (m_boost_charge > boost_reserve_charge) {
-          const float available = (m_boost_charge - boost_reserve_charge) *
-                                  seconds_value (boost_full_burn_time) / dt_s;
+        if (m_boost_charge > vehicle_rig::boost_reserve_charge) {
+          const float available =
+            (m_boost_charge - vehicle_rig::boost_reserve_charge) / burn;
           m_boost_level = std::min (m_boost_input, available);
-          m_boost_charge =
-            std::max (boost_reserve_charge,
-                      m_boost_charge - m_boost_level * dt_s /
-                                         seconds_value (boost_full_burn_time));
+          m_boost_charge = std::max (vehicle_rig::boost_reserve_charge,
+                                     m_boost_charge - m_boost_level * burn);
           m_boost_flight = true;
         } else
           // The reserve cannot sustain flight, but it always supplies enough
           // thrust to take the cruelty out of a long fall.
-          m_boost_level = boost_emergency_level * m_boost_input;
+          m_boost_level = vehicle_rig::boost_emergency_level * m_boost_input;
         // The trigger must be released before recharge starts; this avoids
         // alternating reserve thrust and tiny rechargeable impulses.
-        m_boost_recharge_delay = boost_recharge_pause;
+        m_boost_recharge_delay = vehicle_rig::boost_recharge_pause;
       } else {
         m_boost_level = 0;
-        if (m_boost_recharge_delay > seconds (0))
+        if (m_boost_recharge_delay > seconds_t {})
           m_boost_recharge_delay -= dt;
         else {
           const float recharge_scale = grounded ? 1.0f : 0.35f;
           m_boost_charge =
             std::min (1.0f,
-                      m_boost_charge + recharge_scale * dt_s /
-                                         seconds_value (boost_recharge_time));
+                      m_boost_charge +
+                        recharge_scale * (dt / vehicle_rig::boost_recharge_time)
+                                           .numerical_value_in (one));
         }
       }
     }
 
+    // A landing's impact is the speed into the ground just before the
+    // wheels touched, and collisions of the chassis itself report their
+    // approach speed: an obstacle (a trunk, a railing) glancingly, the
+    // frame slamming the ground in full.
     void Vehicle::update (seconds_t dt) {
-      if (m_rigid) {
-        update_rigid (dt);
-        return;
-      }
-      const float dt_s = seconds_value (dt);
-      // Steering input ramps in rather than snapping: smooth onset
-      // for the heading, the grip model, and the fork visual at once
-      m_yaw += (m_yaw_target - m_yaw) * smoothing_alpha (9.0f / u::s, dt);
+      bool first = true;
+      in_substeps (dt, [&] (seconds_t h) {
+        substep (h, first);
+        first = false;
+      });
+      m_hop = {};
+    }
 
-      // A parked classic bike resting on the ground simply stays put.
-      if (m_parked && is_grounded ()) {
-        m_velocity = moppe::velocity (Vec3 ());
-        update_jets (dt, true);
-        check_ground_collision ();
-        m_airborne_time = seconds (0);
-        return;
-      }
+    void Vehicle::substep (seconds_t h, bool first) {
+      m_yaw += (m_yaw_target - m_yaw) *
+               smoothing_alpha (vehicle_rig::steering_smoothing, h);
+      update_jets (h, m_rigid->grounded ());
 
-      steer (dt);
-      calculate_orientation ();
-
-      const bool contact = driving_contact ();
-      update_jets (dt, is_grounded ());
-
-      const radians_t tilt = boost_max_tilt * std::abs (m_boost_drive);
+      Vec3 ahead = m_rigid->forward ();
+      ahead[1] = 0.0f;
+      ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
+      const radians_t tilt =
+        vehicle_rig::boost_max_tilt * std::abs (m_boost_drive);
       const float drive_sign = m_boost_drive < 0 ? -1.0f : 1.0f;
       const Vec3 boost_direction =
-        Vec3 (0, cos (tilt), 0) + m_heading * (drive_sign * sin (tilt));
+        Vec3 (0, cos (tilt), 0) + ahead * (drive_sign * sin (tilt));
 
-      force_t f = Vec3 () * isq::force[u::N];
-      const Vec3 n = ground_normal ();
-
-      // Thrust stays on through micro-hops (coyote contact); the
-      // normal force only applies with real ground under the wheels.
-      // Force is engine-power-limited above a few m/s: hard launch,
-      // tapering pull, a real top speed against drag.
-      if (contact) {
-        const speed_t vf =
-          std::abs (dot (velocity_value (m_velocity), m_thrust_orientation)) *
-          (u::m / u::s);
-        const newtons_t force =
-          std::min (m_max_thrust,
-                    newtons_t (m_power / std::max (vf, 0.5f * (u::m / u::s))));
-        f += m_thrust_orientation * (scalar_value (m_thrust) * force);
+      RigidBikeControls controls;
+      controls.throttle = scalar_value (m_thrust);
+      controls.steer = m_yaw;
+      controls.boost_acceleration =
+        boost_direction *
+        (vehicle_rig::boost_acceleration.numerical_value_in (u::m /
+                                                             pow<2> (u::s)) *
+         m_boost_level) *
+        isq::acceleration[u::m / pow<2> (u::s)];
+      controls.parked = m_parked;
+      controls.skid = m_skid;
+      controls.wheelie = m_wheelie;
+      controls.hop = first ? m_hop : speed_t {};
+      if (m_hung) {
+        controls.throttle = 0.0f;
+        controls.steer = radians_t {};
+        controls.skid = 0.0f;
+        controls.wheelie = 0.0f;
+        controls.boost_acceleration = m_hang.acceleration;
+        controls.hung = true;
+        controls.hang_forward = m_hang.forward;
+        controls.hang_up = m_hang.up;
       }
-      acceleration_t a =
-        quantity_cast<isq::acceleration> (f / m_mass) + drag () +
-        Vec3 (0, -1, 0) * (9.82f * isq::acceleration[u::m / pow<2> (u::s)]) +
-        boost_direction * (boost_acceleration * m_boost_level);
-      Vec3& acceleration = a.numerical_value_ref_in (u::m / pow<2> (u::s));
+      controls.wading = vehicle_rig::wading_depth (
+        static_cast<float> (m_rigid->reference_position ()[1]) * u::m,
+        m_water_level,
+        m_rigid->rig ().ride_height ());
 
-      // The ground supplies only as much normal force as necessary.  A
-      // partial vertical burn therefore lightens the vehicle; it leaves
-      // the surface only once the jets overcome gravity.
-      if (is_grounded ()) {
-        const float into_ground = dot (acceleration, n);
-        if (into_ground < 0)
-          acceleration -= n * into_ground;
-      }
+      const Vec3 before = m_rigid->velocity ();
+      m_rigid->step (controls, h);
+      const Vec3 at = m_rigid->reference_position ();
+      const meters_t height = static_cast<float> (at[1]) * u::m;
 
-      Vec3& velocity = velocity_value (m_velocity);
-      m_velocity += quantity_cast<isq::velocity> (a * dt);
-
-      if (is_grounded ()) {
-        const float normal_speed = dot (velocity, n);
-        if (dot (acceleration, n) <= 0.001f || normal_speed < 0)
-          velocity -= n * normal_speed;
-      }
-      if (contact) {
-        // Jets progressively unload the tires instead of turning grip
-        // off at the slightest touch.
-        const seconds_t grip_dt = dt * (1.0f - 0.8f * m_boost_level);
-        apply_grip (grip_dt, n);
-      }
-
-      // Wading through the water is slow going, the deeper the slower.
-      m_velocity *=
-        decay (1.4f *
-                 wading_depth (
-                   static_cast<float> (position_value (m_position)[1]) * u::m,
-                   m_water_level) /
-                 u::s,
-               dt);
-
-      m_position += quantity_cast<isq::position_vector> (m_velocity * dt);
-
-      bound ();
-      check_ground_collision ();
-      collide_with_trunks ();
-
-      // Landing detection, for camera shake and dust bursts.  What
-      // matters is the speed INTO the surface at touchdown -- landing
-      // parallel to a downhill slope is gentle no matter how fast the
-      // descent was.
-      if (is_grounded ()) {
-        if (m_airborne_time > seconds (0.25f)) {
-          m_impact = std::max (0.0f * u::m / u::s,
-                               -dot (velocity, ground_normal ()) * u::m / u::s);
-          // Boost-assisted landings are partly forgiven: the jets
-          // flare on touchdown, or so the story goes.
+      if (m_rigid->grounded ()) {
+        if (m_airborne_time > 0.25f * u::s) {
+          const Vec3 n = ground_normal (m_map, at[0], at[2]);
+          m_impact = std::max (m_impact,
+                               std::max (0.0f, -dot (before, n)) * u::m / u::s);
+          // Boost-assisted landings are partly forgiven: the jets flare
+          // on touchdown, or so the story goes.
           if (m_boost_flight)
             m_impact *= 0.75f;
-          m_susp_v -= 0.10f * m_impact;
-          m_fall_drop =
-            m_fall_top -
-            static_cast<float> (position_value (m_position)[1]) * u::m;
+          m_fall_drop = m_fall_top - height;
         }
         if (m_boost_level <= 0)
           m_boost_flight = false;
-        m_airborne_time = seconds (0);
-        m_fall_top = static_cast<float> (position_value (m_position)[1]) * u::m;
+        m_airborne_time = {};
+        m_fall_top = height;
       } else {
-        m_airborne_time += dt;
-        m_fall_top =
-          std::max (m_fall_top,
-                    static_cast<float> (position_value (m_position)[1]) * u::m);
+        m_airborne_time += h;
+        // A glide is no fall, however far down it ends.
+        m_fall_top = m_hung ? height : std::max (m_fall_top, height);
       }
+      m_impact = std::max (m_impact, speed_t (0.4f * m_rigid->trunk_hit ()));
+      m_impact = std::max (m_impact, m_rigid->body_hit ());
 
-      // Lean into corners: balance the turn against gravity
-      {
-        float target = 0;
-        if (driving_contact ()) {
-          const float vf = dot (velocity, m_heading);
-          const float rate =
-            per_second_value (steering_rate) / (1.0f + std::abs (vf) / 70.0f);
-          target = std::atan2 (vf * radians_value (-m_yaw) * rate, 9.82f);
-          target = std::max (-0.7f, std::min (0.7f, target));
-        }
-        m_lean +=
-          (target * u::rad - m_lean) * smoothing_alpha (8.0f / u::s, dt);
-      }
-
-      // Visual attitude is separate from the steering heading. In flight the
-      // rider looks ahead along the ballistic arc and prepares the chassis
-      // for the expected landing plane. If no touchdown is in prediction
-      // range, the bike follows its trajectory as before.
-      Vec3 pose_forward = m_heading;
-      Vec3 pose_up = ground_normal ();
-      damping_t pose_rate = 10.0f / u::s;
-      if (airborne () && length2 (velocity) > 4.0f) {
-        seconds_t time_to_landing {};
-        const bool whipping = abs (m_yaw) > 0.18f * u::rad;
-        if (whipping) {
-          // Full-lock steering is a deliberate motocross whip. Preserve the
-          // trajectory's pitch but let the chassis yaw visibly around it;
-          // releasing the stick hands control back to landing preparation.
-          pose_forward = m_heading;
-          pose_forward[1] = normalized (velocity)[1];
-          normalize (pose_forward);
-          Vec3 right = cross (Vec3 (0, 1, 0), pose_forward);
-          if (length2 (right) < 0.0001f)
-            right = Vec3 (1, 0, 0);
-          normalize (right);
-          pose_up = cross (pose_forward, right);
-          pose_rate = 9.0f / u::s;
-        } else if (expected_landing_pose (
-                     pose_forward, pose_up, time_to_landing)) {
-          pose_rate =
-            4.0f / u::s + 5.0f / std::max (0.5f * u::s, time_to_landing);
-        } else {
-          pose_forward = normalized (velocity);
-          Vec3 right = cross (Vec3 (0, 1, 0), pose_forward);
-          if (length2 (right) < 0.0001f)
-            right = cross (m_render_normal, m_render_heading);
-          if (length2 (right) < 0.0001f)
-            right = Vec3 (1, 0, 0);
-          normalize (right);
-          pose_up = cross (pose_forward, right);
-          pose_rate = 4.5f / u::s;
-        }
-      }
-
-      const float pose_alpha = smoothing_alpha (pose_rate, dt);
-      m_render_heading =
-        linear_vector_interpolate (m_render_heading, pose_forward, pose_alpha);
-      m_render_normal =
-        linear_vector_interpolate (m_render_normal, pose_up, pose_alpha);
-      if (length2 (m_render_heading) > 0.000001f)
-        normalize (m_render_heading);
-      if (length2 (m_render_normal) > 0.000001f)
-        normalize (m_render_normal);
-
-      // Visual suspension spring: kicked by landings, settles fast
-      m_susp_v += (-susp_stiffness * m_susp - susp_damping * m_susp_v) * dt;
-      m_susp += m_susp_v * dt;
-      m_susp = std::max (-0.35f * u::m, std::min (0.15f * u::m, m_susp));
-
-      // Wheel roll for the renderer: ground speed while rolling, a
-      // throttle-driven spin-up in the air.  ~0.68 m wheel radius as
-      // drawn.  Kept in [0, 2pi) so precision survives long rides.
-      {
-        float rate =
-          dot (velocity, m_heading) / meters_value (drawn_wheel_radius);
-        if (!contact && abs (m_thrust) > 0.1f)
-          rate = scalar_value (40.0f * m_thrust);
-        m_wheel_spin =
-          std::fmod (radians_value (m_wheel_spin) + rate * dt_s, full_turn) *
-          u::rad;
-      }
-    }
-
-    // The rigid bike keeps the classic bike's controls, jets, and scoring
-    // signals; only the motion is the assemblage's. A landing's impact is the
-    // speed into the ground just before the wheels touched, and collisions
-    // of the chassis itself report their approach speed: a trunk as the
-    // classic bike felt it, the frame slamming the ground in full.
-    void Vehicle::update_rigid (seconds_t dt) {
-      const int steps =
-        std::max (1,
-                  static_cast<int> (std::ceil (
-                    (dt / rigid_step).numerical_value_in (one) - 0.001f)));
-      const seconds_t h = dt / static_cast<float> (steps);
+      const float wheel_rate =
+        m_rigid->wheel_spin_rate ().numerical_value_in (u::rad / u::s);
       const float h_s = seconds_value (h);
-      const float boost =
-        boost_acceleration.numerical_value_in (u::m / pow<2> (u::s));
-      for (int i = 0; i < steps; ++i) {
-        m_yaw += (m_yaw_target - m_yaw) * smoothing_alpha (9.0f / u::s, h);
-        update_jets (h, m_rigid->grounded ());
+      m_wheel_spin =
+        vehicle_rig::wrapped (radians_value (m_wheel_spin) + wheel_rate * h_s);
 
-        Vec3 ahead = m_rigid->forward ();
-        ahead[1] = 0.0f;
-        if (length2 (ahead) < 1e-6f)
-          ahead = Vec3 (m_heading[0], 0.0f, m_heading[2]);
-        if (length2 (ahead) > 1e-6f)
-          normalize (ahead);
-        const radians_t tilt = boost_max_tilt * std::abs (m_boost_drive);
-        const float drive_sign = m_boost_drive < 0 ? -1.0f : 1.0f;
-        const Vec3 boost_direction =
-          Vec3 (0, cos (tilt), 0) + ahead * (drive_sign * sin (tilt));
-
-        RigidBikeControls controls;
-        controls.throttle = scalar_value (m_thrust);
-        controls.steer = m_yaw;
-        controls.boost_acceleration = boost_direction *
-                                      (boost * m_boost_level) *
-                                      isq::acceleration[u::m / pow<2> (u::s)];
-        controls.parked = m_parked;
-        controls.skid = m_skid;
-        controls.wheelie = m_wheelie;
-        controls.hop = i == 0 ? m_hop : speed_t {};
-        if (m_hung) {
-          controls.throttle = 0.0f;
-          controls.steer = radians_t {};
-          controls.skid = 0.0f;
-          controls.wheelie = 0.0f;
-          controls.boost_acceleration = m_hang.acceleration;
-          controls.hung = true;
-          controls.hang_forward = m_hang.forward;
-          controls.hang_up = m_hang.up;
-        }
-        controls.wading = wading_depth (
-          static_cast<float> (m_rigid->reference_position ()[1]) * u::m,
-          m_water_level);
-
-        const Vec3 before = m_rigid->velocity ();
-        m_rigid->step (controls, h);
-        const Vec3 at = m_rigid->reference_position ();
-        const meters_t height = at[1] * u::m;
-
-        if (m_rigid->grounded ()) {
-          if (m_airborne_time > seconds (0.25f)) {
-            const Vec3 n = spatial::sample<terrain::terrain_normal> (
-                             m_map, moppe::position (Vec3 (at[0], 0.0f, at[2])))
-                             .numerical_value_in (mp_units::one);
-            m_impact = std::max (
-              m_impact, std::max (0.0f, -dot (before, n)) * u::m / u::s);
-            // Boost-assisted landings are partly forgiven, as on the
-            // classic bike.
-            if (m_boost_flight)
-              m_impact *= 0.75f;
-            m_fall_drop = m_fall_top - height;
-          }
-          if (m_boost_level <= 0)
-            m_boost_flight = false;
-          m_airborne_time = seconds (0);
-          m_fall_top = height;
-        } else {
-          m_airborne_time += h;
-          // A glide is no fall, however far down it ends.
-          m_fall_top = m_hung ? height : std::max (m_fall_top, height);
-        }
-        m_impact = std::max (m_impact, speed_t (0.4f * m_rigid->trunk_hit ()));
-        m_impact = std::max (m_impact, m_rigid->body_hit ());
-
-        float spin = std::fmod (
-          radians_value (m_wheel_spin) +
-            m_rigid->wheel_spin_rate ().numerical_value_in (u::rad / u::s) *
-              h_s,
-          full_turn);
-        if (spin < 0.0f)
-          spin += full_turn;
-        m_wheel_spin = spin * u::rad;
-
-        // Pedalling, the rider keeps to a cadence of some eight radians a
-        // second through the gears, from the lowest, which turns the wheel
-        // a little slower than the crank, to the highest, three times as
-        // fast; a wheel off the ground spins up to it. A single speed's
-        // crank goes round with the wheel at its one gear.
-        if (m_thrust > 0.02f && !m_hung && !m_parked) {
-          const float wheel = std::abs (
-            m_rigid->wheel_spin_rate ().numerical_value_in (u::rad / u::s));
-          const float gear = m_rigid->rig ().gear_ratio;
-          const float cadence =
-            gear > 0.0f && (m_rigid->rear_contact () || wheel > 1.0f)
-              ? wheel / gear
-            : m_rigid->rear_contact ()
-              ? wheel / std::clamp (wheel / 8.0f, 0.75f, 3.0f)
-              : 8.0f * scalar_value (m_thrust);
-          m_crank =
-            std::fmod (radians_value (m_crank) + cadence * h_s, full_turn) *
-            u::rad;
-        }
+      // Pedalling, the rider keeps to a cadence of some eight radians a
+      // second through the gears, from the lowest, which turns the wheel
+      // a little slower than the crank, to the highest, three times as
+      // fast; a wheel off the ground spins up to it. A single speed's
+      // crank goes round with the wheel at its one gear.
+      if (m_thrust > 0.02f && !m_hung && !m_parked) {
+        const float wheel = std::abs (wheel_rate);
+        const float gear = m_rigid->rig ().gear_ratio;
+        const float cadence =
+          gear > 0.0f && (m_rigid->rear_contact () || wheel > 1.0f)
+            ? wheel / gear
+          : m_rigid->rear_contact ()
+            ? wheel / std::clamp (wheel / 8.0f, 0.75f, 3.0f)
+            : 8.0f * scalar_value (m_thrust);
+        m_crank =
+          vehicle_rig::wrapped (radians_value (m_crank) + cadence * h_s);
       }
-      m_hop = {};
-      sync_rigid ();
-    }
-
-    // Publishes the assemblage's pose through the members every reader of
-    // the bike already uses. The chassis carries its own roll, so there is
-    // no separate visual lean.
-    void Vehicle::sync_rigid () {
-      m_position = moppe::position (m_rigid->reference_position ());
-      m_velocity = moppe::velocity (m_rigid->velocity ());
-      m_heading = m_rigid->forward ();
-      m_thrust_orientation = m_heading;
-      m_render_heading = m_heading;
-      m_render_normal = m_rigid->up ();
-      m_lean = {};
-      m_front_drop = meters_value (m_rigid->front_extension ());
-      m_rear_drop = meters_value (m_rigid->rear_extension ());
-      m_susp = 0.5f * (m_front_drop + m_rear_drop) * u::m;
-      m_susp_v = {};
-      m_fork = radians_value (m_rigid->steer_angle ());
-    }
-
-    void Vehicle::push (const Vec3& at, const impulse_t& impulse) {
-      if (m_rigid) {
-        m_rigid->push (at, impulse);
-        return;
-      }
-      m_velocity += quantity_cast<isq::velocity> (impulse / m_mass);
     }
 
     void Vehicle::set_boost (float boost, float drive) {
-      m_boost_input = std::max (0.0f, std::min (1.0f, boost));
-      m_boost_drive = std::max (-1.0f, std::min (1.0f, drive));
+      m_boost_input = std::clamp (boost, 0.0f, 1.0f);
+      m_boost_drive = std::clamp (drive, -1.0f, 1.0f);
     }
-
-    void Vehicle::bound () {
-      // The world is a torus; there is no edge to bounce off.
-    }
-
   }
 }

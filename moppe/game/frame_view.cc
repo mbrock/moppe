@@ -103,9 +103,8 @@ namespace moppe::game {
       .position = vehicle.render_position (),
       .render_orientation = vehicle.render_orientation (),
       .render_normal = vehicle.render_normal (),
-      .rear_wheel_drop = vehicle.rear_wheel_drop (),
-      .front_wheel_drop = vehicle.front_wheel_drop (),
-      .lean_radians = radians_value (vehicle.lean ()),
+      .rear_wheel_drop = meters_value (vehicle.rear_wheel_drop ()),
+      .front_wheel_drop = meters_value (vehicle.front_wheel_drop ()),
       .wheel_spin_radians = radians_value (vehicle.wheel_spin ()),
       .fork_radians = radians_value (vehicle.fork_angle ()),
       .thrust = vehicle.thrust ().numerical_value_in (one),
@@ -116,31 +115,17 @@ namespace moppe::game {
     };
   }
 
-  JeepPose jeep_pose (const mov::Jeep& jeep) {
+  CarPose car_pose (const mov::Car& car) {
     return {
-      .position = jeep.position (),
-      .forward = jeep.forward (),
-      .up = jeep.up (),
-      .wheel_drop = { jeep.wheel_drop (0),
-                      jeep.wheel_drop (1),
-                      jeep.wheel_drop (2),
-                      jeep.wheel_drop (3) },
-      .steer_radians = jeep.steer (),
-      .wheel_spin_radians = jeep.wheel_spin (),
-    };
-  }
-
-  CaddyPose caddy_pose (const mov::Caddy& caddy) {
-    return {
-      .position = caddy.position (),
-      .forward = caddy.forward (),
-      .up = caddy.up (),
-      .wheel_drop = { caddy.wheel_drop (0),
-                      caddy.wheel_drop (1),
-                      caddy.wheel_drop (2),
-                      caddy.wheel_drop (3) },
-      .steer_radians = caddy.steer (),
-      .wheel_spin_radians = caddy.wheel_spin (),
+      .position = car.position (),
+      .forward = car.forward (),
+      .up = car.up (),
+      .wheel_drop = { meters_value (car.wheel_drop (0)),
+                      meters_value (car.wheel_drop (1)),
+                      meters_value (car.wheel_drop (2)),
+                      meters_value (car.wheel_drop (3)) },
+      .steer_radians = radians_value (car.steer ()),
+      .wheel_spin_radians = radians_value (car.wheel_spin ()),
     };
   }
 
@@ -366,19 +351,19 @@ namespace moppe::game {
     result.actors.bike = vehicle_pose (input.session.bike ());
     result.actors.mountain_bike = vehicle_pose (input.session.mountain_bike ());
     result.actors.long_john = vehicle_pose (input.session.long_john ());
-    result.actors.jeep = jeep_pose (input.session.jeep ());
+    result.actors.jeep = car_pose (input.session.jeep ());
     result.actors.helicopter = helicopter_pose (input.session.helicopter ());
     result.actors.tractor = tractor_pose (input.session.tractor ());
     result.actors.boat = boat_pose (input.session.boat ());
     result.actors.jet_ski = jet_ski_pose (input.session.jet_ski ());
-    result.actors.caddy = caddy_pose (input.session.caddy ());
+    result.actors.caddy = car_pose (input.session.caddy ());
     if (logic.m_sling.hooked) {
       const Machine load = logic.m_sling.load;
       const MachineBody body = input.session.machine_body (load);
       SlingPose sling;
       sling.hook = input.session.helicopter ().point (sling_hook ());
-      sling.ring = body.point (sling_ring (load));
-      const std::array<Vec3, 4> legs = sling_legs (load);
+      sling.ring = body.point (machine_shape (load).ring);
+      const std::array<Vec3, 4> legs = machine_shape (load).legs;
       for (std::size_t i = 0; i < legs.size (); ++i)
         sling.legs[i] = body.point (legs[i]);
       sling.taut = logic.m_sling.stretch > -0.05f * u::m;
@@ -450,9 +435,9 @@ namespace moppe::game {
     hud.can_take_boat = input.session.can_take_boat ();
     hud.can_ride_jet_ski = input.session.can_ride_jet_ski ();
     if (const auto stuck = input.session.haul_within_reach ())
-      hud.haul = machine_name (*stuck);
+      hud.haul = machine_shape (*stuck).name;
     if (const auto held = input.session.hauling ())
-      hud.hauling = machine_name (*held);
+      hud.hauling = machine_shape (*held).name;
     hud.stuck = input.session.stuck ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();

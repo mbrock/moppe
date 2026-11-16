@@ -49,15 +49,16 @@ namespace moppe::game {
       return meshes;
     }
 
-    Mat4 caddy_frame (const CaddyPose& caddy) {
+    Mat4 caddy_frame (const CarPose& caddy) {
       const Vec3 forward = normalized (caddy.forward);
       const Vec3 left = normalized (cross (caddy.up, forward));
       const Vec3 up = cross (forward, left);
       return Mat4::translation (caddy.position) *
-             Mat4::basis (left, up, forward);
+             Mat4::basis (left, up, forward) *
+             Mat4::scaling (Vec3 (1, 1, 1) * caddy.scale);
     }
 
-    Mat4 caddy_steering_turn (const CaddyPose& caddy) {
+    Mat4 caddy_steering_turn (const CarPose& caddy) {
       const Vec3 column =
         normalized (caddy_model::steering_column - caddy_model::steering_hub);
       return Mat4::rotation (
@@ -67,7 +68,7 @@ namespace moppe::game {
     // The hiker in a front seat: the driver holding the wheel with feet
     // at the pedals, the passenger with hands on their knees.
     AvatarSkeleton
-    caddy_seated (const CaddyPose& caddy, const Mat4& frame, bool driving) {
+    caddy_seated (const CarPose& caddy, const Mat4& frame, bool driving) {
       const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
       const Vec3 facing = normalized (frame.transform_vector (Vec3 (0, 0, 1)));
       const Vec3 left = normalized (cross (up, facing));
@@ -117,7 +118,7 @@ namespace moppe::game {
 
   void render_caddy (render::Renderer& r,
                      render::DrawList& dl,
-                     const CaddyPose& caddy,
+                     const CarPose& caddy,
                      JeepRiders riders,
                      uint64_t motion_base) {
     const CaddyMeshes& meshes = caddy_meshes (r);

@@ -84,13 +84,10 @@ namespace moppe {
         return std::atan2 (dot (cross (a, b), axis), dot (a, b));
       }
 
+      // The ground's normal, over a road's tread (a bridge's deck) the
+      // road's.
       Vec3 normal_at (const map::SurfaceGeometry& surface, float x, float z) {
-        Vec3 n = spatial::sample<terrain::terrain_normal> (
-                   surface, moppe::position (Vec3 (x, 0.0f, z)))
-                   .numerical_value_in (mp_units::one);
-        if (length2 (n) < 1e-8f)
-          return Vec3 (0, 1, 0);
-        return normalized (n);
+        return ground_normal (surface, x, z);
       }
 
       // Where a ballistic reference point next meets the ground at ride
@@ -354,20 +351,11 @@ namespace moppe {
         trunk_hit = body_hit = speed_t {};
       }
 
-      RigidBodyState read (b3BodyId body) const {
-        RigidBodyState s;
-        s.position = from_b3 (b3Body_GetPosition (body));
-        s.rotation = array_of (b3Body_GetRotation (body));
-        s.linear_velocity = from_b3 (b3Body_GetLinearVelocity (body));
-        s.angular_velocity = from_b3 (b3Body_GetAngularVelocity (body));
-        return s;
-      }
-
       RigidBikeState snapshot () const {
         RigidBikeState s;
-        s.chassis = read (chassis);
-        s.front_wheel = read (front);
-        s.rear_wheel = read (rear);
+        s.chassis = read_body (chassis);
+        s.front_wheel = read_body (front);
+        s.rear_wheel = read_body (rear);
         s.ground_column = patch.column ();
         s.ground_row = patch.row ();
         s.front_contact = front_contact;
@@ -869,6 +857,7 @@ namespace moppe {
             return B3_IS_NON_NULL (body) &&
                    (B3_ID_EQUALS (a, body) || B3_ID_EQUALS (b, body));
           };
+          // Trunks and railings are obstacles, which a bike glances off.
           if (is (patch.obstacles ()))
             trunk_hit = std::max (trunk_hit, hit.approachSpeed * u::m / u::s);
           else if (is (patch.ground ()))

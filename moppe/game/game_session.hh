@@ -40,10 +40,7 @@ namespace moppe::game {
   public:
     using State = GameState;
 
-    // The bike physics is chosen once per session; see mov::BikePhysics.
-    GameSession (const WorldParams& world,
-                 const map::SurfaceGeometry& surface,
-                 mov::BikePhysics physics = mov::default_bike_physics);
+    GameSession (const WorldParams& world, const map::SurfaceGeometry& surface);
     GameSession (const GameSession&) = delete;
     GameSession& operator= (const GameSession&) = delete;
     GameSession (GameSession&&) = delete;
@@ -88,10 +85,10 @@ namespace moppe::game {
                                                : m_bike;
     }
 
-    mov::Jeep& jeep () noexcept {
+    mov::Car& jeep () noexcept {
       return m_jeep;
     }
-    const mov::Jeep& jeep () const noexcept {
+    const mov::Car& jeep () const noexcept {
       return m_jeep;
     }
 
@@ -109,10 +106,10 @@ namespace moppe::game {
       return m_tractor;
     }
 
-    mov::Caddy& caddy () noexcept {
+    mov::Car& caddy () noexcept {
       return m_caddy;
     }
-    const mov::Caddy& caddy () const noexcept {
+    const mov::Car& caddy () const noexcept {
       return m_caddy;
     }
 
@@ -173,19 +170,7 @@ namespace moppe::game {
     // What the mount key would take, on foot: of the bike, the jeep, the
     // helicopter, the tractor, the Caddy, the mountainbike, the boat, the
     // Long John, and the jet ski, the nearest within its reach.
-    enum class Mount {
-      none,
-      bike,
-      jeep,
-      helicopter,
-      tractor,
-      caddy,
-      mountain_bike,
-      boat,
-      long_john,
-      jet_ski
-    };
-    Mount mount_within_reach () const;
+    std::optional<Machine> mount_within_reach () const;
     // On foot nearest the jeep, within its reach.
     bool can_drive () const;
     // On foot nearest the helicopter, within its reach.
@@ -266,10 +251,10 @@ namespace moppe::game {
     GameLogicState m_logic;
     mov::Vehicle m_bike;
     mov::Glider m_glider;
-    mov::Jeep m_jeep;
+    mov::Car m_jeep;
     mov::Helicopter m_helicopter;
     mov::Tractor m_tractor;
-    mov::Caddy m_caddy;
+    mov::Car m_caddy;
     mov::Vehicle m_mountain_bike;
     mov::Boat m_boat;
     mov::Vehicle m_long_john;
@@ -280,6 +265,9 @@ namespace moppe::game {
     Stars m_stars;
     Dust m_dust;
   };
+
+  // The machine a mode drives, if any.
+  std::optional<Machine> driven_machine (Mode mode);
 
   // What the wheels roll over, read from the world by the caller: how much
   // loose dust the ground gives up and its colour, and how thickly fallen

@@ -377,13 +377,12 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/rigid_bike.cc
   moppe/mov/character.cc
   moppe/mov/ground_patch.cc
-  moppe/mov/jeep.cc
+  moppe/mov/car.cc
   moppe/mov/helicopter.cc
   moppe/mov/hull_water.cc
   moppe/mov/boat.cc
   moppe/mov/jet_ski.cc
   moppe/mov/tractor.cc
-  moppe/mov/caddy.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
   moppe/game/rescue.cc

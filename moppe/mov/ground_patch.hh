@@ -5,6 +5,7 @@
 #include <moppe/mov/trunk_field.hh>
 
 #include <cstdint>
+#include <functional>
 
 #include <box3d/box3d.h>
 
@@ -61,7 +62,7 @@ namespace moppe::mov {
     b3BodyId ground () const noexcept {
       return m_ground;
     }
-    // Null where no trunk stands near.
+    // The trunks and the bridges' railings; null where none stands near.
     b3BodyId obstacles () const noexcept {
       return m_obstacles;
     }
@@ -69,7 +70,10 @@ namespace moppe::mov {
   private:
     Vec3 centre () const;
     void destroy ();
-    void add_bridges (const b3ShapeDef& ground);
+    // The decks into the ground, and the railings onto the obstacles'
+    // body, made on first use.
+    void add_bridges (const b3ShapeDef& ground,
+                      const std::function<b3BodyId ()>& obstacles);
 
     const map::SurfaceGeometry& m_surface;
     Params m_params;

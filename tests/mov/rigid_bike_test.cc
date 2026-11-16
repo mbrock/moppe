@@ -48,8 +48,7 @@ namespace {
                          surface,
                          1800 * u::N,
                          5.2f * u::kW,
-                         175 * u::kg,
-                         mov::BikePhysics::rigid);
+                         175 * u::kg);
   }
 
   const seconds_t tick = seconds (1.0f / 120.0f);
@@ -62,7 +61,6 @@ namespace {
 MOPPE_TEST (rigid_bike_settles_on_its_suspension) {
   const map::SurfaceGeometry surface = rigid_test_surface (flat);
   mov::Vehicle bike = rigid_bike (surface, Vec3 (100, 0, 100));
-  MOPPE_CHECK (bike.physics () == mov::BikePhysics::rigid);
 
   // Drop it from half a metre: the springs take the landing, compress past
   // their static sag, and settle back to ride height.
@@ -72,15 +70,15 @@ MOPPE_TEST (rigid_bike_settles_on_its_suspension) {
   float deepest = 0.0f;
   for (int i = 0; i < 360; ++i) {
     bike.update (tick);
-    deepest = std::min (deepest, bike.rear_wheel_drop ());
+    deepest = std::min (deepest, meters_value (bike.rear_wheel_drop ()));
   }
   MOPPE_CHECK (deepest < -0.04f);
   MOPPE_CHECK (bike.grounded ());
   MOPPE_CHECK_NEAR (bike.position ()[1],
                     10.0f + meters_value (mov::RigidBike::ride_height),
                     0.03f);
-  MOPPE_CHECK_NEAR (bike.rear_wheel_drop (), 0.0f, 0.03f);
-  MOPPE_CHECK_NEAR (bike.front_wheel_drop (), 0.0f, 0.03f);
+  MOPPE_CHECK_NEAR (meters_value (bike.rear_wheel_drop ()), 0.0f, 0.03f);
+  MOPPE_CHECK_NEAR (meters_value (bike.front_wheel_drop ()), 0.0f, 0.03f);
   MOPPE_CHECK (length (bike.velocity ()) < 0.05f);
   MOPPE_CHECK (bike.render_normal ()[1] > 0.99f);
 }
@@ -105,28 +103,19 @@ MOPPE_TEST (rigid_bike_throttle_drives_it_forward_upright) {
   MOPPE_CHECK (dot (bike.velocity (), bike.orientation ()) < -1.0f);
 }
 
-MOPPE_TEST (rigid_bike_turns_the_way_the_classic_bike_does) {
+MOPPE_TEST (rigid_bike_turns_and_leans_into_the_turn) {
   const map::SurfaceGeometry surface = rigid_test_surface (flat);
-  mov::Vehicle rigid = rigid_bike (surface, Vec3 (150, 0, 50));
-  mov::Vehicle classic (position (Vec3 (150, 0, 50)),
-                        0 * u::deg,
-                        surface,
-                        2600 * u::N,
-                        30 * u::kW,
-                        150 * u::kg);
-  for (mov::Vehicle* bike : { &rigid, &classic }) {
-    bike->set_thrust (0.6f);
-    for (int i = 0; i < 120; ++i)
-      bike->update (tick);
-    bike->set_yaw (45 * u::deg);
-    for (int i = 0; i < 120; ++i)
-      bike->update (tick);
-  }
-  MOPPE_CHECK (rigid.orientation ()[0] < -0.2f);
-  MOPPE_CHECK (classic.orientation ()[0] < -0.2f);
+  mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 50));
+  bike.set_thrust (0.6f);
+  for (int i = 0; i < 120; ++i)
+    bike.update (tick);
+  bike.set_yaw (45 * u::deg);
+  for (int i = 0; i < 120; ++i)
+    bike.update (tick);
+  MOPPE_CHECK (bike.orientation ()[0] < -0.2f);
   // Leaning into a right turn tips the top of the bike to the right.
-  const Vec3 right = cross (rigid.orientation (), Vec3 (0, 1, 0));
-  MOPPE_CHECK (dot (rigid.render_normal (), right) > 0.05f);
+  const Vec3 right = cross (bike.orientation (), Vec3 (0, 1, 0));
+  MOPPE_CHECK (dot (bike.render_normal (), right) > 0.05f);
 }
 
 MOPPE_TEST (rigid_bike_is_stopped_by_a_trunk) {
@@ -209,14 +198,13 @@ MOPPE_TEST (an_unridden_bike_stays_parked_on_a_slope) {
   const map::SurfaceGeometry surface = rigid_test_surface ([] (float x, float) {
     return 10.0f + 9.0f * std::sin (6.2831853f * x / 300.0f);
   });
-  const auto drift = [&] (mov::BikePhysics physics, bool parked) {
+  const auto drift = [&] (bool parked) {
     mov::Vehicle bike (position (Vec3 (0, 0, 100)),
                        90 * u::deg,
                        surface,
                        2600 * u::N,
                        30 * u::kW,
-                       150 * u::kg,
-                       physics);
+                       150 * u::kg);
     // Ride a moment, then step off.
     bike.set_thrust (0.5f);
     for (int i = 0; i < 60; ++i)
@@ -231,10 +219,8 @@ MOPPE_TEST (an_unridden_bike_stays_parked_on_a_slope) {
     MOPPE_CHECK (bike.state ().parked == parked);
     return length (bike.position () - left);
   };
-  MOPPE_CHECK (drift (mov::BikePhysics::rigid, false) > 1.0f);
-  MOPPE_CHECK (drift (mov::BikePhysics::rigid, true) < 0.05f);
-  MOPPE_CHECK (drift (mov::BikePhysics::classic, false) > 1.0f);
-  MOPPE_CHECK (drift (mov::BikePhysics::classic, true) < 0.05f);
+  MOPPE_CHECK (drift (false) > 1.0f);
+  MOPPE_CHECK (drift (true) < 0.05f);
 }
 
 MOPPE_TEST (a_held_skid_brakes_the_bike_round_about_its_front_wheel) {
@@ -301,7 +287,6 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
                      320 * u::N,
                      750 * u::W,
                      95 * u::kg,
-                     mov::BikePhysics::rigid,
                      mov::mountain_bike_rig);
   for (int i = 0; i < 240; ++i)
     bike.update (tick);
@@ -370,7 +355,6 @@ MOPPE_TEST (the_long_john_stands_level_on_its_odd_wheels_and_is_pedalled) {
                      420 * u::N,
                      600 * u::W,
                      115 * u::kg,
-                     mov::BikePhysics::rigid,
                      mov::long_john_rig);
   for (int i = 0; i < 240; ++i)
     bike.update (tick);

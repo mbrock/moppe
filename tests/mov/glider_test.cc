@@ -166,20 +166,18 @@ namespace {
 
   // Throws the bike off into the air at speed, opens the wing, and flies
   // it down onto level ground, flaring over the last metres if asked to.
-  GlideOutcome glider_test_land_bike (mov::BikePhysics physics, bool flare) {
+  GlideOutcome glider_test_land_bike (bool flare) {
     const map::SurfaceGeometry surface = glider_test_ground ();
     game::WorldParams world;
     world.map_size = spatial_extent_in_metres (Vec3 (512, 20, 512));
     world.resolution = static_cast<int> (surface.domain ().width ());
     world.water_level = 0 * u::m;
-    game::GameSession session (world, surface, physics);
+    game::GameSession session (world, surface);
 
     mov::Vehicle::State flight = session.bike ().state ();
     flight.position = position (Vec3 (100, 50, 100));
     flight.velocity = velocity (Vec3 (0, 0, 24));
     flight.heading = Vec3 (0, 0, 1);
-    flight.thrust_orientation = flight.heading;
-    flight.render_heading = flight.heading;
     flight.airborne_time = seconds (1.0f);
     flight.fall_top = 50 * u::m;
     session.bike ().restore (flight);
@@ -239,8 +237,7 @@ namespace {
 
 MOPPE_TEST (a_bike_under_the_wing_lands_on_its_wheels_and_rides_on) {
   for (const bool flare : { false, true }) {
-    const GlideOutcome landing =
-      glider_test_land_bike (mov::BikePhysics::rigid, flare);
+    const GlideOutcome landing = glider_test_land_bike (flare);
     MOPPE_CHECK (landing.mode == game::M_BIKE);
     // Forty metres up at better than eight to one is a long way.
     MOPPE_CHECK (landing.seconds > 10.0f);
@@ -253,19 +250,10 @@ MOPPE_TEST (a_bike_under_the_wing_lands_on_its_wheels_and_rides_on) {
 }
 
 MOPPE_TEST (a_flare_softens_the_touchdown) {
-  const GlideOutcome plain =
-    glider_test_land_bike (mov::BikePhysics::rigid, false);
-  const GlideOutcome flared =
-    glider_test_land_bike (mov::BikePhysics::rigid, true);
+  const GlideOutcome plain = glider_test_land_bike (false);
+  const GlideOutcome flared = glider_test_land_bike (true);
   MOPPE_CHECK (flared.sink < plain.sink - 0.5f);
   MOPPE_CHECK (flared.speed < plain.speed - 2.0f);
-}
-
-MOPPE_TEST (the_classic_bike_is_set_down_moving_too) {
-  const GlideOutcome landing =
-    glider_test_land_bike (mov::BikePhysics::classic, false);
-  MOPPE_CHECK (landing.mode == game::M_BIKE);
-  MOPPE_CHECK (landing.speed > 8.0f);
 }
 
 MOPPE_TEST (a_pilot_alone_lands_running) {

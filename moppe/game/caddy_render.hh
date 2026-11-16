@@ -15,7 +15,7 @@ namespace moppe::game {
   // the frame's draw list.
   void render_caddy (render::Renderer& r,
                      render::DrawList& dl,
-                     const CaddyPose& caddy,
+                     const CarPose& caddy,
                      JeepRiders riders,
                      uint64_t motion_base);
 

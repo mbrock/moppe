@@ -112,17 +112,6 @@ namespace moppe::mov {
       constexpr std::uint64_t wheel_bit = 4;
       constexpr std::uint64_t chassis_bit = 8;
 
-      // The tractor's frame for a level heading.
-      b3Quat level_rotation (const Vec3& heading) {
-        Vec3 f = heading;
-        f[1] = 0.0f;
-        f = length2 (f) > 1e-8f ? normalized (f) : Vec3 (0, 0, 1);
-        const Vec3 up (0, 1, 0);
-        const Vec3 left = cross (up, f);
-        const b3Matrix3 m { to_b3 (left), to_b3 (up), to_b3 (f) };
-        return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
-      }
-
       bool front (int wheel) {
         return wheel < 2;
       }
@@ -467,23 +456,14 @@ namespace moppe::mov {
       kept = s;
     }
 
-    RigidBodyState read (b3BodyId body) const {
-      RigidBodyState s;
-      s.position = from_b3 (b3Body_GetPosition (body));
-      s.rotation = array_of (b3Body_GetRotation (body));
-      s.linear_velocity = from_b3 (b3Body_GetLinearVelocity (body));
-      s.angular_velocity = from_b3 (b3Body_GetAngularVelocity (body));
-      return s;
-    }
-
     State snapshot () const {
       State s = kept;
-      s.chassis = read (chassis);
+      s.chassis = read_body (chassis);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
-        s.wheels[wheel] = read (wheels[wheel]);
-      s.trailer = read (trailer);
+        s.wheels[wheel] = read_body (wheels[wheel]);
+      s.trailer = read_body (trailer);
       for (int wheel = 0; wheel < trailer_wheel_count; ++wheel)
-        s.trailer_wheels[wheel] = read (trailer_wheels[wheel]);
+        s.trailer_wheels[wheel] = read_body (trailer_wheels[wheel]);
       s.ground_column = patch.column ();
       s.ground_row = patch.row ();
       return s;
@@ -515,7 +495,7 @@ namespace moppe::mov {
     // ground under any wheel so that none starts inside it; the springs
     // settle the rest.
     State standing (const Vec3& at, const Vec3& heading) const {
-      const b3Quat q = tractor_rig::level_rotation (heading);
+      const b3Quat q = level_rotation (heading);
       const std::array<float, 4> rotation = array_of (q);
       Vec3 centre = at;
       float highest = -1e30f;
@@ -802,10 +782,10 @@ namespace moppe::mov {
   }
 
   void Tractor::update (seconds_t dt, meters_t water_level) {
-    if (m_impl->kept.asleep || dt <= seconds_t {})
-      return;
-    // Box3D steps in plain seconds and metres.
-    m_impl->step (dt, water_level);
+    in_substeps (dt, [&] (seconds_t h) {
+      if (!m_impl->kept.asleep)
+        m_impl->step (h, water_level);
+    });
   }
 
   Vec3 Tractor::position () const {

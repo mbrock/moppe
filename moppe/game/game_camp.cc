@@ -13,8 +13,7 @@ namespace moppe {
       // picks too, for the touch screen's single action button.
       const bool bike_near =
         length2 (feet - session ().bike ().position ()) < 5.0f * 5.0f ||
-        session ().mount_within_reach () != GameSession::Mount::none ||
-        session ().hauling ();
+        session ().mount_within_reach ().has_value () || session ().hauling ();
       if (!input.deploy_glider && !(input.toggle_mount && !bike_near))
         return;
       const std::optional<std::uint32_t> found =

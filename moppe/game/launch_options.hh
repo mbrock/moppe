@@ -71,8 +71,6 @@ namespace moppe::game {
     // Keeps a hand-started run behind the active application, the way
     // captures and benchmarks already stay out of the way.
     bool stay_inactive = false;
-    // Which simulation moves the bike for this launch.
-    mov::BikePhysics bike_physics = mov::default_bike_physics;
     // Play with someone else in the same world (game/companion.hh): the
     // other machine's address, or empty to find them on the local
     // network. Both must launch the same world.

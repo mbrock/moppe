@@ -13,10 +13,9 @@
 #include <moppe/game/weather.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/boat.hh>
-#include <moppe/mov/caddy.hh>
+#include <moppe/mov/car.hh>
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/helicopter.hh>
-#include <moppe/mov/jeep.hh>
 #include <moppe/mov/jet_ski.hh>
 #include <moppe/mov/tractor.hh>
 #include <moppe/mov/vehicle.hh>
@@ -152,10 +151,10 @@ namespace moppe::game {
     ChaseCamera::State camera;
     Stars::State stars;
     Dust::State dust;
-    mov::Jeep::State jeep;
+    mov::Car::State jeep;
     mov::Helicopter::State helicopter;
     mov::Tractor::State tractor;
-    mov::Caddy::State caddy;
+    mov::Car::State caddy;
     mov::Vehicle::State mountain_bike;
     mov::Boat::State boat;
     mov::Vehicle::State long_john;

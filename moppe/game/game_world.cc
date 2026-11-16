@@ -105,8 +105,7 @@ namespace moppe {
       // Before the session places anything: its bodies stand on the
       // roads.
       mov::attach_roads (surface (), &m_generated_world->road_surface ());
-      m_session =
-        std::make_unique<GameSession> (world (), surface (), m_bike_physics);
+      m_session = std::make_unique<GameSession> (world (), surface ());
       retired_session.reset ();
       retired_world.reset ();
       m_map.forget ();

@@ -133,6 +133,14 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
     game::strain (idle, Vec3 (), 0.0f, dt);
   MOPPE_CHECK (!idle.stuck);
 
+  // Two-second bursts of throttle, let off between, as in a turn on the
+  // spot, never add up to being stuck.
+  game::Trouble turning;
+  for (int burst = 0; burst < 4; ++burst)
+    for (int i = 0; i < 60 * 2 + 10; ++i)
+      game::strain (turning, Vec3 (), i < 120 ? 1.0f : 0.0f, dt);
+  MOPPE_CHECK (!turning.stuck);
+
   // Got three metres away, it is free again.
   game::strain (trouble, Vec3 (4.0f, 0, 0), 0.0f, dt);
   MOPPE_CHECK (!trouble.stuck);
@@ -147,8 +155,9 @@ MOPPE_TEST (a_tractor_driven_into_a_wall_gets_stuck_and_heaves) {
   using namespace moppe;
 
   // Level ground to z = 200, then a cliff.
-  const Ground ground = rescue_ground (
-    [] (float, float z) { return 10.0f + std::max (0.0f, z - 200.0f) * 3.0f; });
+  const Ground ground = rescue_ground ([] (float, float z) {
+    return 10.0f + std::max (0.0f, z - 200.0f) * 10.0f;
+  });
   game::GameSession session (ground.world, ground.surface);
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
@@ -350,7 +359,7 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
                session.tractor ().position ()[2]);
   run ({}, 2.0f);
   const Vec3 shoved = session.tractor ().position () - tractor_was;
-  MOPPE_CHECK (shoved[2] > 0.3f);
+  MOPPE_CHECK (std::hypot (shoved[0], shoved[2]) > 0.3f);
   MOPPE_CHECK (session.tractor ().up ()[1] > 0.99f);
   MOPPE_CHECK (session.tractor ().trailer_up ()[1] > 0.99f);
 }

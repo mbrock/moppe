@@ -1,3 +1,4 @@
+#include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/glider.hh>
 
 #include <algorithm>
@@ -133,11 +134,9 @@ namespace moppe::mov {
   }
 
   meters_t Glider::height_above_ground () const {
-    const float ground =
-      spatial::sample<terrain::surface_elevation> (m_surface, m_position)
-        .quantity_from_zero ()
-        .numerical_value_in (u::m);
-    return (position_value (m_position)[1] - ground) * u::m;
+    // Over a bridge, the deck: not the river under it.
+    const Vec3& p = position_value (m_position);
+    return (p[1] - ground_height (m_surface, p[0], p[2])) * u::m;
   }
 
   rate_of_climb_t Glider::ridge_lift (meters_t agl) const {

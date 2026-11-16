@@ -26,7 +26,14 @@ namespace moppe::game {
     // How far the line was stretched beyond its length last step, for
     // its damping.
     meters_t stretch {};
+    // How much line beyond its length was out when it was hooked on: the
+    // winch takes it in over the next moments, so the load is lifted
+    // rather than yanked.
+    meters_t payout {};
   };
+
+  // How fast the winch takes the line in.
+  inline constexpr speed_t sling_reel = 1.5f * u::m / u::s;
 
   // The line, from the hook to the ring.
   inline constexpr meters_t sling_line = 8.0f * u::m;
@@ -38,10 +45,6 @@ namespace moppe::game {
   inline Vec3 sling_hook () {
     return Vec3 (0.0f, 0.55f, 0.05f);
   }
-  // The ring over each machine, and where its bridle's legs are made fast
-  // to it (a bike's two, at its ends, twice over), in the machine's frame.
-  Vec3 sling_ring (Machine machine);
-  std::array<Vec3, 4> sling_legs (Machine machine);
   // How far below the helicopter's skids what hangs under it reaches
   // when the line is taut, about.
   inline constexpr meters_t sling_hang =

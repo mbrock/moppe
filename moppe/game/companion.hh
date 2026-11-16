@@ -42,14 +42,14 @@ namespace moppe::game {
     VehiclePose bike {};
     // Their jeep, wherever it stands, and how it is moving: someone
     // riding along in it moves with it.
-    JeepPose jeep {};
+    CarPose jeep {};
     Vec3 jeep_velocity {};
     // Their helicopter, wherever it stands or flies.
     HelicopterPose helicopter {};
     // Their tractor, and them at its wheel when they drive it.
     TractorPose tractor {};
     // Their Caddy, likewise.
-    CaddyPose caddy {};
+    CarPose caddy {};
     // Their mountainbike, and them on it when they ride it.
     VehiclePose mountain_bike {};
     // Their Long John, likewise.

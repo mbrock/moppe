@@ -59,11 +59,11 @@ namespace moppe::game {
     float rider_lean = 0.0f;
   };
 
-  // The jeep as drawn: its origin (midway between the axles, at their
-  // standing height) and frame, how far each wheel hangs below where it
-  // stands (front left, front right, rear left, rear right; negative is
+  // A car (the jeep, the Caddy) as drawn: its origin (midway between the axles,
+  // at their standing height) and frame, how far each wheel hangs below where
+  // it stands (front left, front right, rear left, rear right; negative is
   // pressed), the front wheels' turn to the right, and the wheels' roll.
-  struct JeepPose {
+  struct CarPose {
     Vec3 position {};
     Vec3 forward { 0, 0, 1 };
     Vec3 up { 0, 1, 0 };
@@ -93,9 +93,6 @@ namespace moppe::game {
     float rotor_radians = 0.0f;
     float tail_radians = 0.0f;
   };
-
-  // The Caddy as drawn: the same readings as the jeep's.
-  using CaddyPose = JeepPose;
 
   // The tractor as drawn: its origin (midway between the axles, on the
   // ground it stands on) and frame, how far each wheel hangs below where
@@ -179,10 +176,10 @@ namespace moppe::game {
     VehiclePose bike {};
     VehiclePose mountain_bike {};
     VehiclePose long_john {};
-    JeepPose jeep {};
+    CarPose jeep {};
     HelicopterPose helicopter {};
     TractorPose tractor {};
-    CaddyPose caddy {};
+    CarPose caddy {};
     BoatPose boat {};
     JetSkiPose jet_ski {};
     // Fishing from the boat: the rod in the helmsman's right hand.
@@ -401,12 +398,11 @@ namespace moppe::game {
   DisplayColor horizon_color_for (float sun_height);
 
   VehiclePose vehicle_pose (const mov::Vehicle& vehicle);
-  JeepPose jeep_pose (const mov::Jeep& jeep);
+  CarPose car_pose (const mov::Car& car);
   HelicopterPose helicopter_pose (const mov::Helicopter& helicopter);
   TractorPose tractor_pose (const mov::Tractor& tractor);
   BoatPose boat_pose (const mov::Boat& boat);
   JetSkiPose jet_ski_pose (const mov::JetSki& ski);
-  CaddyPose caddy_pose (const mov::Caddy& caddy);
   // The bike and the jeep as they ride in the Caddy (game/sling.hh).
   GliderPose glider_pose (const mov::Glider& glider);
   WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);

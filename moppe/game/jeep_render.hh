@@ -22,7 +22,7 @@ namespace moppe::game {
   // wheel, skinned into the frame's draw list.
   void render_jeep (render::Renderer& r,
                     render::DrawList& dl,
-                    const JeepPose& jeep,
+                    const CarPose& jeep,
                     JeepRiders riders,
                     uint64_t motion_base);
 }

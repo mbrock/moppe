@@ -165,23 +165,6 @@ namespace moppe::game {
             return unknown ("graphics quality", values[0], error);
           return true;
         } },
-      { "--bike-physics",
-        "",
-        1,
-        "<rigid|classic>",
-        "Ride the Box3D rigid-body bike or the classic point-mass bike.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          const std::string_view value = values[0];
-          if (value == "rigid")
-            options.bike_physics = mov::BikePhysics::rigid;
-          else if (value == "classic")
-            options.bike_physics = mov::BikePhysics::classic;
-          else
-            return unknown ("bike physics", values[0], error);
-          return true;
-        } },
       { "--render-scale",
         "",
         1,

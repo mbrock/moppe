@@ -417,7 +417,8 @@
     flat army paint on the jeep, old enamel and cast iron on the
     tractor, aviation paint and a see-through canopy on the helicopter,
     sailcloth and aluminium on the glider.
-  - The Caddy (`moppe/mov/caddy.*`, `models/caddy.blend` from
+  - The Caddy (`mov::Car` on `caddy_rig`, `moppe/mov/car.*`,
+    `models/caddy.blend` from
     `tools/figure/caddy.py`, drawn by `game/caddy_render.*`) is a
     first-series VW Caddy pickup under a fibreglass hardtop on Swedish
     plates, parked by the sea on level ground above the shore the boat
@@ -447,7 +448,8 @@
     `MOPPE_DEMO=glide` deploys the wing on the autopilot's first high leap,
     and `MOPPE_RIDE_CAMERA=side|front` locks a capture camera beside or
     ahead of the bike, the glider, or the driven jeep, tractor, or Caddy.
-  - The jeep (`moppe/mov/jeep.*`, `models/jeep.blend` from
+  - The jeep (`mov::Car` on `jeep_rig`, `moppe/mov/car.*`,
+    `models/jeep.blend` from
     `tools/figure/jeep.py`, drawn by `game/jeep_render.*`) waits on a
     verge beside the nearest cart road some 300 m from the trailhead,
     facing along it (`park_jeep`; beside the bike where no road is near).
@@ -590,8 +592,8 @@
     (`pose_rider` in vehicle_render.cc). The ground covered on the back
     wheel counts over the speedometer and scores two points a metre past
     five (`m_wheelie_m` in game_session.cc); `MOPPE_DEMO=wheelie`
-    (`tools/record OUT.mp4 wheelie`) rides them on the autopilot. The
-    classic point mass has none (companion wire version 11).
+    (`tools/record OUT.mp4 wheelie`) rides them on the autopilot
+    (companion wire version 11).
   - The bike (`models/bike.blend` from `tools/figure/bike.py`, drawn by
     `game/vehicle_render.*`, ridden as `M_BIKE`) is a 1972 Honda CT90
     Trail 90 at life size, which Krisjanis named as the classic to clone:
@@ -629,7 +631,7 @@
     both Box3D bodies; the flight computer lifts and leans against its
     pull (`Helicopter::set_load`), so a heavy load drags it down and
     slows its climb, and the Caddy, slung, damps its swinging and turns
-    its nose the way it is carried (`Caddy::set_slung`).
+    its nose the way it is carried (`Car::set_slung`).
     `MOPPE_RIDE_CAMERA=side|front` stands beside the hanging load. The
     other player sees the load fly but not the line.
   - The tractor (`moppe/mov/tractor.*`, `models/tractor.blend` from
@@ -1161,11 +1163,12 @@
   the stride phase; `game/avatar.*` solves the articulated figure's skeleton
   (two-bone leg IK, planted stance feet) and `walker_render.cc` draws it.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
-  The bike is a Box3D assemblage by default (`mov/rigid_bike.*`: chassis,
-  two sphere wheels on wheel joints, a streamed height-field ground patch,
-  trunk capsules, arcade assists); `--bike-physics classic` selects the old
-  point mass in `mov/vehicle.cc`. An unridden bike is parked (wheels locked,
-  held still once settled). Vendored Box3D carries one local fix
+  The bike is a Box3D assemblage (`mov/rigid_bike.*`: chassis, two sphere
+  wheels on wheel joints, a streamed height-field ground patch, trunk
+  capsules, arcade assists), ridden through `mov::Vehicle` (controls, jets,
+  landings). An unridden bike is parked (wheels locked, held still once
+  settled). Every machine steps in substeps of at most 1/120 s
+  (`mov::in_substeps`), so captures at 1/60 s run play's physics. Vendored Box3D carries one local fix
   (`third_party/box3d/VENDOR.md`).
   Both are GL-free and portable.
 - `moppe/terrain/` owns finite terrain algorithms and typed analysis values;

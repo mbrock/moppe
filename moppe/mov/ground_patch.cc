@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <vector>
 
 namespace moppe::mov {
@@ -27,6 +28,31 @@ namespace moppe::mov {
       spatial::sample<terrain::surface_elevation> (
         surface, moppe::position (Vec3 (x, 0.0f, z))));
     return &surface == roads_surface ? the_roads->ground (x, z, field) : field;
+  }
+
+  Vec3 ground_normal (const map::SurfaceGeometry& surface, float x, float z) {
+    Vec3 n = spatial::sample<terrain::terrain_normal> (
+               surface, moppe::position (Vec3 (x, 0.0f, z)))
+               .numerical_value_in (one);
+    if (&surface == roads_surface) {
+      // Where a road's tread lies over any of the points round it, the
+      // ground's slope there is the road's, taken across them.
+      constexpr float h = 0.25f;
+      const auto field = [&] (float px, float pz) {
+        return terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (px, 0.0f, pz))));
+      };
+      const float east = ground_height (surface, x + h, z);
+      const float west = ground_height (surface, x - h, z);
+      const float south = ground_height (surface, x, z + h);
+      const float north = ground_height (surface, x, z - h);
+      if (east != field (x + h, z) || west != field (x - h, z) ||
+          south != field (x, z + h) || north != field (x, z - h))
+        n =
+          Vec3 ((west - east) / (2.0f * h), 1.0f, (north - south) / (2.0f * h));
+    }
+    return length2 (n) > 1e-8f ? normalized (n) : Vec3 (0, 1, 0);
   }
 
   GroundPatch::GroundPatch (const map::SurfaceGeometry& surface, Params params)
@@ -104,7 +130,18 @@ namespace moppe::mov {
     shape.filter.categoryBits = m_params.ground_bit;
     shape.filter.maskBits = m_params.ground_mask;
     b3CreateHeightFieldShape (m_ground, &shape, m_height_field);
-    add_bridges (shape);
+    // The obstacles are trunks and railings: the body that holds them,
+    // at the world's origin, is made only where some stand, after the
+    // ground, in the same order every time.
+    const auto obstacles = [&] {
+      if (B3_IS_NULL (m_obstacles)) {
+        b3BodyDef obstacle_body = b3DefaultBodyDef ();
+        obstacle_body.type = b3_staticBody;
+        m_obstacles = b3CreateBody (world, &obstacle_body);
+      }
+      return m_obstacles;
+    };
+    add_bridges (shape, obstacles);
 
     if (!trunks)
       return;
@@ -112,9 +149,7 @@ namespace moppe::mov {
       trunks->gather (centre (), m_params.trunk_reach);
     if (nearby.empty ())
       return;
-    b3BodyDef obstacle_body = b3DefaultBodyDef ();
-    obstacle_body.type = b3_staticBody;
-    m_obstacles = b3CreateBody (world, &obstacle_body);
+    obstacles ();
     b3ShapeDef obstacle = b3DefaultShapeDef ();
     obstacle.baseMaterial.friction = m_params.obstacle_friction;
     obstacle.baseMaterial.restitution = m_params.obstacle_restitution;
@@ -132,7 +167,8 @@ namespace moppe::mov {
   // A bridge's deck is a solid slab and its railings are walls: the height
   // field, a sample every metre or so, would round a deck a few samples
   // wide off into slopes down to the river, and has no railings at all.
-  void GroundPatch::add_bridges (const b3ShapeDef& ground) {
+  void GroundPatch::add_bridges (const b3ShapeDef& ground,
+                                 const std::function<b3BodyId ()>& obstacles) {
     if (&m_surface != roads_surface || the_roads->empty ())
       return;
     const float period_x =
@@ -181,8 +217,9 @@ namespace moppe::mov {
           hl,
           0.55f,
           0.08f,
-          { to_b3 (mid + y * 0.55f + z * (side * (half + 0.3f))), turn });
-        b3CreateHullShape (m_ground, &rail, &wall.base);
+          { to_b3 (origin + mid + y * 0.55f + z * (side * (half + 0.3f))),
+            turn });
+        b3CreateHullShape (obstacles (), &rail, &wall.base);
       }
     }
     // A guardrail is a wall from below the road's edge to the beam's top,
@@ -213,14 +250,14 @@ namespace moppe::mov {
           z = -z;
         const Vec3 y = cross (z, x);
         const b3Matrix3 frame { to_b3 (x), to_b3 (y), to_b3 (z) };
-        const Vec3 mid = (a + b) * 0.5f - origin + y * (0.5f * (top + bottom)) +
-                         z * (thick - depth);
+        const Vec3 mid =
+          (a + b) * 0.5f + y * (0.5f * (top + bottom)) + z * (thick - depth);
         const b3BoxHull wall = b3MakeTransformedBoxHull (
           0.5f * length + 0.05f,
           0.5f * (top - bottom),
           thick,
           { to_b3 (mid), b3MakeQuatFromMatrix (&frame) });
-        b3CreateHullShape (m_ground, &guard, &wall.base);
+        b3CreateHullShape (obstacles (), &guard, &wall.base);
       }
   }
 

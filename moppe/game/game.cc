@@ -18,8 +18,7 @@ namespace moppe {
           m_water_shot (options.water_shot), m_gazetteer (options.gazetteer),
           m_screenshot_frames (0), m_ready (false),
           m_benchmark (options.benchmark),
-          m_benchmark_baseline (options.graphics),
-          m_bike_physics (options.bike_physics) {
+          m_benchmark_baseline (options.graphics) {
       m_day = plan_day ();
       m_sky = m_almanac.held (m_graphics.sun_height);
       if (const char* name = moppe::environment ("MOPPE_WEATHER");
@@ -44,10 +43,7 @@ namespace moppe {
       MOPPE_PROFILE_ZONE ("MoppeGame::setup");
       m_renderer = &r;
       std::cerr << "moppe: simulation: fixed-step=120 Hz, catch-up-limit="
-                << MAX_SIMULATION_CATCH_UP_STEPS << " steps, bike-physics="
-                << (m_bike_physics == mov::BikePhysics::rigid ? "rigid"
-                                                              : "classic")
-                << std::endl;
+                << MAX_SIMULATION_CATCH_UP_STEPS << " steps" << std::endl;
 
       // Fast, main-thread resource setup; the heavy world build
       // runs behind the loading screen.
@@ -143,7 +139,6 @@ namespace moppe {
     void MoppeGame::tick_simulation (seconds_t interval) {
       float dt = seconds_value (interval);
       MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
-      m_stepped += dt;
       std::optional<InputFrame> scripted_input;
       if (opening_active () &&
           moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
@@ -206,6 +201,9 @@ namespace moppe {
       if (scripted_input)
         input = *scripted_input;
 
+      // The companion's pose clock counts only time the world was stepped
+      // by, at the step it was stepped by.
+      m_stepped += dt;
       logic ().m_total_time += dt;
       const float total_time = logic ().m_total_time;
       update_world_atmosphere (total_time);
@@ -299,7 +297,7 @@ namespace moppe {
           // a dab of the rear brake if it gets too high -- judged by
           // where the pitch is heading a moment on.
           const mov::Vehicle& bike = session ().bike ();
-          const float pitch = bike.pitch ();
+          const float pitch = radians_value (bike.pitch ());
           const float rate = dt > 0.0f ? (pitch - m_demo_pitch) / dt : 0.0f;
           m_demo_pitch = pitch;
           const float ahead = pitch + 0.4f * rate;

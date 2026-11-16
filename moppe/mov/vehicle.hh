@@ -14,26 +14,21 @@ namespace moppe {
   namespace mov {
     using namespace moppe::map;
 
-    // Which simulation moves the bike. Classic is the original point mass
-    // with a hand-written heading, grip and lean; rigid is the Box3D
-    // assemblage of chassis, wheels and suspension in rigid_bike.hh.
-    enum class BikePhysics { classic, rigid };
-    inline constexpr BikePhysics default_bike_physics = BikePhysics::rigid;
-
+    // A bike and its rider: the rigid assemblage of rigid_bike.hh, ridden.
+    // The rider's controls are smoothed here, the jump jets meter their
+    // charge here, and the readings the game scores and draws by (landings,
+    // falls, the wheel's roll and the crank's turn) are gathered here.
     class Vehicle {
     public:
       struct State {
+        // The coarse pose, derived from the assemblage; restoring a state
+        // whose coarse pose was edited moves the assemblage rigidly to
+        // match.
         position_t position {};
         velocity_t velocity {};
         Vec3 heading {};
-        Vec3 thrust_orientation {};
         radians_t yaw {};
         radians_t yaw_target {};
-        radians_t lean {};
-        Vec3 render_heading {};
-        Vec3 render_normal {};
-        meters_t susp {};
-        speed_t susp_v {};
         radians_t wheel_spin {};
         bool boost_flight {};
         control_signal_t thrust {};
@@ -47,10 +42,6 @@ namespace moppe {
         speed_t impact {};
         meters_t fall_top {};
         meters_t fall_drop {};
-        // The rigid assemblage, when that physics drives the bike. Its
-        // coarse pose is also published above as position, velocity, and
-        // heading; restoring a state whose coarse pose was edited moves the
-        // assemblage rigidly to match.
         RigidBikeState rigid {};
         bool parked {};
         float skid {};
@@ -58,22 +49,18 @@ namespace moppe {
         radians_t crank {};
       };
 
-      // max_thrust caps the wheel force (launch punch); power caps
-      // force * speed, so acceleration tapers like a real engine
-      // instead of shoving at 3 g all the way to the horizon.
+      // Stands the bike at rest on the ground under `position`, facing
+      // `orientation` degrees from +z toward +x. max_thrust caps the
+      // wheel force (launch punch); power caps force * speed, so
+      // acceleration tapers like a real engine.
       Vehicle (position_t position,
                degrees_t orientation,
                const SurfaceGeometry& surface,
                newtons_t max_thrust,
                watts_t power,
                kilograms_t mass,
-               BikePhysics physics = BikePhysics::classic,
                const BikeRig& rig = trail90_rig);
       ~Vehicle ();
-
-      BikePhysics physics () const {
-        return m_rigid ? BikePhysics::rigid : BikePhysics::classic;
-      }
 
       void update (seconds_t dt);
 
@@ -94,14 +81,6 @@ namespace moppe {
         m_yaw_target = degrees;
       }
 
-      void spin (degrees_t degrees) {
-        m_yaw_target += radians_t (degrees);
-      }
-
-      void increase_thrust (control_signal_t dv) {
-        m_thrust += dv;
-      }
-
       // Continuous jump jets.  boost is 0..1; drive is -1..1 and tilts
       // the jet backward/vertical/forward to match the driving stick.
       void set_boost (float boost, float drive);
@@ -111,39 +90,36 @@ namespace moppe {
 
       // The rear brake stamped on, 0..1: the rear wheel locks and slides,
       // and the handlebar swings the tail round (RigidBikeControls::skid).
-      // Only the rigid bike skids.
       void set_skid (float skid) {
         m_skid = std::clamp (skid, 0.0f, 1.0f);
       }
       // How far the rear tyre is sliding under the locked brake, 0..1.
       float skid () const {
-        return m_rigid ? m_rigid->skid () : 0.0f;
+        return m_rigid->skid ();
       }
       // The rider leans back for a wheelie, 0..1
-      // (RigidBikeControls::wheelie). The classic point mass has no pitch
-      // to lift, and ignores it.
+      // (RigidBikeControls::wheelie).
       void set_wheelie (float wheelie) {
         m_wheelie = std::clamp (wheelie, 0.0f, 1.0f);
       }
-      // On the back wheel alone, and how far back the rider's weight is,
-      // a share of how far it goes (negative forward).
+      // On the back wheel alone.
       bool wheeling () const {
-        return m_rigid && m_rigid->wheeling ();
+        return m_rigid->wheeling ();
       }
-      // Whether the front wheel is on the ground; the classic bike's
-      // always is.
       bool front_down () const {
-        return !m_rigid || m_rigid->front_contact ();
+        return m_rigid->front_contact ();
       }
+      // How far back the rider's weight is, a share of how far it goes
+      // (negative forward).
       float rider_lean () const {
-        return m_rigid ? m_rigid->rider_lean () : 0.0f;
+        return m_rigid->rider_lean ();
       }
-      // The chassis' pitch above the ground under it, radians, nose up.
-      float pitch () const {
-        return m_rigid ? radians_value (m_rigid->pitch ()) : 0.0f;
+      // The chassis' pitch above the ground under it, nose up.
+      radians_t pitch () const {
+        return m_rigid->pitch ();
       }
       // Springs the bike up off the ground by `speed` over its next
-      // update: a bunny hop. Only a rigid bike on its wheels hops.
+      // update: a bunny hop. Only a bike on its wheels hops.
       void hop (speed_t speed) {
         if (grounded ())
           m_hop = speed;
@@ -164,28 +140,27 @@ namespace moppe {
         return m_parked;
       }
 
-      // The whole weight of bike and rider, kilograms.
+      // The whole weight of bike and rider.
       kilograms_t mass () const {
         return m_mass;
       }
-      // A blow at `at`, newton-seconds: another machine bumping into it,
-      // or someone hauling on it. The classic bike takes it whole.
-      void push (const Vec3& at, const impulse_t& impulse);
+      // A blow at `at`: another machine bumping into it, or someone
+      // hauling on it.
+      void push (const Vec3& at, const impulse_t& impulse) {
+        m_rigid->push (at, impulse);
+      }
 
       void set_water_level (meters_t level) {
         m_water_level = level;
       }
 
       void set_trunks (const TrunkField* trunks) {
-        m_trunks = trunks;
-        if (m_rigid)
-          m_rigid->set_trunks (trunks);
+        m_rigid->set_trunks (trunks);
       }
 
       // What a glider's wing does to the bike hanging from it over the next
       // update: the acceleration the air gives the whole weight, and the
-      // way the harness holds the chassis. Only the rigid bike flies this
-      // way; the classic one is carried.
+      // way the harness holds the chassis.
       struct Hang {
         acceleration_t acceleration =
           Vec3 () * isq::acceleration[si::metre / pow<2> (si::second)];
@@ -200,27 +175,21 @@ namespace moppe {
         m_hung = false;
       }
 
-      // Move an inactive bike as a rigid payload beneath the glider.
-      void carry (position_t position,
-                  velocity_t velocity,
-                  const Vec3& heading,
-                  const Vec3& up);
-
-      // Respawn: back to a spot, stationary, jets cooled down
+      // Respawn: back to a spot, stationary, jets cooled down.
       void reset (const Vec3& position);
 
       void set_heading (const Vec3& h);
 
       bool grounded () const {
-        return m_rigid ? m_rigid->grounded () : is_grounded ();
+        return m_rigid->grounded ();
       }
 
       // Sideways speed relative to where the bike points; big when
       // drifting, ~zero when rolling straight
       speed_t drift_speed () const {
-        const Vec3& v = velocity_value (m_velocity);
-        float vf = dot (v, m_heading);
-        return length (v - m_heading * vf) * u::m / u::s;
+        const Vec3 v = velocity ();
+        const Vec3 heading = orientation ();
+        return length (v - heading * dot (v, heading)) * u::m / u::s;
       }
 
       // Downward speed of the last hard landing; reading it clears it
@@ -248,15 +217,6 @@ namespace moppe {
         return m_boost_drive;
       }
 
-      // Read-only pose and body state for the external renderer
-      // (game/vehicle_render); the drawing half reads everything it
-      // needs through these.
-      radians_t lean () const {
-        return m_lean;
-      }
-      meters_t susp () const {
-        return m_susp;
-      }
       // Accumulated wheel roll angle in [0, 2pi).
       radians_t wheel_spin () const {
         return m_wheel_spin;
@@ -267,124 +227,71 @@ namespace moppe {
       seconds_t airtime () const {
         return m_airborne_time;
       }
-      radians_t yaw () const {
-        return m_yaw;
-      }
+      // The chassis carries its own roll, so the drawn frame is the
+      // assemblage's: where it stands, its forward, and its top.
       Vec3 render_normal () const {
-        return m_render_normal;
+        return m_rigid->up ();
       }
       Vec3 render_orientation () const {
-        return m_render_heading;
+        return orientation ();
       }
-      // Where the drawn frame stands: the classic bike bobs it on its
-      // visual spring, while the rigid chassis is drawn where it is.
       Vec3 render_position () const {
-        if (m_rigid)
-          return position ();
-        return position () + Vec3 (0.0f, meters_value (m_susp), 0.0f);
+        return position ();
       }
       // How far each wheel hangs below its drawn rest position along the
-      // chassis' down axis, in metres; negative is compressed.
-      float rear_wheel_drop () const {
-        return m_rigid ? m_rear_drop : 0.675f * meters_value (m_susp);
+      // chassis' down axis; negative is compressed.
+      meters_t rear_wheel_drop () const {
+        return m_rigid->rear_extension ();
       }
-      float front_wheel_drop () const {
-        return m_rigid ? m_front_drop : 0.4725f * meters_value (m_susp);
+      meters_t front_wheel_drop () const {
+        return m_rigid->front_extension ();
       }
       // The fork's angle about the steering head; positive turns right.
       radians_t fork_angle () const {
-        return m_rigid ? m_fork * u::rad : 0.4f * m_yaw;
+        return m_rigid->steer_angle ();
       }
 
       Vec3 position () const {
-        return position_value (m_position);
+        return m_rigid->reference_position ();
       }
       position_t physical_position () const {
-        return m_position;
+        return moppe::position (position ());
       }
       Vec3 orientation () const {
-        return m_heading;
+        return m_rigid->forward ();
       }
       Vec3 velocity () const {
-        return velocity_value (m_velocity);
+        return m_rigid->velocity ();
       }
       velocity_t physical_velocity () const {
-        return m_velocity;
+        return moppe::velocity (velocity ());
       }
 
     private:
       void update_jets (seconds_t dt, bool grounded);
-      void update_rigid (seconds_t dt);
-      void sync_rigid ();
-      void steer (seconds_t dt);
-      void apply_grip (seconds_t dt, const Vec3& n);
-      void calculate_orientation ();
-      void fall_to_ground ();
-      void check_ground_collision ();
-      void collide_with_trunks ();
-      void bound ();
-      bool expected_landing_pose (Vec3& forward,
-                                  Vec3& up,
-                                  seconds_t& time_to_landing) const;
-      bool is_grounded () const;
-      bool driving_contact () const;
-
-      acceleration_t drag () const;
-
-      Vec3 ground_normal () const {
-        const Vec3& p = position_value (m_position);
-        return spatial::sample<terrain::terrain_normal> (
-                 m_map, moppe::position (Vec3 (p[0], 0.0f, p[2])))
-          .numerical_value_in (mp_units::one);
-      }
-
-      meters_t ground_height () const {
-        const Vec3& p = position_value (m_position);
-        return terrain::surface_elevation_value (
-                 spatial::sample<terrain::surface_elevation> (
-                   m_map, moppe::position (Vec3 (p[0], 0.0f, p[2])))) *
-               u::m;
-      }
-
-    private:
-      position_t m_position;
-      velocity_t m_velocity;
-      Vec3 m_heading;
-      Vec3 m_thrust_orientation;
-
-      radians_t m_yaw;        // smoothed actual steering
-      radians_t m_yaw_target; // raw keyboard input
-      radians_t m_lean;       // roll into corners
-      Vec3 m_render_heading;  // visual forward, follows the flight arc
-      Vec3 m_render_normal;   // smoothed up vector for drawing
-      meters_t m_susp;        // visual suspension spring
-      speed_t m_susp_v;
-      radians_t m_wheel_spin; // visual wheel roll angle
-      bool m_boost_flight;    // landing softened after using the jets
+      void substep (seconds_t dt, bool first);
 
       const SurfaceGeometry& m_map;
+      const kilograms_t m_mass;
 
-      const newtons_t m_max_thrust;
-      const watts_t m_power;
-      control_signal_t m_thrust; // throttle command in [-1, 1]
-      kilograms_t m_mass;
+      radians_t m_yaw {};        // smoothed actual steering
+      radians_t m_yaw_target {}; // raw steering input
+      radians_t m_wheel_spin {};
+      bool m_boost_flight = false; // landing softened after using the jets
+      control_signal_t m_thrust {};
 
-      float m_boost_input;
-      float m_boost_drive;
-      float m_boost_level;
-      float m_boost_charge;
-      seconds_t m_boost_recharge_delay;
-      meters_t m_water_level;
+      float m_boost_input = 0.0f;
+      float m_boost_drive = 0.0f;
+      float m_boost_level = 0.0f;
+      float m_boost_charge = 1.0f;
+      seconds_t m_boost_recharge_delay {};
+      meters_t m_water_level = -1000.0f * u::m;
 
-      seconds_t m_airborne_time;
-      speed_t m_impact;
-      meters_t m_fall_top;  // highest point of the current flight
-      meters_t m_fall_drop; // set on landing: peak minus touchdown
+      seconds_t m_airborne_time {};
+      speed_t m_impact {};
+      meters_t m_fall_top {};  // highest point of the current flight
+      meters_t m_fall_drop {}; // set on landing: peak minus touchdown
 
-      const TrunkField* m_trunks = nullptr;
-
-      // Present only for rigid physics, which then owns the motion; the
-      // members above are kept as its published readings.
       std::unique_ptr<RigidBike> m_rigid;
       bool m_parked = false;
       float m_skid = 0.0f;
@@ -395,9 +302,6 @@ namespace moppe {
       // Set afresh by the session each step of a glide, never restored.
       bool m_hung = false;
       Hang m_hang {};
-      float m_rear_drop = 0.0f;
-      float m_front_drop = 0.0f;
-      float m_fork = 0.0f;
     };
   }
 }

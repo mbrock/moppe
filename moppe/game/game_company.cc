@@ -50,11 +50,11 @@ namespace moppe {
       mine.day_hours = m_day.turning ? state.m_day_hours : -1.0;
       mine.mode = state.m_mode;
       mine.bike = vehicle_pose (session ().bike ());
-      mine.jeep = jeep_pose (session ().jeep ());
+      mine.jeep = car_pose (session ().jeep ());
       mine.jeep_velocity = session ().jeep ().velocity ();
       mine.helicopter = helicopter_pose (session ().helicopter ());
       mine.tractor = tractor_pose (session ().tractor ());
-      mine.caddy = caddy_pose (session ().caddy ());
+      mine.caddy = car_pose (session ().caddy ());
       mine.mountain_bike = vehicle_pose (session ().mountain_bike ());
       mine.long_john = vehicle_pose (session ().long_john ());
       mine.boat = boat_pose (session ().boat ());
@@ -164,10 +164,11 @@ namespace moppe {
     }
 
     Vec3 MoppeGame::companion_seat (const CompanionSnapshot& theirs) {
-      const JeepPose& jeep = theirs.jeep;
+      const CarPose& jeep = theirs.jeep;
       const Vec3 left = normalized (cross (jeep.up, jeep.forward));
-      return jeep.position - left * mov::Jeep::seat[0] +
-             jeep.up * mov::Jeep::seat[1] + jeep.forward * mov::Jeep::seat[2];
+      return jeep.position - left * mov::jeep_rig.seat[0] +
+             jeep.up * mov::jeep_rig.seat[1] +
+             jeep.forward * mov::jeep_rig.seat[2];
     }
 
     Vec3 MoppeGame::companion_boat_seat (const CompanionSnapshot& theirs) {

@@ -548,7 +548,7 @@ namespace moppe {
       SlugGlyph shade;
       SlugGlyph key;
       SlugGlyph wide_key;
-      std::array<SlugGlyph, 9> vehicles;
+      std::array<SlugGlyph, machine_count> vehicles;
       // The chart's, in units of its radius: the bezel round it, the
       // hairline rim over the picture's edge, and the bezel's ticks.
       SlugGlyph bezel;

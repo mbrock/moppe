@@ -1164,7 +1164,6 @@ namespace moppe {
       std::atomic<bool> m_ready;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;
-      mov::BikePhysics m_bike_physics;
       std::optional<GraphicsBenchmarkReplay> m_benchmark_replay;
       std::optional<GameState> m_benchmark_checkpoint;
       std::optional<GraphicsBenchmarkReplay::Frame> m_benchmark_render_frame;

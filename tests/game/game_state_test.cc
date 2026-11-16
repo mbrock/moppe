@@ -69,20 +69,11 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   check_position (restored.position, saved.position);
   check_velocity (restored.velocity, saved.velocity);
   check_vector (restored.heading, saved.heading);
-  check_vector (restored.thrust_orientation, saved.thrust_orientation);
-  check_vector (restored.render_heading, saved.render_heading);
-  check_vector (restored.render_normal, saved.render_normal);
   MOPPE_CHECK_NEAR (
     radians_value (restored.yaw), radians_value (saved.yaw), 1e-6f);
   MOPPE_CHECK_NEAR (radians_value (restored.yaw_target),
                     radians_value (saved.yaw_target),
                     1e-6f);
-  MOPPE_CHECK_NEAR (
-    radians_value (restored.lean), radians_value (saved.lean), 1e-6f);
-  MOPPE_CHECK_NEAR (
-    meters_value (restored.susp), meters_value (saved.susp), 1e-6f);
-  MOPPE_CHECK_NEAR (
-    speed_value (restored.susp_v), speed_value (saved.susp_v), 1e-6f);
   MOPPE_CHECK_NEAR (radians_value (restored.wheel_spin),
                     radians_value (saved.wheel_spin),
                     1e-6f);
@@ -132,9 +123,6 @@ MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
   flight.position = position (Vec3 (50, 30, 50));
   flight.velocity = velocity (Vec3 (12, -4, 0));
   flight.heading = Vec3 (1, 0, 0);
-  flight.thrust_orientation = flight.heading;
-  flight.render_heading = flight.heading;
-  flight.render_normal = Vec3 (0, 1, 0);
   flight.airborne_time = seconds (0.3f);
   flight.fall_top = 30 * u::m;
   vehicle.restore (flight);
@@ -166,9 +154,6 @@ MOPPE_TEST (air_steering_visibly_whips_the_motocross) {
   flight.position = position (Vec3 (50, 30, 50));
   flight.velocity = velocity (Vec3 (0, 0, 18));
   flight.heading = Vec3 (0, 0, 1);
-  flight.thrust_orientation = flight.heading;
-  flight.render_heading = flight.heading;
-  flight.render_normal = Vec3 (0, 1, 0);
   flight.airborne_time = seconds (1.0f);
   flight.fall_top = 30 * u::m;
   vehicle.restore (flight);
@@ -199,8 +184,6 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   flight.position = position (Vec3 (50, 18, 50));
   flight.velocity = velocity (Vec3 (0, 0, 15));
   flight.heading = Vec3 (0, 0, 1);
-  flight.thrust_orientation = flight.heading;
-  flight.render_heading = flight.heading;
   flight.airborne_time = seconds (1.5f);
   flight.fall_top = 18 * u::m;
   flight.boost_charge = 0.2f;
@@ -214,8 +197,6 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (15, 0, 0));
   flight.heading = Vec3 (1, 0, 0);
-  flight.thrust_orientation = flight.heading;
-  flight.render_heading = flight.heading;
   session.bike ().restore (flight);
   game::advance_game_session (
     world, surface, session, game::InputFrame {}, step);
@@ -229,8 +210,6 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (0, 0, 15));
   flight.heading = Vec3 (0, 0, 1);
-  flight.thrust_orientation = flight.heading;
-  flight.render_heading = flight.heading;
   session.bike ().restore (flight);
   game::advance_game_session (
     world, surface, session, game::InputFrame {}, step);
@@ -424,7 +403,6 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   airborne.position = position (Vec3 (80, 40, 80));
   airborne.velocity = velocity (Vec3 (0, 1, 20));
   airborne.heading = Vec3 (0, 0, 1);
-  airborne.thrust_orientation = airborne.heading;
   airborne.airborne_time = seconds (0.3f);
   airborne.fall_top = 40 * u::m;
   session.bike ().restore (airborne);

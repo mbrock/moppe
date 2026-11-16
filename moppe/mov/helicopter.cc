@@ -70,16 +70,6 @@ namespace moppe::mov {
 
       constexpr float pi = 3.14159265f;
 
-      b3Quat level_rotation (const Vec3& heading) {
-        Vec3 f = heading;
-        f[1] = 0.0f;
-        f = length2 (f) > 1e-8f ? normalized (f) : Vec3 (0, 0, 1);
-        const Vec3 up (0, 1, 0);
-        const Vec3 left = cross (up, f);
-        const b3Matrix3 m { to_b3 (left), to_b3 (up), to_b3 (f) };
-        return b3NormalizeQuat (b3MakeQuatFromMatrix (&m));
-      }
-
       // The skids' ends, where it meets the ground.
       constexpr float skid_ends[4][3] = { { Helicopter::skid, 0.0f, 1.35f },
                                           { -Helicopter::skid, 0.0f, 1.35f },
@@ -176,18 +166,9 @@ namespace moppe::mov {
       kept = s;
     }
 
-    RigidBodyState read () const {
-      RigidBodyState s;
-      s.position = from_b3 (b3Body_GetPosition (body));
-      s.rotation = array_of (b3Body_GetRotation (body));
-      s.linear_velocity = from_b3 (b3Body_GetLinearVelocity (body));
-      s.angular_velocity = from_b3 (b3Body_GetAngularVelocity (body));
-      return s;
-    }
-
     State snapshot () const {
       State s = kept;
-      s.body = read ();
+      s.body = read_body (body);
       s.ground_column = patch.column ();
       s.ground_row = patch.row ();
       return s;
@@ -216,7 +197,7 @@ namespace moppe::mov {
     }
 
     State standing (const Vec3& at, const Vec3& heading) const {
-      const b3Quat q = heli_rig::level_rotation (heading);
+      const b3Quat q = level_rotation (heading);
       const std::array<float, 4> rotation = array_of (q);
       float highest = -1e30f;
       for (const auto& end : heli_rig::skid_ends) {
@@ -461,10 +442,10 @@ namespace moppe::mov {
   }
 
   void Helicopter::update (seconds_t dt, meters_t water_level) {
-    if (m_impl->kept.asleep || dt <= seconds_t {})
-      return;
-    // Box3D steps in plain seconds and metres.
-    m_impl->step (dt, water_level);
+    in_substeps (dt, [&] (seconds_t h) {
+      if (!m_impl->kept.asleep)
+        m_impl->step (h, water_level);
+    });
   }
 
   Vec3 Helicopter::position () const {

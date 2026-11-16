@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_HUD_HH
 #define MOPPE_GAME_HUD_HH
 
+#include <moppe/game/rescue.hh>
 #include <moppe/platform/input.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
@@ -167,19 +168,23 @@ namespace moppe {
         // Who it is: one bit each, so that a group is a set of them that
         // stays the same from frame to frame.
         enum Who : unsigned {
-          Bike = 1 << 0,
-          Jeep = 1 << 1,
-          Tractor = 1 << 2,
-          Caddy = 1 << 3,
-          MountainBike = 1 << 4,
-          Helicopter = 1 << 5,
-          Boat = 1 << 6,
-          LongJohn = 1 << 7,
-          JetSki = 1 << 8,
-          Vehicles = (1 << 9) - 1,
-          Companion = 1 << 9,
-          Place = 1 << 10,
+          Bike = 1u << static_cast<unsigned> (Machine::bike),
+          Jeep = 1u << static_cast<unsigned> (Machine::jeep),
+          Tractor = 1u << static_cast<unsigned> (Machine::tractor),
+          Caddy = 1u << static_cast<unsigned> (Machine::caddy),
+          Helicopter = 1u << static_cast<unsigned> (Machine::helicopter),
+          MountainBike = 1u << static_cast<unsigned> (Machine::mountain_bike),
+          Boat = 1u << static_cast<unsigned> (Machine::boat),
+          LongJohn = 1u << static_cast<unsigned> (Machine::long_john),
+          JetSki = 1u << static_cast<unsigned> (Machine::jet_ski),
+          Vehicles = (1u << machine_count) - 1,
+          Companion = 1u << machine_count,
+          Place = 1u << (machine_count + 1),
         };
+        // The bit a machine's mark is.
+        static constexpr unsigned of (Machine machine) noexcept {
+          return 1u << static_cast<unsigned> (machine);
+        }
         unsigned who = 0;
         // The machine's silhouette, if it is one.
         unsigned vehicles () const noexcept {

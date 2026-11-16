@@ -274,7 +274,7 @@ namespace moppe::game {
     out.put (bike.boost_drive);
     out.put (bike.rider_lean);
 
-    const JeepPose& jeep = snapshot.jeep;
+    const CarPose& jeep = snapshot.jeep;
     out.put (jeep.position);
     out.put (jeep.forward);
     out.put (jeep.up);
@@ -320,7 +320,7 @@ namespace moppe::game {
       out.put (mtb.crank_radians);
     }
 
-    const CaddyPose& caddy = snapshot.caddy;
+    const CarPose& caddy = snapshot.caddy;
     out.put (caddy.position);
     out.put (caddy.forward);
     out.put (caddy.up);
@@ -434,7 +434,7 @@ namespace moppe::game {
     bike.boost_drive = in.number ();
     bike.rider_lean = in.number ();
 
-    JeepPose& jeep = snapshot.jeep;
+    CarPose& jeep = snapshot.jeep;
     jeep.position = in.point ();
     jeep.forward = in.direction (Vec3 (0, 0, 1));
     jeep.up = in.direction (Vec3 (0, 1, 0));
@@ -480,7 +480,7 @@ namespace moppe::game {
       mtb.crank_radians = in.number ();
     }
 
-    CaddyPose& caddy = snapshot.caddy;
+    CarPose& caddy = snapshot.caddy;
     caddy.position = in.point ();
     caddy.forward = in.direction (Vec3 (0, 0, 1));
     caddy.up = in.direction (Vec3 (0, 1, 0));
@@ -617,7 +617,7 @@ namespace moppe::game {
     bike.rider_lean = mix (a.bike.rider_lean, b.bike.rider_lean, within);
 
     if (!leapt (a.jeep.position, b.jeep.position)) {
-      JeepPose& jeep = result.jeep;
+      CarPose& jeep = result.jeep;
       jeep.position =
         travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
           return &each.jeep.position;
@@ -658,7 +658,7 @@ namespace moppe::game {
       mtb.crank_radians = mix_angle (from.crank_radians, to.crank_radians, t);
     }
     if (!leapt (a.caddy.position, b.caddy.position)) {
-      CaddyPose& caddy = result.caddy;
+      CarPose& caddy = result.caddy;
       caddy.position =
         travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
           return &each.caddy.position;
