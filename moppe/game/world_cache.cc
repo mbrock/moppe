@@ -159,15 +159,25 @@ namespace moppe::game {
 
       ~TemporaryCache () {
         std::error_code ignored;
-        std::filesystem::remove_all (m_path, ignored);
+        if (!m_keep)
+          std::filesystem::remove_all (m_path, ignored);
       }
 
       const std::filesystem::path& path () const {
         return m_path;
       }
 
+      void keep () {
+        m_keep = true;
+      }
+
+      void discard () {
+        m_keep = false;
+      }
+
     private:
       std::filesystem::path m_path;
+      bool m_keep = false;
     };
 
     template <typename Bundle>
@@ -856,13 +866,47 @@ namespace moppe::game {
       write_roads (topology, world.roads ());
       topology.finish ();
     }
-    // A concurrent writer may already have published the same recipe.
+    // First try to publish without disturbing another writer's cache.
     std::error_code error;
     std::filesystem::rename (temporary.path (), directory, error);
-    if (error &&
-        !try_load_world_cache (world.params (), world.recipe (), directory))
+    if (!error)
+      return;
+
+    // Keep the previous directory intact until the replacement is ready.
+    // A reader in the interval between the renames sees a cache miss.
+    TemporaryCache previous (directory);
+    const auto old = previous.path () / "previous";
+    error.clear ();
+    std::filesystem::rename (directory, old, error);
+    const bool moved_previous = !error;
+    if (error && error != std::errc::no_such_file_or_directory)
       throw std::filesystem::filesystem_error (
-        "publish world cache", temporary.path (), directory, error);
+        "move old world cache", directory, old, error);
+    if (moved_previous)
+      previous.keep ();
+
+    error.clear ();
+    std::filesystem::rename (temporary.path (), directory, error);
+    if (!error ||
+        try_load_world_cache (world.params (), world.recipe (), directory)) {
+      previous.discard ();
+      return;
+    }
+
+    if (moved_previous) {
+      std::error_code restore_error;
+      std::filesystem::rename (old, directory, restore_error);
+      if (restore_error) {
+        throw std::filesystem::filesystem_error (
+          "publish world cache; previous cache kept at " + old.string (),
+          temporary.path (),
+          directory,
+          error);
+      }
+      previous.discard ();
+    }
+    throw std::filesystem::filesystem_error (
+      "publish world cache", temporary.path (), directory, error);
   }
 
   std::optional<WorldCacheIdentity>

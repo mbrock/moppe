@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <sstream>
 #include <thread>
@@ -217,6 +218,17 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
   const WorldRecipe recipe = test_world_recipe (extent, 17, Seed { 91 });
   const std::unique_ptr<game::GeneratedWorld> written =
     build_test_world (recipe, game::WorldParams {});
+  game::save_world_cache (*written, cache.string ());
+  std::ofstream (cache / "old-marker") << "old";
+  game::save_world_cache (*written, cache.string ());
+  MOPPE_CHECK (!std::filesystem::exists (cache / "old-marker"));
+  std::filesystem::remove (cache / "topology.bin");
+  MOPPE_CHECK (!game::try_load_world_cache (
+    game::WorldParams {}, recipe, cache.string ()));
+  game::save_world_cache (*written, cache.string ());
+  MOPPE_CHECK (game::try_load_world_cache (
+                 game::WorldParams {}, recipe, cache.string ()) != nullptr);
+
   std::exception_ptr failure[2];
   auto save = [&] (int index) {
     try {
