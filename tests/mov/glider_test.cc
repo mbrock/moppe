@@ -147,8 +147,9 @@ MOPPE_TEST (a_glider_touches_down_still_moving) {
     position (Vec3 (100, 30, 100)), velocity (Vec3 (0, 0, 16)), Vec3 (0, 0, 1));
   glider_test_fly (glider, 60.0f);
   MOPPE_CHECK (glider.landed ());
-  MOPPE_CHECK_NEAR (
-    float (glider.position ()[1]), 10.0f + mov::Glider::pilot_clearance, 1e-3f);
+  MOPPE_CHECK_NEAR (float (glider.position ()[1]),
+                    10.0f + meters_value (mov::Glider::pilot_clearance),
+                    1e-3f);
   const Vec3 v = glider.velocity ();
   MOPPE_CHECK (std::hypot (v[0], v[2]) > 10.0f);
 }

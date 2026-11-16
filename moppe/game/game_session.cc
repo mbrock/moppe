@@ -15,7 +15,7 @@ namespace moppe::game {
       const mov::Glider& glider = session.glider ();
       const Vec3 up = glider.up ();
       session.bike ().carry (glider.physical_position () -
-                               up * mov::Glider::bike_hang * u::m,
+                               up * mov::Glider::bike_hang,
                              glider.physical_velocity (),
                              glider.heading (),
                              up);
@@ -30,7 +30,8 @@ namespace moppe::game {
 
     position_t wing_over_bike (const mov::Vehicle& bike) {
       return moppe::position (bike.position () +
-                              bike.render_normal () * mov::Glider::bike_hang);
+                              bike.render_normal () *
+                                meters_value (mov::Glider::bike_hang));
     }
 
     // True once a wheel is down.
@@ -146,7 +147,8 @@ namespace moppe::game {
       session.bike ().set_yaw (0 * u::deg);
       session.bike ().set_boost (0, 0);
       session.glider ().launch (
-        moppe::position (position + Vec3 (0, mov::Glider::bike_hang, 0)),
+        moppe::position (position +
+                         Vec3 (0, meters_value (mov::Glider::bike_hang), 0)),
         inherited,
         heading,
         true);
@@ -186,7 +188,8 @@ namespace moppe::game {
       // landing out.
       const mov::Glider& glider = session.glider ();
       const Vec3 feet =
-        glider.position () - Vec3 (0, mov::Glider::pilot_clearance - 0.1f, 0);
+        glider.position () -
+        Vec3 (0, meters_value (mov::Glider::pilot_clearance) - 0.1f, 0);
       session.walker ().spawn (
         moppe::position (feet), glider.heading (), glider.physical_velocity ());
       session.set_mode (M_FOOT);

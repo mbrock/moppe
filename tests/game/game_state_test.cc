@@ -432,7 +432,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   MOPPE_CHECK (session.can_drop_bike ());
   MOPPE_CHECK_NEAR (
     length (session.glider ().position () - session.bike ().position ()),
-    mov::Glider::bike_hang,
+    meters_value (mov::Glider::bike_hang),
     1e-4f);
 
   game::advance_game_session (
