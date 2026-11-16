@@ -452,7 +452,7 @@ namespace moppe {
           *m_watched >= m_animals.animals ().size ())
         return;
       const Animal& a = m_animals.animals ()[*m_watched];
-      const float height = 0.7f * traits (a.species).length;
+      const float height = 0.7f * meters_value (traits (a.species).length);
       const Vec3 target = a.position + Vec3 (0.0f, height, 0.0f);
       // Eased, so that the view glides after it.
       const float ease = 1.0f - std::exp (-1.5f * dt);

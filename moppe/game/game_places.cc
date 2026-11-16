@@ -338,8 +338,11 @@ namespace moppe {
         presences.push_back ({ .position = m_companion->walker->position,
                                .velocity = m_companion->walker->velocity });
       const AnimalGround ground = animal_ground ();
-      m_animals.step (
-        ground, presences, session ().camera ().position (), 700.0f, dt);
+      m_animals.step (ground,
+                      presences,
+                      session ().camera ().position (),
+                      700.0f * u::m,
+                      seconds (dt));
       m_hens.step (ground,
                    presences,
                    session ().camera ().position (),

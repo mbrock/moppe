@@ -13,64 +13,64 @@ namespace moppe::game {
     constexpr std::array<SpeciesTraits, species_count> species_traits = { {
       { .name = "horse",
         .plural = "horses",
-        .walk = 1.5f,
-        .run = 4.5f,
-        .wary = 5.0f,
-        .flight = 25.0f,
-        .length = 1.7f,
-        .stride = 1.7f,
+        .walk = 1.5f * u::m / u::s,
+        .run = 4.5f * u::m / u::s,
+        .wary = 5.0f * u::m,
+        .flight = 25.0f * u::m,
+        .length = 1.7f * u::m,
+        .stride = 1.7f * u::m,
         .stock = true },
       { .name = "cow",
         .plural = "cows",
-        .walk = 1.1f,
-        .run = 3.0f,
-        .wary = 5.0f,
-        .flight = 18.0f,
-        .length = 1.6f,
-        .stride = 1.4f,
+        .walk = 1.1f * u::m / u::s,
+        .run = 3.0f * u::m / u::s,
+        .wary = 5.0f * u::m,
+        .flight = 18.0f * u::m,
+        .length = 1.6f * u::m,
+        .stride = 1.4f * u::m,
         .stock = true },
       { .name = "sheep",
         .plural = "sheep",
-        .walk = 0.9f,
-        .run = 3.2f,
-        .wary = 9.0f,
-        .flight = 22.0f,
-        .length = 0.95f,
-        .stride = 0.75f,
+        .walk = 0.9f * u::m / u::s,
+        .run = 3.2f * u::m / u::s,
+        .wary = 9.0f * u::m,
+        .flight = 22.0f * u::m,
+        .length = 0.95f * u::m,
+        .stride = 0.75f * u::m,
         .stock = true },
       { .name = "reindeer",
         .plural = "reindeer",
-        .walk = 1.4f,
-        .run = 6.0f,
-        .wary = 30.0f,
-        .flight = 70.0f,
-        .length = 1.3f,
-        .stride = 1.4f },
+        .walk = 1.4f * u::m / u::s,
+        .run = 6.0f * u::m / u::s,
+        .wary = 30.0f * u::m,
+        .flight = 70.0f * u::m,
+        .length = 1.3f * u::m,
+        .stride = 1.4f * u::m },
       { .name = "moose",
         .plural = "moose",
-        .walk = 1.5f,
-        .run = 6.5f,
-        .wary = 28.0f,
-        .flight = 80.0f,
-        .length = 1.9f,
-        .stride = 2.0f },
+        .walk = 1.5f * u::m / u::s,
+        .run = 6.5f * u::m / u::s,
+        .wary = 28.0f * u::m,
+        .flight = 80.0f * u::m,
+        .length = 1.9f * u::m,
+        .stride = 2.0f * u::m },
       { .name = "roe deer",
         .plural = "roe deer",
-        .walk = 1.0f,
-        .run = 8.0f,
-        .wary = 38.0f,
-        .flight = 90.0f,
-        .length = 0.9f,
-        .stride = 0.9f,
+        .walk = 1.0f * u::m / u::s,
+        .run = 8.0f * u::m / u::s,
+        .wary = 38.0f * u::m,
+        .flight = 90.0f * u::m,
+        .length = 0.9f * u::m,
+        .stride = 0.9f * u::m,
         .bounds = true },
       { .name = "pig",
         .plural = "pigs",
-        .walk = 0.7f,
-        .run = 2.4f,
-        .wary = 3.0f,
-        .flight = 6.0f,
-        .length = 1.1f,
-        .stride = 0.6f,
+        .walk = 0.7f * u::m / u::s,
+        .run = 2.4f * u::m / u::s,
+        .wary = 3.0f * u::m,
+        .flight = 6.0f * u::m,
+        .length = 1.1f * u::m,
+        .stride = 0.6f * u::m,
         .stock = true },
     } };
 
@@ -181,7 +181,7 @@ namespace moppe::game {
       for (int tries = 0; placed < count && tries < count * 12; ++tries) {
         const std::uint32_t h = animals_hash (seed, tries + 1);
         const float angle = animals_tau * animals_unit (h, 1);
-        const float r = t.length *
+        const float r = meters_value (t.length) *
                         (0.8f + 3.5f * std::sqrt (animals_unit (h, 2))) *
                         (1.0f + 0.25f * count);
         const Vec3 at = wrap_into (
@@ -192,8 +192,8 @@ namespace moppe::game {
         for (std::size_t k = plan.animals.size () - placed;
              k < plan.animals.size ();
              ++k)
-          crowded |=
-            flat_distance (plan.animals[k].position, at, g) < t.length * 0.9f;
+          crowded |= flat_distance (plan.animals[k].position, at, g) <
+                     meters_value (t.length) * 0.9f;
         if (crowded)
           continue;
         Animal a;
@@ -203,7 +203,7 @@ namespace moppe::game {
         a.position = Vec3 (at[0], g.ground (at[0], at[2]), at[2]);
         a.heading = animals_tau * animals_unit (h, 4);
         a.doing = Animal::Doing::grazing;
-        a.left = 4.0f + 20.0f * animals_unit (h, 5);
+        a.left = (4.0f + 20.0f * animals_unit (h, 5)) * u::s;
         a.head = 1.0f;
         a.goal = a.position;
         plan.animals.push_back (a);
@@ -231,7 +231,7 @@ namespace moppe::game {
         static_cast<std::uint32_t> (plan.herds.size ());
       plan.herds.push_back ({ .species = stall.species,
                               .home = stall.at,
-                              .range = 1.0f + stall.half_along });
+                              .range = (1.0f + stall.half_along) * u::m });
       const Vec3 along = forward_of (stall.heading);
       const Vec3 across (along[2], 0.0f, -along[0]);
       for (int n = 0; n < stall.count; ++n) {
@@ -259,7 +259,7 @@ namespace moppe::game {
           a.heading = animals_tau * animals_unit (h, 2);
         }
         a.doing = Animal::Doing::grazing;
-        a.left = 3.0f + 12.0f * animals_unit (h, 3);
+        a.left = (3.0f + 12.0f * animals_unit (h, 3)) * u::s;
         a.head = 1.0f;
         a.goal = a.position;
         plan.animals.push_back (a);
@@ -273,7 +273,7 @@ namespace moppe::game {
       plan.herds.push_back (
         { .species = species,
           .home = Vec3 (home[0], g.ground (home[0], home[2]), home[2]),
-          .range = range });
+          .range = range * u::m });
       const std::size_t before = plan.animals.size ();
       gather_herd (plan,
                    g,
@@ -477,7 +477,7 @@ namespace moppe::game {
     Vec3 best = a.position;
     for (int k = 0; k < 10; ++k) {
       const float turn = (rand (r) + rand (r) - 1.0f) * 2.2f;
-      const float distance = t.length * 2.0f + far * rand (r);
+      const float distance = meters_value (t.length) * 2.0f + far * rand (r);
       const float heading = a.heading + turn;
       const Vec3 at =
         wrap_into (a.position + forward_of (heading) * distance, g);
@@ -487,9 +487,11 @@ namespace moppe::game {
         continue;
       float score = liking (a.species, g.pasture (at[0], at[2]));
       const float from_home = flat_distance (at, herd.home, g);
-      score -= 2.0f * smooth01 (0.7f * herd.range, herd.range, from_home);
+      const float range = meters_value (herd.range);
+      score -= 2.0f * smooth01 (0.7f * range, range, from_home);
       const float from_mates = flat_distance (at, mates, g);
-      score -= 0.8f * smooth01 (t.length * 4.0f, t.length * 12.0f, from_mates);
+      const float length = meters_value (t.length);
+      score -= 0.8f * smooth01 (length * 4.0f, length * 12.0f, from_mates);
       score += 0.15f * rand (r);
       if (score > best_score) {
         best_score = score;
@@ -512,20 +514,20 @@ namespace moppe::game {
     for (int k = 0; k < 9; ++k) {
       const float swing = (k % 2 ? 1.0f : -1.0f) * 0.35f * ((k + 1) / 2) +
                           0.3f * (rand (r) - 0.5f);
-      const float distance = t.flight * (0.7f + 0.6f * rand (r));
+      const float distance = meters_value (t.flight) * (0.7f + 0.6f * rand (r));
       const Vec3 at =
         wrap_into (a.position + forward_of (base + swing) * distance, g);
       const Vec3 mid = wrap_into (
         a.position + forward_of (base + swing) * (0.5f * distance), g);
       if (footing (g, at[0], at[2]) && g.dry (mid[0], mid[2])) {
         a.goal = at;
-        a.left = 30.0f;
+        a.left = 30.0f * u::s;
         return;
       }
     }
     // Hemmed in: it stands its ground and watches.
     a.doing = Animal::Doing::alert;
-    a.left = 3.0f;
+    a.left = 3.0f * u::s;
   }
 
   // A beast in a barn eats at the manger (or roots about its pen), stands
@@ -535,7 +537,9 @@ namespace moppe::game {
                               const AnimalGround& g,
                               const Presence* nearest,
                               float nearest_distance,
-                              float dt) {
+                              seconds_t dt) {
+    // The head, the look, and the heading turn by unit-blind rates.
+    const float h = seconds_value (dt);
     const SpeciesTraits& t = traits (a.species);
     std::uint32_t& r = m_random[&a - m_plan.animals.data ()];
     using Doing = Animal::Doing;
@@ -543,11 +547,11 @@ namespace moppe::game {
     const Vec3 across (along[2], 0.0f, -along[0]);
     // Someone coming close is looked at, and for a while after.
     const bool watched = nearest && nearest_distance < 6.0f;
-    if (watched && a.doing != Doing::alert && rand (r) < dt * 0.8f) {
+    if (watched && a.doing != Doing::alert && rand (r) < h * 0.8f) {
       a.doing = Doing::alert;
-      a.left = 2.0f + 4.0f * rand (r);
+      a.left = (2.0f + 4.0f * rand (r)) * u::s;
     }
-    if (a.left < 0.0f) {
+    if (a.left < seconds_t {}) {
       const float u = rand (r);
       if (!a.tied && u < 0.35f) {
         // A few steps to another corner of the pen.
@@ -555,16 +559,17 @@ namespace moppe::game {
                  along * ((2.0f * rand (r) - 1.0f) * 0.8f * a.pen_along) +
                  across * ((2.0f * rand (r) - 1.0f) * 0.8f * a.pen_across);
         a.doing = Doing::walking;
-        a.left = 12.0f;
+        a.left = 12.0f * u::s;
       } else if (u < 0.75f) {
         a.doing = Doing::grazing;
-        a.left = 6.0f + 18.0f * rand (r);
+        a.left = (6.0f + 18.0f * rand (r)) * u::s;
       } else {
         a.doing = Doing::standing;
-        a.left = 3.0f + 6.0f * rand (r);
+        a.left = (3.0f + 6.0f * rand (r)) * u::s;
       }
     }
-    float head = 0.0f, speed = 0.0f, face = a.heading;
+    float head = 0.0f, face = a.heading;
+    speed_t speed {};
     a.look_goal = 0.0f;
     switch (a.doing) {
     case Doing::grazing:
@@ -572,7 +577,8 @@ namespace moppe::game {
       break;
     case Doing::standing:
       head = 0.05f;
-      a.look_goal = 0.6f * std::sin (a.left * 0.8f + (a.seed & 63));
+      a.look_goal =
+        0.6f * std::sin (seconds_value (a.left) * 0.8f + (a.seed & 63));
       break;
     case Doing::alert:
     case Doing::fleeing:
@@ -585,14 +591,14 @@ namespace moppe::game {
         if (!a.tied && std::abs (off) > 1.0f)
           face = heading_of (to);
       }
-      if (!watched && a.left < 0.0f)
-        a.left = 0.0f;
+      if (!watched && a.left < seconds_t {})
+        a.left = 0.0f * u::s;
       break;
     case Doing::walking: {
       const Vec3 to = wrapped (a.position, a.goal, g);
       if (std::hypot (to[0], to[2]) < 0.3f) {
         a.doing = Doing::grazing;
-        a.left = 5.0f + 12.0f * rand (r);
+        a.left = (5.0f + 12.0f * rand (r)) * u::s;
       } else {
         face = heading_of (to);
         speed = t.walk;
@@ -603,13 +609,16 @@ namespace moppe::game {
     }
     if (a.tied) {
       a.heading = a.pen_heading;
-      a.speed = 0.0f;
+      a.speed = {};
     } else {
       const float off = angle_between (a.heading, face);
-      a.heading += std::clamp (off, -1.0f * dt, 1.0f * dt);
+      a.heading += std::clamp (off, -1.0f * h, 1.0f * h);
       speed *= std::clamp (1.4f - std::abs (off), 0.1f, 1.0f);
-      a.speed += std::clamp (speed - a.speed, -2.0f * dt, 1.0f * dt);
-      Vec3 next = a.position + forward_of (a.heading) * (a.speed * dt);
+      a.speed += std::clamp<speed_t> (speed - a.speed,
+                                      -2.0f * u::m / pow<2> (u::s) * dt,
+                                      1.0f * u::m / pow<2> (u::s) * dt);
+      Vec3 next =
+        a.position + forward_of (a.heading) * meters_value (a.speed * dt);
       // Within the pen's walls, its body's half length in from them.
       Vec3 rel = next - a.pen;
       const float x = std::clamp (dot (rel, along),
@@ -627,11 +636,11 @@ namespace moppe::game {
           if (l < 0.75f && l > 1e-3f)
             next = next + d * ((0.75f - l) / l * 0.3f);
         }
-      a.gait += length (next - a.position) / t.stride;
+      a.gait += length (next - a.position) / meters_value (t.stride);
       a.position = next;
     }
-    a.head += std::clamp (head - a.head, -1.4f * dt, 1.0f * dt);
-    a.look += std::clamp (a.look_goal - a.look, -1.2f * dt, 1.2f * dt);
+    a.head += std::clamp (head - a.head, -1.4f * h, 1.0f * h);
+    a.look += std::clamp (a.look_goal - a.look, -1.2f * h, 1.2f * h);
     a.position[1] = g.ground (a.position[0], a.position[2]);
     a.gait = std::fmod (a.gait, 1024.0f);
   }
@@ -639,10 +648,12 @@ namespace moppe::game {
   void Animals::step (const AnimalGround& g,
                       std::span<const Presence> presences,
                       const Vec3& focus,
-                      float reach,
-                      float dt) {
-    if (dt <= 0.0f)
+                      meters_t reach,
+                      seconds_t dt) {
+    if (dt <= seconds_t {})
       return;
+    // The head, the look, and the heading turn by unit-blind rates.
+    const float h = seconds_value (dt);
     std::vector<Animal>& all = m_plan.animals;
     // The herds' middles, for keeping together.
     std::vector<Vec3> middles (m_plan.herds.size ());
@@ -658,13 +669,13 @@ namespace moppe::game {
 
     for (std::size_t i = 0; i < all.size (); ++i) {
       Animal& a = all[i];
-      if (flat_distance (a.position, focus, g) > reach)
+      if (flat_distance (a.position, focus, g) > meters_value (reach))
         continue;
       const SpeciesTraits& t = traits (a.species);
       const Herd& herd = m_plan.herds[a.herd];
       std::uint32_t& r = m_random[i];
       a.left -= dt;
-      a.fright = std::max (0.0f, a.fright - dt / 25.0f);
+      a.fright = std::max (0.0f, a.fright - h / 25.0f);
       if (a.indoors) {
         const Presence* nearest = nullptr;
         float nearest_distance = 1e9f;
@@ -685,7 +696,7 @@ namespace moppe::game {
       float nearest_ratio = 1e9f;
       for (const Presence& p : presences) {
         const float speed = std::hypot (p.velocity[0], p.velocity[2]);
-        const float wary = t.wary * (1.0f + 0.5f * a.fright) *
+        const float wary = meters_value (t.wary) * (1.0f + 0.5f * a.fright) *
                            (p.machine ? 2.2f : 1.0f) *
                            (1.0f + std::min (speed, 12.0f) / 5.0f);
         const float ratio = flat_distance (a.position, p.position, g) / wary;
@@ -696,7 +707,7 @@ namespace moppe::game {
       }
       if (nearest) {
         // Nothing runs it down: what reaches its body shoves it aside.
-        const float room = 0.45f * t.length + 0.6f;
+        const float room = 0.45f * meters_value (t.length) + 0.6f;
         const Vec3 off = wrapped (nearest->position, a.position, g);
         const float d = std::hypot (off[0], off[2]);
         if (d < room) {
@@ -709,8 +720,9 @@ namespace moppe::game {
       }
       if (nearest && nearest_ratio < 1.0f &&
           a.doing != Animal::Doing::fleeing) {
-        const bool close = nearest_ratio < 0.55f || nearest->machine ||
-                           (a.doing == Animal::Doing::alert && a.left < 0.0f);
+        const bool close =
+          nearest_ratio < 0.55f || nearest->machine ||
+          (a.doing == Animal::Doing::alert && a.left < seconds_t {});
         if (close) {
           startle (a, nearest->position, g);
           // The rest of the herd goes too.
@@ -723,7 +735,7 @@ namespace moppe::game {
         } else if (a.doing != Animal::Doing::alert) {
           a.doing = Animal::Doing::alert;
           a.threat = nearest->position;
-          a.left = 1.2f + 1.8f * rand (r);
+          a.left = (1.2f + 1.8f * rand (r)) * u::s;
         }
       }
       if (nearest && a.doing == Animal::Doing::alert)
@@ -734,55 +746,55 @@ namespace moppe::game {
       const bool there = flat_distance (a.position, a.goal, g) < 0.8f;
       switch (a.doing) {
       case Doing::grazing:
-        if (a.left < 0.0f) {
+        if (a.left < seconds_t {}) {
           const float u = rand (r);
           if (u < 0.55f) {
             choose (a, herd, g, middles[a.herd]);
             a.doing = Doing::walking;
-            a.left = 40.0f;
+            a.left = 40.0f * u::s;
           } else if (u < 0.85f) {
             a.doing = Doing::standing;
-            a.left = 3.0f + 7.0f * rand (r);
+            a.left = (3.0f + 7.0f * rand (r)) * u::s;
           } else {
-            a.left = 6.0f + 12.0f * rand (r);
+            a.left = (6.0f + 12.0f * rand (r)) * u::s;
           }
         }
         break;
       case Doing::standing:
-        if (a.left < 0.0f) {
+        if (a.left < seconds_t {}) {
           if (rand (r) < 0.6f) {
             a.doing = Doing::grazing;
-            a.left = 8.0f + 22.0f * rand (r);
+            a.left = (8.0f + 22.0f * rand (r)) * u::s;
           } else {
             choose (a, herd, g, middles[a.herd]);
             a.doing = Doing::walking;
-            a.left = 40.0f;
+            a.left = 40.0f * u::s;
           }
         }
         break;
       case Doing::walking:
-        if (there || a.left < 0.0f) {
+        if (there || a.left < seconds_t {}) {
           a.doing = Doing::grazing;
-          a.left = 8.0f + 22.0f * rand (r);
+          a.left = (8.0f + 22.0f * rand (r)) * u::s;
         }
         break;
       case Doing::alert:
-        if (a.left < 0.0f && (!nearest || nearest_ratio > 1.0f)) {
+        if (a.left < seconds_t {} && (!nearest || nearest_ratio > 1.0f)) {
           a.doing = Doing::standing;
-          a.left = 2.0f + 4.0f * rand (r);
+          a.left = (2.0f + 4.0f * rand (r)) * u::s;
         }
         break;
       case Doing::fleeing:
-        if (there || a.left < 0.0f) {
+        if (there || a.left < seconds_t {}) {
           // Stopped, it looks back at what it ran from.
           a.doing = Doing::standing;
-          a.left = 4.0f + 6.0f * rand (r);
+          a.left = (4.0f + 6.0f * rand (r)) * u::s;
         }
         break;
       }
 
       // Where it wants to face and how fast it wants to go.
-      float speed = 0.0f;
+      speed_t speed {};
       float face = a.heading;
       float turn_rate = 1.2f;
       float head = 0.0f;
@@ -791,11 +803,12 @@ namespace moppe::game {
       case Doing::grazing: {
         head = 1.0f;
         // Now and then a step or two on to the next mouthful.
-        const float beat =
-          std::fmod (a.left * 0.23f + (a.seed & 255) / 255.0f, 1.0f);
-        speed = beat < 0.16f ? 0.35f * t.walk : 0.0f;
+        const float beat = std::fmod (
+          seconds_value (a.left) * 0.23f + (a.seed & 255) / 255.0f, 1.0f);
+        speed = beat < 0.16f ? 0.35f * t.walk : speed_t {};
         turn_rate = 0.3f;
-        face = a.heading + 0.3f * std::sin (a.left * 0.4f + a.seed);
+        face =
+          a.heading + 0.3f * std::sin (seconds_value (a.left) * 0.4f + a.seed);
         break;
       }
       case Doing::standing: {
@@ -805,7 +818,8 @@ namespace moppe::game {
           a.look_goal = std::clamp (
             angle_between (a.heading, heading_of (to)), -1.0f, 1.0f);
         } else {
-          a.look_goal = 0.7f * std::sin (a.left * 0.9f + (a.seed & 63));
+          a.look_goal =
+            0.7f * std::sin (seconds_value (a.left) * 0.9f + (a.seed & 63));
         }
         break;
       }
@@ -841,16 +855,19 @@ namespace moppe::game {
       }
 
       const float off = angle_between (a.heading, face);
-      a.heading += std::clamp (off, -turn_rate * dt, turn_rate * dt);
+      a.heading += std::clamp (off, -turn_rate * h, turn_rate * h);
       // Turning hard, it slows to turn on the spot.
       speed *= std::clamp (1.4f - std::abs (off), 0.15f, 1.0f);
-      const float accel = a.doing == Doing::fleeing ? 6.0f : 1.5f;
-      a.speed += std::clamp (speed - a.speed, -accel * dt * 1.5f, accel * dt);
-      a.head += std::clamp (head - a.head, -1.6f * dt, 1.2f * dt);
-      a.look += std::clamp (a.look_goal - a.look, -1.5f * dt, 1.5f * dt);
+      const metres_per_second_squared_t accel =
+        (a.doing == Doing::fleeing ? 6.0f : 1.5f) * u::m / pow<2> (u::s);
+      a.speed +=
+        std::clamp<speed_t> (speed - a.speed, -accel * dt * 1.5f, accel * dt);
+      a.head += std::clamp (head - a.head, -1.6f * h, 1.2f * h);
+      a.look += std::clamp (a.look_goal - a.look, -1.5f * h, 1.5f * h);
 
-      if (a.speed > 1e-3f) {
-        Vec3 next = a.position + forward_of (a.heading) * (a.speed * dt);
+      if (a.speed > 1e-3f * u::m / u::s) {
+        Vec3 next =
+          a.position + forward_of (a.heading) * meters_value (a.speed * dt);
         next = wrap_into (next, g);
         // Herd mates keep their room.
         for (std::size_t k = 0; k < all.size (); ++k) {
@@ -858,23 +875,23 @@ namespace moppe::game {
             continue;
           const Vec3 d = wrapped (all[k].position, next, g);
           const float l = std::hypot (d[0], d[2]);
-          const float room = 0.8f * t.length;
+          const float room = 0.8f * meters_value (t.length);
           if (l < room && l > 1e-3f)
             next = next + d * ((room - l) / l * 0.5f);
         }
         if (g.clear)
-          next = g.clear (next, 0.3f * t.length);
+          next = g.clear (next, 0.3f * meters_value (t.length));
         if (footing (g, next[0], next[2])) {
           a.position = next;
-          const float stride =
+          const meters_t stride =
             a.speed > 1.6f * t.walk ? 2.4f * t.stride : t.stride;
-          a.gait += a.speed * dt / stride;
+          a.gait += (a.speed * dt / stride).numerical_value_in (one);
         } else {
           // Water or a crag ahead: it stops and thinks again.
-          a.speed = 0.0f;
+          a.speed = {};
           a.goal = a.position;
           if (a.doing == Doing::fleeing)
-            a.doing = Doing::alert, a.left = 2.0f;
+            a.doing = Doing::alert, a.left = 2.0f * u::s;
         }
       }
       a.position[1] = g.ground (a.position[0], a.position[2]);

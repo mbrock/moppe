@@ -37,17 +37,17 @@ namespace moppe::game {
     const char* name;
     const char* plural;
     // Walking and running pace, m/s.
-    float walk = 1.0f;
-    float run = 3.0f;
+    speed_t walk = 1.0f * u::m / u::s;
+    speed_t run = 3.0f * u::m / u::s;
     // How near someone on foot may come before it moves off, m; anything
     // moving fast is minded from further off.
-    float wary = 10.0f;
+    meters_t wary = 10.0f * u::m;
     // How far it goes once startled, m.
-    float flight = 30.0f;
+    meters_t flight = 30.0f * u::m;
     // Its length from chest to rump, m: its room among its herd.
-    float length = 1.6f;
+    meters_t length = 1.6f * u::m;
     // How far one stride carries it at a walk, m.
-    float stride = 1.6f;
+    meters_t stride = 1.6f * u::m;
     // Kept stock (as opposed to wild).
     bool stock = false;
     // Runs by bounding (the roe deer) rather than trotting.
@@ -100,9 +100,9 @@ namespace moppe::game {
     // What it is doing, for how much longer, and where it is going.
     enum class Doing { grazing, standing, walking, alert, fleeing };
     Doing doing = Doing::standing;
-    float left = 0.0f;
+    seconds_t left {};
     Vec3 goal {};
-    float speed = 0.0f;
+    speed_t speed {};
     // What made it look up, and where that was.
     Vec3 threat {};
     // How far its gait has gone, in strides; how far its head is down to
@@ -141,7 +141,7 @@ namespace moppe::game {
     Species species = Species::cow;
     // Where it keeps to, and how far it strays from there.
     Vec3 home {};
-    float range = 100.0f;
+    meters_t range = 100.0f * u::m;
   };
 
   // Something the animals mind: someone on foot, or a machine.
@@ -178,8 +178,8 @@ namespace moppe::game {
     void step (const AnimalGround& ground,
                std::span<const Presence> presences,
                const Vec3& focus,
-               float reach,
-               float dt);
+               meters_t reach,
+               seconds_t dt);
 
     std::span<const Animal> animals () const noexcept {
       return m_plan.animals;
@@ -198,7 +198,7 @@ namespace moppe::game {
                        const AnimalGround& ground,
                        const Presence* nearest,
                        float nearest_distance,
-                       float dt);
+                       seconds_t dt);
     float rand (std::uint32_t& state) const;
 
     AnimalPlan m_plan;

@@ -158,15 +158,18 @@ namespace moppe::game {
 
         // The gait: a walk's four beats, a trot's diagonal pairs, or the
         // roe deer's bound, by how fast it goes.
-        const float pace = std::clamp (a.speed / t.walk, 0.0f, 1.0f);
+        const float pace =
+          std::clamp ((a.speed / t.walk).numerical_value_in (one), 0.0f, 1.0f);
         const bool running = a.speed > 1.6f * t.walk;
         float duty = 0.62f, swing = 0.26f * pace, fold = 0.9f * pace;
         std::array<float, 4> offset = { 0.25f, 0.75f, 0.0f, 0.5f };
         float bob = 0.0f, rock = 0.0f;
-        const float run_share = std::clamp ((a.speed - 1.6f * t.walk) /
-                                              (t.run - 1.6f * t.walk + 0.01f),
-                                            0.0f,
-                                            1.0f);
+        const float run_share =
+          std::clamp (((a.speed - 1.6f * t.walk) /
+                       (t.run - 1.6f * t.walk + 0.01f * u::m / u::s))
+                        .numerical_value_in (one),
+                      0.0f,
+                      1.0f);
         if (running) {
           if (t.bounds) {
             offset = { 0.0f, 0.06f, 0.5f, 0.56f };
@@ -174,13 +177,15 @@ namespace moppe::game {
             swing = 0.6f;
             fold = 1.3f;
             rock = 0.12f * std::sin (2.0f * animal_pi * a.gait);
-            bob = 0.08f * std::sin (2.0f * animal_pi * a.gait) * t.length;
+            bob = 0.08f * std::sin (2.0f * animal_pi * a.gait) *
+                  meters_value (t.length);
           } else {
             offset = { 0.0f, 0.5f, 0.5f, 0.0f };
             duty = 0.42f;
             swing = 0.42f + 0.1f * run_share;
             fold = 1.2f;
-            bob = 0.025f * std::cos (4.0f * animal_pi * a.gait) * t.length;
+            bob = 0.025f * std::cos (4.0f * animal_pi * a.gait) *
+                  meters_value (t.length);
           }
         }
 
@@ -272,7 +277,7 @@ namespace moppe::game {
       if (d2 > reach * reach)
         continue;
       // Behind the camera, by more than its own size.
-      const float size = 2.0f * traits (a.species).length;
+      const float size = 2.0f * meters_value (traits (a.species).length);
       if (dot (to, forward) < -size)
         continue;
       const ad::Pose p = ad::pose (a, ground, time);

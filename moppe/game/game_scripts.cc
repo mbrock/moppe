@@ -117,7 +117,7 @@ namespace moppe {
           // Of a few ways in, the first on dry ground.
           const AnimalGround g = animal_ground ();
           const SpeciesTraits& t = traits (best->species);
-          const float away = t.stock ? 9.0f : 2.0f * t.wary;
+          const float away = t.stock ? 9.0f : 2.0f * meters_value (t.wary);
           for (int k = 0; k < 12 && !stand; ++k) {
             const float angle = 0.5236f * k;
             const Vec3 at =

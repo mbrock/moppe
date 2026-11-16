@@ -65,7 +65,8 @@ MOPPE_TEST (the_stock_grazes_round_its_farm_and_keeps_out_of_the_water) {
     start.push_back (a.position);
   const float dt = 1.0f / 30.0f;
   for (int step = 0; step < 120 * 30; ++step) {
-    animals.step (country, {}, Vec3 (1000, 0, 1000), 5000.0f, dt);
+    animals.step (
+      country, {}, Vec3 (1000, 0, 1000), 5000.0f * u::m, seconds (dt));
     for (std::size_t i = 0; i < animals.animals ().size (); ++i) {
       const Animal& a = animals.animals ()[i];
       MOPPE_CHECK (!animals_test_in_lake (a.position[0], a.position[2]));
@@ -103,7 +104,7 @@ MOPPE_TEST (
   for (int step = 0; step < 8 * 30; ++step) {
     walker.position = walker.position + walker.velocity * dt;
     const Presence presences[] = { walker };
-    animals.step (country, presences, at, 5000.0f, dt);
+    animals.step (country, presences, at, 5000.0f * u::m, seconds (dt));
     fled |= animals.animals ()[sheep].doing == Animal::Doing::fleeing;
   }
   MOPPE_CHECK (fled);
@@ -123,11 +124,11 @@ MOPPE_TEST (
   for (int step = 0; step < 7 * 30; ++step) {
     jeep.position = jeep.position + jeep.velocity * dt;
     const Presence presences[] = { jeep };
-    herd.step (country, presences, middle, 5000.0f, dt);
+    herd.step (country, presences, middle, 5000.0f * u::m, seconds (dt));
     for (const Animal& a : herd.animals ())
       MOPPE_CHECK (std::hypot (a.position[0] - jeep.position[0],
                                a.position[2] - jeep.position[2]) >
-                   0.4f * traits (a.species).length + 0.5f);
+                   0.4f * meters_value (traits (a.species).length) + 0.5f);
   }
 }
 
@@ -188,7 +189,7 @@ MOPPE_TEST (the_barns_stock_stays_in_its_stalls_and_pen) {
     const float x = 1002.0f + 4.0f * std::sin (step * dt * 0.3f);
     const Presence walker { .position = Vec3 (x, 130.0f, 1497.0f) };
     const Presence presences[] = { walker };
-    animals.step (country, presences, stall, 500.0f, dt);
+    animals.step (country, presences, stall, 500.0f * u::m, seconds (dt));
     for (std::size_t i = 0; i < animals.animals ().size (); ++i) {
       const Animal& a = animals.animals ()[i];
       if (!a.indoors)
