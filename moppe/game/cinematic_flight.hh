@@ -39,8 +39,8 @@ namespace moppe::game {
   struct CinematicFlightWaypoint {
     Vec3 position;
     Vec3 subject;
-    float cruise_speed = 90.0f;
-    float field_of_view = 58.0f;
+    speed_t cruise_speed = 90.0f * u::m / u::s;
+    degrees_t field_of_view = 58.0f * u::deg;
   };
 
   // How a flight carries itself over the ground: the opening's is a fast,
@@ -50,21 +50,21 @@ namespace moppe::game {
     // The route keeps this far over the ground beneath it, climbing before
     // a rise over about ANTICIPATION metres, and the aircraft itself never
     // comes lower than FLOOR.
-    float clearance = 22.0f;
-    float floor = 18.0f;
-    float anticipation = 95.0f;
-    // The slowest a tight bend brings it down to, metres a second.
-    float slowest_turn = 42.0f;
+    meters_t clearance = 22.0f * u::m;
+    meters_t floor = 18.0f * u::m;
+    meters_t anticipation = 95.0f * u::m;
+    // The slowest a tight bend brings it down to.
+    speed_t slowest_turn = 42.0f * u::m / u::s;
     // The stretch of route ahead its gimbal aims along, as the least and
-    // most metres to that stretch's near and far ends.
-    float look_near_least = 35.0f;
-    float look_near_most = 90.0f;
-    float look_far_least = 220.0f;
-    float look_far_most = 430.0f;
+    // most to that stretch's near and far ends.
+    meters_t look_near_least = 35.0f * u::m;
+    meters_t look_near_most = 90.0f * u::m;
+    meters_t look_far_least = 220.0f * u::m;
+    meters_t look_far_most = 430.0f * u::m;
     // How much of its aim is the waypoints' subject and not the route.
     float subject_weight = 0.52f;
-    // The steepest it banks into a turn, radians.
-    float bank = 0.30f;
+    // The steepest it banks into a turn.
+    radians_t bank = 0.30f * u::rad;
   };
 
   struct CinematicFlightPlan {
@@ -110,7 +110,7 @@ namespace moppe::game {
                                          const terrain::LakeCensus& census,
                                          const terrain::DrainageGraph& drainage,
                                          const terrain::RiverNetwork& rivers,
-                                         float seconds);
+                                         seconds_t seconds);
 
   struct CinematicFlightControls {
     // Body-relative pilot trim. The automatic opening leaves these at zero;
@@ -129,15 +129,17 @@ namespace moppe::game {
     void start (const CinematicFlightPlan& plan,
                 const map::SurfaceGeometry& surface);
     void stop () noexcept;
-    void tick (float dt,
+    // The flight model is a tuned drone's, worked in plain metres and
+    // seconds inside; what it is told and what it reports carry units.
+    void tick (seconds_t step,
                const map::SurfaceGeometry& surface,
                const CinematicFlightControls& controls = {});
 
     bool active () const noexcept {
       return m_active;
     }
-    float elapsed () const noexcept {
-      return m_elapsed;
+    seconds_t elapsed () const noexcept {
+      return m_elapsed * u::s;
     }
     float route_progress () const noexcept {
       if (m_arc_samples.empty () || m_arc_samples.back ().distance <= 0.0f)
@@ -149,14 +151,14 @@ namespace moppe::game {
       return m_position;
     }
     Vec3 forward () const;
-    float field_of_view () const noexcept {
-      return m_field_of_view;
+    degrees_t field_of_view () const noexcept {
+      return m_field_of_view * u::deg;
     }
-    float speed () const noexcept {
-      return m_speed;
+    speed_t speed () const noexcept {
+      return m_speed * u::m / u::s;
     }
-    float bank () const noexcept {
-      return m_bank;
+    radians_t bank () const noexcept {
+      return m_bank * u::rad;
     }
     float motion_blur () const noexcept {
       return std::clamp ((m_speed - 35.0f) / 185.0f, 0.08f, 0.72f);

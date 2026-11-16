@@ -188,7 +188,7 @@ MOPPE_TEST (cinematic_flight_opens_with_a_fast_trail_reveal) {
   flight.start (plan, fixture.surface);
   bool looked_down_at_route = false;
   for (int frame = 0; frame < 180 && flight.active (); ++frame) {
-    flight.tick (1.0f / 60.0f, fixture.surface);
+    flight.tick (seconds (1.0f / 60.0f), fixture.surface);
     looked_down_at_route |= flight.forward ()[1] < -0.08f;
   }
   MOPPE_CHECK (looked_down_at_route);
@@ -285,7 +285,7 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
   Vec3 previous_forward = flight.forward ();
   Vec3 previous_motion {};
   bool has_previous_motion = false;
-  float peak_speed = flight.speed ();
+  float peak_speed = speed_value (flight.speed ());
 
   for (int frame = 0; frame < 12000 && flight.active (); ++frame) {
     const game::CinematicFlightControls controls {
@@ -293,7 +293,7 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
       .lift = frame >= 180 && frame < 360 ? 0.4f : 0.0f,
       .pace = frame < 360 ? 0.25f : 0.0f
     };
-    flight.tick (1.0f / 60.0f, fixture.surface, controls);
+    flight.tick (seconds (1.0f / 60.0f), fixture.surface, controls);
     const Vec3 p = flight.position ();
     const Vec3 view_forward = flight.forward ();
     const Vec3 motion = p - previous_position;
@@ -309,8 +309,8 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
     previous_position = p;
     MOPPE_CHECK (dot (view_forward, previous_forward) > 0.995f);
     previous_forward = view_forward;
-    peak_speed = std::max (peak_speed, flight.speed ());
-    MOPPE_CHECK (std::abs (flight.bank ()) <= 0.301f);
+    peak_speed = std::max (peak_speed, speed_value (flight.speed ()));
+    MOPPE_CHECK (std::abs (radians_value (flight.bank ())) <= 0.301f);
     MOPPE_CHECK (
       p[1] >= terrain::surface_elevation_value (
                 spatial::sample<terrain::surface_elevation> (
@@ -320,7 +320,7 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
     MOPPE_CHECK (flight.motion_blur () >= 0.08f);
     MOPPE_CHECK (flight.motion_blur () <= 0.72f);
   }
-  MOPPE_CHECK (flight.elapsed () > 1.0f);
+  MOPPE_CHECK (seconds_value (flight.elapsed ()) > 1.0f);
   MOPPE_CHECK (peak_speed > 150.0f);
   MOPPE_CHECK (!flight.active ());
 }

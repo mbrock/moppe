@@ -185,14 +185,14 @@ namespace moppe {
           tree[1] = tree_height (site).numerical_value_in (u::m);
           trees.push_back (tree);
         }
-        m_cinematic_plan =
-          plan_river_flight (surface (),
-                             trees,
-                             generated_world ().water_surface (),
-                             lake_census (),
-                             drainage (),
-                             rivers (),
-                             seconds ? std::strtof (seconds, nullptr) : 0.0f);
+        m_cinematic_plan = plan_river_flight (
+          surface (),
+          trees,
+          generated_world ().water_surface (),
+          lake_census (),
+          drainage (),
+          rivers (),
+          (seconds ? std::strtof (seconds, nullptr) : 0.0f) * u::s);
         return;
       }
       if (!flight) {

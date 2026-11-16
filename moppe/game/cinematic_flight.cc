@@ -262,10 +262,11 @@ namespace moppe::game {
           spatial::sample<terrain::surface_elevation> (
             surface, moppe::position (Vec3 (position[0], 0.0f, position[2])))) +
           clearance);
-      plan.waypoints.push_back ({ .position = position,
-                                  .subject = subject,
-                                  .cruise_speed = speed * flight_speed_scale,
-                                  .field_of_view = field_of_view });
+      plan.waypoints.push_back (
+        { .position = position,
+          .subject = subject,
+          .cruise_speed = speed * flight_speed_scale * u::m / u::s,
+          .field_of_view = field_of_view * u::deg });
     }
 
     void add_transit (CinematicFlightPlan& plan,
@@ -635,7 +636,8 @@ namespace moppe::game {
                                          const terrain::LakeCensus& census,
                                          const terrain::DrainageGraph& drainage,
                                          const terrain::RiverNetwork& rivers,
-                                         float seconds) {
+                                         seconds_t duration) {
+    const float seconds = seconds_value (duration);
     MOPPE_PROFILE_ZONE ("plan_river_flight");
     using terrain::RiverReach;
     CinematicFlightPlan plan;
@@ -837,19 +839,19 @@ namespace moppe::game {
                   Vec3 (0.0f, 0.4f * above[gate], 0.0f);
       plan.waypoints.push_back ({ .position = position,
                                   .subject = subject,
-                                  .cruise_speed = pace,
-                                  .field_of_view = 60.0f });
+                                  .cruise_speed = pace * u::m / u::s,
+                                  .field_of_view = 60.0f * u::deg });
     }
-    plan.style = { .clearance = 5.0f,
-                   .floor = 3.5f,
-                   .anticipation = 30.0f,
-                   .slowest_turn = 6.0f,
-                   .look_near_least = 12.0f,
-                   .look_near_most = 30.0f,
-                   .look_far_least = 45.0f,
-                   .look_far_most = 110.0f,
+    plan.style = { .clearance = 5.0f * u::m,
+                   .floor = 3.5f * u::m,
+                   .anticipation = 30.0f * u::m,
+                   .slowest_turn = 6.0f * u::m / u::s,
+                   .look_near_least = 12.0f * u::m,
+                   .look_near_most = 30.0f * u::m,
+                   .look_far_least = 45.0f * u::m,
+                   .look_far_most = 110.0f * u::m,
                    .subject_weight = 0.6f,
-                   .bank = 0.16f };
+                   .bank = 0.16f * u::rad };
     std::cerr << "moppe: river flight: " << course.size () << " reaches, "
               << distance << " m at " << pace << " m/s, about "
               << distance / pace << " s\n";
@@ -931,11 +933,13 @@ namespace moppe::game {
     return {
       .position = position,
       .subject = linear_vector_interpolate (from.subject, to.subject, eased),
-      .cruise_speed = std::min (
-        curve_speed_limit,
-        from.cruise_speed + (to.cruise_speed - from.cruise_speed) * eased),
+      .cruise_speed =
+        std::min (curve_speed_limit,
+                  speed_value (from.cruise_speed +
+                               (to.cruise_speed - from.cruise_speed) * eased)),
       .field_of_view =
-        from.field_of_view + (to.field_of_view - from.field_of_view) * eased
+        (from.field_of_view + (to.field_of_view - from.field_of_view) * eased)
+          .numerical_value_in (u::deg)
     };
   }
 
@@ -965,8 +969,8 @@ namespace moppe::game {
           { .distance = distance,
             .segment = segment,
             .t = t,
-            .terrain_lift =
-              std::max (0.0f, ground + m_style.clearance - point[1]),
+            .terrain_lift = std::max (
+              0.0f, ground + meters_value (m_style.clearance) - point[1]),
             .speed_limit = 360.0f });
         previous = point;
       }
@@ -980,7 +984,7 @@ namespace moppe::game {
     minimum_lift.reserve (m_arc_samples.size ());
     for (const ArcSample& sample : m_arc_samples)
       minimum_lift.push_back (sample.terrain_lift);
-    const float anticipation = m_style.anticipation;
+    const float anticipation = meters_value (m_style.anticipation);
     const float horizon = 3.2f * anticipation;
     for (std::size_t i = 0; i < m_arc_samples.size (); ++i) {
       float lift = minimum_lift[i];
@@ -1064,8 +1068,10 @@ namespace moppe::game {
         0.5f * (m_arc_samples[right].distance - m_arc_samples[left].distance);
       const float curvature = angle / std::max (1.0f, tangent_separation);
       if (curvature > 1e-5f)
-        m_arc_samples[i].speed_limit = std::clamp (
-          std::sqrt (24.0f / curvature), m_style.slowest_turn, 360.0f);
+        m_arc_samples[i].speed_limit =
+          std::clamp (std::sqrt (24.0f / curvature),
+                      speed_value (m_style.slowest_turn),
+                      360.0f);
     }
     for (std::size_t i = m_arc_samples.size () - 1; i > 0; --i) {
       const float span =
@@ -1147,12 +1153,13 @@ namespace moppe::game {
     m_active = false;
   }
 
-  void CinematicFlight::tick (float dt,
+  void CinematicFlight::tick (seconds_t step,
                               const map::SurfaceGeometry& surface,
                               const CinematicFlightControls& controls) {
     if (!m_active)
       return;
-    dt = std::clamp (dt, 1.0f / 240.0f, 1.0f / 20.0f);
+    const float dt =
+      std::clamp (seconds_value (step), 1.0f / 240.0f, 1.0f / 20.0f);
     m_elapsed += dt;
 
     const float route_end = m_arc_samples.back ().distance;
@@ -1206,17 +1213,19 @@ namespace moppe::game {
         spatial::sample<terrain::surface_elevation> (
           surface,
           moppe::position (Vec3 (m_position[0], 0.0f, m_position[2])))) +
-      m_style.floor;
+      meters_value (m_style.floor);
     m_position[1] = std::max (static_cast<float> (m_position[1]), floor);
     m_velocity = (m_position - previous_position) / dt;
 
     // Aim through a long corridor of future flight instead of continually
     // correcting toward the nearest landmark. A stabilized drone gimbal sees
     // one committed swoop; the terrain feature still shaped the route itself.
-    const float look_near = std::clamp (
-      m_speed * 0.28f, m_style.look_near_least, m_style.look_near_most);
-    const float look_far = std::clamp (
-      m_speed * 1.45f, m_style.look_far_least, m_style.look_far_most);
+    const float look_near = std::clamp (m_speed * 0.28f,
+                                        meters_value (m_style.look_near_least),
+                                        meters_value (m_style.look_near_most));
+    const float look_far = std::clamp (m_speed * 1.45f,
+                                       meters_value (m_style.look_far_least),
+                                       meters_value (m_style.look_far_most));
     const RouteState view_near = route_state (m_route_distance + look_near);
     const RouteState view_far = route_state (m_route_distance + look_far);
     Vec3 wanted_look = view_far.position - view_near.position;
@@ -1258,8 +1267,8 @@ namespace moppe::game {
       turn =
         std::atan2 (cross (arc_now, arc_future)[1], dot (arc_now, arc_future));
     }
-    const float wanted_bank =
-      std::clamp (-turn * 0.48f, -m_style.bank, m_style.bank);
+    const float most_bank = radians_value (m_style.bank);
+    const float wanted_bank = std::clamp (-turn * 0.48f, -most_bank, most_bank);
     m_bank += (wanted_bank - m_bank) * (1.0f - std::exp (-0.85f * dt));
 
     if (m_route_distance >= route_end - 0.01f) {

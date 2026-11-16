@@ -217,7 +217,7 @@ namespace moppe {
             .lift = input_value (input.boost),
             .pace = input_value (input.drive),
           };
-          m_cinematic.tick (dt, surface (), controls);
+          m_cinematic.tick (seconds (dt), surface (), controls);
           if (!m_cinematic.active ())
             leave_cinematic ();
           update_frame_flare ();
@@ -592,7 +592,7 @@ namespace moppe {
           .position = m_cinematic.position (),
           .forward = m_cinematic.forward (),
           .view = m_cinematic.view_matrix (),
-          .field_of_view = m_cinematic.field_of_view () * u::deg,
+          .field_of_view = m_cinematic.field_of_view (),
         };
       } else {
         if (m_water_inspection)
@@ -624,8 +624,9 @@ namespace moppe {
         .cinematic_motion_blur =
           m_cinematic.active () ? m_cinematic.motion_blur () : 0.0f,
         .cinematic_elapsed = m_opening.active () ? m_opening.elapsed ()
-                             : cinematic         ? m_cinematic.elapsed ()
-                                                 : 0.0f,
+                             : cinematic
+                               ? seconds_value (m_cinematic.elapsed ())
+                               : 0.0f,
         .reveal_player = m_opening.active () && !m_opening.shot ().settle,
         .capture_field_of_view =
           m_film_fov && !cinematic && !m_opening.active ()
