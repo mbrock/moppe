@@ -72,44 +72,47 @@ namespace moppe::game {
     // old land as surely as a change to their own layout does.
     constexpr std::uint32_t STORED_VERSION =
       CACHE_VERSION * 1000 + static_cast<std::uint32_t> (LAND_VERSION);
+  }
 
-    std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
-      const Vec3 extent = extent_value (recipe.extent ());
-      const auto bits = [] (float value) {
-        return std::bit_cast<std::uint32_t> (value);
-      };
-      std::ostringstream name;
-      name << terrain::profile_id (recipe.generation_profile ()) << '-'
-           << recipe.resolution () << '-' << recipe.seed ().value << std::hex
-           << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
-           << bits (extent[2]) << "-water-"
-           << bits ((recipe.water_datum ()).numerical_value_in (u::m));
-      name << "-uplift-"
-           << bits (recipe.evolution ().uplift_duration.numerical_value_in (
-                mp_units::astronomy::Julian_year));
-      name << "-channel-"
-           << bits (
-                recipe.evolution ().channel_initiation_area.numerical_value_in (
-                  u::m * u::m));
-      name << "-runoff-"
-           << bits (recipe.evolution ()
-                      .fluvial_transport.runoff_rate.numerical_value_in (
-                        u::m / mp_units::astronomy::Julian_year));
-      name << "-concentration-"
-           << bits (recipe.evolution ()
-                      .fluvial_transport.concentration_at_unit_slope
-                      .numerical_value_in (mp_units::one));
-      name << "-slope-"
-           << bits (recipe.evolution ()
-                      .critical_hillslope_gradient.numerical_value_in (
-                        mp_units::one));
-      name << "-waste-"
-           << bits (
-                recipe.evolution ()
-                  .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
-                    mp_units::one));
-      return name.str ();
-    }
+  std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
+    const Vec3 extent = extent_value (recipe.extent ());
+    const auto bits = [] (float value) {
+      return std::bit_cast<std::uint32_t> (value);
+    };
+    std::ostringstream name;
+    name << terrain::profile_id (recipe.generation_profile ()) << '-'
+         << recipe.resolution () << '-' << recipe.seed ().value << std::hex
+         << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
+         << bits (extent[2]) << "-water-"
+         << bits ((recipe.water_datum ()).numerical_value_in (u::m));
+    name << "-uplift-"
+         << bits (recipe.evolution ().uplift_duration.numerical_value_in (
+              mp_units::astronomy::Julian_year));
+    name << "-channel-"
+         << bits (
+              recipe.evolution ().channel_initiation_area.numerical_value_in (
+                u::m * u::m));
+    name << "-runoff-"
+         << bits (recipe.evolution ()
+                    .fluvial_transport.runoff_rate.numerical_value_in (
+                      u::m / mp_units::astronomy::Julian_year));
+    name << "-concentration-"
+         << bits (recipe.evolution ()
+                    .fluvial_transport.concentration_at_unit_slope
+                    .numerical_value_in (mp_units::one));
+    name << "-slope-"
+         << bits (recipe.evolution ()
+                    .critical_hillslope_gradient.numerical_value_in (
+                      mp_units::one));
+    name << "-waste-"
+         << bits (
+              recipe.evolution ()
+                .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
+                  mp_units::one));
+    return name.str ();
+  }
+
+  namespace {
 
     spatial_extent_t forest_period (const terrain::TerrainDomain& domain) {
       return spatial_extent_in_metres (

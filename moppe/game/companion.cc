@@ -217,15 +217,12 @@ namespace moppe::game {
       std::min (latest, ((sequence / 2) % stops) * stride));
   }
 
-  std::uint32_t world_tag (std::uint32_t seed, int resolution, int profile) {
+  std::uint32_t world_tag (std::string_view identity) {
     std::uint32_t tag = 2166136261U;
-    for (const std::uint32_t part : { seed,
-                                      static_cast<std::uint32_t> (resolution),
-                                      static_cast<std::uint32_t> (profile) })
-      for (int shift = 0; shift < 32; shift += 8) {
-        tag ^= (part >> shift) & 0xffU;
-        tag *= 16777619U;
-      }
+    for (const char c : identity) {
+      tag ^= static_cast<std::uint8_t> (c);
+      tag *= 16777619U;
+    }
     return tag;
   }
 

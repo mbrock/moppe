@@ -21,9 +21,7 @@ namespace moppe {
     }
 
     std::uint32_t MoppeGame::this_world () const {
-      return world_tag (static_cast<std::uint32_t> (recipe ().seed ().value),
-                        recipe ().resolution (),
-                        static_cast<int> (recipe ().generation_profile ()));
+      return world_tag (recipe_cache_identity (recipe ()));
     }
 
     void MoppeGame::forget_companion () {
@@ -335,6 +333,7 @@ namespace moppe {
       if (!m_link)
         return;
       m_arrived.clear ();
+      m_link->set_world (this_world ());
       m_link->receive (m_arrived);
       const double now = m_link->now ();
       // The poses told are the simulation's, which moves on in whole
@@ -348,18 +347,17 @@ namespace moppe {
       m_pose_heard = now;
       m_stepped = 0.0;
       const bool was_present = m_track.present (now);
+      // Someone in another world is only told of, while no one here
+      // keeps company.
+      if (m_link->heard_elsewhere () && m_arrived.empty () && !was_present &&
+          !m_companion_elsewhere) {
+        m_companion_elsewhere = true;
+        notice ("Someone is playing, but in another world");
+        std::cerr << "moppe: multiplayer: launch both games with the "
+                     "same --seed and terrain options"
+                  << std::endl;
+      }
       for (CompanionSnapshot& theirs : m_arrived) {
-        if (theirs.world != this_world ()) {
-          if (!m_companion_elsewhere) {
-            forget_companion ();
-            m_companion_elsewhere = true;
-            notice ("Someone is playing, but in another world");
-            std::cerr << "moppe: multiplayer: launch both games with the "
-                         "same --seed and terrain options"
-                      << std::endl;
-          }
-          continue;
-        }
         m_companion_elsewhere = false;
         if (!m_track.present (now))
           m_companion_picks.clear ();

@@ -21,6 +21,7 @@
 #include <deque>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace moppe::game {
@@ -114,9 +115,9 @@ namespace moppe::game {
   std::uint32_t companion_pick_window_start (std::size_t picked,
                                              std::uint32_t sequence);
 
-  // One number for the world a recipe makes, as far as two players need
-  // to agree on it.
-  std::uint32_t world_tag (std::uint32_t seed, int resolution, int profile);
+  // One number for the world a recipe makes, from its whole identity
+  // (recipe_cache_identity): the seed, the size, the uplift, and the rest.
+  std::uint32_t world_tag (std::string_view identity);
 
   // A snapshot as bytes on the wire, little-endian.
   std::vector<std::uint8_t> encode (const CompanionSnapshot& snapshot);

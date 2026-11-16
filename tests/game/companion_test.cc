@@ -15,7 +15,7 @@ namespace {
     CompanionSnapshot snapshot;
     snapshot.player = 7;
     snapshot.sent = sent;
-    snapshot.world = world_tag (123, 2048, 0);
+    snapshot.world = world_tag ("play-2048-123");
     snapshot.day_hours = 9.25;
     snapshot.mode = M_FOOT;
     snapshot.bike.position = Vec3 (10, 20, 30);
@@ -264,8 +264,30 @@ MOPPE_TEST (two_links_on_one_machine_find_each_other) {
   if (!second)
     return;
   MOPPE_CHECK (first->player () != second->player ());
+  const std::uint32_t world = companion_test_walker (0.0f, 0.0).world;
+  first->set_world (world);
+  second->set_world (world);
 
+  // Someone in another world calling first is heard of but not taken
+  // for the companion.
   std::vector<CompanionSnapshot> at_first, at_second;
+  {
+    const std::unique_ptr<CompanionLink> stranger = CompanionLink::open (
+      { .address = "127.0.0.1:" + std::to_string (first->port ()),
+        .port = 47962 },
+      error);
+    MOPPE_CHECK (stranger != nullptr);
+    CompanionSnapshot elsewhere = companion_test_walker (3.0f, 0.0);
+    elsewhere.world = world + 1;
+    bool heard = false;
+    for (int round = 0; round < 100 && !heard; ++round) {
+      stranger->send (elsewhere, stranger->now ());
+      std::this_thread::sleep_for (std::chrono::milliseconds (5));
+      first->receive (at_first);
+      heard = first->heard_elsewhere ();
+    }
+    MOPPE_CHECK (heard && at_first.empty ());
+  }
   for (int round = 0; round < 100 && (at_first.empty () || at_second.empty ());
        ++round) {
     second->send (companion_test_walker (2.0f, 0.0), second->now ());

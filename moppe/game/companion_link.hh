@@ -51,9 +51,16 @@ namespace moppe::game {
     void send (CompanionSnapshot snapshot, double taken);
 
     // Every snapshot that has arrived from the companion since the last
-    // call, oldest first. The first player heard becomes the companion
-    // and stays so until they fall silent.
+    // call, oldest first, each newer than the last taken: one overtaken
+    // on the way is dropped. The first player heard in this world becomes
+    // the companion and stays so until they fall silent.
     void receive (std::vector<CompanionSnapshot>& arrived);
+
+    // The world this game stands in (world_tag). Someone playing another
+    // is heard of but never taken for the companion.
+    void set_world (std::uint32_t world);
+    // Whether someone in another world was heard since the last call.
+    bool heard_elsewhere ();
 
     // Whom this link is speaking to, for the log; empty while calling.
     std::string companion_address () const;

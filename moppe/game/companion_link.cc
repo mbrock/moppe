@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <random>
+#include <utility>
 
 #if (defined(__unix__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__)
 #define MOPPE_COMPANION_SOCKETS 1
@@ -78,6 +79,8 @@ namespace moppe::game {
     std::uint16_t calling_port = default_port;
     std::uint64_t player = 0;
     std::uint32_t sequence = 0;
+    std::uint32_t world = 0;
+    bool elsewhere = false;
     Clock::time_point began = Clock::now ();
     double sent = -1e9;
     // The machine named at launch, if one was.
@@ -86,6 +89,7 @@ namespace moppe::game {
     // The companion, once heard.
     bool heard = false;
     std::uint64_t companion = 0;
+    std::uint32_t companion_sequence = 0;
     sockaddr_in companion_address {};
     double heard_at = -1e9;
 
@@ -212,10 +216,22 @@ namespace moppe::game {
         decode (std::span (bytes, static_cast<std::size_t> (length)));
       if (!snapshot || snapshot->player == socket.player)
         continue;
-      if (socket.speaking () && snapshot->player != socket.companion)
+      if (snapshot->world != socket.world) {
+        socket.elsewhere = true;
         continue;
+      }
+      if (socket.speaking ()) {
+        if (snapshot->player != socket.companion)
+          continue;
+        // Overtaken on the way: what it says is older than what has
+        // been heard already. (The difference reads round a wrap.)
+        if (static_cast<std::int32_t> (snapshot->sequence -
+                                       socket.companion_sequence) <= 0)
+          continue;
+      }
       socket.heard = true;
       socket.companion = snapshot->player;
+      socket.companion_sequence = snapshot->sequence;
       socket.companion_address = from;
       socket.heard_at = socket.now ();
       arrived.push_back (std::move (*snapshot));
@@ -225,6 +241,14 @@ namespace moppe::game {
   std::string CompanionLink::companion_address () const {
     return m_socket->speaking () ? text_of (m_socket->companion_address)
                                  : std::string ();
+  }
+
+  void CompanionLink::set_world (std::uint32_t world) {
+    m_socket->world = world;
+  }
+
+  bool CompanionLink::heard_elsewhere () {
+    return std::exchange (m_socket->elsewhere, false);
   }
 #else
   struct CompanionLink::Socket {
@@ -249,6 +273,10 @@ namespace moppe::game {
 
   void CompanionLink::send (CompanionSnapshot, double) {}
   void CompanionLink::receive (std::vector<CompanionSnapshot>&) {}
+  void CompanionLink::set_world (std::uint32_t) {}
+  bool CompanionLink::heard_elsewhere () {
+    return false;
+  }
 
   std::string CompanionLink::companion_address () const {
     return {};
