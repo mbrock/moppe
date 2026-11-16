@@ -49,11 +49,13 @@ namespace moppe {
       finds.insert (finds.end (), trees.begin (), trees.end ());
       std::cerr << "moppe: scan from " << feet[0] << " " << feet[1] << " "
                 << feet[2] << " found " << finds.size () << "\n";
-      m_scan.start (feet, logic ().m_total_time - ago, std::move (finds));
+      m_scan.start (feet,
+                    seconds_into_play (logic ().m_total_time) - ago,
+                    std::move (finds));
     }
 
     void MoppeGame::draw_scan (render::Renderer& r, const FrameView& frame) {
-      const double now = logic ().m_total_time;
+      const double now = seconds_into_play (logic ().m_total_time);
       if (!m_scan.showing (now) || !m_hud.font ())
         return;
       if (!m_scan_marks.set)
@@ -466,7 +468,7 @@ namespace moppe {
       // The mushroom just picked rises from the moss into the basket.
       if (actors.walker && !basket.picked.empty () && !basket.last_refused) {
         const float age =
-          static_cast<float> (logic ().m_total_time - basket.last_reach_time);
+          seconds_between (logic ().m_total_time, basket.last_reach_time);
         if (age >= 0.0f && age < 0.45f) {
           const float t = age / 0.45f;
           MushroomSite rising = m_mushrooms.site (basket.picked.back ());
@@ -505,7 +507,7 @@ namespace moppe {
                                             logic ().m_beacon_burn,
                                             frame.lighting.daylight,
                                             frame.lighting.time);
-      if (logic ().m_camp.fire_time > -50.0)
+      if (hearth_laid (logic ().m_camp))
         draw_fire (r,
                    logic ().m_camp.hearth,
                    frame.camera.position,

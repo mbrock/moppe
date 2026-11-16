@@ -60,11 +60,11 @@ namespace moppe::game {
   // data, renderer resources, platform state, and asynchronous loading state
   // deliberately live outside this value.
   struct GameLogicState {
-    // double avoids losing tick precision during long-running sessions.
-    double m_total_time = 0.0;
-    // The hour of the day, counted on from the first midnight, and how
-    // many times faster than usual it is passing.
-    double m_day_hours = 9.0;
+    // Play's clock, and the day's: the hour counted on from the first
+    // midnight, and how many times faster than usual it is passing
+    // (game_clock.hh).
+    play_time_t m_total_time = play_time (0.0);
+    clock_time_t m_day_hours = clock_time (9.0);
     float m_day_haste = 1.0f;
     float m_frame_time = 1.0f / 60.0f;
     cloud_cover_t m_cloudiness = 0.5f * cloud_cover[mp_units::one];

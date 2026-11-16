@@ -139,7 +139,7 @@ namespace moppe {
       const Creel& creel = fishing.creel;
       state.fish_total = creel.kept ();
       const float since =
-        static_cast<float> (logic ().m_total_time - creel.last_time);
+        seconds_between (logic ().m_total_time, creel.last_time);
       if (since < 5.0f) {
         const std::string name = fish_name (creel.last.kind);
         if (creel.last_lost) {
@@ -184,7 +184,7 @@ namespace moppe {
       const Camp& camp = logic ().m_camp;
       state.resting = camp.resting;
       state.clock_hours = m_sky.clock.numerical_value_in (si::hour);
-      if (static_cast<float> (logic ().m_total_time - camp.ate_time) < 6.0f) {
+      if (seconds_between (logic ().m_total_time, camp.ate_time) < 6.0f) {
         // What there was, the fish first, then the eggs, then the
         // mushrooms.
         std::vector<std::string> dishes;
@@ -211,7 +211,7 @@ namespace moppe {
             : (one ? "A fried " : "Fried ") + meal + " by the fire. Lovely.";
         state.meal = m_meal_note.c_str ();
         state.meal_age_s =
-          static_cast<float> (logic ().m_total_time - camp.ate_time);
+          seconds_between (logic ().m_total_time, camp.ate_time);
       }
       // What Space and F do here, and what can be done about the camp
       // without a prompt for it (HudState::thumb).
@@ -225,15 +225,16 @@ namespace moppe {
       const bool boosts = logic ().m_mode == M_BIKE || afloat;
       if (boosts && logic ().m_boost_input > 0.1f)
         m_boost_tried[afloat] = true;
-      state.thumb_hint = boosts && !m_boost_tried[afloat] &&
-                         logic ().m_total_time - m_thumb_from < 15.0;
+      state.thumb_hint =
+        boosts && !m_boost_tried[afloat] &&
+        logic ().m_total_time - m_thumb_from < 15.0 * si::second;
       // The wheelie is prompted once the jets' prompt is done with, for
       // half a minute after getting on, until one has been ridden.
       if (logic ().m_mode == M_BIKE && session ().bike ().wheeling ())
         m_wheelie_tried = true;
-      state.wheelie_hint = logic ().m_mode == M_BIKE && !state.thumb_hint &&
-                           !m_wheelie_tried &&
-                           logic ().m_total_time - m_thumb_from < 45.0;
+      state.wheelie_hint =
+        logic ().m_mode == M_BIKE && !state.thumb_hint && !m_wheelie_tried &&
+        logic ().m_total_time - m_thumb_from < 45.0 * si::second;
       switch (logic ().m_mode) {
       case M_FOOT:
         if (!camp.resting) {
@@ -330,7 +331,7 @@ namespace moppe {
         state.camp = HudState::Camp::lie_down;
       else if (logic ().m_hammock_at_hand)
         state.camp = HudState::Camp::hang;
-      else if (camp.hung && camp.fire_time < -50.0 &&
+      else if (camp.hung && !hearth_laid (camp) &&
                hammock_distance (
                  camp.hammock, session ().walker ().position ()) < 12.0f * u::m)
         state.camp = HudState::Camp::light_fire;
@@ -550,7 +551,7 @@ namespace moppe {
       state.reached_name =
         basket.last_egg ? "egg" : mushroom_name (basket.last_kind);
       state.reached_age_s =
-        static_cast<float> (logic ().m_total_time - basket.last_reach_time);
+        seconds_between (logic ().m_total_time, basket.last_reach_time);
       state.reached_refused = basket.last_refused;
       if (logic ().m_mode != M_FOOT)
         return;

@@ -314,7 +314,7 @@ namespace moppe {
       for (const Vec3& ring : m_places.hearths) {
         if (length2 (ring - camera) > 200.0f * 200.0f)
           continue;
-        if (camp.fire_time > -50.0 && length2 (camp.hearth - ring) < 0.04f)
+        if (hearth_laid (camp) && length2 (camp.hearth - ring) < 0.04f)
           continue;
         draw_hearth (m_world_dl, ring, 0.0f);
       }

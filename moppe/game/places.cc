@@ -859,12 +859,12 @@ namespace moppe::game {
     return std::nullopt;
   }
 
-  float beacon_burn (double lit, double out, double now) {
+  float beacon_burn (play_time_t lit, play_time_t out, play_time_t now) {
     using namespace places_parts;
     if (lit > out)
-      return smoothstep (0.0f, 6.0f, static_cast<float> (now - lit));
-    return (1.0f - smoothstep (0.0f, 2.5f, static_cast<float> (now - out))) *
-           smoothstep (0.0f, 6.0f, static_cast<float> (out - lit));
+      return smoothstep (0.0f, 6.0f, seconds_between (now, lit));
+    return (1.0f - smoothstep (0.0f, 2.5f, seconds_between (now, out))) *
+           smoothstep (0.0f, 6.0f, seconds_between (out, lit));
   }
 }
 

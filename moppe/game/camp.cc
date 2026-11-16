@@ -274,11 +274,11 @@ namespace moppe::game {
     return length (to - between * t) * u::m;
   }
 
-  float hammock_load (const Camp& camp, double now) {
+  float hammock_load (const Camp& camp, play_time_t now) {
     using namespace camp_parts;
     // Getting in or out takes this long.
     constexpr seconds_t settling = 0.8f * u::s;
-    const float since = static_cast<float> (now - camp.rest_time);
+    const float since = seconds_between (now, camp.rest_time);
     const float eased = smoothstep (0.0f, seconds_value (settling), since);
     return camp.resting ? eased : 1.0f - eased;
   }
@@ -586,12 +586,12 @@ namespace moppe::game {
            world_up * std::sin (pitch);
   }
 
-  float fire_burn (const Camp& camp, double now) {
+  float fire_burn (const Camp& camp, play_time_t now) {
     using namespace camp_parts;
     // How long a fire takes to catch, and to die once put out.
     constexpr seconds_t catching = 3.5f * u::s;
     constexpr seconds_t dying = 1.5f * u::s;
-    const float since = static_cast<float> (now - camp.fire_time);
+    const float since = seconds_between (now, camp.fire_time);
     if (camp.fire)
       return 0.12f + 0.88f * smoothstep (0.0f, seconds_value (catching), since);
     const float out = seconds_value (dying);
@@ -613,12 +613,12 @@ namespace moppe::game {
       std::pow (std::clamp (burn * flicker, 0.0f, 1.0f), 1.0f / 2.2f));
   }
 
-  float pan_cooked (const Pan& pan, double now) {
+  float pan_cooked (const Pan& pan, play_time_t now) {
     // Fried in nine seconds, kept until forty, burnt fourteen after.
     constexpr seconds_t frying = 9.0f * u::s;
     constexpr seconds_t keeping = 40.0f * u::s;
     constexpr seconds_t burning = 14.0f * u::s;
-    const seconds_t age = static_cast<float> (now - pan.since) * u::s;
+    const seconds_t age = seconds_between (now, pan.since) * u::s;
     if (!pan.on || age <= seconds_t {})
       return 0.0f;
     if (age < frying)

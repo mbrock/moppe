@@ -5,6 +5,7 @@
 // session's copyable state.
 
 #include <moppe/game/fishing_state.hh>
+#include <moppe/game/game_clock.hh>
 #include <moppe/gfx/math.hh>
 
 #include <cstdint>
@@ -27,7 +28,7 @@ namespace moppe::game {
     Vec3 place {};
     float yaw = 0.0f;
     // When it went on, and the mushrooms in it: the plan's indices.
-    double since = -100.0;
+    play_time_t since = play_time (-100.0);
     int count = 0;
     std::uint32_t mushrooms[room] {};
     // A fish from the creel takes the room of two of them.
@@ -35,14 +36,14 @@ namespace moppe::game {
     Fish fish {};
     // Eggs from the basket, each taking a mushroom's room.
     int eggs = 0;
-    double next_steam = 0.0;
+    play_time_t next_steam = play_time (0.0);
   };
 
   // A sanctuary's beacon (game/places.hh): when it was last lit, and
   // when last put out.
   struct Beacon {
-    double lit = -100.0;
-    double out = -100.0;
+    play_time_t lit = play_time (-100.0);
+    play_time_t out = play_time (-100.0);
     bool burning () const {
       return lit > out;
     }
@@ -54,7 +55,7 @@ namespace moppe::game {
     HammockSite hammock;
     bool resting = false;
     // When the hiker last lay down or got up.
-    double rest_time = -100.0;
+    play_time_t rest_time = play_time (-100.0);
     // The hammock's swing about the line between its straps, radians.
     float swing = 0.0f;
     float swing_rate = 0.0f;
@@ -66,20 +67,25 @@ namespace moppe::game {
     bool fire = false;
     // The hearth on the ground, and when the fire was last lit or put out.
     Vec3 hearth {};
-    double fire_time = -100.0;
-    double next_spark = 0.0;
-    double next_smoke = 0.0;
+    play_time_t fire_time = play_time (-100.0);
+    play_time_t next_spark = play_time (0.0);
+    play_time_t next_smoke = play_time (0.0);
 
     Pan pan;
     // The last meal: when it was eaten, how done it was (see
     // pan_cooked), and how many mushrooms it was.
-    double ate_time = -100.0;
+    play_time_t ate_time = play_time (-100.0);
     float ate_cooked = 0.0f;
     int ate_count = 0;
     int ate_eggs = 0;
     bool ate_fish = false;
     Fish ate {};
   };
+
+  // Whether a fire was ever laid here, lit or long out.
+  inline bool hearth_laid (const Camp& camp) {
+    return camp.fire_time > play_time (-50.0);
+  }
 }
 
 #endif

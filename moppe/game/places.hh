@@ -14,6 +14,7 @@
 // Near each, where the trees allow, an old fire ring marks a good camp,
 // and a landing stage on the lake by the mill a place to fish from.
 
+#include <moppe/game/game_clock.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/trunk_field.hh>
@@ -174,7 +175,8 @@ namespace moppe::game {
 
   // How fiercely a beacon lit at `lit` (or put out, if `lit` is
   // negative, at `out`) burns at `now`, 0..1.
-  [[nodiscard]] float beacon_burn (double lit, double out, double now);
+  [[nodiscard]] float
+  beacon_burn (play_time_t lit, play_time_t out, play_time_t now);
 
   // The built things as baked meshes and their colliders.
   class PlacesLandscape {

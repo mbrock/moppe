@@ -115,8 +115,9 @@ namespace moppe {
       // The companion's pose clock counts only time the world was stepped
       // by, at the step it was stepped by.
       m_stepped += dt;
-      logic ().m_total_time += dt;
-      const float total_time = logic ().m_total_time;
+      logic ().m_total_time += dt * si::second;
+      const float total_time =
+        static_cast<float> (seconds_into_play (logic ().m_total_time));
       update_world_atmosphere (total_time);
 
       if (m_cinematic.active ()) {

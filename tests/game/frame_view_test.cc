@@ -53,7 +53,7 @@ namespace {
       session->bike ().reset (Vec3 (48, 11.2f, 48));
       session->bike ().set_heading (Vec3 (0, 0, 1));
       session->camera ().place (Vec3 (48, 20, 32), Vec3 (48, 12, 48));
-      session->logic ().m_total_time = 12.5;
+      session->logic ().m_total_time = game::play_time (12.5);
       session->logic ().m_cloudiness = 0.42f * game::cloud_cover[one];
       session->logic ().m_flare = 0.37f;
       session->logic ().m_fog = DisplayColor (0.4f, 0.5f, 0.6f);
@@ -99,7 +99,7 @@ namespace {
 
   void check_logic_reading (const game::GameLogicState& actual,
                             const game::GameLogicState& expected) {
-    MOPPE_CHECK_NEAR (actual.m_total_time, expected.m_total_time, 1e-6f);
+    MOPPE_CHECK (actual.m_total_time == expected.m_total_time);
     MOPPE_CHECK_NEAR (actual.m_frame_time, expected.m_frame_time, 1e-6f);
     MOPPE_CHECK_NEAR (actual.m_cloudiness.numerical_value_in (one),
                       expected.m_cloudiness.numerical_value_in (one),
@@ -500,7 +500,7 @@ MOPPE_TEST (frame_view_follows_the_rendered_sea_wave_phase) {
   input.selected_camera.position = Vec3 (21.25f, 18.0f, 73.5f);
   bool crested = false, troughed = false;
   for (const double time : { 0.0, 2.5, 7.75, 13.125, 100000.1234 }) {
-    fixture.running ().logic ().m_total_time = time;
+    fixture.running ().logic ().m_total_time = game::play_time (time);
     const game::FrameView view = game::compose_frame_view (input);
     const float level = game::water_surface_at (fixture.world,
                                                 fixture.surface,

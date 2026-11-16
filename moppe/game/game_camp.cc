@@ -21,7 +21,9 @@ namespace moppe {
         .day_turning = m_day.turning,
         .daylight = m_sky.daylight,
         .companion = m_companion ? &*m_companion : nullptr,
-        .companion_hours = m_companion_hours,
+        .companion_clock = m_companion_hours >= 0.0
+                             ? std::optional (clock_time (m_companion_hours))
+                             : std::nullopt,
       };
     }
 
@@ -67,10 +69,10 @@ namespace moppe {
 
     void MoppeGame::draw_camp (render::DrawList& dl) {
       const Camp& camp = logic ().m_camp;
-      const double now = logic ().m_total_time;
+      const play_time_t now = logic ().m_total_time;
       if (camp.hung)
         draw_hammock (dl, camp.hammock, hammock_load (camp, now), camp.swing);
-      if (camp.fire_time > -50.0)
+      if (hearth_laid (camp))
         draw_hearth (dl, camp.hearth, fire_burn (camp, now));
       if (camp.pan.on) {
         m_pan_contents.clear ();

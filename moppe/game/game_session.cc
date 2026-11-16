@@ -1513,8 +1513,8 @@ namespace moppe::game {
                        float elapsed) {
       GameLogicState& logic = session.logic ();
       mov::Boat& boat = session.boat ();
-      const mov::BoatWater floating =
-        floating_water (world, surface, water, logic.m_total_time);
+      const mov::BoatWater floating = floating_water (
+        world, surface, water, seconds_into_play (logic.m_total_time));
       boat.set_parked (logic.m_mode != M_BOAT);
       boat.update (elapsed * u::s, floating);
       if (logic.m_mode != M_BOAT)
@@ -1638,8 +1638,10 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       mov::JetSki& ski = session.jet_ski ();
       ski.set_parked (logic.m_mode != M_JET_SKI);
-      ski.update (elapsed * u::s,
-                  floating_water (world, surface, water, logic.m_total_time));
+      ski.update (
+        elapsed * u::s,
+        floating_water (
+          world, surface, water, seconds_into_play (logic.m_total_time)));
       if (logic.m_mode != M_JET_SKI)
         return;
       logic.m_odometer += length (ski.velocity ()) * elapsed;
@@ -1746,7 +1748,8 @@ namespace moppe::game {
     GameLogicState& logic = session.logic ();
     // Rivers and lakes hold back what goes through them as the sea does.
     const auto water_at = [&] (const Vec3& at) {
-      return water_surface_at (world, surface, water, at, logic.m_total_time);
+      return water_surface_at (
+        world, surface, water, at, seconds_into_play (logic.m_total_time));
     };
     session.bike ().set_water_level (water_at (session.bike ().position ()));
     session.bike ().set_trunks (trunks);
@@ -1818,8 +1821,12 @@ namespace moppe::game {
                           !hauled (Machine::long_john));
     long_john.update (dt);
     if (logic.m_mode == M_FOOT)
-      session.walker ().update (
-        dt, surface, world, trunks, water, logic.m_total_time);
+      session.walker ().update (dt,
+                                surface,
+                                world,
+                                trunks,
+                                water,
+                                seconds_into_play (logic.m_total_time));
     // The jeep stands braked wherever its driver left it.
     mov::Car& jeep = session.jeep ();
     jeep.set_trunks (trunks);
@@ -2335,7 +2342,9 @@ namespace moppe::game {
     // Star pickups sparkle gold and top up the boost reserve.
     {
       const int picked = session.stars ().update (
-        vehicle_position, logic.m_total_time, seconds (elapsed));
+        vehicle_position,
+        static_cast<float> (seconds_into_play (logic.m_total_time)),
+        seconds (elapsed));
       if (picked > 0) {
         Dust::Style sparkle;
         sparkle.size = 0.38f * u::m;

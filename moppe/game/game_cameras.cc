@@ -164,7 +164,8 @@ namespace moppe {
                                         start,
                                         session ().camera ().forward (),
                                         last.fov_deg,
-                                        logic ().m_total_time,
+                                        static_cast<float> (seconds_into_play (
+                                          logic ().m_total_time)),
                                         m_sky.sun_height)
                 << '\n';
       float duration = 0.0f;
@@ -194,8 +195,9 @@ namespace moppe {
         return;
       m_opening_shot_seen = m_opening.shot_index ();
       if (const std::optional<float> clock = m_opening.shot ().clock) {
-        logic ().m_total_time = *clock + m_opening.shot_time ();
-        update_world_atmosphere (logic ().m_total_time);
+        logic ().m_total_time = play_time (*clock + m_opening.shot_time ());
+        update_world_atmosphere (
+          static_cast<float> (seconds_into_play (logic ().m_total_time)));
       }
     }
 

@@ -63,14 +63,18 @@ namespace moppe::game {
                     seconds_t interval) {
       const float dt = seconds_value (interval);
       GameLogicState& logic = session.logic ();
-      double& hours = logic.m_day_hours;
-      hours += around.day_pace * dt * logic.m_day_haste;
+      clock_time_t& hours = logic.m_day_hours;
+      hours += around.day_pace * dt * logic.m_day_haste * si::hour;
       // Two players share one sky: whoever's clock is ahead leads, as
       // when one of them lies down to let the hours run. A little ahead
       // is caught up smoothly, a long way at once.
-      const double behind = around.companion_hours - hours;
-      if (around.day_turning && behind > 0.0)
-        hours += behind > 0.25 ? behind : std::min (behind, behind * 6.0 * dt);
+      if (!around.day_turning || !around.companion_clock)
+        return;
+      const auto behind = *around.companion_clock - hours;
+      if (behind > 0.25 * si::hour)
+        hours += behind;
+      else if (behind > 0.0 * si::hour)
+        hours += std::min (behind, behind * (6.0 * dt));
     }
 
     // A walker reaches for the mushroom at hand: an edible one goes in
@@ -143,7 +147,7 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       Camp& camp = logic.m_camp;
       Basket& basket = logic.m_basket;
-      const double now = logic.m_total_time;
+      const play_time_t now = logic.m_total_time;
       if (logic.m_mode == M_FOOT && input.deploy_glider &&
           !mushroom_at_hand (session, around)) {
         switch (supper_at_hand (session, around)) {
@@ -151,7 +155,7 @@ namespace moppe::game {
           Pan pan = pan_set_on (*fire_at_hand (session, around),
                                 session.walker ().position ());
           pan.since = now;
-          pan.next_steam = now + 1.0;
+          pan.next_steam = now + 1.0 * si::second;
           // A fish first, if there is one, and mushrooms beside it.
           Creel& creel = logic.m_fishing.creel;
           if (creel.kept () > 0) {
@@ -203,7 +207,7 @@ namespace moppe::game {
       if (!pan.on || now < pan.next_steam)
         return;
       const float cooked = pan_cooked (pan, now);
-      pan.next_steam = now + (cooked > 1.2f ? 0.25 : 0.45);
+      pan.next_steam = now + (cooked > 1.2f ? 0.25 : 0.45) * si::second;
       const float shade =
         cooked > 1.2f ? 0.18f : 0.55f + 0.35f * around.daylight;
       Dust::Style steam;
@@ -233,7 +237,7 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       Fishing& fishing = logic.m_fishing;
       Line& line = fishing.line;
-      const double now = logic.m_total_time;
+      const play_time_t now = logic.m_total_time;
       const std::optional<Angler> from = angler (session);
       const bool afloat = logic.m_mode == M_BOAT;
       if (!from || (line_out (line) && line.from_boat != afloat)) {
@@ -318,7 +322,7 @@ namespace moppe::game {
                                               *around.surface,
                                               around.water,
                                               next,
-                                              logic.m_total_time)
+                                              seconds_into_play (now))
                               .numerical_value_in (u::m);
         if (level - ground_at (around, next) > 0.2f &&
             length (out) < meters_value (longest_cast + 2.5f * u::m)) {
@@ -334,7 +338,7 @@ namespace moppe::game {
       if (before == Line::Phase::waiting && line.phase == Line::Phase::biting)
         splash (session, around, line.bobber, 3, 0.2f);
       if (line.phase == Line::Phase::playing && now >= line.next_splash) {
-        line.next_splash = now + 0.18;
+        line.next_splash = now + 0.18 * si::second;
         splash (session, around, fish_in_water (line, now), 2, 0.5f);
       }
       if (before == Line::Phase::playing && line.phase == Line::Phase::landed)
@@ -346,9 +350,10 @@ namespace moppe::game {
     void feed_fire (GameSession& session, const Surroundings& around) {
       GameLogicState& logic = session.logic ();
       Camp& camp = logic.m_camp;
-      const double now = logic.m_total_time;
+      const play_time_t now = logic.m_total_time;
       const float burn = fire_burn (camp, now);
-      const bool smouldering = !camp.fire && now - camp.fire_time < 8.0;
+      const bool smouldering =
+        !camp.fire && now - camp.fire_time < 8.0 * si::second;
       if (burn <= 0.02f && !smouldering)
         return;
       std::uniform_real_distribution<float> unit (0.0f, 1.0f);
@@ -357,7 +362,7 @@ namespace moppe::game {
         return (unit (rng) - 0.5f) * 2.0f * reach;
       };
       if (burn > 0.3f && now >= camp.next_spark) {
-        camp.next_spark = now + 0.10 + 0.55 * unit (rng);
+        camp.next_spark = now + (0.10 + 0.55 * unit (rng)) * si::second;
         Dust::Style spark;
         spark.size = 0.05f * u::m;
         spark.lifetime = (1.2f + unit (rng)) * u::s;
@@ -375,7 +380,7 @@ namespace moppe::game {
           spark);
       }
       if (now >= camp.next_smoke) {
-        camp.next_smoke = now + (smouldering ? 0.22 : 0.5);
+        camp.next_smoke = now + (smouldering ? 0.22 : 0.5) * si::second;
         // Smoke shows by the light there is to see it in.
         const float shade = 0.06f + 0.36f * around.daylight;
         Dust::Style smoke;
@@ -397,7 +402,7 @@ namespace moppe::game {
     // it; the other's catch and die down here as they are heard of.
     void tend_beacons (GameSession& session, const Surroundings& around) {
       GameLogicState& logic = session.logic ();
-      const double now = logic.m_total_time;
+      const play_time_t now = logic.m_total_time;
       const std::vector<Beacon>& beacons = logic.m_beacons;
       logic.m_their_beacons.resize (beacons.size ());
       logic.m_beacon_burn.resize (beacons.size ());
@@ -427,7 +432,7 @@ namespace moppe::game {
       const float dt = seconds_value (interval);
       GameLogicState& logic = session.logic ();
       Camp& camp = logic.m_camp;
-      const double now = logic.m_total_time;
+      const play_time_t now = logic.m_total_time;
       float haste = 1.0f;
       float push = 0.0f;
       if (logic.m_mode != M_FOOT) {
@@ -438,7 +443,7 @@ namespace moppe::game {
       } else if (camp.resting) {
         const bool rise = input.deploy_glider || input.toggle_mount ||
                           input_value (input.boost) > 0.5f;
-        if (rise && now - camp.rest_time > 0.8) {
+        if (rise && now - camp.rest_time > 0.8 * si::second) {
           camp.resting = false;
           camp.rest_time = now;
         } else {
@@ -451,9 +456,9 @@ namespace moppe::game {
           // keeps them at their ordinary pace.
           if (input_value (input.drive) > -0.3f)
             haste =
-              1.0f + (resting_haste - 1.0f) *
-                       smoothstep (
-                         2.5f, 7.0f, static_cast<float> (now - camp.rest_time));
+              1.0f +
+              (resting_haste - 1.0f) *
+                smoothstep (2.5f, 7.0f, seconds_between (now, camp.rest_time));
         }
         const bool cycle = input.cycle_camera;
         input = {};
@@ -776,13 +781,14 @@ namespace moppe::game {
                                session.camera ().position (),
                                700.0f * u::m,
                                interval);
-      session.hens ().step (
-        ground,
-        presences,
-        session.camera ().position (),
-        160.0f * u::m,
-        static_cast<float> (std::fmod (logic.m_day_hours, 24.0)) * si::hour,
-        interval);
+      session.hens ().step (ground,
+                            presences,
+                            session.camera ().position (),
+                            160.0f * u::m,
+                            static_cast<float> (std::fmod (
+                              hours_since_midnight (logic.m_day_hours), 24.0)) *
+                              si::hour,
+                            interval);
     }
     lay_eggs (logic.m_nests, logic.m_day_hours, around.egg_seed);
   }

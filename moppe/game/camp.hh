@@ -72,7 +72,7 @@ namespace moppe::game {
 
   // How much of a sleeper's weight is in the hammock, 0..1, easing in as
   // they lie down and out as they get up.
-  float hammock_load (const Camp& camp, double now);
+  float hammock_load (const Camp& camp, play_time_t now);
 
   // The cloth, its lines, and the straps round the trunks, recorded as
   // triangles; `load` deepens the sag and spreads the cloth.
@@ -94,7 +94,7 @@ namespace moppe::game {
 
   // How fiercely the fire burns, 0..1: it catches over a few seconds and
   // dies quickly when put out.
-  float fire_burn (const Camp& camp, double now);
+  float fire_burn (const Camp& camp, play_time_t now);
   // The fire's light at a moment: its place, and its colour at full
   // strength, flickering.
   Vec3 fire_light_position (const Camp& camp);
@@ -104,7 +104,7 @@ namespace moppe::game {
   // How done what is in the pan is: rising to one, fried golden, over
   // the first nine seconds; held there for half a minute; then on to
   // two, burnt black, for anyone who forgets it.
-  float pan_cooked (const Pan& pan, double now);
+  float pan_cooked (const Pan& pan, play_time_t now);
   inline constexpr meters_t pan_reach = 2.6f * u::m;
 
   // Where a cook standing at `feet` sets a pan on the hearth's stones:

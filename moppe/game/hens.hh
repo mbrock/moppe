@@ -145,10 +145,12 @@ namespace moppe::game {
 
   // The boxes' first eggs, laid before the walker came: one or two each.
   [[nodiscard]] std::vector<NestState>
-  first_eggs (std::size_t nests, double hours, std::uint32_t seed);
+  first_eggs (std::size_t nests, clock_time_t hours, std::uint32_t seed);
 
   // Lays what the hens have laid by `hours`.
-  void lay_eggs (std::span<NestState> states, double hours, std::uint32_t seed);
+  void lay_eggs (std::span<NestState> states,
+                 clock_time_t hours,
+                 std::uint32_t seed);
 
   // The nest box with an egg in it that a walker standing at `feet`,
   // facing `heading`, can reach into.

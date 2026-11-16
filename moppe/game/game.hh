@@ -871,7 +871,7 @@ namespace moppe {
       // Whose Space was last prompted (HudState::thumb_hint), since when,
       // and whether the bike's and the boat's boosts have been tried.
       mutable int m_thumb_mode = -1;
-      mutable double m_thumb_from = 0.0;
+      mutable play_time_t m_thumb_from = play_time (0.0);
       mutable bool m_boost_tried[2] = { false, false };
       mutable bool m_wheelie_tried = false;
       // MOPPE_DEMO=wheelie's last reading of the bike's pitch.

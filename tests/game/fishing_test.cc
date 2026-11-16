@@ -27,44 +27,59 @@ MOPPE_TEST (the_water_decides_what_bites) {
 
 MOPPE_TEST (a_struck_fish_is_landed_into_the_creel) {
   Fishing fishing;
-  cast_line (
-    fishing.line, Vec3 (0, 1, 0), Vec3 (0, 0, 8), Waters::still, false, 10.0);
+  cast_line (fishing.line,
+             Vec3 (0, 1, 0),
+             Vec3 (0, 0, 8),
+             Waters::still,
+             false,
+             play_time (10.0));
   MOPPE_CHECK (line_out (fishing.line));
-  MOPPE_CHECK (rod_pose (fishing.line, 10.2, 0.0f).has_value ());
+  MOPPE_CHECK (rod_pose (fishing.line, play_time (10.2), 0.0f).has_value ());
   // The float lands, and lies there until the take.
-  tend_line (fishing, 10.0 + seconds_value (cast_seconds) + 0.01, false);
+  tend_line (
+    fishing, play_time (10.0 + seconds_value (cast_seconds) + 0.01), false);
   MOPPE_CHECK (fishing.line.phase == Line::Phase::waiting);
-  const double take = fishing.line.bite_at;
+  const double take = seconds_into_play (fishing.line.bite_at);
   MOPPE_CHECK (take > 10.0 + seconds_value (cast_seconds) + 3.9);
-  tend_line (fishing, take + 0.01, false);
+  tend_line (fishing, play_time (take + 0.01), false);
   MOPPE_CHECK (fishing.line.phase == Line::Phase::biting);
   // Struck, it is fought in, and then it is in the creel.
-  MOPPE_CHECK (tend_line (fishing, take + 0.3, true));
+  MOPPE_CHECK (tend_line (fishing, play_time (take + 0.3), true));
   MOPPE_CHECK (fishing.line.phase == Line::Phase::playing);
   const double fought =
     take + 0.3 + seconds_value (play_seconds (fishing.line.fish)) + 0.1;
-  tend_line (fishing, fought, false);
+  tend_line (fishing, play_time (fought), false);
   MOPPE_CHECK (fishing.line.phase == Line::Phase::landed);
   MOPPE_CHECK (fishing.creel.kept () == 1 && !fishing.creel.last_lost);
-  tend_line (fishing, fought + seconds_value (landed_seconds) + 0.1, false);
+  tend_line (
+    fishing, play_time (fought + seconds_value (landed_seconds) + 0.1), false);
   MOPPE_CHECK (!line_out (fishing.line));
-  MOPPE_CHECK (!rod_pose (fishing.line, fought + 5.0, 0.0f).has_value ());
+  MOPPE_CHECK (
+    !rod_pose (fishing.line, play_time (fought + 5.0), 0.0f).has_value ());
 }
 
 MOPPE_TEST (a_fish_not_struck_gets_away) {
   Fishing fishing;
-  cast_line (
-    fishing.line, Vec3 (0, 1, 0), Vec3 (0, 0, 8), Waters::running, false, 0.0);
-  tend_line (fishing, seconds_value (cast_seconds) + 0.01, false);
-  const double take = fishing.line.bite_at;
-  tend_line (fishing, take + 0.01, false);
-  tend_line (fishing, take + seconds_value (strike_seconds) + 0.1, false);
+  cast_line (fishing.line,
+             Vec3 (0, 1, 0),
+             Vec3 (0, 0, 8),
+             Waters::running,
+             false,
+             play_time (0.0));
+  tend_line (fishing, play_time (seconds_value (cast_seconds) + 0.01), false);
+  const double take = seconds_into_play (fishing.line.bite_at);
+  tend_line (fishing, play_time (take + 0.01), false);
+  tend_line (
+    fishing, play_time (take + seconds_value (strike_seconds) + 0.1), false);
   MOPPE_CHECK (fishing.line.phase == Line::Phase::waiting);
   MOPPE_CHECK (fishing.creel.last_lost && fishing.creel.kept () == 0);
-  MOPPE_CHECK (fishing.line.bite_at > take + seconds_value (strike_seconds));
+  MOPPE_CHECK (fishing.line.bite_at >
+               play_time (take + seconds_value (strike_seconds)));
   // Winding in an empty line puts the rod away.
-  MOPPE_CHECK (tend_line (fishing, take + 2.0, true));
+  MOPPE_CHECK (tend_line (fishing, play_time (take + 2.0), true));
   MOPPE_CHECK (fishing.line.phase == Line::Phase::empty);
-  tend_line (fishing, take + 2.0 + seconds_value (wind_seconds) + 0.1, false);
+  tend_line (fishing,
+             play_time (take + 2.0 + seconds_value (wind_seconds) + 0.1),
+             false);
   MOPPE_CHECK (!line_out (fishing.line));
 }

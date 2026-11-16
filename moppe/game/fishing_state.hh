@@ -4,6 +4,7 @@
 // Fishing as it stands (game/fishing.hh): plain values, part of the
 // session's copyable state.
 
+#include <moppe/game/game_clock.hh>
 #include <moppe/gfx/math.hh>
 
 #include <cstddef>
@@ -58,7 +59,7 @@ namespace moppe::game {
     };
     Phase phase = Phase::idle;
     // When the phase began.
-    double since = -100.0;
+    play_time_t since = play_time (-100.0);
     // Where the walker stood to cast (or where the helmsman sits, kept up
     // with the boat as it drifts), and where the float lands and lies.
     Vec3 stand {};
@@ -71,10 +72,10 @@ namespace moppe::game {
     // How many casts there have been, which seeds each one's luck; when
     // the next fish will come to the bait; and what it is.
     std::uint32_t casts = 0;
-    double bite_at = 0.0;
+    play_time_t bite_at = play_time (0.0);
     Fish fish {};
     // Splashes on the water, the next due when.
-    double next_splash = 0.0;
+    play_time_t next_splash = play_time (0.0);
   };
 
   // What was caught, in the order it came out of the water. Those from
@@ -83,7 +84,7 @@ namespace moppe::game {
     std::vector<Fish> fish;
     std::size_t used = 0;
     // The last fish landed or lost, and when, for its moment on screen.
-    double last_time = -100.0;
+    play_time_t last_time = play_time (-100.0);
     Fish last {};
     bool last_lost = false;
 

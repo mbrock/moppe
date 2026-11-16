@@ -362,7 +362,7 @@ namespace moppe {
         frame.camera.position,
         frame.camera.forward,
         frame.camera.field_of_view.numerical_value_in (u::deg),
-        logic ().m_total_time,
+        static_cast<float> (seconds_into_play (logic ().m_total_time)),
         m_sky.sun_height);
       std::cerr << "moppe: pose: " << line << '\n';
       std::ofstream shots (std::filesystem::path (m_snapshot_directory) /

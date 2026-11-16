@@ -156,11 +156,19 @@ MOPPE_TEST (the_mill_turns_its_wheel_in_the_outlet_stream) {
 }
 
 MOPPE_TEST (a_beacon_catches_burns_and_dies_down) {
-  MOPPE_CHECK (beacon_burn (-100.0, -100.0, 10.0) == 0.0f);
-  MOPPE_CHECK (beacon_burn (0.0, -100.0, 1.0) < 0.2f);
-  MOPPE_CHECK_NEAR (beacon_burn (0.0, -100.0, 20.0), 1.0f, 1e-5f);
-  MOPPE_CHECK (beacon_burn (0.0, 20.0, 20.5) > 0.5f);
-  MOPPE_CHECK (beacon_burn (0.0, 20.0, 30.0) == 0.0f);
+  MOPPE_CHECK (beacon_burn (play_time (-100.0),
+                            play_time (-100.0),
+                            play_time (10.0)) == 0.0f);
+  MOPPE_CHECK (
+    beacon_burn (play_time (0.0), play_time (-100.0), play_time (1.0)) < 0.2f);
+  MOPPE_CHECK_NEAR (
+    beacon_burn (play_time (0.0), play_time (-100.0), play_time (20.0)),
+    1.0f,
+    1e-5f);
+  MOPPE_CHECK (
+    beacon_burn (play_time (0.0), play_time (20.0), play_time (20.5)) > 0.5f);
+  MOPPE_CHECK (
+    beacon_burn (play_time (0.0), play_time (20.0), play_time (30.0)) == 0.0f);
 }
 
 // A farmhouse can be walked into: straight at its open door the hiker

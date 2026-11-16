@@ -68,22 +68,22 @@ MOPPE_TEST (hens_roost_on_the_perches_at_night_and_come_down_by_day) {
 // no more than three, and are reached into only by someone standing
 // before them.
 MOPPE_TEST (eggs_are_laid_in_the_nest_boxes_and_taken_from_before_them) {
-  std::vector<NestState> nests = first_eggs (4, 9.0, 11);
+  std::vector<NestState> nests = first_eggs (4, clock_time (9.0), 11);
   for (const NestState& n : nests) {
     MOPPE_CHECK (n.eggs >= 1 && n.eggs <= 2);
-    MOPPE_CHECK (n.next_lay > 9.0);
+    MOPPE_CHECK (n.next_lay > clock_time (9.0));
   }
   // Emptied, within half a day each is laid in again...
   for (NestState& n : nests)
     n.eggs = 0;
-  lay_eggs (nests, 21.0, 11);
+  lay_eggs (nests, clock_time (21.0), 11);
   for (const NestState& n : nests)
     MOPPE_CHECK (n.eggs >= 1 && n.eggs <= nest_holds);
   // ...but left for days, holds no more than it can.
-  lay_eggs (nests, 21.0 + 24.0 * 5, 11);
+  lay_eggs (nests, clock_time (21.0 + 24.0 * 5), 11);
   for (const NestState& n : nests) {
     MOPPE_CHECK (n.eggs == nest_holds);
-    MOPPE_CHECK (n.next_lay > 21.0 + 24.0 * 5);
+    MOPPE_CHECK (n.next_lay > clock_time (21.0 + 24.0 * 5));
   }
 
   const Nest boxes[] = {

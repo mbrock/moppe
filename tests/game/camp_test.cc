@@ -150,53 +150,54 @@ MOPPE_TEST (a_sleeper_lies_in_the_sag_of_the_cloth) {
 
 MOPPE_TEST (the_fire_catches_burns_and_dies) {
   Camp camp;
-  MOPPE_CHECK (fire_burn (camp, 10.0) == 0.0f);
+  MOPPE_CHECK (fire_burn (camp, play_time (10.0)) == 0.0f);
   camp.fire = true;
-  camp.fire_time = 10.0;
+  camp.fire_time = play_time (10.0);
   camp.hearth = Vec3 (5.0f, 2.0f, 7.0f);
-  MOPPE_CHECK (fire_burn (camp, 10.0) > 0.0f);
-  MOPPE_CHECK (fire_burn (camp, 11.0) < fire_burn (camp, 13.0));
-  MOPPE_CHECK_NEAR (fire_burn (camp, 20.0), 1.0f, 1e-5f);
+  MOPPE_CHECK (fire_burn (camp, play_time (10.0)) > 0.0f);
+  MOPPE_CHECK (fire_burn (camp, play_time (11.0)) <
+               fire_burn (camp, play_time (13.0)));
+  MOPPE_CHECK_NEAR (fire_burn (camp, play_time (20.0)), 1.0f, 1e-5f);
   MOPPE_CHECK (fire_light_position (camp)[1] > 2.2f);
   // Its light is warm and never still.
   const DisplayColor light = fire_light_color (1.0f, 3.0f);
   MOPPE_CHECK (light.red > light.green && light.green > light.blue);
   MOPPE_CHECK (fire_light_color (1.0f, 3.1f).red != light.red);
   camp.fire = false;
-  camp.fire_time = 30.0;
-  MOPPE_CHECK (fire_burn (camp, 30.5) < 1.0f);
-  MOPPE_CHECK (fire_burn (camp, 32.0) == 0.0f);
+  camp.fire_time = play_time (30.0);
+  MOPPE_CHECK (fire_burn (camp, play_time (30.5)) < 1.0f);
+  MOPPE_CHECK (fire_burn (camp, play_time (32.0)) == 0.0f);
 
   // Getting in and out of the hammock eases its load.
   camp.resting = true;
-  camp.rest_time = 40.0;
-  MOPPE_CHECK (hammock_load (camp, 40.0) == 0.0f);
-  MOPPE_CHECK_NEAR (hammock_load (camp, 42.0), 1.0f, 1e-5f);
+  camp.rest_time = play_time (40.0);
+  MOPPE_CHECK (hammock_load (camp, play_time (40.0)) == 0.0f);
+  MOPPE_CHECK_NEAR (hammock_load (camp, play_time (42.0)), 1.0f, 1e-5f);
   camp.resting = false;
-  camp.rest_time = 50.0;
-  MOPPE_CHECK_NEAR (hammock_load (camp, 50.0), 1.0f, 1e-5f);
-  MOPPE_CHECK (hammock_load (camp, 52.0) == 0.0f);
+  camp.rest_time = play_time (50.0);
+  MOPPE_CHECK_NEAR (hammock_load (camp, play_time (50.0)), 1.0f, 1e-5f);
+  MOPPE_CHECK (hammock_load (camp, play_time (52.0)) == 0.0f);
 }
 
 MOPPE_TEST (mushrooms_fry_then_keep_then_burn) {
   const Pan pan = [] {
     Pan set = pan_set_on (Vec3 (10, 5, 10), Vec3 (12, 5, 10));
-    set.since = 100.0;
+    set.since = play_time (100.0);
     return set;
   }();
   // On the cook's side of the fire, the handle toward them.
   MOPPE_CHECK (pan.place[0] > 10.2f && pan.place[0] < 10.6f);
   MOPPE_CHECK_NEAR (pan.yaw, 0.0f, 1e-4f);
-  MOPPE_CHECK_NEAR (pan_cooked (pan, 100.0), 0.0f, 1e-6f);
-  MOPPE_CHECK (pan_cooked (pan, 104.0) > 0.3f);
-  MOPPE_CHECK (pan_cooked (pan, 104.0) < 1.0f);
+  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (100.0)), 0.0f, 1e-6f);
+  MOPPE_CHECK (pan_cooked (pan, play_time (104.0)) > 0.3f);
+  MOPPE_CHECK (pan_cooked (pan, play_time (104.0)) < 1.0f);
   // Fried, and good for half a minute.
-  MOPPE_CHECK_NEAR (pan_cooked (pan, 110.0), 1.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (pan_cooked (pan, 139.0), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (110.0)), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (139.0)), 1.0f, 1e-6f);
   // Then it burns.
-  MOPPE_CHECK (pan_cooked (pan, 150.0) > 1.4f);
-  MOPPE_CHECK_NEAR (pan_cooked (pan, 400.0), 2.0f, 1e-6f);
+  MOPPE_CHECK (pan_cooked (pan, play_time (150.0)) > 1.4f);
+  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (400.0)), 2.0f, 1e-6f);
   Pan off = pan;
   off.on = false;
-  MOPPE_CHECK_NEAR (pan_cooked (off, 120.0), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (pan_cooked (off, play_time (120.0)), 0.0f, 1e-6f);
 }

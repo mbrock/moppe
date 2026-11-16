@@ -384,8 +384,7 @@ namespace moppe {
           std::clamp (-0.2f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
         if (line_out (line))
           m_fish_script_rest = t;
-        const float age =
-          static_cast<float> (logic ().m_total_time - line.since);
+        const float age = seconds_between (logic ().m_total_time, line.since);
         input.deploy_glider =
           (!line_out (line) && t - m_fish_script_rest > 1.5f) ||
           (line.phase == Line::Phase::biting && age > 0.4f);
@@ -396,8 +395,7 @@ namespace moppe {
         // over the side, and a cast; strike at the take and land two.
         // Then cast again and open the throttle, which winds it in.
         const Line& line = logic ().m_fishing.line;
-        const float age =
-          static_cast<float> (logic ().m_total_time - line.since);
+        const float age = seconds_between (logic ().m_total_time, line.since);
         if (t < 5.0f || m_boat_fish_off >= 0.0f) {
           input.drive = 1.0f;
           return input;

@@ -255,7 +255,8 @@ namespace moppe::game {
 
     const Weather& weather = logic.m_weather;
     // Lightning lights the cloud and the haze, and everything under it.
-    const float flash = lightning_flash (weather.lightning, logic.m_total_time);
+    const float flash = lightning_flash (
+      weather.lightning, seconds_into_play (logic.m_total_time));
     const DisplayColor flashed_fog = mix_display (
       logic.m_fog, DisplayColor (0.62f, 0.64f, 0.76f), 0.75f * flash);
     result.lighting.fog_color = flashed_fog;
@@ -280,7 +281,8 @@ namespace moppe::game {
     result.lighting.sky_turn = radians_value (sky.turn);
     result.lighting.moonlight = sky.moonlight;
     result.lighting.daylight = sky.daylight;
-    result.lighting.time = static_cast<float> (logic.m_total_time);
+    result.lighting.time =
+      static_cast<float> (seconds_into_play (logic.m_total_time));
     // The campfire lights what stands round it, most of all at night.
     if (const float burn = fire_burn (logic.m_camp, logic.m_total_time);
         burn > 0.01f) {

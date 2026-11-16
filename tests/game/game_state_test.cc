@@ -504,12 +504,12 @@ MOPPE_TEST (game_state_is_an_independent_value) {
   static_assert (std::is_copy_assignable_v<moppe::game::GameState>);
 
   moppe::game::GameState first {};
-  first.logic.m_total_time = 12.5;
+  first.logic.m_total_time = moppe::game::play_time (12.5);
   first.logic.m_score = 400;
   moppe::game::GameState second = first;
-  second.logic.m_total_time = 20.0;
+  second.logic.m_total_time = moppe::game::play_time (20.0);
   second.logic.m_score = 900;
-  MOPPE_CHECK (first.logic.m_total_time == 12.5);
+  MOPPE_CHECK (first.logic.m_total_time == moppe::game::play_time (12.5));
   MOPPE_CHECK (first.logic.m_score == 400);
 }
 
@@ -531,7 +531,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   static_assert (!std::is_move_assignable_v<game::GameSession>);
 
   game::GameSession session (world, surface);
-  session.logic ().m_total_time = 12.5;
+  session.logic ().m_total_time = game::play_time (12.5);
   session.logic ().m_score = 400;
   session.bike ().set_thrust (0.8f);
   session.glider ().launch (
@@ -546,7 +546,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
                         DisplayColor (0.8f, 0.6f, 0.2f));
   const game::GameSession::State saved = session.state ();
 
-  session.logic ().m_total_time = 20.0;
+  session.logic ().m_total_time = game::play_time (20.0);
   session.logic ().m_score = 900;
   session.bike ().set_thrust (-1.0f);
   session.glider ().set_turn (-1.0f);

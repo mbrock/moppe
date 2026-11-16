@@ -505,19 +505,21 @@ namespace moppe::game {
   // -- eggs ---------------------------------------------------------
 
   std::vector<NestState>
-  first_eggs (std::size_t nests, double hours, std::uint32_t seed) {
+  first_eggs (std::size_t nests, clock_time_t hours, std::uint32_t seed) {
     using namespace hen_parts;
     std::vector<NestState> out (nests);
     for (std::size_t k = 0; k < nests; ++k) {
       const auto n = static_cast<std::uint32_t> (k);
       out[k].eggs = static_cast<std::uint8_t> (1 + (hash (seed, n) & 1u));
-      out[k].next_lay = hours + 1.0 + 4.0 * unit (seed ^ 0x9e57u, n);
+      out[k].next_lay =
+        hours + (1.0 + 4.0 * unit (seed ^ 0x9e57u, n)) * si::hour;
     }
     return out;
   }
 
-  void
-  lay_eggs (std::span<NestState> states, double hours, std::uint32_t seed) {
+  void lay_eggs (std::span<NestState> states,
+                 clock_time_t hours,
+                 std::uint32_t seed) {
     using namespace hen_parts;
     for (std::size_t k = 0; k < states.size (); ++k) {
       NestState& s = states[k];
@@ -525,12 +527,14 @@ namespace moppe::game {
       for (int guard = 0; s.next_lay <= hours && guard < 8; ++guard) {
         if (s.eggs < nest_holds)
           ++s.eggs;
-        const auto n = static_cast<std::uint32_t> (s.next_lay * 7.0);
+        const auto n =
+          static_cast<std::uint32_t> (hours_since_midnight (s.next_lay) * 7.0);
         s.next_lay +=
-          3.5 + 3.0 * unit (seed + static_cast<std::uint32_t> (k), n);
+          (3.5 + 3.0 * unit (seed + static_cast<std::uint32_t> (k), n)) *
+          si::hour;
       }
       if (s.next_lay <= hours)
-        s.next_lay = hours + 3.5;
+        s.next_lay = hours + 3.5 * si::hour;
     }
   }
 

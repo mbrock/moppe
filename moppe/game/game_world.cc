@@ -504,7 +504,7 @@ namespace moppe {
         return weather_of (*m_held_sky);
       if (!m_day.turning || !m_session || !m_weather_timeline)
         return {};
-      const double hours = logic ().m_day_hours;
+      const double hours = hours_since_midnight (logic ().m_day_hours);
       const SkyKind kind = m_weather_timeline->kind_at (hours);
       if (kind != m_logged_sky) {
         m_logged_sky = kind;
@@ -532,10 +532,10 @@ namespace moppe {
         static_cast<std::uint32_t> (recipe ().seed ().value));
       m_logged_sky.reset ();
       logic ().m_day_hours =
-        m_day.first_hour
-          ? *m_day.first_hour
-          : m_almanac.clock_for_sun_height (m_graphics.sun_height)
-              .numerical_value_in (si::hour);
+        clock_time (m_day.first_hour
+                      ? *m_day.first_hour
+                      : m_almanac.clock_for_sun_height (m_graphics.sun_height)
+                          .numerical_value_in (si::hour));
       read_sky ();
       if (m_day.turning)
         std::cerr << "moppe: the day begins at "
@@ -547,7 +547,7 @@ namespace moppe {
 
     void MoppeGame::read_sky () {
       m_sky = m_day.turning && m_session
-                ? m_almanac.at (logic ().m_day_hours)
+                ? m_almanac.at (hours_since_midnight (logic ().m_day_hours))
                 : m_almanac.held (m_graphics.sun_height);
     }
   }

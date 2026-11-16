@@ -48,7 +48,7 @@ namespace moppe::game {
   // long enough is landed into the creel, and an empty line comes in.
   // `strike` is the pick key pressed this frame. Returns whether it was
   // used.
-  bool tend_line (Fishing& fishing, double now, bool strike);
+  bool tend_line (Fishing& fishing, play_time_t now, bool strike);
 
   // Begins a cast from where the walker stands at the water at `aim`.
   void cast_line (Line& line,
@@ -56,7 +56,7 @@ namespace moppe::game {
                   const Vec3& aim,
                   Waters waters,
                   bool upland,
-                  double now);
+                  play_time_t now);
 
   // Whether the line is out or being dealt with, the rod in hand.
   inline bool line_out (const Line& line) {
@@ -65,11 +65,12 @@ namespace moppe::game {
 
   // Where the fish on the line is, fought in toward the bank, at the
   // point it leaves the water.
-  Vec3 fish_in_water (const Line& line, double now);
+  Vec3 fish_in_water (const Line& line, play_time_t now);
 
   // The rod and line as drawn at `now`, if the rod is in hand; `time`
   // keeps the float bobbing and the fish twisting.
-  std::optional<RodPose> rod_pose (const Line& line, double now, float time);
+  std::optional<RodPose>
+  rod_pose (const Line& line, play_time_t now, float time);
 
   // Where the right hand holds a rod raised `raise` radians, from the
   // shoulders `k` stands with.

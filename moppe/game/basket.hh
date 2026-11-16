@@ -1,6 +1,8 @@
 #ifndef MOPPE_GAME_BASKET_HH
 #define MOPPE_GAME_BASKET_HH
 
+#include <moppe/game/game_clock.hh>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -31,7 +33,7 @@ namespace moppe::game {
     // Simulation time of the last reach for a mushroom, for its little
     // celebration, and what it was; a refused one was poisonous and was
     // left growing.
-    double last_reach_time = -100.0;
+    play_time_t last_reach_time = play_time (-100.0);
     MushroomKind last_kind = MushroomKind::chanterelle;
     bool last_refused = false;
     // The last reach was into a nest box.
@@ -52,7 +54,7 @@ namespace moppe::game {
   // the first midnight) its next egg will be laid.
   struct NestState {
     std::uint8_t eggs = 0;
-    double next_lay = 0.0;
+    clock_time_t next_lay = clock_time (0.0);
   };
 
   inline constexpr int nest_holds = 3;

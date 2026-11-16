@@ -280,7 +280,7 @@ namespace moppe::game {
                   const Vec3& aim,
                   Waters waters,
                   bool upland,
-                  double now) {
+                  play_time_t now) {
     using namespace fishing_parts;
     ++line.casts;
     line.phase = Line::Phase::casting;
@@ -291,16 +291,15 @@ namespace moppe::game {
     line.waters = waters;
     line.upland = upland;
     line.fish = fish_for (waters, upland, chance (line));
-    line.bite_at = now + seconds_value (cast_seconds) +
-                   seconds_value (bite_wait (chance (line)));
-    line.next_splash = now + seconds_value (cast_seconds);
+    line.bite_at = now + duration_t (cast_seconds + bite_wait (chance (line)));
+    line.next_splash = now + duration_t (cast_seconds);
   }
 
-  bool tend_line (Fishing& fishing, double now, bool strike) {
+  bool tend_line (Fishing& fishing, play_time_t now, bool strike) {
     using namespace fishing_parts;
     Line& line = fishing.line;
     Creel& creel = fishing.creel;
-    const seconds_t age = static_cast<float> (now - line.since) * u::s;
+    const seconds_t age = seconds_between (now, line.since) * u::s;
     const auto begin = [&] (Line::Phase phase) {
       line.phase = phase;
       line.since = now;
@@ -332,7 +331,7 @@ namespace moppe::game {
         creel.last_time = now;
         ++line.casts;
         line.fish = fish_for (line.waters, line.upland, chance (line));
-        line.bite_at = now + seconds_value (bite_wait (chance (line)));
+        line.bite_at = now + duration_t (bite_wait (chance (line)));
         begin (Line::Phase::waiting);
       }
       return false;
@@ -358,25 +357,26 @@ namespace moppe::game {
     return false;
   }
 
-  Vec3 fish_in_water (const Line& line, double now) {
+  Vec3 fish_in_water (const Line& line, play_time_t now) {
     using namespace fishing_parts;
     if (line.phase != Line::Phase::playing)
       return line.bobber;
     const float done =
-      fishing_parts::within_unit (static_cast<float> (now - line.since) /
+      fishing_parts::within_unit (seconds_between (now, line.since) /
                                   seconds_value (play_seconds (line.fish)));
     // It runs from side to side as it is wound in to a few metres out.
     const Vec3 in = flat (line.stand - line.bobber);
     const Vec3 side = unit_or (cross (in, world_up), Vec3 (1, 0, 0));
-    const float t = static_cast<float> (now - line.since);
+    const float t = seconds_between (now, line.since);
     return line.bobber + in * (0.6f * smoothstep (0.0f, 1.0f, done)) +
            side * ((1.0f - done) * 1.1f * std::sin (2.3f * t)) -
            world_up * 0.05f;
   }
 
-  std::optional<RodPose> rod_pose (const Line& line, double now, float time) {
+  std::optional<RodPose>
+  rod_pose (const Line& line, play_time_t now, float time) {
     using namespace fishing_parts;
-    const float age = static_cast<float> (now - line.since);
+    const float age = seconds_between (now, line.since);
     RodPose rod;
     rod.water = line.bobber;
     switch (line.phase) {
@@ -400,7 +400,7 @@ namespace moppe::game {
     case Line::Phase::waiting: {
       rod.raise = 0.55f + 0.03f * std::sin (0.7f * time);
       // Before the take, a few nibbles.
-      const float coming = static_cast<float> (line.bite_at - now);
+      const float coming = seconds_between (line.bite_at, now);
       const float nibble = coming < 2.2f && coming > 0.0f
                              ? 0.035f *
                                  std::max (0.0f, std::sin (11.0f * time)) *

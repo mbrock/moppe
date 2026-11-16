@@ -10,6 +10,7 @@
 
 #include <moppe/game/animals.hh>
 #include <moppe/game/fishing_state.hh>
+#include <moppe/game/game_clock.hh>
 #include <moppe/game/hens.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame.hh>
@@ -44,10 +45,9 @@ namespace moppe::game {
     bool day_turning = false;
     // How much light there is to see smoke and steam by, 0..1.
     float daylight = 1.0f;
-    // The other player as drawn now, and their hour (negative when none
-    // is known).
+    // The other player as drawn now, and their clock when it is known.
     const CompanionSnapshot* companion = nullptr;
-    double companion_hours = -1.0;
+    std::optional<clock_time_t> companion_clock;
   };
 
   // Lying in the hammock the hours run forty times as fast: one goes by

@@ -43,7 +43,8 @@ namespace moppe {
       const GameLogicState& state = logic ();
       CompanionSnapshot mine;
       mine.world = this_world ();
-      mine.day_hours = m_day.turning ? state.m_day_hours : -1.0;
+      mine.day_hours =
+        m_day.turning ? hours_since_midnight (state.m_day_hours) : -1.0;
       mine.mode = state.m_mode;
       mine.bike = vehicle_pose (session ().bike ());
       mine.jeep = car_pose (session ().jeep ());
@@ -69,7 +70,7 @@ namespace moppe {
       mine.swing = camp.swing;
       mine.gaze_yaw = camp.gaze_yaw;
       mine.gaze_pitch = camp.gaze_pitch;
-      mine.hearth_laid = camp.fire_time > -50.0;
+      mine.hearth_laid = hearth_laid (camp);
       mine.hearth = camp.hearth;
       mine.fire_burn = fire_burn (camp, state.m_total_time);
       mine.beacons = 0;

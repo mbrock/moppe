@@ -112,6 +112,13 @@ partition of the graphics features, `--graphics-benchmark`, and the analysis
 tools) was removed as dead code: the NHAL renderer never wrote its results.
 `GameState` restore and replay remain what a future benchmark would build on.
 
+The checkpoint's times are moments on one of two clocks (`game/game_clock.hh`):
+`play_time_t`, seconds since play began, and `clock_time_t`, hours since the
+first midnight. Each is a `quantity_point` on an origin of its own, so the two
+cannot be mixed, and the time between two moments is a duration; the water,
+the shaders, the almanac, and the weather take them as plain numbers at the
+boundary.
+
 Subsystem state structs should remain plain values. When another mutable
 system joins the checkpoint, it should expose `state()` and `restore()` while
 keeping configuration and resource ownership outside the returned value.
