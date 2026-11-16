@@ -215,8 +215,8 @@ namespace moppe::game {
       .position = position_value (body.position) +
                   Vec3 (0, body.step_offset.numerical_value_in (u::m), 0),
       .heading = state.facing,
-      .look_aside = state.lag,
-      .turn_speed = state.turn_speed,
+      .look_aside = radians_value (state.lag),
+      .turn_speed = state.turn_speed.numerical_value_in (u::rad / u::s),
       .velocity = velocity,
       .ground_normal = body.ground_normal,
       .stride_phase = state.stride_phase,
@@ -224,7 +224,7 @@ namespace moppe::game {
       .grounded = body.grounded,
       .airborne_seconds = seconds_value (body.airborne_time),
       .vertical_speed = velocity[1],
-      .landing_dip = walker.landing_dip (),
+      .landing_dip = meters_value (walker.landing_dip ()),
       .look_pitch = look_pitch,
     };
   }

@@ -72,8 +72,8 @@ MOPPE_TEST (walker_walks_and_runs_on_the_ground_deterministically) {
   MOPPE_CHECK (walked.body.grounded);
   MOPPE_CHECK_NEAR (feet[1], 10.0f + 0.2f * feet[0], 0.02f);
   const float pace = walked.stride_speed.numerical_value_in (u::m / u::s);
-  MOPPE_CHECK (pace > 0.8f * game::Walker::walk_speed);
-  MOPPE_CHECK (pace < game::Walker::walk_speed + 0.01f);
+  MOPPE_CHECK (pace > 0.8f * speed_value (game::Walker::walk_speed));
+  MOPPE_CHECK (pace < speed_value (game::Walker::walk_speed) + 0.01f);
   MOPPE_CHECK (ran.stride_speed > 2.0f * walked.stride_speed);
 
   // The same inputs on the same ground give bit-identical bodies.
@@ -98,8 +98,10 @@ MOPPE_TEST (walker_slides_around_a_trunk_instead_of_sticking) {
   blocked.set_walk (1.0f);
   walk_for (blocked, 3.0f, surface, world, &trunks);
   const Vec3 stopped = blocked.position ();
-  MOPPE_CHECK (stopped[0] < 30.0f - 0.4f - mov::Character::radius + 0.01f);
-  MOPPE_CHECK (stopped[0] > 30.0f - 0.4f - mov::Character::radius - 0.1f);
+  MOPPE_CHECK (stopped[0] <
+               30.0f - 0.4f - meters_value (mov::Character::radius) + 0.01f);
+  MOPPE_CHECK (stopped[0] >
+               30.0f - 0.4f - meters_value (mov::Character::radius) - 0.1f);
   MOPPE_CHECK_NEAR (stopped[1], 5.0f, 1e-4f);
   // Pressed against the trunk the legs stop too.
   MOPPE_CHECK (blocked.state ().stride_speed < 0.2f * u::m / u::s);
@@ -112,7 +114,7 @@ MOPPE_TEST (walker_slides_around_a_trunk_instead_of_sticking) {
   const Vec3 past = glancing.position ();
   MOPPE_CHECK (past[0] > 32.0f);
   MOPPE_CHECK (std::abs (past[2] - 64.0f) >
-               0.4f + mov::Character::radius - 0.01f);
+               0.4f + meters_value (mov::Character::radius) - 0.01f);
 }
 
 MOPPE_TEST (walker_jump_arc_lands_and_coyote_time_forgives_a_late_press) {
@@ -132,8 +134,9 @@ MOPPE_TEST (walker_jump_arc_lands_and_coyote_time_forgives_a_late_press) {
     if (!walker.grounded ())
       ++airborne_steps;
   }
-  const float g = mov::Character::gravity;
-  const float v = mov::Character::jump_speed;
+  const float g =
+    mov::Character::gravity.numerical_value_in (u::m / pow<2> (u::s));
+  const float v = speed_value (mov::Character::jump_speed);
   MOPPE_CHECK_NEAR (apex, v * v / (2.0f * g), 0.03f);
   MOPPE_CHECK_NEAR (airborne_steps * walker_test_step, 2.0f * v / g, 0.03f);
   MOPPE_CHECK (walker.grounded ());
@@ -200,7 +203,8 @@ MOPPE_TEST (walker_cannot_climb_a_bank_too_steep_to_stand_on) {
   walker.spawn (position (Vec3 (35, 5, 64)), Vec3 (1, 0, 0));
   walker.set_walk (1.0f);
   walk_for (walker, 4.0f, surface, world);
-  MOPPE_CHECK (walker.position ()[1] < 5.0f + mov::Character::step_height);
+  MOPPE_CHECK (walker.position ()[1] <
+               5.0f + meters_value (mov::Character::step_height));
   MOPPE_CHECK (walker.position ()[0] < 40.5f);
 }
 
@@ -222,7 +226,7 @@ MOPPE_TEST (walker_checkpoint_resumes_the_same_walk) {
       walker.set_walk (1.0f);
       walker.set_run (i > 120);
       walker.set_strafe (i % 200 < 100 ? 0.3f : -0.2f);
-      walker.turn_by (i % 90 < 45 ? 0.004f : -0.003f);
+      walker.turn_by ((i % 90 < 45 ? 0.004f : -0.003f) * u::rad);
       if (i % 150 == 30)
         walker.jump ();
       walker.update (seconds (walker_test_step), surface, world, &trunks);
@@ -288,18 +292,19 @@ MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
   // Standing, a glance aside turns the head, not the body.
   game::Walker walker;
   walker.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
-  walker.turn_by (0.8f);
+  walker.turn_by ((0.8f) * u::rad);
   walk_for (walker, 1.0f, surface, world);
   MOPPE_CHECK_NEAR (yaw (walker.facing ()), 0.0f, 1e-4f);
 
   // A look further round than the chest can twist steps the feet round
   // after it, on the spot, until the body faces it -- but not at once.
-  walker.turn_by (1.4f);
+  walker.turn_by ((1.4f) * u::rad);
   walk_for (walker, 0.1f, surface, world);
   const float early =
     std::abs (game::yaw_between (walker.facing (), walker.heading ()));
   MOPPE_CHECK (early > 1.5f);
-  MOPPE_CHECK (std::abs (walker.turn_speed ()) > 0.5f);
+  MOPPE_CHECK (
+    std::abs (walker.turn_speed ().numerical_value_in (u::rad / u::s)) > 0.5f);
   walk_for (walker, 2.0f, surface, world);
   MOPPE_CHECK_NEAR (
     game::yaw_between (walker.facing (), walker.heading ()), 0.0f, 0.05f);
@@ -310,14 +315,18 @@ MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
   game::Walker spun;
   spun.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
   for (int i = 0; i < 60; ++i) {
-    spun.turn_by (4.0f * PI / 60.0f);
+    spun.turn_by ((4.0f * PI / 60.0f) * u::rad);
     spun.update (seconds (walker_test_step), surface, world);
   }
-  const float way = spun.turn_speed () > 0.0f ? 1.0f : -1.0f;
-  MOPPE_CHECK (std::abs (spun.turn_speed ()) > 1.0f);
+  const float way =
+    spun.turn_speed ().numerical_value_in (u::rad / u::s) > 0.0f ? 1.0f : -1.0f;
+  MOPPE_CHECK (
+    std::abs (spun.turn_speed ().numerical_value_in (u::rad / u::s)) > 1.0f);
   for (int i = 0; i < 120; ++i) {
-    MOPPE_CHECK (way * spun.turn_speed () > -1e-3f);
-    MOPPE_CHECK (std::abs (spun.turn_speed ()) < 3.5f);
+    MOPPE_CHECK (way * spun.turn_speed ().numerical_value_in (u::rad / u::s) >
+                 -1e-3f);
+    MOPPE_CHECK (
+      std::abs (spun.turn_speed ().numerical_value_in (u::rad / u::s)) < 3.5f);
     spun.update (seconds (walker_test_step), surface, world);
   }
 
@@ -327,9 +336,10 @@ MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
   going.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
   going.set_walk (1.0f);
   walk_for (going, 1.0f, surface, world);
-  going.turn_by (1.5f);
+  going.turn_by ((1.5f) * u::rad);
   going.update (seconds (walker_test_step), surface, world);
-  MOPPE_CHECK (std::abs (going.turn_speed ()) <= 6.0f + 1e-3f);
+  MOPPE_CHECK (std::abs (going.turn_speed ().numerical_value_in (
+                 u::rad / u::s)) <= 6.0f + 1e-3f);
   MOPPE_CHECK (
     std::abs (game::yaw_between (going.facing (), going.heading ())) > 1.3f);
   walk_for (going, 1.0f, surface, world);

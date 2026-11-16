@@ -75,20 +75,20 @@ namespace moppe {
                                const Vec3& at,
                                double time);
 
-    // How fast a body wades through water `depth` metres deep, at most:
+    // How fast a body wades through water `depth` deep, at most:
     // unhindered at the ankles, a walk at the shins, two metres a second at
     // the knees, and hardly more than a shuffle at the chest.
-    float wading_speed (float depth);
+    speed_t wading_speed (meters_t depth);
 
     // On foot: the rider parked the bike and walks. The body is a
     // mov::Character capsule; the walker turns controls into its intent,
     // keeps the facing, and counts out the stride the avatar animates.
     class Walker {
     public:
-      static constexpr float walk_speed = 3.6f; // m/s
-      static constexpr float run_speed = 8.5f;
-      static constexpr float wade_speed = 2.0f; // knee deep
-      static constexpr float eye_height = 1.62f;
+      static constexpr speed_t walk_speed = 3.6f * u::m / u::s;
+      static constexpr speed_t run_speed = 8.5f * u::m / u::s;
+      static constexpr speed_t wade_speed = 2.0f * u::m / u::s; // knee deep
+      static constexpr meters_t eye_height = 1.62f * u::m;
 
       struct State {
         mov::Character::State body {};
@@ -104,14 +104,13 @@ namespace moppe {
         // Ground speed over the last step, as the feet saw it.
         speed_t stride_speed {};
         // The way the body faces, which comes round after `heading`, how
-        // fast it turned over the last step (rad/s, positive to the
-        // right), whether it is stepping round on the spot, and how far
-        // it has still to come round, radians, counted the way the look
-        // went.
+        // fast it turned over the last step (positive to the right),
+        // whether it is stepping round on the spot, and how far it has
+        // still to come round, counted the way the look went.
         Vec3 facing { 0, 0, 1 };
-        float turn_speed {};
+        radians_per_second_t turn_speed {};
         bool turning {};
-        float lag {};
+        radians_t lag {};
       };
 
       Walker ();
@@ -140,7 +139,7 @@ namespace moppe {
       // walker cannot walk out further than `longest` from it, measured
       // level, nor in nearer than `shortest`, and is drawn back if they
       // are.
-      void tether (const Vec3& anchor, float shortest, float longest) {
+      void tether (const Vec3& anchor, meters_t shortest, meters_t longest) {
         m_tether = anchor;
         m_tether_shortest = shortest;
         m_tether_longest = longest;
@@ -149,7 +148,7 @@ namespace moppe {
       // Mouse look turns the walker's heading, where it looks and goes,
       // directly; positive is to the right. The body follows at its own
       // pace (`facing`).
-      void turn_by (float radians);
+      void turn_by (radians_t angle);
       // A press, remembered briefly so a jump asked for just before the
       // feet land still happens.
       void jump () {
@@ -185,7 +184,7 @@ namespace moppe {
       Vec3 facing () const {
         return m_facing;
       }
-      float turn_speed () const {
+      radians_per_second_t turn_speed () const {
         return m_turn_speed;
       }
       bool grounded () const {
@@ -195,8 +194,8 @@ namespace moppe {
         return m_phase;
       }
 
-      // How far the body sinks into its knees after a landing, metres.
-      float landing_dip () const;
+      // How far the body sinks into its knees after a landing.
+      meters_t landing_dip () const;
       // The first-person eye: head height, eased over steps, dipped by
       // landings, and bobbing gently with each footfall.
       Vec3 eye_position () const;
@@ -210,12 +209,12 @@ namespace moppe {
       float m_phase;
       speed_t m_stride_speed;
       Vec3 m_facing;
-      float m_turn_speed = 0.0f;
+      radians_per_second_t m_turn_speed {};
       bool m_turning = false;
-      float m_lag = 0.0f;
+      radians_t m_lag {};
       Vec3 m_tether;
-      float m_tether_shortest = 0.0f;
-      float m_tether_longest = 0.0f;
+      meters_t m_tether_shortest {};
+      meters_t m_tether_longest {};
       bool m_tethered = false;
     };
   }

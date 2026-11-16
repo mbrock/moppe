@@ -40,13 +40,14 @@ namespace moppe::mov {
       meters_t step_offset {};
     };
 
-    static constexpr float radius = 0.3f;
-    static constexpr float height = 1.8f;
-    static constexpr float step_height = 0.45f;
+    static constexpr meters_t radius = 0.3f * u::m;
+    static constexpr meters_t height = 1.8f * u::m;
+    static constexpr meters_t step_height = 0.45f * u::m;
     // Steeper ground than this cannot be stood on: the body slides off it.
     static constexpr float walkable_normal_y = 0.64f; // ~50 degrees
-    static constexpr float gravity = 15.0f;
-    static constexpr float jump_speed = 5.4f;
+    static constexpr metres_per_second_squared_t gravity =
+      15.0f * u::m / pow<2> (u::s);
+    static constexpr speed_t jump_speed = 5.4f * u::m / u::s;
 
     void spawn (position_t feet);
     // Arrives in the air and already moving -- off a bike, out of a
@@ -78,12 +79,12 @@ namespace moppe::mov {
   private:
     struct Support {
       bool found = false;
-      float height = 0.0f;
+      meters_t height {};
       Vec3 normal { 0, 1, 0 };
     };
 
     Support probe (const Vec3& feet,
-                   float reach_down,
+                   meters_t reach_down,
                    const map::SurfaceGeometry& surface,
                    const TrunkField* obstacles) const;
     void slide (Vec3& feet,

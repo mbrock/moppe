@@ -692,7 +692,7 @@ namespace moppe::game {
       if (logic.m_mode == M_FOOT) {
         // The walker turns with the look, and a following camera turns
         // with them at once rather than catching up.
-        session.walker ().turn_by (input.look_yaw);
+        session.walker ().turn_by (input.look_yaw * u::rad);
         session.walker ().set_run (input.run && !logic.m_haul.active);
         if (logic.m_cam_mode != CAM_HELMET)
           session.camera ().turn (input.look_yaw, 0.0f);
@@ -775,8 +775,8 @@ namespace moppe::game {
                             body.point (machine_centre (haul.machine)),
                             quantity_cast<isq::impulse> (force.lift * step));
       walker.tether (tie,
-                     std::max (0.6f, meters_value (haul.rope - rope_give)),
-                     meters_value (haul.rope + rope_give));
+                     std::max (0.6f * u::m, haul.rope - rope_give),
+                     haul.rope + rope_give);
     }
 
     // Notes how each machine is getting on, and heaves the one being

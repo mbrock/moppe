@@ -50,21 +50,27 @@ namespace moppe {
              water_waves_at (surface, water, at, time).height * u::m;
     }
 
-    float wading_speed (float depth) {
+    speed_t wading_speed (meters_t depth) {
       // Through the ankles, the shins, the knees, the waist, and the chest.
       constexpr int stages = 5;
-      constexpr float depths[stages] = { 0.1f, 0.3f, 0.5f, 1.0f, 1.5f };
-      constexpr float speeds[stages] = {
-        Walker::run_speed, 3.0f, Walker::wade_speed, 1.2f, 0.8f
+      constexpr meters_t depths[stages] = {
+        0.1f * u::m, 0.3f * u::m, 0.5f * u::m, 1.0f * u::m, 1.5f * u::m
       };
+      constexpr speed_t speeds[stages] = { Walker::run_speed,
+                                           3.0f * u::m / u::s,
+                                           Walker::wade_speed,
+                                           1.2f * u::m / u::s,
+                                           0.8f * u::m / u::s };
       if (depth <= depths[0])
         return speeds[0];
       for (int k = 1; k < stages; ++k)
         if (depth < depths[k])
-          return std::lerp (speeds[k - 1],
-                            speeds[k],
-                            (depth - depths[k - 1]) /
-                              (depths[k] - depths[k - 1]));
+          return std::lerp (
+                   speed_value (speeds[k - 1]),
+                   speed_value (speeds[k]),
+                   ((depth - depths[k - 1]) / (depths[k] - depths[k - 1]))
+                     .numerical_value_in (one)) *
+                 u::m / u::s;
       return speeds[stages - 1];
     }
 
@@ -97,9 +103,8 @@ namespace moppe {
       m_lag = state.lag;
     }
 
-    void Walker::turn_by (float radians) {
-      m_heading =
-        Quaternion::rotate (m_heading, Vec3 (0, 1, 0), -radians * u::rad);
+    void Walker::turn_by (radians_t angle) {
+      m_heading = Quaternion::rotate (m_heading, Vec3 (0, 1, 0), -angle);
       m_heading[1] = 0.0f;
       normalize (m_heading);
     }
@@ -111,9 +116,9 @@ namespace moppe {
         m_heading = Vec3 (0, 0, 1);
       normalize (m_heading);
       m_facing = m_heading;
-      m_turn_speed = 0.0f;
+      m_turn_speed = {};
       m_turning = false;
-      m_lag = 0.0f;
+      m_lag = {};
       m_turn = 0;
       m_walk = 0;
       m_strafe = 0;
@@ -141,11 +146,10 @@ namespace moppe {
 
       // A brisk walk, or a run with Shift held; wading slows either.
       const Vec3 feet = position ();
-      const float depth =
-        (water_surface_at (world, surface, water, feet, time) - feet[1] * u::m)
-          .numerical_value_in (u::m);
-      const float speed =
-        std::min (m_run ? run_speed : walk_speed, wading_speed (depth));
+      const meters_t depth =
+        water_surface_at (world, surface, water, feet, time) - feet[1] * u::m;
+      const float speed = speed_value (
+        std::min (m_run ? run_speed : walk_speed, wading_speed (depth)));
 
       const Vec3 right (m_heading[2], 0.0f, -m_heading[0]);
       Vec3 wish =
@@ -155,13 +159,13 @@ namespace moppe {
         wish = normalized (wish) * (amount * speed);
       // A current over the knees pushes the legs downstream, and more the
       // deeper they stand in it.
-      if (water && depth > 0.15f) {
+      if (water && depth > 0.15f * u::m) {
         const Vec3 current =
           spatial::sample<terrain::water_velocity> (
             *water, moppe::position (Vec3 (feet[0], 0.0f, feet[2])))
             .numerical_value_in (u::m / u::s);
         wish += Vec3 (current[0], 0.0f, current[2]) *
-                (0.6f * std::min (1.0f, depth - 0.15f));
+                (0.6f * std::min (1.0f, meters_value (depth) - 0.15f));
       }
 
       // On the rope, what would take the walker further out, or in
@@ -173,15 +177,16 @@ namespace moppe {
         if (distance > 1e-4f) {
           out *= 1.0f / distance;
           const float away = dot (wish, out);
-          if (distance > m_tether_longest) {
+          const float longest = meters_value (m_tether_longest);
+          const float shortest = meters_value (m_tether_shortest);
+          if (distance > longest) {
             if (away > 0.0f)
               wish -= out * away;
-            wish -= out * std::min (2.0f, 4.0f * (distance - m_tether_longest));
-          } else if (distance < m_tether_shortest) {
+            wish -= out * std::min (2.0f, 4.0f * (distance - longest));
+          } else if (distance < shortest) {
             if (away < 0.0f)
               wish -= out * away;
-            wish +=
-              out * std::min (2.0f, 4.0f * (m_tether_shortest - distance));
+            wish += out * std::min (2.0f, 4.0f * (shortest - distance));
           }
         }
         m_tethered = false;
@@ -210,7 +215,7 @@ namespace moppe {
       // follow passes behind it and the body keeps turning the way the
       // look went, rather than turning back to meet it the short way.
       float aside = yaw_between (m_facing, m_heading);
-      aside += PI2 * std::round ((m_lag - aside) / PI2);
+      aside += PI2 * std::round ((radians_value (m_lag) - aside) / PI2);
       aside = std::clamp (aside, -1.1f * PI, 1.1f * PI);
       const bool under_way =
         !grounded () || step_speed > 0.5f || amount > 0.05f;
@@ -233,26 +238,28 @@ namespace moppe {
       m_facing = yawed (m_facing, turned);
       m_facing[1] = 0.0f;
       normalize (m_facing);
-      m_turn_speed = turned / step;
-      m_lag = aside - turned;
+      m_turn_speed = turned / step * u::rad / u::s;
+      m_lag = (aside - turned) * u::rad;
 
       if (grounded ()) {
         m_stride_speed = step_speed * u::m / u::s;
-        m_phase += step * gait_rate (step_speed, m_turn_speed);
+        m_phase +=
+          step * gait_rate (step_speed,
+                            m_turn_speed.numerical_value_in (u::rad / u::s));
         m_phase -= std::floor (m_phase);
       }
     }
 
-    float Walker::landing_dip () const {
+    meters_t Walker::landing_dip () const {
       // Knees take the landing over a tenth of a second and give it back
       // over the next few: t e^(1 - t) peaks at one when t is one.
       const mov::Character::State body = m_body.state ();
       if (!body.grounded)
-        return 0.0f;
+        return 0.0f * u::m;
       const float impact = body.landing_speed.numerical_value_in (u::m / u::s);
       const float depth = std::min (0.3f, 0.022f * impact);
       const float t = seconds_value (body.since_landing) / 0.09f;
-      return t > 8.0f ? 0.0f : depth * t * std::exp (1.0f - t);
+      return (t > 8.0f ? 0.0f : depth * t * std::exp (1.0f - t)) * u::m;
     }
 
     Vec3 Walker::eye_position () const {
@@ -262,15 +269,18 @@ namespace moppe {
       // a walk, a little more at a run, nothing standing or in the air.
       float bob = 0.0f;
       if (body.grounded) {
-        const float walking = std::min (1.0f, speed / walk_speed);
-        const float running = std::clamp (
-          (speed - walk_speed) / (run_speed - walk_speed), 0.0f, 1.0f);
+        const float walk = speed_value (walk_speed);
+        const float run = speed_value (run_speed);
+        const float walking = std::min (1.0f, speed / walk);
+        const float running =
+          std::clamp ((speed - walk) / (run - walk), 0.0f, 1.0f);
         const float amplitude = 0.018f * walking + 0.014f * running;
         bob = -amplitude * std::cos (2.0f * PI2 * m_phase);
       }
       return position () + Vec3 (0.0f,
                                  body.step_offset.numerical_value_in (u::m) +
-                                   eye_height + bob - landing_dip (),
+                                   meters_value (eye_height) + bob -
+                                   meters_value (landing_dip ()),
                                  0.0f);
     }
   }

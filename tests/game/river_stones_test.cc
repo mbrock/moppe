@@ -138,7 +138,8 @@ namespace {
         return static_cast<float> (i) * step;
       const Vec3 facing = walker.heading ();
       walker.turn_by (-std::atan2 (facing[2] * ahead[0] - facing[0] * ahead[2],
-                                   dot (facing, ahead)));
+                                   dot (facing, ahead)) *
+                      u::rad);
       walker.set_walk (1.0f * one);
       walker.update (
         seconds (step), channel.surface, world, stones, &channel.water);

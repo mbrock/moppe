@@ -10,24 +10,29 @@
 
 namespace moppe::mov {
   namespace {
-    constexpr float ground_acceleration = 40.0f; // m/s^2 toward the wish
-    constexpr float ground_braking = 28.0f;      // m/s^2 with no input
-    constexpr float air_acceleration = 7.0f;
-    constexpr float coyote_seconds = 0.12f;
-    constexpr float jump_buffer_seconds = 0.14f;
+    // Toward the wish, with no input, and in the air.
+    constexpr metres_per_second_squared_t ground_acceleration =
+      40.0f * u::m / pow<2> (u::s);
+    constexpr metres_per_second_squared_t ground_braking =
+      28.0f * u::m / pow<2> (u::s);
+    constexpr metres_per_second_squared_t air_acceleration =
+      7.0f * u::m / pow<2> (u::s);
+    constexpr seconds_t coyote_time = 0.12f * u::s;
+    constexpr seconds_t jump_buffer_time = 0.14f * u::s;
     // A grounded body follows ground falling away by this much per step
     // instead of launching off every crest.
-    constexpr float snap_reach = 0.35f;
+    constexpr meters_t snap_reach = 0.35f * u::m;
     // Feet that rise or fall this much more than the ground's slope
     // predicts stepped onto or off something; the slope itself needs no
     // easing.
-    constexpr float step_snap = 0.04f;
-    constexpr float step_ease = 16.0f; // 1/s
+    constexpr meters_t step_snap = 0.04f * u::m;
+    constexpr damping_t step_ease = 16.0f / u::s;
 
     // The capsule's hemisphere centres above the feet.
-    const Vec3
-      capsule_low (0.0f, Character::step_height + Character::radius, 0.0f);
-    const Vec3 capsule_high (0.0f, Character::height - Character::radius, 0.0f);
+    const Vec3 capsule_low (
+      0.0f, meters_value (Character::step_height + Character::radius), 0.0f);
+    const Vec3 capsule_high (
+      0.0f, meters_value (Character::height - Character::radius), 0.0f);
 
     float
     terrain_height (const map::SurfaceGeometry& surface, float x, float z) {
@@ -76,14 +81,15 @@ namespace moppe::mov {
   }
 
   Character::Support Character::probe (const Vec3& feet,
-                                       float reach_down,
+                                       meters_t reach_down,
                                        const map::SurfaceGeometry& surface,
                                        const TrunkField* obstacles) const {
     Support support;
     const float ground = terrain_height (surface, feet[0], feet[2]);
-    if (ground <= feet[1] + step_height && ground >= feet[1] - reach_down) {
+    if (ground <= feet[1] + meters_value (step_height) &&
+        ground >= feet[1] - meters_value (reach_down)) {
       support.found = true;
-      support.height = ground;
+      support.height = ground * u::m;
       support.normal = terrain_slope_normal (surface, feet[0], feet[2]);
     }
     if (!obstacles)
@@ -93,13 +99,14 @@ namespace moppe::mov {
     // narrower than the capsule, so a body is not held up by a flank it is
     // merely brushing.
     constexpr float foot = 0.18f;
-    const Vec3 from = feet + Vec3 (0.0f, step_height + foot, 0.0f);
-    const GroundHit hit =
-      obstacles->cast_down (from, foot, step_height + reach_down);
+    const Vec3 from =
+      feet + Vec3 (0.0f, meters_value (step_height) + foot, 0.0f);
+    const GroundHit hit = obstacles->cast_down (
+      from, foot, meters_value (step_height + reach_down));
     if (hit.hit && hit.normal[1] >= walkable_normal_y &&
-        (!support.found || hit.point[1] > support.height)) {
+        (!support.found || hit.point[1] > meters_value (support.height))) {
       support.found = true;
-      support.height = hit.point[1];
+      support.height = hit.point[1] * u::m;
       support.normal = hit.normal;
     }
     return support;
@@ -113,14 +120,14 @@ namespace moppe::mov {
     // Box3D's mover loop: gather the planes the capsule touches, solve the
     // displacement that honours them, sweep it so nothing tunnels, repeat
     // from where it stopped.
+    const float r = meters_value (radius);
     const Vec3 target = feet + delta;
     const float reach = length (delta) + 0.05f;
     std::vector<b3CollisionPlane> planes;
     for (int iteration = 0; iteration < 4; ++iteration) {
       m_planes.clear ();
       if (obstacles)
-        obstacles->collide_mover (
-          feet, capsule_low, capsule_high, radius, m_planes);
+        obstacles->collide_mover (feet, capsule_low, capsule_high, r, m_planes);
 
       // The heightfield is not a Box3D shape; its planes come from the
       // ground under and around the capsule's lower hemisphere. On ground
@@ -131,12 +138,12 @@ namespace moppe::mov {
         Vec3 at = low;
         if (k > 0) {
           const float angle = static_cast<float> (k - 1) * (PI2 / 6.0f);
-          at += Vec3 (std::cos (angle), 0.0f, std::sin (angle)) * radius;
+          at += Vec3 (std::cos (angle), 0.0f, std::sin (angle)) * r;
         }
         const Vec3 normal = terrain_slope_normal (surface, at[0], at[2]);
         const Vec3 ground (
           at[0], terrain_height (surface, at[0], at[2]), at[2]);
-        const float depth = radius - dot (normal, low - ground);
+        const float depth = r - dot (normal, low - ground);
         if (depth > -reach)
           m_planes.push_back ({ normal, depth });
       }
@@ -167,9 +174,9 @@ namespace moppe::mov {
       if (grounded)
         move[1] = 0.0f;
       const float fraction =
-        obstacles ? obstacles->cast_mover (
-                      feet, capsule_low, capsule_high, radius, move)
-                  : 1.0f;
+        obstacles
+          ? obstacles->cast_mover (feet, capsule_low, capsule_high, r, move)
+          : 1.0f;
       feet += move * fraction;
       if (length2 (move * fraction) < 1e-8f)
         break;
@@ -184,19 +191,18 @@ namespace moppe::mov {
                         const CharacterIntent& intent,
                         const map::SurfaceGeometry& surface,
                         const TrunkField* obstacles) {
-    const float h = seconds_value (dt);
     State& s = m_state;
     Vec3& feet = position_value (s.position);
     Vec3& v = velocity_value (s.velocity);
 
-    s.jump_buffer = intent.jump ? jump_buffer_seconds * u::s
+    s.jump_buffer = intent.jump ? jump_buffer_time
                                 : std::max (0.0f * u::s, s.jump_buffer - dt);
     if (!s.grounded) {
       s.coyote = std::max (0.0f * u::s, s.coyote - dt);
       s.airborne_time += dt;
     }
     s.since_landing += dt;
-    s.step_offset *= decay (step_ease / u::s, dt);
+    s.step_offset *= decay (step_ease, dt);
 
     Vec3 wish = horizontal (intent.wish_velocity);
     if (s.grounded) {
@@ -207,14 +213,16 @@ namespace moppe::mov {
       if (uphill > 0.0f && length2 (wish) > 0.0f)
         wish *= 1.0f - 0.45f * std::min (1.0f, uphill / length (wish) / 0.77f);
       const bool steering = length2 (wish) > 1e-4f;
-      v = approach (horizontal (v),
-                    wish,
-                    (steering ? ground_acceleration : ground_braking) * h);
+      v = approach (
+        horizontal (v),
+        wish,
+        speed_value ((steering ? ground_acceleration : ground_braking) * dt));
     } else {
       // A little air control: enough to aim a jump, never to fly.
       if (length2 (wish) > 1e-4f) {
         const Vec3 flat = horizontal (v);
-        const Vec3 steered = approach (flat, wish, air_acceleration * h);
+        const Vec3 steered =
+          approach (flat, wish, speed_value (air_acceleration * dt));
         // Never brake a long jump just because the stick asks for less.
         const float keep = std::max (length (flat), length (wish));
         const Vec3 limited = length (steered) > keep && length (steered) > 0
@@ -222,12 +230,12 @@ namespace moppe::mov {
                                : steered;
         v = Vec3 (limited[0], v[1], limited[2]);
       }
-      v[1] -= gravity * h;
+      v[1] -= speed_value (gravity * dt);
     }
 
     bool jumped = false;
     if (s.jump_buffer > 0.0f * u::s && (s.grounded || s.coyote > 0.0f * u::s)) {
-      v[1] = jump_speed;
+      v[1] = speed_value (jump_speed);
       s.grounded = false;
       s.coyote = 0.0f * u::s;
       s.jump_buffer = 0.0f * u::s;
@@ -237,13 +245,13 @@ namespace moppe::mov {
 
     const bool was_grounded = s.grounded;
     const Vec3 before = feet;
-    slide (feet, v * h, was_grounded, surface, obstacles);
+    slide (feet, v * seconds_value (dt), was_grounded, surface, obstacles);
 
     Support support =
-      probe (feet, was_grounded ? snap_reach : 0.0f, surface, obstacles);
+      probe (feet, was_grounded ? snap_reach : 0.0f * u::m, surface, obstacles);
     if (was_grounded && support.found &&
         support.normal[1] < walkable_normal_y &&
-        support.height > before[1] + 0.01f) {
+        meters_value (support.height) > before[1] + 0.01f) {
       // Walking into a bank too steep to stand on: it acts as a wall, so
       // the body slides along its foot instead of hopping up and falling
       // back. The bank's downhill direction is the wall's normal.
@@ -256,7 +264,7 @@ namespace moppe::mov {
         v -= wall * std::min (0.0f, dot (v, wall));
         support = probe (feet, snap_reach, surface, obstacles);
         if (support.found && support.normal[1] < walkable_normal_y &&
-            support.height > before[1] + 0.01f) {
+            meters_value (support.height) > before[1] + 0.01f) {
           feet = before;
           v = Vec3 ();
           support = probe (feet, snap_reach, surface, obstacles);
@@ -271,25 +279,25 @@ namespace moppe::mov {
         const Vec3& n = s.ground_normal;
         const Vec3 moved = feet - before;
         const float predicted = -(n[0] * moved[0] + n[2] * moved[2]) / n[1];
-        const float rise = support.height - feet[1];
-        if (std::abs (rise - predicted) > step_snap)
+        const float rise = meters_value (support.height) - feet[1];
+        if (std::abs (rise - predicted) > meters_value (step_snap))
           s.step_offset -= (rise - predicted) * u::m;
-        feet[1] = support.height;
+        feet[1] = meters_value (support.height);
         s.ground_normal = support.normal;
       } else {
         // Off an edge, or onto ground too steep to stand on.
         s.grounded = false;
-        s.coyote = coyote_seconds * u::s;
+        s.coyote = coyote_time;
         s.airborne_time = 0.0f * u::s;
         v[1] = std::min<float> (v[1], 0.0f);
       }
     } else if (!jumped && v[1] <= 0.0f && walkable &&
-               support.height >= feet[1] - 1e-4f) {
+               meters_value (support.height) >= feet[1] - 1e-4f) {
       s.landing_speed = -v[1] * u::m / u::s;
       s.since_landing = 0.0f * u::s;
       s.grounded = true;
       s.ground_normal = support.normal;
-      feet[1] = support.height;
+      feet[1] = meters_value (support.height);
       v[1] = 0.0f;
     }
 
