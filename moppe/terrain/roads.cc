@@ -390,11 +390,11 @@ namespace moppe::terrain {
       return path;
     }
 
-    float path_length (const Lattice& lattice,
-                       const std::vector<std::size_t>& path) {
-      float length = 0.0f;
+    meters_t path_length (const Lattice& lattice,
+                          const std::vector<std::size_t>& path) {
+      meters_t length = 0.0f * u::m;
       for (std::size_t i = 1; i < path.size (); ++i)
-        length += lattice.distance (path[i - 1], path[i]);
+        length += lattice.distance (path[i - 1], path[i]) * u::m;
       return length;
     }
 
@@ -1411,9 +1411,11 @@ namespace moppe::terrain {
                                 planner.network.places[j]) > 5000.0f)
               continue;
             std::vector<std::size_t> path = trace (fresh, ends[j]);
-            const float direct = path_length (lattice, path);
-            const float ratio = along.cost[ends[j]] / std::max (direct, 1.0f);
-            if (direct < 4500.0f && ratio > best[i].ratio)
+            const meters_t direct = path_length (lattice, path);
+            const meters_t travelled = along.cost[ends[j]] * u::m;
+            const float ratio = (travelled / std::max (direct, 1.0f * u::m))
+                                  .numerical_value_in (mp_units::one);
+            if (direct < 4500.0f * u::m && ratio > best[i].ratio)
               best[i] = { ratio, std::move (path) };
           }
         }

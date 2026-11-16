@@ -67,18 +67,18 @@ namespace moppe::terrain {
     // Bounds every value within `grade` per metre of each bound given:
     // below by the highest of `lower`'s cones, above by the lowest of
     // `upper`'s. Two passes, as each cone only widens along the line.
-    void cones (std::span<const float> along,
-                std::vector<float>& lower,
-                std::vector<float>& upper,
+    void cones (std::span<const meters_t> along,
+                std::vector<meters_t>& lower,
+                std::vector<meters_t>& upper,
                 float grade) {
       const std::size_t n = along.size ();
       for (std::size_t i = 1; i < n; ++i) {
-        const float rise = grade * (along[i] - along[i - 1]);
+        const meters_t rise = grade * (along[i] - along[i - 1]);
         lower[i] = std::max (lower[i], lower[i - 1] - rise);
         upper[i] = std::min (upper[i], upper[i - 1] + rise);
       }
       for (std::size_t i = n - 1; i-- > 0;) {
-        const float rise = grade * (along[i + 1] - along[i]);
+        const meters_t rise = grade * (along[i + 1] - along[i]);
         lower[i] = std::max (lower[i], lower[i + 1] - rise);
         upper[i] = std::min (upper[i], upper[i + 1] + rise);
       }
@@ -87,23 +87,23 @@ namespace moppe::terrain {
     // A mean over `half` metres either way along the line, nearer the ends
     // over less. Averaging keeps any bound on the grade, so the eased
     // profile climbs no steeper than the one it eases.
-    std::vector<float> ease_profile (std::span<const float> along,
-                                     std::span<const float> values,
-                                     float half) {
+    std::vector<meters_t> ease_profile (std::span<const meters_t> along,
+                                        std::span<const meters_t> values,
+                                        meters_t half) {
       const std::size_t n = values.size ();
-      std::vector<float> result (n);
+      std::vector<meters_t> result (n);
       std::size_t first = 0;
       std::size_t last = 0;
       double sum = 0.0;
       for (std::size_t i = 0; i < n; ++i) {
-        const float reach = std::min (
+        const meters_t reach = std::min (
           { half, along[i] - along.front (), along.back () - along[i] });
-        while (last < n && along[last] <= along[i] + reach + 1e-3f)
-          sum += values[last++];
-        while (first < last && along[first] < along[i] - reach - 1e-3f)
-          sum -= values[first++];
+        while (last < n && along[last] <= along[i] + reach + 1e-3f * u::m)
+          sum += values[last++].numerical_value_in (u::m);
+        while (first < last && along[first] < along[i] - reach - 1e-3f * u::m)
+          sum -= values[first++].numerical_value_in (u::m);
         result[i] =
-          static_cast<float> (sum / static_cast<double> (last - first));
+          static_cast<float> (sum / static_cast<double> (last - first)) * u::m;
       }
       return result;
     }
@@ -114,29 +114,41 @@ namespace moppe::terrain {
     // its worst point), eased over the vertical curves, held within the
     // cut and fill allowed, no lower than its floors, and through every
     // pinned height.
-    std::vector<float> solve_profile (std::span<const float> along,
-                                      std::span<const float> ground,
-                                      std::span<const float> pins,
-                                      std::span<const float> floors,
+    std::vector<float> solve_profile (std::span<const float> along_m,
+                                      std::span<const float> ground_m,
+                                      std::span<const float> pins_m,
+                                      std::span<const float> floors_m,
                                       const RoadFormation& parameters) {
+      const auto metres = [] (std::span<const float> values) {
+        std::vector<meters_t> result;
+        result.reserve (values.size ());
+        for (float value : values)
+          result.push_back (value * u::m);
+        return result;
+      };
+      const auto along = metres (along_m);
+      const auto ground = metres (ground_m);
+      const auto pins = metres (pins_m);
+      const auto floors = metres (floors_m);
       const std::size_t n = ground.size ();
       const float grade = parameters.maximum_grade;
-      std::vector<float> lower (ground.begin (), ground.end ());
-      std::vector<float> upper (ground.begin (), ground.end ());
+      std::vector<meters_t> lower (ground.begin (), ground.end ());
+      std::vector<meters_t> upper (ground.begin (), ground.end ());
       cones (along, lower, upper, grade);
-      std::vector<float> profile (n);
+      std::vector<meters_t> profile (n);
       for (std::size_t i = 0; i < n; ++i)
         profile[i] = 0.5f * (lower[i] + upper[i]);
-      profile = ease_profile (along, profile, 0.5f * parameters.vertical_curve);
+      profile =
+        ease_profile (along, profile, 0.5f * parameters.vertical_curve * u::m);
       // The cut and fill allowed, as bounds that themselves keep the
       // grade: clamping into them keeps it too. Where a hump or a hollow
       // asks for more than they allow, the two cross, and the road cuts or
       // fills between them, deeper than allowed but at its grade.
-      std::vector<float> deepest (n);
-      std::vector<float> highest (n);
+      std::vector<meters_t> deepest (n);
+      std::vector<meters_t> highest (n);
       for (std::size_t i = 0; i < n; ++i) {
-        deepest[i] = ground[i] - parameters.maximum_cut;
-        highest[i] = ground[i] + parameters.maximum_fill;
+        deepest[i] = ground[i] - parameters.maximum_cut * u::m;
+        highest[i] = ground[i] + parameters.maximum_fill * u::m;
       }
       cones (along, deepest, highest, grade);
       for (std::size_t i = 0; i < n; ++i)
@@ -146,18 +158,18 @@ namespace moppe::terrain {
 
       // No lower than its floors, come up to at the road's grade.
       {
-        std::vector<float> least (floors.begin (), floors.end ());
-        std::vector<float> unbounded (n, no_height);
+        std::vector<meters_t> least (floors.begin (), floors.end ());
+        std::vector<meters_t> unbounded (n, no_height * u::m);
         cones (along, least, unbounded, grade);
         for (std::size_t i = 0; i < n; ++i)
           profile[i] = std::max (profile[i], least[i]);
       }
 
-      std::vector<float> pin_lower (n, -no_height);
-      std::vector<float> pin_upper (n, no_height);
+      std::vector<meters_t> pin_lower (n, -no_height * u::m);
+      std::vector<meters_t> pin_upper (n, no_height * u::m);
       bool pinned = false;
       for (std::size_t i = 0; i < n; ++i)
-        if (std::isfinite (pins[i])) {
+        if (std::isfinite (pins[i].numerical_value_in (u::m))) {
           pin_lower[i] = pin_upper[i] = pins[i];
           pinned = true;
         }
@@ -168,7 +180,11 @@ namespace moppe::terrain {
                          ? std::clamp (profile[i], pin_lower[i], pin_upper[i])
                          : 0.5f * (pin_lower[i] + pin_upper[i]);
       }
-      return profile;
+      std::vector<float> result;
+      result.reserve (n);
+      for (meters_t height : profile)
+        result.push_back (height.numerical_value_in (u::m));
+      return result;
     }
 
     // An earlier road's tread height at the point of it nearest `at`, if

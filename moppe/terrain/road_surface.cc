@@ -13,8 +13,11 @@ namespace moppe::terrain {
       return delta - period * std::round (delta / period);
     }
 
-    float smoothstep (float low, float high, float value) {
-      const float t = std::clamp ((value - low) / (high - low), 0.0f, 1.0f);
+    float road_smoothstep (meters_t low, meters_t high, meters_t value) {
+      const float t = std::clamp (
+        ((value - low) / (high - low)).numerical_value_in (mp_units::one),
+        0.0f,
+        1.0f);
       return t * t * (3.0f - 2.0f * t);
     }
 
@@ -27,14 +30,23 @@ namespace moppe::terrain {
     // the next is level at their shared point's height, whichever of the
     // two is taken for the nearer. No further aside than the tread and
     // its blend reach, beyond which nothing is held to the height.
-    float
-    mitred (float on, float aside, float length, float bend_a, float bend_b) {
-      constexpr float widest = 5.0f;
-      const float a = std::clamp (aside, -widest, widest);
-      const float cut_a = std::max (a * bend_a, 0.0f);
-      const float cut_b = std::max (a * bend_b, 0.0f);
-      const float span = std::max (length - cut_a - cut_b, 0.1f * length);
-      return span > 0.0f ? std::clamp ((on - cut_a) / span, 0.0f, 1.0f) : 0.0f;
+    float mitred (meters_t on,
+                  meters_t aside,
+                  meters_t length,
+                  float bend_a,
+                  float bend_b) {
+      constexpr meters_t widest = 5.0f * u::m;
+      constexpr meters_t zero = 0.0f * u::m;
+      const meters_t a = std::clamp (aside, -widest, widest);
+      const meters_t cut_a = std::max (a * bend_a, zero);
+      const meters_t cut_b = std::max (a * bend_b, zero);
+      const meters_t span = std::max (length - cut_a - cut_b, 0.1f * length);
+      return span > zero
+               ? std::clamp (
+                   ((on - cut_a) / span).numerical_value_in (mp_units::one),
+                   0.0f,
+                   1.0f)
+               : 0.0f;
     }
   }
 
@@ -313,11 +325,12 @@ namespace moppe::terrain {
       // ends rounded where it ends, and no further on.
       best.across =
         std::copysign (distance, best.direction_x * oz - best.direction_z * ox);
-      const float share = mitred (px * best.direction_x + pz * best.direction_z,
-                                  best.direction_x * pz - best.direction_z * px,
-                                  length,
-                                  bend_a,
-                                  bend_b);
+      const float share =
+        mitred ((px * best.direction_x + pz * best.direction_z) * u::m,
+                (best.direction_x * pz - best.direction_z * px) * u::m,
+                length * u::m,
+                bend_a,
+                bend_b);
       best.along = along_a + share * length;
       best.centre_m = ha + (hb - ha) * share;
       best.grade = length > 0.0f ? (hb - ha) / length : 0.0f;
@@ -329,22 +342,30 @@ namespace moppe::terrain {
     const RoadSample at = nearest (x_m, z_m);
     if (!at.found || at.kind != Road::Kind::Road)
       return field_m;
-    const float d = std::fabs (at.across);
+    const meters_t d = std::fabs (at.across) * u::m;
+    const meters_t field = field_m * u::m;
+    const meters_t centre = at.centre_m * u::m;
     // The deck is level across, out to its kerbs; beyond them, and under
     // it, is the field. A bank that stands above the deck's end is its
     // abutment.
     if (at.bridge)
-      return d <= m_formation.deck_half_width ? std::max (at.centre_m, field_m)
-                                              : field_m;
-    const float tread = m_formation.half_width + m_formation.shoulder;
-    const float half = m_formation.half_width;
-    const float surfacing =
-      at.paved ? asphalt_m * (1.0f - smoothstep (half - 0.1f, half + 0.1f, d))
-               : gravel_m * (1.0f - smoothstep (half - 0.3f, half + 0.6f, d));
-    const float road =
-      at.centre_m - m_formation.crown * std::min (d, half) + surfacing;
-    const float weight = 1.0f - smoothstep (tread, tread + blend_m, d);
-    return field_m + (road - field_m) * weight;
+      return d <= m_formation.deck_half_width * u::m
+               ? std::max (centre, field).numerical_value_in (u::m)
+               : field_m;
+    const meters_t half = m_formation.half_width * u::m;
+    const meters_t tread = half + m_formation.shoulder * u::m;
+    const meters_t surfacing =
+      at.paved
+        ? asphalt_m * u::m *
+            (1.0f - road_smoothstep (half - 0.1f * u::m, half + 0.1f * u::m, d))
+        : gravel_m * u::m *
+            (1.0f -
+             road_smoothstep (half - 0.3f * u::m, half + 0.6f * u::m, d));
+    const meters_t road =
+      centre - m_formation.crown * std::min (d, half) + surfacing;
+    const float weight =
+      1.0f - road_smoothstep (tread, tread + blend_m * u::m, d);
+    return (field + (road - field) * weight).numerical_value_in (u::m);
   }
 
   void RoadSurface::place_guardrails (
