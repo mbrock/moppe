@@ -41,6 +41,9 @@
 #include <windows.h>
 // psapi.h needs the Windows types above.
 #include <psapi.h>
+// Unity builds include the terrain sources after this file.
+#undef near
+#undef far
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <sys/resource.h>
