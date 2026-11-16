@@ -588,15 +588,22 @@ function(moppe_lower_world_shaders language extension outputs)
   set(${outputs} ${written} PARENT_SCOPE)
 endfunction()
 
+set(MOPPE_NHAL_RENDERER_SOURCES
+  moppe/nhal/renderer/nhal_renderer.cc
+  moppe/nhal/renderer/nhal_renderer_frame.cc
+  moppe/nhal/renderer/nhal_renderer_pipelines.cc
+  moppe/nhal/renderer/nhal_renderer_scene.cc
+)
+
 # Adds the NHAL renderer to TARGET, with its world programs embedded in
 # LANGUAGE through WORLD_SHADERS (world_shaders_<backend>.cc).
 function(moppe_add_nhal_renderer target language extension world_shaders)
   moppe_lower_world_shaders(${language} ${extension} lowered)
   add_dependencies(${target} moppe_nhal_world_${language})
   target_sources(${target} PRIVATE
-    moppe/nhal/renderer/nhal_renderer.cc ${world_shaders})
+    ${MOPPE_NHAL_RENDERER_SOURCES} ${world_shaders})
   target_include_directories(${target} PRIVATE ${MOPPE_NHAL_WORLD})
-  set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
+  set_source_files_properties(${MOPPE_NHAL_RENDERER_SOURCES}
     TARGET_DIRECTORY ${target} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
   set_source_files_properties(${world_shaders}
     TARGET_DIRECTORY ${target} PROPERTIES
@@ -607,7 +614,7 @@ function(moppe_add_nhal_renderer target language extension world_shaders)
   # would give the lowering a second owner; the target dependency orders it.
   if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
     set_source_files_properties(
-      moppe/nhal/renderer/nhal_renderer.cc ${world_shaders}
+      ${MOPPE_NHAL_RENDERER_SOURCES} ${world_shaders}
       TARGET_DIRECTORY ${target} PROPERTIES OBJECT_DEPENDS "${lowered}")
   endif()
 endfunction()
@@ -1404,7 +1411,7 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
       ${MOPPE_ENGINE_SOURCES}
       ${MOPPE_APPLICATION_SOURCES}
       moppe/nhal/d3d12/d3d12_device.cc
-      moppe/nhal/renderer/nhal_renderer.cc
+      ${MOPPE_NHAL_RENDERER_SOURCES}
       moppe/nhal/renderer/world_shaders_d3d12.cc
       moppe/platform/sdl/host.cc
       moppe/platform/sdl/device_d3d12.cc
@@ -1421,7 +1428,7 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
     set_source_files_properties(
       moppe/game/main.cc
       moppe/nhal/d3d12/d3d12_device.cc
-      moppe/nhal/renderer/nhal_renderer.cc
+      ${MOPPE_NHAL_RENDERER_SOURCES}
       moppe/nhal/renderer/world_shaders_d3d12.cc
       moppe/platform/sdl/host.cc
       moppe/platform/sdl/device_d3d12.cc
@@ -1430,7 +1437,7 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
       PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
     set_source_files_properties(moppe/nhal/renderer/world_shaders_d3d12.cc
       PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_DXIL}")
-    set_source_files_properties(moppe/nhal/renderer/nhal_renderer.cc
+    set_source_files_properties(${MOPPE_NHAL_RENDERER_SOURCES}
       PROPERTIES OBJECT_DEPENDS "${MOPPE_XBOX_LOWERED}")
     target_link_libraries(moppe-xbox PRIVATE SDL3::SDL3 -ld3d12 -ldxgi)
     # A package may ship a finished world baked on the host
