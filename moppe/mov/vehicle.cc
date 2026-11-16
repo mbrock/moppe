@@ -6,23 +6,23 @@
 namespace moppe {
   namespace mov {
     // The Trail 90's ride height: where it stands over the ground.
-    static const float radius = RigidBike::ride_height; // metres
+    static const meters_t radius = RigidBike::ride_height;
 
     // How deep the wheels of a bike with its centre at `height` run in
     // water standing at `level`: 0 dry, 1 from 0.6 m, a little over the
     // axles.
     static float wading_depth (meters_t height, meters_t level) {
-      return std::clamp (((level - height).numerical_value_in (u::m) + radius) /
-                           0.6f,
-                         0.0f,
-                         1.0f);
+      return std::clamp (
+        ((level - height + radius) / (0.6f * u::m)).numerical_value_in (one),
+        0.0f,
+        1.0f);
     }
 
     // How fast full steering input swings the bike itself, in radians
     // per second per radian of yaw input.  Grip then drags the
     // velocity around after the heading.
-    static const float steering_rate = 1.6;
-    static const float air_steering_rate = 0.9;
+    static const per_second_t steering_rate = 1.6f / u::s;
+    static const per_second_t air_steering_rate = 0.9f / u::s;
 
     static const acceleration_component_t boost_acceleration =
       26.0f * isq::acceleration[u::m / pow<2> (u::s)];
@@ -35,7 +35,15 @@ namespace moppe {
 
     // The rigid bike integrates at the game's own fixed rate; longer steps
     // are split into equal substeps of at most this length.
-    static const float rigid_step_seconds = 1.0f / 120.0f;
+    static const seconds_t rigid_step = seconds (1.0f / 120.0f);
+
+    // The classic bike's visual suspension spring, per unit of its mass.
+    constexpr quantity<one / pow<2> (u::s), float> susp_stiffness =
+      70.0f / pow<2> (u::s);
+    constexpr per_second_t susp_damping = 9.0f / u::s;
+    // Its drawn wheel's radius, and a turn.
+    constexpr meters_t drawn_wheel_radius = 0.68f * u::m;
+    constexpr float full_turn = 2.0f * 3.14159265f;
 
     Vehicle::Vehicle (position_t position,
                       degrees_t orientation,
@@ -48,8 +56,8 @@ namespace moppe {
         : m_position (position), m_velocity (moppe::velocity (Vec3 ())),
           m_heading (sin (orientation), 0, cos (orientation)),
           m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
-          m_lean (0), m_render_heading (m_heading), m_render_normal (0, 1, 0),
-          m_susp (0), m_susp_v (0), m_wheel_spin (0), m_boost_flight (false),
+          m_lean (), m_render_heading (m_heading), m_render_normal (0, 1, 0),
+          m_susp (), m_susp_v (), m_wheel_spin (), m_boost_flight (false),
           m_map (surface), m_max_thrust (max_thrust), m_power (power),
           m_thrust (0), m_mass (mass), m_boost_input (0), m_boost_drive (0),
           m_boost_level (0), m_boost_charge (1),
@@ -206,7 +214,7 @@ namespace moppe {
       m_thrust_orientation = m_heading;
       m_render_heading = m_heading;
       m_render_normal = normalized (up);
-      m_lean = 0;
+      m_lean = {};
       m_yaw = 0 * u::rad;
       m_yaw_target = 0 * u::rad;
       m_airborne_time = seconds (0.2f);
@@ -243,17 +251,19 @@ namespace moppe {
     }
 
     void Vehicle::fall_to_ground () {
-      position_value (m_position)[1] = ground_height ();
+      position_value (m_position)[1] = meters_value (ground_height ());
     }
 
     void Vehicle::check_ground_collision () {
       Vec3& p = position_value (m_position);
-      p[1] = max (ground_height () + radius, static_cast<float> (p[1]));
+      p[1] = max (meters_value (ground_height () + radius),
+                  static_cast<float> (p[1]));
     }
 
     bool Vehicle::is_grounded () const {
-      return std::abs (ground_height () - position_value (m_position)[1]) <
-             (radius + 0.1f);
+      return std::abs (meters_value (ground_height ()) -
+                       position_value (m_position)[1]) <
+             meters_value (radius + 0.1f * u::m);
     }
 
     acceleration_t Vehicle::drag () const {
@@ -272,12 +282,13 @@ namespace moppe {
       if (is_grounded ())
         return true;
       return m_airborne_time < seconds (0.12f) &&
-             position_value (m_position)[1] - ground_height () < radius + 0.6f;
+             position_value (m_position)[1] - meters_value (ground_height ()) <
+               meters_value (radius + 0.6f * u::m);
     }
 
     bool Vehicle::expected_landing_pose (Vec3& forward,
                                          Vec3& up,
-                                         float& time_to_landing) const {
+                                         seconds_t& time_to_landing) const {
       const Vec3& position = position_value (m_position);
       const Vec3& velocity = velocity_value (m_velocity);
       constexpr float gravity = 9.82f;
@@ -293,7 +304,7 @@ namespace moppe {
           terrain::surface_elevation_value (
             spatial::sample<terrain::surface_elevation> (
               m_map, moppe::position (Vec3 (sample[0], 0.0f, sample[2])))) +
-          radius;
+          meters_value (radius);
         if (sample[1] > surface)
           continue;
 
@@ -315,7 +326,7 @@ namespace moppe {
         if (length2 (forward) < 0.0001f)
           return false;
         normalize (forward);
-        time_to_landing = t;
+        time_to_landing = t * u::s;
         return true;
       }
       return false;
@@ -332,10 +343,10 @@ namespace moppe {
       Vec3& p = position_value (m_position);
       Vec3& v = velocity_value (m_velocity);
       constexpr float trunk_radius = 0.45f;
-      const TrunkContact contact =
-        m_trunks->collide (p - Vec3 (0.0f, radius - trunk_radius - 0.1f, 0.0f),
-                           p + Vec3 (0.0f, 0.6f, 0.0f),
-                           trunk_radius);
+      const TrunkContact contact = m_trunks->collide (
+        p - Vec3 (0.0f, meters_value (radius) - trunk_radius - 0.1f, 0.0f),
+        p + Vec3 (0.0f, 0.6f, 0.0f),
+        trunk_radius);
       if (!contact.hit)
         return;
       p += contact.push;
@@ -347,7 +358,6 @@ namespace moppe {
     }
 
     void Vehicle::steer (seconds_t dt) {
-      const float dt_s = seconds_value (dt);
       if (abs (m_yaw) < 0.001f * u::rad)
         return;
 
@@ -356,14 +366,16 @@ namespace moppe {
         // nimble at walking pace
         const float vf =
           std::abs (dot (velocity_value (m_velocity), m_heading));
-        const float rate = steering_rate / (1.0f + vf / 70.0f);
+        const per_second_t rate = steering_rate / (1.0f + vf / 70.0f);
         m_heading = Quaternion::rotate (
-          m_heading, ground_normal (), -m_yaw * rate * dt_s);
+          m_heading, ground_normal (), radians_t (-m_yaw * rate * dt));
       } else
         // Mid-air attitude control: swing the bike around, keep the
         // momentum -- landing sideways starts a drift
-        m_heading = Quaternion::rotate (
-          m_heading, Vec3 (0, 1, 0), -m_yaw * air_steering_rate * dt_s);
+        m_heading =
+          Quaternion::rotate (m_heading,
+                              Vec3 (0, 1, 0),
+                              radians_t (-m_yaw * air_steering_rate * dt));
     }
 
     // Tire grip pulls the velocity into line with where the bike
@@ -541,7 +553,7 @@ namespace moppe {
           // flare on touchdown, or so the story goes.
           if (m_boost_flight)
             m_impact *= 0.75f;
-          m_susp_v -= 0.10f * m_impact.numerical_value_in (u::m / u::s);
+          m_susp_v -= 0.10f * m_impact;
           m_fall_drop =
             m_fall_top -
             static_cast<float> (position_value (m_position)[1]) * u::m;
@@ -562,11 +574,13 @@ namespace moppe {
         float target = 0;
         if (driving_contact ()) {
           const float vf = dot (velocity, m_heading);
-          const float rate = steering_rate / (1.0f + std::abs (vf) / 70.0f);
+          const float rate =
+            per_second_value (steering_rate) / (1.0f + std::abs (vf) / 70.0f);
           target = std::atan2 (vf * radians_value (-m_yaw) * rate, 9.82f);
           target = std::max (-0.7f, std::min (0.7f, target));
         }
-        m_lean += (target - m_lean) * smoothing_alpha (8.0f / u::s, dt);
+        m_lean +=
+          (target * u::rad - m_lean) * smoothing_alpha (8.0f / u::s, dt);
       }
 
       // Visual attitude is separate from the steering heading. In flight the
@@ -577,7 +591,7 @@ namespace moppe {
       Vec3 pose_up = ground_normal ();
       damping_t pose_rate = 10.0f / u::s;
       if (airborne () && length2 (velocity) > 4.0f) {
-        float time_to_landing = 0.0f;
+        seconds_t time_to_landing {};
         const bool whipping = abs (m_yaw) > 0.18f * u::rad;
         if (whipping) {
           // Full-lock steering is a deliberate motocross whip. Preserve the
@@ -594,8 +608,8 @@ namespace moppe {
           pose_rate = 9.0f / u::s;
         } else if (expected_landing_pose (
                      pose_forward, pose_up, time_to_landing)) {
-          const float response = 4.0f + 5.0f / std::max (0.5f, time_to_landing);
-          pose_rate = response / u::s;
+          pose_rate =
+            4.0f / u::s + 5.0f / std::max (0.5f * u::s, time_to_landing);
         } else {
           pose_forward = normalized (velocity);
           Vec3 right = cross (Vec3 (0, 1, 0), pose_forward);
@@ -620,19 +634,21 @@ namespace moppe {
         normalize (m_render_normal);
 
       // Visual suspension spring: kicked by landings, settles fast
-      m_susp_v += (-70.0f * m_susp - 9.0f * m_susp_v) * dt_s;
-      m_susp += m_susp_v * dt_s;
-      m_susp = std::max (-0.35f, std::min (0.15f, m_susp));
+      m_susp_v += (-susp_stiffness * m_susp - susp_damping * m_susp_v) * dt;
+      m_susp += m_susp_v * dt;
+      m_susp = std::max (-0.35f * u::m, std::min (0.15f * u::m, m_susp));
 
       // Wheel roll for the renderer: ground speed while rolling, a
       // throttle-driven spin-up in the air.  ~0.68 m wheel radius as
       // drawn.  Kept in [0, 2pi) so precision survives long rides.
       {
-        float rate = dot (velocity, m_heading) / 0.68f;
+        float rate =
+          dot (velocity, m_heading) / meters_value (drawn_wheel_radius);
         if (!contact && abs (m_thrust) > 0.1f)
           rate = scalar_value (40.0f * m_thrust);
         m_wheel_spin =
-          std::fmod (m_wheel_spin + rate * dt_s, 2.0f * 3.14159265f);
+          std::fmod (radians_value (m_wheel_spin) + rate * dt_s, full_turn) *
+          u::rad;
       }
     }
 
@@ -645,7 +661,7 @@ namespace moppe {
       const int steps =
         std::max (1,
                   static_cast<int> (std::ceil (
-                    seconds_value (dt) / rigid_step_seconds - 0.001f)));
+                    (dt / rigid_step).numerical_value_in (one) - 0.001f)));
       const seconds_t h = dt / static_cast<float> (steps);
       const float h_s = seconds_value (h);
       const float boost =
@@ -674,7 +690,7 @@ namespace moppe {
         controls.parked = m_parked;
         controls.skid = m_skid;
         controls.wheelie = m_wheelie;
-        controls.hop = (i == 0 ? m_hop : 0.0f) * u::m / u::s;
+        controls.hop = i == 0 ? m_hop : speed_t {};
         if (m_hung) {
           controls.throttle = 0.0f;
           controls.steer = radians_t {};
@@ -719,13 +735,14 @@ namespace moppe {
         m_impact = std::max (m_impact, speed_t (0.4f * m_rigid->trunk_hit ()));
         m_impact = std::max (m_impact, m_rigid->body_hit ());
 
-        m_wheel_spin = std::fmod (
-          m_wheel_spin +
+        float spin = std::fmod (
+          radians_value (m_wheel_spin) +
             m_rigid->wheel_spin_rate ().numerical_value_in (u::rad / u::s) *
               h_s,
-          2.0f * 3.14159265f);
-        if (m_wheel_spin < 0.0f)
-          m_wheel_spin += 2.0f * 3.14159265f;
+          full_turn);
+        if (spin < 0.0f)
+          spin += full_turn;
+        m_wheel_spin = spin * u::rad;
 
         // Pedalling, the rider keeps to a cadence of some eight radians a
         // second through the gears, from the lowest, which turns the wheel
@@ -742,10 +759,12 @@ namespace moppe {
             : m_rigid->rear_contact ()
               ? wheel / std::clamp (wheel / 8.0f, 0.75f, 3.0f)
               : 8.0f * scalar_value (m_thrust);
-          m_crank = std::fmod (m_crank + cadence * h_s, 2.0f * 3.14159265f);
+          m_crank =
+            std::fmod (radians_value (m_crank) + cadence * h_s, full_turn) *
+            u::rad;
         }
       }
-      m_hop = 0.0f;
+      m_hop = {};
       sync_rigid ();
     }
 
@@ -759,11 +778,11 @@ namespace moppe {
       m_thrust_orientation = m_heading;
       m_render_heading = m_heading;
       m_render_normal = m_rigid->up ();
-      m_lean = 0.0f;
+      m_lean = {};
       m_front_drop = meters_value (m_rigid->front_extension ());
       m_rear_drop = meters_value (m_rigid->rear_extension ());
-      m_susp = 0.5f * (m_front_drop + m_rear_drop);
-      m_susp_v = 0.0f;
+      m_susp = 0.5f * (m_front_drop + m_rear_drop) * u::m;
+      m_susp_v = {};
       m_fork = radians_value (m_rigid->steer_angle ());
     }
 

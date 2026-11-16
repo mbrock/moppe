@@ -76,8 +76,9 @@ MOPPE_TEST (rigid_bike_settles_on_its_suspension) {
   }
   MOPPE_CHECK (deepest < -0.04f);
   MOPPE_CHECK (bike.grounded ());
-  MOPPE_CHECK_NEAR (
-    bike.position ()[1], 10.0f + mov::RigidBike::ride_height, 0.03f);
+  MOPPE_CHECK_NEAR (bike.position ()[1],
+                    10.0f + meters_value (mov::RigidBike::ride_height),
+                    0.03f);
   MOPPE_CHECK_NEAR (bike.rear_wheel_drop (), 0.0f, 0.03f);
   MOPPE_CHECK_NEAR (bike.front_wheel_drop (), 0.0f, 0.03f);
   MOPPE_CHECK (length (bike.velocity ()) < 0.05f);
@@ -142,7 +143,7 @@ MOPPE_TEST (rigid_bike_is_stopped_by_a_trunk) {
   float furthest = 0.0f;
   for (int i = 0; i < 6 * 120; ++i) {
     bike.update (tick);
-    impact = std::max (impact, bike.pop_impact ());
+    impact = std::max (impact, speed_value (bike.pop_impact ()));
     furthest = std::max (furthest, static_cast<float> (bike.position ()[2]));
   }
   // The frame capsule reaches 0.8 m ahead of the centre of mass.
@@ -350,7 +351,7 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
 
   // A hop clears a log and comes down on its wheels.
   const float ground = bike.position ()[1];
-  bike.hop (3.0f);
+  bike.hop (3.0f * u::m / u::s);
   float top = ground;
   for (int i = 0; i < 240; ++i) {
     bike.update (tick);
@@ -474,7 +475,7 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
   MOPPE_CHECK (lean > 0.3f);
   // Some 35 km/h for six seconds.
   MOPPE_CHECK (metres > 45.0f);
-  MOPPE_CHECK (bike.pop_impact () < 1.0f);
+  MOPPE_CHECK (speed_value (bike.pop_impact ()) < 1.0f);
 
   // Sitting forward and off the throttle, the front comes back down onto
   // its wheel without a crash, and the bike rides on.
@@ -486,7 +487,7 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
   MOPPE_CHECK (!bike.wheeling ());
   MOPPE_CHECK (bike.grounded ());
   MOPPE_CHECK (std::abs (pitch_of (bike)) < 0.05f);
-  MOPPE_CHECK (bike.pop_impact () < 7.0f);
+  MOPPE_CHECK (speed_value (bike.pop_impact ()) < 7.0f);
   MOPPE_CHECK (dot (bike.velocity (), bike.orientation ()) > 5.0f);
 }
 

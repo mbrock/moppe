@@ -132,7 +132,7 @@ namespace moppe::game {
         // No jets on a mountainbike: the rider springs it up off the
         // ground instead.
         if (logic.m_boost_input > 0.1f && previous <= 0.1f)
-          session.mountain_bike ().hop (3.0f);
+          session.mountain_bike ().hop (3.0f * u::m / u::s);
       }
     }
 
@@ -1994,7 +1994,7 @@ namespace moppe::game {
       vehicle_position[1] <
       water_at (vehicle_position).numerical_value_in (moppe::u::m) + 0.3f;
     const bool driving = logic.m_mode == M_BIKE || pedalled;
-    const float impact = driving ? vehicle.pop_impact () : 0.0f;
+    const float impact = driving ? speed_value (vehicle.pop_impact ()) : 0.0f;
 
     // Air steering is a visible motocross whip and a scoring mechanic. The
     // shortest signed angle between successive headings survives wraparound.
@@ -2028,7 +2028,7 @@ namespace moppe::game {
         logic.m_jump_peak_spin_radians = 0.0f;
       }
       logic.m_jump_last_heading = heading;
-      logic.m_jump_airtime = vehicle.airtime ();
+      logic.m_jump_airtime = seconds_value (vehicle.airtime ());
       logic.m_landed_age += elapsed;
     } else {
       if (driving && logic.m_jump_airtime >= 0.75f) {
@@ -2077,10 +2077,11 @@ namespace moppe::game {
     // lasts until the front wheel comes down (for a moment more than a
     // bump's), or the bike leaves the ground for a jump.
     logic.m_wheelie_age += elapsed;
-    const bool riding_up = logic.m_mode == M_BIKE &&
-                           (vehicle.wheeling () || (logic.m_wheelie_m > 0.0f &&
-                                                    !vehicle.front_down () &&
-                                                    vehicle.airtime () < 0.5f));
+    const bool riding_up =
+      logic.m_mode == M_BIKE &&
+      (vehicle.wheeling () ||
+       (logic.m_wheelie_m > 0.0f && !vehicle.front_down () &&
+        vehicle.airtime () < 0.5f * u::s));
     if (riding_up) {
       Vec3 ground_speed = vehicle.velocity ();
       ground_speed[1] = 0.0f;
@@ -2136,8 +2137,10 @@ namespace moppe::game {
     // Drift kicks up dirt from the rear wheel (or spray), and so does a
     // tyre sliding under the locked rear brake, in a low fan swept out
     // sideways as the tail comes round.
-    if (driving && vehicle.grounded () && vehicle.drift_speed () > 6.0f) {
-      const float count = std::min (4.0f, vehicle.drift_speed () * 0.2f);
+    if (driving && vehicle.grounded () &&
+        vehicle.drift_speed () > 6.0f * u::m / u::s) {
+      const float count =
+        std::min (4.0f, speed_value (vehicle.drift_speed ()) * 0.2f);
       session.dust ().emit (moppe::position (rear_wheel),
                             velocity (vehicle.velocity () * 0.15f),
                             in_water ? (int)count : loose (count),
@@ -2338,7 +2341,7 @@ namespace moppe::game {
     // metres are simply fatal -- house rule.
     if (impact > 9.0f)
       logic.m_health -= (impact - 9.0f) * 4.5f;
-    if (driving && vehicle.pop_fall_drop () > 100.0f)
+    if (driving && vehicle.pop_fall_drop () > 100.0f * u::m)
       logic.m_health = 0.0f;
     logic.m_health = std::min (100.0f, logic.m_health + 1.5f * elapsed);
     if (logic.m_health <= 0.0f) {

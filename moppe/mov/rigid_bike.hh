@@ -392,7 +392,7 @@ namespace moppe {
 
       // Height of the Trail 90's reference point above flat ground at
       // static sag, trail90_rig.ride_height ().
-      static constexpr float ride_height = 0.29f;
+      static constexpr meters_t ride_height = 0.29f * u::m;
 
       // Stands the bike at rest with its reference point at `reference`.
       RigidBike (const map::SurfaceGeometry& surface,

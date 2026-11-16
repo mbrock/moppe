@@ -29,12 +29,12 @@ namespace moppe {
         Vec3 thrust_orientation {};
         radians_t yaw {};
         radians_t yaw_target {};
-        float lean {};
+        radians_t lean {};
         Vec3 render_heading {};
         Vec3 render_normal {};
-        float susp {};
-        float susp_v {};
-        float wheel_spin {};
+        meters_t susp {};
+        speed_t susp_v {};
+        radians_t wheel_spin {};
         bool boost_flight {};
         control_signal_t thrust {};
         float boost_input {};
@@ -55,7 +55,7 @@ namespace moppe {
         bool parked {};
         float skid {};
         float wheelie {};
-        float crank {};
+        radians_t crank {};
       };
 
       // max_thrust caps the wheel force (launch punch); power caps
@@ -142,10 +142,9 @@ namespace moppe {
       float pitch () const {
         return m_rigid ? radians_value (m_rigid->pitch ()) : 0.0f;
       }
-      // Springs the bike up off the ground by `speed`, metres per second,
-      // over its next update: a bunny hop. Only a rigid bike on its wheels
-      // hops.
-      void hop (float speed) {
+      // Springs the bike up off the ground by `speed` over its next
+      // update: a bunny hop. Only a rigid bike on its wheels hops.
+      void hop (speed_t speed) {
         if (grounded ())
           m_hop = speed;
       }
@@ -153,7 +152,7 @@ namespace moppe {
       // round at a steady cadence through the gears while the rider
       // pedals, and still while they freewheel.
       radians_t crank () const {
-        return m_crank * u::rad;
+        return m_crank;
       }
 
       // A bike nobody rides stays where it was left: its wheels lock and,
@@ -218,22 +217,22 @@ namespace moppe {
 
       // Sideways speed relative to where the bike points; big when
       // drifting, ~zero when rolling straight
-      float drift_speed () const {
+      speed_t drift_speed () const {
         const Vec3& v = velocity_value (m_velocity);
         float vf = dot (v, m_heading);
-        return length (v - m_heading * vf);
+        return length (v - m_heading * vf) * u::m / u::s;
       }
 
       // Downward speed of the last hard landing; reading it clears it
-      float pop_impact () {
-        const float value = m_impact.numerical_value_in (u::m / u::s);
+      speed_t pop_impact () {
+        const speed_t value = m_impact;
         m_impact = 0 * u::m / u::s;
         return value;
       }
 
-      // How far the last flight fell, peak to touchdown, in meters
-      float pop_fall_drop () {
-        const float value = (m_fall_drop).numerical_value_in (moppe::u::m);
+      // How far the last flight fell, peak to touchdown
+      meters_t pop_fall_drop () {
+        const meters_t value = m_fall_drop;
         m_fall_drop = 0 * u::m;
         return value;
       }
@@ -253,20 +252,20 @@ namespace moppe {
       // (game/vehicle_render); the drawing half reads everything it
       // needs through these.
       radians_t lean () const {
-        return m_lean * u::rad;
+        return m_lean;
       }
-      float susp () const {
+      meters_t susp () const {
         return m_susp;
       }
       // Accumulated wheel roll angle in [0, 2pi).
       radians_t wheel_spin () const {
-        return m_wheel_spin * u::rad;
+        return m_wheel_spin;
       }
       bool airborne () const {
         return m_airborne_time > seconds (0.15f);
       }
-      float airtime () const {
-        return seconds_value (m_airborne_time);
+      seconds_t airtime () const {
+        return m_airborne_time;
       }
       radians_t yaw () const {
         return m_yaw;
@@ -282,15 +281,15 @@ namespace moppe {
       Vec3 render_position () const {
         if (m_rigid)
           return position ();
-        return position () + Vec3 (0.0f, m_susp, 0.0f);
+        return position () + Vec3 (0.0f, meters_value (m_susp), 0.0f);
       }
       // How far each wheel hangs below its drawn rest position along the
       // chassis' down axis, in metres; negative is compressed.
       float rear_wheel_drop () const {
-        return m_rigid ? m_rear_drop : 0.675f * m_susp;
+        return m_rigid ? m_rear_drop : 0.675f * meters_value (m_susp);
       }
       float front_wheel_drop () const {
-        return m_rigid ? m_front_drop : 0.4725f * m_susp;
+        return m_rigid ? m_front_drop : 0.4725f * meters_value (m_susp);
       }
       // The fork's angle about the steering head; positive turns right.
       radians_t fork_angle () const {
@@ -326,7 +325,7 @@ namespace moppe {
       void bound ();
       bool expected_landing_pose (Vec3& forward,
                                   Vec3& up,
-                                  float& time_to_landing) const;
+                                  seconds_t& time_to_landing) const;
       bool is_grounded () const;
       bool driving_contact () const;
 
@@ -339,11 +338,12 @@ namespace moppe {
           .numerical_value_in (mp_units::one);
       }
 
-      float ground_height () const {
+      meters_t ground_height () const {
         const Vec3& p = position_value (m_position);
         return terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            m_map, moppe::position (Vec3 (p[0], 0.0f, p[2]))));
+                 spatial::sample<terrain::surface_elevation> (
+                   m_map, moppe::position (Vec3 (p[0], 0.0f, p[2])))) *
+               u::m;
       }
 
     private:
@@ -354,11 +354,12 @@ namespace moppe {
 
       radians_t m_yaw;        // smoothed actual steering
       radians_t m_yaw_target; // raw keyboard input
-      float m_lean;           // roll into corners (radians)
+      radians_t m_lean;       // roll into corners
       Vec3 m_render_heading;  // visual forward, follows the flight arc
       Vec3 m_render_normal;   // smoothed up vector for drawing
-      float m_susp, m_susp_v; // visual suspension spring
-      float m_wheel_spin;     // visual wheel roll angle (radians)
+      meters_t m_susp;        // visual suspension spring
+      speed_t m_susp_v;
+      radians_t m_wheel_spin; // visual wheel roll angle
       bool m_boost_flight;    // landing softened after using the jets
 
       const SurfaceGeometry& m_map;
@@ -388,9 +389,9 @@ namespace moppe {
       bool m_parked = false;
       float m_skid = 0.0f;
       float m_wheelie = 0.0f;
-      float m_crank = 0.0f;
+      radians_t m_crank {};
       // Set by hop() for the next update only, never restored.
-      float m_hop = 0.0f;
+      speed_t m_hop {};
       // Set afresh by the session each step of a glide, never restored.
       bool m_hung = false;
       Hang m_hang {};

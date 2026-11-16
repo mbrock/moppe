@@ -77,10 +77,15 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   MOPPE_CHECK_NEAR (radians_value (restored.yaw_target),
                     radians_value (saved.yaw_target),
                     1e-6f);
-  MOPPE_CHECK_NEAR (restored.lean, saved.lean, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.susp, saved.susp, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.susp_v, saved.susp_v, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.wheel_spin, saved.wheel_spin, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    radians_value (restored.lean), radians_value (saved.lean), 1e-6f);
+  MOPPE_CHECK_NEAR (
+    meters_value (restored.susp), meters_value (saved.susp), 1e-6f);
+  MOPPE_CHECK_NEAR (
+    speed_value (restored.susp_v), speed_value (saved.susp_v), 1e-6f);
+  MOPPE_CHECK_NEAR (radians_value (restored.wheel_spin),
+                    radians_value (saved.wheel_spin),
+                    1e-6f);
   MOPPE_CHECK (restored.boost_flight == saved.boost_flight);
   MOPPE_CHECK_NEAR (
     scalar_value (restored.thrust), scalar_value (saved.thrust), 1e-6f);
@@ -235,8 +240,8 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
     session.logic ().m_jump_peak_spin_radians, 1.5707963f, 0.01f);
 
   flight = session.bike ().state ();
-  flight.position =
-    position (Vec3 (52, 10.0f + mov::RigidBike::ride_height + 0.085f, 50));
+  flight.position = position (
+    Vec3 (52, 10.0f + meters_value (mov::RigidBike::ride_height) + 0.085f, 50));
   flight.velocity = velocity (Vec3 (0, -1, 15));
   flight.airborne_time = seconds (1.7f);
   flight.fall_top = 18 * u::m;

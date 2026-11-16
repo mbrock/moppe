@@ -91,7 +91,7 @@ namespace moppe {
       // height, within a few seconds; the normal there is the plane the
       // airborne bike prepares for.
       bool predict_landing (const map::SurfaceGeometry& surface,
-                            float ride_height,
+                            meters_t ride_height,
                             const Vec3& position,
                             const Vec3& velocity,
                             Vec3& normal) {
@@ -105,7 +105,8 @@ namespace moppe {
           if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
             return false;
           const float ground =
-            surface_elevation_at (surface, sample[0], sample[2]) + ride_height;
+            surface_elevation_at (surface, sample[0], sample[2]) +
+            meters_value (ride_height);
           if (sample[1] > ground)
             continue;
           normal = normal_at (surface, sample[0], sample[2]);
@@ -589,7 +590,7 @@ namespace moppe {
         const bool landing =
           !grounded && !hanging &&
           predict_landing (surface,
-                           meters_value (rig.ride_height ()),
+                           rig.ride_height (),
                            p + up * meters_value (rig.reference_height),
                            v,
                            landing_normal);
