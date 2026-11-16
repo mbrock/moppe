@@ -102,30 +102,32 @@ namespace moppe {
       // cargo bike's); zero has both alike. The axles stand at
       // axle_height over the rear one's centre, so on flat ground the
       // smaller front axle stands as much lower as its wheel is.
-      float wheel_radius;
-      float front_wheel_radius = 0.0f;
-      float wheel_mass;
+      meters_t wheel_radius;
+      meters_t front_wheel_radius {};
+      kilograms_t wheel_mass;
       // Isotropic, so a steered or leaned wheel carries no gyroscopic
       // self-torque of its own.
-      float wheel_inertia;
-      float half_wheelbase;
+      kilogram_square_metres_t wheel_inertia;
+      meters_t half_wheelbase;
       // The reference point and the axles, above the centre of mass.
-      float reference_height;
-      float axle_height;
+      meters_t reference_height;
+      meters_t axle_height;
       // Width, height, and length of the box of frame and rider whose
       // inertia the chassis has.
       Vec3 inertia_box;
       // Its colliders against trunks and the ground: the frame from end
       // to end and the rider, each a capsule (a, b, radius).
       Vec3 frame_a, frame_b;
-      float frame_radius;
+      meters_t frame_radius;
       Vec3 rider_a, rider_b;
-      float rider_radius;
+      meters_t rider_radius;
 
       // Travel and static sag of each wheel, and the damping as a share of
       // critical for the sprung mass.
-      float front_travel, rear_travel;
-      float front_sag, rear_sag;
+      meters_t front_travel;
+      meters_t rear_travel;
+      meters_t front_sag;
+      meters_t rear_sag;
       float damping_ratio;
 
       // The tyres' grip, rolling and sliding under the locked rear brake.
@@ -135,52 +137,53 @@ namespace moppe {
       // Full lock swings the heading at steering_rate per radian of input,
       // fading with speed, and air_steering_rate in the air; a held skid
       // swings it at skid_rate per unit of input.
-      float steering_rate;
-      float steering_fade_speed;
-      float air_steering_rate;
-      float skid_rate;
-      float max_fork_angle;
-      float max_lean;
+      per_second_t steering_rate;
+      speed_t steering_fade_speed;
+      per_second_t air_steering_rate;
+      per_second_t skid_rate;
+      radians_t max_fork_angle;
+      radians_t max_lean;
 
       // Pitch at which the rider has fully closed the throttle or released
       // the front brake; they start backing off 0.15 rad earlier.
-      float wheelie_limit;
-      float stoppie_limit;
+      radians_t wheelie_limit;
+      radians_t stoppie_limit;
       // Leaning back for a wheelie: how far the rider's weight goes back,
       // metres, and the pitch above the ground they try to hold the bike
       // at, radians, a little short of where it balances on its own.
-      float wheelie_lean;
-      float wheelie_pitch;
+      meters_t wheelie_lean;
+      radians_t wheelie_pitch;
       // The most the drive may rear it up by about the rear tyre beyond
       // what its weight holds it down with, newton-metres.
-      float wheelie_torque;
+      newton_metres_t wheelie_torque;
 
-      float reverse_speed;
+      speed_t reverse_speed;
       float reverse_force_share;
-      float front_brake_force;
-      float rear_brake_force;
+      newtons_t front_brake_force;
+      newtons_t rear_brake_force;
       // The drag of the drive off the throttle, the lock that holds a
       // parked bike, and the locked rear brake, newton-metres.
-      float engine_brake_torque;
-      float parking_torque;
-      float skid_torque;
+      newton_metres_t engine_brake_torque;
+      newton_metres_t parking_torque;
+      newton_metres_t skid_torque;
       float traction_share;
       float wheelie_share;
-      float free_rev_torque;
+      newton_metres_t free_rev_torque;
       // Drag of the whole bike, as accelerations: linear in speed per
       // second, and quadratic per metre.
-      float rolling_drag;
-      float air_drag;
+      per_second_t rolling_drag;
+      per_metre_t air_drag;
       // A pedalled bike of one gear turns its crank this many times slower
       // than its rear wheel; zero rides through the gears.
       float gear_ratio = 0.0f;
 
-      float front_radius () const {
-        return front_wheel_radius > 0.0f ? front_wheel_radius : wheel_radius;
+      meters_t front_radius () const {
+        return front_wheel_radius > meters_t {} ? front_wheel_radius
+                                                : wheel_radius;
       }
 
       // Height of the reference point above flat ground at static sag.
-      float ride_height () const {
+      meters_t ride_height () const {
         return wheel_radius - axle_height + reference_height;
       }
     };
@@ -191,59 +194,59 @@ namespace moppe {
     // 175 kg, 0.42 m over that. It is soft and short of travel, stops on
     // drums, and has no reverse: backing up is paddled with the feet.
     inline const BikeRig trail90_rig {
-      .wheel_radius = 0.29f,
-      .wheel_mass = 7.0f,
-      .wheel_inertia = 0.35f,
-      .half_wheelbase = 0.61f,
-      .reference_height = -0.42f,
-      .axle_height = -0.42f,
+      .wheel_radius = 0.29f * u::m,
+      .wheel_mass = 7.0f * u::kg,
+      .wheel_inertia = 0.35f * u::kg * u::m2,
+      .half_wheelbase = 0.61f * u::m,
+      .reference_height = -0.42f * u::m,
+      .axle_height = -0.42f * u::m,
       .inertia_box = { 0.5f, 1.2f, 1.3f },
       // The engine and the pressed body from axle to axle, its underside
       // at the skid plate, reaching out over the front tyre; and the
       // seated rider, hips to head.
       .frame_a = { 0.0f, -0.32f, -0.62f },
       .frame_b = { 0.0f, -0.37f, 0.62f },
-      .frame_radius = 0.17f,
+      .frame_radius = 0.17f * u::m,
       .rider_a = { 0.0f, 0.18f, -0.22f },
       .rider_b = { 0.0f, 0.63f, -0.1f },
-      .rider_radius = 0.22f,
+      .rider_radius = 0.22f * u::m,
       // The telescopic fork's 11 cm and the twin shocks' 7.
-      .front_travel = 0.11f,
-      .rear_travel = 0.07f,
-      .front_sag = 0.035f,
-      .rear_sag = 0.025f,
+      .front_travel = 0.11f * u::m,
+      .rear_travel = 0.07f * u::m,
+      .front_sag = 0.035f * u::m,
+      .rear_sag = 0.025f * u::m,
       .damping_ratio = 0.4f,
       // Trail tyres: a block tread, neither road nor knobbly.
       .tire_friction = 1.35f,
       .skid_friction = 0.65f,
-      .steering_rate = 1.7f,
-      .steering_fade_speed = 10.0f,
-      .air_steering_rate = 1.0f,
-      .skid_rate = 2.8f,
-      .max_fork_angle = 0.7f,
-      .max_lean = 0.75f,
-      .wheelie_limit = 0.35f,
-      .stoppie_limit = 0.3f,
+      .steering_rate = 1.7f / u::s,
+      .steering_fade_speed = 10.0f * u::m / u::s,
+      .air_steering_rate = 1.0f / u::s,
+      .skid_rate = 2.8f / u::s,
+      .max_fork_angle = 0.7f * u::rad,
+      .max_lean = 0.75f * u::rad,
+      .wheelie_limit = 0.35f * u::rad,
+      .stoppie_limit = 0.3f * u::rad,
       // Its weight stands some 0.42 m over the axles, so it balances on
       // its back wheel near 50 degrees, the rider sat back.
-      .wheelie_lean = 0.2f,
-      .wheelie_pitch = 0.8f,
-      .wheelie_torque = 300.0f,
-      .reverse_speed = 1.5f,
+      .wheelie_lean = 0.2f * u::m,
+      .wheelie_pitch = 0.8f * u::rad,
+      .wheelie_torque = 300.0f * u::N * u::m,
+      .reverse_speed = 1.5f * u::m / u::s,
       .reverse_force_share = 0.25f,
-      .front_brake_force = 900.0f,
-      .rear_brake_force = 800.0f,
-      .engine_brake_torque = 20.0f,
-      .parking_torque = 1500.0f,
-      .skid_torque = 1200.0f,
+      .front_brake_force = 900.0f * u::N,
+      .rear_brake_force = 800.0f * u::N,
+      .engine_brake_torque = 20.0f * u::N * u::m,
+      .parking_torque = 1500.0f * u::N * u::m,
+      .skid_torque = 1200.0f * u::N * u::m,
       .traction_share = 0.9f,
       .wheelie_share = 0.8f,
-      .free_rev_torque = 10.0f,
+      .free_rev_torque = 10.0f * u::N * u::m,
       // Its own air and rolling: a seated rider's 0.6 m2 or so, and tyres
       // at a fiftieth of the weight, which give the 5.2 kW engine the
       // CT90's 85 km/h flat out.
-      .rolling_drag = 0.015f,
-      .air_drag = 0.0018f,
+      .rolling_drag = 0.015f / u::s,
+      .air_drag = 0.0018f / u::m,
     };
 
     // A classic mountainbike at life size: 26-inch wheels 1.06 m apart, a
@@ -251,54 +254,54 @@ namespace moppe {
     // fat tyre. Its reference point is midway between the axles, with the
     // weight of bike and seated rider 0.55 m above it.
     inline const BikeRig mountain_bike_rig {
-      .wheel_radius = 0.335f,
-      .wheel_mass = 3.0f,
-      .wheel_inertia = 0.12f,
-      .half_wheelbase = 0.53f,
-      .reference_height = -0.55f,
-      .axle_height = -0.55f,
+      .wheel_radius = 0.335f * u::m,
+      .wheel_mass = 3.0f * u::kg,
+      .wheel_inertia = 0.12f * u::kg * u::m2,
+      .half_wheelbase = 0.53f * u::m,
+      .reference_height = -0.55f * u::m,
+      .axle_height = -0.55f * u::m,
       .inertia_box = { 0.45f, 1.3f, 1.3f },
       .frame_a = { 0.0f, -0.32f, -0.55f },
       .frame_b = { 0.0f, -0.32f, 0.55f },
-      .frame_radius = 0.17f,
+      .frame_radius = 0.17f * u::m,
       .rider_a = { 0.0f, 0.0f, -0.18f },
       .rider_b = { 0.0f, 0.62f, 0.05f },
-      .rider_radius = 0.24f,
+      .rider_radius = 0.24f * u::m,
       // Five centimetres of fork, and the tyres' give behind.
-      .front_travel = 0.06f,
-      .rear_travel = 0.03f,
-      .front_sag = 0.02f,
-      .rear_sag = 0.012f,
+      .front_travel = 0.06f * u::m,
+      .rear_travel = 0.03f * u::m,
+      .front_sag = 0.02f * u::m,
+      .rear_sag = 0.012f * u::m,
       .damping_ratio = 0.5f,
       .tire_friction = 1.3f,
       .skid_friction = 0.62f,
       // Full lock turns it hard at a walk and fades soon after, keeping a
       // flat-out turn within what its narrow tyres hold.
-      .steering_rate = 1.7f,
-      .steering_fade_speed = 4.0f,
-      .air_steering_rate = 1.4f,
-      .skid_rate = 3.2f,
-      .max_fork_angle = 0.7f,
-      .max_lean = 0.7f,
-      .wheelie_limit = 0.4f,
-      .stoppie_limit = 0.3f,
-      .wheelie_lean = 0.18f,
-      .wheelie_pitch = 0.9f,
-      .wheelie_torque = 60.0f,
+      .steering_rate = 1.7f / u::s,
+      .steering_fade_speed = 4.0f * u::m / u::s,
+      .air_steering_rate = 1.4f / u::s,
+      .skid_rate = 3.2f / u::s,
+      .max_fork_angle = 0.7f * u::rad,
+      .max_lean = 0.7f * u::rad,
+      .wheelie_limit = 0.4f * u::rad,
+      .stoppie_limit = 0.3f * u::rad,
+      .wheelie_lean = 0.18f * u::m,
+      .wheelie_pitch = 0.9f * u::rad,
+      .wheelie_torque = 60.0f * u::N * u::m,
       // Walked back, slowly.
-      .reverse_speed = 1.2f,
+      .reverse_speed = 1.2f * u::m / u::s,
       .reverse_force_share = 0.5f,
-      .front_brake_force = 420.0f,
-      .rear_brake_force = 260.0f,
+      .front_brake_force = 420.0f * u::N,
+      .rear_brake_force = 260.0f * u::N,
       // A freewheel: next to no drag off the pedals.
-      .engine_brake_torque = 0.3f,
-      .parking_torque = 300.0f,
-      .skid_torque = 400.0f,
+      .engine_brake_torque = 0.3f * u::N * u::m,
+      .parking_torque = 300.0f * u::N * u::m,
+      .skid_torque = 400.0f * u::N * u::m,
       .traction_share = 0.9f,
       .wheelie_share = 0.8f,
-      .free_rev_torque = 4.0f,
-      .rolling_drag = 0.05f,
-      .air_drag = 0.0035f,
+      .free_rev_torque = 4.0f * u::N * u::m,
+      .rolling_drag = 0.05f / u::s,
+      .air_drag = 0.0035f / u::m,
     };
 
     // Krisjanis's Long John at life size, to its photogrammetric twin
@@ -310,54 +313,54 @@ namespace moppe {
     // 0.45 m over it, nearer the back. Long and heavy, it turns wide and
     // slowly, leans little, and will not rear up.
     inline const BikeRig long_john_rig {
-      .wheel_radius = 0.335f,
-      .front_wheel_radius = 0.253f,
-      .wheel_mass = 4.0f,
-      .wheel_inertia = 0.16f,
-      .half_wheelbase = 0.947f,
-      .reference_height = -0.45f,
-      .axle_height = -0.45f,
+      .wheel_radius = 0.335f * u::m,
+      .front_wheel_radius = 0.253f * u::m,
+      .wheel_mass = 4.0f * u::kg,
+      .wheel_inertia = 0.16f * u::kg * u::m2,
+      .half_wheelbase = 0.947f * u::m,
+      .reference_height = -0.45f * u::m,
+      .axle_height = -0.45f * u::m,
       .inertia_box = { 0.6f, 1.2f, 2.4f },
       // The box and girder from the rear wheel to the bulkhead, low
       // between the axles; the rider on the saddle over the back wheel.
       .frame_a = { 0.0f, -0.2f, -0.75f },
       .frame_b = { 0.0f, -0.2f, 0.85f },
-      .frame_radius = 0.2f,
+      .frame_radius = 0.2f * u::m,
       .rider_a = { 0.0f, 0.15f, -0.65f },
       .rider_b = { 0.0f, 0.75f, -0.45f },
-      .rider_radius = 0.24f,
+      .rider_radius = 0.24f * u::m,
       // Only the tyres give.
-      .front_travel = 0.03f,
-      .rear_travel = 0.03f,
-      .front_sag = 0.012f,
-      .rear_sag = 0.014f,
+      .front_travel = 0.03f * u::m,
+      .rear_travel = 0.03f * u::m,
+      .front_sag = 0.012f * u::m,
+      .rear_sag = 0.014f * u::m,
       .damping_ratio = 0.5f,
       .tire_friction = 1.2f,
       .skid_friction = 0.6f,
-      .steering_rate = 1.1f,
-      .steering_fade_speed = 4.0f,
-      .air_steering_rate = 0.6f,
-      .skid_rate = 1.8f,
-      .max_fork_angle = 0.6f,
-      .max_lean = 0.45f,
-      .wheelie_limit = 0.2f,
-      .stoppie_limit = 0.25f,
-      .wheelie_lean = 0.1f,
-      .wheelie_pitch = 0.3f,
-      .wheelie_torque = 0.0f,
-      .reverse_speed = 1.0f,
+      .steering_rate = 1.1f / u::s,
+      .steering_fade_speed = 4.0f * u::m / u::s,
+      .air_steering_rate = 0.6f / u::s,
+      .skid_rate = 1.8f / u::s,
+      .max_fork_angle = 0.6f * u::rad,
+      .max_lean = 0.45f * u::rad,
+      .wheelie_limit = 0.2f * u::rad,
+      .stoppie_limit = 0.25f * u::rad,
+      .wheelie_lean = 0.1f * u::m,
+      .wheelie_pitch = 0.3f * u::rad,
+      .wheelie_torque = 0.0f * u::N * u::m,
+      .reverse_speed = 1.0f * u::m / u::s,
       .reverse_force_share = 0.5f,
-      .front_brake_force = 450.0f,
-      .rear_brake_force = 350.0f,
-      .engine_brake_torque = 0.3f,
-      .parking_torque = 400.0f,
-      .skid_torque = 450.0f,
+      .front_brake_force = 450.0f * u::N,
+      .rear_brake_force = 350.0f * u::N,
+      .engine_brake_torque = 0.3f * u::N * u::m,
+      .parking_torque = 400.0f * u::N * u::m,
+      .skid_torque = 450.0f * u::N * u::m,
       .traction_share = 0.9f,
       .wheelie_share = 0.5f,
-      .free_rev_torque = 4.0f,
+      .free_rev_torque = 4.0f * u::N * u::m,
       // Fat tyres and an upright rider behind an open box.
-      .rolling_drag = 0.06f,
-      .air_drag = 0.0045f,
+      .rolling_drag = 0.06f / u::s,
+      .air_drag = 0.0045f / u::m,
       .gear_ratio = 38.0f / 18.0f,
     };
 
@@ -378,9 +381,11 @@ namespace moppe {
     class RigidBike {
     public:
       struct Params {
-        float max_drive_force = 1800.0f; // newtons at the rear contact
-        float power = 5200.0f;           // watts
-        float mass = 175.0f;             // whole bike and rider, kilograms
+        // At the rear contact.
+        newtons_t max_drive_force = 1800.0f * u::N;
+        watts_t power = 5200.0f * u::W;
+        // The whole bike and its rider.
+        kilograms_t mass = 175.0f * u::kg;
         BikeRig rig = trail90_rig;
       };
 

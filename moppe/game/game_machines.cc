@@ -606,8 +606,8 @@ namespace moppe {
         Vec3 at =
           open_ground_near (top->first + m_park_aside, 1.0f, 0.5f, 8.0f);
         report_parked ("mountainbike", at, where);
-        at[1] =
-          ground_height (at) + mov::mountain_bike_rig.ride_height () + 0.02f;
+        at[1] = ground_height (at) +
+                meters_value (mov::mountain_bike_rig.ride_height ()) + 0.02f;
         mtb.set_heading (top->second);
         mtb.reset (at);
         return;
@@ -617,8 +617,8 @@ namespace moppe {
                                   1.0f,
                                   0.4f,
                                   12.0f);
-      at[1] =
-        ground_height (at) + mov::mountain_bike_rig.ride_height () + 0.02f;
+      at[1] = ground_height (at) +
+              meters_value (mov::mountain_bike_rig.ride_height ()) + 0.02f;
       mtb.set_heading (normalized (heading + side * 0.2f));
       report_parked (
         "mountainbike", at, "beside the bike (the trail does not climb)");
@@ -665,8 +665,8 @@ namespace moppe {
           report_parked ("Long John", at, where);
           const Vec3 home = Vec3 (
             m_spawn_position[0] - at[0], 0.0f, m_spawn_position[2] - at[2]);
-          at[1] =
-            ground_height (at) + mov::long_john_rig.ride_height () + 0.02f;
+          at[1] = ground_height (at) +
+                  meters_value (mov::long_john_rig.ride_height ()) + 0.02f;
           lj.set_heading (length2 (home) > 1e-4f ? normalized (home) : heading);
           lj.reset (at);
           return;
@@ -677,7 +677,8 @@ namespace moppe {
                                   1.8f,
                                   0.3f,
                                   20.0f);
-      at[1] = ground_height (at) + mov::long_john_rig.ride_height () + 0.02f;
+      at[1] = ground_height (at) +
+              meters_value (mov::long_john_rig.ride_height ()) + 0.02f;
       lj.set_heading (normalized (heading - side * 0.15f));
       report_parked ("Long John", at, "down the trail (no hamlet near)");
       lj.reset (at);

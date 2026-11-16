@@ -172,7 +172,8 @@ namespace moppe::game {
         // ground as the rear.
         const float front_spin =
           bike.wheel_spin_radians * (mov::long_john_rig.wheel_radius /
-                                     mov::long_john_rig.front_wheel_radius);
+                                     mov::long_john_rig.front_wheel_radius)
+                                      .numerical_value_in (one);
 
         draw_part (*m.frame, frame);
 

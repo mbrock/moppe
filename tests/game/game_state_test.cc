@@ -994,7 +994,8 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   // Away from everything else, beside it.
   mov::Vehicle& bike = session.mountain_bike ();
   bike.set_heading (Vec3 (0, 0, 1));
-  bike.reset (Vec3 (60, 10.0f + mov::mountain_bike_rig.ride_height (), 40));
+  bike.reset (Vec3 (
+    60, 10.0f + meters_value (mov::mountain_bike_rig.ride_height ()), 40));
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 40.0f)),
                            Vec3 (0, 0, 1));
   run ({}, 0.5f);
@@ -1057,7 +1058,8 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   // the back wheel, it is the one to ride.
   mov::Vehicle& bike = session.long_john ();
   bike.set_heading (Vec3 (0, 0, 1));
-  bike.reset (Vec3 (60, 10.0f + mov::long_john_rig.ride_height (), 40));
+  bike.reset (
+    Vec3 (60, 10.0f + meters_value (mov::long_john_rig.ride_height ()), 40));
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 42.2f)),
                            Vec3 (0, 0, 1));
   run ({}, 0.5f);

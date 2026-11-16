@@ -52,6 +52,10 @@ namespace moppe {
   using kilogram_square_metres_t =
     quantity<si::kilogram * pow<2> (si::metre), float>;
   using radians_per_second_t = quantity<si::radian / si::second, float>;
+  // Rates and per-length coefficients that are not decays: a heading
+  // swung per second per radian of input, a drag per metre of speed.
+  using per_second_t = quantity<one / si::second, float>;
+  using per_metre_t = quantity<one / si::metre, float>;
 
   // Dimension-one kinds from moppe/quantities.hh.
   using proportion_t = quantity<proportion[one], float>;
@@ -86,6 +90,27 @@ namespace moppe {
   }
   inline float newtons_value (newtons_t q) {
     return q.numerical_value_in (si::newton);
+  }
+  inline float meters_value (meters_t q) {
+    return q.numerical_value_in (si::metre);
+  }
+  inline float kilograms_value (kilograms_t q) {
+    return q.numerical_value_in (si::kilogram);
+  }
+  inline float speed_value (speed_t q) {
+    return q.numerical_value_in (si::metre / si::second);
+  }
+  inline float newton_metres_value (newton_metres_t q) {
+    return q.numerical_value_in (si::newton * si::metre);
+  }
+  inline float moment_value (kilogram_square_metres_t q) {
+    return q.numerical_value_in (si::kilogram * pow<2> (si::metre));
+  }
+  inline float per_second_value (per_second_t q) {
+    return q.numerical_value_in (one / si::second);
+  }
+  inline float per_metre_value (per_metre_t q) {
+    return q.numerical_value_in (one / si::metre);
   }
 
   inline float attenuation_value (attenuation_t q) {

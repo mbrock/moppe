@@ -60,15 +60,15 @@ namespace moppe {
       fall_to_ground ();
       if (physics == BikePhysics::rigid) {
         RigidBike::Params params;
-        params.max_drive_force = m_max_thrust.numerical_value_in (u::N);
-        params.power = m_power.numerical_value_in (u::W);
-        params.mass = m_mass.numerical_value_in (u::kg);
+        params.max_drive_force = m_max_thrust;
+        params.power = m_power;
+        params.mass = m_mass;
         params.rig = rig;
         const Vec3 ground = position_value (m_position);
         m_rigid = std::make_unique<RigidBike> (
           surface,
           params,
-          ground + Vec3 (0.0f, rig.ride_height (), 0.0f),
+          ground + Vec3 (0.0f, meters_value (rig.ride_height ()), 0.0f),
           m_heading);
         sync_rigid ();
       }
