@@ -1,7 +1,5 @@
 #include <moppe/game/launch_options.hh>
 
-#include <moppe/game/graphics_benchmark.hh>
-
 #include <moppe/environment.hh>
 
 #include <algorithm>
@@ -18,22 +16,6 @@
 
 namespace moppe::game {
   namespace {
-    GraphicsBenchmarkConfig& benchmark_config (LaunchOptions& options) {
-      if (!options.benchmark)
-        options.benchmark = GraphicsBenchmarkConfig {};
-      return *options.benchmark;
-    }
-
-    GazetteerCaptureConfig& gazetteer_config (LaunchOptions& options) {
-      if (!options.gazetteer)
-        options.gazetteer = GazetteerCaptureConfig {};
-      return *options.gazetteer;
-    }
-
-    int frame_count (const char* value) {
-      return std::max (1, std::atoi (value));
-    }
-
     // A capture keeps its own window, since an automated run should never
     // take over the display it was started from.
     void capture_to (LaunchOptions& options, const char* path) {
@@ -86,22 +68,6 @@ namespace moppe::game {
         return false;
       }
       result = static_cast<int> (parsed);
-      return true;
-    }
-
-    bool set_world_cache_key (LaunchOptions& options,
-                              const char* value,
-                              std::string& error) {
-      const std::string_view key = value;
-      if (key.empty () || key.size () > 64 ||
-          !std::all_of (key.begin (), key.end (), [] (unsigned char c) {
-            return std::isalnum (c) || c == '-' || c == '_' || c == '.';
-          })) {
-        error = "--world-cache-key must be 1..64 letters, digits, '.', '_', "
-                "or '-'";
-        return false;
-      }
-      options.world_cache.key = key;
       return true;
     }
 
@@ -180,174 +146,6 @@ namespace moppe::game {
                               options.graphics.render_scale_override,
                               error);
         } },
-      { "--target-fps",
-        "",
-        1,
-        "<0..240>",
-        "Hold this frame rate by shedding scene resolution; zero never does.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          float rate = 0.0f;
-          if (!parse_float_option (
-                values[0], "--target-fps", 0.0f, 240.0f, rate, error))
-            return false;
-          options.target_frame_rate = rate;
-          return true;
-        } },
-      { "--scene-megapixels",
-        "",
-        1,
-        "<0..64>",
-        "Cap desktop 3D scene area in megapixels; zero disables the cap.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          float budget = 0.0f;
-          if (!parse_float_option (
-                values[0], "--scene-megapixels", 0.0f, 64.0f, budget, error))
-            return false;
-          options.scene_megapixel_budget = budget;
-          return true;
-        } },
-      { "--graphics-enable",
-        "",
-        1,
-        "<FEATURE,...>",
-        "Enable named graphics features after preset selection.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          return set_graphics_features (
-            options.graphics, values[0], true, error);
-        } },
-      { "--graphics-disable",
-        "",
-        1,
-        "<FEATURE,...>",
-        "Disable named graphics features after preset selection.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          return set_graphics_features (
-            options.graphics, values[0], false, error);
-        } },
-      { "--graphics-benchmark",
-        "",
-        1,
-        "<CSV>",
-        "Run the partitioned graphics benchmark and write CSV.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          benchmark_config (options).output_path = values[0];
-          options.config.fullscreen = false;
-          return true;
-        } },
-      { "--benchmark-frames",
-        "",
-        1,
-        "<COUNT>",
-        "Set measured frames per benchmark configuration.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          benchmark_config (options).measured_frames = frame_count (values[0]);
-          return true;
-        } },
-      { "--benchmark-settle",
-        "",
-        1,
-        "<COUNT>",
-        "Set settling frames between benchmark configurations.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          benchmark_config (options).settle_frames = frame_count (values[0]);
-          return true;
-        } },
-      { "--benchmark-prelude",
-        "",
-        1,
-        "<COUNT>",
-        "Set the benchmark ride prelude length.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          benchmark_config (options).prelude_frames = frame_count (values[0]);
-          return true;
-        } },
-      { "--benchmark-pass-timing",
-        "",
-        0,
-        "",
-        "Record precise Metal 4 pass timestamps in benchmark CSV.",
-        [] (LaunchOptions& options, const char* const*, std::string&) {
-          benchmark_config (options).pass_timing = true;
-          return true;
-        } },
-      { "--benchmark-partition",
-        "",
-        1,
-        "<standard|detailed>",
-        "Select the 32- or 128-configuration benchmark partition.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          GraphicsBenchmarkPartition partition;
-          if (!parse_graphics_benchmark_partition (values[0], partition)) {
-            error = "unknown graphics benchmark partition: " +
-                    std::string (values[0]);
-            return false;
-          }
-          benchmark_config (options).partition = partition;
-          return true;
-        } },
-      { "--terrain-gazetteer",
-        "",
-        1,
-        "<DIRECTORY>",
-        "Capture the frozen landscape gazetteer.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          gazetteer_config (options).output_directory = values[0];
-          options.config.fullscreen = false;
-          return true;
-        } },
-      { "--gazetteer-settle",
-        "",
-        1,
-        "<COUNT>",
-        "Set settling frames before each gazetteer image.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          gazetteer_config (options).settle_frames = frame_count (values[0]);
-          return true;
-        } },
-      { "--fast",
-        "",
-        0,
-        "",
-        "Use the fast terrain-generation profile.",
-        [] (LaunchOptions& options, const char* const*, std::string&) {
-          options.generation_profile = terrain::TerrainGenerationProfile::Fast;
-          return true;
-        } },
-      { "--terrain-quality",
-        "",
-        1,
-        "<smoke|fast|play|research>",
-        "Select the terrain-generation profile.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          const std::string_view quality = values[0];
-          if (quality == "smoke")
-            options.generation_profile =
-              terrain::TerrainGenerationProfile::Smoke;
-          else if (quality == "fast")
-            options.generation_profile =
-              terrain::TerrainGenerationProfile::Fast;
-          else if (quality == "play")
-            options.generation_profile =
-              terrain::TerrainGenerationProfile::Play;
-          else if (quality == "research")
-            options.generation_profile =
-              terrain::TerrainGenerationProfile::Research;
-          else
-            return unknown ("terrain quality", values[0], error);
-          return true;
-        } },
       { "--world-size",
         "",
         1,
@@ -377,129 +175,6 @@ namespace moppe::game {
           options.terrain_resolution = resolution;
           return true;
         } },
-      { "--uplift-years",
-        "",
-        1,
-        "<YEARS>",
-        "Override the terrain profile's tectonic forcing duration.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          float years = 0.0f;
-          if (!parse_float_option (
-                values[0], "--uplift-years", 0.0f, 10000000.0f, years, error))
-            return false;
-          options.uplift_duration = years * mp_units::astronomy::Julian_year;
-          return true;
-        } },
-      { "--channel-initiation-area",
-        "",
-        1,
-        "<SQUARE_METERS>",
-        "Set the physical catchment scale where channel incision begins.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          float area = 0.0f;
-          if (!parse_float_option (values[0],
-                                   "--channel-initiation-area",
-                                   1.0f,
-                                   1000000000.0f,
-                                   area,
-                                   error))
-            return false;
-          options.channel_initiation_area =
-            area * mp_units::si::metre * mp_units::si::metre;
-          return true;
-        } },
-      { "--sediment-concentration",
-        "",
-        1,
-        "<FRACTION>",
-        "Set solid transport concentration at unit channel slope.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          float concentration = 0.0f;
-          if (!parse_float_option (values[0],
-                                   "--sediment-concentration",
-                                   0.0f,
-                                   1.0f,
-                                   concentration,
-                                   error))
-            return false;
-          options.sediment_concentration =
-            concentration * terrain::sediment_concentration[mp_units::one];
-          return true;
-        } },
-      { "--hillslope-critical-gradient",
-        "",
-        1,
-        "<GRADIENT>",
-        "Set the dimensionless gradient where bounded wasting saturates.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          float gradient = 0.0f;
-          if (!parse_float_option (values[0],
-                                   "--hillslope-critical-gradient",
-                                   0.01f,
-                                   10.0f,
-                                   gradient,
-                                   error))
-            return false;
-          options.critical_hillslope_gradient =
-            gradient * proportion[mp_units::one];
-          return true;
-        } },
-      { "--hillslope-max-multiplier",
-        "",
-        1,
-        "<FACTOR>",
-        "Bound the near-critical hillslope diffusivity multiplier.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          float multiplier = 0.0f;
-          if (!parse_float_option (values[0],
-                                   "--hillslope-max-multiplier",
-                                   1.0f,
-                                   16.0f,
-                                   multiplier,
-                                   error))
-            return false;
-          options.maximum_hillslope_multiplier =
-            multiplier * proportion[mp_units::one];
-          return true;
-        } },
-      { "--world-cache-key",
-        "",
-        1,
-        "<NAME>",
-        "Reuse a named whole-world cache across executable builds.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          return set_world_cache_key (options, values[0], error);
-        } },
-      { "--refresh-world-cache",
-        "",
-        0,
-        "",
-        "Rebuild and replace the selected whole-world cache.",
-        [] (LaunchOptions& options, const char* const*, std::string&) {
-          options.world_cache.mode = WorldCacheMode::Refresh;
-          return true;
-        } },
-      { "--no-world-cache",
-        "",
-        0,
-        "",
-        "Skip whole-world cache loading and saving for this launch.",
-        [] (LaunchOptions& options, const char* const*, std::string&) {
-          options.world_cache.mode = WorldCacheMode::Disabled;
-          return true;
-        } },
       { "--screenshot",
         "",
         1,
@@ -507,24 +182,6 @@ namespace moppe::game {
         "Capture one gameplay PNG and exit.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           capture_to (options, values[0]);
-          return true;
-        } },
-      { "--water-screenshot",
-        "",
-        2,
-        "<FEATURE> <PNG>",
-        "Capture stream, river, confluence, mouth, waterfall, or lake.",
-        [] (LaunchOptions& options,
-            const char* const* values,
-            std::string& error) {
-          options.water_shot = parse_water_shot (values[0]);
-          if (!options.water_shot) {
-            error = "unknown water feature: " + std::string (values[0]) +
-                    " (use stream, river, confluence, mouth, waterfall, "
-                    "or lake)";
-            return false;
-          }
-          capture_to (options, values[1]);
           return true;
         } },
       { "--window-size",
@@ -559,25 +216,6 @@ namespace moppe::game {
           options.stay_inactive = true;
           return true;
         } },
-      { "--multiplayer",
-        "",
-        0,
-        "",
-        "Play with whoever else is playing this world on the local network.",
-        [] (LaunchOptions& options, const char* const*, std::string&) {
-          if (!options.multiplayer)
-            options.multiplayer = std::string ();
-          return true;
-        } },
-      { "--join",
-        "",
-        1,
-        "<HOST[:PORT]>",
-        "Play with the player on that machine.",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          options.multiplayer = std::string (values[0]);
-          return true;
-        } },
       { "--seed",
         "",
         1,
@@ -600,14 +238,6 @@ namespace moppe::game {
     // once here is what keeps every later reader of a launch from re-deriving
     // them, and it is why the order flags arrive in does not matter.
     bool resolve_launch_settings (LaunchOptions& options, std::string& error) {
-      if (options.benchmark && options.benchmark->output_path.empty ()) {
-        error = "--graphics-benchmark is required with benchmark options";
-        return false;
-      }
-      if (options.gazetteer && options.gazetteer->output_directory.empty ()) {
-        error = "--terrain-gazetteer is required with gazetteer options";
-        return false;
-      }
       if (options.generation_profile ==
             terrain::TerrainGenerationProfile::Smoke ||
           options.generation_profile == terrain::TerrainGenerationProfile::Fast)
@@ -624,17 +254,14 @@ namespace moppe::game {
       }
       if (options.terrain_resolution)
         options.world.resolution = *options.terrain_resolution;
-      options.config.capture_frames =
-        !options.screenshot_path.empty () || options.gazetteer ||
-        moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
-        moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") || options.benchmark;
+      options.config.capture_frames = !options.screenshot_path.empty ();
       // A capture keeps its own window (capture_to), as do those asked
       // for by the environment alone.
       if (options.config.capture_frames)
         options.config.fullscreen = false;
       // An automated run stays behind whatever the developer is looking at.
-      options.config.activate = !options.config.capture_frames &&
-                                !options.benchmark && !options.stay_inactive;
+      options.config.activate =
+        !options.config.capture_frames && !options.stay_inactive;
       // A capture pins its own seed so repeated runs compare like with like.
       if (options.config.capture_frames && options.seed < 0)
         options.seed = 123;
@@ -678,21 +305,6 @@ namespace moppe::game {
     for (std::size_t index = 0; index < std::size (flags); ++index)
       output << "  " << std::left << std::setw (static_cast<int> (width + 2))
              << syntax[index] << flags[index].description << '\n';
-    output << "\nGraphics features:\n  ";
-    std::size_t column = 2;
-    for (const GraphicsFeature* feature : graphics_features) {
-      const std::size_t separator_width = column > 2 ? 2 : 0;
-      if (column + separator_width + feature->name.size () > 78) {
-        output << "\n  ";
-        column = 2;
-      } else if (separator_width) {
-        output << ", ";
-        column += separator_width;
-      }
-      output << feature->name;
-      column += feature->name.size ();
-    }
-    output << '\n';
     return output.str ();
   }
 
@@ -743,46 +355,12 @@ namespace moppe::game {
     return resolve_launch_settings (options, error);
   }
 
-  void
-  publish_benchmark_environment (const GraphicsBenchmarkConfig& benchmark) {
-    const int expected =
-      benchmark.measured_frames *
-      (1 << graphics_benchmark_dimension_count (benchmark.partition));
-    moppe::set_environment ("MOPPE_BENCHMARK_OUTPUT",
-                            benchmark.output_path.c_str ());
-    const std::string expected_text = std::to_string (expected);
-    moppe::set_environment ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str ());
-    std::string feature_names;
-    for (const GraphicsFeature* feature : graphics_features)
-      if (graphics_benchmark_includes (*feature)) {
-        if (!feature_names.empty ())
-          feature_names += ',';
-        feature_names += feature->name;
-      }
-    moppe::set_environment ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str ());
-    moppe::set_environment (
-      "MOPPE_BENCHMARK_PARTITION",
-      graphics_benchmark_partition_name (benchmark.partition));
-    const std::string block_names =
-      graphics_benchmark_block_names (benchmark.partition);
-    moppe::set_environment ("MOPPE_BENCHMARK_BLOCKS", block_names.c_str ());
-    if (benchmark.pass_timing)
-      moppe::set_environment ("MOPPE_BENCHMARK_PASSES", "1");
-    else
-      moppe::set_environment ("MOPPE_BENCHMARK_PASSES", nullptr);
-  }
-
   terrain::WorldRecipe make_launch_recipe (const LaunchOptions& options) {
     const terrain::Seed seed { static_cast<std::uint32_t> (options.seed) };
     return terrain::make_world_recipe (options.world.map_size,
                                        options.world.resolution,
                                        seed,
                                        options.world.water_level,
-                                       options.generation_profile,
-                                       options.uplift_duration,
-                                       options.channel_initiation_area,
-                                       options.sediment_concentration,
-                                       options.critical_hillslope_gradient,
-                                       options.maximum_hillslope_multiplier);
+                                       options.generation_profile);
   }
 }

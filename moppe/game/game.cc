@@ -15,10 +15,7 @@ namespace moppe {
           m_graphics (options.graphics),
           m_spawn_position (position_value (this->world ().spawn_position ())),
           m_renderer (0), m_screenshot_path (options.screenshot_path),
-          m_water_shot (options.water_shot), m_gazetteer (options.gazetteer),
-          m_screenshot_frames (0), m_ready (false),
-          m_benchmark (options.benchmark),
-          m_benchmark_baseline (options.graphics) {
+          m_screenshot_frames (0), m_ready (false) {
       m_day = plan_day ();
       m_sky = m_almanac.held (m_graphics.sun_height);
       if (const char* name = moppe::environment ("MOPPE_WEATHER");
@@ -28,14 +25,7 @@ namespace moppe {
           std::cerr << "moppe: weather: no kind named " << name
                     << "; the weather changes" << std::endl;
       }
-      if (m_benchmark)
-        m_benchmark_replay.emplace (GraphicsBenchmarkReplay::Config {
-          m_benchmark->prelude_frames,
-          m_benchmark->settle_frames,
-          m_benchmark->measured_frames,
-          m_benchmark->partition,
-        });
-      if (options.multiplayer && !m_benchmark && !m_gazetteer && !m_water_shot)
+      if (options.multiplayer)
         seek_company (*options.multiplayer);
     }
 
@@ -63,16 +53,8 @@ namespace moppe {
     }
 
     void MoppeGame::pointer_move (float, float, float dx, float dy) {
-      if (!m_spectator) {
-        if (m_ready && !m_pointer_free)
-          m_live_input.look (dx, dy);
-        return;
-      }
-      if (m_spectator->pointer_free)
-        return;
-      m_spectator->yaw += 0.004f * dx;
-      m_spectator->pitch =
-        std::clamp (m_spectator->pitch - 0.004f * dy, -1.45f, 1.45f);
+      if (m_ready && !m_pointer_free)
+        m_live_input.look (dx, dy);
     }
 
     void MoppeGame::tick (seconds_t interval) {
@@ -83,27 +65,10 @@ namespace moppe {
       }
       keep_company (interval);
 
-      // Offline replay and cinematic capture deliberately bind one logical
-      // step to one rendered frame. Ordinary play instead consumes the
-      // presentation interval through a fixed 120 Hz clock.
-      const bool frame_locked =
-        m_benchmark.has_value () ||
-        (opening_active () &&
-         moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR"));
-      if (frame_locked) {
-        m_simulation_clock.reset ();
-        tick_simulation (interval);
-        return;
-      }
-      // Orbit inspections and ride captures advance exactly one 60 Hz frame
-      // of world time per rendered frame, so captured motion is even
-      // however slowly the frames are written.
-      static const bool capture_locked =
-        moppe::environment ("MOPPE_ORBIT") ||
-        moppe::environment ("MOPPE_PAN") ||
-        moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") ||
-        moppe::environment ("MOPPE_VIDEO");
-      if (capture_locked) {
+      // A video advances exactly one 60 Hz frame of world time per rendered
+      // frame, so recorded motion is even however slowly the frames are
+      // written.
+      if (m_video_plan) {
         m_simulation_clock.reset ();
         // The time a video lets pass before it begins is not looked at,
         // so it goes by many steps to a drawn frame, until two seconds
@@ -131,75 +96,21 @@ namespace moppe {
           seconds (static_cast<float> (FIXED_SIMULATION_STEP_SECONDS)));
 
       // The HUD reports rendered-frame cadence, not the internal 120 Hz
-      // integration frequency. Gazetteer views intentionally report zero.
-      if (m_ready && !m_gazetteer)
+      // integration frequency.
+      if (m_ready)
         logic ().m_frame_time = elapsed;
     }
 
     void MoppeGame::tick_simulation (seconds_t interval) {
       float dt = seconds_value (interval);
       MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
-      std::optional<InputFrame> scripted_input;
-      if (opening_active () &&
-          moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
-        const int fps = [] {
-          if (const char* value =
-                moppe::environment ("MOPPE_CINEMATIC_CAPTURE_FPS"))
-            return std::clamp (::atoi (value), 1, 120);
-          return 30;
-        }();
-        dt = 1.0f / fps;
-      }
-      if (m_benchmark) {
-        dt = GRAPHICS_BENCHMARK_DT;
-        if (m_benchmark_submitted) {
-          m_benchmark_render_frame.reset ();
-          if (m_renderer->benchmark_complete () &&
-              !m_benchmark_results_written) {
-            m_renderer->write_benchmark_results ();
-            m_benchmark_results_written = true;
-            platform::request_quit ();
-          }
-          return;
-        }
-        prepare_benchmark_epoch ();
-        m_benchmark_render_frame = m_benchmark_replay->current_frame ();
-        if (!m_benchmark_render_frame)
-          throw std::logic_error ("graphics benchmark has no replay frame");
-        scripted_input = m_benchmark_render_frame->input;
-      }
-      if (m_benchmark_render_frame) {
-        MOPPE_PROFILE_PLOT ("benchmark.mask", m_benchmark_mask);
-        MOPPE_PROFILE_PLOT ("benchmark.partition_mask",
-                            m_benchmark_render_frame->partition_mask);
-        MOPPE_PROFILE_PLOT ("benchmark.epoch", m_benchmark_render_frame->epoch);
-        MOPPE_PROFILE_PLOT ("benchmark.logical_frame",
-                            m_benchmark_render_frame->logical_frame);
-        MOPPE_PROFILE_PLOT ("benchmark.measured",
-                            m_benchmark_render_frame->measured);
-      }
       if (!m_ready)
         return;
       logic ().m_frame_time = dt;
       if (logic ().m_game_over)
         return;
 
-      // The gazetteer is an offline frame composer, not a demo playback.
-      // Simulation, actors, wind, and weather are frozen; only the camera's
-      // terrain-aware sun visibility is derived anew for the current shot.
-      if (m_gazetteer) {
-        constexpr float documentary_time = 41.0f;
-        logic ().m_frame_time = 0.0f;
-        logic ().m_total_time = documentary_time;
-        update_world_atmosphere (documentary_time);
-        const FrameView view = compose_frame_view (frame_view_input (1.0f));
-        logic ().m_flare = sun_visibility_target (view, world (), surface ());
-        return;
-      }
-
       InputFrame input = m_live_input.take_frame (dt);
-      if (scripted_input)
-        input = *scripted_input;
 
       // The companion's pose clock counts only time the world was stepped
       // by, at the step it was stepped by.
@@ -232,12 +143,8 @@ namespace moppe {
         } else {
           m_opening.tick (seconds (dt));
           follow_opening_clock ();
-          if (!m_opening.active ()) {
+          if (!m_opening.active ())
             leave_cinematic ();
-            // A capture of the opening is done when it is.
-            if (moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR"))
-              platform::request_quit ();
-          }
           update_frame_flare ();
           return;
         }
@@ -255,24 +162,13 @@ namespace moppe {
         return name && std::string_view (name) == "wheelie";
       }();
       m_trunk_field.focus (session ().subject_position ());
-      static const bool orbit = moppe::environment ("MOPPE_ORBIT") != 0 ||
-                                moppe::environment ("MOPPE_PAN") != 0;
-      if (m_spectator) {
-        // The mouse turns the spectator directly; the right stick's look
-        // arrives with the frame.
-        m_spectator->yaw += input.look_yaw;
-        m_spectator->pitch =
-          std::clamp (m_spectator->pitch + input.look_pitch, -1.45f, 1.45f);
-        input = {};
-      }
       static const char* walk_script = moppe::environment ("MOPPE_WALK");
       // The bump script drives the jeep too, and boat-fish the boat.
-      if (walk_script && !orbit &&
-          (logic ().m_mode == M_FOOT ||
-           std::string_view (walk_script) == "bump" ||
-           std::string_view (walk_script) == "boat-fish"))
+      if (walk_script && (logic ().m_mode == M_FOOT ||
+                          std::string_view (walk_script) == "bump" ||
+                          std::string_view (walk_script) == "boat-fish"))
         input = scripted_walk (walk_script, seconds (dt));
-      else if (demo && !m_water_inspection && !orbit) {
+      else if (demo) {
         // The autopilot rides; the player may still look around.
         const float look_yaw = input.look_yaw;
         const float look_pitch = input.look_pitch;
@@ -371,20 +267,11 @@ namespace moppe {
         platform::say ("Ouchies. That hurts.");
       tend_animals (seconds (dt));
 
-      if (m_water_inspection) {
-        session ().camera ().place (m_water_inspection->eye,
-                                    m_water_inspection->target);
-        session ().camera ().keep_above (surface ());
-      }
-      orbit_camera ();
-      spectator_camera (seconds (dt));
       rest_camera ();
       walk_side_camera ();
       ride_capture_camera (seconds (dt));
       animal_camera (seconds (dt));
 
-      if (m_benchmark)
-        finish_benchmark_frame (m_benchmark_replay->finish_frame ());
       update_frame_flare ();
     }
 
@@ -431,14 +318,6 @@ namespace moppe {
         return;
       }
 
-      if (k == Key::G && down) {
-        m_graphics.terrain_topology = !m_graphics.terrain_topology;
-        m_renderer->set_terrain_topology_overlay (m_graphics.terrain_topology);
-        std::cerr << "moppe: terrain vertex grid "
-                  << (m_graphics.terrain_topology ? "on" : "off") << '\n';
-        return;
-      }
-
       if (k == Key::Screenshot && down) {
         m_snapshot_requested = true;
         return;
@@ -464,23 +343,6 @@ namespace moppe {
         return;
       }
 
-      if (m_spectator) {
-        // L lets the mouse loose -- to start a screen recording, say --
-        // and takes it back.
-        if (k == Key::L && down) {
-          m_spectator->pointer_free = !m_spectator->pointer_free;
-          platform::set_pointer_captured (!m_spectator->pointer_free);
-        }
-        if (down)
-          m_spectator->held.insert (k);
-        else
-          m_spectator->held.erase (k);
-        if (k == Key::Escape && down) {
-          m_video.finish ();
-          platform::request_quit ();
-        }
-        return;
-      }
       if (opening_active ()) {
         if (k == Key::Escape && down) {
           m_video.finish ();
@@ -518,68 +380,12 @@ namespace moppe {
       m_live_input.key (k, down);
     }
 
-    int MoppeGame::glide_frame_limit () {
-      static const int frames = [] {
-        if (!moppe::environment ("MOPPE_GLIDE"))
-          return 0;
-        const char* count = moppe::environment ("MOPPE_GLIDE_FRAMES");
-        return count ? std::max (2, ::atoi (count)) : 120;
-      }();
-      return frames;
-    }
-
-    float MoppeGame::glide_speed_mps () {
-      static const float speed = [] {
-        const char* value = moppe::environment ("MOPPE_GLIDE_SPEED");
-        return value ? std::max (0.1f, (float)::atof (value)) : 12.0f;
-      }();
-      return speed;
-    }
-
-    float MoppeGame::glide_vertical_speed_mps () {
-      static const float speed = [] {
-        const char* value = moppe::environment ("MOPPE_GLIDE_VERTICAL_SPEED");
-        return value ? (float)::atof (value) : 0.0f;
-      }();
-      return speed;
-    }
-
-    const GazetteerShot* MoppeGame::current_gazetteer_shot () const noexcept {
-      if (!m_gazetteer || m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
-        return nullptr;
-      return &m_gazetteer_plan.shots[m_gazetteer_shot];
-    }
-
     FrameViewInput MoppeGame::frame_view_input (float aspect) const {
       FrameSceneMode scene = FrameSceneMode::Gameplay;
       FrameCameraReading camera;
       const bool cinematic = opening_active ();
 
-      if (const GazetteerShot* shot = current_gazetteer_shot ()) {
-        scene = FrameSceneMode::Gazetteer;
-        Vec3 eye = position_value (shot->eye);
-        Vec3 subject = position_value (shot->subject);
-        // A glide translates the frozen shot's camera along its own
-        // horizontal heading, one render frame at a time, so consecutive
-        // captures differ by camera motion and nothing else.
-        if (glide_frame_limit () > 0) {
-          Vec3 heading = subject - eye;
-          heading[1] = 0.0f;
-          const Vec3 step = normalized (heading) * (glide_speed_mps () / 60.0f);
-          const Vec3 vertical_step =
-            Vec3 (0, glide_vertical_speed_mps () / 60.0f, 0);
-          const Vec3 travel =
-            (step + vertical_step) * static_cast<float> (m_glide_frame);
-          eye += travel;
-          subject += travel;
-        }
-        camera = {
-          .position = eye,
-          .forward = normalized (subject - eye),
-          .view = Mat4::look_at (eye, subject, Vec3 (0, 1, 0)),
-          .field_of_view = shot->vertical_field_of_view,
-        };
-      } else if (m_opening.active ()) {
+      if (m_opening.active ()) {
         scene = FrameSceneMode::Cinematic;
         camera = {
           .position = m_opening.position (),
@@ -596,22 +402,12 @@ namespace moppe {
           .field_of_view = m_cinematic.field_of_view (),
         };
       } else {
-        if (m_water_inspection)
-          scene = FrameSceneMode::WaterInspection;
         camera = {
           .position = session ().camera ().position (),
           .forward = session ().camera ().forward (),
           .view = session ().camera ().view_matrix (),
           .field_of_view = 70.0f * u::deg,
         };
-      }
-
-      FrameBenchmarkTag benchmark { .mask = m_benchmark_mask };
-      if (m_benchmark_render_frame) {
-        benchmark.partition_mask = m_benchmark_render_frame->partition_mask;
-        benchmark.epoch = m_benchmark_render_frame->epoch;
-        benchmark.logical_frame = m_benchmark_render_frame->logical_frame;
-        benchmark.measured = m_benchmark_render_frame->measured;
       }
 
       return {
@@ -633,7 +429,6 @@ namespace moppe {
           m_film_fov && !cinematic && !m_opening.active ()
             ? std::optional<degrees_t> (*m_film_fov * u::deg)
             : std::nullopt,
-        .benchmark = benchmark,
         .sky = m_sky,
         .water = &generated_world ().water_surface (),
       };
@@ -643,74 +438,6 @@ namespace moppe {
       const FrameView frame = compose_frame_view (frame_view_input (1.0f));
       const float target = sun_visibility_target (frame, world (), surface ());
       logic ().m_flare += (target - logic ().m_flare) * 0.12f;
-    }
-
-    void MoppeGame::prepare_benchmark_epoch () {
-      if (!m_benchmark_epoch_pending)
-        return;
-      const std::optional<GraphicsBenchmarkReplay::Frame> frame =
-        m_benchmark_replay->current_frame ();
-      if (!frame || frame->prelude || !m_benchmark_checkpoint)
-        throw std::logic_error ("graphics benchmark lost its checkpoint");
-
-      // The first epoch restores too: a restore rebuilds the rigid bike's
-      // physics world without the solver's warm-start history, so only a
-      // restored session replays exactly like every other epoch.
-      session ().restore (*m_benchmark_checkpoint);
-      m_renderer->reset_temporal_state ();
-      m_graphics = m_benchmark_baseline;
-      m_benchmark_mask = apply_graphics_benchmark_mask (
-        m_graphics, frame->partition_mask, m_benchmark->partition);
-      update_benchmark_title (frame->epoch, frame->partition_mask);
-      m_benchmark_epoch_pending = false;
-    }
-
-    void MoppeGame::finish_benchmark_frame (
-      GraphicsBenchmarkReplay::Boundary boundary) {
-      switch (boundary) {
-      case GraphicsBenchmarkReplay::Boundary::none:
-        return;
-      case GraphicsBenchmarkReplay::Boundary::prelude_complete:
-        m_benchmark_checkpoint = session ().state ();
-        m_benchmark_epoch_pending = true;
-        std::cerr << "moppe: graphics benchmark: "
-                  << m_benchmark_replay->configuration_count ()
-                  << " configurations, " << m_benchmark->settle_frames
-                  << " settle + " << m_benchmark->measured_frames
-                  << " measured frames each\n";
-        return;
-      case GraphicsBenchmarkReplay::Boundary::epoch_complete:
-        m_benchmark_epoch_pending = true;
-        return;
-      case GraphicsBenchmarkReplay::Boundary::complete:
-        m_benchmark_submitted = true;
-        platform::set_window_title ("Moppe benchmark - finishing GPU samples");
-        return;
-      }
-    }
-
-    void MoppeGame::update_benchmark_title (int epoch,
-                                            uint32_t partition_mask) const {
-      if (!m_benchmark)
-        return;
-      const int configurations =
-        1 << graphics_benchmark_dimension_count (m_benchmark->partition);
-      std::ostringstream title;
-      title << "Moppe benchmark " << (epoch + 1) << '/' << configurations
-            << " - ";
-      bool any = false;
-      for (int bit = 0;
-           bit < graphics_benchmark_dimension_count (m_benchmark->partition);
-           ++bit)
-        if (partition_mask & (1u << bit)) {
-          if (any)
-            title << " + ";
-          title << graphics_benchmark_block_name (m_benchmark->partition, bit);
-          any = true;
-        }
-      if (!any)
-        title << "none";
-      platform::set_window_title (title.str ());
     }
 
     void MoppeGame::leave_cinematic () {
@@ -742,19 +469,13 @@ namespace moppe {
       m_opening_shots.clear ();
       m_waterfall_surface.clear ();
       m_bridges.clear ();
-      m_water_inspection.reset ();
       const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());
-      terrain::WorldRecipe next_recipe = terrain::make_world_recipe (
-        recipe ().extent (),
-        recipe ().resolution (),
-        next_seed,
-        recipe ().water_datum (),
-        recipe ().generation_profile (),
-        recipe ().evolution ().uplift_duration,
-        recipe ().evolution ().channel_initiation_area,
-        recipe ().evolution ().fluvial_transport.concentration_at_unit_slope,
-        recipe ().evolution ().critical_hillslope_gradient,
-        recipe ().evolution ().maximum_hillslope_diffusivity_multiplier);
+      terrain::WorldRecipe next_recipe =
+        terrain::make_world_recipe (recipe ().extent (),
+                                    recipe ().resolution (),
+                                    next_seed,
+                                    recipe ().water_datum (),
+                                    recipe ().generation_profile ());
       session ().set_mode (M_BIKE);
       logic ().m_game_over = false;
       logic ().m_health = 100.0f;

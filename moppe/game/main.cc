@@ -23,8 +23,6 @@ extern "C" void game_updates_finish (void);
 
 int main (int argc, char** argv) {
   using namespace moppe;
-  if (moppe::environment ("MOPPE_TRACY_WAIT"))
-    MOPPE_PROFILE_WAIT ();
   MOPPE_PROFILE_THREAD ("Main");
   MOPPE_PROFILE_ZONE ("main");
 
@@ -72,18 +70,6 @@ int main (int argc, char** argv) {
     std::cout << game::launch_options_help (argc > 0 ? argv[0] : "moppe");
     return 0;
   }
-  if (!game::apply_graphics_environment (options.graphics, error)) {
-    std::cerr << error << '\n';
-    return -1;
-  }
-  if (options.scene_megapixel_budget)
-    options.graphics.scene_megapixel_budget = *options.scene_megapixel_budget;
-  if (options.target_frame_rate)
-    options.graphics.target_frame_rate = *options.target_frame_rate;
-  game::print_graphics_settings (std::cerr, options.graphics);
-  if (options.benchmark)
-    game::publish_benchmark_environment (*options.benchmark);
-
   game::prune_obsolete_terrain_caches ();
   if (options.seed < 0)
     options.seed =

@@ -16,7 +16,7 @@
 namespace moppe::game {
   // The one selected presentation mode for a finished world frame. These are
   // deliberately concrete application modes, not a generic scene hierarchy.
-  enum class FrameSceneMode { Gameplay, Cinematic, WaterInspection, Gazetteer };
+  enum class FrameSceneMode { Gameplay, Cinematic };
 
   // The following cameras' vertical field of view, at rest; speed widens
   // it a little.
@@ -260,17 +260,10 @@ namespace moppe::game {
   // mutable application mode while encoding commands.
   struct FrameVisibility {
     bool cinematic = false;
-    bool water_inspection = false;
     bool sky_before_terrain = false;
     bool sky_after_terrain = true;
-    bool forest = true;
-    bool boulders = true;
-    bool mushrooms = true;
     bool undergrowth = true;
-    bool actors = true;
     bool ocean = true;
-    bool waterfall_curtains = true;
-    bool dust = true;
     bool underwater = false;
     bool motion_blur = false;
     bool vehicle_effects = true;
@@ -333,16 +326,6 @@ namespace moppe::game {
     bool lens_flare = true;
   };
 
-  // This remains a raw value because the Metal benchmark CSV owns its column
-  // contract.  FrameView only carries the sample coordinates to the encoder.
-  struct FrameBenchmarkTag {
-    uint32_t mask = 0;
-    uint32_t partition_mask = 0;
-    uint32_t epoch = 0;
-    uint32_t logical_frame = 0;
-    bool measured = false;
-  };
-
   // The immutable reading consumed by a presentation frame. It has no
   // Renderer or platform type and contains no borrowed mutable actor state.
   struct FrameView {
@@ -359,7 +342,6 @@ namespace moppe::game {
     FrameVisibility visibility {};
     float terrain_distance = 0.0f;
     float motion_blur_amount = 0.0f;
-    FrameBenchmarkTag benchmark {};
     // Water at the final camera's x,z, in world metres including waves.
     // Present above the surface too, and when water is hidden; absent
     // over dry ground. The camera's height gives the depth below it.
@@ -381,7 +363,6 @@ namespace moppe::game {
     bool reveal_player = false;
     // A capture camera's own lens, in place of play's.
     std::optional<degrees_t> capture_field_of_view;
-    FrameBenchmarkTag benchmark {};
     // The sky at this moment of the day; absent, the fixed sun at the
     // graphics settings' height.
     std::optional<SkyReading> sky;

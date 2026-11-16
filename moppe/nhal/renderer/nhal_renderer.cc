@@ -589,8 +589,7 @@ namespace moppe::nhal {
       const render::TexturePixels& plants,
       const render::TexturePixels& more_plants,
       const render::TexturePixels& scars,
-      const render::TexturePixels& bedrock,
-      bool) {
+      const render::TexturePixels& bedrock) {
       auto sheet = [&] (Texture& texture,
                         const render::TexturePixels& pixels,
                         const char* label) {

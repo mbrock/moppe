@@ -141,22 +141,6 @@ namespace moppe {
     void MoppeGame::prepare_world_surface () {
       MOPPE_PROFILE_ZONE ("startup.prepare_world_surface");
       session ().bike ().set_water_level (world ().water_level);
-
-      if (m_water_shot) {
-        m_water_inspection = choose_water_inspection (*m_water_shot,
-                                                      surface (),
-                                                      standing_water (),
-                                                      lake_census (),
-                                                      drainage (),
-                                                      rivers ());
-        if (!m_water_inspection)
-          throw std::runtime_error (
-            "no " + std::string (water_shot_name (*m_water_shot)) +
-            " available for water screenshot");
-        std::cerr << "water screenshot: " << water_shot_name (*m_water_shot)
-                  << " cell=" << m_water_inspection->cell
-                  << " score=" << m_water_inspection->score << '\n';
-      }
     }
 
     void MoppeGame::place_stars_and_player () {
@@ -181,17 +165,10 @@ namespace moppe {
       const char* demo = moppe::environment ("MOPPE_DEMO");
       if (demo && std::string_view (demo) == "forest")
         move_spawn_to_forest ();
-      if (const char* start = moppe::environment ("MOPPE_START");
-          start && std::string_view (start).starts_with ("fingerpost"))
-        move_spawn_to_fingerpost (
-          std::string_view (start).starts_with ("fingerpost:")
-            ? static_cast<std::size_t> (std::max (0, std::atoi (start + 11)))
-            : 0);
       // It is a walking game first: the rider stands beside the parked
-      // bike. The demo autopilot and benchmarks still start riding,
-      // unless a scripted walk (MOPPE_WALK) asks for the feet.
-      if ((!demo || moppe::environment ("MOPPE_WALK")) && !m_benchmark &&
-          !m_gazetteer) {
+      // bike. The demo autopilot still starts riding, unless a scripted
+      // walk (MOPPE_WALK) asks for the feet.
+      if (!demo || moppe::environment ("MOPPE_WALK")) {
         session ().start_on_foot ();
         // Scripted walks can watch from behind or in front of the figure.
         if (const char* view = moppe::environment ("MOPPE_WALK_CAMERA")) {
@@ -206,7 +183,7 @@ namespace moppe {
       }
       // MOPPE_DEMO=jeep, tractor, caddy, mountain_bike, or long_john: the
       // autopilot drives that instead.
-      if (demo && !m_benchmark && !m_gazetteer && logic ().m_mode == M_BIKE) {
+      if (demo && logic ().m_mode == M_BIKE) {
         if (std::string_view (demo) == "jeep")
           session ().set_mode (M_JEEP);
         else if (std::string_view (demo) == "tractor")
@@ -220,105 +197,33 @@ namespace moppe {
       }
     }
 
-    void MoppeGame::move_spawn_to_fingerpost (std::size_t rank) {
-      std::vector<const Fingerpost*> posts;
-      for (const Fingerpost& post : m_fingerposts)
-        posts.push_back (&post);
-      const auto off = [this] (const Fingerpost* post) {
-        return std::hypot (post->x_m - m_home_base_position[0],
-                           post->z_m - m_home_base_position[2]);
-      };
-      std::ranges::sort (posts, {}, off);
-      if (rank >= posts.size () || posts[rank]->arms.empty ())
-        throw std::runtime_error ("this world has no such fingerpost");
-      const Fingerpost* nearest = posts[rank];
-      const Fingerpost::Arm& arm = nearest->arms.front ();
-      const Vec3 face (-arm.direction_z, 0.0f, arm.direction_x);
-      const Vec3 post (nearest->x_m, 0.0f, nearest->z_m);
-      m_spawn_position = post + face * 7.0f +
-                         Vec3 (arm.direction_x, 0.0f, arm.direction_z) * 0.6f;
+    void MoppeGame::move_spawn_to_forest () {
+      // The fullest 40-metre cell of the forest plan's conifers.
+      const ForestPlan& plan = generated_world ().forest ();
+      const Vec3 period = extent_value (plan.period);
+      constexpr float cell = 40.0f;
+      const int nx = std::max (1, static_cast<int> (period[0] / cell));
+      const int nz = std::max (1, static_cast<int> (period[2] / cell));
+      std::vector<int> conifers (static_cast<std::size_t> (nx) * nz, 0);
+      for (const ForestSite& site : plan.sites) {
+        if (site.form != ForestForm::conifer)
+          continue;
+        const Vec3 at = position_value (site.position);
+        const int x = std::clamp (static_cast<int> (at[0] / cell), 0, nx - 1);
+        const int z = std::clamp (static_cast<int> (at[2] / cell), 0, nz - 1);
+        ++conifers[static_cast<std::size_t> (z) * nx + x];
+      }
+      const auto densest =
+        std::max_element (conifers.begin (), conifers.end ()) -
+        conifers.begin ();
+      m_spawn_position =
+        Vec3 ((static_cast<float> (densest % nx) + 0.5f) * cell,
+              0.0f,
+              (static_cast<float> (densest / nx) + 0.5f) * cell);
       m_spawn_position[1] = ground_height (m_spawn_position) + 1.2f;
       session ().bike ().reset (m_spawn_position);
-      session ().bike ().set_heading (-face);
-      std::cerr << "moppe: starting by the fingerpost at (" << nearest->x_m
-                << ", "
-                << ground_height (Vec3 (nearest->x_m, 0.0f, nearest->z_m))
-                << ", " << nearest->z_m << "), first arm along ("
-                << arm.direction_x << ", " << arm.direction_z << ")\n";
-    }
-
-    void MoppeGame::move_spawn_to_forest () {
-      const LandscapeGazetteer views =
-        plan_landscape_gazetteer (surface (),
-                                  surface_readings (),
-                                  standing_water (),
-                                  lake_census (),
-                                  drainage (),
-                                  rivers (),
-                                  trail_network (),
-                                  position (m_spawn_position),
-                                  m_sky.sun);
-      const auto forest = std::find_if (
-        views.shots.begin (), views.shots.end (), [] (const auto& shot) {
-          return shot.name == "forest-floor";
-        });
-      if (forest == views.shots.end ())
-        throw std::runtime_error ("forest demo found no forest-floor site");
-
-      m_spawn_position = position_value (forest->eye);
-      m_spawn_position[1] =
-        terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface (),
-            moppe::position (
-              Vec3 (m_spawn_position[0], 0.0f, m_spawn_position[2])))) +
-        1.2f;
-      Vec3 heading = position_value (forest->subject) - m_spawn_position;
-      heading[1] = 0.0f;
-      if (length2 (heading) < 1e-5f)
-        heading = Vec3 (0, 0, 1);
-      heading = normalized (heading);
-      session ().bike ().reset (m_spawn_position);
-      session ().bike ().set_heading (heading);
-      std::cerr << "forest demo: site=" << forest->site.value
-                << " forest-cover="
-                << forest->readings.forest_cover.numerical_value_in (one)
-                << '\n';
-    }
-
-    ForestPlan MoppeGame::tree_lab_plan () const {
-      ForestPlan plan;
-      plan.period = generated_world ().forest ().period;
-      const Vec3 ahead = trail_direction_from_home ();
-      const Vec3 side (-ahead[2], 0.0f, ahead[0]);
-      // Seeds the trunk forest's stable thinning keeps.
-      struct Specimen {
-        float ahead, side, size;
-        ForestForm form;
-        std::uint32_t seed;
-      };
-      const Specimen specimens[] = {
-        { 28.0f, 0.0f, 1.0f, ForestForm::conifer, 0x7a3e11u },
-        { 26.0f, -18.0f, 1.0f, ForestForm::broadleaf, 0x7a3e12u },
-        { 48.0f, 16.0f, 1.3f, ForestForm::conifer, 0x7a3e15u },
-      };
-      for (const Specimen& specimen : specimens) {
-        Vec3 at =
-          m_spawn_position + ahead * specimen.ahead + side * specimen.side;
-        at[1] = terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface (), moppe::position (Vec3 (at[0], 0.0f, at[2]))));
-        plan.sites.push_back (
-          { .position = moppe::position (at),
-            .normal = Vec3 (0, 1, 0) * terrain::terrain_normal[one],
-            .cover = 0.5f * map::forest_cover[one],
-            .moisture = 0.5f * map::surface_moisture[one],
-            .size = specimen.size * tree_size_factor[one],
-            .seed = specimen.seed,
-            .form = specimen.form,
-            .age = ForestAge::mature });
-      }
-      return plan;
+      std::cerr << "forest demo: densest conifer stand at " << m_spawn_position
+                << " (" << conifers[densest] << " spruce in 40 m)\n";
     }
 
     bool MoppeGame::on_road (const Vec3& at, float reach, bool decks) const {
@@ -333,20 +238,13 @@ namespace moppe {
 
     void MoppeGame::grow_global_forest () {
       MOPPE_PROFILE_ZONE ("startup.build_global_forest");
-      if (m_water_inspection)
-        return;
-      static const bool tree_lab = moppe::environment ("MOPPE_TREE_LAB") != 0;
-      if (tree_lab) {
-        m_forest.rebuild (*m_renderer, tree_lab_plan ());
-      } else {
-        // Nothing grows where the places stand, nor on a road.
-        ForestPlan plan = generated_world ().forest ();
-        std::erase_if (plan.sites, [this] (const ForestSite& site) {
-          const Vec3 at = position_value (site.position);
-          return cleared (m_places, at) || on_road (at, 0.6f, true);
-        });
-        m_forest.rebuild (*m_renderer, plan);
-      }
+      // Nothing grows where the places stand, nor on a road.
+      ForestPlan plan = generated_world ().forest ();
+      std::erase_if (plan.sites, [this] (const ForestSite& site) {
+        const Vec3 at = position_value (site.position);
+        return cleared (m_places, at) || on_road (at, 0.6f, true);
+      });
+      m_forest.rebuild (*m_renderer, plan);
       std::cerr << "global forest: " << m_forest.tree_count ()
                 << " canopy representatives, "
                 << m_forest.resident_bytes () / (1024 * 1024)
@@ -355,12 +253,6 @@ namespace moppe {
 
     void MoppeGame::scatter_boulders () {
       MOPPE_PROFILE_ZONE ("startup.scatter_boulders");
-      if (m_water_inspection)
-        return;
-      if (moppe::environment ("MOPPE_TREE_LAB")) {
-        m_boulders.rebuild (*m_renderer, BoulderPlan {});
-        return;
-      }
       const meters_t sea_level = world ().water_level;
       const float sea = sea_level.numerical_value_in (u::m);
       const float highest = terrain::measure_height_range (surface ()).maximum;
@@ -407,10 +299,6 @@ namespace moppe {
 
     void MoppeGame::grow_mushrooms () {
       MOPPE_PROFILE_ZONE ("startup.grow_mushrooms");
-      if (m_water_inspection || moppe::environment ("MOPPE_TREE_LAB")) {
-        m_mushrooms.rebuild ({});
-        return;
-      }
       m_mushrooms.rebuild (
         plan_mushrooms (generated_world ().forest (),
                         surface (),
@@ -491,14 +379,12 @@ namespace moppe {
       const char* demo_name = moppe::environment ("MOPPE_DEMO");
       const char* walk_name = moppe::environment ("MOPPE_WALK");
       const bool boat_demo =
-        ((demo_name && std::string_view (demo_name) == "boat") ||
-         (walk_name && std::string_view (walk_name) == "boat-fish")) &&
-        !m_benchmark && !m_gazetteer;
+        (demo_name && std::string_view (demo_name) == "boat") ||
+        (walk_name && std::string_view (walk_name) == "boat-fish");
       park_boat (boat_demo);
       // MOPPE_DEMO=jet_ski: the autopilot rides the jet ski out instead.
-      const bool jet_ski_demo = demo_name &&
-                                std::string_view (demo_name) == "jet_ski" &&
-                                !m_benchmark && !m_gazetteer;
+      const bool jet_ski_demo =
+        demo_name && std::string_view (demo_name) == "jet_ski";
       park_jet_ski (jet_ski_demo);
       park_caddy ();
       // A demo already at the wheel of a machine just parked follows it.
@@ -513,8 +399,7 @@ namespace moppe {
       // MOPPE_DEMO=helicopter: the autopilot takes it up instead, hooks
       // the jeep, parked beside it, on its line, and flies it off.
       if (const char* demo = moppe::environment ("MOPPE_DEMO");
-          demo && std::string_view (demo) == "helicopter" && !m_benchmark &&
-          !m_gazetteer) {
+          demo && std::string_view (demo) == "helicopter") {
         const mov::Helicopter& heli = session ().helicopter ();
         session ().jeep ().place (heli.point (Vec3 (6.0f, 0.0f, 0.0f)),
                                   heli.forward ());
@@ -524,57 +409,31 @@ namespace moppe {
       stage_camp_script ();
       stage_fish_script ();
       stage_place_script ();
-      place_spectator ();
       // The mouse looks around during play; M hands it back.
-      if (!m_gazetteer && !m_benchmark)
-        platform::set_pointer_captured (true);
-      if (m_gazetteer)
-        plan_gazetteer_capture ();
-      else
-        plan_opening_journey ();
+      platform::set_pointer_captured (true);
+      plan_opening_journey ();
       remember_seed (world (),
                      recipe ().generation_profile (),
                      static_cast<int> (recipe ().seed ().value));
-      if (moppe::environment ("MOPPE_REGENERATE_ONCE") &&
-          !m_automated_regeneration_done) {
-        m_automated_regeneration_done = true;
-        regenerate_world ();
-        return;
-      }
-      r.clear_terrain_overlay ();
       upload_world_terrain (r);
       // The chart in the HUD's corner wants the map from the first
       // frame of play.
-      const auto said = [] (const char* name, std::string_view value) {
-        const char* set = moppe::environment (name);
-        return set && std::string_view (set) == value;
-      };
-      if (!m_gazetteer && !m_benchmark && !m_water_shot &&
-          !said ("MOPPE_CHART", "none") && !said ("MOPPE_HUD", "none"))
+      const char* hud = moppe::environment ("MOPPE_HUD");
+      if (!hud || std::string_view (hud) != "none")
         paint_map (r);
-      if (m_graphics.terrain_shadows)
-        cast_world_shadows (r);
-      if (m_gazetteer)
-        r.reset_temporal_state ();
       m_ready = true;
       MOPPE_PROFILE_PLOT ("startup.ready", 1);
       std::cerr << "moppe: world ready " << m_loading.status ().elapsed
                 << " s after loading began" << std::endl;
-
-      // MOPPE_SCAN=<seconds>: a scan from where the walker stands, that
-      // long under way, for captures.
-      if (const char* scan = moppe::environment ("MOPPE_SCAN"))
-        start_scan (std::atof (scan));
 
       // A screenshot plays a shot list it names (MOPPE_OPENING=file),
       // so that a still can be taken from any pose the grammar writes.
       const char* list = moppe::environment ("MOPPE_OPENING");
       const bool posed = list && std::filesystem::is_regular_file (list) &&
                          !m_screenshot_path.empty ();
-      const bool automated =
-        (!m_screenshot_path.empty () && !posed) || m_benchmark.has_value () ||
-        m_water_shot.has_value () || m_gazetteer.has_value () ||
-        moppe::environment ("MOPPE_DEMO") || moppe::environment ("MOPPE_WALK");
+      const bool automated = (!m_screenshot_path.empty () && !posed) ||
+                             moppe::environment ("MOPPE_DEMO") ||
+                             moppe::environment ("MOPPE_WALK");
       if (posed || (!automated && !m_skip_cinematic_requested)) {
         start_opening ();
         m_live_input.clear ();
@@ -609,13 +468,7 @@ namespace moppe {
       upload_surface_readings (r,
                                surface (),
                                surface_readings (),
-                               generated_world ().water_surface (),
-                               !m_water_shot);
-    }
-
-    void MoppeGame::cast_world_shadows (render::Renderer& r) {
-      MOPPE_PROFILE_ZONE ("startup.cast_world_shadows");
-      m_terrain.render_shadow (r, m_sky.sun, m_graphics.forest);
+                               generated_world ().water_surface ());
     }
 
     void MoppeGame::update_world_atmosphere (float total_time) {
@@ -667,13 +520,10 @@ namespace moppe {
       const char* hour = moppe::environment ("MOPPE_CLOCK");
       if (hour)
         day.first_hour = std::clamp ((float)::atof (hour), 0.0f, 24.0f);
-      const bool composed =
-        m_gazetteer || m_benchmark || m_water_shot ||
-        (moppe::environment ("MOPPE_SUNHEIGHT") && !minutes && !hour);
       const float length = minutes ? (float)::atof (minutes) : 48.0f;
-      if (!composed && length > 0.0f)
+      if (length > 0.0f)
         day.pace = 24.0 / (60.0 * length);
-      day.turning = !composed && (day.pace > 0.0 || hour);
+      day.turning = day.pace > 0.0 || hour;
       return day;
     }
 

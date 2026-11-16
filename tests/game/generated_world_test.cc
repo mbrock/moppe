@@ -1,5 +1,4 @@
 #include <moppe/game/generated_world.hh>
-#include <moppe/game/landscape_summary.hh>
 #include <moppe/game/world_cache.hh>
 
 #include <tests/test.hh>
@@ -128,82 +127,6 @@ MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
   MOPPE_CHECK (!completed);
   MOPPE_CHECK (active.get () == address);
   MOPPE_CHECK (active->recipe ().seed () == Seed { 72 });
-}
-
-MOPPE_TEST (landscape_summary_measures_one_complete_world) {
-  using namespace moppe;
-  using namespace moppe::terrain;
-
-  const spatial_extent_t extent =
-    spatial_extent_in_metres (Vec3 (640, 650, 640));
-  game::WorldParams params;
-  params.map_size = extent;
-  params.resolution = 17;
-  params.water_level = 50.0f * u::m;
-  const WorldRecipe recipe =
-    make_world_recipe (extent,
-                       17,
-                       Seed { 42 },
-                       50.0f * u::m,
-                       TerrainGenerationProfile::Fast,
-                       750000.0f * mp_units::astronomy::Julian_year);
-  const std::unique_ptr<game::GeneratedWorld> world =
-    build_test_world (recipe, params);
-  const auto& [flood, census, drainage, rivers] = world->hydrology ();
-  const game::LandscapeSummary summary = game::summarize_landscape (
-    world->surface (), flood, census, drainage, rivers, world->recipe ());
-
-  MOPPE_CHECK (summary.seed == 42u);
-  MOPPE_CHECK (summary.resolution == 17);
-  MOPPE_CHECK_NEAR (static_cast<float> (summary.uplift_years), 750000.0f, 0.0f);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (summary.channel_initiation_area_m2), 1.0f, 0.0f);
-  MOPPE_CHECK_NEAR (static_cast<float> (summary.runoff_m_per_year), 1.0f, 0.0f);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (summary.sediment_concentration_at_unit_slope),
-    2e-5f,
-    0.0f);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (summary.critical_hillslope_gradient), 1.0f, 0.0f);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (summary.maximum_hillslope_multiplier), 1.0f, 0.0f);
-  MOPPE_CHECK (summary.land_cells > 0);
-  MOPPE_CHECK (summary.land_area_m2 > 0.0);
-  MOPPE_CHECK (summary.land_elevation_max_m >= summary.land_elevation_p90_m);
-  MOPPE_CHECK (summary.land_below_10_deg_fraction >=
-               summary.land_below_5_deg_fraction);
-  MOPPE_CHECK (summary.land_below_20_deg_fraction >=
-               summary.land_below_10_deg_fraction);
-  MOPPE_CHECK (summary.largest_connected_below_20_deg_m2 >=
-               summary.largest_connected_below_10_deg_m2);
-  MOPPE_CHECK (summary.river_graph_junctions <= summary.river_reaches);
-  MOPPE_CHECK (summary.dry_confluence_cells <= summary.river_graph_junctions);
-  // The fast profile erodes nothing: what is cut and laid down is the
-  // roads' earthwork, and only where a road was built.
-  const bool built =
-    std::ranges::any_of (world->roads ().roads, [] (const terrain::Road& road) {
-      return road.kind == terrain::Road::Kind::Road;
-    });
-  MOPPE_CHECK ((summary.eroded_sediment_m3 > 0.0) == built);
-  // An embankment is the only loose cover there is: made ground.
-  MOPPE_CHECK_NEAR (static_cast<float> (summary.mobile_sediment_m3),
-                    static_cast<float> (summary.deposited_sediment_m3),
-                    1.0f);
-
-  std::ostringstream output;
-  game::write_landscape_summary_csv (output, summary);
-  MOPPE_CHECK (output.str ().starts_with (
-    "seed,resolution,spacing_x_m,spacing_z_m,evolution_years,"));
-  MOPPE_CHECK (output.str ().find (",200000,750000,1,1,") != std::string::npos);
-  MOPPE_CHECK (output.str ().find ("sediment_concentration_at_unit_slope") !=
-               std::string::npos);
-  MOPPE_CHECK (output.str ().find ("critical_hillslope_gradient") !=
-               std::string::npos);
-
-  std::ostringstream elevation_output (std::ios::out | std::ios::binary);
-  game::write_landscape_elevation_f32 (elevation_output, world->surface ());
-  MOPPE_CHECK (elevation_output.str ().size () ==
-               world->surface ().size () * sizeof (float));
 }
 
 MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {

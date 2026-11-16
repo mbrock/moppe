@@ -29,12 +29,6 @@ namespace moppe {
                   const GraphicsSettings& graphics,
                   const terrain::WaterSheets* water = nullptr);
 
-      // Renders the one-time shadow map.  sun_dir points toward the
-      // sun, world space.
-      void render_shadow (render::Renderer& r,
-                          const Vec3& sun_dir,
-                          bool include_forest);
-
       // Where a cascade of the sun's map is centred: a point that follows
       // the camera in whole texels, kept in double precision so that its
       // walk does not itself wobble the map.
@@ -48,10 +42,7 @@ namespace moppe {
                                 position_t camera,
                                 const Vec3& view_dir,
                                 const Vec3& sun_dir,
-                                const Vec3& sky_pole,
-                                bool include_forest,
-                                bool include_boulders = true,
-                                bool include_far = true);
+                                const Vec3& sky_pole);
 
       // Emits culled chunk draws: distance cull against max_dist plus
       // the view frustum's side planes.  Five nested LODs run from a

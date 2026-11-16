@@ -22,8 +22,7 @@ namespace moppe::game {
   void upload_surface_readings (render::Renderer& renderer,
                                 const map::SurfaceGeometry& geometry,
                                 const map::SurfaceReadings& readings,
-                                const terrain::WaterSheets& water,
-                                bool include_forest);
+                                const terrain::WaterSheets& water);
 }
 
 #endif

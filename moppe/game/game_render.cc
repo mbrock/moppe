@@ -6,20 +6,6 @@
 
 namespace moppe {
   namespace game {
-    static int cinematic_capture_frame_limit () {
-      if (const char* value =
-            moppe::environment ("MOPPE_CINEMATIC_CAPTURE_FRAMES"))
-        return std::max (1, ::atoi (value));
-      return 450;
-    }
-
-    static int cinematic_capture_frame_step () {
-      if (const char* value =
-            moppe::environment ("MOPPE_CINEMATIC_CAPTURE_STEP"))
-        return std::max (1, ::atoi (value));
-      return 1;
-    }
-
     void MoppeGame::render (render::Renderer& r) {
       MOPPE_PROFILE_FRAME ();
       MOPPE_PROFILE_ZONE ("MoppeGame::render");
@@ -39,7 +25,6 @@ namespace moppe {
       light_beacons (frame);
       light_barn (frame);
       const bool cinematic = frame.visibility.cinematic;
-      const GazetteerShot* gazetteer_shot = current_gazetteer_shot ();
       // A cut is a new view: the temporal history of the last one would
       // only smear into it.
       if (m_opening.active () &&
@@ -56,92 +41,13 @@ namespace moppe {
       }();
       const bool captured = !m_screenshot_path.empty () &&
                             ++m_screenshot_frames >= screenshot_delay;
-      bool captured_cinematic = false;
-      if (cinematic) {
-        if (const char* directory =
-              moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
-          const int capture_count = cinematic_capture_frame_limit ();
-          const bool survey =
-            m_cinematic.active () &&
-            moppe::environment ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
-          const float next_progress =
-            (m_cinematic_capture_frame + 0.5f) / capture_count;
-          const bool sample_frame =
-            survey ? m_cinematic.route_progress () >= next_progress
-                   : m_cinematic_capture_render_frame++ %
-                         cinematic_capture_frame_step () ==
-                       0;
-          if (sample_frame && m_cinematic_capture_frame < capture_count) {
-            if (m_cinematic_capture_frame == 0)
-              std::filesystem::create_directories (directory);
-            std::ostringstream path;
-            path << directory << "/frame-" << std::setfill ('0')
-                 << std::setw (5) << m_cinematic_capture_frame++ << ".png";
-            r.request_screenshot (path.str ());
-            captured_cinematic = true;
-          }
-        }
-      }
-      if (captured) {
-        if (m_water_inspection)
-          std::cerr << "water screenshot camera: eye="
-                    << session ().camera ().position ()
-                    << " target=" << m_water_inspection->target << '\n';
+      if (captured)
         r.request_screenshot (m_screenshot_path);
-      }
-      const bool captured_gazetteer =
-        gazetteer_shot && m_gazetteer &&
-        m_gazetteer_settle_frame >= m_gazetteer->settle_frames;
-      if (captured_gazetteer) {
-        if (glide_frame_limit () > 0) {
-          std::ostringstream name;
-          name << "glide-" << std::setfill ('0') << std::setw (4)
-               << m_glide_frame << ".png";
-          const std::filesystem::path path =
-            std::filesystem::path (m_gazetteer->output_directory) / name.str ();
-          r.request_screenshot (path.string ());
-        } else {
-          const std::filesystem::path path =
-            std::filesystem::path (m_gazetteer->output_directory) /
-            gazetteer_image_filename (m_gazetteer_shot, gazetteer_shot->name);
-          r.request_screenshot (path.string ());
-        }
-      }
       if (m_snapshot_requested) {
         m_snapshot_requested = false;
         const std::string path = next_snapshot_path ();
         r.request_screenshot (path);
         record_shot_pose (frame, path);
-      }
-      // A ride capture records CONSECUTIVE gameplay frames: the stimulus a
-      // rider actually receives, per-frame LOD transitions included --
-      // exactly what settled single captures can never show. Pair with
-      // MOPPE_DEMO=1 for a deterministic autopilot ride.
-      if (!cinematic && m_ready) {
-        static const char* ride_directory =
-          moppe::environment ("MOPPE_RIDE_CAPTURE_DIR");
-        static const int ride_start = [] {
-          const char* start = moppe::environment ("MOPPE_RIDE_CAPTURE_START");
-          return start ? std::max (0, ::atoi (start)) : 600;
-        }();
-        static const int ride_count = [] {
-          const char* count = moppe::environment ("MOPPE_RIDE_CAPTURE_FRAMES");
-          return count ? std::max (1, ::atoi (count)) : 90;
-        }();
-        if (ride_directory) {
-          const int frame_index = m_ride_capture_render_frame++;
-          if (frame_index >= ride_start && frame_index % 2 == 0 &&
-              m_ride_capture_frame < ride_count) {
-            if (m_ride_capture_frame == 0)
-              std::filesystem::create_directories (ride_directory);
-            std::ostringstream path;
-            path << ride_directory << "/ride-" << std::setfill ('0')
-                 << std::setw (4) << m_ride_capture_frame++ << ".png";
-            r.request_screenshot (path.str ());
-          }
-          if (m_ride_capture_frame >= ride_count)
-            platform::request_quit ();
-        }
       }
       record_frame (r);
       render::FrameParams params = frame_params_for (frame);
@@ -163,28 +69,6 @@ namespace moppe {
       if (captured) {
         m_screenshot_path.clear ();
         platform::request_quit ();
-      }
-      if (captured_cinematic) {
-        if (m_cinematic_capture_frame >= cinematic_capture_frame_limit ())
-          platform::request_quit ();
-      }
-      if (gazetteer_shot) {
-        if (!captured_gazetteer) {
-          ++m_gazetteer_settle_frame;
-        } else if (glide_frame_limit () > 0) {
-          if (++m_glide_frame >= glide_frame_limit ())
-            platform::request_quit ();
-        } else {
-          std::cerr << "gazetteer frame " << m_gazetteer_shot + 1 << '/'
-                    << m_gazetteer_plan.shots.size () << ": "
-                    << gazetteer_shot->name << '\n';
-          ++m_gazetteer_shot;
-          m_gazetteer_settle_frame = 0;
-          if (m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
-            platform::request_quit ();
-          else
-            r.reset_temporal_state ();
-        }
       }
     }
 
@@ -342,18 +226,9 @@ namespace moppe {
         }
       }
 
-      bool captured = false;
-      if (const char* path = moppe::environment ("MOPPE_LOADING_SCREENSHOT")) {
-        if (m_loading.claim_loading_capture (completed != nullptr)) {
-          r.request_screenshot (path);
-          captured = true;
-        }
-      }
       r.draw_hud_text (m_hud_text);
       r.draw_hud (m_hud_dl);
       r.end_frame ();
-      if (captured)
-        platform::request_quit ();
 
       // The frame announcing the finish is on its way to the display;
       // now do the finishing work.
@@ -455,12 +330,11 @@ namespace moppe {
     const std::string& MoppeGame::snapshot_directory () {
       namespace fs = std::filesystem;
       if (m_snapshot_directory.empty ()) {
-        const char* base = moppe::environment ("MOPPE_SCREENSHOT_DIR");
         char stamp[32];
         const std::time_t now = std::time (nullptr);
         std::strftime (
           stamp, sizeof stamp, "run-%Y%m%d-%H%M%S", std::localtime (&now));
-        fs::path directory = fs::path (base ? base : "screenshots") / stamp;
+        fs::path directory = fs::path ("screenshots") / stamp;
         std::error_code error;
         fs::create_directories (directory, error);
         if (error) {

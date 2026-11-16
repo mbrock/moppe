@@ -26,22 +26,6 @@ namespace moppe::nhal {
       m_chunks.clear ();
       m_scene_open = m_scene_begun = m_scene_closed = m_resolved = m_presented =
         false;
-      // MOPPE_NHAL_PROBE switches a diagnostic for consoles where the
-      // renderer cannot be debugged directly: "white" draws every draw
-      // list untextured, "additive" draws alpha-blended runs additively,
-      // "nohistory" resolves every frame from itself alone, "nomotion"
-      // resolves ignoring motion, "scene" presents the unresolved scene,
-      // "noao" and "noshafts" leave out the occlusion and the sun shafts, and
-      // "nosky", "nosward", and "noblades" the sky and the grass's
-      // canopy and blades, to time each apart; "noterrain" and
-      // "noribbons" separate the ground from its fine road geometry.
-      {
-        const char* probe = moppe::environment ("MOPPE_NHAL_PROBE");
-        m_probe = probe ? probe : "";
-      }
-      if (m_probe == "nohistory")
-        m_restart = true;
-
       const Mat4 view_proj = params.proj * params.view;
       if (m_restart)
         m_previous_view_proj = view_proj, m_previous_time = params.time;
@@ -70,10 +54,9 @@ namespace moppe::nhal {
                          (halton (phase, 2) - 0.5f) * 2 / float (m_scene_width),
                          (halton (phase, 3) - 0.5f) * 2 /
                            float (m_scene_height) };
-      frame.temporal_blend = { m_restart ? 1.0f : 0.1f,
-                               m_probe == "nomotion" ? 1.0f : 0.0f,
-                               float (m_width),
-                               float (m_height) };
+      frame.temporal_blend = {
+        m_restart ? 1.0f : 0.1f, 0.0f, float (m_width), float (m_height)
+      };
       frame.shadow = { 0, 1.0f / shadow_size, 0, 0 };
       const Vec3 sky_sun = length2 (params.sky_sun_dir) > 1e-6f
                              ? params.sky_sun_dir
@@ -111,9 +94,9 @@ namespace moppe::nhal {
         return;
       }
       using Shadow = render::LocalShadowParams;
-      const bool trees = params.include_forest && m_tree_count;
-      const bool rocks = params.include_boulders && m_rock_count;
-      const std::size_t cascades = params.include_far ? 2 : 1;
+      const bool trees = m_tree_count;
+      const bool rocks = m_rock_count;
+      constexpr std::size_t cascades = 2;
       for (std::size_t c = 0; c < cascades; ++c) {
         const render::ShadowCascade& cascade = params.cascades[c];
         if (trees)
@@ -152,9 +135,7 @@ namespace moppe::nhal {
       m_frame_values.shadow = { m_terrain_params.shadow_strength,
                                 1.0f / shadow_size,
                                 per_metre (near),
-                                params.include_far
-                                  ? per_metre (params.cascades[Shadow::far])
-                                  : 0.0f };
+                                per_metre (params.cascades[Shadow::far]) };
       upload_frame ();
     }
 
@@ -344,7 +325,7 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::apply_gtao (const render::GtaoParams& params) {
-      if (m_resolved || m_probe == "noao")
+      if (m_resolved)
         return;
       close_scene ();
       shaders::gtao::Post post = post_block (
@@ -389,8 +370,7 @@ namespace moppe::nhal {
 
     void
     NhalRenderer::apply_light_shafts (const render::LightShaftParams& params) {
-      if (m_frame_values.shadow[0] <= 0.0f || m_resolved ||
-          m_probe == "noshafts")
+      if (m_frame_values.shadow[0] <= 0.0f || m_resolved)
         return;
       close_scene ();
       shaders::gtao::Post post = post_block (
@@ -456,7 +436,7 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::apply_motion_blur (float strength) {
-      if (strength <= 0.0f || m_probe == "scene")
+      if (strength <= 0.0f)
         return;
       reconstruct_scene ();
       if (!m_blurred)
@@ -948,7 +928,7 @@ namespace moppe::nhal {
       m_device->set_pipeline (m_present);
       m_device->set_uniforms (0, present);
       m_device->set_buffer (1, m_exposure_value);
-      m_device->set_texture (0, m_probe == "scene" ? m_scene_color : m_image);
+      m_device->set_texture (0, m_image);
       m_device->set_texture (1, m_bloom[0]);
       m_device->draw (3);
       m_presented = true;

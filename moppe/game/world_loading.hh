@@ -59,11 +59,6 @@ namespace moppe::game {
 
     LoadingStatus status ();
 
-    // Claims the one development loading capture.  The renderer's first
-    // frames are still settling, so an ordinary claim waits a moment; the
-    // final loading frame is the last chance to fire regardless.
-    bool claim_loading_capture (bool last_chance) noexcept;
-
   private:
     std::shared_ptr<WorldLoadingState> m_state;
   };

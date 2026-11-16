@@ -21,12 +21,10 @@ MOPPE_TEST (terrain_local_shadow_keeps_a_typed_bounded_focus) {
                                camera,
                                Vec3 (0.0f, 0.0f, 1.0f),
                                normalized (Vec3 (0.7f, 0.7f, 0.2f)),
-                               Vec3 (0.0f, 0.866f, -0.5f),
-                               true);
+                               Vec3 (0.0f, 0.866f, -0.5f));
 
   MOPPE_CHECK (renderer.local_shadow.has_value ());
   const render::LocalShadowParams& shadow = *renderer.local_shadow;
-  MOPPE_CHECK (shadow.include_forest);
   const render::ShadowCascade& near =
     shadow.cascades[render::LocalShadowParams::near];
   MOPPE_CHECK_NEAR (near.radius.numerical_value_in (u::m), 160.0f, 1e-6f);
@@ -62,7 +60,7 @@ MOPPE_TEST (the_shadow_lattice_turns_about_the_camera_not_the_origin) {
   };
   const auto probe_texel = [&] (float turn, int axis) {
     terrain.render_local_shadow (
-      renderer, camera, Vec3 (0, 0, 1), sun_at (turn), pole, true);
+      renderer, camera, Vec3 (0, 0, 1), sun_at (turn), pole);
     const Mat4& map =
       renderer.local_shadow->cascades[render::LocalShadowParams::near]
         .light_view_proj;
@@ -81,8 +79,7 @@ MOPPE_TEST (the_shadow_lattice_turns_about_the_camera_not_the_origin) {
                                position (Vec3 (4207.3f, 70.4f, 3111.9f)),
                                Vec3 (0, 0, 1),
                                sun_at (turn),
-                               pole,
-                               true);
+                               pole);
   const float after =
     1024.0f * renderer.local_shadow->cascades[render::LocalShadowParams::near]
                 .light_view_proj.transform_point (probe)[0];

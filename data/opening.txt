@@ -2,7 +2,7 @@
 # and a credit fading over them, ending in the player's own eyes beside the
 # parked bike.  Grammar and units are in moppe/game/opening.hh.
 #
-# To author a shot, play (or `tools/spectate`), frame a view, and press P:
+# To author a shot, play, frame a view, and press P:
 # the log prints a `shot` line for that camera (also gathered in the
 # screenshot run's shots.txt), ready to paste here.  Test a list without
 # rebuilding with MOPPE_OPENING=path/to/list.txt, or MOPPE_ASSETS=<repo>.

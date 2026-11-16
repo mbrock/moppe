@@ -2,10 +2,10 @@
 .PHONY: all lavoir moppe archive atelier etalon etalon-test etalon-watch \
 	callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	animals complexity figure figure-model format models gazetteer grass-lab hooks plan plan-graph phone profile \
+	animals complexity figure figure-model format models hooks plan plan-graph phone profile \
 	test \
 	testflight tracy tv \
-	tracy-benchmark-capture tracy-capture tracy-import water-benchmark \
+	tracy-capture tracy-import \
 	site web web-serve xbox xcode
 
 all: moppe
@@ -147,10 +147,6 @@ tracy:
 tracy-capture:
 	./tools/tracy-capture
 
-# Capture a deterministic graphics-feature cube with CPU and Metal zones.
-tracy-benchmark-capture:
-	./tools/tracy-benchmark-capture
-
 # Import an existing capture: make tracy-import TRACE=path/to/file.tracy
 tracy-import:
 	@test -n "$(TRACE)" || (echo "TRACE is required" >&2; exit 1)
@@ -205,26 +201,6 @@ site:
 		build-web/moppe-site-genesis.js build-web/moppe-site-genesis.wasm \
 		build-web/site/
 	./tools/subset-font build-web/site/fonts
-
-# Build the canonical terrain with the Fast profile, capture the Lab, and exit.
-# Build a deterministic grove from surface habitat and capture it in-game.
-# Compose a frozen, varied landscape survey and its inspectable HTML report.
-gazetteer:
-	./tools/capture-terrain-gazetteer \
-		"$(or $(GAZETTEER_OUT),/tmp/moppe-gazetteer)"
-
-# The grass laboratory: a rolling plain with cover saturated everywhere the
-# medium can root and no trees, captured through the gazetteer program. The
-# grass-gradient frames then show the pure LOD gradient of the grass system.
-# The smoke profile keeps geological time short: a plain needs no epochs.
-grass-lab:
-	MOPPE_GRASS_LAB=1 MOPPE_UPLIFT_YEARS=0 MOPPE_TERRAIN_PROFILE=smoke \
-		./tools/capture-terrain-gazetteer \
-		"$(or $(GRASS_LAB_OUT),/tmp/moppe-grass-lab)"
-
-# Capture the curated hydrology gallery and write its HTML/CSV report.
-water-benchmark:
-	./tools/water-benchmark
 
 # Archive and upload a new build to App Store Connect for TestFlight.
 testflight:

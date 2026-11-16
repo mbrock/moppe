@@ -16,7 +16,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -332,20 +331,6 @@ namespace moppe::platform {
         // MOPPE_FPS_REPORT=1 logs the frame rate every ten seconds.
         const char* fps_report = moppe::environment ("MOPPE_FPS_REPORT");
         m_report_fps = fps_report && *fps_report && *fps_report != '0';
-        // The simulation steps by when frames appear, where the device can
-        // say (nhal::Device::next_frame_timing); MOPPE_FRAME_CLOCK=host
-        // keeps the loop's own time.
-        const char* frame_clock = moppe::environment ("MOPPE_FRAME_CLOCK");
-        m_display_clock = !(frame_clock && std::string (frame_clock) == "host");
-        if (const char* path = moppe::environment ("MOPPE_FRAME_TRACE")) {
-          m_frame_trace.open (path);
-          if (!m_frame_trace)
-            throw std::runtime_error (
-              std::string ("cannot write frame trace: ") + path);
-          m_frame_trace.precision (12);
-          m_frame_trace << "wall_s,interval_ms,step_ms,display_s,refresh_ms,"
-                           "predicted,tick_ms,render_ms,gpu_ms\n";
-        }
         m_start = m_last = m_report_start = std::chrono::steady_clock::now ();
 #ifdef MOPPE_SPARKLE
         game_updates_start (&moppe::platform::request_quit);
@@ -384,9 +369,7 @@ namespace moppe::platform {
         const double wall =
           std::chrono::duration<double> (now - m_last).count ();
         m_last = now;
-        nhal::FrameTiming timing;
-        if (m_display_clock)
-          timing = m_device->next_frame_timing ();
+        const nhal::FrameTiming timing = m_device->next_frame_timing ();
         const FrameStep step = m_frame_clock.select (wall, timing);
         const double dt = step.elapsed_seconds;
         if (step.by_display) {
@@ -401,25 +384,8 @@ namespace moppe::platform {
         m_shortest_step = std::min (m_shortest_step, dt);
         m_longest_step = std::max (m_longest_step, dt);
         m_game.tick (seconds (float (std::clamp (dt, 0.0, 0.05))));
-        const auto ticked = std::chrono::steady_clock::now ();
         m_game.render (*m_renderer);
         sdl::frame_rendered ();
-        if (m_frame_trace.is_open ()) {
-          const auto rendered = std::chrono::steady_clock::now ();
-          double gpu_ms = 0;
-          for (const nhal::PassTiming& pass : m_device->pass_timings ())
-            gpu_ms += pass.milliseconds;
-          m_frame_trace
-            << std::chrono::duration<double> (now - m_start).count () << ','
-            << wall * 1000 << ',' << std::clamp (dt, 0.0, 0.05) * 1000 << ','
-            << timing.display_seconds << ',' << timing.refresh_seconds * 1000
-            << ',' << timing.predicted << ','
-            << std::chrono::duration<double, std::milli> (ticked - now).count ()
-            << ','
-            << std::chrono::duration<double, std::milli> (rendered - ticked)
-                 .count ()
-            << ',' << gpu_ms << '\n';
-        }
         if (m_report_fps)
           report (now, wall);
       }
@@ -561,10 +527,8 @@ namespace moppe::platform {
       Held m_held;
       std::unique_ptr<RemoteControl> m_remote;
       float m_pointer_x = 0, m_pointer_y = 0;
-      bool m_display_clock = true;
       FrameClock m_frame_clock;
       bool m_announced_display = false;
-      std::ofstream m_frame_trace;
       std::chrono::steady_clock::time_point m_start, m_last, m_report_start;
       bool m_report_fps = false;
       long m_report_frames = 0, m_report_displayed = 0;

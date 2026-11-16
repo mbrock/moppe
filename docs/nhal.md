@@ -294,8 +294,6 @@ all of it the far cascade's trees), the present 1.6, the resolve 1.3 after
 0.8 gathering its neighbourhoods, and the water's copy and pass 1.0. What
 scales with the drawable is about 4 ms of that and the rest follows the
 scene: at `MOPPE_RENDERSCALE=0.35` the ride holds 60 fps there.
-`MOPPE_NHAL_PROBE=nosky`, `nosward`, and `noblades` leave one part of the
-scene pass out, to time it by the difference.
 
 So the scene's size follows the frame rate (`render::DynamicResolution`,
 `moppe/render/dynamic_resolution.hh`). Each frame the renderer sums the
@@ -356,7 +354,7 @@ The host steps the simulation by when frames appear, not by when its loop
 comes round: before each frame it asks the device for
 `next_frame_timing ()`, the predicted display time of the frame about to be
 built on the steady clock, and ticks by its advance past the time already
-spent (`MOPPE_FRAME_CLOCK=host` keeps the loop's own time). Each device records
+spent. Each device records
 when its presents actually appeared and `PresentationClock`
 (`moppe/nhal/presentation.hh`) predicts from them: one frame period after
 the latest observed, the period being the frames' own cadence in whole
@@ -387,14 +385,6 @@ display. On Linux (RADV, Wayland, 60 Hz) the loop's own time varied from 10
 to 41 ms a frame at 59.5 fps; stepped by display time every frame takes one
 refresh, 16.68 ms, or two, 33.36 ms, where one was missed. On the Xbox every
 step is 16.68 ms.
-
-`MOPPE_FRAME_TRACE=/path/to/frames.csv` records every SDL host frame: elapsed
-wall time, loop interval, step sent to the game, predicted display time and
-refresh period, whether there was a prediction, CPU tick and render times,
-and the last completed frame's GPU pass total. The render time includes
-waiting for a drawable. Use real play, not the fixed clock of a recording,
-and leave loading, warm-up, screenshots, and profiler attachment out of
-pacing measurements.
 
 ## The game on Linux
 

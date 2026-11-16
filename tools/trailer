@@ -13,8 +13,7 @@ ones are recorded, so a change to the cut alone takes a few minutes;
 ("" for none) and --draft encodes quickly.
 
 The shot lists below are of the default world (seed 123, 2048 samples),
-like data/opening.txt; the viewpoints came from the gazetteer's
-gazetteer.csv.  To change the film, edit CLIPS (what is recorded) and
+like data/opening.txt.  To change the film, edit CLIPS (what is recorded) and
 FILM (what is cut from it, and the captions).
 """
 

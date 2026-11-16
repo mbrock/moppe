@@ -41,7 +41,6 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/game/generated_world.hh>
 #include <moppe/game/glider_render.hh>
-#include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/helicopter_render.hh>
 #include <moppe/game/hens.hh>
@@ -49,8 +48,6 @@
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/jeep_render.hh>
 #include <moppe/game/jet_ski_render.hh>
-#include <moppe/game/landscape_gazetteer.hh>
-#include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/long_john_render.hh>
 #include <moppe/game/map_sheet.hh>
@@ -70,7 +67,6 @@
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/video.hh>
 #include <moppe/game/walker_render.hh>
-#include <moppe/game/water_capture.hh>
 #include <moppe/game/water_presentation.hh>
 #include <moppe/game/waterfall_surface.hh>
 #include <moppe/game/weather.hh>
@@ -158,23 +154,7 @@ namespace moppe {
         return generated_world ().surface ();
       }
 
-      // The spectator starts in the densest conifer stand the forest holds:
-      // the plan's sites are counted on a 40-metre lattice and the camera
-      // stands at the centre of the fullest cell.
-      void place_spectator ();
-
-      // WASD walks the eye through the air, Space and Tab rise and sink, and
-      // the mouse (captured, no button needed) or the arrow keys turn the
-      // head.
-      void spectator_camera (seconds_t interval);
-
       void pointer_move (float, float, float dx, float dy) override;
-
-      // Temporal-stability inspection: MOPPE_ORBIT="radius,height,seconds"
-      // circles the camera at a steady pace around the tree nearest the
-      // rider, so frame-to-frame discontinuities in the forest stand out
-      // against otherwise smooth motion.
-      void orbit_camera ();
 
       // The trodden trail tread is loose dirt; bare eroded faces are soil;
       // turf holds most of its dust and throws up clods of itself, and
@@ -420,20 +400,9 @@ namespace moppe {
       // clear of `avoid` (the other player's) when given one.
       void park_helicopter (std::optional<Vec3> avoid = std::nullopt);
 
-      // MOPPE_DEMO=forest: park the bike at the world's forest-floor site.
-      // MOPPE_START=fingerpost[:N]: before the fingerpost nearest the
-      // trailhead (or the Nth further), facing its first arm's lettered
-      // side, to read it.
-      void move_spawn_to_fingerpost (std::size_t rank);
-
+      // MOPPE_DEMO=forest: park the bike in the forest's densest conifer
+      // stand.
       void move_spawn_to_forest ();
-
-      // The tree laboratory (MOPPE_TREE_LAB, best with --uplift-years 0 for
-      // a rolling plain): the whole forest is replaced by a few specimens
-      // standing in the open ahead of the spawn -- a spruce, a birch, and a
-      // taller spruce -- so their behaviour can be studied with nothing else
-      // in view.
-      ForestPlan tree_lab_plan () const;
 
       // Whether something `reach` metres round stands on a cart road's
       // tread (or, with `decks`, under a bridge's deck). The forest and
@@ -623,13 +592,11 @@ namespace moppe {
         return m_cinematic.active () || m_opening.active ();
       }
 
-      // Whether frames are drawn to keep up with the display. A capture, a
-      // recording, or a benchmark draws each frame it is given however
+      // Whether frames are drawn to keep up with the display. A capture or
+      // a recording draws each frame it is given however
       // long that takes, and its picture must not follow the machine's
       // speed: those hold their resolution.
       bool keeping_pace () const;
-
-      void plan_gazetteer_capture ();
 
       // The finished world arrived from the generation thread.  Everything
       // left runs in one go: build the retained presentations, place the
@@ -641,8 +608,6 @@ namespace moppe {
 
       void upload_world_terrain (render::Renderer& r);
 
-      void cast_world_shadows (render::Renderer& r);
-
       void update_world_atmosphere (float total_time);
 
       // The weather follows the clock from spell to spell, unless
@@ -652,9 +617,8 @@ namespace moppe {
 
       // The day: MOPPE_DAY is how many minutes of play one takes (48
       // unless told; 0 holds the sun still), and MOPPE_CLOCK the hour it
-      // starts at. Composed views -- the gazetteer, benchmarks, water
-      // captures, and any launch that names a sun height without asking
-      // for a day -- keep the fixed sun they were made under.
+      // starts at. A launch that names a sun height without asking for a
+      // day keeps the fixed sun it was made under.
       struct Day {
         // Hours of the clock per second of play.
         double pace = 0.0;
@@ -912,23 +876,9 @@ namespace moppe {
       // log.txt) and gathered in the run directory's shots.txt.
       void record_shot_pose (const FrameView& frame, const std::string& path);
 
-      static int glide_frame_limit ();
-
-      static float glide_speed_mps ();
-
-      static float glide_vertical_speed_mps ();
-
-      const GazetteerShot* current_gazetteer_shot () const noexcept;
-
       FrameViewInput frame_view_input (float aspect) const;
 
       void update_frame_flare ();
-
-      void prepare_benchmark_epoch ();
-
-      void finish_benchmark_frame (GraphicsBenchmarkReplay::Boundary boundary);
-
-      void update_benchmark_title (int epoch, uint32_t partition_mask) const;
 
       Vec3 subject_position () const {
         return session ().subject_position ();
@@ -1119,7 +1069,6 @@ namespace moppe {
       render::TextList m_hud_text;
 
       render::Renderer* m_renderer;
-      bool m_automated_regeneration_done = false;
       std::string m_screenshot_path;
       bool m_snapshot_requested = false;
       std::string m_snapshot_directory;
@@ -1130,47 +1079,13 @@ namespace moppe {
       bool m_video_saw_flight = false;
       int m_clip_count = 0;
       bool m_video_done = false;
-      std::optional<WaterShot> m_water_shot;
-      std::optional<WaterInspection> m_water_inspection;
-      std::optional<mov::Trunk> m_orbit_tree;
       // Whether L has handed the mouse back to the desktop during play.
       bool m_pointer_free = false;
       MapSheet m_map;
       // Esc in play has asked whether to quit (Hud::draw_quit_question).
       bool m_quit_asked = false;
-      bool m_map_asked = false;
-      // A free camera with no rider, for looking at the world as it is.
-      struct Spectator {
-        Vec3 eye {};
-        float yaw = 0.0f;
-        float pitch = 0.0f;
-        std::set<platform::Key> held;
-        bool pointer_free = false;
-      };
-      std::optional<Spectator> m_spectator =
-        moppe::environment ("MOPPE_SPECTATOR")
-          ? std::optional<Spectator> (Spectator {})
-          : std::nullopt;
-      std::optional<GazetteerCaptureConfig> m_gazetteer;
-      LandscapeGazetteer m_gazetteer_plan;
-      std::size_t m_gazetteer_shot = 0;
-      int m_gazetteer_settle_frame = 0;
-      int m_glide_frame = 0;
       int m_screenshot_frames;
-      int m_cinematic_capture_frame = 0;
-      int m_cinematic_capture_render_frame = 0;
-      int m_ride_capture_frame = 0;
-      int m_ride_capture_render_frame = 0;
       std::atomic<bool> m_ready;
-      std::optional<GraphicsBenchmarkConfig> m_benchmark;
-      GraphicsSettings m_benchmark_baseline;
-      std::optional<GraphicsBenchmarkReplay> m_benchmark_replay;
-      std::optional<GameState> m_benchmark_checkpoint;
-      std::optional<GraphicsBenchmarkReplay::Frame> m_benchmark_render_frame;
-      uint32_t m_benchmark_mask = 0;
-      bool m_benchmark_epoch_pending = false;
-      bool m_benchmark_submitted = false;
-      bool m_benchmark_results_written = false;
 
       render::DrawList m_world_dl;
       // Where the shadow casters' riders go, to be thrown away.

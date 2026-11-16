@@ -122,10 +122,7 @@ namespace moppe {
       if (line.size () < 3)
         return false;
       // So far up from the mouth, and on to where it runs deep.
-      static const float most = [] {
-        const char* reach = moppe::environment ("MOPPE_BOAT_RIVER_M");
-        return reach ? std::strtof (reach, nullptr) : 1200.0f;
-      }();
+      constexpr float most = 1200.0f;
       std::size_t start = line.size () - 1;
       float up = 0.0f;
       while (start > 0 && (up < most || boat_depth_at (line[start]) < 0.6f)) {

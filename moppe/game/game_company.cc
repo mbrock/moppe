@@ -8,8 +8,6 @@ namespace moppe {
   namespace game {
     void MoppeGame::seek_company (const std::string& address) {
       CompanionLink::Config config { .address = address };
-      if (const char* port = moppe::environment ("MOPPE_MULTIPLAYER_PORT"))
-        config.port = static_cast<std::uint16_t> (::atoi (port));
       std::string error;
       m_link = CompanionLink::open (config, error);
       if (!m_link) {
@@ -112,7 +110,7 @@ namespace moppe {
     }
 
     void MoppeGame::make_room (const CompanionSnapshot& theirs) {
-      if (m_spectator || logic ().m_mode != M_FOOT)
+      if (logic ().m_mode != M_FOOT)
         return;
       const double here = m_link->now ();
       if (here > theirs.sent ||
@@ -179,7 +177,7 @@ namespace moppe {
     }
 
     MoppeGame::Seat MoppeGame::seat_within_reach () const {
-      if (!m_companion || m_spectator || logic ().m_mode != M_FOOT)
+      if (!m_companion || logic ().m_mode != M_FOOT)
         return Seat::none;
       const Vec3 feet = session ().walker ().position ();
       const float mine =
@@ -391,8 +389,7 @@ namespace moppe {
       m_companion = m_track.advance (now, elapsed);
       meet_strangers (interval);
 
-      // A spectator has no one to show.
-      if (m_spectator || !m_link->due ())
+      if (!m_link->due ())
         return;
       CompanionSnapshot mine = my_snapshot ();
       const std::vector<std::uint32_t>& picked = logic ().m_basket.picked;

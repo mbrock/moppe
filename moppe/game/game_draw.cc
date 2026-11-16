@@ -122,11 +122,6 @@ namespace moppe {
       params.auto_exposure = frame.graphics.auto_exposure;
       params.lens_flare = frame.graphics.lens_flare;
       params.profile = true;
-      params.benchmark_mask = frame.benchmark.mask;
-      params.benchmark_partition_mask = frame.benchmark.partition_mask;
-      params.benchmark_epoch = frame.benchmark.epoch;
-      params.benchmark_frame = frame.benchmark.logical_frame;
-      params.benchmark_measured = frame.benchmark.measured;
       return params;
     }
 
@@ -136,7 +131,7 @@ namespace moppe {
       r.begin_shadow_casters ();
       // The bridges shade the river and the banks under them.
       m_bridges.draw (r, frame.camera.position);
-      if (m_spectator || frame.scene != FrameSceneMode::Gameplay) {
+      if (frame.scene != FrameSceneMode::Gameplay) {
         r.end_shadow_casters ();
         return;
       }
@@ -195,10 +190,7 @@ namespace moppe {
                                        position (camera),
                                        frame.camera.frame_forward,
                                        frame.lighting.sun_direction,
-                                       frame.lighting.sky_pole,
-                                       m_graphics.forest,
-                                       frame.visibility.boulders,
-                                       m_graphics.distant_shadows);
+                                       frame.lighting.sky_pole);
       const auto draw_world_sky = [&] {
         render::SkyParams sky;
         sky.time = frame.lighting.time;
@@ -272,7 +264,6 @@ namespace moppe {
           .time = frame.lighting.time,
           .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
           .reach = 64.0f,
-          .density = m_graphics.grass_cover_boost,
           .interaction_position = frame.hud.subject_position,
           .interaction_radius = interaction_radius
         };
@@ -318,21 +309,15 @@ namespace moppe {
       // Opaque individuals depth-test normally. The distant stand quotient
       // follows the ground medium so its non-depth-writing canopy roof
       // cannot be painted over by the sward's own far density layer.
-      if (visibility.boulders)
-        m_boulders.draw (r);
-      if (visibility.mushrooms) {
-        m_mushrooms.follow (logic ().m_basket);
-        m_mushrooms.draw (r, camera);
-      }
-      if (visibility.forest)
-        m_forest.draw (r);
+      m_boulders.draw (r);
+      m_mushrooms.follow (logic ().m_basket);
+      m_mushrooms.draw (r, camera);
+      m_forest.draw (r);
     }
 
     void MoppeGame::draw_actor_layers (render::Renderer& r,
                                        const FrameView& frame) {
       const FrameVisibility& visibility = frame.visibility;
-      if (!visibility.actors)
-        return;
 
       // The world draw list, in the GL build's draw order.
       m_world_dl.clear ();
@@ -341,8 +326,7 @@ namespace moppe {
       // Soft blob shadows under the movers.
       draw_home_base_marker (m_world_dl);
       draw_fingerposts (r);
-      if (!m_spectator)
-        m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
+      m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
       if (actors.walker)
         m_blob.draw (m_world_dl,
                      surface (),
@@ -353,85 +337,83 @@ namespace moppe {
 
       // In helmet cam you ARE the rider: don't draw yourself.
       const bool helmet = actors.helmet_camera;
-      if (!(helmet && actors.active_mode == M_BIKE) && !m_spectator)
+      if (!(helmet && actors.active_mode == M_BIKE))
         render_vehicle (r,
                         m_world_dl,
                         actors.bike,
                         actors.active_mode == M_BIKE,
                         0x1000,
                         m_outfit);
-      if (!m_spectator) {
-        m_blob.draw (m_world_dl, surface (), actors.jeep.position, 3.4f);
-        render_jeep (r,
-                     m_world_dl,
-                     actors.jeep,
-                     { .driver = actors.active_mode == M_JEEP && !helmet,
-                       .passenger = m_companion &&
-                                    m_companion->mode == M_PASSENGER &&
-                                    !m_companion->in_boat,
-                       .driver_outfit = m_outfit,
-                       .passenger_outfit = their_outfit () },
-                     0x5000);
-        m_blob.draw (m_world_dl, surface (), actors.helicopter.position, 4.5f);
-        render_helicopter (r, actors.helicopter, 0x8000);
-        m_blob.draw (m_world_dl, surface (), actors.tractor.position, 2.8f);
-        m_blob.draw (
-          m_world_dl, surface (), actors.tractor.trailer_position, 2.4f);
-        render_tractor (r,
-                        m_world_dl,
-                        actors.tractor,
-                        actors.active_mode == M_TRACTOR && !helmet
-                          ? std::optional<Outfit> (m_outfit)
-                          : std::nullopt,
-                        0xA000);
-        m_blob.draw (m_world_dl, surface (), actors.caddy.position, 3.6f);
-        render_caddy (r,
+      m_blob.draw (m_world_dl, surface (), actors.jeep.position, 3.4f);
+      render_jeep (r,
+                   m_world_dl,
+                   actors.jeep,
+                   { .driver = actors.active_mode == M_JEEP && !helmet,
+                     .passenger = m_companion &&
+                                  m_companion->mode == M_PASSENGER &&
+                                  !m_companion->in_boat,
+                     .driver_outfit = m_outfit,
+                     .passenger_outfit = their_outfit () },
+                   0x5000);
+      m_blob.draw (m_world_dl, surface (), actors.helicopter.position, 4.5f);
+      render_helicopter (r, actors.helicopter, 0x8000);
+      m_blob.draw (m_world_dl, surface (), actors.tractor.position, 2.8f);
+      m_blob.draw (
+        m_world_dl, surface (), actors.tractor.trailer_position, 2.4f);
+      render_tractor (r,
                       m_world_dl,
-                      actors.caddy,
-                      { .driver = actors.active_mode == M_CADDY && !helmet,
-                        .driver_outfit = m_outfit },
-                      0xC000);
-        if (actors.sling)
-          render_sling (m_world_dl, *actors.sling);
-        render_boat (r,
-                     m_world_dl,
-                     actors.boat,
-                     actors.active_mode == M_BOAT && !helmet
-                       ? std::optional<Outfit> (m_outfit)
-                       : std::nullopt,
-                     0xF000,
-                     actors.helm_rod,
-                     frame.lighting.time,
-                     m_companion && m_companion->mode == M_PASSENGER &&
-                         m_companion->in_boat
-                       ? std::optional<Outfit> (their_outfit ())
-                       : std::nullopt);
-        m_blob.draw (
-          m_world_dl, surface (), actors.mountain_bike.position, 1.3f);
-        // Through the rider's eyes, the bars and the fork below them.
-        render_mountain_bike (r,
-                              m_world_dl,
-                              actors.mountain_bike,
-                              actors.active_mode == M_MOUNTAIN_BIKE && !helmet
-                                ? std::optional<Outfit> (m_outfit)
-                                : std::nullopt,
-                              0xD000);
-        m_blob.draw (m_world_dl, surface (), actors.long_john.position, 2.0f);
-        render_long_john (r,
-                          m_world_dl,
-                          actors.long_john,
-                          actors.active_mode == M_LONG_JOHN && !helmet
-                            ? std::optional<Outfit> (m_outfit)
-                            : std::nullopt,
-                          0xD100);
-        render_jet_ski (r,
+                      actors.tractor,
+                      actors.active_mode == M_TRACTOR && !helmet
+                        ? std::optional<Outfit> (m_outfit)
+                        : std::nullopt,
+                      0xA000);
+      m_blob.draw (m_world_dl, surface (), actors.caddy.position, 3.6f);
+      render_caddy (r,
+                    m_world_dl,
+                    actors.caddy,
+                    { .driver = actors.active_mode == M_CADDY && !helmet,
+                      .driver_outfit = m_outfit },
+                    0xC000);
+      if (actors.sling)
+        render_sling (m_world_dl, *actors.sling);
+      render_boat (r,
+                   m_world_dl,
+                   actors.boat,
+                   actors.active_mode == M_BOAT && !helmet
+                     ? std::optional<Outfit> (m_outfit)
+                     : std::nullopt,
+                   0xF000,
+                   actors.helm_rod,
+                   frame.lighting.time,
+                   m_companion && m_companion->mode == M_PASSENGER &&
+                       m_companion->in_boat
+                     ? std::optional<Outfit> (their_outfit ())
+                     : std::nullopt);
+      m_blob.draw (m_world_dl, surface (), actors.mountain_bike.position, 1.3f);
+      // Through the rider's eyes, the bars and the fork below them.
+      render_mountain_bike (r,
+                            m_world_dl,
+                            actors.mountain_bike,
+                            actors.active_mode == M_MOUNTAIN_BIKE && !helmet
+                              ? std::optional<Outfit> (m_outfit)
+                              : std::nullopt,
+                            0xD000);
+      m_blob.draw (m_world_dl, surface (), actors.long_john.position, 2.0f);
+      render_long_john (r,
                         m_world_dl,
-                        actors.jet_ski,
-                        actors.active_mode == M_JET_SKI && !helmet
+                        actors.long_john,
+                        actors.active_mode == M_LONG_JOHN && !helmet
                           ? std::optional<Outfit> (m_outfit)
                           : std::nullopt,
-                        0xD200);
-      }
+                        0xD100);
+      render_jet_ski (r,
+                      m_world_dl,
+                      actors.jet_ski,
+                      actors.active_mode == M_JET_SKI && !helmet
+                        ? std::optional<Outfit> (m_outfit)
+                        : std::nullopt,
+                      0xD200);
+
       const Basket& basket = logic ().m_basket;
       m_basket_contents.clear ();
       for (std::size_t i = basket.used; i < basket.picked.size (); ++i)
@@ -503,7 +485,7 @@ namespace moppe {
 
       // Additive glow after the solid list, so it blends over everything
       // already drawn: exhaust and jump-jet flames, then star halos.
-      if (visibility.vehicle_effects && !m_spectator &&
+      if (visibility.vehicle_effects &&
           !(helmet && actors.active_mode == M_BIKE))
         render_vehicle_flames (
           r, actors.bike, frame.camera.position, frame.lighting.time, 0x1000);
@@ -560,13 +542,12 @@ namespace moppe {
       // Running channels are part of the same clipped water-level field as
       // lakes and the sea. Only vertical nickpoint geometry is separate;
       // ordinary reaches never draw an overlapping ribbon here.
-      if (visibility.waterfall_curtains)
-        m_waterfall_surface.draw (r, camera);
+      m_waterfall_surface.draw (r, camera);
     }
 
     void MoppeGame::draw_boat_wakes (render::Renderer& r,
                                      const FrameView& frame) {
-      if (!frame.visibility.actors || !frame.visibility.ocean || m_spectator)
+      if (!frame.visibility.ocean)
         return;
       const terrain::WaterSheets& sheets = generated_world ().water_surface ();
       const float time = frame.lighting.time;
@@ -605,10 +586,6 @@ namespace moppe {
                                         const FrameView& frame) {
       const FrameVisibility& visibility = frame.visibility;
 
-      // Dust last so spray sits atop every water surface.
-      if (visibility.dust)
-        session ().dust ().render (r);
-
       // Screen-space post lighting shares the shaken camera basis,
       // extracted straight from the final view matrix with the frustum
       // half-extents folded into the right/up spans. Occlusion first so
@@ -617,8 +594,7 @@ namespace moppe {
       // terrain shapes as the ground shadows. Underwater frames get
       // their own grade instead. Both shade the jittered scene, so they
       // come before its reconstruction.
-      if (!visibility.underwater &&
-          (m_graphics.gtao || m_graphics.light_shafts)) {
+      if (!visibility.underwater) {
         const FrameCamera& camera = frame.camera;
         const Mat4& view = camera.view;
         const Vec3 right (view.at (0, 0), view.at (1, 0), view.at (2, 0));
@@ -627,14 +603,13 @@ namespace moppe {
         const float half_tangent = tan (camera.field_of_view * 0.5f);
         const Vec3 right_span = right * (half_tangent * camera.aspect);
         const Vec3 up_span = up * half_tangent;
-        if (m_graphics.gtao)
-          r.apply_gtao ({
-            .camera_pos = position (camera.position),
-            .forward = forward,
-            .right_span = right_span,
-            .up_span = up_span,
-          });
-        if (m_graphics.light_shafts && frame.lighting.sun_direction[1] > 0.02f)
+        r.apply_gtao ({
+          .camera_pos = position (camera.position),
+          .forward = forward,
+          .right_span = right_span,
+          .up_span = up_span,
+        });
+        if (frame.lighting.sun_direction[1] > 0.02f)
           r.apply_light_shafts ({
             .camera_pos = position (camera.position),
             .forward = forward,
@@ -696,15 +671,6 @@ namespace moppe {
                           hud_height,
                           frame.hud.subject_position,
                           frame.hud.subject_heading);
-        // MOPPE_MAP=whole|near starts with the map unfolded, for
-        // captures.
-        if (!m_map_asked) {
-          m_map_asked = true;
-          if (const char* map = moppe::environment ("MOPPE_MAP"))
-            m_map.show (std::string_view (map) == "near"
-                          ? MapSheet::View::Near
-                          : MapSheet::View::Whole);
-        }
         if (m_map.open ())
           draw_map (r, hud_width, hud_height);
         if (m_quit_asked)

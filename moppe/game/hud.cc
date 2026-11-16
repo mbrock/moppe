@@ -565,8 +565,6 @@ namespace moppe {
         m_diagnostics = std::string (mode) == "debug";
         m_hidden = std::string (mode) == "none";
       }
-      if (const char* chart = moppe::environment ("MOPPE_CHART"))
-        m_chart_hidden = std::string (chart) == "none";
     }
 
     void Hud::load (render::Renderer& renderer) {
@@ -1382,7 +1380,7 @@ namespace moppe {
       const HudState::Chart& chart = st.chart;
       const float width = static_cast<float> (width_pts);
       const float height = static_cast<float> (height_pts);
-      const bool wanted = chart.picture && !m_chart_hidden && !st.resting &&
+      const bool wanted = chart.picture && !st.resting &&
                           chart.period_x_m > 0.0f && chart.period_z_m > 0.0f &&
                           std::min (width, height) >= 240.0f;
       m_chart_alpha = approach (m_chart_alpha, wanted ? 1.0f : 0.0f, 3.0f, dt);

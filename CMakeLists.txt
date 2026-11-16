@@ -343,7 +343,6 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/river.cc
   moppe/terrain/channel.cc
   moppe/terrain/flood.cc
-  moppe/terrain/merge_tree.cc
   moppe/terrain/waterline.cc
   moppe/terrain/sediment_transport.cc
   moppe/terrain/stream_power_evolution.cc
@@ -364,9 +363,6 @@ set(MOPPE_WORLD_SOURCES
   moppe/game/world_cache.cc
   moppe/game/land.cc
   moppe/game/forest_plan.cc
-  moppe/game/water_capture.cc
-  moppe/game/landscape_gazetteer.cc
-  moppe/game/landscape_summary.cc
   moppe/game/relief_map.cc
 )
 
@@ -705,7 +701,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/river_test.cc
     tests/terrain/channel_test.cc
     tests/terrain/flood_test.cc
-    tests/terrain/merge_tree_test.cc
     tests/terrain/waterline_test.cc
     tests/terrain/sediment_transport_test.cc
     tests/terrain/stream_power_evolution_test.cc
@@ -722,8 +717,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/frame_view_test.cc
     tests/game/hud_test.cc
     tests/game/terrain_test.cc
-    tests/game/graphics_benchmark_test.cc
-    tests/game/graphics_settings_test.cc
     tests/mov/trunk_field_test.cc
     tests/mov/rigid_bike_test.cc
     tests/mov/jeep_test.cc
@@ -735,12 +728,10 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/mov/glider_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
-    tests/game/landscape_gazetteer_test.cc
     tests/game/simulation_clock_test.cc
     tests/game/chase_camera_test.cc
     tests/game/generated_world_test.cc
     tests/game/waterfall_surface_test.cc
-    tests/game/water_capture_test.cc
     tests/game/shore_surf_test.cc
     tests/game/forest_test.cc
     tests/game/boulders_test.cc
@@ -1187,14 +1178,6 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       ${MOPPE_RENDER_SOURCES}
       ${MOPPE_TERRAIN_SOURCES})
     moppe_add_sdl_host(moppe-testbed)
-
-    # Tree studio: a flat plane and a lineup of conifer specimens, the fast
-    # instrument for iterating on tree geometry without a generated world.
-    add_executable(moppe-tree-studio EXCLUDE_FROM_ALL
-      moppe/game/tree_studio.cc
-      ${MOPPE_RENDER_SOURCES}
-      ${MOPPE_TERRAIN_SOURCES})
-    moppe_add_sdl_host(moppe-tree-studio)
   endif()
 
 endif()

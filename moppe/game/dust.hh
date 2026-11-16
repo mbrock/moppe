@@ -52,7 +52,6 @@ namespace moppe {
                  DisplayColor color,
                  const Style& style);
       void update (seconds_t dt);
-      void render (render::Renderer& renderer) const;
 
       State state () const;
       void restore (const State& state);

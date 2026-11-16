@@ -2,8 +2,8 @@
 // scene (terrain, sky, draw lists and meshes) into a jittered RGBA16F
 // colour, RG16F motion, and reversed-Z depth at the scene's scale; the
 // temporal resolve into a history at the drawable's size; then the tonemap
-// and the HUD into the drawable. Water, the forest's mesh-shader organs,
-// undergrowth, dust, shadows, and the post effects are not drawn yet.
+// and the HUD into the drawable. Water, the forest, undergrowth, shadows,
+// and the post effects are all part of that frame.
 //
 // This header is private to the renderer's own files: everyone else
 // reaches it through create_renderer (nhal_renderer.hh). NhalRenderer's
@@ -438,14 +438,8 @@ namespace moppe::nhal {
                    std::span<const terrain::SurfaceElevation> heights,
                    std::span<const terrain::TerrainNormal> normals) override;
 
-      void set_terrain_topology_overlay (bool) override {}
-
       void set_sward_texture (render::TexturePtr grain) override;
 
-      void set_terrain_overlay (const render::TerrainOverlayParams&,
-                                std::span<const float>) override {}
-      void clear_terrain_overlay () override {}
-      void render_terrain_shadow (const Mat4&, bool) override {}
       // The water sheet on the terrain grid: the surface in the heights'
       // units, and the swell's amplitude.
       void set_ocean (const render::OceanSetup& setup,
@@ -486,13 +480,13 @@ namespace moppe::nhal {
 
       std::array<float, 4> stand_field () const;
 
-      void set_terrain_materials (const render::TexturePixels& landscape,
-                                  const render::TexturePixels& ground,
-                                  const render::TexturePixels& plants,
-                                  const render::TexturePixels& more_plants,
-                                  const render::TexturePixels& scars,
-                                  const render::TexturePixels& bedrock,
-                                  bool) override;
+      void
+      set_terrain_materials (const render::TexturePixels& landscape,
+                             const render::TexturePixels& ground,
+                             const render::TexturePixels& plants,
+                             const render::TexturePixels& more_plants,
+                             const render::TexturePixels& scars,
+                             const render::TexturePixels& bedrock) override;
 
       // -- a frame --------------------------------------------------------
 
@@ -607,7 +601,6 @@ namespace moppe::nhal {
       // stays sharp. `strength` is the share of a frame's motion the
       // streaks span.
       void apply_motion_blur (float strength) override;
-      void apply_scene_blur () override {}
 
       void draw_hud_text (const render::TextList& text) override;
 
@@ -876,7 +869,6 @@ namespace moppe::nhal {
         m_current_vertices;
       std::string m_screenshot;
       std::function<void (const render::FramePixels&)> m_frame_sink;
-      std::string m_probe;
       std::map<std::string, double> m_timing_sums;
       int m_timing_frames = 0;
     };

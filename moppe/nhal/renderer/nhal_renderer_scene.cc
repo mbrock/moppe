@@ -14,10 +14,8 @@ namespace moppe::nhal {
       m_device->set_pipeline (m_terrain);
       bind_ground ();
       m_chunks.assign (chunks, chunks + count);
-      if (m_probe != "noterrain")
-        draw_chunks ();
-      if (m_probe != "noribbons")
-        draw_road_ribbons ();
+      draw_chunks ();
+      draw_road_ribbons ();
     }
 
     void NhalRenderer::bind_ground () {
@@ -168,10 +166,8 @@ namespace moppe::nhal {
       open_scene ();
       // The canopy first: translucent, it blends over the ground it sits
       // on, and the blades it hands over to stand in it.
-      if (m_probe != "nosward")
-        draw_sward ();
-      if (m_probe != "noblades")
-        draw_blades (params);
+      draw_sward ();
+      draw_blades (params);
     }
 
     void NhalRenderer::draw_sward () {
@@ -254,8 +250,6 @@ namespace moppe::nhal {
 
     void NhalRenderer::draw_sky (const render::SkyParams&) {
       open_scene ();
-      if (m_probe == "nosky")
-        return;
       m_device->set_pipeline (m_sky);
       m_device->set_buffer (0, m_frame_block);
       m_device->draw (3);

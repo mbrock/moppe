@@ -410,7 +410,7 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
     moppe::terrain::surface_elevation_point (3.0f * mp_units::si::metre);
 
   test::RecordingRenderer renderer;
-  game::upload_surface_readings (renderer, surface, readings, water, true);
+  game::upload_surface_readings (renderer, surface, readings, water);
   MOPPE_CHECK (renderer.moisture.size () == surface.domain ().size ());
   MOPPE_CHECK (renderer.erosion.size () == surface.domain ().size ());
   MOPPE_CHECK (renderer.deposition.size () == surface.domain ().size ());
@@ -426,13 +426,6 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
                     2.0f * render::terrain_shore_band_metres / 255.0f);
   MOPPE_CHECK_NEAR (renderer.trail_influence[4], 0.75f, 1.0f / 255.0f);
   MOPPE_CHECK_NEAR (renderer.home_base_influence[4], 0.25f, 1.0f / 255.0f);
-
-  game::upload_surface_readings (renderer, surface, readings, water, false);
-  MOPPE_CHECK (std::ranges::all_of (
-    renderer.forest_cover, [] (float cover) { return cover == 0.0f; }));
-
-  // An overlay that is switched off writes nothing at all.
-  MOPPE_CHECK (render::TexturePixels ().empty ());
 }
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {

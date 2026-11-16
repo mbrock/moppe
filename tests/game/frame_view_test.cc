@@ -345,38 +345,6 @@ MOPPE_TEST (frame_view_preserves_the_helmet_camera_lens) {
     helmet.camera.field_of_view.numerical_value_in (u::deg), 67.0f, 1e-6f);
 }
 
-MOPPE_TEST (frame_view_selects_frozen_gazetteer_rules) {
-  FrameFixture fixture;
-  game::FrameViewInput input = gameplay_input (fixture);
-  input.scene = game::FrameSceneMode::Gazetteer;
-  input.selected_camera.field_of_view = 61.0f * u::deg;
-
-  const game::FrameView view = game::compose_frame_view (input);
-
-  MOPPE_CHECK (view.scene == game::FrameSceneMode::Gazetteer);
-  MOPPE_CHECK_NEAR (
-    view.camera.field_of_view.numerical_value_in (u::deg), 61.0f, 1e-6f);
-  MOPPE_CHECK (view.visibility.forest);
-  MOPPE_CHECK (view.visibility.undergrowth);
-  MOPPE_CHECK (view.visibility.actors);
-  MOPPE_CHECK (view.visibility.ocean);
-  MOPPE_CHECK (view.visibility.waterfall_curtains);
-  MOPPE_CHECK (!view.visibility.dust);
-  MOPPE_CHECK (!view.visibility.game_hud);
-  MOPPE_CHECK (!view.visibility.cinematic_hud);
-}
-
-MOPPE_TEST (frame_view_applies_the_forest_graphics_feature) {
-  FrameFixture fixture;
-  fixture.graphics.forest = false;
-
-  const game::FrameView view =
-    game::compose_frame_view (gameplay_input (fixture));
-
-  MOPPE_CHECK (!view.visibility.forest);
-  MOPPE_CHECK (view.visibility.undergrowth);
-}
-
 MOPPE_TEST (frame_view_classifies_the_selected_camera_in_an_elevated_lake) {
   FrameFixture fixture;
   terrain::WaterSheets water (fixture.surface.domain ());

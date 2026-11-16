@@ -109,10 +109,6 @@ namespace moppe {
       params.tex_scale = 0.5f / m_scale[0];
       params.shadow_strength = graphics.terrain_shadows ? 0.92f : 0.0f;
       params.fog_scale = attenuation_value (world.fog_scale);
-      params.topology_overlay = graphics.terrain_topology;
-      params.fragment_normals = graphics.terrain_fragment_normals;
-      params.snow_support_filter = graphics.snow_support_filter;
-      params.grass_cover_boost = graphics.grass_cover_boost;
       {
         MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
         r.set_terrain (params,
@@ -208,23 +204,6 @@ namespace moppe {
         }
     }
 
-    void Terrain::render_shadow (render::Renderer& r,
-                                 const Vec3& sun_dir,
-                                 bool include_forest) {
-      MOPPE_PROFILE_ZONE ("Terrain::render_shadow");
-      const Vec3 center (m_extent[0] / 2, m_extent[1] / 2, m_extent[2] / 2);
-      const float radius = length (m_extent) / 2;
-
-      // Ortho box big enough for the whole scene: the light sits
-      // radius*3.5 out toward the sun, so the scene spans roughly
-      // [2.5r, 4.5r] in light depth (same numbers as the GL build).
-      const Vec3 light_pos = center + sun_dir * (radius * 3.5f);
-      const Mat4 view = Mat4::look_at (light_pos, center, Vec3 (0, 1, 0));
-      const Mat4 proj = Mat4::ortho (
-        -radius, radius, -radius, radius, radius * 0.5f, radius * 6.0f);
-      r.render_terrain_shadow (proj * view, include_forest);
-    }
-
     namespace {
       // One cascade of the sun's map: an orthographic box of `radius`
       // about a centre `look_ahead` along the horizontal view.
@@ -302,10 +281,7 @@ namespace moppe {
                                        position_t camera,
                                        const Vec3& view_dir,
                                        const Vec3& sun_dir,
-                                       const Vec3& sky_pole,
-                                       bool include_forest,
-                                       bool include_boulders,
-                                       bool include_far) {
+                                       const Vec3& sky_pole) {
       MOPPE_PROFILE_ZONE ("Terrain::render_local_shadow");
       Vec3 horizontal (view_dir[0], 0.0f, view_dir[2]);
       if (length2 (horizontal) < 1e-6f)
@@ -331,9 +307,6 @@ namespace moppe {
                                       1600.0f * u::m,
                                       700.0f * u::m,
                                       m_shadow_anchors[1]) },
-        .include_far = include_far,
-        .include_forest = include_forest,
-        .include_boulders = include_boulders,
       });
     }
 

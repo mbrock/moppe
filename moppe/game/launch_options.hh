@@ -1,8 +1,7 @@
 #ifndef MOPPE_GAME_LAUNCH_OPTIONS_HH
 #define MOPPE_GAME_LAUNCH_OPTIONS_HH
 
-#include <moppe/game/graphics_benchmark.hh>
-#include <moppe/game/water_capture.hh>
+#include <moppe/game/graphics_settings.hh>
 #include <moppe/game/world.hh>
 #include <moppe/game/world_cache.hh>
 #include <moppe/mov/vehicle.hh>
@@ -14,25 +13,6 @@
 #include <string_view>
 
 namespace moppe::game {
-  // How long the GPU benchmark rides before it starts trusting its own
-  // numbers.  The prelude establishes a representative ride; each measured
-  // configuration then replays it from the same checkpoint.
-  struct GraphicsBenchmarkConfig {
-    std::string output_path;
-    int prelude_frames = 480;
-    int settle_frames = 30;
-    int measured_frames = 120;
-    bool pass_timing = false;
-    GraphicsBenchmarkPartition partition = GraphicsBenchmarkPartition::Standard;
-  };
-
-  struct GazetteerCaptureConfig {
-    std::string output_directory;
-    // Frozen views still render a few times so auto-exposure and bounded near
-    // forest residency reach the same state before every captured frame.
-    int settle_frames = 18;
-  };
-
   // Everything one launch of the game is configured with.  This is the whole
   // command line resolved into values: no argv survives past parsing, and no
   // platform service is consulted, so the derived defaults below stay
@@ -47,29 +27,10 @@ namespace moppe::game {
     // How far the world runs before it comes round again, when not the
     // usual five kilometres.
     std::optional<meters_t> world_size;
-    // A development experiment may replace the profile's tectonic clock
-    // without changing its total evolution age or any process law.
-    std::optional<julian_years_t> uplift_duration;
-    // The catchment area where fluvial incision begins to dominate. This is
-    // a physical scale, so one experiment means the same thing at every grid
-    // resolution.
-    std::optional<square_meters_t> channel_initiation_area;
-    std::optional<terrain::SedimentConcentration> sediment_concentration;
-    std::optional<proportion_t> critical_hillslope_gradient;
-    std::optional<proportion_t> maximum_hillslope_multiplier;
     WorldCacheConfig world_cache;
     std::string screenshot_path;
-    std::optional<WaterShot> water_shot;
-    std::optional<GraphicsBenchmarkConfig> benchmark;
-    std::optional<GazetteerCaptureConfig> gazetteer;
-    // Applied after legacy environment settings so an explicit command-line
-    // budget wins. Zero disables the desktop megapixel safety cap.
-    std::optional<float> scene_megapixel_budget;
-    // Applied after them too, so an explicit rate holds beside an explicit
-    // render scale, which would otherwise mean no shedding.
-    std::optional<float> target_frame_rate;
     // Keeps a hand-started run behind the active application, the way
-    // captures and benchmarks already stay out of the way.
+    // captures already stay out of the way.
     bool stay_inactive = false;
     // Play with someone else in the same world (game/companion.hh): the
     // other machine's address, or empty to find them on the local
@@ -92,11 +53,6 @@ namespace moppe::game {
   // Generated from the parser's flag registry so accepted options and their
   // help text remain one definition.
   std::string launch_options_help (std::string_view program_name);
-
-  // The benchmark's output path and feature set reach the renderer backend
-  // through the environment, which is the one channel both the native and
-  // browser hosts already read.
-  void publish_benchmark_environment (const GraphicsBenchmarkConfig& benchmark);
 
   // Requires a resolved (non-negative) seed.
   terrain::WorldRecipe make_launch_recipe (const LaunchOptions& options);

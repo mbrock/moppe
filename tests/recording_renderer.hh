@@ -52,12 +52,7 @@ namespace moppe::test {
     void set_terrain (const render::TerrainParams&,
                       std::span<const terrain::SurfaceElevation>,
                       std::span<const terrain::TerrainNormal>) override {}
-    void set_terrain_topology_overlay (bool) override {}
     void set_sward_texture (render::TexturePtr) override {}
-    void set_terrain_overlay (const render::TerrainOverlayParams&,
-                              std::span<const float>) override {}
-    void clear_terrain_overlay () override {}
-    void render_terrain_shadow (const Mat4&, bool) override {}
     void set_ocean (const render::OceanSetup& setup,
                     const render::TexturePixels& levels) override {
       ocean = setup;
@@ -89,8 +84,7 @@ namespace moppe::test {
                                 const render::TexturePixels&,
                                 const render::TexturePixels&,
                                 const render::TexturePixels&,
-                                const render::TexturePixels&,
-                                bool) override {
+                                const render::TexturePixels&) override {
       const auto landscape_lanes = render::decode_channels (landscape);
       const auto ground_lanes = render::decode_channels (ground);
       if (landscape_lanes.size () == 4) {
@@ -145,7 +139,6 @@ namespace moppe::test {
     void draw_list (const render::DrawList&, uint64_t) override {}
     void apply_underwater (const render::UnderwaterParams&) override {}
     void apply_motion_blur (float) override {}
-    void apply_scene_blur () override {}
     void draw_hud (const render::DrawList&) override {}
     void end_frame () override {}
     int width_pts () const override {

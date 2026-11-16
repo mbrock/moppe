@@ -138,15 +138,8 @@ feature masks.
 ## Frame and presentation
 
 `FrameView` freezes the camera, lighting, weather, graphics choices, mover
-poses, HUD, benchmark coordinates, overlays, and visibility selected for one
+poses, HUD, overlays, and visibility selected for one
 frame. It owns no renderer or platform type and is not a second mutable scene.
-
-`LandscapeGazetteer` is a pure completed-world reader that selects a balanced
-set of documentary places. The application turns each typed eye, subject, and
-field-of-view reading into `FrameSceneMode::Gazetteer`, freezes the session and
-weather, lets renderer-owned resources settle, and asks the ordinary frame
-presenters for one PNG. It does not drive a hidden demo or introduce a second
-render path. See [Landscape gazetteers](landscape-gazetteer.md).
 
 Presentation is deliberately game-shaped:
 
@@ -226,6 +219,5 @@ are not current subsystems.
 - [Lake identity and relations](lake-domain.md)
 - [Generated worlds](generated-world.md)
 - [Game state and replay](game-state.md)
-- [Landscape gazetteers](landscape-gazetteer.md)
 - [Refactoring seams](refactoring-seams.md)
 - [Renderer and platform architecture](renderer-design.md)

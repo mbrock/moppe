@@ -11,7 +11,6 @@ namespace moppe::game {
       const map::SurfaceGeometry& geometry;
       const map::SurfaceReadings& readings;
       const terrain::WaterSheets& water;
-      bool include_forest;
       RiverBedReading river_bed;
     };
 
@@ -44,10 +43,7 @@ namespace moppe::game {
           at + 1, format, render::detail::stored_scalar (erosion[pixel]));
         render::detail::write_channel (at + 2, format, laid);
         render::detail::write_channel (
-          at + 3,
-          format,
-          source.include_forest ? render::detail::stored_scalar (forest[pixel])
-                                : 0.0f);
+          at + 3, format, render::detail::stored_scalar (forest[pixel]));
       }
     }
 
@@ -109,14 +105,12 @@ namespace moppe::game {
   void upload_surface_readings (render::Renderer& renderer,
                                 const map::SurfaceGeometry& geometry,
                                 const map::SurfaceReadings& readings,
-                                const terrain::WaterSheets& water,
-                                bool include_forest) {
+                                const terrain::WaterSheets& water) {
     MOPPE_PROFILE_ZONE ("surface.upload_readings");
     const TerrainMaterialSource source {
       geometry,
       readings,
       water,
-      include_forest,
       read_river_bed (geometry, water),
     };
     const auto pixels = [&] (render::PixelFormat format,
@@ -147,7 +141,6 @@ namespace moppe::game {
                            map::burn_recency,
                            map::stand_recovery>),
       pixels (render::PixelFormat::rgba8unorm,
-              &write_lanes<map::bedrock_exposure, map::spring_fen_abundance>),
-      include_forest);
+              &write_lanes<map::bedrock_exposure, map::spring_fen_abundance>));
   }
 }

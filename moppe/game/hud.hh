@@ -451,10 +451,9 @@ namespace moppe {
       float m_basket_alpha;
       float m_clock_alpha = 0.0f;
       // The chart's visibility and the radius of ground it shows, which
-      // widens with speed; MOPPE_CHART=none leaves it out.
+      // widens with speed;
       float m_chart_alpha = 0.0f;
       float m_chart_reach_m = 0.0f;
-      bool m_chart_hidden = false;
       // The waymarks' markers, each a set of HudState::Waymark::who and
       // how far it has faded in: those of this frame come up and those
       // no longer drawn fade away, so that a group opens out or closes

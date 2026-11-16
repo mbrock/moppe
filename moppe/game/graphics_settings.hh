@@ -3,34 +3,7 @@
 
 #include <moppe/render/types.hh>
 
-#include <array>
-#include <iosfwd>
-#include <string>
-#include <string_view>
-
 namespace moppe::game {
-  enum class GraphicsFeatureId {
-    terrain_shadows,
-    forest,
-    ocean,
-    waterfall_curtains,
-    particles,
-    vehicle_effects,
-    star_effects,
-    motion_blur,
-    bloom,
-    auto_exposure,
-    lens_flare,
-    terrain_topology,
-    terrain_fragment_normals,
-    snow_support_filter,
-    undergrowth,
-    light_shafts,
-    gtao,
-    boulders,
-    distant_shadows,
-  };
-
   struct GraphicsSettings {
     float scene_scale = 1.0f;
     // Zero uses scene_scale relative to the point-resolution baseline.
@@ -49,184 +22,16 @@ namespace moppe::game {
     float target_frame_rate = 60.0f;
     // Late afternoon: a lower, warmer sun with longer shadows.
     float sun_height = 0.62f;
-    // Diagnostic override: saturates grass cover in both the undergrowth
-    // density and the terrain's canopy material, so LOD structure can be
-    // inspected without habitat confounds. Set by MOPPE_GRASS_LAB; 1 is
-    // ordinary habitat-driven cover.
-    float grass_cover_boost = 1.0f;
 
     bool terrain_shadows = true;
-    bool forest = true;
     bool ocean = true;
-    bool waterfall_curtains = true;
-    bool particles = true;
     bool vehicle_effects = true;
     bool star_effects = true;
     bool motion_blur = true;
     bool bloom = true;
     bool auto_exposure = true;
     bool lens_flare = true;
-    bool terrain_topology = false;
-    bool terrain_fragment_normals = true;
-    bool snow_support_filter = true;
     bool undergrowth = true;
-    bool light_shafts = true;
-    bool gtao = true;
-    // Loose rock on the ground. Hiding them leaves their colliders in place,
-    // so a benchmark replay rides the same world in every configuration.
-    bool boulders = true;
-    // The sun's far shadow cascade, out to the haze; without it shadows
-    // reach only the near cascade's 160 metres.
-    bool distant_shadows = true;
-  };
-
-  // A Boolean graphics feature has one canonical name and knows where its
-  // value lives.  The same entities drive command-line parsing and resolved
-  // configuration output.
-  struct GraphicsFeature {
-    GraphicsFeatureId id;
-    std::string_view name;
-    bool GraphicsSettings::* member;
-    // Hot features need no work beyond changing their stored value.  The next
-    // frame observes the change without rebuilding resources or resetting
-    // renderer state.
-    bool hot;
-
-    bool enabled (const GraphicsSettings& settings) const {
-      return settings.*member;
-    }
-    void set (GraphicsSettings& settings, bool value) const {
-      settings.*member = value;
-    }
-  };
-
-  inline constexpr GraphicsFeature terrain_shadows_feature {
-    GraphicsFeatureId::terrain_shadows,
-    "terrain-shadows",
-    &GraphicsSettings::terrain_shadows,
-    false
-  };
-  inline constexpr GraphicsFeature forest_feature {
-    GraphicsFeatureId::forest, "forest", &GraphicsSettings::forest, true
-  };
-  inline constexpr GraphicsFeature ocean_feature {
-    GraphicsFeatureId::ocean, "ocean", &GraphicsSettings::ocean, true
-  };
-  inline constexpr GraphicsFeature waterfall_curtains_feature {
-    GraphicsFeatureId::waterfall_curtains,
-    "waterfall-curtains",
-    &GraphicsSettings::waterfall_curtains,
-    true
-  };
-  inline constexpr GraphicsFeature particles_feature {
-    GraphicsFeatureId::particles,
-    "particles",
-    &GraphicsSettings::particles,
-    true
-  };
-  inline constexpr GraphicsFeature vehicle_effects_feature {
-    GraphicsFeatureId::vehicle_effects,
-    "vehicle-effects",
-    &GraphicsSettings::vehicle_effects,
-    true
-  };
-  inline constexpr GraphicsFeature star_effects_feature {
-    GraphicsFeatureId::star_effects,
-    "star-effects",
-    &GraphicsSettings::star_effects,
-    true
-  };
-  inline constexpr GraphicsFeature motion_blur_feature {
-    GraphicsFeatureId::motion_blur,
-    "motion-blur",
-    &GraphicsSettings::motion_blur,
-    false
-  };
-  inline constexpr GraphicsFeature bloom_feature {
-    GraphicsFeatureId::bloom, "bloom", &GraphicsSettings::bloom, true
-  };
-  inline constexpr GraphicsFeature auto_exposure_feature {
-    GraphicsFeatureId::auto_exposure,
-    "auto-exposure",
-    &GraphicsSettings::auto_exposure,
-    true
-  };
-  inline constexpr GraphicsFeature lens_flare_feature {
-    GraphicsFeatureId::lens_flare,
-    "lens-flare",
-    &GraphicsSettings::lens_flare,
-    true
-  };
-  inline constexpr GraphicsFeature terrain_topology_feature {
-    GraphicsFeatureId::terrain_topology,
-    "terrain-topology",
-    &GraphicsSettings::terrain_topology,
-    true
-  };
-
-  inline constexpr GraphicsFeature terrain_fragment_normals_feature {
-    GraphicsFeatureId::terrain_fragment_normals,
-    "terrain-fragment-normals",
-    &GraphicsSettings::terrain_fragment_normals,
-    true
-  };
-
-  inline constexpr GraphicsFeature snow_support_filter_feature {
-    GraphicsFeatureId::snow_support_filter,
-    "snow-support-filter",
-    &GraphicsSettings::snow_support_filter,
-    true
-  };
-
-  inline constexpr GraphicsFeature undergrowth_feature {
-    GraphicsFeatureId::undergrowth,
-    "undergrowth",
-    &GraphicsSettings::undergrowth,
-    true
-  };
-
-  inline constexpr GraphicsFeature light_shafts_feature {
-    GraphicsFeatureId::light_shafts,
-    "light-shafts",
-    &GraphicsSettings::light_shafts,
-    true
-  };
-
-  inline constexpr GraphicsFeature gtao_feature {
-    GraphicsFeatureId::gtao, "gtao", &GraphicsSettings::gtao, true
-  };
-
-  inline constexpr GraphicsFeature boulders_feature {
-    GraphicsFeatureId::boulders, "boulders", &GraphicsSettings::boulders, true
-  };
-
-  inline constexpr GraphicsFeature distant_shadows_feature {
-    GraphicsFeatureId::distant_shadows,
-    "distant-shadows",
-    &GraphicsSettings::distant_shadows,
-    true
-  };
-
-  inline constexpr std::array<const GraphicsFeature*, 19> graphics_features {
-    &terrain_shadows_feature,
-    &forest_feature,
-    &ocean_feature,
-    &waterfall_curtains_feature,
-    &particles_feature,
-    &vehicle_effects_feature,
-    &star_effects_feature,
-    &motion_blur_feature,
-    &bloom_feature,
-    &auto_exposure_feature,
-    &lens_flare_feature,
-    &terrain_topology_feature,
-    &terrain_fragment_normals_feature,
-    &snow_support_filter_feature,
-    &undergrowth_feature,
-    &light_shafts_feature,
-    &gtao_feature,
-    &boulders_feature,
-    &distant_shadows_feature,
   };
 
   // Ordinary play favors stable high-refresh presentation. Explicit quality
@@ -240,20 +45,6 @@ namespace moppe::game {
   // preset. Water, particles, vehicle effects, and temporal reconstruction
   // remain enabled by default.
   GraphicsSettings apple_tv_graphics_settings ();
-  const GraphicsFeature* find_graphics_feature (std::string_view name);
-
-  // Parses a comma-separated list of canonical feature names.
-  bool set_graphics_features (GraphicsSettings& settings,
-                              std::string_view names,
-                              bool enabled,
-                              std::string& error);
-
-  // Applies the legacy graphics environment variables in one place.
-  bool apply_graphics_environment (GraphicsSettings& settings,
-                                   std::string& error);
-
-  void print_graphics_settings (std::ostream& output,
-                                const GraphicsSettings& settings);
 }
 
 #endif

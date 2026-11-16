@@ -30,30 +30,19 @@ namespace moppe::game {
     FrameVisibility visibility_for (const FrameViewInput& input,
                                     const FrameView& view) {
       const bool cinematic = input.scene == FrameSceneMode::Cinematic;
-      const bool water = input.scene == FrameSceneMode::WaterInspection;
-      const bool gazetteer = input.scene == FrameSceneMode::Gazetteer;
 
       FrameVisibility visibility;
       visibility.cinematic = cinematic;
-      visibility.water_inspection = water;
-      visibility.forest = !water && input.graphics.forest;
-      visibility.boulders = !water && input.graphics.boulders;
-      visibility.mushrooms = !water && input.graphics.forest;
-      visibility.undergrowth = !water && input.graphics.undergrowth;
-      visibility.actors = !water;
+      visibility.undergrowth = input.graphics.undergrowth;
       visibility.ocean = input.graphics.ocean;
-      visibility.waterfall_curtains = input.graphics.waterfall_curtains;
-      visibility.dust = !gazetteer && input.graphics.particles;
       visibility.underwater =
         visibility.ocean && view.camera_water_level &&
         view.camera.position[1] < *view.camera_water_level;
       visibility.motion_blur =
         input.graphics.motion_blur && view.motion_blur_amount > 0.01f;
-      visibility.vehicle_effects =
-        visibility.actors && input.graphics.vehicle_effects;
-      visibility.star_effects =
-        visibility.actors && input.graphics.star_effects;
-      visibility.game_hud = !cinematic && !water && !gazetteer;
+      visibility.vehicle_effects = input.graphics.vehicle_effects;
+      visibility.star_effects = input.graphics.star_effects;
+      visibility.game_hud = !cinematic;
       visibility.cinematic_hud = cinematic;
       return visibility;
     }
@@ -217,18 +206,13 @@ namespace moppe::game {
   FrameView compose_frame_view (const FrameViewInput& input) {
     const GameLogicState& logic = input.session.logic ();
     const bool cinematic = input.scene == FrameSceneMode::Cinematic;
-    const bool water = input.scene == FrameSceneMode::WaterInspection;
 
     FrameView result;
     result.scene = input.scene;
-    result.benchmark = input.benchmark;
 
     result.camera.position = input.selected_camera.position;
     result.camera.forward = input.selected_camera.forward;
     result.camera.field_of_view = cinematic
-                                    ? input.selected_camera.field_of_view
-                                  : water ? 70.0f * u::deg
-                                  : input.scene == FrameSceneMode::Gazetteer
                                     ? input.selected_camera.field_of_view
                                     : gameplay_field_of_view (input);
     result.camera.aspect = std::max (0.01f, input.aspect);

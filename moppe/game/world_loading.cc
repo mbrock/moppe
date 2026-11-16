@@ -78,7 +78,6 @@ namespace moppe::game {
     void reset (const terrain::WorldRecipe& recipe) {
       seed = recipe.seed ().value;
       clock_start = platform::now ();
-      capture_done = false;
       generation_complete = false;
       {
         const std::lock_guard<std::mutex> lock (mutex);
@@ -120,7 +119,6 @@ namespace moppe::game {
     const WorldCacheConfig cache_config;
 
     // Main-thread only.
-    bool capture_done = false;
 
     std::mutex mutex;
     Shared shared;
@@ -452,15 +450,5 @@ namespace moppe::game {
       .seed = state.seed.load (),
       .events = state.shared.events,
     };
-  }
-
-  bool WorldLoading::claim_loading_capture (bool last_chance) noexcept {
-    WorldLoadingState& state = *m_state;
-    if (state.capture_done)
-      return false;
-    if (!last_chance && state.elapsed () < 1.0f)
-      return false;
-    state.capture_done = true;
-    return true;
   }
 }

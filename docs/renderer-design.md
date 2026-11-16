@@ -365,18 +365,6 @@ sloped water ramp. This is the complete representation split: one field for
 all horizontal sea, lake, pool, and river water; one primitive for vertical
 nickpoints.
 
-Feature-targeted visual checks use
-`tools/capture-water /tmp/water.png FEATURE`, where `FEATURE` is `stream`,
-`river`, `confluence`, `mouth`, `waterfall`, or `lake`. The selector consumes
-the same hydrology data, logs the chosen cell and score, uses a fixed clean
-camera, and still runs the empty HUD pass because that pass performs the final
-post-chain composite into the screenshot drawable. The stream view targets a
-root reach and looks upstream so its source or lake handoff remains in frame.
-
-`tools/water-benchmark` builds a multi-seed gallery around these inspection
-cameras, normalizes output dimensions, and records missing features and capture
-metadata. See `docs/water-benchmarks.md` for the corpus and review rubric.
-
 ## Terrain: vertex pulling (the big modernization)
 
 Today: regenerate() builds ~8.4 M vertices of non-indexed strip soup (fine +

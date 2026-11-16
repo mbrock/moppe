@@ -1,142 +1,10 @@
-// The views that are not the following camera's: the opening's shots, the
-// gazetteer, the spectator, and the capture cameras (orbit, side, animal,
-// ride, and the boat's film cameras).
+// The views that are not the following camera's: the opening's shots and
+// the capture cameras (side, animal, ride, and the boat's film cameras).
 
 #include <moppe/game/game.hh>
 
 namespace moppe {
   namespace game {
-    void MoppeGame::place_spectator () {
-      if (!m_spectator)
-        return;
-      const ForestPlan& plan = generated_world ().forest ();
-      const Vec3 period = extent_value (plan.period);
-      constexpr float cell = 40.0f;
-      const int nx = std::max (1, static_cast<int> (period[0] / cell));
-      const int nz = std::max (1, static_cast<int> (period[2] / cell));
-      std::vector<int> conifers (static_cast<std::size_t> (nx) * nz, 0);
-      for (const ForestSite& site : plan.sites) {
-        if (site.form != ForestForm::conifer)
-          continue;
-        const Vec3 at = position_value (site.position);
-        const int x = std::clamp (static_cast<int> (at[0] / cell), 0, nx - 1);
-        const int z = std::clamp (static_cast<int> (at[2] / cell), 0, nz - 1);
-        ++conifers[static_cast<std::size_t> (z) * nx + x];
-      }
-      const auto densest =
-        std::max_element (conifers.begin (), conifers.end ()) -
-        conifers.begin ();
-      Vec3 eye ((static_cast<float> (densest % nx) + 0.5f) * cell,
-                0.0f,
-                (static_cast<float> (densest / nx) + 0.5f) * cell);
-      eye[1] = terrain::surface_elevation_value (
-                 spatial::sample<terrain::surface_elevation> (
-                   surface (), moppe::position (eye))) +
-               1.7f;
-      m_spectator->eye = eye;
-      // The pointer is captured: moving the mouse looks around, as in any
-      // first-person view, without a button held.
-      platform::set_pointer_captured (true);
-      std::cerr << "moppe: spectator in the densest conifer stand at " << eye
-                << " (" << conifers[densest] << " spruce in 40 m)\n";
-    }
-
-    void MoppeGame::spectator_camera (seconds_t interval) {
-      const float dt = seconds_value (interval);
-      if (!m_spectator)
-        return;
-      Spectator& view = *m_spectator;
-      const auto held = [&view] (platform::Key k) {
-        return view.held.count (k) ? 1.0f : 0.0f;
-      };
-      using platform::Key;
-      view.yaw += 1.6f * dt * (held (Key::Right) - held (Key::Left));
-      view.pitch += 1.2f * dt * (held (Key::Up) - held (Key::Down));
-      view.pitch = std::clamp (view.pitch, -1.45f, 1.45f);
-      // W flies where the eye looks, so looking down and pressing W
-      // descends.
-      const Vec3 forward (std::cos (view.yaw) * std::cos (view.pitch),
-                          std::sin (view.pitch),
-                          std::sin (view.yaw) * std::cos (view.pitch));
-      const Vec3 right (-std::sin (view.yaw), 0.0f, std::cos (view.yaw));
-      const float speed = 22.0f;
-      view.eye += (forward * (held (Key::W) - held (Key::S)) +
-                   right * (held (Key::D) - held (Key::A)) +
-                   Vec3 (0, 1, 0) * (held (Key::Space) - held (Key::Tab))) *
-                  (speed * dt);
-      const float ground = terrain::surface_elevation_value (
-                             spatial::sample<terrain::surface_elevation> (
-                               surface (), moppe::position (view.eye))) +
-                           0.4f;
-      view.eye[1] = std::max (static_cast<float> (view.eye[1]), ground);
-      const Vec3 look (std::cos (view.yaw) * std::cos (view.pitch),
-                       std::sin (view.pitch),
-                       std::sin (view.yaw) * std::cos (view.pitch));
-      session ().camera ().place (view.eye, view.eye + look * 10.0f);
-    }
-
-    void MoppeGame::orbit_camera () {
-      // MOPPE_PAN="seconds": stand at the rider and sweep the view left
-      // and right through a half turn, the way a rider looks around.
-      if (static const char* pan = moppe::environment ("MOPPE_PAN"); pan) {
-        const float period = std::max (1.0f, (float)::atof (pan));
-        const float yaw =
-          1.5707963f * std::sin (6.2831853f * logic ().m_total_time / period);
-        const Vec3 eye = session ().subject_position () + Vec3 (0, 1.6f, 0);
-        session ().camera ().place (
-          eye, eye + Vec3 (std::cos (yaw), 0.08f, std::sin (yaw)) * 10.0f);
-        return;
-      }
-      static const char* orbit = moppe::environment ("MOPPE_ORBIT");
-      if (!orbit)
-        return;
-      float radius = 14.0f, height = 3.0f, period = 24.0f;
-      std::sscanf (orbit, "%f,%f,%f", &radius, &height, &period);
-      if (!m_orbit_tree) {
-        // The tallest-standing loner near the rider: the tree whose nearest
-        // neighbour is farthest away, so it fills the frame by itself.
-        const Vec3 at = session ().subject_position ();
-        std::vector<const mov::Trunk*> near;
-        for (const mov::Trunk& trunk : m_forest.trunks ()) {
-          const Vec3 d = trunk.root - at;
-          if (d[0] * d[0] + d[2] * d[2] < 400.0f * 400.0f)
-            near.push_back (&trunk);
-        }
-        float loneliest = 0.0f;
-        for (const mov::Trunk* trunk : near) {
-          if (trunk->height < 12.0f)
-            continue;
-          float nearest = std::numeric_limits<float>::infinity ();
-          for (const mov::Trunk* other : near)
-            if (other != trunk) {
-              const Vec3 d = other->root - trunk->root;
-              nearest = std::min (nearest, d[0] * d[0] + d[2] * d[2]);
-            }
-          if (nearest > loneliest) {
-            loneliest = nearest;
-            m_orbit_tree = *trunk;
-          }
-        }
-        if (!m_orbit_tree)
-          return;
-        std::cerr << "moppe: orbiting tree at " << m_orbit_tree->root
-                  << " height " << m_orbit_tree->height << '\n';
-      }
-      const float turn =
-        6.2831853f * logic ().m_total_time / std::max (period, 1.0f);
-      const Vec3 centre = m_orbit_tree->root;
-      Vec3 eye =
-        centre +
-        Vec3 (radius * std::cos (turn), 0.0f, radius * std::sin (turn));
-      eye[1] = spatial::sample<terrain::surface_elevation> (
-                 surface (), moppe::position (eye))
-                 .quantity_from_zero ()
-                 .numerical_value_in (u::m) +
-               height;
-      session ().camera ().place (
-        eye, centre + Vec3 (0, 0.45f * m_orbit_tree->height, 0));
-    }
-
     void MoppeGame::rest_camera () {
       const Camp& camp = logic ().m_camp;
       const float load = hammock_load (camp, logic ().m_total_time);
@@ -169,14 +37,10 @@ namespace moppe {
     void MoppeGame::plan_opening_journey () {
       MOPPE_PROFILE_ZONE ("startup.plan_opening");
       m_opening_shots.clear ();
-      if (m_spectator)
-        return;
       const char* choice = moppe::environment ("MOPPE_OPENING");
       if (choice && std::string_view (choice) == "none")
         return;
-      const bool flight =
-        (choice && std::string_view (choice) == "flight") ||
-        moppe::environment ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
+      const bool flight = choice && std::string_view (choice) == "flight";
       if (choice && std::string_view (choice) == "river") {
         const char* seconds = moppe::environment ("MOPPE_FLYOVER_SECONDS");
         std::vector<Vec3> trees;
@@ -336,98 +200,7 @@ namespace moppe {
     }
 
     bool MoppeGame::keeping_pace () const {
-      static const bool frame_by_frame =
-        moppe::environment ("MOPPE_ORBIT") ||
-        moppe::environment ("MOPPE_PAN") ||
-        moppe::environment ("MOPPE_RIDE_CAPTURE_DIR") ||
-        moppe::environment ("MOPPE_CINEMATIC_CAPTURE_DIR") ||
-        moppe::environment ("MOPPE_VIDEO");
-      return !frame_by_frame && m_screenshot_path.empty () && !m_benchmark &&
-             !m_gazetteer && !m_water_shot;
-    }
-
-    void MoppeGame::plan_gazetteer_capture () {
-      if (!m_gazetteer)
-        return;
-      MOPPE_PROFILE_ZONE ("startup.plan_landscape_gazetteer");
-      m_gazetteer_plan = plan_landscape_gazetteer (surface (),
-                                                   surface_readings (),
-                                                   standing_water (),
-                                                   lake_census (),
-                                                   drainage (),
-                                                   rivers (),
-                                                   trail_network (),
-                                                   position (m_spawn_position),
-                                                   m_sky.sun);
-      if (m_gazetteer_plan.empty ())
-        throw std::runtime_error ("landscape gazetteer found no viewpoints");
-      // The direct observation primitive: put the camera HERE, look
-      // THERE, one settled frame. A question about composition deserves
-      // a frame composed for that question, never the nearest postcard.
-      if (const char* look = moppe::environment ("MOPPE_LOOK")) {
-        float ex, ey, ez, sx, sy, sz, fov = 55.0f;
-        const int parsed = std::sscanf (
-          look, "%f %f %f %f %f %f %f", &ex, &ey, &ez, &sx, &sy, &sz, &fov);
-        if (parsed < 6)
-          throw std::runtime_error (
-            "MOPPE_LOOK wants: eye_x eye_y eye_z subj_x subj_y subj_z "
-            "[fov_deg]");
-        GazetteerShot shot;
-        shot.name = "look";
-        shot.eye = position (Vec3 (ex, ey, ez));
-        shot.subject = position (Vec3 (sx, sy, sz));
-        shot.vertical_field_of_view = fov * u::deg;
-        m_gazetteer_plan.shots.assign (1, shot);
-      }
-      // A glide is the isolated moving-camera instrument: one named
-      // shot's camera advancing in a straight line, one capture per
-      // rendered frame, no vehicle, no HUD, no particles, frozen wind.
-      // Measurement wants exactly one subject in the frame.
-      if (const char* glide = moppe::environment ("MOPPE_GLIDE")) {
-        auto& shots = m_gazetteer_plan.shots;
-        const auto found = std::find_if (
-          shots.begin (), shots.end (), [&] (const GazetteerShot& shot) {
-            return shot.name == glide;
-          });
-        if (found == std::end (shots))
-          throw std::runtime_error (
-            std::string ("MOPPE_GLIDE names no gazetteer shot: ") + glide);
-        const GazetteerShot only = *found;
-        shots.assign (1, only);
-      }
-      std::filesystem::create_directories (m_gazetteer->output_directory);
-      const std::filesystem::path manifest =
-        std::filesystem::path (m_gazetteer->output_directory) / "gazetteer.csv";
-      std::ofstream output (manifest);
-      if (!output)
-        throw std::runtime_error ("cannot write gazetteer manifest: " +
-                                  manifest.string ());
-      write_landscape_gazetteer_csv (output, m_gazetteer_plan);
-      const std::filesystem::path summary_path =
-        std::filesystem::path (m_gazetteer->output_directory) /
-        "terrain-summary.csv";
-      std::ofstream summary_output (summary_path);
-      if (!summary_output)
-        throw std::runtime_error ("cannot write landscape summary: " +
-                                  summary_path.string ());
-      const LandscapeSummary summary =
-        summarize_landscape (surface (),
-                             standing_water (),
-                             lake_census (),
-                             drainage (),
-                             rivers (),
-                             generated_world ().recipe ());
-      write_landscape_summary_csv (summary_output, summary);
-      const std::filesystem::path elevation_path =
-        std::filesystem::path (m_gazetteer->output_directory) /
-        "terrain-elevation.f32";
-      std::ofstream elevation_output (elevation_path, std::ios::binary);
-      if (!elevation_output)
-        throw std::runtime_error ("cannot write landscape elevation: " +
-                                  elevation_path.string ());
-      write_landscape_elevation_f32 (elevation_output, surface ());
-      std::cerr << "landscape gazetteer: " << m_gazetteer_plan.shots.size ()
-                << " frozen viewpoints -> " << manifest << '\n';
+      return !m_video_plan && m_screenshot_path.empty ();
     }
 
     void MoppeGame::walk_side_camera () {

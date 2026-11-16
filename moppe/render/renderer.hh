@@ -99,11 +99,6 @@ namespace moppe {
       // Development profiling and GPU capture should ignore loading/UI-only
       // frames and measure the complete world render.
       bool profile = false;
-      uint32_t benchmark_mask = 0;
-      uint32_t benchmark_partition_mask = 0;
-      uint32_t benchmark_epoch = 0;
-      uint32_t benchmark_frame = 0;
-      bool benchmark_measured = false;
     };
 
     // A bounded sun-shadow reading for the current camera neighborhood.
@@ -121,9 +116,6 @@ namespace moppe {
     struct LocalShadowParams {
       static constexpr std::size_t near = 0, far = 1;
       std::array<ShadowCascade, 2> cascades;
-      bool include_far = true;
-      bool include_forest = true;
-      bool include_boulders = true;
     };
 
     // Sun-shaft raymarch through the camera-local shadow map. The caller
@@ -180,39 +172,6 @@ namespace moppe {
       float tex_scale; // texture repeats per world metre
       float shadow_strength;
       float fog_scale;
-      // Development overlay showing the actual terrain triangles. Useful for
-      // inspecting the dense reconstructed near field and ordinary LODs.
-      bool topology_overlay = false;
-      // Light Native and coarser LODs from the full-resolution normal
-      // texture at fragment rate, decoupling shading detail from
-      // geometric LOD.
-      bool fragment_normals = true;
-      // Classify snow retention from a broad material-scale surface reading,
-      // leaving the detailed normal available for lighting.
-      bool snow_support_filter = true;
-      // Diagnostic cover saturation for the grass canopy material; 1 is
-      // ordinary habitat-driven cover (see GraphicsSettings).
-      float grass_cover_boost = 1.0f;
-    };
-
-    enum class TerrainOverlayRamp : uint8_t {
-      Heat,
-      Flow,
-      Streams,
-      Categorical,
-      Diverging,
-      Marker,
-      Water,
-      Droplet
-    };
-
-    struct TerrainOverlayParams {
-      int width;
-      int height;
-      float minimum;
-      float maximum;
-      float opacity = 0.65f;
-      TerrainOverlayRamp ramp = TerrainOverlayRamp::Heat;
     };
 
     enum class TerrainLod : uint8_t {
@@ -352,21 +311,6 @@ namespace moppe {
       spatial_extent_t period {};
     };
 
-    struct DustEmission {
-      uint64_t id = 0;
-      float birth_time = 0.0f;
-      Vec3 position;
-      Vec3 velocity;
-      DisplayColor color;
-      float size = 1.0f;
-      float life = 1.0f;
-      float gravity = 0.0f;
-      float spread = 1.0f;
-      uint32_t particle_count = 0;
-      bool additive = false;
-      bool flake = false;
-    };
-
     // One finished frame as the display shows it: rows of 8-bit RGB, the
     // top row first, borrowed for the length of the call.
     struct FramePixels {
@@ -411,19 +355,9 @@ namespace moppe {
       set_terrain (const TerrainParams& params,
                    std::span<const terrain::SurfaceElevation> heights,
                    std::span<const terrain::TerrainNormal> normals) = 0;
-      // Hot development control: changes only terrain shading state, leaving
-      // height/normal textures and chunk geometry intact.
-      virtual void set_terrain_topology_overlay (bool enabled) = 0;
       // The photograph of turf whose grain the far sward's canopy carries.
       // The ground itself reads no image: render/ground_detail.hh.
       virtual void set_sward_texture (TexturePtr grain) = 0;
-      virtual void set_terrain_overlay (const TerrainOverlayParams& params,
-                                        std::span<const float> values) = 0;
-      virtual void clear_terrain_overlay () = 0;
-      // Renders the one-time terrain shadow map from the fixed sun.
-      // light_view_proj maps world to light NDC (conventional Z).
-      virtual void render_terrain_shadow (const Mat4& light_view_proj,
-                                          bool include_forest) = 0;
       // Optional standing-water raster turns the ocean grid into the complete
       // surface: sea plus inland lakes. Samples are interleaved pairs of
       // (physical surface elevation, wave amplitude factor) following the
@@ -464,15 +398,13 @@ namespace moppe {
                                           const TexturePixels& plants,
                                           const TexturePixels& more_plants,
                                           const TexturePixels& scars,
-                                          const TexturePixels& bedrock,
-                                          bool include_forest) {
+                                          const TexturePixels& bedrock) {
         (void)landscape;
         (void)ground;
         (void)plants;
         (void)more_plants;
         (void)scars;
         (void)bedrock;
-        (void)include_forest;
       }
 
       // The built roads exactly (terrain::RoadSurface), for the near ground:
@@ -526,11 +458,6 @@ namespace moppe {
       virtual void draw_terrain (const ChunkDraw* chunks, int count) = 0;
       virtual void draw_sky (const SkyParams& params) = 0;
       virtual void draw_ocean (const OceanParams& params) = 0;
-      virtual void draw_dust (std::span<const DustEmission> emissions,
-                              float logical_time) {
-        (void)emissions;
-        (void)logical_time;
-      }
       // Optional: backends without a mesh pipeline simply grow nothing.
       virtual void draw_undergrowth (const UndergrowthParams& params) {
         (void)params;
@@ -590,8 +517,6 @@ namespace moppe {
       virtual void apply_underwater (const UnderwaterParams&) = 0;
       // Post effects; call after reconstruction and before draw_hud.
       virtual void apply_motion_blur (float strength) = 0;
-      // Soft-focus the completed 3D scene; HUD drawn afterwards stays crisp.
-      virtual void apply_scene_blur () = 0;
       // Slug text and vector shapes for this frame's HUD, in the same point
       // coordinates. Call before draw_hud, which paints them over its list.
       virtual void draw_hud_text (const TextList& text) {
@@ -613,11 +538,7 @@ namespace moppe {
         (void)sink;
       }
       virtual void end_frame () = 0;
-      virtual bool benchmark_complete () const {
-        return true;
-      }
       virtual void reset_temporal_state () {}
-      virtual void write_benchmark_results () {}
 
       // A host that paces frames by a display link offers each frame's
       // drawable before begin_frame; backends that acquire their own ignore

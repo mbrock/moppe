@@ -54,26 +54,4 @@ namespace moppe::game {
              emission.style.lifetime * 0.9f;
     });
   }
-
-  void Dust::render (render::Renderer& renderer) const {
-    std::vector<render::DustEmission> payload;
-    payload.reserve (m_emissions.size ());
-    for (const Emission& emission : m_emissions) {
-      payload.push_back (
-        { .id = emission.id,
-          .birth_time = seconds_value (emission.birth_time),
-          .position = position_value (emission.position),
-          .velocity = velocity_value (emission.velocity),
-          .color = emission.color,
-          .size = (emission.style.size).numerical_value_in (moppe::u::m),
-          .life = seconds_value (emission.style.lifetime),
-          .gravity = emission.style.downward_acceleration.numerical_value_in (
-            u::m / pow<2> (u::s)),
-          .spread = scalar_value (emission.style.spread),
-          .particle_count = emission.particle_count,
-          .additive = emission.style.additive,
-          .flake = emission.style.flake });
-    }
-    renderer.draw_dust (payload, seconds_value (m_logical_time));
-  }
 }

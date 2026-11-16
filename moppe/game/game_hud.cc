@@ -398,8 +398,6 @@ namespace moppe {
                                   const FrameView& frame,
                                   int width,
                                   int height) const {
-      if (m_spectator)
-        return;
       const Mode mode = logic ().m_mode;
       const DisplayColor pale (0.96f, 0.96f, 0.96f);
       if (m_companion && mode != M_PASSENGER &&
@@ -716,7 +714,7 @@ namespace moppe {
     }
 
     void MoppeGame::add_chart (HudState& state, const FrameView& frame) const {
-      if (m_spectator || !m_map.picture ())
+      if (!m_map.picture ())
         return;
       HudState::Chart& chart = state.chart;
       chart.picture = m_map.picture ();

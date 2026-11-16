@@ -1,9 +1,8 @@
-#include <moppe/game/graphics_benchmark.hh>
+#include <moppe/environment.hh>
 #include <moppe/game/launch_options.hh>
 
 #include <tests/test.hh>
 
-#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -42,9 +41,6 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
   MOPPE_CHECK_NEAR (options.graphics.render_scale_override, 0.5f, 0.0f);
   MOPPE_CHECK (options.graphics.motion_blur);
   MOPPE_CHECK (options.screenshot_path.empty ());
-  MOPPE_CHECK (!options.benchmark.has_value ());
-  MOPPE_CHECK (options.world_cache.mode == game::WorldCacheMode::Reuse);
-  MOPPE_CHECK (options.world_cache.key.empty ());
   // Unresolved: main recalls the last played seed for an ordinary launch.
   MOPPE_CHECK (options.seed < 0);
 }
@@ -63,93 +59,42 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--windowed",
          "--graphics-quality",
          "--render-scale",
-         "--scene-megapixels",
-         "--graphics-enable",
-         "--graphics-disable",
-         "--graphics-benchmark",
-         "--benchmark-frames",
-         "--benchmark-settle",
-         "--benchmark-prelude",
-         "--benchmark-partition",
-         "--terrain-gazetteer",
-         "--gazetteer-settle",
-         "--fast",
-         "--terrain-quality",
+         "--world-size",
          "--terrain-resolution",
-         "--uplift-years",
-         "--channel-initiation-area",
-         "--sediment-concentration",
-         "--hillslope-critical-gradient",
-         "--hillslope-max-multiplier",
-         "--world-cache-key",
-         "--refresh-world-cache",
-         "--no-world-cache",
          "--screenshot",
-         "--water-screenshot",
          "--window-size",
          "--inactive",
-         "--multiplayer",
-         "--join",
          "--seed",
        })
     MOPPE_CHECK (help.find (option) != std::string::npos);
   MOPPE_CHECK (help.find ("-h, --help") != std::string::npos);
-  MOPPE_CHECK (help.find ("Graphics features:") != std::string::npos);
-  MOPPE_CHECK (help.find ("forest") != std::string::npos);
-  MOPPE_CHECK (help.find ("undergrowth") != std::string::npos);
 }
 
 MOPPE_TEST (launch_multiplayer_pins_the_shared_world) {
   MOPPE_CHECK (!parsed ({}).multiplayer);
-  const game::LaunchOptions found = parsed ({ "--multiplayer" });
+  moppe::set_environment ("MOPPE_MULTIPLAYER", "1");
+  const game::LaunchOptions found = parsed ({});
   MOPPE_CHECK (found.multiplayer && found.multiplayer->empty ());
   MOPPE_CHECK (found.seed == 123);
-  const game::LaunchOptions named = parsed ({ "--join", "chapel:27961" });
+  moppe::set_environment ("MOPPE_MULTIPLAYER", "chapel:27961");
+  const game::LaunchOptions named = parsed ({});
   MOPPE_CHECK (named.multiplayer && *named.multiplayer == "chapel:27961");
-  MOPPE_CHECK (parsed ({ "--join", "chapel", "--seed", "7" }).seed == 7);
+  MOPPE_CHECK (parsed ({ "--seed", "7" }).seed == 7);
+  moppe::set_environment ("MOPPE_MULTIPLAYER", nullptr);
 }
 
 MOPPE_TEST (launch_quality_flags_select_settings) {
   MOPPE_CHECK (!parsed ({ "--graphics-quality", "low" }).graphics.bloom);
   MOPPE_CHECK (parsed ({ "--graphics-quality", "high" }).graphics.bloom);
-  MOPPE_CHECK (
-    parsed ({ "--graphics-quality", "high", "--graphics-disable", "bloom" })
-      .graphics.bloom == false);
-  MOPPE_CHECK (!parsed ({ "--graphics-disable", "forest" }).graphics.forest);
-  MOPPE_CHECK (
-    parsed ({ "--terrain-quality", "research" }).generation_profile ==
-    terrain::TerrainGenerationProfile::Research);
-  MOPPE_CHECK (parsed ({ "--terrain-quality", "smoke" }).generation_profile ==
-               terrain::TerrainGenerationProfile::Smoke);
   const game::LaunchOptions high = parsed ({ "--graphics-quality", "high" });
   MOPPE_CHECK_NEAR (high.graphics.render_scale_override, 0.0f, 0.0f);
   MOPPE_CHECK (high.graphics.motion_blur);
   const game::LaunchOptions scales = parsed ({ "--render-scale", "0.375" });
   MOPPE_CHECK_NEAR (scales.graphics.render_scale_override, 0.375f, 0.0f);
   // Play sheds resolution to hold 60 frames a second, unless a scale is
-  // asked for outright or another rate is.
+  // asked for outright.
   MOPPE_CHECK_NEAR (parsed ({}).graphics.target_frame_rate, 60.0f, 0.0f);
   MOPPE_CHECK_NEAR (scales.graphics.target_frame_rate, 0.0f, 0.0f);
-  const game::LaunchOptions paced = parsed ({ "--target-fps", "30" });
-  MOPPE_CHECK (paced.target_frame_rate.has_value ());
-  MOPPE_CHECK_NEAR (*paced.target_frame_rate, 30.0f, 0.0f);
-  const game::LaunchOptions raster = parsed ({ "--scene-megapixels", "1.25" });
-  MOPPE_CHECK (raster.scene_megapixel_budget.has_value ());
-  MOPPE_CHECK_NEAR (*raster.scene_megapixel_budget, 1.25f, 0.0f);
-
-  // A preset is the baseline regardless of where it appears; explicit
-  // settings must not disappear merely because the preset was spelled last.
-  const game::LaunchOptions trailing_preset = parsed ({
-    "--render-scale",
-    "0.25",
-    "--graphics-enable",
-    "bloom",
-    "--graphics-quality",
-    "low",
-  });
-  MOPPE_CHECK_NEAR (
-    trailing_preset.graphics.render_scale_override, 0.25f, 0.0f);
-  MOPPE_CHECK (trailing_preset.graphics.bloom);
 }
 
 MOPPE_TEST (launch_rejects_malformed_command_lines) {
@@ -162,50 +107,14 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   };
   MOPPE_CHECK (rejects ({ "--graphics-quality" }));
   MOPPE_CHECK (rejects ({ "--graphics-quality", "medium" }));
-  MOPPE_CHECK (rejects ({ "--scene-megapixels", "65" }));
   MOPPE_CHECK (rejects ({ "--render-scale", "1.1" }));
   MOPPE_CHECK (rejects ({ "--world-size", "40" }));
-  MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
   MOPPE_CHECK (rejects ({ "--terrain-resolution", "1024.5" }));
   MOPPE_CHECK (rejects ({ "--terrain-resolution", "64" }));
-  MOPPE_CHECK (rejects ({ "--uplift-years" }));
-  MOPPE_CHECK (rejects ({ "--uplift-years", "ancient" }));
-  MOPPE_CHECK (rejects ({ "--uplift-years", "-1" }));
-  MOPPE_CHECK (rejects ({ "--uplift-years", "10000001" }));
-  MOPPE_CHECK (rejects ({ "--channel-initiation-area" }));
-  MOPPE_CHECK (rejects ({ "--channel-initiation-area", "tiny" }));
-  MOPPE_CHECK (rejects ({ "--channel-initiation-area", "0" }));
-  MOPPE_CHECK (rejects ({ "--channel-initiation-area", "2000000000" }));
-  MOPPE_CHECK (rejects ({ "--sediment-concentration" }));
-  MOPPE_CHECK (rejects ({ "--sediment-concentration", "muddy" }));
-  MOPPE_CHECK (rejects ({ "--sediment-concentration", "1.1" }));
-  MOPPE_CHECK (rejects ({ "--hillslope-critical-gradient", "0" }));
-  MOPPE_CHECK (rejects ({ "--hillslope-max-multiplier", "0.9" }));
-  MOPPE_CHECK (rejects ({ "--world-cache-key" }));
-  MOPPE_CHECK (rejects ({ "--world-cache-key", "../shared" }));
-  MOPPE_CHECK (rejects ({ "--world-cache-key", "spaces are unsafe" }));
-  MOPPE_CHECK (rejects ({ "--water-screenshot", "canyon", "/tmp/a.png" }));
-  MOPPE_CHECK (rejects ({ "--water-screenshot", "mouth" }));
   MOPPE_CHECK (rejects ({ "--screenshot" }));
   MOPPE_CHECK (rejects ({ "--seed" }));
-  MOPPE_CHECK (rejects ({ "--graphics-enable", "not-a-feature" }));
-  // Benchmark pacing without a destination has nowhere to write.
-  MOPPE_CHECK (rejects ({ "--benchmark-frames", "10" }));
-  MOPPE_CHECK (rejects ({ "--gazetteer-settle", "10" }));
   // An unrecognized argument is not an error; it is simply not a setting.
   MOPPE_CHECK (!rejects ({ "--not-a-flag" }));
-}
-
-MOPPE_TEST (launch_selects_stable_whole_world_cache_policy) {
-  const game::LaunchOptions named =
-    parsed ({ "--world-cache-key", "terrain-tuning_3" });
-  MOPPE_CHECK (named.world_cache.mode == game::WorldCacheMode::Reuse);
-  MOPPE_CHECK (named.world_cache.key == "terrain-tuning_3");
-
-  MOPPE_CHECK (parsed ({ "--refresh-world-cache" }).world_cache.mode ==
-               game::WorldCacheMode::Refresh);
-  MOPPE_CHECK (parsed ({ "--no-world-cache" }).world_cache.mode ==
-               game::WorldCacheMode::Disabled);
 }
 
 MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
@@ -219,33 +128,12 @@ MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
   // An explicit seed still wins over the capture default.
   MOPPE_CHECK (
     parsed ({ "--screenshot", "/tmp/shot.png", "--seed", "7" }).seed == 7);
-
-  const game::LaunchOptions water =
-    parsed ({ "--water-screenshot", "mouth", "/tmp/mouth.png" });
-  MOPPE_CHECK (water.water_shot == game::WaterShot::Mouth);
-  MOPPE_CHECK (water.screenshot_path == "/tmp/mouth.png");
-
-  const game::LaunchOptions gazetteer = parsed (
-    { "--terrain-gazetteer", "/tmp/gazetteer", "--gazetteer-settle", "7" });
-  MOPPE_CHECK (gazetteer.gazetteer.has_value ());
-  MOPPE_CHECK (gazetteer.gazetteer->output_directory == "/tmp/gazetteer");
-  MOPPE_CHECK (gazetteer.gazetteer->settle_frames == 7);
-  MOPPE_CHECK (!gazetteer.config.fullscreen);
-  MOPPE_CHECK (!gazetteer.config.activate);
-  MOPPE_CHECK (gazetteer.config.capture_frames);
-  MOPPE_CHECK (gazetteer.seed == 123);
 }
 
 MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
-  MOPPE_CHECK (parsed ({ "--fast" }).world.resolution == 1024);
-  MOPPE_CHECK (parsed ({ "--terrain-quality", "fast" }).world.resolution ==
-               1024);
-  MOPPE_CHECK (parsed ({ "--terrain-quality", "smoke" }).world.resolution ==
-               1024);
   MOPPE_CHECK (parsed ({}).world.resolution != 1024);
-  MOPPE_CHECK (
-    parsed ({ "--terrain-quality", "play", "--terrain-resolution", "1024" })
-      .world.resolution == 1024);
+  MOPPE_CHECK (parsed ({ "--terrain-resolution", "1024" }).world.resolution ==
+               1024);
   // A wider world is spread over the same samples unless more are asked
   // for.
   const game::LaunchOptions wide = parsed ({ "--world-size", "10" });
@@ -257,89 +145,12 @@ MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
                  .world.resolution == 4096);
 }
 
-MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
-  const game::LaunchOptions options = parsed ({ "--benchmark-frames",
-                                                "24",
-                                                "--graphics-benchmark",
-                                                "/tmp/gpu.csv",
-                                                "--benchmark-pass-timing",
-                                                "--benchmark-settle",
-                                                "5" });
-  MOPPE_CHECK (options.benchmark.has_value ());
-  MOPPE_CHECK (options.benchmark->output_path == "/tmp/gpu.csv");
-  MOPPE_CHECK (options.benchmark->measured_frames == 24);
-  MOPPE_CHECK (options.benchmark->settle_frames == 5);
-  MOPPE_CHECK (options.benchmark->prelude_frames == 480);
-  MOPPE_CHECK (options.benchmark->pass_timing);
-  MOPPE_CHECK (options.benchmark->partition ==
-               game::GraphicsBenchmarkPartition::Standard);
-  MOPPE_CHECK (!options.config.fullscreen);
-  MOPPE_CHECK (options.config.capture_frames);
-  MOPPE_CHECK (!options.config.activate);
-}
-
-MOPPE_TEST (launch_selects_the_detailed_benchmark_partition) {
-  const game::LaunchOptions options = parsed ({ "--graphics-benchmark",
-                                                "/tmp/gpu.csv",
-                                                "--benchmark-partition",
-                                                "detailed" });
-  MOPPE_CHECK (options.benchmark->partition ==
-               game::GraphicsBenchmarkPartition::Detailed);
-}
-
 MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
-  game::LaunchOptions options = parsed ({ "--terrain-quality",
-                                          "fast",
-                                          "--uplift-years",
-                                          "750000",
-                                          "--channel-initiation-area",
-                                          "1200",
-                                          "--sediment-concentration",
-                                          "0.00001",
-                                          "--hillslope-critical-gradient",
-                                          "0.8",
-                                          "--hillslope-max-multiplier",
-                                          "4" });
+  game::LaunchOptions options = parsed ({ "--world-size", "10" });
   options.seed = 4321;
   const terrain::WorldRecipe recipe = game::make_launch_recipe (options);
   MOPPE_CHECK (recipe.seed ().value == 4321u);
-  MOPPE_CHECK (recipe.generation_profile () ==
-               terrain::TerrainGenerationProfile::Fast);
+  MOPPE_CHECK (recipe.generation_profile () == options.generation_profile);
   MOPPE_CHECK (recipe.resolution () == options.world.resolution);
-  MOPPE_CHECK (recipe.evolution ().uplift_duration ==
-               750000.0f * mp_units::astronomy::Julian_year);
-  MOPPE_CHECK (recipe.evolution ().channel_initiation_area ==
-               1200.0f * mp_units::si::metre * mp_units::si::metre);
-  MOPPE_CHECK (
-    recipe.evolution ().fluvial_transport.concentration_at_unit_slope ==
-    0.00001f * terrain::sediment_concentration[mp_units::one]);
-  MOPPE_CHECK (recipe.evolution ().critical_hillslope_gradient ==
-               0.8f * proportion[mp_units::one]);
-  MOPPE_CHECK (recipe.evolution ().maximum_hillslope_diffusivity_multiplier ==
-               4.0f * proportion[mp_units::one]);
-}
-
-MOPPE_TEST (launch_benchmark_environment_reaches_the_backend) {
-  game::GraphicsBenchmarkConfig benchmark;
-  benchmark.output_path = "/tmp/gpu.csv";
-  benchmark.measured_frames = 2;
-  game::publish_benchmark_environment (benchmark);
-  MOPPE_CHECK (std::string (::getenv ("MOPPE_BENCHMARK_OUTPUT")) ==
-               "/tmp/gpu.csv");
-  const int expected =
-    benchmark.measured_frames *
-    (1 << game::graphics_benchmark_dimension_count (benchmark.partition));
-  MOPPE_CHECK (std::atoi (::getenv ("MOPPE_BENCHMARK_EXPECTED")) == expected);
-  MOPPE_CHECK (
-    std::string (::getenv ("MOPPE_BENCHMARK_FEATURES")).find ("bloom") !=
-    std::string::npos);
-  MOPPE_CHECK (std::string (::getenv ("MOPPE_BENCHMARK_PARTITION")) ==
-               "standard");
-  MOPPE_CHECK (std::string (::getenv ("MOPPE_BENCHMARK_BLOCKS")) ==
-               "forest,undergrowth,water,post,other-features");
-  MOPPE_CHECK (::getenv ("MOPPE_BENCHMARK_PASSES") == nullptr);
-
-  benchmark.pass_timing = true;
-  game::publish_benchmark_environment (benchmark);
-  MOPPE_CHECK (::getenv ("MOPPE_BENCHMARK_PASSES") != nullptr);
+  MOPPE_CHECK (extent_value (recipe.extent ())[0] == 10000.0f);
 }

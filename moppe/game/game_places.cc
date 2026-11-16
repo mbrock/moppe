@@ -43,8 +43,6 @@ namespace moppe {
     void MoppeGame::plan_world_places () {
       MOPPE_PROFILE_ZONE ("startup.plan_places");
       m_places = {};
-      if (m_water_inspection || moppe::environment ("MOPPE_TREE_LAB"))
-        return;
       m_places = plan_places (
         generated_world ().roads (),
         place_ground (),
@@ -86,11 +84,6 @@ namespace moppe {
         }
       session ().set_rooms (
         std::move (rooms), m_places.period_x, m_places.period_z);
-      // MOPPE_BEACONS=lit: every beacon already burning, for captures.
-      if (const char* lit = moppe::environment ("MOPPE_BEACONS");
-          lit && std::string_view (lit) == "lit")
-        for (Beacon& beacon : logic ().m_beacons)
-          beacon.lit = logic ().m_total_time - 30.0;
       tend_beacons ();
     }
 
@@ -236,14 +229,6 @@ namespace moppe {
     void MoppeGame::let_out_animals () {
       MOPPE_PROFILE_ZONE ("startup.let_out_animals");
       m_last_subject.reset ();
-      if (m_water_inspection || moppe::environment ("MOPPE_TREE_LAB") ||
-          moppe::environment ("MOPPE_GRASS_LAB") ||
-          (moppe::environment ("MOPPE_ANIMALS") &&
-           std::string_view (moppe::environment ("MOPPE_ANIMALS")) == "none")) {
-        m_animals.rebuild ({});
-        m_hens.rebuild ({}, {});
-        return;
-      }
       const terrain::RoadNetwork& roads = generated_world ().roads ();
       const auto lived_in = [&roads] (std::size_t place) {
         return place < roads.places.size () &&
@@ -331,10 +316,9 @@ namespace moppe {
       m_last_subject = subject;
       if (length2 (moving) > 60.0f * 60.0f)
         moving = Vec3 ();
-      if (!m_spectator)
-        presences.push_back ({ .position = subject,
-                               .velocity = moving,
-                               .machine = logic ().m_mode != M_FOOT });
+      presences.push_back ({ .position = subject,
+                             .velocity = moving,
+                             .machine = logic ().m_mode != M_FOOT });
       if (m_companion && m_companion->walker)
         presences.push_back ({ .position = m_companion->walker->position,
                                .velocity = m_companion->walker->velocity });
