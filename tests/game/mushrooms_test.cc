@@ -40,6 +40,23 @@ MOPPE_TEST (a_walker_reaches_for_the_mushroom_in_front) {
   MOPPE_CHECK (patch.nearest (Vec3 (130.0f, 10.0f, 100.0f), 20.0f) == 2u);
 }
 
+MOPPE_TEST (mushrooms_past_the_worlds_seam_are_reached_from_beyond_it) {
+  MushroomPlan plan;
+  plan.period_x = plan.period_z = 200.0f;
+  plan.sites.push_back (mushroom_at (199.0f, 1.0f, MushroomKind::chanterelle));
+  MushroomPatch patch;
+  patch.rebuild (std::move (plan));
+  // A walker is never wrapped back into the world, so this one stands a
+  // lap on from the mushroom, a step and a half away.
+  const Vec3 feet (400.5f, 10.0f, 200.5f);
+  MOPPE_CHECK (patch.within_reach (feet, Vec3 (-1, 0, 0)) == 0u);
+  MOPPE_CHECK (patch.nearest (feet, 5.0f) == 0u);
+  MOPPE_CHECK (patch.within (feet, 5.0f).size () == 1u);
+  MOPPE_CHECK (std::abs (patch.base_near (0, feet)[0] - 399.0f) < 1e-3f);
+  MOPPE_CHECK (
+    !patch.within_reach (Vec3 (100.0f, 10.0f, 100.0f), Vec3 (-1, 0, 0)));
+}
+
 MOPPE_TEST (picked_mushrooms_leave_the_ground_and_regrow_on_restore) {
   MushroomPatch patch = mushroom_test_patch ();
   const Vec3 feet (100.0f, 10.0f, 100.0f);

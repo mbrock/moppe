@@ -6,6 +6,7 @@
 #include <moppe/game/model_mesh.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/signal.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <array>
@@ -562,10 +563,8 @@ namespace moppe::game {
         };
         const auto apart = [&] (const Vec3& a, const Vec3& b) {
           float dx = a[0] - b[0], dz = a[2] - b[2];
-          if (g.period_x > 0.0f)
-            dx -= g.period_x * std::round (dx / g.period_x);
-          if (g.period_z > 0.0f)
-            dz -= g.period_z * std::round (dz / g.period_z);
+          dx = terrain::minimum_image_delta (dx, g.period_x);
+          dz = terrain::minimum_image_delta (dz, g.period_z);
           return std::hypot (dx, dz);
         };
         struct Candidate {
@@ -789,10 +788,8 @@ namespace moppe::game {
     for (const PlacesPlan::Clearing& c : plan.clearings) {
       float dx = at[0] - c.centre[0];
       float dz = at[2] - c.centre[2];
-      if (plan.period_x > 0.0f)
-        dx -= plan.period_x * std::round (dx / plan.period_x);
-      if (plan.period_z > 0.0f)
-        dz -= plan.period_z * std::round (dz / plan.period_z);
+      dx = terrain::minimum_image_delta (dx, plan.period_x);
+      dz = terrain::minimum_image_delta (dz, plan.period_z);
       if (dx * dx + dz * dz < c.radius * c.radius)
         return true;
     }
@@ -840,10 +837,8 @@ namespace moppe::game {
       const Sanctuary& s = plan.sanctuaries[i];
       float dx = feet[0] - s.hearth[0];
       float dz = feet[2] - s.hearth[2];
-      if (plan.period_x > 0.0f)
-        dx -= plan.period_x * std::round (dx / plan.period_x);
-      if (plan.period_z > 0.0f)
-        dz -= plan.period_z * std::round (dz / plan.period_z);
+      dx = terrain::minimum_image_delta (dx, plan.period_x);
+      dz = terrain::minimum_image_delta (dz, plan.period_z);
       const float reach = s.platform_radius + 1.6f;
       if (dx * dx + dz * dz < reach * reach)
         return i;
@@ -856,10 +851,8 @@ namespace moppe::game {
     for (const Vec3& hearth : plan.hearths) {
       float dx = feet[0] - hearth[0];
       float dz = feet[2] - hearth[2];
-      if (plan.period_x > 0.0f)
-        dx -= plan.period_x * std::round (dx / plan.period_x);
-      if (plan.period_z > 0.0f)
-        dz -= plan.period_z * std::round (dz / plan.period_z);
+      dx = terrain::minimum_image_delta (dx, plan.period_x);
+      dz = terrain::minimum_image_delta (dz, plan.period_z);
       if (dx * dx + dz * dz < 2.2f * 2.2f)
         return Vec3 (feet[0] - dx, hearth[1], feet[2] - dz);
     }
@@ -892,10 +885,8 @@ namespace moppe::game {
         if (b.kind == Building::Kind::mill)
           continue;
         float dx = x - b.at[0], dz = z - b.at[2];
-        if (plan.period_x > 0.0f)
-          dx -= plan.period_x * std::round (dx / plan.period_x);
-        if (plan.period_z > 0.0f)
-          dz -= plan.period_z * std::round (dz / plan.period_z);
+        dx = terrain::minimum_image_delta (dx, plan.period_x);
+        dz = terrain::minimum_image_delta (dz, plan.period_z);
         if (dx * dx + dz * dz > 64.0f)
           continue;
         const Vec3 f = level (b.forward), l = left_of (f);
@@ -1455,10 +1446,8 @@ namespace moppe::game {
 
   Vec3 PlacesLandscape::near_copy (const Vec3& at, const Vec3& camera) const {
     Vec3 out = at;
-    if (m_period_x > 0.0f)
-      out[0] += m_period_x * std::round ((camera[0] - at[0]) / m_period_x);
-    if (m_period_z > 0.0f)
-      out[2] += m_period_z * std::round ((camera[2] - at[2]) / m_period_z);
+    out[0] += terrain::whole_periods (camera[0] - at[0], m_period_x);
+    out[2] += terrain::whole_periods (camera[2] - at[2], m_period_z);
     return out;
   }
 

@@ -48,12 +48,6 @@ namespace moppe::terrain {
       return cr::hypot (a.x_m - b.x_m, a.z_m - b.z_m);
     }
 
-    float wrapped_delta (float delta, float period) {
-      if (period <= 0.0f)
-        return delta;
-      return std::remainder (delta, period);
-    }
-
     TrailAlignmentPoint nearest_image (TrailAlignmentPoint point,
                                        TrailAlignmentPoint reference,
                                        const TerrainDomain& grid) {
@@ -61,10 +55,10 @@ namespace moppe::terrain {
         grid.width () * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
       const float period_z =
         grid.height () * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
-      point.x_m =
-        reference.x_m + wrapped_delta (point.x_m - reference.x_m, period_x);
-      point.z_m =
-        reference.z_m + wrapped_delta (point.z_m - reference.z_m, period_z);
+      point.x_m = reference.x_m +
+                  minimum_image_delta (point.x_m - reference.x_m, period_x);
+      point.z_m = reference.z_m +
+                  minimum_image_delta (point.z_m - reference.z_m, period_z);
       return point;
     }
 
@@ -443,10 +437,12 @@ namespace moppe::terrain {
           planner.source_y (planner.y (node)) * source_spacing_z
         };
         if (!raw.empty ()) {
-          point.x_m = raw.back ().x_m +
-                      wrapped_delta (point.x_m - raw.back ().x_m, period_x);
-          point.z_m = raw.back ().z_m +
-                      wrapped_delta (point.z_m - raw.back ().z_m, period_z);
+          point.x_m =
+            raw.back ().x_m +
+            minimum_image_delta (point.x_m - raw.back ().x_m, period_x);
+          point.z_m =
+            raw.back ().z_m +
+            minimum_image_delta (point.z_m - raw.back ().z_m, period_z);
         }
         if (raw.empty () || distance (raw.back (), point) > 1e-4f)
           raw.push_back (point);

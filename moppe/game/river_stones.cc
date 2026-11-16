@@ -4,6 +4,7 @@
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/river.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -114,10 +115,10 @@ namespace moppe::game {
       }
       // The shortest way between two places on the torus.
       float apart_x (float dx) const {
-        return dx - m_period_x * std::round (dx / m_period_x);
+        return terrain::minimum_image_delta (dx, m_period_x);
       }
       float apart_z (float dz) const {
-        return dz - m_period_z * std::round (dz / m_period_z);
+        return terrain::minimum_image_delta (dz, m_period_z);
       }
 
     private:

@@ -5,6 +5,7 @@
 // are in the nhal_renderer_*.cc files beside this one.
 
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
+#include <moppe/terrain/torus.hh>
 
 namespace moppe::nhal {
   namespace detail {
@@ -468,9 +469,6 @@ namespace moppe::nhal {
         v %= int (size);
         return v < 0 ? v + int (size) : v;
       };
-      const auto periodic = [] (float v, float extent) {
-        return v - std::round (v / extent) * extent;
-      };
       std::vector<float> depth (std::size_t (size) * size, 0.0f);
       for (const render::ForestInstance& tree : instances) {
         const Vec3 root = position_value (tree.root);
@@ -482,8 +480,10 @@ namespace moppe::nhal {
         const int cx = int (std::floor (root[0] / step_x));
         const int cz = int (std::floor (root[2] / step_z));
         auto weight = [&] (int x, int z) {
-          const float dx = periodic ((x + 0.5f) * step_x - root[0], period[0]);
-          const float dz = periodic ((z + 0.5f) * step_z - root[2], period[2]);
+          const float dx = terrain::minimum_image_delta (
+            (x + 0.5f) * step_x - root[0], period[0]);
+          const float dz = terrain::minimum_image_delta (
+            (z + 0.5f) * step_z - root[2], period[2]);
           return std::exp (-0.5f * (dx * dx + dz * dz) / (sigma * sigma));
         };
         float sum = 0;

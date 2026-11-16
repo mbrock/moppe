@@ -2,6 +2,7 @@
 #include <moppe/gfx/signal.hh>
 #include <moppe/mov/box3d_vec.hh>
 #include <moppe/terrain/roads.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -1407,14 +1408,10 @@ namespace moppe::game {
     m_camera.limit (surface, dt);
     const Vec3 pivot = rig.pivot;
     for (ChaseCamera::Room room : m_rooms) {
-      if (m_room_period_x > 0.0f)
-        room.centre[0] +=
-          m_room_period_x *
-          std::round ((pivot[0] - room.centre[0]) / m_room_period_x);
-      if (m_room_period_z > 0.0f)
-        room.centre[2] +=
-          m_room_period_z *
-          std::round ((pivot[2] - room.centre[2]) / m_room_period_z);
+      room.centre[0] +=
+        terrain::whole_periods (pivot[0] - room.centre[0], m_room_period_x);
+      room.centre[2] +=
+        terrain::whole_periods (pivot[2] - room.centre[2], m_room_period_z);
       m_camera.confine (room);
     }
   }

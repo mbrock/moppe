@@ -24,10 +24,6 @@ namespace moppe::terrain {
   namespace {
     constexpr float no_height = std::numeric_limits<float>::infinity ();
 
-    float seam_delta (float delta, float period) {
-      return delta - period * std::round (delta / period);
-    }
-
     struct FormationGround {
       const TerrainDomain& domain;
       std::span<const float> heights;
@@ -197,8 +193,10 @@ namespace moppe::terrain {
       float best = no_height;
       float height = no_height;
       for (std::size_t i = 1; i < road.points.size (); ++i) {
-        const float ax = seam_delta (road.points[i - 1].x_m - at.x_m, period_x);
-        const float az = seam_delta (road.points[i - 1].z_m - at.z_m, period_z);
+        const float ax =
+          minimum_image_delta (road.points[i - 1].x_m - at.x_m, period_x);
+        const float az =
+          minimum_image_delta (road.points[i - 1].z_m - at.z_m, period_z);
         const float dx = road.points[i].x_m - road.points[i - 1].x_m;
         const float dz = road.points[i].z_m - road.points[i - 1].z_m;
         const float length2 = dx * dx + dz * dz;
@@ -222,8 +220,10 @@ namespace moppe::terrain {
                        float period_z) {
       float best = no_height;
       for (std::size_t i = 1; i < road.points.size (); ++i) {
-        const float ax = seam_delta (road.points[i - 1].x_m - at.x_m, period_x);
-        const float az = seam_delta (road.points[i - 1].z_m - at.z_m, period_z);
+        const float ax =
+          minimum_image_delta (road.points[i - 1].x_m - at.x_m, period_x);
+        const float az =
+          minimum_image_delta (road.points[i - 1].z_m - at.z_m, period_z);
         const float dx = road.points[i].x_m - road.points[i - 1].x_m;
         const float dz = road.points[i].z_m - road.points[i - 1].z_m;
         const float length2 = dx * dx + dz * dz;

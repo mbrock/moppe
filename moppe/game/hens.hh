@@ -117,6 +117,8 @@ namespace moppe::game {
                      const Vec3& forward,
                      float time,
                      float reach,
+                     float period_x,
+                     float period_z,
                      std::uint64_t motion_base);
 
   // -- eggs ---------------------------------------------------------
@@ -141,7 +143,9 @@ namespace moppe::game {
   nest_within_reach (std::span<const Nest> nests,
                      std::span<const NestState> states,
                      const Vec3& feet,
-                     const Vec3& heading);
+                     const Vec3& heading,
+                     float period_x,
+                     float period_z);
 
   // An egg, its long axis along `along`, `cooked` 0 raw to 2 burnt black
   // (camp.hh's pan_cooked); a fried one lies broken open, white and yolk.
@@ -159,7 +163,9 @@ namespace moppe::game {
   void draw_nest_eggs (render::DrawList& dl,
                        std::span<const Nest> nests,
                        std::span<const NestState> states,
-                       const Vec3& camera);
+                       const Vec3& camera,
+                       float period_x,
+                       float period_z);
 }
 
 #endif

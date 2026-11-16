@@ -2,6 +2,7 @@
 #include <moppe/render/renderer.hh>
 
 #include <moppe/environment.hh>
+#include <moppe/terrain/torus.hh>
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -1425,9 +1426,6 @@ namespace moppe {
         sx = (dx * rx + dz * rz) * scale;
         sy = -(dx * ax + dz * az) * scale;
       };
-      const auto wrapped = [] (float delta, float period) {
-        return delta - period * std::round (delta / period);
-      };
 
       // The picture, as rings of cells cut at the sheet's seams.
       hud_state (dl);
@@ -1599,10 +1597,11 @@ namespace moppe {
       for (int i = 0; i < chart.pin_count; ++i) {
         const HudState::Chart::Pin& pin = chart.pins[i];
         float sx, sy;
-        on_screen (wrapped (pin.x_m - chart.x_m, chart.period_x_m),
-                   wrapped (pin.z_m - chart.z_m, chart.period_z_m),
-                   sx,
-                   sy);
+        on_screen (
+          terrain::minimum_image_delta (pin.x_m - chart.x_m, chart.period_x_m),
+          terrain::minimum_image_delta (pin.z_m - chart.z_m, chart.period_z_m),
+          sx,
+          sy);
         const float far = 0.86f * r;
         const float off = std::hypot (sx, sy);
         const bool beyond = off > far;

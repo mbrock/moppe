@@ -377,12 +377,12 @@ namespace moppe::terrain {
             std::ranges::push_heap (rising, std::greater<> ());
           }
         if (weir && record.spill_cell != WaterBody::no_cell) {
-          const float away_x = std::remainder (
+          const float away_x = minimum_image_delta (
             static_cast<float> (x -
                                 static_cast<int> (record.spill_cell % width)) *
               spacing_x,
             static_cast<float> (width) * spacing_x);
-          const float away_z = std::remainder (
+          const float away_z = minimum_image_delta (
             static_cast<float> (z -
                                 static_cast<int> (record.spill_cell / width)) *
               spacing_z,

@@ -4,6 +4,7 @@
 #include <moppe/game/hen_model.hh>
 #include <moppe/game/model_mesh.hh>
 #include <moppe/game/rooster_model.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -244,8 +245,11 @@ namespace moppe::game {
     const bool night = hour >= 19.3f || hour < 6.2f;
     for (std::size_t i = 0; i < m_birds.size (); ++i) {
       Bird& b = m_birds[i];
-      Vec3 off = b.position - focus;
-      if (off[0] * off[0] + off[2] * off[2] > reach * reach)
+      const float off_x =
+        terrain::minimum_image_delta (b.position[0] - focus[0], g.period_x);
+      const float off_z =
+        terrain::minimum_image_delta (b.position[2] - focus[2], g.period_z);
+      if (off_x * off_x + off_z * off_z > reach * reach)
         continue;
       const Coop& coop = m_coops[b.coop];
       std::uint32_t& r = m_random[i];
@@ -273,7 +277,9 @@ namespace moppe::game {
       // Someone stepping among them sends them scurrying off.
       for (const Presence& p : presences) {
         Vec3 d = b.position - p.position;
+        d[0] = terrain::minimum_image_delta (d[0], g.period_x);
         d[1] = 0.0f;
+        d[2] = terrain::minimum_image_delta (d[2], g.period_z);
         const float near = b.kind == Bird::Kind::chick ? 1.0f : 1.4f;
         if (length2 (d) < near * near && b.doing != Bird::Doing::scurrying) {
           const Vec3 away =
@@ -420,6 +426,8 @@ namespace moppe::game {
                      const Vec3& forward,
                      float time,
                      float reach,
+                     float period_x,
+                     float period_z,
                      std::uint64_t motion_base) {
     using namespace hen_parts;
     static const std::array<BirdMeshes, 3> meshes = [&r] {
@@ -443,7 +451,11 @@ namespace moppe::game {
                          : -1.0f;
     for (std::size_t i = 0; i < birds.size (); ++i) {
       const Bird& b = birds[i];
-      const Vec3 to = b.position - camera;
+      const Vec3 lap (
+        terrain::whole_periods (camera[0] - b.position[0], period_x),
+        0.0f,
+        terrain::whole_periods (camera[2] - b.position[2], period_z));
+      const Vec3 to = b.position + lap - camera;
       if (length2 (to) > reach * reach || dot (to, forward) < -1.0f)
         continue;
       const BirdBuild& build = build_of (b.kind);
@@ -454,8 +466,8 @@ namespace moppe::game {
       const float phase = tau * b.gait;
       // A little bob at each step, and a crow's stretch now and then.
       const float bob = 0.008f * walking * std::abs (std::sin (phase));
-      const Mat4 frame =
-        Mat4::translation (b.position + up * bob) * Mat4::basis (left, up, f);
+      const Mat4 frame = Mat4::translation (b.position + lap + up * bob) *
+                         Mat4::basis (left, up, f);
       std::uint64_t id = motion_base ? motion_base + i * 8 : 0;
       const auto draw = [&] (const render::Mesh& mesh, const Mat4& at) {
         r.draw_mesh (mesh, at, id ? ++id : 0);
@@ -526,7 +538,9 @@ namespace moppe::game {
   nest_within_reach (std::span<const Nest> nests,
                      std::span<const NestState> states,
                      const Vec3& feet,
-                     const Vec3& heading) {
+                     const Vec3& heading,
+                     float period_x,
+                     float period_z) {
     std::optional<std::size_t> found;
     float best = 1.3f * 1.3f;
     Vec3 facing = heading;
@@ -536,6 +550,8 @@ namespace moppe::game {
       if (states[k].eggs == 0)
         continue;
       Vec3 d = nests[k].at - feet;
+      d[0] = terrain::minimum_image_delta (d[0], period_x);
+      d[2] = terrain::minimum_image_delta (d[2], period_z);
       if (std::abs (static_cast<float> (d[1])) > 1.6f)
         continue;
       d[1] = 0.0f;
@@ -668,11 +684,19 @@ namespace moppe::game {
   void draw_nest_eggs (render::DrawList& dl,
                        std::span<const Nest> nests,
                        std::span<const NestState> states,
-                       const Vec3& camera) {
+                       const Vec3& camera,
+                       float period_x,
+                       float period_z) {
     using namespace hen_parts;
     bool open = false;
     for (std::size_t k = 0; k < nests.size () && k < states.size (); ++k) {
-      if (states[k].eggs == 0 || length2 (nests[k].at - camera) > 60.0f * 60.0f)
+      // The box at the copy of the world nearest the camera.
+      const Vec3 lap (
+        terrain::whole_periods (camera[0] - nests[k].at[0], period_x),
+        0.0f,
+        terrain::whole_periods (camera[2] - nests[k].at[2], period_z));
+      const Vec3 box = nests[k].at + lap;
+      if (states[k].eggs == 0 || length2 (box - camera) > 60.0f * 60.0f)
         continue;
       if (!open) {
         dl.state (render::DrawState ());
@@ -685,7 +709,7 @@ namespace moppe::game {
       for (int e = 0; e < states[k].eggs; ++e) {
         const auto s = hash (static_cast<std::uint32_t> (k) * 31u, e);
         const float a = tau * (e / 3.0f + 0.1f * unit (s, 2));
-        const Vec3 at = nests[k].at + side * (0.05f * std::cos (a)) +
+        const Vec3 at = box + side * (0.05f * std::cos (a)) +
                         nests[k].out * (0.05f * std::sin (a)) + up * 0.02f;
         draw_egg (dl,
                   at,

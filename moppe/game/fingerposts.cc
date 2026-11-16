@@ -1,4 +1,5 @@
 #include <moppe/game/fingerposts.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <moppe/render/renderer.hh>
 
@@ -35,10 +36,6 @@ namespace moppe::game {
       return value - period * std::floor (value / period);
     }
 
-    float post_delta (float delta, float period) {
-      return delta - period * std::round (delta / period);
-    }
-
     struct PostLine {
       std::vector<float> x, z;
       // Metres along from the first point.
@@ -66,8 +63,8 @@ namespace moppe::game {
                                             float period_x,
                                             float period_z) {
     const auto distance = [&] (float ax, float az, float bx, float bz) {
-      return std::hypot (post_delta (ax - bx, period_x),
-                         post_delta (az - bz, period_z));
+      return std::hypot (terrain::minimum_image_delta (ax - bx, period_x),
+                         terrain::minimum_image_delta (az - bz, period_z));
     };
 
     // Every way as a line within one period, read point by point.
@@ -91,11 +88,11 @@ namespace moppe::game {
         const std::size_t i =
           std::min (static_cast<std::size_t> (at), line.x.size () - 2);
         const float t = at - static_cast<float> (i);
-        x = post_wrap (line.x[i] +
-                         t * post_delta (line.x[i + 1] - line.x[i], period_x),
+        x = post_wrap (line.x[i] + t * terrain::minimum_image_delta (
+                                         line.x[i + 1] - line.x[i], period_x),
                        period_x);
-        z = post_wrap (line.z[i] +
-                         t * post_delta (line.z[i + 1] - line.z[i], period_z),
+        z = post_wrap (line.z[i] + t * terrain::minimum_image_delta (
+                                         line.z[i + 1] - line.z[i], period_z),
                        period_z);
       };
     const auto metres_at = [&] (const PostLine& line, float at) {
@@ -109,10 +106,12 @@ namespace moppe::game {
     const auto nearest = [&] (const PostLine& line, float x, float z) {
       std::pair<float, float> best { 0.0f, k_infinite };
       for (std::size_t i = 0; i + 1 < line.x.size (); ++i) {
-        const float ax = post_delta (x - line.x[i], period_x);
-        const float az = post_delta (z - line.z[i], period_z);
-        const float sx = post_delta (line.x[i + 1] - line.x[i], period_x);
-        const float sz = post_delta (line.z[i + 1] - line.z[i], period_z);
+        const float ax = terrain::minimum_image_delta (x - line.x[i], period_x);
+        const float az = terrain::minimum_image_delta (z - line.z[i], period_z);
+        const float sx =
+          terrain::minimum_image_delta (line.x[i + 1] - line.x[i], period_x);
+        const float sz =
+          terrain::minimum_image_delta (line.z[i + 1] - line.z[i], period_z);
         const float length2 = sx * sx + sz * sz;
         const float t =
           length2 > 0.0f
@@ -245,8 +244,8 @@ namespace moppe::game {
             float sx, sz, ex, ez;
             point_at (line, start, sx, sz);
             point_at (line, at, ex, ez);
-            dx = post_delta (ex - sx, period_x);
-            dz = post_delta (ez - sz, period_z);
+            dx = terrain::minimum_image_delta (ex - sx, period_x);
+            dz = terrain::minimum_image_delta (ez - sz, period_z);
             const float n = std::hypot (dx, dz);
             if (n > 1e-4f) {
               dx /= n;

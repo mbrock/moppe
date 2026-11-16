@@ -2,6 +2,7 @@
 
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -392,6 +393,8 @@ namespace moppe::game {
     };
 
     MushroomPlan plan;
+    plan.period_x = period[0];
+    plan.period_z = period[2];
     for (const ForestSite& tree : forest.sites) {
       if (tree.age == ForestAge::sapling)
         continue;
@@ -425,8 +428,8 @@ namespace moppe::game {
         const float reach = distance + 0.7f * (hash_lane (one_seed, 1) - 0.5f);
         float x = at[0] + reach * std::cos (angle);
         float z = at[2] + reach * std::sin (angle);
-        x -= std::floor (x / period[0]) * period[0];
-        z -= std::floor (z / period[2]) * period[2];
+        x = terrain::wrap_coordinate (x, period[0]);
+        z = terrain::wrap_coordinate (z, period[2]);
         if (!clear_of_trunks (x, z))
           continue;
         const position_t where = probe (x, z);
@@ -476,16 +479,37 @@ namespace moppe::game {
     }
   }
 
-  std::uint64_t MushroomPatch::tile_key (int x, int z) {
+  std::uint64_t MushroomPatch::tile_key (int x, int z) const {
+    // Tiles are numbered round the torus, so those past the seam are the
+    // ones at its other edge.
+    if (m_tiles_x > 0)
+      x = terrain::wrap_index (x, m_tiles_x);
+    if (m_tiles_z > 0)
+      z = terrain::wrap_index (z, m_tiles_z);
     return (static_cast<std::uint64_t> (static_cast<std::uint32_t> (x)) << 32) |
            static_cast<std::uint32_t> (z);
   }
 
+  int MushroomPatch::tile_x (float x) const {
+    return static_cast<int> (std::floor (x / m_tile_x));
+  }
+
+  int MushroomPatch::tile_z (float z) const {
+    return static_cast<int> (std::floor (z / m_tile_z));
+  }
+
   MushroomPatch::TileMesh* MushroomPatch::mesh_at (const Vec3& at) {
-    const auto found = m_meshes.find (
-      tile_key (static_cast<int> (std::floor (at[0] / tile_metres)),
-                static_cast<int> (std::floor (at[2] / tile_metres))));
+    const auto found =
+      m_meshes.find (tile_key (tile_x (at[0]), tile_z (at[2])));
     return found == m_meshes.end () ? nullptr : &found->second;
+  }
+
+  Vec3 MushroomPatch::base_near (std::uint32_t index,
+                                 const Vec3& reference) const {
+    Vec3 base = m_plan.sites[index].base;
+    base[0] += terrain::whole_periods (reference[0] - base[0], m_plan.period_x);
+    base[2] += terrain::whole_periods (reference[2] - base[2], m_plan.period_z);
+    return base;
   }
 
   void MushroomPatch::rebuild (MushroomPlan plan) {
@@ -494,11 +518,19 @@ namespace moppe::game {
     m_followed = 0;
     m_meshes.clear ();
     m_tiles.clear ();
+    // Tiles of about `tile_metres`, a whole number of them to the world.
+    const auto fit = [] (float period, float& size, int& count) {
+      count =
+        period > 0.0f
+          ? std::max (1, static_cast<int> (std::ceil (period / tile_metres)))
+          : 0;
+      size = count > 0 ? period / static_cast<float> (count) : tile_metres;
+    };
+    fit (m_plan.period_x, m_tile_x, m_tiles_x);
+    fit (m_plan.period_z, m_tile_z, m_tiles_z);
     for (std::uint32_t i = 0; i < m_plan.sites.size (); ++i) {
       const Vec3& at = m_plan.sites[i].base;
-      m_tiles[tile_key (static_cast<int> (std::floor (at[0] / tile_metres)),
-                        static_cast<int> (std::floor (at[2] / tile_metres)))]
-        .push_back (i);
+      m_tiles[tile_key (tile_x (at[0]), tile_z (at[2]))].push_back (i);
     }
   }
 
@@ -507,8 +539,8 @@ namespace moppe::game {
     Vec3 facing = heading;
     facing[1] = 0.0f;
     facing = length2 (facing) > 1e-6f ? normalized (facing) : Vec3 (0, 0, 1);
-    const int tx = static_cast<int> (std::floor (feet[0] / tile_metres));
-    const int tz = static_cast<int> (std::floor (feet[2] / tile_metres));
+    const int tx = tile_x (feet[0]);
+    const int tz = tile_z (feet[2]);
     std::optional<std::uint32_t> best;
     float best_score = 1e9f;
     for (int dz = -1; dz <= 1; ++dz)
@@ -519,7 +551,7 @@ namespace moppe::game {
         for (const std::uint32_t index : found->second) {
           if (m_picked[index])
             continue;
-          const Vec3 offset = m_plan.sites[index].base - feet;
+          const Vec3 offset = base_near (index, feet) - feet;
           if (std::abs (offset[1]) > 1.5f)
             continue;
           const float distance = std::hypot (offset[0], offset[2]);
@@ -544,13 +576,14 @@ namespace moppe::game {
 
   std::optional<std::uint32_t> MushroomPatch::nearest (
     const Vec3& at, float within, std::span<const std::uint32_t> skip) const {
-    const int tx = static_cast<int> (std::floor (at[0] / tile_metres));
-    const int tz = static_cast<int> (std::floor (at[2] / tile_metres));
-    const int span = static_cast<int> (std::ceil (within / tile_metres));
+    const int tx = tile_x (at[0]);
+    const int tz = tile_z (at[2]);
+    const int span_x = static_cast<int> (std::ceil (within / m_tile_x));
+    const int span_z = static_cast<int> (std::ceil (within / m_tile_z));
     std::optional<std::uint32_t> best;
     float best_distance = within;
-    for (int dz = -span; dz <= span; ++dz)
-      for (int dx = -span; dx <= span; ++dx) {
+    for (int dz = -span_z; dz <= span_z; ++dz)
+      for (int dx = -span_x; dx <= span_x; ++dx) {
         const auto found = m_tiles.find (tile_key (tx + dx, tz + dz));
         if (found == m_tiles.end ())
           continue;
@@ -558,7 +591,7 @@ namespace moppe::game {
           if (m_picked[index] ||
               std::find (skip.begin (), skip.end (), index) != skip.end ())
             continue;
-          const Vec3& base = m_plan.sites[index].base;
+          const Vec3 base = base_near (index, at);
           const float distance = std::hypot (base[0] - at[0], base[2] - at[2]);
           if (distance < best_distance) {
             best_distance = distance;
@@ -571,17 +604,18 @@ namespace moppe::game {
 
   std::vector<std::uint32_t> MushroomPatch::within (const Vec3& at,
                                                     float within) const {
-    const int tx = static_cast<int> (std::floor (at[0] / tile_metres));
-    const int tz = static_cast<int> (std::floor (at[2] / tile_metres));
-    const int span = static_cast<int> (std::ceil (within / tile_metres));
+    const int tx = tile_x (at[0]);
+    const int tz = tile_z (at[2]);
+    const int span_x = static_cast<int> (std::ceil (within / m_tile_x));
+    const int span_z = static_cast<int> (std::ceil (within / m_tile_z));
     std::vector<std::uint32_t> found;
-    for (int dz = -span; dz <= span; ++dz)
-      for (int dx = -span; dx <= span; ++dx) {
+    for (int dz = -span_z; dz <= span_z; ++dz)
+      for (int dx = -span_x; dx <= span_x; ++dx) {
         const auto tile = m_tiles.find (tile_key (tx + dx, tz + dz));
         if (tile == m_tiles.end ())
           continue;
         for (const std::uint32_t index : tile->second) {
-          const Vec3& base = m_plan.sites[index].base;
+          const Vec3 base = base_near (index, at);
           if (!m_picked[index] &&
               std::hypot (base[0] - at[0], base[2] - at[2]) <= within)
             found.push_back (index);
@@ -624,14 +658,19 @@ namespace moppe::game {
   void MushroomPatch::draw (render::Renderer& renderer, const Vec3& camera) {
     if (m_tiles.empty ())
       return;
-    const int tx = static_cast<int> (std::floor (camera[0] / tile_metres));
-    const int tz = static_cast<int> (std::floor (camera[2] / tile_metres));
-    const int span = static_cast<int> (std::ceil (draw_reach / tile_metres));
+    const int tx = tile_x (camera[0]);
+    const int tz = tile_z (camera[2]);
+    const int span_x = static_cast<int> (std::ceil (draw_reach / m_tile_x));
+    const int span_z = static_cast<int> (std::ceil (draw_reach / m_tile_z));
+    // How far a tile, by the shortest way round the world, is from the
+    // camera.
     const auto tile_distance = [&] (int x, int z) {
-      const float cx = (static_cast<float> (x) + 0.5f) * tile_metres;
-      const float cz = (static_cast<float> (z) + 0.5f) * tile_metres;
-      return std::hypot (cx - camera[0], cz - camera[2]) -
-             0.7072f * tile_metres;
+      const float cx = (static_cast<float> (x) + 0.5f) * m_tile_x;
+      const float cz = (static_cast<float> (z) + 0.5f) * m_tile_z;
+      return std::hypot (
+               terrain::minimum_image_delta (cx - camera[0], m_plan.period_x),
+               terrain::minimum_image_delta (cz - camera[2], m_plan.period_z)) -
+             0.7072f * std::max (m_tile_x, m_tile_z);
     };
 
     // Let go of meshes long out of sight, visiting only cached tiles.
@@ -643,8 +682,8 @@ namespace moppe::game {
     });
 
     render::DrawList list;
-    for (int dz = -span; dz <= span; ++dz)
-      for (int dx = -span; dx <= span; ++dx) {
+    for (int dz = -span_z; dz <= span_z; ++dz)
+      for (int dx = -span_x; dx <= span_x; ++dx) {
         if (tile_distance (tx + dx, tz + dz) > draw_reach)
           continue;
         const auto found = m_tiles.find (tile_key (tx + dx, tz + dz));
@@ -666,8 +705,26 @@ namespace moppe::game {
           tile.mesh = list.empty () ? nullptr : renderer.create_mesh (list);
           tile.dirty = false;
         }
-        if (tile.mesh)
-          renderer.draw_mesh (*tile.mesh, Mat4 ());
+        if (!tile.mesh)
+          continue;
+        // The tile is built where it lies in the world; past the seam it
+        // stands a whole number of laps along.
+        const float lap_x =
+          m_tiles_x > 0
+            ? static_cast<float> (
+                (tx + dx - terrain::wrap_index (tx + dx, m_tiles_x)) /
+                m_tiles_x) *
+                m_plan.period_x
+            : 0.0f;
+        const float lap_z =
+          m_tiles_z > 0
+            ? static_cast<float> (
+                (tz + dz - terrain::wrap_index (tz + dz, m_tiles_z)) /
+                m_tiles_z) *
+                m_plan.period_z
+            : 0.0f;
+        renderer.draw_mesh (*tile.mesh,
+                            Mat4::translation (Vec3 (lap_x, 0.0f, lap_z)));
       }
   }
 }

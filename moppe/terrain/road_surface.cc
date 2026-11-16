@@ -9,10 +9,6 @@
 
 namespace moppe::terrain {
   namespace {
-    float seam (float delta, float period) {
-      return delta - period * std::round (delta / period);
-    }
-
     float road_smoothstep (meters_t low, meters_t high, meters_t value) {
       const float t = std::clamp (
         ((value - low) / (high - low)).numerical_value_in (mp_units::one),
@@ -105,8 +101,10 @@ namespace moppe::terrain {
           if (q == r || other.kind != Road::Kind::Road)
             continue;
           for (std::size_t i = 1; i < other.points.size () && !junction; ++i) {
-            const float ax = seam (other.points[i - 1].x_m - end.x_m, period_x);
-            const float az = seam (other.points[i - 1].z_m - end.z_m, period_z);
+            const float ax =
+              minimum_image_delta (other.points[i - 1].x_m - end.x_m, period_x);
+            const float az =
+              minimum_image_delta (other.points[i - 1].z_m - end.z_m, period_z);
             const float dx = other.points[i].x_m - other.points[i - 1].x_m;
             const float dz = other.points[i].z_m - other.points[i - 1].z_m;
             const float length2 = dx * dx + dz * dz;
@@ -299,8 +297,8 @@ namespace moppe::terrain {
       const auto& [ha, hb, along_a, kind] = m_rows[rows_per_segment * s + 1];
       const auto& [bend_a, bend_b, unused_0, unused_1] =
         m_rows[rows_per_segment * s + 2];
-      const float px = seam (x - ax, m_period_x);
-      const float pz = seam (z - az, m_period_z);
+      const float px = minimum_image_delta (x - ax, m_period_x);
+      const float pz = minimum_image_delta (z - az, m_period_z);
       const float dx = bx - ax;
       const float dz = bz - az;
       const float length2 = dx * dx + dz * dz;

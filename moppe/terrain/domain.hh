@@ -4,6 +4,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/quantities.hh>
 #include <moppe/spatial/bundle.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <mp-units/framework.h>
 
@@ -136,26 +137,8 @@ namespace moppe::terrain {
   }
 
   // ---- Topology ----
-
-  // The world is a torus.  These are the wrap operations every lattice
-  // consumer shares; the period is always the full lattice extent.
-  inline int wrap_index (int value, int period) {
-    const int remainder = value % period;
-    return remainder < 0 ? remainder + period : remainder;
-  }
-
-  inline float wrap_coordinate (float value, float period) {
-    const float wrapped = value - std::floor (value / period) * period;
-    return wrapped < period ? wrapped : 0.0f;
-  }
-
-  inline float minimum_image_delta (float delta, float period) {
-    return delta - std::round (delta / period) * period;
-  }
-
-  inline float nearest_image (float value, float reference, float period) {
-    return reference + minimum_image_delta (value - reference, period);
-  }
+  //
+  // The world is a torus; its wrap operations are in torus.hh.
 
   // ---- Cell quantities ----
   //

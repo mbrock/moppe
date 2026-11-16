@@ -1,4 +1,5 @@
 #include <moppe/game/animals.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <array>
@@ -98,10 +99,8 @@ namespace moppe::game {
     Vec3 wrapped (const Vec3& from, const Vec3& to, const AnimalGround& g) {
       Vec3 d = to - from;
       d[1] = 0.0f;
-      if (g.period_x > 0.0f)
-        d[0] -= g.period_x * std::round (d[0] / g.period_x);
-      if (g.period_z > 0.0f)
-        d[2] -= g.period_z * std::round (d[2] / g.period_z);
+      d[0] = terrain::minimum_image_delta (d[0], g.period_x);
+      d[2] = terrain::minimum_image_delta (d[2], g.period_z);
       return d;
     }
 
@@ -162,9 +161,9 @@ namespace moppe::game {
 
     Vec3 wrap_into (Vec3 at, const AnimalGround& g) {
       if (g.period_x > 0.0f)
-        at[0] -= std::floor (at[0] / g.period_x) * g.period_x;
+        at[0] = terrain::wrap_coordinate (at[0], g.period_x);
       if (g.period_z > 0.0f)
-        at[2] -= std::floor (at[2] / g.period_z) * g.period_z;
+        at[2] = terrain::wrap_coordinate (at[2], g.period_z);
       return at;
     }
 

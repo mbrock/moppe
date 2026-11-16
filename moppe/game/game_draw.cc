@@ -3,6 +3,7 @@
 // effects, and overlays such as the fingerposts and the scan.
 
 #include <moppe/game/game.hh>
+#include <moppe/terrain/torus.hh>
 
 namespace moppe {
   namespace game {
@@ -160,6 +161,8 @@ namespace moppe {
         frame.camera.frame_forward,
         frame.lighting.time,
         70.0f,
+        m_places.period_x,
+        m_places.period_z,
         0);
       if (m_fingerpost_mesh)
         r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
@@ -278,10 +281,8 @@ namespace moppe {
             if (farm.ruined || b.kind == Building::Kind::mill)
               continue;
             Vec3 at = b.at;
-            at[0] += m_places.period_x *
-                     std::round ((eye[0] - at[0]) / m_places.period_x);
-            at[2] += m_places.period_z *
-                     std::round ((eye[2] - at[2]) / m_places.period_z);
+            at[0] += terrain::whole_periods (eye[0] - at[0], m_places.period_x);
+            at[2] += terrain::whole_periods (eye[2] - at[2], m_places.period_z);
             const float d = std::hypot (at[0] - eye[0], at[2] - eye[2]);
             const bool barn = b.kind == Building::Kind::barn;
             if (d >= nearest[barn])
@@ -433,6 +434,8 @@ namespace moppe {
         frame.camera.frame_forward,
         frame.lighting.time,
         450.0f,
+        m_places.period_x,
+        m_places.period_z,
         0x200000);
       render_birds (r,
                     m_hens.birds (),
@@ -440,9 +443,15 @@ namespace moppe {
                     frame.camera.frame_forward,
                     frame.lighting.time,
                     90.0f,
+                    m_places.period_x,
+                    m_places.period_z,
                     0x300000);
-      draw_nest_eggs (
-        m_world_dl, m_nest_sites, logic ().m_nests, frame.camera.position);
+      draw_nest_eggs (m_world_dl,
+                      m_nest_sites,
+                      logic ().m_nests,
+                      frame.camera.position,
+                      m_places.period_x,
+                      m_places.period_z);
       if (actors.walker && lying_down ())
         draw_sleeper (m_world_dl, helmet, frame.lighting.time);
       else if (actors.walker && !helmet)
@@ -461,6 +470,8 @@ namespace moppe {
         if (age >= 0.0f && age < 0.45f) {
           const float t = age / 0.45f;
           MushroomSite rising = m_mushrooms.site (basket.picked.back ());
+          rising.base = m_mushrooms.base_near (basket.picked.back (),
+                                               actors.walker->position);
           const Vec3 to = actors.walker->position +
                           normalized (actors.walker->heading) * 0.2f +
                           Vec3 (0, 0.55f, 0);

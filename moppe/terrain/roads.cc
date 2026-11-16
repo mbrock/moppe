@@ -491,11 +491,8 @@ namespace moppe::terrain {
     float torus_distance (const Lattice& lattice, RoadPlace a, RoadPlace b) {
       const float period_x = lattice.width * lattice.spacing_x;
       const float period_z = lattice.height * lattice.spacing_z;
-      float dx = std::fmod (std::fabs (a.x_m - b.x_m), period_x);
-      float dz = std::fmod (std::fabs (a.z_m - b.z_m), period_z);
-      dx = std::min (dx, period_x - dx);
-      dz = std::min (dz, period_z - dz);
-      return cr::hypot (dx, dz);
+      return cr::hypot (minimum_image_delta (a.x_m - b.x_m, period_x),
+                        minimum_image_delta (a.z_m - b.z_m, period_z));
     }
 
     // The node nearest a point in metres.
@@ -814,10 +811,6 @@ namespace moppe::terrain {
           : 0.0f;
     }
 
-    float wrapped (float delta, float period) {
-      return delta - period * std::round (delta / period);
-    }
-
     // The polyline again at about `step` metres between points, its ends
     // kept.
     std::vector<RoadPoint> resample (const std::vector<RoadPoint>& line,
@@ -893,8 +886,10 @@ namespace moppe::terrain {
       RoadPoint best = at;
       float best_distance = infinite;
       for (std::size_t i = 1; i < road.points.size (); ++i) {
-        const float ax = wrapped (road.points[i - 1].x_m - at.x_m, period_x);
-        const float az = wrapped (road.points[i - 1].z_m - at.z_m, period_z);
+        const float ax =
+          minimum_image_delta (road.points[i - 1].x_m - at.x_m, period_x);
+        const float az =
+          minimum_image_delta (road.points[i - 1].z_m - at.z_m, period_z);
         const float dx = road.points[i].x_m - road.points[i - 1].x_m;
         const float dz = road.points[i].z_m - road.points[i - 1].z_m;
         const float length2 = dx * dx + dz * dz;
@@ -1179,8 +1174,9 @@ namespace moppe::terrain {
           const RoadPoint end = back ? line.back () : line.front ();
           // An end at a place stays there.
           if (std::ranges::any_of (places, [&] (const RoadPlace& place) {
-                return cr::hypot (wrapped (place.x_m - end.x_m, period_x),
-                                  wrapped (place.z_m - end.z_m, period_z)) <
+                return cr::hypot (
+                         minimum_image_delta (place.x_m - end.x_m, period_x),
+                         minimum_image_delta (place.z_m - end.z_m, period_z)) <
                        15.0f;
               }))
             continue;

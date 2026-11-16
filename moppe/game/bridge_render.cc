@@ -1,6 +1,7 @@
 #include <moppe/game/bridge_render.hh>
 
 #include <moppe/gfx/mat4.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -445,10 +446,10 @@ namespace moppe::game {
     for (const Bridge& bridge : m_bridges) {
       const float x =
         bridge.centre[0] +
-        m_period_x * std::round ((camera[0] - bridge.centre[0]) / m_period_x);
+        terrain::whole_periods (camera[0] - bridge.centre[0], m_period_x);
       const float z =
         bridge.centre[2] +
-        m_period_z * std::round ((camera[2] - bridge.centre[2]) / m_period_z);
+        terrain::whole_periods (camera[2] - bridge.centre[2], m_period_z);
       if (std::hypot (x - camera[0], z - camera[2]) > bridge.reach)
         continue;
       renderer.draw_mesh (

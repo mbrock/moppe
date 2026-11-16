@@ -4,6 +4,7 @@
 // and the compute passes that cull the grass, rocks, and trees before them.
 
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
+#include <moppe/terrain/torus.hh>
 
 namespace moppe::nhal {
   namespace detail {
@@ -72,8 +73,8 @@ namespace moppe::nhal {
         if (kind == 1.0f || kind == 2.0f)
           continue;
         const float mx = 0.5f * (ax + bx), mz = 0.5f * (az + bz);
-        const float ox = period_x * std::round ((camera[0] - mx) / period_x);
-        const float oz = period_z * std::round ((camera[2] - mz) / period_z);
+        const float ox = terrain::whole_periods (camera[0] - mx, period_x);
+        const float oz = terrain::whole_periods (camera[2] - mz, period_z);
         const float half = 0.5f * std::hypot (bx - ax, bz - az);
         if (std::hypot (mx + ox - camera[0], mz + oz - camera[2]) >
             reach + half)

@@ -8,6 +8,7 @@
 #include <moppe/game/roe_deer_model.hh>
 #include <moppe/game/sheep_model.hh>
 #include <moppe/gfx/mat4.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <array>
 #include <cmath>
@@ -267,12 +268,18 @@ namespace moppe::game {
                        const Vec3& forward,
                        float time,
                        float reach,
+                       float period_x,
+                       float period_z,
                        std::uint64_t motion_base) {
     namespace ad = animal_drawing;
     const auto& all = ad::meshes (r);
     for (std::size_t i = 0; i < animals.size (); ++i) {
       const Animal& a = animals[i];
-      const Vec3 to = a.position - camera;
+      const Vec3 lap (
+        terrain::whole_periods (camera[0] - a.position[0], period_x),
+        0.0f,
+        terrain::whole_periods (camera[2] - a.position[2], period_z));
+      const Vec3 to = a.position + lap - camera;
       const float d2 = length2 (to);
       if (d2 > reach * reach)
         continue;
@@ -284,7 +291,8 @@ namespace moppe::game {
       const ad::Meshes& m = all[static_cast<std::size_t> (a.species)];
       std::uint64_t id = motion_base ? motion_base + i * 16 : 0;
       const auto draw = [&] (int part, const Mat4& at) {
-        r.draw_mesh (*m.part[part], at, id ? ++id : 0);
+        r.draw_mesh (
+          *m.part[part], Mat4::translation (lap) * at, id ? ++id : 0);
       };
       draw (0, p.frame);
       draw (1, p.neck);

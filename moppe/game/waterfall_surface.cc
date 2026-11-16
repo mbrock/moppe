@@ -1,6 +1,7 @@
 #include <moppe/game/waterfall_surface.hh>
 
 #include <moppe/terrain/river.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <array>
@@ -35,10 +36,8 @@ namespace moppe::game {
         (surface.domain ().period_x ()).numerical_value_in (u::m);
       const float period_z =
         (surface.domain ().period_z ()).numerical_value_in (u::m);
-      point[0] =
-        reference[0] + std::remainder (point[0] - reference[0], period_x);
-      point[2] =
-        reference[2] + std::remainder (point[2] - reference[2], period_z);
+      point[0] = terrain::nearest_image (point[0], reference[0], period_x);
+      point[2] = terrain::nearest_image (point[2], reference[2], period_z);
       return point;
     }
 

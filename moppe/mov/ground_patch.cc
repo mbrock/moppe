@@ -1,5 +1,6 @@
 #include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/ground_patch.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -193,8 +194,8 @@ namespace moppe::mov {
         continue;
       // The segment's image nearest the patch.
       const float mx = 0.5f * (ax + bx), mz = 0.5f * (az + bz);
-      const float ox = period_x * std::round ((middle[0] - mx) / period_x);
-      const float oz = period_z * std::round ((middle[2] - mz) / period_z);
+      const float ox = terrain::whole_periods (middle[0] - mx, period_x);
+      const float oz = terrain::whole_periods (middle[2] - mz, period_z);
       const Vec3 a (ax + ox, ha, az + oz), b (bx + ox, hb, bz + oz);
       const float length = moppe::length (b - a);
       if (length < 1e-3f ||
@@ -235,8 +236,8 @@ namespace moppe::mov {
         const terrain::Guardrail::Post& p = run.posts[i - 1];
         const terrain::Guardrail::Post& q = run.posts[i];
         const float mx = 0.5f * (p.x_m + q.x_m), mz = 0.5f * (p.z_m + q.z_m);
-        const float ox = period_x * std::round ((middle[0] - mx) / period_x);
-        const float oz = period_z * std::round ((middle[2] - mz) / period_z);
+        const float ox = terrain::whole_periods (middle[0] - mx, period_x);
+        const float oz = terrain::whole_periods (middle[2] - mz, period_z);
         const Vec3 a (p.x_m + ox, p.rail_m, p.z_m + oz);
         const Vec3 b (q.x_m + ox, q.rail_m, q.z_m + oz);
         const float length = moppe::length (b - a);

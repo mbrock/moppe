@@ -67,14 +67,15 @@ namespace moppe::game {
                                         const Vec3& origin) {
     std::vector<std::uint32_t> near = patch.within (origin, scan_reach);
     std::ranges::sort (near, [&] (std::uint32_t a, std::uint32_t b) {
-      const Vec3 da = patch.site (a).base - origin;
-      const Vec3 db = patch.site (b).base - origin;
+      const Vec3 da = patch.base_near (a, origin) - origin;
+      const Vec3 db = patch.base_near (b, origin) - origin;
       return length2 (da) < length2 (db);
     });
     std::vector<ScanFind> finds;
     std::vector<Vec3> sums;
     for (const std::uint32_t index : near) {
       const MushroomSite& site = patch.site (index);
+      const Vec3 base = patch.base_near (index, origin);
       const ScanFind::Kind kind = mushroom_edible (site.kind)
                                     ? ScanFind::Kind::mushrooms
                                     : ScanFind::Kind::poisonous;
@@ -83,9 +84,8 @@ namespace moppe::game {
         ScanFind& f = finds[i];
         const Vec3 first = sums[i] / static_cast<float> (f.count);
         if (f.kind == kind && f.mushroom == site.kind &&
-            std::hypot (first[0] - site.base[0], first[2] - site.base[2]) <
-              4.0f) {
-          sums[i] = sums[i] + site.base;
+            std::hypot (first[0] - base[0], first[2] - base[2]) < 4.0f) {
+          sums[i] = sums[i] + base;
           ++f.count;
           f.at = sums[i] / static_cast<float> (f.count);
           joined = true;
@@ -96,10 +96,10 @@ namespace moppe::game {
         continue;
       ScanFind find;
       find.kind = kind;
-      find.at = site.base;
+      find.at = base;
       find.mushroom = site.kind;
       finds.push_back (find);
-      sums.push_back (site.base);
+      sums.push_back (base);
     }
     return finds;
   }

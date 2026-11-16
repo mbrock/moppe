@@ -375,7 +375,9 @@ namespace moppe {
       return nest_within_reach (m_nest_sites,
                                 logic ().m_nests,
                                 session ().walker ().position (),
-                                session ().walker ().heading ());
+                                session ().walker ().heading (),
+                                m_places.period_x,
+                                m_places.period_z);
     }
 
     void MoppeGame::draw_places (render::Renderer& r, const FrameView& frame) {

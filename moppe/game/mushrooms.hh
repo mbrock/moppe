@@ -39,6 +39,10 @@ namespace moppe::game {
 
   struct MushroomPlan {
     std::vector<MushroomSite> sites;
+    // The world's extent in x and z, which the sites wrap round; zero for
+    // none.
+    float period_x = 0.0f;
+    float period_z = 0.0f;
   };
 
   // A few of the trees host a group of mushrooms in an arc around the
@@ -94,6 +98,10 @@ namespace moppe::game {
     // basket here holds it.
     void take (std::uint32_t index);
 
+    // Where mushroom `index` stands, at the copy of the world nearest
+    // `reference`: a walker past the seam sees the ones beyond it.
+    Vec3 base_near (std::uint32_t index, const Vec3& reference) const;
+
     void draw (render::Renderer& renderer, const Vec3& camera);
 
   private:
@@ -102,10 +110,18 @@ namespace moppe::game {
       bool dirty = true;
     };
 
-    static std::uint64_t tile_key (int x, int z);
+    std::uint64_t tile_key (int x, int z) const;
+    int tile_x (float x) const;
+    int tile_z (float z) const;
     TileMesh* mesh_at (const Vec3& at);
 
     MushroomPlan m_plan;
+    // The tiles' size and how many there are to the world (none counted
+    // when the plan does not wrap).
+    float m_tile_x = 16.0f;
+    float m_tile_z = 16.0f;
+    int m_tiles_x = 0;
+    int m_tiles_z = 0;
     std::vector<bool> m_picked;
     std::size_t m_followed = 0;
     std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> m_tiles;

@@ -2,6 +2,7 @@
 
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -25,14 +26,6 @@ namespace moppe::game {
       if (magnitude > maximum && magnitude > 1e-5f)
         value *= maximum / magnitude;
       return magnitude;
-    }
-
-    int flight_minimum_image_delta (int delta, int period) {
-      if (delta > period / 2)
-        delta -= period;
-      else if (delta < -period / 2)
-        delta += period;
-      return delta;
     }
 
     Vec3 unwrap_near (Vec3 point,
@@ -99,8 +92,8 @@ namespace moppe::game {
       const int to_z = static_cast<int> (to / drainage.width ());
       int dx = to_x - from_x;
       int dz = to_z - from_z;
-      dx = flight_minimum_image_delta (dx, width);
-      dz = flight_minimum_image_delta (dz, height);
+      dx = terrain::minimum_image_cells (dx, width);
+      dz = terrain::minimum_image_cells (dz, height);
       const Vec3 step =
         Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
               1.0f,
@@ -787,10 +780,10 @@ namespace moppe::game {
                             terrain::wrap_index (z + dz, tiles_z)) *
                             tiles_x +
                           terrain::wrap_index (x + dx, tiles_x)]) {
-              const float away_x =
-                std::remainder (tree[0] - gates[gate][0], period[0]);
-              const float away_z =
-                std::remainder (tree[2] - gates[gate][2], period[2]);
+              const float away_x = terrain::minimum_image_delta (
+                tree[0] - gates[gate][0], period[0]);
+              const float away_z = terrain::minimum_image_delta (
+                tree[2] - gates[gate][2], period[2]);
               if (away_x * away_x + away_z * away_z > beside * beside)
                 continue;
               // The tree's top over the water here, and room over that.

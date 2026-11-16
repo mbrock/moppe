@@ -93,14 +93,25 @@ MOPPE_TEST (eggs_are_laid_in_the_nest_boxes_and_taken_from_before_them) {
   std::vector<NestState> states = { { .eggs = 1 }, { .eggs = 2 } };
   const Vec3 feet (0.7f, 10.34f, 0.45f);
   // Facing them, the nearer box with an egg in it.
-  MOPPE_CHECK (nest_within_reach (boxes, states, feet, Vec3 (-1, 0, 0)) ==
-               std::optional<std::size_t> (1));
+  MOPPE_CHECK (
+    nest_within_reach (boxes, states, feet, Vec3 (-1, 0, 0), 0.0f, 0.0f) ==
+    std::optional<std::size_t> (1));
   // Its eggs gone, the other one.
   states[1].eggs = 0;
-  MOPPE_CHECK (nest_within_reach (boxes, states, feet, Vec3 (-1, 0, 0)) ==
-               std::optional<std::size_t> (0));
+  MOPPE_CHECK (
+    nest_within_reach (boxes, states, feet, Vec3 (-1, 0, 0), 0.0f, 0.0f) ==
+    std::optional<std::size_t> (0));
   // Turned away from them, or too far off, none.
-  MOPPE_CHECK (!nest_within_reach (boxes, states, feet, Vec3 (1, 0, 0)));
+  MOPPE_CHECK (
+    !nest_within_reach (boxes, states, feet, Vec3 (1, 0, 0), 0.0f, 0.0f));
   MOPPE_CHECK (!nest_within_reach (
-    boxes, states, feet + Vec3 (2.0f, 0, 0), Vec3 (-1, 0, 0)));
+    boxes, states, feet + Vec3 (2.0f, 0, 0), Vec3 (-1, 0, 0), 0.0f, 0.0f));
+  // A walker past the world's seam, which they are never wrapped across,
+  // still reaches the box on its far side of it.
+  MOPPE_CHECK (nest_within_reach (boxes,
+                                  states,
+                                  feet + Vec3 (500.0f, 0, -1000.0f),
+                                  Vec3 (-1, 0, 0),
+                                  500.0f,
+                                  1000.0f) == std::optional<std::size_t> (0));
 }

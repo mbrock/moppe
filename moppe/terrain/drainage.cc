@@ -63,10 +63,6 @@ namespace moppe::terrain {
              mp_units::si::metre;
     }
 
-    float river_wrapped_delta (float delta, float period) {
-      return std::remainder (delta, period);
-    }
-
     // Optional per-cell channel readings from a D-infinity analysis. The
     // receiver graph keeps topological authority over reaches; these columns
     // refine only the continuous geometry derived from it.
@@ -302,16 +298,16 @@ namespace moppe::terrain {
                 static_cast<float> (diagonal / width) *
                 (grid.spacing_z ()).numerical_value_in (moppe::u::m);
               x = cardinal_x +
-                  river_wrapped_delta (diagonal_x - cardinal_x, period_x) * t;
+                  minimum_image_delta (diagonal_x - cardinal_x, period_x) * t;
               z = cardinal_z +
-                  river_wrapped_delta (diagonal_z - cardinal_z, period_z) * t;
+                  minimum_image_delta (diagonal_z - cardinal_z, period_z) * t;
             }
           }
           if (!raw.empty ()) {
             x = raw.back ().x_m +
-                river_wrapped_delta (x - raw.back ().x_m, period_x);
+                minimum_image_delta (x - raw.back ().x_m, period_x);
             z = raw.back ().z_m +
-                river_wrapped_delta (z - raw.back ().z_m, period_z);
+                minimum_image_delta (z - raw.back ().z_m, period_z);
           }
           const bool terminating = terminating_water_cell (cell);
           const bool pooled = !terminating && water_cell (cell);

@@ -17,7 +17,8 @@ namespace moppe::game {
   // turned to look aside; the head about the poll, working as it crops;
   // each leg's two parts swung through the walk, the trot, or the roe
   // deer's bound by its gait; and the tail swishing. Those within
-  // `reach` of the camera and before it are drawn; `shadows` lends the
+  // `reach` of the camera and before it (at the copy of the world nearest
+  // the camera, for the periods given) are drawn; `shadows` lends the
   // nearest to the sun's shadow instead.
   void render_animals (render::Renderer& r,
                        std::span<const Animal> animals,
@@ -26,6 +27,8 @@ namespace moppe::game {
                        const Vec3& forward,
                        float time,
                        float reach,
+                       float period_x,
+                       float period_z,
                        std::uint64_t motion_base);
 
   // Where an animal's muzzle is, grazing or not, for the tests and for

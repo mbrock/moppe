@@ -3,6 +3,7 @@
 // map, and the opening's titles.
 
 #include <moppe/game/game.hh>
+#include <moppe/terrain/torus.hh>
 
 namespace moppe {
   namespace game {
@@ -445,10 +446,6 @@ namespace moppe {
       {
         const terrain::RoadNetwork& roads = generated_world ().roads ();
         const Vec3 here = frame.hud.subject_position;
-        const auto across = [] (float delta, float period) {
-          return period > 0.0f ? delta - period * std::round (delta / period)
-                               : delta;
-        };
         const char* name = nullptr;
         float nearest_m = place_waymark_m, x = 0.0f, z = 0.0f;
         for (std::size_t p = 0;
@@ -457,8 +454,10 @@ namespace moppe {
           const terrain::RoadPlace& place = roads.places[p];
           if (place.kind == terrain::RoadPlace::Kind::Trailhead)
             continue;
-          const float dx = across (place.x_m - here[0], m_map.period_x_m ());
-          const float dz = across (place.z_m - here[2], m_map.period_z_m ());
+          const float dx = terrain::minimum_image_delta (place.x_m - here[0],
+                                                         m_map.period_x_m ());
+          const float dz = terrain::minimum_image_delta (place.z_m - here[2],
+                                                         m_map.period_z_m ());
           if (const float metres = std::hypot (dx, dz); metres < nearest_m) {
             nearest_m = metres;
             name = m_place_names[p].c_str ();

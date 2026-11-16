@@ -3,6 +3,7 @@
 
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -217,9 +218,6 @@ namespace moppe::game {
         value %= count;
         return value < 0 ? value + count : value;
       };
-      const auto periodic = [] (float value, float extent) {
-        return value - std::round (value / extent) * extent;
-      };
       std::vector<float> depth (static_cast<std::size_t> (size) * size, 0.0f);
       bool any = false;
       for (const render::ForestInstance& tree : instances) {
@@ -240,9 +238,9 @@ namespace moppe::game {
         const int centre_x = static_cast<int> (std::floor (root[0] / step_x));
         const int centre_z = static_cast<int> (std::floor (root[2] / step_z));
         const auto weight = [&] (int x, int z) {
-          const float dx = periodic (
+          const float dx = terrain::minimum_image_delta (
             (static_cast<float> (x) + 0.5f) * step_x - root[0], period[0]);
-          const float dz = periodic (
+          const float dz = terrain::minimum_image_delta (
             (static_cast<float> (z) + 0.5f) * step_z - root[2], period[2]);
           return cr::exp (-0.5f * (dx * dx + dz * dz) / (spread * spread));
         };

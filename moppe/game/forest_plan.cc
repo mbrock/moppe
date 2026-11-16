@@ -2,6 +2,7 @@
 
 #include <moppe/correct_math.hh>
 #include <moppe/gfx/signal.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <array>
@@ -378,9 +379,6 @@ namespace moppe::game {
       value %= extent;
       return static_cast<std::uint32_t> (value < 0 ? value + extent : value);
     };
-    const auto periodic_delta = [] (float value, float period) {
-      return value - std::round (value / period) * period;
-    };
     const float exclusion_squared = exclusion * exclusion;
 
     for (const ForestCandidate& candidate : candidates) {
@@ -399,9 +397,9 @@ namespace moppe::game {
             const ForestCandidate& neighbour =
               accepted[static_cast<std::size_t> (index)];
             const float delta_x =
-              periodic_delta (candidate.x - neighbour.x, width_m);
+              terrain::minimum_image_delta (candidate.x - neighbour.x, width_m);
             const float delta_z =
-              periodic_delta (candidate.z - neighbour.z, depth_m);
+              terrain::minimum_image_delta (candidate.z - neighbour.z, depth_m);
             if (delta_x * delta_x + delta_z * delta_z < exclusion_squared) {
               separated = false;
               break;
