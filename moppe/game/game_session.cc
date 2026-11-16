@@ -1,4 +1,5 @@
 #include <moppe/game/game_session.hh>
+#include <moppe/game/surroundings.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/mov/box3d_vec.hh>
 #include <moppe/terrain/roads.hh>
@@ -1443,7 +1444,9 @@ namespace moppe::game {
              m_mountain_bike.state (),
              m_boat.state (),
              m_long_john.state (),
-             m_jet_ski.state () };
+             m_jet_ski.state (),
+             m_animals.state (),
+             m_hens.state () };
   }
 
   void GameSession::restore (const State& state) {
@@ -1462,6 +1465,8 @@ namespace moppe::game {
     m_boat.restore (state.boat);
     m_long_john.restore (state.long_john);
     m_jet_ski.restore (state.jet_ski);
+    m_animals.restore (state.animals);
+    m_hens.restore (state.hens);
   }
 
   namespace {
@@ -1725,7 +1730,18 @@ namespace moppe::game {
                         const mov::TrunkField* trunks,
                         const GroundCover& ground,
                         const terrain::WaterSheets* water,
-                        std::span<const MachineBody> strangers) {
+                        std::span<const MachineBody> strangers,
+                        const Surroundings* around) {
+    if (around) {
+      // What the walker does by hand takes from the input what it uses
+      // before the bodies move, and the animals mind where they went.
+      InputFrame rest = input;
+      tend_by_hand (session, *around, rest, dt);
+      const GameSessionAdvanceResult result = advance_game_session (
+        world, surface, session, rest, dt, trunks, ground, water, strangers);
+      tend_animals (session, *around, dt);
+      return result;
+    }
     const float elapsed = dt.numerical_value_in (u::s);
     GameLogicState& logic = session.logic ();
     // Rivers and lakes hold back what goes through them as the sea does.

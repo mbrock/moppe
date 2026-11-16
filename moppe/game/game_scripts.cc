@@ -78,7 +78,7 @@ namespace moppe {
                   : std::pair (b.at - b.forward * 1.6f + left * 0.6f, door);
             }
       } else if (script.starts_with ("animals") &&
-                 !m_animals.animals ().empty ()) {
+                 !session ().animals ().animals ().empty ()) {
         // MOPPE_WALK=animals[:SPECIES]: a little outside the wariness of
         // the nearest herd of that kind (or of stock, or of anything),
         // looking at it.
@@ -94,7 +94,7 @@ namespace moppe {
         const Animal* best = nullptr;
         float best_d = 1e9f;
         for (const bool stock : { true, false }) {
-          for (const Animal& a : m_animals.animals ()) {
+          for (const Animal& a : session ().animals ().animals ()) {
             const float d = std::hypot (a.position[0] - m_spawn_position[0],
                                         a.position[2] - m_spawn_position[2]);
             if (wanted (a, stock) && d < best_d) {
@@ -108,7 +108,7 @@ namespace moppe {
         if (best) {
           Vec3 middle {};
           int n = 0;
-          for (const Animal& a : m_animals.animals ())
+          for (const Animal& a : session ().animals ().animals ())
             if (a.herd == best->herd) {
               middle = middle + a.position;
               ++n;
@@ -125,8 +125,8 @@ namespace moppe {
             if (g.dry (at[0], at[2]))
               stand = { at, middle };
           }
-          m_watched =
-            static_cast<std::size_t> (best - m_animals.animals ().data ());
+          m_watched = static_cast<std::size_t> (
+            best - session ().animals ().animals ().data ());
           if (stand) {
             const Vec3 in = normalized (Vec3 (
               middle[0] - stand->first[0], 0.0f, middle[2] - stand->first[2]));

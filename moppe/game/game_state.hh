@@ -1,11 +1,13 @@
 #ifndef MOPPE_GAME_GAME_STATE_HH
 #define MOPPE_GAME_GAME_STATE_HH
 
+#include <moppe/game/animals.hh>
 #include <moppe/game/basket.hh>
 #include <moppe/game/camp_state.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/fishing_state.hh>
+#include <moppe/game/hens.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/game/sling.hh>
 #include <moppe/game/stars.hh>
@@ -21,6 +23,7 @@
 #include <moppe/mov/vehicle.hh>
 
 #include <array>
+#include <optional>
 #include <random>
 #include <vector>
 
@@ -126,8 +129,18 @@ namespace moppe::game {
     std::mt19937 m_fx_rng { 7 };
     Basket m_basket;
     Camp m_camp;
-    // One for each of the world's sanctuaries.
+    // The trees the walker stands between that would take the hammock,
+    // and where the walker stood when that was worked out.
+    std::optional<HammockSite> m_hammock_at_hand;
+    std::optional<Vec3> m_hammock_sought_from;
+    // One for each of the world's sanctuaries; the other player's as last
+    // heard; and how fiercely each burns this step.
     std::vector<Beacon> m_beacons;
+    std::vector<Beacon> m_their_beacons;
+    std::vector<float> m_beacon_burn;
+    // Where the subject stood a step ago, for how fast the animals find
+    // it going.
+    std::optional<Vec3> m_last_subject;
     Fishing m_fishing;
     // The eggs in each barn's nest boxes, four boxes a barn in the order
     // of the places' farms.
@@ -159,6 +172,8 @@ namespace moppe::game {
     mov::Boat::State boat;
     mov::Vehicle::State long_john;
     mov::JetSki::State jet_ski;
+    Animals::State animals;
+    Hens::State hens;
   };
 }
 

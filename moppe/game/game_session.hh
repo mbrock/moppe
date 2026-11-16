@@ -17,6 +17,8 @@ namespace moppe::game {
     bool say_ouchies = false;
   };
 
+  struct Surroundings;
+
   // How the view follows whatever the player is doing, the same for every
   // way of getting about: the eyes and the way ahead they look along, and
   // for the following cameras the point on the subject they swing about,
@@ -162,6 +164,21 @@ namespace moppe::game {
       return m_dust;
     }
 
+    // The animals and the barns' poultry, planned with the world
+    // (rebuild) and stepped with the session.
+    Animals& animals () noexcept {
+      return m_animals;
+    }
+    const Animals& animals () const noexcept {
+      return m_animals;
+    }
+    Hens& hens () noexcept {
+      return m_hens;
+    }
+    const Hens& hens () const noexcept {
+      return m_hens;
+    }
+
     Vec3 subject_position () const;
     Vec3 subject_heading () const;
     float subject_speed_kmh () const;
@@ -264,6 +281,8 @@ namespace moppe::game {
     ChaseCamera m_camera;
     Stars m_stars;
     Dust m_dust;
+    Animals m_animals;
+    Hens m_hens;
   };
 
   // The machine a mode drives, if any.
@@ -280,7 +299,9 @@ namespace moppe::game {
   };
 
   // `strangers` are the other player's machines, which ours bump into
-  // and are pushed off by, though only the other game moves them.
+  // and are pushed off by, though only the other game moves them. With
+  // `around`, the step also tends the clock, the camp, the line, the pan,
+  // the basket, the beacons, and the animals (surroundings.hh).
   GameSessionAdvanceResult
   advance_game_session (const WorldParams& world,
                         const map::SurfaceGeometry& surface,
@@ -290,7 +311,8 @@ namespace moppe::game {
                         const mov::TrunkField* trunks = nullptr,
                         const GroundCover& ground = {},
                         const terrain::WaterSheets* water = nullptr,
-                        std::span<const MachineBody> strangers = {});
+                        std::span<const MachineBody> strangers = {},
+                        const Surroundings* around = nullptr);
 }
 
 #endif

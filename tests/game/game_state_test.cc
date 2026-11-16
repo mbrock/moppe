@@ -1,6 +1,7 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/game/game_state.hh>
 #include <moppe/game/input_frame_adapter.hh>
+#include <moppe/game/surroundings.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/mov/box3d_vec.hh>
 #include <moppe/terrain/roads.hh>
@@ -601,7 +602,8 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
                                         const mov::TrunkField*,
                                         const game::GroundCover&,
                                         const terrain::WaterSheets*,
-                                        std::span<const game::MachineBody>);
+                                        std::span<const game::MachineBody>,
+                                        const game::Surroundings*);
   static_assert (
     std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
 
@@ -627,10 +629,19 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
     tape.push_back (recorder.take_frame ());
 
   const seconds_t step = seconds (1.0f / 60.0f);
+  // The step tends the clock and the camp too, with the world about it.
+  const game::Surroundings around {
+    .world = &world, .surface = &surface, .day_pace = 0.01, .day_turning = true
+  };
+  const auto advance = [&] (game::GameSession& session,
+                            const game::InputFrame& frame) {
+    game::advance_game_session (
+      world, surface, session, frame, step, nullptr, {}, nullptr, {}, &around);
+  };
   game::GameSession live (world, surface);
   const game::GameSession::State checkpoint = live.state ();
   for (const game::InputFrame& frame : tape)
-    game::advance_game_session (world, surface, live, frame, step);
+    advance (live, frame);
   const game::GameSession::State live_state = live.state ();
 
   // This must be more than a checkpoint round trip: the recorded keyboard
@@ -640,15 +651,17 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   MOPPE_CHECK (live_state.logic.m_mode == game::M_BIKE);
   MOPPE_CHECK (live_state.logic.m_cam_mode == game::CAM_FRONT);
   MOPPE_CHECK (live_state.logic.m_odometer > checkpoint.logic.m_odometer);
+  MOPPE_CHECK (live_state.logic.m_day_hours > checkpoint.logic.m_day_hours);
 
   game::GameSession replay (world, surface);
   replay.restore (checkpoint);
   for (const game::InputFrame& frame : tape)
-    game::advance_game_session (world, surface, replay, frame, step);
+    advance (replay, frame);
   const game::GameSession::State replayed = replay.state ();
 
   MOPPE_CHECK (replayed.logic.m_mode == live_state.logic.m_mode);
   MOPPE_CHECK (replayed.logic.m_cam_mode == live_state.logic.m_cam_mode);
+  MOPPE_CHECK (replayed.logic.m_day_hours == live_state.logic.m_day_hours);
   MOPPE_CHECK_NEAR (
     replayed.logic.m_odometer, live_state.logic.m_odometer, 1e-6f);
   MOPPE_CHECK_NEAR (replayed.logic.m_fov_k, live_state.logic.m_fov_k, 1e-6f);

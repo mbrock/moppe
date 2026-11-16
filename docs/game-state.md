@@ -17,8 +17,10 @@ world.
 
 `game::GameSession` is the concrete owner of running gameplay state. It owns
 `game::GameLogicState` (the clock, weather and camera effects, player mode and
-inputs, health/scoring values, gameplay timers, and effects RNG) along
-with the bike, the glider, walker, chase camera, stars, and dust.
+inputs, health/scoring values, gameplay timers, effects RNG, the basket, the
+camp, the line and creel, the beacons, and the nest boxes' eggs) along with
+every machine, the walker, chase camera, stars, dust, and the animals and
+hens.
 `game::GameState` is its copyable checkpoint value: it combines that logic
 with snapshots of those mutable subsystems. Restoring it changes only mutable
 state; immutable terrain and trunk-field references, bike physical parameters,
@@ -33,15 +35,25 @@ not replay checkpoint state.
 
 Ordinary playable simulation has one public fixed-step operation:
 `game::advance_game_session(world, surface, session, input, seconds_t,
-trunks)`. Its inputs supply only the completed world's parameters,
-geometry, and optional trunk-collision field; it does not expose
-`GeneratedWorld`, loading, platform, or renderer types. The operation applies
-the `InputFrame`, advances actors and effects, updates score, camera, and FOV,
+trunks, ground, water, strangers, around)`. Its inputs supply only the
+completed world's parameters, geometry, water, and optional trunk-collision
+field; it does not expose `GeneratedWorld`, loading, platform, or renderer
+types. `game::Surroundings` (`game/surroundings.hh`) adds what the walker
+reaches for -- the planned mushrooms, places, and nest boxes, what the
+animals read of the ground -- and the other player's news (their hour,
+fire, beacons, and walker). Given it, the operation also passes the hour of
+the day, tends the line, the pan, the camp, the beacons, and the basket,
+and steps the animals and hens and lays the eggs. The operation applies the
+`InputFrame`, advances actors and effects, updates score, camera, and FOV,
 and reports the small set of application-side effects it cannot realize
 itself.
-`MoppeGame::tick` selects live or recorded input, continues the global clock
-and weather through the paused cinematic mode, then delegates
-ordinary play through that operation.
+`MoppeGame::tick_simulation` selects live, recorded, scripted, or autopilot
+input, continues the global clock and weather, takes the other player's
+seat when riding along (`ride_along`, from their snapshots), brings the
+mushrooms on the ground in line with the basket, then delegates ordinary
+play through that operation. After it, the resting view and the capture
+cameras (side, ride capture, animal) may place the camera for their shots;
+the scan's ring (`Q`) is drawn from the application and is not checkpointed.
 
 Ordinary play converts the platform's presentation interval into phase-locked
 120 Hz steps before calling that operation. A slightly early display callback

@@ -101,6 +101,19 @@ namespace moppe::game {
       return m_coops;
     }
 
+    // What moves (GameState): the coops are the plan's and stay.
+    struct State {
+      std::vector<Bird> birds;
+      std::vector<std::uint32_t> random;
+    };
+    State state () const {
+      return { m_birds, m_random };
+    }
+    void restore (const State& state) {
+      m_birds = state.birds;
+      m_random = state.random;
+    }
+
   private:
     void choose (Bird& bird, const AnimalGround& ground, bool night);
     float rand (std::uint32_t& state) const;

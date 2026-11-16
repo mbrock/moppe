@@ -384,6 +384,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/mov/tractor.cc
   moppe/game/chase_camera.cc
   moppe/game/game_session.cc
+  moppe/game/surroundings.cc
   moppe/game/rescue.cc
   moppe/game/sling.cc
   moppe/game/stars.cc

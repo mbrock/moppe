@@ -188,6 +188,20 @@ namespace moppe::game {
       return m_plan.herds;
     }
 
+    // What moves as they go about their day (GameState): the herds are
+    // the plan's and stay.
+    struct State {
+      std::vector<Animal> animals;
+      std::vector<std::uint32_t> random;
+    };
+    State state () const {
+      return { m_plan.animals, m_random };
+    }
+    void restore (const State& state) {
+      m_plan.animals = state.animals;
+      m_random = state.random;
+    }
+
   private:
     void choose (Animal& animal,
                  const Herd& herd,

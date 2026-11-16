@@ -247,12 +247,11 @@ namespace moppe {
         }
       }
 
-      pass_time (seconds (dt));
       ride_along (input);
-      go_fishing (input, seconds (dt));
-      cook_supper (input);
-      tend_camp (input, seconds (dt));
-      reach_for_mushroom (input);
+      // The ground shows what the basket holds, a restored one too.
+      m_mushrooms.follow (logic ().m_basket);
+      const AnimalGround animals = animal_ground ();
+      const Surroundings around = surroundings (&animals);
       const GameSessionAdvanceResult advance =
         advance_game_session (world (),
                               surface (),
@@ -262,10 +261,10 @@ namespace moppe {
                               &m_trunk_field,
                               ground_cover (session ().subject_position ()),
                               &generated_world ().water_surface (),
-                              m_strangers);
+                              m_strangers,
+                              &around);
       if (advance.say_ouchies)
         platform::say ("Ouchies. That hurts.");
-      tend_animals (seconds (dt));
 
       rest_camera ();
       walk_side_camera ();

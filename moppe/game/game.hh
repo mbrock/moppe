@@ -62,6 +62,7 @@
 #include <moppe/game/simulation_clock.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
+#include <moppe/game/surroundings.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/tractor_render.hh>
 #include <moppe/game/vehicle_render.hh>
@@ -259,18 +260,13 @@ namespace moppe {
       // ones are where their country is.
       void let_out_animals ();
 
-      // Everyone about, as the animals mind them: the walker, whatever
-      // the player rides or drives, and the other player.
-      void tend_animals (seconds_t interval);
+      // What the session's step reaches for beside the ground
+      // (surroundings.hh); what the animals read of the world is left
+      // out unless the step is to tend them.
+      Surroundings surroundings (const AnimalGround* animals = nullptr) const;
 
-      // The beacon a walker stands at, if any.
+      // The queries of surroundings.hh, for the HUD and the scripts.
       std::optional<std::size_t> beacon_at_hand () const;
-
-      // Each beacon burns as fiercely as the fire either player keeps on
-      // it; the other's catch and die down here as they are heard of.
-      void tend_beacons ();
-
-      // Whether the other player keeps beacon `i` burning.
       bool their_beacon (std::size_t i) const;
 
       // The boat lies at the water's edge of the sea, the nearest open
@@ -421,11 +417,6 @@ namespace moppe {
       // activates; like the boulders they are cheap and need no cache.
       void grow_mushrooms ();
 
-      // A walker reaches for the mushroom at hand: an edible one goes in
-      // the basket, a poisonous one is left where it grows.
-      void reach_for_mushroom (const InputFrame& input);
-
-      // The nest box with an egg in it the walker can reach into.
       std::optional<std::size_t> egg_at_hand () const;
 
       // Trunks and the larger boulders stop the rider alike, so both feed
@@ -436,90 +427,19 @@ namespace moppe {
 
       GroundHeight ground_reader () const;
 
-      // The pair of trees the walker stands between, if a hammock would
-      // hang there; looked for again only once they have moved.
-      void seek_hammock_site ();
-
-      // Within a step of the hung hammock, beside its length.
       bool beside_hammock () const;
-
-      // A fire is laid a step ahead of the walker, on dry and fairly
-      // level ground.
       std::optional<Vec3> hearth_ahead () const;
-
-      // The fire a walker could cook on: the nearest one burning well
-      // within a couple of steps, their own or the other player's.
       std::optional<Vec3> fire_at_hand () const;
-
-      bool beside_pan () const;
-
-      // What there is to do about supper where the walker stands.
       HudState::Cook supper_at_hand () const;
-
-      // By a fire, the pick key sets a pan of mushrooms from the basket
-      // on its stones; once they are fried it eats them, which mends the
-      // walker -- less so when they were left to burn.
-      void cook_supper (InputFrame& input);
 
       // -- fishing -------------------------------------------------------
 
-      struct FishingWater {
-        Vec3 aim;
-        Waters waters = Waters::still;
-        bool upland = false;
-      };
-
-      // Where the angler fishes from and the way they would cast: on foot,
-      // the walker's feet and heading; at the boat's helm, the seat and
-      // the way the view looks.
-      struct Angler {
-        Vec3 at;
-        Vec3 ahead;
-      };
       std::optional<Angler> angler () const;
-
-      // The river's current at `at`, level.
-      Vec3 current_at (const Vec3& at) const;
-
-      // The boat only floats, its engine at rest and hardly moving
-      // through the water (a river may carry it): a line can go out.
       bool boat_drifting () const;
-
-      // The open water the angler could cast into from where they are: as
-      // far out ahead as a cast reaches where it is deep enough to float a
-      // bait. From the helm, only over the bow or the sides, not back over
-      // the long-tail.
       std::optional<FishingWater> water_ahead () const;
-
-      // Whether the pick key has nothing nearer to do than cast.
-      bool nothing_else_at_hand () const;
-
-      // A splash where the line meets the water.
-      void splash (const Vec3& at, int drops, float vigour);
-
-      // On foot by open water, or at the helm of a boat that only floats,
-      // the pick key casts a line, and while it is out the key is the
-      // line's: it strikes when something takes the float under, and
-      // otherwise winds the line in. Walking off, or getting the boat
-      // under way, winds it in too; while a fish is fought in and held up,
-      // the walker stands and the boat's engine rests.
-      void go_fishing (InputFrame& input, seconds_t interval);
 
       // What there is to do about the line here, and the last fish.
       void add_fishing_readings (HudState& state) const;
-
-      // Lying in the hammock the hours run forty times as fast: one goes
-      // by every three seconds of an ordinary day.
-      static constexpr float RESTING_HASTE = 40.0f;
-
-      // Hanging and taking down the hammock, lighting and dousing the fire,
-      // lying down and getting up; and, while lying there, rocking it and
-      // looking about, which is all that a sleeper's controls do.
-      void tend_camp (InputFrame& input, seconds_t interval);
-
-      // Sparks fly up from a burning fire and its smoke drifts off; a
-      // doused one smoulders a while.
-      void feed_fire ();
 
       // Someone in the hammock sees through eyes that lie back in it; any
       // other camera stands off and can be walked round with the look.
@@ -632,10 +552,6 @@ namespace moppe {
       void begin_day ();
 
       void read_sky ();
-
-      // The clock runs with play, and faster for someone lying down to
-      // watch it.
-      void pass_time (seconds_t interval);
 
       // -- company -----------------------------------------------------
 
@@ -976,22 +892,15 @@ namespace moppe {
       // What stands at the ends of the roads (game/places.hh), and how
       // each sanctuary's beacon burns this frame.
       PlacesPlan m_places;
-      Animals m_animals;
-      // The barns' poultry, and their nest boxes (the eggs in them are
-      // the logic's m_nests).
-      Hens m_hens;
+      // The barns' nest boxes (the eggs in them are the logic's m_nests;
+      // the animals and the poultry are the session's).
       std::vector<Nest> m_nest_sites;
       // MOPPE_WALK=animals: the animal the walk began by, and the capture
       // camera's side of it and its eased aim.
       std::optional<std::size_t> m_watched;
       Vec3 m_watch_side { 1, 0, 0 };
       std::optional<Vec3> m_watch_target;
-      // Where the subject stood a step ago, for how fast it goes.
-      std::optional<Vec3> m_last_subject;
       PlacesLandscape m_places_landscape;
-      std::vector<float> m_beacon_burn;
-      // The other player's beacons as last heard (presentation only).
-      std::vector<Beacon> m_their_beacons;
       MushroomPatch m_mushrooms;
       // The poisonous mushrooms the foraging script has left be.
       std::vector<std::uint32_t> m_forage_refused;
@@ -1044,11 +953,6 @@ namespace moppe {
       OpeningArrival m_opening_arrival;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
-      // The trees the walker stands between that would take the hammock,
-      // and where they last stood when that was worked out.
-      std::optional<HammockSite> m_hammock_at_hand;
-      Vec3 m_hammock_sought_from;
-      bool m_hammock_sought = false;
       float m_walk_script_time = 0.0f;
       // MOPPE_WALK=supper: when the foraging was done.
       float m_supper_since = -1.0f;

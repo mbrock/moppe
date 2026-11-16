@@ -515,7 +515,7 @@ namespace moppe::game {
   void MushroomPatch::rebuild (MushroomPlan plan) {
     m_plan = std::move (plan);
     m_picked.assign (m_plan.sites.size (), false);
-    m_followed = 0;
+    m_followed.clear ();
     m_meshes.clear ();
     m_tiles.clear ();
     // Tiles of about `tile_metres`, a whole number of them to the world.
@@ -633,20 +633,22 @@ namespace moppe::game {
   }
 
   void MushroomPatch::follow (const Basket& basket) {
-    if (basket.picked.size () == m_followed)
-      return;
-    if (basket.picked.size () < m_followed) {
-      // An earlier basket came back: everything grows again first.
+    const std::vector<std::uint32_t>& picked = basket.picked;
+    if (picked.size () < m_followed.size () ||
+        !std::equal (m_followed.begin (), m_followed.end (), picked.begin ())) {
+      // Another basket came back, as when a checkpoint is restored:
+      // everything grows again first.
       for (std::uint32_t i = 0; i < m_picked.size (); ++i)
         if (m_picked[i]) {
           m_picked[i] = false;
           if (TileMesh* tile = mesh_at (m_plan.sites[i].base))
             tile->dirty = true;
         }
-      m_followed = 0;
+      m_followed.clear ();
     }
-    for (; m_followed < basket.picked.size (); ++m_followed) {
-      const std::uint32_t index = basket.picked[m_followed];
+    for (std::size_t i = m_followed.size (); i < picked.size (); ++i) {
+      const std::uint32_t index = picked[i];
+      m_followed.push_back (index);
       if (index >= m_picked.size ())
         continue;
       m_picked[index] = true;

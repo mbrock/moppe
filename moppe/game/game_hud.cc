@@ -328,7 +328,7 @@ namespace moppe {
         state.camp = HudState::Camp::get_up;
       else if (beside_hammock ())
         state.camp = HudState::Camp::lie_down;
-      else if (m_hammock_at_hand)
+      else if (logic ().m_hammock_at_hand)
         state.camp = HudState::Camp::hang;
       else if (camp.hung && camp.fire_time < -50.0 &&
                hammock_distance (

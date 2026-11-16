@@ -550,17 +550,5 @@ namespace moppe {
                 ? m_almanac.at (logic ().m_day_hours)
                 : m_almanac.held (m_graphics.sun_height);
     }
-
-    void MoppeGame::pass_time (seconds_t interval) {
-      const float dt = seconds_value (interval);
-      double& hours = logic ().m_day_hours;
-      hours += m_day.pace * dt * logic ().m_day_haste;
-      // Two players share one sky: whoever's clock is ahead leads, as
-      // when one of them lies down to let the hours run. A little ahead
-      // is caught up smoothly, a long way at once.
-      const double behind = m_companion_hours - hours;
-      if (m_day.turning && behind > 0.0)
-        hours += behind > 0.25 ? behind : std::min (behind, behind * 6.0 * dt);
-    }
   }
 }

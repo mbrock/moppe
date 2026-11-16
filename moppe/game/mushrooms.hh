@@ -91,7 +91,8 @@ namespace moppe::game {
     std::vector<std::uint32_t> within (const Vec3& at, float within) const;
 
     // Brings the ground in line with the basket: anything it holds is no
-    // longer standing. Cheap when nothing changed.
+    // longer standing, and anything only an earlier basket held (one
+    // restored from a checkpoint) grows again.
     void follow (const Basket& basket);
 
     // Someone else picked this one: it no longer stands, though no
@@ -123,7 +124,8 @@ namespace moppe::game {
     int m_tiles_x = 0;
     int m_tiles_z = 0;
     std::vector<bool> m_picked;
-    std::size_t m_followed = 0;
+    // The basket's picks as last followed.
+    std::vector<std::uint32_t> m_followed;
     std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> m_tiles;
     // Only recently visible tiles; empty meshes stay cached too.
     std::unordered_map<std::uint64_t, TileMesh> m_meshes;

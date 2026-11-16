@@ -84,7 +84,8 @@ namespace moppe {
         }
       session ().set_rooms (
         std::move (rooms), m_places.period_x, m_places.period_z);
-      tend_beacons ();
+      logic ().m_their_beacons.assign (logic ().m_beacons.size (), Beacon {});
+      logic ().m_beacon_burn.assign (logic ().m_beacons.size (), 0.0f);
     }
 
     void MoppeGame::build_world_places () {
@@ -228,7 +229,7 @@ namespace moppe {
 
     void MoppeGame::let_out_animals () {
       MOPPE_PROFILE_ZONE ("startup.let_out_animals");
-      m_last_subject.reset ();
+      logic ().m_last_subject.reset ();
       const terrain::RoadNetwork& roads = generated_world ().roads ();
       const auto lived_in = [&roads] (std::size_t place) {
         return place < roads.places.size () &&
@@ -249,7 +250,7 @@ namespace moppe {
       folds.push_back (
         { .kind = Fold::Kind::trailhead, .at = m_home_base_position });
       const AnimalGround ground = animal_ground ();
-      m_animals.rebuild (plan_animals (
+      session ().animals ().rebuild (plan_animals (
         ground,
         folds,
         m_home_base_position,
@@ -266,7 +267,7 @@ namespace moppe {
       std::cerr << "moppe: animals: " << birds.size () << " hens, roosters,"
                 << " and chicks in " << coops.size () << " barns, "
                 << m_nest_sites.size () << " nest boxes" << std::endl;
-      m_hens.rebuild (std::move (coops), std::move (birds));
+      session ().hens ().rebuild (std::move (coops), std::move (birds));
       // And where the barn nearest the spawn keeps them, to aim at.
       const Building* barn = nullptr;
       for (const Building* b : kept_barns ())
@@ -287,7 +288,7 @@ namespace moppe {
       for (int s = 0; s < species_count; ++s) {
         const Animal* nearest = nullptr;
         float best = 1e9f;
-        for (const Animal& a : m_animals.animals ()) {
+        for (const Animal& a : session ().animals ().animals ()) {
           const float d = std::hypot (a.position[0] - m_spawn_position[0],
                                       a.position[2] - m_spawn_position[2]);
           if (static_cast<int> (a.species) == s && d < best) {
@@ -304,86 +305,11 @@ namespace moppe {
       }
     }
 
-    void MoppeGame::tend_animals (seconds_t interval) {
-      const float dt = seconds_value (interval);
-      if (m_animals.animals ().empty () || dt <= 0.0f)
-        return;
-      std::vector<Presence> presences;
-      const Vec3 subject = session ().subject_position ();
-      Vec3 moving {};
-      if (m_last_subject)
-        moving = (subject - *m_last_subject) * (1.0f / dt);
-      m_last_subject = subject;
-      if (length2 (moving) > 60.0f * 60.0f)
-        moving = Vec3 ();
-      presences.push_back ({ .position = subject,
-                             .velocity = moving,
-                             .machine = logic ().m_mode != M_FOOT });
-      if (m_companion && m_companion->walker)
-        presences.push_back ({ .position = m_companion->walker->position,
-                               .velocity = m_companion->walker->velocity });
-      const AnimalGround ground = animal_ground ();
-      m_animals.step (ground,
-                      presences,
-                      session ().camera ().position (),
-                      700.0f * u::m,
-                      interval);
-      m_hens.step (ground,
-                   presences,
-                   session ().camera ().position (),
-                   160.0f * u::m,
-                   static_cast<float> (std::fmod (logic ().m_day_hours, 24.0)) *
-                     si::hour,
-                   interval);
-      lay_eggs (logic ().m_nests, logic ().m_day_hours, egg_seed ());
-    }
-
-    std::optional<std::size_t> MoppeGame::beacon_at_hand () const {
-      if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
-        return std::nullopt;
-      return sanctuary_at_hand (m_places, session ().walker ().position ());
-    }
-
-    void MoppeGame::tend_beacons () {
-      const double now = logic ().m_total_time;
-      std::vector<Beacon>& beacons = logic ().m_beacons;
-      m_their_beacons.resize (beacons.size ());
-      m_beacon_burn.resize (beacons.size ());
-      for (std::size_t i = 0; i < beacons.size (); ++i) {
-        Beacon& theirs = m_their_beacons[i];
-        const bool lit =
-          m_companion && i < 32 && (m_companion->beacons >> i & 1u);
-        if (lit != theirs.burning ()) {
-          (lit ? theirs.lit : theirs.out) = now;
-          std::cerr << "moppe: places: the other player "
-                    << (lit ? "lit" : "put out") << " the beacon on sanctuary "
-                    << i << std::endl;
-        }
-        m_beacon_burn[i] =
-          std::max (beacon_burn (beacons[i].lit, beacons[i].out, now),
-                    beacon_burn (theirs.lit, theirs.out, now));
-      }
-    }
-
-    bool MoppeGame::their_beacon (std::size_t i) const {
-      return i < m_their_beacons.size () && m_their_beacons[i].burning ();
-    }
-
-    std::optional<std::size_t> MoppeGame::egg_at_hand () const {
-      if (logic ().m_mode != M_FOOT || logic ().m_camp.resting)
-        return std::nullopt;
-      return nest_within_reach (m_nest_sites,
-                                logic ().m_nests,
-                                session ().walker ().position (),
-                                session ().walker ().heading (),
-                                m_places.period_x,
-                                m_places.period_z);
-    }
-
     void MoppeGame::draw_places (render::Renderer& r, const FrameView& frame) {
       const Vec3& camera = frame.camera.position;
       m_places_landscape.draw (r, camera, frame.lighting.time, 0x10000);
-      m_places_landscape.draw_beacons (m_world_dl, camera, m_beacon_burn);
+      m_places_landscape.draw_beacons (
+        m_world_dl, camera, logic ().m_beacon_burn);
       const Camp& camp = logic ().m_camp;
       for (const Vec3& ring : m_places.hearths) {
         if (length2 (ring - camera) > 200.0f * 200.0f)
@@ -395,10 +321,10 @@ namespace moppe {
     }
 
     void MoppeGame::light_beacons (FrameView& frame) const {
-      for (std::size_t i = 0;
-           i < m_places.sanctuaries.size () && i < m_beacon_burn.size ();
+      for (std::size_t i = 0; i < m_places.sanctuaries.size () &&
+                              i < logic ().m_beacon_burn.size ();
            ++i) {
-        if (m_beacon_burn[i] <= 0.01f)
+        if (logic ().m_beacon_burn[i] <= 0.01f)
           continue;
         const Vec3 lamp =
           m_places.sanctuaries[i].hearth + Vec3 (0.0f, 0.7f, 0.0f);
@@ -409,9 +335,9 @@ namespace moppe {
           continue;
         lighting.lamp_position = lamp;
         lighting.lamp_reach = 1.8f * meters_value (fire_light_reach);
-        lighting.lamp_color =
-          scale_display (fire_light_color (m_beacon_burn[i], lighting.time),
-                         1.4f * (1.0f - 0.25f * lighting.daylight));
+        lighting.lamp_color = scale_display (
+          fire_light_color (logic ().m_beacon_burn[i], lighting.time),
+          1.4f * (1.0f - 0.25f * lighting.daylight));
       }
     }
 

@@ -150,7 +150,7 @@ namespace moppe {
       m_places_landscape.cast_shadows (r, frame.camera.position);
       render_animals (
         r,
-        m_animals.animals (),
+        session ().animals ().animals (),
         [this] (float x, float z) {
           const float ground = ground_height (Vec3 (x, 0.0f, z));
           if (const std::optional<float> floor = floor_at (m_places, x, z))
@@ -423,7 +423,7 @@ namespace moppe {
       draw_places (r, frame);
       render_animals (
         r,
-        m_animals.animals (),
+        session ().animals ().animals (),
         [this] (float x, float z) {
           const float ground = ground_height (Vec3 (x, 0.0f, z));
           if (const std::optional<float> floor = floor_at (m_places, x, z))
@@ -438,7 +438,7 @@ namespace moppe {
         m_places.period_z,
         0x200000);
       render_birds (r,
-                    m_hens.birds (),
+                    session ().hens ().birds (),
                     frame.camera.position,
                     frame.camera.frame_forward,
                     frame.lighting.time,
@@ -502,7 +502,7 @@ namespace moppe {
           r, actors.bike, frame.camera.position, frame.lighting.time, 0x1000);
       m_places_landscape.draw_beacon_fires (r,
                                             frame.camera.position,
-                                            m_beacon_burn,
+                                            logic ().m_beacon_burn,
                                             frame.lighting.daylight,
                                             frame.lighting.time);
       if (logic ().m_camp.fire_time > -50.0)

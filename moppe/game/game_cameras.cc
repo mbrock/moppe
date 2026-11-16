@@ -224,9 +224,9 @@ namespace moppe {
         return value ? static_cast<float> (::atof (value)) : 0.0f;
       }();
       if (distance <= 0.0f || !m_watched ||
-          *m_watched >= m_animals.animals ().size ())
+          *m_watched >= session ().animals ().animals ().size ())
         return;
-      const Animal& a = m_animals.animals ()[*m_watched];
+      const Animal& a = session ().animals ().animals ()[*m_watched];
       const float height = 0.7f * meters_value (traits (a.species).length);
       const Vec3 target = a.position + Vec3 (0.0f, height, 0.0f);
       // Eased, so that the view glides after it.

@@ -126,6 +126,15 @@ MOPPE_TEST (mushroom_meshes_follow_picking_restore_and_rebuild) {
   const std::size_t single = renderer.baked_vertex_counts.back ();
   MOPPE_CHECK (single > 0 && single < full);
 
+  // A restored basket as long as the last but holding another regrows
+  // what it does not hold.
+  Basket other;
+  other.picked = { 1 };
+  patch.follow (other);
+  MOPPE_CHECK (draw_near () == 1);
+  MOPPE_CHECK (renderer.baked_vertex_counts.back () == single);
+  patch.follow (basket);
+
   // The other player takes the last one. Restoring the basket regrows
   // both, even though their tile had become empty.
   patch.take (1);
