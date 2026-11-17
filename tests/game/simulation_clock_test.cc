@@ -34,10 +34,9 @@ namespace {
     game::ChaseCamera camera (18 * u::deg, 6.5f * u::m);
     game::SimulationClock clock;
     for (int callback = 0; callback < callback_count; ++callback) {
-      const int steps = clock.consume (callback_interval);
+      const int steps = clock.consume (seconds (callback_interval));
       for (int step = 0; step < steps; ++step) {
-        const seconds_t dt =
-          seconds (static_cast<float> (game::FIXED_SIMULATION_STEP_SECONDS));
+        const seconds_t dt = value_cast<float> (game::FIXED_SIMULATION_STEP);
         glider.update (dt);
         camera.update (
           glider.position (), glider.heading (), glider.velocity (), dt);
@@ -58,45 +57,52 @@ namespace {
   int consume_frame (moppe::game::SimulationClock& simulation,
                      const moppe::platform::FrameStep& step) {
     // The SDL host caps the selected interval before passing it to the game.
-    return simulation.consume (static_cast<float> (
-      std::clamp (step.elapsed.numerical_value_in (moppe::u::s), 0.0, 0.05)));
+    return simulation.consume (moppe::seconds (static_cast<float> (
+      std::clamp (step.elapsed.numerical_value_in (moppe::u::s), 0.0, 0.05))));
   }
 }
 
 MOPPE_TEST (simulation_clock_matches_common_display_cadences) {
+  using namespace moppe;
   using namespace moppe::game;
   SimulationClock clock;
 
-  MOPPE_CHECK (clock.consume (1.0f / 120.0f) == 1);
-  MOPPE_CHECK (clock.consume (1.0f / 60.0f) == 2);
-  MOPPE_CHECK (clock.consume (1.0f / 40.0f) == 3);
-  MOPPE_CHECK (std::abs (clock.phase_seconds ()) < 1e-8);
+  MOPPE_CHECK (clock.consume (seconds (1.0f / 120.0f)) == 1);
+  MOPPE_CHECK (clock.consume (seconds (1.0f / 60.0f)) == 2);
+  MOPPE_CHECK (clock.consume (seconds (1.0f / 40.0f)) == 3);
+  MOPPE_CHECK (std::abs (clock.phase ().numerical_value_in (si::second)) <
+               1e-8);
 }
 
 MOPPE_TEST (simulation_clock_phase_locks_jitter_around_120_hz) {
+  using namespace moppe;
   using namespace moppe::game;
   SimulationClock clock;
 
-  MOPPE_CHECK (clock.consume (0.0076f) == 1);
-  MOPPE_CHECK (clock.consume (1.0f / 60.0f - 0.0076f) == 1);
-  MOPPE_CHECK (std::abs (clock.phase_seconds ()) < 1e-7);
+  MOPPE_CHECK (clock.consume (seconds (0.0076f)) == 1);
+  MOPPE_CHECK (clock.consume (seconds (1.0f / 60.0f - 0.0076f)) == 1);
+  MOPPE_CHECK (std::abs (clock.phase ().numerical_value_in (si::second)) <
+               1e-7);
 }
 
 MOPPE_TEST (simulation_clock_bounds_delayed_and_invalid_callbacks) {
+  using namespace moppe;
   using namespace moppe::game;
   SimulationClock clock;
 
-  MOPPE_CHECK (clock.consume (0.5f) == MAX_SIMULATION_CATCH_UP_STEPS);
+  MOPPE_CHECK (clock.consume (seconds (0.5f)) == MAX_SIMULATION_CATCH_UP_STEPS);
   clock.reset ();
-  MOPPE_CHECK (clock.consume (0.0f) == 0);
-  MOPPE_CHECK (clock.consume (-1.0f) == 0);
-  MOPPE_CHECK (clock.consume (std::numeric_limits<float>::quiet_NaN ()) == 0);
-  MOPPE_CHECK (clock.phase_seconds () == 0.0);
+  MOPPE_CHECK (clock.consume (seconds (0.0f)) == 0);
+  MOPPE_CHECK (clock.consume (seconds (-1.0f)) == 0);
+  MOPPE_CHECK (
+    clock.consume (seconds (std::numeric_limits<float>::quiet_NaN ())) == 0);
+  MOPPE_CHECK (clock.phase () == duration_t {});
 }
 
 MOPPE_TEST (frame_clock_does_not_double_count_delayed_feedback) {
   using namespace moppe;
-  constexpr double h = game::FIXED_SIMULATION_STEP_SECONDS;
+  constexpr double h =
+    game::FIXED_SIMULATION_STEP.numerical_value_in (si::second);
   nhal::PresentationClock presentation;
   presentation.set_refresh (h);
   for (std::uint64_t serial = 1; serial <= 5; ++serial)
@@ -146,7 +152,8 @@ MOPPE_TEST (frame_clock_does_not_double_count_delayed_feedback) {
 
 MOPPE_TEST (frame_clock_consumes_cadence_corrections_once) {
   using namespace moppe;
-  constexpr double h = game::FIXED_SIMULATION_STEP_SECONDS;
+  constexpr double h =
+    game::FIXED_SIMULATION_STEP.numerical_value_in (si::second);
   // Two frames of lookahead produce a duplicate when the median changes;
   // three produce a backward correction, then a partial recovery step.
   for (std::uint64_t lag = 2; lag <= 3; ++lag) {
@@ -203,13 +210,15 @@ MOPPE_TEST (frame_clock_consumes_cadence_corrections_once) {
     }
     MOPPE_CHECK (total_steps == 82);
     MOPPE_CHECK (std::abs (elapsed_total - wall_total) < 1e-12);
-    MOPPE_CHECK (std::abs (simulation.phase_seconds ()) < 1e-7);
+    MOPPE_CHECK (
+      std::abs (simulation.phase ().numerical_value_in (si::second)) < 1e-7);
   }
 }
 
 MOPPE_TEST (frame_clock_preserves_jitter_fallback_and_catch_up_policy) {
   using namespace moppe;
-  constexpr double h = game::FIXED_SIMULATION_STEP_SECONDS;
+  constexpr double h =
+    game::FIXED_SIMULATION_STEP.numerical_value_in (si::second);
   struct Sample {
     double wall, display;
     bool predicted;

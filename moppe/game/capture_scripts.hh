@@ -26,26 +26,26 @@ namespace moppe::game {
   struct WorldPlaces;
 
   struct WalkScriptState {
-    float time = 0.0f;
+    seconds_t time = 0.0f * u::s;
     // MOPPE_WALK=forage: the poisonous mushrooms it has left be.
     std::vector<std::uint32_t> forage_refused;
     // MOPPE_WALK=supper: when the foraging was done.
-    float supper_since = -1.0f;
+    seconds_t supper_since = -1.0f * u::s;
     // MOPPE_WALK=barn|byre|eggs: the barn's frame, and how far through
     // the way out of it the egg gatherer has come.
     std::optional<Mat4> barn;
     int egg_leg = 0;
     // MOPPE_WALK=fish: when the line last came in.
-    float fish_rest = 1.0f;
+    seconds_t fish_rest = 1.0f * u::s;
     // MOPPE_WALK=boat-fish: when it got under way again.
-    float boat_fish_off = -1.0f;
+    seconds_t boat_fish_off = -1.0f * u::s;
     // MOPPE_WALK=camp: the trees it camps between, the side it walks in
     // from, and how far through its steps it is.
     struct Camp {
       std::optional<HammockSite> site;
       float side = 1.0f;
       int step = 0;
-      float since = 0.0f;
+      seconds_t since = 0.0f * u::s;
     };
     Camp camp;
   };
@@ -63,14 +63,14 @@ namespace moppe::game {
 
     // MOPPE_WALK=animals: the animal the walk began by, to film from the
     // side `side` of it (or the side last filmed from).
-    void watch (std::size_t animal, std::optional<Vec3> side) {
+    void watch (std::size_t animal, std::optional<direction_t> side) {
       watched = animal;
       if (side)
         watch_side = *side;
     }
 
-    // The lens a film camera asks for this step, degrees.
-    std::optional<float> lens () const {
+    // The lens a film camera asks for this step.
+    std::optional<degrees_t> lens () const {
       return film_fov;
     }
 
@@ -113,15 +113,15 @@ namespace moppe::game {
 
     // The animal camera's subject, its side of it, and its eased aim.
     std::optional<std::size_t> watched;
-    Vec3 watch_side { 1, 0, 0 };
-    std::optional<Vec3> watch_target;
+    direction_t watch_side = unit_direction (Vec3 (1, 0, 0));
+    std::optional<position_t> watch_target;
     // The boat's film camera: how long it has run, the subject and its
-    // heading as eased, the fly-by's stand, and its lens (degrees).
-    float film_time = 0.0f;
-    Vec3 film_at;
-    Vec3 film_heading;
-    Vec3 film_stand;
-    std::optional<float> film_fov;
+    // heading as eased, the fly-by's stand, and its lens.
+    seconds_t film_time = 0.0f * u::s;
+    position_t film_at;
+    direction_t film_heading;
+    position_t film_stand;
+    std::optional<degrees_t> film_fov;
   };
 
   // What a walk script stands in and moves.

@@ -12,6 +12,8 @@
 // light around them.
 
 #include <moppe/color.hh>
+#include <moppe/game/game_clock.hh>
+#include <moppe/gfx/math.hh>
 
 #include <cstdint>
 #include <optional>
@@ -19,18 +21,24 @@
 #include <vector>
 
 namespace moppe::game {
+  using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
+
   struct Weather {
     // The cloud cover drifts between these.
-    float cloud_floor = 0.0f;
-    float cloud_ceiling = 1.0f;
-    float fog_density = 1.0f; // multiplies the world's fog scale
+    cloud_cover_t cloud_floor = 0.0f * cloud_cover[one];
+    cloud_cover_t cloud_ceiling = 1.0f * cloud_cover[one];
+    // Multiplies the world's fog scale.
+    scale_factor_t fog_density = 1.0f * scale_factor[one];
     DisplayColor fog_tint { 0.0f, 0.0f, 0.0f };
-    float fog_tint_amount = 0.0f; // how far the fog greys toward the tint
-    float sunlight = 1.0f;        // direct sun through the overcast
-    float skylight = 1.0f;        // the sky's diffuse fill
-    float mist = 0.0f;            // valley mist, 0..1
-    float rain = 0.0f;            // 1 a drizzle, 2.5 a downpour
-    float lightning = 0.0f;       // how often it strikes, 0..1
+    // How far the fog greys toward the tint.
+    blend_weight_t fog_tint_amount = 0.0f * blend_weight[one];
+    // Direct sun through the overcast, and the sky's diffuse fill.
+    scale_factor_t sunlight = 1.0f * scale_factor[one];
+    scale_factor_t skylight = 1.0f * scale_factor[one];
+    proportion_t mist = 0.0f * proportion[one]; // valley mist
+    // 1 a drizzle, 2.5 a downpour.
+    scale_factor_t rain = 0.0f * scale_factor[one];
+    proportion_t lightning = 0.0f * proportion[one]; // how often it strikes
   };
 
   enum class SkyKind : std::uint8_t {
@@ -46,30 +54,31 @@ namespace moppe::game {
   const char* sky_kind_name (SkyKind kind);
   std::optional<SkyKind> sky_kind_named (std::string_view name);
   Weather weather_of (SkyKind kind);
-  Weather mix_weather (const Weather& from, const Weather& to, float t);
+  Weather
+  mix_weather (const Weather& from, const Weather& to, blend_weight_t t);
 
   // The spells, laid out from hour zero as far as they are asked for.
   class WeatherTimeline {
   public:
     explicit WeatherTimeline (std::uint32_t seed);
 
-    Weather at (double hours);
+    Weather at (clock_time_t hours);
     // The kind of the spell under way at this hour.
-    SkyKind kind_at (double hours);
+    SkyKind kind_at (clock_time_t hours);
 
   private:
     struct Spell {
-      double start;
+      clock_time_t start;
       SkyKind kind;
     };
-    std::size_t spell_at (double hours);
+    std::size_t spell_at (clock_time_t hours);
 
     std::uint64_t m_seed;
     std::vector<Spell> m_spells;
   };
 
-  // How brightly lightning lights the world at this moment, 0..1.
-  float lightning_flash (float lightning, double seconds);
+  // How brightly lightning lights the world at this moment.
+  proportion_t lightning_flash (proportion_t lightning, play_time_t now);
 }
 
 #endif

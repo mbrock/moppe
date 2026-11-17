@@ -216,8 +216,8 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   const Vec3 moved = position_value (session.tractor ().position ()) - start;
   MOPPE_CHECK (moved[2] < -6.0f);
   MOPPE_CHECK (direction_value (session.tractor ().up ())[1] > 0.9f);
-  Vec3 rope =
-    position_value (session.walker ().position ()) - session.rope_end ();
+  Vec3 rope = position_value (session.walker ().position ()) -
+              position_value (session.rope_end ());
   rope[1] = 0.0f;
   MOPPE_CHECK (length (rope) <
                meters_value (logic.m_haul.rope + game::rope_give) + 0.3f);
@@ -300,10 +300,12 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   // and the odometer counts it.
   run ({ .drive = 1.0f }, 6.0f);
   MOPPE_CHECK (position_value (ski.position ())[2] < 70.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () > 45.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () < 75.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) >
+               45.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) <
+               75.0f);
   MOPPE_CHECK (logic.m_odometer > 40.0 * u::m);
-  MOPPE_CHECK (length (session.subject_position () -
+  MOPPE_CHECK (length (position_value (session.subject_position ()) -
                        position_value (ski.position ())) < 1e-3f);
 
   // Brought back in to the shallows and let run down, F gets off beside

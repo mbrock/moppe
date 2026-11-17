@@ -39,6 +39,8 @@ namespace moppe::game {
   // the view play begins with (from behind the walker, or through their
   // eyes), approached from `push` metres behind and `rise` metres above.
 
+  using kilometres_t = quantity<si::kilo<si::metre>, float>;
+
   struct OpeningCaption {
     enum class Style { Title, Credit };
     Style style = Style::Title;
@@ -46,30 +48,31 @@ namespace moppe::game {
     // Seconds after the shot begins that the caption starts fading in, and
     // how long it stays (fades included); a negative length runs it to
     // shortly before the shot ends.
-    float at = 1.4f;
-    float length = -1.0f;
+    seconds_t at = 1.4f * u::s;
+    seconds_t length = -1.0f * u::s;
     // Height of the line in the frame, 0 at the top and 1 at the bottom;
     // negative places it where its style usually sits.
-    float y = -1.0f;
+    proportion_t y = -1.0f * proportion[one];
   };
 
   struct OpeningShot {
     std::string name;
-    Vec3 eye {};
-    float heading_deg = 0.0f;
-    float pitch_deg = 0.0f;
-    float fov_deg = 55.0f;
-    float hold = 7.0f;
-    float push = 0.0f;
-    float truck = 0.0f;
-    float rise = 0.0f;
-    float pan_deg = 0.0f;
-    float tilt_deg = 0.0f;
-    float zoom_deg = 0.0f;
-    float sway = 1.0f;
-    float fade = 0.0f;
-    std::optional<float> clock;
-    std::optional<float> sun;
+    position_t eye = position (Vec3 ());
+    degrees_t heading_deg = 0.0f * u::deg;
+    degrees_t pitch_deg = 0.0f * u::deg;
+    degrees_t fov_deg = 55.0f * u::deg;
+    seconds_t hold = 7.0f * u::s;
+    meters_t push = 0.0f * u::m;
+    meters_t truck = 0.0f * u::m;
+    meters_t rise = 0.0f * u::m;
+    degrees_t pan_deg = 0.0f * u::deg;
+    degrees_t tilt_deg = 0.0f * u::deg;
+    degrees_t zoom_deg = 0.0f * u::deg;
+    scale_factor_t sway = 1.0f * scale_factor[one];
+    seconds_t fade = 0.0f * u::s;
+    // Seconds into play at the cut.
+    std::optional<seconds_t> clock;
+    std::optional<proportion_t> sun;
     std::vector<OpeningCaption> captions;
     // Settles into its final pose with an ease instead of drifting through
     // it; the arrival lands this way in the player's eyes.
@@ -77,11 +80,11 @@ namespace moppe::game {
   };
 
   struct OpeningArrival {
-    float hold = 6.0f;
-    float push = 5.0f;
-    float rise = 1.2f;
-    float fade = 0.0f;
-    float sway = 0.6f;
+    seconds_t hold = 6.0f * u::s;
+    meters_t push = 5.0f * u::m;
+    meters_t rise = 1.2f * u::m;
+    seconds_t fade = 0.0f * u::s;
+    scale_factor_t sway = 0.6f * scale_factor[one];
     std::vector<OpeningCaption> captions;
   };
 
@@ -91,7 +94,7 @@ namespace moppe::game {
     std::optional<int> resolution;
     std::string profile;
     // How many kilometres across; unset, the default world's five.
-    std::optional<float> km;
+    std::optional<kilometres_t> km;
     std::vector<OpeningShot> shots;
     std::optional<OpeningArrival> arrival;
 
@@ -107,30 +110,31 @@ namespace moppe::game {
 
   // A view's compass heading and pitch, in degrees, from its forward
   // vector, and back.
-  float heading_degrees (const Vec3& forward);
-  float pitch_degrees (const Vec3& forward);
-  Vec3 forward_from (float heading_deg, float pitch_deg);
+  degrees_t heading_degrees (const Vec3& forward);
+  degrees_t pitch_degrees (const Vec3& forward);
+  direction_t forward_from (degrees_t heading, degrees_t pitch);
 
   // One pasteable `shot` line for a camera pose.
   std::string format_opening_shot (const std::string& name,
                                    const Vec3& eye,
                                    const Vec3& forward,
-                                   float fov_deg,
-                                   float clock,
-                                   float sun);
+                                   degrees_t fov,
+                                   seconds_t clock,
+                                   proportion_t sun);
 
   // The final shot of a reel, flying the last few metres into the view
   // play begins with (eye and forward) at its field of view.
   OpeningShot arrival_shot (const OpeningArrival& arrival,
-                            const Vec3& eye,
+                            const position_t& eye,
                             const Vec3& forward,
-                            float fov_deg);
+                            degrees_t fov);
 
   struct OpeningCaptionView {
     OpeningCaption::Style style;
     const std::string* text;
-    float alpha;
-    float y;
+    // How far the caption has faded in.
+    proportion_t alpha;
+    proportion_t y;
   };
 
   // Plays a reel: the camera of the current shot, the black veil of a
@@ -152,10 +156,10 @@ namespace moppe::game {
       shot.hold = m_shots.back ().hold;
       m_shots.back () = std::move (shot);
     }
-    float elapsed () const noexcept {
+    seconds_t elapsed () const noexcept {
       return m_elapsed;
     }
-    float duration () const noexcept {
+    seconds_t duration () const noexcept {
       return m_duration;
     }
     // Index of the shot on screen; it changes at each cut.
@@ -166,7 +170,7 @@ namespace moppe::game {
       return m_shots[m_shot];
     }
     // Seconds into the current shot.
-    float shot_time () const noexcept {
+    seconds_t shot_time () const noexcept {
       return m_shot_time;
     }
     // True for the first tick of every shot, when world time may jump.
@@ -174,18 +178,18 @@ namespace moppe::game {
       return m_cut;
     }
 
-    const Vec3& position () const noexcept {
+    const position_t& position () const noexcept {
       return m_position;
     }
-    const Vec3& forward () const noexcept {
+    const direction_t& forward () const noexcept {
       return m_forward;
     }
-    float field_of_view () const noexcept {
+    degrees_t field_of_view () const noexcept {
       return m_fov;
     }
     Mat4 view_matrix () const;
     // Opacity of the black veil over the frame, for fades.
-    float veil () const noexcept {
+    proportion_t veil () const noexcept {
       return m_veil;
     }
     std::vector<OpeningCaptionView> captions () const;
@@ -195,16 +199,16 @@ namespace moppe::game {
 
     std::vector<OpeningShot> m_shots;
     std::size_t m_shot = 0;
-    float m_shot_time = 0.0f;
-    float m_elapsed = 0.0f;
-    float m_duration = 0.0f;
+    seconds_t m_shot_time = 0.0f * u::s;
+    seconds_t m_elapsed = 0.0f * u::s;
+    seconds_t m_duration = 0.0f * u::s;
     bool m_active = false;
     bool m_cut = false;
-    Vec3 m_position {};
-    Vec3 m_forward { 0, 0, 1 };
-    float m_roll = 0.0f;
-    float m_fov = 55.0f;
-    float m_veil = 0.0f;
+    position_t m_position = moppe::position (Vec3 ());
+    direction_t m_forward = unit_direction (Vec3 (0, 0, 1));
+    radians_t m_roll = 0.0f * u::rad;
+    degrees_t m_fov = 55.0f * u::deg;
+    proportion_t m_veil = 0.0f * proportion[one];
   };
 }
 

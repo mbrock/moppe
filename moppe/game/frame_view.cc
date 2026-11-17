@@ -22,11 +22,13 @@ namespace moppe::game {
     }
 
     float daylight_for (proportion_t sun_height) {
-      return daylight_for_elevation (sun_elevation_for (sun_height));
+      return daylight_for_elevation (sun_elevation_for (sun_height))
+        .numerical_value_in (one);
     }
 
     float golden_light_for (proportion_t sun_height) {
-      return golden_light_for_elevation (sun_elevation_for (sun_height));
+      return golden_light_for_elevation (sun_elevation_for (sun_height))
+        .numerical_value_in (one);
     }
 
     FrameVisibility visibility_for (const FrameViewInput& input,
@@ -63,8 +65,7 @@ namespace moppe::game {
   }
 
   direction_t sun_direction_for (proportion_t sun_height) {
-    return unit_direction (
-      authored_sun_direction (sun_height.numerical_value_in (one)));
+    return authored_sun_direction (sun_height);
   }
 
   void sun_light_colors_for (proportion_t sun_height,
@@ -286,8 +287,8 @@ namespace moppe::game {
 
     const Weather& weather = logic.m_weather;
     // Lightning lights the cloud and the haze, and everything under it.
-    const float flash = lightning_flash (
-      weather.lightning, seconds_into_play (logic.m_total_time));
+    const float flash = lightning_flash (weather.lightning, logic.m_total_time)
+                          .numerical_value_in (one);
     const DisplayColor flashed_fog =
       mix_display (logic.m_fog,
                    DisplayColor (0.62f, 0.64f, 0.76f),
@@ -295,28 +296,26 @@ namespace moppe::game {
     FrameLighting& lighting = result.lighting;
     lighting.fog_color = flashed_fog;
     lighting.clear_color = flashed_fog;
-    lighting.fog_scale = input.world.fog_scale * weather.fog_density;
-    lighting.mist = weather.mist * proportion[one];
-    lighting.rain = weather.rain * scale_factor[one];
+    lighting.fog_scale =
+      input.world.fog_scale * weather.fog_density.numerical_value_in (one);
+    lighting.mist = weather.mist;
+    lighting.rain = weather.rain;
     const SkyReading sky =
-      input.sky
-        ? *input.sky
-        : Almanac ().held (input.graphics.sun_height.numerical_value_in (one));
-    lighting.sun_direction = unit_direction (sky.light);
-    lighting.sun_specular = scale_display (
-      sky.light_specular, 0.5f * weather.sunlight * scale_factor[one]);
-    lighting.sun_diffuse =
-      scale_display (sky.light_diffuse, weather.sunlight * scale_factor[one]);
-    lighting.ambient = mix_display (
-      scale_display (sky.ambient, weather.skylight * scale_factor[one]),
-      DisplayColor (0.85f, 0.88f, 1.05f),
-      0.7f * flash * blend_weight[one]);
-    lighting.sky_sun = unit_direction (sky.sun);
-    lighting.sky_moon = unit_direction (sky.moon);
-    lighting.sky_pole = unit_direction (sky.pole);
+      input.sky ? *input.sky : Almanac ().held (input.graphics.sun_height);
+    lighting.sun_direction = sky.light;
+    lighting.sun_specular =
+      scale_display (sky.light_specular, 0.5f * weather.sunlight);
+    lighting.sun_diffuse = scale_display (sky.light_diffuse, weather.sunlight);
+    lighting.ambient =
+      mix_display (scale_display (sky.ambient, weather.skylight),
+                   DisplayColor (0.85f, 0.88f, 1.05f),
+                   0.7f * flash * blend_weight[one]);
+    lighting.sky_sun = sky.sun;
+    lighting.sky_moon = sky.moon;
+    lighting.sky_pole = sky.pole;
     lighting.sky_turn = sky.turn;
-    lighting.moonlight = sky.moonlight * proportion[one];
-    lighting.daylight = sky.daylight * proportion[one];
+    lighting.moonlight = sky.moonlight;
+    lighting.daylight = sky.daylight;
     const float time =
       static_cast<float> (seconds_into_play (logic.m_total_time));
     lighting.time = time * u::s;
@@ -327,9 +326,10 @@ namespace moppe::game {
       lighting.lamp_reach = fire_light_reach;
       lighting.lamp_color =
         scale_display (fire_light_color (burn, time * u::s),
-                       (1.0f - 0.25f * sky.daylight) * scale_factor[one]);
+                       (1.0f - 0.25f * sky.daylight.numerical_value_in (one)) *
+                         scale_factor[one]);
     }
-    lighting.sun_height = sky.sun_height * proportion[one];
+    lighting.sun_height = sky.sun_height;
     lighting.cloudiness = logic.m_cloudiness;
     lighting.sun_visibility = logic.m_flare;
 
@@ -391,20 +391,19 @@ namespace moppe::game {
       result.actors.walker =
         walker_pose (input.session.walker (), logic.m_look_pitch);
     if (result.actors.walker && input.session.hauling ())
-      result.actors.walker->rope_end = position (input.session.rope_end ());
+      result.actors.walker->rope_end = input.session.rope_end ();
     if (result.actors.walker)
       result.actors.walker->rod =
-        rod_pose (logic.m_fishing.line, logic.m_total_time, time);
+        rod_pose (logic.m_fishing.line, logic.m_total_time, lighting.time);
     if (logic.m_doing == Doing::driving (Machine::boat))
       result.actors.helm_rod =
-        rod_pose (logic.m_fishing.line, logic.m_total_time, time);
+        rod_pose (logic.m_fishing.line, logic.m_total_time, lighting.time);
     result.actors.active_mode = logic.m_doing;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera =
       logic.m_cam_mode == CAM_HELMET && !input.reveal_player;
 
-    const kilometres_per_hour_t speed =
-      input.session.subject_speed_kmh () * si::kilo<si::metre> / si::hour;
+    const kilometres_per_hour_t speed = input.session.subject_speed_kmh ();
     FrameHud& hud = result.hud;
     hud.speed = speed;
     if (logic.m_doing == Doing::gliding ()) {
@@ -426,10 +425,10 @@ namespace moppe::game {
     hud.stars = input.session.stars ().collected ();
     hud.score = logic.m_score;
     hud.airtime = logic.m_jump_airtime;
-    hud.spin = radians_value (logic.m_jump_peak_spin_radians) * 180.0f /
-               3.14159265f * u::deg;
+    hud.spin =
+      radians_value (logic.m_jump_peak_spin) * 180.0f / 3.14159265f * u::deg;
     hud.landed_airtime = logic.m_landed_airtime;
-    hud.landed_spin = logic.m_landed_spin_degrees;
+    hud.landed_spin = logic.m_landed_spin;
     hud.landed_points = logic.m_landed_points;
     hud.landed_clean = logic.m_landed_clean;
     hud.landed_age = logic.m_landed_age;
@@ -441,9 +440,9 @@ namespace moppe::game {
     hud.on_foot = logic.m_doing == Doing::on_foot ();
     hud.gliding = logic.m_doing == Doing::gliding ();
     hud.frame_time = logic.m_frame_time;
-    hud.subject_position = position (input.session.subject_position ());
-    const Vec3 facing = input.session.subject_heading ();
-    hud.subject_heading = unit_direction (facing);
+    hud.subject_position = input.session.subject_position ();
+    hud.subject_heading = input.session.subject_heading ();
+    const Vec3& facing = direction_value (hud.subject_heading);
     hud.heading = std::atan2 (facing[0], facing[2]) * moppe::heading[u::rad];
 
     result.motion_blur_amount = cinematic

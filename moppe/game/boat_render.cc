@@ -91,8 +91,7 @@ namespace moppe::game {
         // Posed once to find the shoulders, and again with the hand where
         // a rod raised so high is held from them.
         const AvatarSkeleton seated = pose_holding (hold);
-        hold.wrist[1] =
-          position (rod_hand (seated, rod->raise.numerical_value_in (u::rad)));
+        hold.wrist[1] = rod_hand (seated, rod->raise);
         hold.elbow_pole[1] = left * 0.6f - up;
         return pose_holding (hold);
       }
@@ -156,7 +155,7 @@ namespace moppe::game {
       if (helmsman)
         figure::draw (dl, k, *helmsman);
       if (rod)
-        draw_rod (dl, k, *rod, seconds_value (time));
+        draw_rod (dl, k, *rod, time);
     }
 
     r.draw_mesh (*meshes.hull, frame, motion_base + 1);

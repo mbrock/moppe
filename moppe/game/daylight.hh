@@ -11,6 +11,7 @@
 // day passes through the authored light at a quarter past nine.
 
 #include <moppe/color.hh>
+#include <moppe/game/game_clock.hh>
 #include <moppe/gfx/math.hh>
 
 namespace moppe::game {
@@ -20,38 +21,38 @@ namespace moppe::game {
     hours_t clock = 9.0f * si::hour;
     int day = 0;
     // Toward the sun and the moon; either may be below the horizon.
-    Vec3 sun { 0, 1, 0 };
-    Vec3 moon { 0, -1, 0 };
+    direction_t sun = unit_direction (Vec3 (0, 1, 0));
+    direction_t moon = unit_direction (Vec3 (0, -1, 0));
     // The celestial pole, and how far the stars have turned about it,
     // radians.
-    Vec3 pole { 0, 1, 0 };
+    direction_t pole = unit_direction (Vec3 (0, 1, 0));
     radians_t turn {};
     // How much of the moon's face is lit, 0 new to 1 full, and how brightly
     // it shines in this sky, 0 by day or when it is down.
-    float moon_phase = 1.0f;
-    float moonlight = 0.0f;
+    proportion_t moon_phase = 1.0f * proportion[one];
+    proportion_t moonlight = 0.0f * proportion[one];
     // 0 at night to 1 by day, through the twilights.
-    float daylight = 1.0f;
+    proportion_t daylight = 1.0f * proportion[one];
     // The key light the world is shaded and shadowed by: the sun, or the
     // moon once the sun is gone. It stays a little above the horizon.
-    Vec3 light { 0, 1, 0 };
+    direction_t light = unit_direction (Vec3 (0, 1, 0));
     DisplayColor light_diffuse {};
     DisplayColor light_specular {};
     DisplayColor ambient {};
     DisplayColor horizon {};
     // The old art-direction reading of the sun's elevation: 0.5 at the
     // horizon, 1 overhead.
-    float sun_height = 0.62f;
+    proportion_t sun_height = 0.62f * proportion[one];
   };
 
   // The sky's light by the sine of the sun's elevation: 0 at night to 1 by
   // day, and how golden the low sun is.
-  float daylight_for_elevation (float sine);
-  float golden_light_for_elevation (float sine);
+  proportion_t daylight_for_elevation (float sine);
+  proportion_t golden_light_for_elevation (float sine);
 
   // The fixed sun the game was always lit by, at the old `sun_height`:
   // south-east, by that height above or below the horizon.
-  Vec3 authored_sun_direction (float sun_height);
+  direction_t authored_sun_direction (proportion_t sun_height);
 
   class Almanac {
   public:
@@ -61,21 +62,21 @@ namespace moppe::game {
     // The clock, in hours, at which the morning sun stands at the old
     // `sun_height`; a height the equinox sun never reaches gives noon or
     // midnight.
-    hours_t clock_for_sun_height (float sun_height) const;
+    hours_t clock_for_sun_height (proportion_t sun_height) const;
 
-    // The sky `hours` after the first midnight.
-    SkyReading at (double hours) const;
+    // The sky at this moment of the day's clock.
+    SkyReading at (clock_time_t when) const;
 
     // The same sky lit from a fixed sun at the old `sun_height` and
     // azimuth, for views composed under one.
-    SkyReading held (float sun_height) const;
+    SkyReading held (proportion_t sun_height) const;
 
     radians_t latitude () const {
       return m_latitude;
     }
 
   private:
-    Vec3 body (radians_t hour_angle, radians_t declination) const;
+    direction_t body (radians_t hour_angle, radians_t declination) const;
     void light (SkyReading& sky) const;
 
     radians_t m_latitude;

@@ -180,11 +180,12 @@ namespace moppe::game {
         const int fwd = forward_sign (b);
 
         // What the simulation keeps as floats, read once.
-        const position_t here = position (a.position);
-        const heading_t bearing = a.heading * heading[u::rad];
-        const proportion_t gait = a.gait * of_stride;
-        const proportion_t head_down = a.head * proportion[one];
-        const radians_t look = a.look * u::rad;
+        const position_t here = a.position;
+        const heading_t bearing = a.heading;
+        const proportion_t gait = a.gait.numerical_value_in (one) * of_stride;
+        const proportion_t head_down =
+          a.head.numerical_value_in (one) * proportion[one];
+        const radians_t look = a.look;
 
         // Set on the ground under its fore and hind hooves.
         const direction_t facing =
@@ -355,7 +356,7 @@ namespace moppe::game {
     const auto& all = ad::meshes (r);
     for (std::size_t i = 0; i < animals.size (); ++i) {
       const Animal& a = animals[i];
-      const position_t here = position (a.position);
+      const position_t here = a.position;
       const plan_displacement_t seam = plan (camera) - plan (here);
       const displacement_t lap =
         displacement (Vec3 (terrain::whole_periods (plan_value (seam).x (),

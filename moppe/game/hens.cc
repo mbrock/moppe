@@ -29,12 +29,27 @@ namespace moppe::game {
         return static_cast<float> (hash (a, b) >> 8) * (1.0f / 16777216.0f);
       }
 
-      Vec3 forward_of (float heading) {
-        return Vec3 (std::sin (heading), 0.0f, std::cos (heading));
+      direction_t forward_of (heading_t heading) {
+        const float h = heading.numerical_value_in (u::rad);
+        return unit_direction (Vec3 (std::sin (h), 0.0f, std::cos (h)));
       }
 
-      float heading_of (const Vec3& d) {
-        return std::atan2 (d[0], d[2]);
+      heading_t heading_of (const plan_displacement_t& d) {
+        return std::atan2 (plan_value (d).x (), plan_value (d).z ()) *
+               heading[u::rad];
+      }
+
+      // From one place to another, seen from above.
+      plan_displacement_t plan_between (const position_t& from,
+                                        const position_t& to) {
+        return plan_displacement (
+          plan (position_value (to) - position_value (from)));
+      }
+
+      // Brought down to the floor of the barn's frame.
+      displacement_t on_floor (const displacement_t& d) {
+        const Vec3& v = displacement_value (d);
+        return displacement (Vec3 (v[0], 0.0f, v[2]));
       }
 
       // Where the birds go, in the barn's frame (tools/figure/farm.py):
@@ -42,54 +57,69 @@ namespace moppe::game {
       // the nest boxes, and the yard beyond the ramp; and the way between
       // them, through the doorway and down the ramp.
       struct Area {
-        float x0, x1, z0, z1;
+        meters_t x0, x1, z0, z1;
       };
-      constexpr Area walkway { -5.3f, 5.3f, -0.4f, 3.4f };
-      constexpr Area corner { -5.15f, -3.8f, -3.3f, -0.4f };
-      constexpr Area yard { -8.0f, 8.0f, 6.9f, 12.0f };
-      const Vec3 door_in (0.0f, 0.0f, 3.5f);
-      const Vec3 ramp_foot (0.0f, 0.0f, 6.4f);
+      constexpr Area walkway {
+        -5.3f * u::m, 5.3f * u::m, -0.4f * u::m, 3.4f * u::m
+      };
+      constexpr Area corner {
+        -5.15f * u::m, -3.8f * u::m, -3.3f * u::m, -0.4f * u::m
+      };
+      constexpr Area yard {
+        -8.0f * u::m, 8.0f * u::m, 6.9f * u::m, 12.0f * u::m
+      };
+      const displacement_t door_in = displacement (Vec3 (0.0f, 0.0f, 3.5f));
+      const displacement_t ramp_foot = displacement (Vec3 (0.0f, 0.0f, 6.4f));
       // Where a mother hen settles with her brood for the night.
-      const Vec3 brood (-4.3f, 0.0f, -2.0f);
+      const displacement_t brood = displacement (Vec3 (-4.3f, 0.0f, -2.0f));
       // The two perches: their height in the barn's frame and their z.
-      constexpr float perch_y[2] = { 1.05f, 1.35f };
-      constexpr float perch_z[2] = { -3.25f, -3.6f };
-      constexpr float roost_below_z = -2.75f;
+      constexpr meters_t perch_y[2] = { 1.05f * u::m, 1.35f * u::m };
+      constexpr meters_t perch_z[2] = { -3.25f * u::m, -3.6f * u::m };
+      constexpr meters_t roost_below_z = -2.75f * u::m;
 
-      bool in (const Area& a, const Vec3& p) {
-        return p[0] >= a.x0 && p[0] <= a.x1 && p[2] >= a.z0 && p[2] <= a.z1;
+      bool in (const Area& a, const displacement_t& p) {
+        const meters_t x = displacement_value (p)[0] * u::m;
+        const meters_t z = displacement_value (p)[2] * u::m;
+        return x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1;
       }
 
-      Vec3 clamp_to (const Area& a, Vec3 p) {
-        p[0] = std::clamp (static_cast<float> (p[0]), a.x0, a.x1);
-        p[2] = std::clamp (static_cast<float> (p[2]), a.z0, a.z1);
-        return p;
+      displacement_t clamp_to (const Area& a, const displacement_t& p) {
+        const Vec3& v = displacement_value (p);
+        return displacement (
+          Vec3 (meters_value (std::clamp (v[0] * u::m, a.x0, a.x1)),
+                v[1],
+                meters_value (std::clamp (v[2] * u::m, a.z0, a.z1))));
       }
 
-      Vec3 somewhere (const Area& a, float u, float v) {
-        return Vec3 (a.x0 + (a.x1 - a.x0) * u, 0.0f, a.z0 + (a.z1 - a.z0) * v);
+      // A point of an area, `across` of the way over it in x and `deep`
+      // of the way in z.
+      displacement_t somewhere (const Area& a, float across, float deep) {
+        return displacement (Vec3 (meters_value (a.x0 + (a.x1 - a.x0) * across),
+                                   0.0f,
+                                   meters_value (a.z0 + (a.z1 - a.z0) * deep)));
       }
 
-      Vec3 to_world (const Coop& c, const Vec3& local) {
-        return c.frame.transform_point (local);
+      position_t to_world (const Coop& c, const displacement_t& local) {
+        return position (c.frame.transform_point (displacement_value (local)));
       }
 
-      Vec3 to_local (const Coop& c, const Vec3& world) {
+      displacement_t to_local (const Coop& c, const position_t& world) {
         const Vec3 origin = c.frame.transform_point (Vec3 ());
         const Vec3 x = c.frame.transform_vector (Vec3 (1, 0, 0));
         const Vec3 z = c.frame.transform_vector (Vec3 (0, 0, 1));
-        const Vec3 d = world - origin;
-        return Vec3 (dot (d, x), d[1], dot (d, z));
+        const Vec3 d = position_value (world) - origin;
+        return displacement (Vec3 (dot (d, x), d[1], dot (d, z)));
       }
 
-      float stride_of (Bird::Kind kind) {
-        return kind == Bird::Kind::chick ? 0.05f : 0.11f;
+      meters_t stride_of (Bird::Kind kind) {
+        return (kind == Bird::Kind::chick ? 0.05f : 0.11f) * u::m;
       }
 
-      float pace_of (Bird::Kind kind) {
-        return kind == Bird::Kind::chick     ? 0.55f
-               : kind == Bird::Kind::rooster ? 0.5f
-                                             : 0.42f;
+      speed_t pace_of (Bird::Kind kind) {
+        return (kind == Bird::Kind::chick     ? 0.55f
+                : kind == Bird::Kind::rooster ? 0.5f
+                                              : 0.42f) *
+               u::m / u::s;
       }
     }
   }
@@ -110,24 +140,32 @@ namespace moppe::game {
         b.seed = s;
         b.coop = static_cast<std::uint32_t> (c);
         b.outside = outside;
-        Vec3 local = outside ? somewhere (yard, unit (s, 1), unit (s, 2))
-                             : somewhere (walkway, unit (s, 1), unit (s, 2));
-        local[1] = outside ? 0.0f : 0.34f;
+        const displacement_t spot =
+          outside ? somewhere (yard, unit (s, 1), unit (s, 2))
+                  : somewhere (walkway, unit (s, 1), unit (s, 2));
+        const displacement_t local =
+          displacement (Vec3 (displacement_value (spot)[0],
+                              outside ? 0.0f : 0.34f,
+                              displacement_value (spot)[2]));
         b.mother = mother;
         if (mother >= 0) {
           const Bird& m = birds[mother];
-          const float a = tau * unit (s, 3);
-          b.position = m.position + Vec3 (std::cos (a), 0, std::sin (a)) * 0.3f;
+          const radians_t a = tau * unit (s, 3) * u::rad;
+          const float turn = radians_value (a);
+          b.position =
+            position (position_value (m.position) +
+                      Vec3 (std::cos (turn), 0, std::sin (turn)) * 0.3f);
           b.outside = m.outside;
         } else {
           b.position = to_world (coop, local);
         }
-        b.heading = tau * unit (s, 4);
-        b.left = 1.0f + 5.0f * unit (s, 5);
+        b.heading = tau * unit (s, 4) * u::rad;
+        b.left = (1.0f + 5.0f * unit (s, 5)) * u::s;
         if (kind != Bird::Kind::chick) {
           const int pole = adult % 2;
-          b.roost = Vec3 (
-            -5.5f + 0.55f * (adult / 2), perch_y[pole] + 0.02f, perch_z[pole]);
+          b.roost = displacement (Vec3 (-5.5f + 0.55f * (adult / 2),
+                                        meters_value (perch_y[pole]) + 0.02f,
+                                        meters_value (perch_z[pole])));
           ++adult;
         }
         birds.push_back (b);
@@ -167,11 +205,11 @@ namespace moppe::game {
     using namespace hen_parts;
     std::uint32_t& r = m_random[&b - m_birds.data ()];
     const Coop& coop = m_coops[b.coop];
-    const Vec3 here = to_local (coop, b.position);
+    const displacement_t here = to_local (coop, b.position);
     const bool has_brood = std::ranges::any_of (m_birds, [&] (const Bird& o) {
       return o.mother == &b - m_birds.data ();
     });
-    const auto go = [&] (Vec3 goal, bool outside) {
+    const auto go = [&] (const displacement_t& goal, bool outside) {
       b.ways = 0;
       if (b.outside && !outside) {
         b.way[b.ways++] = ramp_foot;
@@ -183,21 +221,23 @@ namespace moppe::game {
       b.way[b.ways++] = goal;
       b.outside = outside;
       b.doing = Bird::Doing::walking;
-      b.left = 40.0f;
+      b.left = 40.0f * u::s;
     };
     if (b.kind == Bird::Kind::chick) {
       b.doing = rand (r) < 0.7f ? Bird::Doing::pecking : Bird::Doing::standing;
-      b.left = 1.0f + 3.0f * rand (r);
+      b.left = (1.0f + 3.0f * rand (r)) * u::s;
       return;
     }
     if (night) {
-      const Vec3 base =
-        has_brood ? brood : Vec3 (b.roost[0], 0.0f, roost_below_z);
-      Vec3 flat = here;
-      flat[1] = 0.0f;
-      if (!b.outside && length (flat - base) < 0.3f) {
+      const displacement_t base =
+        has_brood ? brood
+                  : displacement (Vec3 (displacement_value (b.roost)[0],
+                                        0.0f,
+                                        meters_value (roost_below_z)));
+      const displacement_t flat = on_floor (here);
+      if (!b.outside && length (displacement_value (flat - base)) < 0.3f) {
         b.doing = has_brood ? Bird::Doing::standing : Bird::Doing::roosting;
-        b.left = 30.0f;
+        b.left = 30.0f * u::s;
         return;
       }
       go (base, false);
@@ -206,22 +246,23 @@ namespace moppe::game {
     const float u = rand (r);
     if (u < 0.5f) {
       b.doing = Bird::Doing::pecking;
-      b.left = 3.0f + 7.0f * rand (r);
+      b.left = (3.0f + 7.0f * rand (r)) * u::s;
     } else if (u < 0.62f) {
       b.doing = Bird::Doing::standing;
-      b.left = 1.5f + 3.0f * rand (r);
+      b.left = (1.5f + 3.0f * rand (r)) * u::s;
     } else {
       // Somewhere else: as often out as in, a mother most often out.
       const bool outside =
         u < 0.82f ? b.outside : rand (r) < (has_brood ? 0.8f : 0.55f);
-      Vec3 goal = outside            ? somewhere (yard, rand (r), rand (r))
-                  : rand (r) < 0.25f ? somewhere (corner, rand (r), rand (r))
-                                     : somewhere (walkway, rand (r), rand (r));
+      const displacement_t goal = outside ? somewhere (yard, rand (r), rand (r))
+                                  : rand (r) < 0.25f
+                                    ? somewhere (corner, rand (r), rand (r))
+                                    : somewhere (walkway, rand (r), rand (r));
       if (outside) {
-        const Vec3 at = to_world (coop, goal);
-        if (!g.dry (at[0], at[2])) {
+        const position_t at = to_world (coop, goal);
+        if (!g.dry (plan (at))) {
           b.doing = Bird::Doing::pecking;
-          b.left = 2.0f;
+          b.left = 2.0f * u::s;
           return;
         }
       }
@@ -231,154 +272,189 @@ namespace moppe::game {
 
   void Hens::step (const AnimalGround& g,
                    std::span<const Presence> presences,
-                   const Vec3& focus,
-                   meters_t reach_q,
-                   hours_t hour_q,
+                   const position_t& focus,
+                   meters_t reach,
+                   hours_t hour,
                    seconds_t interval) {
     using namespace hen_parts;
-    // Unit-blind from here: the birds' rates are tuned in plain numbers.
-    const float reach = meters_value (reach_q);
-    const float hour = hour_q.numerical_value_in (si::hour);
+    // The birds' rates are tuned per second, applied over this many.
     const float dt = seconds_value (interval);
     if (dt <= 0.0f)
       return;
-    const bool night = hour >= 19.3f || hour < 6.2f;
+    const bool night = hour >= 19.3f * si::hour || hour < 6.2f * si::hour;
     for (std::size_t i = 0; i < m_birds.size (); ++i) {
       Bird& b = m_birds[i];
-      const float off_x =
-        terrain::minimum_image_delta (b.position[0] - focus[0], g.period_x);
-      const float off_z =
-        terrain::minimum_image_delta (b.position[2] - focus[2], g.period_z);
-      if (off_x * off_x + off_z * off_z > reach * reach)
+      const plan_displacement_t off =
+        terrain::torus_offset (plan (focus), plan (b.position), g.period);
+      if (length2 (plan_value (off)) >
+          meters_value (reach) * meters_value (reach))
         continue;
       const Coop& coop = m_coops[b.coop];
       std::uint32_t& r = m_random[i];
-      b.left -= dt;
+      b.left -= interval;
 
       // Up on the perch for the night, until the morning.
       if (b.doing == Bird::Doing::roosting) {
         b.perch =
-          std::clamp (b.perch + (night ? 1.6f : -1.6f) * dt, 0.0f, 1.0f);
-        Vec3 below = to_world (coop, Vec3 (b.roost[0], 0.0f, roost_below_z));
-        below[1] = g.ground (below[0], below[2]);
-        const Vec3 above = to_world (coop, b.roost);
-        b.position = below + (above - below) * b.perch;
-        const Vec3 face = to_world (coop, Vec3 (b.roost[0], 0.0f, 0.0f)) -
-                          to_world (coop, Vec3 (b.roost[0], 0.0f, -1.0f));
+          std::clamp (b.perch + (night ? 1.6f : -1.6f) * dt * proportion[one],
+                      0.0f * proportion[one],
+                      1.0f * proportion[one]);
+        position_t below =
+          to_world (coop,
+                    displacement (Vec3 (displacement_value (b.roost)[0],
+                                        0.0f,
+                                        meters_value (roost_below_z))));
+        below = terrain::at_elevation (plan (below), g.ground (plan (below)));
+        const position_t above = to_world (coop, b.roost);
+        b.position =
+          position (position_value (below) +
+                    (position_value (above) - position_value (below)) *
+                      b.perch.numerical_value_in (one));
+        const plan_displacement_t face = plan_between (
+          to_world (
+            coop,
+            displacement (Vec3 (displacement_value (b.roost)[0], 0.0f, -1.0f))),
+          to_world (
+            coop,
+            displacement (Vec3 (displacement_value (b.roost)[0], 0.0f, 0.0f))));
         b.heading = heading_of (face);
-        b.peck = std::max (0.0f, b.peck - 3.0f * dt);
-        if (!night && b.perch <= 0.0f) {
+        b.peck = std::max (0.0f * proportion[one],
+                           b.peck - 3.0f * dt * proportion[one]);
+        if (!night && b.perch <= 0.0f * proportion[one]) {
           b.doing = Bird::Doing::standing;
-          b.left = 1.0f + rand (r);
+          b.left = (1.0f + rand (r)) * u::s;
         }
         continue;
       }
 
       // Someone stepping among them sends them scurrying off.
       for (const Presence& p : presences) {
-        Vec3 d = b.position - p.position;
-        d[0] = terrain::minimum_image_delta (d[0], g.period_x);
-        d[1] = 0.0f;
-        d[2] = terrain::minimum_image_delta (d[2], g.period_z);
-        const float near = b.kind == Bird::Kind::chick ? 1.0f : 1.4f;
-        if (length2 (d) < near * near && b.doing != Bird::Doing::scurrying) {
-          const Vec3 away =
-            length2 (d) > 1e-6f ? normalized (d) : Vec3 (1, 0, 0);
-          Vec3 goal = to_local (coop, b.position + away * 2.5f);
-          goal[1] = 0.0f;
-          const Vec3 here = to_local (coop, b.position);
-          goal = b.outside           ? clamp_to (yard, goal)
-                 : in (corner, here) ? clamp_to (corner, goal)
-                                     : clamp_to (walkway, goal);
-          b.way[0] = goal;
+        const plan_displacement_t d = terrain::torus_offset (
+          plan (p.position), plan (b.position), g.period);
+        const meters_t near =
+          (b.kind == Bird::Kind::chick ? 1.0f : 1.4f) * u::m;
+        if (length2 (plan_value (d)) <
+              meters_value (near) * meters_value (near) &&
+            b.doing != Bird::Doing::scurrying) {
+          const Vec3 away = length2 (plan_value (d)) > 1e-6f
+                              ? lift (normalized (plan_value (d)))
+                              : Vec3 (1, 0, 0);
+          const displacement_t goal = on_floor (to_local (
+            coop, position (position_value (b.position) + away * 2.5f)));
+          const displacement_t here = to_local (coop, b.position);
+          b.way[0] = b.outside           ? clamp_to (yard, goal)
+                     : in (corner, here) ? clamp_to (corner, goal)
+                                         : clamp_to (walkway, goal);
           b.ways = 1;
           b.doing = Bird::Doing::scurrying;
-          b.left = 2.5f;
+          b.left = 2.5f * u::s;
         }
       }
 
       // A chick keeps at its mother's heels.
       if (b.mother >= 0 && b.doing != Bird::Doing::scurrying) {
         const Bird& m = m_birds[b.mother];
-        const float a = tau * unit (b.seed, 9) + 0.3f * std::sin (b.left);
-        const Vec3 near = m.position + Vec3 (std::cos (a), 0.0f, std::sin (a)) *
-                                         (0.25f + 0.3f * unit (b.seed, 10));
-        Vec3 d = near - b.position;
-        d[1] = 0.0f;
+        const radians_t a =
+          (tau * unit (b.seed, 9) + 0.3f * std::sin (seconds_value (b.left))) *
+          u::rad;
+        const float turn = radians_value (a);
+        const position_t near =
+          position (position_value (m.position) +
+                    Vec3 (std::cos (turn), 0.0f, std::sin (turn)) *
+                      (0.25f + 0.3f * unit (b.seed, 10)));
         b.outside = m.outside;
-        if (length (d) > 0.35f) {
+        if (length (plan_between (b.position, near)) > 0.35f * u::m) {
           b.way[0] = to_local (coop, near);
           b.ways = 1;
           b.doing = Bird::Doing::walking;
         } else if (b.doing == Bird::Doing::walking) {
           b.ways = 0;
           b.doing = Bird::Doing::pecking;
-          b.left = 1.0f + 2.0f * rand (r);
+          b.left = (1.0f + 2.0f * rand (r)) * u::s;
         }
       }
 
-      if (b.left < 0.0f || (b.ways == 0 && (b.doing == Bird::Doing::walking ||
-                                            b.doing == Bird::Doing::scurrying)))
+      if (b.left < seconds_t {} ||
+          (b.ways == 0 && (b.doing == Bird::Doing::walking ||
+                           b.doing == Bird::Doing::scurrying)))
         choose (b, g, night);
       // Dusk overtakes whatever it was about.
       if (night && b.kind != Bird::Kind::chick &&
           b.doing != Bird::Doing::walking && b.doing != Bird::Doing::roosting &&
-          b.doing != Bird::Doing::scurrying && b.left > 3.0f)
-        b.left = std::min (b.left, 0.5f);
+          b.doing != Bird::Doing::scurrying && b.left > 3.0f * u::s)
+        b.left = std::min (b.left, 0.5f * u::s);
 
-      float speed = 0.0f;
-      float face = b.heading;
-      float peck = 0.0f;
+      speed_t speed {};
+      heading_t face = b.heading;
+      proportion_t peck = 0.0f * proportion[one];
       switch (b.doing) {
       case Bird::Doing::walking:
       case Bird::Doing::scurrying: {
         if (b.ways == 0)
           break;
-        Vec3 to = to_world (coop, b.way[0]) - b.position;
-        to[1] = 0.0f;
-        const float d = length (to);
-        if (d < 0.15f) {
+        const plan_displacement_t to =
+          plan_between (b.position, to_world (coop, b.way[0]));
+        const meters_t d = length (to);
+        if (d < 0.15f * u::m) {
           for (int k = 1; k < b.ways; ++k)
             b.way[k - 1] = b.way[k];
           --b.ways;
           break;
         }
         face = heading_of (to);
-        speed = b.doing == Bird::Doing::scurrying ? 1.7f : pace_of (b.kind);
+        speed = b.doing == Bird::Doing::scurrying ? 1.7f * u::m / u::s
+                                                  : pace_of (b.kind);
         if (b.mother >= 0)
-          speed = std::min (1.2f, 0.4f + 1.2f * d);
+          speed = std::min (1.2f, 0.4f + 1.2f * meters_value (d)) * u::m / u::s;
         break;
       }
       case Bird::Doing::pecking: {
         // Head down to the ground in quick dabs, a step or two between.
-        const float beat =
-          std::fmod (b.left * 1.9f + 3.0f * unit (b.seed, 11) + 1000.0f, 1.0f);
-        peck = beat < 0.45f ? 1.0f : 0.0f;
-        const float shuffle = std::fmod (b.left * 0.37f + 100.0f, 1.0f);
-        if (shuffle < 0.12f)
-          speed = 0.2f;
-        face = b.heading + 0.8f * std::sin (b.left * 0.6f + b.seed % 17);
+        const proportion_t beat =
+          std::fmod (seconds_value (b.left) * 1.9f + 3.0f * unit (b.seed, 11) +
+                       1000.0f,
+                     1.0f) *
+          proportion[one];
+        peck = (beat < 0.45f * proportion[one] ? 1.0f : 0.0f) * proportion[one];
+        const proportion_t shuffle =
+          std::fmod (seconds_value (b.left) * 0.37f + 100.0f, 1.0f) *
+          proportion[one];
+        if (shuffle < 0.12f * proportion[one])
+          speed = 0.2f * u::m / u::s;
+        face = b.heading +
+               0.8f * std::sin (seconds_value (b.left) * 0.6f + b.seed % 17) *
+                 u::rad;
         break;
       }
       case Bird::Doing::standing:
       case Bird::Doing::roosting:
         break;
       }
-      const float turn = std::remainder (face - b.heading, tau);
-      b.heading += std::clamp (turn, -5.0f * dt, 5.0f * dt);
-      if (std::abs (turn) > 1.2f)
+      const radians_t turn =
+        std::remainder ((face - b.heading).numerical_value_in (u::rad), tau) *
+        u::rad;
+      b.heading += std::clamp (turn, -5.0f * dt * u::rad, 5.0f * dt * u::rad);
+      if (abs (turn) > 1.2f * u::rad)
         speed *= 0.3f;
-      b.speed += std::clamp (speed - b.speed, -6.0f * dt, 6.0f * dt);
-      b.peck += std::clamp (peck - b.peck, -9.0f * dt, 9.0f * dt);
-      if (b.speed > 1e-3f) {
-        Vec3 next = b.position + forward_of (b.heading) * (b.speed * dt);
+      b.speed += std::clamp<speed_t> (
+        speed - b.speed, -6.0f * dt * u::m / u::s, 6.0f * dt * u::m / u::s);
+      b.peck += std::clamp (peck - b.peck,
+                            -9.0f * dt * proportion[one],
+                            9.0f * dt * proportion[one]);
+      if (b.speed > 1e-3f * u::m / u::s) {
+        position_t next = position (position_value (b.position) +
+                                    direction_value (forward_of (b.heading)) *
+                                      (speed_value (b.speed) * dt));
         if (g.clear)
-          next = g.clear (next, b.kind == Bird::Kind::chick ? 0.05f : 0.11f);
-        b.gait += length (next - b.position) / stride_of (b.kind);
-        b.gait = std::fmod (b.gait, 1024.0f);
+          next = g.clear (next,
+                          (b.kind == Bird::Kind::chick ? 0.05f : 0.11f) * u::m);
+        b.gait += length (position_value (next) - position_value (b.position)) /
+                  meters_value (stride_of (b.kind)) * isq::rotation[one];
+        b.gait = fmod (b.gait, 1024.0f * isq::rotation[one]);
         b.position = next;
       }
-      b.position[1] = g.ground (b.position[0], b.position[2]);
+      b.position =
+        terrain::at_elevation (plan (b.position), g.ground (plan (b.position)));
     }
   }
 
@@ -422,14 +498,19 @@ namespace moppe::game {
 
   void render_birds (render::Renderer& r,
                      std::span<const Bird> birds,
-                     const Vec3& camera,
-                     const Vec3& forward,
-                     float time,
-                     float reach,
-                     float period_x,
-                     float period_z,
+                     const position_t& camera,
+                     const direction_t& forward,
+                     seconds_t time,
+                     meters_t reach,
+                     const plan_extent_t& period,
                      std::uint64_t motion_base) {
     using namespace hen_parts;
+    // Into the renderer's frames, in metres and seconds.
+    const Vec3& eye = position_value (camera);
+    const Vec3& ahead = direction_value (forward);
+    const float far = meters_value (reach);
+    const float clock = seconds_value (time);
+    const Vec2& laps = plan_value (period);
     static const std::array<BirdMeshes, 3> meshes = [&r] {
       std::array<BirdMeshes, 3> out;
       for (int k = 0; k < 3; ++k) {
@@ -448,53 +529,60 @@ namespace moppe::game {
                          : -1.0f;
     for (std::size_t i = 0; i < birds.size (); ++i) {
       const Bird& b = birds[i];
-      const Vec3 lap (
-        terrain::whole_periods (camera[0] - b.position[0], period_x),
-        0.0f,
-        terrain::whole_periods (camera[2] - b.position[2], period_z));
-      const Vec3 to = b.position + lap - camera;
-      if (length2 (to) > reach * reach || dot (to, forward) < -1.0f)
+      const Vec3& at = position_value (b.position);
+      const Vec3 lap (terrain::whole_periods (eye[0] - at[0], laps.x ()),
+                      0.0f,
+                      terrain::whole_periods (eye[2] - at[2], laps.z ()));
+      const Vec3 to = at + lap - eye;
+      if (length2 (to) > far * far || dot (to, ahead) < -1.0f)
         continue;
       const BirdBuild& build = build_of (b.kind);
       const BirdMeshes& m = meshes[static_cast<int> (b.kind)];
-      const Vec3 f = forward_of (b.heading);
+      const Vec3 f = direction_value (forward_of (b.heading));
       const Vec3 left = cross (up, f);
-      const float walking = std::min (1.0f, b.speed / 0.4f);
-      const float phase = tau * b.gait;
+      const proportion_t walking =
+        std::min (1.0f, speed_value (b.speed) / 0.4f) * proportion[one];
+      const float stepping = walking.numerical_value_in (one);
+      const radians_t phase = tau * b.gait.numerical_value_in (one) * u::rad;
+      const float cycle = radians_value (phase);
       // A little bob at each step, and a crow's stretch now and then.
-      const float bob = 0.008f * walking * std::abs (std::sin (phase));
-      const Mat4 frame = Mat4::translation (b.position + lap + up * bob) *
-                         Mat4::basis (left, up, f);
+      const meters_t bob =
+        0.008f * stepping * std::abs (std::sin (cycle)) * u::m;
+      const Mat4 frame =
+        Mat4::translation (at + lap + up * meters_value (bob)) *
+        Mat4::basis (left, up, f);
       std::uint64_t id = motion_base ? motion_base + i * 8 : 0;
       const auto draw = [&] (const render::Mesh& mesh, const Mat4& at) {
         r.draw_mesh (mesh, at, id ? ++id : 0);
       };
       draw (*m.body, frame);
       // The head dabs down to peck; walking, it bobs back and forth.
-      const float stretch =
-        b.kind == Bird::Kind::rooster && b.doing == Bird::Doing::standing
-          ? -0.35f * std::max (0.0f, std::sin (time * 0.7f + b.seed % 13))
-          : 0.0f;
-      const float pitch =
+      const radians_t stretch =
+        (b.kind == Bird::Kind::rooster && b.doing == Bird::Doing::standing
+           ? -0.35f * std::max (0.0f, std::sin (clock * 0.7f + b.seed % 13))
+           : 0.0f) *
+        u::rad;
+      const radians_t pitch =
         down *
-        (1.15f * b.peck + 0.18f * walking * std::sin (2.0f * phase) + stretch);
-      const float glance = b.doing == Bird::Doing::standing
-                             ? 0.6f * std::sin (time * 1.3f + b.seed % 29)
-                             : 0.0f;
+        (1.15f * b.peck.numerical_value_in (one) +
+         0.18f * stepping * std::sin (2.0f * cycle) + radians_value (stretch)) *
+        u::rad;
+      const radians_t glance = (b.doing == Bird::Doing::standing
+                                  ? 0.6f * std::sin (clock * 1.3f + b.seed % 29)
+                                  : 0.0f) *
+                               u::rad;
       draw (*m.head,
             frame * Mat4::translation (build.neck) *
-              Mat4::rotation (glance * u::rad, up) *
-              Mat4::rotation (pitch * u::rad, x_axis));
+              Mat4::rotation (glance, up) * Mat4::rotation (pitch, x_axis));
       // The legs swing in turn about the hips.
       for (int side = 0; side < 2; ++side) {
-        const float swing =
-          down * -0.55f * walking * std::sin (phase + side * 3.14159265f);
+        const radians_t swing = down * -0.55f * stepping *
+                                std::sin (cycle + side * 3.14159265f) * u::rad;
         const Vec3 hip = side == 0
                            ? build.hip
                            : Vec3 (-build.hip[0], build.hip[1], build.hip[2]);
         draw (*m.leg,
-              frame * Mat4::translation (hip) *
-                Mat4::rotation (swing * u::rad, x_axis));
+              frame * Mat4::translation (hip) * Mat4::rotation (swing, x_axis));
       }
     }
   }
@@ -538,26 +626,27 @@ namespace moppe::game {
   std::optional<std::size_t>
   nest_within_reach (std::span<const Nest> nests,
                      std::span<const NestState> states,
-                     const Vec3& feet,
-                     const Vec3& heading,
-                     float period_x,
-                     float period_z) {
+                     const position_t& feet,
+                     const direction_t& heading,
+                     const plan_extent_t& period) {
     std::optional<std::size_t> found;
-    float best = 1.3f * 1.3f;
-    Vec3 facing = heading;
-    facing[1] = 0.0f;
-    facing = length2 (facing) > 1e-6f ? normalized (facing) : Vec3 (0, 0, 1);
+    square_meters_t best = 1.3f * 1.3f * u::m * u::m;
+    const Vec2 flat = plan (direction_value (heading));
+    const plan_direction_t facing = plan_unit_direction (
+      length2 (flat) > 1e-6f ? normalized (flat) : Vec2 (0, 1));
     for (std::size_t k = 0; k < nests.size () && k < states.size (); ++k) {
       if (states[k].eggs == 0)
         continue;
-      Vec3 d = nests[k].at - feet;
-      d[0] = terrain::minimum_image_delta (d[0], period_x);
-      d[2] = terrain::minimum_image_delta (d[2], period_z);
-      if (std::abs (static_cast<float> (d[1])) > 1.6f)
+      const displacement_t reach =
+        displacement (position_value (nests[k].at) - position_value (feet));
+      if (std::abs (displacement_value (reach)[1]) * u::m > 1.6f * u::m)
         continue;
-      d[1] = 0.0f;
-      const float d2 = length2 (d);
-      if (d2 >= best || (d2 > 0.04f && dot (d, facing) < 0.2f * std::sqrt (d2)))
+      const plan_displacement_t d =
+        terrain::minimum_image (plan (reach), period);
+      const square_meters_t d2 = length2 (plan_value (d)) * u::m * u::m;
+      if (d2 >= best ||
+          (d2 > 0.04f * u::m * u::m &&
+           dot (plan_value (d), plan_value (facing)) * u::m < 0.2f * sqrt (d2)))
         continue;
       best = d2;
       found = k;
@@ -566,14 +655,17 @@ namespace moppe::game {
   }
 
   void draw_egg (render::DrawList& dl,
-                 const Vec3& at,
-                 const Vec3& along,
+                 const position_t& at,
+                 const direction_t& along,
                  std::uint32_t seed) {
     using namespace hen_parts;
+    // The shell's mesh, in metres in the world.
+    const Vec3& centre = position_value (at);
     // A blommehöna's egg is cream, now and then a little tinted.
     const float tint = unit (seed, 1);
     dl.color (0.93f - 0.05f * tint, 0.89f - 0.09f * tint, 0.80f - 0.14f * tint);
-    const Vec3 a = length2 (along) > 1e-6f ? normalized (along) : up;
+    const Vec3& axis = direction_value (along);
+    const Vec3 a = length2 (axis) > 1e-6f ? normalized (axis) : up;
     Vec3 u = cross (a, std::abs (a[1]) < 0.9f ? up : Vec3 (1, 0, 0));
     u = normalized (u);
     const Vec3 v = cross (a, u);
@@ -587,7 +679,7 @@ namespace moppe::game {
       const float w = round * std::sin (t) * (1.0f + 0.12f * c);
       const Vec3 radial = u * std::cos (s) + v * std::sin (s);
       normal = normalized (radial * std::sin (t) * (half / round) + a * c);
-      return at + a * (half * c) + radial * w;
+      return centre + a * (half * c) + radial * w;
     };
     for (int j = 0; j < stacks; ++j)
       for (int i = 0; i < slices; ++i) {
@@ -610,11 +702,14 @@ namespace moppe::game {
   }
 
   void draw_fried_egg (render::DrawList& dl,
-                       const Vec3& at,
-                       float yaw,
+                       const position_t& at_q,
+                       radians_t yaw_q,
                        float cooked,
                        std::uint32_t seed) {
     using namespace hen_parts;
+    // The egg's mesh, in metres and radians.
+    const Vec3& at = position_value (at_q);
+    const float yaw = radians_value (yaw_q);
     // The white spreads and sets, browning lacy at its edge, then burns.
     const float done = std::clamp (cooked, 0.0f, 1.0f);
     const float burnt = std::clamp (cooked - 1.0f, 0.0f, 1.0f);
@@ -685,18 +780,21 @@ namespace moppe::game {
   void draw_nest_eggs (render::DrawList& dl,
                        std::span<const Nest> nests,
                        std::span<const NestState> states,
-                       const Vec3& camera,
-                       float period_x,
-                       float period_z) {
+                       const position_t& camera_q,
+                       const plan_extent_t& period) {
     using namespace hen_parts;
+    // The boxes' meshes, in metres in the world.
+    const Vec3& camera = position_value (camera_q);
+    const Vec2& laps = plan_value (period);
     bool open = false;
     for (std::size_t k = 0; k < nests.size () && k < states.size (); ++k) {
       // The box at the copy of the world nearest the camera.
-      const Vec3 lap (
-        terrain::whole_periods (camera[0] - nests[k].at[0], period_x),
-        0.0f,
-        terrain::whole_periods (camera[2] - nests[k].at[2], period_z));
-      const Vec3 box = nests[k].at + lap;
+      const Vec3& nest = position_value (nests[k].at);
+      const Vec3& out = direction_value (nests[k].out);
+      const Vec3 lap (terrain::whole_periods (camera[0] - nest[0], laps.x ()),
+                      0.0f,
+                      terrain::whole_periods (camera[2] - nest[2], laps.z ()));
+      const Vec3 box = nest + lap;
       if (states[k].eggs == 0 || length2 (box - camera) > 60.0f * 60.0f)
         continue;
       if (!open) {
@@ -706,17 +804,18 @@ namespace moppe::game {
         dl.begin (render::Prim::Triangles);
         open = true;
       }
-      const Vec3 side = cross (up, nests[k].out);
+      const Vec3 side = cross (up, out);
       for (int e = 0; e < states[k].eggs; ++e) {
         const auto s = hash (static_cast<std::uint32_t> (k) * 31u, e);
         const float a = tau * (e / 3.0f + 0.1f * unit (s, 2));
         const Vec3 at = box + side * (0.05f * std::cos (a)) +
-                        nests[k].out * (0.05f * std::sin (a)) + up * 0.02f;
-        draw_egg (dl,
-                  at,
-                  normalized (side * std::cos (a + 1.3f) +
-                              nests[k].out * std::sin (a + 1.3f) + up * 0.15f),
-                  s);
+                        out * (0.05f * std::sin (a)) + up * 0.02f;
+        draw_egg (
+          dl,
+          position (at),
+          unit_direction (normalized (side * std::cos (a + 1.3f) +
+                                      out * std::sin (a + 1.3f) + up * 0.15f)),
+          s);
       }
     }
     if (open)

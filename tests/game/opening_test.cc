@@ -32,22 +32,22 @@ MOPPE_TEST (opening_reel_parses_shots_captions_and_arrival) {
   MOPPE_CHECK (reel->matches (123, 2048, "play"));
   MOPPE_CHECK (!reel->matches (124, 2048, "play"));
   MOPPE_CHECK (!reel->matches (123, 1024, "play"));
-  MOPPE_CHECK (reel->km && *reel->km == 10.0f);
+  MOPPE_CHECK (reel->km && *reel->km == 10.0f * u::km);
   MOPPE_CHECK (reel->shots.size () == 2);
   const OpeningShot& lake = reel->shots[0];
   MOPPE_CHECK (lake.name == "lake");
-  MOPPE_CHECK_NEAR (lake.eye[1], 20.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (lake.heading_deg, 90.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (lake.fov_deg, 48.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (lake.push, 3.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (lake.fade, 2.5f, 1e-6f);
-  MOPPE_CHECK (lake.clock && *lake.clock == 400.0f);
+  MOPPE_CHECK_NEAR (position_value (lake.eye)[1], 20.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (lake.heading_deg.numerical_value_in (u::deg), 90.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (lake.fov_deg.numerical_value_in (u::deg), 48.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (meters_value (lake.push), 3.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (seconds_value (lake.fade), 2.5f, 1e-6f);
+  MOPPE_CHECK (lake.clock && *lake.clock == 400.0f * u::s);
   MOPPE_CHECK (lake.captions.size () == 1);
   MOPPE_CHECK (lake.captions[0].text == "moppe");
   MOPPE_CHECK (reel->shots[1].captions[0].style ==
                OpeningCaption::Style::Credit);
   MOPPE_CHECK (reel->arrival.has_value ());
-  MOPPE_CHECK_NEAR (reel->arrival->push, 4.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (meters_value (reel->arrival->push), 4.0f, 1e-6f);
 }
 
 MOPPE_TEST (opening_reel_reports_the_line_of_a_mistake) {
@@ -63,47 +63,52 @@ MOPPE_TEST (opening_reel_reports_the_line_of_a_mistake) {
 MOPPE_TEST (opening_pose_line_round_trips) {
   const Vec3 eye (4454.04f, 153.9f, 3617.93f);
   const Vec3 forward = normalized (Vec3 (-0.9f, -0.05f, 0.2f));
-  const std::string line =
-    format_opening_shot ("shot-004", eye, forward, 70.0f, 412.0f, 0.62f);
+  const std::string line = format_opening_shot (
+    "shot-004", eye, forward, 70.0f * u::deg, 412.0f * u::s, 0.62f);
   std::string error;
   const std::optional<OpeningReel> reel = parse (line + "\n", error);
   MOPPE_CHECK (reel.has_value ());
   const OpeningShot& shot = reel->shots.at (0);
   MOPPE_CHECK (shot.name == "shot-004");
-  MOPPE_CHECK_NEAR (shot.eye[0], eye[0], 0.01f);
-  MOPPE_CHECK_NEAR (shot.fov_deg, 70.0f, 0.05f);
-  const Vec3 back = forward_from (shot.heading_deg, shot.pitch_deg);
+  MOPPE_CHECK_NEAR (position_value (shot.eye)[0], eye[0], 0.01f);
+  MOPPE_CHECK_NEAR (shot.fov_deg.numerical_value_in (u::deg), 70.0f, 0.05f);
+  const Vec3 back =
+    direction_value (forward_from (shot.heading_deg, shot.pitch_deg));
   MOPPE_CHECK (length (back - forward) < 0.003f);
 }
 
 MOPPE_TEST (opening_player_cuts_fades_and_lands_in_the_arrival) {
   OpeningShot first;
   first.name = "first";
-  first.eye = Vec3 (0, 10, 0);
-  first.hold = 4.0f;
-  first.fade = 2.0f;
-  first.sway = 0.0f;
-  first.push = 2.0f;
+  first.eye = position (Vec3 (0, 10, 0));
+  first.hold = 4.0f * u::s;
+  first.fade = 2.0f * u::s;
+  first.sway = 0.0f * scale_factor[one];
+  first.push = 2.0f * u::m;
   first.captions.push_back (
-    { OpeningCaption::Style::Title, "moppe", 1.0f, 2.0f });
+    { OpeningCaption::Style::Title, "moppe", 1.0f * u::s, 2.0f * u::s });
   OpeningArrival arrival;
-  arrival.hold = 3.0f;
-  arrival.fade = 1.0f;
+  arrival.hold = 3.0f * u::s;
+  arrival.fade = 1.0f * u::s;
   const Vec3 eye (5, 2, 5);
-  const OpeningShot last = arrival_shot (arrival, eye, Vec3 (1, 0, 0), 70.0f);
+  const OpeningShot last =
+    arrival_shot (arrival, position (eye), Vec3 (1, 0, 0), 70.0f * u::deg);
 
   OpeningPlayer player;
   player.start ({ first, last });
   MOPPE_CHECK (player.active ());
-  MOPPE_CHECK_NEAR (player.duration (), 7.0f, 1e-5f);
-  MOPPE_CHECK_NEAR (player.veil (), 1.0f, 1e-5f); // rising out of black
+  MOPPE_CHECK_NEAR (seconds_value (player.duration ()), 7.0f, 1e-5f);
+  // Rising out of black.
+  MOPPE_CHECK_NEAR (player.veil ().numerical_value_in (one), 1.0f, 1e-5f);
   MOPPE_CHECK (player.captions ().empty ());
 
   player.tick (seconds (2.0f));
-  MOPPE_CHECK_NEAR (player.veil (), 0.0f, 1e-5f);
-  MOPPE_CHECK_NEAR (player.position ()[2], 1.0f, 1e-4f); // halfway pushed
+  MOPPE_CHECK_NEAR (player.veil ().numerical_value_in (one), 0.0f, 1e-5f);
+  // Halfway pushed.
+  MOPPE_CHECK_NEAR (position_value (player.position ())[2], 1.0f, 1e-4f);
   MOPPE_CHECK (player.captions ().size () == 1);
-  MOPPE_CHECK_NEAR (player.captions ()[0].alpha, 1.0f, 0.05f);
+  MOPPE_CHECK_NEAR (
+    player.captions ()[0].alpha.numerical_value_in (one), 1.0f, 0.05f);
 
   player.tick (seconds (1.8f)); // just before the dip's middle
   MOPPE_CHECK (player.veil () > 0.5f);
@@ -115,11 +120,12 @@ MOPPE_TEST (opening_player_cuts_fades_and_lands_in_the_arrival) {
 
   player.tick (seconds (2.84f));
   MOPPE_CHECK (player.active ());
-  MOPPE_CHECK (length (player.position () - eye) < 0.01f);
+  MOPPE_CHECK (length (position_value (player.position ()) - eye) < 0.01f);
   player.tick (seconds (0.1f));
   MOPPE_CHECK (!player.active ());
-  MOPPE_CHECK (length (player.position () - eye) < 1e-4f);
-  MOPPE_CHECK (length (player.forward () - Vec3 (1, 0, 0)) < 1e-4f);
+  MOPPE_CHECK (length (position_value (player.position ()) - eye) < 1e-4f);
+  MOPPE_CHECK (length (direction_value (player.forward ()) - Vec3 (1, 0, 0)) <
+               1e-4f);
 }
 
 // The shot list shipped in data/ parses and names the default world.

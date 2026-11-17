@@ -23,10 +23,9 @@ namespace moppe {
       }
     }
 
-    GroundCover MoppeGame::ground_cover (const Vec3& at) const {
+    GroundCover MoppeGame::ground_cover (const position_t& at) const {
       const auto read = [&] (auto quantity) {
-        return spatial::sample<quantity> (generated_world ().readings (),
-                                          moppe::position (at));
+        return spatial::sample<quantity> (generated_world ().readings (), at);
       };
       constexpr auto part = proportion[one];
       const proportion_t tread =
@@ -36,13 +35,13 @@ namespace moppe {
       const proportion_t wet =
         band (0.45f * part, 0.80f * part, read (map::surface_moisture));
       GroundCover ground;
-      ground.leaves =
-        m_forest.litter_at (plan_position (plan (at))).numerical_value_in (one);
+      ground.leaves = m_forest.litter_at (plan (at));
       const proportion_t loose = std::max (tread, bare);
       const proportion_t whole = 1.0f * part;
       ground.dust = ((0.2f * part + 0.8f * loose) * (whole - 0.6f * wet) *
-                     (1.0f - 0.7f * ground.leaves))
-                      .numerical_value_in (one);
+                     (whole - 0.7f * ground.leaves))
+                      .numerical_value_in (one) *
+                    part;
       const auto blend = [] (DisplayColor a, DisplayColor b, float t) {
         return DisplayColor (a.red + (b.red - a.red) * t,
                              a.green + (b.green - a.green) * t,
@@ -55,8 +54,9 @@ namespace moppe {
                                  DisplayColor (0.42f, 0.34f, 0.24f),
                                  loose.numerical_value_in (one));
       // Under fallen leaves the wheel digs up dark forest soil.
-      ground.clod_color = blend (
-        ground.clod_color, DisplayColor (0.34f, 0.26f, 0.17f), ground.leaves);
+      ground.clod_color = blend (ground.clod_color,
+                                 DisplayColor (0.34f, 0.26f, 0.17f),
+                                 ground.leaves.numerical_value_in (one));
       return ground;
     }
 
@@ -407,8 +407,8 @@ namespace moppe {
                       world_ground (),
                       m_sky.sky (),
                       session (),
-                      m_home_base_position,
-                      m_spawn_position);
+                      position (m_home_base_position),
+                      position (m_spawn_position));
       remember_seed (world (),
                      recipe ().generation_profile (),
                      static_cast<int> (recipe ().seed ().value));

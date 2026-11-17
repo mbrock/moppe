@@ -12,11 +12,11 @@ namespace moppe::game {
     const Vec3 world_up (0, 1, 0);
 
     // The rod, butt to tip, and how much of it is behind the hand.
-    constexpr float rod_length = 2.7f;
-    constexpr float rod_butt = 0.32f;
+    constexpr meters_t rod_length = 2.7f * u::m;
+    constexpr meters_t rod_butt = 0.32f * u::m;
     // The fish are drawn larger than life, as the mushrooms are, so that
     // they show at the end of a line.
-    constexpr float fish_drawn = 1.5f;
+    constexpr scale_factor_t fish_drawn = 1.5f * scale_factor[one];
 
     float mix (float a, float b, float t) {
       return a + (b - a) * t;
@@ -48,7 +48,7 @@ namespace moppe::game {
     void strand (render::DrawList& dl,
                  const Vec3* points,
                  int count,
-                 float radius,
+                 meters_t radius,
                  int sides) {
       for (int i = 0; i + 1 < count; ++i) {
         const Vec3 a = points[i], b = points[i + 1];
@@ -65,7 +65,7 @@ namespace moppe::game {
           const Vec3 n1 = u * std::cos (t1) + v * std::sin (t1);
           const auto put = [&] (const Vec3& p, const Vec3& n) {
             dl.normal (n);
-            dl.vertex (p + n * radius);
+            dl.vertex (p + n * meters_value (radius));
           };
           put (a, n0);
           put (b, n0);
@@ -81,7 +81,7 @@ namespace moppe::game {
     // its lower in `bottom`: the float.
     void ball (render::DrawList& dl,
                const Vec3& centre,
-               float radius,
+               meters_t radius,
                DisplayColor top,
                DisplayColor bottom) {
       constexpr int rings = 6;
@@ -100,7 +100,7 @@ namespace moppe::game {
           const Vec3 n10 = at (r + 1, s), n11 = at (r + 1, s + 1);
           const auto put = [&] (const Vec3& n) {
             dl.normal (n);
-            dl.vertex (centre + n * radius);
+            dl.vertex (centre + n * meters_value (radius));
           };
           put (n00);
           put (n10);
@@ -115,7 +115,7 @@ namespace moppe::game {
     struct Look {
       DisplayColor back, belly, fin;
       // Height of the body for its length, and how it is marked.
-      float depth;
+      proportion_t depth;
       bool bars = false;
       bool spots = false;
       bool pale_spots = false;
@@ -214,44 +214,60 @@ namespace moppe::game {
   Fish fish_for (Waters waters, bool upland, std::uint32_t seed) {
     struct Odds {
       FishKind kind;
-      float weight;
-      float least, most; // metres
+      probability_t weight;
+      meters_t least, most;
     };
     static constexpr Odds still[] = {
-      { FishKind::perch, 0.48f, 0.14f, 0.36f },
-      { FishKind::roach, 0.32f, 0.12f, 0.27f },
-      { FishKind::pike, 0.20f, 0.40f, 0.95f },
+      { FishKind::perch, 0.48f * probability[one], 0.14f * u::m, 0.36f * u::m },
+      { FishKind::roach, 0.32f * probability[one], 0.12f * u::m, 0.27f * u::m },
+      { FishKind::pike, 0.20f * probability[one], 0.40f * u::m, 0.95f * u::m },
     };
     static constexpr Odds cold[] = {
-      { FishKind::arctic_char, 0.55f, 0.18f, 0.42f },
-      { FishKind::brown_trout, 0.25f, 0.20f, 0.45f },
-      { FishKind::perch, 0.20f, 0.14f, 0.30f },
+      { FishKind::arctic_char,
+        0.55f * probability[one],
+        0.18f * u::m,
+        0.42f * u::m },
+      { FishKind::brown_trout,
+        0.25f * probability[one],
+        0.20f * u::m,
+        0.45f * u::m },
+      { FishKind::perch, 0.20f * probability[one], 0.14f * u::m, 0.30f * u::m },
     };
     static constexpr Odds running[] = {
-      { FishKind::brown_trout, 0.50f, 0.18f, 0.48f },
-      { FishKind::grayling, 0.38f, 0.20f, 0.42f },
-      { FishKind::perch, 0.12f, 0.14f, 0.30f },
+      { FishKind::brown_trout,
+        0.50f * probability[one],
+        0.18f * u::m,
+        0.48f * u::m },
+      { FishKind::grayling,
+        0.38f * probability[one],
+        0.20f * u::m,
+        0.42f * u::m },
+      { FishKind::perch, 0.12f * probability[one], 0.14f * u::m, 0.30f * u::m },
     };
     static constexpr Odds sea[] = {
-      { FishKind::herring, 0.45f, 0.15f, 0.26f },
-      { FishKind::perch, 0.30f, 0.15f, 0.34f },
-      { FishKind::cod, 0.25f, 0.30f, 0.75f },
+      { FishKind::herring,
+        0.45f * probability[one],
+        0.15f * u::m,
+        0.26f * u::m },
+      { FishKind::perch, 0.30f * probability[one], 0.15f * u::m, 0.34f * u::m },
+      { FishKind::cod, 0.25f * probability[one], 0.30f * u::m, 0.75f * u::m },
     };
     const Odds* odds = waters == Waters::running ? running
                        : waters == Waters::sea   ? sea
                        : upland                  ? cold
                                                  : still;
-    float pick = hash_lane (seed, 1);
+    probability_t pick = hash_lane (seed, 1) * probability[one];
     int i = 0;
     while (i < 2 && pick >= odds[i].weight) {
       pick -= odds[i].weight;
       ++i;
     }
     // Most are small; now and then a big one.
-    const float size = std::pow (hash_lane (seed, 2), 1.8f);
+    const proportion_t size =
+      std::pow (hash_lane (seed, 2), 1.8f) * proportion[one];
     return { .kind = odds[i].kind,
-             .length =
-               fishing_parts::mix (odds[i].least, odds[i].most, size) * u::m,
+             .length = odds[i].least + (odds[i].most - odds[i].least) *
+                                         size.numerical_value_in (one),
              .seed = seed };
   }
 
@@ -265,8 +281,8 @@ namespace moppe::game {
   }
 
   void cast_line (Line& line,
-                  const Vec3& stand,
-                  const Vec3& aim,
+                  const position_t& stand,
+                  const position_t& aim,
                   Waters waters,
                   bool upland,
                   play_time_t now) {
@@ -274,9 +290,9 @@ namespace moppe::game {
     ++line.casts;
     line.phase = Line::Phase::casting;
     line.since = now;
-    line.stand = position (stand);
-    line.aim = position (aim);
-    line.bobber = position (aim);
+    line.stand = stand;
+    line.aim = aim;
+    line.bobber = aim;
     line.waters = waters;
     line.upland = upland;
     line.fish = fish_for (waters, upland, chance (line));
@@ -288,7 +304,7 @@ namespace moppe::game {
     using namespace fishing_parts;
     Line& line = fishing.line;
     Creel& creel = fishing.creel;
-    const seconds_t age = seconds_between (now, line.since) * u::s;
+    const seconds_t age = seconds_between (now, line.since);
     const auto begin = [&] (Line::Phase phase) {
       line.phase = phase;
       line.since = now;
@@ -326,7 +342,7 @@ namespace moppe::game {
       return false;
     case Line::Phase::playing:
       if (age > play_seconds (line.fish)) {
-        line.bobber = position (fish_in_water (line, now));
+        line.bobber = fish_in_water (line, now);
         creel.fish.push_back (line.fish);
         creel.last = line.fish;
         creel.last_lost = false;
@@ -346,28 +362,31 @@ namespace moppe::game {
     return false;
   }
 
-  Vec3 fish_in_water (const Line& line, play_time_t now) {
+  position_t fish_in_water (const Line& line, play_time_t now) {
     using namespace fishing_parts;
     if (line.phase != Line::Phase::playing)
-      return position_value (line.bobber);
-    const float done =
-      fishing_parts::within_unit (seconds_between (now, line.since) /
-                                  seconds_value (play_seconds (line.fish)));
+      return line.bobber;
+    const seconds_t t = seconds_between (now, line.since);
+    const proportion_t done =
+      within_unit ((t / play_seconds (line.fish)).numerical_value_in (one)) *
+      proportion[one];
+    const float d = done.numerical_value_in (one);
     // It runs from side to side as it is wound in to a few metres out.
     const Vec3 in =
       flat (position_value (line.stand) - position_value (line.bobber));
     const Vec3 side = unit_or (cross (in, world_up), Vec3 (1, 0, 0));
-    const float t = seconds_between (now, line.since);
-    return position_value (line.bobber) +
-           in * (0.6f * smoothstep (0.0f, 1.0f, done)) +
-           side * ((1.0f - done) * 1.1f * std::sin (2.3f * t)) -
-           world_up * 0.05f;
+    return position (
+      position_value (line.bobber) + in * (0.6f * smoothstep (0.0f, 1.0f, d)) +
+      side * ((1.0f - d) * 1.1f * std::sin (2.3f * seconds_value (t))) -
+      world_up * 0.05f);
   }
 
   std::optional<RodPose>
-  rod_pose (const Line& line, play_time_t now, float time) {
+  rod_pose (const Line& line, play_time_t now, seconds_t clock) {
     using namespace fishing_parts;
-    const float age = seconds_between (now, line.since);
+    // The bob and the twist run on the plain seconds.
+    const float time = seconds_value (clock);
+    const float age = seconds_value (seconds_between (now, line.since));
     RodPose rod;
     rod.water = line.bobber;
     switch (line.phase) {
@@ -393,8 +412,8 @@ namespace moppe::game {
       rod.raise =
         (0.55f + 0.03f * std::sin (0.7f * time)) * inclination[u::rad];
       // Before the take, a few nibbles.
-      const float coming = seconds_between (line.bite_at, now);
-      const float nibble = coming < 2.2f && coming > 0.0f
+      const seconds_t coming = seconds_between (line.bite_at, now);
+      const float nibble = coming < 2.2f * u::s && coming > 0.0f * u::s
                              ? 0.035f *
                                  std::max (0.0f, std::sin (11.0f * time)) *
                                  std::max (0.0f, std::sin (2.9f * time))
@@ -414,7 +433,7 @@ namespace moppe::game {
         (0.95f + 0.12f * std::sin (4.7f * time)) * inclination[u::rad];
       rod.bend = (0.6f + 0.18f * std::sin (7.3f * time)) * proportion[one];
       rod.tight = 1.0f * proportion[one];
-      rod.water = position (fish_in_water (line, now));
+      rod.water = fish_in_water (line, now);
       rod.fish_on = true;
       rod.fish = line.fish;
       rod.wriggle = std::sin (9.0f * time) * wriggle[one];
@@ -448,23 +467,25 @@ namespace moppe::game {
     return rod;
   }
 
-  Vec3 rod_hand (const AvatarSkeleton& k, float raise) {
+  position_t rod_hand (const AvatarSkeleton& k, radians_t raise) {
     using namespace fishing_parts;
     const Vec3 chest_right = unit_or (
       cross (direction_value (k.chest_up), direction_value (k.chest_forward)),
       direction_value (k.right));
     // Out before the belly; swung back, up by the shoulder.
-    const float back = smoothstep (1.2f, 1.9f, raise);
-    return position_value (k.shoulder[1]) +
-           direction_value (k.chest_forward) * mix (0.36f, 0.12f, back) +
-           direction_value (k.chest_up) * mix (-0.24f, 0.12f, back) +
-           chest_right * 0.04f;
+    const proportion_t back =
+      smoothstep (1.2f, 1.9f, radians_value (raise)) * proportion[one];
+    const float b = back.numerical_value_in (one);
+    return position (position_value (k.shoulder[1]) +
+                     direction_value (k.chest_forward) * mix (0.36f, 0.12f, b) +
+                     direction_value (k.chest_up) * mix (-0.24f, 0.12f, b) +
+                     chest_right * 0.04f);
   }
 
   void draw_rod (render::DrawList& dl,
                  const AvatarSkeleton& k,
                  const RodPose& rod,
-                 float time) {
+                 seconds_t time) {
     using namespace fishing_parts;
     const Vec3 hand = position_value (k.wrist[1]);
     // The rod points out over the water the line runs to, which need not
@@ -478,9 +499,9 @@ namespace moppe::game {
       normalized (ahead * std::cos (rod.raise.numerical_value_in (u::rad)) +
                   world_up * std::sin (rod.raise.numerical_value_in (u::rad)) +
                   right * 0.10f);
-    const Vec3 butt = hand - along * rod_butt;
-    const float reach = rod_length - rod_butt;
-    const Vec3 straight_tip = hand + along * reach;
+    const Vec3 butt = hand - along * meters_value (rod_butt);
+    const meters_t reach = rod_length - rod_butt;
+    const Vec3 straight_tip = hand + along * meters_value (reach);
     const Vec3 hang = straight_tip - world_up * 0.45f;
     const Vec3 water_end =
       position_value (rod.water) + world_up * meters_value (rod.arc);
@@ -491,12 +512,12 @@ namespace moppe::game {
     pull = pull - along * dot (pull, along);
     const Vec3 toward = unit_or (pull, -world_up);
     const float bend = 0.04f + 0.30f * rod.bend.numerical_value_in (one);
+    const float rod_m = meters_value (rod_length);
     constexpr int pieces = 8;
     Vec3 points[pieces + 1];
     for (int i = 0; i <= pieces; ++i) {
       const float s = static_cast<float> (i) / pieces;
-      points[i] =
-        butt + along * (rod_length * s) + toward * (bend * rod_length * s * s);
+      points[i] = butt + along * (rod_m * s) + toward * (bend * rod_m * s * s);
     }
     const Vec3 tip = points[pieces];
 
@@ -510,33 +531,34 @@ namespace moppe::game {
     dl.color (0.62f, 0.48f, 0.30f);
     {
       const Vec3 grip[2] = { butt, hand + along * 0.08f };
-      strand (dl, grip, 2, 0.016f, 6);
+      strand (dl, grip, 2, 0.016f * u::m, 6);
     }
     dl.color (0.20f, 0.13f, 0.08f);
     for (int i = 1; i < pieces; ++i) {
       const float s = static_cast<float> (i) / pieces;
-      strand (dl, points + i, 2, mix (0.010f, 0.004f, s), 5);
+      strand (dl, points + i, 2, mix (0.010f, 0.004f, s) * u::m, 5);
     }
     // The reel under the grip.
     dl.color (0.55f, 0.56f, 0.58f);
     {
       const Vec3 under = hand + along * 0.05f - world_up * 0.05f;
       const Vec3 spool[2] = { under - right * 0.025f, under + right * 0.025f };
-      strand (dl, spool, 2, 0.032f, 8);
+      strand (dl, spool, 2, 0.032f * u::m, 8);
     }
 
     // The line, sagging as much as it is slack.
     constexpr int stretch = 14;
     Vec3 line[stretch + 1];
-    const float span = length (end - tip);
-    const float sag =
+    const meters_t span = length (end - tip) * u::m;
+    const meters_t sag =
       (0.08f * (1.0f - rod.tight.numerical_value_in (one)) + 0.005f) * span;
     for (int i = 0; i <= stretch; ++i) {
       const float s = static_cast<float> (i) / stretch;
-      line[i] = mix (tip, end, s) - world_up * (sag * 4.0f * s * (1.0f - s));
+      line[i] = mix (tip, end, s) -
+                world_up * (meters_value (sag) * 4.0f * s * (1.0f - s));
     }
     dl.color (0.86f, 0.88f, 0.84f);
-    strand (dl, line, stretch + 1, 0.006f, 4);
+    strand (dl, line, stretch + 1, 0.006f * u::m, 4);
 
     if (rod.fish_on) {
       // Out of the water it hangs from its mouth; in it, it heads away.
@@ -549,22 +571,22 @@ namespace moppe::game {
                  world_up);
       draw_fish (dl,
                  rod.fish,
-                 end,
-                 along_fish,
-                 back,
-                 1.0f,
+                 position (end),
+                 unit_direction (along_fish),
+                 unit_direction (back),
+                 1.0f * scale_factor[one],
                  rod.wriggle.numerical_value_in (one));
     } else {
       // The float: red over white, with a little stem.
       const Vec3 bob = end + world_up * 0.04f;
       ball (dl,
             bob,
-            0.065f,
+            0.065f * u::m,
             DisplayColor (0.90f, 0.12f, 0.08f),
             DisplayColor (0.92f, 0.92f, 0.88f));
       dl.color (0.90f, 0.12f, 0.08f);
       const Vec3 stem[2] = { bob, bob + world_up * 0.11f };
-      strand (dl, stem, 2, 0.008f, 4);
+      strand (dl, stem, 2, 0.008f * u::m, 4);
     }
     (void)time;
     dl.end ();
@@ -573,21 +595,27 @@ namespace moppe::game {
 
   void draw_fish (render::DrawList& dl,
                   const Fish& fish,
-                  const Vec3& mouth,
-                  const Vec3& along_in,
-                  const Vec3& back_in,
-                  float scale,
+                  const position_t& mouth_at,
+                  const direction_t& along_way,
+                  const direction_t& back_way,
+                  scale_factor_t scale_q,
                   float wriggle,
                   float cooked) {
     using namespace fishing_parts;
     const Look look = look_of (fish.kind);
+    // The body is laid out in plain metres, converted here at its edge.
+    const Vec3& mouth = position_value (mouth_at);
+    const Vec3& along_in = direction_value (along_way);
+    const Vec3& back_in = direction_value (back_way);
+    const float drawn = fish_drawn.numerical_value_in (one);
+    const float scale = scale_q.numerical_value_in (one);
     const Vec3 along = unit_or (along_in, Vec3 (0, 0, 1));
     Vec3 back = back_in - along * dot (back_in, along);
     back = unit_or (back, world_up);
     const Vec3 side = normalized (cross (along, back));
-    const float body = meters_value (fish.length) * fish_drawn * scale * 0.84f;
-    const float depth =
-      meters_value (fish.length) * fish_drawn * scale * look.depth;
+    const float body = meters_value (fish.length) * drawn * scale * 0.84f;
+    const float depth = meters_value (fish.length) * drawn * scale *
+                        look.depth.numerical_value_in (one);
     const float width = depth * 0.42f;
 
     // The spine, wriggling more toward the tail.

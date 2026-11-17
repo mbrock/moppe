@@ -1,11 +1,14 @@
 #ifndef MOPPE_GAME_SIMULATION_CLOCK_HH
 #define MOPPE_GAME_SIMULATION_CLOCK_HH
 
+#include <moppe/game/game_clock.hh>
+
 #include <algorithm>
 #include <cmath>
 
 namespace moppe::game {
-  inline constexpr double FIXED_SIMULATION_STEP_SECONDS = 1.0 / 120.0;
+  inline constexpr duration_t FIXED_SIMULATION_STEP =
+    (1.0 / 120.0) * mp_units::si::second;
   inline constexpr int MAX_SIMULATION_CATCH_UP_STEPS = 6;
 
   // Converts irregular presentation intervals into phase-locked 120 Hz
@@ -14,33 +17,33 @@ namespace moppe::game {
   // zero-step/two-step pair on the following frame.
   class SimulationClock {
   public:
-    int consume (float elapsed_seconds) {
-      if (!std::isfinite (elapsed_seconds) || elapsed_seconds <= 0.0f)
+    int consume (seconds_t elapsed) {
+      if (!std::isfinite (seconds_value (elapsed)) ||
+          elapsed <= 0.0f * mp_units::si::second)
         return 0;
 
-      const double maximum_elapsed =
-        FIXED_SIMULATION_STEP_SECONDS * MAX_SIMULATION_CATCH_UP_STEPS;
-      m_phase_seconds +=
-        std::min (static_cast<double> (elapsed_seconds), maximum_elapsed);
-      const int requested = static_cast<int> (
-        std::floor ((m_phase_seconds + 0.5 * FIXED_SIMULATION_STEP_SECONDS) /
-                    FIXED_SIMULATION_STEP_SECONDS));
+      const duration_t maximum_elapsed =
+        FIXED_SIMULATION_STEP * MAX_SIMULATION_CATCH_UP_STEPS;
+      m_phase += std::min (value_cast<double> (elapsed), maximum_elapsed);
+      const int requested = static_cast<int> (std::floor (
+        ((m_phase + 0.5 * FIXED_SIMULATION_STEP) / FIXED_SIMULATION_STEP)
+          .numerical_value_in (mp_units::one)));
       const int steps =
         std::clamp (requested, 0, MAX_SIMULATION_CATCH_UP_STEPS);
-      m_phase_seconds -= steps * FIXED_SIMULATION_STEP_SECONDS;
+      m_phase -= steps * FIXED_SIMULATION_STEP;
       return steps;
     }
 
     void reset () {
-      m_phase_seconds = 0.0;
+      m_phase = duration_t {};
     }
 
-    double phase_seconds () const {
-      return m_phase_seconds;
+    duration_t phase () const {
+      return m_phase;
     }
 
   private:
-    double m_phase_seconds = 0.0;
+    duration_t m_phase {};
   };
 }
 

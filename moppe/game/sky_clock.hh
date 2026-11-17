@@ -17,14 +17,14 @@ namespace moppe::game {
   class SkyClock {
   public:
     // `sun_height` is the authored sun a held sky keeps.
-    explicit SkyClock (float sun_height);
+    explicit SkyClock (proportion_t sun_height);
 
     struct Day {
       // Hours of the clock per second of play.
-      double pace = 0.0;
+      day_pace_t pace {};
       // Whether the sky follows the clock, or holds the authored sun.
       bool turning = false;
-      std::optional<float> first_hour;
+      std::optional<hours_t> first_hour;
     };
 
     const Day& day () const noexcept {
@@ -40,10 +40,10 @@ namespace moppe::game {
     // the first hour.
     void begin (GameLogicState& logic, std::uint32_t seed);
 
-    // The clouds, the weather, the sky, and the fog at `total_time`
-    // seconds of play, written into the logic. Weather remains part of
-    // the world while actors are paused.
-    void update (GameLogicState& logic, float total_time);
+    // The clouds, the weather, the sky, and the fog at `total_time` into
+    // play, written into the logic. Weather remains part of the world
+    // while actors are paused.
+    void update (GameLogicState& logic, seconds_t total_time);
 
   private:
     // The weather at the logic's hour. Composed views, whose day does not
@@ -52,7 +52,7 @@ namespace moppe::game {
 
     void read_sky (const GameLogicState& logic);
 
-    float m_sun_height;
+    proportion_t m_sun_height;
     Almanac m_almanac;
     Day m_day;
     std::optional<SkyKind> m_held_sky;

@@ -33,12 +33,12 @@ namespace moppe::game {
     CinematicLandmarkKind kind;
     terrain::CellIndex cell;
     float score;
-    Vec3 position;
+    position_t position;
   };
 
   struct CinematicFlightWaypoint {
-    Vec3 position;
-    Vec3 subject;
+    position_t position;
+    position_t subject;
     speed_t cruise_speed = 90.0f * u::m / u::s;
     degrees_t field_of_view = 58.0f * u::deg;
   };
@@ -62,7 +62,7 @@ namespace moppe::game {
     meters_t look_far_least = 220.0f * u::m;
     meters_t look_far_most = 430.0f * u::m;
     // How much of its aim is the waypoints' subject and not the route.
-    float subject_weight = 0.52f;
+    proportion_t subject_weight = 0.52f * one;
     // The steepest it banks into a turn.
     radians_t bank = 0.30f * u::rad;
   };
@@ -87,7 +87,7 @@ namespace moppe::game {
                          const terrain::LakeCensus& census,
                          const terrain::DrainageGraph& drainage,
                          const terrain::RiverNetwork& rivers,
-                         const Vec3& arrival,
+                         const position_t& arrival,
                          const terrain::TrailNetwork* trail = nullptr);
 
   // The world's greatest river to reach the sea: its mouth's reach first,
@@ -98,14 +98,20 @@ namespace moppe::game {
   greatest_river_course (const terrain::LakeCensus& census,
                          const terrain::RiverNetwork& rivers);
 
+  // A tree beside the river flight's way: where it stands, and how tall.
+  struct RiverFlightTree {
+    plan_position_t at;
+    meters_t height;
+  };
+
   // A flight down the world's greatest watercourse: from the top of its
   // catchment down the dry valley to where the stream first shows, along
   // it through its lakes, and out over the sea. It flies low over open
   // water and clear of the crowns where trees stand by the stream: TREES
-  // gives each tree's place, with its height for y. SECONDS is how long the
+  // gives each tree's place and height. SECONDS is how long the
   // whole flight should take; zero or less leaves it at a watching pace.
   CinematicFlightPlan plan_river_flight (const map::SurfaceGeometry& surface,
-                                         std::span<const Vec3> trees,
+                                         std::span<const RiverFlightTree> trees,
                                          const terrain::WaterSheets& water,
                                          const terrain::LakeCensus& census,
                                          const terrain::DrainageGraph& drainage,
@@ -115,9 +121,9 @@ namespace moppe::game {
   struct CinematicFlightControls {
     // Body-relative pilot trim. The automatic opening leaves these at zero;
     // a future free-camera mode can feed sticks or pointer input directly.
-    float lateral = 0.0f;
-    float lift = 0.0f;
-    float pace = 0.0f;
+    control_signal_t lateral = 0.0f * one;
+    control_signal_t lift = 0.0f * one;
+    control_signal_t pace = 0.0f * one;
   };
 
   // A fast bird/drone flight model wrapped around the authored gates. The
@@ -139,67 +145,75 @@ namespace moppe::game {
       return m_active;
     }
     seconds_t elapsed () const noexcept {
-      return m_elapsed * u::s;
+      return m_elapsed;
     }
-    float route_progress () const noexcept {
-      if (m_arc_samples.empty () || m_arc_samples.back ().distance <= 0.0f)
-        return 0.0f;
-      return std::clamp (
-        m_route_distance / m_arc_samples.back ().distance, 0.0f, 1.0f);
+    proportion_t route_progress () const noexcept {
+      if (m_arc_samples.empty () ||
+          m_arc_samples.back ().distance <= 0.0f * u::m)
+        return 0.0f * one;
+      return std::clamp<proportion_t> (m_route_distance /
+                                         m_arc_samples.back ().distance,
+                                       0.0f * one,
+                                       1.0f * one);
     }
-    const Vec3& position () const noexcept {
+    const position_t& position () const noexcept {
       return m_position;
     }
-    Vec3 forward () const;
+    direction_t forward () const;
     degrees_t field_of_view () const noexcept {
-      return m_field_of_view * u::deg;
+      return m_field_of_view;
     }
     speed_t speed () const noexcept {
-      return m_speed * u::m / u::s;
+      return m_speed;
     }
     radians_t bank () const noexcept {
-      return m_bank * u::rad;
+      return m_bank;
     }
-    float motion_blur () const noexcept {
-      return std::clamp ((m_speed - 35.0f) / 185.0f, 0.08f, 0.72f);
+    proportion_t motion_blur () const noexcept {
+      return std::clamp<proportion_t> ((m_speed - 35.0f * u::m / u::s) /
+                                         (185.0f * u::m / u::s),
+                                       0.08f * one,
+                                       0.72f * one);
     }
     Mat4 view_matrix () const;
 
   private:
     struct ArcSample {
-      float distance;
+      meters_t distance;
       std::size_t segment;
-      float t;
-      float terrain_lift;
-      float speed_limit;
+      // How far along its segment's curve, by the curve's parameter.
+      blend_weight_t t;
+      meters_t terrain_lift;
+      speed_t speed_limit;
     };
 
     struct RouteState {
-      Vec3 position;
-      Vec3 subject;
-      float cruise_speed;
-      float field_of_view;
+      position_t position;
+      position_t subject;
+      speed_t cruise_speed;
+      degrees_t field_of_view;
     };
 
-    Vec3 curve_position (std::size_t segment, float t) const;
-    RouteState route_state (float distance) const;
+    position_t curve_position (std::size_t segment, blend_weight_t t) const;
+    RouteState route_state (meters_t distance) const;
     void build_flight_ribbon (const map::SurfaceGeometry& surface);
 
     std::vector<CinematicFlightWaypoint> m_waypoints;
     CinematicFlightStyle m_style;
     std::vector<ArcSample> m_arc_samples;
-    Vec3 m_position {};
-    Vec3 m_velocity {};
-    Vec3 m_look_direction { 0, 0, 1 };
-    Vec3 m_manual_offset {};
-    Vec3 m_manual_velocity {};
-    float m_route_distance = 0.0f;
-    float m_speed = 0.0f;
-    float m_longitudinal_acceleration = 0.0f;
-    float m_bank = 0.0f;
-    float m_field_of_view = 58.0f;
-    float m_elapsed = 0.0f;
-    float m_final_hold = 0.0f;
+    position_t m_position {};
+    velocity_t m_velocity {};
+    direction_t m_look_direction = unit_direction (Vec3 (0, 0, 1));
+    displacement_t m_manual_offset {};
+    velocity_t m_manual_velocity {};
+    meters_t m_route_distance = 0.0f * u::m;
+    speed_t m_speed = 0.0f * u::m / u::s;
+    metres_per_second_squared_t m_longitudinal_acceleration =
+      0.0f * u::m / u::s2;
+    radians_t m_bank = 0.0f * u::rad;
+    degrees_t m_field_of_view = 58.0f * u::deg;
+    seconds_t m_elapsed = 0.0f * u::s;
+    seconds_t m_final_hold = 0.0f * u::s;
     bool m_active = false;
   };
 }

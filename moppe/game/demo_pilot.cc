@@ -27,8 +27,8 @@ namespace moppe::game {
       return name && std::string_view (name) == "wheelie";
     }();
     // The autopilot rides; the player may still look around.
-    const float look_yaw = input.look_yaw;
-    const float look_pitch = input.look_pitch;
+    const radians_t look_yaw = input.look_yaw;
+    const radians_t look_pitch = input.look_pitch;
     if (session.logic ().m_doing == Doing::driving (Machine::helicopter)) {
       // Spool up, climb out, hook what is under it, and cruise in
       // long easy curves.
@@ -93,8 +93,8 @@ namespace moppe::game {
       // Look a few metres ahead; where a trunk stands in the way, steer
       // hard toward the side its contact pushes, so a ride through the
       // woods weaves between trees instead of stopping at the first.
-      const Vec3 at = session.subject_position ();
-      const Vec3 heading = session.subject_heading ();
+      const Vec3 at = position_value (session.subject_position ());
+      const Vec3 heading = direction_value (session.subject_heading ());
       const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
       for (const float ahead : { 4.0f, 9.0f }) {
         const Vec3 probe = at + heading * ahead;

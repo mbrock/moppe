@@ -11,10 +11,10 @@
 namespace moppe::game {
   namespace {
     // A find's mark stands this far over it, metres.
-    constexpr float k_mark_rise = 1.6f;
-    // The ring's width on the ground, metres.
-    constexpr float k_ring_width = 2.5f;
-    constexpr float k_ring_edge = 0.18f;
+    constexpr meters_t k_mark_rise = 1.6f * u::m;
+    // The ring's width on the ground, and its crisp front's.
+    constexpr meters_t k_ring_width = 2.5f * u::m;
+    constexpr meters_t k_ring_edge = 0.18f * u::m;
     // The labels' cyan, and the poisonous one's red.
     constexpr DisplayColor k_scan_ink { 0.62f, 0.95f, 1.0f };
     constexpr DisplayColor k_warn_ink { 1.0f, 0.42f, 0.32f };
@@ -36,10 +36,11 @@ namespace moppe::game {
       }
     }
 
-    Vec3 scan_mark_point (const ScanFind& find) {
-      return find.at +
-             Vec3 (
-               0, find.kind == ScanFind::Kind::hammock ? 0.4f : k_mark_rise, 0);
+    position_t scan_mark_point (const ScanFind& find) {
+      const meters_t rise =
+        find.kind == ScanFind::Kind::hammock ? 0.4f * u::m : k_mark_rise;
+      return position (position_value (find.at) +
+                       Vec3 (0, meters_value (rise), 0));
     }
 
     // A closed polygon as Slug lines.
@@ -65,9 +66,9 @@ namespace moppe::game {
   }
 
   std::vector<ScanFind> scan_mushrooms (const MushroomPatch& patch,
-                                        const Vec3& origin) {
-    const position_t from = position (origin);
-    std::vector<std::uint32_t> near = patch.within (from, scan_reach * u::m);
+                                        const position_t& from) {
+    const Vec3& origin = position_value (from);
+    std::vector<std::uint32_t> near = patch.within (from, scan_reach);
     std::ranges::sort (near, [&] (std::uint32_t a, std::uint32_t b) {
       const Vec3 da = position_value (patch.base_near (a, from)) - origin;
       const Vec3 db = position_value (patch.base_near (b, from)) - origin;
@@ -89,7 +90,7 @@ namespace moppe::game {
             std::hypot (first[0] - base[0], first[2] - base[2]) < 4.0f) {
           sums[i] = sums[i] + base;
           ++f.count;
-          f.at = sums[i] / static_cast<float> (f.count);
+          f.at = position (sums[i] / static_cast<float> (f.count));
           joined = true;
           break;
         }
@@ -98,7 +99,7 @@ namespace moppe::game {
         continue;
       ScanFind find;
       find.kind = kind;
-      find.at = base;
+      find.at = position (base);
       find.mushroom = site.kind;
       finds.push_back (find);
       sums.push_back (base);
@@ -111,47 +112,52 @@ namespace moppe::game {
     for (const HammockSite& site : sites) {
       ScanFind find;
       find.kind = ScanFind::Kind::hammock;
-      find.at = position_value (hammock_middle (site));
+      find.at = hammock_middle (site);
       find.hammock = site;
       finds.push_back (find);
     }
     return finds;
   }
 
-  void
-  Scan::start (const Vec3& origin, double now, std::vector<ScanFind> finds) {
+  void Scan::start (const position_t& origin,
+                    play_time_t now,
+                    std::vector<ScanFind> finds) {
     m_origin = origin;
     m_start = now;
     m_finds = std::move (finds);
   }
 
-  float Scan::radius (double now) const {
+  meters_t Scan::radius (play_time_t now) const {
     return std::min (scan_reach,
-                     static_cast<float> (now - m_start) * scan_speed);
+                     meters_t (value_cast<float> (now - m_start) * scan_speed));
   }
 
-  bool Scan::showing (double now) const {
+  bool Scan::showing (play_time_t now) const {
     return now - m_start < scan_reach / scan_speed + scan_lit + scan_fade;
   }
 
-  float Scan::since_found (const ScanFind& find, double now) const {
-    const float away =
-      std::hypot (find.at[0] - m_origin[0], find.at[2] - m_origin[2]);
-    return static_cast<float> (now - m_start) - away / scan_speed;
+  seconds_t Scan::since_found (const ScanFind& find, play_time_t now) const {
+    const Vec3& at = position_value (find.at);
+    const Vec3& origin = position_value (m_origin);
+    const meters_t away =
+      std::hypot (at[0] - origin[0], at[2] - origin[2]) * u::m;
+    return value_cast<float> (now - m_start) - away / scan_speed;
   }
 
-  float Scan::shown (const ScanFind& find, double now) const {
-    const float t = since_found (find, now);
-    if (t < 0.0f)
-      return 0.0f;
-    return scan_ease (t / 0.25f) *
-           (1.0f - scan_ease ((t - scan_lit) / scan_fade));
+  proportion_t Scan::shown (const ScanFind& find, play_time_t now) const {
+    const seconds_t t = since_found (find, now);
+    if (t < 0.0f * u::s)
+      return 0.0f * proportion[one];
+    return scan_ease ((t / (0.25f * u::s)).numerical_value_in (one)) *
+           (1.0f -
+            scan_ease (((t - scan_lit) / scan_fade).numerical_value_in (one))) *
+           proportion[one];
   }
 
   void draw_scan_glow (render::DrawList& dl,
                        const Scan& scan,
-                       double now,
-                       const Vec3& camera,
+                       play_time_t now,
+                       const position_t& eye,
                        const GroundHeight& ground) {
     if (!scan.showing (now))
       return;
@@ -167,16 +173,17 @@ namespace moppe::game {
 
     // The ring: a band lying on the ground, brightest at its front edge
     // and fading as it nears its reach.
-    const float r = scan.radius (now);
-    const float travel = r / scan_reach;
-    const float strength = 1.0f - scan_ease ((travel - 0.75f) / 0.25f);
+    const meters_t r = scan.radius (now);
+    const proportion_t travel = r / scan_reach * proportion[one];
+    const float strength =
+      1.0f - scan_ease ((travel.numerical_value_in (one) - 0.75f) / 0.25f);
     if (r < scan_reach && strength > 0.0f) {
-      const Vec3& o = scan.origin ();
+      const Vec3& o = position_value (scan.origin ());
       constexpr int segments = 240;
-      const float inner = std::max (0.0f, r - k_ring_width);
-      const auto on_ground = [&] (float radius, float a) {
-        const float x = o[0] + radius * std::cos (a);
-        const float z = o[2] + radius * std::sin (a);
+      const meters_t inner = std::max (0.0f * u::m, r - k_ring_width);
+      const auto on_ground = [&] (meters_t radius, float a) {
+        const float x = o[0] + meters_value (radius) * std::cos (a);
+        const float z = o[2] + meters_value (radius) * std::sin (a);
         return Vec3 (x, ground (x, z) + 0.08f, z);
       };
       for (int i = 0; i < segments; ++i) {
@@ -211,13 +218,15 @@ namespace moppe::game {
 
     // A thin line from each find up to its mark, facing the camera, and
     // a pool of light on the ground under it.
+    const Vec3& camera = position_value (eye);
     for (const ScanFind& find : scan.finds ()) {
-      const float shown = scan.shown (find, now);
+      const float shown = scan.shown (find, now).numerical_value_in (one);
       if (shown <= 0.0f)
         continue;
       const DisplayColor ink = scan_ink_of (find);
-      const Vec3 foot = find.at;
-      const Vec3 top = scan_mark_point (find) - Vec3 (0, 0.12f, 0);
+      const Vec3& foot = position_value (find.at);
+      const Vec3 top =
+        position_value (scan_mark_point (find)) - Vec3 (0, 0.12f, 0);
       Vec3 side = cross (top - foot, camera - foot);
       if (length2 (side) < 1e-8f)
         continue;
@@ -283,8 +292,8 @@ namespace moppe::game {
                          const render::Font& font,
                          const ScanMarks& marks,
                          const Scan& scan,
-                         double now,
-                         const Vec3& walker,
+                         play_time_t now,
+                         const position_t& walker_at,
                          const ScanView& view) {
     if (!marks.set || !scan.showing (now))
       return;
@@ -292,25 +301,31 @@ namespace moppe::game {
     // falls on screen in points.
     struct Seen {
       const ScanFind* find;
-      float away, x, y;
+      meters_t away;
+      // Where it falls on screen, in points.
+      float x, y;
     };
     std::vector<Seen> seen;
     const float aspect = view.width_pts / std::max (view.height_pts, 1.0f);
+    const Vec3& walker = position_value (walker_at);
     for (const ScanFind& find : scan.finds ()) {
-      if (scan.shown (find, now) <= 0.0f)
+      if (scan.shown (find, now) <= 0.0f * proportion[one])
         continue;
-      const Vec3 rel = scan_mark_point (find) - view.eye;
-      const float depth = dot (rel, view.forward);
-      if (depth < 0.3f)
+      const Vec3 rel =
+        position_value (scan_mark_point (find)) - position_value (view.eye);
+      const meters_t depth = dot (rel, direction_value (view.forward)) * u::m;
+      if (depth < 0.3f * u::m)
         continue;
-      const float nx =
-        dot (rel, view.right) / (depth * view.tan_half_height * aspect);
-      const float ny = dot (rel, view.up) / (depth * view.tan_half_height);
+      const float nx = dot (rel, direction_value (view.right)) /
+                       (meters_value (depth) * view.tan_half_height * aspect);
+      const float ny = dot (rel, direction_value (view.up)) /
+                       (meters_value (depth) * view.tan_half_height);
       if (std::fabs (nx) > 1.2f || std::fabs (ny) > 1.2f)
         continue;
+      const Vec3& at = position_value (find.at);
       seen.push_back (
         { &find,
-          std::hypot (find.at[0] - walker[0], find.at[2] - walker[2]),
+          std::hypot (at[0] - walker[0], at[2] - walker[2]) * u::m,
           (0.5f + 0.5f * nx) * view.width_pts,
           (0.5f - 0.5f * ny) * view.height_pts });
     }
@@ -329,14 +344,14 @@ namespace moppe::game {
 
     for (const Seen& s : seen) {
       const ScanFind& find = *s.find;
-      const float shown = scan.shown (find, now);
+      const proportion_t shown = scan.shown (find, now);
       const DisplayColor ink = scan_ink_of (find);
-      const float since = scan.since_found (find, now);
+      const seconds_t since = scan.since_found (find, now);
 
       std::string name;
       std::string detail;
       char buffer[64];
-      std::snprintf (buffer, sizeof buffer, "%.0f m", s.away);
+      std::snprintf (buffer, sizeof buffer, "%.0f m", meters_value (s.away));
       const std::string distance = buffer;
       switch (find.kind) {
       case ScanFind::Kind::mushrooms:
@@ -353,12 +368,13 @@ namespace moppe::game {
                    : distance;
         break;
       case ScanFind::Kind::hammock: {
-        const float span =
+        const meters_t span =
           std::hypot (position_value (find.hammock.strap[1])[0] -
                         position_value (find.hammock.strap[0])[0],
                       position_value (find.hammock.strap[1])[2] -
-                        position_value (find.hammock.strap[0])[2]);
-        std::snprintf (buffer, sizeof buffer, "%.1f", span);
+                        position_value (find.hammock.strap[0])[2]) *
+          u::m;
+        std::snprintf (buffer, sizeof buffer, "%.1f", meters_value (span));
         std::string metres = buffer;
         std::replace (metres.begin (), metres.end (), '.', ',');
         name = "Hammock";
@@ -382,11 +398,15 @@ namespace moppe::game {
 
       // The mark lands from a little larger, as if it had just been
       // struck; a mark alone is smaller and dimmer.
-      const float pop = 1.0f + 0.6f * (1.0f - scan_ease (since / 0.35f));
+      const scale_factor_t pop =
+        (1.0f +
+         0.6f * (1.0f - scan_ease (
+                          (since / (0.35f * u::s)).numerical_value_in (one)))) *
+        scale_factor[one];
       const std::size_t first = text.quads ().size ();
       const render::SlugGlyph& shape =
         find.kind == ScanFind::Kind::hammock ? marks.ring : marks.diamond;
-      const float size = (clear ? 11.0f : 7.0f) * pop;
+      const float size = (clear ? 11.0f : 7.0f) * pop.numerical_value_in (one);
       for (const bool shade : { true, false }) {
         render::GlyphQuad quad {};
         quad.origin[3] = shade ? 5.0f : 1.0f;
@@ -399,7 +419,8 @@ namespace moppe::game {
         quad.color[0] = shade ? 0.0f : ink.red;
         quad.color[1] = shade ? 0.0f : ink.green;
         quad.color[2] = shade ? 0.0f : ink.blue;
-        quad.color[3] = (shade ? 0.4f : 1.0f) * (clear ? 1.0f : 0.7f) * shown;
+        quad.color[3] = (shade ? 0.4f : 1.0f) * (clear ? 1.0f : 0.7f) *
+                        shown.numerical_value_in (one);
         quad.glyph[0] = shape.band_offset;
         quad.glyph[1] = shape.horizontal_bands;
         quad.glyph[2] = shape.vertical_bands;
@@ -409,8 +430,8 @@ namespace moppe::game {
       if (clear) {
         // Its name over its distance, to the right, the lettering typing
         // itself in over a moment.
-        const std::size_t typed =
-          static_cast<std::size_t> (std::max (0.0f, since - 0.1f) * 40.0f);
+        const std::size_t typed = static_cast<std::size_t> (
+          seconds_value (std::max (0.0f * u::s, since - 0.1f * u::s)) * 40.0f);
         const auto typing = [&] (const std::string& line, std::size_t start) {
           if (typed <= start)
             return std::string ();
@@ -426,45 +447,44 @@ namespace moppe::game {
           t.red = d.red = shade ? 0.0f : ink.red;
           t.green = d.green = shade ? 0.0f : ink.green;
           t.blue = d.blue = shade ? 0.0f : ink.blue;
-          t.alpha = (shade ? 0.5f : 1.0f) * shown;
-          d.alpha = (shade ? 0.5f : 0.85f) * shown;
+          t.alpha = (shade ? 0.5f : 1.0f) * shown.numerical_value_in (one);
+          d.alpha = (shade ? 0.5f : 0.85f) * shown.numerical_value_in (one);
           if (shade)
             t.softness = d.softness = 5.0f;
           font.draw (text, 20.0f, 3.0f, typing (name, 0), t);
           font.draw (text, 20.0f, 21.0f, typing (detail, name.size ()), d);
         }
       }
-      text.stand (scan_mark_point (find), view.height_pts, first);
+      text.stand (
+        position_value (scan_mark_point (find)), view.height_pts, first);
     }
   }
 
-  void Scanner::start (const Vec3& feet,
-                       double now,
+  void Scanner::start (const position_t& at,
+                       play_time_t now,
                        const MushroomPatch& mushrooms,
                        const mov::TrunkField& trunks,
                        const GroundHeight& ground) {
-    std::vector<ScanFind> finds = scan_mushrooms (mushrooms, feet);
+    std::vector<ScanFind> finds = scan_mushrooms (mushrooms, at);
+    const Vec3& feet = position_value (at);
     const std::vector<mov::Trunk> near =
-      trunks.gather (position (feet), (scan_reach + 6.0f) * u::m);
+      trunks.gather (position (feet), scan_reach + 6.0f * u::m);
     const std::vector<ScanFind> trees = scan_hammocks (hammock_sites_near (
-      near,
-      moppe::position (feet),
-      scan_reach * u::m,
-      [&ground] (const plan_position_t& at) {
+      near, at, scan_reach, [&ground] (const plan_position_t& spot) {
         return terrain::surface_elevation_point (
-          ground (plan_value (at).x (), plan_value (at).z ()) * u::m);
+          ground (plan_value (spot).x (), plan_value (spot).z ()) * u::m);
       }));
     finds.insert (finds.end (), trees.begin (), trees.end ());
     std::cerr << "moppe: scan from " << feet[0] << " " << feet[1] << " "
               << feet[2] << " found " << finds.size () << "\n";
-    m_scan.start (feet, now, std::move (finds));
+    m_scan.start (at, now, std::move (finds));
   }
 
   void Scanner::draw (render::Renderer& r,
                       const render::Font* font,
-                      double now,
+                      play_time_t now,
                       const ScanView& view,
-                      const Vec3& walker,
+                      const position_t& walker,
                       const GroundHeight& ground) {
     if (!m_scan.showing (now) || !font)
       return;

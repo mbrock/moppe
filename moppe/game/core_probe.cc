@@ -216,9 +216,9 @@ namespace moppe::game {
 
     void
     write_course (Report& report, const Course& course, seconds_f64_t wall) {
-      const seconds_f64_t simulated = static_cast<double> (course.steps) *
-                                      FIXED_SIMULATION_STEP_SECONDS *
-                                      si::second;
+      const seconds_f64_t simulated =
+        static_cast<double> (course.steps) *
+        FIXED_SIMULATION_STEP.numerical_value_in (si::second) * si::second;
       const Vec3& from = position_value (course.start);
       const Vec3& to = position_value (course.end);
       report << std::fixed << std::setprecision (2) << "  simulated "
@@ -273,10 +273,12 @@ namespace moppe::game {
       report.flush ();
 
       const seconds_t dt =
-        static_cast<float> (FIXED_SIMULATION_STEP_SECONDS) * si::second;
+        static_cast<float> (
+          FIXED_SIMULATION_STEP.numerical_value_in (si::second)) *
+        si::second;
       // Where the session's subject stands, and how far it went.
       const auto subject_at = [] (const GameSession& session) {
-        return position (session.subject_position ());
+        return session.subject_position ();
       };
       const auto travelled = [] (position_t from, position_t to) {
         return std::sqrt (
@@ -309,9 +311,9 @@ namespace moppe::game {
           // A gentle swing of the head, in radians this tick.
           const radians_per_second_t yaw_rate =
             0.25f * std::sin (clock_s * 0.35f) * u::rad / u::s;
-          input.look_yaw = radians_value (yaw_rate * dt);
+          input.look_yaw = yaw_rate * dt;
           const clock::time_point before = clock::now ();
-          trunks.focus (position (session.subject_position ()));
+          trunks.focus (session.subject_position ());
           advance_game_session (world.params (),
                                 world.surface (),
                                 session,
@@ -357,8 +359,7 @@ namespace moppe::game {
           };
           const clock::time_point before = clock::now ();
           const position_t at = subject_at (session);
-          const direction_t ahead_dir =
-            unit_direction (session.subject_heading ());
+          const direction_t ahead_dir = session.subject_heading ();
           const direction_t right = unit_direction (
             normalized (cross (direction_value (ahead_dir), Vec3 (0, 1, 0))));
           trunks.focus (at);
@@ -399,7 +400,8 @@ namespace moppe::game {
         course.end = last;
         report << "\n== ride (Box3D rigid bike, demo autopilot, 120 Hz) ==\n";
         write_course (report, course, seconds_since (start));
-        report << "  speed at the end: " << session.subject_speed_kmh ()
+        report << "  speed at the end: "
+               << session.subject_speed_kmh ().numerical_value_in (u::km / u::h)
                << " km/h\n";
         times.write (report);
         report.memory ("after simulation");

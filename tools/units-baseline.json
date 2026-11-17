@@ -23,7 +23,7 @@
       "typed": 450,
       "raw_float": 229,
       "raw_vector": 38,
-      "escapes": 177
+      "escapes": 179
     },
     "Forest & flora": {
       "share": 85.7,
@@ -42,12 +42,12 @@
       "escapes": 54
     },
     "Game logic": {
-      "share": 15.4,
+      "share": 72.8,
       "files": 43,
-      "typed": 295,
-      "raw_float": 936,
-      "raw_vector": 685,
-      "escapes": 512
+      "typed": 1510,
+      "raw_float": 267,
+      "raw_vector": 297,
+      "escapes": 978
     },
     "HUD & map": {
       "share": 81.0,
@@ -55,15 +55,15 @@
       "typed": 675,
       "raw_float": 140,
       "raw_vector": 18,
-      "escapes": 216
+      "escapes": 217
     },
     "Places & camp": {
-      "share": 89.2,
+      "share": 89.5,
       "files": 12,
-      "typed": 814,
-      "raw_float": 38,
+      "typed": 820,
+      "raw_float": 35,
       "raw_vector": 61,
-      "escapes": 540
+      "escapes": 539
     },
     "Platform game interface": {
       "share": 89.7,
@@ -74,12 +74,12 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 72.2,
+      "share": 72.3,
       "files": 61,
-      "typed": 1082,
-      "raw_float": 283,
+      "typed": 1083,
+      "raw_float": 282,
       "raw_vector": 133,
-      "escapes": 623
+      "escapes": 615
     },
     "Rivers, water & sediment": {
       "share": 98.0,
@@ -98,28 +98,28 @@
       "escapes": 122
     },
     "Terrain & world generation": {
-      "share": 81.7,
+      "share": 81.8,
       "files": 39,
-      "typed": 969,
+      "typed": 970,
       "raw_float": 165,
-      "raw_vector": 52,
+      "raw_vector": 51,
       "escapes": 202
     },
     "Tests": {
-      "share": 36.9,
+      "share": 37.2,
       "files": 83,
-      "typed": 575,
-      "raw_float": 790,
-      "raw_vector": 192,
-      "escapes": 1202
+      "typed": 581,
+      "raw_float": 787,
+      "raw_vector": 194,
+      "escapes": 1313
     },
     "Vehicles & on-foot body": {
-      "share": 74.6,
+      "share": 74.7,
       "files": 47,
-      "typed": 2063,
-      "raw_float": 268,
+      "typed": 2065,
+      "raw_float": 266,
       "raw_vector": 435,
-      "escapes": 626
+      "escapes": 627
     }
   }
 }

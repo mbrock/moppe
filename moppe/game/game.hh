@@ -90,7 +90,7 @@ namespace moppe {
       // The trodden trail tread is loose dirt; bare eroded faces are soil;
       // turf holds most of its dust and throws up clods of itself, and
       // fallen leaves lie wherever the turned groves have dropped them.
-      GroundCover ground_cover (const Vec3& at) const;
+      GroundCover ground_cover (const position_t& at) const;
 
       // The trailhead is marked by a cairn at the path's edge, built once
       // per world.
@@ -99,8 +99,8 @@ namespace moppe {
       void draw_home_base_marker (render::DrawList& dl) const;
 
       // The scan (scan.hh): a ring out from the walker, and what it finds
-      // labelled where it stands. `ago` starts it that many seconds back.
-      void start_scan (double ago);
+      // labelled where it stands. `ago` starts it that long back.
+      void start_scan (duration_t ago);
 
       void draw_scan (render::Renderer& r, const FrameView& frame);
 
@@ -161,8 +161,9 @@ namespace moppe {
       // standing beside it.
       bool lying_down () const;
 
-      void
-      draw_sleeper (render::DrawList& dl, bool through_own_eyes, float time);
+      void draw_sleeper (render::DrawList& dl,
+                         bool through_own_eyes,
+                         seconds_t time);
 
       // What the walk scripts stand in and move (capture_scripts.hh).
       ScriptStage script_stage ();
@@ -238,11 +239,11 @@ namespace moppe {
 
       void update_frame_flare ();
 
-      Vec3 subject_position () const {
+      position_t subject_position () const {
         return session ().subject_position ();
       }
 
-      Vec3 subject_heading () const {
+      direction_t subject_heading () const {
         return session ().subject_heading ();
       }
 

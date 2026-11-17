@@ -473,6 +473,10 @@ namespace moppe::game {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+
+  // How a beast carries its head: 0 level, 1 down to the grass, and below
+  // zero raised to look about (game/animals.hh).
+  QUANTITY_SPEC (head_carriage, mp_units::dimensionless);
 }
 
 #endif

@@ -28,20 +28,24 @@ namespace moppe::game {
       return false;
     }
 
-    bool parse_float_option (const char* value,
-                             const char* option,
-                             float minimum,
-                             float maximum,
-                             float& result,
-                             std::string& error) {
+    // A number on the command line, read in the unit of `Q`.
+    template <class Q>
+    bool parse_quantity_option (const char* value,
+                                const char* option,
+                                Q minimum,
+                                Q maximum,
+                                Q& result,
+                                std::string& error) {
       char* end = nullptr;
       errno = 0;
-      const float parsed = std::strtof (value, &end);
-      if (errno || end == value || *end != '\0' || !std::isfinite (parsed) ||
+      const Q parsed = std::strtof (value, &end) * Q::reference;
+      if (errno || end == value || *end != '\0' ||
+          !std::isfinite (parsed.numerical_value_in (Q::unit)) ||
           parsed < minimum || parsed > maximum) {
         std::ostringstream message;
-        message << option << " must be between " << minimum << " and "
-                << maximum;
+        message << option << " must be between "
+                << minimum.numerical_value_in (Q::unit) << " and "
+                << maximum.numerical_value_in (Q::unit);
         error = message.str ();
         return false;
       }
@@ -51,9 +55,14 @@ namespace moppe::game {
 
     bool parse_scale (const char* value,
                       const char* option,
-                      float& result,
+                      scale_factor_t& result,
                       std::string& error) {
-      return parse_float_option (value, option, 0.25f, 1.0f, result, error);
+      return parse_quantity_option (value,
+                                    option,
+                                    0.25f * scale_factor[one],
+                                    1.0f * scale_factor[one],
+                                    result,
+                                    error);
     }
 
     bool parse_terrain_resolution (const char* value,
@@ -141,10 +150,10 @@ namespace moppe::game {
             std::string& error) {
           // An explicit scale is held, whatever the frame rate.
           options.graphics.target_frame_rate = 0.0f * u::Hz;
-          float scale = 0.0f;
+          scale_factor_t scale {};
           if (!parse_scale (values[0], "--render-scale", scale, error))
             return false;
-          options.graphics.render_scale_override = scale * scale_factor[one];
+          options.graphics.render_scale_override = scale;
           return true;
         } },
       { "--world-size",
@@ -155,11 +164,16 @@ namespace moppe::game {
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
-          float kilometres = 0.0f;
-          if (!parse_float_option (
-                values[0], "--world-size", 2.5f, 10.0f, kilometres, error))
+          quantity<si::kilo<si::metre>, float> across {};
+          if (!parse_quantity_option (values[0],
+                                      "--world-size",
+                                      2.5f * u::km,
+                                      10.0f * u::km,
+                                      across,
+                                      error))
             return false;
-          options.world_size = kilometres * 1000.0f * u::m;
+          options.world_size =
+            across.numerical_value_in (u::km) * 1000.0f * u::m;
           return true;
         } },
       { "--terrain-resolution",
@@ -248,10 +262,10 @@ namespace moppe::game {
         // more memory and is coarser underfoot; --terrain-resolution buys
         // the grain back where there is the memory for it (generating a
         // 4096 world peaks at 5 GB).
-        const float across = options.world_size->numerical_value_in (u::m);
-        const float height = extent_value (options.world.map_size)[1];
-        options.world.map_size =
-          spatial_extent_in_metres (Vec3 (across, height, across));
+        const meters_t across = *options.world_size;
+        const meters_t height = extent_value (options.world.map_size)[1] * u::m;
+        options.world.map_size = spatial_extent_in_metres (Vec3 (
+          meters_value (across), meters_value (height), meters_value (across)));
       }
       if (options.terrain_resolution)
         options.world.resolution = *options.terrain_resolution;

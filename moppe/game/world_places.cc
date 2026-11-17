@@ -43,9 +43,9 @@ namespace moppe::game {
                                 farm_model::barn_nest_1,
                                 farm_model::barn_nest_2,
                                 farm_model::barn_nest_3 })
-        nests.push_back (
-          { .at = frame.transform_point (nest + Vec3 (0, 0.03f, 0)),
-            .out = out });
+        nests.push_back ({ .at = moppe::position (
+                             frame.transform_point (nest + Vec3 (0, 0.03f, 0))),
+                           .out = unit_direction (out) });
     }
     session.logic ().m_nests =
       first_eggs (nests.size (), session.logic ().m_day_hours, egg_seed ());
@@ -73,9 +73,7 @@ namespace moppe::game {
                            .floor = meters_value (floor),
                            .ceiling = meters_value (ceiling) });
       }
-    session.set_rooms (std::move (rooms),
-                       plan_value (layout.period).x (),
-                       plan_value (layout.period).z ());
+    session.set_rooms (std::move (rooms), layout.period);
     session.logic ().m_their_beacons.assign (session.logic ().m_beacons.size (),
                                              Beacon {});
     session.logic ().m_beacon_burn.assign (session.logic ().m_beacons.size (),
@@ -138,16 +136,17 @@ namespace moppe::game {
                                      farm_model::barn_stall_3 };
       for (int k = 0; k < 4; ++k)
         stalls.push_back ({ .species = k < 2 ? Species::horse : Species::cow,
-                            .at = at (stall_points[k], k < 2 ? -1.95f : -2.1f),
-                            .heading = radians_value (to_manger) });
+                            .at = moppe::position (
+                              at (stall_points[k], k < 2 ? -1.95f : -2.1f)),
+                            .heading = to_manger });
       const Vec3 lo = farm_model::barn_pen_low;
       const Vec3 hi = farm_model::barn_pen_high;
       const Vec3 middle = (lo + hi) * 0.5f;
       stalls.push_back ({ .species = Species::pig,
-                          .at = at (middle, middle[2]),
-                          .heading = radians_value (along_x),
-                          .half_along = 0.5f * std::abs (hi[0] - lo[0]),
-                          .half_across = 0.5f * std::abs (hi[2] - lo[2]),
+                          .at = moppe::position (at (middle, middle[2])),
+                          .heading = along_x,
+                          .half_along = 0.5f * std::abs (hi[0] - lo[0]) * u::m,
+                          .half_across = 0.5f * std::abs (hi[2] - lo[2]) * u::m,
                           .count = 2 + static_cast<int> (++n % 2) });
     }
     return stalls;
@@ -156,20 +155,24 @@ namespace moppe::game {
   AnimalGround WorldPlaces::animal_ground (const WorldGround& ground) const {
     return {
       .ground =
-        [ground, this] (float x, float z) {
+        [ground, this] (plan_position_t p) {
+          const float x = plan_value (p).x (), z = plan_value (p).z ();
           const float height = ground.height (Vec3 (x, 0.0f, z));
           if (const std::optional<terrain::SurfaceElevation> floor =
                 floor_at (layout, plan_position (x, z)))
-            return std::max (terrain::surface_elevation_value (*floor), height);
-          return height;
+            return terrain::surface_elevation_point (
+              std::max (terrain::surface_elevation_value (*floor), height) *
+              u::m);
+          return terrain::surface_elevation_point (height * u::m);
         },
       .dry =
-        [ground] (float x, float z) {
-          const Vec3 at (x, 0.0f, z);
+        [ground] (plan_position_t p) {
+          const Vec3 at (plan_value (p).x (), 0.0f, plan_value (p).z ());
           return ground.still_level (at) < ground.height (at) + 0.05f;
         },
       .pasture =
-        [ground] (float x, float z) {
+        [ground] (plan_position_t p) {
+          const float x = plan_value (p).x (), z = plan_value (p).z ();
           const auto read = [&] (auto quantity) {
             return spatial::sample<quantity> (
                      ground.generated.readings (),
@@ -177,21 +180,25 @@ namespace moppe::game {
               .numerical_value_in (one);
           };
           return Pasture {
-            .grazed = read (map::grazing_pressure),
-            .forest = read (map::forest_cover),
+            .grazed = read (map::grazing_pressure) * proportion[one],
+            .forest = read (map::forest_cover) * proportion[one],
             // The fjäll's dwarf birch and fell birch, and its lichen
             // heath, but not the lichen of the dry pine forest below.
-            .fell = std::min (
-              1.0f,
-              1.5f * read (map::dwarf_birch_abundance) +
-                read (map::mountain_birch_abundance) +
-                read (map::lichen_abundance) *
-                  smoothstep (0.05f, 0.2f, read (map::dwarf_birch_abundance))),
-            .bog = read (map::sphagnum_abundance),
+            .fell =
+              std::min (1.0f,
+                        1.5f * read (map::dwarf_birch_abundance) +
+                          read (map::mountain_birch_abundance) +
+                          read (map::lichen_abundance) *
+                            smoothstep (
+                              0.05f, 0.2f, read (map::dwarf_birch_abundance))) *
+              proportion[one],
+            .bog = read (map::sphagnum_abundance) * proportion[one],
           };
         },
       .clear =
-        [ground] (const Vec3& at, float radius) {
+        [ground] (const position_t& at_q, meters_t radius_q) {
+          const Vec3& at = position_value (at_q);
+          const float radius = meters_value (radius_q);
           const mov::TrunkContact contact =
             ground.trunks.collide (position (at + Vec3 (0, radius + 0.2f, 0)),
                                    position (at + Vec3 (0, radius + 0.8f, 0)),
@@ -201,10 +208,9 @@ namespace moppe::game {
             out[0] += displacement_value (contact.push)[0];
             out[2] += displacement_value (contact.push)[2];
           }
-          return out;
+          return moppe::position (out);
         },
-      .period_x = ground.period_x (),
-      .period_z = ground.period_z (),
+      .period = ground.period (),
     };
   }
 
@@ -224,23 +230,19 @@ namespace moppe::game {
       if (farm.kept)
         for (const Building& b : farm.buildings)
           if (b.kind == Building::Kind::house)
-            folds.push_back (
-              { .kind = Fold::Kind::farm, .at = position_value (b.at) });
+            folds.push_back ({ .kind = Fold::Kind::farm, .at = b.at });
     if (layout.landing && lived_in (layout.landing->place))
-      folds.push_back ({ .kind = Fold::Kind::landing,
-                         .at = position_value (layout.landing->jetty.root) });
+      folds.push_back (
+        { .kind = Fold::Kind::landing, .at = layout.landing->jetty.root });
     for (const Sanctuary& s : layout.sanctuaries)
       if (s.kept)
-        folds.push_back (
-          { .kind = Fold::Kind::sanctuary, .at = position_value (s.centre) });
-    folds.push_back (
-      { .kind = Fold::Kind::trailhead, .at = position_value (home_base) });
+        folds.push_back ({ .kind = Fold::Kind::sanctuary, .at = s.centre });
+    folds.push_back ({ .kind = Fold::Kind::trailhead, .at = home_base });
     const AnimalGround animals = animal_ground (ground);
     session.animals ().rebuild (plan_animals (animals,
                                               folds,
-                                              position_value (home_base),
-                                              animals.period_x,
-                                              animals.period_z,
+                                              home_base,
+                                              animals.period,
                                               m_seed ^ 0xa417a15u,
                                               barn_stalls ()));
     std::vector<Coop> coops;
@@ -248,7 +250,8 @@ namespace moppe::game {
       coops.push_back ({ .frame = building_frame (*barn) });
     std::vector<Bird> birds = plan_birds (coops, egg_seed ());
     for (Bird& b : birds)
-      b.position[1] = animals.ground (b.position[0], b.position[2]);
+      b.position = terrain::at_elevation (
+        moppe::plan (b.position), animals.ground (moppe::plan (b.position)));
     std::cerr << "moppe: animals: " << birds.size () << " hens, roosters,"
               << " and chicks in " << coops.size () << " barns, "
               << nests.size () << " nest boxes" << std::endl;
@@ -282,7 +285,9 @@ namespace moppe::game {
       const Vec3& from = position_value (spawn);
       for (const Animal& a : session.animals ().animals ()) {
         const meters_t d =
-          std::hypot (a.position[0] - from[0], a.position[2] - from[2]) * u::m;
+          std::hypot (position_value (a.position)[0] - from[0],
+                      position_value (a.position)[2] - from[2]) *
+          u::m;
         if (static_cast<int> (a.species) == s && d < best) {
           best = d;
           nearest = &a;
@@ -293,8 +298,9 @@ namespace moppe::game {
                   << traits (nearest->species).plural << ' '
                   << std::lround (meters_value (best))
                   << " m from the spawn, at "
-                  << std::lround (nearest->position[0]) << ' '
-                  << std::lround (nearest->position[2]) << std::endl;
+                  << std::lround (position_value (nearest->position)[0]) << ' '
+                  << std::lround (position_value (nearest->position)[2])
+                  << std::endl;
     }
   }
 
