@@ -14,8 +14,7 @@ namespace moppe::terrain {
     // identified by its edge: 2 * node + 0 horizontal (toward +x),
     // 2 * node + 1 vertical (toward +y).
     struct WaterlineCrossing {
-      float x;
-      float y;
+      plan_position_t at;
       std::uint64_t link[2] = { no_link, no_link };
       std::uint8_t degree = 0;
       bool visited = false;
@@ -30,8 +29,8 @@ namespace moppe::terrain {
                              std::span<const SurfaceElevation> elevations,
                              std::span<const SurfaceElevation> surface,
                              const WaterBodyMembership& water_bodies,
-                             float wet_epsilon) {
-    if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
+                             ElevationChange wet_epsilon) {
+    if (!isfinite (wet_epsilon) || wet_epsilon < ElevationChange::zero ())
       throw std::invalid_argument ("waterline epsilon must be non-negative");
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
@@ -45,17 +44,18 @@ namespace moppe::terrain {
     // clamped on the dry side: it decides topology (which corners are
     // wet), while crossing positions come from extending the wet
     // side's level across the edge below.
-    const auto field = [&] (std::size_t x, std::size_t y) {
-      const std::size_t node = y * width + x;
-      return surface_elevation_value (surface[node]) -
-             elevation_at (grid, elevations, x, y) - wet_epsilon;
-    };
     const auto ground = [&] (std::size_t x, std::size_t y) {
-      return elevation_at (grid, elevations, x, y);
+      return elevations[grid.offset ({ .column = x, .row = y })];
     };
     const auto sheet = [&] (std::size_t x, std::size_t y) {
-      return surface_elevation_value (surface[y * width + x]);
+      return surface[y * width + x];
     };
+    const auto field = [&] (std::size_t x, std::size_t y) -> ElevationChange {
+      return sheet (x, y) - ground (x, y) - wet_epsilon;
+    };
+    const ElevationChange dry = ElevationChange::zero ();
+    const meters_t spacing_x = grid.spacing_x ();
+    const meters_t spacing_y = grid.spacing_z ();
 
     std::unordered_map<std::uint64_t, WaterlineCrossing> crossings;
     std::vector<std::pair<std::uint64_t, std::uint64_t>> segments;
@@ -80,27 +80,35 @@ namespace moppe::terrain {
                                       std::size_t bx,
                                       std::size_t by,
                                       bool vertical,
-                                      float fa,
-                                      float fb) {
+                                      ElevationChange fa,
+                                      ElevationChange fb) {
       const std::uint64_t key = crossing_key (ax, ay, vertical);
       if (crossings.contains (key))
         return key;
-      const bool a_wet = fa > 0.0f;
-      const float level_wet = a_wet ? sheet (ax, ay) : sheet (bx, by);
-      const float dry_z = a_wet ? ground (bx, by) : ground (ax, ay);
+      const bool a_wet = fa > dry;
+      const SurfaceElevation level_wet =
+        a_wet ? sheet (ax, ay) : sheet (bx, by);
+      const SurfaceElevation dry_z = a_wet ? ground (bx, by) : ground (ax, ay);
       // Extended field at the dry end; a dry corner sitting below the
       // wet level (a steep undercut) keeps a token negative value so
       // the crossing stays on the edge.
-      const float dry_extended =
-        std::min (level_wet - dry_z - wet_epsilon, -1e-9f);
-      const float fa_extended = a_wet ? fa : dry_extended;
-      const float fb_extended = a_wet ? dry_extended : fb;
-      const float s = fa_extended / (fa_extended - fb_extended);
-      crossings.emplace (key,
-                         WaterlineCrossing {
-                           .x = static_cast<float> (ax) + (vertical ? 0 : s),
-                           .y = static_cast<float> (ay) + (vertical ? s : 0),
-                         });
+      const ElevationChange dry_extended = std::min (
+        level_wet - dry_z - wet_epsilon, -1e-9f * surface_elevation[u::m]);
+      const ElevationChange fa_extended = a_wet ? fa : dry_extended;
+      const ElevationChange fb_extended = a_wet ? dry_extended : fb;
+      // How far along the edge from a to b.
+      const proportion_t s =
+        quantity_cast<proportion> (fa_extended / (fa_extended - fb_extended));
+      const proportion_t none = 0.0f * proportion[one];
+      crossings.emplace (
+        key,
+        WaterlineCrossing {
+          .at = plan_position (
+            meters_t ((static_cast<float> (ax) + (vertical ? none : s)) *
+                      spacing_x),
+            meters_t ((static_cast<float> (ay) + (vertical ? s : none)) *
+                      spacing_y)),
+        });
       return key;
     };
 
@@ -108,12 +116,12 @@ namespace moppe::terrain {
       const std::size_t y1 = (y + 1) % height;
       for (std::size_t x = 0; x < width; ++x) {
         const std::size_t x1 = (x + 1) % width;
-        const float f00 = field (x, y);
-        const float f10 = field (x1, y);
-        const float f01 = field (x, y1);
-        const float f11 = field (x1, y1);
-        const unsigned mask = (f00 > 0 ? 1u : 0u) | (f10 > 0 ? 2u : 0u) |
-                              (f01 > 0 ? 4u : 0u) | (f11 > 0 ? 8u : 0u);
+        const ElevationChange f00 = field (x, y);
+        const ElevationChange f10 = field (x1, y);
+        const ElevationChange f01 = field (x, y1);
+        const ElevationChange f11 = field (x1, y1);
+        const unsigned mask = (f00 > dry ? 1u : 0u) | (f10 > dry ? 2u : 0u) |
+                              (f01 > dry ? 4u : 0u) | (f11 > dry ? 8u : 0u);
         if (mask == 0u || mask == 15u)
           continue;
 
@@ -185,8 +193,8 @@ namespace moppe::terrain {
         case 9u: {
           // Saddle: resolve by the bilinear center, matching the sign
           // convention of the corners it joins.
-          const float center = 0.25f * (f00 + f10 + f01 + f11);
-          const bool center_wet = center > 0.0f;
+          const ElevationChange center = 0.25f * (f00 + f10 + f01 + f11);
+          const bool center_wet = center > dry;
           const bool corners_00_11_wet = mask == 9u;
           // The boundary isolates whichever corner pair disagrees with
           // the center: dry corners when the middle is wet, wet
@@ -231,10 +239,6 @@ namespace moppe::terrain {
     std::sort (keys.begin (), keys.end ());
 
     Waterline waterline { .domain = grid };
-    const float spacing_x =
-      (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-    const float spacing_y =
-      (grid.spacing_z ()).numerical_value_in (moppe::u::m);
 
     const auto walk = [&] (std::uint64_t start, bool closed) {
       WaterlineContour contour { .closed = closed };
@@ -247,8 +251,7 @@ namespace moppe::terrain {
         if (node.visited)
           break;
         node.visited = true;
-        contour.points.push_back (node.x * spacing_x);
-        contour.points.push_back (node.y * spacing_y);
+        contour.points.push_back (node.at);
         const std::uint64_t next =
           node.link[0] != previous ? node.link[0] : node.link[1];
         previous = current;
@@ -272,27 +275,24 @@ namespace moppe::terrain {
 
   WaterlineProximity waterline_proximity (const Waterline& waterline,
                                           meters_t band) {
-    const float band_m = (band).numerical_value_in (moppe::u::m);
-    if (!std::isfinite (band_m) || band <= 0.0f * u::m)
+    if (!isfinite (band) || band <= 0.0f * u::m)
       throw std::invalid_argument ("waterline band must be positive");
     const TerrainDomain& grid = waterline.domain;
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
-    const float spacing_x =
-      (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-    const float spacing_y =
-      (grid.spacing_z ()).numerical_value_in (moppe::u::m);
-    const float world_x = spacing_x * static_cast<float> (width);
-    const float world_y = spacing_y * static_cast<float> (height);
+    const meters_t spacing_x = grid.spacing_x ();
+    const meters_t spacing_y = grid.spacing_z ();
+    const meters_t world_x = spacing_x * static_cast<float> (width);
+    const meters_t world_y = spacing_y * static_cast<float> (height);
 
-    std::vector<WaterlineDistance> distance (count,
-                                             band_m * waterline_distance[u::m]);
+    std::vector<WaterlineDistance> distance (count, WaterlineDistance (band));
 
     // Bucket segments by lattice cell so each node only inspects its
     // neighborhood; a marching-squares segment spans at most two cells.
+    // A stretch's ends, x then z, each on the map's own lanes.
     struct ShoreSegment {
-      float ax, ay, bx, by;
+      meters_t ax, ay, bx, by;
     };
     std::vector<ShoreSegment> shore;
     std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> buckets;
@@ -307,10 +307,10 @@ namespace moppe::terrain {
       const std::size_t stretches = contour.closed ? points : points - 1;
       for (std::size_t i = 0; i < stretches; ++i) {
         const std::size_t j = (i + 1) % points;
-        ShoreSegment segment { contour.points[2 * i],
-                               contour.points[2 * i + 1],
-                               contour.points[2 * j],
-                               contour.points[2 * j + 1] };
+        ShoreSegment segment { x_of (contour.points[i]),
+                               z_of (contour.points[i]),
+                               x_of (contour.points[j]),
+                               z_of (contour.points[j]) };
         // A closed contour's return stretch may cross the torus seam;
         // minimum-image its far end next to the near one.
         if (segment.bx - segment.ax > 0.5f * world_x)
@@ -324,41 +324,54 @@ namespace moppe::terrain {
         const std::uint32_t index = static_cast<std::uint32_t> (shore.size ());
         shore.push_back (segment);
         buckets[bucket_key (static_cast<int> (std::floor (
-                              0.5f * (segment.ax + segment.bx) / spacing_x)),
+                              (0.5f * (segment.ax + segment.bx) / spacing_x)
+                                .numerical_value_in (one))),
                             static_cast<int> (std::floor (
-                              0.5f * (segment.ay + segment.by) / spacing_y)))]
+                              (0.5f * (segment.ay + segment.by) / spacing_y)
+                                .numerical_value_in (one))))]
           .push_back (index);
       }
     }
     if (shore.empty ())
       return WaterlineProximity (grid, std::move (distance));
 
-    const int reach_x = static_cast<int> (std::ceil (band_m / spacing_x)) + 1;
-    const int reach_y = static_cast<int> (std::ceil (band_m / spacing_y)) + 1;
+    const int reach_x = static_cast<int> (std::ceil (
+                          (band / spacing_x).numerical_value_in (one))) +
+                        1;
+    const int reach_y = static_cast<int> (std::ceil (
+                          (band / spacing_y).numerical_value_in (one))) +
+                        1;
 
-    const auto point_segment_distance = [&] (float px,
-                                             float py,
-                                             const ShoreSegment& segment) {
-      float ax = segment.ax, ay = segment.ay;
-      float bx = segment.bx, by = segment.by;
+    const auto point_segment_distance =
+      [&] (meters_t px, meters_t py, const ShoreSegment& segment) -> meters_t {
+      meters_t ax = segment.ax, ay = segment.ay;
+      meters_t bx = segment.bx, by = segment.by;
       // Bring the segment into the node's minimum image.
-      const float mid_x = 0.5f * (ax + bx);
-      const float mid_y = 0.5f * (ay + by);
-      const float shift_x = std::round ((px - mid_x) / world_x) * world_x;
-      const float shift_y = std::round ((py - mid_y) / world_y) * world_y;
+      const meters_t mid_x = 0.5f * (ax + bx);
+      const meters_t mid_y = 0.5f * (ay + by);
+      const meters_t shift_x =
+        std::round (((px - mid_x) / world_x).numerical_value_in (one)) *
+        world_x;
+      const meters_t shift_y =
+        std::round (((py - mid_y) / world_y).numerical_value_in (one)) *
+        world_y;
       ax += shift_x;
       bx += shift_x;
       ay += shift_y;
       by += shift_y;
-      const float dx = bx - ax, dy = by - ay;
-      const float length2 = dx * dx + dy * dy;
-      const float t =
-        length2 > 0.0f
-          ? std::clamp (((px - ax) * dx + (py - ay) * dy) / length2, 0.0f, 1.0f)
-          : 0.0f;
-      const float cx = ax + t * dx - px;
-      const float cy = ay + t * dy - py;
-      return std::sqrt (cx * cx + cy * cy);
+      const meters_t dx = bx - ax, dy = by - ay;
+      const square_meters_t length2 = dx * dx + dy * dy;
+      // How far along the stretch the nearest point lies.
+      const proportion_t t =
+        length2 > square_meters_t::zero ()
+          ? std::clamp (
+              proportion_t (((px - ax) * dx + (py - ay) * dy) / length2),
+              0.0f * proportion[one],
+              1.0f * proportion[one])
+          : 0.0f * proportion[one];
+      const meters_t cx = meters_t (ax + t * dx) - px;
+      const meters_t cy = meters_t (ay + t * dy) - py;
+      return sqrt (cx * cx + cy * cy);
     };
 
     // Exact distances for every node within the band of a bucketed
@@ -371,13 +384,13 @@ namespace moppe::terrain {
           const int nx = wrap_index (bx + dx, static_cast<int> (width));
           const int ny = wrap_index (by + dy, static_cast<int> (height));
           const std::size_t node = static_cast<std::size_t> (ny) * width + nx;
-          const float px = static_cast<float> (nx) * spacing_x;
-          const float py = static_cast<float> (ny) * spacing_y;
+          const meters_t px = static_cast<float> (nx) * spacing_x;
+          const meters_t py = static_cast<float> (ny) * spacing_y;
           WaterlineDistance& best = distance[node];
           for (const std::uint32_t segment : segment_indices)
             best = std::min (best,
-                             point_segment_distance (px, py, shore[segment]) *
-                               waterline_distance[u::m]);
+                             WaterlineDistance (point_segment_distance (
+                               px, py, shore[segment])));
         }
     }
 

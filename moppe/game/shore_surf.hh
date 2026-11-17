@@ -14,8 +14,8 @@ namespace moppe::game {
   struct ShoreSurf {
     std::size_t width = 0;
     std::size_t height = 0;
-    float period_x = 0.0f; // metres
-    float period_z = 0.0f;
+    meters_t period_x = 0.0f * u::m;
+    meters_t period_z = 0.0f * u::m;
 
     // Row-major samples at (x * period_x / width, z * period_z / height),
     // like the terrain lattice, NOT at half-cell-offset world positions.
@@ -39,6 +39,9 @@ namespace moppe::game {
     // MUST also gate water effects by the original sea lane/depth, and
     // material wetting by the actual ground elevation at the coast. A
     // filtered mask is never permission to put surf on a lake or a cliff.
+    //
+    // The texels as the water program reads them (four float lanes, in
+    // the units above); the solve itself runs on typed lanes.
     std::vector<std::array<float, 4>> samples;
   };
 

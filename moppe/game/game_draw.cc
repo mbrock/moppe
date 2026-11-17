@@ -466,7 +466,7 @@ namespace moppe {
       // Running channels are part of the same clipped water-level field as
       // lakes and the sea. Only vertical nickpoint geometry is separate;
       // ordinary reaches never draw an overlapping ribbon here.
-      m_waterfall_surface.draw (r, camera);
+      m_waterfall_surface.draw (r, position (camera));
     }
 
     void MoppeGame::draw_boat_wakes (render::Renderer& r,

@@ -185,7 +185,8 @@ namespace moppe {
             ymin = std::min (ymin, c.patch_ymin[k]);
             ymax = std::max (ymax, c.patch_ymax[k]);
             c.wave_reach =
-              std::max (c.wave_reach, wave * terrain::sea_wave_lean);
+              std::max (c.wave_reach,
+                        wave * terrain::sea_wave_lean.numerical_value_in (one));
           }
 
           c.x0 = cx * CHUNK;

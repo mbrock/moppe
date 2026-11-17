@@ -118,7 +118,7 @@ namespace moppe::nhal {
                          amplitude,
                          radians_value (sea_wave_phase (t, time)) };
         *lanes[i][1] = { per_second_value (sea_wave_frequency (t)),
-                         amplitude * sea_wave_lean,
+                         amplitude * sea_wave_lean.numerical_value_in (one),
                          meters_value (t.wavelength),
                          k };
       }

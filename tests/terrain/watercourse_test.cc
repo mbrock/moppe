@@ -347,17 +347,29 @@ MOPPE_TEST (sea_waves_read_back_the_surface_the_water_program_displaces) {
           const float theta = per_metre_value (sea_wave_number (t)) *
                                 (dx * rest_x + dz * rest_z) +
                               radians_value (sea_wave_phase (t, time));
-          x += a * sea_wave_lean * dx * std::cos (theta);
-          z += a * sea_wave_lean * dz * std::cos (theta);
+          x +=
+            a * sea_wave_lean.numerical_value_in (one) * dx * std::cos (theta);
+          z +=
+            a * sea_wave_lean.numerical_value_in (one) * dz * std::cos (theta);
           y += a * std::sin (theta);
         }
         MOPPE_CHECK_NEAR (
-          meters_value (sea_waves_at (x, z, time, 1.0f).height), y, 0.01f);
+          meters_value (
+            sea_waves_at (plan_position (x, z), time, 1.0f * proportion[one])
+              .height),
+          y,
+          0.01f);
       }
-  MOPPE_CHECK (sea_waves_at (10.0f, 20.0f, 5.0, 0.0f).height == 0.0f * u::m);
+  MOPPE_CHECK (
+    sea_waves_at (plan_position (10.0f, 20.0f), 5.0, 0.0f * proportion[one])
+      .height == 0.0f * u::m);
   // A river carries none, a lake hardly any, and the sea dies on its shore.
-  MOPPE_CHECK (sea_wave_scale (0.0f, 3.0f * u::m) == 0.0f);
-  MOPPE_CHECK (sea_wave_scale (0.10f, 30.0f * u::m) < 0.011f);
-  MOPPE_CHECK (sea_wave_scale (1.0f, 0.0f * u::m) == 0.0f);
-  MOPPE_CHECK (sea_wave_scale (1.0f, 10.0f * u::m) == 1.0f);
+  MOPPE_CHECK (sea_wave_scale (0.0f * wave_amplitude[one], 3.0f * u::m) ==
+               0.0f);
+  MOPPE_CHECK (sea_wave_scale (0.10f * wave_amplitude[one], 30.0f * u::m) <
+               0.011f);
+  MOPPE_CHECK (sea_wave_scale (1.0f * wave_amplitude[one], 0.0f * u::m) ==
+               0.0f);
+  MOPPE_CHECK (sea_wave_scale (1.0f * wave_amplitude[one], 10.0f * u::m) ==
+               1.0f);
 }
