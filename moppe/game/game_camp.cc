@@ -59,17 +59,20 @@ namespace moppe {
       const Camp& camp = logic ().m_camp;
       const play_time_t now = logic ().m_total_time;
       if (camp.hung)
-        draw_hammock (dl, camp.hammock, hammock_load (camp, now), camp.swing);
+        draw_hammock (dl,
+                      camp.hammock,
+                      hammock_load (camp, now),
+                      radians_value (camp.swing));
       if (hearth_laid (camp))
-        draw_hearth (dl, camp.hearth, fire_burn (camp, now));
+        draw_hearth (dl, position_value (camp.hearth), fire_burn (camp, now));
       if (camp.pan.on) {
         m_pan_contents.clear ();
         for (int i = 0; i < camp.pan.count; ++i)
           if (camp.pan.mushrooms[i] < m_mushrooms.mushroom_count ())
             m_pan_contents.push_back (m_mushrooms.site (camp.pan.mushrooms[i]));
         draw_pan (dl,
-                  camp.pan.place,
-                  camp.pan.yaw,
+                  position_value (camp.pan.place),
+                  camp.pan.yaw.numerical_value_in (u::rad),
                   m_pan_contents,
                   pan_cooked (camp.pan, now),
                   camp.pan.has_fish ? &camp.pan.fish : nullptr,
@@ -92,8 +95,10 @@ namespace moppe {
           dl,
           pose_resting (
             camp.hammock,
-            camp.swing,
-            resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch),
+            radians_value (camp.swing),
+            resting_gaze (camp.hammock,
+                          radians_value (camp.gaze_yaw),
+                          camp.gaze_pitch.numerical_value_in (u::rad)),
             time),
           m_company.outfit);
       // The basket waits on the ground under the foot of the hammock.

@@ -199,10 +199,10 @@ namespace moppe::game {
     // of smoke over each that burns. `burn` is each sanctuary's.
     void draw_beacons (render::DrawList& dl,
                        const Vec3& camera,
-                       const std::vector<float>& burn) const;
+                       const std::vector<proportion_t>& burn) const;
     void draw_beacon_fires (render::Renderer& renderer,
                             const Vec3& camera,
-                            const std::vector<float>& burn,
+                            const std::vector<proportion_t>& burn,
                             float daylight,
                             float time) const;
 

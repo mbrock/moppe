@@ -51,13 +51,15 @@ namespace moppe::game {
     if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
     if (state.m_doing == Doing::on_foot ())
-      mine.walker = walker_pose (session.walker (), state.m_look_pitch);
+      mine.walker = walker_pose (
+        session.walker (), state.m_look_pitch.numerical_value_in (u::rad));
     // On the bus, where they sit, which is all the other game can know of
     // a bus on another clock.
     if (state.m_doing == Doing::on_the_bus ()) {
       mine.bus = state.m_bus;
       mine.bus_seat = state.m_bus_seat;
-      mine.walker = walker_pose (session.walker (), state.m_look_pitch);
+      mine.walker = walker_pose (
+        session.walker (), state.m_look_pitch.numerical_value_in (u::rad));
       mine.walker->position = state.m_seat_position;
       mine.walker->heading = state.m_seat_heading;
       mine.walker->velocity = state.m_seat_velocity;
@@ -66,19 +68,19 @@ namespace moppe::game {
     mine.hung = camp.hung;
     mine.hammock = camp.hammock;
     mine.hammock_load = hammock_load (camp, state.m_total_time);
-    mine.swing = camp.swing;
-    mine.gaze_yaw = camp.gaze_yaw;
-    mine.gaze_pitch = camp.gaze_pitch;
+    mine.swing = radians_value (camp.swing);
+    mine.gaze_yaw = radians_value (camp.gaze_yaw);
+    mine.gaze_pitch = camp.gaze_pitch.numerical_value_in (u::rad);
     mine.hearth_laid = hearth_laid (camp);
-    mine.hearth = camp.hearth;
+    mine.hearth = position_value (camp.hearth);
     mine.fire_burn = fire_burn (camp, state.m_total_time);
     mine.beacons = 0;
     for (std::size_t i = 0; i < state.m_beacons.size () && i < 32; ++i)
       if (state.m_beacons[i].burning ())
         mine.beacons |= 1u << i;
     mine.pan_on = camp.pan.on;
-    mine.pan_place = camp.pan.place;
-    mine.pan_yaw = camp.pan.yaw;
+    mine.pan_place = position_value (camp.pan.place);
+    mine.pan_yaw = camp.pan.yaw.numerical_value_in (u::rad);
     mine.pan_cooked = pan_cooked (camp.pan, state.m_total_time);
     mine.pan_count = static_cast<std::uint8_t> (camp.pan.count);
     std::copy (std::begin (camp.pan.mushrooms),
@@ -357,7 +359,7 @@ namespace moppe::game {
     if (!companion || !companion->hearth_laid || companion->fire_burn <= 0.01f)
       return;
     Camp theirs;
-    theirs.hearth = companion->hearth;
+    theirs.hearth = position (companion->hearth);
     const Vec3 lamp = fire_light_position (theirs);
     FrameLighting& lighting = frame.lighting;
     if (lighting.lamp_reach > 0.0f &&

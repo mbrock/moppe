@@ -35,9 +35,9 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.walker->look_pitch = -0.3f;
   sent.fleet.bike.wheel_spin_radians = 123.0f;
   sent.hung = true;
-  sent.hammock.strap[0] = Vec3 (1, 2, 3);
-  sent.hammock.strap[1] = Vec3 (5, 2, 3);
-  sent.hammock.girth[1] = 0.2f;
+  sent.hammock.strap[0] = position (Vec3 (1, 2, 3));
+  sent.hammock.strap[1] = position (Vec3 (5, 2, 3));
+  sent.hammock.girth[1] = 0.2f * u::m;
   sent.hammock_load = 0.75f;
   sent.hearth_laid = true;
   sent.hearth = Vec3 (3, 2, 5);
@@ -79,8 +79,8 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (got->walker->look_pitch, -0.3f, 1e-6f);
   MOPPE_CHECK_NEAR (got->fleet.bike.wheel_spin_radians, 123.0f, 1e-6f);
   MOPPE_CHECK (got->hung && got->lying_down ());
-  MOPPE_CHECK_NEAR (got->hammock.strap[1][0], 5.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->hammock.girth[1], 0.2f, 1e-6f);
+  MOPPE_CHECK_NEAR (position_value (got->hammock.strap[1])[0], 5.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (meters_value (got->hammock.girth[1]), 0.2f, 1e-6f);
   MOPPE_CHECK (got->hearth_laid);
   MOPPE_CHECK_NEAR (got->fire_burn, 0.5f, 1e-6f);
   MOPPE_CHECK (got->beacons == 0b101);

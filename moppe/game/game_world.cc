@@ -289,7 +289,7 @@ namespace moppe {
           Vec3 stand = at + away * 4.0f;
           stand[1] = world_ground ().height (stand) + 0.1f;
           session ().walker ().spawn (moppe::position (stand), away * -1.0f);
-          logic ().m_fp_eye = session ().walker ().eye_position ();
+          logic ().m_fp_eye = position (session ().walker ().eye_position ());
         }
       }
     }

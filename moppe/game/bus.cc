@@ -593,7 +593,8 @@ namespace moppe::game {
           normalized (out));
         session.set_mode (Doing::on_foot ());
         session.logic ().m_bus_alight = false;
-        session.logic ().m_fp_eye = session.walker ().eye_position ();
+        session.logic ().m_fp_eye =
+          position (session.walker ().eye_position ());
       }
     }
   }

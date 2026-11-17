@@ -390,7 +390,7 @@ namespace moppe::game {
         meal = meal.substr (3);
       const bool one = !camp.ate_fish && camp.ate_count + camp.ate_eggs == 1;
       m_prompts.meal_note =
-        camp.ate_cooked > 1.4f
+        camp.ate_cooked > 1.4f * proportion[mp_units::one]
           ? "Burnt to a cinder. Still, it is supper."
           : (one ? "A fried " : "Fried ") + meal + " by the fire. Lovely.";
       state.meal = m_prompts.meal_note.c_str ();
@@ -737,11 +737,11 @@ namespace moppe::game {
                          .name = "jet ski" });
     const Camp& camp = w.session.logic ().m_camp;
     if (camp.hung || camp.fire)
-      marks.push_back (
-        { .kind = Mark::Kind::Camp,
-          .position = camp.hung ? hammock_middle (camp.hammock) : camp.hearth,
-          .colour = DisplayColor (0.80f, 0.38f, 0.08f),
-          .name = "camp" });
+      marks.push_back ({ .kind = Mark::Kind::Camp,
+                         .position = camp.hung ? hammock_middle (camp.hammock)
+                                               : position_value (camp.hearth),
+                         .colour = DisplayColor (0.80f, 0.38f, 0.08f),
+                         .name = "camp" });
     // The buses where the timetable has them, and their stops; the
     // stops last of all, so drawn under everything.
     for (const BusPose& bus : w.bus.where (bus_time (w.session.logic ())))

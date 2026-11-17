@@ -68,7 +68,8 @@ namespace moppe::game {
                const GameLogicState& logic);
 
     // A burning beacon near the eye lights what stands round it.
-    void light_beacons (FrameView& frame, const std::vector<float>& burn) const;
+    void light_beacons (FrameView& frame,
+                        const std::vector<proportion_t>& burn) const;
 
     // A barn lived in keeps its lantern lit in the dark hours; by day the
     // light from its open doors fills it. Near the eye, it is the lamp,

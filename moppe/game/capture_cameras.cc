@@ -33,16 +33,21 @@ namespace moppe::game {
     const Vec3 looking = camera.forward ();
     Vec3 eye, toward;
     if (session.logic ().m_cam_mode == CAM_HELMET) {
-      eye = resting_eye (camp.hammock, camp.swing);
-      toward = resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch);
+      eye = resting_eye (camp.hammock, radians_value (camp.swing));
+      toward = resting_gaze (camp.hammock,
+                             radians_value (camp.gaze_yaw),
+                             camp.gaze_pitch.numerical_value_in (u::rad));
     } else {
       const Vec3 subject = hammock_middle (camp.hammock) - Vec3 (0, 0.45f, 0);
-      const float around = camp.gaze_yaw + 0.45f;
+      const float around = radians_value (camp.gaze_yaw) + 0.45f;
       eye = subject +
             (hammock_across (camp.hammock) * std::cos (around) +
              hammock_along (camp.hammock) * std::sin (around)) *
               3.7f +
-            Vec3 (0, 0.75f + 1.2f * (1.1f - camp.gaze_pitch), 0);
+            Vec3 (0,
+                  0.75f +
+                    1.2f * (1.1f - camp.gaze_pitch.numerical_value_in (u::rad)),
+                  0);
       eye[1] =
         std::max (static_cast<float> (eye[1]), ground.height (eye) + 0.4f);
       toward = normalized (subject - eye);

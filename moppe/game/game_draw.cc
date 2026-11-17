@@ -422,7 +422,7 @@ namespace moppe {
                                             frame.lighting.time);
       if (hearth_laid (logic ().m_camp))
         draw_fire (r,
-                   logic ().m_camp.hearth,
+                   position_value (logic ().m_camp.hearth),
                    frame.camera.position,
                    fire_burn (logic ().m_camp, logic ().m_total_time),
                    frame.lighting.time);

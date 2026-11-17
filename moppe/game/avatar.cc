@@ -352,7 +352,7 @@ namespace moppe::game {
     // Fishing, the right hand holds the rod out before the body, or up
     // by the shoulder as it swings back to cast.
     if (walker.rod) {
-      Vec3 hand = rod_hand (k, walker.rod->raise);
+      Vec3 hand = rod_hand (k, walker.rod->raise.numerical_value_in (u::rad));
       k.elbow[1] = bend (k.shoulder[1],
                          hand,
                          size::upper_arm,

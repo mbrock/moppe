@@ -71,7 +71,7 @@ namespace moppe::game {
     session.logic ().m_their_beacons.assign (session.logic ().m_beacons.size (),
                                              Beacon {});
     session.logic ().m_beacon_burn.assign (session.logic ().m_beacons.size (),
-                                           0.0f);
+                                           0.0f * proportion[one]);
   }
 
   void WorldPlaces::build (render::Renderer* renderer,
@@ -286,17 +286,19 @@ namespace moppe::game {
     for (const Vec3& ring : layout.hearths) {
       if (length2 (ring - camera) > 200.0f * 200.0f)
         continue;
-      if (hearth_laid (camp) && length2 (camp.hearth - ring) < 0.04f)
+      if (hearth_laid (camp) &&
+          length2 (position_value (camp.hearth) - ring) < 0.04f)
         continue;
       draw_hearth (dl, ring, 0.0f);
     }
   }
 
-  void WorldPlaces::light_beacons (FrameView& frame,
-                                   const std::vector<float>& burn) const {
+  void
+  WorldPlaces::light_beacons (FrameView& frame,
+                              const std::vector<proportion_t>& burn) const {
     for (std::size_t i = 0; i < layout.sanctuaries.size () && i < burn.size ();
          ++i) {
-      if (burn[i] <= 0.01f)
+      if (burn[i] <= 0.01f * proportion[one])
         continue;
       const Vec3 lamp = layout.sanctuaries[i].hearth + Vec3 (0.0f, 0.7f, 0.0f);
       FrameLighting& lighting = frame.lighting;
@@ -306,9 +308,9 @@ namespace moppe::game {
         continue;
       lighting.lamp_position = lamp;
       lighting.lamp_reach = 1.8f * meters_value (fire_light_reach);
-      lighting.lamp_color =
-        scale_display (fire_light_color (burn[i], lighting.time),
-                       1.4f * (1.0f - 0.25f * lighting.daylight));
+      lighting.lamp_color = scale_display (
+        fire_light_color (burn[i].numerical_value_in (one), lighting.time),
+        1.4f * (1.0f - 0.25f * lighting.daylight));
     }
   }
 

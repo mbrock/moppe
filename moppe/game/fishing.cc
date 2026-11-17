@@ -274,9 +274,9 @@ namespace moppe::game {
     ++line.casts;
     line.phase = Line::Phase::casting;
     line.since = now;
-    line.stand = stand;
-    line.aim = aim;
-    line.bobber = aim;
+    line.stand = position (stand);
+    line.aim = position (aim);
+    line.bobber = position (aim);
     line.waters = waters;
     line.upland = upland;
     line.fish = fish_for (waters, upland, chance (line));
@@ -326,7 +326,7 @@ namespace moppe::game {
       return false;
     case Line::Phase::playing:
       if (age > play_seconds (line.fish)) {
-        line.bobber = fish_in_water (line, now);
+        line.bobber = position (fish_in_water (line, now));
         creel.fish.push_back (line.fish);
         creel.last = line.fish;
         creel.last_lost = false;
@@ -349,15 +349,17 @@ namespace moppe::game {
   Vec3 fish_in_water (const Line& line, play_time_t now) {
     using namespace fishing_parts;
     if (line.phase != Line::Phase::playing)
-      return line.bobber;
+      return position_value (line.bobber);
     const float done =
       fishing_parts::within_unit (seconds_between (now, line.since) /
                                   seconds_value (play_seconds (line.fish)));
     // It runs from side to side as it is wound in to a few metres out.
-    const Vec3 in = flat (line.stand - line.bobber);
+    const Vec3 in =
+      flat (position_value (line.stand) - position_value (line.bobber));
     const Vec3 side = unit_or (cross (in, world_up), Vec3 (1, 0, 0));
     const float t = seconds_between (now, line.since);
-    return line.bobber + in * (0.6f * smoothstep (0.0f, 1.0f, done)) +
+    return position_value (line.bobber) +
+           in * (0.6f * smoothstep (0.0f, 1.0f, done)) +
            side * ((1.0f - done) * 1.1f * std::sin (2.3f * t)) -
            world_up * 0.05f;
   }
@@ -374,20 +376,22 @@ namespace moppe::game {
     case Line::Phase::casting: {
       // Back over the shoulder, a whip forward, and down to the water as
       // the float flies out.
-      rod.raise = age < 0.4f ? mix (0.6f, 1.95f, smoothstep (0.0f, 0.4f, age))
-                  : age < 0.55f
-                    ? mix (1.95f, 0.25f, (age - 0.4f) / 0.15f)
-                    : mix (0.25f, 0.55f, smoothstep (0.55f, 0.9f, age));
+      rod.raise =
+        (age < 0.4f    ? mix (0.6f, 1.95f, smoothstep (0.0f, 0.4f, age))
+         : age < 0.55f ? mix (1.95f, 0.25f, (age - 0.4f) / 0.15f)
+                       : mix (0.25f, 0.55f, smoothstep (0.55f, 0.9f, age))) *
+        inclination[u::rad];
       const float flown = fishing_parts::within_unit (
         (age - 0.45f) / (seconds_value (cast_seconds) - 0.45f));
       rod.water = line.aim;
-      rod.out = flown;
-      rod.arc = 2.6f * flown * (1.0f - flown);
-      rod.tight = 0.6f * (1.0f - flown);
+      rod.out = flown * proportion[one];
+      rod.arc = 2.6f * flown * (1.0f - flown) * u::m;
+      rod.tight = 0.6f * (1.0f - flown) * proportion[one];
       break;
     }
     case Line::Phase::waiting: {
-      rod.raise = 0.55f + 0.03f * std::sin (0.7f * time);
+      rod.raise =
+        (0.55f + 0.03f * std::sin (0.7f * time)) * inclination[u::rad];
       // Before the take, a few nibbles.
       const float coming = seconds_between (line.bite_at, now);
       const float nibble = coming < 2.2f && coming > 0.0f
@@ -395,46 +399,49 @@ namespace moppe::game {
                                  std::max (0.0f, std::sin (11.0f * time)) *
                                  std::max (0.0f, std::sin (2.9f * time))
                              : 0.0f;
-      rod.water[1] += 0.012f * std::sin (2.1f * time) - nibble;
+      position_value (rod.water)[1] += 0.012f * std::sin (2.1f * time) - nibble;
       break;
     }
     case Line::Phase::biting:
       // Pulled under, jerking.
-      rod.raise = 0.48f;
-      rod.water[1] -= 0.12f + 0.04f * std::sin (17.0f * time);
-      rod.bend = 0.25f + 0.1f * std::sin (13.0f * time);
-      rod.tight = 0.8f;
+      rod.raise = 0.48f * inclination[u::rad];
+      position_value (rod.water)[1] -= 0.12f + 0.04f * std::sin (17.0f * time);
+      rod.bend = (0.25f + 0.1f * std::sin (13.0f * time)) * proportion[one];
+      rod.tight = 0.8f * proportion[one];
       break;
     case Line::Phase::playing:
-      rod.raise = 0.95f + 0.12f * std::sin (4.7f * time);
-      rod.bend = 0.6f + 0.18f * std::sin (7.3f * time);
-      rod.tight = 1.0f;
-      rod.water = fish_in_water (line, now);
+      rod.raise =
+        (0.95f + 0.12f * std::sin (4.7f * time)) * inclination[u::rad];
+      rod.bend = (0.6f + 0.18f * std::sin (7.3f * time)) * proportion[one];
+      rod.tight = 1.0f * proportion[one];
+      rod.water = position (fish_in_water (line, now));
       rod.fish_on = true;
       rod.fish = line.fish;
-      rod.wriggle = std::sin (9.0f * time);
+      rod.wriggle = std::sin (9.0f * time) * wriggle[one];
       break;
     case Line::Phase::landed: {
       // Lifted out, swung in, and the rod lowered to bring it to eye
       // level.
       const float lifted = smoothstep (0.0f, 0.6f, age);
       const float lowered = smoothstep (0.7f, 1.4f, age);
-      rod.raise = mix (mix (0.95f, 1.2f, lifted), 0.4f, lowered);
-      rod.bend = mix (0.5f, 0.15f, lifted);
-      rod.out = 1.0f - lifted;
-      rod.arc = 0.8f * std::sin (pi * lifted);
-      rod.tight = 1.0f;
+      rod.raise =
+        mix (mix (0.95f, 1.2f, lifted), 0.4f, lowered) * inclination[u::rad];
+      rod.bend = mix (0.5f, 0.15f, lifted) * proportion[one];
+      rod.out = (1.0f - lifted) * proportion[one];
+      rod.arc = 0.8f * std::sin (pi * lifted) * u::m;
+      rod.tight = 1.0f * proportion[one];
       rod.fish_on = true;
       rod.fish = line.fish;
-      rod.wriggle = std::sin (11.0f * time) * mix (1.0f, 0.4f, lifted);
+      rod.wriggle =
+        std::sin (11.0f * time) * mix (1.0f, 0.4f, lifted) * wriggle[one];
       break;
     }
     case Line::Phase::empty: {
       const float wound = smoothstep (0.0f, seconds_value (wind_seconds), age);
-      rod.raise = mix (0.55f, 1.1f, wound);
-      rod.out = 1.0f - wound;
-      rod.arc = 0.6f * std::sin (pi * wound);
-      rod.tight = 0.7f;
+      rod.raise = mix (0.55f, 1.1f, wound) * inclination[u::rad];
+      rod.out = (1.0f - wound) * proportion[one];
+      rod.arc = 0.6f * std::sin (pi * wound) * u::m;
+      rod.tight = 0.7f * proportion[one];
       break;
     }
     }
@@ -460,24 +467,26 @@ namespace moppe::game {
     // The rod points out over the water the line runs to, which need not
     // be the way the angler faces: one at a boat's helm casts over the
     // side.
-    const Vec3 ahead = unit_or (flat (rod.water - hand),
+    const Vec3 ahead = unit_or (flat (position_value (rod.water) - hand),
                                 unit_or (flat (k.forward), Vec3 (0, 0, 1)));
     const Vec3 right = unit_or (cross (world_up, ahead), Vec3 (1, 0, 0));
     const Vec3 along =
-      normalized (ahead * std::cos (rod.raise) +
-                  world_up * std::sin (rod.raise) + right * 0.10f);
+      normalized (ahead * std::cos (rod.raise.numerical_value_in (u::rad)) +
+                  world_up * std::sin (rod.raise.numerical_value_in (u::rad)) +
+                  right * 0.10f);
     const Vec3 butt = hand - along * rod_butt;
     const float reach = rod_length - rod_butt;
     const Vec3 straight_tip = hand + along * reach;
     const Vec3 hang = straight_tip - world_up * 0.45f;
-    const Vec3 water_end = rod.water + world_up * rod.arc;
-    const Vec3 end = mix (hang, water_end, rod.out);
+    const Vec3 water_end =
+      position_value (rod.water) + world_up * meters_value (rod.arc);
+    const Vec3 end = mix (hang, water_end, rod.out.numerical_value_in (one));
 
     // The rod bends toward what pulls it, and droops a little anyway.
     Vec3 pull = end - straight_tip;
     pull = pull - along * dot (pull, along);
     const Vec3 toward = unit_or (pull, -world_up);
-    const float bend = 0.04f + 0.30f * rod.bend;
+    const float bend = 0.04f + 0.30f * rod.bend.numerical_value_in (one);
     constexpr int pieces = 8;
     Vec3 points[pieces + 1];
     for (int i = 0; i <= pieces; ++i) {
@@ -516,7 +525,8 @@ namespace moppe::game {
     constexpr int stretch = 14;
     Vec3 line[stretch + 1];
     const float span = length (end - tip);
-    const float sag = (0.08f * (1.0f - rod.tight) + 0.005f) * span;
+    const float sag =
+      (0.08f * (1.0f - rod.tight.numerical_value_in (one)) + 0.005f) * span;
     for (int i = 0; i <= stretch; ++i) {
       const float s = static_cast<float> (i) / stretch;
       line[i] = mix (tip, end, s) - world_up * (sag * 4.0f * s * (1.0f - s));
@@ -527,11 +537,19 @@ namespace moppe::game {
     if (rod.fish_on) {
       // Out of the water it hangs from its mouth; in it, it heads away.
       const Vec3 away = unit_or (flat (end - k.pelvis), ahead);
-      const Vec3 along_fish = unit_or (mix (-world_up, away, rod.out), away);
+      const Vec3 along_fish =
+        unit_or (mix (-world_up, away, rod.out.numerical_value_in (one)), away);
       const Vec3 side = unit_or (cross (along_fish, world_up), right);
       const Vec3 back =
-        unit_or (mix (side * -1.0f, world_up, rod.out), world_up);
-      draw_fish (dl, rod.fish, end, along_fish, back, 1.0f, rod.wriggle);
+        unit_or (mix (side * -1.0f, world_up, rod.out.numerical_value_in (one)),
+                 world_up);
+      draw_fish (dl,
+                 rod.fish,
+                 end,
+                 along_fish,
+                 back,
+                 1.0f,
+                 rod.wriggle.numerical_value_in (one));
     } else {
       // The float: red over white, with a little stem.
       const Vec3 bob = end + world_up * 0.04f;

@@ -92,8 +92,10 @@ namespace moppe::game {
     Shape shape_of (const HammockSite& site, float load, float swing) {
       Shape s;
       const Vec3 along = hammock_along (site);
-      s.hang[0] = site.strap[0] + along * site.girth[0];
-      s.hang[1] = site.strap[1] - along * site.girth[1];
+      s.hang[0] =
+        position_value (site.strap[0]) + along * meters_value (site.girth[0]);
+      s.hang[1] =
+        position_value (site.strap[1]) - along * meters_value (site.girth[1]);
       s.run = s.hang[1] - s.hang[0];
       const Vec3 axis = normalized (s.run);
       const Vec3 up = normalized (world_up - axis * dot (world_up, axis));
@@ -171,10 +173,10 @@ namespace moppe::game {
                trunk.axis * ((strap - trunk.root[1]) /
                              std::max (0.5f, float (trunk.axis[1])));
       };
-      site.strap[0] = up_trunk (foot);
-      site.strap[1] = up_trunk (head);
-      site.girth[0] = 0.9f * foot.radius;
-      site.girth[1] = 0.9f * head.radius;
+      site.strap[0] = position (up_trunk (foot));
+      site.strap[1] = position (up_trunk (head));
+      site.girth[0] = 0.9f * foot.radius * u::m;
+      site.girth[1] = 0.9f * head.radius * u::m;
       return true;
     }
 
@@ -251,12 +253,14 @@ namespace moppe::game {
 
   Vec3 hammock_middle (const HammockSite& site) {
     using namespace camp_parts;
-    return (site.strap[0] + site.strap[1]) * 0.5f;
+    return (position_value (site.strap[0]) + position_value (site.strap[1])) *
+           0.5f;
   }
 
   Vec3 hammock_along (const HammockSite& site) {
     using namespace camp_parts;
-    const Vec3 between = flat (site.strap[1] - site.strap[0]);
+    const Vec3 between =
+      flat (position_value (site.strap[1]) - position_value (site.strap[0]));
     return length2 (between) > 1e-6f ? normalized (between) : Vec3 (0, 0, 1);
   }
 
@@ -267,9 +271,10 @@ namespace moppe::game {
 
   meters_t hammock_distance (const HammockSite& site, const Vec3& feet) {
     using namespace camp_parts;
-    const Vec3 between = flat (site.strap[1] - site.strap[0]);
+    const Vec3 between =
+      flat (position_value (site.strap[1]) - position_value (site.strap[0]));
     const float apart2 = std::max (length2 (between), 1e-6f);
-    const Vec3 to = flat (feet - site.strap[0]);
+    const Vec3 to = flat (feet - position_value (site.strap[0]));
     const float t = std::clamp (dot (to, between) / apart2, 0.0f, 1.0f);
     return length (to - between * t) * u::m;
   }
@@ -501,14 +506,14 @@ namespace moppe::game {
     dl.color (0.17f, 0.16f, 0.15f);
     for (int end = 0; end < 2; ++end) {
       constexpr int sides = 14;
-      const float radius = site.girth[end] + 0.008f;
+      const float radius = meters_value (site.girth[end]) + 0.008f;
       for (int i = 0; i < sides; ++i) {
         const float a0 = tau * i / sides;
         const float a1 = tau * (i + 1) / sides;
         const Vec3 n0 (std::cos (a0), 0.0f, std::sin (a0));
         const Vec3 n1 (std::cos (a1), 0.0f, std::sin (a1));
-        const Vec3 low = site.strap[end] - world_up * 0.03f;
-        const Vec3 high = site.strap[end] + world_up * 0.03f;
+        const Vec3 low = position_value (site.strap[end]) - world_up * 0.03f;
+        const Vec3 high = position_value (site.strap[end]) + world_up * 0.03f;
         const auto put = [&] (const Vec3& p, const Vec3& n) {
           dl.normal (n);
           dl.vertex (p + n * radius);
@@ -600,7 +605,7 @@ namespace moppe::game {
 
   Vec3 fire_light_position (const Camp& camp) {
     using namespace camp_parts;
-    return camp.hearth + world_up * 0.55f;
+    return position_value (camp.hearth) + world_up * 0.55f;
   }
 
   DisplayColor fire_light_color (float burn, float time) {
@@ -636,8 +641,8 @@ namespace moppe::game {
     toward = length2 (toward) > 1e-6f ? normalized (toward) : Vec3 (0, 0, 1);
     Pan pan;
     pan.on = true;
-    pan.place = hearth + toward * 0.36f + world_up * 0.17f;
-    pan.yaw = std::atan2 (toward[2], toward[0]);
+    pan.place = position (hearth + toward * 0.36f + world_up * 0.17f);
+    pan.yaw = std::atan2 (toward[2], toward[0]) * heading[u::rad];
     return pan;
   }
 

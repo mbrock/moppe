@@ -32,6 +32,7 @@
 
 namespace moppe::game {
   using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
+  using health_t = mp_units::quantity<health[mp_units::one], float>;
 
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
@@ -44,21 +45,26 @@ namespace moppe::game {
     // (game_clock.hh).
     play_time_t m_total_time = play_time (0.0);
     clock_time_t m_day_hours = clock_time (9.0);
-    float m_day_haste = 1.0f;
-    float m_frame_time = 1.0f / 60.0f;
+    scale_factor_t m_day_haste = 1.0f * scale_factor[mp_units::one];
+    // How long the last rendered frame took (the HUD's cadence).
+    seconds_t m_frame_time = (1.0f / 60.0f) * u::s;
     cloud_cover_t m_cloudiness = 0.5f * cloud_cover[mp_units::one];
     // The weather this moment (game/weather.hh), passing from spell to
     // spell with the hours.
     Weather m_weather;
-    float m_flare = 0.0f;
+    // How much of the sun the eye sees, for its flare.
+    proportion_t m_flare = 0.0f * proportion[mp_units::one];
     DisplayColor m_fog;
-    float m_shake = 0.0f;
-    float m_shake_time = 0.0f;
-    float m_health = 100.0f;
-    float m_fov_k = 0.0f;
+    // A hard landing's shake of the riding camera: how far it rolls, and
+    // how long it has been shaking.
+    degrees_t m_shake = 0.0f * u::deg;
+    seconds_t m_shake_time = 0.0f * u::s;
+    health_t m_health = 100.0f * health[mp_units::one];
+    // How far speed has widened the chase camera's field of view.
+    blend_weight_t m_fov_k = 0.0f * blend_weight[mp_units::one];
     int m_lives = 10;
     bool m_game_over = false;
-    double m_odometer = 0.0;
+    meters_f64_t m_odometer = 0.0 * u::m;
     // What the player's hands last asked (game/machine_controls.hh).
     Controls m_controls;
     Doing m_doing;
@@ -67,16 +73,17 @@ namespace moppe::game {
     // behind until Tab chooses another. The one not in use waits here.
     CamMode m_foot_cam = CAM_CHASE;
     CamMode m_ride_cam = CAM_CHASE;
-    // Gaze above (positive) or below the walker's horizon, in radians;
-    // from outside, looking up lowers the camera and looking down lifts it.
-    float m_look_pitch = 0.0f;
+    // Gaze above (positive) or below the walker's horizon; from
+    // outside, looking up lowers the camera and looking down lifts it.
+    inclination_t m_look_pitch = 0.0f * inclination[u::rad];
     // Riding or gliding, the player's look away from straight ahead:
-    // radians around to the right, and seconds since they last moved it
-    // (the view comes back round ahead once it has been let be; see
+    // round to the right, and how long since they last moved it (the
+    // view comes back round ahead once it has been let be; see
     // settle_look in game_session.cc).
-    float m_look_yaw = 0.0f;
-    float m_look_idle = 0.0f;
-    Vec3 m_fp_eye;
+    radians_t m_look_yaw = 0.0f * u::rad;
+    seconds_t m_look_idle = 0.0f * u::s;
+    // The helmet camera's eye.
+    position_t m_fp_eye = position (Vec3 ());
     // Riding along: the seat in the other player's machine, or in the
     // bus, how it faces, and how it moves, as last heard.
     Vec3 m_seat_position;
@@ -94,39 +101,42 @@ namespace moppe::game {
     // two games' buses together (bus_time, Companionship::keep_time).
     double m_bus_lead = 0.0;
     int m_score = 0;
-    float m_jump_airtime = 0.0f;
-    float m_jump_spin_radians = 0.0f;
-    float m_jump_peak_spin_radians = 0.0f;
-    Vec3 m_jump_last_heading { 0, 0, 1 };
-    float m_landed_airtime = 0.0f;
-    float m_landed_spin_degrees = 0.0f;
+    // A jump: how long the bike has been in the air, how far it has
+    // turned about up and the most it has, and which way it faced last
+    // step; and the last landing's airtime, spin, points, and age.
+    seconds_t m_jump_airtime = 0.0f * u::s;
+    radians_t m_jump_spin_radians = 0.0f * u::rad;
+    radians_t m_jump_peak_spin_radians = 0.0f * u::rad;
+    direction_t m_jump_last_heading = unit_direction (Vec3 (0, 0, 1));
+    seconds_t m_landed_airtime = 0.0f * u::s;
+    degrees_t m_landed_spin_degrees = 0.0f * u::deg;
     int m_landed_points = 0;
     bool m_landed_clean = false;
-    float m_landed_age = 10.0f;
+    seconds_t m_landed_age = 10.0f * u::s;
     // A wheelie: the ground covered on the back wheel so far (0 while both
     // are down), how long it has been off it, and the last one's length,
     // its points, and the longest; and seconds since the last one ended.
-    float m_wheelie_m = 0.0f;
-    float m_wheelie_gap = 0.0f;
-    float m_last_wheelie_m = 0.0f;
+    meters_t m_wheelie_m = 0.0f * u::m;
+    seconds_t m_wheelie_gap = 0.0f * u::s;
+    meters_t m_last_wheelie_m = 0.0f * u::m;
     int m_last_wheelie_points = 0;
-    float m_best_wheelie_m = 0.0f;
-    float m_wheelie_age = 10.0f;
+    meters_t m_best_wheelie_m = 0.0f * u::m;
+    seconds_t m_wheelie_age = 10.0f * u::s;
     std::mt19937 m_fx_rng { 7 };
     Basket m_basket;
     Camp m_camp;
     // The trees the walker stands between that would take the hammock,
     // and where the walker stood when that was worked out.
     std::optional<HammockSite> m_hammock_at_hand;
-    std::optional<Vec3> m_hammock_sought_from;
+    std::optional<position_t> m_hammock_sought_from;
     // One for each of the world's sanctuaries; the other player's as last
     // heard; and how fiercely each burns this step.
     std::vector<Beacon> m_beacons;
     std::vector<Beacon> m_their_beacons;
-    std::vector<float> m_beacon_burn;
+    std::vector<proportion_t> m_beacon_burn;
     // Where the subject stood a step ago, for how fast the animals find
     // it going.
-    std::optional<Vec3> m_last_subject;
+    std::optional<position_t> m_last_subject;
     Fishing m_fishing;
     // The eggs in each barn's nest boxes, four boxes a barn in the order
     // of the places' farms.

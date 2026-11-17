@@ -12,6 +12,8 @@
 #include <vector>
 
 namespace moppe::game {
+  using wriggle_t = quantity<wriggle[one], float>;
+
   // The fish of the north's waters. Which bites follows the water: perch,
   // pike, and roach in still lakes and slow pools, brown trout and
   // grayling in running water, arctic char in the cold lakes high up, and
@@ -62,11 +64,11 @@ namespace moppe::game {
     play_time_t since = play_time (-100.0);
     // Where the walker stood to cast (or where the helmsman sits, kept up
     // with the boat as it drifts), and where the float lands and lies.
-    Vec3 stand {};
+    position_t stand = position (Vec3 ());
     // Cast from the boat's helm rather than the bank.
     bool from_boat = false;
-    Vec3 aim {};
-    Vec3 bobber {};
+    position_t aim = position (Vec3 ());
+    position_t bobber = position (Vec3 ());
     Waters waters = Waters::still;
     bool upland = false;
     // How many casts there have been, which seeds each one's luck; when
@@ -102,23 +104,23 @@ namespace moppe::game {
   // walker's pose: how high it is held, how far it bends, and where the
   // line runs.
   struct RodPose {
-    // Radians above the horizon ahead; past a right angle it is swung
-    // back over the shoulder.
-    float raise = 0.55f;
+    // Above the horizon ahead; past a right angle it is swung back over
+    // the shoulder.
+    inclination_t raise = 0.55f * inclination[u::rad];
     // How hard it is pulled, 0..1, bending toward the line.
-    float bend = 0.0f;
+    proportion_t bend = 0.0f * proportion[one];
     // The line runs from the tip to `water`, blended back to hanging
     // just under the tip as `out` falls from one to nought, and lifted
-    // `arc` metres over the way between.
-    Vec3 water {};
-    float out = 1.0f;
-    float arc = 0.0f;
+    // `arc` over the way between.
+    position_t water = position (Vec3 ());
+    proportion_t out = 1.0f * proportion[one];
+    meters_t arc = 0.0f * u::m;
     // How tight the line is, 0..1, against its sag.
-    float tight = 0.0f;
+    proportion_t tight = 0.0f * proportion[one];
     // A fish on the end of it, and how it twists, in place of the float.
     bool fish_on = false;
     Fish fish {};
-    float wriggle = 0.0f;
+    wriggle_t wriggle = 0.0f * game::wriggle[one];
   };
 }
 

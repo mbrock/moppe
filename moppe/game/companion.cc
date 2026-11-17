@@ -632,8 +632,8 @@ namespace moppe::game {
     }
     if (snapshot.hung) {
       for (int end = 0; end < 2; ++end) {
-        out.put (snapshot.hammock.strap[end]);
-        out.put (snapshot.hammock.girth[end]);
+        out.put (position_value (snapshot.hammock.strap[end]));
+        out.put (meters_value (snapshot.hammock.girth[end]));
       }
       out.put (snapshot.hammock_load);
       out.put (snapshot.swing);
@@ -720,16 +720,16 @@ namespace moppe::game {
     if (flags & is_hung) {
       snapshot.hung = true;
       for (int end = 0; end < 2; ++end) {
-        snapshot.hammock.strap[end] = in.point ();
-        snapshot.hammock.girth[end] = in.number ();
+        snapshot.hammock.strap[end] = position (in.point ());
+        snapshot.hammock.girth[end] = in.number () * u::m;
       }
       snapshot.hammock_load = std::clamp (in.number (), 0.0f, 1.0f);
       snapshot.swing = in.number ();
       snapshot.gaze_yaw = in.number ();
       snapshot.gaze_pitch = in.number ();
       // A hammock is slung between two different trees.
-      if (length2 (snapshot.hammock.strap[1] - snapshot.hammock.strap[0]) <
-          0.25f)
+      if (length2 (position_value (snapshot.hammock.strap[1]) -
+                   position_value (snapshot.hammock.strap[0])) < 0.25f)
         return std::nullopt;
     }
     if (flags & has_hearth) {

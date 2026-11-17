@@ -289,7 +289,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   MOPPE_CHECK (ski.position ()[2] < 70.0f);
   MOPPE_CHECK (session.subject_speed_kmh () > 45.0f);
   MOPPE_CHECK (session.subject_speed_kmh () < 75.0f);
-  MOPPE_CHECK (logic.m_odometer > 40.0);
+  MOPPE_CHECK (logic.m_odometer > 40.0 * u::m);
   MOPPE_CHECK (length (session.subject_position () - ski.position ()) < 1e-3f);
 
   // Brought back in to the shallows and let run down, F gets off beside

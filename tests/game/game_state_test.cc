@@ -204,9 +204,12 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   // The rigid bike's chassis keeps moving through each step, so the measured
   // whip carries a few milliradians of honest flight attitude.
   MOPPE_CHECK_NEAR (
-    std::abs (session.logic ().m_jump_spin_radians), 1.5707963f, 0.01f);
-  MOPPE_CHECK_NEAR (
-    session.logic ().m_jump_peak_spin_radians, 1.5707963f, 0.01f);
+    std::abs (radians_value (session.logic ().m_jump_spin_radians)),
+    1.5707963f,
+    0.01f);
+  MOPPE_CHECK_NEAR (radians_value (session.logic ().m_jump_peak_spin_radians),
+                    1.5707963f,
+                    0.01f);
 
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (0, 0, 15));
@@ -215,9 +218,12 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   game::advance_game_session (
     world, surface, session, game::InputFrame {}, step);
   MOPPE_CHECK_NEAR (
-    std::abs (session.logic ().m_jump_spin_radians), 0.0f, 0.01f);
-  MOPPE_CHECK_NEAR (
-    session.logic ().m_jump_peak_spin_radians, 1.5707963f, 0.01f);
+    std::abs (radians_value (session.logic ().m_jump_spin_radians)),
+    0.0f,
+    0.01f);
+  MOPPE_CHECK_NEAR (radians_value (session.logic ().m_jump_peak_spin_radians),
+                    1.5707963f,
+                    0.01f);
 
   flight = session.bike ().state ();
   flight.position = position (
@@ -230,7 +236,10 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
     world, surface, session, game::InputFrame {}, seconds (0.1f));
 
   MOPPE_CHECK (session.logic ().m_landed_clean);
-  MOPPE_CHECK_NEAR (session.logic ().m_landed_spin_degrees, 90.0f, 1.0f);
+  MOPPE_CHECK_NEAR (
+    session.logic ().m_landed_spin_degrees.numerical_value_in (u::deg),
+    90.0f,
+    1.0f);
   MOPPE_CHECK (session.logic ().m_landed_points > 350);
   MOPPE_CHECK (session.logic ().m_score == session.logic ().m_landed_points);
   MOPPE_CHECK (session.bike ().boost_charge () > 0.3f);
@@ -665,9 +674,12 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   MOPPE_CHECK (replayed.logic.m_doing == live_state.logic.m_doing);
   MOPPE_CHECK (replayed.logic.m_cam_mode == live_state.logic.m_cam_mode);
   MOPPE_CHECK (replayed.logic.m_day_hours == live_state.logic.m_day_hours);
-  MOPPE_CHECK_NEAR (
-    replayed.logic.m_odometer, live_state.logic.m_odometer, 1e-6f);
-  MOPPE_CHECK_NEAR (replayed.logic.m_fov_k, live_state.logic.m_fov_k, 1e-6f);
+  MOPPE_CHECK_NEAR (replayed.logic.m_odometer.numerical_value_in (u::m),
+                    live_state.logic.m_odometer.numerical_value_in (u::m),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (replayed.logic.m_fov_k.numerical_value_in (one),
+                    live_state.logic.m_fov_k.numerical_value_in (one),
+                    1e-6f);
   check_position (replayed.fleet.bike.position, live_state.fleet.bike.position);
   check_velocity (replayed.fleet.bike.velocity, live_state.fleet.bike.velocity);
   check_vector (replayed.fleet.bike.heading, live_state.fleet.bike.heading);

@@ -1612,28 +1612,31 @@ namespace moppe::game {
     }
   }
 
-  void PlacesLandscape::draw_beacons (render::DrawList& dl,
-                                      const Vec3& camera,
-                                      const std::vector<float>& burn) const {
+  void
+  PlacesLandscape::draw_beacons (render::DrawList& dl,
+                                 const Vec3& camera,
+                                 const std::vector<proportion_t>& burn) const {
     for (std::size_t i = 0; i < m_beacons.size (); ++i) {
       const Vec3 at = near_copy (m_beacons[i], camera);
       if (length2 (at - camera) > 300.0f * 300.0f)
         continue;
-      draw_hearth (dl, at, i < burn.size () ? burn[i] : 0.0f);
+      draw_hearth (
+        dl, at, i < burn.size () ? burn[i].numerical_value_in (one) : 0.0f);
     }
   }
 
-  void PlacesLandscape::draw_beacon_fires (render::Renderer& renderer,
-                                           const Vec3& camera,
-                                           const std::vector<float>& burn,
-                                           float daylight,
-                                           float time) const {
+  void
+  PlacesLandscape::draw_beacon_fires (render::Renderer& renderer,
+                                      const Vec3& camera,
+                                      const std::vector<proportion_t>& burn,
+                                      float daylight,
+                                      float time) const {
     for (std::size_t i = 0; i < m_beacons.size () && i < burn.size (); ++i)
-      if (burn[i] > 0.01f)
+      if (burn[i] > 0.01f * proportion[one])
         draw_beacon (renderer,
                      near_copy (m_beacons[i], camera),
                      camera,
-                     burn[i],
+                     burn[i].numerical_value_in (one),
                      daylight,
                      time);
   }

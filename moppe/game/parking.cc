@@ -333,7 +333,7 @@ namespace moppe::game {
     } else {
       return;
     }
-    session.logic ().m_fp_eye = session.walker ().eye_position ();
+    session.logic ().m_fp_eye = position (session.walker ().eye_position ());
     session.settle_camera (ground.surface ());
     std::cerr << "moppe: walk: " << script << " beside the tractor at "
               << tractor.position ()[0] << ", " << tractor.position ()[2]

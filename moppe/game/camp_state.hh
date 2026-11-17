@@ -15,8 +15,8 @@ namespace moppe::game {
   // axis, and the trunks' radii there. The sleeper's head lies toward the
   // second.
   struct HammockSite {
-    Vec3 strap[2] {};
-    float girth[2] {};
+    position_t strap[2] { position (Vec3 ()), position (Vec3 ()) };
+    meters_t girth[2] { 0.0f * u::m, 0.0f * u::m };
   };
 
   // A frying pan set on a hearth's stones with a few mushrooms in it.
@@ -24,9 +24,9 @@ namespace moppe::game {
   struct Pan {
     static constexpr int room = 4;
     bool on = false;
-    // Where it sits and which way its handle points, radians about up.
-    Vec3 place {};
-    float yaw = 0.0f;
+    // Where it sits and which way its handle points about up.
+    position_t place = position (Vec3 ());
+    heading_t yaw = 0.0f * heading[u::rad];
     // When it went on, and the mushrooms in it: the plan's indices.
     play_time_t since = play_time (-100.0);
     int count = 0;
@@ -56,17 +56,18 @@ namespace moppe::game {
     bool resting = false;
     // When the hiker last lay down or got up.
     play_time_t rest_time = play_time (-100.0);
-    // The hammock's swing about the line between its straps, radians.
-    float swing = 0.0f;
-    float swing_rate = 0.0f;
+    // The hammock's swing about the line between its straps, and how
+    // fast it swings.
+    radians_t swing = 0.0f * u::rad;
+    radians_per_second_t swing_rate = 0.0f * u::rad / u::s;
     // The sleeper's gaze: round from the foot of the hammock, and above
-    // the horizon, radians.
-    float gaze_yaw = 0.0f;
-    float gaze_pitch = 1.1f;
+    // the horizon.
+    radians_t gaze_yaw = 0.0f * u::rad;
+    inclination_t gaze_pitch = 1.1f * inclination[u::rad];
 
     bool fire = false;
     // The hearth on the ground, and when the fire was last lit or put out.
-    Vec3 hearth {};
+    position_t hearth = position (Vec3 ());
     play_time_t fire_time = play_time (-100.0);
     play_time_t next_spark = play_time (0.0);
     play_time_t next_smoke = play_time (0.0);
@@ -75,7 +76,7 @@ namespace moppe::game {
     // The last meal: when it was eaten, how done it was (see
     // pan_cooked), and how many mushrooms it was.
     play_time_t ate_time = play_time (-100.0);
-    float ate_cooked = 0.0f;
+    proportion_t ate_cooked = 0.0f * proportion[mp_units::one];
     int ate_count = 0;
     int ate_eggs = 0;
     bool ate_fish = false;

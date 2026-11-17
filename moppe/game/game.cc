@@ -88,7 +88,7 @@ namespace moppe {
       // The HUD reports rendered-frame cadence, not the internal 120 Hz
       // integration frequency.
       if (m_ready)
-        logic ().m_frame_time = elapsed;
+        logic ().m_frame_time = elapsed * u::s;
     }
 
     void MoppeGame::tick_simulation (seconds_t interval) {
@@ -96,7 +96,7 @@ namespace moppe {
       MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
       if (!m_ready)
         return;
-      logic ().m_frame_time = dt;
+      logic ().m_frame_time = dt * u::s;
       if (logic ().m_game_over)
         return;
 
@@ -300,7 +300,7 @@ namespace moppe {
     void MoppeGame::update_frame_flare () {
       const FrameView frame = compose_frame_view (frame_view_input (1.0f));
       const float target = sun_visibility_target (frame, world (), surface ());
-      logic ().m_flare += (target - logic ().m_flare) * 0.12f;
+      logic ().m_flare += (target * proportion[one] - logic ().m_flare) * 0.12f;
     }
 
     void MoppeGame::leave_cinematic () {
@@ -327,7 +327,7 @@ namespace moppe {
                                     recipe ().generation_profile ());
       session ().set_mode (Doing::driving (Machine::bike));
       logic ().m_game_over = false;
-      logic ().m_health = 100.0f;
+      logic ().m_health = 100.0f * health[one];
       m_params = bind_world_params (m_params, next_recipe);
       m_recipe = next_recipe;
       m_loading.start (world (), std::move (next_recipe));
@@ -335,14 +335,14 @@ namespace moppe {
 
     void MoppeGame::revive () {
       logic ().m_lives = 10;
-      logic ().m_health = 100.0f;
-      logic ().m_shake = 0.0f;
-      logic ().m_shake_time = 0.0f;
-      logic ().m_jump_airtime = 0.0f;
-      logic ().m_jump_spin_radians = 0.0f;
-      logic ().m_jump_peak_spin_radians = 0.0f;
-      logic ().m_landed_age = 10.0f;
-      logic ().m_wheelie_m = 0.0f;
+      logic ().m_health = 100.0f * health[one];
+      logic ().m_shake = 0.0f * u::deg;
+      logic ().m_shake_time = 0.0f * u::s;
+      logic ().m_jump_airtime = 0.0f * u::s;
+      logic ().m_jump_spin_radians = 0.0f * u::rad;
+      logic ().m_jump_peak_spin_radians = 0.0f * u::rad;
+      logic ().m_landed_age = 10.0f * u::s;
+      logic ().m_wheelie_m = 0.0f * u::m;
       session ().set_mode (Doing::driving (Machine::bike));
       // Back to the start, but ON the ground rather than 600 m
       // over it.

@@ -53,7 +53,8 @@ namespace moppe::game {
         return *input.capture_field_of_view;
       if (logic.m_cam_mode == CAM_HELMET)
         return input.selected_camera.field_of_view;
-      return CHASE_FIELD_OF_VIEW + CHASE_SPEED_WIDENING * logic.m_fov_k;
+      return CHASE_FIELD_OF_VIEW +
+             CHASE_SPEED_WIDENING * logic.m_fov_k.numerical_value_in (one);
     }
   }
 
@@ -233,7 +234,8 @@ namespace moppe::game {
     // Hard landings rotate only the reading of the riding camera.  The camera
     // body stays where simulation placed it, and cinematics/inspection views
     // are explicitly stable reference views.
-    if (input.scene == FrameSceneMode::Gameplay && logic.m_shake > 0.005f) {
+    if (input.scene == FrameSceneMode::Gameplay &&
+        logic.m_shake > 0.005f * u::deg) {
       const Vec3& camera = result.camera.position;
       const float ground = terrain::surface_elevation_value (
         spatial::sample<terrain::surface_elevation> (
@@ -241,12 +243,13 @@ namespace moppe::game {
       const float clearance = camera[1] - ground;
       const float room =
         std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
-      const float pulse = logic.m_shake * room;
-      const float roll =
-        pulse * std::sin (2.0f * PI * 15.0f * logic.m_shake_time);
+      const float pulse = logic.m_shake.numerical_value_in (u::deg) * room;
+      const float roll = pulse * std::sin (2.0f * PI * 15.0f *
+                                           seconds_value (logic.m_shake_time));
       const float pitch =
         pulse * 0.55f *
-        std::sin (2.0f * PI * 19.0f * logic.m_shake_time + 0.7f);
+        std::sin (2.0f * PI * 19.0f * seconds_value (logic.m_shake_time) +
+                  0.7f);
       result.camera.view = result.camera.view *
                            Mat4::rotation (roll * u::deg, Vec3 (0, 0, 1)) *
                            Mat4::rotation (pitch * u::deg, Vec3 (1, 0, 0));
@@ -309,7 +312,7 @@ namespace moppe::game {
     }
     result.lighting.sun_height = sky.sun_height;
     result.lighting.cloudiness = logic.m_cloudiness;
-    result.lighting.sun_visibility = logic.m_flare;
+    result.lighting.sun_visibility = logic.m_flare.numerical_value_in (one);
 
     result.environment.fog_color = result.lighting.fog_color;
     result.environment.fog_scale = result.lighting.fog_scale;
@@ -366,7 +369,8 @@ namespace moppe::game {
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_doing == Doing::on_foot ())
       result.actors.walker =
-        walker_pose (input.session.walker (), logic.m_look_pitch);
+        walker_pose (input.session.walker (),
+                     logic.m_look_pitch.numerical_value_in (u::rad));
     if (result.actors.walker && input.session.hauling ())
       result.actors.walker->rope_end = input.session.rope_end ();
     if (result.actors.walker)
@@ -395,26 +399,29 @@ namespace moppe::game {
                             ? input.session.bike ().boost_charge ()
                             : 1.0f;
     }
-    hud.health01 = logic.m_health / 100.0f;
-    hud.odometer_m = static_cast<float> (logic.m_odometer);
+    hud.health01 = logic.m_health.numerical_value_in (one) / 100.0f;
+    hud.odometer_m =
+      static_cast<float> (logic.m_odometer.numerical_value_in (u::m));
     hud.lives = logic.m_lives;
     hud.stars = input.session.stars ().collected ();
     hud.score = logic.m_score;
-    hud.airtime_s = logic.m_jump_airtime;
-    hud.spin_degrees = logic.m_jump_peak_spin_radians * 180.0f / 3.14159265f;
-    hud.landed_airtime_s = logic.m_landed_airtime;
-    hud.landed_spin_degrees = logic.m_landed_spin_degrees;
+    hud.airtime_s = seconds_value (logic.m_jump_airtime);
+    hud.spin_degrees =
+      radians_value (logic.m_jump_peak_spin_radians) * 180.0f / 3.14159265f;
+    hud.landed_airtime_s = seconds_value (logic.m_landed_airtime);
+    hud.landed_spin_degrees =
+      logic.m_landed_spin_degrees.numerical_value_in (u::deg);
     hud.landed_points = logic.m_landed_points;
     hud.landed_clean = logic.m_landed_clean;
-    hud.landed_age_s = logic.m_landed_age;
-    hud.wheelie_m = logic.m_wheelie_m;
-    hud.last_wheelie_m = logic.m_last_wheelie_m;
+    hud.landed_age_s = seconds_value (logic.m_landed_age);
+    hud.wheelie_m = meters_value (logic.m_wheelie_m);
+    hud.last_wheelie_m = meters_value (logic.m_last_wheelie_m);
     hud.last_wheelie_points = logic.m_last_wheelie_points;
-    hud.best_wheelie_m = logic.m_best_wheelie_m;
-    hud.wheelie_age_s = logic.m_wheelie_age;
+    hud.best_wheelie_m = meters_value (logic.m_best_wheelie_m);
+    hud.wheelie_age_s = seconds_value (logic.m_wheelie_age);
     hud.on_foot = logic.m_doing == Doing::on_foot ();
     hud.gliding = logic.m_doing == Doing::gliding ();
-    hud.frame_time_s = logic.m_frame_time;
+    hud.frame_time_s = seconds_value (logic.m_frame_time);
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();
     hud.heading_radians =

@@ -47,7 +47,8 @@ namespace moppe::game {
             continue;
           stand[1] = s.ground.height (stand) + 0.1f;
           s.session.walker ().spawn (moppe::position (stand), out);
-          s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
+          s.session.logic ().m_fp_eye =
+            position (s.session.walker ().eye_position ());
           std::cerr << "moppe: fish script: a bank " << length (stand - s.spawn)
                     << " m from the spawn" << std::endl;
           return;
@@ -217,7 +218,8 @@ namespace moppe::game {
     Vec3 facing = stand->second - at;
     facing[1] = 0.0f;
     s.session.walker ().spawn (moppe::position (at), normalized (facing));
-    s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
+    s.session.logic ().m_fp_eye =
+      position (s.session.walker ().eye_position ());
     s.session.settle_camera (s.ground.surface ());
     std::cerr << "moppe: walk: " << script << " at " << at[0] << ' ' << at[2]
               << std::endl;
@@ -261,10 +263,13 @@ namespace moppe::game {
     Vec3 facing = middle - stand;
     facing[1] = 0.0f;
     s.session.walker ().spawn (moppe::position (stand), normalized (facing));
-    s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
+    s.session.logic ().m_fp_eye =
+      position (s.session.walker ().eye_position ());
     std::cerr << "moppe: camp script: two trees "
-              << length (site.strap[1] - site.strap[0]) << " m apart, "
-              << length (middle - s.spawn) << " m from the spawn" << std::endl;
+              << length (position_value (site.strap[1]) -
+                         position_value (site.strap[0]))
+              << " m apart, " << length (middle - s.spawn)
+              << " m from the spawn" << std::endl;
   }
 
   InputFrame WalkScripts::camp (const ScriptStage& s, seconds_t interval) {
@@ -307,7 +312,9 @@ namespace moppe::game {
                           hammock_along (site) * 0.6f;
     // The walker's gaze levels out as they go.
     input.look_pitch = std::clamp (
-      -0.12f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+      -0.12f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+      -1.0f * dt,
+      1.0f * dt);
     switch (script.step) {
     case 0:
       if (walk_to (middle, 0.45f))
@@ -414,7 +421,9 @@ namespace moppe::game {
         input.look_yaw = since < 1.2f ? PI / 1.2f * dt : 0.0f;
         input.drive = since > 1.2f && since < 3.4f ? 1.0f : 0.0f;
         input.look_pitch = std::clamp (
-          -0.55f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          -0.55f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+          -1.0f * dt,
+          1.0f * dt);
         input.light_fire = press (m_state.supper_since + 4.2f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
         input.use = press (7.5f + m_state.supper_since) > 0.0f ||
@@ -422,7 +431,9 @@ namespace moppe::game {
         return input;
       }
       input.look_pitch = std::clamp (
-        -0.2f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+        -0.2f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+        -1.0f * dt,
+        1.0f * dt);
       if (line_out (line))
         m_state.fish_rest = t;
       const float age =
@@ -442,10 +453,14 @@ namespace moppe::game {
         input.drive = 1.0f;
         return input;
       }
-      input.look_yaw = std::clamp (
-        1.25f - s.session.logic ().m_look_yaw, -1.0f * dt, 1.0f * dt);
+      input.look_yaw =
+        std::clamp (1.25f - radians_value (s.session.logic ().m_look_yaw),
+                    -1.0f * dt,
+                    1.0f * dt);
       input.look_pitch = std::clamp (
-        0.3f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+        0.3f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+        -1.0f * dt,
+        1.0f * dt);
       if (line_out (line))
         m_state.fish_rest = t;
       if (s.session.logic ().m_fishing.creel.kept () >= 2 &&
@@ -498,7 +513,9 @@ namespace moppe::game {
       };
       if (m_state.supper_since >= 0.0f) {
         input.look_pitch = std::clamp (
-          -0.55f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          -0.55f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+          -1.0f * dt,
+          1.0f * dt);
         input.light_fire = press (m_state.supper_since + 0.8f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
         input.use = press (4.0f + m_state.supper_since) > 0.0f ||
@@ -507,7 +524,9 @@ namespace moppe::game {
       }
       if (s.session.logic ().m_basket.eggs < 3 && m_state.egg_leg == 0) {
         input.look_pitch = std::clamp (
-          -0.5f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          -0.5f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+          -1.0f * dt,
+          1.0f * dt);
         // To the nearest box with an egg in it, and into it.
         std::optional<std::size_t> best;
         for (std::size_t k = 0; k < s.places.nests.size () &&
@@ -538,7 +557,9 @@ namespace moppe::game {
       if (m_state.egg_leg == 0)
         m_state.egg_leg = 1;
       input.look_pitch = std::clamp (
-        -0.2f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+        -0.2f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+        -1.0f * dt,
+        1.0f * dt);
       if (steer (legs[m_state.egg_leg - 1], 0.6f) < 0.6f &&
           ++m_state.egg_leg > 3)
         m_state.supper_since = t;
@@ -554,7 +575,9 @@ namespace moppe::game {
         const float since = t - m_state.supper_since;
         input.drive = since < 2.5f ? 1.0f : 0.0f;
         input.look_pitch = std::clamp (
-          -0.55f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          -0.55f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+          -1.0f * dt,
+          1.0f * dt);
         input.light_fire = press (m_state.supper_since + 3.2f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
         input.use = press (6.5f + m_state.supper_since) > 0.0f ||
@@ -581,7 +604,9 @@ namespace moppe::game {
                                         : -std::asin (leftward);
         input.look_yaw = std::clamp (turn, -2.5f * dt, 2.5f * dt);
         input.look_pitch = std::clamp (
-          -0.6f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
+          -0.6f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),
+          -1.0f * dt,
+          1.0f * dt);
         const bool reachable =
           s.mushrooms.within_reach (position (feet),
                                     unit_direction (heading)) == target;

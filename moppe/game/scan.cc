@@ -234,7 +234,8 @@ namespace moppe::game {
       dl.vertex (top - side);
       if (find.kind == ScanFind::Kind::hammock) {
         // The span itself, strap to strap.
-        const Vec3 a = find.hammock.strap[0], b = find.hammock.strap[1];
+        const Vec3 a = position_value (find.hammock.strap[0]),
+                   b = position_value (find.hammock.strap[1]);
         Vec3 across = cross (b - a, camera - a);
         if (length2 (across) > 1e-8f) {
           across = normalized (across) * 0.015f;
@@ -353,8 +354,10 @@ namespace moppe::game {
         break;
       case ScanFind::Kind::hammock: {
         const float span =
-          std::hypot (find.hammock.strap[1][0] - find.hammock.strap[0][0],
-                      find.hammock.strap[1][2] - find.hammock.strap[0][2]);
+          std::hypot (position_value (find.hammock.strap[1])[0] -
+                        position_value (find.hammock.strap[0])[0],
+                      position_value (find.hammock.strap[1])[2] -
+                        position_value (find.hammock.strap[0])[2]);
         std::snprintf (buffer, sizeof buffer, "%.1f", span);
         std::string metres = buffer;
         std::replace (metres.begin (), metres.end (), '.', ',');

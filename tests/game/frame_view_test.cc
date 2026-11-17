@@ -55,9 +55,9 @@ namespace {
       session->camera ().place (Vec3 (48, 20, 32), Vec3 (48, 12, 48));
       session->logic ().m_total_time = game::play_time (12.5);
       session->logic ().m_cloudiness = 0.42f * game::cloud_cover[one];
-      session->logic ().m_flare = 0.37f;
+      session->logic ().m_flare = 0.37f * proportion[one];
       session->logic ().m_fog = DisplayColor (0.4f, 0.5f, 0.6f);
-      session->logic ().m_fov_k = 0.25f;
+      session->logic ().m_fov_k = 0.25f * blend_weight[one];
     }
 
     game::GameSession& running () {
@@ -100,18 +100,29 @@ namespace {
   void check_logic_reading (const game::GameLogicState& actual,
                             const game::GameLogicState& expected) {
     MOPPE_CHECK (actual.m_total_time == expected.m_total_time);
-    MOPPE_CHECK_NEAR (actual.m_frame_time, expected.m_frame_time, 1e-6f);
+    MOPPE_CHECK_NEAR (seconds_value (actual.m_frame_time),
+                      seconds_value (expected.m_frame_time),
+                      1e-6f);
     MOPPE_CHECK_NEAR (actual.m_cloudiness.numerical_value_in (one),
                       expected.m_cloudiness.numerical_value_in (one),
                       1e-6f);
-    MOPPE_CHECK_NEAR (actual.m_flare, expected.m_flare, 1e-6f);
+    MOPPE_CHECK_NEAR (actual.m_flare.numerical_value_in (one),
+                      expected.m_flare.numerical_value_in (one),
+                      1e-6f);
     frame_view_check_color (actual.m_fog, expected.m_fog);
-    MOPPE_CHECK_NEAR (actual.m_shake, expected.m_shake, 1e-6f);
-    MOPPE_CHECK_NEAR (actual.m_shake_time, expected.m_shake_time, 1e-6f);
-    MOPPE_CHECK_NEAR (actual.m_fov_k, expected.m_fov_k, 1e-6f);
+    MOPPE_CHECK_NEAR (actual.m_shake.numerical_value_in (u::deg),
+                      expected.m_shake.numerical_value_in (u::deg),
+                      1e-6f);
+    MOPPE_CHECK_NEAR (seconds_value (actual.m_shake_time),
+                      seconds_value (expected.m_shake_time),
+                      1e-6f);
+    MOPPE_CHECK_NEAR (actual.m_fov_k.numerical_value_in (one),
+                      expected.m_fov_k.numerical_value_in (one),
+                      1e-6f);
     MOPPE_CHECK (actual.m_doing == expected.m_doing);
     MOPPE_CHECK (actual.m_cam_mode == expected.m_cam_mode);
-    frame_view_check_vector (actual.m_fp_eye, expected.m_fp_eye);
+    frame_view_check_vector (position_value (actual.m_fp_eye),
+                             position_value (expected.m_fp_eye));
     MOPPE_CHECK (actual.m_score == expected.m_score);
     MOPPE_CHECK (actual.m_fx_rng == expected.m_fx_rng);
   }
@@ -166,7 +177,9 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
   frame_view_check_color (first.lighting.clear_color,
                           second.lighting.clear_color);
   MOPPE_CHECK_NEAR (
-    first.lighting.sun_visibility, fixture.running ().logic ().m_flare, 1e-6f);
+    first.lighting.sun_visibility,
+    fixture.running ().logic ().m_flare.numerical_value_in (one),
+    1e-6f);
   frame_view_check_vector (position_value (first.environment.camera_pos),
                            first.camera.position);
   frame_view_check_vector (first.environment.cam_right, first.camera.right);
@@ -179,16 +192,16 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
   FrameFixture fixture;
   game::GameSession& session = fixture.running ();
   game::GameLogicState& logic = session.logic ();
-  logic.m_health = 83.0f;
-  logic.m_odometer = 1234.0;
+  logic.m_health = 83.0f * game::health[one];
+  logic.m_odometer = 1234.0 * u::m;
   logic.m_lives = 6;
   logic.m_score = 420;
-  logic.m_jump_airtime = 2.75f;
-  logic.m_jump_peak_spin_radians = 1.5707963f;
-  logic.m_landed_spin_degrees = 180.0f;
+  logic.m_jump_airtime = 2.75f * u::s;
+  logic.m_jump_peak_spin_radians = 1.5707963f * u::rad;
+  logic.m_landed_spin_degrees = 180.0f * u::deg;
   logic.m_landed_clean = true;
-  logic.m_landed_age = 0.35f;
-  logic.m_frame_time = 0.0125f;
+  logic.m_landed_age = 0.35f * u::s;
+  logic.m_frame_time = 0.0125f * u::s;
 
   const game::FrameView frozen =
     game::compose_frame_view (gameplay_input (fixture));
@@ -272,8 +285,8 @@ MOPPE_TEST (frame_view_applies_shake_to_the_reading_not_the_camera_body) {
   const game::FrameView steady =
     game::compose_frame_view (gameplay_input (fixture));
 
-  session.logic ().m_shake = 0.2f;
-  session.logic ().m_shake_time = 0.031f;
+  session.logic ().m_shake = 0.2f * u::deg;
+  session.logic ().m_shake_time = 0.031f * u::s;
   const game::FrameView shaken =
     game::compose_frame_view (gameplay_input (fixture));
 
@@ -292,8 +305,8 @@ MOPPE_TEST (frame_view_applies_shake_to_the_reading_not_the_camera_body) {
 MOPPE_TEST (frame_view_selects_cinematic_rules) {
   FrameFixture fixture;
   game::GameSession& session = fixture.running ();
-  session.logic ().m_shake = 0.2f;
-  session.logic ().m_shake_time = 0.031f;
+  session.logic ().m_shake = 0.2f * u::deg;
+  session.logic ().m_shake_time = 0.031f * u::s;
 
   const game::FrameCameraReading cinematic_camera {
     .position = Vec3 (20, 60, 20),
@@ -328,7 +341,7 @@ MOPPE_TEST (frame_view_uses_a_narrow_typed_chase_lens) {
   MOPPE_CHECK_NEAR (
     chase.camera.field_of_view.numerical_value_in (u::deg), 80.0f, 1e-6f);
 
-  fixture.running ().logic ().m_fov_k = 1.0f;
+  fixture.running ().logic ().m_fov_k = 1.0f * blend_weight[one];
   const game::FrameView fast = game::compose_frame_view (input);
   MOPPE_CHECK_NEAR (
     fast.camera.field_of_view.numerical_value_in (u::deg), 86.0f, 1e-6f);
@@ -350,8 +363,8 @@ MOPPE_TEST (frame_view_classifies_the_selected_camera_in_an_elevated_lake) {
   terrain::WaterSheets water (fixture.surface.domain ());
   std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
                      terrain::surface_elevation_point (25.0f * u::m));
-  fixture.running ().logic ().m_shake = 0.2f;
-  fixture.running ().logic ().m_shake_time = 0.031f;
+  fixture.running ().logic ().m_shake = 0.2f * u::deg;
+  fixture.running ().logic ().m_shake_time = 0.031f * u::s;
   game::FrameViewInput input = gameplay_input (fixture);
   input.water = &water;
   input.selected_camera.position = Vec3 (21, 24.5f, 73);

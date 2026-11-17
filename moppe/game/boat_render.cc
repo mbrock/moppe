@@ -81,14 +81,15 @@ namespace moppe::game {
         (void)boat;
         if (!rod)
           return pose_holding (hold);
-        Vec3 toward = rod->water - hold.pelvis;
+        Vec3 toward = position_value (rod->water) - hold.pelvis;
         toward = toward - up * dot (toward, up);
         if (length2 (toward) > 1e-4f)
           hold.gaze = normalized (normalized (toward) - up * 0.15f);
         // Posed once to find the shoulders, and again with the hand where
         // a rod raised so high is held from them.
         const AvatarSkeleton seated = pose_holding (hold);
-        hold.wrist[1] = rod_hand (seated, rod->raise);
+        hold.wrist[1] =
+          rod_hand (seated, rod->raise.numerical_value_in (u::rad));
         hold.elbow_pole[1] = left * 0.6f - up;
         return pose_holding (hold);
       }
