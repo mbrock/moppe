@@ -17,14 +17,15 @@ namespace moppe::mov {
       // Box3D mixes two shapes' friction as a geometric mean, so the tyre
       // carries the square of the wanted coefficient against unit ground
       // friction.
-      constexpr float ground_friction = 1.0f;
-      constexpr float traction_share = 0.9f;
+      constexpr friction_coefficient_t ground_friction =
+        1.0f * isq::static_friction_coefficient[one];
+      constexpr proportion_t traction_share = 0.9f * proportion[one];
 
       // The ground patch, as the bike's: samples at half the terrain
       // lattice spacing, recentred long before a wheel nears its edge.
       constexpr int patch_samples = 97;
-      constexpr float patch_recentre_distance = 24.0f;
-      constexpr float trunk_reach = 72.0f;
+      constexpr meters_t patch_recentre_distance = 24.0f * u::m;
+      constexpr meters_t trunk_reach = 72.0f * u::m;
 
       constexpr std::uint64_t ground_bit = 1;
       constexpr std::uint64_t trunk_bit = 2;
@@ -32,11 +33,10 @@ namespace moppe::mov {
       constexpr std::uint64_t chassis_bit = 8;
 
       Vec3 axle_of (const CarRig& rig, int wheel) {
-        const float track =
-          meters_value (wheel < 2 ? rig.front_track : rig.rear_track);
-        const float axle = meters_value (rig.axle);
-        return Vec3 (
-          wheel % 2 == 0 ? track : -track, 0.0f, wheel < 2 ? axle : -axle);
+        const meters_t track = wheel < 2 ? rig.front_track : rig.rear_track;
+        const meters_t across = wheel % 2 == 0 ? track : -track;
+        const meters_t along = wheel < 2 ? rig.axle : -rig.axle;
+        return Vec3 (meters_value (across), 0.0f, meters_value (along));
       }
     }
   }
@@ -45,7 +45,8 @@ namespace moppe::mov {
     const map::SurfaceGeometry& surface;
     const CarRig& rig;
     GroundPatch patch;
-    float hertz = 0.0f, damping = 0.0f;
+    frequency_t hertz {};
+    damping_ratio_t damping {};
 
     const TrunkField* trunks = nullptr;
     b3WorldId world = b3_nullWorldId;
@@ -120,8 +121,10 @@ namespace moppe::mov {
       b3ShapeDef shape = b3DefaultShapeDef ();
       shape.updateBodyMass = false;
       shape.baseMaterial.friction =
-        rig.tyre_friction * rig.tyre_friction / car_rig::ground_friction;
-      shape.baseMaterial.rollingResistance = rig.rolling_resistance;
+        (rig.tyre_friction * rig.tyre_friction / car_rig::ground_friction)
+          .numerical_value_in (one);
+      shape.baseMaterial.rollingResistance =
+        rig.rolling_resistance.numerical_value_in (one);
       shape.filter.categoryBits = car_rig::wheel_bit;
       shape.filter.maskBits = car_rig::ground_bit;
       const b3Sphere sphere { { 0.0f, 0.0f, 0.0f },
@@ -145,19 +148,14 @@ namespace moppe::mov {
       shape.filter.maskBits = car_rig::ground_bit | car_rig::trunk_bit;
       for (int i = 0; i < rig.box_count; ++i) {
         const CarRig::Box& box = rig.boxes[i];
-        const b3BoxHull hull =
-          b3MakeOffsetBoxHull (box.half[0],
-                               box.half[1],
-                               box.half[2],
-                               { box.centre[0], box.centre[1], box.centre[2] });
+        const b3BoxHull hull = box_hull (box.half, box.centre);
         b3CreateHullShape (chassis, &shape, &hull.base);
       }
       b3Body_SetMassData (
         chassis,
-        body_mass (
-          rig.chassis_mass,
-          Vec3 (rig.mass_centre[0], rig.mass_centre[1], rig.mass_centre[2]),
-          { rig.inertia[0], rig.inertia[1], rig.inertia[2] }));
+        body_mass (rig.chassis_mass,
+                   rig.mass_centre,
+                   { rig.inertia[0], rig.inertia[1], rig.inertia[2] }));
     }
 
     b3JointId create_suspension (int wheel) {
@@ -173,8 +171,8 @@ namespace moppe::mov {
       def.base.localFrameB = { { 0.0f, 0.0f, 0.0f }, frame };
       def.base.collideConnected = false;
       def.enableSuspensionSpring = true;
-      def.suspensionHertz = hertz;
-      def.suspensionDampingRatio = damping;
+      def.suspensionHertz = hertz.numerical_value_in (si::hertz);
+      def.suspensionDampingRatio = damping.numerical_value_in (one);
       def.enableSuspensionLimit = true;
       def.lowerSuspensionLimit = -meters_value (rig.sag + rig.bump);
       def.upperSuspensionLimit = 0.0f;
@@ -239,14 +237,14 @@ namespace moppe::mov {
     State standing (const Vec3& at, const Vec3& heading) const {
       const std::array<float, 4> rotation = array_of (level_rotation (heading));
       Vec3 centre = at;
-      float highest = -1e30f;
+      meters_t highest = -1e30f * u::m;
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
         const Vec3 under =
           at + rotated (rotation, car_rig::axle_of (rig, wheel));
-        highest =
-          std::max (highest, ground_height (surface, under[0], under[2]));
+        highest = std::max (highest,
+                            ground_height (surface, under[0], under[2]) * u::m);
       }
-      centre[1] = highest + meters_value (rig.wheel_radius) + 0.04f;
+      centre[1] = meters_value (highest + rig.wheel_radius + 0.04f * u::m);
       State s = kept;
       s.chassis = { centre, rotation, Vec3 (), Vec3 () };
       for (int wheel = 0; wheel < wheel_count; ++wheel)
@@ -290,75 +288,88 @@ namespace moppe::mov {
       const speed_t vf = dot (v, forward) * u::m / u::s;
       const speed_t speed = length (v) * u::m / u::s;
       const meters_t radius = rig.wheel_radius;
-      const float r = meters_value (radius);
 
       // The wheel is turned less far the faster it goes. The joint steers
       // about its axis down the chassis, so a positive angle turns to the
       // right.
-      const float fade = (speed / rig.lock_fade_speed).numerical_value_in (one);
-      const radians_t lock = rig.full_lock / (1.0f + fade * fade);
-      const float steer = radians_value (
-        std::clamp (scalar_value (kept.turn), -1.0f, 1.0f) * lock);
-      b3WheelJoint_SetTargetSteeringAngle (joints[0], steer);
-      b3WheelJoint_SetTargetSteeringAngle (joints[1], steer);
+      const magnitude_t fade = speed / rig.lock_fade_speed;
+      const radians_t lock = rig.full_lock / (1.0f * one + fade * fade);
+      const radians_t steer (std::clamp (kept.turn,
+                                         -1.0f * control_signal[one],
+                                         1.0f * control_signal[one]) *
+                             lock);
+      b3WheelJoint_SetTargetSteeringAngle (joints[0], radians_value (steer));
+      b3WheelJoint_SetTargetSteeringAngle (joints[1], radians_value (steer));
 
       // Engine and brakes through the wheel joints' spin motors: the
       // driven wheels pull, each within what its load lets it put down,
       // and the rest only roll, and brake.
-      const float drive =
-        kept.parked ? 0.0f
-                    : std::clamp (scalar_value (kept.drive), -1.0f, 1.0f);
+      const control_signal_t drive =
+        kept.parked ? control_signal_t {}
+                    : std::clamp (kept.drive,
+                                  -1.0f * control_signal[one],
+                                  1.0f * control_signal[one]);
       const newtons_t pull = std::min (
         rig.engine_force,
         newtons_t (rig.engine_power / std::max (abs (vf), 2.0f * u::m / u::s)));
-      kept.throttle = std::abs (drive);
-      const float driven = rig.front_drive ? 2.0f : 4.0f;
+      kept.throttle = abs (drive);
+      const int driven = rig.front_drive ? 2 : 4;
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
         const bool front = wheel < 2;
         const bool drives = front || !rig.front_drive;
-        float spin = 0.0f;
+        radians_per_second_t spin {};
         newton_metres_t torque =
           drives ? rig.engine_brake_torque : newton_metres_t {};
-        const newton_metres_t grip = car_rig::traction_share *
-                                     rig.tyre_friction * kept.load[wheel] *
-                                     radius;
-        const float brake_share =
-          front ? rig.front_brake_share : 1.0f - rig.front_brake_share;
+        const newton_metres_t grip (car_rig::traction_share *
+                                    rig.tyre_friction * kept.load[wheel] *
+                                    radius);
+        const proportion_t brake_share =
+          front ? rig.front_brake_share
+                : 1.0f * proportion[one] - rig.front_brake_share;
         if (kept.parked) {
           torque = rig.parking_torque;
         } else if (kept.brake ||
                    (drive * vf < speed_t {} && abs (vf) > 1.5f * u::m / u::s)) {
           // Asking for the other way while still rolling is braking.
-          const float effort = kept.brake ? 1.0f : std::abs (drive);
-          torque = effort * rig.brake_force * brake_share * radius / 2.0f;
-        } else if (std::abs (drive) > 0.02f && drives) {
-          const float share = drive > 0.0f ? 1.0f : rig.reverse_share;
-          const newton_metres_t wanted =
-            std::abs (drive) * share * pull * radius / driven;
-          const float ahead = speed_value (vf);
+          const control_signal_t effort =
+            kept.brake ? 1.0f * control_signal[one] : abs (drive);
+          torque = newton_metres_t (effort * rig.brake_force * brake_share *
+                                    radius / 2.0f);
+        } else if (abs (drive) > 0.02f * control_signal[one] && drives) {
+          const bool ahead = drive > control_signal_t {};
+          const proportion_t share =
+            ahead ? 1.0f * proportion[one] : rig.reverse_share;
+          const newton_metres_t wanted (abs (drive) * share * pull * radius /
+                                        driven);
           if (kept.touching[wheel]) {
-            spin = drive > 0.0f ? (std::max (ahead, 0.0f) + 20.0f) / r
-                                : -speed_value (rig.reverse_speed) / r;
+            spin = (ahead ? (std::max (vf, speed_t {}) + 20.0f * u::m / u::s) /
+                              radius
+                          : -rig.reverse_speed / radius) *
+                   u::rad;
             torque = std::min (wanted, grip);
           } else {
             // In the air a wheel only revs up to road speed.
-            spin = (ahead + std::copysign (1.0f, drive)) / r;
+            spin =
+              (vf + (ahead ? 1.0f : -1.0f) * u::m / u::s) / radius * u::rad;
             torque = rig.free_rev_torque;
           }
         }
-        b3WheelJoint_SetSpinMotorSpeed (joints[wheel], spin);
+        b3WheelJoint_SetSpinMotorSpeed (
+          joints[wheel], spin.numerical_value_in (u::rad / u::s));
         b3WheelJoint_SetMaxSpinTorque (joints[wheel],
                                        newton_metres_value (torque));
       }
 
       // The air's drag, and water's up to the sills, on the whole mass.
-      const float wet = std::clamp (
-        (meters_value (water_level) - (point (Vec3 (0, -0.3f, 0))[1])) / 0.8f,
-        0.0f,
-        1.0f);
+      const proportion_t wet =
+        std::clamp (
+          (meters_value (water_level) - point (Vec3 (0, -0.3f, 0))[1]) / 0.8f,
+          0.0f,
+          1.0f) *
+        proportion[one];
       apply_drag (chassis,
                   v,
-                  (rig.air_drag * speed + rig.water_drag * wet) *
+                  (rig.air_drag * speed + damping_t (rig.water_drag * wet)) *
                     rig.total_mass ());
 
       // Hung from the helicopter's line and off the ground, the air on
@@ -372,17 +383,17 @@ namespace moppe::mov {
         Vec3 wanted = w * -per_second_value (rig.slung_damping);
         Vec3 level = v;
         level[1] = 0.0f;
-        const float carried = length (level);
+        const speed_t carried = length (level) * u::m / u::s;
         Vec3 nose = forward;
         nose[1] = 0.0f;
-        if (carried > 2.0f && length2 (nose) > 1e-4f) {
-          level = level * (1.0f / carried);
+        if (carried > 2.0f * u::m / u::s && length2 (nose) > 1e-4f) {
+          level = level * (1.0f / speed_value (carried));
           nose = normalized (nose);
-          const float off =
-            std::atan2 (cross (nose, level)[1], dot (nose, level));
-          wanted[1] += off *
-                       rig.slung_vane.numerical_value_in (one / pow<2> (u::s)) *
-                       std::min (1.0f, carried / 10.0f);
+          const radians_t off =
+            std::atan2 (cross (nose, level)[1], dot (nose, level)) * u::rad;
+          wanted[1] += (off * rig.slung_vane *
+                        std::min (1.0f * one, carried / (10.0f * u::m / u::s)))
+                         .numerical_value_in (u::rad / pow<2> (u::s));
         }
         b3Body_ApplyTorque (
           chassis,
@@ -532,13 +543,11 @@ namespace moppe::mov {
   }
 
   Vec3 Car::driver_seat () const {
-    const float* seat = m_impl->rig.seat;
-    return point (Vec3 (seat[0], seat[1], seat[2]));
+    return point (displacement_value (m_impl->rig.seat));
   }
 
   Vec3 Car::passenger_seat () const {
-    const float* seat = m_impl->rig.seat;
-    return point (Vec3 (-seat[0], seat[1], seat[2]));
+    return point (displacement_value (m_impl->rig.passenger_seat ()));
   }
 
   meters_t Car::wheel_drop (int wheel) const {

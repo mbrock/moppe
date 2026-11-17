@@ -123,8 +123,7 @@ namespace moppe::game {
                   .distance = 8.0f * u::m,
                   .nearest = 3.4f * u::m },
         // Beside the driver, the mirror of their seat.
-        .passenger_seat = Vec3 (
-          -mov::jeep_rig.seat[0], mov::jeep_rig.seat[1], mov::jeep_rig.seat[2]),
+        .passenger_seat = displacement_value (mov::jeep_rig.passenger_seat ()),
         .undergrowth_parting = 1.7f * u::m,
         .shadow_radius = 3.4f * u::m,
         .mark_height = 1.9f * u::m,
@@ -181,9 +180,7 @@ namespace moppe::game {
                   .pivot_height = 1.0f * u::m,
                   .distance = 8.5f * u::m,
                   .nearest = 3.6f * u::m },
-        .passenger_seat = Vec3 (-mov::caddy_rig.seat[0],
-                                mov::caddy_rig.seat[1],
-                                mov::caddy_rig.seat[2]),
+        .passenger_seat = displacement_value (mov::caddy_rig.passenger_seat ()),
         .undergrowth_parting = 1.6f * u::m,
         .shadow_radius = 3.6f * u::m,
         .mark_height = 2.0f * u::m,

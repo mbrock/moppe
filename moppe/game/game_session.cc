@@ -1440,7 +1440,7 @@ namespace moppe::game {
       if (chance (logic.m_fx_rng) < 0.12f + 0.5f * throttle) {
         const float shade = 0.30f + 0.25f * chance (logic.m_fx_rng);
         session.dust ().emit (
-          moppe::position (tractor.exhaust ()),
+          tractor.exhaust (),
           velocity (tractor.velocity () * 0.6f +
                     tractor.up () * (1.2f + 2.0f * throttle)),
           1,

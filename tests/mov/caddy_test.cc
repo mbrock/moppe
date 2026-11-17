@@ -44,10 +44,12 @@ MOPPE_TEST (the_caddy_model_stands_where_the_physics_has_its_wheels) {
   MOPPE_CHECK_NEAR (
     game::caddy_model::wheel_rr[2], -meters_value (mov::caddy_rig.axle), 1e-4f);
   for (int i = 0; i < 3; ++i)
-    MOPPE_CHECK_NEAR (
-      game::caddy_model::seat_driver[i], mov::caddy_rig.seat[i], 1e-4f);
-  MOPPE_CHECK_NEAR (
-    game::caddy_model::seat_passenger[0], -mov::caddy_rig.seat[0], 1e-4f);
+    MOPPE_CHECK_NEAR (game::caddy_model::seat_driver[i],
+                      displacement_value (mov::caddy_rig.seat)[i],
+                      1e-4f);
+  MOPPE_CHECK_NEAR (game::caddy_model::seat_passenger[0],
+                    displacement_value (mov::caddy_rig.passenger_seat ())[0],
+                    1e-4f);
 }
 
 MOPPE_TEST (a_parked_caddy_settles_on_its_springs_and_stays) {
@@ -86,7 +88,7 @@ MOPPE_TEST (the_caddy_drives_steers_and_stops) {
   mov::Car caddy (ground, mov::caddy_rig);
   caddy.place (Vec3 (60, 0, 60), Vec3 (0, 0, 1));
   caddy.set_parked (false);
-  caddy.set_drive (1.0f);
+  caddy.set_drive (1.0f * control_signal[one]);
   caddy_test_run (caddy, 4.0f);
   // Seventy horsepower: a car's pull, nothing like a sports car's.
   const float speed = length (caddy.velocity ());
@@ -97,22 +99,22 @@ MOPPE_TEST (the_caddy_drives_steers_and_stops) {
 
   // Turning right brings the nose round toward -x (x is the driver's
   // left), without rolling over.
-  caddy.set_drive (0.3f);
-  caddy.set_turn (1.0f);
+  caddy.set_drive (0.3f * control_signal[one]);
+  caddy.set_turn (1.0f * control_signal[one]);
   caddy_test_run (caddy, 2.0f);
   MOPPE_CHECK (radians_value (caddy.steer ()) > 0.05f);
   MOPPE_CHECK (caddy.forward ()[0] < -0.3f);
   MOPPE_CHECK (caddy.up ()[1] > 0.9f);
 
-  caddy.set_turn (0.0f);
-  caddy.set_drive (0.0f);
+  caddy.set_turn (0.0f * control_signal[one]);
+  caddy.set_drive (0.0f * control_signal[one]);
   caddy.set_brake (true);
   caddy_test_run (caddy, 4.0f);
   MOPPE_CHECK (length (caddy.velocity ()) < 0.3f);
 
   // And it backs up.
   caddy.set_brake (false);
-  caddy.set_drive (-1.0f);
+  caddy.set_drive (-1.0f * control_signal[one]);
   const Vec3 from = caddy.position ();
   const Vec3 facing = caddy.forward ();
   caddy_test_run (caddy, 2.0f);
@@ -127,7 +129,7 @@ MOPPE_TEST (the_caddy_crosses_rough_ground_upright) {
   mov::Car caddy (rough, mov::caddy_rig);
   caddy.place (Vec3 (80, 0, 40), Vec3 (0, 0, 1));
   caddy.set_parked (false);
-  caddy.set_drive (0.7f);
+  caddy.set_drive (0.7f * control_signal[one]);
   float lowest_up = 1.0f;
   for (int i = 0; i < 120 * 8; ++i) {
     caddy.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
@@ -153,7 +155,7 @@ MOPPE_TEST (a_tree_stops_the_caddy) {
   caddy.set_trunks (&trees);
   caddy.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1));
   caddy.set_parked (false);
-  caddy.set_drive (0.5f);
+  caddy.set_drive (0.5f * control_signal[one]);
   caddy_test_run (caddy, 6.0f);
   // Its bumper is two metres ahead of its origin; the trunk stands at
   // 130.
@@ -193,7 +195,7 @@ MOPPE_TEST (a_restored_caddy_stands_as_it_did) {
   mov::Car caddy (ground, mov::caddy_rig);
   caddy.place (Vec3 (100, 0, 100), Vec3 (1, 0, 1));
   caddy.set_parked (false);
-  caddy.set_drive (1.0f);
+  caddy.set_drive (1.0f * control_signal[one]);
   caddy_test_run (caddy, 2.0f);
   const mov::Car::State kept = caddy.state ();
   caddy_test_run (caddy, 1.0f);
@@ -214,14 +216,14 @@ MOPPE_TEST (the_caddy_is_pulled_by_its_front_wheels) {
   mov::Car caddy (ground, mov::caddy_rig);
   caddy.place (Vec3 (60, 0, 60), Vec3 (0, 0, 1));
   caddy.set_parked (false);
-  caddy.set_drive (1.0f);
+  caddy.set_drive (1.0f * control_signal[one]);
   caddy_test_run (caddy, 1.5f);
   // The front pair carries more than the rear, over the engine, and the
   // nose squats less than the tail as it pulls away.
   const mov::Car::State s = caddy.state ();
   MOPPE_CHECK (s.load[0] + s.load[1] > s.load[2] + s.load[3]);
   MOPPE_CHECK (s.touching[0] && s.touching[1]);
-  MOPPE_CHECK (scalar_value (caddy.throttle ()) > 0.9f);
+  MOPPE_CHECK (caddy.throttle () > 0.9f * control_signal[one]);
 }
 
 MOPPE_TEST (the_caddy_runs_on_toward_its_top_speed) {
@@ -235,7 +237,7 @@ MOPPE_TEST (the_caddy_runs_on_toward_its_top_speed) {
   mov::Car caddy (road, mov::caddy_rig);
   caddy.place (Vec3 (30, 0, 128), Vec3 (1, 0, 0));
   caddy.set_parked (false);
-  caddy.set_drive (1.0f);
+  caddy.set_drive (1.0f * control_signal[one]);
   caddy_test_run (caddy, 35.0f);
   const float kmh = length (caddy.velocity ()) * 3.6f;
   MOPPE_CHECK (kmh > 110.0f && kmh < 150.0f);

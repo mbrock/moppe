@@ -235,17 +235,18 @@ namespace moppe::mov {
 
     explicit Impl (const map::SurfaceGeometry& surface)
         : surface (surface),
-          patch (surface,
-                 { .ground_friction = 0.6f,
-                   .obstacle_friction = 0.3f,
-                   .obstacle_restitution = 0.2f,
-                   .ground_bit = jet_ski_rig::ground_bit,
-                   .ground_mask = jet_ski_rig::body_bit,
-                   .obstacle_bit = jet_ski_rig::trunk_bit,
-                   .obstacle_mask = jet_ski_rig::body_bit,
-                   .samples = jet_ski_rig::patch_samples,
-                   .recentre_distance = jet_ski_rig::patch_recentre_distance,
-                   .trunk_reach = jet_ski_rig::trunk_reach }) {}
+          patch (
+            surface,
+            { .ground_friction = 0.6f,
+              .obstacle_friction = 0.3f,
+              .obstacle_restitution = 0.2f,
+              .ground_bit = jet_ski_rig::ground_bit,
+              .ground_mask = jet_ski_rig::body_bit,
+              .obstacle_bit = jet_ski_rig::trunk_bit,
+              .obstacle_mask = jet_ski_rig::body_bit,
+              .samples = jet_ski_rig::patch_samples,
+              .recentre_distance = jet_ski_rig::patch_recentre_distance * u::m,
+              .trunk_reach = jet_ski_rig::trunk_reach * u::m }) {}
 
     ~Impl () {
       destroy ();

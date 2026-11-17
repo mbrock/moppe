@@ -150,17 +150,18 @@ namespace moppe {
           : surface (surface), params (params), rig (this->params.rig),
             chassis_mass (std::max (0.3f * params.mass,
                                     params.mass - 2.0f * rig.wheel_mass)),
-            patch (surface,
-                   { .ground_friction = bike_rig::ground_friction,
-                     .obstacle_friction = 0.3f,
-                     .obstacle_restitution = 0.3f,
-                     .ground_bit = bike_rig::ground_bit,
-                     .ground_mask = bike_rig::wheel_bit | bike_rig::chassis_bit,
-                     .obstacle_bit = bike_rig::trunk_bit,
-                     .obstacle_mask = bike_rig::chassis_bit,
-                     .samples = bike_rig::patch_samples,
-                     .recentre_distance = bike_rig::patch_recentre_distance,
-                     .trunk_reach = bike_rig::trunk_reach }) {
+            patch (
+              surface,
+              { .ground_friction = bike_rig::ground_friction,
+                .obstacle_friction = 0.3f,
+                .obstacle_restitution = 0.3f,
+                .ground_bit = bike_rig::ground_bit,
+                .ground_mask = bike_rig::wheel_bit | bike_rig::chassis_bit,
+                .obstacle_bit = bike_rig::trunk_bit,
+                .obstacle_mask = bike_rig::chassis_bit,
+                .samples = bike_rig::patch_samples,
+                .recentre_distance = bike_rig::patch_recentre_distance * u::m,
+                .trunk_reach = bike_rig::trunk_reach * u::m }) {
         // A box of frame and rider.
         const kilograms_t k = chassis_mass / 12.0f;
         const Vec3 box = rig.inertia_box;
