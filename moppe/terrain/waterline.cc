@@ -104,9 +104,9 @@ namespace moppe::terrain {
         key,
         WaterlineCrossing {
           .at = plan_position (
-            meters_t ((static_cast<float> (ax) + (vertical ? none : s)) *
+            meters_t ((static_cast<float> (ax) * one + (vertical ? none : s)) *
                       spacing_x),
-            meters_t ((static_cast<float> (ay) + (vertical ? s : none)) *
+            meters_t ((static_cast<float> (ay) * one + (vertical ? s : none)) *
                       spacing_y)),
         });
       return key;

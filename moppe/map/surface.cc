@@ -915,10 +915,11 @@ namespace moppe::map {
         const std::size_t i = domain.offset (site);
         const noise_signal_t whaleback = layered_noise (
           domain.lap_position (site), laps (60.0f * u::m), seed ^ 0x9a817eU, 3);
-        rock[i] = band (0.22f * part,
-                        0.48f * part,
-                        rock[i] + quantity_cast<proportion> (
-                                    0.7f * (whaleback - 0.5f * signal)));
+        rock[i] = band (
+          0.22f * part,
+          0.48f * part,
+          rock[i] + quantity_cast<proportion> (quantity_cast<dimensionless> (
+                      0.7f * (whaleback - 0.5f * signal))));
       }
     }
 
@@ -929,7 +930,7 @@ namespace moppe::map {
       // How far up the land's relief the place stands; under the sea,
       // below none of it.
       const proportion_t rise =
-        quantity_cast<proportion> ((height[i] - sea) / relief);
+        quantity_cast<proportion> (meters_t (height[i] - sea) / relief);
       const ElevationChange above = height[i] - around[i];
       const proportion_t fed =
         std::clamp (2.0f * spring[i], 0.0f * part, whole);
