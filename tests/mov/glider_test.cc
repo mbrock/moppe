@@ -87,11 +87,11 @@ MOPPE_TEST (a_dive_buys_speed_that_a_pull_up_turns_back_into_height) {
   glider.launch (position (Vec3 (100, 600, 100)),
                  velocity (Vec3 (0, 0, 16)),
                  Vec3 (0, 0, 1));
-  glider.set_speed_control (1.0f);
+  glider.set_speed_control (1.0f * control_signal[one]);
   glider_test_fly (glider, 8.0f);
   MOPPE_CHECK (glider_test_airspeed (glider) > 21.0f);
   const float low = position_value (glider.position ())[1];
-  glider.set_speed_control (-1.0f);
+  glider.set_speed_control (-1.0f * control_signal[one]);
   float top = low;
   for (int i = 0; i < 240; ++i) {
     glider.update (glider_test_step);
@@ -108,7 +108,7 @@ MOPPE_TEST (a_banked_glider_turns_at_the_rate_its_tilted_lift_gives) {
   glider.launch (position (Vec3 (100, 600, 100)),
                  velocity (Vec3 (0, 0, 16)),
                  Vec3 (0, 0, 1));
-  glider.set_turn (0.5f);
+  glider.set_turn (0.5f * control_signal[one]);
   glider_test_fly (glider, 6.0f);
   const Vec3 before = glider.heading ();
   glider_test_fly (glider, 1.0f);
@@ -177,7 +177,7 @@ namespace {
     mov::Vehicle::State flight = session.bike ().state ();
     flight.position = position (Vec3 (100, 50, 100));
     flight.velocity = velocity (Vec3 (0, 0, 24));
-    flight.heading = Vec3 (0, 0, 1);
+    flight.heading = unit_direction (Vec3 (0, 0, 1));
     flight.airborne_time = seconds (1.0f);
     flight.fall_top = 50 * u::m;
     session.bike ().restore (flight);
@@ -203,7 +203,7 @@ namespace {
                      agl,
                      length (velocity_value (session.bike ().velocity ())),
                      float (velocity_value (session.bike ().velocity ())[1]),
-                     float (session.bike ().render_normal ()[1]));
+                     float (direction_value (session.bike ().up ())[1]));
       if (session.logic ().m_doing != game::Doing::gliding ()) {
         outcome.seconds = i / 60.0f;
         outcome.sink = sink;
@@ -218,7 +218,7 @@ namespace {
       game::advance_game_session (
         world, surface, session, input, glider_test_step);
     outcome.mode = session.logic ().m_doing;
-    outcome.upright = session.bike ().render_normal ()[1];
+    outcome.upright = direction_value (session.bike ().up ())[1];
     outcome.health_lost = health - session.logic ().m_health;
     const Vec3 v = velocity_value (session.bike ().velocity ());
     if (trace)

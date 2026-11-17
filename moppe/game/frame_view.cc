@@ -89,18 +89,18 @@ namespace moppe::game {
 
   VehiclePose pose (const mov::Vehicle& vehicle) {
     return {
-      .position = vehicle.render_position (),
-      .render_orientation = vehicle.render_orientation (),
-      .render_normal = vehicle.render_normal (),
+      .position = position_value (vehicle.render_position ()),
+      .render_orientation = direction_value (vehicle.render_orientation ()),
+      .render_normal = direction_value (vehicle.render_normal ()),
       .rear_wheel_drop = meters_value (vehicle.rear_wheel_drop ()),
       .front_wheel_drop = meters_value (vehicle.front_wheel_drop ()),
       .wheel_spin_radians = radians_value (vehicle.wheel_spin ()),
       .fork_radians = radians_value (vehicle.fork_angle ()),
       .thrust = vehicle.thrust ().numerical_value_in (one),
-      .boost_level = vehicle.boost_level (),
-      .boost_drive = vehicle.boost_drive (),
+      .boost_level = vehicle.boost_level ().numerical_value_in (one),
+      .boost_drive = vehicle.boost_drive ().numerical_value_in (one),
       .crank_radians = radians_value (vehicle.crank ()),
-      .rider_lean = vehicle.rider_lean (),
+      .rider_lean = vehicle.rider_lean ().numerical_value_in (one),
     };
   }
 
@@ -392,9 +392,10 @@ namespace moppe::game {
         input.session.glider ().vertical_speed ().numerical_value_in (u::m /
                                                                       u::s);
     } else {
-      hud.boost_ready01 = logic.m_doing == Doing::driving (Machine::bike)
-                            ? input.session.bike ().boost_charge ()
-                            : 1.0f;
+      hud.boost_ready01 =
+        logic.m_doing == Doing::driving (Machine::bike)
+          ? input.session.bike ().boost_charge ().numerical_value_in (one)
+          : 1.0f;
     }
     hud.health01 = logic.m_health / 100.0f;
     hud.odometer_m = static_cast<float> (logic.m_odometer);

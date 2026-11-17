@@ -445,8 +445,8 @@ namespace moppe::game {
 
   std::pair<direction_t, direction_t>
   Parking::bike_frame (const ParkingLot& lot) {
-    const direction_t heading =
-      on_the_level (lot.session.bike ().orientation (), Vec3 (0, 0, 1));
+    const direction_t heading = on_the_level (
+      direction_value (lot.session.bike ().forward ()), Vec3 (0, 0, 1));
     return { heading, left_of (heading) };
   }
 

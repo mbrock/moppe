@@ -53,6 +53,10 @@ namespace {
 
   const seconds_t tick = seconds (1.0f / 120.0f);
 
+  control_signal_t sig (float value) {
+    return value * control_signal[one];
+  }
+
   bool same_vector (const Vec3& a, const Vec3& b) {
     return a == b;
   }
@@ -81,44 +85,44 @@ MOPPE_TEST (rigid_bike_settles_on_its_suspension) {
   MOPPE_CHECK_NEAR (meters_value (bike.rear_wheel_drop ()), 0.0f, 0.03f);
   MOPPE_CHECK_NEAR (meters_value (bike.front_wheel_drop ()), 0.0f, 0.03f);
   MOPPE_CHECK (length (velocity_value (bike.velocity ())) < 0.05f);
-  MOPPE_CHECK (bike.render_normal ()[1] > 0.99f);
+  MOPPE_CHECK (direction_value (bike.up ())[1] > 0.99f);
 }
 
 MOPPE_TEST (rigid_bike_throttle_drives_it_forward_upright) {
   const map::SurfaceGeometry surface = rigid_test_surface (flat);
   mov::Vehicle bike = rigid_bike (surface, Vec3 (50, 0, 50));
-  bike.set_thrust (1.0f);
+  bike.set_thrust (sig (1.0f));
   for (int i = 0; i < 4 * 120; ++i)
     bike.update (tick);
   // The Trail 90's 5.2 kW makes some 50 km/h in four seconds.
   const float forward =
-    dot (velocity_value (bike.velocity ()), bike.orientation ());
+    dot (velocity_value (bike.velocity ()), direction_value (bike.forward ()));
   MOPPE_CHECK (forward > 12.0f);
   MOPPE_CHECK (position_value (bike.position ())[2] > 75.0f);
-  MOPPE_CHECK (bike.render_normal ()[1] > 0.95f);
+  MOPPE_CHECK (direction_value (bike.up ())[1] > 0.95f);
   MOPPE_CHECK (bike.grounded ());
 
   // Braking then reverses it.
-  bike.set_thrust (-1.0f);
+  bike.set_thrust (sig (-1.0f));
   for (int i = 0; i < 6 * 120; ++i)
     bike.update (tick);
-  MOPPE_CHECK (dot (velocity_value (bike.velocity ()), bike.orientation ()) <
-               -1.0f);
+  MOPPE_CHECK (dot (velocity_value (bike.velocity ()),
+                    direction_value (bike.forward ())) < -1.0f);
 }
 
 MOPPE_TEST (rigid_bike_turns_and_leans_into_the_turn) {
   const map::SurfaceGeometry surface = rigid_test_surface (flat);
   mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 50));
-  bike.set_thrust (0.6f);
+  bike.set_thrust (sig (0.6f));
   for (int i = 0; i < 120; ++i)
     bike.update (tick);
   bike.set_yaw (45 * u::deg);
   for (int i = 0; i < 120; ++i)
     bike.update (tick);
-  MOPPE_CHECK (bike.orientation ()[0] < -0.2f);
+  MOPPE_CHECK (direction_value (bike.forward ())[0] < -0.2f);
   // Leaning into a right turn tips the top of the bike to the right.
-  const Vec3 right = cross (bike.orientation (), Vec3 (0, 1, 0));
-  MOPPE_CHECK (dot (bike.render_normal (), right) > 0.05f);
+  const Vec3 right = cross (direction_value (bike.forward ()), Vec3 (0, 1, 0));
+  MOPPE_CHECK (dot (direction_value (bike.up ()), right) > 0.05f);
 }
 
 MOPPE_TEST (rigid_bike_is_stopped_by_a_trunk) {
@@ -130,7 +134,7 @@ MOPPE_TEST (rigid_bike_is_stopped_by_a_trunk) {
     300.0f);
   mov::Vehicle bike = rigid_bike (surface, Vec3 (60, 0, 50));
   bike.set_trunks (&trunks);
-  bike.set_thrust (1.0f);
+  bike.set_thrust (sig (1.0f));
   float impact = 0.0f;
   float furthest = 0.0f;
   for (int i = 0; i < 6 * 120; ++i) {
@@ -149,9 +153,10 @@ MOPPE_TEST (rigid_bike_replays_and_restores_deterministically) {
   const auto drive = [] (mov::Vehicle& bike, int from, int count) {
     for (int i = from; i < from + count; ++i) {
       const float t = i / 120.0f;
-      bike.set_thrust (t < 5.0f ? 1.0f : -0.5f);
+      bike.set_thrust (sig (t < 5.0f ? 1.0f : -0.5f));
       bike.set_yaw ((60.0f * std::sin (0.9f * t)) * u::deg);
-      bike.set_boost (std::fmod (t, 3.0f) < 0.4f ? 1.0f : 0.0f, 0.3f);
+      bike.set_boost (sig (std::fmod (t, 3.0f) < 0.4f ? 1.0f : 0.0f),
+                      sig (0.3f));
       bike.update (tick);
     }
   };
@@ -192,12 +197,12 @@ MOPPE_TEST (rigid_bike_replays_and_restores_deterministically) {
   mov::Vehicle::State moved = checkpoint;
   moved.position =
     position (position_value (checkpoint.position) + Vec3 (5, 2, 0));
-  moved.heading = Vec3 (1, 0, 0);
+  moved.heading = unit_direction (Vec3 (1, 0, 0));
   third.restore (moved);
   MOPPE_CHECK_NEAR (position_value (third.position ())[0],
                     position_value (checkpoint.position)[0] + 5.0f,
                     1e-3f);
-  MOPPE_CHECK (third.orientation ()[0] > 0.9f);
+  MOPPE_CHECK (direction_value (third.forward ())[0] > 0.9f);
 }
 
 MOPPE_TEST (an_unridden_bike_stays_parked_on_a_slope) {
@@ -213,10 +218,10 @@ MOPPE_TEST (an_unridden_bike_stays_parked_on_a_slope) {
                        30 * u::kW,
                        150 * u::kg);
     // Ride a moment, then step off.
-    bike.set_thrust (0.5f);
+    bike.set_thrust (sig (0.5f));
     for (int i = 0; i < 60; ++i)
       bike.update (tick);
-    bike.set_thrust (0.0f);
+    bike.set_thrust (sig (0.0f));
     bike.set_parked (parked);
     for (int i = 0; i < 120; ++i)
       bike.update (tick);
@@ -240,29 +245,30 @@ MOPPE_TEST (a_held_skid_brakes_the_bike_round_about_its_front_wheel) {
   };
   const auto turn = [&] (float skid, float steer) {
     mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
-    bike.set_thrust (0.6f);
-    while (dot (velocity_value (bike.velocity ()), bike.orientation ()) < 15.0f)
+    bike.set_thrust (sig (0.6f));
+    while (dot (velocity_value (bike.velocity ()),
+                direction_value (bike.forward ())) < 15.0f)
       bike.update (tick);
-    bike.set_thrust (0.0f);
-    bike.set_skid (skid);
+    bike.set_thrust (sig (0.0f));
+    bike.set_skid (sig (skid));
     bike.set_yaw (steer * u::deg);
     Result r { 0, 0, 0, 0, 1 };
     for (int i = 0; i < 120; ++i) {
       bike.update (tick);
-      r.slid = std::max (r.slid, bike.skid ());
+      r.slid = std::max (r.slid, bike.skid ().numerical_value_in (one));
     }
-    const Vec3 f = bike.orientation ();
+    const Vec3 f = direction_value (bike.forward ());
     const Vec3 v = velocity_value (bike.velocity ());
     r.heading = std::atan2 (-f[0], f[2]) * 57.29578f;
     r.track = std::atan2 (-v[0], v[2]) * 57.29578f;
     r.speed = length (v);
-    bike.set_skid (0.0f);
+    bike.set_skid (sig (0.0f));
     bike.set_yaw (0 * u::deg);
-    bike.set_thrust (0.5f);
+    bike.set_thrust (sig (0.5f));
     for (int i = 0; i < 240; ++i) {
       bike.update (tick);
-      r.upright =
-        std::min (r.upright, static_cast<float> (bike.render_normal ()[1]));
+      r.upright = std::min (
+        r.upright, static_cast<float> (direction_value (bike.up ())[1]));
     }
     MOPPE_CHECK (bike.grounded ());
     return r;
@@ -306,7 +312,7 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
 
   // Pedalled flat out, a cyclist's pace on the flat, the crank going
   // round; freewheeling, the crank stands still.
-  bike.set_thrust (1.0f);
+  bike.set_thrust (sig (1.0f));
   float turned = 0.0f, last = radians_value (bike.crank ());
   for (int i = 0; i < 12 * 120; ++i) {
     bike.update (tick);
@@ -315,11 +321,11 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
     last = now;
   }
   const float flat_out =
-    dot (velocity_value (bike.velocity ()), bike.orientation ());
+    dot (velocity_value (bike.velocity ()), direction_value (bike.forward ()));
   MOPPE_CHECK (flat_out > 7.0f && flat_out < 12.0f);
   // Some eight radians a second.
   MOPPE_CHECK (turned > 12 * 6.0f && turned < 12 * 10.0f);
-  bike.set_thrust (0.0f);
+  bike.set_thrust (sig (0.0f));
   const float coasting = radians_value (bike.crank ());
   for (int i = 0; i < 60; ++i)
     bike.update (tick);
@@ -327,20 +333,20 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
 
   // The rear brake stamped on with the bars over brings it round most of
   // the way to facing back, still moving and on its wheels.
-  const Vec3 before = bike.orientation ();
-  bike.set_skid (1.0f);
+  const Vec3 before = direction_value (bike.forward ());
+  bike.set_skid (sig (1.0f));
   bike.set_yaw (90 * u::deg);
   for (int i = 0; i < 120; ++i)
     bike.update (tick);
-  MOPPE_CHECK (dot (before, bike.orientation ()) < -0.5f);
+  MOPPE_CHECK (dot (before, direction_value (bike.forward ())) < -0.5f);
   MOPPE_CHECK (length (velocity_value (bike.velocity ())) > 2.0f);
-  MOPPE_CHECK (bike.render_normal ()[1] > 0.8f);
-  bike.set_skid (0.0f);
+  MOPPE_CHECK (direction_value (bike.up ())[1] > 0.8f);
+  bike.set_skid (sig (0.0f));
   bike.set_yaw (0 * u::deg);
   for (int i = 0; i < 360; ++i)
     bike.update (tick);
   MOPPE_CHECK (bike.grounded ());
-  MOPPE_CHECK (bike.render_normal ()[1] > 0.98f);
+  MOPPE_CHECK (direction_value (bike.up ())[1] > 0.98f);
 
   // A hop clears a log and comes down on its wheels.
   const float ground = position_value (bike.position ())[1];
@@ -353,7 +359,7 @@ MOPPE_TEST (a_mountain_bike_is_pedalled_skidded_round_and_hopped) {
   }
   MOPPE_CHECK (top - ground > 0.25f && top - ground < 0.7f);
   MOPPE_CHECK (bike.grounded ());
-  MOPPE_CHECK (bike.render_normal ()[1] > 0.98f);
+  MOPPE_CHECK (direction_value (bike.up ())[1] > 0.98f);
 }
 
 MOPPE_TEST (the_long_john_stands_level_on_its_odd_wheels_and_is_pedalled) {
@@ -373,11 +379,11 @@ MOPPE_TEST (the_long_john_stands_level_on_its_odd_wheels_and_is_pedalled) {
   MOPPE_CHECK_NEAR (position_value (bike.position ())[1],
                     10.0f + meters_value (mov::long_john_rig.ride_height ()),
                     0.02f);
-  MOPPE_CHECK_NEAR (bike.orientation ()[1], 0.0f, 0.005f);
+  MOPPE_CHECK_NEAR (direction_value (bike.forward ())[1], 0.0f, 0.005f);
 
   // Pedalled flat out with the motor's help, a loaded cargo bike's pace,
   // the crank going round once for each 38/18 of the wheel.
-  bike.set_thrust (1.0f);
+  bike.set_thrust (sig (1.0f));
   for (int i = 0; i < 15 * 120; ++i)
     bike.update (tick);
   float turned = 0.0f, last = radians_value (bike.crank ());
@@ -391,16 +397,18 @@ MOPPE_TEST (the_long_john_stands_level_on_its_odd_wheels_and_is_pedalled) {
       length (velocity_value (bike.velocity ())) * seconds_value (tick);
   }
   const float kmh =
-    dot (velocity_value (bike.velocity ()), bike.orientation ()) * 3.6f;
+    dot (velocity_value (bike.velocity ()), direction_value (bike.forward ())) *
+    3.6f;
   MOPPE_CHECK (kmh > 20.0f && kmh < 30.0f);
   MOPPE_CHECK_NEAR (turned, covered / (0.335f * 38.0f / 18.0f), 0.5f);
-  MOPPE_CHECK_NEAR (bike.orientation ()[1], 0.0f, 0.01f);
+  MOPPE_CHECK_NEAR (direction_value (bike.forward ())[1], 0.0f, 0.01f);
 }
 
 namespace {
   // The pitch of a bike on flat ground, nose up.
   float pitch_of (const mov::Vehicle& bike) {
-    return std::asin (std::clamp ((float)bike.orientation ()[1], -1.0f, 1.0f));
+    return std::asin (
+      std::clamp ((float)direction_value (bike.forward ())[1], -1.0f, 1.0f));
   }
 
   // A rider holding a wheelie on the throttle and the rear brake as a
@@ -413,9 +421,9 @@ namespace {
       const float pitch = pitch_of (bike);
       const float ahead = pitch + 0.4f * (pitch - last) / seconds_value (tick);
       last = pitch;
-      bike.set_wheelie (1.0f);
-      bike.set_thrust (ahead < 0.7f ? 1.0f : 0.0f);
-      bike.set_skid (ahead > 1.1f ? 1.0f : 0.0f);
+      bike.set_wheelie (sig (1.0f));
+      bike.set_thrust (sig (ahead < 0.7f ? 1.0f : 0.0f));
+      bike.set_skid (sig (ahead > 1.1f ? 1.0f : 0.0f));
     }
   };
 }
@@ -426,7 +434,7 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
   // wheel down.
   {
     mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
-    bike.set_thrust (1.0f);
+    bike.set_thrust (sig (1.0f));
     float highest = 0.0f;
     for (int i = 0; i < 3 * 120; ++i) {
       bike.update (tick);
@@ -456,9 +464,9 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
     MOPPE_CHECK (bike.wheeling ());
     low = std::min (low, pitch_of (bike));
     high = std::max (high, pitch_of (bike));
-    upright = std::min (upright,
-                        std::abs (dot (Vec3 (1, 0, 0), bike.render_normal ())));
-    lean = std::max (lean, bike.rider_lean ());
+    upright = std::min (
+      upright, std::abs (dot (Vec3 (1, 0, 0), direction_value (bike.up ()))));
+    lean = std::max (lean, bike.rider_lean ().numerical_value_in (one));
     metres += length (position_value (bike.position ()) - last);
     last = position_value (bike.position ());
     if (i == 2 * 120)
@@ -474,17 +482,17 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
 
   // Sitting forward and off the throttle, the front comes back down onto
   // its wheel without a crash, and the bike rides on.
-  bike.set_wheelie (0.0f);
-  bike.set_thrust (0.0f);
-  bike.set_skid (0.0f);
+  bike.set_wheelie (sig (0.0f));
+  bike.set_thrust (sig (0.0f));
+  bike.set_skid (sig (0.0f));
   for (int i = 0; i < 2 * 120; ++i)
     bike.update (tick);
   MOPPE_CHECK (!bike.wheeling ());
   MOPPE_CHECK (bike.grounded ());
   MOPPE_CHECK (std::abs (pitch_of (bike)) < 0.05f);
   MOPPE_CHECK (speed_value (bike.pop_impact ()) < 7.0f);
-  MOPPE_CHECK (dot (velocity_value (bike.velocity ()), bike.orientation ()) >
-               5.0f);
+  MOPPE_CHECK (dot (velocity_value (bike.velocity ()),
+                    direction_value (bike.forward ())) > 5.0f);
 }
 
 MOPPE_TEST (the_rear_brake_sets_a_wheelie_down_and_full_throttle_loops_it) {
@@ -503,12 +511,12 @@ MOPPE_TEST (the_rear_brake_sets_a_wheelie_down_and_full_throttle_loops_it) {
   {
     mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
     pop_a_wheelie (bike);
-    bike.set_thrust (0.0f);
-    bike.set_skid (1.0f);
+    bike.set_thrust (sig (0.0f));
+    bike.set_skid (sig (1.0f));
     int frames = 0;
     while (bike.wheeling () && frames < 120) {
       bike.update (tick);
-      MOPPE_CHECK (bike.skid () < 0.05f);
+      MOPPE_CHECK (bike.skid () < 0.05f * proportion[one]);
       ++frames;
     }
     MOPPE_CHECK (frames < 120);
@@ -518,7 +526,7 @@ MOPPE_TEST (the_rear_brake_sets_a_wheelie_down_and_full_throttle_loops_it) {
   {
     mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
     pop_a_wheelie (bike);
-    bike.set_thrust (0.0f);
+    bike.set_thrust (sig (0.0f));
     int frames = 0;
     while (bike.wheeling () && frames < 240)
       bike.update (tick), ++frames;
@@ -529,17 +537,17 @@ MOPPE_TEST (the_rear_brake_sets_a_wheelie_down_and_full_throttle_loops_it) {
   {
     mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
     pop_a_wheelie (bike);
-    bike.set_thrust (1.0f);
-    bike.set_skid (0.0f);
+    bike.set_thrust (sig (1.0f));
+    bike.set_skid (sig (0.0f));
     float lowest_up = 1.0f;
     for (int i = 0; i < 3 * 120; ++i) {
       bike.update (tick);
-      lowest_up =
-        std::min (lowest_up, static_cast<float> (bike.render_normal ()[1]));
+      lowest_up = std::min (
+        lowest_up, static_cast<float> (direction_value (bike.up ())[1]));
     }
     // On its back, lying across the rack.
     MOPPE_CHECK (lowest_up < -0.3f);
     // It lies where it fell, not righted onto its wheels facing back.
-    MOPPE_CHECK (bike.render_normal ()[1] < 0.5f);
+    MOPPE_CHECK (direction_value (bike.up ())[1] < 0.5f);
   }
 }

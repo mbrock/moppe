@@ -142,7 +142,8 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
   check_logic_reading (after.logic, before.logic);
   frame_view_check_vector (position_value (after.fleet.bike.position),
                            position_value (before.fleet.bike.position));
-  frame_view_check_vector (after.fleet.bike.heading, before.fleet.bike.heading);
+  frame_view_check_vector (direction_value (after.fleet.bike.heading),
+                           direction_value (before.fleet.bike.heading));
   frame_view_check_vector (position_value (after.camera.position),
                            position_value (before.camera.position));
   frame_view_check_vector (position_value (after.camera.target),

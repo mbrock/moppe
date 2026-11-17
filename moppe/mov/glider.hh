@@ -29,14 +29,14 @@ namespace moppe::mov {
     struct State {
       position_t position {};
       velocity_t velocity {};
-      Vec3 heading { 0, 0, 1 };
+      direction_t heading = unit_direction (Vec3 (0, 0, 1));
       radians_t bank {};
       airspeed_t airspeed {};
       rate_of_climb_t vertical_speed {};
       rate_of_climb_t air_mass_lift {};
       // The wing's loading: 1 carries the pilot alone at the reference
       // speed, more is the bar pushed out.
-      float loading = 1.0f;
+      scale_factor_t loading = 1.0f * scale_factor[one];
       control_signal_t turn {};
       control_signal_t speed_control {};
       bool flare {};
@@ -129,7 +129,7 @@ namespace moppe::mov {
     rate_of_climb_t ridge_lift (meters_t agl) const;
     meters_t height_above_ground () const;
     velocity_t air_velocity () const;
-    float load () const;
+    scale_factor_t load () const;
 
     const map::SurfaceGeometry& m_surface;
     position_t m_position {};
@@ -139,7 +139,7 @@ namespace moppe::mov {
     airspeed_t m_airspeed {};
     rate_of_climb_t m_vertical_speed {};
     rate_of_climb_t m_air_mass_lift {};
-    float m_loading = 1.0f;
+    scale_factor_t m_loading = 1.0f * scale_factor[one];
     control_signal_t m_turn {};
     control_signal_t m_speed_control {};
     bool m_flare = false;

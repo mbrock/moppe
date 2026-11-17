@@ -67,7 +67,8 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   static_assert (std::is_same_v<decltype (vehicle.velocity ()), velocity_t>);
   check_position (restored.position, saved.position);
   check_velocity (restored.velocity, saved.velocity);
-  check_vector (restored.heading, saved.heading);
+  check_vector (direction_value (restored.heading),
+                direction_value (saved.heading));
   MOPPE_CHECK_NEAR (
     radians_value (restored.yaw), radians_value (saved.yaw), 1e-6f);
   MOPPE_CHECK_NEAR (radians_value (restored.yaw_target),
@@ -79,10 +80,18 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   MOPPE_CHECK (restored.boost_flight == saved.boost_flight);
   MOPPE_CHECK_NEAR (
     scalar_value (restored.thrust), scalar_value (saved.thrust), 1e-6f);
-  MOPPE_CHECK_NEAR (restored.boost_input, saved.boost_input, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.boost_drive, saved.boost_drive, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.boost_level, saved.boost_level, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.boost_charge, saved.boost_charge, 1e-6f);
+  MOPPE_CHECK_NEAR (restored.boost_input.numerical_value_in (one),
+                    saved.boost_input.numerical_value_in (one),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (restored.boost_drive.numerical_value_in (one),
+                    saved.boost_drive.numerical_value_in (one),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (restored.boost_level.numerical_value_in (one),
+                    saved.boost_level.numerical_value_in (one),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (restored.boost_charge.numerical_value_in (one),
+                    saved.boost_charge.numerical_value_in (one),
+                    1e-6f);
   MOPPE_CHECK_NEAR (seconds_value (restored.boost_recharge_delay),
                     seconds_value (saved.boost_recharge_delay),
                     1e-6f);
@@ -121,7 +130,7 @@ MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
   mov::Vehicle::State flight = vehicle.state ();
   flight.position = position (Vec3 (50, 30, 50));
   flight.velocity = velocity (Vec3 (12, -4, 0));
-  flight.heading = Vec3 (1, 0, 0);
+  flight.heading = unit_direction (Vec3 (1, 0, 0));
   flight.airborne_time = seconds (0.3f);
   flight.fall_top = 30 * u::m;
   vehicle.restore (flight);
@@ -130,8 +139,8 @@ MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
 
   // The flight velocity points down, but the expected uphill landing tangent
   // points up. The surface normal also banks toward the downhill side.
-  MOPPE_CHECK (vehicle.render_orientation ()[1] > 0.0f);
-  MOPPE_CHECK (vehicle.render_normal ()[0] < 0.0f);
+  MOPPE_CHECK (direction_value (vehicle.forward ())[1] > 0.0f);
+  MOPPE_CHECK (direction_value (vehicle.up ())[0] < 0.0f);
 }
 
 MOPPE_TEST (air_steering_visibly_whips_the_motocross) {
@@ -152,7 +161,7 @@ MOPPE_TEST (air_steering_visibly_whips_the_motocross) {
   mov::Vehicle::State flight = vehicle.state ();
   flight.position = position (Vec3 (50, 30, 50));
   flight.velocity = velocity (Vec3 (0, 0, 18));
-  flight.heading = Vec3 (0, 0, 1);
+  flight.heading = unit_direction (Vec3 (0, 0, 1));
   flight.airborne_time = seconds (1.0f);
   flight.fall_top = 30 * u::m;
   vehicle.restore (flight);
@@ -161,8 +170,8 @@ MOPPE_TEST (air_steering_visibly_whips_the_motocross) {
   for (int i = 0; i < 30; ++i)
     vehicle.update (moppe::seconds (1.0f / 60.0f));
 
-  MOPPE_CHECK (std::abs (vehicle.orientation ()[0]) > 0.35f);
-  MOPPE_CHECK (std::abs (vehicle.render_orientation ()[0]) > 0.25f);
+  MOPPE_CHECK (std::abs (direction_value (vehicle.forward ())[0]) > 0.35f);
+  MOPPE_CHECK (std::abs (direction_value (vehicle.forward ())[0]) > 0.25f);
 }
 
 MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
@@ -182,7 +191,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   mov::Vehicle::State flight = session.bike ().state ();
   flight.position = position (Vec3 (50, 18, 50));
   flight.velocity = velocity (Vec3 (0, 0, 15));
-  flight.heading = Vec3 (0, 0, 1);
+  flight.heading = unit_direction (Vec3 (0, 0, 1));
   flight.airborne_time = seconds (1.5f);
   flight.fall_top = 18 * u::m;
   flight.boost_charge = 0.2f;
@@ -195,7 +204,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
 
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (15, 0, 0));
-  flight.heading = Vec3 (1, 0, 0);
+  flight.heading = unit_direction (Vec3 (1, 0, 0));
   session.bike ().restore (flight);
   game::advance_game_session (
     world, surface, session, game::InputFrame {}, step);
@@ -208,7 +217,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
 
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (0, 0, 15));
-  flight.heading = Vec3 (0, 0, 1);
+  flight.heading = unit_direction (Vec3 (0, 0, 1));
   session.bike ().restore (flight);
   game::advance_game_session (
     world, surface, session, game::InputFrame {}, step);
@@ -231,7 +240,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   MOPPE_CHECK_NEAR (session.logic ().m_landed_spin_degrees, 90.0f, 1.0f);
   MOPPE_CHECK (session.logic ().m_landed_points > 350);
   MOPPE_CHECK (session.logic ().m_score == session.logic ().m_landed_points);
-  MOPPE_CHECK (session.bike ().boost_charge () > 0.3f);
+  MOPPE_CHECK (session.bike ().boost_charge () > 0.3f * proportion[one]);
   MOPPE_CHECK (!session.dust ().state ().emissions.empty ());
 }
 
@@ -337,7 +346,8 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
 
   check_position (restored.position, saved.position);
   check_velocity (restored.velocity, saved.velocity);
-  check_vector (restored.heading, saved.heading);
+  check_vector (direction_value (restored.heading),
+                direction_value (saved.heading));
   MOPPE_CHECK_NEAR (
     radians_value (restored.bank), radians_value (saved.bank), 1e-6f);
   MOPPE_CHECK_NEAR (restored.airspeed.numerical_value_in (u::m / u::s),
@@ -403,7 +413,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   mov::Vehicle::State airborne = session.bike ().state ();
   airborne.position = position (Vec3 (80, 40, 80));
   airborne.velocity = velocity (Vec3 (0, 1, 20));
-  airborne.heading = Vec3 (0, 0, 1);
+  airborne.heading = unit_direction (Vec3 (0, 0, 1));
   airborne.airborne_time = seconds (0.3f);
   airborne.fall_top = 40 * u::m;
   session.bike ().restore (airborne);
@@ -573,7 +583,8 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
                     scalar_value (saved.fleet.bike.thrust),
                     1e-6f);
   check_position (restored.glider.position, saved.glider.position);
-  check_vector (restored.glider.heading, saved.glider.heading);
+  check_vector (direction_value (restored.glider.heading),
+                direction_value (saved.glider.heading));
   check_position (restored.walker.body.position, saved.walker.body.position);
   check_position (restored.camera.position, saved.camera.position);
   MOPPE_CHECK (restored.stars.count == saved.stars.count);
@@ -670,7 +681,8 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   MOPPE_CHECK_NEAR (replayed.logic.m_fov_k, live_state.logic.m_fov_k, 1e-6f);
   check_position (replayed.fleet.bike.position, live_state.fleet.bike.position);
   check_velocity (replayed.fleet.bike.velocity, live_state.fleet.bike.velocity);
-  check_vector (replayed.fleet.bike.heading, live_state.fleet.bike.heading);
+  check_vector (direction_value (replayed.fleet.bike.heading),
+                direction_value (live_state.fleet.bike.heading));
   check_position (replayed.camera.position, live_state.camera.position);
   check_position (replayed.camera.target, live_state.camera.target);
   check_velocity (replayed.camera.position_velocity,
@@ -1025,13 +1037,13 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   MOPPE_CHECK (session.subject_speed_kmh () < 45.0f);
 
   // Shift with the bars over skids it round to face back the way it came.
-  const Vec3 before = bike.orientation ();
+  const Vec3 before = direction_value (bike.forward ());
   run ({ .turn = 1.0f, .run = true }, 1.2f);
-  MOPPE_CHECK (bike.skid () > 0.9f);
-  MOPPE_CHECK (dot (before, bike.orientation ()) < -0.3f);
+  MOPPE_CHECK (bike.skid () > 0.9f * proportion[one]);
+  MOPPE_CHECK (dot (before, direction_value (bike.forward ())) < -0.3f);
   run ({}, 3.0f);
   MOPPE_CHECK (bike.grounded ());
-  MOPPE_CHECK (bike.skid () < 0.1f);
+  MOPPE_CHECK (bike.skid () < 0.1f * proportion[one]);
 
   // F gets off beside it, and it stays where it was left.
   run ({ .toggle_mount = true }, 0.1f);
