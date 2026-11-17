@@ -261,14 +261,14 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   session.walker ().spawn (position (Vec3 (140, 1.3f, 140)), Vec3 (0, 0, -1));
   run ({}, 2.0f);
   MOPPE_CHECK (ski.afloat ());
-  MOPPE_CHECK (!session.can_ride_jet_ski ());
+  MOPPE_CHECK (session.mount_within_reach () != game::Machine::jet_ski);
   MOPPE_CHECK_NEAR (ski.mass ().numerical_value_in (u::kg), 205.0f, 1e-3f);
 
   // Waded out beside it, F gets on, and the rider's weight with them.
   session.walker ().spawn (position (Vec3 (121.2f, -0.2f, 125.4f)),
                            Vec3 (0, 0, -1));
   run ({}, 0.2f);
-  MOPPE_CHECK (session.can_ride_jet_ski ());
+  MOPPE_CHECK (session.mount_within_reach () == game::Machine::jet_ski);
   MOPPE_CHECK (!session.haul_within_reach ());
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::jet_ski));

@@ -1862,34 +1862,9 @@ namespace moppe {
       } else if (st.can_ride_along) {
         key = mount_key;
         action = *mount_key ? "Ride along" : "A seat is free";
-      } else if (st.can_drive_tractor) {
+      } else if (st.take) {
         key = mount_key;
-        action = *mount_key ? "Drive the tractor" : "Tractor within reach";
-      } else if (st.can_drive_caddy) {
-        key = mount_key;
-        action = *mount_key ? "Drive the Caddy" : "Caddy within reach";
-      } else if (st.can_take_boat) {
-        key = mount_key;
-        action = *mount_key ? "Take the boat out" : "Boat within reach";
-      } else if (st.can_ride_jet_ski) {
-        key = mount_key;
-        action = *mount_key ? "Ride the jet ski" : "Jet ski within reach";
-      } else if (st.can_ride_long_john) {
-        key = mount_key;
-        action = *mount_key ? "Ride the Long John" : "Long John within reach";
-      } else if (st.can_ride_mountain_bike) {
-        key = mount_key;
-        action =
-          *mount_key ? "Ride the mountainbike" : "Mountainbike within reach";
-      } else if (st.can_fly) {
-        key = mount_key;
-        action = *mount_key ? "Fly the helicopter" : "Helicopter within reach";
-      } else if (st.can_drive) {
-        key = mount_key;
-        action = *mount_key ? "Drive" : "Jeep within reach";
-      } else if (st.can_mount) {
-        key = mount_key;
-        action = *mount_key ? "Ride" : "Bike within reach";
+        action = *mount_key ? st.take : st.at_hand;
       } else if (st.stuck) {
         action = "Stuck! Keep at it, or step out and haul";
       } else if (st.thumb_hint && st.thumb && *ride_key) {

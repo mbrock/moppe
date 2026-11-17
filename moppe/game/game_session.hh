@@ -197,26 +197,9 @@ namespace moppe::game {
     float subject_speed_kmh () const;
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
-    // What the mount key would take, on foot: of the bike, the jeep, the
-    // helicopter, the tractor, the Caddy, the mountainbike, the boat, the
-    // Long John, and the jet ski, the nearest within its reach.
+    // What the mount key would take, on foot: of the machines, the
+    // nearest within its reach (MachineKind::reach).
     std::optional<Machine> mount_within_reach () const;
-    // On foot nearest the jeep, within its reach.
-    bool can_drive () const;
-    // On foot nearest the helicopter, within its reach.
-    bool can_fly () const;
-    // On foot nearest the tractor, within its reach.
-    bool can_drive_tractor () const;
-    // On foot nearest the Caddy, within reach of its doors.
-    bool can_drive_caddy () const;
-    // On foot nearest the mountainbike, within reach of its bars.
-    bool can_ride_mountain_bike () const;
-    // On foot nearest the Long John, within reach of its saddle.
-    bool can_ride_long_john () const;
-    // On foot nearest the boat, within reach of its helm.
-    bool can_take_boat () const;
-    // On foot nearest the jet ski, within reach of its saddle.
-    bool can_ride_jet_ski () const;
     // Where someone stepping out of the boat, or off the jet ski, stands:
     // over whichever side, or the bow, has the shallowest water there, as
     // last reckoned.

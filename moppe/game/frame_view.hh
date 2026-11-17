@@ -222,23 +222,8 @@ namespace moppe::game {
     bool gliding = false;
     bool can_deploy_glider = false;
     bool can_drop_bike = false;
-    bool can_mount = false;
-    // On foot beside the jeep, which the mount key would drive.
-    bool can_drive = false;
-    // On foot beside the helicopter, which the mount key would fly.
-    bool can_fly = false;
-    // On foot beside the tractor, which the mount key would drive.
-    bool can_drive_tractor = false;
-    // On foot beside the Caddy, which the mount key would drive.
-    bool can_drive_caddy = false;
-    // On foot beside the mountainbike, which the mount key would ride.
-    bool can_ride_mountain_bike = false;
-    // On foot beside the Long John, which the mount key would ride.
-    bool can_ride_long_john = false;
-    // On foot beside the boat, which the mount key would take out.
-    bool can_take_boat = false;
-    // On foot beside the jet ski, which the mount key would ride.
-    bool can_ride_jet_ski = false;
+    // On foot beside a machine, the one the mount key would take.
+    std::optional<Machine> at_hand;
     // On foot beside a stuck machine, which the mount key would haul
     // out; hauling one; or driving one that is stuck (game/rescue.hh).
     const char* haul = nullptr;

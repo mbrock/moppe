@@ -769,8 +769,8 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   // Away from the bike and the jeep, a few steps from the helicopter.
   session.helicopter ().place (Vec3 (180, 0, 180), Vec3 (0, 0, 1));
   session.walker ().spawn (position (Vec3 (178, 10.1f, 180)), Vec3 (0, 0, 1));
-  MOPPE_CHECK (session.can_fly ());
-  MOPPE_CHECK (!session.can_drive ());
+  MOPPE_CHECK (session.mount_within_reach () == game::Machine::helicopter);
+  MOPPE_CHECK (session.mount_within_reach () != game::Machine::jeep);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing ==
                game::Doing::driving (game::Machine::helicopter));
@@ -894,9 +894,9 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
   // Away from everything else, a couple of steps from the tractor.
   session.tractor ().place (Vec3 (60, 0, 180), Vec3 (0, 0, 1));
   session.walker ().spawn (position (Vec3 (62, 10.1f, 180)), Vec3 (0, 0, 1));
-  MOPPE_CHECK (session.can_drive_tractor ());
-  MOPPE_CHECK (!session.can_drive ());
-  MOPPE_CHECK (!session.can_fly ());
+  MOPPE_CHECK (session.mount_within_reach () == game::Machine::tractor);
+  MOPPE_CHECK (session.mount_within_reach () != game::Machine::jeep);
+  MOPPE_CHECK (session.mount_within_reach () != game::Machine::helicopter);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::tractor));
 
@@ -944,9 +944,9 @@ MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   session.caddy ().place (Vec3 (190, 0, 60), Vec3 (0, 0, 1));
   session.walker ().spawn (position (Vec3 (191.6f, 10.1f, 60.3f)),
                            Vec3 (0, 0, 1));
-  MOPPE_CHECK (session.can_drive_caddy ());
-  MOPPE_CHECK (!session.can_drive ());
-  MOPPE_CHECK (!session.can_drive_tractor ());
+  MOPPE_CHECK (session.mount_within_reach () == game::Machine::caddy);
+  MOPPE_CHECK (session.mount_within_reach () != game::Machine::jeep);
+  MOPPE_CHECK (session.mount_within_reach () != game::Machine::tractor);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::caddy));
 
@@ -1003,7 +1003,7 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 40.0f)),
                            Vec3 (0, 0, 1));
   run ({}, 0.5f);
-  MOPPE_CHECK (session.can_ride_mountain_bike ());
+  MOPPE_CHECK (session.mount_within_reach () == game::Machine::mountain_bike);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing ==
                game::Doing::driving (game::Machine::mountain_bike));
@@ -1068,11 +1068,11 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 42.2f)),
                            Vec3 (0, 0, 1));
   run ({}, 0.5f);
-  MOPPE_CHECK (!session.can_ride_long_john ());
+  MOPPE_CHECK (session.mount_within_reach () != game::Machine::long_john);
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 39.2f)),
                            Vec3 (0, 0, 1));
   run ({}, 0.5f);
-  MOPPE_CHECK (session.can_ride_long_john ());
+  MOPPE_CHECK (session.mount_within_reach () == game::Machine::long_john);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing ==
                game::Doing::driving (game::Machine::long_john));

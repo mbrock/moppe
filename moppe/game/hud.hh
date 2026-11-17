@@ -73,31 +73,19 @@ namespace moppe {
       bool gliding;
       bool can_deploy_glider;
       bool can_drop_bike;
-      // On foot within reach of the bike.
-      bool can_mount;
-      // On foot beside this player's jeep, or the other player's with a
-      // seat free.
-      bool can_drive = false;
+      // On foot beside the other player's jeep with a seat free.
       bool can_ride_along = false;
-      // On foot beside the tractor, or the Caddy.
-      bool can_drive_tractor = false;
-      bool can_drive_caddy = false;
-      // On foot beside the mountainbike.
-      bool can_ride_mountain_bike = false;
-      // On foot beside the Long John.
-      bool can_ride_long_john = false;
-      // On foot beside the boat.
-      bool can_take_boat = false;
-      // On foot beside the jet ski.
-      bool can_ride_jet_ski = false;
+      // On foot beside a machine, what the mount key would do with it
+      // ("Drive the tractor"), and what to say without a key for it
+      // ("Tractor within reach") (MachineKind).
+      const char* take = nullptr;
+      const char* at_hand = nullptr;
       // On foot beside a stuck machine ("the tractor"), which the mount
       // key would haul out; the machine being hauled; and whether the one
       // being driven is stuck.
       const char* haul = nullptr;
       const char* hauling = nullptr;
       bool stuck = false;
-      // On foot beside the helicopter.
-      bool can_fly = false;
       // Flying it: whether it is low and slow enough to step out.
       bool flying = false;
       bool can_step_out = false;
@@ -269,7 +257,7 @@ namespace moppe {
             spin_degrees (0), landed_airtime_s (0), landed_spin_degrees (0),
             landed_points (0), landed_clean (false), landed_age_s (10),
             on_foot (false), gliding (false), can_deploy_glider (false),
-            can_drop_bike (false), can_mount (false), vertical_speed_mps (0),
+            can_drop_bike (false), vertical_speed_mps (0),
             frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
     };
 

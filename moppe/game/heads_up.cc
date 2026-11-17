@@ -275,62 +275,32 @@ namespace moppe::game {
     case Doing::Way::passenger:
       state.dismount = "Step out";
       break;
-    case Doing::Way::driving:
-      switch (w.session.logic ().m_doing.machine) {
-      case Machine::bike:
-        state.thumb = "Boost";
-        state.dismount = "Get off";
-        state.skids = true;
-        state.wheelies = true;
+    case Doing::Way::driving: {
+      const Machine machine = w.session.logic ().m_doing.machine;
+      const MachineKind& kind = machine_kind (machine);
+      state.thumb = kind.thumb;
+      state.dismount = kind.leave;
+      state.skids = kind.skids;
+      state.wheelies = kind.wheelies;
+      if (machine != Machine::helicopter)
         break;
-      case Machine::mountain_bike:
-        state.thumb = "Hop";
-        state.dismount = "Get off";
-        state.skids = true;
-        break;
-      case Machine::long_john:
-        state.dismount = "Get off";
-        state.skids = true;
-        break;
-      case Machine::jeep:
-        state.thumb = "Brake";
-        state.dismount = "Step out";
-        break;
-      case Machine::tractor:
-        state.thumb = "Brake";
-        state.dismount = "Climb down";
-        break;
-      case Machine::caddy:
-        state.thumb = "Brake";
-        state.dismount = "Step out";
-        break;
-      case Machine::boat:
-        state.thumb = "Flat out";
-        state.dismount = "Step ashore";
-        break;
-      case Machine::jet_ski:
-        state.dismount = "Get off";
-        break;
-      case Machine::helicopter:
-        state.thumb = "Climb";
-        state.flying = true;
-        state.can_step_out = w.session.can_step_out_of_helicopter ();
-        // Letting go is prompted only once the load hangs near the
-        // ground, though the key lets it fall from any height.
-        if (w.session.logic ().m_sling.hooked &&
-            w.session.helicopter ().altitude () < sling_hang + 4.0f * u::m)
-          state.slung = machine_shape (w.session.logic ().m_sling.load).name;
-        if (const std::optional<Machine> under = w.session.hook_within_reach ())
-          state.hook = machine_shape (*under).name;
-        if (w.session.logic ().m_sling.hooked)
-          state.dismount = "Let go";
-        else if (state.hook)
-          state.dismount = "Hook on";
-        else if (state.can_step_out)
-          state.dismount = "Step out";
-        break;
-      }
+      state.flying = true;
+      state.can_step_out = w.session.can_step_out_of_helicopter ();
+      // Letting go is prompted only once the load hangs near the
+      // ground, though the key lets it fall from any height.
+      if (w.session.logic ().m_sling.hooked &&
+          w.session.helicopter ().altitude () < sling_hang + 4.0f * u::m)
+        state.slung = machine_kind (w.session.logic ().m_sling.load).name;
+      if (const std::optional<Machine> under = w.session.hook_within_reach ())
+        state.hook = machine_kind (*under).name;
+      if (w.session.logic ().m_sling.hooked)
+        state.dismount = "Let go";
+      else if (state.hook)
+        state.dismount = "Hook on";
+      else if (!state.can_step_out)
+        state.dismount = nullptr;
       break;
+    }
     }
     if (w.session.logic ().m_doing != Doing::on_foot () ||
         state.mushroom_in_reach)
@@ -516,7 +486,7 @@ namespace moppe::game {
         "",
         HudState::Waymark::of (machine),
         w.session.machine_body (machine).position +
-          Vec3 (0, meters_value (machine_shape (machine).mark_height), 0),
+          Vec3 (0, meters_value (machine_kind (machine).mark_height), 0),
         30.0f,
         50.0f,
         pale);
@@ -548,15 +518,10 @@ namespace moppe::game {
     state.gliding = reading.gliding;
     state.can_deploy_glider = reading.can_deploy_glider;
     state.can_drop_bike = reading.can_drop_bike;
-    state.can_mount = reading.can_mount;
-    state.can_drive = reading.can_drive;
-    state.can_fly = reading.can_fly;
-    state.can_drive_tractor = reading.can_drive_tractor;
-    state.can_drive_caddy = reading.can_drive_caddy;
-    state.can_take_boat = reading.can_take_boat;
-    state.can_ride_jet_ski = reading.can_ride_jet_ski;
-    state.can_ride_mountain_bike = reading.can_ride_mountain_bike;
-    state.can_ride_long_john = reading.can_ride_long_john;
+    if (reading.at_hand) {
+      state.take = machine_kind (*reading.at_hand).take;
+      state.at_hand = machine_kind (*reading.at_hand).at_hand;
+    }
     state.haul = reading.haul;
     state.hauling = reading.hauling;
     state.stuck = reading.stuck;

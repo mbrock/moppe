@@ -348,8 +348,8 @@ namespace moppe::game {
       const MachineBody body = input.session.machine_body (load);
       SlingPose sling;
       sling.hook = input.session.helicopter ().point (sling_hook ());
-      sling.ring = body.point (machine_shape (load).ring);
-      const std::array<Vec3, 4> legs = machine_shape (load).legs;
+      sling.ring = body.point (machine_kind (load).ring);
+      const std::array<Vec3, 4> legs = machine_kind (load).legs;
       for (std::size_t i = 0; i < legs.size (); ++i)
         sling.legs[i] = body.point (legs[i]);
       sling.taut = logic.m_sling.stretch > -0.05f * u::m;
@@ -409,22 +409,11 @@ namespace moppe::game {
     hud.gliding = logic.m_doing == Doing::gliding ();
     hud.can_deploy_glider = input.session.can_deploy_glider (input.surface);
     hud.can_drop_bike = input.session.can_drop_bike ();
-    // The remount reach of GameSession's toggle_mount, five metres.
-    hud.can_mount = logic.m_doing == Doing::on_foot () &&
-                    length2 (input.session.walker ().position () -
-                             input.session.bike ().position ()) < 5.0f * 5.0f;
-    hud.can_drive = input.session.can_drive ();
-    hud.can_fly = input.session.can_fly ();
-    hud.can_drive_tractor = input.session.can_drive_tractor ();
-    hud.can_drive_caddy = input.session.can_drive_caddy ();
-    hud.can_ride_mountain_bike = input.session.can_ride_mountain_bike ();
-    hud.can_ride_long_john = input.session.can_ride_long_john ();
-    hud.can_take_boat = input.session.can_take_boat ();
-    hud.can_ride_jet_ski = input.session.can_ride_jet_ski ();
+    hud.at_hand = input.session.mount_within_reach ();
     if (const auto stuck = input.session.haul_within_reach ())
-      hud.haul = machine_shape (*stuck).name;
+      hud.haul = machine_kind (*stuck).name;
     if (const auto held = input.session.hauling ())
-      hud.hauling = machine_shape (*held).name;
+      hud.hauling = machine_kind (*held).name;
     hud.stuck = input.session.stuck ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();

@@ -1,7 +1,7 @@
 #ifndef MOPPE_GAME_DOING_HH
 #define MOPPE_GAME_DOING_HH
 
-#include <moppe/game/rescue.hh>
+#include <moppe/game/machine.hh>
 
 #include <cstdint>
 #include <optional>
@@ -38,8 +38,8 @@ namespace moppe::game {
   }
   // The bikes ridden by pedalling, which have no jets.
   inline bool pedalled (Doing doing) {
-    return doing == Doing::driving (Machine::mountain_bike) ||
-           doing == Doing::driving (Machine::long_john);
+    return doing.way == Doing::Way::driving &&
+           machine_kind (doing.machine).pedalled;
   }
 }
 

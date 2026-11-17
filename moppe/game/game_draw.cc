@@ -202,33 +202,9 @@ namespace moppe {
           case Doing::Way::passenger:
             break;
           case Doing::Way::driving:
-            switch (frame.actors.active_mode.machine) {
-            case Machine::bike:
-              interaction_radius = 1.15f;
-              break;
-            case Machine::jeep:
-              interaction_radius = 1.7f;
-              break;
-            case Machine::tractor:
-              interaction_radius = 1.8f;
-              break;
-            case Machine::caddy:
-              interaction_radius = 1.6f;
-              break;
-            case Machine::mountain_bike:
-              interaction_radius = 0.6f;
-              break;
-            case Machine::long_john:
-              interaction_radius = 0.8f;
-              break;
-            case Machine::helicopter:
-              // The downwash flattens the grass under it.
-              interaction_radius = 4.0f;
-              break;
-            case Machine::boat:
-            case Machine::jet_ski:
-              break;
-            }
+            interaction_radius =
+              meters_value (machine_kind (frame.actors.active_mode.machine)
+                              .undergrowth_parting);
             break;
           }
         }

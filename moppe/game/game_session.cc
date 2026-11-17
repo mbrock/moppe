@@ -143,8 +143,8 @@ namespace moppe::game {
       Haul& haul = session.logic ().m_haul;
       haul = { .active = true,
                .machine = machine,
-               .tie = (front ? machine_shape (machine).front_tie
-                             : machine_shape (machine).back_tie) };
+               .tie = (front ? machine_kind (machine).front_tie
+                             : machine_kind (machine).back_tie) };
       Vec3 out = feet - body.point (haul.tie);
       out[1] = 0.0f;
       haul.rope = std::clamp (length (out), 1.0f, 1.8f) * u::m;
@@ -162,9 +162,25 @@ namespace moppe::game {
       haul.active = false;
     }
 
-    Vec3 level_heading (Vec3 heading) {
-      heading[1] = 0.0f;
-      return length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
+    // Where the driver sits, in the world: a bike's rider over its
+    // reference point.
+    Vec3 seat_of (const mov::Vehicle& bike) {
+      return bike.position ();
+    }
+    Vec3 seat_of (const mov::Car& car) {
+      return car.driver_seat ();
+    }
+    Vec3 seat_of (const mov::Tractor& tractor) {
+      return tractor.driver_seat ();
+    }
+    Vec3 seat_of (const mov::Helicopter& heli) {
+      return heli.pilot_seat ();
+    }
+    Vec3 seat_of (const mov::Boat& boat) {
+      return boat.helm_seat ();
+    }
+    Vec3 seat_of (const mov::JetSki& ski) {
+      return ski.seat ();
     }
 
     float ground_at (const map::SurfaceGeometry& surface, const Vec3& at) {
@@ -188,7 +204,7 @@ namespace moppe::game {
       }
       const Vec3 hook = heli.point (sling_hook ());
       const Vec3 ring = session.machine_body (sling.load)
-                          .point (machine_shape (sling.load).ring);
+                          .point (machine_kind (sling.load).ring);
       const force_t pull = sling_pull (sling, hook, ring, dt);
       if (length2 (force_value (pull)) > 0.0f) {
         session.push_machine (
@@ -198,140 +214,66 @@ namespace moppe::game {
       heli.set_load (-pull, sling_hang);
     }
 
+    // Out of `machine` and onto the feet, where its kind says
+    // (MachineKind::step_out), letting go of everything.
+    void step_out (GameSession& session, Machine machine) {
+      GameLogicState& logic = session.logic ();
+      const MachineKind& kind = machine_kind (machine);
+      drive (session.fleet (), machine, Controls {}, false);
+      visit (session.fleet (), machine, [&] (Machine, const Drivable auto& b) {
+        const Vec3 at =
+          kind.step_out ? b.point (*kind.step_out) : session.boat_landing ();
+        // Off the water's machines one steps with half their way on.
+        const float keep = kind.medium == Medium::water ? 0.5f : 1.0f;
+        session.walker ().spawn (moppe::position (at),
+                                 b.forward (),
+                                 moppe::velocity (b.velocity () * keep));
+      });
+      session.set_mode (Doing::on_foot ());
+      steer (session, logic.m_controls);
+    }
+
     void toggle_mount (GameSession& session) {
       GameLogicState& logic = session.logic ();
-      // A passenger's seat is the game's to give and take away.
-      if (logic.m_doing == Doing::gliding () ||
-          logic.m_doing == Doing::riding_along ())
+      switch (logic.m_doing.way) {
+      case Doing::Way::glider:
+      case Doing::Way::passenger:
+        // A passenger's seat is the game's to give and take away.
         return;
-
-      if (logic.m_doing == Doing::driving (Machine::helicopter)) {
-        // With a machine on the line, the key lets it go first; over one,
-        // it hooks it on.
-        if (logic.m_sling.hooked) {
-          logic.m_sling.hooked = false;
-          return;
+      case Doing::Way::driving: {
+        const Machine machine = logic.m_doing.machine;
+        if (machine == Machine::helicopter) {
+          // With a machine on the line, the key lets it go first; over one,
+          // it hooks it on.
+          if (logic.m_sling.hooked) {
+            logic.m_sling.hooked = false;
+            return;
+          }
+          if (const std::optional<Machine> under =
+                session.hook_within_reach ()) {
+            // The line goes on as long as it is: no slack, and none too
+            // little.
+            const Vec3 hook = session.helicopter ().point (sling_hook ());
+            const Vec3 ring =
+              session.machine_body (*under).point (machine_kind (*under).ring);
+            const meters_t span = length (hook - ring) * u::m;
+            logic.m_sling = { .hooked = true,
+                              .load = *under,
+                              .stretch =
+                                std::min (span - sling_line, meters_t {}),
+                              .payout =
+                                std::max (span - sling_line, meters_t {}) };
+            return;
+          }
+          // Out on the pilot's side once down near the ground.
+          if (!session.can_step_out_of_helicopter ())
+            return;
         }
-        if (const std::optional<Machine> under = session.hook_within_reach ()) {
-          // The line goes on as long as it is: no slack, and none too
-          // little.
-          const Vec3 hook = session.helicopter ().point (sling_hook ());
-          const Vec3 ring =
-            session.machine_body (*under).point (machine_shape (*under).ring);
-          const meters_t span = length (hook - ring) * u::m;
-          logic.m_sling = { .hooked = true,
-                            .load = *under,
-                            .stretch =
-                              std::min (span - sling_line, meters_t {}),
-                            .payout =
-                              std::max (span - sling_line, meters_t {}) };
-          return;
-        }
-        // Out on the pilot's side, the right, once down near the ground.
-        if (!session.can_step_out_of_helicopter ())
-          return;
-        mov::Helicopter& heli = session.helicopter ();
-        heli.set_drive (0);
-        heli.set_turn (0);
-        heli.set_lift (0);
-        Vec3 heading = heli.forward ();
-        heading[1] = 0.0f;
-        session.walker ().spawn (
-          moppe::position (heli.point (Vec3 (-2.0f, 0.3f, 0.4f))),
-          length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1),
-          moppe::velocity (heli.velocity ()));
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
+        step_out (session, machine);
         return;
       }
-
-      if (logic.m_doing == Doing::driving (Machine::tractor)) {
-        // Down off the left side, ahead of the big wheel.
-        mov::Tractor& tractor = session.tractor ();
-        tractor.set_drive (0);
-        tractor.set_turn (0);
-        tractor.set_brake (false);
-        session.walker ().spawn (
-          moppe::position (tractor.point (Vec3 (1.2f, 0.1f, 0.35f))),
-          tractor.forward (),
-          moppe::velocity (tractor.velocity ()));
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
-        return;
-      }
-
-      if (logic.m_doing == Doing::driving (Machine::caddy)) {
-        // Out of the driver's door, on the left.
-        mov::Car& caddy = session.caddy ();
-        caddy.set_drive (0);
-        caddy.set_turn (0);
-        caddy.set_brake (false);
-        session.walker ().spawn (
-          moppe::position (caddy.point (Vec3 (1.35f, 0.2f, 0.25f))),
-          caddy.forward (),
-          moppe::velocity (caddy.velocity ()));
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
-        return;
-      }
-
-      if (pedalled (logic.m_doing)) {
-        // Off on the left, as a cyclist gets off.
-        mov::Vehicle& bike = session.ridden_bike ();
-        const Vec3 heading = level_heading (bike.orientation ());
-        session.walker ().spawn (
-          moppe::position (bike.position () +
-                           cross (Vec3 (0, 1, 0), heading) * 0.8f),
-          heading,
-          bike.physical_velocity ());
-        bike.set_thrust (0);
-        bike.set_yaw (0 * u::deg);
-        bike.set_skid (0);
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
-        return;
-      }
-
-      if (logic.m_doing == Doing::driving (Machine::boat)) {
-        // Over whichever side, or the bow, has the shallowest water.
-        mov::Boat& boat = session.boat ();
-        boat.set_drive (0);
-        boat.set_turn (0);
-        boat.set_boost (0);
-        session.walker ().spawn (moppe::position (session.boat_landing ()),
-                                 level_heading (boat.forward ()),
-                                 moppe::velocity (boat.velocity () * 0.5f));
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
-        return;
-      }
-
-      if (logic.m_doing == Doing::driving (Machine::jet_ski)) {
-        // Off over whichever side, or the bow, has the shallowest water.
-        mov::JetSki& ski = session.jet_ski ();
-        ski.set_drive (0);
-        ski.set_turn (0);
-        session.walker ().spawn (moppe::position (session.boat_landing ()),
-                                 level_heading (ski.forward ()),
-                                 moppe::velocity (ski.velocity () * 0.5f));
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
-        return;
-      }
-
-      if (logic.m_doing == Doing::driving (Machine::jeep)) {
-        // Step out on the driver's side.
-        mov::Car& jeep = session.jeep ();
-        jeep.set_drive (0);
-        jeep.set_turn (0);
-        jeep.set_brake (false);
-        session.walker ().spawn (
-          moppe::position (jeep.point (Vec3 (1.75f, 0.3f, -0.1f))),
-          jeep.forward (),
-          moppe::velocity (jeep.velocity ()));
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
-        return;
+      case Doing::Way::foot:
+        break;
       }
 
       // On foot, holding a rope: let go of it. Beside a stuck machine:
@@ -346,38 +288,8 @@ namespace moppe::game {
       }
 
       // On foot: take whatever stands nearest within reach.
-      const std::optional<Machine> reach = session.mount_within_reach ();
-      const Doing into = reach && *reach != Machine::bike
-                           ? Doing::driving (*reach)
-                           : Doing::on_foot ();
-      if (into != Doing::on_foot ()) {
-        session.set_mode (into);
-        steer (session, logic.m_controls);
-        return;
-      }
-
-      if (logic.m_doing != Doing::on_foot ()) {
-        // Step off to the side of the bike.
-        mov::Vehicle& vehicle = session.bike ();
-        const Vec3 heading = vehicle.orientation ();
-        const Vec3 side (heading[2], 0, -heading[0]);
-        session.walker ().spawn (
-          moppe::position (vehicle.position () + side * 1.8f),
-          heading,
-          vehicle.physical_velocity ());
-        vehicle.set_thrust (0);
-        vehicle.set_yaw (0 * u::deg);
-        vehicle.set_boost (0, 0);
-        vehicle.set_skid (0);
-        vehicle.set_wheelie (0);
-        session.set_mode (Doing::on_foot ());
-        steer (session, logic.m_controls);
-        return;
-      }
-
-      // On foot: remount the bike when standing next to it.
-      if (reach == Machine::bike) {
-        session.set_mode (Doing::driving (Machine::bike));
+      if (const std::optional<Machine> reach = session.mount_within_reach ()) {
+        session.set_mode (Doing::driving (*reach));
         steer (session, logic.m_controls);
       }
     }
@@ -638,7 +550,7 @@ namespace moppe::game {
       session.push_machine (
         haul.machine, tie, quantity_cast<isq::impulse> (force.pull * step));
       session.push_machine (haul.machine,
-                            body.point (machine_shape (haul.machine).centre),
+                            body.point (machine_kind (haul.machine).centre),
                             quantity_cast<isq::impulse> (force.lift * step));
       walker.tether (tie,
                      std::max (0.6f * u::m, haul.rope - rope_give),
@@ -666,7 +578,7 @@ namespace moppe::game {
         const velocity_t kick = heave (trouble, body.forward, throttle);
         ++trouble.heaves;
         session.push_machine (machine,
-                              body.point (machine_shape (machine).centre),
+                              body.point (machine_kind (machine).centre),
                               quantity_cast<isq::impulse> (kick * body.mass));
         puff (session,
               body.position - body.up * 0.3f,
@@ -894,74 +806,18 @@ namespace moppe::game {
     if (m_logic.m_doing != Doing::on_foot ())
       return std::nullopt;
     const Vec3 feet = m_walker.position ();
-    // Each measured from where one gets on or in, with how far off that
-    // may be: the bike's saddle, the jeep's middle, the helicopter's
-    // cabin a little ahead of its mast, the tractor between its axles,
-    // the Caddy's cab, and the mountainbike between its wheels.
-    const struct {
-      Machine machine;
-      Vec3 at;
-      float reach;
-    } mounts[] = {
-      { Machine::bike, m_fleet.bike.position (), 5.0f },
-      { Machine::jeep, m_fleet.jeep.position (), 4.5f },
-      { Machine::helicopter,
-        m_fleet.helicopter.point (Vec3 (0, 0, 0.4f)),
-        4.0f },
-      { Machine::tractor, m_fleet.tractor.position (), 3.6f },
-      { Machine::caddy, m_fleet.caddy.point (Vec3 (0, 0, 0.25f)), 3.4f },
-      { Machine::mountain_bike, m_fleet.mountain_bike.position (), 2.4f },
-      // The Long John from its saddle, behind its middle.
-      { Machine::long_john,
-        m_fleet.long_john.position () - m_fleet.long_john.orientation () * 0.7f,
-        2.4f },
-      // The boat from its middle: it may lie a step out in the water.
-      { Machine::boat, m_fleet.boat.point (Vec3 (0, 0, 0.6f)), 4.0f },
-      // The jet ski from its saddle; it too may lie a step out.
-      { Machine::jet_ski, m_fleet.jet_ski.point (Vec3 (0, 0, 0.1f)), 3.6f },
-    };
     std::optional<Machine> nearest;
     float best = 1e30f;
-    for (const auto& m : mounts) {
-      const float d = length2 (feet - m.at);
-      if (d < m.reach * m.reach && d < best) {
+    for_each_machine (m_fleet, [&] (Machine m, const Drivable auto& b) {
+      const MachineKind& kind = machine_kind (m);
+      const float reach = meters_value (kind.reach);
+      const float d = length2 (feet - b.point (kind.reach_from));
+      if (d < reach * reach && d < best) {
         best = d;
-        nearest = m.machine;
+        nearest = m;
       }
-    }
+    });
     return nearest;
-  }
-
-  bool GameSession::can_drive () const {
-    return mount_within_reach () == Machine::jeep;
-  }
-
-  bool GameSession::can_fly () const {
-    return mount_within_reach () == Machine::helicopter;
-  }
-
-  bool GameSession::can_drive_tractor () const {
-    return mount_within_reach () == Machine::tractor;
-  }
-
-  bool GameSession::can_drive_caddy () const {
-    return mount_within_reach () == Machine::caddy;
-  }
-
-  bool GameSession::can_ride_mountain_bike () const {
-    return mount_within_reach () == Machine::mountain_bike;
-  }
-
-  bool GameSession::can_ride_long_john () const {
-    return mount_within_reach () == Machine::long_john;
-  }
-
-  bool GameSession::can_take_boat () const {
-    return mount_within_reach () == Machine::boat;
-  }
-
-  bool GameSession::can_ride_jet_ski () const {
-    return mount_within_reach () == Machine::jet_ski;
   }
 
   std::optional<Machine> GameSession::hook_within_reach () const {
@@ -976,7 +832,7 @@ namespace moppe::game {
       if (machine == Machine::helicopter)
         continue;
       const Vec3 ring =
-        machine_body (machine).point (machine_shape (machine).ring);
+        machine_body (machine).point (machine_kind (machine).ring);
       const Vec3 off = hook - ring;
       const float aside = std::hypot (off[0], off[2]);
       if (off[1] < 1.0f || aside > meters_value (sling_reach) ||
@@ -1063,126 +919,36 @@ namespace moppe::game {
       rig.distance = 8.0f * u::m;
       rig.nearest = 3.4f * u::m;
       break;
-    case Doing::Way::driving:
-      switch (m_logic.m_doing.machine) {
-      case Machine::jeep:
-        rig.eye = m_fleet.jeep.driver_seat () + m_fleet.jeep.up () * 0.78f +
-                  m_fleet.jeep.forward () * 0.08f;
-        rig.ahead = m_fleet.jeep.forward ();
-        rig.pivot = m_fleet.jeep.position () + Vec3 (0, 0.9f, 0);
-        rig.velocity = m_fleet.jeep.velocity ();
-        rig.distance = 8.0f * u::m;
-        rig.nearest = 3.4f * u::m;
+    case Doing::Way::driving: {
+      const Machine machine = m_logic.m_doing.machine;
+      const SeatView& view = machine_kind (machine).view;
+      visit (m_fleet, machine, [&] (Machine, const Drivable auto& b) {
+        rig.eye =
+          seat_of (b) + b.up () * view.eye[1] + b.forward () * view.eye[2];
+        rig.ahead = b.forward ();
+        rig.pivot =
+          b.position () + Vec3 (0, meters_value (view.pivot_height), 0);
+        rig.velocity = b.velocity ();
+      });
+      rig.distance = view.distance;
+      rig.nearest = view.nearest;
+      rig.elevation = view.elevation;
+      if (machine != Machine::helicopter)
         break;
-      case Machine::caddy:
-        rig.eye = m_fleet.caddy.driver_seat () + m_fleet.caddy.up () * 0.70f +
-                  m_fleet.caddy.forward () * 0.06f;
-        rig.ahead = m_fleet.caddy.forward ();
-        rig.pivot = m_fleet.caddy.position () + Vec3 (0, 1.0f, 0);
-        rig.velocity = m_fleet.caddy.velocity ();
-        rig.distance = 8.5f * u::m;
-        rig.nearest = 3.6f * u::m;
-        break;
-      case Machine::tractor:
-        rig.eye = m_fleet.tractor.driver_seat () +
-                  m_fleet.tractor.up () * 0.80f +
-                  m_fleet.tractor.forward () * 0.1f;
-        rig.ahead = m_fleet.tractor.forward ();
-        rig.pivot = m_fleet.tractor.position () + Vec3 (0, 1.5f, 0);
-        rig.velocity = m_fleet.tractor.velocity ();
-        // Back over the trailer.
-        rig.distance = 8.5f * u::m;
-        rig.nearest = 3.0f * u::m;
-        break;
-      case Machine::helicopter: {
-        rig.eye = m_fleet.helicopter.pilot_seat () +
-                  m_fleet.helicopter.up () * 0.78f +
-                  m_fleet.helicopter.forward () * 0.1f;
-        // Behind the way it heads, level, whatever its nose is doing.
-        Vec3 ahead = m_fleet.helicopter.forward ();
-        ahead[1] = 0.0f;
-        rig.ahead =
-          length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
-        rig.pivot = m_fleet.helicopter.position () + Vec3 (0, 1.6f, 0);
-        rig.velocity = m_fleet.helicopter.velocity ();
-        rig.distance = 12.0f * u::m;
-        rig.nearest = 5.0f * u::m;
-        rig.elevation = 21.0f * u::deg;
-        // Further off and lower, to see what hangs under it too.
-        if (m_logic.m_sling.hooked) {
-          rig.pivot = rig.pivot * 0.65f +
-                      machine_body (m_logic.m_sling.load).position * 0.35f;
-          rig.distance = 24.0f * u::m;
-          rig.nearest = 8.0f * u::m;
-          rig.elevation = 14.0f * u::deg;
-        }
-        break;
-      }
-      case Machine::boat:
-        rig.eye = m_fleet.boat.helm_seat () + m_fleet.boat.up () * 0.85f +
-                  m_fleet.boat.forward () * 0.1f;
-        rig.ahead = m_fleet.boat.forward ();
-        rig.pivot = m_fleet.boat.position () + Vec3 (0, 1.0f, 0);
-        rig.velocity = m_fleet.boat.velocity ();
-        rig.distance = 6.5f * u::m;
-        rig.nearest = 3.0f * u::m;
-        rig.elevation = 16.0f * u::deg;
-        break;
-      case Machine::jet_ski:
-        // Close and low behind it, as the thing is quick and small.
-        rig.eye = m_fleet.jet_ski.seat () + m_fleet.jet_ski.up () * 0.72f +
-                  m_fleet.jet_ski.forward () * 0.12f;
-        rig.ahead = m_fleet.jet_ski.forward ();
-        rig.pivot = m_fleet.jet_ski.position () + Vec3 (0, 1.0f, 0);
-        rig.velocity = m_fleet.jet_ski.velocity ();
-        rig.distance = 6.0f * u::m;
-        rig.nearest = 2.8f * u::m;
-        rig.elevation = 15.0f * u::deg;
-        break;
-      case Machine::mountain_bike: {
-        // The bike is life size, its reference point between the axles at
-        // their height; the rider's eyes are some 1.3 m over that.
-        const mov::Vehicle& bike = m_fleet.mountain_bike;
-        rig.eye = bike.position () + bike.render_normal () * 1.3f +
-                  bike.orientation () * 0.1f;
-        rig.ahead = bike.orientation ();
-        rig.pivot = bike.position () + Vec3 (0, 0.75f, 0);
-        rig.velocity = bike.velocity ();
-        rig.distance = 4.6f * u::m;
-        rig.nearest = 1.6f * u::m;
-        rig.elevation = 15.0f * u::deg;
-        break;
-      }
-      case Machine::long_john: {
-        // The rider sits over the back wheel, some 0.7 m behind the
-        // reference point midway between the axles, eyes 1.45 m over it;
-        // the camera stands back far enough to take in the box ahead.
-        const mov::Vehicle& bike = m_fleet.long_john;
-        rig.eye = bike.position () + bike.render_normal () * 1.45f -
-                  bike.orientation () * 0.6f;
-        rig.ahead = bike.orientation ();
-        rig.pivot = bike.position () + Vec3 (0, 0.8f, 0);
-        rig.velocity = bike.velocity ();
-        rig.distance = 5.6f * u::m;
-        rig.nearest = 2.0f * u::m;
-        rig.elevation = 15.0f * u::deg;
-        break;
-      }
-      case Machine::bike:
-        // The Trail 90 is life size, its reference point between the axles
-        // at their height; the seated rider's eyes are some 1.4 m over it.
-        rig.eye = m_fleet.bike.position () +
-                  m_fleet.bike.render_normal () * 1.4f +
-                  m_fleet.bike.orientation () * 0.05f;
-        rig.ahead = m_fleet.bike.orientation ();
-        rig.pivot = m_fleet.bike.position () + Vec3 (0, 0.8f, 0);
-        rig.velocity = m_fleet.bike.velocity ();
-        rig.distance = 5.0f * u::m;
-        rig.nearest = 1.8f * u::m;
-        rig.elevation = 15.0f * u::deg;
-        break;
+      // Behind the way it heads, level, whatever its nose is doing.
+      Vec3 ahead = rig.ahead;
+      ahead[1] = 0.0f;
+      rig.ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
+      // Further off and lower, to see what hangs under it too.
+      if (m_logic.m_sling.hooked) {
+        rig.pivot = rig.pivot * 0.65f +
+                    machine_body (m_logic.m_sling.load).position * 0.35f;
+        rig.distance = 24.0f * u::m;
+        rig.nearest = 8.0f * u::m;
+        rig.elevation = 14.0f * u::deg;
       }
       break;
+    }
     }
     return rig;
   }

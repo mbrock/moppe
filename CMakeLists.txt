@@ -15,10 +15,10 @@ if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
   set(MOPPE_APPLE_SIMULATOR TRUE)
 endif()
 
-# The normal build is an edit build: do no optimization, and keep only the line
-# tables needed to turn a crash address into a source location. Optimized
-# gameplay, profiling, and distribution builds select RelWithDebInfo or Release
-# explicitly.
+#The normal build is an edit build : do no optimization, and keep only the line
+#tables needed to turn a crash address into a source location.Optimized
+#gameplay, profiling, and distribution builds select RelWithDebInfo or Release
+#explicitly.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING
     "Build type (Debug, Release, RelWithDebInfo, or MinSizeRel)" FORCE)
@@ -26,10 +26,10 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     Debug Release RelWithDebInfo MinSizeRel)
 endif()
 
-# Moppe's Apple renderer is Metal 4-only.  Metal 4 arrived with the 26.0
-# platform generation, so every Apple target names that contract explicitly
-# instead of inheriting an SDK-dependent desktop default or carrying an older
-# Metal compatibility path.  FORCE also upgrades existing build directories.
+#Moppe's Apple renderer is Metal 4-only.  Metal 4 arrived with the 26.0
+#platform generation, so every Apple target names that contract explicitly
+#instead of inheriting an SDK - dependent desktop default or carrying an older
+#Metal compatibility path.FORCE also upgrades existing build directories.
 if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING
     "Minimum Apple platform version (required by Metal 4)" FORCE)
@@ -37,8 +37,8 @@ endif()
 
 project(moppe LANGUAGES C CXX)
 
-# Keep editor tooling in sync with the normal Ninja and Makefile builds.
-# Multi-config generators such as Xcode do not support this output.
+#Keep editor tooling in sync with the normal Ninja and Makefile builds.
+#Multi - config generators such as Xcode do not support this output.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CTest)
@@ -51,15 +51,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 add_compile_options(-Wall)
-# A world generates bit for bit the same on every platform: no fused
-# multiply-adds the source does not ask for (an arm64 build would fuse where
-# baseline x86-64 cannot), and correctly rounded transcendental functions
-# from CORE-MATH below (docs/determinism.md).
+#A world generates bit for bit the same on every platform : no fused
+#multiply - adds the source does not ask for (an arm64 build would fuse where
+#baseline x86 - 64 cannot), and correctly rounded transcendental functions
+#from CORE - MATH below(docs / determinism.md).
 add_compile_options(-ffp-contract=off)
-# In the browser (docs/web.md) errors are WebAssembly's own exceptions, and
-# every object of the program is compiled alike. The page has one thread:
-# threads would need a cross-origin isolated page, which few hosts serve,
-# and only generating a world gains from them.
+#In the browser(docs / web.md) errors are WebAssembly's own exceptions, and
+#every object of the program is compiled alike.The page has one thread:
+#threads would need a cross - origin isolated page, which few hosts serve,
+#and only generating a world gains from them.
 if(EMSCRIPTEN)
   add_compile_options(-fwasm-exceptions)
   add_link_options(-fwasm-exceptions)
@@ -96,29 +96,29 @@ set(MOPPE_LANDS_DIR "" CACHE PATH
 option(MOPPE_EMBED_ASSETS
   "Build the assets and MOPPE_LANDS_DIR's land into the desktop game" OFF)
 
-# Moppe's implementation files are deliberately small, but compiling each
-# separately parses the heavily-templated headers (notably mp-units) once per
-# file. Unity batches of MOPPE_UNITY_BATCH_SIZE sources parse them once per
-# batch: on 16 cores a full build takes 45 s and 6 minutes of CPU, against 63 s
-# and 13 minutes without, and editing one source recompiles its batch (9 s,
-# against 5 s) rather than the whole program. The engine is a library built
-# once (below), and the programs link it. Set MOPPE_UNITY_BUILD=OFF for the
-# quickest edits, or a larger batch for a slow machine.
+#Moppe's implementation files are deliberately small, but compiling each
+#separately parses the heavily - templated headers(notably mp - units) once per
+#file.Unity batches of MOPPE_UNITY_BATCH_SIZE sources parse them once per
+#batch : on 16 cores a full build takes 45 s and 6 minutes of CPU, against 63 s
+# and 13 minutes without, and editing one source recompiles its batch(9 s,
+#against 5 s) rather than the whole program.The engine is a library built
+#once(below), and the programs link it.Set MOPPE_UNITY_BUILD = OFF for the
+#quickest edits, or a larger batch for a slow machine.
 if(MOPPE_UNITY_BUILD)
   set(CMAKE_UNITY_BUILD ON)
   set(CMAKE_UNITY_BUILD_BATCH_SIZE ${MOPPE_UNITY_BATCH_SIZE})
 endif()
 
-# Keep the units vocabulary available to every target without forcing a
-# large-scale conversion of existing float-based APIs.  Consumers opt in with
-# target_link_libraries(<target> PRIVATE mp-units::mp-units).
+#Keep the units vocabulary available to every target without forcing a
+#large - scale conversion of existing float - based APIs.Consumers opt in with
+#target_link_libraries(<target> PRIVATE mp - units::mp - units).
 set(MP_UNITS_BUILD_INSTALL OFF CACHE BOOL
   "Do not install the vendored mp-units target" FORCE)
 set(MP_UNITS_API_CONTRACTS NONE CACHE STRING
   "Avoid an additional contracts dependency" FORCE)
 FetchContent_Declare(mp-units
-  # Pinned to master (post-v2.5.0, pre-v2.6.0) for cartesian_vector/tensor
-  # and the reworked representation-concepts machinery.
+#Pinned to master(post - v2.5.0, pre - v2.6.0) for cartesian_vector / tensor
+#and the reworked representation - concepts machinery.
   URL https://github.com/mpusz/mp-units/archive/bb86582ec2561419bc461a5ce7df01328ba08ea1.tar.gz
   URL_HASH
     SHA256=eb78dbc19c65d5954d31b78149936ca46f2eafb5e5f9c2b1e58f583fcf6705ea
@@ -126,8 +126,8 @@ FetchContent_Declare(mp-units
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(mp-units)
 
-# nanoarrow is vendored as its upstream amalgamation so bundle storage is
-# available offline and uses the same implementation on every platform.
+#nanoarrow is vendored as its upstream amalgamation so bundle storage is
+#available offline and uses the same implementation on every platform.
 add_library(nanoarrow STATIC
   third_party/nanoarrow/nanoarrow.c
   third_party/nanoarrow/nanoarrow_ipc.c
@@ -137,8 +137,8 @@ target_include_directories(nanoarrow SYSTEM PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanoarrow)
 set_target_properties(nanoarrow PROPERTIES UNITY_BUILD OFF)
 
-# zstd's decoder, vendored as its single-file amalgamation
-# (third_party/zstd/VENDOR.md), unpacks the assets a release builds in.
+#zstd's decoder, vendored as its single-file amalgamation
+#(third_party / zstd / VENDOR.md), unpacks the assets a release builds in.
 if(MOPPE_EMBED_ASSETS)
   add_library(zstd-decoder STATIC third_party/zstd/zstddeclib.c)
   target_include_directories(zstd-decoder SYSTEM PUBLIC
@@ -146,8 +146,8 @@ if(MOPPE_EMBED_ASSETS)
   set_target_properties(zstd-decoder PROPERTIES UNITY_BUILD OFF)
 endif()
 
-# Box3D is vendored from upstream (see third_party/box3d/VENDOR.md). Only the
-# library is built; its own CMake files and samples are not vendored.
+#Box3D is vendored from upstream(see third_party / box3d / VENDOR.md).Only the
+#library is built; its own CMake files and samples are not vendored.
 file(GLOB BOX3D_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/box3d/src/*.c)
 add_library(box3d STATIC ${BOX3D_SOURCES})
@@ -439,6 +439,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/camp.cc
   moppe/game/scan.cc
   moppe/game/fishing.cc
+  moppe/game/machine.cc
   moppe/game/machine_controls.cc
   moppe/game/companion.cc
   moppe/game/companion_link.cc
