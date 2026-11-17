@@ -27,13 +27,14 @@ namespace moppe::game {
 
     // Pointer movement in points becomes head turn in radians.
     void look (points_t dx, points_t dy) {
-      m_look_yaw += 0.0035f * dx.numerical_value_in (display_point);
-      m_look_pitch -= 0.0035f * dy.numerical_value_in (display_point);
+      m_look_yaw += 0.0035f * dx.numerical_value_in (display_point) * u::rad;
+      m_look_pitch -= 0.0035f * dy.numerical_value_in (display_point) * u::rad;
     }
 
     void key (platform::Key key, bool down) {
       using platform::Key;
-      const float value = down ? 1.0f : 0.0f;
+      const control_signal_t value = (down ? 1.0f : 0.0f) * control_signal[one];
+      const proportion_t pressed = (down ? 1.0f : 0.0f) * proportion[one];
 
       if (key == Key::Shift) {
         m_run = down;
@@ -85,7 +86,7 @@ namespace moppe::game {
         m_keys.drive = -value;
         break;
       case Key::Space:
-        m_keys.boost = value;
+        m_keys.boost = pressed;
         break;
       case Key::R:
         m_hang_hammock = m_hang_hammock || down;
@@ -101,7 +102,8 @@ namespace moppe::game {
 
     void cinematic_key (platform::Key key, bool down) {
       using platform::Key;
-      const float value = down ? 1.0f : 0.0f;
+      const control_signal_t value = (down ? 1.0f : 0.0f) * control_signal[one];
+      const proportion_t pressed = (down ? 1.0f : 0.0f) * proportion[one];
       switch (key) {
       case Key::Space:
         if (down)
@@ -124,19 +126,20 @@ namespace moppe::game {
         m_keys.drive = -value;
         break;
       case Key::E:
-        m_keys.boost = value;
+        m_keys.boost = pressed;
         break;
       default:
         break;
       }
     }
 
-    // A held look stick turns the head at up to these rates, in radians
-    // per second, over the `dt` the frame covers.
-    static constexpr float look_yaw_rate = 3.2f;
-    static constexpr float look_pitch_rate = 2.0f;
+    // A held look stick turns the head at up to these rates over the
+    // `dt` the frame covers.
+    static constexpr radians_per_second_t look_yaw_rate = 3.2f * u::rad / u::s;
+    static constexpr radians_per_second_t look_pitch_rate =
+      2.0f * u::rad / u::s;
 
-    InputFrame take_frame (float dt = 0.0f) {
+    InputFrame take_frame (seconds_t dt = seconds_t {}) {
       InputFrame frame = m_analog;
       m_look_yaw += look_yaw_rate * input_value (m_look_rate_x) * dt;
       m_look_pitch += look_pitch_rate * input_value (m_look_rate_y) * dt;
@@ -146,8 +149,7 @@ namespace moppe::game {
       if (std::abs (input_value (m_keys.drive)) >
           std::abs (input_value (frame.drive)))
         frame.drive = m_keys.drive;
-      frame.boost =
-        std::max (input_value (frame.boost), input_value (m_keys.boost));
+      frame.boost = std::max (frame.boost, m_keys.boost);
       frame.use = m_use;
       frame.use_held = m_use_held;
       frame.toggle_mount = m_toggle_mount;
@@ -159,8 +161,8 @@ namespace moppe::game {
       frame.look_yaw = m_look_yaw;
       frame.look_pitch = m_look_pitch;
       frame.run = m_run;
-      m_look_yaw = 0.0f;
-      m_look_pitch = 0.0f;
+      m_look_yaw = radians_t {};
+      m_look_pitch = radians_t {};
       m_use = false;
       m_toggle_mount = false;
       m_cycle_camera = false;
@@ -180,8 +182,8 @@ namespace moppe::game {
       m_leave_cinematic = false;
       m_hang_hammock = false;
       m_light_fire = false;
-      m_look_yaw = 0.0f;
-      m_look_pitch = 0.0f;
+      m_look_yaw = radians_t {};
+      m_look_pitch = radians_t {};
       m_look_rate_x = {};
       m_look_rate_y = {};
       m_run = false;
@@ -212,8 +214,8 @@ namespace moppe::game {
     bool m_leave_cinematic = false;
     bool m_hang_hammock = false;
     bool m_light_fire = false;
-    float m_look_yaw = 0.0f;
-    float m_look_pitch = 0.0f;
+    radians_t m_look_yaw {};
+    radians_t m_look_pitch {};
     control_signal_t m_look_rate_x {};
     control_signal_t m_look_rate_y {};
     bool m_run = false;

@@ -361,7 +361,7 @@ namespace moppe::game {
     const Creel& creel = fishing.creel;
     state.fish_total = creel.kept ();
     const seconds_t since =
-      seconds_between (w.session.logic ().m_total_time, creel.last_time) * u::s;
+      seconds_between (w.session.logic ().m_total_time, creel.last_time);
     if (since < 5.0f * u::s) {
       const std::string name = fish_name (creel.last.kind);
       if (creel.last_lost) {
@@ -383,8 +383,7 @@ namespace moppe::game {
     const Camp& camp = w.session.logic ().m_camp;
     state.resting = camp.resting;
     state.clock = w.sky.clock;
-    if (seconds_between (w.session.logic ().m_total_time, camp.ate_time) *
-          u::s <
+    if (seconds_between (w.session.logic ().m_total_time, camp.ate_time) <
         6.0f * u::s) {
       // What there was, the fish first, then the eggs, then the
       // mushrooms.
@@ -412,7 +411,7 @@ namespace moppe::game {
           : (one ? "A fried " : "Fried ") + meal + " by the fire. Lovely.";
       state.meal = m_prompts.meal_note.c_str ();
       state.meal_age =
-        seconds_between (w.session.logic ().m_total_time, camp.ate_time) * u::s;
+        seconds_between (w.session.logic ().m_total_time, camp.ate_time);
     }
     // What Space and F do here, and what can be done about the camp
     // without a prompt for it (HudState::thumb).
@@ -675,9 +674,8 @@ namespace moppe::game {
     state.basket_eggs = basket.eggs;
     state.reached_name =
       basket.last_egg ? "egg" : mushroom_name (basket.last_kind);
-    state.reached_age = seconds_between (w.session.logic ().m_total_time,
-                                         basket.last_reach_time) *
-                        u::s;
+    state.reached_age =
+      seconds_between (w.session.logic ().m_total_time, basket.last_reach_time);
     state.reached_refused = basket.last_refused;
   }
 
@@ -708,8 +706,8 @@ namespace moppe::game {
     std::vector<Mark> marks;
     const Doing mode = w.session.logic ().m_doing;
     marks.push_back ({ .kind = Mark::Kind::Walker,
-                       .position = position (w.session.subject_position ()),
-                       .heading = unit_direction (w.session.subject_heading ()),
+                       .position = w.session.subject_position (),
+                       .heading = w.session.subject_heading (),
                        .colour = dark,
                        .name = "" });
     if (w.company.companion && !passenger_in (mode) &&
@@ -898,7 +896,7 @@ namespace moppe::game {
     const render::Font* font = hud.font ();
     if (!font)
       return;
-    const Vec3 eye = w.session.subject_position ();
+    const Vec3 eye = position_value (w.session.subject_position ());
     const plan_extent_t& period = w.places.period;
     const std::optional<std::size_t> stop =
       bus_stop_near (w.bus, position (eye), shown_within, period);

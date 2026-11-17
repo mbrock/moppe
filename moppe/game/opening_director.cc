@@ -20,8 +20,8 @@ namespace moppe::game {
                               const WorldGround& ground,
                               const SkyReading& sky,
                               GameSession& session,
-                              const Vec3& home_base,
-                              const Vec3& spawn) {
+                              const position_t& home_base,
+                              const position_t& spawn) {
     MOPPE_PROFILE_ZONE ("startup.plan_opening");
     m_shots.clear ();
     const char* choice = moppe::environment ("MOPPE_OPENING");
@@ -30,13 +30,11 @@ namespace moppe::game {
     const bool flight = choice && std::string_view (choice) == "flight";
     if (choice && std::string_view (choice) == "river") {
       const char* seconds = moppe::environment ("MOPPE_FLYOVER_SECONDS");
-      std::vector<Vec3> trees;
+      std::vector<RiverFlightTree> trees;
       trees.reserve (world.forest ().sites.size ());
-      for (const ForestSite& site : world.forest ().sites) {
-        Vec3 tree = position_value (site.position);
-        tree[1] = tree_height (site).numerical_value_in (u::m);
-        trees.push_back (tree);
-      }
+      for (const ForestSite& site : world.forest ().sites)
+        trees.push_back (
+          { .at = moppe::plan (site.position), .height = tree_height (site) });
       m_flight_plan = plan_river_flight (
         world.surface (),
         trees,
@@ -95,48 +93,57 @@ namespace moppe::game {
                         recipe.resolution (),
                         terrain::profile_id (recipe.generation_profile ())) ||
         extent_value (recipe.extent ())[0] !=
-          (reel->km ? *reel->km * 1000.0f
+          (reel->km ? reel->km->numerical_value_in (u::km) * 1000.0f
                     : extent_value (WorldParams ().map_size)[0])) {
       std::cerr << "moppe: opening: " << path
                 << " was composed for another world\n";
       return std::nullopt;
     }
     for (const OpeningShot& shot : reel->shots) {
-      if (shot.eye[1] < ground.height (shot.eye) + 0.2f) {
+      const Vec3& eye = position_value (shot.eye);
+      if (eye[1] < ground.height (eye) + 0.2f) {
         std::cerr << "moppe: opening: shot " << shot.name
                   << " stands underground in this world\n";
         return std::nullopt;
       }
-      if (shot.sun && std::fabs (*shot.sun - sky.sun_height) > 0.01f)
+      if (shot.sun && abs (*shot.sun - sky.sun_height) > 0.01f)
         std::cerr << "moppe: opening: shot " << shot.name
-                  << " was composed under sun " << *shot.sun
-                  << ", the world is lit at " << sky.sun_height << '\n';
+                  << " was composed under sun "
+                  << shot.sun->numerical_value_in (one)
+                  << ", the world is lit at "
+                  << sky.sun_height.numerical_value_in (one) << '\n';
     }
     return reel;
   }
 
-  std::vector<OpeningShot> OpeningDirector::generated (
-    const WorldGround& ground, const Vec3& home_base, const Vec3& spawn) {
-    const Vec3 along = direction_value (ground.trail_heading ());
-    Vec3 eye = home_base + along * 20.0f;
-    eye[1] = ground.height (eye) + 3.6f;
-    Vec3 look = spawn - eye;
+  std::vector<OpeningShot>
+  OpeningDirector::generated (const WorldGround& ground,
+                              const position_t& home_base,
+                              const position_t& spawn) {
+    const direction_t along = ground.trail_heading ();
+    position_t eye =
+      position (position_value (home_base) + direction_value (along) * 20.0f);
+    position_value (eye)[1] = ground.height (position_value (eye)) + 3.6f;
+    Vec3 look = position_value (spawn) - position_value (eye);
     look[1] = 0.0f;
     OpeningShot still;
     still.name = "trailhead";
     still.eye = eye;
     still.heading_deg = heading_degrees (look);
-    still.pitch_deg = -3.0f;
-    still.fov_deg = 46.0f;
-    still.hold = 11.0f;
-    still.push = 3.0f;
-    still.fade = 2.5f;
-    still.captions.push_back (
-      { OpeningCaption::Style::Title, "moppe", 1.6f, 4.4f, 0.28f });
+    still.pitch_deg = -3.0f * u::deg;
+    still.fov_deg = 46.0f * u::deg;
+    still.hold = 11.0f * u::s;
+    still.push = 3.0f * u::m;
+    still.fade = 2.5f * u::s;
+    still.captions.push_back ({ OpeningCaption::Style::Title,
+                                "moppe",
+                                1.6f * u::s,
+                                4.4f * u::s,
+                                0.28f * proportion[one] });
     still.captions.push_back ({ OpeningCaption::Style::Credit,
                                 "a game by Mikael Brockman",
-                                6.2f,
-                                3.8f });
+                                6.2f * u::s,
+                                3.8f * u::s });
     return { still };
   }
 
@@ -145,8 +152,8 @@ namespace moppe::game {
                                    const WorldGround& ground,
                                    const SkyReading& sky,
                                    GameSession& session,
-                                   const Vec3& home_base,
-                                   const Vec3& spawn) {
+                                   const position_t& home_base,
+                                   const position_t& spawn) {
     const std::optional<OpeningReel> reel =
       authored (choice, world, ground, sky);
     m_shots = reel ? reel->shots : generated (ground, home_base, spawn);
@@ -160,15 +167,16 @@ namespace moppe::game {
                                       session.camera ().forward (),
                                       last.fov_deg,
                                       static_cast<float> (seconds_into_play (
-                                        session.logic ().m_total_time)),
+                                        session.logic ().m_total_time)) *
+                                        u::s,
                                       sky.sun_height)
               << '\n';
-    float duration = 0.0f;
+    seconds_t duration = 0.0f * u::s;
     for (const OpeningShot& shot : m_shots)
       duration += shot.hold;
     std::cerr << "moppe: opening: " << m_shots.size ()
-              << (reel ? " authored" : " generated") << " shots, " << duration
-              << " s\n";
+              << (reel ? " authored" : " generated") << " shots, "
+              << seconds_value (duration) << " s\n";
   }
 
   OpeningShot
@@ -176,10 +184,11 @@ namespace moppe::game {
                             const map::SurfaceGeometry& surface) const {
     session.settle_camera (surface);
     const ChaseCamera& camera = session.camera ();
-    const float fov = session.logic ().m_cam_mode == CAM_HELMET
-                        ? 70.0f
-                        : CHASE_FIELD_OF_VIEW.numerical_value_in (u::deg);
-    return arrival_shot (m_arrival, camera.position (), camera.forward (), fov);
+    const degrees_t fov = session.logic ().m_cam_mode == CAM_HELMET
+                            ? 70.0f * u::deg
+                            : CHASE_FIELD_OF_VIEW;
+    return arrival_shot (
+      m_arrival, position (camera.position ()), camera.forward (), fov);
   }
 
   void OpeningDirector::start (GameSession& session,
@@ -207,11 +216,13 @@ namespace moppe::game {
     if (!m_reel.active () || m_reel.shot_index () == m_shot_seen)
       return;
     m_shot_seen = m_reel.shot_index ();
-    if (const std::optional<float> clock = m_reel.shot ().clock) {
+    if (const std::optional<seconds_t> clock = m_reel.shot ().clock) {
       GameLogicState& logic = session.logic ();
-      logic.m_total_time = play_time (*clock + m_reel.shot_time ());
-      sky.update (logic,
-                  static_cast<float> (seconds_into_play (logic.m_total_time)));
+      logic.m_total_time =
+        play_time (seconds_value (*clock + m_reel.shot_time ()));
+      sky.update (
+        logic,
+        seconds (static_cast<float> (seconds_into_play (logic.m_total_time))));
     }
   }
 
@@ -249,15 +260,15 @@ namespace moppe::game {
   std::optional<FrameCameraReading> OpeningDirector::camera () const {
     if (m_reel.active ())
       return FrameCameraReading {
-        .position = position (m_reel.position ()),
-        .forward = unit_direction (m_reel.forward ()),
+        .position = m_reel.position (),
+        .forward = m_reel.forward (),
         .view = m_reel.view_matrix (),
-        .field_of_view = m_reel.field_of_view () * u::deg,
+        .field_of_view = m_reel.field_of_view (),
       };
     if (m_flight.active ())
       return FrameCameraReading {
-        .position = position (m_flight.position ()),
-        .forward = unit_direction (m_flight.forward ()),
+        .position = m_flight.position (),
+        .forward = m_flight.forward (),
         .view = m_flight.view_matrix (),
         .field_of_view = m_flight.field_of_view (),
       };
@@ -285,7 +296,7 @@ namespace moppe::game {
                                      int height_pts) const {
     if (!m_reel.active ())
       return;
-    if (const float veil = m_reel.veil (); veil > 0.002f) {
+    if (const proportion_t veil = m_reel.veil (); veil > 0.002f) {
       render::DrawState over;
       over.blend = true;
       over.depth_test = false;
@@ -294,7 +305,7 @@ namespace moppe::game {
       dl.state (over);
       dl.lit (false);
       dl.fogged (false);
-      dl.color (0.0f, 0.0f, 0.0f, veil);
+      dl.color (0.0f, 0.0f, 0.0f, veil.numerical_value_in (one));
       dl.begin (render::Prim::Quads);
       dl.vertex (-64.0f, -64.0f);
       dl.vertex (width_pts + 64.0f, -64.0f);
@@ -307,8 +318,9 @@ namespace moppe::game {
       hud.draw_title_card (text,
                            caption.style == OpeningCaption::Style::Title,
                            *caption.text,
-                           caption.alpha * opacity[one],
-                           caption.y * proportion[one],
+                           caption.alpha.numerical_value_in (one) *
+                             opacity[one],
+                           caption.y,
                            static_cast<float> (width_pts) * u::pt,
                            static_cast<float> (height_pts) * u::pt);
   }

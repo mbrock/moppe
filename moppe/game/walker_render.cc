@@ -286,7 +286,7 @@ namespace moppe::game {
                    shift (displacement (k.wrist[1] - k.elbow[1]) * 0.25f),
                  *walker.rope_end);
     if (walker.rod)
-      draw_rod (draw, k, *walker.rod, seconds_value (time));
+      draw_rod (draw, k, *walker.rod, time);
   }
 
   void render_basket (render::DrawList& draw,
@@ -296,7 +296,7 @@ namespace moppe::game {
     const AvatarSkeleton k = pose_avatar (walker, seconds_value (time));
     draw_basket (draw, basket_frame (k), basket);
     if (walker.rod)
-      draw_rod (draw, k, *walker.rod, seconds_value (time));
+      draw_rod (draw, k, *walker.rod, time);
   }
 
   void render_basket_set_down (render::DrawList& draw,

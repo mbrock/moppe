@@ -36,7 +36,7 @@ namespace moppe {
                                 frame,
                                 seconds (static_cast<float> (
                                   seconds_into_play (logic ().m_total_time))),
-                                m_sky.sky ().sun_height * proportion[one],
+                                m_sky.sky ().sun_height,
                                 m_opening.active ());
       render::FrameParams params = frame_params_for (frame);
       if (!m_capture.keeping_pace ())

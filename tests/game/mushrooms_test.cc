@@ -193,7 +193,7 @@ MOPPE_TEST (the_scan_groups_mushrooms_and_lights_them_as_the_ring_passes) {
   MushroomPatch patch;
   patch.rebuild (plan);
   const Vec3 origin (100.0f, 10.0f, 100.0f);
-  const std::vector<ScanFind> finds = scan_mushrooms (patch, origin);
+  const std::vector<ScanFind> finds = scan_mushrooms (patch, position (origin));
   MOPPE_CHECK (finds.size () == 3);
   int groups = 0, poisonous = 0, single = 0;
   const ScanFind* far = nullptr;
@@ -212,12 +212,13 @@ MOPPE_TEST (the_scan_groups_mushrooms_and_lights_them_as_the_ring_passes) {
   // The ring goes 24 m a second: at one second it has not reached the
   // chanterelle 40 m off, at two it has.
   Scan scan;
-  scan.start (origin, 50.0, finds);
+  scan.start (position (origin), play_time (50.0), finds);
   MOPPE_CHECK (far != nullptr);
   const ScanFind& lone = scan.finds ()[far - finds.data ()];
-  MOPPE_CHECK (scan.shown (lone, 51.0) == 0.0f);
-  MOPPE_CHECK (scan.shown (lone, 52.0) > 0.5f);
+  MOPPE_CHECK (scan.shown (lone, play_time (51.0)) == 0.0f * proportion[one]);
+  MOPPE_CHECK (scan.shown (lone, play_time (52.0)) > 0.5f * proportion[one]);
   // And it fades once its time is up.
-  MOPPE_CHECK (scan.shown (lone, 52.0 + scan_lit + scan_fade) == 0.0f);
-  MOPPE_CHECK (!scan.showing (50.0 + 60.0));
+  MOPPE_CHECK (scan.shown (lone, play_time (52.0) + scan_lit + scan_fade) ==
+               0.0f * proportion[one]);
+  MOPPE_CHECK (!scan.showing (play_time (50.0 + 60.0)));
 }

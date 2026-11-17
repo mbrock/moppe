@@ -52,8 +52,8 @@ namespace moppe::game {
 
   // Begins a cast from where the walker stands at the water at `aim`.
   void cast_line (Line& line,
-                  const Vec3& stand,
-                  const Vec3& aim,
+                  const position_t& stand,
+                  const position_t& aim,
                   Waters waters,
                   bool upland,
                   play_time_t now);
@@ -65,23 +65,23 @@ namespace moppe::game {
 
   // Where the fish on the line is, fought in toward the bank, at the
   // point it leaves the water.
-  Vec3 fish_in_water (const Line& line, play_time_t now);
+  position_t fish_in_water (const Line& line, play_time_t now);
 
   // The rod and line as drawn at `now`, if the rod is in hand; `time`
   // keeps the float bobbing and the fish twisting.
   std::optional<RodPose>
-  rod_pose (const Line& line, play_time_t now, float time);
+  rod_pose (const Line& line, play_time_t now, seconds_t time);
 
-  // Where the right hand holds a rod raised `raise` radians, from the
-  // shoulders `k` stands with.
-  Vec3 rod_hand (const AvatarSkeleton& k, float raise);
+  // Where the right hand holds a rod raised `raise` above the horizon,
+  // from the shoulders `k` stands with.
+  position_t rod_hand (const AvatarSkeleton& k, radians_t raise);
 
   // The rod in the posed figure's right hand, the line, and the float or
   // the fish on its end, recorded as triangles.
   void draw_rod (render::DrawList& dl,
                  const AvatarSkeleton& k,
                  const RodPose& rod,
-                 float time);
+                 seconds_t time);
 
   // A fish, its mouth at `mouth`, its body running along `along` to its
   // tail, its back toward `back`; `scale` multiplies its length as drawn,
@@ -89,10 +89,10 @@ namespace moppe::game {
   // (one fried golden, two burnt black).
   void draw_fish (render::DrawList& dl,
                   const Fish& fish,
-                  const Vec3& mouth,
-                  const Vec3& along,
-                  const Vec3& back,
-                  float scale,
+                  const position_t& mouth,
+                  const direction_t& along,
+                  const direction_t& back,
+                  scale_factor_t scale,
                   float wriggle,
                   float cooked = 0.0f);
 }

@@ -23,40 +23,42 @@ namespace moppe::game {
       return around.places ? *around.places : none;
     }
 
-    float ground_at (const Surroundings& around, const Vec3& at) {
-      return ground_height_at (*around.surface, at);
+    meters_t ground_at (const Surroundings& around, const position_t& at) {
+      return terrain::surface_elevation_value (
+               ground_height_at (*around.surface, plan (at))) *
+             u::m;
     }
 
     void splash (GameSession& session,
                  const Surroundings& around,
-                 const Vec3& at,
+                 const position_t& at,
                  int drops,
-                 float vigour) {
-      const float shade = 0.25f + 0.65f * around.daylight;
+                 proportion_t vigour) {
+      const float shade =
+        0.25f + 0.65f * around.daylight.numerical_value_in (one);
       Dust::Style spray;
       spray.size = 0.07f * u::m;
       spray.lifetime = 0.7f * u::s;
       spray.downward_acceleration =
         6.0f * isq::acceleration[u::m / pow<2> (u::s)];
-      spray.spread = (0.5f + 0.5f * vigour) * one;
+      spray.spread = (0.5f + 0.5f * vigour.numerical_value_in (one)) * one;
       spray.flake = true;
-      session.dust ().emit (moppe::position (at + Vec3 (0, 0.03f, 0)),
-                            velocity (Vec3 (0, 1.2f + 1.4f * vigour, 0)),
-                            drops,
-                            DisplayColor (shade, shade * 1.02f, shade),
-                            spray);
+      session.dust ().emit (
+        moppe::position (position_value (at) + Vec3 (0, 0.03f, 0)),
+        velocity (Vec3 (0, 1.2f + 1.4f * vigour.numerical_value_in (one), 0)),
+        drops,
+        DisplayColor (shade, shade * 1.02f, shade),
+        spray);
     }
 
     // The clock runs with play, and faster for someone lying down to
     // watch it.
-    void pass_time (GameSession& session,
-                    const Surroundings& around,
-                    seconds_t interval) {
-      const float dt = seconds_value (interval);
+    void
+    pass_time (GameSession& session, const Surroundings& around, seconds_t dt) {
       GameLogicState& logic = session.logic ();
       clock_time_t& hours = logic.m_day_hours;
-      hours += around.day_pace * dt *
-               logic.m_day_haste.numerical_value_in (one) * si::hour;
+      hours +=
+        around.day_pace * dt * logic.m_day_haste.numerical_value_in (one);
       // Two players share one sky: whoever's clock is ahead leads, as
       // when one of them lies down to let the hours run. A little ahead
       // is caught up smoothly, a long way at once.
@@ -66,25 +68,25 @@ namespace moppe::game {
       if (behind > 0.25 * si::hour)
         hours += behind;
       else if (behind > 0.0 * si::hour)
-        hours += std::min (behind, behind * (6.0 * dt));
+        hours += std::min (behind, behind * (6.0 * seconds_value (dt)));
     }
 
     // The pair of trees the walker stands between, if a hammock would
     // hang there; looked for again only once they have moved.
     void seek_hammock_site (GameSession& session, const Surroundings& around) {
       GameLogicState& logic = session.logic ();
-      const Vec3 feet = session.walker ().position ();
+      const position_t feet = moppe::position (session.walker ().position ());
       if (logic.m_hammock_sought_from &&
-          length2 (feet - position_value (*logic.m_hammock_sought_from)) <
-            0.3f * 0.3f)
+          length2 (position_value (feet) -
+                   position_value (*logic.m_hammock_sought_from)) < 0.3f * 0.3f)
         return;
-      logic.m_hammock_sought_from = position (feet);
+      logic.m_hammock_sought_from = feet;
       const std::vector<mov::Trunk> near =
-        around.trunks ? around.trunks->gather (feet, 8.0f)
+        around.trunks ? around.trunks->gather (position_value (feet), 8.0f)
                       : std::vector<mov::Trunk> ();
       const map::SurfaceGeometry& surface = *around.surface;
-      logic.m_hammock_at_hand = hammock_site_at (
-        near, moppe::position (feet), [&surface] (const plan_position_t& at) {
+      logic.m_hammock_at_hand =
+        hammock_site_at (near, feet, [&surface] (const plan_position_t& at) {
           return spatial::sample<terrain::surface_elevation> (
             surface, at_height (at, 0.0f * u::m));
         });
@@ -101,7 +103,9 @@ namespace moppe::game {
       const float cooked = pan_cooked (pan, now).numerical_value_in (one);
       pan.next_steam = now + (cooked > 1.2f ? 0.25 : 0.45) * si::second;
       const float shade =
-        cooked > 1.2f ? 0.18f : 0.55f + 0.35f * around.daylight;
+        cooked > 1.2f
+          ? 0.18f
+          : 0.55f + 0.35f * around.daylight.numerical_value_in (one);
       Dust::Style steam;
       steam.size = 0.16f * u::m;
       steam.lifetime = 1.6f * u::s;
@@ -125,8 +129,7 @@ namespace moppe::game {
     void go_fishing (GameSession& session,
                      const Surroundings& around,
                      InputFrame& input,
-                     seconds_t interval) {
-      const float dt = seconds_value (interval);
+                     seconds_t dt) {
       GameLogicState& logic = session.logic ();
       Fishing& fishing = logic.m_fishing;
       Line& line = fishing.line;
@@ -149,20 +152,22 @@ namespace moppe::game {
         // The line goes where the boat drifts; opening the throttle
         // while the float rides, or making way through the water
         // however it comes about, takes it in.
-        line.stand = position (from->at);
+        line.stand = from->at;
         const mov::Boat& boat = session.boat ();
-        Vec3 way = boat.velocity () - current_at (around, boat.position ());
-        way[1] = 0.0f;
-        Vec3 out = position_value (line.bobber) - from->at;
+        velocity_t way =
+          velocity (boat.velocity ()) -
+          current_at (around, moppe::position (boat.position ()));
+        velocity_value (way)[1] = 0.0f;
+        Vec3 out = position_value (line.bobber) - position_value (from->at);
         out[1] = 0.0f;
-        gone = length2 (way) > 1.5f * 1.5f ||
+        gone = length2 (velocity_value (way)) > 1.5f * 1.5f ||
                length2 (out) > meters_value (longest_cast + 4.0f * u::m) *
                                  meters_value (longest_cast + 4.0f * u::m) ||
-               (std::abs (input_value (input.drive)) > 0.1f &&
+               (abs (input.drive) > 0.1f * control_signal[one] &&
                 (line.phase == Line::Phase::waiting ||
                  line.phase == Line::Phase::biting));
       } else {
-        Vec3 moved = from->at - position_value (line.stand);
+        Vec3 moved = position_value (from->at) - position_value (line.stand);
         moved[1] = 0.0f;
         gone = length2 (moved) >
                meters_value (fishing_leash) * meters_value (fishing_leash);
@@ -172,7 +177,7 @@ namespace moppe::game {
           fishing.creel.last = line.fish;
           fishing.creel.last_lost = true;
           fishing.creel.last_time = now;
-          line.bobber = position (fish_in_water (line, now));
+          line.bobber = fish_in_water (line, now);
         }
         line.phase = Line::Phase::empty;
         line.since = now;
@@ -183,9 +188,9 @@ namespace moppe::game {
       if (line.phase == Line::Phase::casting ||
           line.phase == Line::Phase::playing ||
           line.phase == Line::Phase::landed) {
-        input.drive = 0.0f * one;
-        input.turn = 0.0f * one;
-        input.boost = 0.0f * one;
+        input.drive = 0.0f * control_signal[one];
+        input.turn = 0.0f * control_signal[one];
+        input.boost = 0.0f * proportion[one];
         input.run = false;
       }
 
@@ -193,37 +198,41 @@ namespace moppe::game {
       // it and line to give: held back by a line to the bank, but along
       // with the boat it is cast from, which the river carries too.
       if (line.phase == Line::Phase::waiting) {
-        const float carried = line.from_boat ? 0.9f : 0.45f;
-        Vec3 next =
-          position_value (line.bobber) +
-          current_at (around, position_value (line.bobber)) * (carried * dt);
+        const proportion_t carried =
+          (line.from_boat ? 0.9f : 0.45f) * proportion[one];
+        Vec3 next = position_value (line.bobber) +
+                    (current_at (around, line.bobber) * (carried * dt))
+                      .numerical_value_in (u::m);
         Vec3 out = next - position_value (line.stand);
         out[1] = 0.0f;
-        const float level = water_surface_at (*around.world,
-                                              *around.surface,
-                                              around.water,
-                                              next,
-                                              seconds_into_play (now))
-                              .numerical_value_in (u::m);
-        if (level - ground_at (around, next) > 0.2f &&
+        const meters_t level = water_surface_at (*around.world,
+                                                 *around.surface,
+                                                 around.water,
+                                                 next,
+                                                 seconds_into_play (now));
+        if (level - ground_at (around, moppe::position (next)) > 0.2f * u::m &&
             length (out) < meters_value (longest_cast + 2.5f * u::m)) {
-          next[1] = level;
-          line.bobber = position (next);
+          next[1] = meters_value (level);
+          line.bobber = moppe::position (next);
         }
       }
 
       // The water answers: where the float lands, where it is taken
       // under, about a fish fought in, and where it leaves the water.
       if (before == Line::Phase::casting && line.phase == Line::Phase::waiting)
-        splash (session, around, position_value (line.bobber), 4, 0.0f);
+        splash (session, around, line.bobber, 4, 0.0f * proportion[one]);
       if (before == Line::Phase::waiting && line.phase == Line::Phase::biting)
-        splash (session, around, position_value (line.bobber), 3, 0.2f);
+        splash (session, around, line.bobber, 3, 0.2f * proportion[one]);
       if (line.phase == Line::Phase::playing && now >= line.next_splash) {
         line.next_splash = now + 0.18 * si::second;
-        splash (session, around, fish_in_water (line, now), 2, 0.5f);
+        splash (session,
+                around,
+                fish_in_water (line, now),
+                2,
+                0.5f * proportion[one]);
       }
       if (before == Line::Phase::playing && line.phase == Line::Phase::landed)
-        splash (session, around, position_value (line.bobber), 8, 1.0f);
+        splash (session, around, line.bobber, 8, 1.0f * proportion[one]);
     }
 
     // Sparks fly up from a burning fire and its smoke drifts off; a
@@ -232,17 +241,17 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       Camp& camp = logic.m_camp;
       const play_time_t now = logic.m_total_time;
-      const float burn = fire_burn (camp, now).numerical_value_in (one);
+      const proportion_t burn = fire_burn (camp, now);
       const bool smouldering =
         !camp.fire && now - camp.fire_time < 8.0 * si::second;
-      if (burn <= 0.02f && !smouldering)
+      if (burn <= 0.02f * proportion[one] && !smouldering)
         return;
       std::uniform_real_distribution<float> unit (0.0f, 1.0f);
       std::mt19937& rng = logic.m_fx_rng;
       const auto scatter = [&] (float reach) {
         return (unit (rng) - 0.5f) * 2.0f * reach;
       };
-      if (burn > 0.3f && now >= camp.next_spark) {
+      if (burn > 0.3f * proportion[one] && now >= camp.next_spark) {
         camp.next_spark = now + (0.10 + 0.55 * unit (rng)) * si::second;
         Dust::Style spark;
         spark.size = 0.05f * u::m;
@@ -263,7 +272,8 @@ namespace moppe::game {
       if (now >= camp.next_smoke) {
         camp.next_smoke = now + (smouldering ? 0.22 : 0.5) * si::second;
         // Smoke shows by the light there is to see it in.
-        const float shade = 0.06f + 0.36f * around.daylight;
+        const float shade =
+          0.06f + 0.36f * around.daylight.numerical_value_in (one);
         Dust::Style smoke;
         smoke.size = 0.5f * u::m;
         smoke.lifetime = 4.0f * u::s;
@@ -310,37 +320,38 @@ namespace moppe::game {
     void tend_camp (GameSession& session,
                     const Surroundings& around,
                     InputFrame& input,
-                    seconds_t interval) {
-      const float dt = seconds_value (interval);
+                    seconds_t dt) {
       GameLogicState& logic = session.logic ();
       Camp& camp = logic.m_camp;
       const play_time_t now = logic.m_total_time;
-      float haste = 1.0f;
-      float push = 0.0f;
+      scale_factor_t haste = 1.0f * scale_factor[one];
+      control_signal_t push = 0.0f * control_signal[one];
       if (logic.m_doing != Doing::on_foot ()) {
         if (camp.resting) {
           camp.resting = false;
           camp.rest_time = now;
         }
       } else if (camp.resting) {
-        if (input_value (input.boost) > 0.5f) {
+        if (input.boost > 0.5f * proportion[one]) {
           get_up (session);
         } else {
-          push = input_value (input.turn);
-          camp.gaze_yaw = std::clamp (camp.gaze_yaw + input.look_yaw * u::rad,
-                                      -2.6f * u::rad,
-                                      2.6f * u::rad);
-          camp.gaze_pitch = std::clamp (camp.gaze_pitch + input.look_pitch *
-                                                            inclination[u::rad],
-                                        -0.2f * inclination[u::rad],
-                                        1.5f * inclination[u::rad]);
+          push = input.turn;
+          camp.gaze_yaw = std::clamp (
+            camp.gaze_yaw + input.look_yaw, -2.6f * u::rad, 2.6f * u::rad);
+          camp.gaze_pitch =
+            std::clamp (camp.gaze_pitch + radians_value (input.look_pitch) *
+                                            inclination[u::rad],
+                        -0.2f * inclination[u::rad],
+                        1.5f * inclination[u::rad]);
           // After a quiet moment the hours begin to run; holding back
           // keeps them at their ordinary pace.
-          if (input_value (input.drive) > -0.3f)
-            haste =
-              1.0f +
-              (resting_haste - 1.0f) *
-                smoothstep (2.5f, 7.0f, seconds_between (now, camp.rest_time));
+          if (input.drive > -0.3f * control_signal[one])
+            haste = 1.0f * scale_factor[one] +
+                    (resting_haste - 1.0f * scale_factor[one]) *
+                      smoothstep (
+                        2.5f,
+                        7.0f,
+                        seconds_value (seconds_between (now, camp.rest_time)));
         }
         const bool cycle = input.cycle_camera;
         input = {};
@@ -352,21 +363,22 @@ namespace moppe::game {
       camp.swing_rate +=
         (-6.8f / (u::s * u::s) * camp.swing -
          (camp.resting ? 0.30f : 0.9f) / u::s * camp.swing_rate +
-         1.5f * push * u::rad / (u::s * u::s)) *
-        interval;
+         1.5f * input_value (push) * u::rad / (u::s * u::s)) *
+        dt;
       camp.swing = std::clamp (
-        camp.swing + camp.swing_rate * interval, -0.6f * u::rad, 0.6f * u::rad);
-      logic.m_day_haste += (haste * scale_factor[one] - logic.m_day_haste) *
-                           std::min (1.0f, 1.5f * dt);
+        camp.swing + camp.swing_rate * dt, -0.6f * u::rad, 0.6f * u::rad);
+      logic.m_day_haste += (haste - logic.m_day_haste) *
+                           std::min (1.0f, 1.5f * seconds_value (dt));
       feed_fire (session, around);
       tend_beacons (session, around);
     }
   }
 
-  float ground_height_at (const map::SurfaceGeometry& surface, const Vec3& at) {
-    return terrain::surface_elevation_value (
-      spatial::sample<terrain::surface_elevation> (
-        surface, moppe::position (Vec3 (at[0], 0.0f, at[2]))));
+  terrain::SurfaceElevation
+  ground_height_at (const map::SurfaceGeometry& surface,
+                    const plan_position_t& at) {
+    return spatial::sample<terrain::surface_elevation> (
+      surface, at_height (at, 0.0f * u::m));
   }
 
   bool beside_hammock (const GameSession& session) {
@@ -377,41 +389,44 @@ namespace moppe::game {
              1.5f * u::m;
   }
 
-  std::optional<Vec3> hearth_ahead (const GameSession& session,
-                                    const Surroundings& around) {
+  std::optional<position_t> hearth_ahead (const GameSession& session,
+                                          const Surroundings& around) {
     const Walker& walker = session.walker ();
     Vec3 ahead = walker.heading ();
     ahead[1] = 0.0f;
     if (length2 (ahead) < 1e-6f)
       return std::nullopt;
     ahead = normalized (ahead);
-    Vec3 hearth = walker.position () + ahead * 1.3f;
-    hearth[1] = ground_at (around, hearth);
-    if (hearth[1] < around.world->water_level.numerical_value_in (u::m) + 0.2f)
+    position_t hearth = moppe::position (walker.position () + ahead * 1.3f);
+    const meters_t ground = ground_at (around, hearth);
+    position_value (hearth)[1] = meters_value (ground);
+    if (ground < around.world->water_level + 0.2f * u::m)
       return std::nullopt;
     const Vec3 side (ahead[2], 0.0f, -ahead[0]);
     for (const Vec3& off :
          { ahead * 0.5f, ahead * -0.5f, side * 0.5f, side * -0.5f })
-      if (std::fabs (ground_at (around, hearth + off) - hearth[1]) > 0.22f)
+      if (abs (ground_at (around,
+                          moppe::position (position_value (hearth) + off)) -
+               ground) > 0.22f * u::m)
         return std::nullopt;
     return hearth;
   }
 
-  std::optional<Vec3> fire_at_hand (const GameSession& session,
-                                    const Surroundings& around) {
+  std::optional<position_t> fire_at_hand (const GameSession& session,
+                                          const Surroundings& around) {
     const GameLogicState& logic = session.logic ();
     if (logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return std::nullopt;
-    const Vec3 feet = session.walker ().position ();
+    const position_t feet = moppe::position (session.walker ().position ());
     const Camp& camp = logic.m_camp;
-    std::optional<Vec3> found;
-    float nearest = 2.4f * 2.4f;
+    std::optional<position_t> found;
+    square_meters_t nearest = 2.4f * 2.4f * u::m2;
     const auto consider = [&] (const Vec3& hearth, float burn) {
-      Vec3 to = feet - hearth;
+      Vec3 to = position_value (feet) - hearth;
       to[1] = 0.0f;
-      if (burn > 0.5f && length2 (to) < nearest) {
-        nearest = length2 (to);
-        found = hearth;
+      if (burn > 0.5f && length2 (to) * u::m2 < nearest) {
+        nearest = length2 (to) * u::m2;
+        found = moppe::position (hearth);
       }
     };
     consider (position_value (camp.hearth),
@@ -480,43 +495,45 @@ namespace moppe::game {
     const PlacesPlan& places = places_of (around);
     return nest_within_reach (around.nests,
                               logic.m_nests,
-                              session.walker ().position (),
-                              session.walker ().heading (),
-                              plan_value (places.period).x (),
-                              plan_value (places.period).z ());
+                              moppe::position (session.walker ().position ()),
+                              unit_direction (session.walker ().heading ()),
+                              places.period);
   }
 
   std::optional<Angler> angler (const GameSession& session) {
     const GameLogicState& logic = session.logic ();
     if (logic.m_doing == Doing::on_foot () && !logic.m_camp.resting) {
       const Walker& walker = session.walker ();
-      return Angler { walker.position (), walker.heading () };
+      return Angler { moppe::position (walker.position ()),
+                      unit_direction (walker.heading ()) };
     }
     if (logic.m_doing == Doing::driving (Machine::boat)) {
       const mov::Boat& boat = session.boat ();
-      return Angler { boat.helm_seat (),
-                      Quaternion::rotate (
-                        boat.forward (), Vec3 (0, 1, 0), -logic.m_look_yaw) };
+      return Angler { moppe::position (boat.helm_seat ()),
+                      unit_direction (Quaternion::rotate (
+                        boat.forward (), Vec3 (0, 1, 0), -logic.m_look_yaw)) };
     }
     return std::nullopt;
   }
 
-  Vec3 current_at (const Surroundings& around, const Vec3& at) {
+  velocity_t current_at (const Surroundings& around, const position_t& at) {
     if (!around.water)
-      return Vec3 ();
-    Vec3 current = spatial::sample<terrain::water_velocity> (
-                     *around.water, moppe::position (Vec3 (at[0], 0.0f, at[2])))
-                     .numerical_value_in (u::m / u::s);
-    current[1] = 0.0f;
+      return velocity (Vec3 ());
+    velocity_t current =
+      velocity (spatial::sample<terrain::water_velocity> (
+                  *around.water, at_height (plan (at), 0.0f * u::m))
+                  .numerical_value_in (u::m / u::s));
+    velocity_value (current)[1] = 0.0f;
     return current;
   }
 
   bool boat_drifting (const GameSession& session, const Surroundings& around) {
     const mov::Boat& boat = session.boat ();
-    Vec3 way = boat.velocity () - current_at (around, boat.position ());
-    way[1] = 0.0f;
+    velocity_t way = velocity (boat.velocity ()) -
+                     current_at (around, moppe::position (boat.position ()));
+    velocity_value (way)[1] = 0.0f;
     return boat.afloat () && abs (boat.state ().drive) < 0.1f * one &&
-           length2 (way) < 0.8f * 0.8f;
+           length2 (velocity_value (way)) < 0.8f * 0.8f;
   }
 
   std::optional<FishingWater> water_ahead (const GameSession& session,
@@ -524,7 +541,7 @@ namespace moppe::game {
     const std::optional<Angler> from = angler (session);
     if (!from || !around.water)
       return std::nullopt;
-    Vec3 ahead = from->ahead;
+    Vec3 ahead = direction_value (from->ahead);
     ahead[1] = 0.0f;
     if (length2 (ahead) < 1e-6f)
       return std::nullopt;
@@ -536,23 +553,25 @@ namespace moppe::game {
         return std::nullopt;
     }
     const terrain::WaterSheets& sheets = *around.water;
-    const float sea = around.world->water_level.numerical_value_in (u::m);
+    const meters_t sea = around.world->water_level;
     for (meters_t reach = longest_cast; reach >= shortest_cast;
          reach -= 0.5f * u::m) {
-      Vec3 at = from->at + ahead * meters_value (reach);
-      const float ground = ground_at (around, at);
-      const float level =
-        still_water_at (*around.world, *around.surface, &sheets, at)
-          .numerical_value_in (u::m);
-      if (level - ground < meters_value (fishing_depth))
+      position_t at = moppe::position (position_value (from->at) +
+                                       ahead * meters_value (reach));
+      const meters_t ground = ground_at (around, at);
+      const meters_t level = still_water_at (
+        *around.world, *around.surface, &sheets, position_value (at));
+      if (level - ground < fishing_depth)
         continue;
-      at[1] = level;
-      FishingWater found { .aim = at, .upland = level > sea + 150.0f };
-      const position_t where = moppe::position (Vec3 (at[0], 0.0f, at[2]));
-      const float sheet = terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (sheets, where));
-      if (sheet > ground && sheet > sea + 0.05f)
-        found.waters = length (current_at (around, at)) > 0.15f
+      position_value (at)[1] = meters_value (level);
+      FishingWater found { .aim = at, .upland = level > sea + 150.0f * u::m };
+      const position_t where = at_height (plan (at), 0.0f * u::m);
+      const meters_t sheet =
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (sheets, where)) *
+        u::m;
+      if (sheet > ground && sheet > sea + 0.05f * u::m)
+        found.waters = length (velocity_value (current_at (around, at))) > 0.15f
                          ? Waters::running
                          : Waters::still;
       else
@@ -608,7 +627,7 @@ namespace moppe::game {
     switch (supper_at_hand (session, around)) {
     case Supper::fry: {
       // A pan set on the fire's stones.
-      Pan pan = pan_set_on (moppe::position (*fire_at_hand (session, around)),
+      Pan pan = pan_set_on (*fire_at_hand (session, around),
                             moppe::position (session.walker ().position ()));
       pan.since = now;
       pan.next_steam = now + 1.0 * si::second;
@@ -731,12 +750,12 @@ namespace moppe::game {
               << (b.burning () ? " others" : "") << std::endl;
   }
 
-  std::optional<Vec3> fire_place (const GameSession& session,
-                                  const Surroundings& around) {
+  std::optional<position_t> fire_place (const GameSession& session,
+                                        const Surroundings& around) {
     // An old fire ring takes the fire, or else level ground ahead.
     if (const std::optional<position_t> ring = hearth_at_hand (
           places_of (around), moppe::position (session.walker ().position ())))
-      return position_value (*ring);
+      return *ring;
     return hearth_ahead (session, around);
   }
 
@@ -747,11 +766,11 @@ namespace moppe::game {
     return camp.fire && length2 (to_fire) < 3.0f * 3.0f;
   }
 
-  void light_fire (GameSession& session, const Vec3& hearth) {
+  void light_fire (GameSession& session, const position_t& hearth) {
     GameLogicState& logic = session.logic ();
     Camp& camp = logic.m_camp;
     camp.fire = true;
-    camp.hearth = position (hearth);
+    camp.hearth = hearth;
     camp.fire_time = logic.m_total_time;
     camp.next_spark = camp.next_smoke = logic.m_total_time;
   }
@@ -776,36 +795,36 @@ namespace moppe::game {
                      const Surroundings& around,
                      seconds_t interval) {
     GameLogicState& logic = session.logic ();
-    const float dt = seconds_value (interval);
     if (!around.animal_ground || session.animals ().animals ().empty () ||
-        dt <= 0.0f)
+        interval <= 0.0f * u::s)
       return;
     {
       std::vector<Presence> presences;
-      const Vec3 subject = session.subject_position ();
-      Vec3 moving {};
+      const position_t subject = session.subject_position ();
+      velocity_t moving = velocity (Vec3 ());
       if (logic.m_last_subject)
-        moving =
-          (subject - position_value (*logic.m_last_subject)) * (1.0f / dt);
-      logic.m_last_subject = position (subject);
-      if (length2 (moving) > 60.0f * 60.0f)
-        moving = Vec3 ();
+        moving = velocity (
+          (position_value (subject) - position_value (*logic.m_last_subject)) *
+          (1.0f / seconds_value (interval)));
+      logic.m_last_subject = subject;
+      if (length2 (velocity_value (moving)) > 60.0f * 60.0f)
+        moving = velocity (Vec3 ());
       presences.push_back ({ .position = subject,
                              .velocity = moving,
                              .machine = logic.m_doing != Doing::on_foot () });
       if (around.companion && around.companion->walker)
         presences.push_back (
-          { .position = position_value (around.companion->walker->position),
-            .velocity = velocity_value (around.companion->walker->velocity) });
+          { .position = around.companion->walker->position,
+            .velocity = around.companion->walker->velocity });
       const AnimalGround& ground = *around.animal_ground;
       session.animals ().step (ground,
                                presences,
-                               session.camera ().position (),
+                               moppe::position (session.camera ().position ()),
                                700.0f * u::m,
                                interval);
       session.hens ().step (ground,
                             presences,
-                            session.camera ().position (),
+                            moppe::position (session.camera ().position ()),
                             160.0f * u::m,
                             static_cast<float> (std::fmod (
                               hours_since_midnight (logic.m_day_hours), 24.0)) *

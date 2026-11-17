@@ -14,8 +14,7 @@ namespace moppe {
         : m_params (bind_world_params (options.world, recipe)),
           m_recipe (std::move (recipe)),
           m_loading (this->recipe (), options.world_cache),
-          m_graphics (options.graphics),
-          m_sky (m_graphics.sun_height.numerical_value_in (one)),
+          m_graphics (options.graphics), m_sky (m_graphics.sun_height),
           m_spawn_position (position_value (this->world ().spawn_position ())),
           m_renderer (0), m_capture (options.screenshot_path), m_ready (false) {
       if (options.multiplayer)
@@ -52,7 +51,6 @@ namespace moppe {
     }
 
     void MoppeGame::tick (seconds_t interval) {
-      const float elapsed = seconds_value (interval);
       if (!m_ready) {
         m_simulation_clock.reset ();
         return;
@@ -78,24 +76,22 @@ namespace moppe {
         return;
       }
 
-      const int steps = m_simulation_clock.consume (elapsed);
+      const int steps = m_simulation_clock.consume (interval);
       MOPPE_PROFILE_PLOT ("simulation.steps", steps);
       for (int step = 0; step < steps; ++step)
-        tick_simulation (
-          seconds (static_cast<float> (FIXED_SIMULATION_STEP_SECONDS)));
+        tick_simulation (value_cast<float> (FIXED_SIMULATION_STEP));
 
       // The HUD reports rendered-frame cadence, not the internal 120 Hz
       // integration frequency.
       if (m_ready)
-        logic ().m_frame_time = elapsed * u::s;
+        logic ().m_frame_time = interval;
     }
 
-    void MoppeGame::tick_simulation (seconds_t interval) {
-      float dt = seconds_value (interval);
+    void MoppeGame::tick_simulation (seconds_t dt) {
       MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
       if (!m_ready)
         return;
-      logic ().m_frame_time = dt * u::s;
+      logic ().m_frame_time = dt;
       if (logic ().m_game_over)
         return;
 
@@ -103,14 +99,14 @@ namespace moppe {
 
       // The companion's pose clock counts only time the world was stepped
       // by, at the step it was stepped by.
-      m_company.stepped += dt * si::second;
-      logic ().m_total_time += dt * si::second;
-      const float total_time =
-        static_cast<float> (seconds_into_play (logic ().m_total_time));
+      m_company.stepped += dt;
+      logic ().m_total_time += dt;
+      const seconds_t total_time = seconds (
+        static_cast<float> (seconds_into_play (logic ().m_total_time)));
       m_sky.update (logic (), total_time);
 
       const OpeningDirector::Step opening =
-        m_opening.step (input, seconds (dt), session (), surface (), m_sky);
+        m_opening.step (input, dt, session (), surface (), m_sky);
       if (opening.left)
         leave_cinematic ();
       if (opening.played) {
@@ -118,17 +114,21 @@ namespace moppe {
         return;
       }
 
-      m_trunk_field.focus (session ().subject_position ());
+      m_trunk_field.focus (position_value (session ().subject_position ()));
       static const char* walk_script = moppe::environment ("MOPPE_WALK");
       // A walk script drives (the bump script drives the jeep too, and
       // boat-fish the boat), or else the demo autopilot (demo_pilot.hh).
       if (walk_script && (logic ().m_doing == Doing::on_foot () ||
                           std::string_view (walk_script) == "bump" ||
                           std::string_view (walk_script) == "boat-fish"))
-        input = m_walk.step (script_stage (), walk_script, seconds (dt));
+        input = m_walk.step (script_stage (), walk_script, dt);
       else if (DemoPilot::active ())
-        input = m_demo.steer (
-          input, session (), m_parking, world_ground (), total_time, dt);
+        input = m_demo.steer (input,
+                              session (),
+                              m_parking,
+                              world_ground (),
+                              seconds_value (total_time),
+                              seconds_value (dt));
       m_company.ride_along (session (), input);
       m_company.keep_time (session ());
       // The ground shows what the basket holds, a restored one too.
@@ -138,16 +138,14 @@ namespace moppe {
       // Ours bump into the other player's machines and into the buses.
       std::vector<MachineBody> strangers = m_company.strangers;
       for (const BusPose& bus : m_places.bus.where (bus_time (logic ())))
-        strangers.push_back (
-          bus_body (bus,
-                    position (session ().subject_position ()),
-                    m_places.layout.period));
+        strangers.push_back (bus_body (
+          bus, session ().subject_position (), m_places.layout.period));
       const GameSessionAdvanceResult advance =
         advance_game_session (world (),
                               surface (),
                               session (),
                               input,
-                              seconds (dt),
+                              dt,
                               &m_trunk_field,
                               ground_cover (session ().subject_position ()),
                               &generated_world ().water_surface (),
@@ -156,8 +154,7 @@ namespace moppe {
       if (advance.say_ouchies)
         platform::say ("Ouchies. That hurts.");
 
-      m_capture_camera.override_camera (
-        session (), world_ground (), seconds (dt));
+      m_capture_camera.override_camera (session (), world_ground (), dt);
 
       update_frame_flare ();
     }
@@ -194,7 +191,7 @@ namespace moppe {
 
       if (k == Key::Q && down && logic ().m_doing == Doing::on_foot () &&
           !logic ().m_camp.resting) {
-        start_scan (0.0);
+        start_scan (duration_t {});
         return;
       }
 
@@ -284,13 +281,11 @@ namespace moppe {
         .selected_camera = camera,
         .scene = scene,
         .aspect = aspect * aspect_ratio[one],
-        .cinematic_motion_blur = m_opening.motion_blur () * proportion[one],
-        .cinematic_elapsed = m_opening.elapsed () * u::s,
+        .cinematic_motion_blur = m_opening.motion_blur (),
+        .cinematic_elapsed = m_opening.elapsed (),
         .reveal_player = m_opening.reveal_player (),
         .capture_field_of_view =
-          m_capture_camera.lens () && !cinematic
-            ? std::optional<degrees_t> (*m_capture_camera.lens () * u::deg)
-            : std::nullopt,
+          !cinematic ? m_capture_camera.lens () : std::nullopt,
         .sky = m_sky.sky (),
         .water = &generated_world ().water_surface (),
       };
@@ -339,21 +334,23 @@ namespace moppe {
       logic ().m_shake = 0.0f * u::deg;
       logic ().m_shake_time = 0.0f * u::s;
       logic ().m_jump_airtime = 0.0f * u::s;
-      logic ().m_jump_spin_radians = 0.0f * u::rad;
-      logic ().m_jump_peak_spin_radians = 0.0f * u::rad;
+      logic ().m_jump_spin = 0.0f * u::rad;
+      logic ().m_jump_peak_spin = 0.0f * u::rad;
       logic ().m_landed_age = 10.0f * u::s;
       logic ().m_wheelie_m = 0.0f * u::m;
       session ().set_mode (Doing::driving (Machine::bike));
       // Back to the start, but ON the ground rather than 600 m
       // over it.
-      const float ground =
+      const meters_t ground =
         spatial::sample<terrain::surface_elevation> (
           surface (),
           position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
           .delta_from_zero ()
-          .numerical_value_in (u::m);
-      session ().bike ().reset (
-        Vec3 (m_spawn_position[0], ground + 1.2f, m_spawn_position[2]));
+          .numerical_value_in (u::m) *
+        u::m;
+      session ().bike ().reset (Vec3 (m_spawn_position[0],
+                                      meters_value (ground + 1.2f * u::m),
+                                      m_spawn_position[2]));
       // Key releases were swallowed during the game-over screen;
       // don't resume with the throttle stuck open.
       m_live_input.clear ();

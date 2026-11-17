@@ -25,15 +25,18 @@ namespace moppe::game {
   // for the following cameras the point on the subject they swing about,
   // how it moves, and how far behind and how high above it they stand.
   struct CameraRig {
-    Vec3 eye;
-    Vec3 ahead { 0, 0, 1 };
-    Vec3 pivot;
-    Vec3 velocity;
+    position_t eye = position (Vec3 ());
+    direction_t ahead = unit_direction (Vec3 (0, 0, 1));
+    position_t pivot = position (Vec3 ());
+    velocity_t velocity = moppe::velocity (Vec3 ());
     meters_t distance = 6.5f * u::m;
     // As near as the ground may pull the camera in.
     meters_t nearest = 2.6f * u::m;
     degrees_t elevation = 18.0f * u::deg;
   };
+
+  // How fast the subject goes, as the speedometer reads it.
+  using kilometres_per_hour_t = quantity<si::kilo<si::metre> / si::hour, float>;
 
   // The mutable state of one playable session on a completed world.  The
   // world retains the surface; the bike and the glider borrow it for their
@@ -192,9 +195,9 @@ namespace moppe::game {
       return m_hens;
     }
 
-    Vec3 subject_position () const;
-    Vec3 subject_heading () const;
-    float subject_speed_kmh () const;
+    position_t subject_position () const;
+    direction_t subject_heading () const;
+    kilometres_per_hour_t subject_speed_kmh () const;
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
     // What the mount key would take, on foot: of the machines, the
@@ -203,20 +206,21 @@ namespace moppe::game {
     // Where someone stepping out of the boat, or off the jet ski, stands:
     // over whichever side, or the bow, has the shallowest water there, as
     // last reckoned.
-    Vec3 boat_landing () const {
+    position_t boat_landing () const {
       return m_boat_landing;
     }
     // Each machine as the bumpers see it, and a blow to it
     // (game/rescue.hh).
     MachineBody machine_body (Machine machine) const;
-    void
-    push_machine (Machine machine, const Vec3& at, const impulse_t& impulse);
+    void push_machine (Machine machine,
+                       const position_t& at,
+                       const impulse_t& impulse);
     // On foot beside a stuck machine, which the mount key would take up a
     // rope to haul rather than get into.
     std::optional<Machine> haul_within_reach () const;
     // The machine on the rope, and where the rope is tied to it.
     std::optional<Machine> hauling () const;
-    Vec3 rope_end () const;
+    position_t rope_end () const;
     // Driving a machine that is stuck.
     bool stuck () const;
     // Flying, the machine the hook is over and the line would reach
@@ -246,25 +250,22 @@ namespace moppe::game {
     // Rooms the following camera keeps inside of while the subject is in
     // one (the farmhouses'), in a world of the given period.
     void set_rooms (std::vector<ChaseCamera::Room> rooms,
-                    float period_x,
-                    float period_z) {
+                    plan_extent_t period) {
       m_rooms = std::move (rooms);
-      m_room_period_x = period_x;
-      m_room_period_z = period_z;
+      m_room_period = period;
     }
 
-    void set_boat_landing (const Vec3& at) {
+    void set_boat_landing (const position_t& at) {
       m_boat_landing = at;
     }
 
   private:
     std::vector<ChaseCamera::Room> m_rooms;
-    float m_room_period_x = 0.0f;
-    float m_room_period_z = 0.0f;
+    plan_extent_t m_room_period = plan_extent (0.0f * u::m, 0.0f * u::m);
     GameLogicState m_logic;
     Fleet m_fleet;
     mov::Glider m_glider;
-    Vec3 m_boat_landing {};
+    position_t m_boat_landing = position (Vec3 ());
     Walker m_walker;
     ChaseCamera m_camera;
     Stars m_stars;
@@ -292,10 +293,10 @@ namespace moppe::game {
   // loose dust the ground gives up and its colour, and how thickly fallen
   // leaves lie there to be thrown up.
   struct GroundCover {
-    float dust = 1.0f;
+    proportion_t dust = 1.0f * proportion[one];
     DisplayColor dust_color { 0.60f, 0.52f, 0.40f };
     DisplayColor clod_color { 0.42f, 0.34f, 0.24f };
-    float leaves = 0.0f;
+    proportion_t leaves = 0.0f * proportion[one];
   };
 
   // `strangers` are the other player's machines, which ours bump into

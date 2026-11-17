@@ -179,13 +179,13 @@ namespace moppe::game {
                                        seconds_t play_time,
                                        proportion_t sun_height) {
     const std::string name = std::filesystem::path (path).stem ().string ();
-    const std::string line = format_opening_shot (
-      name,
-      position_value (frame.camera.position),
-      direction_value (frame.camera.forward),
-      frame.camera.field_of_view.numerical_value_in (u::deg),
-      seconds_value (play_time),
-      sun_height.numerical_value_in (one));
+    const std::string line =
+      format_opening_shot (name,
+                           position_value (frame.camera.position),
+                           direction_value (frame.camera.forward),
+                           frame.camera.field_of_view,
+                           play_time,
+                           sun_height);
     std::cerr << "moppe: pose: " << line << '\n';
     std::ofstream shots (std::filesystem::path (m_snapshot_directory) /
                            "shots.txt",

@@ -24,6 +24,9 @@ namespace moppe::game {
   using clock_time_t =
     mp_units::quantity_point<mp_units::si::hour, first_midnight, double>;
   using duration_t = mp_units::quantity<mp_units::si::second, double>;
+  // How fast the day's clock runs: its hours for each second of play.
+  using day_pace_t =
+    mp_units::quantity<mp_units::si::hour / mp_units::si::second, double>;
 
   // Neither clock's moments pass for the other's, nor measure from them.
   template <class A, class B>
@@ -50,10 +53,10 @@ namespace moppe::game {
       .numerical_value_in (mp_units::si::hour);
   }
 
-  // A duration as the float seconds the rest of the game counts in.
-  constexpr float seconds_between (play_time_t later, play_time_t earlier) {
-    return static_cast<float> (
-      (later - earlier).numerical_value_in (mp_units::si::second));
+  // A duration in the float seconds the rest of the game counts in.
+  constexpr seconds_t seconds_between (play_time_t later, play_time_t earlier) {
+    return mp_units::value_cast<float> (
+      (later - earlier).in (mp_units::si::second));
   }
 }
 

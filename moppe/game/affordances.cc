@@ -277,7 +277,8 @@ namespace moppe::game {
       tend_beacon (session, *around, a.object);
       return;
     case Verb::light_fire:
-      if (const std::optional<Vec3> hearth = fire_place (session, *around))
+      if (const std::optional<position_t> hearth =
+            fire_place (session, *around))
         light_fire (session, *hearth);
       return;
     case Verb::douse_fire:

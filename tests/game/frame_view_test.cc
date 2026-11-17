@@ -203,8 +203,8 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
   logic.m_lives = 6;
   logic.m_score = 420;
   logic.m_jump_airtime = 2.75f * u::s;
-  logic.m_jump_peak_spin_radians = 1.5707963f * u::rad;
-  logic.m_landed_spin_degrees = 180.0f * u::deg;
+  logic.m_jump_peak_spin = 1.5707963f * u::rad;
+  logic.m_landed_spin = 180.0f * u::deg;
   logic.m_landed_clean = true;
   logic.m_landed_age = 0.35f * u::s;
   logic.m_frame_time = 0.0125f * u::s;

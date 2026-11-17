@@ -26,11 +26,11 @@ namespace moppe::game {
     // Riding the motocross, what hangs the hammock on foot (R, the left
     // shoulder) is held to lean back for a wheelie.
     bool lean_back = false;
-    // Head movement since the last tick, in radians, from the mouse or the
-    // right stick: on foot it turns the walker and tilts the gaze; riding
-    // or gliding it looks around the way ahead.
-    float look_yaw = 0.0f;
-    float look_pitch = 0.0f;
+    // Head movement since the last tick, from the mouse or the right
+    // stick: on foot it turns the walker and tilts the gaze; riding or
+    // gliding it looks around the way ahead.
+    radians_t look_yaw {};
+    radians_t look_pitch {};
     bool run = false;
   };
 

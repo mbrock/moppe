@@ -16,9 +16,9 @@ namespace moppe {
       dl.append (m_home_base_marker);
     }
 
-    void MoppeGame::start_scan (double ago) {
-      m_scan.start (session ().walker ().position (),
-                    seconds_into_play (logic ().m_total_time) - ago,
+    void MoppeGame::start_scan (duration_t ago) {
+      m_scan.start (moppe::position (session ().walker ().position ()),
+                    logic ().m_total_time - ago,
                     m_mushrooms,
                     m_trunk_field,
                     world_ground ().reader ());
@@ -30,10 +30,11 @@ namespace moppe {
       // takes it.
       const Mat4& m = camera.view;
       const ScanView view {
-        .eye = position_value (camera.position),
-        .right = Vec3 (m.at (0, 0), m.at (1, 0), m.at (2, 0)),
-        .up = Vec3 (m.at (0, 1), m.at (1, 1), m.at (2, 1)),
-        .forward = Vec3 (-m.at (0, 2), -m.at (1, 2), -m.at (2, 2)),
+        .eye = camera.position,
+        .right = unit_direction (Vec3 (m.at (0, 0), m.at (1, 0), m.at (2, 0))),
+        .up = unit_direction (Vec3 (m.at (0, 1), m.at (1, 1), m.at (2, 1))),
+        .forward =
+          unit_direction (Vec3 (-m.at (0, 2), -m.at (1, 2), -m.at (2, 2))),
         .tan_half_height =
           std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad)),
         .width_pts = static_cast<float> (r.width_pts ()),
@@ -41,9 +42,9 @@ namespace moppe {
       };
       m_scan.draw (r,
                    m_heads_up.hud.font (),
-                   seconds_into_play (logic ().m_total_time),
+                   logic ().m_total_time,
                    view,
-                   session ().walker ().position (),
+                   moppe::position (session ().walker ().position ()),
                    world_ground ().reader ());
     }
 
@@ -348,21 +349,19 @@ namespace moppe {
                       0x200000);
       render_birds (r,
                     session ().hens ().birds (),
-                    position_value (frame.camera.position),
-                    direction_value (frame.camera.frame_forward),
-                    seconds_value (frame.lighting.time),
-                    90.0f,
-                    plan_value (m_places.layout.period).x (),
-                    plan_value (m_places.layout.period).z (),
+                    frame.camera.position,
+                    frame.camera.frame_forward,
+                    frame.lighting.time,
+                    90.0f * u::m,
+                    m_places.layout.period,
                     0x300000);
       draw_nest_eggs (m_world_dl,
                       m_places.nests,
                       logic ().m_nests,
-                      position_value (frame.camera.position),
-                      plan_value (m_places.layout.period).x (),
-                      plan_value (m_places.layout.period).z ());
+                      frame.camera.position,
+                      m_places.layout.period);
       if (actors.walker && lying_down ())
-        draw_sleeper (m_world_dl, helmet, seconds_value (frame.lighting.time));
+        draw_sleeper (m_world_dl, helmet, frame.lighting.time);
       else if (actors.walker && !helmet)
         render_walker (m_world_dl,
                        *actors.walker,
@@ -374,8 +373,8 @@ namespace moppe {
           m_world_dl, *actors.walker, frame.lighting.time, m_basket_contents);
       // The mushroom just picked rises from the moss into the basket.
       if (actors.walker && !basket.picked.empty () && !basket.last_refused) {
-        const float age =
-          seconds_between (logic ().m_total_time, basket.last_reach_time);
+        const float age = seconds_value (
+          seconds_between (logic ().m_total_time, basket.last_reach_time));
         if (age >= 0.0f && age < 0.45f) {
           const float t = age / 0.45f;
           MushroomSite rising = m_mushrooms.site (basket.picked.back ());
@@ -509,7 +508,7 @@ namespace moppe {
           return world_ground ().height (position_value (at)) * u::m;
         },
         time,
-        m_sky.sky ().daylight * proportion[one]);
+        m_sky.sky ().daylight);
     }
 
     void MoppeGame::draw_effect_layers (render::Renderer& r,

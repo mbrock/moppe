@@ -40,8 +40,8 @@ namespace moppe::game {
                const WorldGround& ground,
                const SkyReading& sky,
                GameSession& session,
-               const Vec3& home_base,
-               const Vec3& spawn);
+               const position_t& home_base,
+               const position_t& spawn);
 
     void start (GameSession& session,
                 const map::SurfaceGeometry& surface,
@@ -76,14 +76,15 @@ namespace moppe::game {
     // The camera while the opening plays.
     std::optional<FrameCameraReading> camera () const;
 
-    float motion_blur () const {
-      return m_flight.active () ? m_flight.motion_blur () : 0.0f;
+    proportion_t motion_blur () const {
+      return m_flight.active () ? m_flight.motion_blur ()
+                                : 0.0f * proportion[one];
     }
 
-    float elapsed () const {
+    seconds_t elapsed () const {
       return m_reel.active ()     ? m_reel.elapsed ()
-             : m_flight.active () ? seconds_value (m_flight.elapsed ())
-                                  : 0.0f;
+             : m_flight.active () ? m_flight.elapsed ()
+                                  : 0.0f * u::s;
     }
 
     // Whether the shot on screen shows the player before it settles.
@@ -118,16 +119,16 @@ namespace moppe::game {
     // Any world's opening: one long still looking back at the trailhead
     // from up the trail, with the titles over it.
     static std::vector<OpeningShot> generated (const WorldGround& ground,
-                                               const Vec3& home_base,
-                                               const Vec3& spawn);
+                                               const position_t& home_base,
+                                               const position_t& spawn);
 
     void plan_reel (const char* choice,
                     const GeneratedWorld& world,
                     const WorldGround& ground,
                     const SkyReading& sky,
                     GameSession& session,
-                    const Vec3& home_base,
-                    const Vec3& spawn);
+                    const position_t& home_base,
+                    const position_t& spawn);
 
     // The opening's last shot lands where play takes up the view: at
     // the following camera's place behind the player, or in their eyes.

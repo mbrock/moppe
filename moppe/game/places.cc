@@ -1019,10 +1019,12 @@ namespace moppe::game {
   proportion_t beacon_burn (play_time_t lit, play_time_t out, play_time_t now) {
     using namespace places_parts;
     if (lit > out)
-      return smoothstep (0.0f, 6.0f, seconds_between (now, lit)) *
+      return smoothstep (
+               0.0f, 6.0f, seconds_value (seconds_between (now, lit))) *
              proportion[one];
-    return (1.0f - smoothstep (0.0f, 2.5f, seconds_between (now, out))) *
-           smoothstep (0.0f, 6.0f, seconds_between (out, lit)) *
+    return (1.0f - smoothstep (
+                     0.0f, 2.5f, seconds_value (seconds_between (now, out)))) *
+           smoothstep (0.0f, 6.0f, seconds_value (seconds_between (out, lit))) *
            proportion[one];
   }
 }

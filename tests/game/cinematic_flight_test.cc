@@ -153,7 +153,7 @@ namespace {
 MOPPE_TEST (cinematic_flight_opens_with_a_fast_trail_reveal) {
   FlightFixture fixture;
   const terrain::TrailNetwork trail = trail_fixture (fixture);
-  const Vec3 arrival (200, 80, 200);
+  const position_t arrival = position (Vec3 (200, 80, 200));
   const game::CinematicFlightPlan landscape =
     game::plan_cinematic_flight (fixture.surface,
                                  fixture.flood,
@@ -175,7 +175,7 @@ MOPPE_TEST (cinematic_flight_opens_with_a_fast_trail_reveal) {
                game::CinematicLandmarkKind::Trail);
   MOPPE_CHECK (game::cinematic_landmark_name (
                  game::CinematicLandmarkKind::Trail) == "trail");
-  const Vec3 opening_eye = plan.waypoints.front ().position;
+  const Vec3 opening_eye = position_value (plan.waypoints.front ().position);
   MOPPE_CHECK (
     opening_eye[1] >=
     terrain::surface_elevation_value (
@@ -189,7 +189,7 @@ MOPPE_TEST (cinematic_flight_opens_with_a_fast_trail_reveal) {
   bool looked_down_at_route = false;
   for (int frame = 0; frame < 180 && flight.active (); ++frame) {
     flight.tick (seconds (1.0f / 60.0f), fixture.surface);
-    looked_down_at_route |= flight.forward ()[1] < -0.08f;
+    looked_down_at_route |= direction_value (flight.forward ())[1] < -0.08f;
   }
   MOPPE_CHECK (looked_down_at_route);
 }
@@ -202,7 +202,7 @@ MOPPE_TEST (cinematic_flight_reads_landscape_into_distinct_places) {
                                  fixture.census,
                                  fixture.drainage,
                                  fixture.rivers,
-                                 Vec3 (200, 80, 200));
+                                 position (Vec3 (200, 80, 200)));
 
   MOPPE_CHECK (plan.waypoints.size () >= 14);
   const auto has = [&] (game::CinematicLandmarkKind kind) {
@@ -216,13 +216,15 @@ MOPPE_TEST (cinematic_flight_reads_landscape_into_distinct_places) {
   MOPPE_CHECK (has (game::CinematicLandmarkKind::Peak));
   MOPPE_CHECK (has (game::CinematicLandmarkKind::Arrival));
   for (const game::CinematicFlightWaypoint& waypoint : plan.waypoints)
-    MOPPE_CHECK (waypoint.position[1] >=
-                 terrain::surface_elevation_value (
-                   spatial::sample<terrain::surface_elevation> (
-                     fixture.surface,
-                     moppe::position (Vec3 (
-                       waypoint.position[0], 0.0f, waypoint.position[2])))) +
-                   8.9f);
+    MOPPE_CHECK (
+      position_value (waypoint.position)[1] >=
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          fixture.surface,
+          moppe::position (Vec3 (position_value (waypoint.position)[0],
+                                 0.0f,
+                                 position_value (waypoint.position)[2])))) +
+        8.9f);
 }
 
 MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
@@ -263,7 +265,7 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   };
 
   const game::CinematicFlightPlan plan = game::plan_cinematic_flight (
-    surface, flood, census, drainage, rivers, Vec3 (100, 60, 100));
+    surface, flood, census, drainage, rivers, position (Vec3 (100, 60, 100)));
   MOPPE_CHECK (!plan.empty ());
   MOPPE_CHECK (plan.landmarks.back ().kind ==
                game::CinematicLandmarkKind::Arrival);
@@ -277,12 +279,12 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
                                  fixture.census,
                                  fixture.drainage,
                                  fixture.rivers,
-                                 Vec3 (200, 80, 200));
+                                 position (Vec3 (200, 80, 200)));
   game::CinematicFlight flight;
   flight.start (plan, fixture.surface);
   MOPPE_CHECK (flight.active ());
-  Vec3 previous_position = flight.position ();
-  Vec3 previous_forward = flight.forward ();
+  Vec3 previous_position = position_value (flight.position ());
+  Vec3 previous_forward = direction_value (flight.forward ());
   Vec3 previous_motion {};
   bool has_previous_motion = false;
   float peak_speed = speed_value (flight.speed ());
@@ -294,8 +296,8 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
       .pace = frame < 360 ? 0.25f : 0.0f
     };
     flight.tick (seconds (1.0f / 60.0f), fixture.surface, controls);
-    const Vec3 p = flight.position ();
-    const Vec3 view_forward = flight.forward ();
+    const Vec3 p = position_value (flight.position ());
+    const Vec3 view_forward = direction_value (flight.forward ());
     const Vec3 motion = p - previous_position;
     MOPPE_CHECK (length (motion) < 8.0f);
     if (length (motion) > 0.2f) {
@@ -316,7 +318,7 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
                 spatial::sample<terrain::surface_elevation> (
                   fixture.surface, moppe::position (Vec3 (p[0], 0.0f, p[2])))) +
                 17.9f);
-    MOPPE_CHECK (std::isfinite (flight.forward ()[0]));
+    MOPPE_CHECK (std::isfinite (direction_value (flight.forward ())[0]));
     MOPPE_CHECK (flight.motion_blur () >= 0.08f);
     MOPPE_CHECK (flight.motion_blur () <= 0.72f);
   }

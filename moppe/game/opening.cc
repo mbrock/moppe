@@ -9,14 +9,16 @@
 
 namespace moppe::game {
   namespace {
-    constexpr float opening_degree = PI / 180.0f;
+    // One degree, in radians.
+    constexpr auto opening_degree = PI / 180.0f * u::rad / u::deg;
 
-    float unit_clamp (float t) {
-      return std::clamp (t, 0.0f, 1.0f);
+    // How far through a span, held between its ends.
+    proportion_t unit_clamp (magnitude_t t) {
+      return std::clamp (scalar_value (t), 0.0f, 1.0f) * proportion[one];
     }
 
-    float opening_ease (float t) {
-      t = unit_clamp (t);
+    proportion_t opening_ease (magnitude_t span) {
+      const proportion_t t = unit_clamp (span);
       return t * t * (3.0f - 2.0f * t);
     }
 
@@ -71,6 +73,7 @@ namespace moppe::game {
       const std::string& key () {
         return m_words[m_at++];
       }
+      // Text holds plain numbers; each key types its own.
       bool number (float& value) {
         if (done ()) {
           m_error = "missing number after " + m_words[m_at - 1];
@@ -117,40 +120,40 @@ namespace moppe::game {
           float x, y, z;
           if (!in.number (x) || !in.number (y) || !in.number (z))
             return false;
-          shot.eye = Vec3 (x, y, z);
+          shot.eye = position (Vec3 (x, y, z));
           has_eye = true;
           continue;
         }
         if (!in.number (value))
           return false;
         if (key == "heading")
-          shot.heading_deg = value;
+          shot.heading_deg = value * u::deg;
         else if (key == "pitch")
-          shot.pitch_deg = value;
+          shot.pitch_deg = value * u::deg;
         else if (key == "fov")
-          shot.fov_deg = value;
+          shot.fov_deg = value * u::deg;
         else if (key == "hold")
-          shot.hold = value;
+          shot.hold = value * u::s;
         else if (key == "push")
-          shot.push = value;
+          shot.push = value * u::m;
         else if (key == "truck")
-          shot.truck = value;
+          shot.truck = value * u::m;
         else if (key == "rise")
-          shot.rise = value;
+          shot.rise = value * u::m;
         else if (key == "pan")
-          shot.pan_deg = value;
+          shot.pan_deg = value * u::deg;
         else if (key == "tilt")
-          shot.tilt_deg = value;
+          shot.tilt_deg = value * u::deg;
         else if (key == "zoom")
-          shot.zoom_deg = value;
+          shot.zoom_deg = value * u::deg;
         else if (key == "sway")
-          shot.sway = value;
+          shot.sway = value * scale_factor[one];
         else if (key == "fade")
-          shot.fade = value;
+          shot.fade = value * u::s;
         else if (key == "clock")
-          shot.clock = value;
+          shot.clock = value * u::s;
         else if (key == "sun")
-          shot.sun = value;
+          shot.sun = value * proportion[one];
         else {
           error = "unknown shot setting: " + key;
           return false;
@@ -160,8 +163,8 @@ namespace moppe::game {
         error = "shot " + shot.name + " has no eye";
         return false;
       }
-      if (!(shot.hold > 0.0f) || !(shot.fov_deg > 1.0f) ||
-          !(shot.fov_deg < 170.0f) || shot.fade < 0.0f) {
+      if (!(shot.hold > 0.0f * u::s) || !(shot.fov_deg > 1.0f * u::deg) ||
+          !(shot.fov_deg < 170.0f * u::deg) || shot.fade < 0.0f * u::s) {
         error = "shot " + shot.name + " has an impossible hold, fov, or fade";
         return false;
       }
@@ -178,21 +181,21 @@ namespace moppe::game {
         if (!in.number (value))
           return false;
         if (key == "hold")
-          arrival.hold = value;
+          arrival.hold = value * u::s;
         else if (key == "push")
-          arrival.push = value;
+          arrival.push = value * u::m;
         else if (key == "rise")
-          arrival.rise = value;
+          arrival.rise = value * u::m;
         else if (key == "fade")
-          arrival.fade = value;
+          arrival.fade = value * u::s;
         else if (key == "sway")
-          arrival.sway = value;
+          arrival.sway = value * scale_factor[one];
         else {
           error = "unknown arrival setting: " + key;
           return false;
         }
       }
-      if (!(arrival.hold > 0.0f)) {
+      if (!(arrival.hold > 0.0f * u::s)) {
         error = "arrival needs a positive hold";
         return false;
       }
@@ -222,11 +225,11 @@ namespace moppe::game {
         if (!in.number (value))
           return false;
         if (key == "at")
-          caption.at = value;
+          caption.at = value * u::s;
         else if (key == "for")
-          caption.length = value;
+          caption.length = value * u::s;
         else if (key == "y")
-          caption.y = value;
+          caption.y = value * proportion[one];
         else {
           error = "unknown caption setting: " + key;
           return false;
@@ -237,13 +240,13 @@ namespace moppe::game {
 
     // A deterministic phase per shot, so each held camera breathes
     // differently but identically on every launch.
-    float phase_of (const std::string& name, int salt) {
+    radians_t phase_of (const std::string& name, int salt) {
       std::uint32_t hash = 2166136261u ^ static_cast<std::uint32_t> (salt);
       for (const char c : name) {
         hash ^= static_cast<unsigned char> (c);
         hash *= 16777619u;
       }
-      return static_cast<float> (hash % 6283u) * 0.001f;
+      return static_cast<float> (hash % 6283u) * 0.001f * u::rad;
     }
   }
 
@@ -290,7 +293,7 @@ namespace moppe::game {
           else if (key == "resolution")
             reel.resolution = static_cast<int> (value);
           else if (key == "km")
-            reel.km = value;
+            reel.km = value * u::km;
           else
             return fail ("unknown world setting: " + key);
         }
@@ -323,29 +326,29 @@ namespace moppe::game {
     return reel;
   }
 
-  float heading_degrees (const Vec3& forward) {
-    return std::atan2 (forward[0], forward[2]) / opening_degree;
+  degrees_t heading_degrees (const Vec3& forward) {
+    return std::atan2 (forward[0], forward[2]) * u::rad / opening_degree;
   }
 
-  float pitch_degrees (const Vec3& forward) {
+  degrees_t pitch_degrees (const Vec3& forward) {
     const float horizontal =
       std::sqrt (forward[0] * forward[0] + forward[2] * forward[2]);
-    return std::atan2 (forward[1], horizontal) / opening_degree;
+    return std::atan2 (forward[1], horizontal) * u::rad / opening_degree;
   }
 
-  Vec3 forward_from (float heading_deg, float pitch_deg) {
-    const float h = heading_deg * opening_degree;
-    const float p = pitch_deg * opening_degree;
-    return Vec3 (
-      std::sin (h) * std::cos (p), std::sin (p), std::cos (h) * std::cos (p));
+  direction_t forward_from (degrees_t heading, degrees_t pitch) {
+    const float h = radians_value (heading * opening_degree);
+    const float p = radians_value (pitch * opening_degree);
+    return unit_direction (Vec3 (
+      std::sin (h) * std::cos (p), std::sin (p), std::cos (h) * std::cos (p)));
   }
 
   std::string format_opening_shot (const std::string& name,
                                    const Vec3& eye,
                                    const Vec3& forward,
-                                   float fov_deg,
-                                   float clock,
-                                   float sun) {
+                                   degrees_t fov,
+                                   seconds_t clock,
+                                   proportion_t sun) {
     char line[320];
     std::snprintf (line,
                    sizeof line,
@@ -355,27 +358,29 @@ namespace moppe::game {
                    static_cast<float> (eye[0]),
                    static_cast<float> (eye[1]),
                    static_cast<float> (eye[2]),
-                   heading_degrees (forward),
-                   pitch_degrees (forward),
-                   fov_deg,
-                   clock,
-                   sun);
+                   heading_degrees (forward).numerical_value_in (u::deg),
+                   pitch_degrees (forward).numerical_value_in (u::deg),
+                   fov.numerical_value_in (u::deg),
+                   seconds_value (clock),
+                   sun.numerical_value_in (one));
     return line;
   }
 
   OpeningShot arrival_shot (const OpeningArrival& arrival,
-                            const Vec3& eye,
+                            const position_t& eye,
                             const Vec3& forward,
-                            float fov_deg) {
+                            degrees_t fov) {
     OpeningShot shot;
     shot.name = "arrival";
     shot.heading_deg = heading_degrees (forward);
     shot.pitch_deg = pitch_degrees (forward);
-    shot.fov_deg = fov_deg;
+    shot.fov_deg = fov;
     shot.hold = arrival.hold;
     // The push runs along the view, as OpeningPlayer::pose moves it.
-    const Vec3 along = forward_from (shot.heading_deg, shot.pitch_deg);
-    shot.eye = eye - along * arrival.push + Vec3 (0, arrival.rise, 0);
+    const direction_t way = forward_from (shot.heading_deg, shot.pitch_deg);
+    shot.eye = position (position_value (eye) -
+                         direction_value (way) * meters_value (arrival.push) +
+                         Vec3 (0, meters_value (arrival.rise), 0));
     shot.push = arrival.push;
     shot.rise = -arrival.rise;
     shot.sway = arrival.sway;
@@ -389,9 +394,9 @@ namespace moppe::game {
     m_shots = std::move (shots);
     m_active = !m_shots.empty ();
     m_shot = 0;
-    m_shot_time = 0.0f;
-    m_elapsed = 0.0f;
-    m_duration = 0.0f;
+    m_shot_time = 0.0f * u::s;
+    m_elapsed = 0.0f * u::s;
+    m_duration = 0.0f * u::s;
     for (const OpeningShot& shot : m_shots)
       m_duration += shot.hold;
     m_cut = true;
@@ -401,16 +406,15 @@ namespace moppe::game {
 
   void OpeningPlayer::stop () noexcept {
     m_active = false;
-    m_veil = 0.0f;
+    m_veil = 0.0f * proportion[one];
   }
 
   void OpeningPlayer::tick (seconds_t interval) {
-    const float dt = seconds_value (interval);
     if (!m_active)
       return;
     m_cut = false;
-    m_elapsed += dt;
-    m_shot_time += dt;
+    m_elapsed += interval;
+    m_shot_time += interval;
     while (m_shot_time >= m_shots[m_shot].hold) {
       m_shot_time -= m_shots[m_shot].hold;
       if (++m_shot >= m_shots.size ()) {
@@ -428,50 +432,62 @@ namespace moppe::game {
 
   void OpeningPlayer::pose () {
     const OpeningShot& shot = m_shots[m_shot];
-    const float t = m_shot_time;
-    const float progress = unit_clamp (t / shot.hold);
+    const seconds_t t = m_shot_time;
+    const proportion_t progress = unit_clamp (t / shot.hold);
     // Held shots drift through their whole hold at an even pace, already in
     // motion at the cut; a settling shot eases into its final pose.
-    const float travel =
+    const proportion_t travel =
       shot.settle ? 1.0f - (1.0f - progress) * (1.0f - progress) : progress;
-    const float sway =
-      shot.sway * (shot.settle ? (1.0f - progress) * (1.0f - progress) : 1.0f);
+    const scale_factor_t sway = quantity_cast<scale_factor> (
+      shot.sway * (shot.settle ? (1.0f - progress) * (1.0f - progress)
+                               : 1.0f * proportion[one]));
 
     const Vec3 up (0, 1, 0);
-    const Vec3 base = forward_from (shot.heading_deg, shot.pitch_deg);
+    const Vec3 base =
+      direction_value (forward_from (shot.heading_deg, shot.pitch_deg));
     Vec3 right = cross (base, up);
     right = length2 (right) > 1e-6f ? normalized (right) : Vec3 (1, 0, 0);
 
-    const auto wave = [&] (int salt, float hz, float amplitude) {
+    // Each swell's amplitude is in degrees or metres, as it moves.
+    const auto wave = [&] (int salt, frequency_t hz, auto amplitude) {
       return amplitude *
-             std::sin (2.0f * PI * hz * t + phase_of (shot.name, salt));
+             std::sin ((2.0f * PI * hz * t).numerical_value_in (one) +
+                       radians_value (phase_of (shot.name, salt)));
     };
     // A camera on a tripod in a light breeze: slow, incommensurate swells
     // of a fraction of a opening_degree, never a shake.
-    const float yaw =
-      sway * (wave (1, 0.071f, 0.30f) + wave (2, 0.163f, 0.11f));
-    const float pitch =
-      sway * (wave (3, 0.089f, 0.17f) + wave (4, 0.197f, 0.06f));
-    m_roll = sway * wave (5, 0.053f, 0.12f) * opening_degree;
+    const degrees_t yaw = quantity_cast<isq::angular_measure> (
+      sway * (wave (1, 0.071f * u::Hz, 0.30f * u::deg) +
+              wave (2, 0.163f * u::Hz, 0.11f * u::deg)));
+    const degrees_t pitch = quantity_cast<isq::angular_measure> (
+      sway * (wave (3, 0.089f * u::Hz, 0.17f * u::deg) +
+              wave (4, 0.197f * u::Hz, 0.06f * u::deg)));
+    m_roll = quantity_cast<isq::angular_measure> (
+      sway * wave (5, 0.053f * u::Hz, 0.12f * u::deg) * opening_degree);
 
-    m_position = shot.eye + base * (shot.push * travel) +
-                 right * (shot.truck * travel) + up * (shot.rise * travel) +
-                 up * (sway * wave (6, 0.061f, 0.035f)) +
-                 right * (sway * wave (7, 0.043f, 0.05f));
+    const meters_t lift = quantity_cast<isq::length> (
+      sway * wave (6, 0.061f * u::Hz, 0.035f * u::m));
+    const meters_t aside = quantity_cast<isq::length> (
+      sway * wave (7, 0.043f * u::Hz, 0.05f * u::m));
+    m_position = moppe::position (
+      position_value (shot.eye) + base * meters_value (shot.push * travel) +
+      right * meters_value (shot.truck * travel) +
+      up * meters_value (shot.rise * travel) + up * meters_value (lift) +
+      right * meters_value (aside));
     m_forward = forward_from (shot.heading_deg + shot.pan_deg * travel + yaw,
                               shot.pitch_deg + shot.tilt_deg * travel + pitch);
     m_fov = shot.fov_deg - shot.zoom_deg * travel;
 
     // Fades: the first shot rises out of black over its whole fade; later
     // ones dip through black, half the fade on either side of the cut.
-    float veil = 0.0f;
-    if (shot.fade > 0.0f) {
-      const float span = m_shot == 0 ? shot.fade : 0.5f * shot.fade;
+    proportion_t veil = 0.0f * proportion[one];
+    if (shot.fade > 0.0f * u::s) {
+      const seconds_t span = m_shot == 0 ? shot.fade : 0.5f * shot.fade;
       veil = std::max (veil, 1.0f - opening_ease (t / span));
     }
     if (m_shot + 1 < m_shots.size ()) {
-      const float next = m_shots[m_shot + 1].fade;
-      if (next > 0.0f)
+      const seconds_t next = m_shots[m_shot + 1].fade;
+      if (next > 0.0f * u::s)
         veil = std::max (veil,
                          1.0f - opening_ease ((shot.hold - t) / (0.5f * next)));
     }
@@ -479,11 +495,14 @@ namespace moppe::game {
   }
 
   Mat4 OpeningPlayer::view_matrix () const {
-    Vec3 right = cross (m_forward, Vec3 (0, 1, 0));
+    const Vec3& forward = direction_value (m_forward);
+    const Vec3& eye = position_value (m_position);
+    const float roll = radians_value (m_roll);
+    Vec3 right = cross (forward, Vec3 (0, 1, 0));
     right = length2 (right) > 1e-6f ? normalized (right) : Vec3 (1, 0, 0);
-    Vec3 up = normalized (cross (right, m_forward));
-    up = normalized (up * std::cos (m_roll) + right * std::sin (m_roll));
-    return Mat4::look_at (m_position, m_position + m_forward * 100.0f, up);
+    Vec3 up = normalized (cross (right, forward));
+    up = normalized (up * std::cos (roll) + right * std::sin (roll));
+    return Mat4::look_at (eye, eye + forward * 100.0f, up);
   }
 
   std::vector<OpeningCaptionView> OpeningPlayer::captions () const {
@@ -492,13 +511,14 @@ namespace moppe::game {
       return showing;
     const OpeningShot& shot = m_shots[m_shot];
     for (const OpeningCaption& caption : shot.captions) {
-      const float length =
-        caption.length > 0.0f ? caption.length : shot.hold - caption.at - 1.2f;
-      if (length <= 0.0f)
+      const seconds_t length = caption.length > 0.0f * u::s
+                                 ? caption.length
+                                 : shot.hold - caption.at - 1.2f * u::s;
+      if (length <= 0.0f * u::s)
         continue;
-      const float ramp = std::min (1.8f, 0.4f * length);
-      const float t = m_shot_time - caption.at;
-      const float alpha =
+      const seconds_t ramp = std::min (1.8f * u::s, 0.4f * length);
+      const seconds_t t = m_shot_time - caption.at;
+      const proportion_t alpha =
         opening_ease (t / ramp) * opening_ease ((length - t) / ramp);
       if (alpha > 0.002f)
         showing.push_back ({ caption.style, &caption.text, alpha, caption.y });

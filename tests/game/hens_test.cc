@@ -13,13 +13,17 @@ namespace {
   AnimalGround hens_test_barnyard () {
     return {
       .ground =
-        [] (float x, float z) {
+        [] (plan_position_t p) {
+          const float x = plan_value (p).x (), z = plan_value (p).z ();
           if (std::abs (x) < 5.86f && std::abs (z) < 4.0f)
-            return 10.34f;
-          return 10.0f;
+            return terrain::surface_elevation_point (10.34f * u::m);
+          return terrain::surface_elevation_point (10.0f * u::m);
         },
-      .dry = [] (float, float) { return true; },
-      .pasture = [] (float, float) { return Pasture { .grazed = 0.8f }; },
+      .dry = [] (plan_position_t) { return true; },
+      .pasture =
+        [] (plan_position_t) {
+          return Pasture { .grazed = 0.8f * proportion[one] };
+        },
     };
   }
 }
@@ -37,8 +41,12 @@ MOPPE_TEST (hens_roost_on_the_perches_at_night_and_come_down_by_day) {
   MOPPE_CHECK (adults >= 5 && chicks >= 3);
   const float dt = 1.0f / 30.0f;
   for (int step = 0; step < 150 * 30; ++step)
-    hens.step (
-      barnyard, {}, Vec3 (), 500.0f * u::m, 21.0f * si::hour, seconds (dt));
+    hens.step (barnyard,
+               {},
+               position_t {},
+               500.0f * u::m,
+               21.0f * si::hour,
+               seconds (dt));
   for (const Bird& b : hens.birds ()) {
     if (b.kind == Bird::Kind::chick)
       continue;
@@ -47,20 +55,25 @@ MOPPE_TEST (hens_roost_on_the_perches_at_night_and_come_down_by_day) {
       return c.mother == &b - hens.birds ().data ();
     });
     if (mother) {
-      MOPPE_CHECK (b.position[1] < 10.5f && std::abs (b.position[0]) < 5.86f &&
-                   std::abs (b.position[2]) < 4.0f);
+      const Vec3& p = position_value (b.position);
+      MOPPE_CHECK (p[1] < 10.5f && std::abs (p[0]) < 5.86f &&
+                   std::abs (p[2]) < 4.0f);
       continue;
     }
     MOPPE_CHECK (b.doing == Bird::Doing::roosting);
-    MOPPE_CHECK (b.position[1] > 10.9f);
+    MOPPE_CHECK (position_value (b.position)[1] > 10.9f);
   }
   // Morning.
   for (int step = 0; step < 60 * 30; ++step)
-    hens.step (
-      barnyard, {}, Vec3 (), 500.0f * u::m, 8.0f * si::hour, seconds (dt));
+    hens.step (barnyard,
+               {},
+               position_t {},
+               500.0f * u::m,
+               8.0f * si::hour,
+               seconds (dt));
   for (const Bird& b : hens.birds ()) {
     MOPPE_CHECK (b.doing != Bird::Doing::roosting);
-    MOPPE_CHECK (b.position[1] < 10.5f);
+    MOPPE_CHECK (position_value (b.position)[1] < 10.5f);
   }
 }
 
@@ -87,31 +100,46 @@ MOPPE_TEST (eggs_are_laid_in_the_nest_boxes_and_taken_from_before_them) {
   }
 
   const Nest boxes[] = {
-    { .at = Vec3 (0.0f, 10.9f, 0.0f), .out = Vec3 (1, 0, 0) },
-    { .at = Vec3 (0.0f, 10.9f, 0.55f), .out = Vec3 (1, 0, 0) },
+    { .at = position (Vec3 (0.0f, 10.9f, 0.0f)),
+      .out = unit_direction (Vec3 (1, 0, 0)) },
+    { .at = position (Vec3 (0.0f, 10.9f, 0.55f)),
+      .out = unit_direction (Vec3 (1, 0, 0)) },
   };
   std::vector<NestState> states = { { .eggs = 1 }, { .eggs = 2 } };
   const Vec3 feet (0.7f, 10.34f, 0.45f);
   // Facing them, the nearer box with an egg in it.
-  MOPPE_CHECK (
-    nest_within_reach (boxes, states, feet, Vec3 (-1, 0, 0), 0.0f, 0.0f) ==
-    std::optional<std::size_t> (1));
-  // Its eggs gone, the other one.
-  states[1].eggs = 0;
-  MOPPE_CHECK (
-    nest_within_reach (boxes, states, feet, Vec3 (-1, 0, 0), 0.0f, 0.0f) ==
-    std::optional<std::size_t> (0));
-  // Turned away from them, or too far off, none.
-  MOPPE_CHECK (
-    !nest_within_reach (boxes, states, feet, Vec3 (1, 0, 0), 0.0f, 0.0f));
-  MOPPE_CHECK (!nest_within_reach (
-    boxes, states, feet + Vec3 (2.0f, 0, 0), Vec3 (-1, 0, 0), 0.0f, 0.0f));
-  // A walker past the world's seam, which they are never wrapped across,
-  // still reaches the box on its far side of it.
   MOPPE_CHECK (nest_within_reach (boxes,
                                   states,
-                                  feet + Vec3 (500.0f, 0, -1000.0f),
-                                  Vec3 (-1, 0, 0),
-                                  500.0f,
-                                  1000.0f) == std::optional<std::size_t> (0));
+                                  position (feet),
+                                  unit_direction (Vec3 (-1, 0, 0)),
+                                  plan_extent_t {}) ==
+               std::optional<std::size_t> (1));
+  // Its eggs gone, the other one.
+  states[1].eggs = 0;
+  MOPPE_CHECK (nest_within_reach (boxes,
+                                  states,
+                                  position (feet),
+                                  unit_direction (Vec3 (-1, 0, 0)),
+                                  plan_extent_t {}) ==
+               std::optional<std::size_t> (0));
+  // Turned away from them, or too far off, none.
+  MOPPE_CHECK (!nest_within_reach (boxes,
+                                   states,
+                                   position (feet),
+                                   unit_direction (Vec3 (1, 0, 0)),
+                                   plan_extent_t {}));
+  MOPPE_CHECK (!nest_within_reach (boxes,
+                                   states,
+                                   position (feet + Vec3 (2.0f, 0, 0)),
+                                   unit_direction (Vec3 (-1, 0, 0)),
+                                   plan_extent_t {}));
+  // A walker past the world's seam, which they are never wrapped across,
+  // still reaches the box on its far side of it.
+  MOPPE_CHECK (
+    nest_within_reach (boxes,
+                       states,
+                       position (feet + Vec3 (500.0f, 0, -1000.0f)),
+                       unit_direction (Vec3 (-1, 0, 0)),
+                       plan_extent (500.0f * u::m, 1000.0f * u::m)) ==
+    std::optional<std::size_t> (0));
 }

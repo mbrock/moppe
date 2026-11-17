@@ -14,6 +14,7 @@
 // their pen; they eat, look round at whoever comes in, and stay put.
 
 #include <moppe/gfx/math.hh>
+#include <moppe/terrain/domain.hh>
 
 #include <cstdint>
 #include <functional>
@@ -31,6 +32,11 @@ namespace moppe::game {
     pig
   };
   constexpr int species_count = 7;
+
+  // How far a gait has gone, in whole strides (cycles of the legs).
+  using strides_t = quantity<isq::rotation[one], float>;
+  // How a beast carries its head (moppe/quantities.hh).
+  using head_carriage_t = quantity<head_carriage[one], float>;
 
   // What a species is like to meet.
   struct SpeciesTraits {
@@ -58,27 +64,27 @@ namespace moppe::game {
   // What the ground offers an animal at a point, each 0..1.
   struct Pasture {
     // Grazed open, as round a place still lived in.
-    float grazed = 0.0f;
+    proportion_t grazed = 0.0f * proportion[one];
     // Under trees.
-    float forest = 0.0f;
+    proportion_t forest = 0.0f * proportion[one];
     // The fell's lichen heath and dwarf birch.
-    float fell = 0.0f;
+    proportion_t fell = 0.0f * proportion[one];
     // Mire.
-    float bog = 0.0f;
+    proportion_t bog = 0.0f * proportion[one];
   };
 
   // What the animals read of the world.
   struct AnimalGround {
     // The ground's height at a point.
-    std::function<float (float x, float z)> ground;
+    terrain::ElevationField ground;
     // Whether a point is dry land (no standing or running water on it).
-    std::function<bool (float x, float z)> dry;
-    std::function<Pasture (float x, float z)> pasture;
+    terrain::PlanField<bool> dry;
+    terrain::PlanField<Pasture> pasture;
     // Pushes a body of `radius` at `at` out of what stands there (tree
     // trunks, walls); may be empty.
-    std::function<Vec3 (const Vec3& at, float radius)> clear;
-    float period_x = 0.0f;
-    float period_z = 0.0f;
+    std::function<position_t (const position_t& at, meters_t radius)> clear;
+    // The world's period; zero in a lane that does not wrap.
+    plan_extent_t period {};
   };
 
   // A place whose stock grazes round it: a farm still lived in, the
@@ -86,7 +92,7 @@ namespace moppe::game {
   struct Fold {
     enum class Kind { farm, landing, sanctuary, trailhead };
     Kind kind = Kind::farm;
-    Vec3 at {};
+    position_t at {};
   };
 
   struct Animal {
@@ -95,33 +101,33 @@ namespace moppe::game {
     std::uint32_t herd = 0;
     // Where its feet stand, under the middle of its body, and the way it
     // faces, as radians about the vertical from +z toward +x.
-    Vec3 position {};
-    float heading = 0.0f;
+    position_t position {};
+    heading_t heading {};
     // What it is doing, for how much longer, and where it is going.
     enum class Doing { grazing, standing, walking, alert, fleeing };
     Doing doing = Doing::standing;
     seconds_t left {};
-    Vec3 goal {};
+    plan_position_t goal {};
     speed_t speed {};
     // What made it look up, and where that was.
-    Vec3 threat {};
+    position_t threat {};
     // How far its gait has gone, in strides; how far its head is down to
     // the grass, 0 up to 1 cropping; and how far it is turned to look
     // aside, radians.
-    float gait = 0.0f;
-    float head = 0.0f;
-    float look = 0.0f;
-    float look_goal = 0.0f;
+    strides_t gait {};
+    head_carriage_t head {};
+    radians_t look {};
+    radians_t look_goal {};
     // How much it has run lately, 0..1, which keeps it alert.
-    float fright = 0.0f;
+    proportion_t fright {};
     // Kept in a barn (see Stall): where, and whether it is tied there or
     // goes about its pen.
     bool indoors = false;
     bool tied = false;
-    Vec3 pen {};
-    float pen_heading = 0.0f;
-    float pen_along = 0.0f;
-    float pen_across = 0.0f;
+    position_t pen {};
+    heading_t pen_heading {};
+    meters_t pen_along {};
+    meters_t pen_across {};
   };
 
   // Stock kept in a barn: `count` beasts tied at `at` facing `heading`
@@ -130,24 +136,24 @@ namespace moppe::game {
   // many loose in a pen whose middle is `at`. On the barn's floor.
   struct Stall {
     Species species = Species::cow;
-    Vec3 at {};
-    float heading = 0.0f;
-    float half_along = 0.0f;
-    float half_across = 0.0f;
+    position_t at {};
+    heading_t heading {};
+    meters_t half_along {};
+    meters_t half_across {};
     int count = 1;
   };
 
   struct Herd {
     Species species = Species::cow;
     // Where it keeps to, and how far it strays from there.
-    Vec3 home {};
+    position_t home {};
     meters_t range = 100.0f * u::m;
   };
 
   // Something the animals mind: someone on foot, or a machine.
   struct Presence {
-    Vec3 position {};
-    Vec3 velocity {};
+    position_t position {};
+    velocity_t velocity {};
     // A machine's engine is heard from further off.
     bool machine = false;
   };
@@ -162,9 +168,8 @@ namespace moppe::game {
   // Deterministic for a world.
   [[nodiscard]] AnimalPlan plan_animals (const AnimalGround& ground,
                                          std::span<const Fold> folds,
-                                         const Vec3& trailhead,
-                                         float world_x,
-                                         float world_z,
+                                         const position_t& trailhead,
+                                         const plan_extent_t& world,
                                          std::uint32_t seed,
                                          std::span<const Stall> stalls = {});
 
@@ -177,7 +182,7 @@ namespace moppe::game {
     // those further off wait where they are.
     void step (const AnimalGround& ground,
                std::span<const Presence> presences,
-               const Vec3& focus,
+               const position_t& focus,
                meters_t reach,
                seconds_t dt);
 
@@ -206,12 +211,14 @@ namespace moppe::game {
     void choose (Animal& animal,
                  const Herd& herd,
                  const AnimalGround& ground,
-                 const Vec3& mates);
-    void startle (Animal& animal, const Vec3& from, const AnimalGround& ground);
+                 const position_t& mates);
+    void startle (Animal& animal,
+                  const position_t& from,
+                  const AnimalGround& ground);
     void keep_indoors (Animal& animal,
                        const AnimalGround& ground,
                        const Presence* nearest,
-                       float nearest_distance,
+                       meters_t nearest_distance,
                        seconds_t dt);
     float rand (std::uint32_t& state) const;
 

@@ -23,48 +23,54 @@ namespace moppe::game {
              0x1.0p-53;
     }
 
-    // How long a spell of each kind lasts, in hours, at least and at most.
+    using clock_hours_t = quantity<si::hour, double>;
+    constexpr clock_hours_t weather_day = 24.0 * si::hour;
+
+    // How long a spell of each kind lasts, at least and at most.
     struct Span {
-      double least, most;
+      clock_hours_t least, most;
     };
+    constexpr Span hours (double least, double most) {
+      return { least * si::hour, most * si::hour };
+    }
     Span span_of (SkyKind kind) {
       switch (kind) {
       case SkyKind::clear:
-        return { 4.0, 10.0 };
+        return hours (4.0, 10.0);
       case SkyKind::fair:
-        return { 4.0, 9.0 };
+        return hours (4.0, 9.0);
       case SkyKind::overcast:
-        return { 3.0, 7.0 };
+        return hours (3.0, 7.0);
       case SkyKind::mist:
-        return { 3.0, 4.5 };
+        return hours (3.0, 4.5);
       case SkyKind::drizzle:
-        return { 3.0, 5.0 };
+        return hours (3.0, 5.0);
       case SkyKind::rain:
-        return { 3.0, 4.5 };
+        return hours (3.0, 4.5);
       case SkyKind::storm:
-        return { 3.0, 3.5 };
+        return hours (3.0, 3.5);
       }
-      return { 4.0, 8.0 };
+      return hours (4.0, 8.0);
     }
 
     // How long the sky takes to turn into a spell of this kind.
-    double change_hours (SkyKind kind) {
+    clock_hours_t change_hours (SkyKind kind) {
       switch (kind) {
       case SkyKind::storm:
-        return 1.0;
+        return 1.0 * si::hour;
       case SkyKind::mist:
-        return 1.5;
+        return 1.5 * si::hour;
       default:
-        return 2.0;
+        return 2.0 * si::hour;
       }
     }
 
     // What follows a spell, weighed by the hour the next begins at:
     // rain comes only out of an overcast, thunder mostly by night, and
     // mist mostly toward dawn after a clear night.
-    SkyKind next_kind (SkyKind kind, double clock, double dice) {
-      const bool night = clock >= 19.0 || clock < 4.0;
-      const bool dawn = clock >= 2.0 && clock < 7.5;
+    SkyKind next_kind (SkyKind kind, clock_hours_t clock, double dice) {
+      const bool night = clock >= 19.0 * si::hour || clock < 4.0 * si::hour;
+      const bool dawn = clock >= 2.0 * si::hour && clock < 7.5 * si::hour;
       std::array<double, 7> weight {};
       auto set = [&] (SkyKind to, double w) { weight[std::size_t (to)] = w; };
       switch (kind) {
@@ -122,9 +128,23 @@ namespace moppe::game {
       return SkyKind::fair;
     }
 
-    float smooth (float t) {
+    blend_weight_t smooth (float t) {
       t = std::clamp (t, 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
+      return t * t * (3.0f - 2.0f * t) * blend_weight[one];
+    }
+
+    // The settings of a kind of sky, named by what each means.
+    constexpr cloud_cover_t cover (float x) {
+      return x * cloud_cover[one];
+    }
+    constexpr scale_factor_t times (float x) {
+      return x * scale_factor[one];
+    }
+    constexpr blend_weight_t greyed (float x) {
+      return x * blend_weight[one];
+    }
+    constexpr proportion_t share (float x) {
+      return x * proportion[one];
     }
   }
 
@@ -142,67 +162,69 @@ namespace moppe::game {
   Weather weather_of (SkyKind kind) {
     switch (kind) {
     case SkyKind::clear:
-      return { .cloud_floor = 0.0f, .cloud_ceiling = 0.3f };
+      return { .cloud_floor = cover (0.0f), .cloud_ceiling = cover (0.3f) };
     case SkyKind::fair:
-      return { .cloud_floor = 0.2f, .cloud_ceiling = 0.72f };
+      return { .cloud_floor = cover (0.2f), .cloud_ceiling = cover (0.72f) };
     case SkyKind::overcast:
-      return { .cloud_floor = 0.82f,
-               .fog_density = 1.5f,
+      return { .cloud_floor = cover (0.82f),
+               .fog_density = times (1.5f),
                .fog_tint = { 0.72f, 0.75f, 0.78f },
-               .fog_tint_amount = 0.5f,
-               .sunlight = 0.45f,
-               .skylight = 1.6f };
+               .fog_tint_amount = greyed (0.5f),
+               .sunlight = times (0.45f),
+               .skylight = times (1.6f) };
     case SkyKind::mist:
-      return { .cloud_floor = 0.72f,
-               .fog_density = 2.6f,
+      return { .cloud_floor = cover (0.72f),
+               .fog_density = times (2.6f),
                .fog_tint = { 0.74f, 0.78f, 0.79f },
-               .fog_tint_amount = 0.7f,
-               .sunlight = 0.5f,
-               .skylight = 1.7f,
-               .mist = 1.0f };
+               .fog_tint_amount = greyed (0.7f),
+               .sunlight = times (0.5f),
+               .skylight = times (1.7f),
+               .mist = share (1.0f) };
     case SkyKind::drizzle:
-      return { .cloud_floor = 0.94f,
-               .fog_density = 2.2f,
+      return { .cloud_floor = cover (0.94f),
+               .fog_density = times (2.2f),
                .fog_tint = { 0.64f, 0.68f, 0.70f },
-               .fog_tint_amount = 0.85f,
-               .sunlight = 0.25f,
-               .skylight = 1.9f,
-               .mist = 0.6f,
-               .rain = 1.0f };
+               .fog_tint_amount = greyed (0.85f),
+               .sunlight = times (0.25f),
+               .skylight = times (1.9f),
+               .mist = share (0.6f),
+               .rain = times (1.0f) };
     case SkyKind::rain:
-      return { .cloud_floor = 0.97f,
-               .fog_density = 2.7f,
+      return { .cloud_floor = cover (0.97f),
+               .fog_density = times (2.7f),
                .fog_tint = { 0.55f, 0.59f, 0.62f },
-               .fog_tint_amount = 0.9f,
-               .sunlight = 0.14f,
-               .skylight = 1.75f,
-               .mist = 0.5f,
-               .rain = 1.8f };
+               .fog_tint_amount = greyed (0.9f),
+               .sunlight = times (0.14f),
+               .skylight = times (1.75f),
+               .mist = share (0.5f),
+               .rain = times (1.8f) };
     case SkyKind::storm:
-      return { .cloud_floor = 1.0f,
-               .fog_density = 2.5f,
+      return { .cloud_floor = cover (1.0f),
+               .fog_density = times (2.5f),
                .fog_tint = { 0.34f, 0.37f, 0.42f },
-               .fog_tint_amount = 0.95f,
-               .sunlight = 0.05f,
-               .skylight = 1.25f,
-               .mist = 0.3f,
-               .rain = 2.5f,
-               .lightning = 1.0f };
+               .fog_tint_amount = greyed (0.95f),
+               .sunlight = times (0.05f),
+               .skylight = times (1.25f),
+               .mist = share (0.3f),
+               .rain = times (2.5f),
+               .lightning = share (1.0f) };
     }
     return {};
   }
 
-  Weather mix_weather (const Weather& a, const Weather& b, float t) {
-    auto lerp = [t] (float x, float y) { return x + (y - x) * t; };
+  Weather
+  mix_weather (const Weather& a, const Weather& b, blend_weight_t weight) {
+    const float t = weight.numerical_value_in (one);
+    auto lerp = [t] (auto x, auto y) { return x + (y - x) * t; };
     return { .cloud_floor = lerp (a.cloud_floor, b.cloud_floor),
              .cloud_ceiling = lerp (a.cloud_ceiling, b.cloud_ceiling),
              .fog_density = lerp (a.fog_density, b.fog_density),
              // A tint only matters as far as it is applied, so blend it
              // by how much each side applies.
-             .fog_tint =
-               mix_display (a.fog_tint_amount > 0.0f ? a.fog_tint : b.fog_tint,
-                            b.fog_tint_amount > 0.0f ? b.fog_tint : a.fog_tint,
-                            t * blend_weight[one]),
+             .fog_tint = mix_display (
+               a.fog_tint_amount > greyed (0.0f) ? a.fog_tint : b.fog_tint,
+               b.fog_tint_amount > greyed (0.0f) ? b.fog_tint : a.fog_tint,
+               t * blend_weight[one]),
              .fog_tint_amount = lerp (a.fog_tint_amount, b.fog_tint_amount),
              .sunlight = lerp (a.sunlight, b.sunlight),
              .skylight = lerp (a.skylight, b.skylight),
@@ -217,48 +239,56 @@ namespace moppe::game {
   // the dawn after.
   WeatherTimeline::WeatherTimeline (std::uint32_t seed)
       : m_seed (mix_bits (seed ^ 0x2u)),
-        m_spells { { 0.0, SkyKind::fair }, { 12.5, SkyKind::fair } } {
-    m_spells[1].kind = next_kind (SkyKind::fair, 12.5, roll (m_seed, 1, 0));
+        m_spells { { clock_time (0.0), SkyKind::fair },
+                   { clock_time (12.5), SkyKind::fair } } {
+    m_spells[1].kind =
+      next_kind (SkyKind::fair, 12.5 * si::hour, roll (m_seed, 1, 0));
   }
 
-  std::size_t WeatherTimeline::spell_at (double hours) {
-    hours = std::max (hours, 0.0);
+  std::size_t WeatherTimeline::spell_at (clock_time_t hours) {
+    hours = std::max (hours, clock_time (0.0));
     while (m_spells.back ().start <= hours) {
       const std::size_t i = m_spells.size () - 1;
       const Spell& last = m_spells.back ();
       const Span span = span_of (last.kind);
-      const double start = last.start + span.least +
-                           (span.most - span.least) * roll (m_seed, i, 1);
-      m_spells.push_back ({ start,
-                            next_kind (last.kind,
-                                       std::fmod (start, 24.0),
-                                       roll (m_seed, i + 1, 0)) });
+      const clock_time_t start = last.start + span.least +
+                                 (span.most - span.least) * roll (m_seed, i, 1);
+      m_spells.push_back (
+        { start,
+          next_kind (last.kind,
+                     fmod (start - first_midnight, weather_day),
+                     roll (m_seed, i + 1, 0)) });
     }
     const auto after = std::upper_bound (
-      m_spells.begin (), m_spells.end (), hours, [] (double h, const Spell& s) {
-        return h < s.start;
-      });
+      m_spells.begin (),
+      m_spells.end (),
+      hours,
+      [] (clock_time_t h, const Spell& s) { return h < s.start; });
     return std::size_t (after - m_spells.begin ()) - 1;
   }
 
-  SkyKind WeatherTimeline::kind_at (double hours) {
+  SkyKind WeatherTimeline::kind_at (clock_time_t hours) {
     return m_spells[spell_at (hours)].kind;
   }
 
-  Weather WeatherTimeline::at (double hours) {
+  Weather WeatherTimeline::at (clock_time_t hours) {
     const std::size_t i = spell_at (hours);
     const Spell& now = m_spells[i];
     const Weather to = weather_of (now.kind);
     if (i == 0)
       return to;
-    const float t = smooth (
-      float ((std::max (hours, 0.0) - now.start) / change_hours (now.kind)));
+    const blend_weight_t t =
+      smooth (float (((std::max (hours, clock_time (0.0)) - now.start) /
+                      change_hours (now.kind))
+                       .numerical_value_in (one)));
     return mix_weather (weather_of (m_spells[i - 1].kind), to, t);
   }
 
-  float lightning_flash (float lightning, double seconds) {
+  proportion_t lightning_flash (proportion_t lightning_q, play_time_t now) {
+    const float lightning = lightning_q.numerical_value_in (one);
+    const double seconds = seconds_into_play (now);
     if (lightning <= 0.01f)
-      return 0.0f;
+      return share (0.0f);
     // At most one strike in each second and a half, more of them the
     // fiercer the storm: some one every nine seconds at its height.
     constexpr double slot_seconds = 1.5;
@@ -266,11 +296,11 @@ namespace moppe::game {
     const std::uint64_t index = std::uint64_t (std::int64_t (slot));
     constexpr std::uint64_t seed = 0x7b0a5e11ull;
     if (roll (seed, index, 0) > 0.16 * lightning)
-      return 0.0f;
+      return share (0.0f);
     const double since =
       seconds - (slot * slot_seconds + 0.6 * roll (seed, index, 1));
     if (since < 0.0)
-      return 0.0f;
+      return share (0.0f);
     // A stroke flickers: a first flash and a return or two after it.
     const double strength = 0.3 + 0.7 * roll (seed, index, 2);
     const std::array<double, 3> at { 0.0,
@@ -283,6 +313,6 @@ namespace moppe::game {
     for (std::size_t k = 0; k < at.size (); ++k)
       if (since >= at[k])
         flash += bright[k] * std::exp (-(since - at[k]) * 16.0);
-    return float (std::min (1.0, strength * flash));
+    return share (float (std::min (1.0, strength * flash)));
   }
 }

@@ -204,12 +204,9 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   // The rigid bike's chassis keeps moving through each step, so the measured
   // whip carries a few milliradians of honest flight attitude.
   MOPPE_CHECK_NEAR (
-    std::abs (radians_value (session.logic ().m_jump_spin_radians)),
-    1.5707963f,
-    0.01f);
-  MOPPE_CHECK_NEAR (radians_value (session.logic ().m_jump_peak_spin_radians),
-                    1.5707963f,
-                    0.01f);
+    std::abs (radians_value (session.logic ().m_jump_spin)), 1.5707963f, 0.01f);
+  MOPPE_CHECK_NEAR (
+    radians_value (session.logic ().m_jump_peak_spin), 1.5707963f, 0.01f);
 
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (0, 0, 15));
@@ -218,12 +215,9 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   game::advance_game_session (
     world, surface, session, game::InputFrame {}, step);
   MOPPE_CHECK_NEAR (
-    std::abs (radians_value (session.logic ().m_jump_spin_radians)),
-    0.0f,
-    0.01f);
-  MOPPE_CHECK_NEAR (radians_value (session.logic ().m_jump_peak_spin_radians),
-                    1.5707963f,
-                    0.01f);
+    std::abs (radians_value (session.logic ().m_jump_spin)), 0.0f, 0.01f);
+  MOPPE_CHECK_NEAR (
+    radians_value (session.logic ().m_jump_peak_spin), 1.5707963f, 0.01f);
 
   flight = session.bike ().state ();
   flight.position = position (
@@ -237,9 +231,7 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
 
   MOPPE_CHECK (session.logic ().m_landed_clean);
   MOPPE_CHECK_NEAR (
-    session.logic ().m_landed_spin_degrees.numerical_value_in (u::deg),
-    90.0f,
-    1.0f);
+    session.logic ().m_landed_spin.numerical_value_in (u::deg), 90.0f, 1.0f);
   MOPPE_CHECK (session.logic ().m_landed_points > 350);
   MOPPE_CHECK (session.logic ().m_score == session.logic ().m_landed_points);
   MOPPE_CHECK (session.bike ().boost_charge () > 0.3f);
@@ -466,17 +458,22 @@ MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   stars.generate (surface, world, 8);
   const game::Stars::State initial = stars.state ();
 
-  MOPPE_CHECK (
-    stars.update (initial.stars[0].position, 0.0f, (1.0f / 60.0f) * u::s) == 1);
+  MOPPE_CHECK (stars.update (initial.stars[0].position,
+                             game::play_time (0.0),
+                             (1.0f / 60.0f) * u::s) == 1);
   MOPPE_CHECK (stars.collected () == 1);
   stars.restore (initial);
   const game::Stars::State restored = stars.state ();
 
   MOPPE_CHECK (restored.count == 8);
   MOPPE_CHECK (restored.collected == 0);
-  check_vector (restored.stars[0].position, initial.stars[0].position);
-  MOPPE_CHECK_NEAR (restored.stars[0].phase, initial.stars[0].phase, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.stars[0].respawn, initial.stars[0].respawn, 1e-6f);
+  check_position (restored.stars[0].position, initial.stars[0].position);
+  MOPPE_CHECK_NEAR (restored.stars[0].phase.numerical_value_in (u::deg),
+                    initial.stars[0].phase.numerical_value_in (u::deg),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (seconds_value (restored.stars[0].respawn),
+                    seconds_value (initial.stars[0].respawn),
+                    1e-6f);
 }
 
 MOPPE_TEST (dust_state_is_a_bounded_deterministic_emission_log) {
@@ -562,8 +559,9 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.glider ().set_turn (-1.0f);
   session.walker ().spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
   session.camera ().place (Vec3 (100, 100, 100), Vec3 ());
-  session.stars ().update (
-    saved.stars.stars[0].position, 0.0f, (1.0f / 60.0f) * u::s);
+  session.stars ().update (saved.stars.stars[0].position,
+                           game::play_time (0.0),
+                           (1.0f / 60.0f) * u::s);
   session.dust ().update (1.0f * u::s);
   session.restore (saved);
   const game::GameSession::State restored = session.state ();
@@ -640,9 +638,10 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
 
   const seconds_t step = seconds (1.0f / 60.0f);
   // The step tends the clock and the camp too, with the world about it.
-  const game::Surroundings around {
-    .world = &world, .surface = &surface, .day_pace = 0.01, .day_turning = true
-  };
+  const game::Surroundings around { .world = &world,
+                                    .surface = &surface,
+                                    .day_pace = 0.01 * (si::hour / si::second),
+                                    .day_turning = true };
   const auto advance = [&] (game::GameSession& session,
                             const game::InputFrame& frame) {
     game::advance_game_session (
@@ -916,7 +915,8 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
   // W drives it off, no faster than a tractor goes.
   run ({ .drive = 1.0f }, 5.0f);
   MOPPE_CHECK (session.tractor ().position ()[2] > 195.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () < 33.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) <
+               33.0f);
 
   // Space brings it to a stand, and F climbs down beside it.
   run ({ .boost = 1.0f }, 3.0f);
@@ -966,7 +966,8 @@ MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   // W drives it off, faster than the tractor goes.
   run ({ .drive = 1.0f }, 5.0f);
   MOPPE_CHECK (session.caddy ().position ()[2] > 90.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () > 40.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) >
+               40.0f);
 
   // Space brings it to a stand, and F steps out of the driver's door.
   run ({ .boost = 1.0f }, 4.0f);
@@ -1024,8 +1025,10 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   // Pedalled off, at a cyclist's pace.
   run ({ .drive = 1.0f }, 8.0f);
   MOPPE_CHECK (bike.position ()[2] > 80.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () > 20.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () < 45.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) >
+               20.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) <
+               45.0f);
 
   // Shift with the bars over skids it round to face back the way it came.
   const Vec3 before = bike.orientation ();
@@ -1093,14 +1096,17 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   // Pedalled off at a loaded cargo bike's pace.
   run ({ .drive = 1.0f }, 10.0f);
   MOPPE_CHECK (bike.position ()[2] > 80.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () > 18.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () < 32.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) >
+               18.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) <
+               32.0f);
 
   // Braked to a stand, F gets off beside it, and it stays where it was
   // left.
   run ({ .drive = -1.0f }, 1.5f);
   run ({}, 1.0f);
-  MOPPE_CHECK (session.subject_speed_kmh () < 1.0f);
+  MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) <
+               1.0f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (length (session.walker ().position () - bike.position ()) <
@@ -1141,17 +1147,20 @@ MOPPE_TEST (a_road_steers_a_rider_who_lets_the_bars_be_along_it) {
   session.bike ().set_heading (
     normalized (Vec3 (std::sin (0.14f), 0.0f, std::cos (0.14f))));
   float widest = 0.0f;
-  for (int i = 0; i < 60 * 14 && session.subject_position ()[2] < 290.0f; ++i) {
+  for (int i = 0;
+       i < 60 * 14 && position_value (session.subject_position ())[2] < 290.0f;
+       ++i) {
     game::advance_game_session (world,
                                 surface,
                                 session,
                                 game::InputFrame { .drive = 1.0f },
                                 seconds (1.0f / 60.0f));
-    widest =
-      std::max (widest, std::abs (session.subject_position ()[0] - 160.0f));
+    widest = std::max (
+      widest,
+      std::abs (position_value (session.subject_position ())[0] - 160.0f));
   }
   mov::attach_roads (surface, nullptr);
-  MOPPE_CHECK (session.subject_position ()[2] > 200.0f);
+  MOPPE_CHECK (position_value (session.subject_position ())[2] > 200.0f);
   MOPPE_CHECK (widest < meters_value (roads.formation ().half_width +
                                       roads.formation ().shoulder));
 }
@@ -1199,17 +1208,20 @@ MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
   MOPPE_CHECK (session.logic ().m_doing ==
                game::Doing::driving (game::Machine::caddy));
   float widest = 0.0f, fastest = 0.0f;
-  for (int i = 0; i < 60 * 30 && session.subject_position ()[2] < 290.0f; ++i) {
+  for (int i = 0;
+       i < 60 * 30 && position_value (session.subject_position ())[2] < 290.0f;
+       ++i) {
     game::advance_game_session (
       world, surface, session, game::InputFrame { .drive = 1.0f }, step);
-    const Vec3 at = session.subject_position ();
+    const Vec3 at = position_value (session.subject_position ());
     widest = std::max (widest,
                        std::abs (meters_value (
                          roads.nearest (plan_position (at[0], at[2])).across)));
-    fastest = std::max (fastest, session.subject_speed_kmh ());
+    fastest = std::max (
+      fastest, session.subject_speed_kmh ().numerical_value_in (u::km / u::h));
   }
   mov::attach_roads (surface, nullptr);
-  MOPPE_CHECK (session.subject_position ()[2] > 290.0f);
+  MOPPE_CHECK (position_value (session.subject_position ())[2] > 290.0f);
   MOPPE_CHECK (fastest > 30.0f);
   MOPPE_CHECK (widest < meters_value (roads.formation ().half_width +
                                       roads.formation ().shoulder));

@@ -43,10 +43,10 @@ namespace moppe::game {
     std::uint32_t egg_seed = 0;
     const AnimalGround* animal_ground = nullptr;
     // The hours each second of play, and whether the clock turns at all.
-    double day_pace = 0.0;
+    day_pace_t day_pace {};
     bool day_turning = false;
-    // How much light there is to see smoke and steam by, 0..1.
-    float daylight = 1.0f;
+    // How much light there is to see smoke and steam by.
+    proportion_t daylight = 1.0f * proportion[one];
     // The other player as drawn now, and their clock when it is known.
     const CompanionSnapshot* companion = nullptr;
     std::optional<clock_time_t> companion_clock;
@@ -54,35 +54,37 @@ namespace moppe::game {
 
   // Lying in the hammock the hours run forty times as fast: one goes by
   // every three seconds of an ordinary day.
-  inline constexpr float resting_haste = 40.0f;
+  inline constexpr scale_factor_t resting_haste = 40.0f * scale_factor[one];
 
   // Where the angler fishes from and the way they would cast: on foot,
   // the walker's feet and heading; at the boat's helm, the seat and the
   // way the view looks.
   struct Angler {
-    Vec3 at;
-    Vec3 ahead;
+    position_t at;
+    direction_t ahead;
   };
 
   struct FishingWater {
-    Vec3 aim;
+    position_t aim;
     Waters waters = Waters::still;
     bool upland = false;
   };
 
   // The ground's height under `at`, without the roads.
-  float ground_height_at (const map::SurfaceGeometry& surface, const Vec3& at);
+  terrain::SurfaceElevation
+  ground_height_at (const map::SurfaceGeometry& surface,
+                    const plan_position_t& at);
 
   // Within a step of the hung hammock, beside its length.
   bool beside_hammock (const GameSession& session);
   // A fire is laid a step ahead of the walker, on dry and fairly level
   // ground.
-  std::optional<Vec3> hearth_ahead (const GameSession& session,
-                                    const Surroundings& around);
+  std::optional<position_t> hearth_ahead (const GameSession& session,
+                                          const Surroundings& around);
   // The fire a walker could cook on: the nearest one burning well within
   // a couple of steps, their own, the other player's, or a beacon.
-  std::optional<Vec3> fire_at_hand (const GameSession& session,
-                                    const Surroundings& around);
+  std::optional<position_t> fire_at_hand (const GameSession& session,
+                                          const Surroundings& around);
   bool beside_pan (const GameSession& session);
   // What there is to do about supper where the walker stands: fry what
   // the basket and the creel hold on a fire at hand, wait while it
@@ -100,7 +102,7 @@ namespace moppe::game {
                                           const Surroundings& around);
   std::optional<Angler> angler (const GameSession& session);
   // The river's current at `at`, level.
-  Vec3 current_at (const Surroundings& around, const Vec3& at);
+  velocity_t current_at (const Surroundings& around, const position_t& at);
   // The boat only floats, its engine at rest and hardly moving through
   // the water (a river may carry it): a line can go out.
   bool boat_drifting (const GameSession& session, const Surroundings& around);
@@ -115,8 +117,8 @@ namespace moppe::game {
                                                  const Surroundings& around);
   // Where a fire would be laid: an old fire ring at hand, or level
   // ground a step ahead; and whether the walker stands by their own.
-  std::optional<Vec3> fire_place (const GameSession& session,
-                                  const Surroundings& around);
+  std::optional<position_t> fire_place (const GameSession& session,
+                                        const Surroundings& around);
   bool beside_fire (const GameSession& session);
 
   // What the walker's hands do, when game/affordances.hh says a button
@@ -139,7 +141,7 @@ namespace moppe::game {
   void tend_beacon (GameSession& session,
                     const Surroundings& around,
                     std::size_t beacon);
-  void light_fire (GameSession& session, const Vec3& hearth);
+  void light_fire (GameSession& session, const position_t& hearth);
   void douse_fire (GameSession& session);
 
   // The steps advance_game_session takes about the walker before the

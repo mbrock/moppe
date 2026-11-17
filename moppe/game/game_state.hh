@@ -105,11 +105,11 @@ namespace moppe::game {
     // turned about up and the most it has, and which way it faced last
     // step; and the last landing's airtime, spin, points, and age.
     seconds_t m_jump_airtime = 0.0f * u::s;
-    radians_t m_jump_spin_radians = 0.0f * u::rad;
-    radians_t m_jump_peak_spin_radians = 0.0f * u::rad;
+    radians_t m_jump_spin = 0.0f * u::rad;
+    radians_t m_jump_peak_spin = 0.0f * u::rad;
     direction_t m_jump_last_heading = unit_direction (Vec3 (0, 0, 1));
     seconds_t m_landed_airtime = 0.0f * u::s;
-    degrees_t m_landed_spin_degrees = 0.0f * u::deg;
+    degrees_t m_landed_spin = 0.0f * u::deg;
     int m_landed_points = 0;
     bool m_landed_clean = false;
     seconds_t m_landed_age = 10.0f * u::s;

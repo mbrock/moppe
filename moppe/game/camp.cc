@@ -360,7 +360,7 @@ namespace moppe::game {
     using namespace camp_parts;
     // Getting in or out takes this long.
     constexpr seconds_t settling = 0.8f * u::s;
-    const seconds_t since = seconds_between (now, camp.rest_time) * u::s;
+    const seconds_t since = seconds_between (now, camp.rest_time);
     const proportion_t eased =
       smoothstep (0.0f, seconds_value (settling), seconds_value (since)) *
       proportion[one];
@@ -726,7 +726,7 @@ namespace moppe::game {
     // How long a fire takes to catch, and to die once put out.
     constexpr seconds_t catching = 3.5f * u::s;
     constexpr seconds_t dying = 1.5f * u::s;
-    const seconds_t since = seconds_between (now, camp.fire_time) * u::s;
+    const seconds_t since = seconds_between (now, camp.fire_time);
     if (camp.fire)
       return (0.12f + 0.88f * smoothstep (0.0f,
                                           seconds_value (catching),
@@ -765,7 +765,7 @@ namespace moppe::game {
     constexpr seconds_t frying = 9.0f * u::s;
     constexpr seconds_t keeping = 40.0f * u::s;
     constexpr seconds_t burning = 14.0f * u::s;
-    const seconds_t age = seconds_between (now, pan.since) * u::s;
+    const seconds_t age = seconds_between (now, pan.since);
     if (!pan.on || age <= seconds_t {})
       return 0.0f * doneness[one];
     if (age < frying)
@@ -868,16 +868,17 @@ namespace moppe::game {
       const scale_factor_t fit =
         std::min (1.0f * scale_factor[one],
                   quantity_cast<scale_factor> (2.0f * radius * 1.15f / drawn));
-      draw_fish (dl,
-                 *fish,
-                 centre -
-                   across_v * (0.5f * drawn * fit).numerical_value_in (u::m) -
-                   out_v * 0.03f + up * 0.035f,
-                 across_v,
-                 out_v * -1.0f,
-                 fit.numerical_value_in (one),
-                 0.0f,
-                 cooked.numerical_value_in (one));
+      draw_fish (
+        dl,
+        *fish,
+        position (centre -
+                  across_v * (0.5f * drawn * fit).numerical_value_in (u::m) -
+                  out_v * 0.03f + up * 0.035f),
+        across,
+        unit_direction (out_v * -1.0f),
+        fit,
+        0.0f,
+        cooked.numerical_value_in (one));
     }
     // Eggs broken into the middle, the mushrooms round them.
     for (int i = 0; i < eggs; ++i) {
@@ -892,8 +893,8 @@ namespace moppe::game {
                                      std::sin (radians_value (around))) *
                                0.065f;
       draw_fried_egg (dl,
-                      position_value (at),
-                      radians_value (around + 2.0f * u::rad),
+                      at,
+                      around + 2.0f * u::rad,
                       cooked.numerical_value_in (one),
                       static_cast<std::uint32_t> (i * 7919 + 13));
     }

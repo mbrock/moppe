@@ -54,7 +54,8 @@ namespace moppe {
         return;
       session ().walker ().spawn (moppe::position (place + side * 1.8f),
                                   heading);
-      logic ().m_fp_eye = position (session ().walker ().eye_position ());
+      logic ().m_fp_eye =
+        moppe::position (session ().walker ().eye_position ());
       m_opening.reaim (session (), surface ());
     }
 

@@ -11,9 +11,9 @@ static_assert (std::is_trivially_copyable_v<game::InputFrame>);
 
 MOPPE_TEST (recorded_input_frame_needs_no_platform_event) {
   game::InputFrame recorded;
-  recorded.turn = -0.25f;
-  recorded.drive = 0.75f;
-  recorded.boost = 0.5f;
+  recorded.turn = -0.25f * control_signal[one];
+  recorded.drive = 0.75f * control_signal[one];
+  recorded.boost = 0.5f * proportion[one];
   recorded.use = true;
 
   MOPPE_CHECK_NEAR (game::input_value (recorded.turn), -0.25f, 0.0f);
@@ -108,18 +108,22 @@ MOPPE_TEST (input_frame_adapter_turns_the_head_at_the_stick_rate) {
   game::InputFrameAdapter input;
   input.controls ({ .look_x = 1.0f * control_signal[one],
                     .look_y = -0.5f * control_signal[one] });
-  game::InputFrame frame = input.take_frame (0.5f);
+  game::InputFrame frame = input.take_frame (0.5f * u::s);
   MOPPE_CHECK_NEAR (
-    frame.look_yaw, 0.5f * game::InputFrameAdapter::look_yaw_rate, 1e-6f);
+    radians_value (frame.look_yaw),
+    radians_value (0.5f * u::s * game::InputFrameAdapter::look_yaw_rate),
+    1e-6f);
   MOPPE_CHECK_NEAR (
-    frame.look_pitch, -0.25f * game::InputFrameAdapter::look_pitch_rate, 1e-6f);
+    radians_value (frame.look_pitch),
+    radians_value (-0.25f * u::s * game::InputFrameAdapter::look_pitch_rate),
+    1e-6f);
   // The mouse adds to it within the same frame.
   input.look (display_points (10.0f), display_points (0.0f));
-  frame = input.take_frame (0.0f);
-  MOPPE_CHECK_NEAR (frame.look_yaw, 0.035f, 1e-6f);
+  frame = input.take_frame (0.0f * u::s);
+  MOPPE_CHECK_NEAR (radians_value (frame.look_yaw), 0.035f, 1e-6f);
   input.controls ({});
-  frame = input.take_frame (1.0f);
-  MOPPE_CHECK_NEAR (frame.look_yaw, 0.0f, 0.0f);
+  frame = input.take_frame (1.0f * u::s);
+  MOPPE_CHECK_NEAR (radians_value (frame.look_yaw), 0.0f, 0.0f);
 }
 
 MOPPE_TEST (right_stick_looks_through_a_round_dead_zone) {

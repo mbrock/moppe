@@ -201,7 +201,7 @@ MOPPE_TEST (a_rider_boards_at_a_stop_and_gets_off_at_the_next_asked_for) {
   ride_bus (session, line);
   const BusPose moving = line.where (play_time (40.0)).front ();
   MOPPE_CHECK (!moving.at_stop && moving.next_stop == 1);
-  MOPPE_CHECK (length (session.subject_position () -
+  MOPPE_CHECK (length (position_value (session.subject_position ()) -
                        position_value (bus_seat (moving))) < 1e-3f);
   leave_bus (session, line);
   MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());

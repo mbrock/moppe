@@ -46,8 +46,8 @@ namespace moppe::game {
     std::uint32_t coop = 0;
     // Where its feet stand and which way it faces, radians about the
     // vertical from +z toward +x.
-    Vec3 position {};
-    float heading = 0.0f;
+    position_t position {};
+    heading_t heading {};
     enum class Doing : std::uint8_t {
       pecking,
       walking,
@@ -56,22 +56,22 @@ namespace moppe::game {
       roosting
     };
     Doing doing = Doing::pecking;
-    float left = 0.0f;
-    // The way to where it is going, in the barn's frame: up to three
-    // points, the last the goal.
-    std::array<Vec3, 3> way {};
+    seconds_t left {};
+    // The way to where it is going, in the barn's frame (offsets from its
+    // origin along its axes): up to three points, the last the goal.
+    std::array<displacement_t, 3> way {};
     int ways = 0;
     // Out in the yard rather than in the barn.
     bool outside = false;
-    float speed = 0.0f;
+    speed_t speed {};
     // How far its stride has gone; how far its head is down, 0..1; and
     // how far it is up on its perch, 0..1.
-    float gait = 0.0f;
-    float peck = 0.0f;
-    float perch = 0.0f;
+    strides_t gait {};
+    proportion_t peck {};
+    proportion_t perch {};
     // Where on the perches it roosts, in the barn's frame, and its
     // footing below them.
-    Vec3 roost {};
+    displacement_t roost {};
     // A chick's mother, an index into the birds.
     int mother = -1;
   };
@@ -89,7 +89,7 @@ namespace moppe::game {
     // animals stand on.
     void step (const AnimalGround& ground,
                std::span<const Presence> presences,
-               const Vec3& focus,
+               const position_t& focus,
                meters_t reach,
                hours_t hour,
                seconds_t interval);
@@ -126,21 +126,20 @@ namespace moppe::game {
   // The birds within `reach` of the camera and before it.
   void render_birds (render::Renderer& r,
                      std::span<const Bird> birds,
-                     const Vec3& camera,
-                     const Vec3& forward,
-                     float time,
-                     float reach,
-                     float period_x,
-                     float period_z,
+                     const position_t& camera,
+                     const direction_t& forward,
+                     seconds_t time,
+                     meters_t reach,
+                     const plan_extent_t& period,
                      std::uint64_t motion_base);
 
   // -- eggs ---------------------------------------------------------
 
   // A nest box: where its eggs lie on the straw.
   struct Nest {
-    Vec3 at {};
+    position_t at {};
     // The way out of the box, into the barn.
-    Vec3 out {};
+    direction_t out {};
   };
 
   // The boxes' first eggs, laid before the walker came: one or two each.
@@ -157,20 +156,19 @@ namespace moppe::game {
   [[nodiscard]] std::optional<std::size_t>
   nest_within_reach (std::span<const Nest> nests,
                      std::span<const NestState> states,
-                     const Vec3& feet,
-                     const Vec3& heading,
-                     float period_x,
-                     float period_z);
+                     const position_t& feet,
+                     const direction_t& heading,
+                     const plan_extent_t& period);
 
   // An egg, its long axis along `along`, `cooked` 0 raw to 2 burnt black
   // (camp.hh's pan_cooked); a fried one lies broken open, white and yolk.
   void draw_egg (render::DrawList& dl,
-                 const Vec3& at,
-                 const Vec3& along,
+                 const position_t& at,
+                 const direction_t& along,
                  std::uint32_t seed);
   void draw_fried_egg (render::DrawList& dl,
-                       const Vec3& at,
-                       float yaw,
+                       const position_t& at,
+                       radians_t yaw,
                        float cooked,
                        std::uint32_t seed);
 
@@ -178,9 +176,8 @@ namespace moppe::game {
   void draw_nest_eggs (render::DrawList& dl,
                        std::span<const Nest> nests,
                        std::span<const NestState> states,
-                       const Vec3& camera,
-                       float period_x,
-                       float period_z);
+                       const position_t& camera,
+                       const plan_extent_t& period);
 }
 
 #endif

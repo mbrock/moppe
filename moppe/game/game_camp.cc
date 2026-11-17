@@ -86,7 +86,7 @@ namespace moppe {
 
     void MoppeGame::draw_sleeper (render::DrawList& dl,
                                   bool through_own_eyes,
-                                  float time) {
+                                  seconds_t time) {
       const Camp& camp = logic ().m_camp;
       if (!through_own_eyes)
         figure::draw (
@@ -95,7 +95,7 @@ namespace moppe {
             camp.hammock,
             camp.swing,
             resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch),
-            time * u::s),
+            time),
           m_company.outfit);
       // The basket waits on the ground under the foot of the hammock.
       const direction_t across = hammock_across (camp.hammock);

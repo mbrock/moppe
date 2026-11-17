@@ -10,6 +10,7 @@
 // (render::TextList::stand, Renderer::draw_world_labels).
 
 #include <moppe/game/camp.hh>
+#include <moppe/game/game_clock.hh>
 #include <moppe/game/mushrooms.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/trunk_field.hh>
@@ -23,17 +24,17 @@
 namespace moppe::game {
   // How far the ring goes, how fast, and how long what it finds stays lit
   // before fading.
-  inline constexpr float scan_reach = 60.0f;
-  inline constexpr float scan_speed = 24.0f;
-  inline constexpr float scan_lit = 12.0f;
-  inline constexpr float scan_fade = 1.5f;
+  inline constexpr meters_t scan_reach = 60.0f * u::m;
+  inline constexpr speed_t scan_speed = 24.0f * u::m / u::s;
+  inline constexpr seconds_t scan_lit = 12.0f * u::s;
+  inline constexpr seconds_t scan_fade = 1.5f * u::s;
 
   struct ScanFind {
     enum class Kind : std::uint8_t { mushrooms, poisonous, hammock };
     Kind kind = Kind::mushrooms;
     // Where the thing is: a group's middle on the ground, or the middle
     // of a hammock's span at strap height.
-    Vec3 at {};
+    position_t at = position (Vec3 ());
     // How many mushrooms of one kind the group holds.
     int count = 1;
     MushroomKind mushroom = MushroomKind::chanterelle;
@@ -44,25 +45,27 @@ namespace moppe::game {
   // of one kind standing together (within a few metres of the group's
   // first), the poisonous apart.
   [[nodiscard]] std::vector<ScanFind>
-  scan_mushrooms (const MushroomPatch& patch, const Vec3& origin);
+  scan_mushrooms (const MushroomPatch& patch, const position_t& origin);
 
   [[nodiscard]] std::vector<ScanFind>
   scan_hammocks (std::span<const HammockSite> sites);
 
   class Scan {
   public:
-    void start (const Vec3& origin, double now, std::vector<ScanFind> finds);
+    void start (const position_t& origin,
+                play_time_t now,
+                std::vector<ScanFind> finds);
 
     // Whether anything of it still shows.
-    bool showing (double now) const;
+    bool showing (play_time_t now) const;
     // How far the ring has gone.
-    float radius (double now) const;
-    // How much a find shows, 0..1: none until the ring reaches it.
-    float shown (const ScanFind& find, double now) const;
-    // Seconds since the ring reached it, negative before.
-    float since_found (const ScanFind& find, double now) const;
+    meters_t radius (play_time_t now) const;
+    // How much a find shows: none until the ring reaches it.
+    proportion_t shown (const ScanFind& find, play_time_t now) const;
+    // The time since the ring reached it, negative before.
+    seconds_t since_found (const ScanFind& find, play_time_t now) const;
 
-    const Vec3& origin () const {
+    const position_t& origin () const {
       return m_origin;
     }
     const std::vector<ScanFind>& finds () const {
@@ -70,8 +73,8 @@ namespace moppe::game {
     }
 
   private:
-    Vec3 m_origin {};
-    double m_start = -1e9;
+    position_t m_origin = position (Vec3 ());
+    play_time_t m_start = play_time (-1e9);
     std::vector<ScanFind> m_finds;
   };
 
@@ -79,8 +82,8 @@ namespace moppe::game {
   // as additive glow in world space.
   void draw_scan_glow (render::DrawList& dl,
                        const Scan& scan,
-                       double now,
-                       const Vec3& camera,
+                       play_time_t now,
+                       const position_t& camera,
                        const GroundHeight& ground);
 
   // The labels: a mark over each find, seen through what stands in front,
@@ -96,7 +99,10 @@ namespace moppe::game {
   // another's way on screen: the nearest are named, and the rest, and
   // any that would cover a nearer one's label, show their mark alone.
   struct ScanView {
-    Vec3 eye {}, right { 1, 0, 0 }, up { 0, 1, 0 }, forward { 0, 0, 1 };
+    position_t eye = position (Vec3 ());
+    direction_t right = unit_direction (Vec3 (1, 0, 0));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
     float tan_half_height = 0.6f;
     float width_pts = 1280.0f, height_pts = 720.0f;
   };
@@ -105,8 +111,8 @@ namespace moppe::game {
                          const render::Font& font,
                          const ScanMarks& marks,
                          const Scan& scan,
-                         double now,
-                         const Vec3& walker,
+                         play_time_t now,
+                         const position_t& walker,
                          const ScanView& view);
 
   // The scan as play keeps it: started at the walker's feet with what is
@@ -115,8 +121,8 @@ namespace moppe::game {
   public:
     // A ring out from `feet` from `now`, finding the mushrooms and the
     // trees fit for a hammock within reach.
-    void start (const Vec3& feet,
-                double now,
+    void start (const position_t& feet,
+                play_time_t now,
                 const MushroomPatch& mushrooms,
                 const mov::TrunkField& trunks,
                 const GroundHeight& ground);
@@ -125,9 +131,9 @@ namespace moppe::game {
     // `view`, named by their distance from `walker`.
     void draw (render::Renderer& r,
                const render::Font* font,
-               double now,
+               play_time_t now,
                const ScanView& view,
-               const Vec3& walker,
+               const position_t& walker,
                const GroundHeight& ground);
 
   private:
