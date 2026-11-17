@@ -47,10 +47,12 @@ MOPPE_TEST (the_jeep_model_stands_where_the_physics_has_its_wheels) {
   MOPPE_CHECK_NEAR (
     game::jeep_model::wheel_rr[2], -meters_value (mov::jeep_rig.axle), 1e-4f);
   for (int i = 0; i < 3; ++i)
-    MOPPE_CHECK_NEAR (
-      game::jeep_model::seat_driver[i], mov::jeep_rig.seat[i], 1e-4f);
-  MOPPE_CHECK_NEAR (
-    game::jeep_model::seat_passenger[0], -mov::jeep_rig.seat[0], 1e-4f);
+    MOPPE_CHECK_NEAR (game::jeep_model::seat_driver[i],
+                      displacement_value (mov::jeep_rig.seat)[i],
+                      1e-4f);
+  MOPPE_CHECK_NEAR (game::jeep_model::seat_passenger[0],
+                    displacement_value (mov::jeep_rig.passenger_seat ())[0],
+                    1e-4f);
 }
 
 MOPPE_TEST (a_parked_jeep_settles_on_its_springs_and_stays) {
@@ -89,7 +91,7 @@ MOPPE_TEST (the_jeep_drives_steers_and_stops) {
   mov::Car jeep (ground, mov::jeep_rig);
   jeep.place (position (Vec3 (60, 0, 60)), unit_direction (Vec3 (0, 0, 1)));
   jeep.set_parked (false);
-  jeep.set_drive (1.0f);
+  jeep.set_drive (1.0f * control_signal[one]);
   jeep_test_run (jeep, 4.0f);
   const float speed = length (velocity_value (jeep.velocity ()));
   MOPPE_CHECK (position_value (jeep.position ())[2] > 80.0f);
@@ -99,22 +101,22 @@ MOPPE_TEST (the_jeep_drives_steers_and_stops) {
 
   // Turning right brings the nose round toward -x (x is the driver's
   // left), without rolling over.
-  jeep.set_drive (0.3f);
-  jeep.set_turn (1.0f);
+  jeep.set_drive (0.3f * control_signal[one]);
+  jeep.set_turn (1.0f * control_signal[one]);
   jeep_test_run (jeep, 2.0f);
   MOPPE_CHECK (radians_value (jeep.steer ()) > 0.05f);
   MOPPE_CHECK (direction_value (jeep.forward ())[0] < -0.3f);
   MOPPE_CHECK (direction_value (jeep.up ())[1] > 0.9f);
 
-  jeep.set_turn (0.0f);
-  jeep.set_drive (0.0f);
+  jeep.set_turn (0.0f * control_signal[one]);
+  jeep.set_drive (0.0f * control_signal[one]);
   jeep.set_brake (true);
   jeep_test_run (jeep, 4.0f);
   MOPPE_CHECK (length (velocity_value (jeep.velocity ())) < 0.3f);
 
   // And it backs up.
   jeep.set_brake (false);
-  jeep.set_drive (-1.0f);
+  jeep.set_drive (-1.0f * control_signal[one]);
   const Vec3 from = position_value (jeep.position ());
   const Vec3 facing = direction_value (jeep.forward ());
   jeep_test_run (jeep, 2.0f);
@@ -129,7 +131,7 @@ MOPPE_TEST (the_jeep_crosses_rough_ground_upright) {
   mov::Car jeep (rough, mov::jeep_rig);
   jeep.place (position (Vec3 (80, 0, 40)), unit_direction (Vec3 (0, 0, 1)));
   jeep.set_parked (false);
-  jeep.set_drive (0.7f);
+  jeep.set_drive (0.7f * control_signal[one]);
   float lowest_up = 1.0f;
   for (int i = 0; i < 120 * 8; ++i) {
     jeep.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
@@ -157,7 +159,7 @@ MOPPE_TEST (a_tree_stops_the_jeep) {
   jeep.set_trunks (&trees);
   jeep.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (0, 0, 1)));
   jeep.set_parked (false);
-  jeep.set_drive (0.5f);
+  jeep.set_drive (0.5f * control_signal[one]);
   jeep_test_run (jeep, 6.0f);
   // Its nose is two metres ahead of its origin; the trunk stands at 130.
   MOPPE_CHECK (position_value (jeep.position ())[2] < 128.5f);
@@ -196,7 +198,7 @@ MOPPE_TEST (a_restored_jeep_stands_as_it_did) {
   mov::Car jeep (ground, mov::jeep_rig);
   jeep.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (1, 0, 1)));
   jeep.set_parked (false);
-  jeep.set_drive (1.0f);
+  jeep.set_drive (1.0f * control_signal[one]);
   jeep_test_run (jeep, 2.0f);
   const mov::Car::State kept = jeep.state ();
   jeep_test_run (jeep, 1.0f);
@@ -245,11 +247,11 @@ MOPPE_TEST (the_bridge_railing_keeps_a_jeep_on_the_deck) {
   mov::Car jeep (valley, mov::jeep_rig);
   jeep.place (position (Vec3 (160, 0, 120)), unit_direction (Vec3 (0, 0, 1)));
   jeep.set_parked (false);
-  jeep.set_drive (0.6f);
+  jeep.set_drive (0.6f * control_signal[one]);
   float lowest = 100.0f, widest = 0.0f;
   for (int i = 0; i < 120 * 10; ++i) {
     if (position_value (jeep.position ())[2] > 165.0f)
-      jeep.set_turn (1.0f);
+      jeep.set_turn (1.0f * control_signal[one]);
     jeep.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
     if (position_value (jeep.position ())[2] > 150.0f &&
         position_value (jeep.position ())[2] < 210.0f) {
@@ -294,11 +296,11 @@ MOPPE_TEST (a_guardrail_keeps_a_jeep_on_the_embankment) {
     mov::Car jeep (fields, mov::jeep_rig);
     jeep.place (position (Vec3 (160, 0, 60)), unit_direction (Vec3 (0, 0, 1)));
     jeep.set_parked (false);
-    jeep.set_drive (0.8f);
+    jeep.set_drive (0.8f * control_signal[one]);
     float widest = 0.0f;
     for (int i = 0; i < 120 * 10; ++i) {
       if (position_value (jeep.position ())[2] > 90.0f)
-        jeep.set_turn (1.0f);
+        jeep.set_turn (1.0f * control_signal[one]);
       jeep.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
       widest = std::max (
         widest, std::abs (position_value (jeep.position ())[0] - 160.0f));

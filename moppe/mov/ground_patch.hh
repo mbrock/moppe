@@ -24,17 +24,19 @@ namespace moppe::mov {
   class GroundPatch {
   public:
     struct Params {
-      float ground_friction = 1.0f;
-      float obstacle_friction = 0.3f;
+      friction_coefficient_t ground_friction =
+        1.0f * isq::static_friction_coefficient[one];
+      friction_coefficient_t obstacle_friction =
+        0.3f * isq::static_friction_coefficient[one];
       float obstacle_restitution = 0.3f;
       // What the ground and the obstacles are, and what each meets.
       std::uint64_t ground_bit = 0, ground_mask = 0;
       std::uint64_t obstacle_bit = 0, obstacle_mask = 0;
       // Samples along a side, how far from the middle the vehicle may
-      // stray, and how far from the middle trunks are gathered, metres.
+      // stray, and how far from the middle trunks are gathered.
       int samples = 97;
-      float recentre_distance = 24.0f;
-      float trunk_reach = 72.0f;
+      meters_t recentre_distance = 24.0f * u::m;
+      meters_t trunk_reach = 72.0f * u::m;
     };
 
     GroundPatch (const map::SurfaceGeometry& surface, Params params);
@@ -68,7 +70,9 @@ namespace moppe::mov {
     }
 
   private:
-    Vec3 centre () const;
+    // The patch's first sample, and its middle, on the map.
+    plan_position_t corner () const;
+    plan_position_t centre () const;
     void destroy ();
     // The decks into the ground, and the railings onto the obstacles'
     // body, made on first use.
@@ -77,7 +81,8 @@ namespace moppe::mov {
 
     const map::SurfaceGeometry& m_surface;
     Params m_params;
-    float m_dx, m_dz;
+    // The distance between samples, half the terrain lattice's.
+    meters_t m_dx, m_dz;
     b3BodyId m_ground = b3_nullBodyId;
     b3BodyId m_obstacles = b3_nullBodyId;
     b3HeightFieldData* m_height_field = nullptr;

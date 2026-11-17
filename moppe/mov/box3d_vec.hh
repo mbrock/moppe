@@ -199,6 +199,13 @@ namespace moppe::mov {
     return body_mass (mass, displacement_value (centre), inertia);
   }
 
+  // A box of half extents `half` about `centre`, in a body's frame.
+  inline b3BoxHull box_hull (const spatial_extent_t& half,
+                             const displacement_t& centre) {
+    const Vec3& h = extent_value (half);
+    return b3MakeOffsetBoxHull (h[0], h[1], h[2], to_b3 (centre));
+  }
+
   // The torque that turns a body, rotated by `q` and with moments of
   // inertia `inertia` about its own axes, at `acceleration` (radians a
   // second squared, in the world).
@@ -230,6 +237,20 @@ namespace moppe::mov {
               .numerical_value_in (one / si::second);
     damping =
       (c / (2.0f * sqrt (stiffness * effective))).numerical_value_in (one);
+  }
+
+  // The same, typed: the joint's frequency and damping ratio.
+  inline void spring_tuning (quantity<si::newton / si::metre, float> stiffness,
+                             kilograms_t sprung,
+                             kilograms_t effective,
+                             damping_ratio_t ratio,
+                             frequency_t& hertz,
+                             damping_ratio_t& damping) {
+    float h = 0.0f, d = 0.0f;
+    spring_tuning (
+      stiffness, sprung, effective, ratio.numerical_value_in (one), h, d);
+    hertz = h * si::hertz;
+    damping = d * damping_ratio[one];
   }
 
   // A machine's frame for a level heading: x to its left, y up, z along

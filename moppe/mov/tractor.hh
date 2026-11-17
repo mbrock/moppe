@@ -38,27 +38,31 @@ namespace moppe::mov {
     // level with the ground the tractor stands on; each wheel's centre is
     // its radius above that, this far to the side, and ahead of or
     // behind it. models/tractor.blend agrees.
-    static constexpr float rear_radius = 0.66f;
-    static constexpr float rear_track = 0.76f;
-    static constexpr float rear_axle = -0.80f;
-    static constexpr float front_radius = 0.37f;
-    static constexpr float front_track = 0.66f;
-    static constexpr float front_axle = 1.10f;
+    static constexpr meters_t rear_radius = 0.66f * u::m;
+    static constexpr meters_t rear_track = 0.76f * u::m;
+    static constexpr meters_t rear_axle = -0.80f * u::m;
+    static constexpr meters_t front_radius = 0.37f * u::m;
+    static constexpr meters_t front_track = 0.66f * u::m;
+    static constexpr meters_t front_axle = 1.10f * u::m;
     // The one seat, on the centre line over the gearbox.
-    static constexpr float seat[3] = { 0.0f, 1.16f, -1.0f };
+    static inline const displacement_t seat =
+      displacement (Vec3 (0.0f, 1.16f, -1.0f));
     // The mouth of the exhaust stack, on the right.
-    static constexpr float exhaust_mouth[3] = { -0.17f, 2.06f, 0.92f };
+    static inline const displacement_t exhaust_mouth =
+      displacement (Vec3 (-0.17f, 2.06f, 0.92f));
 
     // The trailer's wheels, either side of its axle; the pin its eye
     // drops over, in the tractor's frame; and the eye, in the trailer's.
     // models/trailer.blend agrees.
     static constexpr int trailer_wheel_count = 2;
-    static constexpr float trailer_radius = 0.36f;
-    static constexpr float trailer_track = 0.62f;
-    static constexpr float hitch_pin[3] = { 0.0f, 0.47f, -1.42f };
-    static constexpr float trailer_eye[3] = { 0.0f, 0.47f, 2.30f };
+    static constexpr meters_t trailer_radius = 0.36f * u::m;
+    static constexpr meters_t trailer_track = 0.62f * u::m;
+    static inline const displacement_t hitch_pin =
+      displacement (Vec3 (0.0f, 0.47f, -1.42f));
+    static inline const displacement_t trailer_eye =
+      displacement (Vec3 (0.0f, 0.47f, 2.30f));
 
-    static float wheel_radius (int wheel) {
+    static meters_t wheel_radius (int wheel) {
       return wheel < 2 ? front_radius : rear_radius;
     }
 
@@ -130,11 +134,10 @@ namespace moppe::mov {
     // A point given in the tractor's frame, in the world.
     position_t point (const displacement_t& local) const;
     position_t driver_seat () const {
-      return point (displacement (Vec3 (seat[0], seat[1], seat[2])));
+      return point (seat);
     }
     position_t exhaust () const {
-      return point (displacement (
-        Vec3 (exhaust_mouth[0], exhaust_mouth[1], exhaust_mouth[2])));
+      return point (exhaust_mouth);
     }
 
     // How far a wheel hangs below where it stands; negative when its

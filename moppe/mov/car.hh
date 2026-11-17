@@ -22,12 +22,12 @@ namespace moppe::mov {
     meters_t rear_track;
     meters_t axle;
     // The driver's seat, on the left; the passenger's mirrors it.
-    float seat[3];
+    displacement_t seat;
 
     kilograms_t chassis_mass;
     // Pitch, yaw, and roll about the centre of mass.
     kilogram_square_metres_t inertia[3];
-    float mass_centre[3];
+    displacement_t mass_centre;
     kilograms_t wheel_mass;
     kilogram_square_metres_t wheel_inertia;
     // Box3D holds a body to a quarter turn a step unless told it may spin
@@ -37,8 +37,8 @@ namespace moppe::mov {
     // axles: they meet trunks and, when the springs are spent or the car
     // goes over, the ground. The wheels meet only the ground.
     struct Box {
-      float half[3];
-      float centre[3];
+      spatial_extent_t half;
+      displacement_t centre;
     };
     std::array<Box, 4> boxes;
     int box_count;
@@ -47,12 +47,12 @@ namespace moppe::mov {
     // rate; beyond the sag there is `bump` more before the stops.
     meters_t sag;
     meters_t bump;
-    float sprung_damping_ratio;
+    damping_ratio_t sprung_damping_ratio;
 
     // The tyres' grip, and what it costs a loaded tyre to roll as a share
     // of its load.
-    float tyre_friction;
-    float rolling_resistance;
+    friction_coefficient_t tyre_friction;
+    rolling_resistance_t rolling_resistance;
 
     newtons_t engine_force;
     watts_t engine_power;
@@ -60,9 +60,9 @@ namespace moppe::mov {
     bool front_drive;
     newtons_t brake_force;
     // The brakes' share at the front.
-    float front_brake_share;
+    proportion_t front_brake_share;
     speed_t reverse_speed;
-    float reverse_share;
+    proportion_t reverse_share;
     newton_metres_t engine_brake_torque;
     newton_metres_t parking_torque;
     newton_metres_t free_rev_torque;
@@ -73,7 +73,7 @@ namespace moppe::mov {
 
     // Drag as a deceleration per unit of speed: the air's per metre and
     // the water's (up to the sills) per second.
-    quantity<one / si::metre, float> air_drag;
+    per_metre_t air_drag;
     damping_t water_drag;
 
     // Slung under the helicopter and off the ground: how quickly the air
@@ -85,41 +85,49 @@ namespace moppe::mov {
     kilograms_t total_mass () const {
       return chassis_mass + 4.0f * wheel_mass;
     }
+
+    // The passenger's seat: the driver's, mirrored across the centre line.
+    displacement_t passenger_seat () const {
+      const Vec3& driver = displacement_value (seat);
+      return displacement (Vec3 (-driver[0], driver[1], driver[2]));
+    }
   };
 
   // The jeep: a tub and a roll cage on four driven wheels.
-  inline constexpr CarRig jeep_rig {
+  inline const CarRig jeep_rig {
     .wheel_radius = 0.40f * u::m,
     .front_track = 0.80f * u::m,
     .rear_track = 0.80f * u::m,
     .axle = 1.20f * u::m,
-    .seat = { 0.33f, 0.43f, -0.16f },
+    .seat = displacement (Vec3 (0.33f, 0.43f, -0.16f)),
     .chassis_mass = 1000.0f * u::kg,
     // The centre of mass lies low between the axles.
     .inertia = { 1400.0f * u::kg * u::m2,
                  1500.0f * u::kg* u::m2,
                  560.0f * u::kg* u::m2 },
-    .mass_centre = { 0.0f, 0.15f, 0.05f },
+    .mass_centre = displacement (Vec3 (0.0f, 0.15f, 0.05f)),
     .wheel_mass = 30.0f * u::kg,
     .wheel_inertia = 2.4f * u::kg * u::m2,
     .fast_wheels = false,
     // The tub, wide enough to shield the wheels, and the roll cage over
     // the seats.
-    .boxes = { { { { 0.92f, 0.36f, 1.9f }, { 0.0f, 0.42f, 0.0f } },
-                 { { 0.6f, 0.33f, 0.98f }, { 0.0f, 1.1f, -0.55f } } } },
+    .boxes = { { { spatial_extent_in_metres (Vec3 (0.92f, 0.36f, 1.9f)),
+                   displacement (Vec3 (0.0f, 0.42f, 0.0f)) },
+                 { spatial_extent_in_metres (Vec3 (0.6f, 0.33f, 0.98f)),
+                   displacement (Vec3 (0.0f, 1.1f, -0.55f)) } } },
     .box_count = 2,
     .sag = 0.12f * u::m,
     .bump = 0.17f * u::m,
-    .sprung_damping_ratio = 0.5f,
-    .tyre_friction = 1.25f,
-    .rolling_resistance = 0.025f,
+    .sprung_damping_ratio = 0.5f * damping_ratio[one],
+    .tyre_friction = 1.25f * isq::static_friction_coefficient[one],
+    .rolling_resistance = 0.025f * isq::rolling_resistance_factor[one],
     .engine_force = 9000.0f * u::N,
     .engine_power = 80000.0f * u::W,
     .front_drive = false,
     .brake_force = 13000.0f * u::N,
-    .front_brake_share = 0.5f,
+    .front_brake_share = 0.5f * proportion[one],
     .reverse_speed = 7.0f * u::m / u::s,
-    .reverse_share = 0.6f,
+    .reverse_share = 0.6f * proportion[one],
     .engine_brake_torque = 45.0f * u::N * u::m,
     .parking_torque = 5000.0f * u::N * u::m,
     .free_rev_torque = 40.0f * u::N * u::m,
@@ -135,43 +143,47 @@ namespace moppe::mov {
   // car, its small petrol engine pulling through the front wheels, good
   // for some 140 km/h, on soft springs and narrow tyres that grip less
   // than the jeep's off the road. models/caddy.blend's measures.
-  inline constexpr CarRig caddy_rig {
+  inline const CarRig caddy_rig {
     .wheel_radius = 0.288f * u::m,
     .front_track = 0.695f * u::m,
     .rear_track = 0.685f * u::m,
     .axle = 1.3125f * u::m,
-    .seat = { 0.36f, 0.282f, -0.08f },
+    .seat = displacement (Vec3 (0.36f, 0.282f, -0.08f)),
     // Some 900 kg at the kerb with the hardtop on, nose-heavy over the
     // engine set across the front.
     .chassis_mass = 860.0f * u::kg,
     .inertia = { 1300.0f * u::kg * u::m2,
                  1450.0f * u::kg* u::m2,
                  380.0f * u::kg* u::m2 },
-    .mass_centre = { 0.0f, 0.24f, 0.30f },
+    .mass_centre = displacement (Vec3 (0.0f, 0.24f, 0.30f)),
     .wheel_mass = 16.0f * u::kg,
     .wheel_inertia = 0.75f * u::kg * u::m2,
     .fast_wheels = true,
     // The body from the sills to the waist, the cab over the front of it,
     // and the hardtop over the bed and the cab's roof.
-    .boxes = { { { { 0.82f, 0.33f, 2.14f }, { 0.0f, 0.35f, -0.08f } },
-                 { { 0.66f, 0.25f, 0.42f }, { 0.0f, 0.92f, 0.08f } },
-                 { { 0.785f, 0.47f, 0.94f }, { 0.0f, 1.15f, -1.28f } },
-                 { { 0.785f, 0.22f, 0.36f }, { 0.0f, 1.40f, 0.0f } } } },
+    .boxes = { { { spatial_extent_in_metres (Vec3 (0.82f, 0.33f, 2.14f)),
+                   displacement (Vec3 (0.0f, 0.35f, -0.08f)) },
+                 { spatial_extent_in_metres (Vec3 (0.66f, 0.25f, 0.42f)),
+                   displacement (Vec3 (0.0f, 0.92f, 0.08f)) },
+                 { spatial_extent_in_metres (Vec3 (0.785f, 0.47f, 0.94f)),
+                   displacement (Vec3 (0.0f, 1.15f, -1.28f)) },
+                 { spatial_extent_in_metres (Vec3 (0.785f, 0.22f, 0.36f)),
+                   displacement (Vec3 (0.0f, 1.40f, 0.0f)) } } },
     .box_count = 4,
     // A car's springs: softer and shorter than the jeep's.
     .sag = 0.085f * u::m,
     .bump = 0.10f * u::m,
-    .sprung_damping_ratio = 0.42f,
-    .tyre_friction = 1.08f,
-    .rolling_resistance = 0.015f,
+    .sprung_damping_ratio = 0.42f * damping_ratio[one],
+    .tyre_friction = 1.08f * isq::static_friction_coefficient[one],
+    .rolling_resistance = 0.015f * isq::rolling_resistance_factor[one],
     // The 1.6 litre's seventy horsepower.
     .engine_force = 5600.0f * u::N,
     .engine_power = 52000.0f * u::W,
     .front_drive = true,
     .brake_force = 9500.0f * u::N,
-    .front_brake_share = 0.62f,
+    .front_brake_share = 0.62f * proportion[one],
     .reverse_speed = 6.0f * u::m / u::s,
-    .reverse_share = 0.55f,
+    .reverse_share = 0.55f * proportion[one],
     .engine_brake_torque = 28.0f * u::N * u::m,
     .parking_torque = 2600.0f * u::N * u::m,
     .free_rev_torque = 18.0f * u::N * u::m,

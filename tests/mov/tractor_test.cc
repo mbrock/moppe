@@ -35,27 +35,39 @@ namespace {
 MOPPE_TEST (the_tractor_model_stands_where_the_physics_has_its_wheels) {
   using mov::Tractor;
   namespace model = game::tractor_model;
-  MOPPE_CHECK_NEAR (model::wheel_fl[0], Tractor::front_track, 1e-4f);
-  MOPPE_CHECK_NEAR (model::wheel_fl[1], Tractor::front_radius, 1e-4f);
-  MOPPE_CHECK_NEAR (model::wheel_fl[2], Tractor::front_axle, 1e-4f);
-  MOPPE_CHECK_NEAR (model::wheel_rr[0], -Tractor::rear_track, 1e-4f);
-  MOPPE_CHECK_NEAR (model::wheel_rr[1], Tractor::rear_radius, 1e-4f);
-  MOPPE_CHECK_NEAR (model::wheel_rr[2], Tractor::rear_axle, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_fl[0], meters_value (Tractor::front_track), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_fl[1], meters_value (Tractor::front_radius), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_fl[2], meters_value (Tractor::front_axle), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_rr[0], -meters_value (Tractor::rear_track), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_rr[1], meters_value (Tractor::rear_radius), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_rr[2], meters_value (Tractor::rear_axle), 1e-4f);
   for (int i = 0; i < 3; ++i) {
-    MOPPE_CHECK_NEAR (model::seat_driver[i], Tractor::seat[i], 1e-4f);
-    MOPPE_CHECK_NEAR (model::exhaust[i], Tractor::exhaust_mouth[i], 1e-4f);
+    MOPPE_CHECK_NEAR (
+      model::seat_driver[i], displacement_value (Tractor::seat)[i], 1e-4f);
+    MOPPE_CHECK_NEAR (
+      model::exhaust[i], displacement_value (Tractor::exhaust_mouth)[i], 1e-4f);
   }
 }
 
 MOPPE_TEST (the_trailer_model_stands_where_the_physics_has_its_wheels) {
   using mov::Tractor;
   namespace model = game::trailer_model;
-  MOPPE_CHECK_NEAR (model::wheel_l[0], Tractor::trailer_track, 1e-4f);
-  MOPPE_CHECK_NEAR (model::wheel_r[0], -Tractor::trailer_track, 1e-4f);
-  MOPPE_CHECK_NEAR (model::wheel_l[1], Tractor::trailer_radius, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_l[0], meters_value (Tractor::trailer_track), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_r[0], -meters_value (Tractor::trailer_track), 1e-4f);
+  MOPPE_CHECK_NEAR (
+    model::wheel_l[1], meters_value (Tractor::trailer_radius), 1e-4f);
   MOPPE_CHECK_NEAR (model::wheel_l[2], 0.0f, 1e-4f);
   for (int i = 0; i < 3; ++i)
-    MOPPE_CHECK_NEAR (model::eye[i], Tractor::trailer_eye[i], 1e-4f);
+    MOPPE_CHECK_NEAR (
+      model::eye[i], displacement_value (Tractor::trailer_eye)[i], 1e-4f);
 }
 
 MOPPE_TEST (a_parked_tractor_settles_on_its_tyres_and_stays) {
@@ -102,7 +114,7 @@ MOPPE_TEST (the_tractor_drives_slowly_steers_and_stops) {
   mov::Tractor tractor (ground);
   tractor.place (position (Vec3 (60, 0, 60)), unit_direction (Vec3 (0, 0, 1)));
   tractor.set_parked (false);
-  tractor.set_drive (1.0f);
+  tractor.set_drive (1.0f * control_signal[one]);
   tractor_test_run (tractor, 6.0f);
   const float speed = length (velocity_value (tractor.velocity ()));
   // Governed to some thirty kilometres an hour.
@@ -113,21 +125,21 @@ MOPPE_TEST (the_tractor_drives_slowly_steers_and_stops) {
 
   // Turning right brings the nose round toward -x (x is the driver's
   // left), without rolling over.
-  tractor.set_drive (0.5f);
-  tractor.set_turn (1.0f);
+  tractor.set_drive (0.5f * control_signal[one]);
+  tractor.set_turn (1.0f * control_signal[one]);
   tractor_test_run (tractor, 3.0f);
   MOPPE_CHECK (radians_value (tractor.steer ()) > 0.05f);
   MOPPE_CHECK (direction_value (tractor.forward ())[0] < -0.3f);
   MOPPE_CHECK (direction_value (tractor.up ())[1] > 0.9f);
 
   // Let go of the throttle and it comes to a stop by itself.
-  tractor.set_turn (0.0f);
-  tractor.set_drive (0.0f);
+  tractor.set_turn (0.0f * control_signal[one]);
+  tractor.set_drive (0.0f * control_signal[one]);
   tractor_test_run (tractor, 4.0f);
   MOPPE_CHECK (length (velocity_value (tractor.velocity ())) < 0.3f);
 
   // And it backs up, slowly.
-  tractor.set_drive (-1.0f);
+  tractor.set_drive (-1.0f * control_signal[one]);
   const Vec3 from = position_value (tractor.position ());
   const Vec3 facing = direction_value (tractor.forward ());
   tractor_test_run (tractor, 3.0f);
@@ -142,18 +154,14 @@ MOPPE_TEST (the_trailer_follows_round_and_will_not_fold_back) {
   tractor.place (position (Vec3 (128, 0, 60)), unit_direction (Vec3 (0, 0, 1)));
   tractor.set_parked (false);
   const auto pin = [&tractor] {
-    return position_value (
-      tractor.point (displacement (Vec3 (mov::Tractor::hitch_pin[0],
-                                         mov::Tractor::hitch_pin[1],
-                                         mov::Tractor::hitch_pin[2]))));
+    return position_value (tractor.point (mov::Tractor::hitch_pin));
   };
   const auto eye = [&tractor] {
-    return tractor.trailer_point (Vec3 (mov::Tractor::trailer_eye[0],
-                                        mov::Tractor::trailer_eye[1],
-                                        mov::Tractor::trailer_eye[2]));
+    return tractor.trailer_point (
+      displacement_value (mov::Tractor::trailer_eye));
   };
   // Pulled along, it runs straight behind, rolling as fast.
-  tractor.set_drive (1.0f);
+  tractor.set_drive (1.0f * control_signal[one]);
   tractor_test_run (tractor, 5.0f);
   MOPPE_CHECK (dot (tractor.trailer_forward (),
                     direction_value (tractor.forward ())) > 0.995f);
@@ -166,8 +174,8 @@ MOPPE_TEST (the_trailer_follows_round_and_will_not_fold_back) {
 
   // Round a right-hand turn it lags the tractor's heading, cutting the
   // corner, but comes round the same way.
-  tractor.set_drive (0.4f);
-  tractor.set_turn (1.0f);
+  tractor.set_drive (0.4f * control_signal[one]);
+  tractor.set_turn (1.0f * control_signal[one]);
   tractor_test_run (tractor, 2.0f);
   const float lag = std::atan2 (
     cross (tractor.trailer_forward (), direction_value (tractor.forward ()))[1],
@@ -179,7 +187,7 @@ MOPPE_TEST (the_trailer_follows_round_and_will_not_fold_back) {
 
   // Backing up on full lock jackknifes it, until the drawbar's limit
   // holds it some sixty-five degrees off and pushes it round.
-  tractor.set_drive (-1.0f);
+  tractor.set_drive (-1.0f * control_signal[one]);
   float widest = 0.0f;
   for (int i = 0; i < 120 * 8; ++i) {
     tractor.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
@@ -201,7 +209,7 @@ MOPPE_TEST (the_tractor_climbs_a_steep_slope) {
   mov::Tractor tractor (hill);
   tractor.place (position (Vec3 (100, 0, 60)), unit_direction (Vec3 (0, 0, 1)));
   tractor.set_parked (false);
-  tractor.set_drive (1.0f);
+  tractor.set_drive (1.0f * control_signal[one]);
   tractor_test_run (tractor, 8.0f);
   // Slowly, but gathering speed, and with its nose down.
   MOPPE_CHECK (position_value (tractor.position ())[2] > 70.0f);
@@ -219,7 +227,7 @@ MOPPE_TEST (the_tractor_crosses_rough_ground_upright) {
   mov::Tractor tractor (rough);
   tractor.place (position (Vec3 (80, 0, 40)), unit_direction (Vec3 (0, 0, 1)));
   tractor.set_parked (false);
-  tractor.set_drive (0.8f);
+  tractor.set_drive (0.8f * control_signal[one]);
   float lowest_up = 1.0f;
   for (int i = 0; i < 120 * 8; ++i) {
     tractor.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
@@ -248,7 +256,7 @@ MOPPE_TEST (a_tree_stops_the_tractor) {
   tractor.place (position (Vec3 (100, 0, 100)),
                  unit_direction (Vec3 (0, 0, 1)));
   tractor.set_parked (false);
-  tractor.set_drive (0.5f);
+  tractor.set_drive (0.5f * control_signal[one]);
   tractor_test_run (tractor, 8.0f);
   // Its nose is a metre and a half ahead of its origin.
   MOPPE_CHECK (position_value (tractor.position ())[2] < 128.8f);

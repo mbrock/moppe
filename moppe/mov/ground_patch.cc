@@ -58,9 +58,8 @@ namespace moppe::mov {
 
   GroundPatch::GroundPatch (const map::SurfaceGeometry& surface, Params params)
       : m_surface (surface), m_params (params),
-        m_dx (0.5f * surface.domain ().spacing_x ().numerical_value_in (u::m)),
-        m_dz (0.5f * surface.domain ().spacing_z ().numerical_value_in (u::m)) {
-  }
+        m_dx (0.5f * surface.domain ().spacing_x ()),
+        m_dz (0.5f * surface.domain ().spacing_z ()) {}
 
   GroundPatch::~GroundPatch () {
     forget ();
@@ -68,13 +67,19 @@ namespace moppe::mov {
 
   void GroundPatch::origin_for (const Vec3& p, int& column, int& row) const {
     const int half = (m_params.samples - 1) / 2;
-    column = static_cast<int> (std::floor (p[0] / m_dx)) - half;
-    row = static_cast<int> (std::floor (p[2] / m_dz)) - half;
+    column =
+      static_cast<int> (std::floor (scalar_value (p[0] * u::m / m_dx))) - half;
+    row =
+      static_cast<int> (std::floor (scalar_value (p[2] * u::m / m_dz))) - half;
   }
 
-  Vec3 GroundPatch::centre () const {
+  plan_position_t GroundPatch::corner () const {
+    return plan_position (m_column * m_dx, m_row * m_dz);
+  }
+
+  plan_position_t GroundPatch::centre () const {
     const float half = 0.5f * (m_params.samples - 1);
-    return Vec3 ((m_column + half) * m_dx, 0.0f, (m_row + half) * m_dz);
+    return plan_position ((m_column + half) * m_dx, (m_row + half) * m_dz);
   }
 
   void GroundPatch::forget () {
@@ -103,10 +108,10 @@ namespace moppe::mov {
     float lowest = 1e30f, highest = -1e30f;
     for (int j = 0; j < n; ++j)
       for (int i = 0; i < n; ++i) {
-        const float h =
-          surface_elevation_at (m_surface,
-                                static_cast<float> (column + i) * m_dx,
-                                static_cast<float> (row + j) * m_dz);
+        const float h = surface_elevation_at (
+          m_surface,
+          meters_value (static_cast<float> (column + i) * m_dx),
+          meters_value (static_cast<float> (row + j) * m_dz));
         heights[j * n + i] = h;
         lowest = std::min (lowest, h);
         highest = std::max (highest, h);
@@ -115,7 +120,7 @@ namespace moppe::mov {
     // millimetre or so even on a mountainside.
     b3HeightFieldDef field {};
     field.heights = heights.data ();
-    field.scale = { m_dx, 1.0f, m_dz };
+    field.scale = { meters_value (m_dx), 1.0f, meters_value (m_dz) };
     field.countX = n;
     field.countZ = n;
     field.globalMinimumHeight = lowest - 1.0f;
@@ -124,10 +129,11 @@ namespace moppe::mov {
 
     b3BodyDef body = b3DefaultBodyDef ();
     body.type = b3_staticBody;
-    body.position = { column * m_dx, 0.0f, row * m_dz };
+    body.position = to_b3 (lift (plan_value (corner ())));
     m_ground = b3CreateBody (world, &body);
     b3ShapeDef shape = b3DefaultShapeDef ();
-    shape.baseMaterial.friction = m_params.ground_friction;
+    shape.baseMaterial.friction =
+      m_params.ground_friction.numerical_value_in (one);
     shape.filter.categoryBits = m_params.ground_bit;
     shape.filter.maskBits = m_params.ground_mask;
     b3CreateHeightFieldShape (m_ground, &shape, m_height_field);
@@ -146,13 +152,14 @@ namespace moppe::mov {
 
     if (!trunks)
       return;
-    const std::vector<Trunk> nearby =
-      trunks->gather (centre (), m_params.trunk_reach);
+    const std::vector<Trunk> nearby = trunks->gather (
+      lift (plan_value (centre ())), meters_value (m_params.trunk_reach));
     if (nearby.empty ())
       return;
     obstacles ();
     b3ShapeDef obstacle = b3DefaultShapeDef ();
-    obstacle.baseMaterial.friction = m_params.obstacle_friction;
+    obstacle.baseMaterial.friction =
+      m_params.obstacle_friction.numerical_value_in (one);
     obstacle.baseMaterial.restitution = m_params.obstacle_restitution;
     obstacle.filter.categoryBits = m_params.obstacle_bit;
     obstacle.filter.maskBits = m_params.obstacle_mask;
@@ -176,14 +183,16 @@ namespace moppe::mov {
       m_surface.domain ().period_x ().numerical_value_in (u::m);
     const float period_z =
       m_surface.domain ().period_z ().numerical_value_in (u::m);
-    const Vec3 origin (m_column * m_dx, 0.0f, m_row * m_dz);
-    const Vec3 middle = centre ();
-    const float reach = 0.5f * (m_params.samples - 1) * std::max (m_dx, m_dz);
+    const Vec3 origin = lift (plan_value (corner ()));
+    const Vec3 middle = lift (plan_value (centre ()));
+    const meters_t reach =
+      0.5f * (m_params.samples - 1) * std::max (m_dx, m_dz);
     const float half = the_roads->formation ().deck_half_width;
     b3ShapeDef rail = ground;
     rail.filter.categoryBits = m_params.obstacle_bit;
     rail.filter.maskBits = m_params.obstacle_mask;
-    rail.baseMaterial.friction = m_params.obstacle_friction;
+    rail.baseMaterial.friction =
+      m_params.obstacle_friction.numerical_value_in (one);
     rail.baseMaterial.restitution = 0.1f;
     const auto rows = the_roads->segment_rows ();
     constexpr std::size_t stride = terrain::RoadSurface::rows_per_segment;
@@ -198,9 +207,9 @@ namespace moppe::mov {
       const float oz = terrain::whole_periods (middle[2] - mz, period_z);
       const Vec3 a (ax + ox, ha, az + oz), b (bx + ox, hb, bz + oz);
       const float length = moppe::length (b - a);
-      if (length < 1e-3f ||
-          std::max (std::abs (mx + ox - middle[0]),
-                    std::abs (mz + oz - middle[2])) > reach + length)
+      if (length < 1e-3f || std::max (std::abs (mx + ox - middle[0]),
+                                      std::abs (mz + oz - middle[2])) >
+                              meters_value (reach) + length)
         continue;
       const Vec3 x = (b - a) / length;
       const Vec3 z = normalized (cross (x, Vec3 (0.0f, 1.0f, 0.0f)));
@@ -241,9 +250,9 @@ namespace moppe::mov {
         const Vec3 a (p.x_m + ox, p.rail_m, p.z_m + oz);
         const Vec3 b (q.x_m + ox, q.rail_m, q.z_m + oz);
         const float length = moppe::length (b - a);
-        if (length < 1e-3f ||
-            std::max (std::abs (mx + ox - middle[0]),
-                      std::abs (mz + oz - middle[2])) > reach + length)
+        if (length < 1e-3f || std::max (std::abs (mx + ox - middle[0]),
+                                        std::abs (mz + oz - middle[2])) >
+                                meters_value (reach) + length)
           continue;
         const Vec3 x = (b - a) / length;
         Vec3 z = normalized (cross (x, Vec3 (0.0f, 1.0f, 0.0f)));
@@ -265,9 +274,9 @@ namespace moppe::mov {
   void GroundPatch::recentre (b3WorldId world,
                               const TrunkField* trunks,
                               const Vec3& p) {
-    const Vec3 middle = centre ();
-    if (std::abs (p[0] - middle[0]) < m_params.recentre_distance &&
-        std::abs (p[2] - middle[2]) < m_params.recentre_distance)
+    const plan_displacement_t off = plan_position (plan (p)) - centre ();
+    if (abs (x_of (off)) < m_params.recentre_distance &&
+        abs (z_of (off)) < m_params.recentre_distance)
       return;
     int column = 0, row = 0;
     origin_for (p, column, row);
