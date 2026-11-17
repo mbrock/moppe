@@ -34,28 +34,28 @@
       "escapes": 212
     },
     "Foundations (math & units)": {
-      "share": 35.8,
+      "share": 36.0,
       "files": 9,
-      "typed": 96,
-      "raw_float": 74,
+      "typed": 98,
+      "raw_float": 76,
       "raw_vector": 98,
-      "escapes": 51
+      "escapes": 53
     },
     "Game logic": {
-      "share": 14.7,
+      "share": 14.8,
       "files": 43,
-      "typed": 280,
+      "typed": 283,
       "raw_float": 939,
       "raw_vector": 685,
       "escapes": 299
     },
     "HUD & map": {
-      "share": 2.8,
+      "share": 74.8,
       "files": 8,
-      "typed": 20,
-      "raw_float": 662,
-      "raw_vector": 37,
-      "escapes": 68
+      "typed": 622,
+      "raw_float": 191,
+      "raw_vector": 18,
+      "escapes": 213
     },
     "Places & camp": {
       "share": 4.7,
@@ -106,17 +106,17 @@
       "escapes": 212
     },
     "Tests": {
-      "share": 35.4,
+      "share": 35.8,
       "files": 83,
-      "typed": 540,
-      "raw_float": 789,
+      "typed": 547,
+      "raw_float": 785,
       "raw_vector": 195,
       "escapes": 722
     },
     "Vehicles & on-foot body": {
       "share": 33.0,
       "files": 47,
-      "typed": 866,
+      "typed": 868,
       "raw_float": 885,
       "raw_vector": 877,
       "escapes": 317
