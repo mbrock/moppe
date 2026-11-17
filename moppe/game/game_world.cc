@@ -84,17 +84,10 @@ namespace moppe {
       m_place_names =
         name_places (m_generated_world->roads (),
                      static_cast<std::uint32_t> (m_recipe.seed ().value));
-      {
-        const terrain::TerrainDomain& domain = surface ().domain ();
-        m_fingerposts =
-          plan_fingerposts (m_generated_world->roads (),
-                            domain.period_x ().numerical_value_in (u::m),
-                            domain.period_z ().numerical_value_in (u::m));
-        std::cerr << "moppe: fingerposts: " << m_fingerposts.size () << '\n';
-      }
-      m_fingerposts_made = false;
-      m_fingerpost_mesh.reset ();
-      m_fingerpost_lettering.reset ();
+      const terrain::TerrainDomain& domain = surface ().domain ();
+      m_signs.plan (m_generated_world->roads (),
+                    domain.period_x ().numerical_value_in (u::m),
+                    domain.period_z ().numerical_value_in (u::m));
     }
 
     void MoppeGame::prepare_world_water () {

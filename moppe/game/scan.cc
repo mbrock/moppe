@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iostream>
 #include <numbers>
 
 namespace moppe::game {
@@ -431,5 +432,39 @@ namespace moppe::game {
       }
       text.stand (scan_mark_point (find), view.height_pts, first);
     }
+  }
+
+  void Scanner::start (const Vec3& feet,
+                       double now,
+                       const MushroomPatch& mushrooms,
+                       const mov::TrunkField& trunks,
+                       const GroundHeight& ground) {
+    std::vector<ScanFind> finds = scan_mushrooms (mushrooms, feet);
+    const std::vector<mov::Trunk> near =
+      trunks.gather (feet, scan_reach + 6.0f);
+    const std::vector<ScanFind> trees =
+      scan_hammocks (hammock_sites_near (near, feet, scan_reach, ground));
+    finds.insert (finds.end (), trees.begin (), trees.end ());
+    std::cerr << "moppe: scan from " << feet[0] << " " << feet[1] << " "
+              << feet[2] << " found " << finds.size () << "\n";
+    m_scan.start (feet, now, std::move (finds));
+  }
+
+  void Scanner::draw (render::Renderer& r,
+                      const render::Font* font,
+                      double now,
+                      const ScanView& view,
+                      const Vec3& walker,
+                      const GroundHeight& ground) {
+    if (!m_scan.showing (now) || !font)
+      return;
+    if (!m_marks.set)
+      m_marks = make_scan_marks (r);
+    m_dl.clear ();
+    draw_scan_glow (m_dl, m_scan, now, view.eye, ground);
+    r.draw_list (m_dl, 0);
+    m_text.clear ();
+    draw_scan_labels (m_text, *font, m_marks, m_scan, now, walker, view);
+    r.draw_world_labels (m_text);
   }
 }

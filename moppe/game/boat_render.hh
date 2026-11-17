@@ -62,6 +62,30 @@ namespace moppe::game {
   private:
     std::deque<WakeMark> m_marks;
   };
+
+  // The boats' wakes, ours and the other player's (their jet ski's too,
+  // when they have one in the world): each laid behind its boat as it
+  // goes, on the water's `level`, over the `ground`, and drawn over the
+  // water.
+  class BoatWakes {
+  public:
+    void draw (render::Renderer& r,
+               const BoatPose& boat,
+               const JetSkiPose& jet_ski,
+               const BoatPose* their_boat,
+               const JetSkiPose* their_jet_ski,
+               const std::function<float (const Vec3&)>& level,
+               const std::function<float (const Vec3&)>& ground,
+               float time,
+               float daylight);
+
+  private:
+    BoatWake m_boat;
+    BoatWake m_jet_ski;
+    BoatWake m_their_boat;
+    BoatWake m_their_jet_ski;
+    render::DrawList m_dl;
+  };
 }
 
 #endif

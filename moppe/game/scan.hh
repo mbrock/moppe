@@ -12,6 +12,7 @@
 #include <moppe/game/camp.hh>
 #include <moppe/game/mushrooms.hh>
 #include <moppe/gfx/math.hh>
+#include <moppe/mov/trunk_field.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
 
@@ -107,6 +108,34 @@ namespace moppe::game {
                          double now,
                          const Vec3& walker,
                          const ScanView& view);
+
+  // The scan as play keeps it: started at the walker's feet with what is
+  // there to find, and drawn over the scene while it shows.
+  class Scanner {
+  public:
+    // A ring out from `feet` from `now`, finding the mushrooms and the
+    // trees fit for a hammock within reach.
+    void start (const Vec3& feet,
+                double now,
+                const MushroomPatch& mushrooms,
+                const mov::TrunkField& trunks,
+                const GroundHeight& ground);
+
+    // The glow and, once the HUD's `font` is up, the labels as seen in
+    // `view`, named by their distance from `walker`.
+    void draw (render::Renderer& r,
+               const render::Font* font,
+               double now,
+               const ScanView& view,
+               const Vec3& walker,
+               const GroundHeight& ground);
+
+  private:
+    Scan m_scan;
+    ScanMarks m_marks;
+    render::DrawList m_dl;
+    render::TextList m_text;
+  };
 }
 
 #endif

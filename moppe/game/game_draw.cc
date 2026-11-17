@@ -20,63 +20,15 @@ namespace moppe {
       dl.append (m_home_base_marker);
     }
 
-    void MoppeGame::draw_fingerposts (render::Renderer& r) {
-      if (!m_fingerposts_made && m_heads_up.hud.font ()) {
-        m_fingerposts_made = true;
-        // The signs letter in the face's heavier cut, which carries
-        // further.
-        if (!m_sign_font)
-          m_sign_font = render::Font::load (r, "fonts/Geomini-SemiBold.ttf");
-        FingerpostSigns signs = make_fingerposts (
-          r,
-          m_sign_font->ok () ? *m_sign_font : *m_heads_up.hud.font (),
-          m_fingerposts,
-          m_place_names,
-          [this] (float x, float z) {
-            return generated_world ().road_surface ().ground (
-              x, z, world_ground ().height (Vec3 (x, 0.0f, z)));
-          });
-        m_fingerpost_mesh =
-          signs.mesh.empty () ? nullptr : r.create_mesh (signs.mesh);
-        m_fingerpost_lettering = signs.lettering.empty ()
-                                   ? nullptr
-                                   : r.create_world_text (signs.lettering);
-      }
-      if (m_fingerpost_mesh)
-        r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
-      if (m_fingerpost_lettering)
-        r.draw_world_text (*m_fingerpost_lettering);
-    }
-
     void MoppeGame::start_scan (double ago) {
-      const Vec3 feet = session ().walker ().position ();
-      std::vector<ScanFind> finds = scan_mushrooms (m_mushrooms, feet);
-      const std::vector<mov::Trunk> trunks =
-        m_trunk_field.gather (feet, scan_reach + 6.0f);
-      const std::vector<ScanFind> trees = scan_hammocks (hammock_sites_near (
-        trunks, feet, scan_reach, world_ground ().reader ()));
-      finds.insert (finds.end (), trees.begin (), trees.end ());
-      std::cerr << "moppe: scan from " << feet[0] << " " << feet[1] << " "
-                << feet[2] << " found " << finds.size () << "\n";
-      m_scan.start (feet,
+      m_scan.start (session ().walker ().position (),
                     seconds_into_play (logic ().m_total_time) - ago,
-                    std::move (finds));
+                    m_mushrooms,
+                    m_trunk_field,
+                    world_ground ().reader ());
     }
 
     void MoppeGame::draw_scan (render::Renderer& r, const FrameView& frame) {
-      const double now = seconds_into_play (logic ().m_total_time);
-      if (!m_scan.showing (now) || !m_heads_up.hud.font ())
-        return;
-      if (!m_scan_marks.set)
-        m_scan_marks = make_scan_marks (r);
-      m_scan_dl.clear ();
-      draw_scan_glow (m_scan_dl,
-                      m_scan,
-                      now,
-                      frame.camera.position,
-                      world_ground ().reader ());
-      r.draw_list (m_scan_dl, 0);
-      m_scan_text.clear ();
       const FrameCamera& camera = frame.camera;
       // The drawn view's basis, from its matrix, as the post lighting
       // takes it.
@@ -91,14 +43,12 @@ namespace moppe {
         .width_pts = static_cast<float> (r.width_pts ()),
         .height_pts = static_cast<float> (r.height_pts ()),
       };
-      draw_scan_labels (m_scan_text,
-                        *m_heads_up.hud.font (),
-                        m_scan_marks,
-                        m_scan,
-                        now,
-                        session ().walker ().position (),
-                        view);
-      r.draw_world_labels (m_scan_text);
+      m_scan.draw (r,
+                   m_heads_up.hud.font (),
+                   seconds_into_play (logic ().m_total_time),
+                   view,
+                   session ().walker ().position (),
+                   world_ground ().reader ());
     }
 
     render::FrameParams MoppeGame::frame_params_for (const FrameView& frame) {
@@ -179,8 +129,7 @@ namespace moppe {
         m_places.layout.period_x,
         m_places.layout.period_z,
         0);
-      if (m_fingerpost_mesh)
-        r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
+      m_signs.cast_shadow (r);
       if (m_company.companion) {
         const CompanionSnapshot& theirs = *m_company.companion;
         render_vehicle (r, m_caster_dl, theirs.bike, false, 0);
@@ -343,7 +292,11 @@ namespace moppe {
 
       // Soft blob shadows under the movers.
       draw_home_base_marker (m_world_dl);
-      draw_fingerposts (r);
+      m_signs.draw (
+        r, m_heads_up.hud.font (), m_place_names, [this] (float x, float z) {
+          return generated_world ().road_surface ().ground (
+            x, z, world_ground ().height (Vec3 (x, 0.0f, z)));
+        });
       m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
       if (actors.walker)
         m_blob.draw (m_world_dl,
@@ -596,31 +549,18 @@ namespace moppe {
         return water_surface_at (world (), surface (), &sheets, at, time)
           .numerical_value_in (u::m);
       };
-      const auto depth = [&] (const Vec3& at) {
-        return level (at) - world_ground ().height (at);
-      };
-      // The jet ski leaves a wake as a boat of its place and heading.
-      const auto as_boat = [] (const JetSkiPose& ski) {
-        return BoatPose { .position = ski.position,
-                          .forward = ski.forward,
-                          .up = ski.up };
-      };
-      const auto trail = [&] (BoatWake& wake, const BoatPose& boat) {
-        const Vec3& at = boat.position;
-        wake.follow (boat, level (at), depth (at), time);
-        wake.draw (m_wake_dl, time, m_sky.sky ().daylight, level);
-      };
-      m_wake_dl.clear ();
-      trail (m_boat_wake, frame.actors.boat);
-      trail (m_jet_ski_wake, as_boat (frame.actors.jet_ski));
-      if (m_company.companion) {
-        trail (m_their_wake, m_company.companion->boat);
-        trail (m_their_jet_ski_wake, as_boat (m_company.companion->jet_ski));
-      } else {
-        m_their_wake.clear ();
-        m_their_jet_ski_wake.clear ();
-      }
-      r.draw_list (m_wake_dl, 0x0002);
+      const CompanionSnapshot* theirs =
+        m_company.companion ? &*m_company.companion : nullptr;
+      m_wakes.draw (
+        r,
+        frame.actors.boat,
+        frame.actors.jet_ski,
+        theirs ? &theirs->boat : nullptr,
+        theirs ? &theirs->jet_ski : nullptr,
+        level,
+        [&] (const Vec3& at) { return world_ground ().height (at); },
+        time,
+        m_sky.sky ().daylight);
     }
 
     void MoppeGame::draw_effect_layers (render::Renderer& r,

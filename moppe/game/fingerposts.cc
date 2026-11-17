@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <numbers>
@@ -746,5 +747,41 @@ namespace moppe::game {
              " m";
     const long tenths = std::lround (metres / 100.0f);
     return std::to_string (tenths / 10) + "," + std::to_string (tenths % 10);
+  }
+
+  void RoadSigns::plan (const terrain::RoadNetwork& network,
+                        float period_x,
+                        float period_z) {
+    m_posts = plan_fingerposts (network, period_x, period_z);
+    std::cerr << "moppe: fingerposts: " << m_posts.size () << '\n';
+    m_made = false;
+    m_mesh.reset ();
+    m_lettering.reset ();
+  }
+
+  void RoadSigns::draw (render::Renderer& r,
+                        const render::Font* hud_font,
+                        std::span<const std::string> names,
+                        const std::function<float (float x, float z)>& ground) {
+    if (!m_made && hud_font) {
+      m_made = true;
+      if (!m_font)
+        m_font = render::Font::load (r, "fonts/Geomini-SemiBold.ttf");
+      FingerpostSigns signs = make_fingerposts (
+        r, m_font->ok () ? *m_font : *hud_font, m_posts, names, ground);
+      m_mesh = signs.mesh.empty () ? nullptr : r.create_mesh (signs.mesh);
+      m_lettering = signs.lettering.empty ()
+                      ? nullptr
+                      : r.create_world_text (signs.lettering);
+    }
+    if (m_mesh)
+      r.draw_mesh (*m_mesh, Mat4 {}, 0);
+    if (m_lettering)
+      r.draw_world_text (*m_lettering);
+  }
+
+  void RoadSigns::cast_shadow (render::Renderer& r) const {
+    if (m_mesh)
+      r.draw_mesh (*m_mesh, Mat4 {}, 0);
   }
 }

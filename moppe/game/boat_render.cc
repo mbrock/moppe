@@ -297,4 +297,37 @@ namespace moppe::game {
     dl.lit (true);
     dl.state (render::DrawState ());
   }
+
+  void BoatWakes::draw (render::Renderer& r,
+                        const BoatPose& boat,
+                        const JetSkiPose& jet_ski,
+                        const BoatPose* their_boat,
+                        const JetSkiPose* their_jet_ski,
+                        const std::function<float (const Vec3&)>& level,
+                        const std::function<float (const Vec3&)>& ground,
+                        float time,
+                        float daylight) {
+    // The jet ski leaves a wake as a boat of its place and heading.
+    const auto as_boat = [] (const JetSkiPose& ski) {
+      return BoatPose { .position = ski.position,
+                        .forward = ski.forward,
+                        .up = ski.up };
+    };
+    const auto trail = [&] (BoatWake& wake, const BoatPose& pose) {
+      const Vec3& at = pose.position;
+      wake.follow (pose, level (at), level (at) - ground (at), time);
+      wake.draw (m_dl, time, daylight, level);
+    };
+    m_dl.clear ();
+    trail (m_boat, boat);
+    trail (m_jet_ski, as_boat (jet_ski));
+    if (their_boat && their_jet_ski) {
+      trail (m_their_boat, *their_boat);
+      trail (m_their_jet_ski, as_boat (*their_jet_ski));
+    } else {
+      m_their_boat.clear ();
+      m_their_jet_ski.clear ();
+    }
+    r.draw_list (m_dl, 0x0002);
+  }
 }

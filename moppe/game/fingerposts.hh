@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -79,6 +80,33 @@ namespace moppe::game {
                     std::span<const Fingerpost> posts,
                     std::span<const std::string> names,
                     const std::function<float (float x, float z)>& ground);
+
+  // A world's posts, planned with it and made the first time they are
+  // drawn, when the renderer and the HUD's face are up.
+  class RoadSigns {
+  public:
+    // Plans the posts of a world just activated, to be made anew.
+    void
+    plan (const terrain::RoadNetwork& network, float period_x, float period_z);
+
+    // Makes the posts if they are not yet made and `hud_font` is up,
+    // naming the places `names`, then draws them.
+    void draw (render::Renderer& r,
+               const render::Font* hud_font,
+               std::span<const std::string> names,
+               const std::function<float (float x, float z)>& ground);
+
+    // The timber and boards in the sun's shadow.
+    void cast_shadow (render::Renderer& r) const;
+
+  private:
+    std::vector<Fingerpost> m_posts;
+    bool m_made = false;
+    render::MeshPtr m_mesh;
+    render::WorldTextPtr m_lettering;
+    // The signs letter in the face's heavier cut, which carries further.
+    std::unique_ptr<render::Font> m_font;
+  };
 }
 
 #endif

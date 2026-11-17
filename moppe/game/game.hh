@@ -98,11 +98,6 @@ namespace moppe {
 
       void draw_home_base_marker (render::DrawList& dl) const;
 
-      // The fingerposts at the network's junctions, planned with the
-      // world and made the first time they are drawn, when the renderer
-      // and the HUD's face are up.
-      void draw_fingerposts (render::Renderer& r);
-
       // The scan (scan.hh): a ring out from the walker, and what it finds
       // labelled where it stands. `ago` starts it that many seconds back.
       void start_scan (double ago);
@@ -276,15 +271,8 @@ namespace moppe {
       render::DrawList m_home_base_marker;
       // Each road place's name (place_names.hh), and the fingerposts.
       std::vector<std::string> m_place_names;
-      std::vector<Fingerpost> m_fingerposts;
-      bool m_fingerposts_made = false;
-      render::MeshPtr m_fingerpost_mesh;
-      render::WorldTextPtr m_fingerpost_lettering;
-      Scan m_scan;
-      ScanMarks m_scan_marks;
-      render::DrawList m_scan_dl;
-      render::TextList m_scan_text;
-      std::unique_ptr<render::Font> m_sign_font;
+      RoadSigns m_signs;
+      Scanner m_scan;
       bool m_skip_cinematic_requested = false;
       // The opening (opening_director.hh).
       OpeningDirector m_opening;
@@ -305,11 +293,7 @@ namespace moppe {
       // Scratch for a pan's contents as drawn, and the last meal's note.
       std::vector<MushroomSite> m_pan_contents;
       // The boats' wakes, ours and the other player's, and their list.
-      BoatWake m_boat_wake;
-      BoatWake m_their_wake;
-      BoatWake m_jet_ski_wake;
-      BoatWake m_their_jet_ski_wake;
-      render::DrawList m_wake_dl;
+      BoatWakes m_wakes;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
       // The automated captures' walk scripts and cameras, and the demo
