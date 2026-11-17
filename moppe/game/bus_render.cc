@@ -208,7 +208,24 @@ namespace moppe::game {
     m_bus.steering_wheel = model_mesh::bake (renderer, m::steering_wheel);
     m_bus.wheel = model_mesh::bake (renderer, m::wheel);
     m_bus.rear_wheel = model_mesh::bake (renderer, m::wheel_rear);
-    m_bus.glass = { { model_mesh::bake (renderer, m::glass) } };
+    // The windows seen from the seats as well as from outside: the
+    // model's panes face out, so each is drawn again facing in, for a
+    // rider looking out through them.
+    {
+      std::vector<model_mesh::Vertex> inner (m::glass.vertices.begin (),
+                                             m::glass.vertices.end ());
+      for (model_mesh::Vertex& v : inner)
+        for (float& n : v.normal)
+          n = -n;
+      std::vector<model_mesh::Triangle> turned (m::glass.triangles.begin (),
+                                                m::glass.triangles.end ());
+      for (model_mesh::Triangle& t : turned)
+        std::swap (t.vertex[1], t.vertex[2]);
+      render::DrawList glass;
+      model_mesh::record (glass, m::glass);
+      model_mesh::record (glass, { inner, turned, m::glass.paints });
+      m_bus.glass = { { renderer.create_mesh (glass) } };
+    }
     m_doors = { model_mesh::bake (renderer, m::door_fore),
                 model_mesh::bake (renderer, m::door_aft) };
   }
@@ -344,10 +361,14 @@ namespace moppe::game {
       d.alpha = (shade ? 0.5f : 0.95f) * shown;
       if (shade)
         t.softness = d.softness = 5.0f;
-      font->draw (m_board, 0.0f, 0.0f, at.name, t, render::TextAlign::Center);
-      font->draw (m_board, 0.0f, 19.0f, due, d, render::TextAlign::Center);
+      // Both lines over the board's foot, the countdown's descenders
+      // too: held a fixed size on the screen, a line hung below it would
+      // sink a metre at twenty, into the roof of the bus at the stop.
+      font->draw (m_board, 0.0f, -23.0f, at.name, t, render::TextAlign::Center);
+      font->draw (m_board, 0.0f, -4.0f, due, d, render::TextAlign::Center);
     }
-    m_board.stand (sign + Vec3 (0, 3.2f, 0), height_pts);
+    // Its foot over the bus's roof and the luggage on its rack.
+    m_board.stand (sign + Vec3 (0, 3.4f, 0), height_pts);
     renderer.draw_world_labels (m_board);
   }
 }
