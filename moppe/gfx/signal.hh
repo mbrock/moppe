@@ -37,6 +37,26 @@ namespace moppe {
     return smoothstep (0.0f, 1.0f, t) * proportion[mp_units::one];
   }
 
+  // std::lerp between two values of one quantity, or two points, by a
+  // dimensionless weight (a blend weight, a proportion, a fraction of a
+  // cell): bitwise the float lerp of their numbers, so typing a lerp
+  // changes no result.
+  template <mp_units::Quantity Q, mp_units::Quantity Weight>
+    requires (Weight::unit == mp_units::one)
+  Q lerp (Q from, Q to, Weight weight) {
+    return Q { std::lerp (from.numerical_value_in (Q::unit),
+                          to.numerical_value_in (Q::unit),
+                          weight.numerical_value_in (mp_units::one)),
+               Q::reference };
+  }
+
+  template <mp_units::QuantityPoint P, mp_units::Quantity Weight>
+    requires (Weight::unit == mp_units::one)
+  P lerp (P from, P to, Weight weight) {
+    return P { lerp (from.delta_from_zero (), to.delta_from_zero (), weight),
+               P::point_origin };
+  }
+
   // A repeatable hash over lattice coordinates and a world seed. The world
   // has to look the same on every run and on every backend, so this is
   // spelled out rather than drawn from a random engine.

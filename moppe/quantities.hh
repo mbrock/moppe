@@ -104,6 +104,18 @@ namespace moppe {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+  // Where across a width, signed: -1 at one edge, 0 on the centre line, +1
+  // at the other (a waterfall curtain's columns).
+  QUANTITY_SPEC (span_coordinate, mp_units::dimensionless, mp_units::subkind);
+  // A bed's shear stress over its grains' submerged weight; past its
+  // critical value the flow rolls them along.
+  QUANTITY_SPEC (shields_number,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  // The power one measure grows by with another, d ∝ w^k: how a river's
+  // depth follows its width. Not a scale: it is an exponent, raised to.
+  QUANTITY_SPEC (scaling_exponent, mp_units::dimensionless, mp_units::subkind);
   // Which way, and nothing of how far: a unit-length vector. A normal, a
   // forward, an axis; the plan's version is a unit Vec2.
   QUANTITY_SPEC (direction,
@@ -210,6 +222,16 @@ namespace moppe::terrain {
                  mp_units::isq::speed,
                  mp_units::quantity_tensor_order::vector,
                  mp_units::subkind);
+  // How fine the bed a river's flood leaves, on the logarithmic scale grain
+  // sizes are graded on: 0 for cobbles and coarser, 1 for sand. Negative
+  // where no river sorted the ground.
+  QUANTITY_SPEC (bed_grain_fineness,
+                 mp_units::dimensionless,
+                 mp_units::subkind);
+  // How far up a river's strand the ground stands, as a share of the rise
+  // from the water's edge (0) to the spate's line (1). Negative off the
+  // strands.
+  QUANTITY_SPEC (strand_height, mp_units::dimensionless, mp_units::subkind);
 
   // ---- Drainage ----
 
