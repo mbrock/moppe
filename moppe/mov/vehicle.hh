@@ -114,7 +114,7 @@ namespace moppe {
       }
       // How far back the rider's weight is, a share of how far it goes
       // (negative forward).
-      proportion_t rider_lean () const {
+      control_signal_t rider_lean () const {
         return m_rigid->rider_lean ();
       }
       // The chassis' pitch above the ground under it, nose up.

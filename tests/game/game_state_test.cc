@@ -82,17 +82,17 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   MOPPE_CHECK (restored.boost_flight == saved.boost_flight);
   MOPPE_CHECK_NEAR (
     scalar_value (restored.thrust), scalar_value (saved.thrust), 1e-6f);
-  MOPPE_CHECK_NEAR (scalar_value (restored.boost_input),
-                    scalar_value (saved.boost_input),
+  MOPPE_CHECK_NEAR (restored.boost_input.numerical_value_in (one),
+                    saved.boost_input.numerical_value_in (one),
                     1e-6f);
-  MOPPE_CHECK_NEAR (scalar_value (restored.boost_drive),
-                    scalar_value (saved.boost_drive),
+  MOPPE_CHECK_NEAR (restored.boost_drive.numerical_value_in (one),
+                    saved.boost_drive.numerical_value_in (one),
                     1e-6f);
-  MOPPE_CHECK_NEAR (scalar_value (restored.boost_level),
-                    scalar_value (saved.boost_level),
+  MOPPE_CHECK_NEAR (restored.boost_level.numerical_value_in (one),
+                    saved.boost_level.numerical_value_in (one),
                     1e-6f);
-  MOPPE_CHECK_NEAR (scalar_value (restored.boost_charge),
-                    scalar_value (saved.boost_charge),
+  MOPPE_CHECK_NEAR (restored.boost_charge.numerical_value_in (one),
+                    saved.boost_charge.numerical_value_in (one),
                     1e-6f);
   MOPPE_CHECK_NEAR (seconds_value (restored.boost_recharge_delay),
                     seconds_value (saved.boost_recharge_delay),

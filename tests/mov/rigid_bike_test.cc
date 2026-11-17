@@ -247,7 +247,7 @@ MOPPE_TEST (a_held_skid_brakes_the_bike_round_about_its_front_wheel) {
     Result r { 0, 0, 0, 0, 1 };
     for (int i = 0; i < 120; ++i) {
       bike.update (tick);
-      r.slid = std::max (r.slid, scalar_value (bike.skid ()));
+      r.slid = std::max (r.slid, bike.skid ().numerical_value_in (one));
     }
     const Vec3 f = bike.forward ();
     const Vec3 v = bike.velocity ();
@@ -450,7 +450,7 @@ MOPPE_TEST (a_wheelie_is_popped_held_on_the_rear_wheel_and_set_down) {
     low = std::min (low, pitch_of (bike));
     high = std::max (high, pitch_of (bike));
     upright = std::min (upright, std::abs (dot (Vec3 (1, 0, 0), bike.up ())));
-    lean = std::max (lean, scalar_value (bike.rider_lean ()));
+    lean = std::max (lean, bike.rider_lean ().numerical_value_in (one));
     metres += length (bike.position () - last);
     last = bike.position ();
     if (i == 2 * 120)

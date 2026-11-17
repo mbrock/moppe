@@ -457,7 +457,7 @@ namespace moppe {
       proportion_t skid () const;
       // The rider's weight back from where they sit, as a share of
       // wheelie_lean: 1 leaning right back, negative forward.
-      proportion_t rider_lean () const;
+      control_signal_t rider_lean () const;
       // The chassis' pitch above the ground under it, nose up.
       radians_t pitch () const;
       // On the back wheel alone, the front up off the ground.

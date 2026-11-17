@@ -1685,7 +1685,7 @@ namespace moppe::game {
         sliding > 1.5f) {
       const float count =
         std::min (3.0f, sliding * (pedalled ? 0.25f : 0.15f)) *
-        scalar_value (vehicle.skid ());
+        vehicle.skid ().numerical_value_in (one);
       Dust::Style spray;
       spray.size = (pedalled ? 0.22f : 0.35f) * u::m;
       spray.lifetime = 0.8f * u::s;
@@ -1756,8 +1756,9 @@ namespace moppe::game {
     // blast of whatever the ground is made of. The nozzles swing from
     // straight down at rest to back and down under full drive.
     if (driving && vehicle.boost_level () > 0.05f) {
-      const float level = scalar_value (vehicle.boost_level ());
-      const float swing = 1.047f * scalar_value (vehicle.boost_drive ());
+      const float level = vehicle.boost_level ().numerical_value_in (one);
+      const float swing =
+        1.047f * vehicle.boost_drive ().numerical_value_in (one);
       const Vec3 jet = normalized (Vec3 (0, -std::cos (swing), 0) -
                                    forward * std::sin (swing));
       const Vec3 nozzles =

@@ -158,7 +158,8 @@ namespace moppe {
           const proportion_t available = quantity_cast<proportion> (
             (m_boost_charge - vehicle_rig::boost_reserve_charge) / burn);
           m_boost_level =
-            std::min (quantity_cast<proportion> (m_boost_input), available);
+            std::min (m_boost_input.numerical_value_in (one) * proportion[one],
+                      available);
           m_boost_charge = std::max (
             vehicle_rig::boost_reserve_charge,
             m_boost_charge - quantity_cast<proportion> (m_boost_level * burn));
@@ -209,21 +210,21 @@ namespace moppe {
       Vec3 ahead = m_rigid->forward ();
       ahead[1] = 0.0f;
       ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
-      const radians_t tilt =
-        vehicle_rig::boost_max_tilt * scalar_value (abs (m_boost_drive));
+      const radians_t tilt = vehicle_rig::boost_max_tilt *
+                             abs (m_boost_drive).numerical_value_in (one);
       const control_signal_t drive_sign =
         (m_boost_drive < control_signal_t {} ? -1.0f : 1.0f) *
         control_signal[one];
-      const direction_t boost_direction =
-        unit_direction (Vec3 (0, cos (tilt), 0) +
-                        ahead * scalar_value (drive_sign * sin (tilt)));
+      const direction_t boost_direction = unit_direction (
+        Vec3 (0, cos (tilt), 0) +
+        ahead * (drive_sign * sin (tilt)).numerical_value_in (one));
 
       RigidBikeControls controls;
       controls.throttle = m_thrust;
       controls.steer = m_yaw;
       controls.boost_acceleration = quantity_cast<isq::acceleration> (
-        boost_direction *
-        (vehicle_rig::boost_acceleration * scalar_value (m_boost_level)));
+        boost_direction * (vehicle_rig::boost_acceleration *
+                           m_boost_level.numerical_value_in (one)));
       controls.parked = m_parked;
       controls.skid = m_skid;
       controls.wheelie = m_wheelie;
@@ -289,7 +290,7 @@ namespace moppe {
             ? wheel / gear.numerical_value_in (one)
           : m_rigid->rear_contact ()
             ? wheel / std::clamp (scalar_value (wheel / pedalling), 0.75f, 3.0f)
-            : pedalling * scalar_value (m_thrust);
+            : pedalling * m_thrust.numerical_value_in (one);
         m_crank = vehicle_rig::wrapped (m_crank + cadence * h);
       }
     }

@@ -380,7 +380,8 @@ namespace moppe {
       // The rear tyre's friction as far as it has broken loose.
       float rear_friction () const {
         return tire_material (quantity_cast<isq::static_friction_coefficient> (
-          rig.tire_friction + (rig.skid_friction - rig.tire_friction) * skid));
+          rig.tire_friction + (rig.skid_friction - rig.tire_friction) *
+                                skid.numerical_value_in (one)));
       }
 
       void recentre_ground () {
@@ -547,8 +548,9 @@ namespace moppe {
           rear_contact && !front_contact && wheelie > released;
         const proportion_t skid_goal =
           on_rear ? proportion_t {}
-                  : quantity_cast<proportion> (
-                      std::clamp (controls.skid, released, full));
+                  : std::clamp (controls.skid, released, full)
+                        .numerical_value_in (one) *
+                      proportion[one];
         approach (skid,
                   skid_goal,
                   settle (skid_goal > skid ? 12.0f / u::s : 5.0f / u::s, dt));
@@ -575,9 +577,10 @@ namespace moppe {
               q, to_b3 (displacement_value (front_axle (rig))))) -
             ground_normal * meters_value (rig.front_radius ());
           const Vec3 pivot =
-            p + (front_contact_point - p) * scalar_value (slide);
+            p + (front_contact_point - p) * slide.numerical_value_in (one);
           steer_rate (ground_normal,
-                      wanted_yaw + (skid_yaw - wanted_yaw) * slide,
+                      wanted_yaw + (skid_yaw - wanted_yaw) *
+                                     slide.numerical_value_in (one),
                       yaw_inertia,
                       12.0f / u::s,
                       dt,
@@ -634,7 +637,7 @@ namespace moppe {
           goal = std::atan2 (
                    dot (centripetal, right),
                    standard_gravity.numerical_value_in (u::m / pow<2> (u::s))) *
-                 u::rad * (1.0f - 0.6f * scalar_value (slide));
+                 u::rad * (1.0f - 0.6f * slide.numerical_value_in (one));
         } else if (hanging) {
           // The harness banks the bike with the wing.
           const Vec3& hang_up = direction_value (controls.hang_up);
@@ -667,7 +670,7 @@ namespace moppe {
         steer_rate (forward,
                     angle_about (forward, up, target_up) * 9.0f / u::s,
                     roll_inertia,
-                    30.0f * scalar_value (rolls) / u::s,
+                    30.0f * rolls.numerical_value_in (one) / u::s,
                     dt,
                     grounded ? &under : nullptr);
 
@@ -722,15 +725,16 @@ namespace moppe {
           const radians_per_second_t rising =
             -dot (from_b3 (b3Body_GetAngularVelocity (chassis)), left) *
             u::rad / u::s;
-          const proportion_t balance =
-            front_contact ? 1.0f * proportion[one]
-                          : quantity_cast<proportion> (
+          // Where the rider's body balances it, -1 forward to 1 back.
+          const control_signal_t balance =
+            front_contact ? full
+                          : quantity_cast<control_signal> (
                               (rig.wheelie_pitch - nose) / (0.2f * u::rad) -
                               0.5f * u::s * rising / u::rad);
-          const meters_t goal = wheelie * rig.wheelie_lean *
-                                std::clamp (balance,
-                                            -0.6f * proportion[one],
-                                            1.0f * proportion[one]);
+          const meters_t goal =
+            wheelie.numerical_value_in (one) * rig.wheelie_lean *
+            std::clamp (balance, -0.6f * control_signal[one], full)
+              .numerical_value_in (one);
           approach (rider_shift, goal, settle (8.0f / u::s, dt));
           if (grounded) {
             const newtons_t weight = -chassis_mass * standard_gravity;
@@ -771,7 +775,7 @@ namespace moppe {
         constexpr proportion_t none {};
         constexpr proportion_t all = 1.0f * proportion[one];
         const proportion_t wheelie_cut =
-          std::max (quantity_cast<proportion> (wheelie),
+          std::max (wheelie.numerical_value_in (one) * proportion[one],
                     std::clamp (quantity_cast<proportion> (
                                   (rig.wheelie_limit - nose) / backing_off),
                                 none,
@@ -1107,9 +1111,9 @@ namespace moppe {
       return m_impl->skid;
     }
 
-    proportion_t RigidBike::rider_lean () const {
-      return quantity_cast<proportion> (m_impl->rider_shift /
-                                        m_impl->rig.wheelie_lean);
+    control_signal_t RigidBike::rider_lean () const {
+      return quantity_cast<control_signal> (m_impl->rider_shift /
+                                            m_impl->rig.wheelie_lean);
     }
 
     radians_t RigidBike::pitch () const {

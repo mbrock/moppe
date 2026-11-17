@@ -18,65 +18,80 @@ namespace moppe::mov {
     constexpr airspeed_t least_speed = 1.0f * airspeed[u::m / u::s];
 
     // One airspeed as a share of another.
-    constexpr float share (airspeed_t speed, airspeed_t of) {
-      return (speed / of).numerical_value_in (one);
+    constexpr scale_factor_t share (airspeed_t speed, airspeed_t of) {
+      return quantity_cast<scale_factor> (speed / of);
     }
 
-    constexpr float stall_loading = share (reference_speed, stall_speed) *
-                                    share (reference_speed, stall_speed);
-    constexpr float least_loading = 0.2f;
+    // A path's climb is an angle; holding it, the pilot pushes the bar
+    // out by so much loading per radian it is off.
+    using per_radian_t = quantity<one / si::radian, float>;
+
+    constexpr scale_factor_t stall_loading =
+      quantity_cast<scale_factor> (share (reference_speed, stall_speed) *
+                                   share (reference_speed, stall_speed));
+    constexpr scale_factor_t least_loading = 0.2f * scale_factor[one];
     // The drag polar, in the lift's own units: parasitic drag, drag induced
     // by lift, and the separated flow of a wing pushed toward its stall.
     // The first two give a best glide of sixteen to one at the reference
     // speed; the third is the cost of flying near the stall.
-    constexpr float parasitic_drag = 1.0f / 32.0f;
-    constexpr float induced_drag = 1.0f / 32.0f;
-    constexpr float separation_onset = 1.8f;
-    constexpr float separation_drag = 0.5f;
+    constexpr drag_coefficient_t parasitic_drag =
+      1.0f / 32.0f * isq::drag_coefficient[one];
+    constexpr drag_coefficient_t induced_drag =
+      1.0f / 32.0f * isq::drag_coefficient[one];
+    constexpr scale_factor_t separation_onset = 1.8f * scale_factor[one];
+    constexpr drag_coefficient_t separation_drag =
+      0.5f * isq::drag_coefficient[one];
     // A flaring pilot swings upright and the wing mushes: an air brake.
-    constexpr float flare_drag = 0.25f;
+    constexpr drag_coefficient_t flare_drag =
+      0.25f * isq::drag_coefficient[one];
     // A flare rounds the path out to the shallowest of descents and holds
     // it there.
-    constexpr float flare_climb = -0.02f;
-    constexpr float flare_hold = 4.0f;
+    constexpr radians_t flare_climb = -0.02f * u::rad;
+    constexpr per_radian_t flare_hold = 4.0f / u::rad;
     // A Trail 90 hanging in the airstream is no fairing.
-    constexpr float bike_drag = 0.02f;
+    constexpr drag_coefficient_t bike_drag = 0.02f * isq::drag_coefficient[one];
     // Rider and wing are the unloaded reference mass. Carrying the 175 kg
     // Trail 90 and its rider raises total weight to roughly 2.5 times
     // that baseline.
-    constexpr float loaded_weight_ratio = 2.5f;
+    constexpr scale_factor_t loaded_weight_ratio = 2.5f * scale_factor[one];
     constexpr radians_t full_bank = 0.8378f * u::rad; // 48 degrees
     // How strongly the pilot holds the flight path against the phugoid,
     // the slow swapping of speed and height a fixed bar would fall into:
     // about half of critical damping.
-    constexpr float path_hold = 1.4f;
+    constexpr per_radian_t path_hold = 1.4f / u::rad;
 
     // A persistent, readable prevailing wind. The wing flies in it, it
     // slackens toward the ground, and its encounter with windward slopes
     // makes the ridge lift.
     const velocity_t wind_velocity = velocity (Vec3 (3.2f, 0, 1.4f));
-    const Vec3 wind_direction = normalized (velocity_value (wind_velocity));
+    const direction_t wind_direction =
+      unit_direction (normalized (velocity_value (wind_velocity)));
     constexpr meters_t wind_gradient_height = 25.0f * u::m;
     // Ridge lift at its strongest, into the steepest windward slope, and
     // the height over the ground it has faded out by.
     constexpr rate_of_climb_t ridge_lift_peak =
       8.0f * rate_of_climb_speed[u::m / u::s];
     constexpr meters_t ridge_band = 110.0f * u::m;
-    constexpr float surface_wind_share = 0.3f;
+    constexpr proportion_t surface_wind_share = 0.3f * proportion[one];
 
-    float drag_of (float loading, bool bike) {
-      const float separated = std::max (0.0f, loading - separation_onset);
-      return parasitic_drag + (bike ? bike_drag : 0.0f) +
-             induced_drag * loading * loading +
-             separation_drag * separated * separated;
+    drag_coefficient_t drag_of (scale_factor_t loading, bool bike) {
+      const scale_factor_t separated =
+        std::max (scale_factor_t {}, loading - separation_onset);
+      return parasitic_drag + (bike ? bike_drag : drag_coefficient_t {}) +
+             quantity_cast<isq::drag_coefficient> (induced_drag * loading *
+                                                   loading) +
+             quantity_cast<isq::drag_coefficient> (separation_drag * separated *
+                                                   separated);
     }
 
     // The loading that carries the weight in level flight at an airspeed
     // given for the pilot alone.
-    float loading_at (airspeed_t unloaded_speed) {
-      const float ratio =
+    scale_factor_t loading_at (airspeed_t unloaded_speed) {
+      const scale_factor_t ratio =
         share (reference_speed, std::max (unloaded_speed, least_speed));
-      return std::clamp (ratio * ratio, least_loading, stall_loading);
+      return std::clamp (quantity_cast<scale_factor> (ratio * ratio),
+                         least_loading,
+                         stall_loading);
     }
   }
 
@@ -91,12 +106,12 @@ namespace moppe::mov {
     m_bike_attached = bike_attached;
     const Vec3 inherited = velocity_value (inherited_velocity);
     const Vec3 horizontal (inherited[0], 0, inherited[2]);
-    const float inherited_speed = length (horizontal);
+    const speed_t inherited_speed = length (horizontal) * u::m / u::s;
 
     m_heading = heading;
     m_heading[1] = 0;
-    if (inherited_speed > 2.0f)
-      m_heading = horizontal / inherited_speed;
+    if (inherited_speed > 2.0f * u::m / u::s)
+      m_heading = horizontal / speed_value (inherited_speed);
     else if (length2 (m_heading) > 0.0001f)
       normalize (m_heading);
     else
@@ -105,7 +120,7 @@ namespace moppe::mov {
     m_airspeed = length (inherited) * moppe::airspeed[u::m / u::s];
     m_vertical_speed = inherited[1] * rate_of_climb_speed[u::m / u::s];
     m_air_mass_lift = 0.0f * rate_of_climb_speed[u::m / u::s];
-    m_loading = loading_at (trim_speed) * scale_factor[one];
+    m_loading = loading_at (trim_speed);
     m_bank = 0.0f * u::rad;
     m_turn = {};
     m_speed_control = {};
@@ -115,16 +130,17 @@ namespace moppe::mov {
 
   // The weight the wing carries, against the pilot alone's.
   scale_factor_t Glider::load () const {
-    return (m_bike_attached ? loaded_weight_ratio : 1.0f) * scale_factor[one];
+    return m_bike_attached ? loaded_weight_ratio : 1.0f * scale_factor[one];
   }
 
   rate_of_climb_t Glider::polar_sink (airspeed_t airspeed) {
     // Steady flight: lift carries the weight, and the glide slope is the
     // drag over the lift.
     const float v = airspeed.numerical_value_in (u::m / u::s);
-    const float loading = loading_at (airspeed);
-    const float slope = drag_of (loading, false) / loading;
-    return -v * slope / std::sqrt (1.0f + slope * slope) *
+    const scale_factor_t loading = loading_at (airspeed);
+    const magnitude_t slope =
+      (drag_of (loading, false) / loading).numerical_value_in (one) * one;
+    return (-v * slope / sqrt (1.0f + slope * slope)).numerical_value_in (one) *
            rate_of_climb_speed[u::m / u::s];
   }
 
@@ -146,23 +162,29 @@ namespace moppe::mov {
     // -n.xz is the uphill gradient direction.  Wind into that gradient
     // rises; the useful band fades above the terrain instead of becoming an
     // infinite elevator over every windward mountain.
-    const float upslope =
-      std::max (0.0f, -(n[0] * wind_direction[0] + n[2] * wind_direction[2]));
-    const float height_fade = std::clamp (
-      1.0f -
-        (std::max (0.0f * u::m, agl) / ridge_band).numerical_value_in (one),
-      0.0f,
-      1.0f);
-    return ridge_lift_peak * upslope * height_fade;
+    const proportion_t upslope =
+      std::max (0.0f,
+                -(n[0] * direction_value (wind_direction)[0] +
+                  n[2] * direction_value (wind_direction)[2])) *
+      proportion[one];
+    const proportion_t height_fade =
+      std::clamp (
+        1.0f -
+          (std::max (0.0f * u::m, agl) / ridge_band).numerical_value_in (one),
+        0.0f,
+        1.0f) *
+      proportion[one];
+    return ridge_lift_peak * upslope.numerical_value_in (one) *
+           height_fade.numerical_value_in (one);
   }
 
   // The air's own motion where the wing is, with the lift last read.
   velocity_t Glider::air_velocity () const {
-    const float share = std::clamp (
-      (height_above_ground () / wind_gradient_height).numerical_value_in (one),
+    const proportion_t share = std::clamp (
+      quantity_cast<proportion> (height_above_ground () / wind_gradient_height),
       surface_wind_share,
-      1.0f);
-    velocity_t air = wind_velocity * share;
+      1.0f * proportion[one]);
+    velocity_t air = wind_velocity * share.numerical_value_in (one);
     velocity_value (air)[1] = m_air_mass_lift.numerical_value_in (u::m / u::s);
     return air;
   }
@@ -192,16 +214,14 @@ namespace moppe::mov {
     m_position = position;
     m_velocity = velocity;
 
-    const float turn = scalar_value (m_turn);
-    const radians_t bank_target = turn * full_bank;
+    const radians_t bank_target = m_turn.numerical_value_in (one) * full_bank;
     m_bank += (bank_target - m_bank) * smoothing_alpha (3.2f / u::s, dt);
-    const float bank = radians_value (m_bank);
 
     m_air_mass_lift = ridge_lift (height_above_ground ());
     const Vec3 through = velocity_value (m_velocity - air_velocity ());
-    const float speed = length (through);
-    m_airspeed = speed * moppe::airspeed[u::m / u::s];
-    const float against_reference =
+    const speed_t speed = length (through) * u::m / u::s;
+    m_airspeed = quantity_cast<moppe::airspeed> (speed);
+    const scale_factor_t against_reference =
       share (reference_speed, std::max (m_airspeed, least_speed));
     m_vertical_speed =
       float (velocity_value (m_velocity)[1]) * rate_of_climb_speed[u::m / u::s];
@@ -209,7 +229,8 @@ namespace moppe::mov {
     const Vec3 flat (through[0], 0, through[2]);
     if (length2 (flat) > 4.0f)
       m_heading = normalized (flat);
-    const Vec3 path = speed > 1.0f ? through / speed : m_heading;
+    const Vec3 path =
+      speed > 1.0f * u::m / u::s ? through / speed_value (speed) : m_heading;
 
     // The bar. The stick picks the airspeed the wing should settle at; a
     // banked wing is pushed out to carry the turn; and the pilot leans
@@ -217,31 +238,36 @@ namespace moppe::mov {
     // a dive is neither frozen nor left to porpoise. A flare rounds the
     // path out level and holds it there, pushing further out as the speed
     // bleeds away, until the wing has no more to give and settles.
-    const float weight = load ().numerical_value_in (one);
-    const float climb = std::asin (std::clamp<float> (path[1], -1.0f, 1.0f));
-    float wanted;
+    const radians_t climb =
+      std::asin (std::clamp<float> (path[1], -1.0f, 1.0f)) * u::rad;
+    scale_factor_t wanted;
     if (m_flare) {
-      const float level = weight * against_reference * against_reference;
-      wanted = level * std::clamp (
-                         1.0f - flare_hold * (climb - flare_climb), 0.4f, 1.8f);
+      const scale_factor_t level = quantity_cast<scale_factor> (
+        load () * against_reference * against_reference);
+      wanted =
+        level *
+        std::clamp (
+          scalar_value (1.0f - flare_hold * (climb - flare_climb)), 0.4f, 1.8f);
     } else {
-      const airspeed_t asked =
-        std::clamp (trim_speed + scalar_value (m_speed_control) * speed_range,
-                    minimum_speed,
-                    maximum_speed);
-      const float settled = loading_at (asked);
-      const float glide =
-        -std::atan (drag_of (settled, m_bike_attached) / settled);
-      const float hold =
-        std::clamp (1.0f - path_hold * (climb - glide), 0.4f, 1.8f);
-      wanted = settled * hold;
+      const airspeed_t asked = std::clamp (
+        trim_speed + m_speed_control.numerical_value_in (one) * speed_range,
+        minimum_speed,
+        maximum_speed);
+      const scale_factor_t settled = loading_at (asked);
+      const radians_t glide =
+        -std::atan ((drag_of (settled, m_bike_attached) / settled)
+                      .numerical_value_in (one)) *
+        u::rad;
+      wanted = settled *
+               std::clamp (
+                 scalar_value (1.0f - path_hold * (climb - glide)), 0.4f, 1.8f);
     }
-    wanted = std::clamp (
-      wanted / std::max (0.6f, std::cos (bank)), least_loading, stall_loading);
+    wanted =
+      std::clamp (wanted / std::max (0.6f, std::cos (radians_value (m_bank))),
+                  least_loading,
+                  stall_loading);
     const damping_t bar = m_flare ? 5.0f / u::s : 4.0f / u::s;
-    m_loading +=
-      (wanted * scale_factor[one] - m_loading) * smoothing_alpha (bar, dt);
-    const float loading = m_loading.numerical_value_in (one);
+    m_loading += (wanted - m_loading) * smoothing_alpha (bar, dt);
 
     // Lift acts across the path through the air, in the plane the bank
     // tilts; drag acts back along it.
@@ -252,12 +278,17 @@ namespace moppe::mov {
     normalize (across);
     const Vec3 lift = Quaternion::rotate (across, path, -m_bank);
     const metres_per_second_squared_t pressure =
-      standard_gravity * share (m_airspeed, reference_speed) *
-      share (m_airspeed, reference_speed) / weight;
-    const float drag =
-      drag_of (loading, m_bike_attached) + (m_flare ? flare_drag : 0.0f);
-    return quantity_cast<isq::acceleration> (lift * (pressure * loading) -
-                                             path * (pressure * drag));
+      quantity_cast<isq::acceleration> (
+        standard_gravity * share (m_airspeed, reference_speed) *
+        share (m_airspeed, reference_speed) / load ());
+    const drag_coefficient_t drag =
+      drag_of (m_loading, m_bike_attached) +
+      (m_flare ? flare_drag : drag_coefficient_t {});
+    const metres_per_second_squared_t carried =
+      quantity_cast<isq::acceleration> (pressure * m_loading);
+    const metres_per_second_squared_t held_back =
+      quantity_cast<isq::acceleration> (pressure * drag);
+    return quantity_cast<isq::acceleration> (lift * carried - path * held_back);
   }
 
   void Glider::follow (position_t position, velocity_t velocity) {

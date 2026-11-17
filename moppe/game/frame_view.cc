@@ -97,10 +97,10 @@ namespace moppe::game {
       .wheel_spin_radians = radians_value (vehicle.wheel_spin ()),
       .fork_radians = radians_value (vehicle.fork_angle ()),
       .thrust = vehicle.thrust ().numerical_value_in (one),
-      .boost_level = scalar_value (vehicle.boost_level ()),
-      .boost_drive = scalar_value (vehicle.boost_drive ()),
+      .boost_level = vehicle.boost_level ().numerical_value_in (one),
+      .boost_drive = vehicle.boost_drive ().numerical_value_in (one),
       .crank_radians = radians_value (vehicle.crank ()),
-      .rider_lean = scalar_value (vehicle.rider_lean ()),
+      .rider_lean = vehicle.rider_lean ().numerical_value_in (one),
     };
   }
 
@@ -393,7 +393,7 @@ namespace moppe::game {
     } else {
       hud.boost_ready01 =
         logic.m_doing == Doing::driving (Machine::bike)
-          ? scalar_value (input.session.bike ().boost_charge ())
+          ? input.session.bike ().boost_charge ().numerical_value_in (one)
           : 1.0f;
     }
     hud.health01 = logic.m_health / 100.0f;
