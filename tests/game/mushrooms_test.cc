@@ -10,7 +10,7 @@ using namespace moppe::game;
 namespace {
   MushroomSite mushroom_at (float x, float z, MushroomKind kind) {
     MushroomSite site;
-    site.base = Vec3 (x, 10.0f, z);
+    site.base = position (Vec3 (x, 10.0f, z));
     site.kind = kind;
     return site;
   }
@@ -32,70 +32,78 @@ namespace {
 
 MOPPE_TEST (a_walker_reaches_for_the_mushroom_in_front) {
   const MushroomPatch patch = mushroom_test_patch ();
-  const Vec3 feet (100.0f, 10.0f, 100.0f);
-  MOPPE_CHECK (patch.within_reach (feet, Vec3 (0, 0, 1)) == 0u);
-  MOPPE_CHECK (patch.within_reach (feet, Vec3 (0, 0, -1)) == 1u);
+  const position_t feet = position (Vec3 (100.0f, 10.0f, 100.0f));
+  const direction_t ahead = unit_direction (Vec3 (0, 0, 1));
+  const direction_t behind = unit_direction (Vec3 (0, 0, -1));
+  MOPPE_CHECK (patch.within_reach (feet, ahead) == 0u);
+  MOPPE_CHECK (patch.within_reach (feet, behind) == 1u);
   MOPPE_CHECK (
-    !patch.within_reach (Vec3 (120.0f, 10.0f, 100.0f), Vec3 (0, 0, 1)));
-  MOPPE_CHECK (patch.nearest (Vec3 (130.0f, 10.0f, 100.0f), 20.0f) == 2u);
+    !patch.within_reach (position (Vec3 (120.0f, 10.0f, 100.0f)), ahead));
+  MOPPE_CHECK (patch.nearest (position (Vec3 (130.0f, 10.0f, 100.0f)),
+                              20.0f * u::m) == 2u);
 }
 
 MOPPE_TEST (mushrooms_past_the_worlds_seam_are_reached_from_beyond_it) {
   MushroomPlan plan;
-  plan.period_x = plan.period_z = 200.0f;
+  plan.period = spatial_extent_in_metres (Vec3 (200.0f, 0.0f, 200.0f));
   plan.sites.push_back (mushroom_at (199.0f, 1.0f, MushroomKind::chanterelle));
   MushroomPatch patch;
   patch.rebuild (std::move (plan));
   // A walker is never wrapped back into the world, so this one stands a
   // lap on from the mushroom, a step and a half away.
-  const Vec3 feet (400.5f, 10.0f, 200.5f);
-  MOPPE_CHECK (patch.within_reach (feet, Vec3 (-1, 0, 0)) == 0u);
-  MOPPE_CHECK (patch.nearest (feet, 5.0f) == 0u);
-  MOPPE_CHECK (patch.within (feet, 5.0f).size () == 1u);
-  MOPPE_CHECK (std::abs (patch.base_near (0, feet)[0] - 399.0f) < 1e-3f);
+  const position_t feet = position (Vec3 (400.5f, 10.0f, 200.5f));
+  const direction_t west = unit_direction (Vec3 (-1, 0, 0));
+  MOPPE_CHECK (patch.within_reach (feet, west) == 0u);
+  MOPPE_CHECK (patch.nearest (feet, 5.0f * u::m) == 0u);
+  MOPPE_CHECK (patch.within (feet, 5.0f * u::m).size () == 1u);
   MOPPE_CHECK (
-    !patch.within_reach (Vec3 (100.0f, 10.0f, 100.0f), Vec3 (-1, 0, 0)));
+    std::abs (position_value (patch.base_near (0, feet))[0] - 399.0f) < 1e-3f);
+  MOPPE_CHECK (
+    !patch.within_reach (position (Vec3 (100.0f, 10.0f, 100.0f)), west));
 }
 
 MOPPE_TEST (picked_mushrooms_leave_the_ground_and_regrow_on_restore) {
   MushroomPatch patch = mushroom_test_patch ();
-  const Vec3 feet (100.0f, 10.0f, 100.0f);
+  const position_t feet = position (Vec3 (100.0f, 10.0f, 100.0f));
+  const direction_t ahead = unit_direction (Vec3 (0, 0, 1));
+  const direction_t behind = unit_direction (Vec3 (0, 0, -1));
   Basket basket;
   basket.picked.push_back (0);
   patch.follow (basket);
   // With the one ahead gone, nothing is in front; the one behind is
   // reached by turning round.
-  MOPPE_CHECK (!patch.within_reach (feet, Vec3 (0, 0, 1)));
-  MOPPE_CHECK (patch.within_reach (feet, Vec3 (0, 0, -1)) == 1u);
-  MOPPE_CHECK (patch.nearest (feet, 5.0f, std::array<std::uint32_t, 1> { 1 })
-                 .has_value () == false);
+  MOPPE_CHECK (!patch.within_reach (feet, ahead));
+  MOPPE_CHECK (patch.within_reach (feet, behind) == 1u);
+  MOPPE_CHECK (
+    patch.nearest (feet, 5.0f * u::m, std::array<std::uint32_t, 1> { 1 })
+      .has_value () == false);
 
   // An earlier, empty basket brings everything back.
   patch.follow (Basket {});
-  MOPPE_CHECK (patch.within_reach (feet, Vec3 (0, 0, 1)) == 0u);
+  MOPPE_CHECK (patch.within_reach (feet, ahead) == 0u);
 }
 
 MOPPE_TEST (mushroom_tiles_mesh_near_the_camera_only) {
   MushroomPatch patch = mushroom_test_patch ();
   test::RecordingRenderer renderer;
-  patch.draw (renderer, Vec3 (100.0f, 12.0f, 100.0f));
+  patch.draw (renderer, position (Vec3 (100.0f, 12.0f, 100.0f)));
   MOPPE_CHECK (renderer.meshes_drawn >= 2);
   const std::size_t baked = renderer.baked_vertex_counts.size ();
 
   // Just out of drawing reach, the meshes are kept for the walk back.
   renderer.meshes_drawn = 0;
-  patch.draw (renderer, Vec3 (120.0f, 12.0f, 230.0f));
+  patch.draw (renderer, position (Vec3 (120.0f, 12.0f, 230.0f)));
   MOPPE_CHECK (renderer.meshes_drawn == 0);
-  patch.draw (renderer, Vec3 (100.0f, 12.0f, 100.0f));
+  patch.draw (renderer, position (Vec3 (100.0f, 12.0f, 100.0f)));
   MOPPE_CHECK (renderer.meshes_drawn >= 2);
   MOPPE_CHECK (renderer.baked_vertex_counts.size () == baked);
 
   // A longer trip retires them; returning rebuilds the same geometry.
   renderer.meshes_drawn = 0;
-  patch.draw (renderer, Vec3 (900.0f, 12.0f, 900.0f));
+  patch.draw (renderer, position (Vec3 (900.0f, 12.0f, 900.0f)));
   MOPPE_CHECK (renderer.meshes_drawn == 0);
   MOPPE_CHECK (renderer.baked_vertex_counts.size () == baked);
-  patch.draw (renderer, Vec3 (100.0f, 12.0f, 100.0f));
+  patch.draw (renderer, position (Vec3 (100.0f, 12.0f, 100.0f)));
   MOPPE_CHECK (renderer.meshes_drawn >= 2);
   MOPPE_CHECK (renderer.baked_vertex_counts.size () == 2 * baked);
 }
@@ -109,8 +117,8 @@ MOPPE_TEST (mushroom_meshes_follow_picking_restore_and_rebuild) {
   MushroomPatch patch;
   patch.rebuild (plan);
   test::RecordingRenderer renderer;
-  const Vec3 near (100.0f, 12.0f, 100.0f);
-  const Vec3 far (900.0f, 12.0f, 900.0f);
+  const position_t near = position (Vec3 (100.0f, 12.0f, 100.0f));
+  const position_t far = position (Vec3 (900.0f, 12.0f, 900.0f));
   const auto draw_near = [&] {
     renderer.meshes_drawn = 0;
     patch.draw (renderer, near);

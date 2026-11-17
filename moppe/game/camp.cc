@@ -723,19 +723,19 @@ namespace moppe::game {
       MushroomSite lying = mushrooms[i];
       const float around =
         tau * (i + 0.5f) / mushrooms.size () + hash_lane (lying.seed, 31);
-      lying.base = place +
-                   Vec3 (std::cos (around), 0.0f, std::sin (around)) *
-                     (eggs > 0                ? 0.125f
-                      : mushrooms.size () > 1 ? 0.07f
-                                              : 0.0f) +
-                   world_up * 0.03f;
+      lying.base = position (place +
+                             Vec3 (std::cos (around), 0.0f, std::sin (around)) *
+                               (eggs > 0                ? 0.125f
+                                : mushrooms.size () > 1 ? 0.07f
+                                                        : 0.0f) +
+                             world_up * 0.03f);
       if (fish)
-        lying.base +=
+        position_value (lying.base) +=
           out * 0.09f + across * (0.11f * ((i + eggs) % 2 ? 1.0f : -1.0f));
       lying.scale = 0.5f * mushrooms[i].scale;
-      lying.lean = 1.3f;
-      lying.lean_toward = around + 1.9f;
-      lying.cooked = cooked;
+      lying.lean = 1.3f * inclination[u::rad];
+      lying.lean_toward = (around + 1.9f) * heading[u::rad];
+      lying.cooked = cooked * doneness[one];
       draw_mushroom (dl, lying);
     }
     dl.end ();

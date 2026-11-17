@@ -566,9 +566,10 @@ namespace moppe::game {
       const Walker& walker = s.session.walker ();
       const Vec3 feet = walker.position ();
       const auto target =
-        s.mushrooms.nearest (feet, 60.0f, m_state.forage_refused);
+        s.mushrooms.nearest (position (feet), 60.0f * u::m,
+                             m_state.forage_refused);
       if (target) {
-        Vec3 toward = s.mushrooms.site (*target).base - feet;
+        Vec3 toward = position_value (s.mushrooms.site (*target).base) - feet;
         toward[1] = 0.0f;
         const float distance = length (toward);
         const Vec3 heading = walker.heading ();
@@ -582,7 +583,8 @@ namespace moppe::game {
         input.look_pitch = std::clamp (
           -0.6f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
         const bool reachable =
-          s.mushrooms.within_reach (feet, heading) == target;
+          s.mushrooms.within_reach (position (feet),
+                                    unit_direction (heading)) == target;
         input.drive = !reachable && ahead > 0.7f
                         ? std::min (1.0f, 0.3f + 0.3f * distance)
                         : 0.0f;

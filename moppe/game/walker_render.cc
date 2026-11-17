@@ -160,13 +160,13 @@ namespace moppe::game {
         const float out = place % 7 == 6 ? 0.0f : 0.55f;
         const float depth = std::max (0.25f, 0.85f - 0.3f * layer);
         MushroomSite lying = basket[i];
-        lying.base = b.rim +
-                     b.forward * (out * rim_length * std::cos (around)) +
-                     b.side * (out * rim_width * std::sin (around)) -
-                     b.up * (basket_depth * depth);
+        lying.base =
+          position (b.rim + b.forward * (out * rim_length * std::cos (around)) +
+                    b.side * (out * rim_width * std::sin (around)) -
+                    b.up * (basket_depth * depth));
         lying.scale = 0.5f * basket[i].scale;
-        lying.lean = 0.5f + 0.8f * hash_lane (seed, 22);
-        lying.lean_toward = basket_tau * hash_lane (seed, 23);
+        lying.lean = (0.5f + 0.8f * hash_lane (seed, 22)) * inclination[u::rad];
+        lying.lean_toward = basket_tau * hash_lane (seed, 23) * heading[u::rad];
         draw_mushroom (dl, lying);
       }
     }

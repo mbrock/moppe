@@ -92,6 +92,12 @@ namespace moppe {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+  // How done food is over the fire: none raw, one cooked through (fried
+  // golden brown), two burnt black. A stage, not a share: it passes one.
+  QUANTITY_SPEC (doneness,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
   // A size or a strength relative to a reference: a mesh's scale, a gain,
   // a multiplier on a tuned value. May exceed one.
   QUANTITY_SPEC (scale_factor,

@@ -66,17 +66,18 @@ namespace moppe::game {
 
   std::vector<ScanFind> scan_mushrooms (const MushroomPatch& patch,
                                         const Vec3& origin) {
-    std::vector<std::uint32_t> near = patch.within (origin, scan_reach);
+    const position_t from = position (origin);
+    std::vector<std::uint32_t> near = patch.within (from, scan_reach * u::m);
     std::ranges::sort (near, [&] (std::uint32_t a, std::uint32_t b) {
-      const Vec3 da = patch.base_near (a, origin) - origin;
-      const Vec3 db = patch.base_near (b, origin) - origin;
+      const Vec3 da = position_value (patch.base_near (a, from)) - origin;
+      const Vec3 db = position_value (patch.base_near (b, from)) - origin;
       return length2 (da) < length2 (db);
     });
     std::vector<ScanFind> finds;
     std::vector<Vec3> sums;
     for (const std::uint32_t index : near) {
       const MushroomSite& site = patch.site (index);
-      const Vec3 base = patch.base_near (index, origin);
+      const Vec3 base = position_value (patch.base_near (index, from));
       const ScanFind::Kind kind = mushroom_edible (site.kind)
                                     ? ScanFind::Kind::mushrooms
                                     : ScanFind::Kind::poisonous;

@@ -238,7 +238,7 @@ namespace moppe {
       // cannot be painted over by the sward's own far density layer.
       m_boulders.draw (r);
       m_mushrooms.follow (logic ().m_basket);
-      m_mushrooms.draw (r, camera);
+      m_mushrooms.draw (r, position (camera));
       m_forest.draw (r);
     }
 
@@ -369,15 +369,17 @@ namespace moppe {
         if (age >= 0.0f && age < 0.45f) {
           const float t = age / 0.45f;
           MushroomSite rising = m_mushrooms.site (basket.picked.back ());
-          rising.base = m_mushrooms.base_near (basket.picked.back (),
-                                               actors.walker->position);
+          rising.base = m_mushrooms.base_near (
+            basket.picked.back (), position (actors.walker->position));
           const Vec3 to = actors.walker->position +
                           normalized (actors.walker->heading) * 0.2f +
                           Vec3 (0, 0.55f, 0);
-          rising.base = rising.base + (to - rising.base) * t +
-                        Vec3 (0, 0.35f * std::sin (PI * t), 0);
+          rising.base =
+            position (position_value (rising.base) +
+                      (to - position_value (rising.base)) * t +
+                      Vec3 (0, 0.35f * std::sin (PI * t), 0));
           rising.scale *= 1.0f - 0.5f * t;
-          rising.yaw += 3.0f * t;
+          rising.yaw += 3.0f * t * heading[u::rad];
           m_world_dl.state (render::DrawState ());
           m_world_dl.lit (true);
           m_world_dl.fogged (true);
