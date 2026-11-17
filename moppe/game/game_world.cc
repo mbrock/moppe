@@ -365,8 +365,8 @@ namespace moppe {
       if (const char* demo = moppe::environment ("MOPPE_DEMO");
           demo && std::string_view (demo) == "helicopter") {
         const mov::Helicopter& heli = session ().helicopter ();
-        session ().jeep ().place (heli.point (Vec3 (6.0f, 0.0f, 0.0f)),
-                                  heli.forward ());
+        session ().jeep ().place (
+          heli.point (displacement (Vec3 (6.0f, 0.0f, 0.0f))), heli.forward ());
         session ().set_mode (Doing::driving (Machine::helicopter));
         logic ().m_cam_mode = CAM_CHASE;
       }

@@ -106,49 +106,49 @@ namespace moppe::game {
 
   CarPose pose (const mov::Car& car) {
     return {
-      .position = car.position (),
-      .forward = car.forward (),
-      .up = car.up (),
+      .position = position_value (car.position ()),
+      .forward = direction_value (car.forward ()),
+      .up = direction_value (car.up ()),
       .wheel_drop = { meters_value (car.wheel_drop (0)),
                       meters_value (car.wheel_drop (1)),
                       meters_value (car.wheel_drop (2)),
                       meters_value (car.wheel_drop (3)) },
       .steer_radians = radians_value (car.steer ()),
       .wheel_spin_radians = radians_value (car.wheel_spin ()),
-      .velocity = car.velocity (),
+      .velocity = velocity_value (car.velocity ()),
     };
   }
 
   BoatPose pose (const mov::Boat& boat) {
     return {
-      .position = boat.position (),
-      .forward = boat.forward (),
-      .up = boat.up (),
+      .position = position_value (boat.position ()),
+      .forward = direction_value (boat.forward ()),
+      .up = direction_value (boat.up ()),
       .swing_radians = radians_value (boat.swing ()),
       .tilt_radians = radians_value (boat.tilt ()),
       .propeller_radians = radians_value (boat.propeller_angle ()),
       .rpm = scalar_value (boat.rpm ()),
-      .velocity = boat.velocity (),
+      .velocity = velocity_value (boat.velocity ()),
     };
   }
 
   JetSkiPose pose (const mov::JetSki& ski) {
     return {
-      .position = ski.position (),
-      .forward = ski.forward (),
-      .up = ski.up (),
+      .position = position_value (ski.position ()),
+      .forward = direction_value (ski.forward ()),
+      .up = direction_value (ski.up ()),
       .steer_radians = radians_value (ski.steer ()),
       .lean_radians = radians_value (ski.lean ()),
       .rpm = scalar_value (ski.rpm ()),
-      .velocity = ski.velocity (),
+      .velocity = velocity_value (ski.velocity ()),
     };
   }
 
   TractorPose pose (const mov::Tractor& tractor) {
     return {
-      .position = tractor.position (),
-      .forward = tractor.forward (),
-      .up = tractor.up (),
+      .position = position_value (tractor.position ()),
+      .forward = direction_value (tractor.forward ()),
+      .up = direction_value (tractor.up ()),
       .wheel_drop = { meters_value (tractor.wheel_drop (0)),
                       meters_value (tractor.wheel_drop (1)),
                       meters_value (tractor.wheel_drop (2)),
@@ -167,9 +167,9 @@ namespace moppe::game {
 
   HelicopterPose pose (const mov::Helicopter& helicopter) {
     return {
-      .position = helicopter.position (),
-      .forward = helicopter.forward (),
-      .up = helicopter.up (),
+      .position = position_value (helicopter.position ()),
+      .forward = direction_value (helicopter.forward ()),
+      .up = direction_value (helicopter.up ()),
       .rotor_radians = radians_value (helicopter.rotor_angle ()),
       .tail_radians = radians_value (helicopter.tail_angle ()),
     };
@@ -186,7 +186,7 @@ namespace moppe::game {
 
   GliderPose glider_pose (const mov::Glider& glider) {
     return {
-      .position = glider.position (),
+      .position = position_value (glider.position ()),
       .heading = glider.nose (),
       .bank_radians = radians_value (glider.bank ()),
       .bike_attached = glider.bike_attached (),
@@ -354,11 +354,12 @@ namespace moppe::game {
       const Machine load = logic.m_sling.load;
       const MachineBody body = input.session.machine_body (load);
       SlingPose sling;
-      sling.hook = input.session.helicopter ().point (sling_hook ());
-      sling.ring = body.point (machine_kind (load).ring);
-      const std::array<Vec3, 4> legs = machine_kind (load).legs;
+      sling.hook =
+        position_value (input.session.helicopter ().point (sling_hook ()));
+      sling.ring = position_value (body.point (machine_kind (load).ring));
+      const std::array<displacement_t, 4> legs = machine_kind (load).legs;
       for (std::size_t i = 0; i < legs.size (); ++i)
-        sling.legs[i] = body.point (legs[i]);
+        sling.legs[i] = position_value (body.point (legs[i]));
       sling.taut = logic.m_sling.stretch > -0.05f * u::m;
       result.actors.sling = sling;
     }

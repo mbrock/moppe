@@ -42,8 +42,8 @@ namespace moppe::game {
   inline constexpr meters_t sling_reach = 8.0f * u::m;
   inline constexpr meters_t sling_slack = 1.5f * u::m;
   // The hook, in the helicopter's frame.
-  inline Vec3 sling_hook () {
-    return Vec3 (0.0f, 0.55f, 0.05f);
+  inline displacement_t sling_hook () {
+    return displacement (Vec3 (0.0f, 0.55f, 0.05f));
   }
   // How far below the helicopter's skids what hangs under it reaches
   // when the line is taut, about.
@@ -54,7 +54,7 @@ namespace moppe::game {
   // the world, over a step of `dt`; the helicopter takes the opposite at
   // the hook. Updates the sling's stretch.
   force_t
-  sling_pull (Sling& sling, const Vec3& hook, const Vec3& ring, seconds_t dt);
+  sling_pull (Sling& sling, position_t hook, position_t ring, seconds_t dt);
 }
 
 #endif

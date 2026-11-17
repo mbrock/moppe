@@ -437,8 +437,8 @@ namespace moppe::mov {
     m_impl->build (state);
   }
 
-  void Car::place (const Vec3& at, const Vec3& heading) {
-    m_impl->place (at, heading);
+  void Car::place (position_t at, direction_t heading) {
+    m_impl->place (position_value (at), direction_value (heading));
   }
 
   void Car::set_trunks (const TrunkField* trunks) {
@@ -485,24 +485,25 @@ namespace moppe::mov {
     });
   }
 
-  Vec3 Car::position () const {
-    return m_impl->point (Vec3 ());
+  position_t Car::position () const {
+    return moppe::position (m_impl->point (Vec3 ()));
   }
 
-  Vec3 Car::forward () const {
-    return m_impl->axis (Vec3 (0, 0, 1));
+  direction_t Car::forward () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 0, 1)));
   }
 
-  Vec3 Car::up () const {
-    return m_impl->axis (Vec3 (0, 1, 0));
+  direction_t Car::up () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 1, 0)));
   }
 
-  Vec3 Car::left () const {
-    return m_impl->axis (Vec3 (1, 0, 0));
+  direction_t Car::left () const {
+    return unit_direction (m_impl->axis (Vec3 (1, 0, 0)));
   }
 
-  Vec3 Car::velocity () const {
-    return from_b3 (b3Body_GetLinearVelocity (m_impl->chassis));
+  velocity_t Car::velocity () const {
+    return moppe::velocity (
+      from_b3 (b3Body_GetLinearVelocity (m_impl->chassis)));
   }
 
   bool Car::grounded () const {
@@ -519,26 +520,28 @@ namespace moppe::mov {
     return m_impl->rig.total_mass ();
   }
 
-  void Car::push (const Vec3& at, const impulse_t& impulse) {
+  void Car::push (position_t at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
     m.kept.still = seconds_t {};
-    b3Body_ApplyLinearImpulse (
-      m.chassis, to_b3 (impulse_value (impulse)), to_b3 (at), true);
+    b3Body_ApplyLinearImpulse (m.chassis,
+                               to_b3 (impulse_value (impulse)),
+                               to_b3 (position_value (at)),
+                               true);
   }
 
-  Vec3 Car::point (const Vec3& local) const {
-    return m_impl->point (local);
+  position_t Car::point (const displacement_t& local) const {
+    return moppe::position (m_impl->point (displacement_value (local)));
   }
 
-  Vec3 Car::driver_seat () const {
+  position_t Car::driver_seat () const {
     const float* seat = m_impl->rig.seat;
-    return point (Vec3 (seat[0], seat[1], seat[2]));
+    return point (displacement (Vec3 (seat[0], seat[1], seat[2])));
   }
 
-  Vec3 Car::passenger_seat () const {
+  position_t Car::passenger_seat () const {
     const float* seat = m_impl->rig.seat;
-    return point (Vec3 (-seat[0], seat[1], seat[2]));
+    return point (displacement (Vec3 (-seat[0], seat[1], seat[2])));
   }
 
   meters_t Car::wheel_drop (int wheel) const {

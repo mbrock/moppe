@@ -503,21 +503,21 @@ namespace moppe::game {
                         float period_x,
                         float period_z) {
     static const Bumper bumpers[] = {
-      { Vec3 (0, 1.35f, 4.3f), 1.3f * u::m },
-      { Vec3 (0, 1.35f, 2.15f), 1.3f * u::m },
-      { Vec3 (0, 1.35f, 0.0f), 1.3f * u::m },
-      { Vec3 (0, 1.35f, -2.15f), 1.3f * u::m },
-      { Vec3 (0, 1.35f, -4.3f), 1.3f * u::m },
+      { displacement (Vec3 (0, 1.35f, 4.3f)), 1.3f * u::m },
+      { displacement (Vec3 (0, 1.35f, 2.15f)), 1.3f * u::m },
+      { displacement (Vec3 (0, 1.35f, 0.0f)), 1.3f * u::m },
+      { displacement (Vec3 (0, 1.35f, -2.15f)), 1.3f * u::m },
+      { displacement (Vec3 (0, 1.35f, -4.3f)), 1.3f * u::m },
     };
     MachineBody body;
-    body.position = pose.position;
-    body.position[0] =
+    body.position = position (pose.position);
+    position_value (body.position)[0] =
       terrain::nearest_image (pose.position[0], near[0], period_x);
-    body.position[2] =
+    position_value (body.position)[2] =
       terrain::nearest_image (pose.position[2], near[2], period_z);
-    body.forward = pose.forward;
-    body.up = pose.up;
-    body.velocity = pose.forward * speed_value (pose.speed);
+    body.forward = unit_direction (pose.forward);
+    body.up = unit_direction (pose.up);
+    body.velocity = velocity (pose.forward * speed_value (pose.speed));
     body.mass = 12000.0f * u::kg;
     body.ours = false;
     body.bumpers = bumpers;

@@ -146,8 +146,8 @@ namespace moppe {
       }
       // A blow at `at`: another machine bumping into it, or someone
       // hauling on it.
-      void push (const Vec3& at, const impulse_t& impulse) {
-        m_rigid->push (at, impulse);
+      void push (position_t at, const impulse_t& impulse) {
+        m_rigid->push (position_value (at), impulse);
       }
 
       void set_water_level (meters_t level) {
@@ -187,7 +187,7 @@ namespace moppe {
       // Sideways speed relative to where the bike points; big when
       // drifting, ~zero when rolling straight
       speed_t drift_speed () const {
-        const Vec3 v = velocity ();
+        const Vec3 v = m_rigid->velocity ();
         const Vec3 heading = orientation ();
         return length (v - heading * dot (v, heading)) * u::m / u::s;
       }
@@ -236,7 +236,7 @@ namespace moppe {
         return orientation ();
       }
       Vec3 render_position () const {
-        return position ();
+        return m_rigid->reference_position ();
       }
       // How far each wheel hangs below its drawn rest position along the
       // chassis' down axis; negative is compressed.
@@ -251,34 +251,30 @@ namespace moppe {
         return m_rigid->steer_angle ();
       }
 
-      Vec3 position () const {
-        return m_rigid->reference_position ();
-      }
-      position_t physical_position () const {
-        return moppe::position (position ());
+      position_t position () const {
+        return moppe::position (m_rigid->reference_position ());
       }
       Vec3 orientation () const {
         return m_rigid->forward ();
       }
       // Its frame, named as every other machine names it.
-      Vec3 forward () const {
-        return orientation ();
+      direction_t forward () const {
+        return unit_direction (orientation ());
       }
-      Vec3 up () const {
-        return render_normal ();
+      direction_t up () const {
+        return unit_direction (render_normal ());
       }
       // A point given in its frame (x to the left, y up, z forward).
-      Vec3 point (const Vec3& local) const {
-        const Vec3 u = up ();
-        const Vec3 f = forward ();
+      position_t point (const displacement_t& local) const {
+        const Vec3& l = displacement_value (local);
+        const Vec3 u = render_normal ();
+        const Vec3 f = orientation ();
         const Vec3 left = normalized (cross (u, f));
-        return position () + left * local[0] + u * local[1] + f * local[2];
+        return moppe::position (m_rigid->reference_position () + left * l[0] +
+                                u * l[1] + f * l[2]);
       }
-      Vec3 velocity () const {
-        return m_rigid->velocity ();
-      }
-      velocity_t physical_velocity () const {
-        return moppe::velocity (velocity ());
+      velocity_t velocity () const {
+        return moppe::velocity (m_rigid->velocity ());
       }
 
     private:

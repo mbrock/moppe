@@ -738,8 +738,8 @@ namespace moppe::mov {
     m_impl->build (state);
   }
 
-  void Tractor::place (const Vec3& at, const Vec3& heading) {
-    m_impl->place (at, heading);
+  void Tractor::place (position_t at, direction_t heading) {
+    m_impl->place (position_value (at), direction_value (heading));
   }
 
   void Tractor::set_trunks (const TrunkField* trunks) {
@@ -777,24 +777,25 @@ namespace moppe::mov {
     });
   }
 
-  Vec3 Tractor::position () const {
-    return m_impl->point (Vec3 ());
+  position_t Tractor::position () const {
+    return moppe::position (m_impl->point (Vec3 ()));
   }
 
-  Vec3 Tractor::forward () const {
-    return m_impl->axis (Vec3 (0, 0, 1));
+  direction_t Tractor::forward () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 0, 1)));
   }
 
-  Vec3 Tractor::up () const {
-    return m_impl->axis (Vec3 (0, 1, 0));
+  direction_t Tractor::up () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 1, 0)));
   }
 
-  Vec3 Tractor::left () const {
-    return m_impl->axis (Vec3 (1, 0, 0));
+  direction_t Tractor::left () const {
+    return unit_direction (m_impl->axis (Vec3 (1, 0, 0)));
   }
 
-  Vec3 Tractor::velocity () const {
-    return from_b3 (b3Body_GetLinearVelocity (m_impl->chassis));
+  velocity_t Tractor::velocity () const {
+    return moppe::velocity (
+      from_b3 (b3Body_GetLinearVelocity (m_impl->chassis)));
   }
 
   bool Tractor::grounded () const {
@@ -815,16 +816,17 @@ namespace moppe::mov {
     return tractor_rig::trailer_total_mass;
   }
 
-  void Tractor::push (const Vec3& at, const impulse_t& impulse) {
+  void Tractor::push (position_t at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
     m.kept.still = seconds_t {};
     const bool towed =
-      length2 (at - m.trailer_point (Vec3 (0.0f, 0.85f, 0.15f))) <
-      length2 (at - m.point (Vec3 (0.0f, 0.78f, 0.0f)));
+      length2 (position_value (at) -
+               m.trailer_point (Vec3 (0.0f, 0.85f, 0.15f))) <
+      length2 (position_value (at) - m.point (Vec3 (0.0f, 0.78f, 0.0f)));
     b3Body_ApplyLinearImpulse (towed ? m.trailer : m.chassis,
                                to_b3 (impulse_value (impulse)),
-                               to_b3 (at),
+                               to_b3 (position_value (at)),
                                true);
   }
 
@@ -836,8 +838,8 @@ namespace moppe::mov {
                      std::min (1.0f, std::abs (scalar_value (kept.drive))));
   }
 
-  Vec3 Tractor::point (const Vec3& local) const {
-    return m_impl->point (local);
+  position_t Tractor::point (const displacement_t& local) const {
+    return moppe::position (m_impl->point (displacement_value (local)));
   }
 
   meters_t Tractor::wheel_drop (int wheel) const {

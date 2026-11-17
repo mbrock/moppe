@@ -24,7 +24,7 @@ namespace moppe::game {
     WorldGround ground;
     const PlacesPlan& places;
     const mov::TrunkField& trunks;
-    Vec3 spawn;
+    position_t spawn;
   };
 
   class Parking {
@@ -32,7 +32,7 @@ namespace moppe::game {
     // How far aside the later of two players parks the machines that
     // stand at places in the world, so that theirs and ours do not stand
     // in one another.
-    void set_aside (const Vec3& aside) {
+    void set_aside (const displacement_t& aside) {
       m_aside = aside;
     }
 
@@ -89,18 +89,18 @@ namespace moppe::game {
     // makes a landing site, with no tree within reach of its rotor;
     // clear of `avoid` (the other player's) when given one.
     void park_helicopter (const ParkingLot& lot,
-                          std::optional<Vec3> avoid = std::nullopt) const;
+                          std::optional<position_t> avoid = std::nullopt) const;
 
-    // What the water autopilot steers: how fast it is going, m/s, for
-    // how far ahead it must mind the shallows; whether it follows the
+    // What the water autopilot steers: how fast it is going, for how
+    // far ahead it must mind the shallows; whether it follows the
     // river's course where there is one; how far it looks for open
-    // water, metres; and how much of that it cares to have ahead of it
-    // before the weave matters more.
+    // water; and how much of that it cares to have ahead of it before
+    // the weave matters more.
     struct WaterPilot {
-      float speed = 0.0f;
+      speed_t speed = 0.0f * u::m / u::s;
       bool follow_route = false;
-      float sight = 90.0f;
-      float room = 60.0f;
+      meters_t sight = 90.0f * u::m;
+      meters_t room = 60.0f * u::m;
     };
 
     // Steers something afloat at `at`, heading `heading`, along the
@@ -108,9 +108,9 @@ namespace moppe::game {
     // and otherwise over open water in a lazy weave, steering clear of
     // shallows it sees ahead.
     InputFrame water_autopilot (const WorldGround& ground,
-                                float t,
-                                const Vec3& at,
-                                Vec3 heading,
+                                seconds_t t,
+                                const position_t& at,
+                                direction_t heading,
                                 const WaterPilot& craft);
 
   private:
@@ -119,37 +119,41 @@ namespace moppe::game {
 
     // The trailhead's frame: the bike's heading on the level, and its
     // left.
-    static std::pair<Vec3, Vec3> bike_frame (const ParkingLot& lot);
+    static std::pair<direction_t, direction_t>
+    bike_frame (const ParkingLot& lot);
 
-    // Whether a machine `room` metres round at `at` keeps clear of the
+    // Whether a machine `room` round at `at` keeps clear of the
     // machines already parked there.
-    static bool
-    clear_of_machines (const ParkingLot& lot, const Vec3& at, float room);
+    static bool clear_of_machines (const ParkingLot& lot,
+                                   const position_t& at,
+                                   meters_t room);
 
     static void report_parked (const ParkingLot& lot,
                                const char* name,
-                               const Vec3& at,
+                               const position_t& at,
                                const char* where);
 
     // The shore the boat was left at, when it was.
-    std::optional<Vec3> m_mooring;
+    std::optional<position_t> m_mooring;
     // The way out to open water from there, and where the boat lay and
     // how it faced.
-    std::optional<Vec3> m_mooring_out;
-    std::optional<std::pair<Vec3, Vec3>> m_boat_berth;
-    Vec3 m_aside {};
+    std::optional<direction_t> m_mooring_out;
+    std::optional<std::pair<position_t, direction_t>> m_boat_berth;
+    displacement_t m_aside = displacement (Vec3 ());
     // MOPPE_BOAT=river: the river's course down to the sea, which the
     // boat autopilot follows, and the next point of it ahead.
-    std::vector<Vec3> m_boat_route;
+    std::vector<position_t> m_boat_route;
     std::size_t m_boat_route_at = 0;
   };
 
   // Where a point unwrapped across the world's seam stands in the lap
   // nearest `spawn`, on the ground.
-  Vec3 near_spawn (const WorldGround& ground, const Vec3& spawn, Vec3 at);
+  position_t near_spawn (const WorldGround& ground,
+                         const position_t& spawn,
+                         const position_t& at);
 
   // How far `at` stands from `spawn` on the level.
-  float from_spawn (const Vec3& spawn, const Vec3& at);
+  meters_t from_spawn (const position_t& spawn, const position_t& at);
 
   // MOPPE_WALK=haul: the tractor is stuck where it stands and the walker
   // stands before it, facing away, to haul it out on a rope.

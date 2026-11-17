@@ -112,12 +112,12 @@ namespace moppe::game {
     if (slung) {
       const MachineBody load =
         session.machine_body (session.logic ().m_sling.load);
-      Vec3 heading = load.forward;
+      Vec3 heading = direction_value (load.forward);
       heading[1] = 0.0f;
       heading =
         length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
       const Vec3 right (heading[2], 0.0f, -heading[0]);
-      const Vec3 at = load.position + Vec3 (0, 0.5f, 0);
+      const Vec3 at = position_value (load.position) + Vec3 (0, 0.5f, 0);
       const Vec3 from = view == "front" ? heading * 7.5f + right * 2.0f
                                         : right * 7.5f + heading * 0.6f;
       session.camera ().place (at + from + Vec3 (0, 0.5f, 0), at);
@@ -138,24 +138,26 @@ namespace moppe::game {
     const bool pedalled = game::pedalled (session.logic ().m_doing);
     const auto& bike = session.ridden_bike ();
     // The tractor with its trailer, from their middle.
-    const Vec3 car = tractor ? (session.tractor ().position () +
-                                session.tractor ().trailer_position ()) *
-                                 0.5f
-                     : caddy ? session.caddy ().position ()
-                     : boat  ? session.boat ().position ()
-                     : ski   ? session.jet_ski ().position ()
-                             : session.jeep ().position ();
+    const Vec3 car = tractor
+                       ? (position_value (session.tractor ().position ()) +
+                          session.tractor ().trailer_position ()) *
+                           0.5f
+                     : caddy ? position_value (session.caddy ().position ())
+                     : boat  ? position_value (session.boat ().position ())
+                     : ski   ? position_value (session.jet_ski ().position ())
+                             : position_value (session.jeep ().position ());
     Vec3 heading = gliding   ? session.glider ().heading ()
-                   : tractor ? session.tractor ().forward ()
-                   : caddy   ? session.caddy ().forward ()
-                   : boat    ? session.boat ().forward ()
-                   : ski     ? session.jet_ski ().forward ()
-                   : driving ? session.jeep ().forward ()
+                   : tractor ? direction_value (session.tractor ().forward ())
+                   : caddy   ? direction_value (session.caddy ().forward ())
+                   : boat    ? direction_value (session.boat ().forward ())
+                   : ski     ? direction_value (session.jet_ski ().forward ())
+                   : driving ? direction_value (session.jeep ().forward ())
                              : bike.render_orientation ();
     heading[1] = 0.0f;
     heading = normalized (heading);
     const Vec3 right (heading[2], 0.0f, -heading[0]);
-    const Vec3 at = gliding ? session.glider ().position () - Vec3 (0, 0.9f, 0)
+    const Vec3 at = gliding ? position_value (session.glider ().position ()) -
+                                Vec3 (0, 0.9f, 0)
                     : driving  ? car + Vec3 (0, tractor ? 0.9f : 0.5f, 0)
                     : pedalled ? bike.render_position () + Vec3 (0, 0.55f, 0)
                                : bike.render_position () + Vec3 (0, 0.4f, 0);
@@ -182,8 +184,8 @@ namespace moppe::game {
       return value ? std::strtof (value, nullptr) * PI / 180.0f : 0.0f;
     }();
     const mov::Boat& boat = session.boat ();
-    const Vec3 at = boat.position () + Vec3 (0, 0.6f, 0);
-    Vec3 heading = boat.forward ();
+    const Vec3 at = position_value (boat.position ()) + Vec3 (0, 0.6f, 0);
+    Vec3 heading = direction_value (boat.forward ());
     heading[1] = 0.0f;
     heading = normalized (heading);
     // The subject eased, so the waves' heave and the hull's yawing
@@ -231,13 +233,17 @@ namespace moppe::game {
       look = film_at + h * 14.0f + up * 0.3f;
       fov = 84.0f;
     } else if (view == "hull") {
-      eye = boat.point (Vec3 (-1.35f, 0.45f, 1.3f));
-      look = boat.point (Vec3 (0.0f, 0.85f, -1.0f));
+      eye =
+        position_value (boat.point (displacement (Vec3 (-1.35f, 0.45f, 1.3f))));
+      look =
+        position_value (boat.point (displacement (Vec3 (0.0f, 0.85f, -1.0f))));
       fov = 70.0f;
       clear = false;
     } else if (view == "stern") {
-      eye = boat.point (Vec3 (0.4f, 1.45f, -2.9f));
-      look = boat.point (Vec3 (0.0f, 0.5f, 9.0f));
+      eye =
+        position_value (boat.point (displacement (Vec3 (0.4f, 1.45f, -2.9f))));
+      look =
+        position_value (boat.point (displacement (Vec3 (0.0f, 0.5f, 9.0f))));
       fov = 72.0f;
       clear = false;
     } else if (view == "flyby") {

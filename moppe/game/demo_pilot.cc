@@ -117,15 +117,20 @@ namespace moppe::game {
                                bool boat) {
     if (boat) {
       const mov::Boat& hull = session.boat ();
-      return parking.water_autopilot (
-        ground, t, hull.position (), hull.forward (), { .follow_route = true });
+      return parking.water_autopilot (ground,
+                                      t * u::s,
+                                      hull.position (),
+                                      hull.forward (),
+                                      { .follow_route = true });
     }
     const mov::JetSki& ski = session.jet_ski ();
     return parking.water_autopilot (
       ground,
-      t,
+      t * u::s,
       ski.position (),
       ski.forward (),
-      { .speed = length (ski.velocity ()), .sight = 240.0f, .room = 200.0f });
+      { .speed = length (velocity_value (ski.velocity ())) * u::m / u::s,
+        .sight = 240.0f * u::m,
+        .room = 200.0f * u::m });
   }
 }

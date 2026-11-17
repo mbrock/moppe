@@ -95,7 +95,7 @@ namespace moppe::mov {
     void restore (const State& state);
 
     // Stands the tractor on the ground at `at`, facing along `heading`.
-    void place (const Vec3& at, const Vec3& heading);
+    void place (position_t at, direction_t heading);
     // The obstacles its chassis meets; rebuilt into its world when the
     // field changes.
     void set_trunks (const TrunkField* trunks);
@@ -108,11 +108,11 @@ namespace moppe::mov {
 
     void update (seconds_t dt, meters_t water_level);
 
-    Vec3 position () const;
-    Vec3 forward () const;
-    Vec3 up () const;
-    Vec3 left () const;
-    Vec3 velocity () const;
+    position_t position () const;
+    direction_t forward () const;
+    direction_t up () const;
+    direction_t left () const;
+    velocity_t velocity () const;
     bool grounded () const;
     bool asleep () const;
     // Its whole weight with the trailer's, and the trailer's alone,
@@ -123,18 +123,18 @@ namespace moppe::mov {
     // bumping into it, or someone hauling on it. It lands on the trailer
     // when `at` is nearer the trailer's middle than the tractor's. It
     // wakes one asleep.
-    void push (const Vec3& at, const impulse_t& impulse);
+    void push (position_t at, const impulse_t& impulse);
     // How hard the engine is asked to work, 0..1: the throttle, or a
     // little at idle while someone sits at the wheel.
     control_signal_t throttle () const;
     // A point given in the tractor's frame, in the world.
-    Vec3 point (const Vec3& local) const;
-    Vec3 driver_seat () const {
-      return point (Vec3 (seat[0], seat[1], seat[2]));
+    position_t point (const displacement_t& local) const;
+    position_t driver_seat () const {
+      return point (displacement (Vec3 (seat[0], seat[1], seat[2])));
     }
-    Vec3 exhaust () const {
-      return point (
-        Vec3 (exhaust_mouth[0], exhaust_mouth[1], exhaust_mouth[2]));
+    position_t exhaust () const {
+      return point (displacement (
+        Vec3 (exhaust_mouth[0], exhaust_mouth[1], exhaust_mouth[2])));
     }
 
     // How far a wheel hangs below where it stands; negative when its

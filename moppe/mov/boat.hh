@@ -89,7 +89,7 @@ namespace moppe::mov {
     void restore (const State& state);
 
     // Floats it upright at `at` on water at `level`, facing `heading`.
-    void place (const Vec3& at, const Vec3& heading, meters_t level);
+    void place (position_t at, direction_t heading, meters_t level);
     void set_trunks (const TrunkField* trunks);
 
     void set_drive (control_signal_t drive);
@@ -107,22 +107,22 @@ namespace moppe::mov {
 
     void update (seconds_t dt, const BoatWater& water);
 
-    Vec3 position () const;
-    Vec3 forward () const;
-    Vec3 up () const;
-    Vec3 left () const;
-    Vec3 velocity () const;
-    Vec3 point (const Vec3& local) const;
+    position_t position () const;
+    direction_t forward () const;
+    direction_t up () const;
+    direction_t left () const;
+    velocity_t velocity () const;
+    position_t point (const displacement_t& local) const;
     // Its whole weight, kilograms: the helmsman's too while someone is
     // aboard (not parked), so that it sits deeper with them in it.
     kilograms_t mass () const;
     // A blow at `at` in the world, newton-seconds. It wakes one asleep.
-    void push (const Vec3& at, const impulse_t& impulse);
+    void push (position_t at, const impulse_t& impulse);
     bool asleep () const;
     bool afloat () const;
     bool grounded () const;
-    Vec3 helm_seat () const {
-      return point (Vec3 (helm[0], helm[1], helm[2]));
+    position_t helm_seat () const {
+      return point (displacement (Vec3 (helm[0], helm[1], helm[2])));
     }
 
     // The engine's speed, a share of its rated speed.

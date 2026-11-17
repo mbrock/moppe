@@ -31,7 +31,7 @@ namespace {
       if (trace && i % 30 == 0)
         std::printf ("%5.1f  h %6.1f  v %5.1f  climb %5.2f  bank %5.2f\n",
                      i / 60.0f,
-                     float (glider.position ()[1]),
+                     float (position_value (glider.position ())[1]),
                      glider.airspeed ().numerical_value_in (u::m / u::s),
                      glider.vertical_speed ().numerical_value_in (u::m / u::s),
                      radians_value (glider.bank ()));
@@ -90,12 +90,12 @@ MOPPE_TEST (a_dive_buys_speed_that_a_pull_up_turns_back_into_height) {
   glider.set_speed_control (1.0f);
   glider_test_fly (glider, 8.0f);
   MOPPE_CHECK (glider_test_airspeed (glider) > 21.0f);
-  const float low = glider.position ()[1];
+  const float low = position_value (glider.position ())[1];
   glider.set_speed_control (-1.0f);
   float top = low;
   for (int i = 0; i < 240; ++i) {
     glider.update (glider_test_step);
-    top = std::max<float> (top, glider.position ()[1]);
+    top = std::max<float> (top, position_value (glider.position ())[1]);
   }
   MOPPE_CHECK (top > low + 4.0f);
   // Nothing comes free: the zoom gives back less than the speed was worth.
@@ -147,10 +147,10 @@ MOPPE_TEST (a_glider_touches_down_still_moving) {
     position (Vec3 (100, 30, 100)), velocity (Vec3 (0, 0, 16)), Vec3 (0, 0, 1));
   glider_test_fly (glider, 60.0f);
   MOPPE_CHECK (glider.landed ());
-  MOPPE_CHECK_NEAR (float (glider.position ()[1]),
+  MOPPE_CHECK_NEAR (float (position_value (glider.position ())[1]),
                     10.0f + meters_value (mov::Glider::pilot_clearance),
                     1e-3f);
-  const Vec3 v = glider.velocity ();
+  const Vec3 v = velocity_value (glider.velocity ());
   MOPPE_CHECK (std::hypot (v[0], v[2]) > 10.0f);
 }
 
@@ -188,10 +188,10 @@ namespace {
     input.use = true;
     GlideOutcome outcome {};
     for (int i = 0; i < 60 * 120; ++i) {
-      const float agl = session.bike ().position ()[1] - 10.0f;
+      const float agl = position_value (session.bike ().position ())[1] - 10.0f;
       if (flare && agl < 3.0f)
         input.boost = 1.0f * one;
-      const float sink = -session.bike ().velocity ()[1];
+      const float sink = -velocity_value (session.bike ().velocity ())[1];
       game::advance_game_session (
         world, surface, session, input, glider_test_step);
       input.use = false;
@@ -201,13 +201,13 @@ namespace {
         std::printf ("%5.1f  agl %6.2f  v %5.1f  climb %5.2f  up %4.2f\n",
                      i / 60.0f,
                      agl,
-                     length (session.bike ().velocity ()),
-                     float (session.bike ().velocity ()[1]),
+                     length (velocity_value (session.bike ().velocity ())),
+                     float (velocity_value (session.bike ().velocity ())[1]),
                      float (session.bike ().render_normal ()[1]));
       if (session.logic ().m_doing != game::Doing::gliding ()) {
         outcome.seconds = i / 60.0f;
         outcome.sink = sink;
-        const Vec3 v = session.bike ().velocity ();
+        const Vec3 v = velocity_value (session.bike ().velocity ());
         outcome.speed = std::hypot (v[0], v[2]);
         break;
       }
@@ -220,7 +220,7 @@ namespace {
     outcome.mode = session.logic ().m_doing;
     outcome.upright = session.bike ().render_normal ()[1];
     outcome.health_lost = health - session.logic ().m_health;
-    const Vec3 v = session.bike ().velocity ();
+    const Vec3 v = velocity_value (session.bike ().velocity ());
     if (trace)
       std::printf ("landed after %.1f s at %.1f m/s sinking %.2f; "
                    "%.1f m/s half a second on, up %.2f, hurt %.1f\n",

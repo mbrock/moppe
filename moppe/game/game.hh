@@ -128,7 +128,7 @@ namespace moppe {
                  world_ground (),
                  m_places.layout,
                  m_trunk_field,
-                 m_spawn_position };
+                 moppe::position (m_spawn_position) };
       }
 
       // MOPPE_DEMO=forest: park the bike in the forest's densest conifer

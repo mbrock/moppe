@@ -17,7 +17,8 @@ namespace moppe {
           (here == theirs.sent && m_company.link->player () < theirs.player))
         return;
       mov::Vehicle& bike = session ().bike ();
-      Vec3 apart = bike.position () - theirs.fleet.bike.position;
+      Vec3 apart =
+        position_value (bike.position ()) - theirs.fleet.bike.position;
       apart[1] = 0.0f;
       if (length2 (apart) > 2.5f * 2.5f)
         return;
@@ -26,24 +27,25 @@ namespace moppe {
       heading =
         length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
       const Vec3 side (heading[2], 0, -heading[0]);
-      const bool beside = length2 (session ().walker ().position () -
-                                   bike.position ()) < 6.0f * 6.0f;
+      const bool beside =
+        length2 (session ().walker ().position () -
+                 position_value (bike.position ())) < 6.0f * 6.0f;
       // Far enough that this jeep, parked beyond the bike, clears
       // theirs.
-      Vec3 place = bike.position () - side * 7.0f;
+      Vec3 place = position_value (bike.position ()) - side * 7.0f;
       place[1] = world_ground ().height (place) + 1.2f;
       bike.reset (place);
       bike.set_heading (heading);
       Vec3 aside = place - m_spawn_position;
       aside[1] = 0.0f;
-      m_parking.set_aside (aside);
+      m_parking.set_aside (moppe::displacement (aside));
       m_spawn_position = place;
       m_parking.park_jeep (parking_lot ());
       m_parking.park_tractor (parking_lot ());
       m_parking.park_mountain_bike (parking_lot ());
       m_parking.park_long_john (parking_lot ());
-      m_parking.park_helicopter (parking_lot (),
-                                 theirs.fleet.helicopter.position);
+      m_parking.park_helicopter (
+        parking_lot (), moppe::position (theirs.fleet.helicopter.position));
       if (logic ().m_doing != Doing::driving (Machine::boat))
         m_parking.park_boat (parking_lot ());
       if (logic ().m_doing != Doing::driving (Machine::jet_ski))

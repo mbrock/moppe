@@ -38,15 +38,16 @@ namespace moppe::game {
   template <class B>
   concept Drivable = requires (B& b,
                                const B& c,
-                               Vec3 at,
+                               position_t at,
+                               displacement_t local,
                                impulse_t blow,
                                bool yes,
                                const mov::TrunkField* trunks) {
-    { c.position () } -> std::convertible_to<Vec3>;
-    { c.forward () } -> std::convertible_to<Vec3>;
-    { c.up () } -> std::convertible_to<Vec3>;
-    { c.velocity () } -> std::convertible_to<Vec3>;
-    { c.point (at) } -> std::convertible_to<Vec3>;
+    { c.position () } -> std::same_as<position_t>;
+    { c.forward () } -> std::same_as<direction_t>;
+    { c.up () } -> std::same_as<direction_t>;
+    { c.velocity () } -> std::same_as<velocity_t>;
+    { c.point (local) } -> std::same_as<position_t>;
     { c.mass () } -> std::convertible_to<kilograms_t>;
     b.push (at, blow);
     b.set_parked (yes);

@@ -559,8 +559,9 @@ namespace moppe::mov {
     m_impl->build (state);
   }
 
-  void Boat::place (const Vec3& at, const Vec3& heading, meters_t level) {
-    m_impl->place (at, heading, meters_value (level));
+  void Boat::place (position_t at, direction_t heading, meters_t level) {
+    m_impl->place (
+      position_value (at), direction_value (heading), meters_value (level));
   }
 
   void Boat::set_trunks (const TrunkField* trunks) {
@@ -614,28 +615,28 @@ namespace moppe::mov {
     });
   }
 
-  Vec3 Boat::position () const {
-    return m_impl->point (Vec3 ());
+  position_t Boat::position () const {
+    return moppe::position (m_impl->point (Vec3 ()));
   }
 
-  Vec3 Boat::forward () const {
-    return m_impl->axis (Vec3 (0, 0, 1));
+  direction_t Boat::forward () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 0, 1)));
   }
 
-  Vec3 Boat::up () const {
-    return m_impl->axis (Vec3 (0, 1, 0));
+  direction_t Boat::up () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 1, 0)));
   }
 
-  Vec3 Boat::left () const {
-    return m_impl->axis (Vec3 (1, 0, 0));
+  direction_t Boat::left () const {
+    return unit_direction (m_impl->axis (Vec3 (1, 0, 0)));
   }
 
-  Vec3 Boat::velocity () const {
-    return from_b3 (b3Body_GetLinearVelocity (m_impl->body));
+  velocity_t Boat::velocity () const {
+    return moppe::velocity (from_b3 (b3Body_GetLinearVelocity (m_impl->body)));
   }
 
-  Vec3 Boat::point (const Vec3& local) const {
-    return m_impl->point (local);
+  position_t Boat::point (const displacement_t& local) const {
+    return moppe::position (m_impl->point (displacement_value (local)));
   }
 
   kilograms_t Boat::mass () const {
@@ -644,12 +645,14 @@ namespace moppe::mov {
             (m_impl->kept.passenger ? boat_rig::crew : nobody));
   }
 
-  void Boat::push (const Vec3& at, const impulse_t& impulse) {
+  void Boat::push (position_t at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
     m.kept.still = seconds_t {};
-    b3Body_ApplyLinearImpulse (
-      m.body, to_b3 (impulse_value (impulse)), to_b3 (at), true);
+    b3Body_ApplyLinearImpulse (m.body,
+                               to_b3 (impulse_value (impulse)),
+                               to_b3 (position_value (at)),
+                               true);
   }
 
   bool Boat::asleep () const {

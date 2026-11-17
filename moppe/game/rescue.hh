@@ -34,32 +34,32 @@ namespace moppe::game {
   // A machine as the bumpers see it.
   struct MachineBody {
     Machine machine = Machine::bike;
-    Vec3 position;
-    Vec3 forward { 0, 0, 1 };
-    Vec3 up { 0, 1, 0 };
-    Vec3 velocity;
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    velocity_t velocity = moppe::velocity (Vec3 ());
     kilograms_t mass = 1.0f * u::kg;
     // This game's to push; the other player's machines are theirs.
     bool ours = true;
     // Whether it tows something, the frame of what it tows, for its
     // towed bumpers, and its weight.
     bool towing = false;
-    Vec3 towed_position;
-    Vec3 towed_forward { 0, 0, 1 };
-    Vec3 towed_up { 0, 1, 0 };
+    position_t towed_position {};
+    direction_t towed_forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t towed_up = unit_direction (Vec3 (0, 1, 0));
     kilograms_t towed_mass = 1.0f * u::kg;
     // Its own bumpers, in place of its kind's: what is not one of the
     // players' machines (a bus, bus.hh).
     std::span<const Bumper> bumpers;
 
-    Vec3 point (const Vec3& local) const;
+    position_t point (const displacement_t& local) const;
   };
 
   // Two machines meeting: `a` takes `impulse` at `at`, and `b` the
   // opposite. `speed` is how fast they closed.
   struct Bump {
     int a = 0, b = 0;
-    Vec3 at;
+    position_t at {};
     impulse_t impulse = moppe::impulse (Vec3 ());
     speed_t speed {};
   };
@@ -72,7 +72,7 @@ namespace moppe::game {
   // long the throttle has been open since without its getting away, and
   // the help it has had.
   struct Trouble {
-    Vec3 anchor;
+    position_t anchor {};
     seconds_t strain {};
     bool stuck = false;
     seconds_t heave_wait {};
@@ -81,13 +81,16 @@ namespace moppe::game {
 
   // Moves a machine's trouble on by `dt`, `throttle` being its driver's
   // (zero when no one drives it). True when it should heave just now.
-  bool
-  strain (Trouble& trouble, const Vec3& position, float throttle, seconds_t dt);
+  bool strain (Trouble& trouble,
+               position_t position,
+               control_signal_t throttle,
+               seconds_t dt);
 
   // The change of velocity a heave gives: along the level way it faces,
   // signed by the throttle, and up.
-  velocity_t
-  heave (const Trouble& trouble, const Vec3& forward, float throttle);
+  velocity_t heave (const Trouble& trouble,
+                    direction_t forward,
+                    control_signal_t throttle);
 
   // A rope from the walker's hand to a machine.
   struct Haul {
@@ -95,7 +98,7 @@ namespace moppe::game {
     Machine machine = Machine::bike;
     // Where it is tied, in the machine's frame, and how long it is,
     // measured level from there to the walker's feet.
-    Vec3 tie;
+    displacement_t tie = displacement (Vec3 ());
     meters_t rope = 1.4f * u::m;
   };
 
@@ -113,8 +116,8 @@ namespace moppe::game {
   };
   HaulForce haul_force (const Haul& haul,
                         const MachineBody& body,
-                        const Vec3& feet,
-                        const Vec3& walker_velocity);
+                        position_t feet,
+                        velocity_t walker_velocity);
 }
 
 #endif

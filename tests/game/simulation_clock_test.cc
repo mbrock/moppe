@@ -39,10 +39,8 @@ namespace {
         const seconds_t dt =
           seconds (static_cast<float> (game::FIXED_SIMULATION_STEP_SECONDS));
         glider.update (dt);
-        camera.update (glider.physical_position (),
-                       glider.heading (),
-                       glider.physical_velocity (),
-                       dt);
+        camera.update (
+          glider.position (), glider.heading (), glider.velocity (), dt);
         camera.limit (surface, dt);
       }
     }

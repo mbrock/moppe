@@ -513,8 +513,9 @@ namespace moppe::mov {
     m_impl->build (state);
   }
 
-  void JetSki::place (const Vec3& at, const Vec3& heading, meters_t level) {
-    m_impl->place (at, heading, meters_value (level));
+  void JetSki::place (position_t at, direction_t heading, meters_t level) {
+    m_impl->place (
+      position_value (at), direction_value (heading), meters_value (level));
   }
 
   void JetSki::set_trunks (const TrunkField* trunks) {
@@ -555,28 +556,28 @@ namespace moppe::mov {
     });
   }
 
-  Vec3 JetSki::position () const {
-    return m_impl->point (Vec3 ());
+  position_t JetSki::position () const {
+    return moppe::position (m_impl->point (Vec3 ()));
   }
 
-  Vec3 JetSki::forward () const {
-    return m_impl->axis (Vec3 (0, 0, 1));
+  direction_t JetSki::forward () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 0, 1)));
   }
 
-  Vec3 JetSki::up () const {
-    return m_impl->axis (Vec3 (0, 1, 0));
+  direction_t JetSki::up () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 1, 0)));
   }
 
-  Vec3 JetSki::left () const {
-    return m_impl->axis (Vec3 (1, 0, 0));
+  direction_t JetSki::left () const {
+    return unit_direction (m_impl->axis (Vec3 (1, 0, 0)));
   }
 
-  Vec3 JetSki::velocity () const {
-    return from_b3 (b3Body_GetLinearVelocity (m_impl->body));
+  velocity_t JetSki::velocity () const {
+    return moppe::velocity (from_b3 (b3Body_GetLinearVelocity (m_impl->body)));
   }
 
-  Vec3 JetSki::point (const Vec3& local) const {
-    return m_impl->point (local);
+  position_t JetSki::point (const displacement_t& local) const {
+    return moppe::position (m_impl->point (displacement_value (local)));
   }
 
   kilograms_t JetSki::mass () const {
@@ -584,12 +585,14 @@ namespace moppe::mov {
             (m_impl->kept.parked ? 0.0f * u::kg : jet_ski_rig::crew));
   }
 
-  void JetSki::push (const Vec3& at, const impulse_t& impulse) {
+  void JetSki::push (position_t at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
     m.kept.still = seconds_t {};
-    b3Body_ApplyLinearImpulse (
-      m.body, to_b3 (impulse_value (impulse)), to_b3 (at), true);
+    b3Body_ApplyLinearImpulse (m.body,
+                               to_b3 (impulse_value (impulse)),
+                               to_b3 (position_value (at)),
+                               true);
   }
 
   bool JetSki::asleep () const {

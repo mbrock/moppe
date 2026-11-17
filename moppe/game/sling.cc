@@ -20,20 +20,20 @@ namespace moppe::game {
   }
 
   force_t
-  sling_pull (Sling& sling, const Vec3& hook, const Vec3& ring, seconds_t dt) {
+  sling_pull (Sling& sling, position_t hook, position_t ring, seconds_t dt) {
     using namespace sling_rig;
-    const Vec3 along = hook - ring;
-    const float span = length (along);
-    const meters_t stretch = span * u::m - (sling_line + sling.payout);
+    const Vec3 along = position_value (hook) - position_value (ring);
+    const meters_t span = length (along) * u::m;
+    const meters_t stretch = span - (sling_line + sling.payout);
     sling.payout = std::max (meters_t {}, sling.payout - sling_reel * dt);
     const speed_t rate =
       dt > 0.0f * u::s ? (stretch - std::max (sling.stretch, 0.0f * u::m)) / dt
                        : 0.0f * u::m / u::s;
     sling.stretch = stretch;
-    if (stretch <= 0.0f * u::m || span < 1e-4f)
+    if (stretch <= 0.0f * u::m || span < 1e-4f * u::m)
       return force (Vec3 ());
     const newtons_t tension = std::clamp<newtons_t> (
       stiffness * stretch + damping * rate, 0.0f * u::N, strongest);
-    return force (along * (newtons_value (tension) / span));
+    return force (along * (newtons_value (tension) / meters_value (span)));
   }
 }

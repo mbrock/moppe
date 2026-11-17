@@ -147,7 +147,8 @@ namespace moppe::game {
         // however it comes about, takes it in.
         line.stand = from->at;
         const mov::Boat& boat = session.boat ();
-        Vec3 way = boat.velocity () - current_at (around, boat.position ());
+        Vec3 way = velocity_value (boat.velocity ()) -
+                   current_at (around, position_value (boat.position ()));
         way[1] = 0.0f;
         Vec3 out = line.bobber - from->at;
         out[1] = 0.0f;
@@ -478,8 +479,8 @@ namespace moppe::game {
     }
     if (logic.m_doing == Doing::driving (Machine::boat)) {
       const mov::Boat& boat = session.boat ();
-      return Angler { boat.helm_seat (),
-                      Quaternion::rotate (boat.forward (),
+      return Angler { position_value (boat.helm_seat ()),
+                      Quaternion::rotate (direction_value (boat.forward ()),
                                           Vec3 (0, 1, 0),
                                           -logic.m_look_yaw * u::rad) };
     }
@@ -498,7 +499,8 @@ namespace moppe::game {
 
   bool boat_drifting (const GameSession& session, const Surroundings& around) {
     const mov::Boat& boat = session.boat ();
-    Vec3 way = boat.velocity () - current_at (around, boat.position ());
+    Vec3 way = velocity_value (boat.velocity ()) -
+               current_at (around, position_value (boat.position ()));
     way[1] = 0.0f;
     return boat.afloat () && abs (boat.state ().drive) < 0.1f * one &&
            length2 (way) < 0.8f * 0.8f;
@@ -515,7 +517,7 @@ namespace moppe::game {
       return std::nullopt;
     ahead = normalized (ahead);
     if (session.logic ().m_doing == Doing::driving (Machine::boat)) {
-      Vec3 bow = session.boat ().forward ();
+      Vec3 bow = direction_value (session.boat ().forward ());
       bow[1] = 0.0f;
       if (length2 (bow) < 1e-6f || dot (ahead, normalized (bow)) < -0.17f)
         return std::nullopt;

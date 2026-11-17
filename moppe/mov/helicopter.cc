@@ -410,8 +410,8 @@ namespace moppe::mov {
     m_impl->build (state);
   }
 
-  void Helicopter::place (const Vec3& at, const Vec3& heading) {
-    m_impl->place (at, heading);
+  void Helicopter::place (position_t at, direction_t heading) {
+    m_impl->place (position_value (at), direction_value (heading));
   }
 
   void Helicopter::set_trunks (const TrunkField* trunks) {
@@ -454,24 +454,24 @@ namespace moppe::mov {
     });
   }
 
-  Vec3 Helicopter::position () const {
-    return m_impl->point (Vec3 ());
+  position_t Helicopter::position () const {
+    return moppe::position (m_impl->point (Vec3 ()));
   }
 
-  Vec3 Helicopter::forward () const {
-    return m_impl->axis (Vec3 (0, 0, 1));
+  direction_t Helicopter::forward () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 0, 1)));
   }
 
-  Vec3 Helicopter::up () const {
-    return m_impl->axis (Vec3 (0, 1, 0));
+  direction_t Helicopter::up () const {
+    return unit_direction (m_impl->axis (Vec3 (0, 1, 0)));
   }
 
-  Vec3 Helicopter::left () const {
-    return m_impl->axis (Vec3 (1, 0, 0));
+  direction_t Helicopter::left () const {
+    return unit_direction (m_impl->axis (Vec3 (1, 0, 0)));
   }
 
-  Vec3 Helicopter::velocity () const {
-    return from_b3 (b3Body_GetLinearVelocity (m_impl->body));
+  velocity_t Helicopter::velocity () const {
+    return moppe::velocity (from_b3 (b3Body_GetLinearVelocity (m_impl->body)));
   }
 
   bool Helicopter::grounded () const {
@@ -486,16 +486,18 @@ namespace moppe::mov {
     return heli_rig::mass;
   }
 
-  void Helicopter::push (const Vec3& at, const impulse_t& impulse) {
+  void Helicopter::push (position_t at, const impulse_t& impulse) {
     Impl& m = *m_impl;
     m.kept.asleep = false;
     m.kept.still = seconds_t {};
-    b3Body_ApplyLinearImpulse (
-      m.body, to_b3 (impulse_value (impulse)), to_b3 (at), true);
+    b3Body_ApplyLinearImpulse (m.body,
+                               to_b3 (impulse_value (impulse)),
+                               to_b3 (position_value (at)),
+                               true);
   }
 
-  Vec3 Helicopter::point (const Vec3& local) const {
-    return m_impl->point (local);
+  position_t Helicopter::point (const displacement_t& local) const {
+    return moppe::position (m_impl->point (displacement_value (local)));
   }
 
   meters_t Helicopter::altitude () const {

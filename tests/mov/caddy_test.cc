@@ -54,46 +54,46 @@ MOPPE_TEST (a_parked_caddy_settles_on_its_springs_and_stays) {
   const map::SurfaceGeometry ground =
     caddy_test_ground ([] (float, float) { return 10.0f; });
   mov::Car caddy (ground, mov::caddy_rig);
-  caddy.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1));
+  caddy.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (0, 0, 1)));
   caddy_test_run (caddy, 4.0f);
   MOPPE_CHECK (caddy.asleep ());
   MOPPE_CHECK (caddy.grounded ());
   // The axles stand a wheel's radius off the ground.
-  MOPPE_CHECK_NEAR (caddy.position ()[1],
+  MOPPE_CHECK_NEAR (position_value (caddy.position ())[1],
                     10.0f + meters_value (mov::caddy_rig.wheel_radius),
                     0.03f);
-  MOPPE_CHECK (caddy.up ()[1] > 0.999f);
+  MOPPE_CHECK (direction_value (caddy.up ())[1] > 0.999f);
   for (int wheel = 0; wheel < mov::Car::wheel_count; ++wheel)
     MOPPE_CHECK_NEAR (meters_value (caddy.wheel_drop (wheel)), 0.0f, 0.03f);
-  MOPPE_CHECK_NEAR (caddy.position ()[0], 100.0f, 0.05f);
-  MOPPE_CHECK_NEAR (caddy.position ()[2], 100.0f, 0.05f);
+  MOPPE_CHECK_NEAR (position_value (caddy.position ())[0], 100.0f, 0.05f);
+  MOPPE_CHECK_NEAR (position_value (caddy.position ())[2], 100.0f, 0.05f);
 }
 
 MOPPE_TEST (a_parked_caddy_holds_on_a_hillside) {
   const map::SurfaceGeometry hill =
     caddy_test_ground ([] (float, float z) { return 10.0f + 0.25f * z; });
   mov::Car caddy (hill, mov::caddy_rig);
-  caddy.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1));
+  caddy.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (0, 0, 1)));
   caddy_test_run (caddy, 6.0f);
-  MOPPE_CHECK_NEAR (caddy.position ()[2], 100.0f, 0.6f);
+  MOPPE_CHECK_NEAR (position_value (caddy.position ())[2], 100.0f, 0.6f);
   // Nose up the slope.
-  MOPPE_CHECK (caddy.forward ()[1] > 0.15f);
+  MOPPE_CHECK (direction_value (caddy.forward ())[1] > 0.15f);
 }
 
 MOPPE_TEST (the_caddy_drives_steers_and_stops) {
   const map::SurfaceGeometry ground =
     caddy_test_ground ([] (float, float) { return 10.0f; });
   mov::Car caddy (ground, mov::caddy_rig);
-  caddy.place (Vec3 (60, 0, 60), Vec3 (0, 0, 1));
+  caddy.place (position (Vec3 (60, 0, 60)), unit_direction (Vec3 (0, 0, 1)));
   caddy.set_parked (false);
   caddy.set_drive (1.0f);
   caddy_test_run (caddy, 4.0f);
   // Seventy horsepower: a car's pull, nothing like a sports car's.
-  const float speed = length (caddy.velocity ());
-  MOPPE_CHECK (caddy.position ()[2] > 75.0f);
+  const float speed = length (velocity_value (caddy.velocity ()));
+  MOPPE_CHECK (position_value (caddy.position ())[2] > 75.0f);
   MOPPE_CHECK (speed > 9.0f && speed < 20.0f);
-  MOPPE_CHECK_NEAR (caddy.position ()[0], 60.0f, 0.5f);
-  MOPPE_CHECK (caddy.up ()[1] > 0.98f);
+  MOPPE_CHECK_NEAR (position_value (caddy.position ())[0], 60.0f, 0.5f);
+  MOPPE_CHECK (direction_value (caddy.up ())[1] > 0.98f);
 
   // Turning right brings the nose round toward -x (x is the driver's
   // left), without rolling over.
@@ -101,22 +101,22 @@ MOPPE_TEST (the_caddy_drives_steers_and_stops) {
   caddy.set_turn (1.0f);
   caddy_test_run (caddy, 2.0f);
   MOPPE_CHECK (radians_value (caddy.steer ()) > 0.05f);
-  MOPPE_CHECK (caddy.forward ()[0] < -0.3f);
-  MOPPE_CHECK (caddy.up ()[1] > 0.9f);
+  MOPPE_CHECK (direction_value (caddy.forward ())[0] < -0.3f);
+  MOPPE_CHECK (direction_value (caddy.up ())[1] > 0.9f);
 
   caddy.set_turn (0.0f);
   caddy.set_drive (0.0f);
   caddy.set_brake (true);
   caddy_test_run (caddy, 4.0f);
-  MOPPE_CHECK (length (caddy.velocity ()) < 0.3f);
+  MOPPE_CHECK (length (velocity_value (caddy.velocity ())) < 0.3f);
 
   // And it backs up.
   caddy.set_brake (false);
   caddy.set_drive (-1.0f);
-  const Vec3 from = caddy.position ();
-  const Vec3 facing = caddy.forward ();
+  const Vec3 from = position_value (caddy.position ());
+  const Vec3 facing = direction_value (caddy.forward ());
   caddy_test_run (caddy, 2.0f);
-  MOPPE_CHECK (dot (caddy.position () - from, facing) < -3.0f);
+  MOPPE_CHECK (dot (position_value (caddy.position ()) - from, facing) < -3.0f);
 }
 
 MOPPE_TEST (the_caddy_crosses_rough_ground_upright) {
@@ -125,17 +125,19 @@ MOPPE_TEST (the_caddy_crosses_rough_ground_upright) {
            0.04f * z;
   });
   mov::Car caddy (rough, mov::caddy_rig);
-  caddy.place (Vec3 (80, 0, 40), Vec3 (0, 0, 1));
+  caddy.place (position (Vec3 (80, 0, 40)), unit_direction (Vec3 (0, 0, 1)));
   caddy.set_parked (false);
   caddy.set_drive (0.7f);
   float lowest_up = 1.0f;
   for (int i = 0; i < 120 * 8; ++i) {
     caddy.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
-    lowest_up = std::min (lowest_up, static_cast<float> (caddy.up ()[1]));
-    MOPPE_CHECK (std::isfinite (static_cast<float> (caddy.position ()[1])));
+    lowest_up = std::min (
+      lowest_up, static_cast<float> (direction_value (caddy.up ())[1]));
+    MOPPE_CHECK (std::isfinite (
+      static_cast<float> (position_value (caddy.position ())[1])));
   }
   MOPPE_CHECK (lowest_up > 0.6f);
-  MOPPE_CHECK (caddy.position ()[2] > 90.0f);
+  MOPPE_CHECK (position_value (caddy.position ())[2] > 90.0f);
 }
 
 MOPPE_TEST (a_tree_stops_the_caddy) {
@@ -151,22 +153,22 @@ MOPPE_TEST (a_tree_stops_the_caddy) {
   trees.focus (Vec3 (100, 10, 110));
   mov::Car caddy (ground, mov::caddy_rig);
   caddy.set_trunks (&trees);
-  caddy.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1));
+  caddy.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (0, 0, 1)));
   caddy.set_parked (false);
   caddy.set_drive (0.5f);
   caddy_test_run (caddy, 6.0f);
   // Its bumper is two metres ahead of its origin; the trunk stands at
   // 130.
-  MOPPE_CHECK (caddy.position ()[2] < 128.3f);
-  MOPPE_CHECK (caddy.position ()[2] > 120.0f);
-  MOPPE_CHECK (caddy.up ()[1] > 0.9f);
+  MOPPE_CHECK (position_value (caddy.position ())[2] < 128.3f);
+  MOPPE_CHECK (position_value (caddy.position ())[2] > 120.0f);
+  MOPPE_CHECK (direction_value (caddy.up ())[1] > 0.9f);
 }
 
 MOPPE_TEST (a_caddy_on_its_back_is_set_on_its_wheels_again) {
   const map::SurfaceGeometry ground =
     caddy_test_ground ([] (float, float) { return 10.0f; });
   mov::Car caddy (ground, mov::caddy_rig);
-  caddy.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1));
+  caddy.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (0, 0, 1)));
   // Turned half round about its length, and lifted clear.
   mov::Car::State upset = caddy.state ();
   const Vec3 centre = upset.chassis.position + Vec3 (0, 1.5f, 0);
@@ -179,10 +181,10 @@ MOPPE_TEST (a_caddy_on_its_back_is_set_on_its_wheels_again) {
   upset.chassis.position = centre;
   upset.chassis.rotation = rolled;
   caddy.restore (upset);
-  MOPPE_CHECK (caddy.up ()[1] < -0.9f);
+  MOPPE_CHECK (direction_value (caddy.up ())[1] < -0.9f);
   caddy_test_run (caddy, 8.0f);
-  MOPPE_CHECK (caddy.up ()[1] > 0.95f);
-  MOPPE_CHECK_NEAR (caddy.position ()[1],
+  MOPPE_CHECK (direction_value (caddy.up ())[1] > 0.95f);
+  MOPPE_CHECK_NEAR (position_value (caddy.position ())[1],
                     10.0f + meters_value (mov::caddy_rig.wheel_radius),
                     0.05f);
 }
@@ -191,7 +193,7 @@ MOPPE_TEST (a_restored_caddy_stands_as_it_did) {
   const map::SurfaceGeometry ground =
     caddy_test_ground ([] (float, float) { return 10.0f; });
   mov::Car caddy (ground, mov::caddy_rig);
-  caddy.place (Vec3 (100, 0, 100), Vec3 (1, 0, 1));
+  caddy.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (1, 0, 1)));
   caddy.set_parked (false);
   caddy.set_drive (1.0f);
   caddy_test_run (caddy, 2.0f);
@@ -204,15 +206,16 @@ MOPPE_TEST (a_restored_caddy_stands_as_it_did) {
   MOPPE_CHECK (length (back.position - kept.chassis.position) < 1e-3f);
   for (int i = 0; i < 4; ++i)
     MOPPE_CHECK_NEAR (back.rotation[i], kept.chassis.rotation[i], 1e-4f);
-  MOPPE_CHECK_NEAR (
-    length (caddy.velocity ()), length (kept.chassis.linear_velocity), 0.02f);
+  MOPPE_CHECK_NEAR (length (velocity_value (caddy.velocity ())),
+                    length (kept.chassis.linear_velocity),
+                    0.02f);
 }
 
 MOPPE_TEST (the_caddy_is_pulled_by_its_front_wheels) {
   const map::SurfaceGeometry ground =
     caddy_test_ground ([] (float, float) { return 10.0f; });
   mov::Car caddy (ground, mov::caddy_rig);
-  caddy.place (Vec3 (60, 0, 60), Vec3 (0, 0, 1));
+  caddy.place (position (Vec3 (60, 0, 60)), unit_direction (Vec3 (0, 0, 1)));
   caddy.set_parked (false);
   caddy.set_drive (1.0f);
   caddy_test_run (caddy, 1.5f);
@@ -233,11 +236,11 @@ MOPPE_TEST (the_caddy_runs_on_toward_its_top_speed) {
     terrain::surface_elevation_point (10.0f * mp_units::si::metre));
   map::rebuild_geometry (road);
   mov::Car caddy (road, mov::caddy_rig);
-  caddy.place (Vec3 (30, 0, 128), Vec3 (1, 0, 0));
+  caddy.place (position (Vec3 (30, 0, 128)), unit_direction (Vec3 (1, 0, 0)));
   caddy.set_parked (false);
   caddy.set_drive (1.0f);
   caddy_test_run (caddy, 35.0f);
-  const float kmh = length (caddy.velocity ()) * 3.6f;
+  const float kmh = length (velocity_value (caddy.velocity ())) * 3.6f;
   MOPPE_CHECK (kmh > 110.0f && kmh < 150.0f);
-  MOPPE_CHECK (caddy.up ()[1] > 0.98f);
+  MOPPE_CHECK (direction_value (caddy.up ())[1] > 0.98f);
 }

@@ -168,42 +168,44 @@ namespace moppe::game {
       MachineBody body;
       body.machine = machine;
       visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
-        body.position = pose.position;
+        body.position = moppe::position (pose.position);
         if constexpr (requires { pose.render_orientation; }) {
-          body.forward = pose.render_orientation;
-          body.up = pose.render_normal;
+          body.forward = unit_direction (pose.render_orientation);
+          body.up = unit_direction (pose.render_normal);
         } else {
-          body.forward = pose.forward;
-          body.up = pose.up;
+          body.forward = unit_direction (pose.forward);
+          body.up = unit_direction (pose.up);
         }
         if constexpr (requires { pose.trailer_position; }) {
           body.towing = true;
-          body.towed_position = pose.trailer_position;
-          body.towed_forward = pose.trailer_forward;
-          body.towed_up = pose.trailer_up;
+          body.towed_position = moppe::position (pose.trailer_position);
+          body.towed_forward = unit_direction (pose.trailer_forward);
+          body.towed_up = unit_direction (pose.trailer_up);
           body.towed_mass = session.tractor ().trailer_mass ();
         }
       });
       body.mass = session.machine_body (machine).mass;
       body.ours = false;
       if (strangers_were && elapsed > 0.0f) {
-        const Vec3 moved = body.position - (*strangers_were)[i];
+        const Vec3 moved =
+          position_value (body.position) - (*strangers_were)[i];
         if (length2 (moved) < 25.0f)
-          body.velocity = moved * (1.0f / elapsed);
+          body.velocity = moppe::velocity (moved * (1.0f / elapsed));
       }
       strangers.push_back (body);
     }
     std::array<Vec3, machine_count> were;
     for (const MachineBody& body : strangers)
-      were[static_cast<std::size_t> (body.machine)] = body.position;
+      were[static_cast<std::size_t> (body.machine)] =
+        position_value (body.position);
     strangers_were = were;
     // What says how it moves is believed over what was seen to.
     strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
-      theirs.fleet.jeep.velocity;
+      moppe::velocity (theirs.fleet.jeep.velocity);
     strangers[static_cast<std::size_t> (Machine::boat)].velocity =
-      theirs.fleet.boat.velocity;
+      moppe::velocity (theirs.fleet.boat.velocity);
     strangers[static_cast<std::size_t> (Machine::jet_ski)].velocity =
-      theirs.fleet.jet_ski.velocity;
+      moppe::velocity (theirs.fleet.jet_ski.velocity);
   }
 
   std::optional<CompanionSnapshot>

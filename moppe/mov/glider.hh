@@ -83,16 +83,10 @@ namespace moppe::mov {
       return was_attached;
     }
 
-    Vec3 position () const {
-      return position_value (m_position);
-    }
-    position_t physical_position () const {
+    position_t position () const {
       return m_position;
     }
-    Vec3 velocity () const {
-      return velocity_value (m_velocity);
-    }
-    velocity_t physical_velocity () const {
+    velocity_t velocity () const {
       return m_velocity;
     }
     const Vec3& heading () const {

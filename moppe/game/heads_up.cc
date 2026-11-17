@@ -598,7 +598,7 @@ namespace moppe::game {
         height,
         "",
         HudState::Waymark::of (machine),
-        w.session.machine_body (machine).position +
+        position_value (w.session.machine_body (machine).position) +
           Vec3 (0, meters_value (machine_kind (machine).mark_height), 0),
         30.0f,
         50.0f,
@@ -691,50 +691,59 @@ namespace moppe::game {
                          .name = "companion" });
     }
     if (mode != Doing::driving (Machine::bike) && !w.session.can_drop_bike ())
-      marks.push_back ({ .kind = Mark::Kind::Bike,
-                         .position = w.session.bike ().position (),
-                         .colour = dark,
-                         .name = "bike" });
+      marks.push_back (
+        { .kind = Mark::Kind::Bike,
+          .position = position_value (w.session.bike ().position ()),
+          .colour = dark,
+          .name = "bike" });
     if (mode != Doing::driving (Machine::jeep))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.jeep ().position (),
-                         .colour = dark,
-                         .name = "jeep" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = position_value (w.session.jeep ().position ()),
+          .colour = dark,
+          .name = "jeep" });
     if (mode != Doing::driving (Machine::tractor))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.tractor ().position (),
-                         .colour = DisplayColor (0.70f, 0.12f, 0.08f),
-                         .name = "tractor" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = position_value (w.session.tractor ().position ()),
+          .colour = DisplayColor (0.70f, 0.12f, 0.08f),
+          .name = "tractor" });
     if (mode != Doing::driving (Machine::caddy))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.caddy ().position (),
-                         .colour = DisplayColor (0.22f, 0.50f, 0.45f),
-                         .name = "Caddy" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = position_value (w.session.caddy ().position ()),
+          .colour = DisplayColor (0.22f, 0.50f, 0.45f),
+          .name = "Caddy" });
     if (mode != Doing::driving (Machine::mountain_bike))
-      marks.push_back ({ .kind = Mark::Kind::Bike,
-                         .position = w.session.mountain_bike ().position (),
-                         .colour = DisplayColor (0.06f, 0.30f, 0.22f),
-                         .name = "mountainbike" });
+      marks.push_back (
+        { .kind = Mark::Kind::Bike,
+          .position = position_value (w.session.mountain_bike ().position ()),
+          .colour = DisplayColor (0.06f, 0.30f, 0.22f),
+          .name = "mountainbike" });
     if (mode != Doing::driving (Machine::long_john))
-      marks.push_back ({ .kind = Mark::Kind::Bike,
-                         .position = w.session.long_john ().position (),
-                         .colour = DisplayColor (0.58f, 0.575f, 0.57f),
-                         .name = "Long John" });
+      marks.push_back (
+        { .kind = Mark::Kind::Bike,
+          .position = position_value (w.session.long_john ().position ()),
+          .colour = DisplayColor (0.58f, 0.575f, 0.57f),
+          .name = "Long John" });
     if (mode != Doing::driving (Machine::helicopter))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.helicopter ().position (),
-                         .colour = DisplayColor (0.20f, 0.30f, 0.20f),
-                         .name = "helicopter" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = position_value (w.session.helicopter ().position ()),
+          .colour = DisplayColor (0.20f, 0.30f, 0.20f),
+          .name = "helicopter" });
     if (mode != Doing::driving (Machine::boat))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.boat ().position (),
-                         .colour = DisplayColor (0.62f, 0.48f, 0.30f),
-                         .name = "boat" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = position_value (w.session.boat ().position ()),
+          .colour = DisplayColor (0.62f, 0.48f, 0.30f),
+          .name = "boat" });
     if (mode != Doing::driving (Machine::jet_ski))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.jet_ski ().position (),
-                         .colour = DisplayColor (0.04f, 0.56f, 0.58f),
-                         .name = "jet ski" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = position_value (w.session.jet_ski ().position ()),
+          .colour = DisplayColor (0.04f, 0.56f, 0.58f),
+          .name = "jet ski" });
     const Camp& camp = w.session.logic ().m_camp;
     if (camp.hung || camp.fire)
       marks.push_back (

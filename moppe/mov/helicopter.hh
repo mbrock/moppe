@@ -60,7 +60,7 @@ namespace moppe::mov {
     void restore (const State& state);
 
     // Stands it on its skids on the ground at `at`, facing `heading`.
-    void place (const Vec3& at, const Vec3& heading);
+    void place (position_t at, direction_t heading);
     void set_trunks (const TrunkField* trunks);
 
     // Ahead (positive) or back, -1..1; turn right (positive) or left;
@@ -79,21 +79,21 @@ namespace moppe::mov {
 
     void update (seconds_t dt, meters_t water_level);
 
-    Vec3 position () const;
-    Vec3 forward () const;
-    Vec3 up () const;
-    Vec3 left () const;
-    Vec3 velocity () const;
+    position_t position () const;
+    direction_t forward () const;
+    direction_t up () const;
+    direction_t left () const;
+    velocity_t velocity () const;
     bool grounded () const;
     bool asleep () const;
     // Its whole weight, kilograms.
     kilograms_t mass () const;
     // A blow at `at` in the world, newton-seconds: another machine
     // bumping into it, or someone hauling on it. It wakes one asleep.
-    void push (const Vec3& at, const impulse_t& impulse);
-    Vec3 point (const Vec3& local) const;
-    Vec3 pilot_seat () const {
-      return point (Vec3 (seat[0], seat[1], seat[2]));
+    void push (position_t at, const impulse_t& impulse);
+    position_t point (const displacement_t& local) const;
+    position_t pilot_seat () const {
+      return point (displacement (Vec3 (seat[0], seat[1], seat[2])));
     }
     // Height of the skids over the ground beneath them.
     meters_t altitude () const;

@@ -997,7 +997,8 @@ namespace moppe::game {
 
   Vec3 passenger_seat (const CompanionSnapshot& theirs, Machine machine) {
     const Vec3 seat =
-      machine_kind (machine).passenger_seat.value_or (Vec3 (0, 1, 0));
+      displacement_value (machine_kind (machine).passenger_seat.value_or (
+        displacement (Vec3 (0, 1, 0))));
     return visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
       const auto [forward, up] = lie_of (pose);
       const Vec3 left = normalized (cross (up, forward));
@@ -1026,7 +1027,8 @@ namespace moppe::game {
     // Anything of one's own nearer wins.
     float nearest = 1e30f;
     for_each_machine (session.fleet (), [&] (Machine, const auto& body) {
-      nearest = std::min (nearest, length2 (feet - body.position ()));
+      nearest =
+        std::min (nearest, length2 (feet - position_value (body.position ())));
     });
     constexpr float reach = 4.0f;
     std::optional<Machine> found;

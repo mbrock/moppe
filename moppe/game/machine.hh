@@ -27,7 +27,7 @@ namespace moppe::game {
   // One of a machine's spheres, in its frame: x to the left, y up, z
   // forward, from the point its position() names.
   struct Bumper {
-    Vec3 centre;
+    displacement_t centre;
     meters_t radius {};
   };
 
@@ -39,7 +39,7 @@ namespace moppe::game {
   // following camera swings about, so high over its position; and how
   // far behind, at the least, and how high that camera stands.
   struct SeatView {
-    Vec3 eye;
+    displacement_t eye;
     meters_t pivot_height {};
     meters_t distance {};
     meters_t nearest {};
@@ -66,17 +66,17 @@ namespace moppe::game {
     bool skids = false;
     bool wheelies = false;
     // Where it is reached for, in its frame, and from how far.
-    Vec3 reach_from;
+    displacement_t reach_from;
     meters_t reach {};
     // Where its driver stands on getting out, in its frame; none for
     // the water's machines, which set them down over whichever side has
     // the shallowest water.
-    std::optional<Vec3> step_out;
+    std::optional<displacement_t> step_out;
     SeatView view;
     // The other player's seat, where they ride along with its driver
     // (companion.hh): the middle of its cushion, in its frame. None
     // for the bikes and the tractor, which seat one.
-    std::optional<Vec3> passenger_seat;
+    std::optional<displacement_t> passenger_seat;
     // How wide a path through the undergrowth it parts, and how wide
     // the soft shadow under it is (none on the water).
     meters_t undergrowth_parting {};
@@ -87,14 +87,14 @@ namespace moppe::game {
     meters_t driver_mark {};
     std::span<const Bumper> bumpers;
     // Where its weight is centred.
-    Vec3 centre;
+    displacement_t centre;
     // Where a rope is tied at its front or back end.
-    Vec3 front_tie, back_tie;
+    displacement_t front_tie, back_tie;
     // The ring over it that the helicopter's line hooks on
     // (game/sling.hh), and where its bridle's legs are made fast (a
     // bike's two, at its ends, twice over).
-    Vec3 ring;
-    std::array<Vec3, 4> legs {};
+    displacement_t ring;
+    std::array<displacement_t, 4> legs {};
     // The bumpers of what it tows (the tractor's trailer), in the towed
     // body's frame.
     std::span<const Bumper> towed_bumpers;

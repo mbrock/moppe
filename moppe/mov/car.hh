@@ -232,7 +232,7 @@ namespace moppe::mov {
     void restore (const State& state);
 
     // Stands the car on the ground at `at`, facing along `heading`.
-    void place (const Vec3& at, const Vec3& heading);
+    void place (position_t at, direction_t heading);
     // The obstacles its chassis meets; rebuilt into its world when the
     // field changes.
     void set_trunks (const TrunkField* trunks);
@@ -248,22 +248,22 @@ namespace moppe::mov {
 
     void update (seconds_t dt, meters_t water_level);
 
-    Vec3 position () const;
-    Vec3 forward () const;
-    Vec3 up () const;
-    Vec3 left () const;
-    Vec3 velocity () const;
+    position_t position () const;
+    direction_t forward () const;
+    direction_t up () const;
+    direction_t left () const;
+    velocity_t velocity () const;
     bool grounded () const;
     bool asleep () const;
     // Its whole weight.
     kilograms_t mass () const;
     // A blow at `at` in the world: another machine bumping into it, or
     // someone hauling on it. It wakes one asleep.
-    void push (const Vec3& at, const impulse_t& impulse);
+    void push (position_t at, const impulse_t& impulse);
     // A point given in the car's frame, in the world.
-    Vec3 point (const Vec3& local) const;
-    Vec3 driver_seat () const;
-    Vec3 passenger_seat () const;
+    position_t point (const displacement_t& local) const;
+    position_t driver_seat () const;
+    position_t passenger_seat () const;
 
     // How far a wheel hangs below where it stands; negative when its
     // spring is pressed further.

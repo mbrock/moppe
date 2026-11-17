@@ -16,8 +16,8 @@ namespace {
   game::MachineBody jeep_at (const Vec3& position, const Vec3& velocity) {
     game::MachineBody body;
     body.machine = game::Machine::jeep;
-    body.position = position;
-    body.velocity = velocity;
+    body.position = moppe::position (position);
+    body.velocity = moppe::velocity (velocity);
     body.mass = 1120.0f * u::kg;
     return body;
   }
@@ -91,11 +91,11 @@ MOPPE_TEST (machines_that_meet_are_knocked_apart_by_their_masses) {
   // it is the bike whose speed changes.
   game::MachineBody bike = jeep_at (Vec3 (0, 0, 0), Vec3 (3, 0, 0));
   bike.machine = game::Machine::bike;
-  bike.position[1] = 0.6f;
+  position_value (bike.position)[1] = 0.6f;
   bike.mass = 150.0f * u::kg;
   game::MachineBody tractor = jeep_at (Vec3 (1.3f, 0, 0), Vec3 ());
   tractor.machine = game::Machine::tractor;
-  tractor.position[1] = -0.2f;
+  position_value (tractor.position)[1] = -0.2f;
   tractor.mass = 1840.0f * u::kg;
   const std::vector<game::MachineBody> pair { bike, tractor };
   const std::vector<game::Bump> knock = game::find_bumps (pair);
@@ -115,7 +115,8 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   const seconds_t dt = seconds (1.0f / 60.0f);
   // Moving freely, never.
   for (int i = 0; i < 600; ++i)
-    MOPPE_CHECK (!game::strain (trouble, Vec3 (0, 0, i * 0.05f), 1.0f, dt));
+    MOPPE_CHECK (
+      !game::strain (trouble, position (Vec3 (0, 0, i * 0.05f)), 1.0f, dt));
   MOPPE_CHECK (!trouble.stuck);
 
   // Standing still with the throttle open, stuck after three seconds,
@@ -123,7 +124,7 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   trouble = {};
   int heaves = 0;
   for (int i = 0; i < 60 * 6; ++i)
-    if (game::strain (trouble, Vec3 (0.1f, 0, 0), 1.0f, dt))
+    if (game::strain (trouble, position (Vec3 (0.1f, 0, 0)), 1.0f, dt))
       ++heaves;
   MOPPE_CHECK (trouble.stuck);
   MOPPE_CHECK (heaves == 2 || heaves == 3);
@@ -131,7 +132,7 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   // Standing still with no one trying, it stays as it was.
   game::Trouble idle;
   for (int i = 0; i < 600; ++i)
-    game::strain (idle, Vec3 (), 0.0f, dt);
+    game::strain (idle, position (Vec3 ()), 0.0f, dt);
   MOPPE_CHECK (!idle.stuck);
 
   // Two-second bursts of throttle, let off between, as in a turn on the
@@ -139,16 +140,16 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   game::Trouble turning;
   for (int burst = 0; burst < 4; ++burst)
     for (int i = 0; i < 60 * 2 + 10; ++i)
-      game::strain (turning, Vec3 (), i < 120 ? 1.0f : 0.0f, dt);
+      game::strain (turning, position (Vec3 ()), i < 120 ? 1.0f : 0.0f, dt);
   MOPPE_CHECK (!turning.stuck);
 
   // Got three metres away, it is free again.
-  game::strain (trouble, Vec3 (4.0f, 0, 0), 0.0f, dt);
+  game::strain (trouble, position (Vec3 (4.0f, 0, 0)), 0.0f, dt);
   MOPPE_CHECK (!trouble.stuck);
 
   // A heave goes the way the driver wants, and up.
-  const Vec3 back =
-    velocity_value (game::heave (trouble, Vec3 (0, 0.3f, 1), -1.0f));
+  const Vec3 back = velocity_value (
+    game::heave (trouble, unit_direction (Vec3 (0, 0.3f, 1)), -1.0f));
   MOPPE_CHECK (back[2] < -1.0f && back[1] > 1.0f);
 }
 
@@ -163,7 +164,8 @@ MOPPE_TEST (a_tractor_driven_into_a_wall_gets_stuck_and_heaves) {
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
-  session.tractor ().place (Vec3 (60, 0, 194), Vec3 (0, 0, 1));
+  session.tractor ().place (position (Vec3 (60, 0, 194)),
+                            unit_direction (Vec3 (0, 0, 1)));
   session.walker ().spawn (position (Vec3 (62, 10.1f, 194)), Vec3 (0, 0, 1));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::tractor));
@@ -183,12 +185,15 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
-  session.tractor ().place (Vec3 (60, 0, 180), Vec3 (0, 0, 1));
+  session.tractor ().place (position (Vec3 (60, 0, 180)),
+                            unit_direction (Vec3 (0, 0, 1)));
   run ({}, 1.0f);
-  const Vec3 start = session.tractor ().position ();
+  const Vec3 start = position_value (session.tractor ().position ());
   game::Trouble& trouble =
     logic.m_trouble[static_cast<std::size_t> (game::Machine::tractor)];
-  trouble = { .anchor = start, .strain = 4.0f * u::s, .stuck = true };
+  trouble = { .anchor = position (start),
+              .strain = 4.0f * u::s,
+              .stuck = true };
 
   // Behind it, facing away: F takes up the rope rather than climbing up.
   session.walker ().spawn (position (Vec3 (60, 10.1f, 177.5f)),
@@ -207,9 +212,9 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   // Walking off, the tractor comes after, with the walker never more
   // than the rope's length ahead of it.
   run ({ .drive = 1.0f }, 8.0f);
-  const Vec3 moved = session.tractor ().position () - start;
+  const Vec3 moved = position_value (session.tractor ().position ()) - start;
   MOPPE_CHECK (moved[2] < -6.0f);
-  MOPPE_CHECK (session.tractor ().up ()[1] > 0.9f);
+  MOPPE_CHECK (direction_value (session.tractor ().up ())[1] > 0.9f);
   Vec3 rope = session.walker ().position () - session.rope_end ();
   rope[1] = 0.0f;
   MOPPE_CHECK (length (rope) <
@@ -231,10 +236,12 @@ MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
-  session.boat ().place (Vec3 (60, 10, 180), Vec3 (0, 0, 1), -100.0f * u::m);
+  session.boat ().place (position (Vec3 (60, 10, 180)),
+                         unit_direction (Vec3 (0, 0, 1)),
+                         -100.0f * u::m);
   run ({}, 2.0f);
   MOPPE_CHECK (session.boat ().grounded () && !session.boat ().afloat ());
-  const Vec3 start = session.boat ().position ();
+  const Vec3 start = position_value (session.boat ().position ());
 
   // Ahead of its bow: F takes up the rope to the handle rather than
   // taking the helm of a boat that cannot go anywhere.
@@ -243,13 +250,13 @@ MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (session.hauling () == game::Machine::boat);
-  MOPPE_CHECK (logic.m_haul.tie[2] > 2.0f);
+  MOPPE_CHECK (displacement_value (logic.m_haul.tie)[2] > 2.0f);
 
   // Walking off, the boat slides after on its bottom, upright.
   run ({ .drive = 1.0f }, 8.0f);
-  const Vec3 moved = session.boat ().position () - start;
+  const Vec3 moved = position_value (session.boat ().position ()) - start;
   MOPPE_CHECK (moved[2] > 6.0f);
-  MOPPE_CHECK (session.boat ().up ()[1] > 0.9f);
+  MOPPE_CHECK (direction_value (session.boat ().up ())[1] > 0.9f);
 }
 
 MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
@@ -264,7 +271,9 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   session.start_on_foot ();
   // Afloat in knee-deep water, its bow to the open sea.
   mov::JetSki& ski = session.jet_ski ();
-  ski.place (Vec3 (120, 0, 123.0f), Vec3 (0, 0, -1), 0.0f * u::m);
+  ski.place (position (Vec3 (120, 0, 123.0f)),
+             unit_direction (Vec3 (0, 0, -1)),
+             0.0f * u::m);
   session.walker ().spawn (position (Vec3 (140, 1.3f, 140)), Vec3 (0, 0, -1));
   run ({}, 2.0f);
   MOPPE_CHECK (ski.afloat ());
@@ -286,19 +295,22 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   // The throttle open, it is away over deep water at a jet ski's pace,
   // and the odometer counts it.
   run ({ .drive = 1.0f }, 6.0f);
-  MOPPE_CHECK (ski.position ()[2] < 70.0f);
+  MOPPE_CHECK (position_value (ski.position ())[2] < 70.0f);
   MOPPE_CHECK (session.subject_speed_kmh () > 45.0f);
   MOPPE_CHECK (session.subject_speed_kmh () < 75.0f);
   MOPPE_CHECK (logic.m_odometer > 40.0);
-  MOPPE_CHECK (length (session.subject_position () - ski.position ()) < 1e-3f);
+  MOPPE_CHECK (length (session.subject_position () -
+                       position_value (ski.position ())) < 1e-3f);
 
   // Brought back in to the shallows and let run down, F gets off beside
   // it, its engine stops, and it is left afloat.
-  ski.place (Vec3 (120, 0, 123.0f), Vec3 (0, 0, 1), 0.0f * u::m);
+  ski.place (position (Vec3 (120, 0, 123.0f)),
+             unit_direction (Vec3 (0, 0, 1)),
+             0.0f * u::m);
   run ({}, 1.0f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
-  Vec3 off = session.walker ().position () - ski.position ();
+  Vec3 off = session.walker ().position () - position_value (ski.position ());
   off[1] = 0.0f;
   MOPPE_CHECK (length (off) < 3.5f);
   run ({ .drive = 1.0f }, 1.0f);
@@ -314,12 +326,14 @@ MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
-  session.jet_ski ().place (Vec3 (60, 10, 180), Vec3 (0, 0, 1), -100.0f * u::m);
+  session.jet_ski ().place (position (Vec3 (60, 10, 180)),
+                            unit_direction (Vec3 (0, 0, 1)),
+                            -100.0f * u::m);
   session.walker ().spawn (position (Vec3 (90, 10.1f, 90)), Vec3 (0, 0, 1));
   run ({}, 2.0f);
   const mov::JetSki& ski = session.jet_ski ();
   MOPPE_CHECK (ski.grounded () && !ski.afloat ());
-  const Vec3 start = ski.position ();
+  const Vec3 start = position_value (ski.position ());
 
   // Ahead of its bow: F takes up a rope to the eye in its stem rather
   // than getting on a jet ski whose pump has no water to work on.
@@ -328,11 +342,11 @@ MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (session.hauling () == game::Machine::jet_ski);
-  MOPPE_CHECK (logic.m_haul.tie[2] > 1.5f);
+  MOPPE_CHECK (displacement_value (logic.m_haul.tie)[2] > 1.5f);
 
   // Walking off, it slides after on its keel.
   run ({ .drive = 1.0f }, 8.0f);
-  MOPPE_CHECK ((ski.position () - start)[2] > 6.0f);
+  MOPPE_CHECK ((position_value (ski.position ()) - start)[2] > 6.0f);
 }
 
 MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
@@ -343,10 +357,12 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
-  session.jeep ().place (Vec3 (100, 0, 150), Vec3 (0, 0, 1));
-  session.tractor ().place (Vec3 (100, 0, 170), Vec3 (1, 0, 0));
+  session.jeep ().place (position (Vec3 (100, 0, 150)),
+                         unit_direction (Vec3 (0, 0, 1)));
+  session.tractor ().place (position (Vec3 (100, 0, 170)),
+                            unit_direction (Vec3 (1, 0, 0)));
   run ({}, 1.0f);
-  const Vec3 tractor_was = session.tractor ().position ();
+  const Vec3 tractor_was = position_value (session.tractor ().position ());
   session.walker ().spawn (position (Vec3 (102, 10.1f, 150)), Vec3 (0, 0, 1));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::jeep));
@@ -358,16 +374,19 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
   float fastest = 0.0f;
   for (int i = 0; i < 4 * 60; ++i) {
     run ({ .drive = 1.0f }, 1.0f / 60.0f);
-    fastest = std::max (fastest, length (session.tractor ().velocity ()));
+    fastest = std::max (
+      fastest, length (velocity_value (session.tractor ().velocity ())));
   }
   MOPPE_CHECK (fastest < 15.0f);
-  MOPPE_CHECK (session.tractor ().position ()[1] < tractor_was[1] + 2.0f);
-  MOPPE_CHECK (session.jeep ().position ()[2] <
-               session.tractor ().position ()[2]);
+  MOPPE_CHECK (position_value (session.tractor ().position ())[1] <
+               tractor_was[1] + 2.0f);
+  MOPPE_CHECK (position_value (session.jeep ().position ())[2] <
+               position_value (session.tractor ().position ())[2]);
   run ({}, 2.0f);
-  const Vec3 shoved = session.tractor ().position () - tractor_was;
+  const Vec3 shoved =
+    position_value (session.tractor ().position ()) - tractor_was;
   MOPPE_CHECK (std::hypot (shoved[0], shoved[2]) > 0.3f);
-  MOPPE_CHECK (session.tractor ().up ()[1] > 0.99f);
+  MOPPE_CHECK (direction_value (session.tractor ().up ())[1] > 0.99f);
   MOPPE_CHECK (session.tractor ().trailer_up ()[1] > 0.99f);
 }
 
@@ -380,11 +399,13 @@ MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
   // The tractor faces +x, so its trailer stands some 3.7 m toward -x.
-  session.tractor ().place (Vec3 (100, 0, 170), Vec3 (1, 0, 0));
+  session.tractor ().place (position (Vec3 (100, 0, 170)),
+                            unit_direction (Vec3 (1, 0, 0)));
   const Vec3 bed = session.tractor ().trailer_position ();
-  session.jeep ().place (Vec3 (bed[0], 0, 150), Vec3 (0, 0, 1));
+  session.jeep ().place (position (Vec3 (bed[0], 0, 150)),
+                         unit_direction (Vec3 (0, 0, 1)));
   run ({}, 1.0f);
-  const Vec3 tractor_was = session.tractor ().position ();
+  const Vec3 tractor_was = position_value (session.tractor ().position ());
   const Vec3 trailer_was = session.tractor ().trailer_position ();
   session.walker ().spawn (position (Vec3 (bed[0] + 2, 10.1f, 150)),
                            Vec3 (0, 0, 1));
@@ -397,15 +418,16 @@ MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
   float nearest = 1e9f;
   for (int i = 0; i < 4 * 60; ++i) {
     run ({ .drive = 1.0f }, 1.0f / 60.0f);
-    Vec3 apart =
-      session.jeep ().position () - session.tractor ().trailer_position ();
+    Vec3 apart = position_value (session.jeep ().position ()) -
+                 session.tractor ().trailer_position ();
     apart[1] = 0.0f;
     nearest = std::min (nearest, length (apart));
   }
   run ({}, 2.0f);
   const Vec3 trailer_shoved =
     session.tractor ().trailer_position () - trailer_was;
-  const Vec3 tractor_shoved = session.tractor ().position () - tractor_was;
+  const Vec3 tractor_shoved =
+    position_value (session.tractor ().position ()) - tractor_was;
   MOPPE_CHECK (nearest > 1.2f);
   MOPPE_CHECK (trailer_shoved[2] > 0.3f);
   MOPPE_CHECK (trailer_shoved[2] > tractor_shoved[2]);
