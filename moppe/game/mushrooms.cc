@@ -37,20 +37,24 @@ namespace moppe::game {
     // A walker reaches this far, horizontally, to pick.
     constexpr float pick_reach = 2.0f;
 
-    // Each kind's ordinary height in metres at scale one.
-    float kind_height (MushroomKind kind) {
-      switch (kind) {
-      case MushroomKind::chanterelle:
-        return 0.11f;
-      case MushroomKind::funnel_chanterelle:
-        return 0.09f;
-      case MushroomKind::porcini:
-        return 0.17f;
-      case MushroomKind::fly_agaric:
-        return 0.24f;
-      }
-      return 0.1f;
-    }
+    struct MushroomFrame;
+
+    // What each kind is (mushroom_kinds, after the drawing below).
+    struct MushroomKindRow {
+      // What a walker calls it, singular and plural.
+      const char* name;
+      const char* plural;
+      // Fly agaric is admired, not picked.
+      bool edible;
+      // Its ordinary height in metres at scale one.
+      float height;
+      // How many a group holds: `least`, and up to `more` again as the
+      // group's draw rises.
+      int least;
+      float more;
+      void (*draw) (render::DrawList&, const MushroomFrame&, std::uint32_t);
+    };
+    const MushroomKindRow& row (MushroomKind kind);
 
     // A point of a mushroom's profile: its distance from the axis and
     // height, in units of the mushroom's height, and the colour there.
@@ -96,7 +100,7 @@ namespace moppe::game {
                .up = up,
                .east = east,
                .north = north,
-               .height = kind_height (site.kind) * site.scale * storybook_scale,
+               .height = row (site.kind).height * site.scale * storybook_scale,
                .cooked = site.cooked };
     }
 
@@ -285,6 +289,26 @@ namespace moppe::game {
       }
     }
 
+    // By MushroomKind. Funnel chanterelles come in crowds, porcini
+    // alone or in twos.
+    constexpr MushroomKindRow mushroom_kinds[] = {
+      { "chanterelle", "chanterelles", true, 0.11f, 3, 5.0f, draw_chanterelle },
+      { "funnel chanterelle",
+        "funnel chanterelles",
+        true,
+        0.09f,
+        6,
+        8.0f,
+        draw_funnel_chanterelle },
+      { "porcini", "porcini", true, 0.17f, 1, 2.6f, draw_porcini },
+      { "fly agaric", "fly agarics", false, 0.24f, 1, 3.6f, draw_fly_agaric },
+    };
+    static_assert (std::size (mushroom_kinds) == mushroom_kind_count);
+
+    const MushroomKindRow& row (MushroomKind kind) {
+      return mushroom_kinds[static_cast<std::size_t> (kind)];
+    }
+
     // Which kind a tree's group is, by the tree.
     MushroomKind kind_for (ForestForm form, float draw) {
       if (form == ForestForm::conifer || form == ForestForm::pine) {
@@ -301,20 +325,9 @@ namespace moppe::game {
       return MushroomKind::chanterelle;
     }
 
-    // How many mushrooms a group holds: funnel chanterelles come in
-    // crowds, porcini alone or in twos.
+    // How many mushrooms a group holds.
     int group_size (MushroomKind kind, float draw) {
-      switch (kind) {
-      case MushroomKind::chanterelle:
-        return 3 + static_cast<int> (5.0f * draw);
-      case MushroomKind::funnel_chanterelle:
-        return 6 + static_cast<int> (8.0f * draw);
-      case MushroomKind::porcini:
-        return 1 + static_cast<int> (2.6f * draw);
-      case MushroomKind::fly_agaric:
-        return 1 + static_cast<int> (3.6f * draw);
-      }
-      return 1;
+      return row (kind).least + static_cast<int> (row (kind).more * draw);
     }
 
     position_t probe (float x, float z) {
@@ -323,35 +336,15 @@ namespace moppe::game {
   }
 
   const char* mushroom_name (MushroomKind kind) {
-    switch (kind) {
-    case MushroomKind::chanterelle:
-      return "chanterelle";
-    case MushroomKind::funnel_chanterelle:
-      return "funnel chanterelle";
-    case MushroomKind::porcini:
-      return "porcini";
-    case MushroomKind::fly_agaric:
-      return "fly agaric";
-    }
-    return "mushroom";
+    return row (kind).name;
   }
 
   const char* mushroom_plural (MushroomKind kind) {
-    switch (kind) {
-    case MushroomKind::chanterelle:
-      return "chanterelles";
-    case MushroomKind::funnel_chanterelle:
-      return "funnel chanterelles";
-    case MushroomKind::porcini:
-      return "porcini";
-    case MushroomKind::fly_agaric:
-      return "fly agarics";
-    }
-    return "mushrooms";
+    return row (kind).plural;
   }
 
   bool mushroom_edible (MushroomKind kind) {
-    return kind != MushroomKind::fly_agaric;
+    return row (kind).edible;
   }
 
   MushroomPlan plan_mushrooms (const ForestPlan& forest,
@@ -462,21 +455,7 @@ namespace moppe::game {
   }
 
   void draw_mushroom (render::DrawList& list, const MushroomSite& site) {
-    const MushroomFrame frame = mushroom_frame (site);
-    switch (site.kind) {
-    case MushroomKind::chanterelle:
-      draw_chanterelle (list, frame, site.seed);
-      break;
-    case MushroomKind::funnel_chanterelle:
-      draw_funnel_chanterelle (list, frame, site.seed);
-      break;
-    case MushroomKind::porcini:
-      draw_porcini (list, frame, site.seed);
-      break;
-    case MushroomKind::fly_agaric:
-      draw_fly_agaric (list, frame, site.seed);
-      break;
-    }
+    row (site.kind).draw (list, mushroom_frame (site), site.seed);
   }
 
   std::uint64_t MushroomPatch::tile_key (int x, int z) const {

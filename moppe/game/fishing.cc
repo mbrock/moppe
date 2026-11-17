@@ -122,67 +122,74 @@ namespace moppe::game {
       bool sail = false;
     };
 
-    Look look_of (FishKind kind) {
-      switch (kind) {
-      case FishKind::perch:
-        return { { 0.33f, 0.40f, 0.16f },
-                 { 0.86f, 0.84f, 0.66f },
-                 { 0.85f, 0.38f, 0.12f },
-                 0.30f,
-                 true };
-      case FishKind::pike:
-        return { { 0.22f, 0.30f, 0.13f },
-                 { 0.82f, 0.80f, 0.62f },
-                 { 0.40f, 0.36f, 0.18f },
-                 0.17f,
-                 false,
-                 false,
-                 true };
-      case FishKind::roach:
-        return { { 0.30f, 0.36f, 0.38f },
-                 { 0.86f, 0.87f, 0.86f },
-                 { 0.80f, 0.25f, 0.16f },
-                 0.30f };
-      case FishKind::brown_trout:
-        return { { 0.40f, 0.33f, 0.16f },
-                 { 0.88f, 0.78f, 0.50f },
-                 { 0.45f, 0.36f, 0.20f },
-                 0.23f,
-                 false,
-                 true };
-      case FishKind::grayling:
-        return { { 0.36f, 0.38f, 0.40f },
-                 { 0.80f, 0.80f, 0.82f },
-                 { 0.45f, 0.30f, 0.40f },
-                 0.22f,
-                 false,
-                 true,
-                 false,
-                 true };
-      case FishKind::arctic_char:
-        return { { 0.24f, 0.30f, 0.30f },
-                 { 0.92f, 0.42f, 0.18f },
-                 { 0.90f, 0.40f, 0.20f },
-                 0.22f,
-                 false,
-                 false,
-                 true };
-      case FishKind::herring:
-        return { { 0.20f, 0.34f, 0.42f },
-                 { 0.88f, 0.90f, 0.92f },
-                 { 0.60f, 0.66f, 0.70f },
-                 0.20f };
-      case FishKind::cod:
-        return { { 0.42f, 0.38f, 0.22f },
-                 { 0.88f, 0.86f, 0.76f },
-                 { 0.45f, 0.40f, 0.26f },
-                 0.22f,
-                 false,
-                 true };
-      }
-      return {
-        { 0.4f, 0.4f, 0.4f }, { 0.8f, 0.8f, 0.8f }, { 0.5f, 0.5f, 0.5f }, 0.25f
-      };
+    // What each kind is called and looks like.
+    struct FishKindRow {
+      const char* name;
+      Look look;
+    };
+
+    // By FishKind.
+    constexpr FishKindRow fish_kinds[] = {
+      { "perch",
+        { { 0.33f, 0.40f, 0.16f },
+          { 0.86f, 0.84f, 0.66f },
+          { 0.85f, 0.38f, 0.12f },
+          0.30f,
+          true } },
+      { "pike",
+        { { 0.22f, 0.30f, 0.13f },
+          { 0.82f, 0.80f, 0.62f },
+          { 0.40f, 0.36f, 0.18f },
+          0.17f,
+          false,
+          false,
+          true } },
+      { "roach",
+        { { 0.30f, 0.36f, 0.38f },
+          { 0.86f, 0.87f, 0.86f },
+          { 0.80f, 0.25f, 0.16f },
+          0.30f } },
+      { "brown trout",
+        { { 0.40f, 0.33f, 0.16f },
+          { 0.88f, 0.78f, 0.50f },
+          { 0.45f, 0.36f, 0.20f },
+          0.23f,
+          false,
+          true } },
+      { "grayling",
+        { { 0.36f, 0.38f, 0.40f },
+          { 0.80f, 0.80f, 0.82f },
+          { 0.45f, 0.30f, 0.40f },
+          0.22f,
+          false,
+          true,
+          false,
+          true } },
+      { "arctic char",
+        { { 0.24f, 0.30f, 0.30f },
+          { 0.92f, 0.42f, 0.18f },
+          { 0.90f, 0.40f, 0.20f },
+          0.22f,
+          false,
+          false,
+          true } },
+      { "herring",
+        { { 0.20f, 0.34f, 0.42f },
+          { 0.88f, 0.90f, 0.92f },
+          { 0.60f, 0.66f, 0.70f },
+          0.20f } },
+      { "cod",
+        { { 0.42f, 0.38f, 0.22f },
+          { 0.88f, 0.86f, 0.76f },
+          { 0.45f, 0.40f, 0.26f },
+          0.22f,
+          false,
+          true } },
+    };
+    static_assert (std::size (fish_kinds) == fish_kind_count);
+
+    const Look& look_of (FishKind kind) {
+      return fish_kinds[static_cast<std::size_t> (kind)].look;
     }
 
     DisplayColor blend (DisplayColor a, DisplayColor b, float t) {
@@ -201,25 +208,7 @@ namespace moppe::game {
   }
 
   const char* fish_name (FishKind kind) {
-    switch (kind) {
-    case FishKind::perch:
-      return "perch";
-    case FishKind::pike:
-      return "pike";
-    case FishKind::roach:
-      return "roach";
-    case FishKind::brown_trout:
-      return "brown trout";
-    case FishKind::grayling:
-      return "grayling";
-    case FishKind::arctic_char:
-      return "arctic char";
-    case FishKind::herring:
-      return "herring";
-    case FishKind::cod:
-      return "cod";
-    }
-    return "fish";
+    return fishing_parts::fish_kinds[static_cast<std::size_t> (kind)].name;
   }
 
   Fish fish_for (Waters waters, bool upland, std::uint32_t seed) {
