@@ -31,14 +31,15 @@ namespace {
     const game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
     const auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
-    return game::paint_relief_map (surface,
-                                   readings,
-                                   water,
-                                   std::get<terrain::RiverNetwork> (hydrology),
-                                   trails,
-                                   terrain::RoadNetwork {},
-                                   recipe.water_datum (),
-                                   size);
+    return game::paint_relief_map (
+      surface,
+      readings,
+      water,
+      std::get<terrain::RiverNetwork> (hydrology),
+      trails,
+      terrain::RoadNetwork {},
+      terrain::surface_elevation_point (recipe.water_datum ()),
+      size);
   }
 }
 
@@ -46,8 +47,7 @@ MOPPE_TEST (relief_map_is_an_opaque_square_of_the_whole_world) {
   const game::ReliefMap sheet = small_sheet (96);
   MOPPE_CHECK (sheet.size == 96);
   MOPPE_CHECK (sheet.rgba.size () == 96u * 96u * 4u);
-  MOPPE_CHECK (sheet.period_x_m == 1200.0f);
-  MOPPE_CHECK (sheet.period_z_m == 1200.0f);
+  MOPPE_CHECK (sheet.period == plan_extent (1200.0f * u::m, 1200.0f * u::m));
   bool opaque = true;
   for (std::size_t pixel = 0; pixel < 96u * 96u; ++pixel)
     opaque = opaque && sheet.rgba[pixel * 4 + 3] == 255;
@@ -56,12 +56,16 @@ MOPPE_TEST (relief_map_is_an_opaque_square_of_the_whole_world) {
 
 MOPPE_TEST (relief_map_marks_tops_above_the_sea_inside_the_world) {
   const game::ReliefMap sheet = small_sheet (64);
-  MOPPE_CHECK (sheet.highest_m > 0.0f);
+  MOPPE_CHECK (sheet.highest_above_sea > 0.0f * u::m);
+  const meters_t period_x = plan_value (sheet.period).x () * u::m;
+  const meters_t period_z = plan_value (sheet.period).z () * u::m;
   for (const game::ReliefMap::Summit& top : sheet.summits) {
-    MOPPE_CHECK (top.height_m >= 30.0f);
-    MOPPE_CHECK (top.height_m <= sheet.highest_m);
-    MOPPE_CHECK (top.x_m >= 0.0f && top.x_m < sheet.period_x_m);
-    MOPPE_CHECK (top.z_m >= 0.0f && top.z_m < sheet.period_z_m);
+    MOPPE_CHECK (top.above_sea >= 30.0f * u::m);
+    MOPPE_CHECK (top.above_sea <= sheet.highest_above_sea);
+    MOPPE_CHECK (x_of (top.position) >= 0.0f * u::m &&
+                 x_of (top.position) < period_x);
+    MOPPE_CHECK (z_of (top.position) >= 0.0f * u::m &&
+                 z_of (top.position) < period_z);
   }
 }
 

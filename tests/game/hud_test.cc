@@ -12,10 +12,10 @@ namespace {
   Mark at (unsigned who, float x, float y, bool in_view = true) {
     Mark mark;
     mark.who = who;
-    mark.x = x;
-    mark.y = y;
+    mark.x = x * u::pt;
+    mark.y = y * u::pt;
     mark.in_view = in_view;
-    mark.alpha = 1.0f;
+    mark.alpha = 1.0f * opacity[one];
     return mark;
   }
 
@@ -27,17 +27,19 @@ namespace {
     auto groups = game::group_waymarks (
       marks,
       [&] (unsigned group) {
-        float x = 0.0f, y = 0.0f, n = 0.0f;
+        points_t x = 0.0f * u::pt, y = 0.0f * u::pt;
+        int n = 0;
         for (unsigned i = 0; i < marks.size (); ++i)
           if (group & (1u << i)) {
             x += marks[i].x;
             y += marks[i].y;
-            n += 1.0f;
+            ++n;
           }
-        x /= n;
-        y /= n;
-        const float half = 20.0f + 15.0f * (n - 1.0f);
-        return game::HudBox { x - half, y - 20.0f, x + half, y + 20.0f };
+        x /= static_cast<float> (n);
+        y /= static_cast<float> (n);
+        const points_t half = (20.0f + 15.0f * (n - 1)) * u::pt;
+        const points_t tall = 20.0f * u::pt;
+        return game::HudBox { x - half, y - tall, x + half, y + tall };
       },
       before);
     std::ranges::sort (groups);
@@ -65,7 +67,7 @@ MOPPE_TEST (waymarks_whose_markers_would_meet_share_one) {
     grouped ({ at (Mark::Bike, 100, 100), at (Mark::Jeep, 100, 100, false) }) ==
     (std::vector<unsigned> { 1, 2 }));
   auto faded = at (Mark::Jeep, 100, 100);
-  faded.alpha = 0.0f;
+  faded.alpha = 0.0f * opacity[one];
   MOPPE_CHECK (grouped ({ at (Mark::Bike, 100, 100), faded }) ==
                std::vector<unsigned> { 1 });
 }

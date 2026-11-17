@@ -64,70 +64,108 @@ namespace moppe {
       constexpr const char* map_key = "M";
 #endif
 
-      // The gauge: a hairline arc of radius gauge_radius points, open at the
+      // The gauge: a hairline arc of radius gauge_radius, open at the
       // bottom, with a notch riding it from zero at lower left to full
       // scale at lower right.
-      constexpr float gauge_radius = 30.0f;
-      constexpr float gauge_margin = 30.0f;
+      constexpr points_t gauge_radius = 30.0f * u::pt;
+      constexpr points_t gauge_margin = 30.0f * u::pt;
       // A host's own buttons (platform::offer_actions) have the lower
       // right corner, under the thumb; the gauge and the basket's tally
       // then stand this far in from it.
-      constexpr float thumb_room = 92.0f;
-      constexpr float gauge_start = 225.0f * PI / 180.0f;
-      constexpr float gauge_sweep = 270.0f * PI / 180.0f;
-      constexpr float gauge_full_scale_kmh = 160.0f;
+      constexpr points_t thumb_room = 92.0f * u::pt;
+      constexpr radians_t gauge_start = (225.0f * PI / 180.0f) * u::rad;
+      constexpr radians_t gauge_sweep = (270.0f * PI / 180.0f) * u::rad;
+      constexpr kilometres_per_hour_t gauge_full_scale =
+        160.0f * (u::km / u::h);
       constexpr int reserve_dashes = 12;
 
-      constexpr float ink = 0.96f; // the off-white every element is set in
+      // The off-white every element is set in, black, and white.
+      constexpr DisplayColor ink (0.96f, 0.96f, 0.96f);
+      constexpr DisplayColor black (0.0f, 0.0f, 0.0f);
+      constexpr DisplayColor white (1.0f, 1.0f, 1.0f);
 
       // The chart: its radius as a share of the frame's shorter side,
       // within bounds, its margin, and the bezel's outer radius in units
       // of it.
-      constexpr float chart_share = 0.115f;
-      constexpr float chart_least = 54.0f;
-      constexpr float chart_most = 88.0f;
-      constexpr float chart_margin = 24.0f;
-      constexpr float chart_bezel = 1.20f;
+      constexpr proportion_t chart_share = 0.115f * proportion[one];
+      constexpr points_t chart_least = 54.0f * u::pt;
+      constexpr points_t chart_most = 88.0f * u::pt;
+      constexpr points_t chart_margin = 24.0f * u::pt;
+      constexpr scale_factor_t chart_bezel = 1.20f * scale_factor[one];
       // The ground it shows round the subject: a walk's worth, widening
       // with speed, and wider still from the air.
-      constexpr float chart_reach_foot_m = 220.0f;
-      constexpr float chart_reach_fast_m = 600.0f;
-      constexpr float chart_reach_air_m = 800.0f;
+      constexpr meters_t chart_reach_foot = 220.0f * u::m;
+      constexpr meters_t chart_reach_fast = 600.0f * u::m;
+      constexpr meters_t chart_reach_air = 800.0f * u::m;
+
+      // Faded in and out, and how faint a thing is to be drawn at all.
+      constexpr opacity_t opaque = 1.0f * opacity[one];
+      constexpr opacity_t transparent = 0.0f * opacity[one];
+      constexpr opacity_t unseen = 0.002f * opacity[one];
+
+      // Sets a text style's colour (TextStyle is a boundary of floats).
+      void tint (TextStyle& style, DisplayColor colour) {
+        style.red = colour.red;
+        style.green = colour.green;
+        style.blue = colour.blue;
+      }
+
+      // The chart's scale: points on the screen a metre of ground.
+      using points_per_metre_t = quantity<display_point / si::metre, float>;
 
       struct ChartPlacement {
-        float radius, outer, x, y;
+        points_t radius, outer, x, y;
       };
 
-      ChartPlacement chart_placement (int width, int height, bool aside) {
-        const float r = std::clamp (
-          chart_share * std::min (width, height), chart_least, chart_most);
-        const float outer = chart_bezel * r;
+      ChartPlacement
+      chart_placement (points_t width, points_t height, bool aside) {
+        const points_t share = chart_share * std::min (width, height);
+        const points_t r = std::clamp (share, chart_least, chart_most);
+        const points_t outer = quantity_cast<display_length> (chart_bezel * r);
         return { r,
                  outer,
                  aside ? width - chart_margin - outer : chart_margin + outer,
-                 aside ? chart_margin + outer + 16.0f
+                 aside ? chart_margin + outer + 16.0f * u::pt
                        : height - chart_margin - outer };
       }
 
-      float clamp01 (float value) {
-        return std::clamp (value, 0.0f, 1.0f);
+      // Clamps a dimensionless reading (a proportion, an opacity) to 0..1.
+      template <typename Q>
+      Q clamp01 (Q value) {
+        return std::clamp (
+          value, Q (0.0f * Q::reference), Q (1.0f * Q::reference));
       }
 
       // Exponential approach, frame-rate independent: `rate` is the
       // fraction of the remaining distance closed per second's e-fold.
-      float approach (float value, float target, float rate, float dt) {
-        return target + (value - target) * std::exp (-rate * dt);
+      template <typename Q>
+      Q approach (Q value, Q target, damping_t rate, seconds_t dt) {
+        return target + (value - target) *
+                          std::exp ((-rate * dt).numerical_value_in (one));
       }
 
-      float ease (float t) {
-        t = clamp01 (t);
-        return t * t * (3.0f - 2.0f * t);
+      // Smoothstep of a dimensionless reading clamped to 0..1.
+      template <typename Q>
+      Q ease (Q value) {
+        const float t = clamp01 (value).numerical_value_in (one);
+        return t * t * (3.0f - 2.0f * t) * Q::reference;
+      }
+
+      // How far a word said `age` ago shows: in over `rise`, held until
+      // `hold`, and out over `fall`.
+      opacity_t
+      said (seconds_t age, seconds_t rise, seconds_t hold, seconds_t fall) {
+        return clamp01 (opaque - (age - hold) / fall) * clamp01 (age / rise);
       }
 
       // Builds closed outlines from lines and circular arcs.  Every curve
       // starts exactly where the last ended, and the closing curve is
       // snapped onto the first point, so Slug's closed-contour invariant
       // holds without trusting trigonometry to round-trip.
+      //
+      // The outlines here and below are glyph outlines (render::
+      // OutlinePoint, Slug's boundary of floats) in the shape's own unit,
+      // which place_shape's scale maps to points; their angles are typed.
       class Pen {
       public:
         explicit Pen (OutlinePoint start) : m_start (start), m_at (start) {}
@@ -138,16 +176,18 @@ namespace moppe {
         }
 
         // A circular arc about (cx, cy) from the current point, whose angle
-        // is `from`, through `sweep` radians.  Quadratic segments of at most
-        // 30 degrees stay within 0.06% of the radius.
-        void arc (float cx, float cy, float radius, float from, float sweep) {
-          const int segments =
-            std::max (1, (int)std::ceil (std::fabs (sweep) / (PI / 6.0f)));
-          const float step = sweep / segments;
-          const float reach = radius / std::cos (0.5f * step);
+        // is `from`, through `sweep`.  Quadratic segments of at most 30
+        // degrees stay within 0.06% of the radius.
+        void arc (
+          float cx, float cy, float radius, radians_t from, radians_t sweep) {
+          const int segments = std::max (
+            1,
+            (int)std::ceil (std::fabs (radians_value (sweep)) / (PI / 6.0f)));
+          const radians_t step = sweep / segments;
+          const float reach = radius / std::cos (radians_value (0.5f * step));
           for (int i = 0; i < segments; ++i) {
-            const float mid = from + (i + 0.5f) * step;
-            const float end = from + (i + 1) * step;
+            const float mid = radians_value (from + (i + 0.5f) * step);
+            const float end = radians_value (from + (i + 1) * step);
             const OutlinePoint control { cx + reach * std::cos (mid),
                                          cy + reach * std::sin (mid) };
             const OutlinePoint to { cx + radius * std::cos (end),
@@ -176,36 +216,41 @@ namespace moppe {
         OutlineContour m_contour;
       };
 
-      OutlinePoint polar (float radius, float angle) {
-        return { radius * std::cos (angle), radius * std::sin (angle) };
+      OutlinePoint polar (float radius, radians_t angle) {
+        return { radius * std::cos (radians_value (angle)),
+                 radius * std::sin (radians_value (angle)) };
       }
+
+      constexpr radians_t half_turn = PI * u::rad;
+      constexpr radians_t full_turn = (2.0f * PI) * u::rad;
 
       // A stroke of half-width `half` along the circle of radius `radius`,
       // from angle `from` through `sweep`, with round caps.
       OutlineContour
-      stroked_arc (float radius, float half, float from, float sweep) {
-        const float turn = sweep >= 0.0f ? PI : -PI;
-        const float to = from + sweep;
+      stroked_arc (float radius, float half, radians_t from, radians_t sweep) {
+        const radians_t turn = sweep >= 0.0f * u::rad ? half_turn : -half_turn;
+        const radians_t to = from + sweep;
         Pen pen (polar (radius + half, from));
         pen.arc (0, 0, radius + half, from, sweep);
         const OutlinePoint end = polar (radius, to);
         pen.arc (end.x, end.y, half, to, turn);
         pen.arc (0, 0, radius - half, to, -sweep);
         const OutlinePoint start = polar (radius, from);
-        pen.arc (start.x, start.y, half, from + PI, turn);
+        pen.arc (start.x, start.y, half, from + half_turn, turn);
         return pen.close ();
       }
 
       OutlineContour disc (float radius) {
         Pen pen ({ radius, 0.0f });
-        pen.arc (0, 0, radius, 0.0f, 2.0f * PI);
+        pen.arc (0, 0, radius, 0.0f * u::rad, full_turn);
         return pen.close ();
       }
 
       // A circle wound counterclockwise, or clockwise for a hole.
       OutlineContour circle (float radius, bool clockwise) {
         Pen pen ({ radius, 0.0f });
-        pen.arc (0, 0, radius, 0.0f, clockwise ? -2.0f * PI : 2.0f * PI);
+        pen.arc (
+          0, 0, radius, 0.0f * u::rad, clockwise ? -full_turn : full_turn);
         return pen.close ();
       }
 
@@ -359,15 +404,17 @@ namespace moppe {
       OutlineContour capsule (float inner, float outer, float half) {
         Pen pen ({ inner, -half });
         pen.line ({ outer, -half });
-        pen.arc (outer, 0, half, -0.5f * PI, PI);
+        pen.arc (outer, 0, half, (-0.5f * PI) * u::rad, half_turn);
         pen.line ({ inner, half });
-        pen.arc (inner, 0, half, 0.5f * PI, PI);
+        pen.arc (inner, 0, half, (0.5f * PI) * u::rad, half_turn);
         return pen.close ();
       }
 
       // A corner of the chart's picture: where it falls on the screen and
       // where on the sheet, in periods of it (so that the integers are its
-      // seams).
+      // seams). Floats, as the DrawList's vertices and texture coordinates
+      // they become are: the polygons below are cut and laid down at that
+      // boundary.
       struct ChartCorner {
         float x, y, u, v;
       };
@@ -452,11 +499,11 @@ namespace moppe {
       rounded_rect (float width, float height, float corner, bool clockwise) {
         const float x = 0.5f * width - corner;
         const float y = 0.5f * height - corner;
-        const float quarter = 0.5f * PI;
+        const radians_t quarter = (0.5f * PI) * u::rad;
         if (!clockwise) {
           Pen pen ({ x + corner, -y });
           pen.line ({ x + corner, y });
-          pen.arc (x, y, corner, 0.0f, quarter);
+          pen.arc (x, y, corner, 0.0f * u::rad, quarter);
           pen.line ({ -x, y + corner });
           pen.arc (-x, y, corner, quarter, quarter);
           pen.line ({ -x - corner, -y });
@@ -466,7 +513,7 @@ namespace moppe {
           return pen.close ();
         }
         Pen pen ({ x + corner, -y });
-        pen.arc (x, -y, corner, 0.0f, -quarter);
+        pen.arc (x, -y, corner, 0.0f * u::rad, -quarter);
         pen.line ({ -x, -y - corner });
         pen.arc (-x, -y, corner, -quarter, -quarter);
         pen.line ({ -x - corner, y });
@@ -494,7 +541,7 @@ namespace moppe {
                     std::span<const unsigned> before) {
       std::vector<unsigned> groups;
       for (unsigned i = 0; i < marks.size () && i < 32; ++i)
-        if (marks[i].alpha > 0.002f)
+        if (marks[i].alpha > unseen)
           groups.push_back (1u << i);
       const auto who = [&] (unsigned group) {
         unsigned members = 0;
@@ -509,8 +556,8 @@ namespace moppe {
         const unsigned p = who (a), q = who (b);
         return std::ranges::any_of (
                  before, [&] (unsigned g) { return (g & p) && (g & q); })
-                 ? 30.0f
-                 : 6.0f;
+                 ? 30.0f * u::pt
+                 : 6.0f * u::pt;
       };
       for (bool joined = true; joined;) {
         joined = false;
@@ -520,7 +567,7 @@ namespace moppe {
                 marks[std::countr_zero (groups[b])].in_view)
               continue;
             const HudBox p = box (groups[a]), q = box (groups[b]);
-            const float g = gap (groups[a], groups[b]);
+            const points_t g = gap (groups[a], groups[b]);
             if (p[0] < q[2] + g && q[0] < p[2] + g && p[1] < q[3] + g &&
                 q[1] < p[3] + g) {
               groups[a] |= groups[b];
@@ -553,10 +600,7 @@ namespace moppe {
 
     Hud::~Hud () = default;
 
-    Hud::Hud ()
-        : m_diagnostics (false), m_fps (0), m_gauge_alpha (0),
-          m_reserve_alpha (0), m_reserve_hold (0), m_prompt_alpha (0),
-          m_basket_alpha (0) {
+    Hud::Hud () : m_diagnostics (false) {
       if (const char* mode = moppe::environment ("MOPPE_HUD")) {
         m_diagnostics = std::string (mode) == "debug";
         m_hidden = std::string (mode) == "none";
@@ -576,26 +620,31 @@ namespace moppe {
       const auto add = [&] (std::vector<OutlineContour> contours) {
         return builder.add (contours);
       };
-      const float hairline = 0.55f / gauge_radius;
+      // In units of the gauge's radius.
+      const float hairline =
+        (0.55f * u::pt / gauge_radius).numerical_value_in (one);
       m_shape->track =
         add ({ stroked_arc (1.0f, hairline, gauge_start, -gauge_sweep) });
       {
         // A short radial capsule across the track, pointing along +x and
         // rotated into place when drawn.
-        const float half = 1.15f / gauge_radius;
+        const float half =
+          (1.15f * u::pt / gauge_radius).numerical_value_in (one);
         const float inner = 0.89f, outer = 1.14f;
         Pen pen ({ inner, -half });
         pen.line ({ outer, -half });
-        pen.arc (outer, 0, half, -0.5f * PI, PI);
+        pen.arc (outer, 0, half, (-0.5f * PI) * u::rad, half_turn);
         pen.line ({ inner, half });
-        pen.arc (inner, 0, half, 0.5f * PI, PI);
+        pen.arc (inner, 0, half, (0.5f * PI) * u::rad, half_turn);
         m_shape->notch = add ({ pen.close () });
       }
       {
-        const float slot = gauge_sweep / reserve_dashes;
-        const float sweep = slot - 7.0f * PI / 180.0f;
-        m_shape->dash = add (
-          { stroked_arc (0.8f, 0.45f / gauge_radius, -0.5f * sweep, sweep) });
+        const radians_t slot = gauge_sweep / reserve_dashes;
+        const radians_t sweep = slot - (7.0f * PI / 180.0f) * u::rad;
+        const float half =
+          (0.45f * u::pt / gauge_radius).numerical_value_in (one);
+        m_shape->dash =
+          add ({ stroked_arc (0.8f, half, -0.5f * sweep, sweep) });
       }
       {
         // A waymark's arrowhead, pointing along +x, notched behind.
@@ -611,7 +660,8 @@ namespace moppe {
       m_shape->wide_key = add ({ rounded_rect (3.4f, 1.55f, 0.32f, false),
                                  rounded_rect (3.28f, 1.43f, 0.26f, true) });
       m_shape->bezel =
-        add ({ circle (chart_bezel, false), circle (0.995f, true) });
+        add ({ circle (chart_bezel.numerical_value_in (one), false),
+               circle (0.995f, true) });
       m_shape->rim = add ({ circle (1.013f, false), circle (0.990f, true) });
       m_shape->tick = add ({ capsule (1.045f, 1.085f, 0.0085f) });
       m_shape->major_tick = add ({ capsule (1.035f, 1.125f, 0.011f) });
@@ -622,36 +672,36 @@ namespace moppe {
 
     void Hud::place_shape (render::TextList& text,
                            const SlugGlyph& shape,
-                           float cx,
-                           float cy,
-                           float scale,
-                           float angle,
-                           float red,
-                           float green,
-                           float blue,
-                           float alpha,
-                           float softness) const {
-      if (!m_shapes || shape.empty () || alpha <= 0.002f)
+                           points_t cx,
+                           points_t cy,
+                           points_t scale,
+                           radians_t angle,
+                           DisplayColor colour,
+                           opacity_t alpha,
+                           points_t softness) const {
+      if (!m_shapes || shape.empty () || alpha <= unseen)
         return;
       // Shapes are authored y-up; the HUD is y-down, so a counterclockwise
       // turn on screen negates the y components.
-      const float c = std::cos (angle), s = std::sin (angle);
+      const float c = std::cos (radians_value (angle));
+      const float s = std::sin (radians_value (angle));
+      const float size = points_value (scale);
       render::GlyphQuad quad {};
-      quad.origin[0] = cx;
-      quad.origin[1] = cy;
-      quad.origin[3] = softness;
-      quad.axis_x[0] = scale * c;
-      quad.axis_x[1] = -scale * s;
-      quad.axis_y[0] = -scale * s;
-      quad.axis_y[1] = -scale * c;
+      quad.origin[0] = points_value (cx);
+      quad.origin[1] = points_value (cy);
+      quad.origin[3] = points_value (softness);
+      quad.axis_x[0] = size * c;
+      quad.axis_x[1] = -size * s;
+      quad.axis_y[0] = -size * s;
+      quad.axis_y[1] = -size * c;
       quad.bounds[0] = shape.min_x;
       quad.bounds[1] = shape.min_y;
       quad.bounds[2] = shape.max_x;
       quad.bounds[3] = shape.max_y;
-      quad.color[0] = red;
-      quad.color[1] = green;
-      quad.color[2] = blue;
-      quad.color[3] = alpha;
+      quad.color[0] = colour.red;
+      quad.color[1] = colour.green;
+      quad.color[2] = colour.blue;
+      quad.color[3] = opacity_value (alpha);
       quad.glyph[0] = shape.band_offset;
       quad.glyph[1] = shape.horizontal_bands;
       quad.glyph[2] = shape.vertical_bands;
@@ -659,100 +709,109 @@ namespace moppe {
     }
 
     void Hud::draw_shaded (render::TextList& text,
-                           float x,
-                           float y,
+                           points_t x,
+                           points_t y,
                            const std::string& line,
                            const TextStyle& style,
                            TextAlign align) const {
-      if (!m_font || style.alpha <= 0.002f)
+      if (!m_font || style.alpha <= opacity_value (unseen))
         return;
+      // The style's fields and the font's coordinates are floats, the
+      // text layout's boundary.
       TextStyle shade = style;
-      shade.red = shade.green = shade.blue = 0.0f;
+      tint (shade, black);
       shade.alpha = 0.32f * style.alpha;
       shade.softness = std::max (3.0f, 0.22f * style.size);
-      m_font->draw (text, x, y + 0.04f * style.size, line, shade, align);
-      m_font->draw (text, x, y, line, style, align);
+      m_font->draw (text,
+                    points_value (x),
+                    points_value (y) + 0.04f * style.size,
+                    line,
+                    shade,
+                    align);
+      m_font->draw (
+        text, points_value (x), points_value (y), line, style, align);
     }
 
     void Hud::draw_prompt (render::TextList& text,
                            const std::string& key,
                            const std::string& action,
-                           float alpha,
-                           int width_pts,
-                           int height_pts) const {
-      if (!m_font || alpha <= 0.002f)
+                           opacity_t alpha,
+                           points_t width,
+                           points_t height) const {
+      if (!m_font || alpha <= unseen)
         return;
       const TextStyle words = prompt_words (alpha);
       draw_keyed (text,
-                  0.5f * (width_pts - keyed_width (key, action, words)),
-                  height_pts - 54.0f,
+                  0.5f * (width - keyed_width (key, action, words)),
+                  height - 54.0f * u::pt,
                   key,
                   action,
                   words,
                   alpha);
     }
 
-    TextStyle Hud::prompt_words (float alpha) const {
+    TextStyle Hud::prompt_words (opacity_t alpha) const {
       TextStyle words;
       words.size = 15.0f;
-      words.red = words.green = words.blue = ink;
-      words.alpha = 0.92f * alpha;
+      tint (words, ink);
+      words.alpha = opacity_value (0.92f * alpha);
       words.tracking = 0.02f;
       return words;
     }
 
-    float Hud::keyed_width (const std::string& key,
-                            const std::string& action,
-                            const TextStyle& words) const {
+    points_t Hud::keyed_width (const std::string& key,
+                               const std::string& action,
+                               const TextStyle& words) const {
       if (!m_font)
-        return 0.0f;
-      const float key_width =
-        key.empty () ? 0.0f : (key.size () > 1 ? 3.4f : 1.55f) * words.size;
-      const float gap = key.empty () ? 0.0f : 0.6f * words.size;
-      return key_width + gap + m_font->measure (action, words);
+        return 0.0f * u::pt;
+      const points_t em = words.size * u::pt;
+      const points_t key_width =
+        key.empty () ? 0.0f * u::pt : (key.size () > 1 ? 3.4f : 1.55f) * em;
+      const points_t gap = key.empty () ? 0.0f * u::pt : 0.6f * em;
+      return key_width + gap + m_font->measure (action, words) * u::pt;
     }
 
     void Hud::draw_keyed (render::TextList& text,
-                          float x,
-                          float baseline,
+                          points_t x,
+                          points_t baseline,
                           const std::string& key,
                           const std::string& action,
                           const TextStyle& words,
-                          float alpha) const {
-      if (!m_font || alpha <= 0.002f)
+                          opacity_t alpha) const {
+      if (!m_font || alpha <= unseen)
         return;
       TextStyle cap = words;
       cap.size = (11.5f / 15.0f) * words.size;
       cap.tracking = 0.04f;
-      cap.alpha = 0.86f * alpha;
+      cap.alpha = opacity_value (0.86f * alpha);
 
       const bool has_key = !key.empty ();
       const bool wide = key.size () > 1;
-      const float key_em = words.size;
-      const float key_width = has_key ? (wide ? 3.4f : 1.55f) * key_em : 0.0f;
-      const float gap = has_key ? 0.6f * words.size : 0.0f;
+      const points_t key_em = words.size * u::pt;
+      const points_t key_width =
+        has_key ? (wide ? 3.4f : 1.55f) * key_em : 0.0f * u::pt;
+      const points_t gap = has_key ? 0.6f * key_em : 0.0f * u::pt;
 
       if (has_key) {
         // The keycap sits on the text's optical centre line.
-        const float cx = x + 0.5f * key_width;
-        const float cy = baseline - 0.5f * m_font->cap_height (words.size);
+        const points_t cx = x + 0.5f * key_width;
+        const points_t cy =
+          baseline - 0.5f * m_font->cap_height (words.size) * u::pt;
         const SlugGlyph& outline = wide ? m_shape->wide_key : m_shape->key;
         place_shape (text,
                      outline,
                      cx,
                      cy,
                      key_em,
-                     0.0f,
-                     0.0f,
-                     0.0f,
-                     0.0f,
+                     0.0f * u::rad,
+                     black,
                      0.28f * alpha,
-                     6.0f);
+                     6.0f * u::pt);
         place_shape (
-          text, outline, cx, cy, key_em, 0.0f, ink, ink, ink, 0.7f * alpha);
+          text, outline, cx, cy, key_em, 0.0f * u::rad, ink, 0.7f * alpha);
         draw_shaded (text,
                      cx,
-                     cy + 0.5f * m_font->cap_height (cap.size),
+                     cy + 0.5f * m_font->cap_height (cap.size) * u::pt,
                      key,
                      cap,
                      TextAlign::Center);
@@ -763,70 +822,72 @@ namespace moppe {
 
     void Hud::draw_gauge (render::TextList& text,
                           const HudState& st,
-                          float dt,
-                          int width_pts,
-                          int height_pts) {
+                          seconds_t dt,
+                          points_t width,
+                          points_t height) {
       const bool instrument = !st.on_foot;
-      m_gauge_alpha =
-        approach (m_gauge_alpha, instrument ? 1.0f : 0.0f, 5.0f, dt);
+      m_gauge_alpha = approach (
+        m_gauge_alpha, instrument ? opaque : transparent, 5.0f / u::s, dt);
 
       // The reserve shows only while it is spent or refilling, and lingers
       // a moment after it is full again.
-      const float charge = clamp01 (st.boost_ready01);
-      const bool spending = instrument && !st.gliding && charge < 0.995f;
-      m_reserve_hold = spending ? 1.2f : std::max (0.0f, m_reserve_hold - dt);
-      m_reserve_alpha = approach (
-        m_reserve_alpha, m_reserve_hold > 0.0f ? 1.0f : 0.0f, 4.0f, dt);
+      const proportion_t charge = clamp01 (st.boost_ready);
+      const bool spending =
+        instrument && !st.gliding && charge < 0.995f * proportion[one];
+      m_reserve_hold =
+        spending ? 1.2f * u::s : std::max (0.0f * u::s, m_reserve_hold - dt);
+      m_reserve_alpha =
+        approach (m_reserve_alpha,
+                  m_reserve_hold > 0.0f * u::s ? opaque : transparent,
+                  4.0f / u::s,
+                  dt);
 
-      const float alpha = ease (m_gauge_alpha);
-      if (alpha <= 0.002f || !m_font)
+      const opacity_t alpha = ease (m_gauge_alpha);
+      if (alpha <= unseen || !m_font)
         return;
 
-      const float r = gauge_radius;
-      const float cx =
-        width_pts - gauge_margin - r - (m_host_offers ? thumb_room : 0.0f);
-      const float cy = height_pts - gauge_margin - r;
+      const points_t r = gauge_radius;
+      const points_t cx =
+        width - gauge_margin - r - (m_host_offers ? thumb_room : 0.0f * u::pt);
+      const points_t cy = height - gauge_margin - r;
 
       // A broad, faint shade under the instrument keeps it legible over
       // snowfields without drawing a panel.
       place_shape (text,
                    m_shape->shade,
                    cx,
-                   cy + 2.0f,
+                   cy + 2.0f * u::pt,
                    1.25f * r,
-                   0.0f,
-                   0.0f,
-                   0.0f,
-                   0.0f,
+                   0.0f * u::rad,
+                   black,
                    0.20f * alpha,
-                   60.0f);
+                   60.0f * u::pt);
 
       place_shape (
-        text, m_shape->track, cx, cy, r, 0.0f, ink, ink, ink, 0.30f * alpha);
+        text, m_shape->track, cx, cy, r, 0.0f * u::rad, ink, 0.30f * alpha);
 
-      const float kmh = std::max (0.0f, st.speed_kmh);
-      const float fraction = clamp01 (kmh / gauge_full_scale_kmh);
-      const float angle = gauge_start - gauge_sweep * fraction;
+      const kilometres_per_hour_t kmh =
+        std::max (0.0f * (u::km / u::h), st.speed);
+      const proportion_t fraction = clamp01 (kmh / gauge_full_scale);
+      const radians_t angle = gauge_start - gauge_sweep * fraction;
       place_shape (text,
                    m_shape->notch,
                    cx,
                    cy,
                    r,
                    angle,
-                   0.0f,
-                   0.0f,
-                   0.0f,
+                   black,
                    0.35f * alpha,
-                   4.0f);
-      place_shape (
-        text, m_shape->notch, cx, cy, r, angle, ink, ink, ink, 0.95f * alpha);
+                   4.0f * u::pt);
+      place_shape (text, m_shape->notch, cx, cy, r, angle, ink, 0.95f * alpha);
 
-      if (m_reserve_alpha > 0.002f) {
-        const float slot = gauge_sweep / reserve_dashes;
-        const float filled = charge * reserve_dashes;
+      if (m_reserve_alpha > unseen) {
+        const radians_t slot = gauge_sweep / reserve_dashes;
+        const proportion_t filled = charge * reserve_dashes;
         for (int i = 0; i < reserve_dashes; ++i) {
-          const float lit = clamp01 (filled - i);
-          const float a = (0.07f + 0.36f * lit) * m_reserve_alpha * alpha;
+          const proportion_t lit = clamp01 (filled - i * proportion[one]);
+          const opacity_t a =
+            (0.07f * proportion[one] + 0.36f * lit) * m_reserve_alpha * alpha;
           place_shape (text,
                        m_shape->dash,
                        cx,
@@ -834,174 +895,181 @@ namespace moppe {
                        r,
                        gauge_start - (i + 0.5f) * slot,
                        ink,
-                       ink,
-                       ink,
                        a);
         }
       }
 
       TextStyle numeral;
       numeral.size = 25.0f;
-      numeral.red = numeral.green = numeral.blue = ink;
-      numeral.alpha = 0.94f * alpha;
+      tint (numeral, ink);
+      numeral.alpha = opacity_value (0.94f * alpha);
       numeral.tabular_figures = true;
-      const std::string speed = std::to_string ((int)std::lround (kmh));
+      const std::string speed = std::to_string (
+        (int)std::lround (kmh.numerical_value_in (u::km / u::h)));
       draw_shaded (text,
                    cx,
-                   cy + 0.5f * m_font->cap_height (numeral.size),
+                   cy + 0.5f * m_font->cap_height (numeral.size) * u::pt,
                    speed,
                    numeral,
                    TextAlign::Center);
 
       TextStyle unit;
       unit.size = 8.5f;
-      unit.red = unit.green = unit.blue = ink;
-      unit.alpha = 0.55f * alpha;
+      tint (unit, ink);
+      unit.alpha = opacity_value (0.55f * alpha);
       unit.tracking = 0.08f;
       draw_shaded (text, cx, cy + 0.80f * r, "km/h", unit, TextAlign::Center);
 
       if (st.gliding) {
         char climb[24];
+        const float climbing = speed_value (st.vertical_speed);
         std::snprintf (climb,
                        sizeof climb,
                        "%+.1f m/s",
-                       std::fabs (st.vertical_speed_mps) < 0.05f
-                         ? 0.0f
-                         : st.vertical_speed_mps);
+                       std::fabs (climbing) < 0.05f ? 0.0f : climbing);
         TextStyle vario = unit;
         vario.size = 10.0f;
-        vario.alpha = 0.75f * alpha;
+        vario.alpha = opacity_value (0.75f * alpha);
         vario.tracking = 0.02f;
         vario.tabular_figures = true;
-        draw_shaded (text, cx, cy - r - 12.0f, climb, vario, TextAlign::Center);
+        draw_shaded (
+          text, cx, cy - r - 12.0f * u::pt, climb, vario, TextAlign::Center);
       }
 
       // A wheelie counts its metres over the gauge as it goes, and the
       // one just ridden lingers there a moment with what it scored.
-      const bool wheeling = st.wheelie_m >= 3.0f;
-      const float shown = wheeling ? st.wheelie_m : st.last_wheelie_m;
-      const float linger =
-        wheeling ? 1.0f
-                 : clamp01 (1.0f - (st.wheelie_age_s - 1.6f) / 0.6f) *
-                     (st.last_wheelie_m >= 3.0f ? 1.0f : 0.0f);
-      if (!st.gliding && linger > 0.002f) {
+      constexpr meters_t counted = 3.0f * u::m;
+      const bool wheeling = st.wheelie >= counted;
+      const meters_t ridden = wheeling ? st.wheelie : st.last_wheelie;
+      const proportion_t linger =
+        wheeling ? 1.0f * proportion[one]
+                 : clamp01 (1.0f * proportion[one] -
+                            (st.wheelie_age - 1.6f * u::s) / (0.6f * u::s)) *
+                     (st.last_wheelie >= counted ? 1.0f : 0.0f);
+      if (!st.gliding && linger > 0.002f * proportion[one]) {
         char line[40];
         if (!wheeling && st.last_wheelie_points > 0)
           std::snprintf (line,
                          sizeof line,
                          "wheelie %.0f m  +%d",
-                         shown,
+                         meters_value (ridden),
                          st.last_wheelie_points);
         else
-          std::snprintf (line, sizeof line, "wheelie %.0f m", shown);
+          std::snprintf (
+            line, sizeof line, "wheelie %.0f m", meters_value (ridden));
         TextStyle tally = unit;
         tally.size = 10.0f;
-        tally.alpha = 0.8f * alpha * ease (linger);
+        tally.alpha = opacity_value (0.8f * alpha * ease (linger));
         tally.tracking = 0.02f;
         tally.tabular_figures = true;
-        draw_shaded (text, cx, cy - r - 12.0f, line, tally, TextAlign::Center);
+        draw_shaded (
+          text, cx, cy - r - 12.0f * u::pt, line, tally, TextAlign::Center);
       }
     }
 
     void Hud::draw_basket (render::TextList& text,
                            const HudState& st,
-                           float dt,
-                           int width_pts,
-                           int height_pts) {
+                           seconds_t dt,
+                           points_t width,
+                           points_t height) {
       if (!m_font)
         return;
       // The tally takes the gauge's corner while walking with a basket that
       // has something in it.
       const bool showing =
         st.on_foot && (st.basket_total > 0 || st.fish_total > 0);
-      m_basket_alpha =
-        approach (m_basket_alpha, showing ? 1.0f : 0.0f, 4.0f, dt);
-      const float alpha = ease (m_basket_alpha);
+      m_basket_alpha = approach (
+        m_basket_alpha, showing ? opaque : transparent, 4.0f / u::s, dt);
+      const opacity_t alpha = ease (m_basket_alpha);
+      // Where the words of a moment stand, risen as they come in.
+      const auto cheered = [&] (opacity_t shown) {
+        return height - 96.0f * u::pt - 10.0f * u::pt * (opaque - ease (shown));
+      };
       // A pick is celebrated for a moment just above the prompt.
-      const float fresh = clamp01 (1.0f - (st.reached_age_s - 1.4f) / 0.8f) *
-                          clamp01 (st.reached_age_s / 0.12f);
-      if (fresh > 0.002f && st.reached_name) {
+      const opacity_t fresh =
+        said (st.reached_age, 0.12f * u::s, 1.4f * u::s, 0.8f * u::s);
+      if (fresh > unseen && st.reached_name) {
         TextStyle cheer;
         cheer.size = st.reached_refused ? 15.0f : 21.0f;
-        cheer.red = cheer.green = cheer.blue = ink;
-        cheer.alpha = 0.95f * ease (fresh);
+        tint (cheer, ink);
+        cheer.alpha = opacity_value (0.95f * ease (fresh));
         cheer.tracking = 0.02f;
         const std::string name (st.reached_name);
         const std::string line =
           st.reached_refused ? "Not that one -- the " + name + " is poisonous!"
                              : (name == "egg" ? "An " : "A ") + name + "!";
-        draw_shaded (text,
-                     0.5f * width_pts,
-                     height_pts - 96.0f - 10.0f * (1.0f - ease (fresh)),
-                     line,
-                     cheer,
-                     TextAlign::Center);
+        draw_shaded (
+          text, 0.5f * width, cheered (fresh), line, cheer, TextAlign::Center);
       }
       // A word on supper, where a pick is celebrated.
-      const float sated = clamp01 (1.0f - (st.meal_age_s - 3.2f) / 1.0f) *
-                          clamp01 (st.meal_age_s / 0.25f);
-      if (sated > 0.002f && st.meal) {
+      const opacity_t sated =
+        said (st.meal_age, 0.25f * u::s, 3.2f * u::s, 1.0f * u::s);
+      if (sated > unseen && st.meal) {
         TextStyle word;
         word.size = 19.0f;
-        word.red = word.green = word.blue = ink;
-        word.alpha = 0.95f * ease (sated);
+        tint (word, ink);
+        word.alpha = opacity_value (0.95f * ease (sated));
         word.tracking = 0.02f;
         draw_shaded (text,
-                     0.5f * width_pts,
-                     height_pts - 96.0f - 10.0f * (1.0f - ease (sated)),
+                     0.5f * width,
+                     cheered (sated),
                      st.meal,
                      word,
                      TextAlign::Center);
       }
       // A fish landed, or lost, where a pick is celebrated.
-      const float caught = clamp01 (1.0f - (st.catch_age_s - 3.0f) / 1.0f) *
-                           clamp01 (st.catch_age_s / 0.2f);
-      if (caught > 0.002f && st.catch_note) {
+      const opacity_t caught =
+        said (st.catch_age, 0.2f * u::s, 3.0f * u::s, 1.0f * u::s);
+      if (caught > unseen && st.catch_note) {
         TextStyle word;
         word.size = 21.0f;
-        word.red = word.green = word.blue = ink;
-        word.alpha = 0.95f * ease (caught);
+        tint (word, ink);
+        word.alpha = opacity_value (0.95f * ease (caught));
         word.tracking = 0.02f;
         draw_shaded (text,
-                     0.5f * width_pts,
-                     height_pts - 96.0f - 10.0f * (1.0f - ease (caught)),
+                     0.5f * width,
+                     cheered (caught),
                      st.catch_note,
                      word,
                      TextAlign::Center);
       }
       // News of the other player, small at the top of the frame.
-      const float told = clamp01 (1.0f - (st.notice_age_s - 4.0f) / 1.2f) *
-                         clamp01 (st.notice_age_s / 0.4f);
-      if (told > 0.002f && st.notice) {
+      const opacity_t told =
+        said (st.notice_age, 0.4f * u::s, 4.0f * u::s, 1.2f * u::s);
+      if (told > unseen && st.notice) {
         TextStyle news;
         news.size = 15.0f;
-        news.red = news.green = news.blue = ink;
-        news.alpha = 0.9f * ease (told);
+        tint (news, ink);
+        news.alpha = opacity_value (0.9f * ease (told));
         news.tracking = 0.04f;
-        draw_shaded (
-          text, 0.5f * width_pts, 54.0f, st.notice, news, TextAlign::Center);
+        draw_shaded (text,
+                     0.5f * width,
+                     54.0f * u::pt,
+                     st.notice,
+                     news,
+                     TextAlign::Center);
       }
-      if (alpha <= 0.002f)
+      if (alpha <= unseen)
         return;
-      const float cx = width_pts - gauge_margin - gauge_radius -
-                       (m_host_offers ? thumb_room : 0.0f);
-      const float cy = height_pts - gauge_margin - gauge_radius;
+      const points_t cx = width - gauge_margin - gauge_radius -
+                          (m_host_offers ? thumb_room : 0.0f * u::pt);
+      const points_t cy = height - gauge_margin - gauge_radius;
       TextStyle numeral;
       numeral.size = 25.0f;
-      numeral.red = numeral.green = numeral.blue = ink;
-      numeral.alpha = 0.94f * alpha;
+      tint (numeral, ink);
+      numeral.alpha = opacity_value (0.94f * alpha);
       numeral.tabular_figures = true;
       draw_shaded (
         text,
         cx,
-        cy + 0.5f * m_font->cap_height (numeral.size),
+        cy + 0.5f * m_font->cap_height (numeral.size) * u::pt,
         std::to_string (st.basket_total > 0 ? st.basket_total : st.fish_total),
         numeral,
         TextAlign::Center);
       TextStyle unit;
       unit.size = 8.5f;
-      unit.red = unit.green = unit.blue = ink;
-      unit.alpha = 0.55f * alpha;
+      tint (unit, ink);
+      unit.alpha = opacity_value (0.55f * alpha);
       unit.tracking = 0.08f;
       draw_shaded (text,
                    cx,
@@ -1009,7 +1077,8 @@ namespace moppe {
                    st.basket_total > 0 ? "in the basket" : "fish caught",
                    unit,
                    TextAlign::Center);
-      float below = 11.0f;
+      constexpr points_t leading = 11.0f * u::pt;
+      points_t below = leading;
       if (st.basket_eggs > 0 && st.basket_eggs < st.basket_total) {
         draw_shaded (text,
                      cx,
@@ -1018,7 +1087,7 @@ namespace moppe {
                        (st.basket_eggs > 1 ? " of them eggs" : " an egg"),
                      unit,
                      TextAlign::Center);
-        below += 11.0f;
+        below += leading;
       }
       if (st.basket_total > 0 && st.fish_total > 0)
         draw_shaded (text,
@@ -1033,28 +1102,29 @@ namespace moppe {
     // day, small, over the prompt.
     void Hud::draw_clock (render::TextList& text,
                           const HudState& st,
-                          float dt,
-                          int width_pts,
-                          int height_pts) {
-      m_clock_alpha =
-        approach (m_clock_alpha, st.resting ? 1.0f : 0.0f, 1.5f, dt);
-      const float alpha = ease (m_clock_alpha);
-      if (!m_font || alpha <= 0.002f)
+                          seconds_t dt,
+                          points_t width,
+                          points_t height) {
+      m_clock_alpha = approach (
+        m_clock_alpha, st.resting ? opaque : transparent, 1.5f / u::s, dt);
+      const opacity_t alpha = ease (m_clock_alpha);
+      if (!m_font || alpha <= unseen)
         return;
-      const int minutes =
-        static_cast<int> (std::floor (st.clock_hours * 60.0f)) % (24 * 60);
+      const int minutes = static_cast<int> (std::floor (
+                            st.clock.numerical_value_in (u::h) * 60.0f)) %
+                          (24 * 60);
       char reading[8];
       std::snprintf (
         reading, sizeof reading, "%02d:%02d", minutes / 60, minutes % 60);
       TextStyle hour;
       hour.size = 17.0f;
-      hour.red = hour.green = hour.blue = ink;
-      hour.alpha = 0.72f * alpha;
+      tint (hour, ink);
+      hour.alpha = opacity_value (0.72f * alpha);
       hour.tracking = 0.06f;
       hour.tabular_figures = true;
       draw_shaded (text,
-                   0.5f * width_pts,
-                   height_pts - 92.0f,
+                   0.5f * width,
+                   height - 92.0f * u::pt,
                    reading,
                    hour,
                    TextAlign::Center);
@@ -1062,38 +1132,38 @@ namespace moppe {
 
     void Hud::draw_waymarks (render::TextList& text,
                              const HudState& st,
-                             float dt,
-                             int width_pts,
-                             int height_pts) {
+                             seconds_t dt,
+                             points_t width,
+                             points_t height) {
       if (!m_font)
         return;
       using Mark = HudState::Waymark;
-      const float width = static_cast<float> (width_pts);
-      const float height = static_cast<float> (height_pts);
       std::vector<Mark> marks (st.waymarks.begin (),
                                st.waymarks.begin () + st.waymark_count);
 
       // A distance as the eye wants it: to five metres, or a tenth of a
       // kilometre; and a group's machines as their nearest, or as the
       // span from nearest to furthest where that is wide.
-      const auto distance = [] (float metres, bool unit) {
+      static constexpr meters_t kilometre = 1000.0f * u::m;
+      const auto distance = [] (meters_t metres, bool unit) {
         char words[32];
-        if (metres >= 1000.0f)
+        const float m = meters_value (metres);
+        if (metres >= kilometre)
           std::snprintf (
-            words, sizeof words, unit ? "%.1f km" : "%.1f", metres / 1000.0f);
+            words, sizeof words, unit ? "%.1f km" : "%.1f", m / 1000.0f);
         else
           std::snprintf (words,
                          sizeof words,
                          unit ? "%d m" : "%d",
-                         static_cast<int> (std::round (metres / 5.0f) * 5.0f));
+                         static_cast<int> (std::round (m / 5.0f) * 5.0f));
         return std::string (words);
       };
-      const auto span = [&] (float near, float far) {
+      const auto span = [&] (meters_t near, meters_t far) {
         const std::string first = distance (near, true);
         const std::string last = distance (far, true);
-        if (far <= 1.12f * near + 10.0f || first == last)
+        if (far <= 1.12f * near + 10.0f * u::m || first == last)
           return first;
-        if ((near >= 1000.0f) == (far >= 1000.0f))
+        if ((near >= kilometre) == (far >= kilometre))
           return distance (near, false) + "\u2013" + last;
         return first + " \u2013 " + last;
       };
@@ -1104,19 +1174,20 @@ namespace moppe {
       named.tabular_figures = true;
       TextStyle reading = named;
       reading.size = 12.0f;
-      reading.red = reading.green = reading.blue = ink;
-      constexpr float line = 15.0f;  // a line of words
-      constexpr float pitch = 28.0f; // between silhouettes
-      constexpr float tier = 22.0f;  // a row of them
+      tint (reading, ink);
+      constexpr points_t line = 15.0f * u::pt;  // a line of words
+      constexpr points_t pitch = 28.0f * u::pt; // between silhouettes
+      constexpr points_t tier = 22.0f * u::pt;  // a row of them
+      constexpr points_t edge = 12.0f * u::pt;  // kept from the frame's
 
       // The chart, its heading and map key own their corner.
       const bool aside = m_diagnostics || m_host_offers;
-      const bool charted = st.chart.picture && m_chart_alpha > 0.002f;
-      const auto chart = chart_placement (width_pts, height_pts, aside);
-      const HudBox corner { chart.x - chart.outer - 8.0f,
-                            chart.y - chart.outer - 36.0f,
-                            chart.x + chart.outer + 65.0f,
-                            chart.y + chart.outer + 12.0f };
+      const bool charted = st.chart.picture && m_chart_alpha > unseen;
+      const auto chart = chart_placement (width, height, aside);
+      const HudBox corner { chart.x - chart.outer - 8.0f * u::pt,
+                            chart.y - chart.outer - 36.0f * u::pt,
+                            chart.x + chart.outer + 65.0f * u::pt,
+                            chart.y + chart.outer + 12.0f * u::pt };
 
       // One marker for a group of marks: a pointer, and beside it a
       // block of the members' names and silhouettes. In view, the
@@ -1124,8 +1195,11 @@ namespace moppe {
       // at the frame's edge the pointer points out and the block lies
       // inward of it.
       struct Arrangement {
-        float x = 0.0f, y = 0.0f, angle = 0.0f, size = 0.0f;
-        float red = ink, green = ink, blue = ink, alpha = 0.0f;
+        points_t x = 0.0f * u::pt, y = 0.0f * u::pt;
+        radians_t angle = 0.0f * u::rad;
+        points_t size = 0.0f * u::pt;
+        DisplayColor colour = ink;
+        opacity_t alpha = transparent;
         bool in_view = false;
         TextAlign align = TextAlign::Center;
         std::vector<const Mark*> names;
@@ -1136,7 +1210,9 @@ namespace moppe {
       };
       const auto arrange = [&] (unsigned group) {
         Arrangement a;
-        float across = 0.0f, upward = 0.0f, near = 1e9f, far = 0.0f;
+        // The sum of the members' pointing directions.
+        magnitude_t across = 0.0f * one, upward = 0.0f * one;
+        meters_t near = 1e9f * u::m, far = 0.0f * u::m;
         int members = 0;
         const Mark* first = nullptr;
         for (unsigned i = 0; i < marks.size (); ++i) {
@@ -1145,8 +1221,8 @@ namespace moppe {
           const Mark& mark = marks[i];
           a.x += mark.x;
           a.y += mark.y;
-          across += std::cos (mark.angle);
-          upward += std::sin (mark.angle);
+          across += std::cos (radians_value (mark.angle)) * one;
+          upward += std::sin (radians_value (mark.angle)) * one;
           a.alpha = std::max (a.alpha, mark.alpha);
           a.in_view = mark.in_view;
           ++members;
@@ -1172,11 +1248,12 @@ namespace moppe {
         });
         a.x /= static_cast<float> (members);
         a.y /= static_cast<float> (members);
-        a.angle = a.in_view ? -0.5f * PI : std::atan2 (upward, across);
-        a.size = a.in_view ? 5.5f : 7.0f;
-        a.red = first->red;
-        a.green = first->green;
-        a.blue = first->blue;
+        a.angle = a.in_view ? (-0.5f * PI) * u::rad
+                            : std::atan2 (upward.numerical_value_in (one),
+                                          across.numerical_value_in (one)) *
+                                u::rad;
+        a.size = a.in_view ? 5.5f * u::pt : 7.0f * u::pt;
+        a.colour = first->colour;
         // Quieter over the thing itself than out at the edge.
         a.alpha *= a.vehicles ? 0.94f : a.in_view ? 0.75f : 0.85f;
         a.count = std::popcount (a.vehicles);
@@ -1185,44 +1262,48 @@ namespace moppe {
         if (a.count)
           a.machines = span (near, far);
 
-        float w = a.columns * pitch, h = a.rows * tier;
+        points_t w = a.columns * pitch, h = a.rows * tier;
         if (a.count)
           h += line;
         for (const Mark* m : a.names) {
           w = std::max (w,
                         m_font->measure (std::string (m->name) + "  " +
                                            distance (m->metres, true),
-                                         named));
+                                         named) *
+                          u::pt);
           h += line;
         }
         if (a.count)
-          w = std::max (w, m_font->measure (a.machines, reading));
+          w = std::max (w, m_font->measure (a.machines, reading) * u::pt);
 
-        const float c = std::cos (a.angle), s = std::sin (a.angle);
-        float left, top;
+        // The pointer's direction on the screen (y up): a unit vector,
+        // which places the block.
+        const float c = std::cos (radians_value (a.angle));
+        const float s = std::sin (radians_value (a.angle));
+        points_t left, top;
         if (a.in_view) {
           left = a.x - 0.5f * w;
-          top = a.y - 9.0f - h;
+          top = a.y - 9.0f * u::pt - h;
         } else if (std::fabs (c) > 0.35f) {
           a.align = c > 0.0f ? TextAlign::Right : TextAlign::Left;
-          left = c > 0.0f ? a.x - 13.0f - w : a.x + 13.0f;
+          left = c > 0.0f ? a.x - 13.0f * u::pt - w : a.x + 13.0f * u::pt;
           top = a.y - 0.5f * h;
         } else {
           left = a.x - 0.5f * w;
-          top = s > 0.0f ? a.y + 12.0f : a.y - 12.0f - h;
+          top = s > 0.0f ? a.y + 12.0f * u::pt : a.y - 12.0f * u::pt - h;
         }
-        left = std::clamp (left, 12.0f, std::max (12.0f, width - 12.0f - w));
-        top = std::clamp (top, 12.0f, std::max (12.0f, height - 12.0f - h));
+        left = std::clamp (left, edge, std::max (edge, width - edge - w));
+        top = std::clamp (top, edge, std::max (edge, height - edge - h));
         // A marker at the edge that would cover the chart's corner slides
         // along the edge past it.
         if (charted && !a.in_view) {
-          const float low = std::min (top, a.y - a.size);
-          const float high = std::max (top + h, a.y + a.size);
+          const points_t low = std::min (top, a.y - a.size);
+          const points_t high = std::max (top + h, a.y + a.size);
           if (std::min (left, a.x - a.size) < corner[2] &&
               std::max (left + w, a.x + a.size) > corner[0] &&
               low < corner[3] && high > corner[1]) {
-            const float shift =
-              aside ? corner[3] + 6.0f - low : corner[1] - 6.0f - high;
+            const points_t shift = aside ? corner[3] + 6.0f * u::pt - low
+                                         : corner[1] - 6.0f * u::pt - high;
             a.y += shift;
             top += shift;
           }
@@ -1259,7 +1340,7 @@ namespace moppe {
           // marker of the group it was, as far faded in, rather than
           // fading in under its fading copy: the same name is never
           // drawn twice.
-          float alpha = m_markers.empty () ? 1.0f : 0.0f;
+          opacity_t alpha = m_markers.empty () ? opaque : transparent;
           std::erase_if (m_markers, [&] (const Marker& m) {
             if (!(m.who & members) || std::ranges::count (live, m.who))
               return false;
@@ -1270,60 +1351,49 @@ namespace moppe {
         }
       for (Marker& marker : m_markers) {
         marker.live = std::ranges::count (live, marker.who) > 0;
-        marker.alpha =
-          approach (marker.alpha, marker.live ? 1.0f : 0.0f, 9.0f, dt);
+        marker.alpha = approach (
+          marker.alpha, marker.live ? opaque : transparent, 9.0f / u::s, dt);
       }
-      std::erase_if (
-        m_markers, [] (const Marker& m) { return m.alpha < 0.01f && !m.live; });
+      std::erase_if (m_markers, [] (const Marker& m) {
+        return m.alpha < 0.01f * opacity[one] && !m.live;
+      });
 
       for (const Marker& marker : m_markers) {
         unsigned group = 0;
         for (unsigned i = 0; i < marks.size (); ++i)
-          if ((marks[i].who & marker.who) && marks[i].alpha > 0.002f)
+          if ((marks[i].who & marker.who) && marks[i].alpha > unseen)
             group |= 1u << i;
         if (!group)
           continue;
         const Arrangement a = arrange (group);
-        const float alpha = a.alpha * ease (marker.alpha);
-        if (alpha <= 0.002f)
+        const opacity_t alpha = a.alpha * ease (marker.alpha);
+        if (alpha <= unseen)
           continue;
         place_shape (text,
                      m_shape->arrow,
                      a.x,
                      a.y,
-                     a.size + 1.5f,
+                     a.size + 1.5f * u::pt,
                      a.angle,
-                     0.0f,
-                     0.0f,
-                     0.0f,
+                     black,
                      0.4f * alpha,
-                     4.0f);
-        place_shape (text,
-                     m_shape->arrow,
-                     a.x,
-                     a.y,
-                     a.size,
-                     a.angle,
-                     a.red,
-                     a.green,
-                     a.blue,
-                     alpha);
+                     4.0f * u::pt);
+        place_shape (
+          text, m_shape->arrow, a.x, a.y, a.size, a.angle, a.colour, alpha);
 
         // The block's lines, set flush toward the pointer.
-        const float x = a.align == TextAlign::Left ? a.block[0]
-                        : a.align == TextAlign::Right
-                          ? a.block[2]
-                          : 0.5f * (a.block[0] + a.block[2]);
-        float y = a.block[1];
+        const points_t x = a.align == TextAlign::Left ? a.block[0]
+                           : a.align == TextAlign::Right
+                             ? a.block[2]
+                             : 0.5f * (a.block[0] + a.block[2]);
+        points_t y = a.block[1];
         for (const Mark* m : a.names) {
           TextStyle words = named;
-          words.red = m->red;
-          words.green = m->green;
-          words.blue = m->blue;
-          words.alpha = alpha;
+          tint (words, m->colour);
+          words.alpha = opacity_value (alpha);
           draw_shaded (text,
                        x,
-                       y + 11.0f,
+                       y + 11.0f * u::pt,
                        std::string (m->name) + "  " +
                          distance (m->metres, true),
                        words,
@@ -1334,41 +1404,40 @@ namespace moppe {
           continue;
         // At most four silhouettes a row, balanced: five makes 3 + 2,
         // six 3 + 3, and seven 4 + 3.
-        const float row_width = a.columns * pitch;
+        const points_t row_width = a.columns * pitch;
         int icon = 0;
         for (unsigned v = 0; v < m_shape->vehicles.size (); ++v) {
           if (!(a.vehicles & (1u << v)))
             continue;
           const int row = icon / a.columns;
           const int in_row = std::min (a.columns, a.count - row * a.columns);
-          const float middle = a.align == TextAlign::Left ? x + 0.5f * row_width
-                               : a.align == TextAlign::Right
-                                 ? x - 0.5f * row_width
-                                 : x;
-          const float ix =
+          const points_t middle =
+            a.align == TextAlign::Left    ? x + 0.5f * row_width
+            : a.align == TextAlign::Right ? x - 0.5f * row_width
+                                          : x;
+          const points_t ix =
             middle + (icon % a.columns - 0.5f * (in_row - 1)) * pitch;
-          const float iy = y + 0.5f * tier + row * tier;
+          const points_t iy = y + 0.5f * tier + row * tier;
           const auto& shape = m_shape->vehicles[v];
           // A soft shade keeps the small silhouettes legible over sky,
           // without a dark outline round every wheel and spoke.
           place_shape (text,
                        shape,
                        ix,
-                       iy + 0.5f,
-                       0.9f,
-                       0.0f,
-                       0,
-                       0,
-                       0,
+                       iy + 0.5f * u::pt,
+                       0.9f * u::pt,
+                       0.0f * u::rad,
+                       black,
                        0.5f * alpha,
-                       2.0f);
-          place_shape (text, shape, ix, iy, 0.9f, 0.0f, ink, ink, ink, alpha);
+                       2.0f * u::pt);
+          place_shape (
+            text, shape, ix, iy, 0.9f * u::pt, 0.0f * u::rad, ink, alpha);
           ++icon;
         }
         y += a.rows * tier;
         TextStyle words = reading;
-        words.alpha = alpha;
-        draw_shaded (text, x, y + 11.5f, a.machines, words, a.align);
+        words.alpha = opacity_value (alpha);
+        draw_shaded (text, x, y + 11.5f * u::pt, a.machines, words, a.align);
       }
     }
 
@@ -1381,87 +1450,108 @@ namespace moppe {
     void Hud::draw_chart (DrawList& dl,
                           render::TextList& text,
                           const HudState& st,
-                          float dt,
-                          int width_pts,
-                          int height_pts) {
+                          seconds_t dt,
+                          points_t width,
+                          points_t height) {
       const HudState::Chart& chart = st.chart;
-      const float width = static_cast<float> (width_pts);
-      const float height = static_cast<float> (height_pts);
+      const meters_t period_x = plan_value (chart.period).x () * u::m;
+      const meters_t period_z = plan_value (chart.period).z () * u::m;
       const bool wanted = chart.picture && !st.resting &&
-                          chart.period_x_m > 0.0f && chart.period_z_m > 0.0f &&
-                          std::min (width, height) >= 240.0f;
-      m_chart_alpha = approach (m_chart_alpha, wanted ? 1.0f : 0.0f, 3.0f, dt);
-      const float pace = clamp01 ((st.speed_kmh - 15.0f) / 70.0f);
-      const float reach =
-        st.gliding || st.flying ? chart_reach_air_m
+                          period_x > 0.0f * u::m && period_z > 0.0f * u::m &&
+                          std::min (width, height) >= 240.0f * u::pt;
+      m_chart_alpha = approach (
+        m_chart_alpha, wanted ? opaque : transparent, 3.0f / u::s, dt);
+      const proportion_t pace = clamp01 ((st.speed - 15.0f * (u::km / u::h)) /
+                                         (70.0f * (u::km / u::h)));
+      const meters_t reach =
+        st.gliding || st.flying ? chart_reach_air
         : st.on_foot
-          ? chart_reach_foot_m
-          : chart_reach_foot_m +
-              (chart_reach_fast_m - chart_reach_foot_m) * ease (pace);
-      m_chart_reach_m = m_chart_reach_m > 0.0f
-                          ? approach (m_chart_reach_m, reach, 0.8f, dt)
-                          : reach;
-      const float alpha = ease (m_chart_alpha);
-      if (alpha <= 0.002f || !chart.picture || !m_font)
+          ? chart_reach_foot
+          : meters_t (chart_reach_foot +
+                      (chart_reach_fast - chart_reach_foot) * ease (pace));
+      m_chart_reach = m_chart_reach > 0.0f * u::m
+                        ? approach (m_chart_reach, reach, 0.8f / u::s, dt)
+                        : reach;
+      const opacity_t alpha = ease (m_chart_alpha);
+      if (alpha <= unseen || !chart.picture || !m_font)
         return;
 
       // The lower left, balancing the gauge; or the upper right where the
       // diagnostics' trail map, or a touch screen's thumb, has that corner.
       const bool aside = m_diagnostics || m_host_offers;
-      const auto placement = chart_placement (width_pts, height_pts, aside);
-      const float r = placement.radius, outer = placement.outer;
-      const float cx = placement.x, cy = placement.y;
-      const float scale = r / m_chart_reach_m; // points a metre
+      const auto placement = chart_placement (width, height, aside);
+      const points_t r = placement.radius, outer = placement.outer;
+      const points_t cx = placement.x, cy = placement.y;
+      const points_per_metre_t scale = r / m_chart_reach;
 
       // The way ahead is up, and the screen's right is the ground's to
       // the right of it.
-      float ax = chart.ahead_x, az = chart.ahead_z;
-      if (const float n = std::hypot (ax, az); n > 1e-4f) {
-        ax /= n;
-        az /= n;
-      } else {
-        ax = 0.0f;
-        az = -1.0f;
-      }
-      const float rx = -az, rz = ax;
-      // A stretch of ground from the subject to the screen, in points
-      // from the chart's middle (y down).
-      const auto on_screen = [&] (float dx, float dz, float& sx, float& sy) {
-        sx = (dx * rx + dz * rz) * scale;
-        sy = -(dx * ax + dz * az) * scale;
+      plan_direction_t ahead = plan_unit_direction (Vec2 (0.0f, -1.0f));
+      if (const magnitude_t n = std::hypot (plan_value (chart.ahead).x (),
+                                            plan_value (chart.ahead).z ()) *
+                                one;
+          n > 1e-4f * one)
+        ahead = plan_unit_direction (plan_value (chart.ahead) /
+                                     n.numerical_value_in (one));
+      const plan_direction_t right = plan_unit_direction (
+        Vec2 (-plan_value (ahead).z (), plan_value (ahead).x ()));
+      // A stretch of ground from the subject to the screen, from the
+      // chart's middle (y down).
+      struct OnScreen {
+        points_t x, y;
+      };
+      const auto on_screen = [&] (const plan_displacement_t& d) {
+        return OnScreen { (x_of (d) * plan_value (right).x () +
+                           z_of (d) * plan_value (right).z ()) *
+                            scale,
+                          -(x_of (d) * plan_value (ahead).x () +
+                            z_of (d) * plan_value (ahead).z ()) *
+                            scale };
       };
 
       // The picture, as rings of cells cut at the sheet's seams.
       hud_state (dl);
-      const float light = 0.62f + 0.38f * clamp01 (chart.daylight);
+      const proportion_t light =
+        0.62f * proportion[one] + 0.38f * clamp01 (chart.daylight);
       dl.set_texture (chart.picture);
-      dl.color (light * (0.90f + 0.10f * chart.daylight),
-                light * (0.94f + 0.06f * chart.daylight),
-                light,
-                alpha);
+      dl.color (light.numerical_value_in (one) *
+                  (0.90f + 0.10f * chart.daylight.numerical_value_in (one)),
+                light.numerical_value_in (one) *
+                  (0.94f + 0.06f * chart.daylight.numerical_value_in (one)),
+                light.numerical_value_in (one),
+                opacity_value (alpha));
       dl.begin (render::Prim::Triangles);
       constexpr int rings = 6;
       constexpr int sectors = 96;
-      const float edge = 1.004f * r;
-      const auto corner = [&] (float radius, float angle) {
-        const float sx = radius * std::cos (angle);
-        const float sy = radius * std::sin (angle);
-        const float dx = (rx * sx - ax * sy) / scale;
-        const float dz = (rz * sx - az * sy) / scale;
-        return ChartCorner { cx + sx,
-                             cy + sy,
-                             (chart.x_m + dx) / chart.period_x_m,
-                             (chart.z_m + dz) / chart.period_z_m };
+      const points_t edge = 1.004f * r;
+      // A sector's bound, counterclockwise from the right.
+      const auto sector_angle = [] (int sector) {
+        return (2.0f * PI * sector / sectors) * u::rad;
+      };
+      // Where a point of the chart falls on the screen, and on the sheet.
+      const auto corner = [&] (points_t radius, radians_t angle) {
+        const points_t sx = radius * std::cos (radians_value (angle));
+        const points_t sy = radius * std::sin (radians_value (angle));
+        const meters_t dx =
+          (plan_value (right).x () * sx - plan_value (ahead).x () * sy) / scale;
+        const meters_t dz =
+          (plan_value (right).z () * sx - plan_value (ahead).z () * sy) / scale;
+        return ChartCorner {
+          points_value (cx + sx),
+          points_value (cy + sy),
+          ((x_of (chart.subject) + dx) / period_x).numerical_value_in (one),
+          ((z_of (chart.subject) + dz) / period_z).numerical_value_in (one)
+        };
       };
       for (int ring = 0; ring < rings; ++ring) {
-        const float inner = edge * ring / rings;
-        const float outer_ring = edge * (ring + 1) / rings;
+        const points_t inner = edge * ring / rings;
+        const points_t outer_ring = edge * (ring + 1) / rings;
         for (int sector = 0; sector < sectors; ++sector) {
-          const float a0 = 2.0f * PI * sector / sectors;
-          const float a1 = 2.0f * PI * (sector + 1) / sectors;
+          const radians_t a0 = sector_angle (sector);
+          const radians_t a1 = sector_angle (sector + 1);
           ChartPolygon cell;
           if (ring == 0) {
-            cell.corners[cell.count++] = corner (0.0f, 0.0f);
+            cell.corners[cell.count++] = corner (0.0f * u::pt, 0.0f * u::rad);
           } else {
             cell.corners[cell.count++] = corner (inner, a0);
           }
@@ -1478,21 +1568,27 @@ namespace moppe {
       // A lens's falloff toward the rim, so the paper sits under glass.
       dl.begin (render::Prim::Triangles);
       for (int sector = 0; sector < sectors; ++sector) {
-        const float a0 = 2.0f * PI * sector / sectors;
-        const float a1 = 2.0f * PI * (sector + 1) / sectors;
-        const float inner = 0.70f * r;
-        const float c0 = std::cos (a0), s0 = std::sin (a0);
-        const float c1 = std::cos (a1), s1 = std::sin (a1);
-        const auto at = [&] (float radius, float c, float s, float shade) {
-          dl.color (0.06f, 0.05f, 0.04f, shade * alpha);
-          dl.vertex (cx + radius * c, cy + radius * s);
-        };
-        at (inner, c0, s0, 0.0f);
-        at (edge, c0, s0, 0.20f);
-        at (edge, c1, s1, 0.20f);
-        at (inner, c0, s0, 0.0f);
-        at (edge, c1, s1, 0.20f);
-        at (inner, c1, s1, 0.0f);
+        const radians_t a0 = sector_angle (sector);
+        const radians_t a1 = sector_angle (sector + 1);
+        const points_t inner = 0.70f * r;
+        // The sectors' bounding directions: the vertices' floats.
+        const float c0 = std::cos (radians_value (a0));
+        const float s0 = std::sin (radians_value (a0));
+        const float c1 = std::cos (radians_value (a1));
+        const float s1 = std::sin (radians_value (a1));
+        const auto at =
+          [&] (points_t radius, float c, float s, opacity_t shade) {
+            dl.color (0.06f, 0.05f, 0.04f, opacity_value (shade * alpha));
+            dl.vertex (points_value (cx + radius * c),
+                       points_value (cy + radius * s));
+          };
+        constexpr opacity_t rim = 0.20f * opacity[one];
+        at (inner, c0, s0, transparent);
+        at (edge, c0, s0, rim);
+        at (edge, c1, s1, rim);
+        at (inner, c0, s0, transparent);
+        at (edge, c1, s1, rim);
+        at (inner, c1, s1, transparent);
       }
       dl.end ();
       dl.state (render::DrawState ());
@@ -1505,34 +1601,35 @@ namespace moppe {
       place_shape (text,
                    m_shape->shade,
                    cx,
-                   cy + 2.0f,
+                   cy + 2.0f * u::pt,
                    1.08f * outer,
-                   0.0f,
-                   0.0f,
-                   0.0f,
-                   0.0f,
+                   0.0f * u::rad,
+                   black,
                    0.24f * alpha,
-                   40.0f);
+                   40.0f * u::pt);
       place_shape (text,
                    m_shape->bezel,
                    cx,
                    cy,
                    r,
-                   0.0f,
-                   0.035f,
-                   0.040f,
-                   0.050f,
+                   0.0f * u::rad,
+                   DisplayColor (0.035f, 0.040f, 0.050f),
                    0.58f * alpha);
       place_shape (
-        text, m_shape->rim, cx, cy, r, 0.0f, ink, ink, ink, 0.88f * alpha);
+        text, m_shape->rim, cx, cy, r, 0.0f * u::rad, ink, 0.88f * alpha);
 
-      // A bearing's direction on the screen, as place_shape turns: radians
+      // A bearing's direction on the screen, as place_shape turns:
       // counterclockwise from the right.
-      const auto bearing_angle = [&] (float degrees) {
-        const float b = degrees * PI / 180.0f;
-        float sx, sy;
-        on_screen (std::sin (b), -std::cos (b), sx, sy);
-        return std::atan2 (-sy, sx);
+      constexpr meters_t pace_of_ground = 1.0f * u::m;
+      const auto bearing_angle = [&] (degrees_t bearing) {
+        const radians_t b =
+          (bearing.numerical_value_in (u::deg) * PI / 180.0f) * u::rad;
+        const OnScreen way = on_screen (
+          along (plan_unit_direction (Vec2 (std::sin (radians_value (b)),
+                                            -std::cos (radians_value (b)))),
+                 pace_of_ground));
+        return std::atan2 (-points_value (way.y), points_value (way.x)) *
+               u::rad;
       };
       for (int degrees = 10; degrees < 360; degrees += 10) {
         if (degrees % 90 == 0)
@@ -1543,71 +1640,76 @@ namespace moppe {
                      cx,
                      cy,
                      r,
-                     bearing_angle (static_cast<float> (degrees)),
-                     ink,
-                     ink,
+                     bearing_angle (static_cast<float> (degrees) * u::deg),
                      ink,
                      (major ? 0.85f : 0.45f) * alpha);
       }
       TextStyle quarter;
-      quarter.size = std::clamp (0.135f * r, 9.0f, 12.5f);
+      quarter.size =
+        points_value (std::clamp (0.135f * r, 9.0f * u::pt, 12.5f * u::pt));
       quarter.tracking = 0.02f;
       const char* const quarters[] = { "N", "E", "S", "W" };
       for (int q = 0; q < 4; ++q) {
-        const float angle = bearing_angle (90.0f * q);
-        const float middle = 0.5f * (1.0f + chart_bezel) * r;
+        const radians_t angle = bearing_angle ((90.0f * q) * u::deg);
+        const points_t middle = quantity_cast<display_length> (
+          0.5f * (1.0f * scale_factor[one] + chart_bezel) * r);
         const bool north = q == 0;
-        quarter.red = north ? 1.00f : ink;
-        quarter.green = north ? 0.42f : ink;
-        quarter.blue = north ? 0.33f : ink;
-        quarter.alpha = (north ? 1.0f : 0.82f) * alpha;
-        m_font->draw (text,
-                      cx + middle * std::cos (angle),
-                      cy - middle * std::sin (angle) +
-                        0.5f * m_font->cap_height (quarter.size),
-                      quarters[q],
-                      quarter,
-                      TextAlign::Center);
+        tint (quarter, north ? DisplayColor (1.00f, 0.42f, 0.33f) : ink);
+        quarter.alpha = opacity_value ((north ? 1.0f : 0.82f) * alpha);
+        m_font->draw (
+          text,
+          points_value (cx + middle * std::cos (radians_value (angle))),
+          points_value (cy - middle * std::sin (radians_value (angle)) +
+                        0.5f * m_font->cap_height (quarter.size) * u::pt),
+          quarters[q],
+          quarter,
+          TextAlign::Center);
       }
 
       // The heading, read off a fixed mark over the bezel.
-      const float heading_degrees =
-        std::fmod (std::atan2 (ax, -az) * 180.0f / PI + 360.0f, 360.0f);
+      const degrees_t heading =
+        std::fmod (
+          std::atan2 (plan_value (ahead).x (), -plan_value (ahead).z ()) *
+              180.0f / PI +
+            360.0f,
+          360.0f) *
+        u::deg;
       place_shape (text,
                    m_shape->arrow,
                    cx,
-                   cy - outer - 3.0f,
-                   4.0f,
-                   -0.5f * PI,
-                   ink,
-                   ink,
+                   cy - outer - 3.0f * u::pt,
+                   4.0f * u::pt,
+                   (-0.5f * PI) * u::rad,
                    ink,
                    0.92f * alpha);
       char reading[8];
-      std::snprintf (reading,
-                     sizeof reading,
-                     "%03d",
-                     static_cast<int> (std::lround (heading_degrees)) % 360);
+      std::snprintf (
+        reading,
+        sizeof reading,
+        "%03d",
+        static_cast<int> (std::lround (heading.numerical_value_in (u::deg))) %
+          360);
       TextStyle figure;
       figure.size = 11.5f;
-      figure.red = figure.green = figure.blue = ink;
-      figure.alpha = 0.9f * alpha;
+      tint (figure, ink);
+      figure.alpha = opacity_value (0.9f * alpha);
       figure.tracking = 0.06f;
       figure.tabular_figures = true;
-      draw_shaded (
-        text, cx, cy - outer - 11.0f, reading, figure, TextAlign::Center);
+      draw_shaded (text,
+                   cx,
+                   cy - outer - 11.0f * u::pt,
+                   reading,
+                   figure,
+                   TextAlign::Center);
 
       // What there is to find on it, pinned to the rim when off it.
       for (int i = 0; i < chart.pin_count; ++i) {
         const HudState::Chart::Pin& pin = chart.pins[i];
-        float sx, sy;
-        on_screen (
-          terrain::minimum_image_delta (pin.x_m - chart.x_m, chart.period_x_m),
-          terrain::minimum_image_delta (pin.z_m - chart.z_m, chart.period_z_m),
-          sx,
-          sy);
-        const float far = 0.86f * r;
-        const float off = std::hypot (sx, sy);
+        OnScreen s = on_screen (
+          terrain::torus_offset (chart.subject, pin.position, chart.period));
+        const points_t far = 0.86f * r;
+        const points_t off =
+          std::hypot (points_value (s.x), points_value (s.y)) * u::pt;
         const bool beyond = off > far;
         using Kind = HudState::Chart::Pin::Kind;
         using Place = terrain::RoadPlace::Kind;
@@ -1620,39 +1722,28 @@ namespace moppe {
           if (off > 0.95f * r)
             continue;
           const bool bus = pin.kind == Kind::Bus;
-          const float size = bus ? 3.6f : 2.0f;
-          const float x = cx + sx, y = cy + sy;
+          const points_t size = bus ? 3.6f * u::pt : 2.0f * u::pt;
+          const points_t x = cx + s.x, y = cy + s.y;
           place_shape (text,
                        m_shape->shade,
                        x,
-                       y + 0.5f,
-                       size + 2.0f,
-                       0.0f,
-                       0.0f,
-                       0.0f,
-                       0.0f,
+                       y + 0.5f * u::pt,
+                       size + 2.0f * u::pt,
+                       0.0f * u::rad,
+                       black,
                        0.30f * alpha,
-                       3.0f);
+                       3.0f * u::pt);
           place_shape (text,
                        m_shape->shade,
                        x,
                        y,
-                       size + 1.2f,
-                       0.0f,
-                       bus ? 0.92f : 0.06f,
-                       bus ? 0.87f : 0.42f,
-                       bus ? 0.72f : 0.22f,
+                       size + 1.2f * u::pt,
+                       0.0f * u::rad,
+                       bus ? DisplayColor (0.92f, 0.87f, 0.72f)
+                           : DisplayColor (0.06f, 0.42f, 0.22f),
                        alpha);
-          place_shape (text,
-                       m_shape->shade,
-                       x,
-                       y,
-                       size,
-                       0.0f,
-                       pin.red,
-                       pin.green,
-                       pin.blue,
-                       alpha);
+          place_shape (
+            text, m_shape->shade, x, y, size, 0.0f * u::rad, pin.colour, alpha);
           continue;
         }
         if (place) {
@@ -1660,123 +1751,107 @@ namespace moppe {
           // a peak as a triangle, the landing and an outlet as a ring.
           if (off > 0.95f * r)
             continue;
-          const float x = cx + sx, y = cy + sy;
+          const points_t x = cx + s.x, y = cy + s.y;
           const bool peak = pin.place == Place::Sanctuary;
           const auto& shape = peak ? m_shape->arrow : m_shape->shade;
-          const float angle = peak ? 0.5f * PI : 0.0f;
-          const float size = pin.place == Place::LakeOutlet ? 3.0f : 3.8f;
+          const radians_t angle = peak ? (0.5f * PI) * u::rad : 0.0f * u::rad;
+          const points_t size =
+            pin.place == Place::LakeOutlet ? 3.0f * u::pt : 3.8f * u::pt;
           place_shape (text,
                        shape,
                        x,
-                       y + 0.6f,
-                       size + 2.4f,
+                       y + 0.6f * u::pt,
+                       size + 2.4f * u::pt,
                        angle,
-                       0.0f,
-                       0.0f,
-                       0.0f,
+                       black,
                        0.30f * alpha,
-                       3.0f);
+                       3.0f * u::pt);
           place_shape (
-            text, shape, x, y, size + 1.3f, angle, 1.0f, 1.0f, 1.0f, alpha);
-          place_shape (text,
-                       shape,
-                       x,
-                       y,
-                       size,
-                       angle,
-                       pin.red,
-                       pin.green,
-                       pin.blue,
-                       alpha);
+            text, shape, x, y, size + 1.3f * u::pt, angle, white, alpha);
+          place_shape (text, shape, x, y, size, angle, pin.colour, alpha);
           if (!peak)
             place_shape (text,
                          m_shape->shade,
                          x,
                          y,
                          0.45f * size,
-                         0.0f,
-                         1.0f,
-                         1.0f,
-                         1.0f,
+                         0.0f * u::rad,
+                         white,
                          alpha);
           continue;
         }
         if (beyond) {
-          sx *= far / off;
-          sy *= far / off;
+          s.x *= (far / off).numerical_value_in (one);
+          s.y *= (far / off).numerical_value_in (one);
         }
-        float size = pin.kind == Kind::Companion ? 4.4f
-                     : trailhead                 ? 4.2f
-                                                 : 3.4f;
-        float a = alpha;
+        points_t size = pin.kind == Kind::Companion ? 4.4f * u::pt
+                        : trailhead                 ? 4.2f * u::pt
+                                                    : 3.4f * u::pt;
+        opacity_t a = alpha;
         if (beyond) {
           size *= 1.3f;
           a *= 0.8f;
         }
-        const float x = cx + sx, y = cy + sy;
+        const points_t x = cx + s.x, y = cy + s.y;
         const auto& shape = beyond ? m_shape->arrow : m_shape->shade;
-        const float angle = beyond ? std::atan2 (-sy, sx) : 0.0f;
+        const radians_t angle =
+          beyond ? std::atan2 (-points_value (s.y), points_value (s.x)) * u::rad
+                 : 0.0f * u::rad;
         place_shape (text,
                      shape,
                      x,
-                     y + 0.6f,
-                     size + 2.4f,
+                     y + 0.6f * u::pt,
+                     size + 2.4f * u::pt,
                      angle,
-                     0.0f,
-                     0.0f,
-                     0.0f,
+                     black,
                      0.30f * a,
-                     3.0f);
-        place_shape (
-          text, shape, x, y, size + 1.4f, angle, 1.0f, 1.0f, 1.0f, a);
-        place_shape (
-          text, shape, x, y, size, angle, pin.red, pin.green, pin.blue, a);
+                     3.0f * u::pt);
+        place_shape (text, shape, x, y, size + 1.4f * u::pt, angle, white, a);
+        place_shape (text, shape, x, y, size, angle, pin.colour, a);
         if (trailhead && !beyond)
-          place_shape (text,
-                       m_shape->shade,
-                       x,
-                       y,
-                       0.45f * size,
-                       0.0f,
-                       1.0f,
-                       1.0f,
-                       1.0f,
-                       a);
+          place_shape (
+            text, m_shape->shade, x, y, 0.45f * size, 0.0f * u::rad, white, a);
       }
 
       // The subject, facing the way they face.
-      float fx, fy;
-      on_screen (chart.facing_x, chart.facing_z, fx, fy);
-      const float facing =
-        std::hypot (fx, fy) > 1e-6f ? std::atan2 (-fy, fx) : 0.5f * PI;
+      const OnScreen f = on_screen (along (chart.facing, pace_of_ground));
+      const radians_t facing =
+        std::hypot (points_value (f.x), points_value (f.y)) > 1e-6f
+          ? std::atan2 (-points_value (f.y), points_value (f.x)) * u::rad
+          : (0.5f * PI) * u::rad;
       place_shape (text,
                    m_shape->arrow,
                    cx,
-                   cy + 0.5f,
-                   9.5f,
+                   cy + 0.5f * u::pt,
+                   9.5f * u::pt,
                    facing,
-                   0.0f,
-                   0.0f,
-                   0.0f,
+                   black,
                    0.35f * alpha,
-                   4.0f);
+                   4.0f * u::pt);
       place_shape (
-        text, m_shape->arrow, cx, cy, 8.6f, facing, 1.0f, 1.0f, 1.0f, alpha);
-      place_shape (
-        text, m_shape->arrow, cx, cy, 6.4f, facing, 0.80f, 0.16f, 0.10f, alpha);
+        text, m_shape->arrow, cx, cy, 8.6f * u::pt, facing, white, alpha);
+      place_shape (text,
+                   m_shape->arrow,
+                   cx,
+                   cy,
+                   6.4f * u::pt,
+                   facing,
+                   DisplayColor (0.80f, 0.16f, 0.10f),
+                   alpha);
 
       // The key that unfolds the whole map, small against the bezel's
       // lower outer side.
       if (*map_key && !m_host_offers) {
         TextStyle words = prompt_words (0.8f * alpha);
         words.size = 10.5f;
-        const float run = keyed_width (map_key, "Map", words);
-        const float diagonal = 0.72f * outer;
-        const float x =
-          aside ? cx - diagonal - 4.0f - run : cx + diagonal + 4.0f;
+        const points_t run = keyed_width (map_key, "Map", words);
+        const points_t diagonal = 0.72f * outer;
+        const points_t x = aside ? cx - diagonal - 4.0f * u::pt - run
+                                 : cx + diagonal + 4.0f * u::pt;
         draw_keyed (text,
                     x,
-                    cy + diagonal + 0.5f * m_font->cap_height (words.size),
+                    cy + diagonal +
+                      0.5f * m_font->cap_height (words.size) * u::pt,
                     map_key,
                     "Map",
                     words,
@@ -1786,9 +1861,9 @@ namespace moppe {
 
     void Hud::draw_prompts (render::TextList& text,
                             const HudState& st,
-                            float dt,
-                            int width_pts,
-                            int height_pts) {
+                            seconds_t dt,
+                            points_t width,
+                            points_t height) {
       std::string key, action;
       if (st.prompt_keyed) {
         // The key a button is pressed with here, if there is one.
@@ -1839,22 +1914,25 @@ namespace moppe {
       const bool wanted = !action.empty ();
       if (wanted) {
         // A different prompt replaces the old one only once it has faded.
-        if (m_prompt_alpha < 0.05f || action == m_prompt_action) {
+        if (m_prompt_alpha < 0.05f * opacity[one] ||
+            action == m_prompt_action) {
           m_prompt_key = key;
           m_prompt_action = action;
         }
       }
       const bool showing = wanted && action == m_prompt_action;
-      m_prompt_alpha = approach (
-        m_prompt_alpha, showing ? 1.0f : 0.0f, showing ? 7.0f : 5.0f, dt);
+      m_prompt_alpha = approach (m_prompt_alpha,
+                                 showing ? opaque : transparent,
+                                 showing ? 7.0f / u::s : 5.0f / u::s,
+                                 dt);
       // A host with a button for it shows a keyed prompt itself.
       if (!m_host_offers || m_prompt_key.empty ())
         draw_prompt (text,
                      m_prompt_key,
                      m_prompt_action,
                      ease (m_prompt_alpha),
-                     width_pts,
-                     height_pts);
+                     width,
+                     height);
     }
 
     void Hud::offer (const std::string& key, const std::string& action) {
@@ -1876,10 +1954,10 @@ namespace moppe {
     void Hud::draw_diagnostics (render::DrawList& dl,
                                 render::TextList& text,
                                 const HudState& st,
-                                int width_pts,
-                                int height_pts) {
-      (void)width_pts;
-      (void)height_pts;
+                                points_t width,
+                                points_t height) {
+      (void)width;
+      (void)height;
       // Diagnostics are for reading, not for looks: a dark card keeps them
       // legible against any sky.
       hud_state (dl);
@@ -1896,88 +1974,103 @@ namespace moppe {
       dl.color (1, 1, 1, 1);
       TextStyle style;
       style.size = 11.0f;
-      style.red = style.green = style.blue = ink;
+      tint (style, ink);
       style.alpha = 0.85f;
       style.tabular_figures = true;
-      const float frame_ms = std::max (st.frame_time_s, 1e-4f) * 1000.0f;
-      const float heading =
-        std::fmod (st.heading_radians * 180.0f / PI + 360.0f, 360.0f);
+      // The readings are set as text: their numbers leave the types here.
+      const float frame_ms =
+        seconds_value (std::max (st.frame_time, 1e-4f * u::s)) * 1000.0f;
+      const degrees_t heading =
+        std::fmod (st.heading.numerical_value_in (si::radian) * 180.0f / PI +
+                     360.0f,
+                   360.0f) *
+        u::deg;
       char lines[9][96];
-      std::snprintf (
-        lines[0], sizeof lines[0], "%.0f fps   %.1f ms", m_fps, frame_ms);
+      std::snprintf (lines[0],
+                     sizeof lines[0],
+                     "%.0f fps   %.1f ms",
+                     m_fps.numerical_value_in (u::Hz),
+                     frame_ms);
       std::snprintf (lines[1],
                      sizeof lines[1],
                      "%.0f km/h   heading %03.0f°",
-                     st.speed_kmh,
-                     heading);
+                     st.speed.numerical_value_in (u::km / u::h),
+                     heading.numerical_value_in (u::deg));
       std::snprintf (lines[2],
                      sizeof lines[2],
                      "air %.1f s   whip %.0f°",
-                     st.airtime_s,
-                     st.spin_degrees);
+                     seconds_value (st.airtime),
+                     st.spin.numerical_value_in (u::deg));
       std::snprintf (lines[3],
                      sizeof lines[3],
                      "last %s %.1f s   %.0f°   +%d",
                      st.landed_clean ? "clean" : "landing",
-                     st.landed_airtime_s,
-                     st.landed_spin_degrees,
+                     seconds_value (st.landed_airtime),
+                     st.landed_spin.numerical_value_in (u::deg),
                      st.landed_points);
       std::snprintf (lines[4],
                      sizeof lines[4],
                      "wheelie %.0f m   last %.0f m +%d   best %.0f m",
-                     st.wheelie_m,
-                     st.last_wheelie_m,
+                     meters_value (st.wheelie),
+                     meters_value (st.last_wheelie),
                      st.last_wheelie_points,
-                     st.best_wheelie_m);
+                     meters_value (st.best_wheelie));
       std::snprintf (lines[5], sizeof lines[5], "score %d", st.score);
       std::snprintf (lines[6],
                      sizeof lines[6],
                      "health %.0f%%   lives %d   stars %d",
-                     clamp01 (st.health01) * 100.0f,
+                     clamp01 (st.health).numerical_value_in (one) * 100.0f,
                      st.lives,
                      st.stars);
       std::snprintf (lines[7],
                      sizeof lines[7],
                      "odometer %.2f km   boost %.0f%%",
-                     st.odometer_m / 1000.0f,
-                     clamp01 (st.boost_ready01) * 100.0f);
-      std::snprintf (
-        lines[8], sizeof lines[8], "climb %+.1f m/s", st.vertical_speed_mps);
-      float y = 24.0f;
+                     meters_value (st.odometer) / 1000.0f,
+                     clamp01 (st.boost_ready).numerical_value_in (one) *
+                       100.0f);
+      std::snprintf (lines[8],
+                     sizeof lines[8],
+                     "climb %+.1f m/s",
+                     speed_value (st.vertical_speed));
+      points_t y = 24.0f * u::pt;
       for (const char* line : lines) {
-        draw_shaded (text, 16.0f, y, line, style);
-        y += 15.0f;
+        draw_shaded (text, 16.0f * u::pt, y, line, style);
+        y += 15.0f * u::pt;
       }
     }
 
     void Hud::draw (render::DrawList& dl,
                     render::TextList& text,
                     const HudState& st,
-                    int width_pts,
-                    int height_pts) {
-      const float dt = std::clamp (st.frame_time_s, 0.0f, 0.1f);
-      const float instant_fps =
-        std::min (240.0f, 1.0f / std::max (st.frame_time_s, 0.001f));
-      m_fps = m_fps > 0.0f ? m_fps * 0.9f + instant_fps * 0.1f : instant_fps;
+                    points_t width,
+                    points_t height) {
+      const seconds_t dt = std::clamp (st.frame_time, 0.0f * u::s, 0.1f * u::s);
+      const frequency_t instant_fps =
+        std::min (240.0f * u::Hz,
+                  frequency_t (1.0f / std::max (st.frame_time, 0.001f * u::s)));
+      m_fps =
+        m_fps > 0.0f * u::Hz ? m_fps * 0.9f + instant_fps * 0.1f : instant_fps;
       if (m_hidden)
         return;
 
-      draw_chart (dl, text, st, dt, width_pts, height_pts);
-      draw_waymarks (text, st, dt, width_pts, height_pts);
-      draw_gauge (text, st, dt, width_pts, height_pts);
-      draw_basket (text, st, dt, width_pts, height_pts);
-      draw_clock (text, st, dt, width_pts, height_pts);
-      draw_prompts (text, st, dt, width_pts, height_pts);
+      draw_chart (dl, text, st, dt, width, height);
+      draw_waymarks (text, st, dt, width, height);
+      draw_gauge (text, st, dt, width, height);
+      draw_basket (text, st, dt, width, height);
+      draw_clock (text, st, dt, width, height);
+      draw_prompts (text, st, dt, width, height);
       if (m_diagnostics)
-        draw_diagnostics (dl, text, st, width_pts, height_pts);
+        draw_diagnostics (dl, text, st, width, height);
     }
 
     void Hud::draw_game_over (render::DrawList& dl,
                               render::TextList& text,
-                              int width_pts,
-                              int height_pts) {
-      const float w = (float)width_pts;
-      const float h = (float)height_pts;
+                              points_t width,
+                              points_t height) {
+      // The veil's vertices and the lettering's places: the DrawList's and
+      // the font's floats.
+      const float w = points_value (width);
+      const float h = points_value (height);
       hud_state (dl);
       dl.color (0.02f, 0.02f, 0.025f, 1.0f);
       dl.begin (render::Prim::Quads);
@@ -1995,9 +2088,7 @@ namespace moppe {
 
       TextStyle title;
       title.size = 34.0f;
-      title.red = 0.92f;
-      title.green = 0.88f;
-      title.blue = 0.84f;
+      tint (title, DisplayColor (0.92f, 0.88f, 0.84f));
       title.alpha = 0.95f;
       m_font->draw (
         text, 0.5f * w, 0.5f * h - 18.0f, "Sorry.", title, TextAlign::Center);
@@ -2013,15 +2104,16 @@ namespace moppe {
       offer (restart_key, "Ride again");
       if (!m_host_offers)
         draw_prompt (
-          text, restart_key, "Ride again", 0.8f, width_pts, height_pts);
+          text, restart_key, "Ride again", 0.8f * opacity[one], width, height);
     }
 
     void Hud::draw_quit_question (render::DrawList& dl,
                                   render::TextList& text,
-                                  int width_pts,
-                                  int height_pts) const {
-      const float w = (float)width_pts;
-      const float h = (float)height_pts;
+                                  points_t width,
+                                  points_t height) const {
+      // The veil's vertices: the DrawList's floats.
+      const float w = points_value (width);
+      const float h = points_value (height);
       hud_state (dl);
       dl.color (0.02f, 0.02f, 0.025f, 0.55f);
       dl.begin (render::Prim::Quads);
@@ -2037,65 +2129,74 @@ namespace moppe {
       if (!m_font)
         return;
 
-      TextStyle title = prompt_words (1.0f);
+      TextStyle title = prompt_words (opaque);
       title.size = 30.0f;
       draw_shaded (text,
-                   0.5f * w,
-                   0.5f * h - 14.0f,
+                   0.5f * width,
+                   0.5f * height - 14.0f * u::pt,
                    "Quit Moppe?",
                    title,
                    TextAlign::Center);
       // Esc again quits; any other key goes back to the game.
-      const TextStyle words = prompt_words (0.9f);
-      const float space = 2.0f * words.size;
-      const float quit = keyed_width ("Esc", "Quit", words);
-      const float stay = keyed_width ("Space", "Keep playing", words);
-      const float x = 0.5f * (w - quit - space - stay);
-      const float baseline = 0.5f * h + 30.0f;
-      draw_keyed (text, x, baseline, "Esc", "Quit", words, 0.9f);
-      draw_keyed (
-        text, x + quit + space, baseline, "Space", "Keep playing", words, 0.9f);
+      constexpr opacity_t clear = 0.9f * opacity[one];
+      const TextStyle words = prompt_words (clear);
+      const points_t space = 2.0f * words.size * u::pt;
+      const points_t quit = keyed_width ("Esc", "Quit", words);
+      const points_t stay = keyed_width ("Space", "Keep playing", words);
+      const points_t x = 0.5f * (width - quit - space - stay);
+      const points_t baseline = 0.5f * height + 30.0f * u::pt;
+      draw_keyed (text, x, baseline, "Esc", "Quit", words, clear);
+      draw_keyed (text,
+                  x + quit + space,
+                  baseline,
+                  "Space",
+                  "Keep playing",
+                  words,
+                  clear);
     }
 
     void Hud::draw_ride_prompt (render::TextList& text,
-                                float alpha,
-                                int width_pts,
-                                int height_pts) {
+                                opacity_t alpha,
+                                points_t width,
+                                points_t height) {
       offer (ride_key, "Begin");
       if (*ride_key && !m_host_offers && !m_hidden)
-        draw_prompt (text, ride_key, "Begin", alpha, width_pts, height_pts);
+        draw_prompt (text, ride_key, "Begin", alpha, width, height);
     }
 
     void Hud::draw_title_card (render::TextList& text,
                                bool title,
                                const std::string& line,
-                               float alpha,
-                               float y,
-                               int width_pts,
-                               int height_pts) const {
-      if (!m_font || alpha <= 0.002f)
+                               opacity_t alpha,
+                               proportion_t y,
+                               points_t width,
+                               points_t height) const {
+      if (!m_font || alpha <= unseen)
         return;
-      const float height = static_cast<float> (height_pts);
+      constexpr proportion_t unplaced = 0.0f * proportion[one];
       TextStyle style;
-      style.red = style.green = style.blue = ink;
+      tint (style, ink);
       if (title) {
         // The name alone, large and widely spaced, at the frame's optical
         // centre.
-        style.size = std::clamp (0.105f * height, 30.0f, 140.0f);
+        style.size = points_value (
+          std::clamp (0.105f * height, 30.0f * u::pt, 140.0f * u::pt));
         style.tracking = 0.14f;
-        style.alpha = 0.94f * alpha;
-        const float baseline = (y >= 0.0f ? y : 0.47f) * height +
-                               0.5f * m_font->x_height (style.size);
+        style.alpha = opacity_value (0.94f * alpha);
+        const points_t baseline =
+          (y >= unplaced ? y : 0.47f * proportion[one]) * height +
+          0.5f * m_font->x_height (style.size) * u::pt;
         draw_shaded (
-          text, 0.5f * width_pts, baseline, line, style, TextAlign::Center);
+          text, 0.5f * width, baseline, line, style, TextAlign::Center);
       } else {
         // A credit, small, in the lower third.
-        style.size = std::clamp (0.027f * height, 13.0f, 40.0f);
+        style.size = points_value (
+          std::clamp (0.027f * height, 13.0f * u::pt, 40.0f * u::pt));
         style.tracking = 0.09f;
-        style.alpha = 0.9f * alpha;
+        style.alpha = opacity_value (0.9f * alpha);
         draw_shaded (text,
-                     0.5f * width_pts,
-                     (y >= 0.0f ? y : 0.74f) * height,
+                     0.5f * width,
+                     (y >= unplaced ? y : 0.74f * proportion[one]) * height,
                      line,
                      style,
                      TextAlign::Center);

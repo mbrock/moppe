@@ -307,9 +307,9 @@ namespace moppe::game {
       hud.draw_title_card (text,
                            caption.style == OpeningCaption::Style::Title,
                            *caption.text,
-                           caption.alpha,
-                           caption.y,
-                           width_pts,
-                           height_pts);
+                           caption.alpha * opacity[one],
+                           caption.y * proportion[one],
+                           static_cast<float> (width_pts) * u::pt,
+                           static_cast<float> (height_pts) * u::pt);
   }
 }

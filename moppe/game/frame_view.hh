@@ -232,7 +232,6 @@ namespace moppe::game {
   // Renderer-free readings for the compact driving HUD. They deliberately
   // mirror the HUD's value inputs without importing its DrawList dependency
   // into FrameView. The trail map needs the unprojected subject reading too.
-  using kilometres_per_hour_t = quantity<si::kilo<si::metre> / si::hour, float>;
 
   struct FrameHud {
     kilometres_per_hour_t speed = 0.0f * si::kilo<si::metre> / si::hour;

@@ -154,18 +154,18 @@ namespace moppe {
         std::ostringstream eyebrow;
         eyebrow << "SEED " << loading.seed;
         m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                    left,
-                                    bottom - 118.0f,
+                                    left * u::pt,
+                                    (bottom - 118.0f) * u::pt,
                                     eyebrow.str (),
                                     style (9.0f, 0.62f, 0.16f));
         m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                    left,
-                                    bottom - 86.0f,
+                                    left * u::pt,
+                                    (bottom - 86.0f) * u::pt,
                                     loading.title,
                                     style (27.0f, 0.96f, 0.0f));
         m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                    left,
-                                    bottom - 62.0f,
+                                    left * u::pt,
+                                    (bottom - 62.0f) * u::pt,
                                     loading.detail,
                                     style (14.0f, 0.74f, 0.01f));
 
@@ -195,8 +195,8 @@ namespace moppe {
                        std::lround (done.numerical_value_in (one) * 100.0f))
                   << '%';
           m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                      left + content_width,
-                                      rail_y - 8.0f,
+                                      (left + content_width) * u::pt,
+                                      (rail_y - 8.0f) * u::pt,
                                       percent.str (),
                                       style (9.0f, 0.62f, 0.06f),
                                       render::TextAlign::Right);
@@ -213,8 +213,8 @@ namespace moppe {
                << event.elapsed.numerical_value_in (si::second) << " s   "
                << event.title;
           m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                      left,
-                                      line_y,
+                                      left * u::pt,
+                                      line_y * u::pt,
                                       line.str (),
                                       style (10.0f, 0.46f, 0.02f));
           line_y += 16.0f;
@@ -245,7 +245,10 @@ namespace moppe {
       m_heads_up.dl.clear ();
       m_heads_up.text.clear ();
       m_heads_up.hud.draw_game_over (
-        m_heads_up.dl, m_heads_up.text, r.width_pts (), r.height_pts ());
+        m_heads_up.dl,
+        m_heads_up.text,
+        static_cast<float> (r.width_pts ()) * u::pt,
+        static_cast<float> (r.height_pts ()) * u::pt);
       m_heads_up.hud.publish_offers ();
       r.draw_hud_text (m_heads_up.text);
       r.draw_hud (m_heads_up.dl);

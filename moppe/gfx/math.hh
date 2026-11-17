@@ -37,6 +37,8 @@ namespace moppe {
   using radians_t = quantity<si::radian, float>;
   using magnitude_t = quantity<one, float>;
   using speed_t = quantity<si::metre / si::second, float>;
+  // A speed as a speedometer reads it.
+  using kilometres_per_hour_t = quantity<si::kilo<si::metre> / si::hour, float>;
   using velocity_component_t =
     quantity<isq::velocity[si::metre / si::second], float>;
   using acceleration_component_t =

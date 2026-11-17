@@ -401,7 +401,9 @@ namespace moppe::game {
     if (!link || !last_notice)
       return;
     state.notice = last_notice;
-    state.notice_age_s = static_cast<float> (
-      (link->now () - notice_at).numerical_value_in (si::second));
+    state.notice_age =
+      static_cast<float> (
+        (link->now () - notice_at).numerical_value_in (si::second)) *
+      u::s;
   }
 }

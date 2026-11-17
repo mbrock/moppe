@@ -1,5 +1,6 @@
 #include <moppe/game/relief_map.hh>
 
+#include <moppe/color.hh>
 #include <moppe/parallel.hh>
 
 #include <algorithm>
@@ -8,53 +9,75 @@
 
 namespace moppe::game {
   namespace {
-    struct Rgb {
-      float r = 0.0f, g = 0.0f, b = 0.0f;
-    };
+    using terrain::ElevationChange;
+    using terrain::SurfaceElevation;
 
-    Rgb mix (Rgb a, Rgb b, float t) {
-      return { a.r + (b.r - a.r) * t,
-               a.g + (b.g - a.g) * t,
-               a.b + (b.b - a.b) * t };
+    // The number behind a ratio of two like quantities, or a number
+    // already plain (the sheet's pixels and the lattice's cells).
+    float ratio (float value) {
+      return value;
+    }
+
+    template <Quantity Q>
+    float ratio (Q value) {
+      return value.numerical_value_in (one);
     }
 
     float saturate (float value) {
       return std::clamp (value, 0.0f, 1.0f);
     }
 
-    float smooth (float low, float high, float value) {
-      const float t = saturate ((value - low) / (high - low));
-      return t * t * (3.0f - 2.0f * t);
+    blend_weight_t weight (float value) {
+      return value * blend_weight[one];
+    }
+
+    constexpr proportion_t share (float value) {
+      return value * proportion[one];
+    }
+
+    SurfaceElevation elevation (float metres) {
+      return terrain::surface_elevation_point (metres * u::m);
+    }
+
+    DisplayColor mix (DisplayColor a, DisplayColor b, blend_weight_t t) {
+      return mix_display (a, b, t);
+    }
+
+    // How far `value` has come from `low` to `high`, eased at both ends.
+    template <typename Low, typename High, typename Value>
+    blend_weight_t smooth (Low low, High high, Value value) {
+      const float t = saturate (ratio ((value - low) / (high - low)));
+      return weight (t * t * (3.0f - 2.0f * t));
     }
 
     // The sheet's inks.
-    constexpr Rgb lowland { 0.955f, 0.930f, 0.800f };
-    constexpr Rgb upland { 0.925f, 0.870f, 0.730f };
-    constexpr Rgb fell { 0.900f, 0.860f, 0.790f };
-    constexpr Rgb summit { 0.965f, 0.960f, 0.945f };
-    constexpr Rgb woodland { 0.730f, 0.835f, 0.610f };
-    constexpr Rgb high_woodland { 0.790f, 0.850f, 0.660f };
-    constexpr Rgb shallows { 0.730f, 0.865f, 0.940f };
-    constexpr Rgb deeps { 0.520f, 0.720f, 0.880f };
-    constexpr Rgb fresh_water { 0.640f, 0.815f, 0.945f };
-    constexpr Rgb shore_ink { 0.180f, 0.400f, 0.660f };
-    constexpr Rgb river_ink { 0.215f, 0.470f, 0.760f };
-    constexpr Rgb contour_ink { 0.560f, 0.360f, 0.200f };
-    constexpr Rgb sounding_ink { 0.330f, 0.540f, 0.760f };
-    constexpr Rgb grid_ink { 0.150f, 0.200f, 0.300f };
-    constexpr Rgb trail_ink { 0.800f, 0.130f, 0.110f };
-    constexpr Rgb road_casing_ink { 0.300f, 0.200f, 0.120f };
-    constexpr Rgb road_ink { 0.985f, 0.800f, 0.380f };
-    constexpr Rgb footpath_ink { 0.330f, 0.220f, 0.140f };
+    constexpr DisplayColor lowland { 0.955f, 0.930f, 0.800f };
+    constexpr DisplayColor upland { 0.925f, 0.870f, 0.730f };
+    constexpr DisplayColor fell { 0.900f, 0.860f, 0.790f };
+    constexpr DisplayColor summit { 0.965f, 0.960f, 0.945f };
+    constexpr DisplayColor woodland { 0.730f, 0.835f, 0.610f };
+    constexpr DisplayColor high_woodland { 0.790f, 0.850f, 0.660f };
+    constexpr DisplayColor shallows { 0.730f, 0.865f, 0.940f };
+    constexpr DisplayColor deeps { 0.520f, 0.720f, 0.880f };
+    constexpr DisplayColor fresh_water { 0.640f, 0.815f, 0.945f };
+    constexpr DisplayColor shore_ink { 0.180f, 0.400f, 0.660f };
+    constexpr DisplayColor river_ink { 0.215f, 0.470f, 0.760f };
+    constexpr DisplayColor contour_ink { 0.560f, 0.360f, 0.200f };
+    constexpr DisplayColor sounding_ink { 0.330f, 0.540f, 0.760f };
+    constexpr DisplayColor grid_ink { 0.150f, 0.200f, 0.300f };
+    constexpr DisplayColor trail_ink { 0.800f, 0.130f, 0.110f };
+    constexpr DisplayColor road_casing_ink { 0.300f, 0.200f, 0.120f };
+    constexpr DisplayColor road_ink { 0.985f, 0.800f, 0.380f };
+    constexpr DisplayColor footpath_ink { 0.330f, 0.220f, 0.140f };
     // Ways no longer used: grey-violet, apart from the brown contours.
-    constexpr Rgb old_way_ink { 0.380f, 0.320f, 0.460f };
-    constexpr Rgb sanctuary_ink { 0.560f, 0.120f, 0.160f };
-    constexpr Rgb sightline_ink { 0.850f, 0.420f, 0.150f };
-    constexpr Rgb shadow_ink { 0.360f, 0.340f, 0.430f };
-    constexpr Rgb light_ink { 1.000f, 0.985f, 0.940f };
+    constexpr DisplayColor old_way_ink { 0.380f, 0.320f, 0.460f };
+    constexpr DisplayColor sanctuary_ink { 0.560f, 0.120f, 0.160f };
+    constexpr DisplayColor sightline_ink { 0.850f, 0.420f, 0.150f };
+    constexpr DisplayColor shadow_ink { 0.360f, 0.340f, 0.430f };
+    constexpr DisplayColor light_ink { 1.000f, 0.985f, 0.940f };
 
     // One column of a bundle as plain numbers over the periodic lattice,
-    // read between its samples.
+    // read between its samples: the raster's lanes, addressed in cells.
     struct Lattice {
       std::span<const float> values;
       std::size_t width = 0;
@@ -97,7 +120,7 @@ namespace moppe::game {
                column.size () };
     }
 
-    float wrap_delta (float delta, float period) {
+    meters_t wrap_delta (meters_t delta, meters_t period) {
       if (delta > 0.5f * period)
         delta -= period;
       if (delta < -0.5f * period)
@@ -105,7 +128,15 @@ namespace moppe::game {
       return delta;
     }
 
-    // A layer of line work: how much of each pixel its strokes cover.
+    plan_displacement_t wrap_delta (const plan_displacement_t& delta,
+                                    const plan_extent_t& period) {
+      const Vec2& lap = plan_value (period);
+      return plan_displacement (wrap_delta (x_of (delta), lap.x () * u::m),
+                                wrap_delta (z_of (delta), lap.z () * u::m));
+    }
+
+    // A layer of line work: how much of each pixel its strokes cover. Its
+    // strokes are placed and sized in the sheet's own pixels.
     struct Ink {
       int size = 0;
       std::vector<std::uint8_t> cover;
@@ -113,10 +144,11 @@ namespace moppe::game {
       explicit Ink (int size)
           : size (size), cover (static_cast<std::size_t> (size) * size) {}
 
-      float at (int x, int y) const {
-        return static_cast<float> (
-                 cover[static_cast<std::size_t> (y) * size + x]) /
-               255.0f;
+      // How far the ink is laid over the pixel's colour.
+      blend_weight_t at (int x, int y) const {
+        return weight (
+          static_cast<float> (cover[static_cast<std::size_t> (y) * size + x]) /
+          255.0f);
       }
 
       // A stroke from a to b in pixels, tapering between two half widths.
@@ -175,18 +207,21 @@ namespace moppe::game {
     std::vector<ReliefMap::Summit>
     find_summits (const Lattice& ground,
                   const terrain::TerrainDomain& domain,
-                  float sea_m) {
-      const float spacing_x = domain.spacing_x ().numerical_value_in (u::m);
-      const float spacing_z = domain.spacing_z ().numerical_value_in (u::m);
-      const float period_x = domain.period_x ().numerical_value_in (u::m);
-      const float period_z = domain.period_z ().numerical_value_in (u::m);
-      const std::size_t block = std::max<std::size_t> (
-        1, static_cast<std::size_t> (std::lround (200.0f / spacing_x)));
+                  SurfaceElevation sea) {
+      const meters_t spacing_x = domain.spacing_x ();
+      const meters_t spacing_z = domain.spacing_z ();
+      const meters_t period_x = domain.period_x ();
+      const meters_t period_z = domain.period_z ();
+      const plan_extent_t period = plan_extent (period_x, period_z);
+      const std::size_t block =
+        std::max<std::size_t> (1,
+                               static_cast<std::size_t> (std::lround (
+                                 ratio (200.0f * u::m / spacing_x))));
       const std::size_t across =
         std::max<std::size_t> (1, ground.width / block);
       const std::size_t down = std::max<std::size_t> (1, ground.height / block);
       struct Top {
-        float height = -1e9f;
+        SurfaceElevation height = elevation (-1e9f);
         std::size_t column = 0, row = 0;
       };
       std::vector<Top> tops (across * down);
@@ -196,7 +231,8 @@ namespace moppe::game {
              column < across * block && column < ground.width;
              ++column) {
           Top& top = tops[(row / block) * across + column / block];
-          const float height = ground.values[row * ground.width + column];
+          const SurfaceElevation height =
+            elevation (ground.values[row * ground.width + column]);
           if (height > top.height)
             top = { height, column, row };
         }
@@ -206,7 +242,7 @@ namespace moppe::game {
       for (std::size_t z = 0; z < down; ++z)
         for (std::size_t x = 0; x < across; ++x) {
           const Top& top = tops[z * across + x];
-          if (top.height - sea_m < 30.0f)
+          if (top.height - sea < 30.0f * u::m)
             continue;
           bool highest = true;
           for (long dz = -reach; dz <= reach && highest; ++dz)
@@ -223,29 +259,32 @@ namespace moppe::game {
               }
             }
           if (highest)
-            found.push_back ({ static_cast<float> (top.column) * spacing_x,
-                               static_cast<float> (top.row) * spacing_z,
-                               top.height - sea_m });
+            found.push_back (
+              { plan_position (static_cast<float> (top.column) * spacing_x,
+                               static_cast<float> (top.row) * spacing_z),
+                top.height - sea });
         }
       std::sort (found.begin (),
                  found.end (),
                  [] (const ReliefMap::Summit& a, const ReliefMap::Summit& b) {
-                   return a.height_m != b.height_m ? a.height_m > b.height_m
-                          : a.z_m != b.z_m         ? a.z_m < b.z_m
-                                                   : a.x_m < b.x_m;
+                   return a.above_sea != b.above_sea ? a.above_sea > b.above_sea
+                          : z_of (a.position) != z_of (b.position)
+                            ? z_of (a.position) < z_of (b.position)
+                            : x_of (a.position) < x_of (b.position);
                  });
       // About a dozen to the ordinary world, and as thick on a wider one.
+      const square_meters_t ordinary_area = 25.0e6f * u::m2;
       const std::size_t limit = static_cast<std::size_t> (
-        std::max (3.0f, 12.0f * period_x * period_z / 25.0e6f));
+        std::max (3.0f, ratio (12.0f * period_x * period_z / ordinary_area)));
       std::vector<ReliefMap::Summit> kept;
       for (const ReliefMap::Summit& candidate : found) {
         if (kept.size () >= limit)
           break;
         const bool crowded = std::any_of (
           kept.begin (), kept.end (), [&] (const ReliefMap::Summit& other) {
-            return std::hypot (
-                     wrap_delta (candidate.x_m - other.x_m, period_x),
-                     wrap_delta (candidate.z_m - other.z_m, period_z)) < 650.0f;
+            const plan_displacement_t apart =
+              wrap_delta (candidate.position - other.position, period);
+            return hypot (x_of (apart), z_of (apart)) < 650.0f * u::m;
           });
         if (!crowded)
           kept.push_back (candidate);
@@ -260,16 +299,16 @@ namespace moppe::game {
                               const terrain::RiverNetwork& rivers,
                               const terrain::TrailNetwork& trails,
                               const terrain::RoadNetwork& roads,
-                              meters_t sea_level,
+                              SurfaceElevation sea_level,
                               int size) {
     const terrain::TerrainDomain& domain = surface.domain ();
     const std::size_t width = domain.width ();
     const std::size_t height = domain.height ();
-    const float spacing_x = domain.spacing_x ().numerical_value_in (u::m);
-    const float spacing_z = domain.spacing_z ().numerical_value_in (u::m);
-    const float period_x = domain.period_x ().numerical_value_in (u::m);
-    const float period_z = domain.period_z ().numerical_value_in (u::m);
-    const float sea_m = sea_level.numerical_value_in (u::m);
+    const meters_t spacing_x = domain.spacing_x ();
+    const meters_t spacing_z = domain.spacing_z ();
+    const meters_t period_x = domain.period_x ();
+    const meters_t period_z = domain.period_z ();
+    const plan_extent_t period = plan_extent (period_x, period_z);
 
     const Lattice ground { numbers (spatial::get<terrain::surface_elevation> (
                              surface)),
@@ -284,45 +323,50 @@ namespace moppe::game {
 
     ReliefMap sheet;
     sheet.size = size;
-    sheet.period_x_m = period_x;
-    sheet.period_z_m = period_z;
+    sheet.period = period;
     sheet.rgba.resize (static_cast<std::size_t> (size) * size * 4);
-    float highest = sea_m;
+    SurfaceElevation highest = sea_level;
     for (const float value : ground.values)
-      highest = std::max (highest, value);
-    sheet.highest_m = highest - sea_m;
-    sheet.summits = find_summits (ground, domain, sea_m);
+      highest = std::max (highest, elevation (value));
+    sheet.highest_above_sea = highest - sea_level;
+    sheet.summits = find_summits (ground, domain, sea_level);
 
     // Metres to a pixel, and the pen's unit: lines keep their weight on
-    // the screen whatever the sheet's size.
-    const float metres_x = period_x / static_cast<float> (size);
-    const float metres_z = period_z / static_cast<float> (size);
-    const float metres = 0.5f * (metres_x + metres_z);
+    // the screen whatever the sheet's size. Line work is drawn in the
+    // sheet's pixels.
+    const meters_t metres_x = period_x / static_cast<float> (size);
+    const meters_t metres_z = period_z / static_cast<float> (size);
+    const meters_t metres = 0.5f * (metres_x + metres_z);
     const float pen = static_cast<float> (size) / 2048.0f;
+    const auto across = [&] (meters_t x) { return ratio (x / metres_x); };
+    const auto down = [&] (meters_t z) { return ratio (z / metres_z); };
 
     // Rivers, broader the more country they drain.
     Ink river_layer (size);
-    const float least_area =
-      std::max (1.0f, rivers.minimum_area.numerical_value_in (u::m * u::m));
-    const auto river_half = [&] (float area_m2) {
-      return pen * std::clamp (0.45f + 0.24f * std::log2 (std::max (
-                                                 1.0f, area_m2 / least_area)),
-                               0.45f,
-                               2.4f);
+    const square_meters_t least_area =
+      std::max (square_meters_t (1.0f * u::m2), rivers.minimum_area);
+    const auto river_half = [&] (square_meters_t area) {
+      return pen *
+             std::clamp (0.45f + 0.24f * std::log2 (std::max (
+                                           1.0f, ratio (area / least_area))),
+                         0.45f,
+                         2.4f);
     };
     for (const terrain::RiverReach& reach : rivers.reaches) {
       const auto& points = reach.alignment.points;
       for (std::size_t i = 0; i + 1 < points.size (); ++i) {
-        const float ax = points[i].x_m;
-        const float az = points[i].z_m;
-        const float bx = ax + wrap_delta (points[i + 1].x_m - ax, period_x);
-        const float bz = az + wrap_delta (points[i + 1].z_m - az, period_z);
-        river_layer.stroke (ax / metres_x,
-                            az / metres_z,
-                            bx / metres_x,
-                            bz / metres_z,
-                            river_half (points[i].contributing_area_m2),
-                            river_half (points[i + 1].contributing_area_m2));
+        const plan_position_t a = plan_position (points[i].x_m, points[i].z_m);
+        const plan_position_t b =
+          a +
+          wrap_delta (plan_position (points[i + 1].x_m, points[i + 1].z_m) - a,
+                      period);
+        river_layer.stroke (
+          across (x_of (a)),
+          down (z_of (a)),
+          across (x_of (b)),
+          down (z_of (b)),
+          river_half (points[i].contributing_area_m2 * u::m2),
+          river_half (points[i + 1].contributing_area_m2 * u::m2));
       }
     }
 
@@ -334,16 +378,11 @@ namespace moppe::game {
       for (std::size_t i = 0; i < points.size () && points.size () > 1; ++i) {
         const plan_position_t& a = points[i];
         const plan_position_t& b = points[(i + 1) % points.size ()];
-        const float ax = plan_value (a).x () / metres_x;
-        const float az = plan_value (a).z () / metres_z;
-        const float bx =
-          ax +
-          wrap_delta (plan_value (b).x () - plan_value (a).x (), period_x) /
-            metres_x;
-        const float bz =
-          az +
-          wrap_delta (plan_value (b).z () - plan_value (a).z (), period_z) /
-            metres_z;
+        const plan_displacement_t a_to_b = wrap_delta (b - a, period);
+        const float ax = across (x_of (a));
+        const float az = down (z_of (a));
+        const float bx = ax + across (x_of (a_to_b));
+        const float bz = az + down (z_of (a_to_b));
         trail_layer.stroke (ax,
                             az,
                             bx,
@@ -370,12 +409,10 @@ namespace moppe::game {
     for (const terrain::Road& road : roads.roads) {
       float along = 0.0f;
       for (std::size_t i = 0; i + 1 < road.points.size (); ++i) {
-        const plan_position_t& a = road.points[i];
-        const plan_position_t& b = road.points[i + 1];
-        const float ax = plan_value (a).x () / metres_x;
-        const float az = plan_value (a).z () / metres_z;
-        const float bx = plan_value (b).x () / metres_x;
-        const float bz = plan_value (b).z () / metres_z;
+        const float ax = across (x_of (road.points[i]));
+        const float az = down (z_of (road.points[i]));
+        const float bx = across (x_of (road.points[i + 1]));
+        const float bz = down (z_of (road.points[i + 1]));
         // A way no longer used is drawn in broken line, as maps show
         // an old road gone back to the country.
         const bool abandoned = road.abandoned > age_t {};
@@ -419,24 +456,20 @@ namespace moppe::game {
     for (const auto& [a, b] : roads.sightlines) {
       const terrain::RoadPlace& one = roads.places[a];
       const terrain::RoadPlace& two = roads.places[b];
-      const plan_position_t& p = one.at;
-      const plan_position_t& q = two.at;
-      const float ax = plan_value (p).x () / metres_x;
-      const float az = plan_value (p).z () / metres_z;
-      const float bx =
-        ax + wrap_delta (plan_value (q).x () - plan_value (p).x (), period_x) /
-               metres_x;
-      const float bz =
-        az + wrap_delta (plan_value (q).z () - plan_value (p).z (), period_z) /
-               metres_z;
+      const plan_displacement_t one_to_two =
+        wrap_delta (two.at - one.at, period);
+      const float ax = across (x_of (one.at));
+      const float az = down (z_of (one.at));
+      const float bx = ax + across (x_of (one_to_two));
+      const float bz = az + down (z_of (one_to_two));
       sightline_layer.stroke (
         ax, az, bx, bz, 1.0f * pen, 1.0f * pen, 0.0f, 10.0f * pen, 8.0f * pen);
     }
     for (const terrain::RoadPlace& place : roads.places) {
       if (place.kind != terrain::RoadPlace::Kind::Sanctuary)
         continue;
-      const float cx = plan_value (place.at).x () / metres_x;
-      const float cz = plan_value (place.at).z () / metres_z;
+      const float cx = across (x_of (place.at));
+      const float cz = down (z_of (place.at));
       const float r = 12.0f * pen;
       const float top_x = cx, top_z = cz - r;
       const float left_x = cx - 0.87f * r, left_z = cz + 0.5f * r;
@@ -451,13 +484,14 @@ namespace moppe::game {
     // Light from the north-west, as map readers expect, a little steeper
     // than the country so that gentle ground still models.
     const float light_length = std::sqrt (0.62f * 0.62f * 2.0f + 0.48f * 0.48f);
-    const float light_x = -0.62f / light_length;
-    const float light_y = 0.48f / light_length;
-    const float light_z = -0.62f / light_length;
-    const float exaggeration = 1.25f;
-    const float interval = sheet.contour_interval_m;
-    const float index_interval = 5.0f * interval;
-    const float relief = std::max (60.0f, sheet.highest_m);
+    const direction_t light = unit_direction (Vec3 (
+      -0.62f / light_length, 0.48f / light_length, -0.62f / light_length));
+    const Vec3& sun = direction_value (light);
+    const scale_factor_t exaggeration = 1.25f * scale_factor[one];
+    const ElevationChange interval = sheet.contour_interval;
+    const ElevationChange index_interval = 5.0f * interval;
+    const ElevationChange relief =
+      std::max (ElevationChange (60.0f * u::m), sheet.highest_above_sea);
 
     parallel_for (
       static_cast<std::size_t> (size),
@@ -465,88 +499,125 @@ namespace moppe::game {
       [&] (std::size_t begin, std::size_t end) {
         for (std::size_t py = begin; py < end; ++py)
           for (int px = 0; px < size; ++px) {
-            const float x_m = (static_cast<float> (px) + 0.5f) * metres_x;
-            const float z_m = (static_cast<float> (py) + 0.5f) * metres_z;
-            const float gx = x_m / spacing_x;
-            const float gz = z_m / spacing_z;
+            const meters_t x_m = (static_cast<float> (px) + 0.5f) * metres_x;
+            const meters_t z_m = (static_cast<float> (py) + 0.5f) * metres_z;
+            const float gx = ratio (x_m / spacing_x);
+            const float gz = ratio (z_m / spacing_z);
             // Slopes over a pixel or a sample, whichever is the coarser.
-            const float step_m = 0.75f * std::max (metres, spacing_x);
-            const float sx = step_m / spacing_x;
-            const float sz = step_m / spacing_z;
-            const float h = ground.sample (gx, gz);
-            const float h_east = ground.sample (gx + sx, gz);
-            const float h_west = ground.sample (gx - sx, gz);
-            const float h_south = ground.sample (gx, gz + sz);
-            const float h_north = ground.sample (gx, gz - sz);
-            const float dhdx = (h_east - h_west) / (2.0f * step_m);
-            const float dhdz = (h_south - h_north) / (2.0f * step_m);
-            const float slope = std::sqrt (dhdx * dhdx + dhdz * dhdz);
-            const float above = h - sea_m;
+            const meters_t step_m = 0.75f * std::max (metres, spacing_x);
+            const float sx = ratio (step_m / spacing_x);
+            const float sz = ratio (step_m / spacing_z);
+            const SurfaceElevation h = elevation (ground.sample (gx, gz));
+            const SurfaceElevation h_east =
+              elevation (ground.sample (gx + sx, gz));
+            const SurfaceElevation h_west =
+              elevation (ground.sample (gx - sx, gz));
+            const SurfaceElevation h_south =
+              elevation (ground.sample (gx, gz + sz));
+            const SurfaceElevation h_north =
+              elevation (ground.sample (gx, gz - sz));
+            const grade_t dhdx =
+              ratio ((h_east - h_west) / (2.0f * step_m)) * grade[one];
+            const grade_t dhdz =
+              ratio ((h_south - h_north) / (2.0f * step_m)) * grade[one];
+            const terrain::slope_t slope =
+              std::sqrt (ratio (dhdx * dhdx + dhdz * dhdz)) *
+              terrain::terrain_slope[one];
+            const ElevationChange above = h - sea_level;
 
             // The ground's tint: by height, and by what grows on it.
-            const float high = saturate (above / relief);
-            Rgb open = mix (lowland, upland, smooth (0.05f, 0.45f, high));
-            open = mix (open, fell, smooth (0.40f, 0.75f, high));
-            open = mix (open, summit, smooth (0.72f, 1.0f, high));
-            const float wooded = smooth (0.22f, 0.58f, forest.sample (gx, gz));
-            Rgb color =
+            const proportion_t high = share (saturate (ratio (above / relief)));
+            DisplayColor open = mix (
+              lowland, upland, smooth (share (0.05f), share (0.45f), high));
+            open =
+              mix (open, fell, smooth (share (0.40f), share (0.75f), high));
+            open =
+              mix (open, summit, smooth (share (0.72f), share (1.0f), high));
+            const map::ForestCover cover =
+              forest.sample (gx, gz) * map::forest_cover[one];
+            const blend_weight_t wooded =
+              smooth (share (0.22f), share (0.58f), cover);
+            DisplayColor color =
               mix (open,
-                   mix (woodland, high_woodland, smooth (0.3f, 0.8f, high)),
+                   mix (woodland,
+                        high_woodland,
+                        smooth (share (0.3f), share (0.8f), high)),
                    0.92f * wooded);
 
-            // Shaded relief.
-            const float nx = -dhdx * exaggeration;
-            const float nz = -dhdz * exaggeration;
-            const float n_length = std::sqrt (nx * nx + 1.0f + nz * nz);
+            // Shaded relief: the cosine of the light on the steepened
+            // ground, less its cosine on the level.
+            const grade_t nx = -dhdx * exaggeration.numerical_value_in (one);
+            const grade_t nz = -dhdz * exaggeration.numerical_value_in (one);
+            const float n_length =
+              std::sqrt (ratio (nx * nx) + 1.0f + ratio (nz * nz));
             const float lit =
-              (nx * light_x + light_y + nz * light_z) / n_length - light_y;
-            color = lit < 0.0f
-                      ? mix (color, shadow_ink, saturate (-0.46f * lit))
-                      : mix (color, light_ink, saturate (0.60f * lit));
+              (ratio (nx) * sun[0] + sun[1] + ratio (nz) * sun[2]) / n_length -
+              sun[1];
+            color =
+              lit < 0.0f
+                ? mix (color, shadow_ink, weight (saturate (-0.46f * lit)))
+                : mix (color, light_ink, weight (saturate (0.60f * lit)));
 
             // A line where a field crosses a multiple of an interval: how
             // far the pixel lies from it across the slope, in pixels.
-            const auto line =
-              [&] (float value, float every, float gradient, float half_width) {
-                const float t = value / every;
-                const float off = std::fabs (t - std::round (t)) * every;
-                return saturate (half_width + 0.5f -
-                                 off / std::max (gradient * metres, 1e-4f));
-              };
+            const auto line = [&] (ElevationChange value,
+                                   ElevationChange every,
+                                   terrain::slope_t gradient,
+                                   float half_width) {
+              const float t = ratio (value / every);
+              const ElevationChange off =
+                std::fabs (t - std::round (t)) * every;
+              return saturate (
+                half_width + 0.5f -
+                ratio (off / std::max<ElevationChange> (gradient * metres,
+                                                        1e-4f * u::m)));
+            };
             // Lines that would run together are let go, the fine ones
-            // first.
-            const float steepness = std::max (slope, 0.004f);
-            const float between = interval / (steepness * metres);
+            // first. How far apart they run, in pixels:
+            const terrain::slope_t steepness =
+              std::max (slope, 0.004f * terrain::terrain_slope[one]);
+            const float between = ratio (interval / (steepness * metres));
 
-            const float water_m = level.sample (gx, gz);
-            const float depth = water_m - h;
-            const float d_east = level.sample (gx + sx, gz) - h_east;
-            const float d_west = level.sample (gx - sx, gz) - h_west;
-            const float d_south = level.sample (gx, gz + sz) - h_south;
-            const float d_north = level.sample (gx, gz - sz) - h_north;
-            const float depth_slope = std::max (
-              std::hypot (d_east - d_west, d_south - d_north) / (2.0f * step_m),
-              0.02f);
+            const SurfaceElevation water_level =
+              elevation (level.sample (gx, gz));
+            const ElevationChange depth = water_level - h;
+            const ElevationChange d_east =
+              elevation (level.sample (gx + sx, gz)) - h_east;
+            const ElevationChange d_west =
+              elevation (level.sample (gx - sx, gz)) - h_west;
+            const ElevationChange d_south =
+              elevation (level.sample (gx, gz + sz)) - h_south;
+            const ElevationChange d_north =
+              elevation (level.sample (gx, gz - sz)) - h_north;
+            const terrain::slope_t depth_slope =
+              std::max (ratio (hypot (d_east - d_west, d_south - d_north) /
+                               (2.0f * step_m)) *
+                          terrain::terrain_slope[one],
+                        0.02f * terrain::terrain_slope[one]);
             // Dry ground carries the sheet at its own height, so water is
-            // what stands a hand's breadth over it.
-            const float shore_px = (depth - 0.06f) / (depth_slope * metres);
-            const float wet = saturate (0.5f + shore_px);
+            // what stands a hand's breadth over it. How far the pixel is
+            // into the water from the shore, in pixels:
+            const float shore_px =
+              ratio ((depth - 0.06f * u::m) / (depth_slope * metres));
+            const blend_weight_t wet = weight (saturate (0.5f + shore_px));
 
-            if (wet < 1.0f && above > 0.5f * interval) {
-              const float fine =
+            if (wet < 1.0f * blend_weight[one] && above > 0.5f * interval) {
+              const blend_weight_t fine =
                 0.50f * line (above, interval, steepness, 0.42f * pen) *
                 smooth (2.2f * pen, 4.5f * pen, between);
-              const float heavy =
+              const blend_weight_t heavy =
                 0.80f * line (above, index_interval, steepness, 0.85f * pen) *
                 smooth (0.45f * pen, 1.0f * pen, between);
               color = mix (color, contour_ink, std::max (fine, heavy));
             }
 
-            if (wet > 0.0f) {
-              const bool sea = water_m < sea_m + 0.35f;
-              Rgb wash = sea
-                           ? mix (shallows, deeps, smooth (0.0f, 45.0f, depth))
-                           : fresh_water;
+            if (wet > 0.0f * blend_weight[one]) {
+              const bool sea = water_level < sea_level + 0.35f * u::m;
+              DisplayColor wash =
+                sea ? mix (shallows,
+                           deeps,
+                           smooth (0.0f * u::m, 45.0f * u::m, depth))
+                    : fresh_water;
               if (sea && depth > 0.5f * interval)
                 wash =
                   mix (wash,
@@ -555,10 +626,10 @@ namespace moppe::game {
                          line (depth, 2.0f * interval, steepness, 0.35f * pen) *
                          smooth (3.0f * pen, 6.0f * pen, 2.0f * between));
               color = mix (color, wash, wet);
-              color = mix (
-                color,
-                shore_ink,
-                0.85f * saturate (0.55f * pen + 0.5f - std::fabs (shore_px)));
+              color = mix (color,
+                           shore_ink,
+                           weight (0.85f * saturate (0.55f * pen + 0.5f -
+                                                     std::fabs (shore_px))));
             }
 
             color = mix (color,
@@ -566,11 +637,12 @@ namespace moppe::game {
                          0.92f * river_layer.at (px, static_cast<int> (py)));
 
             // The kilometre grid.
-            const auto grid = [&] (float along_m, float metres_per_pixel) {
-              const float t = along_m / 1000.0f;
-              return saturate (0.25f * pen + 0.5f -
-                               std::fabs (t - std::round (t)) * 1000.0f /
-                                 metres_per_pixel);
+            const auto grid = [&] (meters_t along, meters_t metres_per_pixel) {
+              const float t = ratio (along / (1000.0f * u::m));
+              return weight (
+                saturate (0.25f * pen + 0.5f -
+                          ratio (std::fabs (t - std::round (t)) * 1000.0f *
+                                 u::m / metres_per_pixel)));
             };
             color = mix (
               color,
@@ -594,11 +666,11 @@ namespace moppe::game {
                            static_cast<std::size_t> (px)) *
                           4];
             out[0] = static_cast<std::uint8_t> (
-              std::lround (saturate (color.r) * 255.0f));
+              std::lround (saturate (color.red) * 255.0f));
             out[1] = static_cast<std::uint8_t> (
-              std::lround (saturate (color.g) * 255.0f));
+              std::lround (saturate (color.green) * 255.0f));
             out[2] = static_cast<std::uint8_t> (
-              std::lround (saturate (color.b) * 255.0f));
+              std::lround (saturate (color.blue) * 255.0f));
             out[3] = 255;
           }
       });

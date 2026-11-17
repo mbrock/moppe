@@ -36,7 +36,7 @@ namespace moppe::game {
     const BusLine& bus;
     // Each road place's name (place_names.hh).
     const std::vector<std::string>& place_names;
-    Vec3 home_base;
+    position_t home_base;
     const SkyReading& sky;
   };
 
@@ -84,26 +84,26 @@ namespace moppe::game {
     // Nothing is marked nearer than `near`, and it fades in to `far`.
     static void add_waymark (HudState& state,
                              const FrameView& frame,
-                             int width,
-                             int height,
+                             points_t width,
+                             points_t height,
                              const char* name,
                              unsigned who,
-                             const Vec3& at,
-                             float near,
-                             float far,
+                             const position_t& at,
+                             meters_t near,
+                             meters_t far,
                              const DisplayColor& tint,
-                             float vanish = 0.0f);
+                             meters_t vanish = 0.0f * u::m);
 
     // How near a named place must be for a waymark to point to it.
-    static constexpr float place_waymark_m = 1200.0f;
+    static constexpr meters_t place_waymark = 1200.0f * u::m;
 
     // The way to the other player and to whatever of one's own is
     // parked out of reach, and to the nearest named place.
     void add_waymarks (HudState& state,
                        const HudWorld& w,
                        const FrameView& frame,
-                       int width,
-                       int height) const;
+                       points_t width,
+                       points_t height) const;
 
     // The board over the bus stop nearest the subject, while it is near:
     // the stop's name and when the bus comes, over the sign, in the HUD
@@ -111,8 +111,8 @@ namespace moppe::game {
     // would lay the last string's history over a new one.
     void add_bus_board (const HudWorld& w,
                         const FrameView& frame,
-                        int width,
-                        int height);
+                        points_t width,
+                        points_t height);
 
     // What there is to find on the map, the walker first.
     static std::vector<MapSheet::Mark> map_marks (const HudWorld& w);
@@ -125,10 +125,10 @@ namespace moppe::game {
 
     void draw_trail_map (const HudWorld& w,
                          render::DrawList& dl,
-                         int width_pts,
-                         int height_pts,
-                         const Vec3& subject,
-                         Vec3 heading) const;
+                         points_t width,
+                         points_t height,
+                         const position_t& subject,
+                         direction_t heading) const;
 
     // The map over the view (M): the sheet is painted with the world (or
     // the first time it is unfolded), and what moves is marked on it each
