@@ -57,6 +57,7 @@
 #include <moppe/game/mountain_bike_render.hh>
 #include <moppe/game/mushrooms.hh>
 #include <moppe/game/opening.hh>
+#include <moppe/game/parking.hh>
 #include <moppe/game/place_names.hh>
 #include <moppe/game/places.hh>
 #include <moppe/game/scan.hh>
@@ -74,6 +75,7 @@
 #include <moppe/game/weather.hh>
 #include <moppe/game/world.hh>
 #include <moppe/game/world_loading.hh>
+#include <moppe/game/world_places.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/mov/box3d_vec.hh>
 #include <moppe/mov/glider.hh>
@@ -230,68 +232,24 @@ namespace moppe {
 
       void place_stars_and_player ();
 
-      // -- places ----------------------------------------------------
-
-      PlaceGround place_ground () const;
-
-      // Where the places' things stand is planned before the trees and
-      // rocks, which keep out of their clearings.
-      void plan_world_places ();
-
-      // Once the trees stand: the camps among them, and the built things
-      // with their colliders.
-      void build_world_places ();
-
-      // -- animals -------------------------------------------------
-
-      // The barns of the farms still lived in, in the plan's order.
-      std::vector<const Building*> kept_barns () const;
-
-      std::uint32_t egg_seed () const;
-
-      // Each barn's stock: two horses and two cows tied in their stalls
-      // with their heads to the manger, and the pigs loose in their pen.
-      std::vector<Stall> barn_stalls () const;
-
-      // What the animals read of the world: the ground and its water,
-      // the grazing and the plants, and the trunks and walls about.
-      AnimalGround animal_ground () const;
-
-      // The stock goes out round the places still lived in, and the wild
-      // ones are where their country is.
-      void let_out_animals ();
-
       // What the session's step reaches for beside the ground
       // (surroundings.hh); what the animals read of the world is left
       // out unless the step is to tend them.
       Surroundings surroundings (const AnimalGround* animals = nullptr) const;
 
-      // The queries of surroundings.hh, for the HUD and the scripts.
-      std::optional<std::size_t> beacon_at_hand () const;
-      bool their_beacon (std::size_t i) const;
+      // The active world as what stands on it reads it, and what parking
+      // reads and moves.
+      WorldGround world_ground () const {
+        return { world (), generated_world (), m_trunk_field };
+      }
 
-      // The boat lies at the water's edge of the sea, the nearest open
-      // shore of it to the spawn (or, with no sea in reach or with
-      // `MOPPE_BOAT=lake`, of a lake big enough to take it out on): afloat
-      // a few metres out with its bow drawn up toward the land, as left by
-      // someone gone ashore. `outward` turns it to face the open water.
-      void park_boat (bool outward = false);
-
-      // The jet ski lies afloat by the boat: at the landing, alongside the
-      // jetty's other side; on an open shore or a river, a few metres
-      // along from the boat, wherever the water there will float it. Its
-      // bow is to the land as the boat's is, or with `outward` to the
-      // open water.
-      void park_jet_ski (bool outward = false);
-
-      // How deep the still water stands over the ground at `at`.
-      float boat_depth_at (const Vec3& at) const;
-
-      // MOPPE_BOAT=river: the boat lies on the greatest river, as far up
-      // from the sea as the water stays deep enough to drive it the whole
-      // way down, facing downstream, and the autopilot follows the
-      // river's course out to sea.
-      bool moor_on_river ();
+      ParkingLot parking_lot () {
+        return { session (),
+                 world_ground (),
+                 m_places.layout,
+                 m_trunk_field,
+                 m_spawn_position };
+      }
 
       // The boat autopilot (MOPPE_DEMO=boat): down the river's course
       // where it has one, and otherwise a lazy weave over open water;
@@ -303,99 +261,6 @@ namespace moppe {
       // in a few seconds, and shuts the throttle to come round when the
       // shallows are near.
       InputFrame jet_ski_autopilot (float t);
-
-      // What the water autopilot steers: how fast it is going, m/s, for
-      // how far ahead it must mind the shallows; whether it follows the
-      // river's course where there is one; how far it looks for open
-      // water, metres; and how much of that it cares to have ahead of
-      // it before the weave matters more.
-      struct WaterPilot {
-        float speed = 0.0f;
-        bool follow_route = false;
-        float sight = 90.0f;
-        float room = 60.0f;
-      };
-
-      // Steers something afloat at `at`, heading `heading`, along the
-      // river's course if there is one to follow, and otherwise over
-      // open water.
-      InputFrame water_autopilot (float t,
-                                  const Vec3& at,
-                                  Vec3 heading,
-                                  const WaterPilot& craft);
-
-      bool moor_boat (bool sea_only, bool outward);
-
-      // MOPPE_WALK=haul: the tractor is stuck where it stands and the
-      // walker stands before it, facing away, to haul it out on a rope.
-      // MOPPE_WALK=bump: the jeep stands back from the tractor's flank,
-      // aimed at it, with the walker at its door.
-      void stage_rescue ();
-
-      // Whether a machine `room` metres round could stand at `at`: on dry
-      // ground well above any water, no steeper across that than `relief`
-      // metres, and with no trunk or boulder within reach.
-      bool open_ground (const Vec3& at, float room, float relief) const;
-
-      // The open ground nearest `want`, looked for out to `search` metres
-      // round it; `want` itself when there is none.
-      Vec3 open_ground_near (const Vec3& want,
-                             float room,
-                             float relief,
-                             float search = 30.0f) const;
-
-      // The trailhead's frame: the bike's heading on the level, and its
-      // left.
-      std::pair<Vec3, Vec3> bike_frame () const;
-
-      // Where a point unwrapped across the world's seam stands in the lap
-      // nearest the spawn.
-      Vec3 near_spawn (Vec3 at) const;
-
-      // Whether a machine `room` metres round at `at` keeps clear of the
-      // machines already parked there.
-      bool clear_of_machines (const Vec3& at, float room) const;
-
-      float from_spawn (const Vec3& at) const;
-
-      void report_parked (const char* name, const Vec3& at, const char* where);
-
-      // The jeep is pulled off onto the verge of the nearest cart road, a
-      // few hundred metres out from the trailhead, nose along the road as
-      // if left there for the walk in; beside the bike when no road comes
-      // near enough.
-      void park_jeep ();
-
-      // The tractor stands out on the open ground ahead on the bike's
-      // other side, turned to show its flank, as if left there at the end
-      // of a day's work; the ground found is room for it and the trailer
-      // behind it, some six and a half metres from nose to tailgate.
-      void park_tractor ();
-
-      // The Caddy is parked by the sea, on the nearest level, open ground
-      // above the shore the boat was left at, nose to the water as if its
-      // driver had stood looking out; with no boat, at the trailhead.
-      void park_caddy ();
-
-      // The mountainbike is left at the top of the trail's nearest climb,
-      // the highest point of it within a kilometre or so, off the tread and
-      // facing back down the way it came up, ready for the descent; a few
-      // steps off the motocross when the trail does not climb.
-      void park_mountain_bike ();
-
-      // The Long John, a cargo bike for errands, stands outside the nearest
-      // farmhouse still lived in, or else at the nearest hamlet the roads
-      // join -- a lake's outlet or the landing -- pointed home
-      // toward the trailhead; back down the trail behind the motocross when
-      // none is near.
-      void park_long_john ();
-
-      // The helicopter stands on a pad of its own a few hundred metres
-      // from the trailhead: the levellest open ground round there, raised
-      // above its surroundings where it can be, as a knoll or a shoulder
-      // makes a landing site, with no tree within reach of its rotor;
-      // clear of `avoid` (the other player's) when given one.
-      void park_helicopter (std::optional<Vec3> avoid = std::nullopt);
 
       // MOPPE_DEMO=forest: park the bike in the forest's densest conifer
       // stand.
@@ -418,26 +283,16 @@ namespace moppe {
       // activates; like the boulders they are cheap and need no cache.
       void grow_mushrooms ();
 
-      std::optional<std::size_t> egg_at_hand () const;
-
-      // Trunks and the larger boulders stop the rider alike, so both feed
-      // the one streamed collision field.
-      void settle_obstacles ();
+      // Trunks, the larger boulders, and (once built) the places' walls
+      // stop the rider alike, so all feed the one streamed collision
+      // field.
+      void settle_obstacles (bool with_places);
 
       // -- camp --------------------------------------------------------
 
       GroundHeight ground_reader () const;
 
-      bool beside_hammock () const;
-      std::optional<Vec3> hearth_ahead () const;
-      std::optional<Vec3> fire_at_hand () const;
-      HudState::Cook supper_at_hand () const;
-
       // -- fishing -------------------------------------------------------
-
-      std::optional<Angler> angler () const;
-      bool boat_drifting () const;
-      std::optional<FishingWater> water_ahead () const;
 
       // What there is to do about the line here, and the last fish.
       void add_fishing_readings (HudState& state) const;
@@ -449,11 +304,6 @@ namespace moppe {
 
       // What there is to do about the camp where the walker stands.
       void add_camp_readings (HudState& state) const;
-
-      // The places' stones, timber, and buildings; each beacon's laid
-      // wood; and the old fire rings, cold until a camp's fire is lit in
-      // one.
-      void draw_places (render::Renderer& r, const FrameView& frame);
 
       void draw_camp (render::DrawList& dl);
 
@@ -601,14 +451,6 @@ namespace moppe {
       // under the wing, and their camp.
       void
       draw_companion (render::Renderer& r, render::DrawList& dl, float time);
-
-      // A burning beacon near the eye lights what stands round it.
-      void light_beacons (FrameView& frame) const;
-
-      // A barn lived in keeps its lantern lit in the dark hours; by day
-      // the light from its open doors fills it. Near the eye, it is the
-      // lamp, unless a fire is nearer.
-      void light_barn (FrameView& frame) const;
 
       // The renderer has one lamp. With two fires burning it is the one
       // nearer the eye.
@@ -784,20 +626,8 @@ namespace moppe {
       std::optional<SkyKind> m_logged_sky;
       SkyReading m_sky;
       Vec3 m_spawn_position;
-      // The shore the boat was left at, when it was.
-      std::optional<Vec3> m_mooring;
-      // The way out to open water from there, and where the boat lay
-      // and how it faced.
-      std::optional<Vec3> m_mooring_out;
-      std::optional<std::pair<Vec3, Vec3>> m_boat_berth;
-      // How far aside the later of two players parks the machines that
-      // stand at places in the world, so that theirs and ours do not
-      // stand in one another.
-      Vec3 m_park_aside {};
-      // MOPPE_BOAT=river: the river's course down to the sea, which the
-      // boat autopilot follows, and the next point of it ahead.
-      std::vector<Vec3> m_boat_route;
-      std::size_t m_boat_route_at = 0;
+      // Where the machines were parked, and the boat moored.
+      Parking m_parking;
       Vec3 m_home_base_position;
       render::DrawList m_home_base_marker;
       // Each road place's name (place_names.hh), and the fingerposts.
@@ -825,13 +655,8 @@ namespace moppe {
       Terrain m_terrain;
       ForestLandscape m_forest;
       BoulderLandscape m_boulders;
-      // What stands at the ends of the roads (game/places.hh), and how
-      // each sanctuary's beacon burns this frame.
-      PlacesPlan m_places;
-      // The barns' nest boxes (the eggs in them are the logic's m_nests;
-      // the animals and the poultry are the session's).
-      std::vector<Nest> m_nest_sites;
-      PlacesLandscape m_places_landscape;
+      // What stands at the ends of the roads, and what lives there.
+      WorldPlaces m_places;
       MushroomPatch m_mushrooms;
       // Scratch for the basket's contents as drawn.
       std::vector<MushroomSite> m_basket_contents;

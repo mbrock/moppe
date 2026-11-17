@@ -119,19 +119,20 @@ namespace moppe {
       place[1] = ground_height (place) + 1.2f;
       bike.reset (place);
       bike.set_heading (heading);
-      m_park_aside = place - m_spawn_position;
-      m_park_aside[1] = 0.0f;
+      Vec3 aside = place - m_spawn_position;
+      aside[1] = 0.0f;
+      m_parking.set_aside (aside);
       m_spawn_position = place;
-      park_jeep ();
-      park_tractor ();
-      park_mountain_bike ();
-      park_long_john ();
-      park_helicopter (theirs.helicopter.position);
+      m_parking.park_jeep (parking_lot ());
+      m_parking.park_tractor (parking_lot ());
+      m_parking.park_mountain_bike (parking_lot ());
+      m_parking.park_long_john (parking_lot ());
+      m_parking.park_helicopter (parking_lot (), theirs.helicopter.position);
       if (logic ().m_mode != M_BOAT)
-        park_boat ();
+        m_parking.park_boat (parking_lot ());
       if (logic ().m_mode != M_JET_SKI)
-        park_jet_ski ();
-      park_caddy ();
+        m_parking.park_jet_ski (parking_lot ());
+      m_parking.park_caddy (parking_lot ());
       if (!beside)
         return;
       session ().walker ().spawn (moppe::position (place + side * 1.8f),

@@ -242,7 +242,7 @@ namespace moppe {
       ForestPlan plan = generated_world ().forest ();
       std::erase_if (plan.sites, [this] (const ForestSite& site) {
         const Vec3 at = position_value (site.position);
-        return cleared (m_places, at) || on_road (at, 0.6f, true);
+        return cleared (m_places.layout, at) || on_road (at, 0.6f, true);
       });
       m_forest.rebuild (*m_renderer, plan);
       std::cerr << "global forest: " << m_forest.tree_count ()
@@ -275,7 +275,7 @@ namespace moppe {
       std::erase_if (plan.sites, [this] (const BoulderSite& site) {
         const Vec3 at = position_value (site.centre);
         return !site.solid &&
-               (cleared (m_places, at) ||
+               (cleared (m_places.layout, at) ||
                 on_road (at, site.radius.numerical_value_in (u::m), false));
       });
       m_boulders.rebuild (*m_renderer, plan);
@@ -331,14 +331,18 @@ namespace moppe {
       }
     }
 
-    void MoppeGame::settle_obstacles () {
+    void MoppeGame::settle_obstacles (bool with_places) {
       std::vector<mov::Trunk> obstacles = m_forest.trunks ();
       obstacles.insert (obstacles.end (),
                         m_boulders.colliders ().begin (),
                         m_boulders.colliders ().end ());
+      if (with_places)
+        obstacles.insert (obstacles.end (),
+                          m_places.landscape.colliders ().begin (),
+                          m_places.landscape.colliders ().end ());
       const Vec3 period = extent_value (generated_world ().forest ().period);
       m_trunk_field.set_trunks (std::move (obstacles), period[0], period[2]);
-      if (m_trunk_field.trunk_count ())
+      if (m_trunk_field.trunk_count () && !with_places)
         std::cerr << "moppe: obstacle colliders: "
                   << m_trunk_field.trunk_count ()
                   << " (Box3D, streamed around the rider)" << std::endl;
@@ -362,18 +366,23 @@ namespace moppe {
       prepare_world_water ();
       prepare_world_surface ();
       place_stars_and_player ();
-      plan_world_places ();
+      m_places.plan (world_ground (),
+                     session (),
+                     static_cast<std::uint32_t> (recipe ().seed ().value));
       grow_global_forest ();
       scatter_boulders ();
       grow_mushrooms ();
-      settle_obstacles ();
-      build_world_places ();
-      let_out_animals ();
-      park_jeep ();
-      park_tractor ();
-      park_mountain_bike ();
-      park_long_john ();
-      park_helicopter ();
+      settle_obstacles (false);
+      m_places.build (m_renderer, world_ground ());
+      if (m_renderer && !m_places.landscape.colliders ().empty ())
+        settle_obstacles (true);
+      m_places.let_out_animals (
+        world_ground (), session (), m_home_base_position, m_spawn_position);
+      m_parking.park_jeep (parking_lot ());
+      m_parking.park_tractor (parking_lot ());
+      m_parking.park_mountain_bike (parking_lot ());
+      m_parking.park_long_john (parking_lot ());
+      m_parking.park_helicopter (parking_lot ());
       // MOPPE_DEMO=boat: the autopilot takes the boat out instead, and
       // MOPPE_WALK=boat-fish takes it out to fish.
       const char* demo_name = moppe::environment ("MOPPE_DEMO");
@@ -381,12 +390,12 @@ namespace moppe {
       const bool boat_demo =
         (demo_name && std::string_view (demo_name) == "boat") ||
         (walk_name && std::string_view (walk_name) == "boat-fish");
-      park_boat (boat_demo);
+      m_parking.park_boat (parking_lot (), boat_demo);
       // MOPPE_DEMO=jet_ski: the autopilot rides the jet ski out instead.
       const bool jet_ski_demo =
         demo_name && std::string_view (demo_name) == "jet_ski";
-      park_jet_ski (jet_ski_demo);
-      park_caddy ();
+      m_parking.park_jet_ski (parking_lot (), jet_ski_demo);
+      m_parking.park_caddy (parking_lot ());
       // A demo already at the wheel of a machine just parked follows it.
       if (logic ().m_mode != M_FOOT && logic ().m_mode != M_BIKE)
         session ().settle_camera (surface ());
@@ -395,7 +404,7 @@ namespace moppe {
         logic ().m_cam_mode = CAM_CHASE;
         session ().settle_camera (surface ());
       }
-      stage_rescue ();
+      game::stage_rescue (session (), world_ground ());
       // MOPPE_DEMO=helicopter: the autopilot takes it up instead, hooks
       // the jeep, parked beside it, on its line, and flies it off.
       if (const char* demo = moppe::environment ("MOPPE_DEMO");

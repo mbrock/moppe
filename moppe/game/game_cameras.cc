@@ -400,7 +400,7 @@ namespace moppe {
           m_capture_camera.film_stand =
             at + heading * 45.0f + r * (side * 8.0f);
           m_capture_camera.film_stand[1] =
-            std::max (boat_depth_at (m_capture_camera.film_stand) +
+            std::max (world_ground ().depth (m_capture_camera.film_stand) +
                         ground_height (m_capture_camera.film_stand),
                       ground_height (m_capture_camera.film_stand)) +
             1.1f;

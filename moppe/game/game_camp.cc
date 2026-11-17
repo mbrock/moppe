@@ -13,9 +13,9 @@ namespace moppe {
         .water = &generated_world ().water_surface (),
         .trunks = &m_trunk_field,
         .mushrooms = &m_mushrooms,
-        .places = &m_places,
-        .nests = m_nest_sites,
-        .egg_seed = egg_seed (),
+        .places = &m_places.layout,
+        .nests = m_places.nests,
+        .egg_seed = m_places.egg_seed (),
         .animal_ground = animals,
         .day_pace = m_day.pace,
         .day_turning = m_day.turning,
@@ -25,46 +25,6 @@ namespace moppe {
                              ? std::optional (clock_time (m_company.hours))
                              : std::nullopt,
       };
-    }
-
-    bool MoppeGame::beside_hammock () const {
-      return game::beside_hammock (session ());
-    }
-
-    std::optional<Vec3> MoppeGame::hearth_ahead () const {
-      return game::hearth_ahead (session (), surroundings ());
-    }
-
-    std::optional<Vec3> MoppeGame::fire_at_hand () const {
-      return game::fire_at_hand (session (), surroundings ());
-    }
-
-    HudState::Cook MoppeGame::supper_at_hand () const {
-      return game::supper_at_hand (session (), surroundings ());
-    }
-
-    std::optional<Angler> MoppeGame::angler () const {
-      return game::angler (session ());
-    }
-
-    bool MoppeGame::boat_drifting () const {
-      return game::boat_drifting (session (), surroundings ());
-    }
-
-    std::optional<FishingWater> MoppeGame::water_ahead () const {
-      return game::water_ahead (session (), surroundings ());
-    }
-
-    std::optional<std::size_t> MoppeGame::beacon_at_hand () const {
-      return game::beacon_at_hand (session (), surroundings ());
-    }
-
-    bool MoppeGame::their_beacon (std::size_t i) const {
-      return game::their_beacon (logic (), i);
-    }
-
-    std::optional<std::size_t> MoppeGame::egg_at_hand () const {
-      return game::egg_at_hand (session (), surroundings ());
     }
 
     void MoppeGame::draw_camp (render::DrawList& dl) {

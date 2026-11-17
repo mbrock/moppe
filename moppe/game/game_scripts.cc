@@ -52,22 +52,23 @@ namespace moppe {
         return;
       const std::string_view script (walk);
       std::optional<std::pair<Vec3, Vec3>> stand;
-      if (script == "landing" && m_places.landing) {
+      if (script == "landing" && m_places.layout.landing) {
         // On the strand, looking past the jetty to the skiff beside it.
-        const Landing& landing = *m_places.landing;
+        const Landing& landing = *m_places.layout.landing;
         const Vec3 back = landing.jetty.root - landing.berth;
         const Vec3 aside =
           landing.berth -
           (landing.jetty.root + landing.jetty.out * landing.jetty.length);
         stand = { landing.berth + back * 0.55f + aside * 6.0f, landing.berth };
-      } else if (script == "sanctuary" && !m_places.sanctuaries.empty ()) {
-        const Sanctuary& s = m_places.sanctuaries.front ();
+      } else if (script == "sanctuary" &&
+                 !m_places.layout.sanctuaries.empty ()) {
+        const Sanctuary& s = m_places.layout.sanctuaries.front ();
         // Inside the wall by its gap, on the level top, facing the fire.
         stand = { s.centre + s.gate * (s.wall_radius - 1.8f), s.centre };
       } else if (script == "house" || script == "indoors") {
         // Before the farmhouse's open door, or inside by the back wall
         // looking out through it.
-        for (const Farm& farm : m_places.farms)
+        for (const Farm& farm : m_places.layout.farms)
           for (const Building& b : farm.buildings)
             if (!stand && !farm.ruined && b.kind == Building::Kind::house) {
               const Vec3 left (b.forward[2], 0.0f, -b.forward[0]);
@@ -115,7 +116,7 @@ namespace moppe {
             }
           middle = middle * (1.0f / n);
           // Of a few ways in, the first on dry ground.
-          const AnimalGround g = animal_ground ();
+          const AnimalGround g = m_places.animal_ground (world_ground ());
           const SpeciesTraits& t = traits (best->species);
           const float away = t.stock ? 9.0f : 2.0f * meters_value (t.wary);
           for (int k = 0; k < 12 && !stand; ++k) {
@@ -141,7 +142,7 @@ namespace moppe {
         // hens' corner, its perches and nest boxes.
         const Building* nearest = nullptr;
         float best = 1e9f;
-        for (const Farm& farm : m_places.farms)
+        for (const Farm& farm : m_places.layout.farms)
           for (const Building& b : farm.buildings)
             if (farm.kept && !farm.ruined && b.kind == Building::Kind::barn) {
               const float d = std::hypot (b.at[0] - m_spawn_position[0],
@@ -166,9 +167,9 @@ namespace moppe {
           else
             stand = { at (-4.3f, -2.6f), at (-6.0f, -2.6f) };
         }
-      } else if (script == "farm" && !m_places.farms.empty () &&
-                 !m_places.farms.front ().buildings.empty ()) {
-        const Building& b = m_places.farms.front ().buildings.front ();
+      } else if (script == "farm" && !m_places.layout.farms.empty () &&
+                 !m_places.layout.farms.front ().buildings.empty ()) {
+        const Building& b = m_places.layout.farms.front ().buildings.front ();
         stand = { b.at + b.forward * 16.0f +
                     Vec3 (b.forward[2], 0.0f, -b.forward[0]) * 9.0f,
                   b.at };
@@ -177,7 +178,8 @@ namespace moppe {
         return;
       Vec3 at = stand->first;
       at[1] = ground_height (at) + 0.1f;
-      if (const std::optional<float> floor = floor_at (m_places, at[0], at[2]))
+      if (const std::optional<float> floor =
+            floor_at (m_places.layout, at[0], at[2]))
         at[1] = std::max (static_cast<float> (at[1]), *floor + 0.1f);
       Vec3 facing = stand->second - at;
       facing[1] = 0.0f;
@@ -411,7 +413,7 @@ namespace moppe {
           m_walk.boat_fish_off = t;
         input.deploy_glider =
           (!line_out (line) && t - m_walk.fish_rest > 1.5f &&
-           boat_drifting ()) ||
+           game::boat_drifting (session (), surroundings ())) ||
           (line.phase == Line::Phase::biting && age > 0.4f);
         return input;
       }
@@ -472,18 +474,18 @@ namespace moppe {
           // To the nearest box with an egg in it, and into it.
           std::optional<std::size_t> best;
           for (std::size_t k = 0;
-               k < m_nest_sites.size () && k < logic ().m_nests.size ();
+               k < m_places.nests.size () && k < logic ().m_nests.size ();
                ++k)
             if (logic ().m_nests[k].eggs > 0 &&
-                (!best || length2 (m_nest_sites[k].at - feet) <
-                            length2 (m_nest_sites[*best].at - feet)))
+                (!best || length2 (m_places.nests[k].at - feet) <
+                            length2 (m_places.nests[*best].at - feet)))
               best = k;
           if (!best)
             return input;
           const Vec3 front =
-            m_nest_sites[*best].at + m_nest_sites[*best].out * 0.75f;
-          if (egg_at_hand ()) {
-            steer (m_nest_sites[*best].at, 0.0f);
+            m_places.nests[*best].at + m_places.nests[*best].out * 0.75f;
+          if (game::egg_at_hand (session (), surroundings ())) {
+            steer (m_places.nests[*best].at, 0.0f);
             if (std::fmod (t, 0.9f) < dt + 1e-4f)
               input.deploy_glider = true;
           } else {

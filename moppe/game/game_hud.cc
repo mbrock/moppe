@@ -156,15 +156,17 @@ namespace moppe {
         state.catch_note = m_prompts.catch_note.c_str ();
         state.catch_age_s = since;
       }
-      if (!angler ())
+      if (!game::angler (session ()))
         return;
       const bool afloat = logic ().m_mode == M_BOAT;
       switch (fishing.line.phase) {
       case Line::Phase::idle:
-        if (afloat ? boat_drifting () && water_ahead ()
+        if (afloat ? game::boat_drifting (session (), surroundings ()) &&
+                       game::water_ahead (session (), surroundings ())
                    : !state.mushroom_in_reach &&
                        state.cook == HudState::Cook::none &&
-                       state.camp != HudState::Camp::lie_down && water_ahead ())
+                       state.camp != HudState::Camp::lie_down &&
+                       game::water_ahead (session (), surroundings ()))
           state.angle = HudState::Angle::cast;
         break;
       case Line::Phase::waiting:
@@ -241,18 +243,21 @@ namespace moppe {
       case M_FOOT:
         if (!camp.resting) {
           state.thumb = "Jump";
-          state.can_take_down = beside_hammock ();
+          state.can_take_down = game::beside_hammock (session ());
           Vec3 to_fire = session ().walker ().position () - camp.hearth;
           to_fire[1] = 0.0f;
           state.can_douse_fire = camp.fire && length2 (to_fire) < 3.0f * 3.0f;
           state.can_light_fire =
             !camp.fire &&
-            (hearth_ahead ().has_value () ||
-             hearth_at_hand (m_places, session ().walker ().position ()));
-          if (const std::optional<std::size_t> beacon = beacon_at_hand ()) {
+            (game::hearth_ahead (session (), surroundings ()).has_value () ||
+             hearth_at_hand (m_places.layout,
+                             session ().walker ().position ()));
+          if (const std::optional<std::size_t> beacon =
+                game::beacon_at_hand (session (), surroundings ())) {
             const bool lit = logic ().m_beacons[*beacon].burning ();
             state.can_douse_fire = lit;
-            state.can_light_fire = !lit && !their_beacon (*beacon);
+            state.can_light_fire =
+              !lit && !game::their_beacon (logic (), *beacon);
           }
         }
         break;
@@ -318,18 +323,19 @@ namespace moppe {
       }
       if (logic ().m_mode != M_FOOT || state.mushroom_in_reach)
         return;
-      state.cook = supper_at_hand ();
+      state.cook = game::supper_at_hand (session (), surroundings ());
       state.cook_fish =
         camp.pan.on ? camp.pan.has_fish : logic ().m_fishing.creel.kept () > 0;
       state.cook_eggs =
         camp.pan.on ? camp.pan.eggs > 0 : logic ().m_basket.eggs > 0;
-      if (const std::optional<std::size_t> beacon = beacon_at_hand ();
+      if (const std::optional<std::size_t> beacon =
+            game::beacon_at_hand (session (), surroundings ());
           beacon && !logic ().m_beacons[*beacon].burning () &&
-          !their_beacon (*beacon) && !camp.resting)
+          !game::their_beacon (logic (), *beacon) && !camp.resting)
         state.camp = HudState::Camp::light_beacon;
       else if (camp.resting)
         state.camp = HudState::Camp::get_up;
-      else if (beside_hammock ())
+      else if (game::beside_hammock (session ()))
         state.camp = HudState::Camp::lie_down;
       else if (logic ().m_hammock_at_hand)
         state.camp = HudState::Camp::hang;
@@ -565,7 +571,7 @@ namespace moppe {
         const MushroomKind kind = m_mushrooms.site (*found).kind;
         state.mushroom_in_reach = mushroom_name (kind);
         state.mushroom_edible = mushroom_edible (kind);
-      } else if (egg_at_hand ()) {
+      } else if (game::egg_at_hand (session (), surroundings ())) {
         state.egg_in_reach = true;
         state.basket_takes_egg = basket.eggs < basket_holds_eggs;
       }

@@ -22,8 +22,8 @@ namespace moppe {
         (float)r.width_pts () / std::max (1, r.height_pts ());
       FrameView frame = compose_frame_view (frame_view_input (aspect));
       light_companion_fire (frame);
-      light_beacons (frame);
-      light_barn (frame);
+      m_places.light_beacons (frame, logic ().m_beacon_burn);
+      m_places.light_barn (frame);
       const bool cinematic = frame.visibility.cinematic;
       // A cut is a new view: the temporal history of the last one would
       // only smear into it.

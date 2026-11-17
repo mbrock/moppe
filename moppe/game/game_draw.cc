@@ -149,13 +149,14 @@ namespace moppe {
       render_helicopter (r, actors.helicopter, 0);
       render_boat (r, m_caster_dl, actors.boat, std::nullopt, 0);
       render_jet_ski (r, m_caster_dl, actors.jet_ski, std::nullopt, 0);
-      m_places_landscape.cast_shadows (r, frame.camera.position);
+      m_places.landscape.cast_shadows (r, frame.camera.position);
       render_animals (
         r,
         session ().animals ().animals (),
         [this] (float x, float z) {
           const float ground = ground_height (Vec3 (x, 0.0f, z));
-          if (const std::optional<float> floor = floor_at (m_places, x, z))
+          if (const std::optional<float> floor =
+                floor_at (m_places.layout, x, z))
             return std::max (*floor, ground);
           return ground;
         },
@@ -163,8 +164,8 @@ namespace moppe {
         frame.camera.frame_forward,
         frame.lighting.time,
         70.0f,
-        m_places.period_x,
-        m_places.period_z,
+        m_places.layout.period_x,
+        m_places.layout.period_z,
         0);
       if (m_fingerpost_mesh)
         r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
@@ -278,13 +279,15 @@ namespace moppe {
         // its yard is trodden short.
         const Vec3 eye = frame.camera.position;
         float nearest[2] = { 150.0f, 150.0f };
-        for (const Farm& farm : m_places.farms)
+        for (const Farm& farm : m_places.layout.farms)
           for (const Building& b : farm.buildings) {
             if (farm.ruined || b.kind == Building::Kind::mill)
               continue;
             Vec3 at = b.at;
-            at[0] += terrain::whole_periods (eye[0] - at[0], m_places.period_x);
-            at[2] += terrain::whole_periods (eye[2] - at[2], m_places.period_z);
+            at[0] +=
+              terrain::whole_periods (eye[0] - at[0], m_places.layout.period_x);
+            at[2] +=
+              terrain::whole_periods (eye[2] - at[2], m_places.layout.period_z);
             const float d = std::hypot (at[0] - eye[0], at[2] - eye[2]);
             const bool barn = b.kind == Building::Kind::barn;
             if (d >= nearest[barn])
@@ -423,13 +426,14 @@ namespace moppe {
       for (std::size_t i = basket.used; i < basket.picked.size (); ++i)
         m_basket_contents.push_back (m_mushrooms.site (basket.picked[i]));
       draw_camp (m_world_dl);
-      draw_places (r, frame);
+      m_places.draw (r, m_world_dl, frame, logic ());
       render_animals (
         r,
         session ().animals ().animals (),
         [this] (float x, float z) {
           const float ground = ground_height (Vec3 (x, 0.0f, z));
-          if (const std::optional<float> floor = floor_at (m_places, x, z))
+          if (const std::optional<float> floor =
+                floor_at (m_places.layout, x, z))
             return std::max (*floor, ground);
           return ground;
         },
@@ -437,8 +441,8 @@ namespace moppe {
         frame.camera.frame_forward,
         frame.lighting.time,
         450.0f,
-        m_places.period_x,
-        m_places.period_z,
+        m_places.layout.period_x,
+        m_places.layout.period_z,
         0x200000);
       render_birds (r,
                     session ().hens ().birds (),
@@ -446,15 +450,15 @@ namespace moppe {
                     frame.camera.frame_forward,
                     frame.lighting.time,
                     90.0f,
-                    m_places.period_x,
-                    m_places.period_z,
+                    m_places.layout.period_x,
+                    m_places.layout.period_z,
                     0x300000);
       draw_nest_eggs (m_world_dl,
-                      m_nest_sites,
+                      m_places.nests,
                       logic ().m_nests,
                       frame.camera.position,
-                      m_places.period_x,
-                      m_places.period_z);
+                      m_places.layout.period_x,
+                      m_places.layout.period_z);
       if (actors.walker && lying_down ())
         draw_sleeper (m_world_dl, helmet, frame.lighting.time);
       else if (actors.walker && !helmet)
@@ -507,7 +511,7 @@ namespace moppe {
           !(helmet && actors.active_mode == M_BIKE))
         render_vehicle_flames (
           r, actors.bike, frame.camera.position, frame.lighting.time, 0x1000);
-      m_places_landscape.draw_beacon_fires (r,
+      m_places.landscape.draw_beacon_fires (r,
                                             frame.camera.position,
                                             logic ().m_beacon_burn,
                                             frame.lighting.daylight,

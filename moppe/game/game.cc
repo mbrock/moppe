@@ -246,7 +246,7 @@ namespace moppe {
       ride_along (input);
       // The ground shows what the basket holds, a restored one too.
       m_mushrooms.follow (logic ().m_basket);
-      const AnimalGround animals = animal_ground ();
+      const AnimalGround animals = m_places.animal_ground (world_ground ());
       const Surroundings around = surroundings (&animals);
       const GameSessionAdvanceResult advance =
         advance_game_session (world (),
