@@ -44,7 +44,10 @@ namespace moppe {
       }
     }
 
-    void MoppeGame::pointer_move (float, float, float dx, float dy) {
+    void MoppeGame::pointer_move (platform::view_points_t,
+                                  platform::view_points_t,
+                                  platform::view_points_t dx,
+                                  platform::view_points_t dy) {
       if (m_ready && !m_pointer_free)
         m_live_input.look (dx, dy);
     }
@@ -160,7 +163,7 @@ namespace moppe {
       update_frame_flare ();
     }
 
-    std::optional<double> MoppeGame::script_seconds () const {
+    std::optional<platform::host_time_t> MoppeGame::script_seconds () const {
       return m_capture.script_seconds (m_ready && !m_opening.active ());
     }
 

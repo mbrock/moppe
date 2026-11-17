@@ -26,10 +26,11 @@ namespace moppe::game {
     return std::clamp (first - 120 - m_video_render_frame, 1, 20);
   }
 
-  std::optional<double> FrameCapture::script_seconds (bool playing) const {
+  std::optional<platform::host_time_t>
+  FrameCapture::script_seconds (bool playing) const {
     if (!m_video_plan)
       return std::nullopt;
-    return playing ? m_video_render_frame / 60.0 : -1.0;
+    return platform::host_time (playing ? m_video_render_frame / 60.0 : -1.0);
   }
 
   void FrameCapture::toggle_clip () {

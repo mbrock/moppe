@@ -88,7 +88,8 @@ namespace moppe::game {
     }
 
     float elapsed () const {
-      return static_cast<float> (platform::now () - clock_start);
+      return static_cast<float> (
+        (platform::now () - clock_start).numerical_value_in (u::s));
     }
 
     void
@@ -112,7 +113,7 @@ namespace moppe::game {
 
     // Written at reset, read from both threads.
     std::atomic<std::uint32_t> seed;
-    double clock_start;
+    platform::host_time_t clock_start;
     std::atomic<bool> generation_complete = false;
     std::atomic<bool> in_flight = false;
 

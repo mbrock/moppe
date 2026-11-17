@@ -841,7 +841,9 @@ namespace moppe::game {
     dl.clear ();
     text.clear ();
     const platform::Insets safe_insets = platform::safe_insets ();
-    dl.translate (safe_insets.left, safe_insets.top, 0);
+    dl.translate (safe_insets.left.numerical_value_in (platform::view_point),
+                  safe_insets.top.numerical_value_in (platform::view_point),
+                  0);
     map.draw (dl,
               text,
               hud.font (),
@@ -921,11 +923,14 @@ namespace moppe::game {
     dl.clear ();
     text.clear ();
     const platform::Insets safe_insets = platform::safe_insets ();
-    dl.translate (safe_insets.left, safe_insets.top, 0);
+    const auto in_points = [] (platform::view_points_t length) {
+      return length.numerical_value_in (platform::view_point);
+    };
+    dl.translate (in_points (safe_insets.left), in_points (safe_insets.top), 0);
     const int hud_width =
-      r.width_pts () - (int)(safe_insets.left + safe_insets.right);
+      r.width_pts () - (int)in_points (safe_insets.left + safe_insets.right);
     const int hud_height =
-      r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
+      r.height_pts () - (int)in_points (safe_insets.top + safe_insets.bottom);
     if (visibility.cinematic_hud) {
       opening.draw_titles (hud, dl, text, hud_width, hud_height);
       hud.draw_ride_prompt (
@@ -954,7 +959,7 @@ namespace moppe::game {
         hud.draw_quit_question (dl, text, hud_width, hud_height);
     }
     hud.publish_offers ();
-    text.translate (safe_insets.left, safe_insets.top);
+    text.translate (in_points (safe_insets.left), in_points (safe_insets.top));
 
     // Even a clean inspection capture needs this empty HUD pass: it is
     // also the final post-chain composite into the drawable.

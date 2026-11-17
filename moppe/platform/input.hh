@@ -19,9 +19,9 @@ namespace moppe::platform {
   // One reading of a gamepad in the Xbox layout. Sticks run -1..1 with y up,
   // before any dead zone; the trigger runs 0..1.
   struct GamepadReading {
-    float left_x = 0, left_y = 0;
-    float right_x = 0, right_y = 0;
-    float left_trigger = 0, right_trigger = 0;
+    control_signal_t left_x {}, left_y {};
+    control_signal_t right_x {}, right_y {};
+    proportion_t left_trigger {}, right_trigger {};
     bool a = false, b = false, x = false, y = false;
     bool left_shoulder = false, right_shoulder = false;
     bool dpad_left = false, dpad_right = false;
@@ -30,12 +30,15 @@ namespace moppe::platform {
 
   // A stick axis past its dead zone, rescaled so the edge of the dead zone
   // reads zero and full travel one.
-  float stick_axis (float value);
+  control_signal_t stick_axis (control_signal_t value);
 
   // The right stick's deflection as a look rate: a round dead zone, so a
   // push straight up does not leak sideways, and a curve that keeps small
   // deflections fine for aiming and full ones quick for turning around.
-  void look_axes (float x, float y, float& look_x, float& look_y);
+  void look_axes (control_signal_t x,
+                  control_signal_t y,
+                  control_signal_t& look_x,
+                  control_signal_t& look_y);
 
   // The gamepad as every host reads one: the left stick (or the D-pad)
   // drives and steers, the right stick looks around, the right trigger
@@ -109,22 +112,22 @@ namespace moppe::platform {
       return m_stick ? &m_controls : nullptr;
     }
 
-    // Reads the file now and then and runs what is due at `now` seconds.
-    void poll (double now);
+    // Reads the file now and then and runs what is due at `now`.
+    void poll (host_time_t now);
 
   private:
-    void read (double now);
+    void read (host_time_t now);
     void schedule (const std::string& verb,
                    std::istringstream& words,
                    const std::string& line,
-                   double& at);
+                   host_time_t& at);
 
     Game& m_game;
     std::string m_path;
     std::filesystem::file_time_type m_stamp {};
     long long m_sequence = -1;
-    double m_next_check = 0;
-    std::multimap<double, std::function<void ()>> m_timeline;
+    host_time_t m_next_check = host_time (0.0);
+    std::multimap<host_time_t, std::function<void ()>> m_timeline;
     bool m_stick = false;
     ControlState m_controls {};
   };

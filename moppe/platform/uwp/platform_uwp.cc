@@ -118,11 +118,11 @@ namespace moppe::platform {
     return relative.empty () ? base : base + "\\" + windows_path (relative);
   }
 
-  double now () {
+  host_time_t now () {
     using namespace std::chrono;
-    return duration_cast<duration<double>> (
-             steady_clock::now ().time_since_epoch ())
-      .count ();
+    return host_time (
+      duration_cast<duration<double>> (steady_clock::now ().time_since_epoch ())
+        .count ());
   }
 
   Insets safe_insets () {

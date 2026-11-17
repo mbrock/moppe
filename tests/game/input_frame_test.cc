@@ -73,7 +73,9 @@ MOPPE_TEST (input_frame_adapter_maps_keyboard_controls_and_actions) {
 
 MOPPE_TEST (input_frame_adapter_maps_touch_and_cinematic_controls) {
   game::InputFrameAdapter input;
-  input.controls ({ .steer = 1.4f, .drive = -1.4f, .boost = 1.4f });
+  input.controls ({ .steer = 1.4f * control_signal[one],
+                    .drive = -1.4f * control_signal[one],
+                    .boost = 1.4f * proportion[one] });
   game::InputFrame frame = input.take_frame ();
   MOPPE_CHECK_NEAR (game::input_value (frame.turn), 1.0f, 0.0f);
   MOPPE_CHECK_NEAR (game::input_value (frame.drive), -1.0f, 0.0f);
@@ -88,7 +90,9 @@ MOPPE_TEST (input_frame_adapter_maps_touch_and_cinematic_controls) {
 
 MOPPE_TEST (input_frame_adapter_combines_keyboard_and_controller_controls) {
   game::InputFrameAdapter input;
-  input.controls ({ .steer = 0.5f, .drive = 0.75f, .boost = 0.4f });
+  input.controls ({ .steer = 0.5f * control_signal[one],
+                    .drive = 0.75f * control_signal[one],
+                    .boost = 0.4f * proportion[one] });
   input.key (platform::Key::A, true);
   game::InputFrame frame = input.take_frame ();
   MOPPE_CHECK_NEAR (game::input_value (frame.turn), -1.0f, 0.0f);
@@ -102,14 +106,15 @@ MOPPE_TEST (input_frame_adapter_combines_keyboard_and_controller_controls) {
 
 MOPPE_TEST (input_frame_adapter_turns_the_head_at_the_stick_rate) {
   game::InputFrameAdapter input;
-  input.controls ({ .look_x = 1.0f, .look_y = -0.5f });
+  input.controls ({ .look_x = 1.0f * control_signal[one],
+                    .look_y = -0.5f * control_signal[one] });
   game::InputFrame frame = input.take_frame (0.5f);
   MOPPE_CHECK_NEAR (
     frame.look_yaw, 0.5f * game::InputFrameAdapter::look_yaw_rate, 1e-6f);
   MOPPE_CHECK_NEAR (
     frame.look_pitch, -0.25f * game::InputFrameAdapter::look_pitch_rate, 1e-6f);
   // The mouse adds to it within the same frame.
-  input.look (10.0f, 0.0f);
+  input.look (platform::view_points (10.0f), platform::view_points (0.0f));
   frame = input.take_frame (0.0f);
   MOPPE_CHECK_NEAR (frame.look_yaw, 0.035f, 1e-6f);
   input.controls ({});
@@ -118,15 +123,16 @@ MOPPE_TEST (input_frame_adapter_turns_the_head_at_the_stick_rate) {
 }
 
 MOPPE_TEST (right_stick_looks_through_a_round_dead_zone) {
-  float x = 1, y = 1;
-  platform::look_axes (0.1f, 0.1f, x, y);
-  MOPPE_CHECK_NEAR (x, 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (y, 0.0f, 0.0f);
+  const auto signal = [] (float value) { return value * control_signal[one]; };
+  control_signal_t x = signal (1), y = signal (1);
+  platform::look_axes (signal (0.1f), signal (0.1f), x, y);
+  MOPPE_CHECK_NEAR (game::input_value (x), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (game::input_value (y), 0.0f, 0.0f);
   // Straight up stays straight up, and full travel is full rate.
-  platform::look_axes (0.0f, 1.0f, x, y);
-  MOPPE_CHECK_NEAR (x, 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (y, 1.0f, 1e-6f);
+  platform::look_axes (signal (0.0f), signal (1.0f), x, y);
+  MOPPE_CHECK_NEAR (game::input_value (x), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (game::input_value (y), 1.0f, 1e-6f);
   // Half travel turns well under half as fast, for fine aiming.
-  platform::look_axes (0.575f, 0.0f, x, y);
-  MOPPE_CHECK (x > 0.0f && x < 0.3f);
+  platform::look_axes (signal (0.575f), signal (0.0f), x, y);
+  MOPPE_CHECK (x > signal (0.0f) && x < signal (0.3f));
 }

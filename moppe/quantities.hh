@@ -29,6 +29,8 @@ namespace moppe {
 
   using meters_t = mp_units::quantity<mp_units::si::metre, float>;
   using meters_f64_t = mp_units::quantity<mp_units::si::metre, double>;
+  // Seconds kept in double, for clocks that run for a whole session.
+  using seconds_f64_t = mp_units::quantity<mp_units::si::second, double>;
   using square_meters_t =
     mp_units::quantity<mp_units::si::metre * mp_units::si::metre, float>;
   using cubic_meters_t =
@@ -136,6 +138,20 @@ namespace moppe {
   // converts to a plain radian quantity, but neither becomes the other.
   QUANTITY_SPEC (heading, mp_units::isq::angular_measure);
   QUANTITY_SPEC (inclination, mp_units::isq::angular_measure);
+
+  // ---- The screen ----
+  //
+  // Lengths on the screen, in the points the hosts and the HUD lay things
+  // out in: a dimension of their own, so a pointer's travel is never taken
+  // for metres in the world. The unit, the point, is the platform's
+  // (platform/platform.hh).
+  inline constexpr struct dim_view_length final
+      : mp_units::base_dimension<"Lv"> {
+  } dim_view_length;
+  QUANTITY_SPEC (view_length, dim_view_length);
+  // How far a pointer's wheel was turned, in its steps or the fraction of
+  // one a touchpad gives.
+  QUANTITY_SPEC (wheel_travel, mp_units::dimensionless, mp_units::subkind);
 
   // ---- History ----
 

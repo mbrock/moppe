@@ -1,13 +1,14 @@
 #ifndef MOPPE_PLATFORM_FRAME_CLOCK_HH
 #define MOPPE_PLATFORM_FRAME_CLOCK_HH
 
+#include <moppe/gfx/math.hh>
 #include <moppe/nhal/nhal.hh>
 
 #include <algorithm>
 
 namespace moppe::platform {
   struct FrameStep {
-    double elapsed_seconds = 0;
+    seconds_f64_t elapsed {};
     bool by_display = false;
   };
 
@@ -16,21 +17,25 @@ namespace moppe::platform {
   // interval twice. Wall time bridges startup and prediction loss instead.
   class FrameClock {
   public:
-    FrameStep select (double wall_seconds, const nhal::FrameTiming& timing) {
-      const bool by_display = timing.predicted && m_consumed_display > 0;
-      const double elapsed =
-        by_display ? std::max (0.0, timing.display_seconds - m_consumed_display)
-                   : wall_seconds;
+    FrameStep select (seconds_f64_t wall, const nhal::FrameTiming& timing) {
+      // NHAL's timing is plain seconds on the display's clock.
+      const seconds_f64_t display = timing.display_seconds * u::s;
+      const bool by_display =
+        timing.predicted && m_consumed_display > seconds_f64_t {};
+      const seconds_f64_t elapsed =
+        by_display ? std::max (seconds_f64_t {}, display - m_consumed_display)
+                   : wall;
       // The host still caps elapsed time at 50 ms. Consume the full forward
       // timestamp so discarded time does not become a catch-up backlog.
-      m_consumed_display =
-        timing.predicted ? std::max (m_consumed_display, timing.display_seconds)
-                         : 0;
+      m_consumed_display = timing.predicted
+                             ? std::max (m_consumed_display, display)
+                             : seconds_f64_t {};
       return { elapsed, by_display };
     }
 
   private:
-    double m_consumed_display = 0;
+    // How far into the display's clock frames have been stepped.
+    seconds_f64_t m_consumed_display {};
   };
 }
 

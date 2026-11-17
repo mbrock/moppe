@@ -12,44 +12,68 @@
 
 namespace moppe::platform {
   namespace {
+    using mp_units::one;
+
+    constexpr control_signal_t signal (float value) {
+      return value * control_signal[one];
+    }
+
     constexpr Key gamepad_keys[] = { Key::E,   Key::Restart, Key::Mount,
                                      Key::Tab, Key::Left,    Key::Right,
                                      Key::Up,  Key::Down,    Key::Space,
                                      Key::R,   Key::T,       Key::Shift };
   }
 
-  float stick_axis (float value) {
-    constexpr float dead_zone = 0.12f;
-    const float magnitude = std::abs (value);
+  control_signal_t stick_axis (control_signal_t value) {
+    constexpr control_signal_t dead_zone = signal (0.12f);
+    constexpr control_signal_t full = signal (1.0f);
+    const control_signal_t magnitude = abs (value);
     if (magnitude <= dead_zone)
-      return 0;
-    return std::copysign (
-      std::min (1.0f, (magnitude - dead_zone) / (1.0f - dead_zone)), value);
+      return {};
+    const proportion_t travel =
+      std::min (1.0f,
+                ((magnitude - dead_zone) / (full - dead_zone))
+                  .numerical_value_in (one)) *
+      proportion[one];
+    return signal (std::copysign (travel.numerical_value_in (one),
+                                  value.numerical_value_in (one)));
   }
 
-  void look_axes (float x, float y, float& look_x, float& look_y) {
-    constexpr float dead_zone = 0.15f;
-    const float magnitude = std::sqrt (x * x + y * y);
-    look_x = look_y = 0;
+  void look_axes (control_signal_t x,
+                  control_signal_t y,
+                  control_signal_t& look_x,
+                  control_signal_t& look_y) {
+    constexpr control_signal_t dead_zone = signal (0.15f);
+    constexpr control_signal_t full = signal (1.0f);
+    // The deflection's size, as the stick's own axes measure it.
+    const control_signal_t magnitude =
+      signal (std::sqrt ((x * x + y * y).numerical_value_in (one)));
+    look_x = look_y = {};
     if (magnitude <= dead_zone)
       return;
-    const float travel =
-      std::min (1.0f, (magnitude - dead_zone) / (1.0f - dead_zone));
-    const float rate = travel * (0.25f + 0.75f * travel * travel);
-    look_x = x / magnitude * rate;
-    look_y = y / magnitude * rate;
+    const float travel = std::min (
+      1.0f,
+      ((magnitude - dead_zone) / (full - dead_zone)).numerical_value_in (one));
+    const control_signal_t rate =
+      signal (travel * (0.25f + 0.75f * travel * travel));
+    look_x = signal ((x / magnitude * rate).numerical_value_in (one));
+    look_y = signal ((y / magnitude * rate).numerical_value_in (one));
   }
 
   ControlState GamepadMapper::map (const GamepadReading& r) {
-    const float dpad_x = (r.dpad_right ? 1.0f : 0) - (r.dpad_left ? 1.0f : 0);
-    const float dpad_y = (r.dpad_up ? 1.0f : 0) - (r.dpad_down ? 1.0f : 0);
-    const float stick_x = stick_axis (r.left_x);
-    const float stick_y = stick_axis (r.left_y);
+    const control_signal_t dpad_x =
+      signal ((r.dpad_right ? 1.0f : 0) - (r.dpad_left ? 1.0f : 0));
+    const control_signal_t dpad_y =
+      signal ((r.dpad_up ? 1.0f : 0) - (r.dpad_down ? 1.0f : 0));
+    const control_signal_t stick_x = stick_axis (r.left_x);
+    const control_signal_t stick_y = stick_axis (r.left_y);
     ControlState controls;
-    controls.steer = stick_x != 0 ? stick_x : dpad_x;
-    controls.drive = stick_y != 0 ? stick_y : dpad_y;
+    controls.steer = stick_x != control_signal_t {} ? stick_x : dpad_x;
+    controls.drive = stick_y != control_signal_t {} ? stick_y : dpad_y;
+    constexpr proportion_t none = 0.0f * proportion[one];
+    constexpr proportion_t all = 1.0f * proportion[one];
     controls.boost =
-      std::max (std::clamp (r.right_trigger, 0.0f, 1.0f), r.y ? 1.0f : 0.0f);
+      std::max (std::clamp (r.right_trigger, none, all), r.y ? all : none);
     look_axes (r.right_x, r.right_y, controls.look_x, controls.look_y);
     edge (0, r.a, Key::E);
     edge (1, r.a, Key::Restart);
@@ -62,7 +86,7 @@ namespace moppe::platform {
     edge (8, r.y, Key::Space);
     edge (9, r.left_shoulder, Key::R);
     edge (10, r.right_shoulder, Key::T);
-    edge (11, r.left_trigger > 0.4f, Key::Shift);
+    edge (11, r.left_trigger > 0.4f * proportion[one], Key::Shift);
     return controls;
   }
 
@@ -160,9 +184,9 @@ namespace moppe::platform {
 #endif
   }
 
-  void RemoteControl::poll (double now) {
+  void RemoteControl::poll (host_time_t now) {
     if (now >= m_next_check) {
-      m_next_check = now + 0.2;
+      m_next_check = now + 0.2 * mp_units::si::second;
       read (now);
     }
     while (!m_timeline.empty () && m_timeline.begin ()->first <= now) {
@@ -172,7 +196,7 @@ namespace moppe::platform {
     }
   }
 
-  void RemoteControl::read (double now) {
+  void RemoteControl::read (host_time_t now) {
     std::error_code error;
     const auto stamp = std::filesystem::last_write_time (m_path, error);
     if (error || stamp == m_stamp)
@@ -186,7 +210,7 @@ namespace moppe::platform {
       return;
     m_sequence = sequence;
     std::cerr << "moppe: control " << sequence << std::endl;
-    double at = now;
+    host_time_t at = now;
     std::string line;
     std::getline (input, line);
     while (std::getline (input, line)) {
@@ -201,17 +225,19 @@ namespace moppe::platform {
   void RemoteControl::schedule (const std::string& verb,
                                 std::istringstream& words,
                                 const std::string& line,
-                                double& at) {
-    auto later = [&] (double when, std::function<void ()> action) {
+                                host_time_t& at) {
+    using mp_units::si::second;
+    auto later = [&] (host_time_t when, std::function<void ()> action) {
       m_timeline.emplace (when, [line, action] {
         std::cerr << "moppe: remote " << line << std::endl;
         action ();
       });
     };
     std::string name;
+    // Read off the line as written, then a duration.
     double seconds = 0;
     if (verb == "wait" && words >> seconds) {
-      at += seconds;
+      at += seconds * second;
     } else if ((verb == "tap" || verb == "down" || verb == "up" ||
                 verb == "hold") &&
                words >> name && key_named (name) != Key::Unknown) {
@@ -221,7 +247,7 @@ namespace moppe::platform {
       if (verb != "up")
         later (at, [this, key] { m_game.key (key, true); });
       if (verb == "tap" || verb == "hold")
-        m_timeline.emplace (at + (verb == "tap" ? 0.1 : seconds),
+        m_timeline.emplace (at + (verb == "tap" ? 0.1 : seconds) * second,
                             [this, key] { m_game.key (key, false); });
       else if (verb == "up")
         later (at, [this, key] { m_game.key (key, false); });
@@ -231,8 +257,11 @@ namespace moppe::platform {
       words >> first;
       const bool off = first == "off";
       if (!off) {
-        c.steer = std::stof (first);
-        words >> c.drive >> c.boost;
+        float drive = 0, boost = 0;
+        words >> drive >> boost;
+        c.steer = signal (std::stof (first));
+        c.drive = signal (drive);
+        c.boost = boost * proportion[one];
       }
       later (at, [this, c, off] {
         m_stick = !off;
@@ -250,7 +279,10 @@ namespace moppe::platform {
     } else if (verb == "look") {
       float dx = 0, dy = 0;
       words >> dx >> dy;
-      later (at, [this, dx, dy] { m_game.pointer_move (0, 0, dx, dy); });
+      later (at, [this, dx, dy] {
+        constexpr view_points_t origin {};
+        m_game.pointer_move (origin, origin, dx * view_point, dy * view_point);
+      });
     } else {
       std::cerr << "moppe: remote cannot " << line << std::endl;
     }

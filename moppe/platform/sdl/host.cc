@@ -199,7 +199,9 @@ namespace {
     std::set<Key> keys;
     std::set<PointerButton> buttons;
 
-    void release (Game& game, float x, float y) {
+    void release (Game& game,
+                  moppe::platform::view_points_t x,
+                  moppe::platform::view_points_t y) {
       for (Key k : keys)
         game.key (k, false);
       keys.clear ();
@@ -233,8 +235,8 @@ moppe_touch_stick (float steer, float drive, int held) {
   if (!touched_game)
     return;
   ControlState state;
-  state.steer = steer;
-  state.drive = drive;
+  state.steer = steer * moppe::control_signal[mp_units::one];
+  state.drive = drive * moppe::control_signal[mp_units::one];
   touched_game->controls (state);
 }
 
@@ -242,7 +244,10 @@ moppe_touch_stick (float steer, float drive, int held) {
 EMSCRIPTEN_KEEPALIVE void
 moppe_touch_look (float x, float y, float dx, float dy) {
   if (touched_game)
-    touched_game->pointer_move (x, y, dx, dy);
+    touched_game->pointer_move (moppe::platform::view_points (x),
+                                moppe::platform::view_points (y),
+                                moppe::platform::view_points (dx),
+                                moppe::platform::view_points (dy));
 }
 }
 #endif
@@ -355,11 +360,11 @@ namespace moppe::platform {
         // A game recording itself steps its world frame by frame however
         // long frames take, so its remote control keeps the game's time.
         if (m_remote) {
-          const std::optional<double> script = m_game.script_seconds ();
+          const std::optional<host_time_t> script = m_game.script_seconds ();
           if (!script)
-            m_remote->poll (
-              std::chrono::duration<double> (now - m_start).count ());
-          else if (*script >= 0.0)
+            m_remote->poll (host_time (
+              std::chrono::duration<double> (now - m_start).count ()));
+          else if (*script >= host_time (0.0))
             m_remote->poll (*script);
         }
         if (m_remote && m_remote->controls ())
@@ -370,8 +375,8 @@ namespace moppe::platform {
           std::chrono::duration<double> (now - m_last).count ();
         m_last = now;
         const nhal::FrameTiming timing = m_device->next_frame_timing ();
-        const FrameStep step = m_frame_clock.select (wall, timing);
-        const double dt = step.elapsed_seconds;
+        const FrameStep step = m_frame_clock.select (wall * u::s, timing);
+        const double dt = step.elapsed.numerical_value_in (u::s);
         if (step.by_display) {
           ++m_report_displayed;
           if (!m_announced_display) {
@@ -407,8 +412,8 @@ namespace moppe::platform {
       void remember_pointer (float x, float y) {
         const render::Viewport view = m_renderer->viewport_pixels ();
         const float scale = m_renderer->scale_factor ();
-        m_pointer_x = x - float (view.x) / scale;
-        m_pointer_y = y - float (view.y) / scale;
+        m_pointer_x = view_points (x - float (view.x) / scale);
+        m_pointer_y = view_points (y - float (view.y) / scale);
       }
 
       void display_changed () {
@@ -467,8 +472,10 @@ namespace moppe::platform {
         }
         case SDL_EVENT_MOUSE_MOTION:
           remember_pointer (event.motion.x, event.motion.y);
-          m_game.pointer_move (
-            m_pointer_x, m_pointer_y, event.motion.xrel, event.motion.yrel);
+          m_game.pointer_move (m_pointer_x,
+                               m_pointer_y,
+                               view_points (event.motion.xrel),
+                               view_points (event.motion.yrel));
           break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP: {
@@ -487,7 +494,9 @@ namespace moppe::platform {
           break;
         }
         case SDL_EVENT_MOUSE_WHEEL:
-          m_game.pointer_scroll (m_pointer_x, m_pointer_y, event.wheel.y);
+          m_game.pointer_scroll (m_pointer_x,
+                                 m_pointer_y,
+                                 event.wheel.y * wheel_travel[mp_units::one]);
           break;
         case SDL_EVENT_GAMEPAD_ADDED:
           m_pad.added (event.gdevice.which);
@@ -526,7 +535,7 @@ namespace moppe::platform {
       Pad m_pad;
       Held m_held;
       std::unique_ptr<RemoteControl> m_remote;
-      float m_pointer_x = 0, m_pointer_y = 0;
+      view_points_t m_pointer_x {}, m_pointer_y {};
       FrameClock m_frame_clock;
       bool m_announced_display = false;
       std::chrono::steady_clock::time_point m_start, m_last, m_report_start;

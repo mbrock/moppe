@@ -133,8 +133,8 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   if (!g_game)
     return;
   ControlState state;
-  state.steer = m_steer;
-  state.drive = m_drive;
+  state.steer = m_steer * moppe::control_signal[mp_units::one];
+  state.drive = m_drive * moppe::control_signal[mp_units::one];
   g_game->controls (state);
 }
 
@@ -226,8 +226,11 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
     } else if (t == m_look_touch && g_game) {
       // Dragging on the right turns the head, as the mouse does on a Mac.
       const CGPoint p = [t locationInView:self];
-      g_game->pointer_move (
-        p.x, p.y, 1.4f * (p.x - m_look_last.x), 1.4f * (p.y - m_look_last.y));
+      using moppe::platform::view_points;
+      g_game->pointer_move (view_points (p.x),
+                            view_points (p.y),
+                            view_points (1.4f * (p.x - m_look_last.x)),
+                            view_points (1.4f * (p.y - m_look_last.y)));
       m_look_last = p;
     }
   }
@@ -293,7 +296,9 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
 - (void)drawInMTKView:(MTKView*)view {
   if (!g_game || !self.renderer)
     return;
-  const double t = moppe::platform::now ();
+  const double t = moppe::platform::now ()
+                     .quantity_from (moppe::platform::host_clock_epoch)
+                     .numerical_value_in (mp_units::si::second);
   float dt = m_last_time > 0 ? (float)(t - m_last_time) : 1.0f / 60;
   m_last_time = t;
   if (dt > 0.05f)
@@ -408,10 +413,10 @@ namespace moppe {
       if (!g_window)
         return r;
       const UIEdgeInsets si = g_window.safeAreaInsets;
-      r.left = (float)si.left;
-      r.top = (float)si.top;
-      r.right = (float)si.right;
-      r.bottom = (float)si.bottom;
+      r.left = view_points ((float)si.left);
+      r.top = view_points ((float)si.top);
+      r.right = view_points ((float)si.right);
+      r.bottom = view_points ((float)si.bottom);
       return r;
     }
   }

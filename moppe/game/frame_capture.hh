@@ -7,6 +7,7 @@
 
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/video.hh>
+#include <moppe/platform/platform.hh>
 #include <moppe/render/renderer.hh>
 
 #include <optional>
@@ -61,9 +62,10 @@ namespace moppe::game {
       m_video_render_frame += frames;
     }
 
-    // The seconds of a planned video drawn so far, for its remote
-    // control; negative before play shows.
-    std::optional<double> script_seconds (bool playing) const;
+    // The moment of a planned video drawn so far, for its remote
+    // control: its seconds after the host clock's epoch, and before the
+    // epoch until play shows.
+    std::optional<platform::host_time_t> script_seconds (bool playing) const;
 
     // The screenshot key: the next frame drawn is kept.
     void request_snapshot () noexcept {

@@ -85,7 +85,10 @@ namespace moppe {
         return generated_world ().surface ();
       }
 
-      void pointer_move (float, float, float dx, float dy) override;
+      void pointer_move (platform::view_points_t,
+                         platform::view_points_t,
+                         platform::view_points_t dx,
+                         platform::view_points_t dy) override;
 
       // The trodden trail tread is loose dirt; bare eroded faces are soil;
       // turf holds most of its dust and throws up clods of itself, and
@@ -225,7 +228,7 @@ namespace moppe {
 
       // A launch recording itself runs its remote control by the frames of
       // play it has drawn, starting with the first.
-      std::optional<double> script_seconds () const override;
+      std::optional<platform::host_time_t> script_seconds () const override;
 
       void controls (const platform::ControlState& state) override;
 
