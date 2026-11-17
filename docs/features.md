@@ -525,6 +525,15 @@ build, test, and change the code; read this when working on a feature.
   the autopilot ride it out over open water, and
   `MOPPE_RIDE_CAMERA=side|front` stands beside it; the other player
   sees it (companion wire version 14).
+- The bus's model (`models/bus.blend` from `tools/figure/bus.py`,
+  exported as `moppe/game/bus_model.*` by `make models`) is a
+  forward-control country bus of the fifties in post-coach yellow, 11 m
+  by 2.5 m, its origin on the road under its middle: a body with the
+  cabin in it, the glass to draw last, a front wheel and a rear pair,
+  the door's two leaves (each about its hinge's point, opening outward),
+  and the steering wheel, with points for the axle ends, the driver's
+  seat, grips, and pedals, the 42 passenger seats, the door, the step,
+  the lamps, and the blank destination sign.
 - Skids, on both bikes: riding, `Shift` (the controller's left trigger)
   stamps on the rear brake. The rear wheel locks, its tyre's grip drops
   to a sliding friction, and the bars swing the tail out about the

@@ -115,10 +115,6 @@ def loft(sections, ref, sides=8, turn=0.0, close=(True, True)):
         for i in range(sides):
             k = (i + 1) % sides
             cage.faces.append([a[i], a[k], b[k], b[i]])
-    if close[0]:
-        cage.faces.append(list(rings[0]))
-    if close[1]:
-        cage.faces.append(list(rings[-1]))
     centres = [c for c, _, _ in sections]
 
     def inside(p):
@@ -131,6 +127,12 @@ def loft(sections, ref, sides=8, turn=0.0, close=(True, True)):
         return a + ab * t
 
     cage.orient(inside)
+    # The caps' centres lie on the path, where `inside` cannot tell which
+    # way is out; the rings wind about the way the path runs.
+    if close[0]:
+        cage.faces.append(list(reversed(rings[0])))
+    if close[1]:
+        cage.faces.append(list(rings[-1]))
     return cage
 
 

@@ -453,6 +453,7 @@ set(MOPPE_SCENE_SOURCES
 set(MOPPE_MODEL_SOURCES
   moppe/game/bike_model.cc
   moppe/game/boat_model.cc
+  moppe/game/bus_model.cc
   moppe/game/caddy_model.cc
   moppe/game/chick_model.cc
   moppe/game/cow_model.cc
