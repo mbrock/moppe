@@ -542,8 +542,8 @@ namespace moppe::mov {
         quantity_cast<proportion> (quantity_cast<mp_units::dimensionless> (
           unity + (boosted_pitch - unity))));
       const proportion_t slip = std::clamp (
-        quantity_cast<proportion> (
-          ahead / (pitch_speed * std::max (revs, 0.1f * proportion[one]))),
+        quantity_cast<proportion> (quantity_cast<mp_units::dimensionless> (
+          ahead / (pitch_speed * std::max (revs, 0.1f * proportion[one])))),
         none,
         whole);
       const watts_t shaft_power = quantity_cast<isq::power> (
