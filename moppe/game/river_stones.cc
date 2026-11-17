@@ -32,7 +32,8 @@ namespace moppe::game {
     // The top of a settled stone stands this many radii above the ground it
     // settled on: the body's height less its burial.
     constexpr scale_factor_t river_settled_top =
-      (2.0f * boulder_squash - boulder_burial) * scale_factor[one];
+      (2.0f * boulder_squash - boulder_burial).numerical_value_in (one) *
+      scale_factor[one];
     // A stone in water broad enough to stand on is solid; so is every stone
     // the boulder planner would make so.
     constexpr meters_t river_foothold_radius = 0.3f * u::m;
@@ -390,13 +391,14 @@ namespace moppe::game {
         const bool wet = level > settled;
         if (wet && top < level + least_top)
           return;
-        emit (at,
-              settled + (boulder_squash - boulder_burial) * radius,
-              radius,
-              identity,
-              wet && radius >= river_foothold_radius &&
-                top > level + 0.04f * u::m,
-              wet);
+        emit (
+          at,
+          settled +
+            (boulder_squash - boulder_burial).numerical_value_in (one) * radius,
+          radius,
+          identity,
+          wet && radius >= river_foothold_radius && top > level + 0.04f * u::m,
+          wet);
       }
 
       void emit (const plan_position_t& at,
@@ -488,15 +490,20 @@ namespace moppe::game {
         // it stands on the bottom rather than floating over a hollow.
         const meters_t radius = std::max (
           stepping_least_radius + 0.06f * u::m * hash_lane (stone, 3),
-          meters_t ((top - bed + 0.06f * u::m) / (2.0f * boulder_squash)));
+          meters_t ((top - bed + 0.06f * u::m) /
+                    (2.0f * boulder_squash.numerical_value_in (one))));
         terrain::SurfaceElevation settled {};
         if (radius > stepping_greatest_radius ||
             !layer.settle (at, radius, 0.0f * u::rad, settled)) {
           layer.truncate (start);
           return false;
         }
-        layer.emit (
-          at, top - boulder_squash * radius, radius, stone, true, true);
+        layer.emit (at,
+                    top - boulder_squash.numerical_value_in (one) * radius,
+                    radius,
+                    stone,
+                    true,
+                    true);
         ++stones;
       }
       if (stones == 0)

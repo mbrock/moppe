@@ -217,13 +217,14 @@ namespace moppe {
       const float sea = sea_level.numerical_value_in (u::m);
       const float highest = terrain::measure_height_range (surface ()).maximum;
       const auto start = std::chrono::steady_clock::now ();
-      BoulderPlan plan = plan_boulders (surface (),
-                                        generated_world ().readings (),
-                                        generated_world ().water_surface (),
-                                        generated_world ().rivers (),
-                                        recipe ().seed ().value ^ 0x6b0d1e55U,
-                                        sea_level,
-                                        std::max (highest - sea, 1.0f) * u::m);
+      BoulderPlan plan =
+        plan_boulders (surface (),
+                       generated_world ().readings (),
+                       generated_world ().water_surface (),
+                       generated_world ().rivers (),
+                       recipe ().seed ().value ^ 0x6b0d1e55U,
+                       terrain::surface_elevation_point (sea_level),
+                       std::max (highest - sea, 1.0f) * u::m);
       std::cerr << "moppe: boulder plan: "
                 << std::chrono::duration_cast<std::chrono::milliseconds> (
                      std::chrono::steady_clock::now () - start)

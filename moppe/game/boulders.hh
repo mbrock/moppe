@@ -42,8 +42,8 @@ namespace moppe::game {
 
   // A boulder is broader than it is tall, and a third of its radius lies
   // buried, so the planner, the collider, and the shader agree on its shape.
-  inline constexpr float boulder_squash = 0.7f;
-  inline constexpr float boulder_burial = 0.3f;
+  inline constexpr proportion_t boulder_squash = 0.7f * proportion[one];
+  inline constexpr proportion_t boulder_burial = 0.3f * proportion[one];
 
   // Where the world's history would have left loose rock: talus on steep
   // eroded slopes, scree below cliffs, cobbles along the shores of still
@@ -59,7 +59,7 @@ namespace moppe::game {
                                            const terrain::WaterSheets& water,
                                            const terrain::RiverNetwork& rivers,
                                            std::uint32_t seed,
-                                           meters_t sea_level,
+                                           terrain::SurfaceElevation sea_level,
                                            meters_t land_relief);
 
   // Presentation owner for the planned rocks: compact renderer instances

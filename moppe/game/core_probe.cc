@@ -219,7 +219,7 @@ namespace moppe::game {
         world.water_surface (),
         std::get<terrain::RiverNetwork> (world.hydrology ()),
         world.recipe ().seed ().value ^ 0x6b0d1e55U,
-        sea,
+        terrain::surface_elevation_point (sea),
         std::max (highest - sea.numerical_value_in (u::m), 1.0f) * u::m);
       BoulderLandscape boulders;
       boulders.rebuild (renderer, boulder_plan);

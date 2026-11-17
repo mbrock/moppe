@@ -17,55 +17,55 @@ namespace moppe::game {
     // One candidate per lattice cell, jittered anywhere inside it. The
     // pitch bounds the density of the rockiest ground; thinning by habitat
     // decides everywhere else.
-    constexpr float boulder_cell_metres = 6.0f;
-    constexpr float boulder_cell_odds = 0.70f;
+    constexpr meters_t boulder_cell_spacing = 6.0f * u::m;
+    constexpr probability_t boulder_cell_odds = 0.70f * probability[one];
     // Stones smaller than this are ridden over rather than into.
-    constexpr float boulder_collider_radius = 0.5f;
+    constexpr meters_t boulder_collider_radius = 0.5f * u::m;
     // The tread a rider follows; no part of a rock's footprint enters it.
-    constexpr float boulder_trail_tread = 0.75f;
-    constexpr float boulder_tau = 6.2831853f;
+    constexpr map::TrailInfluence boulder_trail_tread =
+      0.75f * map::trail_influence[one];
+    constexpr radians_t boulder_tau = 6.2831853f * u::rad;
 
     // Every field a candidate stone consults, read at one place.
     struct StoneGround {
-      float elevation;
-      Vec3 normal;
-      float erosion;
-      float deposition;
-      float forest;
-      float moisture;
-      float trail;
-      float home;
-      float waterline;
-      float water_depth;
+      terrain::SurfaceElevation elevation;
+      terrain::TerrainNormal normal;
+      map::ErosionExposure erosion;
+      map::DepositionCover deposition;
+      map::ForestCover forest;
+      map::SurfaceMoisture moisture;
+      map::TrailInfluence trail;
+      terrain::HomeBaseInfluence home;
+      terrain::WaterlineDistance waterline;
+      // Still or running water's level above the ground; below it on land.
+      terrain::ElevationChange water_depth;
       // Running water within reach, which lays its own stones.
       bool by_running_water;
     };
 
-    position_t stone_probe (float x, float z) {
-      return position (Vec3 (x, 0.0f, z));
+    position_t stone_probe (const plan_position_t& at) {
+      return at_height (at, 0.0f * u::m);
     }
 
-    float
-    stone_elevation (const map::SurfaceGeometry& surface, float x, float z) {
-      return terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (surface,
-                                                     stone_probe (x, z)));
+    terrain::SurfaceElevation
+    stone_elevation (const map::SurfaceGeometry& surface,
+                     const plan_position_t& at) {
+      return spatial::sample<terrain::surface_elevation> (surface,
+                                                          stone_probe (at));
     }
 
-    float stone_water_depth (const map::SurfaceGeometry& surface,
-                             const terrain::WaterSheets& water,
-                             float x,
-                             float z) {
-      const float level = terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (water,
-                                                     stone_probe (x, z)));
-      return level - stone_elevation (surface, x, z);
+    terrain::ElevationChange
+    stone_water_depth (const map::SurfaceGeometry& surface,
+                       const terrain::WaterSheets& water,
+                       const plan_position_t& at) {
+      const terrain::SurfaceElevation level =
+        spatial::sample<terrain::surface_elevation> (water, stone_probe (at));
+      return level - stone_elevation (surface, at);
     }
 
-    float stone_trail (const map::SurfaceReadings& readings, float x, float z) {
-      return spatial::sample<map::trail_influence> (readings,
-                                                    stone_probe (x, z))
-        .numerical_value_in (one);
+    map::TrailInfluence stone_trail (const map::SurfaceReadings& readings,
+                                     const plan_position_t& at) {
+      return spatial::sample<map::trail_influence> (readings, stone_probe (at));
     }
 
     // Every lattice cell within a waterline band's reach of a current. The
@@ -108,189 +108,199 @@ namespace moppe::game {
       return near;
     }
 
-    std::size_t
-    nearest_cell (const terrain::TerrainDomain& domain, float x, float z) {
+    std::size_t nearest_cell (const terrain::TerrainDomain& domain,
+                              const plan_position_t& at) {
       const auto nearest =
-        [] (float along, meters_t spacing, std::size_t count) {
+        [] (meters_t along, meters_t spacing, std::size_t count) {
           return static_cast<std::size_t> (
             terrain::wrap_index (static_cast<int> (std::lround (
-                                   along / spacing.numerical_value_in (u::m))),
+                                   (along / spacing).numerical_value_in (one))),
                                  static_cast<int> (count)));
         };
       return domain.offset (
-        { .column = nearest (x, domain.spacing_x (), domain.width ()),
-          .row = nearest (z, domain.spacing_z (), domain.height ()) });
+        { .column = nearest (x_of (at), domain.spacing_x (), domain.width ()),
+          .row = nearest (z_of (at), domain.spacing_z (), domain.height ()) });
     }
 
     StoneGround read_stone_ground (const map::SurfaceGeometry& surface,
                                    const map::SurfaceReadings& readings,
                                    const terrain::WaterSheets& water,
                                    const std::vector<std::uint8_t>& running,
-                                   float x,
-                                   float z) {
-      const position_t where = stone_probe (x, z);
+                                   const plan_position_t& at) {
+      const position_t where = stone_probe (at);
       const auto read = [&] (auto quantity) {
-        return spatial::sample<quantity> (readings, where)
-          .numerical_value_in (one);
+        return spatial::sample<quantity> (readings, where);
       };
       return {
-        .elevation = stone_elevation (surface, x, z),
-        .normal = spatial::sample<terrain::terrain_normal> (surface, where)
-                    .numerical_value_in (one),
+        .elevation = stone_elevation (surface, at),
+        .normal = spatial::sample<terrain::terrain_normal> (surface, where),
         .erosion = read (map::erosion_exposure),
         .deposition = read (map::deposition_cover),
         .forest = read (map::forest_cover),
         .moisture = read (map::surface_moisture),
         .trail = read (map::trail_influence),
         .home = read (map::home_base_influence),
-        .waterline = spatial::sample<map::waterline_distance> (readings, where)
-                       .numerical_value_in (u::m),
-        .water_depth = stone_water_depth (surface, water, x, z),
-        .by_running_water =
-          running[nearest_cell (surface.domain (), x, z)] != 0,
+        .waterline = read (map::waterline_distance),
+        .water_depth = stone_water_depth (surface, water, at),
+        .by_running_water = running[nearest_cell (surface.domain (), at)] != 0,
       };
     }
 
     // How much loose rock the ground holds, and which story put it there.
     struct Rockiness {
-      float total;
-      float erratic; // share of the answer owed to high open ground
-      float scree;   // share owed to a cliff above
-      float stream;  // share owed to running or standing water nearby
+      proportion_t total;
+      proportion_t erratic; // share of the answer owed to high open ground
+      proportion_t scree;   // share owed to a cliff above
+      proportion_t stream;  // share owed to running or standing water nearby
     };
 
+    // The ground's steepness as one less the normal's upward lane.
+    terrain::slope_t steepness_of (const terrain::TerrainNormal& normal) {
+      return (1.0f - normal.numerical_value_ref_in (one)[1]) *
+             terrain::terrain_slope[one];
+    }
+
     Rockiness stone_rockiness (const StoneGround& ground,
-                               float steepness_above,
-                               float altitude) {
-      const float steepness = 1.0f - ground.normal[1];
+                               terrain::slope_t steepness_above,
+                               proportion_t altitude) {
+      const terrain::slope_t steepness = steepness_of (ground.normal);
       // Talus: frost and erosion break rock out of steep slopes, but it
       // cannot rest on a face much past its angle of repose.
-      const float talus = 0.8f * smoothstep (0.05f, 0.20f, steepness) *
-                          (0.15f + 0.85f * ground.erosion) *
-                          (1.0f - smoothstep (0.45f, 0.62f, steepness));
+      const proportion_t talus = 0.8f * band (0.05f, 0.20f, steepness) *
+                                 (0.15f + 0.85f * ground.erosion) *
+                                 (1.0f - band (0.45f, 0.62f, steepness));
       // Scree: what falls from a cliff collects on the gentler ground
       // below it, where the world laid material down.
-      const float scree = smoothstep (0.18f, 0.40f, steepness_above) *
-                          (1.0f - smoothstep (0.25f, 0.45f, steepness)) *
-                          (0.45f + 0.55f * ground.deposition);
+      const proportion_t scree = band (0.18f, 0.40f, steepness_above) *
+                                 (1.0f - band (0.25f, 0.45f, steepness)) *
+                                 (0.45f + 0.55f * ground.deposition);
       // Erratics: the ice left single stones lying on the high open ground.
-      const float erratic = 0.45f * smoothstep (0.45f, 0.80f, altitude) *
-                            (1.0f - ground.forest) *
-                            (1.0f - smoothstep (0.15f, 0.35f, steepness));
+      const proportion_t erratic = 0.45f * band (0.45f, 0.80f, altitude) *
+                                   (1.0f - ground.forest) *
+                                   (1.0f - band (0.15f, 0.35f, steepness));
       // Cobbles along a shore, more where it deposits.
-      const float stream =
-        ground.by_running_water
-          ? 0.0f
-          : (1.0f - smoothstep (0.5f, 7.5f, ground.waterline)) *
-              (0.35f + 0.65f * ground.deposition);
+      proportion_t stream = 0.0f * proportion[one];
+      if (!ground.by_running_water)
+        stream = (1.0f - band (0.5f * u::m, 7.5f * u::m, ground.waterline)) *
+                 (0.35f + 0.65f * ground.deposition);
       // A lush, level meadow has buried what rock it had.
-      const float lush = smoothstep (0.45f, 0.80f, ground.moisture) *
-                         (1.0f - smoothstep (0.03f, 0.12f, steepness)) *
-                         (1.0f - ground.erosion);
-      const float dry =
+      const proportion_t lush = band (0.45f, 0.80f, ground.moisture) *
+                                (1.0f - band (0.03f, 0.12f, steepness)) *
+                                (1.0f - ground.erosion);
+      const proportion_t dry =
         std::max ({ talus, scree, erratic }) * (1.0f - 0.7f * lush);
-      const float rock = std::max (dry, stream);
-      const float total = (rock + 0.015f) * (1.0f - 0.85f * ground.forest);
-      const float sum = std::max (talus + scree + erratic + stream, 1e-4f);
-      return { .total = std::clamp (total, 0.0f, 1.0f),
-               .erratic = erratic / sum,
-               .scree = scree / sum,
-               .stream = stream / sum };
+      const proportion_t rock = std::max (dry, stream);
+      const proportion_t total =
+        (rock + 0.015f) * (1.0f - 0.85f * ground.forest);
+      const proportion_t sum =
+        std::max (talus + scree + erratic + stream, 1e-4f * proportion[one]);
+      return { .total = std::clamp (
+                 total, 0.0f * proportion[one], 1.0f * proportion[one]),
+               .erratic = quantity_cast<proportion> (erratic / sum),
+               .scree = quantity_cast<proportion> (scree / sum),
+               .stream = quantity_cast<proportion> (stream / sum) };
     }
 
     // How much steeper the ground is a little way uphill: a cliff above
     // shows as a steep reading there.
-    float steepness_uphill (const map::SurfaceGeometry& surface,
-                            const StoneGround& ground,
-                            float x,
-                            float z) {
-      const float across = cr::hypot (ground.normal[0], ground.normal[2]);
+    terrain::slope_t steepness_uphill (const map::SurfaceGeometry& surface,
+                                       const StoneGround& ground,
+                                       const plan_position_t& at) {
+      const Vec3& normal = ground.normal.numerical_value_ref_in (one);
+      const float across = cr::hypot (normal[0], normal[2]);
       if (across < 1e-3f)
-        return 1.0f - ground.normal[1];
+        return steepness_of (ground.normal);
       // The normal leans downhill, so uphill is against its lean.
-      constexpr float reach = 12.0f;
-      const float ux = -ground.normal[0] / across;
-      const float uz = -ground.normal[2] / across;
-      return 1.0f - spatial::sample<terrain::terrain_normal> (
-                      surface, stone_probe (x + ux * reach, z + uz * reach))
-                      .numerical_value_in (one)[1];
+      constexpr meters_t reach = 12.0f * u::m;
+      const plan_direction_t uphill =
+        plan_unit_direction (Vec2 (-normal[0] / across, -normal[2] / across));
+      return steepness_of (spatial::sample<terrain::terrain_normal> (
+        surface, stone_probe (at + along (uphill, reach))));
     }
 
     // The body's top stands boulder_squash * 2 - boulder_burial radii above
     // its underside; a stone in water must still break the surface.
-    bool stone_breaks_water (float radius, float depth) {
-      return depth <= 0.0f ||
-             (depth < 0.6f &&
+    bool stone_breaks_water (meters_t radius, terrain::ElevationChange depth) {
+      return depth <= 0.0f * u::m ||
+             (depth < 0.6f * u::m &&
               (2.0f * boulder_squash - boulder_burial) * radius >
-                depth + 0.15f);
+                depth + 0.15f * u::m);
     }
 
-    float stone_centre_height (float ground, float radius) {
-      return ground + (boulder_squash - boulder_burial) * radius;
+    terrain::SurfaceElevation
+    stone_centre_height (terrain::SurfaceElevation ground, meters_t radius) {
+      return ground + terrain::ElevationChange (
+                        (boulder_squash - boulder_burial) * radius);
     }
 
     // Mostly knee-high stones, with a heavy tail of rare large ones. Cobbles
     // on a shore run smaller; erratics and scree run larger.
-    float stone_radius (std::uint32_t identity, const Rockiness& rock) {
-      const float draw = hash_lane (identity, 4);
-      float radius = (0.3f + 0.9f * draw * draw) * (1.0f - 0.25f * rock.stream);
-      const float large_odds =
-        0.03f + 0.15f * rock.erratic + 0.08f * rock.scree;
-      if (hash_lane (identity, 5) < large_odds) {
-        const float ceiling = std::lerp (2.0f, 3.0f, rock.erratic);
-        radius =
-          1.2f + (ceiling - 1.2f) * cr::pow (hash_lane (identity, 6), 1.6f);
+    meters_t stone_radius (std::uint32_t identity, const Rockiness& rock) {
+      const proportion_t draw = hash_lane (identity, 4) * proportion[one];
+      meters_t radius =
+        (0.3f + 0.9f * draw * draw) * (1.0f - 0.25f * rock.stream) * u::m;
+      const probability_t large_odds = quantity_cast<probability> (
+        0.03f + 0.15f * rock.erratic + 0.08f * rock.scree);
+      if (hash_lane (identity, 5) * probability[one] < large_odds) {
+        const meters_t ceiling =
+          std::lerp (2.0f, 3.0f, rock.erratic.numerical_value_in (one)) * u::m;
+        radius = 1.2f * u::m + (ceiling - 1.2f * u::m) *
+                                 cr::pow (hash_lane (identity, 6), 1.6f);
       }
-      return std::max (radius, 0.25f);
+      return std::max (radius, 0.25f * u::m);
     }
 
     // What lies under a stone's footprint: four points around its rim and
     // its centre.
     struct StoneFootprint {
-      float settled; // the ground height the body rests on
-      bool clear;    // out of the tread and above deep water
+      // the ground height the body rests on
+      terrain::SurfaceElevation settled;
+      bool clear; // out of the tread and above deep water
     };
 
     StoneFootprint stone_footprint (const map::SurfaceGeometry& surface,
                                     const map::SurfaceReadings& readings,
                                     const terrain::WaterSheets& water,
                                     const StoneGround& ground,
-                                    float x,
-                                    float z,
-                                    float radius,
-                                    float turn) {
-      float lowest = ground.elevation;
-      float sum = ground.elevation;
-      float deepest = ground.water_depth;
+                                    const plan_position_t& at,
+                                    meters_t radius,
+                                    radians_t turn) {
+      // Heights measured from the vertical frame's zero, so they sum.
+      terrain::ElevationChange lowest = ground.elevation.delta_from_zero ();
+      terrain::ElevationChange sum = lowest;
+      terrain::ElevationChange deepest = ground.water_depth;
       for (int k = 0; k < 4; ++k) {
-        const float angle = turn + 0.25f * boulder_tau * static_cast<float> (k);
-        const float px = x + 0.85f * radius * cr::cos (angle);
-        const float pz = z + 0.85f * radius * cr::sin (angle);
-        if (stone_trail (readings, px, pz) > boulder_trail_tread)
-          return { .settled = 0.0f, .clear = false };
-        const float height = stone_elevation (surface, px, pz);
+        const radians_t angle =
+          turn + 0.25f * boulder_tau * static_cast<float> (k);
+        const plan_position_t rim =
+          at +
+          plan_displacement (0.85f * radius * cr::cos (radians_value (angle)),
+                             0.85f * radius * cr::sin (radians_value (angle)));
+        if (stone_trail (readings, rim) > boulder_trail_tread)
+          return { .settled = {}, .clear = false };
+        const terrain::ElevationChange height =
+          stone_elevation (surface, rim).delta_from_zero ();
         lowest = std::min (lowest, height);
         sum += height;
-        deepest =
-          std::max (deepest, stone_water_depth (surface, water, px, pz));
+        deepest = std::max (deepest, stone_water_depth (surface, water, rim));
       }
       // Neither perched on the highest ground beneath it nor sunk to the
       // lowest: halfway between the lowest and the mean.
-      return { .settled = 0.5f * (lowest + 0.2f * sum),
+      return { .settled =
+                 terrain::SurfaceElevation (0.5f * (lowest + 0.2f * sum)),
                .clear = stone_breaks_water (radius, deepest) };
     }
 
-    BoulderSite stone_site (float x,
-                            float centre_y,
-                            float z,
+    BoulderSite stone_site (const plan_position_t& at,
+                            terrain::SurfaceElevation centre,
                             const StoneGround& ground,
-                            float radius,
+                            meters_t radius,
                             std::uint32_t identity) {
       return {
-        .centre = position (Vec3 (x, centre_y, z)),
-        .normal = ground.normal * terrain::terrain_normal[one],
-        .radius = radius * u::m,
-        .moisture = ground.moisture * map::surface_moisture[one],
+        .centre = terrain::at_elevation (at, centre),
+        .normal = ground.normal,
+        .radius = radius,
+        .moisture = ground.moisture,
         .seed = identity,
       };
     }
@@ -301,38 +311,45 @@ namespace moppe::game {
                              const terrain::WaterSheets& water,
                              const terrain::RiverNetwork& rivers,
                              std::uint32_t seed,
-                             meters_t sea_level,
+                             terrain::SurfaceElevation sea_level,
                              meters_t land_relief) {
     MOPPE_PROFILE_ZONE ("plan_boulders");
     if (land_relief <= 0.0f * u::m)
       throw std::invalid_argument ("Boulder land relief must be positive");
     const terrain::TerrainDomain& domain = surface.domain ();
-    const float width = domain.period_x ().numerical_value_in (u::m);
-    const float depth = domain.period_z ().numerical_value_in (u::m);
-    const float sea = sea_level.numerical_value_in (u::m);
-    const float relief = land_relief.numerical_value_in (u::m);
+    const meters_t width = domain.period_x ();
+    const meters_t depth = domain.period_z ();
     BoulderPlan plan;
-    plan.period = spatial_extent_in_metres (Vec3 (width, 0.0f, depth));
+    plan.period = spatial_extent_in_metres (
+      Vec3 (meters_value (width), 0.0f, meters_value (depth)));
     const std::vector<std::uint8_t> running =
       running_water_reach (surface, water);
 
-    const auto cells = [] (float extent) {
+    const auto cells = [] (meters_t extent) {
       return std::max<std::uint32_t> (
         1,
-        static_cast<std::uint32_t> (std::round (extent / boulder_cell_metres)));
+        static_cast<std::uint32_t> (std::round (
+          (extent / boulder_cell_spacing).numerical_value_in (one))));
     };
     const std::uint32_t cells_x = cells (width);
     const std::uint32_t cells_z = cells (depth);
-    const float cell_x = width / static_cast<float> (cells_x);
-    const float cell_z = depth / static_cast<float> (cells_z);
+    const meters_t cell_x = width / static_cast<float> (cells_x);
+    const meters_t cell_z = depth / static_cast<float> (cells_z);
     // Rocks come in groups: a field of patches a couple of hundred metres
     // across, broken up by a finer one, decides where the ground is stony.
-    const auto laps = [] (float extent, float patch_metres) {
+    const auto laps = [] (meters_t extent, meters_t patch) {
       return std::max<std::uint32_t> (
-        1, static_cast<std::uint32_t> (std::round (extent / patch_metres)));
+        1,
+        static_cast<std::uint32_t> (
+          std::round ((extent / patch).numerical_value_in (one))));
     };
-    const std::uint32_t broad_laps = laps (width, 180.0f);
-    const std::uint32_t fine_laps = laps (width, 45.0f);
+    const std::uint32_t broad_laps = laps (width, 180.0f * u::m);
+    const std::uint32_t fine_laps = laps (width, 45.0f * u::m);
+    // A satellite's place, wrapped back onto the torus as the planner
+    // always has: one lap added, then the remainder.
+    const auto wrapped = [] (meters_t along, meters_t period) {
+      return std::fmod (meters_value (along), meters_value (period)) * u::m;
+    };
 
     // Rows are independent, so bands of them plan in parallel and join in
     // row order: the plan is the same whatever the thread count.
@@ -340,78 +357,82 @@ namespace moppe::game {
                                std::vector<BoulderSite>& sites) {
       for (std::uint32_t ix = 0; ix < cells_x; ++ix) {
         const std::uint32_t identity = lattice_hash (ix, iz, seed);
-        const float odds = hash_lane (identity, 2);
+        const probability_t odds = hash_lane (identity, 2) * probability[one];
         if (odds >= boulder_cell_odds)
           continue;
-        const float x =
-          (static_cast<float> (ix) + hash_lane (identity, 0)) * cell_x;
-        const float z =
-          (static_cast<float> (iz) + hash_lane (identity, 1)) * cell_z;
-        const proportion_t along_x = (x / width) * one;
-        const proportion_t along_z = (z / depth) * one;
-        const float grouping =
-          0.6f * periodic_noise (along_x, along_z, broad_laps, seed ^ 0x60b1u)
-                   .numerical_value_in (one) +
-          0.4f * periodic_noise (along_x, along_z, fine_laps, seed ^ 0x7c3au)
-                   .numerical_value_in (one);
-        const float cluster =
-          0.12f + 1.6f * smoothstep (0.30f, 0.75f, grouping);
+        const plan_position_t at = plan_position (
+          (static_cast<float> (ix) + hash_lane (identity, 0)) * cell_x,
+          (static_cast<float> (iz) + hash_lane (identity, 1)) * cell_z);
+        const proportion_t along_x = x_of (at) / width;
+        const proportion_t along_z = z_of (at) / depth;
+        const noise_signal_t grouping =
+          0.6f * periodic_noise (along_x, along_z, broad_laps, seed ^ 0x60b1u) +
+          0.4f * periodic_noise (along_x, along_z, fine_laps, seed ^ 0x7c3au);
+        const proportion_t cluster =
+          0.12f + 1.6f * band (0.30f, 0.75f, grouping);
+        const proportion_t whole = 1.0f * proportion[one];
         // Rockiness never exceeds one, so between the groups most candidates
         // are refused before any field is read.
-        if (odds >= boulder_cell_odds * std::min (1.0f, cluster))
+        if (odds >= boulder_cell_odds * std::min (whole, cluster))
           continue;
 
         const StoneGround ground =
-          read_stone_ground (surface, readings, water, running, x, z);
-        if (ground.elevation < sea || ground.home > 0.02f ||
-            ground.trail > boulder_trail_tread || ground.water_depth > 0.6f)
+          read_stone_ground (surface, readings, water, running, at);
+        if (ground.elevation < sea_level || ground.home > 0.02f ||
+            ground.trail > boulder_trail_tread ||
+            ground.water_depth > 0.6f * u::m)
           continue;
         const Rockiness rock =
           stone_rockiness (ground,
-                           steepness_uphill (surface, ground, x, z),
-                           (ground.elevation - sea) / relief);
-        if (odds >= boulder_cell_odds * std::min (1.0f, rock.total * cluster))
+                           steepness_uphill (surface, ground, at),
+                           quantity_cast<proportion> (
+                             (ground.elevation - sea_level) / land_relief));
+        if (odds >= boulder_cell_odds *
+                      std::min<proportion_t> (whole, rock.total * cluster))
           continue;
 
-        const float radius = stone_radius (identity, rock);
+        const meters_t radius = stone_radius (identity, rock);
         const StoneFootprint footprint =
           stone_footprint (surface,
                            readings,
                            water,
                            ground,
-                           x,
-                           z,
+                           at,
                            radius,
                            boulder_tau * hash_lane (identity, 3));
         if (!footprint.clear)
           continue;
         sites.push_back (
-          stone_site (x,
+          stone_site (at,
                       stone_centre_height (footprint.settled, radius),
-                      z,
                       ground,
                       radius,
                       identity));
 
         // A large rock gathers a few smaller ones that broke from it or
         // lodged against it, nestled close around its foot.
-        if (radius < 0.6f)
+        if (radius < 0.6f * u::m)
           continue;
         const int satellites = static_cast<int> (
-          hash_lane (identity, 7) * 3.99f * std::min (1.0f, radius / 1.2f));
+          hash_lane (identity, 7) * 3.99f *
+          std::min (1.0f, (radius / (1.2f * u::m)).numerical_value_in (one)));
         for (int k = 0; k < satellites; ++k) {
           const std::uint32_t child = lattice_hash (
             identity, static_cast<std::uint32_t> (k + 1), seed ^ 0x5a7e111u);
-          const float small = radius * (0.18f + 0.27f * hash_lane (child, 0));
-          const float angle = boulder_tau * hash_lane (child, 1);
-          const float reach = 0.95f * radius + 0.6f * small;
-          const float sx =
-            std::fmod (x + reach * cr::cos (angle) + width, width);
-          const float sz =
-            std::fmod (z + reach * cr::sin (angle) + depth, depth);
+          const meters_t small =
+            radius * (0.18f + 0.27f * hash_lane (child, 0));
+          const radians_t angle = boulder_tau * hash_lane (child, 1);
+          const meters_t reach = 0.95f * radius + 0.6f * small;
+          const plan_position_t beside_at = plan_position (
+            wrapped (x_of (at) + reach * cr::cos (radians_value (angle)) +
+                       width,
+                     width),
+            wrapped (z_of (at) + reach * cr::sin (radians_value (angle)) +
+                       depth,
+                     depth));
           const StoneGround beside =
-            read_stone_ground (surface, readings, water, running, sx, sz);
-          if (beside.elevation < sea || beside.home > 0.02f ||
+            read_stone_ground (surface, readings, water, running, beside_at);
+          if (beside.elevation < sea_level || beside.home > 0.02f ||
               beside.trail > boulder_trail_tread)
             continue;
           const StoneFootprint under =
@@ -419,16 +440,14 @@ namespace moppe::game {
                              readings,
                              water,
                              beside,
-                             sx,
-                             sz,
+                             beside_at,
                              small,
                              boulder_tau * hash_lane (child, 2));
           if (!under.clear)
             continue;
           sites.push_back (
-            stone_site (sx,
+            stone_site (beside_at,
                         stone_centre_height (under.settled, small),
-                        sz,
                         beside,
                         small,
                         child));
@@ -475,15 +494,15 @@ namespace moppe::game {
     // follows its flattened top more closely, so that feet passing from one
     // stepping stone to the next find a footing in the crease between them.
     mov::Trunk boulder_collider (const BoulderSite& site) {
-      const Vec3 centre = position_value (site.centre);
-      const float radius = site.radius.numerical_value_in (u::m);
-      const float girth = (site.solid ? 0.95f : 0.8f) * radius;
-      const float upper = centre[1] + boulder_squash * radius - girth;
-      const float lower = upper - 0.6f * radius;
-      return { .root = Vec3 (centre[0], lower - girth, centre[2]),
+      const meters_t height = position_value (site.centre)[1] * u::m;
+      const meters_t girth = (site.solid ? 0.95f : 0.8f) * site.radius;
+      const meters_t upper = height + boulder_squash * site.radius - girth;
+      const meters_t lower = upper - 0.6f * site.radius;
+      return { .root =
+                 position_value (at_height (plan (site.centre), lower - girth)),
                .axis = Vec3 (0.0f, 1.0f, 0.0f),
-               .height = upper - lower + girth,
-               .radius = girth };
+               .height = meters_value (upper - lower + girth),
+               .radius = meters_value (girth) };
     }
   }
 
@@ -498,10 +517,10 @@ namespace moppe::game {
         .centre = site.centre,
         .ground_normal = site.normal,
         .radius = site.radius,
-        .moisture = site.moisture.numerical_value_in (one) * one,
+        .moisture = site.moisture,
         .seed = site.seed,
       });
-      if (site.solid || site.radius >= boulder_collider_radius * u::m)
+      if (site.solid || site.radius >= boulder_collider_radius)
         m_colliders.push_back (boulder_collider (site));
     }
     renderer.set_boulders ({ .period = plan.period }, instances);
