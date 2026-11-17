@@ -52,7 +52,8 @@ namespace {
       session = std::make_unique<game::GameSession> (world, surface);
       session->bike ().reset (Vec3 (48, 11.2f, 48));
       session->bike ().set_heading (Vec3 (0, 0, 1));
-      session->camera ().place (Vec3 (48, 20, 32), Vec3 (48, 12, 48));
+      session->camera ().place (position (Vec3 (48, 20, 32)),
+                                position (Vec3 (48, 12, 48)));
       session->logic ().m_total_time = game::play_time (12.5);
       session->logic ().m_cloudiness = 0.42f * game::cloud_cover[one];
       session->logic ().m_flare = 0.37f * proportion[one];
@@ -71,8 +72,8 @@ namespace {
   game::FrameCameraReading camera_reading (const game::GameSession& session,
                                            degrees_t fov = 58.0f * u::deg) {
     return {
-      .position = position (session.camera ().position ()),
-      .forward = unit_direction (session.camera ().forward ()),
+      .position = session.camera ().position (),
+      .forward = session.camera ().forward (),
       .view = session.camera ().view_matrix (),
       .field_of_view = fov,
     };
@@ -651,7 +652,7 @@ MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
   };
   // The boat on the plane streaks; a jeep or the motocross as fast does not.
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::boat),
-                                kmh (26.0f)) > 0.3f);
+                                kmh (26.0f)) > 0.3f * proportion[one]);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::boat),
                                 kmh (10.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jeep),
@@ -662,12 +663,12 @@ MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
                                 kmh (26.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
-                                kmh (60.0f)) > 0.8f);
+                                kmh (60.0f)) > 0.8f * proportion[one]);
   // The motocross cruises sharp and streaks on a boost.
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
                                 kmh (100.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
-                                kmh (150.0f)) > 0.3f);
+                                kmh (150.0f)) > 0.3f * proportion[one]);
   // Faster streaks longer.
   MOPPE_CHECK (
     motion_blur_for (game::Doing::driving (game::Machine::bike), kmh (140.0f)) >

@@ -410,7 +410,7 @@ namespace moppe::game {
         session.walker ().turn_by (input.look_yaw);
         session.walker ().set_run (input.run && !logic.m_haul.active);
         if (logic.m_cam_mode != CAM_HELMET)
-          session.camera ().turn (radians_value (input.look_yaw), 0.0f);
+          session.camera ().turn (input.look_yaw, 0.0f * u::rad);
         logic.m_look_yaw = 0.0f * u::rad;
       } else {
         // Riding, the look swings about the way ahead, all the way round.
@@ -430,7 +430,7 @@ namespace moppe::game {
         GameLogicState& logic = session.logic ();
         logic.m_cam_mode = (CamMode)((logic.m_cam_mode + 1) % 3);
         if (logic.m_cam_mode == CAM_HELMET)
-          logic.m_fp_eye = moppe::position (session.camera ().position ());
+          logic.m_fp_eye = session.camera ().position ();
       }
     }
   }
@@ -701,9 +701,9 @@ namespace moppe::game {
       body.mass = b.mass ();
       if constexpr (requires { b.trailer_position (); }) {
         body.towing = true;
-        body.towed_position = moppe::position (b.trailer_position ());
-        body.towed_forward = unit_direction (b.trailer_forward ());
-        body.towed_up = unit_direction (b.trailer_up ());
+        body.towed_position = b.trailer_position ();
+        body.towed_forward = b.trailer_forward ();
+        body.towed_up = b.trailer_up ();
         body.towed_mass = b.trailer_mass ();
       }
       return body;
@@ -934,7 +934,7 @@ namespace moppe::game {
     // Eyes open where the camera was and settle into the head, as when
     // Tab chooses them.
     if (m_logic.m_cam_mode == CAM_HELMET)
-      m_logic.m_fp_eye = moppe::position (m_camera.position ());
+      m_logic.m_fp_eye = m_camera.position ();
   }
 
   void GameSession::start_on_foot () {
@@ -1060,7 +1060,7 @@ namespace moppe::game {
                static_cast<float> (dt.numerical_value_in (u::s));
       eye += (position_value (rig.eye) - eye) *
              smoothing_alpha (25.0f / u::s, dt).numerical_value_in (one);
-      m_camera.place (eye, eye + look * 10.0f);
+      m_camera.place (m_logic.m_fp_eye, moppe::position (eye + look * 10.0f));
       return;
     }
     // Looking up swings the camera down behind the subject, below its
@@ -1074,18 +1074,19 @@ namespace moppe::game {
     // Behind the subject, or before it facing back.
     const float flip = m_logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
     m_camera.frame (rig.elevation, rig.distance, rig.nearest);
-    m_camera.aim (radians_value (m_logic.m_look_yaw),
-                  radians_value (raised - base));
-    m_camera.update (
-      rig.pivot, direction_value (rig.ahead) * flip, rig.velocity, dt);
+    m_camera.aim (m_logic.m_look_yaw, raised - base);
+    m_camera.update (rig.pivot,
+                     unit_direction (direction_value (rig.ahead) * flip),
+                     rig.velocity,
+                     dt);
     m_camera.limit (surface, dt);
     const Vec3& pivot = position_value (rig.pivot);
     const Vec2& period = plan_value (m_room_period);
     for (ChaseCamera::Room room : m_rooms) {
-      room.centre[0] +=
-        terrain::whole_periods (pivot[0] - room.centre[0], period.x ());
-      room.centre[2] +=
-        terrain::whole_periods (pivot[2] - room.centre[2], period.z ());
+      position_value (room.centre)[0] += terrain::whole_periods (
+        pivot[0] - position_value (room.centre)[0], period.x ());
+      position_value (room.centre)[2] += terrain::whole_periods (
+        pivot[2] - position_value (room.centre)[2], period.z ());
       m_camera.confine (room);
     }
   }

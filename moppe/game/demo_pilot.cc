@@ -37,11 +37,9 @@ namespace moppe::game {
       const seconds_t t = total_time;
       constexpr radians_per_second_t swing = 0.22f * u::rad / u::s;
       input = {
-        .turn =
-          (t > 9.0f * u::s
-             ? 0.45f * std::sin (radians_value ((t - 9.0f * u::s) * swing))
-             : 0.0f) *
-          control_signal[one],
+        .turn = (t > 9.0f * u::s ? 0.45f * libm::sin ((t - 9.0f * u::s) * swing)
+                                 : 0.0f) *
+                control_signal[one],
         .drive = (t > 8.0f * u::s ? 1.0f : 0.0f) * control_signal[one],
         .boost =
           (t > 4.0f * u::s && t < 9.0f * u::s ? 1.0f : 0.0f) * proportion[one],
@@ -64,10 +62,9 @@ namespace moppe::game {
         dt > 0.0f * u::s ? (pitch - m_pitch) / dt : 0.0f * u::rad / u::s;
       m_pitch = pitch;
       const radians_t ahead = pitch + (0.4f * u::s) * rate;
-      const bool up = std::fmod (seconds_value (total_time), 12.0f) > 3.0f;
+      const bool up = fmod (total_time, 12.0f * u::s) > 3.0f * u::s;
       input = {
-        .turn = 0.2f * std::sin (radians_value (total_time * weave)) *
-                control_signal[one],
+        .turn = 0.2f * libm::sin (total_time * weave) * control_signal[one],
         .drive = (!up                     ? 0.6f
                   : ahead < 0.7f * u::rad ? 1.0f
                                           : 0.0f) *
@@ -86,15 +83,14 @@ namespace moppe::game {
       input.look_pitch = look_pitch;
     } else {
       input = {
-        .turn = 0.35f * std::sin (radians_value (total_time * weave)) *
-                control_signal[one],
+        .turn = 0.35f * libm::sin (total_time * weave) * control_signal[one],
         .drive = 1.0f * control_signal[one],
         .boost =
           session.logic ().m_doing != Doing::driving (Machine::tractor) &&
               session.logic ().m_doing != Doing::driving (Machine::caddy) &&
               session.logic ().m_doing != Doing::driving (Machine::boat) &&
-              std::fmod (seconds_value (total_time), 11.0f) <
-                (demo_glides ? 3.5f : 1.35f)
+              fmod (total_time, 11.0f * u::s) <
+                (demo_glides ? 3.5f : 1.35f) * u::s
             ? 1.0f * proportion[one]
             : 0.0f * proportion[one],
         // MOPPE_DEMO=glide opens the wing on the first leap high
@@ -109,8 +105,8 @@ namespace moppe::game {
       const Vec3 at = position_value (session.subject_position ());
       const Vec3 heading = direction_value (session.subject_heading ());
       const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
-      for (const float ahead : { 4.0f, 9.0f }) {
-        const Vec3 probe = at + heading * ahead;
+      for (const meters_t ahead : { 4.0f * u::m, 9.0f * u::m }) {
+        const Vec3 probe = at + heading * meters_value (ahead);
         const mov::TrunkContact contact = ground.trunks.collide (
           position (probe), position (probe + Vec3 (0, 1.5f, 0)), 1.8f * u::m);
         if (contact.hit) {

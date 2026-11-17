@@ -30,13 +30,14 @@ MOPPE_TEST (chase_camera_looks_aside_at_speed) {
   const Vec3 heading (0, 0, 1);
   const Vec3 moving = heading * 25.0f;
   Vec3 subject (100, 11, 10);
-  camera.aim (1.5707963f, 0.0f);
+  camera.aim (1.5707963f * u::rad, 0.0f * u::rad);
   for (int step = 0; step < 240; ++step) {
     subject += moving * (1.0f / 60.0f);
-    camera.update (position (subject), heading, velocity (moving), dt);
+    camera.update (
+      position (subject), unit_direction (heading), velocity (moving), dt);
     camera.limit (surface, dt);
   }
-  const Vec3 offset = camera.position () - subject;
+  const Vec3 offset = position_value (camera.position ()) - subject;
   const float along = dot (offset, heading);
   const float across = std::abs (static_cast<float> (offset[0]));
   MOPPE_CHECK (across > 5.0f);
@@ -52,14 +53,17 @@ MOPPE_TEST (chase_camera_looks_up_from_low_without_entering_the_ground) {
   camera.frame (10 * u::deg, 3.8f * u::m, 0.9f * u::m);
   const seconds_t dt = seconds (1.0f / 60.0f);
   const Vec3 pivot (100, 11.35f, 100);
-  camera.aim (0.0f, -0.75f - 0.17453f);
+  camera.aim (0.0f * u::rad, (-0.75f - 0.17453f) * u::rad);
   for (int step = 0; step < 180; ++step) {
-    camera.update (position (pivot), Vec3 (0, 0, 1), velocity (Vec3 ()), dt);
+    camera.update (position (pivot),
+                   unit_direction (Vec3 (0, 0, 1)),
+                   velocity (Vec3 ()),
+                   dt);
     camera.limit (surface, dt);
   }
-  const Vec3 eye = camera.position ();
+  const Vec3 eye = position_value (camera.position ());
   MOPPE_CHECK (eye[1] >= 10.45f);
   MOPPE_CHECK (eye[1] < pivot[1] - 0.3f);
   MOPPE_CHECK (length (eye - pivot) < 3.0f);
-  MOPPE_CHECK (camera.forward ()[1] > 0.4f);
+  MOPPE_CHECK (direction_value (camera.forward ())[1] > 0.4f);
 }

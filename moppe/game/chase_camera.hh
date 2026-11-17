@@ -25,14 +25,14 @@ namespace moppe {
         position_t target {};
         position_t pivot {};
         position_t view {};
-        Vec3 avg_orientation {};
+        direction_t avg_orientation {};
         displacement_t ahead {};
         velocity_t position_velocity {};
         velocity_t target_velocity {};
         speed_t speed {};
         meters_t boom {};
-        float orbit_yaw {};
-        float orbit_pitch {};
+        radians_t orbit_yaw {};
+        radians_t orbit_pitch {};
         bool is_uninitialized {};
         bool snap {};
       };
@@ -51,21 +51,21 @@ namespace moppe {
         m_nearest = nearest;
       }
 
-      // Swings the camera about its look point at once, `yaw` radians
-      // rightward and `pitch` radians higher, rather than through the
+      // Swings the camera about its look point at once, `yaw`
+      // rightward and `pitch` higher, rather than through the
       // follow spring, so the mouse and the right stick feel direct. The
       // carried heading turns too, for a subject that turned with it.
-      void turn (float yaw, float pitch);
+      void turn (radians_t yaw, radians_t pitch);
 
       // Where the player has looked away from the default view behind the
-      // subject: `yaw` radians around to the right, `pitch` radians above
+      // subject: `yaw` around to the right, `pitch` above
       // the framing's own elevation. Changes take effect at once (turn).
-      void aim (float yaw, float pitch);
+      void aim (radians_t yaw, radians_t pitch);
 
       // Follows a subject whose pivot -- the point the boom swings about --
       // is at `position`, heading along `orientation`.
       void update (position_t position,
-                   const Vec3& orientation,
+                   direction_t orientation,
                    velocity_t velocity,
                    seconds_t dt);
 
@@ -120,10 +120,10 @@ namespace moppe {
 
       // Directly position the camera (first-person mode bypasses the
       // chase smoothing entirely).
-      void place (const Vec3& eye, const Vec3& target) {
-        m_position = moppe::position (eye);
+      void place (position_t eye, position_t target) {
+        m_position = eye;
         m_view = m_position;
-        m_target = moppe::position (target);
+        m_target = target;
         m_pivot = m_target;
         m_position_velocity = moppe::velocity (Vec3 ());
         m_target_velocity = moppe::velocity (Vec3 ());
@@ -134,14 +134,14 @@ namespace moppe {
       // A room the camera stays inside while the subject is in it: an
       // upright box about `centre` (on its floor), `half_x` along `x` (a
       // horizontal unit vector) and `half_z` across, from `floor` to
-      // `ceiling` metres over the centre.
+      // `ceiling` over the centre.
       struct Room {
-        Vec3 centre {};
-        Vec3 x { 1, 0, 0 };
-        float half_x = 0.0f;
-        float half_z = 0.0f;
-        float floor = 0.0f;
-        float ceiling = 0.0f;
+        position_t centre {};
+        direction_t x = unit_direction (Vec3 (1, 0, 0));
+        meters_t half_x = 0.0f * u::m;
+        meters_t half_z = 0.0f * u::m;
+        meters_t floor = 0.0f * u::m;
+        meters_t ceiling = 0.0f * u::m;
       };
 
       // Brings the camera in from beyond the room's walls when what it
@@ -153,12 +153,13 @@ namespace moppe {
           position_value (m_view), position_value (m_target), Vec3 (0, 1, 0));
       }
 
-      Vec3 position () const {
-        return position_value (m_view);
+      position_t position () const {
+        return m_view;
       }
 
-      Vec3 forward () const {
-        return normalized (position_value (m_target) - position_value (m_view));
+      direction_t forward () const {
+        return unit_direction (
+          normalized (position_value (m_target) - position_value (m_view)));
       }
 
     private:
@@ -173,15 +174,15 @@ namespace moppe {
       position_t m_target;
       position_t m_pivot;
       position_t m_view;
-      Vec3 m_avg_orientation;
+      direction_t m_avg_orientation;
       displacement_t m_ahead;
       velocity_t m_position_velocity;
       velocity_t m_target_velocity;
       speed_t m_speed;
       // How much of the boom the ground leaves the camera.
       meters_t m_boom {};
-      float m_orbit_yaw = 0;
-      float m_orbit_pitch = 0;
+      radians_t m_orbit_yaw = 0.0f * u::rad;
+      radians_t m_orbit_pitch = 0.0f * u::rad;
       bool m_is_uninitialized;
       // The boom's length is taken as it is, not eased toward.
       bool m_snap = true;

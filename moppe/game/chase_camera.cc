@@ -44,15 +44,17 @@ namespace moppe {
             surface, moppe::position (Vec3 (at[0], 0.0f, at[2]))));
       }
 
-      // How high a camera at `camera` must stand to be `at_camera` metres
+      // How high a camera at `camera` must stand to be `at_camera`
       // above the ground and to see `toward` over it, the clearance
       // tapering to `at_subject` there. Twelve taps catch narrow ridges
       // that four could step straight across.
       float lift_needed (const map::SurfaceGeometry& surface,
                          const Vec3& camera,
                          const Vec3& toward,
-                         float at_camera,
-                         float at_subject) {
+                         meters_t camera_clearance,
+                         meters_t subject_clearance) {
+        const float at_camera = meters_value (camera_clearance);
+        const float at_subject = meters_value (subject_clearance);
         float needed = at_camera + ground (surface, camera);
         for (int i = 1; i <= 10; ++i) {
           const float t = i / 12.0f;
@@ -79,22 +81,23 @@ namespace moppe {
       }
     }
 
-    void ChaseCamera::turn (float yaw, float pitch) {
+    void ChaseCamera::turn (radians_t yaw, radians_t pitch) {
       // The camera swings at once and keeps its velocity: the springs
       // damp toward the subject's own motion, which the swing does not
       // change.
       const Vec3 up (0, 1, 0);
-      if (yaw != 0) {
+      if (yaw != 0.0f * u::rad) {
         // Turning right is a negative rotation about up, as the walker's.
-        const radians_t angle = -yaw * u::rad;
-        m_avg_orientation = Quaternion::rotate (m_avg_orientation, up, angle);
+        const radians_t angle = -yaw;
+        m_avg_orientation = unit_direction (
+          Quaternion::rotate (direction_value (m_avg_orientation), up, angle));
         if (m_is_uninitialized)
           return;
         Vec3& target = position_value (m_target);
         Vec3& camera = position_value (m_position);
         camera = target + Quaternion::rotate (camera - target, up, angle);
       }
-      if (pitch != 0 && !m_is_uninitialized) {
+      if (pitch != 0.0f * u::rad && !m_is_uninitialized) {
         Vec3& target = position_value (m_target);
         Vec3& camera = position_value (m_position);
         const Vec3 offset = camera - target;
@@ -103,24 +106,24 @@ namespace moppe {
         if (length2 (right) < 1e-6f)
           return;
         normalize (right);
-        camera = target + Quaternion::rotate (offset, right, pitch * u::rad);
+        camera = target + Quaternion::rotate (offset, right, pitch);
       }
     }
 
-    void ChaseCamera::aim (float yaw, float pitch) {
-      const float turn_yaw = yaw - m_orbit_yaw;
-      const float turn_pitch = pitch - m_orbit_pitch;
+    void ChaseCamera::aim (radians_t yaw, radians_t pitch) {
+      const radians_t turn_yaw = yaw - m_orbit_yaw;
+      const radians_t turn_pitch = pitch - m_orbit_pitch;
       m_orbit_yaw = yaw;
       m_orbit_pitch = pitch;
       // turn() would also swing the carried heading, which aim's offset is
       // measured from; swing the camera alone.
-      const Vec3 heading = m_avg_orientation;
+      const direction_t heading = m_avg_orientation;
       turn (turn_yaw, turn_pitch);
       m_avg_orientation = heading;
     }
 
     void ChaseCamera::update (position_t position,
-                              const Vec3& orientation,
+                              direction_t orientation,
                               velocity_t velocity,
                               seconds_t dt) {
       // dt-correct smoothing (3.1/s reproduces the old 0.05 @ 60Hz)
@@ -133,9 +136,10 @@ namespace moppe {
         m_ahead = displacement (Vec3 ());
       }
 
-      m_avg_orientation =
-        linear_vector_interpolate (m_avg_orientation, orientation, alpha);
-      normalize (m_avg_orientation);
+      m_avg_orientation = unit_direction (normalized (
+        linear_vector_interpolate (direction_value (m_avg_orientation),
+                                   direction_value (orientation),
+                                   alpha)));
       m_pivot = position;
 
       // Sit behind the heading, tilted up from the horizon by the pitch
@@ -143,8 +147,8 @@ namespace moppe {
       // heading downhill lifts the camera by its slope, to see down over
       // it; one climbing does not lower it under itself.
       const Vec3 up (0, 1, 0);
-      const Vec3 o =
-        Quaternion::rotate (m_avg_orientation, up, -m_orbit_yaw * u::rad);
+      const Vec3 o = Quaternion::rotate (
+        direction_value (m_avg_orientation), up, -m_orbit_yaw);
       Vec3 level_o (o[0], 0, o[2]);
       if (length2 (level_o) < 1e-6f)
         level_o = Vec3 (0, 0, 1);
@@ -155,10 +159,9 @@ namespace moppe {
                   -std::atan2 (static_cast<float> (o[1]),
                                std::sqrt (o[0] * o[0] + o[2] * o[2])));
 
-      const float elevation =
-        m_pitch_offset.numerical_value_in (u::rad) + m_orbit_pitch;
+      const radians_t elevation = m_pitch_offset + m_orbit_pitch;
       Vec3 d =
-        Quaternion::rotate (-level_o, right, (elevation + descent) * u::rad);
+        Quaternion::rotate (-level_o, right, elevation + descent * u::rad);
       normalize (d);
 
       // Look a little ahead of the motion so corners open up; the
@@ -177,7 +180,8 @@ namespace moppe {
       // Looking up from low down, the look point rises over the subject,
       // which sinks in the frame and leaves the sky above it.
       const float dist = m_distance.numerical_value_in (moppe::u::m);
-      const float lift = 0.3f * dist * smoothstep (0.0f, 0.7f, -elevation);
+      const float lift =
+        0.3f * dist * smoothstep (0.0f, 0.7f, -radians_value (elevation));
       position_t want_target =
         position + quantity_cast<isq::position_vector> (m_ahead) +
         quantity_cast<isq::position_vector> (displacement (Vec3 (0, lift, 0)));
@@ -303,21 +307,27 @@ namespace moppe {
       // Drawn in as near as it may come and still in the ground, or with
       // a ridge in the way, the camera lifts clear.
       Vec3 view = pivot + boom * (boom_length / span);
-      view[1] = std::max (static_cast<float> (view[1]),
-                          lift_needed (surface, view, pivot, 0.5f, 0.25f));
+      view[1] = std::max (
+        static_cast<float> (view[1]),
+        lift_needed (surface, view, pivot, 0.5f * u::m, 0.25f * u::m));
       m_view = moppe::position (view);
     }
 
     void ChaseCamera::confine (const Room& room) {
-      const Vec3 z = cross (room.x, Vec3 (0, 1, 0));
+      const Vec3& centre = position_value (room.centre);
+      const Vec3& x = direction_value (room.x);
+      const float half_x = meters_value (room.half_x);
+      const float half_z = meters_value (room.half_z);
+      const float floor = meters_value (room.floor);
+      const float ceiling = meters_value (room.ceiling);
+      const Vec3 z = cross (x, Vec3 (0, 1, 0));
       const auto local = [&] (const Vec3& p) {
-        const Vec3 d = p - room.centre;
-        return Vec3 (dot (d, room.x), d[1], dot (d, z));
+        const Vec3 d = p - centre;
+        return Vec3 (dot (d, x), d[1], dot (d, z));
       };
       const Vec3 pivot = local (position_value (m_pivot));
-      if (std::abs (pivot[0]) > room.half_x ||
-          std::abs (pivot[2]) > room.half_z || pivot[1] < room.floor - 0.5f ||
-          pivot[1] > room.ceiling)
+      if (std::abs (pivot[0]) > half_x || std::abs (pivot[2]) > half_z ||
+          pivot[1] < floor - 0.5f || pivot[1] > ceiling)
         return;
       // Along the boom from the subject to the first wall, a hand's
       // breadth short of it.
@@ -331,16 +341,16 @@ namespace moppe {
         if (along < -1e-5f && from + along < -bound)
           t = std::min (t, std::max (0.0f, (-bound - from) / along));
       };
-      stop (pivot[0], boom[0], room.half_x - margin);
-      stop (pivot[2], boom[2], room.half_z - margin);
-      if (boom[1] > 1e-5f && view[1] > room.ceiling - margin)
-        t = std::min (
-          t, std::max (0.0f, (room.ceiling - margin - pivot[1]) / boom[1]));
+      stop (pivot[0], boom[0], half_x - margin);
+      stop (pivot[2], boom[2], half_z - margin);
+      if (boom[1] > 1e-5f && view[1] > ceiling - margin)
+        t = std::min (t,
+                      std::max (0.0f, (ceiling - margin - pivot[1]) / boom[1]));
       if (t >= 1.0f)
         return;
       const Vec3 in = pivot + boom * t;
-      m_view = moppe::position (room.centre + room.x * in[0] +
-                                Vec3 (0, in[1], 0) + z * in[2]);
+      m_view =
+        moppe::position (centre + x * in[0] + Vec3 (0, in[1], 0) + z * in[2]);
       m_boom = length (boom) * t * u::m;
     }
 
@@ -348,8 +358,9 @@ namespace moppe {
       Vec3& target = position_value (m_target);
       floor_target (surface, target, velocity_value (m_target_velocity));
       Vec3& camera = position_value (m_view);
-      camera[1] = std::max (static_cast<float> (camera[1]),
-                            lift_needed (surface, camera, target, 2.2f, 0.3f));
+      camera[1] = std::max (
+        static_cast<float> (camera[1]),
+        lift_needed (surface, camera, target, 2.2f * u::m, 0.3f * u::m));
       m_position = m_view;
     }
   }

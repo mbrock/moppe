@@ -30,7 +30,7 @@ namespace {
     mov::Glider glider (surface);
     glider.launch (
       position (Vec3 (80, 70, 80)), velocity (Vec3 (0, 0, 18)), Vec3 (0, 0, 1));
-    glider.set_turn (0.6f);
+    glider.set_turn (0.6f * control_signal[one]);
     game::ChaseCamera camera (18 * u::deg, 6.5f * u::m);
     game::SimulationClock clock;
     for (int callback = 0; callback < callback_count; ++callback) {
@@ -38,8 +38,10 @@ namespace {
       for (int step = 0; step < steps; ++step) {
         const seconds_t dt = value_cast<float> (game::FIXED_SIMULATION_STEP);
         glider.update (dt);
-        camera.update (
-          glider.position (), glider.heading (), glider.velocity (), dt);
+        camera.update (glider.position (),
+                       unit_direction (glider.heading ()),
+                       glider.velocity (),
+                       dt);
         camera.limit (surface, dt);
       }
     }

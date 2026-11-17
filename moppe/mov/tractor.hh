@@ -151,10 +151,10 @@ namespace moppe::mov {
     // The trailer: its origin (on the ground under its axle) and frame,
     // a point given in its frame, how far each wheel (left, right) hangs
     // below where it stands, and how far round they have rolled.
-    Vec3 trailer_position () const;
-    Vec3 trailer_forward () const;
-    Vec3 trailer_up () const;
-    Vec3 trailer_point (const Vec3& local) const;
+    position_t trailer_position () const;
+    direction_t trailer_forward () const;
+    direction_t trailer_up () const;
+    position_t trailer_point (const displacement_t& local) const;
     meters_t trailer_wheel_drop (int wheel) const;
     radians_t trailer_spin () const;
 

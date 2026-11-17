@@ -43,7 +43,7 @@ namespace moppe::game {
     void camera_place (ChaseCamera& camera,
                        const position_t& eye,
                        const position_t& target) {
-      camera.place (position_value (eye), position_value (target));
+      camera.place (eye, target);
     }
   }
 
@@ -55,8 +55,8 @@ namespace moppe::game {
         session.logic ().m_doing != Doing::on_foot ())
       return;
     ChaseCamera& camera = session.camera ();
-    const position_t from = position (camera.position ());
-    const direction_t looking = unit_direction (camera.forward ());
+    const position_t from = camera.position ();
+    const direction_t looking = camera.forward ();
     position_t eye;
     direction_t toward;
     if (session.logic ().m_cam_mode == CAM_HELMET) {
@@ -199,14 +199,14 @@ namespace moppe::game {
     const bool pedalled = game::pedalled (session.logic ().m_doing);
     const auto& bike = session.ridden_bike ();
     // The tractor with its trailer, from their middle.
-    const position_t car =
-      position (tractor ? (position_value (session.tractor ().position ()) +
-                           session.tractor ().trailer_position ()) *
-                            0.5f
-                : caddy ? position_value (session.caddy ().position ())
-                : boat  ? position_value (session.boat ().position ())
-                : ski   ? position_value (session.jet_ski ().position ())
-                        : position_value (session.jeep ().position ()));
+    const position_t car = position (
+      tractor ? (position_value (session.tractor ().position ()) +
+                 position_value (session.tractor ().trailer_position ())) *
+                  0.5f
+      : caddy ? position_value (session.caddy ().position ())
+      : boat  ? position_value (session.boat ().position ())
+      : ski   ? position_value (session.jet_ski ().position ())
+              : position_value (session.jeep ().position ()));
     const direction_t heading =
       camera_level (gliding   ? session.glider ().heading ()
                     : tractor ? direction_value (session.tractor ().forward ())

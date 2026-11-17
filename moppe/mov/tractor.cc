@@ -900,20 +900,20 @@ namespace moppe::mov {
     return m_impl->kept.rear_spin;
   }
 
-  Vec3 Tractor::trailer_position () const {
-    return m_impl->trailer_point (Vec3 ());
+  position_t Tractor::trailer_position () const {
+    return moppe::position (m_impl->trailer_point (Vec3 ()));
   }
 
-  Vec3 Tractor::trailer_forward () const {
-    return m_impl->trailer_axis (Vec3 (0, 0, 1));
+  direction_t Tractor::trailer_forward () const {
+    return unit_direction (m_impl->trailer_axis (Vec3 (0, 0, 1)));
   }
 
-  Vec3 Tractor::trailer_up () const {
-    return m_impl->trailer_axis (Vec3 (0, 1, 0));
+  direction_t Tractor::trailer_up () const {
+    return unit_direction (m_impl->trailer_axis (Vec3 (0, 1, 0)));
   }
 
-  Vec3 Tractor::trailer_point (const Vec3& local) const {
-    return m_impl->trailer_point (local);
+  position_t Tractor::trailer_point (const displacement_t& local) const {
+    return moppe::position (m_impl->trailer_point (displacement_value (local)));
   }
 
   meters_t Tractor::trailer_wheel_drop (int wheel) const {

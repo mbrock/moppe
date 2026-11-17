@@ -250,11 +250,11 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
   using namespace moppe;
   game::ChaseCamera camera (18 * u::deg, 6.5f * u::m);
   camera.update (position (Vec3 (10, 2, 20)),
-                 Vec3 (0, 0, 1),
+                 unit_direction (Vec3 (0, 0, 1)),
                  velocity (Vec3 (4, 0, 2)),
                  seconds (1.0f / 60.0f));
   const game::ChaseCamera::State camera_state = camera.state ();
-  camera.place (Vec3 (100, 100, 100), Vec3 ());
+  camera.place (position (Vec3 (100, 100, 100)), position (Vec3 ()));
   camera.restore (camera_state);
   check_position (camera.state ().position, camera_state.position);
   check_position (camera.state ().target, camera_state.target);
@@ -558,7 +558,8 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.glider ().set_turn (0.6f * control_signal[one]);
   session.walker ().spawn (position (Vec3 (3, 4, 5)),
                            unit_direction (Vec3 (1, 0, 0)));
-  session.camera ().place (Vec3 (8, 9, 10), Vec3 (9, 9, 10));
+  session.camera ().place (position (Vec3 (8, 9, 10)),
+                           position (Vec3 (9, 9, 10)));
   session.stars ().generate (surface, world, 4);
   session.dust ().emit (position (Vec3 (1, 2, 3)),
                         velocity (Vec3 (4, 5, 6)),
@@ -572,7 +573,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.glider ().set_turn (-1.0f * control_signal[one]);
   session.walker ().spawn (position (Vec3 (30, 40, 50)),
                            unit_direction (Vec3 (0, 0, -1)));
-  session.camera ().place (Vec3 (100, 100, 100), Vec3 ());
+  session.camera ().place (position (Vec3 (100, 100, 100)), position (Vec3 ()));
   session.stars ().update (saved.stars.stars[0].position,
                            game::play_time (0.0),
                            (1.0f / 60.0f) * u::s);

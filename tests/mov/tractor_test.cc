@@ -88,10 +88,12 @@ MOPPE_TEST (a_parked_tractor_settles_on_its_tyres_and_stays) {
   MOPPE_CHECK_NEAR (position_value (tractor.position ())[2], 100.0f, 0.05f);
   // The trailer stands level on its springs straight behind, its eye
   // on the pin, which is 1.42 m behind the tractor's origin.
-  MOPPE_CHECK_NEAR (tractor.trailer_position ()[1], 10.0f, 0.03f);
-  MOPPE_CHECK (tractor.trailer_up ()[1] > 0.999f);
-  MOPPE_CHECK (tractor.trailer_forward ()[2] > 0.999f);
-  MOPPE_CHECK_NEAR (tractor.trailer_position ()[2], 100.0f - 3.72f, 0.05f);
+  MOPPE_CHECK_NEAR (
+    position_value (tractor.trailer_position ())[1], 10.0f, 0.03f);
+  MOPPE_CHECK (direction_value (tractor.trailer_up ())[1] > 0.999f);
+  MOPPE_CHECK (direction_value (tractor.trailer_forward ())[2] > 0.999f);
+  MOPPE_CHECK_NEAR (
+    position_value (tractor.trailer_position ())[2], 100.0f - 3.72f, 0.05f);
   for (int wheel = 0; wheel < mov::Tractor::trailer_wheel_count; ++wheel)
     MOPPE_CHECK_NEAR (
       meters_value (tractor.trailer_wheel_drop (wheel)), 0.0f, 0.03f);
@@ -157,17 +159,16 @@ MOPPE_TEST (the_trailer_follows_round_and_will_not_fold_back) {
     return position_value (tractor.point (mov::Tractor::hitch_pin));
   };
   const auto eye = [&tractor] {
-    return tractor.trailer_point (
-      displacement_value (mov::Tractor::trailer_eye));
+    return position_value (tractor.trailer_point (mov::Tractor::trailer_eye));
   };
   // Pulled along, it runs straight behind, rolling as fast.
   tractor.set_drive (1.0f * control_signal[one]);
   tractor_test_run (tractor, 5.0f);
-  MOPPE_CHECK (dot (tractor.trailer_forward (),
+  MOPPE_CHECK (dot (direction_value (tractor.trailer_forward ()),
                     direction_value (tractor.forward ())) > 0.995f);
-  MOPPE_CHECK (
-    dot (tractor.trailer_position () - position_value (tractor.position ()),
-         direction_value (tractor.forward ())) < -3.5f);
+  MOPPE_CHECK (dot (position_value (tractor.trailer_position ()) -
+                      position_value (tractor.position ()),
+                    direction_value (tractor.forward ())) < -3.5f);
   MOPPE_CHECK (length (eye () - pin ()) < 0.05f);
   MOPPE_CHECK (dot (velocity_value (tractor.velocity ()),
                     direction_value (tractor.forward ())) > 6.0f);
@@ -177,13 +178,15 @@ MOPPE_TEST (the_trailer_follows_round_and_will_not_fold_back) {
   tractor.set_drive (0.4f * control_signal[one]);
   tractor.set_turn (1.0f * control_signal[one]);
   tractor_test_run (tractor, 2.0f);
-  const float lag = std::atan2 (
-    cross (tractor.trailer_forward (), direction_value (tractor.forward ()))[1],
-    dot (tractor.trailer_forward (), direction_value (tractor.forward ())));
-  MOPPE_CHECK (tractor.trailer_forward ()[0] < -0.05f);
+  const float lag =
+    std::atan2 (cross (direction_value (tractor.trailer_forward ()),
+                       direction_value (tractor.forward ()))[1],
+                dot (direction_value (tractor.trailer_forward ()),
+                     direction_value (tractor.forward ())));
+  MOPPE_CHECK (direction_value (tractor.trailer_forward ())[0] < -0.05f);
   MOPPE_CHECK (lag < -0.1f);
   MOPPE_CHECK (length (eye () - pin ()) < 0.05f);
-  MOPPE_CHECK (tractor.trailer_up ()[1] > 0.95f);
+  MOPPE_CHECK (direction_value (tractor.trailer_up ())[1] > 0.95f);
 
   // Backing up on full lock jackknifes it, until the drawbar's limit
   // holds it some sixty-five degrees off and pushes it round.
@@ -191,15 +194,15 @@ MOPPE_TEST (the_trailer_follows_round_and_will_not_fold_back) {
   float widest = 0.0f;
   for (int i = 0; i < 120 * 8; ++i) {
     tractor.update (moppe::seconds (1.0f / 120.0f), -100.0f * u::m);
-    const float c =
-      dot (tractor.trailer_forward (), direction_value (tractor.forward ()));
+    const float c = dot (direction_value (tractor.trailer_forward ()),
+                         direction_value (tractor.forward ()));
     widest = std::max (widest, std::acos (std::clamp (c, -1.0f, 1.0f)));
   }
   MOPPE_CHECK (widest > 0.9f);
   MOPPE_CHECK (widest < 1.3f);
   MOPPE_CHECK (length (eye () - pin ()) < 0.1f);
   MOPPE_CHECK (direction_value (tractor.up ())[1] > 0.9f);
-  MOPPE_CHECK (tractor.trailer_up ()[1] > 0.9f);
+  MOPPE_CHECK (direction_value (tractor.trailer_up ())[1] > 0.9f);
 }
 
 MOPPE_TEST (the_tractor_climbs_a_steep_slope) {
