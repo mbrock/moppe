@@ -382,7 +382,7 @@ build, test, and change the code; read this when working on a feature.
   than the bike; the prompt says which) and `F` again steps out; `W`/`S`
   drive and reverse, `A`/`D` steer, `Space` brakes, `Tab` cycles the
   view. It is life size and seats two: in multiplayer, `F` beside the
-  other player's jeep takes the passenger seat (`M_PASSENGER`), and the
+  other player's jeep takes the passenger seat (`Doing::riding_along ()`), and the
   jeep's pose travels in the companion snapshot. Like the bike it is a
   Box3D assemblage: a chassis of two box hulls on four sphere wheels,
   each on a wheel joint that springs, drives, brakes, and (in front)
@@ -402,7 +402,7 @@ build, test, and change the code; read this when working on a feature.
   assemblage on another `mov::BikeRig` (`mountain_bike_rig` in
   `mov/rigid_bike.hh`; the Trail 90 is `trail90_rig`), and the session
   holds it as a second `mov::Vehicle` (`GameSession::mountain_bike`,
-  `M_MOUNTAIN_BIKE`). `MOPPE_DEMO=mountain_bike` (`tools/record OUT.mp4
+  `Doing::driving (Machine::mountain_bike)`). `MOPPE_DEMO=mountain_bike` (`tools/record OUT.mp4
   mountain_bike`) pedals it on the autopilot; the other player sees it
   (companion wire version 7).
 - The Long John (`models/long_john.blend` from `tools/figure/long_john.py`,
@@ -416,7 +416,7 @@ build, test, and change the code; read this when working on a feature.
   landing, within 3 km (`park_long_john`); `F` by its saddle rides it, `W` pedals (with its
   hub motor's help, some 25 km/h), `S` brakes, `Shift` skids. It rides
   on `mov::long_john_rig` (`BikeRig::front_wheel_radius` gives it its
-  small front wheel), as `M_LONG_JOHN`; `MOPPE_DEMO=long_john`
+  small front wheel), as `Doing::driving (Machine::long_john)`; `MOPPE_DEMO=long_john`
   (`tools/record OUT.mp4 long_john`) pedals it, and the other player
   sees it (companion wire version 12).
 - The boat (`moppe/mov/boat.*`, `models/boat.blend` from
@@ -441,7 +441,7 @@ build, test, and change the code; read this when working on a feature.
   some 24 km/h alone (29 tied back) and 15 two-up, stuck at the hump
   (26 tied back). The boat and engine weigh 70 kg. In multiplayer, `F`
   beside the other player's boat while they are at its helm takes the
-  fore seat (`M_PASSENGER`, `m_seat_boat`), and the helm's game carries
+  fore seat (`Doing::riding_along ()`, `m_seat_boat`), and the helm's game carries
   the passenger's 80 kg (`Boat::set_passenger`). Run up on the land,
   `F` takes up a rope to its bow handle and walking drags it back to
   the water (`Machine::boat` in rescue.hh); the helicopter can hook it
@@ -519,7 +519,7 @@ build, test, and change the code; read this when working on a feature.
   (`tools/record OUT.mp4 wheelie`) rides them on the autopilot
   (companion wire version 11).
 - The bike (`models/bike.blend` from `tools/figure/bike.py`, drawn by
-  `game/vehicle_render.*`, ridden as `M_BIKE`) is a 1972 Honda CT90
+  `game/vehicle_render.*`, ridden as `Doing::driving (Machine::bike)`) is a 1972 Honda CT90
   Trail 90 at life size, which Krisjanis named as the classic to clone:
   Candy Orange pressed body and swingarm, silver shroud over the spine,
   the engine lying flat under it, the exhaust up the right side in a

@@ -29,7 +29,7 @@ namespace moppe::game {
     // The autopilot rides; the player may still look around.
     const float look_yaw = input.look_yaw;
     const float look_pitch = input.look_pitch;
-    if (session.logic ().m_mode == M_HELICOPTER) {
+    if (session.logic ().m_doing == Doing::driving (Machine::helicopter)) {
       // Spool up, climb out, hook what is under it, and cruise in
       // long easy curves.
       const float t = total_time;
@@ -42,7 +42,8 @@ namespace moppe::game {
         .look_yaw = look_yaw,
         .look_pitch = look_pitch,
       };
-    } else if (demo_wheelies && session.logic ().m_mode == M_BIKE) {
+    } else if (demo_wheelies &&
+               session.logic ().m_doing == Doing::driving (Machine::bike)) {
       // MOPPE_DEMO=wheelie: rolling for a few seconds of every
       // twelve, then up on the back wheel and held there as a rider
       // at the keyboard holds it, the throttle all or nothing --
@@ -65,9 +66,9 @@ namespace moppe::game {
         .look_pitch = look_pitch,
         .run = up && ahead > 1.1f,
       };
-    } else if (session.logic ().m_mode == M_BOAT ||
-               session.logic ().m_mode == M_JET_SKI) {
-      input = session.logic ().m_mode == M_BOAT
+    } else if (session.logic ().m_doing == Doing::driving (Machine::boat) ||
+               session.logic ().m_doing == Doing::driving (Machine::jet_ski)) {
+      input = session.logic ().m_doing == Doing::driving (Machine::boat)
                 ? water (session, parking, ground, total_time, true)
                 : water (session, parking, ground, total_time, false);
       input.look_yaw = look_yaw;
@@ -77,9 +78,9 @@ namespace moppe::game {
         .turn = 0.35f * std::sin (total_time * 0.25f),
         .drive = 1.0f,
         .boost =
-          session.logic ().m_mode != M_TRACTOR &&
-              session.logic ().m_mode != M_CADDY &&
-              session.logic ().m_mode != M_BOAT &&
+          session.logic ().m_doing != Doing::driving (Machine::tractor) &&
+              session.logic ().m_doing != Doing::driving (Machine::caddy) &&
+              session.logic ().m_doing != Doing::driving (Machine::boat) &&
               std::fmod (total_time, 11.0f) < (demo_glides ? 3.5f : 1.35f)
             ? 1.0f
             : 0.0f,

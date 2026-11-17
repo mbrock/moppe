@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_HUD_HH
 #define MOPPE_GAME_HUD_HH
 
+#include <moppe/game/doing.hh>
 #include <moppe/game/game_clock.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/platform/input.hh>
@@ -10,6 +11,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -27,7 +29,7 @@ namespace moppe {
     // the bike's and the boat's boosts and the wheelie have been tried;
     // and the last meal's and catch's notes, which the state points into.
     struct HudPrompts {
-      int thumb_mode = -1;
+      std::optional<Doing> thumb_mode;
       play_time_t thumb_from = play_time (0.0);
       bool boost_tried[2] = { false, false };
       bool wheelie_tried = false;

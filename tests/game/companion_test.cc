@@ -17,7 +17,7 @@ namespace {
     snapshot.sent = sent;
     snapshot.world = world_tag ("play-2048-123");
     snapshot.day_hours = 9.25;
-    snapshot.mode = M_FOOT;
+    snapshot.mode = Doing::on_foot ();
     snapshot.bike.position = Vec3 (10, 20, 30);
     WalkerPose walker;
     walker.position = Vec3 (x, 20, 30);
@@ -70,7 +70,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
     return;
   MOPPE_CHECK (got->player == 7 && got->sequence == 99);
   MOPPE_CHECK (got->world == sent.world && got->day_hours == 9.25);
-  MOPPE_CHECK (got->mode == M_FOOT && !got->glider && got->walker);
+  MOPPE_CHECK (got->mode == Doing::on_foot () && !got->glider && got->walker);
   MOPPE_CHECK_NEAR (got->walker->position[0], 12.5f, 1e-6f);
   MOPPE_CHECK_NEAR (got->walker->heading[0], 1.0f, 1e-6f);
   MOPPE_CHECK (!got->walker->grounded);

@@ -48,54 +48,54 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       logic.m_turn_input = value;
       // On foot the mouse turns; the steering keys step sideways.
-      if (logic.m_mode == M_FOOT)
+      if (logic.m_doing == Doing::on_foot ())
         session.walker ().set_strafe (value);
-      else if (logic.m_mode == M_GLIDER)
+      else if (logic.m_doing == Doing::gliding ())
         session.glider ().set_turn (value);
-      else if (logic.m_mode == M_JEEP)
+      else if (logic.m_doing == Doing::driving (Machine::jeep))
         session.jeep ().set_turn (value);
-      else if (logic.m_mode == M_HELICOPTER)
+      else if (logic.m_doing == Doing::driving (Machine::helicopter))
         session.helicopter ().set_turn (value);
-      else if (logic.m_mode == M_TRACTOR)
+      else if (logic.m_doing == Doing::driving (Machine::tractor))
         session.tractor ().set_turn (value);
-      else if (logic.m_mode == M_CADDY)
+      else if (logic.m_doing == Doing::driving (Machine::caddy))
         session.caddy ().set_turn (value);
-      else if (logic.m_mode == M_BIKE)
+      else if (logic.m_doing == Doing::driving (Machine::bike))
         session.bike ().set_yaw ((90 * value) * u::deg);
-      else if (pedalled (logic.m_mode))
+      else if (pedalled (logic.m_doing))
         session.ridden_bike ().set_yaw ((90 * value) * u::deg);
-      else if (logic.m_mode == M_BOAT)
+      else if (logic.m_doing == Doing::driving (Machine::boat))
         session.boat ().set_turn (value);
-      else if (logic.m_mode == M_JET_SKI)
+      else if (logic.m_doing == Doing::driving (Machine::jet_ski))
         session.jet_ski ().set_turn (value);
     }
 
     void set_go (GameSession& session, float value) {
       GameLogicState& logic = session.logic ();
       logic.m_go_input = value;
-      if (logic.m_mode == M_FOOT) {
+      if (logic.m_doing == Doing::on_foot ()) {
         // Hauling on a rope is slow work.
         const float burden = logic.m_haul.active ? 0.6f : 1.0f;
         session.walker ().set_walk (burden *
                                     (value > 0 ? value : value * 0.6f));
-      } else if (logic.m_mode == M_GLIDER)
+      } else if (logic.m_doing == Doing::gliding ())
         session.glider ().set_speed_control (value);
-      else if (logic.m_mode == M_JEEP)
+      else if (logic.m_doing == Doing::driving (Machine::jeep))
         session.jeep ().set_drive (value);
-      else if (logic.m_mode == M_HELICOPTER)
+      else if (logic.m_doing == Doing::driving (Machine::helicopter))
         session.helicopter ().set_drive (value);
-      else if (logic.m_mode == M_TRACTOR)
+      else if (logic.m_doing == Doing::driving (Machine::tractor))
         session.tractor ().set_drive (value);
-      else if (logic.m_mode == M_CADDY)
+      else if (logic.m_doing == Doing::driving (Machine::caddy))
         session.caddy ().set_drive (value);
-      else if (logic.m_mode == M_BIKE) {
+      else if (logic.m_doing == Doing::driving (Machine::bike)) {
         session.bike ().set_thrust (value);
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
-      } else if (pedalled (logic.m_mode))
+      } else if (pedalled (logic.m_doing))
         session.ridden_bike ().set_thrust (value);
-      else if (logic.m_mode == M_BOAT)
+      else if (logic.m_doing == Doing::driving (Machine::boat))
         session.boat ().set_drive (value);
-      else if (logic.m_mode == M_JET_SKI)
+      else if (logic.m_doing == Doing::driving (Machine::jet_ski))
         session.jet_ski ().set_drive (value);
     }
 
@@ -103,23 +103,23 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       const float previous = logic.m_boost_input;
       logic.m_boost_input = std::max (0.0f, std::min (1.0f, value));
-      if (logic.m_mode == M_FOOT) {
+      if (logic.m_doing == Doing::on_foot ()) {
         if (logic.m_boost_input > 0.1f && previous <= 0.1f)
           session.walker ().jump ();
-      } else if (logic.m_mode == M_GLIDER) {
+      } else if (logic.m_doing == Doing::gliding ()) {
         session.glider ().set_flare (logic.m_boost_input > 0.1f);
-      } else if (logic.m_mode == M_JEEP) {
+      } else if (logic.m_doing == Doing::driving (Machine::jeep)) {
         // What boosts the bike brakes the jeep.
         session.jeep ().set_brake (logic.m_boost_input > 0.1f);
-      } else if (logic.m_mode == M_TRACTOR) {
+      } else if (logic.m_doing == Doing::driving (Machine::tractor)) {
         session.tractor ().set_brake (logic.m_boost_input > 0.1f);
-      } else if (logic.m_mode == M_CADDY) {
+      } else if (logic.m_doing == Doing::driving (Machine::caddy)) {
         session.caddy ().set_brake (logic.m_boost_input > 0.1f);
-      } else if (logic.m_mode == M_BIKE) {
+      } else if (logic.m_doing == Doing::driving (Machine::bike)) {
         session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
-      } else if (logic.m_mode == M_BOAT) {
+      } else if (logic.m_doing == Doing::driving (Machine::boat)) {
         session.boat ().set_boost (logic.m_boost_input);
-      } else if (logic.m_mode == M_MOUNTAIN_BIKE) {
+      } else if (logic.m_doing == Doing::driving (Machine::mountain_bike)) {
         // No jets on a mountainbike: the rider springs it up off the
         // ground instead.
         if (logic.m_boost_input > 0.1f && previous <= 0.1f)
@@ -144,7 +144,7 @@ namespace moppe::game {
         heading,
         true);
       GameLogicState& logic = session.logic ();
-      session.set_mode (M_GLIDER);
+      session.set_mode (Doing::gliding ());
       session.glider ().set_turn (logic.m_turn_input);
       session.glider ().set_speed_control (logic.m_go_input);
       session.glider ().set_flare (logic.m_boost_input > 0.1f);
@@ -152,7 +152,7 @@ namespace moppe::game {
 
     void use_glider_control (GameSession& session,
                              const map::SurfaceGeometry& terrain) {
-      if (session.logic ().m_mode == M_GLIDER) {
+      if (session.logic ().m_doing == Doing::gliding ()) {
         session.glider ().drop_bike ();
         return;
       }
@@ -164,7 +164,7 @@ namespace moppe::game {
       if (session.glider ().bike_attached ()) {
         // The bike rides on with everything the glide gave it.
         session.glider ().drop_bike ();
-        session.set_mode (M_BIKE);
+        session.set_mode (Doing::driving (Machine::bike));
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         set_boost (session, 0);
@@ -179,7 +179,7 @@ namespace moppe::game {
         Vec3 (0, meters_value (mov::Glider::pilot_clearance) - 0.1f, 0);
       session.walker ().spawn (
         moppe::position (feet), glider.heading (), glider.physical_velocity ());
-      session.set_mode (M_FOOT);
+      session.set_mode (Doing::on_foot ());
       set_turn (session, logic.m_turn_input);
       set_go (session, logic.m_go_input);
       set_boost (session, 0);
@@ -188,7 +188,7 @@ namespace moppe::game {
     // The helicopter climbs on what boosts the bike and descends on what
     // runs on foot (or the held deploy key, a controller's A).
     void set_lift (GameSession& session, const InputFrame& input) {
-      if (session.logic ().m_mode != M_HELICOPTER)
+      if (session.logic ().m_doing != Doing::driving (Machine::helicopter))
         return;
       const float climb = input_value (input.boost);
       const bool descend = input.run || input.deploy_glider_held;
@@ -196,12 +196,6 @@ namespace moppe::game {
                                       : descend    ? -1.0f
                                                    : 0.0f);
     }
-
-    // The mode each machine is driven in, by Machine.
-    constexpr Mode machine_mode[machine_count] = {
-      M_BIKE,          M_JEEP, M_TRACTOR,   M_CADDY,   M_HELICOPTER,
-      M_MOUNTAIN_BIKE, M_BOAT, M_LONG_JOHN, M_JET_SKI,
-    };
 
     Trouble& trouble_of (GameLogicState& logic, Machine machine) {
       return logic.m_trouble[static_cast<std::size_t> (machine)];
@@ -252,7 +246,7 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       Sling& sling = logic.m_sling;
       mov::Helicopter& heli = session.helicopter ();
-      if (sling.hooked && logic.m_mode != M_HELICOPTER)
+      if (sling.hooked && logic.m_doing != Doing::driving (Machine::helicopter))
         sling.hooked = false;
       if (!sling.hooked) {
         heli.set_load (force (Vec3 ()), meters_t {});
@@ -274,10 +268,11 @@ namespace moppe::game {
     void toggle_mount (GameSession& session) {
       GameLogicState& logic = session.logic ();
       // A passenger's seat is the game's to give and take away.
-      if (logic.m_mode == M_GLIDER || logic.m_mode == M_PASSENGER)
+      if (logic.m_doing == Doing::gliding () ||
+          logic.m_doing == Doing::riding_along ())
         return;
 
-      if (logic.m_mode == M_HELICOPTER) {
+      if (logic.m_doing == Doing::driving (Machine::helicopter)) {
         // With a machine on the line, the key lets it go first; over one,
         // it hooks it on.
         if (logic.m_sling.hooked) {
@@ -312,13 +307,13 @@ namespace moppe::game {
           moppe::position (heli.point (Vec3 (-2.0f, 0.3f, 0.4f))),
           length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1),
           moppe::velocity (heli.velocity ()));
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
       }
 
-      if (logic.m_mode == M_TRACTOR) {
+      if (logic.m_doing == Doing::driving (Machine::tractor)) {
         // Down off the left side, ahead of the big wheel.
         mov::Tractor& tractor = session.tractor ();
         tractor.set_drive (0);
@@ -328,13 +323,13 @@ namespace moppe::game {
           moppe::position (tractor.point (Vec3 (1.2f, 0.1f, 0.35f))),
           tractor.forward (),
           moppe::velocity (tractor.velocity ()));
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
       }
 
-      if (logic.m_mode == M_CADDY) {
+      if (logic.m_doing == Doing::driving (Machine::caddy)) {
         // Out of the driver's door, on the left.
         mov::Car& caddy = session.caddy ();
         caddy.set_drive (0);
@@ -344,13 +339,13 @@ namespace moppe::game {
           moppe::position (caddy.point (Vec3 (1.35f, 0.2f, 0.25f))),
           caddy.forward (),
           moppe::velocity (caddy.velocity ()));
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
       }
 
-      if (pedalled (logic.m_mode)) {
+      if (pedalled (logic.m_doing)) {
         // Off on the left, as a cyclist gets off.
         mov::Vehicle& bike = session.ridden_bike ();
         const Vec3 heading = level_heading (bike.orientation ());
@@ -362,13 +357,13 @@ namespace moppe::game {
         bike.set_thrust (0);
         bike.set_yaw (0 * u::deg);
         bike.set_skid (0);
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
       }
 
-      if (logic.m_mode == M_BOAT) {
+      if (logic.m_doing == Doing::driving (Machine::boat)) {
         // Over whichever side, or the bow, has the shallowest water.
         mov::Boat& boat = session.boat ();
         boat.set_drive (0);
@@ -377,13 +372,13 @@ namespace moppe::game {
         session.walker ().spawn (moppe::position (session.boat_landing ()),
                                  level_heading (boat.forward ()),
                                  moppe::velocity (boat.velocity () * 0.5f));
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
       }
 
-      if (logic.m_mode == M_JET_SKI) {
+      if (logic.m_doing == Doing::driving (Machine::jet_ski)) {
         // Off over whichever side, or the bow, has the shallowest water.
         mov::JetSki& ski = session.jet_ski ();
         ski.set_drive (0);
@@ -391,13 +386,13 @@ namespace moppe::game {
         session.walker ().spawn (moppe::position (session.boat_landing ()),
                                  level_heading (ski.forward ()),
                                  moppe::velocity (ski.velocity () * 0.5f));
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
       }
 
-      if (logic.m_mode == M_JEEP) {
+      if (logic.m_doing == Doing::driving (Machine::jeep)) {
         // Step out on the driver's side.
         mov::Car& jeep = session.jeep ();
         jeep.set_drive (0);
@@ -407,7 +402,7 @@ namespace moppe::game {
           moppe::position (jeep.point (Vec3 (1.75f, 0.3f, -0.1f))),
           jeep.forward (),
           moppe::velocity (jeep.velocity ()));
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
@@ -415,7 +410,7 @@ namespace moppe::game {
 
       // On foot, holding a rope: let go of it. Beside a stuck machine:
       // take up a rope to haul it out.
-      if (logic.m_mode == M_FOOT && logic.m_haul.active) {
+      if (logic.m_doing == Doing::on_foot () && logic.m_haul.active) {
         let_go (session, true);
         return;
       }
@@ -426,19 +421,21 @@ namespace moppe::game {
 
       // On foot: take whatever stands nearest within reach.
       const std::optional<Machine> reach = session.mount_within_reach ();
-      const Mode into = reach && *reach != Machine::bike
-                          ? machine_mode[static_cast<int> (*reach)]
-                          : M_FOOT;
-      if (into != M_FOOT) {
+      const Doing into = reach && *reach != Machine::bike
+                           ? Doing::driving (*reach)
+                           : Doing::on_foot ();
+      if (into != Doing::on_foot ()) {
         session.set_mode (into);
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
-        if (into != M_HELICOPTER && into != M_BOAT && into != M_JET_SKI)
+        if (into != Doing::driving (Machine::helicopter) &&
+            into != Doing::driving (Machine::boat) &&
+            into != Doing::driving (Machine::jet_ski))
           set_boost (session, logic.m_boost_input);
         return;
       }
 
-      if (logic.m_mode != M_FOOT) {
+      if (logic.m_doing != Doing::on_foot ()) {
         // Step off to the side of the bike.
         mov::Vehicle& vehicle = session.bike ();
         const Vec3 heading = vehicle.orientation ();
@@ -452,7 +449,7 @@ namespace moppe::game {
         vehicle.set_boost (0, 0);
         vehicle.set_skid (0);
         vehicle.set_wheelie (0);
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         return;
@@ -462,7 +459,7 @@ namespace moppe::game {
       if (reach == Machine::bike) {
         session.bike ().set_thrust (0);
         session.bike ().set_yaw (0 * u::deg);
-        session.set_mode (M_BIKE);
+        session.set_mode (Doing::driving (Machine::bike));
         set_turn (session, logic.m_turn_input);
         set_go (session, logic.m_go_input);
         set_boost (session, logic.m_boost_input);
@@ -477,7 +474,7 @@ namespace moppe::game {
     // is always ahead.
     void settle_look (GameLogicState& logic, float speed, float elapsed) {
       logic.m_look_idle += elapsed;
-      if (logic.m_mode == M_FOOT)
+      if (logic.m_doing == Doing::on_foot ())
         return;
       const float aside =
         std::max (std::abs (logic.m_look_yaw), std::abs (logic.m_look_pitch));
@@ -509,11 +506,14 @@ namespace moppe::game {
                         float turn,
                         float drive) {
       const RoadHelp none { turn, drive };
-      const Mode mode = session.logic ().m_mode;
-      const bool bike = mode == M_BIKE || pedalled (mode);
+      const Doing mode = session.logic ().m_doing;
+      const bool bike =
+        mode == Doing::driving (Machine::bike) || pedalled (mode);
       const terrain::RoadSurface* roads = mov::attached_roads (terrain);
       if (!roads || drive < 0.0f ||
-          !(bike || mode == M_JEEP || mode == M_TRACTOR || mode == M_CADDY))
+          !(bike || mode == Doing::driving (Machine::jeep) ||
+            mode == Doing::driving (Machine::tractor) ||
+            mode == Doing::driving (Machine::caddy)))
         return none;
       if (bike && !session.ridden_bike ().grounded ())
         return none;
@@ -625,17 +625,22 @@ namespace moppe::game {
       set_lift (session, input);
       GameLogicState& logic = session.logic ();
       // Riding, what runs on foot stamps on the rear brake.
-      session.bike ().set_skid (logic.m_mode == M_BIKE && input.run ? 1 : 0);
-      session.bike ().set_wheelie (logic.m_mode == M_BIKE && input.lean_back);
+      session.bike ().set_skid (
+        logic.m_doing == Doing::driving (Machine::bike) && input.run ? 1 : 0);
+      session.bike ().set_wheelie (
+        logic.m_doing == Doing::driving (Machine::bike) && input.lean_back);
       session.mountain_bike ().set_skid (
-        logic.m_mode == M_MOUNTAIN_BIKE && input.run ? 1 : 0);
+        logic.m_doing == Doing::driving (Machine::mountain_bike) && input.run
+          ? 1
+          : 0);
       session.long_john ().set_skid (
-        logic.m_mode == M_LONG_JOHN && input.run ? 1 : 0);
+        logic.m_doing == Doing::driving (Machine::long_john) && input.run ? 1
+                                                                          : 0);
       logic.m_look_pitch =
         std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
       if (input.look_yaw != 0.0f || input.look_pitch != 0.0f)
         logic.m_look_idle = 0.0f;
-      if (logic.m_mode == M_FOOT) {
+      if (logic.m_doing == Doing::on_foot ()) {
         // The walker turns with the look, and a following camera turns
         // with them at once rather than catching up.
         session.walker ().turn_by (input.look_yaw * u::rad);
@@ -651,7 +656,8 @@ namespace moppe::game {
 
       if (input.deploy_glider)
         use_glider_control (session, terrain);
-      else if (input.deploy_glider_held && session.logic ().m_mode != M_GLIDER)
+      else if (input.deploy_glider_held &&
+               session.logic ().m_doing != Doing::gliding ())
         deploy_glider (session, terrain);
       if (input.toggle_mount) {
         if (session.can_deploy_glider (terrain) || session.can_drop_bike ())
@@ -697,7 +703,7 @@ namespace moppe::game {
       const Haul& haul = logic.m_haul;
       if (!haul.active)
         return;
-      if (logic.m_mode != M_FOOT) {
+      if (logic.m_doing != Doing::on_foot ()) {
         let_go (session, false);
         return;
       }
@@ -731,7 +737,7 @@ namespace moppe::game {
                           seconds_t dt,
                           const GroundCover& ground) {
       GameLogicState& logic = session.logic ();
-      const std::optional<Machine> driven = driven_machine (logic.m_mode);
+      const std::optional<Machine> driven = driven_machine (logic.m_doing);
       for (int i = 0; i < machine_count; ++i) {
         const Machine machine = static_cast<Machine> (i);
         const MachineBody body = session.machine_body (machine);
@@ -768,7 +774,7 @@ namespace moppe::game {
       for (int i = 0; i < machine_count; ++i)
         bodies.push_back (session.machine_body (static_cast<Machine> (i)));
       bodies.insert (bodies.end (), strangers.begin (), strangers.end ());
-      const std::optional<Machine> driven = driven_machine (logic.m_mode);
+      const std::optional<Machine> driven = driven_machine (logic.m_doing);
       for (const Bump& bump : find_bumps (bodies)) {
         const MachineBody& a = bodies[bump.a];
         const MachineBody& b = bodies[bump.b];
@@ -815,13 +821,6 @@ namespace moppe::game {
     }
   }
 
-  std::optional<Machine> driven_machine (Mode mode) {
-    for (int i = 0; i < machine_count; ++i)
-      if (machine_mode[i] == mode)
-        return static_cast<Machine> (i);
-    return std::nullopt;
-  }
-
   MachineBody GameSession::machine_body (Machine machine) const {
     return visit (m_fleet, machine, [] (Machine m, const Drivable auto& b) {
       MachineBody body;
@@ -851,7 +850,7 @@ namespace moppe::game {
   }
 
   std::optional<Machine> GameSession::haul_within_reach () const {
-    if (m_logic.m_mode != M_FOOT || m_logic.m_haul.active)
+    if (m_logic.m_doing != Doing::on_foot () || m_logic.m_haul.active)
       return std::nullopt;
     const std::optional<Machine> machine = mount_within_reach ();
     if (!machine)
@@ -872,7 +871,7 @@ namespace moppe::game {
   }
 
   std::optional<Machine> GameSession::hauling () const {
-    if (m_logic.m_mode != M_FOOT || !m_logic.m_haul.active)
+    if (m_logic.m_doing != Doing::on_foot () || !m_logic.m_haul.active)
       return std::nullopt;
     return m_logic.m_haul.machine;
   }
@@ -883,7 +882,7 @@ namespace moppe::game {
   }
 
   bool GameSession::stuck () const {
-    const std::optional<Machine> driven = driven_machine (m_logic.m_mode);
+    const std::optional<Machine> driven = driven_machine (m_logic.m_doing);
     return driven &&
            m_logic.m_trouble[static_cast<std::size_t> (*driven)].stuck;
   }
@@ -926,85 +925,58 @@ namespace moppe::game {
         m_glider (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
 
   Vec3 GameSession::subject_position () const {
-    if (m_logic.m_mode == M_FOOT)
+    switch (m_logic.m_doing.way) {
+    case Doing::Way::foot:
       return m_walker.position ();
-    if (m_logic.m_mode == M_GLIDER)
+    case Doing::Way::glider:
       return m_glider.position ();
-    if (m_logic.m_mode == M_JEEP)
-      return m_fleet.jeep.position ();
-    if (m_logic.m_mode == M_HELICOPTER)
-      return m_fleet.helicopter.position ();
-    if (m_logic.m_mode == M_TRACTOR)
-      return m_fleet.tractor.position ();
-    if (m_logic.m_mode == M_CADDY)
-      return m_fleet.caddy.position ();
-    if (m_logic.m_mode == M_PASSENGER)
+    case Doing::Way::passenger:
       return m_logic.m_seat_position;
-    if (m_logic.m_mode == M_MOUNTAIN_BIKE)
-      return m_fleet.mountain_bike.position ();
-    if (m_logic.m_mode == M_LONG_JOHN)
-      return m_fleet.long_john.position ();
-    if (m_logic.m_mode == M_BOAT)
-      return m_fleet.boat.position ();
-    if (m_logic.m_mode == M_JET_SKI)
-      return m_fleet.jet_ski.position ();
-    return m_fleet.bike.position ();
+    case Doing::Way::driving:
+      return visit (
+        m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
+          return b.position ();
+        });
+    }
+    std::unreachable ();
   }
 
   Vec3 GameSession::subject_heading () const {
-    if (m_logic.m_mode == M_FOOT)
+    switch (m_logic.m_doing.way) {
+    case Doing::Way::foot:
       return m_walker.heading ();
-    if (m_logic.m_mode == M_GLIDER)
+    case Doing::Way::glider:
       return m_glider.heading ();
-    if (m_logic.m_mode == M_JEEP)
-      return m_fleet.jeep.forward ();
-    if (m_logic.m_mode == M_HELICOPTER)
-      return m_fleet.helicopter.forward ();
-    if (m_logic.m_mode == M_TRACTOR)
-      return m_fleet.tractor.forward ();
-    if (m_logic.m_mode == M_CADDY)
-      return m_fleet.caddy.forward ();
-    if (m_logic.m_mode == M_PASSENGER)
+    case Doing::Way::passenger:
       return m_logic.m_seat_heading;
-    if (m_logic.m_mode == M_MOUNTAIN_BIKE)
-      return m_fleet.mountain_bike.orientation ();
-    if (m_logic.m_mode == M_LONG_JOHN)
-      return m_fleet.long_john.orientation ();
-    if (m_logic.m_mode == M_BOAT)
-      return m_fleet.boat.forward ();
-    if (m_logic.m_mode == M_JET_SKI)
-      return m_fleet.jet_ski.forward ();
-    return m_fleet.bike.orientation ();
+    case Doing::Way::driving:
+      return visit (
+        m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
+          return b.forward ();
+        });
+    }
+    std::unreachable ();
   }
 
   float GameSession::subject_speed_kmh () const {
-    if (m_logic.m_mode == M_FOOT)
+    switch (m_logic.m_doing.way) {
+    case Doing::Way::foot:
       return 0.0f;
-    if (m_logic.m_mode == M_GLIDER)
+    case Doing::Way::glider:
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
-    if (m_logic.m_mode == M_JEEP)
-      return length (m_fleet.jeep.velocity ()) * 3.6f;
-    if (m_logic.m_mode == M_HELICOPTER)
-      return length (m_fleet.helicopter.velocity ()) * 3.6f;
-    if (m_logic.m_mode == M_TRACTOR)
-      return length (m_fleet.tractor.velocity ()) * 3.6f;
-    if (m_logic.m_mode == M_CADDY)
-      return length (m_fleet.caddy.velocity ()) * 3.6f;
-    if (m_logic.m_mode == M_PASSENGER)
+    case Doing::Way::passenger:
       return length (m_logic.m_seat_velocity) * 3.6f;
-    if (m_logic.m_mode == M_MOUNTAIN_BIKE)
-      return length (m_fleet.mountain_bike.velocity ()) * 3.6f;
-    if (m_logic.m_mode == M_LONG_JOHN)
-      return length (m_fleet.long_john.velocity ()) * 3.6f;
-    if (m_logic.m_mode == M_BOAT)
-      return length (m_fleet.boat.velocity ()) * 3.6f;
-    if (m_logic.m_mode == M_JET_SKI)
-      return length (m_fleet.jet_ski.velocity ()) * 3.6f;
-    return length (m_fleet.bike.velocity ()) * 3.6f;
+    case Doing::Way::driving:
+      return visit (
+        m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
+          return length (b.velocity ()) * 3.6f;
+        });
+    }
+    std::unreachable ();
   }
 
   std::optional<Machine> GameSession::mount_within_reach () const {
-    if (m_logic.m_mode != M_FOOT)
+    if (m_logic.m_doing != Doing::on_foot ())
       return std::nullopt;
     const Vec3 feet = m_walker.position ();
     // Each measured from where one gets on or in, with how far off that
@@ -1078,8 +1050,8 @@ namespace moppe::game {
   }
 
   std::optional<Machine> GameSession::hook_within_reach () const {
-    if (m_logic.m_mode != M_HELICOPTER || m_logic.m_sling.hooked ||
-        m_fleet.helicopter.altitude () < 2.0f * u::m)
+    if (m_logic.m_doing != Doing::driving (Machine::helicopter) ||
+        m_logic.m_sling.hooked || m_fleet.helicopter.altitude () < 2.0f * u::m)
       return std::nullopt;
     const Vec3 hook = m_fleet.helicopter.point (sling_hook ());
     std::optional<Machine> nearest;
@@ -1104,14 +1076,15 @@ namespace moppe::game {
   }
 
   bool GameSession::can_step_out_of_helicopter () const {
-    return m_logic.m_mode == M_HELICOPTER &&
+    return m_logic.m_doing == Doing::driving (Machine::helicopter) &&
            m_fleet.helicopter.altitude () < 1.2f * u::m &&
            length (m_fleet.helicopter.velocity ()) < 4.0f;
   }
 
   bool
   GameSession::can_deploy_glider (const map::SurfaceGeometry& terrain) const {
-    if (m_logic.m_mode != M_BIKE || !m_fleet.bike.airborne ())
+    if (m_logic.m_doing != Doing::driving (Machine::bike) ||
+        !m_fleet.bike.airborne ())
       return false;
     const Vec3 position = m_fleet.bike.position ();
     const float ground = terrain::surface_elevation_value (
@@ -1121,13 +1094,13 @@ namespace moppe::game {
   }
 
   bool GameSession::can_drop_bike () const {
-    return m_logic.m_mode == M_GLIDER && m_glider.bike_attached ();
+    return m_logic.m_doing == Doing::gliding () && m_glider.bike_attached ();
   }
 
-  void GameSession::set_mode (Mode mode) {
-    const bool was_on_foot = m_logic.m_mode == M_FOOT;
-    const bool on_foot = mode == M_FOOT;
-    m_logic.m_mode = mode;
+  void GameSession::set_mode (Doing mode) {
+    const bool was_on_foot = m_logic.m_doing == Doing::on_foot ();
+    const bool on_foot = mode == Doing::on_foot ();
+    m_logic.m_doing = mode;
     if (was_on_foot == on_foot)
       return;
     (was_on_foot ? m_logic.m_foot_cam : m_logic.m_ride_cam) =
@@ -1140,7 +1113,7 @@ namespace moppe::game {
   }
 
   void GameSession::start_on_foot () {
-    if (m_logic.m_mode == M_BIKE)
+    if (m_logic.m_doing == Doing::driving (Machine::bike))
       toggle_mount (*this);
     m_logic.m_cam_mode = CAM_CHASE;
     m_logic.m_look_pitch = 0.0f;
@@ -1150,8 +1123,8 @@ namespace moppe::game {
 
   CameraRig GameSession::camera_rig () const {
     CameraRig rig;
-    switch (m_logic.m_mode) {
-    case M_FOOT:
+    switch (m_logic.m_doing.way) {
+    case Doing::Way::foot:
       rig.eye = m_walker.eye_position ();
       rig.ahead = m_walker.heading ();
       rig.pivot = m_walker.position () + Vec3 (0, 1.35f, 0);
@@ -1160,22 +1133,13 @@ namespace moppe::game {
       rig.nearest = 0.9f * u::m;
       rig.elevation = 10.0f * u::deg;
       break;
-    case M_GLIDER:
+    case Doing::Way::glider:
       rig.eye = m_glider.position () - Vec3 (0, 0.75f, 0);
       rig.ahead = m_glider.heading ();
       rig.pivot = position_value (m_glider.physical_position ());
       rig.velocity = velocity_value (m_glider.physical_velocity ());
       break;
-    case M_JEEP:
-      rig.eye = m_fleet.jeep.driver_seat () + m_fleet.jeep.up () * 0.78f +
-                m_fleet.jeep.forward () * 0.08f;
-      rig.ahead = m_fleet.jeep.forward ();
-      rig.pivot = m_fleet.jeep.position () + Vec3 (0, 0.9f, 0);
-      rig.velocity = m_fleet.jeep.velocity ();
-      rig.distance = 8.0f * u::m;
-      rig.nearest = 3.4f * u::m;
-      break;
-    case M_PASSENGER:
+    case Doing::Way::passenger:
       rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.78f +
                 m_logic.m_seat_heading * 0.08f;
       rig.ahead = m_logic.m_seat_heading;
@@ -1184,110 +1148,125 @@ namespace moppe::game {
       rig.distance = 8.0f * u::m;
       rig.nearest = 3.4f * u::m;
       break;
-    case M_CADDY:
-      rig.eye = m_fleet.caddy.driver_seat () + m_fleet.caddy.up () * 0.70f +
-                m_fleet.caddy.forward () * 0.06f;
-      rig.ahead = m_fleet.caddy.forward ();
-      rig.pivot = m_fleet.caddy.position () + Vec3 (0, 1.0f, 0);
-      rig.velocity = m_fleet.caddy.velocity ();
-      rig.distance = 8.5f * u::m;
-      rig.nearest = 3.6f * u::m;
-      break;
-    case M_TRACTOR:
-      rig.eye = m_fleet.tractor.driver_seat () + m_fleet.tractor.up () * 0.80f +
-                m_fleet.tractor.forward () * 0.1f;
-      rig.ahead = m_fleet.tractor.forward ();
-      rig.pivot = m_fleet.tractor.position () + Vec3 (0, 1.5f, 0);
-      rig.velocity = m_fleet.tractor.velocity ();
-      // Back over the trailer.
-      rig.distance = 8.5f * u::m;
-      rig.nearest = 3.0f * u::m;
-      break;
-    case M_HELICOPTER: {
-      rig.eye = m_fleet.helicopter.pilot_seat () +
-                m_fleet.helicopter.up () * 0.78f +
-                m_fleet.helicopter.forward () * 0.1f;
-      // Behind the way it heads, level, whatever its nose is doing.
-      Vec3 ahead = m_fleet.helicopter.forward ();
-      ahead[1] = 0.0f;
-      rig.ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
-      rig.pivot = m_fleet.helicopter.position () + Vec3 (0, 1.6f, 0);
-      rig.velocity = m_fleet.helicopter.velocity ();
-      rig.distance = 12.0f * u::m;
-      rig.nearest = 5.0f * u::m;
-      rig.elevation = 21.0f * u::deg;
-      // Further off and lower, to see what hangs under it too.
-      if (m_logic.m_sling.hooked) {
-        rig.pivot = rig.pivot * 0.65f +
-                    machine_body (m_logic.m_sling.load).position * 0.35f;
-        rig.distance = 24.0f * u::m;
-        rig.nearest = 8.0f * u::m;
-        rig.elevation = 14.0f * u::deg;
+    case Doing::Way::driving:
+      switch (m_logic.m_doing.machine) {
+      case Machine::jeep:
+        rig.eye = m_fleet.jeep.driver_seat () + m_fleet.jeep.up () * 0.78f +
+                  m_fleet.jeep.forward () * 0.08f;
+        rig.ahead = m_fleet.jeep.forward ();
+        rig.pivot = m_fleet.jeep.position () + Vec3 (0, 0.9f, 0);
+        rig.velocity = m_fleet.jeep.velocity ();
+        rig.distance = 8.0f * u::m;
+        rig.nearest = 3.4f * u::m;
+        break;
+      case Machine::caddy:
+        rig.eye = m_fleet.caddy.driver_seat () + m_fleet.caddy.up () * 0.70f +
+                  m_fleet.caddy.forward () * 0.06f;
+        rig.ahead = m_fleet.caddy.forward ();
+        rig.pivot = m_fleet.caddy.position () + Vec3 (0, 1.0f, 0);
+        rig.velocity = m_fleet.caddy.velocity ();
+        rig.distance = 8.5f * u::m;
+        rig.nearest = 3.6f * u::m;
+        break;
+      case Machine::tractor:
+        rig.eye = m_fleet.tractor.driver_seat () +
+                  m_fleet.tractor.up () * 0.80f +
+                  m_fleet.tractor.forward () * 0.1f;
+        rig.ahead = m_fleet.tractor.forward ();
+        rig.pivot = m_fleet.tractor.position () + Vec3 (0, 1.5f, 0);
+        rig.velocity = m_fleet.tractor.velocity ();
+        // Back over the trailer.
+        rig.distance = 8.5f * u::m;
+        rig.nearest = 3.0f * u::m;
+        break;
+      case Machine::helicopter: {
+        rig.eye = m_fleet.helicopter.pilot_seat () +
+                  m_fleet.helicopter.up () * 0.78f +
+                  m_fleet.helicopter.forward () * 0.1f;
+        // Behind the way it heads, level, whatever its nose is doing.
+        Vec3 ahead = m_fleet.helicopter.forward ();
+        ahead[1] = 0.0f;
+        rig.ahead =
+          length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
+        rig.pivot = m_fleet.helicopter.position () + Vec3 (0, 1.6f, 0);
+        rig.velocity = m_fleet.helicopter.velocity ();
+        rig.distance = 12.0f * u::m;
+        rig.nearest = 5.0f * u::m;
+        rig.elevation = 21.0f * u::deg;
+        // Further off and lower, to see what hangs under it too.
+        if (m_logic.m_sling.hooked) {
+          rig.pivot = rig.pivot * 0.65f +
+                      machine_body (m_logic.m_sling.load).position * 0.35f;
+          rig.distance = 24.0f * u::m;
+          rig.nearest = 8.0f * u::m;
+          rig.elevation = 14.0f * u::deg;
+        }
+        break;
       }
-      break;
-    }
-    case M_BOAT:
-      rig.eye = m_fleet.boat.helm_seat () + m_fleet.boat.up () * 0.85f +
-                m_fleet.boat.forward () * 0.1f;
-      rig.ahead = m_fleet.boat.forward ();
-      rig.pivot = m_fleet.boat.position () + Vec3 (0, 1.0f, 0);
-      rig.velocity = m_fleet.boat.velocity ();
-      rig.distance = 6.5f * u::m;
-      rig.nearest = 3.0f * u::m;
-      rig.elevation = 16.0f * u::deg;
-      break;
-    case M_JET_SKI:
-      // Close and low behind it, as the thing is quick and small.
-      rig.eye = m_fleet.jet_ski.seat () + m_fleet.jet_ski.up () * 0.72f +
-                m_fleet.jet_ski.forward () * 0.12f;
-      rig.ahead = m_fleet.jet_ski.forward ();
-      rig.pivot = m_fleet.jet_ski.position () + Vec3 (0, 1.0f, 0);
-      rig.velocity = m_fleet.jet_ski.velocity ();
-      rig.distance = 6.0f * u::m;
-      rig.nearest = 2.8f * u::m;
-      rig.elevation = 15.0f * u::deg;
-      break;
-    case M_MOUNTAIN_BIKE: {
-      // The bike is life size, its reference point between the axles at
-      // their height; the rider's eyes are some 1.3 m over that.
-      const mov::Vehicle& bike = m_fleet.mountain_bike;
-      rig.eye = bike.position () + bike.render_normal () * 1.3f +
-                bike.orientation () * 0.1f;
-      rig.ahead = bike.orientation ();
-      rig.pivot = bike.position () + Vec3 (0, 0.75f, 0);
-      rig.velocity = bike.velocity ();
-      rig.distance = 4.6f * u::m;
-      rig.nearest = 1.6f * u::m;
-      rig.elevation = 15.0f * u::deg;
-      break;
-    }
-    case M_LONG_JOHN: {
-      // The rider sits over the back wheel, some 0.7 m behind the
-      // reference point midway between the axles, eyes 1.45 m over it;
-      // the camera stands back far enough to take in the box ahead.
-      const mov::Vehicle& bike = m_fleet.long_john;
-      rig.eye = bike.position () + bike.render_normal () * 1.45f -
-                bike.orientation () * 0.6f;
-      rig.ahead = bike.orientation ();
-      rig.pivot = bike.position () + Vec3 (0, 0.8f, 0);
-      rig.velocity = bike.velocity ();
-      rig.distance = 5.6f * u::m;
-      rig.nearest = 2.0f * u::m;
-      rig.elevation = 15.0f * u::deg;
-      break;
-    }
-    case M_BIKE:
-      // The Trail 90 is life size, its reference point between the axles
-      // at their height; the seated rider's eyes are some 1.4 m over it.
-      rig.eye = m_fleet.bike.position () +
-                m_fleet.bike.render_normal () * 1.4f +
-                m_fleet.bike.orientation () * 0.05f;
-      rig.ahead = m_fleet.bike.orientation ();
-      rig.pivot = m_fleet.bike.position () + Vec3 (0, 0.8f, 0);
-      rig.velocity = m_fleet.bike.velocity ();
-      rig.distance = 5.0f * u::m;
-      rig.nearest = 1.8f * u::m;
-      rig.elevation = 15.0f * u::deg;
+      case Machine::boat:
+        rig.eye = m_fleet.boat.helm_seat () + m_fleet.boat.up () * 0.85f +
+                  m_fleet.boat.forward () * 0.1f;
+        rig.ahead = m_fleet.boat.forward ();
+        rig.pivot = m_fleet.boat.position () + Vec3 (0, 1.0f, 0);
+        rig.velocity = m_fleet.boat.velocity ();
+        rig.distance = 6.5f * u::m;
+        rig.nearest = 3.0f * u::m;
+        rig.elevation = 16.0f * u::deg;
+        break;
+      case Machine::jet_ski:
+        // Close and low behind it, as the thing is quick and small.
+        rig.eye = m_fleet.jet_ski.seat () + m_fleet.jet_ski.up () * 0.72f +
+                  m_fleet.jet_ski.forward () * 0.12f;
+        rig.ahead = m_fleet.jet_ski.forward ();
+        rig.pivot = m_fleet.jet_ski.position () + Vec3 (0, 1.0f, 0);
+        rig.velocity = m_fleet.jet_ski.velocity ();
+        rig.distance = 6.0f * u::m;
+        rig.nearest = 2.8f * u::m;
+        rig.elevation = 15.0f * u::deg;
+        break;
+      case Machine::mountain_bike: {
+        // The bike is life size, its reference point between the axles at
+        // their height; the rider's eyes are some 1.3 m over that.
+        const mov::Vehicle& bike = m_fleet.mountain_bike;
+        rig.eye = bike.position () + bike.render_normal () * 1.3f +
+                  bike.orientation () * 0.1f;
+        rig.ahead = bike.orientation ();
+        rig.pivot = bike.position () + Vec3 (0, 0.75f, 0);
+        rig.velocity = bike.velocity ();
+        rig.distance = 4.6f * u::m;
+        rig.nearest = 1.6f * u::m;
+        rig.elevation = 15.0f * u::deg;
+        break;
+      }
+      case Machine::long_john: {
+        // The rider sits over the back wheel, some 0.7 m behind the
+        // reference point midway between the axles, eyes 1.45 m over it;
+        // the camera stands back far enough to take in the box ahead.
+        const mov::Vehicle& bike = m_fleet.long_john;
+        rig.eye = bike.position () + bike.render_normal () * 1.45f -
+                  bike.orientation () * 0.6f;
+        rig.ahead = bike.orientation ();
+        rig.pivot = bike.position () + Vec3 (0, 0.8f, 0);
+        rig.velocity = bike.velocity ();
+        rig.distance = 5.6f * u::m;
+        rig.nearest = 2.0f * u::m;
+        rig.elevation = 15.0f * u::deg;
+        break;
+      }
+      case Machine::bike:
+        // The Trail 90 is life size, its reference point between the axles
+        // at their height; the seated rider's eyes are some 1.4 m over it.
+        rig.eye = m_fleet.bike.position () +
+                  m_fleet.bike.render_normal () * 1.4f +
+                  m_fleet.bike.orientation () * 0.05f;
+        rig.ahead = m_fleet.bike.orientation ();
+        rig.pivot = m_fleet.bike.position () + Vec3 (0, 0.8f, 0);
+        rig.velocity = m_fleet.bike.velocity ();
+        rig.distance = 5.0f * u::m;
+        rig.nearest = 1.8f * u::m;
+        rig.elevation = 15.0f * u::deg;
+        break;
+      }
       break;
     }
     return rig;
@@ -1310,7 +1289,7 @@ namespace moppe::game {
       }
       // A helicopter flies too fast for the eye to chase: it is carried
       // along, and only what the cabin does about it is smoothed.
-      if (m_logic.m_mode == M_HELICOPTER)
+      if (m_logic.m_doing == Doing::driving (Machine::helicopter))
         m_logic.m_fp_eye +=
           rig.velocity * static_cast<float> (dt.numerical_value_in (u::s));
       m_logic.m_fp_eye +=
@@ -1442,9 +1421,9 @@ namespace moppe::game {
       mov::Boat& boat = session.boat ();
       const mov::BoatWater floating = floating_water (
         world, surface, water, seconds_into_play (logic.m_total_time));
-      boat.set_parked (logic.m_mode != M_BOAT);
+      boat.set_parked (logic.m_doing != Doing::driving (Machine::boat));
       boat.update (elapsed * u::s, floating);
-      if (logic.m_mode != M_BOAT)
+      if (logic.m_doing != Doing::driving (Machine::boat))
         return;
       logic.m_odometer += length (boat.velocity ()) * elapsed;
 
@@ -1564,12 +1543,12 @@ namespace moppe::game {
                           float elapsed) {
       GameLogicState& logic = session.logic ();
       mov::JetSki& ski = session.jet_ski ();
-      ski.set_parked (logic.m_mode != M_JET_SKI);
+      ski.set_parked (logic.m_doing != Doing::driving (Machine::jet_ski));
       ski.update (
         elapsed * u::s,
         floating_water (
           world, surface, water, seconds_into_play (logic.m_total_time)));
-      if (logic.m_mode != M_JET_SKI)
+      if (logic.m_doing != Doing::driving (Machine::jet_ski))
         return;
       logic.m_odometer += length (ski.velocity ()) * elapsed;
 
@@ -1689,8 +1668,9 @@ namespace moppe::game {
 
     // Where one would step out of the boat, or off the jet ski: over
     // whichever side, or the bow, has the shallowest water.
-    if (logic.m_mode == M_BOAT || logic.m_mode == M_JET_SKI) {
-      const bool skiff = logic.m_mode == M_BOAT;
+    if (logic.m_doing == Doing::driving (Machine::boat) ||
+        logic.m_doing == Doing::driving (Machine::jet_ski)) {
+      const bool skiff = logic.m_doing == Doing::driving (Machine::boat);
       const float beside = skiff ? 1.1f : 1.0f;
       const float amidships = skiff ? 0.4f : 0.0f;
       const float bow = (skiff ? mov::Boat::stem : mov::JetSki::stem) + 0.7f;
@@ -1723,9 +1703,9 @@ namespace moppe::game {
     };
     // Only a ridden bike moves under its own physics; one left standing is
     // parked until someone mounts it again.
-    session.bike ().set_parked (logic.m_mode != M_BIKE &&
-                                !session.can_drop_bike () &&
-                                !hauled (Machine::bike));
+    session.bike ().set_parked (
+      logic.m_doing != Doing::driving (Machine::bike) &&
+      !session.can_drop_bike () && !hauled (Machine::bike));
 
     if (flies_bike (session)) {
       if (fly_bike (session, dt)) {
@@ -1735,19 +1715,21 @@ namespace moppe::game {
     } else {
       if (!session.can_drop_bike ())
         session.bike ().update (dt);
-      if (logic.m_mode == M_GLIDER) {
+      if (logic.m_doing == Doing::gliding ()) {
         if (session.glider ().update (dt))
           finish_glide (session);
       }
     }
     // The mountainbike stands where it was left too.
-    mountain_bike.set_parked (logic.m_mode != M_MOUNTAIN_BIKE &&
+    mountain_bike.set_parked (logic.m_doing !=
+                                Doing::driving (Machine::mountain_bike) &&
                               !hauled (Machine::mountain_bike));
     mountain_bike.update (dt);
-    long_john.set_parked (logic.m_mode != M_LONG_JOHN &&
+    long_john.set_parked (logic.m_doing !=
+                            Doing::driving (Machine::long_john) &&
                           !hauled (Machine::long_john));
     long_john.update (dt);
-    if (logic.m_mode == M_FOOT)
+    if (logic.m_doing == Doing::on_foot ())
       session.walker ().update (dt,
                                 surface,
                                 world,
@@ -1757,14 +1739,15 @@ namespace moppe::game {
     // The jeep stands braked wherever its driver left it.
     mov::Car& jeep = session.jeep ();
     jeep.set_trunks (trunks);
-    jeep.set_parked (logic.m_mode != M_JEEP && !hauled (Machine::jeep));
+    jeep.set_parked (logic.m_doing != Doing::driving (Machine::jeep) &&
+                     !hauled (Machine::jeep));
     jeep.update (dt, water_at (jeep.position ()));
     // The helicopter's rotor runs down once its pilot has stepped out.
     mov::Helicopter& heli = session.helicopter ();
     heli.set_trunks (trunks);
-    heli.set_parked (logic.m_mode != M_HELICOPTER);
+    heli.set_parked (logic.m_doing != Doing::driving (Machine::helicopter));
     heli.update (dt, water_at (heli.position ()));
-    if (logic.m_mode == M_HELICOPTER) {
+    if (logic.m_doing == Doing::driving (Machine::helicopter)) {
       logic.m_odometer += length (heli.velocity ()) * elapsed;
       // Low over the ground, the downwash blows up what lies there.
       const float height = heli.altitude ().numerical_value_in (u::m);
@@ -1794,10 +1777,10 @@ namespace moppe::game {
     // a puff from the stack now and then at idle, a stream under load.
     mov::Tractor& tractor = session.tractor ();
     tractor.set_trunks (trunks);
-    tractor.set_parked (logic.m_mode != M_TRACTOR &&
+    tractor.set_parked (logic.m_doing != Doing::driving (Machine::tractor) &&
                         !hauled (Machine::tractor));
     tractor.update (dt, water_at (tractor.position ()));
-    if (logic.m_mode == M_TRACTOR) {
+    if (logic.m_doing == Doing::driving (Machine::tractor)) {
       logic.m_odometer += length (tractor.velocity ()) * elapsed;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const float throttle = scalar_value (tractor.throttle ());
@@ -1825,11 +1808,12 @@ namespace moppe::game {
     // tail while it is driven: more as it pulls.
     mov::Car& caddy = session.caddy ();
     caddy.set_trunks (trunks);
-    caddy.set_parked (logic.m_mode != M_CADDY && !hauled (Machine::caddy));
+    caddy.set_parked (logic.m_doing != Doing::driving (Machine::caddy) &&
+                      !hauled (Machine::caddy));
     caddy.set_slung (logic.m_sling.hooked &&
                      logic.m_sling.load == Machine::caddy);
     caddy.update (dt, water_at (caddy.position ()));
-    if (logic.m_mode == M_CADDY) {
+    if (logic.m_doing == Doing::driving (Machine::caddy)) {
       logic.m_odometer += length (caddy.velocity ()) * elapsed;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const float throttle = scalar_value (caddy.throttle ());
@@ -1855,7 +1839,7 @@ namespace moppe::game {
     advance_boat (world, surface, session, water, elapsed);
     session.jet_ski ().set_trunks (trunks);
     advance_jet_ski (world, surface, session, water, elapsed);
-    if (logic.m_mode == M_JEEP) {
+    if (logic.m_doing == Doing::driving (Machine::jeep)) {
       logic.m_odometer += length (jeep.velocity ()) * elapsed;
       // Sliding wheels throw up what they slide on.
       const float slide = std::fabs (dot (jeep.velocity (), jeep.left ()));
@@ -1875,11 +1859,12 @@ namespace moppe::game {
     // What follows is the ridden bike's: the motocross, or the pedalled
     // mountainbike, which has no engine to roost, smoke, or burn.
     mov::Vehicle& vehicle = session.ridden_bike ();
-    const bool pedalled = game::pedalled (logic.m_mode);
+    const bool pedalled = game::pedalled (logic.m_doing);
 
     // A parked bike's impacts shouldn't linger until remount.
     for (mov::Vehicle* bike : { &session.bike (), &mountain_bike, &long_john })
-      if (bike != &vehicle || !(logic.m_mode == M_BIKE || pedalled)) {
+      if (bike != &vehicle ||
+          !(logic.m_doing == Doing::driving (Machine::bike) || pedalled)) {
         bike->pop_impact ();
         bike->pop_fall_drop ();
       }
@@ -1887,7 +1872,8 @@ namespace moppe::game {
     const bool in_water =
       vehicle_position[1] <
       water_at (vehicle_position).numerical_value_in (moppe::u::m) + 0.3f;
-    const bool driving = logic.m_mode == M_BIKE || pedalled;
+    const bool driving =
+      logic.m_doing == Doing::driving (Machine::bike) || pedalled;
     const float impact = driving ? speed_value (vehicle.pop_impact ()) : 0.0f;
 
     // Air steering is a visible motocross whip and a scoring mechanic. The
@@ -1972,7 +1958,7 @@ namespace moppe::game {
     // bump's), or the bike leaves the ground for a jump.
     logic.m_wheelie_age += elapsed;
     const bool riding_up =
-      logic.m_mode == M_BIKE &&
+      logic.m_doing == Doing::driving (Machine::bike) &&
       (vehicle.wheeling () ||
        (logic.m_wheelie_m > 0.0f && !vehicle.front_down () &&
         vehicle.airtime () < 0.5f * u::s));
@@ -1983,7 +1969,8 @@ namespace moppe::game {
       logic.m_wheelie_gap = 0.0f;
     } else if (logic.m_wheelie_m > 0.0f) {
       logic.m_wheelie_gap += elapsed;
-      if (logic.m_wheelie_gap > 0.15f || logic.m_mode != M_BIKE) {
+      if (logic.m_wheelie_gap > 0.15f ||
+          logic.m_doing != Doing::driving (Machine::bike)) {
         logic.m_last_wheelie_m = logic.m_wheelie_m;
         // One looped over onto its back scores nothing.
         const bool looped = vehicle.render_normal ()[1] < 0.3f;
@@ -2006,11 +1993,12 @@ namespace moppe::game {
     };
     const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
     const Vec3 forward = session.subject_heading ();
-    const Vec3 rear_wheel = vehicle_position -
-                            forward * (logic.m_mode == M_LONG_JOHN ? 0.95f
-                                       : pedalled                  ? 0.55f
-                                                                   : 0.61f) +
-                            Vec3 (0, -0.25f, 0);
+    const Vec3 rear_wheel =
+      vehicle_position -
+      forward * (logic.m_doing == Doing::driving (Machine::long_john) ? 0.95f
+                 : pedalled                                           ? 0.55f
+                                                                      : 0.61f) +
+      Vec3 (0, -0.25f, 0);
 
     if (clean_stunt_landing && landed_trick_quarters > 0) {
       Dust::Style trick_flash;
@@ -2295,7 +2283,7 @@ namespace moppe::game {
                               5,
                               DisplayColor (1.0f, 0.95f, 0.55f),
                               flash);
-        if (logic.m_mode != M_GLIDER)
+        if (logic.m_doing != Doing::gliding ())
           vehicle.replenish_boost (0.25f * picked);
       }
     }
@@ -2312,7 +2300,7 @@ namespace moppe::game {
 
     // Speed widens the field of view a touch.
     const float kmh =
-      logic.m_mode != M_FOOT ? session.subject_speed_kmh () : 0.0f;
+      logic.m_doing != Doing::on_foot () ? session.subject_speed_kmh () : 0.0f;
     const float fov_target =
       std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
     logic.m_fov_k += (fov_target - logic.m_fov_k) *

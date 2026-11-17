@@ -19,7 +19,7 @@ namespace moppe::game {
   void WalkScripts::stage_fish (const ScriptStage& s) {
     const char* walk = moppe::environment ("MOPPE_WALK");
     if (!walk || std::string_view (walk) != "fish" ||
-        s.session.logic ().m_mode != M_FOOT)
+        s.session.logic ().m_doing != Doing::on_foot ())
       return;
     const terrain::WaterSheets& sheets = s.ground.generated.water_surface ();
     const auto depth_at = [&] (const Vec3& at) {
@@ -57,7 +57,7 @@ namespace moppe::game {
 
   void WalkScripts::stage_place (const ScriptStage& s) {
     const char* walk = moppe::environment ("MOPPE_WALK");
-    if (!walk || s.session.logic ().m_mode != M_FOOT)
+    if (!walk || s.session.logic ().m_doing != Doing::on_foot ())
       return;
     const std::string_view script (walk);
     std::optional<std::pair<Vec3, Vec3>> stand;
@@ -204,7 +204,7 @@ namespace moppe::game {
   void WalkScripts::stage_camp (const ScriptStage& s) {
     const char* walk = moppe::environment ("MOPPE_WALK");
     if (!walk || std::string_view (walk) != "camp" ||
-        s.session.logic ().m_mode != M_FOOT)
+        s.session.logic ().m_doing != Doing::on_foot ())
       return;
     const std::vector<mov::Trunk> near =
       s.ground.trunks.gather (s.spawn, 700.0f);

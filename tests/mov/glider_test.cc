@@ -156,7 +156,7 @@ MOPPE_TEST (a_glider_touches_down_still_moving) {
 
 namespace {
   struct GlideOutcome {
-    game::Mode mode;
+    game::Doing mode;
     float seconds;
     float speed;
     float upright;
@@ -196,7 +196,7 @@ namespace {
         world, surface, session, input, glider_test_step);
       input.deploy_glider = false;
       if (i == 0)
-        MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
+        MOPPE_CHECK (session.logic ().m_doing == game::Doing::gliding ());
       if (trace && i % 30 == 0)
         std::printf ("%5.1f  agl %6.2f  v %5.1f  climb %5.2f  up %4.2f\n",
                      i / 60.0f,
@@ -204,7 +204,7 @@ namespace {
                      length (session.bike ().velocity ()),
                      float (session.bike ().velocity ()[1]),
                      float (session.bike ().render_normal ()[1]));
-      if (session.logic ().m_mode != game::M_GLIDER) {
+      if (session.logic ().m_doing != game::Doing::gliding ()) {
         outcome.seconds = i / 60.0f;
         outcome.sink = sink;
         const Vec3 v = session.bike ().velocity ();
@@ -217,7 +217,7 @@ namespace {
     for (int i = 0; i < 30; ++i)
       game::advance_game_session (
         world, surface, session, input, glider_test_step);
-    outcome.mode = session.logic ().m_mode;
+    outcome.mode = session.logic ().m_doing;
     outcome.upright = session.bike ().render_normal ()[1];
     outcome.health_lost = health - session.logic ().m_health;
     const Vec3 v = session.bike ().velocity ();
@@ -238,7 +238,7 @@ namespace {
 MOPPE_TEST (a_bike_under_the_wing_lands_on_its_wheels_and_rides_on) {
   for (const bool flare : { false, true }) {
     const GlideOutcome landing = glider_test_land_bike (flare);
-    MOPPE_CHECK (landing.mode == game::M_BIKE);
+    MOPPE_CHECK (landing.mode == game::Doing::driving (game::Machine::bike));
     // Forty metres up at better than eight to one is a long way.
     MOPPE_CHECK (landing.seconds > 10.0f);
     // The glide's speed is still the bike's half a second after the wheels
@@ -263,14 +263,14 @@ MOPPE_TEST (a_pilot_alone_lands_running) {
   world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
   game::GameSession session (world, surface);
-  session.set_mode (game::M_GLIDER);
+  session.set_mode (game::Doing::gliding ());
   session.glider ().launch (
     position (Vec3 (100, 20, 100)), velocity (Vec3 (0, 0, 16)), Vec3 (0, 0, 1));
   int steps = 0;
-  while (session.logic ().m_mode == game::M_GLIDER && steps++ < 3600)
+  while (session.logic ().m_doing == game::Doing::gliding () && steps++ < 3600)
     game::advance_game_session (
       world, surface, session, game::InputFrame {}, glider_test_step);
-  MOPPE_CHECK (session.logic ().m_mode == game::M_FOOT);
+  MOPPE_CHECK (session.logic ().m_doing == game::Doing::on_foot ());
   const Vec3 v = session.walker ().velocity ();
   MOPPE_CHECK (std::hypot (v[0], v[2]) > 6.0f);
   // And the feet bring it to a stand.

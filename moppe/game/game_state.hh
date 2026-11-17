@@ -5,6 +5,7 @@
 #include <moppe/game/basket.hh>
 #include <moppe/game/camp_state.hh>
 #include <moppe/game/chase_camera.hh>
+#include <moppe/game/doing.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/fishing_state.hh>
 #include <moppe/game/hens.hh>
@@ -30,30 +31,6 @@
 namespace moppe::game {
   using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
 
-  // M_JEEP drives this player's jeep; M_PASSENGER rides in the other
-  // player's (game/companion.hh); M_HELICOPTER flies the helicopter,
-  // M_TRACTOR drives the tractor, M_CADDY the Caddy, and
-  // M_MOUNTAIN_BIKE rides the mountainbike, M_BOAT takes the boat out,
-  // M_LONG_JOHN rides Krisjanis's cargo bike, and M_JET_SKI rides the
-  // jet ski.
-  enum Mode {
-    M_BIKE,
-    M_FOOT,
-    M_GLIDER,
-    M_JEEP,
-    M_PASSENGER,
-    M_HELICOPTER,
-    M_TRACTOR,
-    M_CADDY,
-    M_MOUNTAIN_BIKE,
-    M_BOAT,
-    M_LONG_JOHN,
-    M_JET_SKI
-  };
-  // The bikes ridden by pedalling, which have no jets.
-  inline bool pedalled (Mode mode) {
-    return mode == M_MOUNTAIN_BIKE || mode == M_LONG_JOHN;
-  }
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
   // The directly copyable logical state owned by GameSession. Generated world
@@ -83,7 +60,7 @@ namespace moppe::game {
     float m_turn_input = 0.0f;
     float m_go_input = 0.0f;
     float m_boost_input = 0.0f;
-    Mode m_mode = M_BIKE;
+    Doing m_doing;
     CamMode m_cam_mode = CAM_CHASE;
     // Each way of getting about keeps the view last chosen for it, from
     // behind until Tab chooses another. The one not in use waits here.
@@ -99,7 +76,7 @@ namespace moppe::game {
     float m_look_yaw = 0.0f;
     float m_look_idle = 0.0f;
     Vec3 m_fp_eye;
-    // Riding along (M_PASSENGER): the seat in the other player's jeep,
+    // Riding along: the seat in the other player's jeep,
     // how it faces, and how it moves, as last heard.
     Vec3 m_seat_position;
     Vec3 m_seat_heading { 0, 0, 1 };

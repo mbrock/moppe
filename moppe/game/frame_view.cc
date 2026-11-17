@@ -355,9 +355,9 @@ namespace moppe::game {
       sling.taut = logic.m_sling.stretch > -0.05f * u::m;
       result.actors.sling = sling;
     }
-    if (logic.m_mode == M_GLIDER)
+    if (logic.m_doing == Doing::gliding ())
       result.actors.glider = glider_pose (input.session.glider ());
-    if (logic.m_mode == M_FOOT)
+    if (logic.m_doing == Doing::on_foot ())
       result.actors.walker =
         walker_pose (input.session.walker (), logic.m_look_pitch);
     if (result.actors.walker && input.session.hauling ())
@@ -365,17 +365,17 @@ namespace moppe::game {
     if (result.actors.walker)
       result.actors.walker->rod = rod_pose (
         logic.m_fishing.line, logic.m_total_time, result.lighting.time);
-    if (logic.m_mode == M_BOAT)
+    if (logic.m_doing == Doing::driving (Machine::boat))
       result.actors.helm_rod = rod_pose (
         logic.m_fishing.line, logic.m_total_time, result.lighting.time);
-    result.actors.active_mode = logic.m_mode;
+    result.actors.active_mode = logic.m_doing;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera =
       logic.m_cam_mode == CAM_HELMET && !input.reveal_player;
 
     FrameHud& hud = result.hud;
     hud.speed_kmh = input.session.subject_speed_kmh ();
-    if (logic.m_mode == M_GLIDER) {
+    if (logic.m_doing == Doing::gliding ()) {
       const float lift =
         input.session.glider ().air_mass_lift ().numerical_value_in (u::m /
                                                                      u::s);
@@ -384,8 +384,9 @@ namespace moppe::game {
         input.session.glider ().vertical_speed ().numerical_value_in (u::m /
                                                                       u::s);
     } else {
-      hud.boost_ready01 =
-        logic.m_mode == M_BIKE ? input.session.bike ().boost_charge () : 1.0f;
+      hud.boost_ready01 = logic.m_doing == Doing::driving (Machine::bike)
+                            ? input.session.bike ().boost_charge ()
+                            : 1.0f;
     }
     hud.health01 = logic.m_health / 100.0f;
     hud.odometer_m = static_cast<float> (logic.m_odometer);
@@ -404,12 +405,12 @@ namespace moppe::game {
     hud.last_wheelie_points = logic.m_last_wheelie_points;
     hud.best_wheelie_m = logic.m_best_wheelie_m;
     hud.wheelie_age_s = logic.m_wheelie_age;
-    hud.on_foot = logic.m_mode == M_FOOT;
-    hud.gliding = logic.m_mode == M_GLIDER;
+    hud.on_foot = logic.m_doing == Doing::on_foot ();
+    hud.gliding = logic.m_doing == Doing::gliding ();
     hud.can_deploy_glider = input.session.can_deploy_glider (input.surface);
     hud.can_drop_bike = input.session.can_drop_bike ();
     // The remount reach of GameSession's toggle_mount, five metres.
-    hud.can_mount = logic.m_mode == M_FOOT &&
+    hud.can_mount = logic.m_doing == Doing::on_foot () &&
                     length2 (input.session.walker ().position () -
                              input.session.bike ().position ()) < 5.0f * 5.0f;
     hud.can_drive = input.session.can_drive ();
@@ -434,7 +435,7 @@ namespace moppe::game {
     result.motion_blur_amount =
       cinematic
         ? input.cinematic_motion_blur
-        : motion_blur_for (logic.m_mode, input.session.subject_speed_kmh ());
+        : motion_blur_for (logic.m_doing, input.session.subject_speed_kmh ());
 
     if (cinematic) {
       result.overlay.cinematic_prompt_alpha = std::clamp (
@@ -450,40 +451,47 @@ namespace moppe::game {
     return result;
   }
 
-  float motion_blur_for (Mode mode, float kmh) {
+  float motion_blur_for (Doing mode, float kmh) {
     // From the speed it begins at to the speed at which it is whole, and
     // how long it is then.
     struct Ramp {
       float from, to, share;
     };
     Ramp ramp {};
-    switch (mode) {
-    case M_BOAT:
-      // It planes at some 26 km/h, flat out on still water.
-      ramp = { 15.0f, 26.0f, 1.0f };
-      break;
-    case M_JET_SKI:
-      // Some 60 km/h flat out on still water, low over it.
-      ramp = { 35.0f, 60.0f, 0.9f };
-      break;
-    case M_BIKE:
-      // 60 to 105 km/h unboosted; a boost carries it to 150.
-      ramp = { 110.0f, 150.0f, 0.8f };
-      break;
-    case M_MOUNTAIN_BIKE:
-    case M_LONG_JOHN:
-      ramp = { 40.0f, 70.0f, 0.6f };
-      break;
-    case M_JEEP:
-    case M_CADDY:
-    case M_PASSENGER:
+    switch (mode.way) {
+    case Doing::Way::foot:
+    case Doing::Way::glider:
+      return 0.0f;
+    case Doing::Way::passenger:
       ramp = { 80.0f, 140.0f, 0.6f };
       break;
-    case M_FOOT:
-    case M_GLIDER:
-    case M_HELICOPTER:
-    case M_TRACTOR:
-      return 0.0f;
+    case Doing::Way::driving:
+      switch (mode.machine) {
+      case Machine::boat:
+        // It planes at some 26 km/h, flat out on still water.
+        ramp = { 15.0f, 26.0f, 1.0f };
+        break;
+      case Machine::jet_ski:
+        // Some 60 km/h flat out on still water, low over it.
+        ramp = { 35.0f, 60.0f, 0.9f };
+        break;
+      case Machine::bike:
+        // 60 to 105 km/h unboosted; a boost carries it to 150.
+        ramp = { 110.0f, 150.0f, 0.8f };
+        break;
+      case Machine::mountain_bike:
+      case Machine::long_john:
+        ramp = { 40.0f, 70.0f, 0.6f };
+        break;
+      case Machine::jeep:
+      case Machine::caddy:
+        ramp = { 80.0f, 140.0f, 0.6f };
+        break;
+      case Machine::helicopter:
+      case Machine::tractor:
+        return 0.0f;
+      }
+      break;
     }
     return ramp.share *
            std::clamp ((kmh - ramp.from) / (ramp.to - ramp.from), 0.0f, 1.0f);

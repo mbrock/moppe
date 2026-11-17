@@ -165,7 +165,7 @@ MOPPE_TEST (a_tractor_driven_into_a_wall_gets_stuck_and_heaves) {
   session.tractor ().place (Vec3 (60, 0, 194), Vec3 (0, 0, 1));
   session.walker ().spawn (position (Vec3 (62, 10.1f, 194)), Vec3 (0, 0, 1));
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_TRACTOR);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::tractor));
   run ({ .drive = 1.0f }, 6.0f);
   const game::Trouble& trouble =
     logic.m_trouble[static_cast<std::size_t> (game::Machine::tractor)];
@@ -194,7 +194,7 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
                            Vec3 (0, 0, -1));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::tractor);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (session.hauling () == game::Machine::tractor);
 
   // Walking off, the tractor comes after, with the walker never more
@@ -213,7 +213,7 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   MOPPE_CHECK (!session.hauling ());
   MOPPE_CHECK (!trouble.stuck);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_TRACTOR);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::tractor));
 }
 
 MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
@@ -234,7 +234,7 @@ MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
   session.walker ().spawn (position (Vec3 (60, 10.1f, 184.0f)), Vec3 (0, 0, 1));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::boat);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (session.hauling () == game::Machine::boat);
   MOPPE_CHECK (logic.m_haul.tie[2] > 2.0f);
 
@@ -271,7 +271,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   MOPPE_CHECK (session.can_ride_jet_ski ());
   MOPPE_CHECK (!session.haul_within_reach ());
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_JET_SKI);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::jet_ski));
   MOPPE_CHECK_NEAR (ski.mass ().numerical_value_in (u::kg), 285.0f, 1e-3f);
   MOPPE_CHECK (session.machine_body (game::Machine::jet_ski).mass >
                280.0f * u::kg);
@@ -290,7 +290,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   ski.place (Vec3 (120, 0, 123.0f), Vec3 (0, 0, 1), 0.0f * u::m);
   run ({}, 1.0f);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   Vec3 off = session.walker ().position () - ski.position ();
   off[1] = 0.0f;
   MOPPE_CHECK (length (off) < 3.5f);
@@ -319,7 +319,7 @@ MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {
   session.walker ().spawn (position (Vec3 (60, 10.1f, 183.4f)), Vec3 (0, 0, 1));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::jet_ski);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (session.hauling () == game::Machine::jet_ski);
   MOPPE_CHECK (logic.m_haul.tie[2] > 1.5f);
 
@@ -342,7 +342,7 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
   const Vec3 tractor_was = session.tractor ().position ();
   session.walker ().spawn (position (Vec3 (102, 10.1f, 150)), Vec3 (0, 0, 1));
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_JEEP);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::jeep));
 
   // Into its side at speed: the tractor is shoved on, neither flies, and
   // the jeep does not pass through it. The trailer pinned behind holds
@@ -382,7 +382,7 @@ MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
   session.walker ().spawn (position (Vec3 (bed[0] + 2, 10.1f, 150)),
                            Vec3 (0, 0, 1));
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_JEEP);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::jeep));
 
   // Into the bed's flank: the jeep meets it rather than passing
   // through, and the trailer swings aside on its hitch, further than

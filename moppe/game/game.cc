@@ -120,7 +120,7 @@ namespace moppe {
       static const char* walk_script = moppe::environment ("MOPPE_WALK");
       // A walk script drives (the bump script drives the jeep too, and
       // boat-fish the boat), or else the demo autopilot (demo_pilot.hh).
-      if (walk_script && (logic ().m_mode == M_FOOT ||
+      if (walk_script && (logic ().m_doing == Doing::on_foot () ||
                           std::string_view (walk_script) == "bump" ||
                           std::string_view (walk_script) == "boat-fish"))
         input = m_walk.step (script_stage (), walk_script, seconds (dt));
@@ -182,7 +182,7 @@ namespace moppe {
         return;
       }
 
-      if (k == Key::Q && down && logic ().m_mode == M_FOOT &&
+      if (k == Key::Q && down && logic ().m_doing == Doing::on_foot () &&
           !logic ().m_camp.resting) {
         start_scan (0.0);
         return;
@@ -314,7 +314,7 @@ namespace moppe {
                                     next_seed,
                                     recipe ().water_datum (),
                                     recipe ().generation_profile ());
-      session ().set_mode (M_BIKE);
+      session ().set_mode (Doing::driving (Machine::bike));
       logic ().m_game_over = false;
       logic ().m_health = 100.0f;
       m_params = bind_world_params (m_params, next_recipe);
@@ -332,7 +332,7 @@ namespace moppe {
       logic ().m_jump_peak_spin_radians = 0.0f;
       logic ().m_landed_age = 10.0f;
       logic ().m_wheelie_m = 0.0f;
-      session ().set_mode (M_BIKE);
+      session ().set_mode (Doing::driving (Machine::bike));
       // Back to the start, but ON the ground rather than 600 m
       // over it.
       const float ground =

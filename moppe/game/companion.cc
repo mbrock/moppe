@@ -21,6 +21,38 @@ namespace moppe::game {
     constexpr std::uint8_t has_pan = 1 << 6;
     constexpr std::uint8_t riding_in_boat = 1 << 7;
 
+    // What the player is doing, one byte on the wire: the bike, on
+    // foot, the glider, the jeep, riding along, then the helicopter,
+    // the tractor, the Caddy, the mountainbike, the boat, the Long John,
+    // and the jet ski.
+    constexpr Doing doing_bytes[] = {
+      Doing::driving (Machine::bike),
+      Doing::on_foot (),
+      Doing::gliding (),
+      Doing::driving (Machine::jeep),
+      Doing::riding_along (),
+      Doing::driving (Machine::helicopter),
+      Doing::driving (Machine::tractor),
+      Doing::driving (Machine::caddy),
+      Doing::driving (Machine::mountain_bike),
+      Doing::driving (Machine::boat),
+      Doing::driving (Machine::long_john),
+      Doing::driving (Machine::jet_ski),
+    };
+
+    std::uint8_t doing_byte (Doing doing) {
+      for (std::size_t i = 0; i < std::size (doing_bytes); ++i)
+        if (doing_bytes[i] == doing)
+          return static_cast<std::uint8_t> (i);
+      return 0;
+    }
+
+    std::optional<Doing> doing_of (std::uint8_t byte) {
+      if (byte >= std::size (doing_bytes))
+        return std::nullopt;
+      return doing_bytes[byte];
+    }
+
     // Farther than this between two snapshots was not travelled: a
     // restart, or a new world's spawn.
     constexpr float leap_metres = 40.0f;
@@ -237,7 +269,7 @@ namespace moppe::game {
     out.put (snapshot.sent);
     out.put (snapshot.world);
     out.put (snapshot.day_hours);
-    out.put (static_cast<std::uint8_t> (snapshot.mode));
+    out.put (doing_byte (snapshot.mode));
     std::uint8_t flags = 0;
     if (snapshot.glider)
       flags |= has_glider;
@@ -411,10 +443,10 @@ namespace moppe::game {
     snapshot.sent = in.long_number ();
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
-    const std::uint8_t mode = in.get<std::uint8_t> ();
-    if (mode > M_JET_SKI)
+    const std::optional<Doing> mode = doing_of (in.get<std::uint8_t> ());
+    if (!mode)
       return std::nullopt;
-    snapshot.mode = static_cast<Mode> (mode);
+    snapshot.mode = *mode;
     const std::uint8_t flags = in.get<std::uint8_t> ();
 
     VehiclePose& bike = snapshot.bike;

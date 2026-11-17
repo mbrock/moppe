@@ -56,7 +56,8 @@ namespace moppe::game {
     ski.set_trunks (&lot.trunks);
     // Where the boat was left, not where someone has since taken it.
     const mov::Boat& boat = lot.session.boat ();
-    if (lot.session.logic ().m_mode != M_BOAT || !m_boat_berth)
+    if (lot.session.logic ().m_doing != Doing::driving (Machine::boat) ||
+        !m_boat_berth)
       m_boat_berth = { boat.position (), boat.forward () };
     const Vec3 berth = m_boat_berth->first;
     Vec3 bow = m_boat_berth->second;
@@ -306,7 +307,7 @@ namespace moppe::game {
 
   void stage_rescue (GameSession& session, const WorldGround& ground) {
     const char* walk = moppe::environment ("MOPPE_WALK");
-    if (!walk || session.logic ().m_mode != M_FOOT)
+    if (!walk || session.logic ().m_doing != Doing::on_foot ())
       return;
     const std::string_view script (walk);
     const mov::Tractor& tractor = session.tractor ();

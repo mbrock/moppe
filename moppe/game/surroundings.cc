@@ -83,7 +83,7 @@ namespace moppe::game {
                              const Surroundings& around,
                              const InputFrame& input) {
       GameLogicState& logic = session.logic ();
-      if (logic.m_mode != M_FOOT)
+      if (logic.m_doing != Doing::on_foot ())
         return;
       const Vec3 feet = session.walker ().position ();
       // F still remounts the bike when it is close enough; otherwise it
@@ -148,7 +148,7 @@ namespace moppe::game {
       Camp& camp = logic.m_camp;
       Basket& basket = logic.m_basket;
       const play_time_t now = logic.m_total_time;
-      if (logic.m_mode == M_FOOT && input.deploy_glider &&
+      if (logic.m_doing == Doing::on_foot () && input.deploy_glider &&
           !mushroom_at_hand (session, around)) {
         switch (supper_at_hand (session, around)) {
         case HudState::Cook::fry: {
@@ -239,7 +239,7 @@ namespace moppe::game {
       Line& line = fishing.line;
       const play_time_t now = logic.m_total_time;
       const std::optional<Angler> from = angler (session);
-      const bool afloat = logic.m_mode == M_BOAT;
+      const bool afloat = logic.m_doing == Doing::driving (Machine::boat);
       if (!from || (line_out (line) && line.from_boat != afloat)) {
         line.phase = Line::Phase::idle;
         return;
@@ -435,7 +435,7 @@ namespace moppe::game {
       const play_time_t now = logic.m_total_time;
       float haste = 1.0f;
       float push = 0.0f;
-      if (logic.m_mode != M_FOOT) {
+      if (logic.m_doing != Doing::on_foot ()) {
         if (camp.resting) {
           camp.resting = false;
           camp.rest_time = now;
@@ -573,7 +573,7 @@ namespace moppe::game {
   std::optional<Vec3> fire_at_hand (const GameSession& session,
                                     const Surroundings& around) {
     const GameLogicState& logic = session.logic ();
-    if (logic.m_mode != M_FOOT || logic.m_camp.resting)
+    if (logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return std::nullopt;
     const Vec3 feet = session.walker ().position ();
     const Camp& camp = logic.m_camp;
@@ -601,7 +601,7 @@ namespace moppe::game {
   bool beside_pan (const GameSession& session) {
     const GameLogicState& logic = session.logic ();
     const Pan& pan = logic.m_camp.pan;
-    if (!pan.on || logic.m_mode != M_FOOT || logic.m_camp.resting)
+    if (!pan.on || logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return false;
     Vec3 to = session.walker ().position () - pan.place;
     to[1] = 0.0f;
@@ -630,7 +630,7 @@ namespace moppe::game {
   std::optional<std::size_t> beacon_at_hand (const GameSession& session,
                                              const Surroundings& around) {
     const GameLogicState& logic = session.logic ();
-    if (logic.m_mode != M_FOOT || logic.m_camp.resting)
+    if (logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return std::nullopt;
     return sanctuary_at_hand (places_of (around),
                               session.walker ().position ());
@@ -644,7 +644,7 @@ namespace moppe::game {
   std::optional<std::size_t> egg_at_hand (const GameSession& session,
                                           const Surroundings& around) {
     const GameLogicState& logic = session.logic ();
-    if (logic.m_mode != M_FOOT || logic.m_camp.resting)
+    if (logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return std::nullopt;
     const PlacesPlan& places = places_of (around);
     return nest_within_reach (around.nests,
@@ -657,11 +657,11 @@ namespace moppe::game {
 
   std::optional<Angler> angler (const GameSession& session) {
     const GameLogicState& logic = session.logic ();
-    if (logic.m_mode == M_FOOT && !logic.m_camp.resting) {
+    if (logic.m_doing == Doing::on_foot () && !logic.m_camp.resting) {
       const Walker& walker = session.walker ();
       return Angler { walker.position (), walker.heading () };
     }
-    if (logic.m_mode == M_BOAT) {
+    if (logic.m_doing == Doing::driving (Machine::boat)) {
       const mov::Boat& boat = session.boat ();
       return Angler { boat.helm_seat (),
                       Quaternion::rotate (boat.forward (),
@@ -699,7 +699,7 @@ namespace moppe::game {
     if (length2 (ahead) < 1e-6f)
       return std::nullopt;
     ahead = normalized (ahead);
-    if (session.logic ().m_mode == M_BOAT) {
+    if (session.logic ().m_doing == Doing::driving (Machine::boat)) {
       Vec3 bow = session.boat ().forward ();
       bow[1] = 0.0f;
       if (length2 (bow) < 1e-6f || dot (ahead, normalized (bow)) < -0.17f)
@@ -770,7 +770,7 @@ namespace moppe::game {
         moving = Vec3 ();
       presences.push_back ({ .position = subject,
                              .velocity = moving,
-                             .machine = logic.m_mode != M_FOOT });
+                             .machine = logic.m_doing != Doing::on_foot () });
       if (around.companion && around.companion->walker)
         presences.push_back (
           { .position = around.companion->walker->position,

@@ -66,7 +66,7 @@ namespace moppe::game {
     mine.world = world;
     mine.day_hours =
       day_turning ? hours_since_midnight (state.m_day_hours) : -1.0;
-    mine.mode = state.m_mode;
+    mine.mode = state.m_doing;
     mine.bike = vehicle_pose (session.bike ());
     mine.jeep = car_pose (session.jeep ());
     mine.jeep_velocity = session.jeep ().velocity ();
@@ -77,12 +77,12 @@ namespace moppe::game {
     mine.long_john = vehicle_pose (session.long_john ());
     mine.boat = boat_pose (session.boat ());
     mine.boat_velocity = session.boat ().velocity ();
-    mine.in_boat = state.m_mode == M_PASSENGER && state.m_seat_boat;
+    mine.in_boat = state.m_doing == Doing::riding_along () && state.m_seat_boat;
     mine.jet_ski = jet_ski_pose (session.jet_ski ());
     mine.jet_ski_velocity = session.jet_ski ().velocity ();
-    if (state.m_mode == M_GLIDER)
+    if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
-    if (state.m_mode == M_FOOT)
+    if (state.m_doing == Doing::on_foot ())
       mine.walker = walker_pose (session.walker (), state.m_look_pitch);
     const Camp& camp = state.m_camp;
     mine.hung = camp.hung;
@@ -131,7 +131,7 @@ namespace moppe::game {
 
   Companionship::Seat
   Companionship::seat_within_reach (const GameSession& session) const {
-    if (!companion || session.logic ().m_mode != M_FOOT)
+    if (!companion || session.logic ().m_doing != Doing::on_foot ())
       return Seat::none;
     const Vec3 feet = session.walker ().position ();
     const float mine =
@@ -140,7 +140,7 @@ namespace moppe::game {
                   length2 (feet - session.boat ().position ()) });
     const float jeep = length2 (feet - companion->jeep.position);
     float boat = 1e30f;
-    if (companion->mode == M_BOAT)
+    if (companion->mode == Doing::driving (Machine::boat))
       boat = length2 (feet - Companionship::boat_seat (*companion));
     if (boat < 4.0f * 4.0f && boat < mine && boat < jeep)
       return Seat::boat;
@@ -155,9 +155,10 @@ namespace moppe::game {
 
   void Companionship::ride_along (GameSession& session, InputFrame& input) {
     GameLogicState& state = session.logic ();
-    session.boat ().set_passenger (
-      companion && companion->mode == M_PASSENGER && companion->in_boat);
-    if (state.m_mode == M_PASSENGER) {
+    session.boat ().set_passenger (companion &&
+                                   companion->mode == Doing::riding_along () &&
+                                   companion->in_boat);
+    if (state.m_doing == Doing::riding_along ()) {
       if (!companion || input.toggle_mount) {
         // Out on the passenger's side, the right; over the boat's
         // gunwale, a step from it.
@@ -167,7 +168,7 @@ namespace moppe::game {
           moppe::position (state.m_seat_position -
                            left * (state.m_seat_boat ? 1.1f : 1.4f)),
           state.m_seat_heading);
-        session.set_mode (M_FOOT);
+        session.set_mode (Doing::on_foot ());
         state.m_seat_boat = false;
         input.toggle_mount = false;
         return;
@@ -175,18 +176,18 @@ namespace moppe::game {
     } else if (input.toggle_mount && can_ride_along (session)) {
       state.m_seat_boat = seat_within_reach (session) == Seat::boat;
       session.clear_controls ();
-      session.set_mode (M_PASSENGER);
+      session.set_mode (Doing::riding_along ());
       input.toggle_mount = false;
     } else if (companion && !rode_along &&
                moppe::environment ("MOPPE_RIDE_ALONG")) {
       // For captures: take the seat as soon as there is one, from
       // wherever this player stands.
       rode_along = true;
-      state.m_seat_boat = companion->mode == M_BOAT;
+      state.m_seat_boat = companion->mode == Doing::driving (Machine::boat);
       session.clear_controls ();
-      session.set_mode (M_PASSENGER);
+      session.set_mode (Doing::riding_along ());
     }
-    if (state.m_mode != M_PASSENGER)
+    if (state.m_doing != Doing::riding_along ())
       return;
     if (state.m_seat_boat) {
       state.m_seat_position = Companionship::boat_seat (*companion);
@@ -374,15 +375,19 @@ namespace moppe::game {
       return;
     const CompanionSnapshot& theirs = *companion;
     blob.draw (dl, surface, theirs.bike.position, 2.2f);
-    render_vehicle (
-      r, dl, theirs.bike, theirs.mode == M_BIKE, 0x3000, their_outfit ());
+    render_vehicle (r,
+                    dl,
+                    theirs.bike,
+                    theirs.mode == Doing::driving (Machine::bike),
+                    0x3000,
+                    their_outfit ());
     blob.draw (dl, surface, theirs.jeep.position, 3.4f);
     // This player beside them, unless seeing through their own eyes.
     render_jeep (r,
                  dl,
                  theirs.jeep,
-                 { .driver = theirs.mode == M_JEEP,
-                   .passenger = logic.m_mode == M_PASSENGER &&
+                 { .driver = theirs.mode == Doing::driving (Machine::jeep),
+                   .passenger = logic.m_doing == Doing::riding_along () &&
                                 !logic.m_seat_boat &&
                                 logic.m_cam_mode != CAM_HELMET,
                    .driver_outfit = their_outfit (),
@@ -395,26 +400,27 @@ namespace moppe::game {
     render_tractor (r,
                     dl,
                     theirs.tractor,
-                    theirs.mode == M_TRACTOR
+                    theirs.mode == Doing::driving (Machine::tractor)
                       ? std::optional<Outfit> (their_outfit ())
                       : std::nullopt,
                     0x9000);
     blob.draw (dl, surface, theirs.caddy.position, 3.6f);
-    render_caddy (
-      r,
-      dl,
-      theirs.caddy,
-      { .driver = theirs.mode == M_CADDY, .driver_outfit = their_outfit () },
-      0xB000);
+    render_caddy (r,
+                  dl,
+                  theirs.caddy,
+                  { .driver = theirs.mode == Doing::driving (Machine::caddy),
+                    .driver_outfit = their_outfit () },
+                  0xB000);
     render_boat (r,
                  dl,
                  theirs.boat,
-                 theirs.mode == M_BOAT ? std::optional<Outfit> (their_outfit ())
-                                       : std::nullopt,
+                 theirs.mode == Doing::driving (Machine::boat)
+                   ? std::optional<Outfit> (their_outfit ())
+                   : std::nullopt,
                  0xF800,
                  std::nullopt,
                  time,
-                 logic.m_mode == M_PASSENGER && logic.m_seat_boat &&
+                 logic.m_doing == Doing::riding_along () && logic.m_seat_boat &&
                      logic.m_cam_mode != CAM_HELMET
                    ? std::optional<Outfit> (outfit)
                    : std::nullopt);
@@ -422,7 +428,7 @@ namespace moppe::game {
     render_mountain_bike (r,
                           dl,
                           theirs.mountain_bike,
-                          theirs.mode == M_MOUNTAIN_BIKE
+                          theirs.mode == Doing::driving (Machine::mountain_bike)
                             ? std::optional<Outfit> (their_outfit ())
                             : std::nullopt,
                           0xE000);
@@ -430,14 +436,14 @@ namespace moppe::game {
     render_long_john (r,
                       dl,
                       theirs.long_john,
-                      theirs.mode == M_LONG_JOHN
+                      theirs.mode == Doing::driving (Machine::long_john)
                         ? std::optional<Outfit> (their_outfit ())
                         : std::nullopt,
                       0xE100);
     render_jet_ski (r,
                     dl,
                     theirs.jet_ski,
-                    theirs.mode == M_JET_SKI
+                    theirs.mode == Doing::driving (Machine::jet_ski)
                       ? std::optional<Outfit> (their_outfit ())
                       : std::nullopt,
                     0xE200);

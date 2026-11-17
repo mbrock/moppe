@@ -398,7 +398,8 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   held.deploy_glider_held = true;
   game::advance_game_session (
     world, surface, session, held, seconds (1.0f / 60.0f));
-  MOPPE_CHECK (session.logic ().m_mode == game::M_BIKE);
+  MOPPE_CHECK (session.logic ().m_doing ==
+               game::Doing::driving (game::Machine::bike));
 
   mov::Vehicle::State airborne = session.bike ().state ();
   airborne.position = position (Vec3 (80, 40, 80));
@@ -411,7 +412,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   game::advance_game_session (
     world, surface, session, held, seconds (1.0f / 60.0f));
 
-  MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
+  MOPPE_CHECK (session.logic ().m_doing == game::Doing::gliding ());
   MOPPE_CHECK (session.glider ().bike_attached ());
   MOPPE_CHECK (session.can_drop_bike ());
   MOPPE_CHECK_NEAR (
@@ -429,7 +430,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
     world, surface, session, drop, seconds (1.0f / 60.0f));
   const Vec3 dropped_position = session.bike ().position ();
 
-  MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
+  MOPPE_CHECK (session.logic ().m_doing == game::Doing::gliding ());
   MOPPE_CHECK (!session.glider ().bike_attached ());
   MOPPE_CHECK (!session.can_drop_bike ());
 
@@ -648,7 +649,8 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   // tape drove and steered the bike, while its Tab edge changed the camera.
   MOPPE_CHECK (length2 (position_value (live_state.vehicle.position) -
                         position_value (checkpoint.vehicle.position)) > 1.0f);
-  MOPPE_CHECK (live_state.logic.m_mode == game::M_BIKE);
+  MOPPE_CHECK (live_state.logic.m_doing ==
+               game::Doing::driving (game::Machine::bike));
   MOPPE_CHECK (live_state.logic.m_cam_mode == game::CAM_FRONT);
   MOPPE_CHECK (live_state.logic.m_odometer > checkpoint.logic.m_odometer);
   MOPPE_CHECK (live_state.logic.m_day_hours > checkpoint.logic.m_day_hours);
@@ -659,7 +661,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
     advance (replay, frame);
   const game::GameSession::State replayed = replay.state ();
 
-  MOPPE_CHECK (replayed.logic.m_mode == live_state.logic.m_mode);
+  MOPPE_CHECK (replayed.logic.m_doing == live_state.logic.m_doing);
   MOPPE_CHECK (replayed.logic.m_cam_mode == live_state.logic.m_cam_mode);
   MOPPE_CHECK (replayed.logic.m_day_hours == live_state.logic.m_day_hours);
   MOPPE_CHECK_NEAR (
@@ -707,7 +709,7 @@ MOPPE_TEST (walking_and_riding_each_keep_their_own_view) {
 
   // The game begins on foot, seen from behind.
   session.start_on_foot ();
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
 
   // Through their eyes, then mounting the bike beside them, the view is
@@ -716,13 +718,13 @@ MOPPE_TEST (walking_and_riding_each_keep_their_own_view) {
   press (&game::InputFrame::cycle_camera);
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
   press (&game::InputFrame::toggle_mount);
-  MOPPE_CHECK (logic.m_mode == game::M_BIKE);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::bike));
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
 
   // Stepping off returns to their eyes; a view chosen on foot is kept for
   // the next time they walk, and the bike's for the next ride.
   press (&game::InputFrame::toggle_mount);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
   press (&game::InputFrame::cycle_camera);
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
@@ -732,10 +734,10 @@ MOPPE_TEST (walking_and_riding_each_keep_their_own_view) {
   press (&game::InputFrame::cycle_camera);
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
   press (&game::InputFrame::toggle_mount);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_CHASE);
   press (&game::InputFrame::toggle_mount);
-  MOPPE_CHECK (logic.m_mode == game::M_BIKE);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::bike));
   MOPPE_CHECK (logic.m_cam_mode == game::CAM_HELMET);
 }
 
@@ -770,7 +772,8 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   MOPPE_CHECK (session.can_fly ());
   MOPPE_CHECK (!session.can_drive ());
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+  MOPPE_CHECK (logic.m_doing ==
+               game::Doing::driving (game::Machine::helicopter));
 
   // Spooled up, Space climbs it away; up there, F does nothing.
   run ({}, 4.0f);
@@ -778,13 +781,14 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   MOPPE_CHECK (session.helicopter ().altitude ().numerical_value_in (u::m) >
                10.0f);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+  MOPPE_CHECK (logic.m_doing ==
+               game::Doing::driving (game::Machine::helicopter));
 
   // Shift brings it down, and on the ground F steps out.
   run ({ .run = true }, 25.0f);
   MOPPE_CHECK (session.helicopter ().grounded ());
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (session.walker ().position ()[1] < 12.0f);
 }
 
@@ -819,7 +823,8 @@ MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
   session.tractor ().place (Vec3 (122, 0, 129), Vec3 (1, 0, 0));
   session.walker ().spawn (position (Vec3 (126, 10.1f, 128)), Vec3 (0, 0, 1));
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+  MOPPE_CHECK (logic.m_doing ==
+               game::Doing::driving (game::Machine::helicopter));
   // Nothing comes along by itself, nor is hooked from the ground.
   MOPPE_CHECK (!logic.m_sling.hooked);
   MOPPE_CHECK (!session.hook_within_reach ());
@@ -835,7 +840,8 @@ MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_sling.hooked);
   MOPPE_CHECK (logic.m_sling.load == game::Machine::tractor);
-  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+  MOPPE_CHECK (logic.m_doing ==
+               game::Doing::driving (game::Machine::helicopter));
 
   // Up it goes, the tractor hanging under it.
   run ({ .boost = 1.0f }, 8.0f);
@@ -852,7 +858,8 @@ MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
   // Let go of, it falls back to the ground, and the helicopter flies on.
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (!logic.m_sling.hooked);
-  MOPPE_CHECK (logic.m_mode == game::M_HELICOPTER);
+  MOPPE_CHECK (logic.m_doing ==
+               game::Doing::driving (game::Machine::helicopter));
   run ({}, 8.0f);
   MOPPE_CHECK (session.tractor ().position ()[1] < 12.0f);
   MOPPE_CHECK (session.helicopter ().altitude ().numerical_value_in (u::m) >
@@ -891,7 +898,7 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
   MOPPE_CHECK (!session.can_drive ());
   MOPPE_CHECK (!session.can_fly ());
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_TRACTOR);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::tractor));
 
   // W drives it off, no faster than a tractor goes.
   run ({ .drive = 1.0f }, 5.0f);
@@ -902,7 +909,7 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
   run ({ .boost = 1.0f }, 3.0f);
   MOPPE_CHECK (length (session.tractor ().velocity ()) < 0.5f);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   const Vec3 apart =
     session.walker ().position () - session.tractor ().position ();
   MOPPE_CHECK (length (apart) < 3.0f);
@@ -941,7 +948,7 @@ MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   MOPPE_CHECK (!session.can_drive ());
   MOPPE_CHECK (!session.can_drive_tractor ());
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_CADDY);
+  MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::caddy));
 
   // W drives it off, faster than the tractor goes.
   run ({ .drive = 1.0f }, 5.0f);
@@ -952,7 +959,7 @@ MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   run ({ .boost = 1.0f }, 4.0f);
   MOPPE_CHECK (length (session.caddy ().velocity ()) < 0.5f);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   const Vec3 out = session.walker ().position () - session.caddy ().position ();
   MOPPE_CHECK (length (out) < 3.0f);
   MOPPE_CHECK (dot (out, session.caddy ().left ()) > 0.8f);
@@ -998,7 +1005,8 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   run ({}, 0.5f);
   MOPPE_CHECK (session.can_ride_mountain_bike ());
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_MOUNTAIN_BIKE);
+  MOPPE_CHECK (logic.m_doing ==
+               game::Doing::driving (game::Machine::mountain_bike));
 
   // Pedalled off, at a cyclist's pace.
   run ({ .drive = 1.0f }, 8.0f);
@@ -1017,7 +1025,7 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
 
   // F gets off beside it, and it stays where it was left.
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (length (session.walker ().position () - bike.position ()) <
                2.0f);
   const Vec3 left = bike.position ();
@@ -1066,7 +1074,8 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   run ({}, 0.5f);
   MOPPE_CHECK (session.can_ride_long_john ());
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_LONG_JOHN);
+  MOPPE_CHECK (logic.m_doing ==
+               game::Doing::driving (game::Machine::long_john));
 
   // Pedalled off at a loaded cargo bike's pace.
   run ({ .drive = 1.0f }, 10.0f);
@@ -1080,7 +1089,7 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   run ({}, 1.0f);
   MOPPE_CHECK (session.subject_speed_kmh () < 1.0f);
   run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_mode == game::M_FOOT);
+  MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (length (session.walker ().position () - bike.position ()) <
                2.0f);
   const Vec3 left = bike.position ();
@@ -1172,7 +1181,8 @@ MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
     way);
   game::advance_game_session (
     world, surface, session, game::InputFrame { .toggle_mount = true }, step);
-  MOPPE_CHECK (session.logic ().m_mode == game::M_CADDY);
+  MOPPE_CHECK (session.logic ().m_doing ==
+               game::Doing::driving (game::Machine::caddy));
   float widest = 0.0f, fastest = 0.0f;
   for (int i = 0; i < 60 * 30 && session.subject_position ()[2] < 290.0f; ++i) {
     game::advance_game_session (

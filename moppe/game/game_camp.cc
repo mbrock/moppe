@@ -77,7 +77,7 @@ namespace moppe {
 
     bool MoppeGame::lying_down () const {
       const Camp& camp = logic ().m_camp;
-      return camp.hung && logic ().m_mode == M_FOOT &&
+      return camp.hung && logic ().m_doing == Doing::on_foot () &&
              hammock_load (camp, logic ().m_total_time) > 0.5f;
     }
 

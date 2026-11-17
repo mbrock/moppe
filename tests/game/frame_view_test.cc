@@ -109,7 +109,7 @@ namespace {
     MOPPE_CHECK_NEAR (actual.m_shake, expected.m_shake, 1e-6f);
     MOPPE_CHECK_NEAR (actual.m_shake_time, expected.m_shake_time, 1e-6f);
     MOPPE_CHECK_NEAR (actual.m_fov_k, expected.m_fov_k, 1e-6f);
-    MOPPE_CHECK (actual.m_mode == expected.m_mode);
+    MOPPE_CHECK (actual.m_doing == expected.m_doing);
     MOPPE_CHECK (actual.m_cam_mode == expected.m_cam_mode);
     frame_view_check_vector (actual.m_fp_eye, expected.m_fp_eye);
     MOPPE_CHECK (actual.m_score == expected.m_score);
@@ -226,7 +226,7 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
 MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
   FrameFixture fixture;
   game::GameSession& session = fixture.running ();
-  session.logic ().m_mode = game::M_FOOT;
+  session.logic ().m_doing = game::Doing::on_foot ();
   session.walker ().spawn (position (Vec3 (60, 10, 60)), Vec3 (1, 0, 0));
 
   const game::FrameView frozen =
@@ -246,7 +246,7 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
   MOPPE_CHECK (length2 (changed.actors.walker->position - walker_position) >
                1.0f);
 
-  session.logic ().m_mode = game::M_GLIDER;
+  session.logic ().m_doing = game::Doing::gliding ();
   session.glider ().launch (position (Vec3 (72, 42, 72)),
                             velocity (Vec3 (0, 1, 14)),
                             Vec3 (0, 0, 1),
@@ -579,21 +579,32 @@ MOPPE_TEST (
 MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
   using game::motion_blur_for;
   // The boat on the plane streaks; a jeep or the motocross as fast does not.
-  MOPPE_CHECK (motion_blur_for (game::M_BOAT, 26.0f) > 0.3f);
-  MOPPE_CHECK (motion_blur_for (game::M_BOAT, 10.0f) == 0.0f);
-  MOPPE_CHECK (motion_blur_for (game::M_JEEP, 26.0f) == 0.0f);
-  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 26.0f) == 0.0f);
+  MOPPE_CHECK (
+    motion_blur_for (game::Doing::driving (game::Machine::boat), 26.0f) > 0.3f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::boat),
+                                10.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jeep),
+                                26.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
+                                26.0f) == 0.0f);
   // The jet ski idles along sharp and streaks flat out.
-  MOPPE_CHECK (motion_blur_for (game::M_JET_SKI, 26.0f) == 0.0f);
-  MOPPE_CHECK (motion_blur_for (game::M_JET_SKI, 60.0f) > 0.8f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
+                                26.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
+                                60.0f) > 0.8f);
   // The motocross cruises sharp and streaks on a boost.
-  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 100.0f) == 0.0f);
-  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 150.0f) > 0.3f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
+                                100.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
+                                150.0f) > 0.3f);
   // Faster streaks longer.
-  MOPPE_CHECK (motion_blur_for (game::M_BIKE, 140.0f) >
-               motion_blur_for (game::M_BIKE, 120.0f));
+  MOPPE_CHECK (
+    motion_blur_for (game::Doing::driving (game::Machine::bike), 140.0f) >
+    motion_blur_for (game::Doing::driving (game::Machine::bike), 120.0f));
   // None on foot or in the air, however fast.
-  MOPPE_CHECK (motion_blur_for (game::M_FOOT, 30.0f) == 0.0f);
-  MOPPE_CHECK (motion_blur_for (game::M_HELICOPTER, 200.0f) == 0.0f);
-  MOPPE_CHECK (motion_blur_for (game::M_GLIDER, 150.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::on_foot (), 30.0f) == 0.0f);
+  MOPPE_CHECK (
+    motion_blur_for (game::Doing::driving (game::Machine::helicopter),
+                     200.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::gliding (), 150.0f) == 0.0f);
 }

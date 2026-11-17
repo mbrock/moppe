@@ -161,7 +161,8 @@ namespace moppe::game {
     }
     if (!game::angler (w.session))
       return;
-    const bool afloat = w.session.logic ().m_mode == M_BOAT;
+    const bool afloat =
+      w.session.logic ().m_doing == Doing::driving (Machine::boat);
     switch (fishing.line.phase) {
     case Line::Phase::idle:
       if (afloat
@@ -222,14 +223,16 @@ namespace moppe::game {
     }
     // What Space and F do here, and what can be done about the camp
     // without a prompt for it (HudState::thumb).
-    if (w.session.logic ().m_mode != m_prompts.thumb_mode) {
-      m_prompts.thumb_mode = w.session.logic ().m_mode;
+    if (w.session.logic ().m_doing != m_prompts.thumb_mode) {
+      m_prompts.thumb_mode = w.session.logic ().m_doing;
       m_prompts.thumb_from = w.session.logic ().m_total_time;
     }
     // The bike's jets and the boat's tied-back governor are prompted
     // for a while after getting on, until they have been tried once.
-    const bool afloat = w.session.logic ().m_mode == M_BOAT;
-    const bool boosts = w.session.logic ().m_mode == M_BIKE || afloat;
+    const bool afloat =
+      w.session.logic ().m_doing == Doing::driving (Machine::boat);
+    const bool boosts =
+      w.session.logic ().m_doing == Doing::driving (Machine::bike) || afloat;
     if (boosts && w.session.logic ().m_boost_input > 0.1f)
       m_prompts.boost_tried[afloat] = true;
     state.thumb_hint = boosts && !m_prompts.boost_tried[afloat] &&
@@ -237,15 +240,16 @@ namespace moppe::game {
                          15.0 * si::second;
     // The wheelie is prompted once the jets' prompt is done with, for
     // half a minute after getting on, until one has been ridden.
-    if (w.session.logic ().m_mode == M_BIKE && w.session.bike ().wheeling ())
+    if (w.session.logic ().m_doing == Doing::driving (Machine::bike) &&
+        w.session.bike ().wheeling ())
       m_prompts.wheelie_tried = true;
     state.wheelie_hint =
-      w.session.logic ().m_mode == M_BIKE && !state.thumb_hint &&
-      !m_prompts.wheelie_tried &&
+      w.session.logic ().m_doing == Doing::driving (Machine::bike) &&
+      !state.thumb_hint && !m_prompts.wheelie_tried &&
       w.session.logic ().m_total_time - m_prompts.thumb_from <
         45.0 * si::second;
-    switch (w.session.logic ().m_mode) {
-    case M_FOOT:
+    switch (w.session.logic ().m_doing.way) {
+    case Doing::Way::foot:
       if (!camp.resting) {
         state.thumb = "Jump";
         state.can_take_down = game::beside_hammock (w.session);
@@ -265,66 +269,71 @@ namespace moppe::game {
         }
       }
       break;
-    case M_BIKE:
-      state.thumb = "Boost";
-      state.dismount = "Get off";
-      state.skids = true;
-      state.wheelies = true;
-      break;
-    case M_MOUNTAIN_BIKE:
-      state.thumb = "Hop";
-      state.dismount = "Get off";
-      state.skids = true;
-      break;
-    case M_LONG_JOHN:
-      state.dismount = "Get off";
-      state.skids = true;
-      break;
-    case M_GLIDER:
+    case Doing::Way::glider:
       state.thumb = "Flare";
       break;
-    case M_JEEP:
-      state.thumb = "Brake";
+    case Doing::Way::passenger:
       state.dismount = "Step out";
       break;
-    case M_PASSENGER:
-      state.dismount = "Step out";
-      break;
-    case M_TRACTOR:
-      state.thumb = "Brake";
-      state.dismount = "Climb down";
-      break;
-    case M_CADDY:
-      state.thumb = "Brake";
-      state.dismount = "Step out";
-      break;
-    case M_BOAT:
-      state.thumb = "Flat out";
-      state.dismount = "Step ashore";
-      break;
-    case M_JET_SKI:
-      state.dismount = "Get off";
-      break;
-    case M_HELICOPTER:
-      state.thumb = "Climb";
-      state.flying = true;
-      state.can_step_out = w.session.can_step_out_of_helicopter ();
-      // Letting go is prompted only once the load hangs near the
-      // ground, though the key lets it fall from any height.
-      if (w.session.logic ().m_sling.hooked &&
-          w.session.helicopter ().altitude () < sling_hang + 4.0f * u::m)
-        state.slung = machine_shape (w.session.logic ().m_sling.load).name;
-      if (const std::optional<Machine> under = w.session.hook_within_reach ())
-        state.hook = machine_shape (*under).name;
-      if (w.session.logic ().m_sling.hooked)
-        state.dismount = "Let go";
-      else if (state.hook)
-        state.dismount = "Hook on";
-      else if (state.can_step_out)
+    case Doing::Way::driving:
+      switch (w.session.logic ().m_doing.machine) {
+      case Machine::bike:
+        state.thumb = "Boost";
+        state.dismount = "Get off";
+        state.skids = true;
+        state.wheelies = true;
+        break;
+      case Machine::mountain_bike:
+        state.thumb = "Hop";
+        state.dismount = "Get off";
+        state.skids = true;
+        break;
+      case Machine::long_john:
+        state.dismount = "Get off";
+        state.skids = true;
+        break;
+      case Machine::jeep:
+        state.thumb = "Brake";
         state.dismount = "Step out";
+        break;
+      case Machine::tractor:
+        state.thumb = "Brake";
+        state.dismount = "Climb down";
+        break;
+      case Machine::caddy:
+        state.thumb = "Brake";
+        state.dismount = "Step out";
+        break;
+      case Machine::boat:
+        state.thumb = "Flat out";
+        state.dismount = "Step ashore";
+        break;
+      case Machine::jet_ski:
+        state.dismount = "Get off";
+        break;
+      case Machine::helicopter:
+        state.thumb = "Climb";
+        state.flying = true;
+        state.can_step_out = w.session.can_step_out_of_helicopter ();
+        // Letting go is prompted only once the load hangs near the
+        // ground, though the key lets it fall from any height.
+        if (w.session.logic ().m_sling.hooked &&
+            w.session.helicopter ().altitude () < sling_hang + 4.0f * u::m)
+          state.slung = machine_shape (w.session.logic ().m_sling.load).name;
+        if (const std::optional<Machine> under = w.session.hook_within_reach ())
+          state.hook = machine_shape (*under).name;
+        if (w.session.logic ().m_sling.hooked)
+          state.dismount = "Let go";
+        else if (state.hook)
+          state.dismount = "Hook on";
+        else if (state.can_step_out)
+          state.dismount = "Step out";
+        break;
+      }
       break;
     }
-    if (w.session.logic ().m_mode != M_FOOT || state.mushroom_in_reach)
+    if (w.session.logic ().m_doing != Doing::on_foot () ||
+        state.mushroom_in_reach)
       return;
     state.cook = game::supper_at_hand (w.session, w.around);
     state.cook_fish = camp.pan.on
@@ -413,31 +422,31 @@ namespace moppe::game {
                               const FrameView& frame,
                               int width,
                               int height) const {
-    const Mode mode = w.session.logic ().m_mode;
+    const Doing mode = w.session.logic ().m_doing;
     const DisplayColor pale (0.96f, 0.96f, 0.96f);
-    if (w.company.companion && mode != M_PASSENGER &&
-        w.company.companion->mode != M_PASSENGER) {
+    if (w.company.companion && mode != Doing::riding_along () &&
+        w.company.companion->mode != Doing::riding_along ()) {
       const CompanionSnapshot& theirs = *w.company.companion;
       Vec3 at = theirs.bike.position;
       if (theirs.walker)
         at = theirs.walker->position;
       else if (theirs.glider)
         at = theirs.glider->position;
-      else if (theirs.mode == M_JEEP)
+      else if (theirs.mode == Doing::driving (Machine::jeep))
         at = theirs.jeep.position;
-      else if (theirs.mode == M_HELICOPTER)
+      else if (theirs.mode == Doing::driving (Machine::helicopter))
         at = theirs.helicopter.position + Vec3 (0, 1.0f, 0);
-      else if (theirs.mode == M_TRACTOR)
+      else if (theirs.mode == Doing::driving (Machine::tractor))
         at = theirs.tractor.position + Vec3 (0, 0.8f, 0);
-      else if (theirs.mode == M_CADDY)
+      else if (theirs.mode == Doing::driving (Machine::caddy))
         at = theirs.caddy.position + Vec3 (0, 1.0f, 0);
-      else if (theirs.mode == M_MOUNTAIN_BIKE)
+      else if (theirs.mode == Doing::driving (Machine::mountain_bike))
         at = theirs.mountain_bike.position + Vec3 (0, 1.4f, 0);
-      else if (theirs.mode == M_LONG_JOHN)
+      else if (theirs.mode == Doing::driving (Machine::long_john))
         at = theirs.long_john.position + Vec3 (0, 1.4f, 0);
-      else if (theirs.mode == M_BOAT)
+      else if (theirs.mode == Doing::driving (Machine::boat))
         at = theirs.boat.position + Vec3 (0, 1.2f, 0);
-      else if (theirs.mode == M_JET_SKI)
+      else if (theirs.mode == Doing::driving (Machine::jet_ski))
         at = theirs.jet_ski.position + Vec3 (0, 1.3f, 0);
       // In the colour of the jacket they wear.
       DisplayColor jacket = pale;
@@ -566,7 +575,7 @@ namespace moppe::game {
     state.reached_age_s =
       seconds_between (w.session.logic ().m_total_time, basket.last_reach_time);
     state.reached_refused = basket.last_refused;
-    if (w.session.logic ().m_mode != M_FOOT)
+    if (w.session.logic ().m_doing != Doing::on_foot ())
       return;
     if (const std::optional<std::uint32_t> found = w.mushrooms.within_reach (
           w.session.walker ().position (), w.session.walker ().heading ())) {
@@ -603,35 +612,35 @@ namespace moppe::game {
     using Mark = MapSheet::Mark;
     const DisplayColor dark (0.09f, 0.09f, 0.10f);
     std::vector<Mark> marks;
-    const Mode mode = w.session.logic ().m_mode;
+    const Doing mode = w.session.logic ().m_doing;
     marks.push_back ({ .kind = Mark::Kind::Walker,
                        .position = w.session.subject_position (),
                        .heading = w.session.subject_heading (),
                        .colour = dark,
                        .name = "" });
-    if (w.company.companion && mode != M_PASSENGER &&
-        w.company.companion->mode != M_PASSENGER) {
+    if (w.company.companion && mode != Doing::riding_along () &&
+        w.company.companion->mode != Doing::riding_along ()) {
       const CompanionSnapshot& theirs = *w.company.companion;
       Vec3 at = theirs.bike.position;
       if (theirs.walker)
         at = theirs.walker->position;
       else if (theirs.glider)
         at = theirs.glider->position;
-      else if (theirs.mode == M_JEEP)
+      else if (theirs.mode == Doing::driving (Machine::jeep))
         at = theirs.jeep.position;
-      else if (theirs.mode == M_HELICOPTER)
+      else if (theirs.mode == Doing::driving (Machine::helicopter))
         at = theirs.helicopter.position;
-      else if (theirs.mode == M_TRACTOR)
+      else if (theirs.mode == Doing::driving (Machine::tractor))
         at = theirs.tractor.position;
-      else if (theirs.mode == M_CADDY)
+      else if (theirs.mode == Doing::driving (Machine::caddy))
         at = theirs.caddy.position;
-      else if (theirs.mode == M_MOUNTAIN_BIKE)
+      else if (theirs.mode == Doing::driving (Machine::mountain_bike))
         at = theirs.mountain_bike.position;
-      else if (theirs.mode == M_LONG_JOHN)
+      else if (theirs.mode == Doing::driving (Machine::long_john))
         at = theirs.long_john.position;
-      else if (theirs.mode == M_BOAT)
+      else if (theirs.mode == Doing::driving (Machine::boat))
         at = theirs.boat.position;
-      else if (theirs.mode == M_JET_SKI)
+      else if (theirs.mode == Doing::driving (Machine::jet_ski))
         at = theirs.jet_ski.position;
       DisplayColor jacket = dark;
       for (std::size_t c = 0; c < figure::colours.size (); ++c)
@@ -643,47 +652,47 @@ namespace moppe::game {
                          .colour = jacket,
                          .name = "companion" });
     }
-    if (mode != M_BIKE && !w.session.can_drop_bike ())
+    if (mode != Doing::driving (Machine::bike) && !w.session.can_drop_bike ())
       marks.push_back ({ .kind = Mark::Kind::Bike,
                          .position = w.session.bike ().position (),
                          .colour = dark,
                          .name = "bike" });
-    if (mode != M_JEEP)
+    if (mode != Doing::driving (Machine::jeep))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
                          .position = w.session.jeep ().position (),
                          .colour = dark,
                          .name = "jeep" });
-    if (mode != M_TRACTOR)
+    if (mode != Doing::driving (Machine::tractor))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
                          .position = w.session.tractor ().position (),
                          .colour = DisplayColor (0.70f, 0.12f, 0.08f),
                          .name = "tractor" });
-    if (mode != M_CADDY)
+    if (mode != Doing::driving (Machine::caddy))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
                          .position = w.session.caddy ().position (),
                          .colour = DisplayColor (0.22f, 0.50f, 0.45f),
                          .name = "Caddy" });
-    if (mode != M_MOUNTAIN_BIKE)
+    if (mode != Doing::driving (Machine::mountain_bike))
       marks.push_back ({ .kind = Mark::Kind::Bike,
                          .position = w.session.mountain_bike ().position (),
                          .colour = DisplayColor (0.06f, 0.30f, 0.22f),
                          .name = "mountainbike" });
-    if (mode != M_LONG_JOHN)
+    if (mode != Doing::driving (Machine::long_john))
       marks.push_back ({ .kind = Mark::Kind::Bike,
                          .position = w.session.long_john ().position (),
                          .colour = DisplayColor (0.58f, 0.575f, 0.57f),
                          .name = "Long John" });
-    if (mode != M_HELICOPTER)
+    if (mode != Doing::driving (Machine::helicopter))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
                          .position = w.session.helicopter ().position (),
                          .colour = DisplayColor (0.20f, 0.30f, 0.20f),
                          .name = "helicopter" });
-    if (mode != M_BOAT)
+    if (mode != Doing::driving (Machine::boat))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
                          .position = w.session.boat ().position (),
                          .colour = DisplayColor (0.62f, 0.48f, 0.30f),
                          .name = "boat" });
-    if (mode != M_JET_SKI)
+    if (mode != Doing::driving (Machine::jet_ski))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
                          .position = w.session.jet_ski ().position (),
                          .colour = DisplayColor (0.04f, 0.56f, 0.58f),

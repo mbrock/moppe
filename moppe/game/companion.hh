@@ -39,7 +39,7 @@ namespace moppe::game {
     // Their hour of the day, counted on from the first midnight.
     double day_hours = 0.0;
 
-    Mode mode = M_FOOT;
+    Doing mode = Doing::on_foot ();
     VehiclePose bike {};
     // Their jeep, wherever it stands, and how it is moving: someone
     // riding along in it moves with it.
@@ -61,7 +61,7 @@ namespace moppe::game {
     // Their jet ski, and them astride it when they ride it.
     JetSkiPose jet_ski {};
     Vec3 jet_ski_velocity {};
-    // Riding along (M_PASSENGER): on the fore seat of the other player's
+    // Riding along: on the fore seat of the other player's
     // boat rather than beside them in their jeep.
     bool in_boat = false;
     std::optional<GliderPose> glider;
@@ -101,7 +101,7 @@ namespace moppe::game {
 
     // Lying in the hammock rather than standing beside it.
     bool lying_down () const {
-      return hung && mode == M_FOOT && hammock_load > 0.5f;
+      return hung && mode == Doing::on_foot () && hammock_load > 0.5f;
     }
   };
 

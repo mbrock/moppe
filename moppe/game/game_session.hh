@@ -86,14 +86,18 @@ namespace moppe::game {
     // The bike being ridden, the motocross, the mountainbike, or the Long
     // John, or the motocross when none is.
     mov::Vehicle& ridden_bike () noexcept {
-      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_fleet.mountain_bike
-             : m_logic.m_mode == M_LONG_JOHN   ? m_fleet.long_john
-                                               : m_fleet.bike;
+      return m_logic.m_doing == Doing::driving (Machine::mountain_bike)
+               ? m_fleet.mountain_bike
+             : m_logic.m_doing == Doing::driving (Machine::long_john)
+               ? m_fleet.long_john
+               : m_fleet.bike;
     }
     const mov::Vehicle& ridden_bike () const noexcept {
-      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_fleet.mountain_bike
-             : m_logic.m_mode == M_LONG_JOHN   ? m_fleet.long_john
-                                               : m_fleet.bike;
+      return m_logic.m_doing == Doing::driving (Machine::mountain_bike)
+               ? m_fleet.mountain_bike
+             : m_logic.m_doing == Doing::driving (Machine::long_john)
+               ? m_fleet.long_john
+               : m_fleet.bike;
     }
 
     mov::Car& jeep () noexcept {
@@ -251,7 +255,7 @@ namespace moppe::game {
     // Changes how the player gets about, and with it the view: mounting
     // takes up the view last used for riding (from behind, unless Tab
     // chose another) and stepping off the one last used on foot.
-    void set_mode (Mode mode);
+    void set_mode (Doing mode);
 
     State state () const;
     void restore (const State& state);
@@ -285,9 +289,6 @@ namespace moppe::game {
     Animals m_animals;
     Hens m_hens;
   };
-
-  // The machine a mode drives, if any.
-  std::optional<Machine> driven_machine (Mode mode);
 
   // What the wheels roll over, read from the world by the caller: how much
   // loose dust the ground gives up and its colour, and how thickly fallen

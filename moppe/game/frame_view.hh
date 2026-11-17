@@ -189,7 +189,7 @@ namespace moppe::game {
     std::optional<SlingPose> sling;
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
-    Mode active_mode = M_BIKE;
+    Doing active_mode = Doing::driving (Machine::bike);
     CamMode camera_mode = CAM_CHASE;
     bool helmet_camera = false;
   };
@@ -396,7 +396,7 @@ namespace moppe::game {
   // cruises at, the Trail 90 only past what it reaches unboosted. On foot and
   // in the air there is none: the ground is far off from a wing or a cabin, so
   // what streaks there is the camera's turning, not speed.
-  float motion_blur_for (Mode mode, float kmh);
+  float motion_blur_for (Doing mode, float kmh);
 
   // The raw, unsmoothed sight line toward the sun.  The game updates its
   // small temporal accumulator in tick(); this remains a pure reading so

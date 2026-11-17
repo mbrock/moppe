@@ -149,17 +149,17 @@ namespace moppe {
       }
       // MOPPE_DEMO=jeep, tractor, caddy, mountain_bike, or long_john: the
       // autopilot drives that instead.
-      if (demo && logic ().m_mode == M_BIKE) {
+      if (demo && logic ().m_doing == Doing::driving (Machine::bike)) {
         if (std::string_view (demo) == "jeep")
-          session ().set_mode (M_JEEP);
+          session ().set_mode (Doing::driving (Machine::jeep));
         else if (std::string_view (demo) == "tractor")
-          session ().set_mode (M_TRACTOR);
+          session ().set_mode (Doing::driving (Machine::tractor));
         else if (std::string_view (demo) == "caddy")
-          session ().set_mode (M_CADDY);
+          session ().set_mode (Doing::driving (Machine::caddy));
         else if (std::string_view (demo) == "mountain_bike")
-          session ().set_mode (M_MOUNTAIN_BIKE);
+          session ().set_mode (Doing::driving (Machine::mountain_bike));
         else if (std::string_view (demo) == "long_john")
-          session ().set_mode (M_LONG_JOHN);
+          session ().set_mode (Doing::driving (Machine::long_john));
       }
     }
 
@@ -277,7 +277,7 @@ namespace moppe {
         if (walk &&
             (std::string_view (walk) == "forage" ||
              std::string_view (walk) == "supper") &&
-            logic ().m_mode == M_FOOT) {
+            logic ().m_doing == Doing::on_foot ()) {
           Vec3 away = m_spawn_position - at;
           away[1] = 0.0f;
           away = length2 (away) > 1e-4f ? normalized (away) : Vec3 (1, 0, 0);
@@ -344,10 +344,12 @@ namespace moppe {
       m_parking.park_jet_ski (parking_lot (), jet_ski_demo);
       m_parking.park_caddy (parking_lot ());
       // A demo already at the wheel of a machine just parked follows it.
-      if (logic ().m_mode != M_FOOT && logic ().m_mode != M_BIKE)
+      if (logic ().m_doing != Doing::on_foot () &&
+          logic ().m_doing != Doing::driving (Machine::bike))
         session ().settle_camera (surface ());
       if (boat_demo || jet_ski_demo) {
-        session ().set_mode (boat_demo ? M_BOAT : M_JET_SKI);
+        session ().set_mode (boat_demo ? Doing::driving (Machine::boat)
+                                       : Doing::driving (Machine::jet_ski));
         logic ().m_cam_mode = CAM_CHASE;
         session ().settle_camera (surface ());
       }
@@ -359,7 +361,7 @@ namespace moppe {
         const mov::Helicopter& heli = session ().helicopter ();
         session ().jeep ().place (heli.point (Vec3 (6.0f, 0.0f, 0.0f)),
                                   heli.forward ());
-        session ().set_mode (M_HELICOPTER);
+        session ().set_mode (Doing::driving (Machine::helicopter));
         logic ().m_cam_mode = CAM_CHASE;
       }
       m_walk.stage (script_stage ());

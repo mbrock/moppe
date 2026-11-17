@@ -10,7 +10,7 @@ namespace moppe {
     }
 
     void MoppeGame::make_room (const CompanionSnapshot& theirs) {
-      if (logic ().m_mode != M_FOOT)
+      if (logic ().m_doing != Doing::on_foot ())
         return;
       const double here = m_company.link->now ();
       if (here > theirs.sent ||
@@ -43,9 +43,9 @@ namespace moppe {
       m_parking.park_mountain_bike (parking_lot ());
       m_parking.park_long_john (parking_lot ());
       m_parking.park_helicopter (parking_lot (), theirs.helicopter.position);
-      if (logic ().m_mode != M_BOAT)
+      if (logic ().m_doing != Doing::driving (Machine::boat))
         m_parking.park_boat (parking_lot ());
-      if (logic ().m_mode != M_JET_SKI)
+      if (logic ().m_doing != Doing::driving (Machine::jet_ski))
         m_parking.park_jet_ski (parking_lot ());
       m_parking.park_caddy (parking_lot ());
       if (!beside)

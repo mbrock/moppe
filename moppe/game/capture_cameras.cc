@@ -25,7 +25,8 @@ namespace moppe::game {
   void CaptureCameras::rest (GameSession& session, const WorldGround& ground) {
     const Camp& camp = session.logic ().m_camp;
     const float load = hammock_load (camp, session.logic ().m_total_time);
-    if (!camp.hung || load <= 0.001f || session.logic ().m_mode != M_FOOT)
+    if (!camp.hung || load <= 0.001f ||
+        session.logic ().m_doing != Doing::on_foot ())
       return;
     ChaseCamera& camera = session.camera ();
     const Vec3 from = camera.position ();
@@ -56,7 +57,7 @@ namespace moppe::game {
       const char* view = moppe::environment ("MOPPE_WALK_CAMERA");
       return view && std::string_view (view) == "side";
     }();
-    if (!side || session.logic ().m_mode != M_FOOT)
+    if (!side || session.logic ().m_doing != Doing::on_foot ())
       return;
     const Walker& walker = session.walker ();
     const Vec3 heading = walker.heading ();
@@ -97,14 +98,16 @@ namespace moppe::game {
       return std::string_view (name ? name : "");
     }();
     film_fov.reset ();
-    if (session.logic ().m_mode == M_BOAT &&
+    if (session.logic ().m_doing == Doing::driving (Machine::boat) &&
         film_boat (session, ground, view, interval))
       return;
     // Flying, it is the machine on the line it stands beside.
-    const bool slung = session.logic ().m_mode == M_HELICOPTER &&
-                       session.logic ().m_sling.hooked;
-    if (view.empty () || session.logic ().m_mode == M_FOOT ||
-        (session.logic ().m_mode == M_HELICOPTER && !slung))
+    const bool slung =
+      session.logic ().m_doing == Doing::driving (Machine::helicopter) &&
+      session.logic ().m_sling.hooked;
+    if (view.empty () || session.logic ().m_doing == Doing::on_foot () ||
+        (session.logic ().m_doing == Doing::driving (Machine::helicopter) &&
+         !slung))
       return;
     if (slung) {
       const MachineBody load =
@@ -120,14 +123,19 @@ namespace moppe::game {
       session.camera ().place (at + from + Vec3 (0, 0.5f, 0), at);
       return;
     }
-    const bool gliding = session.logic ().m_mode == M_GLIDER;
-    const bool tractor = session.logic ().m_mode == M_TRACTOR;
-    const bool caddy = session.logic ().m_mode == M_CADDY;
-    const bool boat = session.logic ().m_mode == M_BOAT;
-    const bool ski = session.logic ().m_mode == M_JET_SKI;
+    const bool gliding = session.logic ().m_doing == Doing::gliding ();
+    const bool tractor =
+      session.logic ().m_doing == Doing::driving (Machine::tractor);
+    const bool caddy =
+      session.logic ().m_doing == Doing::driving (Machine::caddy);
+    const bool boat =
+      session.logic ().m_doing == Doing::driving (Machine::boat);
+    const bool ski =
+      session.logic ().m_doing == Doing::driving (Machine::jet_ski);
     const bool driving =
-      session.logic ().m_mode == M_JEEP || tractor || caddy || boat || ski;
-    const bool pedalled = game::pedalled (session.logic ().m_mode);
+      session.logic ().m_doing == Doing::driving (Machine::jeep) || tractor ||
+      caddy || boat || ski;
+    const bool pedalled = game::pedalled (session.logic ().m_doing);
     const auto& bike = session.ridden_bike ();
     // The tractor with its trailer, from their middle.
     const Vec3 car = tractor ? (session.tractor ().position () +
