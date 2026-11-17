@@ -541,8 +541,7 @@ namespace moppe::game {
   }
 
   play_time_t bus_time (const GameLogicState& logic) {
-    return play_time (seconds_into_play (logic.m_total_time) +
-                      logic.m_bus_lead);
+    return logic.m_total_time + logic.m_bus_lead;
   }
 
   std::optional<std::size_t> bus_at_hand (const BusLine& line,
@@ -577,10 +576,11 @@ namespace moppe::game {
       }
 
       void take_seat (GameLogicState& logic, const BusPose& pose) {
-        logic.m_seat_position = bus_seat (pose, logic.m_bus_seat);
-        logic.m_seat_heading = pose.forward;
-        logic.m_seat_up = pose.up;
-        logic.m_seat_velocity = pose.forward * speed_value (pose.speed);
+        logic.m_seat_position = position (bus_seat (pose, logic.m_bus_seat));
+        logic.m_seat_heading = unit_direction (pose.forward);
+        logic.m_seat_up = unit_direction (pose.up);
+        logic.m_seat_velocity =
+          velocity (pose.forward * speed_value (pose.speed));
       }
 
       // Down by the door, on the verge side, facing out.
@@ -618,11 +618,12 @@ namespace moppe::game {
   void leave_bus (GameSession& session, const BusLine& line) {
     const std::optional<BusPose> pose = bus_parts::ridden (session, line);
     if (!pose || pose->at_stop)
-      bus_parts::step_down (session,
-                            pose.value_or (BusPose {
-                              .position = session.logic ().m_seat_position,
-                              .forward = session.logic ().m_seat_heading,
-                            }));
+      bus_parts::step_down (
+        session,
+        pose.value_or (BusPose {
+          .position = position_value (session.logic ().m_seat_position),
+          .forward = direction_value (session.logic ().m_seat_heading),
+        }));
     else
       session.logic ().m_bus_alight = !session.logic ().m_bus_alight;
   }

@@ -86,20 +86,20 @@ namespace moppe::game {
     position_t m_fp_eye = position (Vec3 ());
     // Riding along: the seat in the other player's machine, or in the
     // bus, how it faces, and how it moves, as last heard.
-    Vec3 m_seat_position;
-    Vec3 m_seat_heading { 0, 0, 1 };
-    Vec3 m_seat_up { 0, 1, 0 };
-    Vec3 m_seat_velocity;
+    position_t m_seat_position = position (Vec3 ());
+    direction_t m_seat_heading = unit_direction (Vec3 (0, 0, 1));
+    direction_t m_seat_up = unit_direction (Vec3 (0, 1, 0));
+    velocity_t m_seat_velocity = velocity (Vec3 ());
     // On the bus: which of them (BusLine::where), which seat (0 the
     // front row's by the door, 1 beside it), and whether the rider has
     // asked to get off at the next stop.
     std::uint8_t m_bus = 0;
     std::uint8_t m_bus_seat = 0;
     bool m_bus_alight = false;
-    // How far the buses' timetable runs ahead of play's clock, seconds:
-    // nothing alone, and with the other player as much as keeps the
-    // two games' buses together (bus_time, Companionship::keep_time).
-    double m_bus_lead = 0.0;
+    // How far the buses' timetable runs ahead of play's clock: nothing
+    // alone, and with the other player as much as keeps the two games'
+    // buses together (bus_time, Companionship::keep_time).
+    duration_t m_bus_lead = 0.0 * si::second;
     int m_score = 0;
     // A jump: how long the bike has been in the air, how far it has
     // turned about up and the most it has, and which way it faced last

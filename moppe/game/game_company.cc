@@ -12,7 +12,7 @@ namespace moppe {
     void MoppeGame::make_room (const CompanionSnapshot& theirs) {
       if (logic ().m_doing != Doing::on_foot ())
         return;
-      const double here = m_company.link->now ();
+      const link_time_t here = m_company.link->now ();
       if (here > theirs.sent ||
           (here == theirs.sent && m_company.link->player () < theirs.player))
         return;

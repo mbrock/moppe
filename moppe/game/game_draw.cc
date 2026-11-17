@@ -397,7 +397,7 @@ namespace moppe {
                        m_company.outfit);
       m_company.draw (r,
                       m_world_dl,
-                      frame.lighting.time,
+                      frame.lighting.time * si::second,
                       logic (),
                       m_mushrooms,
                       m_blob,
@@ -435,9 +435,9 @@ namespace moppe {
                                  0x3000);
         if (m_company.companion->hearth_laid)
           draw_fire (r,
-                     m_company.companion->hearth,
+                     position_value (m_company.companion->hearth),
                      frame.camera.position,
-                     m_company.companion->fire_burn,
+                     m_company.companion->fire_burn.numerical_value_in (one),
                      frame.lighting.time);
       }
       if (visibility.star_effects)

@@ -71,27 +71,30 @@ namespace moppe::game {
 
     // Farther than this between two snapshots was not travelled: a
     // restart, or a new world's spawn.
-    constexpr float leap_metres = 40.0f;
+    constexpr meters_t leap_metres = 40.0f * si::metre;
     // Past the newest snapshot the last known motion is carried on,
     // dying away, over about this much time's worth of travel.
-    constexpr double carry_seconds = 0.2;
+    constexpr duration_t carry_seconds = 0.2 * si::second;
     // The playback clock is drawn toward where it should be at this
     // rate a second, learns a sender whose clock runs fast or slow at
-    // this one, and beyond this many seconds out simply jumps.
-    constexpr double chase_gain = 2.0;
-    constexpr double rate_gain = 0.5;
-    constexpr double resync_seconds = 0.5;
+    // this one (its rate moving by this much a second for every second
+    // it is out), and beyond this far out simply jumps.
+    constexpr quantity<one / si::second, double> chase_gain = 2.0 / si::second;
+    constexpr quantity<one / pow<2> (si::second), double> rate_gain =
+      0.5 / pow<2> (si::second);
+    constexpr duration_t resync_seconds = 0.5 * si::second;
     // How much of each arrival's reading of the two clocks' difference
     // is believed, and how fast a long gap between arrivals is
     // forgotten.
-    constexpr double offset_ease = 0.1;
-    constexpr double gap_ease = 0.01;
-    constexpr double usual_gap = 0.05;
-    constexpr double longest_gap = 0.3;
+    using ease_t = quantity<blend_weight[one], double>;
+    constexpr ease_t offset_ease = 0.1 * blend_weight[one];
+    constexpr ease_t gap_ease = 0.01 * blend_weight[one];
+    constexpr duration_t usual_gap = 0.05 * si::second;
+    constexpr duration_t longest_gap = 0.3 * si::second;
     // What late word shows was drawn wrong is put right over this long,
     // unless it is farther than a slide would cover.
-    constexpr double slip_seconds = 0.15;
-    constexpr float slip_metres = 3.0f;
+    constexpr duration_t slip_seconds = 0.15 * si::second;
+    constexpr meters_t slip_metres = 3.0f * si::metre;
     constexpr std::size_t track_length = 32;
 
     class Writer {
@@ -181,40 +184,48 @@ namespace moppe::game {
       bool m_good = true;
     };
 
-    float mix (float a, float b, float t) {
-      return a + (b - a) * t;
+    // Partway from `a` to `b`: a number, a vector, or a quantity.
+    template <class Value>
+    Value mix (const Value& a, const Value& b, blend_weight_t t) {
+      return a + (b - a) * t.numerical_value_in (one);
     }
 
-    Vec3 mix (const Vec3& a, const Vec3& b, float t) {
-      return a + (b - a) * t;
-    }
-
-    Vec3 mix_direction (const Vec3& a, const Vec3& b, float t) {
-      const Vec3 between = mix (a, b, std::clamp (t, 0.0f, 1.0f));
+    Vec3 mix_direction (const Vec3& a, const Vec3& b, blend_weight_t t) {
+      const Vec3 between = mix (
+        a,
+        b,
+        std::clamp (t, 0.0f * blend_weight[one], 1.0f * blend_weight[one]));
       return length2 (between) > 1e-6f ? normalized (between) : b;
     }
 
-    // Between two fractions of a cycle, the short way round.
-    float mix_phase (float a, float b, float t) {
+    // Between two fractions of a cycle, the short way round. (The poses
+    // tell their phases and angles as plain numbers, frame_view.hh.)
+    float mix_phase (float a, float b, blend_weight_t t) {
       float step = b - a;
       step -= std::round (step);
-      const float phase = a + step * t;
+      const float phase = a + step * t.numerical_value_in (one);
       return phase - std::floor (phase);
     }
 
-    // Between two angles, the short way round.
-    float mix_angle (float a, float b, float t) {
-      return a + std::remainder (b - a, 6.2831853f) * t;
+    // Between two angles in radians, the short way round.
+    float mix_angle (float a, float b, blend_weight_t t) {
+      return a +
+             std::remainder (b - a, 6.2831853f) * t.numerical_value_in (one);
     }
 
     bool leapt (const Vec3& a, const Vec3& b) {
-      return length2 (b - a) > leap_metres * leap_metres;
+      const square_meters_t apart = length2 (b - a) * (si::metre * si::metre);
+      return apart > leap_metres * leap_metres;
     }
 
     // The curve from `p1` (at zero) to `p2` (at one) that leaves with
     // velocity `m1` and arrives with `m2`.
-    Vec3 curve (
-      const Vec3& p1, const Vec3& p2, const Vec3& m1, const Vec3& m2, float s) {
+    Vec3 curve (const Vec3& p1,
+                const Vec3& p2,
+                const Vec3& m1,
+                const Vec3& m2,
+                blend_weight_t along) {
+      const float s = along.numerical_value_in (one);
       const float s2 = s * s;
       const float s3 = s2 * s;
       return p1 * (2 * s3 - 3 * s2 + 1) + m1 * (s3 - 2 * s2 + s) +
@@ -385,9 +396,9 @@ namespace moppe::game {
       const CompanionSnapshot& a;
       const CompanionSnapshot& b;
       const CompanionSnapshot* after;
-      float t;
+      blend_weight_t t;
       // `t` held between the two.
-      float within;
+      blend_weight_t within;
     };
 
     // Where something is partway from `p1` to `p2`: on the curve that
@@ -399,18 +410,21 @@ namespace moppe::game {
                  const Vec3& p1,
                  const Vec3& p2,
                  const Vec3* p3) {
-      const float t = w.t;
-      const double span = w.b.sent - w.a.sent;
-      if (t <= 0.0f || t >= 1.0f || !(span > 0.0))
+      const blend_weight_t t = w.t;
+      const duration_t span = w.b.sent - w.a.sent;
+      if (t <= 0.0f * blend_weight[one] || t >= 1.0f * blend_weight[one] ||
+          !(span > 0.0 * si::second))
         return mix (p1, p2, t);
       Vec3 m1 = p2 - p1;
       Vec3 m2 = m1;
       if (p0 && w.before->sent < w.a.sent && !leapt (*p0, p1))
-        m1 =
-          (p2 - *p0) * static_cast<float> (span / (w.b.sent - w.before->sent));
+        m1 = (p2 - *p0) *
+             static_cast<float> (
+               (span / (w.b.sent - w.before->sent)).numerical_value_in (one));
       if (p3 && w.after->sent > w.b.sent && !leapt (p2, *p3))
-        m2 =
-          (*p3 - p1) * static_cast<float> (span / (w.after->sent - w.a.sent));
+        m2 = (*p3 - p1) *
+             static_cast<float> (
+               (span / (w.after->sent - w.a.sent)).numerical_value_in (one));
       return curve (p1, p2, m1, m2, t);
     }
 
@@ -582,10 +596,10 @@ namespace moppe::game {
     out.put (wire_version);
     out.put (snapshot.player);
     out.put (snapshot.sequence);
-    out.put (snapshot.sent);
+    out.put (seconds_on_link (snapshot.sent));
     out.put (snapshot.world);
-    out.put (snapshot.day_hours);
-    out.put (snapshot.bus_clock);
+    out.put (hours_since_midnight (snapshot.day_hours));
+    out.put (seconds_into_play (snapshot.bus_clock));
     out.put (doing_byte (snapshot.mode));
     out.put (snapshot.bus);
     out.put (snapshot.bus_seat);
@@ -635,21 +649,21 @@ namespace moppe::game {
         out.put (position_value (snapshot.hammock.strap[end]));
         out.put (meters_value (snapshot.hammock.girth[end]));
       }
-      out.put (snapshot.hammock_load);
-      out.put (snapshot.swing);
-      out.put (snapshot.gaze_yaw);
-      out.put (snapshot.gaze_pitch);
+      out.put (snapshot.hammock_load.numerical_value_in (one));
+      out.put (radians_value (snapshot.swing));
+      out.put (radians_value (snapshot.gaze_yaw));
+      out.put (snapshot.gaze_pitch.numerical_value_in (si::radian));
     }
     if (snapshot.hearth_laid) {
-      out.put (snapshot.hearth);
-      out.put (snapshot.fire_burn);
+      out.put (position_value (snapshot.hearth));
+      out.put (snapshot.fire_burn.numerical_value_in (one));
     }
     out.put (snapshot.beacons);
 
     if (snapshot.pan_on) {
-      out.put (snapshot.pan_place);
-      out.put (snapshot.pan_yaw);
-      out.put (snapshot.pan_cooked);
+      out.put (position_value (snapshot.pan_place));
+      out.put (snapshot.pan_yaw.numerical_value_in (si::radian));
+      out.put (snapshot.pan_cooked.numerical_value_in (one));
       out.put (snapshot.pan_count);
       for (const std::uint32_t mushroom : snapshot.pan_mushrooms)
         out.put (mushroom);
@@ -675,10 +689,10 @@ namespace moppe::game {
     CompanionSnapshot snapshot;
     snapshot.player = in.get<std::uint64_t> ();
     snapshot.sequence = in.get<std::uint32_t> ();
-    snapshot.sent = in.long_number ();
+    snapshot.sent = link_time (in.long_number ());
     snapshot.world = in.get<std::uint32_t> ();
-    snapshot.day_hours = in.long_number ();
-    snapshot.bus_clock = in.long_number ();
+    snapshot.day_hours = clock_time (in.long_number ());
+    snapshot.bus_clock = play_time (in.long_number ());
     const std::optional<Doing> mode = doing_of (in.get<std::uint8_t> ());
     if (!mode)
       return std::nullopt;
@@ -723,10 +737,11 @@ namespace moppe::game {
         snapshot.hammock.strap[end] = position (in.point ());
         snapshot.hammock.girth[end] = in.number () * u::m;
       }
-      snapshot.hammock_load = std::clamp (in.number (), 0.0f, 1.0f);
-      snapshot.swing = in.number ();
-      snapshot.gaze_yaw = in.number ();
-      snapshot.gaze_pitch = in.number ();
+      snapshot.hammock_load =
+        std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
+      snapshot.swing = in.number () * si::radian;
+      snapshot.gaze_yaw = in.number () * si::radian;
+      snapshot.gaze_pitch = in.number () * inclination[si::radian];
       // A hammock is slung between two different trees.
       if (length2 (position_value (snapshot.hammock.strap[1]) -
                    position_value (snapshot.hammock.strap[0])) < 0.25f)
@@ -734,16 +749,18 @@ namespace moppe::game {
     }
     if (flags & has_hearth) {
       snapshot.hearth_laid = true;
-      snapshot.hearth = in.point ();
-      snapshot.fire_burn = std::clamp (in.number (), 0.0f, 1.0f);
+      snapshot.hearth = position (in.point ());
+      snapshot.fire_burn =
+        std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
     }
     snapshot.beacons = in.get<std::uint32_t> ();
 
     if (flags & has_pan) {
       snapshot.pan_on = true;
-      snapshot.pan_place = in.point ();
-      snapshot.pan_yaw = in.number ();
-      snapshot.pan_cooked = std::clamp (in.number (), 0.0f, 2.0f);
+      snapshot.pan_place = position (in.point ());
+      snapshot.pan_yaw = in.number () * heading[si::radian];
+      snapshot.pan_cooked =
+        std::clamp (in.number (), 0.0f, 2.0f) * proportion[one];
       snapshot.pan_count = in.get<std::uint8_t> ();
       if (snapshot.pan_count > Pan::room)
         return std::nullopt;
@@ -765,8 +782,9 @@ namespace moppe::game {
     return snapshot;
   }
 
-  CompanionSnapshot
-  blend (const CompanionSnapshot& a, const CompanionSnapshot& b, float t) {
+  CompanionSnapshot blend (const CompanionSnapshot& a,
+                           const CompanionSnapshot& b,
+                           blend_weight_t t) {
     return blend (nullptr, a, b, nullptr, t);
   }
 
@@ -774,14 +792,21 @@ namespace moppe::game {
                            const CompanionSnapshot& a,
                            const CompanionSnapshot& b,
                            const CompanionSnapshot* after,
-                           float t) {
+                           blend_weight_t t) {
     CompanionSnapshot result = b;
     // The buses' clock runs on evenly, past `b` too.
-    result.bus_clock = std::lerp (a.bus_clock, b.bus_clock, double (t));
+    result.bus_clock =
+      play_time (std::lerp (seconds_into_play (a.bus_clock),
+                            seconds_into_play (b.bus_clock),
+                            double (t.numerical_value_in (one))));
     if (leapt (a.fleet.bike.position, b.fleet.bike.position))
       return result;
-    const Moments w { before, a, b, after, t, std::clamp (t, 0.0f, 1.0f) };
-    const float within = w.within;
+    const Moments w {
+      before, a,
+      b,      after,
+      t,      std::clamp (t, 0.0f * blend_weight[one], 1.0f * blend_weight[one])
+    };
+    const blend_weight_t within = w.within;
     // Each machine moves on unless it has leapt.
     for_each_machine_across (
       [&] (Machine m,
@@ -850,11 +875,11 @@ namespace moppe::game {
     return result;
   }
 
-  void CompanionTrack::push (CompanionSnapshot snapshot, double now) {
+  void CompanionTrack::push (CompanionSnapshot snapshot, link_time_t now) {
     if (!m_snapshots.empty () &&
         (snapshot.player != m_snapshots.back ().player || !present (now)))
       clear ();
-    const double offset = snapshot.sent - now;
+    const duration_t offset = snapshot.sent - now;
     if (m_snapshots.empty ())
       m_offset = offset;
     else if (snapshot.sent <= m_snapshots.back ().sent)
@@ -863,16 +888,16 @@ namespace moppe::game {
       // Each arrival is early or late by the network's whim and by
       // where in a frame it was read, so no one of them is believed
       // much -- unless the clocks have plainly parted.
-      if (std::abs (offset - m_offset) > resync_seconds)
+      if (abs (offset - m_offset) > resync_seconds)
         m_offset = offset;
       else
-        m_offset += (offset - m_offset) * offset_ease;
+        m_offset += (offset - m_offset) * offset_ease.numerical_value_in (one);
       // The longest wait of late is what the delay must cover.
-      const double gap = std::min (now - m_heard, longest_gap);
+      const duration_t gap = std::min (now - m_heard, longest_gap);
       if (gap > m_gap)
         m_gap = gap;
-      else if (gap > 1e-4)
-        m_gap += (gap - m_gap) * gap_ease;
+      else if (gap > 1e-4 * si::second)
+        m_gap += (gap - m_gap) * gap_ease.numerical_value_in (one);
     }
     m_heard = now;
     m_snapshots.push_back (std::move (snapshot));
@@ -881,15 +906,17 @@ namespace moppe::game {
       m_snapshots.pop_front ();
   }
 
-  bool CompanionTrack::present (double now) const {
+  bool CompanionTrack::present (link_time_t now) const {
     return !m_snapshots.empty () && now - m_heard < patience;
   }
 
-  double CompanionTrack::delay () const {
-    return std::clamp (1.5 * m_gap + 0.01, 0.05, 0.3);
+  duration_t CompanionTrack::delay () const {
+    return std::clamp (
+      1.5 * m_gap + 0.01 * si::second, 0.05 * si::second, 0.3 * si::second);
   }
 
-  CompanionSnapshot CompanionTrack::look (std::size_t count, double at) const {
+  CompanionSnapshot CompanionTrack::look (std::size_t count,
+                                          link_time_t at) const {
     if (count == 1 || at <= m_snapshots.front ().sent)
       return m_snapshots.front ();
     for (std::size_t i = 1; i < count; ++i) {
@@ -897,44 +924,58 @@ namespace moppe::game {
       const CompanionSnapshot& b = m_snapshots[i];
       if (at > b.sent)
         continue;
-      return blend (i >= 2 ? &m_snapshots[i - 2] : nullptr,
-                    a,
-                    b,
-                    i + 1 < count ? &m_snapshots[i + 1] : nullptr,
-                    static_cast<float> ((at - a.sent) / (b.sent - a.sent)));
+      return blend (
+        i >= 2 ? &m_snapshots[i - 2] : nullptr,
+        a,
+        b,
+        i + 1 < count ? &m_snapshots[i + 1] : nullptr,
+        static_cast<float> (
+          ((at - a.sent) / (b.sent - a.sent)).numerical_value_in (one)) *
+          blend_weight[one]);
     }
     // Past the newest: on the way the last two were going, slowing to a
     // stand rather than stopping dead.
     const CompanionSnapshot& a = m_snapshots[count - 2];
     const CompanionSnapshot& b = m_snapshots[count - 1];
-    const double reach =
-      carry_seconds * (1.0 - std::exp (-(at - b.sent) / carry_seconds));
-    return blend (a, b, static_cast<float> (1.0 + reach / (b.sent - a.sent)));
+    const duration_t reach =
+      carry_seconds *
+      (1.0 -
+       std::exp ((-(at - b.sent) / carry_seconds).numerical_value_in (one)));
+    return blend (
+      a,
+      b,
+      static_cast<float> (
+        1.0 + (reach / (b.sent - a.sent)).numerical_value_in (one)) *
+        blend_weight[one]);
   }
 
-  std::optional<CompanionSnapshot> CompanionTrack::advance (double now,
-                                                            double elapsed) {
+  std::optional<CompanionSnapshot>
+  CompanionTrack::advance (link_time_t now, duration_t elapsed) {
     if (!present (now)) {
       m_playing = false;
       return std::nullopt;
     }
-    elapsed = std::clamp (elapsed, 0.0, 0.25);
+    elapsed = std::clamp (elapsed, 0.0 * si::second, 0.25 * si::second);
     // The moment to draw moves on with this machine's frames, which are
     // even, and is only drawn toward what the arrivals say it should
     // be, which is not.
-    const double target = now + m_offset - delay ();
-    m_play += elapsed * m_rate;
-    const double ahead = target - m_play;
-    if (!m_playing || std::abs (ahead) > resync_seconds) {
+    const link_time_t target = now + m_offset - delay ();
+    m_play += elapsed * m_rate.numerical_value_in (one);
+    const duration_t ahead = target - m_play;
+    if (!m_playing || abs (ahead) > resync_seconds) {
       m_playing = true;
       m_play = target;
-      m_rate = 1.0;
+      m_rate = 1.0 * scale_factor[one];
       m_slip = {};
     } else {
-      m_play += std::clamp (ahead * (1.0 - std::exp (-chase_gain * elapsed)),
-                            -0.5 * elapsed,
-                            0.5 * elapsed);
-      m_rate = std::clamp (m_rate + ahead * rate_gain * elapsed, 0.5, 2.0);
+      m_play += std::clamp (
+        ahead *
+          (1.0 - std::exp ((-chase_gain * elapsed).numerical_value_in (one))),
+        -0.5 * elapsed,
+        0.5 * elapsed);
+      m_rate = std::clamp (m_rate + ahead * rate_gain * elapsed,
+                           0.5 * scale_factor[one],
+                           2.0 * scale_factor[one]);
     }
 
     CompanionSnapshot seen = look (m_snapshots.size (), m_play);
@@ -957,29 +998,35 @@ namespace moppe::game {
         const std::array<Vec3*, 4> is = places (seen);
         for (std::size_t i = 0; i < m_slip.size (); ++i)
           if (was[i] && is[i])
-            m_slip[i] += *was[i] - *is[i];
+            m_slip[i] += displacement (*was[i] - *is[i]);
       }
     }
     m_fresh = 0;
-    const float keep = static_cast<float> (std::exp (-elapsed / slip_seconds));
+    // What of the slip is kept through this frame.
+    const proportion_t keep =
+      static_cast<float> (
+        std::exp ((-elapsed / slip_seconds).numerical_value_in (one))) *
+      proportion[one];
     const std::array<Vec3*, 4> shown = places (seen);
     for (std::size_t i = 0; i < m_slip.size (); ++i) {
-      m_slip[i] = length2 (m_slip[i]) > slip_metres * slip_metres
-                    ? Vec3 ()
-                    : m_slip[i] * keep;
+      const square_meters_t slid =
+        length2 (displacement_value (m_slip[i])) * (si::metre * si::metre);
+      m_slip[i] = slid > slip_metres * slip_metres
+                    ? displacement (Vec3 ())
+                    : m_slip[i] * keep.numerical_value_in (one);
       if (shown[i])
-        *shown[i] += m_slip[i];
+        *shown[i] += displacement_value (m_slip[i]);
     }
     return seen;
   }
 
   void CompanionTrack::clear () {
     m_snapshots.clear ();
-    m_heard = -1e9;
+    m_heard = link_time (-1e9);
     m_gap = usual_gap;
     m_fresh = 0;
     m_playing = false;
-    m_rate = 1.0;
+    m_rate = 1.0 * scale_factor[one];
     m_slip = {};
   }
 
@@ -995,25 +1042,29 @@ namespace moppe::game {
     }
   }
 
-  Vec3 passenger_seat (const CompanionSnapshot& theirs, Machine machine) {
+  position_t passenger_seat (const CompanionSnapshot& theirs, Machine machine) {
     const Vec3 seat =
       machine_kind (machine).passenger_seat.value_or (Vec3 (0, 1, 0));
-    return visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
-      const auto [forward, up] = lie_of (pose);
-      const Vec3 left = normalized (cross (up, forward));
-      return pose.position + left * seat[0] + up * seat[1] + forward * seat[2];
-    });
+    return position (
+      visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
+        const auto [forward, up] = lie_of (pose);
+        const Vec3 left = normalized (cross (up, forward));
+        return pose.position + left * seat[0] + up * seat[1] +
+               forward * seat[2];
+      }));
   }
 
   void keep_seat (GameLogicState& state, const CompanionSnapshot& theirs) {
     const Machine machine = state.m_doing.machine;
     state.m_seat_position = passenger_seat (theirs, machine);
     visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
-      std::tie (state.m_seat_heading, state.m_seat_up) = lie_of (pose);
+      const auto [forward, up] = lie_of (pose);
+      state.m_seat_heading = unit_direction (forward);
+      state.m_seat_up = unit_direction (up);
       if constexpr (requires { pose.velocity; })
-        state.m_seat_velocity = pose.velocity;
+        state.m_seat_velocity = velocity (pose.velocity);
       else
-        state.m_seat_velocity = Vec3 ();
+        state.m_seat_velocity = velocity (Vec3 ());
     });
   }
 
@@ -1024,11 +1075,13 @@ namespace moppe::game {
       return std::nullopt;
     const Vec3 feet = session.walker ().position ();
     // Anything of one's own nearer wins.
-    float nearest = 1e30f;
+    constexpr auto square_metre = si::metre * si::metre;
+    square_meters_t nearest = 1e30f * square_metre;
     for_each_machine (session.fleet (), [&] (Machine, const auto& body) {
-      nearest = std::min (nearest, length2 (feet - body.position ()));
+      nearest =
+        std::min (nearest, length2 (feet - body.position ()) * square_metre);
     });
-    constexpr float reach = 4.0f;
+    constexpr meters_t reach = 4.0f * si::metre;
     std::optional<Machine> found;
     for (int i = 0; i < machine_count; ++i) {
       const Machine m = static_cast<Machine> (i);
@@ -1036,7 +1089,9 @@ namespace moppe::game {
       if (!kind.passenger_seat || (kind.medium == Medium::water &&
                                    companion->mode != Doing::driving (m)))
         continue;
-      const float d = length2 (feet - passenger_seat (*companion, m));
+      const square_meters_t d =
+        length2 (feet - position_value (passenger_seat (*companion, m))) *
+        square_metre;
       if (d < reach * reach && d < nearest) {
         nearest = d;
         found = m;
@@ -1055,11 +1110,10 @@ namespace moppe::game {
 
   void keep_bus_time (GameLogicState& state,
                       const CompanionSnapshot& theirs,
-                      double behind,
+                      duration_t behind,
                       std::uint64_t player) {
-    const double gap =
-      theirs.bus_clock + behind - seconds_into_play (bus_time (state));
-    if (gap > 1.0)
+    const duration_t gap = theirs.bus_clock + behind - bus_time (state);
+    if (gap > 1.0 * si::second)
       state.m_bus_lead += gap;
     else if (player < theirs.player)
       state.m_bus_lead += 0.05 * gap;

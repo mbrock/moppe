@@ -24,8 +24,8 @@ namespace moppe {
         .day_turning = m_sky.day ().turning,
         .daylight = m_sky.sky ().daylight,
         .companion = m_company.companion ? &*m_company.companion : nullptr,
-        .companion_clock = m_company.hours >= 0.0
-                             ? std::optional (clock_time (m_company.hours))
+        .companion_clock = m_company.hours >= clock_time (0.0)
+                             ? std::optional (m_company.hours)
                              : std::nullopt,
       };
     }

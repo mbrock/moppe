@@ -24,8 +24,14 @@ namespace moppe::game {
   namespace {
     using Clock = std::chrono::steady_clock;
 
-    constexpr double speaking_interval = 1.0 / 30.0;
-    constexpr double calling_interval = 0.5;
+    constexpr duration_t speaking_interval = 1.0 / 30.0 * si::second;
+    constexpr duration_t calling_interval = 0.5 * si::second;
+
+    // The time since `began`, as a link's clock reads it.
+    link_time_t since (Clock::time_point began) {
+      return link_time (
+        std::chrono::duration<double> (Clock::now () - began).count ());
+    }
   }
 
 #if MOPPE_COMPANION_SOCKETS
@@ -82,7 +88,7 @@ namespace moppe::game {
     std::uint32_t world = 0;
     bool elsewhere = false;
     Clock::time_point began = Clock::now ();
-    double sent = -1e9;
+    link_time_t sent = link_time (-1e9);
     // The machine named at launch, if one was.
     bool named = false;
     sockaddr_in named_address {};
@@ -91,15 +97,15 @@ namespace moppe::game {
     std::uint64_t companion = 0;
     std::uint32_t companion_sequence = 0;
     sockaddr_in companion_address {};
-    double heard_at = -1e9;
+    link_time_t heard_at = link_time (-1e9);
 
     ~Socket () {
       if (fd >= 0)
         ::close (fd);
     }
 
-    double now () const {
-      return std::chrono::duration<double> (Clock::now () - began).count ();
+    link_time_t now () const {
+      return since (began);
     }
 
     bool speaking () const {
@@ -182,7 +188,7 @@ namespace moppe::game {
       new CompanionLink (std::move (socket)));
   }
 
-  void CompanionLink::send (CompanionSnapshot snapshot, double taken) {
+  void CompanionLink::send (CompanionSnapshot snapshot, link_time_t taken) {
     Socket& socket = *m_socket;
     snapshot.player = socket.player;
     snapshot.sequence = socket.sequence++;
@@ -254,11 +260,11 @@ namespace moppe::game {
   struct CompanionLink::Socket {
     std::uint16_t port = 0;
     std::uint64_t player = 0;
-    double sent = 0.0;
+    link_time_t sent = link_time (0.0);
     Clock::time_point began = Clock::now ();
 
-    double now () const {
-      return std::chrono::duration<double> (Clock::now () - began).count ();
+    link_time_t now () const {
+      return since (began);
     }
     bool speaking () const {
       return false;
@@ -271,7 +277,7 @@ namespace moppe::game {
     return nullptr;
   }
 
-  void CompanionLink::send (CompanionSnapshot, double) {}
+  void CompanionLink::send (CompanionSnapshot, link_time_t) {}
   void CompanionLink::receive (std::vector<CompanionSnapshot>&) {}
   void CompanionLink::set_world (std::uint32_t) {}
   bool CompanionLink::heard_elsewhere () {
@@ -292,7 +298,7 @@ namespace moppe::game {
     return m_socket->player;
   }
 
-  double CompanionLink::now () const {
+  link_time_t CompanionLink::now () const {
     return m_socket->now ();
   }
 
@@ -300,9 +306,9 @@ namespace moppe::game {
     // A little under the interval, so that a game drawing sixty frames
     // a second speaks on every other one and not now on the second, now
     // on the third.
-    return m_socket->now () - m_socket->sent >= (m_socket->speaking ()
-                                                   ? speaking_interval - 0.004
-                                                   : calling_interval);
+    return m_socket->now () - m_socket->sent >=
+           (m_socket->speaking () ? speaking_interval - 0.004 * si::second
+                                  : calling_interval);
   }
 
   std::uint16_t CompanionLink::port () const {

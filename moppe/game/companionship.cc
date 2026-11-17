@@ -19,7 +19,7 @@
 namespace moppe::game {
   void Companionship::notice (const char* words) {
     last_notice = words;
-    notice_at = link ? link->now () : 0.0;
+    notice_at = link ? link->now () : link_time (0.0);
     std::cerr << "moppe: multiplayer: " << words << std::endl;
   }
 
@@ -43,11 +43,10 @@ namespace moppe::game {
     const GameLogicState& state = session.logic ();
     CompanionSnapshot mine;
     mine.world = world;
-    mine.day_hours =
-      day_turning ? hours_since_midnight (state.m_day_hours) : -1.0;
+    mine.day_hours = day_turning ? state.m_day_hours : clock_time (-1.0);
     mine.mode = state.m_doing;
     mine.fleet = poses (session.fleet ());
-    mine.bus_clock = seconds_into_play (bus_time (state));
+    mine.bus_clock = bus_time (state);
     if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
     if (state.m_doing == Doing::on_foot ())
@@ -60,28 +59,30 @@ namespace moppe::game {
       mine.bus_seat = state.m_bus_seat;
       mine.walker = walker_pose (
         session.walker (), state.m_look_pitch.numerical_value_in (u::rad));
-      mine.walker->position = state.m_seat_position;
-      mine.walker->heading = state.m_seat_heading;
-      mine.walker->velocity = state.m_seat_velocity;
+      mine.walker->position = position_value (state.m_seat_position);
+      mine.walker->heading = direction_value (state.m_seat_heading);
+      mine.walker->velocity = velocity_value (state.m_seat_velocity);
     }
     const Camp& camp = state.m_camp;
     mine.hung = camp.hung;
     mine.hammock = camp.hammock;
-    mine.hammock_load = hammock_load (camp, state.m_total_time);
-    mine.swing = radians_value (camp.swing);
-    mine.gaze_yaw = radians_value (camp.gaze_yaw);
-    mine.gaze_pitch = camp.gaze_pitch.numerical_value_in (u::rad);
+    mine.hammock_load =
+      hammock_load (camp, state.m_total_time) * proportion[one];
+    mine.swing = camp.swing;
+    mine.gaze_yaw = camp.gaze_yaw;
+    mine.gaze_pitch = camp.gaze_pitch;
     mine.hearth_laid = hearth_laid (camp);
-    mine.hearth = position_value (camp.hearth);
-    mine.fire_burn = fire_burn (camp, state.m_total_time);
+    mine.hearth = camp.hearth;
+    mine.fire_burn = fire_burn (camp, state.m_total_time) * proportion[one];
     mine.beacons = 0;
     for (std::size_t i = 0; i < state.m_beacons.size () && i < 32; ++i)
       if (state.m_beacons[i].burning ())
         mine.beacons |= 1u << i;
     mine.pan_on = camp.pan.on;
-    mine.pan_place = position_value (camp.pan.place);
-    mine.pan_yaw = camp.pan.yaw.numerical_value_in (u::rad);
-    mine.pan_cooked = pan_cooked (camp.pan, state.m_total_time);
+    mine.pan_place = camp.pan.place;
+    mine.pan_yaw = camp.pan.yaw;
+    mine.pan_cooked =
+      pan_cooked (camp.pan, state.m_total_time) * proportion[one];
     mine.pan_count = static_cast<std::uint8_t> (camp.pan.count);
     std::copy (std::begin (camp.pan.mushrooms),
                std::end (camp.pan.mushrooms),
@@ -123,11 +124,13 @@ namespace moppe::game {
                            companion->mode != Doing::driving (*seat);
       if (!companion || input.toggle_mount || aground) {
         const Vec3 left =
-          normalized (cross (state.m_seat_up, state.m_seat_heading));
+          normalized (cross (direction_value (state.m_seat_up),
+                             direction_value (state.m_seat_heading)));
         const bool water = machine_kind (*seat).medium == Medium::water;
-        session.walker ().spawn (moppe::position (state.m_seat_position -
-                                                  left * (water ? 1.1f : 1.4f)),
-                                 state.m_seat_heading);
+        session.walker ().spawn (
+          moppe::position (position_value (state.m_seat_position) -
+                           left * (water ? 1.1f : 1.4f)),
+          direction_value (state.m_seat_heading));
         session.set_mode (Doing::on_foot ());
         input.toggle_mount = false;
         return;
@@ -157,7 +160,6 @@ namespace moppe::game {
 
   void Companionship::meet_strangers (const GameSession& session,
                                       seconds_t interval) {
-    const float elapsed = seconds_value (interval);
     strangers.clear ();
     if (!companion) {
       strangers_were.reset ();
@@ -188,16 +190,17 @@ namespace moppe::game {
       });
       body.mass = session.machine_body (machine).mass;
       body.ours = false;
-      if (strangers_were && elapsed > 0.0f) {
-        const Vec3 moved = body.position - (*strangers_were)[i];
+      if (strangers_were && interval > 0.0f * si::second) {
+        const Vec3 moved =
+          body.position - position_value ((*strangers_were)[i]);
         if (length2 (moved) < 25.0f)
-          body.velocity = moved * (1.0f / elapsed);
+          body.velocity = moved * (1.0f / seconds_value (interval));
       }
       strangers.push_back (body);
     }
-    std::array<Vec3, machine_count> were;
+    std::array<position_t, machine_count> were;
     for (const MachineBody& body : strangers)
-      were[static_cast<std::size_t> (body.machine)] = body.position;
+      were[static_cast<std::size_t> (body.machine)] = position (body.position);
     strangers_were = were;
     // What says how it moves is believed over what was seen to.
     strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
@@ -216,16 +219,18 @@ namespace moppe::game {
     arrived.clear ();
     link->set_world (world);
     link->receive (arrived);
-    const double now = link->now ();
+    const link_time_t now = link->now ();
     // The poses told are the simulation's, which moves on in whole
     // steps, now two to a frame and now three. They are stamped by a
     // clock that moves with it, so that the other machine sees even
     // motion however unevenly the frames fall.
-    pose_clock = pose_heard < 0.0
-                   ? now
-                   : pose_clock + (stepped > 0.0 ? stepped : now - pose_heard);
+    pose_clock =
+      pose_heard < link_time (0.0)
+        ? now
+        : pose_clock +
+            (stepped > 0.0 * si::second ? stepped : now - pose_heard);
     pose_heard = now;
-    stepped = 0.0;
+    stepped = 0.0 * si::second;
     const bool was_present = track.present (now);
     // Someone in another world is only told of, while no one here
     // keeps company.
@@ -261,7 +266,7 @@ namespace moppe::game {
                 << link->companion_address () << std::endl;
     } else if (!present && was_present) {
       notice ("Your companion has gone");
-      hours = -1.0;
+      hours = clock_time (-1.0);
       met = false;
     }
     return newly_met;
@@ -273,7 +278,7 @@ namespace moppe::game {
                               seconds_t interval) {
     if (!link)
       return;
-    companion = track.advance (link->now (), seconds_value (interval));
+    companion = track.advance (link->now (), interval);
     meet_strangers (session, interval);
 
     if (!link->due ())
@@ -292,7 +297,7 @@ namespace moppe::game {
 
   void Companionship::draw (render::Renderer& r,
                             render::DrawList& dl,
-                            float time,
+                            seconds_t time,
                             const GameLogicState& logic,
                             const MushroomPatch& mushrooms,
                             BlobShadow& blob,
@@ -308,15 +313,23 @@ namespace moppe::game {
     if (const std::optional<Machine> seat = passenger_in (logic.m_doing);
         seat && logic.m_cam_mode != CAM_HELMET)
       riders[static_cast<std::size_t> (*seat)].passenger = outfit;
-    draw_fleet (
-      { .r = r, .dl = dl, .time = time, .blob = &blob, .surface = &surface },
-      theirs.fleet,
-      riders,
-      true);
+    draw_fleet ({ .r = r,
+                  .dl = dl,
+                  .time = seconds_value (time),
+                  .blob = &blob,
+                  .surface = &surface },
+                theirs.fleet,
+                riders,
+                true);
     if (theirs.hung)
-      draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
+      draw_hammock (dl,
+                    theirs.hammock,
+                    theirs.hammock_load.numerical_value_in (one),
+                    radians_value (theirs.swing));
     if (theirs.hearth_laid)
-      draw_hearth (dl, theirs.hearth, theirs.fire_burn);
+      draw_hearth (dl,
+                   position_value (theirs.hearth),
+                   theirs.fire_burn.numerical_value_in (one));
 
     basket.clear ();
     for (std::size_t i = theirs.pick_used; i < picks.size (); ++i)
@@ -327,16 +340,22 @@ namespace moppe::game {
       for (int i = 0; i < theirs.pan_count; ++i)
         if (theirs.pan_mushrooms[i] < mushrooms.mushroom_count ())
           pan.push_back (mushrooms.site (theirs.pan_mushrooms[i]));
-      draw_pan (dl, theirs.pan_place, theirs.pan_yaw, pan, theirs.pan_cooked);
+      draw_pan (dl,
+                position_value (theirs.pan_place),
+                theirs.pan_yaw.numerical_value_in (si::radian),
+                pan,
+                theirs.pan_cooked.numerical_value_in (one));
     }
     if (theirs.walker && theirs.lying_down ()) {
       figure::draw (
         dl,
         pose_resting (
           theirs.hammock,
-          theirs.swing,
-          resting_gaze (theirs.hammock, theirs.gaze_yaw, theirs.gaze_pitch),
-          time),
+          radians_value (theirs.swing),
+          resting_gaze (theirs.hammock,
+                        radians_value (theirs.gaze_yaw),
+                        theirs.gaze_pitch.numerical_value_in (si::radian)),
+          seconds_value (time)),
         their_outfit ());
       Vec3 floor = hammock_middle (theirs.hammock) +
                    hammock_across (theirs.hammock) * 0.75f -
@@ -347,19 +366,22 @@ namespace moppe::game {
     } else if (theirs.walker && theirs.mode != Doing::on_the_bus ()) {
       blob.draw (
         dl, surface, theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
-      render_walker (dl, *theirs.walker, time, basket, their_outfit ());
+      render_walker (
+        dl, *theirs.walker, seconds_value (time), basket, their_outfit ());
     }
     if (theirs.glider) {
       blob.draw (dl, surface, theirs.glider->position, 3.4f);
-      render_glider (r, dl, *theirs.glider, time, 0x4000, their_outfit ());
+      render_glider (
+        r, dl, *theirs.glider, seconds_value (time), 0x4000, their_outfit ());
     }
   }
 
   void Companionship::light_fire (FrameView& frame) const {
-    if (!companion || !companion->hearth_laid || companion->fire_burn <= 0.01f)
+    if (!companion || !companion->hearth_laid ||
+        companion->fire_burn <= 0.01f * proportion[one])
       return;
     Camp theirs;
-    theirs.hearth = position (companion->hearth);
+    theirs.hearth = companion->hearth;
     const Vec3 lamp = fire_light_position (theirs);
     FrameLighting& lighting = frame.lighting;
     if (lighting.lamp_reach > 0.0f &&
@@ -368,9 +390,10 @@ namespace moppe::game {
       return;
     lighting.lamp_position = lamp;
     lighting.lamp_reach = meters_value (fire_light_reach);
-    lighting.lamp_color =
-      scale_display (fire_light_color (companion->fire_burn, lighting.time),
-                     1.0f - 0.25f * lighting.daylight);
+    lighting.lamp_color = scale_display (
+      fire_light_color (companion->fire_burn.numerical_value_in (one),
+                        lighting.time),
+      1.0f - 0.25f * lighting.daylight);
   }
 
   void Companionship::add_readings (HudState& state,
@@ -378,6 +401,7 @@ namespace moppe::game {
     if (!link || !last_notice)
       return;
     state.notice = last_notice;
-    state.notice_age_s = static_cast<float> (link->now () - notice_at);
+    state.notice_age_s = static_cast<float> (
+      (link->now () - notice_at).numerical_value_in (si::second));
   }
 }

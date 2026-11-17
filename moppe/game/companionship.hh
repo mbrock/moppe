@@ -33,7 +33,7 @@ namespace moppe::game {
       track.clear ();
       companion.reset ();
       picks.clear ();
-      hours = -1.0;
+      hours = clock_time (-1.0);
       met = false;
       elsewhere = false;
     }
@@ -87,7 +87,7 @@ namespace moppe::game {
     // the wing, and their camp.
     void draw (render::Renderer& r,
                render::DrawList& dl,
-               float time,
+               seconds_t time,
                const GameLogicState& logic,
                const MushroomPatch& mushrooms,
                BlobShadow& blob,
@@ -118,15 +118,16 @@ namespace moppe::game {
     // Their machines as ours bump into them, and where each stood a frame
     // ago, to tell how they move.
     std::vector<MachineBody> strangers;
-    std::optional<std::array<Vec3, machine_count>> strangers_were;
+    std::optional<std::array<position_t, machine_count>> strangers_were;
     // Their picks in the order they made them, as far as heard, and the
     // same as mushrooms for the basket they carry.
     std::vector<std::uint32_t> picks;
     std::vector<MushroomSite> basket;
     // Scratch for their pan's contents as drawn.
     std::vector<MushroomSite> pan;
-    // Their hour of the day; negative with no one to keep time with.
-    double hours = -1.0;
+    // Their hour of the day; before the first midnight with no one to
+    // keep time with.
+    clock_time_t hours = clock_time (-1.0);
     bool met = false;
     bool rode_along = false;
     // What this player wears; the other wears the other.
@@ -135,12 +136,12 @@ namespace moppe::game {
     std::uint32_t snapshots_sent = 0;
     // The clock this player's snapshots are stamped by, the link's clock
     // when it was last read, and how far the simulation has stepped since.
-    double pose_clock = 0.0;
-    double pose_heard = -1.0;
-    double stepped = 0.0;
+    link_time_t pose_clock = link_time (0.0);
+    link_time_t pose_heard = link_time (-1.0);
+    duration_t stepped = 0.0 * si::second;
     // The last thing told of the other player, and when.
     const char* last_notice = nullptr;
-    double notice_at = 0.0;
+    link_time_t notice_at = link_time (0.0);
   };
 }
 

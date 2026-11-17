@@ -726,7 +726,7 @@ namespace moppe::game {
       return m_glider.position ();
     case Doing::Way::passenger:
     case Doing::Way::bus:
-      return m_logic.m_seat_position;
+      return position_value (m_logic.m_seat_position);
     case Doing::Way::driving:
       return visit (
         m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
@@ -744,7 +744,7 @@ namespace moppe::game {
       return m_glider.heading ();
     case Doing::Way::passenger:
     case Doing::Way::bus:
-      return m_logic.m_seat_heading;
+      return direction_value (m_logic.m_seat_heading);
     case Doing::Way::driving:
       return visit (
         m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
@@ -762,7 +762,7 @@ namespace moppe::game {
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
     case Doing::Way::passenger:
     case Doing::Way::bus:
-      return length (m_logic.m_seat_velocity) * 3.6f;
+      return length (velocity_value (m_logic.m_seat_velocity)) * 3.6f;
     case Doing::Way::driving:
       return visit (
         m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
@@ -883,11 +883,12 @@ namespace moppe::game {
     case Doing::Way::passenger: {
       // From the seat, or from behind as the machine's driver is seen.
       const SeatView& view = machine_kind (m_logic.m_doing.machine).view;
-      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.78f +
-                m_logic.m_seat_heading * 0.08f;
-      rig.ahead = m_logic.m_seat_heading;
-      rig.pivot = m_logic.m_seat_position + Vec3 (0, 0.5f, 0);
-      rig.velocity = m_logic.m_seat_velocity;
+      rig.eye = position_value (m_logic.m_seat_position) +
+                direction_value (m_logic.m_seat_up) * 0.78f +
+                direction_value (m_logic.m_seat_heading) * 0.08f;
+      rig.ahead = direction_value (m_logic.m_seat_heading);
+      rig.pivot = position_value (m_logic.m_seat_position) + Vec3 (0, 0.5f, 0);
+      rig.velocity = velocity_value (m_logic.m_seat_velocity);
       rig.distance = view.distance;
       rig.nearest = view.nearest;
       rig.elevation = view.elevation;
@@ -896,11 +897,13 @@ namespace moppe::game {
     case Doing::Way::bus:
       // From the front seat, a sitter's head over it, looking out
       // through the windscreen; or from well behind and above the bus.
-      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.8f +
-                m_logic.m_seat_heading * 0.1f;
-      rig.ahead = m_logic.m_seat_heading;
-      rig.pivot = m_logic.m_seat_position + m_logic.m_seat_up * 1.3f;
-      rig.velocity = m_logic.m_seat_velocity;
+      rig.eye = position_value (m_logic.m_seat_position) +
+                direction_value (m_logic.m_seat_up) * 0.8f +
+                direction_value (m_logic.m_seat_heading) * 0.1f;
+      rig.ahead = direction_value (m_logic.m_seat_heading);
+      rig.pivot = position_value (m_logic.m_seat_position) +
+                  direction_value (m_logic.m_seat_up) * 1.3f;
+      rig.velocity = velocity_value (m_logic.m_seat_velocity);
       rig.distance = 15.0f * u::m;
       rig.nearest = 7.0f * u::m;
       rig.elevation = 14.0f * u::deg;

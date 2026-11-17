@@ -232,8 +232,9 @@ MOPPE_TEST (two_players_buses_keep_the_same_time) {
       CompanionSnapshot theirs;
       theirs.player = players[1 - i];
       theirs.bus_clock =
-        seconds_into_play (bus_time (sessions[1 - i].logic ())) - late;
-      keep_bus_time (sessions[i].logic (), theirs, late + 0.02, players[i]);
+        bus_time (sessions[1 - i].logic ()) - late * si::second;
+      keep_bus_time (
+        sessions[i].logic (), theirs, (late + 0.02) * si::second, players[i]);
     }
     for (GameSession& session : sessions)
       session.logic ().m_total_time =

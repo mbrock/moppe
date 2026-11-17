@@ -14,6 +14,7 @@
 
 #include <moppe/game/camp_state.hh>
 #include <moppe/game/frame_view.hh>
+#include <moppe/game/game_clock.hh>
 
 #include <array>
 #include <cstddef>
@@ -25,19 +26,41 @@
 #include <vector>
 
 namespace moppe::game {
+  // A link's clock (companion_link.hh): seconds since it opened, in
+  // double so long sessions keep their steps. Each machine keeps its
+  // own; a snapshot is stamped by its sender's, and the difference
+  // between the two machines' readings is only ever learnt by watching
+  // (CompanionTrack).
+  inline constexpr struct link_opened final
+      : mp_units::absolute_point_origin<mp_units::isq::time> {
+  } link_opened;
+
+  using link_time_t =
+    mp_units::quantity_point<mp_units::si::second, link_opened, double>;
+
+  // The moment `seconds` after a link opened.
+  constexpr link_time_t link_time (double seconds) {
+    return link_opened + seconds * mp_units::si::second;
+  }
+  // The same as a plain number, for the wire.
+  constexpr double seconds_on_link (link_time_t t) {
+    return t.delta_from (link_opened).numerical_value_in (mp_units::si::second);
+  }
+
   // How one player looks at one moment, as told to the other.
   struct CompanionSnapshot {
     // Which player, a number drawn at launch, and which of their
     // snapshots this is.
     std::uint64_t player = 0;
     std::uint32_t sequence = 0;
-    // The sender's clock when the poses were true, seconds.
-    double sent = 0.0;
+    // The sender's clock when the poses were true.
+    link_time_t sent = link_time (0.0);
     // Which world they stand in (world_tag): poses mean nothing across
     // two different worlds.
     std::uint32_t world = 0;
-    // Their hour of the day, counted on from the first midnight.
-    double day_hours = 0.0;
+    // Their hour of the day, counted on from the first midnight; before
+    // it (negative) when their day does not turn.
+    clock_time_t day_hours = clock_time (0.0);
 
     // What they are doing; riding along, in which of the other
     // player's machines (MachineKind::passenger_seat).
@@ -45,9 +68,9 @@ namespace moppe::game {
     // Their machines, wherever they stand, and them on or in the one
     // they drive.
     FleetPoses fleet {};
-    // Their buses' clock (bus.hh's bus_time), seconds, which the two
-    // games keep together; and on the bus, which bus and which seat.
-    double bus_clock = 0.0;
+    // Their buses' clock (bus.hh's bus_time), which the two games keep
+    // together; and on the bus, which bus and which seat.
+    play_time_t bus_clock = play_time (0.0);
     std::uint8_t bus = 0;
     std::uint8_t bus_seat = 0;
     std::optional<GliderPose> glider;
@@ -57,13 +80,13 @@ namespace moppe::game {
     // it, and the hearth and how high its fire burns.
     bool hung = false;
     HammockSite hammock {};
-    float hammock_load = 0.0f;
-    float swing = 0.0f;
-    float gaze_yaw = 0.0f;
-    float gaze_pitch = 1.1f;
+    proportion_t hammock_load = 0.0f * proportion[one];
+    radians_t swing = 0.0f * si::radian;
+    radians_t gaze_yaw = 0.0f * si::radian;
+    inclination_t gaze_pitch = 1.1f * inclination[si::radian];
     bool hearth_laid = false;
-    Vec3 hearth {};
-    float fire_burn = 0.0f;
+    position_t hearth = position (Vec3 ());
+    proportion_t fire_burn = 0.0f * proportion[one];
     // Which of the world's sanctuaries' beacons they keep burning, one
     // bit each, the first in the lowest (game/places.hh).
     std::uint32_t beacons = 0;
@@ -71,9 +94,10 @@ namespace moppe::game {
     // Their frying pan, if it is on a fire: where, its handle's way,
     // how done (camp.hh's pan_cooked), and the mushrooms in it.
     bool pan_on = false;
-    Vec3 pan_place {};
-    float pan_yaw = 0.0f;
-    float pan_cooked = 0.0f;
+    position_t pan_place = position (Vec3 ());
+    heading_t pan_yaw = 0.0f * heading[si::radian];
+    // From nothing through one, fried golden, to two, burnt black.
+    proportion_t pan_cooked = 0.0f * proportion[one];
     std::uint8_t pan_count = 0;
     std::uint32_t pan_mushrooms[Pan::room] {};
 
@@ -87,7 +111,8 @@ namespace moppe::game {
 
     // Lying in the hammock rather than standing beside it.
     bool lying_down () const {
-      return hung && mode == Doing::on_foot () && hammock_load > 0.5f;
+      return hung && mode == Doing::on_foot () &&
+             hammock_load > 0.5f * proportion[one];
     }
   };
 
@@ -116,8 +141,9 @@ namespace moppe::game {
   // carries the motion on. What does not blend -- the mode, who rides
   // what, the picks -- is `b`'s, and so is the whole of it across a leap
   // too long to have been travelled.
-  CompanionSnapshot
-  blend (const CompanionSnapshot& a, const CompanionSnapshot& b, float t);
+  CompanionSnapshot blend (const CompanionSnapshot& a,
+                           const CompanionSnapshot& b,
+                           blend_weight_t t);
 
   // The same, knowing the snapshots on either side (either may be
   // null): between `a` and `b` they then move along a curve that passes
@@ -126,7 +152,7 @@ namespace moppe::game {
                            const CompanionSnapshot& a,
                            const CompanionSnapshot& b,
                            const CompanionSnapshot* after,
-                           float t);
+                           blend_weight_t t);
 
   // The companion's recent snapshots, played back a little behind their
   // arrival so that there is nearly always one on either side of the
@@ -134,51 +160,52 @@ namespace moppe::game {
   // evenly, with the frames, and is only steered by the arrivals.
   class CompanionTrack {
   public:
-    // How long after their last word they are taken to have gone,
-    // seconds.
-    static constexpr double patience = 3.0;
+    // How long after their last word they are taken to have gone.
+    static constexpr duration_t patience = 3.0 * mp_units::si::second;
 
     // Takes a snapshot that arrived at `now` on this machine's clock;
     // one older than the newest held is dropped.
-    void push (CompanionSnapshot snapshot, double now);
+    void push (CompanionSnapshot snapshot, link_time_t now);
 
     // Whether the companion has been heard from lately.
-    bool present (double now) const;
+    bool present (link_time_t now) const;
 
-    // How far in the past the companion is drawn, seconds: enough to
-    // cover the longest wait between arrivals of late, so a steady link
-    // is followed closely and an uneven one from farther back.
-    double delay () const;
+    // How far in the past the companion is drawn: enough to cover the
+    // longest wait between arrivals of late, so a steady link is
+    // followed closely and an uneven one from farther back.
+    duration_t delay () const;
 
     // Moves the moment drawn on by `elapsed`, the frame's length, and
     // tells how they look then; nothing once they have gone. Where word
     // has run out they are carried on a little way and slow to a stand,
     // and what later word corrects is eased rather than jumped.
-    std::optional<CompanionSnapshot> advance (double now, double elapsed);
+    std::optional<CompanionSnapshot> advance (link_time_t now,
+                                              duration_t elapsed);
 
     void clear ();
 
   private:
     // How they looked at `at` on their clock, going by the first
     // `count` snapshots held.
-    CompanionSnapshot look (std::size_t count, double at) const;
+    CompanionSnapshot look (std::size_t count, link_time_t at) const;
 
     std::deque<CompanionSnapshot> m_snapshots;
-    // The sender's clock less this machine's, eased over arrivals.
-    double m_offset = 0.0;
-    double m_heard = -1e9;
+    // The sender's clock less this machine's, eased over arrivals: a
+    // reading of theirs less this much is the same moment on this one.
+    duration_t m_offset = 0.0 * mp_units::si::second;
+    link_time_t m_heard = link_time (-1e9);
     // The longest wait between arrivals of late.
-    double m_gap = 0.05;
+    duration_t m_gap = 0.05 * mp_units::si::second;
     // How many snapshots have come since the last advance.
     std::size_t m_fresh = 0;
     // The moment drawn, on the sender's clock, and how fast that clock
     // is found to run against this one.
     bool m_playing = false;
-    double m_play = 0.0;
-    double m_rate = 1.0;
+    link_time_t m_play = link_time (0.0);
+    quantity<scale_factor[one], double> m_rate = 1.0 * scale_factor[one];
     // How far the bike, jeep, walker, and glider are still drawn from
     // where the snapshots put them.
-    std::array<Vec3, 4> m_slip {};
+    std::array<displacement_t, 4> m_slip {};
   };
 
   class GameSession;
@@ -186,7 +213,7 @@ namespace moppe::game {
 
   // The passenger's seat of the other player's `machine`, in the world,
   // for those that have one (MachineKind::passenger_seat).
-  Vec3 passenger_seat (const CompanionSnapshot& theirs, Machine machine);
+  position_t passenger_seat (const CompanionSnapshot& theirs, Machine machine);
 
   // On foot beside the passenger's seat of one of the other player's
   // machines -- the one they drive, or one standing on land -- and
@@ -204,14 +231,14 @@ namespace moppe::game {
   void keep_seat (GameLogicState& state, const CompanionSnapshot& theirs);
 
   // Keeps this game's buses' clock (bus_time) with theirs, which is
-  // drawn `behind` seconds late: the game behind by more than a moment
+  // drawn `behind` late: the game behind by more than a moment
   // jumps ahead to the other, so both see the buses of whoever has
   // played longer; then the player with the smaller number (`player`
   // is this one's) follows the other's closely and the other keeps
   // their own, so the two never chase each other on.
   void keep_bus_time (GameLogicState& state,
                       const CompanionSnapshot& theirs,
-                      double behind,
+                      duration_t behind,
                       std::uint64_t player);
 }
 

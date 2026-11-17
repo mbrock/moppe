@@ -38,9 +38,9 @@ namespace moppe::game {
     CompanionLink (const CompanionLink&) = delete;
     CompanionLink& operator= (const CompanionLink&) = delete;
 
-    // This player's number, and the link's own clock in seconds.
+    // This player's number, and the link's own clock.
     std::uint64_t player () const;
-    double now () const;
+    link_time_t now () const;
 
     // Whether it is time to say something: thirty times a second to a
     // companion, once a second while calling out for one.
@@ -48,7 +48,7 @@ namespace moppe::game {
     // Stamps the snapshot with this player, the next sequence number,
     // and `taken`, the moment on this link's clock that its poses were
     // true, and sends it.
-    void send (CompanionSnapshot snapshot, double taken);
+    void send (CompanionSnapshot snapshot, link_time_t taken);
 
     // Every snapshot that has arrived from the companion since the last
     // call, oldest first, each newer than the last taken: one overtaken

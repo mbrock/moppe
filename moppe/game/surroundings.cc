@@ -415,7 +415,8 @@ namespace moppe::game {
     consider (position_value (camp.hearth),
               fire_burn (camp, logic.m_total_time));
     if (around.companion && around.companion->hearth_laid)
-      consider (around.companion->hearth, around.companion->fire_burn);
+      consider (position_value (around.companion->hearth),
+                around.companion->fire_burn.numerical_value_in (one));
     const PlacesPlan& places = places_of (around);
     for (std::size_t i = 0;
          i < places.sanctuaries.size () && i < logic.m_beacon_burn.size ();

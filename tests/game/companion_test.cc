@@ -14,9 +14,9 @@ namespace {
   CompanionSnapshot companion_test_walker (float x, double sent) {
     CompanionSnapshot snapshot;
     snapshot.player = 7;
-    snapshot.sent = sent;
+    snapshot.sent = link_time (sent);
     snapshot.world = world_tag ("play-2048-123");
-    snapshot.day_hours = 9.25;
+    snapshot.day_hours = clock_time (9.25);
     snapshot.mode = Doing::on_foot ();
     snapshot.fleet.bike.position = Vec3 (10, 20, 30);
     WalkerPose walker;
@@ -38,14 +38,14 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.hammock.strap[0] = position (Vec3 (1, 2, 3));
   sent.hammock.strap[1] = position (Vec3 (5, 2, 3));
   sent.hammock.girth[1] = 0.2f * u::m;
-  sent.hammock_load = 0.75f;
+  sent.hammock_load = 0.75f * proportion[one];
   sent.hearth_laid = true;
-  sent.hearth = Vec3 (3, 2, 5);
-  sent.fire_burn = 0.5f;
+  sent.hearth = position (Vec3 (3, 2, 5));
+  sent.fire_burn = 0.5f * proportion[one];
   sent.beacons = 0b101;
   sent.pan_on = true;
-  sent.pan_place = Vec3 (3.3f, 2.2f, 5);
-  sent.pan_cooked = 0.8f;
+  sent.pan_place = position (Vec3 (3.3f, 2.2f, 5));
+  sent.pan_cooked = 0.8f * proportion[one];
   sent.pan_count = 2;
   sent.pan_mushrooms[1] = 77;
   sent.pick_used = 4;
@@ -54,7 +54,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.picks = { 1001, 1002 };
   sent.fleet.boat.position = Vec3 (40, 0, 9);
   sent.fleet.boat.velocity = Vec3 (0, 0, 6.5f);
-  sent.bus_clock = 4321.25;
+  sent.bus_clock = play_time (4321.25);
   sent.bus = 1;
   sent.bus_seat = 1;
   sent.fleet.jet_ski.position = Vec3 (60, 0.1f, -14);
@@ -71,7 +71,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   if (!got)
     return;
   MOPPE_CHECK (got->player == 7 && got->sequence == 99);
-  MOPPE_CHECK (got->world == sent.world && got->day_hours == 9.25);
+  MOPPE_CHECK (got->world == sent.world && got->day_hours == clock_time (9.25));
   MOPPE_CHECK (got->mode == Doing::on_foot () && !got->glider && got->walker);
   MOPPE_CHECK_NEAR (got->walker->position[0], 12.5f, 1e-6f);
   MOPPE_CHECK_NEAR (got->walker->heading[0], 1.0f, 1e-6f);
@@ -82,17 +82,17 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (position_value (got->hammock.strap[1])[0], 5.0f, 1e-6f);
   MOPPE_CHECK_NEAR (meters_value (got->hammock.girth[1]), 0.2f, 1e-6f);
   MOPPE_CHECK (got->hearth_laid);
-  MOPPE_CHECK_NEAR (got->fire_burn, 0.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fire_burn.numerical_value_in (one), 0.5f, 1e-6f);
   MOPPE_CHECK (got->beacons == 0b101);
   MOPPE_CHECK (got->pan_on && got->pan_count == 2);
   MOPPE_CHECK (got->pan_mushrooms[1] == 77 && got->pick_used == 4);
-  MOPPE_CHECK_NEAR (got->pan_cooked, 0.8f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->pan_place[0], 3.3f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->pan_cooked.numerical_value_in (one), 0.8f, 1e-6f);
+  MOPPE_CHECK_NEAR (position_value (got->pan_place)[0], 3.3f, 1e-6f);
   MOPPE_CHECK (got->pick_count == 40 && got->picks_from == 38);
   MOPPE_CHECK (got->picks == sent.picks);
   MOPPE_CHECK_NEAR (got->fleet.boat.position[0], 40.0f, 1e-6f);
   MOPPE_CHECK_NEAR (got->fleet.boat.velocity[2], 6.5f, 1e-6f);
-  MOPPE_CHECK (got->bus_clock == 4321.25 && got->bus == 1 &&
+  MOPPE_CHECK (got->bus_clock == play_time (4321.25) && got->bus == 1 &&
                got->bus_seat == 1);
   MOPPE_CHECK_NEAR (got->fleet.jet_ski.position[2], -14.0f, 1e-6f);
   MOPPE_CHECK_NEAR (got->fleet.jet_ski.steer_radians, -0.3f, 1e-6f);
@@ -168,11 +168,11 @@ namespace {
         while (!silent && told / 30.0 <= theirs) {
           track.push (companion_test_walker (static_cast<float> (told / 3.0),
                                              told / 30.0),
-                      now);
+                      link_time (now));
           ++told;
         }
         const std::optional<CompanionSnapshot> seen =
-          track.advance (now, 1.0 / 60.0);
+          track.advance (link_time (now), 1.0 / 60.0 * si::second);
         MOPPE_CHECK (seen && seen->walker);
         if (seen && seen->walker)
           drawn.push_back (seen->walker->position[0]);
@@ -185,7 +185,7 @@ MOPPE_TEST (a_companion_is_drawn_evenly_a_moment_behind) {
   CompanionPlayback playback;
   playback.play (4.0);
   // A steady link is followed closely.
-  const double delay = playback.track.delay ();
+  const double delay = playback.track.delay ().numerical_value_in (si::second);
   MOPPE_CHECK (delay >= 0.05 && delay < 0.09);
   MOPPE_CHECK_NEAR (
     playback.drawn.back (), static_cast<float> ((4.0 - delay) * 10.0), 0.25f);
@@ -208,7 +208,7 @@ MOPPE_TEST (a_companion_does_not_jump_when_late_word_comes) {
     MOPPE_CHECK (step > -1e-4f && step < 2.5f * pace);
   }
   // An uneven link is followed from farther back.
-  MOPPE_CHECK (playback.track.delay () > 0.2);
+  MOPPE_CHECK (playback.track.delay () > 0.2 * si::second);
 }
 
 MOPPE_TEST (a_silent_companion_stands_and_then_is_gone) {
@@ -221,7 +221,7 @@ MOPPE_TEST (a_silent_companion_stands_and_then_is_gone) {
   for (int frame = 0; frame < 120; ++frame) {
     now += 1.0 / 60.0;
     const std::optional<CompanionSnapshot> seen =
-      track.advance (now, 1.0 / 60.0);
+      track.advance (link_time (now), 1.0 / 60.0 * si::second);
     MOPPE_CHECK (seen && seen->walker);
     if (!seen || !seen->walker)
       return;
@@ -230,9 +230,9 @@ MOPPE_TEST (a_silent_companion_stands_and_then_is_gone) {
   }
   // Carried on a little past the last word, and no farther.
   MOPPE_CHECK (before > last + 1.0f && before < last + 2.1f);
-  MOPPE_CHECK (track.present (now));
-  MOPPE_CHECK (!track.present (now + 3.0));
-  MOPPE_CHECK (!track.advance (now + 3.0, 1.0 / 60.0));
+  MOPPE_CHECK (track.present (link_time (now)));
+  MOPPE_CHECK (!track.present (link_time (now + 3.0)));
+  MOPPE_CHECK (!track.advance (link_time (now + 3.0), 1.0 / 60.0 * si::second));
 }
 
 MOPPE_TEST (a_companion_rounds_the_corners_between_snapshots) {
@@ -242,9 +242,12 @@ MOPPE_TEST (a_companion_rounds_the_corners_between_snapshots) {
     told[i] = companion_test_walker (static_cast<float> (i * i), 0.1 * i);
   // Straight between the middle two is 2.5; the truth is 2.25.
   MOPPE_CHECK_NEAR (
-    blend (told[1], told[2], 0.5f).walker->position[0], 2.5f, 1e-4f);
+    blend (told[1], told[2], 0.5f * blend_weight[one]).walker->position[0],
+    2.5f,
+    1e-4f);
   MOPPE_CHECK_NEAR (
-    blend (&told[0], told[1], told[2], &told[3], 0.5f).walker->position[0],
+    blend (&told[0], told[1], told[2], &told[3], 0.5f * blend_weight[one])
+      .walker->position[0],
     2.25f,
     1e-4f);
 }
@@ -252,13 +255,15 @@ MOPPE_TEST (a_companion_rounds_the_corners_between_snapshots) {
 MOPPE_TEST (a_companion_does_not_slide_across_a_leap) {
   const CompanionSnapshot here = companion_test_walker (0.0f, 0.0);
   CompanionSnapshot there = companion_test_walker (500.0f, 0.1);
-  const CompanionSnapshot seen = blend (here, there, 0.5f);
+  const CompanionSnapshot seen = blend (here, there, 0.5f * blend_weight[one]);
   MOPPE_CHECK_NEAR (seen.walker->position[0], 500.0f, 1e-3f);
   // The stride turns the short way round its cycle.
   CompanionSnapshot stepped = companion_test_walker (0.5f, 0.1);
   stepped.walker->stride_phase = 0.1f;
   MOPPE_CHECK_NEAR (
-    blend (here, stepped, 0.5f).walker->stride_phase, 0.0f, 1e-4f);
+    blend (here, stepped, 0.5f * blend_weight[one]).walker->stride_phase,
+    0.0f,
+    1e-4f);
 }
 
 MOPPE_TEST (two_links_on_one_machine_find_each_other) {

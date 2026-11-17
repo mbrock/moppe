@@ -104,7 +104,7 @@ namespace moppe {
 
       // The companion's pose clock counts only time the world was stepped
       // by, at the step it was stepped by.
-      m_company.stepped += dt;
+      m_company.stepped += dt * si::second;
       logic ().m_total_time += dt * si::second;
       const float total_time =
         static_cast<float> (seconds_into_play (logic ().m_total_time));
