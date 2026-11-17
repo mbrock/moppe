@@ -96,24 +96,25 @@ namespace moppe::game {
         };
 
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis = frame.transform_point (model::saddle) + up * 0.07f;
+        hold.facing = unit_direction (facing);
+        hold.up = unit_direction (up);
+        hold.pelvis =
+          position (frame.transform_point (model::saddle) + up * 0.07f);
         hold.gaze = facing * std::cos (0.25f) - up * std::sin (0.25f);
         hold.head_up = up;
-        hold.sole = facing;
-        hold.instep = up;
+        hold.sole = unit_direction (facing);
+        hold.instep = unit_direction (up);
 
         // The most upright lean whose shoulders reach the grips, or failing
         // that, the lean that comes closest.
         const float reach =
-          0.9f * (avatar_size::upper_arm + avatar_size::forearm);
+          0.9f * meters_value (avatar_size::upper_arm + avatar_size::forearm);
         float best_lean = 0.0f, best_span = 1e9f;
         for (float lean = 0.0f; lean <= 1.3f; lean += 0.04f) {
-          hold.lean = lean;
-          const float span =
-            std::max (length (held_shoulder (hold, 0) - grip[0]),
-                      length (held_shoulder (hold, 1) - grip[1]));
+          hold.lean = lean * u::rad;
+          const float span = std::max (
+            length (position_value (held_shoulder (hold, 0)) - grip[0]),
+            length (position_value (held_shoulder (hold, 1)) - grip[1]));
           if (span <= reach) {
             best_lean = lean;
             break;
@@ -123,17 +124,18 @@ namespace moppe::game {
             best_lean = lean;
           }
         }
-        hold.lean = best_lean;
+        hold.lean = best_lean * u::rad;
 
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
+          const Vec3 shoulder = position_value (held_shoulder (hold, i));
+          hold.wrist[i] =
+            position (grip[i] - normalized (grip[i] - shoulder) * 0.07f);
           hold.elbow_pole[i] = right * side - up * 0.4f - facing * 0.2f;
           // The ankle stands above and behind the ball of the foot.
           const Vec3 pedal =
             frame.transform_point (pedal_at (bike, i == 0 ? -1 : 1));
-          hold.ankle[i] =
+          position_value (hold.ankle[i]) =
             pedal - right * (side * 0.03f) + up * 0.07f - facing * 0.08f;
           hold.knee_pole[i] = facing + up * 0.2f + right * (side * 0.12f);
         }

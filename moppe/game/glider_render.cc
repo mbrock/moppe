@@ -43,24 +43,26 @@ namespace moppe::game {
       const float sway = std::sin (time * 3.1f) * 0.035f;
 
       HoldPose hold;
-      hold.facing = -up;
-      hold.up = forward;
-      hold.pelvis = frame.transform_point (glider_model::harness) - up * 0.12f -
-                    forward * 0.08f + right * sway;
-      hold.lean = -0.2f;
+      hold.facing = unit_direction (-up);
+      hold.up = unit_direction (forward);
+      hold.pelvis = position (frame.transform_point (glider_model::harness) -
+                              up * 0.12f - forward * 0.08f + right * sway);
+      hold.lean = (-0.2f) * u::rad;
       hold.gaze = normalized (forward - up * 0.15f);
       hold.head_up = up;
-      hold.sole = -forward;
-      hold.instep = -up;
+      hold.sole = unit_direction (-forward);
+      hold.instep = unit_direction (-up);
       const Vec3 grip[2] = { frame.transform_point (glider_model::grip_left),
                              frame.transform_point (glider_model::grip_right) };
       for (int i = 0; i < 2; ++i) {
         const float side = i == 0 ? -1.0f : 1.0f;
-        const Vec3 shoulder = held_shoulder (hold, i);
-        hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
+        const Vec3 shoulder = position_value (held_shoulder (hold, i));
+        hold.wrist[i] =
+          position (grip[i] - normalized (grip[i] - shoulder) * 0.07f);
         hold.elbow_pole[i] = right * (side * 0.8f) - up * 0.5f;
-        hold.ankle[i] =
-          hold.pelvis - forward * 0.84f + up * 0.03f + right * (side * 0.1f);
+        position_value (hold.ankle[i]) = position_value (hold.pelvis) -
+                                         forward * 0.84f + up * 0.03f +
+                                         right * (side * 0.1f);
         hold.knee_pole[i] = -up;
       }
       return pose_holding (hold);

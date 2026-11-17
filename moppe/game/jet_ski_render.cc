@@ -61,25 +61,27 @@ namespace moppe::game {
                                jet_ski_model::grip_left };
 
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis =
+        hold.facing = unit_direction (facing);
+        hold.up = unit_direction (up);
+        position_value (hold.pelvis) =
           frame.transform_point (jet_ski_model::seat) + hull_up * 0.09f;
-        hold.lean = 0.40f;
+        hold.lean = 0.40f * u::rad;
         // Looking where the turn goes.
         hold.gaze = normalized (facing + hull_up * 0.04f -
                                 hull_left * (0.6f * ski.steer_radians));
         hold.head_up = hull_up;
-        hold.sole = facing;
-        hold.instep = hull_up;
+        hold.sole = unit_direction (facing);
+        hold.instep = unit_direction (hull_up);
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
           const Vec3 hand =
             bars.transform_point (grip[i] - jet_ski_model::column);
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = hand - normalized (hand - shoulder) * 0.07f;
+          const Vec3 shoulder = position_value (held_shoulder (hold, i));
+          hold.wrist[i] =
+            position (hand - normalized (hand - shoulder) * 0.07f);
           hold.elbow_pole[i] = left * side - up * 0.5f - facing * 0.2f;
-          hold.ankle[i] = frame.transform_point (foot[i]) + hull_up * 0.085f;
+          hold.ankle[i] =
+            position (frame.transform_point (foot[i]) + hull_up * 0.085f);
           hold.knee_pole[i] = up + facing * 0.7f + left * (side * 0.55f);
         }
         return pose_holding (hold);
@@ -104,21 +106,23 @@ namespace moppe::game {
                                jet_ski_model::foot_left + behind };
 
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis = frame.transform_point (jet_ski_model::seat + behind) +
-                      hull_up * 0.09f;
-        hold.lean = 0.25f;
+        hold.facing = unit_direction (facing);
+        hold.up = unit_direction (up);
+        hold.pelvis =
+          position (frame.transform_point (jet_ski_model::seat + behind) +
+                    hull_up * 0.09f);
+        hold.lean = 0.25f * u::rad;
         hold.gaze = normalized (facing + hull_up * 0.08f);
         hold.head_up = hull_up;
-        hold.sole = facing;
-        hold.instep = hull_up;
+        hold.sole = unit_direction (facing);
+        hold.instep = unit_direction (hull_up);
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
-          hold.wrist[i] = frame.transform_point (
-            jet_ski_model::seat + Vec3 (side * 0.17f, 0.30f, -0.05f));
+          hold.wrist[i] = position (frame.transform_point (
+            jet_ski_model::seat + Vec3 (side * 0.17f, 0.30f, -0.05f)));
           hold.elbow_pole[i] = left * side - up * 0.5f;
-          hold.ankle[i] = frame.transform_point (foot[i]) + hull_up * 0.085f;
+          hold.ankle[i] =
+            position (frame.transform_point (foot[i]) + hull_up * 0.085f);
           hold.knee_pole[i] = up + facing * 0.7f + left * (side * 0.55f);
         }
         return pose_holding (hold);

@@ -291,18 +291,28 @@ MOPPE_TEST (avatar_plants_its_stance_foot_while_walking) {
          guard++ < 400)
     walker.update (seconds (walker_test_step), surface, world);
   const game::AvatarSkeleton before =
-    game::pose_avatar (game::walker_pose (walker), 0.0f);
+    game::pose_avatar (game::walker_pose (walker), 0.0f * u::s);
   walk_for (walker, 0.1f, surface, world);
   const game::AvatarSkeleton after =
-    game::pose_avatar (game::walker_pose (walker), 0.0f);
-  MOPPE_CHECK (after.pelvis[0] - before.pelvis[0] > 0.25f);
-  MOPPE_CHECK_NEAR (after.ankle[0][0], before.ankle[0][0], 0.02f);
-  MOPPE_CHECK_NEAR (after.ankle[0][1], before.ankle[0][1], 0.02f);
+    game::pose_avatar (game::walker_pose (walker), 0.0f * u::s);
+  MOPPE_CHECK (position_value (after.pelvis)[0] -
+                 position_value (before.pelvis)[0] >
+               0.25f);
+  MOPPE_CHECK_NEAR (position_value (after.ankle[0])[0],
+                    position_value (before.ankle[0])[0],
+                    0.02f);
+  MOPPE_CHECK_NEAR (position_value (after.ankle[0])[1],
+                    position_value (before.ankle[0])[1],
+                    0.02f);
   // Limbs keep their lengths through the IK.
   MOPPE_CHECK_NEAR (
-    length (after.knee[1] - after.hip[1]), game::avatar_size::thigh, 1e-3f);
+    length (position_value (after.knee[1]) - position_value (after.hip[1])),
+    meters_value (game::avatar_size::thigh),
+    1e-3f);
   MOPPE_CHECK_NEAR (
-    length (after.ankle[1] - after.knee[1]), game::avatar_size::shin, 1e-3f);
+    length (position_value (after.ankle[1]) - position_value (after.knee[1])),
+    meters_value (game::avatar_size::shin),
+    1e-3f);
 }
 
 MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {

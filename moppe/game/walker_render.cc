@@ -32,17 +32,18 @@ namespace moppe::game {
     // little out from the thigh so the legs swing past it.
     BasketFrame basket_frame (const AvatarSkeleton& k) {
       const Vec3 up (0, 1, 0);
-      Vec3 forward = k.forward;
+      Vec3 forward = direction_value (k.forward);
       forward[1] = 0.0f;
       forward =
         length2 (forward) > 1e-6f ? normalized (forward) : Vec3 (0, 0, 1);
       const Vec3 side = cross (up, forward);
-      Vec3 hand = k.wrist[0];
-      const Vec3 along = k.wrist[0] - k.elbow[0];
+      Vec3 hand = position_value (k.wrist[0]);
+      const Vec3 along =
+        position_value (k.wrist[0]) - position_value (k.elbow[0]);
       if (length2 (along) > 1e-6f)
         hand += normalized (along) * 0.07f;
       // Out from the body: the left hand's side.
-      const Vec3 out = k.right * -0.09f;
+      const Vec3 out = direction_value (k.right) * -0.09f;
       return { .rim = hand + out - up * handle_rise,
                .forward = forward,
                .side = side,
@@ -235,12 +236,15 @@ namespace moppe::game {
                       float time,
                       std::span<const MushroomSite> basket,
                       Outfit outfit) {
-    const AvatarSkeleton k = pose_avatar (walker, time);
+    const AvatarSkeleton k = pose_avatar (walker, time * u::s);
     figure::draw (draw, k, outfit);
     draw_basket (draw, basket_frame (k), basket);
     if (walker.rope_end)
-      draw_rope (
-        draw, k.wrist[1] + (k.wrist[1] - k.elbow[1]) * 0.25f, *walker.rope_end);
+      draw_rope (draw,
+                 position_value (k.wrist[1]) +
+                   (position_value (k.wrist[1]) - position_value (k.elbow[1])) *
+                     0.25f,
+                 *walker.rope_end);
     if (walker.rod)
       draw_rod (draw, k, *walker.rod, time);
   }
@@ -249,7 +253,7 @@ namespace moppe::game {
                       const WalkerPose& walker,
                       float time,
                       std::span<const MushroomSite> basket) {
-    const AvatarSkeleton k = pose_avatar (walker, time);
+    const AvatarSkeleton k = pose_avatar (walker, time * u::s);
     draw_basket (draw, basket_frame (k), basket);
     if (walker.rod)
       draw_rod (draw, k, *walker.rod, time);

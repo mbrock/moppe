@@ -443,12 +443,15 @@ namespace moppe::game {
 
   Vec3 rod_hand (const AvatarSkeleton& k, float raise) {
     using namespace fishing_parts;
-    const Vec3 chest_right =
-      unit_or (cross (k.chest_up, k.chest_forward), k.right);
+    const Vec3 chest_right = unit_or (
+      cross (direction_value (k.chest_up), direction_value (k.chest_forward)),
+      direction_value (k.right));
     // Out before the belly; swung back, up by the shoulder.
     const float back = smoothstep (1.2f, 1.9f, raise);
-    return k.shoulder[1] + k.chest_forward * mix (0.36f, 0.12f, back) +
-           k.chest_up * mix (-0.24f, 0.12f, back) + chest_right * 0.04f;
+    return position_value (k.shoulder[1]) +
+           direction_value (k.chest_forward) * mix (0.36f, 0.12f, back) +
+           direction_value (k.chest_up) * mix (-0.24f, 0.12f, back) +
+           chest_right * 0.04f;
   }
 
   void draw_rod (render::DrawList& dl,
@@ -456,12 +459,13 @@ namespace moppe::game {
                  const RodPose& rod,
                  float time) {
     using namespace fishing_parts;
-    const Vec3 hand = k.wrist[1];
+    const Vec3 hand = position_value (k.wrist[1]);
     // The rod points out over the water the line runs to, which need not
     // be the way the angler faces: one at a boat's helm casts over the
     // side.
-    const Vec3 ahead = unit_or (flat (rod.water - hand),
-                                unit_or (flat (k.forward), Vec3 (0, 0, 1)));
+    const Vec3 ahead =
+      unit_or (flat (rod.water - hand),
+               unit_or (flat (direction_value (k.forward)), Vec3 (0, 0, 1)));
     const Vec3 right = unit_or (cross (world_up, ahead), Vec3 (1, 0, 0));
     const Vec3 along =
       normalized (ahead * std::cos (rod.raise) +
@@ -526,7 +530,7 @@ namespace moppe::game {
 
     if (rod.fish_on) {
       // Out of the water it hangs from its mouth; in it, it heads away.
-      const Vec3 away = unit_or (flat (end - k.pelvis), ahead);
+      const Vec3 away = unit_or (flat (end - position_value (k.pelvis)), ahead);
       const Vec3 along_fish = unit_or (mix (-world_up, away, rod.out), away);
       const Vec3 side = unit_or (cross (along_fish, world_up), right);
       const Vec3 back =

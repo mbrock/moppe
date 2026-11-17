@@ -132,20 +132,24 @@ MOPPE_TEST (a_sleeper_lies_in_the_sag_of_the_cloth) {
   const AvatarSkeleton lying = pose_resting (site, 0.0f, Vec3 (0, 1, 0), 0.0f);
   // Between the trees, below the straps, clear of the ground, on their
   // back with their head toward the second tree.
-  MOPPE_CHECK (lying.pelvis[0] > 101.0f && lying.pelvis[0] < 103.0f);
-  MOPPE_CHECK (lying.pelvis[1] < site.strap[0][1] - 0.3f);
-  MOPPE_CHECK (lying.pelvis[1] > 10.45f);
-  MOPPE_CHECK (lying.forward[1] > 0.9f);
-  MOPPE_CHECK (lying.head[0] > lying.pelvis[0] + 0.4f);
-  MOPPE_CHECK (lying.ankle[0][0] < lying.pelvis[0] - 0.5f);
+  MOPPE_CHECK (position_value (lying.pelvis)[0] > 101.0f &&
+               position_value (lying.pelvis)[0] < 103.0f);
+  MOPPE_CHECK (position_value (lying.pelvis)[1] < site.strap[0][1] - 0.3f);
+  MOPPE_CHECK (position_value (lying.pelvis)[1] > 10.45f);
+  MOPPE_CHECK (direction_value (lying.forward)[1] > 0.9f);
+  MOPPE_CHECK (position_value (lying.head)[0] >
+               position_value (lying.pelvis)[0] + 0.4f);
+  MOPPE_CHECK (position_value (lying.ankle[0])[0] <
+               position_value (lying.pelvis)[0] - 0.5f);
   // Their eyes look up and along their own length.
   const Vec3 eye = resting_eye (site, 0.0f);
-  MOPPE_CHECK (length (eye - lying.head) < 0.3f);
+  MOPPE_CHECK (length (eye - position_value (lying.head)) < 0.3f);
   const Vec3 gaze = resting_gaze (site, 0.0f, 1.1f);
   MOPPE_CHECK (gaze[1] > 0.8f && gaze[0] < 0.0f);
   // A swing carries the sleeper sideways.
   const AvatarSkeleton swung = pose_resting (site, 0.3f, Vec3 (0, 1, 0), 0.0f);
-  MOPPE_CHECK (std::fabs (swung.pelvis[2] - lying.pelvis[2]) > 0.1f);
+  MOPPE_CHECK (std::fabs (position_value (swung.pelvis)[2] -
+                          position_value (lying.pelvis)[2]) > 0.1f);
 }
 
 MOPPE_TEST (the_fire_catches_burns_and_dies) {

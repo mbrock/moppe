@@ -566,30 +566,33 @@ namespace moppe::game {
     const float breath = 0.006f * std::sin (time * 1.3f);
 
     HoldPose hold;
-    hold.facing = facing;
-    hold.up = headward;
+    hold.facing = unit_direction (facing);
+    hold.up = unit_direction (headward);
     // High enough in the cloth that the pack on their back stays in it.
-    hold.pelvis = s.centre (at) + s.normal (at) * 0.21f;
-    hold.lean = 0.16f;
+    hold.pelvis = position (s.centre (at) + s.normal (at) * 0.21f);
+    hold.lean = 0.16f * u::rad;
     // The head rests back; it turns only part of the way after the eyes.
     hold.gaze = normalized (facing + normalized (gaze) * 0.7f);
     hold.head_up = s.tangent (at + 0.22f);
     const float cross_ankles = 0.86f / span;
     for (int i = 0; i < 2; ++i) {
       const float side = i == 0 ? -1.0f : 1.0f;
-      hold.wrist[i] = hold.pelvis + headward * 0.25f +
-                      facing * (0.13f + breath) + right * (side * 0.035f);
+      hold.wrist[i] =
+        position (position_value (hold.pelvis) + headward * 0.25f +
+                  facing * (0.13f + breath) + right * (side * 0.035f));
       hold.elbow_pole[i] = right * side - facing * 0.4f;
       const float foot = at - cross_ankles;
-      hold.ankle[i] = s.centre (foot) + s.normal (foot) * (0.10f + 0.05f * i) +
-                      s.side * (side * 0.03f);
+      hold.ankle[i] =
+        position (s.centre (foot) + s.normal (foot) * (0.10f + 0.05f * i) +
+                  s.side * (side * 0.03f));
       hold.knee_pole[i] = facing + right * (side * 0.2f);
     }
     // The feet fall slack, toes up and a little away.
     const Vec3 at_feet = s.normal (at - cross_ankles);
     const Vec3 to_head = s.tangent (at - cross_ankles);
-    hold.sole = normalized (at_feet * 0.82f - to_head * 0.57f);
-    hold.instep = normalized (to_head * 0.82f + at_feet * 0.57f);
+    hold.sole = unit_direction (normalized (at_feet * 0.82f - to_head * 0.57f));
+    hold.instep =
+      unit_direction (normalized (to_head * 0.82f + at_feet * 0.57f));
     return pose_holding (hold);
   }
 
@@ -597,7 +600,7 @@ namespace moppe::game {
     using namespace camp_parts;
     const Shape s = shape_of (site, 1.0f, swing);
     const AvatarSkeleton k = pose_resting (site, swing, s.up, 0.0f);
-    return k.head + s.normal (0.6f) * 0.09f;
+    return position_value (k.head) + s.normal (0.6f) * 0.09f;
   }
 
   Vec3 resting_gaze (const HammockSite& site, float yaw, float pitch) {
