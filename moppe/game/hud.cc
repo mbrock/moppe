@@ -1603,6 +1603,47 @@ namespace moppe {
         const bool trailhead =
           pin.kind == Kind::Place && pin.place == Place::Trailhead;
         const bool place = pin.kind == Kind::Place && !trailhead;
+        if (pin.kind == Kind::Bus || pin.kind == Kind::BusStop) {
+          // The buses and their stops show only on the chart: a bus as
+          // a red dot ringed in cream, a stop as a little yellow one.
+          if (off > 0.95f * r)
+            continue;
+          const bool bus = pin.kind == Kind::Bus;
+          const float size = bus ? 3.6f : 2.0f;
+          const float x = cx + sx, y = cy + sy;
+          place_shape (text,
+                       m_shape->shade,
+                       x,
+                       y + 0.5f,
+                       size + 2.0f,
+                       0.0f,
+                       0.0f,
+                       0.0f,
+                       0.0f,
+                       0.30f * alpha,
+                       3.0f);
+          place_shape (text,
+                       m_shape->shade,
+                       x,
+                       y,
+                       size + 1.2f,
+                       0.0f,
+                       bus ? 0.92f : 0.06f,
+                       bus ? 0.87f : 0.42f,
+                       bus ? 0.72f : 0.22f,
+                       alpha);
+          place_shape (text,
+                       m_shape->shade,
+                       x,
+                       y,
+                       size,
+                       0.0f,
+                       pin.red,
+                       pin.green,
+                       pin.blue,
+                       alpha);
+          continue;
+        }
         if (place) {
           // Named places stay on the chart only while they are on it:
           // a peak as a triangle, the landing and an outlet as a ring.

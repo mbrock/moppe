@@ -37,6 +37,7 @@ namespace moppe {
                .company = m_company,
                .mushrooms = m_mushrooms,
                .places = m_places.layout,
+               .bus = m_places.bus,
                .place_names = m_place_names,
                .home_base = m_home_base_position,
                .sky = m_sky.sky () };

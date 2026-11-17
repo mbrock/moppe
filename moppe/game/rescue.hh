@@ -48,6 +48,9 @@ namespace moppe::game {
     Vec3 towed_forward { 0, 0, 1 };
     Vec3 towed_up { 0, 1, 0 };
     kilograms_t towed_mass = 1.0f * u::kg;
+    // Its own bumpers, in place of its kind's: what is not one of the
+    // players' machines (a bus, bus.hh).
+    std::span<const Bumper> bumpers;
 
     Vec3 point (const Vec3& local) const;
   };

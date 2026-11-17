@@ -294,10 +294,13 @@ namespace moppe {
       obstacles.insert (obstacles.end (),
                         m_boulders.colliders ().begin (),
                         m_boulders.colliders ().end ());
-      if (with_places)
+      if (with_places) {
         obstacles.insert (obstacles.end (),
                           m_places.landscape.colliders ().begin (),
                           m_places.landscape.colliders ().end ());
+        const std::vector<mov::Trunk> stops = bus_stop_colliders (m_places.bus);
+        obstacles.insert (obstacles.end (), stops.begin (), stops.end ());
+      }
       const Vec3 period = extent_value (generated_world ().forest ().period);
       m_trunk_field.set_trunks (std::move (obstacles), period[0], period[2]);
       if (m_trunk_field.trunk_count () && !with_places)
@@ -315,7 +318,8 @@ namespace moppe {
       place_stars_and_player ();
       m_places.plan (world_ground (),
                      session (),
-                     static_cast<std::uint32_t> (recipe ().seed ().value));
+                     static_cast<std::uint32_t> (recipe ().seed ().value),
+                     m_place_names);
       grow_global_forest ();
       scatter_boulders ();
       grow_mushrooms ();
@@ -365,6 +369,12 @@ namespace moppe {
         logic ().m_cam_mode = CAM_CHASE;
       }
       m_walk.stage (script_stage ());
+      // MOPPE_MAP=whole|near: the map unfolded from the start, for a
+      // capture of it.
+      if (const char* map = moppe::environment ("MOPPE_MAP"))
+        m_heads_up.map.show (std::string_view (map) == "near"
+                               ? MapSheet::View::Near
+                               : MapSheet::View::Whole);
       // The mouse looks around during play; M hands it back.
       platform::set_pointer_captured (true);
       m_opening.plan (generated_world (),

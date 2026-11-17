@@ -99,6 +99,8 @@ namespace moppe {
       const FrameActors& actors = frame.actors;
       cast_fleet (r, m_caster_dl, actors.fleet);
       m_places.landscape.cast_shadows (r, frame.camera.position);
+      m_places.bus_view.cast_shadows (
+        r, m_places.bus, logic ().m_total_time, frame.camera.position);
       render_animals (
         r,
         session ().animals ().animals (),
@@ -418,6 +420,12 @@ namespace moppe {
       if (visibility.star_effects)
         session ().stars ().render (r, frame.environment);
       draw_scan (r, frame);
+      m_places.bus_view.draw_board (r,
+                                    m_heads_up.hud.font (),
+                                    m_places.bus,
+                                    logic ().m_total_time,
+                                    session ().subject_position (),
+                                    static_cast<float> (r.height_pts ()));
     }
 
     void MoppeGame::draw_water_surfaces (render::Renderer& r,

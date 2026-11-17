@@ -4,6 +4,7 @@
 #ifndef MOPPE_GAME_HEADS_UP_HH
 #define MOPPE_GAME_HEADS_UP_HH
 
+#include <moppe/game/bus.hh>
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/map_sheet.hh>
@@ -31,6 +32,8 @@ namespace moppe::game {
     const Companionship& company;
     const MushroomPatch& mushrooms;
     const PlacesPlan& places;
+    // The bus round the loop and its stops (bus.hh).
+    const BusLine& bus;
     // Each road place's name (place_names.hh).
     const std::vector<std::string>& place_names;
     Vec3 home_base;

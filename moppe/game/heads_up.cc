@@ -714,6 +714,14 @@ namespace moppe::game {
           .position = camp.hung ? hammock_middle (camp.hammock) : camp.hearth,
           .colour = DisplayColor (0.80f, 0.38f, 0.08f),
           .name = "camp" });
+    // The buses where the timetable has them, and their stops; the
+    // stops last of all, so drawn under everything.
+    for (const BusPose& bus : w.bus.where (w.session.logic ().m_total_time))
+      marks.push_back ({ .kind = Mark::Kind::Bus,
+                         .position = bus.position,
+                         .heading = bus.forward,
+                         .colour = DisplayColor (0.66f, 0.09f, 0.07f),
+                         .name = "bus" });
     using Place = terrain::RoadPlace::Kind;
     marks.push_back ({ .kind = Mark::Kind::Place,
                        .position = w.home_base,
@@ -737,6 +745,16 @@ namespace moppe::game {
           .name = w.place_names[p].c_str (),
           .place = place.kind });
     }
+    // A stop called after a place it stands at is named by the place.
+    for (const BusStop& stop : w.bus.stops ())
+      marks.push_back ({ .kind = Mark::Kind::BusStop,
+                         .position = stop.sign,
+                         .heading = stop.forward,
+                         .colour = DisplayColor (0.97f, 0.80f, 0.12f),
+                         .name = std::ranges::find (w.place_names, stop.name) !=
+                                     w.place_names.end ()
+                                   ? ""
+                                   : stop.name.c_str () });
     return marks;
   }
 
@@ -774,6 +792,8 @@ namespace moppe::game {
                  : mark.kind == Kind::Bike    ? Pin::Kind::Bike
                  : mark.kind == Kind::Camp    ? Pin::Kind::Camp
                  : mark.kind == Kind::Place   ? Pin::Kind::Place
+                 : mark.kind == Kind::Bus     ? Pin::Kind::Bus
+                 : mark.kind == Kind::BusStop ? Pin::Kind::BusStop
                                               : Pin::Kind::Machine;
       pin.place = mark.place;
       pin.x_m = mark.position[0];

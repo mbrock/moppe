@@ -3,7 +3,9 @@
 
 #include <moppe/terrain/roads.hh>
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,15 @@ namespace moppe::game {
   // else changes, and no two places share one.
   [[nodiscard]] std::vector<std::string>
   name_places (const terrain::RoadNetwork& network, std::uint32_t seed);
+
+  // A name for a bus stop of its own (game/bus.hh), the `index`th rolled
+  // for the world: a stem of the country round it and a hamlet's, a
+  // hill's, or a bend's ending, or a farm's (-gården) for one by a
+  // farmstead; none of `taken`.
+  [[nodiscard]] std::string name_bus_stop (std::uint32_t seed,
+                                           std::size_t index,
+                                           bool farm,
+                                           std::span<const std::string> taken);
 }
 
 #endif

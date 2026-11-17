@@ -7,7 +7,9 @@
 #include <moppe/game/world_places.hh>
 #include <moppe/render/renderer.hh>
 
+#include <cstdlib>
 #include <iostream>
+#include <string>
 
 namespace moppe::game {
   void WalkScripts::stage (const ScriptStage& s) {
@@ -178,6 +180,20 @@ namespace moppe::game {
         else
           stand = { at (-4.3f, -2.6f), at (-6.0f, -2.6f) };
       }
+    } else if (script.starts_with ("bus-stop") &&
+               !s.places.bus.stops ().empty ()) {
+      // MOPPE_WALK=bus-stop[:N]: on the verge a little back from the
+      // Nth stop (the first, where the first bus stands as play begins),
+      // looking past its sign up the road the bus goes on along.
+      std::size_t n = 0;
+      if (script.size () > 9)
+        n = static_cast<std::size_t> (std::strtoul (
+              std::string (script.substr (9)).c_str (), nullptr, 10)) %
+            s.places.bus.stops ().size ();
+      const BusStop& stop = s.places.bus.stops ()[n];
+      const Vec3 right (-stop.forward[2], 0.0f, stop.forward[0]);
+      stand = { stop.sign - stop.forward * 15.0f + right * 7.0f,
+                stop.sign + stop.forward * 2.0f - right * 6.0f };
     } else if (script == "farm" && !s.places.layout.farms.empty () &&
                !s.places.layout.farms.front ().buildings.empty ()) {
       const Building& b = s.places.layout.farms.front ().buildings.front ();
@@ -356,7 +372,8 @@ namespace moppe::game {
     };
     // At a place (stage_place_script), the walker stands and looks.
     if (script == "landing" || script == "sanctuary" || script == "farm" ||
-        script == "indoors" || script == "hens" || script == "byre")
+        script == "indoors" || script == "hens" || script == "byre" ||
+        script.starts_with ("bus-stop"))
       return input;
     // Before the farmhouse's door: in through it, a few steps into the
     // room, and a look round.

@@ -46,6 +46,11 @@ namespace moppe::game {
     constexpr std::array<std::string_view, 6> name_sanctuary_endings {
       "berget", "varden", "kullen", "toppen", "fjället", "höjden",
     };
+    // A bus stop's: a hamlet, a hill, a meadow, a bend in the road.
+    constexpr std::array<std::string_view, 12> name_stop_endings {
+      "by",    "backen", "hagen", "lid", "mon",    "dalen",
+      "ängen", "åsen",   "tjärn", "ön",  "kurvan", "torpet",
+    };
 
     template <std::size_t N>
     std::string_view name_pick (const std::array<std::string_view, N>& words,
@@ -103,5 +108,26 @@ namespace moppe::game {
       names.push_back (std::move (name));
     }
     return names;
+  }
+
+  std::string name_bus_stop (std::uint32_t seed,
+                             std::size_t index,
+                             bool farm,
+                             std::span<const std::string> taken) {
+    std::uint64_t roll =
+      name_mix (name_mix (static_cast<std::uint64_t> (seed) * 4 + 0xb05) +
+                static_cast<std::uint64_t> (index));
+    const auto roll_name = [farm] (std::uint64_t r) {
+      const std::uint64_t second = name_mix (r);
+      return std::string (name_pick (name_country, r)) +
+             std::string (farm ? std::string_view ("gården")
+                               : name_pick (name_stop_endings, second));
+    };
+    std::string name = roll_name (roll);
+    while (std::ranges::find (taken, name) != taken.end ()) {
+      roll = name_mix (roll);
+      name = roll_name (roll);
+    }
+    return name;
   }
 }

@@ -197,13 +197,16 @@ namespace moppe {
             // The road network's places (game/place_kind.hh): named
             // ones are shown only while on the chart, not on its rim.
             Place,
+            // A bus and a bus stop (bus.hh), only while on the chart.
+            Bus,
+            BusStop,
           };
           Kind kind = Kind::Machine;
           terrain::RoadPlace::Kind place = terrain::RoadPlace::Kind::Trailhead;
           float x_m = 0.0f, z_m = 0.0f;
           float red = 0.1f, green = 0.1f, blue = 0.1f;
         };
-        std::array<Pin, 40> pins {};
+        std::array<Pin, 64> pins {};
         int pin_count = 0;
       };
       Chart chart {};

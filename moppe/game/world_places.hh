@@ -2,11 +2,14 @@
 // what lives there: the plan of the farms, the landing, and the
 // sanctuaries; the barns' nest boxes; the built things as drawn and
 // collided with; the stock and the poultry let out round them; and the
-// lamps they light by night.
+// lamps they light by night; and the bus round the loop through the
+// landing, with its stops (bus.hh).
 #ifndef MOPPE_GAME_WORLD_PLACES_HH
 #define MOPPE_GAME_WORLD_PLACES_HH
 
 #include <moppe/game/animals.hh>
+#include <moppe/game/bus.hh>
+#include <moppe/game/bus_render.hh>
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/hens.hh>
@@ -14,17 +17,21 @@
 #include <moppe/game/world_ground.hh>
 
 #include <cstdint>
+#include <span>
+#include <string>
 #include <vector>
 
 namespace moppe::game {
   struct WorldPlaces {
     // Where the places' things stand, planned before the trees and rocks,
     // which keep out of their clearings; with the barns' nest boxes and
-    // the eggs first laid in them, the sanctuaries' beacons, and the rooms
-    // the camera keeps inside.
+    // the eggs first laid in them, the sanctuaries' beacons, the rooms
+    // the camera keeps inside, and the bus's stops, named among `names`
+    // (the network's places', place_names.hh).
     void plan (const WorldGround& ground,
                GameSession& session,
-               std::uint32_t world_seed);
+               std::uint32_t world_seed,
+               std::span<const std::string> names);
 
     // Once the trees stand: the camps among them, and, with a renderer,
     // the built things with their colliders.
@@ -53,7 +60,8 @@ namespace moppe::game {
                           const Vec3& spawn) const;
 
     // The places' stones, timber, and buildings; each beacon's laid wood;
-    // and the old fire rings, cold until a camp's fire is lit in one.
+    // the old fire rings, cold until a camp's fire is lit in one; and the
+    // bus stops and the buses.
     void draw (render::Renderer& r,
                render::DrawList& dl,
                const FrameView& frame,
@@ -71,6 +79,9 @@ namespace moppe::game {
     // The barns' nest boxes (the eggs in them are the logic's m_nests).
     std::vector<Nest> nests;
     PlacesLandscape landscape;
+    // The bus round the loop, and its stops and buses as drawn.
+    BusLine bus;
+    BusView bus_view;
 
   private:
     std::uint32_t m_seed = 0;

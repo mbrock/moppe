@@ -410,6 +410,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/places.cc
   moppe/game/fingerposts.cc
   moppe/game/place_names.cc
+  moppe/game/bus.cc
+  moppe/game/bus_render.cc
   moppe/game/avatar.cc
   moppe/game/walker_render.cc
   moppe/game/figure.cc
@@ -885,6 +887,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/hens_test.cc
     tests/game/camp_test.cc
     tests/game/places_test.cc
+    tests/game/bus_test.cc
     tests/game/fishing_test.cc
     tests/game/companion_test.cc
     tests/game/rescue_test.cc

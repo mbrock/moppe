@@ -18,8 +18,9 @@ namespace moppe::render {
 namespace moppe::game {
   // The map unfolded over the view: the painted sheet (relief_map.hh) on
   // paper with a neatline, kilometre figures, a scale, and what moves on it
-  // -- the walker, the vehicles, the camp. The first press shows the whole
-  // world, the next a stretch round the walker, the third folds it away.
+  // -- the walker, the vehicles, the camp, the buses and their stops. The first
+  // press shows the whole world, the next a stretch round the walker, the third
+  // folds it away.
   class MapSheet {
   public:
     enum class View { Closed, Whole, Near };
@@ -36,6 +37,10 @@ namespace moppe::game {
         // The road network's places (roads.hh): the trailhead, and the
         // rest drawn with their names.
         Place,
+        // A bus on the loop, and a stop of its (bus.hh), whose name is
+        // set only in the near view.
+        Bus,
+        BusStop,
       };
       Kind kind = Kind::Walker;
       Vec3 position;

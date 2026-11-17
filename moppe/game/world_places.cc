@@ -15,13 +15,23 @@
 namespace moppe::game {
   void WorldPlaces::plan (const WorldGround& ground,
                           GameSession& session,
-                          std::uint32_t world_seed) {
+                          std::uint32_t world_seed,
+                          std::span<const std::string> names) {
     MOPPE_PROFILE_ZONE ("startup.plan_places");
     m_seed = world_seed;
     layout = {};
     layout = plan_places (ground.generated.roads (),
                           ground.place_ground (),
                           static_cast<std::uint32_t> (world_seed) ^ 0x91ace5u);
+    // The bus's stops, kept clear of trees and rocks.
+    bus = plan_bus_line (ground.generated.roads (),
+                         names,
+                         layout,
+                         ground.place_ground (),
+                         world_seed ^ 0xb05u);
+    for (const BusStop& stop : bus.stops ())
+      layout.clearings.push_back (
+        { stop.shelter.value_or (stop.sign), stop.shelter ? 4.0f : 2.0f });
     session.logic ().m_beacons.assign (layout.sanctuaries.size (), Beacon {});
     // Each barn lived in has its row of nest boxes, with the eggs laid
     // in them before the walker came.
@@ -87,6 +97,7 @@ namespace moppe::game {
     if (!renderer)
       return;
     landscape.rebuild (*renderer, layout, placed);
+    bus_view.rebuild (*renderer, bus, layout.period_x, layout.period_z);
   }
 
   std::vector<const Building*> WorldPlaces::kept_barns () const {
@@ -270,6 +281,7 @@ namespace moppe::game {
                           const GameLogicState& logic) {
     const Vec3& camera = frame.camera.position;
     landscape.draw (r, camera, frame.lighting.time, 0x10000);
+    bus_view.draw (r, bus, logic.m_total_time, camera, 0xb05000);
     landscape.draw_beacons (dl, camera, logic.m_beacon_burn);
     const Camp& camp = logic.m_camp;
     for (const Vec3& ring : layout.hearths) {

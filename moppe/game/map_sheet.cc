@@ -114,6 +114,8 @@ namespace moppe::game {
         return mark.named () ? 2 : 3;
       case Mark::Kind::Camp:
         return 4;
+      case Mark::Kind::BusStop:
+        return 6;
       default:
         return 5;
       }
@@ -147,6 +149,36 @@ namespace moppe::game {
         box (dl, x - 5.2f * s, y - 5.2f * s, x + 5.2f * s, y + 5.2f * s);
         dl.color (mark.colour, 1.0f);
         box (dl, x - 3.6f * s, y - 3.6f * s, x + 3.6f * s, y + 3.6f * s);
+        break;
+      case Mark::Kind::Bus: {
+        // A bus seen from above, along the way it goes.
+        const float sx = -dy, sy = dx;
+        const auto oblong = [&] (float half_long, float half_wide) {
+          dl.begin (render::Prim::Quads);
+          dl.vertex (x + dx * half_long + sx * half_wide,
+                     y + dy * half_long + sy * half_wide);
+          dl.vertex (x + dx * half_long - sx * half_wide,
+                     y + dy * half_long - sy * half_wide);
+          dl.vertex (x - dx * half_long - sx * half_wide,
+                     y - dy * half_long - sy * half_wide);
+          dl.vertex (x - dx * half_long + sx * half_wide,
+                     y - dy * half_long + sy * half_wide);
+          dl.end ();
+        };
+        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+        oblong (7.4f * s, 4.2f * s);
+        dl.color (mark.colour, 1.0f);
+        oblong (6.0f * s, 2.8f * s);
+        dl.color (0.92f, 0.87f, 0.72f, 1.0f);
+        oblong (6.0f * s, 0.8f * s);
+        break;
+      }
+      case Mark::Kind::BusStop:
+        // A hållplats's yellow plate with its green edge.
+        dl.color (0.06f, 0.42f, 0.22f, 1.0f);
+        box (dl, x - 3.0f * s, y - 3.0f * s, x + 3.0f * s, y + 3.0f * s);
+        dl.color (0.97f, 0.80f, 0.12f, 1.0f);
+        box (dl, x - 1.9f * s, y - 1.9f * s, x + 1.9f * s, y + 1.9f * s);
         break;
       case Mark::Kind::Camp:
         dl.color (1.0f, 1.0f, 1.0f, 1.0f);
@@ -442,9 +474,13 @@ namespace moppe::game {
           i = of[i] = of[of[i]];
         return i;
       };
+      // A stop is named only near to; the whole sheet has too many.
+      const auto named = [near] (const Mark& mark) {
+        return mark.name[0] && (near || mark.kind != Mark::Kind::BusStop);
+      };
       for (std::size_t i = 0; i < placed.size (); ++i)
         for (std::size_t j = i + 1; j < placed.size (); ++j)
-          if (placed[i].mark->name[0] && placed[j].mark->name[0] &&
+          if (named (*placed[i].mark) && named (*placed[j].mark) &&
               std::hypot (placed[i].x - placed[j].x,
                           placed[i].y - placed[j].y) < 10.0f)
             of[root (j)] = root (i);
@@ -452,7 +488,7 @@ namespace moppe::game {
       // Most important first: each group, and the groups in turn, from
       // the end of `placed`.
       for (std::size_t i = placed.size (); i-- > 0;) {
-        if (!placed[i].mark->name[0])
+        if (!named (*placed[i].mark))
           continue;
         std::size_t& g = slot[root (i)];
         if (g == SIZE_MAX) {

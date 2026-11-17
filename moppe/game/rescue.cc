@@ -58,7 +58,8 @@ namespace moppe::game {
       std::vector<Placed> placed_bumpers (const MachineBody& body) {
         std::vector<Placed> placed;
         const MachineKind& shape = machine_kind (body.machine);
-        for (const Bumper& p : shape.bumpers)
+        for (const Bumper& p :
+             body.bumpers.empty () ? shape.bumpers : body.bumpers)
           placed.push_back ({ body.point (p.centre), p.radius, body.mass });
         if (!body.towing)
           return placed;

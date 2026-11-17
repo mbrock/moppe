@@ -139,6 +139,33 @@ build, test, and change the code; read this when working on a feature.
   bend (measured between the mitres of each segment) and it ends
   rounded at a road's end. Near the camera the ground lies five
   centimetres under the ribbon, so the two never meet.
+- The loop and the bus (`moppe/game/bus.*`): the planner lays one road
+  once round the world through the landing (`Road::loop`, the cheaper
+  of the two ways round, by a search over two copies of the lattice
+  joined at the seam), paved, with no turning place, and the
+  trailhead's road and the rest branch from it; a world with no way
+  round (the 257-sample one) has none and no bus. `plan_bus_line`
+  stands a stop at the landing, one just past each branch named for
+  the place it leads toward ("Örnforsen vägskäl" when that is over
+  600 m off), one by each farm near the loop, and more with names of
+  their own (`name_bus_stop`: a -by, -backen, -kurvan, or a farm's
+  -gården) wherever stops would lie over 1.4 km apart; each on the
+  right-hand verge, off bridges, with a yellow hållplats sign and,
+  where the verge is level, a falu-red shelter. The buses drive on the
+  right on a timetable from play's clock alone (gathering pace to
+  45 km/h, braking for each stop, standing 20 s), evenly apart so one
+  passes about every eight minutes (two in the default world's 7 km
+  loop); nothing of them is in `GameState`. Near a stop, a board
+  stands over its sign with its name and "Bus in 4 min" or "Bus here,
+  leaves in 12 s" (`BusView::draw_board`). The map draws each bus as a
+  red oblong along its way and the stops as yellow plates (named in
+  the near view), the chart pins them while they are on it, and the
+  buses knock the players' machines aside (`bus_body`, through the
+  bumpers). The bus is drawn as a placeholder of boxes until its model
+  comes. `MOPPE_WALK=bus-stop[:N]` stands on the verge behind the Nth
+  stop (the first, where the first bus stands as play begins), and
+  `MOPPE_MAP=whole|near` starts with the map unfolded; `moppe: bus:`
+  lists the stops.
 - Waymarks: a small arrow with a name and a distance marks the other
   player (in their jacket's colour), and the bike, the jeep, the
   tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in

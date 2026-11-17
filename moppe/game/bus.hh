@@ -1,0 +1,159 @@
+#ifndef MOPPE_GAME_BUS_HH
+#define MOPPE_GAME_BUS_HH
+
+// The bus: round and round the loop (terrain::Road::loop), the road once
+// round the world through the landing, stopping at stops of its own along
+// it. Where a bus is follows from play's clock alone, by a timetable
+// worked out from the line's length and its stops (accelerating away from
+// each, keeping its pace, and braking for the next, and standing a while
+// at each), so a checkpoint keeps it with no state of its own and each
+// stop can tell how long till the next one comes. Several buses keep to
+// the one timetable, evenly apart, so that one comes by every few
+// minutes. They drive on the right.
+
+#include <moppe/game/game_clock.hh>
+#include <moppe/game/rescue.hh>
+#include <moppe/gfx/math.hh>
+#include <moppe/terrain/roads.hh>
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace moppe::game {
+  struct PlaceGround;
+  struct PlacesPlan;
+
+  struct BusStop {
+    std::string name;
+    // How far along the loop from its start at the landing, the way the
+    // buses go.
+    meters_t along {};
+    // The foot of the sign's post, on the verge to the right going along,
+    // and the way the buses pass it, level.
+    Vec3 sign;
+    Vec3 forward { 0, 0, 1 };
+    // A shelter behind the sign, its open front to the road, where the
+    // verge is level enough to stand one: its middle on the ground.
+    std::optional<Vec3> shelter;
+  };
+
+  // Where a bus is, and how it stands: its position on the road under
+  // its middle, unwrapped as the loop is (to be read modulo the world's
+  // periods), the way it faces, and its up.
+  struct BusPose {
+    meters_t along {};
+    Vec3 position;
+    Vec3 forward { 0, 0, 1 };
+    Vec3 up { 0, 1, 0 };
+    speed_t speed {};
+    // Standing at a stop (into BusLine::stops).
+    std::optional<std::size_t> at_stop;
+  };
+
+  // What a stop's board says: a bus stands there and leaves in `wait`,
+  // or the next is due in `wait`.
+  struct BusDue {
+    bool here = false;
+    duration_t wait {};
+  };
+
+  class BusLine {
+  public:
+    // How the buses go: their pace between stops, how hard they gather
+    // and lose it, how long they stand at each stop, and how often one
+    // comes by, about.
+    static constexpr speed_t cruise = 12.5f * u::m / u::s;
+    static constexpr metres_per_second_squared_t acceleration =
+      0.8f * u::m / (u::s * u::s);
+    static constexpr seconds_t dwell = 20.0f * u::s;
+    static constexpr seconds_t headway = 480.0f * u::s;
+    // How far right of the road's line a bus keeps: its lane's middle.
+    static constexpr meters_t lane = 1.7f * u::m;
+
+    BusLine () = default;
+    // The loop and the stops along it, in order from its start.
+    BusLine (const terrain::Road& loop, std::vector<BusStop> stops);
+
+    bool empty () const noexcept {
+      return m_along.size () < 2;
+    }
+
+    meters_t length () const noexcept {
+      return empty () ? 0.0f * u::m : m_along.back () * u::m;
+    }
+
+    std::span<const BusStop> stops () const noexcept {
+      return m_stops;
+    }
+
+    // How many buses run, and how long one takes round.
+    std::size_t buses () const noexcept {
+      return m_buses;
+    }
+
+    seconds_t round_trip () const noexcept {
+      return m_round * u::s;
+    }
+
+    // The road's line `along` the loop, any distance on or back: the
+    // point on its centre (at the tread's height) and the way it goes
+    // there, level. Unwrapped, so a lap on is a period on.
+    Vec3 point (meters_t along) const;
+    Vec3 direction (meters_t along) const;
+
+    // Each bus at `now`.
+    std::vector<BusPose> where (play_time_t now) const;
+
+    // The board at stop `stop` at `now`.
+    BusDue due (std::size_t stop, play_time_t now) const;
+
+  private:
+    // The line: its points, unwrapped, the tread's height at each, and
+    // how far along each is.
+    std::vector<float> m_x, m_z, m_height, m_along;
+    // A lap on: the last point less the first.
+    float m_lap_x = 0.0f, m_lap_z = 0.0f;
+    std::vector<BusStop> m_stops;
+    // Seconds into a round that a bus reaches each stop, and leaves it.
+    std::vector<float> m_arrive, m_leave;
+    float m_round = 0.0f;
+    std::size_t m_buses = 0;
+
+    // Seconds into the round, for the bus `k`.
+    float phase (std::size_t k, play_time_t now) const;
+  };
+
+  // The stops along the world's loop, and the timetable: one at the
+  // landing; one just past each road that branches off it, named for the
+  // place it leads toward; one by each farm near it; and more between
+  // them wherever they would lie far apart, with names of their own. Each
+  // stands where the verge beside it is level and dry, off any bridge.
+  // Empty when the world has no loop. `names` are the network's places'
+  // (place_names.hh); `seed` rolls the stops' own.
+  [[nodiscard]] BusLine plan_bus_line (const terrain::RoadNetwork& network,
+                                       std::span<const std::string> names,
+                                       const PlacesPlan& places,
+                                       const PlaceGround& ground,
+                                       std::uint32_t seed);
+
+  // A bus as the machines' bumpers meet it (rescue.hh): a row of spheres
+  // down its length and its weight, at the copy of the world nearest
+  // `near`, never ours to push.
+  [[nodiscard]] MachineBody bus_body (const BusPose& pose,
+                                      const Vec3& near,
+                                      float period_x,
+                                      float period_z);
+
+  // The stop whose sign is nearest `at` within `reach`, across the seam.
+  [[nodiscard]] std::optional<std::size_t> bus_stop_near (const BusLine& line,
+                                                          const Vec3& at,
+                                                          meters_t reach,
+                                                          float period_x,
+                                                          float period_z);
+}
+
+#endif

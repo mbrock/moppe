@@ -132,6 +132,13 @@ namespace moppe {
       m_mushrooms.follow (logic ().m_basket);
       const AnimalGround animals = m_places.animal_ground (world_ground ());
       const Surroundings around = surroundings (&animals);
+      // Ours bump into the other player's machines and into the buses.
+      std::vector<MachineBody> strangers = m_company.strangers;
+      for (const BusPose& bus : m_places.bus.where (logic ().m_total_time))
+        strangers.push_back (bus_body (bus,
+                                       session ().subject_position (),
+                                       m_places.layout.period_x,
+                                       m_places.layout.period_z));
       const GameSessionAdvanceResult advance =
         advance_game_session (world (),
                               surface (),
@@ -141,7 +148,7 @@ namespace moppe {
                               &m_trunk_field,
                               ground_cover (session ().subject_position ()),
                               &generated_world ().water_surface (),
-                              m_company.strangers,
+                              strangers,
                               &around);
       if (advance.say_ouchies)
         platform::say ("Ouchies. That hurts.");
