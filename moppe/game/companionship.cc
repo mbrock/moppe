@@ -1,4 +1,22 @@
+#include <moppe/environment.hh>
+#include <moppe/game/blob_shadow.hh>
+#include <moppe/game/boat_render.hh>
+#include <moppe/game/caddy_render.hh>
 #include <moppe/game/companionship.hh>
+#include <moppe/game/figure.hh>
+#include <moppe/game/frame_view.hh>
+#include <moppe/game/game_session.hh>
+#include <moppe/game/glider_render.hh>
+#include <moppe/game/helicopter_render.hh>
+#include <moppe/game/hud.hh>
+#include <moppe/game/input_frame.hh>
+#include <moppe/game/jet_ski_render.hh>
+#include <moppe/game/long_john_render.hh>
+#include <moppe/game/mountain_bike_render.hh>
+#include <moppe/game/tractor_render.hh>
+#include <moppe/game/vehicle_render.hh>
+#include <moppe/game/walker_render.hh>
+#include <moppe/game/world_ground.hh>
 #include <moppe/mov/boat.hh>
 #include <moppe/mov/car.hh>
 
@@ -24,5 +42,471 @@ namespace moppe::game {
     const Vec3 left = normalized (cross (boat.up, boat.forward));
     return boat.position + left * mov::Boat::fore[0] +
            boat.up * mov::Boat::fore[1] + boat.forward * mov::Boat::fore[2];
+  }
+
+  void Companionship::seek (const std::string& address) {
+    CompanionLink::Config config { .address = address };
+    std::string error;
+    link = CompanionLink::open (config, error);
+    if (!link) {
+      std::cerr << "moppe: multiplayer: " << error << std::endl;
+      return;
+    }
+    std::cerr << "moppe: multiplayer: listening on port " << link->port ()
+              << (address.empty () ? ", calling on the local network"
+                                   : ", calling " + address)
+              << std::endl;
+  }
+
+  CompanionSnapshot Companionship::snapshot_of (const GameSession& session,
+                                                std::uint32_t world,
+                                                bool day_turning) {
+    const GameLogicState& state = session.logic ();
+    CompanionSnapshot mine;
+    mine.world = world;
+    mine.day_hours =
+      day_turning ? hours_since_midnight (state.m_day_hours) : -1.0;
+    mine.mode = state.m_mode;
+    mine.bike = vehicle_pose (session.bike ());
+    mine.jeep = car_pose (session.jeep ());
+    mine.jeep_velocity = session.jeep ().velocity ();
+    mine.helicopter = helicopter_pose (session.helicopter ());
+    mine.tractor = tractor_pose (session.tractor ());
+    mine.caddy = car_pose (session.caddy ());
+    mine.mountain_bike = vehicle_pose (session.mountain_bike ());
+    mine.long_john = vehicle_pose (session.long_john ());
+    mine.boat = boat_pose (session.boat ());
+    mine.boat_velocity = session.boat ().velocity ();
+    mine.in_boat = state.m_mode == M_PASSENGER && state.m_seat_boat;
+    mine.jet_ski = jet_ski_pose (session.jet_ski ());
+    mine.jet_ski_velocity = session.jet_ski ().velocity ();
+    if (state.m_mode == M_GLIDER)
+      mine.glider = glider_pose (session.glider ());
+    if (state.m_mode == M_FOOT)
+      mine.walker = walker_pose (session.walker (), state.m_look_pitch);
+    const Camp& camp = state.m_camp;
+    mine.hung = camp.hung;
+    mine.hammock = camp.hammock;
+    mine.hammock_load = hammock_load (camp, state.m_total_time);
+    mine.swing = camp.swing;
+    mine.gaze_yaw = camp.gaze_yaw;
+    mine.gaze_pitch = camp.gaze_pitch;
+    mine.hearth_laid = hearth_laid (camp);
+    mine.hearth = camp.hearth;
+    mine.fire_burn = fire_burn (camp, state.m_total_time);
+    mine.beacons = 0;
+    for (std::size_t i = 0; i < state.m_beacons.size () && i < 32; ++i)
+      if (state.m_beacons[i].burning ())
+        mine.beacons |= 1u << i;
+    mine.pan_on = camp.pan.on;
+    mine.pan_place = camp.pan.place;
+    mine.pan_yaw = camp.pan.yaw;
+    mine.pan_cooked = pan_cooked (camp.pan, state.m_total_time);
+    mine.pan_count = static_cast<std::uint8_t> (camp.pan.count);
+    std::copy (std::begin (camp.pan.mushrooms),
+               std::end (camp.pan.mushrooms),
+               std::begin (mine.pan_mushrooms));
+    mine.pick_used = static_cast<std::uint32_t> (state.m_basket.used);
+    return mine;
+  }
+
+  void Companionship::hear_of_picks (const CompanionSnapshot& theirs,
+                                     MushroomPatch& mushrooms) {
+    if (theirs.pick_count < picks.size ())
+      picks.clear ();
+    constexpr std::uint32_t unknown = UINT32_MAX;
+    // No one has picked more mushrooms than grow.
+    if (theirs.pick_count > mushrooms.mushroom_count ())
+      return;
+    picks.resize (theirs.pick_count, unknown);
+    for (std::size_t i = 0; i < theirs.picks.size (); ++i) {
+      const std::size_t ordinal = theirs.picks_from + i;
+      const std::uint32_t index = theirs.picks[i];
+      if (ordinal >= picks.size () || index >= mushrooms.mushroom_count ())
+        continue;
+      picks[ordinal] = index;
+      mushrooms.take (index);
+    }
+  }
+
+  Companionship::Seat
+  Companionship::seat_within_reach (const GameSession& session) const {
+    if (!companion || session.logic ().m_mode != M_FOOT)
+      return Seat::none;
+    const Vec3 feet = session.walker ().position ();
+    const float mine =
+      std::min ({ length2 (feet - session.jeep ().position ()),
+                  length2 (feet - session.bike ().position ()),
+                  length2 (feet - session.boat ().position ()) });
+    const float jeep = length2 (feet - companion->jeep.position);
+    float boat = 1e30f;
+    if (companion->mode == M_BOAT)
+      boat = length2 (feet - Companionship::boat_seat (*companion));
+    if (boat < 4.0f * 4.0f && boat < mine && boat < jeep)
+      return Seat::boat;
+    if (jeep < 4.5f * 4.5f && jeep < mine)
+      return Seat::jeep;
+    return Seat::none;
+  }
+
+  bool Companionship::can_ride_along (const GameSession& session) const {
+    return seat_within_reach (session) != Seat::none;
+  }
+
+  void Companionship::ride_along (GameSession& session, InputFrame& input) {
+    GameLogicState& state = session.logic ();
+    session.boat ().set_passenger (
+      companion && companion->mode == M_PASSENGER && companion->in_boat);
+    if (state.m_mode == M_PASSENGER) {
+      if (!companion || input.toggle_mount) {
+        // Out on the passenger's side, the right; over the boat's
+        // gunwale, a step from it.
+        const Vec3 left =
+          normalized (cross (state.m_seat_up, state.m_seat_heading));
+        session.walker ().spawn (
+          moppe::position (state.m_seat_position -
+                           left * (state.m_seat_boat ? 1.1f : 1.4f)),
+          state.m_seat_heading);
+        session.set_mode (M_FOOT);
+        state.m_seat_boat = false;
+        input.toggle_mount = false;
+        return;
+      }
+    } else if (input.toggle_mount && can_ride_along (session)) {
+      state.m_seat_boat = seat_within_reach (session) == Seat::boat;
+      session.clear_controls ();
+      session.set_mode (M_PASSENGER);
+      input.toggle_mount = false;
+    } else if (companion && !rode_along &&
+               moppe::environment ("MOPPE_RIDE_ALONG")) {
+      // For captures: take the seat as soon as there is one, from
+      // wherever this player stands.
+      rode_along = true;
+      state.m_seat_boat = companion->mode == M_BOAT;
+      session.clear_controls ();
+      session.set_mode (M_PASSENGER);
+    }
+    if (state.m_mode != M_PASSENGER)
+      return;
+    if (state.m_seat_boat) {
+      state.m_seat_position = Companionship::boat_seat (*companion);
+      state.m_seat_heading = companion->boat.forward;
+      state.m_seat_up = companion->boat.up;
+      state.m_seat_velocity = companion->boat_velocity;
+      return;
+    }
+    state.m_seat_position = Companionship::jeep_seat (*companion);
+    state.m_seat_heading = companion->jeep.forward;
+    state.m_seat_up = companion->jeep.up;
+    state.m_seat_velocity = companion->jeep_velocity;
+  }
+
+  void Companionship::meet_strangers (const GameSession& session,
+                                      seconds_t interval) {
+    const float elapsed = seconds_value (interval);
+    strangers.clear ();
+    if (!companion) {
+      strangers_were.reset ();
+      return;
+    }
+    const CompanionSnapshot& theirs = *companion;
+    const auto stranger = [&] (Machine machine,
+                               const Vec3& position,
+                               const Vec3& forward,
+                               const Vec3& up) {
+      MachineBody body;
+      body.machine = machine;
+      body.position = position;
+      body.forward = forward;
+      body.up = up;
+      body.mass = session.machine_body (machine).mass;
+      body.ours = false;
+      if (machine == Machine::tractor) {
+        body.towing = true;
+        body.towed_position = theirs.tractor.trailer_position;
+        body.towed_forward = theirs.tractor.trailer_forward;
+        body.towed_up = theirs.tractor.trailer_up;
+        body.towed_mass = session.tractor ().trailer_mass ();
+      }
+      const std::size_t i = static_cast<std::size_t> (machine);
+      if (strangers_were && elapsed > 0.0f) {
+        const Vec3 moved = position - (*strangers_were)[i];
+        if (length2 (moved) < 25.0f)
+          body.velocity = moved * (1.0f / elapsed);
+      }
+      strangers.push_back (body);
+    };
+    stranger (Machine::bike,
+              theirs.bike.position,
+              theirs.bike.render_orientation,
+              theirs.bike.render_normal);
+    stranger (
+      Machine::jeep, theirs.jeep.position, theirs.jeep.forward, theirs.jeep.up);
+    stranger (Machine::tractor,
+              theirs.tractor.position,
+              theirs.tractor.forward,
+              theirs.tractor.up);
+    stranger (Machine::caddy,
+              theirs.caddy.position,
+              theirs.caddy.forward,
+              theirs.caddy.up);
+    stranger (Machine::helicopter,
+              theirs.helicopter.position,
+              theirs.helicopter.forward,
+              theirs.helicopter.up);
+    stranger (Machine::mountain_bike,
+              theirs.mountain_bike.position,
+              theirs.mountain_bike.render_orientation,
+              theirs.mountain_bike.render_normal);
+    stranger (
+      Machine::boat, theirs.boat.position, theirs.boat.forward, theirs.boat.up);
+    stranger (Machine::long_john,
+              theirs.long_john.position,
+              theirs.long_john.render_orientation,
+              theirs.long_john.render_normal);
+    stranger (Machine::jet_ski,
+              theirs.jet_ski.position,
+              theirs.jet_ski.forward,
+              theirs.jet_ski.up);
+    std::array<Vec3, machine_count> were;
+    for (const MachineBody& body : strangers)
+      were[static_cast<std::size_t> (body.machine)] = body.position;
+    strangers_were = were;
+    strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
+      theirs.jeep_velocity;
+    strangers[static_cast<std::size_t> (Machine::boat)].velocity =
+      theirs.boat_velocity;
+    strangers[static_cast<std::size_t> (Machine::jet_ski)].velocity =
+      theirs.jet_ski_velocity;
+  }
+
+  std::optional<CompanionSnapshot>
+  Companionship::hear (MushroomPatch& mushrooms, std::uint32_t world) {
+    if (!link)
+      return std::nullopt;
+    std::optional<CompanionSnapshot> newly_met;
+    arrived.clear ();
+    link->set_world (world);
+    link->receive (arrived);
+    const double now = link->now ();
+    // The poses told are the simulation's, which moves on in whole
+    // steps, now two to a frame and now three. They are stamped by a
+    // clock that moves with it, so that the other machine sees even
+    // motion however unevenly the frames fall.
+    pose_clock = pose_heard < 0.0
+                   ? now
+                   : pose_clock + (stepped > 0.0 ? stepped : now - pose_heard);
+    pose_heard = now;
+    stepped = 0.0;
+    const bool was_present = track.present (now);
+    // Someone in another world is only told of, while no one here
+    // keeps company.
+    if (link->heard_elsewhere () && arrived.empty () && !was_present &&
+        !elsewhere) {
+      elsewhere = true;
+      notice ("Someone is playing, but in another world");
+      std::cerr << "moppe: multiplayer: launch both games with the "
+                   "same --seed and terrain options"
+                << std::endl;
+    }
+    for (CompanionSnapshot& theirs : arrived) {
+      elsewhere = false;
+      if (!track.present (now))
+        picks.clear ();
+      hear_of_picks (theirs, mushrooms);
+      hours = theirs.day_hours;
+      if (!met) {
+        met = true;
+        // So that the two can be told apart, and each machine agrees
+        // on who is who, the player with the greater number changes
+        // into the green jacket.
+        outfit = link->player () > theirs.player ? Outfit::green_jacket
+                                                 : Outfit::blue_jacket;
+        newly_met = theirs;
+      }
+      track.push (std::move (theirs), now);
+    }
+    const bool present = track.present (now);
+    if (present && !was_present) {
+      notice ("Your companion has arrived");
+      std::cerr << "moppe: multiplayer: companion at "
+                << link->companion_address () << std::endl;
+    } else if (!present && was_present) {
+      notice ("Your companion has gone");
+      hours = -1.0;
+      met = false;
+    }
+    return newly_met;
+  }
+
+  void Companionship::follow (const GameSession& session,
+                              std::uint32_t world,
+                              bool day_turning,
+                              seconds_t interval) {
+    if (!link)
+      return;
+    companion = track.advance (link->now (), seconds_value (interval));
+    meet_strangers (session, interval);
+
+    if (!link->due ())
+      return;
+    CompanionSnapshot mine = snapshot_of (session, world, day_turning);
+    const std::vector<std::uint32_t>& picked = session.logic ().m_basket.picked;
+    mine.pick_count = static_cast<std::uint32_t> (picked.size ());
+    mine.picks_from =
+      companion_pick_window_start (picked.size (), snapshots_sent++);
+    for (std::size_t i = mine.picks_from;
+         i < picked.size () && mine.picks.size () < companion_pick_window;
+         ++i)
+      mine.picks.push_back (picked[i]);
+    link->send (std::move (mine), pose_clock);
+  }
+
+  void Companionship::draw (render::Renderer& r,
+                            render::DrawList& dl,
+                            float time,
+                            const GameLogicState& logic,
+                            const MushroomPatch& mushrooms,
+                            BlobShadow& blob,
+                            const map::SurfaceGeometry& surface,
+                            const WorldGround& ground) {
+    if (!companion)
+      return;
+    const CompanionSnapshot& theirs = *companion;
+    blob.draw (dl, surface, theirs.bike.position, 2.2f);
+    render_vehicle (
+      r, dl, theirs.bike, theirs.mode == M_BIKE, 0x3000, their_outfit ());
+    blob.draw (dl, surface, theirs.jeep.position, 3.4f);
+    // This player beside them, unless seeing through their own eyes.
+    render_jeep (r,
+                 dl,
+                 theirs.jeep,
+                 { .driver = theirs.mode == M_JEEP,
+                   .passenger = logic.m_mode == M_PASSENGER &&
+                                !logic.m_seat_boat &&
+                                logic.m_cam_mode != CAM_HELMET,
+                   .driver_outfit = their_outfit (),
+                   .passenger_outfit = outfit },
+                 0x6000);
+    blob.draw (dl, surface, theirs.helicopter.position, 4.5f);
+    render_helicopter (r, theirs.helicopter, 0x7000);
+    blob.draw (dl, surface, theirs.tractor.position, 2.8f);
+    blob.draw (dl, surface, theirs.tractor.trailer_position, 2.4f);
+    render_tractor (r,
+                    dl,
+                    theirs.tractor,
+                    theirs.mode == M_TRACTOR
+                      ? std::optional<Outfit> (their_outfit ())
+                      : std::nullopt,
+                    0x9000);
+    blob.draw (dl, surface, theirs.caddy.position, 3.6f);
+    render_caddy (
+      r,
+      dl,
+      theirs.caddy,
+      { .driver = theirs.mode == M_CADDY, .driver_outfit = their_outfit () },
+      0xB000);
+    render_boat (r,
+                 dl,
+                 theirs.boat,
+                 theirs.mode == M_BOAT ? std::optional<Outfit> (their_outfit ())
+                                       : std::nullopt,
+                 0xF800,
+                 std::nullopt,
+                 time,
+                 logic.m_mode == M_PASSENGER && logic.m_seat_boat &&
+                     logic.m_cam_mode != CAM_HELMET
+                   ? std::optional<Outfit> (outfit)
+                   : std::nullopt);
+    blob.draw (dl, surface, theirs.mountain_bike.position, 1.3f);
+    render_mountain_bike (r,
+                          dl,
+                          theirs.mountain_bike,
+                          theirs.mode == M_MOUNTAIN_BIKE
+                            ? std::optional<Outfit> (their_outfit ())
+                            : std::nullopt,
+                          0xE000);
+    blob.draw (dl, surface, theirs.long_john.position, 2.0f);
+    render_long_john (r,
+                      dl,
+                      theirs.long_john,
+                      theirs.mode == M_LONG_JOHN
+                        ? std::optional<Outfit> (their_outfit ())
+                        : std::nullopt,
+                      0xE100);
+    render_jet_ski (r,
+                    dl,
+                    theirs.jet_ski,
+                    theirs.mode == M_JET_SKI
+                      ? std::optional<Outfit> (their_outfit ())
+                      : std::nullopt,
+                    0xE200);
+    if (theirs.hung)
+      draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
+    if (theirs.hearth_laid)
+      draw_hearth (dl, theirs.hearth, theirs.fire_burn);
+
+    basket.clear ();
+    for (std::size_t i = theirs.pick_used; i < picks.size (); ++i)
+      if (picks[i] < mushrooms.mushroom_count ())
+        basket.push_back (mushrooms.site (picks[i]));
+    if (theirs.pan_on) {
+      pan.clear ();
+      for (int i = 0; i < theirs.pan_count; ++i)
+        if (theirs.pan_mushrooms[i] < mushrooms.mushroom_count ())
+          pan.push_back (mushrooms.site (theirs.pan_mushrooms[i]));
+      draw_pan (dl, theirs.pan_place, theirs.pan_yaw, pan, theirs.pan_cooked);
+    }
+    if (theirs.walker && theirs.lying_down ()) {
+      figure::draw (
+        dl,
+        pose_resting (
+          theirs.hammock,
+          theirs.swing,
+          resting_gaze (theirs.hammock, theirs.gaze_yaw, theirs.gaze_pitch),
+          time),
+        their_outfit ());
+      Vec3 floor = hammock_middle (theirs.hammock) +
+                   hammock_across (theirs.hammock) * 0.75f -
+                   hammock_along (theirs.hammock) * 0.5f;
+      floor[1] = ground.height (floor);
+      render_basket_set_down (
+        dl, floor, hammock_along (theirs.hammock), basket);
+    } else if (theirs.walker) {
+      blob.draw (
+        dl, surface, theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
+      render_walker (dl, *theirs.walker, time, basket, their_outfit ());
+    }
+    if (theirs.glider) {
+      blob.draw (dl, surface, theirs.glider->position, 3.4f);
+      render_glider (r, dl, *theirs.glider, time, 0x4000, their_outfit ());
+    }
+  }
+
+  void Companionship::light_fire (FrameView& frame) const {
+    if (!companion || !companion->hearth_laid || companion->fire_burn <= 0.01f)
+      return;
+    Camp theirs;
+    theirs.hearth = companion->hearth;
+    const Vec3 lamp = fire_light_position (theirs);
+    FrameLighting& lighting = frame.lighting;
+    if (lighting.lamp_reach > 0.0f &&
+        length2 (lighting.lamp_position - frame.camera.position) <=
+          length2 (lamp - frame.camera.position))
+      return;
+    lighting.lamp_position = lamp;
+    lighting.lamp_reach = meters_value (fire_light_reach);
+    lighting.lamp_color =
+      scale_display (fire_light_color (companion->fire_burn, lighting.time),
+                     1.0f - 0.25f * lighting.daylight);
+  }
+
+  void Companionship::add_readings (HudState& state,
+                                    const GameSession& session) const {
+    state.can_ride_along = can_ride_along (session);
+    if (!link || !last_notice)
+      return;
+    state.notice = last_notice;
+    state.notice_age_s = static_cast<float> (link->now () - notice_at);
   }
 }

@@ -513,7 +513,14 @@ namespace moppe {
                        frame.lighting.time,
                        0x2000,
                        m_company.outfit);
-      draw_companion (r, m_world_dl, frame.lighting.time);
+      m_company.draw (r,
+                      m_world_dl,
+                      frame.lighting.time,
+                      logic (),
+                      m_mushrooms,
+                      m_blob,
+                      surface (),
+                      world_ground ());
 
       r.draw_list (m_world_dl, 0x0001);
 
@@ -685,7 +692,8 @@ namespace moppe {
       const int hud_height =
         r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
       if (visibility.cinematic_hud) {
-        draw_opening_titles (hud_width, hud_height);
+        m_opening.draw_titles (
+          m_hud, m_hud_dl, m_hud_text, hud_width, hud_height);
         m_hud.draw_ride_prompt (m_hud_text,
                                 frame.overlay.cinematic_prompt_alpha,
                                 hud_width,
@@ -695,7 +703,7 @@ namespace moppe {
         add_basket_readings (hud_state);
         add_camp_readings (hud_state);
         add_fishing_readings (hud_state);
-        add_company_readings (hud_state);
+        m_company.add_readings (hud_state, session ());
         add_waymarks (hud_state, frame, hud_width, hud_height);
         add_chart (hud_state, frame);
         m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);

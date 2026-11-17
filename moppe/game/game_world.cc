@@ -374,7 +374,12 @@ namespace moppe {
       stage_place_script ();
       // The mouse looks around during play; M hands it back.
       platform::set_pointer_captured (true);
-      plan_opening_journey ();
+      m_opening.plan (generated_world (),
+                      world_ground (),
+                      m_sky.sky (),
+                      session (),
+                      m_home_base_position,
+                      m_spawn_position);
       remember_seed (world (),
                      recipe ().generation_profile (),
                      static_cast<int> (recipe ().seed ().value));
@@ -398,7 +403,7 @@ namespace moppe {
                              moppe::environment ("MOPPE_DEMO") ||
                              moppe::environment ("MOPPE_WALK");
       if (posed || (!automated && !m_skip_cinematic_requested)) {
-        start_opening ();
+        m_opening.start (session (), surface (), m_sky);
         m_live_input.clear ();
       }
     }

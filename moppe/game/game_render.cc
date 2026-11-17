@@ -22,27 +22,23 @@ namespace moppe {
       const float aspect =
         (float)r.width_pts () / std::max (1, r.height_pts ());
       FrameView frame = compose_frame_view (frame_view_input (aspect));
-      light_companion_fire (frame);
+      m_company.light_fire (frame);
       m_places.light_beacons (frame, logic ().m_beacon_burn);
       m_places.light_barn (frame);
       const bool cinematic = frame.visibility.cinematic;
       // A cut is a new view: the temporal history of the last one would
       // only smear into it.
-      if (m_opening.active () &&
-          m_opening.shot_index () != m_opening_rendered_shot) {
-        if (m_opening_rendered_shot != SIZE_MAX)
-          r.reset_temporal_state ();
-        m_opening_rendered_shot = m_opening.shot_index ();
-      }
+      if (m_opening.take_cut ())
+        r.reset_temporal_state ();
 
       const bool captured = m_capture.before_frame (
         r,
         frame,
         static_cast<float> (seconds_into_play (logic ().m_total_time)),
         m_sky.sky ().sun_height,
-        opening_active ());
+        m_opening.active ());
       render::FrameParams params = frame_params_for (frame);
-      if (!keeping_pace ())
+      if (!m_capture.keeping_pace ())
         params.frame_rate_target = 0.0f;
       if (!r.begin_frame (params))
         return;

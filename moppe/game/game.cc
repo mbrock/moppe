@@ -18,7 +18,7 @@ namespace moppe {
           m_spawn_position (position_value (this->world ().spawn_position ())),
           m_renderer (0), m_capture (options.screenshot_path), m_ready (false) {
       if (options.multiplayer)
-        seek_company (*options.multiplayer);
+        m_company.seek (*options.multiplayer);
     }
 
     void MoppeGame::setup (render::Renderer& r, int, int) {
@@ -107,35 +107,13 @@ namespace moppe {
         static_cast<float> (seconds_into_play (logic ().m_total_time));
       m_sky.update (logic (), total_time);
 
-      if (m_cinematic.active ()) {
-        if (input.leave_cinematic) {
-          leave_cinematic ();
-          input = {};
-        } else {
-          const CinematicFlightControls controls {
-            .lateral = input_value (input.turn),
-            .lift = input_value (input.boost),
-            .pace = input_value (input.drive),
-          };
-          m_cinematic.tick (seconds (dt), surface (), controls);
-          if (!m_cinematic.active ())
-            leave_cinematic ();
-          update_frame_flare ();
-          return;
-        }
-      }
-      if (m_opening.active ()) {
-        if (input.leave_cinematic) {
-          leave_cinematic ();
-          input = {};
-        } else {
-          m_opening.tick (seconds (dt));
-          follow_opening_clock ();
-          if (!m_opening.active ())
-            leave_cinematic ();
-          update_frame_flare ();
-          return;
-        }
+      const OpeningDirector::Step opening =
+        m_opening.step (input, seconds (dt), session (), surface (), m_sky);
+      if (opening.left)
+        leave_cinematic ();
+      if (opening.played) {
+        update_frame_flare ();
+        return;
       }
 
       m_trunk_field.focus (session ().subject_position ());
@@ -149,7 +127,7 @@ namespace moppe {
       else if (DemoPilot::active ())
         input = m_demo.steer (
           input, session (), m_parking, world_ground (), total_time, dt);
-      ride_along (input);
+      m_company.ride_along (session (), input);
       // The ground shows what the basket holds, a restored one too.
       m_mushrooms.follow (logic ().m_basket);
       const AnimalGround animals = m_places.animal_ground (world_ground ());
@@ -175,7 +153,7 @@ namespace moppe {
     }
 
     std::optional<double> MoppeGame::script_seconds () const {
-      return m_capture.script_seconds (m_ready && !opening_active ());
+      return m_capture.script_seconds (m_ready && !m_opening.active ());
     }
 
     void MoppeGame::controls (const platform::ControlState& state) {
@@ -237,7 +215,7 @@ namespace moppe {
         return;
       }
 
-      if (opening_active ()) {
+      if (m_opening.active ()) {
         if (k == Key::Escape && down) {
           m_capture.finish_video ();
           platform::request_quit ();
@@ -276,32 +254,16 @@ namespace moppe {
 
     FrameViewInput MoppeGame::frame_view_input (float aspect) const {
       FrameSceneMode scene = FrameSceneMode::Gameplay;
-      FrameCameraReading camera;
-      const bool cinematic = opening_active ();
-
-      if (m_opening.active ()) {
+      FrameCameraReading camera = {
+        .position = session ().camera ().position (),
+        .forward = session ().camera ().forward (),
+        .view = session ().camera ().view_matrix (),
+        .field_of_view = 70.0f * u::deg,
+      };
+      const bool cinematic = m_opening.active ();
+      if (const std::optional<FrameCameraReading> shot = m_opening.camera ()) {
         scene = FrameSceneMode::Cinematic;
-        camera = {
-          .position = m_opening.position (),
-          .forward = m_opening.forward (),
-          .view = m_opening.view_matrix (),
-          .field_of_view = m_opening.field_of_view () * u::deg,
-        };
-      } else if (cinematic) {
-        scene = FrameSceneMode::Cinematic;
-        camera = {
-          .position = m_cinematic.position (),
-          .forward = m_cinematic.forward (),
-          .view = m_cinematic.view_matrix (),
-          .field_of_view = m_cinematic.field_of_view (),
-        };
-      } else {
-        camera = {
-          .position = session ().camera ().position (),
-          .forward = session ().camera ().forward (),
-          .view = session ().camera ().view_matrix (),
-          .field_of_view = 70.0f * u::deg,
-        };
+        camera = *shot;
       }
 
       return {
@@ -312,15 +274,11 @@ namespace moppe {
         .selected_camera = camera,
         .scene = scene,
         .aspect = aspect,
-        .cinematic_motion_blur =
-          m_cinematic.active () ? m_cinematic.motion_blur () : 0.0f,
-        .cinematic_elapsed = m_opening.active () ? m_opening.elapsed ()
-                             : cinematic
-                               ? seconds_value (m_cinematic.elapsed ())
-                               : 0.0f,
-        .reveal_player = m_opening.active () && !m_opening.shot ().settle,
+        .cinematic_motion_blur = m_opening.motion_blur (),
+        .cinematic_elapsed = m_opening.elapsed (),
+        .reveal_player = m_opening.reveal_player (),
         .capture_field_of_view =
-          m_capture_camera.lens () && !cinematic && !m_opening.active ()
+          m_capture_camera.lens () && !cinematic
             ? std::optional<degrees_t> (*m_capture_camera.lens () * u::deg)
             : std::nullopt,
         .sky = m_sky.sky (),
@@ -335,21 +293,10 @@ namespace moppe {
     }
 
     void MoppeGame::leave_cinematic () {
-      m_cinematic.stop ();
       m_opening.stop ();
       m_live_input.clear ();
       // The opening has already arrived where play takes up the view.
       session ().settle_camera (surface ());
-    }
-
-    OpeningShot MoppeGame::arrival () {
-      session ().settle_camera (surface ());
-      const ChaseCamera& camera = session ().camera ();
-      const float fov = logic ().m_cam_mode == CAM_HELMET
-                          ? 70.0f
-                          : CHASE_FIELD_OF_VIEW.numerical_value_in (u::deg);
-      return arrival_shot (
-        m_opening_arrival, camera.position (), camera.forward (), fov);
     }
 
     void MoppeGame::regenerate_world () {
@@ -357,10 +304,7 @@ namespace moppe {
       m_live_input.clear ();
       m_ready = false;
       m_skip_cinematic_requested = false;
-      m_cinematic.stop ();
-      m_cinematic_plan = {};
-      m_opening.stop ();
-      m_opening_shots.clear ();
+      m_opening.forget ();
       m_waterfall_surface.clear ();
       m_bridges.clear ();
       const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());

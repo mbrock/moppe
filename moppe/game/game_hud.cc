@@ -787,36 +787,5 @@ namespace moppe {
                   width_pts,
                   height_pts);
     }
-
-    void MoppeGame::draw_opening_titles (int width_pts, int height_pts) {
-      if (!m_opening.active ())
-        return;
-      if (const float veil = m_opening.veil (); veil > 0.002f) {
-        render::DrawState over;
-        over.blend = true;
-        over.depth_test = false;
-        over.depth_write = false;
-        over.cull = false;
-        m_hud_dl.state (over);
-        m_hud_dl.lit (false);
-        m_hud_dl.fogged (false);
-        m_hud_dl.color (0.0f, 0.0f, 0.0f, veil);
-        m_hud_dl.begin (render::Prim::Quads);
-        m_hud_dl.vertex (-64.0f, -64.0f);
-        m_hud_dl.vertex (width_pts + 64.0f, -64.0f);
-        m_hud_dl.vertex (width_pts + 64.0f, height_pts + 64.0f);
-        m_hud_dl.vertex (-64.0f, height_pts + 64.0f);
-        m_hud_dl.end ();
-        m_hud_dl.state (render::DrawState ());
-      }
-      for (const OpeningCaptionView& caption : m_opening.captions ())
-        m_hud.draw_title_card (m_hud_text,
-                               caption.style == OpeningCaption::Style::Title,
-                               *caption.text,
-                               caption.alpha,
-                               caption.y,
-                               width_pts,
-                               height_pts);
-    }
   }
 }

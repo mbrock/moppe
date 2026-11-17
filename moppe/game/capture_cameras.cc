@@ -92,7 +92,6 @@ namespace moppe::game {
   void CaptureCameras::ride (GameSession& session,
                              const WorldGround& ground,
                              seconds_t interval) {
-    const float dt = seconds_value (interval);
     static const std::string_view view = [] {
       const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
       return std::string_view (name ? name : "");

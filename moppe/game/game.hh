@@ -17,7 +17,6 @@
 #include <moppe/game/boulders.hh>
 #include <moppe/game/bridge_render.hh>
 #include <moppe/game/capture_scripts.hh>
-#include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/companionship.hh>
 #include <moppe/game/demo_pilot.hh>
 #include <moppe/game/fingerposts.hh>
@@ -26,7 +25,7 @@
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/map_sheet.hh>
 #include <moppe/game/moppe_game.hh>
-#include <moppe/game/opening.hh>
+#include <moppe/game/opening_director.hh>
 #include <moppe/game/scan.hh>
 #include <moppe/game/simulation_clock.hh>
 #include <moppe/game/sky_clock.hh>
@@ -199,41 +198,6 @@ namespace moppe {
       // while see the sky through the sleeper's eyes.
       InputFrame camp_script (seconds_t interval);
 
-      // The opening is the authored shot list (data/opening.txt) when it
-      // was composed in this world, and otherwise one generated still of
-      // the trailhead; either ends in the player's eyes.  MOPPE_OPENING
-      // names another shot list, `generated` for the still, `flight` for
-      // the old drone flight through the planned landmarks, which the
-      // terrain survey still samples, `river` for a flight down the
-      // greatest watercourse from its divide to the sea (at a watching
-      // pace, or in MOPPE_FLYOVER_SECONDS), or `none` to begin in play.
-      void plan_opening_journey ();
-
-      // Reads the authored shots, keeping them only if they were composed
-      // in this world and every camera stands above its ground.
-      std::optional<OpeningReel> authored_opening (const char* choice) const;
-
-      // Any world's opening: one long still looking back at the trailhead
-      // from up the trail, with the titles over it.
-      std::vector<OpeningShot> generated_opening () const;
-
-      void plan_opening_reel (const char* choice);
-
-      void start_opening ();
-
-      // Each shot may set the world's clock at its cut, choosing its sky.
-      void follow_opening_clock ();
-
-      bool opening_active () const noexcept {
-        return m_cinematic.active () || m_opening.active ();
-      }
-
-      // Whether frames are drawn to keep up with the display. A capture or
-      // a recording draws each frame it is given however
-      // long that takes, and its picture must not follow the machine's
-      // speed: those hold their resolution.
-      bool keeping_pace () const;
-
       // The finished world arrived from the generation thread.  Everything
       // left runs in one go: build the retained presentations, place the
       // player, upload the terrain, and start playing.  The loading frame
@@ -246,55 +210,16 @@ namespace moppe {
 
       // -- company -----------------------------------------------------
 
-      // Opens the link to another player (game/companion_link.hh). A
-      // launch that cannot have one plays on alone.
-      void seek_company (const std::string& address);
-
       std::uint32_t this_world () const;
-
-      // How this player looks now, for the other to draw.
-      CompanionSnapshot my_snapshot () const;
-
-      // The companion's picks leave the ground here too, and fill the
-      // basket they are seen carrying.
-      void hear_of_picks (const CompanionSnapshot& theirs);
 
       // Both players begin beside a bike and a jeep parked on the same
       // spots. Whoever came later moves theirs a few steps aside, and
       // themselves with them if they have not yet walked off.
       void make_room (const CompanionSnapshot& theirs);
 
-      // On foot beside the other player's jeep, or their boat while they
-      // are at its helm, and nearer it than anything of one's own to
-      // ride: which of them, if either.
-      enum class Seat { none, jeep, boat };
-      Seat seat_within_reach () const;
-      bool can_ride_along () const;
-
-      // Taking the seat beside the other player, or ahead of them in
-      // their boat, keeping it as it moves, and leaving it: by the mount
-      // key, or when they have gone. Their weight sits in our boat while
-      // they ride in it.
-      void ride_along (InputFrame& input);
-
-      // The other player's machines, for ours to bump into: where they
-      // stand, and how they move from frame to frame (the jeep's motion
-      // is told).
-      void meet_strangers (seconds_t interval);
-
-      // Once a frame: hears what the other player has sent, works out how
-      // they look just now, and tells them how this one does.
+      // Once a frame: hears the other player (companionship.hh), making
+      // room when first met, and tells them how this one looks.
       void keep_company (seconds_t interval);
-
-      // The other player as the world's second figure: their bike where
-      // they left or ride it, themselves on foot, in the hammock, or
-      // under the wing, and their camp.
-      void
-      draw_companion (render::Renderer& r, render::DrawList& dl, float time);
-
-      // The renderer has one lamp. With two fires burning it is the one
-      // nearer the eye.
-      void light_companion_fire (FrameView& frame) const;
 
       // One waymark: where `at` falls in the frame, or which way it lies.
       // Nothing is marked nearer than `near`, and it fades in to `far`.
@@ -319,8 +244,6 @@ namespace moppe {
                          const FrameView& frame,
                          int width,
                          int height) const;
-
-      void add_company_readings (HudState& state) const;
 
       // -- simulation --------------------------------------------------
 
@@ -380,10 +303,6 @@ namespace moppe {
       // is open.
       void draw_map (render::Renderer& r, int width_pts, int height_pts);
 
-      // The opening's fades are a black veil over the frame, and its
-      // captions are set over that.
-      void draw_opening_titles (int width_pts, int height_pts);
-
       void render (render::Renderer& r) override;
 
       void render_loading (render::Renderer& r);
@@ -413,10 +332,6 @@ namespace moppe {
       }
 
       void leave_cinematic ();
-
-      // The opening's last shot lands where play takes up the view: at
-      // the following camera's place behind the player, or in their eyes.
-      OpeningShot arrival ();
 
       void regenerate_world ();
 
@@ -453,12 +368,8 @@ namespace moppe {
       render::TextList m_scan_text;
       std::unique_ptr<render::Font> m_sign_font;
       bool m_skip_cinematic_requested = false;
-      CinematicFlightPlan m_cinematic_plan;
-      CinematicFlight m_cinematic;
-      std::vector<OpeningShot> m_opening_shots;
-      OpeningPlayer m_opening;
-      std::size_t m_opening_shot_seen = SIZE_MAX;
-      std::size_t m_opening_rendered_shot = SIZE_MAX;
+      // The opening (opening_director.hh).
+      OpeningDirector m_opening;
       InputFrameAdapter m_live_input;
       SimulationClock m_simulation_clock;
       WaterfallSurface m_waterfall_surface;
@@ -481,7 +392,6 @@ namespace moppe {
       BoatWake m_jet_ski_wake;
       BoatWake m_their_jet_ski_wake;
       render::DrawList m_wake_dl;
-      OpeningArrival m_opening_arrival;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
       // The automated captures' walk scripts and cameras, and the demo
