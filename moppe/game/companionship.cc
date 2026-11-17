@@ -1,20 +1,13 @@
 #include <moppe/environment.hh>
 #include <moppe/game/blob_shadow.hh>
-#include <moppe/game/boat_render.hh>
-#include <moppe/game/caddy_render.hh>
 #include <moppe/game/companionship.hh>
 #include <moppe/game/figure.hh>
+#include <moppe/game/fleet_render.hh>
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/glider_render.hh>
-#include <moppe/game/helicopter_render.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame.hh>
-#include <moppe/game/jet_ski_render.hh>
-#include <moppe/game/long_john_render.hh>
-#include <moppe/game/mountain_bike_render.hh>
-#include <moppe/game/tractor_render.hh>
-#include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker_render.hh>
 #include <moppe/game/world_ground.hh>
 #include <moppe/mov/boat.hh>
@@ -337,79 +330,20 @@ namespace moppe::game {
     if (!companion)
       return;
     const CompanionSnapshot& theirs = *companion;
-    blob.draw (dl, surface, theirs.fleet.bike.position, 2.2f);
-    render_vehicle (r,
-                    dl,
-                    theirs.fleet.bike,
-                    theirs.mode == Doing::driving (Machine::bike),
-                    0x3000,
-                    their_outfit ());
-    blob.draw (dl, surface, theirs.fleet.jeep.position, 3.4f);
     // This player beside them, unless seeing through their own eyes.
-    render_jeep (r,
-                 dl,
-                 theirs.fleet.jeep,
-                 { .driver = theirs.mode == Doing::driving (Machine::jeep),
-                   .passenger = logic.m_doing == Doing::riding_along () &&
-                                !logic.m_seat_boat &&
-                                logic.m_cam_mode != CAM_HELMET,
-                   .driver_outfit = their_outfit (),
-                   .passenger_outfit = outfit },
-                 0x6000);
-    blob.draw (dl, surface, theirs.fleet.helicopter.position, 4.5f);
-    render_helicopter (r, theirs.fleet.helicopter, 0x7000);
-    blob.draw (dl, surface, theirs.fleet.tractor.position, 2.8f);
-    blob.draw (dl, surface, theirs.fleet.tractor.trailer_position, 2.4f);
-    render_tractor (r,
-                    dl,
-                    theirs.fleet.tractor,
-                    theirs.mode == Doing::driving (Machine::tractor)
-                      ? std::optional<Outfit> (their_outfit ())
-                      : std::nullopt,
-                    0x9000);
-    blob.draw (dl, surface, theirs.fleet.caddy.position, 3.6f);
-    render_caddy (r,
-                  dl,
-                  theirs.fleet.caddy,
-                  { .driver = theirs.mode == Doing::driving (Machine::caddy),
-                    .driver_outfit = their_outfit () },
-                  0xB000);
-    render_boat (r,
-                 dl,
-                 theirs.fleet.boat,
-                 theirs.mode == Doing::driving (Machine::boat)
-                   ? std::optional<Outfit> (their_outfit ())
-                   : std::nullopt,
-                 0xF800,
-                 std::nullopt,
-                 time,
-                 logic.m_doing == Doing::riding_along () && logic.m_seat_boat &&
-                     logic.m_cam_mode != CAM_HELMET
-                   ? std::optional<Outfit> (outfit)
-                   : std::nullopt);
-    blob.draw (dl, surface, theirs.fleet.mountain_bike.position, 1.3f);
-    render_mountain_bike (r,
-                          dl,
-                          theirs.fleet.mountain_bike,
-                          theirs.mode == Doing::driving (Machine::mountain_bike)
-                            ? std::optional<Outfit> (their_outfit ())
-                            : std::nullopt,
-                          0xE000);
-    blob.draw (dl, surface, theirs.fleet.long_john.position, 2.0f);
-    render_long_john (r,
-                      dl,
-                      theirs.fleet.long_john,
-                      theirs.mode == Doing::driving (Machine::long_john)
-                        ? std::optional<Outfit> (their_outfit ())
-                        : std::nullopt,
-                      0xE100);
-    render_jet_ski (r,
-                    dl,
-                    theirs.fleet.jet_ski,
-                    theirs.mode == Doing::driving (Machine::jet_ski)
-                      ? std::optional<Outfit> (their_outfit ())
-                      : std::nullopt,
-                    0xE200);
+    FleetRiders riders {};
+    if (const std::optional<Machine> driven = driven_machine (theirs.mode))
+      riders[static_cast<std::size_t> (*driven)].driver = their_outfit ();
+    if (logic.m_doing == Doing::riding_along () &&
+        logic.m_cam_mode != CAM_HELMET)
+      riders[static_cast<std::size_t> (logic.m_seat_boat ? Machine::boat
+                                                         : Machine::jeep)]
+        .passenger = outfit;
+    draw_fleet (
+      { .r = r, .dl = dl, .time = time, .blob = &blob, .surface = &surface },
+      theirs.fleet,
+      riders,
+      true);
     if (theirs.hung)
       draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
     if (theirs.hearth_laid)

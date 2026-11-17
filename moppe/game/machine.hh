@@ -73,8 +73,10 @@ namespace moppe::game {
     // the shallowest water.
     std::optional<Vec3> step_out;
     SeatView view;
-    // How wide a path through the undergrowth it parts.
+    // How wide a path through the undergrowth it parts, and how wide
+    // the soft shadow under it is (none on the water).
     meters_t undergrowth_parting {};
+    meters_t shadow_radius {};
     // How high over it its waymark stands, and the waymark over the
     // other player driving it (heads_up.cc).
     meters_t mark_height {};

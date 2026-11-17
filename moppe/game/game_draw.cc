@@ -4,13 +4,9 @@
 
 #include <moppe/game/animal_render.hh>
 #include <moppe/game/caddy_render.hh>
+#include <moppe/game/fleet_render.hh>
 #include <moppe/game/game.hh>
 #include <moppe/game/glider_render.hh>
-#include <moppe/game/helicopter_render.hh>
-#include <moppe/game/jet_ski_render.hh>
-#include <moppe/game/long_john_render.hh>
-#include <moppe/game/mountain_bike_render.hh>
-#include <moppe/game/tractor_render.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker_render.hh>
 
@@ -101,17 +97,7 @@ namespace moppe {
         return;
       }
       const FrameActors& actors = frame.actors;
-      render_vehicle (r, m_caster_dl, actors.fleet.bike, false, 0);
-      render_mountain_bike (
-        r, m_caster_dl, actors.fleet.mountain_bike, std::nullopt, 0);
-      render_long_john (
-        r, m_caster_dl, actors.fleet.long_john, std::nullopt, 0);
-      render_jeep (r, m_caster_dl, actors.fleet.jeep, {}, 0);
-      render_caddy (r, m_caster_dl, actors.fleet.caddy, {}, 0);
-      render_tractor (r, m_caster_dl, actors.fleet.tractor, std::nullopt, 0);
-      render_helicopter (r, actors.fleet.helicopter, 0);
-      render_boat (r, m_caster_dl, actors.fleet.boat, std::nullopt, 0);
-      render_jet_ski (r, m_caster_dl, actors.fleet.jet_ski, std::nullopt, 0);
+      cast_fleet (r, m_caster_dl, actors.fleet);
       m_places.landscape.cast_shadows (r, frame.camera.position);
       render_animals (
         r,
@@ -131,20 +117,8 @@ namespace moppe {
         m_places.layout.period_z,
         0);
       m_signs.cast_shadow (r);
-      if (m_company.companion) {
-        const CompanionSnapshot& theirs = *m_company.companion;
-        render_vehicle (r, m_caster_dl, theirs.fleet.bike, false, 0);
-        render_mountain_bike (
-          r, m_caster_dl, theirs.fleet.mountain_bike, std::nullopt, 0);
-        render_long_john (
-          r, m_caster_dl, theirs.fleet.long_john, std::nullopt, 0);
-        render_jeep (r, m_caster_dl, theirs.fleet.jeep, {}, 0);
-        render_caddy (r, m_caster_dl, theirs.fleet.caddy, {}, 0);
-        render_tractor (r, m_caster_dl, theirs.fleet.tractor, std::nullopt, 0);
-        render_helicopter (r, theirs.fleet.helicopter, 0);
-        render_boat (r, m_caster_dl, theirs.fleet.boat, std::nullopt, 0);
-        render_jet_ski (r, m_caster_dl, theirs.fleet.jet_ski, std::nullopt, 0);
-      }
+      if (m_company.companion)
+        cast_fleet (r, m_caster_dl, m_company.companion->fleet);
       r.end_shadow_casters ();
     }
 
@@ -280,7 +254,6 @@ namespace moppe {
           return generated_world ().road_surface ().ground (
             x, z, world_ground ().height (Vec3 (x, 0.0f, z)));
         });
-      m_blob.draw (m_world_dl, surface (), actors.fleet.bike.position, 2.2f);
       if (actors.walker)
         m_blob.draw (m_world_dl,
                      surface (),
@@ -289,97 +262,33 @@ namespace moppe {
       if (actors.glider)
         m_blob.draw (m_world_dl, surface (), actors.glider->position, 3.4f);
 
-      // In helmet cam you ARE the rider: don't draw yourself.
+      // In helmet cam you ARE the rider: don't draw yourself. The other
+      // player rides along in the jeep, or on the boat's fore seat.
       const bool helmet = actors.helmet_camera;
-      if (!(helmet && actors.active_mode == Doing::driving (Machine::bike)))
-        render_vehicle (r,
-                        m_world_dl,
-                        actors.fleet.bike,
-                        actors.active_mode == Doing::driving (Machine::bike),
-                        0x1000,
-                        m_company.outfit);
-      m_blob.draw (m_world_dl, surface (), actors.fleet.jeep.position, 3.4f);
-      render_jeep (
-        r,
-        m_world_dl,
-        actors.fleet.jeep,
-        { .driver =
-            actors.active_mode == Doing::driving (Machine::jeep) && !helmet,
-          .passenger = m_company.companion &&
-                       m_company.companion->mode == Doing::riding_along () &&
-                       !m_company.companion->in_boat,
-          .driver_outfit = m_company.outfit,
-          .passenger_outfit = m_company.their_outfit () },
-        0x5000);
-      m_blob.draw (
-        m_world_dl, surface (), actors.fleet.helicopter.position, 4.5f);
-      render_helicopter (r, actors.fleet.helicopter, 0x8000);
-      m_blob.draw (m_world_dl, surface (), actors.fleet.tractor.position, 2.8f);
-      m_blob.draw (
-        m_world_dl, surface (), actors.fleet.tractor.trailer_position, 2.4f);
-      render_tractor (r,
-                      m_world_dl,
-                      actors.fleet.tractor,
-                      actors.active_mode == Doing::driving (Machine::tractor) &&
-                          !helmet
-                        ? std::optional<Outfit> (m_company.outfit)
-                        : std::nullopt,
-                      0xA000);
-      m_blob.draw (m_world_dl, surface (), actors.fleet.caddy.position, 3.6f);
-      render_caddy (
-        r,
-        m_world_dl,
-        actors.fleet.caddy,
-        { .driver =
-            actors.active_mode == Doing::driving (Machine::caddy) && !helmet,
-          .driver_outfit = m_company.outfit },
-        0xC000);
+      FleetRiders riders {};
+      if (const std::optional<Machine> driven =
+            driven_machine (actors.active_mode)) {
+        Riders& who = riders[static_cast<std::size_t> (*driven)];
+        who.from_the_seat = helmet;
+        if (!helmet)
+          who.driver = m_company.outfit;
+      }
+      if (m_company.companion &&
+          m_company.companion->mode == Doing::riding_along ())
+        riders[static_cast<std::size_t> (
+                 m_company.companion->in_boat ? Machine::boat : Machine::jeep)]
+          .passenger = m_company.their_outfit ();
+      draw_fleet ({ .r = r,
+                    .dl = m_world_dl,
+                    .time = frame.lighting.time,
+                    .rod = actors.helm_rod,
+                    .blob = &m_blob,
+                    .surface = &surface () },
+                  actors.fleet,
+                  riders,
+                  false);
       if (actors.sling)
         render_sling (m_world_dl, *actors.sling);
-      render_boat (r,
-                   m_world_dl,
-                   actors.fleet.boat,
-                   actors.active_mode == Doing::driving (Machine::boat) &&
-                       !helmet
-                     ? std::optional<Outfit> (m_company.outfit)
-                     : std::nullopt,
-                   0xF000,
-                   actors.helm_rod,
-                   frame.lighting.time,
-                   m_company.companion &&
-                       m_company.companion->mode == Doing::riding_along () &&
-                       m_company.companion->in_boat
-                     ? std::optional<Outfit> (m_company.their_outfit ())
-                     : std::nullopt);
-      m_blob.draw (
-        m_world_dl, surface (), actors.fleet.mountain_bike.position, 1.3f);
-      // Through the rider's eyes, the bars and the fork below them.
-      render_mountain_bike (
-        r,
-        m_world_dl,
-        actors.fleet.mountain_bike,
-        actors.active_mode == Doing::driving (Machine::mountain_bike) && !helmet
-          ? std::optional<Outfit> (m_company.outfit)
-          : std::nullopt,
-        0xD000);
-      m_blob.draw (
-        m_world_dl, surface (), actors.fleet.long_john.position, 2.0f);
-      render_long_john (
-        r,
-        m_world_dl,
-        actors.fleet.long_john,
-        actors.active_mode == Doing::driving (Machine::long_john) && !helmet
-          ? std::optional<Outfit> (m_company.outfit)
-          : std::nullopt,
-        0xD100);
-      render_jet_ski (r,
-                      m_world_dl,
-                      actors.fleet.jet_ski,
-                      actors.active_mode == Doing::driving (Machine::jet_ski) &&
-                          !helmet
-                        ? std::optional<Outfit> (m_company.outfit)
-                        : std::nullopt,
-                      0xD200);
 
       const Basket& basket = logic ().m_basket;
       m_basket_contents.clear ();

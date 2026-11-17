@@ -439,6 +439,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/camp.cc
   moppe/game/scan.cc
   moppe/game/fishing.cc
+  moppe/game/fleet_render.cc
   moppe/game/machine.cc
   moppe/game/machine_controls.cc
   moppe/game/companion.cc
