@@ -78,15 +78,17 @@ namespace moppe::game {
   }
 
   std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
-    const Vec3 extent = extent_value (recipe.extent ());
     const auto bits = [] (float value) {
       return std::bit_cast<std::uint32_t> (value);
     };
     std::ostringstream name;
     name << terrain::profile_id (recipe.generation_profile ()) << '-'
          << recipe.resolution () << '-' << recipe.seed ().value << std::hex
-         << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
-         << bits (extent[2]) << "-water-"
+         << "-extent-";
+    for (std::size_t component = 0; component < 3; ++component)
+      name << (component ? "-" : "")
+           << bits (extent_value (recipe.extent ())[component]);
+    name << "-water-"
          << bits ((recipe.water_datum ()).numerical_value_in (u::m));
     name << "-uplift-"
          << bits (recipe.evolution ().uplift_duration.numerical_value_in (
@@ -218,6 +220,12 @@ namespace moppe::game {
         m_output.write (reinterpret_cast<const char*> (&value), sizeof (value));
       }
 
+      // A quantity as the number it is in `reference`'s unit, the file's.
+      template <mp_units::Quantity Q, mp_units::Reference R>
+      void quantity (Q value, R reference) {
+        scalar (value.numerical_value_in (get_unit (reference)));
+      }
+
       void bytes (const void* data, std::size_t size) {
         m_output.write (static_cast<const char*> (data),
                         static_cast<std::streamsize> (size));
@@ -262,6 +270,17 @@ namespace moppe::game {
         return static_cast<bool> (m_input);
       }
 
+      // What the writer's quantity wrote: a number in `reference`'s unit,
+      // of `value`'s representation.
+      template <mp_units::Quantity Q, mp_units::Reference R>
+      bool quantity (Q& value, R reference) {
+        typename Q::rep number {};
+        if (!scalar (number))
+          return false;
+        value = number * reference;
+        return true;
+      }
+
       bool bytes (void* data, std::size_t size) {
         m_input.read (static_cast<char*> (data),
                       static_cast<std::streamsize> (size));
@@ -293,21 +312,11 @@ namespace moppe::game {
       std::ifstream m_input;
     };
 
-    float meters (meters_t value) {
-      return value.numerical_value_in (u::m);
-    }
-
-    float square_meters (square_meters_t value) {
-      return value.numerical_value_in (u::m * u::m);
-    }
-
-    float cubic_meters (cubic_meters_t value) {
-      return value.numerical_value_in (u::m * u::m * u::m);
-    }
-
-    float slope_value (terrain::slope_t value) {
-      return value.numerical_value_in (mp_units::one);
-    }
+    // The units the file keeps each kind of quantity in.
+    constexpr auto square_metre = u::m * u::m;
+    constexpr auto cubic_metre = u::m * u::m * u::m;
+    constexpr auto julian_year = mp_units::astronomy::Julian_year;
+    constexpr auto slope_ratio = terrain::terrain_slope[mp_units::one];
 
     void write_recipe (BinaryWriter& output,
                        const terrain::WorldRecipe& recipe) {
@@ -316,28 +325,19 @@ namespace moppe::game {
       output.scalar (static_cast<std::uint32_t> (recipe.resolution ()));
       output.scalar (recipe.seed ().value);
       output.scalar (static_cast<std::uint32_t> (recipe.generation_profile ()));
-      const Vec3 extent = extent_value (recipe.extent ());
+      const auto& evolution = recipe.evolution ();
       for (std::size_t component = 0; component < 3; ++component)
-        output.scalar (extent[component]);
-      output.scalar (meters (recipe.water_datum ()));
-      output.scalar (recipe.evolution ().uplift_duration.numerical_value_in (
-        mp_units::astronomy::Julian_year));
-      output.scalar (
-        square_meters (recipe.evolution ().channel_initiation_area));
-      output.scalar (
-        recipe.evolution ().fluvial_transport.runoff_rate.numerical_value_in (
-          u::m / mp_units::astronomy::Julian_year));
-      output.scalar (
-        recipe.evolution ()
-          .fluvial_transport.concentration_at_unit_slope.numerical_value_in (
-            mp_units::one));
-      output.scalar (
-        recipe.evolution ().critical_hillslope_gradient.numerical_value_in (
-          mp_units::one));
-      output.scalar (
-        recipe.evolution ()
-          .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
-            mp_units::one));
+        output.scalar (extent_value (recipe.extent ())[component]);
+      output.quantity (recipe.water_datum (), u::m);
+      output.quantity (evolution.uplift_duration, julian_year);
+      output.quantity (evolution.channel_initiation_area, square_metre);
+      output.quantity (evolution.fluvial_transport.runoff_rate,
+                       u::m / julian_year);
+      output.quantity (evolution.fluvial_transport.concentration_at_unit_slope,
+                       mp_units::one);
+      output.quantity (evolution.critical_hillslope_gradient, mp_units::one);
+      output.quantity (evolution.maximum_hillslope_diffusivity_multiplier,
+                       mp_units::one);
     }
 
     bool read_recipe (BinaryReader& input, const terrain::WorldRecipe& recipe) {
@@ -346,58 +346,50 @@ namespace moppe::game {
       std::uint32_t resolution = 0;
       std::uint32_t seed = 0;
       std::uint32_t profile = 0;
-      Vec3 extent;
-      float water = 0.0f;
-      float uplift_years = 0.0f;
-      float channel_initiation_area_m2 = 0.0f;
-      float runoff_m_per_year = 0.0f;
-      float concentration_at_unit_slope = 0.0f;
-      float critical_hillslope_gradient = 0.0f;
-      float maximum_hillslope_multiplier = 0.0f;
+      // The extent's lanes as the file has them.
+      float lanes[3] {};
+      meters_t water {};
+      julian_years_t uplift {};
+      square_meters_t channel_initiation_area {};
+      meters_per_julian_year_t runoff {};
+      terrain::SedimentConcentration concentration_at_unit_slope {};
+      proportion_t critical_hillslope_gradient {};
+      proportion_t maximum_hillslope_multiplier {};
       if (!input.bytes (magic.data (), magic.size ()) ||
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
         return false;
-      for (std::size_t component = 0; component < 3; ++component) {
-        float value = 0.0f;
-        if (!input.scalar (value))
+      for (float& lane : lanes)
+        if (!input.scalar (lane))
           return false;
-        extent[component] = value;
-      }
-      return input.scalar (water) && input.scalar (uplift_years) &&
-             input.scalar (channel_initiation_area_m2) &&
-             input.scalar (runoff_m_per_year) &&
-             input.scalar (concentration_at_unit_slope) &&
-             input.scalar (critical_hillslope_gradient) &&
-             input.scalar (maximum_hillslope_multiplier) &&
+      const spatial_extent_t extent =
+        spatial_extent_in_metres (Vec3 (lanes[0], lanes[1], lanes[2]));
+      const auto& evolution = recipe.evolution ();
+      return input.quantity (water, u::m) &&
+             input.quantity (uplift, julian_year) &&
+             input.quantity (channel_initiation_area, square_metre) &&
+             input.quantity (runoff, u::m / julian_year) &&
+             input.quantity (concentration_at_unit_slope,
+                             terrain::sediment_concentration[mp_units::one]) &&
+             input.quantity (critical_hillslope_gradient,
+                             proportion[mp_units::one]) &&
+             input.quantity (maximum_hillslope_multiplier,
+                             proportion[mp_units::one]) &&
              magic == CACHE_MAGIC && version == STORED_VERSION &&
              resolution == static_cast<std::uint32_t> (recipe.resolution ()) &&
              seed == recipe.seed ().value &&
              profile ==
                static_cast<std::uint32_t> (recipe.generation_profile ()) &&
-             extent == extent_value (recipe.extent ()) &&
-             water == meters (recipe.water_datum ()) &&
-             uplift_years ==
-               recipe.evolution ().uplift_duration.numerical_value_in (
-                 mp_units::astronomy::Julian_year) &&
-             channel_initiation_area_m2 ==
-               square_meters (recipe.evolution ().channel_initiation_area) &&
-             runoff_m_per_year ==
-               recipe.evolution ()
-                 .fluvial_transport.runoff_rate.numerical_value_in (
-                   u::m / mp_units::astronomy::Julian_year) &&
+             extent == recipe.extent () && water == recipe.water_datum () &&
+             uplift == evolution.uplift_duration &&
+             channel_initiation_area == evolution.channel_initiation_area &&
+             runoff == evolution.fluvial_transport.runoff_rate &&
              concentration_at_unit_slope ==
-               recipe.evolution ()
-                 .fluvial_transport.concentration_at_unit_slope
-                 .numerical_value_in (mp_units::one) &&
+               evolution.fluvial_transport.concentration_at_unit_slope &&
              critical_hillslope_gradient ==
-               recipe.evolution ()
-                 .critical_hillslope_gradient.numerical_value_in (
-                   mp_units::one) &&
+               evolution.critical_hillslope_gradient &&
              maximum_hillslope_multiplier ==
-               recipe.evolution ()
-                 .maximum_hillslope_diffusivity_multiplier.numerical_value_in (
-                   mp_units::one);
+               evolution.maximum_hillslope_diffusivity_multiplier;
     }
 
     void write_flood (BinaryWriter& output, const terrain::FloodField& flood) {
@@ -430,16 +422,16 @@ namespace moppe::game {
         output.scalar (body.id.value);
         output.scalar (
           static_cast<std::uint64_t> (terrain::count_value (body.cells)));
-        output.scalar (square_meters (body.area));
-        output.scalar (meters (body.maximum_depth));
-        output.scalar (meters (body.mean_depth));
-        output.scalar (cubic_meters (body.volume));
-        output.scalar (meters (body.surface_level));
+        output.quantity (body.area, square_metre);
+        output.quantity (body.maximum_depth, u::m);
+        output.quantity (body.mean_depth, u::m);
+        output.quantity (body.volume, cubic_metre);
+        output.quantity (body.surface_level, u::m);
         output.scalar (static_cast<std::uint8_t> (body.ocean_connected));
         output.scalar (body.outlet_cell.value);
         output.scalar (body.spill_cell.value);
         output.scalar (static_cast<std::uint32_t> (body.classification));
-        output.scalar (meters (body.inradius));
+        output.quantity (body.inradius, u::m);
         output.scalar (static_cast<std::uint8_t> (body.channel_like));
       }
     }
@@ -462,34 +454,38 @@ namespace moppe::game {
       for (std::uint64_t index = 0; index < body_count; ++index) {
         std::uint32_t id = 0;
         std::uint64_t count = 0;
-        float area = 0, maximum_depth = 0, mean_depth = 0, volume = 0;
-        float surface_level = 0, inradius = 0;
+        square_meters_t area {};
+        meters_t maximum_depth {}, mean_depth {}, surface_level {}, inradius {};
+        cubic_meters_t volume {};
         std::uint8_t ocean = 0, channel_like = 0;
         std::uint32_t outlet = 0, spill = 0, classification = 0;
         if (!input.scalar (id) || !input.scalar (count) ||
-            !input.scalar (area) || !input.scalar (maximum_depth) ||
-            !input.scalar (mean_depth) || !input.scalar (volume) ||
-            !input.scalar (surface_level) || !input.scalar (ocean) ||
+            !input.quantity (area, square_metre) ||
+            !input.quantity (maximum_depth, u::m) ||
+            !input.quantity (mean_depth, u::m) ||
+            !input.quantity (volume, cubic_metre) ||
+            !input.quantity (surface_level, u::m) || !input.scalar (ocean) ||
             !input.scalar (outlet) || !input.scalar (spill) ||
-            !input.scalar (classification) || !input.scalar (inradius) ||
-            !input.scalar (channel_like) || count > cells ||
+            !input.scalar (classification) ||
+            !input.quantity (inradius, u::m) || !input.scalar (channel_like) ||
+            count > cells ||
             classification >
               static_cast<std::uint32_t> (terrain::WaterBodyClass::Sea))
           return false;
         bodies.push_back (
           { .id = terrain::WaterBodyId { id },
             .cells = terrain::cell_count (count),
-            .area = area * u::m * u::m,
-            .maximum_depth = maximum_depth * u::m,
-            .mean_depth = mean_depth * u::m,
-            .volume = volume * u::m * u::m * u::m,
-            .surface_level = surface_level * u::m,
+            .area = area,
+            .maximum_depth = maximum_depth,
+            .mean_depth = mean_depth,
+            .volume = volume,
+            .surface_level = surface_level,
             .ocean_connected = ocean != 0,
             .outlet_cell = terrain::CellIndex { outlet },
             .spill_cell = terrain::CellIndex { spill },
             .classification =
               static_cast<terrain::WaterBodyClass> (classification),
-            .inradius = inradius * u::m,
+            .inradius = inradius,
             .channel_like = channel_like != 0 });
       }
       lakes = terrain::LakeCensus (std::move (membership), std::move (bodies));
@@ -498,9 +494,9 @@ namespace moppe::game {
 
     void write_rivers (BinaryWriter& output,
                        const terrain::RiverNetwork& rivers) {
-      output.scalar (square_meters (rivers.minimum_area));
-      output.scalar (meters (rivers.waterfall_parameters.minimum_drop));
-      output.scalar (slope_value (rivers.waterfall_parameters.minimum_slope));
+      output.quantity (rivers.minimum_area, square_metre);
+      output.quantity (rivers.waterfall_parameters.minimum_drop, u::m);
+      output.quantity (rivers.waterfall_parameters.minimum_slope, slope_ratio);
       output.scalar (static_cast<std::uint64_t> (
         terrain::count_value (rivers.waterfall_parameters.separation_cells)));
       output.scalar (static_cast<std::uint64_t> (rivers.reaches.size ()));
@@ -511,10 +507,10 @@ namespace moppe::game {
         output.scalar (reach.downstream_body.value);
         output.scalar (static_cast<std::uint8_t> (reach.downstream_ocean));
         output.scalar (reach.downstream_reach.value);
-        output.scalar (square_meters (reach.upstream_area));
-        output.scalar (square_meters (reach.downstream_area));
-        output.scalar (slope_value (reach.maximum_slope));
-        output.scalar (reach.alignment.length.numerical_value_in (u::m));
+        output.quantity (reach.upstream_area, square_metre);
+        output.quantity (reach.downstream_area, square_metre);
+        output.quantity (reach.maximum_slope, slope_ratio);
+        output.quantity (reach.alignment.length, u::m);
         output.scalar (
           static_cast<std::uint64_t> (reach.alignment.points.size ()));
         for (const terrain::RiverAlignmentPoint& point :
@@ -536,10 +532,10 @@ namespace moppe::game {
         output.scalar (waterfall.reach_id.value);
         output.scalar (waterfall.lip_cell.value);
         output.scalar (waterfall.foot_cell.value);
-        output.scalar (meters (waterfall.drop));
-        output.scalar (meters (waterfall.horizontal_distance));
-        output.scalar (slope_value (waterfall.slope));
-        output.scalar (square_meters (waterfall.contributing_area));
+        output.quantity (waterfall.drop, u::m);
+        output.quantity (waterfall.horizontal_distance, u::m);
+        output.quantity (waterfall.slope, slope_ratio);
+        output.quantity (waterfall.contributing_area, square_metre);
       }
       output.vector<std::uint8_t> (rivers.body_traversed);
     }
@@ -548,40 +544,33 @@ namespace moppe::game {
                       terrain::RiverNetwork& rivers,
                       std::size_t cells,
                       std::size_t bodies) {
-      float minimum_area = 0, minimum_drop = 0, minimum_slope = 0;
       std::uint64_t separation = 0, reach_count = 0;
-      if (!input.scalar (minimum_area) || !input.scalar (minimum_drop) ||
-          !input.scalar (minimum_slope) || !input.scalar (separation) ||
-          !input.scalar (reach_count) || reach_count > cells)
+      if (!input.quantity (rivers.minimum_area, square_metre) ||
+          !input.quantity (rivers.waterfall_parameters.minimum_drop, u::m) ||
+          !input.quantity (rivers.waterfall_parameters.minimum_slope,
+                           slope_ratio) ||
+          !input.scalar (separation) || !input.scalar (reach_count) ||
+          reach_count > cells)
         return false;
-      rivers.minimum_area = minimum_area * u::m * u::m;
-      rivers.waterfall_parameters.minimum_drop = minimum_drop * u::m;
-      rivers.waterfall_parameters.minimum_slope =
-        minimum_slope * terrain::terrain_slope[mp_units::one];
       rivers.waterfall_parameters.separation_cells =
         terrain::separation_cell_count (separation);
       rivers.reaches.reserve (static_cast<std::size_t> (reach_count));
       for (std::uint64_t index = 0; index < reach_count; ++index) {
         terrain::RiverReach reach;
         std::uint8_t downstream_ocean = 0;
-        float upstream_area = 0, downstream_area = 0, maximum_slope = 0;
-        double alignment_length = 0;
         std::uint64_t point_count = 0;
         if (!input.scalar (reach.id.value) || !input.ids (reach.cells, cells) ||
             !input.scalar (reach.upstream_body.value) ||
             !input.scalar (reach.downstream_body.value) ||
             !input.scalar (downstream_ocean) ||
             !input.scalar (reach.downstream_reach.value) ||
-            !input.scalar (upstream_area) || !input.scalar (downstream_area) ||
-            !input.scalar (maximum_slope) || !input.scalar (alignment_length) ||
+            !input.quantity (reach.upstream_area, square_metre) ||
+            !input.quantity (reach.downstream_area, square_metre) ||
+            !input.quantity (reach.maximum_slope, slope_ratio) ||
+            !input.quantity (reach.alignment.length, u::m) ||
             !input.scalar (point_count) || point_count > cells * 8)
           return false;
         reach.downstream_ocean = downstream_ocean != 0;
-        reach.upstream_area = upstream_area * u::m * u::m;
-        reach.downstream_area = downstream_area * u::m * u::m;
-        reach.maximum_slope =
-          maximum_slope * terrain::terrain_slope[mp_units::one];
-        reach.alignment.length = alignment_length * u::m;
         reach.alignment.points.resize (static_cast<std::size_t> (point_count));
         for (terrain::RiverAlignmentPoint& point : reach.alignment.points)
           if (!input.scalar (point.x_m) || !input.scalar (point.z_m) ||
@@ -600,17 +589,14 @@ namespace moppe::game {
         return false;
       rivers.waterfalls.resize (static_cast<std::size_t> (waterfall_count));
       for (terrain::Waterfall& waterfall : rivers.waterfalls) {
-        float drop = 0, distance = 0, slope = 0, area = 0;
         if (!input.scalar (waterfall.reach_id.value) ||
             !input.scalar (waterfall.lip_cell.value) ||
-            !input.scalar (waterfall.foot_cell.value) || !input.scalar (drop) ||
-            !input.scalar (distance) || !input.scalar (slope) ||
-            !input.scalar (area))
+            !input.scalar (waterfall.foot_cell.value) ||
+            !input.quantity (waterfall.drop, u::m) ||
+            !input.quantity (waterfall.horizontal_distance, u::m) ||
+            !input.quantity (waterfall.slope, slope_ratio) ||
+            !input.quantity (waterfall.contributing_area, square_metre))
           return false;
-        waterfall.drop = drop * u::m;
-        waterfall.horizontal_distance = distance * u::m;
-        waterfall.slope = slope * terrain::terrain_slope[mp_units::one];
-        waterfall.contributing_area = area * u::m * u::m;
       }
       return input.vector (rivers.body_traversed, bodies) &&
              rivers.body_traversed.size () == bodies;
@@ -622,7 +608,7 @@ namespace moppe::game {
       output.scalar (trails.plan.scenic_focus.value);
       output.ids (trails.plan.control_sites);
       output.ids (trails.plan.circuit);
-      output.scalar (trails.alignment.length.numerical_value_in (u::m));
+      output.quantity (trails.alignment.length, u::m);
       output.scalar (
         static_cast<std::uint64_t> (trails.alignment.points.size ()));
       for (const terrain::TrailAlignmentPoint& point :
@@ -630,7 +616,7 @@ namespace moppe::game {
         output.scalar (point.x_m);
         output.scalar (point.z_m);
       }
-      output.scalar (meters (trails.formed_width));
+      output.quantity (trails.formed_width, u::m);
       output.vector<float> (trails.earthwork_delta_m);
     }
 
@@ -722,27 +708,21 @@ namespace moppe::game {
     bool read_trails (BinaryReader& input,
                       terrain::TrailNetwork& trails,
                       std::size_t cells) {
-      double alignment_length = 0;
       std::uint64_t point_count = 0;
-      float formed_width = 0;
       if (!input.scalar (trails.plan.home_base.value) ||
           !input.scalar (trails.plan.scenic_focus.value) ||
           !input.ids (trails.plan.control_sites, cells) ||
           !input.ids (trails.plan.circuit, cells) ||
-          !input.scalar (alignment_length) || !input.scalar (point_count) ||
-          point_count > cells * 8)
+          !input.quantity (trails.alignment.length, u::m) ||
+          !input.scalar (point_count) || point_count > cells * 8)
         return false;
-      trails.alignment.length = alignment_length * u::m;
       trails.alignment.points.resize (static_cast<std::size_t> (point_count));
       for (terrain::TrailAlignmentPoint& point : trails.alignment.points)
         if (!input.scalar (point.x_m) || !input.scalar (point.z_m))
           return false;
-      if (!input.scalar (formed_width) ||
-          !input.vector (trails.earthwork_delta_m, cells) ||
-          trails.earthwork_delta_m.size () != cells)
-        return false;
-      trails.formed_width = formed_width * u::m;
-      return true;
+      return input.quantity (trails.formed_width, u::m) &&
+             input.vector (trails.earthwork_delta_m, cells) &&
+             trails.earthwork_delta_m.size () == cells;
     }
   }
 
