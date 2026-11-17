@@ -97,10 +97,10 @@ int main (int argc, char** argv) {
     const meters_t spacing = domain.spacing_x ();
     // A river point's place and how far down its reach it lies.
     const auto place_of = [] (const RiverAlignmentPoint& point) {
-      return plan_position (point.x_m, point.z_m);
+      return point.place;
     };
     const auto distance_of = [] (const RiverAlignmentPoint& point) {
-      return point.distance_m * u::m;
+      return point.distance;
     };
     const auto cell_at = [&] (plan_position_t at) {
       const int x = wrap_index (
@@ -192,7 +192,7 @@ int main (int argc, char** argv) {
             ? distance_of (points[point + 1]) - distance_of (points[point])
             : none;
         total += step;
-        if (points[point].waterfall >= 0.5f ||
+        if (points[point].waterfall >= 0.5f * proportion[one] ||
             distance_of (points[point]) <= 20.0f * u::m)
           continue;
         const ElevationChange deepest = deepest_across (points, point);
@@ -266,8 +266,10 @@ int main (int argc, char** argv) {
         const auto& points = reach.alignment.points;
         for (std::size_t point = 8; point + 8 < points.size (); point += 2) {
           const auto& here = points[point];
-          if (here.waterfall >= 0.5f || here.standing_water > 0.0f ||
-              here.pooled > 0.0f || !reach_wet[reach.id][point])
+          if (here.waterfall >= 0.5f * proportion[one] ||
+              here.standing_water > 0.0f * proportion[one] ||
+              here.pooled > 0.0f * proportion[one] ||
+              !reach_wet[reach.id][point])
             continue;
           const auto& above = points[point - 8];
           const auto& below = points[point + 8];

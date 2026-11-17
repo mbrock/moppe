@@ -479,12 +479,11 @@ namespace moppe::terrain {
                                  .numerical_value_in (one))));
     // The spate's share a river carries, through a catchment.
     const auto carried = [&] (const RiverAlignmentPoint& point) {
-      return discharge_t (
-        parameters.flow *
-        river_discharge (point.contributing_area_m2 * u::m * u::m));
+      return discharge_t (parameters.flow *
+                          river_discharge (point.contributing_area));
     };
     const auto place_of = [] (const RiverAlignmentPoint& point) {
-      return plan_position (point.x_m, point.z_m);
+      return point.place;
     };
     {
       MOPPE_PROFILE_ZONE ("watercourse.prepare_running_surface");
@@ -495,10 +494,11 @@ namespace moppe::terrain {
         auto& prepared = reach_points[reach.id];
         if (length == 0)
           continue;
-        const bool fade_source = upstream_reaches[reach.id].empty () &&
-                                 points.front ().standing_water < 0.99f;
+        const bool fade_source =
+          upstream_reaches[reach.id].empty () &&
+          points.front ().standing_water < 0.99f * proportion[one];
         const meters_t source_width =
-          river_width (points.front ().contributing_area_m2 * u::m * u::m);
+          river_width (points.front ().contributing_area);
         const meters_t source_length =
           std::max (14.0f * u::m, 3.0f * source_width);
 
@@ -508,8 +508,7 @@ namespace moppe::terrain {
         std::vector<int> spread_samples (length);
         std::vector<int> reach_samples (length);
         for (std::size_t point = 0; point < length; ++point) {
-          const meters_t river =
-            river_width (points[point].contributing_area_m2 * u::m * u::m);
+          const meters_t river = river_width (points[point].contributing_area);
           const meters_t spread =
             meters_t (0.5f * parameters.spread * river) + 1.5f * u::m;
           spread_samples[point] = static_cast<int> (
@@ -582,7 +581,8 @@ namespace moppe::terrain {
             bed[point] + 0.035f * u::m,
             bed[point] + 0.35f * u::m);
           discharge[point] = carried (center);
-          if (center.standing_water > 0.0f || center.pooled > 0.25f)
+          if (center.standing_water > 0.0f * proportion[one] ||
+              center.pooled > 0.25f * proportion[one])
             body[point] = census.body_at (CellIndex {
               static_cast<std::uint32_t> (cell_at (place_of (center))) });
         }
@@ -604,11 +604,11 @@ namespace moppe::terrain {
         std::size_t leaving_points = 0;
         if (sheet_drawn (reach.upstream_body))
           while (leaving_points < length &&
-                 points[leaving_points].standing_water > 0.0f)
+                 points[leaving_points].standing_water > 0.0f * proportion[one])
             ++leaving_points;
         const auto holds = [&] (std::size_t point) {
           return sheet_drawn (body[point]) &&
-                 (points[point].pooled > 0.25f ||
+                 (points[point].pooled > 0.25f * proportion[one] ||
                   (point < leaving_points &&
                    body[point] == reach.upstream_body));
         };
@@ -621,14 +621,15 @@ namespace moppe::terrain {
               sheet ? raised[census.domain ().offset (body[point])] : unraised;
             const bool leaving = point < leaving_points;
             // The level the alignment found standing water at.
-            const SurfaceElevation found =
-              surface_elevation_point (center.water_level_m * u::m);
+            const SurfaceElevation found = center.water_level;
             SurfaceElevation still_level = found + 0.045f * u::m;
             if (stands != unraised)
               still_level = std::max (still_level, stands);
             if (stands != unraised
-                  ? holds (point) || center.standing_water >= 0.5f
-                  : center.standing_water >= 0.5f && !leaving) {
+                  ? holds (point) ||
+                      center.standing_water >= 0.5f * proportion[one]
+                  : center.standing_water >= 0.5f * proportion[one] &&
+                      !leaving) {
               level[point] = still_level;
               met[point] = 1;
               continue;
@@ -646,13 +647,13 @@ namespace moppe::terrain {
                             section.ground[section.thalweg],
                             no_length,
                             parameters)
-                   : stage (section,
-                            discharge[point],
-                            level[point + 1],
-                            std::max (0.25f * u::m,
-                                      points[point + 1].distance_m * u::m -
-                                        center.distance_m * u::m),
-                            parameters);
+                   : stage (
+                       section,
+                       discharge[point],
+                       level[point + 1],
+                       std::max (0.25f * u::m,
+                                 points[point + 1].distance - center.distance),
+                       parameters);
             if (!sheet && !leaving) {
               const Wetted water = wetted (section, stood);
               // Water that reaches lower still water across its section
@@ -670,17 +671,21 @@ namespace moppe::terrain {
                             section.ground[section.centre + section.spread] -
                               0.08f * u::m);
             }
-            if (center.pooled > 0.25f || leaving)
+            if (center.pooled > 0.25f * proportion[one] || leaving)
               stood = std::max (stood, found + 0.045f * u::m);
             stood = std::max (stood, thread[point]);
             if (!last)
               stood = std::max (stood, level[point + 1]);
             level[point] =
-              leaving ? stood
-                      : lerp (stood,
-                              still_level,
-                              smoothstep (0.0f, 1.0f, center.standing_water) *
-                                blend_weight[one]);
+              leaving
+                ? stood
+                : lerp (stood,
+                        still_level,
+                        smoothstep (
+                          0.0f,
+                          1.0f,
+                          center.standing_water.numerical_value_in (one)) *
+                          blend_weight[one]);
           }
           for (std::size_t point = 1; point < length; ++point)
             if (met[point - 1] && !met[point] &&
@@ -740,9 +745,8 @@ namespace moppe::terrain {
           const RiverAlignmentPoint& center = points[point];
           const SurfaceElevation ground = bed[point];
           const proportion_t source_profile =
-            fade_source
-              ? band (0.0f * u::m, source_length, center.distance_m * u::m)
-              : 1.0f * proportion[one];
+            fade_source ? band (0.0f * u::m, source_length, center.distance)
+                        : 1.0f * proportion[one];
           prepared.push_back (
             { .at = place_of (center),
               .level =
@@ -755,9 +759,9 @@ namespace moppe::terrain {
               .pace = pace_t {},
               .grade = 0.0f * grade[one],
               .discharge = discharge[point],
-              .waterfall = center.waterfall * proportion[one],
+              .waterfall = center.waterfall,
               .source_profile = source_profile,
-              .standing_water = center.standing_water * proportion[one] });
+              .standing_water = center.standing_water });
         }
         // The running surface is a monotone downstream profile. Raise the
         // upstream sample over a shoulder; never lower downstream water into
@@ -818,7 +822,7 @@ namespace moppe::terrain {
           running.right = water.right;
           // In a lake or the sea the river is a current, not a surface: it
           // keeps the width it came with.
-          if (points[point].standing_water >= 0.5f) {
+          if (points[point].standing_water >= 0.5f * proportion[one]) {
             const meters_t spread =
               static_cast<float> (sections[point].spread) *
               sections[point].step;
@@ -827,16 +831,16 @@ namespace moppe::terrain {
           }
           // Only a pit may hold water deeper than a running surface is let
           // stand over the ground.
-          running.depth =
-            points[point].pooled > 0.25f ? water.deepest : no_length;
+          running.depth = points[point].pooled > 0.25f * proportion[one]
+                            ? water.deepest
+                            : no_length;
           running.pace =
             water.conveyance > 0.0f * pow<5, 2> (u::m)
               ? std::min (pace_t (discharge / water.conveyance), steepest)
               : steepest;
           const std::size_t above = point >= 2 ? point - 2 : 0;
           const std::size_t below = std::min (point + 2, length - 1);
-          const meters_t run =
-            points[below].distance_m * u::m - points[above].distance_m * u::m;
+          const meters_t run = points[below].distance - points[above].distance;
           running.grade = run > 0.25f * u::m
                             ? std::clamp (grade_t ((prepared[above].level -
                                                     prepared[below].level) /

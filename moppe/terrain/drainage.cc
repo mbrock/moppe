@@ -107,15 +107,14 @@ namespace moppe::terrain {
     RiverAlignmentPoint interpolate (const RiverAlignmentPoint& from,
                                      const RiverAlignmentPoint& to,
                                      float t) {
-      const auto mix = [t] (float a, float b) { return a + (b - a) * t; };
-      return { .x_m = mix (from.x_m, to.x_m),
-               .z_m = mix (from.z_m, to.z_m),
-               .contributing_area_m2 =
-                 mix (from.contributing_area_m2, to.contributing_area_m2),
+      const auto mix = [t] (auto a, auto b) { return a + (b - a) * t; };
+      return { .place = mix (from.place, to.place),
+               .contributing_area =
+                 mix (from.contributing_area, to.contributing_area),
                .slope = mix (from.slope, to.slope),
                .waterfall = mix (from.waterfall, to.waterfall),
                .standing_water = mix (from.standing_water, to.standing_water),
-               .water_level_m = mix (from.water_level_m, to.water_level_m),
+               .water_level = mix (from.water_level, to.water_level),
                .pooled = mix (from.pooled, to.pooled) };
     }
 
@@ -126,6 +125,13 @@ namespace moppe::terrain {
       RiverAlignment alignment;
       if (raw.size () < 2)
         return alignment;
+      // The curve is fitted in bare metres, lane by lane.
+      const auto x_m = [] (const RiverAlignmentPoint& point) {
+        return plan_value (point.place).x ();
+      };
+      const auto z_m = [] (const RiverAlignmentPoint& point) {
+        return plan_value (point.place).z ();
+      };
 
       // Match the trail system's geometric authority: a damped cubic Hermite
       // curve stays close to the routed corridor while removing eight-way
@@ -143,16 +149,16 @@ namespace moppe::terrain {
         const RiverAlignmentPoint& before = segment ? raw[segment - 1] : a;
         const RiverAlignmentPoint& after =
           segment + 2 < raw.size () ? raw[segment + 2] : b;
-        float tangent_ax = (b.x_m - before.x_m) * tangent_scale;
-        float tangent_az = (b.z_m - before.z_m) * tangent_scale;
-        float tangent_bx = (after.x_m - a.x_m) * tangent_scale;
-        float tangent_bz = (after.z_m - a.z_m) * tangent_scale;
+        float tangent_ax = (x_m (b) - x_m (before)) * tangent_scale;
+        float tangent_az = (z_m (b) - z_m (before)) * tangent_scale;
+        float tangent_bx = (x_m (after) - x_m (a)) * tangent_scale;
+        float tangent_bz = (z_m (after) - z_m (a)) * tangent_scale;
         if (!knot_tangents.empty ()) {
           align_knot_tangent (tangent_ax, tangent_az, knot_tangents[segment]);
           align_knot_tangent (
             tangent_bx, tangent_bz, knot_tangents[segment + 1]);
         }
-        const float run = cr::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
+        const float run = cr::hypot (x_m (b) - x_m (a), z_m (b) - z_m (a));
         const int subdivisions =
           std::max (1, static_cast<int> (std::ceil (run / sample_spacing)));
         for (int step = 0; step < subdivisions; ++step) {
@@ -164,10 +170,10 @@ namespace moppe::terrain {
           const float h01 = -2.0f * t3 + 3.0f * t2;
           const float h11 = t3 - t2;
           RiverAlignmentPoint point = interpolate (a, b, t);
-          point.x_m =
-            a.x_m * h00 + tangent_ax * h10 + b.x_m * h01 + tangent_bx * h11;
-          point.z_m =
-            a.z_m * h00 + tangent_az * h10 + b.z_m * h01 + tangent_bz * h11;
+          point.place = plan_position (x_m (a) * h00 + tangent_ax * h10 +
+                                         x_m (b) * h01 + tangent_bx * h11,
+                                       z_m (a) * h00 + tangent_az * h10 +
+                                         z_m (b) * h01 + tangent_bz * h11);
           alignment.points.push_back (point);
         }
       }
@@ -177,9 +183,9 @@ namespace moppe::terrain {
       for (std::size_t point = 1; point < alignment.points.size (); ++point) {
         const auto& before = alignment.points[point - 1];
         auto& current = alignment.points[point];
-        length_m +=
-          cr::hypot (current.x_m - before.x_m, current.z_m - before.z_m);
-        current.distance_m = static_cast<float> (length_m);
+        length_m += cr::hypot (x_m (current) - x_m (before),
+                               z_m (current) - z_m (before));
+        current.distance = static_cast<float> (length_m) * u::m;
       }
       alignment.length = length_m * mp_units::si::metre;
       return alignment;
@@ -298,8 +304,8 @@ namespace moppe::terrain {
             }
           }
           if (!raw.empty ()) {
-            const meters_t last_x = raw.back ().x_m * u::m;
-            const meters_t last_z = raw.back ().z_m * u::m;
+            const meters_t last_x = x_of (raw.back ().place);
+            const meters_t last_z = z_of (raw.back ().place);
             x = last_x + minimum_image_delta (x - last_x, period_x);
             z = last_z + minimum_image_delta (z - last_z, period_z);
           }
@@ -312,15 +318,14 @@ namespace moppe::terrain {
             channels.empty () ? drainage.contributing_area_at (cell)
                               : square_meters_t (channels.area[cell]);
           raw.push_back (
-            { .x_m = meters_value (x),
-              .z_m = meters_value (z),
-              .contributing_area_m2 = area.numerical_value_in (u::m * u::m),
-              .slope =
-                drainage.slope_at (cell).numerical_value_in (mp_units::one),
-              .waterfall = waterfall_cells[cell] ? 1.0f : 0.0f,
-              .standing_water = terminating ? 1.0f : 0.0f,
-              .water_level_m = flood.water_level_m (cell),
-              .pooled = pooled ? 1.0f : 0.0f });
+            { .place = plan_position (x, z),
+              .contributing_area = area,
+              .slope = drainage.slope_at (cell),
+              .waterfall =
+                (waterfall_cells[cell] ? 1.0f : 0.0f) * proportion[one],
+              .standing_water = (terminating ? 1.0f : 0.0f) * proportion[one],
+              .water_level = flood.water_level (cell),
+              .pooled = (pooled ? 1.0f : 0.0f) * proportion[one] });
           if (!channels.empty ())
             knot_tangents.push_back (
               channels.tangent[cell].numerical_value_in (mp_units::one));
@@ -352,8 +357,9 @@ namespace moppe::terrain {
       for (RiverReach& reach : network.reaches) {
         const double from_start = solve (reach.id);
         for (RiverAlignmentPoint& point : reach.alignment.points)
-          point.flow_distance_m =
-            static_cast<float> (point.distance_m - from_start);
+          point.flow_distance =
+            static_cast<float> (meters_value (point.distance) - from_start) *
+            u::m;
       }
     }
   }

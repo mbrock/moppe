@@ -368,18 +368,15 @@ namespace moppe::game {
     for (const terrain::RiverReach& reach : rivers.reaches) {
       const auto& points = reach.alignment.points;
       for (std::size_t i = 0; i + 1 < points.size (); ++i) {
-        const plan_position_t a = plan_position (points[i].x_m, points[i].z_m);
+        const plan_position_t a = points[i].place;
         const plan_position_t b =
-          a +
-          wrap_delta (plan_position (points[i + 1].x_m, points[i + 1].z_m) - a,
-                      period);
-        river_layer.stroke (
-          across (x_of (a)),
-          down (z_of (a)),
-          across (x_of (b)),
-          down (z_of (b)),
-          river_half (points[i].contributing_area_m2 * u::m2),
-          river_half (points[i + 1].contributing_area_m2 * u::m2));
+          a + wrap_delta (points[i + 1].place - a, period);
+        river_layer.stroke (across (x_of (a)),
+                            down (z_of (a)),
+                            across (x_of (b)),
+                            down (z_of (b)),
+                            river_half (points[i].contributing_area),
+                            river_half (points[i + 1].contributing_area));
       }
     }
 

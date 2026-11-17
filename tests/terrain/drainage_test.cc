@@ -73,7 +73,8 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
                              5.f, 0.f, 0.f, 6.f, 6.f, 6.f, 0.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (5, 5), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph dry = analyze_drainage (terrain);
   const DrainageGraph wet = analyze_wet_drainage (flood, census);
@@ -107,9 +108,13 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
       MOPPE_CHECK (!downstream.alignment.points.empty ());
       const RiverAlignmentPoint& inlet = reach.alignment.points.back ();
       const RiverAlignmentPoint& spill = downstream.alignment.points.front ();
-      MOPPE_CHECK_NEAR (inlet.x_m, spill.x_m, 1e-5f);
-      MOPPE_CHECK_NEAR (inlet.z_m, spill.z_m, 1e-5f);
-      MOPPE_CHECK_NEAR (inlet.flow_distance_m, spill.flow_distance_m, 1e-5f);
+      MOPPE_CHECK_NEAR (
+        plan_value (inlet.place).x (), plan_value (spill.place).x (), 1e-5f);
+      MOPPE_CHECK_NEAR (
+        plan_value (inlet.place).z (), plan_value (spill.place).z (), 1e-5f);
+      MOPPE_CHECK_NEAR (moppe::meters_value (inlet.flow_distance),
+                        moppe::meters_value (spill.flow_distance),
+                        1e-5f);
     }
     for (const std::uint32_t member : reach.cells) {
       MOPPE_CHECK (census.body_at (CellIndex { member }) == LakeCensus::dry);
@@ -138,7 +143,8 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
   const std::array heights { 5.f, 4.f, 3.f, 4.f, 2.f, 1.f, 3.f, 1.f, 0.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (3, 3), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph dry = analyze_drainage (terrain);
   const WetDrainageRouting routing = route_wet_drainage (flood, census);
@@ -164,8 +170,10 @@ MOPPE_TEST (wet_drainage_and_river_network_are_deterministic) {
   const std::array heights { 0.f, 4.f, 3.f, 2.f, 1.f, 5.f, 3.f, 2.f, 4.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (3, 3), heights);
-  const FloodField flood_a = analyze_standing_water (terrain, 0.0f);
-  const FloodField flood_b = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood_a =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
+  const FloodField flood_b =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census_a = census_lakes (flood_a);
   const LakeCensus census_b = census_lakes (flood_b);
   const DrainageGraph graph_a = analyze_wet_drainage (flood_a, census_a);
@@ -202,13 +210,23 @@ MOPPE_TEST (wet_drainage_and_river_network_are_deterministic) {
     for (std::size_t point = 0; point < a.alignment.points.size (); ++point) {
       const RiverAlignmentPoint& point_a = a.alignment.points[point];
       const RiverAlignmentPoint& point_b = b.alignment.points[point];
-      MOPPE_CHECK_NEAR (point_a.x_m, point_b.x_m, 0.0f);
-      MOPPE_CHECK_NEAR (point_a.z_m, point_b.z_m, 0.0f);
-      MOPPE_CHECK_NEAR (point_a.flow_distance_m, point_b.flow_distance_m, 0.0f);
       MOPPE_CHECK_NEAR (
-        point_a.contributing_area_m2, point_b.contributing_area_m2, 0.0f);
-      MOPPE_CHECK_NEAR (point_a.water_level_m, point_b.water_level_m, 0.0f);
-      MOPPE_CHECK_NEAR (point_a.standing_water, point_b.standing_water, 0.0f);
+        plan_value (point_a.place).x (), plan_value (point_b.place).x (), 0.0f);
+      MOPPE_CHECK_NEAR (
+        plan_value (point_a.place).z (), plan_value (point_b.place).z (), 0.0f);
+      MOPPE_CHECK_NEAR (moppe::meters_value (point_a.flow_distance),
+                        moppe::meters_value (point_b.flow_distance),
+                        0.0f);
+      MOPPE_CHECK_NEAR (
+        point_a.contributing_area.numerical_value_in (u::m * u::m),
+        point_b.contributing_area.numerical_value_in (u::m * u::m),
+        0.0f);
+      MOPPE_CHECK_NEAR (surface_elevation_value (point_a.water_level),
+                        surface_elevation_value (point_b.water_level),
+                        0.0f);
+      MOPPE_CHECK_NEAR (point_a.standing_water.numerical_value_in (moppe::one),
+                        point_b.standing_water.numerical_value_in (moppe::one),
+                        0.0f);
     }
     MOPPE_CHECK_NEAR (
       (a.downstream_area).numerical_value_in (moppe::u::m * moppe::u::m),
@@ -249,7 +267,8 @@ MOPPE_TEST (channel_refined_extraction_keeps_topology_and_bends_geometry) {
         30.0f - static_cast<float> (x) - 0.4f * static_cast<float> (y);
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (width, height), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph wet = analyze_wet_drainage (flood, census);
   const FractionalDrainage channels =
@@ -276,36 +295,46 @@ MOPPE_TEST (channel_refined_extraction_keeps_topology_and_bends_geometry) {
     // Knots at the routed cells are exact, so the source point carries the
     // fractional contributing area of its cell verbatim.
     MOPPE_CHECK_NEAR (
-      reach.alignment.points.front ().contributing_area_m2,
+      reach.alignment.points.front ().contributing_area.numerical_value_in (
+        u::m * u::m),
       fractional_areas[reach.cells.front ()].numerical_value_in (
         mp_units::si::metre * mp_units::si::metre),
       1e-4f);
-    MOPPE_CHECK_NEAR (reach.alignment.points.front ().x_m,
-                      reference.alignment.points.front ().x_m,
-                      1e-5f);
-    MOPPE_CHECK_NEAR (reach.alignment.points.front ().z_m,
-                      reference.alignment.points.front ().z_m,
-                      1e-5f);
-    MOPPE_CHECK_NEAR (reach.alignment.points.back ().x_m,
-                      reference.alignment.points.back ().x_m,
-                      1e-5f);
-    MOPPE_CHECK_NEAR (reach.alignment.points.back ().z_m,
-                      reference.alignment.points.back ().z_m,
-                      1e-5f);
+    MOPPE_CHECK_NEAR (
+      plan_value (reach.alignment.points.front ().place).x (),
+      plan_value (reference.alignment.points.front ().place).x (),
+      1e-5f);
+    MOPPE_CHECK_NEAR (
+      plan_value (reach.alignment.points.front ().place).z (),
+      plan_value (reference.alignment.points.front ().place).z (),
+      1e-5f);
+    MOPPE_CHECK_NEAR (
+      plan_value (reach.alignment.points.back ().place).x (),
+      plan_value (reference.alignment.points.back ().place).x (),
+      1e-5f);
+    MOPPE_CHECK_NEAR (
+      plan_value (reach.alignment.points.back ().place).z (),
+      plan_value (reference.alignment.points.back ().place).z (),
+      1e-5f);
     for (const RiverAlignmentPoint& point : reach.alignment.points) {
-      MOPPE_CHECK (std::isfinite (point.x_m) && std::isfinite (point.z_m));
-      MOPPE_CHECK (point.contributing_area_m2 > 0.0f);
+      MOPPE_CHECK (std::isfinite (plan_value (point.place).x ()) &&
+                   std::isfinite (plan_value (point.place).z ()));
+      MOPPE_CHECK (point.contributing_area.numerical_value_in (u::m * u::m) >
+                   0.0f);
     }
     area_differs |=
-      std::fabs (reach.alignment.points.front ().contributing_area_m2 -
-                 reference.alignment.points.front ().contributing_area_m2) >
-      1e-4f;
+      std::fabs (
+        reach.alignment.points.front ().contributing_area.numerical_value_in (
+          u::m * u::m) -
+        reference.alignment.points.front ()
+          .contributing_area.numerical_value_in (u::m * u::m)) > 1e-4f;
     if (reach.alignment.points.size () == reference.alignment.points.size ())
       for (std::size_t point = 1; point + 1 < reach.alignment.points.size ();
            ++point)
         interior_bends |=
-          std::fabs (reach.alignment.points[point].z_m -
-                     reference.alignment.points[point].z_m) > 1e-3f;
+          std::fabs (
+            plan_value (reach.alignment.points[point].place).z () -
+            plan_value (reference.alignment.points[point].place).z ()) > 1e-3f;
   }
   MOPPE_CHECK (area_differs);
   MOPPE_CHECK (interior_bends);

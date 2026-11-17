@@ -68,7 +68,8 @@ namespace {
   PaintedValley paint_valley (const WatercoursePaint& parameters = {}) {
     std::vector<float> heights = valley_to_sea ();
     const ElevationMap terrain = make_elevation_map (valley_grid (), heights);
-    FloodField flood = analyze_standing_water (terrain, 0.0f);
+    FloodField flood =
+      analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
     LakeCensus census = census_lakes (flood);
     DrainageGraph drainage = analyze_wet_drainage (flood, census);
     RiverNetwork rivers = extract_river_network (
@@ -133,7 +134,8 @@ MOPPE_TEST (more_water_stands_deeper_and_runs_faster) {
   // One valley, one slope, one cross-section: all that changes down it is
   // how much water has gathered. In spate, so that the brook stands deeper
   // than the thread every river is at least.
-  const PaintedValley valley = paint_valley ({ .flow = 1.0f });
+  const PaintedValley valley =
+    paint_valley ({ .flow = 1.0f * proportion[one] });
   const std::size_t upper = 5 * 9 + 4;
   const std::size_t lower = 7 * 9 + 4;
   const auto depth = [&] (std::size_t cell) {
@@ -172,7 +174,8 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   const TerrainDomain grid (
     width, height, 20.0f * mp_units::si::metre, 20.0f * mp_units::si::metre);
   const ElevationMap terrain = make_elevation_map (grid, heights);
-  const FloodField flood = analyze_standing_water (terrain, -10.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (-10.0f * u::m));
   const LakeCensus census = census_lakes (flood);
 
   // Both terraces must be real, sheet-rendered bodies for the sill to
@@ -216,7 +219,8 @@ MOPPE_TEST (traversed_channel_like_bodies_join_the_running_water_field) {
   const TerrainDomain grid (
     width, height, 20.0f * mp_units::si::metre, 20.0f * mp_units::si::metre);
   const ElevationMap terrain = make_elevation_map (grid, heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
 
   const WaterBodyId pond_id = census.body_at (CellIndex { 1 * width + 6 });
@@ -246,10 +250,11 @@ MOPPE_TEST (traversed_channel_like_bodies_join_the_running_water_field) {
   MOPPE_CHECK (inlet->downstream_reach != RiverReach::no_id);
   bool pooled_point = false;
   for (const RiverAlignmentPoint& point : inlet->alignment.points)
-    if (point.pooled > 0.9f) {
+    if (point.pooled > 0.9f * proportion[one]) {
       pooled_point = true;
-      MOPPE_CHECK (point.standing_water < 0.1f);
-      MOPPE_CHECK_NEAR (point.water_level_m, 0.25f * 100.0f, 0.5f);
+      MOPPE_CHECK (point.standing_water < 0.1f * proportion[one]);
+      MOPPE_CHECK_NEAR (
+        surface_elevation_value (point.water_level), 0.25f * 100.0f, 0.5f);
     }
   MOPPE_CHECK (pooled_point);
 
@@ -304,7 +309,8 @@ MOPPE_TEST (a_stream_stepping_diagonally_runs_on_across_each_corner) {
   const TerrainDomain grid (
     size, size, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre);
   const ElevationMap terrain = make_elevation_map (grid, heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph drainage = analyze_wet_drainage (flood, census);
   const RiverNetwork rivers =
@@ -365,11 +371,11 @@ MOPPE_TEST (sea_waves_read_back_the_surface_the_water_program_displaces) {
       .height == 0.0f * u::m);
   // A river carries none, a lake hardly any, and the sea dies on its shore.
   MOPPE_CHECK (sea_wave_scale (0.0f * wave_amplitude[one], 3.0f * u::m) ==
-               0.0f);
+               0.0f * proportion[one]);
   MOPPE_CHECK (sea_wave_scale (0.10f * wave_amplitude[one], 30.0f * u::m) <
-               0.011f);
+               0.011f * proportion[one]);
   MOPPE_CHECK (sea_wave_scale (1.0f * wave_amplitude[one], 0.0f * u::m) ==
-               0.0f);
+               0.0f * proportion[one]);
   MOPPE_CHECK (sea_wave_scale (1.0f * wave_amplitude[one], 10.0f * u::m) ==
-               1.0f);
+               1.0f * proportion[one]);
 }

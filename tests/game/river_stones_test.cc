@@ -84,13 +84,13 @@ namespace {
     const float area = (width / 0.012f) * (width / 0.012f);
     for (float x = 10.0f; x <= river_test_side - 10.0f; x += 1.0f)
       reach.alignment.points.push_back (
-        { .x_m = x,
-          .z_m = river_test_centre,
-          .distance_m = x - 10.0f,
-          .flow_distance_m = river_test_side - 10.0f - x,
-          .contributing_area_m2 = area,
-          .slope = slope,
-          .water_level_m = surface_at (x) });
+        { .place = plan_position (x, river_test_centre),
+          .distance = (x - 10.0f) * u::m,
+          .flow_distance = (river_test_side - 10.0f - x) * u::m,
+          .contributing_area = area * u::m2,
+          .slope = slope * terrain::terrain_slope[one],
+          .water_level =
+            terrain::surface_elevation_point (surface_at (x) * u::m) });
     rivers.reaches.push_back (std::move (reach));
     return { std::move (surface),
              std::move (water),

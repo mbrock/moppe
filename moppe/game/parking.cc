@@ -185,7 +185,7 @@ namespace moppe::game {
     for (auto reach = course.rbegin (); reach != course.rend (); ++reach)
       for (const terrain::RiverAlignmentPoint& point :
            (*reach)->alignment.points) {
-        plan_position_t at = plan_position (point.x_m, point.z_m);
+        plan_position_t at = point.place;
         if (!line.empty ()) {
           Vec2& p = plan_value (at);
           const Vec2& last = plan_value (line.back ());

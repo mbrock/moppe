@@ -100,22 +100,21 @@ namespace moppe::terrain {
   // A dense, unwrapped plan-view trajectory derived from a receiver chain.
   // The drainage cells remain the topological authority; this continuous
   // reading is shared by rendering, flow painting, and future traversal.
-  // Distance is local to the reach, while flow_distance_m is globally
+  // Distance is local to the reach, while flow_distance is globally
   // continuous through confluences and reaches zero at the final mouth.
   struct RiverAlignmentPoint {
-    float x_m = 0.0f;
-    float z_m = 0.0f;
-    float distance_m = 0.0f;
-    float flow_distance_m = 0.0f;
-    float contributing_area_m2 = 0.0f;
-    float slope = 0.0f;
-    float waterfall = 0.0f;
-    float standing_water = 0.0f;
-    float water_level_m = 0.0f;
+    plan_position_t place = plan_position (0.0f, 0.0f);
+    meters_t distance = 0.0f * u::m;
+    meters_t flow_distance = 0.0f * u::m;
+    square_meters_t contributing_area = 0.0f * u::m2;
+    slope_t slope = 0.0f * terrain_slope[one];
+    proportion_t waterfall = 0.0f * proportion[one];
+    proportion_t standing_water = 0.0f * proportion[one];
+    SurfaceElevation water_level = surface_elevation_point (0.0f * u::m);
     // Flooded channel-like bodies and small depressions the route crosses.
-    // The running-water painter holds water_level_m across such stretches;
+    // The running-water painter holds water_level across such stretches;
     // standing_water instead marks a body that terminates the river.
-    float pooled = 0.0f;
+    proportion_t pooled = 0.0f * proportion[one];
   };
 
   struct RiverAlignment {
