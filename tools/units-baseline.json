@@ -2,20 +2,20 @@
   "comment": "Typed-quantity ratchet for tools/units-report --check. Regenerate with tools/units-report --update.",
   "areas": {
     "Checkpoints & caches": {
-      "share": 23.7,
+      "share": 96.9,
       "files": 5,
-      "typed": 27,
-      "raw_float": 69,
-      "raw_vector": 18,
-      "escapes": 30
+      "typed": 93,
+      "raw_float": 3,
+      "raw_vector": 0,
+      "escapes": 14
     },
     "Companion / multiplayer": {
-      "share": 4.2,
+      "share": 60.9,
       "files": 7,
-      "typed": 7,
-      "raw_float": 112,
-      "raw_vector": 49,
-      "escapes": 3
+      "typed": 103,
+      "raw_float": 27,
+      "raw_vector": 39,
+      "escapes": 61
     },
     "Developer tools & site": {
       "share": 36.0,
@@ -42,44 +42,44 @@
       "escapes": 47
     },
     "Game logic": {
-      "share": 13.6,
+      "share": 14.2,
       "files": 43,
-      "typed": 257,
-      "raw_float": 949,
+      "typed": 270,
+      "raw_float": 940,
       "raw_vector": 685,
-      "escapes": 183
+      "escapes": 278
     },
     "HUD & map": {
-      "share": 1.3,
+      "share": 1.4,
       "files": 8,
-      "typed": 9,
+      "typed": 10,
       "raw_float": 662,
       "raw_vector": 37,
-      "escapes": 18
+      "escapes": 22
     },
     "Places & camp": {
-      "share": 3.3,
+      "share": 4.1,
       "files": 12,
-      "typed": 27,
-      "raw_float": 450,
+      "typed": 33,
+      "raw_float": 444,
       "raw_vector": 332,
-      "escapes": 15
+      "escapes": 41
     },
     "Platform game interface": {
-      "share": 1.5,
+      "share": 88.8,
       "files": 4,
-      "typed": 1,
-      "raw_float": 64,
+      "typed": 71,
+      "raw_float": 9,
       "raw_vector": 0,
-      "escapes": 0
+      "escapes": 7
     },
     "Renderer & render glue": {
       "share": 6.8,
       "files": 61,
-      "typed": 88,
-      "raw_float": 737,
+      "typed": 89,
+      "raw_float": 736,
       "raw_vector": 478,
-      "escapes": 90
+      "escapes": 113
     },
     "Rivers, water & sediment": {
       "share": 98.0,
@@ -95,23 +95,23 @@
       "typed": 125,
       "raw_float": 946,
       "raw_vector": 66,
-      "escapes": 123
+      "escapes": 125
     },
     "Terrain & world generation": {
-      "share": 50.3,
+      "share": 50.4,
       "files": 39,
-      "typed": 584,
-      "raw_float": 491,
+      "typed": 585,
+      "raw_float": 490,
       "raw_vector": 86,
-      "escapes": 206
+      "escapes": 207
     },
     "Tests": {
-      "share": 34.9,
+      "share": 35.0,
       "files": 83,
-      "typed": 522,
-      "raw_float": 783,
+      "typed": 524,
+      "raw_float": 782,
       "raw_vector": 191,
-      "escapes": 505
+      "escapes": 549
     },
     "Vehicles & on-foot body": {
       "share": 32.8,
@@ -119,7 +119,7 @@
       "typed": 860,
       "raw_float": 887,
       "raw_vector": 877,
-      "escapes": 295
+      "escapes": 296
     }
   }
 }
