@@ -99,6 +99,33 @@ MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
   MOPPE_CHECK (deepest < 3.0f);
   MOPPE_CHECK (boggiest < 0.5f);
 
+  // One road goes once round the world through the landing and closes on
+  // itself there, a period on, and is paved: the bus's.
+  const std::vector<bool> paved = paved_roads (network);
+  std::size_t loops = 0;
+  for (std::size_t r = 0; r < network.roads.size (); ++r) {
+    const Road& road = network.roads[r];
+    if (!road.loop)
+      continue;
+    ++loops;
+    MOPPE_CHECK (paved[r]);
+    const RoadPoint first = road.points.front ();
+    const RoadPoint last = road.points.back ();
+    const float laps_x = std::fabs (last.x_m - first.x_m) / period;
+    const float laps_z = std::fabs (last.z_m - first.z_m) / period;
+    MOPPE_CHECK ((std::fabs (laps_x - 1.0f) < 1e-3f && laps_z < 1e-3f) ||
+                 (std::fabs (laps_z - 1.0f) < 1e-3f && laps_x < 1e-3f));
+    bool at_landing = false;
+    for (const RoadPlace& place : network.places)
+      at_landing =
+        at_landing || (place.kind == RoadPlace::Kind::Landing &&
+                       place.x_m == first.x_m && place.z_m == first.z_m);
+    MOPPE_CHECK (at_landing);
+    for (const RoadTurning& turning : road_turnings (network, period, period))
+      MOPPE_CHECK (turning.road != r);
+  }
+  MOPPE_CHECK (loops == 1);
+
   // Every way carries some journey and is no older than the places it
   // joins; the trailhead is still in use.
   float oldest = 0.0f;

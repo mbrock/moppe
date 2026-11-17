@@ -324,6 +324,39 @@ namespace moppe::terrain {
       std::vector<std::uint32_t> from;
     };
 
+    // What the mover pays for step k (of steps) from a node, infinite
+    // where it may not go.
+    float step_cost (const Lattice& lattice,
+                     const std::vector<std::uint8_t>& ways,
+                     const Mover& mover,
+                     std::size_t node,
+                     std::size_t k) {
+      const int x = lattice.x (node);
+      const int y = lattice.y (node);
+      const auto [dx, dy] = steps[k];
+      const std::size_t next = lattice.node (x + dx, y + dy);
+      const float run =
+        cr::hypot (dx * lattice.spacing_x, dy * lattice.spacing_z);
+      float step = mover.step (lattice,
+                               ways,
+                               node,
+                               next,
+                               run,
+                               lattice.earthwork[node * steps.size () + k]);
+      // A knight's move passes over two cells on its way: both must be
+      // passable too, or it would cut the corner of a mire or a lake.
+      if (step < infinite && (std::abs (dx) == 2 || std::abs (dy) == 2)) {
+        const int mx = std::abs (dx) == 2 ? dx / 2 : 0;
+        const int my = std::abs (dy) == 2 ? dy / 2 : 0;
+        for (const std::size_t over :
+             { lattice.node (x + mx, y + my),
+               lattice.node (x + (mx ? mx : dx), y + (my ? my : dy)) })
+          if (!(mover.step (lattice, ways, node, over, 0.5f * run) < infinite))
+            step = infinite;
+      }
+      return step;
+    }
+
     Search search (const Lattice& lattice,
                    const std::vector<std::uint8_t>& ways,
                    const std::vector<std::size_t>& sources,
@@ -347,26 +380,7 @@ namespace moppe::terrain {
         for (std::size_t k = 0; k < steps.size (); ++k) {
           const auto [dx, dy] = steps[k];
           const std::size_t next = lattice.node (x + dx, y + dy);
-          const float run =
-            cr::hypot (dx * lattice.spacing_x, dy * lattice.spacing_z);
-          float step = mover.step (lattice,
-                                   ways,
-                                   node,
-                                   next,
-                                   run,
-                                   lattice.earthwork[node * steps.size () + k]);
-          // A knight's move passes over two cells on its way: both must be
-          // passable too, or it would cut the corner of a mire or a lake.
-          if (step < infinite && (std::abs (dx) == 2 || std::abs (dy) == 2)) {
-            const int mx = std::abs (dx) == 2 ? dx / 2 : 0;
-            const int my = std::abs (dy) == 2 ? dy / 2 : 0;
-            for (const std::size_t over :
-                 { lattice.node (x + mx, y + my),
-                   lattice.node (x + (mx ? mx : dx), y + (my ? my : dy)) })
-              if (!(mover.step (lattice, ways, node, over, 0.5f * run) <
-                    infinite))
-                step = infinite;
-          }
+          const float step = step_cost (lattice, ways, mover, node, k);
           if (!(step < infinite))
             continue;
           const float reached = cost + step;
@@ -388,6 +402,67 @@ namespace moppe::terrain {
         path.push_back (node);
       }
       return path;
+    }
+
+    // The cheapest way once round the world from `source` back to it, the
+    // way round `axis` (0 across x, 1 across z) and back: a search over two
+    // copies of the lattice joined end to end round that axis, where a step
+    // over the seam passes from one copy to the other, from the source on
+    // the first to the source on the second. Its nodes in order, the source
+    // at both ends, and its cost; no nodes if there is no way round.
+    std::pair<std::vector<std::size_t>, float>
+    search_round (const Lattice& lattice,
+                  const std::vector<std::uint8_t>& ways,
+                  std::size_t source,
+                  const Mover& mover,
+                  int axis) {
+      const std::size_t size = lattice.size ();
+      std::vector<float> cost (2 * size, infinite);
+      std::vector<std::uint32_t> from (2 * size);
+      using Entry = std::pair<float, std::uint32_t>;
+      std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
+      const std::size_t target = source + size;
+      cost[source] = 0.0f;
+      from[source] = static_cast<std::uint32_t> (source);
+      open.push ({ 0.0f, static_cast<std::uint32_t> (source) });
+      while (!open.empty ()) {
+        const auto [reached_cost, lifted] = open.top ();
+        open.pop ();
+        if (reached_cost > cost[lifted])
+          continue;
+        if (lifted == target)
+          break;
+        const std::size_t node = lifted % size;
+        const std::size_t lap = lifted / size;
+        for (std::size_t k = 0; k < steps.size (); ++k) {
+          const int along = axis == 0 ? lattice.x (node) + steps[k][0]
+                                      : lattice.y (node) + steps[k][1];
+          const int period = axis == 0 ? lattice.width : lattice.height;
+          const std::size_t next =
+            lattice.node (lattice.x (node) + steps[k][0],
+                          lattice.y (node) + steps[k][1]) +
+            size * ((along < 0 || along >= period) ? 1 - lap : lap);
+          const float step = step_cost (lattice, ways, mover, node, k);
+          if (!(step < infinite))
+            continue;
+          const float reached = reached_cost + step;
+          if (reached < cost[next]) {
+            cost[next] = reached;
+            from[next] = lifted;
+            open.push ({ reached, static_cast<std::uint32_t> (next) });
+          }
+        }
+      }
+      if (!(cost[target] < infinite))
+        return { {}, infinite };
+      std::vector<std::size_t> path;
+      for (std::size_t lifted = target;; lifted = from[lifted]) {
+        path.push_back (lifted % size);
+        if (lifted == source)
+          break;
+      }
+      std::ranges::reverse (path);
+      return { std::move (path), cost[target] };
     }
 
     meters_t path_length (const Lattice& lattice,
@@ -470,6 +545,16 @@ namespace moppe::terrain {
         emit ();
         for (const std::size_t node : path)
           ways[node] = std::max (ways[node], mark);
+      }
+
+      // Lays a way round the world (search_round's) whole, as the loop.
+      void lay_round (const std::vector<std::size_t>& path) {
+        Road road { Road::Kind::Road, unwrap (lattice, path) };
+        road.loop = true;
+        network.roads.push_back (std::move (road));
+        road_nodes.push_back (path);
+        for (const std::size_t node : path)
+          ways[node] = Built;
       }
 
       RoadPlace place (RoadPlace::Kind kind, std::size_t node) const {
@@ -1301,7 +1386,28 @@ namespace moppe::terrain {
             (best == lattice.size () || found.cost[node] < found.cost[best]))
           best = node;
       }
-      if (best != lattice.size () && planner.connect (best, found))
+      // The loop through it, once round the world whichever way round is
+      // cheaper, which the trailhead's road then joins; or, if no road can
+      // go round, the trailhead's road to the landing alone.
+      std::vector<std::size_t> round;
+      if (best != lattice.size ()) {
+        float cheapest = infinite;
+        for (const int axis : { 0, 1 }) {
+          auto [path, cost] =
+            search_round (lattice, planner.ways, best, cart, axis);
+          if (!path.empty () && cost < cheapest) {
+            cheapest = cost;
+            round = std::move (path);
+          }
+        }
+      }
+      if (!round.empty ()) {
+        planner.lay_round (round);
+        planner.connect (trailhead,
+                         search (lattice, planner.ways, round, cart));
+        planner.network.places.push_back (
+          planner.place (RoadPlace::Kind::Landing, best));
+      } else if (best != lattice.size () && planner.connect (best, found))
         planner.network.places.push_back (
           planner.place (RoadPlace::Kind::Landing, best));
     }
@@ -1458,6 +1564,10 @@ namespace moppe::terrain {
                  ? static_cast<std::uint32_t> (road)
                  : shared;
       }
+    std::vector<bool> held_alone (planner.road_nodes.size (), false);
+    for (const std::uint32_t held : holder)
+      if (held < held_alone.size ())
+        held_alone[held] = true;
     std::vector<RoadPlace>& places = planner.network.places;
     std::vector<Road>& roads = planner.network.roads;
     std::vector<bool> lived_on (roads.size (), false);
@@ -1505,6 +1615,14 @@ namespace moppe::terrain {
         for (const std::size_t node : path)
           if (holder[node] < roads.size ())
             taken[holder[node]] = true;
+        // A short way between two others may hold no node alone; a
+        // journey through all its nodes goes along it.
+        for (std::size_t r = 0; r < roads.size (); ++r)
+          if (!held_alone[r])
+            taken[r] = std::ranges::all_of (
+              planner.road_nodes[r], [&] (std::size_t node) {
+                return std::ranges::find (path, node) != path.end ();
+              });
         for (std::size_t r = 0; r < roads.size (); ++r) {
           if (!taken[r])
             continue;
@@ -1520,6 +1638,16 @@ namespace moppe::terrain {
       roads[road].abandoned_years_ago =
         lived_on[road] || !(last_used[road] < infinite) ? 0.0f
                                                         : last_used[road];
+    // The bus's round from the landing and back is a journey of its own,
+    // made as long as the landing has stood, and still made.
+    for (Road& road : roads)
+      if (road.loop)
+        for (const RoadPlace& place : places)
+          if (place.kind == RoadPlace::Kind::Landing) {
+            ++road.traffic;
+            road.age_years = std::max (road.age_years, place.founded_years_ago);
+            road.abandoned_years_ago = 0.0f;
+          }
     const FineGround fine { surface_elevation_values (elevations),
                             flood,
                             static_cast<int> (domain.width ()),

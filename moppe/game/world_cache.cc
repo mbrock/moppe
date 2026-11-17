@@ -66,7 +66,9 @@ namespace moppe::game {
     // Version 36 ends each cart road on dry ground in a level turning
     // place, keeps the treads clear of standing water beside them, and
     // leaves the ground under a bridge's deck bare.
-    constexpr std::uint32_t CACHE_VERSION = 37;
+    // Version 38 lays a loop round the world through the landing for the
+    // bus (Road::loop).
+    constexpr std::uint32_t CACHE_VERSION = 38;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
@@ -647,6 +649,7 @@ namespace moppe::game {
         output.scalar (road.traffic);
         output.scalar (road.age_years);
         output.scalar (road.abandoned_years_ago);
+        output.scalar (static_cast<std::uint32_t> (road.loop));
         output.vector<terrain::RoadPoint> (road.points);
         output.vector<float> (road.heights);
         output.vector<terrain::RoadBridge> (road.bridges);
@@ -682,12 +685,12 @@ namespace moppe::game {
         return false;
       roads.roads.resize (static_cast<std::size_t> (count));
       for (terrain::Road& road : roads.roads) {
-        std::uint32_t kind = 0;
+        std::uint32_t kind = 0, loop = 0;
         if (!input.scalar (kind) ||
             kind > static_cast<std::uint32_t> (terrain::Road::Kind::Footpath) ||
             !input.scalar (road.traffic) || !input.scalar (road.age_years) ||
-            !input.scalar (road.abandoned_years_ago) ||
-            !input.vector (road.points, cells) ||
+            !input.scalar (road.abandoned_years_ago) || !input.scalar (loop) ||
+            loop > 1 || !input.vector (road.points, cells) ||
             !input.vector (road.heights, cells) ||
             !input.vector (road.bridges, cells) ||
             !input.vector (road.culverts, cells))
@@ -699,6 +702,7 @@ namespace moppe::game {
           if (bridge.first > bridge.last || bridge.last >= road.points.size ())
             return false;
         road.kind = static_cast<terrain::Road::Kind> (kind);
+        road.loop = loop != 0;
       }
       if (!input.scalar (count) || count > cells)
         return false;

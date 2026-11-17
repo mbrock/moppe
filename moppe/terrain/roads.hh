@@ -103,6 +103,11 @@ namespace moppe::terrain {
     // Zero while some journey along it joins two places still in use;
     // otherwise since the last such journey ended.
     float abandoned_years_ago = 0.0f;
+    // The road once round the world through the landing, which the bus
+    // keeps to (game/bus.hh): closed on itself, its last point its first a
+    // period on. It is paved, and its ends join each other, not a turning
+    // place.
+    bool loop = false;
 
     friend bool operator== (const Road&, const Road&) = default;
   };
@@ -371,12 +376,15 @@ namespace moppe::terrain {
     std::vector<Guardrail> m_guardrails;
   };
 
-  // Which of the network's ways are paved, one flag a road: the cart roads
-  // still in use that carry at least half the busiest one's traffic, the
-  // lanes the country keeps up. The rest stay gravel.
+  // Which of the network's ways are paved, one flag a road: the loop, and
+  // the cart roads still in use that carry at least half the busiest one's
+  // traffic, the lanes the country keeps up. The rest stay gravel.
   [[nodiscard]] std::vector<bool> paved_roads (const RoadNetwork& network);
 
-  // Plans the network over one period of the world. `home_base` is the
+  // Plans the network over one period of the world: from the trailhead to
+  // the landing, a loop round the world through the landing (the cheaper
+  // way round of the two) when one can be built, joined by a road from the
+  // trailhead; and from that network the rest. `home_base` is the
   // trail's (the trailhead); `river_area` the least catchment drawn as a
   // river, which a road must bridge; `seed` rolls the places' histories.
   [[nodiscard]] RoadNetwork

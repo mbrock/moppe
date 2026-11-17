@@ -54,9 +54,10 @@ namespace moppe::terrain {
     std::vector<bool> paved;
     paved.reserve (network.roads.size ());
     for (const Road& road : network.roads)
-      paved.push_back (road.kind == Road::Kind::Road &&
-                       road.abandoned_years_ago == 0.0f && busiest > 0 &&
-                       2 * road.traffic >= busiest);
+      paved.push_back (road.loop ||
+                       (road.kind == Road::Kind::Road &&
+                        road.abandoned_years_ago == 0.0f && busiest > 0 &&
+                        2 * road.traffic >= busiest));
     return paved;
   }
 
@@ -83,7 +84,7 @@ namespace moppe::terrain {
     std::vector<RoadTurning> turnings;
     for (std::size_t r = 0; r < network.roads.size (); ++r) {
       const Road& road = network.roads[r];
-      if (road.kind != Road::Kind::Road || road.points.size () < 3)
+      if (road.kind != Road::Kind::Road || road.loop || road.points.size () < 3)
         continue;
       for (const bool back : { false, true }) {
         const std::size_t n = road.points.size ();

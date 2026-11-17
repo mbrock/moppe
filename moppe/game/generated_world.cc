@@ -275,8 +275,11 @@ namespace moppe::game {
     std::cerr << "moppe: roads: " << roads.places.size () << " places, "
               << roads.roads.size () << " ways, " << built.cut_m3 << " m3 cut, "
               << built.fill_m3 << " m3 filled, " << built.steep_points << " of "
-              << built.points << " points steeper than the road's grade"
-              << std::endl;
+              << built.points << " points steeper than the road's grade";
+    for (const terrain::Road& road : roads.roads)
+      if (road.loop)
+        std::cerr << ", a loop round the world through the landing";
+    std::cerr << std::endl;
     map::rebuild_geometry (geometry);
     hydrology = analyze_hydrology (geometry, recipe);
     terrain::TrailUseMap use = trails.use;

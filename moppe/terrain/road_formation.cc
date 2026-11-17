@@ -278,7 +278,7 @@ namespace moppe::terrain {
     // another way meets it there.
     for (std::size_t r = 0; r < network.roads.size (); ++r) {
       Road& road = network.roads[r];
-      if (road.kind != Road::Kind::Road)
+      if (road.kind != Road::Kind::Road || road.loop)
         continue;
       for (const bool back : { false, true }) {
         constexpr std::size_t shortest = 8, most = 15;
@@ -530,6 +530,11 @@ namespace moppe::terrain {
               break;
             }
           }
+      // The loop's ends are one point, at one height.
+      if (road.loop)
+        pins[0] = pins[n - 1] = std::isfinite (pins[0])       ? pins[0]
+                                : std::isfinite (pins[n - 1]) ? pins[n - 1]
+                                                              : natural[0];
       // The tread keeps a freeboard over standing water beside it too: a
       // lake a few metres off, behind a bank no higher than the road, is
       // let in when the formation cuts that bank down.
