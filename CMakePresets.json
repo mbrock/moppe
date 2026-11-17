@@ -16,7 +16,6 @@
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "MOPPE_UNITY_BUILD": "ON",
-        "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON",
         "BUILD_TESTING": "OFF"
       }
     },

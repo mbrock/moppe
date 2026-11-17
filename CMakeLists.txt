@@ -502,9 +502,9 @@ set(MOPPE_APPLE_COMMON_SOURCES
 
 function(moppe_configure_code_target target)
   target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  # The header nearly every source reads first, mp-units and all, is parsed
-  # once per target instead of once per source.
-  target_precompile_headers(${target} PRIVATE moppe/gfx/math.hh)
+  # No precompiled header: with one, Emscripten's clang 23 (and the MinGW
+  # build, with the same errors) no longer sees astronomy::Julian_year as a
+  # unit. Unity batches already share the mp-units parse.
   target_link_libraries(${target} PRIVATE
     mp-units::mp-units
     nanoarrow::nanoarrow

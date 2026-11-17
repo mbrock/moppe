@@ -8,7 +8,8 @@
   once (`moppe-engine`, with the generated models apart in `moppe-models`),
   so editing a source rebuilds its unity batch and relinks (about 9 s on 16
   cores; `-DMOPPE_UNITY_BUILD=OFF` makes it 5 s and a full build twice the
-  CPU). A header every source reads precompiles once per target.
+  CPU). There is no precompiled header: Emscripten's and MinGW's clang break
+  mp-units' units when they load one.
 - Unit tests: `cmake --build build --target moppe-tests && ctest --test-dir
   build --output-on-failure` (the test binary is excluded from the default
   build, so plain `ctest` otherwise runs a stale one)

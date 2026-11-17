@@ -190,8 +190,8 @@ flowchart LR
 The engine's source groups are one static library, `moppe-engine`, built once
 and linked by every terminal executable; the generated models are another,
 `moppe-models`. Sources are compiled in unity batches of four
-(`MOPPE_UNITY_BATCH_SIZE`, or `MOPPE_UNITY_BUILD=OFF`) and share one
-precompiled header, so mp-units is not parsed again for each file. The
+(`MOPPE_UNITY_BATCH_SIZE`, or `MOPPE_UNITY_BUILD=OFF`), so mp-units is parsed
+once per batch rather than once per file. The
 library boundaries are build products, not ownership: that stays in
 directories and namespaces. Tests are excluded from the default CMake
 build and must be requested through `make test` or the `moppe-tests` target.
