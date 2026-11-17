@@ -105,6 +105,15 @@ namespace moppe::game {
                        int width,
                        int height) const;
 
+    // The board over the bus stop nearest the subject, while it is near:
+    // the stop's name and when the bus comes, over the sign, in the HUD
+    // so that it is drawn after the scene's temporal resolve, which
+    // would lay the last string's history over a new one.
+    void add_bus_board (const HudWorld& w,
+                        const FrameView& frame,
+                        int width,
+                        int height);
+
     // What there is to find on the map, the walker first.
     static std::vector<MapSheet::Mark> map_marks (const HudWorld& w);
 

@@ -3,6 +3,7 @@
 // the trail map, and the quit question.
 
 #include <moppe/game/affordances.hh>
+#include <moppe/game/bus_render.hh>
 #include <moppe/game/camp.hh>
 #include <moppe/game/companionship.hh>
 #include <moppe/game/figure.hh>
@@ -851,6 +852,65 @@ namespace moppe::game {
               height_pts);
   }
 
+  void HeadsUp::add_bus_board (const HudWorld& w,
+                               const FrameView& frame,
+                               int width,
+                               int height) {
+    constexpr float shown_m = 40.0f, fading_m = 25.0f;
+    const render::Font* font = hud.font ();
+    if (!font)
+      return;
+    const Vec3 eye = w.session.subject_position ();
+    const float period_x = w.places.period_x, period_z = w.places.period_z;
+    const std::optional<std::size_t> stop =
+      bus_stop_near (w.bus, eye, shown_m * u::m, period_x, period_z);
+    if (!stop)
+      return;
+    const BusStop& at = w.bus.stops ()[*stop];
+    const float dx =
+      terrain::minimum_image_delta (at.sign[0] - eye[0], period_x);
+    const float dz =
+      terrain::minimum_image_delta (at.sign[2] - eye[2], period_z);
+    const float shown = std::clamp (
+      (shown_m - std::hypot (dx, dz)) / (shown_m - fading_m), 0.0f, 1.0f);
+    // Its foot over the bus's roof and the luggage on its rack, where
+    // the camera sees it.
+    const FrameCamera& camera = frame.camera;
+    const Vec3 foot = Vec3 (eye[0] + dx, at.sign[1] + 3.4f, eye[2] + dz);
+    const Vec3 to = foot - camera.position;
+    const float ahead = dot (to, camera.frame_forward);
+    if (ahead < 0.5f || shown <= 0.0f)
+      return;
+    const float half =
+      std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad));
+    const float x =
+      (0.5f + 0.5f * dot (to, camera.right) / (ahead * half * camera.aspect)) *
+      static_cast<float> (width);
+    const float y = (0.5f - 0.5f * dot (to, camera.up) / (ahead * half)) *
+                    static_cast<float> (height);
+    render::TextStyle title;
+    title.size = 20.0f;
+    render::TextStyle small;
+    small.size = 15.0f;
+    small.tracking = 0.03f;
+    const std::string due =
+      bus_due_words (w.bus.due (*stop, bus_time (w.session.logic ())));
+    const DisplayColor ink (1.0f, 0.86f, 0.32f);
+    for (const bool shade : { true, false }) {
+      render::TextStyle t = title, d = small;
+      t.red = shade ? 0.0f : ink.red;
+      t.green = shade ? 0.0f : ink.green;
+      t.blue = shade ? 0.0f : ink.blue;
+      d.red = d.green = d.blue = shade ? 0.0f : 1.0f;
+      t.alpha = (shade ? 0.5f : 1.0f) * shown;
+      d.alpha = (shade ? 0.5f : 0.95f) * shown;
+      if (shade)
+        t.softness = d.softness = 5.0f;
+      font->draw (text, x, y - 23.0f, at.name, t, render::TextAlign::Center);
+      font->draw (text, x, y - 4.0f, due, d, render::TextAlign::Center);
+    }
+  }
+
   void HeadsUp::draw (render::Renderer& r,
                       const HudWorld& w,
                       const OpeningDirector& opening,
@@ -878,6 +938,7 @@ namespace moppe::game {
       add_prompt (hud_state, w);
       w.company.add_readings (hud_state, w.session);
       add_waymarks (hud_state, w, frame, hud_width, hud_height);
+      add_bus_board (w, frame, hud_width, hud_height);
       add_chart (hud_state, frame, w);
       hud.draw (dl, text, hud_state, hud_width, hud_height);
       if (hud.diagnostics ())

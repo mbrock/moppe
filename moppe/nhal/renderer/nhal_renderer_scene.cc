@@ -27,14 +27,6 @@ namespace moppe::nhal {
       lettering.cull = Cull::none;
       lettering.label = "world text";
       m_world_text = m_device->create_render_pipeline (lettering);
-      // A label standing in front writes its depth: the temporal resolve
-      // follows the motion of the nearest surface about each texel, and a
-      // label's thin strokes would otherwise take the ground's or a bus's
-      // behind them, and lose their letters while the camera turns.
-      RenderPipelineDesc labels = lettering;
-      labels.depth_write = true;
-      labels.label = "world labels";
-      m_world_labels = m_device->create_render_pipeline (labels);
       // What the scene hides of a label: where its surfaces are nearer.
       RenderPipelineDesc behind = lettering;
       behind.depth_compare = CompareOp::less;
@@ -91,20 +83,18 @@ namespace moppe::nhal {
       }
     }
 
-    void NhalRenderer::draw_world_labels (const render::TextList& text,
-                                          float hidden) {
+    void NhalRenderer::draw_world_labels (const render::TextList& text) {
       if (text.empty () || m_sun_shadow.casting || m_scene_closed)
         return;
       open_scene ();
       // Behind the scene's surfaces faintly, then in front of them.
       std::vector<render::GlyphQuad> faint = text.quads ();
       for (render::GlyphQuad& quad : faint)
-        quad.color[3] *= hidden;
+        quad.color[3] *= 0.3f;
       for (const bool behind : { true, false }) {
         const std::vector<render::GlyphQuad>& quads =
           behind ? faint : text.quads ();
-        m_device->set_pipeline (behind ? m_world_labels_behind
-                                       : m_world_labels);
+        m_device->set_pipeline (behind ? m_world_labels_behind : m_world_text);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_texture (8, m_sun_shadow.map);
         for (const render::TextList::Run& run : text.runs ()) {

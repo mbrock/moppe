@@ -61,22 +61,12 @@ namespace moppe::game {
                        play_time_t now,
                        const Vec3& camera) const;
 
-    // The board over the stop nearest `eye`, while it is near: standing
-    // over the sign at a fixed size on a screen `height_pts` tall.
-    void draw_board (render::Renderer& renderer,
-                     const render::Font* font,
-                     const BusLine& line,
-                     play_time_t now,
-                     const Vec3& eye,
-                     float height_pts);
-
   private:
     Vec3 near_copy (const Vec3& at, const Vec3& camera) const;
 
     std::vector<render::MeshPtr> m_stops;
     CarMeshes m_bus;
     std::array<render::MeshPtr, 2> m_doors;
-    render::TextList m_board;
     float m_period_x = 0.0f;
     float m_period_z = 0.0f;
   };

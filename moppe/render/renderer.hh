@@ -493,13 +493,9 @@ namespace moppe {
       }
       // Labels standing at points in the world for this frame
       // (TextList::stand): facing the camera at a fixed size on screen,
-      // drawn as light, and where something stands in front at
-      // `hidden` of their strength: faintly, or whole for one that must
-      // be read wherever it is seen from.
-      virtual void draw_world_labels (const TextList& text,
-                                      float hidden = 0.3f) {
+      // drawn as light, and faintly where something stands in front.
+      virtual void draw_world_labels (const TextList& text) {
         (void)text;
-        (void)hidden;
       }
       // Resolve the low-resolution 3D scene before screen-space effects. It
       // is idempotent so backend-specific callers can safely enforce the

@@ -441,12 +441,6 @@ namespace moppe {
       if (visibility.star_effects)
         session ().stars ().render (r, frame.environment);
       draw_scan (r, frame);
-      m_places.bus_view.draw_board (r,
-                                    m_heads_up.hud.font (),
-                                    m_places.bus,
-                                    bus_time (logic ()),
-                                    session ().subject_position (),
-                                    static_cast<float> (r.height_pts ()));
     }
 
     void MoppeGame::draw_water_surfaces (render::Renderer& r,
