@@ -140,8 +140,8 @@ namespace moppe::game {
 
         // The most upright lean whose shoulders reach the grips, or failing
         // that, the lean that comes closest.
-        const meters_t reach =
-          arm_stretch * (avatar_size::upper_arm + avatar_size::forearm);
+        const meters_t reach = meters_t (
+          arm_stretch * (avatar_size::upper_arm + avatar_size::forearm));
         radians_t best_lean = 0.0f * u::rad;
         meters_t best_span = 1e9f * u::m;
         for (radians_t lean = 0.0f * u::rad; lean <= most_lean;

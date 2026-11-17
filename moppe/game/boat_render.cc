@@ -271,7 +271,8 @@ namespace moppe::game {
           std::max (none, proportion_t (1.0f * proportion[one] - age / lasts));
         const proportion_t settled =
           std::min (1.0f, seconds_value (age) * 4.0f + 0.3f) * proportion[one];
-        faded[i] = strength * m.foam * under_way * fade * fade * fade * settled;
+        faded[i] = quantity_cast<proportion> (strength * m.foam * under_way *
+                                              fade * fade * fade * settled);
       }
       std::vector<std::array<position_t, 3>> lifted (n);
       for (std::size_t i = 0; i < n; ++i) {

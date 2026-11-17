@@ -19,7 +19,8 @@ namespace moppe::game {
 
     proportion_t opening_ease (magnitude_t span) {
       const proportion_t t = unit_clamp (span);
-      return t * t * (3.0f - 2.0f * t);
+      return quantity_cast<proportion> (
+        t * t * (3.0f - 2.0f * t.numerical_value_in (one)));
     }
 
     // Splits a line into words, keeping a double-quoted string whole and
@@ -436,11 +437,13 @@ namespace moppe::game {
     const proportion_t progress = unit_clamp (t / shot.hold);
     // Held shots drift through their whole hold at an even pace, already in
     // motion at the cut; a settling shot eases into its final pose.
+    constexpr proportion_t whole = 1.0f * proportion[one];
+    const proportion_t left = whole - progress;
     const proportion_t travel =
-      shot.settle ? 1.0f - (1.0f - progress) * (1.0f - progress) : progress;
+      shot.settle ? whole - quantity_cast<proportion> (left * left) : progress;
     const scale_factor_t sway = quantity_cast<scale_factor> (
-      shot.sway * (shot.settle ? (1.0f - progress) * (1.0f - progress)
-                               : 1.0f * proportion[one]));
+      shot.sway *
+      (shot.settle ? quantity_cast<proportion> (left * left) : whole));
 
     const Vec3 up (0, 1, 0);
     const Vec3 base =
@@ -469,27 +472,29 @@ namespace moppe::game {
       sway * wave (6, 0.061f * u::Hz, 0.035f * u::m));
     const meters_t aside = quantity_cast<isq::length> (
       sway * wave (7, 0.043f * u::Hz, 0.05f * u::m));
-    m_position = moppe::position (
-      position_value (shot.eye) + base * meters_value (shot.push * travel) +
-      right * meters_value (shot.truck * travel) +
-      up * meters_value (shot.rise * travel) + up * meters_value (lift) +
-      right * meters_value (aside));
-    m_forward = forward_from (shot.heading_deg + shot.pan_deg * travel + yaw,
-                              shot.pitch_deg + shot.tilt_deg * travel + pitch);
-    m_fov = shot.fov_deg - shot.zoom_deg * travel;
+    m_position =
+      moppe::position (position_value (shot.eye) +
+                       base * meters_value (meters_t (shot.push * travel)) +
+                       right * meters_value (meters_t (shot.truck * travel)) +
+                       up * meters_value (meters_t (shot.rise * travel)) +
+                       up * meters_value (lift) + right * meters_value (aside));
+    m_forward = forward_from (
+      shot.heading_deg + degrees_t (shot.pan_deg * travel) + yaw,
+      shot.pitch_deg + degrees_t (shot.tilt_deg * travel) + pitch);
+    m_fov = shot.fov_deg - degrees_t (shot.zoom_deg * travel);
 
     // Fades: the first shot rises out of black over its whole fade; later
     // ones dip through black, half the fade on either side of the cut.
     proportion_t veil = 0.0f * proportion[one];
     if (shot.fade > 0.0f * u::s) {
       const seconds_t span = m_shot == 0 ? shot.fade : 0.5f * shot.fade;
-      veil = std::max (veil, 1.0f - opening_ease (t / span));
+      veil = std::max (veil, whole - opening_ease (t / span));
     }
     if (m_shot + 1 < m_shots.size ()) {
       const seconds_t next = m_shots[m_shot + 1].fade;
       if (next > 0.0f * u::s)
-        veil = std::max (veil,
-                         1.0f - opening_ease ((shot.hold - t) / (0.5f * next)));
+        veil = std::max (
+          veil, whole - opening_ease ((shot.hold - t) / (0.5f * next)));
     }
     m_veil = veil;
   }
@@ -518,9 +523,9 @@ namespace moppe::game {
         continue;
       const seconds_t ramp = std::min (1.8f * u::s, 0.4f * length);
       const seconds_t t = m_shot_time - caption.at;
-      const proportion_t alpha =
-        opening_ease (t / ramp) * opening_ease ((length - t) / ramp);
-      if (alpha > 0.002f)
+      const proportion_t alpha = quantity_cast<proportion> (
+        opening_ease (t / ramp) * opening_ease ((length - t) / ramp));
+      if (alpha > 0.002f * proportion[one])
         showing.push_back ({ caption.style, &caption.text, alpha, caption.y });
     }
     return showing;

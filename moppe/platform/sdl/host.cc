@@ -169,13 +169,19 @@ namespace {
         return float (SDL_GetGamepadAxis (m_pad, a)) / 32767.0f;
       };
       moppe::platform::GamepadReading r;
-      r.left_x = axis (SDL_GAMEPAD_AXIS_LEFTX);
+      r.left_x =
+        axis (SDL_GAMEPAD_AXIS_LEFTX) * moppe::control_signal[mp_units::one];
       // SDL's sticks point down for positive y; driving forward is up.
-      r.left_y = -axis (SDL_GAMEPAD_AXIS_LEFTY);
-      r.right_x = axis (SDL_GAMEPAD_AXIS_RIGHTX);
-      r.right_y = -axis (SDL_GAMEPAD_AXIS_RIGHTY);
-      r.left_trigger = axis (SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
-      r.right_trigger = axis (SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+      r.left_y =
+        -axis (SDL_GAMEPAD_AXIS_LEFTY) * moppe::control_signal[mp_units::one];
+      r.right_x =
+        axis (SDL_GAMEPAD_AXIS_RIGHTX) * moppe::control_signal[mp_units::one];
+      r.right_y =
+        -axis (SDL_GAMEPAD_AXIS_RIGHTY) * moppe::control_signal[mp_units::one];
+      r.left_trigger =
+        axis (SDL_GAMEPAD_AXIS_LEFT_TRIGGER) * moppe::proportion[mp_units::one];
+      r.right_trigger = axis (SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) *
+                        moppe::proportion[mp_units::one];
       r.a = held (SDL_GAMEPAD_BUTTON_SOUTH);
       r.b = held (SDL_GAMEPAD_BUTTON_EAST);
       r.x = held (SDL_GAMEPAD_BUTTON_WEST);

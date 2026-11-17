@@ -270,7 +270,8 @@ namespace moppe::game {
       const proportion_t moving =
         smoothstep (8.0f, 18.0f, kmh.numerical_value_in (u::km / u::h)) *
         proportion[one];
-      const proportion_t help = reach * along * moving;
+      const proportion_t help =
+        quantity_cast<proportion> (reach * along * moving);
       if (help <= 0.0f)
         return none;
       const speed_t speed =
@@ -314,9 +315,9 @@ namespace moppe::game {
       to[1] = 0.0f;
       const radians_t error =
         std::atan2 (dot (to, right), dot (to, ahead)) * u::rad;
-      const control_signal_t want =
+      const control_signal_t want = quantity_cast<control_signal> (
         std::clamp (2.5f * radians_value (error), -0.5f, 0.5f) *
-        scalar_value (help) * control_signal[one];
+        control_signal[one] * help);
       control_signal_t steer = turn;
       if (want * turn >= 0.0f)
         // The same way, or the bars let be: at least as far as it wants.
@@ -369,11 +370,14 @@ namespace moppe::game {
           }
         });
       const speed_t over = speed - allowed;
+      const proportion_t eased_off = quantity_cast<proportion> (
+        smoothstep (0.0f, 3.0f, speed_value (over)) * proportion[one] * help);
       const control_signal_t eased =
-        drive * (1.0f - smoothstep (0.0f, 3.0f, speed_value (over)) *
-                          scalar_value (help)) -
-        0.4f * smoothstep (3.0f, 8.0f, speed_value (over)) *
-          scalar_value (help) * control_signal[one];
+        quantity_cast<control_signal> (drive *
+                                       (1.0f * proportion[one] - eased_off)) -
+        quantity_cast<control_signal> (
+          0.4f * smoothstep (3.0f, 8.0f, speed_value (over)) *
+          control_signal[one] * help);
       return { steer, std::min (drive, eased) };
     }
 
@@ -1280,10 +1284,10 @@ namespace moppe::game {
         const int drops = static_cast<int> (
           std::round (std::min (3.0f, speed_value (speed) * 0.25f)));
         for (const float side : { 1.0f, -1.0f }) {
-          const position_t at = boat.point (
-            displacement (Vec3 (side * (0.45f + 0.25f * scalar_value (planing)),
-                                0.10f,
-                                2.4f - 1.6f * scalar_value (planing))));
+          const position_t at = boat.point (displacement (
+            Vec3 (side * (0.45f + 0.25f * planing.numerical_value_in (one)),
+                  0.10f,
+                  2.4f - 1.6f * planing.numerical_value_in (one))));
           session.dust ().emit (
             at,
             velocity (velocity_value (boat.velocity ()) * 0.75f +
@@ -1388,10 +1392,10 @@ namespace moppe::game {
         const int drops = static_cast<int> (
           std::round (std::min (3.0f, speed_value (speed) * 0.2f)));
         for (const float side : { 1.0f, -1.0f }) {
-          const position_t at = ski.point (
-            displacement (Vec3 (side * (0.3f + 0.2f * scalar_value (planing)),
-                                0.12f,
-                                1.2f - 1.3f * scalar_value (planing))));
+          const position_t at = ski.point (displacement (
+            Vec3 (side * (0.3f + 0.2f * planing.numerical_value_in (one)),
+                  0.12f,
+                  1.2f - 1.3f * planing.numerical_value_in (one))));
           session.dust ().emit (
             at,
             velocity (velocity_value (ski.velocity ()) * 0.7f +
@@ -1551,7 +1555,8 @@ namespace moppe::game {
         const proportion_t strength = heli.rotor ().numerical_value_in (one) *
                                       (1.0f - meters_value (height) / 9.0f) *
                                       proportion[one];
-        if (chance (logic.m_fx_rng) < scalar_value (strength) * 0.8f) {
+        if (chance (logic.m_fx_rng) <
+            strength.numerical_value_in (one) * 0.8f) {
           const radians_t around =
             6.2831853f * chance (logic.m_fx_rng) * u::rad;
           const direction_t out =
@@ -1567,12 +1572,12 @@ namespace moppe::game {
           session.dust ().emit (
             under,
             velocity (direction_value (out) *
-                        (7.0f + 5.0f * scalar_value (strength)) +
+                        (7.0f + 5.0f * strength.numerical_value_in (one)) +
                       Vec3 (0, 1.2f, 0)),
             wet ? 2
                 : std::max (1,
-                            static_cast<int> (
-                              std::round (2.0f * scalar_value (ground.dust)))),
+                            static_cast<int> (std::round (
+                              2.0f * ground.dust.numerical_value_in (one)))),
             wet ? DisplayColor (0.85f, 0.92f, 1.0f) : ground.dust_color);
         }
       }
@@ -1609,7 +1614,7 @@ namespace moppe::game {
           velocity (velocity_value (tractor.velocity ()) * 0.15f),
           static_cast<int> (
             std::round (std::min (3.0f, speed_value (slide) * 0.3f) *
-                        scalar_value (ground.dust))),
+                        ground.dust.numerical_value_in (one))),
           ground.dust_color);
     }
     // The Caddy as the jeep, with a breath of exhaust from under its
@@ -1645,7 +1650,7 @@ namespace moppe::game {
           velocity (velocity_value (caddy.velocity ()) * 0.15f),
           static_cast<int> (
             std::round (std::min (3.0f, speed_value (slide) * 0.25f) *
-                        scalar_value (ground.dust))),
+                        ground.dust.numerical_value_in (one))),
           ground.dust_color);
     }
     session.boat ().set_trunks (trunks);
@@ -1665,7 +1670,7 @@ namespace moppe::game {
           velocity (velocity_value (jeep.velocity ()) * 0.15f),
           static_cast<int> (
             std::round (std::min (3.0f, speed_value (slide) * 0.25f) *
-                        scalar_value (ground.dust))),
+                        ground.dust.numerical_value_in (one))),
           ground.dust_color);
     }
 
@@ -1748,7 +1753,7 @@ namespace moppe::game {
             proportion[one];
         }
         clean_stunt_landing =
-          impact < 7.0f * (u::m / u::s) && alignment > 0.82f;
+          impact < 7.0f * (u::m / u::s) && alignment > 0.82f * proportion[one];
 
         const float airtime = seconds_value (logic.m_jump_airtime);
         const float air_points = 60.0f * airtime * airtime;
@@ -1816,7 +1821,8 @@ namespace moppe::game {
     const DisplayColor clod_color = ground.clod_color;
     // Loose ground gives up its dust; turf and litter hold most of theirs.
     const auto loose = [&ground] (float count) {
-      return static_cast<int> (std::round (count * scalar_value (ground.dust)));
+      return static_cast<int> (
+        std::round (count * ground.dust.numerical_value_in (one)));
     };
     const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
     const direction_t heading = session.subject_heading ();
@@ -1882,11 +1888,13 @@ namespace moppe::game {
     }
 
     // Fallen leaves fly up behind the rear wheel and flutter back down.
-    if (driving && vehicle.grounded () && !in_water && ground.leaves > 0.15f) {
+    if (driving && vehicle.grounded () && !in_water &&
+        ground.leaves > 0.15f * proportion[one]) {
       const speed_t speed =
         length (velocity_value (vehicle.velocity ())) * (u::m / u::s);
       const int count = static_cast<int> (std::min (
-        3.0f, scalar_value (ground.leaves) * speed_value (speed) * 0.08f));
+        3.0f,
+        ground.leaves.numerical_value_in (one) * speed_value (speed) * 0.08f));
       if (count > 0) {
         Dust::Style leaf;
         leaf.size = 0.08f * u::m;
@@ -1952,9 +1960,9 @@ namespace moppe::game {
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const auto happens = [&] (per_second_t rate) {
         const probability_t odds (rate * elapsed);
-        return chance (logic.m_fx_rng) < scalar_value (odds);
+        return chance (logic.m_fx_rng) * probability[one] < odds;
       };
-      if (happens (90.0f * scalar_value (level) / u::s)) {
+      if (happens (per_second_t (90.0f * level / u::s))) {
         Dust::Style ember;
         ember.size = 0.12f * u::m;
         ember.lifetime = 0.40f * u::s;
@@ -1970,7 +1978,7 @@ namespace moppe::game {
                                          : DisplayColor (1.0f, 0.86f, 0.50f),
           ember);
       }
-      if (happens (22.0f * scalar_value (level) / u::s)) {
+      if (happens (per_second_t (22.0f * level / u::s))) {
         Dust::Style smoke;
         smoke.size = 0.55f * u::m;
         smoke.lifetime = 1.1f * u::s;
@@ -1979,14 +1987,15 @@ namespace moppe::game {
         smoke.spread = 0.45f * one;
         session.dust ().emit (
           moppe::position (position_value (nozzles) +
-                           jet * (2.0f + 2.5f * scalar_value (level))),
+                           jet *
+                             (2.0f + 2.5f * level.numerical_value_in (one))),
           velocity (velocity_value (vehicle.velocity ()) * 0.3f + jet * 3.0f),
           1,
           DisplayColor (0.62f, 0.60f, 0.58f),
           smoke);
       }
       if (vehicle.grounded () && jet[1] < -0.5f &&
-          happens (40.0f * scalar_value (level) / u::s)) {
+          happens (per_second_t (40.0f * level / u::s))) {
         Dust::Style blast;
         blast.size = 0.30f * u::m;
         blast.lifetime = 0.9f * u::s;
@@ -2012,7 +2021,7 @@ namespace moppe::game {
         abs (vehicle.thrust ()) > 0.3f * control_signal[one]) {
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const probability_t puff (14.0f / u::s * elapsed);
-      if (chance (logic.m_fx_rng) < scalar_value (puff)) {
+      if (chance (logic.m_fx_rng) * probability[one] < puff) {
         Dust::Style smoke;
         smoke.size = 0.35f * u::m;
         smoke.lifetime = 0.8f * u::s;
@@ -2139,7 +2148,7 @@ namespace moppe::game {
 
     session.dust ().update (dt);
     logic.m_shake_time += elapsed;
-    logic.m_shake *= decay (7.0f / u::s, elapsed);
+    logic.m_shake = degrees_t (logic.m_shake * decay (7.0f / u::s, elapsed));
 
     settle_look (logic,
                  length (velocity_value (session.camera_rig ().velocity)) *

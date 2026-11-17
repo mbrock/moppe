@@ -368,7 +368,7 @@ namespace moppe::game {
                     (horizontal / (650.0f * u::m)).numerical_value_in (one)));
       for (int i = 1; i < steps; ++i) {
         const proportion_t t = static_cast<float> (i) / steps * one;
-        position_t point = start + flight_shift (delta * t);
+        position_t point = start + flight_shift (displacement_t (delta * t));
         flight_set_height (
           point, flight_ground (surface, moppe::plan (point)) + 150.0f * u::m);
         add_waypoint (plan,
@@ -689,14 +689,16 @@ namespace moppe::game {
       add_transit (plan, surface, first, subject);
       for (int i = 0; i < 5; ++i) {
         const proportion_t progress = static_cast<float> (i) / 4.0f * one;
-        const radians_t angle = orbit_angle * progress;
+        const radians_t angle = radians_t (orbit_angle * progress);
         position_t eye =
           subject +
           flight_shift (
             along (radial, std::cos (radians_value (angle)) * radius)) +
           flight_shift (
             along (incoming, std::sin (radians_value (angle)) * radius));
-        flight_raise (eye, radius * (0.36f + 0.12f * progress));
+        flight_raise (
+          eye,
+          meters_t (radius * (0.36f * proportion[one] + 0.12f * progress)));
         const position_t look =
           subject + flight_shift (displacement (
                       Vec3 (0, meters_value (radius * 0.08f), 0)));
@@ -1184,7 +1186,7 @@ namespace moppe::game {
         if (separation > horizon)
           break;
         const proportion_t weight = envelope (separation);
-        lift = std::max<meters_t> (lift, minimum_lift[j - 1] * weight);
+        lift = std::max (lift, meters_t (minimum_lift[j - 1] * weight));
       }
       for (std::size_t j = i + 1; j < m_arc_samples.size (); ++j) {
         const meters_t separation =
@@ -1192,7 +1194,7 @@ namespace moppe::game {
         if (separation > horizon)
           break;
         const proportion_t weight = envelope (separation);
-        lift = std::max<meters_t> (lift, minimum_lift[j] * weight);
+        lift = std::max (lift, meters_t (minimum_lift[j] * weight));
       }
       m_arc_samples[i].terrain_lift = lift;
     }
@@ -1366,7 +1368,11 @@ namespace moppe::game {
     const RouteState before = route_state (m_route_distance);
     const control_signal_t pace =
       std::clamp<control_signal_t> (controls.pace, -1.0f * one, 1.0f * one);
-    speed_t wanted_speed = before.cruise_speed * (1.0f + 0.30f * pace);
+    // The pace stick, as a gain on the route's cruise.
+    const scale_factor_t pace_gain =
+      1.0f * scale_factor[one] +
+      quantity_cast<scale_factor> (quantity_cast<dimensionless> (0.30f * pace));
+    speed_t wanted_speed = speed_t (before.cruise_speed * pace_gain);
     const speed_t stopping_speed =
       std::sqrt (std::max (0.0f, 2.0f * 5.0f * meters_value (remaining))) *
       u::m / u::s;
@@ -1404,8 +1410,9 @@ namespace moppe::game {
 
     const direction_t right = right_of (path_forward);
     const displacement_t wanted_offset =
-      along (right, controls.lateral * (70.0f * u::m)) +
-      displacement (Vec3 (0, meters_value (controls.lift * (55.0f * u::m)), 0));
+      along (right, meters_t (controls.lateral * (70.0f * u::m))) +
+      displacement (
+        Vec3 (0, meters_value (meters_t (controls.lift * (55.0f * u::m))), 0));
     velocity_t wanted_manual_velocity =
       (wanted_offset - m_manual_offset) * (0.75f / u::s);
     clamp_length (wanted_manual_velocity, 22.0f * u::m / u::s);

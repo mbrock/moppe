@@ -75,7 +75,8 @@ namespace moppe::game {
       const auto at = [&] (int piece) {
         const proportion_t t =
           static_cast<float> (piece) / pieces * proportion[one];
-        const meters_t drop = sag * 4.0f * t * (1.0f * proportion[one] - t);
+        const meters_t drop =
+          meters_t (sag * 4.0f * t * (1.0f * proportion[one] - t));
         return from +
                quantity_cast<isq::position_vector> (displacement (
                  displacement_value (line) * t.numerical_value_in (one))) -

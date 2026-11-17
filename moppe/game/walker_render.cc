@@ -62,12 +62,14 @@ namespace moppe::game {
     position_t
     wicker_point (const BasketFrame& b, radians_t around, proportion_t down) {
       // The share of the rim's size the wicker keeps that far down.
-      const proportion_t taper = 1.0f - 0.22f * down;
+      const proportion_t taper = 1.0f * proportion[one] - 0.22f * down;
       const float a = radians_value (around);
       return b.rim +
-             shift (along (b.forward, rim_length * taper * std::cos (a))) +
-             shift (along (b.side, rim_width * taper * std::sin (a))) -
-             shift (along (b.up, basket_depth * down));
+             shift (along (b.forward,
+                           meters_t (rim_length * taper * std::cos (a)))) +
+             shift (
+               along (b.side, meters_t (rim_width * taper * std::sin (a)))) -
+             shift (along (b.up, meters_t (basket_depth * down)));
     }
 
     direction_t wicker_normal (const BasketFrame& b, radians_t around) {
@@ -155,13 +157,14 @@ namespace moppe::game {
       dl.color (light);
       tube (
         [&] (proportion_t t) {
-          return wicker_point (b, basket_tau * t, 0.0f * proportion[one]);
+          return wicker_point (
+            b, radians_t (basket_tau * t), 0.0f * proportion[one]);
         },
         sides,
         0.012f * u::m);
       tube (
         [&] (proportion_t t) {
-          const float a = radians_value (PI * u::rad * t);
+          const float a = radians_value (radians_t (PI * u::rad * t));
           return b.rim +
                  shift (along (b.forward, 0.96f * rim_length * std::cos (a))) +
                  shift (along (b.up, handle_rise * std::sin (a)));
@@ -191,9 +194,11 @@ namespace moppe::game {
         const float a = radians_value (around);
         MushroomSite lying = basket[i];
         lying.base =
-          b.rim + shift (along (b.forward, out * rim_length * std::cos (a))) +
-          shift (along (b.side, out * rim_width * std::sin (a))) -
-          shift (along (b.up, basket_depth * depth));
+          b.rim +
+          shift (
+            along (b.forward, meters_t (out * rim_length * std::cos (a)))) +
+          shift (along (b.side, meters_t (out * rim_width * std::sin (a)))) -
+          shift (along (b.up, meters_t (basket_depth * depth)));
         lying.scale = 0.5f * basket[i].scale;
         lying.lean = (0.5f + 0.8f * hash_lane (seed, 22)) * inclination[u::rad];
         lying.lean_toward =
@@ -225,8 +230,9 @@ namespace moppe::game {
       const auto at = [&] (int piece) {
         const proportion_t t =
           static_cast<float> (piece) / pieces * proportion[one];
-        return from + shift (line * t) -
-               shift (along (up, sag * 4.0f * t * (1.0f - t)));
+        return from + shift (displacement_t (line * t)) -
+               shift (along (
+                 up, meters_t (sag * 4.0f * t * (1.0f * proportion[one] - t))));
       };
       render::DrawState solid;
       solid.cull = false;

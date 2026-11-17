@@ -106,7 +106,8 @@ namespace moppe::game {
                   << " stands underground in this world\n";
         return std::nullopt;
       }
-      if (shot.sun && abs (*shot.sun - sky.sun_height) > 0.01f)
+      if (shot.sun &&
+          abs (*shot.sun - sky.sun_height) > 0.01f * proportion[one])
         std::cerr << "moppe: opening: shot " << shot.name
                   << " was composed under sun "
                   << shot.sun->numerical_value_in (one)
@@ -238,9 +239,11 @@ namespace moppe::game {
         return { .left = true };
       }
       const CinematicFlightControls controls {
-        .lateral = input_value (input.turn),
-        .lift = input_value (input.boost),
-        .pace = input_value (input.drive),
+        .lateral = input.turn,
+        // The boost key, held, is the lift stick.
+        .lift = quantity_cast<control_signal> (
+          quantity_cast<dimensionless> (input.boost)),
+        .pace = input.drive,
       };
       m_flight.tick (interval, surface, controls);
       return { .left = !m_flight.active (), .played = true };
@@ -296,7 +299,8 @@ namespace moppe::game {
                                      int height_pts) const {
     if (!m_reel.active ())
       return;
-    if (const proportion_t veil = m_reel.veil (); veil > 0.002f) {
+    if (const proportion_t veil = m_reel.veil ();
+        veil > 0.002f * proportion[one]) {
       render::DrawState over;
       over.blend = true;
       over.depth_test = false;
