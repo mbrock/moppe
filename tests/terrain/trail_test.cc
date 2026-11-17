@@ -30,7 +30,7 @@ namespace {
   }
 
   TrailFormation test_parameters () {
-    return { .sea_level = 0.0f,
+    return { .sea_level = surface_elevation_point (0.0f * mp_units::si::metre),
              .minimum_catchment_area =
                75.0f * mp_units::si::metre * mp_units::si::metre,
              .maximum_catchment_area =
@@ -40,8 +40,8 @@ namespace {
              .shoulder_blend = 2.0f * mp_units::si::metre,
              .maximum_cut = 2.0f * mp_units::si::metre,
              .maximum_fill = 2.0f * mp_units::si::metre,
-             .maximum_grade = 0.2f * terrain_slope[mp_units::one],
-             .designed_grade = 0.06f * terrain_slope[mp_units::one],
+             .maximum_grade = 0.2f * grade[mp_units::one],
+             .designed_grade = 0.06f * grade[mp_units::one],
              .grading_iterations = iteration_count (20) };
   }
 
@@ -179,7 +179,8 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   MOPPE_CHECK (result.report.shaped_cells > cell_count (0));
   MOPPE_CHECK (result.report.cut_volume > 0.0);
   MOPPE_CHECK (result.report.fill_volume > 0.0);
-  MOPPE_CHECK (result.report.mean_centerline_grade >= 0.0);
+  MOPPE_CHECK (result.report.mean_centerline_grade >=
+               0.0 * grade[mp_units::one]);
   MOPPE_CHECK (result.report.maximum_centerline_grade >=
                result.report.mean_centerline_grade);
   MOPPE_CHECK (
@@ -248,18 +249,20 @@ MOPPE_TEST (trail_network_retains_connected_circuit_and_material_footprint) {
   const float home_z =
     (network.plan.home_base.value / width) *
     (network.domain.spacing_z ()).numerical_value_in (moppe::u::m);
-  MOPPE_CHECK_NEAR (network.alignment.points.front ().x_m, home_x, 1e-5f);
-  MOPPE_CHECK_NEAR (network.alignment.points.front ().z_m, home_z, 1e-5f);
+  MOPPE_CHECK_NEAR (
+    plan_value (network.alignment.points.front ()).x (), home_x, 1e-5f);
+  MOPPE_CHECK_NEAR (
+    plan_value (network.alignment.points.front ()).z (), home_z, 1e-5f);
 
   float maximum_step = 0.0f;
   bool has_non_grid_heading = false;
   for (std::size_t point = 0; point < network.alignment.points.size ();
        ++point) {
-    const TrailAlignmentPoint a = network.alignment.points[point];
-    const TrailAlignmentPoint b =
+    const plan_position_t& a = network.alignment.points[point];
+    const plan_position_t& b =
       network.alignment.points[(point + 1) % network.alignment.points.size ()];
-    const float dx = b.x_m - a.x_m;
-    const float dz = b.z_m - a.z_m;
+    const float dx = plan_value (b).x () - plan_value (a).x ();
+    const float dz = plan_value (b).z () - plan_value (a).z ();
     maximum_step = std::max (maximum_step, std::hypot (dx, dz));
     has_non_grid_heading |= std::fabs (dx) > 1e-4f && std::fabs (dz) > 1e-4f &&
                             std::fabs (std::fabs (dx) - std::fabs (dz)) > 1e-3f;
@@ -279,9 +282,8 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   const TrailFormationResult second = form_trails (terrain, parameters);
 
   MOPPE_CHECK (first.heights == second.heights);
-  MOPPE_CHECK (first.network.earthwork_delta_m ==
-               second.network.earthwork_delta_m);
-  MOPPE_CHECK (first.network.earthwork_delta_m.size () == original.size ());
+  MOPPE_CHECK (first.network.earthwork_delta == second.network.earthwork_delta);
+  MOPPE_CHECK (first.network.earthwork_delta.size () == original.size ());
   MOPPE_CHECK (first.network.alignment == second.network.alignment);
   MOPPE_CHECK (first.network.plan.circuit == second.network.plan.circuit);
   MOPPE_CHECK (first.network.plan.home_base == second.network.plan.home_base);
@@ -292,7 +294,10 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
     const float change_m =
       surface_elevation_value (first.heights[cell]) - original[cell];
-    MOPPE_CHECK_NEAR (first.network.earthwork_delta_m[cell], change_m, 1e-5f);
+    MOPPE_CHECK_NEAR (
+      first.network.earthwork_delta[cell].numerical_value_in (moppe::u::m),
+      change_m,
+      1e-5f);
     MOPPE_CHECK (change_m >=
                  -(parameters.maximum_cut).numerical_value_in (moppe::u::m) -
                    1e-5f);
@@ -305,9 +310,9 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
 MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
   const std::vector<float> original = bumpy_valley ();
   TrailFormation level_parameters = test_parameters ();
-  level_parameters.crossfall = 0.0f * terrain_slope[mp_units::one];
+  level_parameters.crossfall = 0.0f * grade[mp_units::one];
   TrailFormation drained_parameters = level_parameters;
-  drained_parameters.crossfall = 0.08f * terrain_slope[mp_units::one];
+  drained_parameters.crossfall = 0.08f * grade[mp_units::one];
 
   const TrailFormationResult level = form_trails (
     make_elevation_map (trail_valley_grid (), original), level_parameters);
@@ -340,15 +345,15 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
   for (std::size_t segment = 0;
        segment + 1 < drained.network.alignment.points.size ();
        ++segment) {
-    const TrailAlignmentPoint a = drained.network.alignment.points[segment];
-    const TrailAlignmentPoint b = drained.network.alignment.points[segment + 1];
-    const float dx = b.x_m - a.x_m;
-    const float dz = b.z_m - a.z_m;
+    const plan_position_t& a = drained.network.alignment.points[segment];
+    const plan_position_t& b = drained.network.alignment.points[segment + 1];
+    const float dx = plan_value (b).x () - plan_value (a).x ();
+    const float dz = plan_value (b).z () - plan_value (a).z ();
     const float length = std::hypot (dx, dz);
     if (length <= 1e-5f)
       continue;
-    const float mid_x = 0.5f * (a.x_m + b.x_m);
-    const float mid_z = 0.5f * (a.z_m + b.z_m);
+    const float mid_x = 0.5f * (plan_value (a).x () + plan_value (b).x ());
+    const float mid_z = 0.5f * (plan_value (a).z () + plan_value (b).z ());
     const float nx = -dz / length;
     const float nz = dx / length;
     constexpr float natural_probe = 2.5f;
@@ -389,7 +394,7 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
 
 MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
   TrailFormation parameters = test_parameters ();
-  parameters.sea_level = 4.0f;
+  parameters.sea_level = surface_elevation_point (4.0f * mp_units::si::metre);
   parameters.home_base_water_distance = 60.0f * mp_units::si::metre;
   parameters.desired_circuit_radius = 110.0f * mp_units::si::metre;
   const TrailFormationResult result = form_trails (
@@ -399,13 +404,14 @@ MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
   // Control sites stay on dry land; the moat is never a control site.
   const std::vector<float> heights = moated_peak ();
   for (const CellIndex site : result.network.plan.control_sites)
-    MOPPE_CHECK (heights[site.value] > parameters.sea_level);
+    MOPPE_CHECK (heights[site.value] >
+                 surface_elevation_value (parameters.sea_level));
 }
 
 MOPPE_TEST (trail_circuit_can_use_adjacent_arms_through_narrow_land) {
   const std::vector<float> heights = narrow_land_ring ();
   TrailFormation parameters = test_parameters ();
-  parameters.sea_level = 0.0f;
+  parameters.sea_level = surface_elevation_point (0.0f * mp_units::si::metre);
   parameters.home_base_water_distance = 48.0f * mp_units::si::metre;
   parameters.desired_circuit_radius = 180.0f * mp_units::si::metre;
   const TrailFormationResult result = form_trails (
@@ -413,7 +419,8 @@ MOPPE_TEST (trail_circuit_can_use_adjacent_arms_through_narrow_land) {
 
   MOPPE_CHECK (result.network.plan.circuit.size () >= 4);
   for (const CellIndex cell : result.network.plan.circuit)
-    MOPPE_CHECK (heights[cell.value] > parameters.sea_level);
+    MOPPE_CHECK (heights[cell.value] >
+                 surface_elevation_value (parameters.sea_level));
 }
 
 MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {

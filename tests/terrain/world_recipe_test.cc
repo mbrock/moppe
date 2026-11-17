@@ -19,7 +19,8 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_generation_values) {
   MOPPE_CHECK (recipe.seed () == Seed { 77 });
   MOPPE_CHECK (recipe.generation_profile () == TerrainGenerationProfile::Fast);
   MOPPE_CHECK_NEAR (recipe.evolution ().sea_level, 50.0f, 0.0f);
-  MOPPE_CHECK_NEAR (recipe.trail_formation ().sea_level, 50.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (recipe.trail_formation ().sea_level), 50.0f, 0.0f);
   MOPPE_CHECK (recipe.evolution ().duration ==
                200000.0f * mp_units::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().uplift_duration ==

@@ -107,7 +107,7 @@ namespace moppe::game {
 
     // Where a trail cell and a point of the trail's alignment stand.
     Vec3 trail_cell (terrain::CellIndex cell) const;
-    Vec3 trail_point (const terrain::TrailAlignmentPoint& point) const;
+    Vec3 trail_point (const plan_position_t& point) const;
 
     // The way the trail leaves its home base, on the level.
     Vec3 trail_heading () const;

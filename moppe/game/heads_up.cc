@@ -231,8 +231,8 @@ namespace moppe::game {
       grid.width () * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
     const float period_z =
       grid.height () * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
-    const float home_x = alignment.front ().x_m;
-    const float home_z = alignment.front ().z_m;
+    const float home_x = plan_value (alignment.front ()).x ();
+    const float home_z = plan_value (alignment.front ()).z ();
     const auto wrap_delta = [] (float delta, float period) {
       if (delta > period * 0.5f)
         delta -= period;
@@ -240,13 +240,14 @@ namespace moppe::game {
         delta += period;
       return delta;
     };
-    const auto relative_alignment = [&] (terrain::TrailAlignmentPoint point) {
-      return Vec3 (point.x_m - home_x, 0, point.z_m - home_z);
+    const auto relative_alignment = [&] (const plan_position_t& point) {
+      return Vec3 (
+        plan_value (point).x () - home_x, 0, plan_value (point).z () - home_z);
     };
 
     Vec3 low (0, 0, 0);
     Vec3 high (0, 0, 0);
-    for (const terrain::TrailAlignmentPoint alignment_point : alignment) {
+    for (const plan_position_t& alignment_point : alignment) {
       const Vec3 point = relative_alignment (alignment_point);
       low[0] = std::min (static_cast<float> (low[0]), point[0]);
       low[2] = std::min (static_cast<float> (low[2]), point[2]);

@@ -499,8 +499,8 @@ namespace moppe::game {
     std::optional<std::pair<Vec3, Vec3>> top;
     float best = start + 15.0f;
     for (std::size_t p = 0; p + 1 < points.size (); ++p) {
-      const Vec3 at = near_spawn (
-        lot.ground, lot.spawn, Vec3 (points[p].x_m, 0.0f, points[p].z_m));
+      const Vec3 at =
+        near_spawn (lot.ground, lot.spawn, lift (plan_value (points[p]), 0.0f));
       const float r = from_spawn (lot.spawn, at);
       if (r < 120.0f || r > 1000.0f)
         continue;
@@ -508,10 +508,8 @@ namespace moppe::game {
       const float score = at[1] - 0.03f * r;
       if (score <= best)
         continue;
-      const Vec3 next =
-        near_spawn (lot.ground,
-                    lot.spawn,
-                    Vec3 (points[p + 1].x_m, 0.0f, points[p + 1].z_m));
+      const Vec3 next = near_spawn (
+        lot.ground, lot.spawn, lift (plan_value (points[p + 1]), 0.0f));
       Vec3 along (next[0] - at[0], 0.0f, next[2] - at[2]);
       if (length2 (along) < 1e-4f)
         continue;

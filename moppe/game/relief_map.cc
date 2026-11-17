@@ -332,13 +332,18 @@ namespace moppe::game {
       const auto& points = trails.alignment.points;
       float along = 0.0f;
       for (std::size_t i = 0; i < points.size () && points.size () > 1; ++i) {
-        const terrain::TrailAlignmentPoint& a = points[i];
-        const terrain::TrailAlignmentPoint& b =
-          points[(i + 1) % points.size ()];
-        const float ax = a.x_m / metres_x;
-        const float az = a.z_m / metres_z;
-        const float bx = ax + wrap_delta (b.x_m - a.x_m, period_x) / metres_x;
-        const float bz = az + wrap_delta (b.z_m - a.z_m, period_z) / metres_z;
+        const plan_position_t& a = points[i];
+        const plan_position_t& b = points[(i + 1) % points.size ()];
+        const float ax = plan_value (a).x () / metres_x;
+        const float az = plan_value (a).z () / metres_z;
+        const float bx =
+          ax +
+          wrap_delta (plan_value (b).x () - plan_value (a).x (), period_x) /
+            metres_x;
+        const float bz =
+          az +
+          wrap_delta (plan_value (b).z () - plan_value (a).z (), period_z) /
+            metres_z;
         trail_layer.stroke (ax,
                             az,
                             bx,

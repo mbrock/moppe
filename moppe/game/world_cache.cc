@@ -612,13 +612,12 @@ namespace moppe::game {
       output.quantity (trails.alignment.length, u::m);
       output.scalar (
         static_cast<std::uint64_t> (trails.alignment.points.size ()));
-      for (const terrain::TrailAlignmentPoint& point :
-           trails.alignment.points) {
-        output.scalar (point.x_m);
-        output.scalar (point.z_m);
-      }
+      for (const plan_position_t& point : trails.alignment.points)
+        output.scalar (point);
       output.quantity (trails.formed_width, u::m);
-      output.vector<float> (trails.earthwork_delta_m);
+      // Each change is stored as its float metres.
+      static_assert (sizeof (terrain::ElevationChange) == sizeof (float));
+      output.vector<terrain::ElevationChange> (trails.earthwork_delta);
     }
 
     // Roads are stored as they were before their types: a point two
@@ -729,12 +728,12 @@ namespace moppe::game {
           !input.scalar (point_count) || point_count > cells * 8)
         return false;
       trails.alignment.points.resize (static_cast<std::size_t> (point_count));
-      for (terrain::TrailAlignmentPoint& point : trails.alignment.points)
-        if (!input.scalar (point.x_m) || !input.scalar (point.z_m))
+      for (plan_position_t& point : trails.alignment.points)
+        if (!input.scalar (point))
           return false;
       return input.quantity (trails.formed_width, u::m) &&
-             input.vector (trails.earthwork_delta_m, cells) &&
-             trails.earthwork_delta_m.size () == cells;
+             input.vector (trails.earthwork_delta, cells) &&
+             trails.earthwork_delta.size () == cells;
     }
   }
 

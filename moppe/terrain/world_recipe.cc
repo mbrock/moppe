@@ -60,8 +60,7 @@ namespace moppe::terrain {
                               mp_units::si::metre /
                               mp_units::astronomy::Julian_year;
     m_evolution.sea_level = (water_datum).numerical_value_in (moppe::u::m);
-    m_trail_formation.sea_level =
-      (water_datum).numerical_value_in (moppe::u::m);
+    m_trail_formation.sea_level = surface_elevation_point (water_datum);
   }
 
   WorldRecipe make_world_recipe (

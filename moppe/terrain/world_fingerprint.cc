@@ -227,7 +227,7 @@ int main (int argc, char** argv) {
     surface_lines ("channels", surface);
     line ("trails earthwork",
           hash_of (map::form_terrain_trails (surface, recipe.trail_formation ())
-                     .earthwork_delta_m));
+                     .earthwork_delta));
     surface_lines ("trails", surface);
     game::quantize_land (surface);
     surface_lines ("land", surface);

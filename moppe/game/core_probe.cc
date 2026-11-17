@@ -160,10 +160,11 @@ namespace moppe::game {
       const terrain::TrailNetwork& trails = world.trails ();
       Vec3 heading (0, 0, 1);
       if (trails.alignment.points.size () >= 2) {
-        const auto& a = trails.alignment.points[0];
-        const auto& b = trails.alignment.points[1];
-        Vec3 d = trail_position (world, b.x_m, b.z_m) -
-                 trail_position (world, a.x_m, a.z_m);
+        const plan_position_t& a = trails.alignment.points[0];
+        const plan_position_t& b = trails.alignment.points[1];
+        Vec3 d =
+          trail_position (world, plan_value (b).x (), plan_value (b).z ()) -
+          trail_position (world, plan_value (a).x (), plan_value (a).z ());
         d[1] = 0.0f;
         if (length2 (d) > 1e-5f)
           heading = normalized (d);

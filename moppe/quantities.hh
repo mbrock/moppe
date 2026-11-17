@@ -323,6 +323,9 @@ namespace moppe::terrain {
 
   QUANTITY_SPEC (trail_influence, proportion);
   QUANTITY_SPEC (home_base_influence, proportion);
+  // How much a planner likes one candidate over another: a weighted sum of
+  // tuned preferences, compared only with scores from the same planner.
+  QUANTITY_SPEC (planning_score, mp_units::dimensionless, mp_units::subkind);
 }
 
 namespace moppe::map {

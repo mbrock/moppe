@@ -95,10 +95,8 @@ namespace moppe::game {
     return Vec3 (x, height (Vec3 (x, 0.0f, z)), z);
   }
 
-  Vec3
-  WorldGround::trail_point (const terrain::TrailAlignmentPoint& point) const {
-    return Vec3 (
-      point.x_m, height (Vec3 (point.x_m, 0.0f, point.z_m)), point.z_m);
+  Vec3 WorldGround::trail_point (const plan_position_t& point) const {
+    return lift (plan_value (point), height (lift (plan_value (point))));
   }
 
   Vec3 WorldGround::trail_heading () const {

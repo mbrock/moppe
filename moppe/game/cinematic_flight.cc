@@ -285,14 +285,12 @@ namespace moppe::game {
       }
     }
 
-    Vec3 trail_alignment_position (const terrain::TrailAlignmentPoint& point,
+    Vec3 trail_alignment_position (const plan_position_t& point,
                                    const map::SurfaceGeometry& surface) {
-      return Vec3 (
-        point.x_m,
-        terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface, moppe::position (Vec3 (point.x_m, 0.0f, point.z_m)))),
-        point.z_m);
+      return lift (plan_value (point),
+                   terrain::surface_elevation_value (
+                     spatial::sample<terrain::surface_elevation> (
+                       surface, moppe::position (lift (plan_value (point))))));
     }
 
     void add_trail_reveal (CinematicFlightPlan& plan,
