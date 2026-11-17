@@ -20,9 +20,9 @@ namespace moppe {
         .day_pace = m_day.pace,
         .day_turning = m_day.turning,
         .daylight = m_sky.daylight,
-        .companion = m_companion ? &*m_companion : nullptr,
-        .companion_clock = m_companion_hours >= 0.0
-                             ? std::optional (clock_time (m_companion_hours))
+        .companion = m_company.companion ? &*m_company.companion : nullptr,
+        .companion_clock = m_company.hours >= 0.0
+                             ? std::optional (clock_time (m_company.hours))
                              : std::nullopt,
       };
     }
@@ -107,7 +107,7 @@ namespace moppe {
             camp.swing,
             resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch),
             time),
-          m_outfit);
+          m_company.outfit);
       // The basket waits on the ground under the foot of the hammock.
       Vec3 floor = hammock_middle (camp.hammock) +
                    hammock_across (camp.hammock) * 0.75f -

@@ -16,16 +16,10 @@ namespace moppe::game {
     };
 
     const GliderMeshes& glider_meshes (render::Renderer& r) {
-      static const GliderMeshes meshes = [&r] {
-        GliderMeshes g;
-        render::DrawList dl;
-        model_mesh::record (dl, glider_model::glider);
-        g.glider = r.create_mesh (dl);
-        dl.clear ();
-        model_mesh::record (dl, glider_model::tether);
-        g.tether = r.create_mesh (dl);
-        return g;
-      }();
+      static const GliderMeshes meshes {
+        model_mesh::bake (r, glider_model::glider),
+        model_mesh::bake (r, glider_model::tether)
+      };
       return meshes;
     }
 

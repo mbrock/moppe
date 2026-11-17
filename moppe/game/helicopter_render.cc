@@ -11,19 +11,12 @@ namespace moppe::game {
       render::MeshPtr tail_rotor;
     };
 
-    render::MeshPtr bake_helicopter_part (render::Renderer& r,
-                                          const model_mesh::Mesh& mesh) {
-      render::DrawList dl;
-      model_mesh::record (dl, mesh);
-      return r.create_mesh (dl);
-    }
-
     const HelicopterMeshes& helicopter_meshes (render::Renderer& r) {
       static const HelicopterMeshes meshes = [&r] {
         HelicopterMeshes m;
-        m.body = bake_helicopter_part (r, helicopter_model::body);
-        m.main_rotor = bake_helicopter_part (r, helicopter_model::main_rotor);
-        m.tail_rotor = bake_helicopter_part (r, helicopter_model::tail_rotor);
+        m.body = model_mesh::bake (r, helicopter_model::body);
+        m.main_rotor = model_mesh::bake (r, helicopter_model::main_rotor);
+        m.tail_rotor = model_mesh::bake (r, helicopter_model::tail_rotor);
         return m;
       }();
       return meshes;
@@ -34,11 +27,8 @@ namespace moppe::game {
                           const HelicopterPose& helicopter,
                           uint64_t motion_base) {
     const HelicopterMeshes& meshes = helicopter_meshes (r);
-    const Vec3 forward = normalized (helicopter.forward);
-    const Vec3 left = normalized (cross (helicopter.up, forward));
-    const Vec3 up = cross (forward, left);
-    const Mat4 frame =
-      Mat4::translation (helicopter.position) * Mat4::basis (left, up, forward);
+    const Mat4 frame = model_mesh::body_frame (
+      helicopter.position, helicopter.forward, helicopter.up);
     r.draw_mesh (*meshes.body, frame, motion_base + 1);
     r.draw_mesh (
       *meshes.main_rotor,

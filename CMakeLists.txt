@@ -419,6 +419,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/glider_render.cc
+  moppe/game/car_render.cc
   moppe/game/jeep_render.cc
   moppe/game/helicopter_render.cc
   moppe/game/boat_render.cc
@@ -479,6 +480,8 @@ set(MOPPE_ENGINE_SOURCES
 )
 
 set(MOPPE_APPLICATION_SOURCES
+  moppe/game/companionship.cc
+  moppe/game/frame_capture.cc
   moppe/game/game.cc
   moppe/game/game_camp.cc
   moppe/game/game_cameras.cc

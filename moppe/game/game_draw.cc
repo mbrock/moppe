@@ -168,8 +168,8 @@ namespace moppe {
         0);
       if (m_fingerpost_mesh)
         r.draw_mesh (*m_fingerpost_mesh, Mat4 {}, 0);
-      if (m_companion) {
-        const CompanionSnapshot& theirs = *m_companion;
+      if (m_company.companion) {
+        const CompanionSnapshot& theirs = *m_company.companion;
         render_vehicle (r, m_caster_dl, theirs.bike, false, 0);
         render_mountain_bike (
           r, m_caster_dl, theirs.mountain_bike, std::nullopt, 0);
@@ -346,17 +346,17 @@ namespace moppe {
                         actors.bike,
                         actors.active_mode == M_BIKE,
                         0x1000,
-                        m_outfit);
+                        m_company.outfit);
       m_blob.draw (m_world_dl, surface (), actors.jeep.position, 3.4f);
       render_jeep (r,
                    m_world_dl,
                    actors.jeep,
                    { .driver = actors.active_mode == M_JEEP && !helmet,
-                     .passenger = m_companion &&
-                                  m_companion->mode == M_PASSENGER &&
-                                  !m_companion->in_boat,
-                     .driver_outfit = m_outfit,
-                     .passenger_outfit = their_outfit () },
+                     .passenger = m_company.companion &&
+                                  m_company.companion->mode == M_PASSENGER &&
+                                  !m_company.companion->in_boat,
+                     .driver_outfit = m_company.outfit,
+                     .passenger_outfit = m_company.their_outfit () },
                    0x5000);
       m_blob.draw (m_world_dl, surface (), actors.helicopter.position, 4.5f);
       render_helicopter (r, actors.helicopter, 0x8000);
@@ -367,7 +367,7 @@ namespace moppe {
                       m_world_dl,
                       actors.tractor,
                       actors.active_mode == M_TRACTOR && !helmet
-                        ? std::optional<Outfit> (m_outfit)
+                        ? std::optional<Outfit> (m_company.outfit)
                         : std::nullopt,
                       0xA000);
       m_blob.draw (m_world_dl, surface (), actors.caddy.position, 3.6f);
@@ -375,7 +375,7 @@ namespace moppe {
                     m_world_dl,
                     actors.caddy,
                     { .driver = actors.active_mode == M_CADDY && !helmet,
-                      .driver_outfit = m_outfit },
+                      .driver_outfit = m_company.outfit },
                     0xC000);
       if (actors.sling)
         render_sling (m_world_dl, *actors.sling);
@@ -383,14 +383,15 @@ namespace moppe {
                    m_world_dl,
                    actors.boat,
                    actors.active_mode == M_BOAT && !helmet
-                     ? std::optional<Outfit> (m_outfit)
+                     ? std::optional<Outfit> (m_company.outfit)
                      : std::nullopt,
                    0xF000,
                    actors.helm_rod,
                    frame.lighting.time,
-                   m_companion && m_companion->mode == M_PASSENGER &&
-                       m_companion->in_boat
-                     ? std::optional<Outfit> (their_outfit ())
+                   m_company.companion &&
+                       m_company.companion->mode == M_PASSENGER &&
+                       m_company.companion->in_boat
+                     ? std::optional<Outfit> (m_company.their_outfit ())
                      : std::nullopt);
       m_blob.draw (m_world_dl, surface (), actors.mountain_bike.position, 1.3f);
       // Through the rider's eyes, the bars and the fork below them.
@@ -398,7 +399,7 @@ namespace moppe {
                             m_world_dl,
                             actors.mountain_bike,
                             actors.active_mode == M_MOUNTAIN_BIKE && !helmet
-                              ? std::optional<Outfit> (m_outfit)
+                              ? std::optional<Outfit> (m_company.outfit)
                               : std::nullopt,
                             0xD000);
       m_blob.draw (m_world_dl, surface (), actors.long_john.position, 2.0f);
@@ -406,14 +407,14 @@ namespace moppe {
                         m_world_dl,
                         actors.long_john,
                         actors.active_mode == M_LONG_JOHN && !helmet
-                          ? std::optional<Outfit> (m_outfit)
+                          ? std::optional<Outfit> (m_company.outfit)
                           : std::nullopt,
                         0xD100);
       render_jet_ski (r,
                       m_world_dl,
                       actors.jet_ski,
                       actors.active_mode == M_JET_SKI && !helmet
-                        ? std::optional<Outfit> (m_outfit)
+                        ? std::optional<Outfit> (m_company.outfit)
                         : std::nullopt,
                       0xD200);
 
@@ -461,7 +462,7 @@ namespace moppe {
                        *actors.walker,
                        frame.lighting.time,
                        m_basket_contents,
-                       m_outfit);
+                       m_company.outfit);
       else if (actors.walker)
         render_basket (
           m_world_dl, *actors.walker, frame.lighting.time, m_basket_contents);
@@ -490,8 +491,12 @@ namespace moppe {
         }
       }
       if (actors.glider && !helmet)
-        render_glider (
-          r, m_world_dl, *actors.glider, frame.lighting.time, 0x2000, m_outfit);
+        render_glider (r,
+                       m_world_dl,
+                       *actors.glider,
+                       frame.lighting.time,
+                       0x2000,
+                       m_company.outfit);
       draw_companion (r, m_world_dl, frame.lighting.time);
 
       r.draw_list (m_world_dl, 0x0001);
@@ -513,18 +518,18 @@ namespace moppe {
                    frame.camera.position,
                    fire_burn (logic ().m_camp, logic ().m_total_time),
                    frame.lighting.time);
-      if (m_companion) {
+      if (m_company.companion) {
         if (visibility.vehicle_effects)
           render_vehicle_flames (r,
-                                 m_companion->bike,
+                                 m_company.companion->bike,
                                  frame.camera.position,
                                  frame.lighting.time,
                                  0x3000);
-        if (m_companion->hearth_laid)
+        if (m_company.companion->hearth_laid)
           draw_fire (r,
-                     m_companion->hearth,
+                     m_company.companion->hearth,
                      frame.camera.position,
-                     m_companion->fire_burn,
+                     m_company.companion->fire_burn,
                      frame.lighting.time);
       }
       if (visibility.star_effects)
@@ -585,9 +590,9 @@ namespace moppe {
       m_wake_dl.clear ();
       trail (m_boat_wake, frame.actors.boat);
       trail (m_jet_ski_wake, as_boat (frame.actors.jet_ski));
-      if (m_companion) {
-        trail (m_their_wake, m_companion->boat);
-        trail (m_their_jet_ski_wake, as_boat (m_companion->jet_ski));
+      if (m_company.companion) {
+        trail (m_their_wake, m_company.companion->boat);
+        trail (m_their_jet_ski_wake, as_boat (m_company.companion->jet_ski));
       } else {
         m_their_wake.clear ();
         m_their_jet_ski_wake.clear ();

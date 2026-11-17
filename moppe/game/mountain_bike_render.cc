@@ -29,22 +29,16 @@ namespace moppe::game {
         render::MeshPtr pedal;
       };
 
-      render::MeshPtr bake (render::Renderer& r, const model_mesh::Mesh& mesh) {
-        render::DrawList dl;
-        model_mesh::record (dl, mesh);
-        return r.create_mesh (dl);
-      }
-
       const Meshes& meshes (render::Renderer& r) {
         static const Meshes m = [&r] {
           Meshes m;
-          m.frame = bake (r, model::frame);
-          m.steering = bake (r, model::steering);
-          m.lowers = bake (r, model::fork_lowers);
-          m.wheel = bake (r, model::wheel);
-          m.cassette = bake (r, model::cassette);
-          m.crank = bake (r, model::crank);
-          m.pedal = bake (r, model::pedal);
+          m.frame = model_mesh::bake (r, model::frame);
+          m.steering = model_mesh::bake (r, model::steering);
+          m.lowers = model_mesh::bake (r, model::fork_lowers);
+          m.wheel = model_mesh::bake (r, model::wheel);
+          m.cassette = model_mesh::bake (r, model::cassette);
+          m.crank = model_mesh::bake (r, model::crank);
+          m.pedal = model_mesh::bake (r, model::pedal);
           return m;
         }();
         return m;

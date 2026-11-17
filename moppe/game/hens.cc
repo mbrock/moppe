@@ -434,12 +434,9 @@ namespace moppe::game {
       std::array<BirdMeshes, 3> out;
       for (int k = 0; k < 3; ++k) {
         const BirdBuild& b = build_of (static_cast<Bird::Kind> (k));
-        const auto bake = [&r] (const model_mesh::Mesh& mesh) {
-          render::DrawList dl;
-          model_mesh::record (dl, mesh);
-          return r.create_mesh (dl);
-        };
-        out[k] = { bake (*b.body), bake (*b.head), bake (*b.leg) };
+        out[k] = { model_mesh::bake (r, *b.body),
+                   model_mesh::bake (r, *b.head),
+                   model_mesh::bake (r, *b.leg) };
       }
       return out;
     }();

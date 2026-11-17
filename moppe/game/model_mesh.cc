@@ -1,4 +1,5 @@
 #include <moppe/game/model_mesh.hh>
+#include <moppe/gfx/mat4.hh>
 
 namespace moppe::game::model_mesh {
   void record (render::DrawList& dl, const Mesh& mesh) {
@@ -39,5 +40,18 @@ namespace moppe::game::model_mesh {
     dl.plain ();
     dl.uv (0.0f, 0.0f);
     dl.worn (-1.0f);
+  }
+
+  render::MeshPtr bake (render::Renderer& r, const Mesh& mesh) {
+    render::DrawList dl;
+    record (dl, mesh);
+    return r.create_mesh (dl);
+  }
+
+  Mat4 body_frame (const Vec3& position, const Vec3& forward, const Vec3& up) {
+    const Vec3 ahead = normalized (forward);
+    const Vec3 left = normalized (cross (up, ahead));
+    return Mat4::translation (position) *
+           Mat4::basis (left, cross (ahead, left), ahead);
   }
 }

@@ -202,7 +202,7 @@ namespace moppe {
     }
 
     bool MoppeGame::keeping_pace () const {
-      return !m_video_plan && m_screenshot_path.empty ();
+      return m_capture.keeping_pace ();
     }
 
     void MoppeGame::walk_side_camera () {

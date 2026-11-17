@@ -9,12 +9,13 @@ namespace moppe {
     void MoppeGame::seek_company (const std::string& address) {
       CompanionLink::Config config { .address = address };
       std::string error;
-      m_link = CompanionLink::open (config, error);
-      if (!m_link) {
+      m_company.link = CompanionLink::open (config, error);
+      if (!m_company.link) {
         std::cerr << "moppe: multiplayer: " << error << std::endl;
         return;
       }
-      std::cerr << "moppe: multiplayer: listening on port " << m_link->port ()
+      std::cerr << "moppe: multiplayer: listening on port "
+                << m_company.link->port ()
                 << (address.empty () ? ", calling on the local network"
                                      : ", calling " + address)
                 << std::endl;
@@ -22,21 +23,6 @@ namespace moppe {
 
     std::uint32_t MoppeGame::this_world () const {
       return world_tag (recipe_cache_identity (recipe ()));
-    }
-
-    void MoppeGame::forget_companion () {
-      m_track.clear ();
-      m_companion.reset ();
-      m_companion_picks.clear ();
-      m_companion_hours = -1.0;
-      m_companion_met = false;
-      m_companion_elsewhere = false;
-    }
-
-    void MoppeGame::notice (const char* words) {
-      m_notice = words;
-      m_notice_at = m_link ? m_link->now () : 0.0;
-      std::cerr << "moppe: multiplayer: " << words << std::endl;
     }
 
     CompanionSnapshot MoppeGame::my_snapshot () const {
@@ -90,20 +76,20 @@ namespace moppe {
     }
 
     void MoppeGame::hear_of_picks (const CompanionSnapshot& theirs) {
-      if (theirs.pick_count < m_companion_picks.size ())
-        m_companion_picks.clear ();
+      if (theirs.pick_count < m_company.picks.size ())
+        m_company.picks.clear ();
       constexpr std::uint32_t unknown = UINT32_MAX;
       // No one has picked more mushrooms than grow.
       if (theirs.pick_count > m_mushrooms.mushroom_count ())
         return;
-      m_companion_picks.resize (theirs.pick_count, unknown);
+      m_company.picks.resize (theirs.pick_count, unknown);
       for (std::size_t i = 0; i < theirs.picks.size (); ++i) {
         const std::size_t ordinal = theirs.picks_from + i;
         const std::uint32_t index = theirs.picks[i];
-        if (ordinal >= m_companion_picks.size () ||
+        if (ordinal >= m_company.picks.size () ||
             index >= m_mushrooms.mushroom_count ())
           continue;
-        m_companion_picks[ordinal] = index;
+        m_company.picks[ordinal] = index;
         m_mushrooms.take (index);
       }
     }
@@ -111,9 +97,9 @@ namespace moppe {
     void MoppeGame::make_room (const CompanionSnapshot& theirs) {
       if (logic ().m_mode != M_FOOT)
         return;
-      const double here = m_link->now ();
+      const double here = m_company.link->now ();
       if (here > theirs.sent ||
-          (here == theirs.sent && m_link->player () < theirs.player))
+          (here == theirs.sent && m_company.link->player () < theirs.player))
         return;
       mov::Vehicle& bike = session ().bike ();
       Vec3 apart = bike.position () - theirs.bike.position;
@@ -155,38 +141,18 @@ namespace moppe {
         m_opening.replace_arrival (arrival ());
     }
 
-    Outfit MoppeGame::their_outfit () const {
-      return m_outfit == Outfit::blue_jacket ? Outfit::green_jacket
-                                             : Outfit::blue_jacket;
-    }
-
-    Vec3 MoppeGame::companion_seat (const CompanionSnapshot& theirs) {
-      const CarPose& jeep = theirs.jeep;
-      const Vec3 left = normalized (cross (jeep.up, jeep.forward));
-      return jeep.position - left * mov::jeep_rig.seat[0] +
-             jeep.up * mov::jeep_rig.seat[1] +
-             jeep.forward * mov::jeep_rig.seat[2];
-    }
-
-    Vec3 MoppeGame::companion_boat_seat (const CompanionSnapshot& theirs) {
-      const BoatPose& boat = theirs.boat;
-      const Vec3 left = normalized (cross (boat.up, boat.forward));
-      return boat.position + left * mov::Boat::fore[0] +
-             boat.up * mov::Boat::fore[1] + boat.forward * mov::Boat::fore[2];
-    }
-
     MoppeGame::Seat MoppeGame::seat_within_reach () const {
-      if (!m_companion || logic ().m_mode != M_FOOT)
+      if (!m_company.companion || logic ().m_mode != M_FOOT)
         return Seat::none;
       const Vec3 feet = session ().walker ().position ();
       const float mine =
         std::min ({ length2 (feet - session ().jeep ().position ()),
                     length2 (feet - session ().bike ().position ()),
                     length2 (feet - session ().boat ().position ()) });
-      const float jeep = length2 (feet - m_companion->jeep.position);
+      const float jeep = length2 (feet - m_company.companion->jeep.position);
       float boat = 1e30f;
-      if (m_companion->mode == M_BOAT)
-        boat = length2 (feet - companion_boat_seat (*m_companion));
+      if (m_company.companion->mode == M_BOAT)
+        boat = length2 (feet - Companionship::boat_seat (*m_company.companion));
       if (boat < 4.0f * 4.0f && boat < mine && boat < jeep)
         return Seat::boat;
       if (jeep < 4.5f * 4.5f && jeep < mine)
@@ -200,11 +166,11 @@ namespace moppe {
 
     void MoppeGame::ride_along (InputFrame& input) {
       GameLogicState& state = logic ();
-      session ().boat ().set_passenger (m_companion &&
-                                        m_companion->mode == M_PASSENGER &&
-                                        m_companion->in_boat);
+      session ().boat ().set_passenger (
+        m_company.companion && m_company.companion->mode == M_PASSENGER &&
+        m_company.companion->in_boat);
       if (state.m_mode == M_PASSENGER) {
-        if (!m_companion || input.toggle_mount) {
+        if (!m_company.companion || input.toggle_mount) {
           // Out on the passenger's side, the right; over the boat's
           // gunwale, a step from it.
           const Vec3 left =
@@ -223,38 +189,38 @@ namespace moppe {
         session ().clear_controls ();
         session ().set_mode (M_PASSENGER);
         input.toggle_mount = false;
-      } else if (m_companion && !m_rode_along &&
+      } else if (m_company.companion && !m_company.rode_along &&
                  moppe::environment ("MOPPE_RIDE_ALONG")) {
         // For captures: take the seat as soon as there is one, from
         // wherever this player stands.
-        m_rode_along = true;
-        state.m_seat_boat = m_companion->mode == M_BOAT;
+        m_company.rode_along = true;
+        state.m_seat_boat = m_company.companion->mode == M_BOAT;
         session ().clear_controls ();
         session ().set_mode (M_PASSENGER);
       }
       if (state.m_mode != M_PASSENGER)
         return;
       if (state.m_seat_boat) {
-        state.m_seat_position = companion_boat_seat (*m_companion);
-        state.m_seat_heading = m_companion->boat.forward;
-        state.m_seat_up = m_companion->boat.up;
-        state.m_seat_velocity = m_companion->boat_velocity;
+        state.m_seat_position = Companionship::boat_seat (*m_company.companion);
+        state.m_seat_heading = m_company.companion->boat.forward;
+        state.m_seat_up = m_company.companion->boat.up;
+        state.m_seat_velocity = m_company.companion->boat_velocity;
         return;
       }
-      state.m_seat_position = companion_seat (*m_companion);
-      state.m_seat_heading = m_companion->jeep.forward;
-      state.m_seat_up = m_companion->jeep.up;
-      state.m_seat_velocity = m_companion->jeep_velocity;
+      state.m_seat_position = Companionship::jeep_seat (*m_company.companion);
+      state.m_seat_heading = m_company.companion->jeep.forward;
+      state.m_seat_up = m_company.companion->jeep.up;
+      state.m_seat_velocity = m_company.companion->jeep_velocity;
     }
 
     void MoppeGame::meet_strangers (seconds_t interval) {
       const float elapsed = seconds_value (interval);
-      m_strangers.clear ();
-      if (!m_companion) {
-        m_strangers_were.reset ();
+      m_company.strangers.clear ();
+      if (!m_company.companion) {
+        m_company.strangers_were.reset ();
         return;
       }
-      const CompanionSnapshot& theirs = *m_companion;
+      const CompanionSnapshot& theirs = *m_company.companion;
       const auto stranger = [&] (Machine machine,
                                  const Vec3& position,
                                  const Vec3& forward,
@@ -274,12 +240,12 @@ namespace moppe {
           body.towed_mass = session ().tractor ().trailer_mass ();
         }
         const std::size_t i = static_cast<std::size_t> (machine);
-        if (m_strangers_were && elapsed > 0.0f) {
-          const Vec3 moved = position - (*m_strangers_were)[i];
+        if (m_company.strangers_were && elapsed > 0.0f) {
+          const Vec3 moved = position - (*m_company.strangers_were)[i];
           if (length2 (moved) < 25.0f)
             body.velocity = moved * (1.0f / elapsed);
         }
-        m_strangers.push_back (body);
+        m_company.strangers.push_back (body);
       };
       stranger (Machine::bike,
                 theirs.bike.position,
@@ -318,99 +284,106 @@ namespace moppe {
                 theirs.jet_ski.forward,
                 theirs.jet_ski.up);
       std::array<Vec3, machine_count> were;
-      for (const MachineBody& body : m_strangers)
+      for (const MachineBody& body : m_company.strangers)
         were[static_cast<std::size_t> (body.machine)] = body.position;
-      m_strangers_were = were;
-      m_strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
+      m_company.strangers_were = were;
+      m_company.strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
         theirs.jeep_velocity;
-      m_strangers[static_cast<std::size_t> (Machine::boat)].velocity =
+      m_company.strangers[static_cast<std::size_t> (Machine::boat)].velocity =
         theirs.boat_velocity;
-      m_strangers[static_cast<std::size_t> (Machine::jet_ski)].velocity =
-        theirs.jet_ski_velocity;
+      m_company.strangers[static_cast<std::size_t> (Machine::jet_ski)]
+        .velocity = theirs.jet_ski_velocity;
     }
 
     void MoppeGame::keep_company (seconds_t interval) {
       const float elapsed = seconds_value (interval);
-      if (!m_link)
+      if (!m_company.link)
         return;
-      m_arrived.clear ();
-      m_link->set_world (this_world ());
-      m_link->receive (m_arrived);
-      const double now = m_link->now ();
+      m_company.arrived.clear ();
+      m_company.link->set_world (this_world ());
+      m_company.link->receive (m_company.arrived);
+      const double now = m_company.link->now ();
       // The poses told are the simulation's, which moves on in whole
       // steps, now two to a frame and now three. They are stamped by a
       // clock that moves with it, so that the other machine sees even
       // motion however unevenly the frames fall.
-      m_pose_clock =
-        m_pose_heard < 0.0
+      m_company.pose_clock =
+        m_company.pose_heard < 0.0
           ? now
-          : m_pose_clock + (m_stepped > 0.0 ? m_stepped : now - m_pose_heard);
-      m_pose_heard = now;
-      m_stepped = 0.0;
-      const bool was_present = m_track.present (now);
+          : m_company.pose_clock + (m_company.stepped > 0.0
+                                      ? m_company.stepped
+                                      : now - m_company.pose_heard);
+      m_company.pose_heard = now;
+      m_company.stepped = 0.0;
+      const bool was_present = m_company.track.present (now);
       // Someone in another world is only told of, while no one here
       // keeps company.
-      if (m_link->heard_elsewhere () && m_arrived.empty () && !was_present &&
-          !m_companion_elsewhere) {
-        m_companion_elsewhere = true;
-        notice ("Someone is playing, but in another world");
+      if (m_company.link->heard_elsewhere () && m_company.arrived.empty () &&
+          !was_present && !m_company.elsewhere) {
+        m_company.elsewhere = true;
+        m_company.notice ("Someone is playing, but in another world");
         std::cerr << "moppe: multiplayer: launch both games with the "
                      "same --seed and terrain options"
                   << std::endl;
       }
-      for (CompanionSnapshot& theirs : m_arrived) {
-        m_companion_elsewhere = false;
-        if (!m_track.present (now))
-          m_companion_picks.clear ();
+      for (CompanionSnapshot& theirs : m_company.arrived) {
+        m_company.elsewhere = false;
+        if (!m_company.track.present (now))
+          m_company.picks.clear ();
         hear_of_picks (theirs);
-        m_companion_hours = theirs.day_hours;
-        if (!m_companion_met) {
-          m_companion_met = true;
+        m_company.hours = theirs.day_hours;
+        if (!m_company.met) {
+          m_company.met = true;
           // So that the two can be told apart, and each machine agrees
           // on who is who, the player with the greater number changes
           // into the green jacket.
-          m_outfit = m_link->player () > theirs.player ? Outfit::green_jacket
-                                                       : Outfit::blue_jacket;
+          m_company.outfit = m_company.link->player () > theirs.player
+                               ? Outfit::green_jacket
+                               : Outfit::blue_jacket;
           make_room (theirs);
         }
-        m_track.push (std::move (theirs), now);
+        m_company.track.push (std::move (theirs), now);
       }
-      const bool present = m_track.present (now);
+      const bool present = m_company.track.present (now);
       if (present && !was_present) {
-        notice ("Your companion has arrived");
+        m_company.notice ("Your companion has arrived");
         std::cerr << "moppe: multiplayer: companion at "
-                  << m_link->companion_address () << std::endl;
+                  << m_company.link->companion_address () << std::endl;
       } else if (!present && was_present) {
-        notice ("Your companion has gone");
-        m_companion_hours = -1.0;
-        m_companion_met = false;
+        m_company.notice ("Your companion has gone");
+        m_company.hours = -1.0;
+        m_company.met = false;
       }
-      m_companion = m_track.advance (now, elapsed);
+      m_company.companion = m_company.track.advance (now, elapsed);
       meet_strangers (interval);
 
-      if (!m_link->due ())
+      if (!m_company.link->due ())
         return;
       CompanionSnapshot mine = my_snapshot ();
       const std::vector<std::uint32_t>& picked = logic ().m_basket.picked;
       mine.pick_count = static_cast<std::uint32_t> (picked.size ());
-      mine.picks_from =
-        companion_pick_window_start (picked.size (), m_snapshots_sent++);
+      mine.picks_from = companion_pick_window_start (
+        picked.size (), m_company.snapshots_sent++);
       for (std::size_t i = mine.picks_from;
            i < picked.size () && mine.picks.size () < companion_pick_window;
            ++i)
         mine.picks.push_back (picked[i]);
-      m_link->send (std::move (mine), m_pose_clock);
+      m_company.link->send (std::move (mine), m_company.pose_clock);
     }
 
     void MoppeGame::draw_companion (render::Renderer& r,
                                     render::DrawList& dl,
                                     float time) {
-      if (!m_companion)
+      if (!m_company.companion)
         return;
-      const CompanionSnapshot& theirs = *m_companion;
+      const CompanionSnapshot& theirs = *m_company.companion;
       m_blob.draw (dl, surface (), theirs.bike.position, 2.2f);
-      render_vehicle (
-        r, dl, theirs.bike, theirs.mode == M_BIKE, 0x3000, their_outfit ());
+      render_vehicle (r,
+                      dl,
+                      theirs.bike,
+                      theirs.mode == M_BIKE,
+                      0x3000,
+                      m_company.their_outfit ());
       m_blob.draw (dl, surface (), theirs.jeep.position, 3.4f);
       // This player beside them, unless seeing through their own eyes.
       render_jeep (r,
@@ -420,8 +393,8 @@ namespace moppe {
                      .passenger = logic ().m_mode == M_PASSENGER &&
                                   !logic ().m_seat_boat &&
                                   logic ().m_cam_mode != CAM_HELMET,
-                     .driver_outfit = their_outfit (),
-                     .passenger_outfit = m_outfit },
+                     .driver_outfit = m_company.their_outfit (),
+                     .passenger_outfit = m_company.outfit },
                    0x6000);
       m_blob.draw (dl, surface (), theirs.helicopter.position, 4.5f);
       render_helicopter (r, theirs.helicopter, 0x7000);
@@ -431,50 +404,51 @@ namespace moppe {
                       dl,
                       theirs.tractor,
                       theirs.mode == M_TRACTOR
-                        ? std::optional<Outfit> (their_outfit ())
+                        ? std::optional<Outfit> (m_company.their_outfit ())
                         : std::nullopt,
                       0x9000);
       m_blob.draw (dl, surface (), theirs.caddy.position, 3.6f);
-      render_caddy (
-        r,
-        dl,
-        theirs.caddy,
-        { .driver = theirs.mode == M_CADDY, .driver_outfit = their_outfit () },
-        0xB000);
+      render_caddy (r,
+                    dl,
+                    theirs.caddy,
+                    { .driver = theirs.mode == M_CADDY,
+                      .driver_outfit = m_company.their_outfit () },
+                    0xB000);
       render_boat (r,
                    dl,
                    theirs.boat,
                    theirs.mode == M_BOAT
-                     ? std::optional<Outfit> (their_outfit ())
+                     ? std::optional<Outfit> (m_company.their_outfit ())
                      : std::nullopt,
                    0xF800,
                    std::nullopt,
                    time,
                    logic ().m_mode == M_PASSENGER && logic ().m_seat_boat &&
                        logic ().m_cam_mode != CAM_HELMET
-                     ? std::optional<Outfit> (m_outfit)
+                     ? std::optional<Outfit> (m_company.outfit)
                      : std::nullopt);
       m_blob.draw (dl, surface (), theirs.mountain_bike.position, 1.3f);
-      render_mountain_bike (r,
-                            dl,
-                            theirs.mountain_bike,
-                            theirs.mode == M_MOUNTAIN_BIKE
-                              ? std::optional<Outfit> (their_outfit ())
-                              : std::nullopt,
-                            0xE000);
+      render_mountain_bike (
+        r,
+        dl,
+        theirs.mountain_bike,
+        theirs.mode == M_MOUNTAIN_BIKE
+          ? std::optional<Outfit> (m_company.their_outfit ())
+          : std::nullopt,
+        0xE000);
       m_blob.draw (dl, surface (), theirs.long_john.position, 2.0f);
       render_long_john (r,
                         dl,
                         theirs.long_john,
                         theirs.mode == M_LONG_JOHN
-                          ? std::optional<Outfit> (their_outfit ())
+                          ? std::optional<Outfit> (m_company.their_outfit ())
                           : std::nullopt,
                         0xE100);
       render_jet_ski (r,
                       dl,
                       theirs.jet_ski,
                       theirs.mode == M_JET_SKI
-                        ? std::optional<Outfit> (their_outfit ())
+                        ? std::optional<Outfit> (m_company.their_outfit ())
                         : std::nullopt,
                       0xE200);
       if (theirs.hung)
@@ -482,11 +456,10 @@ namespace moppe {
       if (theirs.hearth_laid)
         draw_hearth (dl, theirs.hearth, theirs.fire_burn);
 
-      m_companion_basket.clear ();
-      for (std::size_t i = theirs.pick_used; i < m_companion_picks.size (); ++i)
-        if (m_companion_picks[i] < m_mushrooms.mushroom_count ())
-          m_companion_basket.push_back (
-            m_mushrooms.site (m_companion_picks[i]));
+      m_company.basket.clear ();
+      for (std::size_t i = theirs.pick_used; i < m_company.picks.size (); ++i)
+        if (m_company.picks[i] < m_mushrooms.mushroom_count ())
+          m_company.basket.push_back (m_mushrooms.site (m_company.picks[i]));
       if (theirs.pan_on) {
         m_pan_contents.clear ();
         for (int i = 0; i < theirs.pan_count; ++i)
@@ -507,31 +480,35 @@ namespace moppe {
             theirs.swing,
             resting_gaze (theirs.hammock, theirs.gaze_yaw, theirs.gaze_pitch),
             time),
-          their_outfit ());
+          m_company.their_outfit ());
         Vec3 floor = hammock_middle (theirs.hammock) +
                      hammock_across (theirs.hammock) * 0.75f -
                      hammock_along (theirs.hammock) * 0.5f;
         floor[1] = ground_height (floor);
         render_basket_set_down (
-          dl, floor, hammock_along (theirs.hammock), m_companion_basket);
+          dl, floor, hammock_along (theirs.hammock), m_company.basket);
       } else if (theirs.walker) {
         m_blob.draw (
           dl, surface (), theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
-        render_walker (
-          dl, *theirs.walker, time, m_companion_basket, their_outfit ());
+        render_walker (dl,
+                       *theirs.walker,
+                       time,
+                       m_company.basket,
+                       m_company.their_outfit ());
       }
       if (theirs.glider) {
         m_blob.draw (dl, surface (), theirs.glider->position, 3.4f);
-        render_glider (r, dl, *theirs.glider, time, 0x4000, their_outfit ());
+        render_glider (
+          r, dl, *theirs.glider, time, 0x4000, m_company.their_outfit ());
       }
     }
 
     void MoppeGame::light_companion_fire (FrameView& frame) const {
-      if (!m_companion || !m_companion->hearth_laid ||
-          m_companion->fire_burn <= 0.01f)
+      if (!m_company.companion || !m_company.companion->hearth_laid ||
+          m_company.companion->fire_burn <= 0.01f)
         return;
       Camp theirs;
-      theirs.hearth = m_companion->hearth;
+      theirs.hearth = m_company.companion->hearth;
       const Vec3 lamp = fire_light_position (theirs);
       FrameLighting& lighting = frame.lighting;
       if (lighting.lamp_reach > 0.0f &&
@@ -540,17 +517,18 @@ namespace moppe {
         return;
       lighting.lamp_position = lamp;
       lighting.lamp_reach = meters_value (fire_light_reach);
-      lighting.lamp_color =
-        scale_display (fire_light_color (m_companion->fire_burn, lighting.time),
-                       1.0f - 0.25f * lighting.daylight);
+      lighting.lamp_color = scale_display (
+        fire_light_color (m_company.companion->fire_burn, lighting.time),
+        1.0f - 0.25f * lighting.daylight);
     }
 
     void MoppeGame::add_company_readings (HudState& state) const {
       state.can_ride_along = can_ride_along ();
-      if (!m_link || !m_notice)
+      if (!m_company.link || !m_company.last_notice)
         return;
-      state.notice = m_notice;
-      state.notice_age_s = static_cast<float> (m_link->now () - m_notice_at);
+      state.notice = m_company.last_notice;
+      state.notice_age_s =
+        static_cast<float> (m_company.link->now () - m_company.notice_at);
     }
   }
 }

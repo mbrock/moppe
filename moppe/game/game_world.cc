@@ -147,7 +147,7 @@ namespace moppe {
       MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
       session ().stars ().generate (surface (), world (), 80);
       begin_day ();
-      forget_companion ();
+      m_company.forget ();
       m_home_base_position =
         trail_cell_position (trail_network ().plan.home_base);
       build_home_base_marker ();
@@ -430,8 +430,8 @@ namespace moppe {
       // so that a still can be taken from any pose the grammar writes.
       const char* list = moppe::environment ("MOPPE_OPENING");
       const bool posed = list && std::filesystem::is_regular_file (list) &&
-                         !m_screenshot_path.empty ();
-      const bool automated = (!m_screenshot_path.empty () && !posed) ||
+                         m_capture.taking_still ();
+      const bool automated = (m_capture.taking_still () && !posed) ||
                              moppe::environment ("MOPPE_DEMO") ||
                              moppe::environment ("MOPPE_WALK");
       if (posed || (!automated && !m_skip_cinematic_requested)) {

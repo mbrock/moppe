@@ -27,42 +27,21 @@ namespace moppe::game {
         render::MeshPtr trailer_wheel;
       };
 
-      render::MeshPtr bake_tractor_part (render::Renderer& r,
-                                         const model_mesh::Mesh& mesh) {
-        render::DrawList dl;
-        model_mesh::record (dl, mesh);
-        return r.create_mesh (dl);
-      }
-
       const TractorMeshes& tractor_meshes (render::Renderer& r) {
         static const TractorMeshes meshes = [&r] {
           TractorMeshes m;
-          m.body = bake_tractor_part (r, tractor_model::body);
-          m.hitch = bake_tractor_part (r, tractor_model::hitch);
-          m.column = bake_tractor_part (r, tractor_model::column);
+          m.body = model_mesh::bake (r, tractor_model::body);
+          m.hitch = model_mesh::bake (r, tractor_model::hitch);
+          m.column = model_mesh::bake (r, tractor_model::column);
           m.steering_wheel =
-            bake_tractor_part (r, tractor_model::steering_wheel);
-          m.front_wheel = bake_tractor_part (r, tractor_model::front_wheel);
-          m.rear_wheel = bake_tractor_part (r, tractor_model::rear_wheel);
-          m.trailer = bake_tractor_part (r, trailer_model::body);
-          m.trailer_wheel = bake_tractor_part (r, trailer_model::wheel);
+            model_mesh::bake (r, tractor_model::steering_wheel);
+          m.front_wheel = model_mesh::bake (r, tractor_model::front_wheel);
+          m.rear_wheel = model_mesh::bake (r, tractor_model::rear_wheel);
+          m.trailer = model_mesh::bake (r, trailer_model::body);
+          m.trailer_wheel = model_mesh::bake (r, trailer_model::wheel);
           return m;
         }();
         return meshes;
-      }
-
-      Mat4 tractor_body_frame (const Vec3& position,
-                               const Vec3& ahead,
-                               const Vec3& above) {
-        const Vec3 forward = normalized (ahead);
-        const Vec3 left = normalized (cross (above, forward));
-        const Vec3 up = cross (forward, left);
-        return Mat4::translation (position) * Mat4::basis (left, up, forward);
-      }
-
-      Mat4 tractor_frame (const TractorPose& tractor) {
-        return tractor_body_frame (
-          tractor.position, tractor.forward, tractor.up);
       }
 
       Mat4 steering_turn (const TractorPose& tractor) {
@@ -125,7 +104,8 @@ namespace moppe::game {
                        std::optional<Outfit> driver,
                        uint64_t motion_base) {
     const TractorMeshes& meshes = tractor_meshes (r);
-    const Mat4 frame = tractor_frame (tractor);
+    const Mat4 frame =
+      model_mesh::body_frame (tractor.position, tractor.forward, tractor.up);
     if (driver)
       figure::draw (dl, pose_driver (tractor, frame), *driver);
 
@@ -168,7 +148,7 @@ namespace moppe::game {
 
     // The trailer behind, its wheels on their springs, the left-hand one
     // turned about as the tractor's are.
-    const Mat4 towed = tractor_body_frame (
+    const Mat4 towed = model_mesh::body_frame (
       tractor.trailer_position, tractor.trailer_forward, tractor.trailer_up);
     draw_part (*meshes.trailer, towed);
     const Vec3 trailer_axles[2] = { trailer_model::wheel_l,

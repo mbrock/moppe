@@ -18,30 +18,15 @@ namespace moppe::game {
         render::MeshPtr nozzle;
       };
 
-      render::MeshPtr bake_jet_ski_part (render::Renderer& r,
-                                         const model_mesh::Mesh& mesh) {
-        render::DrawList dl;
-        model_mesh::record (dl, mesh);
-        return r.create_mesh (dl);
-      }
-
       const JetSkiMeshes& jet_ski_meshes (render::Renderer& r) {
         static const JetSkiMeshes meshes = [&r] {
           JetSkiMeshes m;
-          m.hull = bake_jet_ski_part (r, jet_ski_model::hull);
-          m.bars = bake_jet_ski_part (r, jet_ski_model::bars);
-          m.nozzle = bake_jet_ski_part (r, jet_ski_model::nozzle);
+          m.hull = model_mesh::bake (r, jet_ski_model::hull);
+          m.bars = model_mesh::bake (r, jet_ski_model::bars);
+          m.nozzle = model_mesh::bake (r, jet_ski_model::nozzle);
           return m;
         }();
         return meshes;
-      }
-
-      Mat4 jet_ski_frame (const JetSkiPose& ski) {
-        const Vec3 forward = normalized (ski.forward);
-        const Vec3 left = normalized (cross (ski.up, forward));
-        const Vec3 up = cross (forward, left);
-        return Mat4::translation (ski.position) *
-               Mat4::basis (left, up, forward);
       }
 
       // The bars turn about the column, which leans back toward the
@@ -109,7 +94,8 @@ namespace moppe::game {
                        std::optional<Outfit> rider,
                        uint64_t motion_base) {
     const JetSkiMeshes& meshes = jet_ski_meshes (r);
-    const Mat4 frame = jet_ski_frame (ski);
+    const Mat4 frame =
+      model_mesh::body_frame (ski.position, ski.forward, ski.up);
     const Mat4 bars = bars_frame (ski, frame);
     if (rider)
       figure::draw (dl, pose_jet_ski_rider (ski, frame, bars), *rider);

@@ -38,22 +38,16 @@ namespace moppe {
         render::MeshPtr nozzle; // one jump-jet bell along +z
       };
 
-      render::MeshPtr bake (render::Renderer& r, const model_mesh::Mesh& mesh) {
-        render::DrawList dl;
-        model_mesh::record (dl, mesh);
-        return r.create_mesh (dl);
-      }
-
       const BikeMeshes& bike_meshes (render::Renderer& r) {
         static const BikeMeshes meshes = [&r] {
           BikeMeshes b;
-          b.wheel = bake (r, bike_model::wheel);
-          b.chassis = bake (r, bike_model::chassis);
-          b.sliders = bake (r, bike_model::fork_sliders);
-          b.swingarm = bake (r, bike_model::swingarm);
-          b.shock_body = bake (r, bike_model::shock_body);
-          b.shock_shaft = bake (r, bike_model::shock_shaft);
-          b.nozzle = bake (r, bike_model::nozzle);
+          b.wheel = model_mesh::bake (r, bike_model::wheel);
+          b.chassis = model_mesh::bake (r, bike_model::chassis);
+          b.sliders = model_mesh::bake (r, bike_model::fork_sliders);
+          b.swingarm = model_mesh::bake (r, bike_model::swingarm);
+          b.shock_body = model_mesh::bake (r, bike_model::shock_body);
+          b.shock_shaft = model_mesh::bake (r, bike_model::shock_shaft);
+          b.nozzle = model_mesh::bake (r, bike_model::nozzle);
 
           // The headlight's lens is unlit in the model; a soft additive
           // halo around it is what the bloom pass picks up.

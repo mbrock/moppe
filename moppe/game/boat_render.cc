@@ -22,30 +22,15 @@ namespace moppe::game {
         render::MeshPtr propeller;
       };
 
-      render::MeshPtr bake_boat_part (render::Renderer& r,
-                                      const model_mesh::Mesh& mesh) {
-        render::DrawList dl;
-        model_mesh::record (dl, mesh);
-        return r.create_mesh (dl);
-      }
-
       const BoatMeshes& boat_meshes (render::Renderer& r) {
         static const BoatMeshes meshes = [&r] {
           BoatMeshes m;
-          m.hull = bake_boat_part (r, boat_model::hull);
-          m.longtail = bake_boat_part (r, boat_model::longtail);
-          m.propeller = bake_boat_part (r, boat_model::propeller);
+          m.hull = model_mesh::bake (r, boat_model::hull);
+          m.longtail = model_mesh::bake (r, boat_model::longtail);
+          m.propeller = model_mesh::bake (r, boat_model::propeller);
           return m;
         }();
         return meshes;
-      }
-
-      Mat4 boat_frame (const BoatPose& boat) {
-        const Vec3 forward = normalized (boat.forward);
-        const Vec3 left = normalized (cross (boat.up, forward));
-        const Vec3 up = cross (forward, left);
-        return Mat4::translation (boat.position) *
-               Mat4::basis (left, up, forward);
       }
 
       // The long-tail's frame about its pivot: swung about the boat's up
@@ -156,7 +141,8 @@ namespace moppe::game {
                     float time,
                     std::optional<Outfit> passenger) {
     const BoatMeshes& meshes = boat_meshes (r);
-    const Mat4 frame = boat_frame (boat);
+    const Mat4 frame =
+      model_mesh::body_frame (boat.position, boat.forward, boat.up);
     const Mat4 tail = tail_frame (boat, frame);
     if (passenger)
       figure::draw (dl, pose_passenger (frame), *passenger);

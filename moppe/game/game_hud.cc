@@ -402,9 +402,9 @@ namespace moppe {
                                   int height) const {
       const Mode mode = logic ().m_mode;
       const DisplayColor pale (0.96f, 0.96f, 0.96f);
-      if (m_companion && mode != M_PASSENGER &&
-          m_companion->mode != M_PASSENGER) {
-        const CompanionSnapshot& theirs = *m_companion;
+      if (m_company.companion && mode != M_PASSENGER &&
+          m_company.companion->mode != M_PASSENGER) {
+        const CompanionSnapshot& theirs = *m_company.companion;
         Vec3 at = theirs.bike.position;
         if (theirs.walker)
           at = theirs.walker->position;
@@ -430,8 +430,10 @@ namespace moppe {
         DisplayColor jacket = pale;
         for (std::size_t c = 0; c < figure::colours.size (); ++c)
           if (std::string_view (figure::colour_names[c]) == "jacket")
-            jacket = mix_display (
-              figure::outfit_colour (c, their_outfit ()), pale, 0.35f);
+            jacket =
+              mix_display (figure::outfit_colour (c, m_company.their_outfit ()),
+                           pale,
+                           0.35f);
         add_waymark (state,
                      frame,
                      width,
@@ -597,9 +599,9 @@ namespace moppe {
                          .heading = subject_heading (),
                          .colour = dark,
                          .name = "" });
-      if (m_companion && mode != M_PASSENGER &&
-          m_companion->mode != M_PASSENGER) {
-        const CompanionSnapshot& theirs = *m_companion;
+      if (m_company.companion && mode != M_PASSENGER &&
+          m_company.companion->mode != M_PASSENGER) {
+        const CompanionSnapshot& theirs = *m_company.companion;
         Vec3 at = theirs.bike.position;
         if (theirs.walker)
           at = theirs.walker->position;
@@ -624,7 +626,7 @@ namespace moppe {
         DisplayColor jacket = dark;
         for (std::size_t c = 0; c < figure::colours.size (); ++c)
           if (std::string_view (figure::colour_names[c]) == "jacket")
-            jacket = figure::outfit_colour (c, their_outfit ());
+            jacket = figure::outfit_colour (c, m_company.their_outfit ());
         marks.push_back ({ .kind = Mark::Kind::Companion,
                            .position = at,
                            .heading = Vec3 (0, 0, -1),

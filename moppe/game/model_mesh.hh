@@ -4,6 +4,7 @@
 #include <moppe/color.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
+#include <moppe/render/renderer.hh>
 
 #include <array>
 #include <cstdint>
@@ -55,6 +56,15 @@ namespace moppe::game::model_mesh {
 
   // Appends the mesh's triangles to `dl` under its current transform.
   void record (render::DrawList& dl, const Mesh& mesh);
+
+  // The mesh recorded alone and retained by the renderer, to be replayed
+  // with a model matrix. The machines and the animals bake their parts
+  // once, the first time they are drawn.
+  render::MeshPtr bake (render::Renderer& r, const Mesh& mesh);
+
+  // Model space for a machine standing at `position`: x to its left, y
+  // up, z along `forward`, squared up from `up`.
+  Mat4 body_frame (const Vec3& position, const Vec3& forward, const Vec3& up);
 }
 
 #endif

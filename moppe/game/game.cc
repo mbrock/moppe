@@ -14,8 +14,7 @@ namespace moppe {
           m_loading (this->recipe (), options.world_cache),
           m_graphics (options.graphics),
           m_spawn_position (position_value (this->world ().spawn_position ())),
-          m_renderer (0), m_screenshot_path (options.screenshot_path),
-          m_screenshot_frames (0), m_ready (false) {
+          m_renderer (0), m_capture (options.screenshot_path), m_ready (false) {
       m_day = plan_day ();
       m_sky = m_almanac.held (m_graphics.sun_height);
       if (const char* name = moppe::environment ("MOPPE_WEATHER");
@@ -68,7 +67,7 @@ namespace moppe {
       // A video advances exactly one 60 Hz frame of world time per rendered
       // frame, so recorded motion is even however slowly the frames are
       // written.
-      if (m_video_plan) {
+      if (m_capture.video_planned ()) {
         m_simulation_clock.reset ();
         // The time a video lets pass before it begins is not looked at,
         // so it goes by many steps to a drawn frame, until two seconds
@@ -76,16 +75,11 @@ namespace moppe {
         // history time to settle.
         // A remote control's taps are timed by drawn frames, so a
         // driven video keeps to one step each.
-        int steps = 1;
-        if (m_video_plan && !m_video_done &&
-            !moppe::environment ("MOPPE_CONTROL_FILE")) {
-          const int first =
-            static_cast<int> (std::lround (m_video_plan->start * 60.0f));
-          steps = std::clamp (first - 120 - m_video_render_frame, 1, 20);
-        }
+        const int steps = m_capture.video_steps (
+          moppe::environment ("MOPPE_CONTROL_FILE") != nullptr);
         for (int step = 0; step < steps; ++step)
           tick_simulation (seconds (1.0f / 60.0f));
-        m_video_render_frame += steps - 1;
+        m_capture.skip_video_frames (steps - 1);
         return;
       }
 
@@ -114,7 +108,7 @@ namespace moppe {
 
       // The companion's pose clock counts only time the world was stepped
       // by, at the step it was stepped by.
-      m_stepped += dt;
+      m_company.stepped += dt;
       logic ().m_total_time += dt * si::second;
       const float total_time =
         static_cast<float> (seconds_into_play (logic ().m_total_time));
@@ -262,7 +256,7 @@ namespace moppe {
                               &m_trunk_field,
                               ground_cover (session ().subject_position ()),
                               &generated_world ().water_surface (),
-                              m_strangers,
+                              m_company.strangers,
                               &around);
       if (advance.say_ouchies)
         platform::say ("Ouchies. That hurts.");
@@ -276,9 +270,7 @@ namespace moppe {
     }
 
     std::optional<double> MoppeGame::script_seconds () const {
-      if (!m_video_plan)
-        return std::nullopt;
-      return m_ready && !opening_active () ? m_video_render_frame / 60.0 : -1.0;
+      return m_capture.script_seconds (m_ready && !opening_active ());
     }
 
     void MoppeGame::controls (const platform::ControlState& state) {
@@ -319,16 +311,13 @@ namespace moppe {
       }
 
       if (k == Key::Screenshot && down) {
-        m_snapshot_requested = true;
+        m_capture.request_snapshot ();
         return;
       }
 
       // V starts a video of what is on screen, and V again ends it.
       if (k == Key::Record && down) {
-        if (m_video.recording ())
-          m_video.finish ();
-        else if (!m_video_plan)
-          m_video.begin (next_clip_path (), 30);
+        m_capture.toggle_clip ();
         return;
       }
       // Esc in play asks whether to quit: Esc again quits, and any
@@ -337,7 +326,7 @@ namespace moppe {
       if (m_quit_asked && down) {
         m_quit_asked = false;
         if (k == Key::Escape) {
-          m_video.finish ();
+          m_capture.finish_video ();
           platform::request_quit ();
         }
         return;
@@ -345,7 +334,7 @@ namespace moppe {
 
       if (opening_active ()) {
         if (k == Key::Escape && down) {
-          m_video.finish ();
+          m_capture.finish_video ();
           platform::request_quit ();
         } else
           m_live_input.cinematic_key (k, down);

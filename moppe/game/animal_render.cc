@@ -249,11 +249,8 @@ namespace moppe::game {
                                                  b.head,       b.tail,
                                                  b.fore_upper, b.fore_lower,
                                                  b.hind_upper, b.hind_lower };
-            for (int k = 0; k < 8; ++k) {
-              render::DrawList dl;
-              model_mesh::record (dl, *parts[k]);
-              out[s].part[k] = r.create_mesh (dl);
-            }
+            for (int k = 0; k < 8; ++k)
+              out[s].part[k] = model_mesh::bake (r, *parts[k]);
           }
           return out;
         }();

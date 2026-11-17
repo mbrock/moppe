@@ -1,6 +1,6 @@
 // The frame: render() in the pass order of the original GL build, the
-// loading and game-over screens, and the captures taken of it (screenshots,
-// posed shots, and videos).
+// loading and game-over screens; the captures taken of it are
+// frame_capture.hh's.
 
 #include <moppe/game/game.hh>
 
@@ -34,22 +34,12 @@ namespace moppe {
         m_opening_rendered_shot = m_opening.shot_index ();
       }
 
-      static const int screenshot_delay = [] {
-        if (const char* frames = moppe::environment ("MOPPE_SCREENSHOT_FRAMES"))
-          return std::max (1, ::atoi (frames));
-        return 30;
-      }();
-      const bool captured = !m_screenshot_path.empty () &&
-                            ++m_screenshot_frames >= screenshot_delay;
-      if (captured)
-        r.request_screenshot (m_screenshot_path);
-      if (m_snapshot_requested) {
-        m_snapshot_requested = false;
-        const std::string path = next_snapshot_path ();
-        r.request_screenshot (path);
-        record_shot_pose (frame, path);
-      }
-      record_frame (r);
+      const bool captured = m_capture.before_frame (
+        r,
+        frame,
+        static_cast<float> (seconds_into_play (logic ().m_total_time)),
+        m_sky.sun_height,
+        opening_active ());
       render::FrameParams params = frame_params_for (frame);
       if (!keeping_pace ())
         params.frame_rate_target = 0.0f;
@@ -66,10 +56,7 @@ namespace moppe {
       draw_overlays (r, frame);
 
       r.end_frame ();
-      if (captured) {
-        m_screenshot_path.clear ();
-        platform::request_quit ();
-      }
+      m_capture.after_frame (captured);
     }
 
     void MoppeGame::render_loading (render::Renderer& r) {
@@ -257,118 +244,5 @@ namespace moppe {
       r.end_frame ();
     }
 
-    std::optional<MoppeGame::VideoPlan> MoppeGame::plan_video () {
-      const char* path = moppe::environment ("MOPPE_VIDEO");
-      if (!path || !*path)
-        return std::nullopt;
-      VideoPlan plan;
-      plan.path = path;
-      const auto number = [] (const char* name, float otherwise) {
-        const char* value = moppe::environment (name);
-        return value ? (float)::atof (value) : otherwise;
-      };
-      plan.fps = number ("MOPPE_VIDEO_FPS", 30.0f) > 45.0f ? 60 : 30;
-      plan.seconds = std::max (0.0f, number ("MOPPE_VIDEO_SECONDS", 0.0f));
-      plan.start = std::max (0.0f, number ("MOPPE_VIDEO_START", 0.0f));
-      plan.speed =
-        std::max (1, static_cast<int> (number ("MOPPE_VIDEO_SPEED", 1.0f)));
-      plan.height =
-        std::max (0, static_cast<int> (number ("MOPPE_VIDEO_HEIGHT", 0.0f)));
-      return plan;
-    }
-
-    void MoppeGame::record_frame (render::Renderer& r) {
-      const auto take = [&] {
-        r.request_frame (
-          [this] (const render::FramePixels& frame) { m_video.add (frame); });
-      };
-      const int index = m_video_render_frame++;
-      if (!m_video_plan) {
-        // A video begun with V takes every second frame as they come.
-        if (m_video.recording () && index % 2 == 0)
-          take ();
-        return;
-      }
-      if (m_video_done)
-        return;
-      const VideoPlan& plan = *m_video_plan;
-      const int first = static_cast<int> (std::lround (plan.start * 60.0f));
-      if (index < first)
-        return;
-      if (index == first)
-        m_video.begin (plan.path, plan.fps, plan.height);
-      // A video of the river flight is over when the flight is: the
-      // drone comes down a little sooner than its planned seconds, and
-      // what follows is only the walker standing at the trailhead.
-      static const bool flight_only = [] {
-        const char* opening = moppe::environment ("MOPPE_OPENING");
-        return opening && std::string_view (opening) == "river";
-      }();
-      if (flight_only && opening_active ())
-        m_video_saw_flight = true;
-      const bool landed =
-        flight_only && m_video_saw_flight && !opening_active ();
-      if (!m_video.recording () || landed ||
-          (plan.seconds > 0.0f &&
-           m_video.frames () >= std::lround (plan.seconds * plan.fps))) {
-        m_video.finish ();
-        m_video_done = true;
-        platform::request_quit ();
-        return;
-      }
-      if ((index - first) % (60 / plan.fps * plan.speed) == 0)
-        take ();
-    }
-
-    std::string MoppeGame::next_clip_path () {
-      std::ostringstream path;
-      path << snapshot_directory () << "/clip-" << std::setfill ('0')
-           << std::setw (3) << m_clip_count++ << ".mp4";
-      return path.str ();
-    }
-
-    const std::string& MoppeGame::snapshot_directory () {
-      namespace fs = std::filesystem;
-      if (m_snapshot_directory.empty ()) {
-        char stamp[32];
-        const std::time_t now = std::time (nullptr);
-        std::strftime (
-          stamp, sizeof stamp, "run-%Y%m%d-%H%M%S", std::localtime (&now));
-        fs::path directory = fs::path ("screenshots") / stamp;
-        std::error_code error;
-        fs::create_directories (directory, error);
-        if (error) {
-          directory = fs::temp_directory_path () / "moppe-screenshots" / stamp;
-          fs::create_directories (directory, error);
-        }
-        m_snapshot_directory = directory.string ();
-      }
-      return m_snapshot_directory;
-    }
-
-    std::string MoppeGame::next_snapshot_path () {
-      std::ostringstream path;
-      path << snapshot_directory () << "/shot-" << std::setfill ('0')
-           << std::setw (3) << m_snapshot_count++ << ".png";
-      std::cerr << "moppe: screenshot " << path.str () << '\n';
-      return path.str ();
-    }
-
-    void MoppeGame::record_shot_pose (const FrameView& frame,
-                                      const std::string& path) {
-      const std::string name = std::filesystem::path (path).stem ().string ();
-      const std::string line = format_opening_shot (
-        name,
-        frame.camera.position,
-        frame.camera.forward,
-        frame.camera.field_of_view.numerical_value_in (u::deg),
-        static_cast<float> (seconds_into_play (logic ().m_total_time)),
-        m_sky.sun_height);
-      std::cerr << "moppe: pose: " << line << '\n';
-      std::ofstream shots (std::filesystem::path (m_snapshot_directory) /
-                             "shots.txt",
-                           std::ios::app);
-      shots << line << '\n';
-    }
   }
 }

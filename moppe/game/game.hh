@@ -29,7 +29,7 @@
 #include <moppe/game/camp.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
-#include <moppe/game/companion_link.hh>
+#include <moppe/game/companionship.hh>
 #include <moppe/game/daylight.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/farm_model.hh>
@@ -37,6 +37,7 @@
 #include <moppe/game/fingerposts.hh>
 #include <moppe/game/fishing.hh>
 #include <moppe/game/forest.hh>
+#include <moppe/game/frame_capture.hh>
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/generated_world.hh>
@@ -66,7 +67,6 @@
 #include <moppe/game/terrain.hh>
 #include <moppe/game/tractor_render.hh>
 #include <moppe/game/vehicle_render.hh>
-#include <moppe/game/video.hh>
 #include <moppe/game/walker_render.hh>
 #include <moppe/game/water_presentation.hh>
 #include <moppe/game/waterfall_surface.hh>
@@ -561,10 +561,6 @@ namespace moppe {
 
       std::uint32_t this_world () const;
 
-      void forget_companion ();
-
-      void notice (const char* words);
-
       // How this player looks now, for the other to draw.
       CompanionSnapshot my_snapshot () const;
 
@@ -576,14 +572,6 @@ namespace moppe {
       // spots. Whoever came later moves theirs a few steps aside, and
       // themselves with them if they have not yet walked off.
       void make_room (const CompanionSnapshot& theirs);
-
-      Outfit their_outfit () const;
-
-      // The passenger's seat of the other player's jeep, in the world.
-      static Vec3 companion_seat (const CompanionSnapshot& theirs);
-
-      // The fore seat of the other player's boat, in the world.
-      static Vec3 companion_boat_seat (const CompanionSnapshot& theirs);
 
       // On foot beside the other player's jeep, or their boat while they
       // are at its helm, and nearer it than anything of one's own to
@@ -754,44 +742,6 @@ namespace moppe {
       void key (platform::Key k, bool down) override;
 
     private:
-      // A launch told to record itself: MOPPE_VIDEO names the file, and
-      // beside it MOPPE_VIDEO_SECONDS how long the video runs before the
-      // game quits (otherwise until it is quit), MOPPE_VIDEO_START the
-      // seconds of play to let pass first, MOPPE_VIDEO_FPS 30 or 60,
-      // MOPPE_VIDEO_SPEED a whole number of times faster than life, and
-      // MOPPE_VIDEO_HEIGHT a height to scale to. The world then advances a
-      // sixtieth of a second per rendered frame, so the video is even
-      // however long its frames took (tools/record).
-      struct VideoPlan {
-        std::string path;
-        int fps = 30;
-        float seconds = 0.0f;
-        float start = 0.0f;
-        int speed = 1;
-        int height = 0;
-      };
-
-      static std::optional<VideoPlan> plan_video ();
-
-      // Hands this frame to the video being recorded, if it is one of the
-      // frames the video takes.
-      void record_frame (render::Renderer& r);
-
-      std::string next_clip_path ();
-
-      // The screenshot key and the video key drop their files into one
-      // per-run timestamped directory.
-      const std::string& snapshot_directory ();
-
-      // The in-game screenshot key's frames number on through a run, so a
-      // walk through the world becomes a reviewable series.
-      std::string next_snapshot_path ();
-
-      // Beside each screenshot, the camera that took it as a `shot` line for
-      // data/opening.txt: printed to the log (on the Xbox, LocalState's
-      // log.txt) and gathered in the run directory's shots.txt.
-      void record_shot_pose (const FrameView& frame, const std::string& path);
-
       FrameViewInput frame_view_input (float aspect) const;
 
       void update_frame_flare ();
@@ -906,20 +856,8 @@ namespace moppe {
       std::vector<std::uint32_t> m_forage_refused;
       // Scratch for the basket's contents as drawn.
       std::vector<MushroomSite> m_basket_contents;
-      // The other player, when there is one (game/companion.hh): the wire
-      // to them, what they have lately sent, and how they look this frame.
-      std::unique_ptr<CompanionLink> m_link;
-      CompanionTrack m_track;
-      std::vector<CompanionSnapshot> m_arrived;
-      std::optional<CompanionSnapshot> m_companion;
-      // The other player's machines as ours bump into them, and where
-      // each stood a frame ago, to tell how they move.
-      std::vector<MachineBody> m_strangers;
-      std::optional<std::array<Vec3, machine_count>> m_strangers_were;
-      // Their picks in the order they made them, as far as heard, and
-      // the same as mushrooms for the basket they carry.
-      std::vector<std::uint32_t> m_companion_picks;
-      std::vector<MushroomSite> m_companion_basket;
+      // The other player, when there is one.
+      Companionship m_company;
       // Scratch for a pan's contents as drawn, and the last meal's note.
       std::vector<MushroomSite> m_pan_contents;
       mutable std::string m_meal_note;
@@ -934,22 +872,6 @@ namespace moppe {
       float m_fish_script_rest = 1.0f;
       // MOPPE_WALK=boat-fish: when it got under way again.
       float m_boat_fish_off = -1.0f;
-      // Their hour of the day; negative with no one to keep time with.
-      double m_companion_hours = -1.0;
-      bool m_companion_met = false;
-      bool m_rode_along = false;
-      // What this player wears; the other wears the other.
-      Outfit m_outfit = Outfit::blue_jacket;
-      bool m_companion_elsewhere = false;
-      std::uint32_t m_snapshots_sent = 0;
-      // The clock this player's snapshots are stamped by, the link's
-      // clock when it was last read, and how far the simulation has
-      // stepped since.
-      double m_pose_clock = 0.0;
-      double m_pose_heard = -1.0;
-      double m_stepped = 0.0;
-      const char* m_notice = nullptr;
-      double m_notice_at = 0.0;
       OpeningArrival m_opening_arrival;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
@@ -973,22 +895,12 @@ namespace moppe {
       render::TextList m_hud_text;
 
       render::Renderer* m_renderer;
-      std::string m_screenshot_path;
-      bool m_snapshot_requested = false;
-      std::string m_snapshot_directory;
-      int m_snapshot_count = 0;
-      VideoRecorder m_video;
-      std::optional<VideoPlan> m_video_plan = plan_video ();
-      int m_video_render_frame = 0;
-      bool m_video_saw_flight = false;
-      int m_clip_count = 0;
-      bool m_video_done = false;
+      FrameCapture m_capture;
       // Whether L has handed the mouse back to the desktop during play.
       bool m_pointer_free = false;
       MapSheet m_map;
       // Esc in play has asked whether to quit (Hud::draw_quit_question).
       bool m_quit_asked = false;
-      int m_screenshot_frames;
       std::atomic<bool> m_ready;
 
       render::DrawList m_world_dl;
