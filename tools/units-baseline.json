@@ -18,12 +18,12 @@
       "escapes": 94
     },
     "Developer tools & site": {
-      "share": 36.2,
+      "share": 62.8,
       "files": 52,
-      "typed": 255,
-      "raw_float": 387,
-      "raw_vector": 62,
-      "escapes": 85
+      "typed": 450,
+      "raw_float": 229,
+      "raw_vector": 38,
+      "escapes": 178
     },
     "Forest & flora": {
       "share": 85.7,
@@ -34,20 +34,20 @@
       "escapes": 212
     },
     "Foundations (math & units)": {
-      "share": 34.3,
+      "share": 35.8,
       "files": 9,
-      "typed": 91,
-      "raw_float": 76,
+      "typed": 96,
+      "raw_float": 74,
       "raw_vector": 98,
-      "escapes": 47
+      "escapes": 51
     },
     "Game logic": {
       "share": 14.7,
       "files": 43,
-      "typed": 279,
-      "raw_float": 940,
+      "typed": 280,
+      "raw_float": 939,
       "raw_vector": 685,
-      "escapes": 294
+      "escapes": 299
     },
     "HUD & map": {
       "share": 2.8,
@@ -76,10 +76,10 @@
     "Renderer & render glue": {
       "share": 71.2,
       "files": 61,
-      "typed": 1081,
+      "typed": 1082,
       "raw_float": 297,
       "raw_vector": 140,
-      "escapes": 654
+      "escapes": 647
     },
     "Rivers, water & sediment": {
       "share": 98.0,
@@ -98,12 +98,12 @@
       "escapes": 125
     },
     "Terrain & world generation": {
-      "share": 50.6,
+      "share": 80.8,
       "files": 39,
-      "typed": 591,
-      "raw_float": 488,
-      "raw_vector": 88,
-      "escapes": 209
+      "typed": 965,
+      "raw_float": 177,
+      "raw_vector": 52,
+      "escapes": 212
     },
     "Tests": {
       "share": 35.4,
@@ -111,15 +111,15 @@
       "typed": 540,
       "raw_float": 789,
       "raw_vector": 195,
-      "escapes": 714
+      "escapes": 722
     },
     "Vehicles & on-foot body": {
-      "share": 32.9,
+      "share": 33.0,
       "files": 47,
-      "typed": 864,
-      "raw_float": 887,
+      "typed": 866,
+      "raw_float": 885,
       "raw_vector": 877,
-      "escapes": 314
+      "escapes": 317
     }
   }
 }
