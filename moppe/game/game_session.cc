@@ -51,8 +51,10 @@ namespace moppe::game {
     // Hands the controls to whatever the player is getting about on.
     void steer (GameSession& session, Controls k) {
       GameLogicState& logic = session.logic ();
-      k.boost = std::clamp (k.boost, 0.0f, 1.0f);
-      const bool pressed = k.boost > 0.1f && logic.m_controls.boost <= 0.1f;
+      k.boost =
+        std::clamp (k.boost, 0.0f * proportion[one], 1.0f * proportion[one]);
+      const bool pressed = k.boost > 0.1f * proportion[one] &&
+                           logic.m_controls.boost <= 0.1f * proportion[one];
       logic.m_controls = k;
       switch (logic.m_doing.way) {
       case Doing::Way::foot: {
@@ -62,7 +64,8 @@ namespace moppe::game {
         const scale_factor_t burden =
           (logic.m_haul.active ? 0.6f : 1.0f) * scale_factor[one];
         session.walker ().set_walk (
-          (burden * (k.go > 0 ? k.go : k.go * 0.6f)).numerical_value_in (one));
+          burden.numerical_value_in (one) *
+          (k.go > 0.0f * control_signal[one] ? k.go : k.go * 0.6f));
         if (pressed)
           session.walker ().jump ();
         break;
@@ -70,7 +73,7 @@ namespace moppe::game {
       case Doing::Way::glider:
         session.glider ().set_turn (k.turn);
         session.glider ().set_speed_control (k.go);
-        session.glider ().set_flare (k.boost > 0.1f);
+        session.glider ().set_flare (k.boost > 0.1f * proportion[one]);
         break;
       case Doing::Way::passenger:
       case Doing::Way::bus:
@@ -88,7 +91,7 @@ namespace moppe::game {
         session.glider ().drop_bike ();
         session.set_mode (Doing::driving (Machine::bike));
         Controls k = logic.m_controls;
-        k.boost = 0.0f;
+        k.boost = 0.0f * proportion[one];
         steer (session, k);
         return;
       }
@@ -103,7 +106,7 @@ namespace moppe::game {
         feet, unit_direction (glider.heading ()), glider.velocity ());
       session.set_mode (Doing::on_foot ());
       Controls k = logic.m_controls;
-      k.boost = 0.0f;
+      k.boost = 0.0f * proportion[one];
       steer (session, k);
     }
 
@@ -384,12 +387,13 @@ namespace moppe::game {
       const proportion_t climb = input.boost;
       const bool descend = input.run || input.use_held;
       steer (session,
-             { .turn = input_value (help.turn),
-               .go = input_value (help.drive),
-               .boost = input_value (input.boost),
-               .lift = climb > 0.1f ? input_value (climb)
-                       : descend    ? -1.0f
-                                    : 0.0f,
+             { .turn = help.turn,
+               .go = help.drive,
+               .boost = input.boost,
+               .lift = (climb > 0.1f * proportion[one] ? input_value (climb)
+                        : descend                      ? -1.0f
+                                                       : 0.0f) *
+                       control_signal[one],
                // Riding, what runs on foot stamps on the rear brake.
                .skid = input.run,
                .wheelie = input.lean_back });
@@ -505,14 +509,12 @@ namespace moppe::game {
         Trouble& trouble = trouble_of (logic, machine);
         // The helicopter flies out of any hole.
         const control_signal_t throttle =
-          (driven == machine && machine != Machine::helicopter
-             ? logic.m_controls.go
-             : 0.0f) *
-          control_signal[one];
-        if (!strain (trouble, body.position, input_value (throttle), dt))
+          driven == machine && machine != Machine::helicopter
+            ? logic.m_controls.go
+            : 0.0f * control_signal[one];
+        if (!strain (trouble, body.position, throttle, dt))
           continue;
-        const velocity_t kick =
-          heave (trouble, body.forward, input_value (throttle));
+        const velocity_t kick = heave (trouble, body.forward, throttle);
         ++trouble.heaves;
         session.push_machine (machine,
                               body.point (machine_kind (machine).centre),
@@ -600,9 +602,10 @@ namespace moppe::game {
     const position_t position = session.bike ().position ();
     const direction_t heading = session.bike ().orientation ();
     const velocity_t inherited = session.bike ().velocity ();
-    session.bike ().set_thrust (0);
+    session.bike ().set_thrust (0.0f * control_signal[one]);
     session.bike ().set_yaw (0 * u::deg);
-    session.bike ().set_boost (0, 0);
+    session.bike ().set_boost (0.0f * proportion[one],
+                               0.0f * control_signal[one]);
     session.glider ().launch (
       moppe::position (position_value (position) +
                        Vec3 (0, meters_value (mov::Glider::bike_hang), 0)),
@@ -659,10 +662,10 @@ namespace moppe::game {
       // Off the water's machines one steps with half their way on.
       const proportion_t keep =
         (kind.medium == Medium::water ? 0.5f : 1.0f) * proportion[one];
-      session.walker ().spawn (
-        at,
-        b.forward (),
-        moppe::velocity (velocity_value (b.velocity ()) * scalar_value (keep)));
+      session.walker ().spawn (at,
+                               b.forward (),
+                               moppe::velocity (velocity_value (b.velocity ()) *
+                                                keep.numerical_value_in (one)));
     });
     session.set_mode (Doing::on_foot ());
     steer (session, logic.m_controls);
@@ -1191,7 +1194,8 @@ namespace moppe::game {
         mov::Boat::pivot + displacement (Vec3 (-0.26f, 0.27f, 0.0f)),
         boat.swing (),
         boat.tilt ()));
-      if (chance (logic.m_fx_rng) < 0.10f + 0.45f * boat.rpm ()) {
+      if (chance (logic.m_fx_rng) <
+          0.10f + 0.45f * boat.rpm ().numerical_value_in (one)) {
         const float shade = 0.55f + 0.2f * chance (logic.m_fx_rng);
         Dust::Style smoke;
         smoke.size = 0.28f * u::m;
@@ -1544,7 +1548,7 @@ namespace moppe::game {
       const meters_t height = heli.altitude ();
       if (heli.rotor () > 0.6f * one && height < 9.0f * u::m) {
         std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-        const proportion_t strength = scalar_value (heli.rotor ()) *
+        const proportion_t strength = heli.rotor ().numerical_value_in (one) *
                                       (1.0f - meters_value (height) / 9.0f) *
                                       proportion[one];
         if (chance (logic.m_fx_rng) < scalar_value (strength) * 0.8f) {
@@ -1584,7 +1588,7 @@ namespace moppe::game {
       logic.m_odometer += length (velocity_value (tractor.velocity ())) *
                           seconds_value (elapsed) * u::m;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-      const float throttle = scalar_value (tractor.throttle ());
+      const float throttle = tractor.throttle ().numerical_value_in (one);
       if (chance (logic.m_fx_rng) < 0.12f + 0.5f * throttle) {
         const float shade = 0.30f + 0.25f * chance (logic.m_fx_rng);
         session.dust ().emit (
@@ -1621,7 +1625,7 @@ namespace moppe::game {
       logic.m_odometer += length (velocity_value (caddy.velocity ())) *
                           seconds_value (elapsed) * u::m;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-      const float throttle = scalar_value (caddy.throttle ());
+      const float throttle = caddy.throttle ().numerical_value_in (one);
       if (chance (logic.m_fx_rng) < 0.05f + 0.25f * throttle) {
         const float shade = 0.62f + 0.2f * chance (logic.m_fx_rng);
         session.dust ().emit (
@@ -1764,8 +1768,9 @@ namespace moppe::game {
         // A clean stunt keeps the ride flowing: the better the whip, the more
         // jump-jet reserve comes back for the next launch.
         if (clean_stunt_landing)
-          vehicle.replenish_boost (
-            std::min (0.35f, 0.10f + 0.04f * landed_trick_quarters));
+          vehicle.replenish_boost (std::min (
+            0.35f * proportion[one],
+            (0.10f + 0.04f * landed_trick_quarters) * proportion[one]));
       }
       logic.m_jump_airtime = 0.0f * u::s;
       logic.m_jump_spin = 0.0f * u::rad;
@@ -1855,7 +1860,8 @@ namespace moppe::game {
     }
     const speed_t sliding =
       length (velocity_value (vehicle.velocity ())) * (u::m / u::s);
-    if (driving && vehicle.grounded () && vehicle.skid () > 0.3f &&
+    if (driving && vehicle.grounded () &&
+        vehicle.skid () > 0.3f * proportion[one] &&
         sliding > 1.5f * (u::m / u::s)) {
       const float count =
         std::min (3.0f, speed_value (sliding) * (pedalled ? 0.25f : 0.15f)) *
@@ -1907,10 +1913,10 @@ namespace moppe::game {
     // Roost: hard throttle sprays an arc of dirt clods backward off the rear
     // knobby, heaviest when the engine wins against the ground.
     if (driving && !pedalled && vehicle.grounded () && !in_water &&
-        vehicle.thrust () > 0.6f) {
+        vehicle.thrust () > 0.6f * control_signal[one]) {
       const speed_t speed =
         length (velocity_value (vehicle.velocity ())) * (u::m / u::s);
-      const float slip = scalar_value (vehicle.thrust ()) *
+      const float slip = vehicle.thrust ().numerical_value_in (one) *
                          (1.0f - std::min (1.0f, speed_value (speed) / 30.0f));
       if (slip > 0.15f) {
         Dust::Style roost;
@@ -1933,9 +1939,10 @@ namespace moppe::game {
     // thin smoke trailing off their ends, and, close over the ground, a
     // blast of whatever the ground is made of. The nozzles swing from
     // straight down at rest to back and down under full drive.
-    if (driving && vehicle.boost_level () > 0.05f) {
-      const proportion_t level = vehicle.boost_level () * proportion[one];
-      const radians_t swing = 1.047f * vehicle.boost_drive () * u::rad;
+    if (driving && vehicle.boost_level () > 0.05f * proportion[one]) {
+      const proportion_t level = vehicle.boost_level ();
+      const radians_t swing = quantity_cast<isq::angular_measure> (
+        1.047f * u::rad * vehicle.boost_drive ());
       const direction_t jet_way = unit_direction (
         normalized (Vec3 (0, -std::cos (radians_value (swing)), 0) -
                     forward * std::sin (radians_value (swing))));
@@ -2001,7 +2008,8 @@ namespace moppe::game {
 
     // Exhaust smoke: faint gray puffs rise off the muffler while the
     // throttle is open.
-    if (driving && !pedalled && abs (vehicle.thrust ()) > 0.3f) {
+    if (driving && !pedalled &&
+        abs (vehicle.thrust ()) > 0.3f * control_signal[one]) {
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const probability_t puff (14.0f / u::s * elapsed);
       if (chance (logic.m_fx_rng) < scalar_value (puff)) {
@@ -2121,7 +2129,7 @@ namespace moppe::game {
                               DisplayColor (1.0f, 0.95f, 0.55f),
                               flash);
         if (logic.m_doing != Doing::gliding ())
-          vehicle.replenish_boost (0.25f * picked);
+          vehicle.replenish_boost (0.25f * picked * proportion[one]);
       }
     }
 

@@ -11,10 +11,10 @@ namespace moppe::game {
   // down to 1 up), and what runs on foot and leans back, which stamp on
   // a bike's rear brake and lift its front wheel.
   struct Controls {
-    float turn = 0.0f;
-    float go = 0.0f;
-    float boost = 0.0f;
-    float lift = 0.0f;
+    control_signal_t turn {};
+    control_signal_t go {};
+    proportion_t boost {};
+    control_signal_t lift {};
     bool skid = false;
     bool wheelie = false;
   };

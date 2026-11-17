@@ -123,12 +123,8 @@ namespace moppe {
                           std::string_view (walk_script) == "boat-fish"))
         input = m_walk.step (script_stage (), walk_script, dt);
       else if (DemoPilot::active ())
-        input = m_demo.steer (input,
-                              session (),
-                              m_parking,
-                              world_ground (),
-                              seconds_value (total_time),
-                              seconds_value (dt));
+        input = m_demo.steer (
+          input, session (), m_parking, world_ground (), total_time, dt);
       m_company.ride_along (session (), input);
       m_company.keep_time (session ());
       // The ground shows what the basket holds, a restored one too.

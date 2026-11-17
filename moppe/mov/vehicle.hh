@@ -32,7 +32,7 @@ namespace moppe {
         radians_t wheel_spin {};
         bool boost_flight {};
         control_signal_t thrust {};
-        control_signal_t boost_input {};
+        proportion_t boost_input {};
         control_signal_t boost_drive {};
         proportion_t boost_level {};
         proportion_t boost_charge {};
@@ -83,7 +83,7 @@ namespace moppe {
 
       // Continuous jump jets.  boost is 0..1; drive is -1..1 and tilts
       // the jet backward/vertical/forward to match the driving stick.
-      void set_boost (control_signal_t boost, control_signal_t drive);
+      void set_boost (proportion_t boost, control_signal_t drive);
       void replenish_boost (proportion_t amount) {
         m_boost_charge =
           std::min (1.0f * proportion[one], m_boost_charge + amount);
@@ -293,7 +293,7 @@ namespace moppe {
       bool m_boost_flight = false; // landing softened after using the jets
       control_signal_t m_thrust {};
 
-      control_signal_t m_boost_input {};
+      proportion_t m_boost_input {};
       control_signal_t m_boost_drive {};
       proportion_t m_boost_level {};
       proportion_t m_boost_charge = 1.0f * proportion[one];

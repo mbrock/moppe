@@ -156,7 +156,8 @@ MOPPE_TEST (rigid_bike_replays_and_restores_deterministically) {
       const float t = i / 120.0f;
       bike.set_thrust (sig (t < 5.0f ? 1.0f : -0.5f));
       bike.set_yaw ((60.0f * std::sin (0.9f * t)) * u::deg);
-      bike.set_boost (sig (std::fmod (t, 3.0f) < 0.4f ? 1.0f : 0.0f),
+      bike.set_boost ((std::fmod (t, 3.0f) < 0.4f ? 1.0f : 0.0f) *
+                        proportion[one],
                       sig (0.3f));
       bike.update (tick);
     }

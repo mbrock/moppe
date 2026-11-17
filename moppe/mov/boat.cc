@@ -458,9 +458,9 @@ namespace moppe::mov {
         kept.parked ? let_go : std::clamp (kept.drive, -full, full);
       const control_signal_t turn =
         kept.parked ? let_go : std::clamp (kept.turn, -full, full);
-      const control_signal_t boost = kept.parked || drive <= let_go
-                                       ? let_go
-                                       : std::clamp (kept.boost, let_go, full);
+      const proportion_t boost = kept.parked || drive <= let_go
+                                   ? none
+                                   : std::clamp (kept.boost, none, whole);
       const scale_factor_t revving =
         unity + quantity_cast<scale_factor> ((boosted_pitch - unity) * boost);
       const proportion_t wanted_rpm =
@@ -660,7 +660,7 @@ namespace moppe::mov {
     m_impl->kept.drive = drive;
   }
 
-  void Boat::set_boost (control_signal_t boost) {
+  void Boat::set_boost (proportion_t boost) {
     m_impl->kept.boost = boost;
   }
 

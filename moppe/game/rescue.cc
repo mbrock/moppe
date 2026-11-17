@@ -134,8 +134,10 @@ namespace moppe::game {
         speed_t parting =
           std::min<speed_t> (deepest * overlap_rate, overlap_speed);
         if (closing < 0.0f * u::m / u::s)
-          parting = std::max (
-            parting, std::max<speed_t> (-closing * restitution, least_rebound));
+          parting = std::max (parting,
+                              std::max<speed_t> (quantity_cast<isq::speed> (
+                                                   -closing * restitution),
+                                                 least_rebound));
         if (closing >= parting)
           continue;
         const kilograms_t reduced = mass_a * mass_b / (mass_a + mass_b);
@@ -227,7 +229,9 @@ namespace moppe::game {
     // The rope's rates are accelerations; the machine's weight makes them
     // forces.
     return { .pull = force (out * newtons_value (pull * body.mass)),
-             .lift = force (Vec3 (
-               0.0f, newtons_value (rope_lift * taut * body.mass), 0.0f)) };
+             .lift = force (Vec3 (0.0f,
+                                  newtons_value (quantity_cast<isq::force> (
+                                    rope_lift * taut * body.mass)),
+                                  0.0f)) };
   }
 }

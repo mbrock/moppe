@@ -62,7 +62,7 @@ namespace moppe::mov {
       // to the right (positive).
       control_signal_t drive {};
       control_signal_t turn {};
-      control_signal_t boost {};
+      proportion_t boost {};
       // The engine's speed as a share of full, how far the tail is swung
       // (positive puts the propeller to starboard and turns the bow to
       // the right) and tipped up, and how far round the propeller has
@@ -100,7 +100,7 @@ namespace moppe::mov {
     // The governor tied back (0..1): the engine runs past its rated
     // speed and gives some half again its power, as these engines are
     // run on the long-tails, and smokes for it.
-    void set_boost (control_signal_t boost);
+    void set_boost (proportion_t boost);
     void set_turn (control_signal_t turn);
     // No one at the helm: the engine stops, the tail is tipped up, and
     // the helmsman's weight is gone from it.

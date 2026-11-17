@@ -115,8 +115,10 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   const seconds_t dt = seconds (1.0f / 60.0f);
   // Moving freely, never.
   for (int i = 0; i < 600; ++i)
-    MOPPE_CHECK (
-      !game::strain (trouble, position (Vec3 (0, 0, i * 0.05f)), 1.0f, dt));
+    MOPPE_CHECK (!game::strain (trouble,
+                                position (Vec3 (0, 0, i * 0.05f)),
+                                1.0f * control_signal[one],
+                                dt));
   MOPPE_CHECK (!trouble.stuck);
 
   // Standing still with the throttle open, stuck after three seconds,
@@ -124,7 +126,10 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   trouble = {};
   int heaves = 0;
   for (int i = 0; i < 60 * 6; ++i)
-    if (game::strain (trouble, position (Vec3 (0.1f, 0, 0)), 1.0f, dt))
+    if (game::strain (trouble,
+                      position (Vec3 (0.1f, 0, 0)),
+                      1.0f * control_signal[one],
+                      dt))
       ++heaves;
   MOPPE_CHECK (trouble.stuck);
   MOPPE_CHECK (heaves == 2 || heaves == 3);
@@ -132,7 +137,7 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   // Standing still with no one trying, it stays as it was.
   game::Trouble idle;
   for (int i = 0; i < 600; ++i)
-    game::strain (idle, position (Vec3 ()), 0.0f, dt);
+    game::strain (idle, position (Vec3 ()), 0.0f * control_signal[one], dt);
   MOPPE_CHECK (!idle.stuck);
 
   // Two-second bursts of throttle, let off between, as in a turn on the
@@ -140,16 +145,20 @@ MOPPE_TEST (a_machine_that_gets_nowhere_on_the_throttle_is_stuck) {
   game::Trouble turning;
   for (int burst = 0; burst < 4; ++burst)
     for (int i = 0; i < 60 * 2 + 10; ++i)
-      game::strain (turning, position (Vec3 ()), i < 120 ? 1.0f : 0.0f, dt);
+      game::strain (turning,
+                    position (Vec3 ()),
+                    (i < 120 ? 1.0f : 0.0f) * control_signal[one],
+                    dt);
   MOPPE_CHECK (!turning.stuck);
 
   // Got three metres away, it is free again.
-  game::strain (trouble, position (Vec3 (4.0f, 0, 0)), 0.0f, dt);
+  game::strain (
+    trouble, position (Vec3 (4.0f, 0, 0)), 0.0f * control_signal[one], dt);
   MOPPE_CHECK (!trouble.stuck);
 
   // A heave goes the way the driver wants, and up.
-  const Vec3 back = velocity_value (
-    game::heave (trouble, unit_direction (Vec3 (0, 0.3f, 1)), -1.0f));
+  const Vec3 back = velocity_value (game::heave (
+    trouble, unit_direction (Vec3 (0, 0.3f, 1)), -1.0f * control_signal[one]));
   MOPPE_CHECK (back[2] < -1.0f && back[1] > 1.0f);
 }
 
@@ -170,7 +179,7 @@ MOPPE_TEST (a_tractor_driven_into_a_wall_gets_stuck_and_heaves) {
                            unit_direction (Vec3 (0, 0, 1)));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::tractor));
-  run ({ .drive = 1.0f }, 6.0f);
+  run ({ .drive = 1.0f * control_signal[one] }, 6.0f);
   const game::Trouble& trouble =
     logic.m_trouble[static_cast<std::size_t> (game::Machine::tractor)];
   MOPPE_CHECK (trouble.stuck);
@@ -212,7 +221,7 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
 
   // Walking off, the tractor comes after, with the walker never more
   // than the rope's length ahead of it.
-  run ({ .drive = 1.0f }, 8.0f);
+  run ({ .drive = 1.0f * control_signal[one] }, 8.0f);
   const Vec3 moved = position_value (session.tractor ().position ()) - start;
   MOPPE_CHECK (moved[2] < -6.0f);
   MOPPE_CHECK (direction_value (session.tractor ().up ())[1] > 0.9f);
@@ -256,7 +265,7 @@ MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
   MOPPE_CHECK (displacement_value (logic.m_haul.tie)[2] > 2.0f);
 
   // Walking off, the boat slides after on its bottom, upright.
-  run ({ .drive = 1.0f }, 8.0f);
+  run ({ .drive = 1.0f * control_signal[one] }, 8.0f);
   const Vec3 moved = position_value (session.boat ().position ()) - start;
   MOPPE_CHECK (moved[2] > 6.0f);
   MOPPE_CHECK (direction_value (session.boat ().up ())[1] > 0.9f);
@@ -298,7 +307,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
 
   // The throttle open, it is away over deep water at a jet ski's pace,
   // and the odometer counts it.
-  run ({ .drive = 1.0f }, 6.0f);
+  run ({ .drive = 1.0f * control_signal[one] }, 6.0f);
   MOPPE_CHECK (position_value (ski.position ())[2] < 70.0f);
   MOPPE_CHECK (session.subject_speed_kmh ().numerical_value_in (u::km / u::h) >
                45.0f);
@@ -320,8 +329,8 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
              position_value (ski.position ());
   off[1] = 0.0f;
   MOPPE_CHECK (length (off) < 3.5f);
-  run ({ .drive = 1.0f }, 1.0f);
-  MOPPE_CHECK_NEAR (scalar_value (ski.rpm ()), 0.0f, 0.05f);
+  run ({ .drive = 1.0f * control_signal[one] }, 1.0f);
+  MOPPE_CHECK_NEAR (ski.rpm ().numerical_value_in (one), 0.0f, 0.05f);
   MOPPE_CHECK_NEAR (ski.mass ().numerical_value_in (u::kg), 205.0f, 1e-3f);
 }
 
@@ -354,7 +363,7 @@ MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {
   MOPPE_CHECK (displacement_value (logic.m_haul.tie)[2] > 1.5f);
 
   // Walking off, it slides after on its keel.
-  run ({ .drive = 1.0f }, 8.0f);
+  run ({ .drive = 1.0f * control_signal[one] }, 8.0f);
   MOPPE_CHECK ((position_value (ski.position ()) - start)[2] > 6.0f);
 }
 
@@ -383,7 +392,7 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
   // little way on.
   float fastest = 0.0f;
   for (int i = 0; i < 4 * 60; ++i) {
-    run ({ .drive = 1.0f }, 1.0f / 60.0f);
+    run ({ .drive = 1.0f * control_signal[one] }, 1.0f / 60.0f);
     fastest = std::max (
       fastest, length (velocity_value (session.tractor ().velocity ())));
   }
@@ -427,7 +436,7 @@ MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
   // the tractor goes.
   float nearest = 1e9f;
   for (int i = 0; i < 4 * 60; ++i) {
-    run ({ .drive = 1.0f }, 1.0f / 60.0f);
+    run ({ .drive = 1.0f * control_signal[one] }, 1.0f / 60.0f);
     Vec3 apart = position_value (session.jeep ().position ()) -
                  session.tractor ().trailer_position ();
     apart[1] = 0.0f;

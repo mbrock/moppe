@@ -16,8 +16,8 @@ namespace moppe::game {
                                GameSession& session,
                                Parking& parking,
                                const WorldGround& ground,
-                               float total_time,
-                               float dt) {
+                               seconds_t total_time,
+                               seconds_t dt) {
     static const bool demo_glides = [] {
       const char* name = moppe::environment ("MOPPE_DEMO");
       return name && std::string_view (name) == "glide";
@@ -26,17 +26,25 @@ namespace moppe::game {
       const char* name = moppe::environment ("MOPPE_DEMO");
       return name && std::string_view (name) == "wheelie";
     }();
+    // How fast the bike's and the cruising machines' weave swings.
+    constexpr radians_per_second_t weave = 0.25f * u::rad / u::s;
     // The autopilot rides; the player may still look around.
     const radians_t look_yaw = input.look_yaw;
     const radians_t look_pitch = input.look_pitch;
     if (session.logic ().m_doing == Doing::driving (Machine::helicopter)) {
       // Spool up, climb out, hook what is under it, and cruise in
       // long easy curves.
-      const float t = total_time;
+      const seconds_t t = total_time;
+      constexpr radians_per_second_t swing = 0.22f * u::rad / u::s;
       input = {
-        .turn = t > 9.0f ? 0.45f * std::sin ((t - 9.0f) * 0.22f) : 0.0f,
-        .drive = t > 8.0f ? 1.0f : 0.0f,
-        .boost = t > 4.0f && t < 9.0f ? 1.0f : 0.0f,
+        .turn =
+          (t > 9.0f * u::s
+             ? 0.45f * std::sin (radians_value ((t - 9.0f * u::s) * swing))
+             : 0.0f) *
+          control_signal[one],
+        .drive = (t > 8.0f * u::s ? 1.0f : 0.0f) * control_signal[one],
+        .boost =
+          (t > 4.0f * u::s && t < 9.0f * u::s ? 1.0f : 0.0f) * proportion[one],
         .toggle_mount = !session.logic ().m_sling.hooked &&
                         session.hook_within_reach ().has_value (),
         .look_yaw = look_yaw,
@@ -51,20 +59,23 @@ namespace moppe::game {
       // a dab of the rear brake if it gets too high -- judged by
       // where the pitch is heading a moment on.
       const mov::Vehicle& bike = session.bike ();
-      const float pitch = radians_value (bike.pitch ());
-      const float rate = dt > 0.0f ? (pitch - m_pitch) / dt : 0.0f;
+      const radians_t pitch = bike.pitch ();
+      const radians_per_second_t rate =
+        dt > 0.0f * u::s ? (pitch - m_pitch) / dt : 0.0f * u::rad / u::s;
       m_pitch = pitch;
-      const float ahead = pitch + 0.4f * rate;
-      const bool up = std::fmod (total_time, 12.0f) > 3.0f;
+      const radians_t ahead = pitch + (0.4f * u::s) * rate;
+      const bool up = std::fmod (seconds_value (total_time), 12.0f) > 3.0f;
       input = {
-        .turn = 0.2f * std::sin (total_time * 0.25f),
-        .drive = !up            ? 0.6f
-                 : ahead < 0.7f ? 1.0f
-                                : 0.0f,
+        .turn = 0.2f * std::sin (radians_value (total_time * weave)) *
+                control_signal[one],
+        .drive = (!up                     ? 0.6f
+                  : ahead < 0.7f * u::rad ? 1.0f
+                                          : 0.0f) *
+                 control_signal[one],
         .lean_back = up,
         .look_yaw = look_yaw,
         .look_pitch = look_pitch,
-        .run = up && ahead > 1.1f,
+        .run = up && ahead > 1.1f * u::rad,
       };
     } else if (session.logic ().m_doing == Doing::driving (Machine::boat) ||
                session.logic ().m_doing == Doing::driving (Machine::jet_ski)) {
@@ -75,15 +86,17 @@ namespace moppe::game {
       input.look_pitch = look_pitch;
     } else {
       input = {
-        .turn = 0.35f * std::sin (total_time * 0.25f),
-        .drive = 1.0f,
+        .turn = 0.35f * std::sin (radians_value (total_time * weave)) *
+                control_signal[one],
+        .drive = 1.0f * control_signal[one],
         .boost =
           session.logic ().m_doing != Doing::driving (Machine::tractor) &&
               session.logic ().m_doing != Doing::driving (Machine::caddy) &&
               session.logic ().m_doing != Doing::driving (Machine::boat) &&
-              std::fmod (total_time, 11.0f) < (demo_glides ? 3.5f : 1.35f)
-            ? 1.0f
-            : 0.0f,
+              std::fmod (seconds_value (total_time), 11.0f) <
+                (demo_glides ? 3.5f : 1.35f)
+            ? 1.0f * proportion[one]
+            : 0.0f * proportion[one],
         // MOPPE_DEMO=glide opens the wing on the first leap high
         // enough to allow it.
         .use_held = demo_glides,
@@ -102,8 +115,8 @@ namespace moppe::game {
           position (probe), position (probe + Vec3 (0, 1.5f, 0)), 1.8f * u::m);
         if (contact.hit) {
           input.turn = dot (direction_value (contact.normal), right) >= 0.0f
-                         ? 1.0f
-                         : -1.0f;
+                         ? 1.0f * control_signal[one]
+                         : -1.0f * control_signal[one];
           break;
         }
       }
@@ -115,20 +128,17 @@ namespace moppe::game {
   InputFrame DemoPilot::water (GameSession& session,
                                Parking& parking,
                                const WorldGround& ground,
-                               float t,
+                               seconds_t t,
                                bool boat) {
     if (boat) {
       const mov::Boat& hull = session.boat ();
-      return parking.water_autopilot (ground,
-                                      t * u::s,
-                                      hull.position (),
-                                      hull.forward (),
-                                      { .follow_route = true });
+      return parking.water_autopilot (
+        ground, t, hull.position (), hull.forward (), { .follow_route = true });
     }
     const mov::JetSki& ski = session.jet_ski ();
     return parking.water_autopilot (
       ground,
-      t * u::s,
+      t,
       ski.position (),
       ski.forward (),
       { .speed = length (velocity_value (ski.velocity ())) * u::m / u::s,

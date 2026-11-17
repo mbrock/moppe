@@ -385,7 +385,7 @@ namespace moppe::game {
       bike.lean = in.number () * u::rad;
       bike.thrust = in.number () * control_signal[one];
       bike.boost_level = in.number () * proportion[one];
-      bike.boost_drive = in.number () * proportion[one];
+      bike.boost_drive = in.number () * control_signal[one];
       bike.rider_lean = in.number () * control_signal[one];
     }
 

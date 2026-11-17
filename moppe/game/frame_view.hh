@@ -48,9 +48,10 @@ namespace moppe::game {
     // Fork angle about the steering head; positive turns right.
     radians_t fork = 0.0f * u::rad;
     control_signal_t thrust = 0.0f * control_signal[one];
-    // How full the jets' charge is and how hard they drive, 0..1.
+    // How full the jets' charge is, 0..1, and how they are tilted by the
+    // drive, -1 (reverse) to 1 (ahead).
     proportion_t boost_level = 0.0f * proportion[one];
-    proportion_t boost_drive = 0.0f * proportion[one];
+    control_signal_t boost_drive = 0.0f * control_signal[one];
     // Drawn at this share of its size.
     scale_factor_t scale = 1.0f * scale_factor[one];
     // A pedalled bike's crank, round from the right arm down.

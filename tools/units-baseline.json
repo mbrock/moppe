@@ -47,7 +47,7 @@
       "typed": 1510,
       "raw_float": 267,
       "raw_vector": 297,
-      "escapes": 978
+      "escapes": 977
     },
     "HUD & map": {
       "share": 81.0,
@@ -114,12 +114,12 @@
       "escapes": 1313
     },
     "Vehicles & on-foot body": {
-      "share": 74.7,
+      "share": 75.3,
       "files": 47,
-      "typed": 2065,
-      "raw_float": 266,
+      "typed": 2083,
+      "raw_float": 250,
       "raw_vector": 435,
-      "escapes": 627
+      "escapes": 630
     }
   }
 }

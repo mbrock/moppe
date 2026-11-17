@@ -3,8 +3,8 @@
 namespace moppe::game {
   namespace {
     // The thumb counts as down past a tenth of its travel.
-    bool held (float thumb) {
-      return thumb > 0.1f;
+    bool held (proportion_t thumb) {
+      return thumb > 0.1f * proportion[one];
     }
   }
 
@@ -41,13 +41,13 @@ namespace moppe::game {
 
   void
   drive (mov::Vehicle& bike, Machine machine, const Controls& k, bool pressed) {
-    bike.set_yaw ((90 * k.turn) * u::deg);
+    bike.set_yaw (quantity_cast<isq::angular_measure> ((90 * k.turn) * u::deg));
     bike.set_thrust (k.go);
-    bike.set_skid (k.skid ? 1 : 0);
+    bike.set_skid ((k.skid ? 1 : 0) * control_signal[one]);
     switch (machine) {
     case Machine::bike:
       bike.set_boost (k.boost, k.go);
-      bike.set_wheelie (k.wheelie ? 1 : 0);
+      bike.set_wheelie ((k.wheelie ? 1 : 0) * control_signal[one]);
       break;
     case Machine::mountain_bike:
       // No jets on a mountainbike: the rider springs it up off the

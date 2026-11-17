@@ -154,13 +154,11 @@ namespace moppe {
       // The share of a full charge a full burn spends over the step.
       const proportion_t burn =
         quantity_cast<proportion> (dt / vehicle_rig::boost_full_burn_time);
-      if (m_boost_input > 0.001f * control_signal[one]) {
+      if (m_boost_input > 0.001f * proportion[one]) {
         if (m_boost_charge > vehicle_rig::boost_reserve_charge) {
           const proportion_t available = quantity_cast<proportion> (
             (m_boost_charge - vehicle_rig::boost_reserve_charge) / burn);
-          m_boost_level =
-            std::min (m_boost_input.numerical_value_in (one) * proportion[one],
-                      available);
+          m_boost_level = std::min (m_boost_input, available);
           m_boost_charge = std::max (
             vehicle_rig::boost_reserve_charge,
             m_boost_charge - quantity_cast<proportion> (m_boost_level * burn));
@@ -296,9 +294,9 @@ namespace moppe {
       }
     }
 
-    void Vehicle::set_boost (control_signal_t boost, control_signal_t drive) {
-      m_boost_input = std::clamp (
-        boost, 0.0f * control_signal[one], 1.0f * control_signal[one]);
+    void Vehicle::set_boost (proportion_t boost, control_signal_t drive) {
+      m_boost_input =
+        std::clamp (boost, 0.0f * proportion[one], 1.0f * proportion[one]);
       m_boost_drive = std::clamp (
         drive, -1.0f * control_signal[one], 1.0f * control_signal[one]);
     }

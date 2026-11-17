@@ -109,7 +109,7 @@ namespace moppe::game {
       .fork = vehicle.fork_angle (),
       .thrust = vehicle.thrust (),
       .boost_level = vehicle.boost_level (),
-      .boost_drive = quantity_cast<proportion> (vehicle.boost_drive ()),
+      .boost_drive = vehicle.boost_drive (),
       .crank = vehicle.crank (),
       .rider_lean = vehicle.rider_lean (),
     };

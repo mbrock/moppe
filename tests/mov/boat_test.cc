@@ -130,11 +130,11 @@ MOPPE_TEST (the_long_tail_drives_the_boat_up_onto_the_plane_and_steers_it) {
   MOPPE_CHECK (direction_value (boat.up ())[1] > 0.97f);
 
   // With the governor tied back it goes faster still.
-  boat.set_boost (boat_signal (1.0f));
+  boat.set_boost (1.0f * proportion[one]);
   boat_test_run (boat, 6.0f);
   MOPPE_CHECK (length (level (velocity_value (boat.velocity ()))) >
                speed + 1.0f);
-  boat.set_boost (boat_signal (0.0f));
+  boat.set_boost (0.0f * proportion[one]);
 
   // Swinging the tail turns it to the right, toward -x.
   boat.set_turn (boat_signal (1.0f));
@@ -217,7 +217,7 @@ MOPPE_TEST (
   MOPPE_CHECK (stuck > 3.5f);
   MOPPE_CHECK (stuck < 5.0f);
   // Tied back, the engine pushes it over onto the plane.
-  boat.set_boost (boat_signal (1.0f));
+  boat.set_boost (1.0f * proportion[one]);
   boat_test_run (boat, 10.0f);
   MOPPE_CHECK (length (level (velocity_value (boat.velocity ()))) > 6.0f);
 }

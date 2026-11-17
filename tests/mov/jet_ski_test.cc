@@ -314,7 +314,9 @@ MOPPE_TEST (a_jet_skis_checkpoint_replays_the_same_ride_each_time) {
                1e-5f);
   MOPPE_CHECK (length (velocity_value (ski.velocity ()) -
                        kept.body.linear_velocity) < 1e-5f);
-  MOPPE_CHECK_NEAR (scalar_value (ski.rpm ()), scalar_value (kept.rpm), 1e-6f);
+  MOPPE_CHECK_NEAR (ski.rpm ().numerical_value_in (one),
+                    kept.rpm.numerical_value_in (one),
+                    1e-6f);
   MOPPE_CHECK_NEAR (
     radians_value (ski.steer ()), radians_value (kept.steer), 1e-6f);
   jet_ski_test_run (ski, 2.0f);

@@ -23,8 +23,8 @@ namespace moppe::game {
                       GameSession& session,
                       Parking& parking,
                       const WorldGround& ground,
-                      float total_time,
-                      float dt);
+                      seconds_t total_time,
+                      seconds_t dt);
 
   private:
     // The boat (MOPPE_DEMO=boat) goes down the river's course where it
@@ -34,11 +34,11 @@ namespace moppe::game {
     static InputFrame water (GameSession& session,
                              Parking& parking,
                              const WorldGround& ground,
-                             float t,
+                             seconds_t t,
                              bool boat);
 
     // MOPPE_DEMO=wheelie's last reading of the bike's pitch.
-    float m_pitch = 0.0f;
+    radians_t m_pitch {};
   };
 }
 

@@ -239,7 +239,8 @@ namespace moppe::mov {
       s.airborne_time += dt;
     }
     s.since_landing += dt;
-    s.step_offset *= decay (step_ease, dt);
+    s.step_offset =
+      quantity_cast<isq::length> (s.step_offset * decay (step_ease, dt));
 
     velocity_t wish = horizontal (intent.wish_velocity);
     if (s.grounded) {

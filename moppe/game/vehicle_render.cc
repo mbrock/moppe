@@ -15,7 +15,8 @@ namespace moppe {
     static degrees_t boost_nozzle_angle (const VehiclePose& vehicle) {
       // The exhaust points opposite the force: backward when boosting
       // forward, straight down at neutral drive, and forward in reverse.
-      return 90.0f * u::deg + 60.0f * u::deg * vehicle.boost_drive;
+      return 90.0f * u::deg + quantity_cast<isq::angular_measure> (
+                                60.0f * u::deg * vehicle.boost_drive);
     }
 
     // -- baked bike assemblies ------------------------------------------
