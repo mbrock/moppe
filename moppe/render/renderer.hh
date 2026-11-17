@@ -407,7 +407,7 @@ namespace moppe {
         std::span<const std::uint32_t> index;
         int buckets_x = 0;
         int buckets_z = 0;
-        float half_width = 2.5f;
+        float half_width = 3.0f;
         float shoulder = 0.75f;
         float crown = 0.025f;
         float blend = 1.5f;

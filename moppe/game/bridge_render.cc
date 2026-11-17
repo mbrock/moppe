@@ -235,10 +235,10 @@ namespace moppe::game {
             const Vec3 c = a + (b - a) * t;
             const Vec3 cap = c - up * 0.85f;
             beam (
-              dl, cap - side * 2.4f, cap + side * 2.4f, 0.18f, 0.3f, tarred);
+              dl, cap - side * half, cap + side * half, 0.18f, 0.3f, tarred);
             for (const float s : { -1.0f, 1.0f }) {
-              const Vec3 top = cap + side * (s * 1.7f);
-              const Vec3 foot_xz = c + side * (s * 2.3f);
+              const Vec3 top = cap + side * (s * (half - 0.7f));
+              const Vec3 foot_xz = c + side * (s * (half - 0.1f));
               const Vec3 world_foot (
                 foot_xz[0] + origin[0], 0.0f, foot_xz[2] + origin[2]);
               const float bed = ground_under (world_foot) - 0.6f;

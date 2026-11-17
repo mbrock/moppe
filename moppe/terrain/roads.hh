@@ -136,7 +136,8 @@ namespace moppe::terrain {
   // out at the batters' slopes until they meet it. Lengths are metres and
   // slopes rise over run.
   struct RoadFormation {
-    float half_width = 2.5f;
+    // Room for the bus in its lane, and for a car to pass it.
+    float half_width = 3.0f;
     float shoulder = 0.75f;
     float crown = 0.025f;
     float cut_slope = 1.0f;
@@ -164,7 +165,7 @@ namespace moppe::terrain {
     float bridge_reach = 30.0f;
     float longest_bridge = 90.0f;
     // The deck's half width, inside the tread's: the kerbs stand at it.
-    float deck_half_width = 2.4f;
+    float deck_half_width = 2.9f;
     // How deep the deck and its stringers stand under the tread: the
     // ground under a span is kept at least this far below it.
     float deck_depth = 0.6f;
@@ -316,7 +317,7 @@ namespace moppe::terrain {
     // Guardrails: the beam's line stands `guardrail_offset_m` from the
     // road's centre and its middle `guardrail_height_m` over the tread's
     // edge, on posts every `guardrail_spacing_m`.
-    static constexpr float guardrail_offset_m = 3.6f;
+    static constexpr float guardrail_offset_m = 4.1f;
     static constexpr float guardrail_height_m = 0.6f;
     static constexpr float guardrail_spacing_m = 2.0f;
 

@@ -68,7 +68,8 @@ namespace moppe::game {
     // leaves the ground under a bridge's deck bare.
     // Version 38 lays a loop round the world through the landing for the
     // bus (Road::loop).
-    constexpr std::uint32_t CACHE_VERSION = 38;
+    // Version 39 widens the roads, the bus's lane among them.
+    constexpr std::uint32_t CACHE_VERSION = 39;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
