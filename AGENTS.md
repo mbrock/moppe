@@ -245,6 +245,18 @@
   the HUD in point coordinates (docs/nhal.md).
 - World generation runs on a background thread behind a loading screen.
 
+## Typed Quantities
+- Physical and dimensionless values are typed with mp-units, never bare
+  floats: lengths `meters_t`, places `position_t`, map points
+  `plan_position_t`, elevations `terrain::SurfaceElevation`, ratios by
+  kind (`proportion_t`, `grade_t`, `blend_weight_t`, ...). Raw floats stay
+  only at storage boundaries (GPU layout, Box3D, noise internals).
+  docs/typed-quantities.md has the conventions.
+- `tools/units-report` prints the typed share per area (`--files AREA`
+  for the worst files); CI's `--check` fails when an area's share drops.
+  A change that raises one runs `tools/units-report --update` and commits
+  `tools/units-baseline.json`.
+
 ## Code Style Guidelines
 - **Namespaces**: Use nested namespaces (`moppe::render`, `moppe::game`)
 - **Function names**: Use snake_case (`render_directly()`)

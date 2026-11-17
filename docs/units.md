@@ -7,6 +7,10 @@ different systems agree, makes parameters portable across resolutions, and
 lets us compare a simulation with measurements from geomorphology, hydrology,
 soil science, ecology, and atmospheric science.
 
+How the code represents them -- which mp-units types to use, where raw
+floats are allowed, and how to convert at boundaries -- is in
+[typed-quantities.md](typed-quantities.md).
+
 This document is a reference for quantities we already use or may want to
 model. It does not prescribe the C++ types, API shapes, storage units, or naming
 conventions that should represent them. Those choices are being worked out as

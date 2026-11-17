@@ -29,6 +29,8 @@ jobs:
             echo 'Use correctly rounded generation math' >&2
             exit 1
           fi
+      - name: Check typed-quantity ratchet
+        run: python3 tools/units-report --check
       - name: Build and test
         run: |
           nix develop --command bash -euc '
