@@ -281,7 +281,6 @@ namespace moppe::game {
                           const GameLogicState& logic) {
     const Vec3& camera = frame.camera.position;
     landscape.draw (r, camera, frame.lighting.time, 0x10000);
-    bus_view.draw (r, bus, logic.m_total_time, camera, 0xb05000);
     landscape.draw_beacons (dl, camera, logic.m_beacon_burn);
     const Camp& camp = logic.m_camp;
     for (const Vec3& ring : layout.hearths) {

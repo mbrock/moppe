@@ -448,6 +448,7 @@ namespace moppe::game {
     case Doing::Way::glider:
       return 0.0f;
     case Doing::Way::passenger:
+    case Doing::Way::bus:
       ramp = { 80.0f, 140.0f, 0.6f };
       break;
     case Doing::Way::driving:

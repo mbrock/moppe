@@ -108,7 +108,8 @@ namespace moppe::game {
         turn = turn * Mat4::rotation (3.14159265f * u::rad, y_axis);
       const float roll =
         left_side ? -car.wheel_spin_radians : car.wheel_spin_radians;
-      draw_part (*meshes.wheel,
+      draw_part (wheel >= 2 && meshes.rear_wheel ? *meshes.rear_wheel
+                                                 : *meshes.wheel,
                  frame *
                    Mat4::translation (model.wheels[wheel] -
                                       Vec3 (0, car.wheel_drop[wheel], 0)) *

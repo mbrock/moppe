@@ -77,14 +77,18 @@ namespace moppe::game {
     float m_look_yaw = 0.0f;
     float m_look_idle = 0.0f;
     Vec3 m_fp_eye;
-    // Riding along: the seat in the other player's jeep,
-    // how it faces, and how it moves, as last heard.
+    // Riding along: the seat in the other player's jeep, or in the
+    // bus, how it faces, and how it moves, as last heard.
     Vec3 m_seat_position;
     Vec3 m_seat_heading { 0, 0, 1 };
     Vec3 m_seat_up { 0, 1, 0 };
     Vec3 m_seat_velocity;
     // Whether that seat is the fore seat of their boat.
     bool m_seat_boat = false;
+    // On the bus: which of them (BusLine::where), and whether the rider
+    // has asked to get off at the next stop.
+    std::uint8_t m_bus = 0;
+    bool m_bus_alight = false;
     int m_score = 0;
     float m_jump_airtime = 0.0f;
     float m_jump_spin_radians = 0.0f;

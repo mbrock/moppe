@@ -51,6 +51,14 @@ namespace moppe::game {
       mine.glider = glider_pose (session.glider ());
     if (state.m_doing == Doing::on_foot ())
       mine.walker = walker_pose (session.walker (), state.m_look_pitch);
+    // On the bus, where they sit, which is all the other game can know of
+    // a bus on another clock.
+    if (state.m_doing == Doing::on_the_bus ()) {
+      mine.walker = walker_pose (session.walker (), state.m_look_pitch);
+      mine.walker->position = state.m_seat_position;
+      mine.walker->heading = state.m_seat_heading;
+      mine.walker->velocity = state.m_seat_velocity;
+    }
     const Camp& camp = state.m_camp;
     mine.hung = camp.hung;
     mine.hammock = camp.hammock;
@@ -320,7 +328,7 @@ namespace moppe::game {
       floor[1] = ground.height (floor);
       render_basket_set_down (
         dl, floor, hammock_along (theirs.hammock), basket);
-    } else if (theirs.walker) {
+    } else if (theirs.walker && theirs.mode != Doing::on_the_bus ()) {
       blob.draw (
         dl, surface, theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
       render_walker (dl, *theirs.walker, time, basket, their_outfit ());

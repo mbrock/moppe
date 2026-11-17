@@ -60,8 +60,8 @@ namespace moppe::game {
                           const Vec3& spawn) const;
 
     // The places' stones, timber, and buildings; each beacon's laid wood;
-    // the old fire rings, cold until a camp's fire is lit in one; and the
-    // bus stops and the buses.
+    // and the old fire rings, cold until a camp's fire is lit in one. The
+    // buses and their stops are bus_view's.
     void draw (render::Renderer& r,
                render::DrawList& dl,
                const FrameView& frame,

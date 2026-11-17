@@ -16,6 +16,7 @@ namespace moppe {
         .trunks = &m_trunk_field,
         .mushrooms = &m_mushrooms,
         .places = &m_places.layout,
+        .bus = &m_places.bus,
         .nests = m_places.nests,
         .egg_seed = m_places.egg_seed (),
         .animal_ground = animals,

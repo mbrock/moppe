@@ -1,5 +1,7 @@
 #include <moppe/game/bus_render.hh>
 
+#include <moppe/game/bus_model.hh>
+#include <moppe/game/model_mesh.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/terrain/torus.hh>
@@ -25,106 +27,6 @@ namespace moppe::game {
         dl.scale (size);
         dl.cube (1.0f);
         dl.pop ();
-      }
-
-      // A wheel: a short cylinder across x at `centre`.
-      void wheel (render::DrawList& dl,
-                  const Vec3& centre,
-                  float radius,
-                  float width) {
-        constexpr int sides = 14;
-        const float tau = 2.0f * std::numbers::pi_v<float>;
-        const auto rim = [&] (int k, float side) {
-          const float a = tau * static_cast<float> (k) / sides;
-          return centre + Vec3 (side * 0.5f * width,
-                                radius * std::sin (a),
-                                radius * std::cos (a));
-        };
-        dl.begin (render::Prim::Triangles);
-        for (int k = 0; k < sides; ++k) {
-          const float a = tau * (static_cast<float> (k) + 0.5f) / sides;
-          dl.normal (Vec3 (0.0f, std::sin (a), std::cos (a)));
-          dl.vertex (rim (k, -1.0f));
-          dl.vertex (rim (k + 1, -1.0f));
-          dl.vertex (rim (k + 1, 1.0f));
-          dl.vertex (rim (k, -1.0f));
-          dl.vertex (rim (k + 1, 1.0f));
-          dl.vertex (rim (k, 1.0f));
-          for (const float side : { -1.0f, 1.0f }) {
-            dl.normal (Vec3 (side, 0.0f, 0.0f));
-            const Vec3 hub = centre + Vec3 (side * 0.5f * width, 0.0f, 0.0f);
-            dl.vertex (hub);
-            dl.vertex (rim (side > 0.0f ? k : k + 1, side));
-            dl.vertex (rim (side > 0.0f ? k + 1 : k, side));
-          }
-        }
-        dl.end ();
-      }
-
-      // Till the bus's own model comes: a classic single-decker in its
-      // frame (x to the left, y up, z forward, the origin on the road
-      // under its middle), eleven metres long, red below the waist and
-      // cream above, its windows a dark band between pillars.
-      void record_bus (render::DrawList& dl) {
-        constexpr float half_length = 5.5f, half_width = 1.25f;
-        const DisplayColor red (0.66f, 0.09f, 0.07f);
-        const DisplayColor cream (0.92f, 0.87f, 0.72f);
-        const DisplayColor glass (0.08f, 0.10f, 0.12f);
-        const DisplayColor dark (0.06f, 0.06f, 0.06f);
-        // The skirt and the panels up to the waist.
-        dl.color (red);
-        box (
-          dl, Vec3 (0, 0.75f, 0), Vec3 (2 * half_width, 0.8f, 2 * half_length));
-        // A cream band at the waist.
-        dl.color (cream);
-        box (dl,
-             Vec3 (0, 1.2f, 0),
-             Vec3 (2 * half_width + 0.02f, 0.1f, 2 * half_length + 0.02f));
-        // The windows, and the pillars between them.
-        dl.color (glass);
-        box (dl,
-             Vec3 (0, 1.75f, -0.05f),
-             Vec3 (2 * half_width - 0.06f, 1.0f, 2 * half_length - 0.1f));
-        dl.color (cream);
-        for (float z = -half_length + 0.1f; z <= half_length - 0.5f; z += 1.25f)
-          box (dl, Vec3 (0, 1.75f, z), Vec3 (2 * half_width, 1.0f, 0.14f));
-        // Above the windows, and the roof.
-        box (
-          dl, Vec3 (0, 2.5f, 0), Vec3 (2 * half_width, 0.5f, 2 * half_length));
-        dl.color (0.82f, 0.80f, 0.76f);
-        box (dl,
-             Vec3 (0, 2.8f, 0),
-             Vec3 (2 * half_width - 0.2f, 0.12f, 2 * half_length - 0.3f));
-        // The windscreen, raked a little under the destination sign.
-        dl.color (glass);
-        box (dl,
-             Vec3 (0, 1.7f, half_length - 0.02f),
-             Vec3 (2 * half_width - 0.2f, 1.1f, 0.06f));
-        dl.color (0.95f, 0.68f, 0.12f);
-        box (
-          dl, Vec3 (0, 2.45f, half_length + 0.01f), Vec3 (1.6f, 0.26f, 0.04f));
-        // The front door, on the right (the -x side).
-        dl.color (glass);
-        box (dl,
-             Vec3 (-half_width - 0.01f, 1.3f, half_length - 1.0f),
-             Vec3 (0.04f, 2.0f, 1.1f));
-        // Lamps and bumpers.
-        dl.color (0.98f, 0.95f, 0.82f);
-        for (const float x : { -0.85f, 0.85f })
-          box (
-            dl, Vec3 (x, 0.72f, half_length + 0.02f), Vec3 (0.3f, 0.2f, 0.05f));
-        dl.color (0.75f, 0.08f, 0.06f);
-        for (const float x : { -0.9f, 0.9f })
-          box (dl,
-               Vec3 (x, 0.75f, -half_length - 0.02f),
-               Vec3 (0.25f, 0.25f, 0.05f));
-        dl.color (dark);
-        for (const float z : { half_length + 0.06f, -half_length - 0.06f })
-          box (dl, Vec3 (0, 0.42f, z), Vec3 (2 * half_width, 0.2f, 0.14f));
-        // The wheels, in their arches.
-        for (const float z : { 3.4f, -2.6f })
-          for (const float x : { -half_width + 0.2f, half_width - 0.2f })
-            wheel (dl, Vec3 (x, 0.5f, z), 0.5f, 0.38f);
       }
 
       // A stop: in the frame of its sign's foot (x along the road against
@@ -191,10 +93,31 @@ namespace moppe::game {
                Mat4::basis (left_of (toward_road), up, toward_road);
       }
 
-      Mat4 bus_frame (const BusPose& pose, const Vec3& at) {
-        const Vec3 left = normalized (cross (pose.up, pose.forward));
-        return Mat4::translation (at) *
-               Mat4::basis (left, pose.up, pose.forward);
+      // The bus's model as render_car reads it: its driver at the wheel
+      // and the rider in the front seat by the door, feet on the floor.
+      const CarModel& bus_car () {
+        namespace m = bus_model;
+        static const CarModel model {
+          .steering_ratio = 6.0f,
+          .steering_hub = m::steering_hub,
+          .steering_column = m::steering_column,
+          .grip_left = m::grip_left,
+          .grip_right = m::grip_right,
+          .seat_driver = m::seat_driver,
+          .seat_passenger = m::seat_01,
+          .pedal_left = m::pedal_left,
+          .pedal_right = m::pedal_right,
+          .footrest_left =
+            Vec3 (m::seat_01[0] + 0.12f, m::aisle[1], m::seat_01[2] + 0.45f),
+          .footrest_right =
+            Vec3 (m::seat_01[0] - 0.12f, m::aisle[1], m::seat_01[2] + 0.45f),
+          .wheels = { m::wheel_fl, m::wheel_fr, m::wheel_rl, m::wheel_rr },
+          .lean = -0.10f,
+          .sole_tilt = 0.30f,
+          .knee_ahead = 0.5f,
+          .knee_out = 0.15f,
+        };
+        return model;
       }
     }
   }
@@ -272,11 +195,18 @@ namespace moppe::game {
       dl.state (render::DrawState ());
       m_stops.push_back (renderer.create_mesh (dl));
     }
-    render::DrawList bus;
-    lit (bus);
-    record_bus (bus);
-    bus.state (render::DrawState ());
-    m_bus = line.empty () ? nullptr : renderer.create_mesh (bus);
+    m_bus = {};
+    m_doors = {};
+    if (line.empty ())
+      return;
+    namespace m = bus_model;
+    m_bus.body = { { model_mesh::bake (renderer, m::body) } };
+    m_bus.steering_wheel = model_mesh::bake (renderer, m::steering_wheel);
+    m_bus.wheel = model_mesh::bake (renderer, m::wheel);
+    m_bus.rear_wheel = model_mesh::bake (renderer, m::wheel_rear);
+    m_bus.glass = { { model_mesh::bake (renderer, m::glass) } };
+    m_doors = { model_mesh::bake (renderer, m::door_fore),
+                model_mesh::bake (renderer, m::door_aft) };
   }
 
   Vec3 BusView::near_copy (const Vec3& at, const Vec3& camera) const {
@@ -287,10 +217,12 @@ namespace moppe::game {
   }
 
   void BusView::draw (render::Renderer& renderer,
+                      render::DrawList& dl,
                       const BusLine& line,
                       play_time_t now,
                       const Vec3& camera,
-                      std::uint64_t motion_base) const {
+                      std::uint64_t motion_base,
+                      std::optional<BusRider> rider) const {
     using namespace bus_render_parts;
     std::uint64_t id = motion_base;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
@@ -300,13 +232,45 @@ namespace moppe::game {
       if (m_stops[i] && length2 (at - camera) < 1500.0f * 1500.0f)
         renderer.draw_mesh (*m_stops[i], Mat4::translation (at - sign));
     }
-    if (!m_bus)
+    if (!m_bus.wheel)
       return;
-    for (const BusPose& pose : line.where (now)) {
-      ++id;
+    const std::vector<BusPose> buses = line.where (now);
+    for (std::size_t k = 0; k < buses.size (); ++k) {
+      const BusPose& pose = buses[k];
+      id += 16;
       const Vec3 at = near_copy (pose.position, camera);
-      if (length2 (at - camera) < 2500.0f * 2500.0f)
-        renderer.draw_mesh (*m_bus, bus_frame (pose, at), id);
+      if (length2 (at - camera) > 2500.0f * 2500.0f)
+        continue;
+      const CarPose car { .position = at,
+                          .forward = pose.forward,
+                          .up = pose.up,
+                          .steer_radians = pose.steer_radians,
+                          .wheel_spin_radians = pose.wheel_spin_radians };
+      const bool ridden = rider && rider->bus == k;
+      render_car (
+        renderer,
+        dl,
+        car,
+        { .driver = true,
+          .passenger = ridden && rider->seen,
+          .driver_outfit = Outfit::green_jacket,
+          .passenger_outfit = ridden ? rider->outfit : Outfit::blue_jacket },
+        id,
+        bus_car (),
+        m_bus);
+      // Its doors, folding out about their hinges at a stop.
+      const Mat4 frame = model_mesh::body_frame (at, pose.forward, pose.up);
+      const float swing = 1.536f * pose.door_open;
+      renderer.draw_mesh (*m_doors[0],
+                          frame *
+                            Mat4::translation (bus_model::door_fore_hinge) *
+                            Mat4::rotation (swing * u::rad, Vec3 (0, 1, 0)),
+                          id + 14);
+      renderer.draw_mesh (*m_doors[1],
+                          frame *
+                            Mat4::translation (bus_model::door_aft_hinge) *
+                            Mat4::rotation (-swing * u::rad, Vec3 (0, 1, 0)),
+                          id + 15);
     }
   }
 
@@ -322,12 +286,13 @@ namespace moppe::game {
       if (m_stops[i] && length2 (at - camera) < 160.0f * 160.0f)
         renderer.draw_mesh (*m_stops[i], Mat4::translation (at - sign));
     }
-    if (!m_bus)
+    if (m_bus.body.empty ())
       return;
     for (const BusPose& pose : line.where (now)) {
       const Vec3 at = near_copy (pose.position, camera);
       if (length2 (at - camera) < 160.0f * 160.0f)
-        renderer.draw_mesh (*m_bus, bus_frame (pose, at));
+        renderer.draw_mesh (*m_bus.body.front ().mesh,
+                            model_mesh::body_frame (at, pose.forward, pose.up));
     }
   }
 

@@ -49,6 +49,9 @@ namespace moppe::game {
       ride_along,
       take,
       step_out,
+      // The bus: on at a stop, and off (or off at the next stop).
+      board_bus,
+      leave_bus,
       // Only said: a machine stuck.
       stuck,
     };

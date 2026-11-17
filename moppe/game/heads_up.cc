@@ -35,6 +35,17 @@ namespace moppe::game {
              Vec3 (0, meters_value (machine_kind (machine).driver_mark), 0);
     }
 
+    // The bus the player rides, as it is now.
+    std::optional<BusPose> ridden_bus (const HudWorld& w) {
+      const std::vector<BusPose> buses =
+        w.bus.where (w.session.logic ().m_total_time);
+      const std::size_t k = w.session.logic ().m_bus;
+      if (w.session.logic ().m_doing != Doing::on_the_bus () ||
+          k >= buses.size ())
+        return std::nullopt;
+      return buses[k];
+    }
+
     // A name at the head of a sentence.
     std::string first_up (std::string_view name) {
       std::string word (name);
@@ -140,6 +151,19 @@ namespace moppe::game {
                  machine_kind (a.machine).at_hand };
       case Verb::step_out:
         return same (machine_kind (a.machine).leave);
+      case Verb::board_bus:
+        return { "Board the bus", "The bus" };
+      case Verb::leave_bus: {
+        const std::optional<BusPose> pose = ridden_bus (w);
+        if (!pose)
+          return same ("Get off");
+        if (pose->at_stop)
+          return same ("Get off at " + w.bus.stops ()[*pose->at_stop].name);
+        const std::string next = w.bus.stops ()[pose->next_stop].name;
+        if (logic.m_bus_alight)
+          return { "Stay on", "Getting off at " + next };
+        return { "Get off at " + next, "Next stop: " + next };
+      }
       case Verb::stuck:
         return same ("Stuck! Keep at it, or step out and haul");
       }
@@ -410,6 +434,9 @@ namespace moppe::game {
       break;
     case Doing::Way::passenger:
       state.dismount = "Step out";
+      break;
+    case Doing::Way::bus:
+      state.dismount = "Get off";
       break;
     case Doing::Way::driving: {
       const Machine machine = w.session.logic ().m_doing.machine;

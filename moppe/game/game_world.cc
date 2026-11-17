@@ -145,6 +145,8 @@ namespace moppe {
             logic ().m_cam_mode = CAM_FRONT;
           else if (name == "eyes")
             logic ().m_cam_mode = CAM_HELMET;
+          // And riding too, after getting on (the bus-ride script's).
+          logic ().m_ride_cam = logic ().m_cam_mode;
         }
       }
       // MOPPE_DEMO=jeep, tractor, caddy, mountain_bike, or long_john: the

@@ -8,10 +8,10 @@
 
 namespace moppe::game {
   // What the player is doing to get about: walking, gliding, driving
-  // one of their machines (game/fleet.hh), or riding along in the other
-  // player's (game/companion.hh).
+  // one of their machines (game/fleet.hh), riding along in the other
+  // player's (game/companion.hh), or riding the bus (game/bus.hh).
   struct Doing {
-    enum class Way : std::uint8_t { foot, glider, driving, passenger };
+    enum class Way : std::uint8_t { foot, glider, driving, passenger, bus };
     Way way = Way::driving;
     // Driving, which machine; the bike otherwise.
     Machine machine = Machine::bike;
@@ -24,6 +24,9 @@ namespace moppe::game {
     }
     static constexpr Doing riding_along () {
       return { Way::passenger };
+    }
+    static constexpr Doing on_the_bus () {
+      return { Way::bus };
     }
     static constexpr Doing driving (Machine machine) {
       return { Way::driving, machine };

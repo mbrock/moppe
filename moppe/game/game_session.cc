@@ -1,5 +1,7 @@
 #include <moppe/game/affordances.hh>
 #include <moppe/game/game_session.hh>
+
+#include <moppe/game/bus.hh>
 #include <moppe/game/surroundings.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/mov/box3d_vec.hh>
@@ -68,6 +70,7 @@ namespace moppe::game {
         session.glider ().set_flare (k.boost > 0.1f);
         break;
       case Doing::Way::passenger:
+      case Doing::Way::bus:
         break;
       case Doing::Way::driving:
         drive (session.fleet (), logic.m_doing.machine, k, pressed);
@@ -716,6 +719,7 @@ namespace moppe::game {
     case Doing::Way::glider:
       return m_glider.position ();
     case Doing::Way::passenger:
+    case Doing::Way::bus:
       return m_logic.m_seat_position;
     case Doing::Way::driving:
       return visit (
@@ -733,6 +737,7 @@ namespace moppe::game {
     case Doing::Way::glider:
       return m_glider.heading ();
     case Doing::Way::passenger:
+    case Doing::Way::bus:
       return m_logic.m_seat_heading;
     case Doing::Way::driving:
       return visit (
@@ -750,6 +755,7 @@ namespace moppe::game {
     case Doing::Way::glider:
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
     case Doing::Way::passenger:
+    case Doing::Way::bus:
       return length (m_logic.m_seat_velocity) * 3.6f;
     case Doing::Way::driving:
       return visit (
@@ -876,6 +882,18 @@ namespace moppe::game {
       rig.velocity = m_logic.m_seat_velocity;
       rig.distance = 8.0f * u::m;
       rig.nearest = 3.4f * u::m;
+      break;
+    case Doing::Way::bus:
+      // From the front seat, looking out over the windscreen; or from
+      // well behind and above the bus.
+      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 1.05f +
+                m_logic.m_seat_heading * 4.2f;
+      rig.ahead = m_logic.m_seat_heading;
+      rig.pivot = m_logic.m_seat_position + m_logic.m_seat_up * 1.3f;
+      rig.velocity = m_logic.m_seat_velocity;
+      rig.distance = 15.0f * u::m;
+      rig.nearest = 7.0f * u::m;
+      rig.elevation = 14.0f * u::deg;
       break;
     case Doing::Way::driving: {
       const Machine machine = m_logic.m_doing.machine;
@@ -1273,6 +1291,8 @@ namespace moppe::game {
       // before the bodies move, and the animals mind where they went.
       InputFrame rest = input;
       press_buttons (session, surface, around, rest);
+      if (around->bus)
+        ride_bus (session, *around->bus);
       tend_by_hand (session, *around, rest, dt);
       const GameSessionAdvanceResult result = advance_game_session (
         world, surface, session, rest, dt, trunks, ground, water, strangers);

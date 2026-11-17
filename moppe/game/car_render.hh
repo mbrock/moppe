@@ -52,6 +52,8 @@ namespace moppe::game {
     std::vector<Part> body;
     render::MeshPtr steering_wheel;
     render::MeshPtr wheel;
+    // The rear pair's, when they differ (the bus's twins).
+    render::MeshPtr rear_wheel;
     std::vector<Part> glass;
   };
 

@@ -1,5 +1,7 @@
 #include <moppe/game/bus.hh>
+#include <moppe/game/game_session.hh>
 #include <moppe/game/places.hh>
+#include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
 
@@ -138,4 +140,70 @@ MOPPE_TEST (buses_keep_their_timetable_round_the_loop) {
       was_due = wait;
     }
   }
+}
+
+MOPPE_TEST (a_rider_boards_at_a_stop_and_gets_off_at_the_next_asked_for) {
+  // The loop of the timetable test (stops at 0 and 400 m) on level
+  // ground: the session's own ground stands nowhere near the bus's, and
+  // nothing here steps the walker.
+  map::SurfaceGeometry surface (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (64, 0, 64))));
+  map::rebuild_geometry (surface);
+  WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (64, 60, 64));
+  world.resolution = 17;
+  GameSession session (world, surface);
+  session.start_on_foot ();
+  GameLogicState& logic = session.logic ();
+  BusStop first, second;
+  first.name = "A";
+  first.along = 0.0f * u::m;
+  second.name = "B";
+  second.along = 400.0f * u::m;
+  const BusLine line (bus_test_loop (), { first, second });
+
+  // Standing at the first stop as play begins, a bus's door is at hand
+  // only from beside it.
+  const BusPose standing = line.where (play_time (0.0)).front ();
+  const Vec3 door = bus_door (standing);
+  MOPPE_CHECK (bus_at_hand (line,
+                            door + Vec3 (0, 0, 2.0f),
+                            play_time (0.0),
+                            bus_test_period,
+                            bus_test_period) == std::optional<std::size_t> (0));
+  MOPPE_CHECK (!bus_at_hand (line,
+                             door + Vec3 (0, 0, 9.0f),
+                             play_time (0.0),
+                             bus_test_period,
+                             bus_test_period));
+  // Nor once it has left the stop.
+  MOPPE_CHECK (!bus_at_hand (
+    line, door, play_time (30.0), bus_test_period, bus_test_period));
+
+  board_bus (session, line, 0);
+  MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());
+  // Under way, the seat goes with it; asking to get off waits for the
+  // next stop.
+  logic.m_total_time = play_time (40.0);
+  ride_bus (session, line);
+  const BusPose moving = line.where (play_time (40.0)).front ();
+  MOPPE_CHECK (!moving.at_stop && moving.next_stop == 1);
+  MOPPE_CHECK (length (session.subject_position () - bus_seat (moving)) <
+               1e-3f);
+  leave_bus (session, line);
+  MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());
+  MOPPE_CHECK (logic.m_bus_alight);
+  logic.m_total_time = play_time (60.0);
+  ride_bus (session, line);
+  MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());
+  // At the second stop (reached at 67.625 s) they step down by the door
+  // (bus_model::door, 2.925 m ahead of the bus's middle and 1.8 m to its
+  // right): south of the lane's middle at z = 501.7, on the verge.
+  logic.m_total_time = play_time (70.0);
+  ride_bus (session, line);
+  MOPPE_CHECK (logic.m_doing == Doing::on_foot ());
+  MOPPE_CHECK (!logic.m_bus_alight);
+  const Vec3 feet = session.walker ().position ();
+  MOPPE_CHECK (std::fabs (feet[0] - 402.925f) < 0.1f);
+  MOPPE_CHECK (std::fabs (feet[2] - 503.5f) < 0.1f);
 }

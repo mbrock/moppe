@@ -24,6 +24,7 @@
 #include <span>
 
 namespace moppe::game {
+  class BusLine;
   class GameSession;
   struct CompanionSnapshot;
   struct GameLogicState;
@@ -36,6 +37,8 @@ namespace moppe::game {
     // Following the basket (MushroomPatch::follow) before the step.
     const MushroomPatch* mushrooms = nullptr;
     const PlacesPlan* places = nullptr;
+    // The bus round the loop, to board and ride (bus.hh).
+    const BusLine* bus = nullptr;
     std::span<const Nest> nests;
     std::uint32_t egg_seed = 0;
     const AnimalGround* animal_ground = nullptr;

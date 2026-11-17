@@ -13,6 +13,7 @@
 
 #include <moppe/game/game_clock.hh>
 #include <moppe/game/rescue.hh>
+#include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/terrain/roads.hh>
 
@@ -24,6 +25,7 @@
 #include <vector>
 
 namespace moppe::game {
+  class GameSession;
   struct PlaceGround;
   struct PlacesPlan;
 
@@ -50,8 +52,16 @@ namespace moppe::game {
     Vec3 forward { 0, 0, 1 };
     Vec3 up { 0, 1, 0 };
     speed_t speed {};
-    // Standing at a stop (into BusLine::stops).
+    // Standing at a stop (into BusLine::stops), and the stop it stands
+    // at or comes to next.
     std::optional<std::size_t> at_stop;
+    std::size_t next_stop = 0;
+    // For its drawing: how far its doors stand open, 0 shut to 1, and
+    // its front wheels' turn (positive to the right) and how far its
+    // wheels have rolled.
+    float door_open = 0.0f;
+    float steer_radians = 0.0f;
+    float wheel_spin_radians = 0.0f;
   };
 
   // What a stop's board says: a bus stands there and leaves in `wait`,
@@ -147,6 +157,36 @@ namespace moppe::game {
                                       const Vec3& near,
                                       float period_x,
                                       float period_z);
+
+  // -- riding -------------------------------------------------------
+
+  // Where one gets on and off: on the road by its door, on its right,
+  // and where the rider sits inside (the front row's seat by the door,
+  // bus_model::seat_01), in the world (unwrapped as the pose is).
+  [[nodiscard]] Vec3 bus_door (const BusPose& pose);
+  // The bus's model space (bus_model.hh) where it stands.
+  [[nodiscard]] Mat4 bus_frame (const BusPose& pose);
+  [[nodiscard]] Vec3 bus_seat (const BusPose& pose);
+
+  // On foot within a few steps of the door of a bus standing at a stop:
+  // which bus, to board.
+  [[nodiscard]] std::optional<std::size_t> bus_at_hand (const BusLine& line,
+                                                        const Vec3& feet,
+                                                        play_time_t now,
+                                                        float period_x,
+                                                        float period_z);
+
+  // Gets on bus `bus`, the walker left where they stood.
+  void board_bus (GameSession& session, const BusLine& line, std::size_t bus);
+
+  // The rider asks to get off: at once while the bus stands at a stop,
+  // else at the next stop it comes to.
+  void leave_bus (GameSession& session, const BusLine& line);
+
+  // Each step on the bus: the seat goes where the bus is, and at a stop
+  // the rider asked for, they get off, stepping down onto the verge by
+  // the door.
+  void ride_bus (GameSession& session, const BusLine& line);
 
   // The stop whose sign is nearest `at` within `reach`, across the seam.
   [[nodiscard]] std::optional<std::size_t> bus_stop_near (const BusLine& line,

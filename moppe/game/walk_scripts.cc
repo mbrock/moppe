@@ -194,6 +194,12 @@ namespace moppe::game {
       const Vec3 right (-stop.forward[2], 0.0f, stop.forward[0]);
       stand = { stop.sign - stop.forward * 15.0f + right * 7.0f,
                 stop.sign + stop.forward * 2.0f - right * 6.0f };
+    } else if (script == "bus-ride" && !s.places.bus.empty ()) {
+      // MOPPE_WALK=bus-ride: by the door of the first bus, standing at
+      // the first stop as play begins, facing it; the script boards.
+      const BusPose bus = s.places.bus.where (play_time (0.0)).front ();
+      const Vec3 door = bus_door (bus);
+      stand = { door - bus.forward * 1.5f, door + bus.forward * 2.0f };
     } else if (script == "farm" && !s.places.layout.farms.empty () &&
                !s.places.layout.farms.front ().buildings.empty ()) {
       const Building& b = s.places.layout.farms.front ().buildings.front ();
@@ -382,6 +388,11 @@ namespace moppe::game {
         input.drive = 0.6f;
       if (t > 6.5f && t < 9.5f)
         input.look_yaw = 1.2f * dt;
+      return input;
+    }
+    // By the bus's door: on board.
+    if (script == "bus-ride") {
+      input.toggle_mount = press (0.5f) > 0.0f;
       return input;
     }
     if (script.starts_with ("animals")) {

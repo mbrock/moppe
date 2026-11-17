@@ -14,7 +14,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 16;
+    constexpr std::uint8_t wire_version = 17;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -28,7 +28,7 @@ namespace moppe::game {
     // What the player is doing, one byte on the wire: the bike, on
     // foot, the glider, the jeep, riding along, then the helicopter,
     // the tractor, the Caddy, the mountainbike, the boat, the Long John,
-    // and the jet ski.
+    // the jet ski, and on the bus.
     constexpr Doing doing_bytes[] = {
       Doing::driving (Machine::bike),
       Doing::on_foot (),
@@ -42,6 +42,7 @@ namespace moppe::game {
       Doing::driving (Machine::boat),
       Doing::driving (Machine::long_john),
       Doing::driving (Machine::jet_ski),
+      Doing::on_the_bus (),
     };
 
     std::uint8_t doing_byte (Doing doing) {

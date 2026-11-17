@@ -2,6 +2,7 @@
 
 #include <moppe/game/affordances.hh>
 
+#include <moppe/game/bus.hh>
 #include <moppe/game/camp.hh>
 #include <moppe/game/companion.hh>
 #include <moppe/game/fishing.hh>
@@ -166,6 +167,21 @@ namespace moppe::game {
                             .button = Button::mount,
                             .prompted = false });
         }
+        if (around && around->bus && around->places) {
+          if (doing == Doing::on_foot ()) {
+            if (const std::optional<std::size_t> bus =
+                  bus_at_hand (*around->bus,
+                               session.walker ().position (),
+                               logic.m_total_time,
+                               around->places->period_x,
+                               around->places->period_z))
+              list.push_back ({ .verb = Verb::board_bus,
+                                .button = Button::mount,
+                                .object = static_cast<std::uint32_t> (*bus) });
+          } else if (doing == Doing::on_the_bus ())
+            list.push_back (
+              { .verb = Verb::leave_bus, .button = Button::mount });
+        }
         if (doing == Doing::on_foot ()) {
           if (around &&
               seat_within_reach (session, around->companion) != Seat::none)
@@ -291,6 +307,12 @@ namespace moppe::game {
       return;
     case Verb::step_out:
       step_out (session, a.machine);
+      return;
+    case Verb::board_bus:
+      board_bus (session, *around->bus, a.object);
+      return;
+    case Verb::leave_bus:
+      leave_bus (session, *around->bus);
       return;
     case Verb::stuck:
       return;

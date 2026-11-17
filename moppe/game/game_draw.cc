@@ -178,6 +178,7 @@ namespace moppe {
             break;
           case Doing::Way::glider:
           case Doing::Way::passenger:
+          case Doing::Way::bus:
             break;
           case Doing::Way::driving:
             interaction_radius =
@@ -298,6 +299,18 @@ namespace moppe {
         m_basket_contents.push_back (m_mushrooms.site (basket.picked[i]));
       draw_camp (m_world_dl);
       m_places.draw (r, m_world_dl, frame, logic ());
+      m_places.bus_view.draw (
+        r,
+        m_world_dl,
+        m_places.bus,
+        logic ().m_total_time,
+        frame.camera.position,
+        0xb05000,
+        actors.active_mode == Doing::on_the_bus ()
+          ? std::optional (BusRider { .bus = logic ().m_bus,
+                                      .outfit = m_company.outfit,
+                                      .seen = !helmet })
+          : std::nullopt);
       render_animals (
         r,
         session ().animals ().animals (),

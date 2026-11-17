@@ -6,12 +6,15 @@
 // its board -- its name and how long till the next bus.
 
 #include <moppe/game/bus.hh>
+#include <moppe/game/car_render.hh>
 #include <moppe/game/game_clock.hh>
 #include <moppe/mov/trunk_field.hh>
 #include <moppe/render/renderer.hh>
 #include <moppe/render/text.hh>
 
+#include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,20 +27,31 @@ namespace moppe::game {
   [[nodiscard]] std::vector<mov::Trunk>
   bus_stop_colliders (const BusLine& line);
 
+  // The player riding bus `bus`, in their outfit, and whether they are
+  // seen in their seat (not when the view is through their eyes).
+  struct BusRider {
+    std::size_t bus = 0;
+    Outfit outfit = Outfit::blue_jacket;
+    bool seen = true;
+  };
+
   class BusView {
   public:
-    // Bakes the stops' signs and shelters, and the bus.
+    // Bakes the stops' signs and shelters, and the bus's model.
     void rebuild (render::Renderer& renderer,
                   const BusLine& line,
                   float period_x,
                   float period_z);
 
-    // The stops near the camera, and the buses where they are at `now`.
+    // The stops near the camera, and the buses where they are at `now`
+    // (bus_model.hh), each with its driver, and its rider in `dl`.
     void draw (render::Renderer& renderer,
+               render::DrawList& dl,
                const BusLine& line,
                play_time_t now,
                const Vec3& camera,
-               std::uint64_t motion_base) const;
+               std::uint64_t motion_base,
+               std::optional<BusRider> rider) const;
     // The same, lent to the sun's shadow.
     void cast_shadows (render::Renderer& renderer,
                        const BusLine& line,
@@ -57,7 +71,8 @@ namespace moppe::game {
     Vec3 near_copy (const Vec3& at, const Vec3& camera) const;
 
     std::vector<render::MeshPtr> m_stops;
-    render::MeshPtr m_bus;
+    CarMeshes m_bus;
+    std::array<render::MeshPtr, 2> m_doors;
     render::TextList m_board;
     float m_period_x = 0.0f;
     float m_period_z = 0.0f;

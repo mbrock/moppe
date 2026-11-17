@@ -1,7 +1,11 @@
 #include <moppe/game/bus.hh>
 
+#include <moppe/game/bus_model.hh>
+#include <moppe/game/game_session.hh>
+#include <moppe/game/model_mesh.hh>
 #include <moppe/game/place_names.hh>
 #include <moppe/game/places.hh>
+#include <moppe/gfx/mat4.hh>
 #include <moppe/terrain/torus.hh>
 
 #include <algorithm>
@@ -185,10 +189,15 @@ namespace moppe::game {
         const std::size_t i =
           static_cast<std::size_t> (reached - m_arrive.begin ()) - 1;
         const float here = m_stops[i].along.numerical_value_in (u::m);
+        pose.next_stop = i;
         if (t < m_leave[i]) {
           along = here;
           pose.at_stop = i;
+          // Opening over a second and a half, and shutting as long.
+          pose.door_open = std::clamp (
+            std::min (t - m_arrive[i], m_leave[i] - t) / 1.5f, 0.0f, 1.0f);
         } else {
+          pose.next_stop = (i + 1) % m_stops.size ();
           const float next =
             i + 1 < m_stops.size ()
               ? m_stops[i + 1].along.numerical_value_in (u::m)
@@ -208,6 +217,17 @@ namespace moppe::game {
       pose.forward = normalized (level * 6.0f + Vec3 (0.0f, rise, 0.0f));
       pose.up = normalized (cross (pose.forward, left));
       pose.position = point (pose.along) - left * meters_value (lane);
+      // The front wheels follow the bend, over the wheelbase; they roll
+      // the way it goes.
+      {
+        constexpr float wheelbase = 6.45f, wheel_radius = 0.49f;
+        const Vec3 behind = direction (pose.along - 4.0f * u::m);
+        const Vec3 ahead = direction (pose.along + 4.0f * u::m);
+        const float to_left = std::atan2 (
+          behind[2] * ahead[0] - behind[0] * ahead[2], dot (behind, ahead));
+        pose.steer_radians = -std::atan (wheelbase * to_left / 8.0f);
+        pose.wheel_spin_radians = std::fmod (along / wheel_radius, 6.2831853f);
+      }
       poses.push_back (pose);
     }
     return poses;
@@ -503,6 +523,109 @@ namespace moppe::game {
     body.ours = false;
     body.bumpers = bumpers;
     return body;
+  }
+
+  Mat4 bus_frame (const BusPose& pose) {
+    return model_mesh::body_frame (pose.position, pose.forward, pose.up);
+  }
+
+  Vec3 bus_door (const BusPose& pose) {
+    return bus_frame (pose).transform_point (bus_model::door);
+  }
+
+  Vec3 bus_seat (const BusPose& pose) {
+    return bus_frame (pose).transform_point (bus_model::seat_01);
+  }
+
+  std::optional<std::size_t> bus_at_hand (const BusLine& line,
+                                          const Vec3& feet,
+                                          play_time_t now,
+                                          float period_x,
+                                          float period_z) {
+    constexpr float reach = 4.5f;
+    const std::vector<BusPose> buses = line.where (now);
+    for (std::size_t k = 0; k < buses.size (); ++k) {
+      if (!buses[k].at_stop)
+        continue;
+      const Vec3 door = bus_door (buses[k]);
+      if (std::hypot (
+            terrain::minimum_image_delta (door[0] - feet[0], period_x),
+            terrain::minimum_image_delta (door[2] - feet[2], period_z)) < reach)
+        return k;
+    }
+    return std::nullopt;
+  }
+
+  namespace {
+    namespace bus_parts {
+      // The ridden bus as it is now, if it runs.
+      std::optional<BusPose> ridden (const GameSession& session,
+                                     const BusLine& line) {
+        const std::vector<BusPose> buses =
+          line.where (session.logic ().m_total_time);
+        if (session.logic ().m_bus >= buses.size ())
+          return std::nullopt;
+        return buses[session.logic ().m_bus];
+      }
+
+      void take_seat (GameLogicState& logic, const BusPose& pose) {
+        logic.m_seat_position = bus_seat (pose);
+        logic.m_seat_heading = pose.forward;
+        logic.m_seat_up = pose.up;
+        logic.m_seat_velocity = pose.forward * speed_value (pose.speed);
+      }
+
+      // Down by the door, on the verge side, facing out.
+      void step_down (GameSession& session, const BusPose& pose) {
+        const Vec3 left = normalized (cross (pose.up, pose.forward));
+        Vec3 out = left * -1.0f;
+        out[1] = 0.0f;
+        session.walker ().spawn (
+          moppe::position (bus_door (pose) + Vec3 (0, 0.2f, 0)),
+          normalized (out));
+        session.set_mode (Doing::on_foot ());
+        session.logic ().m_bus_alight = false;
+        session.logic ().m_fp_eye = session.walker ().eye_position ();
+      }
+    }
+  }
+
+  void board_bus (GameSession& session, const BusLine& line, std::size_t bus) {
+    GameLogicState& logic = session.logic ();
+    logic.m_bus = static_cast<std::uint8_t> (bus);
+    logic.m_bus_alight = false;
+    const std::optional<BusPose> pose = bus_parts::ridden (session, line);
+    if (!pose)
+      return;
+    session.clear_controls ();
+    session.set_mode (Doing::on_the_bus ());
+    bus_parts::take_seat (logic, *pose);
+  }
+
+  void leave_bus (GameSession& session, const BusLine& line) {
+    const std::optional<BusPose> pose = bus_parts::ridden (session, line);
+    if (!pose || pose->at_stop)
+      bus_parts::step_down (session,
+                            pose.value_or (BusPose {
+                              .position = session.logic ().m_seat_position,
+                              .forward = session.logic ().m_seat_heading,
+                            }));
+    else
+      session.logic ().m_bus_alight = !session.logic ().m_bus_alight;
+  }
+
+  void ride_bus (GameSession& session, const BusLine& line) {
+    GameLogicState& logic = session.logic ();
+    if (logic.m_doing != Doing::on_the_bus ())
+      return;
+    const std::optional<BusPose> pose = bus_parts::ridden (session, line);
+    if (!pose) {
+      leave_bus (session, line);
+      return;
+    }
+    bus_parts::take_seat (logic, *pose);
+    if (logic.m_bus_alight && pose->at_stop)
+      bus_parts::step_down (session, *pose);
   }
 
   std::optional<std::size_t> bus_stop_near (const BusLine& line,

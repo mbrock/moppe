@@ -161,9 +161,22 @@ build, test, and change the code; read this when working on a feature.
   red oblong along its way and the stops as yellow plates (named in
   the near view), the chart pins them while they are on it, and the
   buses knock the players' machines aside (`bus_body`, through the
-  bumpers). The bus is drawn as a placeholder of boxes until its model
-  comes. `MOPPE_WALK=bus-stop[:N]` stands on the verge behind the Nth
-  stop (the first, where the first bus stands as play begins), and
+  bumpers). The bus is a fifties country bus in post-coach yellow
+  (`models/bus.blend` from `tools/figure/bus.py`, drawn through
+  `render_car` with its twin rear wheels, a driver at the wheel, the
+  wheels rolling and the front pair steering with the road, and its
+  door's two leaves folding open at each stop). Riding it
+  (`Doing::on_the_bus`): on foot by the door of a bus standing at a
+  stop, the mount key boards (`board_bus`) and the rider sits in the
+  front seat by the door (`bus_model::seat_01`), seen from behind the
+  bus or, through their eyes, out of the windscreen; the prompt names
+  the next stop, and the mount key asks to get off there (again, to
+  stay on) or, while it stands at a stop, gets off at once, stepping
+  down by the door (`leave_bus`, `ride_bus`). The other player sees the
+  rider's seat on the map, not a figure (companion wire version 17).
+  `MOPPE_WALK=bus-stop[:N]` stands on the verge behind the Nth stop
+  (the first, where the first bus stands as play begins),
+  `MOPPE_WALK=bus-ride` boards that bus and rides it, and
   `MOPPE_MAP=whole|near` starts with the map unfolded; `moppe: bus:`
   lists the stops.
 - Waymarks: a small arrow with a name and a distance marks the other
