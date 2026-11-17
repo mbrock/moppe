@@ -1599,19 +1599,20 @@ namespace moppe {
         const float off = std::hypot (sx, sy);
         const bool beyond = off > far;
         using Kind = HudState::Chart::Pin::Kind;
-        const bool place = pin.kind == Kind::Landing ||
-                           pin.kind == Kind::Outlet ||
-                           pin.kind == Kind::Sanctuary;
+        using Place = terrain::RoadPlace::Kind;
+        const bool trailhead =
+          pin.kind == Kind::Place && pin.place == Place::Trailhead;
+        const bool place = pin.kind == Kind::Place && !trailhead;
         if (place) {
           // Named places stay on the chart only while they are on it:
           // a peak as a triangle, the landing and an outlet as a ring.
           if (off > 0.95f * r)
             continue;
           const float x = cx + sx, y = cy + sy;
-          const bool peak = pin.kind == Kind::Sanctuary;
+          const bool peak = pin.place == Place::Sanctuary;
           const auto& shape = peak ? m_shape->arrow : m_shape->shade;
           const float angle = peak ? 0.5f * PI : 0.0f;
-          const float size = pin.kind == Kind::Outlet ? 3.0f : 3.8f;
+          const float size = pin.place == Place::LakeOutlet ? 3.0f : 3.8f;
           place_shape (text,
                        shape,
                        x,
@@ -1652,9 +1653,9 @@ namespace moppe {
           sx *= far / off;
           sy *= far / off;
         }
-        float size = pin.kind == Kind::Companion   ? 4.4f
-                     : pin.kind == Kind::Trailhead ? 4.2f
-                                                   : 3.4f;
+        float size = pin.kind == Kind::Companion ? 4.4f
+                     : trailhead                 ? 4.2f
+                                                 : 3.4f;
         float a = alpha;
         if (beyond) {
           size *= 1.3f;
@@ -1678,7 +1679,7 @@ namespace moppe {
           text, shape, x, y, size + 1.4f, angle, 1.0f, 1.0f, 1.0f, a);
         place_shape (
           text, shape, x, y, size, angle, pin.red, pin.green, pin.blue, a);
-        if (pin.kind == Kind::Trailhead && !beyond)
+        if (trailhead && !beyond)
           place_shape (text,
                        m_shape->shade,
                        x,

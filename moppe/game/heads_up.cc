@@ -714,9 +714,10 @@ namespace moppe::game {
           .position = camp.hung ? hammock_middle (camp.hammock) : camp.hearth,
           .colour = DisplayColor (0.80f, 0.38f, 0.08f),
           .name = "camp" });
-    marks.push_back ({ .kind = Mark::Kind::Trailhead,
+    using Place = terrain::RoadPlace::Kind;
+    marks.push_back ({ .kind = Mark::Kind::Place,
                        .position = w.home_base,
-                       .colour = DisplayColor (0.80f, 0.13f, 0.11f),
+                       .colour = place_kind (Place::Trailhead).ink,
                        .name = "trailhead" });
     // The road network's places, by name; last, so drawn under the
     // rest.
@@ -725,21 +726,16 @@ namespace moppe::game {
          p < roads.places.size () && p < w.place_names.size ();
          ++p) {
       const terrain::RoadPlace& place = roads.places[p];
-      using Place = terrain::RoadPlace::Kind;
-      if (place.kind == Place::Trailhead)
+      const PlaceKind& kind = place_kind (place.kind);
+      if (!kind.named)
         continue;
       const bool quiet = place.abandoned_years_ago > 0.0f;
       marks.push_back (
-        { .kind = place.kind == Place::Landing      ? Mark::Kind::Landing
-                  : place.kind == Place::LakeOutlet ? Mark::Kind::Outlet
-                                                    : Mark::Kind::Sanctuary,
+        { .kind = Mark::Kind::Place,
           .position = Vec3 (place.x_m, place.height_m, place.z_m),
-          .colour = place.kind == Place::Sanctuary
-                      ? (quiet ? DisplayColor (0.36f, 0.24f, 0.26f)
-                               : DisplayColor (0.56f, 0.12f, 0.16f))
-                      : DisplayColor (0.10f, 0.30f, 0.62f),
+          .colour = quiet ? kind.quiet_ink : kind.ink,
           .name = w.place_names[p].c_str (),
-          .place = true });
+          .place = place.kind });
     }
     return marks;
   }
@@ -774,14 +770,12 @@ namespace moppe::game {
           chart.pin_count >= static_cast<int> (chart.pins.size ()))
         continue;
       Pin& pin = chart.pins[chart.pin_count++];
-      pin.kind = mark.kind == Kind::Companion   ? Pin::Kind::Companion
-                 : mark.kind == Kind::Bike      ? Pin::Kind::Bike
-                 : mark.kind == Kind::Camp      ? Pin::Kind::Camp
-                 : mark.kind == Kind::Trailhead ? Pin::Kind::Trailhead
-                 : mark.kind == Kind::Landing   ? Pin::Kind::Landing
-                 : mark.kind == Kind::Outlet    ? Pin::Kind::Outlet
-                 : mark.kind == Kind::Sanctuary ? Pin::Kind::Sanctuary
-                                                : Pin::Kind::Machine;
+      pin.kind = mark.kind == Kind::Companion ? Pin::Kind::Companion
+                 : mark.kind == Kind::Bike    ? Pin::Kind::Bike
+                 : mark.kind == Kind::Camp    ? Pin::Kind::Camp
+                 : mark.kind == Kind::Place   ? Pin::Kind::Place
+                                              : Pin::Kind::Machine;
+      pin.place = mark.place;
       pin.x_m = mark.position[0];
       pin.z_m = mark.position[2];
       pin.red = mark.colour.red;

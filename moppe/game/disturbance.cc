@@ -1,6 +1,7 @@
 #include <moppe/game/disturbance.hh>
 
 #include <moppe/correct_math.hh>
+#include <moppe/game/place_kind.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
 #include <moppe/spatial/bundle_operations.hh>
@@ -138,15 +139,12 @@ namespace moppe::game {
     // the birch has been walking back in since it went quiet.
     std::size_t pastures = 0, kept = 0;
     for (const terrain::RoadPlace& place : roads.places) {
-      using Kind = terrain::RoadPlace::Kind;
-      if (place.kind == Kind::Trailhead)
+      const float reach = place_kind (place.kind).pasture_m;
+      if (reach <= 0.0f)
         continue;
       ++pastures;
       const bool living = place.abandoned_years_ago <= 0.0f;
       kept += living;
-      const float reach = place.kind == Kind::Sanctuary ? 1300.0f
-                          : place.kind == Kind::Landing ? 650.0f
-                                                        : 500.0f;
       const float then =
         living ? 0.36f : recovery_after_years (place.abandoned_years_ago);
       const float grazing = living ? 0.85f : 0.0f;

@@ -2,6 +2,7 @@
 #define MOPPE_GAME_MAP_SHEET_HH
 
 #include <moppe/color.hh>
+#include <moppe/game/place_kind.hh>
 #include <moppe/game/relief_map.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
@@ -32,11 +33,9 @@ namespace moppe::game {
         Bike,
         Jeep,
         Camp,
-        Trailhead,
-        // The road network's places (roads.hh), drawn with their names.
-        Landing,
-        Outlet,
-        Sanctuary,
+        // The road network's places (roads.hh): the trailhead, and the
+        // rest drawn with their names.
+        Place,
       };
       Kind kind = Kind::Walker;
       Vec3 position;
@@ -44,9 +43,14 @@ namespace moppe::game {
       Vec3 heading { 0.0f, 0.0f, 1.0f };
       DisplayColor colour { 0.1f, 0.1f, 0.1f };
       const char* name = "";
+      // Which place, for a Place.
+      terrain::RoadPlace::Kind place = terrain::RoadPlace::Kind::Trailhead;
+
       // A place on the map rather than a thing, named in the sheet's
       // own lettering.
-      bool place = false;
+      bool named () const {
+        return kind == Kind::Place && place_kind (place).named;
+      }
     };
 
     View view () const noexcept {

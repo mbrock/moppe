@@ -4,6 +4,7 @@
 #include <moppe/game/affordances.hh>
 #include <moppe/game/doing.hh>
 #include <moppe/game/game_clock.hh>
+#include <moppe/game/place_kind.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/platform/input.hh>
 #include <moppe/render/draw.hh>
@@ -193,14 +194,12 @@ namespace moppe {
             Bike,
             Machine,
             Camp,
-            Trailhead,
-            // Named places, shown only while on the chart, not on its
-            // rim.
-            Landing,
-            Outlet,
-            Sanctuary,
+            // The road network's places (game/place_kind.hh): named
+            // ones are shown only while on the chart, not on its rim.
+            Place,
           };
           Kind kind = Kind::Machine;
+          terrain::RoadPlace::Kind place = terrain::RoadPlace::Kind::Trailhead;
           float x_m = 0.0f, z_m = 0.0f;
           float red = 0.1f, green = 0.1f, blue = 0.1f;
         };

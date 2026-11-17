@@ -104,18 +104,14 @@ namespace moppe::game {
 
     // Which marks matter most: their symbols are drawn over the others',
     // and their names set first.
-    int rank (Mark::Kind kind) {
-      switch (kind) {
+    int rank (const Mark& mark) {
+      switch (mark.kind) {
       case Mark::Kind::Walker:
         return 0;
       case Mark::Kind::Companion:
         return 1;
-      case Mark::Kind::Landing:
-      case Mark::Kind::Outlet:
-      case Mark::Kind::Sanctuary:
-        return 2;
-      case Mark::Kind::Trailhead:
-        return 3;
+      case Mark::Kind::Place:
+        return mark.named () ? 2 : 3;
       case Mark::Kind::Camp:
         return 4;
       default:
@@ -158,45 +154,49 @@ namespace moppe::game {
         dl.color (mark.colour, 1.0f);
         arrow (dl, x, y + 0.4f * s, 0.0f, -1.0f, 6.5f * s);
         break;
-      case Mark::Kind::Trailhead:
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 5.0f * s);
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 3.2f * s);
-        break;
-      case Mark::Kind::Landing:
-        // An anchor's ring and stock, as charts mark a landing place.
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 6.2f * s);
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 4.8f * s);
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        dl.line (x, y - 3.2f * s, x, y + 3.0f * s, 1.1f * s);
-        dl.line (
-          x - 2.4f * s, y - 1.6f * s, x + 2.4f * s, y - 1.6f * s, 1.1f * s);
-        dl.line (x - 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
-        dl.line (x + 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
-        break;
-      case Mark::Kind::Outlet:
-        // A mill wheel: a ring with spokes.
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 5.6f * s);
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 4.3f * s);
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 1.3f * s);
-        dl.line (x - 3.4f * s, y, x + 3.4f * s, y, 0.9f * s);
-        dl.line (x, y - 3.4f * s, x, y + 3.4f * s, 0.9f * s);
-        break;
-      case Mark::Kind::Sanctuary:
-        // The sheet already carries its triangle; a dot of fire in it.
-        // In a list, where there is no triangle, the triangle too.
-        if (s < 1.0f) {
+      case Mark::Kind::Place:
+        switch (mark.place) {
+        case terrain::RoadPlace::Kind::Trailhead:
           dl.color (mark.colour, 1.0f);
-          arrow (dl, x, y + 2.0f, 0.0f, -1.0f, 8.0f * s);
+          disc (dl, x, y, 5.0f * s);
+          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+          disc (dl, x, y, 3.2f * s);
+          break;
+        case terrain::RoadPlace::Kind::Landing:
+          // An anchor's ring and stock, as charts mark a landing place.
+          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+          disc (dl, x, y, 6.2f * s);
+          dl.color (mark.colour, 1.0f);
+          disc (dl, x, y, 4.8f * s);
+          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+          dl.line (x, y - 3.2f * s, x, y + 3.0f * s, 1.1f * s);
+          dl.line (
+            x - 2.4f * s, y - 1.6f * s, x + 2.4f * s, y - 1.6f * s, 1.1f * s);
+          dl.line (x - 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
+          dl.line (x + 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
+          break;
+        case terrain::RoadPlace::Kind::LakeOutlet:
+          // A mill wheel: a ring with spokes.
+          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+          disc (dl, x, y, 5.6f * s);
+          dl.color (mark.colour, 1.0f);
+          disc (dl, x, y, 4.3f * s);
+          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+          disc (dl, x, y, 1.3f * s);
+          dl.line (x - 3.4f * s, y, x + 3.4f * s, y, 0.9f * s);
+          dl.line (x, y - 3.4f * s, x, y + 3.4f * s, 0.9f * s);
+          break;
+        case terrain::RoadPlace::Kind::Sanctuary:
+          // The sheet already carries its triangle; a dot of fire in it.
+          // In a list, where there is no triangle, the triangle too.
+          if (s < 1.0f) {
+            dl.color (mark.colour, 1.0f);
+            arrow (dl, x, y + 2.0f, 0.0f, -1.0f, 8.0f * s);
+          }
+          dl.color (mark.colour, 1.0f);
+          disc (dl, x, y, 2.4f * s);
+          break;
         }
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 2.4f * s);
         break;
       }
     }
@@ -418,7 +418,7 @@ namespace moppe::game {
         placed.push_back ({ x, y, &mark });
     }
     std::ranges::stable_sort (placed, std::greater<> {}, [] (const Placed& p) {
-      return rank (p.mark->kind);
+      return rank (*p.mark);
     });
     std::vector<Box> symbols;
     for (const Placed& p : placed) {
@@ -471,12 +471,13 @@ namespace moppe::game {
     const auto words_of = [&] (const Mark& mark) {
       // Places are named in the water's blue, sanctuaries in their own
       // ink.
-      return mark.place ? style (11.0f,
-                                 mark.kind == Mark::Kind::Sanctuary
-                                   ? mark.colour
-                                   : DisplayColor (0.04f, 0.18f, 0.42f),
-                                 0.04f)
-                        : style (10.5f, map_ink, 0.02f);
+      return mark.named ()
+               ? style (11.0f,
+                        mark.place == terrain::RoadPlace::Kind::Sanctuary
+                          ? mark.colour
+                          : DisplayColor (0.04f, 0.18f, 0.42f),
+                        0.04f)
+               : style (10.5f, map_ink, 0.02f);
     };
     const auto meets = [] (const Box& a, const Box& b) {
       return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
@@ -549,7 +550,7 @@ namespace moppe::game {
         }
       }
       if (cost >= 1e9f ||
-          (cost >= 1000.0f && rank (placed[group.front ()].mark->kind) >= 4))
+          (cost >= 1000.0f && rank (*placed[group.front ()].mark) >= 4))
         continue;
       set.push_back (best);
 

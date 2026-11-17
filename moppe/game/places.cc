@@ -4,6 +4,7 @@
 #include <moppe/game/camp.hh>
 #include <moppe/game/farm_model.hh>
 #include <moppe/game/model_mesh.hh>
+#include <moppe/game/place_kind.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/terrain/torus.hh>
@@ -710,30 +711,26 @@ namespace moppe::game {
       const terrain::RoadPlace& place = network.places[i];
       Random random (seed ^ static_cast<std::uint32_t> (i * 0x9e3779b9u));
       using Kind = terrain::RoadPlace::Kind;
-      const char* what = "the trailhead";
       switch (place.kind) {
       case Kind::Trailhead:
         break;
       case Kind::Landing:
-        what = "a landing";
         if (!plan.landing)
           plan.landing = plan_landing (ground, place, i, sea);
         break;
       case Kind::LakeOutlet:
-        what = "a lake outlet";
         if (std::optional<Farm> farm =
               plan_farm (ground, place, i, plan.stages))
           plan.farms.push_back (std::move (*farm));
         break;
       case Kind::Sanctuary:
-        what = "a sanctuary";
         sanctuary_of[i] = plan.sanctuaries.size ();
         plan.sanctuaries.push_back (plan_sanctuary (ground, place, i, random));
         break;
       }
-      std::cerr << "moppe: places: " << what << " at " << place.x_m << ' '
-                << place.z_m << ", " << place.height_m << " m, founded "
-                << place.founded_years_ago << " years ago";
+      std::cerr << "moppe: places: " << place_kind (place.kind).what << " at "
+                << place.x_m << ' ' << place.z_m << ", " << place.height_m
+                << " m, founded " << place.founded_years_ago << " years ago";
       if (place.abandoned_years_ago > 0.0f)
         std::cerr << ", left " << place.abandoned_years_ago << " years ago";
       std::cerr << '\n';
