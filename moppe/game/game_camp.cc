@@ -17,9 +17,9 @@ namespace moppe {
         .nests = m_places.nests,
         .egg_seed = m_places.egg_seed (),
         .animal_ground = animals,
-        .day_pace = m_day.pace,
-        .day_turning = m_day.turning,
-        .daylight = m_sky.daylight,
+        .day_pace = m_sky.day ().pace,
+        .day_turning = m_sky.day ().turning,
+        .daylight = m_sky.sky ().daylight,
         .companion = m_company.companion ? &*m_company.companion : nullptr,
         .companion_clock = m_company.hours >= 0.0
                              ? std::optional (clock_time (m_company.hours))

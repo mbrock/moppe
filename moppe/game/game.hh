@@ -64,6 +64,7 @@
 #include <moppe/game/scan.hh>
 #include <moppe/game/seed_memory.hh>
 #include <moppe/game/simulation_clock.hh>
+#include <moppe/game/sky_clock.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/game/surroundings.hh>
@@ -317,31 +318,6 @@ namespace moppe {
 
       void upload_world_terrain (render::Renderer& r);
 
-      void update_world_atmosphere (float total_time);
-
-      // The weather follows the clock from spell to spell, unless
-      // MOPPE_WEATHER holds one kind. Composed views, whose day does not
-      // turn, keep the drifting sky they were made under.
-      Weather read_weather ();
-
-      // The day: MOPPE_DAY is how many minutes of play one takes (48
-      // unless told; 0 holds the sun still), and MOPPE_CLOCK the hour it
-      // starts at. A launch that names a sun height without asking for a
-      // day keeps the fixed sun it was made under.
-      struct Day {
-        // Hours of the clock per second of play.
-        double pace = 0.0;
-        // Whether the sky follows the clock, or holds the authored sun.
-        bool turning = false;
-        std::optional<float> first_hour;
-      };
-
-      Day plan_day () const;
-
-      void begin_day ();
-
-      void read_sky ();
-
       // -- company -----------------------------------------------------
 
       // Opens the link to another player (game/companion_link.hh). A
@@ -532,12 +508,8 @@ namespace moppe {
       std::unique_ptr<GameSession> m_session;
       WorldLoading m_loading;
       GraphicsSettings m_graphics;
-      Almanac m_almanac;
-      Day m_day;
-      std::optional<SkyKind> m_held_sky;
-      std::optional<WeatherTimeline> m_weather_timeline;
-      std::optional<SkyKind> m_logged_sky;
-      SkyReading m_sky;
+      // The day and its weather.
+      SkyClock m_sky;
       Vec3 m_spawn_position;
       // Where the machines were parked, and the boat moored.
       Parking m_parking;

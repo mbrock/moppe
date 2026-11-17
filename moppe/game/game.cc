@@ -12,18 +12,9 @@ namespace moppe {
         : m_params (bind_world_params (options.world, recipe)),
           m_recipe (std::move (recipe)),
           m_loading (this->recipe (), options.world_cache),
-          m_graphics (options.graphics),
+          m_graphics (options.graphics), m_sky (m_graphics.sun_height),
           m_spawn_position (position_value (this->world ().spawn_position ())),
           m_renderer (0), m_capture (options.screenshot_path), m_ready (false) {
-      m_day = plan_day ();
-      m_sky = m_almanac.held (m_graphics.sun_height);
-      if (const char* name = moppe::environment ("MOPPE_WEATHER");
-          name && std::string_view (name) != "changing") {
-        m_held_sky = sky_kind_named (name);
-        if (!m_held_sky)
-          std::cerr << "moppe: weather: no kind named " << name
-                    << "; the weather changes" << std::endl;
-      }
       if (options.multiplayer)
         seek_company (*options.multiplayer);
     }
@@ -112,7 +103,7 @@ namespace moppe {
       logic ().m_total_time += dt * si::second;
       const float total_time =
         static_cast<float> (seconds_into_play (logic ().m_total_time));
-      update_world_atmosphere (total_time);
+      m_sky.update (logic (), total_time);
 
       if (m_cinematic.active ()) {
         if (input.leave_cinematic) {
@@ -331,7 +322,7 @@ namespace moppe {
           m_capture_camera.lens () && !cinematic && !m_opening.active ()
             ? std::optional<degrees_t> (*m_capture_camera.lens () * u::deg)
             : std::nullopt,
-        .sky = m_sky,
+        .sky = m_sky.sky (),
         .water = &generated_world ().water_surface (),
       };
     }

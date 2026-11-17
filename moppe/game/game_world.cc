@@ -109,7 +109,8 @@ namespace moppe {
     void MoppeGame::place_stars_and_player () {
       MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
       session ().stars ().generate (surface (), world (), 80);
-      begin_day ();
+      m_sky.begin (logic (),
+                   static_cast<std::uint32_t> (recipe ().seed ().value));
       m_company.forget ();
       m_home_base_position = world_ground ().trail_cell (
         generated_world ().trails ().plan.home_base);
@@ -422,86 +423,6 @@ namespace moppe {
                                surface (),
                                generated_world ().readings (),
                                generated_world ().water_surface ());
-    }
-
-    void MoppeGame::update_world_atmosphere (float total_time) {
-      // Weather remains part of the world while actors are paused.
-      cloud_cover_t cloudiness =
-        (std::sin (total_time * 0.0003f) * 0.4f + 0.5f +
-         0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
-         std::sin (total_time * 0.02f) * 0.05f) *
-        cloud_cover[one];
-      const Weather weather = read_weather ();
-      logic ().m_weather = weather;
-      cloudiness = std::clamp (cloudiness,
-                               weather.cloud_floor * cloud_cover[one],
-                               weather.cloud_ceiling * cloud_cover[one]);
-      logic ().m_cloudiness = cloudiness;
-
-      // Fog stays mostly sky-blue. Directional warmth is added in the
-      // shaders only when looking toward the sun.
-      read_sky ();
-      // By night the haze keeps the sky's own dark blue, and an overcast
-      // greys only as far as there is light to grey it.
-      const float lit = 0.12f + 0.88f * m_sky.daylight;
-      logic ().m_fog = mix_display (
-        mix_display (m_sky.horizon,
-                     scale_display (DisplayColor (0.90f, 0.94f, 1.0f), lit),
-                     0.18f),
-        scale_display (weather.fog_tint, lit),
-        weather.fog_tint_amount);
-    }
-
-    Weather MoppeGame::read_weather () {
-      if (m_held_sky)
-        return weather_of (*m_held_sky);
-      if (!m_day.turning || !m_session || !m_weather_timeline)
-        return {};
-      const double hours = hours_since_midnight (logic ().m_day_hours);
-      const SkyKind kind = m_weather_timeline->kind_at (hours);
-      if (kind != m_logged_sky) {
-        m_logged_sky = kind;
-        std::cerr << "moppe: weather: " << sky_kind_name (kind) << " from "
-                  << std::fmod (hours, 24.0) << " h" << std::endl;
-      }
-      return m_weather_timeline->at (hours);
-    }
-
-    MoppeGame::Day MoppeGame::plan_day () const {
-      Day day;
-      const char* minutes = moppe::environment ("MOPPE_DAY");
-      const char* hour = moppe::environment ("MOPPE_CLOCK");
-      if (hour)
-        day.first_hour = std::clamp ((float)::atof (hour), 0.0f, 24.0f);
-      const float length = minutes ? (float)::atof (minutes) : 48.0f;
-      if (length > 0.0f)
-        day.pace = 24.0 / (60.0 * length);
-      day.turning = day.pace > 0.0 || hour;
-      return day;
-    }
-
-    void MoppeGame::begin_day () {
-      m_weather_timeline.emplace (
-        static_cast<std::uint32_t> (recipe ().seed ().value));
-      m_logged_sky.reset ();
-      logic ().m_day_hours =
-        clock_time (m_day.first_hour
-                      ? *m_day.first_hour
-                      : m_almanac.clock_for_sun_height (m_graphics.sun_height)
-                          .numerical_value_in (si::hour));
-      read_sky ();
-      if (m_day.turning)
-        std::cerr << "moppe: the day begins at "
-                  << m_sky.clock.numerical_value_in (si::hour)
-                  << " h and takes "
-                  << (m_day.pace > 0.0 ? 24.0 / (60.0 * m_day.pace) : 0.0)
-                  << " minutes" << std::endl;
-    }
-
-    void MoppeGame::read_sky () {
-      m_sky = m_day.turning && m_session
-                ? m_almanac.at (hours_since_midnight (logic ().m_day_hours))
-                : m_almanac.held (m_graphics.sun_height);
     }
   }
 }

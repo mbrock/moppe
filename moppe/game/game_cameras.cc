@@ -91,10 +91,11 @@ namespace moppe {
                     << " stands underground in this world\n";
           return std::nullopt;
         }
-        if (shot.sun && std::fabs (*shot.sun - m_sky.sun_height) > 0.01f)
+        if (shot.sun && std::fabs (*shot.sun - m_sky.sky ().sun_height) > 0.01f)
           std::cerr << "moppe: opening: shot " << shot.name
                     << " was composed under sun " << *shot.sun
-                    << ", the world is lit at " << m_sky.sun_height << '\n';
+                    << ", the world is lit at " << m_sky.sky ().sun_height
+                    << '\n';
       }
       return reel;
     }
@@ -138,7 +139,7 @@ namespace moppe {
                                         last.fov_deg,
                                         static_cast<float> (seconds_into_play (
                                           logic ().m_total_time)),
-                                        m_sky.sun_height)
+                                        m_sky.sky ().sun_height)
                 << '\n';
       float duration = 0.0f;
       for (const OpeningShot& shot : m_opening_shots)
@@ -168,7 +169,8 @@ namespace moppe {
       m_opening_shot_seen = m_opening.shot_index ();
       if (const std::optional<float> clock = m_opening.shot ().clock) {
         logic ().m_total_time = play_time (*clock + m_opening.shot_time ());
-        update_world_atmosphere (
+        m_sky.update (
+          logic (),
           static_cast<float> (seconds_into_play (logic ().m_total_time)));
       }
     }

@@ -592,7 +592,7 @@ namespace moppe {
       const auto trail = [&] (BoatWake& wake, const BoatPose& boat) {
         const Vec3& at = boat.position;
         wake.follow (boat, level (at), depth (at), time);
-        wake.draw (m_wake_dl, time, m_sky.daylight, level);
+        wake.draw (m_wake_dl, time, m_sky.sky ().daylight, level);
       };
       m_wake_dl.clear ();
       trail (m_boat_wake, frame.actors.boat);

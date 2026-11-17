@@ -38,7 +38,7 @@ namespace moppe {
         r,
         frame,
         static_cast<float> (seconds_into_play (logic ().m_total_time)),
-        m_sky.sun_height,
+        m_sky.sky ().sun_height,
         opening_active ());
       render::FrameParams params = frame_params_for (frame);
       if (!keeping_pace ())

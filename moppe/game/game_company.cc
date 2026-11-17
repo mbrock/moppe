@@ -30,7 +30,7 @@ namespace moppe {
       CompanionSnapshot mine;
       mine.world = this_world ();
       mine.day_hours =
-        m_day.turning ? hours_since_midnight (state.m_day_hours) : -1.0;
+        m_sky.day ().turning ? hours_since_midnight (state.m_day_hours) : -1.0;
       mine.mode = state.m_mode;
       mine.bike = vehicle_pose (session ().bike ());
       mine.jeep = car_pose (session ().jeep ());
