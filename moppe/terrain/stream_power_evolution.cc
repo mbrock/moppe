@@ -392,12 +392,12 @@ namespace moppe::terrain {
             static_cast<float> (
               (downhill_height / run).numerical_value_in (mp_units::one)) *
             terrain_slope[mp_units::one];
-          transport_capacity[cell] =
-            sediment_transport_capacity (dt,
-                                         area,
-                                         slope,
-                                         static_cast<float> (channel_share),
-                                         parameters.fluvial_transport);
+          transport_capacity[cell] = sediment_transport_capacity (
+            dt,
+            area,
+            slope,
+            static_cast<float> (channel_share) * proportion[mp_units::one],
+            parameters.fluvial_transport);
         };
 
         const auto& areas =
