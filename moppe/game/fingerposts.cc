@@ -19,106 +19,114 @@
 
 namespace moppe::game {
   namespace {
-    constexpr float k_infinite = std::numeric_limits<float>::infinity ();
+    constexpr meters_t k_infinite =
+      std::numeric_limits<float>::infinity () * u::m;
     // How near a way's end must come to another way to join it (the
     // smoothed lines stray some way from the lattice node the planner
     // joined them at, past the 30 m roads.cc snaps them back by), and how
     // near other cuts must be to be one node.
-    constexpr float k_join_m = 40.0f;
-    constexpr float k_node_m = 10.0f;
+    constexpr meters_t k_join = 40.0f * u::m;
+    constexpr meters_t k_node = 10.0f * u::m;
     // How near a place must lie to a way to stand on it.
-    constexpr float k_place_m = 25.0f;
+    constexpr meters_t k_place = 25.0f * u::m;
     // No post nearer a place than this: the place is its own landmark.
-    constexpr float k_clear_of_place_m = 60.0f;
+    constexpr meters_t k_clear_of_place = 60.0f * u::m;
     // Nor nearer another post.
-    constexpr float k_clear_of_post_m = 30.0f;
+    constexpr meters_t k_clear_of_post = 30.0f * u::m;
 
-    float post_wrap (float value, float period) {
-      return value - period * std::floor (value / period);
+    // Into the world's one copy, lane by lane (not torus.hh's wrap, which
+    // also sends a point that rounds up to the period back to zero).
+    plan_position_t post_wrap (const plan_position_t& at,
+                               const plan_extent_t& period) {
+      const Vec2& p = plan_value (at);
+      const Vec2& n = plan_value (period);
+      return plan_position (p.x () - n.x () * std::floor (p.x () / n.x ()),
+                            p.z () - n.z () * std::floor (p.z () / n.z ()));
+    }
+
+    // How far a plan step reaches, as std::hypot measures it (which
+    // rounds otherwise than cr::hypot).
+    meters_t reach_of (const plan_displacement_t& step) {
+      const Vec2& d = plan_value (step);
+      return std::hypot (d.x (), d.z ()) * u::m;
     }
 
     struct PostLine {
-      std::vector<float> x, z;
-      // Metres along from the first point.
-      std::vector<float> along;
+      std::vector<plan_position_t> points;
+      // How far along from the first point.
+      std::vector<meters_t> along;
     };
 
     struct PostCut {
       std::size_t road = 0;
       // A fractional point index.
       float at = 0.0f;
-      float x = 0.0f, z = 0.0f;
+      plan_position_t point {};
     };
 
     struct PostEdge {
       std::size_t a = 0, b = 0;
-      float metres = 0.0f;
+      meters_t length {};
       std::size_t road = 0;
-      // Away from each end, a unit vector.
-      float a_dx = 1.0f, a_dz = 0.0f;
-      float b_dx = 1.0f, b_dz = 0.0f;
+      // Away from each end.
+      plan_direction_t a_way = plan_unit_direction (Vec2 (1.0f, 0.0f));
+      plan_direction_t b_way = plan_unit_direction (Vec2 (1.0f, 0.0f));
     };
   }
 
   std::vector<Fingerpost> plan_fingerposts (const terrain::RoadNetwork& network,
-                                            float period_x,
-                                            float period_z) {
-    const auto distance = [&] (float ax, float az, float bx, float bz) {
-      return std::hypot (terrain::minimum_image_delta (ax - bx, period_x),
-                         terrain::minimum_image_delta (az - bz, period_z));
+                                            plan_extent_t period) {
+    const auto distance = [&] (const plan_position_t& a,
+                               const plan_position_t& b) {
+      return reach_of (terrain::torus_offset (b, a, period));
     };
 
     // Every way as a line within one period, read point by point.
     std::vector<PostLine> lines (network.roads.size ());
     for (std::size_t r = 0; r < network.roads.size (); ++r) {
       PostLine& line = lines[r];
-      float along = 0.0f;
+      meters_t along = meters_t::zero ();
       for (std::size_t i = 0; i < network.roads[r].points.size (); ++i) {
-        const terrain::RoadPoint& p = network.roads[r].points[i];
-        if (i > 0) {
-          const terrain::RoadPoint& q = network.roads[r].points[i - 1];
-          along += std::hypot (p.x_m - q.x_m, p.z_m - q.z_m);
-        }
-        line.x.push_back (post_wrap (p.x_m, period_x));
-        line.z.push_back (post_wrap (p.z_m, period_z));
+        const plan_position_t& p = network.roads[r].points[i];
+        if (i > 0)
+          along += reach_of (p - network.roads[r].points[i - 1]);
+        line.points.push_back (post_wrap (p, period));
         line.along.push_back (along);
       }
     }
-    const auto point_at =
-      [&] (const PostLine& line, float at, float& x, float& z) {
-        const std::size_t i =
-          std::min (static_cast<std::size_t> (at), line.x.size () - 2);
-        const float t = at - static_cast<float> (i);
-        x = post_wrap (line.x[i] + t * terrain::minimum_image_delta (
-                                         line.x[i + 1] - line.x[i], period_x),
-                       period_x);
-        z = post_wrap (line.z[i] + t * terrain::minimum_image_delta (
-                                         line.z[i + 1] - line.z[i], period_z),
-                       period_z);
-      };
+    const auto point_at = [&] (const PostLine& line, float at) {
+      const std::size_t i =
+        std::min (static_cast<std::size_t> (at), line.points.size () - 2);
+      const float t = at - static_cast<float> (i);
+      const Vec2& p = plan_value (line.points[i]);
+      const Vec2 d = plan_value (
+        terrain::torus_offset (line.points[i], line.points[i + 1], period));
+      return post_wrap (
+        plan_position (p.x () + t * d.x (), p.z () + t * d.z ()), period);
+    };
     const auto metres_at = [&] (const PostLine& line, float at) {
       const std::size_t i =
-        std::min (static_cast<std::size_t> (at), line.x.size () - 2);
+        std::min (static_cast<std::size_t> (at), line.points.size () - 2);
       const float t = at - static_cast<float> (i);
       return line.along[i] + t * (line.along[i + 1] - line.along[i]);
     };
     // The nearest point of a line to a point: its fractional index and
     // how far off it is.
-    const auto nearest = [&] (const PostLine& line, float x, float z) {
-      std::pair<float, float> best { 0.0f, k_infinite };
-      for (std::size_t i = 0; i + 1 < line.x.size (); ++i) {
-        const float ax = terrain::minimum_image_delta (x - line.x[i], period_x);
-        const float az = terrain::minimum_image_delta (z - line.z[i], period_z);
-        const float sx =
-          terrain::minimum_image_delta (line.x[i + 1] - line.x[i], period_x);
-        const float sz =
-          terrain::minimum_image_delta (line.z[i + 1] - line.z[i], period_z);
-        const float length2 = sx * sx + sz * sz;
+    const auto nearest = [&] (const PostLine& line, const plan_position_t& at) {
+      std::pair<float, meters_t> best { 0.0f, k_infinite };
+      for (std::size_t i = 0; i + 1 < line.points.size (); ++i) {
+        const Vec2 a =
+          plan_value (terrain::torus_offset (line.points[i], at, period));
+        const Vec2 s = plan_value (
+          terrain::torus_offset (line.points[i], line.points[i + 1], period));
+        const float length2 = s.x () * s.x () + s.z () * s.z ();
         const float t =
           length2 > 0.0f
-            ? std::clamp ((ax * sx + az * sz) / length2, 0.0f, 1.0f)
+            ? std::clamp (
+                (a.x () * s.x () + a.z () * s.z ()) / length2, 0.0f, 1.0f)
             : 0.0f;
-        const float off = std::hypot (ax - t * sx, az - t * sz);
+        const meters_t off =
+          std::hypot (a.x () - t * s.x (), a.z () - t * s.z ()) * u::m;
         if (off < best.second)
           best = { static_cast<float> (i) + t, off };
       }
@@ -129,32 +137,30 @@ namespace moppe::game {
     // them, and where a place stands on them.
     std::vector<PostCut> cuts;
     const auto cut = [&] (std::size_t road, float at) {
-      PostCut c { road, at };
-      point_at (lines[road], at, c.x, c.z);
-      cuts.push_back (c);
+      cuts.push_back ({ road, at, point_at (lines[road], at) });
       return cuts.size () - 1;
     };
     std::vector<std::array<std::size_t, 2>> ends (lines.size ());
     for (std::size_t r = 0; r < lines.size (); ++r) {
-      if (lines[r].x.size () < 2)
+      if (lines[r].points.size () < 2)
         continue;
       ends[r][0] = cut (r, 0.0f);
-      ends[r][1] = cut (r, static_cast<float> (lines[r].x.size () - 1));
+      ends[r][1] = cut (r, static_cast<float> (lines[r].points.size () - 1));
     }
     // Each join with the end that made it, which are one node however
     // far apart.
     std::vector<std::pair<std::size_t, std::size_t>> joins;
     for (std::size_t r = 0; r < lines.size (); ++r) {
-      if (lines[r].x.size () < 2)
+      if (lines[r].points.size () < 2)
         continue;
       for (const bool back : { false, true }) {
-        const float ex = back ? lines[r].x.back () : lines[r].x.front ();
-        const float ez = back ? lines[r].z.back () : lines[r].z.front ();
+        const plan_position_t end =
+          back ? lines[r].points.back () : lines[r].points.front ();
         for (std::size_t s = 0; s < lines.size (); ++s) {
-          if (s == r || lines[s].x.size () < 2)
+          if (s == r || lines[s].points.size () < 2)
             continue;
-          const auto [at, off] = nearest (lines[s], ex, ez);
-          if (off < k_join_m)
+          const auto [at, off] = nearest (lines[s], end);
+          if (off < k_join)
             joins.emplace_back (cut (s, at), ends[r][back ? 1 : 0]);
         }
       }
@@ -162,20 +168,19 @@ namespace moppe::game {
     std::vector<std::size_t> place_cut (network.places.size (),
                                         static_cast<std::size_t> (-1));
     for (std::size_t p = 0; p < network.places.size (); ++p) {
-      const float px = post_wrap (network.places[p].x_m, period_x);
-      const float pz = post_wrap (network.places[p].z_m, period_z);
+      const plan_position_t place = post_wrap (network.places[p].at, period);
       std::size_t best_road = 0;
-      std::pair<float, float> best { 0.0f, k_infinite };
+      std::pair<float, meters_t> best { 0.0f, k_infinite };
       for (std::size_t r = 0; r < lines.size (); ++r) {
-        if (lines[r].x.size () < 2)
+        if (lines[r].points.size () < 2)
           continue;
-        const auto found = nearest (lines[r], px, pz);
+        const auto found = nearest (lines[r], place);
         if (found.second < best.second) {
           best = found;
           best_road = r;
         }
       }
-      if (best.second < k_place_m)
+      if (best.second < k_place)
         place_cut[p] = cut (best_road, best.first);
     }
 
@@ -187,7 +192,7 @@ namespace moppe::game {
     };
     for (std::size_t i = 0; i < cuts.size (); ++i)
       for (std::size_t j = i + 1; j < cuts.size (); ++j)
-        if (distance (cuts[i].x, cuts[i].z, cuts[j].x, cuts[j].z) < k_node_m)
+        if (distance (cuts[i].point, cuts[j].point) < k_node)
           parent[root (j)] = root (i);
     for (const auto& [join, end] : joins)
       parent[root (end)] = root (join);
@@ -207,7 +212,7 @@ namespace moppe::game {
         // rather than at the end of one that meets it.
         const PostCut& c = cuts[i];
         if (c.at > 0.0f &&
-            c.at < static_cast<float> (lines[c.road].x.size () - 1))
+            c.at < static_cast<float> (lines[c.road].points.size () - 1))
           node_cut[numbered[r]] = i;
       }
     }
@@ -231,33 +236,24 @@ namespace moppe::game {
           a, b, metres_at (line, to) - metres_at (line, from), r
         };
         // The way's heading some fifteen metres in from each end.
-        const auto heading =
-          [&] (float start, float sign, float& dx, float& dz) {
-            const float s = metres_at (line, start);
-            const float reach = std::min (15.0f, 0.5f * edge.metres);
-            float at = start;
-            while (sign > 0.0f ? at < to : at > from) {
-              if (std::fabs (metres_at (line, at) - s) >= reach)
-                break;
-              at += 0.25f * sign;
-            }
-            at = std::clamp (at, from, to);
-            float sx, sz, ex, ez;
-            point_at (line, start, sx, sz);
-            point_at (line, at, ex, ez);
-            dx = terrain::minimum_image_delta (ex - sx, period_x);
-            dz = terrain::minimum_image_delta (ez - sz, period_z);
-            const float n = std::hypot (dx, dz);
-            if (n > 1e-4f) {
-              dx /= n;
-              dz /= n;
-            } else {
-              dx = 1.0f;
-              dz = 0.0f;
-            }
-          };
-        heading (from, 1.0f, edge.a_dx, edge.a_dz);
-        heading (to, -1.0f, edge.b_dx, edge.b_dz);
+        const auto heading = [&] (float start, float sign) {
+          const meters_t s = metres_at (line, start);
+          const meters_t reach = std::min (15.0f * u::m, 0.5f * edge.length);
+          float at = start;
+          while (sign > 0.0f ? at < to : at > from) {
+            if (abs (metres_at (line, at) - s) >= reach)
+              break;
+            at += 0.25f * sign;
+          }
+          at = std::clamp (at, from, to);
+          const Vec2 d = plan_value (terrain::torus_offset (
+            point_at (line, start), point_at (line, at), period));
+          const float n = std::hypot (d.x (), d.z ());
+          return plan_unit_direction (n > 1e-4f ? Vec2 (d.x () / n, d.z () / n)
+                                                : Vec2 (1.0f, 0.0f));
+        };
+        edge.a_way = heading (from, 1.0f);
+        edge.b_way = heading (to, -1.0f);
         edges.push_back (edge);
       }
     }
@@ -287,26 +283,21 @@ namespace moppe::game {
       const PostCut& here = cuts[node_cut[n]];
       bool clear = true;
       for (const terrain::RoadPlace& place : network.places)
-        clear = clear && distance (here.x,
-                                   here.z,
-                                   post_wrap (place.x_m, period_x),
-                                   post_wrap (place.z_m, period_z)) >=
-                           k_clear_of_place_m;
+        clear = clear && distance (here.point, post_wrap (place.at, period)) >=
+                           k_clear_of_place;
       for (const Fingerpost& post : posts)
         clear =
-          clear &&
-          distance (here.x, here.z, post.junction_x_m, post.junction_z_m) >=
-            k_clear_of_post_m;
+          clear && distance (here.point, post.junction) >= k_clear_of_post;
       if (!clear)
         continue;
 
       // The shortest ways out from here, and which arm each leaves by.
-      std::vector<float> metres (nodes, k_infinite);
+      std::vector<meters_t> metres (nodes, k_infinite);
       std::vector<std::size_t> by (nodes, static_cast<std::size_t> (-1));
-      using Entry = std::pair<float, std::size_t>;
+      using Entry = std::pair<meters_t, std::size_t>;
       std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
-      metres[n] = 0.0f;
-      open.push ({ 0.0f, n });
+      metres[n] = meters_t::zero ();
+      open.push ({ meters_t::zero (), n });
       while (!open.empty ()) {
         const auto [reached, node] = open.top ();
         open.pop ();
@@ -314,7 +305,7 @@ namespace moppe::game {
           continue;
         for (const std::size_t e : touching[node]) {
           const std::size_t next = edges[e].a == node ? edges[e].b : edges[e].a;
-          const float further = reached + edges[e].metres;
+          const meters_t further = reached + edges[e].length;
           if (further < metres[next]) {
             metres[next] = further;
             by[next] = node == n ? e : by[node];
@@ -324,22 +315,20 @@ namespace moppe::game {
       }
 
       Fingerpost post;
-      post.junction_x_m = here.x;
-      post.junction_z_m = here.z;
+      post.junction = here.point;
       for (const std::size_t e : ways) {
         Fingerpost::Arm arm;
         const PostEdge& edge = edges[e];
-        arm.direction_x = edge.a == n ? edge.a_dx : edge.b_dx;
-        arm.direction_z = edge.a == n ? edge.a_dz : edge.b_dz;
+        arm.direction = edge.a == n ? edge.a_way : edge.b_way;
         arm.kind = network.roads[edge.road].kind;
-        arm.abandoned = network.roads[edge.road].abandoned_years_ago > 0.0f;
+        arm.abandoned = network.roads[edge.road].abandoned > age_t::zero ();
         for (std::size_t p = 0; p < network.places.size (); ++p)
           if (place_node[p] != static_cast<std::size_t> (-1) &&
               by[place_node[p]] == e)
             arm.boards.push_back ({ p, metres[place_node[p]] });
         if (arm.boards.empty ())
           continue;
-        std::ranges::sort (arm.boards, {}, &Fingerpost::Board::metres);
+        std::ranges::sort (arm.boards, {}, &Fingerpost::Board::distance);
         if (arm.boards.size () > 2)
           arm.boards.resize (2);
         post.arms.push_back (std::move (arm));
@@ -348,19 +337,20 @@ namespace moppe::game {
         continue;
 
       // The post stands in the widest gap between the ways, off the tread.
-      std::vector<float> angles;
+      std::vector<radians_t> angles;
       for (const std::size_t e : ways) {
         const PostEdge& edge = edges[e];
-        angles.push_back (edge.a == n ? std::atan2 (edge.a_dz, edge.a_dx)
-                                      : std::atan2 (edge.b_dz, edge.b_dx));
+        const Vec2& way = plan_value (edge.a == n ? edge.a_way : edge.b_way);
+        angles.push_back (std::atan2 (way.z (), way.x ()) * u::rad);
       }
       std::ranges::sort (angles);
-      float widest = -1.0f, middle = 0.0f;
+      radians_t widest = -1.0f * u::rad, middle = radians_t::zero ();
       for (std::size_t i = 0; i < angles.size (); ++i) {
-        const float a = angles[i];
-        const float b = i + 1 < angles.size ()
-                          ? angles[i + 1]
-                          : angles.front () + 2.0f * std::numbers::pi_v<float>;
+        const radians_t a = angles[i];
+        const radians_t b =
+          i + 1 < angles.size ()
+            ? angles[i + 1]
+            : angles.front () + 2.0f * std::numbers::pi_v<float> * u::rad;
         if (b - a > widest) {
           widest = b - a;
           middle = 0.5f * (a + b);
@@ -368,11 +358,12 @@ namespace moppe::game {
       }
       // Clear of a cart road's carriageway and shoulder, and of its
       // batter, unless the gap is narrow and the way beside it close.
-      const float off = 6.5f / std::max (0.6f, std::sin (0.5f * widest));
-      post.x_m = post_wrap (here.x + std::min (off, 11.0f) * std::cos (middle),
-                            period_x);
-      post.z_m = post_wrap (here.z + std::min (off, 11.0f) * std::sin (middle),
-                            period_z);
+      const meters_t off =
+        6.5f * u::m / std::max (0.6f, std::sin (0.5f * radians_value (widest)));
+      const plan_direction_t out = plan_unit_direction (Vec2 (
+        std::cos (radians_value (middle)), std::sin (radians_value (middle))));
+      post.at = post_wrap (
+        here.point + along (out, std::min (off, 11.0f * u::m)), period);
       posts.push_back (std::move (post));
     }
     return posts;
@@ -563,12 +554,11 @@ namespace moppe::game {
     }
   }
 
-  FingerpostSigns
-  make_fingerposts (render::Renderer& renderer,
-                    const render::Font& font,
-                    std::span<const Fingerpost> posts,
-                    std::span<const std::string> names,
-                    const std::function<float (float x, float z)>& ground) {
+  FingerpostSigns make_fingerposts (render::Renderer& renderer,
+                                    const render::Font& font,
+                                    std::span<const Fingerpost> posts,
+                                    std::span<const std::string> names,
+                                    const terrain::ElevationField& ground) {
     FingerpostSigns signs;
     // The boards, one to each place an arm leads to, topmost first.
     struct Placed {
@@ -584,7 +574,7 @@ namespace moppe::game {
     const Vec3 up (0, 1, 0);
     for (const Fingerpost& post : posts) {
       int row = 0;
-      const Vec3 foot (post.x_m, ground (post.x_m, post.z_m), post.z_m);
+      const position_t foot = terrain::at_elevation (post.at, ground (post.at));
       // Every arm's nearest place first, then the second where there is
       // room on the post.
       for (std::size_t rank = 0; rank < 2; ++rank)
@@ -594,14 +584,15 @@ namespace moppe::game {
             continue;
           Placed p { &post, &arm, &arm.boards[rank], row++ };
           p.name = names[p.board->place];
-          p.distance = fingerpost_distance (p.board->metres);
+          p.distance = fingerpost_distance (p.board->distance);
           p.length = board_length (font, p.name, p.distance);
-          p.along = Vec3 (arm.direction_x, 0.0f, arm.direction_z);
+          p.along = lift (plan_value (arm.direction));
           // To the left of the way the arm points: the face whose reader
           // sees the tip on the right.
           p.face = Vec3 (-p.along[2], 0.0f, p.along[0]);
-          p.middle = foot + up * (k_post_top - 0.2f -
-                                  k_board_step * static_cast<float> (p.row));
+          p.middle = position_value (foot) +
+                     up * (k_post_top - 0.2f -
+                           k_board_step * static_cast<float> (p.row));
           placed.push_back (std::move (p));
         }
     }
@@ -707,12 +698,13 @@ namespace moppe::game {
     dl.begin (render::Prim::Triangles);
     dl.color (0.43f, 0.37f, 0.29f, 1.0f);
     for (const Fingerpost& post : posts) {
-      const Vec3 foot (post.x_m, ground (post.x_m, post.z_m) - 0.3f, post.z_m);
+      // Sunk a little into the ground.
+      const Vec3 foot = position_value (
+        terrain::at_elevation (post.at, ground (post.at) - 0.3f * u::m));
       // Square to the first arm, as it would have been set.
-      const Vec3 e = post.arms.empty () ? Vec3 (1, 0, 0)
-                                        : Vec3 (post.arms.front ().direction_x,
-                                                0.0f,
-                                                post.arms.front ().direction_z);
+      const Vec3 e = post.arms.empty ()
+                       ? Vec3 (1, 0, 0)
+                       : lift (plan_value (post.arms.front ().direction));
       const Vec3 f (-e[2], 0.0f, e[0]);
       const float top = k_post_top + 0.3f;
       const Vec3 corner[4] = {
@@ -740,7 +732,8 @@ namespace moppe::game {
     return signs;
   }
 
-  std::string fingerpost_distance (float metres) {
+  std::string fingerpost_distance (meters_t distance) {
+    const float metres = meters_value (distance);
     if (metres < 1000.0f)
       return std::to_string (
                static_cast<int> (std::lround (metres / 10.0f) * 10)) +
@@ -750,9 +743,8 @@ namespace moppe::game {
   }
 
   void RoadSigns::plan (const terrain::RoadNetwork& network,
-                        float period_x,
-                        float period_z) {
-    m_posts = plan_fingerposts (network, period_x, period_z);
+                        plan_extent_t period) {
+    m_posts = plan_fingerposts (network, period);
     std::cerr << "moppe: fingerposts: " << m_posts.size () << '\n';
     m_made = false;
     m_mesh.reset ();
@@ -762,7 +754,7 @@ namespace moppe::game {
   void RoadSigns::draw (render::Renderer& r,
                         const render::Font* hud_font,
                         std::span<const std::string> names,
-                        const std::function<float (float x, float z)>& ground) {
+                        const terrain::ElevationField& ground) {
     if (!m_made && hud_font) {
       m_made = true;
       if (!m_font)

@@ -68,10 +68,4 @@ namespace moppe::game::model_mesh {
                         cross (direction_value (ahead), direction_value (left)),
                         direction_value (ahead));
   }
-
-  Mat4 body_frame (const Vec3& position, const Vec3& forward, const Vec3& up) {
-    return body_frame (moppe::position (position),
-                       unit_direction (forward),
-                       unit_direction (up));
-  }
 }

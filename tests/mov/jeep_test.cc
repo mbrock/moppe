@@ -227,8 +227,8 @@ MOPPE_TEST (the_bridge_railing_keeps_a_jeep_on_the_deck) {
   terrain::RoadNetwork network;
   terrain::Road road { .kind = terrain::Road::Kind::Road };
   for (float z = 40.0f; z <= 300.0f; z += 4.0f) {
-    road.points.push_back ({ 160.0f, z });
-    road.heights.push_back (10.0f);
+    road.points.push_back (plan_position (160.0f, z));
+    road.heights.push_back (terrain::surface_elevation_point (10.0f * u::m));
     if (z <= 140.0f)
       road.bridges = { { static_cast<std::uint32_t> (road.points.size () - 1),
                          0 } };
@@ -237,7 +237,8 @@ MOPPE_TEST (the_bridge_railing_keeps_a_jeep_on_the_deck) {
         static_cast<std::uint32_t> (road.points.size () - 1);
   }
   network.roads = { road };
-  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  const terrain::RoadSurface roads (network,
+                                    plan_extent (320.0f * u::m, 320.0f * u::m));
   mov::attach_roads (valley, &roads);
   mov::Car jeep (valley, mov::jeep_rig);
   jeep.place (Vec3 (160, 0, 120), Vec3 (0, 0, 1));
@@ -257,7 +258,8 @@ MOPPE_TEST (the_bridge_railing_keeps_a_jeep_on_the_deck) {
   MOPPE_CHECK (jeep.position ()[2] > 170.0f);
   MOPPE_CHECK (lowest >
                10.0f + meters_value (mov::jeep_rig.wheel_radius) - 0.25f);
-  MOPPE_CHECK (widest < roads.formation ().deck_half_width + 0.5f);
+  MOPPE_CHECK (widest <
+               meters_value (roads.formation ().deck_half_width) + 0.5f);
 }
 
 // A paved lane along an embankment two metres over the fields has
@@ -276,14 +278,17 @@ MOPPE_TEST (a_guardrail_keeps_a_jeep_on_the_embankment) {
   terrain::RoadNetwork network;
   terrain::Road road { .kind = terrain::Road::Kind::Road, .traffic = 1 };
   for (float z = 20.0f; z <= 300.0f; z += 4.0f) {
-    road.points.push_back ({ 160.0f, z });
-    road.heights.push_back (12.0f);
+    road.points.push_back (plan_position (160.0f, z));
+    road.heights.push_back (terrain::surface_elevation_point (12.0f * u::m));
   }
   network.roads = { road };
   const auto drive = [&] (bool guarded) {
-    terrain::RoadSurface roads (network, 320.0f, 320.0f);
+    terrain::RoadSurface roads (network,
+                                plan_extent (320.0f * u::m, 320.0f * u::m));
     if (guarded)
-      roads.place_guardrails (network, [] (float, float) { return 10.0f; });
+      roads.place_guardrails (network, [] (plan_position_t) {
+        return terrain::surface_elevation_point (10.0f * u::m);
+      });
     mov::attach_roads (fields, &roads);
     mov::Car jeep (fields, mov::jeep_rig);
     jeep.place (Vec3 (160, 0, 60), Vec3 (0, 0, 1));
@@ -304,5 +309,5 @@ MOPPE_TEST (a_guardrail_keeps_a_jeep_on_the_embankment) {
   MOPPE_CHECK (none == 0);
   MOPPE_CHECK (rails == 2);
   MOPPE_CHECK (loose > 6.0f);
-  MOPPE_CHECK (kept < terrain::RoadSurface::guardrail_offset_m);
+  MOPPE_CHECK (kept < meters_value (terrain::RoadSurface::guardrail_offset));
 }

@@ -72,8 +72,6 @@ namespace moppe::game::model_mesh {
   Mat4 body_frame (const position_t& position,
                    const direction_t& forward,
                    const direction_t& up);
-  // The same for callers still holding plain vectors (BusPose).
-  Mat4 body_frame (const Vec3& position, const Vec3& forward, const Vec3& up);
 }
 
 #endif

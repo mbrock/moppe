@@ -238,23 +238,17 @@ namespace moppe::game {
                                          const terrain::TrailNetwork& trails,
                                          const map::SurfaceReadings& readings) {
     const auto& [standing_water, lakes, drainage, rivers] = hydrology;
-    const auto numbers = [] (const auto& column) {
-      using Quantity = std::ranges::range_value_t<decltype (column)>;
-      static_assert (sizeof (Quantity) == sizeof (float));
-      return std::span<const float> (
-        reinterpret_cast<const float*> (column.data ()), column.size ());
-    };
     return terrain::plan_roads (
       geometry.domain (),
       spatial::get<terrain::surface_elevation> (geometry),
       standing_water,
       drainage,
-      { .forest_cover = numbers (spatial::get<map::forest_cover> (readings)),
-        .mire = numbers (spatial::get<map::sphagnum_abundance> (readings)),
-        .wetness = numbers (spatial::get<terrain::soil_wetness> (readings)) },
+      { .forest_cover = spatial::get<map::forest_cover> (readings),
+        .mire = spatial::get<map::sphagnum_abundance> (readings),
+        .wetness = spatial::get<terrain::soil_wetness> (readings) },
       rivers.minimum_area,
       trails.plan.home_base,
-      recipe.water_datum ().numerical_value_in (u::m),
+      terrain::surface_elevation_point (recipe.water_datum ()),
       recipe.seed ().value ^ 0x5d1c0a7bU);
   }
 
@@ -273,9 +267,12 @@ namespace moppe::game {
                                std::get<terrain::FloodField> (hydrology),
                                std::get<terrain::DrainageGraph> (hydrology));
     std::cerr << "moppe: roads: " << roads.places.size () << " places, "
-              << roads.roads.size () << " ways, " << built.cut_m3 << " m3 cut, "
-              << built.fill_m3 << " m3 filled, " << built.steep_points << " of "
-              << built.points << " points steeper than the road's grade";
+              << roads.roads.size () << " ways, "
+              << built.cut.numerical_value_in (u::m * u::m * u::m)
+              << " m3 cut, "
+              << built.fill.numerical_value_in (u::m * u::m * u::m)
+              << " m3 filled, " << built.steep_points << " of " << built.points
+              << " points steeper than the road's grade";
     for (const terrain::Road& road : roads.roads)
       if (road.loop)
         std::cerr << ", a loop round the world through the landing";
@@ -285,8 +282,9 @@ namespace moppe::game {
     terrain::TrailUseMap use = trails.use;
     auto& tread = spatial::get<map::trail_influence> (use);
     for (std::size_t cell = 0; cell < tread.size (); ++cell)
-      tread[cell] = std::max (
-        tread[cell], built.influence[cell] * map::trail_influence[one]);
+      tread[cell] =
+        std::max (tread[cell],
+                  quantity_cast<map::trail_influence> (built.influence[cell]));
     std::tie (water, readings) =
       analyze_surface (geometry, recipe, hydrology, use);
     return roads;
@@ -334,10 +332,9 @@ namespace moppe::game {
         m_hydrology (std::move (hydrology)),
         m_water_surface (std::move (water)), m_trails (std::move (trails)),
         m_readings (std::move (readings)), m_roads (std::move (roads)),
-        m_road_surface (
-          m_roads,
-          m_surface.domain ().period_x ().numerical_value_in (u::m),
-          m_surface.domain ().period_z ().numerical_value_in (u::m)),
+        m_road_surface (m_roads,
+                        plan_extent (m_surface.domain ().period_x (),
+                                     m_surface.domain ().period_z ())),
         m_forest (std::move (forest)) {
     const float period_x =
       m_surface.domain ().period_x ().numerical_value_in (u::m);
@@ -346,11 +343,12 @@ namespace moppe::game {
     const auto wrap = [] (float v, float period) {
       return v - period * std::floor (v / period);
     };
-    m_road_surface.place_guardrails (m_roads, [&] (float x, float z) {
-      return terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (
-          m_surface,
-          position (Vec3 (wrap (x, period_x), 0.0f, wrap (z, period_z)))));
+    m_road_surface.place_guardrails (m_roads, [&] (plan_position_t at) {
+      const Vec2& p = plan_value (at);
+      return spatial::sample<terrain::surface_elevation> (
+        m_surface,
+        position (
+          Vec3 (wrap (p.x (), period_x), 0.0f, wrap (p.z (), period_z))));
     });
     // Where the longest stands, to aim a camera at.
     std::size_t posts = 0;
@@ -364,9 +362,12 @@ namespace moppe::game {
               << " runs, " << posts << " posts";
     if (longest) {
       const terrain::Guardrail::Post& end = longest->posts.front ();
-      std::cerr << "; the longest begins at " << wrap (end.x_m, period_x) << ' '
-                << end.rail_m << ' ' << wrap (end.z_m, period_z)
-                << " facing out " << end.out_x << ' ' << end.out_z;
+      const Vec2& at = plan_value (end.at);
+      const Vec2& out = plan_value (end.out);
+      std::cerr << "; the longest begins at " << wrap (at.x (), period_x) << ' '
+                << terrain::surface_elevation_value (end.rail) << ' '
+                << wrap (at.z (), period_z) << " facing out " << out.x () << ' '
+                << out.z ();
     }
     std::cerr << '\n';
   }

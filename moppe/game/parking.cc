@@ -395,28 +395,22 @@ namespace moppe::game {
         continue;
       for (std::size_t p = 1; p + 1 < road.points.size (); p += 2) {
         const Vec3 a = near_spawn (
-          lot.ground,
-          lot.spawn,
-          Vec3 (road.points[p - 1].x_m, 0.0f, road.points[p - 1].z_m));
+          lot.ground, lot.spawn, lift (plan_value (road.points[p - 1])));
         const Vec3 b = near_spawn (
-          lot.ground,
-          lot.spawn,
-          Vec3 (road.points[p + 1].x_m, 0.0f, road.points[p + 1].z_m));
+          lot.ground, lot.spawn, lift (plan_value (road.points[p + 1])));
         Vec3 along (b[0] - a[0], 0.0f, b[2] - a[2]);
         if (length2 (along) < 1e-4f)
           continue;
         along = normalized (along);
-        const Vec3 mid =
-          near_spawn (lot.ground,
-                      lot.spawn,
-                      Vec3 (road.points[p].x_m, 0.0f, road.points[p].z_m));
+        const Vec3 mid = near_spawn (
+          lot.ground, lot.spawn, lift (plan_value (road.points[p])));
         const float r = from_spawn (lot.spawn, mid);
         if (r < 150.0f || r > 1200.0f)
           continue;
         // Nearest the trailhead wins, a road still in use before one
         // gone over.
-        const float score = std::abs (r - 300.0f) +
-                            (road.abandoned_years_ago > 0.0f ? 600.0f : 0.0f);
+        const float score =
+          std::abs (r - 300.0f) + (road.abandoned > age_t {} ? 600.0f : 0.0f);
         if (score >= best_score)
           continue;
         const Vec3 across (along[2], 0.0f, -along[0]);
@@ -607,7 +601,7 @@ namespace moppe::game {
       if (place.kind != Kind::LakeOutlet && place.kind != Kind::Landing)
         continue;
       const Vec3 at =
-        near_spawn (lot.ground, lot.spawn, Vec3 (place.x_m, 0.0f, place.z_m));
+        near_spawn (lot.ground, lot.spawn, lift (plan_value (place.at)));
       const float r = from_spawn (lot.spawn, at);
       if (r > 3000.0f || (hamlet && r >= from_spawn (lot.spawn, *hamlet)))
         continue;

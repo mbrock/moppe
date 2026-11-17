@@ -142,9 +142,8 @@ namespace moppe::game {
                     seconds_t time,
                     std::optional<Outfit> passenger) {
     const BoatMeshes& meshes = boat_meshes (r);
-    const Mat4 frame = model_mesh::body_frame (position_value (boat.position),
-                                               direction_value (boat.forward),
-                                               direction_value (boat.up));
+    const Mat4 frame =
+      model_mesh::body_frame (boat.position, boat.forward, boat.up);
     const Mat4 tail = tail_frame (boat, frame);
     if (passenger)
       figure::draw (dl, pose_passenger (frame), *passenger);

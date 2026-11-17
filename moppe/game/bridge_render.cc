@@ -134,7 +134,7 @@ namespace moppe::game {
                  at_height (into_period (at, m_period), 0.0f * u::m))) *
              u::m;
     };
-    const meters_t half = formation.deck_half_width * u::m;
+    const meters_t half = formation.deck_half_width;
     const direction_t up = unit_direction (Vec3 (0.0f, 1.0f, 0.0f));
     std::uint32_t seed = 0;
     for (const terrain::Road& road : roads.roads)
@@ -147,8 +147,7 @@ namespace moppe::game {
         // The road's points are raw storage (roads.hh): each becomes a
         // place here.
         const auto at = [&] (std::size_t k) {
-          return position (
-            Vec3 (road.points[k].x_m, road.heights[k], road.points[k].z_m));
+          return terrain::at_elevation (road.points[k], road.heights[k]);
         };
         const position_t origin = at (first);
         // Unwrapped, the line runs on past the period; the mesh is built
@@ -438,17 +437,19 @@ namespace moppe::game {
       // way away from the road.
       const auto line = [&] (std::size_t i, const plan_position_t& origin) {
         const terrain::Guardrail::Post& p = run.posts[i];
+        const Vec2& at = plan_value (p.at);
         const Vec2& o = plan_value (origin);
-        return displacement (Vec3 (p.x_m - o.x (), p.rail_m, p.z_m - o.z ()));
+        return displacement (Vec3 (at.x () - o.x (),
+                                   terrain::surface_elevation_value (p.rail),
+                                   at.z () - o.z ()));
       };
       const auto out = [&] (std::size_t i) {
-        return unit_direction (
-          Vec3 (run.posts[i].out_x, 0.0f, run.posts[i].out_z));
+        const Vec2& o = plan_value (run.posts[i].out);
+        return unit_direction (Vec3 (o.x (), 0.0f, o.z ()));
       };
       for (std::size_t first = 0; first + 1 < n; first += spans_a_mesh) {
         const std::size_t last = std::min (n - 1, first + spans_a_mesh);
-        const plan_position_t origin =
-          plan_position (run.posts[first].x_m, run.posts[first].z_m);
+        const plan_position_t origin = run.posts[first].at;
         render::DrawList dl;
         dl.lit (true);
         dl.fogged (true);
@@ -475,7 +476,9 @@ namespace moppe::game {
           const Vec3 back = displacement_value (p - line (inner, origin));
           const direction_t away =
             unit_direction (normalized (Vec3 (back[0], 0.0f, back[2])));
-          const meters_t buried = run.posts[end].foot_m * u::m - 0.12f * u::m;
+          const meters_t buried =
+            terrain::surface_elevation_value (run.posts[end].foot) * u::m -
+            0.12f * u::m;
           const meters_t p_y = displacement_value (p)[1] * u::m;
           const displacement_t mid = p + along (away, 2.0f * u::m) +
                                      along (o, 0.15f * u::m) +
@@ -493,7 +496,9 @@ namespace moppe::game {
           const direction_t o = out (i);
           const direction_t t =
             unit_direction (cross (direction_value (up), direction_value (o)));
-          const meters_t foot = run.posts[i].foot_m * u::m - 0.4f * u::m;
+          const meters_t foot =
+            terrain::surface_elevation_value (run.posts[i].foot) * u::m -
+            0.4f * u::m;
           const meters_t top = displacement_value (p)[1] * u::m + 0.12f * u::m;
           const Vec3 base = displacement_value (p + along (o, 0.17f * u::m));
           box (dl,
@@ -551,10 +556,5 @@ namespace moppe::game {
         Mat4::translation (position_value (at_height (image, 0.0f * u::m))),
         ++motion);
     }
-  }
-
-  void BridgeSurface::draw (render::Renderer& renderer,
-                            const Vec3& camera) const {
-    draw (renderer, position (camera));
   }
 }

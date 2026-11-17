@@ -87,8 +87,7 @@ namespace moppe {
                      static_cast<std::uint32_t> (m_recipe.seed ().value));
       const terrain::TerrainDomain& domain = surface ().domain ();
       m_signs.plan (m_generated_world->roads (),
-                    domain.period_x ().numerical_value_in (u::m),
-                    domain.period_z ().numerical_value_in (u::m));
+                    plan_extent (domain.period_x (), domain.period_z ()));
     }
 
     void MoppeGame::prepare_world_water () {
@@ -424,16 +423,18 @@ namespace moppe {
                        m_graphics,
                        &generated_world ().water_surface ());
       const terrain::RoadSurface& roads = generated_world ().road_surface ();
-      r.set_roads ({ .segment_rows = roads.segment_rows (),
-                     .index = roads.index (),
-                     .buckets_x = roads.buckets_x (),
-                     .buckets_z = roads.buckets_z (),
-                     .half_width = roads.formation ().half_width,
-                     .shoulder = roads.formation ().shoulder,
-                     .crown = roads.formation ().crown,
-                     .blend = terrain::RoadSurface::blend_m,
-                     .cut_slope = roads.formation ().cut_slope,
-                     .fill_slope = roads.formation ().fill_slope });
+      r.set_roads (
+        { .segment_rows = roads.segment_rows (),
+          .index = roads.index (),
+          .buckets_x = roads.buckets_x (),
+          .buckets_z = roads.buckets_z (),
+          .half_width = meters_value (roads.formation ().half_width),
+          .shoulder = meters_value (roads.formation ().shoulder),
+          .crown = roads.formation ().crown.numerical_value_in (one),
+          .blend = meters_value (terrain::RoadSurface::blend),
+          .cut_slope = roads.formation ().cut_slope.numerical_value_in (one),
+          .fill_slope =
+            roads.formation ().fill_slope.numerical_value_in (one) });
       // The typed water and ground presentations can upload only after
       // set_terrain has established the texture dimensions.
       upload_water (r,

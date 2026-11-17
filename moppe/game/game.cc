@@ -140,10 +140,11 @@ namespace moppe {
       // Ours bump into the other player's machines and into the buses.
       std::vector<MachineBody> strangers = m_company.strangers;
       for (const BusPose& bus : m_places.bus.where (bus_time (logic ())))
-        strangers.push_back (bus_body (bus,
-                                       session ().subject_position (),
-                                       m_places.layout.period_x,
-                                       m_places.layout.period_z));
+        strangers.push_back (
+          bus_body (bus,
+                    position (session ().subject_position ()),
+                    plan_extent (m_places.layout.period_x * u::m,
+                                 m_places.layout.period_z * u::m)));
       const GameSessionAdvanceResult advance =
         advance_game_session (world (),
                               surface (),

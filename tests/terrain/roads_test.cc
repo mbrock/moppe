@@ -9,6 +9,11 @@
 #include <vector>
 
 using namespace moppe::terrain;
+using moppe::meters_value;
+using moppe::plan_extent;
+using moppe::plan_position;
+using moppe::plan_position_t;
+using moppe::plan_value;
 
 namespace {
   // Two kilometres of level country 10 m above the sea. The trailhead lies
@@ -19,6 +24,30 @@ namespace {
   constexpr std::size_t side = 100;
   constexpr float spacing = 20.0f;
   constexpr float sea_level = 50.0f;
+
+  // The tests' plan extents, lengths, and ages, in metres and years.
+  moppe::plan_extent_t square (float period) {
+    return plan_extent (period * mp_units::si::metre,
+                        period * mp_units::si::metre);
+  }
+
+  SurfaceElevation elevation (float metres) {
+    return surface_elevation_point (metres * mp_units::si::metre);
+  }
+
+  float years (moppe::age_t age) {
+    return age.numerical_value_in (mp_units::astronomy::Julian_year);
+  }
+
+  float number (auto ratio) {
+    return ratio.numerical_value_in (mp_units::one);
+  }
+
+  // The road surface's ground over a field at `field` metres, in metres.
+  float ground_at (const RoadSurface& surface, float x, float z, float field) {
+    return surface_elevation_value (
+      surface.ground (plan_position (x, z), elevation (field)));
+  }
 
   // Shelving gently, so that only the depth of the water keeps a road out.
   float strip_depth (float across, float z) {
@@ -54,11 +83,15 @@ MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
   const DrainageGraph drainage = analyze_drainage (terrain);
   // Two patches of mire straddle the trailhead's way north and south,
   // leaving narrow dry ground either side.
-  std::vector<float> mire (side * side, 0.0f);
+  using Mire =
+    mp_units::quantity<moppe::map::sphagnum_abundance[mp_units::one], float>;
+  std::vector<Mire> mire (side * side,
+                          0.0f * moppe::map::sphagnum_abundance[mp_units::one]);
   for (std::size_t z = 0; z < side; ++z)
     for (std::size_t x = 15; x <= 25; ++x)
       if ((z >= 30 && z <= 45) || (z >= 55 && z <= 70))
-        mire[z * side + x] = 1.0f;
+        mire[z * side + x] =
+          1.0f * moppe::map::sphagnum_abundance[mp_units::one];
   const RoadNetwork network =
     plan_roads (terrain.domain (),
                 elevations (terrain),
@@ -67,7 +100,7 @@ MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
                 { .mire = mire },
                 1.0e9f * mp_units::si::metre * mp_units::si::metre,
                 CellIndex { static_cast<std::uint32_t> (50 * side + 20) },
-                sea_level,
+                elevation (sea_level),
                 7);
 
   MOPPE_CHECK (!network.places.empty ());
@@ -85,15 +118,16 @@ MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
   for (const Road& road : network.roads) {
     if (road.kind != Road::Kind::Road)
       continue;
-    for (const RoadPoint& point : road.points) {
+    for (const plan_position_t& point : road.points) {
       const auto cell = [&] (float m) {
         return static_cast<std::size_t> (
                  std::lround (wrap_coordinate (m, period) / spacing)) %
                side;
       };
-      const std::size_t at = cell (point.z_m) * side + cell (point.x_m);
+      const std::size_t at =
+        cell (plan_value (point).z ()) * side + cell (plan_value (point).x ());
       deepest = std::max (deepest, flood.water_depth_m (at));
-      boggiest = std::max (boggiest, mire[at]);
+      boggiest = std::max (boggiest, number (mire[at]));
     }
   }
   MOPPE_CHECK (deepest < 3.0f);
@@ -109,19 +143,19 @@ MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
       continue;
     ++loops;
     MOPPE_CHECK (paved[r]);
-    const RoadPoint first = road.points.front ();
-    const RoadPoint last = road.points.back ();
-    const float laps_x = std::fabs (last.x_m - first.x_m) / period;
-    const float laps_z = std::fabs (last.z_m - first.z_m) / period;
+    const moppe::Vec2 first = plan_value (road.points.front ());
+    const moppe::Vec2 last = plan_value (road.points.back ());
+    const float laps_x = std::fabs (last.x () - first.x ()) / period;
+    const float laps_z = std::fabs (last.z () - first.z ()) / period;
     MOPPE_CHECK ((std::fabs (laps_x - 1.0f) < 1e-3f && laps_z < 1e-3f) ||
                  (std::fabs (laps_z - 1.0f) < 1e-3f && laps_x < 1e-3f));
     bool at_landing = false;
     for (const RoadPlace& place : network.places)
-      at_landing =
-        at_landing || (place.kind == RoadPlace::Kind::Landing &&
-                       place.x_m == first.x_m && place.z_m == first.z_m);
+      at_landing = at_landing || (place.kind == RoadPlace::Kind::Landing &&
+                                  plan_value (place.at).x () == first.x () &&
+                                  plan_value (place.at).z () == first.z ());
     MOPPE_CHECK (at_landing);
-    for (const RoadTurning& turning : road_turnings (network, period, period))
+    for (const RoadTurning& turning : road_turnings (network, square (period)))
       MOPPE_CHECK (turning.road != r);
   }
   MOPPE_CHECK (loops == 1);
@@ -130,11 +164,11 @@ MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
   // joins; the trailhead is still in use.
   float oldest = 0.0f;
   for (const RoadPlace& place : network.places)
-    oldest = std::max (oldest, place.founded_years_ago);
-  MOPPE_CHECK (network.places.front ().abandoned_years_ago == 0.0f);
+    oldest = std::max (oldest, years (place.founded));
+  MOPPE_CHECK (years (network.places.front ().abandoned) == 0.0f);
   for (const Road& road : network.roads) {
     MOPPE_CHECK (road.traffic > 0);
-    MOPPE_CHECK (road.age_years > 0.0f && road.age_years <= oldest);
+    MOPPE_CHECK (years (road.age) > 0.0f && years (road.age) <= oldest);
   }
 }
 
@@ -167,13 +201,13 @@ MOPPE_TEST (built_roads_hold_their_grade_and_meet_where_they_join) {
   // flank northward.
   Road over { .kind = Road::Kind::Road };
   for (float x = 100.0f; x <= 400.0f; x += 4.0f)
-    over.points.push_back ({ x, 250.0f });
+    over.points.push_back (plan_position (x, 250.0f));
   Road branch { .kind = Road::Kind::Road };
   for (float z = 249.0f; z >= 100.0f; z -= 4.0f)
-    branch.points.push_back ({ 236.0f, z });
+    branch.points.push_back (plan_position (236.0f, z));
   network.roads = { over, branch };
   RoadFormation parameters;
-  parameters.culvert_area_m2 = 1.0e12f;
+  parameters.culvert_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
   const RoadFormationResult built = form_roads (terrain.domain (),
                                                 elevations (terrain),
                                                 network,
@@ -184,31 +218,38 @@ MOPPE_TEST (built_roads_hold_their_grade_and_meet_where_they_join) {
   const Road& formed = network.roads[0];
   float steepest = 0.0f;
   for (std::size_t i = 1; i < formed.points.size (); ++i)
-    steepest = std::max (
-      steepest, std::fabs (formed.heights[i] - formed.heights[i - 1]) / 4.0f);
-  MOPPE_CHECK (steepest <= parameters.maximum_grade + 1e-3f);
+    steepest =
+      std::max (steepest,
+                std::fabs (surface_elevation_value (formed.heights[i]) -
+                           surface_elevation_value (formed.heights[i - 1])) /
+                  4.0f);
+  MOPPE_CHECK (steepest <= number (parameters.maximum_grade) + 1e-3f);
   MOPPE_CHECK (built.steep_points == 0);
   // It cut through the crest rather than climbing it, deeper than the cut
   // allowed, rather than steepening.
-  MOPPE_CHECK (formed.heights[formed.points.size () / 2] <
-               84.0f - 0.4f - parameters.maximum_cut);
-  MOPPE_CHECK (built.cut_m3 > 0.0);
+  MOPPE_CHECK (
+    surface_elevation_value (formed.heights[formed.points.size () / 2]) <
+    84.0f - 0.4f - meters_value (parameters.maximum_cut));
+  MOPPE_CHECK (built.cut > 0.0 * mp_units::si::metre * mp_units::si::metre *
+                             mp_units::si::metre);
 
   // The branch starts at the height of the road it leaves.
   const std::size_t at = static_cast<std::size_t> ((236.0f - 100.0f) / 4.0f);
-  MOPPE_CHECK_NEAR (
-    network.roads[1].heights.front (), formed.heights[at], 0.05f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (network.roads[1].heights.front ()),
+                    surface_elevation_value (formed.heights[at]),
+                    0.05f);
 
   // The tread's crown is what the formed ground holds on the line, and
   // ground well away from both roads is left as it was.
   const auto height = [&] (std::size_t x, std::size_t z) {
     return surface_elevation_value (built.heights[z * side + x]);
   };
-  MOPPE_CHECK_NEAR (height (52, 50), formed.heights[40], 0.05f);
+  MOPPE_CHECK_NEAR (
+    height (52, 50), surface_elevation_value (formed.heights[40]), 0.05f);
   MOPPE_CHECK (height (50, 90) ==
                surface_elevation_value (elevations (terrain)[90 * side + 50]));
-  MOPPE_CHECK (built.influence[50 * side + 70] > 0.99f);
-  MOPPE_CHECK (built.influence[80 * side + 70] == 0.0f);
+  MOPPE_CHECK (number (built.influence[50 * side + 70]) > 0.99f);
+  MOPPE_CHECK (number (built.influence[80 * side + 70]) == 0.0f);
 }
 
 // The exact road surface is the crowned tread over a built road, the
@@ -218,42 +259,44 @@ MOPPE_TEST (road_surface_is_the_crowned_tread_and_the_field_beyond) {
   // A road climbing east at 5% across the seam at x = 1000, and a footpath.
   Road road { .kind = Road::Kind::Road };
   for (float x = 960.0f; x <= 1040.0f; x += 4.0f) {
-    road.points.push_back ({ x, 300.0f });
-    road.heights.push_back (100.0f + 0.05f * (x - 960.0f));
+    road.points.push_back (plan_position (x, 300.0f));
+    road.heights.push_back (elevation (100.0f + 0.05f * (x - 960.0f)));
   }
   Road path { .kind = Road::Kind::Footpath };
   for (float z = 500.0f; z <= 560.0f; z += 4.0f) {
-    path.points.push_back ({ 200.0f, z });
-    path.heights.push_back (80.0f);
+    path.points.push_back (plan_position (200.0f, z));
+    path.heights.push_back (elevation (80.0f));
   }
   network.roads = { road, path };
   const RoadFormation formation;
-  const RoadSurface surface (network, 1000.0f, 1000.0f, formation);
+  const RoadSurface surface (network, square (1000.0f), formation);
   constexpr float field = 70.0f;
 
   // On the line, past the seam: x = 1010 is x = 10. A gravel road's crown
   // of loose stone lies on the formed tread.
-  const float top = 102.5f + RoadSurface::gravel_m;
-  MOPPE_CHECK_NEAR (surface.ground (10.0f, 300.0f, field), top, 1e-3f);
-  MOPPE_CHECK_NEAR (surface.ground (1010.0f, 300.0f, field), top, 1e-3f);
+  const float top = 102.5f + meters_value (RoadSurface::gravel);
+  MOPPE_CHECK_NEAR (ground_at (surface, 10.0f, 300.0f, field), top, 1e-3f);
+  MOPPE_CHECK_NEAR (ground_at (surface, 1010.0f, 300.0f, field), top, 1e-3f);
   // Crowned: two metres off the line it lies a crown's slope lower, the
   // same on either side.
-  const float off = top - 2.0f * formation.crown;
-  MOPPE_CHECK_NEAR (surface.ground (10.0f, 302.0f, field), off, 1e-3f);
-  MOPPE_CHECK_NEAR (surface.ground (10.0f, 298.0f, field), off, 1e-3f);
+  const float off = top - 2.0f * number (formation.crown);
+  MOPPE_CHECK_NEAR (ground_at (surface, 10.0f, 302.0f, field), off, 1e-3f);
+  MOPPE_CHECK_NEAR (ground_at (surface, 10.0f, 298.0f, field), off, 1e-3f);
   // Past the shoulder and the blend it is the field again.
-  const float beyond =
-    formation.half_width + formation.shoulder + RoadSurface::blend_m + 0.1f;
-  MOPPE_CHECK (surface.ground (10.0f, 300.0f + beyond, field) == field);
+  const float beyond = meters_value (formation.half_width + formation.shoulder +
+                                     RoadSurface::blend) +
+                       0.1f;
+  MOPPE_CHECK (ground_at (surface, 10.0f, 300.0f + beyond, field) == field);
   // The sample says where along and which way.
-  const RoadSample at = surface.nearest (990.0f, 301.0f);
+  const RoadSample at = surface.nearest (plan_position (990.0f, 301.0f));
   MOPPE_CHECK (at.found && at.kind == Road::Kind::Road);
-  MOPPE_CHECK_NEAR (at.along, 30.0f, 1e-3f);
-  MOPPE_CHECK_NEAR (std::fabs (at.across), 1.0f, 1e-3f);
-  MOPPE_CHECK_NEAR (at.grade, 0.05f, 1e-4f);
+  MOPPE_CHECK_NEAR (meters_value (at.along), 30.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (std::fabs (meters_value (at.across)), 1.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (number (at.grade), 0.05f, 1e-4f);
   // A footpath is found but leaves the ground alone.
-  MOPPE_CHECK (surface.nearest (200.5f, 530.0f).kind == Road::Kind::Footpath);
-  MOPPE_CHECK (surface.ground (200.5f, 530.0f, field) == field);
+  MOPPE_CHECK (surface.nearest (plan_position (200.5f, 530.0f)).kind ==
+               Road::Kind::Footpath);
+  MOPPE_CHECK (ground_at (surface, 200.5f, 530.0f, field) == field);
 }
 
 namespace {
@@ -293,11 +336,12 @@ MOPPE_TEST (roads_bridge_the_rivers_they_cross) {
   RoadNetwork network;
   Road over { .kind = Road::Kind::Road };
   for (float x = 100.0f; x <= 400.0f; x += 4.0f)
-    over.points.push_back ({ x, 250.0f });
+    over.points.push_back (plan_position (x, 250.0f));
   network.roads = { over };
   RoadFormation parameters;
-  parameters.culvert_area_m2 = 1.0e12f;
-  parameters.bridge_area_m2 = 0.5f * river;
+  parameters.culvert_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
+  parameters.bridge_area =
+    0.5f * river * mp_units::si::metre * mp_units::si::metre;
   const RoadFormationResult built = form_roads (terrain.domain (),
                                                 elevations (terrain),
                                                 network,
@@ -309,28 +353,32 @@ MOPPE_TEST (roads_bridge_the_rivers_they_cross) {
   MOPPE_CHECK (built.bridges == 1);
   MOPPE_CHECK (formed.bridges.size () == 1);
   const RoadBridge& bridge = formed.bridges.front ();
-  const float from = formed.points[bridge.first].x_m;
-  const float to = formed.points[bridge.last].x_m;
+  const float from = plan_value (formed.points[bridge.first]).x ();
+  const float to = plan_value (formed.points[bridge.last]).x ();
   // Over the river, not the whole valley's walk across.
   MOPPE_CHECK (from < 250.0f && to > 250.0f);
-  MOPPE_CHECK (to - from < parameters.longest_bridge);
+  MOPPE_CHECK (to - from < meters_value (parameters.longest_bridge));
   // Clear of the water over the valley floor, which is left as it was.
   const float bed = surface_elevation_value (elevations (terrain)[floor]);
   const std::size_t middle = (bridge.first + bridge.last) / 2;
-  MOPPE_CHECK (formed.heights[middle] > bed + parameters.clearance);
+  MOPPE_CHECK (surface_elevation_value (formed.heights[middle]) >
+               bed + meters_value (parameters.clearance));
   MOPPE_CHECK (surface_elevation_value (built.heights[floor]) == bed);
   // Driven on, the deck: level across to its kerbs, the river below
   // past them.
-  const RoadSurface surface (network, 500.0f, 500.0f, parameters);
-  const RoadSample at = surface.nearest (250.0f, 251.0f);
+  const RoadSurface surface (network, square (500.0f), parameters);
+  const RoadSample at = surface.nearest (plan_position (250.0f, 251.0f));
   MOPPE_CHECK (at.found && at.bridge);
-  MOPPE_CHECK_NEAR (
-    surface.ground (250.0f, 251.0f, bed), formed.heights[middle], 0.2f);
-  MOPPE_CHECK (surface.ground (250.0f,
-                               250.0f + parameters.deck_half_width + 0.5f,
-                               bed) == bed);
+  MOPPE_CHECK_NEAR (ground_at (surface, 250.0f, 251.0f, bed),
+                    surface_elevation_value (formed.heights[middle]),
+                    0.2f);
+  MOPPE_CHECK (
+    ground_at (surface,
+               250.0f,
+               250.0f + meters_value (parameters.deck_half_width) + 0.5f,
+               bed) == bed);
   // Off the bridge the road is the crowned tread again.
-  MOPPE_CHECK (!surface.nearest (130.0f, 250.0f).bridge);
+  MOPPE_CHECK (!surface.nearest (plan_position (130.0f, 250.0f)).bridge);
 }
 
 // A knoll of the floodplain under a bridge's span stands no higher than
@@ -346,11 +394,12 @@ MOPPE_TEST (a_bridge_span_is_cut_clear_of_the_ground_beneath) {
   RoadNetwork network;
   Road over { .kind = Road::Kind::Road };
   for (float x = 100.0f; x <= 400.0f; x += 4.0f)
-    over.points.push_back ({ x, 250.0f });
+    over.points.push_back (plan_position (x, 250.0f));
   network.roads = { over };
   RoadFormation parameters;
-  parameters.culvert_area_m2 = 1.0e12f;
-  parameters.bridge_area_m2 = 0.5f * river;
+  parameters.culvert_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
+  parameters.bridge_area =
+    0.5f * river * mp_units::si::metre * mp_units::si::metre;
   const RoadFormationResult built = form_roads (terrain.domain (),
                                                 elevations (terrain),
                                                 network,
@@ -362,13 +411,15 @@ MOPPE_TEST (a_bridge_span_is_cut_clear_of_the_ground_beneath) {
   const RoadBridge& bridge = formed.bridges.front ();
   // The knoll stood above the deck, beside its line.
   const std::size_t knoll = 51 * side + 49;
-  const RoadSurface surface (network, 500.0f, 500.0f, parameters);
-  const RoadSample over_knoll = surface.nearest (245.0f, 255.0f);
+  const RoadSurface surface (network, square (500.0f), parameters);
+  const RoadSample over_knoll =
+    surface.nearest (plan_position (245.0f, 255.0f));
   MOPPE_CHECK (over_knoll.bridge);
   MOPPE_CHECK (surface_elevation_value (elevations (terrain)[knoll]) >
-               over_knoll.centre_m);
+               surface_elevation_value (over_knoll.centre));
   MOPPE_CHECK (surface_elevation_value (built.heights[knoll]) <=
-               over_knoll.centre_m - parameters.deck_depth + 1e-3f);
+               surface_elevation_value (over_knoll.centre) -
+                 meters_value (parameters.deck_depth) + 1e-3f);
   // Out past the tread and a lattice step, the floodplain is its own.
   const std::size_t aside = 53 * side + 49;
   MOPPE_CHECK (surface_elevation_value (built.heights[aside]) ==
@@ -389,11 +440,12 @@ MOPPE_TEST (roads_cross_small_streams_on_embankments_over_culverts) {
   RoadNetwork network;
   Road over { .kind = Road::Kind::Road };
   for (float x = 100.0f; x <= 400.0f; x += 4.0f)
-    over.points.push_back ({ x, 250.0f });
+    over.points.push_back (plan_position (x, 250.0f));
   network.roads = { over };
   RoadFormation parameters;
-  parameters.culvert_area_m2 = 0.5f * stream;
-  parameters.bridge_area_m2 = 1.0e12f;
+  parameters.culvert_area =
+    0.5f * stream * mp_units::si::metre * mp_units::si::metre;
+  parameters.bridge_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
   const RoadFormationResult built = form_roads (terrain.domain (),
                                                 elevations (terrain),
                                                 network,
@@ -405,18 +457,19 @@ MOPPE_TEST (roads_cross_small_streams_on_embankments_over_culverts) {
   MOPPE_CHECK (formed.bridges.empty ());
   MOPPE_CHECK (formed.culverts.size () == 1);
   const RoadCulvert& culvert = formed.culverts.front ();
-  MOPPE_CHECK_NEAR (formed.points[culvert.at].x_m, 250.0f, 6.0f);
+  MOPPE_CHECK_NEAR (plan_value (formed.points[culvert.at]).x (), 250.0f, 6.0f);
   const float bed = surface_elevation_value (elevations (terrain)[floor]);
   // Over the pipe and a freeboard, not down at the bed.
-  MOPPE_CHECK (formed.heights[culvert.at] >=
-               bed + culvert.diameter_m + parameters.freeboard - 0.05f);
+  MOPPE_CHECK (surface_elevation_value (formed.heights[culvert.at]) >=
+               bed + meters_value (culvert.diameter) +
+                 meters_value (parameters.freeboard) - 0.05f);
   MOPPE_CHECK (built.steep_points == 0);
   // The pipe's line is left to the water; beside it the embankment
   // stands under the tread.
   MOPPE_CHECK (surface_elevation_value (built.heights[floor]) == bed);
   const std::size_t beside =
-    50 * side + static_cast<std::size_t> (
-                  std::lround ((formed.points[culvert.at].x_m + 7.0f) / 5.0f));
+    50 * side + static_cast<std::size_t> (std::lround (
+                  (plan_value (formed.points[culvert.at]).x () + 7.0f) / 5.0f));
   MOPPE_CHECK (surface_elevation_value (built.heights[beside]) >
                surface_elevation_value (elevations (terrain)[beside]) + 0.3f);
 }
@@ -430,26 +483,28 @@ MOPPE_TEST (road_surface_keeps_its_height_round_a_bend) {
   // East at 10% up to (500, 500), then on at thirty degrees to it.
   float height = 100.0f;
   for (float x = 440.0f; x <= 500.0f; x += 4.0f) {
-    road.points.push_back ({ x, 500.0f });
-    road.heights.push_back (height);
+    road.points.push_back (plan_position (x, 500.0f));
+    road.heights.push_back (elevation (height));
     height += 0.4f;
   }
   for (int k = 1; k <= 15; ++k) {
     road.points.push_back (
-      { 500.0f + 4.0f * k * 0.8660254f, 500.0f + 4.0f * k * 0.5f });
-    road.heights.push_back (height);
+      plan_position (500.0f + 4.0f * k * 0.8660254f, 500.0f + 4.0f * k * 0.5f));
+    road.heights.push_back (elevation (height));
     height += 0.4f;
   }
   network.roads = { road };
-  const RoadSurface surface (network, 1000.0f, 1000.0f);
+  const RoadSurface surface (network, square (1000.0f));
   // Round the bend's corner two metres out, a degree at a time: on the
   // inside across the mitre, on the outside round the corner.
   float steepest = 0.0f;
-  float last = surface.ground (502.0f, 500.0f, 0.0f);
+  float last = ground_at (surface, 502.0f, 500.0f, 0.0f);
   for (int degree = 1; degree <= 360; ++degree) {
     const float angle = static_cast<float> (degree) * 0.01745329f;
-    const float here = surface.ground (
-      500.0f + 2.0f * std::cos (angle), 500.0f + 2.0f * std::sin (angle), 0.0f);
+    const float here = ground_at (surface,
+                                  500.0f + 2.0f * std::cos (angle),
+                                  500.0f + 2.0f * std::sin (angle),
+                                  0.0f);
     steepest = std::max (steepest, std::fabs (here - last));
     last = here;
   }
@@ -467,13 +522,13 @@ MOPPE_TEST (roads_end_in_turning_places_and_no_further_on) {
   RoadNetwork network;
   Road over { .kind = Road::Kind::Road };
   for (float x = 100.0f; x <= 400.0f; x += 4.0f)
-    over.points.push_back ({ x, 250.0f });
+    over.points.push_back (plan_position (x, 250.0f));
   Road branch { .kind = Road::Kind::Road };
   for (float z = 249.0f; z >= 100.0f; z -= 4.0f)
-    branch.points.push_back ({ 236.0f, z });
+    branch.points.push_back (plan_position (236.0f, z));
   network.roads = { over, branch };
   RoadFormation parameters;
-  parameters.culvert_area_m2 = 1.0e12f;
+  parameters.culvert_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
   const RoadFormationResult built = form_roads (terrain.domain (),
                                                 elevations (terrain),
                                                 network,
@@ -484,7 +539,7 @@ MOPPE_TEST (roads_end_in_turning_places_and_no_further_on) {
   // Both ends of the road over the ridge, and the branch's far end; not
   // where the branch leaves the road.
   const std::vector<RoadTurning> turnings =
-    road_turnings (network, 500.0f, 500.0f);
+    road_turnings (network, square (500.0f));
   MOPPE_CHECK (turnings.size () == 3);
   MOPPE_CHECK (turnings[0].road == 0 && !turnings[0].back);
   MOPPE_CHECK (turnings[1].road == 0 && turnings[1].back);
@@ -493,26 +548,32 @@ MOPPE_TEST (roads_end_in_turning_places_and_no_further_on) {
   const Road& formed = network.roads[0];
   MOPPE_CHECK (formed.heights[0] == formed.heights[1] &&
                formed.heights[1] == formed.heights[2]);
-  for (const float pad : turnings[0].heights)
-    MOPPE_CHECK_NEAR (pad, formed.heights[0], 1e-4f);
+  for (const SurfaceElevation pad : turnings[0].heights)
+    MOPPE_CHECK_NEAR (surface_elevation_value (pad),
+                      surface_elevation_value (formed.heights[0]),
+                      1e-4f);
   // The ring passes through the end and nowhere beyond it.
-  MOPPE_CHECK_NEAR (turnings[0].points.front ().x_m, 100.0f, 1e-3f);
-  for (const RoadPoint& point : turnings[0].points)
-    MOPPE_CHECK (point.x_m >= 100.0f - 1e-3f);
+  MOPPE_CHECK_NEAR (
+    plan_value (turnings[0].points.front ()).x (), 100.0f, 1e-3f);
+  for (const plan_position_t& point : turnings[0].points)
+    MOPPE_CHECK (plan_value (point).x () >= 100.0f - 1e-3f);
   // The ground is formed for the pad: trodden five metres to the side of
   // the end, where the road alone leaves the ground all but untouched.
-  MOPPE_CHECK (built.influence[51 * side + 20] > 0.9f);
+  MOPPE_CHECK (number (built.influence[51 * side + 20]) > 0.9f);
 
-  const RoadSurface surface (network, 500.0f, 500.0f, parameters);
+  const RoadSurface surface (network, square (500.0f), parameters);
   constexpr float field = 10.0f;
   // On the pad, four metres to the side of its middle, the tread.
-  MOPPE_CHECK_NEAR (
-    surface.ground (102.0f, 254.0f, field), formed.heights[0], 0.1f);
+  MOPPE_CHECK_NEAR (ground_at (surface, 102.0f, 254.0f, field),
+                    surface_elevation_value (formed.heights[0]),
+                    0.1f);
   // Six metres past the end, on the road's own line, the field: the
   // tread ends rounded at the end and does not run on.
-  MOPPE_CHECK (surface.ground (94.0f, 250.0f, field) == field);
-  MOPPE_CHECK (!surface.nearest (89.0f, 250.0f).found ||
-               std::fabs (surface.nearest (89.0f, 250.0f).across) > 9.0f);
+  MOPPE_CHECK (ground_at (surface, 94.0f, 250.0f, field) == field);
+  MOPPE_CHECK (!surface.nearest (plan_position (89.0f, 250.0f)).found ||
+               std::fabs (meters_value (
+                 surface.nearest (plan_position (89.0f, 250.0f)).across)) >
+                 9.0f);
 }
 
 namespace {
@@ -544,11 +605,11 @@ MOPPE_TEST (a_road_into_water_ends_on_the_bank_above_it) {
   RoadNetwork network;
   Road road { .kind = Road::Kind::Road };
   for (float x = 100.0f; x <= 212.0f; x += 4.0f)
-    road.points.push_back ({ x, 250.0f });
+    road.points.push_back (plan_position (x, 250.0f));
   network.roads = { road };
   RoadFormation parameters;
-  parameters.culvert_area_m2 = 1.0e12f;
-  parameters.bridge_area_m2 = 1.0e12f;
+  parameters.culvert_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
+  parameters.bridge_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
   const RoadFormationResult built = form_roads (terrain.domain (),
                                                 elevations (terrain),
                                                 network,
@@ -557,10 +618,11 @@ MOPPE_TEST (a_road_into_water_ends_on_the_bank_above_it) {
                                                 parameters);
   const Road& formed = network.roads[0];
   // The pond's first cell is at x = 200; the last dry point is at 196.
-  MOPPE_CHECK_NEAR (formed.points.back ().x_m, 196.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (plan_value (formed.points.back ()).x (), 196.0f, 1e-3f);
   MOPPE_CHECK (formed.heights.size () == formed.points.size ());
-  MOPPE_CHECK (formed.heights.back () >= 60.0f + parameters.freeboard - 1e-3f);
+  MOPPE_CHECK (surface_elevation_value (formed.heights.back ()) >=
+               60.0f + meters_value (parameters.freeboard) - 1e-3f);
   // Away from the water it runs on the ground.
-  MOPPE_CHECK_NEAR (formed.heights[5], 60.0f, 0.05f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (formed.heights[5]), 60.0f, 0.05f);
   MOPPE_CHECK (built.steep_points == 0);
 }

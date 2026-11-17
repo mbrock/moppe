@@ -75,13 +75,12 @@ namespace moppe::game {
                              meters_t reach,
                              bool decks) const {
     const terrain::RoadSurface& roads = generated.road_surface ();
-    const Vec2& p = plan_value (at);
-    const terrain::RoadSample road = roads.nearest (p.x (), p.z ());
+    const terrain::RoadSample road = roads.nearest (at);
     const terrain::RoadFormation& formation = roads.formation ();
     return road.found && road.kind == terrain::Road::Kind::Road &&
            (decks || !road.bridge) &&
-           std::abs (road.across) <
-             formation.half_width + formation.shoulder + meters_value (reach);
+           abs (road.across) <
+             formation.half_width + formation.shoulder + reach;
   }
 
   Vec3 WorldGround::trail_cell (terrain::CellIndex cell) const {

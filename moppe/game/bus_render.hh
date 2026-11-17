@@ -43,8 +43,7 @@ namespace moppe::game {
     // Bakes the stops' signs and shelters, and the bus's model.
     void rebuild (render::Renderer& renderer,
                   const BusLine& line,
-                  float period_x,
-                  float period_z);
+                  plan_extent_t period);
 
     // The stops near the camera, and the buses where they are at `now`
     // (bus_model.hh), each with its driver, and its riders in `dl`.
@@ -67,7 +66,7 @@ namespace moppe::game {
     std::vector<render::MeshPtr> m_stops;
     CarMeshes m_bus;
     std::array<render::MeshPtr, 2> m_doors;
-    plan_extent_t m_period = plan_extent (0.0f * u::m, 0.0f * u::m);
+    plan_extent_t m_period {};
   };
 }
 

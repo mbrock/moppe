@@ -156,7 +156,7 @@ namespace moppe::game {
       if (reach <= 0.0f * u::m)
         continue;
       ++pastures;
-      const age_t abandoned = place.abandoned_years_ago * age[Julian_year];
+      const age_t abandoned = place.abandoned;
       const bool living = abandoned <= 0.0f * age[Julian_year];
       kept += living;
       const map::StandRecovery then = living ? 0.36f * map::stand_recovery[one]
@@ -164,9 +164,9 @@ namespace moppe::game {
       const map::GrazingPressure grazing =
         (living ? 0.85f : 0.0f) * map::grazing_pressure[one];
       const long cx =
-        std::lround ((place.x_m * u::m / lattice.dx).numerical_value_in (one));
+        std::lround ((x_of (place.at) / lattice.dx).numerical_value_in (one));
       const long cz =
-        std::lround ((place.z_m * u::m / lattice.dz).numerical_value_in (one));
+        std::lround ((z_of (place.at) / lattice.dz).numerical_value_in (one));
       const long rx = static_cast<long> (
         std::ceil ((1.4f * reach / lattice.dx).numerical_value_in (one)));
       const long rz = static_cast<long> (
@@ -208,17 +208,17 @@ namespace moppe::game {
                          12.0f * u::m)
              : 2.5f * u::m;
       const meters_t edge = 1.7f * half;
-      const age_t abandoned = road.abandoned_years_ago * age[Julian_year];
+      const age_t abandoned = road.abandoned;
       const bool living = abandoned <= 0.0f * age[Julian_year];
       const map::StandRecovery then = living ? 0.22f * map::stand_recovery[one]
                                              : recovery_after_years (abandoned);
       const map::GrazingPressure grazing =
         (living ? (cart ? 0.75f : 0.5f) : 0.0f) * map::grazing_pressure[one];
       for (std::size_t p = 1; p < road.points.size (); ++p) {
-        const meters_t ax = road.points[p - 1].x_m * u::m;
-        const meters_t az = road.points[p - 1].z_m * u::m;
-        const meters_t bx = road.points[p].x_m * u::m;
-        const meters_t bz = road.points[p].z_m * u::m;
+        const meters_t ax = x_of (road.points[p - 1]);
+        const meters_t az = z_of (road.points[p - 1]);
+        const meters_t bx = x_of (road.points[p]);
+        const meters_t bz = z_of (road.points[p]);
         const meters_t sx = bx - ax, sz = bz - az;
         const square_meters_t span2 =
           std::max<square_meters_t> (sx * sx + sz * sz, 1e-6f * u::m2);

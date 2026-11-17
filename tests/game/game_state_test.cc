@@ -1125,11 +1125,12 @@ MOPPE_TEST (a_road_steers_a_rider_who_lets_the_bars_be_along_it) {
   terrain::RoadNetwork network;
   terrain::Road road { .kind = terrain::Road::Kind::Road };
   for (float z = 10.0f; z <= 310.0f; z += 4.0f) {
-    road.points.push_back ({ 160.0f, z });
-    road.heights.push_back (10.0f);
+    road.points.push_back (plan_position (160.0f, z));
+    road.heights.push_back (terrain::surface_elevation_point (10.0f * u::m));
   }
   network.roads = { road };
-  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  const terrain::RoadSurface roads (network,
+                                    plan_extent (320.0f * u::m, 320.0f * u::m));
   mov::attach_roads (surface, &roads);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (320, 20, 320));
@@ -1151,8 +1152,8 @@ MOPPE_TEST (a_road_steers_a_rider_who_lets_the_bars_be_along_it) {
   }
   mov::attach_roads (surface, nullptr);
   MOPPE_CHECK (session.subject_position ()[2] > 200.0f);
-  MOPPE_CHECK (widest <
-               roads.formation ().half_width + roads.formation ().shoulder);
+  MOPPE_CHECK (widest < meters_value (roads.formation ().half_width +
+                                      roads.formation ().shoulder));
 }
 
 // The road holds a car through its bends too: the Caddy, flat out with the
@@ -1173,11 +1174,12 @@ MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
   terrain::RoadNetwork network;
   terrain::Road road { .kind = terrain::Road::Kind::Road };
   for (float z = 10.0f; z <= 310.0f; z += 2.0f) {
-    road.points.push_back ({ line (z), z });
-    road.heights.push_back (10.0f);
+    road.points.push_back (plan_position (line (z), z));
+    road.heights.push_back (terrain::surface_elevation_point (10.0f * u::m));
   }
   network.roads = { road };
-  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  const terrain::RoadSurface roads (network,
+                                    plan_extent (320.0f * u::m, 320.0f * u::m));
   mov::attach_roads (surface, &roads);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (320, 20, 320));
@@ -1201,12 +1203,14 @@ MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
     game::advance_game_session (
       world, surface, session, game::InputFrame { .drive = 1.0f }, step);
     const Vec3 at = session.subject_position ();
-    widest = std::max (widest, std::abs (roads.nearest (at[0], at[2]).across));
+    widest = std::max (widest,
+                       std::abs (meters_value (
+                         roads.nearest (plan_position (at[0], at[2])).across)));
     fastest = std::max (fastest, session.subject_speed_kmh ());
   }
   mov::attach_roads (surface, nullptr);
   MOPPE_CHECK (session.subject_position ()[2] > 290.0f);
   MOPPE_CHECK (fastest > 30.0f);
-  MOPPE_CHECK (widest <
-               roads.formation ().half_width + roads.formation ().shoulder);
+  MOPPE_CHECK (widest < meters_value (roads.formation ().half_width +
+                                      roads.formation ().shoulder));
 }

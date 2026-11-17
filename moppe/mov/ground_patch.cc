@@ -28,7 +28,11 @@ namespace moppe::mov {
     const float field = terrain::surface_elevation_value (
       spatial::sample<terrain::surface_elevation> (
         surface, moppe::position (Vec3 (x, 0.0f, z))));
-    return &surface == roads_surface ? the_roads->ground (x, z, field) : field;
+    if (&surface != roads_surface)
+      return field;
+    return terrain::surface_elevation_value (
+      the_roads->ground (moppe::plan_position (x, z),
+                         terrain::surface_elevation_point (field * u::m)));
   }
 
   Vec3 ground_normal (const map::SurfaceGeometry& surface, float x, float z) {
@@ -179,7 +183,7 @@ namespace moppe::mov {
     const Vec3 origin (m_column * m_dx, 0.0f, m_row * m_dz);
     const Vec3 middle = centre ();
     const float reach = 0.5f * (m_params.samples - 1) * std::max (m_dx, m_dz);
-    const float half = the_roads->formation ().deck_half_width;
+    const float half = meters_value (the_roads->formation ().deck_half_width);
     b3ShapeDef rail = ground;
     rail.filter.categoryBits = m_params.obstacle_bit;
     rail.filter.maskBits = m_params.obstacle_mask;
@@ -230,16 +234,24 @@ namespace moppe::mov {
     guard.baseMaterial.restitution = 0.05f;
     constexpr float depth = 0.083f, thick = 0.1f;
     const float top = 0.16f;
-    const float bottom = -terrain::RoadSurface::guardrail_height_m - 0.4f;
+    const float bottom =
+      -meters_value (terrain::RoadSurface::guardrail_height) - 0.4f;
     for (const terrain::Guardrail& run : the_roads->guardrails ())
       for (std::size_t i = 1; i < run.posts.size (); ++i) {
         const terrain::Guardrail::Post& p = run.posts[i - 1];
         const terrain::Guardrail::Post& q = run.posts[i];
-        const float mx = 0.5f * (p.x_m + q.x_m), mz = 0.5f * (p.z_m + q.z_m);
+        const plan_position_t& pa = p.at;
+        const plan_position_t& qa = q.at;
+        const float mx = 0.5f * (plan_value (pa).x () + plan_value (qa).x ());
+        const float mz = 0.5f * (plan_value (pa).z () + plan_value (qa).z ());
         const float ox = terrain::whole_periods (middle[0] - mx, period_x);
         const float oz = terrain::whole_periods (middle[2] - mz, period_z);
-        const Vec3 a (p.x_m + ox, p.rail_m, p.z_m + oz);
-        const Vec3 b (q.x_m + ox, q.rail_m, q.z_m + oz);
+        const Vec3 a (plan_value (pa).x () + ox,
+                      terrain::surface_elevation_value (p.rail),
+                      plan_value (pa).z () + oz);
+        const Vec3 b (plan_value (qa).x () + ox,
+                      terrain::surface_elevation_value (q.rail),
+                      plan_value (qa).z () + oz);
         const float length = moppe::length (b - a);
         if (length < 1e-3f ||
             std::max (std::abs (mx + ox - middle[0]),
@@ -247,7 +259,11 @@ namespace moppe::mov {
           continue;
         const Vec3 x = (b - a) / length;
         Vec3 z = normalized (cross (x, Vec3 (0.0f, 1.0f, 0.0f)));
-        if (z[0] * (p.out_x + q.out_x) + z[2] * (p.out_z + q.out_z) < 0.0f)
+        const plan_direction_t& po = p.out;
+        const plan_direction_t& qo = q.out;
+        if (z[0] * (plan_value (po).x () + plan_value (qo).x ()) +
+              z[2] * (plan_value (po).z () + plan_value (qo).z ()) <
+            0.0f)
           z = -z;
         const Vec3 y = cross (z, x);
         const b3Matrix3 frame { to_b3 (x), to_b3 (y), to_b3 (z) };

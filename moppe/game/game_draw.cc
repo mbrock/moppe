@@ -266,11 +266,13 @@ namespace moppe {
 
       // Soft blob shadows under the movers.
       draw_home_base_marker (m_world_dl);
-      m_signs.draw (
-        r, m_heads_up.hud.font (), m_place_names, [this] (float x, float z) {
-          return generated_world ().road_surface ().ground (
-            x, z, world_ground ().height (Vec3 (x, 0.0f, z)));
-        });
+      m_signs.draw (r,
+                    m_heads_up.hud.font (),
+                    m_place_names,
+                    [this] (const plan_position_t& at) {
+                      return generated_world ().road_surface ().ground (
+                        at, world_ground ().elevation (at));
+                    });
       if (actors.walker)
         m_blob.draw (m_world_dl,
                      surface (),

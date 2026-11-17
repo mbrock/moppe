@@ -67,12 +67,11 @@ namespace {
     using Kind = terrain::RoadPlace::Kind;
     terrain::RoadNetwork network;
     network.places = {
-      { .kind = Kind::Landing, .x_m = 1010.0f, .z_m = 500.0f },
+      { .kind = Kind::Landing, .at = plan_position (1010.0f, 500.0f) },
       { .kind = Kind::Sanctuary,
-        .x_m = 3000.0f,
-        .z_m = 3004.0f,
-        .abandoned_years_ago = sanctuary_left },
-      { .kind = Kind::LakeOutlet, .x_m = 1600.0f, .z_m = 6000.0f },
+        .at = plan_position (3000.0f, 3004.0f),
+        .abandoned = sanctuary_left * mp_units::astronomy::Julian_year },
+      { .kind = Kind::LakeOutlet, .at = plan_position (1600.0f, 6000.0f) },
     };
     return network;
   }

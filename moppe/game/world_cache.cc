@@ -7,6 +7,7 @@
 
 #include <array>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -620,25 +621,38 @@ namespace moppe::game {
       output.vector<float> (trails.earthwork_delta_m);
     }
 
+    // Roads are stored as they were before their types: a point two
+    // floats (x, z), a height one float, a culvert (point, invert,
+    // diameter) twelve bytes, and ages the years as floats.
+    static_assert (sizeof (plan_position_t) == 2 * sizeof (float) &&
+                   std::is_trivially_copyable_v<plan_position_t>);
+    static_assert (sizeof (age_t) == sizeof (float) &&
+                   std::is_trivially_copyable_v<age_t>);
+    static_assert (sizeof (terrain::SurfaceElevation) == sizeof (float) &&
+                   std::is_trivially_copyable_v<terrain::SurfaceElevation>);
+    static_assert (sizeof (terrain::RoadCulvert) == 12 &&
+                   offsetof (terrain::RoadCulvert, invert) == 4 &&
+                   offsetof (terrain::RoadCulvert, diameter) == 8 &&
+                   std::is_trivially_copyable_v<terrain::RoadCulvert>);
+
     void write_roads (BinaryWriter& output, const terrain::RoadNetwork& roads) {
       output.scalar (static_cast<std::uint64_t> (roads.places.size ()));
       for (const terrain::RoadPlace& place : roads.places) {
         output.scalar (static_cast<std::uint32_t> (place.kind));
-        output.scalar (place.x_m);
-        output.scalar (place.z_m);
-        output.scalar (place.height_m);
-        output.scalar (place.founded_years_ago);
-        output.scalar (place.abandoned_years_ago);
+        output.scalar (place.at);
+        output.scalar (place.height);
+        output.scalar (place.founded);
+        output.scalar (place.abandoned);
       }
       output.scalar (static_cast<std::uint64_t> (roads.roads.size ()));
       for (const terrain::Road& road : roads.roads) {
         output.scalar (static_cast<std::uint32_t> (road.kind));
         output.scalar (road.traffic);
-        output.scalar (road.age_years);
-        output.scalar (road.abandoned_years_ago);
+        output.scalar (road.age);
+        output.scalar (road.abandoned);
         output.scalar (static_cast<std::uint32_t> (road.loop));
-        output.vector<terrain::RoadPoint> (road.points);
-        output.vector<float> (road.heights);
+        output.vector<plan_position_t> (road.points);
+        output.vector<terrain::SurfaceElevation> (road.heights);
         output.vector<terrain::RoadBridge> (road.bridges);
         output.vector<terrain::RoadCulvert> (road.culverts);
       }
@@ -661,10 +675,8 @@ namespace moppe::game {
         if (!input.scalar (kind) ||
             kind > static_cast<std::uint32_t> (
                      terrain::RoadPlace::Kind::Sanctuary) ||
-            !input.scalar (place.x_m) || !input.scalar (place.z_m) ||
-            !input.scalar (place.height_m) ||
-            !input.scalar (place.founded_years_ago) ||
-            !input.scalar (place.abandoned_years_ago))
+            !input.scalar (place.at) || !input.scalar (place.height) ||
+            !input.scalar (place.founded) || !input.scalar (place.abandoned))
           return false;
         place.kind = static_cast<terrain::RoadPlace::Kind> (kind);
       }
@@ -675,8 +687,8 @@ namespace moppe::game {
         std::uint32_t kind = 0, loop = 0;
         if (!input.scalar (kind) ||
             kind > static_cast<std::uint32_t> (terrain::Road::Kind::Footpath) ||
-            !input.scalar (road.traffic) || !input.scalar (road.age_years) ||
-            !input.scalar (road.abandoned_years_ago) || !input.scalar (loop) ||
+            !input.scalar (road.traffic) || !input.scalar (road.age) ||
+            !input.scalar (road.abandoned) || !input.scalar (loop) ||
             loop > 1 || !input.vector (road.points, cells) ||
             !input.vector (road.heights, cells) ||
             !input.vector (road.bridges, cells) ||

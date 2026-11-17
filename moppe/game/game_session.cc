@@ -226,7 +226,8 @@ namespace moppe::game {
       if (bike && !session.ridden_bike ().grounded ())
         return none;
       const Vec3 at = session.subject_position ();
-      const terrain::RoadSample road = roads->nearest (at[0], at[2]);
+      const terrain::RoadSample road =
+        roads->nearest (plan_position (at[0], at[2]));
       if (!road.found || road.kind != terrain::Road::Kind::Road)
         return none;
       Vec3 ahead = session.subject_heading ();
@@ -235,14 +236,18 @@ namespace moppe::game {
         return none;
       ahead = normalized (ahead);
       const Vec3 right = normalized (cross (ahead, Vec3 (0.0f, 1.0f, 0.0f)));
-      Vec3 way (road.direction_x, 0.0f, road.direction_z);
+      const plan_direction_t& road_way = road.direction;
+      Vec3 way = lift (plan_value (road_way));
       if (dot (way, ahead) < 0.0f)
         way = -way;
       const float askew = std::atan2 (dot (way, right), dot (way, ahead));
       const terrain::RoadFormation& formation = roads->formation ();
-      const float tread = formation.half_width + formation.shoulder;
+      const float tread =
+        meters_value (formation.half_width + formation.shoulder);
       const float reach =
-        1.0f - smoothstep (tread + 1.0f, tread + 3.0f, std::abs (road.across));
+        1.0f - smoothstep (tread + 1.0f,
+                           tread + 3.0f,
+                           std::abs (meters_value (road.across)));
       const float along = 1.0f - smoothstep (0.4f, 0.7f, std::abs (askew));
       const float kmh = session.subject_speed_kmh ();
       const float moving = smoothstep (8.0f, 18.0f, kmh);
@@ -255,17 +260,23 @@ namespace moppe::game {
       // calls `visit` with the distance and the way at each step.
       const auto walk = [&] (float far, float step, auto&& visit) {
         Vec3 p =
-          at - Vec3 (-road.direction_z, 0.0f, road.direction_x) * road.across;
+          at -
+          Vec3 (-plan_value (road_way).z (), 0.0f, plan_value (road_way).x ()) *
+            meters_value (road.across);
         Vec3 w = way;
         for (float d = step; d <= far; d += step) {
           const Vec3 q = p + w * step;
-          const terrain::RoadSample s = roads->nearest (q[0], q[2]);
+          const terrain::RoadSample s =
+            roads->nearest (plan_position (q[0], q[2]));
           if (!s.found || s.kind != terrain::Road::Kind::Road)
             return;
-          Vec3 next (s.direction_x, 0.0f, s.direction_z);
+          const plan_direction_t& s_way = s.direction;
+          Vec3 next = lift (plan_value (s_way));
           if (dot (next, w) < 0.0f)
             next = -next;
-          p = q - Vec3 (-s.direction_z, 0.0f, s.direction_x) * s.across;
+          p =
+            q - Vec3 (-plan_value (s_way).z (), 0.0f, plan_value (s_way).x ()) *
+                  meters_value (s.across);
           w = next;
           visit (d, p, w);
         }

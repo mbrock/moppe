@@ -140,9 +140,8 @@ namespace moppe::game {
                        uint64_t motion_base,
                        std::optional<Outfit> pillion) {
     const JetSkiMeshes& meshes = jet_ski_meshes (r);
-    const Mat4 frame = model_mesh::body_frame (position_value (ski.position),
-                                               direction_value (ski.forward),
-                                               direction_value (ski.up));
+    const Mat4 frame =
+      model_mesh::body_frame (ski.position, ski.forward, ski.up);
     const Mat4 bars = bars_frame (ski, frame);
     if (rider)
       figure::draw (dl, pose_jet_ski_rider (ski, frame, bars), *rider);

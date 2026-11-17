@@ -25,9 +25,6 @@ namespace moppe::game {
                   const terrain::RoadSurface& road_surface);
     void clear ();
     void draw (render::Renderer& renderer, const position_t& camera) const;
-    // For callers still holding a plain vector (game_draw.cc's
-    // FrameCamera::position).
-    void draw (render::Renderer& renderer, const Vec3& camera) const;
 
   private:
     struct Bridge {

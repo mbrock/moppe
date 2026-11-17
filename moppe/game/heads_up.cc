@@ -562,10 +562,11 @@ namespace moppe::game {
         const terrain::RoadPlace& place = roads.places[p];
         if (place.kind == terrain::RoadPlace::Kind::Trailhead)
           continue;
-        const float dx =
-          terrain::minimum_image_delta (place.x_m - here[0], map.period_x_m ());
-        const float dz =
-          terrain::minimum_image_delta (place.z_m - here[2], map.period_z_m ());
+        const plan_position_t& at = place.at;
+        const float dx = terrain::minimum_image_delta (
+          plan_value (at).x () - here[0], map.period_x_m ());
+        const float dz = terrain::minimum_image_delta (
+          plan_value (at).z () - here[2], map.period_z_m ());
         if (const float metres = std::hypot (dx, dz); metres < nearest_m) {
           nearest_m = metres;
           name = w.place_names[p].c_str ();
@@ -749,8 +750,8 @@ namespace moppe::game {
     // stops last of all, so drawn under everything.
     for (const BusPose& bus : w.bus.where (bus_time (w.session.logic ())))
       marks.push_back ({ .kind = Mark::Kind::Bus,
-                         .position = bus.position,
-                         .heading = bus.forward,
+                         .position = position_value (bus.position),
+                         .heading = direction_value (bus.forward),
                          .colour = DisplayColor (0.66f, 0.09f, 0.07f),
                          .name = "bus" });
     using Place = terrain::RoadPlace::Kind;
@@ -768,19 +769,19 @@ namespace moppe::game {
       const PlaceKind& kind = place_kind (place.kind);
       if (!kind.named)
         continue;
-      const bool quiet = place.abandoned_years_ago > 0.0f;
-      marks.push_back (
-        { .kind = Mark::Kind::Place,
-          .position = Vec3 (place.x_m, place.height_m, place.z_m),
-          .colour = quiet ? kind.quiet_ink : kind.ink,
-          .name = w.place_names[p].c_str (),
-          .place = place.kind });
+      const bool quiet = place.abandoned > age_t::zero ();
+      marks.push_back ({ .kind = Mark::Kind::Place,
+                         .position = position_value (
+                           terrain::at_elevation (place.at, place.height)),
+                         .colour = quiet ? kind.quiet_ink : kind.ink,
+                         .name = w.place_names[p].c_str (),
+                         .place = place.kind });
     }
     // A stop called after a place it stands at is named by the place.
     for (const BusStop& stop : w.bus.stops ())
       marks.push_back ({ .kind = Mark::Kind::BusStop,
-                         .position = stop.sign,
-                         .heading = stop.forward,
+                         .position = position_value (stop.sign),
+                         .heading = direction_value (stop.forward),
                          .colour = DisplayColor (0.97f, 0.80f, 0.12f),
                          .name = std::ranges::find (w.place_names, stop.name) !=
                                      w.place_names.end ()
@@ -868,20 +869,25 @@ namespace moppe::game {
     const Vec3 eye = w.session.subject_position ();
     const float period_x = w.places.period_x, period_z = w.places.period_z;
     const std::optional<std::size_t> stop =
-      bus_stop_near (w.bus, eye, shown_m * u::m, period_x, period_z);
+      bus_stop_near (w.bus,
+                     position (eye),
+                     shown_m * u::m,
+                     plan_extent (period_x * u::m, period_z * u::m));
     if (!stop)
       return;
     const BusStop& at = w.bus.stops ()[*stop];
-    const float dx =
-      terrain::minimum_image_delta (at.sign[0] - eye[0], period_x);
-    const float dz =
-      terrain::minimum_image_delta (at.sign[2] - eye[2], period_z);
+    const position_t& sign = at.sign;
+    const float dx = terrain::minimum_image_delta (
+      position_value (sign)[0] - eye[0], period_x);
+    const float dz = terrain::minimum_image_delta (
+      position_value (sign)[2] - eye[2], period_z);
     const float shown = std::clamp (
       (shown_m - std::hypot (dx, dz)) / (shown_m - fading_m), 0.0f, 1.0f);
     // Its foot over the bus's roof and the luggage on its rack, where
     // the camera sees it.
     const FrameCamera& camera = frame.camera;
-    const Vec3 foot = Vec3 (eye[0] + dx, at.sign[1] + 3.4f, eye[2] + dz);
+    const Vec3 foot =
+      Vec3 (eye[0] + dx, position_value (sign)[1] + 3.4f, eye[2] + dz);
     const Vec3 to = foot - position_value (camera.position);
     const float ahead = dot (to, direction_value (camera.frame_forward));
     if (ahead < 0.5f || shown <= 0.0f)

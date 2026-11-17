@@ -131,7 +131,7 @@ namespace moppe::game {
       // the floor.
       CarModel bus_car_for (std::size_t seat) {
         namespace m = bus_model;
-        const displacement_t at = displacement (bus_seat_in_model (seat));
+        const displacement_t at = bus_seat_in_model (seat);
         return {
           .steering_ratio = 6.0f * scale_factor[one],
           .steering_hub = displacement (m::steering_hub),
@@ -186,14 +186,14 @@ namespace moppe::game {
     using namespace bus_render_parts;
     std::vector<mov::Trunk> colliders;
     for (const BusStop& stop : line.stops ()) {
-      colliders.push_back ({ .root = stop.sign + Vec3 (0, -0.2f, 0),
-                             .axis = direction_value (up),
-                             .height = 2.8f,
-                             .radius = 0.12f });
+      colliders.push_back (
+        { .root = position_value (stop.sign) + Vec3 (0, -0.2f, 0),
+          .axis = direction_value (up),
+          .height = 2.8f,
+          .radius = 0.12f });
       if (!stop.shelter)
         continue;
-      const Mat4 frame =
-        facing_road (position (*stop.shelter), unit_direction (stop.forward));
+      const Mat4 frame = facing_road (*stop.shelter, stop.forward);
       const auto post = [&] (meters_t x, meters_t z) {
         colliders.push_back ({ .root = frame.transform_point (Vec3 (
                                  meters_value (x), -0.3f, meters_value (z))),
@@ -214,10 +214,9 @@ namespace moppe::game {
 
   void BusView::rebuild (render::Renderer& renderer,
                          const BusLine& line,
-                         float period_x,
-                         float period_z) {
+                         plan_extent_t period) {
     using namespace bus_render_parts;
-    m_period = plan_extent (period_x * u::m, period_z * u::m);
+    m_period = period;
     m_stops.clear ();
     const auto lit = [] (render::DrawList& dl) {
       render::DrawState solid;
@@ -230,14 +229,12 @@ namespace moppe::game {
       render::DrawList dl;
       lit (dl);
       dl.push ();
-      dl.mult (
-        facing_road (position (stop.sign), unit_direction (stop.forward)));
+      dl.mult (facing_road (stop.sign, stop.forward));
       record_sign (dl);
       dl.pop ();
       if (stop.shelter) {
         dl.push ();
-        dl.mult (facing_road (position (*stop.shelter),
-                              unit_direction (stop.forward)));
+        dl.mult (facing_road (*stop.shelter, stop.forward));
         record_shelter (dl);
         dl.pop ();
       }
@@ -298,7 +295,7 @@ namespace moppe::game {
     std::uint64_t id = motion_base;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
          ++i) {
-      const position_t sign = position (line.stops ()[i].sign);
+      const position_t& sign = line.stops ()[i].sign;
       const position_t at = near_copy (sign, camera);
       if (m_stops[i] &&
           length2 (displacement_value (at - camera)) < 1500.0f * 1500.0f)
@@ -311,14 +308,14 @@ namespace moppe::game {
     for (std::size_t k = 0; k < buses.size (); ++k) {
       const BusPose& pose = buses[k];
       id += 16;
-      const position_t at = near_copy (position (pose.position), camera);
+      const position_t at = near_copy (pose.position, camera);
       if (length2 (displacement_value (at - camera)) > 2500.0f * 2500.0f)
         continue;
       const CarPose car { .position = at,
-                          .forward = unit_direction (pose.forward),
-                          .up = unit_direction (pose.up),
-                          .steer = pose.steer_radians * u::rad,
-                          .wheel_spin = pose.wheel_spin_radians * u::rad };
+                          .forward = pose.forward,
+                          .up = pose.up,
+                          .steer = pose.steer,
+                          .wheel_spin = pose.wheel_spin };
       // Its riders, by seat.
       std::array<std::optional<Outfit>, 2> seated;
       for (const BusRider& rider : riders)
@@ -338,8 +335,7 @@ namespace moppe::game {
       if (seated[1])
         seat_car_passenger (dl, car, bus_car (1), *seated[1]);
       // Its doors, folding out about their hinges at a stop.
-      const Mat4 frame =
-        model_mesh::body_frame (position_value (at), pose.forward, pose.up);
+      const Mat4 frame = model_mesh::body_frame (at, pose.forward, pose.up);
       // The doors' swing when they stand fully open.
       const radians_t swing = 1.536f * pose.door_open * u::rad;
       renderer.draw_mesh (*m_doors[0],
@@ -362,7 +358,7 @@ namespace moppe::game {
     using namespace bus_render_parts;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
          ++i) {
-      const position_t sign = position (line.stops ()[i].sign);
+      const position_t& sign = line.stops ()[i].sign;
       const position_t at = near_copy (sign, camera);
       if (m_stops[i] &&
           length2 (displacement_value (at - camera)) < 160.0f * 160.0f)
@@ -372,11 +368,10 @@ namespace moppe::game {
     if (m_bus.body.empty ())
       return;
     for (const BusPose& pose : line.where (now)) {
-      const position_t at = near_copy (position (pose.position), camera);
+      const position_t at = near_copy (pose.position, camera);
       if (length2 (displacement_value (at - camera)) < 160.0f * 160.0f)
-        renderer.draw_mesh (
-          *m_bus.body.front ().mesh,
-          model_mesh::body_frame (position_value (at), pose.forward, pose.up));
+        renderer.draw_mesh (*m_bus.body.front ().mesh,
+                            model_mesh::body_frame (at, pose.forward, pose.up));
     }
   }
 

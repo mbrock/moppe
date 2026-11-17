@@ -69,6 +69,15 @@ namespace moppe::game {
         return Vec3 (x, g.ground (x, z), z);
       }
 
+      Vec3 on_ground (const PlaceGround& g, plan_position_t at) {
+        return on_ground (g, plan_value (at).x (), plan_value (at).z ());
+      }
+
+      // An age as the years the planning below counts in.
+      float years_ago (age_t age) {
+        return age.numerical_value_in (mp_units::astronomy::Julian_year);
+      }
+
       // How deep the still water stands over the ground at a point.
       float depth_at (const PlaceGround& g, float x, float z) {
         return g.water (x, z) - g.ground (x, z);
@@ -111,7 +120,7 @@ namespace moppe::game {
       terrain::RoadSample road_near (const PlaceGround& g, const Vec3& at) {
         if (!g.roads || g.roads->empty ())
           return {};
-        return g.roads->nearest (at[0], at[2]);
+        return g.roads->nearest (plan_position (at[0], at[2]));
       }
 
       // How high a kept sanctuary's fire platform stands.
@@ -219,7 +228,7 @@ namespace moppe::game {
                                            std::size_t index,
                                            float sea) {
         // The shore within a stone's throw of where the road ends.
-        const Vec3 centre = on_ground (g, place.x_m, place.z_m);
+        const Vec3 centre = on_ground (g, place.at);
         std::optional<Landing> best;
         float best_score = 1e30f;
         // Out to water deep enough for any boat, or on a shallow shore to
@@ -256,9 +265,9 @@ namespace moppe::game {
           return std::nullopt;
         Jetty& jetty = best->jetty;
         jetty.decay =
-          place.abandoned_years_ago > 0.0f
+          place.abandoned > age_t {}
             ? 0.25f +
-                0.35f * smoothstep (15.0f, 150.0f, place.abandoned_years_ago)
+                0.35f * smoothstep (15.0f, 150.0f, years_ago (place.abandoned))
             : 0.0f;
         // The skiff lies alongside near the head, on the deeper side, its
         // bow to the land, tied to the post there.
@@ -287,11 +296,10 @@ namespace moppe::game {
         s.place = index;
         s.gate = Vec3 (1, 0, 0);
         // The highest ground near the planned site.
-        Vec3 top = on_ground (g, place.x_m, place.z_m);
+        Vec3 top = on_ground (g, place.at);
         for (float r = 1.0f; r <= 10.0f; r += 1.0f)
           for (int k = 0; k < 16; ++k) {
-            const Vec3 p =
-              on_ground (g, place.x_m, place.z_m) + bearing (tau * k / 16) * r;
+            const Vec3 p = on_ground (g, place.at) + bearing (tau * k / 16) * r;
             const Vec3 at = on_ground (g, p[0], p[2]);
             if (at[1] > top[1])
               top = at;
@@ -314,8 +322,8 @@ namespace moppe::game {
           }
           const terrain::RoadSample road = road_near (g, p);
           if (road.found && road.kind == terrain::Road::Kind::Footpath &&
-              std::abs (road.across) < nearest) {
-            nearest = std::abs (road.across);
+              std::abs (meters_value (road.across)) < nearest) {
+            nearest = std::abs (meters_value (road.across));
             s.gate = way;
           }
         }
@@ -327,8 +335,8 @@ namespace moppe::game {
           const Vec3 p = top + bearing (tau * k / 12.0f) * s.platform_radius;
           under = std::max (under, g.ground (p[0], p[2]));
         }
-        s.kept = place.abandoned_years_ago <= 0.0f;
-        s.ruin = ruin_after (place.abandoned_years_ago);
+        s.kept = place.abandoned <= age_t {};
+        s.ruin = ruin_after (years_ago (place.abandoned));
         s.hearth = Vec3 (
           top[0], under + platform_height * (1.0f - 0.5f * s.ruin), top[2]);
         return s;
@@ -356,7 +364,8 @@ namespace moppe::game {
             if (rough > flat || !dry_round (g, at, room + 6.0f, 1.0f))
               continue;
             const terrain::RoadSample road = road_near (g, at);
-            if (road.found && std::abs (road.across) < room + 4.0f)
+            if (road.found &&
+                std::abs (meters_value (road.across)) < room + 4.0f)
               continue;
             bool clear = true;
             for (const Vec3& other : taken)
@@ -402,7 +411,7 @@ namespace moppe::game {
                                      const terrain::RoadPlace& place,
                                      std::size_t index,
                                      std::vector<Jetty>& stages) {
-        const Vec3 outlet = on_ground (g, place.x_m, place.z_m);
+        const Vec3 outlet = on_ground (g, place.at);
         // The stream: running water near the outlet, and the way it
         // runs.
         Vec3 flow (0, 0, 0);
@@ -423,8 +432,8 @@ namespace moppe::game {
           }
         Farm farm;
         farm.place = index;
-        farm.kept = place.abandoned_years_ago <= 0.0f;
-        farm.ruined = place.abandoned_years_ago > 45.0f;
+        farm.kept = place.abandoned <= age_t {};
+        farm.ruined = years_ago (place.abandoned) > 45.0f;
         std::vector<Vec3> taken;
         if (fastest > 0.2f) {
           const Vec3 down = level (flow);
@@ -454,7 +463,7 @@ namespace moppe::game {
               if (relief (g, at, 3.0f) > 1.6f)
                 continue;
               const terrain::RoadSample road = road_near (g, at);
-              if (road.found && std::abs (road.across) < 5.0f)
+              if (road.found && std::abs (meters_value (road.across)) < 5.0f)
                 continue;
               // The wheel is on the model's -x: turned so that it faces
               // the stream.
@@ -470,9 +479,10 @@ namespace moppe::game {
           const terrain::RoadSample road = road_near (g, at);
           if (!road.found)
             return level (outlet - at);
-          const Vec3 dir (road.direction_x, 0.0f, road.direction_z);
+          const Vec3 dir = lift (plan_value (road.direction), 0.0f);
           // Toward the line: against the side it lies on.
-          return level (left_of (dir) * (road.across > 0.0f ? -1.0f : 1.0f));
+          return level (left_of (dir) *
+                        (road.across > 0.0f * u::m ? -1.0f : 1.0f));
         };
         if (const std::optional<Vec3> house =
               building_site (g, outlet, 20.0f, 70.0f, 5.0f, 0.9f, taken)) {
@@ -552,7 +562,7 @@ namespace moppe::game {
         std::vector<Vec3> others;
         std::optional<Vec3> trailhead;
         for (const terrain::RoadPlace& place : network.places) {
-          others.push_back (on_ground (g, place.x_m, place.z_m));
+          others.push_back (on_ground (g, place.at));
           if (place.kind == terrain::RoadPlace::Kind::Trailhead)
             trailhead = others.back ();
         }
@@ -579,7 +589,8 @@ namespace moppe::game {
         float summit = -1e30f;
         for (const terrain::RoadPlace& place : network.places)
           if (place.kind == terrain::RoadPlace::Kind::Sanctuary)
-            summit = std::max (summit, place.height_m);
+            summit = std::max (summit,
+                               terrain::surface_elevation_value (place.height));
         if (summit > g.sea_level)
           ceiling = g.sea_level + 0.72f * (summit - g.sea_level);
         const auto consider = [&] (float x, float z, float penalty) {
@@ -596,16 +607,16 @@ namespace moppe::game {
         // Beside the cart roads, old and new, and the footpaths in use.
         for (const terrain::Road& road : network.roads) {
           if ((road.kind != terrain::Road::Kind::Road &&
-               road.abandoned_years_ago > 0.0f) ||
+               road.abandoned > age_t {}) ||
               road.points.size () < 2)
             continue;
           const float penalty =
             (road.kind == terrain::Road::Kind::Road ? 0.0f : 0.4f) +
-            (road.abandoned_years_ago > 0.0f ? 0.5f : 0.0f);
+            (road.abandoned > age_t {} ? 0.5f : 0.0f);
           float run = 30.0f;
           for (std::size_t i = 1; i < road.points.size (); ++i) {
-            const Vec3 a (road.points[i - 1].x_m, 0.0f, road.points[i - 1].z_m);
-            const Vec3 b (road.points[i].x_m, 0.0f, road.points[i].z_m);
+            const Vec3 a = lift (plan_value (road.points[i - 1]), 0.0f);
+            const Vec3 b = lift (plan_value (road.points[i]), 0.0f);
             const float step = flat_distance (a, b);
             run += step;
             if (run < 60.0f || step < 1e-3f)
@@ -659,9 +670,8 @@ namespace moppe::game {
           const terrain::RoadSample road = road_near (g, *house);
           Vec3 facing = level (c.at - *house);
           if (road.found)
-            facing =
-              level (left_of (Vec3 (road.direction_x, 0.0f, road.direction_z)) *
-                     (road.across > 0.0f ? -1.0f : 1.0f));
+            facing = level (left_of (lift (plan_value (road.direction), 0.0f)) *
+                            (road.across > 0.0f * u::m ? -1.0f : 1.0f));
           farm.buildings.push_back (
             { Building::Kind::house,
               raised (g, *house, facing, Building::Kind::house),
@@ -729,10 +739,12 @@ namespace moppe::game {
         break;
       }
       std::cerr << "moppe: places: " << place_kind (place.kind).what << " at "
-                << place.x_m << ' ' << place.z_m << ", " << place.height_m
-                << " m, founded " << place.founded_years_ago << " years ago";
-      if (place.abandoned_years_ago > 0.0f)
-        std::cerr << ", left " << place.abandoned_years_ago << " years ago";
+                << plan_value (place.at).x () << ' '
+                << plan_value (place.at).z () << ", "
+                << terrain::surface_elevation_value (place.height)
+                << " m, founded " << years_ago (place.founded) << " years ago";
+      if (place.abandoned > age_t {})
+        std::cerr << ", left " << years_ago (place.abandoned) << " years ago";
       std::cerr << '\n';
     }
     for (const auto& [a, b] : network.sightlines) {
@@ -803,7 +815,7 @@ namespace moppe::game {
     for (const terrain::RoadPlace& place : network.places) {
       if (place.kind == terrain::RoadPlace::Kind::Trailhead)
         continue;
-      const Vec3 at = on_ground (ground, place.x_m, place.z_m);
+      const Vec3 at = on_ground (ground, place.at);
       const std::optional<Vec3> middle = hammock_near (at);
       if (!middle)
         continue;
@@ -817,11 +829,12 @@ namespace moppe::game {
             !dry_round (ground, p, 1.0f, 0.4f))
           continue;
         const terrain::RoadSample road = road_near (ground, p);
-        if (road.found && std::abs (road.across) < 4.0f)
+        if (road.found && std::abs (meters_value (road.across)) < 4.0f)
           continue;
         plan.hearths.push_back (p);
         std::cerr << "moppe: places: a camp at " << p[0] << ' ' << p[2] << ", "
-                  << std::hypot (p[0] - place.x_m, p[2] - place.z_m)
+                  << std::hypot (p[0] - plan_value (place.at).x (),
+                                 p[2] - plan_value (place.at).z ())
                   << " m from the place" << std::endl;
         break;
       }

@@ -32,24 +32,16 @@ namespace moppe::terrain {
     };
 
     Kind kind = Kind::Trailhead;
-    float x_m = 0.0f;
-    float z_m = 0.0f;
-    float height_m = 0.0f;
+    plan_position_t at {};
+    SurfaceElevation height {};
     // A history rolled for each place from the world's seed, by its kind:
     // the sanctuaries oldest and often gone quiet, the landing and the
     // outlets old, the trailhead young and in use. Abandoned is zero for a
     // place still lived in or kept.
-    float founded_years_ago = 0.0f;
-    float abandoned_years_ago = 0.0f;
+    age_t founded {};
+    age_t abandoned {};
 
     friend bool operator== (const RoadPlace&, const RoadPlace&) = default;
-  };
-
-  struct RoadPoint {
-    float x_m = 0.0f;
-    float z_m = 0.0f;
-
-    friend bool operator== (const RoadPoint&, const RoadPoint&) = default;
   };
 
   // A bridge's span along a road: the points (indices into Road::points)
@@ -65,11 +57,11 @@ namespace moppe::terrain {
 
   // Where a cart road crosses a stream or a pond on an embankment, the pipe
   // that lets the water through under it: at point `at` of the road, its
-  // floor (invert) `invert_m` metres high and `diameter_m` across.
+  // floor (invert) at `invert` and `diameter` across.
   struct RoadCulvert {
     std::uint32_t at = 0;
-    float invert_m = 0.0f;
-    float diameter_m = 0.0f;
+    SurfaceElevation invert {};
+    meters_t diameter {};
 
     friend bool operator== (const RoadCulvert&, const RoadCulvert&) = default;
   };
@@ -85,10 +77,10 @@ namespace moppe::terrain {
     Kind kind = Kind::Road;
     // Unwrapped: each point follows the last across the torus's seam, so
     // the line may run beyond the period and is to be read modulo it.
-    std::vector<RoadPoint> points;
-    // The height of the finished tread's centre at each point, metres;
-    // empty until form_roads solves it.
-    std::vector<float> heights;
+    std::vector<plan_position_t> points;
+    // The height of the finished tread's centre at each point; empty until
+    // form_roads solves it.
+    std::vector<SurfaceElevation> heights;
     // Where it crosses a river on a bridge, in order along it; set by
     // form_roads.
     std::vector<RoadBridge> bridges;
@@ -99,10 +91,10 @@ namespace moppe::terrain {
     std::uint32_t traffic = 0;
     // Since the oldest pair of places it joins have both stood: a way is as
     // old as the oldest journey along it.
-    float age_years = 0.0f;
+    age_t age {};
     // Zero while some journey along it joins two places still in use;
     // otherwise since the last such journey ended.
-    float abandoned_years_ago = 0.0f;
+    age_t abandoned {};
     // The road once round the world through the landing, which the bus
     // keeps to (game/bus.hh): closed on itself, its last point its first a
     // period on. It is paved, and its ends join each other, not a turning
@@ -124,63 +116,64 @@ namespace moppe::terrain {
 
   // What grows on and soaks the ground, per terrain cell, each 0 to 1; an
   // empty span counts as none. Roads are dearer to clear through forest,
-  // keep out of mires, and shun wet ground; footpaths mind them less.
+  // keep out of mires (the sphagnum's cover), and shun wet ground;
+  // footpaths mind them less.
   struct RoadGround {
-    std::span<const float> forest_cover;
-    std::span<const float> mire;
-    std::span<const float> wetness;
+    std::span<const quantity<map::forest_cover[one], float>> forest_cover;
+    std::span<const quantity<map::sphagnum_abundance[one], float>> mire;
+    std::span<const SoilWetness> wetness;
   };
 
   // How a road is built into the ground. The tread is a crowned
   // carriageway with shoulders; beyond it the ground is cut back or filled
-  // out at the batters' slopes until they meet it. Lengths are metres and
-  // slopes rise over run.
+  // out at the batters' slopes until they meet it. Slopes and the crown's
+  // fall are rise over run across the road, the grade along it.
   struct RoadFormation {
     // Room for the bus in its lane, and for a car to pass it.
-    float half_width = 3.0f;
-    float shoulder = 0.75f;
-    float crown = 0.025f;
-    float cut_slope = 1.0f;
-    float fill_slope = 0.6f;
+    meters_t half_width = 3.0f * u::m;
+    meters_t shoulder = 0.75f * u::m;
+    slope_t crown = 0.025f * terrain_slope[one];
+    slope_t cut_slope = 1.0f * terrain_slope[one];
+    slope_t fill_slope = 0.6f * terrain_slope[one];
     // The steepest a cart road climbs, and the length over which a change
     // of grade is eased (its vertical curves).
-    float maximum_grade = 0.10f;
-    float vertical_curve = 30.0f;
+    grade_t maximum_grade = 0.10f * grade[one];
+    meters_t vertical_curve = 30.0f * u::m;
     // The most the tread's centre should lie under or over the natural
     // ground; where a hump or a hollow asks for more, the road keeps its
     // grade and cuts or fills deeper.
-    float maximum_cut = 4.0f;
-    float maximum_fill = 2.5f;
+    meters_t maximum_cut = 4.0f * u::m;
+    meters_t maximum_fill = 2.5f * u::m;
     // A road crosses any watercourse draining more than this, and any
     // standing water, on an embankment over a culvert: its tread at least
     // `freeboard` over the water, and over the pipe's crown.
-    float culvert_area_m2 = 20000.0f;
-    float freeboard = 0.5f;
+    square_meters_t culvert_area = 20000.0f * u::m * u::m;
+    meters_t freeboard = 0.5f * u::m;
     // A road bridges any river draining more than this, where the rivers
-    // are drawn (river.hh: five metres wide), its deck `clearance` metres
-    // above the river's spate and its abutments on the banks, at most
-    // `bridge_reach` metres either side of the river's line.
-    float bridge_area_m2 = 175000.0f;
-    float clearance = 1.2f;
-    float bridge_reach = 30.0f;
-    float longest_bridge = 90.0f;
+    // are drawn (river.hh: five metres wide), its deck `clearance` above
+    // the river's spate and its abutments on the banks, at most
+    // `bridge_reach` either side of the river's line.
+    square_meters_t bridge_area = 175000.0f * u::m * u::m;
+    meters_t clearance = 1.2f * u::m;
+    meters_t bridge_reach = 30.0f * u::m;
+    meters_t longest_bridge = 90.0f * u::m;
     // The deck's half width, inside the tread's: the kerbs stand at it.
-    float deck_half_width = 2.9f;
+    meters_t deck_half_width = 2.9f * u::m;
     // How deep the deck and its stringers stand under the tread: the
     // ground under a span is kept at least this far below it.
-    float deck_depth = 0.6f;
+    meters_t deck_depth = 0.6f * u::m;
     // A footpath's worn width; footpaths are not built, only trodden.
-    float footpath_half_width = 0.8f;
+    meters_t footpath_half_width = 0.8f * u::m;
   };
 
   struct RoadFormationResult {
     std::vector<SurfaceElevation> heights;
-    // Metres of ground laid down (positive) or cut away (negative).
-    std::vector<float> change_m;
+    // Ground laid down (positive) or cut away (negative).
+    std::vector<ElevationChange> change;
     // How much of each cell the tread covers, 0 to 1.
-    std::vector<float> influence;
-    double cut_m3 = 0.0;
-    double fill_m3 = 0.0;
+    std::vector<proportion_t> influence;
+    cubic_meters_f64_t cut = 0.0 * u::m * u::m * u::m;
+    cubic_meters_f64_t fill = 0.0 * u::m * u::m * u::m;
     // Points where a cart road's grade exceeds maximum_grade, of all its
     // points.
     std::size_t steep_points = 0;
@@ -213,21 +206,21 @@ namespace moppe::terrain {
   // stretch climbs in, which form_roads makes level, so the pad meets
   // the road it ends without a step.
   struct RoadTurning {
-    static constexpr float radius_m = 2.0f;
+    static constexpr meters_t radius = 2.0f * u::m;
     static constexpr std::size_t segments = 12;
 
     // Into RoadNetwork::roads, and which end: its last point or its first.
     std::size_t road = 0;
     bool back = false;
-    std::vector<RoadPoint> points;
-    std::vector<float> heights;
+    std::vector<plan_position_t> points;
+    std::vector<SurfaceElevation> heights;
   };
 
   // The turning places of a network's cart roads, in the roads' order: one
   // at each end that no other cart road comes within a tread's width of
-  // (a footpath may go on from it). The periods are the world's.
+  // (a footpath may go on from it). The period is the world's.
   [[nodiscard]] std::vector<RoadTurning>
-  road_turnings (const RoadNetwork& network, float period_x, float period_z);
+  road_turnings (const RoadNetwork& network, plan_extent_t period);
 
   // What the nearest road makes of a point: how far it lies from the line
   // (signed, positive to the left going along), how far along the road,
@@ -239,13 +232,12 @@ namespace moppe::terrain {
     bool bridge = false;
     // A paved lane (paved_roads), whose asphalt lies on the tread.
     bool paved = false;
-    float across = 0.0f;
-    float along = 0.0f;
-    float centre_m = 0.0f;
-    float grade = 0.0f;
-    // The line's direction across the ground, a unit vector.
-    float direction_x = 1.0f;
-    float direction_z = 0.0f;
+    meters_t across {};
+    meters_t along {};
+    SurfaceElevation centre {};
+    grade_t grade {};
+    // The line's direction across the ground.
+    plan_direction_t direction = Vec2 (1.0f, 0.0f) * moppe::direction[one];
   };
 
   // A guardrail along a paved lane where the ground falls away beside it:
@@ -254,14 +246,12 @@ namespace moppe::terrain {
   // period.
   struct Guardrail {
     struct Post {
-      float x_m = 0.0f;
-      float z_m = 0.0f;
+      plan_position_t at {};
       // The beam's middle, and the ground at the post's foot.
-      float rail_m = 0.0f;
-      float foot_m = 0.0f;
-      // Away from the road, a horizontal unit vector.
-      float out_x = 0.0f;
-      float out_z = 0.0f;
+      SurfaceElevation rail {};
+      SurfaceElevation foot {};
+      // Away from the road, level.
+      plan_direction_t out {};
     };
     std::vector<Post> posts;
   };
@@ -270,9 +260,9 @@ namespace moppe::terrain {
   // authority the renderer's near ground and every body's footing read, so
   // that what is drawn is what is driven on. Over a built road's tread the
   // ground is the crowned carriageway, under a paved lane's asphalt or a
-  // gravel road's crown (asphalt_m, gravel_m, as the renderer's road
-  // ribbon lays them); it blends back into the height field over `blend`
-  // metres past the shoulder. Over a bridge's span it
+  // gravel road's crown (asphalt, gravel, as the renderer's road ribbon
+  // lays them); it blends back into the height field over `blend` past
+  // the shoulder. Over a bridge's span it
   // is the deck, out to the kerbs, and beyond them the field below.
   // Footpaths are worn into the ground's colour, not built, and leave its
   // height alone. The turning places at the roads' ends are part of it.
@@ -287,18 +277,17 @@ namespace moppe::terrain {
   class RoadSurface {
   public:
     // Segments are found by a grid of buckets, each no more than
-    // `bucket_m` square and listing every segment that passes within
-    // `reach` metres of it.
-    static constexpr float bucket_m = 16.0f;
-    static constexpr float reach_m = 10.0f;
-    static constexpr float blend_m = 1.5f;
-    static constexpr float asphalt_m = 0.045f;
-    static constexpr float gravel_m = 0.03f;
+    // `bucket` square and listing every segment that passes within
+    // `reach` of it.
+    static constexpr meters_t bucket = 16.0f * u::m;
+    static constexpr meters_t reach = 10.0f * u::m;
+    static constexpr meters_t blend = 1.5f * u::m;
+    static constexpr meters_t asphalt = 0.045f * u::m;
+    static constexpr meters_t gravel = 0.03f * u::m;
 
     RoadSurface () = default;
     RoadSurface (const RoadNetwork& network,
-                 float period_x,
-                 float period_z,
+                 plan_extent_t period,
                  const RoadFormation& formation = {});
 
     bool empty () const noexcept {
@@ -309,35 +298,36 @@ namespace moppe::terrain {
       return m_formation;
     }
 
-    RoadSample nearest (float x_m, float z_m) const;
+    RoadSample nearest (plan_position_t at) const;
 
     // The ground's height at a point, given the height field's there.
-    float ground (float x_m, float z_m, float field_m) const;
+    SurfaceElevation ground (plan_position_t at, SurfaceElevation field) const;
 
-    // Guardrails: the beam's line stands `guardrail_offset_m` from the
-    // road's centre and its middle `guardrail_height_m` over the tread's
-    // edge, on posts every `guardrail_spacing_m`.
-    static constexpr float guardrail_offset_m = 4.1f;
-    static constexpr float guardrail_height_m = 0.6f;
-    static constexpr float guardrail_spacing_m = 2.0f;
+    // Guardrails: the beam's line stands `guardrail_offset` from the
+    // road's centre and its middle `guardrail_height` over the tread's
+    // edge, on posts every `guardrail_spacing`.
+    static constexpr meters_t guardrail_offset = 4.1f * u::m;
+    static constexpr meters_t guardrail_height = 0.6f * u::m;
+    static constexpr meters_t guardrail_spacing = 2.0f * u::m;
 
     // Lays the guardrails along the paved lanes of `network` (the one
     // this surface was built from) wherever the ground, as `field` gives
-    // the height field, falls away from the road's edge. Bridges keep
-    // their own railings, and junctions are left open.
+    // the height field (unwrapped points, to be read modulo the period),
+    // falls away from the road's edge. Bridges keep their own railings,
+    // and junctions are left open.
     void place_guardrails (const RoadNetwork& network,
-                           const std::function<float (float, float)>& field);
+                           const ElevationField& field);
 
     std::span<const Guardrail> guardrails () const noexcept {
       return m_guardrails;
     }
 
-    // As the renderer takes them: three rows a segment, (ax, az, bx, bz),
-    // (height at a, at b, distance along at a, 0 road, 1 footpath,
-    // 2 a bridge's deck, or 3 a paved road), and (the tangents of half the
-    // bends at a and at b, positive turning left, 0, 0); and per bucket,
-    // row by row, the offset into the entries (which follow the buckets)
-    // and their count, then the entries.
+    // As the renderer takes them, metres, the GPU's layout: three rows a
+    // segment, (ax, az, bx, bz), (height at a, at b, distance along at a, 0
+    // road, 1 footpath, 2 a bridge's deck, or 3 a paved road), and (the
+    // tangents of half the bends at a and at b, positive turning left, 0, 0);
+    // and per bucket, row by row, the offset into the entries (which follow the
+    // buckets) and their count, then the entries.
     static constexpr std::size_t rows_per_segment = 3;
 
     std::span<const std::array<float, 4>> segment_rows () const noexcept {
@@ -356,19 +346,20 @@ namespace moppe::terrain {
       return m_buckets_z;
     }
 
-    // A bucket's sides, metres: the periods divided evenly.
-    float bucket_x () const noexcept {
-      return m_period_x / static_cast<float> (m_buckets_x);
+    // A bucket's sides: the periods divided evenly.
+    meters_t bucket_x () const noexcept {
+      return plan_value (m_period).x () / static_cast<float> (m_buckets_x) *
+             u::m;
     }
 
-    float bucket_z () const noexcept {
-      return m_period_z / static_cast<float> (m_buckets_z);
+    meters_t bucket_z () const noexcept {
+      return plan_value (m_period).z () / static_cast<float> (m_buckets_z) *
+             u::m;
     }
 
   private:
     RoadFormation m_formation;
-    float m_period_x = 0.0f;
-    float m_period_z = 0.0f;
+    plan_extent_t m_period {};
     int m_buckets_x = 0;
     int m_buckets_z = 0;
     std::size_t m_segment_count = 0;
@@ -396,7 +387,7 @@ namespace moppe::terrain {
               const RoadGround& ground,
               square_meters_t river_area,
               CellIndex home_base,
-              float sea_level,
+              SurfaceElevation sea_level,
               std::uint32_t seed);
 }
 

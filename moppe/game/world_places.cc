@@ -31,7 +31,8 @@ namespace moppe::game {
                          world_seed ^ 0xb05u);
     for (const BusStop& stop : bus.stops ())
       layout.clearings.push_back (
-        { stop.shelter.value_or (stop.sign), stop.shelter ? 4.0f : 2.0f });
+        { position_value (stop.shelter.value_or (stop.sign)),
+          stop.shelter ? 4.0f : 2.0f });
     session.logic ().m_beacons.assign (layout.sanctuaries.size (), Beacon {});
     // Each barn lived in has its row of nest boxes, with the eggs laid
     // in them before the walker came.
@@ -97,7 +98,10 @@ namespace moppe::game {
     if (!renderer)
       return;
     landscape.rebuild (*renderer, layout, placed);
-    bus_view.rebuild (*renderer, bus, layout.period_x, layout.period_z);
+    bus_view.rebuild (
+      *renderer,
+      bus,
+      plan_extent (layout.period_x * u::m, layout.period_z * u::m));
   }
 
   std::vector<const Building*> WorldPlaces::kept_barns () const {
@@ -206,7 +210,7 @@ namespace moppe::game {
     const terrain::RoadNetwork& roads = ground.generated.roads ();
     const auto lived_in = [&roads] (std::size_t place) {
       return place < roads.places.size () &&
-             roads.places[place].abandoned_years_ago <= 0.0f;
+             roads.places[place].abandoned <= age_t::zero ();
     };
     std::vector<Fold> folds;
     for (const Farm& farm : layout.farms)

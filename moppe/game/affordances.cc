@@ -171,10 +171,10 @@ namespace moppe::game {
           if (doing == Doing::on_foot ()) {
             if (const std::optional<std::size_t> bus =
                   bus_at_hand (*around->bus,
-                               session.walker ().position (),
+                               position (session.walker ().position ()),
                                bus_time (logic),
-                               around->places->period_x,
-                               around->places->period_z))
+                               plan_extent (around->places->period_x * u::m,
+                                            around->places->period_z * u::m)))
               list.push_back ({ .verb = Verb::board_bus,
                                 .button = Button::mount,
                                 .object = static_cast<std::uint32_t> (*bus) });

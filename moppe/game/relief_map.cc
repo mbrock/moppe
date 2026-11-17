@@ -365,13 +365,15 @@ namespace moppe::game {
     for (const terrain::Road& road : roads.roads) {
       float along = 0.0f;
       for (std::size_t i = 0; i + 1 < road.points.size (); ++i) {
-        const float ax = road.points[i].x_m / metres_x;
-        const float az = road.points[i].z_m / metres_z;
-        const float bx = road.points[i + 1].x_m / metres_x;
-        const float bz = road.points[i + 1].z_m / metres_z;
+        const plan_position_t& a = road.points[i];
+        const plan_position_t& b = road.points[i + 1];
+        const float ax = plan_value (a).x () / metres_x;
+        const float az = plan_value (a).z () / metres_z;
+        const float bx = plan_value (b).x () / metres_x;
+        const float bz = plan_value (b).z () / metres_z;
         // A way no longer used is drawn in broken line, as maps show
         // an old road gone back to the country.
-        const bool abandoned = road.abandoned_years_ago > 0.0f;
+        const bool abandoned = road.abandoned > age_t {};
         if (road.kind == terrain::Road::Kind::Road && abandoned) {
           old_road_layer.stroke (ax,
                                  az,
@@ -412,18 +414,24 @@ namespace moppe::game {
     for (const auto& [a, b] : roads.sightlines) {
       const terrain::RoadPlace& one = roads.places[a];
       const terrain::RoadPlace& two = roads.places[b];
-      const float ax = one.x_m / metres_x;
-      const float az = one.z_m / metres_z;
-      const float bx = ax + wrap_delta (two.x_m - one.x_m, period_x) / metres_x;
-      const float bz = az + wrap_delta (two.z_m - one.z_m, period_z) / metres_z;
+      const plan_position_t& p = one.at;
+      const plan_position_t& q = two.at;
+      const float ax = plan_value (p).x () / metres_x;
+      const float az = plan_value (p).z () / metres_z;
+      const float bx =
+        ax + wrap_delta (plan_value (q).x () - plan_value (p).x (), period_x) /
+               metres_x;
+      const float bz =
+        az + wrap_delta (plan_value (q).z () - plan_value (p).z (), period_z) /
+               metres_z;
       sightline_layer.stroke (
         ax, az, bx, bz, 1.0f * pen, 1.0f * pen, 0.0f, 10.0f * pen, 8.0f * pen);
     }
     for (const terrain::RoadPlace& place : roads.places) {
       if (place.kind != terrain::RoadPlace::Kind::Sanctuary)
         continue;
-      const float cx = place.x_m / metres_x;
-      const float cz = place.z_m / metres_z;
+      const float cx = plan_value (place.at).x () / metres_x;
+      const float cz = plan_value (place.at).z () / metres_z;
       const float r = 12.0f * pen;
       const float top_x = cx, top_z = cz - r;
       const float left_x = cx - 0.87f * r, left_z = cz + 0.5f * r;
