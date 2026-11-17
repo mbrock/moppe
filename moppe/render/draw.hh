@@ -39,10 +39,17 @@ namespace moppe {
       void load_identity ();
       void translate (const Vec3& v);
       void translate (float x, float y, float z);
+      // Typed: move the origin by an offset in the current frame, or (on
+      // an identity stack, as the world's draws start) to a place.
+      void translate (const displacement_t& offset);
+      void translate (const position_t& place);
       void rotate (radians_t angle, const Vec3& axis);
       void rotate (radians_t angle, float ax, float ay, float az);
+      void rotate (radians_t angle, const direction_t& axis);
       void scale (const Vec3& v);
       void scale (float x, float y, float z);
+      // The same factor on every axis.
+      void scale (scale_factor_t factor);
       void mult (const Mat4& m);
       const Mat4& matrix () const {
         return m_stack[m_top];
@@ -51,12 +58,14 @@ namespace moppe {
       // -- attribute / state -------------------------------------------
       void color (float r, float g, float b, float a = 1.0f);
       void color (DisplayColor c, float a = 1.0f);
+      void color (DisplayColor c, proportion_t opacity);
       void lit (bool on);
       void fogged (bool on);
       // Subsequent lit vertices are a weathered film (the boat's
       // plywood) worn this much, 0..1, its coordinates in metres in the
       // uv; negative, the default, they are not.
       void worn (float wear);
+      void worn (proportion_t wear);
       // How much of the gust's lean subsequent vertices take (0 = anchored,
       // 1 = full amplitude). Grows with height up a plant.
       void wind (proportion_t w);
@@ -71,8 +80,13 @@ namespace moppe {
                      float roughness,
                      float coat,
                      float sheen = 0.0f);
+      void material (proportion_t metallic,
+                     proportion_t roughness,
+                     proportion_t coat,
+                     proportion_t sheen);
       void plain ();
       void normal (const Vec3& n);
+      void normal (const direction_t& n);
       void uv (float u, float v);
       void state (const DrawState& s);
       DrawState& state () {
@@ -83,6 +97,10 @@ namespace moppe {
       void begin (Prim p);
       void vertex (const Vec3& v);
       void vertex (float x, float y, float z = 0.0f);
+      // Typed: a point of the model, as its offset from the frame's
+      // origin, or a place in the world (with the frame at the world's).
+      void vertex (const displacement_t& offset);
+      void vertex (const position_t& place);
       void end ();
 
       // Solid primitives, matching the glutSolid* conventions:
@@ -93,6 +111,12 @@ namespace moppe {
       void sphere (float radius, int slices, int stacks);
       void cone (float base, float height, int slices, int stacks);
       void torus (float inner, float outer, int sides, int rings);
+      // The same in metres: a cube's edge, a sphere's radius, a cone's
+      // base radius and height, a torus's tube and spine radii.
+      void cube (meters_t size);
+      void sphere (meters_t radius, int slices, int stacks);
+      void cone (meters_t base, meters_t height, int slices, int stacks);
+      void torus (meters_t inner, meters_t outer, int sides, int rings);
 
       // 2D convenience for the HUD (records in the z=0 plane): a thick
       // line segment as a quad.  Endpoints honor the matrix stack; width

@@ -124,6 +124,12 @@ namespace moppe {
   // The power one measure grows by with another, d ∝ w^k: how a river's
   // depth follows its width. Not a scale: it is an exponent, raised to.
   QUANTITY_SPEC (scaling_exponent, mp_units::dimensionless, mp_units::subkind);
+  // A picture's width over its height: a camera's frame, a viewport.
+  QUANTITY_SPEC (aspect_ratio,
+                 mp_units::dimensionless,
+                 mp_units::isq::width / mp_units::isq::height,
+                 mp_units::non_negative,
+                 mp_units::subkind);
   // Which way, and nothing of how far: a unit-length vector. A normal, a
   // forward, an axis; the plan's version is a unit Vec2.
   QUANTITY_SPEC (direction,

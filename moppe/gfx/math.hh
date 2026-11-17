@@ -70,6 +70,7 @@ namespace moppe {
   using scale_factor_t = quantity<scale_factor[one], float>;
   using froude_number_t = quantity<froude_number[one], float>;
   using scaling_exponent_t = quantity<scaling_exponent[one], float>;
+  using aspect_ratio_t = quantity<aspect_ratio[one], float>;
 
   // Angles with a role (moppe/quantities.hh).
   using heading_t = quantity<heading[si::radian], float>;
