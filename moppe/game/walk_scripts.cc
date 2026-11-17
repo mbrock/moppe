@@ -25,7 +25,8 @@ namespace moppe::game {
       return;
     const terrain::WaterSheets& sheets = s.ground.generated.water_surface ();
     const auto depth_at = [&] (const Vec3& at) {
-      return still_water_at (s.ground.world, s.ground.surface (), &sheets, at)
+      return still_water_at (
+               s.ground.world, s.ground.surface (), &sheets, position (at))
                .numerical_value_in (u::m) -
              s.ground.height (at);
     };
@@ -46,8 +47,10 @@ namespace moppe::game {
               depth_at (stand + out * 8.0f) < 0.8f)
             continue;
           stand[1] = s.ground.height (stand) + 0.1f;
-          s.session.walker ().spawn (moppe::position (stand), out);
-          s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
+          s.session.walker ().spawn (moppe::position (stand),
+                                     unit_direction (out));
+          s.session.logic ().m_fp_eye =
+            position_value (s.session.walker ().eye_position ());
           std::cerr << "moppe: fish script: a bank " << length (stand - s.spawn)
                     << " m from the spawn" << std::endl;
           return;
@@ -216,8 +219,10 @@ namespace moppe::game {
       at[1] = std::max (static_cast<float> (at[1]), *floor + 0.1f);
     Vec3 facing = stand->second - at;
     facing[1] = 0.0f;
-    s.session.walker ().spawn (moppe::position (at), normalized (facing));
-    s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
+    s.session.walker ().spawn (moppe::position (at),
+                               unit_direction (normalized (facing)));
+    s.session.logic ().m_fp_eye =
+      position_value (s.session.walker ().eye_position ());
     s.session.settle_camera (s.ground.surface ());
     std::cerr << "moppe: walk: " << script << " at " << at[0] << ' ' << at[2]
               << std::endl;
@@ -229,7 +234,7 @@ namespace moppe::game {
         s.session.logic ().m_doing != Doing::on_foot ())
       return;
     const std::vector<mov::Trunk> near =
-      s.ground.trunks.gather (s.spawn, 700.0f);
+      s.ground.trunks.gather (position (s.spawn), 700.0f * u::m);
     // Under open sky, so there are stars to lie and look at.
     m_state.camp.site =
       nearest_hammock_site (near, s.spawn, s.ground.reader (), 60.0f);
@@ -245,7 +250,7 @@ namespace moppe::game {
     const auto clearance = [&] (float side) {
       float least = 100.0f;
       for (const mov::Trunk& trunk : near) {
-        Vec3 to = trunk.root - middle;
+        Vec3 to = position_value (trunk.root) - middle;
         to[1] = 0.0f;
         const float out = dot (to, across) * side;
         if (out < 1.0f || out > 9.0f)
@@ -260,8 +265,10 @@ namespace moppe::game {
     stand[1] = s.ground.height (stand) + 0.1f;
     Vec3 facing = middle - stand;
     facing[1] = 0.0f;
-    s.session.walker ().spawn (moppe::position (stand), normalized (facing));
-    s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
+    s.session.walker ().spawn (moppe::position (stand),
+                               unit_direction (normalized (facing)));
+    s.session.logic ().m_fp_eye =
+      position_value (s.session.walker ().eye_position ());
     std::cerr << "moppe: camp script: two trees "
               << length (site.strap[1] - site.strap[0]) << " m apart, "
               << length (middle - s.spawn) << " m from the spawn" << std::endl;
@@ -275,7 +282,7 @@ namespace moppe::game {
       return input;
     const HammockSite& site = *script.site;
     const Walker& walker = s.session.walker ();
-    const Vec3 feet = walker.position ();
+    const Vec3 feet = position_value (walker.position ());
     const float t = m_state.time;
     const float waited = t - script.since;
     const auto next = [&] {
@@ -289,7 +296,7 @@ namespace moppe::game {
       const float distance = length (toward);
       if (distance <= near)
         return true;
-      const Vec3 heading = walker.heading ();
+      const Vec3 heading = direction_value (walker.heading ());
       const Vec3 left (heading[2], 0.0f, -heading[0]);
       const float leftward = dot (toward, left) / distance;
       const float ahead = dot (toward, heading) / distance;
@@ -481,12 +488,12 @@ namespace moppe::game {
       // doors and down the ramp into the yard, light a fire there,
       // fry them, and eat.
       const Walker& walker = s.session.walker ();
-      const Vec3 feet = walker.position ();
+      const Vec3 feet = position_value (walker.position ());
       const auto steer = [&] (const Vec3& goal, float pace) {
         Vec3 toward = goal - feet;
         toward[1] = 0.0f;
         const float distance = length (toward);
-        const Vec3 heading = walker.heading ();
+        const Vec3 heading = direction_value (walker.heading ());
         const Vec3 left (heading[2], 0.0f, -heading[0]);
         const float leftward = dot (toward, left) / std::max (distance, 1e-3f);
         const float ahead = dot (toward, heading) / std::max (distance, 1e-3f);
@@ -564,14 +571,14 @@ namespace moppe::game {
       // Walk to the nearest mushroom, turning toward it, and pick it
       // once within reach; poisonous ones are left after one try.
       const Walker& walker = s.session.walker ();
-      const Vec3 feet = walker.position ();
+      const Vec3 feet = position_value (walker.position ());
       const auto target =
         s.mushrooms.nearest (feet, 60.0f, m_state.forage_refused);
       if (target) {
         Vec3 toward = s.mushrooms.site (*target).base - feet;
         toward[1] = 0.0f;
         const float distance = length (toward);
-        const Vec3 heading = walker.heading ();
+        const Vec3 heading = direction_value (walker.heading ());
         const Vec3 left (heading[2], 0.0f, -heading[0]);
         const float leftward = dot (toward, left) / std::max (distance, 1e-3f);
         const float ahead = dot (toward, heading) / std::max (distance, 1e-3f);

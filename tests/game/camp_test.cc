@@ -11,17 +11,17 @@ using namespace moppe::game;
 namespace {
   // A birch: tall, a hand's breadth through, bare to well above the head.
   mov::Trunk camp_test_birch (float x, float z, float ground = 10.0f) {
-    return { .root = Vec3 (x, ground, z),
-             .axis = Vec3 (0, 1, 0),
-             .height = 12.0f,
-             .radius = 0.12f,
-             .clear = 6.0f };
+    return { .root = position (Vec3 (x, ground, z)),
+             .axis = unit_direction (Vec3 (0, 1, 0)),
+             .height = 12.0f * u::m,
+             .radius = 0.12f * u::m,
+             .clear = 6.0f * u::m };
   }
 
   // A spruce of the same size keeps its boughs to the ground.
   mov::Trunk camp_test_spruce (float x, float z) {
     mov::Trunk spruce = camp_test_birch (x, z);
-    spruce.clear = 0.8f;
+    spruce.clear = 0.8f * u::m;
     return spruce;
   }
 
@@ -70,8 +70,8 @@ MOPPE_TEST (unfit_trees_carry_no_hammock) {
     { camp_test_spruce (100.0f, 100.0f), camp_test_birch (104.0f, 100.0f) }));
   // A sapling will not hold.
   mov::Trunk sapling = camp_test_birch (104.0f, 100.0f);
-  sapling.height = 3.0f;
-  sapling.radius = 0.03f;
+  sapling.height = 3.0f * u::m;
+  sapling.radius = 0.03f * u::m;
   MOPPE_CHECK (!hangs ({ camp_test_birch (100.0f, 100.0f), sapling }));
   // A third tree stands between them.
   MOPPE_CHECK (!hangs ({ camp_test_birch (100.0f, 100.0f),
@@ -132,20 +132,24 @@ MOPPE_TEST (a_sleeper_lies_in_the_sag_of_the_cloth) {
   const AvatarSkeleton lying = pose_resting (site, 0.0f, Vec3 (0, 1, 0), 0.0f);
   // Between the trees, below the straps, clear of the ground, on their
   // back with their head toward the second tree.
-  MOPPE_CHECK (lying.pelvis[0] > 101.0f && lying.pelvis[0] < 103.0f);
-  MOPPE_CHECK (lying.pelvis[1] < site.strap[0][1] - 0.3f);
-  MOPPE_CHECK (lying.pelvis[1] > 10.45f);
-  MOPPE_CHECK (lying.forward[1] > 0.9f);
-  MOPPE_CHECK (lying.head[0] > lying.pelvis[0] + 0.4f);
-  MOPPE_CHECK (lying.ankle[0][0] < lying.pelvis[0] - 0.5f);
+  MOPPE_CHECK (position_value (lying.pelvis)[0] > 101.0f &&
+               position_value (lying.pelvis)[0] < 103.0f);
+  MOPPE_CHECK (position_value (lying.pelvis)[1] < site.strap[0][1] - 0.3f);
+  MOPPE_CHECK (position_value (lying.pelvis)[1] > 10.45f);
+  MOPPE_CHECK (direction_value (lying.forward)[1] > 0.9f);
+  MOPPE_CHECK (position_value (lying.head)[0] >
+               position_value (lying.pelvis)[0] + 0.4f);
+  MOPPE_CHECK (position_value (lying.ankle[0])[0] <
+               position_value (lying.pelvis)[0] - 0.5f);
   // Their eyes look up and along their own length.
   const Vec3 eye = resting_eye (site, 0.0f);
-  MOPPE_CHECK (length (eye - lying.head) < 0.3f);
+  MOPPE_CHECK (length (eye - position_value (lying.head)) < 0.3f);
   const Vec3 gaze = resting_gaze (site, 0.0f, 1.1f);
   MOPPE_CHECK (gaze[1] > 0.8f && gaze[0] < 0.0f);
   // A swing carries the sleeper sideways.
   const AvatarSkeleton swung = pose_resting (site, 0.3f, Vec3 (0, 1, 0), 0.0f);
-  MOPPE_CHECK (std::fabs (swung.pelvis[2] - lying.pelvis[2]) > 0.1f);
+  MOPPE_CHECK (std::fabs (position_value (swung.pelvis)[2] -
+                          position_value (lying.pelvis)[2]) > 0.1f);
 }
 
 MOPPE_TEST (the_fire_catches_burns_and_dies) {

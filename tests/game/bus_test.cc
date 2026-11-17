@@ -205,7 +205,7 @@ MOPPE_TEST (a_rider_boards_at_a_stop_and_gets_off_at_the_next_asked_for) {
   ride_bus (session, line);
   MOPPE_CHECK (logic.m_doing == Doing::on_foot ());
   MOPPE_CHECK (!logic.m_bus_alight);
-  const Vec3 feet = session.walker ().position ();
+  const Vec3 feet = position_value (session.walker ().position ());
   MOPPE_CHECK (std::fabs (feet[0] - 402.925f) < 0.1f);
   MOPPE_CHECK (std::fabs (feet[2] - 502.7f) < 0.1f);
 }

@@ -72,13 +72,13 @@ namespace moppe::game {
     // hang there; looked for again only once they have moved.
     void seek_hammock_site (GameSession& session, const Surroundings& around) {
       GameLogicState& logic = session.logic ();
-      const Vec3 feet = session.walker ().position ();
+      const Vec3 feet = position_value (session.walker ().position ());
       if (logic.m_hammock_sought_from &&
           length2 (feet - *logic.m_hammock_sought_from) < 0.3f * 0.3f)
         return;
       logic.m_hammock_sought_from = feet;
       const std::vector<mov::Trunk> near =
-        around.trunks ? around.trunks->gather (feet, 8.0f)
+        around.trunks ? around.trunks->gather (position (feet), 8.0f * u::m)
                       : std::vector<mov::Trunk> ();
       const map::SurfaceGeometry& surface = *around.surface;
       logic.m_hammock_at_hand =
@@ -198,7 +198,7 @@ namespace moppe::game {
         const float level = water_surface_at (*around.world,
                                               *around.surface,
                                               around.water,
-                                              next,
+                                              position (next),
                                               seconds_into_play (now))
                               .numerical_value_in (u::m);
         if (level - ground_at (around, next) > 0.2f &&
@@ -362,19 +362,20 @@ namespace moppe::game {
   bool beside_hammock (const GameSession& session) {
     const Camp& camp = session.logic ().m_camp;
     return camp.hung &&
-           hammock_distance (camp.hammock, session.walker ().position ()) <
+           hammock_distance (camp.hammock,
+                             position_value (session.walker ().position ())) <
              1.5f * u::m;
   }
 
   std::optional<Vec3> hearth_ahead (const GameSession& session,
                                     const Surroundings& around) {
     const Walker& walker = session.walker ();
-    Vec3 ahead = walker.heading ();
+    Vec3 ahead = direction_value (walker.heading ());
     ahead[1] = 0.0f;
     if (length2 (ahead) < 1e-6f)
       return std::nullopt;
     ahead = normalized (ahead);
-    Vec3 hearth = walker.position () + ahead * 1.3f;
+    Vec3 hearth = position_value (walker.position ()) + ahead * 1.3f;
     hearth[1] = ground_at (around, hearth);
     if (hearth[1] < around.world->water_level.numerical_value_in (u::m) + 0.2f)
       return std::nullopt;
@@ -391,7 +392,7 @@ namespace moppe::game {
     const GameLogicState& logic = session.logic ();
     if (logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return std::nullopt;
-    const Vec3 feet = session.walker ().position ();
+    const Vec3 feet = position_value (session.walker ().position ());
     const Camp& camp = logic.m_camp;
     std::optional<Vec3> found;
     float nearest = 2.4f * 2.4f;
@@ -419,7 +420,7 @@ namespace moppe::game {
     const Pan& pan = logic.m_camp.pan;
     if (!pan.on || logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return false;
-    Vec3 to = session.walker ().position () - pan.place;
+    Vec3 to = position_value (session.walker ().position ()) - pan.place;
     to[1] = 0.0f;
     return length2 (to) < meters_value (pan_reach) * meters_value (pan_reach);
   }
@@ -449,7 +450,7 @@ namespace moppe::game {
     if (logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return std::nullopt;
     return sanctuary_at_hand (places_of (around),
-                              session.walker ().position ());
+                              position_value (session.walker ().position ()));
   }
 
   bool their_beacon (const GameLogicState& logic, std::size_t i) {
@@ -465,8 +466,8 @@ namespace moppe::game {
     const PlacesPlan& places = places_of (around);
     return nest_within_reach (around.nests,
                               logic.m_nests,
-                              session.walker ().position (),
-                              session.walker ().heading (),
+                              position_value (session.walker ().position ()),
+                              direction_value (session.walker ().heading ()),
                               places.period_x,
                               places.period_z);
   }
@@ -475,7 +476,8 @@ namespace moppe::game {
     const GameLogicState& logic = session.logic ();
     if (logic.m_doing == Doing::on_foot () && !logic.m_camp.resting) {
       const Walker& walker = session.walker ();
-      return Angler { walker.position (), walker.heading () };
+      return Angler { position_value (walker.position ()),
+                      direction_value (walker.heading ()) };
     }
     if (logic.m_doing == Doing::driving (Machine::boat)) {
       const mov::Boat& boat = session.boat ();
@@ -529,7 +531,7 @@ namespace moppe::game {
       Vec3 at = from->at + ahead * meters_value (reach);
       const float ground = ground_at (around, at);
       const float level =
-        still_water_at (*around.world, *around.surface, &sheets, at)
+        still_water_at (*around.world, *around.surface, &sheets, position (at))
           .numerical_value_in (u::m);
       if (level - ground < meters_value (fishing_depth))
         continue;
@@ -554,8 +556,8 @@ namespace moppe::game {
     if (!around.mushrooms || session.logic ().m_doing != Doing::on_foot ())
       return std::nullopt;
     const Walker& walker = session.walker ();
-    return around.mushrooms->within_reach (walker.position (),
-                                           walker.heading ());
+    return around.mushrooms->within_reach (position_value (walker.position ()),
+                                           direction_value (walker.heading ()));
   }
 
   void pick (GameSession& session,
@@ -596,7 +598,7 @@ namespace moppe::game {
     case Supper::fry: {
       // A pan set on the fire's stones.
       Pan pan = pan_set_on (*fire_at_hand (session, around),
-                            session.walker ().position ());
+                            position_value (session.walker ().position ()));
       pan.since = now;
       pan.next_steam = now + 1.0 * si::second;
       // A fish first, if there is one, and mushrooms beside it.
@@ -719,15 +721,15 @@ namespace moppe::game {
   std::optional<Vec3> fire_place (const GameSession& session,
                                   const Surroundings& around) {
     // An old fire ring takes the fire, or else level ground ahead.
-    if (const std::optional<Vec3> ring =
-          hearth_at_hand (places_of (around), session.walker ().position ()))
+    if (const std::optional<Vec3> ring = hearth_at_hand (
+          places_of (around), position_value (session.walker ().position ())))
       return ring;
     return hearth_ahead (session, around);
   }
 
   bool beside_fire (const GameSession& session) {
     const Camp& camp = session.logic ().m_camp;
-    Vec3 to_fire = session.walker ().position () - camp.hearth;
+    Vec3 to_fire = position_value (session.walker ().position ()) - camp.hearth;
     to_fire[1] = 0.0f;
     return camp.fire && length2 (to_fire) < 3.0f * 3.0f;
   }

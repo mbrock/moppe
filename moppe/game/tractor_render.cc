@@ -64,16 +64,16 @@ namespace moppe::game {
                                tractor_model::pedal_left };
 
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis =
+        hold.facing = unit_direction (facing);
+        hold.up = unit_direction (up);
+        position_value (hold.pelvis) =
           frame.transform_point (tractor_model::seat_driver) + up * 0.09f;
         // Sat up, leaning a little toward the wheel.
-        hold.lean = 0.05f;
+        hold.lean = 0.05f * u::rad;
         hold.gaze = facing;
         hold.head_up = up;
-        hold.sole = normalized (up * 0.15f + facing);
-        hold.instep = normalized (up - facing * 0.15f);
+        hold.sole = unit_direction (normalized (up * 0.15f + facing));
+        hold.instep = unit_direction (normalized (up - facing * 0.15f));
 
         const Mat4 wheel = frame *
                            Mat4::translation (tractor_model::steering_hub) *
@@ -86,10 +86,12 @@ namespace moppe::game {
         };
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
+          const Vec3 shoulder = position_value (held_shoulder (hold, i));
+          hold.wrist[i] =
+            position (grip[i] - normalized (grip[i] - shoulder) * 0.07f);
           hold.elbow_pole[i] = left * side - up * 0.6f - facing * 0.2f;
-          hold.ankle[i] = frame.transform_point (foot[i]) + up * 0.085f;
+          hold.ankle[i] =
+            position (frame.transform_point (foot[i]) + up * 0.085f);
           hold.knee_pole[i] = up + facing * 0.6f + left * (side * 0.35f);
         }
         return pose_holding (hold);

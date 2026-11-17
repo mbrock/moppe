@@ -229,7 +229,8 @@ namespace moppe::game {
                         boulders.colliders ().end ());
       const Vec3 period = extent_value (world.forest ().period);
       mov::TrunkField trunks;
-      trunks.set_trunks (std::move (obstacles), period[0], period[2]);
+      trunks.set_trunks (std::move (obstacles),
+                         plan_extent (period[0] * u::m, period[2] * u::m));
       const auto [spawn, heading] = spawn_of (world);
       report << "\n== simulation setup ==\n"
              << "  " << forest.tree_count () << " trees, "
@@ -261,7 +262,7 @@ namespace moppe::game {
           input.boost = std::fmod (t, 2.5f) < 0.1f && t > 4.0f ? 1.0f : 0.0f;
           input.look_yaw = 0.25f * std::sin (t * 0.35f) * dt;
           const clock::time_point before = clock::now ();
-          trunks.focus (session.subject_position ());
+          trunks.focus (position (session.subject_position ()));
           advance_game_session (world.params (),
                                 world.surface (),
                                 session,
@@ -311,13 +312,17 @@ namespace moppe::game {
           const Vec3 at = session.subject_position ();
           const Vec3 ahead_dir = session.subject_heading ();
           const Vec3 right = normalized (cross (ahead_dir, Vec3 (0, 1, 0)));
-          trunks.focus (at);
+          trunks.focus (position (at));
           for (const float ahead : { 4.0f, 9.0f }) {
             const Vec3 probe = at + ahead_dir * ahead;
             const mov::TrunkContact contact =
-              trunks.collide (probe, probe + Vec3 (0, 1.5f, 0), 1.8f);
+              trunks.collide (position (probe),
+                              position (probe + Vec3 (0, 1.5f, 0)),
+                              1.8f * u::m);
             if (contact.hit) {
-              input.turn = dot (contact.normal, right) >= 0.0f ? 1.0f : -1.0f;
+              input.turn = dot (direction_value (contact.normal), right) >= 0.0f
+                             ? 1.0f
+                             : -1.0f;
               break;
             }
           }

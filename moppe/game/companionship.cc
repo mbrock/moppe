@@ -125,7 +125,7 @@ namespace moppe::game {
         const bool water = machine_kind (*seat).medium == Medium::water;
         session.walker ().spawn (moppe::position (state.m_seat_position -
                                                   left * (water ? 1.1f : 1.4f)),
-                                 state.m_seat_heading);
+                                 unit_direction (state.m_seat_heading));
         session.set_mode (Doing::on_foot ());
         input.toggle_mount = false;
         return;

@@ -97,8 +97,9 @@ namespace moppe::game {
       const Vec3 feet =
         position_value (glider.position ()) -
         Vec3 (0, meters_value (mov::Glider::pilot_clearance) - 0.1f, 0);
-      session.walker ().spawn (
-        moppe::position (feet), glider.heading (), glider.velocity ());
+      session.walker ().spawn (moppe::position (feet),
+                               unit_direction (glider.heading ()),
+                               glider.velocity ());
       session.set_mode (Doing::on_foot ());
       Controls k = logic.m_controls;
       k.boost = 0.0f;
@@ -411,7 +412,7 @@ namespace moppe::game {
       const position_t tie_at = body.point (haul.tie);
       const Vec3& tie = position_value (tie_at);
       Walker& walker = session.walker ();
-      Vec3 out = walker.position () - tie;
+      Vec3 out = position_value (walker.position ()) - tie;
       const float drop = std::abs (out[1]);
       out[1] = 0.0f;
       // Pulled out of the hand: the machine fell away, or the walker did.
@@ -420,16 +421,14 @@ namespace moppe::game {
         let_go (session, false);
         return;
       }
-      const HaulForce force = haul_force (haul,
-                                          body,
-                                          walker.physical_position (),
-                                          moppe::velocity (walker.velocity ()));
+      const HaulForce force =
+        haul_force (haul, body, walker.position (), walker.velocity ());
       session.push_machine (
         haul.machine, tie_at, quantity_cast<isq::impulse> (force.pull * step));
       session.push_machine (haul.machine,
                             body.point (machine_kind (haul.machine).centre),
                             quantity_cast<isq::impulse> (force.lift * step));
-      walker.tether (tie,
+      walker.tether (moppe::position (tie),
                      std::max (0.6f * u::m, haul.rope - rope_give),
                      haul.rope + rope_give);
     }
@@ -556,7 +555,7 @@ namespace moppe::game {
   // as it reaches from there to the walker's feet.
   void take_rope (GameSession& session, Machine machine) {
     const MachineBody body = session.machine_body (machine);
-    const Vec3 feet = session.walker ().position ();
+    const Vec3 feet = position_value (session.walker ().position ());
     const bool front = dot (feet - position_value (body.position),
                             direction_value (body.forward)) >= 0.0f;
     Haul& haul = session.logic ().m_haul;
@@ -591,7 +590,7 @@ namespace moppe::game {
       const float keep = kind.medium == Medium::water ? 0.5f : 1.0f;
       session.walker ().spawn (
         moppe::position (at),
-        direction_value (b.forward ()),
+        b.forward (),
         moppe::velocity (velocity_value (b.velocity ()) * keep));
     });
     session.set_mode (Doing::on_foot ());
@@ -723,7 +722,7 @@ namespace moppe::game {
   Vec3 GameSession::subject_position () const {
     switch (m_logic.m_doing.way) {
     case Doing::Way::foot:
-      return m_walker.position ();
+      return position_value (m_walker.position ());
     case Doing::Way::glider:
       return position_value (m_glider.position ());
     case Doing::Way::passenger:
@@ -741,7 +740,7 @@ namespace moppe::game {
   Vec3 GameSession::subject_heading () const {
     switch (m_logic.m_doing.way) {
     case Doing::Way::foot:
-      return m_walker.heading ();
+      return direction_value (m_walker.heading ());
     case Doing::Way::glider:
       return m_glider.heading ();
     case Doing::Way::passenger:
@@ -777,7 +776,7 @@ namespace moppe::game {
   std::optional<Machine> GameSession::mount_within_reach () const {
     if (m_logic.m_doing != Doing::on_foot ())
       return std::nullopt;
-    const Vec3 feet = m_walker.position ();
+    const Vec3 feet = position_value (m_walker.position ());
     std::optional<Machine> nearest;
     float best = 1e30f;
     for_each_machine (m_fleet, [&] (Machine m, const Drivable auto& b) {
@@ -861,7 +860,7 @@ namespace moppe::game {
       step_out (*this, Machine::bike);
     m_logic.m_cam_mode = CAM_CHASE;
     m_logic.m_look_pitch = 0.0f;
-    m_logic.m_fp_eye = m_walker.eye_position ();
+    m_logic.m_fp_eye = position_value (m_walker.eye_position ());
     m_camera.reset ();
   }
 
@@ -869,10 +868,10 @@ namespace moppe::game {
     CameraRig rig;
     switch (m_logic.m_doing.way) {
     case Doing::Way::foot:
-      rig.eye = m_walker.eye_position ();
-      rig.ahead = m_walker.heading ();
-      rig.pivot = m_walker.position () + Vec3 (0, 1.35f, 0);
-      rig.velocity = m_walker.velocity ();
+      rig.eye = position_value (m_walker.eye_position ());
+      rig.ahead = direction_value (m_walker.heading ());
+      rig.pivot = position_value (m_walker.position ()) + Vec3 (0, 1.35f, 0);
+      rig.velocity = velocity_value (m_walker.velocity ());
       rig.distance = 3.8f * u::m;
       rig.nearest = 0.9f * u::m;
       rig.elevation = 10.0f * u::deg;
@@ -1046,16 +1045,15 @@ namespace moppe::game {
                                    double time) {
       const float sea = world.water_level.numerical_value_in (u::m);
       return { [&world, &surface, water, time] (position_t at) {
-                return water_surface_at (
-                  world, surface, water, position_value (at), time);
+                return water_surface_at (world, surface, water, at, time);
               },
                [&surface, water, time, sea] (position_t at) {
                  if (!water)
                    return velocity (Vec3 ());
                  const Vec3 here = position_value (at);
                  const Vec3 under (here[0], 0.0f, here[2]);
-                 const terrain::SeaWaves waves =
-                   water_waves_at (surface, water, under, time);
+                 const terrain::SeaWaves waves = water_waves_at (
+                   surface, water, moppe::position (under), time);
                  const position_t where = moppe::position (under);
                  const float sheet = terrain::surface_elevation_value (
                    spatial::sample<terrain::surface_elevation> (*water, where));
@@ -1333,8 +1331,11 @@ namespace moppe::game {
     GameLogicState& logic = session.logic ();
     // Rivers and lakes hold back what goes through them as the sea does.
     const auto water_at = [&] (const Vec3& at) {
-      return water_surface_at (
-        world, surface, water, at, seconds_into_play (logic.m_total_time));
+      return water_surface_at (world,
+                               surface,
+                               water,
+                               moppe::position (at),
+                               seconds_into_play (logic.m_total_time));
     };
     session.bike ().set_water_level (
       water_at (position_value (session.bike ().position ())));

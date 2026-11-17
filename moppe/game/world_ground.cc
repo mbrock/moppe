@@ -18,8 +18,11 @@ namespace moppe::game {
 
   terrain::SurfaceElevation
   WorldGround::still_water (const plan_position_t& at) const {
-    return terrain::surface_elevation_point (still_water_at (
-      world, surface (), &generated.water_surface (), lift (plan_value (at))));
+    return terrain::surface_elevation_point (
+      still_water_at (world,
+                      surface (),
+                      &generated.water_surface (),
+                      at_height (at, 0.0f * u::m)));
   }
 
   bool WorldGround::open (const plan_position_t& at,
@@ -40,11 +43,10 @@ namespace moppe::game {
     }
     if (high - low > relief)
       return false;
-    const Vec2& centre = plan_value (at);
     for (const mov::Trunk& trunk :
-         trunks.gather (lift (centre), meters_value (room) + 2.0f)) {
-      const plan_displacement_t apart = plan_position (plan (trunk.root)) - at;
-      const meters_t clear = room + trunk.radius * u::m;
+         trunks.gather (at_height (at, 0.0f * u::m), room + 2.0f * u::m)) {
+      const plan_displacement_t apart = plan (trunk.root) - at;
+      const meters_t clear = room + trunk.radius;
       if (length2 (plan_value (apart)) <
           meters_value (clear) * meters_value (clear))
         return false;

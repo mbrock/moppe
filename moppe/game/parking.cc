@@ -422,7 +422,7 @@ namespace moppe::game {
         plan (moved (tractor.position (), along (ahead, 3.0f * u::m)));
       session.walker ().spawn (
         terrain::at_elevation (stand, ground.elevation (stand) + 0.1f * u::m),
-        direction_value (ahead));
+        ahead);
     } else if (script == "bump") {
       const direction_t across =
         on_the_level (direction_value (tractor.left ()), Vec3 (1, 0, 0));
@@ -432,11 +432,12 @@ namespace moppe::game {
         plan (session.jeep ().point (displacement (Vec3 (1.75f, 0.0f, -0.1f))));
       session.walker ().spawn (
         terrain::at_elevation (stand, ground.elevation (stand) + 0.1f * u::m),
-        direction_value (-across));
+        -across);
     } else {
       return;
     }
-    session.logic ().m_fp_eye = session.walker ().eye_position ();
+    session.logic ().m_fp_eye =
+      position_value (session.walker ().eye_position ());
     session.settle_camera (ground.surface ());
     std::cerr << "moppe: walk: " << script << " beside the tractor at "
               << position_value (tractor.position ())[0] << ", "
@@ -850,11 +851,10 @@ namespace moppe::game {
           continue;
         const position_t at = terrain::at_elevation (on, h);
         bool clear = true;
-        for (const mov::Trunk& trunk : lot.trunks.gather (
-               position_value (at), meters_value (reach) + 1.0f)) {
-          const plan_displacement_t apart =
-            plan_position (trunk.root[0], trunk.root[2]) - on;
-          const meters_t room = reach + trunk.radius * u::m;
+        for (const mov::Trunk& trunk :
+             lot.trunks.gather (at, reach + 1.0f * u::m)) {
+          const plan_displacement_t apart = plan (trunk.root) - on;
+          const meters_t room = reach + trunk.radius;
           if (dot (apart, apart) < room * room) {
             clear = false;
             break;

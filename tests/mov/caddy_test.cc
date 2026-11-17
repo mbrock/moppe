@@ -146,13 +146,12 @@ MOPPE_TEST (a_tree_stops_the_caddy) {
   const map::SurfaceGeometry ground =
     caddy_test_ground ([] (float, float) { return 10.0f; });
   mov::TrunkField trees;
-  trees.set_trunks ({ { .root = Vec3 (100, 10, 130),
-                        .axis = Vec3 (0, 1, 0),
-                        .height = 12.0f,
-                        .radius = 0.3f } },
-                    0.0f,
-                    0.0f);
-  trees.focus (Vec3 (100, 10, 110));
+  trees.set_trunks ({ { .root = position (Vec3 (100, 10, 130)),
+                        .axis = unit_direction (Vec3 (0, 1, 0)),
+                        .height = 12.0f * u::m,
+                        .radius = 0.3f * u::m } },
+                    plan_extent (0.0f * u::m, 0.0f * u::m));
+  trees.focus (position (Vec3 (100, 10, 110)));
   mov::Car caddy (ground, mov::caddy_rig);
   caddy.set_trunks (&trees);
   caddy.place (position (Vec3 (100, 0, 100)), unit_direction (Vec3 (0, 0, 1)));

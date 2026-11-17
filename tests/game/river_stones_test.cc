@@ -128,26 +128,26 @@ namespace {
     game::Walker walker;
     Vec3 heading = to - from;
     heading[1] = 0.0f;
-    walker.spawn (position (from), normalized (heading));
+    walker.spawn (position (from), unit_direction (normalized (heading)));
     wettest = -1.0f;
     constexpr float step = 1.0f / 120.0f;
     for (int i = 0; i < 120 * 12; ++i) {
-      Vec3 ahead = to - walker.position ();
+      Vec3 ahead = to - position_value (walker.position ());
       ahead[1] = 0.0f;
       if (length (ahead) < 0.5f)
         return static_cast<float> (i) * step;
-      const Vec3 facing = walker.heading ();
+      const Vec3 facing = direction_value (walker.heading ());
       walker.turn_by (-std::atan2 (facing[2] * ahead[0] - facing[0] * ahead[2],
                                    dot (facing, ahead)) *
                       u::rad);
       walker.set_walk (1.0f * one);
       walker.update (
         seconds (step), channel.surface, world, stones, &channel.water);
-      const Vec3 feet = walker.position ();
+      const position_t feet = walker.position ();
       wettest = std::max (
         wettest,
         (game::still_water_at (world, channel.surface, &channel.water, feet) -
-         feet[1] * u::m)
+         position_value (feet)[1] * u::m)
           .numerical_value_in (u::m));
     }
     return -1.0f;
@@ -230,8 +230,10 @@ MOPPE_TEST (stepping_stones_carry_a_walker_across_dry_shod) {
   game::BoulderLandscape landscape;
   landscape.rebuild (renderer, plan);
   mov::TrunkField field;
-  field.set_trunks (landscape.colliders (), river_test_side, river_test_side);
-  field.focus (from);
+  field.set_trunks (
+    landscape.colliders (),
+    plan_extent (river_test_side * u::m, river_test_side * u::m));
+  field.focus (position (from));
 
   float dry = 0.0f;
   const float on_stones = river_test_walk (brook, from, to, &field, dry);

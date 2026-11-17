@@ -174,11 +174,13 @@ namespace moppe {
           std::clamp (
             std::asin (std::clamp (facing[1], -1.0f, 1.0f)), 0.0f, 1.3f);
         HoldPose hold;
-        hold.facing = facing * std::cos (rear) + up * std::sin (rear);
-        hold.up = up * std::cos (rear) - facing * std::sin (rear);
-        hold.pelvis = frame.transform_point (bike_model::saddle) +
-                      up * (0.1f - 0.04f * std::max (back, 0.0f)) -
-                      facing * (0.2f * back);
+        hold.facing =
+          unit_direction (facing * std::cos (rear) + up * std::sin (rear));
+        hold.up =
+          unit_direction (up * std::cos (rear) - facing * std::sin (rear));
+        hold.pelvis = position (frame.transform_point (bike_model::saddle) +
+                                up * (0.1f - 0.04f * std::max (back, 0.0f)) -
+                                facing * (0.2f * back));
         hold.gaze = facing * std::cos (0.2f) - up * std::sin (0.2f);
         hold.head_up = up;
         Vec3 ahead (facing[0], 0.0f, facing[2]);
@@ -188,22 +190,22 @@ namespace moppe {
           hold.gaze = normalized (hold.gaze + (ahead - hold.gaze) * posture);
           hold.head_up = normalized (up + (Vec3 (0, 1, 0) - up) * posture);
         }
-        hold.sole = facing;
-        hold.instep = up;
+        hold.sole = unit_direction (facing);
+        hold.instep = unit_direction (up);
 
         // The most upright lean whose shoulders reach the grips, or failing
         // that, the lean that comes closest.
         const float reach =
-          0.88f * (avatar_size::upper_arm + avatar_size::forearm);
+          0.88f * meters_value (avatar_size::upper_arm + avatar_size::forearm);
         // Leaning back, the search starts from behind the upright, so the
         // trunk hangs back as far as straight arms let it.
         const float start = -0.5f * std::max (back, 0.0f);
         float best_lean = 0.0f, best_span = 1e9f;
         for (float lean = start; lean <= 1.2f; lean += 0.04f) {
-          hold.lean = lean;
-          const float span =
-            std::max (length (held_shoulder (hold, 0) - grip[0]),
-                      length (held_shoulder (hold, 1) - grip[1]));
+          hold.lean = lean * u::rad;
+          const float span = std::max (
+            length (position_value (held_shoulder (hold, 0)) - grip[0]),
+            length (position_value (held_shoulder (hold, 1)) - grip[1]));
           if (span <= reach) {
             best_lean = lean;
             break;
@@ -213,14 +215,15 @@ namespace moppe {
             best_lean = lean;
           }
         }
-        hold.lean = best_lean;
+        hold.lean = best_lean * u::rad;
 
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
+          const Vec3 shoulder = position_value (held_shoulder (hold, i));
+          hold.wrist[i] =
+            position (grip[i] - normalized (grip[i] - shoulder) * 0.07f);
           hold.elbow_pole[i] = right * side - up * 0.3f - facing * 0.3f;
-          hold.ankle[i] = peg[i] + up * 0.085f - facing * 0.03f;
+          hold.ankle[i] = position (peg[i] + up * 0.085f - facing * 0.03f);
           hold.knee_pole[i] = facing + right * (side * 0.35f);
         }
         return pose_holding (hold);

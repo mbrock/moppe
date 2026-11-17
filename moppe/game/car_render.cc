@@ -31,14 +31,14 @@ namespace moppe::game {
                              driving ? model.pedal_left : model.footrest_left };
 
       HoldPose hold;
-      hold.facing = facing;
-      hold.up = up;
-      hold.pelvis = frame.transform_point (seat) + up * 0.09f;
-      hold.lean = model.lean;
+      hold.facing = unit_direction (facing);
+      hold.up = unit_direction (up);
+      hold.pelvis = position (frame.transform_point (seat) + up * 0.09f);
+      hold.lean = model.lean * u::rad;
       hold.gaze = facing;
       hold.head_up = up;
-      hold.sole = normalized (facing + up * model.sole_tilt);
-      hold.instep = normalized (up - facing * model.sole_tilt);
+      hold.sole = unit_direction (normalized (facing + up * model.sole_tilt));
+      hold.instep = unit_direction (normalized (up - facing * model.sole_tilt));
 
       const Mat4 wheel = frame * Mat4::translation (model.steering_hub) *
                          steering_turn (car, model);
@@ -49,14 +49,17 @@ namespace moppe::game {
       for (int i = 0; i < 2; ++i) {
         const float side = i == 0 ? -1.0f : 1.0f;
         if (driving) {
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
-        } else {
+          const Vec3 shoulder = position_value (held_shoulder (hold, i));
           hold.wrist[i] =
-            hold.pelvis + left * (side * 0.13f) + facing * 0.33f + up * 0.10f;
+            position (grip[i] - normalized (grip[i] - shoulder) * 0.07f);
+        } else {
+          position_value (hold.wrist[i]) = position_value (hold.pelvis) +
+                                           left * (side * 0.13f) +
+                                           facing * 0.33f + up * 0.10f;
         }
         hold.elbow_pole[i] = left * side - up * 0.6f - facing * 0.2f;
-        hold.ankle[i] = frame.transform_point (foot[i]) + up * 0.085f;
+        hold.ankle[i] =
+          position (frame.transform_point (foot[i]) + up * 0.085f);
         hold.knee_pole[i] =
           up + facing * model.knee_ahead + left * (side * model.knee_out);
       }

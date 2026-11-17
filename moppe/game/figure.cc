@@ -16,7 +16,8 @@ namespace moppe::game::figure {
 
     // The frame at `origin` whose y runs along `axis` and whose z leans
     // toward `reference`, as the rig's bones are rolled.
-    Frame frame (const Vec3& origin, const Vec3& axis, const Vec3& reference) {
+    Frame
+    frame (const position_t& origin, const Vec3& axis, const Vec3& reference) {
       Vec3 y = axis;
       if (length2 (y) < 1e-12f)
         y = Vec3 (0, 1, 0);
@@ -28,7 +29,9 @@ namespace moppe::game::figure {
                                    : cross (y, Vec3 (1, 0, 0));
       }
       normalize (z);
-      return { arr (origin), arr (cross (y, z)), arr (y), arr (z) };
+      return {
+        arr (position_value (origin)), arr (cross (y, z)), arr (y), arr (z)
+      };
     }
 
     // The rigid motion carrying a rest frame onto a posed one.
@@ -59,23 +62,37 @@ namespace moppe::game::figure {
   }
 
   std::array<Frame, bone_count> pose (const AvatarSkeleton& k) {
+    // The way from one joint to the next, in the rig's metres.
+    const auto bone = [] (const position_t& from, const position_t& to) {
+      return (to - from).numerical_value_in (si::metre);
+    };
     std::array<Frame, bone_count> f;
-    f[pelvis] = frame (k.pelvis, k.waist - k.pelvis, k.forward);
-    f[spine] = frame (k.waist, k.chest - k.waist, k.chest_forward);
-    f[chest] = frame (k.chest, k.neck - k.chest, k.chest_forward);
-    f[head] = frame (k.neck, k.head_up, k.head_forward);
-    const Vec3 chest_right = cross (k.chest_up, k.chest_forward);
+    f[pelvis] =
+      frame (k.pelvis, bone (k.pelvis, k.waist), direction_value (k.forward));
+    f[spine] = frame (
+      k.waist, bone (k.waist, k.chest), direction_value (k.chest_forward));
+    f[chest] = frame (
+      k.chest, bone (k.chest, k.neck), direction_value (k.chest_forward));
+    f[head] = frame (
+      k.neck, direction_value (k.head_up), direction_value (k.head_forward));
+    const Vec3 chest_right =
+      cross (direction_value (k.chest_up), direction_value (k.chest_forward));
+    const Vec3& right = direction_value (k.right);
     for (int i = 0; i < 2; ++i) {
-      f[thigh + i] = frame (k.hip[i], k.knee[i] - k.hip[i], k.right);
-      f[shin + i] = frame (k.knee[i], k.ankle[i] - k.knee[i], k.right);
+      f[thigh + i] = frame (k.hip[i], bone (k.hip[i], k.knee[i]), right);
+      f[shin + i] = frame (k.knee[i], bone (k.knee[i], k.ankle[i]), right);
       // The foot runs heel to toe and is rolled to its instep.
-      const Vec3 sole = k.toe[i] - k.heel[i];
-      const Vec3 mid = (k.heel[i] + k.toe[i]) * 0.5f;
-      f[foot + i] = frame (k.ankle[i], sole, k.ankle[i] - mid);
+      const Vec3& heel = position_value (k.heel[i]);
+      const Vec3& toe = position_value (k.toe[i]);
+      const Vec3 mid = (heel + toe) * 0.5f;
+      f[foot + i] =
+        frame (k.ankle[i], toe - heel, position_value (k.ankle[i]) - mid);
       f[upper_arm + i] =
-        frame (k.shoulder[i], k.elbow[i] - k.shoulder[i], chest_right);
-      f[forearm + i] = frame (k.elbow[i], k.wrist[i] - k.elbow[i], chest_right);
-      f[hand + i] = frame (k.wrist[i], k.wrist[i] - k.elbow[i], chest_right);
+        frame (k.shoulder[i], bone (k.shoulder[i], k.elbow[i]), chest_right);
+      f[forearm + i] =
+        frame (k.elbow[i], bone (k.elbow[i], k.wrist[i]), chest_right);
+      f[hand + i] =
+        frame (k.wrist[i], bone (k.elbow[i], k.wrist[i]), chest_right);
     }
     return f;
   }
@@ -88,7 +105,7 @@ namespace moppe::game::figure {
     for (int b = 0; b < bone_count; ++b)
       moves[b] = motion (rest[b], posed[b]);
 
-    const Vec3 origin = k.pelvis;
+    const Vec3 origin = position_value (k.pelvis);
     points.resize (vertices.size ());
     normals.resize (vertices.size ());
     for (std::size_t i = 0; i < vertices.size (); ++i) {

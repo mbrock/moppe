@@ -98,10 +98,12 @@ namespace moppe::game {
       const Vec3 right = normalized (cross (heading, Vec3 (0, 1, 0)));
       for (const float ahead : { 4.0f, 9.0f }) {
         const Vec3 probe = at + heading * ahead;
-        const mov::TrunkContact contact =
-          ground.trunks.collide (probe, probe + Vec3 (0, 1.5f, 0), 1.8f);
+        const mov::TrunkContact contact = ground.trunks.collide (
+          position (probe), position (probe + Vec3 (0, 1.5f, 0)), 1.8f * u::m);
         if (contact.hit) {
-          input.turn = dot (contact.normal, right) >= 0.0f ? 1.0f : -1.0f;
+          input.turn = dot (direction_value (contact.normal), right) >= 0.0f
+                         ? 1.0f
+                         : -1.0f;
           break;
         }
       }

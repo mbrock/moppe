@@ -28,6 +28,11 @@ namespace {
       }
     return worst;
   }
+
+  // How far apart two joints are, in metres.
+  float apart (const position_t& a, const position_t& b) {
+    return length ((a - b).numerical_value_in (si::metre));
+  }
 }
 
 MOPPE_TEST (figure_rest_pose_reproduces_the_rest_mesh) {
@@ -36,7 +41,7 @@ MOPPE_TEST (figure_rest_pose_reproduces_the_rest_mesh) {
   game::WalkerPose walker;
   walker.position = Vec3 (3, 2, 1);
   std::vector<Vec3> points, normals;
-  game::figure::skin (game::pose_avatar (walker, 0.0f), points, normals);
+  game::figure::skin (game::pose_avatar (walker, 0.0f * u::s), points, normals);
   MOPPE_CHECK (points.size () == game::figure::vertices.size ());
   MOPPE_CHECK (worst_stretch (points) < 1.3f);
 }
@@ -53,7 +58,8 @@ MOPPE_TEST (figure_skin_never_tears_through_a_stride) {
       walker.stride_speed = speed;
       walker.velocity = walker.heading * speed;
       walker.stride_phase = i / 16.0f;
-      game::figure::skin (game::pose_avatar (walker, 0.0f), points, normals);
+      game::figure::skin (
+        game::pose_avatar (walker, 0.0f * u::s), points, normals);
       const float stretch = worst_stretch (points);
       // Creases stretch short edges (the boot at a running ankle about
       // twofold); a tear stretches them by tens.
@@ -65,29 +71,35 @@ MOPPE_TEST (holding_pose_reaches_its_targets_with_true_limbs) {
   // A rider's targets, all within reach: the hands land exactly on them
   // and every limb keeps its length; the knees bend toward their poles.
   game::HoldPose hold;
-  hold.pelvis = Vec3 (300, 40, -200);
-  hold.lean = 0.5f;
-  const Vec3 forward = hold.facing, up = hold.up, right (1, 0, 0);
+  const Vec3 pelvis (300, 40, -200);
+  hold.pelvis = position (pelvis);
+  hold.lean = 0.5f * u::rad;
+  const Vec3 forward = direction_value (hold.facing),
+             up = direction_value (hold.up), right (1, 0, 0);
   for (int i = 0; i < 2; ++i) {
     const float side = i == 0 ? -1.0f : 1.0f;
     hold.wrist[i] =
-      hold.pelvis + forward * 0.45f + up * 0.35f + right * (side * 0.3f);
-    hold.ankle[i] = hold.pelvis - up * 0.6f + right * (side * 0.18f);
+      position (pelvis + forward * 0.45f + up * 0.35f + right * (side * 0.3f));
+    hold.ankle[i] = position (pelvis - up * 0.6f + right * (side * 0.18f));
     hold.elbow_pole[i] = right * side;
     hold.knee_pole[i] = forward;
   }
   const game::AvatarSkeleton k = game::pose_holding (hold);
   namespace size = game::avatar_size;
   for (int i = 0; i < 2; ++i) {
-    MOPPE_CHECK (length (k.wrist[i] - hold.wrist[i]) < 1e-4f);
-    MOPPE_CHECK (length (k.ankle[i] - hold.ankle[i]) < 1e-4f);
+    MOPPE_CHECK (apart (k.wrist[i], hold.wrist[i]) < 1e-4f);
+    MOPPE_CHECK (apart (k.ankle[i], hold.ankle[i]) < 1e-4f);
     MOPPE_CHECK_NEAR (
-      length (k.elbow[i] - k.shoulder[i]), size::upper_arm, 1e-3f);
-    MOPPE_CHECK_NEAR (length (k.wrist[i] - k.elbow[i]), size::forearm, 1e-3f);
-    MOPPE_CHECK_NEAR (length (k.knee[i] - k.hip[i]), size::thigh, 1e-3f);
-    MOPPE_CHECK_NEAR (length (k.ankle[i] - k.knee[i]), size::shin, 1e-3f);
-    MOPPE_CHECK (dot (k.knee[i] - (k.hip[i] + k.ankle[i]) * 0.5f, forward) >
-                 0.0f);
+      apart (k.elbow[i], k.shoulder[i]), meters_value (size::upper_arm), 1e-3f);
+    MOPPE_CHECK_NEAR (
+      apart (k.wrist[i], k.elbow[i]), meters_value (size::forearm), 1e-3f);
+    MOPPE_CHECK_NEAR (
+      apart (k.knee[i], k.hip[i]), meters_value (size::thigh), 1e-3f);
+    MOPPE_CHECK_NEAR (
+      apart (k.ankle[i], k.knee[i]), meters_value (size::shin), 1e-3f);
+    const Vec3 middle =
+      (position_value (k.hip[i]) + position_value (k.ankle[i])) * 0.5f;
+    MOPPE_CHECK (dot (position_value (k.knee[i]) - middle, forward) > 0.0f);
   }
 
   // Skinned to that pose, far from the origin, nothing tears.

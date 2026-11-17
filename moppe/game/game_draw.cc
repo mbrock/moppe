@@ -17,7 +17,7 @@ namespace moppe {
     }
 
     void MoppeGame::start_scan (double ago) {
-      m_scan.start (session ().walker ().position (),
+      m_scan.start (position_value (session ().walker ().position ()),
                     seconds_into_play (logic ().m_total_time) - ago,
                     m_mushrooms,
                     m_trunk_field,
@@ -43,7 +43,7 @@ namespace moppe {
                    m_heads_up.hud.font (),
                    seconds_into_play (logic ().m_total_time),
                    view,
-                   session ().walker ().position (),
+                   position_value (session ().walker ().position ()),
                    world_ground ().reader ());
     }
 
@@ -476,7 +476,8 @@ namespace moppe {
       const terrain::WaterSheets& sheets = generated_world ().water_surface ();
       const float time = frame.lighting.time;
       const auto level = [&] (const Vec3& at) {
-        return water_surface_at (world (), surface (), &sheets, at, time)
+        return water_surface_at (
+                 world (), surface (), &sheets, position (at), time)
           .numerical_value_in (u::m);
       };
       const CompanionSnapshot* theirs =

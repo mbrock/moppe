@@ -166,7 +166,8 @@ MOPPE_TEST (a_tractor_driven_into_a_wall_gets_stuck_and_heaves) {
   session.start_on_foot ();
   session.tractor ().place (position (Vec3 (60, 0, 194)),
                             unit_direction (Vec3 (0, 0, 1)));
-  session.walker ().spawn (position (Vec3 (62, 10.1f, 194)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (62, 10.1f, 194)),
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::tractor));
   run ({ .drive = 1.0f }, 6.0f);
@@ -197,7 +198,7 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
 
   // Behind it, facing away: F takes up the rope rather than climbing up.
   session.walker ().spawn (position (Vec3 (60, 10.1f, 177.5f)),
-                           Vec3 (0, 0, -1));
+                           unit_direction (Vec3 (0, 0, -1)));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::tractor);
   // The prompt says so, and the key does what it says.
   const std::vector<game::Affordance> here =
@@ -215,7 +216,8 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   const Vec3 moved = position_value (session.tractor ().position ()) - start;
   MOPPE_CHECK (moved[2] < -6.0f);
   MOPPE_CHECK (direction_value (session.tractor ().up ())[1] > 0.9f);
-  Vec3 rope = session.walker ().position () - session.rope_end ();
+  Vec3 rope =
+    position_value (session.walker ().position ()) - session.rope_end ();
   rope[1] = 0.0f;
   MOPPE_CHECK (length (rope) <
                meters_value (logic.m_haul.rope + game::rope_give) + 0.3f);
@@ -245,7 +247,8 @@ MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
 
   // Ahead of its bow: F takes up the rope to the handle rather than
   // taking the helm of a boat that cannot go anywhere.
-  session.walker ().spawn (position (Vec3 (60, 10.1f, 184.0f)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (60, 10.1f, 184.0f)),
+                           unit_direction (Vec3 (0, 0, 1)));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::boat);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
@@ -274,7 +277,8 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   ski.place (position (Vec3 (120, 0, 123.0f)),
              unit_direction (Vec3 (0, 0, -1)),
              0.0f * u::m);
-  session.walker ().spawn (position (Vec3 (140, 1.3f, 140)), Vec3 (0, 0, -1));
+  session.walker ().spawn (position (Vec3 (140, 1.3f, 140)),
+                           unit_direction (Vec3 (0, 0, -1)));
   run ({}, 2.0f);
   MOPPE_CHECK (ski.afloat ());
   MOPPE_CHECK (session.mount_within_reach () != game::Machine::jet_ski);
@@ -282,7 +286,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
 
   // Waded out beside it, F gets on, and the rider's weight with them.
   session.walker ().spawn (position (Vec3 (121.2f, -0.2f, 125.4f)),
-                           Vec3 (0, 0, -1));
+                           unit_direction (Vec3 (0, 0, -1)));
   run ({}, 0.2f);
   MOPPE_CHECK (session.mount_within_reach () == game::Machine::jet_ski);
   MOPPE_CHECK (!session.haul_within_reach ());
@@ -310,7 +314,8 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   run ({}, 1.0f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
-  Vec3 off = session.walker ().position () - position_value (ski.position ());
+  Vec3 off = position_value (session.walker ().position ()) -
+             position_value (ski.position ());
   off[1] = 0.0f;
   MOPPE_CHECK (length (off) < 3.5f);
   run ({ .drive = 1.0f }, 1.0f);
@@ -329,7 +334,8 @@ MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {
   session.jet_ski ().place (position (Vec3 (60, 10, 180)),
                             unit_direction (Vec3 (0, 0, 1)),
                             -100.0f * u::m);
-  session.walker ().spawn (position (Vec3 (90, 10.1f, 90)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (90, 10.1f, 90)),
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({}, 2.0f);
   const mov::JetSki& ski = session.jet_ski ();
   MOPPE_CHECK (ski.grounded () && !ski.afloat ());
@@ -337,7 +343,8 @@ MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {
 
   // Ahead of its bow: F takes up a rope to the eye in its stem rather
   // than getting on a jet ski whose pump has no water to work on.
-  session.walker ().spawn (position (Vec3 (60, 10.1f, 183.4f)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (60, 10.1f, 183.4f)),
+                           unit_direction (Vec3 (0, 0, 1)));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::jet_ski);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
@@ -363,7 +370,8 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
                             unit_direction (Vec3 (1, 0, 0)));
   run ({}, 1.0f);
   const Vec3 tractor_was = position_value (session.tractor ().position ());
-  session.walker ().spawn (position (Vec3 (102, 10.1f, 150)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (102, 10.1f, 150)),
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::jeep));
 
@@ -408,7 +416,7 @@ MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
   const Vec3 tractor_was = position_value (session.tractor ().position ());
   const Vec3 trailer_was = session.tractor ().trailer_position ();
   session.walker ().spawn (position (Vec3 (bed[0] + 2, 10.1f, 150)),
-                           Vec3 (0, 0, 1));
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::driving (game::Machine::jeep));
 

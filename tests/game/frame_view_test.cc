@@ -228,7 +228,8 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
   FrameFixture fixture;
   game::GameSession& session = fixture.running ();
   session.logic ().m_doing = game::Doing::on_foot ();
-  session.walker ().spawn (position (Vec3 (60, 10, 60)), Vec3 (1, 0, 0));
+  session.walker ().spawn (position (Vec3 (60, 10, 60)),
+                           unit_direction (Vec3 (1, 0, 0)));
 
   const game::FrameView frozen =
     game::compose_frame_view (gameplay_input (fixture));
@@ -237,7 +238,8 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
   const Vec3 walker_position = frozen.actors.walker->position;
 
   session.bike ().reset (Vec3 (112, 11.2f, 48));
-  session.walker ().spawn (position (Vec3 (96, 10, 40)), Vec3 (-1, 0, 0));
+  session.walker ().spawn (position (Vec3 (96, 10, 40)),
+                           unit_direction (Vec3 (-1, 0, 0)));
   const game::FrameView changed =
     game::compose_frame_view (gameplay_input (fixture));
 
@@ -506,7 +508,7 @@ MOPPE_TEST (frame_view_follows_the_rendered_sea_wave_phase) {
     const float level = game::water_surface_at (fixture.world,
                                                 fixture.surface,
                                                 &water,
-                                                view.camera.position,
+                                                position (view.camera.position),
                                                 view.lighting.time)
                           .numerical_value_in (u::m);
     MOPPE_CHECK (view.camera_water_level.has_value ());

@@ -116,7 +116,7 @@ namespace moppe {
         return;
       }
 
-      m_trunk_field.focus (session ().subject_position ());
+      m_trunk_field.focus (position (session ().subject_position ()));
       static const char* walk_script = moppe::environment ("MOPPE_WALK");
       // A walk script drives (the bump script drives the jeep too, and
       // boat-fish the boat), or else the demo autopilot (demo_pilot.hh).

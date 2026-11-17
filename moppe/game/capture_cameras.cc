@@ -60,9 +60,9 @@ namespace moppe::game {
     if (!side || session.logic ().m_doing != Doing::on_foot ())
       return;
     const Walker& walker = session.walker ();
-    const Vec3 heading = walker.heading ();
+    const Vec3 heading = direction_value (walker.heading ());
     const Vec3 right (heading[2], 0.0f, -heading[0]);
-    const Vec3 at = walker.position () + Vec3 (0, 0.9f, 0);
+    const Vec3 at = position_value (walker.position ()) + Vec3 (0, 0.9f, 0);
     session.camera ().place (at + right * 4.0f + Vec3 (0, 0.25f, 0), at);
   }
 

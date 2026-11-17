@@ -285,8 +285,10 @@ namespace moppe {
           away = length2 (away) > 1e-4f ? normalized (away) : Vec3 (1, 0, 0);
           Vec3 stand = at + away * 4.0f;
           stand[1] = world_ground ().height (stand) + 0.1f;
-          session ().walker ().spawn (moppe::position (stand), away * -1.0f);
-          logic ().m_fp_eye = session ().walker ().eye_position ();
+          session ().walker ().spawn (moppe::position (stand),
+                                      unit_direction (away * -1.0f));
+          logic ().m_fp_eye =
+            position_value (session ().walker ().eye_position ());
         }
       }
     }
@@ -304,7 +306,9 @@ namespace moppe {
         obstacles.insert (obstacles.end (), stops.begin (), stops.end ());
       }
       const Vec3 period = extent_value (generated_world ().forest ().period);
-      m_trunk_field.set_trunks (std::move (obstacles), period[0], period[2]);
+      m_trunk_field.set_trunks (
+        std::move (obstacles),
+        plan_extent (period[0] * u::m, period[2] * u::m));
       if (m_trunk_field.trunk_count () && !with_places)
         std::cerr << "moppe: obstacle colliders: "
                   << m_trunk_field.trunk_count ()

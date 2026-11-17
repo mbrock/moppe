@@ -128,10 +128,11 @@ MOPPE_TEST (rigid_bike_turns_and_leans_into_the_turn) {
 MOPPE_TEST (rigid_bike_is_stopped_by_a_trunk) {
   const map::SurfaceGeometry surface = rigid_test_surface (flat);
   mov::TrunkField trunks;
-  trunks.set_trunks (
-    { mov::Trunk { Vec3 (60, 10, 90), Vec3 (0, 1, 0), 12.0f, 0.5f } },
-    300.0f,
-    300.0f);
+  trunks.set_trunks ({ mov::Trunk { position (Vec3 (60, 10, 90)),
+                                    unit_direction (Vec3 (0, 1, 0)),
+                                    12.0f * u::m,
+                                    0.5f * u::m } },
+                     plan_extent (300.0f * u::m, 300.0f * u::m));
   mov::Vehicle bike = rigid_bike (surface, Vec3 (60, 0, 50));
   bike.set_trunks (&trunks);
   bike.set_thrust (sig (1.0f));

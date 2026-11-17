@@ -987,10 +987,11 @@ namespace moppe::game {
         constexpr float radius = 0.3f;
         for (const float s : { -0.55f, 0.0f, 0.55f }) {
           mov::Trunk deck;
-          deck.root = jetty.root + side * (s * hw) - out * 0.2f + up * -radius;
-          deck.axis = out;
-          deck.height = jetty.length + 0.2f;
-          deck.radius = radius;
+          deck.root =
+            position (jetty.root + side * (s * hw) - out * 0.2f + up * -radius);
+          deck.axis = unit_direction (out);
+          deck.height = (jetty.length + 0.2f) * u::m;
+          deck.radius = radius * u::m;
           colliders.push_back (deck);
         }
       }
@@ -1081,10 +1082,11 @@ namespace moppe::game {
             continue;
           mov::Trunk stone;
           const Vec3 at = centre + bearing (a) * r;
-          stone.root = Vec3 (at[0], g.ground (at[0], at[2]) - 0.1f, at[2]);
-          stone.axis = up;
-          stone.height = std::max (0.05f, tall - 0.35f);
-          stone.radius = 0.35f;
+          stone.root =
+            position (Vec3 (at[0], g.ground (at[0], at[2]) - 0.1f, at[2]));
+          stone.axis = unit_direction (up);
+          stone.height = std::max (0.05f, tall - 0.35f) * u::m;
+          stone.radius = 0.35f * u::m;
           colliders.push_back (stone);
         }
       }
@@ -1187,12 +1189,15 @@ namespace moppe::game {
             if (x * x + z * z > (R - post) * (R - post))
               continue;
             mov::Trunk drum;
-            drum.root = Vec3 (middle[0] + x,
+            drum.root =
+              position (Vec3 (middle[0] + x,
                               g.ground (middle[0] + x, middle[2] + z) - 0.2f,
-                              middle[2] + z);
-            drum.axis = up;
-            drum.radius = post;
-            drum.height = std::max (0.01f, top - post - drum.root[1]);
+                              middle[2] + z));
+            drum.axis = unit_direction (up);
+            drum.radius = post * u::m;
+            drum.height =
+              std::max (0.01f, top - post - position_value (drum.root)[1]) *
+              u::m;
             colliders.push_back (drum);
           }
 
@@ -1237,10 +1242,12 @@ namespace moppe::game {
           a = frame.transform_point (a);
           b = frame.transform_point (b);
           mov::Trunk t;
-          t.root = a;
-          t.height = length (b - a);
-          t.axis = (b - a) / std::max (t.height, 1e-3f);
-          t.radius = radius;
+          const meters_t span = length (b - a) * u::m;
+          t.root = position (a);
+          t.height = span;
+          t.axis =
+            unit_direction ((b - a) / std::max (meters_value (span), 1e-3f));
+          t.radius = radius * u::m;
           colliders.push_back (t);
         };
         const auto upright = [&] (float x, float z, float top, float radius) {
@@ -1352,10 +1359,12 @@ namespace moppe::game {
             a = frame.transform_point (a);
             b = frame.transform_point (b);
             mov::Trunk t;
-            t.root = a;
-            t.height = length (b - a);
-            t.axis = (b - a) / std::max (t.height, 1e-3f);
-            t.radius = radius;
+            const meters_t span = length (b - a) * u::m;
+            t.root = position (a);
+            t.height = span;
+            t.axis =
+              unit_direction ((b - a) / std::max (meters_value (span), 1e-3f));
+            t.radius = radius * u::m;
             colliders.push_back (t);
           };
           constexpr float wall = 0.1f;
@@ -1393,10 +1402,10 @@ namespace moppe::game {
         constexpr float radius = 0.55f;
         const auto post = [&] (float x, float z) {
           mov::Trunk wall;
-          wall.root = frame.transform_point (Vec3 (x, -0.5f, z));
-          wall.axis = up;
-          wall.height = tall;
-          wall.radius = radius;
+          wall.root = position (frame.transform_point (Vec3 (x, -0.5f, z)));
+          wall.axis = unit_direction (up);
+          wall.height = tall * u::m;
+          wall.radius = radius * u::m;
           colliders.push_back (wall);
         };
         for (float x = -hx + radius; x <= hx - radius + 0.01f; x += 0.9f)

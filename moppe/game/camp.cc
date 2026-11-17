@@ -109,15 +109,20 @@ namespace moppe::game {
     }
 
     bool same_tree (const mov::Trunk& a, const mov::Trunk& b) {
-      return a.root[0] == b.root[0] && a.root[2] == b.root[2];
+      return position_value (a.root)[0] == position_value (b.root)[0] &&
+             position_value (a.root)[2] == position_value (b.root)[2];
     }
 
     bool carries (const mov::Trunk& trunk) {
-      if (trunk.height < least_height || trunk.radius < least_girth ||
-          trunk.radius > most_girth)
+      if (meters_value (trunk.height) < least_height ||
+          meters_value (trunk.radius) < least_girth ||
+          meters_value (trunk.radius) > most_girth)
         return false;
-      const bool deep = trunk.height - trunk.clear > deep_crown * trunk.height;
-      return trunk.clear >= (deep ? least_clear_under_deep_crown : least_clear);
+      const bool deep =
+        meters_value (trunk.height) - meters_value (trunk.clear) >
+        deep_crown * meters_value (trunk.height);
+      return meters_value (trunk.clear) >=
+             (deep ? least_clear_under_deep_crown : least_clear);
     }
 
     // Whether a hammock hangs between `a` and `b`, with `others` the trees
@@ -129,52 +134,61 @@ namespace moppe::game {
                HammockSite& site) {
       if (!carries (a) || !carries (b))
         return false;
-      const Vec3 between = flat (b.root - a.root);
+      const Vec3 between =
+        flat (position_value (b.root) - position_value (a.root));
       const float apart = length (between);
-      const float span = apart - a.radius - b.radius;
+      const float span =
+        apart - meters_value (a.radius) - meters_value (b.radius);
       if (span < meters_value (hammock_least_span) ||
           span > meters_value (hammock_most_span))
         return false;
-      if (std::fabs (a.root[1] - b.root[1]) > most_step)
+      if (std::fabs (position_value (a.root)[1] - position_value (b.root)[1]) >
+          most_step)
         return false;
-      const float top = std::max (a.root[1], b.root[1]);
+      const float top =
+        std::max (position_value (a.root)[1], position_value (b.root)[1]);
       const float strap = top + seat_height + loaded_sag * span;
-      if (strap - std::min (a.root[1], b.root[1]) > highest_strap)
+      if (strap -
+            std::min (position_value (a.root)[1], position_value (b.root)[1]) >
+          highest_strap)
         return false;
       const Vec3 along = between * (1.0f / apart);
       // The ground must not rise into the cloth.
       for (int i = 1; i < 6; ++i) {
-        const Vec3 at = a.root + between * (i / 6.0f);
+        const Vec3 at = position_value (a.root) + between * (i / 6.0f);
         if (ground (at[0], at[2]) > top + 0.2f)
           return false;
       }
       for (const mov::Trunk& other : others) {
-        if (same_tree (other, a) || same_tree (other, b) || other.height < 0.8f)
+        if (same_tree (other, a) || same_tree (other, b) ||
+            meters_value (other.height) < 0.8f)
           continue;
-        const Vec3 to = flat (other.root - a.root);
+        const Vec3 to =
+          flat (position_value (other.root) - position_value (a.root));
         const float reach = dot (to, along);
         if (reach < 0.0f || reach > apart)
           continue;
         const float off = length (to - along * reach);
-        if (off < clear_way + other.radius)
+        if (off < clear_way + meters_value (other.radius))
           return false;
       }
       // The head lies toward the higher root, looking out over the feet.
-      const bool swap = a.root[1] > b.root[1];
+      const bool swap = position_value (a.root)[1] > position_value (b.root)[1];
       const mov::Trunk& foot = swap ? b : a;
       const mov::Trunk& head = swap ? a : b;
       // Each strap goes round its trunk where the trunk, leaning as it
       // does, passes the strap's height; a trunk is a little slimmer there
       // than at its foot.
       const auto up_trunk = [strap] (const mov::Trunk& trunk) {
-        return trunk.root +
-               trunk.axis * ((strap - trunk.root[1]) /
-                             std::max (0.5f, float (trunk.axis[1])));
+        return position_value (trunk.root) +
+               direction_value (trunk.axis) *
+                 ((strap - position_value (trunk.root)[1]) /
+                  std::max (0.5f, float (direction_value (trunk.axis)[1])));
       };
       site.strap[0] = up_trunk (foot);
       site.strap[1] = up_trunk (head);
-      site.girth[0] = 0.9f * foot.radius;
-      site.girth[1] = 0.9f * head.radius;
+      site.girth[0] = 0.9f * meters_value (foot.radius);
+      site.girth[1] = 0.9f * meters_value (head.radius);
       return true;
     }
 
@@ -294,12 +308,13 @@ namespace moppe::game {
       for (std::size_t j = i + 1; j < trunks.size (); ++j) {
         const mov::Trunk& a = trunks[i];
         const mov::Trunk& b = trunks[j];
-        const Vec3 between = flat (b.root - a.root);
+        const Vec3 between =
+          flat (position_value (b.root) - position_value (a.root));
         const float apart2 = length2 (between);
         if (apart2 < 1.0f || apart2 > 49.0f)
           continue;
         // Standing between them: along the middle of the line, and near it.
-        const Vec3 to = flat (feet - a.root);
+        const Vec3 to = flat (feet - position_value (a.root));
         const float t = dot (to, between) / apart2;
         if (t < 0.12f || t > 0.88f)
           continue;
@@ -329,7 +344,7 @@ namespace moppe::game {
     // order.
     std::vector<mov::Trunk> sorted (trunks.begin (), trunks.end ());
     std::ranges::sort (sorted, [] (const mov::Trunk& a, const mov::Trunk& b) {
-      return a.root[0] < b.root[0];
+      return position_value (a.root)[0] < position_value (b.root)[0];
     });
     constexpr float window =
       hammock_most_span.numerical_value_in (u::m) + 2.0f * most_girth;
@@ -338,20 +353,24 @@ namespace moppe::game {
     // where the place's x falls.
     const auto overhead = [&] (const Vec3& middle) {
       float crown = 0.0f;
-      const auto from =
-        std::ranges::lower_bound (sorted,
-                                  middle[0] - meters_value (open_sky),
-                                  {},
-                                  [] (const mov::Trunk& trunk) {
-                                    return static_cast<float> (trunk.root[0]);
-                                  });
+      const auto from = std::ranges::lower_bound (
+        sorted,
+        middle[0] - meters_value (open_sky),
+        {},
+        [] (const mov::Trunk& trunk) {
+          return static_cast<float> (position_value (trunk.root)[0]);
+        });
       for (auto trunk = from;
-           trunk != sorted.end () &&
-           trunk->root[0] <= middle[0] + meters_value (open_sky);
+           trunk != sorted.end () && position_value (trunk->root)[0] <=
+                                       middle[0] + meters_value (open_sky);
            ++trunk)
-        if (const float away = length (flat (trunk->root - middle));
-            trunk->height > 3.0f && away < meters_value (open_sky))
-          crown += (trunk->height - trunk->clear) / (away + 2.0f);
+        if (const float away =
+              length (flat (position_value (trunk->root) - middle));
+            meters_value (trunk->height) > 3.0f &&
+            away < meters_value (open_sky))
+          crown +=
+            (meters_value (trunk->height) - meters_value (trunk->clear)) /
+            (away + 2.0f);
       return crown;
     };
     std::optional<HammockSite> best;
@@ -361,17 +380,20 @@ namespace moppe::game {
       const mov::Trunk& a = sorted[i];
       if (!carries (a))
         continue;
-      while (sorted[first].root[0] < a.root[0] - window)
+      while (position_value (sorted[first].root)[0] <
+             position_value (a.root)[0] - window)
         ++first;
       std::size_t last = i;
       while (last + 1 < sorted.size () &&
-             sorted[last + 1].root[0] <= a.root[0] + window)
+             position_value (sorted[last + 1].root)[0] <=
+               position_value (a.root)[0] + window)
         ++last;
       const std::span<const mov::Trunk> around (sorted.data () + first,
                                                 last - first + 1);
       for (std::size_t j = i + 1; j <= last; ++j) {
         const mov::Trunk& b = sorted[j];
-        const Vec3 middle = (a.root + b.root) * 0.5f;
+        const Vec3 middle =
+          (position_value (a.root) + position_value (b.root)) * 0.5f;
         float distance = length (flat (middle - near));
         if (distance >= best_distance)
           continue;
@@ -397,7 +419,7 @@ namespace moppe::game {
     using namespace camp_parts;
     std::vector<mov::Trunk> sorted (trunks.begin (), trunks.end ());
     std::ranges::sort (sorted, [] (const mov::Trunk& a, const mov::Trunk& b) {
-      return a.root[0] < b.root[0];
+      return position_value (a.root)[0] < position_value (b.root)[0];
     });
     constexpr float window =
       hammock_most_span.numerical_value_in (u::m) + 2.0f * most_girth;
@@ -412,16 +434,19 @@ namespace moppe::game {
       const mov::Trunk& a = sorted[i];
       if (!carries (a))
         continue;
-      while (sorted[first].root[0] < a.root[0] - window)
+      while (position_value (sorted[first].root)[0] <
+             position_value (a.root)[0] - window)
         ++first;
       std::size_t last = i;
       while (last + 1 < sorted.size () &&
-             sorted[last + 1].root[0] <= a.root[0] + window)
+             position_value (sorted[last + 1].root)[0] <=
+               position_value (a.root)[0] + window)
         ++last;
       const std::span<const mov::Trunk> around (sorted.data () + first,
                                                 last - first + 1);
       for (std::size_t j = i + 1; j <= last; ++j) {
-        const Vec3 middle = (a.root + sorted[j].root) * 0.5f;
+        const Vec3 middle =
+          (position_value (a.root) + position_value (sorted[j].root)) * 0.5f;
         const float distance = length (flat (middle - near));
         HammockSite site;
         if (distance > within || !fits (a, sorted[j], around, ground, site))
@@ -541,30 +566,33 @@ namespace moppe::game {
     const float breath = 0.006f * std::sin (time * 1.3f);
 
     HoldPose hold;
-    hold.facing = facing;
-    hold.up = headward;
+    hold.facing = unit_direction (facing);
+    hold.up = unit_direction (headward);
     // High enough in the cloth that the pack on their back stays in it.
-    hold.pelvis = s.centre (at) + s.normal (at) * 0.21f;
-    hold.lean = 0.16f;
+    hold.pelvis = position (s.centre (at) + s.normal (at) * 0.21f);
+    hold.lean = 0.16f * u::rad;
     // The head rests back; it turns only part of the way after the eyes.
     hold.gaze = normalized (facing + normalized (gaze) * 0.7f);
     hold.head_up = s.tangent (at + 0.22f);
     const float cross_ankles = 0.86f / span;
     for (int i = 0; i < 2; ++i) {
       const float side = i == 0 ? -1.0f : 1.0f;
-      hold.wrist[i] = hold.pelvis + headward * 0.25f +
-                      facing * (0.13f + breath) + right * (side * 0.035f);
+      hold.wrist[i] =
+        position (position_value (hold.pelvis) + headward * 0.25f +
+                  facing * (0.13f + breath) + right * (side * 0.035f));
       hold.elbow_pole[i] = right * side - facing * 0.4f;
       const float foot = at - cross_ankles;
-      hold.ankle[i] = s.centre (foot) + s.normal (foot) * (0.10f + 0.05f * i) +
-                      s.side * (side * 0.03f);
+      hold.ankle[i] =
+        position (s.centre (foot) + s.normal (foot) * (0.10f + 0.05f * i) +
+                  s.side * (side * 0.03f));
       hold.knee_pole[i] = facing + right * (side * 0.2f);
     }
     // The feet fall slack, toes up and a little away.
     const Vec3 at_feet = s.normal (at - cross_ankles);
     const Vec3 to_head = s.tangent (at - cross_ankles);
-    hold.sole = normalized (at_feet * 0.82f - to_head * 0.57f);
-    hold.instep = normalized (to_head * 0.82f + at_feet * 0.57f);
+    hold.sole = unit_direction (normalized (at_feet * 0.82f - to_head * 0.57f));
+    hold.instep =
+      unit_direction (normalized (to_head * 0.82f + at_feet * 0.57f));
     return pose_holding (hold);
   }
 
@@ -572,7 +600,7 @@ namespace moppe::game {
     using namespace camp_parts;
     const Shape s = shape_of (site, 1.0f, swing);
     const AvatarSkeleton k = pose_resting (site, swing, s.up, 0.0f);
-    return k.head + s.normal (0.6f) * 0.09f;
+    return position_value (k.head) + s.normal (0.6f) * 0.09f;
   }
 
   Vec3 resting_gaze (const HammockSite& site, float yaw, float pitch) {

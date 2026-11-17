@@ -201,13 +201,14 @@ MOPPE_TEST (the_farmhouse_is_walked_into_through_its_door) {
   PlacesLandscape landscape;
   landscape.rebuild (renderer, plan, ground);
   mov::TrunkField trunks;
-  trunks.set_trunks (landscape.colliders (), 0.0f, 0.0f);
-  trunks.focus (at);
+  trunks.set_trunks (landscape.colliders (),
+                     plan_extent (0.0f * u::m, 0.0f * u::m));
+  trunks.focus (position (at));
   const auto walk_at = [&] (float aside) {
     GameSession session (world, surface);
     session.start_on_foot ();
     const Vec3 from = at + forward * 9.0f + left * aside;
-    session.walker ().spawn (position (from), -forward);
+    session.walker ().spawn (position (from), unit_direction (-forward));
     for (int i = 0; i < 60 * 6; ++i)
       advance_game_session (world,
                             surface,
@@ -215,7 +216,7 @@ MOPPE_TEST (the_farmhouse_is_walked_into_through_its_door) {
                             InputFrame { .drive = 0.5f },
                             seconds (1.0f / 60.0f),
                             &trunks);
-    return session.walker ().position ();
+    return position_value (session.walker ().position ());
   };
   // The doorway is at x -0.9 of the model, its left.
   const Vec3 in = walk_at (-0.9f);
@@ -271,13 +272,14 @@ MOPPE_TEST (the_barn_is_walked_into_up_its_ramp) {
   PlacesLandscape landscape;
   landscape.rebuild (renderer, plan, ground);
   mov::TrunkField trunks;
-  trunks.set_trunks (landscape.colliders (), 0.0f, 0.0f);
-  trunks.focus (at);
+  trunks.set_trunks (landscape.colliders (),
+                     plan_extent (0.0f * u::m, 0.0f * u::m));
+  trunks.focus (position (at));
   const auto walk_at = [&] (float aside) {
     GameSession session (world, surface);
     session.start_on_foot ();
     const Vec3 from = at + forward * 12.0f + left * aside;
-    session.walker ().spawn (position (from), -forward);
+    session.walker ().spawn (position (from), unit_direction (-forward));
     for (int i = 0; i < 60 * 8; ++i)
       advance_game_session (world,
                             surface,
@@ -285,7 +287,7 @@ MOPPE_TEST (the_barn_is_walked_into_up_its_ramp) {
                             InputFrame { .drive = 0.5f },
                             seconds (1.0f / 60.0f),
                             &trunks);
-    return session.walker ().position ();
+    return position_value (session.walker ().position ());
   };
   const Vec3 in = walk_at (0.3f);
   MOPPE_CHECK (dot (in - at, forward) < barn_front - 0.5f);

@@ -211,10 +211,11 @@ MOPPE_TEST (boulder_landscape_uploads_rocks_and_solid_colliders) {
   MOPPE_CHECK (!landscape.colliders ().empty ());
   MOPPE_CHECK (landscape.colliders ().size () < plan.sites.size ());
   for (const mov::Trunk& collider : landscape.colliders ()) {
-    MOPPE_CHECK (collider.radius >= 0.4f);
+    MOPPE_CHECK (collider.radius >= 0.4f * u::m);
     MOPPE_CHECK (collider.height > collider.radius);
     // The capsule's crown stays near the top of the rock it stands for.
-    const float crown = collider.root[1] + collider.height + collider.radius;
-    MOPPE_CHECK (crown > boulder_test_ground);
+    const meters_t crown = position_value (collider.root)[1] * u::m +
+                           collider.height + collider.radius;
+    MOPPE_CHECK (crown > boulder_test_ground * u::m);
   }
 }

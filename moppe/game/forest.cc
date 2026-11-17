@@ -56,12 +56,12 @@ namespace moppe::game {
       const bool fell = tree.species == render::ForestSpecies::FellBirch;
       // A snag stands its whole broken height, a spruce's girth.
       const bool snag = tree.species == render::ForestSpecies::Snag;
-      const float height = tree.height.numerical_value_in (u::m);
+      const meters_t height = tree.height;
       return {
-        .root = position_value (tree.root),
-        .axis = normalized (Vec3 (0.0f, 1.0f, 0.0f) +
-                            Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
-                            Vec3 (cr::cos (turn), 0.0f, cr::sin (turn)) * lean),
+        .root = tree.root,
+        .axis = unit_direction (normalized (
+          Vec3 (0.0f, 1.0f, 0.0f) + Vec3 (ground[0], 0.0f, ground[2]) * 0.08f +
+          Vec3 (cr::cos (turn), 0.0f, cr::sin (turn)) * lean)),
         // A fell birch's main stem: short and stout for its height. Its
         // other stems spring from the same base and are not obstacles.
         .height = height * (conifer ? 0.9f

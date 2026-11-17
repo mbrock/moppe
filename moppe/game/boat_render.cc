@@ -55,40 +55,42 @@ namespace moppe::game {
         const Vec3 foot[2] = { boat_model::foot_right, boat_model::foot_left };
 
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis =
+        hold.facing = unit_direction (facing);
+        hold.up = unit_direction (up);
+        position_value (hold.pelvis) =
           frame.transform_point (boat_model::seat_helm) + up * 0.09f;
-        hold.lean = 0.12f;
+        hold.lean = 0.12f * u::rad;
         hold.gaze = normalized (facing + up * 0.05f);
         hold.head_up = up;
-        hold.sole = facing;
-        hold.instep = up;
+        hold.sole = unit_direction (facing);
+        hold.instep = unit_direction (up);
 
         const Vec3 grip =
           tail.transform_point (boat_model::tiller_grip - boat_model::pivot);
-        const Vec3 knee =
-          hold.pelvis + facing * 0.42f + left * 0.16f + up * 0.08f;
+        const Vec3 knee = position_value (hold.pelvis) + facing * 0.42f +
+                          left * 0.16f + up * 0.08f;
         const Vec3 hand[2] = { grip, knee };
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = hand[i] - normalized (hand[i] - shoulder) * 0.07f;
+          const Vec3 shoulder = position_value (held_shoulder (hold, i));
+          hold.wrist[i] =
+            position (hand[i] - normalized (hand[i] - shoulder) * 0.07f);
           hold.elbow_pole[i] = left * side - up * 0.6f - facing * 0.2f;
-          hold.ankle[i] = frame.transform_point (foot[i]) + up * 0.085f;
+          hold.ankle[i] =
+            position (frame.transform_point (foot[i]) + up * 0.085f);
           hold.knee_pole[i] = up + facing * 0.6f + left * (side * 0.3f);
         }
         (void)boat;
         if (!rod)
           return pose_holding (hold);
-        Vec3 toward = rod->water - hold.pelvis;
+        Vec3 toward = rod->water - position_value (hold.pelvis);
         toward = toward - up * dot (toward, up);
         if (length2 (toward) > 1e-4f)
           hold.gaze = normalized (normalized (toward) - up * 0.15f);
         // Posed once to find the shoulders, and again with the hand where
         // a rod raised so high is held from them.
         const AvatarSkeleton seated = pose_holding (hold);
-        hold.wrist[1] = rod_hand (seated, rod->raise);
+        hold.wrist[1] = position (rod_hand (seated, rod->raise));
         hold.elbow_pole[1] = left * 0.6f - up;
         return pose_holding (hold);
       }
@@ -101,23 +103,24 @@ namespace moppe::game {
           normalized (frame.transform_vector (Vec3 (0, 0, 1)));
         const Vec3 left = normalized (cross (up, facing));
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis =
+        hold.facing = unit_direction (facing);
+        hold.up = unit_direction (up);
+        position_value (hold.pelvis) =
           frame.transform_point (boat_model::seat_fore) + up * 0.09f;
-        hold.lean = 0.18f;
+        hold.lean = 0.18f * u::rad;
         hold.gaze = normalized (facing + up * 0.03f);
         hold.head_up = up;
-        hold.sole = facing;
-        hold.instep = up;
+        hold.sole = unit_direction (facing);
+        hold.instep = unit_direction (up);
         for (int i = 0; i < 2; ++i) {
           const float side = i == 0 ? -1.0f : 1.0f;
-          const Vec3 knee =
-            hold.pelvis + facing * 0.40f + left * (side * 0.13f) + up * 0.07f;
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = knee - normalized (knee - shoulder) * 0.07f;
+          const Vec3 knee = position_value (hold.pelvis) + facing * 0.40f +
+                            left * (side * 0.13f) + up * 0.07f;
+          const Vec3 shoulder = position_value (held_shoulder (hold, i));
+          hold.wrist[i] =
+            position (knee - normalized (knee - shoulder) * 0.07f);
           hold.elbow_pole[i] = left * side - up * 0.5f;
-          hold.ankle[i] =
+          position_value (hold.ankle[i]) =
             frame.transform_point (
               boat_model::seat_fore + Vec3 (side * -0.12f, 0.0f, 0.45f) -
               Vec3 (0.0f,
