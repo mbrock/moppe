@@ -133,7 +133,8 @@ MOPPE_TEST (more_water_stands_deeper_and_runs_faster) {
   // One valley, one slope, one cross-section: all that changes down it is
   // how much water has gathered. In spate, so that the brook stands deeper
   // than the thread every river is at least.
-  const PaintedValley valley = paint_valley ({ .flow = 1.0f });
+  const PaintedValley valley =
+    paint_valley ({ .flow = 1.0f * proportion[one] });
   const std::size_t upper = 5 * 9 + 4;
   const std::size_t lower = 7 * 9 + 4;
   const auto depth = [&] (std::size_t cell) {
@@ -367,9 +368,9 @@ MOPPE_TEST (sea_waves_read_back_the_surface_the_water_program_displaces) {
   MOPPE_CHECK (sea_wave_scale (0.0f * wave_amplitude[one], 3.0f * u::m) ==
                0.0f);
   MOPPE_CHECK (sea_wave_scale (0.10f * wave_amplitude[one], 30.0f * u::m) <
-               0.011f);
+               0.011f * proportion[one]);
   MOPPE_CHECK (sea_wave_scale (1.0f * wave_amplitude[one], 0.0f * u::m) ==
                0.0f);
   MOPPE_CHECK (sea_wave_scale (1.0f * wave_amplitude[one], 10.0f * u::m) ==
-               1.0f);
+               1.0f * proportion[one]);
 }

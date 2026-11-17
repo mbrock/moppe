@@ -651,7 +651,7 @@ MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
   };
   // The boat on the plane streaks; a jeep or the motocross as fast does not.
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::boat),
-                                kmh (26.0f)) > 0.3f);
+                                kmh (26.0f)) > 0.3f * proportion[one]);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::boat),
                                 kmh (10.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jeep),
@@ -662,12 +662,12 @@ MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
                                 kmh (26.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
-                                kmh (60.0f)) > 0.8f);
+                                kmh (60.0f)) > 0.8f * proportion[one]);
   // The motocross cruises sharp and streaks on a boost.
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
                                 kmh (100.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
-                                kmh (150.0f)) > 0.3f);
+                                kmh (150.0f)) > 0.3f * proportion[one]);
   // Faster streaks longer.
   MOPPE_CHECK (
     motion_blur_for (game::Doing::driving (game::Machine::bike), kmh (140.0f)) >

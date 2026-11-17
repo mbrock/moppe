@@ -291,9 +291,9 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
 
   for (int frame = 0; frame < 12000 && flight.active (); ++frame) {
     const game::CinematicFlightControls controls {
-      .lateral = frame < 180 ? 0.6f : 0.0f,
-      .lift = frame >= 180 && frame < 360 ? 0.4f : 0.0f,
-      .pace = frame < 360 ? 0.25f : 0.0f
+      .lateral = (frame < 180 ? 0.6f : 0.0f) * control_signal[one],
+      .lift = (frame >= 180 && frame < 360 ? 0.4f : 0.0f) * control_signal[one],
+      .pace = (frame < 360 ? 0.25f : 0.0f) * control_signal[one]
     };
     flight.tick (seconds (1.0f / 60.0f), fixture.surface, controls);
     const Vec3 p = position_value (flight.position ());
@@ -319,8 +319,8 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
                   fixture.surface, moppe::position (Vec3 (p[0], 0.0f, p[2])))) +
                 17.9f);
     MOPPE_CHECK (std::isfinite (direction_value (flight.forward ())[0]));
-    MOPPE_CHECK (flight.motion_blur () >= 0.08f);
-    MOPPE_CHECK (flight.motion_blur () <= 0.72f);
+    MOPPE_CHECK (flight.motion_blur () >= 0.08f * proportion[one]);
+    MOPPE_CHECK (flight.motion_blur () <= 0.72f * proportion[one]);
   }
   MOPPE_CHECK (seconds_value (flight.elapsed ()) > 1.0f);
   MOPPE_CHECK (peak_speed > 150.0f);

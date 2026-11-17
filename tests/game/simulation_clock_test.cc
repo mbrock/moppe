@@ -30,7 +30,7 @@ namespace {
     mov::Glider glider (surface);
     glider.launch (
       position (Vec3 (80, 70, 80)), velocity (Vec3 (0, 0, 18)), Vec3 (0, 0, 1));
-    glider.set_turn (0.6f);
+    glider.set_turn (0.6f * control_signal[one]);
     game::ChaseCamera camera (18 * u::deg, 6.5f * u::m);
     game::SimulationClock clock;
     for (int callback = 0; callback < callback_count; ++callback) {

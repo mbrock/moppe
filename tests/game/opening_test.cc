@@ -63,8 +63,12 @@ MOPPE_TEST (opening_reel_reports_the_line_of_a_mistake) {
 MOPPE_TEST (opening_pose_line_round_trips) {
   const Vec3 eye (4454.04f, 153.9f, 3617.93f);
   const Vec3 forward = normalized (Vec3 (-0.9f, -0.05f, 0.2f));
-  const std::string line = format_opening_shot (
-    "shot-004", eye, forward, 70.0f * u::deg, 412.0f * u::s, 0.62f);
+  const std::string line = format_opening_shot ("shot-004",
+                                                eye,
+                                                forward,
+                                                70.0f * u::deg,
+                                                412.0f * u::s,
+                                                0.62f * proportion[one]);
   std::string error;
   const std::optional<OpeningReel> reel = parse (line + "\n", error);
   MOPPE_CHECK (reel.has_value ());
@@ -111,12 +115,12 @@ MOPPE_TEST (opening_player_cuts_fades_and_lands_in_the_arrival) {
     player.captions ()[0].alpha.numerical_value_in (one), 1.0f, 0.05f);
 
   player.tick (seconds (1.8f)); // just before the dip's middle
-  MOPPE_CHECK (player.veil () > 0.5f);
+  MOPPE_CHECK (player.veil () > 0.5f * proportion[one]);
   MOPPE_CHECK (player.shot_index () == 0);
 
   player.tick (seconds (0.3f));
   MOPPE_CHECK (player.shot_index () == 1);
-  MOPPE_CHECK (player.veil () > 0.5f);
+  MOPPE_CHECK (player.veil () > 0.5f * proportion[one]);
 
   player.tick (seconds (2.84f));
   MOPPE_CHECK (player.active ());

@@ -246,7 +246,7 @@ MOPPE_TEST (the_farmhouse_is_walked_into_through_its_door) {
       advance_game_session (world,
                             surface,
                             session,
-                            InputFrame { .drive = 0.5f },
+                            InputFrame { .drive = 0.5f * control_signal[one] },
                             seconds (1.0f / 60.0f),
                             &trunks);
     return position_value (session.walker ().position ());
@@ -333,7 +333,7 @@ MOPPE_TEST (the_barn_is_walked_into_up_its_ramp) {
       advance_game_session (world,
                             surface,
                             session,
-                            InputFrame { .drive = 0.5f },
+                            InputFrame { .drive = 0.5f * control_signal[one] },
                             seconds (1.0f / 60.0f),
                             &trunks);
     return position_value (session.walker ().position ());
