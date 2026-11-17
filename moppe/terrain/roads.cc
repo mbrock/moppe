@@ -400,20 +400,22 @@ namespace moppe::terrain {
           if (lattice.water[b] == Lattice::Shallow)
             cost *= 20.0f;
           cost += quantity_cast<isq::length> (run * 4.0f * lattice.river[b]);
-          cost += run * (1.5f * lattice.forest[b] + 6.0f * lattice.mire[b] +
-                         1.0f * lattice.wetness[b] + per_earthwork * earthwork);
+          cost += meters_t (
+            run * (1.5f * lattice.forest[b] + 6.0f * lattice.mire[b] +
+                   1.0f * lattice.wetness[b] + per_earthwork * earthwork));
           if (ways[b] == Built)
-            cost *= reuse;
+            cost = meters_t (cost * reuse);
         } else {
           if (lattice.water[b] != Lattice::Dry || pitch > 0.5f * grade[one])
             return unreachable;
           const auto steep = pitch / (0.2f * grade[one]);
           cost = run * (1.0f + steep * steep);
           cost += quantity_cast<isq::length> (run * 1.5f * lattice.river[b]);
-          cost += run * (0.4f * lattice.forest[b] + 2.0f * lattice.mire[b] +
-                         0.3f * lattice.wetness[b]);
+          cost +=
+            meters_t (run * (0.4f * lattice.forest[b] + 2.0f * lattice.mire[b] +
+                             0.3f * lattice.wetness[b]));
           if (ways[b] != None)
-            cost *= reuse;
+            cost = meters_t (cost * reuse);
         }
         return cost;
       }
@@ -872,8 +874,8 @@ namespace moppe::terrain {
               (apart < 6000.0f * u::m &&
                sees (lattice, site.node, 4.0f * u::m, other.node, 4.0f * u::m));
           }
-          const scale_factor_t worth =
-            site.score * (answered ? 1.0f * proportion[one] : alone);
+          const scale_factor_t worth = quantity_cast<scale_factor> (
+            site.score * (answered ? 1.0f * proportion[one] : alone));
           if (!crowded && worth > best_worth) {
             best = i;
             best_worth = worth;
@@ -1014,11 +1016,14 @@ namespace moppe::terrain {
         break;
       }
       const auto between = [&] (age_t low, age_t high, std::uint32_t salt) {
-        return whole_years (low + (high - low) * roll (seed, node, salt));
+        return whole_years (low +
+                            age_t ((high - low) * roll (seed, node, salt)));
       };
       place.founded = between (history.founded_low, history.founded_high, 1);
       place.abandoned =
-        roll (seed, node, 2) < history.abandon_chance
+        // The roll, drawn against the chance the place was given up.
+        quantity_cast<probability> (quantity_cast<dimensionless> (
+          roll (seed, node, 2))) < history.abandon_chance
           ? std::min (
               between (history.abandoned_low, history.abandoned_high, 3),
               whole_years (0.9f * place.founded))
@@ -1055,7 +1060,7 @@ namespace moppe::terrain {
             : 0.0f * proportion[one];
         const plan_position_t a = line[segment - 1];
         const plan_position_t b = line[segment];
-        result.push_back (a + (b - a) * t);
+        result.push_back (a + plan_displacement_t ((b - a) * t));
       }
       result.push_back (line.back ());
       return result;
@@ -1106,7 +1111,7 @@ namespace moppe::terrain {
                 0.0f * proportion[one],
                 1.0f * proportion[one])
             : 0.0f * proportion[one];
-        const plan_displacement_t p = a + d * t;
+        const plan_displacement_t p = a + plan_displacement_t (d * t);
         const meters_t distance = hypot (p);
         if (distance < best_distance) {
           best_distance = distance;
@@ -1137,7 +1142,7 @@ namespace moppe::terrain {
           break;
         const auto t = 1.0f - along / reach;
         const proportion_t weight = t * t * (3.0f - 2.0f * t);
-        point += shift * weight;
+        point += plan_displacement_t (shift * weight);
       }
     }
 
@@ -1223,16 +1228,19 @@ namespace moppe::terrain {
           const auto off = target.empty ()
                              ? 0.0f * one
                              : rise (target[i], elevation[k]) / (2.0f * u::m);
-          place[k] =
-            j < lowest[i] || j > highest[i] || depth > 1.5f * u::m ||
-                lattice.mire[node] > impassable_mire
-              ? impassable
-              : quantity_cast<scale_factor> (
-                  (depth > 1e-3f * u::m ? 19.0f : 0.0f) + off * off +
-                  4.0f * quantity_cast<mp_units::dimensionless> (
-                           lattice.river[node]) +
-                  1.5f * lattice.forest[node] + 6.0f * lattice.mire[node] +
-                  1.0f * lattice.wetness[node]);
+          place[k] = j < lowest[i] || j > highest[i] || depth > 1.5f * u::m ||
+                         lattice.mire[node] > impassable_mire
+                       ? impassable
+                       : quantity_cast<scale_factor> (
+                           (depth > 1e-3f * u::m ? 19.0f : 0.0f) + off * off +
+                           4.0f * quantity_cast<mp_units::dimensionless> (
+                                    lattice.river[node]) +
+                           1.5f * quantity_cast<mp_units::dimensionless> (
+                                    lattice.forest[node]) +
+                           6.0f * quantity_cast<mp_units::dimensionless> (
+                                    lattice.mire[node]) +
+                           1.0f * quantity_cast<mp_units::dimensionless> (
+                                    lattice.wetness[node]));
         }
 
       // Over the stations: the cheapest way to each offset arriving with

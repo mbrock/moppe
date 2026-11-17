@@ -337,7 +337,7 @@ namespace moppe::game {
       // Its doors, folding out about their hinges at a stop.
       const Mat4 frame = model_mesh::body_frame (at, pose.forward, pose.up);
       // The doors' swing when they stand fully open.
-      const radians_t swing = 1.536f * pose.door_open * u::rad;
+      const radians_t swing = radians_t (1.536f * pose.door_open * u::rad);
       renderer.draw_mesh (*m_doors[0],
                           frame *
                             Mat4::translation (bus_model::door_fore_hinge) *

@@ -308,8 +308,7 @@ namespace moppe::game {
         }
         logic.m_beacon_burn[i] =
           std::max (beacon_burn (beacons[i].lit, beacons[i].out, now),
-                    beacon_burn (theirs.lit, theirs.out, now)) *
-          proportion[one];
+                    beacon_burn (theirs.lit, theirs.out, now));
       }
     }
 

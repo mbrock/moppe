@@ -167,12 +167,14 @@ namespace moppe::game {
 
     // How much a species wants to be at a point, 0..1.
     proportion_t liking (Species species, const Pasture& p) {
+      constexpr proportion_t whole = 1.0f * proportion[one];
       switch (species) {
       case Species::horse:
       case Species::cow:
       case Species::sheep:
       case Species::pig:
-        return p.grazed * (1.0f - 0.8f * p.forest) * (1.0f - 0.7f * p.bog);
+        return quantity_cast<proportion> (p.grazed * (whole - 0.8f * p.forest) *
+                                          (whole - 0.7f * p.bog));
       case Species::moose:
         // Browse in young and open forest, by the mires.
         return smooth01 (0.2f, 0.45f, p.forest.numerical_value_in (one)) *
@@ -181,16 +183,16 @@ namespace moppe::game {
                                         p.forest.numerical_value_in (one))) *
                (0.6f +
                 0.4f * smooth01 (0.0f, 0.3f, p.bog.numerical_value_in (one))) *
-               (1.0f - p.fell);
+               (whole - p.fell);
       case Species::roe_deer:
         // The edges: half in the open, half under the trees.
-        return smooth01 (0.05f, 0.3f, p.forest.numerical_value_in (one)) *
-               (1.0f -
-                smooth01 (0.55f, 0.8f, p.forest.numerical_value_in (one))) *
-               (1.0f - 0.8f * p.fell) * (1.0f - 0.6f * p.bog);
+        return quantity_cast<proportion> (
+          smooth01 (0.05f, 0.3f, p.forest.numerical_value_in (one)) *
+          (1.0f - smooth01 (0.55f, 0.8f, p.forest.numerical_value_in (one))) *
+          (whole - 0.8f * p.fell) * (whole - 0.6f * p.bog));
       case Species::reindeer:
         return smooth01 (0.25f, 0.6f, p.fell.numerical_value_in (one)) *
-               (1.0f - p.forest);
+               (whole - p.forest);
       }
       return 0.0f * proportion[one];
     }

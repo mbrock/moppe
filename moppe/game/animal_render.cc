@@ -151,12 +151,15 @@ namespace moppe::game {
         phase -= std::floor (phase.numerical_value_in (one)) * of_stride;
         if (phase < duty) {
           const proportion_t through = quantity_cast<proportion> (phase / duty);
-          leg.upper = swing * (1.0f * one - 2.0f * through);
+          leg.upper = radians_t (swing * (1.0f * one - 2.0f * through));
         } else {
           const proportion_t through = quantity_cast<proportion> (
             (phase - duty) / (1.0f * of_stride - duty));
-          leg.upper = swing * (-std::cos (radians_value (half_turn * through)));
-          leg.lower = fold * std::sin (radians_value (half_turn * through));
+          leg.upper =
+            swing *
+            (-std::cos (radians_value (radians_t (half_turn * through))));
+          leg.lower =
+            fold * std::sin (radians_value (radians_t (half_turn * through)));
         }
         return leg;
       }
@@ -219,7 +222,8 @@ namespace moppe::game {
           proportion[one];
         const bool running = a.speed > 1.6f * t.walk;
         proportion_t duty = 0.62f * of_stride;
-        radians_t swing = 0.26f * u::rad * pace, fold = 0.9f * u::rad * pace;
+        radians_t swing = radians_t (0.26f * u::rad * pace),
+                  fold = radians_t (0.9f * u::rad * pace);
         std::array<proportion_t, 4> offset = { 0.25f * of_stride,
                                                0.75f * of_stride,
                                                0.0f * of_stride,
@@ -242,20 +246,25 @@ namespace moppe::game {
             duty = 0.32f * of_stride;
             swing = 0.6f * u::rad;
             fold = 1.3f * u::rad;
-            rock = 0.12f * u::rad *
-                   std::sin (radians_value (2.0f * half_turn * gait));
-            bob = 0.08f * std::sin (radians_value (2.0f * half_turn * gait)) *
-                  t.length;
+            rock =
+              0.12f * u::rad *
+              std::sin (radians_value (radians_t (2.0f * half_turn * gait)));
+            bob =
+              0.08f *
+              std::sin (radians_value (radians_t (2.0f * half_turn * gait))) *
+              t.length;
           } else {
             offset = { 0.0f * of_stride,
                        0.5f * of_stride,
                        0.5f * of_stride,
                        0.0f * of_stride };
             duty = 0.42f * of_stride;
-            swing = 0.42f * u::rad + 0.1f * u::rad * run_share;
+            swing = 0.42f * u::rad + radians_t (0.1f * u::rad * run_share);
             fold = 1.2f * u::rad;
-            bob = 0.025f * std::cos (radians_value (4.0f * half_turn * gait)) *
-                  t.length;
+            bob =
+              0.025f *
+              std::cos (radians_value (radians_t (4.0f * half_turn * gait))) *
+              t.length;
           }
         }
 
@@ -274,7 +283,8 @@ namespace moppe::game {
         // share of its reach either way.
         const proportion_t lower = std::max (head_down, 0.0f * proportion[one]);
         const proportion_t raise = std::min (head_down, 0.0f * proportion[one]);
-        const radians_t neck = down.neck * lower + raise * 0.5f * down.neck;
+        const radians_t neck =
+          radians_t (down.neck * lower) + radians_t (raise * 0.5f * down.neck);
         const proportion_t chew =
           lower > 0.9f * proportion[one]
             ? 0.06f *
@@ -282,8 +292,9 @@ namespace moppe::game {
                           a.seed % 7) *
                 proportion[one]
             : 0.0f * proportion[one];
-        const radians_t head =
-          down.head * lower - raise * 0.3f * down.head + chew * down.head;
+        const radians_t head = radians_t (down.head * lower) -
+                               radians_t (raise * 0.3f * down.head) +
+                               radians_t (chew * down.head);
         p.neck = p.frame * translation (b.withers) *
                  turn (look * 0.8f, y_axis) * turn (neck, x_axis);
         p.head = p.neck * translation (b.poll - b.withers) *
@@ -298,7 +309,7 @@ namespace moppe::game {
            0.5f * std::sin (radians_value (time * (0.37f * u::rad / u::s)) +
                             (a.seed & 15)));
         p.tail = p.frame * translation (b.tail_root) * turn (swish, y_axis) *
-                 turn (-fwd * (0.5f * u::rad) * run_share, x_axis);
+                 turn (radians_t (-fwd * (0.5f * u::rad) * run_share), x_axis);
 
         // The legs: the left's parts serve the right moved across.
         for (int leg = 0; leg < 4; ++leg) {

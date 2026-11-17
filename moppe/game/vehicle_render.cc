@@ -238,8 +238,8 @@ namespace moppe {
                           up_vec * std::sin (radians_value (rear)));
         hold.up = unit_direction (up_vec * std::cos (radians_value (rear)) -
                                   facing_vec * std::sin (radians_value (rear)));
-        const meters_t rise = seat_rise - seat_drop_back * back_only;
-        const meters_t slide = seat_slide * back;
+        const meters_t rise = seat_rise - meters_t (seat_drop_back * back_only);
+        const meters_t slide = meters_t (seat_slide * back);
         hold.pelvis = position (frame.transform_point (bike_model::saddle) +
                                 displacement_value (along (up, rise)) -
                                 displacement_value (along (facing, slide)));
@@ -261,8 +261,8 @@ namespace moppe {
 
         // The most upright lean whose shoulders reach the grips, or failing
         // that, the lean that comes closest.
-        const meters_t reach =
-          arm_stretch * (avatar_size::upper_arm + avatar_size::forearm);
+        const meters_t reach = meters_t (
+          arm_stretch * (avatar_size::upper_arm + avatar_size::forearm));
         // Leaning back, the search starts from behind the upright, so the
         // trunk hangs back as far as straight arms let it.
         const radians_t start =
@@ -417,7 +417,7 @@ namespace moppe {
           std::fabs (dot (direction_value (axis), direction_value (view))) *
           proportion[one];
         const meters_t along_view =
-          half_length + (half_width - half_length) * end_on * end_on;
+          half_length + meters_t ((half_width - half_length) * end_on * end_on);
         const displacement_t u = along (up, along_view),
                              v = along (side, half_width);
         dl.color (colour, opacity);
@@ -480,8 +480,8 @@ namespace moppe {
              0.15f * std::sin (radians_value (time * flicker_fast + phase)) *
                std::sin (radians_value (time * flicker_slow + 1.3f * phase))) *
             scale_factor[one];
-          const meters_t length =
-            (1.4f * u::m + 2.6f * u::m * k) * flicker.numerical_value_in (one);
+          const meters_t length = (1.4f * u::m + meters_t (2.6f * u::m * k)) *
+                                  flicker.numerical_value_in (one);
 
           // The heat round the mouth, and the white-hot throat.
           jet_sprite (dl,
@@ -508,28 +508,29 @@ namespace moppe {
             const proportion_t t = (i + 0.5f) / blobs * proportion[one];
             const meters_t wobble =
               0.03f * u::m *
-              std::sin (
-                radians_value (time * wobble_rate + 5.0f * u::rad * t + phase));
+              std::sin (radians_value (time * wobble_rate +
+                                       radians_t (5.0f * u::rad * t) + phase));
             const position_t centre =
-              mouth + as_move (along (axis, t * length)) +
+              mouth + as_move (along (axis, meters_t (t * length))) +
               as_move (
                 displacement (cross (direction_value (axis), Vec3 (0, 1, 0)) *
-                              meters_value (wobble * t)));
+                              meters_value (meters_t (wobble * t))));
             const DisplayColor colour = t < 0.35f * proportion[one]
                                           ? DisplayColor (1.0f, 0.86f, 0.52f)
                                         : t < 0.70f * proportion[one]
                                           ? DisplayColor (1.0f, 0.52f, 0.16f)
                                           : DisplayColor (0.95f, 0.26f, 0.08f);
-            const proportion_t fade =
-              (1.0f * proportion[one] - t) * (1.0f * proportion[one] - t);
+            const proportion_t fade = quantity_cast<proportion> (
+              (1.0f * proportion[one] - t) * (1.0f * proportion[one] - t));
             jet_sprite (dl,
                         camera,
                         centre,
                         axis,
                         0.75f * length / blobs + 0.12f * u::m,
-                        0.08f * u::m + 0.20f * u::m * t,
+                        0.08f * u::m + meters_t (0.20f * u::m * t),
                         colour,
-                        (0.25f * proportion[one] + 0.55f * fade) * k);
+                        quantity_cast<proportion> (
+                          (0.25f * proportion[one] + 0.55f * fade) * k));
           }
 
           // The core: narrow and near white, burning through the first
@@ -539,12 +540,13 @@ namespace moppe {
             const proportion_t t = (i + 0.5f) / cores * 0.45f * proportion[one];
             jet_sprite (dl,
                         camera,
-                        mouth + as_move (along (axis, t * length)),
+                        mouth + as_move (along (axis, meters_t (t * length))),
                         axis,
                         0.16f * length / cores + 0.08f * u::m,
-                        0.05f * u::m + 0.06f * u::m * t,
+                        0.05f * u::m + meters_t (0.06f * u::m * t),
                         DisplayColor (1.0f, 0.95f, 0.80f),
-                        (0.85f * proportion[one] - 0.8f * t) * k);
+                        quantity_cast<proportion> (
+                          (0.85f * proportion[one] - 0.8f * t) * k));
           }
 
           // Shock diamonds: knots that pulse where the jet re-compresses.
@@ -556,15 +558,17 @@ namespace moppe {
                0.35f * std::sin (radians_value (time * pulse_rate +
                                                 2.4f * u::rad * i + phase))) *
               proportion[one];
-            jet_sprite (dl,
-                        camera,
-                        mouth + as_move (along (axis, t * length)),
-                        axis,
-                        0.10f * u::m,
-                        0.075f * u::m - 0.012f * u::m * i,
-                        DisplayColor (1.0f, 0.96f, 0.86f),
-                        (0.9f * proportion[one] - 0.2f * proportion[one] * i) *
-                          pulse * k);
+            jet_sprite (
+              dl,
+              camera,
+              mouth + as_move (along (axis, meters_t (t * length))),
+              axis,
+              0.10f * u::m,
+              0.075f * u::m - 0.012f * u::m * i,
+              DisplayColor (1.0f, 0.96f, 0.86f),
+              quantity_cast<proportion> (
+                (0.9f * proportion[one] - 0.2f * proportion[one] * i) * pulse *
+                k));
           }
         }
         dl.end ();
@@ -621,14 +625,16 @@ namespace moppe {
         const Mat4 muffler =
           frame * Mat4::translation (bike_model::muffler_tip) *
           Mat4::rotation (180 * u::deg, direction_value (y_axis));
-        draw_part (*fm.lick_outer,
-                   muffler * cone_of (outer_radius,
-                                      (0.16f * u::m + 0.30f * u::m * thrust) *
-                                        lick.numerical_value_in (one)));
-        draw_part (*fm.lick_core,
-                   muffler * cone_of (core_radius,
-                                      (0.22f * u::m + 0.36f * u::m * thrust) *
-                                        lick.numerical_value_in (one)));
+        draw_part (
+          *fm.lick_outer,
+          muffler * cone_of (outer_radius,
+                             (0.16f * u::m + meters_t (0.30f * u::m * thrust)) *
+                               lick.numerical_value_in (one)));
+        draw_part (
+          *fm.lick_core,
+          muffler * cone_of (core_radius,
+                             (0.22f * u::m + meters_t (0.36f * u::m * thrust)) *
+                               lick.numerical_value_in (one)));
       }
 
       // Live jump-jet output, built fresh each frame from soft sprites that

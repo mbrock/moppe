@@ -119,7 +119,8 @@ namespace moppe {
 
       ChartPlacement
       chart_placement (points_t width, points_t height, bool aside) {
-        const points_t share = chart_share * std::min (width, height);
+        const points_t share =
+          points_t (chart_share * std::min (width, height));
         const points_t r = std::clamp (share, chart_least, chart_most);
         const points_t outer = quantity_cast<display_length> (chart_bezel * r);
         return { r,
@@ -869,7 +870,7 @@ namespace moppe {
       const kilometres_per_hour_t kmh =
         std::max (0.0f * (u::km / u::h), st.speed);
       const proportion_t fraction = clamp01 (kmh / gauge_full_scale);
-      const radians_t angle = gauge_start - gauge_sweep * fraction;
+      const radians_t angle = gauge_start - radians_t (gauge_sweep * fraction);
       place_shape (text,
                    m_shape->notch,
                    cx,
@@ -886,8 +887,8 @@ namespace moppe {
         const proportion_t filled = charge * reserve_dashes;
         for (int i = 0; i < reserve_dashes; ++i) {
           const proportion_t lit = clamp01 (filled - i * proportion[one]);
-          const opacity_t a =
-            (0.07f * proportion[one] + 0.36f * lit) * m_reserve_alpha * alpha;
+          const opacity_t a = quantity_cast<opacity> (
+            (0.07f * proportion[one] + 0.36f * lit) * m_reserve_alpha * alpha);
           place_shape (text,
                        m_shape->dash,
                        cx,
@@ -959,7 +960,8 @@ namespace moppe {
             line, sizeof line, "wheelie %.0f m", meters_value (ridden));
         TextStyle tally = unit;
         tally.size = 10.0f;
-        tally.alpha = opacity_value (0.8f * alpha * ease (linger));
+        tally.alpha =
+          opacity_value (quantity_cast<opacity> (0.8f * alpha * ease (linger)));
         tally.tracking = 0.02f;
         tally.tabular_figures = true;
         draw_shaded (
@@ -983,7 +985,8 @@ namespace moppe {
       const opacity_t alpha = ease (m_basket_alpha);
       // Where the words of a moment stand, risen as they come in.
       const auto cheered = [&] (opacity_t shown) {
-        return height - 96.0f * u::pt - 10.0f * u::pt * (opaque - ease (shown));
+        return height - 96.0f * u::pt -
+               points_t (10.0f * u::pt * (opaque - ease (shown)));
       };
       // A pick is celebrated for a moment just above the prompt.
       const opacity_t fresh =
@@ -1366,7 +1369,8 @@ namespace moppe {
         if (!group)
           continue;
         const Arrangement a = arrange (group);
-        const opacity_t alpha = a.alpha * ease (marker.alpha);
+        const opacity_t alpha =
+          quantity_cast<opacity> (a.alpha * ease (marker.alpha));
         if (alpha <= unseen)
           continue;
         place_shape (text,
@@ -1578,7 +1582,10 @@ namespace moppe {
         const float s1 = std::sin (radians_value (a1));
         const auto at =
           [&] (points_t radius, float c, float s, opacity_t shade) {
-            dl.color (0.06f, 0.05f, 0.04f, opacity_value (shade * alpha));
+            dl.color (0.06f,
+                      0.05f,
+                      0.04f,
+                      opacity_value (quantity_cast<opacity> (shade * alpha)));
             dl.vertex (points_value (cx + radius * c),
                        points_value (cy + radius * s));
           };
@@ -2184,7 +2191,7 @@ namespace moppe {
         style.tracking = 0.14f;
         style.alpha = opacity_value (0.94f * alpha);
         const points_t baseline =
-          (y >= unplaced ? y : 0.47f * proportion[one]) * height +
+          points_t ((y >= unplaced ? y : 0.47f * proportion[one]) * height) +
           0.5f * m_font->x_height (style.size) * u::pt;
         draw_shaded (
           text, 0.5f * width, baseline, line, style, TextAlign::Center);
@@ -2194,12 +2201,13 @@ namespace moppe {
           std::clamp (0.027f * height, 13.0f * u::pt, 40.0f * u::pt));
         style.tracking = 0.09f;
         style.alpha = opacity_value (0.9f * alpha);
-        draw_shaded (text,
-                     0.5f * width,
-                     (y >= unplaced ? y : 0.74f * proportion[one]) * height,
-                     line,
-                     style,
-                     TextAlign::Center);
+        draw_shaded (
+          text,
+          0.5f * width,
+          points_t ((y >= unplaced ? y : 0.74f * proportion[one]) * height),
+          line,
+          style,
+          TextAlign::Center);
       }
     }
   }

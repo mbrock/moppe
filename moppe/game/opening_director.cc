@@ -244,7 +244,9 @@ namespace moppe::game {
       }
       const CinematicFlightControls controls {
         .lateral = input.turn,
-        .lift = input_value (input.boost) * control_signal[one],
+        // The boost key, held, is the lift stick.
+        .lift = quantity_cast<control_signal> (
+          quantity_cast<dimensionless> (input.boost)),
         .pace = input.drive,
       };
       m_flight.tick (interval, surface, controls);

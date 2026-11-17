@@ -164,34 +164,40 @@ namespace moppe::game {
                                terrain::slope_t steepness_above,
                                proportion_t altitude) {
       const terrain::slope_t steepness = steepness_of (ground.normal);
+      constexpr proportion_t whole = 1.0f * proportion[one];
       // Talus: frost and erosion break rock out of steep slopes, but it
       // cannot rest on a face much past its angle of repose.
-      const proportion_t talus = 0.8f * band (0.05f, 0.20f, steepness) *
-                                 (0.15f + 0.85f * ground.erosion) *
-                                 (1.0f - band (0.45f, 0.62f, steepness));
+      const proportion_t talus = quantity_cast<proportion> (
+        0.8f * band (0.05f, 0.20f, steepness) *
+        (0.15f * proportion[one] + 0.85f * ground.erosion) *
+        (whole - band (0.45f, 0.62f, steepness)));
       // Scree: what falls from a cliff collects on the gentler ground
       // below it, where the world laid material down.
-      const proportion_t scree = band (0.18f, 0.40f, steepness_above) *
-                                 (1.0f - band (0.25f, 0.45f, steepness)) *
-                                 (0.45f + 0.55f * ground.deposition);
+      const proportion_t scree = quantity_cast<proportion> (
+        band (0.18f, 0.40f, steepness_above) *
+        (whole - band (0.25f, 0.45f, steepness)) *
+        (0.45f * proportion[one] + 0.55f * ground.deposition));
       // Erratics: the ice left single stones lying on the high open ground.
-      const proportion_t erratic = 0.45f * band (0.45f, 0.80f, altitude) *
-                                   (1.0f - ground.forest) *
-                                   (1.0f - band (0.15f, 0.35f, steepness));
+      const proportion_t erratic = quantity_cast<proportion> (
+        0.45f *
+        band (0.45f * proportion[one], 0.80f * proportion[one], altitude) *
+        (whole - ground.forest) * (whole - band (0.15f, 0.35f, steepness)));
       // Cobbles along a shore, more where it deposits.
       proportion_t stream = 0.0f * proportion[one];
       if (!ground.by_running_water)
-        stream = (1.0f - band (0.5f * u::m, 7.5f * u::m, ground.waterline)) *
-                 (0.35f + 0.65f * ground.deposition);
+        stream = quantity_cast<proportion> (
+          (whole - band (0.5f * u::m, 7.5f * u::m, ground.waterline)) *
+          (0.35f * proportion[one] + 0.65f * ground.deposition));
       // A lush, level meadow has buried what rock it had.
-      const proportion_t lush = band (0.45f, 0.80f, ground.moisture) *
-                                (1.0f - band (0.03f, 0.12f, steepness)) *
-                                (1.0f - ground.erosion);
-      const proportion_t dry =
-        std::max ({ talus, scree, erratic }) * (1.0f - 0.7f * lush);
+      const proportion_t lush = quantity_cast<proportion> (
+        band (
+          0.45f * proportion[one], 0.80f * proportion[one], ground.moisture) *
+        (whole - band (0.03f, 0.12f, steepness)) * (whole - ground.erosion));
+      const proportion_t dry = quantity_cast<proportion> (
+        std::max ({ talus, scree, erratic }) * (whole - 0.7f * lush));
       const proportion_t rock = std::max (dry, stream);
-      const proportion_t total =
-        (rock + 0.015f) * (1.0f - 0.85f * ground.forest);
+      const proportion_t total = quantity_cast<proportion> (
+        (rock + 0.015f * proportion[one]) * (whole - 0.85f * ground.forest));
       const proportion_t sum =
         std::max (talus + scree + erratic + stream, 1e-4f * proportion[one]);
       return { .total = std::clamp (
@@ -223,24 +229,30 @@ namespace moppe::game {
     bool stone_breaks_water (meters_t radius, terrain::ElevationChange depth) {
       return depth <= 0.0f * u::m ||
              (depth < 0.6f * u::m &&
-              (2.0f * boulder_squash - boulder_burial) * radius >
+              meters_t ((2.0f * boulder_squash - boulder_burial) * radius) >
                 depth + 0.15f * u::m);
     }
 
     terrain::SurfaceElevation
     stone_centre_height (terrain::SurfaceElevation ground, meters_t radius) {
-      return ground + terrain::ElevationChange (
-                        (boulder_squash - boulder_burial) * radius);
+      return ground + terrain::ElevationChange (quantity_cast<isq::length> (
+                        (boulder_squash - boulder_burial) * radius));
     }
 
     // Mostly knee-high stones, with a heavy tail of rare large ones. Cobbles
     // on a shore run smaller; erratics and scree run larger.
     meters_t stone_radius (std::uint32_t identity, const Rockiness& rock) {
       const proportion_t draw = hash_lane (identity, 4) * proportion[one];
+      // The draw shaped into a size: from 0.3 of a metre to 1.2.
+      const scale_factor_t size =
+        0.3f * scale_factor[one] +
+        quantity_cast<scale_factor> (
+          quantity_cast<dimensionless> (0.9f * draw * draw));
       meters_t radius =
-        (0.3f + 0.9f * draw * draw) * (1.0f - 0.25f * rock.stream) * u::m;
-      const probability_t large_odds = quantity_cast<probability> (
-        0.03f + 0.15f * rock.erratic + 0.08f * rock.scree);
+        meters_t (size * (1.0f * proportion[one] - 0.25f * rock.stream) * u::m);
+      const probability_t large_odds =
+        quantity_cast<probability> (quantity_cast<dimensionless> (
+          0.03f * proportion[one] + 0.15f * rock.erratic + 0.08f * rock.scree));
       if (hash_lane (identity, 5) * probability[one] < large_odds) {
         const meters_t ceiling =
           std::lerp (2.0f, 3.0f, rock.erratic.numerical_value_in (one)) * u::m;
@@ -368,27 +380,39 @@ namespace moppe::game {
         const noise_signal_t grouping =
           0.6f * periodic_noise (along_x, along_z, broad_laps, seed ^ 0x60b1u) +
           0.4f * periodic_noise (along_x, along_z, fine_laps, seed ^ 0x7c3au);
-        const proportion_t cluster =
-          0.12f + 1.6f * band (0.30f, 0.75f, grouping);
-        const proportion_t whole = 1.0f * proportion[one];
+        // How strongly the groups gather stone here: past one at their
+        // hearts.
+        const scale_factor_t cluster =
+          0.12f * scale_factor[one] +
+          quantity_cast<scale_factor> (quantity_cast<dimensionless> (
+            1.6f * band (0.30f * noise_signal[one],
+                         0.75f * noise_signal[one],
+                         grouping)));
+        const scale_factor_t whole = 1.0f * scale_factor[one];
         // Rockiness never exceeds one, so between the groups most candidates
         // are refused before any field is read.
-        if (odds >= boulder_cell_odds * std::min (whole, cluster))
+        if (odds >= quantity_cast<probability> (boulder_cell_odds *
+                                                std::min (whole, cluster)))
           continue;
 
         const StoneGround ground =
           read_stone_ground (surface, readings, water, running, at);
-        if (ground.elevation < sea_level || ground.home > 0.02f ||
+        if (ground.elevation < sea_level ||
+            ground.home > 0.02f * proportion[one] ||
             ground.trail > boulder_trail_tread ||
             ground.water_depth > 0.6f * u::m)
           continue;
-        const Rockiness rock =
-          stone_rockiness (ground,
-                           steepness_uphill (surface, ground, at),
-                           quantity_cast<proportion> (
-                             (ground.elevation - sea_level) / land_relief));
-        if (odds >= boulder_cell_odds *
-                      std::min<proportion_t> (whole, rock.total * cluster))
+        const Rockiness rock = stone_rockiness (
+          ground,
+          steepness_uphill (surface, ground, at),
+          quantity_cast<proportion> (meters_t (ground.elevation - sea_level) /
+                                     land_relief));
+        if (odds >=
+            quantity_cast<probability> (
+              boulder_cell_odds * std::min (whole,
+                                            quantity_cast<scale_factor> (
+                                              quantity_cast<dimensionless> (
+                                                rock.total * cluster)))))
           continue;
 
         const meters_t radius = stone_radius (identity, rock);
@@ -432,7 +456,8 @@ namespace moppe::game {
                      depth));
           const StoneGround beside =
             read_stone_ground (surface, readings, water, running, beside_at);
-          if (beside.elevation < sea_level || beside.home > 0.02f ||
+          if (beside.elevation < sea_level ||
+              beside.home > 0.02f * proportion[one] ||
               beside.trail > boulder_trail_tread)
             continue;
           const StoneFootprint under =
@@ -496,7 +521,8 @@ namespace moppe::game {
     mov::Trunk boulder_collider (const BoulderSite& site) {
       const meters_t height = position_value (site.centre)[1] * u::m;
       const meters_t girth = (site.solid ? 0.95f : 0.8f) * site.radius;
-      const meters_t upper = height + boulder_squash * site.radius - girth;
+      const meters_t upper =
+        height + meters_t (boulder_squash * site.radius) - girth;
       const meters_t lower = upper - 0.6f * site.radius;
       return { .root = at_height (plan (site.centre), lower - girth),
                .axis = unit_direction (Vec3 (0.0f, 1.0f, 0.0f)),

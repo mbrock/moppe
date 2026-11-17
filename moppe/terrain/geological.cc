@@ -61,6 +61,16 @@ namespace moppe::terrain {
     float folded (noise_signal_t signal) {
       return std::fma (signal.numerical_value_in (one), 0.5f, 0.5f);
     }
+
+    // A place on the lap moved by `reach` times a warp signal, fused as
+    // one fma. The warp's sample becomes a share of the lap here.
+    proportion_t
+    warped (proportion_t reach, noise_signal_t signal, proportion_t place) {
+      return quantity_cast<proportion> (
+        fma (quantity_cast<dimensionless> (reach),
+             quantity_cast<dimensionless> (signal),
+             quantity_cast<dimensionless> (place)));
+    }
   }
 
   GeologicalSections generate_geology (TerrainDomain domain,
@@ -121,8 +131,8 @@ namespace moppe::terrain {
             warp.fbm (on_lattice (u, warp_cycles) + 91.1f,
                       on_lattice (v, warp_cycles) + 33.9f,
                       warp_shape);
-          const proportion_t warped_x = fma (warp_reach, warp_x, u);
-          const proportion_t warped_y = fma (warp_reach, warp_y, v);
+          const proportion_t warped_x = warped (warp_reach, warp_x, u);
+          const proportion_t warped_y = warped (warp_reach, warp_y, v);
 
           const int continent_cycles = continent_noise_shape.cycles;
           const ContinentShape continent =
@@ -145,11 +155,12 @@ namespace moppe::terrain {
           const proportion_t mountain_mask =
             smoothstep (0.55f, 0.82f, continent.numerical_value_in (one)) *
             proportion[one];
-          const UpliftWeight lowland = quantity_cast<uplift_weight> (
-            plains * 0.12f * (1.0f * proportion[one] - mountain_mask));
+          const UpliftWeight lowland =
+            quantity_cast<uplift_weight> (quantity_cast<dimensionless> (
+              plains * 0.12f * (1.0f * proportion[one] - mountain_mask)));
           const UpliftWeight combined = quantity_cast<uplift_weight> (
-            fma (mountains * 0.45f,
-                 mountain_mask,
+            fma (quantity_cast<dimensionless> (mountains * 0.45f),
+                 quantity_cast<dimensionless> (mountain_mask),
                  quantity_cast<uplift_weight> (
                    fma (continent, 0.55f * one, lowland))));
 

@@ -67,7 +67,7 @@ MOPPE_TEST (dynamic_resolution_stops_at_three_eighths_size) {
 MOPPE_TEST (dynamic_resolution_returns_when_the_load_lifts) {
   DynamicResolution dynamic;
   play (dynamic, { 7.0f, 13.0f }, 600);
-  MOPPE_CHECK (dynamic.share () < 1.0f);
+  MOPPE_CHECK (dynamic.share () < 1.0f * proportion[one]);
   const std::set<float> late = play (dynamic, { 3.0f, 6.0f }, 600);
   MOPPE_CHECK (late == std::set<float> { 1.0f });
 }
@@ -76,7 +76,7 @@ MOPPE_TEST (dynamic_resolution_ignores_frames_without_a_time) {
   DynamicResolution dynamic;
   for (int frame = 0; frame < 100; ++frame)
     dynamic.observe (seconds (0.0f), sixtieth);
-  MOPPE_CHECK (dynamic.share () == 1.0f);
+  MOPPE_CHECK (dynamic.share () == 1.0f * proportion[one]);
 }
 
 MOPPE_TEST (dynamic_resolution_does_not_take_slow_frames_for_a_slow_display) {
@@ -94,7 +94,7 @@ MOPPE_TEST (dynamic_resolution_does_not_take_slow_frames_for_a_slow_display) {
     seconds (float (std::max (1.0 / 60.0, timing.refresh_seconds)));
   for (int frame = 0; frame < 600; ++frame)
     dynamic.observe (machine.frame (dynamic), period);
-  MOPPE_CHECK (dynamic.share () < 1.0f);
+  MOPPE_CHECK (dynamic.share () < 1.0f * proportion[one]);
   MOPPE_CHECK (machine.frame (dynamic) <=
                sixtieth * DynamicResolution::headroom);
 

@@ -617,7 +617,7 @@ namespace moppe::game {
           across += 0.9f * (previous + radius);
           previous = radius;
           const meters_t along =
-            0.2f * radius * river_gaussian (stone, 1).numerical_value_in (one);
+            meters_t (0.2f * radius * river_gaussian (stone, 1));
           layer.loose (
             section.at (across, along), radius, stone, -0.08f * u::m);
         }
