@@ -1,5 +1,10 @@
 #include <moppe/game/machine.hh>
 
+#include <moppe/game/helicopter_model.hh>
+#include <moppe/mov/boat.hh>
+#include <moppe/mov/car.hh>
+#include <moppe/mov/jet_ski.hh>
+
 namespace moppe::game {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
@@ -117,6 +122,9 @@ namespace moppe::game {
                   .pivot_height = 0.9f * u::m,
                   .distance = 8.0f * u::m,
                   .nearest = 3.4f * u::m },
+        // Beside the driver, the mirror of their seat.
+        .passenger_seat = Vec3 (
+          -mov::jeep_rig.seat[0], mov::jeep_rig.seat[1], mov::jeep_rig.seat[2]),
         .undergrowth_parting = 1.7f * u::m,
         .shadow_radius = 3.4f * u::m,
         .mark_height = 1.9f * u::m,
@@ -173,6 +181,9 @@ namespace moppe::game {
                   .pivot_height = 1.0f * u::m,
                   .distance = 8.5f * u::m,
                   .nearest = 3.6f * u::m },
+        .passenger_seat = Vec3 (-mov::caddy_rig.seat[0],
+                                mov::caddy_rig.seat[1],
+                                mov::caddy_rig.seat[2]),
         .undergrowth_parting = 1.6f * u::m,
         .shadow_radius = 3.6f * u::m,
         .mark_height = 2.0f * u::m,
@@ -203,6 +214,8 @@ namespace moppe::game {
                   .distance = 12.0f * u::m,
                   .nearest = 5.0f * u::m,
                   .elevation = 21.0f * u::deg },
+        // Beside the pilot, on the left.
+        .passenger_seat = helicopter_model::seat_passenger,
         // The downwash flattens the grass under it.
         .undergrowth_parting = 4.0f * u::m,
         .shadow_radius = 4.5f * u::m,
@@ -257,6 +270,9 @@ namespace moppe::game {
                   .distance = 6.5f * u::m,
                   .nearest = 3.0f * u::m,
                   .elevation = 16.0f * u::deg },
+        // The fore seat.
+        .passenger_seat =
+          Vec3 (mov::Boat::fore[0], mov::Boat::fore[1], mov::Boat::fore[2]),
         .mark_height = 1.4f * u::m,
         .driver_mark = 1.2f * u::m,
         .bumpers = boat_bumpers,
@@ -317,6 +333,10 @@ namespace moppe::game {
                   .distance = 6.0f * u::m,
                   .nearest = 2.8f * u::m,
                   .elevation = 15.0f * u::deg },
+        // Pillion, on the saddle's back half.
+        .passenger_seat = Vec3 (mov::JetSki::saddle[0],
+                                mov::JetSki::saddle[1] + 0.03f,
+                                mov::JetSki::saddle[2] - 0.5f),
         .mark_height = 1.6f * u::m,
         .driver_mark = 1.3f * u::m,
         .bumpers = jet_ski_bumpers,

@@ -14,12 +14,13 @@ namespace moppe::game {
   // the nozzle swung on the transom. A rider, given their outfit, sits
   // astride the saddle with both hands on the grips and their feet in
   // the wells, leaning into the turn, skinned into the frame's draw
-  // list.
+  // list; and one riding pillion behind them.
   void render_jet_ski (render::Renderer& r,
                        render::DrawList& dl,
                        const JetSkiPose& ski,
                        std::optional<Outfit> rider,
-                       uint64_t motion_base);
+                       uint64_t motion_base,
+                       std::optional<Outfit> pillion = std::nullopt);
 }
 
 #endif

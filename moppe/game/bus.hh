@@ -26,6 +26,7 @@
 
 namespace moppe::game {
   class GameSession;
+  struct GameLogicState;
   struct PlaceGround;
   struct PlacesPlan;
 
@@ -74,15 +75,17 @@ namespace moppe::game {
   class BusLine {
   public:
     // How the buses go: their pace between stops, how hard they gather
-    // and lose it, how long they stand at each stop, and how often one
-    // comes by, about.
+    // and lose it, how long they stand at each stop (a moment, long
+    // enough to step on or off) and at the first, the landing, where
+    // the round begins, and how often one comes by, about.
     static constexpr speed_t cruise = 12.5f * u::m / u::s;
     static constexpr metres_per_second_squared_t acceleration =
       0.8f * u::m / (u::s * u::s);
-    static constexpr seconds_t dwell = 20.0f * u::s;
+    static constexpr seconds_t dwell = 6.0f * u::s;
+    static constexpr seconds_t layover = 20.0f * u::s;
     static constexpr seconds_t headway = 480.0f * u::s;
     // How far right of the road's line a bus keeps: its lane's middle.
-    static constexpr meters_t lane = 1.7f * u::m;
+    static constexpr meters_t lane = 1.6f * u::m;
 
     BusLine () = default;
     // The loop and the stops along it, in order from its start.
@@ -160,13 +163,21 @@ namespace moppe::game {
 
   // -- riding -------------------------------------------------------
 
+  // The buses' clock: play's, run on by the lead that keeps it with the
+  // other player's (GameLogicState::m_bus_lead), so that both see the
+  // same buses and can ride one together.
+  [[nodiscard]] play_time_t bus_time (const GameLogicState& logic);
+
   // Where one gets on and off: on the road by its door, on its right,
-  // and where the rider sits inside (the front row's seat by the door,
-  // bus_model::seat_01), in the world (unwrapped as the pose is).
+  // and where a rider sits inside, in the world (unwrapped as the pose
+  // is): `seat` 0 the front row's by the door (bus_model::seat_01), 1
+  // the one beside it, for the other player.
   [[nodiscard]] Vec3 bus_door (const BusPose& pose);
   // The bus's model space (bus_model.hh) where it stands.
   [[nodiscard]] Mat4 bus_frame (const BusPose& pose);
-  [[nodiscard]] Vec3 bus_seat (const BusPose& pose);
+  [[nodiscard]] Vec3 bus_seat (const BusPose& pose, std::size_t seat = 0);
+  // That seat in the bus's model space.
+  [[nodiscard]] Vec3 bus_seat_in_model (std::size_t seat);
 
   // On foot within a few steps of the door of a bus standing at a stop:
   // which bus, to board.
@@ -176,8 +187,11 @@ namespace moppe::game {
                                                         float period_x,
                                                         float period_z);
 
-  // Gets on bus `bus`, the walker left where they stood.
-  void board_bus (GameSession& session, const BusLine& line, std::size_t bus);
+  // Gets on bus `bus` into seat `seat`, the walker left where they stood.
+  void board_bus (GameSession& session,
+                  const BusLine& line,
+                  std::size_t bus,
+                  std::size_t seat = 0);
 
   // The rider asks to get off: at once while the bus stands at a stop,
   // else at the next stop it comes to.

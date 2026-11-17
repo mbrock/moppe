@@ -152,10 +152,13 @@ build, test, and change the code; read this when working on a feature.
   -gården) wherever stops would lie over 1.4 km apart; each on the
   right-hand verge, off bridges, with a yellow hållplats sign and,
   where the verge is level, a falu-red shelter. The buses drive on the
-  right on a timetable from play's clock alone (gathering pace to
-  45 km/h, braking for each stop, standing 20 s), evenly apart so one
-  passes about every eight minutes (two in the default world's 7 km
-  loop); nothing of them is in `GameState`. Near a stop, a board
+  right, 1.6 m right of the road's line on its 6 m carriageway, on a
+  timetable from play's clock alone (gathering pace to 45 km/h,
+  braking for each stop, standing 6 s, and 20 s at the landing where
+  the round begins), evenly apart so one passes about every seven
+  minutes (two in the default world's 7 km loop); nothing of them is
+  in `GameState` but how far their clock runs ahead of play's
+  (`m_bus_lead`), which keeps two players' buses together. Near a stop, a board
   stands over its sign with its name and "Bus in 4 min" or "Bus here,
   leaves in 12 s" (`BusView::draw_board`). The map draws each bus as a
   red oblong along its way and the stops as yellow plates (named in
@@ -172,8 +175,13 @@ build, test, and change the code; read this when working on a feature.
   bus or, through their eyes, out of the windscreen; the prompt names
   the next stop, and the mount key asks to get off there (again, to
   stay on) or, while it stands at a stop, gets off at once, stepping
-  down by the door (`leave_bus`, `ride_bus`). The other player sees the
-  rider's seat on the map, not a figure (companion wire version 17).
+  down by the door (`leave_bus`, `ride_bus`). Two players see the same
+  buses: each snapshot carries the sender's buses' clock (`bus_time`),
+  the game behind by more than a second jumps ahead to the other's,
+  and then the player with the smaller number follows the other's
+  closely (`keep_bus_time`); so both can ride one bus, the second to
+  board taking the seat beside the first (`bus_model::seat_02`), each
+  seen in their seat by the other (companion wire version 18).
   `MOPPE_WALK=bus-stop[:N]` stands on the verge behind the Nth stop
   (the first, where the first bus stands as play begins),
   `MOPPE_WALK=bus-ride` boards that bus and rides it, and
@@ -422,8 +430,15 @@ build, test, and change the code; read this when working on a feature.
   than the bike; the prompt says which) and `F` again steps out; `W`/`S`
   drive and reverse, `A`/`D` steer, `Space` brakes, `Tab` cycles the
   view. It is life size and seats two: in multiplayer, `F` beside the
-  other player's jeep takes the passenger seat (`Doing::riding_along ()`), and the
-  jeep's pose travels in the companion snapshot. Like the bike it is a
+  passenger seat of the other player's jeep takes it
+  (`Doing::riding_along (Machine::jeep)`), and the jeep's pose travels
+  in the companion snapshot. Every machine that seats two rides the
+  same way, by its `MachineKind::passenger_seat`: the jeep and the
+  Caddy beside the driver, the helicopter beside the pilot (both
+  behind its tinted glass), the boat on its fore seat, and the jet ski
+  pillion behind its rider; one standing on land, or the boat or jet
+  ski while the other player drives it (`seat_within_reach`). The
+  bikes and the tractor seat one. Like the bike it is a
   Box3D assemblage: a chassis of two box hulls on four sphere wheels,
   each on a wheel joint that springs, drives, brakes, and (in front)
   steers it, over its own streamed height-field patch and trunk

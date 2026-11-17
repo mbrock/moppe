@@ -38,7 +38,7 @@ namespace moppe::game {
     // The bus the player rides, as it is now.
     std::optional<BusPose> ridden_bus (const HudWorld& w) {
       const std::vector<BusPose> buses =
-        w.bus.where (w.session.logic ().m_total_time);
+        w.bus.where (bus_time (w.session.logic ()));
       const std::size_t k = w.session.logic ().m_bus;
       if (w.session.logic ().m_doing != Doing::on_the_bus () ||
           k >= buses.size ())
@@ -145,7 +145,7 @@ namespace moppe::game {
           return { "Drag the jet ski by its bow", "The jet ski is aground" };
         return { "Haul " + name + " out", first_up (name) + " is stuck" };
       case Verb::ride_along:
-        return { "Ride along", "A seat is free" };
+        return { "Ride along in " + name, "A seat is free in " + name };
       case Verb::take:
         return { machine_kind (a.machine).take,
                  machine_kind (a.machine).at_hand };
@@ -526,8 +526,8 @@ namespace moppe::game {
                               int height) const {
     const Doing mode = w.session.logic ().m_doing;
     const DisplayColor pale (0.96f, 0.96f, 0.96f);
-    if (w.company.companion && mode != Doing::riding_along () &&
-        w.company.companion->mode != Doing::riding_along ()) {
+    if (w.company.companion && !passenger_in (mode) &&
+        !passenger_in (w.company.companion->mode)) {
       const CompanionSnapshot& theirs = *w.company.companion;
       const Vec3 at = whereabouts (theirs, true);
       // In the colour of the jacket they wear.
@@ -675,8 +675,8 @@ namespace moppe::game {
                        .heading = w.session.subject_heading (),
                        .colour = dark,
                        .name = "" });
-    if (w.company.companion && mode != Doing::riding_along () &&
-        w.company.companion->mode != Doing::riding_along ()) {
+    if (w.company.companion && !passenger_in (mode) &&
+        !passenger_in (w.company.companion->mode)) {
       const CompanionSnapshot& theirs = *w.company.companion;
       const Vec3 at = whereabouts (theirs, false);
       DisplayColor jacket = dark;
@@ -743,7 +743,7 @@ namespace moppe::game {
           .name = "camp" });
     // The buses where the timetable has them, and their stops; the
     // stops last of all, so drawn under everything.
-    for (const BusPose& bus : w.bus.where (w.session.logic ().m_total_time))
+    for (const BusPose& bus : w.bus.where (bus_time (w.session.logic ())))
       marks.push_back ({ .kind = Mark::Kind::Bus,
                          .position = bus.position,
                          .heading = bus.forward,

@@ -71,11 +71,16 @@ namespace moppe::game {
     // told).
     void meet_strangers (const GameSession& session, seconds_t interval);
 
-    // Keeping the seat beside the other player, or ahead of them in their
-    // boat (companion.hh), as it moves, and leaving it: by the mount key,
+    // Keeping the passenger's seat in the other player's machine
+    // (companion.hh) as it moves, and leaving it: by the mount key,
     // or when they have gone. Their weight sits in our boat while they ride in
     // it.
     void ride_along (GameSession& session, InputFrame& input);
+
+    // Keeps this game's buses with theirs (GameLogicState::m_bus_lead),
+    // so both see the same bus at the same stop and can ride it
+    // together.
+    void keep_time (GameSession& session);
 
     // The other player as the world's second figure: their bike where
     // they left or ride it, themselves on foot, in the hammock, or under

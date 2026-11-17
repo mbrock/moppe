@@ -1,5 +1,6 @@
 #include <moppe/game/companion.hh>
 
+#include <moppe/game/bus.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/mov/boat.hh>
 #include <moppe/mov/car.hh>
@@ -9,12 +10,14 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <tuple>
+#include <utility>
 
 namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 17;
+    constexpr std::uint8_t wire_version = 18;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -23,18 +26,18 @@ namespace moppe::game {
     constexpr std::uint8_t glider_carries_bike = 1 << 4;
     constexpr std::uint8_t walker_grounded = 1 << 5;
     constexpr std::uint8_t has_pan = 1 << 6;
-    constexpr std::uint8_t riding_in_boat = 1 << 7;
 
     // What the player is doing, one byte on the wire: the bike, on
-    // foot, the glider, the jeep, riding along, then the helicopter,
-    // the tractor, the Caddy, the mountainbike, the boat, the Long John,
-    // the jet ski, and on the bus.
+    // foot, the glider, the jeep, riding along in the jeep, then the
+    // helicopter, the tractor, the Caddy, the mountainbike, the boat,
+    // the Long John, the jet ski, on the bus, and riding along in each
+    // other machine.
     constexpr Doing doing_bytes[] = {
       Doing::driving (Machine::bike),
       Doing::on_foot (),
       Doing::gliding (),
       Doing::driving (Machine::jeep),
-      Doing::riding_along (),
+      Doing::riding_along (Machine::jeep),
       Doing::driving (Machine::helicopter),
       Doing::driving (Machine::tractor),
       Doing::driving (Machine::caddy),
@@ -43,6 +46,14 @@ namespace moppe::game {
       Doing::driving (Machine::long_john),
       Doing::driving (Machine::jet_ski),
       Doing::on_the_bus (),
+      Doing::riding_along (Machine::bike),
+      Doing::riding_along (Machine::tractor),
+      Doing::riding_along (Machine::caddy),
+      Doing::riding_along (Machine::helicopter),
+      Doing::riding_along (Machine::mountain_bike),
+      Doing::riding_along (Machine::boat),
+      Doing::riding_along (Machine::long_john),
+      Doing::riding_along (Machine::jet_ski),
     };
 
     std::uint8_t doing_byte (Doing doing) {
@@ -574,7 +585,10 @@ namespace moppe::game {
     out.put (snapshot.sent);
     out.put (snapshot.world);
     out.put (snapshot.day_hours);
+    out.put (snapshot.bus_clock);
     out.put (doing_byte (snapshot.mode));
+    out.put (snapshot.bus);
+    out.put (snapshot.bus_seat);
     std::uint8_t flags = 0;
     if (snapshot.glider)
       flags |= has_glider;
@@ -590,8 +604,6 @@ namespace moppe::game {
       flags |= has_hearth;
     if (snapshot.pan_on)
       flags |= has_pan;
-    if (snapshot.in_boat)
-      flags |= riding_in_boat;
     out.put (flags);
 
     for_each_machine (snapshot.fleet, [&] (Machine m, const auto& pose) {
@@ -666,15 +678,19 @@ namespace moppe::game {
     snapshot.sent = in.long_number ();
     snapshot.world = in.get<std::uint32_t> ();
     snapshot.day_hours = in.long_number ();
+    snapshot.bus_clock = in.long_number ();
     const std::optional<Doing> mode = doing_of (in.get<std::uint8_t> ());
     if (!mode)
       return std::nullopt;
     snapshot.mode = *mode;
+    snapshot.bus = in.get<std::uint8_t> ();
+    snapshot.bus_seat = in.get<std::uint8_t> ();
+    if (snapshot.bus_seat > 1)
+      return std::nullopt;
     const std::uint8_t flags = in.get<std::uint8_t> ();
 
     for_each_machine (snapshot.fleet,
                       [&] (Machine m, auto& pose) { get (in, m, pose); });
-    snapshot.in_boat = (flags & riding_in_boat) != 0;
 
     if (flags & has_glider) {
       GliderPose glider;
@@ -760,6 +776,8 @@ namespace moppe::game {
                            const CompanionSnapshot* after,
                            float t) {
     CompanionSnapshot result = b;
+    // The buses' clock runs on evenly, past `b` too.
+    result.bus_clock = std::lerp (a.bus_clock, b.bus_clock, double (t));
     if (leapt (a.fleet.bike.position, b.fleet.bike.position))
       return result;
     const Moments w { before, a, b, after, t, std::clamp (t, 0.0f, 1.0f) };
@@ -965,60 +983,85 @@ namespace moppe::game {
     m_slip = {};
   }
 
-  Vec3 jeep_seat (const CompanionSnapshot& theirs) {
-    const CarPose& jeep = theirs.fleet.jeep;
-    const Vec3 left = normalized (cross (jeep.up, jeep.forward));
-    return jeep.position - left * mov::jeep_rig.seat[0] +
-           jeep.up * mov::jeep_rig.seat[1] +
-           jeep.forward * mov::jeep_rig.seat[2];
+  namespace {
+    // How a machine as told lies: its way forward and its up. The bikes
+    // tell theirs as drawn.
+    template <class Pose>
+    std::pair<Vec3, Vec3> lie_of (const Pose& pose) {
+      if constexpr (requires { pose.render_orientation; })
+        return { pose.render_orientation, pose.render_normal };
+      else
+        return { pose.forward, pose.up };
+    }
   }
 
-  Vec3 boat_seat (const CompanionSnapshot& theirs) {
-    const BoatPose& boat = theirs.fleet.boat;
-    const Vec3 left = normalized (cross (boat.up, boat.forward));
-    return boat.position + left * mov::Boat::fore[0] +
-           boat.up * mov::Boat::fore[1] + boat.forward * mov::Boat::fore[2];
+  Vec3 passenger_seat (const CompanionSnapshot& theirs, Machine machine) {
+    const Vec3 seat =
+      machine_kind (machine).passenger_seat.value_or (Vec3 (0, 1, 0));
+    return visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
+      const auto [forward, up] = lie_of (pose);
+      const Vec3 left = normalized (cross (up, forward));
+      return pose.position + left * seat[0] + up * seat[1] + forward * seat[2];
+    });
   }
 
   void keep_seat (GameLogicState& state, const CompanionSnapshot& theirs) {
-    if (state.m_seat_boat) {
-      state.m_seat_position = boat_seat (theirs);
-      state.m_seat_heading = theirs.fleet.boat.forward;
-      state.m_seat_up = theirs.fleet.boat.up;
-      state.m_seat_velocity = theirs.fleet.boat.velocity;
-      return;
-    }
-    state.m_seat_position = jeep_seat (theirs);
-    state.m_seat_heading = theirs.fleet.jeep.forward;
-    state.m_seat_up = theirs.fleet.jeep.up;
-    state.m_seat_velocity = theirs.fleet.jeep.velocity;
+    const Machine machine = state.m_doing.machine;
+    state.m_seat_position = passenger_seat (theirs, machine);
+    visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
+      std::tie (state.m_seat_heading, state.m_seat_up) = lie_of (pose);
+      if constexpr (requires { pose.velocity; })
+        state.m_seat_velocity = pose.velocity;
+      else
+        state.m_seat_velocity = Vec3 ();
+    });
   }
 
-  Seat seat_within_reach (const GameSession& session,
-                          const CompanionSnapshot* companion) {
+  std::optional<Machine>
+  seat_within_reach (const GameSession& session,
+                     const CompanionSnapshot* companion) {
     if (!companion || session.logic ().m_doing != Doing::on_foot ())
-      return Seat::none;
+      return std::nullopt;
     const Vec3 feet = session.walker ().position ();
-    const float mine =
-      std::min ({ length2 (feet - session.jeep ().position ()),
-                  length2 (feet - session.bike ().position ()),
-                  length2 (feet - session.boat ().position ()) });
-    const float jeep = length2 (feet - companion->fleet.jeep.position);
-    float boat = 1e30f;
-    if (companion->mode == Doing::driving (Machine::boat))
-      boat = length2 (feet - boat_seat (*companion));
-    if (boat < 4.0f * 4.0f && boat < mine && boat < jeep)
-      return Seat::boat;
-    if (jeep < 4.5f * 4.5f && jeep < mine)
-      return Seat::jeep;
-    return Seat::none;
+    // Anything of one's own nearer wins.
+    float nearest = 1e30f;
+    for_each_machine (session.fleet (), [&] (Machine, const auto& body) {
+      nearest = std::min (nearest, length2 (feet - body.position ()));
+    });
+    constexpr float reach = 4.0f;
+    std::optional<Machine> found;
+    for (int i = 0; i < machine_count; ++i) {
+      const Machine m = static_cast<Machine> (i);
+      const MachineKind& kind = machine_kind (m);
+      if (!kind.passenger_seat || (kind.medium == Medium::water &&
+                                   companion->mode != Doing::driving (m)))
+        continue;
+      const float d = length2 (feet - passenger_seat (*companion, m));
+      if (d < reach * reach && d < nearest) {
+        nearest = d;
+        found = m;
+      }
+    }
+    return found;
   }
 
-  void take_seat (GameSession& session, const CompanionSnapshot& theirs) {
-    GameLogicState& state = session.logic ();
-    state.m_seat_boat = seat_within_reach (session, &theirs) == Seat::boat;
+  void take_seat (GameSession& session,
+                  const CompanionSnapshot& theirs,
+                  Machine machine) {
     session.clear_controls ();
-    session.set_mode (Doing::riding_along ());
-    keep_seat (state, theirs);
+    session.set_mode (Doing::riding_along (machine));
+    keep_seat (session.logic (), theirs);
+  }
+
+  void keep_bus_time (GameLogicState& state,
+                      const CompanionSnapshot& theirs,
+                      double behind,
+                      std::uint64_t player) {
+    const double gap =
+      theirs.bus_clock + behind - seconds_into_play (bus_time (state));
+    if (gap > 1.0)
+      state.m_bus_lead += gap;
+    else if (player < theirs.player)
+      state.m_bus_lead += 0.05 * gap;
   }
 }

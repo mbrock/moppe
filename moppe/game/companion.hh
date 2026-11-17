@@ -39,13 +39,17 @@ namespace moppe::game {
     // Their hour of the day, counted on from the first midnight.
     double day_hours = 0.0;
 
+    // What they are doing; riding along, in which of the other
+    // player's machines (MachineKind::passenger_seat).
     Doing mode = Doing::on_foot ();
     // Their machines, wherever they stand, and them on or in the one
     // they drive.
     FleetPoses fleet {};
-    // Riding along: on the fore seat of the other player's
-    // boat rather than beside them in their jeep.
-    bool in_boat = false;
+    // Their buses' clock (bus.hh's bus_time), seconds, which the two
+    // games keep together; and on the bus, which bus and which seat.
+    double bus_clock = 0.0;
+    std::uint8_t bus = 0;
+    std::uint8_t bus_seat = 0;
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
 
@@ -180,24 +184,35 @@ namespace moppe::game {
   class GameSession;
   struct GameLogicState;
 
-  // The passenger's seat of the other player's jeep, in the world.
-  Vec3 jeep_seat (const CompanionSnapshot& theirs);
+  // The passenger's seat of the other player's `machine`, in the world,
+  // for those that have one (MachineKind::passenger_seat).
+  Vec3 passenger_seat (const CompanionSnapshot& theirs, Machine machine);
 
-  // The fore seat of the other player's boat, in the world.
-  Vec3 boat_seat (const CompanionSnapshot& theirs);
+  // On foot beside the passenger's seat of one of the other player's
+  // machines -- the one they drive, or one standing on land -- and
+  // nearer it than anything of one's own to ride: which, if any.
+  std::optional<Machine> seat_within_reach (const GameSession& session,
+                                            const CompanionSnapshot* theirs);
 
-  // On foot beside the other player's jeep, or their boat while they are
-  // at its helm, and nearer it than anything of one's own to ride: which
-  // of them, if either.
-  enum class Seat { none, jeep, boat };
-  Seat seat_within_reach (const GameSession& session,
-                          const CompanionSnapshot* theirs);
+  // Takes the passenger's seat of `machine`, as the mount key does
+  // there (game/affordances.hh).
+  void take_seat (GameSession& session,
+                  const CompanionSnapshot& theirs,
+                  Machine machine);
 
-  // Takes that seat, as the mount key does there (game/affordances.hh).
-  void take_seat (GameSession& session, const CompanionSnapshot& theirs);
-
-  // The seat moves with the other player's jeep, or their boat.
+  // The seat moves with the other player's machine.
   void keep_seat (GameLogicState& state, const CompanionSnapshot& theirs);
+
+  // Keeps this game's buses' clock (bus_time) with theirs, which is
+  // drawn `behind` seconds late: the game behind by more than a moment
+  // jumps ahead to the other, so both see the buses of whoever has
+  // played longer; then the player with the smaller number (`player`
+  // is this one's) follows the other's closely and the other keeps
+  // their own, so the two never chase each other on.
+  void keep_bus_time (GameLogicState& state,
+                      const CompanionSnapshot& theirs,
+                      double behind,
+                      std::uint64_t player);
 }
 
 #endif

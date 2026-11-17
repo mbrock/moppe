@@ -84,6 +84,45 @@ namespace moppe::game {
         }
         return pose_holding (hold);
       }
+
+      // Riding pillion (MachineKind::passenger_seat) on the saddle's
+      // back half: astride it behind the rider, feet in the wells
+      // further aft, and hands at the rider's waist.
+      AvatarSkeleton pose_jet_ski_pillion (const JetSkiPose& ski,
+                                           const Mat4& frame) {
+        const Vec3 hull_up =
+          normalized (frame.transform_vector (Vec3 (0, 1, 0)));
+        const Vec3 facing =
+          normalized (frame.transform_vector (Vec3 (0, 0, 1)));
+        const Vec3 hull_left = normalized (cross (hull_up, facing));
+        const float lean = 0.5f * ski.lean_radians;
+        const Vec3 up =
+          normalized (hull_up * std::cos (lean) - hull_left * std::sin (lean));
+        const Vec3 left = normalized (cross (up, facing));
+        const Vec3 behind (0.0f, 0.03f, -0.5f);
+        const Vec3 foot[2] = { jet_ski_model::foot_right + behind,
+                               jet_ski_model::foot_left + behind };
+
+        HoldPose hold;
+        hold.facing = facing;
+        hold.up = up;
+        hold.pelvis = frame.transform_point (jet_ski_model::seat + behind) +
+                      hull_up * 0.09f;
+        hold.lean = 0.25f;
+        hold.gaze = normalized (facing + hull_up * 0.08f);
+        hold.head_up = hull_up;
+        hold.sole = facing;
+        hold.instep = hull_up;
+        for (int i = 0; i < 2; ++i) {
+          const float side = i == 0 ? -1.0f : 1.0f;
+          hold.wrist[i] = frame.transform_point (
+            jet_ski_model::seat + Vec3 (side * 0.17f, 0.30f, -0.05f));
+          hold.elbow_pole[i] = left * side - up * 0.5f;
+          hold.ankle[i] = frame.transform_point (foot[i]) + hull_up * 0.085f;
+          hold.knee_pole[i] = up + facing * 0.7f + left * (side * 0.55f);
+        }
+        return pose_holding (hold);
+      }
     }
   }
   using namespace jet_ski_drawing;
@@ -92,13 +131,16 @@ namespace moppe::game {
                        render::DrawList& dl,
                        const JetSkiPose& ski,
                        std::optional<Outfit> rider,
-                       uint64_t motion_base) {
+                       uint64_t motion_base,
+                       std::optional<Outfit> pillion) {
     const JetSkiMeshes& meshes = jet_ski_meshes (r);
     const Mat4 frame =
       model_mesh::body_frame (ski.position, ski.forward, ski.up);
     const Mat4 bars = bars_frame (ski, frame);
     if (rider)
       figure::draw (dl, pose_jet_ski_rider (ski, frame, bars), *rider);
+    if (pillion)
+      figure::draw (dl, pose_jet_ski_pillion (ski, frame), *pillion);
 
     r.draw_mesh (*meshes.hull, frame, motion_base + 1);
     r.draw_mesh (*meshes.bars, bars, motion_base + 2);

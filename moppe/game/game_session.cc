@@ -874,20 +874,24 @@ namespace moppe::game {
       rig.pivot = position_value (m_glider.physical_position ());
       rig.velocity = velocity_value (m_glider.physical_velocity ());
       break;
-    case Doing::Way::passenger:
+    case Doing::Way::passenger: {
+      // From the seat, or from behind as the machine's driver is seen.
+      const SeatView& view = machine_kind (m_logic.m_doing.machine).view;
       rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.78f +
                 m_logic.m_seat_heading * 0.08f;
       rig.ahead = m_logic.m_seat_heading;
       rig.pivot = m_logic.m_seat_position + Vec3 (0, 0.5f, 0);
       rig.velocity = m_logic.m_seat_velocity;
-      rig.distance = 8.0f * u::m;
-      rig.nearest = 3.4f * u::m;
+      rig.distance = view.distance;
+      rig.nearest = view.nearest;
+      rig.elevation = view.elevation;
       break;
+    }
     case Doing::Way::bus:
-      // From the front seat, looking out over the windscreen; or from
-      // well behind and above the bus.
-      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 1.05f +
-                m_logic.m_seat_heading * 4.2f;
+      // From the front seat, a sitter's head over it, looking out
+      // through the windscreen; or from well behind and above the bus.
+      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.8f +
+                m_logic.m_seat_heading * 0.1f;
       rig.ahead = m_logic.m_seat_heading;
       rig.pivot = m_logic.m_seat_position + m_logic.m_seat_up * 1.3f;
       rig.velocity = m_logic.m_seat_velocity;

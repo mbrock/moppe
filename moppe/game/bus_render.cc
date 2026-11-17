@@ -94,30 +94,34 @@ namespace moppe::game {
       }
 
       // The bus's model as render_car reads it: its driver at the wheel
-      // and the rider in the front seat by the door, feet on the floor.
-      const CarModel& bus_car () {
+      // and a rider in front seat `seat` (bus_seat_in_model), feet on
+      // the floor.
+      CarModel bus_car_for (std::size_t seat) {
         namespace m = bus_model;
-        static const CarModel model {
+        const Vec3 at = bus_seat_in_model (seat);
+        return {
           .steering_ratio = 6.0f,
           .steering_hub = m::steering_hub,
           .steering_column = m::steering_column,
           .grip_left = m::grip_left,
           .grip_right = m::grip_right,
           .seat_driver = m::seat_driver,
-          .seat_passenger = m::seat_01,
+          .seat_passenger = at,
           .pedal_left = m::pedal_left,
           .pedal_right = m::pedal_right,
-          .footrest_left =
-            Vec3 (m::seat_01[0] + 0.12f, m::aisle[1], m::seat_01[2] + 0.45f),
-          .footrest_right =
-            Vec3 (m::seat_01[0] - 0.12f, m::aisle[1], m::seat_01[2] + 0.45f),
+          .footrest_left = Vec3 (at[0] + 0.12f, m::aisle[1], at[2] + 0.45f),
+          .footrest_right = Vec3 (at[0] - 0.12f, m::aisle[1], at[2] + 0.45f),
           .wheels = { m::wheel_fl, m::wheel_fr, m::wheel_rl, m::wheel_rr },
           .lean = -0.10f,
           .sole_tilt = 0.30f,
           .knee_ahead = 0.5f,
           .knee_out = 0.15f,
         };
-        return model;
+      }
+
+      const CarModel& bus_car (std::size_t seat = 0) {
+        static const CarModel models[2] = { bus_car_for (0), bus_car_for (1) };
+        return models[std::min<std::size_t> (seat, 1)];
       }
     }
   }
@@ -222,7 +226,7 @@ namespace moppe::game {
                       play_time_t now,
                       const Vec3& camera,
                       std::uint64_t motion_base,
-                      std::optional<BusRider> rider) const {
+                      std::span<const BusRider> riders) const {
     using namespace bus_render_parts;
     std::uint64_t id = motion_base;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
@@ -246,18 +250,24 @@ namespace moppe::game {
                           .up = pose.up,
                           .steer_radians = pose.steer_radians,
                           .wheel_spin_radians = pose.wheel_spin_radians };
-      const bool ridden = rider && rider->bus == k;
+      // Its riders, by seat.
+      std::array<std::optional<Outfit>, 2> seated;
+      for (const BusRider& rider : riders)
+        if (rider.bus == k && rider.seen)
+          seated[std::min<std::size_t> (rider.seat, 1)] = rider.outfit;
       render_car (
         renderer,
         dl,
         car,
         { .driver = true,
-          .passenger = ridden && rider->seen,
+          .passenger = seated[0].has_value (),
           .driver_outfit = Outfit::green_jacket,
-          .passenger_outfit = ridden ? rider->outfit : Outfit::blue_jacket },
+          .passenger_outfit = seated[0].value_or (Outfit::blue_jacket) },
         id,
         bus_car (),
         m_bus);
+      if (seated[1])
+        seat_car_passenger (dl, car, bus_car (1), *seated[1]);
       // Its doors, folding out about their hinges at a stop.
       const Mat4 frame = model_mesh::body_frame (at, pose.forward, pose.up);
       const float swing = 1.536f * pose.door_open;

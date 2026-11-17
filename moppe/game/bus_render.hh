@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -27,10 +28,12 @@ namespace moppe::game {
   [[nodiscard]] std::vector<mov::Trunk>
   bus_stop_colliders (const BusLine& line);
 
-  // The player riding bus `bus`, in their outfit, and whether they are
-  // seen in their seat (not when the view is through their eyes).
+  // A player riding bus `bus` in seat `seat` (bus_seat), in their
+  // outfit, and whether they are seen in it (not when the view is
+  // through their eyes).
   struct BusRider {
     std::size_t bus = 0;
+    std::size_t seat = 0;
     Outfit outfit = Outfit::blue_jacket;
     bool seen = true;
   };
@@ -44,14 +47,14 @@ namespace moppe::game {
                   float period_z);
 
     // The stops near the camera, and the buses where they are at `now`
-    // (bus_model.hh), each with its driver, and its rider in `dl`.
+    // (bus_model.hh), each with its driver, and its riders in `dl`.
     void draw (render::Renderer& renderer,
                render::DrawList& dl,
                const BusLine& line,
                play_time_t now,
                const Vec3& camera,
                std::uint64_t motion_base,
-               std::optional<BusRider> rider) const;
+               std::span<const BusRider> riders) const;
     // The same, lent to the sun's shadow.
     void cast_shadows (render::Renderer& renderer,
                        const BusLine& line,

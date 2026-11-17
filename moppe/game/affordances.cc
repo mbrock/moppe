@@ -172,7 +172,7 @@ namespace moppe::game {
             if (const std::optional<std::size_t> bus =
                   bus_at_hand (*around->bus,
                                session.walker ().position (),
-                               logic.m_total_time,
+                               bus_time (logic),
                                around->places->period_x,
                                around->places->period_z))
               list.push_back ({ .verb = Verb::board_bus,
@@ -183,10 +183,12 @@ namespace moppe::game {
               { .verb = Verb::leave_bus, .button = Button::mount });
         }
         if (doing == Doing::on_foot ()) {
-          if (around &&
-              seat_within_reach (session, around->companion) != Seat::none)
-            list.push_back (
-              { .verb = Verb::ride_along, .button = Button::mount });
+          if (const std::optional<Machine> seat =
+                around ? seat_within_reach (session, around->companion)
+                       : std::nullopt)
+            list.push_back ({ .verb = Verb::ride_along,
+                              .button = Button::mount,
+                              .machine = *seat });
           if (const std::optional<Machine> stuck = session.haul_within_reach ())
             list.push_back ({ .verb = Verb::haul,
                               .button = Button::mount,
@@ -300,7 +302,7 @@ namespace moppe::game {
       take_rope (session, a.machine);
       return;
     case Verb::ride_along:
-      take_seat (session, *around->companion);
+      take_seat (session, *around->companion, a.machine);
       return;
     case Verb::take:
       get_in (session, a.machine);
@@ -308,8 +310,15 @@ namespace moppe::game {
     case Verb::step_out:
       step_out (session, a.machine);
       return;
-    case Verb::board_bus:
-      board_bus (session, *around->bus, a.object);
+    case Verb::board_bus: {
+      // The front seat by the door, or beside it when the other player
+      // sits there.
+      const CompanionSnapshot* theirs = around->companion;
+      const bool taken = theirs && theirs->mode == Doing::on_the_bus () &&
+                         theirs->bus == a.object && theirs->bus_seat == 0;
+      board_bus (session, *around->bus, a.object, taken ? 1 : 0);
+      return;
+    }
       return;
     case Verb::leave_bus:
       leave_bus (session, *around->bus);

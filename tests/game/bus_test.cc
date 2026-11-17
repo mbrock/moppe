@@ -1,4 +1,5 @@
 #include <moppe/game/bus.hh>
+#include <moppe/game/companion.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/places.hh>
 #include <moppe/map/surface.hh>
@@ -87,7 +88,8 @@ MOPPE_TEST (buses_keep_their_timetable_round_the_loop) {
   // Stops at 0 and 400 m: each run gathers pace at 0.8 m/s² to 12.5 m/s,
   // which takes 15.625 s over 97.66 m, keeps it, and brakes as hard. 400 m
   // takes 400 / 12.5 + 15.625 = 47.625 s and 600 m 63.625 s; with 20 s
-  // at each stop a round is 151.25 s, so one bus runs.
+  // at the first stop, where the round begins, and 6 s at the other, a
+  // round is 137.25 s, so one bus runs.
   BusStop first, second;
   first.name = "A";
   first.along = 0.0f * u::m;
@@ -95,13 +97,13 @@ MOPPE_TEST (buses_keep_their_timetable_round_the_loop) {
   second.along = 400.0f * u::m;
   const BusLine line (bus_test_loop (), { first, second });
   MOPPE_CHECK (line.buses () == 1);
-  MOPPE_CHECK (std::fabs (seconds_value (line.round_trip ()) - 151.25f) <
+  MOPPE_CHECK (std::fabs (seconds_value (line.round_trip ()) - 137.25f) <
                0.01f);
 
   // As play begins it stands at the first stop, in the right-hand lane.
   const BusPose start = line.where (play_time (0.0)).front ();
   MOPPE_CHECK (start.at_stop == std::optional<std::size_t> (0));
-  MOPPE_CHECK (std::fabs (start.position[2] - 501.7f) < 0.01f);
+  MOPPE_CHECK (std::fabs (start.position[2] - 501.6f) < 0.01f);
   MOPPE_CHECK (start.forward[0] > 0.99f);
   // The second stop's board: due once the first stop's 20 s and the run
   // are done.
@@ -117,7 +119,7 @@ MOPPE_TEST (buses_keep_their_timetable_round_the_loop) {
   const BusDue there = line.due (1, play_time (70.0));
   MOPPE_CHECK (there.here);
   MOPPE_CHECK (std::fabs (there.wait.numerical_value_in (si::second) -
-                          (67.625 + 20.0 - 70.0)) < 0.01);
+                          (67.625 + 6.0 - 70.0)) < 0.01);
 
   // Never faster than its pace nor jumping, across the stops and the
   // loop's seam, over two rounds; and the board counts down as it goes.
@@ -198,12 +200,47 @@ MOPPE_TEST (a_rider_boards_at_a_stop_and_gets_off_at_the_next_asked_for) {
   MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());
   // At the second stop (reached at 67.625 s) they step down by the door
   // (bus_model::door, 2.925 m ahead of the bus's middle and 1.8 m to its
-  // right): south of the lane's middle at z = 501.7, on the verge.
+  // right): south of the lane's middle at z = 501.6, on the verge.
   logic.m_total_time = play_time (70.0);
   ride_bus (session, line);
   MOPPE_CHECK (logic.m_doing == Doing::on_foot ());
   MOPPE_CHECK (!logic.m_bus_alight);
   const Vec3 feet = session.walker ().position ();
   MOPPE_CHECK (std::fabs (feet[0] - 402.925f) < 0.1f);
-  MOPPE_CHECK (std::fabs (feet[2] - 503.5f) < 0.1f);
+  MOPPE_CHECK (std::fabs (feet[2] - 503.4f) < 0.1f);
+}
+
+MOPPE_TEST (two_players_buses_keep_the_same_time) {
+  // Two games, one on for a quarter of an hour and one just begun, each
+  // hearing the other's buses' clock a moment late and misjudging by
+  // how much (20 ms too little): the one behind catches up, and from
+  // then on they keep together without either running the other on.
+  map::SurfaceGeometry surface (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (64, 0, 64))));
+  map::rebuild_geometry (surface);
+  WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (64, 60, 64));
+  world.resolution = 17;
+  GameSession sessions[2] { GameSession (world, surface),
+                            GameSession (world, surface) };
+  const std::uint64_t players[2] = { 41, 17 };
+  sessions[0].logic ().m_total_time = play_time (900.0);
+  sessions[1].logic ().m_total_time = play_time (3.0);
+  constexpr double dt = 1.0 / 60.0, late = 0.1;
+  for (int frame = 0; frame < 60 * 60; ++frame) {
+    for (int i = 0; i < 2; ++i) {
+      CompanionSnapshot theirs;
+      theirs.player = players[1 - i];
+      theirs.bus_clock =
+        seconds_into_play (bus_time (sessions[1 - i].logic ())) - late;
+      keep_bus_time (sessions[i].logic (), theirs, late + 0.02, players[i]);
+    }
+    for (GameSession& session : sessions)
+      session.logic ().m_total_time =
+        play_time (seconds_into_play (session.logic ().m_total_time) + dt);
+  }
+  const double a = seconds_into_play (bus_time (sessions[0].logic ()));
+  const double b = seconds_into_play (bus_time (sessions[1].logic ()));
+  MOPPE_CHECK (std::fabs (a - b) < 0.1);
+  MOPPE_CHECK (std::fabs (a - 960.0) < 0.5);
 }

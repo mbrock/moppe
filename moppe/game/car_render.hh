@@ -67,6 +67,13 @@ namespace moppe::game {
                    uint64_t motion_base,
                    const CarModel& model,
                    const CarMeshes& meshes);
+
+  // A passenger alone, seated in `model`'s passenger seat of `car`,
+  // skinned into `dl`: one more rider than render_car seats.
+  void seat_car_passenger (render::DrawList& dl,
+                           const CarPose& car,
+                           const CarModel& model,
+                           Outfit outfit);
 }
 
 #endif

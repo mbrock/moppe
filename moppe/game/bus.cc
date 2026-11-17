@@ -114,11 +114,10 @@ namespace moppe::game {
     });
     // The timetable: the first stop reached at the round's start.
     const float length = along;
-    const float dwell_s = seconds_value (dwell);
     float t = 0.0f;
     for (std::size_t i = 0; i < m_stops.size (); ++i) {
       m_arrive.push_back (t);
-      t += dwell_s;
+      t += seconds_value (i == 0 ? layover : dwell);
       m_leave.push_back (t);
       const float here = m_stops[i].along.numerical_value_in (u::m);
       const float next =
@@ -533,8 +532,17 @@ namespace moppe::game {
     return bus_frame (pose).transform_point (bus_model::door);
   }
 
-  Vec3 bus_seat (const BusPose& pose) {
-    return bus_frame (pose).transform_point (bus_model::seat_01);
+  Vec3 bus_seat_in_model (std::size_t seat) {
+    return seat == 0 ? bus_model::seat_01 : bus_model::seat_02;
+  }
+
+  Vec3 bus_seat (const BusPose& pose, std::size_t seat) {
+    return bus_frame (pose).transform_point (bus_seat_in_model (seat));
+  }
+
+  play_time_t bus_time (const GameLogicState& logic) {
+    return play_time (seconds_into_play (logic.m_total_time) +
+                      logic.m_bus_lead);
   }
 
   std::optional<std::size_t> bus_at_hand (const BusLine& line,
@@ -562,14 +570,14 @@ namespace moppe::game {
       std::optional<BusPose> ridden (const GameSession& session,
                                      const BusLine& line) {
         const std::vector<BusPose> buses =
-          line.where (session.logic ().m_total_time);
+          line.where (bus_time (session.logic ()));
         if (session.logic ().m_bus >= buses.size ())
           return std::nullopt;
         return buses[session.logic ().m_bus];
       }
 
       void take_seat (GameLogicState& logic, const BusPose& pose) {
-        logic.m_seat_position = bus_seat (pose);
+        logic.m_seat_position = bus_seat (pose, logic.m_bus_seat);
         logic.m_seat_heading = pose.forward;
         logic.m_seat_up = pose.up;
         logic.m_seat_velocity = pose.forward * speed_value (pose.speed);
@@ -590,9 +598,13 @@ namespace moppe::game {
     }
   }
 
-  void board_bus (GameSession& session, const BusLine& line, std::size_t bus) {
+  void board_bus (GameSession& session,
+                  const BusLine& line,
+                  std::size_t bus,
+                  std::size_t seat) {
     GameLogicState& logic = session.logic ();
     logic.m_bus = static_cast<std::uint8_t> (bus);
+    logic.m_bus_seat = static_cast<std::uint8_t> (seat);
     logic.m_bus_alight = false;
     const std::optional<BusPose> pose = bus_parts::ridden (session, line);
     if (!pose)

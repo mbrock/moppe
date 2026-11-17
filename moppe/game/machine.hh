@@ -73,6 +73,10 @@ namespace moppe::game {
     // the shallowest water.
     std::optional<Vec3> step_out;
     SeatView view;
+    // The other player's seat, where they ride along with its driver
+    // (companion.hh): the middle of its cushion, in its frame. None
+    // for the bikes and the tractor, which seat one.
+    std::optional<Vec3> passenger_seat;
     // How wide a path through the undergrowth it parts, and how wide
     // the soft shadow under it is (none on the water).
     meters_t undergrowth_parting {};

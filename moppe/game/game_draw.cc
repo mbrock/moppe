@@ -100,7 +100,7 @@ namespace moppe {
       cast_fleet (r, m_caster_dl, actors.fleet);
       m_places.landscape.cast_shadows (r, frame.camera.position);
       m_places.bus_view.cast_shadows (
-        r, m_places.bus, logic ().m_total_time, frame.camera.position);
+        r, m_places.bus, bus_time (logic ()), frame.camera.position);
       render_animals (
         r,
         session ().animals ().animals (),
@@ -276,11 +276,11 @@ namespace moppe {
         if (!helmet)
           who.driver = m_company.outfit;
       }
-      if (m_company.companion &&
-          m_company.companion->mode == Doing::riding_along ())
-        riders[static_cast<std::size_t> (
-                 m_company.companion->in_boat ? Machine::boat : Machine::jeep)]
-          .passenger = m_company.their_outfit ();
+      if (const std::optional<Machine> seat =
+            m_company.companion ? passenger_in (m_company.companion->mode)
+                                : std::nullopt)
+        riders[static_cast<std::size_t> (*seat)].passenger =
+          m_company.their_outfit ();
       draw_fleet ({ .r = r,
                     .dl = m_world_dl,
                     .time = frame.lighting.time,
@@ -299,18 +299,26 @@ namespace moppe {
         m_basket_contents.push_back (m_mushrooms.site (basket.picked[i]));
       draw_camp (m_world_dl);
       m_places.draw (r, m_world_dl, frame, logic ());
-      m_places.bus_view.draw (
-        r,
-        m_world_dl,
-        m_places.bus,
-        logic ().m_total_time,
-        frame.camera.position,
-        0xb05000,
-        actors.active_mode == Doing::on_the_bus ()
-          ? std::optional (BusRider { .bus = logic ().m_bus,
-                                      .outfit = m_company.outfit,
-                                      .seen = !helmet })
-          : std::nullopt);
+      // Who rides the buses: this player, and the other, whose buses
+      // keep the same time (Companionship::keep_time).
+      std::vector<BusRider> bus_riders;
+      if (actors.active_mode == Doing::on_the_bus ())
+        bus_riders.push_back ({ .bus = logic ().m_bus,
+                                .seat = logic ().m_bus_seat,
+                                .outfit = m_company.outfit,
+                                .seen = !helmet });
+      if (m_company.companion &&
+          m_company.companion->mode == Doing::on_the_bus ())
+        bus_riders.push_back ({ .bus = m_company.companion->bus,
+                                .seat = m_company.companion->bus_seat,
+                                .outfit = m_company.their_outfit () });
+      m_places.bus_view.draw (r,
+                              m_world_dl,
+                              m_places.bus,
+                              bus_time (logic ()),
+                              frame.camera.position,
+                              0xb05000,
+                              bus_riders);
       render_animals (
         r,
         session ().animals ().animals (),
@@ -436,7 +444,7 @@ namespace moppe {
       m_places.bus_view.draw_board (r,
                                     m_heads_up.hud.font (),
                                     m_places.bus,
-                                    logic ().m_total_time,
+                                    bus_time (logic ()),
                                     session ().subject_position (),
                                     static_cast<float> (r.height_pts ()));
     }

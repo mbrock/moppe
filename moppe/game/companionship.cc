@@ -1,5 +1,6 @@
 #include <moppe/environment.hh>
 #include <moppe/game/blob_shadow.hh>
+#include <moppe/game/bus.hh>
 #include <moppe/game/companionship.hh>
 #include <moppe/game/figure.hh>
 #include <moppe/game/fleet_render.hh>
@@ -46,7 +47,7 @@ namespace moppe::game {
       day_turning ? hours_since_midnight (state.m_day_hours) : -1.0;
     mine.mode = state.m_doing;
     mine.fleet = poses (session.fleet ());
-    mine.in_boat = state.m_doing == Doing::riding_along () && state.m_seat_boat;
+    mine.bus_clock = seconds_into_play (bus_time (state));
     if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
     if (state.m_doing == Doing::on_foot ())
@@ -54,6 +55,8 @@ namespace moppe::game {
     // On the bus, where they sit, which is all the other game can know of
     // a bus on another clock.
     if (state.m_doing == Doing::on_the_bus ()) {
+      mine.bus = state.m_bus;
+      mine.bus_seat = state.m_bus_seat;
       mine.walker = walker_pose (session.walker (), state.m_look_pitch);
       mine.walker->position = state.m_seat_position;
       mine.walker->heading = state.m_seat_heading;
@@ -106,35 +109,48 @@ namespace moppe::game {
 
   void Companionship::ride_along (GameSession& session, InputFrame& input) {
     GameLogicState& state = session.logic ();
-    session.boat ().set_passenger (companion &&
-                                   companion->mode == Doing::riding_along () &&
-                                   companion->in_boat);
-    if (state.m_doing == Doing::riding_along ()) {
-      if (!companion || input.toggle_mount) {
-        // Out on the passenger's side, the right; over the boat's
-        // gunwale, a step from it.
+    session.boat ().set_passenger (
+      companion && passenger_in (companion->mode) == Machine::boat);
+    if (const std::optional<Machine> seat = passenger_in (state.m_doing)) {
+      // Out when the mount key is pressed, or when they have gone, or
+      // when what was ridden in is no longer theirs to drive (a boat
+      // they have stepped ashore from) -- a step out to the right of
+      // the seat, the passenger's side, or over a boat's gunwale.
+      const bool aground = companion &&
+                           machine_kind (*seat).medium == Medium::water &&
+                           companion->mode != Doing::driving (*seat);
+      if (!companion || input.toggle_mount || aground) {
         const Vec3 left =
           normalized (cross (state.m_seat_up, state.m_seat_heading));
-        session.walker ().spawn (
-          moppe::position (state.m_seat_position -
-                           left * (state.m_seat_boat ? 1.1f : 1.4f)),
-          state.m_seat_heading);
+        const bool water = machine_kind (*seat).medium == Medium::water;
+        session.walker ().spawn (moppe::position (state.m_seat_position -
+                                                  left * (water ? 1.1f : 1.4f)),
+                                 state.m_seat_heading);
         session.set_mode (Doing::on_foot ());
-        state.m_seat_boat = false;
         input.toggle_mount = false;
         return;
       }
     } else if (companion && !rode_along &&
                moppe::environment ("MOPPE_RIDE_ALONG")) {
-      // For captures: take the seat as soon as there is one, from
+      // For captures: take the seat in what they drive (the jeep when
+      // they drive nothing with one) as soon as there is one, from
       // wherever this player stands.
       rode_along = true;
-      state.m_seat_boat = companion->mode == Doing::driving (Machine::boat);
-      session.clear_controls ();
-      session.set_mode (Doing::riding_along ());
+      const std::optional<Machine> driven = driven_machine (companion->mode);
+      take_seat (session,
+                 *companion,
+                 driven && machine_kind (*driven).passenger_seat
+                   ? *driven
+                   : Machine::jeep);
     }
-    if (state.m_doing == Doing::riding_along ())
+    if (passenger_in (state.m_doing))
       keep_seat (state, *companion);
+  }
+
+  void Companionship::keep_time (GameSession& session) {
+    if (companion && link)
+      keep_bus_time (
+        session.logic (), *companion, track.delay (), link->player ());
   }
 
   void Companionship::meet_strangers (const GameSession& session,
@@ -287,11 +303,9 @@ namespace moppe::game {
     FleetRiders riders {};
     if (const std::optional<Machine> driven = driven_machine (theirs.mode))
       riders[static_cast<std::size_t> (*driven)].driver = their_outfit ();
-    if (logic.m_doing == Doing::riding_along () &&
-        logic.m_cam_mode != CAM_HELMET)
-      riders[static_cast<std::size_t> (logic.m_seat_boat ? Machine::boat
-                                                         : Machine::jeep)]
-        .passenger = outfit;
+    if (const std::optional<Machine> seat = passenger_in (logic.m_doing);
+        seat && logic.m_cam_mode != CAM_HELMET)
+      riders[static_cast<std::size_t> (*seat)].passenger = outfit;
     draw_fleet (
       { .r = r, .dl = dl, .time = time, .blob = &blob, .surface = &surface },
       theirs.fleet,

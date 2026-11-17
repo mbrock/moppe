@@ -84,6 +84,7 @@ namespace moppe::game {
           render_jeep (s.r, s.dl, pose, riders, base);
       }
 
+      // Its pilot and passenger sit behind tinted glass, not drawn.
       void draw (const FleetScene& s,
                  Machine,
                  const HelicopterPose& pose,
@@ -114,7 +115,7 @@ namespace moppe::game {
                  const JetSkiPose& pose,
                  const Riders& who,
                  std::uint64_t base) {
-        render_jet_ski (s.r, s.dl, pose, who.driver, base);
+        render_jet_ski (s.r, s.dl, pose, who.driver, base, who.passenger);
       }
     }
   }

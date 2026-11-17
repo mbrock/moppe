@@ -64,6 +64,16 @@ namespace moppe::game {
     }
   }
 
+  void seat_car_passenger (render::DrawList& dl,
+                           const CarPose& car,
+                           const CarModel& model,
+                           Outfit outfit) {
+    const Mat4 frame =
+      model_mesh::body_frame (car.position, car.forward, car.up) *
+      Mat4::scaling (Vec3 (1, 1, 1) * car.scale);
+    figure::draw (dl, seated (car, model, frame, false), outfit);
+  }
+
   void render_car (render::Renderer& r,
                    render::DrawList& dl,
                    const CarPose& car,
