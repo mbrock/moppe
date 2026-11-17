@@ -193,6 +193,9 @@ foreach(function IN LISTS CORE_MATH_FUNCTIONS)
     third_party/core-math/binary32/${function}/${function}f.c
     third_party/core-math/binary64/${function}/${function}.c)
 endforeach()
+if(MINGW AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+  list(APPEND CORE_MATH_SOURCES moppe/roundeven_windows.c)
+endif()
 add_library(core-math STATIC ${CORE_MATH_SOURCES})
 set_target_properties(core-math PROPERTIES
   C_STANDARD 11
