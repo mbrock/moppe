@@ -8,6 +8,9 @@ namespace {
   using namespace mp_units;
   using namespace mp_units::si::unit_symbols;
 
+  template <class T>
+  concept addable = requires (T a) { a + a; };
+
   MOPPE_TEST (mp_units_is_available_to_project_targets) {
     const auto distance = 125 * m;
     const auto duration = 5 * s;
@@ -28,7 +31,13 @@ namespace {
   static_assert (std::is_trivially_copyable_v<moppe::Vec3>);
 #endif
 
-  static_assert (QuantityOf<moppe::position_t, isq::position_vector>);
+  // A position is a point: two do not add, though a position vector moves
+  // one, and their difference is a position vector.
+  static_assert (QuantityPointOf<moppe::position_t, isq::position_vector>);
+  static_assert (!addable<moppe::position_t>);
+  static_assert (
+    QuantityOf<decltype (moppe::position_t {} - moppe::position_t {}),
+               isq::position_vector>);
   static_assert (QuantityOf<moppe::velocity_t, isq::velocity>);
   static_assert (QuantityOf<moppe::acceleration_t, isq::acceleration>);
   static_assert (QuantityOf<moppe::force_t, isq::force>);

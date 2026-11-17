@@ -55,16 +55,16 @@ namespace moppe::mov {
       int ground_column = 0, ground_row = 0;
       // What the rider asks: ahead (positive) or astern, and a turn to
       // the right (positive).
-      float drive = 0.0f;
-      float turn = 0.0f;
+      control_signal_t drive {};
+      control_signal_t turn {};
       // The engine's speed as a share of full, how far the nozzle is
       // swung (positive turns the bow to the right), how far the rider
       // leans (positive to the right), and how far round the impeller
       // has turned.
-      float rpm = 0.0f;
-      float steer = 0.0f;
-      float lean = 0.0f;
-      float impeller_angle = 0.0f;
+      proportion_t rpm {};
+      radians_t steer {};
+      radians_t lean {};
+      radians_t impeller_angle {};
       // How deep the intake ran in the last step, and how hard the jet
       // pushed, newtons.
       meters_t intake_depth {};
@@ -86,11 +86,11 @@ namespace moppe::mov {
     void restore (const State& state);
 
     // Floats it upright at `at` on water at `level`, facing `heading`.
-    void place (const Vec3& at, const Vec3& heading, float level);
+    void place (const Vec3& at, const Vec3& heading, meters_t level);
     void set_trunks (const TrunkField* trunks);
 
-    void set_drive (float drive);
-    void set_turn (float turn);
+    void set_drive (control_signal_t drive);
+    void set_turn (control_signal_t turn);
     // No one on it: the engine stops, and the rider's weight is gone
     // from it.
     void set_parked (bool parked);
@@ -115,10 +115,11 @@ namespace moppe::mov {
       return point (Vec3 (saddle[0], saddle[1], saddle[2]));
     }
 
-    float rpm () const;
-    float steer () const;
-    float lean () const;
-    float impeller_angle () const;
+    // The engine's speed, a share of full.
+    proportion_t rpm () const;
+    radians_t steer () const;
+    radians_t lean () const;
+    radians_t impeller_angle () const;
     newtons_t thrust () const;
     // Where the jet leaves the nozzle, and the way it is thrown, in the
     // world; and how deep under the water the intake last ran (negative

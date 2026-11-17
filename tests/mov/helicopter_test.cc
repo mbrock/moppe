@@ -62,7 +62,7 @@ MOPPE_TEST (the_helicopter_takes_off_flies_turns_and_lands) {
   // Sat with nothing asked, it spools up and stays put.
   helicopter_test_run (heli, 4.0f);
   MOPPE_CHECK (heli.grounded ());
-  MOPPE_CHECK_NEAR (heli.rotor (), 1.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (scalar_value (heli.rotor ()), 1.0f, 1e-3f);
 
   // Climb, then hold the height.
   heli.set_lift (1.0f);

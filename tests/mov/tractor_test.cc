@@ -70,7 +70,7 @@ MOPPE_TEST (a_parked_tractor_settles_on_its_tyres_and_stays) {
   MOPPE_CHECK_NEAR (tractor.position ()[1], 10.0f, 0.03f);
   MOPPE_CHECK (tractor.up ()[1] > 0.999f);
   for (int wheel = 0; wheel < mov::Tractor::wheel_count; ++wheel)
-    MOPPE_CHECK_NEAR (tractor.wheel_drop (wheel), 0.0f, 0.03f);
+    MOPPE_CHECK_NEAR (meters_value (tractor.wheel_drop (wheel)), 0.0f, 0.03f);
   MOPPE_CHECK_NEAR (tractor.position ()[0], 100.0f, 0.05f);
   MOPPE_CHECK_NEAR (tractor.position ()[2], 100.0f, 0.05f);
   // The trailer stands level on its springs straight behind, its eye
@@ -80,7 +80,8 @@ MOPPE_TEST (a_parked_tractor_settles_on_its_tyres_and_stays) {
   MOPPE_CHECK (tractor.trailer_forward ()[2] > 0.999f);
   MOPPE_CHECK_NEAR (tractor.trailer_position ()[2], 100.0f - 3.72f, 0.05f);
   for (int wheel = 0; wheel < mov::Tractor::trailer_wheel_count; ++wheel)
-    MOPPE_CHECK_NEAR (tractor.trailer_wheel_drop (wheel), 0.0f, 0.03f);
+    MOPPE_CHECK_NEAR (
+      meters_value (tractor.trailer_wheel_drop (wheel)), 0.0f, 0.03f);
 }
 
 MOPPE_TEST (a_parked_tractor_holds_on_a_hillside) {
@@ -113,7 +114,7 @@ MOPPE_TEST (the_tractor_drives_slowly_steers_and_stops) {
   tractor.set_drive (0.5f);
   tractor.set_turn (1.0f);
   tractor_test_run (tractor, 3.0f);
-  MOPPE_CHECK (tractor.steer () > 0.05f);
+  MOPPE_CHECK (radians_value (tractor.steer ()) > 0.05f);
   MOPPE_CHECK (tractor.forward ()[0] < -0.3f);
   MOPPE_CHECK (tractor.up ()[1] > 0.9f);
 

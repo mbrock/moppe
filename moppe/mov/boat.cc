@@ -13,7 +13,7 @@ namespace moppe::mov {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace boat_rig {
-      constexpr metres_per_second_squared_t g = 9.81f * u::m / pow<2> (u::s);
+      constexpr metres_per_second_squared_t g = standard_gravity;
       constexpr int substeps = 4;
       constexpr float pi = 3.14159265f;
 
@@ -235,9 +235,10 @@ namespace moppe::mov {
     }
   }
 
-  Vec3 Boat::tail_point (const Vec3& local, float swing, float tilt) {
+  Vec3 Boat::tail_point (const Vec3& local, radians_t swing, radians_t tilt) {
     const Vec3 p (pivot[0], pivot[1], pivot[2]);
-    return p + boat_rig::swing_tilt (local - p, swing, tilt);
+    return p + boat_rig::swing_tilt (
+                 local - p, radians_value (swing), radians_value (tilt));
   }
 
   struct Boat::Impl {
@@ -355,8 +356,9 @@ namespace moppe::mov {
       patch.origin_for (centre, s.ground_column, s.ground_row);
       s.still = s.overturned = seconds_t {};
       s.asleep = false;
-      s.tilt = boat_rig::stowed_tilt;
-      s.swing = s.rpm = 0.0f;
+      s.tilt = boat_rig::stowed_tilt * u::rad;
+      s.swing = {};
+      s.rpm = {};
       s.thrust = newtons_t {};
       if (B3_IS_NULL (world)) {
         build (s);
@@ -385,7 +387,7 @@ namespace moppe::mov {
 
       const Vec3 v = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 at = point (Vec3 ());
-      const Vec3 current = water.current (at[0], at[2]);
+      const Vec3 current = water.current_at (at);
       Vec3 way = v - current;
       way[1] = 0.0f;
       const float speed = length (way);
@@ -398,22 +400,28 @@ namespace moppe::mov {
 
       // The long-tail.
       const float drive =
-        kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
+        kept.parked ? 0.0f
+                    : std::clamp (scalar_value (kept.drive), -1.0f, 1.0f);
       const float turn =
-        kept.parked ? 0.0f : std::clamp (kept.turn, -1.0f, 1.0f);
-      const float boost = kept.parked || drive <= 0.0f
-                            ? 0.0f
-                            : std::clamp (kept.boost, 0.0f, 1.0f);
+        kept.parked ? 0.0f : std::clamp (scalar_value (kept.turn), -1.0f, 1.0f);
+      const float boost =
+        kept.parked || drive <= 0.0f
+          ? 0.0f
+          : std::clamp (scalar_value (kept.boost), 0.0f, 1.0f);
       const float wanted_rpm = kept.parked
                                  ? 0.0f
                                  : std::max (idle, std::abs (drive)) *
                                      (1.0f + (boosted_pitch - 1.0f) * boost);
-      kept.rpm += (wanted_rpm - kept.rpm) *
-                  std::min (1.0f, (dt / spin_up).numerical_value_in (one));
-      kept.propeller_angle = std::remainder (
-        kept.propeller_angle +
-          (kept.rpm * 2.0f * pi * propeller_rate * dt).numerical_value_in (one),
-        2.0f * pi);
+      float rpm = scalar_value (kept.rpm);
+      rpm += (wanted_rpm - rpm) *
+             std::min (1.0f, (dt / spin_up).numerical_value_in (one));
+      kept.rpm = rpm * one;
+      kept.propeller_angle =
+        std::remainder (
+          radians_value (kept.propeller_angle) +
+            (rpm * 2.0f * pi * propeller_rate * dt).numerical_value_in (one),
+          2.0f * pi) *
+        u::rad;
       // Left alone the helmsman's hand holds the course, against the
       // pull of the boat heeling under their weight and the engine's.
       const float yaw =
@@ -424,37 +432,40 @@ namespace moppe::mov {
                                std::clamp (2.5f * yaw, -0.15f, 0.15f);
       const float swing_to = turn * most_swing + hold;
       const float swing_step = radians_value (swing_rate * dt);
-      kept.swing += std::clamp (swing_to - kept.swing, -swing_step, swing_step);
+      float swing = radians_value (kept.swing);
+      swing += std::clamp (swing_to - swing, -swing_step, swing_step);
+      kept.swing = swing * u::rad;
 
       // Down into the water while someone holds it, but lifted over the
       // bottom where it would strike; tipped up out of it when left.
       const Vec3 hub_at (hub[0], hub[1], hub[2]);
       float tilt_to = stowed_tilt;
       if (!kept.parked) {
-        const Vec3 low = point (tail_point (hub_at, kept.swing, 0.0f));
+        const Vec3 low = point (tail_point (hub_at, kept.swing, radians_t {}));
         const float floor =
           surface_elevation_at (surface, low[0], low[2]) + 0.06f + skeg;
         tilt_to =
           std::clamp ((floor - low[1]) / shaft_reach, 0.0f, stowed_tilt);
       }
       const float tilt_step = radians_value (tilt_rate * dt);
-      kept.tilt += std::clamp (tilt_to - kept.tilt, -tilt_step, tilt_step);
+      float tilt = radians_value (kept.tilt);
+      tilt += std::clamp (tilt_to - tilt, -tilt_step, tilt_step);
+      kept.tilt = tilt * u::rad;
 
       const Vec3 hub_local = tail_point (hub_at, kept.swing, kept.tilt);
       const Vec3 prop = point (hub_local);
       const float rise = stern_wave * smoothstep (1.5f, 6.0f, speed);
-      const float propeller_depth =
-        water.level (prop[0], prop[2]) + rise - prop[1];
+      const float propeller_depth = water.level_at (prop) + rise - prop[1];
       kept.propeller_depth = propeller_depth * u::m;
       const float bite = smoothstep (-0.04f, 0.12f, propeller_depth);
       // The helmsman holds the tail with its push aimed through the
       // boat's centre of mass; steering swings it from there, moving the
       // propeller across and turning its push with it.
       const Vec3 centre = from_b3 (mass_data (true, kept.passenger).center);
-      const Vec3 shaft = normalized (axis (
-        swing_tilt (normalized (centre - hub_at), kept.swing, kept.tilt)));
+      const Vec3 shaft = normalized (
+        axis (swing_tilt (normalized (centre - hub_at), swing, tilt)));
       const speed_t ahead = dot (v - current, shaft) * u::m / u::s;
-      const float revs = std::min (kept.rpm, 1.0f + (boosted_pitch - 1.0f));
+      const float revs = std::min (rpm, 1.0f + (boosted_pitch - 1.0f));
       const float slip =
         std::clamp ((ahead / (pitch_speed * std::max (revs, 0.1f)))
                       .numerical_value_in (one),
@@ -469,7 +480,7 @@ namespace moppe::mov {
                                               std::max (ahead, steerage))) *
                          (1.0f - slip * slip * slip);
       if (drive < 0.0f)
-        thrust = -astern * static_thrust * bite * kept.rpm;
+        thrust = -astern * static_thrust * bite * rpm;
       else if (drive == 0.0f)
         thrust = 0.0f * u::N;
       kept.thrust = thrust;
@@ -516,7 +527,7 @@ namespace moppe::mov {
         const Vec3 here = point (Vec3 ());
         const bool parked = kept.parked;
         const bool passenger = kept.passenger;
-        place (here, axis (Vec3 (0, 0, 1)), water.level (here[0], here[2]));
+        place (here, axis (Vec3 (0, 0, 1)), water.level_at (here));
         kept.parked = parked;
         kept.passenger = passenger;
         b3Body_SetMassData (body, mass_data (!parked, passenger));
@@ -548,8 +559,8 @@ namespace moppe::mov {
     m_impl->build (state);
   }
 
-  void Boat::place (const Vec3& at, const Vec3& heading, float level) {
-    m_impl->place (at, heading, level);
+  void Boat::place (const Vec3& at, const Vec3& heading, meters_t level) {
+    m_impl->place (at, heading, meters_value (level));
   }
 
   void Boat::set_trunks (const TrunkField* trunks) {
@@ -561,15 +572,15 @@ namespace moppe::mov {
     m.build (s);
   }
 
-  void Boat::set_drive (float drive) {
+  void Boat::set_drive (control_signal_t drive) {
     m_impl->kept.drive = drive;
   }
 
-  void Boat::set_boost (float boost) {
+  void Boat::set_boost (control_signal_t boost) {
     m_impl->kept.boost = boost;
   }
 
-  void Boat::set_turn (float turn) {
+  void Boat::set_turn (control_signal_t turn) {
     m_impl->kept.turn = turn;
   }
 
@@ -653,19 +664,19 @@ namespace moppe::mov {
     return m_impl->kept.grounded;
   }
 
-  float Boat::rpm () const {
+  proportion_t Boat::rpm () const {
     return m_impl->kept.rpm;
   }
 
-  float Boat::swing () const {
+  radians_t Boat::swing () const {
     return m_impl->kept.swing;
   }
 
-  float Boat::tilt () const {
+  radians_t Boat::tilt () const {
     return m_impl->kept.tilt;
   }
 
-  float Boat::propeller_angle () const {
+  radians_t Boat::propeller_angle () const {
     return m_impl->kept.propeller_angle;
   }
 

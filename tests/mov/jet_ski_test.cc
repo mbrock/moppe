@@ -27,8 +27,8 @@ namespace {
   }
 
   mov::BoatWater jet_ski_still_water (Vec3 current = Vec3 ()) {
-    return { [] (float, float) { return 0.0f; },
-             [current] (float, float) { return current; } };
+    return { [] (position_t) { return 0.0f * u::m; },
+             [current] (position_t) { return velocity (current); } };
   }
 
   void jet_ski_test_run (mov::JetSki& ski,
@@ -63,7 +63,7 @@ MOPPE_TEST (a_jet_ski_left_on_the_water_floats_level_and_rests) {
     jet_ski_test_ground ([] (float, float) { return -4.0f; });
   mov::JetSki ski (lake);
   // Dropped a little high, it settles.
-  ski.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.3f);
+  ski.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.3f * u::m);
   jet_ski_test_run (ski, 12.0f);
   MOPPE_CHECK (ski.afloat ());
   MOPPE_CHECK (!ski.grounded ());
@@ -79,7 +79,7 @@ MOPPE_TEST (the_jet_ski_settles_deeper_under_its_rider_and_stays_upright) {
   const map::SurfaceGeometry lake =
     jet_ski_test_ground ([] (float, float) { return -4.0f; });
   mov::JetSki ski (lake);
-  ski.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f * u::m);
   jet_ski_test_run (ski, 10.0f);
   const float empty = ski.position ()[1];
   const float empty_mass = ski.mass ().numerical_value_in (u::kg);
@@ -102,7 +102,7 @@ MOPPE_TEST (the_jet_planes_the_jet_ski_and_its_nozzle_steers_it) {
   const map::SurfaceGeometry lake =
     jet_ski_test_ground ([] (float, float) { return -4.0f; });
   mov::JetSki ski (lake);
-  ski.place (Vec3 (256, 0, 30), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (256, 0, 30), Vec3 (0, 0, 1), 0.0f * u::m);
   ski.set_parked (false);
   jet_ski_test_run (ski, 2.0f);
   const float floating = ski.position ()[1];
@@ -142,7 +142,7 @@ MOPPE_TEST (with_the_throttle_shut_the_jet_ski_has_nothing_to_steer_with) {
   const map::SurfaceGeometry lake =
     jet_ski_test_ground ([] (float, float) { return -4.0f; });
   mov::JetSki ski (lake);
-  ski.place (Vec3 (256, 0, 30), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (256, 0, 30), Vec3 (0, 0, 1), 0.0f * u::m);
   ski.set_parked (false);
   ski.set_drive (1.0f);
   jet_ski_test_run (ski, 5.0f);
@@ -158,7 +158,7 @@ MOPPE_TEST (astern_the_jet_skis_bucket_backs_it_slowly) {
   const map::SurfaceGeometry lake =
     jet_ski_test_ground ([] (float, float) { return -4.0f; });
   mov::JetSki ski (lake);
-  ski.place (Vec3 (256, 0, 100), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (256, 0, 100), Vec3 (0, 0, 1), 0.0f * u::m);
   ski.set_parked (false);
   ski.set_drive (-1.0f);
   jet_ski_test_run (ski, 6.0f);
@@ -172,7 +172,7 @@ MOPPE_TEST (a_jet_ski_thrown_off_a_wave_loses_its_push_until_it_lands) {
   const map::SurfaceGeometry lake =
     jet_ski_test_ground ([] (float, float) { return -6.0f; });
   mov::JetSki ski (lake);
-  ski.place (Vec3 (256, 0, 100), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (256, 0, 100), Vec3 (0, 0, 1), 0.0f * u::m);
   ski.set_parked (false);
   ski.set_drive (1.0f);
   jet_ski_test_run (ski, 4.0f);
@@ -200,17 +200,20 @@ MOPPE_TEST (a_jet_ski_rides_over_a_swell_without_burying_its_bow) {
   float time = 0.0f;
   const float k = 2.0f * 3.14159265f / 24.0f;
   const float omega = std::sqrt (9.81f * k);
-  const mov::BoatWater swell { [&] (float, float z) {
-                                return 0.5f * std::sin (k * z + omega * time);
-                              },
-                               [&] (float, float z) {
-                                 const float phase = k * z + omega * time;
-                                 return Vec3 (0.0f,
-                                              0.5f * omega * std::cos (phase),
-                                              -0.5f * omega * std::sin (phase));
-                               } };
+  const mov::BoatWater swell {
+    [&] (position_t at) {
+      const float z = position_value (at)[2];
+      return 0.5f * std::sin (k * z + omega * time) * u::m;
+    },
+    [&] (position_t at) {
+      const float phase = k * position_value (at)[2] + omega * time;
+      return velocity (Vec3 (0.0f,
+                             0.5f * omega * std::cos (phase),
+                             -0.5f * omega * std::sin (phase)));
+    }
+  };
   mov::JetSki ski (sea);
-  ski.place (Vec3 (256, 0, 40), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (256, 0, 40), Vec3 (0, 0, 1), 0.0f * u::m);
   ski.set_parked (false);
   ski.set_drive (1.0f);
   float least_up = 1.0f, lowest = 1e9f;
@@ -219,7 +222,7 @@ MOPPE_TEST (a_jet_ski_rides_over_a_swell_without_burying_its_bow) {
     ski.update (moppe::seconds (1.0f / 60.0f), swell);
     least_up = std::min<float> (least_up, ski.up ()[1]);
     const Vec3 at = ski.position ();
-    lowest = std::min<float> (lowest, at[1] - swell.level (at[0], at[2]));
+    lowest = std::min<float> (lowest, at[1] - swell.level_at (at));
   }
   MOPPE_CHECK (least_up > 0.6f);
   MOPPE_CHECK (lowest > -0.6f);
@@ -231,7 +234,7 @@ MOPPE_TEST (driven_at_a_shelving_shore_the_jet_ski_runs_aground) {
   const map::SurfaceGeometry shore =
     jet_ski_test_ground ([] (float, float z) { return (z - 160.0f) / 12.0f; });
   mov::JetSki ski (shore);
-  ski.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1), 0.0f * u::m);
   ski.set_parked (false);
   ski.set_drive (1.0f);
   jet_ski_test_run (ski, 20.0f);
@@ -248,7 +251,7 @@ MOPPE_TEST (a_jet_ski_knocked_over_is_righted_where_it_floats) {
   const map::SurfaceGeometry lake =
     jet_ski_test_ground ([] (float, float) { return -4.0f; });
   mov::JetSki ski (lake);
-  ski.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f * u::m);
   jet_ski_test_run (ski, 3.0f);
   // Turned turtle: a rotation of half a turn about its length.
   mov::JetSki::State over = ski.state ();
@@ -268,7 +271,7 @@ MOPPE_TEST (a_jet_skis_checkpoint_replays_the_same_ride_each_time) {
   const map::SurfaceGeometry lake =
     jet_ski_test_ground ([] (float, float) { return -4.0f; });
   mov::JetSki ski (lake);
-  ski.place (Vec3 (256, 0, 60), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (256, 0, 60), Vec3 (0, 0, 1), 0.0f * u::m);
   ski.set_parked (false);
   ski.set_drive (1.0f);
   ski.set_turn (0.4f);
@@ -282,8 +285,9 @@ MOPPE_TEST (a_jet_skis_checkpoint_replays_the_same_ride_each_time) {
   MOPPE_CHECK (length (ski.state ().body.position - kept.body.position) <
                1e-5f);
   MOPPE_CHECK (length (ski.velocity () - kept.body.linear_velocity) < 1e-5f);
-  MOPPE_CHECK_NEAR (ski.rpm (), kept.rpm, 1e-6f);
-  MOPPE_CHECK_NEAR (ski.steer (), kept.steer, 1e-6f);
+  MOPPE_CHECK_NEAR (scalar_value (ski.rpm ()), scalar_value (kept.rpm), 1e-6f);
+  MOPPE_CHECK_NEAR (
+    radians_value (ski.steer ()), radians_value (kept.steer), 1e-6f);
   jet_ski_test_run (ski, 2.0f);
   const Vec3 first = ski.position ();
   // Another jet ski restored from it rides the same way, and both close

@@ -21,8 +21,6 @@ namespace moppe {
       // BikeRig.
       namespace bike_rig {
         constexpr int substeps = 4;
-        constexpr metres_per_second_squared_t gravity =
-          9.82f * u::m / pow<2> (u::s);
 
         // Box3D mixes two shapes' friction as a geometric mean, so a tire
         // carries the square of the wanted coefficient against unit ground
@@ -103,7 +101,7 @@ namespace moppe {
         for (float t = step; t <= horizon; t += step) {
           Vec3 sample = position + velocity * t;
           sample[1] -=
-            0.5f * bike_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)) *
+            0.5f * standard_gravity.numerical_value_in (u::m / pow<2> (u::s)) *
             t * t;
           if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
             return false;
@@ -178,7 +176,7 @@ namespace moppe {
         const kilograms_t effective =
           1.0f / (1.0f / rig.wheel_mass + 1.0f / chassis_mass +
                   lever * lever / chassis_inertia[0]);
-        const newtons_t load = 0.5f * chassis_mass * bike_rig::gravity;
+        const newtons_t load = 0.5f * chassis_mass * standard_gravity;
         const auto tune = [&] (meters_t sag, float& hertz, float& damping) {
           spring_tuning (load / sag,
                          0.5f * chassis_mass,
@@ -312,8 +310,8 @@ namespace moppe {
         destroy ();
         b3WorldDef def = b3DefaultWorldDef ();
         def.gravity = { 0.0f,
-                        -bike_rig::gravity.numerical_value_in (u::m /
-                                                               pow<2> (u::s)),
+                        -standard_gravity.numerical_value_in (u::m /
+                                                              pow<2> (u::s)),
                         0.0f };
         def.enableSleep = false;
         def.workerCount = 1;
@@ -599,9 +597,9 @@ namespace moppe {
           const Vec3 centripetal = cross (
             Vec3 (0.0f, wanted_yaw.numerical_value_in (u::rad / u::s), 0.0f),
             v);
-          goal = std::atan2 (dot (centripetal, right),
-                             bike_rig::gravity.numerical_value_in (
-                               u::m / pow<2> (u::s))) *
+          goal = std::atan2 (
+                   dot (centripetal, right),
+                   standard_gravity.numerical_value_in (u::m / pow<2> (u::s))) *
                  (1.0f - 0.6f * slide);
         } else if (hanging) {
           // The harness banks the bike with the wing.
@@ -695,7 +693,7 @@ namespace moppe {
             wheelie * rig.wheelie_lean * std::clamp (balance, -0.6f, 1.0f);
           rider_shift += (goal - rider_shift) * settle (8.0f / u::s, dt);
           if (grounded) {
-            const newtons_t weight = -chassis_mass * bike_rig::gravity;
+            const newtons_t weight = -chassis_mass * standard_gravity;
             b3Body_ApplyTorque (
               chassis,
               to_b3 (cross (forward * -meters_value (rider_shift),
@@ -748,7 +746,7 @@ namespace moppe {
             const newtons_t grip =
               rig.traction_share * rig.tire_friction * rear_load;
             const newtons_t lift = rig.wheelie_share * total_mass *
-                                   bike_rig::gravity * rig.half_wheelbase /
+                                   standard_gravity * rig.half_wheelbase /
                                    (rig.ride_height () - rig.reference_height);
             // Leaning back, the rider lets the drive lift the front, but
             // its pull about the rear tyre may rear the bike up by no more
@@ -769,7 +767,7 @@ namespace moppe {
               rearing = std::max (
                 newtons_t {},
                 newtons_t ((rig.wheelie_torque +
-                            total_mass * bike_rig::gravity * (reach * u::m)) /
+                            total_mass * standard_gravity * (reach * u::m)) /
                            (height * u::m)));
             }
             rear_speed = (std::max (vf, 0.0f) + 20.0f) / r_m;

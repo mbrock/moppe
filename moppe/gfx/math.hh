@@ -70,6 +70,11 @@ namespace moppe {
   // smoothing constant in the codebase is one of these; spelled
   // 3.1f / u::s at definition sites.
   using damping_t = quantity<one / si::second, float>;
+
+  // The pull of the ground, the one every machine and the water fall by.
+  // (The walker falls faster, by its own, for the feel of a jump.)
+  inline constexpr metres_per_second_squared_t standard_gravity =
+    9.81f * si::metre / pow<2> (si::second);
   using frequency_t = quantity<si::hertz, float>;
   using attenuation_t = quantity<isq::attenuation[one / si::metre], float>;
 
@@ -558,7 +563,12 @@ namespace moppe {
   // Physical spatial vectors keep one unit around one numerical vector.  The
   // simulation can migrate fields to these types incrementally without ever
   // constructing a vector whose individual elements are quantities.
-  using position_t = quantity<isq::position_vector[si::metre], Vec3>;
+  // A place in the world is a point, measured from the world's origin:
+  // two of them do not add, and their difference is a position vector.
+  using position_t =
+    quantity_point<isq::position_vector[si::metre],
+                   default_point_origin (isq::position_vector[si::metre]),
+                   Vec3>;
   using displacement_t = quantity<isq::displacement[si::metre], Vec3>;
   using spatial_extent_t = quantity<spatial_extent[si::metre], Vec3>;
   using velocity_t = quantity<isq::velocity[si::metre / si::second], Vec3>;
@@ -568,7 +578,7 @@ namespace moppe {
   using impulse_t = quantity<isq::impulse[si::newton * si::second], Vec3>;
 
   inline position_t position (const Vec3& value) {
-    return value * isq::position_vector[si::metre];
+    return position_t (value * isq::position_vector[si::metre]);
   }
 
   inline displacement_t displacement (const Vec3& value) {
@@ -608,11 +618,13 @@ namespace moppe {
   }
 
   inline const Vec3& position_value (const position_t& value) {
-    return value.numerical_value_ref_in (si::metre);
+    return value.quantity_ref_from (value.point_origin)
+      .numerical_value_ref_in (si::metre);
   }
 
   inline Vec3& position_value (position_t& value) {
-    return value.numerical_value_ref_in (si::metre);
+    return value.quantity_ref_from (value.point_origin)
+      .numerical_value_ref_in (si::metre);
   }
 
   inline const Vec3& velocity_value (const velocity_t& value) {

@@ -182,6 +182,16 @@ namespace moppe::mov {
       step (h);
   }
 
+  // How far round a wheel has rolled after a step of `dt` from `angle`, in
+  // (-pi, pi]: what its joint's spin turned it through.
+  inline radians_t rolled (radians_t angle, b3JointId joint, seconds_t dt) {
+    return std::remainder (radians_value (angle) +
+                             b3WheelJoint_GetSpinSpeed (joint) *
+                               seconds_value (dt),
+                           6.2831853f) *
+           si::radian;
+  }
+
   // A wheel joint slides along its frame's x axis and spins about z: in
   // this frame x points down the chassis and z along the axle to the left.
   inline b3Quat suspension_rotation () {

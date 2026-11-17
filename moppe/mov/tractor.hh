@@ -69,14 +69,14 @@ namespace moppe::mov {
       std::array<bool, wheel_count> touching {};
       std::array<newtons_t, wheel_count> load {};
       // How far each pair of wheels has rolled round, for drawing them.
-      float front_spin = 0.0f;
-      float rear_spin = 0.0f;
+      radians_t front_spin {};
+      radians_t rear_spin {};
       // The trailer, left wheel then right.
       RigidBodyState trailer;
       std::array<RigidBodyState, trailer_wheel_count> trailer_wheels;
-      float trailer_spin = 0.0f;
-      float drive = 0.0f;
-      float turn = 0.0f;
+      radians_t trailer_spin {};
+      control_signal_t drive {};
+      control_signal_t turn {};
       bool brake = false;
       bool parked = true;
       // How long it has stood still, and lain on its side or back.
@@ -101,8 +101,8 @@ namespace moppe::mov {
     void set_trunks (const TrunkField* trunks);
 
     // Forward (positive) or back, -1..1; right (positive) or left.
-    void set_drive (float drive);
-    void set_turn (float turn);
+    void set_drive (control_signal_t drive);
+    void set_turn (control_signal_t turn);
     void set_brake (bool brake);
     void set_parked (bool parked);
 
@@ -126,7 +126,7 @@ namespace moppe::mov {
     void push (const Vec3& at, const impulse_t& impulse);
     // How hard the engine is asked to work, 0..1: the throttle, or a
     // little at idle while someone sits at the wheel.
-    float throttle () const;
+    control_signal_t throttle () const;
     // A point given in the tractor's frame, in the world.
     Vec3 point (const Vec3& local) const;
     Vec3 driver_seat () const {
@@ -139,11 +139,11 @@ namespace moppe::mov {
 
     // How far a wheel hangs below where it stands; negative when its
     // spring is pressed further.
-    float wheel_drop (int wheel) const;
+    meters_t wheel_drop (int wheel) const;
     // The front wheels' turn, positive to the right.
-    float steer () const;
-    float front_spin () const;
-    float rear_spin () const;
+    radians_t steer () const;
+    radians_t front_spin () const;
+    radians_t rear_spin () const;
 
     // The trailer: its origin (on the ground under its axle) and frame,
     // a point given in its frame, how far each wheel (left, right) hangs
@@ -152,8 +152,8 @@ namespace moppe::mov {
     Vec3 trailer_forward () const;
     Vec3 trailer_up () const;
     Vec3 trailer_point (const Vec3& local) const;
-    float trailer_wheel_drop (int wheel) const;
-    float trailer_spin () const;
+    meters_t trailer_wheel_drop (int wheel) const;
+    radians_t trailer_spin () const;
 
   private:
     struct Impl;

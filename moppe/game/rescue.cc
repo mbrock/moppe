@@ -93,8 +93,7 @@ namespace moppe::game {
       constexpr per_second_t rope_damping = 2.5f / u::s;
       constexpr metres_per_second_squared_t rope_most =
         7.0f * u::m / pow<2> (u::s);
-      constexpr metres_per_second_squared_t rope_lift =
-        0.3f * 9.81f * u::m / pow<2> (u::s);
+      constexpr metres_per_second_squared_t rope_lift = 0.3f * standard_gravity;
       // The stretch over which the rope comes taut.
       constexpr meters_t rope_taking_up = 0.15f * u::m;
     }

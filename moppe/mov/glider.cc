@@ -6,8 +6,6 @@
 
 namespace moppe::mov {
   namespace {
-    constexpr metres_per_second_squared_t gravity =
-      9.82f * u::m / pow<2> (u::s);
     // The speed at which a loading of one carries the pilot alone, and the
     // speeds the bar can ask the wing to settle at. A heavier load flies
     // the same loadings faster, by the root of the weight.
@@ -250,7 +248,7 @@ namespace moppe::mov {
     normalize (across);
     const Vec3 lift = Quaternion::rotate (across, path, -m_bank);
     const metres_per_second_squared_t pressure =
-      gravity * share (m_airspeed, reference_speed) *
+      standard_gravity * share (m_airspeed, reference_speed) *
       share (m_airspeed, reference_speed) / load ();
     const float drag =
       drag_of (m_loading, m_bike_attached) + (m_flare ? flare_drag : 0.0f);
@@ -270,7 +268,7 @@ namespace moppe::mov {
       return true;
 
     const acceleration_t weight =
-      Vec3 (0, gravity.numerical_value_in (u::m / pow<2> (u::s)), 0) *
+      Vec3 (0, standard_gravity.numerical_value_in (u::m / pow<2> (u::s)), 0) *
       isq::acceleration[u::m / pow<2> (u::s)];
     const acceleration_t air = fly (dt, m_position, m_velocity);
     m_velocity += quantity_cast<isq::velocity> ((air - weight) * dt);

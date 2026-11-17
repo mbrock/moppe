@@ -115,7 +115,7 @@ MOPPE_TEST (a_banked_glider_turns_at_the_rate_its_tilted_lift_gives) {
   const Vec3 after = glider.heading ();
   const float turned =
     std::acos (std::clamp<float> (dot (before, after), -1.0f, 1.0f));
-  const float expected = 9.82f * std::tan (radians_value (glider.bank ())) /
+  const float expected = 9.81f * std::tan (radians_value (glider.bank ())) /
                          glider_test_airspeed (glider);
   MOPPE_CHECK_NEAR (turned, expected, 0.25f * expected);
   // A positive turn swings a wing flying along +z toward +x, the way the

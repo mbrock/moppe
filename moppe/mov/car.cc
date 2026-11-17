@@ -12,8 +12,6 @@ namespace moppe::mov {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace car_rig {
-      constexpr metres_per_second_squared_t gravity =
-        9.81f * u::m / pow<2> (u::s);
       constexpr int substeps = 4;
 
       // Box3D mixes two shapes' friction as a geometric mean, so the tyre
@@ -83,7 +81,7 @@ namespace moppe::mov {
                 rig.axle * rig.axle / rig.inertia[0] +
                 rig.front_track * rig.front_track / rig.inertia[2]);
       const kilograms_t sprung = 0.25f * rig.chassis_mass;
-      spring_tuning (sprung * car_rig::gravity / rig.sag,
+      spring_tuning (sprung * standard_gravity / rig.sag,
                      sprung,
                      effective,
                      rig.sprung_damping_ratio,
@@ -199,7 +197,7 @@ namespace moppe::mov {
       destroy ();
       b3WorldDef def = b3DefaultWorldDef ();
       def.gravity = {
-        0.0f, -car_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)), 0.0f
+        0.0f, -standard_gravity.numerical_value_in (u::m / pow<2> (u::s)), 0.0f
       };
       def.enableSleep = false;
       def.workerCount = 1;
@@ -397,12 +395,7 @@ namespace moppe::mov {
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         kept.touching[wheel] =
           wheel_touches_ground (wheels[wheel], dt, kept.load[wheel]);
-      kept.wheel_spin =
-        std::remainder (radians_value (kept.wheel_spin) +
-                          b3WheelJoint_GetSpinSpeed (joints[2]) *
-                            seconds_value (dt),
-                        6.2831853f) *
-        u::rad;
+      kept.wheel_spin = rolled (kept.wheel_spin, joints[2], dt);
 
       // Left on its side or back, it is set on its wheels again.
       const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (chassis));

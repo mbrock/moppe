@@ -14,8 +14,6 @@ namespace moppe::mov {
     // a unity build, and the jeep's and the bike's rigs have helpers of
     // their own.
     namespace tractor_rig {
-      constexpr metres_per_second_squared_t gravity =
-        9.81f * u::m / pow<2> (u::s);
       constexpr int substeps = 4;
 
       constexpr kilograms_t chassis_mass = 1700.0f * u::kg;
@@ -208,8 +206,7 @@ namespace moppe::mov {
         const kilograms_t sprung =
           0.5f * tractor_rig::chassis_mass *
           (tractor_rig::front (wheel) ? 1.0f - rear_share : rear_share);
-        spring_tuning (sprung * tractor_rig::gravity /
-                         (tractor_rig::sag * u::m),
+        spring_tuning (sprung * standard_gravity / (tractor_rig::sag * u::m),
                        sprung,
                        effective,
                        tractor_rig::sprung_damping_ratio,
@@ -228,7 +225,7 @@ namespace moppe::mov {
         const kilograms_t sprung =
           0.5f * tractor_rig::trailer_mass *
           (1.0f - tractor_rig::trailer_centre[2] / Tractor::trailer_eye[2]);
-        spring_tuning (sprung * tractor_rig::gravity /
+        spring_tuning (sprung * standard_gravity /
                          (tractor_rig::trailer_sag * u::m),
                        sprung,
                        effective,
@@ -429,10 +426,9 @@ namespace moppe::mov {
     void build (const State& s) {
       destroy ();
       b3WorldDef def = b3DefaultWorldDef ();
-      def.gravity = { 0.0f,
-                      -tractor_rig::gravity.numerical_value_in (u::m /
-                                                                pow<2> (u::s)),
-                      0.0f };
+      def.gravity = {
+        0.0f, -standard_gravity.numerical_value_in (u::m / pow<2> (u::s)), 0.0f
+      };
       def.enableSleep = false;
       def.workerCount = 1;
       world = b3CreateWorld (&def);
@@ -589,7 +585,8 @@ namespace moppe::mov {
       // angle turns to the right.
       const float fade = speed / tractor_rig::lock_fade_speed;
       const float lock = tractor_rig::full_lock / (1.0f + fade * fade);
-      const float steer = std::clamp (kept.turn, -1.0f, 1.0f) * lock;
+      const float steer =
+        std::clamp (scalar_value (kept.turn), -1.0f, 1.0f) * lock;
       b3WheelJoint_SetTargetSteeringAngle (joints[0], steer);
       b3WheelJoint_SetTargetSteeringAngle (joints[1], steer);
 
@@ -597,7 +594,8 @@ namespace moppe::mov {
       // asks for, each within what its load lets it put down; the brakes
       // act on all four.
       const float drive =
-        kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
+        kept.parked ? 0.0f
+                    : std::clamp (scalar_value (kept.drive), -1.0f, 1.0f);
       const newtons_t pull = std::min (
         tractor_rig::engine_force,
         newtons_t (tractor_rig::engine_power /
@@ -692,18 +690,9 @@ namespace moppe::mov {
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         kept.touching[wheel] =
           wheel_touches_ground (wheels[wheel], dt, kept.load[wheel]);
-      kept.front_spin = std::remainder (
-        kept.front_spin +
-          b3WheelJoint_GetSpinSpeed (joints[0]) * seconds_value (dt),
-        6.2831853f);
-      kept.rear_spin =
-        std::remainder (kept.rear_spin + b3WheelJoint_GetSpinSpeed (joints[2]) *
-                                           seconds_value (dt),
-                        6.2831853f);
-      kept.trailer_spin = std::remainder (
-        kept.trailer_spin +
-          b3WheelJoint_GetSpinSpeed (trailer_joints[0]) * seconds_value (dt),
-        6.2831853f);
+      kept.front_spin = rolled (kept.front_spin, joints[0], dt);
+      kept.rear_spin = rolled (kept.rear_spin, joints[2], dt);
+      kept.trailer_spin = rolled (kept.trailer_spin, trailer_joints[0], dt);
 
       // Left on its side or back, it is set on its wheels again.
       const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (chassis));
@@ -762,11 +751,11 @@ namespace moppe::mov {
     m.build (s);
   }
 
-  void Tractor::set_drive (float drive) {
+  void Tractor::set_drive (control_signal_t drive) {
     m_impl->kept.drive = drive;
   }
 
-  void Tractor::set_turn (float turn) {
+  void Tractor::set_turn (control_signal_t turn) {
     m_impl->kept.turn = turn;
   }
 
@@ -839,33 +828,35 @@ namespace moppe::mov {
                                true);
   }
 
-  float Tractor::throttle () const {
+  control_signal_t Tractor::throttle () const {
     const State& kept = m_impl->kept;
     if (kept.parked)
-      return 0.0f;
-    return std::max (0.15f, std::min (1.0f, std::abs (kept.drive)));
+      return {};
+    return std::max (0.15f,
+                     std::min (1.0f, std::abs (scalar_value (kept.drive))));
   }
 
   Vec3 Tractor::point (const Vec3& local) const {
     return m_impl->point (local);
   }
 
-  float Tractor::wheel_drop (int wheel) const {
+  meters_t Tractor::wheel_drop (int wheel) const {
     const Impl& m = *m_impl;
     const Vec3 at = from_b3 (b3Body_GetPosition (m.wheels[wheel]));
     return dot (at - m.point (tractor_rig::axle_of (wheel)),
-                m.axis (Vec3 (0, -1, 0)));
+                m.axis (Vec3 (0, -1, 0))) *
+           u::m;
   }
 
-  float Tractor::steer () const {
-    return b3WheelJoint_GetSteeringAngle (m_impl->joints[0]);
+  radians_t Tractor::steer () const {
+    return b3WheelJoint_GetSteeringAngle (m_impl->joints[0]) * u::rad;
   }
 
-  float Tractor::front_spin () const {
+  radians_t Tractor::front_spin () const {
     return m_impl->kept.front_spin;
   }
 
-  float Tractor::rear_spin () const {
+  radians_t Tractor::rear_spin () const {
     return m_impl->kept.rear_spin;
   }
 
@@ -885,14 +876,15 @@ namespace moppe::mov {
     return m_impl->trailer_point (local);
   }
 
-  float Tractor::trailer_wheel_drop (int wheel) const {
+  meters_t Tractor::trailer_wheel_drop (int wheel) const {
     const Impl& m = *m_impl;
     const Vec3 at = from_b3 (b3Body_GetPosition (m.trailer_wheels[wheel]));
     return dot (at - m.trailer_point (tractor_rig::trailer_axle_of (wheel)),
-                m.trailer_axis (Vec3 (0, -1, 0)));
+                m.trailer_axis (Vec3 (0, -1, 0))) *
+           u::m;
   }
 
-  float Tractor::trailer_spin () const {
+  radians_t Tractor::trailer_spin () const {
     return m_impl->kept.trailer_spin;
   }
 }

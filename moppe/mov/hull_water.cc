@@ -45,7 +45,7 @@ namespace moppe::mov {
                               const BoatWater& water,
                               const HullWaterTraits& traits) {
     constexpr auto rho = water_density;
-    constexpr auto g = water_gravity;
+    constexpr auto g = standard_gravity;
     constexpr meters_t dry = 0.0f * u::m;
     const b3Quat q = b3Body_GetRotation (body);
     const Vec3 origin = from_b3 (b3Body_GetPosition (body));
@@ -60,7 +60,7 @@ namespace moppe::mov {
     square_meters_t wetted = 0.0f * u::m * u::m;
     for (const HullPanel& p : panels) {
       const Vec3 c = point (p.centre);
-      const meters_t level = water.level (c[0], c[2]) * u::m;
+      const meters_t level = water.level (position (c));
       const meters_t centre_depth = level - c[1] * u::m;
       // How far the panel reaches up and down about its middle, and so
       // how much of it is under and how deep that part is on average.
@@ -89,7 +89,7 @@ namespace moppe::mov {
       const Vec3 n = axis (p.normal);
       const Vec3 moving =
         from_b3 (b3Body_GetLocalPointVelocity (body, to_b3 (p.centre))) -
-        water.current (c[0], c[2]);
+        water.current_at (c);
       const speed_t vn = dot (moving, n) * u::m / u::s;
       const speed_t through = length (moving) * u::m / u::s;
       // Over the gunwale the water floods in, and pushes on the panel

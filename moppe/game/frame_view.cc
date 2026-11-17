@@ -123,10 +123,10 @@ namespace moppe::game {
       .position = boat.position (),
       .forward = boat.forward (),
       .up = boat.up (),
-      .swing_radians = boat.swing (),
-      .tilt_radians = boat.tilt (),
-      .propeller_radians = boat.propeller_angle (),
-      .rpm = boat.rpm (),
+      .swing_radians = radians_value (boat.swing ()),
+      .tilt_radians = radians_value (boat.tilt ()),
+      .propeller_radians = radians_value (boat.propeller_angle ()),
+      .rpm = scalar_value (boat.rpm ()),
     };
   }
 
@@ -135,9 +135,9 @@ namespace moppe::game {
       .position = ski.position (),
       .forward = ski.forward (),
       .up = ski.up (),
-      .steer_radians = ski.steer (),
-      .lean_radians = ski.lean (),
-      .rpm = ski.rpm (),
+      .steer_radians = radians_value (ski.steer ()),
+      .lean_radians = radians_value (ski.lean ()),
+      .rpm = scalar_value (ski.rpm ()),
     };
   }
 
@@ -146,19 +146,19 @@ namespace moppe::game {
       .position = tractor.position (),
       .forward = tractor.forward (),
       .up = tractor.up (),
-      .wheel_drop = { tractor.wheel_drop (0),
-                      tractor.wheel_drop (1),
-                      tractor.wheel_drop (2),
-                      tractor.wheel_drop (3) },
-      .steer_radians = tractor.steer (),
-      .front_spin_radians = tractor.front_spin (),
-      .rear_spin_radians = tractor.rear_spin (),
+      .wheel_drop = { meters_value (tractor.wheel_drop (0)),
+                      meters_value (tractor.wheel_drop (1)),
+                      meters_value (tractor.wheel_drop (2)),
+                      meters_value (tractor.wheel_drop (3)) },
+      .steer_radians = radians_value (tractor.steer ()),
+      .front_spin_radians = radians_value (tractor.front_spin ()),
+      .rear_spin_radians = radians_value (tractor.rear_spin ()),
       .trailer_position = tractor.trailer_position (),
       .trailer_forward = tractor.trailer_forward (),
       .trailer_up = tractor.trailer_up (),
-      .trailer_wheel_drop = { tractor.trailer_wheel_drop (0),
-                              tractor.trailer_wheel_drop (1) },
-      .trailer_spin_radians = tractor.trailer_spin (),
+      .trailer_wheel_drop = { meters_value (tractor.trailer_wheel_drop (0)),
+                              meters_value (tractor.trailer_wheel_drop (1)) },
+      .trailer_spin_radians = radians_value (tractor.trailer_spin ()),
     };
   }
 
@@ -167,8 +167,8 @@ namespace moppe::game {
       .position = helicopter.position (),
       .forward = helicopter.forward (),
       .up = helicopter.up (),
-      .rotor_radians = helicopter.rotor_angle (),
-      .tail_radians = helicopter.tail_angle (),
+      .rotor_radians = radians_value (helicopter.rotor_angle ()),
+      .tail_radians = radians_value (helicopter.tail_angle ()),
     };
   }
 

@@ -10,13 +10,20 @@
 #include <box3d/box3d.h>
 
 namespace moppe::mov {
-  // The water a boat floats on, as the game reads it: the surface's
-  // height at (x, z), below the ground where it is dry, and how the water
-  // moves there, metres a second: a river's current and the waves' to and
-  // fro and up and down.
+  // The water a boat floats on, as the game reads it under a point (its
+  // height is not read): the surface's height there, below the ground
+  // where it is dry, and how the water moves there: a river's current and
+  // the waves' to and fro and up and down.
   struct BoatWater {
-    std::function<float (float x, float z)> level;
-    std::function<Vec3 (float x, float z)> current;
+    std::function<meters_t (position_t at)> level;
+    std::function<velocity_t (position_t at)> current;
+
+    float level_at (const Vec3& at) const {
+      return meters_value (level (position (at)));
+    }
+    Vec3 current_at (const Vec3& at) const {
+      return velocity_value (current (position (at)));
+    }
   };
 
   // A small piece of a hull's skin, in the hull's frame: its middle, its
@@ -63,8 +70,6 @@ namespace moppe::mov {
 
   inline constexpr kilograms_per_cubic_metre_t water_density =
     1000.0f * u::kg / pow<3> (u::m);
-  inline constexpr metres_per_second_squared_t water_gravity =
-    9.81f * u::m / pow<2> (u::s);
 
   // The water on each of `body`'s panels, applied to it as forces: the
   // pressure at each submerged panel's depth, which floats, heels, and

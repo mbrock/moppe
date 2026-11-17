@@ -224,7 +224,7 @@ MOPPE_TEST (a_boat_run_up_on_the_land_is_dragged_by_its_bow_handle) {
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
-  session.boat ().place (Vec3 (60, 10, 180), Vec3 (0, 0, 1), -100.0f);
+  session.boat ().place (Vec3 (60, 10, 180), Vec3 (0, 0, 1), -100.0f * u::m);
   run ({}, 2.0f);
   MOPPE_CHECK (session.boat ().grounded () && !session.boat ().afloat ());
   const Vec3 start = session.boat ().position ();
@@ -257,7 +257,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   session.start_on_foot ();
   // Afloat in knee-deep water, its bow to the open sea.
   mov::JetSki& ski = session.jet_ski ();
-  ski.place (Vec3 (120, 0, 123.0f), Vec3 (0, 0, -1), 0.0f);
+  ski.place (Vec3 (120, 0, 123.0f), Vec3 (0, 0, -1), 0.0f * u::m);
   session.walker ().spawn (position (Vec3 (140, 1.3f, 140)), Vec3 (0, 0, -1));
   run ({}, 2.0f);
   MOPPE_CHECK (ski.afloat ());
@@ -287,7 +287,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
 
   // Brought back in to the shallows and let run down, F gets off beside
   // it, its engine stops, and it is left afloat.
-  ski.place (Vec3 (120, 0, 123.0f), Vec3 (0, 0, 1), 0.0f);
+  ski.place (Vec3 (120, 0, 123.0f), Vec3 (0, 0, 1), 0.0f * u::m);
   run ({}, 1.0f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_mode == game::M_FOOT);
@@ -295,7 +295,7 @@ MOPPE_TEST (the_jet_ski_is_ridden_out_from_the_shallows_and_got_off_again) {
   off[1] = 0.0f;
   MOPPE_CHECK (length (off) < 3.5f);
   run ({ .drive = 1.0f }, 1.0f);
-  MOPPE_CHECK_NEAR (ski.rpm (), 0.0f, 0.05f);
+  MOPPE_CHECK_NEAR (scalar_value (ski.rpm ()), 0.0f, 0.05f);
   MOPPE_CHECK_NEAR (ski.mass ().numerical_value_in (u::kg), 205.0f, 1e-3f);
 }
 
@@ -307,7 +307,7 @@ MOPPE_TEST (a_jet_ski_run_up_on_the_land_is_dragged_back_by_its_bow_eye) {
   Runner run { ground, session };
   game::GameLogicState& logic = session.logic ();
   session.start_on_foot ();
-  session.jet_ski ().place (Vec3 (60, 10, 180), Vec3 (0, 0, 1), -100.0f);
+  session.jet_ski ().place (Vec3 (60, 10, 180), Vec3 (0, 0, 1), -100.0f * u::m);
   session.walker ().spawn (position (Vec3 (90, 10.1f, 90)), Vec3 (0, 0, 1));
   run ({}, 2.0f);
   const mov::JetSki& ski = session.jet_ski ();

@@ -11,8 +11,6 @@ namespace moppe::mov {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace heli_rig {
-      constexpr metres_per_second_squared_t gravity =
-        9.81f * u::m / pow<2> (u::s);
       constexpr int substeps = 4;
 
       constexpr kilograms_t mass = 1100.0f * u::kg;
@@ -156,7 +154,7 @@ namespace moppe::mov {
       destroy ();
       b3WorldDef def = b3DefaultWorldDef ();
       def.gravity = {
-        0.0f, -heli_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)), 0.0f
+        0.0f, -standard_gravity.numerical_value_in (u::m / pow<2> (u::s)), 0.0f
       };
       def.enableSleep = false;
       def.workerCount = 1;
@@ -236,15 +234,21 @@ namespace moppe::mov {
 
       const seconds_t step = dt;
       const auto share = [] (auto q) { return q.numerical_value_in (one); };
-      kept.rotor = kept.parked
-                     ? std::max (0.0f, kept.rotor - share (step / spool_down))
-                     : std::min (1.0f, kept.rotor + share (step / spool_up));
-      kept.rotor_angle = std::remainder (
-        kept.rotor_angle + share (kept.rotor * 2.0f * pi * rotor_rate * step),
-        2.0f * pi);
-      kept.tail_angle = std::remainder (
-        kept.tail_angle + share (kept.rotor * 2.0f * pi * tail_rate * step),
-        2.0f * pi);
+      const float was = scalar_value (kept.rotor);
+      const float rotor = kept.parked
+                            ? std::max (0.0f, was - share (step / spool_down))
+                            : std::min (1.0f, was + share (step / spool_up));
+      kept.rotor = rotor * one;
+      kept.rotor_angle =
+        std::remainder (radians_value (kept.rotor_angle) +
+                          share (rotor * 2.0f * pi * rotor_rate * step),
+                        2.0f * pi) *
+        u::rad;
+      kept.tail_angle =
+        std::remainder (radians_value (kept.tail_angle) +
+                          share (rotor * 2.0f * pi * tail_rate * step),
+                        2.0f * pi) *
+        u::rad;
 
       const Vec3 up = axis (Vec3 (0, 1, 0));
       const Vec3 v = from_b3 (b3Body_GetLinearVelocity (body));
@@ -253,12 +257,13 @@ namespace moppe::mov {
       kept.grounded = height < 0.12f;
 
       const float drive =
-        kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
+        kept.parked ? 0.0f
+                    : std::clamp (scalar_value (kept.drive), -1.0f, 1.0f);
       const float turn =
-        kept.parked ? 0.0f : std::clamp (kept.turn, -1.0f, 1.0f);
+        kept.parked ? 0.0f : std::clamp (scalar_value (kept.turn), -1.0f, 1.0f);
       const float lift =
-        kept.parked ? 0.0f : std::clamp (kept.lift, -1.0f, 1.0f);
-      const float authority = kept.rotor * kept.rotor;
+        kept.parked ? 0.0f : std::clamp (scalar_value (kept.lift), -1.0f, 1.0f);
+      const float authority = rotor * rotor;
 
       // The way it heads, level.
       Vec3 ahead = axis (Vec3 (0, 0, 1));
@@ -272,7 +277,7 @@ namespace moppe::mov {
       // Sitting on its skids with nothing asked of it, it stays sat.
       const bool sitting = kept.grounded && lift <= 0.05f &&
                            std::abs (drive) < 0.05f && std::abs (turn) < 0.05f;
-      const newtons_t weight = heli_rig::mass * heli_rig::gravity;
+      const newtons_t weight = heli_rig::mass * standard_gravity;
       const auto newtons = [] (newtons_t f) {
         return f.numerical_value_in (u::N);
       };
@@ -314,7 +319,7 @@ namespace moppe::mov {
         Vec3 push = (ahead * target.numerical_value_in (u::m / u::s) - across) *
                     speed_gain.numerical_value_in (one / u::s);
         const float most =
-          heli_rig::gravity.numerical_value_in (u::m / pow<2> (u::s)) *
+          standard_gravity.numerical_value_in (u::m / pow<2> (u::s)) *
           std::tan (radians_value (max_tilt));
         if (length (push) > most)
           push = normalized (push) * most;
@@ -382,8 +387,9 @@ namespace moppe::mov {
       // Parked, its rotor stopped, and still: it stays where it is.
       const bool quiet = length2 (moving) < 0.08f * 0.08f &&
                          length2 (turning) < 0.08f * 0.08f && kept.grounded;
-      kept.still = kept.parked && kept.rotor <= 0.0f && quiet ? kept.still + dt
-                                                              : seconds_t {};
+      kept.still = kept.parked && kept.rotor <= proportion_t {} && quiet
+                     ? kept.still + dt
+                     : seconds_t {};
       if (kept.still > 1.0f * u::s)
         kept.asleep = true;
     }
@@ -417,15 +423,15 @@ namespace moppe::mov {
     m.build (s);
   }
 
-  void Helicopter::set_drive (float drive) {
+  void Helicopter::set_drive (control_signal_t drive) {
     m_impl->kept.drive = drive;
   }
 
-  void Helicopter::set_turn (float turn) {
+  void Helicopter::set_turn (control_signal_t turn) {
     m_impl->kept.turn = turn;
   }
 
-  void Helicopter::set_lift (float lift) {
+  void Helicopter::set_lift (control_signal_t lift) {
     m_impl->kept.lift = lift;
   }
 
@@ -496,15 +502,15 @@ namespace moppe::mov {
     return m_impl->altitude () * u::m;
   }
 
-  float Helicopter::rotor () const {
+  proportion_t Helicopter::rotor () const {
     return m_impl->kept.rotor;
   }
 
-  float Helicopter::rotor_angle () const {
+  radians_t Helicopter::rotor_angle () const {
     return m_impl->kept.rotor_angle;
   }
 
-  float Helicopter::tail_angle () const {
+  radians_t Helicopter::tail_angle () const {
     return m_impl->kept.tail_angle;
   }
 }

@@ -13,7 +13,7 @@ namespace moppe::mov {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace jet_ski_rig {
-      constexpr metres_per_second_squared_t g = water_gravity;
+      constexpr metres_per_second_squared_t g = standard_gravity;
       constexpr kilograms_per_cubic_metre_t rho = water_density;
       constexpr int substeps = 4;
       constexpr float pi = 3.14159265f;
@@ -338,7 +338,8 @@ namespace moppe::mov {
     // The way the jet pushes the hull, in the hull's frame: ahead,
     // swung by the nozzle.
     Vec3 push_local () const {
-      return Vec3 (std::sin (kept.steer), 0.0f, std::cos (kept.steer));
+      const float steer = radians_value (kept.steer);
+      return Vec3 (std::sin (steer), 0.0f, std::cos (steer));
     }
 
     void place (const Vec3& at, const Vec3& heading, float level) {
@@ -352,7 +353,8 @@ namespace moppe::mov {
       patch.origin_for (centre, s.ground_column, s.ground_row);
       s.still = s.overturned = seconds_t {};
       s.asleep = false;
-      s.steer = s.lean = s.rpm = 0.0f;
+      s.steer = s.lean = radians_t {};
+      s.rpm = {};
       s.thrust = newtons_t {};
       if (B3_IS_NULL (world)) {
         build (s);
@@ -381,7 +383,7 @@ namespace moppe::mov {
 
       const Vec3 v = from_b3 (b3Body_GetLinearVelocity (body));
       const Vec3 at = point (Vec3 ());
-      const Vec3 current = water.current (at[0], at[2]);
+      const Vec3 current = water.current_at (at);
       Vec3 way = v - current;
       way[1] = 0.0f;
       const float speed = length (way);
@@ -394,13 +396,13 @@ namespace moppe::mov {
 
       // The engine and the bars.
       const float drive =
-        kept.parked ? 0.0f : std::clamp (kept.drive, -1.0f, 1.0f);
+        kept.parked ? 0.0f
+                    : std::clamp (scalar_value (kept.drive), -1.0f, 1.0f);
       const float turn =
-        kept.parked ? 0.0f : std::clamp (kept.turn, -1.0f, 1.0f);
+        kept.parked ? 0.0f : std::clamp (scalar_value (kept.turn), -1.0f, 1.0f);
       const Vec3 grate (intake[0], intake[1], intake[2]);
       const Vec3 grate_at = point (grate);
-      const float intake_depth =
-        water.level (grate_at[0], grate_at[2]) - grate_at[1];
+      const float intake_depth = water.level_at (grate_at) - grate_at[1];
       kept.intake_depth = intake_depth * u::m;
       const float bite = smoothstep (-0.03f, 0.06f, intake_depth);
       // Out of the water the pump has nothing to work on and the engine
@@ -409,22 +411,27 @@ namespace moppe::mov {
       const float wanted_rpm =
         kept.parked ? 0.0f
                     : std::max (idle, load) * (1.0f + 0.15f * (1.0f - bite));
-      kept.rpm += (wanted_rpm - kept.rpm) *
-                  std::min (1.0f, (dt / spin_up).numerical_value_in (one));
-      kept.impeller_angle = std::remainder (
-        kept.impeller_angle +
-          (kept.rpm * 2.0f * pi * impeller_rate * dt).numerical_value_in (one),
-        2.0f * pi);
+      float rpm = scalar_value (kept.rpm);
+      rpm += (wanted_rpm - rpm) *
+             std::min (1.0f, (dt / spin_up).numerical_value_in (one));
+      kept.rpm = rpm * one;
+      kept.impeller_angle =
+        std::remainder (
+          radians_value (kept.impeller_angle) +
+            (rpm * 2.0f * pi * impeller_rate * dt).numerical_value_in (one),
+          2.0f * pi) *
+        u::rad;
       const float steer_step = radians_value (steer_rate * dt);
-      kept.steer +=
-        std::clamp (turn * most_steer - kept.steer, -steer_step, steer_step);
+      float steer = radians_value (kept.steer);
+      steer += std::clamp (turn * most_steer - steer, -steer_step, steer_step);
+      kept.steer = steer * u::rad;
 
       // The jet: the water's change of speed through the pump.
       const Vec3 push = axis (push_local ());
       const speed_t still = 0.0f * u::m / u::s;
       const speed_t ahead =
         std::max (still, dot (v - current, push) * u::m / u::s);
-      const speed_t jet = jet_speed * std::min (kept.rpm, 1.0f);
+      const speed_t jet = jet_speed * std::min (rpm, 1.0f);
       newtons_t thrust =
         bite * rho * nozzle_area * jet * std::max (jet - ahead, still);
       if (drive < 0.0f)
@@ -447,15 +454,17 @@ namespace moppe::mov {
           u::s;
         const float lean_to = most_lean * turn * smoothstep (1.5f, 7.0f, speed);
         const float lean_step = radians_value (1.6f * u::rad / u::s * dt);
-        kept.lean += std::clamp (lean_to - kept.lean, -lean_step, lean_step);
+        float lean = radians_value (kept.lean);
+        lean += std::clamp (lean_to - lean, -lean_step, lean_step);
+        kept.lean = lean * u::rad;
         const newton_metres_t torque =
-          std::clamp (newton_metres_t (balance * ((kept.lean - roll) * u::rad) -
+          std::clamp (newton_metres_t (balance * ((lean - roll) * u::rad) -
                                        balance_damping * rolling),
                       -most_balance,
                       most_balance);
         apply_torque (body, forward, torque);
       } else {
-        kept.lean = 0.0f;
+        kept.lean = radians_t {};
       }
 
       // The air's drag on what stands out of the water.
@@ -473,7 +482,7 @@ namespace moppe::mov {
       if (kept.overturned > 2.0f * u::s) {
         const Vec3 here = point (Vec3 ());
         const bool parked = kept.parked;
-        place (here, axis (Vec3 (0, 0, 1)), water.level (here[0], here[2]));
+        place (here, axis (Vec3 (0, 0, 1)), water.level_at (here));
         kept.parked = parked;
         b3Body_SetMassData (body, mass_data (!parked));
         return;
@@ -504,8 +513,8 @@ namespace moppe::mov {
     m_impl->build (state);
   }
 
-  void JetSki::place (const Vec3& at, const Vec3& heading, float level) {
-    m_impl->place (at, heading, level);
+  void JetSki::place (const Vec3& at, const Vec3& heading, meters_t level) {
+    m_impl->place (at, heading, meters_value (level));
   }
 
   void JetSki::set_trunks (const TrunkField* trunks) {
@@ -517,11 +526,11 @@ namespace moppe::mov {
     m.build (s);
   }
 
-  void JetSki::set_drive (float drive) {
+  void JetSki::set_drive (control_signal_t drive) {
     m_impl->kept.drive = drive;
   }
 
-  void JetSki::set_turn (float turn) {
+  void JetSki::set_turn (control_signal_t turn) {
     m_impl->kept.turn = turn;
   }
 
@@ -595,19 +604,19 @@ namespace moppe::mov {
     return m_impl->kept.grounded;
   }
 
-  float JetSki::rpm () const {
+  proportion_t JetSki::rpm () const {
     return m_impl->kept.rpm;
   }
 
-  float JetSki::steer () const {
+  radians_t JetSki::steer () const {
     return m_impl->kept.steer;
   }
 
-  float JetSki::lean () const {
+  radians_t JetSki::lean () const {
     return m_impl->kept.lean;
   }
 
-  float JetSki::impeller_angle () const {
+  radians_t JetSki::impeller_angle () const {
     return m_impl->kept.impeller_angle;
   }
 

@@ -56,17 +56,17 @@ namespace moppe::mov {
       int ground_column = 0, ground_row = 0;
       // What the helmsman asks: ahead (positive) or astern, and a turn
       // to the right (positive).
-      float drive = 0.0f;
-      float turn = 0.0f;
-      float boost = 0.0f;
+      control_signal_t drive {};
+      control_signal_t turn {};
+      control_signal_t boost {};
       // The engine's speed as a share of full, how far the tail is swung
       // (positive puts the propeller to starboard and turns the bow to
       // the right) and tipped up, and how far round the propeller has
       // turned.
-      float rpm = 0.0f;
-      float swing = 0.0f;
-      float tilt = 0.0f;
-      float propeller_angle = 0.0f;
+      proportion_t rpm {};
+      radians_t swing {};
+      radians_t tilt {};
+      radians_t propeller_angle {};
       // How deep the propeller ran in the last step, and how hard it
       // pushed, newtons.
       meters_t propeller_depth {};
@@ -89,15 +89,15 @@ namespace moppe::mov {
     void restore (const State& state);
 
     // Floats it upright at `at` on water at `level`, facing `heading`.
-    void place (const Vec3& at, const Vec3& heading, float level);
+    void place (const Vec3& at, const Vec3& heading, meters_t level);
     void set_trunks (const TrunkField* trunks);
 
-    void set_drive (float drive);
+    void set_drive (control_signal_t drive);
     // The governor tied back (0..1): the engine runs past its rated
     // speed and gives some half again its power, as these engines are
     // run on the long-tails, and smokes for it.
-    void set_boost (float boost);
-    void set_turn (float turn);
+    void set_boost (control_signal_t boost);
+    void set_turn (control_signal_t turn);
     // No one at the helm: the engine stops, the tail is tipped up, and
     // the helmsman's weight is gone from it.
     void set_parked (bool parked);
@@ -125,10 +125,11 @@ namespace moppe::mov {
       return point (Vec3 (helm[0], helm[1], helm[2]));
     }
 
-    float rpm () const;
-    float swing () const;
-    float tilt () const;
-    float propeller_angle () const;
+    // The engine's speed, a share of its rated speed.
+    proportion_t rpm () const;
+    radians_t swing () const;
+    radians_t tilt () const;
+    radians_t propeller_angle () const;
     newtons_t thrust () const;
     // Where the propeller's hub is in the world, and how deep under the
     // water it last ran (negative is out of it).
@@ -137,7 +138,7 @@ namespace moppe::mov {
 
     // The tail's frame about the pivot, in the boat's: swung by `swing`
     // and tipped up by `tilt`, as a rotation of the boat's own axes.
-    static Vec3 tail_point (const Vec3& local, float swing, float tilt);
+    static Vec3 tail_point (const Vec3& local, radians_t swing, radians_t tilt);
 
   private:
     struct Impl;

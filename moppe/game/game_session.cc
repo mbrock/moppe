@@ -1473,27 +1473,28 @@ namespace moppe::game {
                                    const terrain::WaterSheets* water,
                                    double time) {
       const float sea = world.water_level.numerical_value_in (u::m);
-      return { [&world, &surface, water, time] (float x, float z) {
+      return { [&world, &surface, water, time] (position_t at) {
                 return water_surface_at (
-                         world, surface, water, Vec3 (x, 0.0f, z), time)
-                  .numerical_value_in (u::m);
+                  world, surface, water, position_value (at), time);
               },
-               [&surface, water, time, sea] (float x, float z) {
+               [&surface, water, time, sea] (position_t at) {
                  if (!water)
-                   return Vec3 ();
+                   return velocity (Vec3 ());
+                 const Vec3 here = position_value (at);
+                 const Vec3 under (here[0], 0.0f, here[2]);
                  const terrain::SeaWaves waves =
-                   water_waves_at (surface, water, Vec3 (x, 0.0f, z), time);
-                 const Vec3 moving = velocity_value (waves.velocity);
-                 const position_t where = moppe::position (Vec3 (x, 0.0f, z));
+                   water_waves_at (surface, water, under, time);
+                 const position_t where = moppe::position (under);
                  const float sheet = terrain::surface_elevation_value (
                    spatial::sample<terrain::surface_elevation> (*water, where));
-                 if (sheet <= ground_at (surface, Vec3 (x, 0.0f, z)) ||
+                 if (sheet <= ground_at (surface, under) ||
                      sheet <= sea + 0.05f)
-                   return moving;
+                   return waves.velocity;
                  Vec3 current =
                    spatial::sample<terrain::water_velocity> (*water, where)
                      .numerical_value_in (u::m / u::s);
-                 return moving + Vec3 (current[0], 0.0f, current[2]);
+                 return waves.velocity +
+                        velocity (Vec3 (current[0], 0.0f, current[2]));
                } };
     }
 
@@ -1817,9 +1818,10 @@ namespace moppe::game {
       logic.m_odometer += length (heli.velocity ()) * elapsed;
       // Low over the ground, the downwash blows up what lies there.
       const float height = heli.altitude ().numerical_value_in (u::m);
-      if (heli.rotor () > 0.6f && height < 9.0f) {
+      if (heli.rotor () > 0.6f * one && height < 9.0f) {
         std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-        const float strength = heli.rotor () * (1.0f - height / 9.0f);
+        const float strength =
+          scalar_value (heli.rotor ()) * (1.0f - height / 9.0f);
         if (chance (logic.m_fx_rng) < strength * 0.8f) {
           const float around = 6.2831853f * chance (logic.m_fx_rng);
           const Vec3 out (std::cos (around), 0, std::sin (around));
@@ -1848,7 +1850,7 @@ namespace moppe::game {
     if (logic.m_mode == M_TRACTOR) {
       logic.m_odometer += length (tractor.velocity ()) * elapsed;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-      const float throttle = tractor.throttle ();
+      const float throttle = scalar_value (tractor.throttle ());
       if (chance (logic.m_fx_rng) < 0.12f + 0.5f * throttle) {
         const float shade = 0.30f + 0.25f * chance (logic.m_fx_rng);
         session.dust ().emit (

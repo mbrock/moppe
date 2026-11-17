@@ -36,12 +36,12 @@ namespace moppe::mov {
       int ground_column = 0, ground_row = 0;
       // How fast the rotor turns, as a share of flying speed, and how far
       // round each rotor has turned, for drawing them.
-      float rotor = 0.0f;
-      float rotor_angle = 0.0f;
-      float tail_angle = 0.0f;
-      float drive = 0.0f;
-      float turn = 0.0f;
-      float lift = 0.0f;
+      proportion_t rotor {};
+      radians_t rotor_angle {};
+      radians_t tail_angle {};
+      control_signal_t drive {};
+      control_signal_t turn {};
+      control_signal_t lift {};
       force_t load_pull = force (Vec3 ());
       meters_t load_hang {};
       bool parked = true;
@@ -65,9 +65,9 @@ namespace moppe::mov {
 
     // Ahead (positive) or back, -1..1; turn right (positive) or left;
     // climb (positive) or descend.
-    void set_drive (float drive);
-    void set_turn (float turn);
-    void set_lift (float lift);
+    void set_drive (control_signal_t drive);
+    void set_turn (control_signal_t turn);
+    void set_lift (control_signal_t lift);
     // No one at the controls: the rotor runs down.
     void set_parked (bool parked);
     // What hangs under it: the pull, newtons, of a line on its hook (the
@@ -97,9 +97,10 @@ namespace moppe::mov {
     }
     // Height of the skids over the ground beneath them.
     meters_t altitude () const;
-    float rotor () const;
-    float rotor_angle () const;
-    float tail_angle () const;
+    // How fast the rotor turns, a share of flying speed.
+    proportion_t rotor () const;
+    radians_t rotor_angle () const;
+    radians_t tail_angle () const;
 
   private:
     struct Impl;

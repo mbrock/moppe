@@ -27,8 +27,8 @@ namespace {
   }
 
   mov::BoatWater still_water (Vec3 current = Vec3 ()) {
-    return { [] (float, float) { return 0.0f; },
-             [current] (float, float) { return current; } };
+    return { [] (position_t) { return 0.0f * u::m; },
+             [current] (position_t) { return velocity (current); } };
   }
 
   void boat_test_run (mov::Boat& boat,
@@ -58,7 +58,7 @@ MOPPE_TEST (a_moored_boat_floats_level_at_its_draft_and_rests) {
     boat_test_ground ([] (float, float) { return -4.0f; });
   mov::Boat boat (lake);
   // Dropped a little high and askew, it settles.
-  boat.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.3f);
+  boat.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.3f * u::m);
   boat_test_run (boat, 12.0f);
   MOPPE_CHECK (boat.afloat ());
   MOPPE_CHECK (!boat.grounded ());
@@ -75,7 +75,7 @@ MOPPE_TEST (the_boat_settles_deeper_with_the_helmsman_aboard) {
   const map::SurfaceGeometry lake =
     boat_test_ground ([] (float, float) { return -4.0f; });
   mov::Boat boat (lake);
-  boat.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f);
+  boat.place (Vec3 (200, 0, 200), Vec3 (0, 0, 1), 0.0f * u::m);
   boat_test_run (boat, 10.0f);
   const float empty = boat.position ()[1];
   const float empty_mass = boat.mass ().numerical_value_in (u::kg);
@@ -98,7 +98,7 @@ MOPPE_TEST (the_long_tail_drives_the_boat_up_onto_the_plane_and_steers_it) {
   const map::SurfaceGeometry lake =
     boat_test_ground ([] (float, float) { return -4.0f; });
   mov::Boat boat (lake);
-  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f);
+  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f * u::m);
   boat.set_parked (false);
   boat.set_drive (1.0f);
   boat_test_run (boat, 3.0f);
@@ -138,7 +138,7 @@ MOPPE_TEST (a_river_carries_a_boat_left_on_it) {
   const map::SurfaceGeometry river =
     boat_test_ground ([] (float, float) { return -3.0f; });
   mov::Boat boat (river);
-  boat.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1), 0.0f);
+  boat.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1), 0.0f * u::m);
   const mov::BoatWater flowing = still_water (Vec3 (1.2f, 0, 0));
   boat_test_run (boat, 20.0f, flowing);
   MOPPE_CHECK_NEAR (boat.velocity ()[0], 1.2f, 0.2f);
@@ -150,7 +150,7 @@ MOPPE_TEST (driven_at_a_shelving_shore_the_boat_runs_aground) {
   const map::SurfaceGeometry shore =
     boat_test_ground ([] (float, float z) { return (z - 160.0f) / 12.0f; });
   mov::Boat boat (shore);
-  boat.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1), 0.0f);
+  boat.place (Vec3 (100, 0, 100), Vec3 (0, 0, 1), 0.0f * u::m);
   boat.set_parked (false);
   boat.set_drive (1.0f);
   boat_test_run (boat, 30.0f);
@@ -165,7 +165,7 @@ MOPPE_TEST (driven_against_a_current_the_boat_makes_less_way_over_the_ground) {
     boat_test_ground ([] (float, float) { return -3.0f; });
   const auto speed_in = [&] (const mov::BoatWater& water) -> float {
     mov::Boat boat (river);
-    boat.place (Vec3 (100, 0, 40), Vec3 (0, 0, 1), 0.0f);
+    boat.place (Vec3 (100, 0, 40), Vec3 (0, 0, 1), 0.0f * u::m);
     boat.set_parked (false);
     boat.set_drive (1.0f);
     boat_test_run (boat, 15.0f, water);
@@ -183,7 +183,7 @@ MOPPE_TEST (
   const map::SurfaceGeometry lake =
     boat_test_ground ([] (float, float) { return -4.0f; });
   mov::Boat boat (lake);
-  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f);
+  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f * u::m);
   boat.set_parked (false);
   boat.set_passenger (true);
   MOPPE_CHECK_NEAR (boat.mass ().numerical_value_in (u::kg), 230.0f, 1e-3f);
@@ -207,7 +207,7 @@ MOPPE_TEST (a_swamped_boat_comes_up_awash_rather_than_flying_out) {
   const map::SurfaceGeometry lake =
     boat_test_ground ([] (float, float) { return -8.0f; });
   mov::Boat boat (lake);
-  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f);
+  boat.place (Vec3 (60, 0, 40), Vec3 (0, 0, 1), 0.0f * u::m);
   mov::Boat::State sunk = boat.state ();
   sunk.body.position[1] = -4.0f;
   boat.restore (sunk);

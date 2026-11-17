@@ -242,7 +242,7 @@ namespace moppe {
       const mov::Boat& boat = session ().boat ();
       Vec3 way = boat.velocity () - current_at (boat.position ());
       way[1] = 0.0f;
-      return boat.afloat () && std::abs (boat.state ().drive) < 0.1f &&
+      return boat.afloat () && abs (boat.state ().drive) < 0.1f * one &&
              length2 (way) < 0.8f * 0.8f;
     }
 

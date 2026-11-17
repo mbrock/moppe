@@ -28,7 +28,7 @@ namespace moppe {
         boat.set_trunks (&m_trunk_field);
         boat.place (landing.berth,
                     outward ? -landing.berth_forward : landing.berth_forward,
-                    landing.berth[1]);
+                    landing.berth[1] * u::m);
         m_mooring = landing.jetty.root;
         m_mooring_out = landing.jetty.out;
         std::cerr << "moppe: boat moored at the landing's jetty, "
@@ -75,7 +75,8 @@ namespace moppe {
       const Vec3 facing = outward && m_mooring_out ? *m_mooring_out : bow;
       for (const Vec3& at : berths)
         if (boat_depth_at (at) > 0.5f) {
-          ski.place (at, facing, boat_depth_at (at) + ground_height (at));
+          ski.place (
+            at, facing, (boat_depth_at (at) + ground_height (at)) * u::m);
           std::cerr << "moppe: jet ski afloat " << std::lround (from_spawn (at))
                     << " m from the spawn, at " << at[0] << ' ' << at[2]
                     << std::endl;
@@ -86,7 +87,7 @@ namespace moppe {
         return;
       }
       // No water round the boat deep enough: drawn up on its shore.
-      ski.place (*m_mooring, facing, -1e6f);
+      ski.place (*m_mooring, facing, -1e6f * u::m);
       std::cerr << "moppe: jet ski drawn up on the boat's shore, at "
                 << (*m_mooring)[0] << ' ' << (*m_mooring)[2] << std::endl;
     }
@@ -135,7 +136,7 @@ namespace moppe {
       const Vec3 ahead = normalized (line[start + 1] - at);
       mov::Boat& boat = session ().boat ();
       boat.set_trunks (&m_trunk_field);
-      boat.place (at, ahead, boat_depth_at (at) + ground_height (at));
+      boat.place (at, ahead, (boat_depth_at (at) + ground_height (at)) * u::m);
       m_mooring = at;
       m_mooring_out = ahead;
       m_boat_route.assign (line.begin () + start + 1, line.end ());
@@ -296,7 +297,7 @@ namespace moppe {
                                 : at;
             mov::Boat& boat = session ().boat ();
             boat.set_trunks (&m_trunk_field);
-            boat.place (moor, outward ? out : -out, level_at (moor));
+            boat.place (moor, outward ? out : -out, level_at (moor) * u::m);
             m_mooring = shore;
             m_mooring_out = out;
             std::cerr << "moppe: boat moored "
