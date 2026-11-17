@@ -47,6 +47,8 @@
 #   haul      a stuck tractor hauled out on a rope     (MOPPE_WALK=haul)
 #   bump      the jeep driven into the tractor's side, twice
 #                                                      (MOPPE_WALK=bump)
+#   bus       boarding the bus at its first stop and riding it on
+#                                                  (MOPPE_WALK=bus-ride)
 #   camp      hang the hammock, light a fire, lie down at dusk and watch
 #             the night go by                          (MOPPE_WALK=camp)
 #   opening   the opening titles
@@ -182,6 +184,7 @@ case $scene in
   boat-fish) stage MOPPE_WALK=boat-fish; : "${seconds:=80}" ;;
   haul) stage MOPPE_WALK=haul MOPPE_WALK_CAMERA=front; : "${seconds:=16}" ;;
   bump) stage MOPPE_WALK=bump; : "${seconds:=13}" ;;
+  bus) stage MOPPE_WALK=bus-ride MOPPE_WALK_CAMERA=chase; : "${seconds:=45}" ;;
   camp)
     stage MOPPE_WALK=camp MOPPE_WALK_CAMERA=chase MOPPE_CLOCK=17.3
     : "${seconds:=75}" ;;
