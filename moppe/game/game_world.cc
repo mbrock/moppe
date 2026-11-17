@@ -369,9 +369,7 @@ namespace moppe {
         session ().set_mode (M_HELICOPTER);
         logic ().m_cam_mode = CAM_CHASE;
       }
-      stage_camp_script ();
-      stage_fish_script ();
-      stage_place_script ();
+      m_walk.stage (script_stage ());
       // The mouse looks around during play; M hands it back.
       platform::set_pointer_captured (true);
       m_opening.plan (generated_world (),

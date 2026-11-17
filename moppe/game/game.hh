@@ -169,23 +169,8 @@ namespace moppe {
       void
       draw_sleeper (render::DrawList& dl, bool through_own_eyes, float time);
 
-      // MOPPE_WALK=fish: the walker starts on the bank of the open water
-      // nearest the spawn, facing out over it.
-      void stage_fish_script ();
-
-      // MOPPE_WALK=camp: the walker starts a few steps from the fit pair of
-      // trees nearest the spawn, on whichever side is clearer to walk in
-      // from.
-      // MOPPE_WALK=landing|sanctuary|farm: on foot at the landing's
-      // jetty, a sanctuary's gate, or a farm, facing it.
-      void stage_place_script ();
-
-      void stage_camp_script ();
-
-      // The script itself: walk in between the trees and hang the hammock,
-      // step out and light a fire, come back and lie down, and after a
-      // while see the sky through the sleeper's eyes.
-      InputFrame camp_script (seconds_t interval);
+      // What the walk scripts stand in and move (capture_scripts.hh).
+      ScriptStage script_stage ();
 
       // The finished world arrived from the generation thread.  Everything
       // left runs in one go: build the retained presentations, place the
@@ -213,14 +198,6 @@ namespace moppe {
       // -- simulation --------------------------------------------------
 
       void tick (seconds_t interval) override;
-
-      // A deterministic on-foot script for automated captures (MOPPE_WALK):
-      // "walk", "run", and "jump" hold one gait, "tour" stands, walks,
-      // runs, jumps twice from the run, and comes to rest, turning gently
-      // throughout so a following camera sees the figure from changing
-      // sides, and "forage" starts beside the mushrooms nearest the spawn
-      // and picks its way from one to the next.
-      InputFrame scripted_walk (std::string_view script, seconds_t interval);
 
       void tick_simulation (seconds_t interval);
 
@@ -337,7 +314,7 @@ namespace moppe {
       mov::TrunkField m_trunk_field;
       // The automated captures' walk scripts and cameras, and the demo
       // autopilot.
-      WalkScriptState m_walk;
+      WalkScripts m_walk;
       CaptureCameras m_capture_camera;
       DemoPilot m_demo;
       // The HUD, the map sheet, and the quit question.

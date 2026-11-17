@@ -42,6 +42,17 @@ namespace moppe {
                .sky = m_sky.sky () };
     }
 
+    ScriptStage MoppeGame::script_stage () {
+      return { .session = session (),
+               .ground = world_ground (),
+               .around = surroundings (),
+               .places = m_places,
+               .mushrooms = m_mushrooms,
+               .spawn = m_spawn_position,
+               .cameras = m_capture_camera,
+               .renderer = m_renderer };
+    }
+
     void MoppeGame::draw_camp (render::DrawList& dl) {
       const Camp& camp = logic ().m_camp;
       const play_time_t now = logic ().m_total_time;

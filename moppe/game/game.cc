@@ -123,7 +123,7 @@ namespace moppe {
       if (walk_script && (logic ().m_mode == M_FOOT ||
                           std::string_view (walk_script) == "bump" ||
                           std::string_view (walk_script) == "boat-fish"))
-        input = scripted_walk (walk_script, seconds (dt));
+        input = m_walk.step (script_stage (), walk_script, seconds (dt));
       else if (DemoPilot::active ())
         input = m_demo.steer (
           input, session (), m_parking, world_ground (), total_time, dt);

@@ -1,11 +1,14 @@
-// What the automated captures' scripts keep from step to step (MOPPE_WALK),
-// which MoppeGame's game_scripts.cc works, and the cameras that film them
+// The automated captures' scripted walks (MOPPE_WALK, walk_scripts.cc):
+// where each starts, what it keeps from step to step, and the input it
+// drives the walker with; and the cameras that film them
 // (capture_cameras.cc).
 #ifndef MOPPE_GAME_CAPTURE_SCRIPTS_HH
 #define MOPPE_GAME_CAPTURE_SCRIPTS_HH
 
 #include <moppe/game/camp.hh>
 #include <moppe/game/game_session.hh>
+#include <moppe/game/input_frame.hh>
+#include <moppe/game/surroundings.hh>
 #include <moppe/game/world_ground.hh>
 #include <moppe/gfx/mat4.hh>
 
@@ -15,7 +18,13 @@
 #include <string_view>
 #include <vector>
 
+namespace moppe::render {
+  class Renderer;
+}
+
 namespace moppe::game {
+  struct WorldPlaces;
+
   struct WalkScriptState {
     float time = 0.0f;
     // MOPPE_WALK=forage: the poisonous mushrooms it has left be.
@@ -113,6 +122,49 @@ namespace moppe::game {
     Vec3 film_heading;
     Vec3 film_stand;
     std::optional<float> film_fov;
+  };
+
+  // What a walk script stands in and moves.
+  struct ScriptStage {
+    GameSession& session;
+    WorldGround ground;
+    Surroundings around;
+    const WorldPlaces& places;
+    const MushroomPatch& mushrooms;
+    Vec3 spawn;
+    CaptureCameras& cameras;
+    render::Renderer* renderer;
+  };
+
+  class WalkScripts {
+  public:
+    // Once the world is ready, places the walker where the launch's
+    // script begins: MOPPE_WALK=camp a few steps from the fit pair of
+    // trees nearest the spawn, on whichever side is clearer to walk in
+    // from; fish on the bank of the open water nearest the spawn, facing
+    // out over it; landing|sanctuary|farm and the like on foot at the
+    // landing's jetty, a sanctuary's gate, or a farm, facing it.
+    void stage (const ScriptStage& s);
+
+    // A deterministic on-foot script: "walk", "run", and "jump" hold one
+    // gait, "tour" stands, walks, runs, jumps twice from the run, and
+    // comes to rest, turning gently throughout so a following camera
+    // sees the figure from changing sides, and "forage" starts beside the
+    // mushrooms nearest the spawn and picks its way from one to the next.
+    InputFrame
+    step (const ScriptStage& s, std::string_view script, seconds_t interval);
+
+  private:
+    void stage_fish (const ScriptStage& s);
+    void stage_place (const ScriptStage& s);
+    void stage_camp (const ScriptStage& s);
+
+    // The camp script: walk in between the trees and hang the hammock,
+    // step out and light a fire, come back and lie down, and after a
+    // while see the sky through the sleeper's eyes.
+    InputFrame camp (const ScriptStage& s, seconds_t interval);
+
+    WalkScriptState m_state;
   };
 }
 
