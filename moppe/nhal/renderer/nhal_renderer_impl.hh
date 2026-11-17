@@ -663,7 +663,7 @@ namespace moppe::nhal {
       PostState m_post;
 
       Pipeline m_sky, m_resolve, m_neighbourhood, m_present, m_hud, m_slug_text,
-        m_exposure, m_rain, m_world_text, m_world_labels_behind;
+        m_exposure, m_rain, m_world_text, m_world_labels, m_world_labels_behind;
       std::unordered_map<int, Pipeline> m_uber;
       FrameBlock m_frame_values {};
       Buffer m_exposure_value;
