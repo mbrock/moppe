@@ -1,8 +1,8 @@
 #ifndef MOPPE_GAME_FOREST_PLAN_HH
 #define MOPPE_GAME_FOREST_PLAN_HH
 
-#include <moppe/game/foliage_kind.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/render/forest_kinds.hh>
 #include <moppe/terrain/watercourse.hh>
 
 #include <cstdint>
@@ -11,12 +11,11 @@
 #include <vector>
 
 namespace moppe::game {
-  using ForestForm = FoliageKind;
+  using ForestForm = render::ForestSpecies;
+  using render::ForestAge;
 
   using TreeSizeFactor =
     mp_units::quantity<tree_size_factor[mp_units::one], float>;
-
-  enum class ForestAge : std::uint8_t { sapling, young, mature, ancient };
 
   struct ForestSite {
     position_t position {};
@@ -25,8 +24,8 @@ namespace moppe::game {
     map::SurfaceMoisture moisture {};
     TreeSizeFactor size = 1.0f * tree_size_factor[mp_units::one];
     std::uint32_t seed = 0;
-    ForestForm form = ForestForm::broadleaf;
-    ForestAge age = ForestAge::mature;
+    ForestForm form = ForestForm::Broadleaf;
+    ForestAge age = ForestAge::Mature;
   };
 
   struct ForestPlan {

@@ -61,7 +61,7 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
                       1e-6f);
     // Spruce follows the canopy field; birch may also pioneer open ground
     // inside its groves.
-    if (site.form == game::ForestForm::conifer)
+    if (site.form == game::ForestForm::Conifer)
       MOPPE_CHECK (site.cover >= 0.06f * map::forest_cover[mp_units::one]);
     MOPPE_CHECK (site.normal.numerical_value_in (mp_units::one)[1] > 0.99f);
   }
@@ -163,8 +163,8 @@ MOPPE_TEST (baked_forest_plan_round_trips_and_rejects_bad_identity) {
       .moisture = 0.4f * map::surface_moisture[mp_units::one],
       .size = 1.2f * game::tree_size_factor[mp_units::one],
       .seed = 1234,
-      .form = game::ForestForm::conifer,
-      .age = game::ForestAge::ancient });
+      .form = game::ForestForm::Conifer,
+      .age = game::ForestAge::Ancient });
 
   game::save_forest_plan (plan, 99, path.string ());
   const std::optional<game::ForestPlan> restored =
@@ -172,8 +172,8 @@ MOPPE_TEST (baked_forest_plan_round_trips_and_rejects_bad_identity) {
   MOPPE_CHECK (restored.has_value ());
   MOPPE_CHECK (restored->sites.size () == 1);
   MOPPE_CHECK (restored->sites[0].seed == 1234);
-  MOPPE_CHECK (restored->sites[0].form == game::ForestForm::conifer);
-  MOPPE_CHECK (restored->sites[0].age == game::ForestAge::ancient);
+  MOPPE_CHECK (restored->sites[0].form == game::ForestForm::Conifer);
+  MOPPE_CHECK (restored->sites[0].age == game::ForestAge::Ancient);
   MOPPE_CHECK_NEAR (
     position_value (restored->sites[0].position)[1], 34.0f, 0.0f);
   MOPPE_CHECK (!game::try_load_forest_plan (path.string (), 100, period));

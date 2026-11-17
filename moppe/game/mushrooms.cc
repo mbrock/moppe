@@ -311,7 +311,7 @@ namespace moppe::game {
 
     // Which kind a tree's group is, by the tree.
     MushroomKind kind_for (ForestForm form, float draw) {
-      if (form == ForestForm::conifer || form == ForestForm::pine) {
+      if (form == ForestForm::Conifer || form == ForestForm::Pine) {
         if (draw < 0.40f)
           return MushroomKind::chanterelle;
         if (draw < 0.70f)
@@ -389,7 +389,7 @@ namespace moppe::game {
     plan.period_x = period[0];
     plan.period_z = period[2];
     for (const ForestSite& tree : forest.sites) {
-      if (tree.age == ForestAge::sapling)
+      if (tree.age == ForestAge::Sapling)
         continue;
       const std::uint32_t identity = lattice_hash (tree.seed, 0x6d75u, seed);
       const Vec3 at = position_value (tree.position);

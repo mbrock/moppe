@@ -206,24 +206,24 @@ namespace moppe::game {
         hash_lane (identity, 6) *
         std::lerp (0.2f, 1.0f, smoothstep (0.03f, 0.6f, recovery));
       if (draw < 0.18f)
-        return ForestAge::sapling;
+        return ForestAge::Sapling;
       if (draw < 0.46f)
-        return ForestAge::young;
+        return ForestAge::Young;
       if (draw < 0.94f)
-        return ForestAge::mature;
-      return ForestAge::ancient;
+        return ForestAge::Mature;
+      return ForestAge::Ancient;
     }
 
     TreeSizeFactor size_for_age (ForestAge age, std::uint32_t identity) {
       const float draw = hash_lane (identity, 4);
       switch (age) {
-      case ForestAge::sapling:
+      case ForestAge::Sapling:
         return (0.18f + 0.27f * draw) * tree_size_factor[one];
-      case ForestAge::young:
+      case ForestAge::Young:
         return (0.48f + 0.32f * draw) * tree_size_factor[one];
-      case ForestAge::mature:
+      case ForestAge::Mature:
         return (0.78f + 0.42f * draw) * tree_size_factor[one];
-      case ForestAge::ancient:
+      case ForestAge::Ancient:
         return (1.25f + 0.45f * draw) * tree_size_factor[one];
       }
       return 1.0f * tree_size_factor[one];
@@ -429,8 +429,8 @@ namespace moppe::game {
       // off since.
       if (candidate.snag) {
         const ForestAge age = hash_lane (candidate.identity, 12) < 0.25f
-                                ? ForestAge::ancient
-                                : ForestAge::mature;
+                                ? ForestAge::Ancient
+                                : ForestAge::Mature;
         plan.sites.push_back (
           { .position = forest_position (x, elevation, z),
             .normal = normal_at (surface, x, z),
@@ -439,7 +439,7 @@ namespace moppe::game {
             .size = size_for_age (age, candidate.identity) *
                     (0.45f + 0.45f * hash_lane (candidate.identity, 13)),
             .seed = candidate.identity,
-            .form = ForestForm::snag,
+            .form = ForestForm::Snag,
             .age = age });
         continue;
       }
@@ -459,24 +459,24 @@ namespace moppe::game {
       // Where no tree has come back yet, the first to is a birch.
       if (total <= 0.0f)
         kind = candidate.recovery < 0.5f ? 2 : 0;
-      ForestForm form = kind == 1   ? ForestForm::pine
-                        : kind == 0 ? ForestForm::conifer
-                        : kind == 3 ? ForestForm::fell_birch
-                                    : ForestForm::broadleaf;
-      if (form != ForestForm::fell_birch &&
+      ForestForm form = kind == 1   ? ForestForm::Pine
+                        : kind == 0 ? ForestForm::Conifer
+                        : kind == 3 ? ForestForm::FellBirch
+                                    : ForestForm::Broadleaf;
+      if (form != ForestForm::FellBirch &&
           (candidate.pioneer ||
-           (form == ForestForm::conifer && is_birch (site))))
-        form = ForestForm::broadleaf;
+           (form == ForestForm::Conifer && is_birch (site))))
+        form = ForestForm::Broadleaf;
       // Toward the treeline the trees shrink: the fell birch low and
       // many-crowned, spruce stunted to krummholz among it. A bog's pines
       // are old and no taller than a person or two.
       const float fell_share = total > 0.0f ? candidate.fell / total : 0.0f;
       float shrink = 1.0f;
-      if (form == ForestForm::fell_birch)
+      if (form == ForestForm::FellBirch)
         shrink = 0.30f;
-      else if (form == ForestForm::conifer)
+      else if (form == ForestForm::Conifer)
         shrink = 1.0f - 0.6f * fell_share;
-      else if (form == ForestForm::pine)
+      else if (form == ForestForm::Pine)
         shrink =
           std::lerp (1.0f, 0.28f, candidate.bog) * (1.0f - 0.4f * fell_share);
       // And young ground grows young trees smaller still.
@@ -557,8 +557,8 @@ namespace moppe::game {
       ForestSiteRecord record {};
       input.read (reinterpret_cast<char*> (&record), sizeof (record));
       if (!input ||
-          record.form > static_cast<std::uint32_t> (ForestForm::snag) ||
-          record.age > static_cast<std::uint32_t> (ForestAge::ancient))
+          record.form > static_cast<std::uint32_t> (ForestForm::Snag) ||
+          record.age > static_cast<std::uint32_t> (ForestAge::Ancient))
         return std::nullopt;
       plan.sites.push_back (
         { .position = position (

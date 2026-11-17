@@ -172,7 +172,7 @@ namespace moppe {
       const int nz = std::max (1, static_cast<int> (period[2] / cell));
       std::vector<int> conifers (static_cast<std::size_t> (nx) * nz, 0);
       for (const ForestSite& site : plan.sites) {
-        if (site.form != ForestForm::conifer)
+        if (site.form != ForestForm::Conifer)
           continue;
         const Vec3 at = position_value (site.position);
         const int x = std::clamp (static_cast<int> (at[0] / cell), 0, nx - 1);

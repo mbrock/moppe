@@ -18,9 +18,9 @@ namespace moppe::game {
     const float size = site.size.numerical_value_in (mp_units::one);
     const float cover = site.cover.numerical_value_in (mp_units::one);
     const float moisture = site.moisture.numerical_value_in (mp_units::one);
-    const float species = site.form == ForestForm::conifer ? 15.0f
-                          : site.form == ForestForm::snag  ? 15.0f
-                          : site.form == ForestForm::pine  ? 14.0f
+    const float species = site.form == ForestForm::Conifer ? 15.0f
+                          : site.form == ForestForm::Snag  ? 15.0f
+                          : site.form == ForestForm::Pine  ? 14.0f
                                                            : 13.4f;
     return 1.5f * size * species * (0.82f + 0.30f * cover + 0.26f * moisture) *
            u::m;
@@ -95,32 +95,16 @@ namespace moppe::game {
       };
     }
 
-    render::ForestAge presented_age (ForestAge age) {
-      switch (age) {
-      case ForestAge::sapling:
-        return render::ForestAge::Sapling;
-      case ForestAge::young:
-        return render::ForestAge::Young;
-      case ForestAge::mature:
-        return render::ForestAge::Mature;
-      case ForestAge::ancient:
-        return render::ForestAge::Ancient;
-      }
-      return render::ForestAge::Mature;
-    }
-
     render::ForestInstance present (const ForestSite& site) {
-      const float size = site.size.numerical_value_in (mp_units::one);
       const float cover = site.cover.numerical_value_in (mp_units::one);
       const float moisture = site.moisture.numerical_value_in (mp_units::one);
-      const bool conifer = site.form == ForestForm::conifer;
       // The forest stands at the height of a mature stand -- most conifers
       // 20 to 35 metres -- with stout spruce cones and broad broadleaf crowns
       // lifted on clear trunks.
       const meters_t height = tree_height (site);
       // A fell birch spreads as wide as it stands tall.
       const float crown_share =
-        site.form == ForestForm::fell_birch ? 0.34f : 0.19f;
+        site.form == ForestForm::FellBirch ? 0.34f : 0.19f;
       return {
         .root = site.position,
         .ground_normal = site.normal,
@@ -129,14 +113,8 @@ namespace moppe::game {
         .canopy_cover = cover * mp_units::one,
         .moisture = moisture * mp_units::one,
         .seed = site.seed,
-        .species = conifer ? render::ForestSpecies::Conifer
-                   : site.form == ForestForm::pine ? render::ForestSpecies::Pine
-                   : site.form == ForestForm::fell_birch
-                     ? render::ForestSpecies::FellBirch
-                   : site.form == ForestForm::snag
-                     ? render::ForestSpecies::Snag
-                     : render::ForestSpecies::Broadleaf,
-        .age = presented_age (site.age),
+        .species = site.form,
+        .age = site.age,
       };
     }
   }
@@ -318,19 +296,19 @@ namespace moppe::game {
     m_tree_count = instances.size ();
     const auto birches =
       std::ranges::count_if (plan.sites, [] (const ForestSite& site) {
-        return site.form == ForestForm::broadleaf;
+        return site.form == ForestForm::Broadleaf;
       });
     const auto pines =
       std::ranges::count_if (plan.sites, [] (const ForestSite& site) {
-        return site.form == ForestForm::pine;
+        return site.form == ForestForm::Pine;
       });
     const auto fell_birches =
       std::ranges::count_if (plan.sites, [] (const ForestSite& site) {
-        return site.form == ForestForm::fell_birch;
+        return site.form == ForestForm::FellBirch;
       });
     const auto snags =
       std::ranges::count_if (plan.sites, [] (const ForestSite& site) {
-        return site.form == ForestForm::snag;
+        return site.form == ForestForm::Snag;
       });
     std::cerr << "moppe: forest plan: " << plan.sites.size () << " sites, "
               << birches << " birch, " << pines << " pine, " << fell_birches
